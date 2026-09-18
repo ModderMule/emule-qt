@@ -560,6 +560,8 @@ void KadPanel::requestContacts()
             row.tcpPort = static_cast<uint16_t>(m.value(QStringLiteral("tcpPort")).toInteger());
             row.version = static_cast<uint8_t>(m.value(QStringLiteral("version")).toInteger());
             row.type = static_cast<uint8_t>(m.value(QStringLiteral("type")).toInteger());
+            row.ipVerified = m.value(QStringLiteral("ipVerified")).toBool();
+            row.bootstrap = m.value(QStringLiteral("bootstrap")).toBool();
             rows.push_back(std::move(row));
         }
 

@@ -45,6 +45,10 @@ struct NzbAddChoices {
     int category = 0;
     int priority = 0;
     bool paused = false;
+
+    /// NZB file indices unchecked in Choose Files…; the daemon widens them to
+    /// whole archive sets.
+    QList<int> skippedFiles;
 };
 
 class UsenetPanel : public QWidget {
@@ -133,6 +137,9 @@ private:
     void onOpenFolder();
     void onPreview();
     void onCheckAvailability();
+    void onToggleEnginePause();
+    /// Pause All / Resume All, from IpcClient::usenetEnginePaused().
+    void updateEngineAction();
 
     /// What a double-click or Enter does on @p index — the single place that
     /// decision lives, so the mouse and the keyboard cannot diverge.
@@ -197,6 +204,7 @@ private:
     QAction* m_removeAction = nullptr;
     QAction* m_previewAction = nullptr;
     QAction* m_checkAction = nullptr;
+    QAction* m_pauseAllAction = nullptr;
 
     QString m_streamToken;
 

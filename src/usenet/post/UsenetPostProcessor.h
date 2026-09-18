@@ -115,6 +115,18 @@ struct UsenetPostJob {
     /// the same place this would have put them, so the unpack stage skips those
     /// sets — unless a repair ran, which invalidates them by definition.
     QList<UsenetDirectUnpackResult> directUnpacked;
+
+    /// A file the user skipped: absent on purpose, so its PAR2 blocks are not
+    /// damage on their own. `names` are every sanitized name it may go by.
+    struct SkippedFile {
+        int fileIndex = -1;
+        QStringList names;
+    };
+    QList<SkippedFile> skippedFiles;
+
+    /// Bare names in workDir to delete once PAR2 is done: skipped files a repair
+    /// fetched back or rebuilt. Checked with the rest, never published.
+    QStringList discardAfterVerify;
 };
 
 /// One payload file on its way into the incoming directory.
@@ -143,6 +155,10 @@ struct UsenetPostResult {
     /// The queue turns this into another download round rather than a failure.
     bool needsMoreBlocks = false;
     int  blocksNeeded = 0;
+
+    /// Verification came up short and the repair needs files the user skipped,
+    /// by NZB index. Fetching them costs less than their recovery blocks.
+    QList<int> needsSkippedFiles;
 
     /// Staged payload, each waiting for the queue to rename it into place.
     QList<UsenetStagedFile> staged;

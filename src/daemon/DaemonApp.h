@@ -18,6 +18,8 @@
 namespace eMule {
 
 class CoreSession;
+class DaemonUsenetWebBackend;
+class TranslationRouter;
 class WebServer;
 
 class IpcServer;
@@ -44,6 +46,10 @@ public:
 
     /// Access the web server (may be nullptr if not running).
     [[nodiscard]] WebServer* webServer() const { return m_webServer.get(); }
+
+    /// The installed translator the web UI's languages go through. Not owned;
+    /// set before start(). Without it the web UI is English.
+    void setTranslationRouter(TranslationRouter* router) { m_translations = router; }
 
     /// Access the singleton instance (set during start, cleared on stop).
     [[nodiscard]] static DaemonApp* instance() { return s_instance; }
@@ -127,10 +133,13 @@ private:
     std::unique_ptr<CoreSession> m_coreSession;
     std::unique_ptr<IpcServer> m_ipcServer;
     std::unique_ptr<CoreNotifierBridge> m_notifierBridge;
+    /// Declared before m_webServer so the server that points at it dies first.
+    std::unique_ptr<DaemonUsenetWebBackend> m_usenetWebBackend;
     std::unique_ptr<WebServer> m_webServer;
     std::unique_ptr<usenet::UsenetSession> m_usenetSession;
     std::unique_ptr<indexer::IndexerSearchList> m_indexerSearches;
     std::unique_ptr<indexer::IndexerFeedList> m_indexerFeeds;
+    TranslationRouter* m_translations = nullptr;
     bool m_running = false;
 
     static DaemonApp* s_instance;

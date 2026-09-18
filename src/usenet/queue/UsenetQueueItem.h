@@ -201,6 +201,19 @@ struct UsenetFileState {
     /// were.
     int missingSegments = 0;
 
+    /// The user left this file out of the download. Never fetched, sealed or
+    /// published; its scratch file is deleted when post-processing begins.
+    /// Optional sidecar key.
+    bool skipped = false;
+
+    /// A repair turned out to need this skipped file: fetched and verified like
+    /// any other, still not published. Persisted, so a restart does not delete
+    /// it a second time.
+    bool neededForRepair = false;
+
+    /// Skipped and not wanted back by a repair — the test every planner uses.
+    [[nodiscard]] bool isSkipped() const { return skipped && !neededForRepair; }
+
     [[nodiscard]] bool allSegmentsDone() const;
 
     /// Merge `[start, end)` into `written`, coalescing with any neighbours.
@@ -222,6 +235,35 @@ struct UsenetFileState {
     /// volume file — the archive header sits in front of it.
     [[nodiscard]] qint64 availableFrom(qint64 offset) const;
 };
+
+/// What one file is doing, for the GUI's icon and bar. Sent as an int, so
+/// values are only ever appended.
+enum class UsenetFileWireState : quint8 {
+    Queued = 0,     ///< nothing resolved, nothing in flight
+    Partial = 1,    ///< some articles resolved or in flight
+    Complete = 2,   ///< every article landed
+    Missing = 3,    ///< every article resolved, some on no server
+    Skipped = 4,    ///< the user left it out
+    Held = 5,       ///< a recovery volume nobody asked for yet
+};
+
+/// Bucket codes in a segment map.
+inline constexpr quint8 kSegmentMapQueued = 0;
+inline constexpr quint8 kSegmentMapDone = 1;
+inline constexpr quint8 kSegmentMapMissing = 2;
+inline constexpr quint8 kSegmentMapInFlight = 3;
+
+/// A map never has more buckets than this, whatever the article count.
+inline constexpr int kSegmentMapMaxBuckets = 128;
+
+/// One byte per bucket over @p st's articles, min(articles, 128) buckets.
+/// A bucket shows the worst article in it: missing, then in flight, then
+/// queued, then done. @p inFlight holds segment indices of this file.
+///
+/// Empty when every bucket reads queued or every bucket reads done — the file's
+/// state says that for free, and keeps a push small. A uniform missing or
+/// in-flight file comes back as a single byte.
+[[nodiscard]] QByteArray buildSegmentMap(const UsenetFileState& st, const QSet<int>& inFlight);
 
 class UsenetQueueItem {
 public:
@@ -301,9 +343,11 @@ public:
     /// second time — once per restart, forever.
     QSet<int> requestedPar2;
 
-    [[nodiscard]] qint64 totalEncodedBytes() const { return nzb.totalEncodedBytes(); }
+    /// Totals over the files that are part of the download — skipped files are
+    /// left out, so percent and remaining describe what will actually arrive.
+    [[nodiscard]] qint64 totalEncodedBytes() const;
     [[nodiscard]] qint64 decodedBytes() const;
-    [[nodiscard]] int segmentCount() const { return nzb.segmentCount(); }
+    [[nodiscard]] int segmentCount() const;
     [[nodiscard]] int doneSegmentCount() const;
 
     /// Whether @p fileIndex is worth offering a preview for: a video or audio

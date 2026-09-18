@@ -12,6 +12,7 @@
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QLocale>
 #include <QLockFile>
 #include <QSet>
 #include <QStandardPaths>
@@ -256,6 +257,32 @@ QStringList AppConfig::langCandidates(const QString& appDir)
     if (const QString devDir = QStringLiteral(EMULE_DEV_LANG_DIR); !devDir.isEmpty())
         candidates << devDir;
     return candidates;
+}
+
+QList<AppLanguage> AppConfig::availableLanguages(const QStringList& dirs)
+{
+    QSet<QString> codes;
+    for (const QString& dir : dirs) {
+        QDirIterator it(dir, {QStringLiteral("emuleqt_*.qm")}, QDir::Files);
+        while (it.hasNext()) {
+            it.next();
+            // "emuleqt_xx_YY.qm" -> "xx_YY"
+            const QString code = it.fileName().mid(8).chopped(3);
+            if (!code.isEmpty() && code != QLatin1String("en"))
+                codes.insert(code);
+        }
+    }
+
+    QList<AppLanguage> out;
+    for (const QString& code : std::as_const(codes)) {
+        const QLocale loc(code);
+        QString label = loc.nativeLanguageName();
+        if (!loc.nativeTerritoryName().isEmpty())
+            label += QStringLiteral(" (") + loc.nativeTerritoryName() + u')';
+        out.append({code, label});
+    }
+    std::ranges::sort(out, {}, &AppLanguage::label);
+    return out;
 }
 
 AppConfig::SeedReport AppConfig::seedBundledData(const QString& configDir)

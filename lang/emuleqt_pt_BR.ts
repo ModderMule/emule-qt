@@ -6,12 +6,12 @@
     <message>
         <location filename="../src/core/media/ContainerSniffer.cpp" line="+164"/>
         <source>Named .%1 but matches no media container we recognise — very likely a fake.</source>
-        <translation type="unfinished"></translation>
+        <translation>Nomeado como .%1, mas não corresponde a nenhum contêiner de mídia conhecido — muito provavelmente é falso.</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Named .%1 but the contents are %2.</source>
-        <translation type="unfinished"></translation>
+        <translation>Nomeado como .%1, mas o conteúdo é %2.</translation>
     </message>
 </context>
 <context>
@@ -183,7 +183,7 @@ O Cache HTTP será ativado e esta chave será salva para uploads.</translation>
         <translation>A configuração de Cache HTTP para %1 não foi aplicada.</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+22"/>
         <location line="+2"/>
         <source>HTTP Cache configured for %1.</source>
         <translation>Cache HTTP configurado para %1.</translation>
@@ -197,7 +197,7 @@ O Cache HTTP será ativado e esta chave será salva para uploads.</translation>
 <context>
     <name>IpcFeedback</name>
     <message>
-        <location filename="../src/gui/utils/IpcFeedback.cpp" line="+22"/>
+        <location filename="../src/gui/utils/IpcFeedback.cpp" line="+24"/>
         <source>The request was rejected by eMule.</source>
         <translation>A solicitação foi rejeitada pelo eMule.</translation>
     </message>
@@ -207,19 +207,64 @@ O Cache HTTP será ativado e esta chave será salva para uploads.</translation>
     <message>
         <location filename="../src/gui/utils/PreviewLauncher.cpp" line="+195"/>
         <source>Not connected to the core.</source>
-        <translation type="unfinished"></translation>
+        <translation>Não conectado ao núcleo.</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>The core has not sent its stream token yet. It arrives with the next status update — try again in a moment.</source>
-        <translation type="unfinished"></translation>
+        <translation>O núcleo ainda não enviou seu token de stream. Ele chega com a próxima atualização de status — tente novamente em instantes.</translation>
     </message>
     <message>
         <location line="+10"/>
         <source>The core runs on another machine and its web server only listens on localhost.
 
 Enable Web Interface or REST API under Options → Web Interface.</source>
-        <translation type="unfinished"></translation>
+        <translation>O núcleo é executado em outra máquina e seu servidor web só escuta em localhost.
+
+Ative a Interface web ou a API REST em Opções → Interface web.</translation>
+    </message>
+</context>
+<context>
+    <name>Priority</name>
+    <message>
+        <location filename="../src/gui/utils/PriorityText.cpp" line="+16"/>
+        <source>Very Low</source>
+        <translation>Muito baixa</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Auto [Lo]</source>
+        <translation>Auto [Bx]</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Low</source>
+        <translation>Baixa</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Auto [Hi]</source>
+        <translation>Auto [Al]</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>High</source>
+        <translation>Alta</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Release</source>
+        <translation>Lançamento</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Auto [No]</source>
+        <translation>Auto [No]</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Normal</source>
+        <translation>Normal</translation>
     </message>
 </context>
 <context>
@@ -244,10 +289,12 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Você já baixou o(s) seguinte(s) arquivo(s). Baixar novamente?
+
+%1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+546"/>
+        <location filename="../src/gui/app/main.cpp" line="+556"/>
         <source>Download Added</source>
         <translation>Download adicionado</translation>
     </message>
@@ -277,42 +324,70 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
         <translation>A conexão com o servidor foi perdida.</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+67"/>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+35"/>
         <source>Very Low</source>
-        <translation>Muito baixa</translation>
+        <translation type="vanished">Muito baixa</translation>
+    </message>
+    <message>
+        <location filename="../src/gui/controls/UsenetQueueModel.cpp" line="+200"/>
+        <source>Skipped</source>
+        <translation>Ignorado</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+1"/>
+        <source>Held back — fetched if a repair needs it</source>
+        <translation>Retido — será obtido se um reparo precisar dele</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+2"/>
+        <location line="+4"/>
+        <source>%n article(s) missing</source>
+        <translation>
+            <numerusform>%n artigo ausente</numerusform>
+            <numerusform>%n artigos ausentes</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="-3"/>
+        <source>Complete</source>
+        <translation>Concluído</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Queued</source>
+        <translation>Na fila</translation>
+    </message>
+    <message>
+        <location line="+408"/>
+        <source>Very high</source>
+        <translation>Muito alta</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Low</source>
         <translation>Baixa</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+3"/>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+1"/>
-        <location line="+3"/>
+        <source>Very low</source>
+        <translation>Muito baixa</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Normal</source>
         <translation>Normal</translation>
     </message>
     <message>
-        <location line="-2"/>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="-2"/>
+        <location line="-3"/>
         <source>High</source>
         <translation>Alta</translation>
     </message>
     <message>
-        <location line="+1"/>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+1"/>
         <source>Very High</source>
-        <translation>Muito alta</translation>
+        <translation type="vanished">Muito alta</translation>
     </message>
     <message>
-        <location line="+4"/>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+4"/>
         <source>Auto [%1]</source>
-        <translation>Auto [%1]</translation>
+        <translation type="vanished">Auto [%1]</translation>
     </message>
     <message>
         <location filename="../src/gui/utils/RatingIcons.cpp" line="+57"/>
@@ -343,16 +418,18 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
         <location line="+101"/>
         <source>
 Rating:	%1</source>
-        <translation type="unfinished"></translation>
+        <translation>
+Avaliação:	%1</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>
 Has comments</source>
-        <translation type="unfinished"></translation>
+        <translation>
+Tem comentários</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+13"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+56"/>
         <source>Server</source>
         <translation>Servidor</translation>
     </message>
@@ -368,7 +445,7 @@ Has comments</source>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+71"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+72"/>
         <source>Passive</source>
         <translation>Passivo</translation>
     </message>
@@ -385,8 +462,7 @@ Has comments</source>
         <translation>Cache HTTP</translation>
     </message>
     <message>
-        <location line="+200"/>
-        <location line="+14"/>
+        <location line="+226"/>
         <source>Yes</source>
         <translation>Sim</translation>
     </message>
@@ -397,7 +473,7 @@ Has comments</source>
     </message>
     <message>
         <location line="+7"/>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="-25"/>
+        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+19"/>
         <source>Archive</source>
         <translation>Arquivo</translation>
     </message>
@@ -459,7 +535,7 @@ Has comments</source>
         <translation>Troca de fontes</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="-215"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="-227"/>
         <location filename="../src/gui/controls/DownloadListModel.cpp" line="+3"/>
         <source>SLS</source>
         <translation>SLS</translation>
@@ -476,6 +552,7 @@ Has comments</source>
     </message>
     <message>
         <location line="+1"/>
+        <location filename="../src/gui/controls/UsenetQueueModel.cpp" line="-411"/>
         <source>Downloading</source>
         <translation>Baixando</translation>
     </message>
@@ -490,7 +567,7 @@ Has comments</source>
         <translation>Cancelado</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="+277"/>
+        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="+282"/>
         <source>Total Overhead (Packets): 0 Bytes (0)</source>
         <translation>Sobrecarga total (pacotes): 0 Bytes (0)</translation>
     </message>
@@ -519,49 +596,51 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2776"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2777"/>
         <source>Test</source>
-        <translation type="unfinished">Testar</translation>
+        <translation>Testar</translation>
     </message>
     <message>
         <location filename="../src/gui/utils/FileAssociation.cpp" line="+155"/>
         <source>Could not write the file association to the registry.</source>
-        <translation type="unfinished"></translation>
+        <translation>Não foi possível gravar a associação de arquivo no registro.</translation>
     </message>
     <message>
         <location line="+23"/>
         <source>Could not remove the file association from the registry.</source>
-        <translation type="unfinished"></translation>
+        <translation>Não foi possível remover a associação de arquivo do registro.</translation>
     </message>
     <message>
         <location line="+15"/>
         <location line="+29"/>
         <source>No writable data directory.</source>
-        <translation type="unfinished"></translation>
+        <translation>Nenhum diretório de dados gravável.</translation>
     </message>
     <message>
         <location line="-23"/>
         <source>Could not create %1.</source>
-        <translation type="unfinished"></translation>
+        <translation>Não foi possível criar %1.</translation>
     </message>
     <message>
         <location filename="../src/gui/utils/NzbAdd.cpp" line="+25"/>
         <source>Could not add &quot;%1&quot;.</source>
-        <translation type="unfinished"></translation>
+        <translation>Não foi possível adicionar &quot;%1&quot;.</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+37"/>
+        <location line="+42"/>
         <location line="+10"/>
         <source>Add NZB</source>
-        <translation type="unfinished"></translation>
+        <translation>Adicionar NZB</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>%1
 
 Download it again?</source>
-        <translation type="unfinished"></translation>
+        <translation>%1
+
+Baixar novamente?</translation>
     </message>
 </context>
 <context>
@@ -569,58 +648,63 @@ Download it again?</source>
     <message>
         <location filename="../src/core/utils/OtherFunctions.cpp" line="+405"/>
         <source>Not rated</source>
-        <translation type="unfinished"></translation>
+        <translation>Sem avaliação</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Invalid / Corrupt / Fake</source>
-        <translation type="unfinished"></translation>
+        <translation>Inválido / Corrompido / Falso</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Poor</source>
-        <translation type="unfinished">Ruim</translation>
+        <translation>Ruim</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Fair</source>
-        <translation type="unfinished">Razoável</translation>
+        <translation>Razoável</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Good</source>
-        <translation type="unfinished">Boa</translation>
+        <translation>Boa</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Excellent</source>
-        <translation type="unfinished">Excelente</translation>
+        <translation>Excelente</translation>
     </message>
 </context>
 <context>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4110"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
     <message>
         <location line="+1"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1"/>
         <source>KB</source>
         <translation>KB</translation>
     </message>
     <message>
         <location line="+1"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1"/>
         <source>MB</source>
         <translation>MB</translation>
     </message>
     <message>
         <location line="+1"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1"/>
         <source>GB</source>
         <translation>GB</translation>
     </message>
     <message>
         <location line="+1"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1"/>
         <source>TB</source>
         <translation>TB</translation>
     </message>
@@ -649,39 +733,75 @@ Download it again?</source>
         <source>TB/s</source>
         <translation>TB/s</translation>
     </message>
+    <message>
+        <location line="+9"/>
+        <source>k</source>
+        <translation>k</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>M</source>
+        <translation>M</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>G</source>
+        <translation>G</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>T</source>
+        <translation>T</translation>
+    </message>
+    <message>
+        <location line="+22"/>
+        <source>secs</source>
+        <translation>seg</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>mins</source>
+        <translation>min</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>h</source>
+        <translation>h</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>d</source>
+        <translation>d</translation>
+    </message>
 </context>
 <context>
     <name>UsenetDetailsDialog</name>
     <message numerus="yes">
-        <location filename="../src/gui/dialogs/UsenetDetailsDialog.cpp" line="+64"/>
+        <location filename="../src/gui/dialogs/UsenetDetailsDialog.cpp" line="+66"/>
         <source>%1 (and %n other(s))</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%1 (e %n outro)</numerusform>
+            <numerusform>%1 (e %n outros)</numerusform>
         </translation>
     </message>
     <message numerus="yes">
-        <location line="+10"/>
         <source>%n article(s) missing</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation type="vanished">
+            <numerusform>%n artigo ausente</numerusform>
+            <numerusform>%n artigos ausentes</numerusform>
         </translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>Complete</source>
-        <translation type="unfinished">Concluído</translation>
+        <translation type="vanished">Concluído</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Downloading</source>
-        <translation type="unfinished">Baixando</translation>
+        <translation type="vanished">Baixando</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Queued</source>
-        <translation type="unfinished">Na fila</translation>
+        <translation type="vanished">Na fila</translation>
     </message>
 </context>
 <context>
@@ -761,77 +881,91 @@ Download it again?</source>
 <context>
     <name>eMule::AddNzbFilesDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/AddNzbFilesDialog.cpp" line="+10"/>
+        <location filename="../src/gui/dialogs/AddNzbFilesDialog.cpp" line="+15"/>
         <source>Add NZB</source>
-        <translation type="unfinished"></translation>
+        <translation>Adicionar NZB</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>NZB files:</source>
-        <translation type="unfinished"></translation>
+        <translation>Arquivos NZB:</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Add</source>
-        <translation type="unfinished">Adicionar</translation>
+        <translation>Adicionar</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Password:</source>
-        <translation type="unfinished">Senha:</translation>
+        <translation>Senha:</translation>
+    </message>
+    <message>
+        <location line="+18"/>
+        <location line="+31"/>
+        <source>Choose Files…</source>
+        <translation>Escolher arquivos…</translation>
+    </message>
+    <message numerus="yes">
+        <location line="-1"/>
+        <source>Choose Files… (%n skipped)</source>
+        <translation>
+            <numerusform>Escolher arquivos… (%n ignorado)</numerusform>
+            <numerusform>Escolher arquivos… (%n ignorados)</numerusform>
+        </translation>
     </message>
 </context>
 <context>
     <name>eMule::AddNzbUrlDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/AddNzbUrlDialog.cpp" line="+15"/>
-        <location line="+25"/>
+        <location filename="../src/gui/dialogs/AddNzbUrlDialog.cpp" line="+16"/>
+        <location line="+27"/>
         <location line="+31"/>
-        <location line="+64"/>
+        <location line="+71"/>
         <source>Add NZB from URL</source>
-        <translation type="unfinished"></translation>
+        <translation>Adicionar NZB de URL</translation>
     </message>
     <message>
-        <location line="-118"/>
+        <location line="-127"/>
         <source>NZB URLs:</source>
-        <translation type="unfinished"></translation>
+        <translation>URLs de NZB:</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Paste one or more http(s) links to .nzb files here, one per line...</source>
-        <translation type="unfinished"></translation>
+        <translation>Cole aqui um ou mais links http(s) para arquivos .nzb, um por linha...</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Download</source>
-        <translation type="unfinished">Download</translation>
+        <translation>Download</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Password:</source>
-        <translation type="unfinished">Senha:</translation>
+        <translation>Senha:</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+11"/>
         <source>Not Connected</source>
-        <translation type="unfinished">Não conectado</translation>
+        <translation>Não conectado</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Not connected to the eMule core.</source>
-        <translation type="unfinished"></translation>
+        <translation>Não conectado ao núcleo do eMule.</translation>
     </message>
     <message>
         <location line="+10"/>
         <source>Please add at most %1 links at a time.</source>
-        <translation type="unfinished"></translation>
+        <translation>Adicione no máximo %1 links por vez.</translation>
     </message>
     <message numerus="yes">
         <location line="+23"/>
         <source>Queued %n NZB(s) from URL.</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%n NZB da URL enfileirado.</numerusform>
+            <numerusform>%n NZBs da URL enfileirados.</numerusform>
         </translation>
     </message>
     <message>
@@ -839,21 +973,27 @@ Download it again?</source>
         <source>These links could not be added:
 
 %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Estes links não puderam ser adicionados:
+
+%1</translation>
     </message>
     <message>
         <location line="+32"/>
         <source>Could not reach the eMule core.</source>
-        <translation type="unfinished"></translation>
+        <translation>Não foi possível contatar o núcleo do eMule.</translation>
     </message>
     <message numerus="yes">
-        <location line="+32"/>
+        <location line="+39"/>
         <source>You have already downloaded %n of these. Download them again?
 
 %1</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>Você já baixou %n destes. Baixar novamente?
+
+%1</numerusform>
+            <numerusform>Você já baixou %n destes. Baixar novamente?
+
+%1</numerusform>
         </translation>
     </message>
 </context>
@@ -1093,95 +1233,95 @@ Download it again?</source>
     <message>
         <location filename="../src/gui/dialogs/CategoryDialog.cpp" line="+34"/>
         <source>Edit Category-Properties</source>
-        <translation type="unfinished"></translation>
+        <translation>Editar propriedades da categoria</translation>
     </message>
     <message>
         <location line="+6"/>
         <source>Title</source>
-        <translation type="unfinished">Título</translation>
+        <translation>Título</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Comments</source>
-        <translation type="unfinished">Comentários</translation>
+        <translation>Comentários</translation>
     </message>
     <message>
         <location line="+13"/>
         <location line="+71"/>
         <source>Choose a folder for incoming files</source>
-        <translation type="unfinished"></translation>
+        <translation>Escolha uma pasta para os arquivos recebidos</translation>
     </message>
     <message>
         <location line="-67"/>
         <source>Incoming Files  (Folder will be shared!)</source>
-        <translation type="unfinished"></translation>
+        <translation>Arquivos recebidos  (A pasta será compartilhada!)</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Low</source>
-        <translation type="unfinished">Baixa</translation>
+        <translation>Baixa</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Normal</source>
-        <translation type="unfinished">Normal</translation>
+        <translation>Normal</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>High</source>
-        <translation type="unfinished">Alta</translation>
+        <translation>Alta</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Priority for this category</source>
-        <translation type="unfinished"></translation>
+        <translation>Prioridade para esta categoria</translation>
     </message>
     <message>
         <location line="+6"/>
         <location line="+59"/>
         <source>Color</source>
-        <translation type="unfinished">Cor</translation>
+        <translation>Cor</translation>
     </message>
     <message>
         <location line="-56"/>
         <source>Auto cat. assignment (separate patterns with |)</source>
-        <translation type="unfinished"></translation>
+        <translation>Atribuição automática de cat. (separe os padrões com |)</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>As Regular Expression</source>
-        <translation type="unfinished"></translation>
+        <translation>Como expressão regular</translation>
     </message>
     <message>
         <location line="+9"/>
         <source>Stored for compatibility — the per-category view filter is not implemented yet.</source>
-        <translation type="unfinished"></translation>
+        <translation>Armazenado por compatibilidade — o filtro de exibição por categoria ainda não foi implementado.</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Regular expression for view filter:</source>
-        <translation type="unfinished"></translation>
+        <translation>Expressão regular para o filtro de exibição:</translation>
     </message>
     <message>
         <location line="+55"/>
         <source>A category needs a title.</source>
-        <translation type="unfinished"></translation>
+        <translation>Uma categoria precisa de um título.</translation>
     </message>
     <message>
         <location line="+15"/>
         <source>Invalid folder. Folder can not be created. Please check name and location.</source>
-        <translation type="unfinished"></translation>
+        <translation>Pasta inválida. A pasta não pode ser criada. Verifique o nome e o local.</translation>
     </message>
     <message>
         <location line="+10"/>
         <location line="+6"/>
         <source>Bad regular expression</source>
-        <translation type="unfinished"></translation>
+        <translation>Expressão regular inválida</translation>
     </message>
     <message>
         <location line="+34"/>
         <source>Default</source>
-        <translation type="unfinished">Padrão</translation>
+        <translation>Padrão</translation>
     </message>
 </context>
 <context>
@@ -1191,55 +1331,57 @@ Download it again?</source>
         <location line="+47"/>
         <location line="+59"/>
         <source>All</source>
-        <translation type="unfinished">Todos</translation>
+        <translation>Todos</translation>
     </message>
     <message>
         <location line="-52"/>
         <source>Cat %1</source>
-        <translation type="unfinished">Cat. %1</translation>
+        <translation>Cat %1</translation>
     </message>
     <message>
         <location line="+74"/>
         <source>Category</source>
-        <translation type="unfinished">Categoria</translation>
+        <translation>Categoria</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Category (%1)</source>
-        <translation type="unfinished"></translation>
+        <translation>Categoria (%1)</translation>
     </message>
     <message>
         <location line="+12"/>
         <source>Open Incoming Folder</source>
-        <translation type="unfinished">Abrir pasta de entrada</translation>
+        <translation>Abrir pasta de entrada</translation>
     </message>
     <message>
         <location line="+12"/>
         <source>Add Category...</source>
-        <translation type="unfinished"></translation>
+        <translation>Adicionar categoria...</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Edit Category...</source>
-        <translation type="unfinished"></translation>
+        <translation>Editar categoria...</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+136"/>
+        <location line="+138"/>
         <source>Remove Category</source>
-        <translation type="unfinished"></translation>
+        <translation>Remover categoria</translation>
     </message>
     <message>
         <location line="-44"/>
         <source>Could not save categories: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Não foi possível salvar as categorias: %1</translation>
     </message>
     <message>
         <location line="+45"/>
         <source>Remove the category &quot;%1&quot;?
 
 Its downloads keep their files and move to All.</source>
-        <translation type="unfinished"></translation>
+        <translation>Remover a categoria &quot;%1&quot;?
+
+Seus downloads mantêm os arquivos e vão para Todas.</translation>
     </message>
 </context>
 <context>
@@ -1390,7 +1532,7 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::ClientListModel</name>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+290"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+304"/>
         <location line="+13"/>
         <location line="+13"/>
         <location line="+15"/>
@@ -1510,7 +1652,23 @@ Its downloads keep their files and move to All.</source>
         <translation>Baixado</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-176"/>
+        <location line="+36"/>
+        <source>Low ID</source>
+        <translation>Low ID</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Yes</source>
+        <translation>Sim</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>No</source>
+        <translation>Não</translation>
+    </message>
+    <message>
+        <location line="+138"/>
         <source>Connected</source>
         <translation>Conectado</translation>
     </message>
@@ -1556,7 +1714,7 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::CollectionCreateDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CollectionCreateDialog.cpp" line="+52"/>
+        <location filename="../src/gui/dialogs/CollectionCreateDialog.cpp" line="+54"/>
         <source>Modify Collection...</source>
         <translation>Modificar coleção...</translation>
     </message>
@@ -1627,7 +1785,7 @@ Its downloads keep their files and move to All.</source>
         <translation>Cancelar</translation>
     </message>
     <message>
-        <location line="+89"/>
+        <location line="+91"/>
         <source>Shared (%1)</source>
         <translation>Compartilhado (%1)</translation>
     </message>
@@ -1639,12 +1797,13 @@ Its downloads keep their files and move to All.</source>
     <message>
         <location line="+26"/>
         <location line="+6"/>
-        <location line="+25"/>
+        <location line="+42"/>
+        <location line="+9"/>
         <source>Collection</source>
         <translation>Coleção</translation>
     </message>
     <message>
-        <location line="-31"/>
+        <location line="-57"/>
         <source>Please enter a collection name.</source>
         <translation>Digite um nome para a coleção.</translation>
     </message>
@@ -1654,7 +1813,12 @@ Its downloads keep their files and move to All.</source>
         <translation>A coleção está vazia. Adicione arquivos primeiro.</translation>
     </message>
     <message>
-        <location line="+26"/>
+        <location line="+43"/>
+        <source>Do you want to replace existing file?</source>
+        <translation>Deseja substituir o arquivo existente?</translation>
+    </message>
+    <message>
+        <location line="+9"/>
         <source>Failed to save collection: %1</source>
         <translation>Falha ao salvar a coleção: %1</translation>
     </message>
@@ -1727,37 +1891,37 @@ Its downloads keep their files and move to All.</source>
     <message>
         <location filename="../src/gui/dialogs/CommentEditPanel.cpp" line="+70"/>
         <source>Comment This File! (This text will be shown to all users.)</source>
-        <translation type="unfinished"></translation>
+        <translation>Comente este arquivo! (Este texto será mostrado a todos os usuários.)</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>For a film, you can say its length, its story, the language... And if it is a fake, you can inform other eMule users...</source>
-        <translation type="unfinished"></translation>
+        <translation>Para um filme, você pode dizer a duração, a história, o idioma... E se for falso, pode avisar os outros usuários do eMule...</translation>
     </message>
     <message>
         <location line="+15"/>
         <source>File Quality</source>
-        <translation type="unfinished"></translation>
+        <translation>Qualidade do arquivo</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Choose the file rating or advice users if the file is invalid!</source>
-        <translation type="unfinished"></translation>
+        <translation>Escolha a avaliação do arquivo ou avise os usuários se o arquivo for inválido!</translation>
     </message>
     <message>
         <location line="+13"/>
         <source>Reset</source>
-        <translation type="unfinished">Redefinir</translation>
+        <translation>Redefinir</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>Apply</source>
-        <translation type="unfinished">Aplicar</translation>
+        <translation>Aplicar</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Comment</source>
-        <translation type="unfinished">Comentário</translation>
+        <translation>Comentário</translation>
     </message>
 </context>
 <context>
@@ -1900,14 +2064,14 @@ Insira o endereço e o token de autenticação de um núcleo remoto.</translatio
 <context>
     <name>eMule::DetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/DetailDialog.cpp" line="+201"/>
+        <location filename="../src/gui/dialogs/DetailDialog.cpp" line="+202"/>
         <source>Search Kad</source>
         <translation>Pesquisar no Kad</translation>
     </message>
     <message>
         <location line="+95"/>
         <source>Comments</source>
-        <translation type="unfinished">Comentários</translation>
+        <translation>Comentários</translation>
     </message>
     <message>
         <location line="+37"/>
@@ -1923,18 +2087,27 @@ Insira o endereço e o token de autenticação de um núcleo remoto.</translatio
 <context>
     <name>eMule::DownloadListModel</name>
     <message>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+154"/>
-        <location line="+439"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+616"/>
         <source>Downloading</source>
         <translation>Baixando</translation>
     </message>
     <message>
-        <location line="-357"/>
+        <location line="-362"/>
         <source>Auto [%1]</source>
         <translation>Auto [%1]</translation>
     </message>
     <message>
+        <location line="-81"/>
+        <source>Queue Full</source>
+        <translation>Fila cheia</translation>
+    </message>
+    <message>
         <location line="+35"/>
+        <source>Available parts: %1 / %2</source>
+        <translation>Partes disponíveis: %1 / %2</translation>
+    </message>
+    <message>
+        <location line="+81"/>
         <source>File Name:	%1
 ED2K Hash:	%2
 Size:	%3
@@ -1959,7 +2132,7 @@ Requisições aceitas:	%11
 Dados transferidos:	%12</translation>
     </message>
     <message>
-        <location line="+69"/>
+        <location line="+68"/>
         <source>File Name</source>
         <translation>Nome do arquivo</translation>
     </message>
@@ -2024,7 +2197,7 @@ Dados transferidos:	%12</translation>
         <translation>Adicionado em</translation>
     </message>
     <message>
-        <location line="+212"/>
+        <location line="+218"/>
         <source>Importing part</source>
         <translation>Importando parte</translation>
     </message>
@@ -2540,93 +2713,93 @@ Dados transferidos:	%12</translation>
     <message>
         <location filename="../src/gui/controls/IndexerResultsModel.cpp" line="+25"/>
         <source>today</source>
-        <translation type="unfinished"></translation>
+        <translation>hoje</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>1 day</source>
-        <translation type="unfinished"></translation>
+        <translation>1 dia</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>%1 days</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 dias</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>%1 months</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 meses</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>%1 years</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 anos</translation>
     </message>
     <message>
         <location line="+102"/>
         <source>Posted: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Postado: %1</translation>
     </message>
     <message>
         <location line="+6"/>
         <source>%1 files</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 arquivos</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Password protected</source>
-        <translation type="unfinished"></translation>
+        <translation>Protegido por senha</translation>
     </message>
     <message>
         <location line="+27"/>
         <source>Name</source>
-        <translation type="unfinished">Nome</translation>
+        <translation>Nome</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Size</source>
-        <translation type="unfinished">Tamanho</translation>
+        <translation>Tamanho</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Age</source>
-        <translation type="unfinished"></translation>
+        <translation>Idade</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Category</source>
-        <translation type="unfinished">Categoria</translation>
+        <translation>Categoria</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Grabs</source>
-        <translation type="unfinished"></translation>
+        <translation>Baixados</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Indexer</source>
-        <translation type="unfinished"></translation>
+        <translation>Indexador</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Seeders</source>
-        <translation type="unfinished"></translation>
+        <translation>Semeadores</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Peers</source>
-        <translation type="unfinished"></translation>
+        <translation>Pares</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Known</source>
-        <translation type="unfinished">Conhecido</translation>
+        <translation>Conhecido</translation>
     </message>
 </context>
 <context>
     <name>eMule::IrcPanel</name>
     <message>
-        <location filename="../src/gui/panels/IrcPanel.cpp" line="+162"/>
+        <location filename="../src/gui/panels/IrcPanel.cpp" line="+131"/>
         <source>Select an IRC nick.</source>
         <translation>Selecione um nick para IRC.</translation>
     </message>
@@ -2662,12 +2835,12 @@ Por favor, escolha outro:</translation>
     </message>
     <message>
         <location line="+33"/>
-        <location line="+561"/>
+        <location line="+537"/>
         <source>Nick</source>
         <translation>Nick</translation>
     </message>
     <message>
-        <location line="-502"/>
+        <location line="-478"/>
         <source>Status</source>
         <translation>Status</translation>
     </message>
@@ -2737,7 +2910,7 @@ Por favor, escolha outro:</translation>
         <translation>Canais</translation>
     </message>
     <message>
-        <location line="+285"/>
+        <location line="+261"/>
         <source>Nick (%1)</source>
         <translation>Nick (%1)</translation>
     </message>
@@ -2745,7 +2918,7 @@ Por favor, escolha outro:</translation>
 <context>
     <name>eMule::KadContactHistogram</name>
     <message>
-        <location filename="../src/gui/controls/KadContactHistogram.cpp" line="+190"/>
+        <location filename="../src/gui/controls/KadContactHistogram.cpp" line="+193"/>
         <source>Contacts</source>
         <translation>Contatos</translation>
     </message>
@@ -2758,7 +2931,7 @@ Por favor, escolha outro:</translation>
 <context>
     <name>eMule::KadContactsModel</name>
     <message>
-        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+81"/>
+        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+67"/>
         <source>Status</source>
         <translation>Status</translation>
     </message>
@@ -2812,29 +2985,29 @@ Por favor, escolha outro:</translation>
         <location line="-431"/>
         <location line="+12"/>
         <location line="+369"/>
-        <location line="+92"/>
+        <location line="+94"/>
         <source>▸ Current Searches (0)</source>
         <translation>▸ Buscas atuais (0)</translation>
     </message>
     <message>
-        <location line="-266"/>
-        <location line="+328"/>
+        <location line="-268"/>
+        <location line="+332"/>
         <source>▸ Search Details</source>
         <translation>▸ Detalhes da busca</translation>
     </message>
     <message>
-        <location line="-248"/>
+        <location line="-252"/>
         <source>Recheck Firewall</source>
         <translation>Verificar firewall</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+235"/>
+        <location line="+239"/>
         <source>Connect</source>
         <translation>Conectar</translation>
     </message>
     <message>
-        <location line="-443"/>
+        <location line="-447"/>
         <location line="+223"/>
         <location line="+28"/>
         <source>Bootstrap</source>
@@ -2884,13 +3057,13 @@ Por favor, escolha outro:</translation>
         <translation>Nodes.dat da URL:</translation>
     </message>
     <message>
-        <location line="+135"/>
+        <location line="+137"/>
         <location line="+3"/>
         <source>▸ Contacts (%1)</source>
         <translation>▸ Contatos (%1)</translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="+41"/>
         <source>▸ Current Searches (%1)</source>
         <translation>▸ Buscas atuais (%1)</translation>
     </message>
@@ -2908,7 +3081,7 @@ Por favor, escolha outro:</translation>
 <context>
     <name>eMule::KadSearchesModel</name>
     <message>
-        <location filename="../src/gui/controls/KadSearchesModel.cpp" line="+76"/>
+        <location filename="../src/gui/controls/KadSearchesModel.cpp" line="+78"/>
         <source>No.</source>
         <translation>N.º</translation>
     </message>
@@ -3016,12 +3189,12 @@ Por favor, escolha outro:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1030"/>
+        <location line="+1050"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Desconectado</translation>
     </message>
     <message>
-        <location line="-1016"/>
+        <location line="-1036"/>
         <source>Kad: Connected</source>
         <translation>Kad: Conectado</translation>
     </message>
@@ -3037,17 +3210,17 @@ Por favor, escolha outro:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1008"/>
+        <location line="+1028"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: Desconectado</translation>
     </message>
     <message>
-        <location line="-999"/>
+        <location line="-1019"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Usuários: %1 | Arquivos: %2</translation>
     </message>
     <message>
-        <location line="+251"/>
+        <location line="+269"/>
         <source>Open Incoming Folder...</source>
         <translation>Abrir pasta de entrada...</translation>
     </message>
@@ -3087,14 +3260,14 @@ Por favor, escolha outro:</translation>
         <translation>FAQ</translation>
     </message>
     <message>
-        <location line="-515"/>
+        <location line="-533"/>
         <location line="+7"/>
-        <location line="+511"/>
+        <location line="+529"/>
         <source>Version Check</source>
         <translation>Verificar versão</translation>
     </message>
     <message>
-        <location line="-573"/>
+        <location line="-591"/>
         <source>Quit eMule Qt</source>
         <translation>Sair do eMule Qt</translation>
     </message>
@@ -3168,7 +3341,7 @@ Up: %3 | Down: %4</source>
 Envio: %3 | Download: %4</translation>
     </message>
     <message>
-        <location line="+70"/>
+        <location line="+72"/>
         <source>Confirm Exit</source>
         <translation>Confirmar saída</translation>
     </message>
@@ -3178,14 +3351,14 @@ Envio: %3 | Download: %4</translation>
         <translation>Tem certeza de que deseja sair do eMule?</translation>
     </message>
     <message>
-        <location line="+131"/>
+        <location line="+147"/>
         <source>Open Downloads Folder in Browser</source>
-        <translation type="unfinished"></translation>
+        <translation>Abrir pasta de downloads no navegador</translation>
     </message>
     <message>
         <location line="+34"/>
         <source>Open WebUI</source>
-        <translation type="unfinished"></translation>
+        <translation>Abrir WebUI</translation>
     </message>
     <message>
         <location line="+5"/>
@@ -3208,36 +3381,38 @@ Envio: %3 | Download: %4</translation>
         <translation>Ativar agendador</translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="+41"/>
         <source>Cannot Open Downloads Folder</source>
-        <translation type="unfinished"></translation>
+        <translation>Não é possível abrir a pasta de downloads</translation>
     </message>
     <message>
         <location line="+10"/>
         <source>Cannot Open Web Interface</source>
-        <translation type="unfinished"></translation>
+        <translation>Não é possível abrir a interface web</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Not connected to the core.</source>
-        <translation type="unfinished"></translation>
+        <translation>Não conectado ao núcleo.</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Web Interface Disabled</source>
-        <translation type="unfinished"></translation>
+        <translation>Interface web desativada</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>The web interface is disabled.
 
 Enable it under Options → Web Interface, then try again.</source>
-        <translation type="unfinished"></translation>
+        <translation>A interface web está desativada.
+
+Ative-a em Opções → Interface web e tente novamente.</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Open Options</source>
-        <translation type="unfinished"></translation>
+        <translation>Abrir Opções</translation>
     </message>
     <message>
         <location line="+141"/>
@@ -3355,6 +3530,11 @@ Enable it under Options → Web Interface, then try again.</source>
         <source>Double-click for Network Information</source>
         <translation>Clique duplo para informações de rede</translation>
     </message>
+    <message>
+        <location line="+25"/>
+        <source>New message — double-click to read</source>
+        <translation>Nova mensagem — clique duplo para ler</translation>
+    </message>
 </context>
 <context>
     <name>eMule::MediaInfoPanel</name>
@@ -3445,12 +3625,12 @@ Enable it under Options → Web Interface, then try again.</source>
 <context>
     <name>eMule::MessagesPanel</name>
     <message>
-        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+121"/>
+        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+139"/>
         <source>Me</source>
         <translation>Eu</translation>
     </message>
     <message>
-        <location line="+72"/>
+        <location line="+76"/>
         <source>Friends (0)</source>
         <translation>Amigos (0)</translation>
     </message>
@@ -3461,12 +3641,12 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
     <message>
         <location line="+15"/>
-        <location line="+289"/>
+        <location line="+291"/>
         <source>Name:</source>
         <translation>Nome:</translation>
     </message>
     <message>
-        <location line="-288"/>
+        <location line="-290"/>
         <source>Hash:</source>
         <translation>Hash:</translation>
     </message>
@@ -3546,7 +3726,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>Buscar...</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="+32"/>
         <source>Friends (%1)</source>
         <translation>Amigos (%1)</translation>
     </message>
@@ -3640,7 +3820,7 @@ Enable it under Options → Web Interface, then try again.</source>
 <context>
     <name>eMule::NetworkInfoDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+52"/>
+        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+53"/>
         <source>Network Information</source>
         <translation>Informações de rede</translation>
     </message>
@@ -3651,11 +3831,12 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
     <message>
         <location line="+15"/>
+        <location line="+10"/>
         <source>&lt;b&gt;Not connected to daemon.&lt;/b&gt;</source>
         <translation>&lt;b&gt;Não conectado ao daemon.&lt;/b&gt;</translation>
     </message>
     <message>
-        <location line="+56"/>
+        <location line="+52"/>
         <source>Connected</source>
         <translation>Conectado</translation>
     </message>
@@ -3720,6 +3901,60 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
 </context>
 <context>
+    <name>eMule::NzbFileChooserDialog</name>
+    <message>
+        <location filename="../src/gui/dialogs/NzbFileChooserDialog.cpp" line="+42"/>
+        <source>Choose Files</source>
+        <translation>Escolher arquivos</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Unchecked files are not downloaded. The volumes of one archive are checked together, and PAR2 files are fetched only when a repair needs them.</source>
+        <translation>Arquivos desmarcados não são baixados. Os volumes de um mesmo arquivo compactado são marcados juntos, e os arquivos PAR2 só são obtidos quando um reparo precisa deles.</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Name</source>
+        <translation>Nome</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Size</source>
+        <translation>Tamanho</translation>
+    </message>
+    <message>
+        <location line="+19"/>
+        <source>Reading…</source>
+        <translation>Lendo…</translation>
+    </message>
+    <message>
+        <location line="+35"/>
+        <source>PAR2 files are fetched when a repair needs them.</source>
+        <translation>Os arquivos PAR2 são obtidos quando um reparo precisa deles.</translation>
+    </message>
+    <message>
+        <location line="+20"/>
+        <location line="+20"/>
+        <source>Not connected to the eMule core.</source>
+        <translation>Não conectado ao núcleo do eMule.</translation>
+    </message>
+    <message>
+        <location line="-14"/>
+        <source>Cannot read %1.</source>
+        <translation>Não é possível ler %1.</translation>
+    </message>
+    <message>
+        <location line="+32"/>
+        <source>This file could not be read.</source>
+        <translation>Não foi possível ler este arquivo.</translation>
+    </message>
+    <message>
+        <location line="+25"/>
+        <source>Keep at least one file of &quot;%1&quot;.</source>
+        <translation>Mantenha pelo menos um arquivo de &quot;%1&quot;.</translation>
+    </message>
+</context>
+<context>
     <name>eMule::OptionsDialog</name>
     <message>
         <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2690"/>
@@ -3728,30 +3963,30 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
     <message>
         <location line="+49"/>
-        <location line="+1762"/>
+        <location line="+1760"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-1761"/>
-        <location line="+1762"/>
+        <location line="-1759"/>
+        <location line="+1760"/>
         <source>Cancel</source>
         <translation>Cancelar</translation>
     </message>
     <message>
-        <location line="-1761"/>
-        <location line="+5234"/>
+        <location line="-1759"/>
+        <location line="+5301"/>
         <source>Apply</source>
         <translation>Aplicar</translation>
     </message>
     <message>
-        <location line="-5233"/>
+        <location line="-5300"/>
         <source>Help</source>
         <translation>Ajuda</translation>
     </message>
     <message>
-        <location line="+234"/>
-        <location line="+1754"/>
+        <location line="+245"/>
+        <location line="+1741"/>
         <location line="+63"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -3760,29 +3995,29 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>Filtro IP</translation>
     </message>
     <message>
-        <location line="-1841"/>
+        <location line="-1828"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>Filtro IP recarregado: %1 entradas.</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+84"/>
         <source>Options -&gt; %1 -&gt; %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Opções -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
         <location line="+152"/>
         <source>General options</source>
-        <translation type="unfinished"></translation>
+        <translation>Opções gerais</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Advanced options</source>
-        <translation type="unfinished"></translation>
+        <translation>Opções avançadas</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Usenet</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet</translation>
     </message>
     <message>
         <location line="+74"/>
@@ -3791,18 +4026,18 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5158"/>
+        <location line="+5226"/>
         <source>Language</source>
         <translation>Idioma</translation>
     </message>
     <message>
-        <location line="-5155"/>
+        <location line="-5223"/>
         <source>System Default</source>
         <translation>Padrão do sistema</translation>
     </message>
     <message>
-        <location line="+38"/>
-        <location line="+589"/>
+        <location line="+14"/>
+        <location line="+599"/>
         <location line="+293"/>
         <location line="+372"/>
         <location line="+276"/>
@@ -3810,7 +4045,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>Diversos</translation>
     </message>
     <message>
-        <location line="-1527"/>
+        <location line="-1537"/>
         <source>Bring to front on link click</source>
         <translation>Trazer para frente ao clicar no link</translation>
     </message>
@@ -3842,12 +4077,12 @@ Enable it under Options → Web Interface, then try again.</source>
     <message>
         <location line="+10"/>
         <source>Web Services</source>
-        <translation type="unfinished">Serviços web</translation>
+        <translation>Serviços web</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>webservices.dat was not found in the config folder.</source>
-        <translation type="unfinished"></translation>
+        <translation>webservices.dat não foi encontrado na pasta de configuração.</translation>
     </message>
     <message>
         <location line="+6"/>
@@ -3896,25 +4131,25 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5060"/>
+        <location line="+5152"/>
         <source>Core</source>
         <translation>Núcleo</translation>
     </message>
     <message>
-        <location line="-5055"/>
+        <location line="-5147"/>
         <source>Address:</source>
         <translation>Endereço:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1049"/>
+        <location line="+1059"/>
         <location line="+633"/>
-        <location line="+407"/>
+        <location line="+409"/>
         <source>Port:</source>
         <translation>Porta:</translation>
     </message>
     <message>
-        <location line="-2086"/>
+        <location line="-2098"/>
         <source>authentication token</source>
         <translation>token de autenticação</translation>
     </message>
@@ -4055,20 +4290,20 @@ Tem certeza de que deseja continuar?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+587"/>
+        <location line="+597"/>
         <location line="+928"/>
         <location line="+108"/>
-        <location line="+287"/>
-        <location line="+951"/>
+        <location line="+289"/>
+        <location line="+1006"/>
         <location line="+152"/>
-        <location line="+1025"/>
-        <location line="+269"/>
+        <location line="+1036"/>
+        <location line="+270"/>
         <location line="+29"/>
         <source>Enabled</source>
         <translation>Ativado</translation>
     </message>
     <message>
-        <location line="-4334"/>
+        <location line="-4413"/>
         <source>Reset</source>
         <translation>Redefinir</translation>
     </message>
@@ -4210,12 +4445,12 @@ Tem certeza de que deseja continuar?</translation>
     </message>
     <message>
         <location line="+54"/>
-        <location line="+1303"/>
+        <location line="+1313"/>
         <source>General</source>
         <translation>Geral</translation>
     </message>
     <message>
-        <location line="-1300"/>
+        <location line="-1310"/>
         <source>Enable proxy</source>
         <translation>Ativar proxy</translation>
     </message>
@@ -4265,7 +4500,7 @@ Tem certeza de que deseja continuar?</translation>
         <translation>Porta do proxy:</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+21"/>
         <source>Authentication</source>
         <translation>Autenticação</translation>
     </message>
@@ -4276,23 +4511,23 @@ Tem certeza de que deseja continuar?</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1660"/>
-        <location line="+954"/>
+        <location line="+1663"/>
+        <location line="+1009"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>Nome:</translation>
     </message>
     <message>
-        <location line="-2762"/>
-        <location line="+654"/>
+        <location line="-2820"/>
+        <location line="+655"/>
         <location line="+695"/>
         <location line="+19"/>
-        <location line="+316"/>
+        <location line="+318"/>
         <source>Password:</source>
         <translation>Senha:</translation>
     </message>
     <message>
-        <location line="-1651"/>
+        <location line="-1653"/>
         <source>Update</source>
         <translation>Atualizar</translation>
     </message>
@@ -4661,12 +4896,12 @@ Cada regra substitui um padrão regex por uma string de substituição.</transla
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1087"/>
+        <location line="+1089"/>
         <source>None</source>
         <translation>Nenhum</translation>
     </message>
     <message>
-        <location line="-1086"/>
+        <location line="-1088"/>
         <source>Plain</source>
         <translation>Sem criptografia</translation>
     </message>
@@ -4707,14 +4942,14 @@ Cada regra substitui um padrão regex por uma string de substituição.</transla
     </message>
     <message>
         <location line="+4"/>
-        <location line="+900"/>
-        <location line="+961"/>
+        <location line="+902"/>
+        <location line="+1016"/>
         <location line="+154"/>
         <source>Name</source>
         <translation>Nome</translation>
     </message>
     <message>
-        <location line="-2013"/>
+        <location line="-2070"/>
         <source>Users</source>
         <translation>Usuários</translation>
     </message>
@@ -5043,9 +5278,23 @@ Cada regra substitui um padrão regex por uma string de substituição.</transla
         <translation>Vagas de upload (sem overhead)</translation>
     </message>
     <message>
-        <location line="-4"/>
+        <location line="-1139"/>
+        <source>Use for news servers</source>
+        <translation>Usar para servidores de notícias</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Route Usenet downloads, availability checks and the news server Test button through this proxy too. News servers switch over as soon as you press OK.
+
+Every Usenet connection then passes through the proxy, so its speed caps the download, and many HTTP proxies only allow connections to port 443.</source>
+        <translation>Encaminhar também os downloads Usenet, as verificações de disponibilidade e o botão Testar dos servidores de notícias por este proxy. Os servidores de notícias mudam assim que você pressionar OK.
+
+Toda conexão Usenet passa então pelo proxy, de modo que a velocidade dele limita o download, e muitos proxies HTTP só permitem conexões à porta 443.</translation>
+    </message>
+    <message>
+        <location line="+1133"/>
         <source>Download Usenet</source>
-        <translation type="unfinished"></translation>
+        <translation>Download Usenet</translation>
     </message>
     <message>
         <location line="+20"/>
@@ -5170,14 +5419,14 @@ Cada regra substitui um padrão regex por uma string de substituição.</transla
         <translation>Convidado</translation>
     </message>
     <message>
-        <location line="+48"/>
+        <location line="+50"/>
         <source>Web template reloaded</source>
-        <translation type="unfinished"></translation>
+        <translation>Template web recarregado</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Web template reload failed</source>
-        <translation type="unfinished"></translation>
+        <translation>Falha ao recarregar o template web</translation>
     </message>
     <message>
         <location line="+7"/>
@@ -5222,193 +5471,193 @@ Cada regra substitui um padrão regex por uma string de substituição.</transla
     <message>
         <location line="+131"/>
         <source>Enable Usenet downloads</source>
-        <translation type="unfinished"></translation>
+        <translation>Ativar downloads Usenet</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Gates automatic activity only. Adding a download by hand always works.</source>
-        <translation type="unfinished"></translation>
+        <translation>Controla apenas a atividade automática. Adicionar um download manualmente sempre funciona.</translation>
     </message>
     <message>
         <location line="+26"/>
         <location line="+37"/>
         <source>Account</source>
-        <translation type="unfinished"></translation>
+        <translation>Conta</translation>
     </message>
     <message>
         <location line="-35"/>
         <source>Advanced</source>
-        <translation type="unfinished"></translation>
+        <translation>Avançado</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+580"/>
-        <location line="+262"/>
+        <location line="+627"/>
+        <location line="+264"/>
         <location line="+15"/>
         <source>News servers</source>
-        <translation type="unfinished"></translation>
+        <translation>Servidores de notícias</translation>
     </message>
     <message>
-        <location line="-851"/>
+        <location line="-900"/>
         <source>Host</source>
-        <translation type="unfinished"></translation>
+        <translation>Host</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Port</source>
-        <translation type="unfinished">Porta</translation>
+        <translation>Porta</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Priority</source>
-        <translation type="unfinished">Prioridade</translation>
+        <translation>Prioridade</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Connections</source>
-        <translation type="unfinished"></translation>
+        <translation>Conexões</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Used</source>
-        <translation type="unfinished"></translation>
+        <translation>Usado</translation>
     </message>
     <message>
         <location line="+40"/>
         <source>Display name (optional)</source>
-        <translation type="unfinished"></translation>
+        <translation>Nome de exibição (opcional)</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Host:</source>
-        <translation type="unfinished"></translation>
+        <translation>Host:</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>Encryption:</source>
-        <translation type="unfinished"></translation>
+        <translation>Criptografia:</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>None (119)</source>
-        <translation type="unfinished"></translation>
+        <translation>Nenhuma (119)</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>SSL/TLS (563)</source>
-        <translation type="unfinished"></translation>
+        <translation>SSL/TLS (563)</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>STARTTLS</source>
-        <translation type="unfinished"></translation>
+        <translation>STARTTLS</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>User:</source>
-        <translation type="unfinished"></translation>
+        <translation>Usuário:</translation>
     </message>
     <message>
         <location line="+10"/>
         <source>Never set this above what your provider allows — exceeding the limit gets the account throttled, not queued.</source>
-        <translation type="unfinished"></translation>
+        <translation>Nunca defina isto acima do que seu provedor permite — exceder o limite faz a conta ser limitada, não enfileirada.</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Connections:</source>
-        <translation type="unfinished"></translation>
+        <translation>Conexões:</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Lower is tried first. A higher level is only used for articles that every server below reported as missing — that is what makes a block or fill account worth having.</source>
-        <translation type="unfinished"></translation>
+        <translation>O menor é tentado primeiro. Um nível maior só é usado para artigos que todos os servidores abaixo reportaram como ausentes — é isso que torna útil uma conta de blocos ou de complemento.</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Priority level:</source>
-        <translation type="unfinished"></translation>
+        <translation>Nível de prioridade:</translation>
     </message>
     <message>
         <location line="+12"/>
         <source>Account options</source>
-        <translation type="unfinished"></translation>
+        <translation>Opções da conta</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>Unknown</source>
-        <translation type="unfinished">Desconhecido</translation>
+        <translation>Desconhecido</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+939"/>
+        <location line="+994"/>
         <location line="+165"/>
         <source> days</source>
-        <translation type="unfinished"></translation>
+        <translation> dias</translation>
     </message>
     <message>
-        <location line="-1103"/>
+        <location line="-1158"/>
         <source>Retention:</source>
-        <translation type="unfinished"></translation>
+        <translation>Retenção:</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Accounts sharing a group number count as one for connection limits — use it when the same provider is reached through two host names, so the two entries cannot open twice what the plan allows.</source>
-        <translation type="unfinished"></translation>
+        <translation>Contas que compartilham um número de grupo contam como uma só para os limites de conexão — use isso quando o mesmo provedor é acessado por dois nomes de host, para que as duas entradas não abram o dobro do que o plano permite.</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Connection group:</source>
-        <translation type="unfinished"></translation>
+        <translation>Grupo de conexão:</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>None — accept any certificate</source>
-        <translation type="unfinished"></translation>
+        <translation>Nenhuma — aceitar qualquer certificado</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Minimal — allow a host name mismatch</source>
-        <translation type="unfinished"></translation>
+        <translation>Mínima — permitir divergência no nome de host</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Strict</source>
-        <translation type="unfinished"></translation>
+        <translation>Estrita</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Certificate check:</source>
-        <translation type="unfinished"></translation>
+        <translation>Verificação de certificado:</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Optional — never fail a download on its own</source>
-        <translation type="unfinished"></translation>
+        <translation>Opcional — nunca falhar um download por si só</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Send GROUP before fetching (only needed by a few old servers)</source>
-        <translation type="unfinished"></translation>
+        <translation>Enviar GROUP antes de obter (necessário apenas em alguns servidores antigos)</translation>
     </message>
     <message>
         <location line="+6"/>
         <source>Unmetered</source>
-        <translation type="unfinished"></translation>
+        <translation>Sem medição</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Monthly allowance</source>
-        <translation type="unfinished"></translation>
+        <translation>Franquia mensal</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Block account (prepaid)</source>
-        <translation type="unfinished"></translation>
+        <translation>Conta de blocos (pré-paga)</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Allowance:</source>
-        <translation type="unfinished"></translation>
+        <translation>Franquia:</translation>
     </message>
     <message>
         <location line="+5"/>
@@ -5418,103 +5667,103 @@ Cada regra substitui um padrão regex por uma string de substituição.</transla
     <message>
         <location line="+1"/>
         <source>No limit</source>
-        <translation type="unfinished"></translation>
+        <translation>Sem limite</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>Allowance size:</source>
-        <translation type="unfinished"></translation>
+        <translation>Tamanho da franquia:</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Your billing day — providers reset on the day you signed up, not on the 1st. A month shorter than this rolls over on its last day.</source>
-        <translation type="unfinished"></translation>
+        <translation>Seu dia de cobrança — os provedores zeram no dia em que você assinou, não no dia 1º. Um mês mais curto que esse vira no último dia.</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Resets on day:</source>
-        <translation type="unfinished"></translation>
+        <translation>Zera no dia:</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>When the allowance is spent, use the next priority level</source>
-        <translation type="unfinished"></translation>
+        <translation>Quando a franquia acabar, usar o próximo nível de prioridade</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Off by default: block credit usually costs more per GB than the plan it would be covering, and spending it without being asked is the one thing a limit exists to prevent. Left off, downloads wait for the allowance instead — they are never failed and no article is ever given up on.</source>
-        <translation type="unfinished"></translation>
+        <translation>Desativado por padrão: o crédito de blocos costuma custar mais por GB do que o plano que ele cobriria, e gastá-lo sem ser perguntado é justamente o que um limite existe para evitar. Deixando desativado, os downloads esperam pela franquia — eles nunca falham e nenhum artigo é abandonado.</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Used:</source>
-        <translation type="unfinished"></translation>
+        <translation>Usado:</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Correct…</source>
-        <translation type="unfinished"></translation>
+        <translation>Corrigir…</translation>
     </message>
     <message>
         <location line="+11"/>
         <source>Downloading</source>
-        <translation type="unfinished">Baixando</translation>
+        <translation>Baixando</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Retry a failed server after:</source>
-        <translation type="unfinished"></translation>
+        <translation>Tentar novamente um servidor com falha após:</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Never back off</source>
-        <translation type="unfinished"></translation>
+        <translation>Nunca recuar</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Applies to every account: how long a server that refused or dropped a connection is passed over before it is tried again.</source>
-        <translation type="unfinished"></translation>
+        <translation>Vale para todas as contas: por quanto tempo um servidor que recusou ou derrubou uma conexão é ignorado antes de ser tentado de novo.</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>Share of the download limit:</source>
-        <translation type="unfinished"></translation>
+        <translation>Parcela do limite de download:</translation>
     </message>
     <message>
         <location line="+3"/>
         <location line="+42"/>
         <source> %</source>
-        <translation type="unfinished"></translation>
+        <translation> %</translation>
     </message>
     <message>
         <location line="-40"/>
         <source>How much of the global download limit Usenet may take while eD2K is also downloading. Whichever engine is idle lends its whole share to the other, so this only applies when both are busy.</source>
-        <translation type="unfinished"></translation>
+        <translation>Quanto do limite global de download o Usenet pode tomar enquanto o eD2K também está baixando. O mecanismo que estiver ocioso empresta toda a sua parte ao outro, então isto só vale quando ambos estão ativos.</translation>
     </message>
     <message>
         <location line="+11"/>
         <source>When adding</source>
-        <translation type="unfinished"></translation>
+        <translation>Ao adicionar</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Check availability:</source>
-        <translation type="unfinished"></translation>
+        <translation>Verificar disponibilidade:</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Do not check</source>
-        <translation type="unfinished"></translation>
+        <translation>Não verificar</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Sample one article per file</source>
-        <translation type="unfinished"></translation>
+        <translation>Amostrar um artigo por arquivo</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Check every article</source>
-        <translation type="unfinished"></translation>
+        <translation>Verificar todos os artigos</translation>
     </message>
     <message>
         <location line="+2"/>
@@ -5523,491 +5772,587 @@ Cada regra substitui um padrão regex por uma string de substituição.</transla
 Sampling asks about the first article of each file, which is usually enough: providers expire whole posts by date, so a file is almost always present or absent as a unit. Checking every article is certain but can mean tens of thousands of requests for a large release.
 
 The answer is never a verdict. Nothing here can stop an article being fetched — an article your providers deny may still arrive, and a release this pauses downloads normally when you resume it.</source>
-        <translation type="unfinished"></translation>
+        <translation>Antes de baixar qualquer coisa, pergunte aos seus provedores se eles ainda têm o lançamento. Custa uma pequena requisição por artigo consultado e nenhum dado de carga.
+
+A amostragem pergunta pelo primeiro artigo de cada arquivo, o que costuma bastar: os provedores expiram postagens inteiras por data, então um arquivo quase sempre está presente ou ausente por completo. Verificar todos os artigos é certeiro, mas pode significar dezenas de milhares de requisições em um lançamento grande.
+
+A resposta nunca é um veredito. Nada aqui impede que um artigo seja obtido — um artigo que seus provedores negam ainda pode chegar, e um lançamento que isto pausa baixa normalmente quando você o retoma.</translation>
     </message>
     <message>
         <location line="+16"/>
         <source>Pause below:</source>
-        <translation type="unfinished"></translation>
+        <translation>Pausar abaixo de:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1232"/>
+        <location line="+1290"/>
         <source>never</source>
-        <translation type="unfinished"></translation>
+        <translation>nunca</translation>
     </message>
     <message>
-        <location line="-1229"/>
+        <location line="-1287"/>
         <source>A release that looks emptier than this is added paused, with the reason shown, so you decide rather than the guess. It is never failed and never refused.
 
 A shortfall the release&apos;s own PAR2 recovery volumes can cover does not pause it, however low the figure goes.</source>
-        <translation type="unfinished"></translation>
+        <translation>Um lançamento que pareça mais vazio do que isto é adicionado pausado, com o motivo exibido, para que você decida em vez da estimativa. Ele nunca falha e nunca é recusado.
+
+Uma falta que os próprios volumes de recuperação PAR2 do lançamento possam cobrir não o pausa, por mais baixo que seja o valor.</translation>
     </message>
     <message>
         <location line="+10"/>
         <source>Start automatic downloads paused</source>
-        <translation type="unfinished"></translation>
+        <translation>Iniciar downloads automáticos pausados</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Applies to anything queued without you asking for it directly: the watch folder below, and feeds.
 
 With this on, an automatic download waits for you to press Resume, so a feed proposes rather than decides. Anything you add yourself starts normally either way.</source>
-        <translation type="unfinished"></translation>
+        <translation>Vale para tudo que é enfileirado sem que você peça diretamente: a pasta monitorada abaixo e os feeds.
+
+Com isto ativado, um download automático espera que você pressione Retomar, de modo que um feed propõe em vez de decidir. O que você mesmo adicionar começa normalmente de qualquer forma.</translation>
     </message>
     <message>
         <location line="+10"/>
         <location line="+49"/>
         <source>Watch folder</source>
-        <translation type="unfinished"></translation>
+        <translation>Pasta monitorada</translation>
     </message>
     <message>
         <location line="-45"/>
         <source>Any .nzb file left in this folder is queued and then moved into a _processed subfolder — or _failed, if it could not be read.</source>
-        <translation type="unfinished"></translation>
+        <translation>Qualquer arquivo .nzb deixado nesta pasta é enfileirado e depois movido para uma subpasta _processed — ou _failed, se não puder ser lido.</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>No folder is being watched</source>
-        <translation type="unfinished"></translation>
+        <translation>Nenhuma pasta está sendo monitorada</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>A file is only read once it has stopped changing, so a large .nzb still being copied in is left alone until it is complete.
 
 It cannot be inside your temp, incoming or configuration folders: the daemon writes there itself.</source>
-        <translation type="unfinished"></translation>
+        <translation>Um arquivo só é lido depois que para de mudar, então um .nzb grande ainda sendo copiado é deixado em paz até estar completo.
+
+Ela não pode estar dentro das suas pastas de temporários, recebidos ou de configuração: o daemon escreve nelas.</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Browse…</source>
-        <translation type="unfinished"></translation>
+        <translation>Procurar…</translation>
     </message>
     <message>
         <location line="+10"/>
         <source>Desktop</source>
-        <translation type="unfinished"></translation>
+        <translation>Área de trabalho</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Open .nzb files with eMule Qt</source>
-        <translation type="unfinished"></translation>
+        <translation>Abrir arquivos .nzb com o eMule Qt</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Claim .nzb files for this copy of eMule Qt, so double-clicking one queues it. The setting is for you alone and needs no administrator; it is re-applied at every start, so another program taking the association does not keep it.</source>
-        <translation type="unfinished"></translation>
+        <translation>Reivindicar os arquivos .nzb para esta cópia do eMule Qt, de modo que um clique duplo enfileire o arquivo. A configuração é só para você e não precisa de administrador; ela é reaplicada a cada início, então outro programa que tome a associação não fica com ela.</translation>
     </message>
     <message>
         <location line="+21"/>
         <source>After downloading</source>
-        <translation type="unfinished"></translation>
+        <translation>Após baixar</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Verify and repair with PAR2</source>
-        <translation type="unfinished"></translation>
+        <translation>Verificar e reparar com PAR2</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Check the finished files against the release&apos;s PAR2 set and repair any damage from its recovery volumes. The recovery volumes are only downloaded when something actually needs repairing.
 
 With this off, a release with missing articles fails instead of being shared, because there is no way to tell whether it is intact.</source>
-        <translation type="unfinished"></translation>
+        <translation>Conferir os arquivos concluídos com o conjunto PAR2 do lançamento e reparar qualquer dano a partir dos volumes de recuperação. Os volumes de recuperação só são baixados quando algo realmente precisa de reparo.
+
+Com isto desativado, um lançamento com artigos ausentes falha em vez de ser compartilhado, porque não há como saber se está íntegro.</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Restore filenames from PAR2</source>
-        <translation type="unfinished"></translation>
+        <translation>Restaurar nomes de arquivo a partir do PAR2</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Obfuscated releases are posted under meaningless filenames. The PAR2 metadata carries the real ones, and without them the archives cannot be identified for unpacking either.</source>
-        <translation type="unfinished"></translation>
+        <translation>Lançamentos ofuscados são postados com nomes de arquivo sem sentido. Os metadados PAR2 carregam os nomes reais, e sem eles os arquivos compactados também não podem ser identificados para descompactação.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Verify with SFV when there is no PAR2</source>
+        <translation>Verificar com SFV quando não houver PAR2</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>A release posted without a PAR2 set often comes with an .sfv file instead. Its checksums cannot repair anything, but a release they call damaged is not published.</source>
+        <translation>Um lançamento postado sem um conjunto PAR2 costuma vir com um arquivo .sfv no lugar. As somas de verificação dele não reparam nada, mas um lançamento que elas apontem como danificado não é publicado.</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Unpack archives</source>
-        <translation type="unfinished"></translation>
+        <translation>Descompactar arquivos compactados</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Extract RAR, 7z and ZIP volume sets once they have been verified.
 
 Password-protected archives need 7-Zip or unrar installed — eMule&apos;s own archive reader can only decrypt ZIP.</source>
-        <translation type="unfinished"></translation>
+        <translation>Extrair conjuntos de volumes RAR, 7z e ZIP assim que forem verificados.
+
+Arquivos protegidos por senha precisam do 7-Zip ou do unrar instalado — o leitor de arquivos compactados do próprio eMule só consegue descriptografar ZIP.</translation>
     </message>
     <message>
         <location line="+6"/>
         <source>Unpack while downloading</source>
-        <translation type="unfinished"></translation>
+        <translation>Descompactar durante o download</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Extract each archive volume as soon as it finishes instead of waiting for the whole release, so the content is ready the moment the download is.
 
 It is the same extraction, moved earlier, so it costs no extra disk space. If the release turns out to need repairing, the result is discarded and it is unpacked again afterwards.</source>
-        <translation type="unfinished"></translation>
+        <translation>Extrair cada volume do arquivo compactado assim que ele terminar, em vez de esperar o lançamento inteiro, para que o conteúdo esteja pronto no momento em que o download estiver.
+
+É a mesma extração, apenas antecipada, então não custa espaço extra em disco. Se o lançamento acabar precisando de reparo, o resultado é descartado e ele é descompactado de novo depois.</translation>
     </message>
     <message>
         <location line="+9"/>
         <source>Preview password-protected releases while downloading</source>
-        <translation type="unfinished"></translation>
+        <translation>Pré-visualizar lançamentos protegidos por senha durante o download</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>An encrypted archive cannot be read a piece at a time, so previewing one means decrypting it again from the first volume every time more of it arrives.
 
 Nothing runs unless a preview is actually open, and only RAR releases can do it at all — an incomplete 7z set decodes to nothing.</source>
-        <translation type="unfinished"></translation>
+        <translation>Um arquivo compactado criptografado não pode ser lido em pedaços, então pré-visualizá-lo significa descriptografá-lo de novo desde o primeiro volume a cada vez que chega mais dele.
+
+Nada é executado a menos que uma pré-visualização esteja realmente aberta, e só lançamentos RAR conseguem fazer isso — um conjunto 7z incompleto não decodifica nada.</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>Unpacker:</source>
-        <translation type="unfinished"></translation>
+        <translation>Descompactador:</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>automatic (7zz, 7z, unrar)</source>
-        <translation type="unfinished"></translation>
+        <translation>automático (7zz, 7z, unrar)</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Path to a 7-Zip or unrar binary, for password-protected archives.
 
 Leave this empty to search the usual locations. Set it when eMule runs as a background service, whose search path is often much shorter than the one a terminal has.</source>
-        <translation type="unfinished"></translation>
+        <translation>Caminho para um binário do 7-Zip ou do unrar, para arquivos protegidos por senha.
+
+Deixe vazio para procurar nos locais habituais. Defina-o quando o eMule rodar como serviço em segundo plano, cujo caminho de busca costuma ser bem mais curto que o de um terminal.</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>Delete archives and PAR2 files after unpacking</source>
-        <translation type="unfinished"></translation>
+        <translation>Excluir arquivos compactados e arquivos PAR2 após descompactar</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Keep only the unpacked content. Turning this off roughly doubles the disk space a release uses and shares the archive volumes and recovery files with eD2K peers, who have no use for them.</source>
-        <translation type="unfinished"></translation>
+        <translation>Manter apenas o conteúdo descompactado. Desativar isto praticamente dobra o espaço em disco que um lançamento ocupa e compartilha os volumes compactados e os arquivos de recuperação com os pares eD2K, que não têm uso para eles.</translation>
     </message>
     <message>
-        <location line="+183"/>
+        <location line="+7"/>
+        <source>Keep downloading</source>
+        <translation>Continuar baixando</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+11"/>
+        <source>Pause it</source>
+        <translation>Pausar</translation>
+    </message>
+    <message>
+        <location line="-10"/>
+        <location line="+11"/>
+        <source>Fail it</source>
+        <translation>Marcar como falha</translation>
+    </message>
+    <message>
+        <location line="-9"/>
+        <source>A release that has lost more than its recovery files could ever repair stops here instead of using up your allowance until the final check. The estimate only ever errs towards downloading.
+
+Resume downloads it anyway.</source>
+        <translation>Um lançamento que perdeu mais do que seus arquivos de recuperação conseguiriam reparar para aqui, em vez de consumir sua franquia até a verificação final. A estimativa sempre erra a favor de baixar.
+
+Retomar baixa mesmo assim.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>When a download cannot be repaired:</source>
+        <translation>Quando um download não pode ser reparado:</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Publish anyway</source>
+        <translation>Publicar mesmo assim</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>A movie or episode whose download contains programs or shortcuts is almost always a fake. Only releases with video or audio in them are checked, so software downloads are not affected.
+
+Resume publishes it anyway.</source>
+        <translation>Um filme ou episódio cujo download contém programas ou atalhos é quase sempre falso. Só lançamentos com vídeo ou áudio são verificados, então downloads de software não são afetados.
+
+Retomar publica mesmo assim.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>When a media release has unwanted files:</source>
+        <translation>Quando um lançamento de mídia tem arquivos indesejados:</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>File extensions, separated by commas. A video file that is not really a video counts as well. Leave this empty to turn the check off.</source>
+        <translation>Extensões de arquivo, separadas por vírgulas. Um arquivo de vídeo que não é realmente um vídeo também conta. Deixe vazio para desativar a verificação.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Unwanted file types:</source>
+        <translation>Tipos de arquivo indesejados:</translation>
+    </message>
+    <message>
+        <location line="+191"/>
         <source>The news server list could not be saved.</source>
-        <translation type="unfinished"></translation>
+        <translation>Não foi possível salvar a lista de servidores de notícias.</translation>
     </message>
     <message>
         <location line="+136"/>
         <source>(unchanged)</source>
-        <translation type="unfinished"></translation>
+        <translation>(inalterado)</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>(none set)</source>
-        <translation type="unfinished"></translation>
+        <translation>(nenhum definido)</translation>
     </message>
     <message>
         <location line="+60"/>
         <source>not measured — the Usenet engine is stopped</source>
-        <translation type="unfinished"></translation>
+        <translation>não medido — o mecanismo Usenet está parado</translation>
     </message>
     <message>
         <location line="+11"/>
         <source>%1 used</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 usado</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>%1 of %2</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 de %2</translation>
     </message>
     <message>
         <location line="+6"/>
         <source>, resets %1</source>
-        <translation type="unfinished"></translation>
+        <translation>, zera %1</translation>
     </message>
     <message>
         <location line="+5"/>
         <source> — spent</source>
-        <translation type="unfinished"></translation>
+        <translation> — esgotado</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Measured here, not reported by the provider — NNTP has no command that asks. Expect a few percent below your provider&apos;s own figure.</source>
-        <translation type="unfinished"></translation>
+        <translation>Medido aqui, não informado pelo provedor — o NNTP não tem comando que pergunte. Espere alguns por cento abaixo do número do próprio provedor.</translation>
     </message>
     <message>
         <location line="+20"/>
         <source>Correct usage</source>
-        <translation type="unfinished"></translation>
+        <translation>Corrigir uso</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Used this period, in GB.
 
 Enter what your provider&apos;s control panel says, or 0 to start again.</source>
-        <translation type="unfinished"></translation>
+        <translation>Usado neste período, em GB.
+
+Insira o que o painel de controle do seu provedor informa, ou 0 para começar de novo.</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="+16"/>
         <source>The usage counter could not be changed.</source>
-        <translation type="unfinished"></translation>
+        <translation>Não foi possível alterar o contador de uso.</translation>
     </message>
     <message>
         <location line="+14"/>
         <source>At most %1 news servers can be configured.</source>
-        <translation type="unfinished"></translation>
+        <translation>No máximo %1 servidores de notícias podem ser configurados.</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>New server</source>
-        <translation type="unfinished"></translation>
+        <translation>Novo servidor</translation>
     </message>
     <message>
         <location line="+39"/>
         <source>Enter a host name first.</source>
-        <translation type="unfinished"></translation>
+        <translation>Insira primeiro um nome de host.</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Connecting…</source>
-        <translation type="unfinished"></translation>
+        <translation>Conectando…</translation>
     </message>
     <message>
-        <location line="+45"/>
+        <location line="+51"/>
         <source>Search indexers answer keyword searches and hand back an NZB. They are separate from your news servers: on Usenet the provider you download from and the service you search are different businesses.</source>
-        <translation type="unfinished"></translation>
+        <translation>Os indexadores de busca respondem a buscas por palavra-chave e devolvem um NZB. Eles são separados dos seus servidores de notícias: na Usenet, o provedor de onde você baixa e o serviço em que você busca são negócios diferentes.</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+383"/>
-        <location line="+537"/>
+        <location line="+384"/>
+        <location line="+541"/>
         <source>Indexers</source>
-        <translation type="unfinished"></translation>
+        <translation>Indexadores</translation>
     </message>
     <message>
-        <location line="-915"/>
+        <location line="-920"/>
         <source>URL</source>
-        <translation type="unfinished"></translation>
+        <translation>URL</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Type</source>
-        <translation type="unfinished">Tipo</translation>
+        <translation>Tipo</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>API key</source>
-        <translation type="unfinished"></translation>
+        <translation>Chave de API</translation>
     </message>
     <message>
         <location line="+19"/>
         <source>Indexer</source>
-        <translation type="unfinished"></translation>
+        <translation>Indexador</translation>
     </message>
     <message>
         <location line="+11"/>
         <location line="+152"/>
         <source>Display name</source>
-        <translation type="unfinished"></translation>
+        <translation>Nome de exibição</translation>
     </message>
     <message>
         <location line="-150"/>
         <source>Also the identity of this account: it names the cached capabilities and appears in the Indexer column of the results.</source>
-        <translation type="unfinished"></translation>
+        <translation>Também é a identidade desta conta: dá nome às capacidades em cache e aparece na coluna Indexador dos resultados.</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>The API base URL. A bare host gets &quot;/api&quot; added; a URL that already has a path is used exactly as typed, which is what Jackett and NZBHydra2 endpoints need.</source>
-        <translation type="unfinished"></translation>
+        <translation>A URL base da API. Um host sozinho recebe &quot;/api&quot; acrescentado; uma URL que já tem um caminho é usada exatamente como digitada, que é o que os endpoints do Jackett e do NZBHydra2 precisam.</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>API URL:</source>
-        <translation type="unfinished"></translation>
+        <translation>URL da API:</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>API key:</source>
-        <translation type="unfinished"></translation>
+        <translation>Chave de API:</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Newznab (Usenet)</source>
-        <translation type="unfinished"></translation>
+        <translation>Newznab (Usenet)</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Torznab (BitTorrent)</source>
-        <translation type="unfinished"></translation>
+        <translation>Torznab (BitTorrent)</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Both — Prowlarr, NZBHydra2</source>
-        <translation type="unfinished"></translation>
+        <translation>Ambos — Prowlarr, NZBHydra2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Type:</source>
-        <translation type="unfinished">Tipo:</translation>
+        <translation>Tipo:</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Searching</source>
-        <translation type="unfinished"></translation>
+        <translation>Busca</translation>
     </message>
     <message>
         <location line="+6"/>
         <source>Rows to ask for per request. An indexer that allows fewer silently returns fewer, so this is an upper bound rather than a promise.</source>
-        <translation type="unfinished"></translation>
+        <translation>Linhas a pedir por requisição. Um indexador que permita menos devolve menos silenciosamente, então isto é um limite superior, não uma promessa.</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Results per request:</source>
-        <translation type="unfinished"></translation>
+        <translation>Resultados por requisição:</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>How many pages one search may fetch from each indexer.
 
 Every page is an API call against the allowance your account has, so this is a spending limit, not a speed setting.</source>
-        <translation type="unfinished"></translation>
+        <translation>Quantas páginas uma busca pode obter de cada indexador.
+
+Cada página é uma chamada de API contra a franquia da sua conta, então isto é um limite de gasto, não uma configuração de velocidade.</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Pages per search:</source>
-        <translation type="unfinished"></translation>
+        <translation>Páginas por busca:</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Request timeout:</source>
-        <translation type="unfinished"></translation>
+        <translation>Tempo limite da requisição:</translation>
     </message>
     <message>
         <location line="+6"/>
         <source>How often to re-read what each indexer supports. A stale answer never blocks a search — it only means a query field stays greyed out that the indexer has since started accepting.</source>
-        <translation type="unfinished"></translation>
+        <translation>Com que frequência reler o que cada indexador suporta. Uma resposta desatualizada nunca bloqueia uma busca — apenas faz com que um campo de consulta continue esmaecido embora o indexador já tenha passado a aceitá-lo.</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Refresh capabilities every:</source>
-        <translation type="unfinished"></translation>
+        <translation>Atualizar capacidades a cada:</translation>
     </message>
     <message>
         <location line="+51"/>
         <source>A feed is a search that runs on its own and queues what it finds. Its first check adds nothing — it only records what the indexer already lists, because otherwise a new feed would download everything still on the server.</source>
-        <translation type="unfinished"></translation>
+        <translation>Um feed é uma busca que roda sozinha e enfileira o que encontra. Sua primeira verificação não adiciona nada — apenas registra o que o indexador já lista, porque do contrário um feed novo baixaria tudo que ainda está no servidor.</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+321"/>
-        <location line="+275"/>
+        <location line="+324"/>
+        <location line="+277"/>
         <source>Feeds</source>
-        <translation type="unfinished"></translation>
+        <translation>Feeds</translation>
     </message>
     <message>
-        <location line="-591"/>
+        <location line="-596"/>
         <source>Search</source>
-        <translation type="unfinished">Busca</translation>
+        <translation>Busca</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Every</source>
-        <translation type="unfinished"></translation>
+        <translation>A cada</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Last checked</source>
-        <translation type="unfinished"></translation>
+        <translation>Última verificação</translation>
     </message>
     <message>
         <location line="+19"/>
         <source>Feed</source>
-        <translation type="unfinished"></translation>
+        <translation>Feed</translation>
     </message>
     <message>
         <location line="+11"/>
         <source>Also the identity of this feed: it names the file that remembers what the feed has already seen.</source>
-        <translation type="unfinished"></translation>
+        <translation>Também é a identidade deste feed: dá nome ao arquivo que lembra o que o feed já viu.</translation>
     </message>
     <message>
         <location line="+6"/>
         <source>Search my indexers</source>
-        <translation type="unfinished"></translation>
+        <translation>Buscar nos meus indexadores</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>An RSS address I paste</source>
-        <translation type="unfinished"></translation>
+        <translation>Um endereço RSS que eu colar</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Source:</source>
-        <translation type="unfinished"></translation>
+        <translation>Origem:</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Keywords. Leave it empty to take everything new in the categories below.</source>
-        <translation type="unfinished"></translation>
+        <translation>Palavras-chave. Deixe vazio para pegar tudo que for novo nas categorias abaixo.</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Search for:</source>
-        <translation type="unfinished">Buscar por:</translation>
+        <translation>Buscar por:</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>e.g. 2000, 5000</source>
-        <translation type="unfinished"></translation>
+        <translation>ex.: 2000, 5000</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Newznab category numbers, separated by commas. Empty means every category.</source>
-        <translation type="unfinished"></translation>
+        <translation>Números de categoria Newznab, separados por vírgulas. Vazio significa todas as categorias.</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Categories:</source>
-        <translation type="unfinished"></translation>
+        <translation>Categorias:</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Which indexers to ask, by name and separated by commas. Empty means all of them.
 
 Adding one later does not fetch its back catalogue: a new indexer gets its own first check, which adds nothing.</source>
-        <translation type="unfinished"></translation>
+        <translation>Quais indexadores consultar, por nome e separados por vírgulas. Vazio significa todos.
+
+Adicionar um depois não busca o acervo antigo dele: um indexador novo tem sua própria primeira verificação, que não adiciona nada.</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Indexers:</source>
-        <translation type="unfinished"></translation>
+        <translation>Indexadores:</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>The RSS address from your indexer&apos;s website. It contains your API key, so it is stored encrypted and is only ever shown back to you with the key hidden.</source>
-        <translation type="unfinished"></translation>
+        <translation>O endereço RSS do site do seu indexador. Ele contém sua chave de API, por isso é armazenado criptografado e só é mostrado de volta com a chave oculta.</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Feed URL:</source>
-        <translation type="unfinished"></translation>
+        <translation>URL do feed:</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Only queue releases whose name matches this pattern. Empty accepts everything.</source>
-        <translation type="unfinished"></translation>
+        <translation>Só enfileirar lançamentos cujo nome corresponda a este padrão. Vazio aceita tudo.</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Must match:</source>
-        <translation type="unfinished"></translation>
+        <translation>Deve corresponder a:</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Never queue a release whose name matches this pattern. It wins over the one above.</source>
-        <translation type="unfinished"></translation>
+        <translation>Nunca enfileirar um lançamento cujo nome corresponda a este padrão. Ele prevalece sobre o de cima.</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Must not match:</source>
-        <translation type="unfinished"></translation>
+        <translation>Não pode corresponder a:</translation>
     </message>
     <message>
         <location line="+4"/>
@@ -6018,171 +6363,171 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
     <message>
         <location line="-6"/>
         <source>no minimum</source>
-        <translation type="unfinished"></translation>
+        <translation>sem mínimo</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Smallest:</source>
-        <translation type="unfinished"></translation>
+        <translation>Menor:</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>no maximum</source>
-        <translation type="unfinished"></translation>
+        <translation>sem máximo</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Largest:</source>
-        <translation type="unfinished"></translation>
+        <translation>Maior:</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>any age</source>
-        <translation type="unfinished"></translation>
+        <translation>qualquer idade</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Posted within:</source>
-        <translation type="unfinished"></translation>
+        <translation>Postado nos últimos:</translation>
     </message>
     <message>
         <location line="+4"/>
         <source> minutes</source>
-        <translation type="unfinished"></translation>
+        <translation> minutos</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>How often to check. Fifteen minutes is the floor: most indexers ask for no more than that, and checking harder gets an account suspended.</source>
-        <translation type="unfinished"></translation>
+        <translation>Com que frequência verificar. Quinze minutos é o piso: a maioria dos indexadores não pede mais que isso, e verificar com mais frequência faz a conta ser suspensa.</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Check every:</source>
-        <translation type="unfinished"></translation>
+        <translation>Verificar a cada:</translation>
     </message>
     <message>
         <location line="+5"/>
-        <location line="+134"/>
+        <location line="+136"/>
         <source>No category</source>
-        <translation type="unfinished"></translation>
+        <translation>Sem categoria</translation>
     </message>
     <message>
-        <location line="-132"/>
+        <location line="-134"/>
         <source>Which download category this feed&apos;s matches go into. The category decides the folder they finish in, and it is resolved when a release completes — so repointing the category moves what is still running with it.</source>
-        <translation type="unfinished"></translation>
+        <translation>Em qual categoria de download entram as correspondências deste feed. A categoria decide a pasta em que eles terminam, e ela é resolvida quando um lançamento é concluído — então redirecionar a categoria leva junto o que ainda está em andamento.</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Download category:</source>
-        <translation type="unfinished"></translation>
+        <translation>Categoria de download:</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Queue what it already lists</source>
-        <translation type="unfinished"></translation>
+        <translation>Enfileirar o que já está listado</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Normally a feed&apos;s first check only takes note of what is there and queues nothing, because everything an indexer still holds is new to a feed that has never run. Turn this on to take the back catalogue as well — it can be a great deal of it.</source>
-        <translation type="unfinished"></translation>
+        <translation>Normalmente a primeira verificação de um feed apenas toma nota do que existe e não enfileira nada, porque tudo que um indexador ainda mantém é novidade para um feed que nunca rodou. Ative isto para pegar também o acervo antigo — pode ser muita coisa.</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Check now</source>
-        <translation type="unfinished"></translation>
+        <translation>Verificar agora</translation>
     </message>
     <message>
-        <location line="+96"/>
+        <location line="+97"/>
         <source>The indexer list could not be saved.</source>
-        <translation type="unfinished"></translation>
+        <translation>Não foi possível salvar a lista de indexadores.</translation>
     </message>
     <message>
-        <location line="+92"/>
+        <location line="+94"/>
         <source>The feed list could not be saved.</source>
-        <translation type="unfinished"></translation>
+        <translation>Não foi possível salvar a lista de feeds.</translation>
     </message>
     <message>
         <location line="+37"/>
         <source>%1 min</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 min</translation>
     </message>
     <message>
         <location line="+6"/>
         <source>checking…</source>
-        <translation type="unfinished"></translation>
+        <translation>verificando…</translation>
     </message>
     <message>
         <location line="+113"/>
         <source>%1 queued on the last check; %2 releases remembered.</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 enfileirado(s) na última verificação; %2 lançamentos lembrados.</translation>
     </message>
     <message>
         <location line="+71"/>
         <source>New feed</source>
-        <translation type="unfinished"></translation>
+        <translation>Novo feed</translation>
     </message>
     <message>
-        <location line="+48"/>
+        <location line="+50"/>
         <source>&quot;%1&quot; could not be checked.</source>
-        <translation type="unfinished"></translation>
+        <translation>Não foi possível verificar &quot;%1&quot;.</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Checking &quot;%1&quot;…</source>
-        <translation type="unfinished"></translation>
+        <translation>Verificando &quot;%1&quot;…</translation>
     </message>
     <message>
         <location line="+53"/>
         <source>Newznab</source>
-        <translation type="unfinished"></translation>
+        <translation>Newznab</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Torznab</source>
-        <translation type="unfinished"></translation>
+        <translation>Torznab</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Both</source>
-        <translation type="unfinished"></translation>
+        <translation>Ambos</translation>
     </message>
     <message>
         <location line="+9"/>
         <source>yes</source>
-        <translation type="unfinished"></translation>
+        <translation>sim</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>no</source>
-        <translation type="unfinished"></translation>
+        <translation>não</translation>
     </message>
     <message>
         <location line="+68"/>
         <source>(a key is stored — leave empty to keep it)</source>
-        <translation type="unfinished"></translation>
+        <translation>(há uma chave armazenada — deixe vazio para mantê-la)</translation>
     </message>
     <message>
         <location line="+33"/>
         <source>At most %1 indexers can be configured.</source>
-        <translation type="unfinished"></translation>
+        <translation>No máximo %1 indexadores podem ser configurados.</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>New indexer</source>
-        <translation type="unfinished"></translation>
+        <translation>Novo indexador</translation>
     </message>
     <message>
         <location line="+33"/>
         <source>Enter an API URL first.</source>
-        <translation type="unfinished"></translation>
+        <translation>Insira primeiro uma URL de API.</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Contacting the indexer…</source>
-        <translation type="unfinished"></translation>
+        <translation>Contatando o indexador…</translation>
     </message>
     <message>
-        <location line="+64"/>
+        <location line="+70"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>Aviso: Não altere estas configurações a menos que saiba o que está fazendo. Caso contrário, você pode facilmente piorar as coisas. O eMule funcionará bem sem ajustar nenhuma dessas configurações.</translation>
     </message>
@@ -6478,32 +6823,43 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>Tamanho do buffer de arquivo: %1 MB</translation>
     </message>
     <message>
-        <location line="+21"/>
+        <location line="+22"/>
         <source>Queue size: %1</source>
         <translation>Tamanho da fila: %1</translation>
     </message>
     <message>
-        <location line="+1411"/>
+        <location line="+589"/>
+        <source>Proxy settings will only apply to new connections.
+Restart eMule for all connections to use the new proxy settings.
+
+News server connections switch over immediately.</source>
+        <translation>As configurações de proxy só se aplicam a novas conexões.
+Reinicie o eMule para que todas as conexões usem as novas configurações de proxy.
+
+As conexões com servidores de notícias mudam imediatamente.</translation>
+    </message>
+    <message>
+        <location line="+846"/>
         <source>File types</source>
-        <translation type="unfinished"></translation>
+        <translation>Tipos de arquivo</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Could not update the .nzb file association: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Não foi possível atualizar a associação do arquivo .nzb: %1</translation>
     </message>
     <message>
-        <location line="-5070"/>
-        <location line="+1281"/>
-        <location line="+954"/>
+        <location line="-5163"/>
+        <location line="+1283"/>
+        <location line="+1009"/>
         <location line="+154"/>
-        <location line="+1312"/>
+        <location line="+1324"/>
         <location line="+281"/>
         <source>Remove</source>
         <translation>Remover</translation>
     </message>
     <message>
-        <location line="-3771"/>
+        <location line="-3840"/>
         <source>New eMule Qt version detected</source>
         <translation>Nova versão do eMule Qt detectada</translation>
     </message>
@@ -6513,7 +6869,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>Atualizar a partir da URL: (formato filter.dat ou PeerGuardian, .gz/.zip aceitos)</translation>
     </message>
     <message>
-        <location line="+2847"/>
+        <location line="+2915"/>
         <source>Write eMule core logs to disk</source>
         <translation>Gravar os logs do núcleo do eMule em disco</translation>
     </message>
@@ -6573,14 +6929,14 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>Tempo de concessão solicitado:</translation>
     </message>
     <message>
-        <location line="-2129"/>
-        <location line="+848"/>
-        <location line="+1285"/>
+        <location line="-2195"/>
+        <location line="+903"/>
+        <location line="+1296"/>
         <source> s</source>
         <translation> s</translation>
     </message>
     <message>
-        <location line="-2175"/>
+        <location line="-2241"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
@@ -6589,7 +6945,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
 Defina um valor um pouco abaixo do seu plano. O volume é medido aqui, então fica alguns por cento abaixo do valor do seu provedor, e os artigos já em trânsito quando o limite é atingido ainda são concluídos.</translation>
     </message>
     <message>
-        <location line="+2289"/>
+        <location line="+2356"/>
         <source>New</source>
         <translation>Novo</translation>
     </message>
@@ -6697,11 +7053,11 @@ Defina um valor um pouco abaixo do seu plano. O volume é medido aqui, então fi
         <translation>Novo agendamento</translation>
     </message>
     <message>
-        <location line="-3797"/>
-        <location line="+1284"/>
-        <location line="+954"/>
+        <location line="-3866"/>
+        <location line="+1286"/>
+        <location line="+1009"/>
         <location line="+154"/>
-        <location line="+1566"/>
+        <location line="+1578"/>
         <source>Add</source>
         <translation>Adicionar</translation>
     </message>
@@ -6728,19 +7084,18 @@ Defina um valor um pouco abaixo do seu plano. O volume é medido aqui, então fi
         <translation>A página de configurações %1 ainda não foi implementada.</translation>
     </message>
     <message>
-        <location line="+164"/>
+        <location line="+176"/>
         <source>Proxy</source>
         <translation>Proxy</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Proxy settings will only apply to new connections.
 Restart eMule for all connections to use the new proxy settings.</source>
-        <translation>As configurações de proxy serão aplicadas apenas a novas conexões.
+        <translation type="vanished">As configurações de proxy serão aplicadas apenas a novas conexões.
 Reinicie o eMule para que todas as conexões usem as novas configurações de proxy.</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+25"/>
         <source>The language change will take effect after restarting the application.</source>
         <translation>A alteração de idioma terá efeito após reiniciar o aplicativo.</translation>
     </message>
@@ -6814,19 +7169,34 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
 <context>
     <name>eMule::PasteTextDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/PasteTextDialog.cpp" line="+38"/>
+        <location filename="../src/gui/dialogs/PasteTextDialog.cpp" line="+42"/>
         <source>optional</source>
-        <translation type="unfinished"></translation>
+        <translation>opcional</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+12"/>
+        <source>Category:</source>
+        <translation>Categoria:</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Priority:</source>
+        <translation>Prioridade:</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Start paused</source>
+        <translation>Iniciar pausado</translation>
+    </message>
+    <message>
+        <location line="+17"/>
         <source>Cancel</source>
-        <translation type="unfinished">Cancelar</translation>
+        <translation>Cancelar</translation>
     </message>
     <message>
-        <location line="+55"/>
+        <location line="+78"/>
         <source>Working…</source>
-        <translation type="unfinished"></translation>
+        <translation>Trabalhando…</translation>
     </message>
 </context>
 <context>
@@ -6852,14 +7222,14 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+214"/>
-        <location line="+663"/>
-        <location line="+309"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+220"/>
+        <location line="+707"/>
+        <location line="+315"/>
         <source>Download</source>
         <translation>Download</translation>
     </message>
     <message>
-        <location line="-962"/>
+        <location line="-1002"/>
         <source>Close All Searches</source>
         <translation>Fechar todas as buscas</translation>
     </message>
@@ -6951,7 +7321,7 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
     <message>
         <location line="+5"/>
         <source>Usenet (Indexer)</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet (Indexador)</translation>
     </message>
     <message>
         <location line="+2"/>
@@ -7042,44 +7412,49 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
     </message>
     <message>
         <location line="+47"/>
-        <location line="+167"/>
+        <location line="+191"/>
         <source>Usenet search</source>
-        <translation type="unfinished"></translation>
+        <translation>Busca Usenet</translation>
     </message>
     <message>
-        <location line="-66"/>
+        <location line="-90"/>
         <source>%1 results — %2 of %3 indexers</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 resultados — %2 de %3 indexadores</translation>
     </message>
     <message>
         <location line="+18"/>
         <source>Usenet search: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Busca Usenet: %1</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>No results</source>
-        <translation type="unfinished"></translation>
+        <translation>Nenhum resultado</translation>
     </message>
     <message>
-        <location line="+45"/>
+        <location line="+69"/>
         <source>Could not queue &quot;%1&quot;: %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Não foi possível enfileirar &quot;%1&quot;: %2</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+7"/>
         <source>Queued &quot;%1&quot; for download from Usenet.</source>
-        <translation type="unfinished"></translation>
+        <translation>&quot;%1&quot; enfileirado para download da Usenet.</translation>
     </message>
     <message>
         <location line="+103"/>
         <source>&amp;Download</source>
-        <translation type="unfinished"></translation>
+        <translation>&amp;Baixar</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+9"/>
+        <source>Download &amp;To</source>
+        <translation>Baixar &amp;para</translation>
+    </message>
+    <message>
+        <location line="+9"/>
         <source>Copy &amp;Name</source>
-        <translation type="unfinished"></translation>
+        <translation>Copiar &amp;nome</translation>
     </message>
     <message>
         <location line="+52"/>
@@ -7108,24 +7483,31 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
     </message>
     <message>
         <location line="+61"/>
-        <location line="+617"/>
+        <location line="+629"/>
         <source>Preview</source>
         <translation>Pré-visualização</translation>
     </message>
     <message>
-        <location line="-435"/>
+        <location line="-441"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Você já baixou o(s) seguinte(s) arquivo(s). Baixar novamente?
+
+%1</translation>
     </message>
     <message>
-        <location line="+693"/>
+        <location line="+687"/>
         <source>Asking servers: %1 / %2</source>
         <translation>Consultando servidores: %1 / %2</translation>
     </message>
     <message>
-        <location line="-936"/>
+        <location line="+39"/>
+        <source>All</source>
+        <translation>Todos</translation>
+    </message>
+    <message>
+        <location line="-975"/>
         <location line="+14"/>
         <source>Mark as Spam</source>
         <translation>Marcar como spam</translation>
@@ -7161,7 +7543,7 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
         <translation>Serviços web</translation>
     </message>
     <message>
-        <location line="+596"/>
+        <location line="+608"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Pré-visualização indisponível — o servidor web não está em execução ou o token de stream não foi recebido.</translation>
     </message>
@@ -7169,7 +7551,12 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
 <context>
     <name>eMule::SearchResultsModel</name>
     <message>
-        <location filename="../src/gui/controls/SearchResultsModel.cpp" line="+150"/>
+        <location filename="../src/gui/controls/SearchResultsModel.cpp" line="+70"/>
+        <source>Yes</source>
+        <translation>Sim</translation>
+    </message>
+    <message>
+        <location line="+119"/>
         <source>File Name</source>
         <translation>Nome do arquivo</translation>
     </message>
@@ -7232,7 +7619,7 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+70"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+74"/>
         <location line="+3"/>
         <source>Yes</source>
         <translation>Sim</translation>
@@ -7244,7 +7631,7 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
         <translation>Não</translation>
     </message>
     <message>
-        <location line="+59"/>
+        <location line="+61"/>
         <source>Server Name</source>
         <translation>Nome do servidor</translation>
     </message>
@@ -7275,6 +7662,11 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
     </message>
     <message>
         <location line="+1"/>
+        <source>Files</source>
+        <translation>Arquivos</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Preference</source>
         <translation>Preferência</translation>
     </message>
@@ -7290,11 +7682,30 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
     </message>
     <message>
         <location line="+1"/>
-        <source>Soft Files</source>
-        <translation>Arquivos Soft</translation>
+        <source>Soft File Limit</source>
+        <translation>Limite Soft de arquivos</translation>
+    </message>
+    <message>
+        <location line="+32"/>
+        <source>High</source>
+        <translation>Alta</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>Low</source>
+        <translation>Baixa</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Normal</source>
+        <translation>Normal</translation>
+    </message>
+    <message>
+        <source>Soft Files</source>
+        <translation type="vanished">Arquivos Soft</translation>
+    </message>
+    <message>
+        <location line="-33"/>
         <source>Low ID</source>
         <translation>Low ID</translation>
     </message>
@@ -7307,29 +7718,25 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+136"/>
-        <location line="+94"/>
-        <location line="+2"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+234"/>
         <source>Disconnect</source>
         <translation>Desconectar</translation>
     </message>
     <message>
-        <location line="-96"/>
-        <location line="+7"/>
-        <location line="+113"/>
+        <location line="+2"/>
+        <location line="+24"/>
         <location line="+50"/>
         <source>Cancel</source>
         <translation>Cancelar</translation>
     </message>
     <message>
-        <location line="-167"/>
-        <location line="+95"/>
+        <location line="-72"/>
         <location line="+440"/>
         <source>Connect</source>
         <translation>Conectar</translation>
     </message>
     <message>
-        <location line="-490"/>
+        <location line="-491"/>
         <source>Invalid URL: %1</source>
         <translation>URL inválida: %1</translation>
     </message>
@@ -7359,7 +7766,7 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
         <translation>server.met baixado, &quot;%1&quot; descompactado (%2 bytes). Analisando...</translation>
     </message>
     <message>
-        <location line="+586"/>
+        <location line="+587"/>
         <location line="+2"/>
         <location line="+24"/>
         <location line="+39"/>
@@ -7672,7 +8079,7 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
 <context>
     <name>eMule::SharedFilesModel</name>
     <message>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+207"/>
+        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+190"/>
         <source>File Name</source>
         <translation>Nome do arquivo</translation>
     </message>
@@ -7740,12 +8147,12 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1306"/>
+        <location line="+1308"/>
         <source>Open Folder</source>
         <translation>Abrir pasta</translation>
     </message>
     <message>
-        <location line="-1294"/>
+        <location line="-1296"/>
         <source>Rename...</source>
         <translation>Renomear...</translation>
     </message>
@@ -7765,7 +8172,7 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
         <translation>Excluir do disco</translation>
     </message>
     <message>
-        <location line="+796"/>
+        <location line="+798"/>
         <source>Delete File</source>
         <translation>Excluir arquivo</translation>
     </message>
@@ -7775,12 +8182,12 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
         <translation>Tem certeza de que deseja excluir permanentemente &quot;%1&quot; do disco?</translation>
     </message>
     <message>
-        <location line="-775"/>
+        <location line="-777"/>
         <source>Unshare</source>
         <translation>Deixar de compartilhar</translation>
     </message>
     <message>
-        <location line="+808"/>
+        <location line="+810"/>
         <source>Unshare File</source>
         <translation>Deixar de compartilhar arquivo</translation>
     </message>
@@ -7794,7 +8201,7 @@ The file will remain on disk.</source>
 O arquivo permanecerá no disco.</translation>
     </message>
     <message>
-        <location line="-791"/>
+        <location line="-793"/>
         <source>Priority (Upload)</source>
         <translation>Prioridade (Upload)</translation>
     </message>
@@ -7819,12 +8226,11 @@ O arquivo permanecerá no disco.</translation>
         <translation>Alta</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Very High</source>
-        <translation>Muito alta</translation>
+        <translation type="vanished">Muito alta</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
@@ -7979,7 +8385,7 @@ O arquivo permanecerá no disco.</translation>
         <translation>%1 (%2 de %3 compartilhados)</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+24"/>
         <source>Could not share that file</source>
         <translation>Não foi possível compartilhar esse arquivo</translation>
     </message>
@@ -8014,7 +8420,7 @@ O arquivo permanecerá no disco.</translation>
         <translation>Abrir arquivo indisponível — o servidor web não está em execução ou o token de stream não foi recebido.</translation>
     </message>
     <message>
-        <location line="-866"/>
+        <location line="-868"/>
         <source>Content</source>
         <translation>Conteúdo</translation>
     </message>
@@ -8029,7 +8435,12 @@ O arquivo permanecerá no disco.</translation>
         <translation>Copiar</translation>
     </message>
     <message>
-        <location line="-26"/>
+        <location line="-511"/>
+        <source>Release</source>
+        <translation>Lançamento</translation>
+    </message>
+    <message>
+        <location line="+485"/>
         <source>Basic Options</source>
         <translation>Opções básicas</translation>
     </message>
@@ -8065,17 +8476,17 @@ O arquivo permanecerá no disco.</translation>
     </message>
     <message>
         <location line="+24"/>
-        <location line="+409"/>
+        <location line="+411"/>
         <source>Requires a hostname configured in Preferences, or a public IPv6</source>
         <translation>Requer um nome de host configurado nas Preferências ou um IPv6 público</translation>
     </message>
     <message>
-        <location line="-297"/>
+        <location line="-299"/>
         <source>Shared Files (%1)</source>
         <translation>Arquivos compartilhados (%1)</translation>
     </message>
     <message numerus="yes">
-        <location line="+110"/>
+        <location line="+112"/>
         <source>Are you sure you want to permanently delete %n selected file(s) from disk?</source>
         <translation>
             <numerusform>Tem certeza de que deseja excluir permanentemente %n arquivo selecionado do disco?</numerusform>
@@ -8202,22 +8613,22 @@ Os arquivos permanecerão no disco.</numerusform>
         <location line="+10"/>
         <location line="+155"/>
         <location line="+19"/>
-        <location line="+1090"/>
+        <location line="+1100"/>
         <source>Uploads</source>
         <translation>Uploads</translation>
     </message>
     <message>
-        <location line="-1260"/>
+        <location line="-1270"/>
         <location line="+63"/>
         <location line="+78"/>
         <location line="+47"/>
-        <location line="+991"/>
+        <location line="+1001"/>
         <location line="+70"/>
         <source>Session</source>
         <translation>Sessão</translation>
     </message>
     <message>
-        <location line="-1246"/>
+        <location line="-1256"/>
         <location line="+32"/>
         <source>Uploaded Data: 0 Bytes</source>
         <translation>Dados enviados: 0 Bytes</translation>
@@ -8275,13 +8686,13 @@ Os arquivos permanecerão no disco.</numerusform>
         <location line="+6"/>
         <location line="+97"/>
         <location line="+19"/>
-        <location line="+926"/>
+        <location line="+936"/>
         <location line="+163"/>
         <source>Downloads</source>
         <translation>Downloads</translation>
     </message>
     <message>
-        <location line="-1198"/>
+        <location line="-1208"/>
         <location line="+39"/>
         <source>Downloaded Data: 0 Bytes</source>
         <translation>Dados baixados: 0 Bytes</translation>
@@ -8423,13 +8834,13 @@ Os arquivos permanecerão no disco.</numerusform>
         <location line="+70"/>
         <location line="+60"/>
         <location line="+37"/>
-        <location line="+985"/>
+        <location line="+995"/>
         <location line="+70"/>
         <source>Cumulative</source>
         <translation>Acumulado</translation>
     </message>
     <message>
-        <location line="-1173"/>
+        <location line="-1183"/>
         <location line="+33"/>
         <source>Completed Downloads: 0</source>
         <translation>Downloads concluídos: 0</translation>
@@ -8473,12 +8884,12 @@ Os arquivos permanecerão no disco.</numerusform>
     <message>
         <location line="+15"/>
         <location line="+21"/>
-        <location line="+917"/>
+        <location line="+925"/>
         <source>General</source>
         <translation>Geral</translation>
     </message>
     <message>
-        <location line="-933"/>
+        <location line="-941"/>
         <source>Average Connections: 0.0</source>
         <translation>Conexões médias: 0.0</translation>
     </message>
@@ -8538,55 +8949,60 @@ Os arquivos permanecerão no disco.</numerusform>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+450"/>
+        <location line="+458"/>
         <location line="+4"/>
         <source>Statistics Last Reset: %1</source>
         <translation>Última redefinição das estatísticas: %1</translation>
     </message>
     <message>
-        <location line="-741"/>
+        <location line="-749"/>
         <location line="+287"/>
-        <location line="+448"/>
+        <location line="+456"/>
         <location line="+7"/>
         <source>Unknown</source>
         <translation>Desconhecido</translation>
     </message>
     <message>
-        <location line="-749"/>
+        <location line="-757"/>
         <source>Statistics Tree</source>
         <translation>Árvore de estatísticas</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+745"/>
+        <location line="+753"/>
         <source>Statistics last reset: %1</source>
         <translation>Última redefinição das estatísticas: %1</translation>
     </message>
     <message>
-        <location line="-718"/>
-        <location line="+1252"/>
+        <location line="-726"/>
+        <location line="+1262"/>
         <source>Usenet</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet</translation>
     </message>
     <message>
-        <location line="-1187"/>
-        <location line="+1066"/>
+        <location line="-1197"/>
+        <location line="+1074"/>
         <source>Waiting...</source>
         <translation>Esperando...</translation>
     </message>
     <message>
-        <location line="-1063"/>
-        <location line="+396"/>
+        <location line="-1071"/>
+        <location line="+404"/>
         <source>Session UL:DL Ratio (Friends UL excluded): %1</source>
         <translation>Proporção UL:DL sessão (exclui upload para amigos): %1</translation>
     </message>
     <message>
-        <location line="-308"/>
+        <location line="-316"/>
         <source>UDP File Re-asks: 0, Failed: 0 (0.0%)</source>
         <translation>Reconsultas de arquivo UDP: 0, falhas: 0 (0.0%)</translation>
     </message>
     <message>
-        <location line="+1164"/>
+        <location line="+1028"/>
+        <source>Corrupt (Failed yEnc Check): %1</source>
+        <translation>Corrompido (falha na verificação yEnc): %1</translation>
+    </message>
+    <message>
+        <location line="+146"/>
         <source>HTTP Cache</source>
         <translation>Cache HTTP</translation>
     </message>
@@ -8611,7 +9027,7 @@ Os arquivos permanecerão no disco.</numerusform>
         <translation type="vanished">Blocos obtidos: 0</translation>
     </message>
     <message>
-        <location line="-1043"/>
+        <location line="-1053"/>
         <source>Run Time: 0:00:00</source>
         <translation>Tempo de execução: 0:00:00</translation>
     </message>
@@ -8779,7 +9195,7 @@ Os arquivos permanecerão no disco.</numerusform>
     </message>
     <message>
         <location line="-264"/>
-        <location line="+396"/>
+        <location line="+404"/>
         <source>Session UL:DL Ratio: %1</source>
         <translation>Proporção UL:DL sessão: %1</translation>
     </message>
@@ -8788,8 +9204,8 @@ Os arquivos permanecerão no disco.</numerusform>
         <translation type="vanished">Proporção UL:DL sessão amigos: %1</translation>
     </message>
     <message>
-        <location line="-393"/>
-        <location line="+397"/>
+        <location line="-401"/>
+        <location line="+405"/>
         <source>Cumulative UL:DL Ratio: %1</source>
         <translation>Proporção UL:DL acumulada: %1</translation>
     </message>
@@ -8851,13 +9267,13 @@ Os arquivos permanecerão no disco.</numerusform>
     <message>
         <location line="-46"/>
         <location line="+48"/>
-        <location line="+637"/>
+        <location line="+639"/>
         <location line="+49"/>
         <source>Failed: %1</source>
         <translation>Falhos: %1</translation>
     </message>
     <message>
-        <location line="-731"/>
+        <location line="-733"/>
         <location line="+48"/>
         <source>Average Upload Per Session: %1</source>
         <translation>Upload médio por sessão: %1</translation>
@@ -9110,14 +9526,14 @@ Os arquivos permanecerão no disco.</numerusform>
         <translation>Duração total do servidor: %1 %2</translation>
     </message>
     <message>
-        <location line="-487"/>
+        <location line="-495"/>
         <source>Current Server Duration: 0:00:00</source>
-        <translation type="unfinished"></translation>
+        <translation>Duração do servidor atual: 0:00:00</translation>
     </message>
     <message>
-        <location line="+467"/>
+        <location line="+475"/>
         <source>Current Server Duration: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Duração do servidor atual: %1 %2</translation>
     </message>
     <message>
         <location line="+25"/>
@@ -9226,30 +9642,30 @@ Os arquivos permanecerão no disco.</numerusform>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+331"/>
+        <location line="+333"/>
         <source>Number of Downloads: %1</source>
         <translation>Número de downloads: %1</translation>
     </message>
     <message>
-        <location line="-329"/>
-        <location line="+337"/>
+        <location line="-331"/>
+        <location line="+339"/>
         <source>Total Size of Downloads: %1</source>
         <translation>Tamanho total dos downloads: %1</translation>
     </message>
     <message>
-        <location line="-335"/>
-        <location line="+336"/>
+        <location line="-337"/>
+        <location line="+338"/>
         <source>Total Size Downloaded: %1</source>
         <translation>Tamanho total baixado: %1</translation>
     </message>
     <message>
-        <location line="-334"/>
-        <location line="+335"/>
+        <location line="-336"/>
+        <location line="+337"/>
         <source>Total Size Left to Download: %1</source>
         <translation>Tamanho total restante para baixar: %1</translation>
     </message>
     <message>
-        <location line="-333"/>
+        <location line="-335"/>
         <source>Free Space on Drive: %1</source>
         <translation>Espaço livre no disco: %1</translation>
     </message>
@@ -9315,406 +9731,401 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
     </message>
     <message>
         <location line="+127"/>
-        <location line="+285"/>
+        <location line="+287"/>
         <source>Open Connections: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Conexões abertas: %1</translation>
     </message>
     <message>
-        <location line="-281"/>
+        <location line="-283"/>
         <source>Network Traffic: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Tráfego de rede: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Overhead: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Sobrecarga: %1 %2</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Articles</source>
-        <translation type="unfinished"></translation>
+        <translation>Artigos</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Downloaded: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Baixado: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Not Found on a Server: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Não encontrado em um servidor: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Missing on All Servers: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Ausente em todos os servidores: %1</translation>
     </message>
     <message>
-        <location line="+1"/>
-        <source>Corrupt (CRC Errors): %1</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+1"/>
+        <location line="+4"/>
         <location line="+282"/>
         <source>Connection Errors: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Erros de conexão: %1</translation>
     </message>
     <message>
         <location line="-279"/>
         <source>Completed Downloads: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Downloads concluídos: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Completed Data: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Dados concluídos: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Failed Downloads: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Downloads com falha: %1 %2</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Post-Processing</source>
-        <translation type="unfinished"></translation>
+        <translation>Pós-processamento</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>PAR2 Verified: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Verificado com PAR2: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Repaired: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Reparado: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Repair Failed: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Falha no reparo: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Blocks Repaired: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Blocos reparados: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Recovery Volumes Fetched: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Volumes de recuperação obtidos: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Recovery Data: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Dados de recuperação: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Unpacked: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Descompactado: %1</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Password Required: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Senha necessária: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Sets Unpacked While Downloading: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Conjuntos descompactados durante o download: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Time Spent: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Tempo gasto: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Verifying: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Verificando: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Repairing: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Reparando: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Unpacking: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Descompactando: %1 %2</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Health Checks</source>
-        <translation type="unfinished"></translation>
+        <translation>Verificações de saúde</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Checks Run: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Verificações executadas: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Passed: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Aprovados: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Paused as Incomplete: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Pausados por estarem incompletos: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Inconclusive: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Inconclusivos: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Articles Probed: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Artigos sondados: %1</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Intake</source>
-        <translation type="unfinished"></translation>
+        <translation>Entrada</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>NZBs Added: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>NZBs adicionados: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Files: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Arquivos: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>URLs: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>URLs: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Watch Folder: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Pasta monitorada: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Feeds: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Feeds: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Indexer Searches: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Buscas em indexadores: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Duplicates: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Duplicados: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Already Downloaded: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Já baixados: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Invalid NZBs: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>NZBs inválidos: %1</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Indexers</source>
-        <translation type="unfinished"></translation>
+        <translation>Indexadores</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Searches: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Buscas: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>API Requests: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Requisições de API: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Errors: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Erros: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>NZBs Fetched: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>NZBs obtidos: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <location line="+81"/>
         <source>Failed: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Com falha: %1 %2</translation>
     </message>
     <message>
         <location line="-80"/>
         <source>Feed Polls: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Consultas de feed: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Feed Matches: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Correspondências de feed: %1</translation>
     </message>
     <message>
         <location line="+11"/>
         <source>Downloading: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Baixando: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Queued: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Na fila: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Paused: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Pausados: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Checking: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Verificando: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Post-Processing: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Pós-processamento: %1</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Completed: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Concluídos: %1</translation>
     </message>
     <message>
         <location line="+26"/>
         <source>News Servers</source>
-        <translation type="unfinished"></translation>
+        <translation>Servidores de notícias</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Queue</source>
-        <translation type="unfinished"></translation>
+        <translation>Fila</translation>
     </message>
     <message>
         <location line="+20"/>
         <source>Published: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Publicado: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Chunks Published: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Blocos publicados: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Upload Saved: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Upload economizado: %1</translation>
     </message>
     <message>
         <location line="+9"/>
         <source>Fetched: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Obtido: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Chunks Fetched: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Blocos obtidos: %1 %2</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Failed Hash Check: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Falha na verificação de hash: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Resumed: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Retomados: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Offers Received: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Ofertas recebidas: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Declined: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Recusadas: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Chunks Found in Kad: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Blocos encontrados no Kad: %1</translation>
     </message>
     <message>
         <location line="+125"/>
         <source>Measured here, not reported by the provider, in decimal GB as providers bill. Expect a few percent below the provider&apos;s own figure.</source>
-        <translation type="unfinished"></translation>
+        <translation>Medido aqui, não informado pelo provedor, em GB decimais como os provedores cobram. Espere alguns por cento abaixo do número do próprio provedor.</translation>
     </message>
     <message>
         <location line="+10"/>
         <source>%1 (disabled)</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 (desativado)</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>Session Traffic: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Tráfego da sessão: %1 %2</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Articles Downloaded: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Artigos baixados: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Not Found: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Não encontrados: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Corrupt: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Corrompidos: %1</translation>
     </message>
     <message>
         <location line="+9"/>
         <source>%1 of %2 %3</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 de %2 %3</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>, resets %1</source>
-        <translation type="unfinished"></translation>
+        <translation>, zera %1</translation>
     </message>
     <message>
         <location line="+3"/>
         <source> — spent</source>
-        <translation type="unfinished"></translation>
+        <translation> — esgotado</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Block: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Bloco: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>This Period: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Neste período: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>All Time: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Desde sempre: %1</translation>
     </message>
 </context>
 <context>
@@ -9768,7 +10179,7 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+593"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+615"/>
         <source>Downloads</source>
         <translation>Downloads</translation>
     </message>
@@ -9779,128 +10190,128 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
     </message>
     <message>
         <location line="+29"/>
-        <location line="+1509"/>
+        <location line="+1517"/>
         <location line="+98"/>
         <source>Low</source>
         <translation>Baixa</translation>
     </message>
     <message>
-        <location line="-1606"/>
-        <location line="+1508"/>
+        <location line="-1614"/>
+        <location line="+1516"/>
         <location line="+99"/>
         <source>Normal</source>
         <translation>Normal</translation>
     </message>
     <message>
-        <location line="-1606"/>
-        <location line="+1507"/>
+        <location line="-1614"/>
+        <location line="+1515"/>
         <location line="+100"/>
         <source>High</source>
         <translation>Alta</translation>
     </message>
     <message>
-        <location line="-1605"/>
-        <location line="+1607"/>
+        <location line="-1613"/>
+        <location line="+1615"/>
         <source>Very Low</source>
         <translation>Muito baixa</translation>
     </message>
     <message>
-        <location line="-1606"/>
-        <location line="+1607"/>
+        <location line="-1614"/>
+        <location line="+1615"/>
         <source>Very High</source>
         <translation>Muito alta</translation>
     </message>
     <message>
-        <location line="-1605"/>
-        <location line="+1608"/>
+        <location line="-1613"/>
+        <location line="+1616"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-1597"/>
-        <location line="+507"/>
-        <location line="+998"/>
+        <location line="-1605"/>
+        <location line="+512"/>
+        <location line="+1001"/>
         <source>Pause</source>
         <translation>Pausar</translation>
     </message>
     <message>
-        <location line="-1496"/>
-        <location line="+504"/>
-        <location line="+994"/>
+        <location line="-1504"/>
+        <location line="+509"/>
+        <location line="+997"/>
         <source>Stop</source>
         <translation>Parar</translation>
     </message>
     <message>
-        <location line="-1489"/>
-        <location line="+501"/>
-        <location line="+990"/>
+        <location line="-1497"/>
+        <location line="+506"/>
+        <location line="+993"/>
         <source>Resume</source>
         <translation>Retomar</translation>
     </message>
     <message>
-        <location line="-1478"/>
-        <location line="+494"/>
-        <location line="+986"/>
+        <location line="-1486"/>
+        <location line="+499"/>
+        <location line="+989"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>Cancelar</translation>
     </message>
     <message>
-        <location line="-1481"/>
-        <location line="+505"/>
+        <location line="-1489"/>
+        <location line="+510"/>
         <source>Cancel Download</source>
         <translation>Cancelar download</translation>
     </message>
     <message>
-        <location line="-504"/>
-        <location line="+505"/>
+        <location line="-509"/>
+        <location line="+510"/>
         <source>Cancel download &quot;%1&quot;?</source>
         <translation>Cancelar o download &quot;%1&quot;?</translation>
     </message>
     <message>
-        <location line="-501"/>
-        <location line="+505"/>
+        <location line="-506"/>
+        <location line="+510"/>
         <source>Cancel Downloads</source>
         <translation>Cancelar downloads</translation>
     </message>
     <message>
-        <location line="-504"/>
-        <location line="+505"/>
+        <location line="-509"/>
+        <location line="+510"/>
         <source>Cancel %1 selected downloads?</source>
         <translation>Cancelar %1 downloads selecionados?</translation>
     </message>
     <message>
-        <location line="-492"/>
-        <location line="+503"/>
+        <location line="-497"/>
+        <location line="+508"/>
         <source>Open File</source>
         <translation>Abrir arquivo</translation>
     </message>
     <message>
-        <location line="-494"/>
-        <location line="+508"/>
+        <location line="-499"/>
+        <location line="+513"/>
         <source>Preview</source>
         <translation>Pré-visualização</translation>
     </message>
     <message>
-        <location line="-502"/>
-        <location line="+1565"/>
+        <location line="-507"/>
+        <location line="+1573"/>
         <location line="+82"/>
         <source>Details...</source>
         <translation>Detalhes...</translation>
     </message>
     <message>
-        <location line="-1641"/>
+        <location line="-1649"/>
         <source>Comments...</source>
         <translation>Comentários...</translation>
     </message>
     <message>
         <location line="+17"/>
-        <location line="+527"/>
+        <location line="+532"/>
         <source>Clear Completed</source>
         <translation>Limpar concluídos</translation>
     </message>
     <message>
-        <location line="-517"/>
+        <location line="-522"/>
         <source>eD2K Links...</source>
         <translation>Links eD2K...</translation>
     </message>
@@ -9911,13 +10322,13 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
     </message>
     <message>
         <location line="+21"/>
-        <location line="+1571"/>
+        <location line="+1579"/>
         <location line="+77"/>
         <source>Find...</source>
         <translation>Buscar...</translation>
     </message>
     <message>
-        <location line="-1644"/>
+        <location line="-1652"/>
         <source>Search Related Files</source>
         <translation>Buscar arquivos relacionados</translation>
     </message>
@@ -9928,7 +10339,7 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
     </message>
     <message>
         <location line="+11"/>
-        <location line="+449"/>
+        <location line="+454"/>
         <source>Assign To Category</source>
         <translation>Atribuir à categoria</translation>
     </message>
@@ -9941,7 +10352,7 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
         <translation type="vanished">Todos</translation>
     </message>
     <message>
-        <location line="+839"/>
+        <location line="+842"/>
         <source>Uploading</source>
         <translation>Enviando</translation>
     </message>
@@ -9961,24 +10372,24 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
         <translation>Clientes conhecidos</translation>
     </message>
     <message>
-        <location line="-962"/>
+        <location line="-965"/>
         <source>Clients on queue:   0</source>
         <translation>Clientes na fila:   0</translation>
     </message>
     <message>
-        <location line="-325"/>
-        <location line="+452"/>
+        <location line="-330"/>
+        <location line="+457"/>
         <source>(Unassign)</source>
-        <translation type="unfinished"></translation>
+        <translation>(Desatribuir)</translation>
     </message>
     <message>
         <location line="-104"/>
-        <location line="+987"/>
+        <location line="+990"/>
         <source>Priority</source>
         <translation>Prioridade</translation>
     </message>
     <message>
-        <location line="-926"/>
+        <location line="-929"/>
         <source>Open Folder</source>
         <translation>Abrir pasta</translation>
     </message>
@@ -10008,7 +10419,7 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
         <translation>Procurar</translation>
     </message>
     <message>
-        <location line="+439"/>
+        <location line="+442"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Pré-visualização indisponível — o servidor web não está em execução ou o token de stream não foi recebido.</translation>
     </message>
@@ -10058,12 +10469,12 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
     <message>
         <location line="+47"/>
         <source>Are you sure you want to cancel every download in &quot;%1&quot;?</source>
-        <translation type="unfinished"></translation>
+        <translation>Tem certeza de que deseja cancelar todos os downloads em &quot;%1&quot;?</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Resume next file</source>
-        <translation type="unfinished"></translation>
+        <translation>Retomar próximo arquivo</translation>
     </message>
     <message>
         <source>Open Incoming Folder</source>
@@ -10099,7 +10510,7 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
 <context>
     <name>eMule::TrayMenuManager</name>
     <message>
-        <location filename="../src/gui/app/TrayMenuManager.cpp" line="+70"/>
+        <location filename="../src/gui/app/TrayMenuManager.cpp" line="+86"/>
         <source>eMule Speed</source>
         <translation>Velocidade do eMule</translation>
     </message>
@@ -10136,7 +10547,12 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
         <translation>Limitar velocidade de envio/download</translation>
     </message>
     <message>
-        <location line="+19"/>
+        <location line="+20"/>
+        <source>Pause Usenet</source>
+        <translation>Pausar Usenet</translation>
+    </message>
+    <message>
+        <location line="+14"/>
         <source>Connect</source>
         <translation>Conectar</translation>
     </message>
@@ -10166,535 +10582,616 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
     <message>
         <location filename="../src/gui/dialogs/UsenetArchiveEntryDialog.cpp" line="+59"/>
         <source>Preview File</source>
-        <translation type="unfinished"></translation>
+        <translation>Arquivo para visualizar</translation>
     </message>
     <message>
         <location line="+42"/>
         <source>Playable</source>
-        <translation type="unfinished"></translation>
+        <translation>Reproduzível</translation>
     </message>
     <message>
         <location line="+30"/>
         <source>Nothing has arrived for this download yet.</source>
-        <translation type="unfinished"></translation>
+        <translation>Nada chegou ainda para este download.</translation>
     </message>
     <message numerus="yes">
         <location line="+3"/>
         <source>Reading the archive… %n file(s) found so far</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>Lendo o arquivo compactado… %n arquivo encontrado até agora</numerusform>
+            <numerusform>Lendo o arquivo compactado… %n arquivos encontrados até agora</numerusform>
         </translation>
     </message>
     <message numerus="yes">
         <location line="+6"/>
         <source>%n file(s) in the archive.</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%n arquivo no arquivo compactado.</numerusform>
+            <numerusform>%n arquivos no arquivo compactado.</numerusform>
         </translation>
     </message>
     <message>
         <location line="+34"/>
         <source>Name</source>
-        <translation type="unfinished">Nome</translation>
+        <translation>Nome</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Size</source>
-        <translation type="unfinished">Tamanho</translation>
+        <translation>Tamanho</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Status</source>
-        <translation type="unfinished">Status</translation>
+        <translation>Status</translation>
     </message>
     <message>
         <location line="+25"/>
         <source>Reading the archive…</source>
-        <translation type="unfinished"></translation>
+        <translation>Lendo o arquivo compactado…</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Preview</source>
-        <translation type="unfinished">Pré-visualização</translation>
+        <translation>Pré-visualização</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Keep Scanning</source>
-        <translation type="unfinished"></translation>
+        <translation>Continuar analisando</translation>
     </message>
     <message>
         <location line="+26"/>
         <source>The connection to the core was lost.</source>
-        <translation type="unfinished"></translation>
+        <translation>A conexão com o núcleo foi perdida.</translation>
     </message>
     <message>
         <location line="+6"/>
         <source>The archive is still being read — the files listed so far are all that is known.</source>
-        <translation type="unfinished"></translation>
+        <translation>O arquivo compactado ainda está sendo lido — os arquivos listados até agora são tudo o que se sabe.</translation>
     </message>
 </context>
 <context>
     <name>eMule::UsenetDetailsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/UsenetDetailsDialog.cpp" line="+13"/>
+        <location filename="../src/gui/dialogs/UsenetDetailsDialog.cpp" line="+15"/>
         <location line="+18"/>
         <source>Release Details</source>
-        <translation type="unfinished"></translation>
+        <translation>Detalhes do lançamento</translation>
     </message>
     <message>
         <location line="+19"/>
         <source>Not checked.</source>
-        <translation type="unfinished"></translation>
+        <translation>Não verificado.</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>%1% of this release looks obtainable.</source>
-        <translation type="unfinished"></translation>
+        <translation>%1% deste lançamento parece obtível.</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>%1% by the NZB&apos;s own article counts. No server was asked.</source>
-        <translation type="unfinished"></translation>
+        <translation>%1% pela contagem de artigos do próprio NZB. Nenhum servidor foi consultado.</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>%1 of %2</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 de %2</translation>
     </message>
     <message numerus="yes">
-        <location line="+84"/>
+        <location line="+99"/>
         <source>%n article(s) were never listed in the NZB</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%n artigo nunca foi listado no NZB</numerusform>
+            <numerusform>%n artigos nunca foram listados no NZB</numerusform>
         </translation>
     </message>
     <message>
-        <location line="+53"/>
+        <location line="+58"/>
         <source>&quot;%1&quot; has not been published on its own.</source>
-        <translation type="unfinished"></translation>
+        <translation>&quot;%1&quot; não foi publicado separadamente.</translation>
     </message>
     <message>
         <location line="+14"/>
         <source>&quot;%1&quot; is outside the core&apos;s Incoming folder and cannot be opened from here.</source>
-        <translation type="unfinished"></translation>
+        <translation>&quot;%1&quot; está fora da pasta Recebidos do núcleo e não pode ser aberto daqui.</translation>
     </message>
     <message>
         <location line="+43"/>
         <source>Total Size:</source>
-        <translation type="unfinished"></translation>
+        <translation>Tamanho total:</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Date:</source>
-        <translation type="unfinished"></translation>
+        <translation>Data:</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Status:</source>
-        <translation type="unfinished">Status:</translation>
+        <translation>Status:</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Health:</source>
-        <translation type="unfinished"></translation>
+        <translation>Saúde:</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Poster:</source>
-        <translation type="unfinished"></translation>
+        <translation>Autor:</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Articles:</source>
-        <translation type="unfinished"></translation>
+        <translation>Artigos:</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Newsgroups:</source>
-        <translation type="unfinished"></translation>
+        <translation>Grupos de notícias:</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Files:</source>
-        <translation type="unfinished">Arquivos:</translation>
+        <translation>Arquivos:</translation>
     </message>
     <message>
         <location line="+9"/>
         <source>Name</source>
-        <translation type="unfinished">Nome</translation>
+        <translation>Nome</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Size</source>
-        <translation type="unfinished">Tamanho</translation>
+        <translation>Tamanho</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Progress</source>
-        <translation type="unfinished">Progresso</translation>
+        <translation>Progresso</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Articles</source>
-        <translation type="unfinished"></translation>
+        <translation>Artigos</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Missing</source>
-        <translation type="unfinished"></translation>
+        <translation>Ausentes</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Status</source>
-        <translation type="unfinished">Status</translation>
+        <translation>Status</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+23"/>
         <source>Open Folder</source>
-        <translation type="unfinished">Abrir pasta</translation>
+        <translation>Abrir pasta</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::UsenetFileCheckList</name>
+    <message>
+        <location filename="../src/gui/controls/UsenetFileCheckList.cpp" line="+53"/>
+        <source>Select All</source>
+        <translation>Selecionar tudo</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Select None</source>
+        <translation>Desmarcar tudo</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Invert Selection</source>
+        <translation>Inverter seleção</translation>
+    </message>
+    <message>
+        <location line="+73"/>
+        <source>Could not change which files download.</source>
+        <translation>Não foi possível alterar quais arquivos são baixados.</translation>
     </message>
 </context>
 <context>
     <name>eMule::UsenetPanel</name>
     <message>
-        <location filename="../src/gui/panels/UsenetPanel.cpp" line="+156"/>
+        <location filename="../src/gui/panels/UsenetPanel.cpp" line="+164"/>
         <location line="+7"/>
-        <location line="+37"/>
-        <location line="+422"/>
+        <location line="+44"/>
+        <location line="+483"/>
         <source>Add NZB</source>
-        <translation type="unfinished"></translation>
+        <translation>Adicionar NZB</translation>
     </message>
     <message>
-        <location line="-465"/>
-        <location line="+43"/>
-        <location line="+49"/>
+        <location line="-533"/>
+        <location line="+50"/>
+        <location line="+62"/>
         <source>Not connected to the eMule core.</source>
-        <translation type="unfinished"></translation>
+        <translation>Não conectado ao núcleo do eMule.</translation>
     </message>
     <message>
-        <location line="-85"/>
+        <location line="-105"/>
         <source>Cannot read %1.</source>
-        <translation type="unfinished"></translation>
+        <translation>Não é possível ler %1.</translation>
     </message>
     <message>
-        <location line="+84"/>
+        <location line="+104"/>
         <source>Add NZB from URL</source>
-        <translation type="unfinished"></translation>
+        <translation>Adicionar NZB de URL</translation>
     </message>
     <message>
         <location line="+23"/>
         <source>Add NZB…</source>
-        <translation type="unfinished"></translation>
+        <translation>Adicionar NZB…</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+863"/>
+        <location line="+938"/>
         <source>Pause</source>
-        <translation type="unfinished">Pausar</translation>
+        <translation>Pausar</translation>
     </message>
     <message>
-        <location line="-859"/>
-        <location line="+862"/>
+        <location line="-934"/>
+        <location line="+937"/>
         <source>Resume</source>
-        <translation type="unfinished">Retomar</translation>
+        <translation>Retomar</translation>
     </message>
     <message>
-        <location line="-860"/>
+        <location line="-935"/>
         <source>Remove</source>
-        <translation type="unfinished">Remover</translation>
+        <translation>Remover</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+5"/>
+        <location line="+893"/>
+        <source>Pause All</source>
+        <translation>Pausar tudo</translation>
+    </message>
+    <message>
+        <location line="-886"/>
         <source>Add NZB from URL…</source>
-        <translation type="unfinished"></translation>
+        <translation>Adicionar NZB de URL…</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Preview</source>
-        <translation type="unfinished">Pré-visualização</translation>
+        <translation>Pré-visualização</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Check Availability</source>
-        <translation type="unfinished"></translation>
+        <translation>Verificar disponibilidade</translation>
     </message>
     <message>
-        <location line="+248"/>
+        <location line="+261"/>
         <source>Priority</source>
-        <translation type="unfinished">Prioridade</translation>
+        <translation>Prioridade</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>High</source>
-        <translation type="unfinished">Alta</translation>
+        <translation type="obsolete">Alta</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Normal</source>
-        <translation type="unfinished">Normal</translation>
+        <translation type="obsolete">Normal</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Low</source>
-        <translation type="unfinished">Baixa</translation>
+        <translation type="obsolete">Baixa</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+10"/>
         <source>Assign To Category</source>
-        <translation type="unfinished">Atribuir à categoria</translation>
+        <translation>Atribuir à categoria</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>No category</source>
-        <translation type="unfinished"></translation>
+        <translation>Sem categoria</translation>
     </message>
     <message>
         <location line="+14"/>
         <source>Set Password…</source>
-        <translation type="unfinished"></translation>
+        <translation>Definir senha…</translation>
+    </message>
+    <message>
+        <location line="+23"/>
+        <source>Download Selected Files</source>
+        <translation>Baixar arquivos selecionados</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Skip Selected Files</source>
+        <translation>Ignorar arquivos selecionados</translation>
     </message>
     <message>
         <location line="+19"/>
         <source>Open File</source>
-        <translation type="unfinished">Abrir arquivo</translation>
+        <translation>Abrir arquivo</translation>
     </message>
     <message>
         <location line="+11"/>
         <source>Open Folder</source>
-        <translation type="unfinished">Abrir pasta</translation>
+        <translation>Abrir pasta</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Details…</source>
-        <translation type="unfinished"></translation>
+        <translation>Detalhes…</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>Remove and Delete Files</source>
-        <translation type="unfinished"></translation>
+        <translation>Remover e excluir arquivos</translation>
     </message>
     <message>
         <location line="+9"/>
         <source>NZB files (*.nzb);;All files (*)</source>
-        <translation type="unfinished"></translation>
+        <translation>Arquivos NZB (*.nzb);;Todos os arquivos (*)</translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location line="+34"/>
         <location line="+15"/>
         <source>Set Password</source>
-        <translation type="unfinished"></translation>
+        <translation>Definir senha</translation>
     </message>
     <message>
         <location line="-14"/>
         <source>Archive password for &quot;%1&quot;:</source>
-        <translation type="unfinished"></translation>
+        <translation>Senha do arquivo para &quot;%1&quot;:</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>this download</source>
-        <translation type="unfinished"></translation>
+        <translation>este download</translation>
     </message>
     <message>
         <location line="+14"/>
         <source>Remove the stored password for this download?</source>
-        <translation type="unfinished"></translation>
+        <translation>Remover a senha salva deste download?</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+13"/>
         <source>Could not set the password.</source>
-        <translation type="unfinished"></translation>
+        <translation>Não foi possível definir a senha.</translation>
     </message>
     <message>
         <location line="+43"/>
         <source>Remove Downloads</source>
-        <translation type="unfinished"></translation>
+        <translation>Remover downloads</translation>
     </message>
     <message numerus="yes">
         <location line="+1"/>
         <source>Remove %n download(s) and delete the files already fetched?</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>Remover %n download e excluir os arquivos já obtidos?</numerusform>
+            <numerusform>Remover %n downloads e excluir os arquivos já obtidos?</numerusform>
         </translation>
     </message>
     <message>
         <location line="+55"/>
         <location line="+82"/>
         <source>Nothing has completed yet for &quot;%1&quot;.</source>
-        <translation type="unfinished"></translation>
+        <translation>Nada foi concluído ainda para &quot;%1&quot;.</translation>
     </message>
     <message>
         <location line="+100"/>
         <source>Nothing here can be previewed yet.</source>
-        <translation type="unfinished"></translation>
+        <translation>Nada aqui pode ser visualizado ainda.</translation>
     </message>
     <message>
         <location line="+26"/>
         <source>Preview is unavailable — the daemon&apos;s web server is not running.</source>
-        <translation type="unfinished"></translation>
+        <translation>Pré-visualização indisponível — o servidor web do daemon não está em execução.</translation>
     </message>
     <message>
         <location line="+58"/>
         <source>No Usenet downloads. Use &quot;Add NZB…&quot; to queue one.</source>
-        <translation type="unfinished"></translation>
+        <translation>Nenhum download Usenet. Use &quot;Adicionar NZB…&quot; para enfileirar um.</translation>
     </message>
     <message>
         <location line="+30"/>
         <source>%1 download(s), %2 active — %3% complete</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 download(s), %2 ativo(s) — %3% concluído</translation>
     </message>
     <message>
         <location line="+9"/>
         <source> — %1</source>
-        <translation type="unfinished"></translation>
+        <translation> — %1</translation>
     </message>
     <message>
         <location line="+7"/>
         <source> — limited to %1 KB/s while eD2K downloads</source>
-        <translation type="unfinished"></translation>
+        <translation> — limitado a %1 KB/s enquanto o eD2K baixa</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Download limit %1 KB/s: Usenet up to %2 KB/s, eD2K up to %3 KB/s.
 Whichever network is idle lends its share to the other.</source>
-        <translation type="unfinished"></translation>
+        <translation>Limite de download %1 KB/s: Usenet até %2 KB/s, eD2K até %3 KB/s.
+A rede ociosa empresta sua parte à outra.</translation>
     </message>
     <message>
         <location line="+11"/>
         <source>Usenet: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet: %1</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Usenet: downloading again.</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet: baixando novamente.</translation>
+    </message>
+    <message>
+        <location line="+19"/>
+        <source>Resume All</source>
+        <translation>Retomar tudo</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Let every Usenet download continue</source>
+        <translation>Deixar todos os downloads Usenet continuarem</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Stop starting new Usenet articles. Nothing is removed, and each release keeps its own state.</source>
+        <translation>Parar de iniciar novos artigos Usenet. Nada é removido, e cada lançamento mantém seu próprio estado.</translation>
     </message>
     <message>
         <location line="+39"/>
         <location line="+4"/>
         <source>Cancel</source>
-        <translation type="unfinished">Cancelar</translation>
+        <translation>Cancelar</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Remove every Usenet download in &quot;%1&quot; and delete its files?</source>
-        <translation type="unfinished"></translation>
+        <translation>Remover todos os downloads Usenet em &quot;%1&quot; e excluir seus arquivos?</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+22"/>
         <source>Could not apply that to the category: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Não foi possível aplicar isso à categoria: %1</translation>
     </message>
 </context>
 <context>
     <name>eMule::UsenetQueueModel</name>
     <message numerus="yes">
-        <location filename="../src/gui/controls/UsenetQueueModel.cpp" line="+179"/>
         <source>%n article(s) missing</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation type="vanished">
+            <numerusform>%n artigo ausente</numerusform>
+            <numerusform>%n artigos ausentes</numerusform>
         </translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Complete</source>
-        <translation type="unfinished">Concluído</translation>
+        <translation type="vanished">Concluído</translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/gui/controls/UsenetQueueModel.cpp" line="+114"/>
+        <source>%1% — %n article(s) missing</source>
+        <translation>
+            <numerusform>%1% — %n artigo ausente</numerusform>
+            <numerusform>%1% — %n artigos ausentes</numerusform>
+        </translation>
     </message>
     <message>
-        <location line="+106"/>
+        <location line="+39"/>
+        <source>Skipped — tick it to download this file</source>
+        <translation>Ignorado — marque para baixar este arquivo</translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>%1% — %2 of %3 articles</source>
+        <translation>%1% — %2 de %3 artigos</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+4"/>
+        <source>, %n missing</source>
+        <translation>
+            <numerusform>, %n ausente</numerusform>
+            <numerusform>, %n ausentes</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+84"/>
         <source>Not checked.</source>
-        <translation type="unfinished"></translation>
+        <translation>Não verificado.</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>%1% of this release looks obtainable.</source>
-        <translation type="unfinished"></translation>
+        <translation>%1% deste lançamento parece obtível.</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>%1% by the NZB&apos;s own article counts. No server was asked.</source>
-        <translation type="unfinished"></translation>
+        <translation>%1% pela contagem de artigos do próprio NZB. Nenhum servidor foi consultado.</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>The PAR2 recovery volumes should cover the shortfall.</source>
-        <translation type="unfinished"></translation>
+        <translation>Os volumes de recuperação PAR2 devem cobrir o que falta.</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>%1
 The password for this release did not work. Right-click to set a different one.</source>
-        <translation type="unfinished"></translation>
+        <translation>%1
+A senha deste lançamento não funcionou. Clique com o botão direito para definir outra.</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>%1
 This release is password-protected. Right-click to set its password.</source>
-        <translation type="unfinished"></translation>
+        <translation>%1
+Este lançamento é protegido por senha. Clique com o botão direito para definir a senha.</translation>
     </message>
     <message numerus="yes">
         <location line="+4"/>
         <source>%1
 %n article(s) could not be found on any server</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%1
+%n artigo não foi encontrado em nenhum servidor</numerusform>
+            <numerusform>%1
+%n artigos não foram encontrados em nenhum servidor</numerusform>
         </translation>
     </message>
     <message>
         <location line="+4"/>
         <source>%1
 A password is set for this release.</source>
-        <translation type="unfinished"></translation>
+        <translation>%1
+Há uma senha definida para este lançamento.</translation>
     </message>
     <message>
         <location line="+61"/>
         <source>Name</source>
-        <translation type="unfinished">Nome</translation>
+        <translation>Nome</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Size</source>
-        <translation type="unfinished">Tamanho</translation>
+        <translation>Tamanho</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Progress</source>
-        <translation type="unfinished">Progresso</translation>
+        <translation>Progresso</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Status</source>
-        <translation type="unfinished">Status</translation>
+        <translation>Status</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Speed</source>
-        <translation type="unfinished">Velocidade</translation>
+        <translation>Velocidade</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Remaining</source>
-        <translation type="unfinished">Restante</translation>
+        <translation>Restante</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Priority</source>
-        <translation type="unfinished">Prioridade</translation>
+        <translation>Prioridade</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Health</source>
-        <translation type="unfinished"></translation>
+        <translation>Saúde</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Category</source>
-        <translation type="unfinished">Categoria</translation>
+        <translation>Categoria</translation>
     </message>
 </context>
 <context>
@@ -10713,6 +11210,1263 @@ A password is set for this release.</source>
         <location line="+7"/>
         <source>the version manifest has no &apos;latest&apos; field</source>
         <translation>o manifesto de versão não possui o campo &apos;latest&apos;</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::WebServer</name>
+    <message>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+15"/>
+        <source>(still scanning)</source>
+        <translation>(ainda analisando)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Accepted</source>
+        <translation>Aceitas</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Add</source>
+        <translation>Adicionar</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Add NZB from URL…</source>
+        <translation>Adicionar NZB de URL…</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Add NZB…</source>
+        <translation>Adicionar NZB…</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Add paused</source>
+        <translation>Adicionar pausado</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Add to Static</source>
+        <translation>Adicionar aos estáticos</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Adding %1 NZB(s)…</source>
+        <translation>Adicionando %1 NZB(s)…</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Address</source>
+        <translation>Endereço</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3593"/>
+        <location line="+3485"/>
+        <location line="+45"/>
+        <source>Session expired — log in again</source>
+        <translation>Sessão expirada — faça login novamente</translation>
+    </message>
+    <message>
+        <location line="-3528"/>
+        <source>Guests cannot add downloads</source>
+        <translation>Convidados não podem adicionar downloads</translation>
+    </message>
+    <message>
+        <location line="+859"/>
+        <source>Looking for comments on Kad</source>
+        <translation>Procurando comentários no Kad</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Rating: %1</source>
+        <translation>Avaliação: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Has comments</source>
+        <translation>Tem comentários</translation>
+    </message>
+    <message>
+        <location line="+403"/>
+        <location line="+1"/>
+        <source>Incoming</source>
+        <translation>Recebidos</translation>
+    </message>
+    <message>
+        <location line="+27"/>
+        <source>Nothing has finished downloading yet.</source>
+        <translation>Nenhum download foi concluído ainda.</translation>
+    </message>
+    <message>
+        <location line="+32"/>
+        <source>Modified</source>
+        <translation>Modificado</translation>
+    </message>
+    <message>
+        <location line="+40"/>
+        <source>Download</source>
+        <translation>Download</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>Play</source>
+        <translation>Reproduzir</translation>
+    </message>
+    <message>
+        <location line="+91"/>
+        <source>Open this URL in VLC or another player:</source>
+        <translation>Abra esta URL no VLC ou em outro player:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>This file is named %1 but its contents are %2. The name is wrong — common for files off the ed2k network — so a player that trusts it finds no %3 and sits at 0:00. It is being served as its real type, so it may still play above.</source>
+        <translation>Este arquivo se chama %1, mas seu conteúdo é %2. O nome está errado — comum em arquivos da rede ed2k — então um player que confia nele não encontra nenhum %3 e fica parado em 0:00. Ele está sendo servido com seu tipo real, então talvez ainda seja reproduzido acima.</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>This file is named %1 but does not start with the %2 signature every one of them has, and its contents match no media container we recognise. It is very likely a fake or a corrupt download — no player will get anything out of it.</source>
+        <translation>Este arquivo se chama %1, mas não começa com a assinatura %2 que todos eles têm, e seu conteúdo não corresponde a nenhum contêiner de mídia conhecido. Muito provavelmente é falso ou um download corrompido — nenhum player conseguirá reproduzi-lo.</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>The raw URL, if you want to look for yourself:</source>
+        <translation>A URL direta, se quiser verificar por conta própria:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Your browser probably cannot decode %1.</source>
+        <translation>Seu navegador provavelmente não consegue decodificar %1.</translation>
+    </message>
+    <message>
+        <location line="+24"/>
+        <source>Copy</source>
+        <translation>Copiar</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Copied</source>
+        <translation>Copiado</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Download this file</source>
+        <translation>Baixar este arquivo</translation>
+    </message>
+    <message>
+        <location line="+322"/>
+        <source>Access denied — no password configured. Set a password in Options → Web Interface.</source>
+        <translation>Acesso negado — nenhuma senha configurada. Defina uma em Opções → Interface Web.</translation>
+    </message>
+    <message>
+        <location line="+18"/>
+        <source>Login failed</source>
+        <translation>Falha no login</translation>
+    </message>
+    <message>
+        <location line="+205"/>
+        <location line="+1819"/>
+        <source>Web Control Panel</source>
+        <translation>Painel de controle web</translation>
+    </message>
+    <message>
+        <location line="-1810"/>
+        <source>Not connected</source>
+        <translation>Não conectado</translation>
+    </message>
+    <message>
+        <location line="+289"/>
+        <source>Connected</source>
+        <translation>Conectado</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+283"/>
+        <source>Disconnected</source>
+        <translation>Desconectado</translation>
+    </message>
+    <message>
+        <location line="-84"/>
+        <source>Active Connections</source>
+        <translation>Conexões ativas</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Time</source>
+        <translation>Tempo</translation>
+    </message>
+    <message>
+        <location line="+29"/>
+        <source>Connected to: %1 (%2:%3)</source>
+        <translation>Conectado a: %1 (%2:%3)</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Client ID: %1 (%2)</source>
+        <translation>ID do cliente: %1 (%2)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>LowID</source>
+        <translation>LowID</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>HighID</source>
+        <translation>HighID</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Users: %1 | Files: %2</source>
+        <translation>Usuários: %1 | Arquivos: %2</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Description: %1</source>
+        <translation>Descrição: %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Ping: %1 ms</source>
+        <translation>Ping: %1 ms</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Connecting...</source>
+        <translation>Conectando...</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Not connected to any server</source>
+        <translation>Não conectado a nenhum servidor</translation>
+    </message>
+    <message>
+        <location line="+34"/>
+        <source>Running</source>
+        <translation>Em execução</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Not available</source>
+        <translation>Não disponível</translation>
+    </message>
+    <message>
+        <location line="+149"/>
+        <location line="+1036"/>
+        <source>Queued</source>
+        <translation>Na fila</translation>
+    </message>
+    <message>
+        <location line="-1035"/>
+        <location line="+1034"/>
+        <source>Downloading</source>
+        <translation>Baixando</translation>
+    </message>
+    <message>
+        <location line="-1033"/>
+        <source>Paused</source>
+        <translation>Pausado</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+867"/>
+        <location line="+164"/>
+        <source>Complete</source>
+        <translation>Concluído</translation>
+    </message>
+    <message>
+        <location line="-1030"/>
+        <source>Failed</source>
+        <translation>Falhou</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Verifying</source>
+        <translation>Verificando</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Repairing</source>
+        <translation>Reparando</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Unpacking</source>
+        <translation>Descompactando</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Checking</source>
+        <translation>Checando</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Unknown</source>
+        <translation>Desconhecido</translation>
+    </message>
+    <message>
+        <location line="+30"/>
+        <source>Not checked.</source>
+        <translation>Não verificado.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>%1% of this release looks obtainable.</source>
+        <translation>%1% deste lançamento parece obtível.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>%1% by the NZB&apos;s own article counts. No server was asked.</source>
+        <translation>%1% pela contagem de artigos do próprio NZB. Nenhum servidor foi consultado.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>The PAR2 recovery volumes should cover the shortfall.</source>
+        <translation>Os volumes de recuperação PAR2 devem cobrir o que falta.</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>%1
+The password for this release did not work. Right-click to set a different one.</source>
+        <translation>%1
+A senha deste lançamento não funcionou. Clique com o botão direito para definir outra.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>%1
+This release is password-protected. Right-click to set its password.</source>
+        <translation>%1
+Este lançamento é protegido por senha. Clique com o botão direito para definir a senha.</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+4"/>
+        <source>%1
+%n article(s) could not be found on any server</source>
+        <translation>
+            <numerusform>%1
+%n artigo não foi encontrado em nenhum servidor</numerusform>
+            <numerusform>%1
+%n artigos não foram encontrados em nenhum servidor</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>%1
+A password is set for this release.</source>
+        <translation>%1
+Há uma senha definida para este lançamento.</translation>
+    </message>
+    <message>
+        <location line="+126"/>
+        <source>%1 (and %2 other(s))</source>
+        <translation>%1 (e mais %2)</translation>
+    </message>
+    <message>
+        <location line="+60"/>
+        <source>Usenet item not found</source>
+        <translation>Item Usenet não encontrado</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Very high</source>
+        <translation>Muito alta</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>High</source>
+        <translation>Alta</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Low</source>
+        <translation>Baixa</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Very low</source>
+        <translation>Muito baixa</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Normal</source>
+        <translation>Normal</translation>
+    </message>
+    <message>
+        <location line="+97"/>
+        <source>Only a queued or downloading release can be paused</source>
+        <translation>Apenas um lançamento na fila ou baixando pode ser pausado</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Only a paused or failed release can be resumed</source>
+        <translation>Apenas um lançamento pausado ou com falha pode ser retomado</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <location line="+120"/>
+        <location line="+165"/>
+        <source>priority must be a number from -2 to 2</source>
+        <translation>a prioridade deve ser um número de -2 a 2</translation>
+    </message>
+    <message>
+        <location line="-279"/>
+        <location line="+120"/>
+        <location line="+74"/>
+        <location line="+78"/>
+        <source>Unknown category</source>
+        <translation>Categoria desconhecida</translation>
+    </message>
+    <message>
+        <location line="-260"/>
+        <location line="+4"/>
+        <source>files must be a list of file numbers</source>
+        <translation>files deve ser uma lista de números de arquivo</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Unknown action</source>
+        <translation>Ação desconhecida</translation>
+    </message>
+    <message>
+        <location line="+241"/>
+        <source>Post the .nzb as the request body, or give a url</source>
+        <translation>Envie o .nzb como corpo da requisição ou informe uma URL</translation>
+    </message>
+    <message>
+        <location line="+43"/>
+        <source>Guests cannot change downloads</source>
+        <translation>Convidados não podem alterar downloads</translation>
+    </message>
+    <message>
+        <location line="+17"/>
+        <source>Nothing selected</source>
+        <translation>Nada selecionado</translation>
+    </message>
+    <message>
+        <location line="+49"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>All</source>
+        <translation>Todos</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>No category</source>
+        <translation>Sem categoria</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+115"/>
+        <location line="+164"/>
+        <source>%n article(s) missing</source>
+        <translation>
+            <numerusform>%n artigo ausente</numerusform>
+            <numerusform>%n artigos ausentes</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="-100"/>
+        <source>No Usenet downloads. Use &quot;Add NZB…&quot; to queue one.</source>
+        <translation>Nenhum download Usenet. Use &quot;Adicionar NZB…&quot; para enfileirar um.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>%1 download(s), %2 active — %3% complete</source>
+        <translation>%1 download(s), %2 ativo(s) — %3% concluído</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <location line="+2"/>
+        <source> — %1</source>
+        <translation> — %1</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source> — limited to %1 KB/s while eD2K downloads</source>
+        <translation> — limitado a %1 KB/s enquanto o eD2K baixa</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Download limit %1 KB/s: Usenet up to %2 KB/s, eD2K up to %3 KB/s.
+Whichever network is idle lends its share to the other.</source>
+        <translation>Limite de download %1 KB/s: Usenet até %2 KB/s, eD2K até %3 KB/s.
+A rede ociosa empresta sua parte à outra.</translation>
+    </message>
+    <message>
+        <location line="+22"/>
+        <source>No Usenet downloads here.</source>
+        <translation>Nenhum download Usenet aqui.</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+48"/>
+        <source>%n article(s) were never listed in the NZB</source>
+        <translation>
+            <numerusform>%n artigo nunca foi listado no NZB</numerusform>
+            <numerusform>%n artigos nunca foram listados no NZB</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+40"/>
+        <source>%1 of %2</source>
+        <translation>%1 de %2</translation>
+    </message>
+    <message>
+        <location line="+60"/>
+        <source>App language (%1)</source>
+        <translation>Idioma do aplicativo (%1)</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>Any</source>
+        <translation>Qualquer</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Apply</source>
+        <translation>Aplicar</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Archive (.zip .rar ...)</source>
+        <translation>Arquivo compactado (.zip .rar ...)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Archive password for &quot;%1&quot;:</source>
+        <translation>Senha do arquivo para &quot;%1&quot;:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Articles</source>
+        <translation>Artigos</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Articles:</source>
+        <translation>Artigos:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Audio (.mp3 .ogg ...)</source>
+        <translation>Áudio (.mp3 .ogg ...)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Back to the queue</source>
+        <translation>Voltar à fila</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>CD Image (.iso .bin ...)</source>
+        <translation>Imagem de CD (.iso .bin ...)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Cancel</source>
+        <translation>Cancelar</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Cancel this download?</source>
+        <translation>Cancelar este download?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Category</source>
+        <translation>Categoria</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Category:</source>
+        <translation>Categoria:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Category: %1</source>
+        <translation>Categoria: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Check Availability</source>
+        <translation>Verificar disponibilidade</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Choose .nzb files or paste links first.</source>
+        <translation>Escolha arquivos .nzb ou cole links primeiro.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Clear Completed</source>
+        <translation>Limpar concluídos</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Client</source>
+        <translation>Cliente</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Comment</source>
+        <translation>Comentário</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Comments</source>
+        <translation>Comentários</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Completed</source>
+        <translation>Concluído</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Connect</source>
+        <translation>Conectar</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Copy ED2K Link</source>
+        <translation>Copiar link ED2K</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Could not apply that to the category: %1</source>
+        <translation>Não foi possível aplicar isso à categoria: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Could not reach the eMule core.</source>
+        <translation>Não foi possível contatar o núcleo do eMule.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Date:</source>
+        <translation>Data:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Debug</source>
+        <translation>Depuração</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Debug Log</source>
+        <translation>Log de depuração</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Description</source>
+        <translation>Descrição</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Details…</source>
+        <translation>Detalhes…</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Disconnect</source>
+        <translation>Desconectar</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Document (.doc .pdf ...)</source>
+        <translation>Documento (.doc .pdf ...)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Download Speed</source>
+        <translation>Velocidade de download</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1358"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>Downloads</source>
+        <translation>Downloads</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>File</source>
+        <translation>Arquivo</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>File Name</source>
+        <translation>Nome do arquivo</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Files</source>
+        <translation>Arquivos</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Files:</source>
+        <translation>Arquivos:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>General</source>
+        <translation>Geral</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Global</source>
+        <translation>Global</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Graphs</source>
+        <translation>Gráficos</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hash</source>
+        <translation>Hash</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Health</source>
+        <translation>Saúde</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Health:</source>
+        <translation>Saúde:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Image (.jpg .png ...)</source>
+        <translation>Imagem (.jpg .png ...)</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>KB/s</source>
+        <translation>KB/s</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>Kad</source>
+        <translation>Kad</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Kad Network</source>
+        <translation>Rede Kad</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Kademlia</source>
+        <translation>Kademlia</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Keep Scanning</source>
+        <translation>Continuar analisando</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Language</source>
+        <translation>Idioma</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Log</source>
+        <translation>Log</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Login</source>
+        <translation>Entrar</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Logout</source>
+        <translation>Sair</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Max Download (KB/s)</source>
+        <translation>Download máx. (KB/s)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Max Download Speed</source>
+        <translation>Velocidade de download máx.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Max Upload (KB/s)</source>
+        <translation>Upload máx. (KB/s)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Max Upload Speed</source>
+        <translation>Velocidade de upload máx.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Method</source>
+        <translation>Método</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Missing</source>
+        <translation>Ausentes</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>My Info</source>
+        <translation>Minha info</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>NZB URLs:</source>
+        <translation>URLs de NZB:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>NZB files:</source>
+        <translation>Arquivos NZB:</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1240"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>Name</source>
+        <translation>Nome</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>Newsgroups:</source>
+        <translation>Grupos de notícias:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Nickname</source>
+        <translation>Apelido</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Nickname:</source>
+        <translation>Apelido:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Nothing has completed yet for &quot;%1&quot;.</source>
+        <translation>Nada foi concluído ainda para &quot;%1&quot;.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Nothing here can be previewed yet.</source>
+        <translation>Nada aqui pode ser visualizado ainda.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Open File</source>
+        <translation>Abrir arquivo</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Open Folder</source>
+        <translation>Abrir pasta</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Password</source>
+        <translation>Senha</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Password:</source>
+        <translation>Senha:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Paste one or more http(s) links to .nzb files here, one per line...</source>
+        <translation>Cole aqui um ou mais links http(s) para arquivos .nzb, um por linha...</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Pause</source>
+        <translation>Pausar</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Pause All</source>
+        <translation>Pausar tudo</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Ping</source>
+        <translation>Ping</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Playable</source>
+        <translation>Reproduzível</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Please add at most %1 links at a time.</source>
+        <translation>Adicione no máximo %1 links por vez.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Port</source>
+        <translation>Porta</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Ports</source>
+        <translation>Portas</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Poster:</source>
+        <translation>Autor:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Preferences</source>
+        <translation>Preferências</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Preview</source>
+        <translation>Pré-visualização</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Preview File</source>
+        <translation>Arquivo para visualizar</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Priority</source>
+        <translation>Prioridade</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Priority:</source>
+        <translation>Prioridade:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Priority: %1</source>
+        <translation>Prioridade: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Priority: Auto</source>
+        <translation>Prioridade: Automática</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Priority: High</source>
+        <translation>Prioridade: Alta</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Priority: Low</source>
+        <translation>Prioridade: Baixa</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Priority: Normal</source>
+        <translation>Prioridade: Normal</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Program (.exe ...)</source>
+        <translation>Programa (.exe ...)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Progress</source>
+        <translation>Progresso</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Queued %1 NZB(s).</source>
+        <translation>%1 NZB(s) enfileirado(s).</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Rating</source>
+        <translation>Avaliação</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Recheck Firewall</source>
+        <translation>Verificar firewall</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Reconnects</source>
+        <translation>Reconexões</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remaining</source>
+        <translation>Restante</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove</source>
+        <translation>Remover</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove %1 download(s) and delete the files already fetched?</source>
+        <translation>Remover %1 download(s) e excluir os arquivos já obtidos?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove and Delete Files</source>
+        <translation>Remover e excluir arquivos</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove every Usenet download in &quot;%1&quot; and delete its files?</source>
+        <translation>Remover todos os downloads Usenet em &quot;%1&quot; e excluir seus arquivos?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove from Static</source>
+        <translation>Remover dos estáticos</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove the stored password for this download?</source>
+        <translation>Remover a senha salva deste download?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Requests</source>
+        <translation>Solicitações</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Resume</source>
+        <translation>Retomar</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Resume All</source>
+        <translation>Retomar tudo</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Search</source>
+        <translation>Busca</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Server</source>
+        <translation>Servidor</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Server Info</source>
+        <translation>Info do servidor</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Server List</source>
+        <translation>Lista de servidores</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Server Name</source>
+        <translation>Nome do servidor</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Session Received</source>
+        <translation>Recebido (sessão)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Session Sent</source>
+        <translation>Enviado (sessão)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Session Statistics</source>
+        <translation>Estatísticas da sessão</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Set Password…</source>
+        <translation>Definir senha…</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Shared</source>
+        <translation>Compartilhado</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Shared Files</source>
+        <translation>Arquivos compartilhados</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+0"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>Size</source>
+        <translation>Tamanho</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>Sources</source>
+        <translation>Fontes</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Speed</source>
+        <translation>Velocidade</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Speed Limits</source>
+        <translation>Limites de velocidade</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Statistics</source>
+        <translation>Estatísticas</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Status</source>
+        <translation>Status</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Status:</source>
+        <translation>Status:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Stop</source>
+        <translation>Parar</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>TCP Port</source>
+        <translation>Porta TCP</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>That did not work.</source>
+        <translation>Isso não funcionou.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>These could not be added: %1</source>
+        <translation>Não foi possível adicionar: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>This archive cannot be previewed.</source>
+        <translation>Este arquivo compactado não pode ser visualizado.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>This download is no longer in the queue.</source>
+        <translation>Este download não está mais na fila.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Total</source>
+        <translation>Total</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Total Size:</source>
+        <translation>Tamanho total:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Transfer</source>
+        <translation>Transferência</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Transferred</source>
+        <translation>Transferido</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Type</source>
+        <translation>Tipo</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>UDP Port</source>
+        <translation>Porta UDP</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Upload Speed</source>
+        <translation>Velocidade de upload</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1237"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>Uploads</source>
+        <translation>Uploads</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>Uptime</source>
+        <translation>Tempo ativo</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Usenet</source>
+        <translation>Usenet</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+483"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>Usenet engine unavailable</source>
+        <translation>Mecanismo Usenet indisponível</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>User</source>
+        <translation>Usuário</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>User Information</source>
+        <translation>Informações do usuário</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>User Name</source>
+        <translation>Nome de usuário</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Users</source>
+        <translation>Usuários</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Video (.avi .mkv ...)</source>
+        <translation>Vídeo (.avi .mkv ...)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>You have already downloaded %1 of these. Download them again?</source>
+        <translation>Você já baixou %1 deles. Baixar novamente?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>this download</source>
+        <translation>este download</translation>
     </message>
 </context>
 </TS>

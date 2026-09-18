@@ -601,8 +601,24 @@ void tst_UploadQueueStore::obfuscation_cryptFlagsAndKadVersionSurvive()
              "callback=true must be passed, or firewalled peers become unreachable");
     QCOMPARE(restored->kadVersion(), uint8(KADEMLIA_VERSION8_49b));
     QCOMPARE(restored->udpVer(), uint8(4));
-    QVERIFY2(restored->shouldReceiveCryptUDPPackets(),
-             "without kadVersion we would send plaintext UDP to a peer expecting obfuscation");
+
+    // Obfuscated UDP now follows MFC's rule: our own settings, a public IP and the peer's
+    // hash, with the Kad version out of it entirely (an ed2k-only peer asking for
+    // obfuscation used to be answered in the clear and drop the answer).
+    const bool savedSupported = thePrefs.cryptLayerSupported();
+    const bool savedRequested = thePrefs.cryptLayerRequested();
+    const uint32 savedPublicIP = theApp.publicIP();
+    thePrefs.setCryptLayerSupported(true);
+    thePrefs.setCryptLayerRequested(true);
+    theApp.setPublicIP(0x0A141E28);          // asymmetric, so a byte swap would show
+    const bool obfuscated = restored->shouldReceiveCryptUDPPackets();
+    const bool noPublicIP = (theApp.setPublicIP(0), restored->shouldReceiveCryptUDPPackets());
+    thePrefs.setCryptLayerSupported(savedSupported);
+    thePrefs.setCryptLayerRequested(savedRequested);
+    theApp.setPublicIP(savedPublicIP);
+
+    QVERIFY2(obfuscated, "restored crypt flags must still produce obfuscated UDP");
+    QVERIFY2(!noPublicIP, "without a public IP MFC sends plaintext");
     QVERIFY2(restored->hasValidHash(),
              "the user hash is the RC4 key seed for an obfuscated outgoing connect");
 }

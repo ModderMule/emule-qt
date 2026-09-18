@@ -55,7 +55,7 @@ enum class IpcMsgType : int {
     StopSearch           = 152,  ///< [searchID: int]
     RemoveSearch         = 153,  ///< [searchID: int]
     ClearAllSearches     = 154,  ///< []
-    DownloadSearchFile   = 155,  ///< [hash: string, fileName: string, fileSize: int64, link: string] — link wins if set
+    DownloadSearchFile   = 155,  ///< [hash: string, fileName: string, fileSize: int64, link: string, category: int] — link wins if set; category optional
     GetKnownTypes        = 156,  ///< [hashes: QCborArray of strings] → [types: QCborArray of ints]
     GetSharedFiles       = 160,
     SetSharedFilePriority = 161, ///< [hash: string, priority: int, isAuto: bool]
@@ -504,7 +504,7 @@ enum class IpcMsgType : int {
     /// decode them with countersFromCbor():
     /// { usenet: { session: UsenetCounters, cumulative: UsenetCounters,
     ///             current: { running, downRate (B/s wire), limitKb (0 = none),
-    ///                        activeConnections, openConnections,
+    ///                        activeConnections, openConnections, paused,
     ///                        queue: { count, downloading, queued, paused, checking,
     ///                                 postProcessing, failed, complete,
     ///                                 totalBytes, downloadedBytes, leftBytes } },
@@ -515,6 +515,23 @@ enum class IpcMsgType : int {
     ///                           overQuota> } ] },
     ///   indexer: { session: IndexerCounters, cumulative: IndexerCounters } }
     GetUsenetStats          = 738,
+
+    /// [itemId, fileIndices: [int], skipped: bool] -> [ok, error]. Leave files of
+    /// one release out of the download, or bring them back. The daemon widens a
+    /// request to the whole archive set and refuses par2 files, every payload file
+    /// at once, and releases already post-processing or complete.
+    SetUsenetFilesSkipped   = 739,
+
+    /// [paused: bool] -> [ok]. Pause the whole Usenet engine: nothing new starts,
+    /// articles in flight finish, and no item's status changes. Persisted as
+    /// `usenet.paused`; PushUsenetEngineState tells every client.
+    SetUsenetPaused         = 740,
+
+    /// [nzbBytes, name] -> [ok, {name, files: [{index, name, size, isPar2,
+    /// setKey}]}] or [false, error]. Parse an .nzb without queueing it, so the
+    /// Add NZB dialog can offer its files. `index` is what AddNzb's field 8 names;
+    /// `setKey` groups the volumes of one archive set, empty for other files.
+    InspectNzb              = 741,
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 
@@ -541,6 +558,7 @@ enum class IpcMsgType : int {
     PushKadSearchesChanged = 481,
     PushKnownClientsChanged = 490,
     PushChatMessage       = 500,  ///< [senderHash, senderName, message]
+    PushChatState         = 501,  ///< [friendHash, ChatConnectProgress] — dial progress
     PushFriendListChanged = 510,  ///< [] — friend list changed
     PushClientSharedFiles = 520,  ///< [clientHash, CborArray of files] — response to browse
     PushPortMapStatus     = 530,  ///< [{status, statusText, method, methodText, externalAddress}]
@@ -584,6 +602,9 @@ enum class IpcMsgType : int {
     /// Terminal outcome, broadcast **uncoalesced**: this is a transition, not a
     /// latest value, and a coalescing window would swallow it whole.
     PushUsenetItemFinished = 912,
+    /// [{paused: bool}] — the engine-wide pause changed. Uncoalesced: a
+    /// transition, and the tray and the toolbar both follow it.
+    PushUsenetEngineState  = 913,
 };
 
 /// What SetCategoryStatus should do to every download in the category.

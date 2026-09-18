@@ -8,6 +8,7 @@
 #include "webserver/WebTemplateEngine.h"
 
 #include "app/AppConfig.h"
+#include "app/TranslationRouter.h"
 #include "client/UpDownClient.h"
 #include "files/KnownFile.h"
 #include "files/PartFile.h"
@@ -16,6 +17,7 @@
 #include "friends/FriendList.h"
 #include "media/ContainerSniffer.h"
 #include "prefs/Preferences.h"
+#include "protocol/ED2KLink.h"
 #include "search/SearchFile.h"
 #include "search/SearchList.h"
 #include "search/SearchParams.h"
@@ -30,7 +32,10 @@
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 #include "utils/StringUtils.h"
+#include "utils/UsenetDisplay.h"
 
+#include <QCborArray>
+#include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDeadlineTimer>
@@ -44,6 +49,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLocale>
 #include <QMimeDatabase>
 #include <QPromise>
 #include <QRegularExpression>
@@ -58,6 +64,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 
 namespace eMule {
 
@@ -221,6 +228,31 @@ QHttpServerResponse jsonSuccess(const QJsonObject& data)
 QHttpServerResponse jsonSuccess(const QJsonArray& data)
 {
     return QHttpServerResponse(data);
+}
+
+/// An already-answered future, for routes that sometimes have to wait.
+QFuture<QHttpServerResponse> finishedResponse(QHttpServerResponse&& response)
+{
+    QPromise<QHttpServerResponse> promise;
+    QFuture<QHttpServerResponse> future = promise.future();
+    promise.start();
+    promise.addResult(std::move(response));
+    promise.finish();
+    return future;
+}
+
+/// A value for a template: element text or a quoted attribute. The engine never
+/// scans a value again, so escaping is all it takes.
+[[nodiscard]] QString htmlText(const QString& s)
+{
+    return WebTemplateEngine::htmlEscape(s);
+}
+
+/// `lang=` for an <html> element: "de-DE", or "en" for the source language.
+[[nodiscard]] QString htmlLangCode(const QString& code)
+{
+    return code.isEmpty() ? QStringLiteral("en")
+                          : QString(code).replace(QLatin1Char('_'), QLatin1Char('-'));
 }
 
 } // anonymous namespace
@@ -472,6 +504,30 @@ void WebServer::registerRoutes()
                 }
                 return QHttpServerResponse(QHttpServerResponse::StatusCode::NotFound);
             });
+
+        // The Usenet page talks JSON over its session rather than GET-and-render
+        // like the Transfer page, so a reload never repeats an action and a
+        // passphrase never lands in a URL.
+        m_server->route(QStringLiteral("/usenet/action"), QHttpServerRequest::Method::Post,
+            [this](const QHttpServerRequest& req) {
+                return handleWebUsenetAction(req);
+            });
+
+        m_server->route(QStringLiteral("/usenet/add"), QHttpServerRequest::Method::Post,
+            [this](const QHttpServerRequest& req) -> QFuture<QHttpServerResponse> {
+                const WebSessionCheck ses = webSession(QUrlQuery(req.query()));
+                const TranslationRouter::Scope language(m_translations, webLanguage(ses.id));
+                if (!ses.valid)
+                    return finishedResponse(jsonError(401, tr("Session expired — log in again")));
+                if (!ses.admin)
+                    return finishedResponse(jsonError(403, tr("Guests cannot add downloads")));
+                return handleUsenetAdd(req, /*restApi*/ false);
+            });
+
+        m_server->route(QStringLiteral("/usenet/entries"), QHttpServerRequest::Method::Get,
+            [this](const QHttpServerRequest& req) {
+                return handleWebUsenetEntries(req);
+            });
     }
 
     // --- Preview streaming (always available, uses stream token auth) ---
@@ -547,6 +603,75 @@ void WebServer::registerRoutes()
         [this](const QString& hash, const QHttpServerRequest& req) {
             if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
             return handleCancelDownload(hash);
+        });
+
+    // --- Usenet queue ---
+    // Literal paths before the <arg> ones, so "stats" is never taken for an item id.
+    m_server->route(QStringLiteral("/api/v1/usenet/stats"), QHttpServerRequest::Method::Get,
+        [this](const QHttpServerRequest& req) {
+            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
+            return handleRestUsenetStats();
+        });
+
+    m_server->route(QStringLiteral("/api/v1/usenet/pause"), QHttpServerRequest::Method::Post,
+        [this](const QHttpServerRequest& req) {
+            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
+            return handleUsenetEngineOp(true);
+        });
+
+    m_server->route(QStringLiteral("/api/v1/usenet/resume"), QHttpServerRequest::Method::Post,
+        [this](const QHttpServerRequest& req) {
+            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
+            return handleUsenetEngineOp(false);
+        });
+
+    m_server->route(QStringLiteral("/api/v1/usenet/categories/<arg>/<arg>"), QHttpServerRequest::Method::Post,
+        [this](const QString& category, const QString& op, const QHttpServerRequest& req) {
+            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
+            return handleRestUsenetCategoryOp(category, op);
+        });
+
+    m_server->route(QStringLiteral("/api/v1/usenet"), QHttpServerRequest::Method::Get,
+        [this](const QHttpServerRequest& req) {
+            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
+            return handleRestUsenetList(req);
+        });
+
+    m_server->route(QStringLiteral("/api/v1/usenet"), QHttpServerRequest::Method::Post,
+        [this](const QHttpServerRequest& req) -> QFuture<QHttpServerResponse> {
+            if (auto r = checkAuth(req.headers()); !r.ok)
+                return finishedResponse(std::move(r.response));
+            return handleUsenetAdd(req, /*restApi*/ true);
+        });
+
+    m_server->route(QStringLiteral("/api/v1/usenet/<arg>"), QHttpServerRequest::Method::Get,
+        [this](const QString& id, const QHttpServerRequest& req) {
+            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
+            return handleRestUsenetItem(id);
+        });
+
+    m_server->route(QStringLiteral("/api/v1/usenet/<arg>"), QHttpServerRequest::Method::Patch,
+        [this](const QString& id, const QHttpServerRequest& req) {
+            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
+            return handleRestUsenetPatch(id, req);
+        });
+
+    m_server->route(QStringLiteral("/api/v1/usenet/<arg>"), QHttpServerRequest::Method::Delete,
+        [this](const QString& id, const QHttpServerRequest& req) {
+            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
+            return handleRestUsenetDelete(id, req);
+        });
+
+    m_server->route(QStringLiteral("/api/v1/usenet/<arg>/<arg>/entries"), QHttpServerRequest::Method::Get,
+        [this](const QString& id, const QString& fileIndex, const QHttpServerRequest& req) {
+            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
+            return handleRestUsenetEntries(id, fileIndex);
+        });
+
+    m_server->route(QStringLiteral("/api/v1/usenet/<arg>/<arg>"), QHttpServerRequest::Method::Post,
+        [this](const QString& id, const QString& op, const QHttpServerRequest& req) {
+            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
+            return handleRestUsenetItemOp(id, op);
         });
 
     // --- Uploads ---
@@ -833,15 +958,6 @@ QHttpServerResponse WebServer::handlePreviewStream(const QString& hash, const QH
 QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
     const QString& itemId, const QString& fileIndexText, const QHttpServerRequest& req)
 {
-    const auto ready = [](QHttpServerResponse&& r) {
-        QPromise<QHttpServerResponse> p;
-        QFuture<QHttpServerResponse> f = p.future();
-        p.start();
-        p.addResult(std::move(r));
-        p.finish();
-        return f;
-    };
-
     // Same gate as the ED2K route: a per-process random token, not the REST API
     // key. Preview is served even with both web surfaces switched off, so it
     // cannot lean on either one's authentication.
@@ -849,16 +965,16 @@ QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
     const QString token = query.queryItemValue(QStringLiteral("token"));
     if (token.isEmpty() || token != m_streamToken) {
         logWarning(QStringLiteral("Usenet preview: 401 — invalid or missing stream token"));
-        return ready(jsonError(401, QStringLiteral("Invalid or missing stream token")));
+        return finishedResponse(jsonError(401, QStringLiteral("Invalid or missing stream token")));
     }
 
     if (!m_usenetStreamResolver)
-        return ready(jsonError(503, QStringLiteral("Usenet engine unavailable")));
+        return finishedResponse(jsonError(503, QStringLiteral("Usenet engine unavailable")));
 
     bool indexOk = false;
     const int fileIndex = fileIndexText.toInt(&indexOk);
     if (!indexOk || fileIndex < 0)
-        return ready(jsonError(400, QStringLiteral("Invalid file index")));
+        return finishedResponse(jsonError(400, QStringLiteral("Invalid file index")));
 
     // Which file inside the archive set. Absent means "the first playable one",
     // which is what every URL predating the chooser carries. A malformed value
@@ -869,7 +985,7 @@ QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
         bool entryOk = false;
         entryOrdinal = query.queryItemValue(QStringLiteral("entry")).toInt(&entryOk);
         if (!entryOk || entryOrdinal < 0)
-            return ready(jsonError(400, QStringLiteral("Invalid archive entry")));
+            return finishedResponse(jsonError(400, QStringLiteral("Invalid archive entry")));
     }
 
     // The request object does not outlive this call, so everything the deferred
@@ -897,7 +1013,7 @@ QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
     if (!first.found) {
         logWarning(QStringLiteral("Usenet preview: 404 — no file %1 of item %2")
                        .arg(fileIndex).arg(itemId));
-        return ready(jsonError(404, QStringLiteral("File not found")));
+        return finishedResponse(jsonError(404, QStringLiteral("File not found")));
     }
 
     // A compressed, solid or encrypted archive will never be mappable. Waiting
@@ -905,11 +1021,11 @@ QFuture<QHttpServerResponse> WebServer::handleUsenetPreviewStream(
     // reason says "not ever", which is what the user needs to know.
     if (!first.notSeekableReason.isEmpty()) {
         logWarning(QStringLiteral("Usenet preview: 406 — %1").arg(first.notSeekableReason));
-        return ready(jsonError(406, first.notSeekableReason));
+        return finishedResponse(jsonError(406, first.notSeekableReason));
     }
 
     if (first.availableEnd > wantStart) {
-        return ready(serveRange(first.pieces, first.fileName, first.totalSize,
+        return finishedResponse(serveRange(first.pieces, first.fileName, first.totalSize,
                                 first.availableEnd, rangeHeader));
     }
 
@@ -1193,16 +1309,18 @@ bool isBrowserPlayable(const QString& fileName)
 }
 
 /// One link back into these routes, with every value percent-encoded.
-QString incomingHref(const QString& path, const QString& token,
+QString incomingHref(const QString& path, const QString& token, const QString& lang,
                      const QString& key, const QString& value)
 {
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("token"), token);
+    if (!lang.isEmpty())
+        query.addQueryItem(QStringLiteral("lang"), lang);
     if (!value.isEmpty())
         query.addQueryItem(key, value);
 
     const QString href = path + QLatin1Char('?') + query.toString(QUrl::FullyEncoded);
-    return href.toHtmlEscaped();
+    return htmlText(href);
 }
 
 /// The `filetype_*` sprite suffix for a name — MFC _GetWebImageNameForFileType
@@ -1261,10 +1379,10 @@ QString webRatingTitle(const AbstractFile& f)
 {
     const uint32 rating = f.userRating(true);
     if (rating == 6)
-        return QStringLiteral("Looking for comments on Kad");
+        return WebServer::tr("Looking for comments on Kad");
     if (rating >= 1 && rating <= 5)
-        return QStringLiteral("Rating: %1").arg(ratingLabel(static_cast<int>(rating)));
-    return f.hasComment() ? QStringLiteral("Has comments") : QString{};
+        return WebServer::tr("Rating: %1").arg(ratingLabel(static_cast<int>(rating)));
+    return f.hasComment() ? WebServer::tr("Has comments") : QString{};
 }
 
 /// Shared head of both pages. Inline everything: with the web UI disabled there
@@ -1305,7 +1423,7 @@ QString pageHead(const QString& title, const QString& extraCss = {})
         "span.bad{display:inline-block;width:15px;height:15px;line-height:15px;"
         "text-align:center;border-radius:50%;background:#d93025;color:#fff;"
         "font-weight:700;font-size:11px;margin-right:6px;cursor:help}"
-        "%2</style></head><body>").arg(title.toHtmlEscaped(), extraCss);
+        "%2</style></head><body>").arg(htmlText(title), extraCss);
 }
 
 } // namespace
@@ -1320,6 +1438,13 @@ QHttpServerResponse WebServer::handleIncomingListing(const QHttpServerRequest& r
     const QUrlQuery query(req.query());
     const QString token = query.queryItemValue(QStringLiteral("token"));
 
+    // No session on a token route, so the web UI's pages name their language. Kept
+    // only when usable, and handed on to every link the page draws.
+    QString lang = query.queryItemValue(QStringLiteral("lang"));
+    if (!m_translations || !m_translations->isUsable(lang))
+        lang.clear();
+    const TranslationRouter::Scope language(m_translations, webLanguage({}, lang));
+
     // ?play= is the same route on purpose: the player page is one <video> tag and
     // a back link, not a surface of its own.
     const QString play = query.queryItemValue(QStringLiteral("play"), QUrl::FullyDecoded);
@@ -1330,7 +1455,7 @@ QHttpServerResponse WebServer::handleIncomingListing(const QHttpServerRequest& r
             return jsonError(404, QStringLiteral("File not found"));
         }
         return QHttpServerResponse(QByteArrayLiteral("text/html; charset=utf-8"),
-                                   renderIncomingPlayer(play, QFileInfo(abs).fileName(), token));
+                                   renderIncomingPlayer(play, QFileInfo(abs).fileName(), token, lang));
     }
 
     const QString rel = query.queryItemValue(QStringLiteral("path"), QUrl::FullyDecoded);
@@ -1346,7 +1471,7 @@ QHttpServerResponse WebServer::handleIncomingListing(const QHttpServerRequest& r
     }
 
     return QHttpServerResponse(QByteArrayLiteral("text/html; charset=utf-8"),
-                               renderIncomingListing(abs, rel, token));
+                               renderIncomingListing(abs, rel, token, lang));
 }
 
 void WebServer::handleIncomingStream(const QHttpServerRequest& req,
@@ -1653,22 +1778,22 @@ QString WebServer::ratingSpriteCss() const
 }
 
 QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString& relPath,
-                                            const QString& token) const
+                                            const QString& token, const QString& lang) const
 {
     // A category root is addressed as "!N/...", which is an implementation
     // detail the breadcrumb should not show — name the category instead.
     const IncomingRoot selected = splitIncomingPath(relPath);
     const QString rootLabel =
         selected.categoryIndex > 0 && m_preferences
-            ? QStringLiteral("Incoming/") + m_preferences->category(selected.categoryIndex).title
-            : QStringLiteral("Incoming");
+            ? tr("Incoming") + QLatin1Char('/') + m_preferences->category(selected.categoryIndex).title
+            : tr("Incoming");
     const QString here = selected.remainder.isEmpty()
                              ? rootLabel
                              : rootLabel + QLatin1Char('/') + selected.remainder;
     const QString spriteCss = ratingSpriteCss();
     QString html = pageHead(here, spriteCss);
 
-    html += QStringLiteral("<h1>%1</h1>").arg(here.toHtmlEscaped());
+    html += QStringLiteral("<h1>%1</h1>").arg(htmlText(here));
 
     const QFileInfoList entries = QDir(absDir).entryInfoList(
         QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot, QDir::DirsFirst | QDir::Name);
@@ -1687,7 +1812,8 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
     }
 
     if (entries.isEmpty() && categoryRoots.isEmpty() && relPath.isEmpty()) {
-        html += QStringLiteral("<p class=\"empty\">Nothing has finished downloading yet.</p>");
+        html += QStringLiteral("<p class=\"empty\">%1</p>")
+                    .arg(htmlText(tr("Nothing has finished downloading yet.")));
         html += QStringLiteral("</body></html>");
         return html.toUtf8();
     }
@@ -1718,16 +1844,16 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
         });
     }
 
-    html += QStringLiteral("<table><tr><th>Name</th><th>Size</th><th>Modified</th>"
-                           "<th></th></tr>");
+    html += QStringLiteral("<table><tr><th>%1</th><th>%2</th><th>%3</th><th></th></tr>")
+                .arg(htmlText(tr("Name")), htmlText(tr("Size")), htmlText(tr("Modified")));
 
     for (const auto& [index, title] : categoryRoots) {
         html += QStringLiteral("<tr><td><a href=\"%1\">%2/</a></td><td class=\"n\"></td>"
                                "<td class=\"n\"></td><td class=\"a\"></td></tr>")
-                    .arg(incomingHref(QStringLiteral("/api/v1/incoming"), token,
+                    .arg(incomingHref(QStringLiteral("/api/v1/incoming"), token, lang,
                                       QStringLiteral("path"),
                                       QStringLiteral("!%1").arg(index)),
-                         title.toHtmlEscaped());
+                         htmlText(title));
     }
 
     if (!relPath.isEmpty()) {
@@ -1737,7 +1863,7 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
         const QString up = cut < 0 ? QString{} : relPath.left(cut);
         html += QStringLiteral("<tr><td><a href=\"%1\">../</a></td><td></td><td></td>"
                                "<td></td></tr>")
-                    .arg(incomingHref(QStringLiteral("/api/v1/incoming"), token,
+                    .arg(incomingHref(QStringLiteral("/api/v1/incoming"), token, lang,
                                       QStringLiteral("path"), up));
     }
 
@@ -1750,15 +1876,16 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
         if (fi.isDir()) {
             html += QStringLiteral("<tr><td><a href=\"%1\">%2/</a></td><td class=\"n\"></td>"
                                    "<td class=\"n\">%3</td><td class=\"a\"></td></tr>")
-                        .arg(incomingHref(QStringLiteral("/api/v1/incoming"), token,
+                        .arg(incomingHref(QStringLiteral("/api/v1/incoming"), token, lang,
                                           QStringLiteral("path"), rel),
-                             name.toHtmlEscaped(), modified);
+                             htmlText(name), modified);
             continue;
         }
 
-        QString actions = QStringLiteral("<a href=\"%1\">Download</a>")
-                              .arg(incomingHref(QStringLiteral("/api/v1/incoming/download"),
-                                                token, QStringLiteral("file"), rel));
+        QString actions = QStringLiteral("<a href=\"%1\">%2</a>")
+                              .arg(incomingHref(QStringLiteral("/api/v1/incoming/download"), token, lang,
+                                                QStringLiteral("file"), rel),
+                                   htmlText(tr("Download")));
 
         // Video and audio get a second link, and it is always the player page --
         // never the raw stream URL. Whether the browser can decode the container
@@ -1768,9 +1895,10 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
         const ED2KFileType type = getED2KFileTypeID(name);
         const bool media = type == ED2KFileType::Video || type == ED2KFileType::Audio;
         if (media) {
-            actions += QStringLiteral("<a href=\"%1\">Play</a>")
-                           .arg(incomingHref(QStringLiteral("/api/v1/incoming"), token,
-                                             QStringLiteral("play"), rel));
+            actions += QStringLiteral("<a href=\"%1\">%2</a>")
+                           .arg(incomingHref(QStringLiteral("/api/v1/incoming"), token, lang,
+                                             QStringLiteral("play"), rel),
+                                htmlText(tr("Play")));
         }
 
         // Say it here rather than only on the player page. Finding out that a file is
@@ -1793,7 +1921,7 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
             check = checkFile(fi.absoluteFilePath(), name);
         QString marker;
         if (check.isSuspect()) {
-            const QString why = containerWarningText(check, name).toHtmlEscaped();
+            const QString why = htmlText(containerWarningText(check, name));
             marker = spriteCss.isEmpty()
                          // No sheet: fall back to the mark drawn in the page's own CSS.
                          ? QStringLiteral("<span class=\"bad\" title=\"%1\">!</span>").arg(why)
@@ -1810,13 +1938,13 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
                 rating = QStringLiteral("<span class=\"rm rm%1\" title=\"%2\"></span>")
                              .arg(cell == QLatin1String("search")
                                       ? QStringLiteral("7") : QString::number(cell.toInt() + 1),
-                                  webRatingTitle(*known).toHtmlEscaped());
+                                  htmlText(webRatingTitle(*known)));
             }
         }
 
         html += QStringLiteral("<tr><td>%1%2%3</td><td class=\"n\">%4</td><td class=\"n\">%5</td>"
                                "<td class=\"a\">%6</td></tr>")
-                    .arg(marker, rating, name.toHtmlEscaped(), formatByteSize(fi.size()), modified,
+                    .arg(marker, rating, htmlText(name), formatByteSize(fi.size()), modified,
                          actions);
     }
 
@@ -1825,11 +1953,11 @@ QByteArray WebServer::renderIncomingListing(const QString& absDir, const QString
 }
 
 QByteArray WebServer::renderIncomingPlayer(const QString& relPath, const QString& fileName,
-                                           const QString& token) const
+                                           const QString& token, const QString& lang) const
 {
     const qsizetype cut = relPath.lastIndexOf(QLatin1Char('/'));
     const QString folder = cut < 0 ? QString{} : relPath.left(cut);
-    const QString src = incomingHref(QStringLiteral("/api/v1/incoming/stream"), token,
+    const QString src = incomingHref(QStringLiteral("/api/v1/incoming/stream"), token, lang,
                                      QStringLiteral("file"), relPath);
     // A file whose magic contradicts its name decides its own element -- the fake
     // .wmv that prompted this is an MP3, and a <video> tag can only ever show a
@@ -1843,9 +1971,9 @@ QByteArray WebServer::renderIncomingPlayer(const QString& relPath, const QString
 
     QString html = pageHead(fileName);
     html += QStringLiteral("<h1><a href=\"%1\">&larr;</a> %2</h1>")
-                .arg(incomingHref(QStringLiteral("/api/v1/incoming"), token,
+                .arg(incomingHref(QStringLiteral("/api/v1/incoming"), token, lang,
                                   QStringLiteral("path"), folder),
-                     fileName.toHtmlEscaped());
+                     htmlText(fileName));
     html += QStringLiteral("<%1 controls autoplay src=\"%2\"></%1>")
                 .arg(audio ? QStringLiteral("audio") : QStringLiteral("video"), src);
 
@@ -1856,33 +1984,34 @@ QByteArray WebServer::renderIncomingPlayer(const QString& relPath, const QString
     // a file whose bytes are not what its name claims is fixed by nothing, and
     // sending someone to VLC for that one just wastes their time twice.
     const QString ext = QFileInfo(fileName).suffix().toLower();
+    // The sentences are translated and escaped whole; the markup goes in as arguments.
+    const auto strong = [](const QString& text) {
+        return QStringLiteral("<strong>%1</strong>").arg(htmlText(text));
+    };
     QString notice;
-    QString callToAction = QStringLiteral("Open this URL in VLC or another player:");
+    QString callToAction = htmlText(tr("Open this URL in VLC or another player:"));
     if (real.verdict == ContainerVerdict::WrongContainer) {
-        notice = QStringLiteral(
-                     "This file is named <strong>.%1</strong> but its contents are "
-                     "<strong>%2</strong>. The name is wrong — common for files off "
-                     "the ed2k network — so a player that trusts it finds no %3 and "
-                     "sits at 0:00. It is being served as its real type, so it may "
-                     "still play above.")
-                     .arg(ext.toHtmlEscaped(), real.actual.toHtmlEscaped(),
-                          real.expected.toHtmlEscaped());
+        notice = htmlText(tr("This file is named %1 but its contents are %2. The name is wrong "
+                             "— common for files off the ed2k network — so a player that "
+                             "trusts it finds no %3 and sits at 0:00. It is being served as "
+                             "its real type, so it may still play above."))
+                     .arg(strong(QLatin1Char('.') + ext), strong(real.actual),
+                          htmlText(real.expected));
     } else if (real.verdict == ContainerVerdict::NoKnownContainer) {
         // The signature its extension requires is missing and nothing else
         // matches, which is what a fake usually looks like from here. Say that
         // plainly: pointing this one at VLC only wastes the trip twice.
-        notice = QStringLiteral(
-                     "This file is named <strong>.%1</strong> but does not start with "
-                     "the %2 signature every one of them has, and its contents match no "
-                     "media container we recognise. It is very likely a fake or a "
-                     "corrupt download — no player will get anything out of it.")
-                     .arg(ext.toHtmlEscaped(), real.expected.toHtmlEscaped());
+        notice = htmlText(tr("This file is named %1 but does not start with the %2 signature "
+                             "every one of them has, and its contents match no media container "
+                             "we recognise. It is very likely a fake or a corrupt download — no "
+                             "player will get anything out of it."))
+                     .arg(strong(QLatin1Char('.') + ext), htmlText(real.expected));
         // Not "open this in VLC": we just said nothing will play it, and sending
         // someone off to prove that for themselves is how this bug got reported.
-        callToAction = QStringLiteral("The raw URL, if you want to look for yourself:");
+        callToAction = htmlText(tr("The raw URL, if you want to look for yourself:"));
     } else if (!isBrowserPlayable(fileName)) {
-        notice = QStringLiteral("Your browser probably cannot decode <strong>.%1</strong>.")
-                     .arg(ext.toHtmlEscaped());
+        notice = htmlText(tr("Your browser probably cannot decode %1."))
+                     .arg(strong(QLatin1Char('.') + ext));
     }
 
     if (!notice.isEmpty()) {
@@ -1890,7 +2019,7 @@ QByteArray WebServer::renderIncomingPlayer(const QString& relPath, const QString
             "<div class=\"warn\"><p>%1 %3</p>"
             "<form onsubmit=\"return false\">"
             "<input id=\"u\" readonly value=\"%2\">"
-            "<button id=\"c\">Copy</button></form></div>"
+            "<button id=\"c\">%4</button></form></div>"
             // location.origin rather than a URL built on the server: the daemon
             // does not reliably know the scheme, host or port it was reached
             // through, and the browser does.
@@ -1903,14 +2032,16 @@ QByteArray WebServer::renderIncomingPlayer(const QString& relPath, const QString
             // localhost, which is the common case for a core on the LAN.
             "if(navigator.clipboard)navigator.clipboard.writeText(i.value);"
             "else document.execCommand('copy');"
-            "this.textContent='Copied';"
+            "this.textContent='%5';"
             "};"
-            "</script>").arg(notice, src, callToAction);
+            "</script>").arg(notice, src, callToAction, htmlText(tr("Copy")),
+                             WebTemplateEngine::jsEscape(tr("Copied")));
     }
 
-    html += QStringLiteral("<p><a href=\"%1\">Download this file</a></p>")
-                .arg(incomingHref(QStringLiteral("/api/v1/incoming/download"), token,
-                                  QStringLiteral("file"), relPath));
+    html += QStringLiteral("<p><a href=\"%1\">%2</a></p>")
+                .arg(incomingHref(QStringLiteral("/api/v1/incoming/download"), token, lang,
+                                  QStringLiteral("file"), relPath),
+                     htmlText(tr("Download this file")));
     html += QStringLiteral("</body></html>");
     return html.toUtf8();
 }
@@ -2221,6 +2352,9 @@ QHttpServerResponse WebServer::handleLogin(const QHttpServerRequest& request)
             QByteArrayLiteral("Web interface not configured"),
             QHttpServerResponse::StatusCode::InternalServerError);
 
+    // No session yet, so the login page speaks the app's language.
+    const TranslationRouter::Scope language(m_translations, webLanguage({}));
+
     // Parse form body: w=password&p=<password>
     const QUrlQuery query(QString::fromUtf8(request.body()));
     const QString password = query.queryItemValue(QStringLiteral("p"));
@@ -2228,31 +2362,12 @@ QHttpServerResponse WebServer::handleLogin(const QHttpServerRequest& request)
     // No admin password configured — deny login with clear message
     if (m_config.adminPasswordHash.isEmpty()
         && !(m_config.guestEnabled && !m_config.guestPasswordHash.isEmpty())) {
-        QHash<QString, QString> vars;
-        vars[QStringLiteral("CharSet")] = QStringLiteral("UTF-8");
-        vars[QStringLiteral("eMuleAppName")] = QStringLiteral("eMule");
-        vars[QStringLiteral("version")] = QString(kAppVersion);
-        vars[QStringLiteral("WebControl")] = QStringLiteral("Web Control Panel");
-        vars[QStringLiteral("FailedLogin")] = QStringLiteral(
-            "<p class=\"failed\">Access denied &mdash; no password configured. "
-            "Set a password in Options &rarr; Web Interface.</p>");
-        const auto html = WebTemplateEngine::substitute(
-            m_templateEngine->section(QStringLiteral("LOGIN")), vars);
-        return QHttpServerResponse(QByteArrayLiteral("text/html"), html.toUtf8());
+        return loginPage(QStringLiteral("<p class=\"failed\">%1</p>").arg(htmlText(
+            tr("Access denied — no password configured. Set a password in Options → Web Interface."))));
     }
 
-    if (password.isEmpty()) {
-        // Show login page with no error
-        QHash<QString, QString> vars;
-        vars[QStringLiteral("CharSet")] = QStringLiteral("UTF-8");
-        vars[QStringLiteral("eMuleAppName")] = QStringLiteral("eMule");
-        vars[QStringLiteral("version")] = QString(kAppVersion);
-        vars[QStringLiteral("WebControl")] = QStringLiteral("Web Control Panel");
-        vars[QStringLiteral("FailedLogin")] = QString();
-        const auto html = WebTemplateEngine::substitute(
-            m_templateEngine->section(QStringLiteral("LOGIN")), vars);
-        return QHttpServerResponse(QByteArrayLiteral("text/html"), html.toUtf8());
-    }
+    if (password.isEmpty())
+        return loginPage({});
 
     // Hash the password and attempt login
     const QByteArray passwordHash = QCryptographicHash::hash(
@@ -2265,16 +2380,8 @@ QHttpServerResponse WebServer::handleLogin(const QHttpServerRequest& request)
         m_config.guestEnabled);
 
     if (sessionId.isEmpty()) {
-        // Failed login — show login page with error
-        QHash<QString, QString> vars;
-        vars[QStringLiteral("CharSet")] = QStringLiteral("UTF-8");
-        vars[QStringLiteral("eMuleAppName")] = QStringLiteral("eMule");
-        vars[QStringLiteral("version")] = QString(kAppVersion);
-        vars[QStringLiteral("WebControl")] = QStringLiteral("Web Control Panel");
-        vars[QStringLiteral("FailedLogin")] = QStringLiteral("<p class=\"failed\">Login failed</p>");
-        const auto html = WebTemplateEngine::substitute(
-            m_templateEngine->section(QStringLiteral("LOGIN")), vars);
-        return QHttpServerResponse(QByteArrayLiteral("text/html"), html.toUtf8());
+        return loginPage(
+            QStringLiteral("<p class=\"failed\">%1</p>").arg(htmlText(tr("Login failed"))));
     }
 
     // Redirect to main page with session
@@ -2289,21 +2396,11 @@ QHttpServerResponse WebServer::handleLogin(const QHttpServerRequest& request)
 
 QHttpServerResponse WebServer::handlePage(const QHttpServerRequest& request)
 {
-    if (!m_templateEngine || !m_templateEngine->isValid() || !m_sessionManager) {
-        // No template loaded — show simple login or error
-        QHash<QString, QString> vars;
-        vars[QStringLiteral("CharSet")] = QStringLiteral("UTF-8");
-        vars[QStringLiteral("eMuleAppName")] = QStringLiteral("eMule");
-        vars[QStringLiteral("version")] = QString(kAppVersion);
-        vars[QStringLiteral("WebControl")] = QStringLiteral("Web Control Panel");
-        vars[QStringLiteral("FailedLogin")] = QString();
-        const QString loginTmpl = m_templateEngine ? m_templateEngine->section(QStringLiteral("LOGIN")) : QString();
-        if (loginTmpl.isEmpty())
-            return QHttpServerResponse(QByteArrayLiteral("text/html"),
-                QStringLiteral("<html><body><h1>eMule Web Interface</h1><p>Template not loaded.</p></body></html>").toUtf8());
-        const auto html = WebTemplateEngine::substitute(loginTmpl, vars);
-        return QHttpServerResponse(QByteArrayLiteral("text/html"), html.toUtf8());
-    }
+    // Until a session says otherwise, the app's language.
+    const TranslationRouter::Scope appLanguage(m_translations, webLanguage({}));
+
+    if (!m_templateEngine || !m_templateEngine->isValid() || !m_sessionManager)
+        return loginPage({});
 
     const QUrlQuery query(request.url());
     const QString ses = query.queryItemValue(QStringLiteral("ses"));
@@ -2313,36 +2410,44 @@ QHttpServerResponse WebServer::handlePage(const QHttpServerRequest& request)
     if (page == QStringLiteral("logout")) {
         if (!ses.isEmpty())
             m_sessionManager->logout(ses);
-        QHash<QString, QString> vars;
-        vars[QStringLiteral("CharSet")] = QStringLiteral("UTF-8");
-        vars[QStringLiteral("eMuleAppName")] = QStringLiteral("eMule");
-        vars[QStringLiteral("version")] = QString(kAppVersion);
-        vars[QStringLiteral("WebControl")] = QStringLiteral("Web Control Panel");
-        vars[QStringLiteral("FailedLogin")] = QString();
-        const auto html = WebTemplateEngine::substitute(
-            m_templateEngine->section(QStringLiteral("LOGIN")), vars);
-        return QHttpServerResponse(QByteArrayLiteral("text/html"), html.toUtf8());
+        return loginPage({});
     }
 
     // Validate session
-    if (ses.isEmpty() || !m_sessionManager->isValid(ses)) {
-        QHash<QString, QString> vars;
-        vars[QStringLiteral("CharSet")] = QStringLiteral("UTF-8");
-        vars[QStringLiteral("eMuleAppName")] = QStringLiteral("eMule");
-        vars[QStringLiteral("version")] = QString(kAppVersion);
-        vars[QStringLiteral("WebControl")] = QStringLiteral("Web Control Panel");
-        vars[QStringLiteral("FailedLogin")] = QString();
-        const auto html = WebTemplateEngine::substitute(
-            m_templateEngine->section(QStringLiteral("LOGIN")), vars);
-        return QHttpServerResponse(QByteArrayLiteral("text/html"), html.toUtf8());
+    if (ses.isEmpty() || !m_sessionManager->isValid(ses))
+        return loginPage({});
+
+    // The header's language menu, guests included. Idempotent, so a reload that
+    // repeats it is harmless; empty follows the app again.
+    if (query.hasQueryItem(QStringLiteral("setlang"))) {
+        const QString code = query.queryItemValue(QStringLiteral("setlang"));
+        if (code.isEmpty() || (m_translations && m_translations->isUsable(code)))
+            m_sessionManager->setLanguage(ses, code);
     }
+    const TranslationRouter::Scope language(m_translations, webLanguage(ses));
 
     // Dispatch actions before rendering (admin only)
     const QString activePage = page.isEmpty() ? QStringLiteral("transfer") : page;
     if (m_sessionManager->isAdmin(ses))
         dispatchActions(query, activePage);
 
-    return renderPage(activePage, ses);
+    // The Usenet page polls these instead of reloading, which keeps its
+    // selection, expanded rows and scroll position.
+    if (activePage == QStringLiteral("usenet")) {
+        const QString part = query.queryItemValue(QStringLiteral("part"));
+        if (part == QStringLiteral("list")) {
+            return QHttpServerResponse(QByteArrayLiteral("text/html"),
+                                       buildUsenetList(ses, query).toUtf8());
+        }
+        if (part == QStringLiteral("details")) {
+            return QHttpServerResponse(
+                QByteArrayLiteral("text/html"),
+                buildUsenetDetails(ses, query.queryItemValue(QStringLiteral("id"), QUrl::FullyDecoded))
+                    .toUtf8());
+        }
+    }
+
+    return renderPage(activePage, ses, query);
 }
 
 // ---------------------------------------------------------------------------
@@ -2471,7 +2576,8 @@ void WebServer::dispatchActions(const QUrlQuery& query, const QString& page)
         m_downloadQueue->addDownloadFromED2KLink(ed2k, QString());
 }
 
-QHttpServerResponse WebServer::renderPage(const QString& page, const QString& sessionId)
+QHttpServerResponse WebServer::renderPage(const QString& page, const QString& sessionId,
+                                          const QUrlQuery& query)
 {
     const bool isAdmin = m_sessionManager->isAdmin(sessionId);
 
@@ -2480,14 +2586,16 @@ QHttpServerResponse WebServer::renderPage(const QString& page, const QString& se
     headerVars[QStringLiteral("CharSet")] = QStringLiteral("UTF-8");
     headerVars[QStringLiteral("eMuleAppName")] = QStringLiteral("eMule");
     headerVars[QStringLiteral("version")] = QString(kAppVersion);
-    headerVars[QStringLiteral("WebControl")] = QStringLiteral("Web Control Panel");
+    headerVars[QStringLiteral("WebControl")] = htmlText(tr("Web Control Panel"));
     headerVars[QStringLiteral("Session")] = sessionId;
     headerVars[QStringLiteral("ses")] = sessionId;
+    headerVars[QStringLiteral("HtmlLang")] = htmlText(htmlLangCode(webLanguage(sessionId)));
+    headerVars[QStringLiteral("LanguageOptions")] = languageOptions(sessionId);
 
     // Connection status
     if (m_serverConnect) {
-        headerVars[QStringLiteral("ServerName")] = m_serverConnect->currentServer()
-            ? m_serverConnect->currentServer()->name() : QStringLiteral("Not connected");
+        headerVars[QStringLiteral("ServerName")] = htmlText(m_serverConnect->currentServer()
+            ? m_serverConnect->currentServer()->name() : tr("Not connected"));
         headerVars[QStringLiteral("Connected")] = m_serverConnect->isConnected()
             ? QStringLiteral("1") : QStringLiteral("0");
     }
@@ -2515,7 +2623,8 @@ QHttpServerResponse WebServer::renderPage(const QString& page, const QString& se
         QStringLiteral("transfer"), QStringLiteral("server"), QStringLiteral("search"),
         QStringLiteral("shared"), QStringLiteral("stats"), QStringLiteral("graphs"),
         QStringLiteral("options"), QStringLiteral("sinfo"), QStringLiteral("log"),
-        QStringLiteral("debuglog"), QStringLiteral("kad"), QStringLiteral("myinfo")
+        QStringLiteral("debuglog"), QStringLiteral("kad"), QStringLiteral("myinfo"),
+        QStringLiteral("usenet")
     };
     for (const auto& p : pages) {
         headerVars[QStringLiteral("Page_") + p] = (p == page)
@@ -2548,6 +2657,8 @@ QHttpServerResponse WebServer::renderPage(const QString& page, const QString& se
         content = buildKadPage(sessionId);
     else if (page == QStringLiteral("myinfo"))
         content = buildMyInfoPage();
+    else if (page == QStringLiteral("usenet"))
+        content = buildUsenetPage(isAdmin, sessionId, query);
     else
         content = buildTransferPage(isAdmin, sessionId);
 
@@ -2556,7 +2667,7 @@ QHttpServerResponse WebServer::renderPage(const QString& page, const QString& se
         m_templateEngine->section(QStringLiteral("HEADER_STYLESHEET"));
     const QString header = WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("HEADER")), headerVars);
-    const QString footer = m_templateEngine->section(QStringLiteral("FOOTER"));
+    const QString footer = WebTemplateEngine::substitute(m_templateEngine->section(QStringLiteral("FOOTER")));
 
     const QString fullPage = header + content + footer;
     return QHttpServerResponse(QByteArrayLiteral("text/html"), fullPage.toUtf8());
@@ -2610,20 +2721,20 @@ QString WebServer::buildTransferPage(bool isAdmin, const QString& sessionId)
             lineVars[QStringLiteral("Session")] = sessionId;
             // The engine substitutes raw, so anything user-supplied has to be
             // escaped here or a file named with a "<" injects markup.
-            lineVars[QStringLiteral("DownloadFileName")] = file->fileName().toHtmlEscaped();
+            lineVars[QStringLiteral("DownloadFileName")] = htmlText(file->fileName());
             lineVars[QStringLiteral("DownloadFileType")] = webFileTypeToken(file->fileName());
             lineVars[QStringLiteral("DownloadCommentIcon")] = webCommentToken(*file);
             lineVars[QStringLiteral("DownloadRating")] =
                 webRatingToken(*file, m_preferences && m_preferences->indicateRatings());
             lineVars[QStringLiteral("DownloadRatingTitle")] =
-                webRatingTitle(*file).toHtmlEscaped();
+                htmlText(webRatingTitle(*file));
             // The download list is tens of files and the verdict is cached after the
             // first look, so this one may read. The share cannot — see the shared page.
             const ContainerCheck& cc = file->containerCheck();
             lineVars[QStringLiteral("DownloadFake")] =
                 cc.isSuspect() ? QStringLiteral("fake") : QStringLiteral("none");
             lineVars[QStringLiteral("DownloadFakeTitle")] =
-                containerWarningText(cc, file->fileName()).toHtmlEscaped();
+                htmlText(containerWarningText(cc, file->fileName()));
             lineVars[QStringLiteral("DownloadFileSize")] = formatByteSize(file->fileSize());
             lineVars[QStringLiteral("DownloadFileHash")] = md4str(file->fileHash());
             lineVars[QStringLiteral("DownloadCompleted")] = formatByteSize(file->completedSize());
@@ -2687,10 +2798,10 @@ QString WebServer::buildTransferPage(bool isAdmin, const QString& sessionId)
         int upIndex = 0;
         m_uploadQueue->forEachUploading([&](UpDownClient* client) {
             QHash<QString, QString> lineVars;
-            lineVars[QStringLiteral("1")] = client->userName().toHtmlEscaped();
-            lineVars[QStringLiteral("ClientSoftV")] = client->clientSoftwareStr().toHtmlEscaped();
+            lineVars[QStringLiteral("1")] = htmlText(client->userName());
+            lineVars[QStringLiteral("ClientSoftV")] = htmlText(client->clientSoftwareStr());
             lineVars[QStringLiteral("2")] = client->uploadFile()
-                ? client->uploadFile()->fileName().toHtmlEscaped() : QStringLiteral("?");
+                ? htmlText(client->uploadFile()->fileName()) : QStringLiteral("?");
 
             const uint64 transferred = client->sessionUp();
             const uint32 delay = client->getUpStartTimeDelay();
@@ -2719,7 +2830,7 @@ QString WebServer::buildTransferPage(bool isAdmin, const QString& sessionId)
             lineVars[QStringLiteral("ClientExtra")] = QStringLiteral("none");
             lineVars[QStringLiteral("UserHash")] = md4str(client->userHash());
             lineVars[QStringLiteral("FileInfo")] = client->uploadFile()
-                ? client->uploadFile()->fileName().toHtmlEscaped() : QString();
+                ? htmlText(client->uploadFile()->fileName()) : QString();
             lineVars[QStringLiteral("admin")] = isAdmin ? QStringLiteral("admin") : QString();
             lineVars[QStringLiteral("UploadIndex")] = QString::number(upIndex++);
 
@@ -2760,10 +2871,11 @@ QString WebServer::buildServerListPage(bool /*isAdmin*/, const QString& sessionI
         for (const auto& srv : m_serverList->servers()) {
             QHash<QString, QString> lineVars;
             lineVars[QStringLiteral("Session")] = sessionId;
-            lineVars[QStringLiteral("ServerName")] = srv->name();
-            lineVars[QStringLiteral("ServerAddr")] = srv->address();
+            // All three come from the servers themselves.
+            lineVars[QStringLiteral("ServerName")] = htmlText(srv->name());
+            lineVars[QStringLiteral("ServerAddr")] = htmlText(srv->address());
             lineVars[QStringLiteral("ServerPort")] = QString::number(srv->port());
-            lineVars[QStringLiteral("ServerDescription")] = srv->description();
+            lineVars[QStringLiteral("ServerDescription")] = htmlText(srv->description());
             lineVars[QStringLiteral("ServerPing")] = QString::number(srv->ping());
             lineVars[QStringLiteral("ServerUsers")] = QString::number(srv->users());
             lineVars[QStringLiteral("ServerFiles")] = QString::number(srv->files());
@@ -2771,6 +2883,8 @@ QString WebServer::buildServerListPage(bool /*isAdmin*/, const QString& sessionI
             bool isConnected = m_serverConnect && m_serverConnect->currentServer() == srv.get();
             lineVars[QStringLiteral("ServerStatus")] = isConnected
                 ? QStringLiteral("connected") : QStringLiteral("disconnected");
+            lineVars[QStringLiteral("ServerStatusText")] =
+                htmlText(isConnected ? tr("Connected") : tr("Disconnected"));
 
             serverLines += WebTemplateEngine::substitute(lineTmpl, lineVars);
         }
@@ -2797,35 +2911,33 @@ QString WebServer::buildSharedFilesPage(bool /*isAdmin*/, const QString& session
         m_sharedFiles->forEachFile([&](KnownFile* file) {
             QHash<QString, QString> lineVars;
             lineVars[QStringLiteral("Session")] = sessionId;
-            lineVars[QStringLiteral("SharedFileName")] = file->fileName().toHtmlEscaped();
+            lineVars[QStringLiteral("SharedFileName")] = htmlText(file->fileName());
             lineVars[QStringLiteral("SharedFileType")] = webFileTypeToken(file->fileName());
             lineVars[QStringLiteral("SharedCommentIcon")] = webCommentToken(*file);
             lineVars[QStringLiteral("SharedRating")] =
                 webRatingToken(*file, m_preferences && m_preferences->indicateRatings());
             lineVars[QStringLiteral("SharedRatingTitle")] =
-                webRatingTitle(*file).toHtmlEscaped();
+                htmlText(webRatingTitle(*file));
             // Only what the daemon's background sweep has settled: this walks the whole
             // share, so it may not open files (SharedFileList::warmContainerChecks).
             const ContainerCheck& cc = file->containerCheckIfResolved();
             lineVars[QStringLiteral("SharedFake")] =
                 cc.isSuspect() ? QStringLiteral("fake") : QStringLiteral("none");
             lineVars[QStringLiteral("SharedFakeTitle")] =
-                containerWarningText(cc, file->fileName()).toHtmlEscaped();
+                htmlText(containerWarningText(cc, file->fileName()));
             lineVars[QStringLiteral("SharedFileSize")] = formatByteSize(file->fileSize());
             lineVars[QStringLiteral("SharedFileHash")] = md4str(file->fileHash());
             lineVars[QStringLiteral("SharedRequests")] = QString::number(file->statistic.requests());
             lineVars[QStringLiteral("SharedAccepted")] = QString::number(file->statistic.accepts());
             lineVars[QStringLiteral("SharedTransferred")] = formatByteSize(file->statistic.transferred());
             lineVars[QStringLiteral("SharedPriority")] = QString::number(file->upPriority());
-            // ED2K link for Copy ED2K Link context menu
-            // Escape single quotes for JS string embedding in oncontextmenu attr
-            QString safeName = file->fileName();
-            safeName.replace(u'\'', QStringLiteral("\\'"));
-            safeName.replace(u'&', QStringLiteral("&amp;"));
-            lineVars[QStringLiteral("SharedED2kLink")] = QStringLiteral("ed2k://|file|%1|%2|%3|/")
-                .arg(safeName)
-                .arg(file->fileSize())
-                .arg(md4str(file->fileHash()));
+            // For Copy ED2K Link. A data attribute, so the name never lands in a
+            // script literal, and the core's own builder encodes it.
+            ED2KFileLink link;
+            link.name = file->fileName();
+            link.size = file->fileSize();
+            std::memcpy(link.hash.data(), file->fileHash(), link.hash.size());
+            lineVars[QStringLiteral("SharedED2kLink")] = htmlText(link.toLink());
             sharedLines += WebTemplateEngine::substitute(lineTmpl, lineVars);
         });
     }
@@ -2846,7 +2958,7 @@ QString WebServer::buildStatisticsPage()
         vars[QStringLiteral("SessionReceived")] = formatByteSize(m_statistics->sessionReceivedBytes());
         vars[QStringLiteral("SessionSent")] = formatByteSize(m_statistics->sessionSentBytes());
         vars[QStringLiteral("Reconnects")] = QString::number(m_statistics->reconnects());
-        vars[QStringLiteral("Uptime")] = QString::number(m_statistics->uptimeSecs());
+        vars[QStringLiteral("Uptime")] = formatDuration(std::chrono::seconds(m_statistics->uptimeSecs()));
     }
     return WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("STATS")), vars);
@@ -2969,11 +3081,11 @@ QString WebServer::buildGraphsPage()
         std::chrono::seconds(static_cast<int64_t>(interval > 0 ? interval : 3)
                              * static_cast<int64_t>(kWebGraphWidth)));
 
-    vars[QStringLiteral("TxtDownload")]    = QStringLiteral("Downloads");
-    vars[QStringLiteral("TxtUpload")]      = QStringLiteral("Uploads");
-    vars[QStringLiteral("TxtConnections")] = QStringLiteral("Active Connections");
-    vars[QStringLiteral("TxtTime")]        = QStringLiteral("Time");
-    vars[QStringLiteral("KByteSec")]       = QStringLiteral("KB/s");
+    vars[QStringLiteral("TxtDownload")]    = htmlText(tr("Downloads"));
+    vars[QStringLiteral("TxtUpload")]      = htmlText(tr("Uploads"));
+    vars[QStringLiteral("TxtConnections")] = htmlText(tr("Active Connections"));
+    vars[QStringLiteral("TxtTime")]        = htmlText(tr("Time"));
+    vars[QStringLiteral("KByteSec")]       = htmlText(tr("KB/s"));
 
     return WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("GRAPHS")), vars);
@@ -2983,7 +3095,7 @@ QString WebServer::buildPreferencesPage(bool /*isAdmin*/)
 {
     QHash<QString, QString> vars;
     if (m_preferences) {
-        vars[QStringLiteral("Nick")] = m_preferences->nick();
+        vars[QStringLiteral("Nick")] = htmlText(m_preferences->nick());
         vars[QStringLiteral("MaxUpload")] = QString::number(m_preferences->maxUpload());
         vars[QStringLiteral("MaxDownload")] = QString::number(m_preferences->maxDownload());
         vars[QStringLiteral("Port")] = QString::number(m_preferences->port());
@@ -2997,27 +3109,32 @@ QString WebServer::buildServerInfoPage()
 {
     QHash<QString, QString> vars;
 
+    QString info;
     if (m_serverConnect && m_serverConnect->isConnected()) {
-        Server* srv = m_serverConnect->currentServer();
-        QString info;
-        if (srv) {
-            info += QStringLiteral("Connected to: %1 (%2:%3)\n")
-                .arg(srv->name(), srv->address()).arg(srv->port());
-            info += QStringLiteral("Client ID: %1 (%2)\n")
-                .arg(m_serverConnect->clientID())
-                .arg(m_serverConnect->isLowID() ? QStringLiteral("LowID") : QStringLiteral("HighID"));
-            info += QStringLiteral("Users: %1 | Files: %2\n").arg(srv->users()).arg(srv->files());
+        if (const Server* srv = m_serverConnect->currentServer()) {
+            // One arg() per line: a server name holding "%2" has to stay text.
+            info += tr("Connected to: %1 (%2:%3)")
+                        .arg(srv->name(), srv->address(), QString::number(srv->port()))
+                    + QLatin1Char('\n');
+            info += tr("Client ID: %1 (%2)")
+                        .arg(QString::number(m_serverConnect->clientID()),
+                             m_serverConnect->isLowID() ? tr("LowID") : tr("HighID"))
+                    + QLatin1Char('\n');
+            info += tr("Users: %1 | Files: %2")
+                        .arg(QString::number(srv->users()), QString::number(srv->files()))
+                    + QLatin1Char('\n');
             if (!srv->description().isEmpty())
-                info += QStringLiteral("Description: %1\n").arg(srv->description());
+                info += tr("Description: %1").arg(srv->description()) + QLatin1Char('\n');
             if (srv->ping() > 0)
-                info += QStringLiteral("Ping: %1 ms\n").arg(srv->ping());
+                info += tr("Ping: %1 ms").arg(QString::number(srv->ping())) + QLatin1Char('\n');
         }
-        vars[QStringLiteral("ServerInfo")] = info;
     } else {
-        vars[QStringLiteral("ServerInfo")] = m_serverConnect && m_serverConnect->isConnecting()
-            ? QStringLiteral("Connecting...")
-            : QStringLiteral("Not connected to any server");
+        info = m_serverConnect && m_serverConnect->isConnecting()
+            ? tr("Connecting...")
+            : tr("Not connected to any server");
     }
+    // Server-supplied text, into a <pre>.
+    vars[QStringLiteral("ServerInfo")] = htmlText(info);
 
     return WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("SERVERINFO")), vars);
@@ -3026,7 +3143,8 @@ QString WebServer::buildServerInfoPage()
 QString WebServer::buildLogPage()
 {
     QHash<QString, QString> vars;
-    vars[QStringLiteral("Log")] = m_logProvider ? m_logProvider() : QString();
+    // Log lines quote peers, servers and file names.
+    vars[QStringLiteral("Log")] = htmlText(m_logProvider ? m_logProvider() : QString());
     return WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("LOG")), vars);
 }
@@ -3034,7 +3152,7 @@ QString WebServer::buildLogPage()
 QString WebServer::buildDebugLogPage()
 {
     QHash<QString, QString> vars;
-    vars[QStringLiteral("DebugLog")] = m_logProvider ? m_logProvider() : QString();
+    vars[QStringLiteral("DebugLog")] = htmlText(m_logProvider ? m_logProvider() : QString());
     return WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("DEBUGLOG")), vars);
 }
@@ -3047,13 +3165,13 @@ QString WebServer::buildKadPage(const QString& sessionId)
     QString kadStatus;
     if (auto* kadInst = kad::Kademlia::instance()) {
         if (kadInst->isRunning())
-            kadStatus = QStringLiteral("Running");
+            kadStatus = tr("Running");
         else
-            kadStatus = QStringLiteral("Disconnected");
+            kadStatus = tr("Disconnected");
     } else {
-        kadStatus = QStringLiteral("Not available");
+        kadStatus = tr("Not available");
     }
-    vars[QStringLiteral("KadStatus")] = kadStatus;
+    vars[QStringLiteral("KadStatus")] = htmlText(kadStatus);
 
     return WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("KADDLG")), vars);
@@ -3063,7 +3181,7 @@ QString WebServer::buildMyInfoPage()
 {
     QHash<QString, QString> vars;
     if (m_preferences) {
-        vars[QStringLiteral("Nick")] = m_preferences->nick();
+        vars[QStringLiteral("Nick")] = htmlText(m_preferences->nick());
     }
     return WebTemplateEngine::substitute(
         m_templateEngine->section(QStringLiteral("MYINFO")), vars);
@@ -3132,6 +3250,1202 @@ QByteArray WebServer::gzipCompress(const QByteArray& data)
     appendLE32(static_cast<quint32>(data.size()));
 
     return gzip;
+}
+
+// ---------------------------------------------------------------------------
+// Usenet queue — shared by the REST API and the web UI
+//
+// Read through UsenetWebBackend, which DaemonApp installs: core may not name the
+// Usenet module. Rows are the IPC's own CBOR maps, so all three surfaces share
+// one field vocabulary.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+[[nodiscard]] bool queryFlag(const QString& v)
+{
+    return v == QLatin1String("1") || v.compare(QLatin1String("true"), Qt::CaseInsensitive) == 0
+        || v.compare(QLatin1String("on"), Qt::CaseInsensitive) == 0;
+}
+
+/// A form body as QUrlQuery reads it: that class leaves '+' alone.
+[[nodiscard]] QUrlQuery formBody(const QByteArray& body)
+{
+    return QUrlQuery(QString::fromUtf8(body).replace(QLatin1Char('+'), QStringLiteral("%20")));
+}
+
+/// 409 is a question ("already downloaded — force?"), 429 a moment's wait, 400 a
+/// bad NZB or link, 500 a disk that refused.
+[[nodiscard]] QHttpServerResponse usenetAddReply(const UsenetWebAddResult& r)
+{
+    if (r.ok()) {
+        return jsonSuccess(QJsonObject{{QStringLiteral("id"), r.itemId},
+                                       {QStringLiteral("outcome"), int(r.outcome)}});
+    }
+
+    int code = 400;
+    if (r.busy)
+        code = 429;
+    else if (r.outcome == UsenetWebAddOutcome::AlreadyDownloaded
+             || r.outcome == UsenetWebAddOutcome::Duplicate)
+        code = 409;
+    else if (r.outcome == UsenetWebAddOutcome::Failed)
+        code = 500;
+
+    const QJsonObject root{
+        {QStringLiteral("error"), QJsonObject{{QStringLiteral("code"), code},
+                                              {QStringLiteral("message"), r.error}}},
+        {QStringLiteral("outcome"), int(r.outcome)},
+    };
+    return QHttpServerResponse(root, static_cast<QHttpServerResponse::StatusCode>(code));
+}
+
+[[nodiscard]] int usenetRowStatus(const QCborMap& row)
+{
+    return int(row.value(QStringLiteral("status")).toInteger());
+}
+
+/// What the Progress column shows: a post-processing stage moves no segments.
+[[nodiscard]] qint64 usenetShownPercent(const QCborMap& row)
+{
+    return usenetStatusIsPostProcessing(usenetRowStatus(row))
+               ? row.value(QStringLiteral("postPercent")).toInteger()
+               : row.value(QStringLiteral("percent")).toInteger();
+}
+
+/// The Qt window's status words. The row's own statusText comes from the daemon,
+/// which translates nothing.
+[[nodiscard]] QString usenetStatusName(int status)
+{
+    switch (status) {
+    case UsenetWireStatus::Queued:      return WebServer::tr("Queued");
+    case UsenetWireStatus::Downloading: return WebServer::tr("Downloading");
+    case UsenetWireStatus::Paused:      return WebServer::tr("Paused");
+    case UsenetWireStatus::Complete:    return WebServer::tr("Complete");
+    case UsenetWireStatus::Failed:      return WebServer::tr("Failed");
+    case UsenetWireStatus::Verifying:   return WebServer::tr("Verifying");
+    case UsenetWireStatus::Repairing:   return WebServer::tr("Repairing");
+    case UsenetWireStatus::Unpacking:   return WebServer::tr("Unpacking");
+    case UsenetWireStatus::Checking:    return WebServer::tr("Checking");
+    default:                            return WebServer::tr("Unknown");
+    }
+}
+
+/// Status plus the first reason worth reading — UsenetQueueModel's cascade.
+[[nodiscard]] QString usenetStatusText(const QCborMap& row)
+{
+    const QString text = usenetStatusName(usenetRowStatus(row));
+    const QString sep = QStringLiteral(" — ");
+    if (const QString e = row.value(QStringLiteral("error")).toString(); !e.isEmpty())
+        return text + sep + e;
+    const QString detail = row.value(QStringLiteral("postDetail")).toString();
+    if (usenetStatusIsPostProcessing(usenetRowStatus(row)) && !detail.isEmpty())
+        return text + sep + detail;
+    if (const QString s = row.value(QStringLiteral("stalledReason")).toString(); !s.isEmpty())
+        return text + sep + s;
+    return text;
+}
+
+[[nodiscard]] QString usenetHealthText(const QCborMap& row)
+{
+    // A dash, not "100%": -1 means nothing was ever asked.
+    const qint64 h = row.value(QStringLiteral("healthPercent")).toInteger(-1);
+    return h < 0 ? QStringLiteral("—") : QStringLiteral("%1%").arg(qMin(h, qint64(100)));
+}
+
+[[nodiscard]] QString usenetHealthTitle(const QCborMap& row)
+{
+    const qint64 h = row.value(QStringLiteral("healthPercent")).toInteger(-1);
+    if (h < 0)
+        return WebServer::tr("Not checked.");
+    QString note = row.value(QStringLiteral("healthProbed")).toBool()
+        ? WebServer::tr("%1% of this release looks obtainable.").arg(h)
+        : WebServer::tr("%1% by the NZB's own article counts. No server was asked.").arg(h);
+    const qint64 missing = row.value(QStringLiteral("healthMissingBytes")).toInteger();
+    const qint64 recovery = row.value(QStringLiteral("healthRecoveryBytes")).toInteger();
+    if (missing > 0 && recovery >= missing)
+        note += QLatin1Char('\n') + WebServer::tr("The PAR2 recovery volumes should cover the shortfall.");
+    return note;
+}
+
+[[nodiscard]] QString usenetNameTitle(const QCborMap& row)
+{
+    const QString name = row.value(QStringLiteral("name")).toString();
+    const bool has = row.value(QStringLiteral("hasPassword")).toBool();
+    // The Qt model's own sentences, so they share its translations.
+    if (row.value(QStringLiteral("passwordRequired")).toBool()) {
+        return has ? WebServer::tr("%1\nThe password for this release did not work. "
+                                   "Right-click to set a different one.").arg(name)
+                   : WebServer::tr("%1\nThis release is password-protected. "
+                                   "Right-click to set its password.").arg(name);
+    }
+    if (const qint64 m = row.value(QStringLiteral("missingSegments")).toInteger(); m > 0) {
+        return WebServer::tr("%1\n%n article(s) could not be found on any server", nullptr, int(m))
+                   .arg(name);
+    }
+    if (has)
+        return WebServer::tr("%1\nA password is set for this release.").arg(name);
+    return name;
+}
+
+/// The `t_*` sprite the Transfer page shows for the nearest state.
+[[nodiscard]] QString usenetStatusIcon(int status)
+{
+    switch (status) {
+    case UsenetWireStatus::Downloading: return QStringLiteral("t_downloading");
+    case UsenetWireStatus::Paused:      return QStringLiteral("t_paused");
+    case UsenetWireStatus::Complete:    return QStringLiteral("t_complete");
+    case UsenetWireStatus::Failed:      return QStringLiteral("t_error");
+    case UsenetWireStatus::Verifying:
+    case UsenetWireStatus::Repairing:
+    case UsenetWireStatus::Unpacking:   return QStringLiteral("t_completing");
+    case UsenetWireStatus::Checking:    return QStringLiteral("t_connecting");
+    default:                            return QStringLiteral("t_waiting");
+    }
+}
+
+/// What the page script keys its menu and double-click on.
+[[nodiscard]] QString usenetStatusKey(int status)
+{
+    switch (status) {
+    case UsenetWireStatus::Queued:      return QStringLiteral("queued");
+    case UsenetWireStatus::Downloading: return QStringLiteral("downloading");
+    case UsenetWireStatus::Paused:      return QStringLiteral("paused");
+    case UsenetWireStatus::Complete:    return QStringLiteral("complete");
+    case UsenetWireStatus::Failed:      return QStringLiteral("failed");
+    case UsenetWireStatus::Checking:    return QStringLiteral("checking");
+    default:                            return QStringLiteral("post");
+    }
+}
+
+/// Bold while working, red failed, grey paused, blue post-processing.
+[[nodiscard]] QString usenetRowClass(int status)
+{
+    if (status == UsenetWireStatus::Failed)
+        return QStringLiteral("un-failed");
+    if (status == UsenetWireStatus::Paused)
+        return QStringLiteral("un-paused");
+    if (usenetStatusIsPostProcessing(status))
+        return QStringLiteral("un-post");
+    if (status == UsenetWireStatus::Downloading)
+        return QStringLiteral("un-active");
+    return {};
+}
+
+/// The release's payload: the biggest published file that is not a recovery
+/// volume. From publishedFiles, never files[].finalPath — unpacking leaves that
+/// empty on purpose, which is the Qt window's Open Folder defect.
+[[nodiscard]] QCborMap usenetPayload(const QCborMap& row)
+{
+    QCborMap best;
+    for (const auto& v : row.value(QStringLiteral("publishedFiles")).toArray()) {
+        const QCborMap pf = v.toMap();
+        if (pf.value(QStringLiteral("name")).toString().endsWith(QLatin1String(".par2"),
+                                                                Qt::CaseInsensitive))
+            continue;
+        if (best.isEmpty()
+            || pf.value(QStringLiteral("size")).toInteger()
+                   > best.value(QStringLiteral("size")).toInteger())
+            best = pf;
+    }
+    return best;
+}
+
+/// The published entry for one NZB file, matched by path.
+[[nodiscard]] QCborMap usenetPublishedFor(const QCborMap& row, const QString& finalPath)
+{
+    if (finalPath.isEmpty())
+        return {};
+    for (const auto& v : row.value(QStringLiteral("publishedFiles")).toArray()) {
+        const QCborMap pf = v.toMap();
+        if (pf.value(QStringLiteral("path")).toString() == finalPath)
+            return pf;
+    }
+    return {};
+}
+
+/// The largest previewable file, or -1 and the first note saying why not.
+[[nodiscard]] std::pair<int, QString> usenetPreviewTarget(const QCborMap& row)
+{
+    int bestIndex = -1;
+    qint64 bestSize = -1;
+    QString note;
+    for (const auto& v : row.value(QStringLiteral("files")).toArray()) {
+        const QCborMap f = v.toMap();
+        if (note.isEmpty())
+            note = f.value(QStringLiteral("previewNote")).toString();
+        if (!f.value(QStringLiteral("previewable")).toBool())
+            continue;
+        if (const qint64 size = f.value(QStringLiteral("size")).toInteger(); size > bestSize) {
+            bestSize = size;
+            bestIndex = int(f.value(QStringLiteral("index")).toInteger(-1));
+        }
+    }
+    return {bestIndex, bestIndex >= 0 ? QString() : note};
+}
+
+/// Whether Open plays rather than downloads — the incoming route's own split.
+[[nodiscard]] QString usenetPlayFlag(const QString& name)
+{
+    const QString type = webFileTypeToken(name);
+    return (type == QLatin1String("video") || type == QLatin1String("audio"))
+               ? QStringLiteral("1") : QStringLiteral("0");
+}
+
+/// MFC colours the tab text (SetTabTextColor), and so does CategoryTabBar.
+[[nodiscard]] QString categoryCssColor(quint32 color)
+{
+    if (color == kCategoryColorAuto)
+        return {};
+    return QStringLiteral("color:#%1").arg(color & 0xFFFFFFu, 6, 16, QLatin1Char('0'));
+}
+
+/// One value, or "first (and N other(s))" when a release's files disagree.
+[[nodiscard]] QString collapseValues(const QStringList& values)
+{
+    QStringList distinct;
+    for (const QString& v : values) {
+        if (!v.isEmpty() && !distinct.contains(v))
+            distinct << v;
+    }
+    if (distinct.size() <= 1)
+        return distinct.value(0);
+    return WebServer::tr("%1 (and %2 other(s))")
+               .arg(distinct.first(), QString::number(distinct.size() - 1));
+}
+
+/// A JS string literal that is also safe inside a template and a <script>.
+[[nodiscard]] QString jsString(const QString& s)
+{
+    QString json = QString::fromUtf8(
+        QJsonDocument(QJsonArray{s}).toJson(QJsonDocument::Compact));
+    json = json.mid(1, json.size() - 2);
+    return json.replace(QLatin1Char('['), QStringLiteral("\\u005b"))
+               .replace(QLatin1Char('<'), QStringLiteral("\\u003c"));
+}
+
+/// Raw values where the column is a number, like the Qt model's UserRole.
+[[nodiscard]] bool usenetLess(const QCborMap& a, const QCborMap& b, const QString& column)
+{
+    const auto num = [](const QCborMap& m, QLatin1String key) {
+        return m.value(key).toInteger();
+    };
+    if (column == QLatin1String("size"))
+        return num(a, QLatin1String("totalBytes")) < num(b, QLatin1String("totalBytes"));
+    if (column == QLatin1String("progress"))
+        return usenetShownPercent(a) < usenetShownPercent(b);
+    if (column == QLatin1String("status"))
+        return usenetStatusRank(usenetRowStatus(a)) < usenetStatusRank(usenetRowStatus(b));
+    if (column == QLatin1String("speed"))
+        return num(a, QLatin1String("speed")) < num(b, QLatin1String("speed"));
+    if (column == QLatin1String("remaining")) {
+        return num(a, QLatin1String("totalBytes")) - num(a, QLatin1String("decodedBytes"))
+             < num(b, QLatin1String("totalBytes")) - num(b, QLatin1String("decodedBytes"));
+    }
+    if (column == QLatin1String("priority"))
+        return num(a, QLatin1String("priority")) < num(b, QLatin1String("priority"));
+    if (column == QLatin1String("health")) {
+        return a.value(QStringLiteral("healthPercent")).toInteger(-1)
+             < b.value(QStringLiteral("healthPercent")).toInteger(-1);
+    }
+    if (column == QLatin1String("category"))
+        return num(a, QLatin1String("category")) < num(b, QLatin1String("category"));
+    return a.value(QStringLiteral("name")).toString().compare(
+               b.value(QStringLiteral("name")).toString(), Qt::CaseInsensitive) < 0;
+}
+
+[[nodiscard]] QJsonObject rowJsonById(const QList<QCborMap>& rows, const QString& id)
+{
+    for (const QCborMap& row : rows) {
+        if (row.value(QStringLiteral("id")).toString() == id)
+            return row.toJsonObject();
+    }
+    return QJsonObject{{QStringLiteral("id"), id}};
+}
+
+[[nodiscard]] QString usenetUnavailableText()
+{
+    return WebServer::tr("Usenet engine unavailable");
+}
+
+[[nodiscard]] QString usenetNotFoundText()
+{
+    return WebServer::tr("Usenet item not found");
+}
+
+/// The Qt window's priority names.
+[[nodiscard]] QString usenetPriorityName(int level)
+{
+    switch (level) {
+    case 2:  return WebServer::tr("Very high");
+    case 1:  return WebServer::tr("High");
+    case -1: return WebServer::tr("Low");
+    case -2: return WebServer::tr("Very low");
+    default: return WebServer::tr("Normal");
+    }
+}
+
+} // namespace
+
+bool WebServer::usenetAvailable() const
+{
+    return m_usenetBackend && m_usenetBackend->available();
+}
+
+WebServer::WebSessionCheck WebServer::webSession(const QUrlQuery& query)
+{
+    WebSessionCheck s;
+    s.id = query.queryItemValue(QStringLiteral("ses"));
+    if (!m_sessionManager || s.id.isEmpty() || !m_sessionManager->isValid(s.id))
+        return s;
+    s.valid = true;
+    s.admin = m_sessionManager->isAdmin(s.id);
+    return s;
+}
+
+QList<QCborMap> WebServer::usenetRows(int category)
+{
+    QList<QCborMap> rows;
+    if (!usenetAvailable())
+        return rows;
+
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    QSet<QString> present;
+    for (const auto& v : m_usenetBackend->queue()) {
+        QCborMap row = v.toMap();
+        const QString id = row.value(QStringLiteral("id")).toString();
+        present.insert(id);
+
+        // Sampled on every request, whichever browser or script asked; the
+        // sampler ignores readings closer together than its window.
+        const qint64 rate = m_usenetRates[id].update(
+            row.value(QStringLiteral("decodedBytes")).toInteger(), nowMs);
+        row.insert(QStringLiteral("speed"),
+                   usenetRowStatus(row) == UsenetWireStatus::Downloading ? rate : qint64(0));
+
+        if (category > 0 && row.value(QStringLiteral("category")).toInteger() != category)
+            continue;
+        rows.append(row);
+    }
+
+    for (auto it = m_usenetRates.begin(); it != m_usenetRates.end();) {
+        if (present.contains(it.key()))
+            ++it;
+        else
+            it = m_usenetRates.erase(it);
+    }
+    return rows;
+}
+
+QJsonObject WebServer::usenetStatsJson(const QList<QCborMap>& rows) const
+{
+    int active = 0;
+    qint64 total = 0;
+    qint64 done = 0;
+    QString stalled;
+    for (const QCborMap& row : rows) {
+        const int status = usenetRowStatus(row);
+        // Post-processing counts as active: "0 active" during a repair reads as a stall.
+        if (status == UsenetWireStatus::Downloading || status == UsenetWireStatus::Queued
+            || usenetStatusIsPostProcessing(status)) {
+            ++active;
+        }
+        total += row.value(QStringLiteral("totalBytes")).toInteger();
+        done += row.value(QStringLiteral("decodedBytes")).toInteger();
+        // Queue-level, so every stalled row carries the same sentence.
+        if (stalled.isEmpty())
+            stalled = row.value(QStringLiteral("stalledReason")).toString();
+    }
+
+    QJsonObject out = m_usenetBackend ? m_usenetBackend->downloadSplit().toJsonObject()
+                                      : QJsonObject{};
+    out.insert(QStringLiteral("count"), int(rows.size()));
+    out.insert(QStringLiteral("active"), active);
+    out.insert(QStringLiteral("totalBytes"), total);
+    out.insert(QStringLiteral("decodedBytes"), done);
+    out.insert(QStringLiteral("percent"), total > 0 ? int(done * 100 / total) : 0);
+    out.insert(QStringLiteral("stalledReason"), stalled);
+    return out;
+}
+
+WebServer::UsenetOpResult WebServer::applyUsenetItemOp(const QString& op, const QString& id,
+                                                       const QString& value)
+{
+    if (!usenetAvailable())
+        return {503, usenetUnavailableText()};
+    if (!m_usenetBackend->contains(id))
+        return {404, usenetNotFoundText()};
+
+    if (op == QLatin1String("pause")) {
+        if (!m_usenetBackend->pause(id))
+            return {409, tr("Only a queued or downloading release can be paused")};
+    } else if (op == QLatin1String("resume")) {
+        if (!m_usenetBackend->resume(id))
+            return {409, tr("Only a paused or failed release can be resumed")};
+    } else if (op == QLatin1String("check")) {
+        if (const QString why = m_usenetBackend->recheck(id); !why.isEmpty())
+            return {409, why};
+    } else if (op == QLatin1String("remove") || op == QLatin1String("removedelete")) {
+        if (!m_usenetBackend->remove(id, op == QLatin1String("removedelete")))
+            return {404, usenetNotFoundText()};
+    } else if (op == QLatin1String("priority")) {
+        bool ok = false;
+        const int priority = value.toInt(&ok);
+        if (!ok || priority < -2 || priority > 2)
+            return {400, tr("priority must be a number from -2 to 2")};
+        m_usenetBackend->setPriority(id, priority);
+    } else if (op == QLatin1String("category")) {
+        bool ok = false;
+        const int category = value.toInt(&ok);
+        if (!ok || !m_usenetBackend->categoryExists(category))
+            return {400, tr("Unknown category")};
+        m_usenetBackend->setCategory(id, category);
+    } else if (op == QLatin1String("password")) {
+        // Not trimmed: a passphrase is opaque, and empty is a deliberate clear.
+        m_usenetBackend->setPassword(id, value);
+    } else if (op == QLatin1String("skip") || op == QLatin1String("unskip")) {
+        // File indices, comma-separated; the backend widens them to archive sets.
+        QList<int> files;
+        for (const QString& part : value.split(QLatin1Char(','), Qt::SkipEmptyParts)) {
+            bool ok = false;
+            const int index = part.trimmed().toInt(&ok);
+            if (!ok || index < 0)
+                return {400, tr("files must be a list of file numbers")};
+            files.append(index);
+        }
+        if (files.isEmpty())
+            return {400, tr("files must be a list of file numbers")};
+        if (const QString why =
+                m_usenetBackend->setFilesSkipped(id, files, op == QLatin1String("skip"));
+            !why.isEmpty()) {
+            return {409, why};
+        }
+    } else {
+        return {400, tr("Unknown action")};
+    }
+    return {};
+}
+
+// --- REST ------------------------------------------------------------------
+
+QHttpServerResponse WebServer::handleRestUsenetList(const QHttpServerRequest& req)
+{
+    if (!usenetAvailable())
+        return jsonError(503, usenetUnavailableText());
+
+    const int category =
+        QUrlQuery(req.query()).queryItemValue(QStringLiteral("category")).toInt();
+    QJsonArray arr;
+    for (const QCborMap& row : usenetRows(category))
+        arr.append(row.toJsonObject());
+    return jsonSuccess(arr);
+}
+
+QHttpServerResponse WebServer::handleRestUsenetStats()
+{
+    if (!usenetAvailable())
+        return jsonError(503, usenetUnavailableText());
+    return jsonSuccess(usenetStatsJson(usenetRows()));
+}
+
+QHttpServerResponse WebServer::handleRestUsenetItem(const QString& id)
+{
+    if (!usenetAvailable())
+        return jsonError(503, usenetUnavailableText());
+
+    QCborMap details = m_usenetBackend->details(id);
+    if (details.isEmpty())
+        return jsonError(404, usenetNotFoundText());
+
+    // A rate only exists across requests; report the last one sampled.
+    const auto it = m_usenetRates.constFind(id);
+    const bool downloading = usenetRowStatus(details) == UsenetWireStatus::Downloading;
+    details.insert(QStringLiteral("speed"),
+                   it != m_usenetRates.cend() && downloading ? it->rate : qint64(0));
+    return jsonSuccess(details.toJsonObject());
+}
+
+QHttpServerResponse WebServer::handleRestUsenetEntries(const QString& id,
+                                                       const QString& fileIndexText)
+{
+    if (!usenetAvailable())
+        return jsonError(503, usenetUnavailableText());
+
+    bool ok = false;
+    const int fileIndex = fileIndexText.toInt(&ok);
+    if (!ok || fileIndex < 0)
+        return jsonError(400, QStringLiteral("Invalid file index"));
+    if (!m_usenetBackend->contains(id))
+        return jsonError(404, usenetNotFoundText());
+    return jsonSuccess(m_usenetBackend->archiveEntries(id, fileIndex).toJsonObject());
+}
+
+QHttpServerResponse WebServer::handleRestUsenetItemOp(const QString& id, const QString& op)
+{
+    if (op != QLatin1String("pause") && op != QLatin1String("resume")
+        && op != QLatin1String("check"))
+        return jsonError(404, QStringLiteral("Unknown Usenet action"));
+
+    const UsenetOpResult r = applyUsenetItemOp(op, id, {});
+    if (r.code != 200)
+        return jsonError(r.code, r.message);
+    return jsonSuccess(rowJsonById(usenetRows(), id));
+}
+
+QHttpServerResponse WebServer::handleRestUsenetPatch(const QString& id,
+                                                     const QHttpServerRequest& req)
+{
+    if (!usenetAvailable())
+        return jsonError(503, usenetUnavailableText());
+
+    const QJsonDocument doc = QJsonDocument::fromJson(req.body());
+    if (!doc.isObject())
+        return jsonError(400, QStringLiteral("Invalid JSON body"));
+    if (!m_usenetBackend->contains(id))
+        return jsonError(404, usenetNotFoundText());
+
+    // Validate every field before changing any, so a bad one leaves the release
+    // exactly as it was.
+    const QJsonObject body = doc.object();
+    QList<std::pair<QString, QString>> ops;
+    if (body.contains(QStringLiteral("priority"))) {
+        const QJsonValue v = body.value(QStringLiteral("priority"));
+        const int p = v.toInt(99);
+        if (!v.isDouble() || p < -2 || p > 2)
+            return jsonError(400, tr("priority must be a number from -2 to 2"));
+        ops.append({QStringLiteral("priority"), QString::number(p)});
+    }
+    if (body.contains(QStringLiteral("category"))) {
+        const QJsonValue v = body.value(QStringLiteral("category"));
+        if (!v.isDouble() || !m_usenetBackend->categoryExists(v.toInt(-1)))
+            return jsonError(400, tr("Unknown category"));
+        ops.append({QStringLiteral("category"), QString::number(v.toInt())});
+    }
+    if (body.contains(QStringLiteral("password"))) {
+        const QJsonValue v = body.value(QStringLiteral("password"));
+        if (!v.isString())
+            return jsonError(400, QStringLiteral("password must be a string"));
+        ops.append({QStringLiteral("password"), v.toString()});
+    }
+    for (const auto& [field, op] : {std::pair{QStringLiteral("skipFiles"), QStringLiteral("skip")},
+                                    std::pair{QStringLiteral("unskipFiles"),
+                                              QStringLiteral("unskip")}}) {
+        if (!body.contains(field))
+            continue;
+        const QJsonValue v = body.value(field);
+        const QJsonArray indices = v.toArray();
+        bool valid = v.isArray() && !indices.isEmpty();
+        QStringList parts;
+        for (const QJsonValue& e : indices) {
+            if (!e.isDouble() || e.toInt(-1) < 0 || e.toDouble() != double(e.toInt(-1))) {
+                valid = false;
+                break;
+            }
+            parts.append(QString::number(e.toInt()));
+        }
+        if (!valid)
+            return jsonError(400, QStringLiteral("%1 must be a non-empty array of file indices")
+                                      .arg(field));
+        ops.append({op, parts.join(QLatin1Char(','))});
+    }
+    if (ops.isEmpty())
+        return jsonError(400, QStringLiteral("Nothing to change: send priority, category, "
+                                             "password, skipFiles or unskipFiles"));
+
+    for (const auto& [op, value] : std::as_const(ops)) {
+        if (const UsenetOpResult r = applyUsenetItemOp(op, id, value); r.code != 200)
+            return jsonError(r.code, r.message);
+    }
+    return jsonSuccess(rowJsonById(usenetRows(), id));
+}
+
+QHttpServerResponse WebServer::handleRestUsenetDelete(const QString& id,
+                                                      const QHttpServerRequest& req)
+{
+    const bool deleteFiles =
+        queryFlag(QUrlQuery(req.query()).queryItemValue(QStringLiteral("deleteFiles")));
+    const UsenetOpResult r = applyUsenetItemOp(
+        deleteFiles ? QStringLiteral("removedelete") : QStringLiteral("remove"), id, {});
+    if (r.code != 200)
+        return jsonError(r.code, r.message);
+    return jsonSuccess(QJsonObject{{QStringLiteral("removed"), true},
+                                   {QStringLiteral("deletedFiles"), deleteFiles}});
+}
+
+QHttpServerResponse WebServer::handleRestUsenetCategoryOp(const QString& categoryText,
+                                                          const QString& op)
+{
+    if (!usenetAvailable())
+        return jsonError(503, usenetUnavailableText());
+
+    UsenetWebCategoryAction action = UsenetWebCategoryAction::Pause;
+    if (op == QLatin1String("pause"))
+        action = UsenetWebCategoryAction::Pause;
+    else if (op == QLatin1String("resume"))
+        action = UsenetWebCategoryAction::Resume;
+    else if (op == QLatin1String("cancel"))
+        action = UsenetWebCategoryAction::Cancel;
+    else
+        return jsonError(404, QStringLiteral("Unknown category action"));
+
+    bool ok = false;
+    const int category = categoryText.toInt(&ok);
+    const int acted = ok ? m_usenetBackend->applyCategoryAction(category, action) : -1;
+    if (acted < 0)
+        return jsonError(400, tr("Unknown category"));
+    return jsonSuccess(QJsonObject{{QStringLiteral("affected"), acted}});
+}
+
+QHttpServerResponse WebServer::handleUsenetEngineOp(bool paused)
+{
+    if (!usenetAvailable())
+        return jsonError(503, usenetUnavailableText());
+    m_usenetBackend->setEnginePaused(paused);
+    return jsonSuccess(QJsonObject{{QStringLiteral("paused"), paused}});
+}
+
+QFuture<QHttpServerResponse> WebServer::handleUsenetAdd(const QHttpServerRequest& req,
+                                                        bool restApi)
+{
+    if (!usenetAvailable())
+        return finishedResponse(jsonError(503, usenetUnavailableText()));
+
+    const QByteArray contentType =
+        req.headers().combinedValue(QByteArrayLiteral("Content-Type")).toLower();
+    const QByteArray body = req.body();
+
+    // Options arrive three ways: a JSON body (REST, for a URL), a form body (the
+    // page's URL adds, so a passphrase stays out of the URL), or the query string
+    // beside a raw .nzb body.
+    UsenetWebAddOptions options;
+    QString url;
+    QString name;
+    QString categoryText;
+    QString priorityText;
+
+    if (restApi && contentType.startsWith("application/json")) {
+        const QJsonDocument doc = QJsonDocument::fromJson(body);
+        if (!doc.isObject())
+            return finishedResponse(jsonError(400, QStringLiteral("Invalid JSON body")));
+        const QJsonObject o = doc.object();
+        url = o.value(QStringLiteral("url")).toString();
+        name = o.value(QStringLiteral("name")).toString();
+        options.force = o.value(QStringLiteral("force")).toBool();
+        options.password = o.value(QStringLiteral("password")).toString();
+        options.paused = o.value(QStringLiteral("paused")).toBool();
+        if (o.contains(QStringLiteral("category")))
+            categoryText = QString::number(o.value(QStringLiteral("category")).toInt(-1));
+        if (o.contains(QStringLiteral("priority")))
+            priorityText = QString::number(o.value(QStringLiteral("priority")).toInt(99));
+        if (url.isEmpty()) {
+            return finishedResponse(jsonError(400, QStringLiteral(
+                "A JSON body must carry \"url\"; post the .nzb itself as the body to add a file")));
+        }
+    } else {
+        const bool form = contentType.startsWith("application/x-www-form-urlencoded");
+        const QUrlQuery fields = form ? formBody(body) : QUrlQuery(req.query());
+        const auto field = [&fields](const char* key) {
+            return fields.queryItemValue(QLatin1String(key), QUrl::FullyDecoded);
+        };
+        url = field("url");
+        name = field("name");
+        options.force = queryFlag(field("force"));
+        options.password = field("password");
+        options.paused = queryFlag(field("paused"));
+        categoryText = field("category");
+        priorityText = field("priority");
+
+        // Beside a raw body the passphrase rides a header, not the URL.
+        const QByteArray pwHeader = req.headers().combinedValue(QByteArrayLiteral("X-Nzb-Password"));
+        if (options.password.isEmpty() && !pwHeader.isEmpty())
+            options.password = QUrl::fromPercentEncoding(pwHeader);
+
+        if (url.isEmpty() && (form || body.isEmpty())) {
+            return finishedResponse(
+                jsonError(400, tr("Post the .nzb as the request body, or give a url")));
+        }
+    }
+
+    if (!categoryText.isEmpty()) {
+        bool ok = false;
+        options.category = categoryText.toInt(&ok);
+        if (!ok || !m_usenetBackend->categoryExists(options.category))
+            return finishedResponse(jsonError(400, tr("Unknown category")));
+    }
+    if (!priorityText.isEmpty()) {
+        bool ok = false;
+        options.priority = priorityText.toInt(&ok);
+        if (!ok || options.priority < -2 || options.priority > 2) {
+            return finishedResponse(
+                jsonError(400, tr("priority must be a number from -2 to 2")));
+        }
+    }
+
+    if (url.isEmpty())
+        return finishedResponse(usenetAddReply(m_usenetBackend->addNzb(body, name, options)));
+
+    // The fetch takes seconds and the reply goes when it lands. The callback owns
+    // only the promise, so a web-server restart in the meantime is harmless.
+    auto promise = std::make_shared<QPromise<QHttpServerResponse>>();
+    promise->start();
+    QFuture<QHttpServerResponse> future = promise->future();
+    m_usenetBackend->addNzbUrl(url, options, [promise](const UsenetWebAddResult& r) {
+        promise->addResult(usenetAddReply(r));
+        promise->finish();
+    });
+    return future;
+}
+
+// --- Web UI (session) --------------------------------------------------------
+
+QHttpServerResponse WebServer::handleWebUsenetAction(const QHttpServerRequest& req)
+{
+    const WebSessionCheck ses = webSession(QUrlQuery(req.query()));
+    const TranslationRouter::Scope language(m_translations, webLanguage(ses.id));
+    if (!ses.valid)
+        return jsonError(401, tr("Session expired — log in again"));
+    if (!ses.admin)
+        return jsonError(403, tr("Guests cannot change downloads"));
+    if (!usenetAvailable())
+        return jsonError(503, usenetUnavailableText());
+
+    const QUrlQuery form = formBody(req.body());
+    const QString op = form.queryItemValue(QStringLiteral("op"));
+    const QString value = form.queryItemValue(QStringLiteral("v"), QUrl::FullyDecoded);
+
+    if (op.startsWith(QLatin1String("cat"))) {
+        // catpause / catresume / catcancel, with the category index in `v`.
+        return handleRestUsenetCategoryOp(value, op.mid(3));
+    }
+    if (op == QLatin1String("enginepause") || op == QLatin1String("engineresume"))
+        return handleUsenetEngineOp(op == QLatin1String("enginepause"));
+
+    const QStringList ids = form.allQueryItemValues(QStringLiteral("id"), QUrl::FullyDecoded);
+    if (ids.isEmpty())
+        return jsonError(400, tr("Nothing selected"));
+
+    int done = 0;
+    UsenetOpResult firstFailure;
+    for (const QString& id : ids) {
+        const UsenetOpResult r = applyUsenetItemOp(op, id, value);
+        if (r.code == 200)
+            ++done;
+        else if (firstFailure.code == 200)
+            firstFailure = r;
+    }
+
+    // A batch where some rows refused — pausing a finished release beside a
+    // running one — still did what it could, the way the Qt toolbar does.
+    if (done == 0)
+        return jsonError(firstFailure.code, firstFailure.message);
+    return jsonSuccess(QJsonObject{{QStringLiteral("done"), done},
+                                   {QStringLiteral("message"), firstFailure.message}});
+}
+
+QHttpServerResponse WebServer::handleWebUsenetEntries(const QHttpServerRequest& req)
+{
+    const QUrlQuery query(req.query());
+    const WebSessionCheck ses = webSession(query);
+    const TranslationRouter::Scope language(m_translations, webLanguage(ses.id));
+    if (!ses.valid)
+        return jsonError(401, tr("Session expired — log in again"));
+    return handleRestUsenetEntries(query.queryItemValue(QStringLiteral("id"), QUrl::FullyDecoded),
+                                   query.queryItemValue(QStringLiteral("file")));
+}
+
+// --- Page ------------------------------------------------------------------------
+
+QString WebServer::buildUsenetPage(bool isAdmin, const QString& sessionId, const QUrlQuery& query)
+{
+    if (!usenetAvailable())
+        return WebTemplateEngine::substitute(m_templateEngine->section(QStringLiteral("USENET_UNAVAILABLE")));
+
+    const int currentCat = query.queryItemValue(QStringLiteral("cat")).toInt();
+    const QList<DownloadCategory> cats =
+        m_preferences ? m_preferences->categories() : QList<DownloadCategory>{};
+    const int catCount = qMax(1, int(cats.size()));
+
+    QString tabs;
+    QString catOptions;
+    QStringList catNames;
+    for (int i = 0; i < catCount; ++i) {
+        const bool known = i < cats.size();
+        // Index 0 is "All" on a tab, and "No category" as a thing to assign.
+        const QString title = i == 0 ? tr("All") : cats.at(i).displayName();
+        const QString assign = i == 0 ? tr("No category") : title;
+        tabs += QStringLiteral("<a class=\"un-cattab%1\" href=\"?ses=%2&amp;w=usenet&amp;cat=%3\" "
+                               "data-cat=\"%3\" title=\"%4\" style=\"%5\">%6</a>")
+                    .arg(i == currentCat ? QStringLiteral(" active") : QString(), sessionId)
+                    .arg(i)
+                    .arg(known ? htmlText(cats.at(i).comment) : QString(),
+                         known && i > 0 ? categoryCssColor(cats.at(i).color) : QString(),
+                         htmlText(title));
+        catOptions += QStringLiteral("<option value=\"%1\">%2</option>").arg(i).arg(htmlText(assign));
+        catNames << jsString(assign);
+    }
+
+    QString prioOptions;
+    QStringList levels;
+    for (const int level : kUsenetPriorityLevels) {
+        prioOptions += QStringLiteral("<option value=\"%1\"%2>%3</option>")
+                           .arg(level)
+                           .arg(level == 0 ? QStringLiteral(" selected") : QString(),
+                                htmlText(usenetPriorityName(level)));
+        levels << QStringLiteral("{p:%1,n:%2}").arg(level).arg(jsString(usenetPriorityName(level)));
+    }
+
+    // Whitelisted, because it lands inside a script literal.
+    QString sort = query.queryItemValue(QStringLiteral("sort"));
+    static const QRegularExpression word(QStringLiteral("^[a-z]{0,12}$"));
+    if (!word.match(sort).hasMatch())
+        sort.clear();
+
+    QHash<QString, QString> vars;
+    vars[QStringLiteral("Session")] = sessionId;
+    vars[QStringLiteral("StreamToken")] = m_streamToken;
+    // Passed on to the incoming pages, which have no session of their own.
+    vars[QStringLiteral("WebLang")] = WebTemplateEngine::jsEscape(webLanguage(sessionId));
+    // The page script formats archive entry sizes itself, in formatByteSize's units.
+    vars[QStringLiteral("UsenetUnitsJson")] = QStringLiteral("{\"list\":[%1]}").arg(QStringList{
+        jsString(QCoreApplication::translate("Units", "Bytes")),
+        jsString(QCoreApplication::translate("Units", "KB")),
+        jsString(QCoreApplication::translate("Units", "MB")),
+        jsString(QCoreApplication::translate("Units", "GB")),
+        jsString(QCoreApplication::translate("Units", "TB")),
+    }.join(QLatin1Char(',')));
+    vars[QStringLiteral("IsAdmin")] = isAdmin ? QStringLiteral("1") : QStringLiteral("0");
+    vars[QStringLiteral("UsenetCategoryTabs")] = tabs;
+    vars[QStringLiteral("UsenetCategoryOptions")] = catOptions;
+    vars[QStringLiteral("UsenetPriorityOptions")] = prioOptions;
+    vars[QStringLiteral("UsenetCategoriesJson")] = QStringLiteral("{\"list\":") + QLatin1Char('[')
+        + catNames.join(QLatin1Char(',')) + QStringLiteral("]}");
+    vars[QStringLiteral("UsenetLevelsJson")] = QStringLiteral("{\"list\":") + QLatin1Char('[')
+        + levels.join(QLatin1Char(',')) + QStringLiteral("]}");
+    vars[QStringLiteral("UsenetCat")] = QString::number(currentCat);
+    vars[QStringLiteral("UsenetSort")] = sort;
+    vars[QStringLiteral("UsenetDesc")] =
+        query.queryItemValue(QStringLiteral("desc")) == QLatin1String("1") ? QStringLiteral("1")
+                                                                           : QStringLiteral("0");
+    // AddNzbUrlDialog::kMaxUrls — the same cap on a pasted list.
+    vars[QStringLiteral("UsenetMaxUrls")] = QStringLiteral("20");
+    vars[QStringLiteral("UsenetList")] = buildUsenetList(sessionId, query);
+    return WebTemplateEngine::substitute(m_templateEngine->section(QStringLiteral("USENET")), vars);
+}
+
+QString WebServer::buildUsenetList(const QString& sessionId, const QUrlQuery& query)
+{
+    if (!usenetAvailable())
+        return QStringLiteral("<!--usenet-list--><div class=\"message\">%1</div>")
+                   .arg(htmlText(usenetUnavailableText()));
+
+    const int category = query.queryItemValue(QStringLiteral("cat")).toInt();
+    const QString sort = query.queryItemValue(QStringLiteral("sort"));
+    const bool desc = query.queryItemValue(QStringLiteral("desc")) == QLatin1String("1");
+
+    // All of them for the summary, which the Qt window also counts over every tab.
+    const QList<QCborMap> all = usenetRows();
+    QList<QCborMap> rows;
+    for (const QCborMap& row : all) {
+        if (category <= 0 || row.value(QStringLiteral("category")).toInteger() == category)
+            rows.append(row);
+    }
+    if (!sort.isEmpty()) {
+        std::stable_sort(rows.begin(), rows.end(), [&sort, desc](const QCborMap& a, const QCborMap& b) {
+            return desc ? usenetLess(b, a, sort) : usenetLess(a, b, sort);
+        });
+    }
+
+    const QList<DownloadCategory> cats =
+        m_preferences ? m_preferences->categories() : QList<DownloadCategory>{};
+    const QString lineTmpl = m_templateEngine->section(QStringLiteral("USENET_LINE"));
+    const QString fileTmpl = m_templateEngine->section(QStringLiteral("USENET_FILE_LINE"));
+
+    QString lines;
+    for (const QCborMap& row : std::as_const(rows)) {
+        const QString id = row.value(QStringLiteral("id")).toString();
+        const int status = usenetRowStatus(row);
+        const qint64 total = row.value(QStringLiteral("totalBytes")).toInteger();
+        const qint64 decoded = row.value(QStringLiteral("decodedBytes")).toInteger();
+        const auto [previewFile, previewNote] = usenetPreviewTarget(row);
+        const QCborMap payload = usenetPayload(row);
+        const QCborArray files = row.value(QStringLiteral("files")).toArray();
+
+        QString fileLines;
+        for (const auto& fv : files) {
+            const QCborMap f = fv.toMap();
+            const QString fname = f.value(QStringLiteral("name")).toString();
+            const QString finalPath = f.value(QStringLiteral("finalPath")).toString();
+            const qint64 missing = f.value(QStringLiteral("missingSegments")).toInteger();
+            const qint64 pct = f.value(QStringLiteral("percent")).toInteger();
+
+            QHash<QString, QString> v;
+            v[QStringLiteral("UsenetId")] = htmlText(id);
+            v[QStringLiteral("UsenetFileIndex")] =
+                QString::number(f.value(QStringLiteral("index")).toInteger(-1));
+            v[QStringLiteral("UsenetFileName")] = htmlText(fname);
+            v[QStringLiteral("UsenetFileType")] = webFileTypeToken(fname);
+            v[QStringLiteral("UsenetFileSize")] = formatByteSize(f.value(QStringLiteral("size")).toInteger());
+            v[QStringLiteral("UsenetFilePercent")] = QString::number(pct);
+            v[QStringLiteral("UsenetFileStatus")] =
+                missing > 0 ? htmlText(tr("%n article(s) missing", nullptr, int(missing)))
+                            : (pct >= 100 ? htmlText(tr("Complete")) : QString());
+            v[QStringLiteral("UsenetFileClass")] =
+                f.value(QStringLiteral("isPar2")).toBool() ? QStringLiteral("un-par2") : QString();
+            v[QStringLiteral("UsenetFileTitle")] = htmlText(finalPath);
+            v[QStringLiteral("UsenetFilePreview")] =
+                f.value(QStringLiteral("previewable")).toBool() ? QStringLiteral("1") : QStringLiteral("0");
+            v[QStringLiteral("UsenetFileNote")] = htmlText(f.value(QStringLiteral("previewNote")).toString());
+            v[QStringLiteral("UsenetFileOpen")] =
+                htmlText(usenetPublishedFor(row, finalPath).value(QStringLiteral("relPath")).toString());
+            v[QStringLiteral("UsenetFileHasFinal")] =
+                finalPath.isEmpty() ? QStringLiteral("0") : QStringLiteral("1");
+            v[QStringLiteral("UsenetFilePlay")] = usenetPlayFlag(fname);
+            fileLines += WebTemplateEngine::substitute(fileTmpl, v);
+        }
+
+        const int cat = int(row.value(QStringLiteral("category")).toInteger());
+        const bool hasPw = row.value(QStringLiteral("hasPassword")).toBool();
+        const qint64 speed = row.value(QStringLiteral("speed")).toInteger();
+
+        QHash<QString, QString> v;
+        v[QStringLiteral("UsenetId")] = htmlText(id);
+        v[QStringLiteral("UsenetName")] = htmlText(row.value(QStringLiteral("name")).toString());
+        v[QStringLiteral("UsenetNameTitle")] = htmlText(usenetNameTitle(row));
+        v[QStringLiteral("UsenetLock")] =
+            (hasPw || row.value(QStringLiteral("passwordRequired")).toBool())
+                ? QStringLiteral("<span class=\"un-lock\">&#128274;</span>") : QString();
+        v[QStringLiteral("UsenetStatusIcon")] = usenetStatusIcon(status);
+        v[QStringLiteral("UsenetStatusKey")] = usenetStatusKey(status);
+        v[QStringLiteral("UsenetRowClass")] = usenetRowClass(status);
+        v[QStringLiteral("UsenetSize")] = formatByteSize(total);
+        v[QStringLiteral("UsenetPercent")] =
+            QString::number(qBound(qint64(0), usenetShownPercent(row), qint64(100)));
+        v[QStringLiteral("UsenetStatus")] = htmlText(usenetStatusText(row));
+        v[QStringLiteral("UsenetSpeed")] = speed > 0 ? formatByteRate(speed) : QString();
+        v[QStringLiteral("UsenetRemaining")] = formatByteSize(qMax(qint64(0), total - decoded));
+        v[QStringLiteral("UsenetPriority")] =
+            htmlText(usenetPriorityName(int(row.value(QStringLiteral("priority")).toInteger())));
+        v[QStringLiteral("UsenetHealth")] = usenetHealthText(row);
+        v[QStringLiteral("UsenetHealthTitle")] = htmlText(usenetHealthTitle(row));
+        // Blank for index 0, the absence of a category; the bare number for one
+        // the list no longer holds.
+        v[QStringLiteral("UsenetCategory")] =
+            cat <= 0 ? QString()
+                     : (cat < cats.size() ? htmlText(cats.at(cat).displayName()) : QString::number(cat));
+        v[QStringLiteral("UsenetPreviewFile")] = QString::number(previewFile);
+        v[QStringLiteral("UsenetPreviewNote")] = htmlText(previewNote);
+        v[QStringLiteral("UsenetOpen")] = htmlText(payload.value(QStringLiteral("relPath")).toString());
+        v[QStringLiteral("UsenetHasPayload")] = payload.isEmpty() ? QStringLiteral("0") : QStringLiteral("1");
+        v[QStringLiteral("UsenetOpenPlay")] = usenetPlayFlag(payload.value(QStringLiteral("name")).toString());
+        v[QStringLiteral("UsenetHasPassword")] = hasPw ? QStringLiteral("1") : QStringLiteral("0");
+        v[QStringLiteral("UsenetFileCount")] = QString::number(files.size());
+        v[QStringLiteral("UsenetFiles")] = fileLines;
+        lines += WebTemplateEngine::substitute(lineTmpl, v);
+    }
+
+    // The Qt window's summary line, plus the engine's rate: the web UI has no
+    // status bar to show it in.
+    const QJsonObject stats = usenetStatsJson(all);
+    QString summary;
+    QString summaryTitle;
+    const int count = stats.value(QStringLiteral("count")).toInt();
+    // UsenetPanel::updateSummary()'s sentences, so they share its translations.
+    if (count == 0) {
+        summary = tr("No Usenet downloads. Use \"Add NZB…\" to queue one.");
+    } else {
+        const int active = stats.value(QStringLiteral("active")).toInt();
+        summary = tr("%1 download(s), %2 active — %3% complete")
+                      .arg(QString::number(count), QString::number(active),
+                           QString::number(stats.value(QStringLiteral("percent")).toInt()));
+        if (const QString stalled = stats.value(QStringLiteral("stalledReason")).toString();
+            !stalled.isEmpty())
+            summary += tr(" — %1").arg(stalled);
+        if (const qint64 rate = stats.value(QStringLiteral("rate")).toInteger(); rate > 0)
+            summary += tr(" — %1").arg(formatByteRate(rate));
+
+        const qint64 maxKb = stats.value(QStringLiteral("maxDownloadKb")).toInteger();
+        const qint64 usenetKb = stats.value(QStringLiteral("usenetLimitKb")).toInteger();
+        const qint64 ed2kKb = stats.value(QStringLiteral("ed2kBudgetKb")).toInteger();
+        if (active > 0 && maxKb > 0) {
+            if (usenetKb < maxKb)
+                summary += tr(" — limited to %1 KB/s while eD2K downloads").arg(usenetKb);
+            summaryTitle = tr("Download limit %1 KB/s: Usenet up to %2 KB/s, eD2K up to %3 KB/s.\n"
+                              "Whichever network is idle lends its share to the other.")
+                               .arg(QString::number(maxKb), QString::number(usenetKb),
+                                    QString::number(ed2kKb));
+        }
+    }
+
+    QHash<QString, QString> listVars;
+    for (const char* col : {"name", "size", "progress", "status", "speed", "remaining",
+                            "priority", "health", "category"}) {
+        const QString c = QLatin1String(col);
+        listVars[QStringLiteral("SortMark_") + c] =
+            sort == c ? (desc ? QStringLiteral(" &#9660;") : QStringLiteral(" &#9650;")) : QString();
+    }
+    listVars[QStringLiteral("Session")] = sessionId;
+    listVars[QStringLiteral("UsenetCount")] = QString::number(rows.size());
+    listVars[QStringLiteral("UsenetSummary")] = htmlText(summary);
+    listVars[QStringLiteral("UsenetSummaryTitle")] = htmlText(summaryTitle);
+    listVars[QStringLiteral("UsenetEnginePaused")] =
+        stats.value(QStringLiteral("paused")).toBool() ? QStringLiteral("1") : QStringLiteral("0");
+    listVars[QStringLiteral("UsenetEmptyRow")] = rows.isEmpty()
+        ? QStringLiteral("<tr><td class=\"left\" colspan=\"10\">%1</td></tr>")
+              .arg(htmlText(tr("No Usenet downloads here.")))
+        : QString();
+    listVars[QStringLiteral("UsenetRows")] = lines;
+    return WebTemplateEngine::substitute(m_templateEngine->section(QStringLiteral("USENET_LIST")),
+                                         listVars);
+}
+
+QString WebServer::buildUsenetDetails(const QString& /*sessionId*/, const QString& id)
+{
+    if (!usenetAvailable())
+        return WebTemplateEngine::substitute(m_templateEngine->section(QStringLiteral("USENET_DETAILS_GONE")));
+
+    const QCborMap d = m_usenetBackend->details(id);
+    if (d.isEmpty())
+        return WebTemplateEngine::substitute(m_templateEngine->section(QStringLiteral("USENET_DETAILS_GONE")));
+
+    const QCborMap payload = usenetPayload(d);
+    const QString fileTmpl = m_templateEngine->section(QStringLiteral("USENET_DETAILS_FILE_LINE"));
+    const QCborArray files = d.value(QStringLiteral("files")).toArray();
+
+    QStringList posters;
+    QStringList groups;
+    qint64 newest = 0;
+    qint64 doneSegs = 0;
+    qint64 totalSegs = 0;
+    QString fileLines;
+    for (const auto& fv : files) {
+        const QCborMap f = fv.toMap();
+        posters << f.value(QStringLiteral("poster")).toString();
+        for (const auto& g : f.value(QStringLiteral("groups")).toArray())
+            groups << g.toString();
+        newest = qMax(newest, f.value(QStringLiteral("date")).toInteger());
+        const qint64 done = f.value(QStringLiteral("doneSegments")).toInteger();
+        const qint64 segs = f.value(QStringLiteral("segmentCount")).toInteger();
+        doneSegs += done;
+        totalSegs += segs;
+
+        const QString fname = f.value(QStringLiteral("name")).toString();
+        const QString finalPath = f.value(QStringLiteral("finalPath")).toString();
+        const qint64 missing = f.value(QStringLiteral("missingSegments")).toInteger();
+        const qint64 pct = f.value(QStringLiteral("percent")).toInteger();
+
+        QString title = f.value(QStringLiteral("subject")).toString();
+        if (!finalPath.isEmpty())
+            title += QLatin1Char('\n') + finalPath;
+        if (const qint64 nzbMissing = f.value(QStringLiteral("nzbMissingSegments")).toInteger();
+            nzbMissing > 0) {
+            title += QLatin1Char('\n')
+                     + tr("%n article(s) were never listed in the NZB", nullptr, int(nzbMissing));
+        }
+
+        QHash<QString, QString> v;
+        v[QStringLiteral("UsenetId")] = htmlText(id);
+        v[QStringLiteral("UsenetFileName")] = htmlText(fname);
+        v[QStringLiteral("UsenetFileType")] = webFileTypeToken(fname);
+        v[QStringLiteral("UsenetFileSize")] = formatByteSize(f.value(QStringLiteral("size")).toInteger());
+        v[QStringLiteral("UsenetFilePercent")] = QString::number(pct);
+        v[QStringLiteral("UsenetFileArticles")] = QStringLiteral("%1/%2").arg(done).arg(segs);
+        v[QStringLiteral("UsenetFileMissing")] = missing > 0 ? QString::number(missing) : QString();
+        v[QStringLiteral("UsenetFileStatus")] =
+            htmlText(missing > 0  ? tr("%n article(s) missing", nullptr, int(missing))
+                     : pct >= 100 ? tr("Complete")
+                     : done > 0   ? tr("Downloading")
+                                  : tr("Queued"));
+        v[QStringLiteral("UsenetFileClass")] =
+            f.value(QStringLiteral("isPar2")).toBool() ? QStringLiteral("un-par2") : QString();
+        v[QStringLiteral("UsenetFileTitle")] = htmlText(title);
+        v[QStringLiteral("UsenetFileOpen")] =
+            htmlText(usenetPublishedFor(d, finalPath).value(QStringLiteral("relPath")).toString());
+        v[QStringLiteral("UsenetFileHasFinal")] =
+            finalPath.isEmpty() ? QStringLiteral("0") : QStringLiteral("1");
+        v[QStringLiteral("UsenetFilePlay")] = usenetPlayFlag(fname);
+        fileLines += WebTemplateEngine::substitute(fileTmpl, v);
+    }
+
+    QHash<QString, QString> vars;
+    vars[QStringLiteral("UsenetId")] = htmlText(id);
+    vars[QStringLiteral("UsenetName")] = htmlText(d.value(QStringLiteral("name")).toString());
+    vars[QStringLiteral("UsenetSize")] = formatByteSize(d.value(QStringLiteral("totalBytes")).toInteger());
+    vars[QStringLiteral("UsenetDate")] = newest > 0
+        ? QDateTime::fromSecsSinceEpoch(newest).toString(QStringLiteral("yyyy-MM-dd HH:mm"))
+        : QString();
+    vars[QStringLiteral("UsenetStatus")] = htmlText(usenetStatusText(d));
+    vars[QStringLiteral("UsenetHealth")] = usenetHealthText(d);
+    vars[QStringLiteral("UsenetHealthTitle")] = htmlText(usenetHealthTitle(d));
+    vars[QStringLiteral("UsenetPoster")] = htmlText(collapseValues(posters));
+    vars[QStringLiteral("UsenetGroups")] = htmlText(collapseValues(groups));
+    vars[QStringLiteral("UsenetArticles")] =
+        htmlText(tr("%1 of %2").arg(QString::number(doneSegs), QString::number(totalSegs)));
+    vars[QStringLiteral("UsenetFileCount")] = QString::number(files.size());
+    vars[QStringLiteral("UsenetOpen")] = htmlText(payload.value(QStringLiteral("relPath")).toString());
+    vars[QStringLiteral("UsenetHasPayload")] = payload.isEmpty() ? QStringLiteral("0") : QStringLiteral("1");
+    vars[QStringLiteral("UsenetDetailsFiles")] = fileLines;
+    return WebTemplateEngine::substitute(m_templateEngine->section(QStringLiteral("USENET_DETAILS")),
+                                         vars);
+}
+
+// ---------------------------------------------------------------------------
+// Languages
+// ---------------------------------------------------------------------------
+
+QHttpServerResponse WebServer::loginPage(const QString& failedHtml)
+{
+    const QString tmpl =
+        m_templateEngine ? m_templateEngine->section(QStringLiteral("LOGIN")) : QString();
+    if (tmpl.isEmpty()) {
+        return QHttpServerResponse(QByteArrayLiteral("text/html"),
+            QByteArrayLiteral("<html><body><h1>eMule Web Interface</h1><p>Template not loaded.</p></body></html>"));
+    }
+
+    QHash<QString, QString> vars;
+    vars[QStringLiteral("CharSet")] = QStringLiteral("UTF-8");
+    vars[QStringLiteral("eMuleAppName")] = QStringLiteral("eMule");
+    vars[QStringLiteral("version")] = QString(kAppVersion);
+    vars[QStringLiteral("WebControl")] = htmlText(tr("Web Control Panel"));
+    vars[QStringLiteral("HtmlLang")] = htmlText(htmlLangCode(webLanguage({})));
+    vars[QStringLiteral("FailedLogin")] = failedHtml;
+    return QHttpServerResponse(QByteArrayLiteral("text/html"),
+                               WebTemplateEngine::substitute(tmpl, vars).toUtf8());
+}
+
+QString WebServer::webLanguage(const QString& sessionId, const QString& requested) const
+{
+    if (!m_translations)
+        return {};
+    QString chosen = requested;
+    if (m_sessionManager && !sessionId.isEmpty()) {
+        if (const WebSession* s = m_sessionManager->session(sessionId); s && !s->language.isEmpty())
+            chosen = s->language;
+    }
+    return m_translations->resolve(chosen, m_preferences ? m_preferences->language() : QString());
+}
+
+QString WebServer::languageOptions(const QString& sessionId) const
+{
+    const WebSession* session = m_sessionManager ? m_sessionManager->session(sessionId) : nullptr;
+    const QString chosen = session ? session->language : QString();
+
+    const auto option = [&chosen](const QString& code, const QString& label) {
+        return QStringLiteral("<option value=\"%1\"%2>%3</option>")
+            .arg(htmlText(code), code == chosen ? QStringLiteral(" selected") : QString(),
+                 htmlText(label));
+    };
+
+    // "App language" names what that currently is, so choosing it is not a guess.
+    const QString app = m_translations
+        ? m_translations->resolve({}, m_preferences ? m_preferences->language() : QString())
+        : QStringLiteral("en_US");
+    QString html = option({}, tr("App language (%1)").arg(QLocale(app).nativeLanguageName()));
+    html += option(QStringLiteral("en_US"), QStringLiteral("English"));
+    if (m_translations) {
+        for (const AppLanguage& lang : m_translations->availableLanguages())
+            html += option(lang.code, lang.label);
+    }
+    return html;
 }
 
 } // namespace eMule

@@ -3,10 +3,17 @@
 
 #include "TestHelpers.h"
 #include "webserver/WebServer.h"
+#include "webserver/WebTemplateEngine.h"
+#include "webserver/WebTemplateStrings.h"
+#include "utils/ByteRateSampler.h"
+#include "utils/StringUtils.h"
 
+#include "app/AppConfig.h"
+#include "app/TranslationRouter.h"
 #include "friends/FriendList.h"
 #include "prefs/Preferences.h"
 #include "search/SearchList.h"
+#include "server/Server.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
 #include "stats/Statistics.h"
@@ -17,6 +24,9 @@
 #include "files/KnownFileList.h"
 #include "files/SharedFileList.h"
 
+#include <QCborArray>
+#include <QCborMap>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -26,17 +36,255 @@
 #include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QRegularExpression>
+#include <QScopeGuard>
 #include <QSet>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTranslator>
 
+#include <algorithm>
 #include <cstring>
+#include <functional>
 #include <QTimer>
 
 using namespace eMule;
+
+namespace {
+
+/// A whole `<--TMPL_NAME-->` section of @p text, markers included; empty when absent.
+QString templateSection(const QString& text, const QString& name)
+{
+    const QString open = QStringLiteral("<--TMPL_%1-->").arg(name);
+    const QString close = QStringLiteral("<--TMPL_%1_END-->").arg(name);
+    const qsizetype from = text.indexOf(open);
+    const qsizetype to = text.indexOf(close, from);
+    return (from < 0 || to < 0) ? QString{} : text.mid(from, to - from);
+}
+
+QString sha256Hex(const QString& text)
+{
+    return QString::fromLatin1(
+        QCryptographicHash::hash(text.toUtf8(), QCryptographicHash::Sha256).toHex());
+}
+
+QCborMap usenetFileRow(int index, const QString& name, bool par2 = false)
+{
+    return QCborMap{
+        {QStringLiteral("index"), index},
+        {QStringLiteral("name"), name},
+        {QStringLiteral("size"), qint64(1000000)},
+        {QStringLiteral("percent"), 25},
+        {QStringLiteral("finalPath"), QString()},
+        {QStringLiteral("isPar2"), par2},
+        {QStringLiteral("missingSegments"), 0},
+        {QStringLiteral("previewable"), !par2},
+        {QStringLiteral("previewNote"), QString()},
+    };
+}
+
+/// Two releases in the GetUsenetQueue shape: one downloading in category 1 whose
+/// name is hostile to both HTML and the template engine, one finished in category 2.
+QCborArray fakeUsenetRows()
+{
+    const QCborMap a{
+        {QStringLiteral("id"), QStringLiteral("item-a")},
+        {QStringLiteral("name"), QStringLiteral("<b>[Session]</b> Movie")},
+        {QStringLiteral("status"), 1},
+        {QStringLiteral("statusText"), QStringLiteral("Downloading")},
+        {QStringLiteral("priority"), 0},
+        {QStringLiteral("category"), 1},
+        {QStringLiteral("percent"), 25},
+        {QStringLiteral("totalBytes"), qint64(2000000)},
+        {QStringLiteral("decodedBytes"), qint64(500000)},
+        {QStringLiteral("healthPercent"), -1},
+        {QStringLiteral("files"), QCborArray{usenetFileRow(0, QStringLiteral("Movie.mkv")),
+                                             usenetFileRow(1, QStringLiteral("Movie.par2"), true)}},
+        {QStringLiteral("publishedFiles"), QCborArray{}},
+    };
+    const QCborMap b{
+        {QStringLiteral("id"), QStringLiteral("item-b")},
+        {QStringLiteral("name"), QStringLiteral("Other Release")},
+        {QStringLiteral("status"), 3},
+        {QStringLiteral("statusText"), QStringLiteral("Completed")},
+        {QStringLiteral("priority"), 1},
+        {QStringLiteral("category"), 2},
+        {QStringLiteral("percent"), 100},
+        {QStringLiteral("totalBytes"), qint64(1000000)},
+        {QStringLiteral("decodedBytes"), qint64(1000000)},
+        {QStringLiteral("healthPercent"), 100},
+        {QStringLiteral("healthProbed"), true},
+        {QStringLiteral("files"), QCborArray{usenetFileRow(0, QStringLiteral("Other.mkv"))}},
+        {QStringLiteral("publishedFiles"), QCborArray{QCborMap{
+            {QStringLiteral("name"), QStringLiteral("Other.mkv")},
+            {QStringLiteral("path"), QStringLiteral("/in/Other.mkv")},
+            {QStringLiteral("relPath"), QStringLiteral("Other.mkv")},
+            {QStringLiteral("size"), qint64(100)},
+        }}},
+    };
+    return QCborArray{a, b};
+}
+
+/// Records what the web server asked for. Categories 0-2 exist.
+class FakeUsenetBackend final : public UsenetWebBackend {
+public:
+    QCborArray rows = fakeUsenetRows();
+    mutable QStringList calls;
+    bool pauseResult = true;
+    UsenetWebAddResult nextAdd;
+    QByteArray lastData;
+    QString lastName;
+    QString lastUrl;
+    UsenetWebAddOptions lastOptions;
+
+    bool available() const override { return true; }
+    QCborArray queue() const override { return rows; }
+
+    bool contains(const QString& id) const override
+    {
+        for (const auto& v : rows) {
+            if (v.toMap().value(QStringLiteral("id")).toString() == id)
+                return true;
+        }
+        return false;
+    }
+
+    QCborMap details(const QString& id) const override
+    {
+        calls << QStringLiteral("details:") + id;
+        for (const auto& v : rows) {
+            if (v.toMap().value(QStringLiteral("id")).toString() == id)
+                return v.toMap();
+        }
+        return {};
+    }
+
+    QCborMap archiveEntries(const QString& id, int fileIndex) override
+    {
+        calls << QStringLiteral("entries:%1:%2").arg(id).arg(fileIndex);
+        return QCborMap{{QStringLiteral("status"), 2}, {QStringLiteral("entries"), QCborArray{}}};
+    }
+
+    QCborMap downloadSplit() const override
+    {
+        return QCborMap{{QStringLiteral("maxDownloadKb"), 0},
+                        {QStringLiteral("usenetLimitKb"), 0},
+                        {QStringLiteral("ed2kBudgetKb"), 0},
+                        {QStringLiteral("rate"), 1234},
+                        {QStringLiteral("paused"), enginePaused}};
+    }
+
+    bool categoryExists(int category) const override { return category >= 0 && category < 3; }
+
+    bool enginePaused = false;
+    void setEnginePaused(bool paused) override
+    {
+        calls << QStringLiteral("engine:%1").arg(paused ? 1 : 0);
+        enginePaused = paused;
+    }
+
+    QString setFilesSkipped(const QString& id, const QList<int>& files, bool skipped) override
+    {
+        QStringList indices;
+        for (const int f : files)
+            indices << QString::number(f);
+        calls << QStringLiteral("%1:%2:%3")
+                     .arg(skipped ? QStringLiteral("skip") : QStringLiteral("unskip"), id,
+                          indices.join(QLatin1Char(',')));
+        return {};
+    }
+
+    bool pause(const QString& id) override
+    {
+        calls << QStringLiteral("pause:") + id;
+        return pauseResult;
+    }
+    bool resume(const QString& id) override
+    {
+        calls << QStringLiteral("resume:") + id;
+        return true;
+    }
+    bool remove(const QString& id, bool deleteFiles) override
+    {
+        calls << QStringLiteral("remove:%1:%2")
+                     .arg(id, deleteFiles ? QStringLiteral("true") : QStringLiteral("false"));
+        return true;
+    }
+    bool setPriority(const QString& id, int priority) override
+    {
+        calls << QStringLiteral("priority:%1:%2").arg(id).arg(priority);
+        return true;
+    }
+    bool setCategory(const QString& id, int category) override
+    {
+        calls << QStringLiteral("category:%1:%2").arg(id).arg(category);
+        return true;
+    }
+    bool setPassword(const QString& id, const QString& password) override
+    {
+        calls << QStringLiteral("password:%1:%2").arg(id, password);
+        return true;
+    }
+    QString recheck(const QString& id) override
+    {
+        calls << QStringLiteral("check:") + id;
+        return {};
+    }
+    int applyCategoryAction(int category, UsenetWebCategoryAction action) override
+    {
+        calls << QStringLiteral("cat:%1:%2").arg(category).arg(int(action));
+        return categoryExists(category) ? 1 : -1;
+    }
+
+    UsenetWebAddResult addNzb(const QByteArray& data, const QString& name,
+                              const UsenetWebAddOptions& options) override
+    {
+        calls << QStringLiteral("add");
+        lastData = data;
+        lastName = name;
+        lastOptions = options;
+        return nextAdd;
+    }
+
+    void addNzbUrl(const QString& url, const UsenetWebAddOptions& options,
+                   std::function<void(const UsenetWebAddResult&)> done) override
+    {
+        calls << QStringLiteral("addurl");
+        lastUrl = url;
+        lastOptions = options;
+        // Later, like a real fetch, so the deferred reply is what gets tested.
+        QTimer::singleShot(50, [done = std::move(done), r = nextAdd] { done(r); });
+    }
+};
+
+/// Answers every web-UI lookup with text hostile to HTML, JS and the template
+/// engine at once.
+class HostileTranslator final : public QTranslator {
+public:
+    QString translate(const char* context, const char* source, const char*, int) const override
+    {
+        if (qstrcmp(context, kWebTranslationContext) != 0)
+            return {};
+        return QStringLiteral("<i>\"'[Session]{{Transfer}}&</i>") + QString::fromUtf8(source);
+    }
+    bool isEmpty() const override { return false; }
+};
+
+/// Language "xx": every web-UI string gets an "XX:" prefix.
+class PrefixTranslator final : public QTranslator {
+public:
+    QString translate(const char* context, const char* source, const char*, int) const override
+    {
+        return qstrcmp(context, kWebTranslationContext) == 0
+                   ? QStringLiteral("XX:") + QString::fromUtf8(source) : QString();
+    }
+    bool isEmpty() const override { return false; }
+};
+
+} // namespace
+
 
 // ---------------------------------------------------------------------------
 // Test fixture
@@ -128,6 +376,30 @@ private slots:
     void graphVars_pointsStayInsideTheViewBox();
     void graphVars_withNoSamplesAreEmpty();
 
+    // Usenet — the web page and the REST API
+    void byteRateSamplerIgnoresReadingsInsideItsWindow();
+    void usenetPageRendersTheQueueEscaped();
+    void usenetListFragmentFiltersAndSorts();
+    void usenetActionsNeedAnAdminSession();
+    void usenetAddFromThePageCarriesBytesAndOptions();
+    void usenetPageWithoutBackendSaysUnavailable();
+    void restUsenetListNeedsKeyAndReturnsRows();
+    void restUsenetStatsIsNotShadowedByItemRoute();
+    void restUsenetItemActionsAndErrors();
+    void restUsenetPatchAndDelete();
+    void restUsenetAddRawAndUrl();
+    void restUsenetWithoutBackendIs503();
+    void restUsenetAbsentWhenRestDisabled();
+    void theUsenetTemplateHasItsSections();
+
+    // Template engine, escaping and languages
+    void templateEngineSubstitutesInOnePass();
+    void templateMarkersEscapeHostileTranslations();
+    void templateMarkersMatchTheStringsHeader();
+    void pagesEscapeHostileServerLogAndShareText();
+    void languageOverrideIsPerSession();
+    void shippedGermanTranslatesTheWebContext();
+
 private:
     // Helper: send HTTP request and block until response
     struct Response {
@@ -154,8 +426,21 @@ private:
 
     // Start a throwaway WebServer with the given UI/REST flags on a random port,
     // wired to the shared fixture dependencies. Caller owns and must stop it.
-    std::unique_ptr<WebServer> startServer(bool webUiEnabled, bool restApiEnabled,
-                                           const QString& templatePath = QString());
+    std::unique_ptr<WebServer> startServer(
+        bool webUiEnabled, bool restApiEnabled, const QString& templatePath = QString(),
+        const std::function<void(WebServer&, WebServerConfig&)>& tweak = {});
+
+    /// A web-UI server on the real template, with @p backend, an admin login
+    /// ("admin-pw") and a guest one ("guest-pw").
+    std::unique_ptr<WebServer> startUsenetUi(UsenetWebBackend* backend);
+
+    /// Log in through the form; the session id, or empty.
+    QString webLogin(uint16 port, const QString& password);
+
+    /// Any method, body, content type and headers, against any port. No API key.
+    Response sendRaw(uint16 port, const QByteArray& method, const QString& path,
+                     const QByteArray& body = {}, const QByteArray& contentType = {},
+                     const QList<std::pair<QByteArray, QByteArray>>& headers = {});
 
     std::unique_ptr<WebServer>     m_webServer;
     std::unique_ptr<Statistics>    m_stats;
@@ -567,8 +852,9 @@ QString tst_WebServer::rawGetBody(uint16 port, const QString& path)
     return body;
 }
 
-std::unique_ptr<WebServer> tst_WebServer::startServer(bool webUiEnabled, bool restApiEnabled,
-                                                      const QString& templatePath)
+std::unique_ptr<WebServer> tst_WebServer::startServer(
+    bool webUiEnabled, bool restApiEnabled, const QString& templatePath,
+    const std::function<void(WebServer&, WebServerConfig&)>& tweak)
 {
     auto server = std::make_unique<WebServer>();
     server->setStatistics(m_stats.get());
@@ -588,6 +874,8 @@ std::unique_ptr<WebServer> tst_WebServer::startServer(bool webUiEnabled, bool re
     config.port = 0;
     config.apiKey = m_apiKey;
     config.templatePath = templatePath;  // empty by default — page render is not under test here
+    if (tweak)
+        tweak(*server, config);
 
     server->start(config);
     return server;
@@ -1297,13 +1585,7 @@ void tst_WebServer::theTemplateRowsAskForPerFileIcons()
     QVERIFY(tmpl.open(QIODevice::ReadOnly));
     const QString text = QString::fromUtf8(tmpl.readAll());
 
-    const auto section = [&text](const QString& name) {
-        const QString open = QStringLiteral("<--TMPL_%1-->").arg(name);
-        const QString close = QStringLiteral("<--TMPL_%1_END-->").arg(name);
-        const qsizetype from = text.indexOf(open);
-        const qsizetype to = text.indexOf(close, from);
-        return (from < 0 || to < 0) ? QString{} : text.mid(from, to - from);
-    };
+    const auto section = [&text](const QString& name) { return templateSection(text, name); };
 
     const QString down = section(QStringLiteral("TRANSFER_DOWN_LINE"));
     const QString shared = section(QStringLiteral("SHARED_LINE"));
@@ -1358,7 +1640,7 @@ void tst_WebServer::theTemplateLeavesSizeAndRateUnitsToTheValue()
 
     static const QRegularExpression doubled(QStringLiteral(
         "\\[(DownloadFileSize|DownloadCompleted|DownloadSpeed|TotalUpTransferred|"
-        "TotalUpSpeed|SharedFileSize|SharedTransferred|SessionReceived|SessionSent)\\]"
+        "TotalUpSpeed|SharedFileSize|SharedTransferred|SessionReceived|SessionSent|UsenetSize|UsenetSpeed|UsenetRemaining|UsenetFileSize)\\]"
         "\\s*(bytes|[KMGT]?B(/s)?)\\b"),
         QRegularExpression::CaseInsensitiveOption);
     const QRegularExpressionMatch m = doubled.match(text);
@@ -1417,6 +1699,23 @@ void tst_WebServer::everySpriteTokenTheTemplateAsksForExists()
                              QStringLiteral("5"), QStringLiteral("search"),
                              QStringLiteral("fake")}) {
         wanted << QStringLiteral("rating_") + t;
+    }
+
+    // The Usenet page: its tab, the status marks it borrows from Transfer, and
+    // the toolbar and menu icons its script composes.
+    for (const QString& t : {QStringLiteral("h_usenet"), QStringLiteral("t_downloading"),
+                             QStringLiteral("t_paused"), QStringLiteral("t_complete"),
+                             QStringLiteral("t_error"), QStringLiteral("t_completing"),
+                             QStringLiteral("t_connecting"), QStringLiteral("t_waiting"),
+                             QStringLiteral("l_add"), QStringLiteral("l_pause"),
+                             QStringLiteral("l_resume"), QStringLiteral("l_remove"),
+                             QStringLiteral("l_cancel"), QStringLiteral("l_info"),
+                             QStringLiteral("l_category"), QStringLiteral("l_options"),
+                             QStringLiteral("l_search"), QStringLiteral("l_shared"),
+                             QStringLiteral("l_ed2klink"), QStringLiteral("l_close"),
+                             QStringLiteral("l_none"), QStringLiteral("high"), QStringLiteral("low"),
+                             QStringLiteral("filetype_video"), QStringLiteral("filetype_other")}) {
+        wanted << t;
     }
 
     for (const QString& cls : wanted) {
@@ -1773,6 +2072,704 @@ void tst_WebServer::aCustomTemplateOverridesAssetsOneFileAtATime()
 
     server->stop();
     m_preferences->setConfigDir(prevCfg);
+}
+
+// ---------------------------------------------------------------------------
+// Usenet — the web page and the REST API
+// ---------------------------------------------------------------------------
+
+tst_WebServer::Response tst_WebServer::sendRaw(uint16 port, const QByteArray& method,
+                                               const QString& path, const QByteArray& body,
+                                               const QByteArray& contentType,
+                                               const QList<std::pair<QByteArray, QByteArray>>& headers)
+{
+    QNetworkRequest req(QUrl(QStringLiteral("http://127.0.0.1:%1%2").arg(port).arg(path)));
+    if (!contentType.isEmpty())
+        req.setHeader(QNetworkRequest::ContentTypeHeader, contentType);
+    for (const auto& [key, value] : headers)
+        req.setRawHeader(key, value);
+
+    QNetworkReply* reply = method == QByteArrayLiteral("GET")
+                               ? m_nam.get(req)
+                               : m_nam.sendCustomRequest(req, method, body);
+    if (!reply->isFinished()) {
+        QEventLoop loop;
+        QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+        QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+        loop.exec();
+    }
+
+    Response resp;
+    resp.statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    resp.rawBody = reply->readAll();
+    resp.json = QJsonDocument::fromJson(resp.rawBody);
+    reply->deleteLater();
+    return resp;
+}
+
+std::unique_ptr<WebServer> tst_WebServer::startUsenetUi(UsenetWebBackend* backend)
+{
+    return startServer(/*webUiEnabled*/ true, /*restApiEnabled*/ false,
+                       eMule::testing::projectDataDir() + QStringLiteral("/config/eMule.tmpl"),
+                       [backend](WebServer& server, WebServerConfig& config) {
+        server.setUsenetBackend(backend);
+        config.adminPasswordHash = sha256Hex(QStringLiteral("admin-pw"));
+        config.guestEnabled = true;
+        config.guestPasswordHash = sha256Hex(QStringLiteral("guest-pw"));
+    });
+}
+
+QString tst_WebServer::webLogin(uint16 port, const QString& password)
+{
+    // The form posts to "/", and the answer is a meta refresh carrying the session.
+    const Response r = sendRaw(port, QByteArrayLiteral("POST"), QStringLiteral("/"),
+                               QByteArrayLiteral("p=") + QUrl::toPercentEncoding(password),
+                               QByteArrayLiteral("application/x-www-form-urlencoded"));
+    static const QRegularExpression rx(QStringLiteral("ses=([^&\"]+)"));
+    const QRegularExpressionMatch m = rx.match(QString::fromUtf8(r.rawBody));
+    return m.hasMatch() ? m.captured(1) : QString();
+}
+
+void tst_WebServer::byteRateSamplerIgnoresReadingsInsideItsWindow()
+{
+    ByteRateSampler s;
+    QCOMPARE(s.update(0, 1000), qint64(0));        // the first reading only anchors
+    QCOMPARE(s.update(400, 1200), qint64(0));      // 200 ms on: too close to measure
+    QCOMPARE(s.update(1000, 2000), qint64(1000));  // 1000 bytes over 1 s
+    QCOMPARE(s.update(1000, 3000), qint64(0));     // standing still reads as zero
+}
+
+void tst_WebServer::usenetPageRendersTheQueueEscaped()
+{
+    FakeUsenetBackend fake;
+    auto server = startUsenetUi(&fake);
+    QVERIFY(server->isRunning());
+    const uint16 port = server->port();
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+    QVERIFY(!ses.isEmpty());
+
+    const QString page = rawGetBody(port, QStringLiteral("/?ses=%1&w=usenet").arg(ses));
+
+    // The tab exists and is the active one.
+    QVERIFY(page.contains(QStringLiteral("nav-tab active\"><a href=\"?ses=%1&amp;w=usenet\"").arg(ses)));
+    QVERIFY(page.contains(QStringLiteral("icon-h_usenet")));
+
+    // A name is data, not markup — and not a template key either: "[Session]"
+    // must survive substitution rather than turn into the session id.
+    QVERIFY(page.contains(QStringLiteral("&lt;b&gt;[Session]&lt;/b&gt; Movie")));
+    QVERIFY(!page.contains(QStringLiteral("<b>[Session]")));
+    QVERIFY(!page.contains(QStringLiteral("&lt;b&gt;") + ses));
+
+    // Both releases, their files, and sizes that carry their own unit.
+    QVERIFY(page.contains(QStringLiteral("data-id=\"item-a\"")));
+    QVERIFY(page.contains(QStringLiteral("data-id=\"item-b\"")));
+    QVERIFY(page.contains(QStringLiteral("Movie.par2")));
+    QVERIFY(page.contains(formatByteSize(qint64(2000000))));
+    QVERIFY(page.contains(QStringLiteral("un-item un-active")));
+
+    // Every key filled, the menu container present, the stream token handed over.
+    static const QRegularExpression leftover(QStringLiteral("\\[(Usenet[A-Za-z]*|SortMark_[a-z]+|StreamToken|IsAdmin)\\]"));
+    const QRegularExpressionMatch m = leftover.match(page);
+    QVERIFY2(!m.hasMatch(), qPrintable(m.captured(0)));
+    QVERIFY(page.contains(QStringLiteral("id=\"usenetmenu\"")));
+    QVERIFY(page.contains(server->streamToken()));
+
+    // The Qt window's summary, over every tab: one of two is active, half the bytes are in.
+    QVERIFY(page.contains(QStringLiteral("2 download(s), 1 active — 50% complete")));
+
+    server->stop();
+}
+
+void tst_WebServer::usenetListFragmentFiltersAndSorts()
+{
+    FakeUsenetBackend fake;
+    auto server = startUsenetUi(&fake);
+    const uint16 port = server->port();
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+    QVERIFY(!ses.isEmpty());
+
+    const QString base = QStringLiteral("/?ses=%1&w=usenet&part=list").arg(ses);
+    const QString all = rawGetBody(port, base);
+    QVERIFY(all.contains(QStringLiteral("<!--usenet-list-->")));
+    QVERIFY(!all.contains(QStringLiteral("<html")));    // a fragment, not a page
+    QVERIFY(all.contains(QStringLiteral("data-id=\"item-a\"")));
+    QVERIFY(all.contains(QStringLiteral("data-id=\"item-b\"")));
+
+    const QString cat2 = rawGetBody(port, base + QStringLiteral("&cat=2"));
+    QVERIFY(cat2.contains(QStringLiteral("data-id=\"item-b\"")));
+    QVERIFY(!cat2.contains(QStringLiteral("data-id=\"item-a\"")));
+
+    const QString asc = rawGetBody(port, base + QStringLiteral("&sort=name&desc=0"));
+    const QString desc = rawGetBody(port, base + QStringLiteral("&sort=name&desc=1"));
+    QVERIFY(asc.indexOf(QStringLiteral("data-id=\"item-a\"")) < asc.indexOf(QStringLiteral("data-id=\"item-b\"")));
+    QVERIFY(desc.indexOf(QStringLiteral("data-id=\"item-b\"")) < desc.indexOf(QStringLiteral("data-id=\"item-a\"")));
+    QVERIFY(desc.contains(QStringLiteral("Name &#9660;")));
+
+    // Most finished first, like the Qt model: Complete ranks above Downloading.
+    const QString byStatus = rawGetBody(port, base + QStringLiteral("&sort=status"));
+    QVERIFY(byStatus.indexOf(QStringLiteral("data-id=\"item-b\"")) < byStatus.indexOf(QStringLiteral("data-id=\"item-a\"")));
+
+    // A finished release opens its payload from publishedFiles.
+    QVERIFY(all.contains(QStringLiteral("data-open=\"Other.mkv\" data-play=\"1\" data-payload=\"1\"")));
+
+    server->stop();
+}
+
+void tst_WebServer::usenetActionsNeedAnAdminSession()
+{
+    FakeUsenetBackend fake;
+    auto server = startUsenetUi(&fake);
+    const uint16 port = server->port();
+    const QString admin = webLogin(port, QStringLiteral("admin-pw"));
+    const QString guest = webLogin(port, QStringLiteral("guest-pw"));
+    QVERIFY(!admin.isEmpty());
+    QVERIFY(!guest.isEmpty());
+
+    const QByteArray form("application/x-www-form-urlencoded");
+    const auto post = [&](const QString& ses, const QByteArray& body) {
+        return sendRaw(port, QByteArrayLiteral("POST"),
+                       QStringLiteral("/usenet/action?ses=%1").arg(ses), body, form);
+    };
+
+    // The selection is repeated ids, and every one is acted on.
+    Response r = post(admin, QByteArrayLiteral("op=pause&id=item-a&id=item-b"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("done")).toInt(), 2);
+    QVERIFY(fake.calls.contains(QStringLiteral("pause:item-a")));
+    QVERIFY(fake.calls.contains(QStringLiteral("pause:item-b")));
+
+    // A passphrase is opaque: percent-encoded '+', '&' and spaces arrive intact,
+    // and a form's literal '+' still means a space.
+    r = post(admin, QByteArrayLiteral("op=password&id=item-a&v=") + QUrl::toPercentEncoding(QStringLiteral("p a+ss&w")));
+    QCOMPARE(r.statusCode, 200);
+    QVERIFY(fake.calls.contains(QStringLiteral("password:item-a:p a+ss&w")));
+    r = post(admin, QByteArrayLiteral("op=password&id=item-a&v=a+b"));
+    QVERIFY(fake.calls.contains(QStringLiteral("password:item-a:a b")));
+
+    r = post(admin, QByteArrayLiteral("op=priority&id=item-a&v=7"));
+    QCOMPARE(r.statusCode, 400);
+
+    r = post(admin, QByteArrayLiteral("op=catpause&v=1"));
+    QCOMPARE(r.statusCode, 200);
+    QVERIFY(fake.calls.contains(QStringLiteral("cat:1:0")));
+    QCOMPARE(post(admin, QByteArrayLiteral("op=catcancel&v=9")).statusCode, 400);
+
+    // Guests look; they do not touch.
+    const qsizetype before = fake.calls.size();
+    QCOMPARE(post(guest, QByteArrayLiteral("op=pause&id=item-a")).statusCode, 403);
+    QCOMPARE(post(QString(), QByteArrayLiteral("op=pause&id=item-a")).statusCode, 401);
+    QCOMPARE(fake.calls.size(), before);
+
+    // ...but a guest may still ask what an archive holds, for Preview.
+    r = sendRaw(port, QByteArrayLiteral("GET"),
+                QStringLiteral("/usenet/entries?ses=%1&id=item-a&file=0").arg(guest));
+    QCOMPARE(r.statusCode, 200);
+    QVERIFY(fake.calls.contains(QStringLiteral("entries:item-a:0")));
+
+    server->stop();
+}
+
+void tst_WebServer::usenetAddFromThePageCarriesBytesAndOptions()
+{
+    FakeUsenetBackend fake;
+    auto server = startUsenetUi(&fake);
+    const uint16 port = server->port();
+    const QString admin = webLogin(port, QStringLiteral("admin-pw"));
+    const QString guest = webLogin(port, QStringLiteral("guest-pw"));
+    QVERIFY(!admin.isEmpty());
+
+    fake.nextAdd.itemId = QStringLiteral("new-1");
+    fake.nextAdd.outcome = UsenetWebAddOutcome::Added;
+
+    const QString path = QStringLiteral("/usenet/add?ses=%1&name=R.nzb&category=2&priority=1&paused=1");
+    const QList<std::pair<QByteArray, QByteArray>> pw{
+        {QByteArrayLiteral("X-Nzb-Password"), QUrl::toPercentEncoding(QStringLiteral("pw é"))}};
+
+    Response r = sendRaw(port, QByteArrayLiteral("POST"), path.arg(admin), QByteArrayLiteral("<nzb/>"),
+                         QByteArrayLiteral("application/x-nzb"), pw);
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("id")).toString(), QStringLiteral("new-1"));
+    QCOMPARE(fake.lastData, QByteArrayLiteral("<nzb/>"));
+    QCOMPARE(fake.lastName, QStringLiteral("R.nzb"));
+    QCOMPARE(fake.lastOptions.category, 2);
+    QCOMPARE(fake.lastOptions.priority, 1);
+    QVERIFY(fake.lastOptions.paused);
+    QCOMPARE(fake.lastOptions.password, QStringLiteral("pw é"));
+
+    // "Already downloaded" is a question the page asks, so it must be told apart.
+    fake.nextAdd = {};
+    fake.nextAdd.outcome = UsenetWebAddOutcome::AlreadyDownloaded;
+    fake.nextAdd.error = QStringLiteral("You already downloaded this.");
+    r = sendRaw(port, QByteArrayLiteral("POST"), path.arg(admin), QByteArrayLiteral("<nzb/>"),
+                QByteArrayLiteral("application/x-nzb"));
+    QCOMPARE(r.statusCode, 409);
+    QCOMPARE(r.json.object().value(QStringLiteral("outcome")).toInt(), 4);
+
+    // A link arrives as a form body, and the reply waits for the fetch.
+    r = sendRaw(port, QByteArrayLiteral("POST"), QStringLiteral("/usenet/add?ses=%1").arg(admin),
+                QByteArrayLiteral("url=") + QUrl::toPercentEncoding(QStringLiteral("https://x.test/a.nzb?apikey=k"))
+                    + QByteArrayLiteral("&force=1&password=s3cret"),
+                QByteArrayLiteral("application/x-www-form-urlencoded"));
+    QCOMPARE(r.statusCode, 409);
+    QCOMPARE(fake.lastUrl, QStringLiteral("https://x.test/a.nzb?apikey=k"));
+    QVERIFY(fake.lastOptions.force);
+    QCOMPARE(fake.lastOptions.password, QStringLiteral("s3cret"));
+
+    const qsizetype before = fake.calls.size();
+    QCOMPARE(sendRaw(port, QByteArrayLiteral("POST"),
+                     QStringLiteral("/usenet/add?ses=%1&category=7").arg(admin),
+                     QByteArrayLiteral("<nzb/>"), QByteArrayLiteral("application/x-nzb")).statusCode, 400);
+    QCOMPARE(sendRaw(port, QByteArrayLiteral("POST"), path.arg(guest), QByteArrayLiteral("<nzb/>"),
+                     QByteArrayLiteral("application/x-nzb")).statusCode, 403);
+    QCOMPARE(fake.calls.size(), before);
+
+    server->stop();
+}
+
+void tst_WebServer::usenetPageWithoutBackendSaysUnavailable()
+{
+    auto server = startUsenetUi(nullptr);
+    const uint16 port = server->port();
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+    QVERIFY(!ses.isEmpty());
+
+    QVERIFY(rawGetBody(port, QStringLiteral("/?ses=%1&w=usenet").arg(ses))
+                .contains(QStringLiteral("Usenet engine unavailable")));
+    // The fragment keeps its marker, or the page would reload itself in a loop.
+    const QString list = rawGetBody(port, QStringLiteral("/?ses=%1&w=usenet&part=list").arg(ses));
+    QVERIFY(list.contains(QStringLiteral("<!--usenet-list-->")));
+    QCOMPARE(sendRaw(port, QByteArrayLiteral("POST"), QStringLiteral("/usenet/action?ses=%1").arg(ses),
+                     QByteArrayLiteral("op=pause&id=x"),
+                     QByteArrayLiteral("application/x-www-form-urlencoded")).statusCode, 503);
+
+    server->stop();
+}
+
+void tst_WebServer::restUsenetListNeedsKeyAndReturnsRows()
+{
+    FakeUsenetBackend fake;
+    m_webServer->setUsenetBackend(&fake);
+    const auto reset = qScopeGuard([this] { m_webServer->setUsenetBackend(nullptr); });
+
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/usenet"), {}, /*includeAuth*/ false).statusCode, 401);
+
+    Response r = sendRequest("GET", QStringLiteral("/api/v1/usenet"));
+    QCOMPARE(r.statusCode, 200);
+    const QJsonArray rows = r.json.array();
+    QCOMPARE(rows.size(), 2);
+    const QJsonObject a = rows.at(0).toObject();
+    QCOMPARE(a.value(QStringLiteral("id")).toString(), QStringLiteral("item-a"));
+    QVERIFY(a.contains(QStringLiteral("speed")));
+    QCOMPARE(a.value(QStringLiteral("files")).toArray().size(), 2);
+
+    r = sendRequest("GET", QStringLiteral("/api/v1/usenet?category=2"));
+    QCOMPARE(r.json.array().size(), 1);
+}
+
+void tst_WebServer::restUsenetStatsIsNotShadowedByItemRoute()
+{
+    FakeUsenetBackend fake;
+    m_webServer->setUsenetBackend(&fake);
+    const auto reset = qScopeGuard([this] { m_webServer->setUsenetBackend(nullptr); });
+
+    Response r = sendRequest("GET", QStringLiteral("/api/v1/usenet/stats"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("count")).toInt(), 2);
+    QCOMPARE(r.json.object().value(QStringLiteral("active")).toInt(), 1);
+    QCOMPARE(r.json.object().value(QStringLiteral("rate")).toInt(), 1234);
+    QVERIFY(!fake.calls.contains(QStringLiteral("details:stats")));
+
+    r = sendRequest("GET", QStringLiteral("/api/v1/usenet/item-a"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("id")).toString(), QStringLiteral("item-a"));
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/usenet/nope")).statusCode, 404);
+
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/usenet/item-a/0/entries")).statusCode, 200);
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/usenet/item-a/x/entries")).statusCode, 400);
+}
+
+void tst_WebServer::restUsenetItemActionsAndErrors()
+{
+    FakeUsenetBackend fake;
+    m_webServer->setUsenetBackend(&fake);
+    const auto reset = qScopeGuard([this] { m_webServer->setUsenetBackend(nullptr); });
+
+    Response r = sendRequest("POST", QStringLiteral("/api/v1/usenet/item-a/pause"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("id")).toString(), QStringLiteral("item-a"));
+    QVERIFY(fake.calls.contains(QStringLiteral("pause:item-a")));
+
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet/item-a/resume")).statusCode, 200);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet/item-a/check")).statusCode, 200);
+    QVERIFY(fake.calls.contains(QStringLiteral("check:item-a")));
+
+    // The queue refusing is a conflict with the release's state, not a bad request.
+    fake.pauseResult = false;
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet/item-a/pause")).statusCode, 409);
+
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet/nope/resume")).statusCode, 404);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet/item-a/explode")).statusCode, 404);
+
+    r = sendRequest("POST", QStringLiteral("/api/v1/usenet/categories/1/pause"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("affected")).toInt(), 1);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet/categories/9/resume")).statusCode, 400);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet/categories/1/explode")).statusCode, 404);
+
+    // The whole engine, on literal routes an item id can never shadow.
+    r = sendRequest("POST", QStringLiteral("/api/v1/usenet/pause"));
+    QCOMPARE(r.statusCode, 200);
+    QVERIFY(fake.enginePaused);
+    QVERIFY(sendRequest("GET", QStringLiteral("/api/v1/usenet/stats"))
+                .json.object().value(QStringLiteral("paused")).toBool());
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet/resume")).statusCode, 200);
+    QVERIFY(!fake.enginePaused);
+}
+
+void tst_WebServer::restUsenetPatchAndDelete()
+{
+    FakeUsenetBackend fake;
+    m_webServer->setUsenetBackend(&fake);
+    const auto reset = qScopeGuard([this] { m_webServer->setUsenetBackend(nullptr); });
+
+    Response r = sendRequest("PATCH", QStringLiteral("/api/v1/usenet/item-a"),
+                             QByteArrayLiteral("{\"priority\":2,\"category\":1,\"password\":\"x\"}"));
+    QCOMPARE(r.statusCode, 200);
+    QVERIFY(fake.calls.contains(QStringLiteral("priority:item-a:2")));
+    QVERIFY(fake.calls.contains(QStringLiteral("category:item-a:1")));
+    QVERIFY(fake.calls.contains(QStringLiteral("password:item-a:x")));
+
+    // Validated before anything applies: the good priority must not land beside the bad category.
+    const qsizetype before = fake.calls.size();
+    QCOMPARE(sendRequest("PATCH", QStringLiteral("/api/v1/usenet/item-a"),
+                         QByteArrayLiteral("{\"priority\":-1,\"category\":9}")).statusCode, 400);
+    QCOMPARE(fake.calls.size(), before);
+    QCOMPARE(sendRequest("PATCH", QStringLiteral("/api/v1/usenet/item-a"),
+                         QByteArrayLiteral("{\"priority\":5}")).statusCode, 400);
+    QCOMPARE(sendRequest("PATCH", QStringLiteral("/api/v1/usenet/item-a"),
+                         QByteArrayLiteral("{}")).statusCode, 400);
+    QCOMPARE(sendRequest("PATCH", QStringLiteral("/api/v1/usenet/nope"),
+                         QByteArrayLiteral("{\"priority\":1}")).statusCode, 404);
+
+    // Which files download: indices, both directions in one body.
+    r = sendRequest("PATCH", QStringLiteral("/api/v1/usenet/item-a"),
+                    QByteArrayLiteral("{\"skipFiles\":[2,3],\"unskipFiles\":[1]}"));
+    QCOMPARE(r.statusCode, 200);
+    QVERIFY(fake.calls.contains(QStringLiteral("skip:item-a:2,3")));
+    QVERIFY(fake.calls.contains(QStringLiteral("unskip:item-a:1")));
+    QCOMPARE(sendRequest("PATCH", QStringLiteral("/api/v1/usenet/item-a"),
+                         QByteArrayLiteral("{\"skipFiles\":[]}")).statusCode, 400);
+    QCOMPARE(sendRequest("PATCH", QStringLiteral("/api/v1/usenet/item-a"),
+                         QByteArrayLiteral("{\"skipFiles\":[\"x\"]}")).statusCode, 400);
+
+    r = sendRequest("DELETE", QStringLiteral("/api/v1/usenet/item-a?deleteFiles=true"));
+    QCOMPARE(r.statusCode, 200);
+    QVERIFY(fake.calls.contains(QStringLiteral("remove:item-a:true")));
+    QCOMPARE(sendRequest("DELETE", QStringLiteral("/api/v1/usenet/nope")).statusCode, 404);
+}
+
+void tst_WebServer::restUsenetAddRawAndUrl()
+{
+    FakeUsenetBackend fake;
+    m_webServer->setUsenetBackend(&fake);
+    const auto reset = qScopeGuard([this] { m_webServer->setUsenetBackend(nullptr); });
+
+    fake.nextAdd.itemId = QStringLiteral("new-2");
+    fake.nextAdd.outcome = UsenetWebAddOutcome::Added;
+    Response r = sendRaw(m_port, QByteArrayLiteral("POST"),
+                         QStringLiteral("/api/v1/usenet?name=A.nzb&priority=-1"),
+                         QByteArrayLiteral("<nzb/>"), QByteArrayLiteral("application/x-nzb"),
+                         {{QByteArrayLiteral("X-Api-Key"), m_apiKey.toUtf8()}});
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("id")).toString(), QStringLiteral("new-2"));
+    QCOMPARE(fake.lastName, QStringLiteral("A.nzb"));
+    QCOMPARE(fake.lastOptions.priority, -1);
+
+    // A JSON link: the reply waits for the (fake) fetch, and 409 carries the outcome.
+    fake.nextAdd = {};
+    fake.nextAdd.outcome = UsenetWebAddOutcome::AlreadyDownloaded;
+    r = sendRequest("POST", QStringLiteral("/api/v1/usenet"),
+                    QByteArrayLiteral("{\"url\":\"https://x.test/b.nzb\",\"category\":1,\"force\":true}"));
+    QCOMPARE(r.statusCode, 409);
+    QCOMPARE(r.json.object().value(QStringLiteral("outcome")).toInt(), 4);
+    QCOMPARE(fake.lastUrl, QStringLiteral("https://x.test/b.nzb"));
+    QCOMPARE(fake.lastOptions.category, 1);
+    QVERIFY(fake.lastOptions.force);
+
+    fake.nextAdd.busy = true;
+    fake.nextAdd.outcome = UsenetWebAddOutcome::Invalid;
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet"),
+                         QByteArrayLiteral("{\"url\":\"https://x.test/c.nzb\"}")).statusCode, 429);
+
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet"),
+                         QByteArrayLiteral("{\"category\":1}")).statusCode, 400);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet"), {}, /*includeAuth*/ false).statusCode, 401);
+}
+
+void tst_WebServer::restUsenetWithoutBackendIs503()
+{
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/usenet")).statusCode, 503);
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/usenet/stats")).statusCode, 503);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet/x/pause")).statusCode, 503);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet"),
+                         QByteArrayLiteral("{\"url\":\"https://x.test/a.nzb\"}")).statusCode, 503);
+}
+
+void tst_WebServer::restUsenetAbsentWhenRestDisabled()
+{
+    FakeUsenetBackend fake;
+    auto server = startServer(/*webUiEnabled*/ true, /*restApiEnabled*/ false, {},
+                              [&fake](WebServer& s, WebServerConfig&) { s.setUsenetBackend(&fake); });
+    QCOMPARE(rawGetStatus(server->port(), QStringLiteral("/api/v1/usenet"), /*withKey*/ true), 404);
+    server->stop();
+}
+
+void tst_WebServer::theUsenetTemplateHasItsSections()
+{
+    QFile tmpl(eMule::testing::projectDataDir() + QStringLiteral("/config/eMule.tmpl"));
+    QVERIFY(tmpl.open(QIODevice::ReadOnly));
+    const QString text = QString::fromUtf8(tmpl.readAll());
+
+    for (const QString& name : {QStringLiteral("USENET"), QStringLiteral("USENET_LIST"),
+                                QStringLiteral("USENET_LINE"), QStringLiteral("USENET_FILE_LINE"),
+                                QStringLiteral("USENET_DETAILS"), QStringLiteral("USENET_DETAILS_FILE_LINE"),
+                                QStringLiteral("USENET_DETAILS_GONE"), QStringLiteral("USENET_UNAVAILABLE")}) {
+        QVERIFY2(!templateSection(text, name).isEmpty(), qPrintable(name));
+    }
+
+    // The markers the page script reloads on when missing.
+    QVERIFY(templateSection(text, QStringLiteral("USENET_LIST")).contains(QStringLiteral("<!--usenet-list-->")));
+    QVERIFY(templateSection(text, QStringLiteral("USENET_DETAILS")).contains(QStringLiteral("usenet-details")));
+    QVERIFY(templateSection(text, QStringLiteral("USENET_DETAILS_GONE")).contains(QStringLiteral("usenet-details")));
+
+    const QString line = templateSection(text, QStringLiteral("USENET_LINE"));
+    for (const QString& key : {QStringLiteral("[UsenetId]"), QStringLiteral("[UsenetName]"),
+                               QStringLiteral("[UsenetFiles]"), QStringLiteral("[UsenetFileCount]"),
+                               QStringLiteral("icon-[UsenetStatusIcon]")}) {
+        QVERIFY2(line.contains(key), qPrintable(key));
+    }
+    QVERIFY(templateSection(text, QStringLiteral("HEADER")).contains(QStringLiteral("[Page_usenet]")));
+    QVERIFY(templateSection(text, QStringLiteral("FOOTER")).contains(QStringLiteral("id=\"usenetmenu\"")));
+}
+
+void tst_WebServer::templateEngineSubstitutesInOnePass()
+{
+    const QHash<QString, QString> vars{
+        {QStringLiteral("A"), QStringLiteral("[B] {{Transfer}}")},
+        {QStringLiteral("B"), QStringLiteral("bee")},
+    };
+    // A value is never scanned again, whatever it holds.
+    QCOMPARE(WebTemplateEngine::substitute(QStringLiteral("[A]|[B]"), vars),
+             QStringLiteral("[B] {{Transfer}}|bee"));
+
+    // Unknown keys, CSS selectors and script subscripts stay as written.
+    const QString css = QStringLiteral("input[type=\"text\"], [hidden], a[i], [Nope]");
+    QCOMPARE(WebTemplateEngine::substitute(css, vars), css);
+
+    // Without a translator a marker is its own text, escaped for where it stands.
+    QCOMPARE(WebTemplateEngine::substitute(QStringLiteral("<b>{{A & B}}</b>'{{js:It's}}'")),
+             QStringLiteral("<b>A &amp; B</b>'It\\x27s'"));
+}
+
+void tst_WebServer::templateMarkersEscapeHostileTranslations()
+{
+    TranslationRouter router{QStringList{}};
+    router.setTranslator(QStringLiteral("xx"), std::make_unique<HostileTranslator>());
+    QCoreApplication::installTranslator(&router);
+    const auto uninstall = qScopeGuard([&router] { QCoreApplication::removeTranslator(&router); });
+
+    const QHash<QString, QString> vars{{QStringLiteral("Session"), QStringLiteral("SECRET")}};
+    const QString tmpl = QStringLiteral(
+        "<a title=\"{{Tip}}\">{{Tip}}</a><script>x='{{js:Tip}}';</script>[Session]");
+
+    // Outside a scope the router translates nothing.
+    QCOMPARE(WebTemplateEngine::substitute(tmpl, vars),
+             QStringLiteral("<a title=\"Tip\">Tip</a><script>x='Tip';</script>SECRET"));
+
+    const TranslationRouter::Scope scope(&router, QStringLiteral("xx"));
+    const QString out = WebTemplateEngine::substitute(tmpl, vars);
+    QVERIFY2(out.contains(QStringLiteral(
+                 "<a title=\"&lt;i&gt;&quot;&#39;[Session]{{Transfer}}&amp;&lt;/i&gt;Tip\">")),
+             qPrintable(out));
+    QVERIFY2(out.contains(QStringLiteral(
+                 "x='\\x3ci\\x3e\\x22\\x27[Session]{{Transfer}}\\x26\\x3c/i\\x3eTip';")),
+             qPrintable(out));
+    // The translation's "[Session]" is text: only the template's own key was filled.
+    QCOMPARE(out.count(QStringLiteral("SECRET")), 1);
+}
+
+void tst_WebServer::templateMarkersMatchTheStringsHeader()
+{
+    QFile tmpl(eMule::testing::projectDataDir() + QStringLiteral("/config/eMule.tmpl"));
+    QVERIFY(tmpl.open(QIODevice::ReadOnly));
+    const QString text = QString::fromUtf8(tmpl.readAll());
+
+    const QStringList markers = WebTemplateEngine::markerTexts(text);
+    QVERIFY(markers.size() > 100);
+    const QSet<QString> inTemplate(markers.cbegin(), markers.cend());
+
+    QSet<QString> inHeader;
+    for (const char* source : kWebTemplateStrings)
+        inHeader.insert(QString::fromUtf8(source));
+    // Stale means lupdate misses strings: run scripts/extract_web_strings.py.
+    QVERIFY2(inHeader == inTemplate, "WebTemplateStrings.h is stale");
+
+    // Plain text only: an entity or a tag would reach translators as markup.
+    for (const QString& m : markers)
+        QVERIFY2(!m.contains(QLatin1Char('<')) && !m.contains(QLatin1Char('&')), qPrintable(m));
+
+    // Every "{{" in the template opens a marker the engine recognises.
+    QCOMPARE(text.count(QStringLiteral("{{")), markers.size());
+}
+
+void tst_WebServer::pagesEscapeHostileServerLogAndShareText()
+{
+    const QString hostile = QStringLiteral("<x>\"'[Session]");
+
+    // Public either way round: addServer() refuses loopback and LAN addresses.
+    auto owned = std::make_unique<Server>(0x5E0B0C5Du, uint16(4242));
+    owned->setName(hostile);
+    owned->setDescription(hostile);
+    Server* srv = m_serverList->addServer(std::move(owned));
+    QVERIFY(srv);
+    const auto dropServer = qScopeGuard([this, srv] { m_serverList->removeServer(srv); });
+
+    const QString savedNick = m_preferences->nick();
+    m_preferences->setNick(hostile);
+    const auto restoreNick = qScopeGuard([this, savedNick] { m_preferences->setNick(savedNick); });
+
+    auto* known = new KnownFile();
+    uint8 hash[16];
+    std::memset(hash, 0x3C, 16);
+    known->setFileHash(hash);
+    known->setFileName(hostile + QStringLiteral(".avi"));
+    known->setFileSize(1234);
+    m_knownFiles->safeAddKFile(known);
+    QVERIFY(m_sharedFiles->safeAddKFile(known));
+    const auto dropShare = qScopeGuard([this, known] { m_sharedFiles->removeFile(known); });
+
+    auto server = startServer(/*webUiEnabled*/ true, /*restApiEnabled*/ false,
+                              eMule::testing::projectDataDir() + QStringLiteral("/config/eMule.tmpl"),
+                              [hostile](WebServer& s, WebServerConfig& config) {
+        s.setLogProvider([hostile] { return QStringLiteral("12:00:00 ") + hostile + QLatin1Char('\n'); });
+        config.adminPasswordHash = sha256Hex(QStringLiteral("admin-pw"));
+    });
+    const uint16 port = server->port();
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+    QVERIFY(!ses.isEmpty());
+
+    for (const QString& page : {QStringLiteral("server"), QStringLiteral("log"),
+                                QStringLiteral("debuglog"), QStringLiteral("options"),
+                                QStringLiteral("myinfo")}) {
+        const QString html = rawGetBody(port, QStringLiteral("/?ses=%1&w=%2").arg(ses, page));
+        QVERIFY2(!html.contains(QStringLiteral("<x>")), qPrintable(page));
+        // Escaped, with "[Session]" left as the text it is.
+        QVERIFY2(html.contains(QStringLiteral("&lt;x&gt;&quot;&#39;[Session]")), qPrintable(page));
+    }
+
+    // Remote-controlled values reach the menu scripts through data attributes only.
+    const QString servers = rawGetBody(port, QStringLiteral("/?ses=%1&w=server").arg(ses));
+    QVERIFY(servers.contains(QStringLiteral("servermenu(event,'%1',this.dataset.ip,this.dataset.port)").arg(ses)));
+    const QString shared = rawGetBody(port, QStringLiteral("/?ses=%1&w=shared").arg(ses));
+    // A share keeps only what a file name may hold; whatever survived, escaped.
+    QVERIFY(!shared.contains(QStringLiteral("<x>")));
+    QVERIFY2(shared.contains(WebTemplateEngine::htmlEscape(known->fileName())),
+             qPrintable(known->fileName()));
+    QVERIFY(shared.contains(QStringLiteral("data-link=\"ed2k://|file|")));
+    QVERIFY(shared.contains(QStringLiteral("sharedmenu(event,this.dataset.link)")));
+
+    server->stop();
+}
+
+void tst_WebServer::languageOverrideIsPerSession()
+{
+    TranslationRouter router{QStringList{}};
+    router.setTranslator(QStringLiteral("xx"), std::make_unique<PrefixTranslator>());
+    QCoreApplication::installTranslator(&router);
+    const auto uninstall = qScopeGuard([&router] { QCoreApplication::removeTranslator(&router); });
+
+    const QString savedLanguage = m_preferences->language();
+    m_preferences->setLanguage(QStringLiteral("en_US"));
+    const auto restoreLanguage =
+        qScopeGuard([this, savedLanguage] { m_preferences->setLanguage(savedLanguage); });
+
+    FakeUsenetBackend fake;
+    auto server = startServer(/*webUiEnabled*/ true, /*restApiEnabled*/ true,
+                              eMule::testing::projectDataDir() + QStringLiteral("/config/eMule.tmpl"),
+                              [&router, &fake](WebServer& s, WebServerConfig& config) {
+        s.setTranslationRouter(&router);
+        s.setUsenetBackend(&fake);
+        config.adminPasswordHash = sha256Hex(QStringLiteral("admin-pw"));
+    });
+    const uint16 port = server->port();
+    const QString one = webLogin(port, QStringLiteral("admin-pw"));
+    const QString two = webLogin(port, QStringLiteral("admin-pw"));
+    QVERIFY(!one.isEmpty() && !two.isEmpty() && one != two);
+
+    // The menu offers the language; the app's own is English, so nothing is translated.
+    QString page = rawGetBody(port, QStringLiteral("/?ses=%1&w=transfer").arg(one));
+    QVERIFY(page.contains(QStringLiteral("<option value=\"xx\">")));
+    QVERIFY(page.contains(QStringLiteral("<br>Transfer</a>")));
+
+    // A code nothing is installed for changes nothing.
+    page = rawGetBody(port, QStringLiteral("/?ses=%1&w=transfer&setlang=zz_ZZ").arg(one));
+    QVERIFY(page.contains(QStringLiteral("<br>Transfer</a>")));
+
+    page = rawGetBody(port, QStringLiteral("/?ses=%1&w=transfer&setlang=xx").arg(one));
+    QVERIFY2(page.contains(QStringLiteral("<br>XX:Transfer</a>")), qPrintable(page.left(6000)));
+    QVERIFY(page.contains(QStringLiteral("<html lang=\"xx\">")));
+    QVERIFY(page.contains(QStringLiteral("<option value=\"xx\" selected>")));
+
+    // It sticks to the session, C++ strings included...
+    page = rawGetBody(port, QStringLiteral("/?ses=%1&w=usenet").arg(one));
+    QVERIFY(page.contains(QStringLiteral("XX:2 download(s), 1 active")));
+    QVERIFY(page.contains(QStringLiteral("lang:'xx'")));
+
+    // ...and to that session only.
+    page = rawGetBody(port, QStringLiteral("/?ses=%1&w=usenet").arg(two));
+    QVERIFY(page.contains(QStringLiteral(">2 download(s), 1 active")));
+    QVERIFY(!page.contains(QStringLiteral("XX:")));
+
+    // The page's JSON speaks the session's language; the REST API stays English.
+    Response r = sendRaw(port, QByteArrayLiteral("POST"), QStringLiteral("/usenet/action?ses=%1").arg(one),
+                         QByteArrayLiteral("op=pause&id=nope"),
+                         QByteArrayLiteral("application/x-www-form-urlencoded"));
+    QCOMPARE(r.statusCode, 404);
+    QCOMPARE(r.json.object().value(QStringLiteral("error")).toObject()
+                 .value(QStringLiteral("message")).toString(),
+             QStringLiteral("XX:Usenet item not found"));
+    r = sendRaw(port, QByteArrayLiteral("POST"), QStringLiteral("/api/v1/usenet/nope/pause"), {}, {},
+                {{QByteArrayLiteral("X-Api-Key"), m_apiKey.toUtf8()}});
+    QCOMPARE(r.statusCode, 404);
+    QCOMPARE(r.json.object().value(QStringLiteral("error")).toObject()
+                 .value(QStringLiteral("message")).toString(),
+             QStringLiteral("Usenet item not found"));
+
+    // Empty follows the app again.
+    page = rawGetBody(port, QStringLiteral("/?ses=%1&w=transfer&setlang=").arg(one));
+    QVERIFY(page.contains(QStringLiteral("<br>Transfer</a>")));
+
+    server->stop();
+}
+
+void tst_WebServer::shippedGermanTranslatesTheWebContext()
+{
+    // The German catalogue the build compiles, found the way the daemon finds it.
+    // Asserted, not skipped: a missing .qm is exactly what goes unnoticed otherwise.
+    TranslationRouter router(AppConfig::langCandidates(QCoreApplication::applicationDirPath()));
+    const QList<AppLanguage> languages = router.availableLanguages();
+    QVERIFY2(std::ranges::any_of(languages,
+                                 [](const AppLanguage& l) { return l.code == QLatin1String("de_DE"); }),
+             "no emuleqt_de_DE.qm found -- build the emuleqt target first");
+    QCoreApplication::installTranslator(&router);
+    const auto uninstall = qScopeGuard([&router] { QCoreApplication::removeTranslator(&router); });
+
+    const TranslationRouter::Scope scope(&router, QStringLiteral("de_DE"));
+    // A template marker and a page builder's own string.
+    const QString marker = WebTemplateEngine::substitute(QStringLiteral("{{Back to the queue}}"));
+    QVERIFY2(marker != QStringLiteral("Back to the queue"), qPrintable(marker));
+    const QString builder = WebServer::tr("Usenet engine unavailable");
+    QVERIFY2(builder != QStringLiteral("Usenet engine unavailable"), qPrintable(builder));
 }
 
 QTEST_MAIN(tst_WebServer)

@@ -7,9 +7,12 @@
 /// Provides CRUD access to downloads, uploads, servers, search, shared files,
 /// friends, statistics, and preferences.
 
+#include "utils/ByteRateSampler.h"
 #include "utils/Types.h"
+#include "webserver/UsenetWebBackend.h"
 
 #include <QFuture>
+#include <QHash>
 #include <QHttpHeaders>
 #include <QHttpServerResponse>
 #include <QJsonObject>
@@ -39,6 +42,7 @@ class ServerList;
 class SharedFileList;
 class Statistics;
 class StatsHistory;
+class TranslationRouter;
 class UploadQueue;
 struct StatsGraphSample;
 
@@ -165,6 +169,15 @@ public:
     {
         m_usenetStreamResolver = std::move(resolver);
     }
+
+    /// The Usenet page and the /api/v1/usenet routes. Optional and not owned:
+    /// without it both answer "Usenet engine unavailable".
+    void setUsenetBackend(UsenetWebBackend* backend) { m_usenetBackend = backend; }
+
+    /// The web UI's languages. Optional and not owned, and it must be the one
+    /// installed with QCoreApplication::installTranslator(): without it every
+    /// page is English. The REST API stays English either way.
+    void setTranslationRouter(TranslationRouter* router) { m_translations = router; }
 
     bool start(const WebServerConfig& config);
     void stop();
@@ -312,10 +325,56 @@ private:
     /// Empty when it cannot be read; callers fall back to the CSS-drawn mark.
     [[nodiscard]] QString ratingSpriteCss() const;
 
+    /// @p lang, when set, rides along in every link the page draws: these routes
+    /// have no session to remember the web UI's language.
     [[nodiscard]] QByteArray renderIncomingListing(const QString& absDir, const QString& relPath,
-                                                   const QString& token) const;
+                                                   const QString& token, const QString& lang) const;
     [[nodiscard]] QByteArray renderIncomingPlayer(const QString& relPath, const QString& fileName,
-                                                  const QString& token) const;
+                                                  const QString& token, const QString& lang) const;
+
+    // Endpoint handlers — Usenet queue (REST API)
+    QHttpServerResponse handleRestUsenetList(const QHttpServerRequest& req);
+    QHttpServerResponse handleRestUsenetStats();
+    QHttpServerResponse handleRestUsenetItem(const QString& id);
+    QHttpServerResponse handleRestUsenetEntries(const QString& id, const QString& fileIndex);
+    QHttpServerResponse handleRestUsenetItemOp(const QString& id, const QString& op);
+    QHttpServerResponse handleRestUsenetPatch(const QString& id, const QHttpServerRequest& req);
+    QHttpServerResponse handleRestUsenetDelete(const QString& id, const QHttpServerRequest& req);
+    QHttpServerResponse handleRestUsenetCategoryOp(const QString& category, const QString& op);
+    /// Pause or resume the whole engine — REST and the web UI's action route.
+    QHttpServerResponse handleUsenetEngineOp(bool paused);
+
+    // Endpoint handlers — Usenet queue (web UI, session-authenticated JSON)
+    QHttpServerResponse handleWebUsenetAction(const QHttpServerRequest& req);
+    QHttpServerResponse handleWebUsenetEntries(const QHttpServerRequest& req);
+
+    /// Add an NZB: raw bytes in the body, or a URL. One implementation behind two
+    /// gates — REST's API key and the web UI's admin session — that differ only
+    /// in how the options arrive (@p restApi: JSON body for a URL).
+    QFuture<QHttpServerResponse> handleUsenetAdd(const QHttpServerRequest& req, bool restApi);
+
+    /// One per-item action, shared by REST and the web UI's action route.
+    /// `code` is the HTTP status the REST route answers with.
+    struct UsenetOpResult {
+        int code = 200;
+        QString message;
+    };
+    [[nodiscard]] UsenetOpResult applyUsenetItemOp(const QString& op, const QString& id,
+                                                   const QString& value);
+
+    /// The backend's rows with a derived per-item `speed`. Prunes the samplers of
+    /// items that are gone. Optionally only one category (0 = all).
+    [[nodiscard]] QList<QCborMap> usenetRows(int category = 0);
+    [[nodiscard]] QJsonObject usenetStatsJson(const QList<QCborMap>& rows) const;
+    [[nodiscard]] bool usenetAvailable() const;
+
+    struct WebSessionCheck {
+        bool valid = false;
+        bool admin = false;
+        QString id;
+    };
+    /// The `ses` of @p query, validated. Refreshes the session like a page view.
+    [[nodiscard]] WebSessionCheck webSession(const QUrlQuery& query);
 
     // Endpoint handlers — Uploads
     QHttpServerResponse handleGetUploads();
@@ -351,7 +410,8 @@ private:
     QHttpServerResponse handleLogin(const QHttpServerRequest& request);
     QHttpServerResponse handlePage(const QHttpServerRequest& request);
     QHttpServerResponse handleStaticFile(const QString& path);
-    QHttpServerResponse renderPage(const QString& page, const QString& sessionId);
+    QHttpServerResponse renderPage(const QString& page, const QString& sessionId,
+                                   const QUrlQuery& query);
     void dispatchActions(const QUrlQuery& query, const QString& page);
 
     // Template page builders
@@ -367,6 +427,26 @@ private:
     [[nodiscard]] QString buildKadPage(const QString& sessionId);
     [[nodiscard]] QString buildMyInfoPage();
     [[nodiscard]] QString buildGraphsPage();
+
+    /// The Usenet page: toolbar, category tabs, the queue and the page script.
+    [[nodiscard]] QString buildUsenetPage(bool isAdmin, const QString& sessionId,
+                                          const QUrlQuery& query);
+    /// The part the page polls: rows plus summary (`part=list`).
+    [[nodiscard]] QString buildUsenetList(const QString& sessionId, const QUrlQuery& query);
+    /// One release in full (`part=details&id=`).
+    [[nodiscard]] QString buildUsenetDetails(const QString& sessionId, const QString& id);
+
+    /// The login page, with @p failedHtml (already markup) above the form.
+    [[nodiscard]] QHttpServerResponse loginPage(const QString& failedHtml);
+
+    /// The language a web-UI request renders in: the session's own choice, else
+    /// @p requested (an incoming page's `lang=`), else the app language. Empty
+    /// without a router, which renders English.
+    [[nodiscard]] QString webLanguage(const QString& sessionId, const QString& requested = {}) const;
+
+    /// The header's language menu: "App language", English and every installed
+    /// translation, with the session's choice selected.
+    [[nodiscard]] QString languageOptions(const QString& sessionId) const;
 
     // Gzip compression helper
     static QByteArray gzipCompress(const QByteArray& data);
@@ -403,6 +483,14 @@ private:
 
     // Usenet stream resolver (injected by DaemonApp; null in a core-only build)
     UsenetStreamResolver m_usenetStreamResolver;
+
+    // Usenet queue (injected by DaemonApp; not owned)
+    UsenetWebBackend* m_usenetBackend = nullptr;
+
+    // Web UI languages (injected by DaemonApp; not owned)
+    TranslationRouter* m_translations = nullptr;
+    /// Per-item rate, derived from `decodedBytes` across requests.
+    QHash<QString, ByteRateSampler> m_usenetRates;
 
     // Random token for preview streaming authentication
     QString m_streamToken;

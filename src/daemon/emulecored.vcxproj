@@ -180,9 +180,11 @@
     <ClCompile Include="CommandLineExec.cpp" />
     <ClCompile Include="CoreNotifierBridge.cpp" />
     <ClCompile Include="DaemonApp.cpp" />
+    <ClCompile Include="DaemonUsenetWebBackend.cpp" />
     <ClCompile Include="IpcClientHandler.cpp" />
     <ClCompile Include="IpcServer.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="UsenetBridge.cpp" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="CliIpcClient.h" />
@@ -191,6 +193,8 @@
     <QtMoc Include="DaemonApp.h" />
     <QtMoc Include="IpcClientHandler.h" />
     <QtMoc Include="IpcServer.h" />
+    <ClInclude Include="DaemonUsenetWebBackend.h" />
+    <ClInclude Include="UsenetBridge.h" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="debug\moc_predefs.h.cbt">

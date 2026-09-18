@@ -2,6 +2,7 @@
 /// @brief Per-connection IPC request handler — implementation.
 
 #include "IpcClientHandler.h"
+#include "UsenetBridge.h"
 #include "CoreNotifierBridge.h"
 #include "DaemonApp.h"
 
@@ -336,6 +337,9 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::SetUsenetItemPriority: handleSetUsenetItemPriority(msg); break;
     case IpcMsgType::SetUsenetItemCategory: handleSetUsenetItemCategory(msg); break;
     case IpcMsgType::SetUsenetCategoryStatus: handleSetUsenetCategoryStatus(msg); break;
+    case IpcMsgType::SetUsenetPaused:     handleSetUsenetPaused(msg); break;
+    case IpcMsgType::SetUsenetFilesSkipped: handleSetUsenetFilesSkipped(msg); break;
+    case IpcMsgType::InspectNzb:          handleInspectNzb(msg); break;
     case IpcMsgType::SetUsenetItemPassword: handleSetUsenetItemPassword(msg); break;
     case IpcMsgType::ListUsenetArchiveEntries: handleListUsenetArchiveEntries(msg); break;
     case IpcMsgType::GetUsenetItemDetails:     handleGetUsenetItemDetails(msg);     break;
@@ -502,8 +506,14 @@ void IpcClientHandler::handleGetUploads(const IpcMessage& msg)
     QCborArray uploading;
     QCborArray waiting;
     if (theApp.uploadQueue) {
+        // A slot past the active count draws its bar greyed (MFC UploadClient.cpp:57-70).
+        const auto activeSlots = static_cast<uint32>(theApp.uploadQueue->maxActiveClientsShortTime());
         theApp.uploadQueue->forEachUploading([&](UpDownClient* c) {
-            uploading.append(toCbor(*c));
+            QCborMap m = toCbor(*c);
+            const bool sending = c->uploadState() == UploadState::Uploading
+                              || c->uploadState() == UploadState::Connecting;
+            m.insert(QStringLiteral("upBarGreyed"), sending && c->slotNumber() > activeSlots);
+            uploading.append(m);
         });
         theApp.uploadQueue->forEachWaiting([&](UpDownClient* c) {
             waiting.append(toCbor(*c));
@@ -1234,6 +1244,8 @@ void IpcClientHandler::handleDownloadSearchFile(const IpcMessage& msg)
     const QString fileName = msg.fieldString(1);
     const auto fileSize    = static_cast<uint64>(msg.fieldInt(2));
     const QString rawLink  = msg.fieldString(3);
+    // The search window's "->" category (MFC SearchResultsWnd.cpp:542); older senders omit it.
+    const qint64 category  = msg.fieldInt(4);
 
     // Prefer the original link text when the GUI has one: it carries the AICH hash,
     // part hashes and source hints, none of which survive a hash/name/size round-trip.
@@ -1248,7 +1260,9 @@ void IpcClientHandler::handleDownloadSearchFile(const IpcMessage& msg)
     const QString tempDir = tempDirs.isEmpty()
         ? QDir(thePrefs.configDir()).filePath(QStringLiteral("Temp"))
         : tempDirs.first();
-    const bool ok = theApp.downloadQueue->addDownloadFromED2KLink(ed2kLink, tempDir, 0);
+    const uint32 cat = category > 0 && category < static_cast<qint64>(thePrefs.categoryCount())
+        ? static_cast<uint32>(category) : 0;
+    const bool ok = theApp.downloadQueue->addDownloadFromED2KLink(ed2kLink, tempDir, cat);
     sendMessage(IpcMessage::makeResult(msg.seqId(), ok));
 }
 
@@ -1637,14 +1651,24 @@ void IpcClientHandler::handleSendChatMessage(const IpcMessage& msg)
 
     // Find the client by user hash
     auto* client = theApp.clientList->findByUserHash(hashBuf, 0, 0);
-    if (!client) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 404,
-            QStringLiteral("Client not found or not connected")));
+    if (client && client->socket() && client->socket()->isConnected()) {
+        client->sendChatMessage(message);
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true));
         return;
     }
 
-    client->sendChatMessage(message);
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    // Offline: if it is a friend we know an address or a Kad ID for, park the text and
+    // dial. Progress reaches the GUI as PushChatState. Everything about that decision
+    // lives in Friend, where it is testable.
+    if (theApp.friendList) {
+        if (Friend* f = theApp.friendList->searchFriend(hashBuf); f && f->sendOrQueueChatMessage(message)) {
+            sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+            return;
+        }
+    }
+
+    sendMessage(IpcMessage::makeError(msg.seqId(), 404,
+        QStringLiteral("Client not found or not connected")));
 }
 
 void IpcClientHandler::handleSetFriendSlot(const IpcMessage& msg)
@@ -1685,17 +1709,6 @@ void IpcClientHandler::handleSetFriendSlot(const IpcMessage& msg)
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
-void insertDownloadSplit(QCborMap& stats)
-{
-    // Stopped or not yet constructed reads as unthrottled, which is what it is.
-    const usenet::UsenetSession::DownloadSplit split =
-        usenet::theUsenetSession ? usenet::theUsenetSession->lastSplit()
-                                 : usenet::UsenetSession::DownloadSplit{thePrefs.maxDownload()};
-    stats.insert(QStringLiteral("maxDownloadKb"), static_cast<qint64>(split.ceilingKb));
-    stats.insert(QStringLiteral("usenetLimitKb"), split.usenetKb());
-    stats.insert(QStringLiteral("ed2kBudgetKb"), split.ed2kKb());
-}
-
 void IpcClientHandler::handleGetStats(const IpcMessage& msg)
 {
     QCborMap stats = toCborMap(collectStatsSnapshot());
@@ -1708,7 +1721,7 @@ void IpcClientHandler::handleGetStats(const IpcMessage& msg)
     }
 
     // Likewise daemon-only: the split is Usenet's, and core must not know Usenet.
-    insertDownloadSplit(stats);
+    UsenetBridge::insertDownloadSplit(stats);
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(stats)));
 }
@@ -1874,6 +1887,9 @@ void IpcClientHandler::handleGetKadContacts(const IpcMessage& msg)
                 m.insert(QStringLiteral("tcpPort"), c->getTCPPort());
                 m.insert(QStringLiteral("version"), c->getVersion());
                 m.insert(QStringLiteral("type"), c->getType());
+                // The contact icon (MFC KadContactListCtrl.cpp:117-124)
+                m.insert(QStringLiteral("ipVerified"), c->isIpVerified());
+                m.insert(QStringLiteral("bootstrap"), c->isBootstrapContact());
                 contacts.append(m);
             }
         }
@@ -4784,6 +4800,7 @@ void IpcClientHandler::handleGetUsenetStats(const IpcMessage& msg)
                    session ? session->lastSplit().usenetKb() : qint64(0));
     current.insert(QStringLiteral("activeConnections"), queue ? queue->activeFetches() : 0);
     current.insert(QStringLiteral("openConnections"), usenet::NntpSocket::openConnectionCount());
+    current.insert(QStringLiteral("paused"), thePrefs.usenetPaused());
 
     const usenet::UsenetQueueSummary summary =
         queue ? usenet::summarizeQueue(queue->items()) : usenet::UsenetQueueSummary{};
@@ -5108,172 +5125,28 @@ void IpcClientHandler::handleSetCategoryStatus(const IpcMessage& msg)
 // Usenet — the download queue (723-728)
 //
 // The queue lives on UsenetSession, which DaemonApp owns because core may not
-// depend on eMule::Usenet. usenet::theUsenetSession is how a handler reaches it;
-// every one of these checks it, because the engine does not exist until the
-// daemon has started.
+// depend on eMule::Usenet. What each request does lives in UsenetBridge, which
+// the web server's page and REST API share; these handlers only speak IPC.
 // ---------------------------------------------------------------------------
-
-namespace {
-
-/// One queue row. Shared by GetUsenetQueue and the per-item push so the two
-/// cannot drift into disagreeing about field names — the same reason
-/// newsServerToCbor exists.
-QCborMap usenetItemToCbor(const usenet::UsenetQueueItem& item)
-{
-    // Preview is container-aware since phase 6b, and only the queue's streaming
-    // index knows whether a `.rXX` is a mappable stored volume. Absent a queue
-    // (never, in the daemon) the answer degrades to the phase 6a predicate.
-    auto* queue = usenet::theUsenetSession ? usenet::theUsenetSession->queue() : nullptr;
-
-    QCborArray files;
-    for (int i = 0; i < item.files.size() && i < item.nzb.files.size(); ++i) {
-        const auto& st = item.files.at(i);
-        const auto& info = item.nzb.files.at(i);
-
-        const auto preview =
-            queue ? queue->previewability(item.id, i)
-                  : usenet::UsenetQueue::PreviewInfo{
-                        item.isFilePreviewable(i) && st.availableEnd() > 0, {}};
-
-        // PAR2's name, then the article's own =ybegin, then the subject: for an
-        // obfuscated post the subject carries nothing readable, and for a fully
-        // obfuscated one neither does =ybegin.
-        QString name = item.bestFileName(i);
-        if (name.isEmpty())
-            name = info.subject;
-
-        int done = 0;
-        for (qsizetype b = 0; b < st.done.size(); ++b) {
-            if (st.done.testBit(b))
-                ++done;
-        }
-        const int total = int(info.segments.size());
-
-        files.append(QCborMap{
-            {QStringLiteral("name"),      name},
-            {QStringLiteral("size"),      static_cast<qint64>(st.declaredSize > 0
-                                              ? st.declaredSize : info.encodedBytes())},
-            {QStringLiteral("percent"),   total > 0 ? done * 100 / total : 0},
-            {QStringLiteral("finalPath"), st.finalPath},
-            {QStringLiteral("isPar2"),    info.isPar2()},
-            {QStringLiteral("missingSegments"), st.missingSegments},
-            // The position in the NZB, which is what the preview URL addresses.
-            // Sent explicitly rather than left as the array index, so a future
-            // filtered list cannot silently shift it.
-            {QStringLiteral("index"),     i},
-            // Whether a Preview action should be offered at all. Decided here,
-            // not in the GUI: it needs the file's real (post-yEnc) name, the
-            // ED2K type table, and how far the *contiguous* prefix has got —
-            // none of which the GUI has.
-            {QStringLiteral("previewable"), preview.previewable},
-            // Why not, when not. A stored RAR set streams; a compressed or
-            // encrypted one never will, and the GUI shows this instead of
-            // leaving the user with an unexplained greyed-out entry.
-            {QStringLiteral("previewNote"), preview.note},
-        });
-    }
-
-    int missing = 0;
-    for (const auto& st : item.files)
-        missing += st.missingSegments;
-
-    // What the release actually put on disk. `files` cannot answer this: an
-    // unpacked release publishes the extracted members, which are not NZB files.
-    // Empty until the item completes, so a running queue pays nothing for it.
-    //
-    // relPath is resolved here rather than in the GUI because the daemon's
-    // incoming directory is the authoritative one — against a remote core the
-    // GUI's own copy is somebody else's setting.
-    const QDir incoming(thePrefs.incomingDir());
-    QCborArray publishedFiles;
-    for (const QString& path : item.publishedPaths) {
-        const QFileInfo fi(path);
-        QString rel = incoming.relativeFilePath(path);
-        // A result that escapes the incoming root cannot be addressed by the
-        // browse route at all; say so with an empty string rather than a
-        // traversal the web server would refuse anyway.
-        if (rel.startsWith(QLatin1String("..")) || QDir::isAbsolutePath(rel))
-            rel.clear();
-        publishedFiles.append(QCborMap{
-            {QStringLiteral("name"),    fi.fileName()},
-            {QStringLiteral("path"),    path},
-            {QStringLiteral("relPath"), rel},
-            {QStringLiteral("size"),    static_cast<qint64>(fi.size())},
-        });
-    }
-
-    return QCborMap{
-        {QStringLiteral("id"),              item.id},
-        {QStringLiteral("name"),            item.name},
-        {QStringLiteral("status"),          int(item.status)},
-        {QStringLiteral("statusText"),      usenet::describeUsenetItemStatus(item.status)},
-        {QStringLiteral("priority"),        item.priority},
-        {QStringLiteral("category"),        item.category},
-        {QStringLiteral("percent"),         item.percentComplete()},
-        {QStringLiteral("totalBytes"),      static_cast<qint64>(item.totalEncodedBytes())},
-        {QStringLiteral("decodedBytes"),    static_cast<qint64>(item.decodedBytes())},
-        {QStringLiteral("segmentCount"),    item.segmentCount()},
-        {QStringLiteral("doneSegments"),    item.doneSegmentCount()},
-        {QStringLiteral("missingSegments"), missing},
-        {QStringLiteral("error"),           item.error},
-        // Whether a password is set, never the password itself — the same
-        // one-way contract GetNewsServers keeps for provider accounts.
-        {QStringLiteral("hasPassword"),     !item.nzb.password.isEmpty()},
-        // The release is password-protected and no password we have opens it.
-        // A flag rather than a match on `error`, which is translated.
-        {QStringLiteral("passwordRequired"), item.passwordRequired},
-        // Post-processing progress. Separate from `percent`, which is segment
-        // counts: a repair or an unpack moves no segments at all, so a single
-        // figure would sit frozen at 100% for the whole of it.
-        {QStringLiteral("postPercent"),     item.postPercent},
-        {QStringLiteral("postDetail"),      item.postDetail},
-        // Why a queued item is standing still — an allowance spent, today.
-        // Separate from `error`, which means the download failed.
-        {QStringLiteral("stalledReason"),   item.stalledReason},
-        // How much of the release looks obtainable, combining what the NZB never
-        // listed with what no account still holds. **-1 means not assessed**,
-        // which the GUI must not render as 100.
-        {QStringLiteral("healthPercent"),   item.healthPercent},
-        {QStringLiteral("healthMissingBytes"),
-                                            static_cast<qint64>(item.healthMissingBytes)},
-        {QStringLiteral("healthRecoveryBytes"),
-                                            static_cast<qint64>(item.healthRecoveryBytes)},
-        // False means the figure is the NZB's own arithmetic and no server was
-        // asked — a different statement from the same number with a probe behind it.
-        {QStringLiteral("healthProbed"),    item.healthProbed},
-        {QStringLiteral("files"),           files},
-        {QStringLiteral("publishedFiles"),  publishedFiles},
-    };
-}
-
-} // namespace
-
-QCborMap usenetQueueItemToCbor(const usenet::UsenetQueueItem& item)
-{
-    return usenetItemToCbor(item);
-}
 
 void IpcClientHandler::handleGetUsenetQueue(const IpcMessage& msg)
 {
-    if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
+    auto* queue = UsenetBridge::queue();
+    if (!queue) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 503,
                                           QStringLiteral("Usenet engine unavailable")));
         return;
     }
 
     QCborArray out;
-    for (const auto* item : usenet::theUsenetSession->queue()->items())
-        out.append(usenetItemToCbor(*item));
+    for (const auto* item : queue->items())
+        out.append(UsenetBridge::itemToCbor(*item));
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(out)));
 }
 
-/// Everything about one release that the queue row leaves out.
-///
-/// Built on usenetItemToCbor() rather than beside it, so the details view and the
-/// list can never disagree about a field they share. What is added here is the
-/// per-file detail that would be wasteful on a 250 ms push: article tallies, the
-/// NZB's own subject and part counter, poster, date and newsgroups.
+/// Everything about one release that the queue row leaves out: article tallies,
+/// the NZB's own subject and part counter, poster, date and newsgroups.
 void IpcClientHandler::handleGetUsenetItemDetails(const IpcMessage& msg)
 {
     if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
@@ -5292,53 +5165,8 @@ void IpcClientHandler::handleGetUsenetItemDetails(const IpcMessage& msg)
         return;
     }
 
-    QCborMap out = usenetQueueItemToCbor(*item);
-
-    // Re-emit `files` with the detail fields merged in, keeping every key the
-    // queue row already carries (percent, previewable, previewNote, index, ...).
-    const QCborArray base = out.value(QStringLiteral("files")).toArray();
-    QCborArray files;
-    for (int i = 0; i < item->nzb.files.size(); ++i) {
-        const usenet::NzbFileInfo& info = item->nzb.files.at(i);
-        const usenet::UsenetFileState& st =
-            i < item->files.size() ? item->files.at(i) : usenet::UsenetFileState{};
-
-        QCborMap f = i < base.size() ? base.at(i).toMap() : QCborMap{};
-
-        int done = 0;
-        for (qsizetype b = 0; b < st.done.size(); ++b) {
-            if (st.done.testBit(b))
-                ++done;
-        }
-
-        QCborArray groups;
-        for (const QString& g : info.groups)
-            groups.append(g);
-
-        f.insert(QStringLiteral("subject"),      info.subject);
-        f.insert(QStringLiteral("poster"),       info.poster);
-        f.insert(QStringLiteral("date"),         static_cast<qint64>(info.date));
-        f.insert(QStringLiteral("groups"),       groups);
-        f.insert(QStringLiteral("segmentCount"), int(info.segments.size()));
-        f.insert(QStringLiteral("doneSegments"), done);
-        // What the subject's (n/m) counter claims, and what it claims the NZB
-        // never listed. Distinct from missingSegments, which is what no server
-        // would serve — one is the indexer's shortfall, the other the network's.
-        f.insert(QStringLiteral("partsTotal"),        info.partsTotal);
-        f.insert(QStringLiteral("nzbMissingSegments"), info.missingSegmentCount());
-        f.insert(QStringLiteral("encodedBytes"),  static_cast<qint64>(info.encodedBytes()));
-        f.insert(QStringLiteral("declaredSize"),  static_cast<qint64>(st.declaredSize));
-        f.insert(QStringLiteral("decodedBytes"),  static_cast<qint64>(st.decodedBytes));
-        f.insert(QStringLiteral("par2Blocks"),    info.par2RecoveryBlocks());
-        f.insert(QStringLiteral("requestedPar2"), item->requestedPar2.contains(i));
-        f.insert(QStringLiteral("finalized"),     st.finalized);
-        f.insert(QStringLiteral("tempPath"),      st.tempPath);
-
-        files.append(f);
-    }
-    out.insert(QStringLiteral("files"), files);
-
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(out)));
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true,
+                                       QCborValue(UsenetBridge::itemDetailsToCbor(*item))));
 }
 
 void IpcClientHandler::handleListUsenetArchiveEntries(const IpcMessage& msg)
@@ -5352,26 +5180,8 @@ void IpcClientHandler::handleListUsenetArchiveEntries(const IpcMessage& msg)
     const QString itemId = msg.fieldString(0);
     const int fileIndex = int(msg.fieldInt(1));
 
-    const auto listing = usenet::theUsenetSession->queue()->listArchiveEntries(itemId, fileIndex);
-
-    QCborArray entries;
-    for (const auto& e : listing.entries) {
-        entries.append(QCborMap{
-            {QStringLiteral("entry"),    e.entry},
-            {QStringLiteral("name"),     e.name},
-            {QStringLiteral("size"),     e.size},
-            {QStringLiteral("playable"), e.playable},
-            {QStringLiteral("note"),     e.note},
-        });
-    }
-
-    const QCborMap out{
-        {QStringLiteral("status"),  int(listing.status)},
-        {QStringLiteral("note"),    listing.note},
-        {QStringLiteral("entries"), entries},
-    };
-
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(out)));
+    sendMessage(IpcMessage::makeResult(
+        msg.seqId(), true, QCborValue(UsenetBridge::archiveEntriesToCbor(itemId, fileIndex))));
 }
 
 void IpcClientHandler::handleAddNzb(const IpcMessage& msg)
@@ -5408,26 +5218,34 @@ void IpcClientHandler::handleAddNzb(const IpcMessage& msg)
         return;
     }
 
-    QString error;
-    usenet::UsenetAddOutcome outcome = usenet::UsenetAddOutcome::Failed;
-    const QString id = usenet::theUsenetSession->queue()->addNzb(
-        data, name, error,
+    // Field 8: NZB file indices the Add NZB dialog unchecked. Absent reads as
+    // none, which is every other caller.
+    QList<int> skippedFiles;
+    for (const QCborValue& v : msg.field(8).toArray())
+        skippedFiles.append(int(v.toInteger(-1)));
+
+    const auto result = UsenetBridge::addNzbData(
+        data, name,
         {.source = source, .force = force, .password = password,
          .category = choices.category, .priority = choices.priority,
-         .paused = choices.paused},
-        &outcome);
-    sendAddNzbResult(msg.seqId(), id, error, outcome, usenet::UsenetAddOrigin::File);
+         .paused = choices.paused, .skippedFiles = std::move(skippedFiles)},
+        usenet::UsenetAddOrigin::File);
+    replyAddNzb(msg.seqId(), result.itemId, result.error, result.outcome);
 }
 
 void IpcClientHandler::sendAddNzbResult(int seqId, const QString& itemId, const QString& error,
                                        usenet::UsenetAddOutcome outcome,
                                        usenet::UsenetAddOrigin origin)
 {
-    // Every caller reaches here only after addNzb() ran, so this is also the one
-    // place an IPC add is counted.
-    if (usenet::theUsenetSession && usenet::theUsenetSession->queue())
-        usenet::theUsenetSession->queue()->stats().noteAdd(origin, outcome);
+    // Every caller reaches here only after addNzb() ran itself, so this is where
+    // such an add is counted. UsenetBridge::addNzbData() counts its own.
+    UsenetBridge::noteAdd(origin, outcome);
+    replyAddNzb(seqId, itemId, error, outcome);
+}
 
+void IpcClientHandler::replyAddNzb(int seqId, const QString& itemId, const QString& error,
+                                   usenet::UsenetAddOutcome outcome)
+{
     // Three intake paths answered this question three times before; one helper so
     // their outcome codes cannot drift apart.
     if (!itemId.isEmpty()) {
@@ -5472,14 +5290,8 @@ void IpcClientHandler::handleCheckUsenetItem(const IpcMessage& msg)
         return;
     }
 
-    const QString id = msg.fieldString(0);
-    if (!usenet::theUsenetSession->queue()->recheckItem(id)) {
-        // Not an error about the release: the item may be downloading, may
-        // already be checking, or there may be no account to ask. A probe that
-        // cannot run produces no verdict, which is the whole safety property.
-        sendMessage(IpcMessage::makeResult(
-            msg.seqId(), false,
-            QCborValue(tr("This download cannot be checked right now."))));
+    if (const QString why = UsenetBridge::recheck(msg.fieldString(0)); !why.isEmpty()) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), false, QCborValue(why)));
         return;
     }
 
@@ -5494,7 +5306,7 @@ void IpcClientHandler::handleAddNzbUrl(const IpcMessage& msg)
         return;
     }
 
-    const QUrl url(msg.fieldString(0).trimmed(), QUrl::StrictMode);
+    const QString url = msg.fieldString(0);
     const auto source = msg.fieldBool(1) ? usenet::UsenetAddSource::Automatic
                                          : usenet::UsenetAddSource::Manual;
     // Field 2: the same "asked and answered" bit AddNzb takes. Carried through the
@@ -5509,11 +5321,6 @@ void IpcClientHandler::handleAddNzbUrl(const IpcMessage& msg)
                                           QStringLiteral("Unknown category")));
         return;
     }
-    if (const QString why = usenet::NzbUrlFetch::rejectReason(url); !why.isEmpty()) {
-        sendMessage(IpcMessage::makeResult(msg.seqId(), false, QCborValue(why)));
-        return;
-    }
-
     if (m_nzbUrlFetchesInFlight >= kMaxNzbUrlFetches) {
         sendMessage(IpcMessage::makeResult(
             msg.seqId(), false,
@@ -5528,44 +5335,24 @@ void IpcClientHandler::handleAddNzbUrl(const IpcMessage& msg)
     QPointer<IpcClientHandler> self(this);
     const int seqId = msg.seqId();
 
-    usenet::NzbUrlFetch::fetch(this, url,
-                               [self, seqId, source, force, password, choices]
-                               (const usenet::NzbUrlFetch::Result& result) {
-        if (!self)
-            return;
-        --self->m_nzbUrlFetchesInFlight;
+    UsenetBridge::addNzbUrl(
+        this, url,
+        {.source = source, .force = force, .password = password,
+         .category = choices.category, .priority = choices.priority,
+         .paused = choices.paused},
+        [self, seqId](const UsenetBridge::AddResult& result) {
+            if (!self)
+                return;
+            --self->m_nzbUrlFetchesInFlight;
 
-        // A fetch failure and a parse failure are different problems and the
-        // user fixes them differently: one means the link or the network is
-        // wrong, the other means the link was fine and what came back was not an
-        // NZB — an indexer's HTML login page, most often. Qt embeds the request
-        // URL in its own error strings, so the key rides out with them unless
-        // this is redacted.
-        if (!result.ok()) {
-            self->sendMessage(IpcMessage::makeResult(
-                seqId, false, QCborValue(indexer::redactApiKey(result.error))));
-            return;
-        }
-
-        if (!usenet::theUsenetSession || !usenet::theUsenetSession->queue()) {
-            self->sendMessage(IpcMessage::makeResult(
-                seqId, false, QCborValue(tr("The Usenet engine is not running."))));
-            return;
-        }
-
-        // An empty name is deliberate and useful: addNzb() then falls back to the
-        // NZB's own <meta type="name">, which is a better answer than anything
-        // an API-style URL could have told us.
-        QString error;
-        usenet::UsenetAddOutcome outcome = usenet::UsenetAddOutcome::Failed;
-        const QString id = usenet::theUsenetSession->queue()->addNzb(
-            result.data, result.name, error,
-            {.source = source, .force = force, .password = password,
-             .category = choices.category, .priority = choices.priority,
-             .paused = choices.paused},
-            &outcome);
-        self->sendAddNzbResult(seqId, id, error, outcome, usenet::UsenetAddOrigin::Url);
-    });
+            // No attempt: a rejected link, a failed fetch or no engine. A sentence
+            // with no outcome, which is what these replies always were.
+            if (!result.attempted) {
+                self->sendMessage(IpcMessage::makeResult(seqId, false, QCborValue(result.error)));
+                return;
+            }
+            self->replyAddNzb(seqId, result.itemId, result.error, result.outcome);
+        });
 }
 
 void IpcClientHandler::handleRemoveUsenetItem(const IpcMessage& msg)
@@ -5711,39 +5498,56 @@ void IpcClientHandler::handleSetUsenetCategoryStatus(const IpcMessage& msg)
         return;
     }
 
-    auto* queue = usenet::theUsenetSession->queue();
-
-    // Snapshot the ids first: Cancel removes items while we walk, and items()
-    // hands out pointers into the very list it is about to mutate.
-    QStringList ids;
-    for (const auto* item : queue->items()) {
-        // Index 0 is "All" and means every release, categorised or not — the
-        // same thing the "All" tab shows.
-        if (category == 0 || item->category == category)
-            ids.append(item->id);
-    }
-
-    int acted = 0;
-    for (const QString& id : std::as_const(ids)) {
-        switch (action) {
-        case Ipc::CategoryAction::Pause:  acted += queue->pauseItem(id) ? 1 : 0; break;
-        case Ipc::CategoryAction::Resume:
-            // Bulk: a category-wide resume must not wave through a release a
-            // check stopped, which nobody looked at.
-            acted += queue->resumeItem(id, usenet::UsenetQueue::ResumeIntent::Bulk) ? 1 : 0;
-            break;
-        case Ipc::CategoryAction::Cancel:
-            acted += queue->removeItem(id, /*deleteFiles*/ true) ? 1 : 0;
-            break;
-        default: break;
-        }
-    }
-
-    logInfo(QStringLiteral("Usenet: %1 applied to %2 item(s) in \"%3\"")
-                .arg(QString::number(int(action)), QString::number(acted),
-                     thePrefs.category(category).displayName()));
+    UsenetBridge::applyCategoryAction(category,
+                                      action == Ipc::CategoryAction::Pause
+                                          ? UsenetWebCategoryAction::Pause
+                                      : action == Ipc::CategoryAction::Resume
+                                          ? UsenetWebCategoryAction::Resume
+                                          : UsenetWebCategoryAction::Cancel);
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+void IpcClientHandler::handleSetUsenetPaused(const IpcMessage& msg)
+{
+    // No engine needed: the preference is what start() reads.
+    UsenetBridge::setEnginePaused(msg.fieldBool(0));
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+void IpcClientHandler::handleSetUsenetFilesSkipped(const IpcMessage& msg)
+{
+    auto* queue = UsenetBridge::queue();
+    if (!queue) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503,
+                                          QStringLiteral("Usenet engine unavailable")));
+        return;
+    }
+
+    QList<int> files;
+    for (const QCborValue& v : msg.field(1).toArray())
+        files.append(int(v.toInteger(-1)));
+
+    // The refusal is a sentence the GUI shows as it is: which files cannot be
+    // skipped, or that the release is past the point of choosing.
+    if (const QString why = queue->setFilesSkipped(msg.fieldString(0), files, msg.fieldBool(2));
+        !why.isEmpty()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 409, why));
+        return;
+    }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+void IpcClientHandler::handleInspectNzb(const IpcMessage& msg)
+{
+    QString error;
+    const QCborMap inspected =
+        UsenetBridge::inspectNzb(msg.field(0).toByteArray(), msg.fieldString(1), error);
+    if (inspected.isEmpty()) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), false, QCborValue(error)));
+        return;
+    }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(inspected)));
 }
 
 void IpcClientHandler::handleTestNewsServer(const IpcMessage& msg)

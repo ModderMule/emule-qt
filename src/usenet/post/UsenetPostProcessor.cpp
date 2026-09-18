@@ -7,6 +7,7 @@
 #include "post/UsenetReleaseChecks.h"
 #include "post/UsenetUnpacker.h"
 #include "prefs/Preferences.h"
+#include "queue/UsenetQueueItem.h"
 #include "utils/Log.h"
 
 #include <QDir>
@@ -192,6 +193,62 @@ void removeStaleCopiesOfCoveredFiles(const QString& par2Path, const QString& dir
     return result;
 }
 
+/// What a verify says about the files the user skipped.
+///
+/// Judged on whole files, never on per-file block counts: par2 credits a block
+/// to wherever its content turns up, so a damaged file whose lost block exists
+/// elsewhere could read as short of nothing and be published unrepaired.
+struct SkippedJudgement {
+    bool onlySkipped = false;   ///< every incomplete file is a skipped one
+    QList<int> needed;          ///< skipped files a repair of the rest needs
+};
+
+[[nodiscard]] SkippedJudgement judgeSkippedFiles(const Par2Result& check,
+                                                 const UsenetPostJob& job)
+{
+    SkippedJudgement out;
+    if (check.files.isEmpty())
+        return out;   // no per-file detail, no opinion
+
+    const auto key = [](const QString& name) {
+        return sanitizeName(QFileInfo(name).fileName()).toCaseFolded();
+    };
+    QHash<QString, int> owner;
+    for (const UsenetPostJob::SkippedFile& s : job.skippedFiles) {
+        for (const QString& n : s.names)
+            owner.insert(key(n), s.fileIndex);
+    }
+
+    QSet<int> matched;
+    bool unexplained = false;
+    bool absentUnexplained = false;
+    for (const Par2FileStatus& f : check.files) {
+        if (f.complete)
+            continue;
+        if (const auto it = owner.constFind(key(f.fileName)); it != owner.cend()) {
+            matched.insert(*it);
+            continue;
+        }
+        unexplained = true;
+        if (!f.targetExists)
+            absentUnexplained = true;
+    }
+
+    if (!unexplained) {
+        out.onlySkipped = !matched.isEmpty();
+        return out;
+    }
+
+    // Real damage. A skipped file posted under a name the set does not use
+    // cannot be told from a lost one, so an absent file nothing names brings
+    // every skipped file back: bytes are cheaper than a wrong verdict.
+    for (const UsenetPostJob::SkippedFile& s : job.skippedFiles) {
+        if (absentUnexplained || matched.contains(s.fileIndex))
+            out.needed.append(s.fileIndex);
+    }
+    return out;
+}
+
 } // namespace
 
 QString describePostStage(PostStage stage)
@@ -302,7 +359,28 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
             return;
         }
 
-        if (check.outcome == Par2Outcome::NeedMoreBlocks) {
+        // A skipped file reads as missing. That alone is no damage; beside real
+        // damage the repair needs it, and fetching it beats buying its blocks.
+        bool onlySkippedMissing = false;
+        if (!job.skippedFiles.isEmpty()
+            && (check.outcome == Par2Outcome::NeedMoreBlocks
+                || check.outcome == Par2Outcome::RepairPossible)) {
+            const SkippedJudgement judged = judgeSkippedFiles(check, job);
+            if (judged.onlySkipped) {
+                onlySkippedMissing = true;
+                result.par2Outcome = Par2Outcome::Clean;
+                logInfo(QStringLiteral("Usenet: \"%1\" verified; only skipped files are absent")
+                            .arg(job.itemId));
+            } else if (check.outcome == Par2Outcome::NeedMoreBlocks && !judged.needed.isEmpty()) {
+                result.needsSkippedFiles = judged.needed;
+                result.message = QObject::tr("The repair needs %n skipped file(s)", nullptr,
+                                             int(judged.needed.size()));
+                emit finished(result);
+                return;
+            }
+        }
+
+        if (!onlySkippedMissing && check.outcome == Par2Outcome::NeedMoreBlocks) {
             // Not a failure. The queue skipped the recovery volumes on purpose;
             // this is the moment it finds out how many of them it actually needs.
             result.needsMoreBlocks = true;
@@ -313,7 +391,7 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
             return;
         }
 
-        if (check.outcome == Par2Outcome::RepairPossible) {
+        if (!onlySkippedMissing && check.outcome == Par2Outcome::RepairPossible) {
             emitStage(job.itemId, PostStage::Repairing, 0, QString());
             verifier.setProgressCallback([&](int percent, const QString& file) {
                 emitStage(job.itemId, PostStage::Repairing, percent, file);
@@ -334,7 +412,7 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
                 return;
             }
             logInfo(QStringLiteral("Usenet: repaired \"%1\"").arg(job.itemId));
-        } else if (!check.ok()) {
+        } else if (!onlySkippedMissing && !check.ok()) {
             result.message = QObject::tr("Verification failed: %1")
                                  .arg(describePar2Outcome(check.outcome));
             emit finished(result);
@@ -394,6 +472,13 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
             logInfo(QStringLiteral("Usenet: %1 file(s) passed the SFV check").arg(sfv.checked));
             verifiedSfvFiles = sfv.sfvFiles;
         }
+    }
+
+    // Skipped files a repair fetched back or rebuilt: checked, never published.
+    for (const QString& name : job.discardAfterVerify) {
+        const QString path = QDir(job.workDir).filePath(name);
+        if (QFileInfo(path).isFile() && QFile::remove(path))
+            logInfo(QStringLiteral("Usenet: dropped skipped file \"%1\"").arg(name));
     }
 
     if (m_stopRequested) {

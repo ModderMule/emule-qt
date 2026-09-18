@@ -13,6 +13,7 @@
 #include "controls/DownloadListModel.h"
 #include "controls/DownloadProgressDelegate.h"
 #include "controls/TransferToolbar.h"
+#include "controls/UploadStatusDelegate.h"
 #include "dialogs/CategoryDialog.h"
 #include "dialogs/ClientDetailDialog.h"
 #include "dialogs/FindInListDialog.h"
@@ -102,10 +103,31 @@ ClientRow parseClient(const QCborMap& m)
 
     // New fields for TODO columns
     row.uploadStartDelay = m.value(QStringLiteral("uploadStartDelay")).toInteger();
-    row.filePriority     = static_cast<int>(m.value(QStringLiteral("filePriority")).toInteger(-1));
-    row.isAutoPriority   = m.value(QStringLiteral("isAutoPriority")).toBool();
-    row.fileRating       = static_cast<uint8_t>(m.value(QStringLiteral("fileRating")).toInteger());
+    row.uploadFilePriority = static_cast<int>(m.value(QStringLiteral("uploadFilePriority")).toInteger(-1));
+    row.uploadFileAutoPriority = m.value(QStringLiteral("uploadFileAutoPriority")).toBool();
     row.isConnected      = m.value(QStringLiteral("isConnected")).toBool();
+
+    // On Queue columns and the Obtained Parts bar
+    row.queueRating        = m.value(QStringLiteral("queueRating")).toInteger();
+    row.queueScore         = m.value(QStringLiteral("queueScore")).toInteger();
+    row.lastUpRequestDelay = m.value(QStringLiteral("lastUpRequestDelay")).toInteger();
+    row.hasLowID           = m.value(QStringLiteral("hasLowID")).toBool();
+    row.addNextConnect     = m.value(QStringLiteral("addNextConnect")).toBool();
+    if (const QCborMap bar = m.value(QStringLiteral("upStatus")).toMap(); !bar.isEmpty()) {
+        row.upStatus.fileSize = bar.value(QStringLiteral("fileSize")).toInteger();
+        // Bit-packed on the wire, one bit per part
+        const QByteArray packed = bar.value(QStringLiteral("parts")).toByteArray();
+        row.upStatus.parts = QByteArray(row.upPartCount, '\0');
+        for (int i = 0; i < row.upPartCount && i / 8 < packed.size(); ++i)
+            row.upStatus.parts[i] = static_cast<char>((static_cast<uint8_t>(packed[i / 8]) >> (i % 8)) & 1);
+        for (const auto& part : bar.value(QStringLiteral("next")).toArray())
+            row.upStatus.nextParts.push_back(static_cast<int>(part.toInteger()));
+        for (const auto& range : bar.value(QStringLiteral("sent")).toArray()) {
+            const QCborArray pair = range.toArray();
+            row.upStatus.sentRanges.emplace_back(pair.at(0).toInteger(), pair.at(1).toInteger());
+        }
+    }
+    row.upStatus.greyed = m.value(QStringLiteral("upBarGreyed")).toBool();
 
     // Pick best file name from reqFileName or uploadFileName or fileName
     row.fileName = m.value(QStringLiteral("uploadFileName")).toString();
@@ -794,6 +816,11 @@ QWidget* TransferPanel::createBottomPane()
         // User Name, File, File Priority, Rating, Score, Asked, Last Seen,
         // Entered Queue, Banned, Obtained Parts
         {150, 220, 80, 70, 60, 60, 100, 110, 60, 120});
+    // Obtained Parts is MFC's upload status bar (UploadListCtrl.cpp:165, QueueListCtrl.cpp:168)
+    clientSlot(Uploading).view->setItemDelegateForColumn(
+        7, new UploadStatusDelegate(false, clientSlot(Uploading).view));
+    clientSlot(OnQueue).view->setItemDelegateForColumn(
+        9, new UploadStatusDelegate(true, clientSlot(OnQueue).view));
     clientSlot(Known).view = createClientView(
         clientSlot(Known).model, QStringLiteral("clientsKnown3"),
         // User Name, Upload Status, Transferred, Download Status, Transferred Down,

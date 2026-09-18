@@ -121,6 +121,7 @@ private slots:
     void theNameIndexKeysOnLengthAndTheOpeningBytesTogether();
     void twoIdenticalFilesInASetAreLeftUnnamed();
     void aFileWhoseOpeningBytesAreNotThereYetIsNotMatched();
+    void aVerifySaysWhichFileTheMissingBlocksBelongTo();
 };
 
 // ---------------------------------------------------------------------------
@@ -665,6 +666,66 @@ void TestUsenetPar2::aFileWhoseOpeningBytesAreNotThereYetIsNotMatched()
     // A file shorter than the window hashes whole, so the window is its length.
     QCOMPARE(Par2NameIndex::bytesNeededFor(5000), qint64(5000));
     QCOMPARE(Par2NameIndex::bytesNeededFor(40000), kPar2Hash16kBytes);
+}
+
+void TestUsenetPar2::aVerifySaysWhichFileTheMissingBlocksBelongTo()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    // Three blocks each; the sample is then deleted and the movie damaged in one.
+    const QString movie = QDir(dir.path()).filePath(QStringLiteral("movie.bin"));
+    const QString sample = QDir(dir.path()).filePath(QStringLiteral("sample.bin"));
+    const QByteArray original = patternData(12000, 'm');
+    QVERIFY(writeFile(movie, original));
+    QVERIFY(writeFile(sample, patternData(12000, 's')));
+    QVERIFY(createPar2Set(dir.path(), QStringLiteral("rel"),
+                          {QStringLiteral("movie.bin"), QStringLiteral("sample.bin")},
+                          /*blockSize*/ 4000, /*recoveryBlocks*/ 1));
+
+    QVERIFY(QFile::remove(sample));
+    QByteArray damaged = original;
+    damaged.replace(4000, 100, QByteArray(100, '\0'));
+    QVERIFY(writeFile(movie, damaged));
+
+    Par2Verifier v;
+    const Par2Result r = v.verify(QDir(dir.path()).filePath(QStringLiteral("rel.par2")),
+                                  dir.path());
+    QCOMPARE(r.outcome, Par2Outcome::NeedMoreBlocks);
+
+    // The totals cannot say which files are short; a skipped file and real
+    // damage read the same there. The per-file list is what tells them apart —
+    // by whole files: this data repeats every 256 bytes, so par2 credits the
+    // sample's blocks to offsets inside the movie, and a per-file block count
+    // would name the wrong file.
+    QCOMPARE(r.files.size(), 2);
+    const Par2FileStatus* movieStatus = nullptr;
+    const Par2FileStatus* sampleStatus = nullptr;
+    for (const Par2FileStatus& f : r.files) {
+        QCOMPARE(f.blocks, 3);
+        if (f.fileName == QStringLiteral("movie.bin"))
+            movieStatus = &f;
+        else if (f.fileName == QStringLiteral("sample.bin"))
+            sampleStatus = &f;
+    }
+    QVERIFY(movieStatus && sampleStatus);
+    QVERIFY(!movieStatus->complete);
+    QVERIFY(movieStatus->targetExists);   // damaged, not gone
+    QVERIFY(!sampleStatus->complete);
+    QVERIFY(!sampleStatus->targetExists);
+
+    // An intact file reads complete.
+    QVERIFY(writeFile(movie, original));
+    const Par2Result again = v.verify(QDir(dir.path()).filePath(QStringLiteral("rel.par2")),
+                                      dir.path());
+    for (const Par2FileStatus& f : again.files) {
+        if (f.fileName == QStringLiteral("movie.bin"))
+            QVERIFY(f.complete);
+    }
+#endif
 }
 
 QTEST_MAIN(TestUsenetPar2)

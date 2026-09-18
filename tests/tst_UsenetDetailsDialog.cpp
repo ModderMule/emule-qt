@@ -80,6 +80,7 @@ private slots:
     void sizeAndArticleColumnsSortByMagnitudeNotByText();
     void theNameColumnStillSortsAsAName();
     void recoveryVolumesAreListedButGreyed();
+    void aSkippedFileIsUncheckedAndPar2HasNoBoxToClear();
 };
 
 void tst_UsenetDetailsDialog::everyNzbFileBecomesARow()
@@ -241,6 +242,50 @@ void tst_UsenetDetailsDialog::recoveryVolumesAreListedButGreyed()
             QCOMPARE(item->foreground(UsenetDetailsDialog::ColName), QBrush());
         }
     }
+}
+
+void tst_UsenetDetailsDialog::aSkippedFileIsUncheckedAndPar2HasNoBoxToClear()
+{
+    UsenetDetailsDialog dlg(nullptr, QStringLiteral("item"), QString());
+
+    QCborMap sample = file(QStringLiteral("sample.mkv"), 1000, 0, 0, 10, 0, false,
+                           QStringLiteral("p"), {QStringLiteral("g")});
+    sample.insert(QStringLiteral("skipped"), true);
+    sample.insert(QStringLiteral("state"), 4);
+    const QCborArray files{
+        file(QStringLiteral("rel.part01.rar"), 50000000, 40, 200, 512, 0, false,
+             QStringLiteral("p"), {QStringLiteral("g")}),
+        sample,
+        file(QStringLiteral("rel.par2"), 20000, 0, 0, 1, 0, true,
+             QStringLiteral("p"), {QStringLiteral("g")}),
+    };
+    dlg.applyDetails(details(files, -1));
+
+    auto* tree = dlg.findChild<QTreeWidget*>();
+    QVERIFY(tree);
+    const auto row = [tree](const QString& name) {
+        const auto found = tree->findItems(name, Qt::MatchExactly, UsenetDetailsDialog::ColName);
+        return found.isEmpty() ? nullptr : found.first();
+    };
+    QVERIFY(row(QStringLiteral("rel.part01.rar")) && row(QStringLiteral("sample.mkv"))
+            && row(QStringLiteral("rel.par2")));
+
+    QCOMPARE(row(QStringLiteral("rel.part01.rar"))->checkState(UsenetDetailsDialog::ColName),
+             Qt::Checked);
+    QVERIFY(row(QStringLiteral("rel.part01.rar"))->flags() & Qt::ItemIsUserCheckable);
+    QCOMPARE(row(QStringLiteral("sample.mkv"))->checkState(UsenetDetailsDialog::ColName),
+             Qt::Unchecked);
+    QCOMPARE(row(QStringLiteral("sample.mkv"))->text(UsenetDetailsDialog::ColStatus),
+             QStringLiteral("Skipped"));
+    // The queue fetches PAR2 files when a repair needs them; a box there would
+    // promise a choice the queue does not offer.
+    QVERIFY(!(row(QStringLiteral("rel.par2"))->flags() & Qt::ItemIsUserCheckable));
+
+    // Past the point of choosing, nothing is editable.
+    QCborMap complete = details(files, -1);
+    complete.insert(QStringLiteral("status"), 3);
+    dlg.applyDetails(complete);
+    QVERIFY(!(row(QStringLiteral("rel.part01.rar"))->flags() & Qt::ItemIsUserCheckable));
 }
 
 QTEST_MAIN(tst_UsenetDetailsDialog)

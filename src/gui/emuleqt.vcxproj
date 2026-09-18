@@ -229,6 +229,8 @@
     <ClCompile Include="controls\CategoryTabBar.cpp" />
     <ClCompile Include="controls\DownloadListModel.cpp" />
     <ClCompile Include="controls\DownloadProgressDelegate.cpp" />
+    <ClCompile Include="controls\UsenetFileCheckList.cpp" />
+    <ClCompile Include="controls\UsenetProgressDelegate.cpp" />
     <ClCompile Include="app\Ed2kSchemeHandler.cpp" />
     <ClCompile Include="dialogs\CollectionCreateDialog.cpp" />
     <ClCompile Include="dialogs\CollectionViewDialog.cpp" />
@@ -256,6 +258,7 @@
     <ClCompile Include="dialogs\NetworkInfoDialog.cpp" />
     <ClCompile Include="dialogs\OptionsDialog.cpp" />
     <ClCompile Include="dialogs\AddNzbFilesDialog.cpp" />
+    <ClCompile Include="dialogs\NzbFileChooserDialog.cpp" />
     <ClCompile Include="dialogs\AddNzbUrlDialog.cpp" />
     <ClCompile Include="dialogs\PasteLinksDialog.cpp" />
     <ClCompile Include="dialogs\PasteTextDialog.cpp" />
@@ -276,6 +279,7 @@
     <ClCompile Include="app\TrayMenuManager.cpp" />
     <ClCompile Include="panels\TransferPanel.cpp" />
     <ClCompile Include="controls\TransferToolbar.cpp" />
+    <ClCompile Include="controls\UploadStatusDelegate.cpp" />
     <ClCompile Include="app\UiState.cpp" />
     <ClCompile Include="app\VersionChecker.cpp" />
     <ClCompile Include="app\SkinEngine.cpp" />
@@ -296,6 +300,7 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="controls\AbstractListView.h" />
     <ClInclude Include="controls\SortableItems.h" />
+    <ClInclude Include="controls\PartBarPainter.h" />
     <ClInclude Include="controls\AbstractTableModel.h" />
     <ClInclude Include="controls\TrayMeterIcon.h" />
     <ClInclude Include="utils\DialogSizing.h" />
@@ -342,6 +347,8 @@
     <QtMoc Include="controls\CategoryTabBar.h" />
     <QtMoc Include="controls\DownloadListModel.h" />
     <QtMoc Include="controls\DownloadProgressDelegate.h" />
+    <QtMoc Include="controls\UsenetFileCheckList.h" />
+    <QtMoc Include="controls\UsenetProgressDelegate.h" />
     <ClInclude Include="app\Ed2kSchemeHandler.h" />
     <ClInclude Include="app\PendingOpenQueue.h" />
     <QtMoc Include="dialogs\CollectionCreateDialog.h" />
@@ -369,6 +376,7 @@
     <QtMoc Include="dialogs\NetworkInfoDialog.h" />
     <QtMoc Include="dialogs\OptionsDialog.h" />
     <QtMoc Include="dialogs\AddNzbFilesDialog.h" />
+    <QtMoc Include="dialogs\NzbFileChooserDialog.h" />
     <QtMoc Include="dialogs\AddNzbUrlDialog.h" />
     <QtMoc Include="dialogs\PasteLinksDialog.h" />
     <QtMoc Include="dialogs\PasteTextDialog.h" />
@@ -382,6 +390,7 @@
     <QtMoc Include="controls\SharedFilesModel.h" />
     <QtMoc Include="panels\SharedFilesPanel.h" />
     <QtMoc Include="controls\SharedPartsDelegate.h" />
+    <QtMoc Include="controls\UploadStatusDelegate.h" />
     <QtMoc Include="panels\StatisticsPanel.h" />
     <QtMoc Include="controls\SpeedGraph.h" />
     <QtMoc Include="controls\StatsGraph.h" />

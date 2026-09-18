@@ -108,22 +108,85 @@ qint64 UsenetFileState::availableFrom(qint64 offset) const
     return offset;
 }
 
+QByteArray buildSegmentMap(const UsenetFileState& st, const QSet<int>& inFlight)
+{
+    const int n = int(st.done.size());
+    if (n <= 0)
+        return {};
+
+    const int buckets = std::min(n, kSegmentMapMaxBuckets);
+    QByteArray map(buckets, char(kSegmentMapQueued));
+    bool uniform = true;
+    for (int b = 0; b < buckets; ++b) {
+        const int from = int(qint64(b) * n / buckets);
+        const int to = std::max(from + 1, int(qint64(b + 1) * n / buckets));
+
+        bool anyMissing = false;
+        bool anyInFlight = false;
+        bool anyQueued = false;
+        for (int s = from; s < to; ++s) {
+            if (!st.done.testBit(s)) {
+                (inFlight.contains(s) ? anyInFlight : anyQueued) = true;
+            } else if (s < st.missing.size() && st.missing.testBit(s)) {
+                anyMissing = true;
+            }
+        }
+
+        const quint8 code = anyMissing    ? kSegmentMapMissing
+                            : anyInFlight ? kSegmentMapInFlight
+                            : anyQueued   ? kSegmentMapQueued
+                                          : kSegmentMapDone;
+        map[b] = char(code);
+        if (b > 0 && code != quint8(map.at(0)))
+            uniform = false;
+    }
+
+    if (!uniform)
+        return map;
+    const quint8 only = quint8(map.at(0));
+    if (only == kSegmentMapQueued || only == kSegmentMapDone)
+        return {};
+    return QByteArray(1, char(only));
+}
+
+qint64 UsenetQueueItem::totalEncodedBytes() const
+{
+    qint64 total = 0;
+    for (int i = 0; i < nzb.files.size(); ++i) {
+        if (i < files.size() && files.at(i).isSkipped())
+            continue;
+        total += nzb.files.at(i).encodedBytes();
+    }
+    return total;
+}
+
 qint64 UsenetQueueItem::decodedBytes() const
 {
     qint64 total = 0;
-    for (const auto& f : files)
-        total += f.decodedBytes;
+    for (const auto& f : files) {
+        if (!f.isSkipped())
+            total += f.decodedBytes;
+    }
     return total;
+}
+
+int UsenetQueueItem::segmentCount() const
+{
+    int n = 0;
+    for (int i = 0; i < nzb.files.size(); ++i) {
+        if (i < files.size() && files.at(i).isSkipped())
+            continue;
+        n += int(nzb.files.at(i).segments.size());
+    }
+    return n;
 }
 
 int UsenetQueueItem::doneSegmentCount() const
 {
     int n = 0;
     for (const auto& f : files) {
-        for (qsizetype i = 0; i < f.done.size(); ++i) {
-            if (f.done.testBit(i))
-                ++n;
-        }
+        if (!f.isSkipped())
+            n += int(f.done.count(true));
     }
     return n;
 }

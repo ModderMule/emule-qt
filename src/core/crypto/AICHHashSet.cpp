@@ -1,11 +1,18 @@
 #include "pch.h"
 #include "AICHHashSet.h"
 #include "SHAHash.h"
+#include "app/AppContext.h"
+#include "client/UpDownClient.h"
+#include "files/PartFile.h"
+#include "transfer/DownloadQueue.h"
 #include "utils/DebugUtils.h"
+#include "utils/Log.h"
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
 
 #include <QMutexLocker>
+
+#include <algorithm>
 
 
 namespace eMule {
@@ -18,6 +25,7 @@ inline constexpr int kMinPercentageToTrust = 92;
 QMutex AICHRecoveryHashSet::s_mutKnown2File;
 QString AICHRecoveryHashSet::s_known2MetPath;
 std::unordered_map<AICHHash, uint64> AICHRecoveryHashSet::s_storedHashes;
+std::vector<AICHRecoveryHashSet::RequestedData> AICHRecoveryHashSet::s_requestedData;
 
 // ---------------------------------------------------------------------------
 // AICHUntrustedHash
@@ -194,6 +202,63 @@ uint64 AICHRecoveryHashSet::addStoredAICHHash(const AICHHash& hash, uint64 fileP
     }
     s_storedHashes[hash] = filePos;
     return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Pending recovery requests — MFC SHAHashSet.cpp:1001-1050
+// ---------------------------------------------------------------------------
+
+void AICHRecoveryHashSet::addClientAICHRequest(const RequestedData& request)
+{
+    s_requestedData.push_back(request);
+}
+
+void AICHRecoveryHashSet::clientAICHRequestFailed(UpDownClient* client)
+{
+    if (!client)
+        return;
+
+    // MFC SetReqFileAICHHash(NULL). requestAICHRecovery() picks among the sources that
+    // reported our master hash, so clearing it is what keeps the failed client out of
+    // the next draw — without it we would ask the same peer again, for ever.
+    client->clearReqFileAICHHash();
+
+    const RequestedData data = aichReqDetails(client);
+    removeClientAICHRequest(client);
+
+    if (data.client != client || !data.file || !theApp.downloadQueue)
+        return;
+
+    const auto& files = theApp.downloadQueue->files();
+    if (std::find(files.begin(), files.end(), data.file) == files.end())
+        return; // the download went away while the request was out
+
+    qCDebug(lcEmuleGeneral, "AICH request failed, asking another client (file %s, part %u)",
+            qUtf8Printable(data.file->fileName()), data.part);
+    data.file->requestAICHRecovery(data.part);
+}
+
+void AICHRecoveryHashSet::removeClientAICHRequest(const UpDownClient* client)
+{
+    const auto it = std::find_if(s_requestedData.begin(), s_requestedData.end(),
+                                 [client](const RequestedData& rd) { return rd.client == client; });
+    if (it != s_requestedData.end())
+        s_requestedData.erase(it);
+}
+
+bool AICHRecoveryHashSet::isClientRequestPending(const PartFile* file, uint16 part)
+{
+    return std::any_of(s_requestedData.begin(), s_requestedData.end(),
+                       [file, part](const RequestedData& rd) {
+                           return rd.file == file && rd.part == part;
+                       });
+}
+
+AICHRecoveryHashSet::RequestedData AICHRecoveryHashSet::aichReqDetails(const UpDownClient* client)
+{
+    const auto it = std::find_if(s_requestedData.begin(), s_requestedData.end(),
+                                 [client](const RequestedData& rd) { return rd.client == client; });
+    return it != s_requestedData.end() ? *it : RequestedData{};
 }
 
 bool AICHRecoveryHashSet::isLargeFile() const

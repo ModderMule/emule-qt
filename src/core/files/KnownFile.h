@@ -212,7 +212,10 @@ public:
     bool publishNotes();
 
     void updateFileRatingCommentAvail(bool forceUpdate = false) override;
-    void updatePartsInfo();
+    /// Rebuild part availability from the peers uploading this file, and refresh the
+    /// complete-source estimate at most once a minute. PartFile overrides it to count
+    /// download sources instead. MFC KnownFile.cpp:204.
+    virtual void updatePartsInfo();
 
     // Comment / rating — the user's own, i.e. the write half of
     // AbstractFile::loadComment(). Distinct from hasComment()/userRating(), which
@@ -264,6 +267,13 @@ protected:
     // PartFile (.part.met) so both record formats use one implementation.
     [[nodiscard]] QByteArray serializeKadNotes() const;
     void deserializeKadNotes(const QByteArray& blob);
+
+    /// Fold the complete-source counts our peers report into count/Lo/Hi and stamp the
+    /// next refresh. @p seen is the lowest part frequency we see ourselves; @p blend
+    /// mixes 80% network with 20% of that, which MFC does for a part file
+    /// (PartFile.cpp:2596-2655) but not for a complete one (KnownFile.cpp:255-291).
+    void updateCompleteSourceCounts(std::vector<uint16>& peerCounts, uint16 seen, bool blend);
+    [[nodiscard]] bool completeSourcesDue(time_t now) const { return now - m_completeSourcesTime > 0; }
 
 private:
     void pruneKadNotes();  // drop expired entries, then cap to the newest N

@@ -33,6 +33,11 @@ inline constexpr QLatin1StringView kWebsiteUrl{"https://emule-qt.org"};
 /// optional ip4/ip6 hints for the other one.
 inline constexpr QLatin1StringView kPortTestPath{"/test-ports/"};
 
+/// One installed translation: its locale code ("de_DE") and native name.
+struct AppLanguage {
+    QString code;
+    QString label;
+};
 
 class AppConfig {
 public:
@@ -103,6 +108,11 @@ public:
     /// directory a translator loads from, but the Options dialog has to union the
     /// locales it finds across all of them.
     [[nodiscard]] static QStringList langCandidates(const QString& appDir);
+
+    /// The translations installed across @p dirs (emuleqt_<code>.qm), English
+    /// excluded, as a union sorted by native name. What the Options dialog offers
+    /// and the web UI's language menu lists.
+    [[nodiscard]] static QList<AppLanguage> availableLanguages(const QStringList& dirs);
 };
 
 } // namespace eMule

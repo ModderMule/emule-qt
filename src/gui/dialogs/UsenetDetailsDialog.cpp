@@ -8,6 +8,8 @@
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
 #include "controls/SortableItems.h"
+#include "controls/UsenetFileCheckList.h"
+#include "controls/UsenetProgressDelegate.h"
 #include "controls/UsenetQueueModel.h"
 #include "utils/DialogSizing.h"
 #include "utils/FileTypeIcons.h"
@@ -64,21 +66,6 @@ QString aggregate(const QStringList& values)
     return QCoreApplication::translate("UsenetDetailsDialog", "%1 (and %n other(s))",
                                        nullptr, int(distinct.size()) - 1)
         .arg(distinct.first());
-}
-
-/// The per-file status cell. Deliberately not the item's status: a file is done,
-/// short, or still coming, and only the first of those is worth a word.
-QString fileStatusText(int percent, int missing, bool finalized)
-{
-    if (missing > 0) {
-        return QCoreApplication::translate("UsenetDetailsDialog", "%n article(s) missing",
-                                           nullptr, missing);
-    }
-    if (finalized || percent >= 100)
-        return QCoreApplication::translate("UsenetDetailsDialog", "Complete");
-    if (percent > 0)
-        return QCoreApplication::translate("UsenetDetailsDialog", "Downloading");
-    return QCoreApplication::translate("UsenetDetailsDialog", "Queued");
 }
 
 } // namespace
@@ -172,6 +159,12 @@ void UsenetDetailsDialog::applyDetails(const QCborMap& details)
     m_tree->setSortingEnabled(false);
     m_tree->clear();
 
+    // The file list is the user's to change until post-processing takes the
+    // release; the icon and the Status word are the queue tree's, shared.
+    m_checks->setEditable(usenetItemAcceptsSkip(row.status));
+    const bool itemActive = row.status == UsenetRowStatus::Downloading
+                            || row.status == UsenetRowStatus::Queued;
+
     for (qsizetype i = 0; i < files.size(); ++i) {
         const QCborMap fm = files.at(i).toMap();
 
@@ -182,17 +175,26 @@ void UsenetDetailsDialog::applyDetails(const QCborMap& details)
         const int total = int(fm.value(QStringLiteral("segmentCount")).toInteger());
         const int missing = int(fm.value(QStringLiteral("missingSegments")).toInteger());
         const bool isPar2 = fm.value(QStringLiteral("isPar2")).toBool();
-        const bool finalized = fm.value(QStringLiteral("finalized")).toBool();
         const QString finalPath = fm.value(QStringLiteral("finalPath")).toString();
+        // Decoded from the same array, so the same position.
+        const UsenetFileRow fileRow = i < row.files.size() ? row.files.at(i) : UsenetFileRow{};
 
         auto* item = new SortableTreeItem(m_tree);
         item->setIcon(ColName, fileTypeIconForName(name));
         item->setText(ColName, name);
         item->setText(ColSize, size > 0 ? formatByteSize(size) : QString());
         item->setText(ColProgress, QStringLiteral("%1%").arg(percent));
+        item->setToolTip(ColProgress, QStringLiteral("%1%").arg(percent));
+        item->setData(ColProgress, kUsenetBarRole, usenetFileBar(fileRow));
+        item->setData(ColProgress, kUsenetBarPercentRole, percent);
+        item->setData(ColProgress, kUsenetBarPausedRole,
+                      row.status == UsenetRowStatus::Paused || row.status == UsenetRowStatus::Failed);
+        item->setData(ColProgress, kUsenetBarCompleteRole,
+                      fileRow.state == UsenetFileRowState::Complete);
         item->setText(ColArticles, QStringLiteral("%1/%2").arg(done).arg(total));
         item->setText(ColMissing, missing > 0 ? QString::number(missing) : QString());
-        item->setText(ColStatus, fileStatusText(percent, missing, finalized));
+        item->setText(ColStatus, usenetFileStateText(fileRow, itemActive));
+        item->setIcon(ColStatus, usenetFileStateIcon(fileRow, itemActive));
 
         // Raw values behind the formatted ones, so these columns sort by
         // magnitude rather than by the leading digit of "9.90 MB". SortRole and
@@ -228,11 +230,16 @@ void UsenetDetailsDialog::applyDetails(const QCborMap& details)
 
         // A recovery set is not payload, and greying it says so without hiding
         // it. The palette brush follows a theme change; a literal colour does not.
-        if (isPar2) {
+        if (isPar2 || fileRow.state == UsenetFileRowState::Skipped) {
             const QBrush grey = palette().brush(QPalette::Disabled, QPalette::Text);
             for (int c = 0; c < ColCount; ++c)
                 item->setForeground(c, grey);
         }
+
+        // Checked downloads it. The daemon widens a change to the whole archive
+        // set, and the next poll shows that.
+        m_checks->bindRow(item, fileRow.index >= 0 ? fileRow.index : int(i), !fileRow.skipped,
+                          isPar2);
     }
 
     m_tree->setSortingEnabled(wasSorting);
@@ -355,7 +362,17 @@ void UsenetDetailsDialog::buildUi()
     tree->setSelectionMode(QAbstractItemView::SingleSelection);
     tree->setSortingEnabled(true);
     tree->bindColumns(QStringLiteral("usenetDetailsFiles"),
-                      {260, 90, 75, 90, 70, 130});
+                      {260, 90, 110, 90, 70, 150});
+
+    // The bar the queue tree draws, off the same roles.
+    tree->setItemDelegateForColumn(ColProgress, new UsenetProgressDelegate(tree));
+
+    m_checks = new UsenetFileCheckList(tree, ColName);
+    connect(m_checks, &UsenetFileCheckList::skipChanged, this,
+            [this](const QList<int>& fileIndices, bool skipped) {
+        UsenetFileCheckList::sendSkip(m_ipc, this, m_itemId, fileIndices, skipped);
+    });
+    layout->addWidget(m_checks->createButtonRow(this));
     layout->addWidget(tree, 1);
 
     connect(tree, &QTreeWidget::itemDoubleClicked,

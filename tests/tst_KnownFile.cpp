@@ -196,6 +196,7 @@ private slots:
     void createFromFile_setsDate();
     void createFromFile_progressCallback();
     void updatePartsInfo_noClients();
+    void updatePartsInfo_usesUploaderStatusAndCompleteCounts();
     void publishSrc_timing();
     void publishNotes_timing();
     void createHashFromMemory_basic();
@@ -783,6 +784,48 @@ void tst_KnownFile::updatePartsInfo_noClients()
     QCOMPARE(kf.availPartFrequency().size(), static_cast<size_t>(3));
     for (auto freq : kf.availPartFrequency())
         QCOMPARE(freq, uint16{0});
+}
+
+void tst_KnownFile::updatePartsInfo_usesUploaderStatusAndCompleteCounts()
+{
+    // Availability comes from what the peers downloading this file report about *it* —
+    // their upload-side part status — not from the download-side status they hold for
+    // whatever they are fetching elsewhere, which is what used to be counted here.
+    // MFC KnownFile.cpp:218-241.
+    KnownFile kf;
+    kf.setFileSize(PARTSIZE * 2 + 100);   // 3 parts
+    QCOMPARE(kf.partCount(), uint16{3});
+
+    auto feed = [&kf](UpDownClient& client, uint8 bitmap, uint16 completeSources) {
+        // Extended-requests v1 reports the part status only, so nothing recomputes the
+        // estimate before the explicit call below.
+        client.setExtendedRequestsVer(1);
+        SafeMemFile data;
+        data.writeUInt16(kf.ed2kPartCount());
+        data.writeUInt8(bitmap);
+        data.seek(0, SEEK_SET);
+        QVERIFY(client.processExtendedInfo(data, &kf));
+        client.setUpCompleteSourcesCount(completeSources);
+        kf.addUploadingClient(&client);
+    };
+
+    UpDownClient first;
+    UpDownClient second;
+    feed(first, 0x03, 12);    // parts 0 and 1
+    feed(second, 0x07, 8);    // all three
+
+    kf.updatePartsInfo();
+
+    QCOMPARE(kf.availPartFrequency().at(0), uint16{2});
+    QCOMPARE(kf.availPartFrequency().at(1), uint16{2});
+    QCOMPARE(kf.availPartFrequency().at(2), uint16{1});
+
+    // One peer holds every part, and we hold the file ourselves, so the sample is
+    // {2, 8, 12}: the estimate is the middle of it and the high guess the upper quartile.
+    // The count used to be left at its initial 1 for every file, for ever.
+    QCOMPARE(kf.completeSourcesCount(), uint16{8});
+    QCOMPARE(kf.completeSourcesCountLo(), uint16{8});
+    QCOMPARE(kf.completeSourcesCountHi(), uint16{12});
 }
 
 void tst_KnownFile::publishSrc_timing()

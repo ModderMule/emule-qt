@@ -3,11 +3,12 @@
 /// @file KadContactsModel.h
 /// @brief Table model for the Kad contacts list in the Kad tab.
 
-#include <QPixmap>
+#include <QIcon>
 #include <QString>
 
 #include "AbstractTableModel.h"
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -22,6 +23,8 @@ struct KadContactRow {
     uint16_t tcpPort = 0;
     uint8_t version = 0;
     uint8_t type = 0;
+    bool ipVerified = false;
+    bool bootstrap = false;
 };
 
 /// Table model backing the Kad contacts tree view.
@@ -47,13 +50,15 @@ public:
 
     [[nodiscard]] int contactCount() const { return count(); }
 
+    /// MFC's image index (KadContactListCtrl.cpp:117-124): Contact0-4 by type, and 5
+    /// (SrcUnknown) for a bootstrap contact or an active one that isn't IP-verified.
+    [[nodiscard]] static int contactImage(const KadContactRow& c);
+
 protected:
     [[nodiscard]] int columnCountValue() const override { return ColCount; }
 
 private:
-    [[nodiscard]] static QPixmap contactIcon(uint8_t type);
-
-    QPixmap m_icons[5]; // Cached icons for types 0-4
+    std::array<QIcon, 6> m_icons;
 };
 
 } // namespace eMule

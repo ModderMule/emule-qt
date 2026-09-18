@@ -178,6 +178,11 @@ bool FriendList::removeFriend(Friend* f)
     if (it == m_friends.end())
         return false;
 
+    // A friend deleted mid-dial owes its watchers a verdict, or the chat tab keeps
+    // spinning over an entry that no longer exists.
+    if (f->isTryingToConnect())
+        f->updateFriendConnectionState(FriendConnectReport::Deleted);
+
     // Unlink before erasing, as MFC does (srchybrid/FriendList.cpp:212). The destructor
     // would do it too, but doing it here keeps the client's friendPtr() from being observed
     // pointing at an entry that is already on its way out.
@@ -191,8 +196,11 @@ bool FriendList::removeFriend(Friend* f)
 
 void FriendList::removeAll()
 {
-    for (const auto& f : m_friends)
+    for (const auto& f : m_friends) {
+        if (f->isTryingToConnect())
+            f->updateFriendConnectionState(FriendConnectReport::Deleted);
         f->setLinkedClient(nullptr);
+    }
     m_friends.clear();
 }
 
@@ -243,6 +251,20 @@ void FriendList::removeAllFriendSlots()
 {
     for (const auto& f : m_friends)
         f->setFriendSlot(false);
+}
+
+// ===========================================================================
+// Private
+// ===========================================================================
+
+void FriendList::emitConnectionProgress(Friend* f, ChatConnectProgress step)
+{
+    emit friendConnectionProgress(f, step);
+}
+
+void FriendList::emitConnectingResult(Friend* f, bool success)
+{
+    emit friendConnectingResult(f, success);
 }
 
 } // namespace eMule

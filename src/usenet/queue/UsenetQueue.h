@@ -235,6 +235,25 @@ public:
     /// was blocking it, is a step with no decision in it.
     bool setItemPassword(const QString& id, const QString& password);
 
+    /// Leave files of @p id out of the download, or bring them back. Widened to
+    /// whole archive sets. Empty when applied, else why not.
+    QString setFilesSkipped(const QString& id, const QList<int>& fileIndices, bool skipped);
+
+    /// The files @p requested stands for once archive sets are widened, keeping
+    /// only those whose flag would change. Empty when valid, else why not.
+    [[nodiscard]] static QString expandSkipRequest(const UsenetQueueItem& item,
+                                                   const QList<int>& requested, bool skipped,
+                                                   QSet<int>& out);
+
+    /// What one file is doing, for the GUI's icon and bar.
+    struct FileView {
+        UsenetFileWireState state = UsenetFileWireState::Queued;
+        QByteArray segmentMap;   ///< see buildSegmentMap(); often empty
+    };
+
+    /// Parallel to the item's files; empty for an unknown item.
+    [[nodiscard]] QList<FileView> fileViews(const QString& itemId) const;
+
     [[nodiscard]] QList<const UsenetQueueItem*> items() const;
     [[nodiscard]] const UsenetQueueItem* findItem(const QString& id) const;
 
@@ -367,6 +386,12 @@ public:
     /// would take bandwidth away from ED2K for as long as the quota lasts.
     [[nodiscard]] bool hasActiveDownloads() const;
 
+    /// Pause or resume the whole engine. Nothing new is dispatched and no
+    /// post-processing starts while paused; articles in flight still land and no
+    /// item's status changes. Idempotent.
+    void setEnginePaused(bool paused);
+    [[nodiscard]] bool isEnginePaused() const { return m_enginePaused; }
+
     /// Per-account byte meters. Read for the IPC report; written only here.
     [[nodiscard]] const UsenetUsageTracker& usage() const { return m_usage; }
 
@@ -401,6 +426,9 @@ signals:
     /// can broadcast it *uncoalesced*: this is a transition, not a latest value,
     /// and collapsing it inside a coalescing window loses it entirely.
     void itemFinished(const QString& id, bool success, const QString& message);
+
+    /// setEnginePaused() changed the answer.
+    void enginePausedChanged(bool paused);
 
 private:
     struct SegmentKey {
@@ -711,13 +739,34 @@ private:
     [[nodiscard]] bool volumeHasRoom(const QString& dir) const;
 
     /// A connection died at the proxy. Parks the whole queue for the retry
-    /// interval with the reason on every active item — never a statement about a
-    /// server, never a spent retry.
+    /// interval, and re-asks noteWaitReason() for every item — never a statement
+    /// about a server, never a spent retry, and never over a floor that is
+    /// already holding the same queue.
     void noteProxyStall(const QString& text);
 
     /// Something came through, or the settings changed: lift the proxy park and
     /// the reason it left on the items.
     void noteProxyRecovered();
+
+    /// Write on @p rt the global wait that is holding it, and nothing when none
+    /// is: the pause, then the disk floor, then the proxy, then a pending check
+    /// — dispatch()'s own gate order, since an item held at the first gate must
+    /// not name a later one the round never reached. The single owner of that order: every path back
+    /// into waiting calls this, because each global wait writes its text at its
+    /// own edge and an item that starts waiting afterwards would hear nothing.
+    /// True when the text changed.
+    bool noteWaitReason(ItemRuntime& rt);
+
+    /// The same for the whole queue, after a global wait went up or came down.
+    /// Skips a quota-parked item: the allowance's sentence is the item's own and
+    /// nothing could write it back.
+    void noteWaitReasons();
+
+    /// After a resume: swap the pause reason for whatever global wait is still
+    /// in force — the disk, the proxy, a pending check — or for nothing.
+    void restoreWaitReasons();
+
+    [[nodiscard]] static QString enginePausedText();
 
     /// A check fired: pause or fail @p rt per the user's setting, from any
     /// status, with @p detail as the reason. False, changing nothing, when the
@@ -889,6 +938,10 @@ private:
     [[nodiscard]] static bool looksObfuscated(const UsenetQueueItem& item);
 
     void beginPostProcessing(ItemRuntime& rt);
+
+    /// Delete the scratch files of skipped files and forget what they held, so
+    /// verify reads them as absent and a repair that wants one starts clean.
+    void discardSkippedFiles(ItemRuntime& rt);
     void onPostStage(const QString& itemId, int stage, int percent, const QString& detail);
     void onPostFinished(const eMule::usenet::UsenetPostResult& result);
 
@@ -1173,6 +1226,16 @@ private:
     /// The reason written on the items, empty when no stall is unresolved. Also
     /// what keeps the warning to one per stall.
     QString m_proxyStallReason;
+
+    /// The disk-floor reason while m_diskBlocked, kept so anything that starts
+    /// waiting mid-stall — an added release, a resume, a lifted pause — can be
+    /// told what it is waiting for.
+    QString m_diskStallReason;
+
+    /// The user paused the whole engine. Gates dispatch() like the disk floor,
+    /// but is a choice rather than a wait, and the one global reason the others
+    /// may not overwrite. Persisted as a preference, not in any sidecar.
+    bool m_enginePaused = false;
 
     bool m_running = false;
 };

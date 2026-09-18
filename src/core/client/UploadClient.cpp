@@ -25,6 +25,7 @@
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
+#include "utils/SafeFile.h"
 
 
 namespace eMule {
@@ -177,38 +178,54 @@ float UpDownClient::getCombinedFilePrioAndCredit() const
 
 bool UpDownClient::processExtendedInfo(SafeMemFile& data, KnownFile* file)
 {
-    const uint16 partCount = data.readUInt16();
+    // Whatever this peer said about a previous file is void — MFC UploadClient.cpp:237-240.
+    m_upPartStatus.clear();
+    m_upPartCount = 0;
+    m_upCompleteSourcesCount = 0;
+
+    if (m_extendedRequestsVer == 0)
+        return true;
+
     if (!file)
         return false;
 
-    if (partCount != file->partCount()) {
-        m_upPartStatus.clear();
-        m_upPartCount = 0;
-        return false;
+    // The wire count is the ED2K one; our data part count is one lower for a size that
+    // is an exact multiple of PARTSIZE. Comparing it against partCount() made us answer
+    // every such request from an MFC peer with OP_FILEREQANSNOFIL.
+    const uint16 wirePartCount = data.readUInt16();
+
+    if (wirePartCount == 0) {
+        // Peer doesn't say — assume it holds nothing yet (MFC UploadClient.cpp:245-249).
+        m_upPartCount = file->partCount();
+        if (m_upPartCount == 0)
+            return false;
+        m_upPartStatus.assign(m_upPartCount, 0);
+    } else {
+        if (file->ed2kPartCount() != wirePartCount)
+            return false;   // part count stays 0 — MFC UploadClient.cpp:251-255
+
+        m_upPartCount = file->partCount();
+        m_upPartStatus.assign(m_upPartCount, 0);
+
+        // Framed by the ED2K count the sender wrote, not by our part count: reading one
+        // byte fewer would misalign the complete-source count that follows.
+        const uint16 byteCount = (wirePartCount + 7) / 8;
+        std::vector<uint8> bitmap(byteCount);
+        data.read(bitmap.data(), byteCount);
+
+        for (uint16 i = 0; i < m_upPartCount; ++i)
+            m_upPartStatus[i] = (bitmap[i / 8] & (1 << (i % 8))) ? 1 : 0;
     }
 
-    m_upPartCount = partCount;
-    m_upPartStatus.resize(partCount);
-
-    if (partCount == 0) {
-        // MFC: still consume complete source count if present
-        if (m_extendedRequestsVer > 1 && (data.length() - data.position()) >= 2)
-            data.readUInt16();
-        return true;
+    // Complete-source count for ExtendedRequests v2+. It used to be read and dropped,
+    // which left every peer's contribution to the file's estimate at zero.
+    if (m_extendedRequestsVer > 1) {
+        const uint16 previous = m_upCompleteSourcesCount;
+        const uint16 reported = data.readUInt16();
+        setUpCompleteSourcesCount(reported);
+        if (previous != reported)
+            file->updatePartsInfo();
     }
-
-    // Read part availability bitmap
-    const uint16 byteCount = (partCount + 7) / 8;
-    std::vector<uint8> bitmap(byteCount);
-    data.read(bitmap.data(), byteCount);
-
-    for (uint16 i = 0; i < partCount; ++i) {
-        m_upPartStatus[i] = (bitmap[i / 8] & (1 << (i % 8))) ? 1 : 0;
-    }
-
-    // MFC ProcessExtendedInfo: consume complete source count for ExtendedRequests v2+
-    if (m_extendedRequestsVer > 1 && (data.length() - data.position()) >= 2)
-        data.readUInt16();
 
     return true;
 }
@@ -923,6 +940,14 @@ void UpDownClient::processRequestFileName(const uint8* data, uint32 size)
         return;
     }
 
+    if (!md4equ(fileHash, m_reqUpFileId.data()))
+        setCommentDirty(true);
+
+    // Before the extended info, not after: setUploadFileID() resets the reported part
+    // status when the file changes, which silently threw away what we had just parsed.
+    // MFC ListenSocket.cpp:324-327.
+    setUploadFileID(file);
+
     // Process extended info (part status) if available
     if (m_extendedRequestsVer > 0 && (io.length() - io.position()) >= 2) {
         if (!processExtendedInfo(io, file)) {
@@ -931,10 +956,8 @@ void UpDownClient::processRequestFileName(const uint8* data, uint32 size)
         }
     }
 
-    if (!md4equ(fileHash, m_reqUpFileId.data()))
-        setCommentDirty(true);
-
-    setUploadFileID(file);
+    // After the part status, so the source is added knowing what it has.
+    maybeAddAsPassiveSource(file);
 
     // Send OP_REQFILENAMEANSWER: hash + filename
     SafeMemFile response;
@@ -984,6 +1007,9 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
 
     if (!md4equ(fileIdent.getMD4Hash(), m_reqUpFileId.data()))
         setCommentDirty(true);
+
+    // MFC adds the passive source before SetUploadFileID here (ListenSocket.cpp:928-937).
+    maybeAddAsPassiveSource(reqFile);
 
     setUploadFileID(reqFile);
 
@@ -1049,10 +1075,17 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
             break;
         }
 
-        default:
-            logDebug(QStringLiteral("MultiPacketExt2: unknown sub-opcode 0x%1")
-                         .arg(subOpcode, 2, 16, QLatin1Char('0')));
+        case OP_AICHFILEHASHREQ:
+            // Not answered for a file-identifier peer: the identifier at the head of our
+            // answer already carries the AICH hash (MFC ListenSocket.cpp:970-971).
+            logDebug(QStringLiteral("MultiPacketExt2: AICH hash sub-request from %1 ignored, "
+                                    "it supports file identifiers").arg(userName()));
             break;
+
+        default:
+            // Unknown sub-opcode: its length is unknown too, so the rest of the packet
+            // cannot be parsed. MFC ListenSocket.cpp:1030-1035 throws, which disconnects.
+            throw FileException("OP_MULTIPACKET_EXT2: invalid sub opcode");
         }
     }
 
@@ -1112,6 +1145,8 @@ void UpDownClient::processMultiPacketLegacy(const uint8* data, uint32 size, bool
     if (!md4equ(fileHash, m_reqUpFileId.data()))
         setCommentDirty(true);
 
+    maybeAddAsPassiveSource(reqFile);
+
     setUploadFileID(reqFile);
 
     // Build response — legacy answer uses hash16 prefix
@@ -1121,8 +1156,7 @@ void UpDownClient::processMultiPacketLegacy(const uint8* data, uint32 size, bool
     bool answerFNF = false;
 
     // Process sub-opcodes (same as EXT2)
-    bool stopParsing = false;
-    while ((dataIn.length() - dataIn.position()) > 0 && !answerFNF && !stopParsing) {
+    while ((dataIn.length() - dataIn.position()) > 0 && !answerFNF) {
         const uint8 subOpcode = dataIn.readUInt8();
 
         switch (subOpcode) {
@@ -1164,12 +1198,23 @@ void UpDownClient::processMultiPacketLegacy(const uint8* data, uint32 size, bool
             break;
         }
 
-        default:
-            // Unknown sub-opcode with unknown length — stop parsing
-            logDebug(QStringLiteral("MultiPacketLegacy: unknown sub-opcode 0x%1")
-                         .arg(subOpcode, 2, 16, QLatin1Char('0')));
-            stopParsing = true;
+        case OP_AICHFILEHASHREQ:
+            // The legacy way of asking for our AICH root hash, which is what we ask a
+            // legacy peer for too. MFC ListenSocket.cpp:966-976.
+            if (supportsFileIdentifiers()) {
+                logDebug(QStringLiteral("MultiPacketLegacy: AICH hash sub-request from %1 "
+                                        "ignored, it supports file identifiers").arg(userName()));
+            } else if (isSupportingAICH() && reqFile->fileIdentifier().hasAICHHash()) {
+                dataOut.writeUInt8(OP_AICHFILEHASHANS);
+                reqFile->fileIdentifier().getAICHHash().write(dataOut);
+                hasResponse = true;
+            }
             break;
+
+        default:
+            // Unknown sub-opcode with unknown length — the rest of the packet cannot be
+            // parsed. MFC ListenSocket.cpp:1030-1035 throws, which disconnects.
+            throw FileException("OP_MULTIPACKET: invalid sub opcode");
         }
     }
 
@@ -1216,9 +1261,17 @@ void UpDownClient::processMultiPacketAnswerLegacy(const uint8* data, uint32 size
             processFileStatus(false, dataIn, m_reqFile);
             break;
 
+        case OP_AICHFILEHASHANS:
+            // The answer to the sub-request we send a legacy peer. Falling into the
+            // default below meant we never read it — and skipped the upload-slot request
+            // that follows this loop, because that default returned.
+            processAICHFileHash(&dataIn, m_reqFile, nullptr);
+            break;
+
         default:
-            // Unknown sub-response with unknown length — can't continue
-            return;
+            // Unknown sub-response with unknown length — can't continue.
+            // MFC ListenSocket.cpp:1110-1115 throws, which disconnects.
+            throw FileException("OP_MULTIPACKETANSWER: invalid sub opcode");
         }
     }
 
@@ -1256,6 +1309,16 @@ void UpDownClient::processMultiPacketAnswer(const uint8* data, uint32 size)
         return;
     }
 
+    // Same MD4 but a different identifier means a different file — MFC treats that as a
+    // wrong file ID and disconnects (ListenSocket.cpp:1071-1072).
+    if (!m_reqFile->fileIdentifier().compareRelaxed(fileIdent))
+        throw FileException("OP_MULTIPACKETANSWER_EXT2: file identifier mismatch");
+
+    // With file identifiers the peer's AICH root hash rides in the identifier itself
+    // rather than in a sub-answer (MFC ListenSocket.cpp:1073-1074).
+    if (fileIdent.hasAICHHash())
+        processAICHFileHash(nullptr, m_reqFile, &fileIdent.getAICHHash());
+
     if (thePrefs.logRawSocketPackets())
         logDebug(QStringLiteral("processMultiPacketAnswer: file=%1 dlState=%2 from %3")
                      .arg(m_reqFile->fileName())
@@ -1276,8 +1339,9 @@ void UpDownClient::processMultiPacketAnswer(const uint8* data, uint32 size)
             break;
 
         default:
-            // Unknown sub-response, can't continue (unknown length)
-            return;
+            // Unknown sub-response, can't continue (unknown length).
+            // MFC ListenSocket.cpp:1110-1115 throws, which disconnects.
+            throw FileException("OP_MULTIPACKETANSWER_EXT2: invalid sub opcode");
         }
     }
 
@@ -1289,6 +1353,26 @@ void UpDownClient::processMultiPacketAnswer(const uint8* data, uint32 size)
                       || m_downloadState == DownloadState::Connecting)) {
         sendStartupLoadReq();
     }
+}
+
+// ===========================================================================
+// maybeAddAsPassiveSource — private, MFC ListenSocket.cpp:339-342 / :928-931
+// ===========================================================================
+
+void UpDownClient::maybeAddAsPassiveSource(KnownFile* file)
+{
+    // A peer asking us for a file we are downloading is a source we never had to look
+    // for. MFC skips single-part files — the swap machinery cannot do anything useful
+    // with them — and stops at the per-file source cap.
+    if (!file || !file->isPartFile() || static_cast<uint64>(file->fileSize()) <= PARTSIZE)
+        return;
+
+    auto* partFile = static_cast<PartFile*>(file);
+    if (partFile->sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
+        return;
+
+    if (theApp.downloadQueue)
+        theApp.downloadQueue->checkAndAddKnownSource(partFile, this, /*ignoreGlobalDeadList*/ true);
 }
 
 } // namespace eMule

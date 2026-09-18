@@ -101,6 +101,7 @@
 .icon-h_shared { background: url(sprite-header.png) -259px 0; width: 32px; height: 32px; }
 .icon-h_statistic { background: url(sprite-header.png) -291px 0; width: 32px; height: 34px; }
 .icon-h_transfer { background: url(sprite-header.png) -323px 0; width: 32px; height: 32px; }
+.icon-h_usenet { background: url(usenet.png) 0 0; width: 32px; height: 32px; }
 .icon-stats_0 { background: url(sprite-stats.png) -0px 0; width: 16px; height: 16px; }
 .icon-stats_1 { background: url(sprite-stats.png) -16px 0; width: 16px; height: 16px; }
 .icon-stats_10 { background: url(sprite-stats.png) -32px 0; width: 16px; height: 16px; }

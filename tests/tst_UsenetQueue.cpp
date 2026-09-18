@@ -12,6 +12,7 @@
 ///   - Resume state is per-segment, so a restart must not refetch what is done.
 
 #include "FakeNntpServer.h"
+#include "FakeProxyServer.h"
 #include "TestFixtures.h"
 #include "TestHelpers.h"
 
@@ -27,6 +28,7 @@
 #include <QDirIterator>
 #include <QFile>
 #include <QNetworkProxy>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTest>
@@ -290,6 +292,21 @@ private slots:
     void aVeryHighItemIsFetchedBeforeAHighOne();
     void aPriorityOutsideTheFiveLevelsIsClamped();
     void aDeadProxyNeverMakesAnArticleMissingOrBlamesAServer();
+    void segmentMapShowsTheWorstArticleInEachBucket();
+    void aSkipIsWidenedToItsArchiveSetAndNeverTouchesPar2();
+    void aSkipSurvivesARestartAndAnOldSidecarDownloadsEverything();
+    void aSkippedFileIsNeverFetchedOrPublished();
+    void aPausedEngineStartsNothingAndChangesNoStatus();
+    void anInFlightArticleOfASkippedFileCannotRecreateIt();
+    void unskipResumesFromThePartialFile();
+    void enginePauseHoldsPostProcessing();
+    void thePausedReasonOutlivesTheDiskStallItReplaced();
+    void aQuotaParkedItemSaysWhyAgainAfterAPause();
+    void fileViewsNameEachFilesStateAndMapOnlyTheBusyOne();
+    void anItemThatStartsWaitingBelowTheFloorSaysSo();
+    void theDiskNeverOverwritesAnAllowanceItDidNotWrite();
+    void theFloorOutranksAProxyTheRoundNeverReaches();
+    void aCheckingItemNeverGoesSilentWhenTheProxyComesBack();
 };
 
 void tst_UsenetQueue::downloadsAnNzbByteIdentically()
@@ -1937,6 +1954,244 @@ void tst_UsenetQueue::aSidecarWithNoPar2NameKeyReadsAsUnknown()
     QCOMPARE(loaded.bestFileName(0), QStringLiteral("abcdef0123456789.bin"));
 }
 
+void tst_UsenetQueue::segmentMapShowsTheWorstArticleInEachBucket()
+{
+    // Four articles, four buckets: one of each code.
+    UsenetFileState st;
+    st.done.resize(4);
+    st.missing.resize(4);
+    st.done.setBit(0);
+    st.done.setBit(1);
+    st.missing.setBit(1);
+    QByteArray map = buildSegmentMap(st, {2});
+    QCOMPARE(map.size(), 4);
+    QCOMPARE(quint8(map.at(0)), kSegmentMapDone);
+    QCOMPARE(quint8(map.at(1)), kSegmentMapMissing);
+    QCOMPARE(quint8(map.at(2)), kSegmentMapInFlight);
+    QCOMPARE(quint8(map.at(3)), kSegmentMapQueued);
+
+    // A thousand fold into the cap, and a single hole among them still shows —
+    // averaging it away is the one way this bar could lie.
+    UsenetFileState big;
+    big.done.resize(1000);
+    big.done.fill(true);
+    big.missing.resize(1000);
+    big.missing.setBit(500);
+    map = buildSegmentMap(big, {});
+    QCOMPARE(map.size(), kSegmentMapMaxBuckets);
+    QCOMPARE(int(std::count(map.cbegin(), map.cend(), char(kSegmentMapMissing))), 1);
+
+    // Uniform files cost the push nothing: their state already says it.
+    big.missing.clearBit(500);
+    QVERIFY(buildSegmentMap(big, {}).isEmpty());
+    UsenetFileState fresh;
+    fresh.done.resize(10);
+    QVERIFY(buildSegmentMap(fresh, {}).isEmpty());
+
+    // Except when the uniform code is one the state cannot express.
+    QSet<int> all;
+    for (int s = 0; s < 10; ++s)
+        all.insert(s);
+    QCOMPARE(buildSegmentMap(fresh, all), QByteArray(1, char(kSegmentMapInFlight)));
+}
+
+void tst_UsenetQueue::aSkipIsWidenedToItsArchiveSetAndNeverTouchesPar2()
+{
+    eMule::testing::TempDir tmp;
+
+    UsenetQueueItem item;
+    item.id = QStringLiteral("skip-set");
+    for (const QString& name : {QStringLiteral("rel.part01.rar"), QStringLiteral("rel.part02.rar"),
+                                QStringLiteral("sample.mkv"), QStringLiteral("rel.par2")}) {
+        NzbFileInfo info;
+        info.fileName = name;
+        info.subject = QStringLiteral("\"%1\" yEnc (1/1)").arg(name);
+        info.segments.append(NzbSegment{name + QStringLiteral("@example.com"), 3500, 1});
+        item.nzb.files.append(info);
+    }
+    item.initFileStates(tmp.path());
+
+    // One volume short fails the unpack, so a volume stands for its set.
+    QSet<int> out;
+    QVERIFY(UsenetQueue::expandSkipRequest(item, {0}, true, out).isEmpty());
+    QCOMPARE(out, (QSet<int>{0, 1}));
+
+    // The index is what verify and naming read.
+    out.clear();
+    QVERIFY(!UsenetQueue::expandSkipRequest(item, {3}, true, out).isEmpty());
+
+    // A release with nothing left to download is refused, not queued empty.
+    out.clear();
+    QVERIFY(!UsenetQueue::expandSkipRequest(item, {0, 2}, true, out).isEmpty());
+
+    // Asking for what already stands changes nothing; bringing one volume back
+    // brings the set back.
+    item.files[0].skipped = true;
+    item.files[1].skipped = true;
+    out.clear();
+    QVERIFY(UsenetQueue::expandSkipRequest(item, {0}, true, out).isEmpty());
+    QVERIFY(out.isEmpty());
+    QVERIFY(UsenetQueue::expandSkipRequest(item, {1}, false, out).isEmpty());
+    QCOMPARE(out, (QSet<int>{0, 1}));
+}
+
+void tst_UsenetQueue::aSkipSurvivesARestartAndAnOldSidecarDownloadsEverything()
+{
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+
+    UsenetQueueItem item;
+    item.id = QStringLiteral("cccccccc-bbbb-cccc-dddd-eeeeeeeeeeee");
+    item.name = QStringLiteral("skipping");
+    for (const QString& name : {QStringLiteral("a.bin"), QStringLiteral("b.bin")}) {
+        NzbFileInfo info;
+        info.subject = QStringLiteral("\"%1\" yEnc (1/1)").arg(name);
+        info.fileName = name;
+        info.segments.append(NzbSegment{name + QStringLiteral("@example.com"), 3500, 1});
+        item.nzb.files.append(info);
+    }
+    item.initFileStates(thePrefs.usenetTempDir());
+    item.files[1].skipped = true;
+    item.files[1].neededForRepair = true;
+    QVERIFY(UsenetQueueStore::save(item));
+
+    const QString path = UsenetQueueStore::statePath(item.id);
+    UsenetQueueItem loaded;
+    QString error;
+    QVERIFY2(UsenetQueueStore::load(path, loaded, error), qPrintable(error));
+    QVERIFY(!loaded.files.at(0).skipped);
+    QVERIFY(loaded.files.at(1).skipped);
+    // Without this a restart would delete a file the repair already asked for.
+    QVERIFY(loaded.files.at(1).neededForRepair);
+
+    // Absent is what every older sidecar says, and it has to mean "download it".
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    const QByteArray yaml = f.readAll();
+    f.close();
+    QVERIFY2(yaml.contains("version: 2"), "kStateVersion moved");
+    QByteArray stripped;
+    for (const QByteArray& line : yaml.split('\n')) {
+        const QByteArray key = line.trimmed();
+        if (!key.startsWith("skipped") && !key.startsWith("neededForRepair"))
+            stripped += line + '\n';
+    }
+    QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    f.write(stripped);
+    f.close();
+
+    UsenetQueueItem old;
+    QVERIFY2(UsenetQueueStore::load(path, old, error), qPrintable(error));
+    QVERIFY(!old.files.at(1).skipped);
+    QVERIFY(!old.files.at(1).neededForRepair);
+}
+
+void tst_UsenetQueue::aSkippedFileIsNeverFetchedOrPublished()
+{
+    const QByteArray keep = payload(kPartSize * 2);
+    const QByteArray sample = payload(kPartSize * 2 - 700);
+
+    FakeNntpServer server;
+    server.addGroup(QStringLiteral("alt.binaries.test"), 4, 1, 4);
+    for (int p = 1; p <= 2; ++p) {
+        server.addArticle(QStringLiteral("n0p%1@example.com").arg(p),
+                          makeArticle(keep, p, 2, QStringLiteral("keep.bin")));
+        server.addArticle(QStringLiteral("n1p%1@example.com").arg(p),
+                          makeArticle(sample, p, 2, QStringLiteral("sample.bin")));
+    }
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 2)}, 60);
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    UsenetAddOptions options;
+    options.skippedFiles = {1};
+    QString error;
+    const QString id = queue.addNzb(
+        makeNamedFilesNzb({QStringLiteral("keep.bin"), QStringLiteral("sample.bin")}, 2),
+        QStringLiteral("skip"), error, options);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+    QVERIFY(queue.findItem(id)->files.at(1).skipped);
+
+    QVERIFY2(finished.wait(30000), "no terminal outcome");
+    QVERIFY2(finished.at(0).at(1).toBool(), qPrintable(finished.at(0).at(2).toString()));
+
+    for (const QString& cmd : server.receivedCommands()) {
+        QVERIFY2(!(cmd.startsWith(QLatin1String("BODY")) && cmd.contains(QLatin1String("n1p"))),
+                 qPrintable(QStringLiteral("a skipped file was downloaded: %1").arg(cmd)));
+    }
+
+    const QDir incoming(thePrefs.incomingDir());
+    QFile published(incoming.filePath(QStringLiteral("keep.bin")));
+    QVERIFY(published.open(QIODevice::ReadOnly));
+    QCOMPARE(published.readAll(), keep);
+    QVERIFY(!QFile::exists(incoming.filePath(QStringLiteral("sample.bin"))));
+
+    queue.stop();
+}
+
+void tst_UsenetQueue::aPausedEngineStartsNothingAndChangesNoStatus()
+{
+    const QByteArray whole = payload(kPartSize * 2);
+    FakeNntpServer server;
+    server.addGroup(QStringLiteral("alt.binaries.test"), 2, 1, 2);
+    for (int p = 1; p <= 2; ++p)
+        server.addArticle(messageIdFor(p), makeArticle(whole, p, 2, QStringLiteral("engine.bin")));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+    const int savedCheck = thePrefs.usenetHealthCheck();
+    const auto restore = qScopeGuard([savedCheck] { thePrefs.setUsenetHealthCheck(savedCheck); });
+    thePrefs.setUsenetHealthCheck(0);
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 2)}, 60);
+    queue.start();
+
+    QSignalSpy engineChanged(&queue, &UsenetQueue::enginePausedChanged);
+    queue.setEnginePaused(true);
+    queue.setEnginePaused(true);
+    QCOMPARE(engineChanged.count(), 1);
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    const QString id = queue.addNzb(makeNzb(QStringLiteral("engine.bin"), 2),
+                                    QStringLiteral("engine"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+    QTest::qWait(500);
+
+    QCOMPARE(firstCommandIndex(server.receivedCommands(), QStringLiteral("BODY")), -1);
+    // The engine stopped, not the release: its own state is untouched, and it
+    // says why it stands still.
+    QCOMPARE(queue.findItem(id)->status, UsenetItemStatus::Queued);
+    QVERIFY(!queue.findItem(id)->stalledReason.isEmpty());
+    // eD2K gets the whole line back.
+    QVERIFY(!queue.hasActiveDownloads());
+
+    queue.setEnginePaused(false);
+    QVERIFY2(finished.wait(30000), "the resumed engine never finished the release");
+    QVERIFY2(finished.at(0).at(1).toBool(), qPrintable(finished.at(0).at(2).toString()));
+    QVERIFY(queue.findItem(id)->stalledReason.isEmpty());
+
+    queue.stop();
+}
+
 QTEST_MAIN(tst_UsenetQueue)
 void tst_UsenetQueue::everyServerOnALevelIsAskedBeforeEscalating()
 {
@@ -2981,6 +3236,19 @@ HoledRelease postHoledRelease(FakeNntpServer& server, UsenetQueue& queue,
     return out;
 }
 
+/// STAT requests for @p messageId — the probe's verb, where the counterpart
+/// below counts BODY, the article's.
+int statCountFor(const FakeNntpServer& server, const QString& messageId)
+{
+    int n = 0;
+    for (const QString& cmd : server.receivedCommands()) {
+        if (cmd.startsWith(QStringLiteral("STAT"), Qt::CaseInsensitive)
+            && cmd.contains(messageId))
+            ++n;
+    }
+    return n;
+}
+
 /// BODY requests for @p messageId, counting only those issued after @p from —
 /// the whole point of a retry case is what happened *after* it started, and the
 /// first attempt asked for the same article once already.
@@ -3417,6 +3685,13 @@ void tst_UsenetQueue::belowTheFloorTheQueueWaitsAndSaysWhy()
     thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
     thePrefs.setSharedDirs({});
 
+    // The probe on, as it is for everyone who never opened the page: the item
+    // goes to Checking on the way in, and what it says there is the whole point.
+    const int savedCheck = thePrefs.usenetHealthCheck();
+    thePrefs.setUsenetHealthCheck(int(UsenetHealthCheck::Sample));
+    const auto restoreCheck =
+        qScopeGuard([savedCheck] { thePrefs.setUsenetHealthCheck(savedCheck); });
+
     DiskFloorGuard floor(kImpossibleFloor);
 
     UsenetQueue queue;
@@ -3433,13 +3708,18 @@ void tst_UsenetQueue::belowTheFloorTheQueueWaitsAndSaysWhy()
     const UsenetQueueItem* item = queue.findItem(id);
     QVERIFY(item != nullptr);
     QVERIFY2(item->status != UsenetItemStatus::Failed, "a floor became a verdict");
-    QVERIFY2(!item->stalledReason.isEmpty(), "the queue stopped without saying why");
+    QVERIFY2(item->stalledReason.contains(QStringLiteral("disk space")),
+             qPrintable(QStringLiteral("the queue waited without naming the floor: \"%1\"")
+                            .arg(item->stalledReason)));
     QCOMPARE(item->files.at(0).missingSegments, 0);
     QCOMPARE(stats->usenetSession().articlesMissing, uint64(0));
     QCOMPARE(stats->usenetSession().connectionErrors, uint64(0));
-    // A probe may still have run: STAT writes nothing, so the floor has no
-    // opinion about it. What must not happen is a BODY, which arrives as bytes
-    // needing somewhere to go.
+    // dispatch() returns at the floor before it reaches the probes, so nothing
+    // is being checked and the row must not claim otherwise. No BODY either,
+    // which is the one that arrives as bytes needing somewhere to go.
+    QVERIFY2(!item->stalledReason.contains(QStringLiteral("checking")),
+             "an item said it was being checked while the floor held the probes");
+    QCOMPARE(statCountFor(server, QStringLiteral("@example.com")), 0);
     QCOMPARE(bodyCountFor(server, QStringLiteral("@example.com")), 0);
 
     queue.stop();
@@ -3732,6 +4012,681 @@ void tst_UsenetQueue::aDeadProxyNeverMakesAnArticleMissingOrBlamesAServer()
     QVERIFY2(finished.wait(30000), "the queue never came back once the proxy was fixed");
     QVERIFY2(finished.at(0).at(1).toBool(), qPrintable(finished.at(0).at(2).toString()));
     QVERIFY2(queue.findItem(id)->stalledReason.isEmpty(), "the reason outlived the stall");
+
+    queue.stop();
+}
+
+// ---------------------------------------------------------------------------
+// Picking files out of a release that is already running
+// ---------------------------------------------------------------------------
+//
+// Everything above skips at *add* time, where nothing was ever in flight. These
+// drive setFilesSkipped() on a live item, which is what the GUI and the daemon
+// actually call.
+
+/// A two-file NZB with one article of the second file held open on the wire.
+/// @p heldId is the article the server sits on until releaseHeld().
+namespace {
+
+QByteArray namedPairNzb()
+{
+    return makeNamedFilesNzb({QStringLiteral("keep.bin"), QStringLiteral("sample.bin")}, 2);
+}
+
+void postNamedPair(FakeNntpServer& server, const QByteArray& keep, const QByteArray& sample)
+{
+    server.addGroup(QStringLiteral("alt.binaries.test"), 4, 1, 4);
+    for (int p = 1; p <= 2; ++p) {
+        server.addArticle(QStringLiteral("n0p%1@example.com").arg(p),
+                          makeArticle(keep, p, 2, QStringLiteral("keep.bin")));
+        server.addArticle(QStringLiteral("n1p%1@example.com").arg(p),
+                          makeArticle(sample, p, 2, QStringLiteral("sample.bin")));
+    }
+}
+
+/// The scratch prefs every case below wants, with the probe off so an
+/// availability check cannot muddy what the server was asked for.
+[[nodiscard]] auto useScratchPrefs(const eMule::testing::TempDir& tmp)
+{
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+    const int savedCheck = thePrefs.usenetHealthCheck();
+    thePrefs.setUsenetHealthCheck(0);
+    return qScopeGuard([savedCheck] { thePrefs.setUsenetHealthCheck(savedCheck); });
+}
+
+} // namespace
+
+// Skipping a file while its own article is still on the wire. The writer knows
+// nothing about skipping and ArticleWriter::open() *creates* what it cannot
+// find, so a late article is a real chance to resurrect the file after
+// post-processing deleted it. It has to end up discarded and unpublished.
+//
+// Scope: this locks the outcome, not one guard. checkItemCompletion()'s
+// in-flight loop is defence in depth — removing it alone does not break this
+// case, because completion is held up by other means as well.
+void tst_UsenetQueue::anInFlightArticleOfASkippedFileCannotRecreateIt()
+{
+    const QByteArray keep = payload(kPartSize * 2);
+    const QByteArray sample = payload(kPartSize * 2);
+
+    FakeNntpServer server;
+    postNamedPair(server, keep, sample);
+    server.setHoldArticle(QStringLiteral("n1p2@example.com"));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    eMule::testing::TempDir tmp;
+    const auto restore = useScratchPrefs(tmp);
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 2)}, 60);
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    const QString id = queue.addNzb(namedPairNzb(), QStringLiteral("inflight"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+
+    // One article of the sample is in, the other is held open.
+    QTRY_VERIFY_WITH_TIMEOUT(queue.findItem(id)->files.at(1).done.count(true) == 1, 20000);
+    const QString tempPath = queue.findItem(id)->files.at(1).tempPath;
+    QVERIFY(QFile::exists(tempPath));
+
+    QVERIFY2(queue.setFilesSkipped(id, {1}, true).isEmpty(), "the skip was refused");
+
+    // The rest of the release is done, and it still must not seal: the skipped
+    // file has an article on the wire.
+    QTRY_VERIFY_WITH_TIMEOUT(queue.findItem(id)->files.at(0).done.count(true) == 2, 20000);
+    QTest::qWait(500);
+    QCOMPARE(finished.count(), 0);
+    QVERIFY2(queue.findItem(id)->status != UsenetItemStatus::Complete,
+             "the release completed with an article of a skipped file still out");
+
+    server.releaseHeld();
+    QVERIFY2(finished.wait(30000), "no terminal outcome");
+    QVERIFY2(finished.at(0).at(1).toBool(), qPrintable(finished.at(0).at(2).toString()));
+
+    // Give a late write somewhere to land. Without this the case passes on a
+    // race: a file recreated *after* the discard has simply not appeared yet
+    // when the assertions below look for it.
+    QTest::qWait(1000);
+
+    // As if never fetched — which is what a repair that wants it back relies on.
+    const UsenetFileState& skipped = queue.findItem(id)->files.at(1);
+    QCOMPARE(skipped.done.count(true), 0);
+    QCOMPARE(skipped.decodedBytes, qint64(0));
+    QVERIFY(!skipped.finalized);
+    QVERIFY2(!QFile::exists(tempPath), "the late article rebuilt the skipped file");
+
+    const QDir incoming(thePrefs.incomingDir());
+    QVERIFY(QFile::exists(incoming.filePath(QStringLiteral("keep.bin"))));
+    QVERIFY2(!QFile::exists(incoming.filePath(QStringLiteral("sample.bin"))),
+             "a skipped file was published by its last article");
+
+    queue.stop();
+}
+
+// Un-skip re-creates the target before anything else moves. ReadWrite, because
+// WriteOnly truncates on some backends — and truncating is exactly wrong here:
+// the bytes already on disk are the ones the user is not paying for twice.
+void tst_UsenetQueue::unskipResumesFromThePartialFile()
+{
+    const QByteArray keep = payload(kPartSize * 2);
+    const QByteArray sample = payload(kPartSize * 2);
+
+    FakeNntpServer server;
+    postNamedPair(server, keep, sample);
+    server.setHoldArticle(QStringLiteral("n1p2@example.com"));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    eMule::testing::TempDir tmp;
+    const auto restore = useScratchPrefs(tmp);
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 2)}, 60);
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    const QString id = queue.addNzb(namedPairNzb(), QStringLiteral("unskip"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+
+    QTRY_VERIFY_WITH_TIMEOUT(queue.findItem(id)->files.at(1).done.count(true) == 1, 20000);
+    const QString tempPath = queue.findItem(id)->files.at(1).tempPath;
+    const qint64 partialSize = QFile(tempPath).size();
+    QVERIFY(partialSize > 0);
+
+    // A skip is not a discard: the file is only thrown away at post-processing,
+    // so an un-skip before then has something to resume from.
+    QVERIFY2(queue.setFilesSkipped(id, {1}, true).isEmpty(), "the skip was refused");
+    QCOMPARE(queue.findItem(id)->files.at(1).done.count(true), 1);
+    QVERIFY(QFile::exists(tempPath));
+
+    QVERIFY2(queue.setFilesSkipped(id, {1}, false).isEmpty(), "the un-skip was refused");
+    QVERIFY(!queue.findItem(id)->files.at(1).skipped);
+    QCOMPARE(queue.findItem(id)->files.at(1).done.count(true), 1);
+    QCOMPARE(QFile(tempPath).size(), partialSize);
+
+    server.releaseHeld();
+    QVERIFY2(finished.wait(30000), "no terminal outcome");
+    QVERIFY2(finished.at(0).at(1).toBool(), qPrintable(finished.at(0).at(2).toString()));
+
+    // Resumed, not restarted: rebuildPlan() skips what the done bits already cover.
+    QCOMPARE(bodyCountFor(server, QStringLiteral("n1p1@example.com")), 1);
+    QCOMPARE(bodyCountFor(server, QStringLiteral("n1p2@example.com")), 1);
+
+    QFile published(QDir(thePrefs.incomingDir()).filePath(QStringLiteral("sample.bin")));
+    QVERIFY(published.open(QIODevice::ReadOnly));
+    QCOMPARE(published.readAll(), sample);
+    published.close();
+
+    // And once it is downloaded there is nothing left to skip.
+    QVERIFY2(!queue.setFilesSkipped(id, {1}, true).isEmpty(),
+             "a finished release still accepted a skip");
+
+    queue.stop();
+}
+
+// beginPostProcessing() has exactly one caller, so checkItemCompletion()'s gate
+// is the whole of "no post-processing starts while paused". A repair is minutes
+// of disk and CPU, which is the thing the user just asked to have back.
+void tst_UsenetQueue::enginePauseHoldsPostProcessing()
+{
+    const QByteArray whole = payload(kPartSize * 2);
+
+    FakeNntpServer server;
+    server.addGroup(QStringLiteral("alt.binaries.test"), 2, 1, 2);
+    for (int p = 1; p <= 2; ++p)
+        server.addArticle(messageIdFor(p), makeArticle(whole, p, 2, QStringLiteral("hold.bin")));
+    server.setHoldArticle(messageIdFor(2));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    eMule::testing::TempDir tmp;
+    const auto restore = useScratchPrefs(tmp);
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 2)}, 60);
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    const QString id = queue.addNzb(makeNzb(QStringLiteral("hold.bin"), 2),
+                                    QStringLiteral("hold"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+    QTRY_VERIFY_WITH_TIMEOUT(queue.findItem(id)->files.at(0).done.count(true) == 1, 20000);
+
+    // Paused with the last article still out: it lands, and nothing follows it.
+    queue.setEnginePaused(true);
+    server.releaseHeld();
+    QTRY_VERIFY_WITH_TIMEOUT(queue.findItem(id)->files.at(0).done.count(true) == 2, 20000);
+    QTest::qWait(500);
+
+    const QDir incoming(thePrefs.incomingDir());
+    QCOMPARE(finished.count(), 0);
+    QCOMPARE(queue.findItem(id)->status, UsenetItemStatus::Downloading);
+    QVERIFY2(!QFile::exists(incoming.filePath(QStringLiteral("hold.bin"))),
+             "a paused engine published a release anyway");
+    QVERIFY(queue.findItem(id)->stalledReason.contains(QStringLiteral("paused")));
+
+    queue.setEnginePaused(false);
+    QVERIFY2(finished.wait(30000), "the resumed engine never post-processed the release");
+    QVERIFY2(finished.at(0).at(1).toBool(), qPrintable(finished.at(0).at(2).toString()));
+
+    QFile published(incoming.filePath(QStringLiteral("hold.bin")));
+    QVERIFY(published.open(QIODevice::ReadOnly));
+    QCOMPARE(published.readAll(), whole);
+    published.close();
+
+    queue.stop();
+}
+
+// Three global waits can be in force at once and only one line says why. The
+// pause wins while it lasts: it is the only one the user chose, and reporting
+// "waiting for disk space" to somebody who pressed Pause is a lie about who is
+// holding the queue up.
+void tst_UsenetQueue::thePausedReasonOutlivesTheDiskStallItReplaced()
+{
+    const QByteArray whole = payload(kPartSize * 4);
+
+    FakeNntpServer server;
+    server.addGroup(QStringLiteral("alt.binaries.test"), 4, 1, 4);
+    for (int p = 1; p <= 4; ++p)
+        server.addArticle(messageIdFor(p), makeArticle(whole, p, 4, QStringLiteral("floor.bin")));
+    // Held so the item is still downloading when the volume fills under it.
+    server.setHoldArticle(messageIdFor(4));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    eMule::testing::TempDir tmp;
+    const auto restore = useScratchPrefs(tmp);
+    // Room to begin with, so the item is mid-download when the volume fills.
+    DiskFloorGuard floor(0);
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 4)}, 60);
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    const QString id = queue.addNzb(makeNzb(QStringLiteral("floor.bin"), 4),
+                                    QStringLiteral("floor"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+    QTRY_VERIFY_WITH_TIMEOUT(queue.findItem(id)->files.at(0).done.count(true) == 3, 20000);
+
+    // The disk fills mid-download.
+    thePrefs.setMinFreeDiskSpace(kImpossibleFloor);
+    QTRY_VERIFY2_WITH_TIMEOUT(
+        queue.findItem(id)->stalledReason.contains(QStringLiteral("disk space")),
+        "the disk floor never said why it was waiting", 30000);
+
+    queue.setEnginePaused(true);
+    QVERIFY(queue.findItem(id)->stalledReason.contains(QStringLiteral("paused")));
+    QVERIFY2(!queue.findItem(id)->stalledReason.contains(QStringLiteral("disk space")),
+             "the disk stall outranked the pause the user asked for");
+
+    // Somebody empties the trash while it is paused. The engine is still not
+    // asking for anything, so the reason must not fall back to a stall that is
+    // over — refreshDiskState() leaves paused items alone for exactly this.
+    DiskFloorGuard::lift();
+    QTest::qWait(3000);   // twice kDiskCheckIntervalMs
+    QVERIFY2(queue.findItem(id)->stalledReason.contains(QStringLiteral("paused")),
+             "the disk recovery overwrote the pause");
+    QCOMPARE(finished.count(), 0);
+
+    queue.setEnginePaused(false);
+    server.releaseHeld();
+    QVERIFY2(finished.wait(30000), "the resumed queue never finished the release");
+    QVERIFY2(finished.at(0).at(1).toBool(), qPrintable(finished.at(0).at(2).toString()));
+    QVERIFY2(queue.findItem(id)->stalledReason.isEmpty(), "a reason outlived every stall");
+
+    queue.stop();
+}
+
+// The asymmetry in restoreWaitReasons(): proxy, checking and disk are restored
+// from what the engine still knows, the allowance is not — nothing caches it, so
+// the item is left to re-park itself on the next round. It still has to end up
+// saying what it is waiting on.
+void tst_UsenetQueue::aQuotaParkedItemSaysWhyAgainAfterAPause()
+{
+    const QByteArray whole = payload(kPartSize * 4);
+
+    FakeNntpServer only;
+    only.addGroup(QStringLiteral("alt.binaries.test"), 4, 1, 4);
+    for (int p = 1; p <= 4; ++p)
+        only.addArticle(messageIdFor(p), makeArticle(whole, p, 4, QStringLiteral("quota.bin")));
+    const quint16 port = only.start();
+    QVERIFY(port != 0);
+
+    eMule::testing::TempDir tmp;
+    const auto restore = useScratchPrefs(tmp);
+
+    NewsServer s = serverConfig(port, 2);
+    s.quotaKind = NntpQuotaKind::Block;
+    s.quotaBytes = 1000;
+    plantUsage(s.accountId, 5000);
+
+    UsenetQueue queue;
+    queue.applyServers({s}, 0);
+    queue.start();
+
+    QString error;
+    const QString id = queue.addNzb(makeNzb(QStringLiteral("quota.bin"), 4),
+                                    QStringLiteral("quota"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+
+    QTRY_VERIFY2_WITH_TIMEOUT(
+        queue.findItem(id)->stalledReason.contains(QStringLiteral("allowance")),
+        "a spent allowance never said so", 10000);
+
+    queue.setEnginePaused(true);
+    QVERIFY(queue.findItem(id)->stalledReason.contains(QStringLiteral("paused")));
+
+    queue.setEnginePaused(false);
+    QTRY_VERIFY2_WITH_TIMEOUT(
+        queue.findItem(id)->stalledReason.contains(QStringLiteral("allowance")),
+        "a paused-then-resumed item forgot the allowance it waits on", 10000);
+
+    queue.stop();
+}
+
+// fileViews() is what every bar and icon in the GUI is drawn from, and it is the
+// one place the wire states are decided. The map rides only on a file that is
+// genuinely part-done: a uniform one would cost a push its size for nothing.
+void tst_UsenetQueue::fileViewsNameEachFilesStateAndMapOnlyTheBusyOne()
+{
+    const QByteArray data = payload(kPartSize * 2);
+    const QStringList names = {QStringLiteral("done.bin"), QStringLiteral("busy.bin"),
+                               QStringLiteral("sample.bin"),
+                               QStringLiteral("rel.vol000+01.par2")};
+
+    FakeNntpServer server;
+    server.addGroup(QStringLiteral("alt.binaries.test"), 8, 1, 8);
+    for (int f = 0; f < names.size(); ++f) {
+        for (int p = 1; p <= 2; ++p) {
+            server.addArticle(QStringLiteral("n%1p%2@example.com").arg(f).arg(p),
+                              makeArticle(data, p, 2, names.at(f)));
+        }
+    }
+    server.setHoldArticle(QStringLiteral("n1p2@example.com"));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    eMule::testing::TempDir tmp;
+    const auto restore = useScratchPrefs(tmp);
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 2)}, 60);
+    queue.start();
+
+    QString error;
+    UsenetAddOptions options;
+    options.skippedFiles = {2};
+    const QString id = queue.addNzb(makeNamedFilesNzb(names, 2), QStringLiteral("views"),
+                                    error, options);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+
+    QTRY_VERIFY_WITH_TIMEOUT(queue.findItem(id)->files.at(0).done.count(true) == 2
+                                 && queue.findItem(id)->files.at(1).done.count(true) == 1,
+                             20000);
+
+    const QList<UsenetQueue::FileView> views = queue.fileViews(id);
+    QCOMPARE(views.size(), names.size());
+
+    QCOMPARE(views.at(0).state, UsenetFileWireState::Complete);
+    QVERIFY2(views.at(0).segmentMap.isEmpty(), "a uniform file paid for a segment map");
+
+    QCOMPARE(views.at(1).state, UsenetFileWireState::Partial);
+    QVERIFY2(!views.at(1).segmentMap.isEmpty(), "a half-done file carried no segment map");
+
+    QCOMPARE(views.at(2).state, UsenetFileWireState::Skipped);
+    // A recovery volume nobody has asked for: held back, not queued, so it never
+    // reads as work outstanding.
+    QCOMPARE(views.at(3).state, UsenetFileWireState::Held);
+
+    queue.stop();
+}
+
+// The floor is measured at the edges, but an item can start waiting long after
+// the volume filled — an add, a resume, a retry, a repair cycle. Before this it
+// was told nothing and sat there with an empty reason, which the row renders as
+// a release that stopped for no reason at all.
+void tst_UsenetQueue::anItemThatStartsWaitingBelowTheFloorSaysSo()
+{
+    const QByteArray whole = payload(kPartSize * 4);
+
+    FakeNntpServer server;
+    server.addGroup(QStringLiteral("alt.binaries.test"), 4, 1, 4);
+    for (int p = 1; p <= 4; ++p)
+        server.addArticle(messageIdFor(p), makeArticle(whole, p, 4, QStringLiteral("late.bin")));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    eMule::testing::TempDir tmp;
+    const auto restore = useScratchPrefs(tmp);
+
+    // Already full when the queue starts: start()'s dispatch measures the volume
+    // before any item exists, so the add below finds the floor down and no edge
+    // left to cross.
+    DiskFloorGuard floor(kImpossibleFloor);
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 4)}, 60);
+    queue.start();
+
+    QString error;
+    const QString id = queue.addNzb(makeNzb(QStringLiteral("late.bin"), 4),
+                                    QStringLiteral("late"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+
+    // Not QTRY: the reason belongs to the item the moment it joins the queue,
+    // not to whichever tick happens to look at it next.
+    QVERIFY2(queue.findItem(id)->stalledReason.contains(QStringLiteral("disk space")),
+             qPrintable(QStringLiteral("an item added below the floor said \"%1\"")
+                            .arg(queue.findItem(id)->stalledReason)));
+
+    // Every other way back into waiting has to say it too. Resume clears the
+    // reason first — that is what used to leave the row blank.
+    QVERIFY(queue.pauseItem(id));
+    QVERIFY(queue.resumeItem(id));
+    QVERIFY2(queue.findItem(id)->stalledReason.contains(QStringLiteral("disk space")),
+             "a resumed item forgot the floor it was resumed onto");
+
+    // And it is still only a wait: nothing was asked for, nothing blamed.
+    QCOMPARE(bodyCountFor(server, QStringLiteral("@example.com")), 0);
+    QCOMPARE(queue.findItem(id)->files.at(0).missingSegments, 0);
+
+    queue.stop();
+}
+
+// The disk may overwrite the reasons it owns and no others. An allowance is the
+// counter-example: nothing caches its sentence, so a floor that wrote over it
+// and then cleared itself left a parked item saying nothing until the next
+// rollover — the one wait in the module that can last a month.
+void tst_UsenetQueue::theDiskNeverOverwritesAnAllowanceItDidNotWrite()
+{
+    const QByteArray whole = payload(kPartSize * 4);
+
+    FakeNntpServer server;
+    server.addGroup(QStringLiteral("alt.binaries.test"), 4, 1, 4);
+    for (int p = 1; p <= 4; ++p)
+        server.addArticle(messageIdFor(p), makeArticle(whole, p, 4, QStringLiteral("spent.bin")));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    eMule::testing::TempDir tmp;
+    const auto restore = useScratchPrefs(tmp);
+
+    NewsServer s = serverConfig(port, 2);
+    s.quotaKind = NntpQuotaKind::Block;
+    s.quotaBytes = 1000;
+    plantUsage(s.accountId, 5000);
+
+    DiskFloorGuard floor(0);   // room, so the allowance is what parks it
+
+    UsenetQueue queue;
+    queue.applyServers({s}, 0);
+    queue.start();
+
+    QString error;
+    const QString parked = queue.addNzb(makeNzb(QStringLiteral("spent.bin"), 4),
+                                        QStringLiteral("spent"), error);
+    QVERIFY2(!parked.isEmpty(), qPrintable(error));
+    QTRY_VERIFY2_WITH_TIMEOUT(
+        queue.findItem(parked)->stalledReason.contains(QStringLiteral("allowance")),
+        "a spent allowance never said so", 10000);
+
+    // The volume fills under it, and the tick is given time to cross the floor —
+    // that crossing is what used to write over every active item's reason.
+    thePrefs.setMinFreeDiskSpace(kImpossibleFloor);
+    QTest::qWait(3000);   // more than kDiskCheckIntervalMs
+    QVERIFY2(queue.findItem(parked)->stalledReason.contains(QStringLiteral("allowance")),
+             "the floor wrote over an allowance it knows nothing about");
+
+    // A second release, added below the floor, is the witness: what it says is
+    // how this case knows the floor really is down, without reading a log. Its
+    // own message-ids, or the duplicate guard would refuse it — nothing ever
+    // asks for them, since both waits come first.
+    const QString witness =
+        queue.addNzb(makeNamedFilesNzb({QStringLiteral("witness.bin")}, 2),
+                     QStringLiteral("witness"), error);
+    QVERIFY2(!witness.isEmpty(), qPrintable(error));
+    QVERIFY2(queue.findItem(witness)->stalledReason.contains(QStringLiteral("disk space")),
+             "the floor was not down where the witness could see it");
+
+    // Space comes back. The witness parks on the allowance instead, which is the
+    // dispatch round that proves the queue is asking again.
+    DiskFloorGuard::lift();
+    QTRY_VERIFY2_WITH_TIMEOUT(
+        queue.findItem(witness)->stalledReason.contains(QStringLiteral("allowance")),
+        "the floor never came back up", 30000);
+    QVERIFY2(queue.findItem(parked)->stalledReason.contains(QStringLiteral("allowance")),
+             "a parked item was left silent after the floor recovered");
+
+    queue.stop();
+}
+
+// Two global waits can hold one queue, and only the one dispatch() actually
+// stops at may speak. It returns at the floor and never looks at the proxy, so
+// "waiting for the proxy" would send the user to fix something that would
+// change nothing — and the floor, measured only at its edges, would have no
+// second chance to correct it.
+void tst_UsenetQueue::theFloorOutranksAProxyTheRoundNeverReaches()
+{
+    const QByteArray whole = payload(kPartSize * 4);
+
+    FakeNntpServer server;
+    server.addGroup(QStringLiteral("alt.binaries.test"), 4, 1, 4);
+    for (int p = 1; p <= 4; ++p)
+        server.addArticle(messageIdFor(p), makeArticle(whole, p, 4, QStringLiteral("both.bin")));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    quint16 deadPort = 0;
+    {
+        QTcpServer probe;
+        QVERIFY(probe.listen(QHostAddress::LocalHost, 0));
+        deadPort = probe.serverPort();
+    }
+
+    eMule::testing::TempDir tmp;
+    const auto restore = useScratchPrefs(tmp);
+
+    // The floor comes up later on purpose: it gates dispatch() before any socket
+    // is opened, so a queue that started below it would never reach the proxy
+    // and there would be no proxy stall to outrank.
+    UsenetQueue queue;
+    queue.setProxy(QNetworkProxy(QNetworkProxy::Socks5Proxy,
+                                 QStringLiteral("127.0.0.1"), deadPort));
+    queue.applyServers({serverConfig(port, 4)}, 60);
+    queue.start();
+
+    QString error;
+    const QString id = queue.addNzb(makeNzb(QStringLiteral("both.bin"), 4),
+                                    QStringLiteral("both"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+    QTRY_VERIFY2_WITH_TIMEOUT(
+        queue.findItem(id)->stalledReason.contains(QStringLiteral("proxy")),
+        "the queue stopped without saying the proxy was why", 10000);
+
+    // The volume fills under it. Both hold now, and the floor is the gate the
+    // round stops at.
+    DiskFloorGuard floor(kImpossibleFloor);
+    QTest::qWait(3000);   // the floor is measured at most every two seconds
+    QVERIFY2(queue.findItem(id)->stalledReason.contains(QStringLiteral("disk space")),
+             qPrintable(QStringLiteral("with both waits in force the item said \"%1\"")
+                            .arg(queue.findItem(id)->stalledReason)));
+
+    // Space comes back and the proxy is still dead: the row goes back to saying
+    // so rather than falling silent, because the park itself never went away.
+    DiskFloorGuard::lift();
+    QTRY_VERIFY2_WITH_TIMEOUT(
+        queue.findItem(id)->stalledReason.contains(QStringLiteral("proxy")),
+        "the floor's recovery swallowed the proxy wait underneath it", 30000);
+
+    // Neither wait ever became a verdict.
+    QCOMPARE(bodyCountFor(server, QStringLiteral("@example.com")), 0);
+    QCOMPARE(queue.findItem(id)->files.at(0).missingSegments, 0);
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    queue.setProxy(QNetworkProxy(QNetworkProxy::NoProxy));
+    queue.applyServers({serverConfig(port, 4)}, 60);
+    QVERIFY2(finished.wait(30000), "the queue never came back once both waits were over");
+    QVERIFY2(finished.at(0).at(1).toBool(), qPrintable(finished.at(0).at(2).toString()));
+    QVERIFY2(queue.findItem(id)->stalledReason.isEmpty(), "a reason outlived both stalls");
+
+    queue.stop();
+}
+
+// A checking item is a waiting item: its probes sit behind the same gates, so
+// the row has to keep saying what is holding them. Lifting the proxy park used
+// to clear the reason outright, which left a release that was still being
+// checked with nothing at all to say for the rest of its check.
+//
+// applyServers() cannot show this — it abandons any probe in flight, so the item
+// is no longer being checked by the time the park lifts. The only way in is the
+// one production takes: the park expires, the proxy answers, and the first
+// answer lifts it while the other probes are still out.
+void tst_UsenetQueue::aCheckingItemNeverGoesSilentWhenTheProxyComesBack()
+{
+    constexpr int kFiles = 12;
+
+    FakeNntpServer server;
+    server.addGroup(QStringLiteral("alt.binaries.test"), kFiles * 2, 1, kFiles * 2);
+    for (int f = 0; f < kFiles; ++f) {
+        for (int p = 1; p <= 2; ++p) {
+            // Bodies nobody decodes: this case ends at the verdict.
+            server.addArticle(QStringLiteral("f%1p%2@example.com").arg(f).arg(p),
+                              QByteArrayLiteral("x"));
+        }
+    }
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    // Dead to begin with, then back on the same port.
+    eMule::testing::FakeProxyServer proxy(eMule::testing::FakeProxyServer::Kind::Socks5);
+    const quint16 proxyPort = proxy.start();
+    QVERIFY(proxyPort != 0);
+    proxy.close();
+
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    const int savedCheck = thePrefs.usenetHealthCheck();
+    thePrefs.setUsenetHealthCheck(int(UsenetHealthCheck::Sample));
+    const auto restoreCheck =
+        qScopeGuard([savedCheck] { thePrefs.setUsenetHealthCheck(savedCheck); });
+
+    UsenetQueue queue;
+    queue.setProxy(QNetworkProxy(QNetworkProxy::Socks5Proxy,
+                                 QStringLiteral("127.0.0.1"), proxyPort));
+    // A one-second park, so the retry lands as soon as the proxy does.
+    queue.applyServers({serverConfig(port, 4)}, 1);
+    queue.start();
+
+    // Latched at the signal, not polled: the window between the first probe
+    // answer and the verdict is milliseconds wide, and a QTRY would be a coin
+    // toss over the very thing under test.
+    int silences = 0;
+    bool saidChecking = false;
+    QObject::connect(&queue, &UsenetQueue::itemChanged, &queue,
+                     [&queue, &silences, &saidChecking](const QString& changed) {
+                         const UsenetQueueItem* item = queue.findItem(changed);
+                         if (!item || item->status != UsenetItemStatus::Checking)
+                             return;
+                         if (item->stalledReason.isEmpty())
+                             ++silences;
+                         else if (item->stalledReason.contains(QStringLiteral("checking")))
+                             saidChecking = true;
+                     });
+
+    QString error;
+    const QString id = queue.addNzb(makeMultiFileNzb(kFiles, 2),
+                                    QStringLiteral("checked"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+
+    QTRY_VERIFY2_WITH_TIMEOUT(
+        queue.findItem(id)->stalledReason.contains(QStringLiteral("proxy")),
+        "a checking item behind a dead proxy did not say so", 10000);
+    QCOMPARE(queue.findItem(id)->status, UsenetItemStatus::Checking);
+    QCOMPARE(firstCommandIndex(server.receivedCommands(), QStringLiteral("STAT")), -1);
+
+    // Only what the recovery itself writes counts: the add already said this
+    // once, before the proxy ever failed.
+    saidChecking = false;
+
+    QVERIFY2(proxy.listen(QHostAddress::LocalHost, proxyPort), "the proxy would not come back");
+    QTRY_VERIFY_WITH_TIMEOUT(queue.findItem(id)->healthPercent >= 0, 60000);
+
+    QCOMPARE(silences, 0);
+    QVERIFY2(saidChecking, "the recovered proxy never handed the item back to its check");
 
     queue.stop();
 }

@@ -27,13 +27,11 @@
 #include "stats/Statistics.h"
 #include "transfer/DownloadQueue.h"
 #include "transfer/UploadQueue.h"
+#include "UsenetBridge.h"
 
 namespace eMule {
 
 using namespace Ipc;
-
-/// Defined in IpcClientHandler.cpp, beside the GetStats reply it must match.
-void insertDownloadSplit(QCborMap& stats);
 
 namespace {
 
@@ -174,6 +172,10 @@ void CoreNotifierBridge::connectAll()
                 this, [this](const QString&) { onFriendListChanged(); });
         connect(theApp.friendList, &FriendList::friendUpdated,
                 this, [this](Friend*) { onFriendListChanged(); });
+        connect(theApp.friendList, &FriendList::friendConnectionProgress,
+                this, &CoreNotifierBridge::onFriendConnectionProgress);
+        connect(theApp.friendList, &FriendList::friendConnectingResult,
+                this, &CoreNotifierBridge::onFriendConnectingResult);
     }
 
     // Kademlia
@@ -331,7 +333,7 @@ void CoreNotifierBridge::onStatsUpdated()
         }
         // The Usenet panel says why its rate stops where it does, and the split
         // moves with the other engine's demand, so it rides the once-a-second push.
-        insertDownloadSplit(stats);
+        UsenetBridge::insertDownloadSplit(stats);
         if (!stats.isEmpty())
             msg.append(stats);
         return msg;
@@ -461,6 +463,24 @@ void CoreNotifierBridge::onChatMessageReceived(const QString& fromUser,
     msg.append(fromUser);
     msg.append(message);
     m_ipcServer->broadcast(msg);
+}
+
+// These are transitions, not a latest value, so they go out uncoalesced — a swallowed
+// "*** Connecting" leaves the chat window with a gap in the story.
+void CoreNotifierBridge::onFriendConnectionProgress(Friend* f, ChatConnectProgress step)
+{
+    if (!f)
+        return;
+    IpcMessage msg(IpcMsgType::PushChatState, 0);
+    msg.append(md4str(f->userHash().data()));
+    msg.append(static_cast<qint64>(step));
+    m_ipcServer->broadcast(msg);
+}
+
+void CoreNotifierBridge::onFriendConnectingResult(Friend* f, bool success)
+{
+    onFriendConnectionProgress(f, success ? ChatConnectProgress::Connected
+                                          : ChatConnectProgress::Failed);
 }
 
 void CoreNotifierBridge::connectClientChatSignal(UpDownClient* client)

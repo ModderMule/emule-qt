@@ -26,12 +26,28 @@ TrayMenuManager::TrayMenuManager(QWidget* parent)
 // Public
 // ---------------------------------------------------------------------------
 
+void TrayMenuManager::setIpcClient(IpcClient* ipc)
+{
+    m_ipc = ipc;
+    if (!m_ipc)
+        return;
+    // The menu can be open while another client pauses the engine.
+    connect(m_ipc, &IpcClient::usenetEnginePausedChanged, m_usenetPauseAction,
+            &QAction::setChecked, Qt::UniqueConnection);
+}
+
 void TrayMenuManager::updateState(bool ed2kConnected, bool kadRunning, bool ipcConnected)
 {
     const bool connected = ed2kConnected || kadRunning;
 
     m_connectAction->setEnabled(ipcConnected && !connected);
     m_disconnectAction->setEnabled(ipcConnected && connected);
+
+    m_usenetPauseAction->setEnabled(ipcConnected);
+    {
+        QSignalBlocker block(m_usenetPauseAction);
+        m_usenetPauseAction->setChecked(m_ipc && m_ipc->usenetEnginePaused());
+    }
 
     const int maxUp = static_cast<int>(thePrefs.maxGraphUploadRate());
     const int maxDown = static_cast<int>(thePrefs.maxGraphDownloadRate());
@@ -164,6 +180,21 @@ void TrayMenuManager::buildMenu()
             m_downSpin->setValue(1);
         }
         sendSpeedChange();
+    });
+
+    addSeparator();
+
+    // The whole Usenet engine, checked while paused. triggered(), not toggled():
+    // the state follows the daemon's push, and only a click should send.
+    m_usenetPauseAction = addAction(
+        QIcon(QStringLiteral(":/icons/Pause.ico")), tr("Pause Usenet"));
+    m_usenetPauseAction->setCheckable(true);
+    connect(m_usenetPauseAction, &QAction::triggered, this, [this](bool checked) {
+        if (!m_ipc || !m_ipc->isConnected())
+            return;
+        Ipc::IpcMessage req(Ipc::IpcMsgType::SetUsenetPaused);
+        req.append(checked);
+        m_ipc->sendRequest(std::move(req));
     });
 
     addSeparator();

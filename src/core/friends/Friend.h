@@ -7,6 +7,8 @@
 /// display name, timestamps, and friend slot flag. Serializable to the
 /// emfriends.met binary format via SafeFile + Tag.
 
+#include "friends/FriendConnectProgress.h"
+#include "kademlia/KadClientSearcher.h"
 #include "net/Address.h"
 #include "utils/Types.h"
 
@@ -24,8 +26,27 @@ class UpDownClient;
 inline constexpr uint8 kFriendTagName  = 0x01;
 inline constexpr uint8 kFriendTagKadID = 0x02;
 
+/// Where a connection attempt to this friend currently stands.
+/// MFC EFriendConnectState (srchybrid/Friend.h:24-29).
+enum class FriendConnectState : uint8 {
+    None = 0,      ///< no attempt running
+    Connecting,    ///< a socket is being established
+    Auth,          ///< connected, waiting for secure identification
+    KadSearching   ///< the address failed; asking Kad where the friend is now
+};
+
+/// What just happened to the attempt. MFC EFriendConnectReport (srchybrid/Friend.h:31-38).
+enum class FriendConnectReport : uint8 {
+    Established = 0,    ///< the connection came up
+    Disconnected,       ///< it dropped, or never came up
+    UserHashVerified,   ///< secure identification succeeded
+    UserHashFailed,     ///< the peer at that address is somebody else
+    SecureIdentFailed,  ///< it claims to be our friend but cannot prove it
+    Deleted             ///< the client object is going away underneath us
+};
+
 /// Represents a single friend entry in the friend list.
-class Friend {
+class Friend : public kad::KadClientSearcher {
 public:
     Friend();
     Friend(const uint8* userHash, std::time_t lastSeen, uint32 lastUsedIP,
@@ -94,6 +115,39 @@ public:
     /// removal, or the slot being moved to somebody else.
     void setLinkedClient(UpDownClient* client);
 
+    // -- Connecting -----------------------------------------------------------
+
+    /// The client to hold a chat session on: the linked one, or a fresh client built from
+    /// the stored address and registered with the client list. Null only when we have no
+    /// address to dial at all. MFC CFriend::GetClientForChatSession (srchybrid/Friend.cpp:210).
+    [[nodiscard]] UpDownClient* clientForChatSession();
+
+    /// Start (or join) an attempt to reach this friend. Progress and the final verdict are
+    /// reported through FriendList's signals rather than MFC's listener list — the one
+    /// listener lives on the other side of the IPC seam.
+    /// MFC CFriend::TryToConnect (srchybrid/Friend.cpp:226-257).
+    bool tryToConnect();
+
+    /// Feed the attempt what just happened to the linked client.
+    /// MFC CFriend::UpdateFriendConnectionState (srchybrid/Friend.cpp:259-371).
+    void updateFriendConnectionState(FriendConnectReport report);
+
+    [[nodiscard]] bool isTryingToConnect() const { return m_connectState != FriendConnectState::None; }
+    [[nodiscard]] FriendConnectState connectState() const { return m_connectState; }
+
+    /// Learn this friend's Kad ID from the address it is on, so a later move can be
+    /// followed. MFC CFriend::FindKadID (srchybrid/Friend.cpp:373-381).
+    void findKadID();
+
+    /// Send now if the session is up, otherwise park the text on the chat client and dial.
+    /// False only when the friend cannot be reached at all.
+    bool sendOrQueueChatMessage(const QString& message);
+
+    // -- kad::KadClientSearcher -----------------------------------------------
+
+    void kadSearchNodeIDByIPResult(kad::KadClientSearchResult status, const uchar* nodeID) override;
+    void kadSearchIPByNodeIDResult(kad::KadClientSearchResult status, uint32 ip, uint16 port) override;
+
     // -- Friend slot ----------------------------------------------------------
 
     /// MFC CFriend::GetFriendSlot (srchybrid/Friend.cpp:166-169) — the linked client is
@@ -106,6 +160,13 @@ public:
     void setFriendSlot(bool val);
 
 private:
+    /// Tell whoever is watching how far the attempt has got.
+    void reportProgress(ChatConnectProgress step) const;
+
+    /// End the attempt. @p touchClient is false on the Deleted path, where the linked
+    /// client is already inside its own destructor and must not be called into.
+    void finishConnecting(bool success, bool touchClient = true);
+
     UpDownClient* m_linkedClient = nullptr;   ///< not owned
     std::array<uint8, 16> m_userHash{};
     std::array<uint8, 16> m_kadID{};
@@ -115,6 +176,8 @@ private:
     std::time_t m_lastSeen = 0;
     std::time_t m_lastChatted = 0;
     bool m_friendSlot = false;
+    FriendConnectState m_connectState = FriendConnectState::None;
+    uint32 m_lastKadSearch = 0;   ///< tick of the last Kad lookup; MFC's 10-minute gate
 };
 
 } // namespace eMule

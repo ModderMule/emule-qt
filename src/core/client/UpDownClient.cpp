@@ -10,6 +10,7 @@
 #include "client/ClientList.h"
 #include "client/DeadSourceList.h"
 #include "app/AppContext.h"
+#include "crypto/AICHHashSet.h"
 #include "files/KnownFile.h"
 #include "files/PartFile.h"
 #include "httpcache/HttpCacheManager.h"
@@ -94,11 +95,23 @@ UpDownClient::UpDownClient(uint16 port, uint32 userId, uint32 serverIP,
 
 UpDownClient::~UpDownClient()
 {
+    // An AICH recovery request dies with us — hand the part to another source rather
+    // than letting it sit unanswered for ever. MFC srchybrid/BaseClient.cpp:262-267.
+    if (m_aichRequested) {
+        m_aichRequested = false;
+        AICHRecoveryHashSet::clientAICHRequestFailed(this);
+    }
+
     // Break the friend link from this side, so the friend entry is not left pointing at a
     // destroyed client — and, since setLinkedClient() takes the slot flag back with it, so
     // the friend keeps its slot for when it reconnects. MFC srchybrid/BaseClient.cpp:269-273.
-    if (Friend* f = friendPtr())
+    if (Friend* f = friendPtr()) {
+        // A dial in flight ends here; the report must not touch this client, which is
+        // already inside its own destructor. MFC srchybrid/BaseClient.cpp:269-272.
+        if (f->isTryingToConnect())
+            f->updateFriendConnectionState(FriendConnectReport::Deleted);
         f->setLinkedClient(nullptr);
+    }
     m_friend = nullptr;
 
     // Clear rate data
@@ -424,6 +437,15 @@ void UpDownClient::setDownloadState(DownloadState state)
     // the socket read the next file's control packets (multipacket answer,
     // hashset response) without being throttled by a stale limit.
     if (state != m_downloadState) {
+        // The re-dial clock. MFC stamps it on entering Connecting and, for a Kad source
+        // that hit the connection cap, rewinds it a full window so the source is retried
+        // at once rather than being stuck for 20 minutes
+        // (srchybrid/DownloadClient.cpp:615-623).
+        if (state == DownloadState::Connecting)
+            setLastTriedToConnectNow();
+        else if (state == DownloadState::TooManyConnsKad)
+            m_lastTriedToConnect = static_cast<uint32>(getTickCount()) - MIN2MS(20);
+
         // MFC: Increase socket timeout to 4x when entering Downloading state
         // to give the uploader time to start sending data blocks
         if (state == DownloadState::Downloading && m_socket) {
@@ -1102,7 +1124,13 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
         // it is not that friend any more. Unlink first, which hands the slot back to the
         // friend entry instead of leaving it on a client that no longer earns it.
         if (cur && cur->hasUserhash() && !md4equ(cur->userHash().data(), m_userHash.data())) {
-            cur->setLinkedClient(nullptr);
+            if (cur->isTryingToConnect()) {
+                // We dialled a friend and somebody else answered: the attempt failed, and
+                // the friend gets a fresh client object carrying the hash we want.
+                cur->updateFriendConnectionState(FriendConnectReport::UserHashFailed);
+            } else {
+                cur->setLinkedClient(nullptr);
+            }
             cur = nullptr;
         }
 
@@ -1116,6 +1144,10 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
             Friend* found = theApp.friendList->searchFriend(
                 m_userHash.data(), m_userAddress.toNetworkUint32(), m_userPort);
             if (found) {
+                // A friend matched by address alone learns the hash here, which is what
+                // makes it findable in Kad later. MFC srchybrid/BaseClient.cpp:645-646.
+                if (!found->hasUserhash() && hasValidHash())
+                    found->setUserHash(m_userHash.data());
                 found->setLinkedClient(this);
             } else {
                 // Nothing matches, so whatever slot this instance is carrying is stale —
@@ -1602,9 +1634,21 @@ bool UpDownClient::sendPacket(std::unique_ptr<Packet> packet, bool /*verifyConne
 // checkHandshakeFinished
 // ===========================================================================
 
+void UpDownClient::setLastTriedToConnectNow()
+{
+    m_lastTriedToConnect = static_cast<uint32>(getTickCount());
+}
+
 bool UpDownClient::checkHandshakeFinished() const
 {
-    return (m_infoPacketsReceived & InfoPacketState::Both) == InfoPacketState::Both;
+    // MFC BaseClient.cpp:2403-2413: the only question is whether a HELLO of ours is still
+    // waiting for its answer. The old test — both info packets seen — can never be true
+    // for a pure eDonkey / MLDonkey / non-mule peer, which never sends the eMule one, so
+    // such a peer was permanently "mid-handshake": never granted an upload slot in place,
+    // never taken through onHandshakeCompleted() on an existing connection.
+    // (MFC's IP_BOTH is a consumed edge, cleared inside InfoPacketsReceived(), and was
+    // never meant as a lasting predicate; ours latches, which is what made it look usable.)
+    return !m_helloAnswerPending;
 }
 
 // ===========================================================================
@@ -1660,6 +1704,14 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
     // refusing them here loses the slot or the probe outright.
     if (!ignoreMaxCon && theApp.listenSocket && theApp.listenSocket->tooManySockets()) {
         logDebug(QStringLiteral("tryToConnect: too many sockets"));
+        return false;
+    }
+
+    // Obfuscation settings that cannot meet — MFC BaseClient.cpp:1300-1308, which sits in
+    // the same place and likewise refuses rather than trying plaintext. Every attempt
+    // would fail at the handshake, so this is a connect saved, not one lost.
+    if (isCryptLayerIncompatible(/*requireHash*/ false)) {
+        disconnected(QStringLiteral("CryptLayer-Settings (Obfuscation) incompatible"));
         return false;
     }
 
@@ -2112,9 +2164,10 @@ void UpDownClient::connectionEstablished()
                  .arg(static_cast<int>(m_downloadState)));
     // Only on an outgoing connection. On an accepted one the peer opened with OP_HELLO and
     // we have just answered it, so sending our own hello here would be a spurious extra
-    // packet — and checkHandshakeFinished() stays false for a plain eDonkey/MLDonkey peer
-    // (InfoPacketState::Both is never reached), so the guard above does not catch it.
-    if (!m_incomingConnection && !checkHandshakeFinished() && !m_helloAnswerPending) {
+    // packet. MFC sends this from Connect() at dial time and relies on CEMSocket buffering
+    // it; here the socketConnected signal is deliberately deferred past the RC4 handshake
+    // (ClientReqSocket::onSocketConnected), which is the same moment in practice.
+    if (!m_incomingConnection && !m_helloAnswerPending) {
         sendHelloPacket();
     }
 
@@ -2144,13 +2197,6 @@ void UpDownClient::connectionEstablished()
         }
     }
 
-    if (m_uploadState == UploadState::Connecting) {
-        // Send hello if needed
-        if (!checkHandshakeFinished()) {
-            sendHelloPacket();
-        }
-    }
-
     // Kademlia state handling
     switch (m_kadState) {
     case KadState::ConnectingFwCheck:
@@ -2176,10 +2222,24 @@ void UpDownClient::connectionEstablished()
         break;
     }
 
-    // Chat UI callback
-    if (m_chatState == ChatState::Connecting) {
-        setChatState(ChatState::Chatting);
-        emit chatStateChanged();
+    // Chat session. While a friend attempt is carrying this connection the friend owns
+    // the transition — it still has secure identification to wait for.
+    // MFC srchybrid/BaseClient.cpp:1533-1539.
+    if (m_chatState == ChatState::Connecting || m_chatState == ChatState::Chatting) {
+        Friend* f = friendPtr();
+        if (f && f->isTryingToConnect()) {
+            f->updateFriendConnectionState(FriendConnectReport::Established);
+            if (m_credits
+                && m_credits->currentIdentState(m_connectAddress.toNetworkUint32())
+                       == IdentState::IdFailed)
+            {
+                f->updateFriendConnectionState(FriendConnectReport::SecureIdentFailed);
+            }
+        } else if (m_chatState == ChatState::Connecting) {
+            setChatState(ChatState::Chatting);
+            sendPendingChatMessage();
+            emit chatStateChanged();
+        }
     }
 }
 
@@ -2302,6 +2362,14 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
     // delivering packets and later ran this function again from its own close.
     releaseSocket(/*destroy*/ !fromSocket);
 
+    // A recovery request that was in flight is lost with the connection. Report it so
+    // the part is asked of another source instead of stalling until this client is
+    // reaped. MFC BaseClient.cpp:1134-1138.
+    if (m_aichRequested) {
+        m_aichRequested = false;
+        AICHRecoveryHashSet::clientAICHRequestFailed(this);
+    }
+
     // Reset handshake state so the next connection starts a fresh HELLO
     // exchange.  Without this, checkHandshakeFinished() returns true on
     // reconnect and connectionEstablished() never sends OP_HELLO.
@@ -2359,8 +2427,12 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
     // Clear pending block requests on disconnect
     clearDownloadBlockRequests();
 
-    // Reset chat state
-    if (m_chatState == ChatState::Connecting)
+    // Reset chat state. A friend attempt may carry on from here — it can go looking for
+    // the friend in Kad — so it decides what the session state becomes.
+    // MFC srchybrid/BaseClient.cpp:1197-1200.
+    if (Friend* f = friendPtr(); f && f->isTryingToConnect())
+        f->updateFriendConnectionState(FriendConnectReport::Disconnected);
+    else if (m_chatState == ChatState::Connecting)
         setChatState(ChatState::UnableToConnect);
 
     // Update friend's last-seen info
@@ -2411,9 +2483,12 @@ void UpDownClient::resetFileStatusInfo()
     m_partCount = 0;
     m_completeSource = false;
     m_clientFilename.clear();
-    m_aichRequested = false;
+    // m_aichRequested deliberately survives, as in MFC (BaseClient.cpp:2040-2052): the
+    // request is tracked globally, and clearing it here would orphan the entry and make
+    // the answer look unrequested.
     m_hashsetRequestingMD4 = false;
     m_hashsetRequestingAICH = false;
+    m_reqFileAICHHash.reset();   // MFC BaseClient.cpp:2050
 }
 
 // ===========================================================================
@@ -2432,7 +2507,11 @@ void UpDownClient::onInfoPacketsReceived()
     // GetInfoPacketsReceived() == IP_BOTH at every call site before calling
     // InfoPacketsReceived().  The m_secIdentSent flag still guards against
     // duplicate sends across the multiple call sites.
-    if (checkHandshakeFinished() &&
+    // MFC tests GetInfoPacketsReceived() == IP_BOTH at each of its four call sites before
+    // entering InfoPacketsReceived() (BaseClient.cpp:2029-2038). That test moved here when
+    // checkHandshakeFinished() stopped meaning "both info packets seen". Unlike MFC we keep
+    // the latch instead of consuming it back to None; m_secIdentSent is the duplicate guard.
+    if ((m_infoPacketsReceived & InfoPacketState::Both) == InfoPacketState::Both &&
         m_supportSecIdent != 0 && m_credits && !m_secIdentSent) {
         m_secIdentSent = true;
         sendSecIdentStatePacket();
@@ -2723,12 +2802,46 @@ bool UpDownClient::isObfuscatedConnectionEstablished() const
 }
 
 // ===========================================================================
+// isCryptLayerIncompatible
+// ===========================================================================
+
+bool UpDownClient::isCryptLayerIncompatible(bool requireHash) const
+{
+    // MFC's accessors chain the flags (UpdownClient.h:208-210, Preferences.h:1388-1391).
+    // Ours are raw members and setConnectOptions() does not chain them, so do it here.
+    const bool peerRequires =
+        m_supportsCryptLayer && m_requestsCryptLayer && m_requiresCryptLayer;
+    const bool weRequire = thePrefs.cryptLayerSupported() && thePrefs.cryptLayerRequested()
+                        && thePrefs.cryptLayerRequired();
+    const bool hashMissing = requireHash && !hasValidHash();
+
+    if (peerRequires && (!thePrefs.cryptLayerSupported() || hashMissing))
+        return true;
+    if (weRequire && (!m_supportsCryptLayer || hashMissing))
+        return true;
+    return false;
+}
+
+// ===========================================================================
 // shouldReceiveCryptUDPPackets
 // ===========================================================================
 
 bool UpDownClient::shouldReceiveCryptUDPPackets() const
 {
-    return m_supportsCryptLayer && m_kadVersion >= KADEMLIA_VERSION8_49b;
+    // MFC BaseClient.cpp:2582. The Kad version this used to demand has nothing to do with
+    // ed2k UDP obfuscation: an ed2k-only peer that asks for it was sent plaintext, which
+    // it then drops — losing exactly the queue-rank refreshes the reask exists for.
+    if (!thePrefs.cryptLayerSupported() || !m_supportsCryptLayer || !hasValidHash())
+        return false;
+
+    // MFC tests GetPublicIP() != 0, which is IPv4-only. A peer we reach over IPv6 is
+    // keyed the same way and only needs us to know a public v6 address.
+    const bool knowOwnAddress = theApp.publicIP() != 0
+        || (m_connectAddress.isIPv6() && !theApp.publicIPv6().isNull());
+    if (!knowOwnAddress)
+        return false;
+
+    return thePrefs.cryptLayerRequested() || m_requestsCryptLayer;
 }
 
 // ===========================================================================
@@ -2971,6 +3084,13 @@ void UpDownClient::processSignaturePacket(const uint8* data, uint32 size)
     if (thePrefs.logSecureIdent())
         logDebug(QStringLiteral("processSignaturePacket: sigLen=%1 chaIPKind=%2 verified=%3 for %4")
                      .arg(data[0]).arg(chaIPKind).arg(verified).arg(userName()));
+
+    // A friend attempt waiting on authentication has been waiting for exactly this.
+    // MFC srchybrid/BaseClient.cpp:1962-1972.
+    if (Friend* f = friendPtr(); f && f->isTryingToConnect()) {
+        f->updateFriendConnectionState(verified ? FriendConnectReport::UserHashVerified
+                                                : FriendConnectReport::SecureIdentFailed);
+    }
 }
 
 // ===========================================================================
@@ -3174,6 +3294,13 @@ void UpDownClient::processChatMessage(SafeMemFile& data, uint32 length)
 // ===========================================================================
 // sendChatMessage
 // ===========================================================================
+
+void UpDownClient::sendPendingChatMessage()
+{
+    if (m_pendingChatMessage.isEmpty() || !m_socket || !m_socket->isConnected())
+        return;
+    sendChatMessage(takePendingChatMessage());
+}
 
 void UpDownClient::sendChatMessage(const QString& message)
 {
@@ -3686,74 +3813,12 @@ void UpDownClient::processReaskCallbackTCP(const uint8* data, uint32 size)
     uint8 reqFileHash[16];
     dataIn.readHash16(reqFileHash);
 
-    // Look up the requesting client by IP + UDP port before checking the file,
-    // so we can encrypt the response if possible. Matches MFC ListenSocket.cpp:1453.
-    UpDownClient* sender = nullptr;
-    if (theApp.clientList)
-        sender = theApp.clientList->findByEndpoint_UDP(destEP.address(), destPort);
-
-    // Look up the requested file in shared files
-    KnownFile* reqFile = nullptr;
-    if (theApp.sharedFileList)
-        reqFile = theApp.sharedFileList->getFileByID(reqFileHash);
-
-    if (!reqFile) {
-        // File not found — send OP_FILENOTFOUND via UDP
-        if (theApp.clientUDP) {
-            auto response = std::make_unique<Packet>(OP_FILENOTFOUND, 0, OP_EMULEPROT);
-            if (sender)
-                theApp.clientUDP->sendPacket(std::move(response), destEP,
-                                             sender->shouldReceiveCryptUDPPackets(),
-                                             sender->userHash(), false, 0);
-            else
-                theApp.clientUDP->sendPacket(std::move(response), destEP,
-                                             false, nullptr, false, 0);
-        }
-        return;
-    }
-
-    if (sender) {
-        // Verify the file matches
-        KnownFile* senderReqFile = sender->uploadFile();
-        if (senderReqFile && md4equ(senderReqFile->fileHash(), reqFileHash)) {
-            // Build reask ACK with part status and queue rank
-            SafeMemFile dataOut;
-
-            if (sender->udpVer() > 3) {
-                if (reqFile->isPartFile())
-                    static_cast<PartFile*>(reqFile)->writePartStatus(dataOut);
-                else
-                    dataOut.writeUInt16(0);
-            }
-
-            const uint16 queueRank = theApp.uploadQueue
-                ? static_cast<uint16>(theApp.uploadQueue->waitingPosition(sender))
-                : 0;
-            dataOut.writeUInt16(queueRank);
-
-            auto response = std::make_unique<Packet>(dataOut, OP_EMULEPROT, OP_REASKACK);
-            if (theApp.clientUDP) {
-                theApp.clientUDP->sendPacket(std::move(response), destEP,
-                                             sender->shouldReceiveCryptUDPPackets(),
-                                             sender->userHash(), false, 0);
-            }
-        } else {
-            logDebug(QStringLiteral("processReaskCallbackTCP: reqfile mismatch for client at %1")
-                     .arg(destEP.toString()));
-        }
-    } else {
-        // Unknown client — if queue is full, inform; otherwise ignore
-        if (theApp.uploadQueue && theApp.clientUDP) {
-            // MFC srchybrid/ListenSocket.cpp:1508 — gated on the same pref that caps
-            // the queue, not on a hardcoded count.
-            if (theApp.uploadQueue->waitingUserCount() + 50
-                > static_cast<int>(thePrefs.queueSize())) {
-                auto response = std::make_unique<Packet>(OP_QUEUEFULL, 0, OP_EMULEPROT);
-                theApp.clientUDP->sendPacket(std::move(response), destEP,
-                                             false, nullptr, false, 0);
-            }
-        }
-    }
+    // Identical to a direct OP_REASKFILEPING from here on, only relayed by our buddy —
+    // MFC duplicates the whole block (ListenSocket.cpp:1453-1510 vs
+    // ClientUDPSocket.cpp:226-308); we answer both through one path. dataIn is left
+    // positioned after the hash, which is where the extended info starts.
+    if (theApp.uploadQueue)
+        theApp.uploadQueue->answerReask(destEP, dataIn, reqFileHash);
 }
 
 // ===========================================================================
@@ -3932,6 +3997,18 @@ void UpDownClient::onExtPacketReceived(const uint8* data, uint32 size, uint8 opc
         processAICHAnswer(data, size);
         break;
 
+    case OP_AICHFILEHASHREQ:
+        processAICHFileHashRequest(data, size);
+        break;
+
+    case OP_AICHFILEHASHANS: {
+        // Normally bundled in a multipacket answer; MFC handles the standalone form too
+        // (ListenSocket.cpp:1534), and it is the form we send to a non-multipacket peer.
+        SafeMemFile io(data, size);
+        processAICHFileHash(&io, nullptr, nullptr);
+        break;
+    }
+
     case OP_CALLBACK:
         processCallbackPacket(data, size);
         break;
@@ -4049,7 +4126,7 @@ void UpDownClient::onPacketForClient(const uint8* data, uint32 size, uint8 opcod
         break;
 
     case OP_CHANGE_CLIENT_ID:
-        // Server notifies of client ID change — not used in peer-to-peer context
+        processChangeClientID(data, size);
         break;
 
     case OP_CHANGE_CLIENT_IP:
@@ -4277,6 +4354,11 @@ void UpDownClient::onUploadRequestReceived(const uint8* data, uint32 size)
     if (size < 16)
         return;
 
+    // MFC's one hard handshake gate in the TCP dispatch (srchybrid/ListenSocket.cpp:480):
+    // a slot request that arrives while our own HELLO is still unanswered is dropped.
+    if (!checkHandshakeFinished())
+        return;
+
     // The packet contains the requested file hash (16 bytes)
     KnownFile* file = findUploadFile(data);
 
@@ -4395,8 +4477,17 @@ void UpDownClient::processRequestSources(const uint8* data, uint32 size)
     if (!file && theApp.downloadQueue)
         file = theApp.downloadQueue->fileByID(fileHash);
 
-    if (!file)
+    if (!file) {
+        checkFailedFileIdReqs(fileHash);   // MFC ListenSocket.cpp:1243
         return;
+    }
+
+    // Some clients skip the OP_REQUESTFILENAME / OP_SETREQFILEID preamble and ask for
+    // sources straight away, so the upload file has to be set from here or the answer is
+    // filtered against whatever file was last in context. MFC ListenSocket.cpp:1213-1220.
+    // The bundled multipacket form deliberately does not repeat this — its header already
+    // set the file.
+    setUploadFileID(file);
 
     // SX1 carries no version byte, so a requested version of 0 is what the shared gate
     // sees; it then falls back to the version the peer announced at handshake.
@@ -4455,8 +4546,11 @@ void UpDownClient::processRequestSources2(const uint8* data, uint32 size)
 
     if (!file) {
         logDebug(QStringLiteral("processRequestSources2: file not found"));
+        checkFailedFileIdReqs(fileHash);   // MFC ListenSocket.cpp:1243
         return;
     }
+
+    setUploadFileID(file);   // see processRequestSources()
 
     answerSourceRequest(file, version, options);
 }
@@ -4822,6 +4916,70 @@ void UpDownClient::processChangeClientIP(const uint8* data, uint32 size)
 
     logDebug(QStringLiteral("OP_CHANGE_CLIENT_IP from %1: new IPv6 %2")
                  .arg(userName(), announced.toString()));
+}
+
+// ===========================================================================
+// processAICHFileHashRequest — MFC ListenSocket.cpp:1545-1571
+// ===========================================================================
+
+void UpDownClient::processAICHFileHashRequest(const uint8* data, uint32 size)
+{
+    SafeMemFile io(data, size);
+    uint8 fileHash[16];
+    io.readHash16(fileHash);
+
+    KnownFile* file = findUploadFile(fileHash);
+    if (!file) {
+        checkFailedFileIdReqs(fileHash);
+        return;
+    }
+
+    // A peer with file identifiers gets the AICH hash inside the identifier instead.
+    if (!isSupportingAICH() || !file->fileIdentifier().hasAICHHash())
+        return;
+
+    SafeMemFile dataOut;
+    dataOut.writeHash16(fileHash);
+    file->fileIdentifier().getAICHHash().write(dataOut);
+
+    auto packet = std::make_unique<Packet>(dataOut, OP_EMULEPROT, OP_AICHFILEHASHANS);
+    sendPacket(std::move(packet));
+}
+
+// ===========================================================================
+// processChangeClientID — MFC ListenSocket.cpp:604-636
+// ===========================================================================
+
+void UpDownClient::processChangeClientID(const uint8* data, uint32 size)
+{
+    SafeMemFile io(data, size);
+    const uint32 newUserID = io.readUInt32();      // ed2k ID, wire order
+    const uint32 newServerIP = io.readUInt32();    // network order
+
+    Server* newServer = theApp.serverList
+        ? theApp.serverList->getServerByIP(newServerIP)
+        : nullptr;
+
+    if (isLowID(newUserID)) {
+        // A Low ID is only meaningful together with the server that issued it, so an
+        // unknown server means we cannot use the ID either.
+        if (!newServer)
+            return;
+        m_userIDHybrid = newUserID;
+        setServerAddress(Address::fromNetworkOrder(newServerIP));
+        setServerPort(newServer->port());
+    } else if (Address::fromNetworkOrder(newUserID) == m_userAddress) {
+        // A High ID is the peer's own IPv4 — believe it only if it is the address we are
+        // actually talking to. m_userIDHybrid keeps High IDs in host order.
+        setUserIDHybrid(ntohl(newUserID));
+        if (newServer) {
+            setServerAddress(Address::fromNetworkOrder(newServerIP));
+            setServerPort(newServer->port());
+        }
+    } else {
+        logDebug(QStringLiteral("OP_CHANGE_CLIENT_ID from %1: unknown contents (id=%2)")
+                     .arg(userName(), ipstr(newUserID)));
+    }
 }
 
 } // namespace eMule

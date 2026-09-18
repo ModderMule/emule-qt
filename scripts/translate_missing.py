@@ -4,20 +4,26 @@ Translate missing strings in Qt .ts translation files.
 
 Usage:
     scripts/translate_missing.py show              # list untranslated strings
+    scripts/translate_missing.py reuse             # fill from identical finished sources
     scripts/translate_missing.py export            # export to lang/missing.json
+    scripts/translate_missing.py export --context eMule::WebServer
+                                                   # export one context only
     scripts/translate_missing.py apply             # apply from lang/missing.json
     scripts/translate_missing.py apply FILE.json   # apply from custom JSON file
 
 Workflow after running lupdate:
-    1. scripts/translate_missing.py export          # creates lang/missing.json
-    2. Fill in translations in lang/missing.json    # manually or via LLM
-    3. scripts/translate_missing.py apply           # writes into .ts files
-    4. scripts/localize.sh compile                  # generate .qm binaries
+    1. scripts/translate_missing.py reuse           # borrow what other contexts translate
+    2. scripts/translate_missing.py export          # creates lang/missing.json
+    3. Fill in translations in lang/missing.json    # manually or via LLM
+    4. scripts/translate_missing.py apply           # writes into .ts files
+    5. scripts/localize.sh extract                  # apply/reuse reformat the .ts
+    6. scripts/localize.sh compile                  # generate .qm binaries
 """
 
 import json
 import sys
 import xml.etree.ElementTree as ET
+from collections import Counter
 from pathlib import Path
 
 LANG_DIR = Path(__file__).resolve().parent.parent / "lang"
@@ -68,7 +74,57 @@ def cmd_show():
         print("  All languages are fully translated.")
 
 
-def cmd_export():
+def cmd_reuse():
+    """Fill unfinished messages from finished ones with the same source text.
+
+    A string another context already translates -- "Pause", "Priority" -- gets the
+    same words in the new one. Where contexts disagree the most common translation
+    wins. A plural message only borrows from one with the same number of forms.
+    """
+    for lang in LANGUAGES:
+        path = ts_path(lang)
+        if not path.exists():
+            continue
+        tree = ET.parse(path)
+        root = tree.getroot()
+
+        known: dict[tuple[str, int], Counter] = {}
+        for msg in root.iter("message"):
+            trans = msg.find("translation")
+            src = msg.findtext("source", "")
+            # Finished only: unfinished, vanished and obsolete all carry a type.
+            if trans is None or not src or trans.get("type") is not None:
+                continue
+            forms = trans.findall("numerusform")
+            value = tuple(f.text or "" for f in forms) if forms else (trans.text or "",)
+            if all(value):
+                known.setdefault((src, len(forms)), Counter())[value] += 1
+
+        count = 0
+        for msg in root.iter("message"):
+            trans = msg.find("translation")
+            if trans is None or trans.get("type") != "unfinished":
+                continue
+            forms = trans.findall("numerusform")
+            best = known.get((msg.findtext("source", ""), len(forms)))
+            if not best:
+                continue
+            value = best.most_common(1)[0][0]
+            if forms:
+                for form, text in zip(forms, value):
+                    form.text = text
+            else:
+                trans.text = value[0]
+            del trans.attrib["type"]
+            count += 1
+
+        if count > 0:
+            tree.write(str(path), encoding="utf-8", xml_declaration=True)
+            _fix_ts_header(path)
+        print(f"  {lang}: {count} strings reused")
+
+
+def cmd_export(context: str | None = None):
     """Export untranslated strings to a JSON template for filling in translations.
 
     Format:
@@ -83,7 +139,7 @@ def cmd_export():
 
     A %n (plural) source exports a list of empty strings instead — one per
     <numerusform> the language declares, so e.g. German gets two slots and
-    Japanese one.
+    Japanese one. With @p context only that context's strings are exported.
     """
     # Collect unique source strings and their contexts across all languages
     sources: dict[str, str] = {}  # source -> context
@@ -93,6 +149,8 @@ def cmd_export():
         missing = get_untranslated(lang)
         per_lang_missing[lang] = {}
         for ctx, src, forms in missing:
+            if context is not None and ctx != context:
+                continue
             sources[src] = ctx
             per_lang_missing[lang][src] = forms
 
@@ -212,8 +270,18 @@ def main():
     cmd = sys.argv[1]
     if cmd == "show":
         cmd_show()
+    elif cmd == "reuse":
+        cmd_reuse()
     elif cmd == "export":
-        cmd_export()
+        args = sys.argv[2:]
+        context = None
+        if "--context" in args:
+            i = args.index("--context")
+            if i + 1 >= len(args):
+                print("  --context needs a context name", file=sys.stderr)
+                sys.exit(1)
+            context = args[i + 1]
+        cmd_export(context)
     elif cmd == "apply":
         json_path = Path(sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_EXPORT
         cmd_apply(json_path)

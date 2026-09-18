@@ -23,6 +23,7 @@
 namespace eMule {
 
 class Packet;
+class SafeMemFile;
 class SharedFileList;
 class UpDownClient;
 class UploadBandwidthThrottler;
@@ -75,6 +76,22 @@ public:
     [[nodiscard]] int uploadQueueLength() const;
     [[nodiscard]] int waitingPosition(const UpDownClient* client) const;
     [[nodiscard]] UpDownClient* waitingClientByIP(uint32 ip) const;
+
+    /// The waiting client at this UDP endpoint; failing that, the only waiting client at
+    /// this IP, since a peer behind a rewriting NAT reaches us from a port it never
+    /// advertised. @p multipleIPs reports that several waiting clients share the IP, so
+    /// they cannot be told apart. MFC CUploadQueue::GetWaitingClientByIP_UDP
+    /// (srchybrid/UploadQueue.cpp:485), whose match counter counts every waiting client
+    /// instead of the same-IP ones — with one waiter that answers pings from anywhere.
+    [[nodiscard]] UpDownClient* waitingClientByIP_UDP(const Address& addr, uint16 udpPort,
+                                                      bool* multipleIPs = nullptr) const;
+
+    /// Answer a file re-ask for @p fileHash: OP_REASKACK with part status and queue rank,
+    /// or OP_FILENOTFOUND / OP_QUEUEFULL. @p in must be positioned just after the hash,
+    /// where the sender's extended info starts. Shared by the direct UDP ping and the
+    /// buddy-relayed TCP callback, which MFC implements twice
+    /// (ClientUDPSocket.cpp:226-308, ListenSocket.cpp:1453-1510).
+    void answerReask(const Endpoint& replyTo, SafeMemFile& in, const uint8* fileHash);
 
     /// Mean UpDownClient::getCombinedFilePrioAndCredit() over the waiting list, recomputed
     /// at most once every 5 s. This is what decides "high ranking" for the soft queue

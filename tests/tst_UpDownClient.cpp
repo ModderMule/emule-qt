@@ -140,6 +140,14 @@ private slots:
     void disconnected_releasesItsSocket();
     void staleSocketDisconnect_keepsCurrentSocket();
     void tryToConnect_refusesBannedAddress();
+    void tryToConnect_refusesCryptIncompatible_data();
+    void tryToConnect_refusesCryptIncompatible();
+    void shouldReceiveCryptUDPPackets_followsMfcRule_data();
+    void shouldReceiveCryptUDPPackets_followsMfcRule();
+    void processFileStatus_exactMultipleAcceptsEd2kCount();
+    void isSourceRequestAllowed_followsRarityAndSoftCap();
+    void processChangeClientID_lowIdAdoptedOnlyWithKnownServer();
+    void processChangeClientID_highIdMustMatchThePeerAddress();
 
     // Phase 3 tests — protocol utility
     void resetFileStatusInfo_clearsAll();
@@ -191,6 +199,10 @@ private slots:
     void onHandshakeCompleted_fileListArmed_sendsAskSharedFiles();
     void onHandshakeCompleted_fileListDirCount_doesNotResend();
     void maybeBootstrapKadFromPeer_guards();
+
+    // Re-ask and re-dial clocks
+    void timeUntilReask_shortWindowForAnIdleSource();
+    void setDownloadState_stampsTheConnectClock();
 };
 
 // ---------------------------------------------------------------------------
@@ -1419,19 +1431,20 @@ void tst_UpDownClient::checkHandshakeFinished()
 {
     UpDownClient client;
 
-    // Initially no packets received
+    // The question is only whether a HELLO of ours is still waiting for its answer
+    // (MFC BaseClient.cpp:2403). Nothing is pending on a fresh client.
+    QVERIFY(client.checkHandshakeFinished());
+
+    client.setHelloAnswerPending(true);
     QVERIFY(!client.checkHandshakeFinished());
 
-    // Set only eDonkey flag
+    client.setHelloAnswerPending(false);
+    QVERIFY(client.checkHandshakeFinished());
+
+    // A peer that speaks plain eDonkey never sends the eMule info packet, so it never
+    // reaches InfoPacketState::Both. Under the old predicate it stayed "mid-handshake"
+    // for the whole connection and could not be granted an upload slot in place.
     client.setInfoPacketsReceived(InfoPacketState::EDonkeyProtPack);
-    QVERIFY(!client.checkHandshakeFinished());
-
-    // Set only eMule flag
-    client.setInfoPacketsReceived(InfoPacketState::EMuleProtPack);
-    QVERIFY(!client.checkHandshakeFinished());
-
-    // Set both flags
-    client.setInfoPacketsReceived(InfoPacketState::Both);
     QVERIFY(client.checkHandshakeFinished());
 }
 
@@ -1718,17 +1731,21 @@ void tst_UpDownClient::score_noFile_returnsZero()
 void tst_UpDownClient::processExtendedInfo_parsesPartStatus()
 {
     UpDownClient client;
+    // Extended requests version 0 means "this peer reports nothing", and the parse is
+    // skipped entirely — MFC UploadClient.cpp:241.
+    client.setExtendedRequestsVer(1);
 
-    // Create a KnownFile with 16 parts
+    // An exact multiple of PARTSIZE: 16 data parts, ED2K count 17. The count on the wire
+    // is the ED2K one, and it frames the bitmap.
     KnownFile file;
-    file.setFileSize(16 * PARTSIZE); // 16 parts
+    file.setFileSize(16 * PARTSIZE);
+    QCOMPARE(file.ed2kPartCount(), static_cast<uint16>(17));
 
-    // Build extended info packet: partCount(uint16) + bitmap
     SafeMemFile data;
-    data.writeUInt16(file.partCount());
+    data.writeUInt16(file.ed2kPartCount());
 
     // Write bitmap: all parts available (all bits set)
-    const uint16 byteCount = (file.partCount() + 7) / 8;
+    const uint16 byteCount = (file.ed2kPartCount() + 7) / 8;
     for (uint16 i = 0; i < byteCount; ++i)
         data.writeUInt8(0xFF);
 
@@ -2720,6 +2737,288 @@ void tst_UpDownClient::processHello_addsPeerServerOnlyWhenEnabled()
 }
 
 // ---------------------------------------------------------------------------
+// Obfuscation compatibility — MFC BaseClient.cpp:1300-1308, :2582-2586
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Restores the three obfuscation preferences and the public IP a test changed.
+struct CryptPrefGuard {
+    bool supported = thePrefs.cryptLayerSupported();
+    bool requested = thePrefs.cryptLayerRequested();
+    bool required = thePrefs.cryptLayerRequired();
+    uint32 publicIP = theApp.publicIP();
+    ~CryptPrefGuard()
+    {
+        thePrefs.setCryptLayerSupported(supported);
+        thePrefs.setCryptLayerRequested(requested);
+        thePrefs.setCryptLayerRequired(required);
+        theApp.setPublicIP(publicIP);
+    }
+};
+
+} // namespace
+
+void tst_UpDownClient::tryToConnect_refusesCryptIncompatible_data()
+{
+    QTest::addColumn<int>("connectOptions");
+    QTest::addColumn<bool>("weSupport");
+    QTest::addColumn<bool>("weRequire");
+    QTest::addColumn<bool>("expectDialled");
+
+    // 0x01 supports, 0x02 requests, 0x04 requires.
+    QTest::newRow("peer requires, we switched it off") << 0x07 << false << false << false;
+    QTest::newRow("peer requires, we can do it")       << 0x07 << true  << false << true;
+    QTest::newRow("we require, peer cannot")           << 0x00 << true  << true  << false;
+    QTest::newRow("we require, peer supports")         << 0x07 << true  << true  << true;
+}
+
+void tst_UpDownClient::tryToConnect_refusesCryptIncompatible()
+{
+    // MFC refuses the connect in both directions rather than trying plaintext, because
+    // the handshake could only fail. The port used to dial every one of these.
+    QFETCH(int, connectOptions);
+    QFETCH(bool, weSupport);
+    QFETCH(bool, weRequire);
+    QFETCH(bool, expectDialled);
+
+    CryptPrefGuard prefGuard;
+    ClientList clientList;
+    struct ClientListGuard {
+        ~ClientListGuard() { theApp.clientList = nullptr; }
+    } listGuard;
+    theApp.clientList = &clientList;
+
+    thePrefs.setCryptLayerSupported(weSupport);
+    thePrefs.setCryptLayerRequested(weRequire);
+    thePrefs.setCryptLayerRequired(weRequire);
+
+    // Loopback, so a dial that is *supposed* to happen fails fast instead of hanging.
+    const Address peer = Address::fromString(QStringLiteral("127.0.0.1"));
+    UpDownClient client;
+    client.setUserIDHybrid(peer.toUint32());        // high ID → direct TCP branch
+    client.setConnectAddress(peer);
+    client.setUserPort(4662);
+    uint8 hash[16];
+    fillHash(hash, 0x3D);
+    client.setUserHash(hash);
+    client.setConnectOptions(static_cast<uint8>(connectOptions), true, false);
+
+    const bool dialled = client.tryToConnect();
+    QCOMPARE(dialled, expectDialled);
+    if (!expectDialled)
+        QVERIFY2(client.socket() == nullptr, "an incompatible peer must not be dialled");
+
+    client.disconnected(QStringLiteral("test cleanup"));
+}
+
+void tst_UpDownClient::shouldReceiveCryptUDPPackets_followsMfcRule_data()
+{
+    QTest::addColumn<int>("connectOptions");
+    QTest::addColumn<bool>("weSupport");
+    QTest::addColumn<bool>("wePrefer");
+    QTest::addColumn<uint32>("publicIP");
+    QTest::addColumn<bool>("validHash");
+    QTest::addColumn<bool>("expected");
+
+    const uint32 ip = 0x0A141E28;   // asymmetric, so a byte swap would show
+    QTest::newRow("peer asks for it")      << 0x03 << true  << false << ip << true  << true;
+    QTest::newRow("we prefer it")          << 0x01 << true  << true  << ip << true  << true;
+    QTest::newRow("peer cannot")           << 0x00 << true  << true  << ip << true  << false;
+    QTest::newRow("we switched it off")    << 0x03 << false << false << ip << true  << false;
+    QTest::newRow("we have no public IP")  << 0x03 << true  << true  << 0u << true  << false;
+    QTest::newRow("no hash to key it")     << 0x03 << true  << true  << ip << false << false;
+}
+
+void tst_UpDownClient::shouldReceiveCryptUDPPackets_followsMfcRule()
+{
+    // The Kad version this used to test has nothing to do with ed2k UDP obfuscation: an
+    // ed2k-only peer asking for it was answered in the clear and dropped the answer.
+    QFETCH(int, connectOptions);
+    QFETCH(bool, weSupport);
+    QFETCH(bool, wePrefer);
+    QFETCH(uint32, publicIP);
+    QFETCH(bool, validHash);
+    QFETCH(bool, expected);
+
+    CryptPrefGuard prefGuard;
+    thePrefs.setCryptLayerSupported(weSupport);
+    thePrefs.setCryptLayerRequested(wePrefer);
+    theApp.setPublicIP(publicIP);
+
+    UpDownClient client;
+    if (validHash) {
+        uint8 hash[16];
+        fillHash(hash, 0x4E);
+        client.setUserHash(hash);
+    }
+    client.setConnectOptions(static_cast<uint8>(connectOptions), true, false);
+    QCOMPARE(client.kadVersion(), uint8{0});   // no Kad at all, and it must not matter
+
+    QCOMPARE(client.shouldReceiveCryptUDPPackets(), expected);
+}
+
+// ---------------------------------------------------------------------------
+// ED2K part count on the wire — MFC DownloadClient.cpp:515-540
+// ---------------------------------------------------------------------------
+
+void tst_UpDownClient::processFileStatus_exactMultipleAcceptsEd2kCount()
+{
+    // A size that is an exact multiple of PARTSIZE has one more ED2K part than data
+    // parts. Checking the wire count against our part count rejected every such status
+    // from an MFC peer as "wrong part number".
+    PartFile file;
+    file.setFileName(QStringLiteral("exact.bin"));
+    file.setFileSize(EMFileSize(PARTSIZE * 2));
+    QCOMPARE(file.partCount(), uint16{2});
+    QCOMPARE(file.ed2kPartCount(), uint16{3});
+
+    UpDownClient client;
+    SafeMemFile data;
+    data.writeUInt16(file.ed2kPartCount());
+    data.writeUInt8(0x07);          // all three ED2K parts present
+    data.seek(0, SEEK_SET);
+
+    client.processFileStatus(false, data, &file);
+
+    // The status array is sized in *data* parts, not ED2K parts.
+    QCOMPARE(client.partCount(), file.partCount());
+    QVERIFY(client.isPartAvailable(0));
+    QVERIFY(client.isPartAvailable(1));
+}
+
+// ---------------------------------------------------------------------------
+// isSourceRequestAllowed — MFC DownloadClient.cpp:217-260
+// ---------------------------------------------------------------------------
+
+void tst_UpDownClient::isSourceRequestAllowed_followsRarityAndSoftCap()
+{
+    struct MaxSourcesGuard {
+        uint32 prev = thePrefs.maxSourcesPerFile();
+        ~MaxSourcesGuard() { thePrefs.setMaxSourcesPerFile(static_cast<uint16>(prev)); }
+    } guard;
+    thePrefs.setMaxSourcesPerFile(10);   // soft cap = 9
+
+    PartFile file;
+    file.setFileName(QStringLiteral("rare.bin"));
+    file.setFileSize(EMFileSize(PARTSIZE));
+
+    UpDownClient client;
+    client.setEmuleProtocol(true);
+    client.setSupportsSourceExchange2(true);
+    client.setReqFile(&file);
+    QVERIFY2(client.isSourceRequestAllowed(), "a rare file we never asked about qualifies");
+
+    // Source exchange is an eMule extension; a peer we never exchanged eMule info with
+    // has none, whatever its advertised version bits say.
+    UpDownClient plain;
+    plain.setSupportsSourceExchange2(true);
+    plain.setReqFile(&file);
+    QVERIFY(!plain.isSourceRequestAllowed());
+
+    // Fill the file to its soft cap: past it we stop asking, however rare it looks.
+    std::vector<std::unique_ptr<UpDownClient>> sources;
+    while (static_cast<uint32>(file.sourceCount()) < file.maxSourcePerFileSoft()) {
+        auto src = std::make_unique<UpDownClient>();
+        file.addSource(src.get());
+        sources.push_back(std::move(src));
+    }
+    QVERIFY2(!client.isSourceRequestAllowed(), "past the soft cap we stop asking");
+
+    for (auto& src : sources)
+        file.removeSource(src.get());
+}
+
+// ---------------------------------------------------------------------------
+// OP_CHANGE_CLIENT_ID — MFC ListenSocket.cpp:604-636
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The packet a peer sends after moving to another server: its new ed2k ID, then that
+/// server's address. Both are wire (network) order.
+QByteArray buildChangeClientID(uint32 newUserID, uint32 newServerIP)
+{
+    SafeMemFile data;
+    data.writeUInt32(newUserID);
+    data.writeUInt32(newServerIP);
+    return data.buffer();
+}
+
+} // namespace
+
+void tst_UpDownClient::processChangeClientID_lowIdAdoptedOnlyWithKnownServer()
+{
+    // A Low ID means nothing without the server that issued it, so an unknown server
+    // leaves the peer's identity alone. The port used to ignore the packet entirely.
+    ServerList serverList;
+    struct Guard {
+        ~Guard() { theApp.serverList = nullptr; }
+    } guard;
+    theApp.serverList = &serverList;
+
+    const Address serverAddr = Address::fromString(QStringLiteral("81.2.69.142"));
+    QVERIFY(serverList.addServer(std::make_unique<Server>(serverAddr, 4661)) != nullptr);
+
+    const Address unknownServer = Address::fromString(QStringLiteral("198.51.100.60"));
+
+    UpDownClient unknown;
+    const auto unknownPacket = buildChangeClientID(0x00000123, unknownServer.toNetworkUint32());
+    unknown.processChangeClientID(reinterpret_cast<const uint8*>(unknownPacket.constData()),
+                                  static_cast<uint32>(unknownPacket.size()));
+    QCOMPARE(unknown.userIDHybrid(), uint32{0});
+    QVERIFY(unknown.serverAddress().isNull());
+
+    UpDownClient known;
+    const auto knownPacket = buildChangeClientID(0x00000123, serverAddr.toNetworkUint32());
+    known.processChangeClientID(reinterpret_cast<const uint8*>(knownPacket.constData()),
+                                static_cast<uint32>(knownPacket.size()));
+    QCOMPARE(known.userIDHybrid(), uint32{0x123});
+    QVERIFY(known.hasLowID());
+    QCOMPARE(known.serverAddress(), serverAddr);
+    QCOMPARE(known.serverPort(), uint16{4661});
+}
+
+void tst_UpDownClient::processChangeClientID_highIdMustMatchThePeerAddress()
+{
+    // A High ID *is* the peer's own IPv4, so it is only believable when it matches the
+    // address we are talking to. Asymmetric addresses, so a byte-order slip cannot pass.
+    ServerList serverList;
+    struct Guard {
+        ~Guard() { theApp.serverList = nullptr; }
+    } guard;
+    theApp.serverList = &serverList;
+
+    const Address serverAddr = Address::fromString(QStringLiteral("81.2.69.142"));
+    QVERIFY(serverList.addServer(std::make_unique<Server>(serverAddr, 4661)) != nullptr);
+
+    const Address peerAddr = Address::fromString(QStringLiteral("198.51.100.22"));
+
+    UpDownClient client;
+    client.setUserAddress(peerAddr);
+
+    const auto matching = buildChangeClientID(peerAddr.toNetworkUint32(),
+                                              serverAddr.toNetworkUint32());
+    client.processChangeClientID(reinterpret_cast<const uint8*>(matching.constData()),
+                                 static_cast<uint32>(matching.size()));
+    QCOMPARE(client.userIDHybrid(), peerAddr.toUint32());
+    QVERIFY(!client.hasLowID());
+    QCOMPARE(client.serverAddress(), serverAddr);
+    QCOMPARE(client.serverPort(), uint16{4661});
+
+    // A High ID that is not this peer's address is somebody else's; ignore it.
+    UpDownClient liar;
+    liar.setUserAddress(peerAddr);
+    const auto mismatched = buildChangeClientID(
+        Address::fromString(QStringLiteral("198.51.100.77")).toNetworkUint32(),
+        serverAddr.toNetworkUint32());
+    liar.processChangeClientID(reinterpret_cast<const uint8*>(mismatched.constData()),
+                               static_cast<uint32>(mismatched.size()));
+    QCOMPARE(liar.userIDHybrid(), uint32{0});
+    QVERIFY(liar.serverAddress().isNull());
+}
+
+// ---------------------------------------------------------------------------
 // disconnected() — MFC BaseClient.cpp:1101-1233
 // ---------------------------------------------------------------------------
 
@@ -2847,6 +3146,67 @@ void tst_UpDownClient::processBlockPacket_badBlockThrows()
     QVERIFY_THROWS_EXCEPTION(FileException,
         client.processBlockPacket(reinterpret_cast<const uint8*>(packet.constData()),
                                   static_cast<uint32>(packet.size()), packed, false));
+}
+
+// MFC re-asks a source it holds no conversation with after MIN_REQUESTTIME (10 min)
+// rather than the full FILEREASKTIME (~29 min), and doubles the wait for a source that
+// told us it has no needed parts. srchybrid/DownloadClient.cpp:1885-1893.
+void tst_UpDownClient::timeUntilReask_shortWindowForAnIdleSource()
+{
+    UpDownClient client;
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    PartFile file;
+    file.setFileName(QStringLiteral("reask.bin"));
+    file.setFileSize(PARTSIZE);
+    uint8 hash[16];
+    fillHash(hash, 0x71);
+    file.setFileHash(hash);
+
+    client.setReqFile(&file);
+
+    // Never asked: due immediately, whatever the state.
+    QCOMPARE(client.timeUntilReask(&file), 0U);
+
+    client.setLastAskedTime();
+
+    // DownloadState::None — the short window.
+    client.setDownloadState(DownloadState::None);
+    const uint32 idle = client.timeUntilReask(&file);
+    QVERIFY(idle > 0);
+    QVERIFY2(idle <= MIN_REQUESTTIME, "an idle source must use the 10-minute window");
+
+    // Parked on the peer's queue — the full window.
+    client.setDownloadState(DownloadState::OnQueue);
+    const uint32 queued = client.timeUntilReask(&file);
+    QVERIFY2(queued > MIN_REQUESTTIME, "a queued source must wait out FILEREASKTIME");
+    QVERIFY(queued <= FILEREASKTIME);
+
+    // Asked for explicitly, the short window applies regardless of state.
+    QVERIFY(client.timeUntilReask(&file, /*allowShortReaskTime*/ true) <= MIN_REQUESTTIME);
+
+    client.setReqFile(nullptr);
+    file.removeSource(&client);
+}
+
+// The 20-minute re-dial window is stamped when a source goes Connecting, and rewound for
+// a Kad source that bounced off the connection cap so it is retried at once rather than
+// being stuck for the whole window. srchybrid/DownloadClient.cpp:615-623.
+void tst_UpDownClient::setDownloadState_stampsTheConnectClock()
+{
+    UpDownClient client;
+    const uint32 before = client.lastTriedToConnect();
+
+    client.setDownloadState(DownloadState::Connecting);
+    const uint32 stamped = client.lastTriedToConnect();
+    QVERIFY2(stamped != before, "entering Connecting must stamp the re-dial clock");
+    QVERIFY(static_cast<uint32>(getTickCount()) - stamped < SEC2MS(5));
+
+    client.setDownloadState(DownloadState::TooManyConnsKad);
+    const uint32 rewound = client.lastTriedToConnect();
+    QVERIFY2(static_cast<uint32>(getTickCount()) - rewound >= MIN2MS(20),
+             "a Kad source over the connection cap must be dialable again at once");
 }
 
 QTEST_MAIN(tst_UpDownClient)

@@ -46,6 +46,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSettings>
+#include <QSignalBlocker>
 #include <QSortFilterProxyModel>
 #include <QSpinBox>
 #include <QStringList>
@@ -54,6 +55,7 @@
 #include <QTreeView>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <utility>
 
 namespace eMule {
@@ -223,6 +225,16 @@ void SearchPanel::setupUi()
                             : QModelIndexList{});
     });
     bottomLayout->addWidget(m_downloadBtn);
+    // The category a download goes to (MFC IDC_STATIC_DLTOof + IDC_CATTAB2, emule.rc:130-132),
+    // shown only once there is more than "All".
+    m_downloadToLabel = new QLabel(QStringLiteral("->"), this);
+    m_downloadToLabel->setVisible(false);
+    bottomLayout->addWidget(m_downloadToLabel);
+    m_categoryTabs = new QTabBar(this);
+    m_categoryTabs->setDrawBase(false);
+    m_categoryTabs->setExpanding(false);
+    m_categoryTabs->setVisible(false);
+    bottomLayout->addWidget(m_categoryTabs);
     m_statusLabel = new QLabel(this);
     bottomLayout->addWidget(m_statusLabel, 1);
     m_closeAllBtn = new QPushButton(tr("Close All Searches"), this);
@@ -691,6 +703,7 @@ void SearchPanel::requestCategories()
             if (value.isMap())
                 m_categoryTitles.append(value.toMap().value(QStringLiteral("title")).toString());
         }
+        updateCategoryTabs();
     });
 }
 
@@ -1181,6 +1194,10 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
     if (!tab)
         return;
 
+    // MFC DownloadSelected → GetSelectedCat (SearchResultsWnd.cpp:542)
+    if (category < 0)
+        category = m_categoryTabs->count() > 1 ? std::max(m_categoryTabs->currentIndex(), 0) : 0;
+
     // Triaged once for the whole action, not once per row: selecting twenty rows
     // of which three are already downloaded must raise one question, not three.
     QList<int> plain;
@@ -1233,7 +1250,7 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
         if (tab->isIndexer())
             sendIndexerGrab(proxyRow, /*force*/ false, category);
         else
-            sendDownloadRequest(proxyRow);
+            sendDownloadRequest(proxyRow, category);
     }
     if (!downloadKnown)
         return;
@@ -1241,11 +1258,11 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
         if (tab->isIndexer())
             sendIndexerGrab(proxyRow, /*force*/ true, category);
         else
-            sendDownloadRequest(proxyRow);
+            sendDownloadRequest(proxyRow, category);
     }
 }
 
-void SearchPanel::sendDownloadRequest(int row)
+void SearchPanel::sendDownloadRequest(int row, int category)
 {
     if (!m_ipc || !m_ipc->isConnected())
         return;
@@ -1265,6 +1282,8 @@ void SearchPanel::sendDownloadRequest(int row)
     msg.append(result->hash);
     msg.append(result->fileName);
     msg.append(static_cast<qint64>(result->fileSize));
+    msg.append(QString());   // no link: the daemon builds one
+    msg.append(static_cast<qint64>(category));
     // Model and hash, not tab index and row: the tab at that index can be another
     // search by the time the reply lands (an indexer one has no model at all), and
     // every result push resets the rows.
@@ -1937,6 +1956,23 @@ void SearchPanel::drainDirtySearches()
         if (stillOpen)
             requestSearchResults(searchID);
     }
+}
+
+void SearchPanel::updateCategoryTabs()
+{
+    // MFC CSearchResultsWnd::UpdateCatTabs (SearchResultsWnd.cpp:1570-1586)
+    const int previous = m_categoryTabs->currentIndex();
+    const QSignalBlocker blocker(m_categoryTabs);
+    while (m_categoryTabs->count() > 0)
+        m_categoryTabs->removeTab(0);
+    for (qsizetype i = 0; i < m_categoryTitles.size(); ++i) {
+        QString label = i == 0 ? tr("All") : m_categoryTitles.at(i);
+        m_categoryTabs->addTab(label.replace(QLatin1Char('&'), QStringLiteral("&&")));
+    }
+    m_categoryTabs->setCurrentIndex(previous > 0 && previous < m_categoryTabs->count() ? previous : 0);
+    const bool show = m_categoryTabs->count() > 1;
+    m_downloadToLabel->setVisible(show);
+    m_categoryTabs->setVisible(show);
 }
 
 } // namespace eMule

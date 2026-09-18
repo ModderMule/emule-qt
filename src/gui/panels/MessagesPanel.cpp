@@ -38,6 +38,7 @@
 #include <QWidgetAction>
 
 #include "net/Address.h"
+#include "friends/FriendConnectProgress.h"
 
 namespace eMule {
 
@@ -67,6 +68,8 @@ void MessagesPanel::setIpcClient(IpcClient* client)
         requestFriendList();
     });
 
+    connect(m_ipc, &IpcClient::chatStateReceived,
+            this, &MessagesPanel::onChatStatePush);
     connect(m_ipc, &IpcClient::chatMessageReceived,
             this, &MessagesPanel::onChatMessagePush);
     connect(m_ipc, &IpcClient::friendListChanged,
@@ -135,11 +138,16 @@ void MessagesPanel::onSendClicked()
     msg.append(text);
 
     m_ipc->sendRequest(std::move(msg), [this, target, text](const IpcMessage& resp) {
-        if (resp.fieldBool(0)) {
+        // An Error reply arrives through this same callback, and its field 0 is the
+        // numeric code — reading it as a bool silently swallowed the failure, so a
+        // message to an offline friend simply vanished.
+        if (resp.type() == IpcMsgType::Error || !resp.fieldBool(0)) {
+            appendChatStatus(target, tr(" ...failed"));
+        } else {
             appendChatMessage(target, tr("Me"), text, true);
-            if (target == m_activeFriendHash)
-                updateChatDisplay();
         }
+        if (target == m_activeFriendHash)
+            updateChatDisplay();
     });
 
     m_messageInput->clear();
@@ -478,6 +486,14 @@ void MessagesPanel::updateChatDisplay()
     for (const auto& msg : msgs) {
         const QString ts = QDateTime::fromSecsSinceEpoch(msg.timestamp)
                                .toString(QStringLiteral("HH:mm:ss"));
+        if (msg.system) {
+            // No sender, no linkifying: this is us narrating the connection attempt.
+            m_chatBrowser->append(
+                QStringLiteral("<font color='gray'>[%1] %2</font>")
+                    .arg(ts, msg.text.toHtmlEscaped()));
+            continue;
+        }
+
         const QString color = msg.outgoing ? QStringLiteral("#3399FF")
                                             : QStringLiteral("#CC0000");
         // Linkify the raw message; smileys are rendered into the gaps between links
@@ -489,6 +505,36 @@ void MessagesPanel::updateChatDisplay()
                            "<font color='%2'><b>%3:</b></font> %4")
                 .arg(ts, color, msg.sender.toHtmlEscaped(), escapedText));
     }
+}
+
+void MessagesPanel::onChatStatePush(const IpcMessage& msg)
+{
+    const QString friendHash = msg.fieldString(0);
+    if (friendHash.isEmpty())
+        return;
+
+    QString text;
+    switch (static_cast<ChatConnectProgress>(msg.fieldInt(1))) {
+    case ChatConnectProgress::Connecting:     text = tr("*** Connecting");              break;
+    case ChatConnectProgress::Authenticating: text = tr("*** Authenticating friend");   break;
+    case ChatConnectProgress::SearchingKad:   text = tr("*** Searching friend in Kad"); break;
+    case ChatConnectProgress::FoundInKad:     text = tr(" ...found");                   break;
+    case ChatConnectProgress::Connected:      text = tr(" ...OK");                      break;
+    case ChatConnectProgress::Failed:         text = tr(" ...failed");                  break;
+    }
+
+    appendChatStatus(friendHash, text);
+    if (friendHash.compare(m_activeFriendHash, Qt::CaseInsensitive) == 0)
+        updateChatDisplay();
+}
+
+void MessagesPanel::appendChatStatus(const QString& friendHash, const QString& text)
+{
+    ChatMsg cm;
+    cm.text = text;
+    cm.system = true;
+    cm.timestamp = QDateTime::currentSecsSinceEpoch();
+    m_chatHistory[friendHash].append(std::move(cm));
 }
 
 void MessagesPanel::appendChatMessage(const QString& friendHash, const QString& sender,

@@ -66,14 +66,18 @@ SOURCES += \
     CommandLineExec.cpp \
     CoreNotifierBridge.cpp \
     DaemonApp.cpp \
+    DaemonUsenetWebBackend.cpp \
     IpcClientHandler.cpp \
     IpcServer.cpp \
-    main.cpp
+    main.cpp \
+    UsenetBridge.cpp
 
 HEADERS += \
     CliIpcClient.h \
     CommandLineExec.h \
     CoreNotifierBridge.h \
     DaemonApp.h \
+    DaemonUsenetWebBackend.h \
     IpcClientHandler.h \
-    IpcServer.h
+    IpcServer.h \
+    UsenetBridge.h

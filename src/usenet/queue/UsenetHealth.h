@@ -20,6 +20,7 @@
 /// never propagated, or simply on a different server -- so every figure here is
 /// advice, and the only actor allowed to act on it is the user.
 
+#include <QList>
 #include <QString>
 #include <QtTypes>
 
@@ -98,6 +99,11 @@ struct UsenetAddOptions {
     /// Queue it without starting it. Independent of usenetAutoAddPaused(),
     /// which pauses an automatic add whatever the caller asked for.
     bool paused = false;
+
+    /// NZB file indices to leave out, as the Add NZB dialog unchecked them.
+    /// Widened to whole archive sets; a list skipping a par2 file or every
+    /// payload file refuses the add.
+    QList<int> skippedFiles;
 };
 
 /// How hard to ask before spending anything. Mirrors the integer stored in

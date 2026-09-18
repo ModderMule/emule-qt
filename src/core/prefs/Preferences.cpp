@@ -589,6 +589,7 @@ struct Preferences::Data {
     int usenetHealthCheck = 1;         // 0 off, 1 sample, 2 full
     int usenetHealthMinPercent = 95;
     bool usenetAutoAddPaused = false;
+    bool usenetPaused = false;
     bool usenetUseProxy = true;
     bool usenetSfvCheck = true;
     int usenetUnrepairableAction = 1;  // 0 keep going, 1 pause, 2 fail
@@ -1792,6 +1793,16 @@ void Preferences::setUsenetAutoAddPaused(bool val)
     set(&Data::usenetAutoAddPaused, val);
 }
 
+bool Preferences::usenetPaused() const
+{
+    return get(&Data::usenetPaused);
+}
+
+void Preferences::setUsenetPaused(bool val)
+{
+    set(&Data::usenetPaused, val);
+}
+
 bool Preferences::usenetUseProxy() const
 {
     return get(&Data::usenetUseProxy);
@@ -2919,6 +2930,8 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("usenetHealthMinPercent"),
                  static_cast<qint64>(usenetHealthMinPercent()));
     prefs.insert(QStringLiteral("usenetAutoAddPaused"), usenetAutoAddPaused());
+    // Read-only here: SetUsenetPaused is the only writer.
+    prefs.insert(QStringLiteral("usenetPaused"), usenetPaused());
     prefs.insert(QStringLiteral("usenetUseProxy"), usenetUseProxy());
     prefs.insert(QStringLiteral("usenetSfvCheck"), usenetSfvCheck());
     prefs.insert(QStringLiteral("usenetUnrepairableAction"),
@@ -4029,6 +4042,7 @@ bool Preferences::load(const QString& filePath)
                 un["healthMinPercent"].as<int>(m_data->usenetHealthMinPercent), 0, 100);
             m_data->usenetAutoAddPaused =
                 un["autoAddPaused"].as<bool>(m_data->usenetAutoAddPaused);
+            m_data->usenetPaused = un["paused"].as<bool>(m_data->usenetPaused);
             m_data->usenetUseProxy = un["useProxy"].as<bool>(m_data->usenetUseProxy);
             m_data->usenetSfvCheck = un["sfvCheck"].as<bool>(m_data->usenetSfvCheck);
             m_data->usenetUnrepairableAction = std::clamp(
@@ -5057,6 +5071,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "healthCheck" << YAML::Value << m_data->usenetHealthCheck;
     out << YAML::Key << "healthMinPercent" << YAML::Value << m_data->usenetHealthMinPercent;
     out << YAML::Key << "autoAddPaused" << YAML::Value << m_data->usenetAutoAddPaused;
+    out << YAML::Key << "paused" << YAML::Value << m_data->usenetPaused;
     out << YAML::Key << "useProxy" << YAML::Value << m_data->usenetUseProxy;
     out << YAML::Key << "sfvCheck" << YAML::Value << m_data->usenetSfvCheck;
     out << YAML::Key << "unrepairableAction" << YAML::Value << m_data->usenetUnrepairableAction;

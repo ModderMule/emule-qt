@@ -526,12 +526,19 @@ private:
             dataIn.read(aichBuf, kAICHHashSize);
         }
 
-        // Build response with our file identifier
+        // Build response with our file identifier. A real eMule peer puts its AICH root
+        // hash in here, which is how the downloader learns what this source claims — and
+        // therefore whether it may be asked for AICH recovery data.
+        const bool sendAICH = m_aichHashSet != nullptr && m_aichHashSet->hasValidMasterHash();
+
         SafeMemFile dataOut;
-        const uint8 respDesc = 0x01 | 0x02; // hasMD4 + hasSize
+        const uint8 respDesc =
+            static_cast<uint8>(0x01 | 0x02 | (sendAICH ? 0x04 : 0x00)); // MD4 + size [+ AICH]
         dataOut.writeUInt8(respDesc);
         dataOut.writeHash16(m_fileHash.data());
         dataOut.writeUInt64(m_fileSize);
+        if (sendAICH)
+            m_aichHashSet->getMasterHash().write(dataOut);
 
         bool hasResponse = false;
 
@@ -875,7 +882,7 @@ void tst_MockPeerDownload::initTestCase()
     m_partFile->setFileSize(EMFileSize(m_fileSize));
     m_partFile->setFileHash(m_fileHash.data());
     m_partFile->fileIdentifier().setMD4HashSet(m_partHashes);
-    m_partFile->aichRecoveryHashSet().setMasterHash(m_aichMasterHash, EAICHStatus::Trusted);
+    m_partFile->aichRecoveryHashSet().setMasterHash(m_aichMasterHash, EAICHStatus::Verified);
 
     QVERIFY(m_partFile->createPartFile(m_tmpDir->filePath(QStringLiteral("temp"))));
 
@@ -1008,7 +1015,7 @@ void tst_MockPeerDownload::downloadFlow_corruptionDetectedAndRecovered()
     partFile->setFileSize(EMFileSize(m_fileSize));
     partFile->setFileHash(m_fileHash.data());
     partFile->fileIdentifier().setMD4HashSet(m_partHashes);
-    partFile->aichRecoveryHashSet().setMasterHash(m_aichMasterHash, EAICHStatus::Trusted);
+    partFile->aichRecoveryHashSet().setMasterHash(m_aichMasterHash, EAICHStatus::Verified);
 
     QVERIFY(partFile->createPartFile(tempDir2));
     m_downloadQueue->addDownload(partFile);

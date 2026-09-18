@@ -27,6 +27,7 @@
 
 
 #include <zlib.h>
+#include <algorithm>
 
 namespace eMule {
 
@@ -76,13 +77,12 @@ bool UpDownClient::askForDownload()
             return false;
         }
 
-        // The re-ask throttle. This is where MFC keeps it (SetLastTriedToConnectTime,
-        // srchybrid/DownloadClient.cpp:193) — it used to sit inside tryToConnect(), where it
-        // silently refused the upload queue, chat and every Kad path as well.
-        const uint32 curTick = static_cast<uint32>(getTickCount());
-        if (curTick - m_lastTriedToConnect < MIN2MS(1))
-            return false;
-        m_lastTriedToConnect = curTick;
+        // Stamp only. MFC has no time gate in either AskForDownload or TryToConnect
+        // (srchybrid/DownloadClient.cpp:193); the throttle is the caller's — the re-ask
+        // window plus 20 minutes per source, both in PartFile::process(). The one-minute
+        // gate that used to live here was ours, and only needed because process() had
+        // neither of those.
+        m_lastTriedToConnect = static_cast<uint32>(getTickCount());
 
         if (hasLowID() && lastAskedTime() > 0) {
             // It is already on *our* upload queue, so it will re-ask us of its own accord
@@ -125,33 +125,60 @@ bool UpDownClient::isSourceRequestAllowed() const
 
 bool UpDownClient::isSourceRequestAllowed(PartFile* partFile, bool sourceExchangeCheck) const
 {
-    if (m_sourceExchange1Ver == 0)
+    // MFC DownloadClient.cpp:217-260, which weighs how rare the file is against how long
+    // ago we asked. The port used to apply one flat 40-minute gate per client and per
+    // file, with no soft cap at all, so it kept asking for sources well past it.
+    if (!partFile || !m_reqFile)
+        return false;
+    if (!extProtocolAvailable() || !(supportsSourceExchange2() || m_sourceExchange1Ver > 1))
         return false;
 
     const uint32 curTick = static_cast<uint32>(getTickCount()) + CONNECTION_LATENCY;
-
-    // Per-client rate limit
-    const uint32 nTimePassedClient = curTick - m_lastAskedForSources;
+    const uint32 timePassedClient = curTick - m_lastAskedForSources;
+    const uint32 timePassedFile = curTick - partFile->lastAnsweredTime();
     const bool neverAskedBefore = (m_lastAskedForSources == 0);
 
-    // MFC: per-file rate limit (DownloadClient.cpp:221)
-    if (partFile) {
-        const uint32 nTimePassedFile = curTick - partFile->lastAnsweredTime();
-        if (!neverAskedBefore && nTimePassedClient < SOURCECLIENTREASKS)
-            return false;
-        if (partFile->lastAnsweredTime() != 0 && nTimePassedFile < SOURCECLIENTREASKS)
-            return false;
-    } else {
-        if (!neverAskedBefore && nTimePassedClient < SOURCECLIENTREASKS)
-            return false;
+    // A file we are not currently asking this peer about would gain one source if it
+    // said yes, so count that in before comparing (MFC DownloadClient.cpp:226-227).
+    uint32 sources = static_cast<uint32>(partFile->sourceCount());
+    uint32 validSources = static_cast<uint32>(partFile->validSourcesCount());
+    if (partFile != m_reqFile) {
+        ++sources;
+        ++validSources;
+    }
+    const uint32 reqValidSources = static_cast<uint32>(m_reqFile->validSourcesCount());
+
+    if (m_reqFile->maxSourcePerFileSoft() <= sources)
+        return false;
+
+    // The A4AF terms only bite when the caller is weighing a swap; asking about the file
+    // we already requested skips them.
+    const bool thisFile = (!sourceExchangeCheck || partFile == m_reqFile);
+    const bool clientGateOpen = neverAskedBefore || timePassedClient > SOURCECLIENTREASKS;
+    const bool commonGateOpen = neverAskedBefore
+        || timePassedClient > SOURCECLIENTREASKS * MINCOMMONPENALTY;
+    // MFC's ratio of the two re-ask intervals (40 min / 5 min).
+    const uint32 reaskRatio = SOURCECLIENTREASKS / SOURCECLIENTREASKF;
+    const bool worseThanReqFile = validSources < reaskRatio && validSources < reqValidSources;
+
+    // Very rare file: ask as soon as the per-client gate opens.
+    if (!m_completeSource && clientGateOpen && sources <= RARE_FILE / 5
+        && (thisFile || (validSources < reqValidSources && reqValidSources > 3))) {
+        return true;
     }
 
-    if (sourceExchangeCheck) {
-        if (partFile && partFile->sourceCount() >= thePrefs.maxSourcesPerFile())
-            return false;
+    // Rare file: also needs the short per-file gate.
+    if (!m_completeSource && clientGateOpen
+        && (sources <= RARE_FILE || (thisFile && sources <= RARE_FILE / 2 + validSources))
+        && timePassedFile > SOURCECLIENTREASKF
+        && (thisFile || worseThanReqFile)) {
+        return true;
     }
 
-    return true;
+    // Common file: both gates stretched by the penalty factor.
+    return commonGateOpen
+        && timePassedFile > SOURCECLIENTREASKF * MINCOMMONPENALTY
+        && (thisFile || worseThanReqFile);
 }
 
 // ===========================================================================
@@ -345,33 +372,32 @@ void UpDownClient::processFileStatus(bool udpPacket, SafeMemFile& data, PartFile
 {
     Q_UNUSED(udpPacket);
 
-    const uint16 partCount = data.readUInt16();
-    m_partCount = partCount;
+    // The count on the wire is the ED2K one (size/PARTSIZE + 1). Our own part count is
+    // one lower for a size that is an exact multiple of PARTSIZE, so the two must not be
+    // conflated — MFC DownloadClient.cpp:515-540 checks the ED2K count and then sizes
+    // the status array with GetPartCount().
+    const uint16 wirePartCount = data.readUInt16();
 
-    if (partCount == 0) {
+    if (wirePartCount == 0) {
         // Complete file — all parts available
         m_completeSource = true;
         m_partStatus.clear();
-        // Increment source part frequency — addSource() couldn't do this
-        // because completeSource was not yet set at that point.
-        if (file) {
-            for (auto& freq : file->srcPartFrequency())
-                ++freq;
-        }
+        m_partCount = file ? file->partCount() : 0;
     } else {
-        // MFC: validate partCount against file's expected ED2K part count
-        if (file && file->ed2kPartCount() != partCount) {
+        if (file && file->ed2kPartCount() != wirePartCount) {
             logWarning(QStringLiteral("processFileStatus: wrong part count recv=%1 expected=%2")
-                           .arg(partCount).arg(file->ed2kPartCount()));
+                           .arg(wirePartCount).arg(file->ed2kPartCount()));
             m_partCount = 0;
             return;
         }
 
         m_completeSource = false;
-        m_partStatus.resize(partCount);
+        m_partCount = file ? file->partCount() : wirePartCount;
 
-        // Read availability bitmap
-        const uint16 byteCount = (partCount + 7) / 8;
+        // Framed by the ED2K count, which is what the sender wrote. MFC reads only
+        // ceil(partCount/8) bytes here and so loses the stream alignment for whatever
+        // follows when the extra ED2K part starts a new byte.
+        const uint16 byteCount = (wirePartCount + 7) / 8;
         if (data.length() - data.position() < byteCount) {
             // Malformed packet — not enough data for bitmap
             m_completeSource = true;
@@ -382,8 +408,9 @@ void UpDownClient::processFileStatus(bool udpPacket, SafeMemFile& data, PartFile
         std::vector<uint8> bitmap(byteCount);
         data.read(bitmap.data(), byteCount);
 
+        m_partStatus.assign(m_partCount, 0);
         bool allAvailable = true;
-        for (uint16 i = 0; i < partCount; ++i) {
+        for (uint16 i = 0; i < m_partCount; ++i) {
             m_partStatus[i] = (bitmap[i / 8] & (1 << (i % 8))) ? 1 : 0;
             if (!m_partStatus[i])
                 allAvailable = false;
@@ -391,17 +418,6 @@ void UpDownClient::processFileStatus(bool udpPacket, SafeMemFile& data, PartFile
 
         if (allAvailable)
             m_completeSource = true;
-
-        // Update PartFile source part frequency
-        if (file) {
-            auto& freq = file->srcPartFrequency();
-            if (freq.size() == partCount) {
-                for (uint16 i = 0; i < partCount; ++i) {
-                    if (m_partStatus[i])
-                        freq[i]++;
-                }
-            }
-        }
     }
 
     if (!file)
@@ -423,22 +439,23 @@ void UpDownClient::processFileStatus(bool udpPacket, SafeMemFile& data, PartFile
         swapToAnotherFile(
             QStringLiteral("A4AF for NNP file. processFileStatus() TCP"),
             true, false, false, nullptr, true, true);
-        return;
+    } else if (m_downloadState == DownloadState::Connected
+               || m_downloadState == DownloadState::Connecting) {
+        // Request hashset or upload slot — only when actively connecting via TCP
+        if (file->isMD4HashsetNeeded()
+            || (file->isAICHPartHashsetNeeded() && supportsFileIdentifiers()
+                && reqFileAICHHash() != nullptr
+                && *reqFileAICHHash() == file->fileIdentifier().getAICHHash())) {
+            sendHashSetRequest();
+        } else {
+            sendStartupLoadReq();
+        }
     }
 
-    // Request hashset or upload slot — only when actively connecting via TCP
-    if (m_downloadState != DownloadState::Connected
-        && m_downloadState != DownloadState::Connecting)
-        return;
-
-    if (file->isMD4HashsetNeeded()
-        || (file->isAICHPartHashsetNeeded() && supportsFileIdentifiers()
-            && reqFileAICHHash() != nullptr
-            && *reqFileAICHHash() == file->fileIdentifier().getAICHHash())) {
-        sendHashSetRequest();
-    } else {
-        sendStartupLoadReq();
-    }
+    // Availability and the complete-source estimate are rebuilt from every source, which
+    // is also what keeps the frequencies from drifting when a source re-reports its
+    // status. MFC DownloadClient.cpp:580.
+    file->updatePartsInfo();
 }
 
 // ===========================================================================
@@ -575,6 +592,11 @@ bool UpDownClient::addRequestForAnotherFile(PartFile* file)
     if (!file)
         return false;
 
+    // A file this source has already told us it has no needed parts of is not a
+    // candidate. MFC srchybrid/DownloadClient.cpp:585.
+    if (isInNoNeededList(file))
+        return false;
+
     // Check if already in other requests list
     for (const auto* f : m_otherRequests) {
         if (f == file)
@@ -582,6 +604,14 @@ bool UpDownClient::addRequestForAnotherFile(PartFile* file)
     }
 
     m_otherRequests.push_back(file);
+
+    // Both sides of the relation, as MFC does (DownloadClient.cpp:589). The file's list
+    // is what the GUI shows and what swapToAnotherFile() and removeSource() walk, so a
+    // one-sided add left the A4AF invisible to everything but this client.
+    auto& a4afList = file->a4afSrcList();
+    if (std::ranges::find(a4afList, this) == a4afList.end())
+        a4afList.push_back(this);
+
     return true;
 }
 
@@ -1297,7 +1327,9 @@ void UpDownClient::udpReaskForDownload()
         writeReaskFileInfo(data);
 
         auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_REASKFILEPING);
-        const bool encrypt = supportsCryptLayer() && thePrefs.cryptLayerSupported();
+        // The same predicate the answering side uses, as MFC does (DownloadClient.cpp:1376):
+        // obfuscating a ping a peer will not decrypt loses its queue rank.
+        const bool encrypt = shouldReceiveCryptUDPPackets();
         if (theApp.downloadQueue)
             theApp.downloadQueue->addUDPFileReasks();  // MFC DownloadClient.cpp:1375
         // Endpoint form — toUint32() is 0 for an IPv6 peer, which sent every reask
@@ -1459,6 +1491,10 @@ bool UpDownClient::doSwap(PartFile* swapTo, bool removeCompletely, const QString
     // and never requests data for the new file.
     clearDownloadBlockRequests();
 
+    // The file we are leaving no longer has this source's parts — MFC
+    // DownloadClient.cpp:1830.
+    oldFile->updatePartsInfo();
+
     // Set the new request file
     m_reqFile = swapTo;
     if (m_reqFile->fileHash()) {
@@ -1599,18 +1635,24 @@ uint32 UpDownClient::timeUntilReask() const
     return timeUntilReask(m_reqFile);
 }
 
-uint32 UpDownClient::timeUntilReask(const PartFile* file) const
+uint32 UpDownClient::timeUntilReask(const PartFile* file, bool allowShortReaskTime) const
 {
     const uint32 lastAsk = lastAskedTime(file);
     if (lastAsk == 0)
         return 0;
 
-    // MFC: NNP sources get doubled reask time to save connections and traffic
-    uint32 reaskTime = FILEREASKTIME;
-    if ((file == m_reqFile && m_downloadState == DownloadState::NoNeededParts)
-        || (file != m_reqFile && isInNoNeededList(file)))
+    uint32 reaskTime;
+    if (allowShortReaskTime || (file == m_reqFile && m_downloadState == DownloadState::None)) {
+        // A source we are not talking to at all may be re-asked far sooner than one that
+        // answered and parked us. MFC srchybrid/DownloadClient.cpp:1885-1887.
+        reaskTime = MIN_REQUESTTIME;
+    } else if ((file == m_reqFile && m_downloadState == DownloadState::NoNeededParts)
+               || (file != m_reqFile && isInNoNeededList(file)))
     {
+        // MFC: NNP sources get doubled reask time to save connections and traffic
         reaskTime = FILEREASKTIME * 2;
+    } else {
+        reaskTime = FILEREASKTIME;
     }
 
     const uint32 curTick = static_cast<uint32>(getTickCount());
@@ -1664,18 +1706,31 @@ void UpDownClient::updateDisplayedInfo(bool force)
 
 const AICHHash* UpDownClient::reqFileAICHHash() const
 {
-    if (!m_reqFile)
-        return nullptr;
-    if (!m_reqFile->aichRecoveryHashSet().hasValidMasterHash())
-        return nullptr;
-    return &m_reqFile->aichRecoveryHashSet().getMasterHash();
+    // What the peer told us, not our own master hash. Returning ours made every
+    // comparison against it trivially true, so an AICH-capable source was always
+    // treated as agreeing with us and the part hashset was requested from anyone.
+    return m_reqFileAICHHash.get();
+}
+
+void UpDownClient::setReqFileAICHHash(const AICHHash& hash)
+{
+    m_reqFileAICHHash = std::make_unique<AICHHash>(hash);
+}
+
+void UpDownClient::clearReqFileAICHHash()
+{
+    m_reqFileAICHHash.reset();
 }
 
 void UpDownClient::sendAICHRequest(PartFile* forFile, uint16 part)
 {
-    if (!forFile || !m_socket)
+    if (!forFile)
         return;
 
+    // Tracked before the send: the answer is matched against this triple, and if the
+    // answer never comes (or fails) the same part is asked of another source.
+    // MFC DownloadClient.cpp:2033-2040.
+    AICHRecoveryHashSet::addClientAICHRequest({part, forFile, this});
     m_aichRequested = true;
 
     // Build OP_AICHREQUEST: file hash (16) + part number (uint16) + master hash (20)
@@ -1684,155 +1739,162 @@ void UpDownClient::sendAICHRequest(PartFile* forFile, uint16 part)
     data.writeUInt16(part);
     forFile->aichRecoveryHashSet().getMasterHash().write(data);
 
+    // No socket precondition: safeConnectAndSendPacket() dials a source that is only
+    // queued, as MFC's SafeConnectAndSendPacket does.
     auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_AICHREQUEST);
     safeConnectAndSendPacket(std::move(packet));
 }
 
 void UpDownClient::processAICHAnswer(const uint8* data, uint32 size)
 {
-    if (!data || size < 16 + 2 + kAICHHashSize) {
-        m_aichRequested = false;
-        return;
-    }
+    // MFC throws here (DownloadClient.cpp:2054), which drops the peer: an answer we
+    // never asked for is either a protocol error or an attempt to feed us hashes.
+    if (!m_aichRequested)
+        throw FileException("Received unrequested AICH answer");
 
-    if (!m_aichRequested) {
-        logDebug(QStringLiteral("processAICHAnswer: unrequested AICH answer from %1").arg(userName()));
+    m_aichRequested = false;
+
+    if (!data || size <= 16) {
+        // The peer's own "I cannot serve this" answer — 16 bytes, hash only.
+        AICHRecoveryHashSet::clientAICHRequestFailed(this);
         return;
     }
-    m_aichRequested = false;
 
     SafeMemFile file(data, size);
 
-    // Read file hash and part number
     uint8 fileHash[16];
     file.readHash16(fileHash);
     const uint16 partNumber = file.readUInt16();
 
-    // Read and verify the master hash
-    AICHHash masterHash(file);
+    PartFile* partFile = theApp.downloadQueue ? theApp.downloadQueue->fileByID(fileHash) : nullptr;
+    const AICHRecoveryHashSet::RequestedData request = AICHRecoveryHashSet::aichReqDetails(this);
 
-    // Find the PartFile this belongs to
-    PartFile* partFile = nullptr;
-    if (theApp.downloadQueue)
-        partFile = theApp.downloadQueue->fileByID(fileHash);
+    // The answer has to be the one we asked this client for. Without the triple check a
+    // peer could hand us recovery data for any part of any file in the queue.
+    if (partFile && request.file == partFile && request.client == this && request.part == partNumber) {
+        AICHHash masterHash(file);
+        auto& recoveryHashSet = partFile->aichRecoveryHashSet();
 
-    if (!partFile) {
-        logDebug(QStringLiteral("processAICHAnswer: file not found for AICH answer"));
-        return;
+        // Status first, then the hash: readRecoveryData() asserts on anything but
+        // Trusted/Verified, and one peer vote can push a Trusted set to Untrusted.
+        const EAICHStatus status = recoveryHashSet.getStatus();
+        if ((status == EAICHStatus::Trusted || status == EAICHStatus::Verified)
+            && recoveryHashSet.hasValidMasterHash()
+            && recoveryHashSet.getMasterHash() == masterHash)
+        {
+            if (recoveryHashSet.readRecoveryData(static_cast<uint64>(request.part) * PARTSIZE, file)) {
+                AICHRecoveryHashSet::removeClientAICHRequest(this);
+                partFile->aichRecoveryDataAvailable(request.part);
+                return;
+            }
+            logDebug(QStringLiteral("processAICHAnswer: recovery data failed to validate from %1")
+                         .arg(userName()));
+        } else {
+            logDebug(QStringLiteral("processAICHAnswer: master hash differs or hash set not trusted (%1)")
+                         .arg(userName()));
+        }
+    } else {
+        logDebug(QStringLiteral("processAICHAnswer: answer does not match what we asked %1 for")
+                     .arg(userName()));
     }
 
-    auto& recoveryHashSet = partFile->aichRecoveryHashSet();
-
-    // Verify master hash matches
-    if (!recoveryHashSet.hasValidMasterHash() ||
-        recoveryHashSet.getMasterHash() != masterHash)
-    {
-        logDebug(QStringLiteral("processAICHAnswer: master hash mismatch from %1").arg(userName()));
-        return;
-    }
-
-    // Read recovery data
-    if (!recoveryHashSet.readRecoveryData(
-            static_cast<uint64>(partNumber) * PARTSIZE, file))
-    {
-        logDebug(QStringLiteral("processAICHAnswer: readRecoveryData failed from %1").arg(userName()));
-        return;
-    }
-
-    // Notify PartFile that AICH recovery data is available
-    partFile->aichRecoveryDataAvailable(partNumber);
+    AICHRecoveryHashSet::clientAICHRequestFailed(this);
 }
 
 void UpDownClient::processAICHRequest(const uint8* data, uint32 size)
 {
-    if (!data || size < 16 + 2 + kAICHHashSize || !m_socket)
-        return;
+    // Exact size, as MFC (DownloadClient.cpp:2093) — a short packet drops the peer
+    // rather than being silently ignored.
+    if (!data || size != 16u + 2u + kAICHHashSize)
+        throw FileException("Received AICH request packet with wrong size");
 
     SafeMemFile file(data, size);
 
-    // Read file hash, part number, and master hash
     uint8 fileHash[16];
     file.readHash16(fileHash);
     const uint16 partNumber = file.readUInt16();
     AICHHash masterHash(file);
 
-    // Look up file in shared files
-    KnownFile* knownFile = nullptr;
-    if (theApp.sharedFileList)
-        knownFile = theApp.sharedFileList->getFileByID(fileHash);
-
-    if (!knownFile || !knownFile->isAICHRecoverHashSetAvailable()) {
-        logDebug(QStringLiteral("processAICHRequest: file not found or AICH not available"));
+    if (canServeAICHRecovery(fileHash, partNumber, masterHash))
         return;
-    }
 
-    // Verify the file has an AICH hash in its identifier
-    const auto& ident = knownFile->fileIdentifier();
-    if (!ident.hasAICHHash() || ident.getAICHHash() != masterHash) {
-        logDebug(QStringLiteral("processAICHRequest: master hash mismatch"));
-        return;
-    }
-
-    // Validate part number
-    const uint64 fileSize = knownFile->fileSize();
-    if (static_cast<uint64>(partNumber) * PARTSIZE >= fileSize) {
-        logDebug(QStringLiteral("processAICHRequest: invalid part number %1").arg(partNumber));
-        return;
-    }
-
-    // Create a temporary recovery hash set to generate recovery data.
-    // createPartRecoveryData will load the hash tree from known2_64.met.
-    AICHRecoveryHashSet recoveryHashSet(fileSize);
-    recoveryHashSet.setMasterHash(masterHash, EAICHStatus::Verified);
-
-    SafeMemFile response;
-    response.writeHash16(fileHash);
-    response.writeUInt16(partNumber);
-    masterHash.write(response);
-
-    if (!recoveryHashSet.createPartRecoveryData(
-            static_cast<uint64>(partNumber) * PARTSIZE, response))
-    {
-        logDebug(QStringLiteral("processAICHRequest: createPartRecoveryData failed"));
-        return;
-    }
-
-    auto packet = std::make_unique<Packet>(response, OP_EMULEPROT, OP_AICHANSWER);
-    sendPacket(std::move(packet));
+    // Every other path answers with the 16-byte hash alone: "asked, cannot serve".
+    // It is what lets the asker fail fast and try another source instead of waiting for
+    // a disconnect that may never come. MFC DownloadClient.cpp:2134-2137.
+    SafeMemFile failure;
+    failure.writeHash16(fileHash);
+    safeConnectAndSendPacket(std::make_unique<Packet>(failure, OP_EMULEPROT, OP_AICHANSWER));
 }
 
-void UpDownClient::processAICHFileHash(SafeMemFile& data, PartFile* file)
+void UpDownClient::processAICHFileHash(SafeMemFile* data, PartFile* file,
+                                       const AICHHash* aichHash)
 {
-    if (!file)
+    PartFile* partFile = file;
+    if (!partFile && data && theApp.downloadQueue) {
+        // Standalone OP_AICHFILEHASHANS carries the file hash first.
+        uint8 fileHash[16];
+        data->readHash16(fileHash);
+        partFile = theApp.downloadQueue->fileByID(fileHash);
+    }
+
+    AICHHash masterHash;
+    if (aichHash)
+        masterHash = *aichHash;
+    else if (data)
+        masterHash.read(*data);
+    else
         return;
 
-    // Read the AICH master hash from the peer
-    AICHHash masterHash(data);
+    if (!partFile || partFile != m_reqFile) {
+        logDebug(QStringLiteral("processAICHFileHash: not the file we asked %1 for")
+                     .arg(userName()));
+        return;
+    }
 
-    auto& recoveryHashSet = file->aichRecoveryHashSet();
+    // Remember what this peer claims, and let it vote on what the real hash is.
+    setReqFileAICHHash(masterHash);
+    partFile->aichRecoveryHashSet().untrustedHashReceived(
+        masterHash, m_connectAddress.toNetworkUint32());
 
-    if (recoveryHashSet.hasValidMasterHash() &&
-        recoveryHashSet.getStatus() == EAICHStatus::Verified)
-    {
-        // We already have a verified hash — check if it matches
-        if (recoveryHashSet.getMasterHash() != masterHash) {
-            logDebug(QStringLiteral("processAICHFileHash: hash mismatch from %1 for %2").arg(userName(), file->fileName()));
-            // Add to dead source list — this source has wrong AICH hash
-            if (theApp.clientList) {
-                DeadSourceKey key;
-                key.hash = m_userHash;
-                key.serverAddress = m_serverAddress;
-                key.userID = m_userIDHybrid;
-                key.port = m_userPort;
-                key.kadPort = m_kadPort;
-                theApp.clientList->globalDeadSourceList.addDeadSource(key, hasLowID());
-            }
-            return;
+    const auto& ident = partFile->fileIdentifier();
+    if (!ident.hasAICHHash() || ident.getAICHHash() == masterHash)
+        return;
+
+    // It answered with a different hash than the one we have verified, so it does not
+    // have our file. Handle it like a file-not-found and drop it as a source —
+    // MFC DownloadClient.cpp:2158-2187.
+    logWarning(QStringLiteral("Client %1 reports a different AICH hash for %2 — removing source")
+                   .arg(userName(), partFile->fileName()));
+
+    if (theApp.clientList) {
+        DeadSourceKey key;
+        key.hash = m_userHash;
+        key.serverAddress = m_serverAddress;
+        key.userID = m_userIDHybrid;
+        key.port = m_userPort;
+        key.kadPort = m_kadPort;
+        theApp.clientList->globalDeadSourceList.addDeadSource(key, hasLowID());
+    }
+
+    if (m_downloadState == DownloadState::ReqHashSet) {
+        // Don't accept a hash set from it either — put the requests back.
+        if (m_hashsetRequestingMD4) {
+            partFile->setMD4HashsetNeeded(true);
+            m_hashsetRequestingMD4 = false;
+        }
+        if (m_hashsetRequestingAICH) {
+            partFile->setAICHPartHashsetNeeded(true);
+            m_hashsetRequestingAICH = false;
         }
     }
 
-    // Report hash to trust system for consensus building
-    recoveryHashSet.untrustedHashReceived(masterHash, m_connectAddress.toNetworkUint32());
+    dontSwapTo(partFile);
+    if (!swapToAnotherFile(
+            QStringLiteral("Source says it doesn't have the file (AICH mismatch). processAICHFileHash()"),
+            true, true, true, nullptr, false, false)) {
+        if (theApp.downloadQueue)
+            theApp.downloadQueue->removeSource(this);
+    }
 }
 
 // ===========================================================================
@@ -1950,6 +2012,55 @@ void UpDownClient::writeReaskFileInfo(SafeMemFile& data) const
             m_reqFile->writePartStatus(data);
         m_reqFile->writeCompleteSourcesCount(data);
     }
+}
+
+// ===========================================================================
+// canServeAICHRecovery — private, MFC DownloadClient.cpp:2104-2133
+// ===========================================================================
+
+bool UpDownClient::canServeAICHRecovery(const uint8* fileHash, uint16 part,
+                                        const AICHHash& masterHash)
+{
+    KnownFile* knownFile = theApp.sharedFileList ? theApp.sharedFileList->getFileByID(fileHash) : nullptr;
+    if (!knownFile || !knownFile->isAICHRecoverHashSetAvailable()) {
+        logDebug(QStringLiteral("processAICHRequest: file not found or AICH not available"));
+        return false;
+    }
+
+    const auto& ident = knownFile->fileIdentifier();
+    if (!ident.hasAICHHash() || ident.getAICHHash() != masterHash) {
+        logDebug(QStringLiteral("processAICHRequest: master hash mismatch"));
+        return false;
+    }
+
+    // A part beyond the file, or a trailing part no larger than one block, has no
+    // recovery data to give. MFC DownloadClient.cpp:2107-2109.
+    const uint64 fileSize = knownFile->fileSize();
+    if (knownFile->partCount() <= part
+        || fileSize <= static_cast<uint64>(part) * PARTSIZE + EMBLOCKSIZE)
+    {
+        logDebug(QStringLiteral("processAICHRequest: invalid part number %1").arg(part));
+        return false;
+    }
+
+    // HashSetComplete, not Verified: createPartRecoveryData() serves a complete set only
+    // and refuses (asserting in a debug build) on anything else, so seeding Verified here
+    // meant we never answered a single AICH request. MFC DownloadClient.cpp:2116.
+    AICHRecoveryHashSet recoveryHashSet(fileSize);
+    recoveryHashSet.setMasterHash(masterHash, EAICHStatus::HashSetComplete);
+
+    SafeMemFile response;
+    response.writeHash16(fileHash);
+    response.writeUInt16(part);
+    masterHash.write(response);
+
+    if (!recoveryHashSet.createPartRecoveryData(static_cast<uint64>(part) * PARTSIZE, response)) {
+        logDebug(QStringLiteral("processAICHRequest: createPartRecoveryData failed"));
+        return false;
+    }
+
+    safeConnectAndSendPacket(std::make_unique<Packet>(response, OP_EMULEPROT, OP_AICHANSWER));
+    return true;
 }
 
 } // namespace eMule

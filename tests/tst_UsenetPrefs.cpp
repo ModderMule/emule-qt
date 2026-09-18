@@ -73,6 +73,7 @@ private slots:
     void quotaFieldsRoundTrip();
     void aConfigWithoutQuotasLoadsUnmeteredWithAnId();
     void healthCheckSettingsRoundTrip();
+    void theEnginePauseRoundTrips();
     void newsServersFollowTheProxyUnlessSwitchedOff();
     void subjectPatternsRoundTrip();
     void noSubjectPatternsBlockIsWrittenWhenTheDefaultsAreInUse();
@@ -345,6 +346,22 @@ void tst_UsenetPrefs::defaultsAreSaneWithNoUsenetBlock()
     QCOMPARE(p2.usenetEnabled(), false);
     QVERIFY(p2.usenetServers().isEmpty());
     QCOMPARE(p2.usenetRetryIntervalSeconds(), 60);
+}
+
+void tst_UsenetPrefs::theEnginePauseRoundTrips()
+{
+    {
+        Preferences p;
+        QVERIFY(!p.usenetPaused());
+        p.setUsenetPaused(true);
+        QVERIFY(p.saveTo(m_file));
+    }
+
+    Preferences p2;
+    QVERIFY(p2.load(m_file));
+    QVERIFY(p2.usenetPaused());
+    // Clients read it from here on connect: the push only reports a change.
+    QVERIFY(p2.toIpcMap().value(QStringLiteral("usenetPaused")).toBool());
 }
 
 void tst_UsenetPrefs::healthCheckSettingsRoundTrip()

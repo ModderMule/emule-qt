@@ -51,6 +51,22 @@ enum class Par2Outcome {
 
 [[nodiscard]] QString describePar2Outcome(Par2Outcome outcome);
 
+/// One recoverable file of a set after a scan.
+///
+/// Whole-file facts only. par2 finds a block by its content in whichever file
+/// holds it, so data repeated across two files puts one file's blocks at the
+/// other's offsets, and a per-file block count would name the wrong file.
+struct Par2FileStatus {
+    QString fileName;    ///< as the set names it — untrusted, see Par2SetFile
+    int blocks = 0;
+
+    /// Every byte verified, under this name or another.
+    bool complete = false;
+
+    /// A file by the set's name is on disk, damaged or not.
+    bool targetExists = false;
+};
+
 struct Par2Result {
     Par2Outcome outcome = Par2Outcome::Unavailable;
 
@@ -96,6 +112,11 @@ struct Par2Result {
     /// publishes every non-par2 file in the work directory — so somebody has to
     /// delete them, which means somebody has to be told what they are.
     QStringList backupFiles;
+
+    /// Per recoverable file, once a scan ran; empty otherwise. What lets the
+    /// queue tell a file the user skipped from damage — the counters above
+    /// cannot say which files are short.
+    QList<Par2FileStatus> files;
 
     /// The library's own stdout/stderr, kept for the log when something failed.
     QString message;

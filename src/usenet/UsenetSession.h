@@ -128,6 +128,7 @@ signals:
     void itemAdded(const QString& id);
     void itemRemoved(const QString& id);
     void itemFinished(const QString& id, bool success, const QString& message);
+    void enginePausedChanged(bool paused);
 
 private:
     /// Recompute how the one global download budget is split between ED2K and

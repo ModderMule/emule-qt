@@ -33,6 +33,9 @@
     <ClCompile Include="app\AppConfig.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="app\TranslationRouter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="app\AppContext.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -428,6 +431,9 @@
     <ClInclude Include="app\AppConfig.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="app\TranslationRouter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="app\AppContext.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -521,6 +527,9 @@
     <ClInclude Include="friends\Friend.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="friends\FriendConnectProgress.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <QtMoc Include="friends\FriendList.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -543,6 +552,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="webserver\JsonSerializers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="webserver\UsenetWebBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="webserver\WebTemplateStrings.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="kademlia\KadClientSearcher.h">
@@ -801,6 +816,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\StringUtils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\ByteRateSampler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\UsenetDisplay.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="protocol\Tag.h">

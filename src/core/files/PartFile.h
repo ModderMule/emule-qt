@@ -226,7 +226,11 @@ public:
                        uint64 start, uint64 end,
                        Requested_Block_Struct* block,
                        const Address& sender = {});
-    void flushBuffer(bool forceICH = false);
+    /// @param forceICH  re-hash without asking AICH first (the ICH pass).
+    /// @param noAICH    never start an AICH recovery request from this flush — the
+    ///                  destructor flushes this way, since a request would outlive us.
+    ///                  MFC srchybrid/PartFile.h:232.
+    void flushBuffer(bool forceICH = false, bool noAICH = false);
 
     // -- Block selection ------------------------------------------------------
 
@@ -336,6 +340,16 @@ public:
     /// uses it to decide whether a file is rare enough to be worth remembering.
     [[nodiscard]] int availableSourceCount() const;
 
+    /// Sources that answered us at all — OnQueue, Downloading, Connected or
+    /// RemoteQueueFull. MFC CPartFile::GetValidSourcesCount() (PartFile.cpp:2116);
+    /// isSourceRequestAllowed() weighs it against the raw source count.
+    [[nodiscard]] int validSourcesCount() const;
+
+    /// Source caps derived from the max-sources pref (this port has no per-file max).
+    /// MFC CPartFile::GetMaxSourcePerFileSoft/UDP (PartFile.cpp:5349-5359).
+    [[nodiscard]] uint32 maxSourcePerFileSoft() const;
+    [[nodiscard]] uint32 maxSourcePerFileUDP() const;
+
     /// Save/Load Sources driver for this file. Held per file so its resave/reload timers and
     /// their jitter stay independent — mirrors MorphXT CPartFile::m_sourcesaver.
     [[nodiscard]] SourceSaver& sourceSaver() { return m_sourceSaver; }
@@ -395,6 +409,10 @@ public:
 
     void updateFileRatingCommentAvail(bool forceUpdate = false) override;
 
+    /// Rebuild source part frequencies and the complete-source estimate from our
+    /// download sources. MFC CPartFile::UpdatePartsInfo (PartFile.cpp:2558).
+    void updatePartsInfo() override;
+
     // AICH recovery
     [[nodiscard]] AICHRecoveryHashSet& aichRecoveryHashSet() { return m_aichRecoveryHashSet; }
     [[nodiscard]] const AICHRecoveryHashSet& aichRecoveryHashSet() const { return m_aichRecoveryHashSet; }
@@ -402,6 +420,9 @@ public:
     void setMD4HashsetNeeded(bool val) { m_md4HashsetNeeded = val; }
     [[nodiscard]] bool isAICHPartHashsetNeeded() const { return m_aichPartHashsetNeeded; }
     void setAICHPartHashsetNeeded(bool val) { m_aichPartHashsetNeeded = val; }
+    /// Adopt the identifier's AICH root hash as a Verified recovery master hash.
+    /// Call whenever an AICH hash arrives with a link or a search result.
+    void seedAICHRecoveryMasterHash();
     void requestAICHRecovery(uint32 partNumber);
     void aichRecoveryDataAvailable(uint32 partNumber);
 

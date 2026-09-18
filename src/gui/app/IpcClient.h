@@ -102,6 +102,17 @@ public:
     /// Use this when the GUI launched the daemon and is about to close.
     void sendShutdown();
 
+    /// The daemon's engine-wide Usenet pause, as last reported: seeded from the
+    /// connect-time GetPreferences, then kept by PushUsenetEngineState.
+    [[nodiscard]] bool usenetEnginePaused() const { return m_usenetEnginePaused; }
+    void setUsenetEnginePaused(bool paused)
+    {
+        if (paused == m_usenetEnginePaused)
+            return;
+        m_usenetEnginePaused = paused;
+        emit usenetEnginePausedChanged(paused);
+    }
+
 signals:
     /// Emitted when connection + handshake succeeds.
     void connected();
@@ -134,6 +145,8 @@ signals:
     /// Carries no payload: every consumer wants the whole list.
     void categoriesChanged(const Ipc::IpcMessage& msg);
     void chatMessageReceived(const Ipc::IpcMessage& msg);
+    /// [friendHash, ChatConnectProgress] — how a chat dial to a friend is going.
+    void chatStateReceived(const Ipc::IpcMessage& msg);
     void friendListChanged(const Ipc::IpcMessage& msg);
     void clientSharedFilesReceived(const Ipc::IpcMessage& msg);
     /// Port-mapping status changed (protocol chosen, mapping gained or lost).
@@ -145,6 +158,8 @@ signals:
     void usenetItemRemoved(const Ipc::IpcMessage& msg);
     /// [id, success, message] — terminal outcome, never coalesced.
     void usenetItemFinished(const Ipc::IpcMessage& msg);
+    /// The engine-wide pause changed; see usenetEnginePaused().
+    void usenetEnginePausedChanged(bool paused);
 
     /// [searchId, rows] — a batch of indexer results, as each indexer answers.
     void indexerResultsReceived(const Ipc::IpcMessage& msg);
@@ -196,6 +211,7 @@ private:
     int m_nextSeqId = 1;
     int m_reconnectDelayMs = 1000;
     bool m_handshaked = false;
+    bool m_usenetEnginePaused = false;
     bool m_autoReconnect = false;
     int64_t m_lastKadId     = 0;
     int64_t m_lastServerId  = 0;

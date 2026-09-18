@@ -7,7 +7,6 @@
 #include "client/ClientStateDefs.h"
 #include "prefs/Preferences.h"
 #include "utils/PriorityText.h"
-#include "utils/RatingIcons.h"
 #include "utils/StringUtils.h"
 
 #include <QColor>
@@ -39,25 +38,10 @@ QString sessionWithTotal(int64_t session, int64_t total)
     return QStringLiteral("%1 (%2)").arg(formatByteSize(session), formatByteSize(total));
 }
 
-/// Format a duration in milliseconds as HH:MM:SS.
-QString formatDuration(int64_t ms)
+/// Elapsed milliseconds as MFC CastSecondsToHM shows them.
+QString hmCell(int64_t ms)
 {
-    if (ms <= 0)
-        return {};
-    const int64_t totalSecs = ms / 1000;
-    const int h = static_cast<int>(totalSecs / 3600);
-    const int m = static_cast<int>((totalSecs % 3600) / 60);
-    const int s = static_cast<int>(totalSecs % 60);
-    return QStringLiteral("%1:%2:%3")
-        .arg(h, 2, 10, QLatin1Char('0'))
-        .arg(m, 2, 10, QLatin1Char('0'))
-        .arg(s, 2, 10, QLatin1Char('0'));
-}
-
-/// Format wait time (elapsed ms from daemon) as HH:MM:SS.
-QString formatWaitTime(int64_t ms)
-{
-    return formatDuration(ms);
+    return formatSecondsHM(ms / 1000);
 }
 
 /// SourceFrom enum to display string.
@@ -203,6 +187,9 @@ QVariant ClientListModel::data(const QModelIndex& index, int role) const
     if (role == Qt::UserRole)
         return sortData(c, index.column());
 
+    if (role == UpStatusRole)
+        return QVariant::fromValue(c.upStatus);
+
     if (role == Qt::DecorationRole && index.column() == 0)
         return clientSoftwareIcon(c.softwareId, c.hasCredit, c.isFriend);
 
@@ -243,10 +230,12 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
                      ? QStringLiteral("%1 (%2)").arg(sizeCell(c.sessionUp),
                                                      sizeCell(c.queueSessionPayloadUp))
                      : sizeCell(c.sessionUp);
-        case 4: return formatWaitTime(c.waitStartTime);
-        case 5: return c.uploadStartDelay > 0 ? formatDuration(c.uploadStartDelay) : QString{};
+        // MFC UploadListCtrl.cpp:205-213
+        case 4: return c.hasLowID ? QStringLiteral("%1 (%2)").arg(hmCell(c.waitStartTime), tr("Low ID"))
+                                  : hmCell(c.waitStartTime);
+        case 5: return hmCell(c.uploadStartDelay);
         case 6: return c.uploadState;
-        case 7: return c.upPartCount > 0 ? QString::number(c.upPartCount) : QString{};
+        case 7: return {};   // UploadStatusDelegate draws the bar
         default: return {};
         }
 
@@ -266,17 +255,24 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
 
     case ClientListMode::OnQueue:
         // MFC: User Name, File, File Priority, Rating, Score, Asked, Last Seen, Entered Queue, Banned, Obtained Parts
+        // (QueueListCtrl.cpp:185-260)
         switch (column) {
         case 0: return c.userName;
         case 1: return c.fileName;
-        case 2: return c.filePriority >= 0 ? uploadPriorityText(c.filePriority, c.isAutoPriority) : QString{};
-        case 3: return c.fileRating > 0 ? ratingText(c.fileRating) : QString{};
-        case 4: return c.remoteQueueRank > 0 ? QString::number(c.remoteQueueRank) : QString{};
-        case 5: return c.askedCount > 0 ? QString::number(c.askedCount) : QString{};
-        case 6: return formatWaitTime(c.waitStartTime);
-        case 7: return formatWaitTime(c.waitStartTime); // Entered Queue
-        case 8: return c.isBanned ? QObject::tr("Yes") : QString{};
-        case 9: return c.partCount > 0 ? QString::number(c.partCount) : QString{};
+        case 2: return c.uploadFilePriority >= 0
+                     ? uploadPriorityText(c.uploadFilePriority, c.uploadFileAutoPriority) : QString{};
+        case 3: return QString::number(c.queueRating);
+        case 4:
+            if (!c.hasLowID)
+                return QString::number(c.queueScore);
+            return c.addNextConnect
+                ? QStringLiteral("%1 ****").arg(c.queueScore)
+                : QStringLiteral("%1 (%2)").arg(QString::number(c.queueScore), tr("Low ID"));
+        case 5: return QString::number(c.askedCount);
+        case 6: return hmCell(c.lastUpRequestDelay);
+        case 7: return hmCell(c.waitStartTime);
+        case 8: return c.isBanned ? tr("Yes") : tr("No");
+        case 9: return {};   // UploadStatusDelegate draws the bar
         default: return {};
         }
 
@@ -331,14 +327,16 @@ QVariant ClientListModel::sortData(const ClientRow& c, int column) const
         switch (column) {
         case 0: return c.userName;
         case 1: return c.fileName;
-        case 2: return c.filePriority;
-        case 3: return static_cast<int>(c.fileRating);
-        case 4: return c.remoteQueueRank;
+        // MFC SortProc (QueueListCtrl.cpp:340-367): Very Low (4) ranks below Low; the two
+        // times sort by timestamp, i.e. the longest ago first.
+        case 2: return c.uploadFilePriority < 0 ? -2 : (c.uploadFilePriority == 4 ? -1 : c.uploadFilePriority);
+        case 3: return QVariant::fromValue(c.queueRating);
+        case 4: return QVariant::fromValue(c.queueScore);
         case 5: return QVariant::fromValue(c.askedCount);
-        case 6: return QVariant::fromValue(c.waitStartTime);
-        case 7: return QVariant::fromValue(c.waitStartTime);
+        case 6: return QVariant::fromValue(-c.lastUpRequestDelay);
+        case 7: return QVariant::fromValue(-c.waitStartTime);
         case 8: return c.isBanned ? 1 : 0;
-        case 9: return c.partCount;
+        case 9: return c.upPartCount;
         default: return {};
         }
 

@@ -3,6 +3,7 @@
 /// @brief Per-part availability bar delegate matching MFC eMule DrawShareStatusBar().
 
 #include "controls/SharedPartsDelegate.h"
+#include "controls/PartBarPainter.h"
 #include "controls/SharedFilesModel.h"
 
 #include <QPainter>
@@ -62,20 +63,7 @@ void SharedPartsDelegate::paint(QPainter* painter, const QStyleOptionViewItem& o
         // No availability data — solid dark grey bar
         painter->fillRect(barRect, QColor(104, 104, 104));
     } else {
-        const int partCount = static_cast<int>(partMap.size());
-        const double partWidth = static_cast<double>(barRect.width()) / partCount;
-
-        for (int i = 0; i < partCount; ++i) {
-            const auto status = static_cast<uint8_t>(partMap[i]);
-            const QColor color = sharePartColor(status);
-
-            const int x0 = barRect.left() + static_cast<int>(i * partWidth);
-            int x1 = barRect.left() + static_cast<int>((i + 1) * partWidth);
-            if (i == partCount - 1)
-                x1 = barRect.right() + 1;
-
-            painter->fillRect(x0, barRect.top(), x1 - x0, barRect.height(), color);
-        }
+        paintPartBar(*painter, barRect, partMap, sharePartColor);
     }
 
     painter->restore();

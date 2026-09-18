@@ -447,12 +447,15 @@ int main(int argc, char* argv[])
             // GetPreferences response inside the dialog arrives.
             eMule::Ipc::IpcMessage reqPrefs(eMule::Ipc::IpcMsgType::GetPreferences);
             ipcClient.sendRequest(std::move(reqPrefs),
-                                  [&mainWindow](const eMule::Ipc::IpcMessage& resp) {
+                                  [&mainWindow, &ipcClient](const eMule::Ipc::IpcMessage& resp) {
                 // A failed reply (the connection dropped first) has no map, and
                 // applying one would zero every daemon-owned setting.
                 if (!resp.fieldBool(0))
                     return;
                 eMule::thePrefs.updateFromCbor(resp.fieldMap(1));
+                // Pushes only report changes, so the starting value comes from here.
+                ipcClient.setUsenetEnginePaused(
+                    resp.fieldMap(1).value(QStringLiteral("usenetPaused")).toBool());
                 // logToDiskGui is stored by the daemon (it owns preferences.yml)
                 // but acted on here, so the sink follows the value that just landed.
                 eMule::LogWidget::applyLogFileSettings();

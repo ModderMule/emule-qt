@@ -39,11 +39,19 @@ TRANSLATIONS_DIR="$PROJECT_DIR/lang"
 # "not what it claims" sentence, the KB/MB unit labels), and scanning all of
 # src/core to reach them would drag in every daemon-side log line. Named
 # individually on purpose — lupdate takes files as happily as directories.
+#
+# The web server's own strings and the template's {{…}} markers are scanned too:
+# WebTemplateStrings.h is generated from the template by extract_web_strings.py,
+# which do_extract/do_add run first. WebServer.h is listed so lupdate sees the
+# class declaration and files tr() under eMule::WebServer.
 SOURCE_DIRS=(
     "$PROJECT_DIR/src/gui"
     "$PROJECT_DIR/src/core/utils/OtherFunctions.cpp"
     "$PROJECT_DIR/src/core/utils/StringUtils.cpp"
     "$PROJECT_DIR/src/core/media/ContainerSniffer.cpp"
+    "$PROJECT_DIR/src/core/webserver/WebServer.h"
+    "$PROJECT_DIR/src/core/webserver/WebServer.cpp"
+    "$PROJECT_DIR/src/core/webserver/WebTemplateStrings.h"
 )
 
 # Base name for .ts/.qm files
@@ -162,6 +170,7 @@ existing_ts_files() {
 
 do_extract() {
     echo "=== Extracting translatable strings ==="
+    python3 "$SCRIPT_DIR/extract_web_strings.py"
     echo "  lupdate: $LUPDATE"
     echo "  Sources: ${SOURCE_DIRS[*]}"
 
@@ -182,6 +191,9 @@ do_extract() {
 
     lupdate_args+=("-extensions" "cpp,h,ui,qml")
     lupdate_args+=("-locations" "relative")
+    # Resolves core includes like "webserver/WebServer.h", without which lupdate
+    # files WebServer.cpp's tr() under "WebServer" instead of "eMule::WebServer".
+    lupdate_args+=("-I" "$PROJECT_DIR/src/core")
 
     if [ "$NO_OBSOLETE" = true ]; then
         lupdate_args+=("-no-obsolete")
@@ -233,6 +245,8 @@ do_add() {
 
     mkdir -p "$TRANSLATIONS_DIR"
 
+    python3 "$SCRIPT_DIR/extract_web_strings.py"
+
     for lang in "${LANGUAGES[@]}"; do
         local ts="$TRANSLATIONS_DIR/${TS_BASENAME}_${lang}.ts"
         if [ -f "$ts" ]; then
@@ -246,6 +260,7 @@ do_add() {
             done
             lupdate_args+=("-extensions" "cpp,h,ui,qml")
             lupdate_args+=("-locations" "relative")
+            lupdate_args+=("-I" "$PROJECT_DIR/src/core")
             lupdate_args+=("-ts" "$ts")
             "$LUPDATE" "${lupdate_args[@]}" 2>&1 | grep -v "^Scanning" || true
             local count

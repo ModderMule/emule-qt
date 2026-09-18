@@ -19,6 +19,7 @@
 
 class QCheckBox;
 class QComboBox;
+class QHBoxLayout;
 class QLineEdit;
 class QPlainTextEdit;
 class QPushButton;
@@ -87,6 +88,10 @@ protected:
     /// IPC and wait, and without this a second click queues everything twice.
     void setBusy(bool busy);
 
+    /// A button left of Accept/Cancel, for an action that is not an answer — the
+    /// place QDialogButtonBox gives an ActionRole button.
+    QPushButton* addActionButton(const QString& text);
+
     /// Called when the accept button is pressed. The subclass decides whether
     /// and when to accept() — neither of these dialogs can close synchronously,
     /// because both are waiting on the daemon.
@@ -101,6 +106,7 @@ private:
     QComboBox* m_priority = nullptr;
     QCheckBox* m_paused = nullptr;
     QPushButton* m_acceptBtn = nullptr;
+    QHBoxLayout* m_buttonRow = nullptr;
     QString m_acceptText;
     bool m_readOnlyText = false;
 };

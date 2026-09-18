@@ -24,7 +24,7 @@ class TrayMenuManager : public QMenu {
 public:
     explicit TrayMenuManager(QWidget* parent = nullptr);
 
-    void setIpcClient(IpcClient* ipc) { m_ipc = ipc; }
+    void setIpcClient(IpcClient* ipc);
 
     /// Refresh slider ranges/values and connect action state.
     void updateState(bool ed2kConnected, bool kadRunning, bool ipcConnected);
@@ -45,6 +45,7 @@ private:
 
     QAction* m_connectAction = nullptr;
     QAction* m_disconnectAction = nullptr;
+    QAction* m_usenetPauseAction = nullptr;
     QSlider* m_upSlider = nullptr;
     QSpinBox* m_upSpin = nullptr;
     QSlider* m_downSlider = nullptr;

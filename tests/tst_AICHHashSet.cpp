@@ -5,6 +5,7 @@
 #include "crypto/AICHHashSet.h"
 #include "crypto/AICHHashTree.h"
 #include "crypto/SHAHash.h"
+#include "client/UpDownClient.h"
 #include "files/KnownFile.h"
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
@@ -37,6 +38,10 @@ private slots:
     // saveHashSet / loadHashSet roundtrip
     void saveLoadHashSet_roundtrip();
     void saveHashSet_duplicate_succeeds();
+
+    // Pending recovery requests
+    void requestTracking_detailsAndPendingGuard();
+    void requestFailed_forgetsTheRequestAndTheReportedHash();
 
     // addStoredAICHHash / static configuration
     void addStoredAICHHash_newEntry();
@@ -717,6 +722,66 @@ void tst_AICHHashSet::untrustedHash_sameIP_differentHash_ignored()
     // hash2=12, total=13, 12/13=92.3% ≥ 92% AND 12 ≥ 10 → Trusted!
     QCOMPARE(hs.getStatus(), EAICHStatus::Trusted);
     QCOMPARE(hs.getMasterHash(), hash2);
+}
+
+// ---------------------------------------------------------------------------
+// Pending recovery requests — MFC SHAHashSet.cpp:1001-1050
+// ---------------------------------------------------------------------------
+
+// The list answers two questions: what did we ask this client for, and is this part
+// already on its way from somebody? The second is what stops the same part being
+// requested from several peers at once (MFC PartFile.cpp:5186). The file pointers are
+// never dereferenced on this path, so sentinels are enough.
+void tst_AICHHashSet::requestTracking_detailsAndPendingGuard()
+{
+    UpDownClient a;
+    UpDownClient b;
+    auto* fileA = reinterpret_cast<PartFile*>(0x1000);
+    auto* fileB = reinterpret_cast<PartFile*>(0x2000);
+
+    QVERIFY(!AICHRecoveryHashSet::isClientRequestPending(fileA, 7));
+    QCOMPARE(AICHRecoveryHashSet::aichReqDetails(&a).client, nullptr);
+
+    AICHRecoveryHashSet::addClientAICHRequest({ 7, fileA, &a });
+    AICHRecoveryHashSet::addClientAICHRequest({ 3, fileB, &b });
+
+    QVERIFY(AICHRecoveryHashSet::isClientRequestPending(fileA, 7));
+    QVERIFY(!AICHRecoveryHashSet::isClientRequestPending(fileA, 3));   // right part, wrong file
+    QVERIFY(!AICHRecoveryHashSet::isClientRequestPending(fileB, 7));
+
+    const auto details = AICHRecoveryHashSet::aichReqDetails(&a);
+    QCOMPARE(details.client, &a);
+    QCOMPARE(details.file, fileA);
+    QCOMPARE(details.part, uint16(7));
+
+    AICHRecoveryHashSet::removeClientAICHRequest(&a);
+    QVERIFY(!AICHRecoveryHashSet::isClientRequestPending(fileA, 7));
+    QVERIFY(AICHRecoveryHashSet::isClientRequestPending(fileB, 3));
+
+    AICHRecoveryHashSet::removeClientAICHRequest(&b);
+}
+
+// A client that failed us must also lose the root hash it reported: requestAICHRecovery()
+// draws only among sources whose reported hash matches ours, so leaving it would let the
+// next draw land on the same peer again. MFC SetReqFileAICHHash(NULL), SHAHashSet.cpp:1003.
+void tst_AICHHashSet::requestFailed_forgetsTheRequestAndTheReportedHash()
+{
+    UpDownClient client;
+    auto* file = reinterpret_cast<PartFile*>(0x3000);
+
+    uint8 raw[kAICHHashSize];
+    std::memset(raw, 0x4D, sizeof(raw));
+    client.setReqFileAICHHash(AICHHash(raw));
+    QVERIFY(client.reqFileAICHHash() != nullptr);
+
+    AICHRecoveryHashSet::addClientAICHRequest({ 2, file, &client });
+
+    // theApp.downloadQueue is null here, so the re-ask stops after the bookkeeping —
+    // which is the part under test.
+    AICHRecoveryHashSet::clientAICHRequestFailed(&client);
+
+    QVERIFY(!AICHRecoveryHashSet::isClientRequestPending(file, 2));
+    QCOMPARE(client.reqFileAICHHash(), nullptr);
 }
 
 QTEST_MAIN(tst_AICHHashSet)

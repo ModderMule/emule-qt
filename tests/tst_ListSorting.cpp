@@ -15,19 +15,24 @@
 
 #include "controls/ClientListModel.h"
 #include "controls/DownloadListModel.h"
+#include "controls/KadContactsModel.h"
 #include "controls/KnownTypeStyle.h"
 #include "controls/SearchResultsModel.h"
 #include "controls/ServerListModel.h"
 #include "controls/SortableItems.h"
+#include "controls/UploadStatusDelegate.h"
 #include "controls/UsenetQueueModel.h"
 #include "prefs/Preferences.h"
 #include "utils/ColorUtils.h"
+#include "utils/Opcodes.h"
 #include "utils/PriorityText.h"
 
 #include <QCborArray>
 #include <QCborMap>
 #include <QDateTime>
 #include <QGuiApplication>
+#include <QImage>
+#include <QPainter>
 #include <QSortFilterProxyModel>
 #include <QStandardItemModel>
 #include <QTest>
@@ -107,6 +112,9 @@ private slots:
     void completeSourcesShowPercentOrUnknown();
     void uploadPriorityLabelsMatchMfc();
     void serverCountsHideZeroAndCompact();
+    void onQueueColumnsFollowMfc();
+    void uploadStatusBarFollowsMfc();
+    void kadContactImageFollowsMfc();
 };
 
 // ---------------------------------------------------------------------------
@@ -754,6 +762,112 @@ void tst_ListSorting::serverCountsHideZeroAndCompact()
     QSortFilterProxyModel proxy;
     sortThrough(proxy, &model, ServerListModel::ColFiles, Qt::DescendingOrder);
     QCOMPARE(proxy.index(0, ServerListModel::ColName).data().toString(), QStringLiteral("mid"));
+}
+
+void tst_ListSorting::onQueueColumnsFollowMfc()
+{
+    // MFC QueueListCtrl.cpp:185-260. Score showed the remote queue rank, Last Seen repeated
+    // Entered Queue, and File Priority read the requested download's priority.
+    ClientListModel model(ClientListMode::OnQueue);
+    std::vector<ClientRow> rows(3);
+    rows[0].userName = QStringLiteral("high");
+    rows[0].queueRating = 100;
+    rows[0].queueScore = 9;
+    rows[0].lastUpRequestDelay = 65'000;
+    rows[0].waitStartTime = 3'700'000;
+    rows[0].uploadFilePriority = 3;
+    rows[1].userName = QStringLiteral("low");
+    rows[1].queueScore = 10;                 // "10" sorts before "9" as text
+    rows[1].hasLowID = true;
+    rows[2].userName = QStringLiteral("next");
+    rows[2].queueScore = 5;
+    rows[2].hasLowID = true;
+    rows[2].addNextConnect = true;
+    rows[2].isBanned = true;
+    model.setClients(std::move(rows));
+
+    const auto text = [&](int row, int column) { return model.index(row, column).data().toString(); };
+    QCOMPARE(text(0, 2), QStringLiteral("Release"));
+    QCOMPARE(text(0, 3), QStringLiteral("100"));
+    QCOMPARE(text(0, 4), QStringLiteral("9"));
+    QCOMPARE(text(1, 4), QStringLiteral("10 (Low ID)"));
+    QCOMPARE(text(2, 4), QStringLiteral("5 ****"));
+    QCOMPARE(text(0, 5), QStringLiteral("0"));
+    QCOMPARE(text(0, 6), QStringLiteral("1:05 mins"));
+    QCOMPARE(text(0, 7), QStringLiteral("1:01 h"));
+    QCOMPARE(text(0, 8), QStringLiteral("No"));
+    QCOMPARE(text(2, 8), QStringLiteral("Yes"));
+    QCOMPARE(text(0, 9), QString());
+
+    QSortFilterProxyModel proxy;
+    sortThrough(proxy, &model, 4, Qt::AscendingOrder);
+    QCOMPARE(proxy.index(0, 0).data().toString(), QStringLiteral("next"));
+    QCOMPARE(proxy.index(1, 0).data().toString(), QStringLiteral("high"));
+    QCOMPARE(proxy.index(2, 0).data().toString(), QStringLiteral("low"));
+
+    // The Uploading list shares the time format (UploadListCtrl.cpp:205-213)
+    ClientListModel uploads(ClientListMode::Uploading);
+    std::vector<ClientRow> slot(1);
+    slot[0].waitStartTime = 125'000;
+    slot[0].uploadStartDelay = 30'000;
+    slot[0].hasLowID = true;
+    uploads.setClients(std::move(slot));
+    QCOMPARE(uploads.index(0, 4).data().toString(), QStringLiteral("2:05 mins (Low ID)"));
+    QCOMPARE(uploads.index(0, 5).data().toString(), QStringLiteral("30 secs"));
+}
+
+void tst_ListSorting::uploadStatusBarFollowsMfc()
+{
+    // MFC CUpDownClient::DrawUpStatusBar: had parts black, the next part yellow, sent bytes
+    // green, the rest light grey — and a paler set for a slot past the active count.
+    UpStatusBar bar;
+    bar.fileSize = 3 * static_cast<int64_t>(PARTSIZE);
+    bar.parts = QByteArray("\x01\x00\x00", 3);
+    bar.nextParts = {1};
+    const auto part = static_cast<int64_t>(PARTSIZE);
+    bar.sentRanges = {{2 * part, 2 * part + part / 2 - 1}};
+
+    const auto render = [](const UpStatusBar& b) {
+        QImage image(300, 10, QImage::Format_RGB32);
+        image.fill(Qt::white);
+        QPainter painter(&image);
+        paintUpStatusBar(painter, image.rect(), b);
+        return image;
+    };
+
+    QImage image = render(bar);
+    QCOMPARE(image.pixelColor(50, 5), QColor(0, 0, 0));
+    QCOMPARE(image.pixelColor(150, 5), QColor(255, 208, 0));
+    QCOMPARE(image.pixelColor(220, 5), QColor(0, 150, 0));
+    QCOMPARE(image.pixelColor(290, 5), QColor(224, 224, 224));
+
+    bar.greyed = true;
+    image = render(bar);
+    QCOMPARE(image.pixelColor(50, 5), QColor(191, 191, 191));
+    QCOMPARE(image.pixelColor(290, 5), QColor(248, 248, 248));
+
+    // Nothing to draw without a size
+    image = render(UpStatusBar{});
+    QCOMPARE(image.pixelColor(50, 5), QColor(Qt::white));
+}
+
+void tst_ListSorting::kadContactImageFollowsMfc()
+{
+    // MFC KadContactListCtrl.cpp:117-124: an active contact that isn't IP-verified, or a
+    // bootstrap one, shows SrcUnknown (5).
+    KadContactRow c;
+    c.type = 1;
+    QCOMPARE(KadContactsModel::contactImage(c), 5);
+    c.ipVerified = true;
+    QCOMPARE(KadContactsModel::contactImage(c), 1);
+    c.bootstrap = true;
+    QCOMPARE(KadContactsModel::contactImage(c), 5);
+
+    KadContactRow old;
+    old.type = 3;
+    QCOMPARE(KadContactsModel::contactImage(old), 3);
+    old.type = 7;
+    QCOMPARE(KadContactsModel::contactImage(old), 4);
 }
 
 QTEST_MAIN(tst_ListSorting)

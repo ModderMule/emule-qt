@@ -15,7 +15,8 @@ restores obfuscated filenames, unpacks the archives — as their volumes land,
 not after — and offers the payload, and only the payload, to the ED2K network. It has a queue with persistence, a
 Usenet tab in the GUI, a share of the global download budget, and streaming
 preview — of a raw-posted release, and of the file inside a stored RAR set, with
-a seek anywhere in it. Keyword search is
+a seek anywhere in it. The web interface has a Usenet page and the REST API a
+`/api/v1/usenet` resource — see § Web interface and REST API. Keyword search is
 phase 5: it lives in the shared `eMule::Indexer` module rather than here, because
 newznab and torznab are one protocol — see `docs/indexer-module.md`.
 
@@ -50,6 +51,10 @@ src/usenet/
 GUI side (linking `eMule::Core` + `eMule::Ipc` only, never `eMule::Usenet`):
 `src/gui/panels/UsenetPanel.{h,cpp}` and
 `src/gui/controls/UsenetQueueModel.{h,cpp}`.
+
+Web side: `src/core/webserver/UsenetWebBackend.h` (the interface core may see),
+`src/daemon/DaemonUsenetWebBackend.{h,cpp}` (its implementation) and
+`src/daemon/UsenetBridge.{h,cpp}` (what IPC, the page and the REST API share).
 
 ## Sockets
 
@@ -101,7 +106,9 @@ errors against each, spent every article's transport retries, failed items on
 required accounts and booked articles **missing** on optional ones. Now the worker
 blocks no server, statistics blame nobody, and the queue parks for the retry
 interval with "waiting for the proxy" on each item — the same shape as the disk
-floor — until an article comes through or a settings save lifts it.
+floor — until an article comes through or a settings save lifts it. The floor
+outranks it while both hold (see the wait-reason order below); lifting the park
+hands a Checking item back to "checking availability" rather than to silence.
 
 ## Transport and commands are separate, on purpose
 
@@ -415,6 +422,59 @@ The download queue is a **standalone Usenet tab**. Merging it into the shared
 transfer list is a separate refactor for after every phase is built and tested —
 nothing in phases 0–6 is shaped around that merge. The tab accepts dropped .nzb
 files, as does the main window, which switches to it.
+
+### Segment bars, file status and picking files
+
+The Progress column is a **segment map**, drawn by `UsenetProgressDelegate` in
+MFC's bar style through `PartBarPainter.h`. The eD2K download and shared-files
+delegates now use the same painter, so the three cannot drift apart.
+
+| colour | means |
+|---|---|
+| dark grey | articles in |
+| blue | still to fetch |
+| amber | in flight right now |
+| red | missing on every server |
+| light grey | a skipped file, or a recovery volume nobody asked for |
+| solid green | a finished file or release |
+
+The top 3 px strip shows percent. During post-processing it shows the stage's
+own percent. Paused and failed releases use the muted palette.
+
+**What the daemon sends, and what the GUI builds.**
+
+- Each file row in `itemToCbor()` carries a `state` (`UsenetFileWireState`:
+  Queued, Partial, Complete, Missing, Skipped, Held) and, **only when the file is
+  not uniform**, a `segmentMap`.
+- The map is one byte per bucket, at most 128. A bucket shows the worst article
+  in it: missing, then in flight, then queued, then done.
+- A finished or untouched file sends no map at all, so a 250 ms push carries
+  bytes only for the few files actually arriving.
+- The release bar is built GUI-side (`usenetItemBar()`): the files are laid end
+  to end by size, and held recovery volumes are left out. A tenth of the release
+  that mostly never downloads would otherwise read as a permanent blue tail.
+- The Status column carries an icon per file, from the existing artwork:
+  `Download.ico` downloading, `ClientsOnQueue.ico` queued, `Cancel.ico` articles
+  missing, `Pause.ico` skipped.
+
+**Picking files inside an NZB (#4).**
+
+- Every non-PAR2 file row has a checkbox, both in the queue tree and in Release
+  Details.
+- Release Details adds Select All / Select None / Invert Selection, through the
+  shared `UsenetFileCheckList`. The queue's context menu offers Skip / Download
+  Selected Files.
+- A click only *asks* (`SetUsenetFilesSkipped`). The row follows the next push,
+  so a refusal cannot leave a box lying.
+- Add NZB gains **Choose Files…** (`NzbFileChooserDialog`), which has the daemon
+  parse each picked file (`InspectNzb`, since the GUI never links the NZB
+  parser). The unchecked indices ride on `AddNzb` field 8.
+- Drops, URL adds, the watch folder and indexer grabs still add everything.
+
+**Pause All** on the Usenet toolbar, **Pause Usenet** in the tray and the web
+page's toggle all send one request (`SetUsenetPaused`). All three follow
+`PushUsenetEngineState`, seeded on connect from `usenetPaused` in
+`GetPreferences`. See "Pausing the whole engine".
 
 ## yEnc
 
@@ -752,7 +812,7 @@ header.
 | `tst_UsenetSubjectPatterns` | the heuristics once they became data. A 16-row corpus run against a **frozen verbatim copy** of the hand-written parser this replaced *and* against golden columns — including the quoted-whitespace quirk, preserved rather than fixed, and the length cap, which is the one intentional divergence. Policy: a pattern that will not compile skipped rather than fatal, a role whose rules are all typos falling back to the built-ins while one whose rules are all *disabled* does not, positional groups refused, a counter rule missing `total` refused so a part never arrives without one, a pattern matching the empty string refused, **configuring one role leaving the others on their built-ins**, first-match-wins within a role, `pick: last` keeping a year out of the counter, an absurdly long subject yielding nothing rather than hanging, and the same rule set handed out until the preference changes |
 | `tst_UsenetNzbParse` | schema, namespaces, HTML error pages, subject heuristics; and the NZB's own shortfall — a short segment run reported with its bytes priced at *that file's* mean, an obfuscated post with no part counter **not** called incomplete, and the par2 index file kept out of the recovery total it carries no recovery data for |
 | `tst_UsenetArticleFetch` | a multi-part file assembled **out of order**, byte-identical |
-| `tst_UsenetQueue` | the ladder: every account on a level asked before escalating (a sibling used to be skipped on the first 430); an article older than an account's retention skipped while another can serve it, and **fetched anyway when none can** — the fail-safe; a dead *optional* account costing one article rather than the download, and the same account not optional still failing it; an NZB naming itself through `<meta type="name">` when the caller supplies no name. Allowances: raw wire bytes booked against the account that served them and against one that only answered 430; an account over its allowance skipped while a sibling serves, and **never asked**; a spent allowance parking the download rather than failing it or declaring an article missing, and resuming when the limit is raised; a dead *optional* account unable to strand an article the allowance is hiding; and a spent rung parking rather than spending the next one until asked; the 90% warning said once rather than four times a second. Health: STAT issued **before** any BODY; sampling asking exactly one article per file; an article the second server holds **not** counted unavailable — the ladder-blind version pauses four releases that download perfectly; a probe whose answer is wrong changing nothing at all (`missingSegments == 0`, payload byte-identical) — the fail-safe twin of the retention case; a short release added *paused* and downloading in full on resume; a checking item not counted as a live download; and no verdict at all when there is nothing to ask. Duplicates: the same NZB refused under a different name, a manual re-add of a completed release allowed and an automatic one skipped, a repost with fresh message-ids **not** a duplicate, the guard surviving a restart, and the refusal sentence carrying no em dash; `addNzb()` reporting Added / Duplicate / Invalid, and an automatic add queued *paused* when the user asked for that while a manual one is not. Categories: a release completing into its category's folder **and not into the global incoming dir**; a category whose folder was deleted mid-download landing in the global one rather than being stranded, and keeping its label; an index the list no longer holds resolving to "All" rather than reaching past the end; the category surviving a restart through the sidecar, and a sidecar with no `category:` key at all reading as "All"; a deleted category renumbering the live queue **and the sidecars of a queue that is not running** — the case ED2K has no analogue for; and an automatic add still auto-categorised while one the caller categorised is never second-guessed. Proxy: a dead proxy parking the queue with the reason on the item, **no article missing, no connection error charged, no `BODY` issued**, and a settings save that turns it off letting the release straight through |
+| `tst_UsenetQueue` | the ladder: every account on a level asked before escalating (a sibling used to be skipped on the first 430); an article older than an account's retention skipped while another can serve it, and **fetched anyway when none can** — the fail-safe; a dead *optional* account costing one article rather than the download, and the same account not optional still failing it; an NZB naming itself through `<meta type="name">` when the caller supplies no name. Allowances: raw wire bytes booked against the account that served them and against one that only answered 430; an account over its allowance skipped while a sibling serves, and **never asked**; a spent allowance parking the download rather than failing it or declaring an article missing, and resuming when the limit is raised; a dead *optional* account unable to strand an article the allowance is hiding; and a spent rung parking rather than spending the next one until asked; the 90% warning said once rather than four times a second. Health: STAT issued **before** any BODY; sampling asking exactly one article per file; an article the second server holds **not** counted unavailable — the ladder-blind version pauses four releases that download perfectly; a probe whose answer is wrong changing nothing at all (`missingSegments == 0`, payload byte-identical) — the fail-safe twin of the retention case; a short release added *paused* and downloading in full on resume; a checking item not counted as a live download; and no verdict at all when there is nothing to ask. Duplicates: the same NZB refused under a different name, a manual re-add of a completed release allowed and an automatic one skipped, a repost with fresh message-ids **not** a duplicate, the guard surviving a restart, and the refusal sentence carrying no em dash; `addNzb()` reporting Added / Duplicate / Invalid, and an automatic add queued *paused* when the user asked for that while a manual one is not. Categories: a release completing into its category's folder **and not into the global incoming dir**; a category whose folder was deleted mid-download landing in the global one rather than being stranded, and keeping its label; an index the list no longer holds resolving to "All" rather than reaching past the end; the category surviving a restart through the sidecar, and a sidecar with no `category:` key at all reading as "All"; a deleted category renumbering the live queue **and the sidecars of a queue that is not running** — the case ED2K has no analogue for; and an automatic add still auto-categorised while one the caller categorised is never second-guessed. Proxy: a dead proxy parking the queue with the reason on the item, **no article missing, no connection error charged, no `BODY` issued**, and a settings save that turns it off letting the release straight through; the disk floor **outranking** a proxy the round never reaches, and the proxy wait coming back when space does; a recovered proxy handing a Checking item back to "checking availability" rather than to silence |
 | `tst_UsenetWatchFolder` | intake: a file still being written left alone until its size and mtime hold still — the regression files it into `_failed/`, which looks exactly like a corrupt download; a queued .nzb moved to `_processed/` and an unreadable one to `_failed/`; a **duplicate** treated as processed rather than failed; files already present when the daemon started picked up, since no watcher event ever fires for those; and the two output folders never rescanned — otherwise the scanner re-queues its own output forever |
 | `tst_NzbDrop` | what a drop is: .nzb files and http(s) links whose *path* ends .nzb, several at once, and an indexer link with a query string after it — against `.emulecollection`, `server.met`, an `ed2k:` link, an ftp URL and a plain-text drag, all of which must fall through untouched |
 | `tst_PendingOpenQueue` | what waits for the daemon on a cold start: that the kind survives the wait (a path replayed as a link reaches the eD2K importer and is lost), that a re-entrant release cannot replay anything twice, arrival order, and the cap |
@@ -761,7 +821,7 @@ header.
 | `tst_UsenetNzbUrl` | the URL intake: `file:`, `qrc:`, `ftp:`, `data:`, hostless and relative links refused; a **private address accepted**, pinned so nobody blocks the self-hosted-indexer case; the display name stripped of `.nzb`/`.gz`, percent-decoded, and empty for API-style URLs; a plain and a gzipped `.nzb` fetched; a 404 reported as a *download* failure rather than a parse one; and no callback after its context dies |
 | `tst_UsenetPar2` | verify, repair, rename and the blocks-needed figure, against sets built in-process by `Par2::par2creator`. The file list: every name returned with **every source file deleted first**, `hash16k` equal to a `QCryptographicHash` digest of the first 16 KiB — the case that fails the moment anyone reaches for `MD5Hash::print()`, which emits `hash[15]` first — a short file hashing whole for both fields, and a truncated index answering rather than dereferencing the null `CreateSourceFileList()` leaves behind. The defect: a damaged obfuscated file costing **the 2 blocks it lost and not the 15 it has**, and a repair reporting the `.1` it moved aside — plus the second, unreported leftover, the obfuscated original par2 never touched. `Par2NameIndex`: length and opening bytes keyed *together*, two identical files in a set left unnamed, and a scratch file one byte short of the window not matched |
 | `tst_UsenetUnpack` | volume-set detection across all three naming schemes; path-traversal and reserved-name refusals; a multi-volume RAR set extracted through the whole list, and a set skipped because it was unpacked during the download |
-| `tst_UsenetPostPipeline` | a repair discarding what was unpacked while downloading, and corrupt volumes never reaching the published release; phase 4 end to end: a healthy release fetches **no** recovery volumes; a damaged one fetches them, repairs, unpacks and publishes the payload alone; an unrepairable one publishes nothing. Names: a fully obfuscated release — par2 built over the real names, the payload then renamed to hex and only then posted, so the subject *and* `=ybegin` are junk — carrying `par2FileName` and sealed under the real one, which is what separates this from the post-processing rename that would also end up with the right name on disk; the index `.par2` fetched **before** the payload and dragging no recovery volume with it; a release with no par2 scheduled exactly as before; a damaged obfuscated release buying **≤4 recovery blocks for 2 damaged ones** rather than 15; and `<name>.1` never published, with and without the cleanup preference. Without PAR2: an SFV mismatch failing the release (and the check off publishing it), a clean SFV publishing the payload but not itself, an unposted sample listed and still publishing. Held back: a program in a movie release, **a program in a software release published**, an archive whose only member is `movie.mkv.exe` **never extracted**; through the queue, a stopped release paused with its reason, **left alone by a bulk resume and a password**, keeping both across a restart, and published by the user's Resume. Unrepairable: six volumes with the first gone and two recovery blocks, stopped **before a single `BODY` for the second volume**, with rename off; Resume downloading it anyway and failing it **without buying the recovery volumes** that could never cover it |
+| `tst_UsenetPostPipeline` | a repair discarding what was unpacked while downloading, and corrupt volumes never reaching the published release; phase 4 end to end: a healthy release fetches **no** recovery volumes; a damaged one fetches them, repairs, unpacks and publishes the payload alone; an unrepairable one publishes nothing. Names: a fully obfuscated release — par2 built over the real names, the payload then renamed to hex and only then posted, so the subject *and* `=ybegin` are junk — carrying `par2FileName` and sealed under the real one, which is what separates this from the post-processing rename that would also end up with the right name on disk; the index `.par2` fetched **before** the payload and dragging no recovery volume with it; a release with no par2 scheduled exactly as before; a damaged obfuscated release buying **≤4 recovery blocks for 2 damaged ones** rather than 15; and `<name>.1` never published, with and without the cleanup preference. Without PAR2: an SFV mismatch failing the release (and the check off publishing it), a clean SFV publishing the payload but not itself, an unposted sample listed and still publishing. Held back: a program in a movie release, **a program in a software release published**, an archive whose only member is `movie.mkv.exe` **never extracted**; through the queue, a stopped release paused with its reason, **left alone by a bulk resume and a password**, keeping both across a restart, and published by the user's Resume. Unrepairable: six volumes with the first gone and two recovery blocks, stopped **before a single `BODY` for the second volume**, with rename off; Resume downloading it anyway and failing it **without buying the recovery volumes** that could never cover it. The cycle re-entering a queue that is waiting: paused mid-verify, both ways back into fetching — for recovery volumes and for a file the user skipped — say **why** instead of going blank, buy nothing while they wait, and finish when the pause lifts |
 | `tst_UsenetStream` | phase 6a: part-number dispatch order over a shuffled NZB, a failed article retried *before* later ones, interval merge and the hole that stops it, `written` surviving a restart, the previewable predicate. Phase 6b: a stored RAR set resolving to the file inside it and reading back byte-identically across volume boundaries; **a seek to 80% that never issues a `BODY` for the volumes it skipped** — the exit criterion, asserted; a compressed set saying why; a `.001` split set. Multi-file sets: every inner file enumerated with its ordinal, each mapping to its own bytes across a volume boundary, **a set whose first file is an `.nfo` streaming the movie with no `entry=` named**, and a listing on a paused item that neither fetches nor guesses. Preview from the extraction: a **solid stored** set — refused by the map, extractable by libarchive, which is the only fixture that separates the two sources — streamed out of `_unpacked/` with the archive's own declared size as the total, listed and marked playable, and a control case proving the same set is refused when nothing is extracting it |
 | `tst_RarReader` | phase 6b: RAR4 and RAR5 stored volumes — name, method, packed/unpacked sizes, data offset, split flags, `LHD_LARGE` sizes past 4 GB, RAR5 multi-byte vints; compressed read but not stored; solid and encrypted refused with a reason; every truncated prefix asking for more bytes rather than reading past the buffer; a volume carrying two file headers listing both; resuming mid-volume at a computed offset, and a resumed block at a wrong address caught by its header CRC |
 | `tst_UsenetPassword` | password-protected releases: a header-encrypted RAR failing rather than completing empty with its volumes deleted; a data-encrypted one naming the password; ZIP decrypting through libarchive and refusing a wrong passphrase; an encrypted 7z going through `ExternalUnpacker` and coming back byte-identical; a configured unpacker that is not a binary refusing rather than substituting; stored paths harvested out of a staging directory; an incomplete 7z set listing nothing; the biggest playable member chosen over the sample; the `{{password}}` name convention reaching the queue; manual beating the NZB where automatic does not; a failed release retrying — without re-downloading — the moment a password is set; and, end to end, a genuinely encrypted release posted as articles, downloaded, unpacked with its password and published byte-identically |
@@ -1004,8 +1064,16 @@ release that was fine, and PAR2 blocks bought to repair it.
   `kDiskCheckIntervalMs`, because an add dispatches immediately and the first
   release of a session would otherwise be fetched before anything looked at the
   volume. Below the floor it sets `m_diskBlocked`, writes a reason on every
-  active item and logs once; it unparks only at floor + `kDiskUnparkHeadroom`, or
+  waiting item and logs once; it unparks only at floor + `kDiskUnparkHeadroom`, or
   a resumed queue re-parks after one article.
+- ⚠️ **The edge is not the whole story.** The reason is written when the floor is
+  *crossed*, but items start waiting long after that — an add, a resume, a health
+  verdict, a retry, a repair cycle — and each of those used to clear the reason
+  and leave the row blank, or, with the probe on, leave it saying "checking
+  availability" for a check `dispatch()` was never going to reach. Every one of
+  those paths now calls `noteWaitReason()`, and the floor's own sweep skips a
+  quota-parked item: nothing caches the allowance sentence, so overwriting it
+  would silence that row until the next rollover.
 - **Two volumes, two checks.** Scratch and Incoming are knowingly on different
   filesystems — `stageForPublish()` renames and falls back to a copy when that
   crosses one — so `beginPostProcessing()` checks the incoming volume as well and
@@ -1674,6 +1742,89 @@ the block count out of a `.vol{start}+{count}.par2` name. Both spellings occur
 (par2cmdline writes `rel.vol0+1.par2`, QuickPar and MultiPar pad to
 `rel.vol000+01.par2`), so the digits are parsed and never matched.
 
+### A skipped file is fetched only when a repair needs it
+
+A skipped file (`UsenetFileState::skipped`) is out of `isPlanned()`, so everything
+that plans through it ignores it: the plan, completion, SFV expectations and the
+retry. A few paths needed their own guard:
+
+- **`dispatch()`**, because retries, aborts and preview promotion re-insert keys
+  without asking;
+- **sealing**, so an article that outlives the skip cannot publish the file;
+- **direct unpack**, both a set's start and its replay;
+- **the health probe**, and the item totals, so percent and remaining describe
+  what will arrive;
+- **the repair estimate.**
+
+A skip is widened to the **whole archive set**, because one volume short fails
+the unpack. PAR2 files cannot be skipped, and neither can every payload file at
+once (`expandSkipRequest()`).
+
+**When post-processing starts**, `discardSkippedFiles()` deletes each skipped
+file's scratch file and forgets its articles. It runs *after* the room check, so
+a disk wait deletes nothing. `checkItemCompletion()` first waits out any article
+of a skipped file still in flight, because `ArticleWriter` would otherwise
+recreate the file mid-verify.
+
+**What verify then sees.** A PAR2 set often covers the sample too, so verify
+reads the absent file as missing blocks.
+
+- `Par2Result::files` now reports, **per file**, whether par2 found it complete
+  (`GetCompleteFile()`) and whether it is on disk. These are whole-file facts,
+  never per-file block counts. par2 finds a block by its content in whichever
+  file holds it, so repeated data puts one file's blocks at another's offsets.
+  A block count would then name the wrong file, and could even read a damaged
+  file as short of nothing. `tst_UsenetPar2` found exactly that with patterned
+  test data.
+- **Only skipped files are short:** verify counts as clean. No repair runs and
+  no recovery volume is bought.
+- **Real damage as well, and short of blocks:** the result carries
+  `needsSkippedFiles`. The queue marks those files `neededForRepair`, fetches
+  them (cheaper than their blocks), and runs another round, bounded by
+  `kMaxPar2Rounds`. A damaged file posted under a name the set does not use
+  cannot be told from a skipped one, so an unexplained absent file brings every
+  skipped file back. That costs bytes, where guessing wrong would cost the
+  release.
+- **Either way, not published.** Once PAR2 is done, every name a skipped or
+  repair-only file can carry (`discardAfterVerify`) is deleted before unpack.
+  The one exception is a name a wanted file also carries.
+
+`tst_UsenetPostPipeline::aSkippedFileTheSetCoversNeedsNoRecoveryVolumes` and
+`realDamageFetchesTheSkippedFileTheRepairNeeds` pin both halves.
+
+### Pausing the whole engine
+
+`UsenetQueue::setEnginePaused()` is persisted as `usenet.paused`, and only
+`SetUsenetPaused` writes it: it is kept out of the `SetPreferences` chain on
+purpose, so an Options dialog left open cannot undo a pause. While paused:
+
+- `dispatch()` returns before probes and articles alike; articles already in
+  flight still land;
+- `checkItemCompletion()` starts no post-processing;
+- `hasActiveDownloads()` is false, so eD2K gets the whole line.
+
+**No item's status changes.** That is the difference from the "All" category's
+Pause, which pauses every release and whose Resume skips ones a check stopped.
+
+Every waiting item's `stalledReason` reads "all downloads paused", and that text
+**wins** over the quota, disk and proxy texts.
+
+One function owns that order. `noteWaitReason()` answers `dispatch()`'s own gates
+in `dispatch()`'s order — **pause → disk floor → proxy → a pending check → nothing**
+— since an item held at the first gate must not name a later one the round never
+reached, and a Checking item may not claim it is being checked while a gate ahead
+of the probes holds it. The floor before the proxy is `dispatch()`'s own order and
+not an arbitrary ranking: with the volume full the round returns at the floor and
+never looks at the proxy, so naming the proxy would send the user to fix something
+that would change nothing. `noteProxyStall()` and `refreshDiskState()` therefore
+both set their text and re-ask the helper, rather than stamping items themselves.
+Every path back into waiting calls it, which is what makes a reason reach an item
+that started waiting *after* the wait began. `restoreWaitReasons()` re-asks it at
+the resume, and `unparkQuotaStalls()` lets the next round re-park anything still
+over its allowance.
+
+This is the hook the scheduler's Usenet actions (#6) need.
+
 ### Four things about libpar2-turbo that are not in its headers
 
 The library is the **nzbgetcom fork** of par2cmdline-turbo, not animetosho's
@@ -2043,7 +2194,7 @@ Requests `720–799`, pushes `910–949`.
 |---|---|
 | `GetNewsServers = 720` / `SetNewsServers = 721` / `TestNewsServer = 722` | provider accounts; the password never travels to the GUI |
 | `GetUsenetQueue = 723` | the whole queue |
-| `AddNzb = 724` | `[bytes, name, automatic, force]` → `[ok, idOrError, outcome]`. The file's **contents**, not a path — the daemon may be on another machine |
+| `AddNzb = 724` | `[bytes, name, automatic, force, password, category, priority, paused, skippedFileIndices]` → `[ok, idOrError, outcome]`. Fields 4–8 are optional; a skip list naming a PAR2 file or every payload file refuses the add. The file's **contents**, not a path — the daemon may be on another machine |
 | `AddNzbUrl = 730` | `[url, automatic, force]` → `[ok, idOrError, outcome]`. **The daemon fetches.** A `.nzb` link is often reachable only from the daemon's own network — a self-hosted indexer on its LAN — and the bytes have to reach the queue regardless, so a GUI-side fetch is two hops. `http`/`https` only: `QNetworkAccessManager` also speaks `file:` and `qrc:`, and a client naming one of those would be asking the daemon to read its own disk. Private addresses are deliberately allowed — that is where self-hosted indexers live. One URL per request, so a dead link costs its own line and no reply waits out another URL's timeout. |
 | `SetNewsServerUsage = 731` | `[accountId, periodBytes, totalBytes]` → `[ok, error]`. -1 leaves a figure alone, so a reset is `[id, 0, -1]`. It exists because the meter is *measured*, not reported — a user who switches plans, corrects a billing day or tops up a block account has no other way to make it true. The counters themselves ride **read-only** on `GetNewsServers`, the way `hasPassword` does |
 | `SetUsenetItemPassword = 735` | `[itemId, password]` → `[ok, error]`. **Write-only** — the password never travels the other way, exactly as `GetNewsServers` reports only `hasPassword`; the item map carries `hasPassword` and `passwordRequired` instead. An empty string clears it, which is how a user takes back a wrong guess. Setting it on a *failed* item **retries** it: the whole release is already on disk, and asking the user to press Resume after they just answered the only question blocking it is a step with no decision in it. `ok` false means the item is unknown, never that the password is wrong — nothing knows that until the unpack runs. Numbered explicitly because 733 and 734 are not: an opcode inserted mid-block renumbers everything after it |
@@ -2054,10 +2205,14 @@ Requests `720–799`, pushes `910–949`.
 | `RemoveUsenetItem = 725` … `SetUsenetItemPriority = 728` | per-item actions |
 | `ListUsenetArchiveEntries = 729` | the files inside an archive set; **this one fetches** |
 | `GetUsenetStats = 738` | `[]` → `[ok, map]`. The Statistics window's Usenet branch: session and cumulative counter blocks, live figures, the queue summary and one row per account (the `GetNewsServers` row plus its session figures). Its own request because `GetStats` is polled every second for the status bar; this one only while the panel is on screen. See "Statistics" |
+| `SetUsenetFilesSkipped = 739` | `[itemId, [fileIndex…], skipped]` → `[ok]` or `409 why`. Widened to whole archive sets; refuses PAR2 files, every payload file at once, and a release post-processing or complete. See "A skipped file is fetched only when a repair needs it" |
+| `SetUsenetPaused = 740` | `[paused]` → `[ok]`. The engine-wide pause; persisted as `usenet.paused` and **not** settable through `SetPreferences`. Needs no running engine |
+| `InspectNzb = 741` | `[bytes, name]` → `[ok, {name, files: [{index, name, size, isPar2, setKey}]}]` or `[false, error]`. Parses without queueing, for the Add NZB chooser; `setKey` groups an archive set's volumes |
 | `GetUsenetItemDetails = 734` | `[itemId]` → `[ok, map]`. The queue row plus everything it leaves out: per-file article tallies, poster, date, newsgroups, the NZB's own subject and part counter, and the scratch path. On-demand and **never pushed** — `PushUsenetQueueItem` fires every 250 ms per changing item, and a newsgroup list plus a per-file segment tally on each of those is a continuous cost for a dialog nobody has open. Built on `usenetItemToCbor()` rather than beside it, so the list and the details view cannot disagree about a field they share |
 | `PushUsenetQueueItem = 910` | one item, coalesced on its id |
 | `PushUsenetItemRemoved = 911` | uncoalesced — a removal behind a later change would be dropped |
 | `PushUsenetItemFinished = 912` | uncoalesced — a transition, not a latest value |
+| `PushUsenetEngineState = 913` | `[{paused}]`, uncoalesced. The item rows also carry per-file `state`, `skipped` and — only for non-uniform files — `segmentMap` |
 
 Two fields carry the "you already downloaded this" exchange, and both are on the
 existing opcodes rather than a new pair:
@@ -2457,6 +2612,13 @@ Segment completion is a `QBitArray`, base64 inside the YAML — 1.25 KB for a
 `Downloading` is demoted to `Queued` on load: nothing is in flight after a
 restart.
 
+Per file, `skipped` and `neededForRepair` are optional keys written only when
+true. Absent means "download it", which is what every older sidecar meant, so
+`kStateVersion` stays at 2. Both are loaded as well as written, because
+`remapCategories()` round-trips sidecars through `load()` and `save()`. The
+engine-wide pause is not an item fact and lives in `preferences.yml` as
+`usenet.paused`.
+
 `Config/Usenet/history.yml` holds what has *left* the queue — see "What survives
 leaving the queue" above — and `Config/Usenet/usage.yml` the per-account meters, both beside those sidecars
 (they are globbed by `*.nzbstate`, so a `.yml` among them is never mistaken for
@@ -2481,6 +2643,121 @@ Two rules the counter is shaped by, both learned elsewhere in this codebase:
   parked queue spends nothing, so a lazy check would never fire and a
   single-account queue would sit parked past its own billing day forever.
 
+## Web interface and REST API
+
+The daemon's web server has a **Usenet** tab beside Transfer, Kad and the rest,
+and the REST API a `/api/v1/usenet` resource. Both are the Qt window's queue,
+reached without the GUI.
+
+### The seam
+
+`WebServer` lives in eMule::Core, which may never name eMule::Usenet, so it reads
+the queue through `UsenetWebBackend` (`src/core/webserver/UsenetWebBackend.h`).
+`DaemonApp` owns a `DaemonUsenetWebBackend` and installs it next to the preview
+resolver; it survives web-server restarts because a URL fetch in flight holds on
+to it. Without a backend every route answers **503 "Usenet engine unavailable"**
+and the page says the same — which is what `tst_WebServer`'s plain fixture gets.
+
+Rows cross that seam as the IPC's own CBOR maps. The serializers moved out of
+`IpcClientHandler.cpp` into `src/daemon/UsenetBridge.{h,cpp}`, together with the
+add paths (`addNzbData`, `addNzbUrl`, both counted exactly once for the
+statistics), the availability re-check and the category-wide walk. IPC, the page
+and the REST API are thin wrappers over the same functions, so a field added to
+the GUI's row is in the web page and the API the moment it exists.
+
+The one thing the daemon cannot say is a per-item speed — the engine measures
+itself as a whole. `ByteRateSampler` (`src/core/utils/ByteRateSampler.h`) derives
+it from `decodedBytes` for the GUI's model and for the web server alike; the web
+server samples on every request, whichever browser or script asked.
+
+### The page
+
+`w=usenet` mirrors `UsenetPanel`:
+
+- **Toolbar** Add NZB… · Pause · Resume · Remove, acting on the selection
+  (click, Ctrl/Cmd-click or the checkbox column), and the **category tabs**
+  right-aligned beside it, coloured like `CategoryTabBar`.
+- **Queue** with the model's nine columns and styling — bold while working, red
+  failed, grey paused, blue post-processing — and each release's files as
+  expandable child rows. Column headers sort server-side on raw values, with the
+  shared `usenetStatusRank()` (`src/core/utils/UsenetDisplay.h`).
+- **Context menu**: Add NZB…, Add NZB from URL…, Pause, Resume, the five
+  priorities, Assign to category, Set Password…, Check Availability, Preview,
+  Open File (bold, the double-click), Open Folder, Details…, Remove, Remove and
+  Delete Files. The category tabs have Pause / Resume / Cancel.
+- **Add NZB panel** — files and pasted links (at most 20, like
+  `AddNzbUrlDialog`), password, category, priority, add paused. An
+  `AlreadyDownloaded` answer is asked about and re-sent with `force`.
+- **Details** — the dialog's fields and file table, refreshed every second.
+- **Preview** opens `/api/v1/usenet/<id>/<file>/preview` after asking
+  `/usenet/entries`, exactly as `UsenetArchiveEntryDialog` does: one playable
+  entry plays at once, several open a chooser, a solid or encrypted set says why.
+- **Summary line** — count, active, percent, stall reason, the eD2K split note,
+  plus the engine's rate, which the web UI has no status bar for.
+
+Deliberate differences from the Qt window:
+
+- **Language** follows the app, and the header's menu overrides it per session,
+  like every web page — see `docs/web-interface.md`.
+- **A poll, not pushes.** The list fragment (`part=list`) is fetched every two
+  seconds while the tab is visible and swapped in place; selection, expanded rows
+  and scroll position are kept in the script. A menu that is open holds the poll.
+- **Actions are JSON POSTs** to `/usenet/action` and `/usenet/add`, gated by an
+  admin session — not GET-and-render like the Transfer page, so a reload never
+  repeats an action and a passphrase never lands in a URL (beside a raw `.nzb`
+  body it rides the `X-Nzb-Password` header).
+- **Guests** see the queue, Details, Preview and Open; every change is refused
+  with 403. The stream token is written into the page for both, because Preview
+  and Open go through the token-gated preview and incoming routes.
+- **Open Folder resolves from `publishedFiles`**, never `files[].finalPath`, so
+  the page does not have the Qt window's defect listed under § Not built yet.
+
+Every user-supplied string goes through `htmlText()`. The template engine fills
+`[Key]` in one pass and never rescans a value, so a release named `[Session]`
+stays that name. Escaping and translation rules: `docs/web-interface.md`.
+
+### REST
+
+All under the REST API's `X-Api-Key`. Rows are the `GetUsenetQueue` maps plus
+`speed`; details are the `GetUsenetItemDetails` map.
+
+| Method & path | Does | Answers |
+|---|---|---|
+| `GET /api/v1/usenet[?category=N]` | the queue | `200 [row…]` |
+| `GET /api/v1/usenet/stats` | `count`, `active`, `percent`, `totalBytes`, `decodedBytes`, `stalledReason`, `rate`, `maxDownloadKb`, `usenetLimitKb`, `ed2kBudgetKb`, `paused` | `200 {…}` |
+| `POST /api/v1/usenet/pause` · `resume` | the whole engine; persisted, no item status changes | `200 {paused}` |
+| `GET /api/v1/usenet/<id>` | one release in full | `200` · `404` |
+| `GET /api/v1/usenet/<id>/<file>/entries` | the archive listing; asks for header bytes | `200 {status, note, entries}` |
+| `POST /api/v1/usenet` | add — see below | `200 {id, outcome}` · `400` · `409` · `429` · `500` |
+| `POST /api/v1/usenet/<id>/pause` · `resume` · `check` | per-release action; resume overrules a check-stop (`ResumeIntent::User`) | `200 row` · `404` · `409 {error}` when the queue refuses |
+| `PATCH /api/v1/usenet/<id>` | any of `{priority, category, password, skipFiles, unskipFiles}` (the last two are NZB file-index arrays, widened to archive sets); all validated before any applies | `200 row` · `400` · `404` · `409` when the queue refuses a skip |
+| `DELETE /api/v1/usenet/<id>[?deleteFiles=true]` | remove | `200 {removed, deletedFiles}` · `404` |
+| `POST /api/v1/usenet/categories/<n>/pause` · `resume` · `cancel` | the category, 0 being all; resume is `Bulk` | `200 {affected}` · `400` |
+
+An add takes one of three shapes:
+
+```
+POST /api/v1/usenet                      Content-Type: application/json
+{"url": "https://indexer/getnzb?id=…", "category": 2, "priority": 1, "paused": false,
+ "password": "…", "force": false}
+
+POST /api/v1/usenet?name=Release.nzb&category=2&priority=1   Content-Type: application/x-nzb
+<the .nzb bytes>                         (password in X-Nzb-Password, percent-encoded)
+
+POST /api/v1/usenet                      Content-Type: application/x-www-form-urlencoded
+url=…&category=2&password=…
+```
+
+`outcome` is `UsenetAddOutcome`: 0 Added, 1 Duplicate, 2 Invalid, 3 Failed,
+4 AlreadyDownloaded. **409 is a question**: Duplicate is final, AlreadyDownloaded
+is answered by re-sending with `force`. 429 means four URL fetches are already
+running. A URL add answers when the fetch lands, not before.
+
+The literal routes are registered before the `<arg>` ones, so `stats` and
+`categories` are never taken for an item id; `tst_WebServer` asserts it.
+Streaming stays on the token-gated `/api/v1/usenet/<id>/<file>/preview`, and a
+row's `files[].previewable` / `previewNote` say whether it will work.
+
 ## Not built yet
 
 The Usenet features this module still lacks, found by sweeping these docs, the
@@ -2499,6 +2776,8 @@ marked, never renumbered or removed. Sizes are relative (S/M/L).
 3. **Stop downloads that cannot be repaired**, instead of spending the allowance
    until the final verify. (S–M) *(built 2026-09-15)*
 4. **Pick files inside an NZB** — skip samples and extras, pause one file. (M)
+   *(built 2026-09-15 — at add time and in the queue; see § Segment bars, file
+   status and picking files)*
 5. **Propagation delay** — do not fetch posts younger than N minutes. (S)
 6. **Scheduler actions for Usenet** — the scheduler cannot pause or resume it. (S)
 7. **Speed limit per server or per item**; there is one global Usenet limit. (M)
@@ -2535,6 +2814,7 @@ marked, never renumbered or removed. Sizes are relative (S/M/L).
 22. **Proxy for news-server connections**; eD2K sockets honour the proxy, NNTP
     connects directly. (S–M) *(built 2026-09-15)*
 23. **Usenet in the web interface**; only the preview link exists there. (M–L)
+    *(built 2026-09-15, with a REST API — see § Web interface and REST API)*
 24. **Merge the Usenet tab into the shared transfers list** — the refactor
     deferred under § GUI. (L)
 
@@ -2554,6 +2834,21 @@ marked, never renumbered or removed. Sizes are relative (S/M/L).
 29. **A dedicated IPC message for post-processing progress.** Mostly delivered
     already. (S)
 
+**Found comparing with Newshosting (2026-09-15)**
+
+30. **Segment-map progress bars and per-file status icons** — done, missing,
+    in-flight and queued articles by position, per file and per release; the
+    Progress column is a bare percentage. (S–M) *(built 2026-09-15)*
+31. **Pause the whole Usenet engine** — stop starting new work and leave every
+    item's state alone. Only per-item and per-category pause exist, and both
+    rewrite item states. The hook #6 needs. (S) *(built 2026-09-15 — toolbar,
+    tray, web page and REST)*
+32. **Details for an indexer result before grabbing** — cover, rating, IMDb id,
+    NFO from the search feed; the release's file list only on request, because
+    fetching the NZB spends a grab against the daily API limit. (M)
+33. **Per-connection NNTP activity view** — what each socket is doing right now.
+    Statistics shows only open and active counts. (M)
+
 **Known defects, not features**
 
 - Open Folder on an unpacked release says "Nothing has completed yet":
@@ -2571,8 +2866,9 @@ Options page for subject patterns.
 
 ## Build note
 
-`src/usenet/` and `src/gui/panels/` are globbed by CMake, so new files need no
-CMake edit — but MSBuild and qmake do. Run `scripts/sync_module_vcxproj.py` and
+`src/usenet/`, `src/gui/panels/`, `src/daemon/` and `src/core/webserver/` are
+globbed by CMake, so new files need no CMake edit — but MSBuild and qmake do
+(`src/daemon/daemon.pro` and `emulecored.vcxproj` for the web backend). Run `scripts/sync_module_vcxproj.py` and
 update `src/usenet/usenet.pro`; a new test also needs
 `python3 scripts/generate_test_vcxprojs.py`.
 

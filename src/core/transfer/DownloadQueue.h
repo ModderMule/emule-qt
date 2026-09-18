@@ -104,6 +104,13 @@ public:
     // -- Source management (basic) --------------------------------------------
 
     bool checkAndAddSource(PartFile* file, UpDownClient* source);
+    /// Add a client we are already talking to — one that asked us for a file we happen to
+    /// be downloading — as a source for it. Unlike checkAndAddSource() the client stays in
+    /// the ClientList either way, and a client that already sources another file becomes an
+    /// A4AF request instead. MFC CheckAndAddKnownSource (srchybrid/DownloadQueue.cpp:540).
+    /// @param ignoreGlobalDeadList a peer talking to us is alive whatever we concluded.
+    bool checkAndAddKnownSource(PartFile* file, UpDownClient* source,
+                                bool ignoreGlobalDeadList = false);
     void removeSource(UpDownClient* source);
 
     /// Vet one peer address the way every untrusted source ingress must: isGoodIP, the IP
@@ -248,6 +255,11 @@ signals:
     void fileCompleted(eMule::PartFile* file);
 
 private:
+    /// Filters both source-add paths share: stopped download, obfuscation compatibility,
+    /// a usable High ID, the IP filter and the global dead list.
+    [[nodiscard]] bool sourceFiltersPass(PartFile* file, UpDownClient* source,
+                                        bool ignoreGlobalDeadList) const;
+
     /// When the volume was last measured, for checkDiskspaceTimed().
     QElapsedTimer m_diskCheckClock;
 

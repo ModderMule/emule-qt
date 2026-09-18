@@ -272,6 +272,7 @@ emule_add_test(tst_IrcClient     FOLDER "Chat")
 # Module 18: Friend System
 emule_add_test(tst_Friend       FOLDER "Friends")
 emule_add_test(tst_FriendList   FOLDER "Friends")
+emule_add_test(tst_FriendConnect FOLDER "Friends")
 
 # Module 15: Statistics & Logging
 emule_add_test(tst_Statistics      FOLDER "Stats")
@@ -418,6 +419,8 @@ emule_add_test(tst_UsenetDetailsDialog FOLDER "Gui"
     SOURCES tst_UsenetDetailsDialog.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/UsenetDetailsDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetQueueModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetFileCheckList.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetProgressDelegate.cpp"
             # The model marks a password-protected release with menuIcon().
             "${CMAKE_SOURCE_DIR}/src/gui/utils/MenuUtils.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
@@ -431,6 +434,17 @@ target_include_directories(tst_UsenetDetailsDialog PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_UsenetDetailsDialog PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
+# The Usenet queue model's progress bars and file checkboxes, off hand-built rows.
+emule_add_test(tst_UsenetQueueModel FOLDER "Gui"
+    SOURCES tst_UsenetQueueModel.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetQueueModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/MenuUtils.cpp")
+target_include_directories(tst_UsenetQueueModel PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_UsenetQueueModel PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
 # The category tab's filter proxy. Pure model plumbing -- no daemon, no panel,
@@ -457,6 +471,8 @@ emule_add_test(tst_ListSorting FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadListModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/ClientListModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/SearchResultsModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/KadContactsModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/UploadStatusDelegate.cpp"
             # The Usenet model marks a password-protected release with menuIcon().
             "${CMAKE_SOURCE_DIR}/src/gui/utils/MenuUtils.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/PriorityText.cpp"

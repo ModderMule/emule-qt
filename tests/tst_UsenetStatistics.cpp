@@ -50,6 +50,37 @@ UsenetQueueItem makeItem(UsenetItemStatus status, qint64 encoded, qint64 decoded
     return item;
 }
 
+/// One file of a release: what the NZB says it costs, what is decoded so far,
+/// and whether the user took it out.
+struct FileSpec {
+    qint64 encoded = 0;
+    qint64 decoded = 0;
+    bool skipped = false;
+    bool neededForRepair = false;
+};
+
+/// makeItem() builds a single file, which cannot express a release somebody
+/// picked files out of.
+UsenetQueueItem makeMultiFileItem(UsenetItemStatus status, const QList<FileSpec>& specs)
+{
+    UsenetQueueItem item;
+    item.status = status;
+    for (const FileSpec& spec : specs) {
+        NzbSegment segment;
+        segment.bytes = spec.encoded;
+        NzbFileInfo file;
+        file.segments.append(segment);
+        item.nzb.files.append(file);
+
+        UsenetFileState state;
+        state.decodedBytes = spec.decoded;
+        state.skipped = spec.skipped;
+        state.neededForRepair = spec.neededForRepair;
+        item.files.append(state);
+    }
+    return item;
+}
+
 } // namespace
 
 class tst_UsenetStatistics : public QObject {
@@ -64,6 +95,7 @@ private slots:
     void notePostFinished_countsOnlyTerminalVerifies();
     void addPostStageTime_bucketsByStage();
     void summarizeQueue_countsStatusesAndWhatIsLeft();
+    void summarizeQueue_leavesOutSkippedFiles();
 };
 
 // Which counter one result lands in. Every result charges its wire bytes, the
@@ -293,6 +325,30 @@ void tst_UsenetStatistics::summarizeQueue_countsStatusesAndWhatIsLeft()
     QCOMPARE(s.downloadedBytes, qint64(3780));
     // A finished release's yEnc overhead is not left to download.
     QCOMPARE(s.leftBytes, qint64(600 + 2000 + 20));
+}
+
+void tst_UsenetStatistics::summarizeQueue_leavesOutSkippedFiles()
+{
+    // A file the user took out is not work outstanding. Counting it leaves the
+    // queue reporting bytes nobody is ever going to fetch, and a release that
+    // can never reach 100%.
+    UsenetQueueItem item = makeMultiFileItem(UsenetItemStatus::Downloading,
+                                             {{1000, 400}, {2000, 0, /*skipped*/ true}});
+
+    UsenetQueueSummary s = summarizeQueue({&item});
+    QCOMPARE(s.count, 1);
+    QCOMPARE(s.downloading, 1);
+    QCOMPARE(s.totalBytes, qint64(1000));
+    QCOMPARE(s.downloadedBytes, qint64(400));
+    QCOMPARE(s.leftBytes, qint64(600));
+
+    // Until a repair asks for it back: isSkipped() is skipped && !neededForRepair,
+    // so it is being downloaded again and counts again.
+    item.files[1].neededForRepair = true;
+    s = summarizeQueue({&item});
+    QCOMPARE(s.totalBytes, qint64(3000));
+    QCOMPARE(s.downloadedBytes, qint64(400));
+    QCOMPARE(s.leftBytes, qint64(2600));
 }
 
 QTEST_MAIN(tst_UsenetStatistics)

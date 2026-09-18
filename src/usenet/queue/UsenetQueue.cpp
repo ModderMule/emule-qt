@@ -186,6 +186,8 @@ void UsenetQueue::start()
     if (!m_items.empty()) {
         logInfo(QStringLiteral("Usenet: restored %1 queued item(s)").arg(int(m_items.size())));
     }
+    for (auto& rt : m_items)
+        noteWaitReason(*rt);
 
     startWorkers();
     startPostProcessor();
@@ -298,6 +300,7 @@ void UsenetQueue::applyServers(const QList<NewsServer>& servers, int retryInterv
         clearHealthCheck(*rt);
         rt->item->status = resumeTo;
         rt->item->stalledReason.clear();
+        noteWaitReason(*rt);
         emit itemChanged(rt->item->id);
     }
 
@@ -396,6 +399,20 @@ QString UsenetQueue::addNzb(const QByteArray& data, const QString& name, QString
     item->releaseKey = nzbReleaseKey(item->name, item->nzb.totalEncodedBytes());
     item->initFileStates(thePrefs.usenetTempDir());
 
+    // Files the caller unchecked, widened to whole archive sets. Refused rather
+    // than trimmed: a list that skips a par2 file or every payload file is a
+    // caller bug worth a sentence.
+    if (!options.skippedFiles.isEmpty()) {
+        QSet<int> skipped;
+        error = expandSkipRequest(*item, options.skippedFiles, true, skipped);
+        if (!error.isEmpty()) {
+            report(UsenetAddOutcome::Invalid);
+            return {};
+        }
+        for (const int f : std::as_const(skipped))
+            item->files[f].skipped = true;
+    }
+
     // Lay each target file out once, up front. Growing a file by seeking past its
     // end article by article is what fragments it badly, and the size is only
     // knowable from the NZB's encoded total until the first =ybegin arrives — so
@@ -407,7 +424,7 @@ QString UsenetQueue::addNzb(const QByteArray& data, const QString& name, QString
     // — which a release with no archive to unpack would publish as payload.
     // requestPar2Volumes() creates the ones it actually asks for.
     for (int i = 0; i < item->files.size(); ++i) {
-        if (item->nzb.files.at(i).isPar2Volume())
+        if (item->nzb.files.at(i).isPar2Volume() || item->files.at(i).skipped)
             continue;
         if (!createTargetFile(item->files[i].tempPath, error))
             return {};
@@ -448,6 +465,8 @@ QString UsenetQueue::addNzb(const QByteArray& data, const QString& name, QString
     // false — leaving the item plain Queued — whenever a probe cannot or should
     // not run, which must cost nothing.
     beginHealthCheck(*m_items.back());
+    if (noteWaitReason(*m_items.back()))
+        emit itemChanged(id);
 
     dispatch();
     return id;
@@ -612,6 +631,7 @@ bool UsenetQueue::resumeItem(const QString& id, ResumeIntent intent)
         }
     }
 
+    noteWaitReason(*rt);
     emit itemChanged(id);
     dispatch();
     return true;
@@ -644,7 +664,7 @@ bool UsenetQueue::retryMissingArticles(const QString& id)
     rt->refetch = {};
     QStringList refused;
     for (int f = 0; f < rt->item->files.size(); ++f) {
-        if (rt->item->files.at(f).missingSegments <= 0)
+        if (rt->item->files.at(f).missingSegments <= 0 || rt->item->files.at(f).isSkipped())
             continue;
         if (!rearmMissingSegments(*rt, f))
             refused.append(rt->item->bestFileName(f));
@@ -675,6 +695,7 @@ bool UsenetQueue::retryMissingArticles(const QString& id)
     rt->item->status = UsenetItemStatus::Queued;
     rt->item->error.clear();
     rt->attempts.clear();       // back to rung 0 over the accounts configured now
+    noteWaitReason(*rt);        // straight back into whatever is holding the queue
     rebuildPlan(*rt);
     persist(*rt);
 
@@ -788,6 +809,159 @@ const UsenetQueueItem* UsenetQueue::findItem(const QString& id) const
     return nullptr;
 }
 
+QString UsenetQueue::setFilesSkipped(const QString& id, const QList<int>& fileIndices,
+                                     bool skipped)
+{
+    ItemRuntime* rt = runtimeFor(id);
+    if (!rt)
+        return tr("Queue item not found");
+
+    UsenetQueueItem& item = *rt->item;
+    // The work directory belongs to the pipeline now, or is already gone.
+    if (rt->postRunning || item.isPostProcessing() || item.status == UsenetItemStatus::Complete)
+        return tr("This release has already been downloaded");
+
+    QSet<int> targets;
+    if (const QString why = expandSkipRequest(item, fileIndices, skipped, targets);
+        !why.isEmpty()) {
+        return why;
+    }
+    if (targets.isEmpty())
+        return {};
+
+    // Laid out before any flag moves, so a refusal changes nothing. addNzb()
+    // never created a skipped file, and the worker will not either; ReadWrite,
+    // so a partial file keeps what it had.
+    if (!skipped) {
+        for (const int f : std::as_const(targets)) {
+            QString error;
+            if (!createTargetFile(item.files.at(f).tempPath, error))
+                return error;
+        }
+    }
+
+    bool touchesArchive = false;
+    for (const int f : std::as_const(targets)) {
+        item.files[f].skipped = skipped;
+        item.files[f].neededForRepair = false;
+        touchesArchive = touchesArchive
+                         || UsenetUnpacker::volumePositionOf(volumeNameOf(*rt, f)).index >= 0;
+    }
+
+    logInfo(QStringLiteral("Usenet: \"%1\" — %2 %3 file(s)")
+                .arg(item.name, skipped ? QStringLiteral("skipping") : QStringLiteral("fetching"))
+                .arg(targets.size()));
+
+    // A set being extracted may just have lost its volumes, or regained them.
+    if (touchesArchive) {
+        cancelDirectUnpack(*rt);
+        if (item.isActive())
+            restartDirectUnpack(*rt);
+    }
+
+    rt->repairEstimateStale = true;
+    rebuildPlan(*rt);
+    persist(*rt);
+    emit itemChanged(id);
+    dispatch();
+    return {};
+}
+
+QString UsenetQueue::expandSkipRequest(const UsenetQueueItem& item, const QList<int>& requested,
+                                       bool skipped, QSet<int>& out)
+{
+    const int count = int(std::min(item.files.size(), item.nzb.files.size()));
+
+    // The name a set is recognised by: the one on disk once sealed, else the best guess.
+    const auto setOf = [&item](int f) {
+        const UsenetFileState& st = item.files.at(f);
+        return UsenetUnpacker::volumePositionOf(st.finalized ? QFileInfo(st.tempPath).fileName()
+                                                             : item.bestFileName(f));
+    };
+
+    for (const int f : requested) {
+        if (f < 0 || f >= count)
+            return tr("That file is not part of this release");
+        // The index is what verify and naming read; volumes come on demand.
+        if (item.nzb.files.at(f).isPar2())
+            return tr("PAR2 files are fetched when a repair needs them and cannot be skipped");
+        out.insert(f);
+
+        // All or nothing: one volume short fails the whole unpack.
+        const auto position = setOf(f);
+        if (position.index < 0)
+            continue;
+        for (int g = 0; g < count; ++g) {
+            if (g == f || item.nzb.files.at(g).isPar2())
+                continue;
+            const auto other = setOf(g);
+            if (other.index >= 0 && other.baseName == position.baseName)
+                out.insert(g);
+        }
+    }
+
+    // Only what changes.
+    QList<int> unchanged;
+    for (const int f : std::as_const(out)) {
+        if (item.files.at(f).skipped == skipped)
+            unchanged.append(f);
+    }
+    for (const int f : std::as_const(unchanged))
+        out.remove(f);
+
+    if (skipped && !out.isEmpty()) {
+        bool payloadLeft = false;
+        for (int g = 0; g < count && !payloadLeft; ++g) {
+            payloadLeft = !item.nzb.files.at(g).isPar2() && !item.files.at(g).skipped
+                          && !out.contains(g);
+        }
+        if (!payloadLeft)
+            return tr("At least one file has to stay in the download");
+    }
+    return {};
+}
+
+QList<UsenetQueue::FileView> UsenetQueue::fileViews(const QString& itemId) const
+{
+    const auto found = std::ranges::find_if(
+        m_items, [&itemId](const auto& rt) { return rt->item->id == itemId; });
+    if (found == m_items.cend())
+        return {};
+    const ItemRuntime& rt = **found;
+    const UsenetQueueItem& item = *rt.item;
+
+    QHash<int, QSet<int>> inFlight;
+    for (const quint64 key : rt.inFlight)
+        inFlight[int(key >> 32)].insert(int(key & 0xFFFFFFFFu));
+
+    QList<FileView> out;
+    out.reserve(item.files.size());
+    for (int f = 0; f < item.files.size(); ++f) {
+        const UsenetFileState& st = item.files.at(f);
+        FileView view;
+        if (st.isSkipped()) {
+            view.state = UsenetFileWireState::Skipped;
+        } else if (!isPlanned(rt, f)) {
+            view.state = UsenetFileWireState::Held;
+        } else if (item.status == UsenetItemStatus::Complete) {
+            // A repair fills the holes and leaves the counts alone.
+            view.state = UsenetFileWireState::Complete;
+        } else {
+            const QSet<int> flying = inFlight.value(f);
+            const qsizetype done = st.done.count(true);
+            if (st.finalized || (done > 0 && done == st.done.size())) {
+                view.state = st.missingSegments > 0 ? UsenetFileWireState::Missing
+                                                    : UsenetFileWireState::Complete;
+            } else if (done > 0 || !flying.isEmpty()) {
+                view.state = UsenetFileWireState::Partial;
+            }
+            view.segmentMap = buildSegmentMap(st, flying);
+        }
+        out.append(std::move(view));
+    }
+    return out;
+}
+
 UsenetQueue::PreviewInfo UsenetQueue::previewability(const QString& itemId, int fileIndex)
 {
     PreviewInfo out;
@@ -801,6 +975,10 @@ UsenetQueue::PreviewInfo UsenetQueue::previewability(const QString& itemId, int 
         return out;
 
     const UsenetFileState& st = item.files.at(fileIndex);
+    if (st.isSkipped()) {
+        out.note = tr("Skipped — nothing of it is downloaded");
+        return out;
+    }
 
     // A media file posted raw needs no container work at all — that is phase 6a,
     // and answering it here keeps the index out of the hot path entirely.
@@ -856,6 +1034,9 @@ UsenetQueue::StreamInfo UsenetQueue::requestStream(const QString& itemId, int fi
 
     const UsenetQueueItem& item = *rt->item;
     if (fileIndex < 0 || fileIndex >= item.files.size())
+        return info;
+    // Not found rather than waited on: a skipped file's bytes are not coming.
+    if (item.files.at(fileIndex).isSkipped())
         return info;
 
     info.found = true;
@@ -1151,6 +1332,10 @@ bool UsenetQueue::isOverQuota(const NewsServer& s) const
 
 bool UsenetQueue::hasActiveDownloads() const
 {
+    // A paused engine asks nothing of the line, so eD2K gets all of it.
+    if (m_enginePaused)
+        return false;
+
     for (const auto& rt : m_items) {
         // A parked item is waiting on a billing day, not on the network.
         // Counting it would reserve a share of the line for an engine that is
@@ -1159,6 +1344,31 @@ bool UsenetQueue::hasActiveDownloads() const
             return true;
     }
     return false;
+}
+
+void UsenetQueue::setEnginePaused(bool paused)
+{
+    if (paused == m_enginePaused)
+        return;
+    m_enginePaused = paused;
+
+    if (paused) {
+        logInfo(QStringLiteral("Usenet: all downloads paused — articles in flight finish, "
+                               "nothing new starts"));
+        for (auto& rt : m_items) {
+            if (noteWaitReason(*rt))
+                emit itemChanged(rt->item->id);
+        }
+    } else {
+        logInfo(QStringLiteral("Usenet: downloads resumed"));
+        restoreWaitReasons();
+        // A parked item's allowance may have changed while nothing was asked;
+        // the next round re-parks whatever is still over.
+        unparkQuotaStalls();
+        dispatch();
+    }
+
+    emit enginePausedChanged(paused);
 }
 
 int UsenetQueue::activeFetches() const
@@ -1312,6 +1522,7 @@ void UsenetQueue::stopWorkers()
     for (auto& rt : m_items) {
         rt->inFlight.clear();
         rt->planCursor = 0;
+        rt->dirty = true;   // the segment map still shows those articles in flight
     }
 }
 
@@ -1537,6 +1748,11 @@ void UsenetQueue::dispatch()
     if (m_ladder.isEmpty())
         return;
 
+    // The user paused everything. Before the probes too: a check is traffic.
+    // Articles already in flight still land through onSegmentFinished().
+    if (m_enginePaused)
+        return;
+
     // A dispatch round that found nothing leasable stays parked until the next
     // tick clears this. Without it, every "no connection available" result would
     // trigger another identical round.
@@ -1629,6 +1845,13 @@ void UsenetQueue::dispatch()
                     }
                     const UsenetFileState& st = rt->item->files.at(fileIndex);
                     if (segIndex < st.done.size() && st.done.testBit(segIndex)) {
+                        ++rt->planCursor;
+                        continue;
+                    }
+                    // Skipped since it was planned. A retry, an abort or a preview
+                    // can put its keys back; before the unservable test, or they
+                    // would be marked missing.
+                    if (!isPlanned(*rt, fileIndex)) {
                         ++rt->planCursor;
                         continue;
                     }
@@ -1888,6 +2111,10 @@ void UsenetQueue::onSegmentFinished(const UsenetFetchResult& result, bool curren
     const quint64 key = SegmentKey{result.fileIndex, result.segmentIndex}.packed();
     if (current)
         rt->inFlight.remove(key);
+    // A failure below may not mark the item dirty, and the map would keep
+    // showing this article in flight.
+    if (rt->inFlight.isEmpty())
+        rt->dirty = true;
 
     // A failure nobody is to blame for and nothing can be learned from:
     //
@@ -2144,7 +2371,8 @@ void UsenetQueue::checkFileCompletion(ItemRuntime& rt, int fileIndex)
         return;
 
     UsenetFileState& st = rt.item->files[fileIndex];
-    if (st.finalized || !st.allSegmentsDone())
+    // Never sealed: an article that outlived the skip must not publish the file.
+    if (st.isSkipped() || st.finalized || !st.allSegmentsDone())
         return;
 
     sealFile(rt, fileIndex);
@@ -2164,6 +2392,9 @@ void UsenetQueue::checkFileCompletion(ItemRuntime& rt, int fileIndex)
 bool UsenetQueue::isPlanned(const ItemRuntime& rt, int fileIndex)
 {
     if (fileIndex < 0 || fileIndex >= rt.item->nzb.files.size())
+        return false;
+
+    if (fileIndex < rt.item->files.size() && rt.item->files.at(fileIndex).isSkipped())
         return false;
 
     // A recovery volume counts only once somebody has asked for it. Everything
@@ -2275,6 +2506,11 @@ void UsenetQueue::checkItemCompletion(ItemRuntime& rt)
     if (rt.postRunning)
         return;
 
+    // A paused engine starts no post-processing either — a repair is minutes
+    // of disk the user asked to have back. onTick() returns here after resume.
+    if (m_enginePaused)
+        return;
+
     // Paused, failed or checking. pauseItem() does not cancel the articles
     // already in flight, and the last of them landing must not carry the item
     // off into post-processing behind the user's back. onTick() comes back here
@@ -2288,6 +2524,14 @@ void UsenetQueue::checkItemCompletion(ItemRuntime& rt)
         if (!isPlanned(rt, f))
             continue;
         if (!rt.item->files.at(f).finalized)
+            return;
+    }
+
+    // An article of a skipped file still on its way would recreate the file
+    // post-processing is about to delete. onTick() comes back once it lands.
+    for (const quint64 key : std::as_const(rt.inFlight)) {
+        const int f = int(key >> 32);
+        if (f >= 0 && f < rt.item->files.size() && rt.item->files.at(f).isSkipped())
             return;
     }
 
@@ -2375,6 +2619,8 @@ bool UsenetQueue::startDirectUnpack(ItemRuntime& rt, const QString& baseName)
     // Volume one has to be on disk, whichever volume brought us here.
     int firstIndex = -1;
     for (int f = 0; f < rt.item->files.size(); ++f) {
+        if (rt.item->files.at(f).isSkipped())
+            continue;
         const auto pos = UsenetUnpacker::volumePositionOf(volumeNameOf(rt, f));
         if (pos.index < 0 || pos.baseName != baseName)
             continue;
@@ -2415,7 +2661,7 @@ bool UsenetQueue::startDirectUnpack(ItemRuntime& rt, const QString& baseName)
     // been given, so anything offered ahead of time simply waits in the map.
     for (int f = 0; f < rt.item->files.size(); ++f) {
         const UsenetFileState& st = rt.item->files.at(f);
-        if (!st.finalized || st.missingSegments > 0)
+        if (!st.finalized || st.missingSegments > 0 || st.isSkipped())
             continue;
         const auto pos = UsenetUnpacker::volumePositionOf(volumeNameOf(rt, f));
         if (pos.index < 0 || pos.baseName != baseName)
@@ -2434,6 +2680,8 @@ void UsenetQueue::restartDirectUnpack(ItemRuntime& rt)
 
     QSet<QString> seen;
     for (int f = 0; f < rt.item->files.size(); ++f) {
+        if (rt.item->files.at(f).isSkipped())
+            continue;
         const auto pos = UsenetUnpacker::volumePositionOf(volumeNameOf(rt, f));
         if (pos.index < 0 || seen.contains(pos.baseName))
             continue;
@@ -3045,6 +3293,9 @@ void UsenetQueue::beginPostProcessing(ItemRuntime& rt)
         emit itemChanged(rt.item->id);
     }
 
+    // After the room check, so a wait for disk space deletes nothing early.
+    discardSkippedFiles(rt);
+
     // From here the extracted files belong to post-processing: a repair discards
     // them, staging renames them into the incoming directory. A preview must
     // stop being served from them before either happens.
@@ -3128,6 +3379,33 @@ void UsenetQueue::beginPostProcessing(ItemRuntime& rt)
             job.expectedNames.append(QFileInfo(st.tempPath).fileName());
     }
 
+    // Every name a skipped file may carry. Skipped ones are absent and verify is
+    // told why; the ones a repair fetched back are deleted once it is done. A
+    // name a wanted file shares is kept — a repost can name two files alike.
+    QSet<QString> keepNames;
+    QStringList dropNames;
+    for (int f = 0; f < rt.item->files.size() && f < rt.item->nzb.files.size(); ++f) {
+        const UsenetFileState& st = rt.item->files.at(f);
+        QStringList names;
+        for (const QString& n : {QFileInfo(st.tempPath).fileName(), st.par2FileName,
+                                 st.articleFileName, rt.item->nzb.files.at(f).fileName}) {
+            if (!n.isEmpty())
+                names.append(sanitizeName(QFileInfo(n).fileName()));
+        }
+        if (!st.skipped) {
+            for (const QString& n : std::as_const(names))
+                keepNames.insert(n);
+            continue;
+        }
+        if (st.isSkipped())
+            job.skippedFiles.append({f, names});
+        dropNames += names;
+    }
+    for (const QString& n : std::as_const(dropNames)) {
+        if (!keepNames.contains(n) && !job.discardAfterVerify.contains(n))
+            job.discardAfterVerify.append(n);
+    }
+
     for (const DirectUnpackRun& run : std::as_const(rt.directUnpack)) {
         if (run.result.ok)
             job.directUnpacked.append(run.result);
@@ -3142,6 +3420,24 @@ void UsenetQueue::beginPostProcessing(ItemRuntime& rt)
 
     QMetaObject::invokeMethod(m_postProcessor, "process", Qt::QueuedConnection,
                               Q_ARG(eMule::usenet::UsenetPostJob, job));
+}
+
+void UsenetQueue::discardSkippedFiles(ItemRuntime& rt)
+{
+    for (UsenetFileState& st : rt.item->files) {
+        if (!st.isSkipped())
+            continue;
+        if (!st.tempPath.isEmpty())
+            QFile::remove(st.tempPath);
+        // As if never fetched: a repair that wants it back re-downloads it whole.
+        st.done.fill(false);
+        st.missing.clear();
+        st.missingSegments = 0;
+        st.written.clear();
+        st.decodedBytes = 0;
+        st.partLength = 0;
+        st.finalized = false;
+    }
 }
 
 void UsenetQueue::onPostStage(const QString& itemId, int stage, int percent,
@@ -3204,6 +3500,47 @@ void UsenetQueue::onPostFinished(const UsenetPostResult& result)
     // Every cached path and parsed header in the streaming index is suspect.
     rt->streamIndex.invalidate();
 
+    // -- a repair needs files the user skipped: fetching them beats buying
+    //    their blocks, and they are deleted again once verified ------------
+    if (!result.needsSkippedFiles.isEmpty()) {
+        if (++rt->par2Rounds > kMaxPar2Rounds) {
+            m_stats.bump(&UsenetCounters::par2Verified);
+            m_stats.bump(&UsenetCounters::par2RepairFailed);
+            failItem(*rt, tr("Repair still incomplete after %1 rounds").arg(kMaxPar2Rounds));
+            return;
+        }
+
+        int fetched = 0;
+        for (const int f : result.needsSkippedFiles) {
+            if (f < 0 || f >= rt->item->files.size() || !rt->item->files.at(f).isSkipped())
+                continue;
+            QString error;
+            if (!createTargetFile(rt->item->files.at(f).tempPath, error)) {
+                logWarning(QStringLiteral("Usenet: %1").arg(error));
+                continue;
+            }
+            rt->item->files[f].neededForRepair = true;
+            ++fetched;
+        }
+        if (fetched == 0) {
+            failItem(*rt, tr("The repair needs files that were skipped, and they could "
+                             "not be fetched"));
+            return;
+        }
+
+        logInfo(QStringLiteral("Usenet: \"%1\" needs %2 skipped file(s) for its repair; "
+                               "fetching them")
+                    .arg(rt->item->name).arg(fetched));
+
+        rt->item->status = UsenetItemStatus::Downloading;
+        noteWaitReason(*rt);    // the cycle re-enters a queue that may be waiting
+        rebuildPlan(*rt);
+        persist(*rt);
+        emit itemChanged(rt->item->id);
+        dispatch();
+        return;
+    }
+
     // -- the cycle: verification came up short, go and fetch the blocks ----
     if (result.needsMoreBlocks) {
         // A short verify only counts once it is final: normally it sends the
@@ -3227,6 +3564,7 @@ void UsenetQueue::onPostFinished(const UsenetPostResult& result)
                     .arg(rt->item->name).arg(result.blocksNeeded));
 
         rt->item->status = UsenetItemStatus::Downloading;
+        noteWaitReason(*rt);    // the cycle re-enters a queue that may be waiting
         rebuildPlan(*rt);
         persist(*rt);
         emit itemChanged(rt->item->id);
@@ -3728,6 +4066,7 @@ void UsenetQueue::unparkQuotaStalls()
             continue;
         rt->quotaParked = false;
         rt->item->stalledReason.clear();
+        noteWaitReason(*rt);
         emit itemChanged(rt->item->id);
     }
 }
@@ -3803,6 +4142,8 @@ bool UsenetQueue::beginHealthCheck(ItemRuntime& rt)
         const NzbFileInfo& info = item.nzb.files.at(f);
         if (info.segments.isEmpty())
             continue;
+        if (f < item.files.size() && item.files.at(f).isSkipped())
+            continue;   // its availability decides nothing
 
         if (mode == UsenetHealthCheck::Full) {
             for (int seg = 0; seg < info.segments.size(); ++seg)
@@ -3824,7 +4165,7 @@ bool UsenetQueue::beginHealthCheck(ItemRuntime& rt)
 
     rt.checkResumeStatus = rt.item->status;
     rt.item->status = UsenetItemStatus::Checking;
-    rt.item->stalledReason = tr("checking availability");
+    noteWaitReason(rt);
     m_stats.bump(&UsenetCounters::healthChecks);
     emit itemChanged(rt.item->id);
     return true;
@@ -4020,7 +4361,14 @@ void UsenetQueue::finishHealthCheck(ItemRuntime& rt)
 
     // Both halves, combined into the one number a user can act on: articles the
     // NZB never listed, and articles no account still holds.
-    const NzbShortfall nzbShort = item.nzb.shortfall();
+    // Over what will be downloaded: a skipped sample the indexer listed short is
+    // no shortfall of this download.
+    NzbInfo wanted = item.nzb;
+    for (qsizetype f = wanted.files.size() - 1; f >= 0; --f) {
+        if (f < item.files.size() && item.files.at(f).isSkipped())
+            wanted.files.removeAt(f);
+    }
+    const NzbShortfall nzbShort = wanted.shortfall();
 
     UsenetHealthVerdict verdict;
     verdict.probed = rt.checkProbedBytes > 0;
@@ -4035,7 +4383,7 @@ void UsenetQueue::finishHealthCheck(ItemRuntime& rt)
             verdict.recoveryBytes += info.encodedBytes();
     }
 
-    const qint64 claimed = item.nzb.totalEncodedBytes() + nzbShort.missingBytes;
+    const qint64 claimed = wanted.totalEncodedBytes() + nzbShort.missingBytes;
     if (claimed > 0) {
         const qint64 obtainable = std::max<qint64>(0, claimed - verdict.missingBytes);
         verdict.percent = int(obtainable * 100 / claimed);
@@ -4079,6 +4427,7 @@ void UsenetQueue::finishHealthCheck(ItemRuntime& rt)
         // not a decision to start it.
         item.status = resumeTo;
         item.stalledReason.clear();
+        noteWaitReason(rt);
         if (verdict.probed) {
             logInfo(QStringLiteral("Usenet: \"%1\" checked out at %2%")
                         .arg(item.name)
@@ -4493,12 +4842,8 @@ void UsenetQueue::refreshDiskState(bool force)
         if (m_diskBlocked) {
             m_diskBlocked = false;
             m_diskStallLogged = false;
-            for (auto& rt : m_items) {
-                if (!rt->item->stalledReason.isEmpty() && rt->item->isActive()) {
-                    rt->item->stalledReason.clear();
-                    emit itemChanged(rt->item->id);
-                }
-            }
+            m_diskStallReason.clear();
+            noteWaitReasons();
         }
         return;
     }
@@ -4533,12 +4878,11 @@ void UsenetQueue::refreshDiskState(bool force)
         : tr("waiting for disk space — %1 free, %2 required")
               .arg(formatByteSize(qint64(*free)), formatByteSize(floor));
 
-    for (auto& rt : m_items) {
-        if (!rt->item->isActive())
-            continue;
-        rt->item->stalledReason = blocked ? reason : QString();
-        emit itemChanged(rt->item->id);
-    }
+    m_diskStallReason = blocked ? reason : QString();
+
+    // The pause outranks this inside noteWaitReason(), so a paused queue keeps
+    // saying so and restoreWaitReasons() puts this one back at the resume.
+    noteWaitReasons();
 
     if (blocked) {
         if (!m_diskStallLogged) {
@@ -4574,17 +4918,11 @@ void UsenetQueue::noteProxyStall(const QString& text)
                        .arg(text));
     }
 
-    // Checking too: its probes are held by the same park, and "checking
-    // availability" would otherwise sit there with nothing being checked.
-    for (auto& rt : m_items) {
-        const bool waiting = rt->item->isActive()
-                             || rt->item->status == UsenetItemStatus::Checking;
-        if (!waiting || rt->item->stalledReason == reason)
-            continue;
-        rt->item->stalledReason = reason;
-        emit itemChanged(rt->item->id);
-    }
+    // Set before the sweep, like the floor's: noteWaitReason() reads it, and it
+    // does not necessarily win — a paused queue or a floor that is already down
+    // outranks it, and this must not write over either.
     m_proxyStallReason = reason;
+    noteWaitReasons();
 }
 
 void UsenetQueue::noteProxyRecovered()
@@ -4593,14 +4931,87 @@ void UsenetQueue::noteProxyRecovered()
     if (m_proxyStallReason.isEmpty())
         return;
 
+    // Cleared before the items are asked again, and each is re-asked rather than
+    // just wiped: an item that was probing is still probing, and wiping it left
+    // a Checking row with nothing to say for as long as the check took. A gate
+    // that outranks the proxy has already overwritten this text, so anything
+    // still carrying it is waiting on the proxy alone.
+    const QString stale = m_proxyStallReason;
+    m_proxyStallReason.clear();
     for (auto& rt : m_items) {
-        if (rt->item->stalledReason != m_proxyStallReason)
+        if (rt->item->stalledReason != stale)
             continue;
         rt->item->stalledReason.clear();
+        noteWaitReason(*rt);
         emit itemChanged(rt->item->id);
     }
-    m_proxyStallReason.clear();
     logInfo(QStringLiteral("Usenet: news servers are reachable again"));
+}
+
+bool UsenetQueue::noteWaitReason(ItemRuntime& rt)
+{
+    // Checking too: its probes are held by every gate below, so an item may not
+    // go on saying it is being checked while one of them holds it.
+    const bool checking = rt.item->status == UsenetItemStatus::Checking;
+    if (!rt.item->isActive() && !checking)
+        return false;
+
+    // dispatch()'s gates, in its order, and only one line says why. The pause is
+    // first because it is the one the user chose: reporting a disk to somebody
+    // who pressed Pause is a lie about who is holding the queue up. The floor
+    // then comes before the proxy because dispatch() returns at it first and
+    // never looks at the proxy — naming a gate the round never reached sends
+    // the user to fix something that would change nothing.
+    QString text;
+    if (m_enginePaused)
+        text = enginePausedText();
+    else if (m_diskBlocked)
+        text = m_diskStallReason;
+    else if (!m_proxyStallReason.isEmpty())
+        text = m_proxyStallReason;
+    else if (checking)
+        text = tr("checking availability");
+
+    if (rt.item->stalledReason == text)
+        return false;
+
+    rt.item->stalledReason = text;
+    return true;
+}
+
+void UsenetQueue::noteWaitReasons()
+{
+    for (auto& rt : m_items) {
+        // Never the allowance's sentence. Nothing caches it — noteQuotaStall()
+        // works it out from the accounts blocking that article — so a global
+        // wait that wrote over it would leave the item silent until the next
+        // rollover, which is a month away.
+        if (rt->quotaParked)
+            continue;
+        if (noteWaitReason(*rt))
+            emit itemChanged(rt->item->id);
+    }
+}
+
+void UsenetQueue::restoreWaitReasons()
+{
+    const QString paused = enginePausedText();
+    for (auto& rt : m_items) {
+        if (rt->item->stalledReason != paused)
+            continue;
+
+        // Cleared first, so an item that is no longer waiting on anything — one
+        // the user paused while the engine was — is left saying nothing rather
+        // than inheriting a global wait it is not in.
+        rt->item->stalledReason.clear();
+        noteWaitReason(*rt);
+        emit itemChanged(rt->item->id);
+    }
+}
+
+QString UsenetQueue::enginePausedText()
+{
+    return tr("all downloads paused");
 }
 
 bool UsenetQueue::stopForCheck(ItemRuntime& rt, UsenetStopReason reason, const QString& detail)

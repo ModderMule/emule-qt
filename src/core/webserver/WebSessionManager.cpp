@@ -13,6 +13,15 @@ WebSessionManager::WebSessionManager(int timeoutMinutes)
 {
 }
 
+bool WebSessionManager::setLanguage(const QString& sessionId, const QString& code)
+{
+    const auto it = m_sessions.find(sessionId);
+    if (it == m_sessions.end())
+        return false;
+    it->language = code;
+    return true;
+}
+
 QString WebSessionManager::login(const QString& passwordHash,
                                  const QString& adminHash,
                                  const QString& guestHash,

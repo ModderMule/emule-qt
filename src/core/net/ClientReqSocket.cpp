@@ -366,6 +366,8 @@ bool ClientReqSocket::processExtPacket(const uint8* packet, uint32 size, uint8 o
     case OP_FILEDESC:
     case OP_AICHREQUEST:
     case OP_AICHANSWER:
+    case OP_AICHFILEHASHREQ:
+    case OP_AICHFILEHASHANS:
     case OP_HASHSETREQUEST2:
     case OP_HASHSETANSWER2:
     case OP_MULTIPACKET:

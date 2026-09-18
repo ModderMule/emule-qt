@@ -197,6 +197,25 @@ public:
         r.renamedFiles    = int(renamedfilecount);
         r.repairedBlocks  = m_repairRan ? m_blocksAtRepair : 0;
         r.backupFiles     = backupFiles();
+
+        // Only once a scan ran: a failed PreProcess() snapshots before the source
+        // blocks exist, and before that nothing was looked at.
+        if (mainpacket && !sourceblocks.empty()) {
+            const size_t recoverable = size_t(mainpacket->RecoverableFileCount());
+            for (size_t i = 0; i < sourcefiles.size() && i < recoverable; ++i) {
+                const Par2::Par2RepairerSourceFile* sf = sourcefiles[i];
+                const Par2::DescriptionPacket* dp = sf ? sf->GetDescriptionPacket() : nullptr;
+                if (!dp)
+                    continue;
+                Par2FileStatus status;
+                status.fileName = QString::fromStdString(dp->FileName());
+                status.blocks = int(sf->BlockCount());
+                // What UpdateVerificationResults() counts a file complete by.
+                status.complete = sf->GetCompleteFile() != nullptr;
+                status.targetExists = sf->GetTargetExists();
+                r.files.append(std::move(status));
+            }
+        }
         return r;
     }
 

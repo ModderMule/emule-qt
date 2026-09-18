@@ -112,6 +112,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushKadSearchesChanged: return QStringLiteral("PushKadSearchesChanged");
     case T::PushKnownClientsChanged: return QStringLiteral("PushKnownClientsChanged");
     case T::PushChatMessage:      return QStringLiteral("PushChatMessage");
+    case T::PushChatState:        return QStringLiteral("PushChatState");
     case T::PushFriendListChanged: return QStringLiteral("PushFriendListChanged");
     case T::PushClientSharedFiles: return QStringLiteral("PushClientSharedFiles");
     case T::PushPortMapStatus: return QStringLiteral("PushPortMapStatus");
@@ -146,6 +147,10 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushUsenetQueueItem:  return QStringLiteral("PushUsenetQueueItem");
     case T::PushUsenetItemRemoved: return QStringLiteral("PushUsenetItemRemoved");
     case T::PushUsenetItemFinished: return QStringLiteral("PushUsenetItemFinished");
+    case T::PushUsenetEngineState: return QStringLiteral("PushUsenetEngineState");
+    case T::SetUsenetFilesSkipped: return QStringLiteral("SetUsenetFilesSkipped");
+    case T::SetUsenetPaused:      return QStringLiteral("SetUsenetPaused");
+    case T::InspectNzb:           return QStringLiteral("InspectNzb");
     default:
         return QStringLiteral("Unknown(%1)").arg(static_cast<int>(type));
     }
@@ -598,6 +603,9 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushUsenetQueueItem:  emit usenetItemUpdated(msg); break;
     case IpcMsgType::PushUsenetItemRemoved: emit usenetItemRemoved(msg); break;
     case IpcMsgType::PushUsenetItemFinished: emit usenetItemFinished(msg); break;
+    case IpcMsgType::PushUsenetEngineState:
+        setUsenetEnginePaused(msg.fieldMap(0).value(QStringLiteral("paused")).toBool());
+        break;
     case IpcMsgType::PushSharedFileUpdate: emit sharedFileUpdated(msg); break;
     case IpcMsgType::PushUploadUpdate:     emit uploadUpdated(msg); break;
     case IpcMsgType::PushKadUpdate:        emit kadUpdated(msg); break;
@@ -605,6 +613,7 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushKnownClientsChanged: emit knownClientsChanged(msg); break;
     case IpcMsgType::PushCategoriesChanged:   emit categoriesChanged(msg); break;
     case IpcMsgType::PushChatMessage:        emit chatMessageReceived(msg); break;
+    case IpcMsgType::PushChatState:          emit chatStateReceived(msg); break;
     case IpcMsgType::PushFriendListChanged:  emit friendListChanged(msg); break;
     case IpcMsgType::PushClientSharedFiles:  emit clientSharedFilesReceived(msg); break;
     case IpcMsgType::PushPortMapStatus:      emit portMapStatusChanged(msg); break;

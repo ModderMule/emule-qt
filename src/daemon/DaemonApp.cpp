@@ -3,7 +3,9 @@
 
 #include "DaemonApp.h"
 #include "CoreNotifierBridge.h"
+#include "DaemonUsenetWebBackend.h"
 #include "IpcServer.h"
+#include "UsenetBridge.h"
 
 #include "IpcMessage.h"
 #include "LogRelay.h"
@@ -267,6 +269,7 @@ void DaemonApp::startWebServer()
     m_webServer->setStatistics(theApp.statistics);
     m_webServer->setStatsHistory(theApp.statsHistory);
     m_webServer->setPreferences(&thePrefs);
+    m_webServer->setTranslationRouter(m_translations);
 
     // Usenet preview. Injected as a callback rather than a pointer: WebServer
     // lives in eMule::Core and `core -> usenet` must never happen. DaemonApp is
@@ -295,6 +298,12 @@ void DaemonApp::startWebServer()
             }
             return out;
         });
+
+    // The Usenet page and the /api/v1/usenet routes. Created once and kept across
+    // web-server restarts: a URL fetch in flight holds on to it.
+    if (!m_usenetWebBackend)
+        m_usenetWebBackend = std::make_unique<DaemonUsenetWebBackend>();
+    m_webServer->setUsenetBackend(m_usenetWebBackend.get());
 
     m_webServer->setLogProvider([] {
         auto entries = DaemonApp::logsSince(0);
@@ -363,9 +372,6 @@ constexpr int kFeedPushWindowMs = 250;
 
 } // namespace
 
-/// Defined in IpcClientHandler.cpp, beside the GetUsenetQueue row it must match.
-QCborMap usenetQueueItemToCbor(const usenet::UsenetQueueItem& item);
-
 /// Likewise: the push and the StartIndexerSearch reply must carry the same row.
 QCborMap indexerResultToCbor(const indexer::IndexerResult& result);
 
@@ -388,7 +394,7 @@ void DaemonApp::connectUsenetPushes()
             IpcMessage msg(IpcMsgType::PushUsenetQueueItem, 0);
             if (auto* session = m_usenetSession.get(); session && session->queue()) {
                 if (const auto* item = session->queue()->findItem(id))
-                    msg.append(usenetQueueItemToCbor(*item));
+                    msg.append(UsenetBridge::itemToCbor(*item));
             }
             return msg;
         }, kUsenetPushWindowMs, subKey);
@@ -416,6 +422,15 @@ void DaemonApp::connectUsenetPushes()
         msg.append(id);
         msg.append(success);
         msg.append(message);
+        m_ipcServer->broadcast(msg);
+    });
+
+    // Uncoalesced for the same reason: a pause and a resume inside one window
+    // would otherwise leave a client showing whichever came first.
+    connect(m_usenetSession.get(), &usenet::UsenetSession::enginePausedChanged, this,
+            [this](bool paused) {
+        IpcMessage msg(IpcMsgType::PushUsenetEngineState, 0);
+        msg.append(QCborMap{{QStringLiteral("paused"), paused}});
         m_ipcServer->broadcast(msg);
     });
 }

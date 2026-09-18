@@ -17,6 +17,7 @@
 #include "server/Server.h"
 #include "server/ServerList.h"
 #include "utils/OtherFunctions.h"
+#include "utils/TimeUtils.h"
 
 #include <QCborArray>
 #include <QCborMap>
@@ -320,16 +321,65 @@ namespace eMule::Ipc {
     m.insert(QStringLiteral("uploadStartDelay"), static_cast<qint64>(c.getUpStartTimeDelay()));
     m.insert(QStringLiteral("fileRating"), static_cast<int>(c.fileRating()));
     m.insert(QStringLiteral("isConnected"), c.socket() != nullptr);
-    // File info
-    if (c.reqFile()) {
+    // File info. File Priority on the queue list is the *upload* file's up priority
+    // (MFC QueueListCtrl.cpp:204-226), not the requested download's.
+    if (c.reqFile())
         m.insert(QStringLiteral("reqFileName"), c.reqFile()->fileName());
-        m.insert(QStringLiteral("filePriority"), static_cast<int>(c.reqFile()->downPriority()));
-        m.insert(QStringLiteral("isAutoPriority"), c.reqFile()->isAutoDownPriority());
+    if (const auto* uf = c.uploadFile()) {
+        m.insert(QStringLiteral("uploadFileName"), uf->fileName());
+        m.insert(QStringLiteral("uploadFilePriority"), static_cast<int>(uf->upPriority()));
+        m.insert(QStringLiteral("uploadFileAutoPriority"), uf->isAutoUpPriority());
     }
-    if (c.uploadFile())
-        m.insert(QStringLiteral("uploadFileName"), c.uploadFile()->fileName());
     if (auto spm = buildSourcePartMap(c); !spm.isEmpty())
         m.insert(QStringLiteral("sourcePartMap"), std::move(spm));
+
+    // On Queue columns, MFC QueueListCtrl.cpp:230-253. score() runs in ms; /1000 is MFC's
+    // figure, as in toCborDetailed(). The list asks without isDownloading, like MFC.
+    m.insert(QStringLiteral("queueRating"), static_cast<qint64>(c.score(false, false, true) / 1000));
+    m.insert(QStringLiteral("queueScore"),  static_cast<qint64>(c.score(false) / 1000));
+    const auto tick = static_cast<uint32>(getTickCount());
+    const uint32 lastUpRequest = c.lastUpRequest();
+    m.insert(QStringLiteral("lastUpRequestDelay"),
+             lastUpRequest != 0 && tick >= lastUpRequest ? static_cast<qint64>(tick - lastUpRequest)
+                                                         : qint64(0));
+    m.insert(QStringLiteral("hasLowID"), c.hasLowID());
+    m.insert(QStringLiteral("addNextConnect"), c.addNextConnect());
+
+    // Obtained Parts bar, MFC CUpDownClient::DrawUpStatusBar (UploadClient.cpp:53-114).
+    // Parts go bit-packed: every client of the waiting list carries them.
+    const uint64 upFileSize = c.uploadFile() ? static_cast<uint64>(c.uploadFile()->fileSize())
+                                             : static_cast<uint64>(PARTSIZE) * c.upPartCount();
+    const bool holdsSlot = c.uploadState() == UploadState::Uploading
+                        || c.uploadState() == UploadState::Connecting;
+    if (upFileSize > 0 && (c.upPartCount() > 0 || holdsSlot)) {
+        QCborMap bar;
+        bar.insert(QStringLiteral("fileSize"), static_cast<qint64>(upFileSize));
+        const auto& status = c.upPartStatus();
+        QByteArray packed((static_cast<qsizetype>(status.size()) + 7) / 8, '\0');
+        for (std::size_t i = 0; i < status.size(); ++i) {
+            if (status[i])
+                packed[static_cast<qsizetype>(i / 8)] |= static_cast<char>(1 << (i % 8));
+        }
+        bar.insert(QStringLiteral("parts"), packed);
+        // Whole parts about to go out: the next request and the part of the latest block.
+        QCborArray next;
+        if (!c.blockRequests().empty() && c.blockRequests().front())
+            next.append(static_cast<qint64>(c.blockRequests().front()->startOffset / PARTSIZE));
+        if (!c.doneBlocks().empty() && c.doneBlocks().front())
+            next.append(static_cast<qint64>(c.doneBlocks().front()->startOffset / PARTSIZE));
+        bar.insert(QStringLiteral("next"), next);
+        QCborArray sent;
+        for (const auto* block : c.doneBlocks()) {
+            if (sent.size() >= 64)
+                break;
+            if (block) {
+                sent.append(QCborArray{static_cast<qint64>(block->startOffset),
+                                       static_cast<qint64>(block->endOffset)});
+            }
+        }
+        bar.insert(QStringLiteral("sent"), sent);
+        m.insert(QStringLiteral("upStatus"), bar);
+    }
     return m;
 }
 

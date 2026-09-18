@@ -9,6 +9,7 @@
 
 #include "portmap/PortMapTypes.h"
 #include "server/ServerMsgType.h"
+#include "friends/FriendConnectProgress.h"
 
 #include <QCborArray>
 #include <QObject>
@@ -28,6 +29,7 @@ class PartFile;
 class SearchFile;
 class SmtpClient;
 class UpDownClient;
+class Friend;
 
 class CoreNotifierBridge : public QObject {
     Q_OBJECT
@@ -93,6 +95,8 @@ private slots:
 
     // Chat signals
     void onChatMessageReceived(const QString& fromUser, const QString& message);
+    void onFriendConnectionProgress(eMule::Friend* f, eMule::ChatConnectProgress step);
+    void onFriendConnectingResult(eMule::Friend* f, bool success);
 
     // Client shared files signals
     void onClientSharedFilesReceived(const QByteArray& userHash,

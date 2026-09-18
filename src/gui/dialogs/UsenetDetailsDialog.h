@@ -28,6 +28,7 @@ class QTreeWidgetItem;
 namespace eMule {
 
 class IpcClient;
+class UsenetFileCheckList;
 
 class UsenetDetailsDialog : public QDialog {
     Q_OBJECT
@@ -74,6 +75,9 @@ private:
     QLabel* m_fileCount = nullptr;
 
     QTreeWidget* m_tree = nullptr;
+
+    /// The Name column's boxes: which files download.
+    UsenetFileCheckList* m_checks = nullptr;
 
     QTimer* m_poll = nullptr;
 };

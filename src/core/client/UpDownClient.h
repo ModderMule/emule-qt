@@ -27,6 +27,7 @@
 #include <memory>
 #include <unordered_map>
 #include <vector>
+#include <utility>
 
 namespace eMule {
 
@@ -224,6 +225,15 @@ public:
     [[nodiscard]] ChatState chatState() const { return m_chatState; }
     void setChatState(ChatState state) { m_chatState = state; }
 
+    /// Text typed at an offline peer, held until the session comes up. It lives on the
+    /// client rather than the Friend so it also covers a non-friend chat partner, and it
+    /// is moved across explicitly when a friend swaps its client object.
+    void setPendingChatMessage(const QString& message) { m_pendingChatMessage = message; }
+    [[nodiscard]] QString takePendingChatMessage() { return std::exchange(m_pendingChatMessage, QString()); }
+    [[nodiscard]] bool hasPendingChatMessage() const { return !m_pendingChatMessage.isEmpty(); }
+    /// Send it if there is one and we can. Called once the chat session is established.
+    void sendPendingChatMessage();
+
     [[nodiscard]] KadState kadState() const { return m_kadState; }
     void setKadState(KadState state) { m_kadState = state; }
 
@@ -265,6 +275,16 @@ public:
     [[nodiscard]] bool supportsCryptLayer() const { return m_supportsCryptLayer; }
     [[nodiscard]] bool requestsCryptLayer() const { return m_requestsCryptLayer; }
     [[nodiscard]] bool requiresCryptLayer() const { return m_requiresCryptLayer; }
+    /// True when this peer's obfuscation settings and ours cannot meet: it demands
+    /// obfuscation we have switched off, or we demand it and the peer can't. MFC keeps
+    /// the same test in TryToConnect (BaseClient.cpp:1300) and CheckAndAddSource
+    /// (DownloadQueue.cpp:478), the latter also insisting on a user hash — the RC4 key
+    /// seed — which is what @p requireHash adds.
+    ///
+    /// The flags are chained the way MFC's accessors are (requires implies requests
+    /// implies supports); ours are raw members, and setConnectOptions() does not chain
+    /// them either.
+    [[nodiscard]] bool isCryptLayerIncompatible(bool requireHash) const;
     /// A direct UDP callback needs a reachable Kad endpoint and a hash to address it
     /// with; without both the callback goes nowhere and we'd just stall on it.
     [[nodiscard]] bool supportsDirectUDPCallback() const
@@ -289,6 +309,9 @@ public:
     [[nodiscard]] bool supportsSourceExchange2() const { return m_supportsSourceEx2; }
     void setSupportsSourceExchange2(bool s) { m_supportsSourceEx2 = s; }
     [[nodiscard]] uint8 extendedRequestsVer() const { return m_extendedRequestsVer; }
+    /// Normally set by hello / EMULEINFO parsing. Explicit setter for the same reason
+    /// setUdpVer() has one: it gates whether a peer's part status is parsed at all.
+    void setExtendedRequestsVer(uint8 v) { m_extendedRequestsVer = v; }
     [[nodiscard]] uint8 acceptCommentVer() const { return m_acceptCommentVer; }
     [[nodiscard]] uint8 compatibleClient() const { return m_compatibleClient; }
     [[nodiscard]] uint8 kadVersion() const { return m_kadVersion; }
@@ -617,6 +640,9 @@ public:
     /// OP_CHANGE_CLIENT_IP — the peer's new public IPv6, 16 raw bytes, no tag wrapper.
     /// Reachable from both protocol dispatchers; see the opcode comment in Opcodes.h.
     void processChangeClientIP(const uint8* data, uint32 size);
+    /// A peer telling us it moved to another server, and what ID it got there.
+    /// MFC ListenSocket.cpp:604.
+    void processChangeClientID(const uint8* data, uint32 size);
     void sendSharedDirectories();
     bool safeConnectAndSendPacket(std::unique_ptr<Packet> packet);
     [[nodiscard]] bool isObfuscatedConnectionEstablished() const;
@@ -743,6 +769,11 @@ public:
     {
         return m_blockRequests;
     }
+    /// Blocks already sent this slot, newest first — the green of the upload status bar.
+    [[nodiscard]] const std::list<Requested_Block_Struct*>& doneBlocks() const
+    {
+        return m_doneBlocks;
+    }
 
     // -- Phase 3 — download (DownloadClient.cpp) ----------------------------
 
@@ -798,10 +829,14 @@ public:
                                        bool allowShortReaskTime = false,
                                        bool fileIsNNP = false) const;
     [[nodiscard]] uint32 timeUntilReask() const;
-    [[nodiscard]] uint32 timeUntilReask(const PartFile* file) const;
+    /// @param allowShortReaskTime use MIN_REQUESTTIME instead of FILEREASKTIME, as MFC
+    ///        does for a source we hold no conversation with.
+    [[nodiscard]] uint32 timeUntilReask(const PartFile* file, bool allowShortReaskTime = false) const;
     /// Tick of the last connect attempt — MFC's GetLastTriedToConnectTime(). Seeded to
     /// 20 minutes in the past by the constructor, so a brand-new source is dialable.
     [[nodiscard]] uint32 lastTriedToConnect() const { return m_lastTriedToConnect; }
+    /// MFC SetLastTriedToConnectTime() — stamps the 20-minute re-dial window.
+    void setLastTriedToConnectNow();
     [[nodiscard]] uint32 lastAskedTime(const PartFile* file = nullptr) const;
     void setLastAskedTime();
     void updateDisplayedInfo(bool force = false);
@@ -814,13 +849,26 @@ public:
     void processAnswerSources2(const uint8* data, uint32 size);   // v2
 
     // AICH
-    [[nodiscard]] bool isSupportingAICH() const { return m_supportsAICH > 0; }
+    /// Bit 0 of the hello's 3-bit AICH field is "supports AICH"; the other two are
+    /// version bits, so `> 0` also accepted peers that had only set those.
+    /// MFC srchybrid/UpdownClient.h:396.
+    [[nodiscard]] bool isSupportingAICH() const { return (m_supportsAICH & 0x01) != 0; }
     [[nodiscard]] const AICHHash* reqFileAICHHash() const;
+    /// Remember the AICH root hash this peer reports for the file it is downloading.
+    /// MFC SetReqFileAICHHash().
+    void setReqFileAICHHash(const AICHHash& hash);
+    /// Forget it again. MFC SetReqFileAICHHash(NULL), used when its recovery answer
+    /// failed so the next draw cannot land on the same peer.
+    void clearReqFileAICHHash();
     [[nodiscard]] bool isAICHReqPending() const { return m_aichRequested; }
+    void setAICHReqPending(bool pending) { m_aichRequested = pending; }
     void sendAICHRequest(PartFile* forFile, uint16 part);
     void processAICHAnswer(const uint8* data, uint32 size);
     void processAICHRequest(const uint8* data, uint32 size);
-    void processAICHFileHash(SafeMemFile& data, PartFile* file);
+    /// Take in the AICH root hash this peer reports for @p file. Exactly one of @p data
+    /// (read 20 bytes from it) and @p aichHash is given; a null @p file means read the
+    /// file hash from @p data first. MFC DownloadClient.cpp:2140.
+    void processAICHFileHash(SafeMemFile* data, PartFile* file, const AICHHash* aichHash);
 
     [[nodiscard]] virtual bool isEd2kClient() const { return true; }
     [[nodiscard]] bool isUrlClient() const { return !isEd2kClient(); }
@@ -894,6 +942,16 @@ private:
     KnownFile* findUploadFile(const uint8* fileHash) const;
     void sendFileNotFound(const uint8* fileHash);
     void sendFileStatus(const uint8* fileHash, KnownFile* file);
+
+    /// Answer a standalone OP_AICHFILEHASHREQ with our AICH root hash for that file.
+    /// MFC ListenSocket.cpp:1545.
+    void processAICHFileHashRequest(const uint8* data, uint32 size);
+    /// Consider a peer that just asked us for @p file as a source for it, when it is a
+    /// multi-part download of ours with room left. MFC's CheckAndAddKnownSource sites.
+    void maybeAddAsPassiveSource(KnownFile* file);
+    /// Answer an OP_AICHREQUEST with real recovery data when we can. False means the
+    /// caller owes the peer the empty "cannot serve" answer.
+    bool canServeAICHRecovery(const uint8* fileHash, uint16 part, const AICHHash& masterHash);
 
     // -- Phase 3 — private helpers ------------------------------------------
     int filePrioAsNumber() const;
@@ -1047,6 +1105,10 @@ private:
     // -- Pointers -----------------------------------------------------------
     EMSocket* m_socket = nullptr;
     ClientCredits* m_credits = nullptr;
+    /// The AICH root hash *this peer* reports for m_reqFile — MFC's m_pReqFileAICHHash.
+    /// Not our own: comparing the file's hash against itself, which is what the port did,
+    /// made every AICH-capable source look like it agreed with us.
+    std::unique_ptr<AICHHash> m_reqFileAICHHash;
     Friend* m_friend = nullptr;
 
     // -- Timestamps ---------------------------------------------------------
@@ -1087,6 +1149,7 @@ private:
     bool m_addNextConnect = false;
     bool m_sourceExchangeSwapped = false;
     bool m_secIdentSent = false;
+    QString m_pendingChatMessage;
     uint16 m_lastPartAsked = UINT16_MAX;
     uint16 m_showDR = 0;
     QString m_clientSoftwareStr;

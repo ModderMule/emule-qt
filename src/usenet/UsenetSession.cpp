@@ -53,6 +53,8 @@ UsenetSession::UsenetSession(QObject* parent)
     connect(m_queue.get(), &UsenetQueue::itemAdded, this, &UsenetSession::itemAdded);
     connect(m_queue.get(), &UsenetQueue::itemRemoved, this, &UsenetSession::itemRemoved);
     connect(m_queue.get(), &UsenetQueue::itemFinished, this, &UsenetSession::itemFinished);
+    connect(m_queue.get(), &UsenetQueue::enginePausedChanged,
+            this, &UsenetSession::enginePausedChanged);
 
     applyPreferences();
 }
@@ -139,6 +141,8 @@ void UsenetSession::applyPreferences()
         m_watchFolder->applyPreferences();
 
     if (m_queue) {
+        m_queue->setEnginePaused(thePrefs.usenetPaused());
+
         // Before applyServers(): its worker rebuild is what hands the route out.
         m_queue->setProxy(toNetworkProxy(thePrefs.usenetProxySettings()));
         m_queue->applyServers(thePrefs.usenetServers(),

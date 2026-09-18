@@ -708,36 +708,12 @@ QWidget* OptionsDialog::createGeneralPage()
     m_langCombo->addItem(tr("System Default"), QString{});
     m_langCombo->addItem(QStringLiteral("English (United States)"), QStringLiteral("en_US"));
 
-    // Discover available translations from .qm files. Every candidate directory,
-    // not just the first with any: main() picks one directory to load from, but the
-    // combo offers the union of what all of them hold.
-    const QStringList langSearchPaths =
-        eMule::AppConfig::langCandidates(QCoreApplication::applicationDirPath());
-    QSet<QString> foundLocales;
-    for (const auto& dir : langSearchPaths) {
-        QDirIterator it(dir, {QStringLiteral("emuleqt_*.qm")}, QDir::Files);
-        while (it.hasNext()) {
-            it.next();
-            // Extract locale code from "emuleqt_xx_YY.qm"
-            QString name = it.fileName();
-            name.remove(0, 8);           // strip "emuleqt_"
-            name.chop(3);                // strip ".qm"
-            if (!name.isEmpty() && name != QStringLiteral("en"))
-                foundLocales.insert(name);
-        }
-    }
-    // Add each found locale with its native language name
-    QList<std::pair<QString, QString>> available;
-    for (const auto& code : foundLocales) {
-        QLocale loc(code);
-        QString label = loc.nativeLanguageName();
-        if (!loc.nativeTerritoryName().isEmpty())
-            label += QStringLiteral(" (") + loc.nativeTerritoryName() + u')';
-        available.emplaceBack(label, code);
-    }
-    std::ranges::sort(available, {}, &std::pair<QString, QString>::first);
-    for (const auto& [label, code] : available)
-        m_langCombo->addItem(label, code);
+    // Every candidate directory, not just the first with any: main() picks one
+    // directory to load from, but the combo offers the union of what all of them hold.
+    const QList<eMule::AppLanguage> languages = eMule::AppConfig::availableLanguages(
+        eMule::AppConfig::langCandidates(QCoreApplication::applicationDirPath()));
+    for (const auto& lang : languages)
+        m_langCombo->addItem(lang.label, lang.code);
 
     langLayout->addWidget(m_langCombo);
     layout->addWidget(langGroup);

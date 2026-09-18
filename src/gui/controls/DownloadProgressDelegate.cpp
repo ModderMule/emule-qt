@@ -4,6 +4,7 @@
 
 #include "controls/DownloadProgressDelegate.h"
 #include "controls/DownloadListModel.h"
+#include "controls/PartBarPainter.h"
 
 #include <QPainter>
 
@@ -92,22 +93,11 @@ void DownloadProgressDelegate::paint(QPainter* painter, const QStyleOptionViewIt
 
     // Layer 1: Part map (full bar height)
     if (!partMap.isEmpty()) {
-        const qsizetype partCount = partMap.size();
-        const double partWidth = static_cast<double>(barRect.width()) / static_cast<double>(partCount);
-
-        for (qsizetype i = 0; i < partCount; ++i) {
-            const auto status = static_cast<uint8_t>(partMap[i]);
-            const QColor color = isSourceRow ? sourcePartColor(status)
-                               : paused     ? partColorPaused(status)
-                                            : partColorActive(status);
-
-            int x0 = barRect.left() + static_cast<int>(static_cast<double>(i) * partWidth);
-            int x1 = barRect.left() + static_cast<int>(static_cast<double>(i + 1) * partWidth);
-            if (i == partCount - 1)
-                x1 = barRect.right() + 1;  // fill to edge
-
-            painter->fillRect(x0, barRect.top(), x1 - x0, barRect.height(), color);
-        }
+        paintPartBar(*painter, barRect, partMap, [isSourceRow, paused](uint8_t status) {
+            return isSourceRow ? sourcePartColor(status)
+                 : paused      ? partColorPaused(status)
+                               : partColorActive(status);
+        });
     } else if (!isSourceRow) {
         // Fallback: simple bar when no part map (e.g. completed files)
         painter->fillRect(barRect, QColor(104, 104, 104));
@@ -123,20 +113,8 @@ void DownloadProgressDelegate::paint(QPainter* painter, const QStyleOptionViewIt
     }
 
     // Layer 2: Thin green progress overlay (top 3px) — file rows only
-    if (!isSourceRow) {
-        constexpr int progressHeight = 3;
-        if (barRect.height() > progressHeight) {
-            QRect greyBar(barRect.left(), barRect.top(), barRect.width(), progressHeight);
-            painter->fillRect(greyBar, QColor(224, 224, 224));
-
-            if (percent > 0.0) {
-                int greenWidth = static_cast<int>(barRect.width() * percent / 100.0);
-                QRect greenBar(barRect.left(), barRect.top(),
-                               std::min(greenWidth, barRect.width()), progressHeight);
-                painter->fillRect(greenBar, QColor(0, 224, 0));
-            }
-        }
-    }
+    if (!isSourceRow)
+        paintProgressStrip(*painter, barRect, percent);
 
     painter->restore();
 }

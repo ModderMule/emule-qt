@@ -171,6 +171,7 @@
     <ClCompile Include="crypto\AICHSyncThread.cpp" />
     <ClCompile Include="files\AbstractFile.cpp" />
     <ClCompile Include="app\AppConfig.cpp" />
+    <ClCompile Include="app\TranslationRouter.cpp" />
     <ClCompile Include="app\AppContext.cpp" />
     <ClCompile Include="archive\ArchiveReader.cpp" />
     <ClCompile Include="archive\ExternalUnpacker.cpp" />
@@ -309,6 +310,7 @@
     <QtMoc Include="crypto\AICHSyncThread.h" />
     <ClInclude Include="files\AbstractFile.h" />
     <ClInclude Include="app\AppConfig.h" />
+    <ClInclude Include="app\TranslationRouter.h" />
     <ClInclude Include="app\AppContext.h" />
     <ClInclude Include="archive\ArchiveReader.h" />
     <ClInclude Include="archive\ExternalUnpacker.h" />
@@ -347,6 +349,7 @@
     <ClInclude Include="crypto\FileIdentifier.h" />
     <QtMoc Include="media\FrameGrabThread.h" />
     <ClInclude Include="friends\Friend.h" />
+    <ClInclude Include="friends\FriendConnectProgress.h" />
     <QtMoc Include="friends\FriendList.h" />
     <QtMoc Include="net\HostResolver.h" />
     <QtMoc Include="portmap\PortMapBackend.h" />
@@ -360,6 +363,8 @@
     <QtMoc Include="chat\IrcClient.h" />
     <ClInclude Include="chat\IrcMessage.h" />
     <ClInclude Include="webserver\JsonSerializers.h" />
+    <ClInclude Include="webserver\UsenetWebBackend.h" />
+    <ClInclude Include="webserver\WebTemplateStrings.h" />
     <ClInclude Include="kademlia\KadClientSearcher.h" />
     <ClInclude Include="kademlia\KadContact.h" />
     <ClInclude Include="kademlia\KadEntry.h" />
@@ -448,6 +453,8 @@
     <QtMoc Include="stats\StatsHistory.h" />
     <ClInclude Include="stats\StatsSnapshot.h" />
     <ClInclude Include="utils\StringUtils.h" />
+    <ClInclude Include="utils\ByteRateSampler.h" />
+    <ClInclude Include="utils\UsenetDisplay.h" />
     <ClInclude Include="protocol\Tag.h" />
     <ClInclude Include="utils\ThreadUtils.h" />
     <ClInclude Include="net\ThrottledSocket.h" />

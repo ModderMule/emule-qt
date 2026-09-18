@@ -9,6 +9,7 @@
 #include "DaemonApp.h"
 
 #include "app/AppConfig.h"
+#include "app/TranslationRouter.h"
 #include "prefs/Preferences.h"
 #include "utils/CrashHandler.h"
 #include "utils/Log.h"
@@ -115,8 +116,16 @@ int main(int argc, char* argv[])
     if (cli.portOverride() != 0)
         ipcPort = cli.portOverride();
 
+    // The web UI answers each session in its own language through this. It
+    // translates nothing outside a web request, so logs and IPC stay as they are.
+    // Declared before the daemon so it outlives the web server.
+    eMule::TranslationRouter translations(
+        eMule::AppConfig::langCandidates(QCoreApplication::applicationDirPath()));
+    QCoreApplication::installTranslator(&translations);
+
     // Create and start daemon
     eMule::DaemonApp daemon;
+    daemon.setTranslationRouter(&translations);
     if (!daemon.start()) {
         eMule::logError(QStringLiteral("Failed to start daemon"));
         return 1;

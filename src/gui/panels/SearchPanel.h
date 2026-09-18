@@ -156,6 +156,9 @@ private:
     /// cannot wait for a round trip, so the list has to be there already.
     void requestCategories();
 
+    /// Refill the "->" category strip beside Download from m_categoryTitles.
+    void updateCategoryTabs();
+
     QStringList m_categoryTitles;
 
     /// The tab a searchID belongs to, or nullptr. Indexer searches and ED2K
@@ -173,13 +176,13 @@ private:
     /// Download button, the context menu and a double click — so the question is
     /// asked once per action instead of once per selected row. Routes indexer
     /// rows to the grab path, which has no hash to download by.
-    /// @p category files an indexer grab into that category; 0 is "nobody
-    /// chose", which lets the daemon auto-categorise. Ignored for an eD2K row,
-    /// which has its own category machinery on the Transfers tab.
-    void downloadResults(const QModelIndexList& proxyRows, int category = 0);
+    /// @p category files the download into that category; -1 takes the "->" strip's
+    /// selection (MFC GetSelectedCat). For an indexer grab 0 is "nobody chose", which
+    /// lets the daemon auto-categorise.
+    void downloadResults(const QModelIndexList& proxyRows, int category = -1);
 
     /// Send one ED2K download request for a proxy row.
-    void sendDownloadRequest(int proxyRow);
+    void sendDownloadRequest(int proxyRow, int category);
     [[nodiscard]] QString buildEd2kLink(int proxyRow);
     void copyEd2kLink(int row);
     void closeSearch(int tabIndex);
@@ -257,6 +260,8 @@ private:
     ListTreeView* m_resultView = nullptr;
     QLabel* m_statusLabel = nullptr;
     QPushButton* m_downloadBtn = nullptr;
+    QLabel* m_downloadToLabel = nullptr;   ///< MFC IDC_STATIC_DLTOof
+    QTabBar* m_categoryTabs = nullptr;     ///< MFC IDC_CATTAB2
     QPushButton* m_closeAllBtn = nullptr;
 
     // Context menu

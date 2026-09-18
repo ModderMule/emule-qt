@@ -37,6 +37,8 @@
 #include <QSignalSpy>
 #include <QTest>
 
+#include <memory>
+
 #include <archive.h>
 #include <archive_entry.h>
 
@@ -303,6 +305,30 @@ QStringList namesIn(const QString& dir)
     return names;
 }
 
+/// Pause the engine the moment post-processing starts, so that when the repair
+/// cycle sends the item back to downloading it re-enters a queue that is
+/// waiting — the case that used to re-enter saying nothing at all.
+///
+/// The first change carrying a post-processing status comes from onPostStage(),
+/// queued from the processor thread and so delivered strictly before that
+/// thread's result: there is no window to miss.
+///
+/// Once, and then it lets go. Post-processing runs again after the cycle has
+/// fetched what it went back for, and a hook that re-armed would pause that
+/// round too — with nobody left to resume it.
+void pauseWhenPostProcessingBegins(UsenetQueue& queue, const QString& id)
+{
+    auto once = std::make_shared<QMetaObject::Connection>();
+    *once = QObject::connect(&queue, &UsenetQueue::itemChanged, &queue,
+                             [&queue, id, once](const QString& changed) {
+                                 const UsenetQueueItem* item = queue.findItem(id);
+                                 if (changed != id || !item || !item->isPostProcessing())
+                                     return;
+                                 QObject::disconnect(*once);
+                                 queue.setEnginePaused(true);
+                             });
+}
+
 } // namespace
 
 class tst_UsenetPostPipeline : public QObject {
@@ -327,6 +353,11 @@ private slots:
     void anArchiveHidingADisguisedProgramIsNeverExtracted();
     void aStoppedReleaseWaitsForTheUserAndOnlyTheUser();
     void aReleaseThatCannotBeRepairedStopsBeforeTheRest();
+    void aSkippedFileTheSetCoversNeedsNoRecoveryVolumes();
+    void realDamageFetchesTheSkippedFileTheRepairNeeds();
+    void aRenamePassDoesNotPublishASkippedFile();
+    void aRepairGoingBackForVolumesSaysWhatIsHoldingItUp();
+    void aRepairGoingBackForASkippedFileSaysWhatIsHoldingItUp();
 };
 
 // ---------------------------------------------------------------------------
@@ -388,6 +419,123 @@ void tst_UsenetPostPipeline::skipsRecoveryVolumesForAHealthyRelease()
     QCOMPARE(c.recoveryVolumes, uint64(0));
     QCOMPARE(c.unpackOk, uint64(1));
     QCOMPARE(c.itemsCompleted, uint64(1));
+
+    queue.stop();
+#endif
+}
+
+void tst_UsenetPostPipeline::aSkippedFileTheSetCoversNeedsNoRecoveryVolumes()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    eMule::testing::TempDir tmp;
+    const QString stage = tmp.filePath(QStringLiteral("stage"));
+    QVERIFY(QDir().mkpath(stage));
+
+    // The recovery set covers the sample too, so a verify reads it as missing.
+    const QByteArray movie = payload(24000, 5);
+    QVERIFY(writeZip(QDir(stage).filePath(QStringLiteral("Rel.zip")),
+                     QStringLiteral("Movie.mkv"), movie));
+    QVERIFY(writeFile(QDir(stage).filePath(QStringLiteral("Sample.mkv")), payload(9000, 9)));
+    QVERIFY(createPar2Set(stage, QStringLiteral("Rel"),
+                          {QStringLiteral("Rel.zip"), QStringLiteral("Sample.mkv")}, 4000, 8));
+
+    FakeNntpServer server;
+    const PostedRelease release = postRelease(stage, server);
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 4)}, 60);
+    queue.setPostProcessingOptions({});
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    UsenetAddOptions options;
+    options.skippedFiles = {int(release.fileNames.indexOf(QStringLiteral("Sample.mkv")))};
+    QString error;
+    const QString id = queue.addNzb(release.nzb, QStringLiteral("Rel"), error, options);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+
+    QVERIFY2(finished.wait(60000), "no terminal outcome");
+    QVERIFY2(finished.at(0).at(1).toBool(), qPrintable(finished.at(0).at(2).toString()));
+
+    // Its blocks alone are no damage: nothing bought to rebuild what the user left out.
+    QVERIFY2(!requestedAnyRecoveryVolume(server.receivedCommands()),
+             "recovery volumes were fetched to rebuild a skipped file");
+    for (const QString& cmd : server.receivedCommands()) {
+        QVERIFY2(!cmd.contains(QLatin1String("Sample.mkv.")),
+                 qPrintable(QStringLiteral("the skipped file was asked for: %1").arg(cmd)));
+    }
+
+    const QDir incoming(thePrefs.incomingDir());
+    QCOMPARE(readFile(incoming.filePath(QStringLiteral("Movie.mkv"))), movie);
+    QVERIFY(!QFile::exists(incoming.filePath(QStringLiteral("Sample.mkv"))));
+
+    queue.stop();
+#endif
+}
+
+void tst_UsenetPostPipeline::realDamageFetchesTheSkippedFileTheRepairNeeds()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    eMule::testing::TempDir tmp;
+    const QString stage = tmp.filePath(QStringLiteral("stage"));
+    QVERIFY(QDir().mkpath(stage));
+
+    const QByteArray movie = payload(24000, 6);
+    QVERIFY(writeZip(QDir(stage).filePath(QStringLiteral("Rel.zip")),
+                     QStringLiteral("Movie.mkv"), movie));
+    QVERIFY(writeFile(QDir(stage).filePath(QStringLiteral("Sample.mkv")), payload(9000, 10)));
+    QVERIFY(createPar2Set(stage, QStringLiteral("Rel"),
+                          {QStringLiteral("Rel.zip"), QStringLiteral("Sample.mkv")}, 4000, 8));
+
+    // Part 2 of the archive arrives with wrong bytes, so the repair is real.
+    FakeNntpServer server;
+    const PostedRelease release =
+        postRelease(stage, server, QStringLiteral("Rel.zip"), {}, {2});
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 4)}, 60);
+    queue.setPostProcessingOptions({});
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    UsenetAddOptions options;
+    options.skippedFiles = {int(release.fileNames.indexOf(QStringLiteral("Sample.mkv")))};
+    QString error;
+    const QString id = queue.addNzb(release.nzb, QStringLiteral("Rel"), error, options);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+
+    QVERIFY2(finished.wait(90000), "no terminal outcome");
+    QVERIFY2(finished.at(0).at(1).toBool(), qPrintable(finished.at(0).at(2).toString()));
+
+    // par2 cannot repair around an absent file, so the sample was fetched after all…
+    bool fetchedSample = false;
+    for (const QString& cmd : server.receivedCommands())
+        fetchedSample = fetchedSample || cmd.contains(QLatin1String("Sample.mkv."));
+    QVERIFY2(fetchedSample, "the repair ran without the skipped file it needed");
+    QVERIFY(queue.findItem(id)->files.at(options.skippedFiles.first()).neededForRepair);
+
+    // …and it is still not published.
+    const QDir incoming(thePrefs.incomingDir());
+    QCOMPARE(readFile(incoming.filePath(QStringLiteral("Movie.mkv"))), movie);
+    QVERIFY(!QFile::exists(incoming.filePath(QStringLiteral("Sample.mkv"))));
 
     queue.stop();
 #endif
@@ -1346,6 +1494,257 @@ void tst_UsenetPostPipeline::aReleaseThatCannotBeRepairedStopsBeforeTheRest()
     QVERIFY(firstBodyIndexFor(server.receivedCommands(), QStringLiteral("Rel.part6.bin")) >= 0);
     QVERIFY2(!requestedAnyRecoveryVolume(server.receivedCommands()),
              "bought recovery volumes that could never cover the shortfall");
+
+    queue.stop();
+#endif
+}
+
+#ifdef EMULE_HAVE_PAR2
+namespace {
+
+struct ObfuscatedPair {
+    PostedRelease posted;
+    QString movieReal;
+    QString movieHex;
+    QString sampleReal;
+    QString sampleHex;
+};
+
+/// Two payload files, the set built over their real names and both then renamed
+/// to hex. Skipping the *only* payload file is refused, so the rename pass needs
+/// a release with something left in it.
+ObfuscatedPair postObfuscatedPair(const QString& stage, FakeNntpServer& server,
+                                  const QByteArray& movie, const QByteArray& sample)
+{
+    ObfuscatedPair out;
+    out.movieReal = QStringLiteral("Movie.mkv");
+    out.movieHex = QStringLiteral("b1c2d3e4f5061728.bin");
+    out.sampleReal = QStringLiteral("Sample.mkv");
+    out.sampleHex = QStringLiteral("c1d2e3f405162738.bin");
+
+    writeFile(QDir(stage).filePath(out.movieReal), movie);
+    writeFile(QDir(stage).filePath(out.sampleReal), sample);
+    createPar2Set(stage, QStringLiteral("Rel"), {out.movieReal, out.sampleReal}, 4000, 8);
+    QFile::rename(QDir(stage).filePath(out.movieReal), QDir(stage).filePath(out.movieHex));
+    QFile::rename(QDir(stage).filePath(out.sampleReal), QDir(stage).filePath(out.sampleHex));
+
+    out.posted = postRelease(stage, server);
+    return out;
+}
+
+} // namespace
+#endif
+
+// The rename pass is the one thing that can hand a skipped file a publishable
+// name back: the user rejected `c1d2e3f4…bin`, and par2 knows it is really
+// Sample.mkv. Restoring the name must not restore it to the release.
+void tst_UsenetPostPipeline::aRenamePassDoesNotPublishASkippedFile()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    eMule::testing::TempDir tmp;
+    const QString stage = tmp.filePath(QStringLiteral("stage"));
+    QVERIFY(QDir().mkpath(stage));
+
+    const QByteArray movie = payload(24000, 31);
+    const QByteArray sample = payload(9000, 32);
+
+    FakeNntpServer server;
+    const ObfuscatedPair rel = postObfuscatedPair(stage, server, movie, sample);
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 4)}, 60);
+    queue.setPostProcessingOptions({});
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    UsenetAddOptions options;
+    const int sampleIndex = int(rel.posted.fileNames.indexOf(rel.sampleHex));
+    QVERIFY(sampleIndex >= 0);
+    options.skippedFiles = {sampleIndex};
+    QString error;
+    const QString id = queue.addNzb(rel.posted.nzb, QStringLiteral("Rel"), error, options);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+
+    QVERIFY2(finished.wait(120000), "no terminal outcome");
+    QVERIFY2(finished.at(0).at(1).toBool(), qPrintable(finished.at(0).at(2).toString()));
+
+    // Nothing was bought to rebuild what the user left out.
+    QVERIFY2(!requestedAnyRecoveryVolume(server.receivedCommands()),
+             "recovery volumes were fetched to rebuild a file the user left out");
+
+    // The skipped file itself *is* re-fetched here, unlike the plainly named
+    // case: par2 knows it as Sample.mkv, the disk knows it as a hex name, and
+    // nothing links the two until the set has been read — so the verify cannot
+    // tell "the file the user skipped" from real damage, and errs towards
+    // downloading. What must not change is where it ends up.
+    QVERIFY(queue.findItem(id)->files.at(sampleIndex).neededForRepair);
+
+    // The name par2 handed back is not a licence to publish it.
+    QCOMPARE(namesIn(thePrefs.incomingDir()), QStringList{rel.movieReal});
+
+    queue.stop();
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// The cycle re-enters a queue that may be waiting
+// ---------------------------------------------------------------------------
+//
+// Completion is a loop here, so an item goes back to Downloading long after it
+// first got there — and it lands in whatever global wait is in force at that
+// moment. Both re-entries used to say nothing, which the row renders as a
+// release that stopped for no reason: the two cases below are the only paths
+// in the module where a *finished download* starts waiting again.
+
+void tst_UsenetPostPipeline::aRepairGoingBackForVolumesSaysWhatIsHoldingItUp()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    eMule::testing::TempDir tmp;
+    const QString stage = tmp.filePath(QStringLiteral("stage"));
+    QVERIFY(QDir().mkpath(stage));
+
+    const QByteArray movie = payload(24000, 9);
+    QVERIFY(writeZip(QDir(stage).filePath(QStringLiteral("Rel.zip")),
+                     QStringLiteral("Movie.mkv"), movie));
+    QVERIFY(createPar2Set(stage, QStringLiteral("Rel"), {QStringLiteral("Rel.zip")},
+                          4000, 8));
+
+    // One article withheld: the file keeps its length and gets a hole, so the
+    // verify comes up short and the cycle goes back for recovery volumes.
+    FakeNntpServer server;
+    const PostedRelease release =
+        postRelease(stage, server, QStringLiteral("Rel.zip"), {3});
+    QCOMPARE(release.droppedIds.size(), 1);
+
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 4)}, 60);
+    queue.setPostProcessingOptions({});
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    const QString id = queue.addNzb(release.nzb, QStringLiteral("Rel"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+
+    // The pause arrives while par2 is still working, so the verdict comes back
+    // to a queue that is holding everything.
+    pauseWhenPostProcessingBegins(queue, id);
+
+    QTRY_VERIFY2_WITH_TIMEOUT(
+        queue.findItem(id)->status == UsenetItemStatus::Downloading
+            && queue.findItem(id)->stalledReason.contains(QStringLiteral("paused")),
+        qPrintable(QStringLiteral("the cycle went back for volumes saying \"%1\"")
+                       .arg(queue.findItem(id)->stalledReason)),
+        45000);
+
+    // And it really is waiting: the volumes it asked the plan for are not on
+    // the wire. A line that names a wait has to describe one.
+    QVERIFY2(!requestedAnyRecoveryVolume(server.receivedCommands()),
+             "a paused queue bought recovery volumes anyway");
+
+    // Resumed, the cycle finishes: a pause in the middle of it is a wait, not a
+    // dead end.
+    queue.setEnginePaused(false);
+    QVERIFY2(finished.wait(90000), "the cycle never resumed after the pause");
+    QVERIFY2(finished.at(0).at(1).toBool(),
+             qPrintable(QStringLiteral("repair failed: %1").arg(finished.at(0).at(2).toString())));
+    QVERIFY(requestedAnyRecoveryVolume(server.receivedCommands()));
+    QCOMPARE(readFile(QDir(thePrefs.incomingDir()).filePath(QStringLiteral("Movie.mkv"))),
+             movie);
+    QVERIFY(queue.findItem(id)->stalledReason.isEmpty());
+
+    queue.stop();
+#endif
+}
+
+void tst_UsenetPostPipeline::aRepairGoingBackForASkippedFileSaysWhatIsHoldingItUp()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    eMule::testing::TempDir tmp;
+    const QString stage = tmp.filePath(QStringLiteral("stage"));
+    QVERIFY(QDir().mkpath(stage));
+
+    const QByteArray movie = payload(24000, 6);
+    QVERIFY(writeZip(QDir(stage).filePath(QStringLiteral("Rel.zip")),
+                     QStringLiteral("Movie.mkv"), movie));
+    QVERIFY(writeFile(QDir(stage).filePath(QStringLiteral("Sample.mkv")), payload(9000, 10)));
+    QVERIFY(createPar2Set(stage, QStringLiteral("Rel"),
+                          {QStringLiteral("Rel.zip"), QStringLiteral("Sample.mkv")}, 4000, 8));
+
+    // Part 2 of the archive arrives with wrong bytes, so the repair is real and
+    // par2 cannot work around the file the user left out.
+    FakeNntpServer server;
+    const PostedRelease release =
+        postRelease(stage, server, QStringLiteral("Rel.zip"), {}, {2});
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 4)}, 60);
+    queue.setPostProcessingOptions({});
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    UsenetAddOptions options;
+    options.skippedFiles = {int(release.fileNames.indexOf(QStringLiteral("Sample.mkv")))};
+    QString error;
+    const QString id = queue.addNzb(release.nzb, QStringLiteral("Rel"), error, options);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+
+    pauseWhenPostProcessingBegins(queue, id);
+
+    QTRY_VERIFY2_WITH_TIMEOUT(
+        queue.findItem(id)->status == UsenetItemStatus::Downloading
+            && queue.findItem(id)->stalledReason.contains(QStringLiteral("paused")),
+        qPrintable(QStringLiteral("the cycle went back for a skipped file saying \"%1\"")
+                       .arg(queue.findItem(id)->stalledReason)),
+        45000);
+
+    // The file was marked as owed to the repair, and not asked for yet.
+    QVERIFY(queue.findItem(id)->files.at(options.skippedFiles.first()).neededForRepair);
+    for (const QString& cmd : server.receivedCommands()) {
+        QVERIFY2(!cmd.contains(QLatin1String("Sample.mkv.")),
+                 qPrintable(QStringLiteral("a paused queue asked anyway: %1").arg(cmd)));
+    }
+
+    queue.setEnginePaused(false);
+    QVERIFY2(finished.wait(90000), "the cycle never resumed after the pause");
+    QVERIFY2(finished.at(0).at(1).toBool(), qPrintable(finished.at(0).at(2).toString()));
+
+    bool fetchedSample = false;
+    for (const QString& cmd : server.receivedCommands())
+        fetchedSample = fetchedSample || cmd.contains(QLatin1String("Sample.mkv."));
+    QVERIFY2(fetchedSample, "the repair ran without the skipped file it needed");
+
+    const QDir incoming(thePrefs.incomingDir());
+    QCOMPARE(readFile(incoming.filePath(QStringLiteral("Movie.mkv"))), movie);
+    QVERIFY(!QFile::exists(incoming.filePath(QStringLiteral("Sample.mkv"))));
 
     queue.stop();
 #endif

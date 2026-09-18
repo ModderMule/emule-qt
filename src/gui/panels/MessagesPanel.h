@@ -37,6 +37,9 @@ struct ChatMsg {
     QString sender;
     QString text;
     bool    outgoing = false;
+    /// A status line from the connection attempt ("*** Connecting"), shown without a
+    /// sender and in grey, as MFC's chat window does with STATUS_MSG_COLOR.
+    bool    system = false;
     qint64  timestamp = 0;
 };
 
@@ -68,6 +71,7 @@ protected:
 private slots:
     void onFriendClicked(const QModelIndex& index);
     void onSendClicked();
+    void onChatStatePush(const Ipc::IpcMessage& msg);
     void onCloseClicked();
     void onRefreshTimer();
     void onFriendContextMenu(const QPoint& pos);
@@ -82,6 +86,7 @@ private:
     void requestFriendList();
     void updateInfoSection(int row);
     void updateChatDisplay();
+    void appendChatStatus(const QString& friendHash, const QString& text);
     void appendChatMessage(const QString& friendHash, const QString& sender,
                            const QString& text, bool outgoing);
     [[nodiscard]] QString saveSelection() const;

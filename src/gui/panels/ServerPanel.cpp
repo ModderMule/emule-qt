@@ -132,16 +132,19 @@ void ServerPanel::onConnectClicked()
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
-    // Check button text to determine action
-    if (m_connectBtn->text() == tr("Disconnect") || m_connectBtn->text() == tr("Cancel")) {
+    // From the state, not the translated label (MFC ServerWnd.cpp:699-709). Optimistic
+    // until the next status update, so a second click cancels instead of re-connecting.
+    if (m_ed2kConnected || m_ed2kConnecting) {
         Ipc::IpcMessage req(Ipc::IpcMsgType::DisconnectFromServer);
         m_ipc->sendRequest(std::move(req));
-        m_connectBtn->setText(tr("Connect"));
+        m_ed2kConnected = false;
+        m_ed2kConnecting = false;
     } else {
         Ipc::IpcMessage req(Ipc::IpcMsgType::ConnectToServer);
         m_ipc->sendRequest(std::move(req));
-        m_connectBtn->setText(tr("Cancel"));
+        m_ed2kConnecting = true;
     }
+    updateConnectButton(m_ed2kConnected, m_ed2kConnecting);
 }
 
 void ServerPanel::onAddServerClicked()

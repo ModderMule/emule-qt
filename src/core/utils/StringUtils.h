@@ -72,6 +72,10 @@ template <std::integral T>
     return formatShortNumber(static_cast<double>(count), decimals);
 }
 
+/// A duration as MFC CastSecondsToHM shows it: "12 secs", "3:05 mins", "2:10 h",
+/// "1 d 3 h"; "?" for a negative value. Unit words translate under context "Units".
+[[nodiscard]] QString formatSecondsHM(qint64 seconds);
+
 /// A provider allowance in decimal GB, "500.0 GB" — what the plan and the
 /// invoice say. Deliberately not formatByteSize(), which is 1024-based: a 500 GB
 /// plan would read 465.66 GB beside the spin box it was typed into.

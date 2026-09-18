@@ -63,6 +63,7 @@ macx {
 
 SOURCES += \
     app/AppConfig.cpp \
+    app/TranslationRouter.cpp \
     app/AppContext.cpp \
     app/CoreSession.cpp \
     archive/ArchiveReader.cpp \
@@ -185,6 +186,7 @@ SOURCES += \
 
 HEADERS += \
     app/AppConfig.h \
+    app/TranslationRouter.h \
     app/AppContext.h \
     app/CoreSession.h \
     archive/ArchiveReader.h \
@@ -223,6 +225,7 @@ HEADERS += \
     files/SourceSaver.h \
     files/StatisticFile.h \
     friends/Friend.h \
+    friends/FriendConnectProgress.h \
     friends/FriendList.h \
     ipfilter/IPFilter.h \
     kademlia/Kademlia.h \
@@ -318,11 +321,15 @@ HEADERS += \
     utils/SafeFile.h \
     utils/SettingsUtils.h \
     utils/StringUtils.h \
+    utils/ByteRateSampler.h \
+    utils/UsenetDisplay.h \
     utils/ThreadUtils.h \
     utils/TimeUtils.h \
     utils/Types.h \
     utils/WinCompat.h \
     webserver/JsonSerializers.h \
+    webserver/UsenetWebBackend.h \
+    webserver/WebTemplateStrings.h \
     webserver/WebServer.h \
     webserver/WebSessionManager.h \
     webserver/WebTemplateEngine.h

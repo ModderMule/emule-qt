@@ -90,6 +90,8 @@ SOURCES += \
     controls/CategoryTabBar.cpp \
     controls/DownloadListModel.cpp \
     controls/DownloadProgressDelegate.cpp \
+    controls/UsenetFileCheckList.cpp \
+    controls/UsenetProgressDelegate.cpp \
     controls/FriendListModel.cpp \
     controls/KadContactHistogram.cpp \
     controls/KadContactsModel.cpp \
@@ -119,6 +121,7 @@ SOURCES += \
     dialogs/NetworkInfoDialog.cpp \
     dialogs/OptionsDialog.cpp \
     dialogs/AddNzbFilesDialog.cpp \
+    dialogs/NzbFileChooserDialog.cpp \
     dialogs/AddNzbUrlDialog.cpp \
     dialogs/PasteLinksDialog.cpp \
     dialogs/PasteTextDialog.cpp \
@@ -155,6 +158,9 @@ HEADERS += \
     controls/CategoryTabBar.h \
     controls/DownloadListModel.h \
     controls/DownloadProgressDelegate.h \
+    controls/PartBarPainter.h \
+    controls/UsenetFileCheckList.h \
+    controls/UsenetProgressDelegate.h \
     controls/FriendListModel.h \
     controls/KadContactHistogram.h \
     controls/KadContactsModel.h \
@@ -185,6 +191,7 @@ HEADERS += \
     dialogs/NetworkInfoDialog.h \
     dialogs/OptionsDialog.h \
     dialogs/AddNzbFilesDialog.h \
+    dialogs/NzbFileChooserDialog.h \
     dialogs/AddNzbUrlDialog.h \
     dialogs/PasteLinksDialog.h \
     dialogs/PasteTextDialog.h \

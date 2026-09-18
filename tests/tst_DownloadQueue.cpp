@@ -97,6 +97,11 @@ private slots:
     void init_scansDirectory();
     void checkAndAddSource_basic();
     void checkAndAddSource_rejectsUnusableHighIdOnly();
+    void checkAndAddSource_rejectsOwnUserHash();
+    void checkAndAddSource_rejectsCryptIncompatible();
+    void checkAndAddSource_rejectsSourceForAStoppedDownload();
+    void checkAndAddKnownSource_addsAPassiveSource();
+    void checkAndAddKnownSource_a4afWhenItAlreadySourcesAnotherFile();
     void addServerSources_dropsLowIdWhenFirewalled();
     void addServerSources_dropsIpFilteredHighId();
     void addServerSources_dropsBannedHighId();
@@ -670,6 +675,76 @@ void tst_DownloadQueue::checkAndAddSource_basic()
     QVERIFY(!duplicate);
     QCOMPARE(pf->sourceCount(), 1);
 
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::checkAndAddSource_rejectsOwnUserHash()
+{
+    // A source exchange can hand us our own identity behind an address we do not
+    // recognise as ours; the user hash is what gives it away. MFC DownloadQueue.cpp:461.
+    DownloadQueue dq;
+
+    uint8 hash[16] = {31, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2};
+    auto* pf = createTestPartFile(hash, QStringLiteral("self_source.bin"));
+    dq.addDownload(pf);
+
+    // A zero user hash reads as "no hash", and MFC only compares when the source has one,
+    // so the preference needs a real hash for this to mean anything.
+    struct UserHashGuard {
+        std::array<uint8, 16> prev = thePrefs.userHash();
+        ~UserHashGuard() { thePrefs.setUserHash(prev); }
+    } hashGuard;
+    std::array<uint8, 16> ourHash{};
+    ourHash.fill(0x9F);
+    thePrefs.setUserHash(ourHash);
+
+    UpDownClient self;
+    self.setUserAddress(Address::fromNetworkOrder(0x05060708));
+    self.setUserIDHybrid(0x08070605);
+    self.setUserPort(4662);
+    self.setUserHash(ourHash.data());
+    QVERIFY(self.hasValidHash());
+
+    QVERIFY2(!dq.checkAndAddSource(pf, &self), "our own user hash is not a source");
+    QCOMPARE(pf->sourceCount(), 0);
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::checkAndAddSource_rejectsCryptIncompatible()
+{
+    // A peer demanding obfuscation we have switched off can never be connected to, so it
+    // is a wasted source slot rather than a source. MFC DownloadQueue.cpp:478-485.
+    struct PrefGuard {
+        bool supported = thePrefs.cryptLayerSupported();
+        ~PrefGuard() { thePrefs.setCryptLayerSupported(supported); }
+    } prefGuard;
+
+    DownloadQueue dq;
+
+    uint8 hash[16] = {32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3};
+    auto* pf = createTestPartFile(hash, QStringLiteral("crypt_source.bin"));
+    dq.addDownload(pf);
+
+    UpDownClient peer;
+    peer.setUserAddress(Address::fromNetworkOrder(0x0A0B0C0D));
+    peer.setUserIDHybrid(0x0D0C0B0A);
+    peer.setUserPort(4662);
+    uint8 peerHash[16];
+    std::memset(peerHash, 0x7B, sizeof(peerHash));
+    peer.setUserHash(peerHash);
+    peer.setConnectOptions(0x07, true, false);   // supports + requests + requires
+    QVERIFY(peer.requiresCryptLayer());
+
+    thePrefs.setCryptLayerSupported(false);
+    QVERIFY2(!dq.checkAndAddSource(pf, &peer), "peer requires obfuscation we cannot do");
+    QCOMPARE(pf->sourceCount(), 0);
+
+    thePrefs.setCryptLayerSupported(true);
+    QVERIFY2(dq.checkAndAddSource(pf, &peer), "with obfuscation on it is a fine source");
+    QCOMPARE(pf->sourceCount(), 1);
+
+    pf->removeSource(&peer);
     dq.deleteAll();
 }
 
@@ -1587,6 +1662,97 @@ void tst_DownloadQueue::process_udpReaskWindowIsDisjointFromTheTcpReask()
              "an answered source must not be re-asked again inside FILEREASKTIME");
 
     pf->srcList().clear();
+    dq.deleteAll();
+}
+
+// MFC refuses a source for a stopped download outright (DownloadQueue.cpp:456): we are
+// not going to talk to it, so keeping it only ages the entry.
+void tst_DownloadQueue::checkAndAddSource_rejectsSourceForAStoppedDownload()
+{
+    DownloadQueue dq;
+
+    uint8 hash[16] = {36, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    auto* pf = createTestPartFile(hash, QStringLiteral("stopped.bin"));
+    dq.addDownload(pf);
+    pf->stopFile();
+
+    UpDownClient client;
+    const Address addr = Address::fromString(QStringLiteral("81.2.69.160"));
+    client.setUserAddress(addr);
+    client.setUserIDHybrid(addr.toUint32());
+    client.setUserPort(4662);
+
+    QVERIFY(!dq.checkAndAddSource(pf, &client));
+    QCOMPARE(pf->sourceCount(), 0);
+
+    dq.deleteAll();
+}
+
+// A peer that asks us for a file we happen to be downloading is a source we never had to
+// look for. It stays in the ClientList either way — it is already connected to us — which
+// is the whole reason this path is separate from checkAndAddSource().
+void tst_DownloadQueue::checkAndAddKnownSource_addsAPassiveSource()
+{
+    DownloadQueue dq;
+
+    uint8 hash[16] = {37, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    auto* pf = createTestPartFile(hash, QStringLiteral("passive.bin"));
+    dq.addDownload(pf);
+
+    UpDownClient client;
+    const Address addr = Address::fromString(QStringLiteral("81.2.69.161"));
+    client.setUserAddress(addr);
+    client.setUserIDHybrid(addr.toUint32());
+    client.setUserPort(4662);
+    QCOMPARE(client.sourceFrom(), SourceFrom::Server);
+
+    QVERIFY(dq.checkAndAddKnownSource(pf, &client, /*ignoreGlobalDeadList*/ true));
+    QCOMPARE(pf->sourceCount(), 1);
+    QCOMPARE(client.reqFile(), pf);
+    QCOMPARE(client.sourceFrom(), SourceFrom::Passive);
+
+    // Asking twice does not source it twice.
+    QVERIFY(!dq.checkAndAddKnownSource(pf, &client, true));
+    QCOMPARE(pf->sourceCount(), 1);
+
+    pf->removeSource(&client);
+    dq.deleteAll();
+}
+
+// Already sourcing another file? Then this is an A4AF relationship, not a second source
+// entry — MFC DownloadQueue.cpp:578-590.
+void tst_DownloadQueue::checkAndAddKnownSource_a4afWhenItAlreadySourcesAnotherFile()
+{
+    DownloadQueue dq;
+
+    uint8 hashA[16] = {38, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    uint8 hashB[16] = {39, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    auto* fileA = createTestPartFile(hashA, QStringLiteral("a4af-a.bin"));
+    auto* fileB = createTestPartFile(hashB, QStringLiteral("a4af-b.bin"));
+    dq.addDownload(fileA);
+    dq.addDownload(fileB);
+
+    UpDownClient client;
+    const Address addr = Address::fromString(QStringLiteral("81.2.69.162"));
+    client.setUserAddress(addr);
+    client.setUserIDHybrid(addr.toUint32());
+    client.setUserPort(4662);
+
+    QVERIFY(dq.checkAndAddKnownSource(fileA, &client, true));
+    QCOMPARE(fileA->sourceCount(), 1);
+
+    // Connected, so MFC records the A4AF and leaves the client where it is; an idle one
+    // would be swapped to whichever file wins (srchybrid/DownloadQueue.cpp:584-586).
+    client.setDownloadState(DownloadState::Connected);
+
+    // The same client now asks about the other file.
+    QVERIFY2(!dq.checkAndAddKnownSource(fileB, &client, true),
+             "a client already sourcing another file is an A4AF candidate, not a source");
+    QCOMPARE(fileB->sourceCount(), 0);
+    QCOMPARE(fileB->a4afSourceCount(), 1);
+
+    client.removeFileFromOtherLists(fileB);
+    fileA->removeSource(&client);
     dq.deleteAll();
 }
 

@@ -71,6 +71,7 @@ PasteTextDialog::PasteTextDialog(const Chrome& chrome, QWidget* parent)
     }
 
     auto* btnLayout = new QHBoxLayout;
+    m_buttonRow = btnLayout;
     btnLayout->addStretch();
 
     m_acceptBtn = new QPushButton(chrome.acceptText, this);
@@ -99,6 +100,14 @@ PasteTextDialog::PasteTextDialog(const Chrome& chrome, QWidget* parent)
     connect(cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
 
     DialogSizing::applySize(this, {}, chrome.defaultSize, DialogSizing::Fit::Layout);
+}
+
+QPushButton* PasteTextDialog::addActionButton(const QString& text)
+{
+    // Ahead of the stretch, so it sits apart from the answer buttons.
+    auto* button = new QPushButton(text, this);
+    m_buttonRow->insertWidget(0, button);
+    return button;
 }
 
 QString PasteTextDialog::text() const

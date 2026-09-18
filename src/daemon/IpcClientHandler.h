@@ -184,12 +184,18 @@ private:
     /// the statistics, as @p origin.
     void sendAddNzbResult(int seqId, const QString& itemId, const QString& error,
                           usenet::UsenetAddOutcome outcome, usenet::UsenetAddOrigin origin);
+    /// The same reply without counting, for adds UsenetBridge already counted.
+    void replyAddNzb(int seqId, const QString& itemId, const QString& error,
+                     usenet::UsenetAddOutcome outcome);
     void handleRemoveUsenetItem(const Ipc::IpcMessage& msg);
     void handlePauseUsenetItem(const Ipc::IpcMessage& msg);
     void handleResumeUsenetItem(const Ipc::IpcMessage& msg);
     void handleSetUsenetItemPriority(const Ipc::IpcMessage& msg);
     void handleSetUsenetItemCategory(const Ipc::IpcMessage& msg);
     void handleSetUsenetCategoryStatus(const Ipc::IpcMessage& msg);
+    void handleSetUsenetPaused(const Ipc::IpcMessage& msg);
+    void handleSetUsenetFilesSkipped(const Ipc::IpcMessage& msg);
+    void handleInspectNzb(const Ipc::IpcMessage& msg);
     void handleSetUsenetItemPassword(const Ipc::IpcMessage& msg);
     void handleListUsenetArchiveEntries(const Ipc::IpcMessage& msg);
     void handleSetDownloadCategory(const Ipc::IpcMessage& msg);

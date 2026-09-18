@@ -73,6 +73,12 @@
     <ClCompile Include="controls\DownloadProgressDelegate.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="controls\UsenetFileCheckList.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\UsenetProgressDelegate.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="app\Ed2kSchemeHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -169,6 +175,9 @@
     <ClCompile Include="dialogs\AddNzbFilesDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="dialogs\NzbFileChooserDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="dialogs\AddNzbUrlDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -218,6 +227,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="controls\TransferToolbar.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="controls\UploadStatusDelegate.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="app\UiState.cpp">
@@ -289,6 +301,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="controls\SortableItems.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="controls\PartBarPainter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="controls\TrayMeterIcon.h">
@@ -372,6 +387,12 @@
     <QtMoc Include="controls\DownloadProgressDelegate.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="controls\UsenetFileCheckList.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\UsenetProgressDelegate.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <ClInclude Include="app\Ed2kSchemeHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -441,6 +462,9 @@
     <QtMoc Include="dialogs\AddNzbFilesDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="dialogs\NzbFileChooserDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="dialogs\AddNzbUrlDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -478,6 +502,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\SharedPartsDelegate.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\UploadStatusDelegate.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="panels\StatisticsPanel.h">

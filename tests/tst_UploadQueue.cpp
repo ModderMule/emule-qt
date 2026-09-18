@@ -43,6 +43,7 @@ private slots:
     void removeFromUploadQueue_basic();
     void isDownloading_uploading();
     void waitingPosition_correct();
+    void waitingClientByIP_UDP_exactThenUniqueIp();
     void updateDatarates_basic();
     void process_noop_empty();
     void targetClientDataRate_calculation();
@@ -327,7 +328,9 @@ public:
         auto* raw = sock.get();
         m_sockets.push_back(std::move(sock));
         client->setSocket(raw);
-        client->setInfoPacketsReceived(InfoPacketState::Both);
+        // A connected peer with no HELLO of ours outstanding counts as past the
+        // handshake — including one that never sends an eMule info packet.
+        client->setHelloAnswerPending(false);
         return raw;
     }
 
@@ -585,6 +588,61 @@ void tst_UploadQueue::waitingPosition_correct()
         int pos = queue.waitingPosition(&client);
         QVERIFY(pos >= 1);
     }
+}
+
+void tst_UploadQueue::waitingClientByIP_UDP_exactThenUniqueIp()
+{
+    // A re-ask is answered with a queue rank, so only a *waiting* client can be answered.
+    // The port-less fallback exists because a peer behind a rewriting NAT reaches us from
+    // a port it never advertised. MFC CUploadQueue::GetWaitingClientByIP_UDP.
+    UploadQueue queue;
+    qRegisterMetaType<eMule::UpDownClient*>("eMule::UpDownClient*");
+
+    const Address shared = Address::fromString(QStringLiteral("10.20.30.40"));
+    const Address other = Address::fromString(QStringLiteral("10.20.30.41"));
+
+    // Low-ID and socketless, so none of them is promoted into an upload slot and they all
+    // stay on the waiting list.
+    std::vector<std::unique_ptr<UpDownClient>> clients;
+    auto addWaiting = [&](const Address& addr, uint16 port, uint16 udpPort, uint8 hashByte) {
+        auto c = std::make_unique<UpDownClient>();
+        c->setUserAddress(addr);
+        c->setUserPort(port);
+        c->setUDPPort(udpPort);
+        uint8 hash[16]{};
+        hash[0] = hashByte;
+        hash[1] = 0xC4;
+        c->setUserHash(hash);
+        queue.addClientToQueue(c.get());
+        auto* raw = c.get();
+        clients.push_back(std::move(c));
+        return raw;
+    };
+
+    auto* first = addWaiting(shared, 4662, 5001, 0x01);
+    addWaiting(other, 4662, 5002, 0x02);
+    QCOMPARE(queue.waitingUserCount(), 2);
+
+    // Exact endpoint match.
+    QCOMPARE(queue.waitingClientByIP_UDP(shared, 5001), first);
+
+    // Port rewritten in flight: the only waiting client at that IP is still the answer.
+    bool multipleIPs = true;
+    QCOMPARE(queue.waitingClientByIP_UDP(shared, 9999, &multipleIPs), first);
+    QVERIFY(!multipleIPs);
+
+    // A second waiting client behind the same IP makes them indistinguishable, and MFC
+    // then answers nobody rather than guessing.
+    addWaiting(shared, 4663, 5003, 0x03);
+    QVERIFY(queue.waitingClientByIP_UDP(shared, 9999, &multipleIPs) == nullptr);
+    QVERIFY(multipleIPs);
+
+    // An address nobody is waiting from.
+    QVERIFY(queue.waitingClientByIP_UDP(
+                Address::fromString(QStringLiteral("10.20.30.42")), 5001) == nullptr);
+
+    for (auto& c : clients)
+        queue.removeFromWaitingQueue(c.get());
 }
 
 void tst_UploadQueue::updateDatarates_basic()

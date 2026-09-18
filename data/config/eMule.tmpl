@@ -4,7 +4,7 @@
 <-- ################################################################# -->
 
 <--TMPL_VERSION-->
-7
+9
 <--TMPL_VERSION_END-->
 
 
@@ -14,7 +14,7 @@
 
 <--TMPL_LOGIN-->
 <!DOCTYPE html>
-<html>
+<html lang="[HtmlLang]">
 <head>
 <meta charset="[CharSet]">
 <link rel="icon" href="favicon.ico">
@@ -68,8 +68,8 @@ form { display: inline; }
   <div class="version">[version] - [WebControl]</div>
   [FailedLogin]
   <form name="login" action="/" method="POST">
-   <div><input type="password" name="p" placeholder="Password" autofocus></div>
-   <div><input type="submit" value="Login"></div>
+   <div><input type="password" name="p" placeholder="{{Password}}" autofocus></div>
+   <div><input type="submit" value="{{Login}}"></div>
   </form>
  </div>
 </div>
@@ -84,7 +84,7 @@ form { display: inline; }
 
 <--TMPL_HEADER-->
 <!DOCTYPE html>
-<html>
+<html lang="[HtmlLang]">
 <head>
 <meta charset="[CharSet]">
 <meta http-equiv="pragma" content="no-cache">
@@ -99,51 +99,59 @@ function showMenu(e,m){hideMenu();m.style.left=e.pageX+'px';m.style.top=e.pageY+
 function hideMenu(){if(activeMenu){activeMenu.style.display='none';activeMenu=null;}}
 document.addEventListener('click',hideMenu);
 
+// Labels arrive as plain text in the page's language; every one is escaped on its way into markup.
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function ic(n){return '<span class="icon icon-'+n+'"></span> ';}
+function mi(href,icon,label,question){return '<a class="menuitems" href="'+esc(href)+'"'+(question?' data-q="'+esc(question)+'" onclick="return confirm(this.dataset.q)"':'')+'>'+ic(icon)+esc(label)+'</a>';}
+var SEP='<div class="menusep"></div>';
+function setlang(code){var q=new URLSearchParams(location.search);q.set('setlang',code);location.search=q.toString();}
+
 function downmenu(e,ses,hash,st){
  var m=document.getElementById('downmenu');
  var h='';
- var u='?ses='+ses+'&w=transfer&file='+hash+'&op=';
+ var u='?ses='+encodeURIComponent(ses)+'&w=transfer&file='+encodeURIComponent(hash)+'&op=';
  if(st==='paused'||st==='stopped')
-  h+='<a class="menuitems" href="'+u+'resume">'+ic('l_resume')+'Resume</a>';
+  h+=mi(u+'resume','l_resume','{{js:Resume}}');
  if(st==='downloading'||st==='waiting')
-  h+='<a class="menuitems" href="'+u+'pause">'+ic('l_pause')+'Pause</a><a class="menuitems" href="'+u+'stop">'+ic('l_stop')+'Stop</a>';
+  h+=mi(u+'pause','l_pause','{{js:Pause}}')+mi(u+'stop','l_stop','{{js:Stop}}');
  if(st==='paused')
-  h+='<a class="menuitems" href="'+u+'stop">'+ic('l_stop')+'Stop</a>';
- h+='<div class="menusep"></div>';
- h+='<a class="menuitems" href="'+u+'cancel" onclick="return confirm(\'Cancel this download?\')">'+ic('l_cancel')+'Cancel</a>';
- h+='<div class="menusep"></div>';
- h+='<a class="menuitems" href="'+u+'priolow">'+ic('low')+'Priority: Low</a>';
- h+='<a class="menuitems" href="'+u+'prionormal">'+ic('l_none')+'Priority: Normal</a>';
- h+='<a class="menuitems" href="'+u+'priohigh">'+ic('high')+'Priority: High</a>';
- h+='<a class="menuitems" href="'+u+'prioauto">'+ic('l_none')+'Priority: Auto</a>';
- h+='<div class="menusep"></div>';
- h+='<a class="menuitems" href="?ses='+ses+'&w=transfer&op=clearcompleted">'+ic('m_clearcompleted')+'Clear Completed</a>';
+  h+=mi(u+'stop','l_stop','{{js:Stop}}');
+ h+=SEP;
+ h+=mi(u+'cancel','l_cancel','{{js:Cancel}}','{{js:Cancel this download?}}');
+ h+=SEP;
+ h+=mi(u+'priolow','low','{{js:Priority: Low}}');
+ h+=mi(u+'prionormal','l_none','{{js:Priority: Normal}}');
+ h+=mi(u+'priohigh','high','{{js:Priority: High}}');
+ h+=mi(u+'prioauto','l_none','{{js:Priority: Auto}}');
+ h+=SEP;
+ h+=mi('?ses='+encodeURIComponent(ses)+'&w=transfer&op=clearcompleted','m_clearcompleted','{{js:Clear Completed}}');
  m.innerHTML=h;
  showMenu(e,m);
 }
 
 function servermenu(e,ses,ip,port){
  var m=document.getElementById('servermenu');
- var u='?ses='+ses+'&w=server&ip='+ip+'&port='+port+'&c=';
+ var s='?ses='+encodeURIComponent(ses)+'&w=server';
+ var u=s+'&ip='+encodeURIComponent(ip)+'&port='+encodeURIComponent(port)+'&c=';
  var h='';
- h+='<a class="menuitems" href="'+u+'connect">'+ic('l_connect')+'Connect</a>';
- h+='<a class="menuitems" href="?ses='+ses+'&w=server&c=disconnect">'+ic('l_close')+'Disconnect</a>';
- h+='<div class="menusep"></div>';
- h+='<a class="menuitems" href="'+u+'remove">'+ic('l_remove')+'Remove</a>';
- h+='<a class="menuitems" href="'+u+'addtostatic">'+ic('l_static')+'Add to Static</a>';
- h+='<a class="menuitems" href="'+u+'removefromstatic">'+ic('l_remove')+'Remove from Static</a>';
- h+='<div class="menusep"></div>';
- h+='<a class="menuitems" href="'+u+'priolow">'+ic('low')+'Priority: Low</a>';
- h+='<a class="menuitems" href="'+u+'prionormal">'+ic('l_none')+'Priority: Normal</a>';
- h+='<a class="menuitems" href="'+u+'priohigh">'+ic('high')+'Priority: High</a>';
+ h+=mi(u+'connect','l_connect','{{js:Connect}}');
+ h+=mi(s+'&c=disconnect','l_close','{{js:Disconnect}}');
+ h+=SEP;
+ h+=mi(u+'remove','l_remove','{{js:Remove}}');
+ h+=mi(u+'addtostatic','l_static','{{js:Add to Static}}');
+ h+=mi(u+'removefromstatic','l_remove','{{js:Remove from Static}}');
+ h+=SEP;
+ h+=mi(u+'priolow','low','{{js:Priority: Low}}');
+ h+=mi(u+'prionormal','l_none','{{js:Priority: Normal}}');
+ h+=mi(u+'priohigh','high','{{js:Priority: High}}');
  m.innerHTML=h;
  showMenu(e,m);
 }
 
 function sharedmenu(e,link){
  var m=document.getElementById('sharedmenu');
- m.innerHTML='<a class="menuitems" href="#" onclick="navigator.clipboard.writeText(\''+link.replace(/'/g,"\\'")+'\');hideMenu();return false;">'+ic('l_ed2klink')+'Copy ED2K Link</a>';
+ m.innerHTML='<a class="menuitems" href="#">'+ic('l_ed2klink')+esc('{{js:Copy ED2K Link}}')+'</a>';
+ m.firstChild.onclick=function(){if(navigator.clipboard)navigator.clipboard.writeText(link);hideMenu();return false;};
  showMenu(e,m);
 }
 </script>
@@ -160,11 +168,13 @@ function sharedmenu(e,link){
    <td class="topbar-right" align="right">
     <span class="status-text">[ServerName]</span>
     &nbsp;&nbsp;
-    <span class="icon icon-arrow_down" style="vertical-align:middle"></span> [SpeedDown] KB/s
+    <span class="icon icon-arrow_down" style="vertical-align:middle"></span> [SpeedDown] {{KB/s}}
     &nbsp;
-    <span class="icon icon-arrow_up" style="vertical-align:middle"></span> [SpeedUp] KB/s
+    <span class="icon icon-arrow_up" style="vertical-align:middle"></span> [SpeedUp] {{KB/s}}
     &nbsp;&nbsp;|&nbsp;&nbsp;
-    <a href="?ses=[ses]&amp;w=logout"><span class="icon icon-l_logout" style="vertical-align:middle"></span> Logout</a>
+    <select class="lang-select" title="{{Language}}" onchange="setlang(this.value)">[LanguageOptions]</select>
+    &nbsp;&nbsp;|&nbsp;&nbsp;
+    <a href="?ses=[ses]&amp;w=logout"><span class="icon icon-l_logout" style="vertical-align:middle"></span> {{Logout}}</a>
    </td>
   </tr>
  </table>
@@ -172,20 +182,21 @@ function sharedmenu(e,link){
 
 <div class="nav">
  <div class="nav-main">
-  <div class="nav-tab [Page_transfer]"><a href="?ses=[ses]&amp;w=transfer"><span class="icon icon-h_transfer"></span><br>Transfer</a></div>
-  <div class="nav-tab [Page_kad]"><a href="?ses=[ses]&amp;w=kad"><span class="icon icon-h_kad"></span><br>Kad</a></div>
-  <div class="nav-tab [Page_server]"><a href="?ses=[ses]&amp;w=server"><span class="icon icon-h_server"></span><br>Server</a></div>
-  <div class="nav-tab [Page_search]"><a href="?ses=[ses]&amp;w=search"><span class="icon icon-h_search"></span><br>Search</a></div>
-  <div class="nav-tab [Page_shared]"><a href="?ses=[ses]&amp;w=shared"><span class="icon icon-h_shared"></span><br>Shared</a></div>
-  <div class="nav-tab [Page_stats]"><a href="?ses=[ses]&amp;w=stats"><span class="icon icon-h_statistic"></span><br>Statistics</a></div>
-  <div class="nav-tab [Page_graphs]"><a href="?ses=[ses]&amp;w=graphs"><span class="icon icon-h_graph"></span><br>Graphs</a></div>
-  <div class="nav-tab [Page_options]"><a href="?ses=[ses]&amp;w=options"><span class="icon icon-h_preferences"></span><br>Preferences</a></div>
+  <div class="nav-tab [Page_transfer]"><a href="?ses=[ses]&amp;w=transfer"><span class="icon icon-h_transfer"></span><br>{{Transfer}}</a></div>
+  <div class="nav-tab [Page_kad]"><a href="?ses=[ses]&amp;w=kad"><span class="icon icon-h_kad"></span><br>{{Kad}}</a></div>
+  <div class="nav-tab [Page_server]"><a href="?ses=[ses]&amp;w=server"><span class="icon icon-h_server"></span><br>{{Server}}</a></div>
+  <div class="nav-tab [Page_search]"><a href="?ses=[ses]&amp;w=search"><span class="icon icon-h_search"></span><br>{{Search}}</a></div>
+  <div class="nav-tab [Page_shared]"><a href="?ses=[ses]&amp;w=shared"><span class="icon icon-h_shared"></span><br>{{Shared}}</a></div>
+  <div class="nav-tab [Page_usenet]"><a href="?ses=[ses]&amp;w=usenet"><span class="icon icon-h_usenet"></span><br>{{Usenet}}</a></div>
+  <div class="nav-tab [Page_stats]"><a href="?ses=[ses]&amp;w=stats"><span class="icon icon-h_statistic"></span><br>{{Statistics}}</a></div>
+  <div class="nav-tab [Page_graphs]"><a href="?ses=[ses]&amp;w=graphs"><span class="icon icon-h_graph"></span><br>{{Graphs}}</a></div>
+  <div class="nav-tab [Page_options]"><a href="?ses=[ses]&amp;w=options"><span class="icon icon-h_preferences"></span><br>{{Preferences}}</a></div>
  </div>
  <div class="nav-right">
-  <a class="nav-link [Page_sinfo]" href="?ses=[ses]&amp;w=sinfo"><span class="icon icon-h_log" style="vertical-align:middle"></span>&nbsp;Server Info</a><br>
-  <a class="nav-link [Page_log]" href="?ses=[ses]&amp;w=log"><span class="icon icon-h_log" style="vertical-align:middle"></span>&nbsp;Log</a><br>
-  <a class="nav-link [Page_debuglog]" href="?ses=[ses]&amp;w=debuglog"><span class="icon icon-h_log" style="vertical-align:middle"></span>&nbsp;Debug</a><br>
-  <a class="nav-link [Page_myinfo]" href="?ses=[ses]&amp;w=myinfo"><span class="icon icon-l_info" style="vertical-align:middle"></span>&nbsp;My Info</a>
+  <a class="nav-link [Page_sinfo]" href="?ses=[ses]&amp;w=sinfo"><span class="icon icon-h_log" style="vertical-align:middle"></span>&nbsp;{{Server Info}}</a><br>
+  <a class="nav-link [Page_log]" href="?ses=[ses]&amp;w=log"><span class="icon icon-h_log" style="vertical-align:middle"></span>&nbsp;{{Log}}</a><br>
+  <a class="nav-link [Page_debuglog]" href="?ses=[ses]&amp;w=debuglog"><span class="icon icon-h_log" style="vertical-align:middle"></span>&nbsp;{{Debug}}</a><br>
+  <a class="nav-link [Page_myinfo]" href="?ses=[ses]&amp;w=myinfo"><span class="icon icon-l_info" style="vertical-align:middle"></span>&nbsp;{{My Info}}</a>
  </div>
 </div>
 
@@ -221,6 +232,7 @@ img { border: 0; }
 .topbar-left { font-size: 9pt; }
 .topbar-right { font-size: 8pt; white-space: nowrap; }
 .status-text { color: #99CCFF; }
+.lang-select { font-size: 7.5pt; background: #1F76A5; color: #FFFFFF; border: 1px solid #002244; }
 
 /* === Navigation === */
 .nav {
@@ -432,6 +444,41 @@ img { border: 0; }
 .menuitems:hover { background:#003C6E; }
 .menuitems .icon { vertical-align:middle; margin-right:4px; background-color:#003C6E; border:2px #003C6E solid; }
 .menusep { border-top:1px solid #003C6E; margin:0; }
+
+/* === Usenet === */
+[hidden] { display:none !important; }
+.un-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:2px; background:#003C6E; padding:3px 6px; }
+.un-btn { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border:1px solid transparent; cursor:pointer; }
+.un-btn:hover { border-color:#1F76A5; }
+.un-btn.disabled { opacity:.45; pointer-events:none; }
+.un-toolsep { width:1px; height:16px; background:#1F76A5; margin:0 4px; }
+.un-cattabs { margin-left:auto; display:flex; flex-wrap:wrap; gap:2px; }
+.un-cattab { padding:2px 10px; background:#1F76A5; border:1px solid #005784; }
+.un-cattab.active { background:#005784; border-bottom:2px solid #FFC412; font-weight:bold; }
+.un-table tr.un-item td { cursor:default; }
+.un-table tr.un-selected td { background:#2E8FC2; }
+.un-table tr.un-active td { font-weight:bold; }
+.un-table tr.un-failed td { color:#FF7070; }
+.un-table tr.un-paused td { color:#C1C1C1; }
+.un-table tr.un-post td { color:#9FD4FF; font-weight:bold; }
+.un-table tr.un-post .progress-fill { background:#3399FF; }
+.un-table tr.un-file td { background:#2A86B8; }
+.un-table td.un-fname { padding-left:34px; }
+.data-table tr.un-par2 td { color:#B8C8D4; }
+.un-table .progress-bar { width:110px; }
+.un-expander { display:inline-block; width:14px; text-align:center; cursor:pointer; }
+.un-lock { margin-right:3px; }
+.un-summary { background:#003C6E; padding:3px 8px; }
+.un-notice { background:#005784; padding:4px 8px; margin:4px 0; }
+.un-notice.error { color:#FFB0B0; }
+.un-panel { background:#1F76A5; border:1px solid #003C6E; padding:6px; margin:4px 0; }
+.un-panel td { padding:3px 6px; vertical-align:top; }
+.un-panel textarea { width:460px; max-width:100%; height:60px; font-size:8pt; }
+.un-panel input, .un-panel select, .un-panel button { font-size:8pt; }
+.un-details-title { font-size:11pt; font-weight:bold; padding:6px 0; }
+.un-details-grid { display:grid; grid-template-columns:auto 1fr auto 1fr; gap:3px 12px; margin-bottom:8px; }
+.un-details-grid .k { color:#99CCFF; }
+.un-chooser { position:fixed; left:50%; top:25%; transform:translateX(-50%); background:#005784; border:1px solid #000; padding:8px; z-index:200; min-width:380px; }
 </style>
 <--TMPL_HEADER_STYLESHEET_END-->
 
@@ -445,6 +492,7 @@ img { border: 0; }
 <div id="downmenu" class="popmenu"></div>
 <div id="servermenu" class="popmenu"></div>
 <div id="sharedmenu" class="popmenu"></div>
+<div id="usenetmenu" class="popmenu"></div>
 </body>
 </html>
 <--TMPL_FOOTER_END-->
@@ -456,19 +504,19 @@ img { border: 0; }
 
 <--TMPL_SERVER_LIST-->
 <div class="section-header">
- <span class="icon icon-l_server" style="vertical-align:middle"></span>&nbsp; Server List
+ <span class="icon icon-l_server" style="vertical-align:middle"></span>&nbsp; {{Server List}}
 </div>
 <table class="data-table">
  <thead>
   <tr>
-   <th class="left">Server Name</th>
-   <th>Address</th>
-   <th>Port</th>
-   <th>Description</th>
-   <th>Ping</th>
-   <th>Users</th>
-   <th>Files</th>
-   <th>Status</th>
+   <th class="left">{{Server Name}}</th>
+   <th>{{Address}}</th>
+   <th>{{Port}}</th>
+   <th>{{Description}}</th>
+   <th>{{Ping}}</th>
+   <th>{{Users}}</th>
+   <th>{{Files}}</th>
+   <th>{{Status}}</th>
   </tr>
  </thead>
  <tbody>
@@ -479,7 +527,7 @@ img { border: 0; }
 
 
 <--TMPL_SERVER_LINE-->
-<tr class="srv-[ServerStatus]" oncontextmenu="servermenu(event,'[Session]','[ServerAddr]','[ServerPort]')">
+<tr class="srv-[ServerStatus]" data-ip="[ServerAddr]" data-port="[ServerPort]" oncontextmenu="servermenu(event,'[Session]',this.dataset.ip,this.dataset.port)">
  <td class="left">[ServerName]</td>
  <td class="center">[ServerAddr]</td>
  <td class="center">[ServerPort]</td>
@@ -487,7 +535,7 @@ img { border: 0; }
  <td class="center">[ServerPing]</td>
  <td class="center">[ServerUsers]</td>
  <td class="center">[ServerFiles]</td>
- <td class="center"><span class="icon icon-[ServerStatus]" style="vertical-align:middle"></span> [ServerStatus]</td>
+ <td class="center"><span class="icon icon-[ServerStatus]" style="vertical-align:middle"></span> [ServerStatusText]</td>
 </tr>
 <--TMPL_SERVER_LINE_END-->
 
@@ -551,18 +599,18 @@ img { border: 0; }
 <--TMPL_TRANSFER_DOWN_HEADER-->
 <div class="section-header">
  <span class="icon icon-arrow_down" style="vertical-align:middle"></span>&nbsp;
- <b>Downloads ([DownloadCount])</b>
+ <b>{{Downloads}} ([DownloadCount])</b>
 </div>
 <table class="data-table">
  <thead>
   <tr>
-   <th class="left">File Name</th>
-   <th>Size</th>
-   <th>Completed</th>
-   <th>Progress</th>
-   <th>Speed</th>
-   <th>Sources</th>
-   <th>Priority</th>
+   <th class="left">{{File Name}}</th>
+   <th>{{Size}}</th>
+   <th>{{Completed}}</th>
+   <th>{{Progress}}</th>
+   <th>{{Speed}}</th>
+   <th>{{Sources}}</th>
+   <th>{{Priority}}</th>
   </tr>
  </thead>
  <tbody>
@@ -604,16 +652,16 @@ img { border: 0; }
 <--TMPL_TRANSFER_UP_HEADER-->
 <div class="section-header">
  <span class="icon icon-arrow_up" style="vertical-align:middle"></span>&nbsp;
- <b>Uploads</b>
+ <b>{{Uploads}}</b>
 </div>
 <table class="data-table">
  <thead>
   <tr>
-   <th class="left">User Name</th>
-   <th>Client</th>
-   <th class="left">File Name</th>
-   <th>Transferred</th>
-   <th>Speed</th>
+   <th class="left">{{User Name}}</th>
+   <th>{{Client}}</th>
+   <th class="left">{{File Name}}</th>
+   <th>{{Transferred}}</th>
+   <th>{{Speed}}</th>
   </tr>
  </thead>
  <tbody>
@@ -624,7 +672,7 @@ img { border: 0; }
  </tbody>
  <tfoot>
   <tr>
-   <td class="left" colspan="3">Total</td>
+   <td class="left" colspan="3">{{Total}}</td>
    <td class="center">[TotalUpTransferred]</td>
    <td class="center">[TotalUpSpeed]</td>
   </tr>
@@ -695,13 +743,452 @@ img { border: 0; }
 
 
 <-- ################################################################# -->
+<-- ########################## USENET ############################### -->
+<-- ################################################################# -->
+
+<--TMPL_USENET-->
+<div class="section-header">
+ <span class="icon icon-h_usenet" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span>&nbsp; {{Usenet}}
+</div>
+<div class="un-toolbar">
+ <a class="un-btn admin-only" href="#" onclick="unAddPanel(true);return false;"><span class="icon icon-l_add"></span>{{Add NZB…}}</a>
+ <span class="un-toolsep admin-only"></span>
+ <a class="un-btn admin-only needs-sel" href="#" onclick="unAct('pause');return false;"><span class="icon icon-l_pause"></span>{{Pause}}</a>
+ <a class="un-btn admin-only needs-sel" href="#" onclick="unAct('resume');return false;"><span class="icon icon-l_resume"></span>{{Resume}}</a>
+ <a class="un-btn admin-only needs-sel" href="#" onclick="unRemove(false);return false;"><span class="icon icon-l_remove"></span>{{Remove}}</a>
+ <span class="un-toolsep admin-only"></span>
+ <a class="un-btn admin-only" id="un-enginebtn" href="#" onclick="unEngineToggle();return false;"><span class="icon icon-l_pause"></span><span class="un-enginetext">{{Pause All}}</span></a>
+ <div class="un-cattabs">[UsenetCategoryTabs]</div>
+</div>
+<div id="un-notice" class="un-notice" hidden></div>
+<div id="un-addpanel" class="un-panel" hidden>
+ <table>
+  <tr><td>{{NZB files:}}</td><td><input type="file" id="un-files" accept=".nzb" multiple></td></tr>
+  <tr><td>{{NZB URLs:}}</td><td><textarea id="un-urls" placeholder="{{Paste one or more http(s) links to .nzb files here, one per line...}}"></textarea></td></tr>
+  <tr><td>{{Password:}}</td><td><input type="password" id="un-pw" autocomplete="off"></td></tr>
+  <tr><td>{{Category:}}</td><td><select id="un-cat">[UsenetCategoryOptions]</select>
+   &nbsp; {{Priority:}} <select id="un-prio">[UsenetPriorityOptions]</select>
+   &nbsp; <label><input type="checkbox" id="un-paused"> {{Add paused}}</label></td></tr>
+  <tr><td></td><td><button type="button" onclick="unAddSubmit()">{{Add}}</button> <button type="button" onclick="unAddPanel(false)">{{Cancel}}</button></td></tr>
+ </table>
+</div>
+<div id="un-list">[UsenetList]</div>
+<div id="un-details" hidden></div>
+<div id="un-chooser" class="un-chooser" hidden></div>
+<script>
+var UN={ses:'[Session]',token:'[StreamToken]',lang:'[WebLang]',admin:'[IsAdmin]'==='1',cat:[UsenetCat],sort:'[UsenetSort]',desc:'[UsenetDesc]',
+ cats:([UsenetCategoriesJson]).list,levels:([UsenetLevelsJson]).list,units:([UsenetUnitsJson]).list,maxUrls:[UsenetMaxUrls],
+ sel:{},open:{},cur:null,details:null,busy:false,again:false,tick:0,menuRow:null,menuId:null,menuFile:-1};
+var UN_SEP='<div class="menusep"></div>';
+
+function unSize(b){var u=UN.units,i=0;b=Number(b)||0;while(b>=1000&&i<4){b/=1024;i++;}return i?b.toFixed(2)+' '+u[i]:b+' '+u[0];}
+// "%1".."%9" in a translated sentence.
+function unFmt(s){var a=arguments;return String(s).replace(/%(\d)/g,function(m,i){return a[+i]==null?'':String(a[+i]);});}
+function unQ(){return 'ses='+encodeURIComponent(UN.ses);}
+function unNotice(msg,err){var n=document.getElementById('un-notice');if(!msg){n.hidden=true;return;}n.textContent=msg;n.className='un-notice'+(err?' error':'');n.hidden=false;}
+function unForm(o){var p=[];Object.keys(o).forEach(function(k){[].concat(o[k]).forEach(function(v){p.push(k+'='+encodeURIComponent(v));});});return p.join('&');}
+function unErr(j){return (j&&j.error&&j.error.message)||'{{js:That did not work.}}';}
+function unPost(path,body,headers){
+ return fetch(path+(path.indexOf('?')<0?'?':'&')+unQ(),{method:'POST',cache:'no-store',
+  headers:headers||{'Content-Type':'application/x-www-form-urlencoded'},body:body})
+  .then(function(r){return r.json().catch(function(){return {};}).then(function(j){j.status=r.status;return j;});})
+  .catch(function(){return {status:0,error:{message:'{{js:Could not reach the eMule core.}}'}};});
+}
+function unItem(id){var rows=document.querySelectorAll('#un-list tr.un-item');for(var i=0;i<rows.length;i++){if(rows[i].dataset.id===id)return rows[i];}return null;}
+
+// --- the list: selection, expanded rows and scroll position survive each poll
+function unRestore(){
+ var seen={};
+ document.querySelectorAll('#un-list tr.un-item').forEach(function(tr){
+  var id=tr.dataset.id,on=!!UN.sel[id];seen[id]=1;
+  tr.classList.toggle('un-selected',on);
+  var cb=tr.querySelector('.un-check');if(cb)cb.checked=on;
+  var ex=tr.querySelector('.un-expander');if(ex)ex.innerHTML=tr.dataset.files==='0'?'':(UN.open[id]?'&#9662;':'&#9656;');
+ });
+ document.querySelectorAll('#un-list tr.un-file').forEach(function(tr){tr.hidden=!UN.open[tr.dataset.id];});
+ Object.keys(UN.sel).forEach(function(id){if(!seen[id])delete UN.sel[id];});
+ var any=Object.keys(UN.sel).length>0;
+ document.querySelectorAll('.un-toolbar .needs-sel').forEach(function(b){b.classList.toggle('disabled',!any);});
+ unEngineSync();
+}
+// Pause All / Resume All follows the list fragment, which the server renders with the engine state.
+function unEngineSync(){
+ var s=document.getElementById('un-summary'),b=document.getElementById('un-enginebtn');if(!s||!b)return;
+ var p=s.dataset.enginePaused==='1';b.dataset.paused=p?'1':'0';
+ b.querySelector('.icon').className='icon '+(p?'icon-l_resume':'icon-l_pause');
+ b.querySelector('.un-enginetext').textContent=p?'{{js:Resume All}}':'{{js:Pause All}}';
+}
+function unEngineToggle(){
+ var b=document.getElementById('un-enginebtn');
+ unPost('/usenet/action',unForm({op:b.dataset.paused==='1'?'engineresume':'enginepause'})).then(function(j){
+  if(j.status!==200)unNotice(unErr(j),true);
+  unRefresh();
+ });
+}
+function unRefresh(){
+ if(UN.busy){UN.again=true;return;}
+ UN.busy=true;
+ var url=UN.details?('?'+unQ()+'&w=usenet&part=details&id='+encodeURIComponent(UN.details))
+                   :('?'+unQ()+'&w=usenet&part=list&cat='+UN.cat+'&sort='+UN.sort+'&desc='+UN.desc);
+ var marker=UN.details?'usenet-details':'usenet-list',box=document.getElementById(UN.details?'un-details':'un-list');
+ fetch(url,{cache:'no-store'}).then(function(r){return r.text();}).then(function(html){
+  // A login page instead of a fragment: the session ran out.
+  if(html.indexOf(marker)<0){location.reload();return;}
+  var y=window.scrollY;box.innerHTML=html;if(!UN.details)unRestore();window.scrollTo(0,y);
+ }).catch(function(){}).then(function(){UN.busy=false;if(UN.again){UN.again=false;unRefresh();}});
+}
+setInterval(function(){
+ if(document.hidden||activeMenu)return;
+ UN.tick++;
+ // Details every second, like the Qt dialog; the queue every two.
+ if(UN.details||UN.tick%2===0)unRefresh();
+},1000);
+
+function unSelect(e,id){
+ if(e.ctrlKey||e.metaKey){if(UN.sel[id])delete UN.sel[id];else UN.sel[id]=1;}
+ else{UN.sel={};UN.sel[id]=1;}
+ UN.cur=id;
+}
+var unList=document.getElementById('un-list');
+unList.addEventListener('click',function(e){
+ var a=e.target.closest('a[data-sort]');
+ if(a){e.preventDefault();var c=a.dataset.sort;if(UN.sort===c)UN.desc=UN.desc==='1'?'0':'1';else{UN.sort=c;UN.desc='0';}unRefresh();return;}
+ var tr=e.target.closest('tr.un-item,tr.un-file');if(!tr)return;
+ var id=tr.dataset.id;
+ if(e.target.classList.contains('un-expander')){if(UN.open[id])delete UN.open[id];else UN.open[id]=1;}
+ else if(e.target.classList.contains('un-check')){if(e.target.checked)UN.sel[id]=1;else delete UN.sel[id];UN.cur=id;}
+ else unSelect(e,id);
+ unRestore();
+});
+unList.addEventListener('dblclick',function(e){var tr=e.target.closest('tr.un-item,tr.un-file');if(tr)unActivate(tr);});
+unList.addEventListener('contextmenu',function(e){
+ var tr=e.target.closest('tr.un-item,tr.un-file');
+ if(tr){var id=tr.dataset.id;if(!UN.sel[id]){UN.sel={};UN.sel[id]=1;}UN.cur=id;unRestore();unMenu(e,tr);return;}
+ if(!UN.admin)return;
+ var m=document.getElementById('usenetmenu');m.innerHTML=unAddEntries();showMenu(e,m);
+});
+
+// --- double-click: a finished release opens, a file opens, anything else expands
+function unActivate(tr){
+ var id=tr.dataset.id;
+ if(tr.classList.contains('un-file')){if(tr.dataset.final==='1')unOpenFile(tr);else unShowDetails(id);return;}
+ if(tr.dataset.status==='complete'){unOpenPayload(tr);return;}
+ if(UN.open[id])delete UN.open[id];else UN.open[id]=1;
+ unRestore();
+}
+function unIncoming(rel,play){
+ // The incoming pages have no session, so they are told the language.
+ var q='token='+encodeURIComponent(UN.token)+'&lang='+encodeURIComponent(UN.lang);
+ if(!rel)return '/api/v1/incoming?'+q;
+ return play==='1'?'/api/v1/incoming?'+q+'&play='+encodeURIComponent(rel)
+                  :'/api/v1/incoming/download?'+q+'&file='+encodeURIComponent(rel);
+}
+function unNothingYet(el){unNotice(unFmt('{{js:Nothing has completed yet for "%1".}}',el.dataset.name||'{{js:this download}}'),true);}
+function unOpenPayload(el){if(el.dataset.payload!=='1'){unNothingYet(el);return;}window.open(unIncoming(el.dataset.open,el.dataset.play),'_blank');}
+function unOpenFile(el){
+ // A file outside the incoming folder has no browse address; the listing is the fallback.
+ if(el.dataset.open){window.open(unIncoming(el.dataset.open,el.dataset.play),'_blank');return;}
+ if(el.dataset.final==='1')window.open(unIncoming('',''),'_blank');else unShowDetails(el.dataset.id);
+}
+function unOpenFolder(el){
+ if(!el||el.dataset.payload!=='1'){if(el)unNothingYet(el);return;}
+ var rel=el.dataset.open||'',cut=rel.lastIndexOf('/');
+ window.open(unIncoming('','')+(cut>0?'&path='+encodeURIComponent(rel.substring(0,cut)):''),'_blank');
+}
+
+// --- preview, with the archive-entry chooser
+function unPreviewTarget(tr){
+ if(!tr)return {file:-1,note:''};
+ if(tr.classList.contains('un-file'))return {file:tr.dataset.preview==='1'?Number(tr.dataset.index):-1,note:tr.dataset.note};
+ return {file:Number(tr.dataset.previewFile),note:tr.dataset.previewNote};
+}
+function unStreamUrl(id,file,entry){return '/api/v1/usenet/'+encodeURIComponent(id)+'/'+file+'/preview?token='+encodeURIComponent(UN.token)+(entry>=0?'&entry='+entry:'');}
+function unPreview(id,file,note){
+ if(file<0){unNotice(note||'{{js:Nothing here can be previewed yet.}}',true);return;}
+ // Opened inside the click, or a popup blocker eats it once the listing returns.
+ var win=window.open('about:blank','_blank'),started=Date.now();
+ (function poll(){
+  fetch('/usenet/entries?'+unQ()+'&id='+encodeURIComponent(id)+'&file='+file,{cache:'no-store'})
+  .then(function(r){return r.json();}).then(function(j){
+   var entries=j.entries||[],playable=entries.filter(function(x){return x.playable;});
+   if(j.status===3){if(win)win.close();unNotice(j.note||'{{js:This archive cannot be previewed.}}',true);return;}
+   if(j.status===1&&playable.length<2&&Date.now()-started<60000){setTimeout(poll,500);return;}
+   if(playable.length<=1){if(win)win.location=unStreamUrl(id,file,playable.length?playable[0].entry:-1);return;}
+   if(win)win.close();
+   unChooser(id,file,entries,j.status===1);
+  }).catch(function(){if(win)win.location=unStreamUrl(id,file,-1);});
+ })();
+}
+function unChooser(id,file,entries,scanning){
+ var h='<div class="section-header">'+esc('{{js:Preview File}}')+(scanning?' '+esc('{{js:(still scanning)}}'):'')+'</div>'
+  +'<table class="data-table"><thead><tr><th class="left">'+esc('{{js:Name}}')+'</th><th>'+esc('{{js:Size}}')+'</th><th class="left">'+esc('{{js:Status}}')+'</th><th></th></tr></thead><tbody>';
+ entries.forEach(function(x){
+  h+='<tr><td class="left">'+esc(x.name)+'</td><td class="right">'+esc(unSize(x.size))+'</td><td class="left">'+esc(x.playable?'{{js:Playable}}':x.note)+'</td><td>'
+   +(x.playable?'<a href="'+esc(unStreamUrl(id,file,x.entry))+'" target="_blank" onclick="unCloseChooser()">'+esc('{{js:Preview}}')+'</a>':'')+'</td></tr>';
+ });
+ h+='</tbody></table><div style="text-align:right;padding-top:6px">'
+  +(scanning?'<button type="button" id="un-keepscan">'+esc('{{js:Keep Scanning}}')+'</button> ':'')
+  +'<button type="button" onclick="unCloseChooser()">'+esc('{{js:Cancel}}')+'</button></div>';
+ var box=document.getElementById('un-chooser');box.innerHTML=h;box.hidden=false;
+ var k=document.getElementById('un-keepscan');if(k)k.onclick=function(){unCloseChooser();unPreview(id,file);};
+}
+function unCloseChooser(){document.getElementById('un-chooser').hidden=true;}
+
+// --- context menus, mirroring the Qt window's. Labels are plain text.
+function unMi(icon,label,js,bold){return '<a class="menuitems" href="#" onclick="hideMenu();'+js+';return false;">'+ic(icon)+(bold?'<b>'+esc(label)+'</b>':esc(label))+'</a>';}
+function unMiOff(icon,label,title){return '<span class="menuitems" style="opacity:.5;cursor:default" title="'+esc(title||'')+'">'+ic(icon)+esc(label)+'</span>';}
+function unAddEntries(){return unMi('l_add','{{js:Add NZB…}}','unAddPanel(true)')+unMi('l_ed2klink','{{js:Add NZB from URL…}}','unAddPanel(true,true)');}
+function unMenu(e,tr){
+ var id=tr.dataset.id,item=unItem(id),ids=Object.keys(UN.sel),one=ids.length===1,isFile=tr.classList.contains('un-file'),h='';
+ if(UN.admin){
+  h+=unAddEntries()+UN_SEP+unMi('l_pause','{{js:Pause}}',"unAct('pause')")+unMi('l_resume','{{js:Resume}}',"unAct('resume')")+UN_SEP;
+  UN.levels.forEach(function(l){h+=unMi(l.p>0?'high':l.p<0?'low':'l_none',unFmt('{{js:Priority: %1}}',l.n),"unAct('priority',"+l.p+")");});
+  if(UN.cats.length>1){h+=UN_SEP;UN.cats.forEach(function(c,i){h+=unMi('l_category',unFmt('{{js:Category: %1}}',c),"unAct('category',"+i+")");});}
+  h+=UN_SEP+(one?unMi('l_options','{{js:Set Password…}}','unPassword()'):unMiOff('l_options','{{js:Set Password…}}'))+UN_SEP;
+  h+=unMi('l_search','{{js:Check Availability}}',"unAct('check')");
+ }
+ var t=unPreviewTarget(isFile?tr:item);
+ UN.menuId=id;UN.menuFile=t.file;
+ h+=t.file>=0?unMi('filetype_video','{{js:Preview}}','unPreview(UN.menuId,UN.menuFile)'):unMiOff('filetype_video','{{js:Preview}}',t.note||'{{js:Nothing here can be previewed yet.}}');
+ UN.menuRow=isFile?tr:item;
+ var openable=isFile?tr.dataset.final==='1':(item&&item.dataset.status==='complete'&&item.dataset.payload==='1');
+ h+=openable&&one?unMi('filetype_other','{{js:Open File}}',isFile?'unOpenFile(UN.menuRow)':'unOpenPayload(UN.menuRow)',true):unMiOff('filetype_other','{{js:Open File}}');
+ h+=unMi('l_shared','{{js:Open Folder}}','unOpenFolder(unItem(UN.menuId))');
+ h+=unMi('l_info','{{js:Details…}}','unShowDetails(UN.menuId)');
+ if(UN.admin)h+=UN_SEP+unMi('l_remove','{{js:Remove}}','unRemove(false)')+unMi('l_cancel','{{js:Remove and Delete Files}}','unRemove(true)');
+ var m=document.getElementById('usenetmenu');m.innerHTML=h;showMenu(e,m);
+}
+document.querySelectorAll('.un-cattab').forEach(function(a){
+ a.addEventListener('click',function(e){
+  e.preventDefault();UN.cat=Number(a.dataset.cat);
+  document.querySelectorAll('.un-cattab').forEach(function(b){b.classList.toggle('active',b===a);});
+  unRefresh();
+ });
+ a.addEventListener('contextmenu',function(e){
+  if(!UN.admin)return;
+  var c=Number(a.dataset.cat),m=document.getElementById('usenetmenu');
+  m.innerHTML=unMi('l_pause','{{js:Pause}}',"unCatAct('pause',"+c+")")+unMi('l_resume','{{js:Resume}}',"unCatAct('resume',"+c+")")+unMi('l_cancel','{{js:Cancel}}',"unCatAct('cancel',"+c+")");
+  showMenu(e,m);
+ });
+});
+
+// --- actions
+function unAct(op,v,ids){
+ ids=ids||Object.keys(UN.sel);if(!ids.length)return;
+ unPost('/usenet/action',unForm({op:op,id:ids,v:v==null?'':v})).then(function(j){
+  if(j.status!==200)unNotice(unErr(j),true);else unNotice(j.message||'',!!j.message);
+  unRefresh();
+ });
+}
+function unCatAct(op,c){
+ // It deletes every article already fetched for those releases, and there is no undo.
+ if(op==='cancel'&&!confirm(unFmt('{{js:Remove every Usenet download in "%1" and delete its files?}}',c===0?'{{js:All}}':UN.cats[c])))return;
+ unPost('/usenet/action',unForm({op:'cat'+op,v:c})).then(function(j){
+  if(j.status!==200)unNotice(unFmt('{{js:Could not apply that to the category: %1}}',unErr(j)),true);
+  unRefresh();
+ });
+}
+function unRemove(del){
+ var n=Object.keys(UN.sel).length;if(!n)return;
+ if(del&&!confirm(unFmt('{{js:Remove %1 download(s) and delete the files already fetched?}}',n)))return;
+ unAct(del?'removedelete':'remove');
+}
+function unPassword(){
+ var id=Object.keys(UN.sel)[0],tr=unItem(id);if(!tr)return;
+ // Never pre-filled: the core does not send the stored value.
+ var pw=prompt(unFmt('{{js:Archive password for "%1":}}',tr.dataset.name),'');if(pw===null)return;
+ if(pw===''&&tr.dataset.haspw==='1'&&!confirm('{{js:Remove the stored password for this download?}}'))return;
+ unAct('password',pw,[id]);
+}
+
+// --- Add NZB: files and links, with the same options the Qt dialogs ask for
+function unAddPanel(show,urlFirst){var p=document.getElementById('un-addpanel');p.hidden=!show;if(show)document.getElementById(urlFirst?'un-urls':'un-files').focus();}
+function unAddOne(job,force){
+ var o={category:document.getElementById('un-cat').value,priority:document.getElementById('un-prio').value,
+        paused:document.getElementById('un-paused').checked?'1':'0'};
+ var pw=document.getElementById('un-pw').value;
+ if(force)o.force='1';
+ if(job.url){o.url=job.url;o.password=pw;return unPost('/usenet/add',unForm(o));}
+ // The body is the .nzb, so the passphrase rides a header rather than the URL.
+ o.name=job.file.name;
+ return unPost('/usenet/add?'+unForm(o),job.file,{'Content-Type':'application/x-nzb','X-Nzb-Password':encodeURIComponent(pw)});
+}
+function unAddSubmit(){
+ var files=Array.prototype.slice.call(document.getElementById('un-files').files||[]);
+ var urls=document.getElementById('un-urls').value.split(/\r?\n/).map(function(s){return s.trim();}).filter(Boolean);
+ if(!files.length&&!urls.length){unNotice('{{js:Choose .nzb files or paste links first.}}',true);return;}
+ if(urls.length>UN.maxUrls){unNotice(unFmt('{{js:Please add at most %1 links at a time.}}',UN.maxUrls),true);return;}
+ var jobs=files.map(function(f){return {file:f,label:f.name};}).concat(urls.map(function(u){return {url:u,label:u};}));
+ var added=0,failed=[],again=[],chain=Promise.resolve();
+ unNotice(unFmt('{{js:Adding %1 NZB(s)…}}',jobs.length));
+ jobs.forEach(function(job){chain=chain.then(function(){return unAddOne(job,false).then(function(j){
+  if(j.status===200)added++;else if(j.outcome===4)again.push(job);else failed.push(job.label+': '+unErr(j));
+ });});});
+ chain.then(function(){
+  // "Already downloaded" is a question, not a failure.
+  if(!again.length||!confirm(unFmt('{{js:You have already downloaded %1 of these. Download them again?}}',again.length)+'\n\n'+again.map(function(x){return x.label;}).join('\n')))return;
+  var more=Promise.resolve();
+  again.forEach(function(job){more=more.then(function(){return unAddOne(job,true).then(function(j){
+   if(j.status===200)added++;else failed.push(job.label+': '+unErr(j));
+  });});});
+  return more;
+ }).then(function(){
+  var msg=added?unFmt('{{js:Queued %1 NZB(s).}}',added):'';
+  if(failed.length)msg+=(added?' ':'')+unFmt('{{js:These could not be added: %1}}',failed.join('; '));
+  unNotice(msg,failed.length>0);
+  if(added){unAddPanel(false);document.getElementById('un-files').value='';document.getElementById('un-urls').value='';document.getElementById('un-pw').value='';}
+  unRefresh();
+ });
+}
+
+// --- details
+function unShowDetails(id){UN.details=id;document.getElementById('un-list').hidden=true;document.getElementById('un-details').hidden=false;unCloseChooser();unRefresh();}
+function unCloseDetails(){UN.details=null;document.getElementById('un-details').hidden=true;document.getElementById('un-list').hidden=false;unRefresh();}
+document.getElementById('un-details').addEventListener('dblclick',function(e){var tr=e.target.closest('tr.un-dfile');if(tr)unOpenFile(tr);});
+
+// Enter mirrors the double-click, Alt+Enter opens Details.
+document.addEventListener('keydown',function(e){
+ if(e.key!=='Enter'||UN.details||!UN.cur||/INPUT|TEXTAREA|SELECT|BUTTON/.test(e.target.tagName))return;
+ var tr=unItem(UN.cur);if(!tr)return;
+ e.preventDefault();
+ if(e.altKey)unShowDetails(UN.cur);else unActivate(tr);
+});
+if(!UN.admin)document.querySelectorAll('.admin-only').forEach(function(x){x.hidden=true;});
+unRestore();
+</script>
+<--TMPL_USENET_END-->
+
+
+<--TMPL_USENET_UNAVAILABLE-->
+<div class="section-header">
+ <span class="icon icon-h_usenet" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span>&nbsp; {{Usenet}}
+</div>
+<div class="message">{{Usenet engine unavailable}}</div>
+<--TMPL_USENET_UNAVAILABLE_END-->
+
+
+<--TMPL_USENET_LIST-->
+<!--usenet-list-->
+<table class="data-table un-table">
+ <thead>
+  <tr>
+   <th style="width:18px"></th>
+   <th class="left"><a href="#" data-sort="name">{{Name}}[SortMark_name]</a></th>
+   <th><a href="#" data-sort="size">{{Size}}[SortMark_size]</a></th>
+   <th><a href="#" data-sort="progress">{{Progress}}[SortMark_progress]</a></th>
+   <th class="left"><a href="#" data-sort="status">{{Status}}[SortMark_status]</a></th>
+   <th><a href="#" data-sort="speed">{{Speed}}[SortMark_speed]</a></th>
+   <th><a href="#" data-sort="remaining">{{Remaining}}[SortMark_remaining]</a></th>
+   <th><a href="#" data-sort="priority">{{Priority}}[SortMark_priority]</a></th>
+   <th><a href="#" data-sort="health">{{Health}}[SortMark_health]</a></th>
+   <th><a href="#" data-sort="category">{{Category}}[SortMark_category]</a></th>
+  </tr>
+ </thead>
+ <tbody>
+[UsenetRows]
+[UsenetEmptyRow]
+ </tbody>
+</table>
+<div class="un-summary" id="un-summary" data-engine-paused="[UsenetEnginePaused]" title="[UsenetSummaryTitle]">[UsenetSummary]</div>
+<--TMPL_USENET_LIST_END-->
+
+
+<--TMPL_USENET_LINE-->
+<tr class="un-item [UsenetRowClass]" data-id="[UsenetId]" data-name="[UsenetName]" data-status="[UsenetStatusKey]" data-files="[UsenetFileCount]" data-preview-file="[UsenetPreviewFile]" data-preview-note="[UsenetPreviewNote]" data-open="[UsenetOpen]" data-play="[UsenetOpenPlay]" data-payload="[UsenetHasPayload]" data-haspw="[UsenetHasPassword]">
+ <td class="center"><input type="checkbox" class="un-check"></td>
+ <td class="left" title="[UsenetNameTitle]"><span class="un-expander"></span><span class="icon icon-[UsenetStatusIcon]" style="vertical-align:middle"></span>&nbsp;[UsenetLock][UsenetName]</td>
+ <td class="right">[UsenetSize]</td>
+ <td class="center">
+  <div class="progress-bar">
+   <div class="progress-fill" style="width:[UsenetPercent]%"></div>
+   <div class="progress-text">[UsenetPercent]%</div>
+  </div>
+ </td>
+ <td class="left">[UsenetStatus]</td>
+ <td class="right">[UsenetSpeed]</td>
+ <td class="right">[UsenetRemaining]</td>
+ <td class="center">[UsenetPriority]</td>
+ <td class="center" title="[UsenetHealthTitle]">[UsenetHealth]</td>
+ <td class="center">[UsenetCategory]</td>
+</tr>
+[UsenetFiles]
+<--TMPL_USENET_LINE_END-->
+
+
+<--TMPL_USENET_FILE_LINE-->
+<tr class="un-file [UsenetFileClass]" data-id="[UsenetId]" data-index="[UsenetFileIndex]" data-preview="[UsenetFilePreview]" data-note="[UsenetFileNote]" data-open="[UsenetFileOpen]" data-play="[UsenetFilePlay]" data-final="[UsenetFileHasFinal]" hidden>
+ <td></td>
+ <td class="left un-fname" title="[UsenetFileTitle]"><span class="icon icon-filetype_[UsenetFileType]" style="vertical-align:middle"></span>&nbsp;[UsenetFileName]</td>
+ <td class="right">[UsenetFileSize]</td>
+ <td class="center">[UsenetFilePercent]%</td>
+ <td class="left">[UsenetFileStatus]</td>
+ <td colspan="5"></td>
+</tr>
+<--TMPL_USENET_FILE_LINE_END-->
+
+
+<--TMPL_USENET_DETAILS-->
+<div class="usenet-details">
+<div class="un-toolbar">
+ <a class="un-btn" href="#" onclick="unCloseDetails();return false;"><span class="icon icon-l_close"></span>{{Back to the queue}}</a>
+ <a class="un-btn" href="#" data-open="[UsenetOpen]" data-payload="[UsenetHasPayload]" data-name="[UsenetName]" onclick="unOpenFolder(this);return false;"><span class="icon icon-l_shared"></span>{{Open Folder}}</a>
+</div>
+<div class="un-details-title">[UsenetName]</div>
+<div class="un-details-grid">
+ <span class="k">{{Total Size:}}</span><span>[UsenetSize]</span><span class="k">{{Poster:}}</span><span>[UsenetPoster]</span>
+ <span class="k">{{Date:}}</span><span>[UsenetDate]</span><span class="k">{{Articles:}}</span><span>[UsenetArticles]</span>
+ <span class="k">{{Status:}}</span><span>[UsenetStatus]</span><span class="k">{{Newsgroups:}}</span><span>[UsenetGroups]</span>
+ <span class="k">{{Health:}}</span><span title="[UsenetHealthTitle]">[UsenetHealth]</span><span class="k">{{Files:}}</span><span>[UsenetFileCount]</span>
+</div>
+<table class="data-table">
+ <thead>
+  <tr>
+   <th class="left">{{Name}}</th>
+   <th>{{Size}}</th>
+   <th>{{Progress}}</th>
+   <th>{{Articles}}</th>
+   <th>{{Missing}}</th>
+   <th class="left">{{Status}}</th>
+  </tr>
+ </thead>
+ <tbody>
+[UsenetDetailsFiles]
+ </tbody>
+</table>
+</div>
+<--TMPL_USENET_DETAILS_END-->
+
+
+<--TMPL_USENET_DETAILS_FILE_LINE-->
+<tr class="un-dfile [UsenetFileClass]" data-id="[UsenetId]" data-open="[UsenetFileOpen]" data-play="[UsenetFilePlay]" data-final="[UsenetFileHasFinal]">
+ <td class="left" title="[UsenetFileTitle]"><span class="icon icon-filetype_[UsenetFileType]" style="vertical-align:middle"></span>&nbsp;[UsenetFileName]</td>
+ <td class="right">[UsenetFileSize]</td>
+ <td class="center">[UsenetFilePercent]%</td>
+ <td class="center">[UsenetFileArticles]</td>
+ <td class="center">[UsenetFileMissing]</td>
+ <td class="left">[UsenetFileStatus]</td>
+</tr>
+<--TMPL_USENET_DETAILS_FILE_LINE_END-->
+
+
+<--TMPL_USENET_DETAILS_GONE-->
+<div class="usenet-details">
+<div class="un-toolbar">
+ <a class="un-btn" href="#" onclick="unCloseDetails();return false;"><span class="icon icon-l_close"></span>{{Back to the queue}}</a>
+</div>
+<div class="message">{{This download is no longer in the queue.}}</div>
+</div>
+<--TMPL_USENET_DETAILS_GONE_END-->
+
+
+<-- ################################################################# -->
 <-- ########################### SEARCH ############################## -->
 <-- ################################################################# -->
 
 <--TMPL_SEARCH-->
 <div class="section-header">
  <span class="icon icon-l_search" style="vertical-align:middle"></span>&nbsp;
- <b>Search</b>
+ <b>{{Search}}</b>
 </div>
 <div class="search-form">
  <form action="" method="GET">
@@ -709,35 +1196,35 @@ img { border: 0; }
   <input type="hidden" name="w" value="search">
   <table border="0" cellpadding="4" cellspacing="0">
    <tr>
-    <td>Name</td>
+    <td>{{Name}}</td>
     <td><input name="tosearch" type="text" size="30"></td>
    </tr>
    <tr>
-    <td>Type</td>
+    <td>{{Type}}</td>
     <td>
      <select name="type">
-      <option value="">Any</option>
-      <option value="Arc">Archive (.zip .rar ...)</option>
-      <option value="Audio">Audio (.mp3 .ogg ...)</option>
-      <option value="Iso">CD Image (.iso .bin ...)</option>
-      <option value="Doc">Document (.doc .pdf ...)</option>
-      <option value="Image">Image (.jpg .png ...)</option>
-      <option value="Pro">Program (.exe ...)</option>
-      <option value="Video">Video (.avi .mkv ...)</option>
+      <option value="">{{Any}}</option>
+      <option value="Arc">{{Archive (.zip .rar ...)}}</option>
+      <option value="Audio">{{Audio (.mp3 .ogg ...)}}</option>
+      <option value="Iso">{{CD Image (.iso .bin ...)}}</option>
+      <option value="Doc">{{Document (.doc .pdf ...)}}</option>
+      <option value="Image">{{Image (.jpg .png ...)}}</option>
+      <option value="Pro">{{Program (.exe ...)}}</option>
+      <option value="Video">{{Video (.avi .mkv ...)}}</option>
      </select>
     </td>
    </tr>
    <tr>
-    <td>Method</td>
+    <td>{{Method}}</td>
     <td>
-     <input value="server" type="radio" name="method" checked> Server&nbsp;
-     <input value="global" type="radio" name="method"> Global&nbsp;
-     <input value="kademlia" type="radio" name="method"> Kademlia
+     <input value="server" type="radio" name="method" checked> {{Server}}&nbsp;
+     <input value="global" type="radio" name="method"> {{Global}}&nbsp;
+     <input value="kademlia" type="radio" name="method"> {{Kademlia}}
     </td>
    </tr>
    <tr>
     <td></td>
-    <td><br><input type="submit" value="Search"></td>
+    <td><br><input type="submit" value="{{Search}}"></td>
    </tr>
   </table>
  </form>
@@ -747,10 +1234,10 @@ img { border: 0; }
 
 <--TMPL_SEARCH_RESULT_HEADER-->
 <tr>
- <th class="left">File Name</th>
- <th>Size</th>
- <th>Hash</th>
- <th>Sources</th>
+ <th class="left">{{File Name}}</th>
+ <th>{{Size}}</th>
+ <th>{{Hash}}</th>
+ <th>{{Sources}}</th>
  <th>&nbsp;</th>
 </tr>
 <--TMPL_SEARCH_RESULT_HEADER_END-->
@@ -774,17 +1261,17 @@ img { border: 0; }
 <--TMPL_SHARED_LIST-->
 <div class="section-header">
  <span class="icon icon-l_shared" style="vertical-align:middle"></span>&nbsp;
- <b>Shared Files</b>
+ <b>{{Shared Files}}</b>
 </div>
 <table class="data-table">
  <thead>
   <tr>
-   <th class="left">File Name</th>
-   <th>Size</th>
-   <th>Requests</th>
-   <th>Accepted</th>
-   <th>Transferred</th>
-   <th>Priority</th>
+   <th class="left">{{File Name}}</th>
+   <th>{{Size}}</th>
+   <th>{{Requests}}</th>
+   <th>{{Accepted}}</th>
+   <th>{{Transferred}}</th>
+   <th>{{Priority}}</th>
   </tr>
  </thead>
  <tbody>
@@ -795,7 +1282,7 @@ img { border: 0; }
 
 
 <--TMPL_SHARED_LINE-->
-<tr oncontextmenu="sharedmenu(event,'[SharedED2kLink]')">
+<tr data-link="[SharedED2kLink]" oncontextmenu="sharedmenu(event,this.dataset.link)">
  <td class="left">
   <span class="icon icon-filetype_[SharedFileType]" style="vertical-align:middle"></span>
   <span class="icon icon-rating_[SharedFake]" style="vertical-align:middle" title="[SharedFakeTitle]"></span>
@@ -819,44 +1306,44 @@ img { border: 0; }
 <--TMPL_STATS-->
 <div class="section-header">
  <span class="icon icon-h_statistic" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span>&nbsp;
- <b>Statistics</b>
+ <b>{{Statistics}}</b>
 </div>
 <br>
 <table border="0" align="center" cellpadding="4" cellspacing="0" width="60%">
  <tr>
-  <td class="pref-section" colspan="2">Session Statistics</td>
+  <td class="pref-section" colspan="2">{{Session Statistics}}</td>
  </tr>
  <tr>
-  <td class="pref-row" width="50%">Download Speed</td>
-  <td class="pref-row">[SpeedDown] KB/s</td>
+  <td class="pref-row" width="50%">{{Download Speed}}</td>
+  <td class="pref-row">[SpeedDown] {{KB/s}}</td>
  </tr>
  <tr>
-  <td class="pref-row">Upload Speed</td>
-  <td class="pref-row">[SpeedUp] KB/s</td>
+  <td class="pref-row">{{Upload Speed}}</td>
+  <td class="pref-row">[SpeedUp] {{KB/s}}</td>
  </tr>
  <tr>
-  <td class="pref-row">Max Download Speed</td>
-  <td class="pref-row">[MaxSpeedDown] KB/s</td>
+  <td class="pref-row">{{Max Download Speed}}</td>
+  <td class="pref-row">[MaxSpeedDown] {{KB/s}}</td>
  </tr>
  <tr>
-  <td class="pref-row">Max Upload Speed</td>
-  <td class="pref-row">[MaxSpeedUp] KB/s</td>
+  <td class="pref-row">{{Max Upload Speed}}</td>
+  <td class="pref-row">[MaxSpeedUp] {{KB/s}}</td>
  </tr>
  <tr>
-  <td class="pref-row">Session Received</td>
+  <td class="pref-row">{{Session Received}}</td>
   <td class="pref-row">[SessionReceived]</td>
  </tr>
  <tr>
-  <td class="pref-row">Session Sent</td>
+  <td class="pref-row">{{Session Sent}}</td>
   <td class="pref-row">[SessionSent]</td>
  </tr>
  <tr>
-  <td class="pref-row">Reconnects</td>
+  <td class="pref-row">{{Reconnects}}</td>
   <td class="pref-row">[Reconnects]</td>
  </tr>
  <tr>
-  <td class="pref-row">Uptime</td>
-  <td class="pref-row">[Uptime] sec</td>
+  <td class="pref-row">{{Uptime}}</td>
+  <td class="pref-row">[Uptime]</td>
  </tr>
 </table>
 <br>
@@ -880,13 +1367,13 @@ img { border: 0; }
 </style>
 <div class="section-header">
  <span class="icon icon-h_graph" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span>&nbsp;
- <b>Graphs</b>
+ <b>{{Graphs}}</b>
 </div>
 <br>
 <table border="0" align="center" cellpadding="4" cellspacing="0" width="90%">
  <tr>
   <td>
-   <div class="graph-title">[TxtDownload] &mdash; 0 to [MaxDownload] [KByteSec]</div>
+   <div class="graph-title">[TxtDownload] &mdash; 0&ndash;[MaxDownload] [KByteSec]</div>
    <div class="graph-box">
     <svg class="graph-svg" viewBox="0 0 500 120" preserveAspectRatio="none" data-values="[GraphDownload]">
      <line x1="0" y1="30" x2="500" y2="30" stroke="#C0C0FF" stroke-opacity="0.3" stroke-dasharray="2 4"/>
@@ -900,7 +1387,7 @@ img { border: 0; }
  </tr>
  <tr>
   <td>
-   <div class="graph-title">[TxtUpload] &mdash; 0 to [MaxUpload] [KByteSec]</div>
+   <div class="graph-title">[TxtUpload] &mdash; 0&ndash;[MaxUpload] [KByteSec]</div>
    <div class="graph-box">
     <svg class="graph-svg" viewBox="0 0 500 120" preserveAspectRatio="none" data-values="[GraphUpload]">
      <line x1="0" y1="30" x2="500" y2="30" stroke="#C0C0FF" stroke-opacity="0.3" stroke-dasharray="2 4"/>
@@ -914,7 +1401,7 @@ img { border: 0; }
  </tr>
  <tr>
   <td>
-   <div class="graph-title">[TxtConnections] &mdash; 0 to [MaxConnections]</div>
+   <div class="graph-title">[TxtConnections] &mdash; 0&ndash;[MaxConnections]</div>
    <div class="graph-box">
     <svg class="graph-svg" viewBox="0 0 500 120" preserveAspectRatio="none" data-values="[GraphConnections]">
      <line x1="0" y1="30" x2="500" y2="30" stroke="#C0C0FF" stroke-opacity="0.3" stroke-dasharray="2 4"/>
@@ -938,7 +1425,7 @@ img { border: 0; }
 <--TMPL_PREFERENCES-->
 <div class="section-header">
  <span class="icon icon-l_options" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span>&nbsp;
- <b>Preferences</b>
+ <b>{{Preferences}}</b>
 </div>
 <br>
 <form action="" method="GET">
@@ -947,36 +1434,36 @@ img { border: 0; }
  <input type="hidden" name="saveprefs" value="true">
  <table border="0" align="center" cellpadding="4" cellspacing="0" width="60%">
   <tr>
-   <td class="pref-section" colspan="2">General</td>
+   <td class="pref-section" colspan="2">{{General}}</td>
   </tr>
   <tr>
-   <td class="pref-row">Nickname</td>
+   <td class="pref-row">{{Nickname}}</td>
    <td class="pref-row"><input type="text" name="nick" value="[Nick]" size="30"></td>
   </tr>
   <tr>
-   <td class="pref-section" colspan="2">Speed Limits</td>
+   <td class="pref-section" colspan="2">{{Speed Limits}}</td>
   </tr>
   <tr>
-   <td class="pref-row">Max Download (KB/s)</td>
+   <td class="pref-row">{{Max Download (KB/s)}}</td>
    <td class="pref-row"><input type="text" name="maxdown" value="[MaxDownload]" size="8"></td>
   </tr>
   <tr>
-   <td class="pref-row">Max Upload (KB/s)</td>
+   <td class="pref-row">{{Max Upload (KB/s)}}</td>
    <td class="pref-row"><input type="text" name="maxup" value="[MaxUpload]" size="8"></td>
   </tr>
   <tr>
-   <td class="pref-section" colspan="2">Ports</td>
+   <td class="pref-section" colspan="2">{{Ports}}</td>
   </tr>
   <tr>
-   <td class="pref-row">TCP Port</td>
+   <td class="pref-row">{{TCP Port}}</td>
    <td class="pref-row"><input type="text" name="port" value="[Port]" size="8"></td>
   </tr>
   <tr>
-   <td class="pref-row">UDP Port</td>
+   <td class="pref-row">{{UDP Port}}</td>
    <td class="pref-row"><input type="text" name="udpport" value="[UDPPort]" size="8"></td>
   </tr>
   <tr>
-   <td align="center" colspan="2"><br><input type="submit" value="Apply"></td>
+   <td align="center" colspan="2"><br><input type="submit" value="{{Apply}}"></td>
   </tr>
  </table>
 </form>
@@ -991,7 +1478,7 @@ img { border: 0; }
 <--TMPL_SERVERINFO-->
 <div class="section-header">
  <span class="icon icon-h_server" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span>&nbsp;
- <b>Server Info</b>
+ <b>{{Server Info}}</b>
 </div>
 <br>
 <table border="0" align="center" cellpadding="4" cellspacing="0" width="80%">
@@ -1010,7 +1497,7 @@ img { border: 0; }
 <--TMPL_LOG-->
 <div class="section-header">
  <span class="icon icon-h_log" style="vertical-align:middle"></span>&nbsp;
- <b>Log</b>
+ <b>{{Log}}</b>
 </div>
 <br>
 <table border="0" align="center" cellpadding="4" cellspacing="0" width="80%">
@@ -1025,7 +1512,7 @@ img { border: 0; }
 <--TMPL_DEBUGLOG-->
 <div class="section-header">
  <span class="icon icon-h_log" style="vertical-align:middle"></span>&nbsp;
- <b>Debug Log</b>
+ <b>{{Debug Log}}</b>
 </div>
 <br>
 <table border="0" align="center" cellpadding="4" cellspacing="0" width="80%">
@@ -1044,15 +1531,15 @@ img { border: 0; }
 <--TMPL_MYINFO-->
 <div class="section-header">
  <span class="icon icon-l_info" style="vertical-align:middle"></span>&nbsp;
- <b>My Info</b>
+ <b>{{My Info}}</b>
 </div>
 <br>
 <table border="0" align="center" cellpadding="4" cellspacing="0" width="60%">
  <tr>
-  <td class="pref-section">User Information</td>
+  <td class="pref-section">{{User Information}}</td>
  </tr>
  <tr>
-  <td class="pref-row">Nickname: <b>[Nick]</b></td>
+  <td class="pref-row">{{Nickname:}} <b>[Nick]</b></td>
  </tr>
 </table>
 <br>
@@ -1071,24 +1558,24 @@ img { border: 0; }
 <--TMPL_KADDLG-->
 <div class="section-header">
  <span class="icon icon-h_kad" style="width:16px;height:16px;background-size:16px 16px;vertical-align:middle"></span>&nbsp;
- <b>Kademlia</b>
+ <b>{{Kademlia}}</b>
 </div>
 <br>
 <table class="kad-table">
  <tr>
-  <td colspan="2" style="background:#000;font-weight:bold">Kad Network</td>
+  <td colspan="2" style="background:#000;font-weight:bold">{{Kad Network}}</td>
  </tr>
  <tr>
-  <td>Status</td>
+  <td>{{Status}}</td>
   <td><b>[KadStatus]</b></td>
  </tr>
  <tr>
   <td colspan="2" style="text-align:center; padding:8px;">
-   <a href="?ses=[Session]&amp;w=kad&amp;c=connect" style="padding:4px 12px; background:#0075B3; border:1px solid #002244; border-radius:3px;">Connect</a>
+   <a href="?ses=[Session]&amp;w=kad&amp;c=connect" style="padding:4px 12px; background:#0075B3; border:1px solid #002244; border-radius:3px;">{{Connect}}</a>
    &nbsp;
-   <a href="?ses=[Session]&amp;w=kad&amp;c=disconnect" style="padding:4px 12px; background:#0075B3; border:1px solid #002244; border-radius:3px;">Disconnect</a>
+   <a href="?ses=[Session]&amp;w=kad&amp;c=disconnect" style="padding:4px 12px; background:#0075B3; border:1px solid #002244; border-radius:3px;">{{Disconnect}}</a>
    &nbsp;
-   <a href="?ses=[Session]&amp;w=kad&amp;c=rcfirewall" style="padding:4px 12px; background:#0075B3; border:1px solid #002244; border-radius:3px;">Recheck Firewall</a>
+   <a href="?ses=[Session]&amp;w=kad&amp;c=rcfirewall" style="padding:4px 12px; background:#0075B3; border:1px solid #002244; border-radius:3px;">{{Recheck Firewall}}</a>
   </td>
  </tr>
 </table>
@@ -1102,13 +1589,13 @@ img { border: 0; }
 
 <--TMPL_COMMENTLIST-->
 <!DOCTYPE html>
-<html>
+<html lang="[HtmlLang]">
 <head>
  <meta charset="[CharSet]">
  <link rel="icon" href="favicon.ico">
  <link rel="stylesheet" href="sprites.css">
 <link rel="stylesheet" href="sprite-rating.css">
- <title>Comments</title>
+ <title>{{Comments}}</title>
  <style>
   body { font-family: Tahoma, sans-serif; font-size: 8pt; background: #005784; color: #fff; }
   table { width: 100%; border-collapse: collapse; }
@@ -1119,7 +1606,7 @@ img { border: 0; }
 <body>
  <table>
   <tr>
-   <th>User</th><th>File</th><th>Comment</th><th>Rating</th>
+   <th>{{User}}</th><th>{{File}}</th><th>{{Comment}}</th><th>{{Rating}}</th>
   </tr>
   [COMMENTLINES]
  </table>

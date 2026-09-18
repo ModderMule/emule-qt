@@ -7,6 +7,8 @@
 #include "app/AppContext.h"
 #include "files/PartFile.h"
 #include "client/UpDownClient.h"
+#include "crypto/AICHHashSet.h"
+#include "crypto/FileIdentifier.h"
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
 #include "utils/OtherFunctions.h"
@@ -58,9 +60,12 @@ private slots:
     void containerCheckWaitsForTheFirstBytes();
     void rightFileHasHigherPrio_ordering();
     void writePartStatus_basic();
+    void validSourcesCount_countsMfcStates();
+    void updatePartsInfo_rebuildsFrequencyAndCompleteCount();
     void getFilledArray_basic();
     void writeToBuffer_countsCompressionGain();
     void ich_recoversCorruptedPartOnRehash();
+    void seedAICHRecoveryMasterHash_adoptsTheIdentifierHash();
 
 private:
     QTemporaryDir m_tempDir;
@@ -642,6 +647,71 @@ void tst_PartFile::sourceTracking()
     QCOMPARE(pf.sourceCount(), 0);
 }
 
+void tst_PartFile::validSourcesCount_countsMfcStates()
+{
+    // The sources that actually answered us, which is what isSourceRequestAllowed()
+    // weighs against the raw source count. MFC CPartFile::GetValidSourcesCount().
+    PartFile pf;
+    pf.setFileSize(PARTSIZE);
+
+    const std::array<DownloadState, 6> states{
+        DownloadState::OnQueue,        DownloadState::Downloading,
+        DownloadState::Connected,      DownloadState::RemoteQueueFull,
+        DownloadState::NoNeededParts,  DownloadState::None};
+
+    std::vector<std::unique_ptr<UpDownClient>> clients;
+    for (const auto state : states) {
+        auto c = std::make_unique<UpDownClient>();
+        c->setDownloadState(state);
+        pf.addSource(c.get());
+        clients.push_back(std::move(c));
+    }
+
+    QCOMPARE(pf.sourceCount(), 6);
+    QCOMPARE(pf.validSourcesCount(), 4);
+
+    for (auto& c : clients)
+        pf.removeSource(c.get());
+}
+
+void tst_PartFile::updatePartsInfo_rebuildsFrequencyAndCompleteCount()
+{
+    // addSource()/removeSource() maintain the frequencies incrementally, but a source
+    // that re-reports its part status was only ever added, never subtracted — so
+    // availability drifted upward with every OP_FILESTATUS and every re-ask. The rebuild
+    // is what keeps it honest (MFC CPartFile::UpdatePartsInfo).
+    PartFile pf;
+    pf.setFileName(QStringLiteral("freq.bin"));
+    pf.setFileSize(PARTSIZE * 2 + 100);   // 3 parts
+    QCOMPARE(pf.partCount(), uint16{3});
+
+    UpDownClient src;
+    pf.addSource(&src);
+
+    auto report = [&pf, &src](uint8 bitmap) {
+        SafeMemFile data;
+        data.writeUInt16(pf.ed2kPartCount());
+        data.writeUInt8(bitmap);
+        data.seek(0, SEEK_SET);
+        src.processFileStatus(false, data, &pf);
+    };
+
+    report(0x07);   // holds all three parts
+    QCOMPARE(pf.srcPartFrequency().at(0), uint16{1});
+    QCOMPARE(pf.srcPartFrequency().at(2), uint16{1});
+
+    report(0x07);   // says the same thing again — this used to count it twice
+    QCOMPARE(pf.srcPartFrequency().at(0), uint16{1});
+    QCOMPARE(pf.srcPartFrequency().at(2), uint16{1});
+
+    report(0x01);   // now it only has part 0
+    QCOMPARE(pf.srcPartFrequency().at(0), uint16{1});
+    QCOMPARE(pf.srcPartFrequency().at(1), uint16{0});
+    QCOMPARE(pf.srcPartFrequency().at(2), uint16{0});
+
+    pf.removeSource(&src);
+}
+
 void tst_PartFile::rightFileHasHigherPrio_ordering()
 {
     PartFile low, high;
@@ -659,15 +729,33 @@ void tst_PartFile::rightFileHasHigherPrio_ordering()
 
 void tst_PartFile::writePartStatus_basic()
 {
+    // An exact multiple of PARTSIZE is the case where the two part counts differ: 3 data
+    // parts, but the ED2K count that goes on the wire is 4. Sending our own count made
+    // MFC peers answer "wrong part number" for every such file.
     PartFile pf;
-    pf.setFileSize(PARTSIZE * 3); // 3 parts
+    pf.setFileSize(PARTSIZE * 3);
+    QCOMPARE(pf.partCount(), static_cast<uint16>(3));
 
     SafeMemFile file;
     pf.writePartStatus(file);
 
     file.seek(0, 0); // SEEK_SET
-    uint16 pc = file.readUInt16();
-    QCOMPARE(pc, static_cast<uint16>(3));
+    QCOMPARE(pf.ed2kPartCount(), static_cast<uint16>(4));
+    QCOMPARE(file.readUInt16(), pf.ed2kPartCount());
+
+    // The trailing zero-length part always reads as complete, which is what MFC's
+    // IsCompleteBDSafe() yields over an empty range.
+    const uint8 bits = file.readUInt8();
+    QVERIFY2((bits & 0x08) != 0, "the extra ED2K part must be marked complete");
+
+    // A size that is not a multiple has both counts equal.
+    PartFile odd;
+    odd.setFileSize(PARTSIZE * 3 + 1);
+    SafeMemFile oddFile;
+    odd.writePartStatus(oddFile);
+    oddFile.seek(0, 0);
+    QCOMPARE(oddFile.readUInt16(), odd.partCount());
+    QCOMPARE(odd.partCount(), odd.ed2kPartCount());
 }
 
 void tst_PartFile::getFilledArray_basic()
@@ -790,6 +878,36 @@ void tst_PartFile::ich_recoversCorruptedPartOnRehash()
 
     // The second part is untouched, so the file is not complete.
     QVERIFY(pf.totalGapSize() > 0);
+}
+
+// An AICH root hash that arrives with an ed2k link or a search result is as trustworthy
+// as the file hash beside it, and MFC seeds the recovery set from it at creation
+// (srchybrid/PartFile.cpp:97, :188). Without this the set stays Empty and
+// requestAICHRecovery() bails, so recovery was off for every download until a restart
+// reloaded the .part.met.
+void tst_PartFile::seedAICHRecoveryMasterHash_adoptsTheIdentifierHash()
+{
+    PartFile pf;
+    pf.setFileName(QStringLiteral("aich-seed.bin"));
+    pf.setFileSize(PARTSIZE * 3);
+
+    // Nothing to adopt yet.
+    pf.seedAICHRecoveryMasterHash();
+    QCOMPARE(pf.aichRecoveryHashSet().getStatus(), EAICHStatus::Empty);
+
+    uint8 raw[kAICHHashSize];
+    std::memset(raw, 0x6E, sizeof(raw));
+    const AICHHash root(raw);
+    pf.fileIdentifier().setAICHHash(root);
+
+    pf.seedAICHRecoveryMasterHash();
+    QCOMPARE(pf.aichRecoveryHashSet().getStatus(), EAICHStatus::Verified);
+    QCOMPARE(pf.aichRecoveryHashSet().getMasterHash(), root);
+
+    // A set peers have already voted into Trusted is not downgraded by a second seeding.
+    pf.aichRecoveryHashSet().setStatus(EAICHStatus::Trusted);
+    pf.seedAICHRecoveryMasterHash();
+    QCOMPARE(pf.aichRecoveryHashSet().getStatus(), EAICHStatus::Trusted);
 }
 
 QTEST_GUILESS_MAIN(tst_PartFile)

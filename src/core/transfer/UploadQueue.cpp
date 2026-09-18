@@ -155,6 +155,27 @@ UpDownClient* UploadQueue::waitingClientByIP(uint32 ip) const
     return nullptr;
 }
 
+UpDownClient* UploadQueue::waitingClientByIP_UDP(const Address& addr, uint16 udpPort,
+                                                 bool* multipleIPs) const
+{
+    UpDownClient* sameIP = nullptr;
+    uint32 matches = 0;
+
+    for (auto* client : m_waitingList) {
+        if (client->userAddress() != addr)
+            continue;
+        if (client->udpPort() == udpPort)
+            return client;
+        sameIP = client;
+        ++matches;
+    }
+
+    if (multipleIPs)
+        *multipleIPs = matches > 1;
+
+    return (matches == 1) ? sameIP : nullptr;
+}
+
 int UploadQueue::waitingPosition(const UpDownClient* client) const
 {
     if (!isOnUploadQueue(client))
@@ -864,6 +885,10 @@ bool UploadQueue::removeFromUploadQueue(UpDownClient* client)
         ++m_failedUpCount;
     }
 
+    // The file loses this peer's reported availability — MFC UploadQueue.cpp:734-736.
+    if (KnownFile* uploadedFile = client->uploadFile())
+        uploadedFile->updatePartsInfo();
+
     // Keep track of this client — it has now consumed an upload slot, which is what the
     // per-address queue gate in addClientToQueue counts.
     if (theApp.clientList)
@@ -1174,76 +1199,102 @@ void UploadQueue::onReaskFilePing(const Endpoint& senderEP,
     if (!data || size < 16)
         return;
 
-    // Keep the Endpoint intact end-to-end. Flattening it to a uint32 loses the family
-    // (an IPv6 sender collapses to 0) and mixes host order into a network-order lookup,
-    // which is why this handler never resolved a sender and no rank was ever returned.
-    UpDownClient* sender = nullptr;
-    if (theApp.clientList)
-        sender = theApp.clientList->findByEndpoint_UDP(senderEP.address(), senderEP.port());
+    SafeMemFile in(data, size);
+    uint8 fileHash[16];
+    in.readHash16(fileHash);
+
+    answerReask(senderEP, in, fileHash);
+}
+
+// ===========================================================================
+// answerReask — MFC ClientUDPSocket.cpp:226-308 / ListenSocket.cpp:1453-1510
+// ===========================================================================
+
+void UploadQueue::answerReask(const Endpoint& replyTo, SafeMemFile& in,
+                              const uint8* fileHash)
+{
+    if (!fileHash || !theApp.clientUDP)
+        return;
 
     // Look up the requested file by hash
     KnownFile* reqFile = nullptr;
     if (theApp.sharedFileList)
-        reqFile = theApp.sharedFileList->getFileByID(data);
+        reqFile = theApp.sharedFileList->getFileByID(fileHash);
 
     if (!reqFile) {
         // Not in shared files — check incomplete downloads with >= 1 complete part
         if (theApp.downloadQueue) {
-            auto* partFile = theApp.downloadQueue->fileByID(data);
+            auto* partFile = theApp.downloadQueue->fileByID(fileHash);
             if (partFile && static_cast<uint64>(partFile->completedSize()) >= PARTSIZE)
                 reqFile = partFile;
         }
     }
 
+    // Only the waiting queue, as MFC does: this answer is a queue rank, and a client we
+    // know from somewhere else has none. Searching the whole client list also meant a
+    // ping could re-queue a peer that had never asked over TCP.
+    bool multipleIPs = false;
+    UpDownClient* sender =
+        waitingClientByIP_UDP(replyTo.address(), replyTo.port(), &multipleIPs);
+
     if (!reqFile) {
-        if (theApp.clientUDP) {
-            auto pkt = std::make_unique<Packet>(OP_FILENOTFOUND, 0, OP_EMULEPROT);
-            if (sender)
-                theApp.clientUDP->sendPacket(std::move(pkt), senderEP,
-                                              sender->shouldReceiveCryptUDPPackets(),
-                                              sender->userHash(), false, 0);
-            else
-                theApp.clientUDP->sendPacket(std::move(pkt), senderEP,
-                                              false, nullptr, false, 0);
+        auto pkt = std::make_unique<Packet>(OP_FILENOTFOUND, 0, OP_EMULEPROT);
+        if (sender)
+            theApp.clientUDP->sendPacket(std::move(pkt), replyTo,
+                                          sender->shouldReceiveCryptUDPPackets(),
+                                          sender->userHash(), false, 0);
+        else
+            theApp.clientUDP->sendPacket(std::move(pkt), replyTo,
+                                          false, nullptr, false, 0);
+        return;
+    }
+
+    if (!sender) {
+        // We probably do have this peer queued but cannot identify it, so say nothing and
+        // let it reconnect over TCP. Only a genuinely full queue is worth an answer, and
+        // it goes out in the clear because we have no hash to key the obfuscation with.
+        if (!multipleIPs && waitingUserCount() + 50 > static_cast<int>(thePrefs.queueSize())) {
+            auto pkt = std::make_unique<Packet>(OP_QUEUEFULL, 0, OP_EMULEPROT);
+            theApp.clientUDP->sendPacket(std::move(pkt), replyTo, false, nullptr, false, 0);
         }
         return;
     }
 
-    if (sender) {
-        // Re-add to queue (updates position, handles reconnect)
-        // Note: addClientToQueue() calls incAskedCount() + setLastUpRequest() internally
-        addClientToQueue(sender);
-
-        // Build reask ACK with part status + queue rank
-        SafeMemFile dataOut;
-
-        if (sender->udpVer() > 3) {
-            if (reqFile->isPartFile())
-                static_cast<PartFile*>(reqFile)->writePartStatus(dataOut);
-            else
-                dataOut.writeUInt16(0);
-        }
-
-        const uint16 queueRank = static_cast<uint16>(waitingPosition(sender));
-        dataOut.writeUInt16(queueRank);
-
-        auto response = std::make_unique<Packet>(dataOut, OP_EMULEPROT, OP_REASKACK);
-        if (theApp.clientUDP) {
-            theApp.clientUDP->sendPacket(std::move(response), senderEP,
-                                          sender->shouldReceiveCryptUDPPackets(),
-                                          sender->userHash(), false, 0);
-        }
-    } else {
-        // Unknown client — check if queue is full
-        if (theApp.clientUDP) {
-            // MFC srchybrid/ClientUDPSocket.cpp:299 — the same pref that caps the queue.
-            if (waitingUserCount() + 50 > static_cast<int>(thePrefs.queueSize())) {
-                auto pkt = std::make_unique<Packet>(OP_QUEUEFULL, 0, OP_EMULEPROT);
-                theApp.clientUDP->sendPacket(std::move(pkt), senderEP,
-                                              false, nullptr, false, 0);
-            }
-        }
+    // Still about the file it holds a queue place for? MFC ClientUDPSocket.cpp:255.
+    if (!md4equ(fileHash, sender->reqUpFileId())) {
+        logDebug(QStringLiteral("answerReask: %1 asked about a file it is not queued for")
+                     .arg(sender->userName()));
+        return;
     }
+
+    sender->incAskedCount();
+    sender->setLastUpRequest(static_cast<uint32>(getTickCount()));
+
+    // Refresh what it holds. UDP version 4 sends the whole extended info; version 3 only
+    // the complete-source count (MFC ClientUDPSocket.cpp:258-274).
+    if (sender->udpVer() > 3) {
+        sender->processExtendedInfo(in, reqFile);
+    } else if (sender->udpVer() > 2) {
+        const uint16 previous = sender->upCompleteSourcesCount();
+        const uint16 reported = in.readUInt16();
+        sender->setUpCompleteSourcesCount(reported);
+        if (previous != reported)
+            reqFile->updatePartsInfo();
+    }
+
+    SafeMemFile dataOut;
+    if (sender->udpVer() > 3) {
+        if (reqFile->isPartFile())
+            static_cast<PartFile*>(reqFile)->writePartStatus(dataOut);
+        else
+            dataOut.writeUInt16(0);
+    }
+    dataOut.writeUInt16(static_cast<uint16>(waitingPosition(sender)));
+
+    auto response = std::make_unique<Packet>(dataOut, OP_EMULEPROT, OP_REASKACK);
+    theApp.clientUDP->sendPacket(std::move(response), replyTo,
+                                  sender->shouldReceiveCryptUDPPackets(),
+                                  sender->userHash(), false, 0);
 }
 
 } // namespace eMule

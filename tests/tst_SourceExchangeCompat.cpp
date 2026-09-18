@@ -26,6 +26,7 @@
 #include "app/AppContext.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
+#include "crypto/AICHData.h"
 #include "files/KnownFile.h"
 #include "files/KnownFileList.h"
 #include "files/PartFile.h"
@@ -317,6 +318,11 @@ public:
         return n;
     }
 
+    /// Claim a live connection, so a handler that answers through
+    /// safeConnectAndSendPacket() records the packet instead of queueing it behind a
+    /// dial that will never complete in a unit test.
+    void markConnected() { m_conState.store(EMSState::Connected, std::memory_order_release); }
+
     /// Deliver an eMule-extended-protocol packet as if it had arrived on the wire.
     void deliverExt(const QByteArray& payload, uint8 opcode)
     {
@@ -403,9 +409,27 @@ UpDownClient* makeHighIdClient(const QString& ip, uint16 port, uint8 hashPattern
 }
 
 /// The peer asking us for sources. `extSX` drives MODMISC_EXTXS, `skipTags` bit 5.
+/// createSrcInfoPacket() answers only a peer whose upload file is the one it is asking
+/// about, as MFC does (srchybrid/KnownFile.cpp:1012). The real dispatch arranges that
+/// with setUploadFileID() before answering; these tests do the same.
+template <typename FileT>
+std::unique_ptr<Packet> srcInfoFor(FileT& file, UpDownClient* peer, uint8 version,
+                                   uint16 options = 0)
+{
+    peer->setUploadFileID(&file);
+    auto packet = file.createSrcInfoPacket(peer, version, options);
+    // Let go again, so a peer that asked once is not left on the file's uploading list
+    // and counted as a source by the next question.
+    peer->setUploadFileID(nullptr);
+    return packet;
+}
+
 UpDownClient* makeRequester(bool extSX = false, bool skipTags = false, bool supportsSX2 = true)
 {
     auto* c = makeHighIdClient(QStringLiteral("99.98.97.96"), 4665, 0x99);
+    // Source exchange is an eMule-protocol extension, so a peer that has it has also
+    // exchanged the eMule info — isSourceRequestAllowed() checks that, as MFC does.
+    c->setEmuleProtocol(true);
     c->setSupportsSourceExchange2(supportsSX2);
     c->setSourceExchange1Ver(4);
     c->setSupportsExtendedXS(extSX);
@@ -510,6 +534,22 @@ private slots:
     void multipacket_sourceRequestDoesNotDesyncFollowingSubOpcodes();
     void multipacket_sourceAnswerIsSeparatePacket();
     void secondSourceRequestWithinIntervalIsRefused();
+
+    // -- G. AICH file-hash exchange --
+    void aichFileHash_standaloneRequestAnswered();
+    void aichFileHash_ignoredWithoutAichSupport();
+    void aichFileHash_legacyMultipacketRequestAnswered();
+    void aichFileHash_legacyAnswerIsStored();
+    void multipacketAnswer_unknownSubOpcodeDisconnects();
+    void requestFileName_extendedInfoSurvivesTheFileChange();
+
+    // -- AICH recovery --
+    void aichRecovery_requestWeCannotServeGetsTheEmptyAnswer();
+    void aichRecovery_wrongSizedRequestDisconnects();
+    void aichRecovery_unrequestedAnswerDisconnects();
+
+    // -- Source-request context --
+    void standaloneSourceRequest_setsTheUploadFile();
 
     // -- F. The compressed transport, end to end --
     void packedExtSxAnswerFromPeerIsParsed();
@@ -639,7 +679,7 @@ void tst_SourceExchangeCompat::classicRecordIsByteExact()
     auto file = makeFile({ a, b });
     auto* peer = track(makeRequester(/*extSX*/ false));
 
-    auto packet = file->createSrcInfoPacket(peer, version, 0);
+    auto packet = srcInfoFor(*file, peer, version);
     QVERIFY(packet != nullptr);
     QCOMPARE(packet->opcode, uint8(OP_ANSWERSOURCES2));
     QCOMPARE(packet->prot, uint8(OP_EMULEPROT));
@@ -683,7 +723,7 @@ void tst_SourceExchangeCompat::sx1AnswerIsByteExact()
     peer->setSourceExchange1Ver(2);
 
     // version 0 == "the peer did not ask over SX2", so the SX1 branch is taken.
-    auto packet = file->createSrcInfoPacket(peer, 0, 0);
+    auto packet = srcInfoFor(*file, peer, 0);
     QVERIFY(packet != nullptr);
     QCOMPARE(packet->opcode, uint8(OP_ANSWERSOURCES));
 
@@ -726,7 +766,7 @@ void tst_SourceExchangeCompat::legacyReaderAcceptsOurClassicAnswer()
     auto file = makeFile({ a, b });
     auto* peer = track(makeRequester(/*extSX*/ false));
 
-    auto packet = file->createSrcInfoPacket(peer, version, 0);
+    auto packet = srcInfoFor(*file, peer, version);
     QVERIFY(packet != nullptr);
 
     const LegacyParse parsed =
@@ -763,7 +803,7 @@ void tst_SourceExchangeCompat::extSxCapabilityDoesNotLeakIntoClassicAnswer()
         }
         auto file = makeFile({ src });
         auto* peer = track(makeRequester(/*extSX*/ false, /*skipTags*/ true));   // bit 5 alone
-        auto packet = file->createSrcInfoPacket(peer, 4, 0);
+        auto packet = srcInfoFor(*file, peer, 4);
         Q_ASSERT(packet != nullptr);
         return QByteArray(packet->pBuffer, static_cast<int>(packet->size));
     };
@@ -785,7 +825,7 @@ void tst_SourceExchangeCompat::legacyReaderRejectsExtSxPayload()
     auto file = makeFile({ src });
     auto* ext = track(makeRequester(/*extSX*/ true));
 
-    auto packet = file->createSrcInfoPacket(ext, SOURCEEXCHANGEEXT_VERSION, 0);
+    auto packet = srcInfoFor(*file, ext, SOURCEEXCHANGEEXT_VERSION);
     QVERIFY(packet != nullptr);
 
     const QByteArray body = answerBody(*packet, /*isSX2*/ true);
@@ -841,7 +881,7 @@ void tst_SourceExchangeCompat::extSxRecordMatchesSpecWorkedExample()
     auto file = makeFile({ src });
     auto* peer = track(makeRequester(/*extSX*/ true, /*skipTags*/ false));
 
-    auto packet = file->createSrcInfoPacket(peer, SOURCEEXCHANGEEXT_VERSION, 0);
+    auto packet = srcInfoFor(*file, peer, SOURCEEXCHANGEEXT_VERSION);
     QVERIFY(packet != nullptr);
     QCOMPARE(packet->opcode, uint8(OP_ANSWERSOURCES2));
     QCOMPARE(uint8(packet->pBuffer[0]), uint8(SOURCEEXCHANGEEXT_VERSION));
@@ -875,7 +915,7 @@ void tst_SourceExchangeCompat::intolerantReaderSurvivesOurAnswerForNonSkipTagsPe
     auto file = makeFile({ a, b });
     auto* peer = track(makeRequester(/*extSX*/ true, /*skipTags*/ false));
 
-    auto packet = file->createSrcInfoPacket(peer, SOURCEEXCHANGEEXT_VERSION, 0);
+    auto packet = srcInfoFor(*file, peer, SOURCEEXCHANGEEXT_VERSION);
     QVERIFY(packet != nullptr);
     const QByteArray body = answerBody(*packet, /*isSX2*/ true);
 
@@ -907,7 +947,7 @@ void tst_SourceExchangeCompat::intolerantReaderWouldLoseEverything_ifTagsWereUng
     auto file = makeFile({ a, b });
     auto* tolerant = track(makeRequester(/*extSX*/ true, /*skipTags*/ true));
 
-    auto packet = file->createSrcInfoPacket(tolerant, SOURCEEXCHANGEEXT_VERSION, 0);
+    auto packet = srcInfoFor(*file, tolerant, SOURCEEXCHANGEEXT_VERSION);
     QVERIFY(packet != nullptr);
     const QByteArray body = answerBody(*packet, /*isSX2*/ true);
 
@@ -935,7 +975,7 @@ void tst_SourceExchangeCompat::serverTagsAlwaysPaired()
     auto file = makeFile({ withServer, noServer });
     auto* peer = track(makeRequester(/*extSX*/ true));
 
-    auto packet = file->createSrcInfoPacket(peer, SOURCEEXCHANGEEXT_VERSION, 0);
+    auto packet = srcInfoFor(*file, peer, SOURCEEXCHANGEEXT_VERSION);
     QVERIFY(packet != nullptr);
 
     const auto tags = extSxTagIds(answerBody(*packet, /*isSX2*/ true));
@@ -959,7 +999,7 @@ void tst_SourceExchangeCompat::serverIpWithLeadingZeroBytes_survivesSizeOptimisa
     auto file = makeFile({ src });
     auto* peer = track(makeRequester(/*extSX*/ true));
 
-    auto packet = file->createSrcInfoPacket(peer, SOURCEEXCHANGEEXT_VERSION, 0);
+    auto packet = srcInfoFor(*file, peer, SOURCEEXCHANGEEXT_VERSION);
     QVERIFY(packet != nullptr);
     const QByteArray body = answerBody(*packet, /*isSX2*/ true);
 
@@ -1009,7 +1049,7 @@ void tst_SourceExchangeCompat::ipv6TagOnlyForGlobalUnicast()
     auto file = makeFile({ src });
     auto* peer = track(makeRequester(/*extSX*/ true));
 
-    auto packet = file->createSrcInfoPacket(peer, SOURCEEXCHANGEEXT_VERSION, 0);
+    auto packet = srcInfoFor(*file, peer, SOURCEEXCHANGEEXT_VERSION);
     QVERIFY(packet != nullptr);
 
     const auto tags = extSxTagIds(answerBody(*packet, /*isSX2*/ true));
@@ -1038,7 +1078,7 @@ void tst_SourceExchangeCompat::extSxAnswerZlibRoundTrip()
     auto file = makeFile(srcs);
     auto* peer = track(makeRequester(/*extSX*/ true, /*skipTags*/ true));
 
-    auto packet = file->createSrcInfoPacket(peer, SOURCEEXCHANGEEXT_VERSION, 0);
+    auto packet = srcInfoFor(*file, peer, SOURCEEXCHANGEEXT_VERSION);
     QVERIFY(packet != nullptr);
     QCOMPARE(packet->prot, uint8(OP_PACKEDPROT));
     QVERIFY(packet->unPackPacket());
@@ -1071,12 +1111,12 @@ void tst_SourceExchangeCompat::addressLessSourceKeptOnExtSxPath()
 
     // A classic peer cannot be told about it at all.
     auto* classic = track(makeRequester(/*extSX*/ false));
-    QVERIFY(file->createSrcInfoPacket(classic, 4, 0) == nullptr);
+    QVERIFY(srcInfoFor(*file, classic, 4) == nullptr);
 
     // An ExtSX peer gets it, and reads it back as a LowID client so nothing dials
     // 255.255.255.255.
     auto* ext = track(makeRequester(/*extSX*/ true));
-    auto packet = file->createSrcInfoPacket(ext, SOURCEEXCHANGEEXT_VERSION, 0);
+    auto packet = srcInfoFor(*file, ext, SOURCEEXCHANGEEXT_VERSION);
     QVERIFY(packet != nullptr);
 
     parseInto(answerBody(*packet, /*isSX2*/ true), SOURCEEXCHANGEEXT_VERSION, true, ext,
@@ -1108,14 +1148,14 @@ void tst_SourceExchangeCompat::requestedVersionIgnoredForExtSxPeer()
     auto file = makeFile({ src });
     auto* peer = track(makeRequester(/*extSX*/ true));
 
-    auto packet = file->createSrcInfoPacket(peer, requested, 0);
+    auto packet = srcInfoFor(*file, peer, requested);
     QVERIFY(packet != nullptr);
     QCOMPARE(uint8(packet->pBuffer[0]), uint8(SOURCEEXCHANGEEXT_VERSION));
     // Tag block, not a fixed record: two server tags follow the 7-byte record head.
     QCOMPARE(uint8(packet->pBuffer[kSx2HeaderSize + 2 + 4 + 2]), uint8(2));
 
     // version 0 means "not asked over SX2 at all", which is still the SX1 fallback.
-    auto sx1 = file->createSrcInfoPacket(peer, 0, 0);
+    auto sx1 = srcInfoFor(*file, peer, 0);
     QVERIFY(sx1 != nullptr);
     QCOMPARE(sx1->opcode, uint8(OP_ANSWERSOURCES));
 }
@@ -1588,7 +1628,7 @@ void tst_SourceExchangeCompat::helloWithoutModMiscOptions_getsClassicAnswer()
     src->setOpenIPv6(true);
 
     auto file = makeFile({ src });
-    auto packet = file->createSrcInfoPacket(peer, 4, 0);
+    auto packet = srcInfoFor(*file, peer, 4);
     QVERIFY(packet != nullptr);
 
     QCOMPARE(uint8(packet->pBuffer[0]), uint8(4));
@@ -1782,6 +1822,215 @@ void tst_SourceExchangeCompat::secondSourceRequestWithinIntervalIsRefused()
 }
 
 // ===========================================================================
+// G. AICH file-hash exchange
+//
+// We have always *asked* for the AICH root hash — standalone and bundled — and then
+// dropped every answer: no opcode reached the client, and reqFileAICHHash() returned our
+// own master hash instead of the peer's, so "does this source agree with us" was
+// trivially true for anyone. MFC ListenSocket.cpp:966-976, :1104-1109, :1534-1571.
+// ===========================================================================
+
+namespace {
+
+/// A peer that finished a hello. `fileIdentifiers` off puts it on the legacy AICH path,
+/// which is the one that uses the 0x9D/0x9E sub-opcodes at all; `aich` clears the three
+/// AICH bits of MISCOPTIONS1.
+UpDownClient* makeAichPeer(bool aich = true, bool fileIdentifiers = false)
+{
+    auto* c = new UpDownClient;
+    std::vector<Tag> tags;
+    tags.emplace_back(CT_EMULE_VERSION, kEmuleVersionTag);
+    tags.emplace_back(CT_EMULE_MISCOPTIONS1,
+                      aich ? kMiscOptions1 : (kMiscOptions1 & ~(uint32(7) << 29)));
+    tags.emplace_back(CT_EMULE_MISCOPTIONS2,
+                      fileIdentifiers ? kMiscOptions2 : (kMiscOptions2 & ~(uint32(1) << 13)));
+    const auto hello = buildHelloAnswer(0x77, 0x0A0B0C0D, 4662, tags);
+    c->processHelloAnswer(reinterpret_cast<const uint8*>(hello.constData()),
+                          static_cast<uint32>(hello.size()));
+    return c;
+}
+
+/// A recognisable AICH root hash.
+AICHHash makeRootHash(uint8 pattern)
+{
+    std::array<uint8, kAICHHashSize> bytes{};
+    bytes.fill(pattern);
+    return AICHHash(bytes.data());
+}
+
+} // namespace
+
+void tst_SourceExchangeCompat::aichFileHash_standaloneRequestAnswered()
+{
+    SharedFileFixture shared;
+    const AICHHash root = makeRootHash(0xA7);
+    shared.file->fileIdentifier().setAICHHash(root);
+
+    auto* peer = track(makeAichPeer());
+    QVERIFY(peer->isSupportingAICH());
+
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+
+    SafeMemFile req;
+    req.writeHash16(shared.file->fileHash());
+    sock.deliverExt(req.buffer(), OP_AICHFILEHASHREQ);
+
+    const auto* ans = sock.find(OP_AICHFILEHASHANS);
+    QVERIFY2(ans != nullptr, "an AICH-capable peer must be given the root hash");
+    QCOMPARE(ans->payload.size(), 16 + static_cast<int>(kAICHHashSize));
+    QCOMPARE(std::memcmp(ans->payload.constData(), shared.file->fileHash(), 16), 0);
+    QCOMPARE(std::memcmp(ans->payload.constData() + 16, root.getRawHash(), kAICHHashSize), 0);
+
+    peer->setSocket(nullptr);
+}
+
+void tst_SourceExchangeCompat::aichFileHash_ignoredWithoutAichSupport()
+{
+    SharedFileFixture shared;
+    shared.file->fileIdentifier().setAICHHash(makeRootHash(0xA7));
+
+    auto* peer = track(makeAichPeer(/*aich*/ false));
+    QVERIFY(!peer->isSupportingAICH());
+
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+
+    SafeMemFile req;
+    req.writeHash16(shared.file->fileHash());
+    sock.deliverExt(req.buffer(), OP_AICHFILEHASHREQ);
+
+    QVERIFY(sock.find(OP_AICHFILEHASHANS) == nullptr);
+    peer->setSocket(nullptr);
+}
+
+void tst_SourceExchangeCompat::aichFileHash_legacyMultipacketRequestAnswered()
+{
+    SharedFileFixture shared;
+    const AICHHash root = makeRootHash(0xB4);
+    shared.file->fileIdentifier().setAICHHash(root);
+
+    auto* peer = track(makeAichPeer());
+    QVERIFY(!peer->supportsFileIdentifiers());   // the legacy sub-opcode is for this peer
+
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+
+    SafeMemFile mp;
+    mp.writeHash16(shared.file->fileHash());
+    mp.writeUInt8(OP_AICHFILEHASHREQ);
+    QVERIFY(sock.deliverWire(OP_EMULEPROT, OP_MULTIPACKET, mp.buffer()));
+
+    const auto* answer = sock.find(OP_MULTIPACKETANSWER);
+    QVERIFY2(answer != nullptr, "the bundled AICH request must be answered");
+    // hash16, then the sub-answer opcode and the 20-byte root hash.
+    QCOMPARE(answer->payload.size(), 16 + 1 + static_cast<int>(kAICHHashSize));
+    QCOMPARE(static_cast<uint8>(answer->payload.at(16)), static_cast<uint8>(OP_AICHFILEHASHANS));
+    QCOMPARE(std::memcmp(answer->payload.constData() + 17, root.getRawHash(), kAICHHashSize), 0);
+
+    peer->setSocket(nullptr);
+}
+
+void tst_SourceExchangeCompat::aichFileHash_legacyAnswerIsStored()
+{
+    // The answer used to fall into `default: return`, which also skipped the upload-slot
+    // request that follows the sub-opcode loop.
+    DownloadQueue queue;
+    theApp.downloadQueue = &queue;
+
+    auto* pf = new PartFile;
+    uint8 hash[16];
+    std::memset(hash, 0x5A, sizeof(hash));
+    pf->setFileHash(hash);
+    pf->setFileName(QStringLiteral("aich-answer.bin"));
+    pf->setFileSize(EMFileSize(PARTSIZE));
+    queue.addDownload(pf);
+
+    auto* peer = track(makeAichPeer());
+    peer->setReqFile(pf);
+    peer->setReqUpFileId(hash);
+
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+
+    const AICHHash root = makeRootHash(0xC9);
+    SafeMemFile answer;
+    answer.writeHash16(hash);
+    answer.writeUInt8(OP_AICHFILEHASHANS);
+    root.write(answer);
+    QVERIFY(sock.deliverWire(OP_EMULEPROT, OP_MULTIPACKETANSWER, answer.buffer()));
+
+    QVERIFY2(peer->reqFileAICHHash() != nullptr, "the peer's AICH hash must be remembered");
+    QVERIFY(*peer->reqFileAICHHash() == root);
+
+    peer->setSocket(nullptr);
+    theApp.downloadQueue = nullptr;
+    queue.deleteAll();
+}
+
+void tst_SourceExchangeCompat::multipacketAnswer_unknownSubOpcodeDisconnects()
+{
+    // An unknown sub-opcode has an unknown length, so the rest of the packet cannot be
+    // parsed. MFC throws, which disconnects; we used to return and keep the peer.
+    DownloadQueue queue;
+    theApp.downloadQueue = &queue;
+
+    auto* pf = new PartFile;
+    uint8 hash[16];
+    std::memset(hash, 0x61, sizeof(hash));
+    pf->setFileHash(hash);
+    pf->setFileName(QStringLiteral("bad-sub.bin"));
+    pf->setFileSize(EMFileSize(PARTSIZE));
+    queue.addDownload(pf);
+
+    auto* peer = track(makeAichPeer());
+    peer->setReqFile(pf);
+    peer->setReqUpFileId(hash);
+
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+
+    SafeMemFile answer;
+    answer.writeHash16(hash);
+    answer.writeUInt8(0x7F);   // no such sub-opcode
+    QVERIFY2(!sock.deliverWire(OP_EMULEPROT, OP_MULTIPACKETANSWER, answer.buffer()),
+             "an invalid sub-opcode must drop the connection");
+
+    peer->setSocket(nullptr);
+    theApp.downloadQueue = nullptr;
+    queue.deleteAll();
+}
+
+void tst_SourceExchangeCompat::requestFileName_extendedInfoSurvivesTheFileChange()
+{
+    // setUploadFileID() resets the part status a peer reported, so parsing the extended
+    // info before switching the file threw the parse away whenever the file changed.
+    // MFC sets the file first (ListenSocket.cpp:324-327).
+    SharedFileFixture shared;
+    QCOMPARE(shared.file->partCount(), uint16{1});
+    QCOMPARE(shared.file->ed2kPartCount(), uint16{2});   // size is exactly PARTSIZE
+
+    auto* peer = track(makeAichPeer());
+    peer->setExtendedRequestsVer(1);
+
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+
+    SafeMemFile req;
+    req.writeHash16(shared.file->fileHash());
+    req.writeUInt16(shared.file->ed2kPartCount());
+    req.writeUInt8(0x03);      // both ED2K parts present
+    QVERIFY(sock.deliverWire(OP_EDONKEYPROT, OP_REQUESTFILENAME, req.buffer()));
+
+    QVERIFY2(sock.find(OP_REQFILENAMEANSWER) != nullptr, "the file name must be answered");
+    QCOMPARE(peer->uploadFile(), shared.file);
+    QCOMPARE(peer->upPartCount(), shared.file->partCount());
+    QVERIFY2(peer->isUpPartAvailable(0), "the reported part status must outlive the switch");
+
+    peer->setSocket(nullptr);
+}
+
+// ===========================================================================
 // F. The compressed transport, end to end
 //
 // Every case above builds an answer and reads it back in the same process with the packet
@@ -1809,7 +2058,7 @@ void tst_SourceExchangeCompat::packedExtSxAnswerFromPeerIsParsed()
     // One peer plays both parts: we build the answer it would send us, then it sends it.
     auto* peer = track(makeRequester(/*extSX*/ true, /*skipTags*/ true));
 
-    auto packet = file->createSrcInfoPacket(peer, SOURCEEXCHANGEEXT_VERSION, 0);
+    auto packet = srcInfoFor(*file, peer, SOURCEEXCHANGEEXT_VERSION);
     QVERIFY(packet != nullptr);
     QCOMPARE(packet->prot, uint8(OP_PACKEDPROT));   // our own emitter packed it
 
@@ -1840,7 +2089,7 @@ void tst_SourceExchangeCompat::packedClassicAnswerFromPeerIsParsed()
     auto file = makeFile(srcs);
     auto* peer = track(makeRequester(/*extSX*/ false));
 
-    auto packet = file->createSrcInfoPacket(peer, SOURCEEXCHANGE2_VERSION, 0);
+    auto packet = srcInfoFor(*file, peer, SOURCEEXCHANGE2_VERSION);
     QVERIFY(packet != nullptr);
     QCOMPARE(packet->prot, uint8(OP_PACKEDPROT));
 
@@ -1852,6 +2101,112 @@ void tst_SourceExchangeCompat::packedClassicAnswerFromPeerIsParsed()
                       [&](PartFile& pf) {
         QCOMPARE(pf.sourceCount(), kSources);
     });
+}
+
+// ---------------------------------------------------------------------------
+// AICH recovery
+// ---------------------------------------------------------------------------
+
+// A request we cannot serve is still answered — with the 16-byte hash alone. That empty
+// answer is what lets the asker give up on us at once and ask another source, instead of
+// waiting out a request that will never be filled. MFC DownloadClient.cpp:2134-2137.
+void tst_SourceExchangeCompat::aichRecovery_requestWeCannotServeGetsTheEmptyAnswer()
+{
+    SharedFileFixture shared;   // no AICH recovery hash set, so nothing to serve
+
+    auto* peer = track(makeAichPeer());
+    RecordingSocket sock;
+    sock.markConnected();
+    peer->wireIncomingSocket(&sock);
+
+    SafeMemFile req;
+    req.writeHash16(shared.file->fileHash());
+    req.writeUInt16(0);
+    makeRootHash(0x5B).write(req);
+    QVERIFY(sock.deliverWire(OP_EMULEPROT, OP_AICHREQUEST, req.buffer()));
+
+    const auto* ans = sock.find(OP_AICHANSWER);
+    QVERIFY2(ans != nullptr, "an AICH request must always be answered");
+    QCOMPARE(ans->payload.size(), 16);
+    QCOMPARE(std::memcmp(ans->payload.constData(), shared.file->fileHash(), 16), 0);
+
+    peer->setSocket(nullptr);
+}
+
+// MFC demands the exact size and throws otherwise, which drops the peer.
+void tst_SourceExchangeCompat::aichRecovery_wrongSizedRequestDisconnects()
+{
+    SharedFileFixture shared;
+
+    auto* peer = track(makeAichPeer());
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+
+    SafeMemFile req;
+    req.writeHash16(shared.file->fileHash());
+    req.writeUInt16(0);   // the master hash is missing
+    QVERIFY2(!sock.deliverWire(OP_EMULEPROT, OP_AICHREQUEST, req.buffer()),
+             "a short AICH request must drop the peer");
+
+    peer->setSocket(nullptr);
+}
+
+// Recovery data we never asked for is either a protocol error or an attempt to feed us
+// hashes; MFC throws on it (DownloadClient.cpp:2054).
+void tst_SourceExchangeCompat::aichRecovery_unrequestedAnswerDisconnects()
+{
+    SharedFileFixture shared;
+
+    auto* peer = track(makeAichPeer());
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+    QVERIFY(!peer->isAICHReqPending());
+
+    SafeMemFile ans;
+    ans.writeHash16(shared.file->fileHash());
+    ans.writeUInt16(0);
+    makeRootHash(0x5B).write(ans);
+    ans.writeUInt16(0);   // an empty recovery block, so only the "unrequested" test fires
+
+    QVERIFY2(!sock.deliverWire(OP_EMULEPROT, OP_AICHANSWER, ans.buffer()),
+             "an unrequested AICH answer must drop the peer");
+
+    peer->setSocket(nullptr);
+}
+
+// ---------------------------------------------------------------------------
+// Source-request context
+// ---------------------------------------------------------------------------
+
+// Clients exist that ask for sources without the OP_REQUESTFILENAME / OP_SETREQFILEID
+// preamble. MFC sets the upload file from the request itself so the answer is built for
+// the file actually being asked about (ListenSocket.cpp:1213-1220).
+void tst_SourceExchangeCompat::standaloneSourceRequest_setsTheUploadFile()
+{
+    SharedFileFixture fixture;
+    auto* file = fixture.file;
+
+    auto* src = track(makeHighIdClient(QStringLiteral("60.70.80.91"), 4662, 0xA2));
+    file->addUploadingClient(src);
+
+    auto* peer = track(makeRequester(/*extSX*/ false));
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+
+    uint8 zero[16]{};
+    QCOMPARE(std::memcmp(peer->reqUpFileId(), zero, 16), 0);
+
+    SafeMemFile req;
+    req.writeUInt8(SOURCEEXCHANGE2_VERSION);
+    req.writeUInt16(0);
+    req.writeHash16(file->fileHash());
+    sock.deliverExt(req.buffer(), OP_REQUESTSOURCES2);
+
+    QCOMPARE(std::memcmp(peer->reqUpFileId(), file->fileHash(), 16), 0);
+    QVERIFY2(sock.find(OP_ANSWERSOURCES2) != nullptr,
+             "the standalone source request went unanswered");
+
+    peer->setSocket(nullptr);
 }
 
 QTEST_MAIN(tst_SourceExchangeCompat)

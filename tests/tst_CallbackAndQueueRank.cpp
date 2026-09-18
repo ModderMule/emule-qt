@@ -422,6 +422,8 @@ private slots:
     void reaskCallbackTcp_parsesIPv6SentinelForm();
     // OP_QUEUEFULL threshold — MFC srchybrid/ClientUDPSocket.cpp:299
     void reaskFilePing_queueFullThresholdFollowsQueueSizePref();
+    void reaskFilePing_answersOnlyAWaitingClient();
+    void reaskFilePing_fileMismatchIsNotAnswered();
     // UDP re-ask accounting — MFC DownloadQueue.h:114-117, DownloadClient.cpp:179-183
     void udpReask_countsSentAndUnansweredReasks();
     void udpReask_notBlockedByADelayedTcpReask();
@@ -1115,8 +1117,9 @@ void tst_CallbackAndQueueRank::swapToAnotherFile_swapsSourceAndTracksA4AF()
     client->setUserPort(4662);
     client->setReqFile(fileA);
     fileA->addSource(client);
+    // addRequestForAnotherFile() now registers both sides, as MFC does
+    // (srchybrid/DownloadClient.cpp:589), so the file's A4AF list needs no manual push.
     client->addRequestForAnotherFile(fileB);
-    fileB->a4afSrcList().push_back(client);
     client->setDownloadState(DownloadState::OnQueue);
     client->setRemoteQueueRank(42);
     m_clientList->addClient(client);
@@ -1440,6 +1443,14 @@ void tst_CallbackAndQueueRank::reaskCallbackTcp_parsesIPv6SentinelForm()
     auto* buddy = new UpDownClient();
     m_clientList->setBuddy(buddy, BuddyStatus::Connected);
 
+    // The relayed re-ask is answered through the upload queue now, exactly like a direct
+    // OP_REASKFILEPING — the rank in the ACK can only come from there.
+    UploadQueue uploadQueue;
+    theApp.uploadQueue = &uploadQueue;
+    struct UploadQueueReset {
+        ~UploadQueueReset() { theApp.uploadQueue = nullptr; }
+    } uploadQueueReset;
+
     const Address requesterV6 = Address::fromString(QStringLiteral("::1"));
 
     std::array<uint8, 16> unknownHash{};
@@ -1541,6 +1552,115 @@ void tst_CallbackAndQueueRank::reaskFilePing_queueFullThresholdFollowsQueueSizeP
     // Leave the queue empty so the clients can be destroyed safely.
     for (auto& c : waiting)
         queue.removeFromWaitingQueue(c.get());
+}
+
+// ===========================================================================
+// Who a re-ask may be answered to
+//
+// The answer is a queue rank, so only a client on the waiting queue has one. The port
+// looked the sender up across the whole client list and then called addClientToQueue(),
+// so a UDP datagram could put a peer on the queue that had never asked over TCP — and a
+// peer we knew from anywhere else got a rank of 0. MFC ClientUDPSocket.cpp:235-293.
+// ===========================================================================
+
+/// A shared file plus an upload queue wired to it, for the reask-receiver tests.
+struct ReaskFixture {
+    UploadQueue queue;
+    KnownFile* shared = nullptr;
+    std::array<uint8, 16> hash{};
+
+    ReaskFixture(SharedFileList* sharedFiles, uint8 hashByte)
+    {
+        hash.fill(hashByte);
+        auto* file = new KnownFile();
+        file->setFileHash(hash.data());
+        file->setFileName(QStringLiteral("reask-target.bin"));
+        file->setFileSize(EMFileSize(PARTSIZE));
+        sharedFiles->safeAddKFile(file);
+        shared = file;
+        queue.setSharedFileList(sharedFiles);
+    }
+};
+
+void tst_CallbackAndQueueRank::reaskFilePing_answersOnlyAWaitingClient()
+{
+    ReaskFixture fixture(m_sharedFiles, 0x7A);
+
+    // The peer's UDP endpoint is where the answer goes, so point it at m_senderUDP.
+    const Endpoint replyTo(Address::fromString(QStringLiteral("127.0.0.1")),
+                           m_senderUDP->connectedPort());
+
+    auto peer = std::make_unique<UpDownClient>();
+    peer->setUserAddress(replyTo.address());
+    peer->setUserPort(4662);
+    peer->setUDPPort(replyTo.port());
+    uint8 peerHash[16];
+    std::memset(peerHash, 0x2B, sizeof(peerHash));
+    peer->setUserHash(peerHash);
+    peer->setReqUpFileId(fixture.hash.data());
+    // Deliberately NOT added to m_clientList: the answer comes from the waiting queue now,
+    // and a socketless client sitting in the list is reaped by ClientList::process() —
+    // whose deleteLater() would land inside the waits below and double-free this one.
+
+    QSignalSpy ackSpy(m_senderUDP, &ClientUDPSocket::reaskAckReceived);
+
+    // Not waiting for a slot: no rank to report, so MFC stays silent and the peer
+    // reconnects over TCP instead.
+    fixture.queue.onReaskFilePing(replyTo, fixture.hash.data(), 16);
+    flushUDPSocket(m_receiverUDP);
+    QTest::qWait(200);
+    QCoreApplication::processEvents();
+    QCOMPARE(ackSpy.count(), 0);
+    QVERIFY2(!fixture.queue.isOnUploadQueue(peer.get()),
+             "a datagram must not put a peer on the queue that never asked over TCP");
+
+    // Once it is actually waiting, the same ping is answered.
+    fixture.queue.addClientToQueue(peer.get());
+    fixture.queue.onReaskFilePing(replyTo, fixture.hash.data(), 16);
+    flushUDPSocket(m_receiverUDP);
+    QTRY_COMPARE_WITH_TIMEOUT(ackSpy.count(), 1, 3000);
+
+    fixture.queue.removeFromWaitingQueue(peer.get());
+    fixture.queue.removeFromUploadQueue(peer.get());
+}
+
+void tst_CallbackAndQueueRank::reaskFilePing_fileMismatchIsNotAnswered()
+{
+    // "Make sure we are still thinking about the same file" — MFC ClientUDPSocket.cpp:255.
+    // Without it any waiting peer's ping was answered with a rank for whatever file it
+    // named, and its asked-count was bumped for a file it was never queued for.
+    ReaskFixture fixture(m_sharedFiles, 0x7B);
+
+    const Endpoint replyTo(Address::fromString(QStringLiteral("127.0.0.1")),
+                           m_senderUDP->connectedPort());
+
+    auto peer = std::make_unique<UpDownClient>();
+    peer->setUserAddress(replyTo.address());
+    peer->setUserPort(4663);
+    peer->setUDPPort(replyTo.port());
+    uint8 peerHash[16];
+    std::memset(peerHash, 0x3C, sizeof(peerHash));
+    peer->setUserHash(peerHash);
+
+    // Queued for a different file than the one the ping names.
+    std::array<uint8, 16> otherFile{};
+    otherFile.fill(0x5D);
+    peer->setReqUpFileId(otherFile.data());
+    fixture.queue.addClientToQueue(peer.get());
+
+    const uint32 askedBefore = peer->askedCount();
+    QSignalSpy ackSpy(m_senderUDP, &ClientUDPSocket::reaskAckReceived);
+
+    fixture.queue.onReaskFilePing(replyTo, fixture.hash.data(), 16);
+    flushUDPSocket(m_receiverUDP);
+    QTest::qWait(200);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(ackSpy.count(), 0);
+    QCOMPARE(peer->askedCount(), askedBefore);
+
+    fixture.queue.removeFromWaitingQueue(peer.get());
+    fixture.queue.removeFromUploadQueue(peer.get());
 }
 
 // ===========================================================================

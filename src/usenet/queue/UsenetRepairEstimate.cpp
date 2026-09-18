@@ -45,6 +45,11 @@ UsenetRepairEstimate estimateRepair(const UsenetQueueItem& item, qint64 blockSiz
         const NzbFileInfo& info = item.nzb.files.at(f);
         const UsenetFileState& st = item.files.at(f);
 
+        // Left out on purpose: neither damage nor recovery data. A repair that
+        // turns out to need it fetches it back.
+        if (st.isSkipped())
+            continue;
+
         qint64 notMissingBytes = 0;
         qint64 pendingBytes = 0;
         bool allResolved = true;

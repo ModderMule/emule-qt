@@ -16,11 +16,16 @@ struct WebSession {
     QString id;
     bool isAdmin = false;
     QDateTime lastAccess;
+    QString language;   ///< the language menu's choice; empty follows the app
 };
 
 class WebSessionManager {
 public:
     explicit WebSessionManager(int timeoutMinutes = 5);
+
+    /// Set a session's language; empty follows the app again. False when there
+    /// is no such session.
+    bool setLanguage(const QString& sessionId, const QString& code);
 
     /// Attempt login. Returns session ID on success, empty string on failure.
     /// @p passwordHash is SHA-256 hex of the entered password.

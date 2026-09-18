@@ -339,40 +339,16 @@ bool DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* source)
         return false;
     }
 
-    // A High ID *is* the peer's IPv4, so it has to be a usable one — 0.x, loopback,
-    // multicast, reserved and (unless the lab-mode pref says otherwise) LAN are all
-    // unreachable or bogus. A Low ID is an ID and not an address, so testing it would
-    // reject every firewalled source; the IPv6-only marker kNoIPv4SourceId is
-    // deliberately a Low ID for the same reason. MFC DownloadQueue.cpp:568-575.
-    // m_userIDHybrid is host order for a High ID, isGoodIP() takes network order.
-    if (!source->hasLowID() && !isGoodIP(htonl(source->userIDHybrid()))) {
-        logDebug(QStringLiteral("Source rejected — unusable high ID: %1")
-                     .arg(ipstr(htonl(source->userIDHybrid()))));
+    // The same test by identity rather than address: a source exchange can hand us our
+    // own hash behind an address we don't recognise. MFC DownloadQueue.cpp:461-466.
+    if (source->hasValidHash() && md4equ(source->userHash(), thePrefs.userHash().data())) {
+        logDebug(QStringLiteral("Source rejected — user hash matches our own: %1")
+                     .arg(ipstr(source->userAddress())));
         return false;
     }
 
-    // IPFilter check — reject filtered IPs. The Address overload covers both families
-    // and keeps IPv6 sources out of the uint32 path, where they would collapse to 0.
-    if (m_ipFilter && !source->userAddress().isNull()) {
-        if (m_ipFilter->isFiltered(source->userAddress())) {
-            logDebug(QStringLiteral("Source rejected by IPFilter: %1").arg(ipstr(source->userAddress())));
-            return false;
-        }
-    }
-
-    // Check dead source list
-    if (m_clientList) {
-        DeadSourceKey key;
-        std::memcpy(key.hash.data(), source->userHash(), 16);
-        key.userID = source->userIDHybrid();
-        key.port = source->userPort();
-        key.kadPort = source->kadPort();
-        key.serverAddress = source->serverAddress();
-        if (m_clientList->globalDeadSourceList.isDeadSource(key)) {
-            logDebug(QStringLiteral("Source rejected — dead source: %1").arg(ipstr(source->userAddress())));
-            return false;
-        }
-    }
+    if (!sourceFiltersPass(file, source, /*ignoreGlobalDeadList*/ false))
+        return false;
 
     // ClientList dedup across files — check if a matching client already exists globally
     if (m_clientList) {
@@ -432,13 +408,62 @@ bool DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* source)
     return true;
 }
 
+bool DownloadQueue::checkAndAddKnownSource(PartFile* file, UpDownClient* source,
+                                          bool ignoreGlobalDeadList)
+{
+    if (!file || !source)
+        return false;
+
+    if (!sourceFiltersPass(file, source, ignoreGlobalDeadList))
+        return false;
+
+    // Unlike checkAndAddSource() the client is already ours — it is connected and asking
+    // us for a file. So a match in another file's source list is not a duplicate to
+    // reject but an A4AF relationship to record. MFC DownloadQueue.cpp:578-590.
+    for (auto* cur : files()) {
+        if (!cur)
+            continue;
+        const auto& srcList = cur->srcList();
+        if (std::ranges::find(srcList, source) == srcList.end())
+            continue;
+
+        if (cur == file)
+            return false; // already a source of this very file
+
+        source->addRequestForAnotherFile(file);
+        if (source->downloadState() != DownloadState::Connected) {
+            source->swapToAnotherFile(
+                QStringLiteral("New A4AF source found. DownloadQueue::checkAndAddKnownSource()"),
+                false, false, false, nullptr, true, false);
+        }
+        return false;
+    }
+
+    source->setReqFile(file);
+    file->addSource(source);
+    // MFC SF_PASSIVE: we did not go looking for this one, it came to us.
+    source->setSourceFrom(SourceFrom::Passive);
+    // Deliberately no clientList->addClient(): the client is already in the list, and the
+    // skipDupTest path checkAndAddSource() uses would insert it a second time.
+    logDebug(QStringLiteral("Passively added source %1:%2 to %3")
+                 .arg(ipstr(source->userAddress())).arg(source->userPort()).arg(file->fileName()));
+    return true;
+}
+
 void DownloadQueue::removeSource(UpDownClient* source)
 {
     if (!source)
         return;
 
-    for (auto* file : m_items)
+    for (auto* file : m_items) {
+        const auto& sources = file->srcList();
+        const bool hadSource = std::ranges::find(sources, source) != sources.end();
         file->removeSource(source);
+        // Only the file that actually lost a source needs recounting — MFC
+        // DownloadQueue.cpp:626-629.
+        if (hadSource)
+            file->updatePartsInfo();
+    }
 }
 
 void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& result)
@@ -657,8 +682,10 @@ bool DownloadQueue::addDownloadFromED2KLink(const QString& link, const QString& 
         if (PartFile* existing = fileByID(fileLink->hash.data());
             existing && static_cast<uint64>(existing->fileSize()) == fileLink->size)
         {
-            if (fileLink->hasValidAICHHash && !existing->fileIdentifier().hasAICHHash())
+            if (fileLink->hasValidAICHHash && !existing->fileIdentifier().hasAICHHash()) {
                 existing->fileIdentifier().setAICHHash(fileLink->aichHash);
+                existing->seedAICHRecoveryMasterHash();
+            }
             addLinkSources(existing, fileLink->hostnameSources);
         }
         return false;
@@ -669,8 +696,10 @@ bool DownloadQueue::addDownloadFromED2KLink(const QString& link, const QString& 
     partFile->setFileSize(fileLink->size);
     partFile->setFileHash(fileLink->hash.data());
 
-    if (fileLink->hasValidAICHHash)
+    if (fileLink->hasValidAICHHash) {
         partFile->fileIdentifier().setAICHHash(fileLink->aichHash);
+        partFile->seedAICHRecoveryMasterHash();
+    }
 
     if (fileLink->hashset)
         partFile->fileIdentifier().loadMD4HashsetFromFile(*fileLink->hashset, true);
@@ -1071,10 +1100,12 @@ void DownloadQueue::addLinkUrlSource(PartFile* file, const ED2KLinkSource& sourc
     client->setRequestFile(file);
     client->setSourceFrom(SourceFrom::Link);
 
-    if (checkAndAddSource(file, client))
+    if (checkAndAddSource(file, client)) {
         client->tryToConnect();
-    else
+        file->updatePartsInfo();   // MFC PartFile.cpp:2555
+    } else {
         delete client;
+    }
 }
 
 // ===========================================================================
@@ -1426,11 +1457,7 @@ bool DownloadQueue::sendNextUDPPacket()
         if (!sent && nextfile) {
             const uint64 fsize = nextfile->fileSize();
             const bool isLarge = fsize > UINT32_MAX;
-            // Port of CPartFile::GetMaxSourcePerFileUDP() (max-sources tracked
-            // globally via the pref in this port).
-            const uint32 udpCap = std::min<uint32>(
-                (static_cast<uint32>(thePrefs.maxSourcesPerFile()) * 3) / 4,
-                MAX_SOURCES_FILE_UDP);
+            const uint32 udpCap = nextfile->maxSourcePerFileUDP();
             if (static_cast<uint32>(nextfile->sourceCount()) < udpCap
                 && (serverLarge || !isLarge))
             {
@@ -1730,6 +1757,67 @@ bool DownloadQueue::doKademliaFileRequest() const
 void DownloadQueue::setLastKademliaFileRequest()
 {
     m_lastKademliaFileRequest = static_cast<uint32>(getTickCount());
+}
+
+// ===========================================================================
+// sourceFiltersPass — private; the filters checkAndAddSource() and
+// checkAndAddKnownSource() share (MFC DownloadQueue.cpp:454-485 / :542-575)
+// ===========================================================================
+
+bool DownloadQueue::sourceFiltersPass(PartFile* file, UpDownClient* source,
+                                      bool ignoreGlobalDeadList) const
+{
+    if (file->isStopped()) {
+        logDebug(QStringLiteral("Source rejected — download is stopped: %1").arg(file->fileName()));
+        return false;
+    }
+
+    // A peer whose obfuscation settings can never meet ours is not a source, it is a
+    // wasted slot and a connect attempt that always fails. The hash matters because it
+    // seeds the RC4 key. MFC DownloadQueue.cpp:478-485.
+    if (source->isCryptLayerIncompatible(/*requireHash*/ true)) {
+        logDebug(QStringLiteral("Source rejected — obfuscation settings incompatible: %1")
+                     .arg(ipstr(source->userAddress())));
+        return false;
+    }
+
+    // A High ID *is* the peer's IPv4, so it has to be a usable one — 0.x, loopback,
+    // multicast, reserved and (unless the lab-mode pref says otherwise) LAN are all
+    // unreachable or bogus. A Low ID is an ID and not an address, so testing it would
+    // reject every firewalled source; the IPv6-only marker kNoIPv4SourceId is
+    // deliberately a Low ID for the same reason. MFC DownloadQueue.cpp:568-575.
+    // m_userIDHybrid is host order for a High ID, isGoodIP() takes network order.
+    if (!source->hasLowID() && !isGoodIP(htonl(source->userIDHybrid()))) {
+        logDebug(QStringLiteral("Source rejected — unusable high ID: %1")
+                     .arg(ipstr(htonl(source->userIDHybrid()))));
+        return false;
+    }
+
+    // IPFilter check — reject filtered IPs. The Address overload covers both families
+    // and keeps IPv6 sources out of the uint32 path, where they would collapse to 0.
+    if (m_ipFilter && !source->userAddress().isNull()
+        && m_ipFilter->isFiltered(source->userAddress()))
+    {
+        logDebug(QStringLiteral("Source rejected by IPFilter: %1").arg(ipstr(source->userAddress())));
+        return false;
+    }
+
+    // A source that asks us for a file bypasses the global dead list: it is demonstrably
+    // alive, whatever we concluded earlier. MFC's bIgnoreGlobDeadList.
+    if (m_clientList && !ignoreGlobalDeadList) {
+        DeadSourceKey key;
+        std::memcpy(key.hash.data(), source->userHash(), 16);
+        key.userID = source->userIDHybrid();
+        key.port = source->userPort();
+        key.kadPort = source->kadPort();
+        key.serverAddress = source->serverAddress();
+        if (m_clientList->globalDeadSourceList.isDeadSource(key)) {
+            logDebug(QStringLiteral("Source rejected — dead source: %1").arg(ipstr(source->userAddress())));
+            return false;
+        }
+    }
+
+    return true;
 }
 
 } // namespace eMule

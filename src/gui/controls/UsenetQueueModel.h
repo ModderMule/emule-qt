@@ -14,8 +14,11 @@
 /// with while it runs.
 
 #include "controls/CategoryFilterProxy.h"
+#include "utils/ByteRateSampler.h"
+#include "utils/UsenetDisplay.h"
 
 #include <QAbstractItemModel>
+#include <QByteArray>
 
 #include <array>
 #include <QCborMap>
@@ -56,10 +59,47 @@ enum class UsenetRowStatus : int {
         || s == UsenetRowStatus::Unpacking;
 }
 
+/// Mirrors usenet::UsenetFileWireState — what one file is doing.
+enum class UsenetFileRowState : int {
+    Queued = 0,     ///< nothing resolved, nothing in flight
+    Partial = 1,    ///< some articles resolved or in flight
+    Complete = 2,
+    Missing = 3,    ///< every article resolved, some on no server
+    Skipped = 4,    ///< the user left it out
+    Held = 5,       ///< a recovery volume nobody asked for yet
+};
+
+/// Bucket codes of a progress bar. 0-3 are the daemon's segment-map codes.
+inline constexpr quint8 kUsenetBarQueued = 0;
+inline constexpr quint8 kUsenetBarDone = 1;
+inline constexpr quint8 kUsenetBarMissing = 2;
+inline constexpr quint8 kUsenetBarInFlight = 3;
+/// Not the daemon's: a skipped or held-back file, drawn light grey.
+inline constexpr quint8 kUsenetBarSkipped = 4;
+
+/// What UsenetProgressDelegate reads off the Progress column. Clear of
+/// Qt::UserRole, which the column spends on its sort value.
+enum UsenetBarRoles : int {
+    kUsenetBarRole = Qt::UserRole + 0x100,   ///< QByteArray of bar codes
+    kUsenetBarPercentRole,                  ///< 0-100, the thin strip on top
+    kUsenetBarPausedRole,                   ///< muted palette
+    kUsenetBarCompleteRole,                 ///< solid green, MFC's finished bar
+};
+
 struct UsenetFileRow {
     QString name;
     qint64 size = 0;
     int percent = 0;
+
+    UsenetFileRowState state = UsenetFileRowState::Queued;
+
+    /// The user left it out. The checkbox reads this, not `state`: a skipped
+    /// file a repair fetched back is still one the user did not want.
+    bool skipped = false;
+
+    /// Bar codes from the daemon; empty when the file is uniform, which its
+    /// state then says for free. See usenetFileBar().
+    QByteArray segmentMap;
     QString finalPath;
     bool isPar2 = false;
     int missingSegments = 0;
@@ -157,8 +197,11 @@ struct UsenetItemRow {
     qint64 speed = 0;
 
     /// Set by the model when it computes speed; not from the wire.
-    qint64 lastDecodedBytes = 0;
-    qint64 lastSampleMs = 0;
+    ByteRateSampler rateSampler;
+
+    /// The release's bar: its files laid end to end by size. Built once per
+    /// decode by usenetRowFromCbor(), not per paint.
+    QByteArray bar;
 };
 
 /// Mirrors usenet::UsenetItemStatus. Read as an int off the wire, because the GUI
@@ -170,14 +213,25 @@ struct UsenetItemRow {
 /// decoder that exists twice drifts the moment one field is added.
 [[nodiscard]] UsenetItemRow usenetRowFromCbor(const QCborMap& m);
 
-/// The five levels the daemon accepts, highest first — menu order, and the order
-/// the queue runs them in.
-///
-/// Duplicated from `usenet::kUsenetPriorityLevels` because the GUI does not link
-/// eMule::Usenet and the wire carries a bare int. The daemon clamps what it is
-/// sent, so the worst a drift here can do is offer a level that comes back as
-/// its nearest neighbour.
-inline constexpr std::array<int, 5> kUsenetPriorityLevels{2, 1, 0, -1, -2};
+/// One file's bar codes: the daemon's map, or the uniform fill its state implies.
+[[nodiscard]] QByteArray usenetFileBar(const UsenetFileRow& file);
+
+/// A release's bar codes: its files end to end, each as wide as its size, held
+/// recovery volumes left out. A bucket shows the worst file code it covers.
+[[nodiscard]] QByteArray usenetItemBar(const UsenetItemRow& item);
+
+/// The per-file Status cell and its icon, shared by the queue tree and the
+/// details dialog. @p itemActive: the release is queued or downloading.
+[[nodiscard]] QString usenetFileStateText(const UsenetFileRow& file, bool itemActive);
+[[nodiscard]] QIcon usenetFileStateIcon(const UsenetFileRow& file, bool itemActive);
+
+/// Whether a release still lets the user change which of its files download.
+[[nodiscard]] inline bool usenetItemAcceptsSkip(UsenetRowStatus s)
+{
+    return s != UsenetRowStatus::Complete && !isPostProcessing(s);
+}
+
+// kUsenetPriorityLevels lives in utils/UsenetDisplay.h, shared with the web UI.
 
 /// A level's name, for the menu and the Priority column. Anything outside the
 /// five reads as the nearest one.
@@ -222,6 +276,14 @@ public:
     QVariant headerData(int section, Qt::Orientation orientation,
                         int role = Qt::DisplayRole) const override;
 
+    /// File rows are checkable on the Name column while the release still
+    /// accepts a skip; PAR2 files never are.
+    Qt::ItemFlags flags(const QModelIndex& index) const override;
+
+    /// A checkbox click. Emits fileSkipRequested() and changes nothing: the row
+    /// follows the daemon's push, so a refusal cannot leave it lying.
+    bool setData(const QModelIndex& index, const QVariant& value, int role = Qt::EditRole) override;
+
     /// Replace the whole queue, incrementally. Rows that survive are updated in
     /// place; only genuine arrivals and departures move.
     void setItems(const QList<UsenetItemRow>& items);
@@ -246,6 +308,10 @@ public:
     [[nodiscard]] QString idAt(int row) const;
     [[nodiscard]] const UsenetItemRow* findById(const QString& id) const;
     [[nodiscard]] int itemCount() const { return int(m_items.size()); }
+
+signals:
+    /// The user ticked (@p skipped false) or cleared a file row's checkbox.
+    void fileSkipRequested(const QString& itemId, int fileIndex, bool skipped);
 
 private:
     void applyInto(UsenetItemRow& target, const UsenetItemRow& incoming);

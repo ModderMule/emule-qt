@@ -973,6 +973,12 @@ public:
     [[nodiscard]] bool usenetAutoAddPaused() const;
     void setUsenetAutoAddPaused(bool val);
 
+    /// The whole Usenet engine is paused: nothing new starts, item states are
+    /// untouched. Set through SetUsenetPaused only — deliberately not in the
+    /// SetPreferences chain, so an Options dialog left open cannot undo it.
+    [[nodiscard]] bool usenetPaused() const;
+    void setUsenetPaused(bool val);
+
     /// Route news-server connections through the Proxy page's proxy. On by
     /// default: a user who set a proxy up meant their traffic to go through it.
     /// Meaningless while no proxy is configured.

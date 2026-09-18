@@ -6,14 +6,26 @@
 /// A single model class serves all 4 tabs (Uploading, Downloading, On Queue,
 /// Known Clients) by switching the column set based on the mode.
 
+#include <QByteArray>
+#include <QMetaType>
 #include <QString>
 
 #include "AbstractTableModel.h"
 
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace eMule {
+
+/// The Obtained Parts bar of one uploading or queued client (MFC DrawUpStatusBar).
+struct UpStatusBar {
+    int64_t fileSize = 0;                                 ///< 0 = nothing to draw
+    QByteArray parts;                                     ///< one byte per part, non-zero = peer has it
+    std::vector<int> nextParts;                           ///< whole parts about to be sent
+    std::vector<std::pair<int64_t, int64_t>> sentRanges;  ///< inclusive byte ranges already sent
+    bool greyed = false;                                  ///< slot past the active upload count
+};
 
 /// Which bottom tab this model is configured for.
 enum class ClientListMode {
@@ -54,11 +66,16 @@ struct ClientRow {
     int64_t downloadedTotal = 0;  // credit totals across sessions (0 = no credits)
     int64_t uploadedTotal = 0;
     int64_t uploadStartDelay = 0;  // ms since upload started (0 = not uploading)
-    int filePriority = -1;         // download priority of queued file (-1 = unknown)
-    bool isAutoPriority = false;   // whether file priority is auto
+    int uploadFilePriority = -1;   // up priority of the upload file (-1 = unknown)
+    bool uploadFileAutoPriority = false;
     int upPartCount = 0;           // parts client has (upload context, PARTSIZE chunks)
-    uint8_t fileRating = 0;        // client's rating for file (0-5)
     bool isConnected = false;      // has active socket connection
+    int64_t queueRating = 0;       // MFC GetScore(false, false, true)
+    int64_t queueScore = 0;        // MFC GetScore(false)
+    int64_t lastUpRequestDelay = 0;  // ms since the last upload request
+    bool hasLowID = false;
+    bool addNextConnect = false;   // LowID peer owed the next free slot
+    UpStatusBar upStatus;
 };
 
 /// Table model backing the client list tree views in the Transfer panel.
@@ -66,6 +83,9 @@ class ClientListModel : public AbstractTableModel<ClientRow> {
     Q_OBJECT
 
 public:
+    /// The row's UpStatusBar, for UploadStatusDelegate.
+    static constexpr int UpStatusRole = Qt::UserRole + 1;
+
     explicit ClientListModel(ClientListMode mode, QObject* parent = nullptr);
 
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
@@ -91,3 +111,5 @@ private:
 };
 
 } // namespace eMule
+
+Q_DECLARE_METATYPE(eMule::UpStatusBar)

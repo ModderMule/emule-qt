@@ -19,6 +19,8 @@
 namespace eMule {
 
 class SafeMemFile;
+class PartFile;
+class UpDownClient;
 
 // ---------------------------------------------------------------------------
 // AICHUntrustedHash — tracks signing IPs for trust evaluation
@@ -94,6 +96,32 @@ public:
     /// Mutex for known2_64.met file access.
     static QMutex s_mutKnown2File;
 
+    // --- Pending recovery requests (MFC SHAHashSet.h:196-253) ---
+
+    /// One outstanding OP_AICHREQUEST: which part of which file we asked whom for.
+    struct RequestedData {
+        uint16 part = 0;
+        PartFile* file = nullptr;
+        UpDownClient* client = nullptr;
+    };
+
+    /// Remember an outgoing request so its answer can be matched and, if it never
+    /// comes, another source asked. MFC pushes onto m_liRequestedData in SendAICHRequest.
+    static void addClientAICHRequest(const RequestedData& request);
+
+    /// This client cannot serve what we asked it: forget the request and ask somebody
+    /// else for the same part. MFC ClientAICHRequestFailed (SHAHashSet.cpp:1001).
+    static void clientAICHRequestFailed(UpDownClient* client);
+
+    /// Drop the entry without re-asking. MFC RemoveClientAICHRequest.
+    static void removeClientAICHRequest(const UpDownClient* client);
+
+    /// Is this part of this file already on its way from somebody? MFC IsClientRequestPending.
+    [[nodiscard]] static bool isClientRequestPending(const PartFile* file, uint16 part);
+
+    /// What we asked this client for; a default entry when we asked it nothing.
+    [[nodiscard]] static RequestedData aichReqDetails(const UpDownClient* client);
+
     // Public tree access (used by FileIdentifier)
     AICHHashTree m_hashTree;
 
@@ -107,6 +135,7 @@ private:
     // Static state for known2_64.met hash index
     static QString s_known2MetPath;
     static std::unordered_map<AICHHash, uint64> s_storedHashes;
+    static std::vector<RequestedData> s_requestedData;
 };
 
 } // namespace eMule

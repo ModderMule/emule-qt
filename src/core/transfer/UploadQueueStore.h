@@ -75,10 +75,10 @@ struct QueuedClientRecord {
     /// 0x04 requires crypt, 0x08 direct-UDP-callback. Same encoding SLS persists.
     uint8 connectOptions = 0;
 
-    /// Needed for obfuscation, not display: shouldReceiveCryptUDPPackets() is
-    /// `supportsCryptLayer && kadVersion >= KADEMLIA_VERSION8_49b`. Left at 0 we would send
-    /// plaintext UDP to a peer expecting obfuscation, and it would drop it — silently
-    /// costing us exactly the firewalled peers the direct-callback path exists for.
+    /// The peer's Kad version. It no longer gates obfuscation —
+    /// shouldReceiveCryptUDPPackets() follows MFC and asks about the crypt flags, our own
+    /// prefs, a known public IP and a valid user hash — but it still decides whether the
+    /// peer can be reached for a Kad callback at all.
     uint8 kadVersion = 0;
     /// udpVer > 3 gates the part-status block in the OP_REASKACK reply, i.e. whether a
     /// returning peer can see its queue rank again.

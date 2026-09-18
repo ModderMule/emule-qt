@@ -53,7 +53,7 @@ PartFile::~PartFile()
 {
     // Flush any remaining buffered data
     if (!m_bufferedData.empty()) {
-        flushBuffer();
+        flushBuffer(/*forceICH*/ false, /*noAICH*/ true);   // MFC srchybrid/PartFile.cpp:294
     }
 
     // Close the part file handle before saving metadata
@@ -455,7 +455,7 @@ void PartFile::writeToBuffer(uint64 transize, const uint8* data,
         flushBuffer();
 }
 
-void PartFile::flushBuffer(bool forceICH)
+void PartFile::flushBuffer(bool forceICH, bool noAICH)
 {
     if (m_bufferedData.empty())
         return;
@@ -556,8 +556,10 @@ void PartFile::flushBuffer(bool forceICH)
             if (std::ranges::find(m_corruptedParts, static_cast<uint16>(p)) == m_corruptedParts.end())
                 m_corruptedParts.push_back(static_cast<uint16>(p));
 
-            // Request AICH recovery data if AICH didn't already agree
-            if (!forceICH && !aichAgreed)
+            // Request AICH recovery data if AICH didn't already agree. noAICH is
+            // separate from forceICH because the destructor flushes with noAICH: a part
+            // failing MD4 there must not start a request against a file being destroyed.
+            if (!forceICH && !noAICH && !aichAgreed)
                 requestAICHRecovery(p);
 
             // Track corruption loss
@@ -1259,6 +1261,75 @@ int PartFile::availableSourceCount() const
         const DownloadState state = client->downloadState();
         return state == DownloadState::OnQueue || state == DownloadState::Downloading;
     }));
+}
+
+int PartFile::validSourcesCount() const
+{
+    return static_cast<int>(std::ranges::count_if(m_srcList, [](const UpDownClient* client) {
+        switch (client->downloadState()) {
+        case DownloadState::OnQueue:
+        case DownloadState::Downloading:
+        case DownloadState::Connected:
+        case DownloadState::RemoteQueueFull:
+            return true;
+        default:
+            return false;
+        }
+    }));
+}
+
+uint32 PartFile::maxSourcePerFileSoft() const
+{
+    return std::min<uint32>((static_cast<uint32>(thePrefs.maxSourcesPerFile()) * 9) / 10,
+                            MAX_SOURCES_FILE_SOFT);
+}
+
+uint32 PartFile::maxSourcePerFileUDP() const
+{
+    return std::min<uint32>((static_cast<uint32>(thePrefs.maxSourcesPerFile()) * 3) / 4,
+                            MAX_SOURCES_FILE_UDP);
+}
+
+void PartFile::updatePartsInfo()
+{
+    if (!isPartFile()) {
+        KnownFile::updatePartsInfo();
+        return;
+    }
+
+    const time_t now = std::time(nullptr);
+    const bool refresh = completeSourcesDue(now);
+
+    // Rebuilt from scratch: addSource()/removeSource() keep the frequencies up to date
+    // incrementally, but a source that reports a *new* part status (every OP_FILESTATUS
+    // and every reask) was only ever added, never subtracted, so the counts drifted up.
+    m_srcPartFrequency.assign(partCount(), 0);
+
+    std::vector<uint16> peerCounts;
+    for (const auto* src : m_srcList) {
+        const auto& status = src->partStatus();
+        const bool complete = src->completeSource();
+        if (!complete && status.empty())
+            continue;   // hasn't told us what it holds — MFC PartFile.cpp:2576
+
+        for (uint16 i = 0; i < partCount(); ++i) {
+            if (complete || (i < status.size() && status[i] != 0))
+                ++m_srcPartFrequency[i];
+        }
+        if (refresh)
+            peerCounts.push_back(src->upCompleteSourcesCount());
+    }
+
+    if (refresh) {
+        uint16 seen = 0;
+        if (partCount() > 0) {
+            seen = *std::min_element(m_srcPartFrequency.begin(),
+                                     m_srcPartFrequency.end());
+        }
+        updateCompleteSourceCounts(peerCounts, seen, /*blend*/ true);
+    }
+
+    emit notifier()->fileUpdated();
 }
 
 void PartFile::addSource(UpDownClient* client)
@@ -2029,7 +2100,8 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
     }
 
     // Retry connections to idle sources — MFC PartFile.cpp Process() source loop.
-    // Only attempt a few per cycle to avoid socket flooding.
+    // The per-cycle cap has no MFC counterpart; it stays as a cheap backstop behind the
+    // two time gates below.
     // Index-based loop because NNP purge can call removeSource() which invalidates iterators.
     int connectAttempts = 0;
     static constexpr int kMaxConnectAttemptsPerCycle = 3;
@@ -2045,12 +2117,32 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
                  || disconnectedOnQueue)
                 && client->connectingState() == ConnectingState::None)
             {
-                // MFC: Disconnected OnQueue sources should NOT be retried
-                // immediately — the reask interval (FILEREASKTIME ~29 min)
-                // must elapse first.  Without this guard the source is
-                // reconnected every process() cycle (~100 ms), flooding the
-                // remote and potentially resetting our queue position.
-                if (disconnectedOnQueue && client->timeUntilReask(this) > 0) {
+                // MFC's re-ask window applies to every candidate, not just a source
+                // that lost its socket: nothing is asked again before FILEREASKTIME
+                // (~29 min, doubled for NNP) has passed. srchybrid/PartFile.cpp:2345.
+                if (client->timeUntilReask(this) > 0) {
+                    ++i;
+                    continue;
+                }
+
+                // Still connected and past the window: MFC re-asks in place rather than
+                // dialling again (srchybrid/PartFile.cpp:2347-2351). Reachable for a
+                // non-mule peer only since checkHandshakeFinished() stopped demanding an
+                // eMule info packet.
+                if (client->socket() && client->socket()->isConnected()
+                    && client->checkHandshakeFinished()
+                    && client->uploadState() != UploadState::Banned)
+                {
+                    client->setDownloadState(DownloadState::Connected);
+                    client->setLastTriedToConnectNow();
+                    client->sendFileRequest();
+                    ++i;
+                    continue;
+                }
+
+                // Otherwise dial, but no more than once every 20 minutes per source —
+                // MFC's second gate (srchybrid/PartFile.cpp:2352).
+                if (curTick < client->lastTriedToConnect() + MIN2MS(20)) {
                     ++i;
                     continue;
                 }
@@ -2064,10 +2156,10 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
                 // askForDownload(), not tryToConnect(): MFC calls it from exactly here
                 // (srchybrid/PartFile.cpp:2354) and it owns the whole re-ask preamble —
                 // charging an unanswered UDP re-ask, the TooManyConns backoff, the LowID
-                // delays that keep a source instead of burning a callback on it, the
-                // one-minute throttle, and the A4AF swap. It sets Connecting and calls
-                // tryToConnect() itself. Calling tryToConnect() directly left all of that
-                // unreachable — askForDownload() had no production caller at all.
+                // delays that keep a source instead of burning a callback on it, and the
+                // A4AF swap. It sets Connecting and calls tryToConnect() itself. Calling
+                // tryToConnect() directly left all of that unreachable — askForDownload()
+                // had no production caller at all.
                 if (client->askForDownload())
                     ++connectAttempts;
 
@@ -2148,9 +2240,7 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
     }
 
     // -- Kad source search (MFC PartFile.cpp:2363-2380) --
-    const int maxSrcUDP = std::min(
-        static_cast<int>(thePrefs.maxSourcesPerFile()) * 3 / 4,
-        static_cast<int>(MAX_SOURCES_FILE_UDP));
+    const int maxSrcUDP = static_cast<int>(maxSourcePerFileUDP());
 
     if (maxSrcUDP > sourceCount()) {
         auto* kad = kad::Kademlia::instance();
@@ -2221,7 +2311,12 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
 
 void PartFile::writePartStatus(SafeMemFile& file) const
 {
-    const uint16 pc = partCount();
+    // The wire count is the ED2K one (size/PARTSIZE + 1), not our data part count
+    // (MFC PartFile.cpp:2097). They differ only for a size that is an exact multiple
+    // of PARTSIZE, where the ED2K count has one extra zero-length part — and there
+    // the two disagreeing made every MFC peer reject our file status and extended
+    // info with "wrong part number".
+    const uint16 pc = ed2kPartCount();
     file.writeUInt16(pc);
 
     if (pc == 0)
@@ -2231,7 +2326,9 @@ void PartFile::writePartStatus(SafeMemFile& file) const
     std::vector<uint8> bitmap(byteCount, 0);
 
     for (uint32 i = 0; i < pc; ++i) {
-        if (isComplete(i))
+        // The trailing zero-length part is always complete: MFC asks IsCompleteBDSafe
+        // over an empty range, which no gap can intersect (PartFile.cpp:1606-1628).
+        if (i >= partCount() || isComplete(i))
             bitmap[i / 8] |= static_cast<uint8>(1 << (i % 8));
     }
 
@@ -2547,6 +2644,27 @@ bool PartFile::hashSinglePart(uint32 partNumber, bool* aichAgreed)
 // requestAICHRecovery — request AICH recovery data from a source
 // ===========================================================================
 
+void PartFile::seedAICHRecoveryMasterHash()
+{
+    if (!fileIdentifier().hasAICHHash())
+        return;
+
+    const EAICHStatus status = m_aichRecoveryHashSet.getStatus();
+    if (m_aichRecoveryHashSet.hasValidMasterHash()
+        && (status == EAICHStatus::Verified || status == EAICHStatus::Trusted))
+    {
+        return; // already trusted, don't downgrade a set that peers voted on
+    }
+
+    // An AICH root hash that came with the ed2k link or the search result is as
+    // trustworthy as the file hash beside it. MFC seeds the recovery set the same way
+    // (srchybrid/PartFile.cpp:97, :188, DownloadQueue.cpp:283). Without this,
+    // requestAICHRecovery() bails on every freshly added download — the set stays Empty
+    // until the .part.met is reloaded on the next start, so recovery is effectively off
+    // for exactly the downloads most likely to need it.
+    m_aichRecoveryHashSet.setMasterHash(fileIdentifier().getAICHHash(), EAICHStatus::Verified);
+}
+
 void PartFile::requestAICHRecovery(uint32 partNumber)
 {
     if (!m_aichRecoveryHashSet.hasValidMasterHash()
@@ -2558,6 +2676,10 @@ void PartFile::requestAICHRecovery(uint32 partNumber)
     }
 
     if (static_cast<uint64>(fileSize()) <= static_cast<uint64>(partNumber) * PARTSIZE + EMBLOCKSIZE)
+        return;
+
+    // Somebody is already fetching this part for us. MFC PartFile.cpp:5186.
+    if (AICHRecoveryHashSet::isClientRequestPending(this, static_cast<uint16>(partNumber)))
         return;
 
     // Check if recovery data is already available in memory
@@ -2626,7 +2748,7 @@ void PartFile::aichRecoveryDataAvailable(uint32 partNumber)
         return;
 
     // Flush any pending data first (without requesting AICH again)
-    flushBuffer(true);
+    flushBuffer(/*forceICH*/ true, /*noAICH*/ true);
 
     const uint64 partStart = static_cast<uint64>(partNumber) * PARTSIZE;
     const uint64 partLen = std::min<uint64>(PARTSIZE, static_cast<uint64>(fileSize()) - partStart);
@@ -2721,6 +2843,9 @@ void PartFile::aichRecoveryDataAvailable(uint32 partNumber)
         // Remove from corrupted list
         dropCorruptedPart(partNumber);
 
+        // A recovered part is a part we can serve. MFC srchybrid/PartFile.cpp:5329.
+        addToSharedFiles();
+
         // Check if entire file is now complete
         if (m_gapList.empty() && m_bufferedData.empty())
             completeFile();
@@ -2767,8 +2892,34 @@ std::unique_ptr<Packet> PartFile::createServerSourceRequestPacket(bool obfuscate
 std::unique_ptr<Packet> PartFile::createSrcInfoPacket(
     const UpDownClient* forClient, uint8 version, uint16 /*options*/) const
 {
-    if (m_srcList.empty() || !forClient)
+    if (!forClient)
         return nullptr;
+
+    // With no sources of our own, the clients uploading this part file are still worth
+    // handing out — that is the base implementation, and it carries the part-count guard.
+    // MFC srchybrid/PartFile.cpp:3642-3643.
+    if (m_srcList.empty())
+        return KnownFile::createSrcInfoPacket(forClient, version, 0);
+
+    // The answer is built against the part status the requester reported for *this* file,
+    // so it has to be the file it last set. A client that asks out of context gets
+    // nothing rather than a source set filtered through a stale bitmap.
+    // MFC srchybrid/PartFile.cpp:3645-3650.
+    if (!md4equ(forClient->reqUpFileId(), fileHash())) {
+        logDebug(QStringLiteral("createSrcInfoPacket: requester's upload file is not %1")
+                     .arg(fileName()));
+        return nullptr;
+    }
+
+    // Same shape test the base class applies. MFC srchybrid/PartFile.cpp:3652-3659.
+    if (!(forClient->upPartCount() == 0 && forClient->upPartStatus().empty()) &&
+        !(forClient->upPartCount() == partCount() && !forClient->upPartStatus().empty()))
+    {
+        logDebug(QStringLiteral("createSrcInfoPacket: requester part count %1 does not "
+                                "match file part count %2 for %3")
+                     .arg(forClient->upPartCount()).arg(partCount()).arg(fileName()));
+        return nullptr;
+    }
 
     // Sources are only worth exchanging for a file we are actually downloading. A
     // paused, erroring, completing or rehashing file has no business handing its

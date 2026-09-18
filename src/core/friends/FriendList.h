@@ -85,7 +85,20 @@ signals:
     void friendUpdated(eMule::Friend* f);
     void listLoaded(int count);
 
+    /// A connection attempt moved on. MFC reports these through
+    /// CFriendConnectionListener; here the one listener is the GUI, across the IPC seam,
+    /// so the list is the signal source and CoreNotifierBridge forwards them.
+    void friendConnectionProgress(eMule::Friend* f, eMule::ChatConnectProgress step);
+    /// Terminal verdict for an attempt.
+    void friendConnectingResult(eMule::Friend* f, bool success);
+
 private:
+    /// Friend raises the two signals above through these, so the emit stays with the
+    /// list that owns the entry.
+    friend class Friend;
+    void emitConnectionProgress(Friend* f, ChatConnectProgress step);
+    void emitConnectingResult(Friend* f, bool success);
+
     std::vector<std::unique_ptr<Friend>> m_friends;
 };
 

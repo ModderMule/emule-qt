@@ -111,6 +111,21 @@ UpDownClient* makeRequester(bool supportsSX2 = true, uint8 sx1Version = 4)
     return c;
 }
 
+/// createSrcInfoPacket() answers only a peer whose upload file is the one it is asking
+/// about, as MFC does (srchybrid/KnownFile.cpp:1012). The real dispatch arranges that
+/// with setUploadFileID() before answering; these tests do the same.
+template <typename FileT>
+std::unique_ptr<Packet> srcInfoFor(FileT& file, UpDownClient* peer, uint8 version,
+                                   uint16 options = 0)
+{
+    peer->setUploadFileID(&file);
+    auto packet = file.createSrcInfoPacket(peer, version, options);
+    // Let go again, so a peer that asked once is not left on the file's uploading list
+    // and counted as a source by the next question.
+    peer->setUploadFileID(nullptr);
+    return packet;
+}
+
 void appendU16(QByteArray& b, uint16 v)
 {
     b.append(char(v & 0xFF));
@@ -270,7 +285,7 @@ void tst_SourceExchange::knownFile_countMatchesEntries_withLowIdSources()
         track(makeLowIdClient(0x00000456)),
     });
 
-    auto packet = file->createSrcInfoPacket(requester(), 4, 0);
+    auto packet = srcInfoFor(*file, requester(), 4);
     QVERIFY(packet != nullptr);
 
     const uint16 count = readU16(packet->pBuffer, kHeaderSize);
@@ -301,7 +316,7 @@ void tst_SourceExchange::knownFile_countMatchesEntries_allVersions()
         track(makeHighIdClient(QStringLiteral("12.23.34.45"), 4664)),
     });
 
-    auto packet = file->createSrcInfoPacket(requester(), version, 0);
+    auto packet = srcInfoFor(*file, requester(), version);
     QVERIFY(packet != nullptr);
 
     QCOMPARE(uint8(packet->pBuffer[0]), version);
@@ -319,7 +334,7 @@ void tst_SourceExchange::knownFile_allLowIdSources_returnsNull()
         track(makeLowIdClient(0x00000002)),
     });
 
-    QVERIFY(file->createSrcInfoPacket(requester(), 4, 0) == nullptr);
+    QVERIFY(srcInfoFor(*file, requester(), 4) == nullptr);
 }
 
 // ---------------------------------------------------------------------------
@@ -344,7 +359,7 @@ void tst_SourceExchange::knownFile_userIdIsHybridAtV3Plus()
     const Address addr = Address::fromString(QStringLiteral("10.20.30.40"));
     auto file = makeFile({ track(makeHighIdClient(QStringLiteral("10.20.30.40"), 4662)) });
 
-    auto packet = file->createSrcInfoPacket(requester(), version, 0);
+    auto packet = srcInfoFor(*file, requester(), version);
     QVERIFY(packet != nullptr);
 
     const uint32 wireId = readU32(packet->pBuffer, kHeaderSize + 2);
@@ -365,11 +380,11 @@ void tst_SourceExchange::partFile_userIdIsHybridAtV3Plus()
     pf.setFileHash(hash);
     pf.addSource(track(makeHighIdClient(QStringLiteral("10.20.30.40"), 4662)));
 
-    auto v4 = pf.createSrcInfoPacket(requester(), 4, 0);
+    auto v4 = srcInfoFor(pf, requester(), 4);
     QVERIFY(v4 != nullptr);
     QCOMPARE(readU32(v4->pBuffer, kHeaderSize + 2), addr.toUint32());
 
-    auto v2 = pf.createSrcInfoPacket(requester(), 2, 0);
+    auto v2 = srcInfoFor(pf, requester(), 2);
     QVERIFY(v2 != nullptr);
     QCOMPARE(readU32(v2->pBuffer, kHeaderSize + 2), addr.toNetworkUint32());
 }
@@ -381,7 +396,7 @@ void tst_SourceExchange::serverIpIsAlwaysNetworkOrder()
     auto file = makeFile({ track(makeHighIdClient(QStringLiteral("10.20.30.40"), 4662)) });
 
     for (uint8 v : { uint8(1), uint8(2), uint8(3), uint8(4) }) {
-        auto packet = file->createSrcInfoPacket(requester(), v, 0);
+        auto packet = srcInfoFor(*file, requester(), v);
         QVERIFY(packet != nullptr);
         QCOMPARE(readU32(packet->pBuffer, kHeaderSize + 2 + 4 + 2), server.toNetworkUint32());
     }
@@ -413,7 +428,7 @@ void tst_SourceExchange::roundTrip_recoversSourceAddress()
     const Address addr = Address::fromString(ip);
     auto file = makeFile({ track(makeHighIdClient(ip, 4662)) });
 
-    auto packet = file->createSrcInfoPacket(requester(), version, 0);
+    auto packet = srcInfoFor(*file, requester(), version);
     QVERIFY(packet != nullptr);
 
     const uint32 wireId = readU32(packet->pBuffer, kHeaderSize + 2);
@@ -444,7 +459,7 @@ void tst_SourceExchange::trailingZeroOctet_survivesAsHighId()
 
     auto file = makeFile({ track(makeHighIdClient(ip, 4662)) });
 
-    auto packet = file->createSrcInfoPacket(requester(), 4, 0);
+    auto packet = srcInfoFor(*file, requester(), 4);
     QVERIFY(packet != nullptr);
 
     const uint32 wireId = readU32(packet->pBuffer, kHeaderSize + 2);
@@ -469,7 +484,7 @@ void tst_SourceExchange::cryptOptions_bit3NeverSet()
     QVERIFY(src->supportsDirectUDPCallback());
 
     auto file = makeFile({ src });
-    auto packet = file->createSrcInfoPacket(requester(), 4, 0);
+    auto packet = srcInfoFor(*file, requester(), 4);
     QVERIFY(packet != nullptr);
 
     const int cryptOff = kHeaderSize + 2 + (4 + 2 + 4 + 2 + 16);
@@ -494,7 +509,7 @@ void tst_SourceExchange::sx1Answer_hasNoVersionByteAndSx1Opcode()
         track(makeHighIdClient(QStringLiteral("11.22.33.44"), 4663)),
     });
 
-    auto packet = file->createSrcInfoPacket(peer, 0, 0);
+    auto packet = srcInfoFor(*file, peer, 0);
     QVERIFY(packet != nullptr);
 
     QCOMPARE(packet->opcode, uint8(OP_ANSWERSOURCES));
@@ -515,7 +530,7 @@ void tst_SourceExchange::sx2Answer_keepsVersionByteAndSx2Opcode()
     // Guards the SX1 change against regressing the SX2 path.
     auto file = makeFile({ track(makeHighIdClient(QStringLiteral("10.20.30.40"), 4662)) });
 
-    auto packet = file->createSrcInfoPacket(requester(), 4, 0);
+    auto packet = srcInfoFor(*file, requester(), 4);
     QVERIFY(packet != nullptr);
 
     QCOMPARE(packet->opcode, uint8(OP_ANSWERSOURCES2));
@@ -601,7 +616,7 @@ void tst_SourceExchange::knownFile_skipsRequesterAndIneligibleClients()
     // The requester is in our own upload list — telling it about itself is useless.
     auto file = makeFile({ peer, connecting, banned, good });
 
-    auto packet = file->createSrcInfoPacket(peer, 4, 0);
+    auto packet = srcInfoFor(*file, peer, 4);
     QVERIFY(packet != nullptr);
 
     const uint16 count = readU16(packet->pBuffer, kHeaderSize);
@@ -692,7 +707,7 @@ void tst_SourceExchange::extSX_answerIsVersion1TagBlock()
     src->setOpenIPv6(true);
 
     auto file = makeFile({ src });
-    auto packet = file->createSrcInfoPacket(peer, SOURCEEXCHANGEEXT_VERSION, 0);
+    auto packet = srcInfoFor(*file, peer, SOURCEEXCHANGEEXT_VERSION);
     QVERIFY(packet != nullptr);
 
     QCOMPARE(packet->opcode, uint8(OP_ANSWERSOURCES2));
@@ -725,7 +740,7 @@ void tst_SourceExchange::extSX_userHashAndCryptTagsOnlyForTolerantPeer()
         peer->setSupportsExtSXSkipTags(tolerant);
 
         auto file = makeFile({ src });
-        auto packet = file->createSrcInfoPacket(peer, SOURCEEXCHANGEEXT_VERSION, 0);
+        auto packet = srcInfoFor(*file, peer, SOURCEEXCHANGEEXT_VERSION);
         Q_ASSERT(packet != nullptr);
         return uint8(packet->pBuffer[kHeaderSize + 2 + 4 + 2]);
     };
@@ -752,7 +767,7 @@ void tst_SourceExchange::extSX_userHashAndCryptTagsRoundTrip()
     src->setConnectOptions(0x03, true, false);   // supports + requests crypt
 
     auto file = makeFile({ src });
-    auto packet = file->createSrcInfoPacket(peer, SOURCEEXCHANGEEXT_VERSION, 0);
+    auto packet = srcInfoFor(*file, peer, SOURCEEXCHANGEEXT_VERSION);
     QVERIFY(packet != nullptr);
 
     DownloadQueue queue;
@@ -793,7 +808,7 @@ void tst_SourceExchange::extSX_roundTrip_recoversIPv6Source()
     auto* v4src = track(makeHighIdClient(QStringLiteral("61.71.81.91"), 4663));
 
     auto file = makeFile({ v6src, v4src });
-    auto packet = file->createSrcInfoPacket(peer, SOURCEEXCHANGEEXT_VERSION, 0);
+    auto packet = srcInfoFor(*file, peer, SOURCEEXCHANGEEXT_VERSION);
     QVERIFY(packet != nullptr);
 
     DownloadQueue queue;
@@ -894,12 +909,12 @@ void tst_SourceExchange::extSX_keepsLowIdSourceWithIPv6ButClassicDropsIt()
 
     // Classic SX2 peer: the LowID source is dropped, so there is nothing to send.
     auto* classic = track(makeRequester());   // supportsExtendedXS() == false
-    QVERIFY(file->createSrcInfoPacket(classic, 4, 0) == nullptr);
+    QVERIFY(srcInfoFor(*file, classic, 4) == nullptr);
 
     // ExtSX peer: the source is kept and carried as a v6 tag block.
     auto* ext = track(makeRequester());
     ext->setSupportsExtendedXS(true);
-    auto packet = file->createSrcInfoPacket(ext, SOURCEEXCHANGEEXT_VERSION, 0);
+    auto packet = srcInfoFor(*file, ext, SOURCEEXCHANGEEXT_VERSION);
     QVERIFY(packet != nullptr);
     QCOMPARE(readU16(packet->pBuffer, kHeaderSize), uint16(1));
 }
@@ -931,20 +946,20 @@ void tst_SourceExchange::extSX_sourceCapIs500NotV1Default()
 
     auto* ext = track(makeRequester());
     ext->setSupportsExtendedXS(true);
-    auto extPacket = file->createSrcInfoPacket(ext, SOURCEEXCHANGEEXT_VERSION, 0);
+    auto extPacket = srcInfoFor(*file, ext, SOURCEEXCHANGEEXT_VERSION);
     QVERIFY(extPacket != nullptr);
     QCOMPARE(declaredCount(std::move(extPacket)), uint16(kSources));
 
     // Plain SX2 v4 already had the 500 cap; the two must now agree.
     auto* classic = track(makeRequester());
-    auto v4Packet = file->createSrcInfoPacket(classic, 4, 0);
+    auto v4Packet = srcInfoFor(*file, classic, 4);
     QVERIFY(v4Packet != nullptr);
     QCOMPARE(declaredCount(std::move(v4Packet)), uint16(kSources));
 
     // A plain v1 peer gets the same 500: MFC applies one cap to every version
     // (PartFile.cpp:3731, KnownFile.cpp:1141). The port used to hand it 50.
     auto* v1 = track(makeRequester());
-    auto v1Packet = file->createSrcInfoPacket(v1, 1, 0);
+    auto v1Packet = srcInfoFor(*file, v1, 1);
     QVERIFY(v1Packet != nullptr);
     QCOMPARE(declaredCount(std::move(v1Packet)), uint16(kSources));
 }
@@ -964,7 +979,7 @@ void tst_SourceExchange::extSX_lowIdUsesHybridIdNotAddress()
     auto* ext = track(makeRequester());
     ext->setSupportsExtendedXS(true);
 
-    auto packet = file->createSrcInfoPacket(ext, SOURCEEXCHANGEEXT_VERSION, 0);
+    auto packet = srcInfoFor(*file, ext, SOURCEEXCHANGEEXT_VERSION);
     QVERIFY(packet != nullptr);
 
     const uint32 wireId = readU32(packet->pBuffer, kHeaderSize + 2);
@@ -989,7 +1004,7 @@ void tst_SourceExchange::extSX_ipv6OnlySourceSurvivesRoundTrip()
     v6only->setOpenIPv6(true);
 
     auto file = makeFile({ v6only });
-    auto packet = file->createSrcInfoPacket(peer, SOURCEEXCHANGEEXT_VERSION, 0);
+    auto packet = srcInfoFor(*file, peer, SOURCEEXCHANGEEXT_VERSION);
     QVERIFY(packet != nullptr);
     QCOMPARE(readU32(packet->pBuffer, kHeaderSize + 2), htonl(0xFFFFFFFFu));
 
@@ -1145,7 +1160,7 @@ void tst_SourceExchange::receivedSources_areQueuedNotDialled()
     auto* peer = track(makeRequester());
     auto* src = track(makeHighIdClient(QStringLiteral("60.70.80.90"), 4662));
     auto file = makeFile({ src });
-    auto packet = file->createSrcInfoPacket(peer, 4, 0);
+    auto packet = srcInfoFor(*file, peer, 4);
     QVERIFY(packet != nullptr);
 
     DownloadQueue queue;

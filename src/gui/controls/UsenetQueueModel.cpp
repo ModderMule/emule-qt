@@ -7,10 +7,30 @@
 #include <QCborArray>
 #include <QDateTime>
 #include <QFont>
+#include <QIcon>
+#include <QLocale>
 
 #include <algorithm>
 
 namespace eMule {
+
+namespace {
+
+/// Most finished first, like the item rows; a file that cannot finish sorts last.
+int fileStateRank(UsenetFileRowState s)
+{
+    switch (s) {
+    case UsenetFileRowState::Complete: return 0;
+    case UsenetFileRowState::Partial:  return 1;
+    case UsenetFileRowState::Queued:   return 2;
+    case UsenetFileRowState::Held:     return 3;
+    case UsenetFileRowState::Skipped:  return 4;
+    case UsenetFileRowState::Missing:  return 5;
+    }
+    return 2;
+}
+
+} // namespace
 
 UsenetRowStatus usenetStatusFromInt(int v)
 {
@@ -71,6 +91,18 @@ UsenetItemRow usenetRowFromCbor(const QCborMap& m)
         f.index = int(fm.value(QStringLiteral("index")).toInteger(-1));
         f.previewable = fm.value(QStringLiteral("previewable")).toBool();
         f.previewNote = fm.value(QStringLiteral("previewNote")).toString();
+        f.skipped = fm.value(QStringLiteral("skipped")).toBool();
+        f.segmentMap = fm.value(QStringLiteral("segmentMap")).toByteArray();
+        if (const QCborValue state = fm.value(QStringLiteral("state")); state.isInteger()) {
+            f.state = static_cast<UsenetFileRowState>(std::clamp<qint64>(state.toInteger(), 0, 5));
+        } else {
+            // A daemon that sends no state: the nearest reading of what it did send.
+            const bool finished = f.percent >= 100 || fm.value(QStringLiteral("finalized")).toBool();
+            f.state = finished        ? (f.missingSegments > 0 ? UsenetFileRowState::Missing
+                                                               : UsenetFileRowState::Complete)
+                      : f.percent > 0 ? UsenetFileRowState::Partial
+                                      : UsenetFileRowState::Queued;
+        }
         r.files.append(f);
     }
 
@@ -85,7 +117,112 @@ UsenetItemRow usenetRowFromCbor(const QCborMap& m)
         pf.size = pm.value(QStringLiteral("size")).toInteger();
         r.publishedFiles.append(pf);
     }
+
+    r.bar = usenetItemBar(r);
     return r;
+}
+
+QByteArray usenetFileBar(const UsenetFileRow& file)
+{
+    if (!file.segmentMap.isEmpty())
+        return file.segmentMap;
+
+    switch (file.state) {
+    case UsenetFileRowState::Complete: return QByteArray(1, char(kUsenetBarDone));
+    case UsenetFileRowState::Missing:  return QByteArray(1, char(kUsenetBarMissing));
+    case UsenetFileRowState::Skipped:
+    case UsenetFileRowState::Held:     return QByteArray(1, char(kUsenetBarSkipped));
+    case UsenetFileRowState::Partial: {
+        // No map from the daemon, which only an older one omits. The share done
+        // is still worth drawing.
+        QByteArray bar(100, char(kUsenetBarQueued));
+        std::fill_n(bar.begin(), std::clamp(file.percent, 0, 100), char(kUsenetBarDone));
+        return bar;
+    }
+    case UsenetFileRowState::Queued:
+        break;
+    }
+    return QByteArray(1, char(kUsenetBarQueued));
+}
+
+QByteArray usenetItemBar(const UsenetItemRow& item)
+{
+    constexpr int kBuckets = 128;
+
+    // Held recovery volumes are left out: a tenth of a release that will mostly
+    // never download would read as a permanent blue tail.
+    qint64 total = 0;
+    for (const UsenetFileRow& f : item.files) {
+        if (f.state != UsenetFileRowState::Held)
+            total += std::max<qint64>(f.size, 1);
+    }
+    if (total <= 0)
+        return {};
+
+    // Worst first, the order one file's map uses: missing, in flight, queued.
+    const auto rank = [](quint8 code) {
+        switch (code) {
+        case kUsenetBarMissing:  return 4;
+        case kUsenetBarInFlight: return 3;
+        case kUsenetBarQueued:   return 2;
+        case kUsenetBarSkipped:  return 1;
+        default:                 return 0;
+        }
+    };
+
+    QByteArray out(kBuckets, char(kUsenetBarDone));
+    QList<bool> written(kBuckets, false);
+    qint64 offset = 0;
+    for (const UsenetFileRow& f : item.files) {
+        if (f.state == UsenetFileRowState::Held)
+            continue;
+        const qint64 size = std::max<qint64>(f.size, 1);
+        const QByteArray bar = usenetFileBar(f);
+        const int first = int(offset * kBuckets / total);
+        const int end = std::max(first + 1, int((offset + size) * kBuckets / total));
+        for (int b = first; b < end && b < kBuckets; ++b) {
+            const qsizetype at = std::min<qsizetype>(qint64(b - first) * bar.size() / (end - first),
+                                                     bar.size() - 1);
+            const quint8 code = quint8(bar.at(at));
+            if (!written[b] || rank(code) > rank(quint8(out.at(b)))) {
+                out[b] = char(code);
+                written[b] = true;
+            }
+        }
+        offset += size;
+    }
+    return out;
+}
+
+QString usenetFileStateText(const UsenetFileRow& file, bool itemActive)
+{
+    switch (file.state) {
+    case UsenetFileRowState::Skipped:  return QObject::tr("Skipped");
+    case UsenetFileRowState::Held:     return QObject::tr("Held back — fetched if a repair needs it");
+    case UsenetFileRowState::Missing:
+        return QObject::tr("%n article(s) missing", nullptr, file.missingSegments);
+    case UsenetFileRowState::Complete: return QObject::tr("Complete");
+    case UsenetFileRowState::Partial:
+        if (file.missingSegments > 0)
+            return QObject::tr("%n article(s) missing", nullptr, file.missingSegments);
+        return itemActive ? QObject::tr("Downloading") : QString();
+    case UsenetFileRowState::Queued:
+        return itemActive ? QObject::tr("Queued") : QString();
+    }
+    return {};
+}
+
+QIcon usenetFileStateIcon(const UsenetFileRow& file, bool itemActive)
+{
+    switch (file.state) {
+    case UsenetFileRowState::Partial:  return itemActive ? menuIcon("Download.ico") : QIcon();
+    case UsenetFileRowState::Queued:   return menuIcon("ClientsOnQueue.ico");
+    case UsenetFileRowState::Missing:  return menuIcon("Cancel.ico");
+    case UsenetFileRowState::Skipped:  return menuIcon("Pause.ico");
+    case UsenetFileRowState::Complete:
+    case UsenetFileRowState::Held:     break;
+    }
+    return {};
 }
 
 UsenetQueueModel::UsenetQueueModel(QObject* parent)
@@ -168,16 +305,34 @@ QVariant UsenetQueueModel::data(const QModelIndex& index, int role) const
         if (index.row() < 0 || index.row() >= files.size())
             return {};
         const UsenetFileRow& f = files.at(index.row());
+        const UsenetItemRow& owner = m_items[size_t(parentRow)];
+        const bool ownerActive = owner.status == UsenetRowStatus::Downloading
+                                 || owner.status == UsenetRowStatus::Queued;
+
+        if (index.column() == ColProgress) {
+            switch (role) {
+            case kUsenetBarRole:         return usenetFileBar(f);
+            case kUsenetBarPercentRole:  return f.percent;
+            case kUsenetBarPausedRole:
+                return owner.status == UsenetRowStatus::Paused
+                       || owner.status == UsenetRowStatus::Failed;
+            case kUsenetBarCompleteRole: return f.state == UsenetFileRowState::Complete;
+            case Qt::ToolTipRole:
+                return f.missingSegments > 0
+                           ? tr("%1% — %n article(s) missing", nullptr, f.missingSegments)
+                                 .arg(f.percent)
+                           : QStringLiteral("%1%").arg(f.percent);
+            default:
+                break;
+            }
+        }
 
         if (role == Qt::DisplayRole) {
             switch (index.column()) {
             case ColName:     return f.name;
             case ColSize:     return formatByteSize(f.size);
             case ColProgress: return QStringLiteral("%1%").arg(f.percent);
-            case ColStatus:
-                if (f.missingSegments > 0)
-                    return tr("%n article(s) missing", nullptr, f.missingSegments);
-                return f.percent >= 100 ? tr("Complete") : QString();
+            case ColStatus:   return usenetFileStateText(f, ownerActive);
             default:          return {};
             }
         }
@@ -186,11 +341,7 @@ QVariant UsenetQueueModel::data(const QModelIndex& index, int role) const
             case ColName:     return f.name;
             case ColSize:     return QVariant::fromValue(f.size);
             case ColProgress: return f.percent;
-            case ColStatus:
-                // Same most-finished-first order as the item rows below.
-                if (f.missingSegments > 0)
-                    return 2;
-                return f.percent >= 100 ? 0 : 1;
+            case ColStatus:   return fileStateRank(f.state);
             default:
                 // Every other column belongs to the item row and a file leaves it
                 // blank. Sorting on the NZB position keeps the children in posting
@@ -199,10 +350,23 @@ QVariant UsenetQueueModel::data(const QModelIndex& index, int role) const
                 return f.index;
             }
         }
-        if (role == Qt::ToolTipRole && !f.finalPath.isEmpty())
-            return f.finalPath;
-        if (role == Qt::ForegroundRole && f.isPar2)
+        // Checked means "downloads". PAR2 files have no box: the queue fetches
+        // them when a repair needs them, which is not the user's call per file.
+        if (role == Qt::CheckStateRole && index.column() == ColName && !f.isPar2)
+            return int(f.skipped ? Qt::Unchecked : Qt::Checked);
+        if (role == Qt::DecorationRole && index.column() == ColStatus)
+            return usenetFileStateIcon(f, ownerActive);
+        if (role == Qt::ToolTipRole) {
+            if (index.column() == ColName && f.skipped)
+                return tr("Skipped — tick it to download this file");
+            if (!f.finalPath.isEmpty())
+                return f.finalPath;
+            return {};
+        }
+        if (role == Qt::ForegroundRole
+            && (f.isPar2 || f.state == UsenetFileRowState::Skipped)) {
             return QVariant::fromValue(QColor(0x88, 0x88, 0x88));
+        }
         return {};
     }
 
@@ -210,6 +374,29 @@ QVariant UsenetQueueModel::data(const QModelIndex& index, int role) const
     if (index.row() < 0 || index.row() >= int(m_items.size()))
         return {};
     const UsenetItemRow& it = m_items[size_t(index.row())];
+
+    if (index.column() == ColProgress) {
+        switch (role) {
+        case kUsenetBarRole:         return it.bar;
+        // Whichever number the cell is about: a repair moves no articles.
+        case kUsenetBarPercentRole:  return isPostProcessing(it.status) ? it.postPercent
+                                                                        : it.percent;
+        case kUsenetBarPausedRole:
+            return it.status == UsenetRowStatus::Paused || it.status == UsenetRowStatus::Failed;
+        case kUsenetBarCompleteRole: return it.status == UsenetRowStatus::Complete;
+        case Qt::ToolTipRole: {
+            const QLocale locale;
+            QString tip = tr("%1% — %2 of %3 articles")
+                              .arg(QString::number(it.percent), locale.toString(it.doneSegments),
+                                   locale.toString(it.segmentCount));
+            if (it.missingSegments > 0)
+                tip += tr(", %n missing", nullptr, it.missingSegments);
+            return tip;
+        }
+        default:
+            break;
+        }
+    }
 
     switch (role) {
     case Qt::DisplayRole:
@@ -390,6 +577,37 @@ QVariant UsenetQueueModel::headerData(int section, Qt::Orientation orientation, 
     }
 }
 
+Qt::ItemFlags UsenetQueueModel::flags(const QModelIndex& index) const
+{
+    Qt::ItemFlags result = QAbstractItemModel::flags(index);
+    if (index.column() != ColName)
+        return result;
+
+    const UsenetFileRow* f = fileAt(index);
+    if (!f || f->isPar2)
+        return result;
+    // fileAt() has validated the parent row.
+    if (usenetItemAcceptsSkip(m_items[size_t(index.internalId() - 1)].status))
+        result |= Qt::ItemIsUserCheckable;
+    return result;
+}
+
+bool UsenetQueueModel::setData(const QModelIndex& index, const QVariant& value, int role)
+{
+    if (role != Qt::CheckStateRole || index.column() != ColName)
+        return false;
+
+    QString itemId;
+    const UsenetFileRow* f = fileAt(index, &itemId);
+    if (!f || f->isPar2)
+        return false;
+
+    const bool skip = value.toInt() == Qt::Unchecked;
+    if (skip != f->skipped)
+        emit fileSkipRequested(itemId, f->index, skip);
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // Updates
 // ---------------------------------------------------------------------------
@@ -458,8 +676,7 @@ void UsenetQueueModel::setItems(const QList<UsenetItemRow>& items)
         beginInsertRows({}, first, first + int(arrivals.size()) - 1);
         for (const UsenetItemRow& r : arrivals) {
             UsenetItemRow copy = r;
-            copy.lastDecodedBytes = r.decodedBytes;
-            copy.lastSampleMs = QDateTime::currentMSecsSinceEpoch();
+            copy.rateSampler.update(r.decodedBytes, QDateTime::currentMSecsSinceEpoch());
             m_items.push_back(std::move(copy));
         }
         endInsertRows();
@@ -489,8 +706,7 @@ void UsenetQueueModel::upsertItem(const UsenetItemRow& item)
     const int first = int(m_items.size());
     beginInsertRows({}, first, first);
     UsenetItemRow copy = item;
-    copy.lastDecodedBytes = item.decodedBytes;
-    copy.lastSampleMs = QDateTime::currentMSecsSinceEpoch();
+    copy.rateSampler.update(item.decodedBytes, QDateTime::currentMSecsSinceEpoch());
     m_items.push_back(std::move(copy));
     endInsertRows();
 }
@@ -559,46 +775,20 @@ void UsenetQueueModel::applyInto(UsenetItemRow& target, const UsenetItemRow& inc
     // Derive the rate before overwriting the sample it is measured against. The
     // daemon reports the engine's total rate, not a per-item one, so an item's
     // own speed can only come from its own byte counter moving.
-    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-    const qint64 elapsed = nowMs - target.lastSampleMs;
-    if (target.lastSampleMs > 0 && elapsed >= 500) {
-        const qint64 delta = incoming.decodedBytes - target.lastDecodedBytes;
-        target.speed = delta > 0 ? delta * 1000 / elapsed : 0;
-        target.lastDecodedBytes = incoming.decodedBytes;
-        target.lastSampleMs = nowMs;
-    } else if (target.lastSampleMs == 0) {
-        target.lastDecodedBytes = incoming.decodedBytes;
-        target.lastSampleMs = nowMs;
-    }
-
-    const qint64 speed = target.speed;
-    const qint64 lastBytes = target.lastDecodedBytes;
-    const qint64 lastMs = target.lastSampleMs;
+    ByteRateSampler sampler = target.rateSampler;
+    const qint64 speed = sampler.update(incoming.decodedBytes, QDateTime::currentMSecsSinceEpoch());
 
     target = incoming;
 
     target.speed = incoming.status == UsenetRowStatus::Downloading ? speed : 0;
-    target.lastDecodedBytes = lastBytes;
-    target.lastSampleMs = lastMs;
+    target.rateSampler = sampler;
 }
 
 int UsenetQueueModel::statusRank(const UsenetItemRow& item)
 {
     // Most finished first, so one click puts what needs attention at the bottom
-    // and what is done at the top. Deliberately not the enum's own values: those
-    // are wire order, where Paused sits between Downloading and Complete.
-    switch (item.status) {
-    case UsenetRowStatus::Complete:    return 0;
-    case UsenetRowStatus::Unpacking:   return 1;
-    case UsenetRowStatus::Repairing:   return 2;
-    case UsenetRowStatus::Verifying:   return 3;
-    case UsenetRowStatus::Downloading: return 4;
-    case UsenetRowStatus::Checking:    return 5;
-    case UsenetRowStatus::Queued:      return 6;
-    case UsenetRowStatus::Paused:      return 7;
-    case UsenetRowStatus::Failed:      return 8;
-    }
-    return 9;
+    // and what is done at the top. Shared with the web UI's sort.
+    return usenetStatusRank(int(item.status));
 }
 
 int UsenetQueueModel::rowOf(const QString& id) const

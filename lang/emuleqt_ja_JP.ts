@@ -6,12 +6,12 @@
     <message>
         <location filename="../src/core/media/ContainerSniffer.cpp" line="+164"/>
         <source>Named .%1 but matches no media container we recognise — very likely a fake.</source>
-        <translation type="unfinished"></translation>
+        <translation>.%1 という名前ですが、認識できるメディアコンテナではありません — 偽物の可能性が非常に高いです。</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Named .%1 but the contents are %2.</source>
-        <translation type="unfinished"></translation>
+        <translation>.%1 という名前ですが、中身は %2 です。</translation>
     </message>
 </context>
 <context>
@@ -179,7 +179,7 @@ HTTP キャッシュが有効になり、この鍵がアップロード用に保
         <translation>%1 の HTTP キャッシュ設定は適用されませんでした。</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+22"/>
         <location line="+2"/>
         <source>HTTP Cache configured for %1.</source>
         <translation>%1 の HTTP キャッシュを設定しました。</translation>
@@ -193,7 +193,7 @@ HTTP キャッシュが有効になり、この鍵がアップロード用に保
 <context>
     <name>IpcFeedback</name>
     <message>
-        <location filename="../src/gui/utils/IpcFeedback.cpp" line="+22"/>
+        <location filename="../src/gui/utils/IpcFeedback.cpp" line="+24"/>
         <source>The request was rejected by eMule.</source>
         <translation>リクエストは eMule によって拒否されました。</translation>
     </message>
@@ -203,19 +203,64 @@ HTTP キャッシュが有効になり、この鍵がアップロード用に保
     <message>
         <location filename="../src/gui/utils/PreviewLauncher.cpp" line="+195"/>
         <source>Not connected to the core.</source>
-        <translation type="unfinished"></translation>
+        <translation>コアに接続されていません。</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>The core has not sent its stream token yet. It arrives with the next status update — try again in a moment.</source>
-        <translation type="unfinished"></translation>
+        <translation>コアはまだストリームトークンを送信していません。次のステータス更新で届きます — 少し待ってからもう一度お試しください。</translation>
     </message>
     <message>
         <location line="+10"/>
         <source>The core runs on another machine and its web server only listens on localhost.
 
 Enable Web Interface or REST API under Options → Web Interface.</source>
-        <translation type="unfinished"></translation>
+        <translation>コアは別のマシンで動作しており、その Web サーバーは localhost でのみ待ち受けています。
+
+オプション → Web インターフェース で Web インターフェースまたは REST API を有効にしてください。</translation>
+    </message>
+</context>
+<context>
+    <name>Priority</name>
+    <message>
+        <location filename="../src/gui/utils/PriorityText.cpp" line="+16"/>
+        <source>Very Low</source>
+        <translation>非常に低い</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Auto [Lo]</source>
+        <translation>自動 [低]</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Low</source>
+        <translation>低い</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Auto [Hi]</source>
+        <translation>自動 [高]</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>High</source>
+        <translation>高い</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Release</source>
+        <translation>リリース</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Auto [No]</source>
+        <translation>自動 [通常]</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Normal</source>
+        <translation>通常</translation>
     </message>
 </context>
 <context>
@@ -240,10 +285,12 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
-        <translation type="unfinished"></translation>
+        <translation>次のファイルはすでにダウンロード済みです。もう一度ダウンロードしますか？
+
+%1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+546"/>
+        <location filename="../src/gui/app/main.cpp" line="+556"/>
         <source>Download Added</source>
         <translation>ダウンロード追加</translation>
     </message>
@@ -273,42 +320,69 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
         <translation>サーバー接続が失われました。</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+67"/>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+35"/>
         <source>Very Low</source>
-        <translation>非常に低い</translation>
+        <translation type="vanished">非常に低い</translation>
+    </message>
+    <message>
+        <location filename="../src/gui/controls/UsenetQueueModel.cpp" line="+200"/>
+        <source>Skipped</source>
+        <translation>スキップ</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+1"/>
+        <source>Held back — fetched if a repair needs it</source>
+        <translation>保留中 — 修復に必要な場合に取得します</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+2"/>
+        <location line="+4"/>
+        <source>%n article(s) missing</source>
+        <translation>
+            <numerusform>%n 件の記事が欠落</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="-3"/>
+        <source>Complete</source>
+        <translation>完了</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Queued</source>
+        <translation>キュー待ち</translation>
+    </message>
+    <message>
+        <location line="+408"/>
+        <source>Very high</source>
+        <translation>非常に高い</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Low</source>
         <translation>低い</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+3"/>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+1"/>
-        <location line="+3"/>
+        <source>Very low</source>
+        <translation>非常に低い</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Normal</source>
         <translation>通常</translation>
     </message>
     <message>
-        <location line="-2"/>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="-2"/>
+        <location line="-3"/>
         <source>High</source>
         <translation>高い</translation>
     </message>
     <message>
-        <location line="+1"/>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+1"/>
         <source>Very High</source>
-        <translation>非常に高い</translation>
+        <translation type="vanished">非常に高い</translation>
     </message>
     <message>
-        <location line="+4"/>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+4"/>
         <source>Auto [%1]</source>
-        <translation>自動 [%1]</translation>
+        <translation type="vanished">自動 [%1]</translation>
     </message>
     <message>
         <location filename="../src/gui/utils/RatingIcons.cpp" line="+57"/>
@@ -339,16 +413,18 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
         <location line="+101"/>
         <source>
 Rating:	%1</source>
-        <translation type="unfinished"></translation>
+        <translation>
+評価:	%1</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>
 Has comments</source>
-        <translation type="unfinished"></translation>
+        <translation>
+コメントあり</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+13"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+56"/>
         <source>Server</source>
         <translation>サーバー</translation>
     </message>
@@ -364,7 +440,7 @@ Has comments</source>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+71"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+72"/>
         <source>Passive</source>
         <translation>パッシブ</translation>
     </message>
@@ -381,8 +457,7 @@ Has comments</source>
         <translation>HTTP キャッシュ</translation>
     </message>
     <message>
-        <location line="+200"/>
-        <location line="+14"/>
+        <location line="+226"/>
         <source>Yes</source>
         <translation>はい</translation>
     </message>
@@ -393,7 +468,7 @@ Has comments</source>
     </message>
     <message>
         <location line="+7"/>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="-25"/>
+        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+19"/>
         <source>Archive</source>
         <translation>アーカイブ</translation>
     </message>
@@ -455,7 +530,7 @@ Has comments</source>
         <translation>ソース交換</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="-215"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="-227"/>
         <location filename="../src/gui/controls/DownloadListModel.cpp" line="+3"/>
         <source>SLS</source>
         <translation>SLS</translation>
@@ -472,6 +547,7 @@ Has comments</source>
     </message>
     <message>
         <location line="+1"/>
+        <location filename="../src/gui/controls/UsenetQueueModel.cpp" line="-411"/>
         <source>Downloading</source>
         <translation>ダウンロード中</translation>
     </message>
@@ -486,7 +562,7 @@ Has comments</source>
         <translation>キャンセル済み</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="+277"/>
+        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="+282"/>
         <source>Total Overhead (Packets): 0 Bytes (0)</source>
         <translation>総オーバーヘッド (パケット): 0 Bytes (0)</translation>
     </message>
@@ -515,49 +591,51 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2776"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2777"/>
         <source>Test</source>
-        <translation type="unfinished">テスト</translation>
+        <translation>テスト</translation>
     </message>
     <message>
         <location filename="../src/gui/utils/FileAssociation.cpp" line="+155"/>
         <source>Could not write the file association to the registry.</source>
-        <translation type="unfinished"></translation>
+        <translation>ファイルの関連付けをレジストリに書き込めませんでした。</translation>
     </message>
     <message>
         <location line="+23"/>
         <source>Could not remove the file association from the registry.</source>
-        <translation type="unfinished"></translation>
+        <translation>ファイルの関連付けをレジストリから削除できませんでした。</translation>
     </message>
     <message>
         <location line="+15"/>
         <location line="+29"/>
         <source>No writable data directory.</source>
-        <translation type="unfinished"></translation>
+        <translation>書き込み可能なデータディレクトリがありません。</translation>
     </message>
     <message>
         <location line="-23"/>
         <source>Could not create %1.</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 を作成できませんでした。</translation>
     </message>
     <message>
         <location filename="../src/gui/utils/NzbAdd.cpp" line="+25"/>
         <source>Could not add &quot;%1&quot;.</source>
-        <translation type="unfinished"></translation>
+        <translation>「%1」を追加できませんでした。</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+37"/>
+        <location line="+42"/>
         <location line="+10"/>
         <source>Add NZB</source>
-        <translation type="unfinished"></translation>
+        <translation>NZBを追加</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>%1
 
 Download it again?</source>
-        <translation type="unfinished"></translation>
+        <translation>%1
+
+もう一度ダウンロードしますか？</translation>
     </message>
 </context>
 <context>
@@ -565,58 +643,63 @@ Download it again?</source>
     <message>
         <location filename="../src/core/utils/OtherFunctions.cpp" line="+405"/>
         <source>Not rated</source>
-        <translation type="unfinished"></translation>
+        <translation>未評価</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Invalid / Corrupt / Fake</source>
-        <translation type="unfinished"></translation>
+        <translation>無効 / 破損 / 偽物</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Poor</source>
-        <translation type="unfinished">悪い</translation>
+        <translation>悪い</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Fair</source>
-        <translation type="unfinished">普通</translation>
+        <translation>普通</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Good</source>
-        <translation type="unfinished">良い</translation>
+        <translation>良い</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Excellent</source>
-        <translation type="unfinished">優秀</translation>
+        <translation>優秀</translation>
     </message>
 </context>
 <context>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4110"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
     <message>
         <location line="+1"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1"/>
         <source>KB</source>
         <translation>KB</translation>
     </message>
     <message>
         <location line="+1"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1"/>
         <source>MB</source>
         <translation>MB</translation>
     </message>
     <message>
         <location line="+1"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1"/>
         <source>GB</source>
         <translation>GB</translation>
     </message>
     <message>
         <location line="+1"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1"/>
         <source>TB</source>
         <translation>TB</translation>
     </message>
@@ -645,37 +728,73 @@ Download it again?</source>
         <source>TB/s</source>
         <translation>TB/s</translation>
     </message>
+    <message>
+        <location line="+9"/>
+        <source>k</source>
+        <translation>k</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>M</source>
+        <translation>M</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>G</source>
+        <translation>G</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>T</source>
+        <translation>T</translation>
+    </message>
+    <message>
+        <location line="+22"/>
+        <source>secs</source>
+        <translation>秒</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>mins</source>
+        <translation>分</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>h</source>
+        <translation>時間</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>d</source>
+        <translation>日</translation>
+    </message>
 </context>
 <context>
     <name>UsenetDetailsDialog</name>
     <message numerus="yes">
-        <location filename="../src/gui/dialogs/UsenetDetailsDialog.cpp" line="+64"/>
+        <location filename="../src/gui/dialogs/UsenetDetailsDialog.cpp" line="+66"/>
         <source>%1 (and %n other(s))</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%1 (ほか %n 件)</numerusform>
         </translation>
     </message>
     <message numerus="yes">
-        <location line="+10"/>
         <source>%n article(s) missing</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
+        <translation type="vanished">
+            <numerusform>%n 件の記事が欠落</numerusform>
         </translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>Complete</source>
-        <translation type="unfinished">完了</translation>
+        <translation type="vanished">完了</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Downloading</source>
-        <translation type="unfinished">ダウンロード中</translation>
+        <translation type="vanished">ダウンロード中</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Queued</source>
-        <translation type="unfinished">キュー待ち</translation>
+        <translation type="vanished">キュー待ち</translation>
     </message>
 </context>
 <context>
@@ -755,76 +874,89 @@ Download it again?</source>
 <context>
     <name>eMule::AddNzbFilesDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/AddNzbFilesDialog.cpp" line="+10"/>
+        <location filename="../src/gui/dialogs/AddNzbFilesDialog.cpp" line="+15"/>
         <source>Add NZB</source>
-        <translation type="unfinished"></translation>
+        <translation>NZBを追加</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>NZB files:</source>
-        <translation type="unfinished"></translation>
+        <translation>NZB ファイル:</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Add</source>
-        <translation type="unfinished">追加</translation>
+        <translation>追加</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Password:</source>
-        <translation type="unfinished">パスワード：</translation>
+        <translation>パスワード：</translation>
+    </message>
+    <message>
+        <location line="+18"/>
+        <location line="+31"/>
+        <source>Choose Files…</source>
+        <translation>ファイルを選択…</translation>
+    </message>
+    <message numerus="yes">
+        <location line="-1"/>
+        <source>Choose Files… (%n skipped)</source>
+        <translation>
+            <numerusform>ファイルを選択… (%n 件スキップ)</numerusform>
+        </translation>
     </message>
 </context>
 <context>
     <name>eMule::AddNzbUrlDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/AddNzbUrlDialog.cpp" line="+15"/>
-        <location line="+25"/>
+        <location filename="../src/gui/dialogs/AddNzbUrlDialog.cpp" line="+16"/>
+        <location line="+27"/>
         <location line="+31"/>
-        <location line="+64"/>
+        <location line="+71"/>
         <source>Add NZB from URL</source>
-        <translation type="unfinished"></translation>
+        <translation>URLからNZBを追加</translation>
     </message>
     <message>
-        <location line="-118"/>
+        <location line="-127"/>
         <source>NZB URLs:</source>
-        <translation type="unfinished"></translation>
+        <translation>NZB の URL:</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Paste one or more http(s) links to .nzb files here, one per line...</source>
-        <translation type="unfinished"></translation>
+        <translation>.nzb ファイルへの http(s) リンクを 1 行に 1 つずつここに貼り付けてください...</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Download</source>
-        <translation type="unfinished">ダウンロード</translation>
+        <translation>ダウンロード</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Password:</source>
-        <translation type="unfinished">パスワード：</translation>
+        <translation>パスワード：</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+11"/>
         <source>Not Connected</source>
-        <translation type="unfinished">未接続</translation>
+        <translation>未接続</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Not connected to the eMule core.</source>
-        <translation type="unfinished"></translation>
+        <translation>eMule コアに接続されていません。</translation>
     </message>
     <message>
         <location line="+10"/>
         <source>Please add at most %1 links at a time.</source>
-        <translation type="unfinished"></translation>
+        <translation>一度に追加できるリンクは %1 件までです。</translation>
     </message>
     <message numerus="yes">
         <location line="+23"/>
         <source>Queued %n NZB(s) from URL.</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>URL から %n 個の NZB をキューに追加しました。</numerusform>
         </translation>
     </message>
     <message>
@@ -832,20 +964,24 @@ Download it again?</source>
         <source>These links could not be added:
 
 %1</source>
-        <translation type="unfinished"></translation>
+        <translation>次のリンクは追加できませんでした:
+
+%1</translation>
     </message>
     <message>
         <location line="+32"/>
         <source>Could not reach the eMule core.</source>
-        <translation type="unfinished"></translation>
+        <translation>eMule コアに接続できませんでした。</translation>
     </message>
     <message numerus="yes">
-        <location line="+32"/>
+        <location line="+39"/>
         <source>You have already downloaded %n of these. Download them again?
 
 %1</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>このうち %n 件はすでにダウンロード済みです。もう一度ダウンロードしますか？
+
+%1</numerusform>
         </translation>
     </message>
 </context>
@@ -1085,95 +1221,95 @@ Download it again?</source>
     <message>
         <location filename="../src/gui/dialogs/CategoryDialog.cpp" line="+34"/>
         <source>Edit Category-Properties</source>
-        <translation type="unfinished"></translation>
+        <translation>カテゴリのプロパティを編集</translation>
     </message>
     <message>
         <location line="+6"/>
         <source>Title</source>
-        <translation type="unfinished">タイトル</translation>
+        <translation>タイトル</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Comments</source>
-        <translation type="unfinished">コメント</translation>
+        <translation>コメント</translation>
     </message>
     <message>
         <location line="+13"/>
         <location line="+71"/>
         <source>Choose a folder for incoming files</source>
-        <translation type="unfinished"></translation>
+        <translation>受信ファイル用のフォルダを選択</translation>
     </message>
     <message>
         <location line="-67"/>
         <source>Incoming Files  (Folder will be shared!)</source>
-        <translation type="unfinished"></translation>
+        <translation>受信ファイル  (フォルダは共有されます！)</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Low</source>
-        <translation type="unfinished">低い</translation>
+        <translation>低い</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Normal</source>
-        <translation type="unfinished">通常</translation>
+        <translation>通常</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>High</source>
-        <translation type="unfinished">高い</translation>
+        <translation>高い</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Priority for this category</source>
-        <translation type="unfinished"></translation>
+        <translation>このカテゴリの優先度</translation>
     </message>
     <message>
         <location line="+6"/>
         <location line="+59"/>
         <source>Color</source>
-        <translation type="unfinished">色</translation>
+        <translation>色</translation>
     </message>
     <message>
         <location line="-56"/>
         <source>Auto cat. assignment (separate patterns with |)</source>
-        <translation type="unfinished"></translation>
+        <translation>カテゴリの自動割り当て（パターンは | で区切ります）</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>As Regular Expression</source>
-        <translation type="unfinished"></translation>
+        <translation>正規表現として</translation>
     </message>
     <message>
         <location line="+9"/>
         <source>Stored for compatibility — the per-category view filter is not implemented yet.</source>
-        <translation type="unfinished"></translation>
+        <translation>互換性のために保存されます — カテゴリごとの表示フィルターはまだ実装されていません。</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Regular expression for view filter:</source>
-        <translation type="unfinished"></translation>
+        <translation>表示フィルターの正規表現:</translation>
     </message>
     <message>
         <location line="+55"/>
         <source>A category needs a title.</source>
-        <translation type="unfinished"></translation>
+        <translation>カテゴリにはタイトルが必要です。</translation>
     </message>
     <message>
         <location line="+15"/>
         <source>Invalid folder. Folder can not be created. Please check name and location.</source>
-        <translation type="unfinished"></translation>
+        <translation>無効なフォルダです。フォルダを作成できません。名前と場所を確認してください。</translation>
     </message>
     <message>
         <location line="+10"/>
         <location line="+6"/>
         <source>Bad regular expression</source>
-        <translation type="unfinished"></translation>
+        <translation>正規表現が正しくありません</translation>
     </message>
     <message>
         <location line="+34"/>
         <source>Default</source>
-        <translation type="unfinished"></translation>
+        <translation>既定</translation>
     </message>
 </context>
 <context>
@@ -1183,55 +1319,57 @@ Download it again?</source>
         <location line="+47"/>
         <location line="+59"/>
         <source>All</source>
-        <translation type="unfinished">すべて</translation>
+        <translation>すべて</translation>
     </message>
     <message>
         <location line="-52"/>
         <source>Cat %1</source>
-        <translation type="unfinished">カテゴリ %1</translation>
+        <translation>カテゴリ %1</translation>
     </message>
     <message>
         <location line="+74"/>
         <source>Category</source>
-        <translation type="unfinished">カテゴリ</translation>
+        <translation>カテゴリ</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Category (%1)</source>
-        <translation type="unfinished"></translation>
+        <translation>カテゴリ (%1)</translation>
     </message>
     <message>
         <location line="+12"/>
         <source>Open Incoming Folder</source>
-        <translation type="unfinished">受信フォルダを開く</translation>
+        <translation>受信フォルダを開く</translation>
     </message>
     <message>
         <location line="+12"/>
         <source>Add Category...</source>
-        <translation type="unfinished"></translation>
+        <translation>カテゴリを追加...</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Edit Category...</source>
-        <translation type="unfinished"></translation>
+        <translation>カテゴリを編集...</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+136"/>
+        <location line="+138"/>
         <source>Remove Category</source>
-        <translation type="unfinished"></translation>
+        <translation>カテゴリを削除</translation>
     </message>
     <message>
         <location line="-44"/>
         <source>Could not save categories: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>カテゴリを保存できませんでした: %1</translation>
     </message>
     <message>
         <location line="+45"/>
         <source>Remove the category &quot;%1&quot;?
 
 Its downloads keep their files and move to All.</source>
-        <translation type="unfinished"></translation>
+        <translation>カテゴリ「%1」を削除しますか?
+
+そのダウンロードはファイルを保持したまま「すべて」に移動します。</translation>
     </message>
 </context>
 <context>
@@ -1382,7 +1520,7 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::ClientListModel</name>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+290"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+304"/>
         <location line="+13"/>
         <location line="+13"/>
         <location line="+15"/>
@@ -1502,7 +1640,23 @@ Its downloads keep their files and move to All.</source>
         <translation>ダウンロード済み</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-176"/>
+        <location line="+36"/>
+        <source>Low ID</source>
+        <translation>Low ID</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Yes</source>
+        <translation>はい</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>No</source>
+        <translation>いいえ</translation>
+    </message>
+    <message>
+        <location line="+138"/>
         <source>Connected</source>
         <translation>接続済み</translation>
     </message>
@@ -1548,7 +1702,7 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::CollectionCreateDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CollectionCreateDialog.cpp" line="+52"/>
+        <location filename="../src/gui/dialogs/CollectionCreateDialog.cpp" line="+54"/>
         <source>Modify Collection...</source>
         <translation>コレクションを編集...</translation>
     </message>
@@ -1619,7 +1773,7 @@ Its downloads keep their files and move to All.</source>
         <translation>キャンセル</translation>
     </message>
     <message>
-        <location line="+89"/>
+        <location line="+91"/>
         <source>Shared (%1)</source>
         <translation>共有 (%1)</translation>
     </message>
@@ -1631,12 +1785,13 @@ Its downloads keep their files and move to All.</source>
     <message>
         <location line="+26"/>
         <location line="+6"/>
-        <location line="+25"/>
+        <location line="+42"/>
+        <location line="+9"/>
         <source>Collection</source>
         <translation>コレクション</translation>
     </message>
     <message>
-        <location line="-31"/>
+        <location line="-57"/>
         <source>Please enter a collection name.</source>
         <translation>コレクション名を入力してください。</translation>
     </message>
@@ -1646,7 +1801,12 @@ Its downloads keep their files and move to All.</source>
         <translation>コレクションが空です。先にファイルを追加してください。</translation>
     </message>
     <message>
-        <location line="+26"/>
+        <location line="+43"/>
+        <source>Do you want to replace existing file?</source>
+        <translation>既存のファイルを置き換えますか？</translation>
+    </message>
+    <message>
+        <location line="+9"/>
         <source>Failed to save collection: %1</source>
         <translation>コレクションを保存できませんでした: %1</translation>
     </message>
@@ -1719,37 +1879,37 @@ Its downloads keep their files and move to All.</source>
     <message>
         <location filename="../src/gui/dialogs/CommentEditPanel.cpp" line="+70"/>
         <source>Comment This File! (This text will be shown to all users.)</source>
-        <translation type="unfinished"></translation>
+        <translation>このファイルにコメントしましょう！（このテキストはすべてのユーザーに表示されます。）</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>For a film, you can say its length, its story, the language... And if it is a fake, you can inform other eMule users...</source>
-        <translation type="unfinished"></translation>
+        <translation>映画なら、長さ、あらすじ、言語などを書けます... 偽物の場合は、他の eMule ユーザーに知らせることができます...</translation>
     </message>
     <message>
         <location line="+15"/>
         <source>File Quality</source>
-        <translation type="unfinished"></translation>
+        <translation>ファイルの品質</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Choose the file rating or advice users if the file is invalid!</source>
-        <translation type="unfinished"></translation>
+        <translation>ファイルの評価を選ぶか、ファイルが無効な場合はユーザーに知らせてください！</translation>
     </message>
     <message>
         <location line="+13"/>
         <source>Reset</source>
-        <translation type="unfinished">リセット</translation>
+        <translation>リセット</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>Apply</source>
-        <translation type="unfinished">適用</translation>
+        <translation>適用</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Comment</source>
-        <translation type="unfinished">コメント</translation>
+        <translation>コメント</translation>
     </message>
 </context>
 <context>
@@ -1892,14 +2052,14 @@ Enter the address and authentication token of a remote core.</source>
 <context>
     <name>eMule::DetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/DetailDialog.cpp" line="+201"/>
+        <location filename="../src/gui/dialogs/DetailDialog.cpp" line="+202"/>
         <source>Search Kad</source>
         <translation>Kad を検索</translation>
     </message>
     <message>
         <location line="+95"/>
         <source>Comments</source>
-        <translation type="unfinished">コメント</translation>
+        <translation>コメント</translation>
     </message>
     <message>
         <location line="+37"/>
@@ -1915,18 +2075,27 @@ Enter the address and authentication token of a remote core.</source>
 <context>
     <name>eMule::DownloadListModel</name>
     <message>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+154"/>
-        <location line="+439"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+616"/>
         <source>Downloading</source>
         <translation>ダウンロード中</translation>
     </message>
     <message>
-        <location line="-357"/>
+        <location line="-362"/>
         <source>Auto [%1]</source>
         <translation>自動 [%1]</translation>
     </message>
     <message>
+        <location line="-81"/>
+        <source>Queue Full</source>
+        <translation>キューが満杯</translation>
+    </message>
+    <message>
         <location line="+35"/>
+        <source>Available parts: %1 / %2</source>
+        <translation>利用可能なパート: %1 / %2</translation>
+    </message>
+    <message>
+        <location line="+81"/>
         <source>File Name:	%1
 ED2K Hash:	%2
 Size:	%3
@@ -1951,7 +2120,7 @@ ED2K ハッシュ:	%2
 転送データ:	%12</translation>
     </message>
     <message>
-        <location line="+69"/>
+        <location line="+68"/>
         <source>File Name</source>
         <translation>ファイル名</translation>
     </message>
@@ -2016,7 +2185,7 @@ ED2K ハッシュ:	%2
         <translation>追加日</translation>
     </message>
     <message>
-        <location line="+212"/>
+        <location line="+218"/>
         <source>Importing part</source>
         <translation>パートをインポート中</translation>
     </message>
@@ -2532,93 +2701,93 @@ ED2K ハッシュ:	%2
     <message>
         <location filename="../src/gui/controls/IndexerResultsModel.cpp" line="+25"/>
         <source>today</source>
-        <translation type="unfinished"></translation>
+        <translation>今日</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>1 day</source>
-        <translation type="unfinished"></translation>
+        <translation>1 日</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>%1 days</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 日</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>%1 months</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 か月</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>%1 years</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 年</translation>
     </message>
     <message>
         <location line="+102"/>
         <source>Posted: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>投稿日: %1</translation>
     </message>
     <message>
         <location line="+6"/>
         <source>%1 files</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 ファイル</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Password protected</source>
-        <translation type="unfinished"></translation>
+        <translation>パスワード保護</translation>
     </message>
     <message>
         <location line="+27"/>
         <source>Name</source>
-        <translation type="unfinished">名前</translation>
+        <translation>名前</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Size</source>
-        <translation type="unfinished">サイズ</translation>
+        <translation>サイズ</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Age</source>
-        <translation type="unfinished"></translation>
+        <translation>経過日数</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Category</source>
-        <translation type="unfinished">カテゴリ</translation>
+        <translation>カテゴリ</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Grabs</source>
-        <translation type="unfinished"></translation>
+        <translation>取得数</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Indexer</source>
-        <translation type="unfinished"></translation>
+        <translation>インデクサー</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Seeders</source>
-        <translation type="unfinished"></translation>
+        <translation>シーダー</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Peers</source>
-        <translation type="unfinished"></translation>
+        <translation>ピア</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Known</source>
-        <translation type="unfinished">既知</translation>
+        <translation>既知</translation>
     </message>
 </context>
 <context>
     <name>eMule::IrcPanel</name>
     <message>
-        <location filename="../src/gui/panels/IrcPanel.cpp" line="+162"/>
+        <location filename="../src/gui/panels/IrcPanel.cpp" line="+131"/>
         <source>Select an IRC nick.</source>
         <translation>IRC ニックネームを選択してください。</translation>
     </message>
@@ -2654,12 +2823,12 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+33"/>
-        <location line="+561"/>
+        <location line="+537"/>
         <source>Nick</source>
         <translation>ニックネーム</translation>
     </message>
     <message>
-        <location line="-502"/>
+        <location line="-478"/>
         <source>Status</source>
         <translation>ステータス</translation>
     </message>
@@ -2729,7 +2898,7 @@ Please choose another:</source>
         <translation>チャンネル</translation>
     </message>
     <message>
-        <location line="+285"/>
+        <location line="+261"/>
         <source>Nick (%1)</source>
         <translation>ニックネーム (%1)</translation>
     </message>
@@ -2737,7 +2906,7 @@ Please choose another:</source>
 <context>
     <name>eMule::KadContactHistogram</name>
     <message>
-        <location filename="../src/gui/controls/KadContactHistogram.cpp" line="+190"/>
+        <location filename="../src/gui/controls/KadContactHistogram.cpp" line="+193"/>
         <source>Contacts</source>
         <translation>連絡先</translation>
     </message>
@@ -2750,7 +2919,7 @@ Please choose another:</source>
 <context>
     <name>eMule::KadContactsModel</name>
     <message>
-        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+81"/>
+        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+67"/>
         <source>Status</source>
         <translation>ステータス</translation>
     </message>
@@ -2804,29 +2973,29 @@ Please choose another:</source>
         <location line="-431"/>
         <location line="+12"/>
         <location line="+369"/>
-        <location line="+92"/>
+        <location line="+94"/>
         <source>▸ Current Searches (0)</source>
         <translation>▸ 現在の検索 (0)</translation>
     </message>
     <message>
-        <location line="-266"/>
-        <location line="+328"/>
+        <location line="-268"/>
+        <location line="+332"/>
         <source>▸ Search Details</source>
         <translation>▸ 検索詳細</translation>
     </message>
     <message>
-        <location line="-248"/>
+        <location line="-252"/>
         <source>Recheck Firewall</source>
         <translation>ファイアウォールを再チェック</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+235"/>
+        <location line="+239"/>
         <source>Connect</source>
         <translation>接続</translation>
     </message>
     <message>
-        <location line="-443"/>
+        <location line="-447"/>
         <location line="+223"/>
         <location line="+28"/>
         <source>Bootstrap</source>
@@ -2876,13 +3045,13 @@ Please choose another:</source>
         <translation>URL から Nodes.dat：</translation>
     </message>
     <message>
-        <location line="+135"/>
+        <location line="+137"/>
         <location line="+3"/>
         <source>▸ Contacts (%1)</source>
         <translation>▸ 連絡先 (%1)</translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="+41"/>
         <source>▸ Current Searches (%1)</source>
         <translation>▸ 現在の検索 (%1)</translation>
     </message>
@@ -2900,7 +3069,7 @@ Please choose another:</source>
 <context>
     <name>eMule::KadSearchesModel</name>
     <message>
-        <location filename="../src/gui/controls/KadSearchesModel.cpp" line="+76"/>
+        <location filename="../src/gui/controls/KadSearchesModel.cpp" line="+78"/>
         <source>No.</source>
         <translation>番号</translation>
     </message>
@@ -3008,12 +3177,12 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1030"/>
+        <location line="+1050"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K：未接続</translation>
     </message>
     <message>
-        <location line="-1016"/>
+        <location line="-1036"/>
         <source>Kad: Connected</source>
         <translation>Kad：接続済み</translation>
     </message>
@@ -3029,17 +3198,17 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1008"/>
+        <location line="+1028"/>
         <source>Kad: Disconnected</source>
         <translation>Kad：未接続</translation>
     </message>
     <message>
-        <location line="-999"/>
+        <location line="-1019"/>
         <source>Users: %1 | Files: %2</source>
         <translation>ユーザー：%1 | ファイル：%2</translation>
     </message>
     <message>
-        <location line="+251"/>
+        <location line="+269"/>
         <source>Open Incoming Folder...</source>
         <translation>受信フォルダを開く...</translation>
     </message>
@@ -3079,14 +3248,14 @@ Please choose another:</source>
         <translation>よくある質問</translation>
     </message>
     <message>
-        <location line="-515"/>
+        <location line="-533"/>
         <location line="+7"/>
-        <location line="+511"/>
+        <location line="+529"/>
         <source>Version Check</source>
         <translation>バージョン確認</translation>
     </message>
     <message>
-        <location line="-573"/>
+        <location line="-591"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt を終了</translation>
     </message>
@@ -3160,7 +3329,7 @@ Up: %3 | Down: %4</source>
 上り: %3 | 下り: %4</translation>
     </message>
     <message>
-        <location line="+70"/>
+        <location line="+72"/>
         <source>Confirm Exit</source>
         <translation>終了の確認</translation>
     </message>
@@ -3170,14 +3339,14 @@ Up: %3 | Down: %4</source>
         <translation>eMule を終了してもよろしいですか？</translation>
     </message>
     <message>
-        <location line="+131"/>
+        <location line="+147"/>
         <source>Open Downloads Folder in Browser</source>
-        <translation type="unfinished"></translation>
+        <translation>ダウンロードフォルダをブラウザで開く</translation>
     </message>
     <message>
         <location line="+34"/>
         <source>Open WebUI</source>
-        <translation type="unfinished"></translation>
+        <translation>Web インターフェースを開く</translation>
     </message>
     <message>
         <location line="+5"/>
@@ -3200,36 +3369,38 @@ Up: %3 | Down: %4</source>
         <translation>スケジューラを有効化</translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="+41"/>
         <source>Cannot Open Downloads Folder</source>
-        <translation type="unfinished"></translation>
+        <translation>ダウンロードフォルダを開けません</translation>
     </message>
     <message>
         <location line="+10"/>
         <source>Cannot Open Web Interface</source>
-        <translation type="unfinished"></translation>
+        <translation>Web インターフェースを開けません</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Not connected to the core.</source>
-        <translation type="unfinished"></translation>
+        <translation>コアに接続されていません。</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Web Interface Disabled</source>
-        <translation type="unfinished"></translation>
+        <translation>Web インターフェースは無効です</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>The web interface is disabled.
 
 Enable it under Options → Web Interface, then try again.</source>
-        <translation type="unfinished"></translation>
+        <translation>Web インターフェースは無効になっています。
+
+オプション → Web インターフェース で有効にしてから、もう一度お試しください。</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Open Options</source>
-        <translation type="unfinished"></translation>
+        <translation>オプションを開く</translation>
     </message>
     <message>
         <location line="+141"/>
@@ -3347,6 +3518,11 @@ Enable it under Options → Web Interface, then try again.</source>
         <source>Double-click for Network Information</source>
         <translation>ダブルクリックでネットワーク情報を表示</translation>
     </message>
+    <message>
+        <location line="+25"/>
+        <source>New message — double-click to read</source>
+        <translation>新しいメッセージ — ダブルクリックで読む</translation>
+    </message>
 </context>
 <context>
     <name>eMule::MediaInfoPanel</name>
@@ -3437,12 +3613,12 @@ Enable it under Options → Web Interface, then try again.</source>
 <context>
     <name>eMule::MessagesPanel</name>
     <message>
-        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+121"/>
+        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+139"/>
         <source>Me</source>
         <translation>自分</translation>
     </message>
     <message>
-        <location line="+72"/>
+        <location line="+76"/>
         <source>Friends (0)</source>
         <translation>フレンド (0)</translation>
     </message>
@@ -3453,12 +3629,12 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
     <message>
         <location line="+15"/>
-        <location line="+289"/>
+        <location line="+291"/>
         <source>Name:</source>
         <translation>名前：</translation>
     </message>
     <message>
-        <location line="-288"/>
+        <location line="-290"/>
         <source>Hash:</source>
         <translation>ハッシュ：</translation>
     </message>
@@ -3538,7 +3714,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>検索...</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="+32"/>
         <source>Friends (%1)</source>
         <translation>フレンド (%1)</translation>
     </message>
@@ -3632,7 +3808,7 @@ Enable it under Options → Web Interface, then try again.</source>
 <context>
     <name>eMule::NetworkInfoDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+52"/>
+        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+53"/>
         <source>Network Information</source>
         <translation>ネットワーク情報</translation>
     </message>
@@ -3643,11 +3819,12 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
     <message>
         <location line="+15"/>
+        <location line="+10"/>
         <source>&lt;b&gt;Not connected to daemon.&lt;/b&gt;</source>
         <translation>&lt;b&gt;デーモンに接続されていません。&lt;/b&gt;</translation>
     </message>
     <message>
-        <location line="+56"/>
+        <location line="+52"/>
         <source>Connected</source>
         <translation>接続済み</translation>
     </message>
@@ -3712,6 +3889,60 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
 </context>
 <context>
+    <name>eMule::NzbFileChooserDialog</name>
+    <message>
+        <location filename="../src/gui/dialogs/NzbFileChooserDialog.cpp" line="+42"/>
+        <source>Choose Files</source>
+        <translation>ファイルを選択</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Unchecked files are not downloaded. The volumes of one archive are checked together, and PAR2 files are fetched only when a repair needs them.</source>
+        <translation>チェックを外したファイルはダウンロードされません。1 つのアーカイブのボリュームはまとめてチェックされ、PAR2 ファイルは修復に必要な場合にのみ取得されます。</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Name</source>
+        <translation>名前</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Size</source>
+        <translation>サイズ</translation>
+    </message>
+    <message>
+        <location line="+19"/>
+        <source>Reading…</source>
+        <translation>読み込み中…</translation>
+    </message>
+    <message>
+        <location line="+35"/>
+        <source>PAR2 files are fetched when a repair needs them.</source>
+        <translation>PAR2 ファイルは修復に必要な場合に取得されます。</translation>
+    </message>
+    <message>
+        <location line="+20"/>
+        <location line="+20"/>
+        <source>Not connected to the eMule core.</source>
+        <translation>eMule コアに接続されていません。</translation>
+    </message>
+    <message>
+        <location line="-14"/>
+        <source>Cannot read %1.</source>
+        <translation>%1 を読み取れません。</translation>
+    </message>
+    <message>
+        <location line="+32"/>
+        <source>This file could not be read.</source>
+        <translation>このファイルは読み取れませんでした。</translation>
+    </message>
+    <message>
+        <location line="+25"/>
+        <source>Keep at least one file of &quot;%1&quot;.</source>
+        <translation>「%1」のファイルを少なくとも 1 つは残してください。</translation>
+    </message>
+</context>
+<context>
     <name>eMule::OptionsDialog</name>
     <message>
         <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2690"/>
@@ -3720,30 +3951,30 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
     <message>
         <location line="+49"/>
-        <location line="+1762"/>
+        <location line="+1760"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-1761"/>
-        <location line="+1762"/>
+        <location line="-1759"/>
+        <location line="+1760"/>
         <source>Cancel</source>
         <translation>キャンセル</translation>
     </message>
     <message>
-        <location line="-1761"/>
-        <location line="+5234"/>
+        <location line="-1759"/>
+        <location line="+5301"/>
         <source>Apply</source>
         <translation>適用</translation>
     </message>
     <message>
-        <location line="-5233"/>
+        <location line="-5300"/>
         <source>Help</source>
         <translation>ヘルプ</translation>
     </message>
     <message>
-        <location line="+234"/>
-        <location line="+1754"/>
+        <location line="+245"/>
+        <location line="+1741"/>
         <location line="+63"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -3752,29 +3983,29 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>IP フィルター</translation>
     </message>
     <message>
-        <location line="-1841"/>
+        <location line="-1828"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP フィルターを再読み込み：%1 エントリ。</translation>
     </message>
     <message>
-        <location line="+83"/>
+        <location line="+84"/>
         <source>Options -&gt; %1 -&gt; %2</source>
-        <translation type="unfinished"></translation>
+        <translation>オプション -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
         <location line="+152"/>
         <source>General options</source>
-        <translation type="unfinished"></translation>
+        <translation>全般オプション</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Advanced options</source>
-        <translation type="unfinished"></translation>
+        <translation>詳細オプション</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Usenet</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet</translation>
     </message>
     <message>
         <location line="+74"/>
@@ -3783,18 +4014,18 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5158"/>
+        <location line="+5226"/>
         <source>Language</source>
         <translation>言語</translation>
     </message>
     <message>
-        <location line="-5155"/>
+        <location line="-5223"/>
         <source>System Default</source>
         <translation>システム既定</translation>
     </message>
     <message>
-        <location line="+38"/>
-        <location line="+589"/>
+        <location line="+14"/>
+        <location line="+599"/>
         <location line="+293"/>
         <location line="+372"/>
         <location line="+276"/>
@@ -3802,7 +4033,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>その他</translation>
     </message>
     <message>
-        <location line="-1527"/>
+        <location line="-1537"/>
         <source>Bring to front on link click</source>
         <translation>リンクのクリック時に前面に表示</translation>
     </message>
@@ -3834,12 +4065,12 @@ Enable it under Options → Web Interface, then try again.</source>
     <message>
         <location line="+10"/>
         <source>Web Services</source>
-        <translation type="unfinished">Web サービス</translation>
+        <translation>Web サービス</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>webservices.dat was not found in the config folder.</source>
-        <translation type="unfinished"></translation>
+        <translation>webservices.dat が設定フォルダに見つかりませんでした。</translation>
     </message>
     <message>
         <location line="+6"/>
@@ -3888,25 +4119,25 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5060"/>
+        <location line="+5152"/>
         <source>Core</source>
         <translation>コア</translation>
     </message>
     <message>
-        <location line="-5055"/>
+        <location line="-5147"/>
         <source>Address:</source>
         <translation>アドレス：</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1049"/>
+        <location line="+1059"/>
         <location line="+633"/>
-        <location line="+407"/>
+        <location line="+409"/>
         <source>Port:</source>
         <translation>ポート：</translation>
     </message>
     <message>
-        <location line="-2086"/>
+        <location line="-2098"/>
         <source>authentication token</source>
         <translation>認証トークン</translation>
     </message>
@@ -4047,20 +4278,20 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+587"/>
+        <location line="+597"/>
         <location line="+928"/>
         <location line="+108"/>
-        <location line="+287"/>
-        <location line="+951"/>
+        <location line="+289"/>
+        <location line="+1006"/>
         <location line="+152"/>
-        <location line="+1025"/>
-        <location line="+269"/>
+        <location line="+1036"/>
+        <location line="+270"/>
         <location line="+29"/>
         <source>Enabled</source>
         <translation>有効</translation>
     </message>
     <message>
-        <location line="-4334"/>
+        <location line="-4413"/>
         <source>Reset</source>
         <translation>リセット</translation>
     </message>
@@ -4202,12 +4433,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+54"/>
-        <location line="+1303"/>
+        <location line="+1313"/>
         <source>General</source>
         <translation>全般</translation>
     </message>
     <message>
-        <location line="-1300"/>
+        <location line="-1310"/>
         <source>Enable proxy</source>
         <translation>プロキシを有効化</translation>
     </message>
@@ -4257,7 +4488,7 @@ Are you sure you want to continue?</source>
         <translation>プロキシポート：</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+21"/>
         <source>Authentication</source>
         <translation>認証</translation>
     </message>
@@ -4268,23 +4499,23 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1660"/>
-        <location line="+954"/>
+        <location line="+1663"/>
+        <location line="+1009"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>名前：</translation>
     </message>
     <message>
-        <location line="-2762"/>
-        <location line="+654"/>
+        <location line="-2820"/>
+        <location line="+655"/>
         <location line="+695"/>
         <location line="+19"/>
-        <location line="+316"/>
+        <location line="+318"/>
         <source>Password:</source>
         <translation>パスワード：</translation>
     </message>
     <message>
-        <location line="-1651"/>
+        <location line="-1653"/>
         <source>Update</source>
         <translation>更新</translation>
     </message>
@@ -4653,12 +4884,12 @@ Each rule replaces a regex pattern with a replacement string.</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1087"/>
+        <location line="+1089"/>
         <source>None</source>
         <translation>なし</translation>
     </message>
     <message>
-        <location line="-1086"/>
+        <location line="-1088"/>
         <source>Plain</source>
         <translation>プレーン</translation>
     </message>
@@ -4699,14 +4930,14 @@ Each rule replaces a regex pattern with a replacement string.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+900"/>
-        <location line="+961"/>
+        <location line="+902"/>
+        <location line="+1016"/>
         <location line="+154"/>
         <source>Name</source>
         <translation>名前</translation>
     </message>
     <message>
-        <location line="-2013"/>
+        <location line="-2070"/>
         <source>Users</source>
         <translation>ユーザー</translation>
     </message>
@@ -5035,9 +5266,23 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>アップロードスロット（オーバーヘッドなし）</translation>
     </message>
     <message>
-        <location line="-4"/>
+        <location line="-1139"/>
+        <source>Use for news servers</source>
+        <translation>ニュースサーバーにも使用する</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Route Usenet downloads, availability checks and the news server Test button through this proxy too. News servers switch over as soon as you press OK.
+
+Every Usenet connection then passes through the proxy, so its speed caps the download, and many HTTP proxies only allow connections to port 443.</source>
+        <translation>Usenet のダウンロード、可用性の確認、ニュースサーバーのテストボタンもこのプロキシ経由にします。ニュースサーバーは OK を押すとすぐに切り替わります。
+
+すべての Usenet 接続がプロキシを通るため、その速度がダウンロード速度の上限になります。また、多くの HTTP プロキシはポート 443 への接続しか許可していません。</translation>
+    </message>
+    <message>
+        <location line="+1133"/>
         <source>Download Usenet</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet ダウンロード</translation>
     </message>
     <message>
         <location line="+20"/>
@@ -5162,14 +5407,14 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>ゲスト</translation>
     </message>
     <message>
-        <location line="+48"/>
+        <location line="+50"/>
         <source>Web template reloaded</source>
-        <translation type="unfinished"></translation>
+        <translation>Web テンプレートを再読み込みしました</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Web template reload failed</source>
-        <translation type="unfinished"></translation>
+        <translation>Web テンプレートの再読み込みに失敗しました</translation>
     </message>
     <message>
         <location line="+7"/>
@@ -5214,193 +5459,193 @@ Each rule replaces a regex pattern with a replacement string.</source>
     <message>
         <location line="+131"/>
         <source>Enable Usenet downloads</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet のダウンロードを有効化</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Gates automatic activity only. Adding a download by hand always works.</source>
-        <translation type="unfinished"></translation>
+        <translation>自動的な動作のみを制御します。手動でのダウンロード追加は常に可能です。</translation>
     </message>
     <message>
         <location line="+26"/>
         <location line="+37"/>
         <source>Account</source>
-        <translation type="unfinished"></translation>
+        <translation>アカウント</translation>
     </message>
     <message>
         <location line="-35"/>
         <source>Advanced</source>
-        <translation type="unfinished"></translation>
+        <translation>詳細</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+580"/>
-        <location line="+262"/>
+        <location line="+627"/>
+        <location line="+264"/>
         <location line="+15"/>
         <source>News servers</source>
-        <translation type="unfinished"></translation>
+        <translation>ニュースサーバー</translation>
     </message>
     <message>
-        <location line="-851"/>
+        <location line="-900"/>
         <source>Host</source>
-        <translation type="unfinished"></translation>
+        <translation>ホスト</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Port</source>
-        <translation type="unfinished">ポート</translation>
+        <translation>ポート</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Priority</source>
-        <translation type="unfinished">優先度</translation>
+        <translation>優先度</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Connections</source>
-        <translation type="unfinished"></translation>
+        <translation>接続数</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Used</source>
-        <translation type="unfinished"></translation>
+        <translation>使用量</translation>
     </message>
     <message>
         <location line="+40"/>
         <source>Display name (optional)</source>
-        <translation type="unfinished"></translation>
+        <translation>表示名（任意）</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Host:</source>
-        <translation type="unfinished"></translation>
+        <translation>ホスト:</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>Encryption:</source>
-        <translation type="unfinished"></translation>
+        <translation>暗号化:</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>None (119)</source>
-        <translation type="unfinished"></translation>
+        <translation>なし (119)</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>SSL/TLS (563)</source>
-        <translation type="unfinished"></translation>
+        <translation>SSL/TLS (563)</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>STARTTLS</source>
-        <translation type="unfinished"></translation>
+        <translation>STARTTLS</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>User:</source>
-        <translation type="unfinished"></translation>
+        <translation>ユーザー:</translation>
     </message>
     <message>
         <location line="+10"/>
         <source>Never set this above what your provider allows — exceeding the limit gets the account throttled, not queued.</source>
-        <translation type="unfinished"></translation>
+        <translation>プロバイダーが許可する数を超えて設定しないでください — 上限を超えると、接続が待たされるのではなくアカウントが帯域制限されます。</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Connections:</source>
-        <translation type="unfinished"></translation>
+        <translation>接続数:</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Lower is tried first. A higher level is only used for articles that every server below reported as missing — that is what makes a block or fill account worth having.</source>
-        <translation type="unfinished"></translation>
+        <translation>小さい値から順に試されます。上位のレベルは、下位のすべてのサーバーが欠落と報告した記事にのみ使用されます — ブロックアカウントや補完用アカウントが役に立つのはこのためです。</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Priority level:</source>
-        <translation type="unfinished"></translation>
+        <translation>優先レベル:</translation>
     </message>
     <message>
         <location line="+12"/>
         <source>Account options</source>
-        <translation type="unfinished"></translation>
+        <translation>アカウントオプション</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>Unknown</source>
-        <translation type="unfinished">不明</translation>
+        <translation>不明</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+939"/>
+        <location line="+994"/>
         <location line="+165"/>
         <source> days</source>
-        <translation type="unfinished"></translation>
+        <translation> 日</translation>
     </message>
     <message>
-        <location line="-1103"/>
+        <location line="-1158"/>
         <source>Retention:</source>
-        <translation type="unfinished"></translation>
+        <translation>保持期間:</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Accounts sharing a group number count as one for connection limits — use it when the same provider is reached through two host names, so the two entries cannot open twice what the plan allows.</source>
-        <translation type="unfinished"></translation>
+        <translation>同じグループ番号を持つアカウントは、接続数の上限では 1 つとして数えられます — 同じプロバイダーに 2 つのホスト名で接続する場合に使用すると、2 つの項目がプランの許可する接続数の 2 倍を開くことを防げます。</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Connection group:</source>
-        <translation type="unfinished"></translation>
+        <translation>接続グループ:</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>None — accept any certificate</source>
-        <translation type="unfinished"></translation>
+        <translation>なし — すべての証明書を受け入れる</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Minimal — allow a host name mismatch</source>
-        <translation type="unfinished"></translation>
+        <translation>最小限 — ホスト名の不一致を許可する</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Strict</source>
-        <translation type="unfinished"></translation>
+        <translation>厳格</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Certificate check:</source>
-        <translation type="unfinished"></translation>
+        <translation>証明書の確認:</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Optional — never fail a download on its own</source>
-        <translation type="unfinished"></translation>
+        <translation>任意 — これだけでダウンロードを失敗させません</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Send GROUP before fetching (only needed by a few old servers)</source>
-        <translation type="unfinished"></translation>
+        <translation>取得前に GROUP を送信する（一部の古いサーバーでのみ必要）</translation>
     </message>
     <message>
         <location line="+6"/>
         <source>Unmetered</source>
-        <translation type="unfinished"></translation>
+        <translation>無制限</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Monthly allowance</source>
-        <translation type="unfinished"></translation>
+        <translation>月間の通信量上限</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Block account (prepaid)</source>
-        <translation type="unfinished"></translation>
+        <translation>ブロックアカウント（前払い）</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Allowance:</source>
-        <translation type="unfinished"></translation>
+        <translation>通信量上限:</translation>
     </message>
     <message>
         <location line="+5"/>
@@ -5410,103 +5655,103 @@ Each rule replaces a regex pattern with a replacement string.</source>
     <message>
         <location line="+1"/>
         <source>No limit</source>
-        <translation type="unfinished"></translation>
+        <translation>制限なし</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>Allowance size:</source>
-        <translation type="unfinished"></translation>
+        <translation>上限サイズ:</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Your billing day — providers reset on the day you signed up, not on the 1st. A month shorter than this rolls over on its last day.</source>
-        <translation type="unfinished"></translation>
+        <translation>請求日です — プロバイダーは 1 日ではなく、契約した日にリセットします。これより短い月は、その月の最終日に繰り越されます。</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Resets on day:</source>
-        <translation type="unfinished"></translation>
+        <translation>リセット日:</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>When the allowance is spent, use the next priority level</source>
-        <translation type="unfinished"></translation>
+        <translation>通信量上限を使い切ったら、次の優先レベルを使用する</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Off by default: block credit usually costs more per GB than the plan it would be covering, and spending it without being asked is the one thing a limit exists to prevent. Left off, downloads wait for the allowance instead — they are never failed and no article is ever given up on.</source>
-        <translation type="unfinished"></translation>
+        <translation>既定ではオフです。ブロッククレジットは通常、それが補うプランよりも GB あたりの単価が高く、確認なしに消費してしまうことこそ、上限を設ける意味を失わせるものだからです。オフのままなら、ダウンロードは上限が回復するまで待機します — 失敗することはなく、記事が諦められることもありません。</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Used:</source>
-        <translation type="unfinished"></translation>
+        <translation>使用量:</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Correct…</source>
-        <translation type="unfinished"></translation>
+        <translation>修正…</translation>
     </message>
     <message>
         <location line="+11"/>
         <source>Downloading</source>
-        <translation type="unfinished">ダウンロード中</translation>
+        <translation>ダウンロード中</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Retry a failed server after:</source>
-        <translation type="unfinished"></translation>
+        <translation>失敗したサーバーを再試行するまで:</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Never back off</source>
-        <translation type="unfinished"></translation>
+        <translation>待機しない</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Applies to every account: how long a server that refused or dropped a connection is passed over before it is tried again.</source>
-        <translation type="unfinished"></translation>
+        <translation>すべてのアカウントに適用されます: 接続を拒否または切断したサーバーを、再試行するまでどれだけの間スキップするかを指定します。</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>Share of the download limit:</source>
-        <translation type="unfinished"></translation>
+        <translation>ダウンロード制限の割り当て:</translation>
     </message>
     <message>
         <location line="+3"/>
         <location line="+42"/>
         <source> %</source>
-        <translation type="unfinished"></translation>
+        <translation> %</translation>
     </message>
     <message>
         <location line="-40"/>
         <source>How much of the global download limit Usenet may take while eD2K is also downloading. Whichever engine is idle lends its whole share to the other, so this only applies when both are busy.</source>
-        <translation type="unfinished"></translation>
+        <translation>eD2K も同時にダウンロードしているときに、Usenet が全体のダウンロード制限のうちどれだけを使えるかを指定します。アイドル状態のエンジンは自分の割り当てをすべてもう一方に譲るため、これは両方が動作しているときにのみ適用されます。</translation>
     </message>
     <message>
         <location line="+11"/>
         <source>When adding</source>
-        <translation type="unfinished"></translation>
+        <translation>追加時</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Check availability:</source>
-        <translation type="unfinished"></translation>
+        <translation>可用性の確認:</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Do not check</source>
-        <translation type="unfinished"></translation>
+        <translation>確認しない</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Sample one article per file</source>
-        <translation type="unfinished"></translation>
+        <translation>ファイルごとに 1 記事を抽出して確認</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Check every article</source>
-        <translation type="unfinished"></translation>
+        <translation>すべての記事を確認</translation>
     </message>
     <message>
         <location line="+2"/>
@@ -5515,491 +5760,587 @@ Each rule replaces a regex pattern with a replacement string.</source>
 Sampling asks about the first article of each file, which is usually enough: providers expire whole posts by date, so a file is almost always present or absent as a unit. Checking every article is certain but can mean tens of thousands of requests for a large release.
 
 The answer is never a verdict. Nothing here can stop an article being fetched — an article your providers deny may still arrive, and a release this pauses downloads normally when you resume it.</source>
-        <translation type="unfinished"></translation>
+        <translation>ダウンロードを始める前に、そのリリースをまだ保持しているかどうかをプロバイダーに問い合わせます。問い合わせた記事 1 件につき小さなリクエストが 1 回かかるだけで、データ本体の転送はありません。
+
+サンプリングは各ファイルの最初の記事について問い合わせるもので、通常はこれで十分です。プロバイダーは投稿全体を日付単位で期限切れにするため、ファイルはほぼ常にまとめて存在するか、まとめて存在しないかのどちらかです。すべての記事を確認すれば確実ですが、大きなリリースでは数万件のリクエストになることがあります。
+
+この答えは判定ではありません。ここでの結果が記事の取得を止めることはありません — プロバイダーが否定した記事でも届くことがありますし、これによって一時停止されたリリースも、再開すれば通常どおりダウンロードされます。</translation>
     </message>
     <message>
         <location line="+16"/>
         <source>Pause below:</source>
-        <translation type="unfinished"></translation>
+        <translation>一時停止のしきい値:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1232"/>
+        <location line="+1290"/>
         <source>never</source>
-        <translation type="unfinished"></translation>
+        <translation>しない</translation>
     </message>
     <message>
-        <location line="-1229"/>
+        <location line="-1287"/>
         <source>A release that looks emptier than this is added paused, with the reason shown, so you decide rather than the guess. It is never failed and never refused.
 
 A shortfall the release&apos;s own PAR2 recovery volumes can cover does not pause it, however low the figure goes.</source>
-        <translation type="unfinished"></translation>
+        <translation>これより内容が少なく見えるリリースは、理由を表示したうえで一時停止状態で追加されます。推測ではなくあなたが判断できるようにするためです。失敗させたり拒否したりすることはありません。
+
+リリース自身の PAR2 リカバリーボリュームで補える不足であれば、数値がどれだけ低くても一時停止されません。</translation>
     </message>
     <message>
         <location line="+10"/>
         <source>Start automatic downloads paused</source>
-        <translation type="unfinished"></translation>
+        <translation>自動ダウンロードを一時停止状態で開始</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Applies to anything queued without you asking for it directly: the watch folder below, and feeds.
 
 With this on, an automatic download waits for you to press Resume, so a feed proposes rather than decides. Anything you add yourself starts normally either way.</source>
-        <translation type="unfinished"></translation>
+        <translation>自分で直接指示していないものすべてに適用されます: 下の監視フォルダとフィードです。
+
+これをオンにすると、自動的なダウンロードは「再開」を押すまで待機するため、フィードは決定するのではなく提案するだけになります。自分で追加したものは、どちらの設定でも通常どおり開始します。</translation>
     </message>
     <message>
         <location line="+10"/>
         <location line="+49"/>
         <source>Watch folder</source>
-        <translation type="unfinished"></translation>
+        <translation>監視フォルダ</translation>
     </message>
     <message>
         <location line="-45"/>
         <source>Any .nzb file left in this folder is queued and then moved into a _processed subfolder — or _failed, if it could not be read.</source>
-        <translation type="unfinished"></translation>
+        <translation>このフォルダに置かれた .nzb ファイルはキューに追加され、その後 _processed サブフォルダに移動されます — 読み取れなかった場合は _failed に移動されます。</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>No folder is being watched</source>
-        <translation type="unfinished"></translation>
+        <translation>監視中のフォルダはありません</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>A file is only read once it has stopped changing, so a large .nzb still being copied in is left alone until it is complete.
 
 It cannot be inside your temp, incoming or configuration folders: the daemon writes there itself.</source>
-        <translation type="unfinished"></translation>
+        <translation>ファイルは変更が止まってから読み込まれるため、コピー中の大きな .nzb は完了するまでそのままにされます。
+
+監視フォルダは、一時フォルダ、受信フォルダ、設定フォルダの中には置けません: デーモン自身がそこに書き込むためです。</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Browse…</source>
-        <translation type="unfinished"></translation>
+        <translation>参照…</translation>
     </message>
     <message>
         <location line="+10"/>
         <source>Desktop</source>
-        <translation type="unfinished"></translation>
+        <translation>デスクトップ</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Open .nzb files with eMule Qt</source>
-        <translation type="unfinished"></translation>
+        <translation>.nzb ファイルを eMule Qt で開く</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Claim .nzb files for this copy of eMule Qt, so double-clicking one queues it. The setting is for you alone and needs no administrator; it is re-applied at every start, so another program taking the association does not keep it.</source>
-        <translation type="unfinished"></translation>
+        <translation>.nzb ファイルをこの eMule Qt に関連付けて、ダブルクリックするだけでキューに追加できるようにします。この設定はあなた専用で、管理者権限は不要です。起動のたびに再適用されるため、他のプログラムが関連付けを奪っても元に戻ります。</translation>
     </message>
     <message>
         <location line="+21"/>
         <source>After downloading</source>
-        <translation type="unfinished"></translation>
+        <translation>ダウンロード後</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Verify and repair with PAR2</source>
-        <translation type="unfinished"></translation>
+        <translation>PAR2 で検証して修復する</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Check the finished files against the release&apos;s PAR2 set and repair any damage from its recovery volumes. The recovery volumes are only downloaded when something actually needs repairing.
 
 With this off, a release with missing articles fails instead of being shared, because there is no way to tell whether it is intact.</source>
-        <translation type="unfinished"></translation>
+        <translation>完了したファイルをリリースの PAR2 セットと照合し、破損があればそのリカバリーボリュームから修復します。リカバリーボリュームは、実際に修復が必要になったときにのみダウンロードされます。
+
+これをオフにすると、記事が欠落しているリリースは共有されずに失敗します。完全かどうかを確かめる手段がないためです。</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Restore filenames from PAR2</source>
-        <translation type="unfinished"></translation>
+        <translation>PAR2 からファイル名を復元する</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Obfuscated releases are posted under meaningless filenames. The PAR2 metadata carries the real ones, and without them the archives cannot be identified for unpacking either.</source>
-        <translation type="unfinished"></translation>
+        <translation>難読化されたリリースは意味のないファイル名で投稿されます。PAR2 のメタデータには本来の名前が含まれており、それがないとアーカイブを識別して展開することもできません。</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Verify with SFV when there is no PAR2</source>
+        <translation>PAR2 がない場合は SFV で検証する</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>A release posted without a PAR2 set often comes with an .sfv file instead. Its checksums cannot repair anything, but a release they call damaged is not published.</source>
+        <translation>PAR2 セットなしで投稿されたリリースには、代わりに .sfv ファイルが付いていることがよくあります。そのチェックサムでは修復はできませんが、破損と判定されたリリースは公開されません。</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Unpack archives</source>
-        <translation type="unfinished"></translation>
+        <translation>アーカイブを展開する</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Extract RAR, 7z and ZIP volume sets once they have been verified.
 
 Password-protected archives need 7-Zip or unrar installed — eMule&apos;s own archive reader can only decrypt ZIP.</source>
-        <translation type="unfinished"></translation>
+        <translation>検証が完了した RAR、7z、ZIP のボリュームセットを展開します。
+
+パスワード保護されたアーカイブには 7-Zip または unrar のインストールが必要です — eMule 自身のアーカイブリーダーは ZIP しか復号できません。</translation>
     </message>
     <message>
         <location line="+6"/>
         <source>Unpack while downloading</source>
-        <translation type="unfinished"></translation>
+        <translation>ダウンロード中に展開する</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Extract each archive volume as soon as it finishes instead of waiting for the whole release, so the content is ready the moment the download is.
 
 It is the same extraction, moved earlier, so it costs no extra disk space. If the release turns out to need repairing, the result is discarded and it is unpacked again afterwards.</source>
-        <translation type="unfinished"></translation>
+        <translation>リリース全体を待たずに、各アーカイブボリュームが完了した時点で展開します。ダウンロードが終わった瞬間に内容を使えるようになります。
+
+同じ展開処理を前倒しするだけなので、ディスク容量を余分に消費することはありません。修復が必要だと判明した場合は、結果を破棄して修復後にもう一度展開します。</translation>
     </message>
     <message>
         <location line="+9"/>
         <source>Preview password-protected releases while downloading</source>
-        <translation type="unfinished"></translation>
+        <translation>パスワード保護されたリリースをダウンロード中にプレビューする</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>An encrypted archive cannot be read a piece at a time, so previewing one means decrypting it again from the first volume every time more of it arrives.
 
 Nothing runs unless a preview is actually open, and only RAR releases can do it at all — an incomplete 7z set decodes to nothing.</source>
-        <translation type="unfinished"></translation>
+        <translation>暗号化されたアーカイブは少しずつ読み進めることができないため、プレビューするにはデータが届くたびに最初のボリュームから復号し直すことになります。
+
+プレビューを実際に開いているときにしか動作せず、そもそも対応できるのは RAR のリリースだけです — 不完全な 7z セットは何も復号できません。</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>Unpacker:</source>
-        <translation type="unfinished"></translation>
+        <translation>展開プログラム:</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>automatic (7zz, 7z, unrar)</source>
-        <translation type="unfinished"></translation>
+        <translation>自動 (7zz, 7z, unrar)</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Path to a 7-Zip or unrar binary, for password-protected archives.
 
 Leave this empty to search the usual locations. Set it when eMule runs as a background service, whose search path is often much shorter than the one a terminal has.</source>
-        <translation type="unfinished"></translation>
+        <translation>パスワード保護されたアーカイブ用の 7-Zip または unrar の実行ファイルのパスです。
+
+空欄にすると通常の場所を検索します。eMule をバックグラウンドサービスとして実行する場合は指定してください。サービスの検索パスは、ターミナルのものよりずっと短いことがよくあります。</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>Delete archives and PAR2 files after unpacking</source>
-        <translation type="unfinished"></translation>
+        <translation>展開後にアーカイブと PAR2 ファイルを削除する</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Keep only the unpacked content. Turning this off roughly doubles the disk space a release uses and shares the archive volumes and recovery files with eD2K peers, who have no use for them.</source>
-        <translation type="unfinished"></translation>
+        <translation>展開された内容だけを残します。これをオフにすると、リリースが使うディスク容量はおよそ 2 倍になり、アーカイブのボリュームやリカバリーファイルまで eD2K のピアに共有されます。ピアにとっては不要なものです。</translation>
     </message>
     <message>
-        <location line="+183"/>
+        <location line="+7"/>
+        <source>Keep downloading</source>
+        <translation>ダウンロードを続ける</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+11"/>
+        <source>Pause it</source>
+        <translation>一時停止する</translation>
+    </message>
+    <message>
+        <location line="-10"/>
+        <location line="+11"/>
+        <source>Fail it</source>
+        <translation>失敗にする</translation>
+    </message>
+    <message>
+        <location line="-9"/>
+        <source>A release that has lost more than its recovery files could ever repair stops here instead of using up your allowance until the final check. The estimate only ever errs towards downloading.
+
+Resume downloads it anyway.</source>
+        <translation>リカバリーファイルで修復できる限度を超えて欠落したリリースは、最終チェックまで通信量を使い切ることなくここで停止します。この推定は常にダウンロードを続ける側に誤差を取ります。
+
+「再開」すればそのままダウンロードします。</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>When a download cannot be repaired:</source>
+        <translation>ダウンロードを修復できない場合:</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Publish anyway</source>
+        <translation>そのまま公開する</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>A movie or episode whose download contains programs or shortcuts is almost always a fake. Only releases with video or audio in them are checked, so software downloads are not affected.
+
+Resume publishes it anyway.</source>
+        <translation>映画やエピソードのダウンロードにプログラムやショートカットが含まれている場合、ほぼ確実に偽物です。チェックされるのは映像や音声を含むリリースだけなので、ソフトウェアのダウンロードには影響しません。
+
+「再開」すればそのまま公開します。</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>When a media release has unwanted files:</source>
+        <translation>メディアリリースに不要なファイルがある場合:</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>File extensions, separated by commas. A video file that is not really a video counts as well. Leave this empty to turn the check off.</source>
+        <translation>ファイル拡張子をカンマ区切りで指定します。実際には動画ではない動画ファイルも対象になります。空欄にするとこのチェックを無効にします。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Unwanted file types:</source>
+        <translation>不要なファイルの種類:</translation>
+    </message>
+    <message>
+        <location line="+191"/>
         <source>The news server list could not be saved.</source>
-        <translation type="unfinished"></translation>
+        <translation>ニュースサーバーのリストを保存できませんでした。</translation>
     </message>
     <message>
         <location line="+136"/>
         <source>(unchanged)</source>
-        <translation type="unfinished"></translation>
+        <translation>(変更なし)</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>(none set)</source>
-        <translation type="unfinished"></translation>
+        <translation>(未設定)</translation>
     </message>
     <message>
         <location line="+60"/>
         <source>not measured — the Usenet engine is stopped</source>
-        <translation type="unfinished"></translation>
+        <translation>未計測 — Usenet エンジンは停止しています</translation>
     </message>
     <message>
         <location line="+11"/>
         <source>%1 used</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 使用</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>%1 of %2</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 / %2</translation>
     </message>
     <message>
         <location line="+6"/>
         <source>, resets %1</source>
-        <translation type="unfinished"></translation>
+        <translation>、%1 にリセット</translation>
     </message>
     <message>
         <location line="+5"/>
         <source> — spent</source>
-        <translation type="unfinished"></translation>
+        <translation> — 使用済み</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Measured here, not reported by the provider — NNTP has no command that asks. Expect a few percent below your provider&apos;s own figure.</source>
-        <translation type="unfinished"></translation>
+        <translation>この値はここで計測したもので、プロバイダーから報告されたものではありません — NNTP には問い合わせるコマンドがありません。プロバイダー自身の数値より数パーセント低くなります。</translation>
     </message>
     <message>
         <location line="+20"/>
         <source>Correct usage</source>
-        <translation type="unfinished"></translation>
+        <translation>使用量を修正</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Used this period, in GB.
 
 Enter what your provider&apos;s control panel says, or 0 to start again.</source>
-        <translation type="unfinished"></translation>
+        <translation>今期の使用量（GB）です。
+
+プロバイダーの管理画面に表示されている値を入力するか、0 を入力してやり直してください。</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="+16"/>
         <source>The usage counter could not be changed.</source>
-        <translation type="unfinished"></translation>
+        <translation>使用量カウンターを変更できませんでした。</translation>
     </message>
     <message>
         <location line="+14"/>
         <source>At most %1 news servers can be configured.</source>
-        <translation type="unfinished"></translation>
+        <translation>設定できるニュースサーバーは最大 %1 台です。</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>New server</source>
-        <translation type="unfinished"></translation>
+        <translation>新しいサーバー</translation>
     </message>
     <message>
         <location line="+39"/>
         <source>Enter a host name first.</source>
-        <translation type="unfinished"></translation>
+        <translation>先にホスト名を入力してください。</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Connecting…</source>
-        <translation type="unfinished"></translation>
+        <translation>接続中…</translation>
     </message>
     <message>
-        <location line="+45"/>
+        <location line="+51"/>
         <source>Search indexers answer keyword searches and hand back an NZB. They are separate from your news servers: on Usenet the provider you download from and the service you search are different businesses.</source>
-        <translation type="unfinished"></translation>
+        <translation>検索インデクサーはキーワード検索に応答して NZB を返します。ニュースサーバーとは別物です: Usenet では、ダウンロード先のプロバイダーと検索に使うサービスは別の事業者です。</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+383"/>
-        <location line="+537"/>
+        <location line="+384"/>
+        <location line="+541"/>
         <source>Indexers</source>
-        <translation type="unfinished"></translation>
+        <translation>インデクサー</translation>
     </message>
     <message>
-        <location line="-915"/>
+        <location line="-920"/>
         <source>URL</source>
-        <translation type="unfinished"></translation>
+        <translation>URL</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Type</source>
-        <translation type="unfinished">種類</translation>
+        <translation>種類</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>API key</source>
-        <translation type="unfinished"></translation>
+        <translation>API キー</translation>
     </message>
     <message>
         <location line="+19"/>
         <source>Indexer</source>
-        <translation type="unfinished"></translation>
+        <translation>インデクサー</translation>
     </message>
     <message>
         <location line="+11"/>
         <location line="+152"/>
         <source>Display name</source>
-        <translation type="unfinished"></translation>
+        <translation>表示名</translation>
     </message>
     <message>
         <location line="-150"/>
         <source>Also the identity of this account: it names the cached capabilities and appears in the Indexer column of the results.</source>
-        <translation type="unfinished"></translation>
+        <translation>このアカウントの識別名でもあります: キャッシュされた機能情報の名前になり、結果のインデクサー列に表示されます。</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>The API base URL. A bare host gets &quot;/api&quot; added; a URL that already has a path is used exactly as typed, which is what Jackett and NZBHydra2 endpoints need.</source>
-        <translation type="unfinished"></translation>
+        <translation>API のベース URL です。ホスト名だけの場合は &quot;/api&quot; が追加されます。すでにパスを含む URL は入力したとおりに使用されます。Jackett や NZBHydra2 のエンドポイントにはこれが必要です。</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>API URL:</source>
-        <translation type="unfinished"></translation>
+        <translation>API URL:</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>API key:</source>
-        <translation type="unfinished"></translation>
+        <translation>API キー:</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Newznab (Usenet)</source>
-        <translation type="unfinished"></translation>
+        <translation>Newznab (Usenet)</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Torznab (BitTorrent)</source>
-        <translation type="unfinished"></translation>
+        <translation>Torznab (BitTorrent)</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Both — Prowlarr, NZBHydra2</source>
-        <translation type="unfinished"></translation>
+        <translation>両方 — Prowlarr、NZBHydra2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Type:</source>
-        <translation type="unfinished">種類：</translation>
+        <translation>種類：</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Searching</source>
-        <translation type="unfinished"></translation>
+        <translation>検索</translation>
     </message>
     <message>
         <location line="+6"/>
         <source>Rows to ask for per request. An indexer that allows fewer silently returns fewer, so this is an upper bound rather than a promise.</source>
-        <translation type="unfinished"></translation>
+        <translation>1 回のリクエストで要求する件数です。これより少ない件数しか許可しないインデクサーは黙って少なく返すため、これは約束ではなく上限です。</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Results per request:</source>
-        <translation type="unfinished"></translation>
+        <translation>リクエストあたりの結果数:</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>How many pages one search may fetch from each indexer.
 
 Every page is an API call against the allowance your account has, so this is a spending limit, not a speed setting.</source>
-        <translation type="unfinished"></translation>
+        <translation>1 回の検索で各インデクサーから取得できるページ数です。
+
+各ページはアカウントの利用枠を消費する API 呼び出しになるため、これは速度ではなく消費量の上限です。</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Pages per search:</source>
-        <translation type="unfinished"></translation>
+        <translation>検索あたりのページ数:</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Request timeout:</source>
-        <translation type="unfinished"></translation>
+        <translation>リクエストのタイムアウト:</translation>
     </message>
     <message>
         <location line="+6"/>
         <source>How often to re-read what each indexer supports. A stale answer never blocks a search — it only means a query field stays greyed out that the indexer has since started accepting.</source>
-        <translation type="unfinished"></translation>
+        <translation>各インデクサーが対応している機能を再取得する間隔です。情報が古くても検索が妨げられることはありません — インデクサーが後から受け付けるようになった検索項目が、グレー表示のままになるだけです。</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Refresh capabilities every:</source>
-        <translation type="unfinished"></translation>
+        <translation>機能情報の更新間隔:</translation>
     </message>
     <message>
         <location line="+51"/>
         <source>A feed is a search that runs on its own and queues what it finds. Its first check adds nothing — it only records what the indexer already lists, because otherwise a new feed would download everything still on the server.</source>
-        <translation type="unfinished"></translation>
+        <translation>フィードは自動的に実行され、見つけたものをキューに追加する検索です。最初のチェックでは何も追加されません — インデクサーがすでに掲載しているものを記録するだけです。そうしないと、新しいフィードがサーバーに残っているものをすべてダウンロードしてしまうためです。</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+321"/>
-        <location line="+275"/>
+        <location line="+324"/>
+        <location line="+277"/>
         <source>Feeds</source>
-        <translation type="unfinished"></translation>
+        <translation>フィード</translation>
     </message>
     <message>
-        <location line="-591"/>
+        <location line="-596"/>
         <source>Search</source>
-        <translation type="unfinished">検索</translation>
+        <translation>検索</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Every</source>
-        <translation type="unfinished"></translation>
+        <translation>間隔</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Last checked</source>
-        <translation type="unfinished"></translation>
+        <translation>最終チェック</translation>
     </message>
     <message>
         <location line="+19"/>
         <source>Feed</source>
-        <translation type="unfinished"></translation>
+        <translation>フィード</translation>
     </message>
     <message>
         <location line="+11"/>
         <source>Also the identity of this feed: it names the file that remembers what the feed has already seen.</source>
-        <translation type="unfinished"></translation>
+        <translation>このフィードの識別名でもあります: フィードがすでに見たものを記憶するファイルの名前になります。</translation>
     </message>
     <message>
         <location line="+6"/>
         <source>Search my indexers</source>
-        <translation type="unfinished"></translation>
+        <translation>自分のインデクサーを検索</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>An RSS address I paste</source>
-        <translation type="unfinished"></translation>
+        <translation>貼り付けた RSS アドレス</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Source:</source>
-        <translation type="unfinished"></translation>
+        <translation>ソース:</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Keywords. Leave it empty to take everything new in the categories below.</source>
-        <translation type="unfinished"></translation>
+        <translation>キーワードです。空欄にすると、下のカテゴリの新着をすべて取り込みます。</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Search for:</source>
-        <translation type="unfinished">検索：</translation>
+        <translation>検索：</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>e.g. 2000, 5000</source>
-        <translation type="unfinished"></translation>
+        <translation>例: 2000, 5000</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Newznab category numbers, separated by commas. Empty means every category.</source>
-        <translation type="unfinished"></translation>
+        <translation>Newznab のカテゴリ番号をカンマ区切りで指定します。空欄はすべてのカテゴリを意味します。</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Categories:</source>
-        <translation type="unfinished"></translation>
+        <translation>カテゴリ:</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Which indexers to ask, by name and separated by commas. Empty means all of them.
 
 Adding one later does not fetch its back catalogue: a new indexer gets its own first check, which adds nothing.</source>
-        <translation type="unfinished"></translation>
+        <translation>問い合わせるインデクサーを名前でカンマ区切りで指定します。空欄はすべてを意味します。
+
+後から追加しても過去の分は取得されません: 新しいインデクサーには独自の初回チェックが行われ、そこでは何も追加されません。</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Indexers:</source>
-        <translation type="unfinished"></translation>
+        <translation>インデクサー:</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>The RSS address from your indexer&apos;s website. It contains your API key, so it is stored encrypted and is only ever shown back to you with the key hidden.</source>
-        <translation type="unfinished"></translation>
+        <translation>インデクサーのウェブサイトで取得した RSS アドレスです。API キーが含まれるため暗号化して保存され、表示される際は常にキーが伏せられます。</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Feed URL:</source>
-        <translation type="unfinished"></translation>
+        <translation>フィード URL:</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Only queue releases whose name matches this pattern. Empty accepts everything.</source>
-        <translation type="unfinished"></translation>
+        <translation>名前がこのパターンに一致するリリースだけをキューに追加します。空欄はすべてを受け入れます。</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Must match:</source>
-        <translation type="unfinished"></translation>
+        <translation>一致必須:</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Never queue a release whose name matches this pattern. It wins over the one above.</source>
-        <translation type="unfinished"></translation>
+        <translation>名前がこのパターンに一致するリリースはキューに追加しません。上の設定より優先されます。</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Must not match:</source>
-        <translation type="unfinished"></translation>
+        <translation>除外パターン:</translation>
     </message>
     <message>
         <location line="+4"/>
@@ -6010,171 +6351,171 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
     <message>
         <location line="-6"/>
         <source>no minimum</source>
-        <translation type="unfinished"></translation>
+        <translation>下限なし</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Smallest:</source>
-        <translation type="unfinished"></translation>
+        <translation>最小サイズ:</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>no maximum</source>
-        <translation type="unfinished"></translation>
+        <translation>上限なし</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Largest:</source>
-        <translation type="unfinished"></translation>
+        <translation>最大サイズ:</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>any age</source>
-        <translation type="unfinished"></translation>
+        <translation>経過日数を問わない</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Posted within:</source>
-        <translation type="unfinished"></translation>
+        <translation>投稿からの期間:</translation>
     </message>
     <message>
         <location line="+4"/>
         <source> minutes</source>
-        <translation type="unfinished"></translation>
+        <translation> 分</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>How often to check. Fifteen minutes is the floor: most indexers ask for no more than that, and checking harder gets an account suspended.</source>
-        <translation type="unfinished"></translation>
+        <translation>チェックする間隔です。下限は 15 分です: ほとんどのインデクサーはそれ以上頻繁なアクセスを認めておらず、それを超えるとアカウントが停止されます。</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Check every:</source>
-        <translation type="unfinished"></translation>
+        <translation>チェック間隔:</translation>
     </message>
     <message>
         <location line="+5"/>
-        <location line="+134"/>
+        <location line="+136"/>
         <source>No category</source>
-        <translation type="unfinished"></translation>
+        <translation>カテゴリなし</translation>
     </message>
     <message>
-        <location line="-132"/>
+        <location line="-134"/>
         <source>Which download category this feed&apos;s matches go into. The category decides the folder they finish in, and it is resolved when a release completes — so repointing the category moves what is still running with it.</source>
-        <translation type="unfinished"></translation>
+        <translation>このフィードに一致したものを入れるダウンロードカテゴリです。カテゴリは完了時の保存先フォルダを決め、リリースの完了時に解決されます — そのためカテゴリの保存先を変更すると、実行中のものもそれに従って移動します。</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Download category:</source>
-        <translation type="unfinished"></translation>
+        <translation>ダウンロードカテゴリ:</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Queue what it already lists</source>
-        <translation type="unfinished"></translation>
+        <translation>掲載済みのものもキューに追加</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Normally a feed&apos;s first check only takes note of what is there and queues nothing, because everything an indexer still holds is new to a feed that has never run. Turn this on to take the back catalogue as well — it can be a great deal of it.</source>
-        <translation type="unfinished"></translation>
+        <translation>通常、フィードの初回チェックは現在の内容を記録するだけで、何もキューに追加しません。一度も実行していないフィードにとっては、インデクサーが保持しているものすべてが新着だからです。過去の分も取り込むにはこれをオンにしてください — 非常に大量になることがあります。</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Check now</source>
-        <translation type="unfinished"></translation>
+        <translation>今すぐチェック</translation>
     </message>
     <message>
-        <location line="+96"/>
+        <location line="+97"/>
         <source>The indexer list could not be saved.</source>
-        <translation type="unfinished"></translation>
+        <translation>インデクサーのリストを保存できませんでした。</translation>
     </message>
     <message>
-        <location line="+92"/>
+        <location line="+94"/>
         <source>The feed list could not be saved.</source>
-        <translation type="unfinished"></translation>
+        <translation>フィードのリストを保存できませんでした。</translation>
     </message>
     <message>
         <location line="+37"/>
         <source>%1 min</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 分</translation>
     </message>
     <message>
         <location line="+6"/>
         <source>checking…</source>
-        <translation type="unfinished"></translation>
+        <translation>チェック中…</translation>
     </message>
     <message>
         <location line="+113"/>
         <source>%1 queued on the last check; %2 releases remembered.</source>
-        <translation type="unfinished"></translation>
+        <translation>前回のチェックで %1 件をキューに追加。%2 件のリリースを記憶しています。</translation>
     </message>
     <message>
         <location line="+71"/>
         <source>New feed</source>
-        <translation type="unfinished"></translation>
+        <translation>新しいフィード</translation>
     </message>
     <message>
-        <location line="+48"/>
+        <location line="+50"/>
         <source>&quot;%1&quot; could not be checked.</source>
-        <translation type="unfinished"></translation>
+        <translation>「%1」をチェックできませんでした。</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Checking &quot;%1&quot;…</source>
-        <translation type="unfinished"></translation>
+        <translation>「%1」をチェック中…</translation>
     </message>
     <message>
         <location line="+53"/>
         <source>Newznab</source>
-        <translation type="unfinished"></translation>
+        <translation>Newznab</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Torznab</source>
-        <translation type="unfinished"></translation>
+        <translation>Torznab</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Both</source>
-        <translation type="unfinished"></translation>
+        <translation>両方</translation>
     </message>
     <message>
         <location line="+9"/>
         <source>yes</source>
-        <translation type="unfinished"></translation>
+        <translation>はい</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>no</source>
-        <translation type="unfinished"></translation>
+        <translation>いいえ</translation>
     </message>
     <message>
         <location line="+68"/>
         <source>(a key is stored — leave empty to keep it)</source>
-        <translation type="unfinished"></translation>
+        <translation>(キーは保存済みです — そのままにする場合は空欄のまま)</translation>
     </message>
     <message>
         <location line="+33"/>
         <source>At most %1 indexers can be configured.</source>
-        <translation type="unfinished"></translation>
+        <translation>設定できるインデクサーは最大 %1 件です。</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>New indexer</source>
-        <translation type="unfinished"></translation>
+        <translation>新しいインデクサー</translation>
     </message>
     <message>
         <location line="+33"/>
         <source>Enter an API URL first.</source>
-        <translation type="unfinished"></translation>
+        <translation>先に API URL を入力してください。</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Contacting the indexer…</source>
-        <translation type="unfinished"></translation>
+        <translation>インデクサーに接続中…</translation>
     </message>
     <message>
-        <location line="+64"/>
+        <location line="+70"/>
         <source>Warning: Do not change these settings unless you know what you are doing. Otherwise you can easily make things worse for yourself. eMule will run fine without adjusting any of these settings.</source>
         <translation>警告：何をしているか分かっていない限り、これらの設定を変更しないでください。さもないと、問題を悪化させる可能性があります。eMule はこれらの設定を調整しなくても正常に動作します。</translation>
     </message>
@@ -6470,32 +6811,43 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>ファイルバッファサイズ：%1 MB</translation>
     </message>
     <message>
-        <location line="+21"/>
+        <location line="+22"/>
         <source>Queue size: %1</source>
         <translation>キューサイズ：%1</translation>
     </message>
     <message>
-        <location line="+1411"/>
+        <location line="+589"/>
+        <source>Proxy settings will only apply to new connections.
+Restart eMule for all connections to use the new proxy settings.
+
+News server connections switch over immediately.</source>
+        <translation>プロキシ設定は新しい接続にのみ適用されます。
+すべての接続で新しいプロキシ設定を使用するには eMule を再起動してください。
+
+ニュースサーバーの接続はすぐに切り替わります。</translation>
+    </message>
+    <message>
+        <location line="+846"/>
         <source>File types</source>
-        <translation type="unfinished"></translation>
+        <translation>ファイルの種類</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Could not update the .nzb file association: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>.nzb ファイルの関連付けを更新できませんでした: %1</translation>
     </message>
     <message>
-        <location line="-5070"/>
-        <location line="+1281"/>
-        <location line="+954"/>
+        <location line="-5163"/>
+        <location line="+1283"/>
+        <location line="+1009"/>
         <location line="+154"/>
-        <location line="+1312"/>
+        <location line="+1324"/>
         <location line="+281"/>
         <source>Remove</source>
         <translation>削除</translation>
     </message>
     <message>
-        <location line="-3771"/>
+        <location line="-3840"/>
         <source>New eMule Qt version detected</source>
         <translation>新しい eMule Qt バージョンを検出しました</translation>
     </message>
@@ -6505,7 +6857,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>URL から更新: （filter.dat 形式または PeerGuardian 形式、.gz/.zip 可）</translation>
     </message>
     <message>
-        <location line="+2847"/>
+        <location line="+2915"/>
         <source>Write eMule core logs to disk</source>
         <translation>eMule コアのログをディスクに書き込む</translation>
     </message>
@@ -6565,14 +6917,14 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>要求するリース時間:</translation>
     </message>
     <message>
-        <location line="-2129"/>
-        <location line="+848"/>
-        <location line="+1285"/>
+        <location line="-2195"/>
+        <location line="+903"/>
+        <location line="+1296"/>
         <source> s</source>
         <translation> 秒</translation>
     </message>
     <message>
-        <location line="-2175"/>
+        <location line="-2241"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
@@ -6581,7 +6933,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
 プランより少し小さめに設定してください。この値はここで計測されるため、プロバイダーの数値より数パーセント低くなります。また、上限に達した時点で転送中の記事はそのまま完了します。</translation>
     </message>
     <message>
-        <location line="+2289"/>
+        <location line="+2356"/>
         <source>New</source>
         <translation>新規</translation>
     </message>
@@ -6689,11 +7041,11 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>新しいスケジュール</translation>
     </message>
     <message>
-        <location line="-3797"/>
-        <location line="+1284"/>
-        <location line="+954"/>
+        <location line="-3866"/>
+        <location line="+1286"/>
+        <location line="+1009"/>
         <location line="+154"/>
-        <location line="+1566"/>
+        <location line="+1578"/>
         <source>Add</source>
         <translation>追加</translation>
     </message>
@@ -6720,19 +7072,18 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>設定ページ %1 はまだ実装されていません。</translation>
     </message>
     <message>
-        <location line="+164"/>
+        <location line="+176"/>
         <source>Proxy</source>
         <translation>プロキシ</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Proxy settings will only apply to new connections.
 Restart eMule for all connections to use the new proxy settings.</source>
-        <translation>プロキシ設定は新しい接続にのみ適用されます。
+        <translation type="vanished">プロキシ設定は新しい接続にのみ適用されます。
 すべての接続で新しいプロキシ設定を使用するには eMule を再起動してください。</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+25"/>
         <source>The language change will take effect after restarting the application.</source>
         <translation>言語の変更はアプリケーションの再起動後に有効になります。</translation>
     </message>
@@ -6806,19 +7157,34 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::PasteTextDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/PasteTextDialog.cpp" line="+38"/>
+        <location filename="../src/gui/dialogs/PasteTextDialog.cpp" line="+42"/>
         <source>optional</source>
-        <translation type="unfinished"></translation>
+        <translation>任意</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+12"/>
+        <source>Category:</source>
+        <translation>カテゴリ:</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Priority:</source>
+        <translation>優先度:</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Start paused</source>
+        <translation>一時停止状態で開始</translation>
+    </message>
+    <message>
+        <location line="+17"/>
         <source>Cancel</source>
-        <translation type="unfinished">キャンセル</translation>
+        <translation>キャンセル</translation>
     </message>
     <message>
-        <location line="+55"/>
+        <location line="+78"/>
         <source>Working…</source>
-        <translation type="unfinished"></translation>
+        <translation>処理中…</translation>
     </message>
 </context>
 <context>
@@ -6844,14 +7210,14 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+214"/>
-        <location line="+663"/>
-        <location line="+309"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+220"/>
+        <location line="+707"/>
+        <location line="+315"/>
         <source>Download</source>
         <translation>ダウンロード</translation>
     </message>
     <message>
-        <location line="-962"/>
+        <location line="-1002"/>
         <source>Close All Searches</source>
         <translation>すべての検索を閉じる</translation>
     </message>
@@ -6943,7 +7309,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
     <message>
         <location line="+5"/>
         <source>Usenet (Indexer)</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet (インデクサー)</translation>
     </message>
     <message>
         <location line="+2"/>
@@ -7034,44 +7400,49 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+47"/>
-        <location line="+167"/>
+        <location line="+191"/>
         <source>Usenet search</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet 検索</translation>
     </message>
     <message>
-        <location line="-66"/>
+        <location line="-90"/>
         <source>%1 results — %2 of %3 indexers</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 件の結果 — %3 件中 %2 件のインデクサー</translation>
     </message>
     <message>
         <location line="+18"/>
         <source>Usenet search: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet 検索: %1</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>No results</source>
-        <translation type="unfinished"></translation>
+        <translation>結果なし</translation>
     </message>
     <message>
-        <location line="+45"/>
+        <location line="+69"/>
         <source>Could not queue &quot;%1&quot;: %2</source>
-        <translation type="unfinished"></translation>
+        <translation>「%1」をキューに追加できませんでした: %2</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+7"/>
         <source>Queued &quot;%1&quot; for download from Usenet.</source>
-        <translation type="unfinished"></translation>
+        <translation>「%1」を Usenet からのダウンロードとしてキューに追加しました。</translation>
     </message>
     <message>
         <location line="+103"/>
         <source>&amp;Download</source>
-        <translation type="unfinished"></translation>
+        <translation>ダウンロード(&amp;D)</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+9"/>
+        <source>Download &amp;To</source>
+        <translation>ダウンロード先(&amp;T)</translation>
+    </message>
+    <message>
+        <location line="+9"/>
         <source>Copy &amp;Name</source>
-        <translation type="unfinished"></translation>
+        <translation>名前をコピー(&amp;N)</translation>
     </message>
     <message>
         <location line="+52"/>
@@ -7100,24 +7471,31 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+617"/>
+        <location line="+629"/>
         <source>Preview</source>
         <translation>プレビュー</translation>
     </message>
     <message>
-        <location line="-435"/>
+        <location line="-441"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
-        <translation type="unfinished"></translation>
+        <translation>次のファイルはすでにダウンロード済みです。もう一度ダウンロードしますか？
+
+%1</translation>
     </message>
     <message>
-        <location line="+693"/>
+        <location line="+687"/>
         <source>Asking servers: %1 / %2</source>
         <translation>サーバーに問い合わせ中：%1 / %2</translation>
     </message>
     <message>
-        <location line="-936"/>
+        <location line="+39"/>
+        <source>All</source>
+        <translation>すべて</translation>
+    </message>
+    <message>
+        <location line="-975"/>
         <location line="+14"/>
         <source>Mark as Spam</source>
         <translation>スパムとしてマーク</translation>
@@ -7153,7 +7531,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>Web サービス</translation>
     </message>
     <message>
-        <location line="+596"/>
+        <location line="+608"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>プレビューは利用できません — Web サーバーが実行されていないか、ストリームトークンを受信していません。</translation>
     </message>
@@ -7161,7 +7539,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::SearchResultsModel</name>
     <message>
-        <location filename="../src/gui/controls/SearchResultsModel.cpp" line="+150"/>
+        <location filename="../src/gui/controls/SearchResultsModel.cpp" line="+70"/>
+        <source>Yes</source>
+        <translation>はい</translation>
+    </message>
+    <message>
+        <location line="+119"/>
         <source>File Name</source>
         <translation>ファイル名</translation>
     </message>
@@ -7224,7 +7607,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+70"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+74"/>
         <location line="+3"/>
         <source>Yes</source>
         <translation>はい</translation>
@@ -7236,7 +7619,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>いいえ</translation>
     </message>
     <message>
-        <location line="+59"/>
+        <location line="+61"/>
         <source>Server Name</source>
         <translation>サーバー名</translation>
     </message>
@@ -7267,6 +7650,11 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+1"/>
+        <source>Files</source>
+        <translation>ファイル</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Preference</source>
         <translation>優先設定</translation>
     </message>
@@ -7282,11 +7670,30 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+1"/>
-        <source>Soft Files</source>
-        <translation>ソフトファイル</translation>
+        <source>Soft File Limit</source>
+        <translation>ソフトファイル制限</translation>
+    </message>
+    <message>
+        <location line="+32"/>
+        <source>High</source>
+        <translation>高い</translation>
     </message>
     <message>
         <location line="+1"/>
+        <source>Low</source>
+        <translation>低い</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Normal</source>
+        <translation>通常</translation>
+    </message>
+    <message>
+        <source>Soft Files</source>
+        <translation type="vanished">ソフトファイル</translation>
+    </message>
+    <message>
+        <location line="-33"/>
         <source>Low ID</source>
         <translation>Low ID</translation>
     </message>
@@ -7299,29 +7706,25 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+136"/>
-        <location line="+94"/>
-        <location line="+2"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+234"/>
         <source>Disconnect</source>
         <translation>切断</translation>
     </message>
     <message>
-        <location line="-96"/>
-        <location line="+7"/>
-        <location line="+113"/>
+        <location line="+2"/>
+        <location line="+24"/>
         <location line="+50"/>
         <source>Cancel</source>
         <translation>キャンセル</translation>
     </message>
     <message>
-        <location line="-167"/>
-        <location line="+95"/>
+        <location line="-72"/>
         <location line="+440"/>
         <source>Connect</source>
         <translation>接続</translation>
     </message>
     <message>
-        <location line="-490"/>
+        <location line="-491"/>
         <source>Invalid URL: %1</source>
         <translation>無効なURL: %1</translation>
     </message>
@@ -7351,7 +7754,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>server.met をダウンロードし、&quot;%1&quot; を展開しました (%2 バイト)。解析中...</translation>
     </message>
     <message>
-        <location line="+586"/>
+        <location line="+587"/>
         <location line="+2"/>
         <location line="+24"/>
         <location line="+39"/>
@@ -7664,7 +8067,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::SharedFilesModel</name>
     <message>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+207"/>
+        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+190"/>
         <source>File Name</source>
         <translation>ファイル名</translation>
     </message>
@@ -7732,12 +8135,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1306"/>
+        <location line="+1308"/>
         <source>Open Folder</source>
         <translation>フォルダを開く</translation>
     </message>
     <message>
-        <location line="-1294"/>
+        <location line="-1296"/>
         <source>Rename...</source>
         <translation>名前変更...</translation>
     </message>
@@ -7757,7 +8160,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>ディスクから削除</translation>
     </message>
     <message>
-        <location line="+796"/>
+        <location line="+798"/>
         <source>Delete File</source>
         <translation>ファイルを削除</translation>
     </message>
@@ -7767,12 +8170,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>&quot;%1&quot;をディスクから完全に削除しますか？</translation>
     </message>
     <message>
-        <location line="-775"/>
+        <location line="-777"/>
         <source>Unshare</source>
         <translation>共有解除</translation>
     </message>
     <message>
-        <location line="+808"/>
+        <location line="+810"/>
         <source>Unshare File</source>
         <translation>ファイルの共有を解除</translation>
     </message>
@@ -7786,7 +8189,7 @@ The file will remain on disk.</source>
 ファイルはディスクに残ります。</translation>
     </message>
     <message>
-        <location line="-791"/>
+        <location line="-793"/>
         <source>Priority (Upload)</source>
         <translation>優先度（アップロード）</translation>
     </message>
@@ -7811,12 +8214,11 @@ The file will remain on disk.</source>
         <translation>高い</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Very High</source>
-        <translation>非常に高い</translation>
+        <translation type="vanished">非常に高い</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
         <source>Auto</source>
         <translation>自動</translation>
     </message>
@@ -7971,7 +8373,7 @@ The file will remain on disk.</source>
         <translation>%1（%3 件中 %2 件を共有）</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+24"/>
         <source>Could not share that file</source>
         <translation>そのファイルを共有できませんでした</translation>
     </message>
@@ -8006,7 +8408,7 @@ The file will remain on disk.</source>
         <translation>ファイルを開く操作は利用できません — Web サーバーが実行されていないか、ストリームトークンを受信していません。</translation>
     </message>
     <message>
-        <location line="-866"/>
+        <location line="-868"/>
         <source>Content</source>
         <translation>コンテンツ</translation>
     </message>
@@ -8021,7 +8423,12 @@ The file will remain on disk.</source>
         <translation>コピー</translation>
     </message>
     <message>
-        <location line="-26"/>
+        <location line="-511"/>
+        <source>Release</source>
+        <translation>リリース</translation>
+    </message>
+    <message>
+        <location line="+485"/>
         <source>Basic Options</source>
         <translation>基本オプション</translation>
     </message>
@@ -8057,17 +8464,17 @@ The file will remain on disk.</source>
     </message>
     <message>
         <location line="+24"/>
-        <location line="+409"/>
+        <location line="+411"/>
         <source>Requires a hostname configured in Preferences, or a public IPv6</source>
         <translation>設定でホスト名が構成されているか、パブリック IPv6 が必要です</translation>
     </message>
     <message>
-        <location line="-297"/>
+        <location line="-299"/>
         <source>Shared Files (%1)</source>
         <translation>共有ファイル (%1)</translation>
     </message>
     <message numerus="yes">
-        <location line="+110"/>
+        <location line="+112"/>
         <source>Are you sure you want to permanently delete %n selected file(s) from disk?</source>
         <translation>
             <numerusform>選択した %n 件のファイルをディスクから完全に削除してもよろしいですか？</numerusform>
@@ -8189,22 +8596,22 @@ The files will remain on disk.</source>
         <location line="+10"/>
         <location line="+155"/>
         <location line="+19"/>
-        <location line="+1090"/>
+        <location line="+1100"/>
         <source>Uploads</source>
         <translation>アップロード</translation>
     </message>
     <message>
-        <location line="-1260"/>
+        <location line="-1270"/>
         <location line="+63"/>
         <location line="+78"/>
         <location line="+47"/>
-        <location line="+991"/>
+        <location line="+1001"/>
         <location line="+70"/>
         <source>Session</source>
         <translation>セッション</translation>
     </message>
     <message>
-        <location line="-1246"/>
+        <location line="-1256"/>
         <location line="+32"/>
         <source>Uploaded Data: 0 Bytes</source>
         <translation>アップロードデータ：0 Bytes</translation>
@@ -8262,13 +8669,13 @@ The files will remain on disk.</source>
         <location line="+6"/>
         <location line="+97"/>
         <location line="+19"/>
-        <location line="+926"/>
+        <location line="+936"/>
         <location line="+163"/>
         <source>Downloads</source>
         <translation>ダウンロード</translation>
     </message>
     <message>
-        <location line="-1198"/>
+        <location line="-1208"/>
         <location line="+39"/>
         <source>Downloaded Data: 0 Bytes</source>
         <translation>ダウンロードデータ：0 Bytes</translation>
@@ -8410,13 +8817,13 @@ The files will remain on disk.</source>
         <location line="+70"/>
         <location line="+60"/>
         <location line="+37"/>
-        <location line="+985"/>
+        <location line="+995"/>
         <location line="+70"/>
         <source>Cumulative</source>
         <translation>累計</translation>
     </message>
     <message>
-        <location line="-1173"/>
+        <location line="-1183"/>
         <location line="+33"/>
         <source>Completed Downloads: 0</source>
         <translation>完了したダウンロード: 0</translation>
@@ -8460,12 +8867,12 @@ The files will remain on disk.</source>
     <message>
         <location line="+15"/>
         <location line="+21"/>
-        <location line="+917"/>
+        <location line="+925"/>
         <source>General</source>
         <translation>全般</translation>
     </message>
     <message>
-        <location line="-933"/>
+        <location line="-941"/>
         <source>Average Connections: 0.0</source>
         <translation>平均接続数: 0.0</translation>
     </message>
@@ -8525,55 +8932,60 @@ The files will remain on disk.</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+450"/>
+        <location line="+458"/>
         <location line="+4"/>
         <source>Statistics Last Reset: %1</source>
         <translation>統計の最終リセット: %1</translation>
     </message>
     <message>
-        <location line="-741"/>
+        <location line="-749"/>
         <location line="+287"/>
-        <location line="+448"/>
+        <location line="+456"/>
         <location line="+7"/>
         <source>Unknown</source>
         <translation>不明</translation>
     </message>
     <message>
-        <location line="-749"/>
+        <location line="-757"/>
         <source>Statistics Tree</source>
         <translation>統計ツリー</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+745"/>
+        <location line="+753"/>
         <source>Statistics last reset: %1</source>
         <translation>統計の最終リセット: %1</translation>
     </message>
     <message>
-        <location line="-718"/>
-        <location line="+1252"/>
+        <location line="-726"/>
+        <location line="+1262"/>
         <source>Usenet</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet</translation>
     </message>
     <message>
-        <location line="-1187"/>
-        <location line="+1066"/>
+        <location line="-1197"/>
+        <location line="+1074"/>
         <source>Waiting...</source>
         <translation>待機中...</translation>
     </message>
     <message>
-        <location line="-1063"/>
-        <location line="+396"/>
+        <location line="-1071"/>
+        <location line="+404"/>
         <source>Session UL:DL Ratio (Friends UL excluded): %1</source>
         <translation>セッション UL:DL 比率 (友達へのULを除く)：%1</translation>
     </message>
     <message>
-        <location line="-308"/>
+        <location line="-316"/>
         <source>UDP File Re-asks: 0, Failed: 0 (0.0%)</source>
         <translation>UDP ファイル再問い合わせ：0、失敗：0 (0.0%)</translation>
     </message>
     <message>
-        <location line="+1164"/>
+        <location line="+1028"/>
+        <source>Corrupt (Failed yEnc Check): %1</source>
+        <translation>破損 (yEnc チェック失敗): %1</translation>
+    </message>
+    <message>
+        <location line="+146"/>
         <source>HTTP Cache</source>
         <translation>HTTP キャッシュ</translation>
     </message>
@@ -8598,7 +9010,7 @@ The files will remain on disk.</source>
         <translation type="vanished">取得チャンク数: 0</translation>
     </message>
     <message>
-        <location line="-1043"/>
+        <location line="-1053"/>
         <source>Run Time: 0:00:00</source>
         <translation>実行時間: 0:00:00</translation>
     </message>
@@ -8766,7 +9178,7 @@ The files will remain on disk.</source>
     </message>
     <message>
         <location line="-264"/>
-        <location line="+396"/>
+        <location line="+404"/>
         <source>Session UL:DL Ratio: %1</source>
         <translation>セッション UL:DL 比率：%1</translation>
     </message>
@@ -8775,8 +9187,8 @@ The files will remain on disk.</source>
         <translation type="vanished">フレンドセッション UL:DL 比率：%1</translation>
     </message>
     <message>
-        <location line="-393"/>
-        <location line="+397"/>
+        <location line="-401"/>
+        <location line="+405"/>
         <source>Cumulative UL:DL Ratio: %1</source>
         <translation>累積 UL:DL 比率：%1</translation>
     </message>
@@ -8838,13 +9250,13 @@ The files will remain on disk.</source>
     <message>
         <location line="-46"/>
         <location line="+48"/>
-        <location line="+637"/>
+        <location line="+639"/>
         <location line="+49"/>
         <source>Failed: %1</source>
         <translation>失敗：%1</translation>
     </message>
     <message>
-        <location line="-731"/>
+        <location line="-733"/>
         <location line="+48"/>
         <source>Average Upload Per Session: %1</source>
         <translation>セッションあたりの平均アップロード：%1</translation>
@@ -9097,14 +9509,14 @@ The files will remain on disk.</source>
         <translation>サーバー合計時間: %1 %2</translation>
     </message>
     <message>
-        <location line="-487"/>
+        <location line="-495"/>
         <source>Current Server Duration: 0:00:00</source>
-        <translation type="unfinished"></translation>
+        <translation>現在のサーバー接続時間: 0:00:00</translation>
     </message>
     <message>
-        <location line="+467"/>
+        <location line="+475"/>
         <source>Current Server Duration: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>現在のサーバー接続時間: %1 %2</translation>
     </message>
     <message>
         <location line="+25"/>
@@ -9213,30 +9625,30 @@ The files will remain on disk.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+331"/>
+        <location line="+333"/>
         <source>Number of Downloads: %1</source>
         <translation>ダウンロード数: %1</translation>
     </message>
     <message>
-        <location line="-329"/>
-        <location line="+337"/>
+        <location line="-331"/>
+        <location line="+339"/>
         <source>Total Size of Downloads: %1</source>
         <translation>ダウンロードの総サイズ: %1</translation>
     </message>
     <message>
-        <location line="-335"/>
-        <location line="+336"/>
+        <location line="-337"/>
+        <location line="+338"/>
         <source>Total Size Downloaded: %1</source>
         <translation>ダウンロード済みの総サイズ: %1</translation>
     </message>
     <message>
-        <location line="-334"/>
-        <location line="+335"/>
+        <location line="-336"/>
+        <location line="+337"/>
         <source>Total Size Left to Download: %1</source>
         <translation>残りのダウンロードサイズ: %1</translation>
     </message>
     <message>
-        <location line="-333"/>
+        <location line="-335"/>
         <source>Free Space on Drive: %1</source>
         <translation>ドライブの空き容量: %1</translation>
     </message>
@@ -9302,406 +9714,401 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+127"/>
-        <location line="+285"/>
+        <location line="+287"/>
         <source>Open Connections: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>オープン接続: %1</translation>
     </message>
     <message>
-        <location line="-281"/>
+        <location line="-283"/>
         <source>Network Traffic: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>ネットワークトラフィック: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Overhead: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>オーバーヘッド: %1 %2</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Articles</source>
-        <translation type="unfinished"></translation>
+        <translation>記事</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Downloaded: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>ダウンロード済み: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Not Found on a Server: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>サーバーで見つからず: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Missing on All Servers: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>すべてのサーバーで欠落: %1</translation>
     </message>
     <message>
-        <location line="+1"/>
-        <source>Corrupt (CRC Errors): %1</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+1"/>
+        <location line="+4"/>
         <location line="+282"/>
         <source>Connection Errors: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>接続エラー: %1</translation>
     </message>
     <message>
         <location line="-279"/>
         <source>Completed Downloads: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>完了したダウンロード: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Completed Data: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>完了したデータ: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Failed Downloads: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>失敗したダウンロード: %1 %2</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Post-Processing</source>
-        <translation type="unfinished"></translation>
+        <translation>後処理</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>PAR2 Verified: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>PAR2 検証済み: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Repaired: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>修復済み: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Repair Failed: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>修復失敗: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Blocks Repaired: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>修復したブロック: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Recovery Volumes Fetched: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>取得したリカバリーボリューム: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Recovery Data: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>リカバリーデータ: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Unpacked: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>展開済み: %1</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Password Required: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>パスワードが必要: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Sets Unpacked While Downloading: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>ダウンロード中に展開したセット: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Time Spent: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>所要時間: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Verifying: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>検証中: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Repairing: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>修復中: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Unpacking: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>展開中: %1 %2</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Health Checks</source>
-        <translation type="unfinished"></translation>
+        <translation>健全性チェック</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Checks Run: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>実行したチェック: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Passed: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>合格: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Paused as Incomplete: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>不完全として一時停止: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Inconclusive: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>判定不能: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Articles Probed: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>調査した記事: %1</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Intake</source>
-        <translation type="unfinished"></translation>
+        <translation>取り込み</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>NZBs Added: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>追加した NZB: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Files: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>ファイル: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>URLs: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>URL: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Watch Folder: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>監視フォルダ: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Feeds: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>フィード: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Indexer Searches: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>インデクサー検索: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Duplicates: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>重複: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Already Downloaded: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>すでにダウンロード済み: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Invalid NZBs: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>無効な NZB: %1</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Indexers</source>
-        <translation type="unfinished"></translation>
+        <translation>インデクサー</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Searches: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>検索: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>API Requests: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>API リクエスト: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Errors: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>エラー: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>NZBs Fetched: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>取得した NZB: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <location line="+81"/>
         <source>Failed: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>失敗: %1 %2</translation>
     </message>
     <message>
         <location line="-80"/>
         <source>Feed Polls: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>フィードのチェック回数: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Feed Matches: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>フィードの一致件数: %1</translation>
     </message>
     <message>
         <location line="+11"/>
         <source>Downloading: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>ダウンロード中: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Queued: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>キュー待ち: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Paused: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>一時停止中: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Checking: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>チェック中: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Post-Processing: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>後処理: %1</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Completed: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>完了: %1</translation>
     </message>
     <message>
         <location line="+26"/>
         <source>News Servers</source>
-        <translation type="unfinished"></translation>
+        <translation>ニュースサーバー</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>Queue</source>
-        <translation type="unfinished"></translation>
+        <translation>キュー</translation>
     </message>
     <message>
         <location line="+20"/>
         <source>Published: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>公開済み: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Chunks Published: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>公開したチャンク: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Upload Saved: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>節約したアップロード: %1</translation>
     </message>
     <message>
         <location line="+9"/>
         <source>Fetched: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>取得済み: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Chunks Fetched: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>取得したチャンク: %1 %2</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Failed Hash Check: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>ハッシュチェック失敗: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Resumed: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>再開: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Offers Received: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>受信したオファー: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Declined: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>拒否: %1 %2</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Chunks Found in Kad: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Kad で見つかったチャンク: %1</translation>
     </message>
     <message>
         <location line="+125"/>
         <source>Measured here, not reported by the provider, in decimal GB as providers bill. Expect a few percent below the provider&apos;s own figure.</source>
-        <translation type="unfinished"></translation>
+        <translation>この値はここで計測したもので、プロバイダーから報告されたものではありません。単位は請求と同じ 10 進数の GB です。プロバイダー自身の数値より数パーセント低くなります。</translation>
     </message>
     <message>
         <location line="+10"/>
         <source>%1 (disabled)</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 (無効)</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>Session Traffic: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>セッションのトラフィック: %1 %2</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Articles Downloaded: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>ダウンロードした記事: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Not Found: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>見つからず: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Corrupt: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>破損: %1</translation>
     </message>
     <message>
         <location line="+9"/>
         <source>%1 of %2 %3</source>
-        <translation type="unfinished"></translation>
+        <translation>%2 中 %1 %3</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>, resets %1</source>
-        <translation type="unfinished"></translation>
+        <translation>、%1 にリセット</translation>
     </message>
     <message>
         <location line="+3"/>
         <source> — spent</source>
-        <translation type="unfinished"></translation>
+        <translation> — 使用済み</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Block: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>ブロック: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>This Period: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>今期: %1</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>All Time: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>累計: %1</translation>
     </message>
 </context>
 <context>
@@ -9755,7 +10162,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+593"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+615"/>
         <source>Downloads</source>
         <translation>ダウンロード</translation>
     </message>
@@ -9766,128 +10173,128 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+29"/>
-        <location line="+1509"/>
+        <location line="+1517"/>
         <location line="+98"/>
         <source>Low</source>
         <translation>低い</translation>
     </message>
     <message>
-        <location line="-1606"/>
-        <location line="+1508"/>
+        <location line="-1614"/>
+        <location line="+1516"/>
         <location line="+99"/>
         <source>Normal</source>
         <translation>通常</translation>
     </message>
     <message>
-        <location line="-1606"/>
-        <location line="+1507"/>
+        <location line="-1614"/>
+        <location line="+1515"/>
         <location line="+100"/>
         <source>High</source>
         <translation>高い</translation>
     </message>
     <message>
-        <location line="-1605"/>
-        <location line="+1607"/>
+        <location line="-1613"/>
+        <location line="+1615"/>
         <source>Very Low</source>
         <translation>非常に低い</translation>
     </message>
     <message>
-        <location line="-1606"/>
-        <location line="+1607"/>
+        <location line="-1614"/>
+        <location line="+1615"/>
         <source>Very High</source>
         <translation>非常に高い</translation>
     </message>
     <message>
-        <location line="-1605"/>
-        <location line="+1608"/>
+        <location line="-1613"/>
+        <location line="+1616"/>
         <source>Auto</source>
         <translation>自動</translation>
     </message>
     <message>
-        <location line="-1597"/>
-        <location line="+507"/>
-        <location line="+998"/>
+        <location line="-1605"/>
+        <location line="+512"/>
+        <location line="+1001"/>
         <source>Pause</source>
         <translation>一時停止</translation>
     </message>
     <message>
-        <location line="-1496"/>
-        <location line="+504"/>
-        <location line="+994"/>
+        <location line="-1504"/>
+        <location line="+509"/>
+        <location line="+997"/>
         <source>Stop</source>
         <translation>停止</translation>
     </message>
     <message>
-        <location line="-1489"/>
-        <location line="+501"/>
-        <location line="+990"/>
+        <location line="-1497"/>
+        <location line="+506"/>
+        <location line="+993"/>
         <source>Resume</source>
         <translation>再開</translation>
     </message>
     <message>
-        <location line="-1478"/>
-        <location line="+494"/>
-        <location line="+986"/>
+        <location line="-1486"/>
+        <location line="+499"/>
+        <location line="+989"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>キャンセル</translation>
     </message>
     <message>
-        <location line="-1481"/>
-        <location line="+505"/>
+        <location line="-1489"/>
+        <location line="+510"/>
         <source>Cancel Download</source>
         <translation>ダウンロードをキャンセル</translation>
     </message>
     <message>
-        <location line="-504"/>
-        <location line="+505"/>
+        <location line="-509"/>
+        <location line="+510"/>
         <source>Cancel download &quot;%1&quot;?</source>
         <translation>ダウンロード「%1」をキャンセルしますか？</translation>
     </message>
     <message>
-        <location line="-501"/>
-        <location line="+505"/>
+        <location line="-506"/>
+        <location line="+510"/>
         <source>Cancel Downloads</source>
         <translation>複数のダウンロードをキャンセル</translation>
     </message>
     <message>
-        <location line="-504"/>
-        <location line="+505"/>
+        <location line="-509"/>
+        <location line="+510"/>
         <source>Cancel %1 selected downloads?</source>
         <translation>選択した %1 件のダウンロードをキャンセルしますか？</translation>
     </message>
     <message>
-        <location line="-492"/>
-        <location line="+503"/>
+        <location line="-497"/>
+        <location line="+508"/>
         <source>Open File</source>
         <translation>ファイルを開く</translation>
     </message>
     <message>
-        <location line="-494"/>
-        <location line="+508"/>
+        <location line="-499"/>
+        <location line="+513"/>
         <source>Preview</source>
         <translation>プレビュー</translation>
     </message>
     <message>
-        <location line="-502"/>
-        <location line="+1565"/>
+        <location line="-507"/>
+        <location line="+1573"/>
         <location line="+82"/>
         <source>Details...</source>
         <translation>詳細...</translation>
     </message>
     <message>
-        <location line="-1641"/>
+        <location line="-1649"/>
         <source>Comments...</source>
         <translation>コメント...</translation>
     </message>
     <message>
         <location line="+17"/>
-        <location line="+527"/>
+        <location line="+532"/>
         <source>Clear Completed</source>
         <translation>完了済みをクリア</translation>
     </message>
     <message>
-        <location line="-517"/>
+        <location line="-522"/>
         <source>eD2K Links...</source>
         <translation>eD2K リンク...</translation>
     </message>
@@ -9898,13 +10305,13 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+21"/>
-        <location line="+1571"/>
+        <location line="+1579"/>
         <location line="+77"/>
         <source>Find...</source>
         <translation>検索...</translation>
     </message>
     <message>
-        <location line="-1644"/>
+        <location line="-1652"/>
         <source>Search Related Files</source>
         <translation>関連ファイルを検索</translation>
     </message>
@@ -9915,7 +10322,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+11"/>
-        <location line="+449"/>
+        <location line="+454"/>
         <source>Assign To Category</source>
         <translation>カテゴリに割り当て</translation>
     </message>
@@ -9928,7 +10335,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="vanished">すべて</translation>
     </message>
     <message>
-        <location line="+839"/>
+        <location line="+842"/>
         <source>Uploading</source>
         <translation>アップロード中</translation>
     </message>
@@ -9948,24 +10355,24 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>既知のクライアント</translation>
     </message>
     <message>
-        <location line="-962"/>
+        <location line="-965"/>
         <source>Clients on queue:   0</source>
         <translation>キュー内のクライアント：   0</translation>
     </message>
     <message>
-        <location line="-325"/>
-        <location line="+452"/>
+        <location line="-330"/>
+        <location line="+457"/>
         <source>(Unassign)</source>
-        <translation type="unfinished"></translation>
+        <translation>(割り当て解除)</translation>
     </message>
     <message>
         <location line="-104"/>
-        <location line="+987"/>
+        <location line="+990"/>
         <source>Priority</source>
         <translation>優先度</translation>
     </message>
     <message>
-        <location line="-926"/>
+        <location line="-929"/>
         <source>Open Folder</source>
         <translation>フォルダを開く</translation>
     </message>
@@ -9995,7 +10402,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>検索</translation>
     </message>
     <message>
-        <location line="+439"/>
+        <location line="+442"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>プレビューは利用できません — Web サーバーが実行されていないか、ストリームトークンを受信していません。</translation>
     </message>
@@ -10045,12 +10452,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     <message>
         <location line="+47"/>
         <source>Are you sure you want to cancel every download in &quot;%1&quot;?</source>
-        <translation type="unfinished"></translation>
+        <translation>「%1」内のすべてのダウンロードをキャンセルしてもよろしいですか？</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Resume next file</source>
-        <translation type="unfinished"></translation>
+        <translation>次のファイルを再開</translation>
     </message>
     <message>
         <source>Open Incoming Folder</source>
@@ -10086,7 +10493,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
 <context>
     <name>eMule::TrayMenuManager</name>
     <message>
-        <location filename="../src/gui/app/TrayMenuManager.cpp" line="+70"/>
+        <location filename="../src/gui/app/TrayMenuManager.cpp" line="+86"/>
         <source>eMule Speed</source>
         <translation>eMule の速度</translation>
     </message>
@@ -10123,7 +10530,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>アップ/ダウン速度を制限する</translation>
     </message>
     <message>
-        <location line="+19"/>
+        <location line="+20"/>
+        <source>Pause Usenet</source>
+        <translation>Usenet を一時停止</translation>
+    </message>
+    <message>
+        <location line="+14"/>
         <source>Connect</source>
         <translation>接続</translation>
     </message>
@@ -10153,529 +10565,607 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     <message>
         <location filename="../src/gui/dialogs/UsenetArchiveEntryDialog.cpp" line="+59"/>
         <source>Preview File</source>
-        <translation type="unfinished"></translation>
+        <translation>プレビューするファイル</translation>
     </message>
     <message>
         <location line="+42"/>
         <source>Playable</source>
-        <translation type="unfinished"></translation>
+        <translation>再生可能</translation>
     </message>
     <message>
         <location line="+30"/>
         <source>Nothing has arrived for this download yet.</source>
-        <translation type="unfinished"></translation>
+        <translation>このダウンロードはまだ何も届いていません。</translation>
     </message>
     <message numerus="yes">
         <location line="+3"/>
         <source>Reading the archive… %n file(s) found so far</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>アーカイブを読み込み中… これまでに %n 件のファイルを検出</numerusform>
         </translation>
     </message>
     <message numerus="yes">
         <location line="+6"/>
         <source>%n file(s) in the archive.</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>アーカイブ内に %n 件のファイルがあります。</numerusform>
         </translation>
     </message>
     <message>
         <location line="+34"/>
         <source>Name</source>
-        <translation type="unfinished">名前</translation>
+        <translation>名前</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Size</source>
-        <translation type="unfinished">サイズ</translation>
+        <translation>サイズ</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Status</source>
-        <translation type="unfinished">ステータス</translation>
+        <translation>ステータス</translation>
     </message>
     <message>
         <location line="+25"/>
         <source>Reading the archive…</source>
-        <translation type="unfinished"></translation>
+        <translation>アーカイブを読み込み中…</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>Preview</source>
-        <translation type="unfinished">プレビュー</translation>
+        <translation>プレビュー</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Keep Scanning</source>
-        <translation type="unfinished"></translation>
+        <translation>スキャンを続ける</translation>
     </message>
     <message>
         <location line="+26"/>
         <source>The connection to the core was lost.</source>
-        <translation type="unfinished"></translation>
+        <translation>コアへの接続が失われました。</translation>
     </message>
     <message>
         <location line="+6"/>
         <source>The archive is still being read — the files listed so far are all that is known.</source>
-        <translation type="unfinished"></translation>
+        <translation>アーカイブはまだ読み込み中です — ここに表示されているファイルが現時点で判明しているすべてです。</translation>
     </message>
 </context>
 <context>
     <name>eMule::UsenetDetailsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/UsenetDetailsDialog.cpp" line="+13"/>
+        <location filename="../src/gui/dialogs/UsenetDetailsDialog.cpp" line="+15"/>
         <location line="+18"/>
         <source>Release Details</source>
-        <translation type="unfinished"></translation>
+        <translation>リリースの詳細</translation>
     </message>
     <message>
         <location line="+19"/>
         <source>Not checked.</source>
-        <translation type="unfinished"></translation>
+        <translation>未確認。</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>%1% of this release looks obtainable.</source>
-        <translation type="unfinished"></translation>
+        <translation>このリリースの %1% は取得できそうです。</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>%1% by the NZB&apos;s own article counts. No server was asked.</source>
-        <translation type="unfinished"></translation>
+        <translation>NZB 自体の記事数による %1%。サーバーには問い合わせていません。</translation>
     </message>
     <message>
         <location line="+4"/>
         <source>%1 of %2</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 / %2</translation>
     </message>
     <message numerus="yes">
-        <location line="+84"/>
+        <location line="+99"/>
         <source>%n article(s) were never listed in the NZB</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%n 件の記事が NZB に記載されていませんでした</numerusform>
         </translation>
     </message>
     <message>
-        <location line="+53"/>
+        <location line="+58"/>
         <source>&quot;%1&quot; has not been published on its own.</source>
-        <translation type="unfinished"></translation>
+        <translation>「%1」は単独では公開されていません。</translation>
     </message>
     <message>
         <location line="+14"/>
         <source>&quot;%1&quot; is outside the core&apos;s Incoming folder and cannot be opened from here.</source>
-        <translation type="unfinished"></translation>
+        <translation>「%1」はコアの受信フォルダの外にあるため、ここから開くことはできません。</translation>
     </message>
     <message>
         <location line="+43"/>
         <source>Total Size:</source>
-        <translation type="unfinished"></translation>
+        <translation>合計サイズ:</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Date:</source>
-        <translation type="unfinished"></translation>
+        <translation>日付:</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Status:</source>
-        <translation type="unfinished">ステータス：</translation>
+        <translation>ステータス：</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Health:</source>
-        <translation type="unfinished"></translation>
+        <translation>健全性:</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Poster:</source>
-        <translation type="unfinished"></translation>
+        <translation>投稿者:</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Articles:</source>
-        <translation type="unfinished"></translation>
+        <translation>記事:</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Newsgroups:</source>
-        <translation type="unfinished"></translation>
+        <translation>ニュースグループ:</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Files:</source>
-        <translation type="unfinished">ファイル:</translation>
+        <translation>ファイル:</translation>
     </message>
     <message>
         <location line="+9"/>
         <source>Name</source>
-        <translation type="unfinished">名前</translation>
+        <translation>名前</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Size</source>
-        <translation type="unfinished">サイズ</translation>
+        <translation>サイズ</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Progress</source>
-        <translation type="unfinished">進捗</translation>
+        <translation>進捗</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Articles</source>
-        <translation type="unfinished"></translation>
+        <translation>記事</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Missing</source>
-        <translation type="unfinished"></translation>
+        <translation>欠落</translation>
     </message>
     <message>
         <location line="+0"/>
         <source>Status</source>
-        <translation type="unfinished">ステータス</translation>
+        <translation>ステータス</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+23"/>
         <source>Open Folder</source>
-        <translation type="unfinished">フォルダを開く</translation>
+        <translation>フォルダを開く</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::UsenetFileCheckList</name>
+    <message>
+        <location filename="../src/gui/controls/UsenetFileCheckList.cpp" line="+53"/>
+        <source>Select All</source>
+        <translation>すべて選択</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Select None</source>
+        <translation>選択解除</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Invert Selection</source>
+        <translation>選択を反転</translation>
+    </message>
+    <message>
+        <location line="+73"/>
+        <source>Could not change which files download.</source>
+        <translation>ダウンロードするファイルを変更できませんでした。</translation>
     </message>
 </context>
 <context>
     <name>eMule::UsenetPanel</name>
     <message>
-        <location filename="../src/gui/panels/UsenetPanel.cpp" line="+156"/>
+        <location filename="../src/gui/panels/UsenetPanel.cpp" line="+164"/>
         <location line="+7"/>
-        <location line="+37"/>
-        <location line="+422"/>
+        <location line="+44"/>
+        <location line="+483"/>
         <source>Add NZB</source>
-        <translation type="unfinished"></translation>
+        <translation>NZBを追加</translation>
     </message>
     <message>
-        <location line="-465"/>
-        <location line="+43"/>
-        <location line="+49"/>
+        <location line="-533"/>
+        <location line="+50"/>
+        <location line="+62"/>
         <source>Not connected to the eMule core.</source>
-        <translation type="unfinished"></translation>
+        <translation>eMule コアに接続されていません。</translation>
     </message>
     <message>
-        <location line="-85"/>
+        <location line="-105"/>
         <source>Cannot read %1.</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 を読み取れません。</translation>
     </message>
     <message>
-        <location line="+84"/>
+        <location line="+104"/>
         <source>Add NZB from URL</source>
-        <translation type="unfinished"></translation>
+        <translation>URLからNZBを追加</translation>
     </message>
     <message>
         <location line="+23"/>
         <source>Add NZB…</source>
-        <translation type="unfinished"></translation>
+        <translation>NZBを追加…</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+863"/>
+        <location line="+938"/>
         <source>Pause</source>
-        <translation type="unfinished">一時停止</translation>
+        <translation>一時停止</translation>
     </message>
     <message>
-        <location line="-859"/>
-        <location line="+862"/>
+        <location line="-934"/>
+        <location line="+937"/>
         <source>Resume</source>
-        <translation type="unfinished">再開</translation>
+        <translation>再開</translation>
     </message>
     <message>
-        <location line="-860"/>
+        <location line="-935"/>
         <source>Remove</source>
-        <translation type="unfinished">削除</translation>
+        <translation>削除</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+5"/>
+        <location line="+893"/>
+        <source>Pause All</source>
+        <translation>すべて一時停止</translation>
+    </message>
+    <message>
+        <location line="-886"/>
         <source>Add NZB from URL…</source>
-        <translation type="unfinished"></translation>
+        <translation>URLからNZBを追加…</translation>
     </message>
     <message>
         <location line="+5"/>
         <source>Preview</source>
-        <translation type="unfinished">プレビュー</translation>
+        <translation>プレビュー</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>Check Availability</source>
-        <translation type="unfinished"></translation>
+        <translation>可用性を確認</translation>
     </message>
     <message>
-        <location line="+248"/>
+        <location line="+261"/>
         <source>Priority</source>
-        <translation type="unfinished">優先度</translation>
+        <translation>優先度</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>High</source>
-        <translation type="unfinished">高い</translation>
+        <translation type="obsolete">高い</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Normal</source>
-        <translation type="unfinished">通常</translation>
+        <translation type="obsolete">通常</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Low</source>
-        <translation type="unfinished">低い</translation>
+        <translation type="obsolete">低い</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+10"/>
         <source>Assign To Category</source>
-        <translation type="unfinished">カテゴリに割り当て</translation>
+        <translation>カテゴリに割り当て</translation>
     </message>
     <message>
         <location line="+3"/>
         <source>No category</source>
-        <translation type="unfinished"></translation>
+        <translation>カテゴリなし</translation>
     </message>
     <message>
         <location line="+14"/>
         <source>Set Password…</source>
-        <translation type="unfinished"></translation>
+        <translation>パスワードを設定…</translation>
+    </message>
+    <message>
+        <location line="+23"/>
+        <source>Download Selected Files</source>
+        <translation>選択したファイルをダウンロード</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Skip Selected Files</source>
+        <translation>選択したファイルをスキップ</translation>
     </message>
     <message>
         <location line="+19"/>
         <source>Open File</source>
-        <translation type="unfinished">ファイルを開く</translation>
+        <translation>ファイルを開く</translation>
     </message>
     <message>
         <location line="+11"/>
         <source>Open Folder</source>
-        <translation type="unfinished">フォルダを開く</translation>
+        <translation>フォルダを開く</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Details…</source>
-        <translation type="unfinished"></translation>
+        <translation>詳細…</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>Remove and Delete Files</source>
-        <translation type="unfinished"></translation>
+        <translation>削除してファイルも消去</translation>
     </message>
     <message>
         <location line="+9"/>
         <source>NZB files (*.nzb);;All files (*)</source>
-        <translation type="unfinished"></translation>
+        <translation>NZB ファイル (*.nzb);;すべてのファイル (*)</translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location line="+34"/>
         <location line="+15"/>
         <source>Set Password</source>
-        <translation type="unfinished"></translation>
+        <translation>パスワードを設定</translation>
     </message>
     <message>
         <location line="-14"/>
         <source>Archive password for &quot;%1&quot;:</source>
-        <translation type="unfinished"></translation>
+        <translation>「%1」のアーカイブパスワード:</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>this download</source>
-        <translation type="unfinished"></translation>
+        <translation>このダウンロード</translation>
     </message>
     <message>
         <location line="+14"/>
         <source>Remove the stored password for this download?</source>
-        <translation type="unfinished"></translation>
+        <translation>このダウンロードに保存されたパスワードを削除しますか?</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+13"/>
         <source>Could not set the password.</source>
-        <translation type="unfinished"></translation>
+        <translation>パスワードを設定できませんでした。</translation>
     </message>
     <message>
         <location line="+43"/>
         <source>Remove Downloads</source>
-        <translation type="unfinished"></translation>
+        <translation>ダウンロードを削除</translation>
     </message>
     <message numerus="yes">
         <location line="+1"/>
         <source>Remove %n download(s) and delete the files already fetched?</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%n 件のダウンロードを削除し、取得済みのファイルも消去しますか?</numerusform>
         </translation>
     </message>
     <message>
         <location line="+55"/>
         <location line="+82"/>
         <source>Nothing has completed yet for &quot;%1&quot;.</source>
-        <translation type="unfinished"></translation>
+        <translation>「%1」はまだ何も完了していません。</translation>
     </message>
     <message>
         <location line="+100"/>
         <source>Nothing here can be previewed yet.</source>
-        <translation type="unfinished"></translation>
+        <translation>まだプレビューできるものはありません。</translation>
     </message>
     <message>
         <location line="+26"/>
         <source>Preview is unavailable — the daemon&apos;s web server is not running.</source>
-        <translation type="unfinished"></translation>
+        <translation>プレビューは利用できません — デーモンの Web サーバーが実行されていません。</translation>
     </message>
     <message>
         <location line="+58"/>
         <source>No Usenet downloads. Use &quot;Add NZB…&quot; to queue one.</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet のダウンロードはありません。「NZBを追加…」でキューに追加してください。</translation>
     </message>
     <message>
         <location line="+30"/>
         <source>%1 download(s), %2 active — %3% complete</source>
-        <translation type="unfinished"></translation>
+        <translation>ダウンロード %1 件、アクティブ %2 件 — %3% 完了</translation>
     </message>
     <message>
         <location line="+9"/>
         <source> — %1</source>
-        <translation type="unfinished"></translation>
+        <translation> — %1</translation>
     </message>
     <message>
         <location line="+7"/>
         <source> — limited to %1 KB/s while eD2K downloads</source>
-        <translation type="unfinished"></translation>
+        <translation> — eD2K のダウンロード中は %1 KB/s に制限</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Download limit %1 KB/s: Usenet up to %2 KB/s, eD2K up to %3 KB/s.
 Whichever network is idle lends its share to the other.</source>
-        <translation type="unfinished"></translation>
+        <translation>ダウンロード制限 %1 KB/s: Usenet は最大 %2 KB/s、eD2K は最大 %3 KB/s。
+アイドル状態のネットワークは自分の割り当てをもう一方に譲ります。</translation>
     </message>
     <message>
         <location line="+11"/>
         <source>Usenet: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet: %1</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>Usenet: downloading again.</source>
-        <translation type="unfinished"></translation>
+        <translation>Usenet: ダウンロードを再開しました。</translation>
+    </message>
+    <message>
+        <location line="+19"/>
+        <source>Resume All</source>
+        <translation>すべて再開</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Let every Usenet download continue</source>
+        <translation>すべての Usenet ダウンロードを継続します</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Stop starting new Usenet articles. Nothing is removed, and each release keeps its own state.</source>
+        <translation>新しい Usenet 記事の取得開始を停止します。何も削除されず、各リリースは自身の状態を保ちます。</translation>
     </message>
     <message>
         <location line="+39"/>
         <location line="+4"/>
         <source>Cancel</source>
-        <translation type="unfinished">キャンセル</translation>
+        <translation>キャンセル</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Remove every Usenet download in &quot;%1&quot; and delete its files?</source>
-        <translation type="unfinished"></translation>
+        <translation>「%1」内のすべての Usenet ダウンロードを削除し、ファイルも消去しますか?</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+22"/>
         <source>Could not apply that to the category: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>カテゴリに適用できませんでした: %1</translation>
     </message>
 </context>
 <context>
     <name>eMule::UsenetQueueModel</name>
     <message numerus="yes">
-        <location filename="../src/gui/controls/UsenetQueueModel.cpp" line="+179"/>
         <source>%n article(s) missing</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
+        <translation type="vanished">
+            <numerusform>%n 件の記事が欠落</numerusform>
         </translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Complete</source>
-        <translation type="unfinished">完了</translation>
+        <translation type="vanished">完了</translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/gui/controls/UsenetQueueModel.cpp" line="+114"/>
+        <source>%1% — %n article(s) missing</source>
+        <translation>
+            <numerusform>%1% — %n 件の記事が欠落</numerusform>
+        </translation>
     </message>
     <message>
-        <location line="+106"/>
+        <location line="+39"/>
+        <source>Skipped — tick it to download this file</source>
+        <translation>スキップ — このファイルをダウンロードするにはチェックを入れてください</translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>%1% — %2 of %3 articles</source>
+        <translation>%1% — %3 件中 %2 件の記事</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+4"/>
+        <source>, %n missing</source>
+        <translation>
+            <numerusform>、%n 件欠落</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+84"/>
         <source>Not checked.</source>
-        <translation type="unfinished"></translation>
+        <translation>未確認。</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>%1% of this release looks obtainable.</source>
-        <translation type="unfinished"></translation>
+        <translation>このリリースの %1% は取得できそうです。</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>%1% by the NZB&apos;s own article counts. No server was asked.</source>
-        <translation type="unfinished"></translation>
+        <translation>NZB 自体の記事数による %1%。サーバーには問い合わせていません。</translation>
     </message>
     <message>
         <location line="+7"/>
         <source>The PAR2 recovery volumes should cover the shortfall.</source>
-        <translation type="unfinished"></translation>
+        <translation>PAR2 リカバリーボリュームで不足分を補えるはずです。</translation>
     </message>
     <message>
         <location line="+8"/>
         <source>%1
 The password for this release did not work. Right-click to set a different one.</source>
-        <translation type="unfinished"></translation>
+        <translation>%1
+このリリースのパスワードは正しくありませんでした。右クリックして別のパスワードを設定してください。</translation>
     </message>
     <message>
         <location line="+2"/>
         <source>%1
 This release is password-protected. Right-click to set its password.</source>
-        <translation type="unfinished"></translation>
+        <translation>%1
+このリリースはパスワードで保護されています。右クリックしてパスワードを設定してください。</translation>
     </message>
     <message numerus="yes">
         <location line="+4"/>
         <source>%1
 %n article(s) could not be found on any server</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
+        <translation>
+            <numerusform>%1
+%n 件の記事がどのサーバーにも見つかりませんでした</numerusform>
         </translation>
     </message>
     <message>
         <location line="+4"/>
         <source>%1
 A password is set for this release.</source>
-        <translation type="unfinished"></translation>
+        <translation>%1
+このリリースにはパスワードが設定されています。</translation>
     </message>
     <message>
         <location line="+61"/>
         <source>Name</source>
-        <translation type="unfinished">名前</translation>
+        <translation>名前</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Size</source>
-        <translation type="unfinished">サイズ</translation>
+        <translation>サイズ</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Progress</source>
-        <translation type="unfinished">進捗</translation>
+        <translation>進捗</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Status</source>
-        <translation type="unfinished">ステータス</translation>
+        <translation>ステータス</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Speed</source>
-        <translation type="unfinished">速度</translation>
+        <translation>速度</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Remaining</source>
-        <translation type="unfinished">残り</translation>
+        <translation>残り</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Priority</source>
-        <translation type="unfinished">優先度</translation>
+        <translation>優先度</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Health</source>
-        <translation type="unfinished"></translation>
+        <translation>健全性</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Category</source>
-        <translation type="unfinished">カテゴリ</translation>
+        <translation>カテゴリ</translation>
     </message>
 </context>
 <context>
@@ -10694,6 +11184,1259 @@ A password is set for this release.</source>
         <location line="+7"/>
         <source>the version manifest has no &apos;latest&apos; field</source>
         <translation>バージョンマニフェストに &apos;latest&apos; フィールドがありません</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::WebServer</name>
+    <message>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+15"/>
+        <source>(still scanning)</source>
+        <translation>（スキャン中）</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Accepted</source>
+        <translation>承認</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Add</source>
+        <translation>追加</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Add NZB from URL…</source>
+        <translation>URLからNZBを追加…</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Add NZB…</source>
+        <translation>NZBを追加…</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Add paused</source>
+        <translation>一時停止状態で追加</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Add to Static</source>
+        <translation>静的リストに追加</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Adding %1 NZB(s)…</source>
+        <translation>%1 個のNZBを追加中…</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Address</source>
+        <translation>アドレス</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3593"/>
+        <location line="+3485"/>
+        <location line="+45"/>
+        <source>Session expired — log in again</source>
+        <translation>セッションの有効期限が切れました — 再度ログインしてください</translation>
+    </message>
+    <message>
+        <location line="-3528"/>
+        <source>Guests cannot add downloads</source>
+        <translation>ゲストはダウンロードを追加できません</translation>
+    </message>
+    <message>
+        <location line="+859"/>
+        <source>Looking for comments on Kad</source>
+        <translation>Kad でコメントを検索中</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Rating: %1</source>
+        <translation>評価: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Has comments</source>
+        <translation>コメントあり</translation>
+    </message>
+    <message>
+        <location line="+403"/>
+        <location line="+1"/>
+        <source>Incoming</source>
+        <translation>受信フォルダ</translation>
+    </message>
+    <message>
+        <location line="+27"/>
+        <source>Nothing has finished downloading yet.</source>
+        <translation>まだ完了したダウンロードはありません。</translation>
+    </message>
+    <message>
+        <location line="+32"/>
+        <source>Modified</source>
+        <translation>更新日時</translation>
+    </message>
+    <message>
+        <location line="+40"/>
+        <source>Download</source>
+        <translation>ダウンロード</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>Play</source>
+        <translation>再生</translation>
+    </message>
+    <message>
+        <location line="+91"/>
+        <source>Open this URL in VLC or another player:</source>
+        <translation>この URL を VLC などのプレーヤーで開いてください:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>This file is named %1 but its contents are %2. The name is wrong — common for files off the ed2k network — so a player that trusts it finds no %3 and sits at 0:00. It is being served as its real type, so it may still play above.</source>
+        <translation>このファイルの名前は %1 ですが、中身は %2 です。名前が間違っています（ed2k ネットワークのファイルではよくあります）。そのため名前を信じるプレーヤーは %3 を見つけられず 0:00 のまま止まります。実際の形式で配信しているので、上で再生できる可能性があります。</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>This file is named %1 but does not start with the %2 signature every one of them has, and its contents match no media container we recognise. It is very likely a fake or a corrupt download — no player will get anything out of it.</source>
+        <translation>このファイルの名前は %1 ですが、この形式のファイルが必ず持つ %2 シグネチャで始まっておらず、内容も既知のメディアコンテナに一致しません。偽物か破損したダウンロードの可能性が非常に高く、どのプレーヤーでも再生できません。</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>The raw URL, if you want to look for yourself:</source>
+        <translation>自分で確認したい場合の直接 URL:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Your browser probably cannot decode %1.</source>
+        <translation>お使いのブラウザーは %1 をデコードできない可能性があります。</translation>
+    </message>
+    <message>
+        <location line="+24"/>
+        <source>Copy</source>
+        <translation>コピー</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Copied</source>
+        <translation>コピーしました</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Download this file</source>
+        <translation>このファイルをダウンロード</translation>
+    </message>
+    <message>
+        <location line="+322"/>
+        <source>Access denied — no password configured. Set a password in Options → Web Interface.</source>
+        <translation>アクセスが拒否されました — パスワードが設定されていません。オプション → Web インターフェースでパスワードを設定してください。</translation>
+    </message>
+    <message>
+        <location line="+18"/>
+        <source>Login failed</source>
+        <translation>ログインに失敗しました</translation>
+    </message>
+    <message>
+        <location line="+205"/>
+        <location line="+1819"/>
+        <source>Web Control Panel</source>
+        <translation>Web コントロールパネル</translation>
+    </message>
+    <message>
+        <location line="-1810"/>
+        <source>Not connected</source>
+        <translation>未接続</translation>
+    </message>
+    <message>
+        <location line="+289"/>
+        <source>Connected</source>
+        <translation>接続済み</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <location line="+283"/>
+        <source>Disconnected</source>
+        <translation>未接続</translation>
+    </message>
+    <message>
+        <location line="-84"/>
+        <source>Active Connections</source>
+        <translation>アクティブ接続</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Time</source>
+        <translation>時間</translation>
+    </message>
+    <message>
+        <location line="+29"/>
+        <source>Connected to: %1 (%2:%3)</source>
+        <translation>接続先: %1 (%2:%3)</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Client ID: %1 (%2)</source>
+        <translation>クライアント ID: %1 (%2)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>LowID</source>
+        <translation>LowID</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>HighID</source>
+        <translation>HighID</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Users: %1 | Files: %2</source>
+        <translation>ユーザー：%1 | ファイル：%2</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Description: %1</source>
+        <translation>説明: %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Ping: %1 ms</source>
+        <translation>Ping: %1 ms</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Connecting...</source>
+        <translation>接続中...</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Not connected to any server</source>
+        <translation>どのサーバーにも接続していません</translation>
+    </message>
+    <message>
+        <location line="+34"/>
+        <source>Running</source>
+        <translation>実行中</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Not available</source>
+        <translation>利用できません</translation>
+    </message>
+    <message>
+        <location line="+149"/>
+        <location line="+1036"/>
+        <source>Queued</source>
+        <translation>キュー待ち</translation>
+    </message>
+    <message>
+        <location line="-1035"/>
+        <location line="+1034"/>
+        <source>Downloading</source>
+        <translation>ダウンロード中</translation>
+    </message>
+    <message>
+        <location line="-1033"/>
+        <source>Paused</source>
+        <translation>一時停止</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+867"/>
+        <location line="+164"/>
+        <source>Complete</source>
+        <translation>完了</translation>
+    </message>
+    <message>
+        <location line="-1030"/>
+        <source>Failed</source>
+        <translation>失敗</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Verifying</source>
+        <translation>検証中</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Repairing</source>
+        <translation>修復中</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Unpacking</source>
+        <translation>展開中</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Checking</source>
+        <translation>確認中</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Unknown</source>
+        <translation>不明</translation>
+    </message>
+    <message>
+        <location line="+30"/>
+        <source>Not checked.</source>
+        <translation>未確認。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>%1% of this release looks obtainable.</source>
+        <translation>このリリースの %1% は取得できそうです。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>%1% by the NZB&apos;s own article counts. No server was asked.</source>
+        <translation>NZB 自体の記事数による %1%。サーバーには問い合わせていません。</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>The PAR2 recovery volumes should cover the shortfall.</source>
+        <translation>PAR2 リカバリーボリュームで不足分を補えるはずです。</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>%1
+The password for this release did not work. Right-click to set a different one.</source>
+        <translation>%1
+このリリースのパスワードは正しくありませんでした。右クリックして別のパスワードを設定してください。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>%1
+This release is password-protected. Right-click to set its password.</source>
+        <translation>%1
+このリリースはパスワードで保護されています。右クリックしてパスワードを設定してください。</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+4"/>
+        <source>%1
+%n article(s) could not be found on any server</source>
+        <translation>
+            <numerusform>%1
+%n 件の記事がどのサーバーにも見つかりませんでした</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>%1
+A password is set for this release.</source>
+        <translation>%1
+このリリースにはパスワードが設定されています。</translation>
+    </message>
+    <message>
+        <location line="+126"/>
+        <source>%1 (and %2 other(s))</source>
+        <translation>%1（他 %2 件）</translation>
+    </message>
+    <message>
+        <location line="+60"/>
+        <source>Usenet item not found</source>
+        <translation>Usenet の項目が見つかりません</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Very high</source>
+        <translation>非常に高い</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>High</source>
+        <translation>高い</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Low</source>
+        <translation>低い</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Very low</source>
+        <translation>非常に低い</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Normal</source>
+        <translation>通常</translation>
+    </message>
+    <message>
+        <location line="+97"/>
+        <source>Only a queued or downloading release can be paused</source>
+        <translation>一時停止できるのは待機中またはダウンロード中のリリースだけです</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Only a paused or failed release can be resumed</source>
+        <translation>再開できるのは一時停止中または失敗したリリースだけです</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <location line="+120"/>
+        <location line="+165"/>
+        <source>priority must be a number from -2 to 2</source>
+        <translation>優先度は -2 から 2 の数値で指定してください</translation>
+    </message>
+    <message>
+        <location line="-279"/>
+        <location line="+120"/>
+        <location line="+74"/>
+        <location line="+78"/>
+        <source>Unknown category</source>
+        <translation>不明なカテゴリ</translation>
+    </message>
+    <message>
+        <location line="-260"/>
+        <location line="+4"/>
+        <source>files must be a list of file numbers</source>
+        <translation>files はファイル番号のリストで指定してください</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Unknown action</source>
+        <translation>不明な操作</translation>
+    </message>
+    <message>
+        <location line="+241"/>
+        <source>Post the .nzb as the request body, or give a url</source>
+        <translation>.nzb をリクエスト本文として送信するか、URL を指定してください</translation>
+    </message>
+    <message>
+        <location line="+43"/>
+        <source>Guests cannot change downloads</source>
+        <translation>ゲストはダウンロードを変更できません</translation>
+    </message>
+    <message>
+        <location line="+17"/>
+        <source>Nothing selected</source>
+        <translation>何も選択されていません</translation>
+    </message>
+    <message>
+        <location line="+49"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>All</source>
+        <translation>すべて</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>No category</source>
+        <translation>カテゴリなし</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+115"/>
+        <location line="+164"/>
+        <source>%n article(s) missing</source>
+        <translation>
+            <numerusform>%n 件の記事が欠落</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="-100"/>
+        <source>No Usenet downloads. Use &quot;Add NZB…&quot; to queue one.</source>
+        <translation>Usenet のダウンロードはありません。「NZBを追加…」でキューに追加してください。</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>%1 download(s), %2 active — %3% complete</source>
+        <translation>ダウンロード %1 件、アクティブ %2 件 — %3% 完了</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <location line="+2"/>
+        <source> — %1</source>
+        <translation> — %1</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source> — limited to %1 KB/s while eD2K downloads</source>
+        <translation> — eD2K のダウンロード中は %1 KB/s に制限</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Download limit %1 KB/s: Usenet up to %2 KB/s, eD2K up to %3 KB/s.
+Whichever network is idle lends its share to the other.</source>
+        <translation>ダウンロード制限 %1 KB/s: Usenet は最大 %2 KB/s、eD2K は最大 %3 KB/s。
+アイドル状態のネットワークは自分の割り当てをもう一方に譲ります。</translation>
+    </message>
+    <message>
+        <location line="+22"/>
+        <source>No Usenet downloads here.</source>
+        <translation>ここには Usenet のダウンロードはありません。</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+48"/>
+        <source>%n article(s) were never listed in the NZB</source>
+        <translation>
+            <numerusform>%n 件の記事が NZB に記載されていませんでした</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+40"/>
+        <source>%1 of %2</source>
+        <translation>%1 / %2</translation>
+    </message>
+    <message>
+        <location line="+60"/>
+        <source>App language (%1)</source>
+        <translation>アプリの言語 (%1)</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>Any</source>
+        <translation>すべて</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Apply</source>
+        <translation>適用</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Archive (.zip .rar ...)</source>
+        <translation>アーカイブ (.zip .rar ...)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Archive password for &quot;%1&quot;:</source>
+        <translation>「%1」のアーカイブパスワード:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Articles</source>
+        <translation>記事</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Articles:</source>
+        <translation>記事:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Audio (.mp3 .ogg ...)</source>
+        <translation>オーディオ (.mp3 .ogg ...)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Back to the queue</source>
+        <translation>キューに戻る</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>CD Image (.iso .bin ...)</source>
+        <translation>CD イメージ (.iso .bin ...)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Cancel</source>
+        <translation>キャンセル</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Cancel this download?</source>
+        <translation>このダウンロードをキャンセルしますか?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Category</source>
+        <translation>カテゴリ</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Category:</source>
+        <translation>カテゴリ:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Category: %1</source>
+        <translation>カテゴリ: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Check Availability</source>
+        <translation>可用性を確認</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Choose .nzb files or paste links first.</source>
+        <translation>先に .nzb ファイルを選ぶか、リンクを貼り付けてください。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Clear Completed</source>
+        <translation>完了済みをクリア</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Client</source>
+        <translation>クライアント</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Comment</source>
+        <translation>コメント</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Comments</source>
+        <translation>コメント</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Completed</source>
+        <translation>完了</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Connect</source>
+        <translation>接続</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Copy ED2K Link</source>
+        <translation>ED2K リンクをコピー</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Could not apply that to the category: %1</source>
+        <translation>カテゴリに適用できませんでした: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Could not reach the eMule core.</source>
+        <translation>eMule コアに接続できませんでした。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Date:</source>
+        <translation>日付:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Debug</source>
+        <translation>デバッグ</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Debug Log</source>
+        <translation>デバッグログ</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Description</source>
+        <translation>説明</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Details…</source>
+        <translation>詳細…</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Disconnect</source>
+        <translation>切断</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Document (.doc .pdf ...)</source>
+        <translation>ドキュメント (.doc .pdf ...)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Download Speed</source>
+        <translation>ダウンロード速度</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1358"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>Downloads</source>
+        <translation>ダウンロード</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>File</source>
+        <translation>ファイル</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>File Name</source>
+        <translation>ファイル名</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Files</source>
+        <translation>ファイル</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Files:</source>
+        <translation>ファイル:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>General</source>
+        <translation>全般</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Global</source>
+        <translation>グローバル</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Graphs</source>
+        <translation>グラフ</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hash</source>
+        <translation>ハッシュ</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Health</source>
+        <translation>健全性</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Health:</source>
+        <translation>健全性:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Image (.jpg .png ...)</source>
+        <translation>画像 (.jpg .png ...)</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>KB/s</source>
+        <translation>KB/s</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>Kad</source>
+        <translation>Kad</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Kad Network</source>
+        <translation>Kad ネットワーク</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Kademlia</source>
+        <translation>Kademlia</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Keep Scanning</source>
+        <translation>スキャンを続ける</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Language</source>
+        <translation>言語</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Log</source>
+        <translation>ログ</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Login</source>
+        <translation>ログイン</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Logout</source>
+        <translation>ログアウト</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Max Download (KB/s)</source>
+        <translation>最大ダウンロード (KB/s)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Max Download Speed</source>
+        <translation>最大ダウンロード速度</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Max Upload (KB/s)</source>
+        <translation>最大アップロード (KB/s)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Max Upload Speed</source>
+        <translation>最大アップロード速度</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Method</source>
+        <translation>方式</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Missing</source>
+        <translation>欠落</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>My Info</source>
+        <translation>マイ情報</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>NZB URLs:</source>
+        <translation>NZB の URL:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>NZB files:</source>
+        <translation>NZB ファイル:</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1240"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>Name</source>
+        <translation>名前</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>Newsgroups:</source>
+        <translation>ニュースグループ:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Nickname</source>
+        <translation>ニックネーム</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Nickname:</source>
+        <translation>ニックネーム:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Nothing has completed yet for &quot;%1&quot;.</source>
+        <translation>「%1」はまだ何も完了していません。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Nothing here can be previewed yet.</source>
+        <translation>まだプレビューできるものはありません。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Open File</source>
+        <translation>ファイルを開く</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Open Folder</source>
+        <translation>フォルダを開く</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Password</source>
+        <translation>パスワード</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Password:</source>
+        <translation>パスワード：</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Paste one or more http(s) links to .nzb files here, one per line...</source>
+        <translation>.nzb ファイルへの http(s) リンクを 1 行に 1 つずつここに貼り付けてください...</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Pause</source>
+        <translation>一時停止</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Pause All</source>
+        <translation>すべて一時停止</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Ping</source>
+        <translation>Ping</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Playable</source>
+        <translation>再生可能</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Please add at most %1 links at a time.</source>
+        <translation>一度に追加できるリンクは %1 件までです。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Port</source>
+        <translation>ポート</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Ports</source>
+        <translation>ポート</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Poster:</source>
+        <translation>投稿者:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Preferences</source>
+        <translation>設定</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Preview</source>
+        <translation>プレビュー</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Preview File</source>
+        <translation>プレビューするファイル</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Priority</source>
+        <translation>優先度</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Priority:</source>
+        <translation>優先度:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Priority: %1</source>
+        <translation>優先度: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Priority: Auto</source>
+        <translation>優先度: 自動</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Priority: High</source>
+        <translation>優先度: 高</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Priority: Low</source>
+        <translation>優先度: 低</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Priority: Normal</source>
+        <translation>優先度: 普通</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Program (.exe ...)</source>
+        <translation>プログラム (.exe ...)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Progress</source>
+        <translation>進捗</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Queued %1 NZB(s).</source>
+        <translation>%1 個のNZBをキューに追加しました。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Rating</source>
+        <translation>評価</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Recheck Firewall</source>
+        <translation>ファイアウォールを再チェック</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Reconnects</source>
+        <translation>再接続</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remaining</source>
+        <translation>残り</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove</source>
+        <translation>削除</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove %1 download(s) and delete the files already fetched?</source>
+        <translation>%1 件のダウンロードを削除し、取得済みのファイルも削除しますか?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove and Delete Files</source>
+        <translation>削除してファイルも消去</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove every Usenet download in &quot;%1&quot; and delete its files?</source>
+        <translation>「%1」内のすべての Usenet ダウンロードを削除し、ファイルも消去しますか?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove from Static</source>
+        <translation>静的リストから削除</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Remove the stored password for this download?</source>
+        <translation>このダウンロードに保存されたパスワードを削除しますか?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Requests</source>
+        <translation>リクエスト</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Resume</source>
+        <translation>再開</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Resume All</source>
+        <translation>すべて再開</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Search</source>
+        <translation>検索</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Server</source>
+        <translation>サーバー</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Server Info</source>
+        <translation>サーバー情報</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Server List</source>
+        <translation>サーバーリスト</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Server Name</source>
+        <translation>サーバー名</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Session Received</source>
+        <translation>受信量（セッション）</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Session Sent</source>
+        <translation>送信量（セッション）</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Session Statistics</source>
+        <translation>セッション統計</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Set Password…</source>
+        <translation>パスワードを設定…</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Shared</source>
+        <translation>共有済み</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Shared Files</source>
+        <translation>共有ファイル</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+0"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>Size</source>
+        <translation>サイズ</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>Sources</source>
+        <translation>ソース</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Speed</source>
+        <translation>速度</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Speed Limits</source>
+        <translation>速度制限</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Statistics</source>
+        <translation>統計</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Status</source>
+        <translation>ステータス</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Status:</source>
+        <translation>ステータス：</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Stop</source>
+        <translation>停止</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>TCP Port</source>
+        <translation>TCP ポート</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>That did not work.</source>
+        <translation>うまくいきませんでした。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>These could not be added: %1</source>
+        <translation>次のものは追加できませんでした: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>This archive cannot be previewed.</source>
+        <translation>このアーカイブはプレビューできません。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>This download is no longer in the queue.</source>
+        <translation>このダウンロードはもうキューにありません。</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Total</source>
+        <translation>合計</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Total Size:</source>
+        <translation>合計サイズ:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Transfer</source>
+        <translation>転送</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Transferred</source>
+        <translation>転送済み</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Type</source>
+        <translation>種類</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>UDP Port</source>
+        <translation>UDP ポート</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Upload Speed</source>
+        <translation>アップロード速度</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1237"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>Uploads</source>
+        <translation>アップロード</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>Uptime</source>
+        <translation>稼働時間</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Usenet</source>
+        <translation>Usenet</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+483"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>Usenet engine unavailable</source>
+        <translation>Usenet エンジンを利用できません</translation>
+    </message>
+    <message>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <source>User</source>
+        <translation>ユーザー</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>User Information</source>
+        <translation>ユーザー情報</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>User Name</source>
+        <translation>ユーザー名</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Users</source>
+        <translation>ユーザー</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Video (.avi .mkv ...)</source>
+        <translation>動画 (.avi .mkv ...)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>You have already downloaded %1 of these. Download them again?</source>
+        <translation>このうち %1 件はすでにダウンロード済みです。もう一度ダウンロードしますか?</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>this download</source>
+        <translation>このダウンロード</translation>
     </message>
 </context>
 </TS>

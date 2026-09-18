@@ -3,6 +3,8 @@
 
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
+#include "controls/UsenetFileCheckList.h"
+#include "controls/UsenetProgressDelegate.h"
 #include "controls/UsenetQueueModel.h"
 #include "utils/PanelPoller.h"
 #include "dialogs/UsenetArchiveEntryDialog.h"
@@ -29,6 +31,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QHash>
 #include <QInputDialog>
 #include "controls/CategoryFilterProxy.h"
 #include "controls/CategoryTabBar.h"
@@ -101,7 +104,12 @@ void UsenetPanel::setIpcClient(IpcClient* ipc)
         m_model->clear();
         m_maxDownloadKb = m_usenetLimitKb = m_ed2kBudgetKb = 0;
         updateSummary();
+        updateEngineAction();
     });
+    connect(m_ipc, &IpcClient::connected, this, &UsenetPanel::updateEngineAction);
+    connect(m_ipc, &IpcClient::usenetEnginePausedChanged, this,
+            &UsenetPanel::updateEngineAction);
+    updateEngineAction();
 
     // The split moves with eD2K's demand, not with anything in this queue, so it
     // cannot ride the item pushes. The stats push comes about once a second.
@@ -185,6 +193,10 @@ void UsenetPanel::addNzbFile(const QString& path, const NzbAddChoices& choices)
             msg.append(qint64(choices.category));
             msg.append(qint64(choices.priority));
             msg.append(choices.paused);
+            QCborArray skipped;
+            for (const int f : choices.skippedFiles)
+                skipped.append(f);
+            msg.append(QCborValue(skipped));
             return msg;
         },
         [this](bool added) {
@@ -295,6 +307,11 @@ void UsenetPanel::setupUi()
                                         this, &UsenetPanel::onResume);
     m_removeAction = toolbar->addAction(menuIcon("ListRemove.ico"), tr("Remove"),
                                         this, [this] { onRemove(false); });
+    toolbar->addSeparator();
+    // The engine, not the selection: nothing new starts, and no release's
+    // status changes — so Resume All cannot wake what the user paused one by one.
+    m_pauseAllAction = toolbar->addAction(menuIcon("Pause.ico"), tr("Pause All"),
+                                          this, &UsenetPanel::onToggleEnginePause);
 
     // Context menu and the Tools menu, but not the toolbar: MFC parity argues
     // against a second Add button, and one QAction shared by both menus is what
@@ -339,6 +356,12 @@ void UsenetPanel::setupUi()
     m_view = view;
     m_model = new UsenetQueueModel(this);
 
+    // A file row's checkbox. The row follows the push, not the click.
+    connect(m_model, &UsenetQueueModel::fileSkipRequested, this,
+            [this](const QString& itemId, int fileIndex, bool skipped) {
+        UsenetFileCheckList::sendSkip(m_ipc, this, itemId, {fileIndex}, skipped);
+    });
+
     m_proxy = new QSortFilterProxyModel(this);
     m_proxy->setSourceModel(m_model);
     // Qt::UserRole, as on Transfers: the model's display strings are formatted
@@ -356,6 +379,8 @@ void UsenetPanel::setupUi()
     m_categoryProxy->setSortRole(Qt::UserRole);
 
     m_view->setModel(m_categoryProxy);
+    m_view->setItemDelegateForColumn(UsenetQueueModel::ColProgress,
+                                     new UsenetProgressDelegate(m_view));
     m_view->setRootIsDecorated(true);
     m_view->setUniformRowHeights(true);
     m_view->setAlternatingRowColors(true);
@@ -367,7 +392,7 @@ void UsenetPanel::setupUi()
 
     // bindColumns only after setModel(): a header with no sections cannot take a
     // restore, and caching that empty state would destroy the saved layout.
-    view->bindColumns(QStringLiteral("usenetQueue"), {280, 80, 75, 160, 85, 85, 60, 60, 90});
+    view->bindColumns(QStringLiteral("usenetQueue"), {280, 80, 110, 160, 85, 85, 60, 60, 90});
 
     connect(m_view, &QWidget::customContextMenuRequested,
             this, &UsenetPanel::onContextMenu);
@@ -407,6 +432,7 @@ void UsenetPanel::setupUi()
     // Drops land here as well as on the main window; see acceptNzbDrop().
     setAcceptDrops(true);
     updateActions();
+    updateEngineAction();
     updateSummary();
 }
 
@@ -599,6 +625,35 @@ void UsenetPanel::onContextMenu(const QPoint& pos)
         menu.addAction(m_checkAction);
         menu.addAction(m_previewAction);
 
+        // The file rows' checkboxes, for a whole selection at once.
+        QHash<QString, QList<int>> toSkip;
+        QHash<QString, QList<int>> toFetch;
+        for (const QModelIndex& proxyIdx : m_view->selectionModel()->selectedIndexes()) {
+            if (proxyIdx.column() != 0)
+                continue;
+            QString ownerId;
+            const UsenetFileRow* f = m_model->fileAt(toSourceIndex(proxyIdx), &ownerId);
+            const UsenetItemRow* owner = f ? m_model->findById(ownerId) : nullptr;
+            if (!f || f->isPar2 || !owner || !usenetItemAcceptsSkip(owner->status))
+                continue;
+            (f->skipped ? toFetch : toSkip)[ownerId].append(f->index);
+        }
+        if (!toSkip.isEmpty() || !toFetch.isEmpty()) {
+            menu.addSeparator();
+            auto* fetchAct = menu.addAction(menuIcon("Download.ico"), tr("Download Selected Files"),
+                                            this, [this, toFetch] {
+                for (auto it = toFetch.cbegin(); it != toFetch.cend(); ++it)
+                    UsenetFileCheckList::sendSkip(m_ipc, this, it.key(), it.value(), false);
+            });
+            fetchAct->setEnabled(!toFetch.isEmpty());
+            auto* skipAct = menu.addAction(menuIcon("Pause.ico"), tr("Skip Selected Files"),
+                                           this, [this, toSkip] {
+                for (auto it = toSkip.cbegin(); it != toSkip.cend(); ++it)
+                    UsenetFileCheckList::sendSkip(m_ipc, this, it.key(), it.value(), true);
+            });
+            skipAct->setEnabled(!toSkip.isEmpty());
+        }
+
         // What the double-click does, spelled out. Resolved from the row under
         // the cursor, so a file row offers *that* file and an item row its payload.
         const QModelIndex src = toSourceIndex(m_view->currentIndex());
@@ -649,14 +704,15 @@ void UsenetPanel::onAddNzb()
     // difference between a download that finishes and one that fails and has to
     // be retried. A *drop* stays silent — that is the quick path, and the
     // context menu's Set Password… covers it afterwards.
-    AddNzbFilesDialog dlg(paths, categoryChoices(), this);
+    AddNzbFilesDialog dlg(m_ipc, paths, categoryChoices(), this);
     if (dlg.exec() != QDialog::Accepted)
         return;
 
-    const NzbAddChoices choices{dlg.archivePassword(), dlg.category(),
-                                dlg.priority(), dlg.paused()};
-    for (const QString& path : paths)
+    for (const QString& path : paths) {
+        const NzbAddChoices choices{dlg.archivePassword(), dlg.category(), dlg.priority(),
+                                    dlg.paused(), dlg.skippedFiles(path)};
         addNzbFile(path, choices);
+    }
 }
 
 void UsenetPanel::onSetPassword()
@@ -1131,6 +1187,29 @@ void UsenetPanel::updateSummary()
         StatusBarNotifier::post(tr("Usenet: downloading again."), 4000);
     }
     m_lastStallNotice = stalled;
+}
+
+void UsenetPanel::onToggleEnginePause()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    // The label follows the push, not the click, so a refused or lost request
+    // cannot leave the button lying.
+    Ipc::IpcMessage msg(Ipc::IpcMsgType::SetUsenetPaused);
+    msg.append(!m_ipc->usenetEnginePaused());
+    m_ipc->sendRequest(std::move(msg));
+}
+
+void UsenetPanel::updateEngineAction()
+{
+    const bool paused = m_ipc && m_ipc->usenetEnginePaused();
+    m_pauseAllAction->setText(paused ? tr("Resume All") : tr("Pause All"));
+    m_pauseAllAction->setIcon(paused ? menuIcon("Start.ico") : menuIcon("Pause.ico"));
+    m_pauseAllAction->setToolTip(
+        paused ? tr("Let every Usenet download continue")
+               : tr("Stop starting new Usenet articles. Nothing is removed, and each "
+                    "release keeps its own state."));
+    m_pauseAllAction->setEnabled(m_ipc && m_ipc->isConnected());
 }
 
 QModelIndex UsenetPanel::toSourceIndex(const QModelIndex& viewIndex) const

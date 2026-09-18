@@ -117,6 +117,36 @@ QString formatShortNumber(double count, int decimals)
                                         QCoreApplication::translate("Units", kSuffix[idx]));
 }
 
+QString formatSecondsHM(qint64 seconds)
+{
+    // MFC CastSecondsToHM (OtherFunctions.cpp:231-250), IDS_SECS..IDS_DAYS (emule.rc:2503-2506)
+    static constexpr const char* kSecs  = QT_TRANSLATE_NOOP("Units", "secs");
+    static constexpr const char* kMins  = QT_TRANSLATE_NOOP("Units", "mins");
+    static constexpr const char* kHours = QT_TRANSLATE_NOOP("Units", "h");
+    static constexpr const char* kDays  = QT_TRANSLATE_NOOP("Units", "d");
+    if (seconds < 0)
+        return QStringLiteral("?");
+    if (seconds < 60)
+        return QStringLiteral("%1 %2").arg(seconds).arg(QCoreApplication::translate("Units", kSecs));
+    if (seconds < 3600) {
+        return QStringLiteral("%1:%2 %3")
+            .arg(seconds / 60)
+            .arg(seconds % 60, 2, 10, QLatin1Char('0'))
+            .arg(QCoreApplication::translate("Units", kMins));
+    }
+    if (seconds < 86400) {
+        return QStringLiteral("%1:%2 %3")
+            .arg(seconds / 3600)
+            .arg((seconds % 3600) / 60, 2, 10, QLatin1Char('0'))
+            .arg(QCoreApplication::translate("Units", kHours));
+    }
+    return QStringLiteral("%1 %2 %3 %4")
+        .arg(seconds / 86400)
+        .arg(QCoreApplication::translate("Units", kDays))
+        .arg((seconds % 86400) / 3600)
+        .arg(QCoreApplication::translate("Units", kHours));
+}
+
 QString formatQuotaGb(qint64 bytes)
 {
     return QStringLiteral("%1 GB").arg(double(bytes) / 1e9, 0, 'f', 1);

@@ -807,6 +807,15 @@ std::unique_ptr<Packet> KnownFile::createSrcInfoPacket(
     if (!forClient || m_uploadingClients.empty())
         return nullptr;
 
+    // The answer describes this file, so the requester has to have asked for it. MFC
+    // writes the client's upload file ID into the packet and relies on this guard for
+    // the two to agree (srchybrid/KnownFile.cpp:1012-1017).
+    if (!md4equ(forClient->reqUpFileId(), fileHash())) {
+        logDebug(QStringLiteral("createSrcInfoPacket: requester's upload file is not %1")
+                     .arg(fileName()));
+        return nullptr;
+    }
+
     // The requester must either report no chunk status at all, or one sized for this
     // file. Anything else means the needed-parts comparison below would read two
     // differently-shaped bitmaps against each other.
@@ -1234,21 +1243,97 @@ bool KnownFile::createHashFromMemory(const uint8* data, uint32 size,
 
 void KnownFile::updatePartsInfo()
 {
-    m_availPartFrequency.resize(m_partCount, 0);
-    std::fill(m_availPartFrequency.begin(), m_availPartFrequency.end(), 0);
+    const time_t now = std::time(nullptr);
+    const bool refresh = completeSourcesDue(now);
 
-    // Aggregate part availability from all uploading clients
+    m_availPartFrequency.assign(m_partCount, 0);
+
+    // What the peers downloading this file from us say they hold. The download-side
+    // partStatus() used to be read here, which is that peer's view of some *other*
+    // file it is downloading from us — MFC reads m_abyUpPartStatus (KnownFile.cpp:221).
+    std::vector<uint16> peerCounts;
     for (const auto* client : m_uploadingClients) {
-        const auto& status = client->partStatus();
-        const auto statusSize = static_cast<uint16>(status.size());
-        const uint16 limit = std::min(m_partCount, statusSize);
-        for (uint16 i = 0; i < limit; ++i) {
+        const auto& status = client->upPartStatus();
+        // A peer that hasn't reported for this file yet (or reported for a different
+        // one) contributes nothing — MFC KnownFile.cpp:221.
+        if (client->upPartCount() != m_partCount || status.size() < m_partCount)
+            continue;
+        for (uint16 i = 0; i < m_partCount; ++i) {
             if (status[i] != 0)
                 ++m_availPartFrequency[i];
         }
+        if (refresh)
+            peerCounts.push_back(client->upCompleteSourcesCount());
+    }
+
+    if (refresh) {
+        // Sources holding every part. MFC's loop at KnownFile.cpp:222 runs `--i > 0`
+        // and so never counts part 0, which then forces this minimum to 0; counting
+        // every part is what the code means and what CPartFile does.
+        uint16 seen = 0;
+        if (m_partCount > 0) {
+            seen = *std::min_element(m_availPartFrequency.begin(),
+                                     m_availPartFrequency.end());
+        }
+        updateCompleteSourceCounts(peerCounts, seen, /*blend*/ false);
     }
 
     emit m_notifier.fileUpdated();
+}
+
+// ---------------------------------------------------------------------------
+// updateCompleteSourceCounts — protected
+// ---------------------------------------------------------------------------
+
+void KnownFile::updateCompleteSourceCounts(std::vector<uint16>& peerCounts,
+                                           uint16 seen, bool blend)
+{
+    m_completeSourcesCountLo = m_completeSourcesCountHi = 0;
+    m_completeSourcesCount = seen;
+
+    // A complete file adds itself to the sample; a part file is not a complete source.
+    peerCounts.push_back(blend ? seen : static_cast<uint16>(seen + 1));
+    std::sort(peerCounts.begin(), peerCounts.end());
+
+    const std::size_t n = peerCounts.size();
+    const uint16 mid  = peerCounts[n >> 1];
+    const uint16 high = peerCounts[(n * 3) >> 2];
+    const uint16 top  = peerCounts[(n * 7) >> 3];
+
+    if (!blend) {
+        // Complete file: trust what the network reports (MFC KnownFile.cpp:262-289).
+        if (n < 20) {
+            m_completeSourcesCountLo = std::max(mid, m_completeSourcesCount);
+            m_completeSourcesCount = m_completeSourcesCountLo;
+            m_completeSourcesCountHi = high;
+        } else {
+            m_completeSourcesCountLo = m_completeSourcesCount;
+            m_completeSourcesCount = std::max(high, m_completeSourcesCountLo);
+            m_completeSourcesCountHi = top;
+        }
+    } else if (n < 5) {
+        // Too few opinions to average — use what we see (MFC PartFile.cpp:2617-2620).
+        m_completeSourcesCountHi = m_completeSourcesCountLo = m_completeSourcesCount;
+    } else if (n < 20) {
+        m_completeSourcesCountLo = (mid < m_completeSourcesCount)
+            ? m_completeSourcesCount
+            : static_cast<uint16>((mid * 4 + m_completeSourcesCount) / 5);
+        m_completeSourcesCount = m_completeSourcesCountLo;
+        m_completeSourcesCountHi =
+            static_cast<uint16>((high * 4 + m_completeSourcesCount) / 5);
+    } else {
+        m_completeSourcesCountLo = m_completeSourcesCount;
+        m_completeSourcesCount = std::max<uint16>(
+            static_cast<uint16>((high * 4 + m_completeSourcesCount) / 5),
+            m_completeSourcesCountLo);
+        m_completeSourcesCountHi =
+            static_cast<uint16>((top * 4 + m_completeSourcesCount) / 5);
+    }
+
+    if (m_completeSourcesCountHi < m_completeSourcesCount)
+        m_completeSourcesCountHi = m_completeSourcesCount;
+
+    m_completeSourcesTime = std::time(nullptr) + MIN2S(1);
 }
 
 // ---------------------------------------------------------------------------

@@ -197,6 +197,13 @@ bool UsenetQueueStore::save(const UsenetQueueItem& item)
         if (st.missingSegments > 0 && st.missing.count(true) > 0)
             out << YAML::Key << "missing" << YAML::Value << toStd(bitsToBase64(st.missing));
 
+        // Optional, written only when true: absent means "downloaded", which is
+        // what every older sidecar meant.
+        if (st.skipped)
+            out << YAML::Key << "skipped" << YAML::Value << true;
+        if (st.neededForRepair)
+            out << YAML::Key << "neededForRepair" << YAML::Value << true;
+
         // Byte ranges on disk, "start-end" per entry, half-open. Separate from
         // `done` because the two answer different questions: a done bit means
         // *resolved*, and a segment missing everywhere sets it having written
@@ -353,6 +360,11 @@ bool UsenetQueueStore::load(const QString& path, UsenetQueueItem& out, QString& 
                 st.done = bitsFromBase64(fromStd(fnode, "done"), int(info.segments.size()));
                 st.missing = bitsFromBase64(fromStd(fnode, "missing"),
                                             int(info.segments.size()));
+                // Read as well as written: remapCategories() round-trips sidecars
+                // through load() and save(), and would drop a key load() ignores.
+                st.skipped = fnode["skipped"] ? fnode["skipped"].as<bool>(false) : false;
+                st.neededForRepair =
+                    fnode["neededForRepair"] ? fnode["neededForRepair"].as<bool>(false) : false;
 
                 // Absent in a sidecar written before streaming existed, and
                 // absent is harmless: the file simply offers no preview until it
