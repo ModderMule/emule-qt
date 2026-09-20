@@ -4,7 +4,7 @@
 # BUILD_TOOL and an include/par2 tree. Upstream builds a CLI and cannot be
 # consumed as a library at all. NZBGet ships exactly this dependency.
 #
-# Three things this port has to do by hand, all of which are load-bearing:
+# Four things this port has to do by hand, all of which are load-bearing:
 #
 #  1. There are no install() rules, so the archives and headers are copied out of
 #     the build tree explicitly.
@@ -13,10 +13,15 @@
 #     HAVE_CONFIG_H, and on LP64 that is uint64_t rather than unsigned long long
 #     — same width, different mangled name. A consumer that compiles without the
 #     matching config.h gets an undefined reference to Process().
-#  3. The library is built -fno-rtti (its cmake/common.cmake), so its classes
+#  3. The library is built -fno-rtti (its cmake/common.cmake, non-MSVC branch
+#     only -- under MSVC it keeps the triplet's /GR), so its classes
 #     have vtables and no typeinfo. Anything subclassing Par2Repairer must be
 #     compiled the same way; src/usenet/CMakeLists.txt does that for
 #     Par2Verifier.cpp.
+#  4. That same common.cmake hardcodes /MT for MSVC Release, because upstream
+#     ships a standalone CLI. In a library that is LNK2038 against every object
+#     built with the triplet's dynamic CRT, so fix-msvc-crt.patch drops the flag
+#     and lets the triplet decide.
 
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
@@ -24,6 +29,7 @@ vcpkg_from_github(
     REF v1.4.0-20260803
     SHA512 0feae4b62477c8e3c43f35cb9d025f61ecfac1304c53bb76355c79ef4861cfe631177436f85622e51b2c15b98f0513d6c74f704aec05dcbc2f695a27cbae99d1
     HEAD_REF master
+    PATCHES fix-msvc-crt.patch
 )
 
 vcpkg_cmake_configure(

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(eMuleQt
-    VERSION 0.5.1
+    VERSION 0.5.2
     DESCRIPTION "eMule P2P file sharing client — Qt 6 port"
     LANGUAGES CXX
 )
@@ -328,6 +328,35 @@ if(EMULE_USENET_PAR2)
                 "${par2turbo_SOURCE_DIR}/include"
                 "${par2turbo_BINARY_DIR}")          # its generated config.h
             target_compile_definitions(emule_par2 INTERFACE ${EMULE_PAR2_DEFINES})
+
+            # par2cmdline-turbo builds itself as a standalone CLI: its
+            # cmake/common.cmake does add_compile_options(/MT) in Release, so its
+            # objects want the static CRT while everything else here uses the DLL
+            # one -- LNK2038 on every par2/gf16/hasher object. add_compile_options
+            # is directory scope, which CMake copies into each target's
+            # COMPILE_OPTIONS, so strip it there. The trailing /MD is what cl obeys
+            # (last flag wins); the property only bites if that directory honours
+            # CMP0091, and it declares cmake_minimum_required(3.13), so it does
+            # not. C/CXX only: gf16 has a MASM source and ml64 knows no /MD.
+            # The vcpkg path -- what CI builds -- patches the flag out instead;
+            # see src/vcpkg-ports/par2-turbo/fix-msvc-crt.patch.
+            if(MSVC)
+                foreach(_p2_lib par2-turbo gf16 hasher)
+                    if(NOT TARGET ${_p2_lib})
+                        continue()
+                    endif()
+                    get_target_property(_p2_opts ${_p2_lib} COMPILE_OPTIONS)
+                    if(NOT _p2_opts)
+                        set(_p2_opts "")
+                    endif()
+                    list(REMOVE_ITEM _p2_opts /MT /MTd)
+                    list(APPEND _p2_opts
+                        "$<$<COMPILE_LANGUAGE:C,CXX>:$<IF:$<CONFIG:Debug>,/MDd,/MD>>")
+                    set_property(TARGET ${_p2_lib} PROPERTY COMPILE_OPTIONS "${_p2_opts}")
+                    set_property(TARGET ${_p2_lib} PROPERTY MSVC_RUNTIME_LIBRARY
+                        "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+                endforeach()
+            endif()
         else()
             message(WARNING "par2-turbo target not found - PAR2 verify/repair disabled")
             set(EMULE_USENET_PAR2 OFF)

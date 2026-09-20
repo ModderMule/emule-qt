@@ -1,0 +1,19 @@
+diff --git a/cmake/common.cmake b/cmake/common.cmake
+index e26c3b9..82b1abb 100644
+--- a/cmake/common.cmake
++++ b/cmake/common.cmake
+@@ -38,12 +38,12 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+     elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+         add_compile_options(-Wall -Wextra)
+     elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+-        add_compile_options(/MTd /Zi /MP /W4 /utf-8)
++        add_compile_options(/Zi /MP /W4 /utf-8)
+     endif()
+ 
+ elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+     if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+-        add_compile_options(/MT /Oi /MP /utf-8 /guard:cf)
++        add_compile_options(/Oi /MP /utf-8 /guard:cf)
+         add_link_options(/guard:cf /OPT:REF /OPT:ICF)
+     else()
+         add_compile_options(-fno-rtti -ffunction-sections -fdata-sections -Wno-unused-function)
