@@ -22,9 +22,21 @@ cd path\to\eMuleQt\src
 C:\vcpkg\vcpkg install --triplet x64-windows
 ```
 
-This installs: `zlib`, `openssl`, `yaml-cpp`, `libarchive`, `miniupnpc`.
+This installs: `zlib`, `openssl`, `yaml-cpp`, `libarchive`, `miniupnpc`, `par2-turbo`, `rapidyenc`.
+
+The last two are the Usenet dependencies — PAR2 verify/repair and SIMD yEnc decoding — and neither has
+a port in the vcpkg registry. They are built from the overlay ports in `src/vcpkg-ports/`, which
+`src/vcpkg-configuration.json` declares, so no `--overlay-ports` flag is needed. That declaration is
+also why `vcpkg install` has to be run **from `src/`**: from anywhere else the two ports are not found
+at all.
 
 > **Visual Studio manifest mode:** If you have vcpkg integrated with VS (`vcpkg integrate install`), opening the solution should auto-install dependencies from `src/vcpkg.json`. If it doesn't, run `vcpkg install` manually from `src/` as shown above.
+
+> **The Usenet libraries are not optional here.** Unlike the CMake build, which falls back to a scalar
+> yEnc decoder and drops PAR2 when they are missing, `src/eMuleQt.sln` hardcodes
+> `EMULE_HAVE_RAPIDYENC=1` and `EMULE_HAVE_PAR2=1` in `src/usenet/emuleusenet.vcxproj` and links
+> `rapidyenc.lib`, `par2-turbo.lib`, `gf16.lib` and `hasher.lib`. If `vcpkg install` did not produce
+> them, the daemon fails to link rather than building without Usenet support.
 
 ## Qt Setup
 
@@ -70,6 +82,10 @@ If not using vcpkg, install libraries to the paths expected by the project files
 | libarchive | `C:\Program Files\libarchive\include` | `C:\Program Files\libarchive\lib` |
 
 Note: The zlib library file must be named `zlib.lib` (standard Windows/vcpkg name), not `z.lib`.
+
+`par2-turbo` and `rapidyenc` have no manual-install path — there is no upstream binary distribution
+and the project files expect them in `src\vcpkg_installed\`. Without vcpkg, the CMake build fetches
+and builds both itself; the hand-maintained solution cannot, and will not link.
 
 ## Scripted build, bundle and debug run
 
@@ -295,6 +311,9 @@ Two rules that step had to learn the hard way, both worth preserving in any simi
 Sourcing libarchive from vcpkg pulls its default features, so the bundle ships 14 DLLs rather
 than the previous 3 — `archive`, `bz2`, `charset-1`, `iconv-2`, `legacy`, `libcrypto-3-x64`,
 `liblzma`, `libssl-3-x64`, `libxml2`, `lz4`, `miniupnpc`, `yaml-cpp`, `z`, `zstd`.
+
+`par2-turbo` and `rapidyenc` are static libraries (`.lib` only — the overlay portfiles install no
+runtime), so they add nothing to that list.
 
 The old FetchContent build logged `Could NOT find BZip2 / LibLZMA / LZ4 / ZSTD` while
 `ArchiveReader.cpp` calls `archive_read_support_filter_all()`, so Windows silently lacked
