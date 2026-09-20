@@ -68,6 +68,14 @@ public:
     [[nodiscard]] bool isPortTestConnection() const { return m_portTestCon; }
     void setPortTestConnection(bool val) { m_portTestCon = val; }
 
+    /// Mark a socket that ListenSocket accepted. MFC tells the two apart by whether a
+    /// CUpDownClient exists yet — it creates one inside the OP_HELLO case — but this
+    /// port attaches a blank client at accept time, so the direction has to be stated.
+    /// Set by ListenSocket::incomingConnection() and by nothing else: it must survive
+    /// ClientList::attachToAlreadyKnown() re-homing the socket to another client.
+    void setIncoming(bool val) { m_incoming = val; }
+    [[nodiscard]] bool isIncoming() const { return m_incoming; }
+
     // Override for ThrottledFileSocket + tracking
     void sendPacket(std::unique_ptr<Packet> packet, bool controlPacket = true,
                     uint32 actualPayloadSize = 0, bool forceImmediateSend = false) override;
@@ -120,12 +128,18 @@ protected:
 
     void setPeerSocketState(PeerSocketState val);
 
+    /// MFC's two "who are you?" gates, ListenSocket.cpp:1793-1819. Returns false and
+    /// drops the connection for a packet that may not arrive before the hello.
+    bool checkHelloFirst(uint8 protocol, uint8 opcode, uint32 rawSize);
+
     UpDownClient* m_client = nullptr;
     PeerSocketState m_socketState = PeerSocketState::Other;
     uint32 m_timeoutTimer = 0;
     uint32 m_deleteTimer = 0;
     bool m_deleteThis = false;
     bool m_portTestCon = false;
+    bool m_incoming = false;
+    bool m_helloSeen = false;
 
 private:
     void onSocketConnected();

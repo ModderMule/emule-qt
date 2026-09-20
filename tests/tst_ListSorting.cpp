@@ -111,6 +111,7 @@ private slots:
     void aSourceIndexSurvivesAnEarlierDownloadLeaving();
     void completeSourcesShowPercentOrUnknown();
     void uploadPriorityLabelsMatchMfc();
+    void downloadPriorityLabelsMatchMfc();
     void serverCountsHideZeroAndCompact();
     void onQueueColumnsFollowMfc();
     void uploadStatusBarFollowsMfc();
@@ -725,6 +726,38 @@ void tst_ListSorting::uploadPriorityLabelsMatchMfc()
     QCOMPARE(uploadPriorityText(0, true), QStringLiteral("Auto [Lo]"));
     QCOMPARE(uploadPriorityText(1, true), QStringLiteral("Auto [No]"));
     QCOMPARE(uploadPriorityText(2, false), QStringLiteral("High"));
+}
+
+void tst_ListSorting::downloadPriorityLabelsMatchMfc()
+{
+    // The column printed the wire token: "veryHigh", "normal", "Auto [normal]".
+    // MFC DownloadListCtrl.cpp:2038-2056 localises the label and has no auto form
+    // for either end of the scale. Level 3 is "Very High" here, not the upload
+    // side's "Release"; MFC blanks it, but the port's own menus offer it.
+    QCOMPARE(downloadPriorityText(QStringLiteral("veryHigh"), false), QStringLiteral("Very High"));
+    QCOMPARE(downloadPriorityText(QStringLiteral("veryHigh"), true), QStringLiteral("Very High"));
+    QCOMPARE(downloadPriorityText(QStringLiteral("veryLow"), true), QStringLiteral("Very Low"));
+    QCOMPARE(downloadPriorityText(QStringLiteral("low"), true), QStringLiteral("Auto [Lo]"));
+    QCOMPARE(downloadPriorityText(QStringLiteral("normal"), true), QStringLiteral("Auto [No]"));
+    QCOMPARE(downloadPriorityText(QStringLiteral("high"), true), QStringLiteral("Auto [Hi]"));
+    QCOMPARE(downloadPriorityText(QStringLiteral("high"), false), QStringLiteral("High"));
+    // The daemon resolves auto per file, so "auto" should never arrive -- but if it
+    // does it must not reach the cell verbatim.
+    QCOMPARE(downloadPriorityText(QStringLiteral("auto"), false), QStringLiteral("Normal"));
+
+    // ... and the model asks for it, rather than formatting its own.
+    DownloadListModel model;
+    std::vector<DownloadRow> rows;
+    DownloadRow row;
+    row.hash = QStringLiteral("a");
+    row.fileName = QStringLiteral("a");
+    row.status = QStringLiteral("paused");
+    row.priority = QStringLiteral("veryHigh");
+    row.fileSize = 1000;
+    rows.push_back(row);
+    model.setDownloads(std::move(rows));
+    QCOMPARE(model.index(0, DownloadListModel::ColPriority).data().toString(),
+             QStringLiteral("Very High"));
 }
 
 void tst_ListSorting::serverCountsHideZeroAndCompact()

@@ -163,6 +163,14 @@ private slots:
     void malformedPacket_disconnectsPeer();
     void nonStdException_isCaughtAndDisconnects();
 
+    // Nothing before the hello — MFC ListenSocket.cpp:1793-1819
+    void inboundSocket_nonHelloEd2kPacketIsRejected();
+    void inboundSocket_helloOpensTheGate();
+    void inboundSocket_portTestIsExemptBeforeHello();
+    void inboundSocket_packedNonHelloIsRejectedAfterUnpack();
+    void outboundSocket_isNotGated();
+    void unknownProtocol_disconnectsAndChargesOverhead();
+
 private:
     /// Open a connection to `listener` and give it a chance to be accepted or rejected.
     /// Returns how many newClientConnection signals fired.
@@ -629,6 +637,106 @@ void tst_ListenSocket::nonStdException_isCaughtAndDisconnects()
     QVERIFY(!socket.deliver(OP_EMULEPROT, OP_ANSWERSOURCES2, QByteArray(8, '\x01')));
     QVERIFY(socket.isTornDown());
     QCOMPARE(disconnected.count(), 1);
+}
+
+// ---------------------------------------------------------------------------
+// The hello gate — MFC ListenSocket.cpp:1793-1819
+//
+// MFC keys this on "is there a CUpDownClient yet", because it only builds one in the
+// OP_HELLO case. This port attaches a blank client when the connection is accepted, so
+// the socket carries the state and ListenSocket marks the direction.
+// ---------------------------------------------------------------------------
+
+void tst_ListenSocket::inboundSocket_nonHelloEd2kPacketIsRejected()
+{
+    PacketProbeSocket socket;
+    socket.setIncoming(true);
+    QSignalSpy disconnected(&socket, &ClientReqSocket::clientDisconnected);
+
+    const QByteArray body(16, '\x07');
+    QVERIFY(!socket.deliver(OP_EDONKEYPROT, OP_REQUESTFILENAME, body));
+
+    QVERIFY(socket.received.empty());
+    QVERIFY2(socket.isTornDown(), "a peer that asks for a file before saying hello is dropped");
+    QCOMPARE(disconnected.count(), 1);
+    // MFC charges the packet as overhead before it throws (uRawSize, i.e. the payload).
+    QCOMPARE(m_statistics->downDataOverheadOther(), static_cast<uint64>(body.size()));
+}
+
+void tst_ListenSocket::inboundSocket_helloOpensTheGate()
+{
+    PacketProbeSocket socket;
+    socket.setIncoming(true);
+
+    QVERIFY(socket.deliver(OP_EDONKEYPROT, OP_HELLO, QByteArray(20, '\x01')));
+    QVERIFY(socket.deliver(OP_EDONKEYPROT, OP_REQUESTFILENAME, QByteArray(16, '\x07')));
+    QVERIFY(socket.deliver(OP_EMULEPROT, OP_REQUESTSOURCES2, QByteArray(17, '\x02')));
+
+    QCOMPARE(socket.received.size(), static_cast<std::size_t>(3));
+    QCOMPARE(socket.received[0].via, QByteArray("hello"));
+    QCOMPARE(socket.received[1].via, QByteArray("fileRequest"));
+    QCOMPARE(socket.received[2].via, QByteArray("ext"));
+    QVERIFY(!socket.isTornDown());
+}
+
+void tst_ListenSocket::inboundSocket_portTestIsExemptBeforeHello()
+{
+    // The port-test probe never says hello, and MFC exempts exactly this opcode
+    // (ListenSocket.cpp:1810).
+    PacketProbeSocket socket;
+    socket.setIncoming(true);
+
+    QVERIFY(socket.deliver(OP_EMULEPROT, OP_PORTTEST, QByteArray(1, '\x12')));
+
+    QVERIFY(!socket.isTornDown());
+    QVERIFY2(socket.isPortTestConnection(), "the probe must still be recognised");
+}
+
+void tst_ListenSocket::inboundSocket_packedNonHelloIsRejectedAfterUnpack()
+{
+    // The gate has to sit after the unpack, or a packed packet walks straight past it:
+    // unPackPacket() is what rewrites prot to OP_EMULEPROT.
+    const QByteArray body = compressibleBody(4096);
+    const QByteArray packed = packBody(body, OP_ANSWERSOURCES2);
+    QVERIFY2(!packed.isEmpty(), "body did not compress — the case would prove nothing");
+
+    PacketProbeSocket socket;
+    socket.setIncoming(true);
+    QSignalSpy disconnected(&socket, &ClientReqSocket::clientDisconnected);
+
+    QVERIFY(!socket.deliver(OP_PACKEDPROT, OP_ANSWERSOURCES2, packed));
+
+    QVERIFY(socket.received.empty());
+    QVERIFY(socket.isTornDown());
+    QCOMPARE(disconnected.count(), 1);
+}
+
+void tst_ListenSocket::outboundSocket_isNotGated()
+{
+    // We dialled this one and said hello ourselves; MFC's gate only ever fires on a
+    // socket with no client, which an outgoing connection never is.
+    PacketProbeSocket socket;
+
+    QVERIFY(socket.deliver(OP_EDONKEYPROT, OP_REQFILENAMEANSWER, QByteArray(16, '\x07')));
+
+    QCOMPARE(socket.received.size(), static_cast<std::size_t>(1));
+    QVERIFY(!socket.isTornDown());
+}
+
+void tst_ListenSocket::unknownProtocol_disconnectsAndChargesOverhead()
+{
+    // MFC ListenSocket.cpp:1822-1829. We used to log and abandon the read buffer,
+    // leaving the peer connected.
+    PacketProbeSocket socket;
+    QSignalSpy disconnected(&socket, &ClientReqSocket::clientDisconnected);
+
+    const QByteArray body(12, '\x09');
+    QVERIFY(!socket.deliver(0x77, 0x01, body));
+
+    QVERIFY(socket.received.empty());
+    QVERIFY(socket.isTornDown());
+    QCOMPARE(disconnected.count(), 1);
+    QCOMPARE(m_statistics->downDataOverheadOther(), static_cast<uint64>(body.size()));
 }
 
 QTEST_MAIN(tst_ListenSocket)

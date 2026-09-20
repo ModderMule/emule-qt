@@ -185,7 +185,6 @@ int EncryptedStreamSocket::flushPendingNegotiationData()
 int EncryptedStreamSocket::processReceivedData(void* buf, int len)
 {
     m_obfuscatedBytesReceived = len;
-    m_fullReceive = true; // simplified; original tracked if recv returned exactly requested size
 
     if (len <= 0)
         return len;

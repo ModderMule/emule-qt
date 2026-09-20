@@ -268,6 +268,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::RemoveFriend:         handleRemoveFriend(msg); break;
     case IpcMsgType::SendChatMessage:      handleSendChatMessage(msg); break;
     case IpcMsgType::SetFriendSlot:        handleSetFriendSlot(msg); break;
+    case IpcMsgType::EndChatSession:       handleEndChatSession(msg); break;
     case IpcMsgType::GetStats:             handleGetStats(msg); break;
     case IpcMsgType::GetSpeedHistory:      handleGetSpeedHistory(msg); break;
     case IpcMsgType::GetStatsHistory:      handleGetStatsHistory(msg); break;
@@ -1669,6 +1670,38 @@ void IpcClientHandler::handleSendChatMessage(const IpcMessage& msg)
 
     sendMessage(IpcMessage::makeError(msg.seqId(), 404,
         QStringLiteral("Client not found or not connected")));
+}
+
+void IpcClientHandler::handleEndChatSession(const IpcMessage& msg)
+{
+    const QString hashStr = msg.fieldString(0);
+
+    uint8 hashBuf[16]{};
+    if (!hexToHash(hashStr, hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+
+    bool ended = false;
+
+    // Both sides, not the first hit: for a friend we are still dialling, the chat client
+    // is already in the client list, so stopping at it would leave the attempt running —
+    // and a dial that lands re-opens the session and sends the abandoned text.
+    if (theApp.clientList) {
+        if (auto* client = theApp.clientList->findByUserHash(hashBuf, 0, 0)) {
+            client->endChatSession();
+            ended = true;
+        }
+    }
+
+    if (theApp.friendList) {
+        if (Friend* f = theApp.friendList->searchFriend(hashBuf)) {
+            f->endChatSession();
+            ended = true;
+        }
+    }
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), ended));
 }
 
 void IpcClientHandler::handleSetFriendSlot(const IpcMessage& msg)

@@ -227,7 +227,7 @@ Aktivieren Sie unter Optionen → Weboberfläche die Weboberfläche oder die RES
 <context>
     <name>Priority</name>
     <message>
-        <location filename="../src/gui/utils/PriorityText.cpp" line="+16"/>
+        <location filename="../src/gui/utils/PriorityText.cpp" line="+20"/>
         <source>Very Low</source>
         <translation>Sehr niedrig</translation>
     </message>
@@ -252,12 +252,17 @@ Aktivieren Sie unter Optionen → Weboberfläche die Weboberfläche oder die RES
         <translation>Hoch</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+13"/>
         <source>Release</source>
         <translation>Release</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+15"/>
+        <source>Very High</source>
+        <translation>Sehr hoch</translation>
+    </message>
+    <message>
+        <location line="-24"/>
         <source>Auto [No]</source>
         <translation>Auto [No]</translation>
     </message>
@@ -445,7 +450,7 @@ Hat Kommentare</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+72"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+73"/>
         <source>Passive</source>
         <translation>Passiv</translation>
     </message>
@@ -596,7 +601,7 @@ Hat Kommentare</translation>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2777"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2779"/>
         <source>Test</source>
         <translation>Test</translation>
     </message>
@@ -2087,17 +2092,16 @@ Geben Sie die Adresse und den Authentifizierungstoken eines entfernten Kerns ein
 <context>
     <name>eMule::DownloadListModel</name>
     <message>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+616"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+614"/>
         <source>Downloading</source>
         <translation>Herunterladen</translation>
     </message>
     <message>
-        <location line="-362"/>
         <source>Auto [%1]</source>
-        <translation>Auto [%1]</translation>
+        <translation type="vanished">Auto [%1]</translation>
     </message>
     <message>
-        <location line="-81"/>
+        <location line="-441"/>
         <source>Queue Full</source>
         <translation>Warteschlange voll</translation>
     </message>
@@ -2107,7 +2111,7 @@ Geben Sie die Adresse und den Authentifizierungstoken eines entfernten Kerns ein
         <translation>Verfügbare Teile: %1 / %2</translation>
     </message>
     <message>
-        <location line="+81"/>
+        <location line="+78"/>
         <source>File Name:	%1
 ED2K Hash:	%2
 Size:	%3
@@ -2132,7 +2136,7 @@ Angenommene Anfragen:	%11
 Übertragene Daten:	%12</translation>
     </message>
     <message>
-        <location line="+68"/>
+        <location line="+69"/>
         <source>File Name</source>
         <translation>Dateiname</translation>
     </message>
@@ -3625,7 +3629,13 @@ Aktivieren Sie sie unter Optionen → Weboberfläche und versuchen Sie es erneut
 <context>
     <name>eMule::MessagesPanel</name>
     <message>
-        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+139"/>
+        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+145"/>
+        <location line="+378"/>
+        <source> ...failed</source>
+        <translation> ...fehlgeschlagen</translation>
+    </message>
+    <message>
+        <location line="-376"/>
         <source>Me</source>
         <translation>Ich</translation>
     </message>
@@ -3641,12 +3651,12 @@ Aktivieren Sie sie unter Optionen → Weboberfläche und versuchen Sie es erneut
     </message>
     <message>
         <location line="+15"/>
-        <location line="+291"/>
+        <location line="+329"/>
         <source>Name:</source>
         <translation>Name:</translation>
     </message>
     <message>
-        <location line="-290"/>
+        <location line="-328"/>
         <source>Hash:</source>
         <translation>Hash:</translation>
     </message>
@@ -3731,7 +3741,32 @@ Aktivieren Sie sie unter Optionen → Weboberfläche und versuchen Sie es erneut
         <translation>Freunde (%1)</translation>
     </message>
     <message>
-        <location line="+108"/>
+        <location line="+66"/>
+        <source>*** Connecting</source>
+        <translation>*** Verbinde</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>*** Authenticating friend</source>
+        <translation>*** Authentifiziere Freund</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>*** Searching friend in Kad</source>
+        <translation>*** Suche Freund in Kad</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source> ...found</source>
+        <translation> ...gefunden</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source> ...OK</source>
+        <translation> ...OK</translation>
+    </message>
+    <message>
+        <location line="+76"/>
         <source>Find Friend</source>
         <translation>Freund suchen</translation>
     </message>
@@ -3957,36 +3992,36 @@ Aktivieren Sie sie unter Optionen → Weboberfläche und versuchen Sie es erneut
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2690"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2692"/>
         <source>Options</source>
         <translation>Optionen</translation>
     </message>
     <message>
         <location line="+49"/>
-        <location line="+1760"/>
+        <location line="+1762"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-1759"/>
-        <location line="+1760"/>
+        <location line="-1761"/>
+        <location line="+1762"/>
         <source>Cancel</source>
         <translation>Abbrechen</translation>
     </message>
     <message>
-        <location line="-1759"/>
-        <location line="+5301"/>
+        <location line="-1761"/>
+        <location line="+5303"/>
         <source>Apply</source>
         <translation>Übernehmen</translation>
     </message>
     <message>
-        <location line="-5300"/>
+        <location line="-5302"/>
         <source>Help</source>
         <translation>Hilfe</translation>
     </message>
     <message>
         <location line="+245"/>
-        <location line="+1741"/>
+        <location line="+1743"/>
         <location line="+63"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -3995,7 +4030,7 @@ Aktivieren Sie sie unter Optionen → Weboberfläche und versuchen Sie es erneut
         <translation>IP-Filter</translation>
     </message>
     <message>
-        <location line="-1828"/>
+        <location line="-1830"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP-Filter neu geladen: %1 Einträge.</translation>
     </message>
@@ -4026,18 +4061,18 @@ Aktivieren Sie sie unter Optionen → Weboberfläche und versuchen Sie es erneut
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5226"/>
+        <location line="+5228"/>
         <source>Language</source>
         <translation>Sprache</translation>
     </message>
     <message>
-        <location line="-5223"/>
+        <location line="-5225"/>
         <source>System Default</source>
         <translation>Systemstandard</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+599"/>
+        <location line="+601"/>
         <location line="+293"/>
         <location line="+372"/>
         <location line="+276"/>
@@ -4045,7 +4080,7 @@ Aktivieren Sie sie unter Optionen → Weboberfläche und versuchen Sie es erneut
         <translation>Verschiedenes</translation>
     </message>
     <message>
-        <location line="-1537"/>
+        <location line="-1539"/>
         <source>Bring to front on link click</source>
         <translation>Bei Linkklick in den Vordergrund</translation>
     </message>
@@ -4131,25 +4166,25 @@ Aktivieren Sie sie unter Optionen → Weboberfläche und versuchen Sie es erneut
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5152"/>
+        <location line="+5154"/>
         <source>Core</source>
         <translation>Kern</translation>
     </message>
     <message>
-        <location line="-5147"/>
+        <location line="-5149"/>
         <source>Address:</source>
         <translation>Adresse:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1059"/>
+        <location line="+1061"/>
         <location line="+633"/>
         <location line="+409"/>
         <source>Port:</source>
         <translation>Port:</translation>
     </message>
     <message>
-        <location line="-2098"/>
+        <location line="-2100"/>
         <source>authentication token</source>
         <translation>Authentifizierungstoken</translation>
     </message>
@@ -4290,7 +4325,7 @@ Möchten Sie wirklich fortfahren?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+597"/>
+        <location line="+599"/>
         <location line="+928"/>
         <location line="+108"/>
         <location line="+289"/>
@@ -4303,7 +4338,7 @@ Möchten Sie wirklich fortfahren?</translation>
         <translation>Aktiviert</translation>
     </message>
     <message>
-        <location line="-4413"/>
+        <location line="-4415"/>
         <source>Reset</source>
         <translation>Zurücksetzen</translation>
     </message>
@@ -4399,7 +4434,7 @@ Möchten Sie wirklich fortfahren?</translation>
         <translation>Max. Verbindungen</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+14"/>
         <source>Autoconnect on startup</source>
         <translation>Automatisch bei Start verbinden</translation>
     </message>

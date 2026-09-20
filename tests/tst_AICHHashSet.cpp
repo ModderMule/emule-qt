@@ -67,6 +67,7 @@ private slots:
 
     // AICH part verification via createHashFromMemory
     void partVerification_fromMemory_consistent();
+    void blockHash_isPlainSha1OfExactlyThatBlock();
     void partVerification_corruptBlock_detected();
 
     // AICH part recovery — block-level corruption identification
@@ -518,6 +519,50 @@ void tst_AICHHashSet::partVerification_fromMemory_consistent()
         QVERIFY(b2 && b2->m_hashValid);
         QCOMPARE(b1->m_hash, b2->m_hash);
     }
+}
+
+// An AICH block hash is the SHA-1 of exactly EMBLOCKSIZE bytes — no more, no less. Our
+// hasher read in 8 KB chunks and only closed a block once a chunk had carried it past
+// the boundary, so every block hash covered a few KB of the next block and the leftover
+// bytes were then dropped. Self-consistent, and wrong for every other client.
+// MFC splits the read at the boundary: srchybrid/KnownFile.cpp:945-959.
+void tst_AICHHashSet::blockHash_isPlainSha1OfExactlyThatBlock()
+{
+    // Two full blocks and a tail, so the boundary falls mid-chunk (8 KB does not divide
+    // EMBLOCKSIZE) and there is a short block at the end as well.
+    const uint32 dataSize = EMBLOCKSIZE * 2 + 5000;
+    QByteArray data(static_cast<qsizetype>(dataSize), Qt::Uninitialized);
+    for (uint32 i = 0; i < dataSize; ++i)
+        data[static_cast<qsizetype>(i)] = static_cast<char>((i * 31 + 7) % 251);
+
+    AICHHashTree tree(dataSize, true, EMBLOCKSIZE);
+    uint8 md4[16]{};
+    QVERIFY(KnownFile::createHashFromMemory(
+        reinterpret_cast<const uint8*>(data.constData()), dataSize, md4, &tree));
+
+    const auto sha1Of = [&](qsizetype offset, qsizetype len) {
+        ShaHasher h;
+        h.add(data.constData() + offset, static_cast<uint32>(len));
+        AICHHash out;
+        h.finish(out);
+        return out;
+    };
+
+    for (uint32 block = 0; block < 2; ++block) {
+        const uint64 start = static_cast<uint64>(block) * EMBLOCKSIZE;
+        const AICHHashTree* node = tree.findExistingHash(start, EMBLOCKSIZE);
+        QVERIFY2(node && node->m_hashValid, "block hash missing");
+        QCOMPARE(node->m_hash, sha1Of(static_cast<qsizetype>(start), EMBLOCKSIZE));
+    }
+
+    // The short trailing block too.
+    const uint64 tailStart = static_cast<uint64>(EMBLOCKSIZE) * 2;
+    const AICHHashTree* tail = tree.findExistingHash(tailStart, 5000);
+    QVERIFY2(tail && tail->m_hashValid, "trailing block hash missing");
+    QCOMPARE(tail->m_hash, sha1Of(static_cast<qsizetype>(tailStart), 5000));
+
+    // createHash finishes the tree, as MFC's does — the caller gets a usable root.
+    QVERIFY(tree.m_hashValid);
 }
 
 void tst_AICHHashSet::partVerification_corruptBlock_detected()

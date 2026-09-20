@@ -123,6 +123,8 @@ void ListenSocket::incomingConnection(qintptr socketDescriptor)
     }
 
     reqSocket->setObfuscationConfig(thePrefs.obfuscationConfig());
+    // We accepted this one, so the peer owes us an OP_HELLO before anything else.
+    reqSocket->setIncoming(true);
 
     addSocket(reqSocket);
     addConnection();

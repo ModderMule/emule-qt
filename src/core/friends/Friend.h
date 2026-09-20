@@ -132,6 +132,12 @@ public:
     /// MFC CFriend::UpdateFriendConnectionState (srchybrid/Friend.cpp:259-371).
     void updateFriendConnectionState(FriendConnectReport report);
 
+    /// The chat window closed: cancel a dial of ours that is still running and put the
+    /// linked client back to ChatState::None. MFC only does the latter
+    /// (CChatSelector::EndSession, srchybrid/ChatSelector.cpp:464-490) because it has no
+    /// connect state machine of its own to unwind.
+    void endChatSession();
+
     [[nodiscard]] bool isTryingToConnect() const { return m_connectState != FriendConnectState::None; }
     [[nodiscard]] FriendConnectState connectState() const { return m_connectState; }
 

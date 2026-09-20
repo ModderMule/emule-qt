@@ -513,6 +513,11 @@ void MessagesPanel::onChatStatePush(const IpcMessage& msg)
     if (friendHash.isEmpty())
         return;
 
+    // No tab, no transcript: the cancellation we ourselves asked for reports Failed, and
+    // appending it would re-create the history entry closeChatTab() just dropped.
+    if (findTabByHash(friendHash) < 0)
+        return;
+
     QString text;
     switch (static_cast<ChatConnectProgress>(msg.fieldInt(1))) {
     case ChatConnectProgress::Connecting:     text = tr("*** Connecting");              break;
@@ -657,6 +662,15 @@ void MessagesPanel::closeChatTab(int tabIndex)
     m_chatHistory.remove(hash);
     m_notifyHashes.remove(hash);
     m_chatTabBar->removeTab(tabIndex);
+
+    // Tell core the session is over, or the peer stays ChatState::Chatting for ever:
+    // never reaped, and holding its socket open twice as long. MFC does this from
+    // CChatSelector::EndSession (srchybrid/ChatSelector.cpp:464-490).
+    if (m_ipc && !hash.isEmpty()) {
+        IpcMessage msg(IpcMsgType::EndChatSession);
+        msg.append(hash);
+        m_ipc->sendRequest(std::move(msg));
+    }
     updateTabBarVisibility();
     refreshNotifyCues();
 

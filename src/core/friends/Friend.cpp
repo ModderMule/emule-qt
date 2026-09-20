@@ -242,6 +242,24 @@ void Friend::updateFriendConnectionState(FriendConnectReport report)
     }
 }
 
+void Friend::endChatSession()
+{
+    // Cancel first: an attempt left running lands in finishConnecting(true), which puts
+    // the client straight back into Chatting and sends the text the user abandoned.
+    if (isTryingToConnect()) {
+        if (m_connectState == FriendConnectState::KadSearching) {
+            if (auto* kad = kad::Kademlia::instance())
+                kad->cancelClientSearch(*this);
+        }
+        // Deleted is the one report that unwinds without touching the client's chat
+        // state — which is ours to clear, below.
+        updateFriendConnectionState(FriendConnectReport::Deleted);
+    }
+
+    if (UpDownClient* client = linkedClient(true))
+        client->endChatSession();
+}
+
 void Friend::findKadID()
 {
     auto* kad = kad::Kademlia::instance();

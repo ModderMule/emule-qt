@@ -1087,7 +1087,9 @@ QWidget* OptionsDialog::createConnectionPage()
     auto* connLayout = new QHBoxLayout(connGroup);
     connLayout->addWidget(new QLabel(tr("Max. connections"), connGroup));
     m_maxConnectionsSpin = new QSpinBox(connGroup);
-    m_maxConnectionsSpin->setRange(1, 10000);
+    // The core keeps a uint16 and clamps only the low end (Preferences.cpp:3273-3275).
+    // Stopping at 10 000 cut a larger stored limit down on the next OK.
+    m_maxConnectionsSpin->setRange(1, 65535);
     connLayout->addWidget(m_maxConnectionsSpin);
     row3->addWidget(connGroup);
 

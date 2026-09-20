@@ -589,6 +589,7 @@ target_link_libraries(tst_FileAssociation PRIVATE Qt6::Widgets)
 emule_add_test(tst_DownloadStatusText FOLDER "Gui"
     SOURCES tst_DownloadStatusText.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadListModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/PriorityText.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp")
 target_include_directories(tst_DownloadStatusText PRIVATE

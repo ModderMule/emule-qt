@@ -9,6 +9,7 @@
 #include "client/UpDownClient.h"
 #include "crypto/AICHHashSet.h"
 #include "crypto/FileIdentifier.h"
+#include "crypto/SHAHash.h"
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
 #include "utils/OtherFunctions.h"
@@ -66,6 +67,12 @@ private slots:
     void writeToBuffer_countsCompressionGain();
     void ich_recoversCorruptedPartOnRehash();
     void seedAICHRecoveryMasterHash_adoptsTheIdentifierHash();
+
+    // hashSinglePart — MFC srchybrid/PartFile.cpp:3122-3198
+    void hashSinglePart_singlePartFileComparesTheFileHash();
+    void hashSinglePart_exactlyOnePartSizeUsesThePartHash();
+    void hashSinglePart_missingHashsetsBailAndFlagBothNeeded();
+    void hashSinglePart_aichDisagreementCondemnsThePart();
 
 private:
     QTemporaryDir m_tempDir;
@@ -908,6 +915,207 @@ void tst_PartFile::seedAICHRecoveryMasterHash_adoptsTheIdentifierHash()
     pf.aichRecoveryHashSet().setStatus(EAICHStatus::Trusted);
     pf.seedAICHRecoveryMasterHash();
     QCOMPARE(pf.aichRecoveryHashSet().getStatus(), EAICHStatus::Trusted);
+}
+
+// ---------------------------------------------------------------------------
+// hashSinglePart — MFC demands that MD4 and AICH agree (PartFile.cpp:3124-3129)
+// ---------------------------------------------------------------------------
+
+// A file below one PARTSIZE has no MD4 part hashes — its file hash *is* the part hash
+// (MFC PartFile.cpp:3168-3170). Without that arm nothing was ever compared for such a
+// file, so a corrupt one verified clean and went straight to the incoming folder.
+void tst_PartFile::hashSinglePart_singlePartFileComparesTheFileHash()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/single-temp");
+    const QString incoming = m_tempDir.path() + QStringLiteral("/single-in");
+    QDir().mkpath(tempDir);
+    QDir().mkpath(incoming);
+    thePrefs.setIncomingDir(incoming);
+
+    ScopedStatistics stats;
+
+    constexpr uint64 fileSize = 5000;
+    PartFile pf;
+    pf.setFileName(QStringLiteral("single.bin"));
+    pf.setFileSize(fileSize);
+    pf.setTmpPath(tempDir);
+    QVERIFY(pf.createPartFile(tempDir));
+
+    // No part hashes exist, and none are expected — that is exactly the case the
+    // missing arm used to wave through.
+    QCOMPARE(pf.fileIdentifier().getAvailableMD4PartHashCount(), uint16(0));
+    QVERIFY(pf.fileIdentifier().hasExpectedMD4HashCount());
+
+    const auto data = makePattern(fileSize);
+    uint8 realHash[16]{};
+    QVERIFY(KnownFile::createHashFromMemory(data.data(), fileSize, realHash, nullptr));
+
+    uint8 wrongHash[16];
+    std::memset(wrongHash, 0xEE, sizeof(wrongHash));
+    pf.setFileHash(wrongHash);
+
+    pf.writeToBuffer(fileSize, data.data(), 0, fileSize - 1, nullptr);
+    pf.flushBuffer();
+
+    QVERIFY2(pf.isCorruptedPart(0), "a single-part file whose hash disagrees must be condemned");
+    QCOMPARE(pf.totalGapSizeInPart(0), fileSize);
+
+    // The hash was the liar: with the right one the same bytes verify, and the file
+    // finishes. (ICH re-hashes the part on the next flush.)
+    pf.setFileHash(realHash);
+    pf.writeToBuffer(1000, data.data(), 0, 999, nullptr);
+    pf.flushBuffer();
+
+    QVERIFY(!pf.isCorruptedPart(0));
+    QCOMPARE(pf.totalGapSizeInPart(0), uint64{0});
+
+    // The move runs on its own thread; let it land before the temp dir goes away.
+    QTRY_COMPARE_WITH_TIMEOUT(pf.status(), PartFileStatus::Complete, 5000);
+}
+
+// Exactly one PARTSIZE is the awkward case MFC spells out: partCount() is 1, but the
+// theoretical hashset has two entries, so the *part* hash decides, not the file hash.
+void tst_PartFile::hashSinglePart_exactlyOnePartSizeUsesThePartHash()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/exact-temp");
+    const QString incoming = m_tempDir.path() + QStringLiteral("/exact-in");
+    QDir().mkpath(tempDir);
+    QDir().mkpath(incoming);
+    thePrefs.setIncomingDir(incoming);
+
+    ScopedStatistics stats;
+
+    PartFile pf;
+    pf.setFileName(QStringLiteral("exact.bin"));
+    pf.setFileSize(PARTSIZE);
+    pf.setTmpPath(tempDir);
+    QVERIFY(pf.createPartFile(tempDir));
+
+    const auto part0 = makePattern(PARTSIZE);
+    uint8 goodHash[16]{};
+    QVERIFY(KnownFile::createHashFromMemory(part0.data(), PARTSIZE, goodHash, nullptr));
+
+    // Two entries, as GetTheoreticalMD4PartHashCount() demands for an exact multiple.
+    auto& hashSet = pf.fileIdentifier().getRawMD4HashSet();
+    hashSet.resize(2);
+    std::ranges::copy(std::span(goodHash, 16), hashSet[0].begin());
+    hashSet[1].fill(0x00);
+    QVERIFY(pf.fileIdentifier().hasExpectedMD4HashCount());
+
+    // Deliberately nonsense: if the file hash were consulted here the part would be
+    // condemned, which is how this pins the `|| fileSize == PARTSIZE` arm.
+    uint8 wrongFileHash[16];
+    std::memset(wrongFileHash, 0xEE, sizeof(wrongFileHash));
+    pf.setFileHash(wrongFileHash);
+
+    pf.writeToBuffer(PARTSIZE, part0.data(), 0, PARTSIZE - 1, nullptr);
+    pf.flushBuffer();
+
+    QVERIFY(!pf.isCorruptedPart(0));
+    QCOMPARE(pf.corruptionLoss(), uint64{0});
+    QTRY_COMPARE_WITH_TIMEOUT(pf.status(), PartFileStatus::Complete, 5000);
+}
+
+// With neither hashset there is nothing to compare against. MFC says so, asks for both,
+// and does not condemn the data (PartFile.cpp:3132-3137).
+void tst_PartFile::hashSinglePart_missingHashsetsBailAndFlagBothNeeded()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/nohash-temp");
+    QDir().mkpath(tempDir);
+
+    ScopedStatistics stats;
+
+    PartFile pf;
+    pf.setFileName(QStringLiteral("nohash.bin"));
+    pf.setFileSize(PARTSIZE * 2);        // two parts, so part 0 does not finish the file
+    pf.setTmpPath(tempDir);
+    QVERIFY(pf.createPartFile(tempDir));
+
+    // Pretend both were satisfied, so the flags prove the bail actually ran.
+    pf.setMD4HashsetNeeded(false);
+    pf.setAICHPartHashsetNeeded(false);
+    QVERIFY(!pf.fileIdentifier().hasExpectedMD4HashCount());
+
+    const auto part0 = makePattern(PARTSIZE);
+    pf.writeToBuffer(PARTSIZE, part0.data(), 0, PARTSIZE - 1, nullptr);
+    pf.flushBuffer();
+
+    QVERIFY2(!pf.isCorruptedPart(0), "unverifiable is not the same as corrupt");
+    QCOMPARE(pf.corruptionLoss(), uint64{0});
+    QVERIFY(pf.isMD4HashsetNeeded());
+    QVERIFY(pf.isAICHPartHashsetNeeded());
+}
+
+// MD4 alone is not enough: MFC condemns a part whose AICH part hash disagrees, however
+// happy MD4 is (PartFile.cpp:3173-3198). Ours compared against the recovery tree, which
+// for an ordinary download holds nothing but a root hash, so the check never ran.
+void tst_PartFile::hashSinglePart_aichDisagreementCondemnsThePart()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/aich-temp");
+    QDir().mkpath(tempDir);
+
+    ScopedStatistics stats;
+
+    constexpr uint64 fileSize = PARTSIZE + 1000;
+    PartFile pf;
+    pf.setFileName(QStringLiteral("aich.bin"));
+    pf.setFileSize(fileSize);
+    pf.setTmpPath(tempDir);
+    QVERIFY(pf.createPartFile(tempDir));
+
+    const auto part0 = makePattern(PARTSIZE);
+
+    // MD4 is made to agree, so the verdict can only come from AICH.
+    uint8 goodHash[16]{};
+    QVERIFY(KnownFile::createHashFromMemory(part0.data(), PARTSIZE, goodHash, nullptr));
+    auto& md4Set = pf.fileIdentifier().getRawMD4HashSet();
+    md4Set.resize(2);
+    std::ranges::copy(std::span(goodHash, 16), md4Set[0].begin());
+    md4Set[1].fill(0x00);
+    QVERIFY(pf.fileIdentifier().hasExpectedMD4HashCount());
+
+    // An internally consistent AICH hashset that describes some other file. Part 1 is
+    // never written, so only part 0's hash matters.
+    std::vector<AICHHash> partHashes;
+    for (int i = 0; i < 2; ++i) {
+        ShaHasher h;
+        const QByteArray seed = QByteArray::number(i) + "not-the-data";
+        h.add(seed.constData(), static_cast<uint32>(seed.size()));
+        AICHHash ph;
+        h.finish(ph);
+        partHashes.push_back(ph);
+    }
+
+    EMFileSize aichSize(fileSize);
+    AICHRecoveryHashSet source(aichSize);
+    for (uint32 i = 0; i < 2; ++i) {
+        const uint64 partStart = static_cast<uint64>(i) * PARTSIZE;
+        const auto partSize = static_cast<uint32>(std::min<uint64>(PARTSIZE, fileSize - partStart));
+        AICHHashTree* node = source.m_hashTree.findHash(partStart, partSize);
+        QVERIFY(node != nullptr);
+        node->m_hash = partHashes[i];
+        node->m_hashValid = true;
+    }
+    QVERIFY(source.reCalculateHash(false));
+
+    pf.fileIdentifier().setAICHHash(source.getMasterHash());
+
+    SafeMemFile blob;
+    AICHHash master = source.getMasterHash();
+    master.write(blob);
+    blob.writeUInt16(static_cast<uint16>(partHashes.size()));
+    for (auto& ph : partHashes)
+        ph.write(blob);
+    blob.seek(0, 0);
+    QVERIFY(pf.fileIdentifier().loadAICHHashsetFromFile(blob, true));
+    QVERIFY(pf.fileIdentifier().hasExpectedAICHHashCount());
+
+    pf.writeToBuffer(PARTSIZE, part0.data(), 0, PARTSIZE - 1, nullptr);
+    pf.flushBuffer();
+
+    QVERIFY2(pf.isCorruptedPart(0),
+             "MD4 agreed but AICH did not — eMule condemns the part either way");
+    QCOMPARE(pf.totalGapSizeInPart(0), uint64{PARTSIZE});
 }
 
 QTEST_GUILESS_MAIN(tst_PartFile)

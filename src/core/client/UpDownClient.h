@@ -234,6 +234,11 @@ public:
     /// Send it if there is one and we can. Called once the chat session is established.
     void sendPendingChatMessage();
 
+    /// Leave the chat: state and captcha back to None, and any text still parked for
+    /// this peer is dropped rather than delivered later. MFC CChatSelector::EndSession
+    /// (srchybrid/ChatSelector.cpp:464-490).
+    void endChatSession();
+
     [[nodiscard]] KadState kadState() const { return m_kadState; }
     void setKadState(KadState state) { m_kadState = state; }
 
@@ -569,7 +574,8 @@ public:
     /// Send a packet via the client socket. Returns false if no socket.
     bool sendPacket(std::unique_ptr<Packet> packet, bool verifyConnection = false);
 
-    /// Returns true when both eDonkey and eMule info packets have been received.
+    /// True once the handshake is settled: MFC's !m_bHelloAnswerPending
+    /// (srchybrid/BaseClient.cpp:2403).
     [[nodiscard]] bool checkHandshakeFinished() const;
 
     // -- Phase 3 — connection management ------------------------------------

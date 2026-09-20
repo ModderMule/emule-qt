@@ -223,7 +223,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 <context>
     <name>Priority</name>
     <message>
-        <location filename="../src/gui/utils/PriorityText.cpp" line="+16"/>
+        <location filename="../src/gui/utils/PriorityText.cpp" line="+20"/>
         <source>Very Low</source>
         <translation>매우 낮음</translation>
     </message>
@@ -248,12 +248,17 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
         <translation>높음</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+13"/>
         <source>Release</source>
         <translation>릴리스</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+15"/>
+        <source>Very High</source>
+        <translation>매우 높음</translation>
+    </message>
+    <message>
+        <location line="-24"/>
         <source>Auto [No]</source>
         <translation>자동 [중]</translation>
     </message>
@@ -440,7 +445,7 @@ Has comments</source>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+72"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+73"/>
         <source>Passive</source>
         <translation>수동</translation>
     </message>
@@ -591,7 +596,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2777"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2779"/>
         <source>Test</source>
         <translation>테스트</translation>
     </message>
@@ -2075,17 +2080,16 @@ Enter the address and authentication token of a remote core.</source>
 <context>
     <name>eMule::DownloadListModel</name>
     <message>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+616"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+614"/>
         <source>Downloading</source>
         <translation>다운로드 중</translation>
     </message>
     <message>
-        <location line="-362"/>
         <source>Auto [%1]</source>
-        <translation>자동 [%1]</translation>
+        <translation type="vanished">자동 [%1]</translation>
     </message>
     <message>
-        <location line="-81"/>
+        <location line="-441"/>
         <source>Queue Full</source>
         <translation>대기열 가득 참</translation>
     </message>
@@ -2095,7 +2099,7 @@ Enter the address and authentication token of a remote core.</source>
         <translation>사용 가능한 파트: %1 / %2</translation>
     </message>
     <message>
-        <location line="+81"/>
+        <location line="+78"/>
         <source>File Name:	%1
 ED2K Hash:	%2
 Size:	%3
@@ -2120,7 +2124,7 @@ ED2K 해시:	%2
 전송된 데이터:	%12</translation>
     </message>
     <message>
-        <location line="+68"/>
+        <location line="+69"/>
         <source>File Name</source>
         <translation>파일 이름</translation>
     </message>
@@ -3613,7 +3617,13 @@ Enable it under Options → Web Interface, then try again.</source>
 <context>
     <name>eMule::MessagesPanel</name>
     <message>
-        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+139"/>
+        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+145"/>
+        <location line="+378"/>
+        <source> ...failed</source>
+        <translation> ...실패</translation>
+    </message>
+    <message>
+        <location line="-376"/>
         <source>Me</source>
         <translation>나</translation>
     </message>
@@ -3629,12 +3639,12 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
     <message>
         <location line="+15"/>
-        <location line="+291"/>
+        <location line="+329"/>
         <source>Name:</source>
         <translation>이름:</translation>
     </message>
     <message>
-        <location line="-290"/>
+        <location line="-328"/>
         <source>Hash:</source>
         <translation>해시:</translation>
     </message>
@@ -3719,7 +3729,32 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>친구 (%1)</translation>
     </message>
     <message>
-        <location line="+108"/>
+        <location line="+66"/>
+        <source>*** Connecting</source>
+        <translation>*** 연결 중</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>*** Authenticating friend</source>
+        <translation>*** 친구 인증 중</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>*** Searching friend in Kad</source>
+        <translation>*** Kad에서 친구 검색 중</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source> ...found</source>
+        <translation> ...찾음</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source> ...OK</source>
+        <translation> ...OK</translation>
+    </message>
+    <message>
+        <location line="+76"/>
         <source>Find Friend</source>
         <translation>친구 찾기</translation>
     </message>
@@ -3945,36 +3980,36 @@ Enable it under Options → Web Interface, then try again.</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2690"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2692"/>
         <source>Options</source>
         <translation>옵션</translation>
     </message>
     <message>
         <location line="+49"/>
-        <location line="+1760"/>
+        <location line="+1762"/>
         <source>OK</source>
         <translation>확인</translation>
     </message>
     <message>
-        <location line="-1759"/>
-        <location line="+1760"/>
+        <location line="-1761"/>
+        <location line="+1762"/>
         <source>Cancel</source>
         <translation>취소</translation>
     </message>
     <message>
-        <location line="-1759"/>
-        <location line="+5301"/>
+        <location line="-1761"/>
+        <location line="+5303"/>
         <source>Apply</source>
         <translation>적용</translation>
     </message>
     <message>
-        <location line="-5300"/>
+        <location line="-5302"/>
         <source>Help</source>
         <translation>도움말</translation>
     </message>
     <message>
         <location line="+245"/>
-        <location line="+1741"/>
+        <location line="+1743"/>
         <location line="+63"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -3983,7 +4018,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>IP 필터</translation>
     </message>
     <message>
-        <location line="-1828"/>
+        <location line="-1830"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 필터 다시 로드됨: %1개 항목.</translation>
     </message>
@@ -4014,18 +4049,18 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5226"/>
+        <location line="+5228"/>
         <source>Language</source>
         <translation>언어</translation>
     </message>
     <message>
-        <location line="-5223"/>
+        <location line="-5225"/>
         <source>System Default</source>
         <translation>시스템 기본값</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+599"/>
+        <location line="+601"/>
         <location line="+293"/>
         <location line="+372"/>
         <location line="+276"/>
@@ -4033,7 +4068,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>기타</translation>
     </message>
     <message>
-        <location line="-1537"/>
+        <location line="-1539"/>
         <source>Bring to front on link click</source>
         <translation>링크 클릭 시 앞으로 가져오기</translation>
     </message>
@@ -4119,25 +4154,25 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5152"/>
+        <location line="+5154"/>
         <source>Core</source>
         <translation>코어</translation>
     </message>
     <message>
-        <location line="-5147"/>
+        <location line="-5149"/>
         <source>Address:</source>
         <translation>주소:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1059"/>
+        <location line="+1061"/>
         <location line="+633"/>
         <location line="+409"/>
         <source>Port:</source>
         <translation>포트:</translation>
     </message>
     <message>
-        <location line="-2098"/>
+        <location line="-2100"/>
         <source>authentication token</source>
         <translation>인증 토큰</translation>
     </message>
@@ -4278,7 +4313,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+597"/>
+        <location line="+599"/>
         <location line="+928"/>
         <location line="+108"/>
         <location line="+289"/>
@@ -4291,7 +4326,7 @@ Are you sure you want to continue?</source>
         <translation>활성화됨</translation>
     </message>
     <message>
-        <location line="-4413"/>
+        <location line="-4415"/>
         <source>Reset</source>
         <translation>초기화</translation>
     </message>
@@ -4387,7 +4422,7 @@ Are you sure you want to continue?</source>
         <translation>최대 연결 수</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+14"/>
         <source>Autoconnect on startup</source>
         <translation>시작 시 자동 연결</translation>
     </message>

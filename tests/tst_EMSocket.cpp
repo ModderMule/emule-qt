@@ -44,9 +44,20 @@ public:
     /// run after onError, so only a synchronous drain can deliver buffered bytes.
     bool disconnectOnError = false;
 
+    /// Re-enter the read path from inside the first packet's handler, the way
+    /// ClientReqSocket::disconnect()'s flush() can when the write fails synchronously.
+    /// disableDownloadLimit() is the reachable lever: it calls onReadyRead() directly
+    /// whenever pendingOnReceive() is set.
+    bool reenterOnFirstPacket = false;
+
 protected:
     bool packetReceived(Packet* packet) override
     {
+        if (reenterOnFirstPacket) {
+            reenterOnFirstPacket = false;   // once, or it recurses
+            disableDownloadLimit();
+        }
+
         ReceivedPacket rp;
         rp.opcode = packet->opcode;
         rp.prot = packet->prot;
@@ -81,6 +92,11 @@ private slots:
     void drainsBufferWhenPeerGoesQuiet();
     void drainsBufferWhenPeerCloses();
     void retryChainQuiescesWhenEncryptionNotReady();
+    void sharedReadBuffer_twoSocketsInterleave();
+    void nestedPassDoesNotCorruptOuterBuffer();
+    void fullReceive_falseOnShortRead();
+    void fullReceive_trueWhenBufferFilled();
+    void fullReceive_trueUnderAThrottleThatCapsTheRead();
 };
 
 /// Helper: write raw ED2K packet bytes to a socket.
@@ -462,6 +478,207 @@ void tst_EMSocket::retryChainQuiescesWhenEncryptionNotReady()
     QVERIFY2(retries > 0, "retry chain never started — the test would prove nothing");
     QVERIFY2(retries < 10,
              qPrintable(QStringLiteral("retry chain fired %1 times in 500ms").arg(retries)));
+
+    serverSide->close();
+    clientSocket.close();
+}
+
+// ---------------------------------------------------------------------------
+// One read buffer, many sockets
+//
+// The 2 MB buffer is shared (MFC's GlobalReadBuffer). What must stay per-socket is
+// the partial-header tail, so two sockets each holding one across a pass may not
+// bleed into each other.
+// ---------------------------------------------------------------------------
+
+void tst_EMSocket::sharedReadBuffer_twoSocketsInterleave()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    TestEMSocket a;
+    TestEMSocket b;
+    a.connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* peerA = server.nextPendingConnection();
+    b.connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* peerB = server.nextPendingConnection();
+    QVERIFY(peerA && peerB);
+    QVERIFY(a.waitForConnected(5000));
+    QVERIFY(b.waitForConnected(5000));
+
+    // Header plus two payload bytes, so each socket parks a partial packet.
+    const auto writeHead = [](QTcpSocket* peer, uint8 opcode, const char* first2) {
+        HeaderStruct hdr;
+        hdr.eDonkeyID = OP_EDONKEYPROT;
+        hdr.packetLength = 6 + 1;   // 6 payload bytes
+        hdr.command = opcode;
+        peer->write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
+        peer->write(first2, 2);
+        peer->flush();
+    };
+
+    writeHead(peerA, 0x11, "AA");
+    writeHead(peerB, 0x22, "BB");
+    QTest::qWait(150);           // both passes run and save their tail
+
+    peerA->write("AAAA", 4);
+    peerA->flush();
+    peerB->write("BBBB", 4);
+    peerB->flush();
+
+    QTRY_COMPARE_WITH_TIMEOUT(a.receivedPackets.size(), static_cast<std::size_t>(1), 3000);
+    QTRY_COMPARE_WITH_TIMEOUT(b.receivedPackets.size(), static_cast<std::size_t>(1), 3000);
+
+    QCOMPARE(a.receivedPackets[0].opcode, static_cast<uint8>(0x11));
+    QCOMPARE(b.receivedPackets[0].opcode, static_cast<uint8>(0x22));
+    QCOMPARE(QByteArray(a.receivedPackets[0].data.data(), 6), QByteArray("AAAAAA", 6));
+    QCOMPARE(QByteArray(b.receivedPackets[0].data.data(), 6), QByteArray("BBBBBB", 6));
+
+    peerA->close();
+    peerB->close();
+    a.close();
+    b.close();
+}
+
+// ---------------------------------------------------------------------------
+// A nested pass must not eat the outer pass's bytes
+//
+// The outer pass is mid-parse with pointers into the shared buffer when the nested
+// one reads over it. The lease hands the nested pass a buffer of its own; without it
+// the outer's remaining packets come back as whatever the nested read overwrote them
+// with.
+// ---------------------------------------------------------------------------
+
+void tst_EMSocket::nestedPassDoesNotCorruptOuterBuffer()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    TestEMSocket clientSocket;
+    clientSocket.connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* serverSide = server.nextPendingConnection();
+    QVERIFY(serverSide != nullptr);
+    QVERIFY(clientSocket.waitForConnected(5000));
+
+    // 8 packets of 16 bytes each. Each payload is its own index, so a packet that came
+    // out of clobbered memory is recognisable.
+    constexpr int kPackets = 8;
+    constexpr uint32 kPayload = 10;
+    constexpr qint64 kPacketBytes = kPayload + sizeof(HeaderStruct);
+
+    clientSocket.setDownloadLimit(0);
+    for (int i = 0; i < kPackets; ++i) {
+        const std::vector<char> payload(kPayload, static_cast<char>('0' + i));
+        writeRawPacket(serverSide, OP_EDONKEYPROT, static_cast<uint8>(0x40 + i),
+                       payload.data(), kPayload);
+    }
+    QVERIFY(QTest::qWaitFor([&] { return clientSocket.bytesAvailable() >= kPackets * kPacketBytes; },
+                            5000));
+
+    // A limit of exactly four packets: the first pass fills its whole request (so
+    // pendingOnReceive is set) and leaves the other four buffered for the nested pass.
+    clientSocket.reenterOnFirstPacket = true;
+    clientSocket.setDownloadLimit(4 * kPacketBytes);
+
+    QTRY_COMPARE_WITH_TIMEOUT(clientSocket.receivedPackets.size(),
+                              static_cast<std::size_t>(kPackets), 3000);
+
+    // Order is interleaved by the nesting; what matters is that every packet arrived
+    // once and carries its own bytes.
+    std::vector<bool> seen(kPackets, false);
+    for (const auto& rp : clientSocket.receivedPackets) {
+        const int idx = rp.opcode - 0x40;
+        QVERIFY2(idx >= 0 && idx < kPackets, "packet with an opcode we never sent");
+        QVERIFY2(!seen[idx], "the same packet arrived twice");
+        seen[idx] = true;
+        QCOMPARE(rp.data.size(), static_cast<std::size_t>(kPayload));
+        QCOMPARE(QByteArray(rp.data.data(), kPayload),
+                 QByteArray(kPayload, static_cast<char>('0' + idx)));
+    }
+
+    serverSide->close();
+    clientSocket.close();
+}
+
+// ---------------------------------------------------------------------------
+// m_fullReceive — MFC's "did the read fill the ask?" (EncryptedStreamSocket.cpp:230)
+// ---------------------------------------------------------------------------
+
+void tst_EMSocket::fullReceive_falseOnShortRead()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    TestEMSocket clientSocket;
+    clientSocket.connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* serverSide = server.nextPendingConnection();
+    QVERIFY(serverSide != nullptr);
+    QVERIFY(clientSocket.waitForConnected(5000));
+
+    writeRawPacket(serverSide, OP_EDONKEYPROT, 0x01, "Hello", 5);
+    QTRY_COMPARE_WITH_TIMEOUT(clientSocket.receivedPackets.size(), static_cast<std::size_t>(1), 3000);
+
+    // 11 bytes against a 2 MB request: there is plainly nothing more to fetch, so
+    // lifting the rate limit must not fire a re-entrant read.
+    QVERIFY(!clientSocket.pendingOnReceive());
+
+    serverSide->close();
+    clientSocket.close();
+}
+
+void tst_EMSocket::fullReceive_trueWhenBufferFilled()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    TestEMSocket clientSocket;
+    clientSocket.connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* serverSide = server.nextPendingConnection();
+    QVERIFY(serverSide != nullptr);
+    QVERIFY(clientSocket.waitForConnected(5000));
+
+    QVERIFY2(sendBurstWithoutReading(clientSocket, serverSide),
+             "peer data never arrived — the case would prove nothing");
+
+    // Synchronous: one pass that consumes the whole 2 MB request runs inside this call.
+    clientSocket.disableDownloadLimit();
+    QVERIFY(clientSocket.pendingOnReceive());
+
+    serverSide->close();
+    clientSocket.close();
+}
+
+void tst_EMSocket::fullReceive_trueUnderAThrottleThatCapsTheRead()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    TestEMSocket clientSocket;
+    clientSocket.connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* serverSide = server.nextPendingConnection();
+    QVERIFY(serverSide != nullptr);
+    QVERIFY(clientSocket.waitForConnected(5000));
+
+    clientSocket.setDownloadLimit(0);
+    const std::vector<char> payload(1000, '\xCD');
+    writeRawPacket(serverSide, OP_EDONKEYPROT, 0x01, payload.data(), 1000);
+    QVERIFY(QTest::qWaitFor([&] { return clientSocket.bytesAvailable() >= 1006; }, 5000));
+
+    // The throttle, not the peer, is what ends this read — more is waiting, so the
+    // next limit change must re-read immediately. This is the pacing MFC relies on.
+    clientSocket.setDownloadLimit(64);
+    QVERIFY(clientSocket.pendingOnReceive());
+    QCOMPARE(clientSocket.receivedPackets.size(), static_cast<std::size_t>(0));
+
+    clientSocket.setDownloadLimit(4000);
+    QTRY_COMPARE_WITH_TIMEOUT(clientSocket.receivedPackets.size(), static_cast<std::size_t>(1), 3000);
+    QCOMPARE(clientSocket.receivedPackets[0].data.size(), static_cast<std::size_t>(1000));
 
     serverSide->close();
     clientSocket.close();

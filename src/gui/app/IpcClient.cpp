@@ -56,6 +56,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::RemoveFriend:         return QStringLiteral("RemoveFriend");
     case T::SendChatMessage:      return QStringLiteral("SendChatMessage");
     case T::SetFriendSlot:        return QStringLiteral("SetFriendSlot");
+    case T::EndChatSession:       return QStringLiteral("EndChatSession");
     case T::GetStats:             return QStringLiteral("GetStats");
     case T::GetPreferences:       return QStringLiteral("GetPreferences");
     case T::SetPreferences:       return QStringLiteral("SetPreferences");

@@ -2570,6 +2570,22 @@ bool PartFile::hashSinglePart(uint32 partNumber, bool* aichAgreed)
     if (partNumber >= partCount())
         return true; // out of range, nothing to verify
 
+    // We demand that MD4 and AICH agree, exactly as MFC does — a part is only good if
+    // neither algorithm objects (srchybrid/PartFile.cpp:3124-3129).
+    const bool haveMD4 = fileIdentifier().hasExpectedMD4HashCount();
+    const bool haveAICH = fileIdentifier().hasAICHHash()
+                          && fileIdentifier().hasExpectedAICHHashCount();
+
+    if (!haveMD4 && !haveAICH) {
+        // Nothing to compare against. Ask for both hash sets rather than blessing the
+        // data (MFC PartFile.cpp:3132-3137).
+        logError(QStringLiteral("PartFile: cannot verify part %1 of '%2' — no hashset")
+                     .arg(partNumber).arg(fileName()));
+        setMD4HashsetNeeded(true);
+        setAICHPartHashsetNeeded(true);
+        return true;
+    }
+
     const uint64 partStart = static_cast<uint64>(partNumber) * PARTSIZE;
     const uint64 partEnd = std::min(partStart + PARTSIZE - 1,
                                      static_cast<uint64>(fileSize()) - 1);
@@ -2591,53 +2607,77 @@ bool PartFile::hashSinglePart(uint32 partNumber, bool* aichAgreed)
     if (static_cast<uint64>(partData.size()) != partLen)
         return true; // can't read, assume OK
 
-    // AICH verification (block-level, more precise than MD4)
-    if (m_aichRecoveryHashSet.hasValidMasterHash()
-        && (m_aichRecoveryHashSet.getStatus() == EAICHStatus::Verified
-            || m_aichRecoveryHashSet.getStatus() == EAICHStatus::Trusted
-            || m_aichRecoveryHashSet.getStatus() == EAICHStatus::HashSetComplete))
-    {
-        // Build AICH hash tree from actual part data
-        AICHHashTree aichPartTree(partLen, true, EMBLOCKSIZE);
-        KnownFile::createHashFromMemory(
-            reinterpret_cast<const uint8*>(partData.constData()),
-            static_cast<uint32>(partLen), nullptr, &aichPartTree);
-
-        if (aichPartTree.m_hashValid) {
-            // Compare with the stored part hash from the recovery hashset
-            const AICHHashTree* storedPartNode =
-                m_aichRecoveryHashSet.m_hashTree.findExistingHash(partStart, partLen);
-            if (storedPartNode && storedPartNode->m_hashValid) {
-                if (aichPartTree.m_hash == storedPartNode->m_hash) {
-                    if (aichAgreed)
-                        *aichAgreed = true;
-                }
-            }
+    // A fresh tree that copies the geometry of the recovery set's node for this part:
+    // the root it computes is then comparable with the stored part hash, and existing
+    // recovery data is left alone (MFC PartFile.cpp:3139-3147).
+    std::unique_ptr<AICHHashTree> aichPartTree;
+    if (haveAICH) {
+        if (const AICHHashTree* node =
+                m_aichRecoveryHashSet.findPartHash(static_cast<uint16>(partNumber))) {
+            aichPartTree = std::make_unique<AICHHashTree>(node->m_dataSize,
+                                                          node->m_isLeftBranch,
+                                                          node->getBaseSize());
         }
     }
 
-    // MD4 verification
-    bool md4OK = true;
-    const uint8* storedHash = fileIdentifier().getMD4PartHash(partNumber);
-    if (storedHash) {
-        uint8 computedHash[16]{};
-        KnownFile::createHashFromMemory(
-            reinterpret_cast<const uint8*>(partData.constData()),
-            static_cast<uint32>(partLen), computedHash, nullptr);
+    // One pass fills both hashes, as MFC's single CreateHash call does.
+    uint8 computedHash[16]{};
+    KnownFile::createHashFromMemory(
+        reinterpret_cast<const uint8*>(partData.constData()),
+        static_cast<uint32>(partLen), computedHash, aichPartTree.get());
 
-        if (!md4equ(computedHash, storedHash))
-            md4OK = false;
+    // MD4 — MFC PartFile.cpp:3155-3171
+    bool md4Error = false;
+    if (haveMD4) {
+        if (partCount() > 1 || fileSize() == PARTSIZE) {
+            if (const uint8* storedHash = fileIdentifier().getMD4PartHash(partNumber))
+                md4Error = !md4equ(computedHash, storedHash);
+            else {
+                logWarning(QStringLiteral("PartFile: MD4 part hash %1 missing for '%2'")
+                               .arg(partNumber).arg(fileName()));
+                setMD4HashsetNeeded(true);
+            }
+        } else {
+            // A file of one part has no part hashes at all — its file hash is the part
+            // hash, and without this arm such a file was never verified.
+            md4Error = !md4equ(computedHash, fileIdentifier().getMD4Hash());
+        }
+    } else {
+        logWarning(QStringLiteral("PartFile: MD4 hashset missing while verifying part %1 of '%2'")
+                       .arg(partNumber).arg(fileName()));
+        setMD4HashsetNeeded(true);
     }
 
-    // Both must agree for the part to be considered valid
-    // If AICH was verified and agrees, we trust it even if MD4 can't verify
-    // If MD4 verifies OK, the part is valid
-    // If MD4 fails, the part is corrupt regardless of AICH
-    if (!md4OK)
-        return false;
+    // AICH — MFC PartFile.cpp:3173-3184
+    bool aichError = false;
+    const bool aichChecked = haveAICH && aichPartTree && aichPartTree->m_hashValid;
+    if (aichChecked) {
+        if (partCount() > 1) {
+            if (fileIdentifier().getAvailableAICHPartHashCount() > partNumber)
+                aichError = fileIdentifier().getRawAICHHashSet()[partNumber] != aichPartTree->m_hash;
+            else {
+                logWarning(QStringLiteral("PartFile: AICH part hash %1 missing for '%2'")
+                               .arg(partNumber).arg(fileName()));
+                setAICHPartHashsetNeeded(true);
+            }
+        } else
+            aichError = fileIdentifier().getAICHHash() != aichPartTree->m_hash;
+    }
 
-    // If AICH was checked and disagrees while MD4 was OK, trust MD4
-    return true;
+    // Only a check that actually ran may report agreement: the caller skips the AICH
+    // recovery request on the strength of it (flushBuffer, above).
+    if (aichAgreed && aichChecked)
+        *aichAgreed = !aichError;
+
+    if (haveMD4 && aichChecked && md4Error != aichError) {
+        logError(QStringLiteral("PartFile: MD4 and AICH disagree on part %1 of '%2' — "
+                                "MD4: %3, AICH: %4")
+                     .arg(partNumber).arg(fileName(),
+                          md4Error ? QStringLiteral("corrupt") : QStringLiteral("ok"),
+                          aichError ? QStringLiteral("corrupt") : QStringLiteral("ok")));
+    }
+
+    return !md4Error && !aichError;
 }
 
 // ===========================================================================

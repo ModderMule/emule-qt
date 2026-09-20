@@ -221,7 +221,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 <context>
     <name>Priority</name>
     <message>
-        <location filename="../src/gui/utils/PriorityText.cpp" line="+16"/>
+        <location filename="../src/gui/utils/PriorityText.cpp" line="+20"/>
         <source>Very Low</source>
         <translation type="unfinished"></translation>
     </message>
@@ -246,12 +246,17 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+13"/>
         <source>Release</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+15"/>
+        <source>Very High</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-24"/>
         <source>Auto [No]</source>
         <translation type="unfinished"></translation>
     </message>
@@ -317,7 +322,7 @@ Has comments</source>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+72"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+73"/>
         <source>Passive</source>
         <translation type="unfinished"></translation>
     </message>
@@ -568,7 +573,7 @@ Has comments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2777"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2779"/>
         <source>Test</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2028,17 +2033,12 @@ Enter the address and authentication token of a remote core.</source>
 <context>
     <name>eMule::DownloadListModel</name>
     <message>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+616"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+614"/>
         <source>Downloading</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-362"/>
-        <source>Auto [%1]</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="-81"/>
+        <location line="-441"/>
         <source>Queue Full</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2048,7 +2048,7 @@ Enter the address and authentication token of a remote core.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+81"/>
+        <location line="+78"/>
         <source>File Name:	%1
 ED2K Hash:	%2
 Size:	%3
@@ -2063,7 +2063,7 @@ Transferred Data:	%12</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+68"/>
+        <location line="+69"/>
         <source>File Name</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3545,7 +3545,13 @@ Enable it under Options → Web Interface, then try again.</source>
 <context>
     <name>eMule::MessagesPanel</name>
     <message>
-        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+139"/>
+        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+145"/>
+        <location line="+378"/>
+        <source> ...failed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="-376"/>
         <source>Me</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3561,12 +3567,12 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
     <message>
         <location line="+15"/>
-        <location line="+291"/>
+        <location line="+329"/>
         <source>Name:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-290"/>
+        <location line="-328"/>
         <source>Hash:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3651,7 +3657,32 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+108"/>
+        <location line="+66"/>
+        <source>*** Connecting</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>*** Authenticating friend</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>*** Searching friend in Kad</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source> ...found</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source> ...OK</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+76"/>
         <source>Find Friend</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3877,36 +3908,36 @@ Enable it under Options → Web Interface, then try again.</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2690"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2692"/>
         <source>Options</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+49"/>
-        <location line="+1760"/>
+        <location line="+1762"/>
         <source>OK</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1759"/>
-        <location line="+1760"/>
+        <location line="-1761"/>
+        <location line="+1762"/>
         <source>Cancel</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1759"/>
-        <location line="+5301"/>
+        <location line="-1761"/>
+        <location line="+5303"/>
         <source>Apply</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5300"/>
+        <location line="-5302"/>
         <source>Help</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+245"/>
-        <location line="+1741"/>
+        <location line="+1743"/>
         <location line="+63"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -3915,7 +3946,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1828"/>
+        <location line="-1830"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3946,18 +3977,18 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5226"/>
+        <location line="+5228"/>
         <source>Language</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5223"/>
+        <location line="-5225"/>
         <source>System Default</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+599"/>
+        <location line="+601"/>
         <location line="+293"/>
         <location line="+372"/>
         <location line="+276"/>
@@ -3965,7 +3996,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1537"/>
+        <location line="-1539"/>
         <source>Bring to front on link click</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4051,25 +4082,25 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5152"/>
+        <location line="+5154"/>
         <source>Core</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5147"/>
+        <location line="-5149"/>
         <source>Address:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1059"/>
+        <location line="+1061"/>
         <location line="+633"/>
         <location line="+409"/>
         <source>Port:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2098"/>
+        <location line="-2100"/>
         <source>authentication token</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4208,7 +4239,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+597"/>
+        <location line="+599"/>
         <location line="+928"/>
         <location line="+108"/>
         <location line="+289"/>
@@ -4221,7 +4252,7 @@ Are you sure you want to continue?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4413"/>
+        <location line="-4415"/>
         <source>Reset</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4317,7 +4348,7 @@ Are you sure you want to continue?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+14"/>
         <source>Autoconnect on startup</source>
         <translation type="unfinished"></translation>
     </message>

@@ -1167,12 +1167,14 @@ void KnownFile::createHash(QIODevice& device, uint64 length,
 {
     static constexpr uint32 kReadBlockSize = 8 * 1024; // 8 KB
 
-    auto hashAlg = std::unique_ptr<AICHHashAlgo>(AICHRecoveryHashSet::getNewHashAlgo());
+    auto hashAlg = aichTree ? std::unique_ptr<AICHHashAlgo>(AICHRecoveryHashSet::getNewHashAlgo())
+                            : nullptr;
 
     MD4Hasher md4Hasher;
     uint8 buf[kReadBlockSize];
     uint64 read = 0;
-    uint64 aichPos = 0; // position within current EMBLOCKSIZE boundary
+    uint64 blockStart = 0;   ///< file offset of the AICH block being hashed
+    uint64 blockFilled = 0;  ///< bytes of that block already fed to hashAlg
 
     while (read < length) {
         const uint64 toRead = std::min(static_cast<uint64>(kReadBlockSize), length - read);
@@ -1182,21 +1184,26 @@ void KnownFile::createHash(QIODevice& device, uint64 length,
 
         md4Hasher.add(buf, static_cast<std::size_t>(got));
 
+        // An AICH block is a hash of exactly EMBLOCKSIZE bytes, and 8 KB does not divide
+        // it, so a read that straddles the boundary has to be split — the tail belongs to
+        // the next block. MFC srchybrid/KnownFile.cpp:945-959. Feeding the whole chunk and
+        // dropping the remainder, as this used to, put a few KB of the next block into
+        // every block hash and started the next one late: our AICH hashes matched nothing
+        // but themselves.
         if (aichTree && hashAlg) {
-            hashAlg->add(buf, static_cast<uint32>(got));
-            aichPos += static_cast<uint64>(got);
-
-            // When we cross an EMBLOCKSIZE boundary, flush AICH block
-            if (aichPos >= EMBLOCKSIZE) {
-                AICHHash blockHash;
-                hashAlg->finish(blockHash);
-                aichTree->setBlockHash(EMBLOCKSIZE, read + static_cast<uint64>(got) - aichPos, hashAlg.get());
-                aichPos -= EMBLOCKSIZE;
+            const auto chunk = static_cast<uint64>(got);
+            if (blockFilled + chunk >= EMBLOCKSIZE) {
+                const uint64 toComplete = EMBLOCKSIZE - blockFilled;
+                hashAlg->add(buf, static_cast<uint32>(toComplete));
+                aichTree->setBlockHash(EMBLOCKSIZE, blockStart, hashAlg.get());
+                blockStart += EMBLOCKSIZE;
                 hashAlg->reset();
-                if (aichPos > 0) {
-                    // Feed leftover bytes from current read
-                    // (they were already added above, recalculate after reset)
-                }
+                blockFilled = chunk - toComplete;
+                if (blockFilled > 0)
+                    hashAlg->add(buf + toComplete, static_cast<uint32>(blockFilled));
+            } else {
+                hashAlg->add(buf, static_cast<uint32>(chunk));
+                blockFilled += chunk;
             }
         }
 
@@ -1207,11 +1214,12 @@ void KnownFile::createHash(QIODevice& device, uint64 length,
     if (md4HashOut)
         md4cpy(md4HashOut, md4Hasher.getHash());
 
-    // Flush remaining AICH data
-    if (aichTree && hashAlg && aichPos > 0) {
-        AICHHash blockHash;
-        hashAlg->finish(blockHash);
-        aichTree->setBlockHash(aichPos, read - aichPos, hashAlg.get());
+    // The last, short block, then the tree itself — MFC finishes both inside CreateHash
+    // (srchybrid/KnownFile.cpp:966-974), so the root hash is ready when this returns.
+    if (aichTree && hashAlg) {
+        if (blockFilled > 0)
+            aichTree->setBlockHash(blockFilled, blockStart, hashAlg.get());
+        aichTree->reCalculateHash(hashAlg.get(), false);
     }
 }
 

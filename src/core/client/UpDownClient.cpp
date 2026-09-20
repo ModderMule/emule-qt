@@ -3249,6 +3249,12 @@ void UpDownClient::processChatMessage(SafeMemFile& data, uint32 length)
                 if (!trimmed.isEmpty() && message.contains(trimmed, Qt::CaseInsensitive)) {
                     m_isSpammer = true;
                     logDebug(QStringLiteral("Spam detected from %1: %2").arg(userName(), message));
+                    // MFC BaseClient.cpp:2647-2650 also closes the window on a spammer we
+                    // never wrote to; a chat we started ourselves is left alone. (We keep
+                    // setting m_isSpammer either way, which MFC gates on its adv-spam
+                    // preference — we have no such pref.)
+                    if (!friendPtr() && messagesSent() == 0)
+                        endChatSession();
                     return;
                 }
             }
@@ -3300,6 +3306,14 @@ void UpDownClient::sendPendingChatMessage()
     if (m_pendingChatMessage.isEmpty() || !m_socket || !m_socket->isConnected())
         return;
     sendChatMessage(takePendingChatMessage());
+}
+
+void UpDownClient::endChatSession()
+{
+    m_chatState = ChatState::None;
+    m_chatCaptchaState = ChatCaptchaState::None;
+    (void)takePendingChatMessage();
+    emit chatStateChanged();
 }
 
 void UpDownClient::sendChatMessage(const QString& message)
@@ -4252,27 +4266,23 @@ void UpDownClient::onHelloReceived(const uint8* data, uint32 size, uint8 opcode)
                          .arg(m_socket ? m_socket->peerAddress().toString() : QStringLiteral("?"))
                          .arg(m_socket ? m_socket->peerPort() : 0));
         m_helloAnswerPending = false;
-        const bool isMule = processHelloTypePacket(io);
+        (void)processHelloTypePacket(io);   // its tags are read for their side effects
 
-        // Send deferred file request BEFORE EMULEINFO so the remote
-        // processes it with ExtendedRequestsVersion=0 (matching MFC
-        // packet order where file requests are sent from
-        // ConnectionEstablished before HELLO_ANSWER/EMULEINFO).
+        // Deferred file request goes out first, so the remote processes it with
+        // ExtendedRequestsVersion=0 — MFC's packet order, where file requests leave
+        // ConnectionEstablished ahead of the hello answer.
         if (m_pendingFileRequest) {
             m_pendingFileRequest = false;
             logDebug(QStringLiteral("onHelloReceived: sending deferred file request after HELLO_ANSWER"));
             sendFileRequest();
         }
 
-        // OP_EMULEINFO is the pre-0.42 capability exchange. Clients that sent an
-        // extended (mule) hello already gave us everything via CT_EMULE_MISCOPTIONS1/2
-        // and CT_EMULE_VERSION, and sending it to them is actively harmful: their
-        // ProcessMuleInfoPacket overwrites the 0x99 "version came from hello" marker
-        // with our legacy version byte, which anti-leech modules (eMuleAI Shield
-        // PR_FAKEMULEVERSION) read as a forged eMule version and ban us for.
-        // MFC: ListenSocket only sends it when !bIsMuleHello; eMule 0.50a never sends it.
-        if (!isMule)
-            sendMuleInfoPacket(false);
+        // No OP_EMULEINFO here. MFC sends it from exactly one place — the inbound
+        // OP_HELLO path, for an SO_EMULE peer (srchybrid/ListenSocket.cpp:275), which we
+        // match above; its OP_HELLOANSWER handler (:214-232) sends nothing. Sending it
+        // unprompted was also the riskier half: a mule peer's ProcessMuleInfoPacket
+        // overwrites the 0x99 "version came from hello" marker with our legacy version
+        // byte, which anti-leech modules read as a forged eMule version and ban us for.
         onInfoPacketsReceived();
         // MFC ListenSocket.cpp:229 calls ConnectionEstablished() here, AFTER
         // InfoPacketsReceived() — the reverse of the OP_HELLO ordering above. This is the

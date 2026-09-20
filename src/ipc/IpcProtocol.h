@@ -71,6 +71,10 @@ enum class IpcMsgType : int {
     RemoveFriend         = 172,  ///< [hash]
     SendChatMessage      = 173,  ///< [hash: string, message: string]
     SetFriendSlot        = 174,  ///< [hash: string, enabled: bool]
+    EndChatSession       = 175,  ///< [hash: string] — the chat window closed, so the
+                                ///<   peer goes back to ChatState::None and a dial we
+                                ///<   started for it is cancelled. MFC does this from
+                                ///<   CChatSelector::EndSession (ChatSelector.cpp:464).
     /// {...StatsSnapshot, streamToken, maxDownloadKb, usenetLimitKb, ed2kBudgetKb}.
     /// The last three are the live download split, effective caps in KB/s with
     /// every sentinel resolved: 0 only when maxDownloadKb is 0 (unlimited), and a

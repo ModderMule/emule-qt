@@ -78,6 +78,7 @@ private slots:
     void anUnlimitedLimitParksAtTheCapacity();
     void theIpcLogBoxShowsTheStoredValue();
     void aLargeQueueSizeSurvivesTheSlider();
+    void aLargeConnectionLimitSurvivesTheSpin();
     void extendedValuesComeFromThePrefsNotFallbacks();
     void generalPageControlsEnableApply();
 };
@@ -262,6 +263,25 @@ void TestOptionsDialogSizing::aLargeQueueSizeSurvivesTheSlider()
     QCOMPARE(queue->minimum(), 20);
     QCOMPARE(queue->value(), 420);
     thePrefs.setQueueSize(5000);
+}
+
+/// The spin stopped at 10 000, so a larger stored connection limit was cut down by
+/// the next OK -- the same failure the queue-size slider had.
+void TestOptionsDialogSizing::aLargeConnectionLimitSurvivesTheSpin()
+{
+    // The two port spins on this page also stop at 65535, so match on the value too.
+    thePrefs.setPort(4662);
+    thePrefs.setUdpPort(4672);
+    thePrefs.setMaxConnections(20'000);
+    OptionsDialog dlg(nullptr, nullptr);
+
+    QSpinBox* conns = nullptr;
+    for (QSpinBox* s : stackOf(dlg)->widget(OptionsDialog::PageConnection)->findChildren<QSpinBox*>())
+        if (s->maximum() == 65535 && s->value() == 20'000)
+            conns = s;
+    QVERIFY(conns);
+    QCOMPARE(conns->minimum(), 1);
+    thePrefs.setMaxConnections(500);
 }
 
 /// The offline map stopped after the Files page, so everything later loaded hardcoded

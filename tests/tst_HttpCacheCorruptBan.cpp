@@ -46,7 +46,10 @@ namespace {
 
 /// Two parts, so filling one never empties the gap list and PartFile does not
 /// wander off into completeFile() in the middle of a test.
-constexpr uint64 kFileSize = PARTSIZE * 2;
+/// Not PARTSIZE * 2: an exact multiple wants three ED2K part hashes (size/PARTSIZE + 1)
+/// and these fixtures plant two, so hashSinglePart() would bail out as hashset-less and
+/// verify nothing. The stub second part is never written either way.
+constexpr uint64 kFileSize = PARTSIZE + 1000;
 
 /// Neither of these is on loopback, so "the peer got banned" and "the cache
 /// server got banned" can never turn out to be the same assertion.

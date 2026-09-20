@@ -119,6 +119,11 @@ public:
     /// than retry at a fixed 10 ms. Only touched on the socket's own thread.
     [[nodiscard]] uint64 sendRetryCount() const { return m_sendRetryCount; }
 
+    /// True when the last read filled the whole request, so lifting the rate limit
+    /// re-reads immediately (MFC's pendingOnReceive, srchybrid/EMSocket.cpp:297).
+    /// Exposed for tests.
+    [[nodiscard]] bool pendingOnReceive() const { return m_pendingOnReceive; }
+
 protected:
     // --- Abstract methods (subclasses must implement) ---
 
@@ -221,9 +226,6 @@ private:
     /// Threshold above which the socket is considered congested (128 KB,
     /// matching the SO_SNDBUF size set by useBigSendBuffer()).
     static constexpr qint64 kBusyThreshold = 1024 * 1024;
-
-    // Read buffer
-    std::vector<char> m_readBuffer;
 
     QElapsedTimer m_elapsedTimer;
 };

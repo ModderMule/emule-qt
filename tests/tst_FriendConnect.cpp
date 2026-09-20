@@ -51,6 +51,12 @@ private slots:
     void sendOrQueueChatMessage_offlineParksTheTextAndDials();
     void removeFriendWhileConnecting_reportsFailure();
 
+    // Closing the chat window — MFC CChatSelector::EndSession (ChatSelector.cpp:464-490)
+    void endChatSession_midDialCancelsTheAttemptAndReportsFailure();
+    void endChatSession_dropsTheParkedText();
+    void endChatSession_onAnIdleFriendIsHarmless();
+    void endChatSession_clearsCaptchaState();
+
 private:
     /// A friend with an address to dial, owned by the list.
     Friend* makeFriend(uint8 hashByte = 0x51);
@@ -267,6 +273,74 @@ void tst_FriendConnect::removeFriendWhileConnecting_reportsFailure()
     QVERIFY(m_friends->removeFriend(f));
     QCOMPARE(result.count(), 1);
     QCOMPARE(result.at(0).at(1).toBool(), false);
+}
+
+// Closing the tab mid-dial has to stop the dial, not just tidy the GUI. MFC gets away
+// with setting MS_NONE because it has no connect state of its own; here an attempt left
+// running lands in finishConnecting(true) and re-opens the session.
+void tst_FriendConnect::endChatSession_midDialCancelsTheAttemptAndReportsFailure()
+{
+    Friend* f = makeFriend(0x5B);
+    QVERIFY(f->tryToConnect());
+    UpDownClient* client = f->linkedClient();
+    QVERIFY(client != nullptr);
+    QCOMPARE(client->chatState(), ChatState::Connecting);
+
+    QSignalSpy result(m_friends.get(), &FriendList::friendConnectingResult);
+
+    f->endChatSession();
+
+    QVERIFY(!f->isTryingToConnect());
+    QCOMPARE(f->connectState(), FriendConnectState::None);
+    QCOMPARE(client->chatState(), ChatState::None);
+    QCOMPARE(result.count(), 1);
+    QCOMPARE(result.at(0).at(1).toBool(), false);
+}
+
+// The text the user typed and then walked away from must not turn up later.
+void tst_FriendConnect::endChatSession_dropsTheParkedText()
+{
+    Friend* f = makeFriend(0x5C);
+    QVERIFY(f->sendOrQueueChatMessage(QStringLiteral("never mind")));
+
+    UpDownClient* client = f->linkedClient();
+    QVERIFY(client != nullptr);
+    QVERIFY(client->hasPendingChatMessage());
+
+    f->endChatSession();
+    QVERIFY(!client->hasPendingChatMessage());
+
+    // And a dial that lands afterwards may not resurrect the session.
+    f->updateFriendConnectionState(FriendConnectReport::Established);
+    QCOMPARE(client->chatState(), ChatState::None);
+    QVERIFY(!client->hasPendingChatMessage());
+}
+
+void tst_FriendConnect::endChatSession_onAnIdleFriendIsHarmless()
+{
+    Friend* f = makeFriend(0x5D);
+    QSignalSpy result(m_friends.get(), &FriendList::friendConnectingResult);
+
+    f->endChatSession();   // nothing running, no client yet
+
+    QCOMPARE(f->connectState(), FriendConnectState::None);
+    QCOMPARE(result.count(), 0);
+    QCOMPARE(f->linkedClient(), nullptr);
+}
+
+// MFC clears the captcha state alongside the chat state (ChatSelector.cpp:475-476), so a
+// reopened window starts a fresh challenge instead of inheriting a half-finished one.
+void tst_FriendConnect::endChatSession_clearsCaptchaState()
+{
+    Friend* f = makeFriend(0x5E);
+    UpDownClient* client = f->clientForChatSession();
+    QVERIFY(client != nullptr);
+    client->setChatCaptchaState(ChatCaptchaState::ChallengeSent);
+
+    client->endChatSession();
+
+    QCOMPARE(client->chatState(), ChatState::None);
+    QCOMPARE(client->chatCaptchaState(), ChatCaptchaState::None);
 }
 
 QTEST_MAIN(tst_FriendConnect)

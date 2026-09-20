@@ -153,6 +153,8 @@ protected:
 
     StreamCryptState m_streamCryptState = StreamCryptState::None;
     EncryptionMethod m_encryptionMethod = EncryptionMethod::Obfuscation;
+    /// Written by EMSocket::readIncoming(), which is where the receive happens in
+    /// this port; MFC sets it in its own Receive() override.
     bool m_fullReceive = true;
     bool m_serverCrypt = false;
 

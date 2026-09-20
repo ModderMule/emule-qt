@@ -209,6 +209,11 @@ bool ClientReqSocket::packetReceived(Packet* packet)
         const auto* data = reinterpret_cast<const uint8*>(packet->pBuffer);
         const uint32 size = packet->size;
 
+        // After the unpack, because unPackPacket rewrites prot — MFC gates the
+        // unpacked packet too, by falling through into the OP_EMULEPROT case.
+        if (!checkHelloFirst(protocol, opcode, rawSize))
+            return false;
+
         if (protocol == OP_EDONKEYPROT) {
             return processPacket(data, size, opcode);
         } else if (protocol == OP_EMULEPROT) {
@@ -246,9 +251,62 @@ bool ClientReqSocket::packetReceived(Packet* packet)
         return false;
     }
 
-    if (thePrefs.logRawSocketPackets())
-        logDebug(QStringLiteral("ClientReqSocket: Unknown protocol 0x%1")
-                     .arg(protocol, 2, 16, QLatin1Char('0')));
+    // MFC ListenSocket.cpp:1822-1829 — a protocol byte we do not know means the stream
+    // is not what it claims to be; charge it, fail the download and drop the peer.
+    if (auto* stats = theApp.statistics)
+        stats->addDownDataOverheadOther(rawSize);
+    logWarning(QStringLiteral("ClientReqSocket: Unknown protocol 0x%1 from %2:%3")
+                   .arg(protocol, 2, 16, QLatin1Char('0'))
+                   .arg(peerAddress().toString()).arg(peerPort()));
+    if (m_client)
+        m_client->setDownloadState(DownloadState::Error);
+    disconnect(QStringLiteral("Unknown protocol"));
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// checkHelloFirst — MFC's two pre-handshake gates (ListenSocket.cpp:1793-1819)
+//
+// MFC keys them on the client object, which it only creates inside the OP_HELLO
+// case, so "no client" means "has not said hello". Here a blank client is attached
+// when the connection is accepted, so the socket carries the state instead.
+// ---------------------------------------------------------------------------
+
+bool ClientReqSocket::checkHelloFirst(uint8 protocol, uint8 opcode, uint32 rawSize)
+{
+    if (protocol == OP_EDONKEYPROT) {
+        if (opcode == OP_HELLO) {
+            m_helloSeen = true;
+            return true;
+        }
+
+        if (!m_incoming || m_helloSeen) {
+            // MFC ListenSocket.cpp:1796-1797: the umbrella nudge every non-hello
+            // eD2K opcode gets. It is the reason MFC's individual call sites are
+            // redundant; ours only had the individual ones.
+            if (m_client && opcode != OP_HELLOANSWER)
+                (void)m_client->checkHandshakeFinished();
+            return true;
+        }
+    } else if (protocol == OP_EMULEPROT) {
+        // The port test is the one exchange that legitimately reaches a socket which
+        // never said hello (MFC ListenSocket.cpp:1810-1817).
+        if (opcode == OP_PORTTEST || !m_incoming || m_helloSeen)
+            return true;
+    } else {
+        return true;   // unknown protocol: the caller disconnects
+    }
+
+    if (auto* stats = theApp.statistics)
+        stats->addDownDataOverheadOther(rawSize);
+    logWarning(QStringLiteral("ClientReqSocket: peer %1:%2 sent proto=0x%3 opcode=0x%4 "
+                              "before saying hello")
+                   .arg(peerAddress().toString()).arg(peerPort())
+                   .arg(protocol, 2, 16, QLatin1Char('0'))
+                   .arg(opcode, 2, 16, QLatin1Char('0')));
+    // disconnect() sets m_deleteThis before it flushes, which is what keeps a nested
+    // send out of packetReceived() — nothing may be sent after this point.
+    disconnect(QStringLiteral("Asks for something without saying hello"));
     return false;
 }
 

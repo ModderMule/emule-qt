@@ -29,6 +29,59 @@ namespace {
 /// Maximum read buffer size (~2MB, matching original).
 constexpr std::size_t kMaxReadBuffer = 2'000'000;
 
+// One read buffer for every socket, as MFC's `static char GlobalReadBuffer[2000000]`
+// inside CEMSocket::OnReceive (srchybrid/EMSocket.cpp:256-259). A buffer per socket
+// costs hundreds of MB with hundreds of peers. thread_local rather than a plain
+// static: sockets all live on the main thread, but the usenet workers are threads
+// too, and TLS is only paid by a thread that actually reads.
+thread_local std::vector<char> g_readBuffer;
+thread_local bool g_readBufferInUse = false;
+
+/// Hands out the shared buffer, or a throwaway one to a nested read pass.
+///
+/// Nesting is rare but real: ClientReqSocket::disconnect() flushes from inside
+/// packetReceived(), i.e. from inside the parse loop, and a synchronous
+/// RemoteHostClosedError out of that write re-enters readIncoming() through
+/// onSocketError()'s drain. The nested pass must still make progress — the drain
+/// breaks out of its loop when a pass consumes nothing, and the tail would be lost.
+/// It does still overwrite the socket's own m_pendingHeader, exactly as it did when
+/// every socket owned a buffer; what it can no longer do is corrupt another socket's
+/// pass. (m_pendingPacket is safe: the parse loop moves ownership out before it
+/// dispatches, or a nested pass would deliver that packet twice and then free it.)
+class ReadBufferLease {
+public:
+    ReadBufferLease()
+    {
+        if (g_readBufferInUse) {
+            m_fallback = std::make_unique_for_overwrite<char[]>(kMaxReadBuffer);
+            m_data = m_fallback.get();
+            return;
+        }
+        if (g_readBuffer.size() != kMaxReadBuffer)
+            g_readBuffer.resize(kMaxReadBuffer);
+        g_readBufferInUse = true;
+        m_owner = true;
+        m_data = g_readBuffer.data();
+    }
+
+    ~ReadBufferLease()
+    {
+        if (m_owner)
+            g_readBufferInUse = false;
+    }
+
+    ReadBufferLease(const ReadBufferLease&) = delete;
+    ReadBufferLease& operator=(const ReadBufferLease&) = delete;
+
+    [[nodiscard]] char* data() const { return m_data; }
+    [[nodiscard]] static constexpr std::size_t size() { return kMaxReadBuffer; }
+
+private:
+    std::unique_ptr<char[]> m_fallback;
+    char* m_data = nullptr;
+    bool m_owner = false;
+};
+
 } // anonymous namespace
 
 // ---------------------------------------------------------------------------
@@ -37,7 +90,6 @@ constexpr std::size_t kMaxReadBuffer = 2'000'000;
 
 EMSocket::EMSocket(QObject* parent)
     : EncryptedStreamSocket(parent)
-    , m_readBuffer(kMaxReadBuffer)
 {
     m_elapsedTimer.start();
     m_lastCalledSend = static_cast<uint32>(m_elapsedTimer.elapsed());
@@ -163,8 +215,12 @@ void EMSocket::readIncoming(bool peerShutdown)
         return;
     }
 
+    // The buffer is shared between all sockets, so it is borrowed for the length of
+    // this pass only; nothing may point into it once readIncoming() returns.
+    const ReadBufferLease buffer;
+
     // Calculate max bytes to read
-    std::size_t readMax = m_readBuffer.size() - m_pendingHeaderSize;
+    std::size_t readMax = buffer.size() - m_pendingHeaderSize;
     if (m_downloadLimitEnable && readMax > m_downloadLimit && !peerShutdown)
         readMax = m_downloadLimit;
 
@@ -179,13 +235,20 @@ void EMSocket::readIncoming(bool peerShutdown)
                      .arg(static_cast<int>(m_streamCryptState)));
 
     qint64 toRead = std::min(static_cast<qint64>(readMax), bytesAvailable);
-    qint64 ret = read(m_readBuffer.data() + m_pendingHeaderSize, toRead);
+    qint64 ret = read(buffer.data() + m_pendingHeaderSize, toRead);
+
+    // MFC sets this inside Receive() (srchybrid/EncryptedStreamSocket.cpp:230), before
+    // the error check, and compares against the *requested* length — readMax, not the
+    // clamped toRead. A buffered QIODevice returns min(requested, buffered), so
+    // ret == toRead would be true on every read and pendingOnReceive would never clear.
+    m_fullReceive = (ret == static_cast<qint64>(readMax));
+
     if (ret <= 0 || m_conState.load(std::memory_order_acquire) == EMSState::Disconnected)
         return;
 
     // Process through encryption layer
     bool wasReady = isEncryptionLayerReady();
-    int decryptedLen = processReceivedData(m_readBuffer.data() + m_pendingHeaderSize, static_cast<int>(ret));
+    int decryptedLen = processReceivedData(buffer.data() + m_pendingHeaderSize, static_cast<int>(ret));
 
     // If encryption layer just became ready, flush any queued control packets.
     // This handles the case where sendPacket() queued packets during connection
@@ -238,23 +301,20 @@ void EMSocket::readIncoming(bool peerShutdown)
 
     // Prepend any partial header from previous read
     if (m_pendingHeaderSize > 0) {
-        std::memmove(m_readBuffer.data() + m_pendingHeaderSize - m_pendingHeaderSize,
-                     m_pendingHeader, m_pendingHeaderSize);
-        // Actually copy the pending header to the front
-        std::memcpy(m_readBuffer.data(), m_pendingHeader, m_pendingHeaderSize);
+        std::memcpy(buffer.data(), m_pendingHeader, m_pendingHeaderSize);
         ret += static_cast<qint64>(m_pendingHeaderSize);
         m_pendingHeaderSize = 0;
     }
 
     if (isRawDataMode()) {
-        dataReceived(reinterpret_cast<const uint8*>(m_readBuffer.data()), static_cast<uint32>(ret));
+        dataReceived(reinterpret_cast<const uint8*>(buffer.data()), static_cast<uint32>(ret));
         scheduleReadRearm();
         return;
     }
 
     // Parse packets from the buffer
-    const char* rptr = m_readBuffer.data();
-    const char* rend = m_readBuffer.data() + ret;
+    const char* rptr = buffer.data();
+    const char* rend = buffer.data() + ret;
 
     try {
         while (rend >= rptr + static_cast<ptrdiff_t>(kPacketHeaderSize)
@@ -303,11 +363,15 @@ void EMSocket::readIncoming(bool peerShutdown)
 
             // Check if packet is complete
             if (m_pendingPacket->size == m_pendingPacketSize) {
-                bool result = packetReceived(m_pendingPacket.get());
-                m_pendingPacket.reset();
+                // Ownership moves out before dispatch. A handler can re-enter the read
+                // path (ClientReqSocket::disconnect() flushes, and a synchronous write
+                // error drains through readIncoming); leaving the member set would let
+                // that nested pass deliver this packet a second time and then free it
+                // underneath us. Held in a local, so it outlives the call either way.
+                std::unique_ptr<Packet> complete = std::move(m_pendingPacket);
                 m_pendingPacketSize = 0;
 
-                if (!result)
+                if (!packetReceived(complete.get()))
                     return;
             }
         }

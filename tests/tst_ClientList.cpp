@@ -71,6 +71,9 @@ private slots:
     void processKadList_adoptsConnectedBuddyAndDropsOthers();
     void processKadList_dropsAnOpenBuddy();
     void processKadList_detectsBuddyLoss();
+
+    // The reaper and the chat state — MFC CClientList::Process()
+    void process_reapsAChatterOnceTheSessionEnds();
 };
 
 // ---------------------------------------------------------------------------
@@ -701,6 +704,24 @@ void tst_ClientList::processKadList_detectsBuddyLoss()
 
     QCOMPARE(list.buddyStatus(), BuddyStatus::None);
     QVERIFY(list.getBuddy() == nullptr);
+}
+
+// A client kept alive only by its chat state is never collected (ClientList.cpp:465-466),
+// and its socket timeout stays doubled. Before EndChatSession existed nothing ever put
+// that state back, so every peer we had ever chatted with leaked for the daemon's life.
+void tst_ClientList::process_reapsAChatterOnceTheSessionEnds()
+{
+    ClientList list;
+    auto* client = new UpDownClient();   // reaped clients are deleteLater()d
+    client->setChatState(ChatState::Chatting);
+    list.addClient(client);
+
+    list.process();
+    QCOMPARE(list.clientCount(), 1);     // mid-conversation: kept, as MFC keeps it
+
+    client->endChatSession();
+    list.process();
+    QCOMPARE(list.clientCount(), 0);
 }
 
 QTEST_MAIN(tst_ClientList)

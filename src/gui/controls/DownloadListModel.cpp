@@ -8,6 +8,7 @@
 #include "prefs/Preferences.h"
 
 #include "utils/OtherFunctions.h"
+#include "utils/PriorityText.h"
 #include "utils/RatingIcons.h"
 #include "utils/StringUtils.h"
 
@@ -325,11 +326,8 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         case ColSpeed:      return d.datarate > 0 ? formatByteRate(d.datarate) : QString{};
         case ColProgress:   return QStringLiteral("%1%").arg(d.percentCompleted, 0, 'f', 1);
         case ColSources:    return sourcesText(d);
-        case ColPriority: {
-            if (d.isAutoDownPriority)
-                return tr("Auto [%1]").arg(d.priority);
-            return d.priority;
-        }
+        // The wire token, not a label: the column read "veryHigh" / "Auto [normal]".
+        case ColPriority:   return downloadPriorityText(d.priority, d.isAutoDownPriority);
         case ColStatus:     return statusText(d);
         case ColRemaining:
             return formatRemaining(d.fileSize - d.completedSize, d.datarate);
@@ -379,7 +377,8 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
                  formatByteSize(d.completedSize),
                  QString::number(d.percentCompleted, 'f', 1))
             .arg(fileTypeDisplay(d.fileType),
-                 d.status, d.priority, sourcesText(d))
+                 statusText(d), downloadPriorityText(d.priority, d.isAutoDownPriority),
+                 sourcesText(d))
             .arg(d.requests).arg(d.acceptedRequests)
             .arg(formatByteSize(d.transferredData));
         tip += extra;
