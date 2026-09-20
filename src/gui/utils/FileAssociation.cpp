@@ -144,9 +144,12 @@ bool registerNzbFileType(QString& error)
                       QSettings::NativeFormat);
 
     for (const auto& value : nzbRegistryValues(exePath())) {
-        const QString path = value.name.isEmpty()
-                                 ? value.key + QStringLiteral("/.")
-                                 : value.key + QLatin1Char('/') + value.name;
+        // Pick the leaf first, and keep the join in a QString: with
+        // QT_USE_QSTRINGBUILDER a ternary over the two concatenations has two
+        // different builder types, and setValue() takes a QAnyStringView that a
+        // builder cannot reach in one conversion.
+        const QString leaf = value.name.isEmpty() ? QStringLiteral(".") : value.name;
+        const QString path = value.key + QLatin1Char('/') + leaf;
         classes.setValue(path, value.value);
     }
     classes.sync();

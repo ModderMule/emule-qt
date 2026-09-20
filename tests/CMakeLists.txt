@@ -527,6 +527,9 @@ target_include_directories(tst_OptionsDialogSizing PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_OptionsDialogSizing PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
+if(WIN32)
+    target_link_libraries(tst_OptionsDialogSizing PRIVATE shell32)  # SHChangeNotify
+endif()
 
 # The Statistics window's Usenet branch, fed a GetUsenetStats reply in wire shape.
 emule_add_test(tst_StatisticsPanel FOLDER "Gui"
@@ -582,6 +585,9 @@ target_include_directories(tst_FileAssociation PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_FileAssociation PRIVATE Qt6::Widgets)
+if(WIN32)
+    target_link_libraries(tst_FileAssociation PRIVATE shell32)  # SHChangeNotify
+endif()
 
 # Downloads Status column — the daemon sends the raw enum token ("ready", "empty") and
 # the model turns it into MFC's wording. Pure string/int mapping, so the real source
