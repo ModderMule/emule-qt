@@ -137,7 +137,8 @@ const QByteArray kUsenetCrawlerCaps = R"(<?xml version="1.0" encoding="UTF-8"?>
       <subcat id="6040" name="x264"/>
     </category>
   </categories>
-</caps>)";
+</caps>
+)";
 
 const QByteArray kUsenetCrawlerSearch = R"(<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">
@@ -172,7 +173,8 @@ const QByteArray kUsenetCrawlerSearch = R"(<?xml version="1.0" encoding="UTF-8"?
     <newznab:attr name="catalogid" value="nzb:ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789"/>
   </item>
 </channel>
-</rss>)";
+</rss>
+)";
 
 } // namespace
 

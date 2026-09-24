@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(eMuleQt
-    VERSION 0.5.2
+    VERSION 0.5.3
     DESCRIPTION "eMule P2P file sharing client — Qt 6 port"
     LANGUAGES CXX
 )
@@ -25,6 +25,13 @@ foreach(_hint IN LISTS _qt_hints)
         break()
     endif()
 endforeach()
+
+# Linux: link OpenGL as libGL.so.1 (what the Qt libs need anyway). GLVND default
+# adds libOpenGL.so.0 + libGLX.so.0, and libopengl0 is missing on many desktops
+# -> v0.5.2 tarball failed to start there.
+if(UNIX AND NOT APPLE)
+    set(OpenGL_GL_PREFERENCE LEGACY)
+endif()
 
 find_package(Qt6 6.5 REQUIRED COMPONENTS
     Core

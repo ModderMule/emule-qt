@@ -63,6 +63,7 @@ fi
 # -- Copy daemon into bundle -------------------------------------------------
 
 echo "Copying emulecored into app bundle..."
+rm -f "$MACOS_DIR/emulecored"   # dev builds may have a symlink into the build tree
 cp "$DAEMON_BIN" "$MACOS_DIR/emulecored"
 chmod +x "$MACOS_DIR/emulecored"
 echo "  -> $MACOS_DIR/emulecored"
@@ -131,7 +132,10 @@ done
 
 if [ -n "$MACDEPLOYQT" ]; then
     echo "Running macdeployqt..."
-    "$MACDEPLOYQT" "$APP_BUNDLE" -always-overwrite 2>&1 | tail -5 || true
+    # -executable: the copied-in daemon needs its rpath + deps fixed too, else
+    # it keeps the build machine's Qt rpath and dies in dyld
+    "$MACDEPLOYQT" "$APP_BUNDLE" -always-overwrite \
+        -executable="$MACOS_DIR/emulecored" 2>&1 | tail -5 || true
     echo "  macdeployqt complete."
 else
     echo "Warning: macdeployqt not found — skipping Qt framework bundling."
@@ -145,7 +149,8 @@ FRAMEWORKS_DIR="$APP_BUNDLE/Contents/Frameworks"
 mkdir -p "$FRAMEWORKS_DIR"
 
 # Find the absolute OpenSSL path linked by the binaries
-OPENSSL_DYLIB=$(otool -L "$MACOS_DIR/emulecored" | grep -o '/.*libcrypto[^[:space:]]*' | head -1)
+# (absolute only: macdeployqt may already have rewritten it to @executable_path)
+OPENSSL_DYLIB=$(otool -L "$MACOS_DIR/emulecored" | awk 'NR > 1 { print $1 }' | grep '^/.*libcrypto' | head -1 || true)
 
 if [ -n "$OPENSSL_DYLIB" ] && [ -f "$OPENSSL_DYLIB" ]; then
     DYLIB_NAME=$(basename "$OPENSSL_DYLIB")
@@ -163,33 +168,88 @@ if [ -n "$OPENSSL_DYLIB" ] && [ -f "$OPENSSL_DYLIB" ]; then
     # Fix the dylib's own install name
     install_name_tool -id "@executable_path/../Frameworks/$DYLIB_NAME" "$FRAMEWORKS_DIR/$DYLIB_NAME"
 
-    # Ad-hoc re-sign (required on Apple Silicon)
-    codesign --force --sign - "$FRAMEWORKS_DIR/$DYLIB_NAME"
-    codesign --force --sign - "$MACOS_DIR/emuleqt"
-    codesign --force --sign - "$MACOS_DIR/emulecored"
-
     echo "  Bundled and relinked $DYLIB_NAME"
+elif compgen -G "$FRAMEWORKS_DIR/libcrypto*.dylib" >/dev/null; then
+    echo "OpenSSL already bundled by macdeployqt."
 else
     echo "Warning: OpenSSL dylib not found — skipping OpenSSL bundling."
     echo "  The app will only work on machines with OpenSSL installed."
 fi
 
-# Bundle any other non-system absolute-path dylibs (e.g. zstd from Homebrew)
-for bin in "$MACOS_DIR/emuleqt" "$MACOS_DIR/emulecored"; do
-    # Find absolute paths that are NOT /usr/lib (system) or @rpath (already handled)
-    for dylib in $(otool -L "$bin" | grep -o '/opt/[^[:space:]]*\|/usr/local/[^[:space:]]*' | sort -u); do
-        DYLIB_NAME=$(basename "$dylib")
-        if [ -f "$dylib" ] && [ ! -f "$FRAMEWORKS_DIR/$DYLIB_NAME" ]; then
-            echo "  Bundling $DYLIB_NAME <- $dylib"
-            cp "$dylib" "$FRAMEWORKS_DIR/$DYLIB_NAME"
-            install_name_tool -id "@executable_path/../Frameworks/$DYLIB_NAME" "$FRAMEWORKS_DIR/$DYLIB_NAME"
-            codesign --force --sign - "$FRAMEWORKS_DIR/$DYLIB_NAME"
+# Bundle any other non-system absolute-path dylibs (e.g. zstd from Homebrew).
+# Transitive: a bundled dylib may point into /opt itself (libssl -> libcrypto).
+bundle_deps() {
+    local bin="$1" dylib name
+    # Absolute paths that are NOT /usr/lib (system) or @rpath (already handled)
+    for dylib in $(otool -L "$bin" | tail -n +2 | grep -o '/opt/[^[:space:]]*\|/usr/local/[^[:space:]]*' | sort -u); do
+        name=$(basename "$dylib")
+        if [ ! -f "$FRAMEWORKS_DIR/$name" ]; then
+            if [ ! -f "$dylib" ]; then
+                echo "Error: $bin needs $dylib, which does not exist"
+                exit 1
+            fi
+            echo "  Bundling $name <- $dylib"
+            cp "$dylib" "$FRAMEWORKS_DIR/$name"
+            chmod u+w "$FRAMEWORKS_DIR/$name"   # Homebrew ships some r--r--r--
+            install_name_tool -id "@executable_path/../Frameworks/$name" "$FRAMEWORKS_DIR/$name"
+            bundle_deps "$FRAMEWORKS_DIR/$name"
         fi
-        # Rewrite the reference in the binary
-        install_name_tool -change "$dylib" "@executable_path/../Frameworks/$DYLIB_NAME" "$bin"
+        install_name_tool -change "$dylib" "@executable_path/../Frameworks/$name" "$bin"
     done
-    codesign --force --sign - "$bin"
+}
+
+for bin in "$MACOS_DIR/emuleqt" "$MACOS_DIR/emulecored" "$FRAMEWORKS_DIR"/*.dylib; do
+    [ -f "$bin" ] && bundle_deps "$bin"
 done
+
+# Fallback when macdeployqt didn't run or skipped the daemon
+if ! otool -l "$MACOS_DIR/emulecored" | grep -A2 LC_RPATH \
+        | grep -qE ' path @(executable|loader)_path/\.\./Frameworks'; then
+    install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/emulecored"
+fi
+
+# -- Audit: nothing may still point outside the bundle -----------------------
+# v0.5.2 shipped a daemon with the CI runner's Qt rpath and a libssl linking
+# Homebrew's Cellar libcrypto; neither shows up on the build machine itself.
+
+LEAKS=0
+while IFS= read -r -d '' f; do
+    file "$f" | grep -q 'Mach-O' || continue
+    bad=$( { otool -L "$f" | tail -n +2; otool -l "$f" | grep -A2 LC_RPATH | grep ' path '; } \
+           | grep -E '(/opt/|/usr/local/|/Users/)' || true)
+    if [ -n "$bad" ]; then
+        echo "Error: ${f#"$APP_BUNDLE"/} references outside the bundle:"
+        echo "$bad"
+        LEAKS=1
+    fi
+done < <(find "$APP_BUNDLE/Contents" -type f \( -name '*.dylib' -o -perm -u+x \) -print0)
+[ "$LEAKS" -eq 0 ] || exit 1
+
+# -- Ad-hoc sign the whole bundle --------------------------------------------
+# Must run after every install_name_tool edit above AND macdeployqt's: those
+# leave stale signatures behind (macdeployqt copied Homebrew's liblz4/libzstd,
+# rewrote their ids, never re-signed). Apple Silicon SIGKILLs a launch on the
+# first page of such a dylib ("Code Signature Invalid") — v0.5.2 shipped so.
+# Sign inside-out: nested code first, the .app last so it seals everything.
+
+echo ""
+echo "=== Ad-hoc signing bundle ==="
+adhoc_sign() { codesign --force --sign - --timestamp=none "$@"; }
+
+while IFS= read -r -d '' lib; do
+    adhoc_sign "$lib"
+done < <(find "$APP_BUNDLE/Contents" -type f -name '*.dylib' -not -path '*.framework/*' -print0)
+
+for fw in "$FRAMEWORKS_DIR"/*.framework; do
+    [ -d "$fw" ] && adhoc_sign "$fw"
+done
+
+adhoc_sign "$MACOS_DIR/emulecored"
+adhoc_sign "$APP_BUNDLE"
+
+# Fail the build rather than ship a bundle that dies in dyld
+codesign --verify --deep --strict --verbose=1 "$APP_BUNDLE"
+echo "  Signature verified."
 
 # -- Verify ------------------------------------------------------------------
 

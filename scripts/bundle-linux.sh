@@ -341,6 +341,30 @@ else
     echo "Warning: No .qm translation files found — skipping lang bundling."
 fi
 
+# -- Audit direct dependencies -----------------------------------------------
+# Our executables may only need bundled libs or libs every desktop has. v0.5.2
+# linked libOpenGL.so.0/libGLX.so.0 (GLVND) and died where libopengl0 is absent.
+
+echo ""
+echo "=== Auditing direct dependencies ==="
+BASE_SONAMES=" libc.so.6 libm.so.6 libstdc++.so.6 libgcc_s.so.1 ld-linux-x86-64.so.2 \
+libpthread.so.0 libdl.so.2 librt.so.1 libGL.so.1 libEGL.so.1 "
+UNBUNDLED=0
+for bin in "$STAGE_DIR/emuleqt.bin" "$STAGE_DIR/emulecored.bin"; do
+    [ -f "$bin" ] || continue
+    for soname in $(readelf -d "$bin" | awk '/\(NEEDED\)/ { gsub(/[][]/, "", $NF); print $NF }'); do
+        [ -f "$STAGE_DIR/lib/$soname" ] && continue
+        case "$BASE_SONAMES" in *" $soname "*) continue ;; esac
+        echo "  $(basename "$bin") needs $soname: not bundled, not a base system lib" >&2
+        UNBUNDLED=1
+    done
+done
+if [ "$UNBUNDLED" -ne 0 ]; then
+    echo "Error: bundle depends on libs users may not have (see above)." >&2
+    exit 1
+fi
+echo "  All direct dependencies bundled or base system libs."
+
 # -- Create tarball ----------------------------------------------------------
 
 TAR_NAME="eMuleQt-v${VERSION}-linux-x86_64.tar.gz"
