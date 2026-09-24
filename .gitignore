@@ -117,6 +117,7 @@ __pycache__/
 *.local.sh
 *.local.log
 *.local.md
+*.local.txt
 *.local.json
 translations_*.json
 blog-*.md

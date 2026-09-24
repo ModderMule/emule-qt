@@ -10,6 +10,7 @@
 #include "IndexerResult.h"
 
 #include <QTest>
+#include <QTimeZone>
 
 using namespace eMule::indexer;
 
@@ -45,6 +46,10 @@ private slots:
     void search_dedupKeyIgnoresCase();
     void search_classifiesThePasswordAttr();
     void search_takesABracedPasswordOutOfTheTitle();
+
+    // -- usenet-crawler -------------------------------------------------------
+    void usenetCrawler_capsIsFullyReadable();
+    void usenetCrawler_searchIsFullyReadable();
 };
 
 namespace {
@@ -97,6 +102,76 @@ const QByteArray kSearch = R"(<?xml version="1.0" encoding="UTF-8"?>
       <newznab:attr name="password" value="1"/>
     </item>
   </channel>
+</rss>)";
+
+/// The two documents usenet-crawler actually emits, copied verbatim from
+/// usenet-crawler/pkg/newznab/testdata/.
+///
+/// They are here so that a change on either side breaks a build rather than a
+/// user's search. The Go side pins them with a golden test; when that test fails,
+/// the new bytes are regenerated with `go test ./pkg/newznab -update` and pasted
+/// below. This is the only thing that crosses between the two projects: a test
+/// vector, parsed here by a different language and a different compiler from the
+/// one that wrote it — which is what makes it capable of disagreeing with us.
+const QByteArray kUsenetCrawlerCaps = R"(<?xml version="1.0" encoding="UTF-8"?>
+<caps>
+  <server version="1.0" title="usenet-crawler" strapline="a crawl of the binary groups" email="nobody@example.invalid" url="http://indexer.example.invalid"/>
+  <limits max="100" default="100"/>
+  <retention days="3000"/>
+  <registration available="no" open="no"/>
+  <searching>
+    <search available="yes" supportedParams="q,cat,limit,offset,maxage,minsize,maxsize,group,extended"/>
+    <tv-search available="yes" supportedParams="q,cat,limit,offset,maxage,season,ep,extended"/>
+    <movie-search available="yes" supportedParams="q,cat,limit,offset,maxage,extended"/>
+    <audio-search available="no"/>
+    <book-search available="no"/>
+  </searching>
+  <categories>
+    <category id="2000" name="Movies">
+      <subcat id="2040" name="HD"/>
+    </category>
+    <category id="5000" name="TV">
+      <subcat id="5040" name="HD"/>
+    </category>
+    <category id="6000" name="XXX">
+      <subcat id="6040" name="x264"/>
+    </category>
+  </categories>
+</caps>)";
+
+const QByteArray kUsenetCrawlerSearch = R"(<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">
+<channel>
+  <atom:link href="http://indexer.example.invalid/api" rel="self" type="application/rss+xml"/>
+  <title>usenet-crawler</title>
+  <description>usenet-crawler API results</description>
+  <link>http://indexer.example.invalid/</link>
+  <language>en-gb</language>
+  <webMaster>nobody@example.invalid (usenet-crawler)</webMaster>
+  <newznab:response offset="0" total="1"/>
+  <item>
+    <title>A.Tv.Show.S06E05.1080p.WEB-DL "special" &amp; &lt;friends&gt;</title>
+    <guid isPermaLink="false">ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789</guid>
+    <link>http://indexer.example.invalid/getnzb/ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789.nzb</link>
+    <pubDate>Tue, 23 Jun 2026 09:30:00 +0000</pubDate>
+    <category>TV &gt; HD</category>
+    <description>A.Tv.Show.S06E05.1080p.WEB-DL "special" &amp; &lt;friends&gt;</description>
+    <enclosure url="http://indexer.example.invalid/getnzb/ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789.nzb" length="4294967295" type="application/x-nzb"/>
+    <newznab:attr name="category" value="5000"/>
+    <newznab:attr name="category" value="5040"/>
+    <newznab:attr name="size" value="4294967295"/>
+    <newznab:attr name="files" value="42"/>
+    <newznab:attr name="poster" value="yenc@power-post"/>
+    <newznab:attr name="group" value="alt.binaries.teevee"/>
+    <newznab:attr name="grabs" value="7"/>
+    <newznab:attr name="comments" value="0"/>
+    <newznab:attr name="password" value="0"/>
+    <newznab:attr name="usenetdate" value="Mon, 22 Jun 2026 06:54:22 +0000"/>
+    <newznab:attr name="completion" value="100"/>
+    <newznab:attr name="parts" value="12345"/>
+    <newznab:attr name="catalogid" value="nzb:ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789"/>
+  </item>
+</channel>
 </rss>)";
 
 } // namespace
@@ -430,6 +505,93 @@ void tst_IndexerParse::search_takesABracedPasswordOutOfTheTitle()
     QCOMPARE(page.results.at(0).title, QStringLiteral("Some.Release.2160p"));
     QCOMPARE(page.results.at(0).password, QStringLiteral("letmein"));
     QVERIFY(page.results.at(0).passwordProtected);
+}
+
+// ---------------------------------------------------------------------------
+// usenet-crawler — the documents the sibling crawler emits
+// ---------------------------------------------------------------------------
+
+void tst_IndexerParse::usenetCrawler_capsIsFullyReadable()
+{
+    QString error;
+    const IndexerCaps caps = parseIndexerCaps(kUsenetCrawlerCaps, error);
+
+    QVERIFY2(error.isEmpty(), qPrintable(error));
+
+    QCOMPARE(caps.serverTitle, QStringLiteral("usenet-crawler"));
+    QCOMPARE(caps.limitMax, 100);
+    QCOMPARE(caps.limitDefault, 100);
+
+    // The modes are keyed by the element name, which is also what we send as t=.
+    QVERIFY(caps.supportsMode(kModeSearch));
+    QVERIFY(caps.supportsMode(kModeTvSearch));
+    QVERIFY(caps.supportsMode(kModeMovieSearch));
+    QVERIFY(!caps.supportsMode(kModeAudioSearch));
+    QVERIFY(!caps.supportsMode(kModeBookSearch));
+
+    // And the parameters our query builder gates on are advertised.
+    QVERIFY(caps.supportsParam(kModeTvSearch, u"season"));
+    QVERIFY(caps.supportsParam(kModeTvSearch, u"ep"));
+    QVERIFY(caps.supportsParam(kModeSearch, u"cat"));
+    QVERIFY(caps.supportsParam(kModeSearch, u"maxage"));
+    // Not advertised because that crawler does not filter on it, so we must not
+    // send it and believe the result was narrowed.
+    QVERIFY(!caps.supportsParam(kModeTvSearch, u"imdbid"));
+
+    // The tree resolves both levels, which is what a results list needs to show
+    // a heading without a second round trip.
+    QCOMPARE(caps.categoryName(5000), QStringLiteral("TV"));
+    QCOMPARE(caps.categoryName(5040), QStringLiteral("HD"));
+}
+
+void tst_IndexerParse::usenetCrawler_searchIsFullyReadable()
+{
+    const IndexerSearchPage page = parseIndexerSearch(
+        kUsenetCrawlerSearch, QStringLiteral("usenet-crawler"),
+        QStringLiteral("usenet_crawler"));
+
+    QVERIFY2(page.error.isEmpty(), qPrintable(page.error));
+    QCOMPARE(page.total, 1);
+    QCOMPARE(page.offset, 0);
+    QCOMPARE(page.results.size(), 1);
+
+    const IndexerResult& row = page.results.at(0);
+
+    // The title round-trips through XML escaping with its punctuation intact.
+    QCOMPARE(row.title,
+             QStringLiteral("A.Tv.Show.S06E05.1080p.WEB-DL \"special\" & <friends>"));
+
+    // The size attribute and the enclosure length agree, so the pick between
+    // them cannot go wrong.
+    QCOMPARE(row.size, 4294967295LL);
+
+    QCOMPARE(row.files, 42);
+    QCOMPARE(row.grabs, 7);
+    QCOMPARE(row.poster, QStringLiteral("yenc@power-post"));
+    QCOMPARE(row.group, QStringLiteral("alt.binaries.teevee"));
+
+    // Parent then leaf, both present.
+    QCOMPARE(row.categoryIds.size(), 2);
+    QCOMPARE(row.categoryIds.at(0), 5000);
+    QCOMPARE(row.categoryIds.at(1), 5040);
+
+    // password="0" is a flag and never a passphrase.
+    QVERIFY(!row.passwordProtected);
+    QVERIFY(row.password.isEmpty());
+
+    // usenetdate wins over pubDate, and both parse: the day names are generated
+    // from the timestamps rather than separately, so the strict RFC 2822 reader
+    // accepts them without the fallback.
+    QVERIFY(row.published.isValid());
+    QCOMPARE(row.published.toUTC(),
+             QDateTime(QDate(2026, 6, 22), QTime(6, 54, 22), QTimeZone::UTC));
+
+    // The download URL is the enclosure's, and it names the release by its own
+    // digest — so a row we cached stays valid across a re-crawl of that catalogue.
+    QVERIFY(row.downloadUrl.isValid());
+    QVERIFY(row.downloadUrl.path().endsWith(QStringLiteral(".nzb")));
+    QCOMPARE(row.guid,
+             QStringLiteral("ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789"));
 }
 
 QTEST_MAIN(tst_IndexerParse)
