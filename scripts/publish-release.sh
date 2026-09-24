@@ -84,7 +84,8 @@ if [[ ! -f "$ENV_FILE" ]]; then
 fi
 
 # Same KEY=VALUE semantics as loadEnvFile() in tests/TestHelpers.h: skip blanks
-# and '#' comments, split on the first '=', trim surrounding whitespace. Only
+# and '#' comments, split on the first '=', trim surrounding whitespace, strip
+# one pair of matching quotes. Only
 # PUBLISH_* keys are imported -- .env also holds SMTP credentials that have no
 # business in this script's environment.
 while IFS= read -r line || [[ -n "$line" ]]; do
@@ -98,6 +99,10 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
   val="${val#"${val%%[![:space:]]*}"}"
   val="${val%"${val##*[![:space:]]}"}"
+  # a quoted value keeps its spaces, not its quotes
+  if [[ ${#val} -ge 2 && ( "$val" == \"*\" || "$val" == \'*\' ) ]]; then
+    val="${val:1:${#val}-2}"
+  fi
   printf -v "$key" '%s' "$val"
 done < "$ENV_FILE"
 
@@ -277,9 +282,8 @@ if ! SSHPASS="$PUBLISH_SSH_PASS" rsync -avz \
        "${PUBLISH_SSH_USER}@${PUBLISH_SSH_HOST}:${PUBLISH_REMOTE_PATH}"; then
   echo >&2
   echo "warning: rsync failed -- tag ${TAG} IS pushed and the local manifest IS updated." >&2
-  echo "  Re-run just the upload once the server is reachable:" >&2
-  echo "    SSHPASS=\"\$PUBLISH_SSH_PASS\" rsync -avz -e 'sshpass -e ssh' \\" >&2
-  echo "      '${PUBLISH_LOCAL_JSON}' '${PUBLISH_SSH_USER}@${PUBLISH_SSH_HOST}:${PUBLISH_REMOTE_PATH}'" >&2
+  echo "  Re-run just the upload once the server is reachable (reads .env itself):" >&2
+  echo "    scripts/publish-release.sh --publish-only" >&2
   exit 1
 fi
 
