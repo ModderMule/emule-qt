@@ -420,7 +420,7 @@ Activez l&apos;interface web ou l&apos;API REST dans Options → Interface web.<
         <translation>Excellent</translation>
     </message>
     <message>
-        <location line="+101"/>
+        <location line="+107"/>
         <source>
 Rating:	%1</source>
         <translation>
@@ -606,7 +606,7 @@ Contient des commentaires</translation>
         <translation>Test</translation>
     </message>
     <message>
-        <location filename="../src/gui/utils/FileAssociation.cpp" line="+155"/>
+        <location filename="../src/gui/utils/FileAssociation.cpp" line="+158"/>
         <source>Could not write the file association to the registry.</source>
         <translation>Impossible d&apos;écrire l&apos;association de fichier dans le registre.</translation>
     </message>
@@ -3630,12 +3630,12 @@ Activez-la dans Options → Interface web, puis réessayez.</translation>
     <name>eMule::MessagesPanel</name>
     <message>
         <location filename="../src/gui/panels/MessagesPanel.cpp" line="+145"/>
-        <location line="+378"/>
+        <location line="+383"/>
         <source> ...failed</source>
         <translation> ...échoué</translation>
     </message>
     <message>
-        <location line="-376"/>
+        <location line="-381"/>
         <source>Me</source>
         <translation>Moi</translation>
     </message>
@@ -3651,12 +3651,12 @@ Activez-la dans Options → Interface web, puis réessayez.</translation>
     </message>
     <message>
         <location line="+15"/>
-        <location line="+329"/>
+        <location line="+334"/>
         <source>Name:</source>
         <translation>Nom :</translation>
     </message>
     <message>
-        <location line="-328"/>
+        <location line="-333"/>
         <source>Hash:</source>
         <translation>Hash :</translation>
     </message>
@@ -3741,19 +3741,19 @@ Activez-la dans Options → Interface web, puis réessayez.</translation>
         <translation>Amis (%1)</translation>
     </message>
     <message>
-        <location line="+66"/>
+        <location line="+71"/>
         <source>*** Connecting</source>
         <translation>*** Connexion</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>*** Authenticating friend</source>
-        <translation>*** Authentification de l'ami</translation>
+        <translation>*** Authentification de l&apos;ami</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>*** Searching friend in Kad</source>
-        <translation>*** Recherche de l'ami dans Kad</translation>
+        <translation>*** Recherche de l&apos;ami dans Kad</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -3769,6 +3769,211 @@ Activez-la dans Options → Interface web, puis réessayez.</translation>
         <location line="+76"/>
         <source>Find Friend</source>
         <translation>Rechercher un ami</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::MetaAccountDialog</name>
+    <message>
+        <location filename="../src/gui/dialogs/MetaAccountDialog.cpp" line="+63"/>
+        <source>User name:</source>
+        <translation>Nom d&apos;utilisateur :</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Password:</source>
+        <translation>Mot de passe :</translation>
+    </message>
+    <message>
+        <location line="+20"/>
+        <source>Log In</source>
+        <translation>Se connecter</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Check Again</source>
+        <translation>Vérifier à nouveau</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Log Out</source>
+        <translation>Se déconnecter</translation>
+    </message>
+    <message>
+        <location line="+36"/>
+        <source>eNode Account — %1</source>
+        <translation>Compte eNode — %1</translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>&lt;b&gt;%1&lt;/b&gt; needs an account to download torrent and Usenet search results. Log in, or register an account on the server&apos;s website.</source>
+        <translation>&lt;b&gt;%1&lt;/b&gt; exige un compte pour télécharger les résultats de recherche torrent et Usenet. Connectez-vous ou créez un compte sur le site web du serveur.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Log in to your account on &lt;b&gt;%1&lt;/b&gt;.</source>
+        <translation>Connectez-vous à votre compte sur &lt;b&gt;%1&lt;/b&gt;.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>is not active yet</source>
+        <translation>n&apos;est pas encore actif</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>has expired</source>
+        <translation>a expiré</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>has been disabled by the operator</source>
+        <translation>a été désactivé par l&apos;opérateur</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Your account &lt;b&gt;%1&lt;/b&gt; on %2 %3. Complete the steps below on the server&apos;s website, then choose Check Again.</source>
+        <translation>Votre compte &lt;b&gt;%1&lt;/b&gt; sur %2 %3. Effectuez les étapes ci-dessous sur le site web du serveur, puis choisissez « Vérifier à nouveau ».</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>no expiry</source>
+        <translation>sans expiration</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Logged in to &lt;b&gt;%1&lt;/b&gt; as &lt;b&gt;%2&lt;/b&gt;.&lt;br&gt;Access until: %3</source>
+        <translation>Connecté à &lt;b&gt;%1&lt;/b&gt; en tant que &lt;b&gt;%2&lt;/b&gt;.&lt;br&gt;Accès jusqu&apos;au : %3</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>&lt;b&gt;%1&lt;/b&gt; needs no account — its torrent and Usenet results are free to download.</source>
+        <translation>&lt;b&gt;%1&lt;/b&gt; ne requiert aucun compte — ses résultats torrent et Usenet sont téléchargeables librement.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Checking the account on &lt;b&gt;%1&lt;/b&gt;...</source>
+        <translation>Vérification du compte sur &lt;b&gt;%1&lt;/b&gt;...</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>Open steps:</source>
+        <translation>Étapes restantes :</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Register an account</source>
+        <translation>Créer un compte</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Open account page</source>
+        <translation>Ouvrir la page du compte</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Cancel</source>
+        <translation>Annuler</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Close</source>
+        <translation>Fermer</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Not connected to the eMule core.</source>
+        <translation>Non connecté au noyau eMule.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Enter a user name and a password.</source>
+        <translation>Saisissez un nom d&apos;utilisateur et un mot de passe.</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Logging in...</source>
+        <translation>Connexion en cours...</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>The connection to the eMule core was lost.</source>
+        <translation>La connexion au noyau eMule a été perdue.</translation>
+    </message>
+    <message>
+        <location line="+37"/>
+        <source>Checking...</source>
+        <translation>Vérification...</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::MetaResultActions</name>
+    <message>
+        <location filename="../src/gui/utils/MetaResultActions.cpp" line="+75"/>
+        <source>NZB files (*.nzb)</source>
+        <translation>Fichiers NZB (*.nzb)</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Torrent files (*.torrent)</source>
+        <translation>Fichiers torrent (*.torrent)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Save NZB File</source>
+        <translation>Enregistrer le fichier NZB</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Save Torrent File</source>
+        <translation>Enregistrer le fichier torrent</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Save Files To</source>
+        <translation>Enregistrer les fichiers dans</translation>
+    </message>
+    <message>
+        <location line="+43"/>
+        <source>Queued &quot;%1&quot; for Usenet download.</source>
+        <translation>« %1 » ajouté à la file de téléchargement Usenet.</translation>
+    </message>
+    <message>
+        <location line="+22"/>
+        <source>Download</source>
+        <translation>Téléchargement</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>%1
+
+Download it again?</source>
+        <translation>%1
+
+Le télécharger à nouveau ?</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Could not queue &quot;%1&quot;: %2</source>
+        <translation>Impossible de mettre « %1 » en file d&apos;attente : %2</translation>
+    </message>
+    <message>
+        <location line="+24"/>
+        <source>Could not download &quot;%1&quot;: %2</source>
+        <translation>Impossible de télécharger « %1 » : %2</translation>
+    </message>
+    <message>
+        <location line="+15"/>
+        <source>Could not write %1: %2</source>
+        <translation>Impossible d&apos;écrire %1 : %2</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Saved %1</source>
+        <translation>%1 enregistré</translation>
+    </message>
+    <message>
+        <location line="+45"/>
+        <source>Search</source>
+        <translation>Recherche</translation>
     </message>
 </context>
 <context>
@@ -7257,14 +7462,14 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+220"/>
-        <location line="+707"/>
-        <location line="+315"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+222"/>
+        <location line="+720"/>
+        <location line="+376"/>
         <source>Download</source>
         <translation>Téléchargement</translation>
     </message>
     <message>
-        <location line="-1002"/>
+        <location line="-1076"/>
         <source>Close All Searches</source>
         <translation>Fermer toutes les recherches</translation>
     </message>
@@ -7492,7 +7697,17 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Copier le &amp;nom</translation>
     </message>
     <message>
-        <location line="+52"/>
+        <location line="+65"/>
+        <source>Download NZB File...</source>
+        <translation>Télécharger le fichier NZB...</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Download Torrent</source>
+        <translation>Télécharger le torrent</translation>
+    </message>
+    <message>
+        <location line="+10"/>
         <source>Details...</source>
         <translation>Détails...</translation>
     </message>
@@ -7502,28 +7717,33 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Commentaires...</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+12"/>
         <source>Copy eD2K Links</source>
         <translation>Copier les liens eD2K</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+12"/>
         <source>Copy eD2K Links (HTML)</source>
         <translation>Copier les liens eD2K (HTML)</translation>
     </message>
     <message>
-        <location line="+24"/>
+        <location line="+19"/>
+        <source>Copy Magnet Links</source>
+        <translation>Copier les liens magnet</translation>
+    </message>
+    <message>
+        <location line="+17"/>
         <source>Mark as not Spam</source>
         <translation>Marquer comme non-spam</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+629"/>
+        <location line="+700"/>
         <source>Preview</source>
         <translation>Aperçu</translation>
     </message>
     <message>
-        <location line="-441"/>
+        <location line="-481"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -7532,7 +7752,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
 %1</translation>
     </message>
     <message>
-        <location line="+687"/>
+        <location line="+727"/>
         <source>Asking servers: %1 / %2</source>
         <translation>Interrogation des serveurs : %1 / %2</translation>
     </message>
@@ -7542,7 +7762,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Tous</translation>
     </message>
     <message>
-        <location line="-975"/>
+        <location line="-1046"/>
         <location line="+14"/>
         <source>Mark as Spam</source>
         <translation>Marquer comme spam</translation>
@@ -7578,7 +7798,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Services web</translation>
     </message>
     <message>
-        <location line="+608"/>
+        <location line="+679"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Aperçu indisponible — le serveur web n&apos;est pas en cours d&apos;exécution ou aucun jeton de flux n&apos;a été reçu.</translation>
     </message>
@@ -7591,7 +7811,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Oui</translation>
     </message>
     <message>
-        <location line="+119"/>
+        <location line="+128"/>
         <source>File Name</source>
         <translation>Nom du fichier</translation>
     </message>
@@ -7721,7 +7941,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Limite de fichiers Soft</translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location line="+34"/>
         <source>High</source>
         <translation>Haute</translation>
     </message>
@@ -7740,7 +7960,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation type="vanished">Fichiers Soft</translation>
     </message>
     <message>
-        <location line="-33"/>
+        <location line="-35"/>
         <source>Low ID</source>
         <translation>Low ID</translation>
     </message>
@@ -7753,7 +7973,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+234"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+235"/>
         <source>Disconnect</source>
         <translation>Déconnecter</translation>
     </message>
@@ -7766,12 +7986,12 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
     </message>
     <message>
         <location line="-72"/>
-        <location line="+440"/>
+        <location line="+454"/>
         <source>Connect</source>
         <translation>Connecter</translation>
     </message>
     <message>
-        <location line="-491"/>
+        <location line="-505"/>
         <source>Invalid URL: %1</source>
         <translation>URL invalide : %1</translation>
     </message>
@@ -7801,7 +8021,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>server.met téléchargé, &quot;%1&quot; décompressé (%2 octets). Analyse en cours...</translation>
     </message>
     <message>
-        <location line="+587"/>
+        <location line="+601"/>
         <location line="+2"/>
         <location line="+24"/>
         <location line="+39"/>
@@ -7899,7 +8119,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>▸ Serveurs (%1)</translation>
     </message>
     <message>
-        <location line="-622"/>
+        <location line="-636"/>
         <source>Connect To</source>
         <translation>Se connecter à</translation>
     </message>
@@ -7915,12 +8135,12 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
     </message>
     <message>
         <location line="+1"/>
-        <location line="+511"/>
+        <location line="+525"/>
         <source>Normal</source>
         <translation>Normale</translation>
     </message>
     <message>
-        <location line="-510"/>
+        <location line="-524"/>
         <source>High</source>
         <translation>Haute</translation>
     </message>
@@ -7966,6 +8186,11 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
     </message>
     <message>
         <location line="+15"/>
+        <source>eNode Account...</source>
+        <translation>Compte eNode...</translation>
+    </message>
+    <message>
+        <location line="+14"/>
         <source>Find...</source>
         <translation>Rechercher...</translation>
     </message>

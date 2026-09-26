@@ -194,6 +194,9 @@ private:
 
     bool m_failed = false;
 
+    /// QSslSocket said connected: through a proxy, the tunnel is up.
+    bool m_transportUp = false;
+
     /// In the open-connection registry, under this account id.
     bool m_counted = false;
     QString m_countedAccount;

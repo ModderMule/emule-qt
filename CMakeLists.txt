@@ -101,6 +101,24 @@ if(WIN32 AND NOT DEFINED OPENSSL_ROOT_DIR)
     endforeach()
 endif()
 
+# Homebrew upgrades delete the versioned Cellar dir the cache pinned (e.g.
+# openssl@3/3.6.1) — drop stale entries and prefer the stable opt/ symlink
+if(OPENSSL_CRYPTO_LIBRARY AND NOT EXISTS "${OPENSSL_CRYPTO_LIBRARY}")
+    unset(OPENSSL_CRYPTO_LIBRARY CACHE)
+    unset(OPENSSL_SSL_LIBRARY CACHE)
+    unset(OPENSSL_INCLUDE_DIR CACHE)
+    unset(pkgcfg_lib__OPENSSL_crypto CACHE)
+    unset(pkgcfg_lib__OPENSSL_ssl CACHE)
+endif()
+if(APPLE AND NOT DEFINED OPENSSL_ROOT_DIR)
+    foreach(_ssl_dir "/opt/homebrew/opt/openssl@3" "/usr/local/opt/openssl@3")
+        if(EXISTS "${_ssl_dir}/include/openssl/ssl.h")
+            set(OPENSSL_ROOT_DIR "${_ssl_dir}" CACHE PATH "OpenSSL root")
+            break()
+        endif()
+    endforeach()
+endif()
+
 find_package(ZLIB REQUIRED)
 find_package(OpenSSL REQUIRED)
 

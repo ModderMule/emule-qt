@@ -15,6 +15,7 @@
 
 #include <QByteArray>
 #include <QHostAddress>
+#include <QHostInfo>
 #include <QPointer>
 #include <QString>
 #include <QStringList>
@@ -269,7 +270,17 @@ private:
             if (s->client)
                 s->client->disconnectFromHost();
         });
-        upstream->connectToHost(host, port);
+        upstream->connectToHost(loopbackFirst(host), port);
+    }
+
+    /// Darwin 27 reports a refused connect as EISCONN, so Qt never falls back
+    /// from a refused ::1 to 127.0.0.1. The fakes listen on IPv4 loopback only.
+    static QString loopbackFirst(const QString& host)
+    {
+        for (const QHostAddress& a : QHostInfo::fromName(host).addresses())
+            if (a.protocol() == QAbstractSocket::IPv4Protocol)
+                return a.toString();
+        return host;
     }
 
     Kind m_kind;

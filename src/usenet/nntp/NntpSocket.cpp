@@ -97,9 +97,11 @@ void NntpSocket::connectToServer(const NewsServer& server)
 
     m_server = server;
     m_failed = false;
+    m_transportUp = false;
 
     if (!m_socket) {
         m_socket = new QSslSocket(this);
+        connect(m_socket, &QSslSocket::connected,     this, [this] { m_transportUp = true; });
         connect(m_socket, &QSslSocket::readyRead,     this, &NntpSocket::onReadyRead);
         connect(m_socket, &QSslSocket::errorOccurred, this, &NntpSocket::onSocketError);
         connect(m_socket, &QSslSocket::sslErrors,     this, &NntpSocket::onSslErrors);
@@ -285,6 +287,7 @@ void NntpSocket::onSocketError()
         return;
 
     const QAbstractSocket::SocketError code = m_socket->error();
+    bool proxyFault = false;
     switch (code) {
     // The proxy's own refusal, named as such: the queue waits for a proxy and
     // must never back a provider off, or book an article missing, over one.
@@ -294,13 +297,24 @@ void NntpSocket::onSocketError()
     case QAbstractSocket::ProxyConnectionTimeoutError:
     case QAbstractSocket::ProxyNotFoundError:
     case QAbstractSocket::ProxyProtocolError:
+        proxyFault = true;
+        break;
+    // Darwin 27 answers the retry-connect of a refused socket with EISCONN, so
+    // Qt's SOCKS engine "reaches" a dead proxy and fails later with a plain
+    // NetworkError/RemoteHostClosed. Before the tunnel is up, that's the proxy.
+    case QAbstractSocket::NetworkError:
+    case QAbstractSocket::RemoteHostClosedError:
+        proxyFault = m_proxy.type() != QNetworkProxy::NoProxy && !m_transportUp;
+        break;
+    default:
+        break;
+    }
+    if (proxyFault) {
         fail(NntpError::ProxyFailed, QStringLiteral("proxy %1:%2: %3")
                                          .arg(m_proxy.hostName())
                                          .arg(m_proxy.port())
                                          .arg(m_socket->errorString()));
         return;
-    default:
-        break;
     }
 
     const auto err = code == QAbstractSocket::SslHandshakeFailedError ? NntpError::TlsFailed

@@ -415,7 +415,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
         <translation>優秀</translation>
     </message>
     <message>
-        <location line="+101"/>
+        <location line="+107"/>
         <source>
 Rating:	%1</source>
         <translation>
@@ -601,7 +601,7 @@ Has comments</source>
         <translation>テスト</translation>
     </message>
     <message>
-        <location filename="../src/gui/utils/FileAssociation.cpp" line="+155"/>
+        <location filename="../src/gui/utils/FileAssociation.cpp" line="+158"/>
         <source>Could not write the file association to the registry.</source>
         <translation>ファイルの関連付けをレジストリに書き込めませんでした。</translation>
     </message>
@@ -3618,12 +3618,12 @@ Enable it under Options → Web Interface, then try again.</source>
     <name>eMule::MessagesPanel</name>
     <message>
         <location filename="../src/gui/panels/MessagesPanel.cpp" line="+145"/>
-        <location line="+378"/>
+        <location line="+383"/>
         <source> ...failed</source>
         <translation> ...失敗</translation>
     </message>
     <message>
-        <location line="-376"/>
+        <location line="-381"/>
         <source>Me</source>
         <translation>自分</translation>
     </message>
@@ -3639,12 +3639,12 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
     <message>
         <location line="+15"/>
-        <location line="+329"/>
+        <location line="+334"/>
         <source>Name:</source>
         <translation>名前：</translation>
     </message>
     <message>
-        <location line="-328"/>
+        <location line="-333"/>
         <source>Hash:</source>
         <translation>ハッシュ：</translation>
     </message>
@@ -3729,7 +3729,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>フレンド (%1)</translation>
     </message>
     <message>
-        <location line="+66"/>
+        <location line="+71"/>
         <source>*** Connecting</source>
         <translation>*** 接続中</translation>
     </message>
@@ -3757,6 +3757,211 @@ Enable it under Options → Web Interface, then try again.</source>
         <location line="+76"/>
         <source>Find Friend</source>
         <translation>フレンドを検索</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::MetaAccountDialog</name>
+    <message>
+        <location filename="../src/gui/dialogs/MetaAccountDialog.cpp" line="+63"/>
+        <source>User name:</source>
+        <translation>ユーザー名：</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Password:</source>
+        <translation>パスワード：</translation>
+    </message>
+    <message>
+        <location line="+20"/>
+        <source>Log In</source>
+        <translation>ログイン</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Check Again</source>
+        <translation>再確認</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Log Out</source>
+        <translation>ログアウト</translation>
+    </message>
+    <message>
+        <location line="+36"/>
+        <source>eNode Account — %1</source>
+        <translation>eNode アカウント — %1</translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>&lt;b&gt;%1&lt;/b&gt; needs an account to download torrent and Usenet search results. Log in, or register an account on the server&apos;s website.</source>
+        <translation>&lt;b&gt;%1&lt;/b&gt; で Torrent と Usenet の検索結果をダウンロードするにはアカウントが必要です。ログインするか、サーバーの Web サイトでアカウントを登録してください。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Log in to your account on &lt;b&gt;%1&lt;/b&gt;.</source>
+        <translation>&lt;b&gt;%1&lt;/b&gt; のアカウントにログインします。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>is not active yet</source>
+        <translation>はまだ有効ではありません</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>has expired</source>
+        <translation>は期限切れです</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>has been disabled by the operator</source>
+        <translation>は運営者によって無効化されています</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Your account &lt;b&gt;%1&lt;/b&gt; on %2 %3. Complete the steps below on the server&apos;s website, then choose Check Again.</source>
+        <translation>%2 のアカウント &lt;b&gt;%1&lt;/b&gt;%3。サーバーの Web サイトで以下の手順を完了してから、「再確認」を選択してください。</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>no expiry</source>
+        <translation>期限なし</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Logged in to &lt;b&gt;%1&lt;/b&gt; as &lt;b&gt;%2&lt;/b&gt;.&lt;br&gt;Access until: %3</source>
+        <translation>&lt;b&gt;%1&lt;/b&gt; に &lt;b&gt;%2&lt;/b&gt; としてログイン中。&lt;br&gt;利用期限: %3</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>&lt;b&gt;%1&lt;/b&gt; needs no account — its torrent and Usenet results are free to download.</source>
+        <translation>&lt;b&gt;%1&lt;/b&gt; はアカウント不要です — Torrent と Usenet の結果は自由にダウンロードできます。</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Checking the account on &lt;b&gt;%1&lt;/b&gt;...</source>
+        <translation>&lt;b&gt;%1&lt;/b&gt; のアカウントを確認中...</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>Open steps:</source>
+        <translation>未完了の手順：</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Register an account</source>
+        <translation>アカウントを登録</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Open account page</source>
+        <translation>アカウントページを開く</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Cancel</source>
+        <translation>キャンセル</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Close</source>
+        <translation>閉じる</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Not connected to the eMule core.</source>
+        <translation>eMule コアに接続されていません。</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Enter a user name and a password.</source>
+        <translation>ユーザー名とパスワードを入力してください。</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Logging in...</source>
+        <translation>ログイン中...</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>The connection to the eMule core was lost.</source>
+        <translation>eMule コアとの接続が切断されました。</translation>
+    </message>
+    <message>
+        <location line="+37"/>
+        <source>Checking...</source>
+        <translation>確認中...</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::MetaResultActions</name>
+    <message>
+        <location filename="../src/gui/utils/MetaResultActions.cpp" line="+75"/>
+        <source>NZB files (*.nzb)</source>
+        <translation>NZB ファイル (*.nzb)</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Torrent files (*.torrent)</source>
+        <translation>Torrent ファイル (*.torrent)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Save NZB File</source>
+        <translation>NZB ファイルを保存</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Save Torrent File</source>
+        <translation>Torrent ファイルを保存</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Save Files To</source>
+        <translation>ファイルの保存先</translation>
+    </message>
+    <message>
+        <location line="+43"/>
+        <source>Queued &quot;%1&quot; for Usenet download.</source>
+        <translation>「%1」を Usenet ダウンロードのキューに追加しました。</translation>
+    </message>
+    <message>
+        <location line="+22"/>
+        <source>Download</source>
+        <translation>ダウンロード</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>%1
+
+Download it again?</source>
+        <translation>%1
+
+もう一度ダウンロードしますか？</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Could not queue &quot;%1&quot;: %2</source>
+        <translation>「%1」をキューに追加できませんでした: %2</translation>
+    </message>
+    <message>
+        <location line="+24"/>
+        <source>Could not download &quot;%1&quot;: %2</source>
+        <translation>「%1」をダウンロードできませんでした: %2</translation>
+    </message>
+    <message>
+        <location line="+15"/>
+        <source>Could not write %1: %2</source>
+        <translation>%1 を書き込めませんでした: %2</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Saved %1</source>
+        <translation>%1 を保存しました</translation>
+    </message>
+    <message>
+        <location line="+45"/>
+        <source>Search</source>
+        <translation>検索</translation>
     </message>
 </context>
 <context>
@@ -7245,14 +7450,14 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+220"/>
-        <location line="+707"/>
-        <location line="+315"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+222"/>
+        <location line="+720"/>
+        <location line="+376"/>
         <source>Download</source>
         <translation>ダウンロード</translation>
     </message>
     <message>
-        <location line="-1002"/>
+        <location line="-1076"/>
         <source>Close All Searches</source>
         <translation>すべての検索を閉じる</translation>
     </message>
@@ -7480,7 +7685,17 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>名前をコピー(&amp;N)</translation>
     </message>
     <message>
-        <location line="+52"/>
+        <location line="+65"/>
+        <source>Download NZB File...</source>
+        <translation>NZB ファイルをダウンロード...</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Download Torrent</source>
+        <translation>Torrent をダウンロード</translation>
+    </message>
+    <message>
+        <location line="+10"/>
         <source>Details...</source>
         <translation>詳細...</translation>
     </message>
@@ -7490,28 +7705,33 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>コメント...</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+12"/>
         <source>Copy eD2K Links</source>
         <translation>eD2K リンクをコピー</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+12"/>
         <source>Copy eD2K Links (HTML)</source>
         <translation>eD2K リンクをコピー (HTML)</translation>
     </message>
     <message>
-        <location line="+24"/>
+        <location line="+19"/>
+        <source>Copy Magnet Links</source>
+        <translation>マグネットリンクをコピー</translation>
+    </message>
+    <message>
+        <location line="+17"/>
         <source>Mark as not Spam</source>
         <translation>スパムではないとマーク</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+629"/>
+        <location line="+700"/>
         <source>Preview</source>
         <translation>プレビュー</translation>
     </message>
     <message>
-        <location line="-441"/>
+        <location line="-481"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -7520,7 +7740,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 %1</translation>
     </message>
     <message>
-        <location line="+687"/>
+        <location line="+727"/>
         <source>Asking servers: %1 / %2</source>
         <translation>サーバーに問い合わせ中：%1 / %2</translation>
     </message>
@@ -7530,7 +7750,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>すべて</translation>
     </message>
     <message>
-        <location line="-975"/>
+        <location line="-1046"/>
         <location line="+14"/>
         <source>Mark as Spam</source>
         <translation>スパムとしてマーク</translation>
@@ -7566,7 +7786,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>Web サービス</translation>
     </message>
     <message>
-        <location line="+608"/>
+        <location line="+679"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>プレビューは利用できません — Web サーバーが実行されていないか、ストリームトークンを受信していません。</translation>
     </message>
@@ -7579,7 +7799,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>はい</translation>
     </message>
     <message>
-        <location line="+119"/>
+        <location line="+128"/>
         <source>File Name</source>
         <translation>ファイル名</translation>
     </message>
@@ -7709,7 +7929,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>ソフトファイル制限</translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location line="+34"/>
         <source>High</source>
         <translation>高い</translation>
     </message>
@@ -7728,7 +7948,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation type="vanished">ソフトファイル</translation>
     </message>
     <message>
-        <location line="-33"/>
+        <location line="-35"/>
         <source>Low ID</source>
         <translation>Low ID</translation>
     </message>
@@ -7741,7 +7961,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+234"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+235"/>
         <source>Disconnect</source>
         <translation>切断</translation>
     </message>
@@ -7754,12 +7974,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="-72"/>
-        <location line="+440"/>
+        <location line="+454"/>
         <source>Connect</source>
         <translation>接続</translation>
     </message>
     <message>
-        <location line="-491"/>
+        <location line="-505"/>
         <source>Invalid URL: %1</source>
         <translation>無効なURL: %1</translation>
     </message>
@@ -7789,7 +8009,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>server.met をダウンロードし、&quot;%1&quot; を展開しました (%2 バイト)。解析中...</translation>
     </message>
     <message>
-        <location line="+587"/>
+        <location line="+601"/>
         <location line="+2"/>
         <location line="+24"/>
         <location line="+39"/>
@@ -7887,7 +8107,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>▸ サーバー (%1)</translation>
     </message>
     <message>
-        <location line="-622"/>
+        <location line="-636"/>
         <source>Connect To</source>
         <translation>接続先</translation>
     </message>
@@ -7903,12 +8123,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+511"/>
+        <location line="+525"/>
         <source>Normal</source>
         <translation>通常</translation>
     </message>
     <message>
-        <location line="-510"/>
+        <location line="-524"/>
         <source>High</source>
         <translation>高い</translation>
     </message>
@@ -7954,6 +8174,11 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+15"/>
+        <source>eNode Account...</source>
+        <translation>eNode アカウント...</translation>
+    </message>
+    <message>
+        <location line="+14"/>
         <source>Find...</source>
         <translation>検索...</translation>
     </message>
