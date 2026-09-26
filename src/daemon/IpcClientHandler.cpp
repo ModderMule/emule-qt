@@ -18,6 +18,7 @@
 #include "queue/UsenetQueue.h"
 #include "queue/UsenetQueueItem.h"
 #include "webserver/WebServer.h"
+#include "enodemeta/MetaHash.h"
 
 #include <QDir>
 #include <QHostInfo>
@@ -341,6 +342,11 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::SetUsenetPaused:     handleSetUsenetPaused(msg); break;
     case IpcMsgType::SetUsenetFilesSkipped: handleSetUsenetFilesSkipped(msg); break;
     case IpcMsgType::InspectNzb:          handleInspectNzb(msg); break;
+    case IpcMsgType::FetchMetaFile:       handleFetchMetaFile(msg); break;
+    case IpcMsgType::DownloadMetaResult:  handleDownloadMetaResult(msg); break;
+    case IpcMsgType::GetMetaAuthStatus:   handleGetMetaAuthStatus(msg); break;
+    case IpcMsgType::MetaLogin:           handleMetaLogin(msg); break;
+    case IpcMsgType::MetaLogout:          handleMetaLogout(msg); break;
     case IpcMsgType::SetUsenetItemPassword: handleSetUsenetItemPassword(msg); break;
     case IpcMsgType::ListUsenetArchiveEntries: handleListUsenetArchiveEntries(msg); break;
     case IpcMsgType::GetUsenetItemDetails:     handleGetUsenetItemDetails(msg);     break;
@@ -1245,6 +1251,13 @@ void IpcClientHandler::handleDownloadSearchFile(const IpcMessage& msg)
     const QString fileName = msg.fieldString(1);
     const auto fileSize    = static_cast<uint64>(msg.fieldInt(2));
     const QString rawLink  = msg.fieldString(3);
+
+    // a meta hash is not an eD2K file — never queue it (enodemeta "four nevers")
+    if (uint8 hashBuf[16]{}; hexToHash(hash, hashBuf) && enodemeta::isMetaHash(hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400,
+                                          QStringLiteral("Torrent/Usenet results are not eD2K downloads")));
+        return;
+    }
     // The search window's "->" category (MFC SearchResultsWnd.cpp:542); older senders omit it.
     const qint64 category  = msg.fieldInt(4);
 

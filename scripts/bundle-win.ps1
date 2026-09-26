@@ -150,7 +150,8 @@ else {
 Write-Host ''
 Write-Host '=== Running windeployqt ==='
 $deployMode = if ($Config -eq 'Debug') { '--debug' } else { '--release' }
-& $windeployqt $deployMode --no-translations --no-system-d3d-compiler --no-opengl-sw (Join-Path $stageDir 'emuleqt.exe')
+# The daemon too: it links Qt modules the GUI may not import (Qt6Protobuf)
+& $windeployqt $deployMode --no-translations --no-system-d3d-compiler --no-opengl-sw (Join-Path $stageDir 'emuleqt.exe') (Join-Path $stageDir 'emulecored.exe')
 if ($LASTEXITCODE -ne 0) {
     Write-Warning 'windeployqt reported errors (continuing).'
 }

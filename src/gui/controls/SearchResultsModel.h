@@ -33,6 +33,16 @@ struct SearchResultRow {
     bool isSpam = false;
     bool hasComment = false;
     int userRating = 0;   // wire value: 6 means a Kad note lookup is running
+
+    // eNode meta row — network from the meta hash (enodemeta::Kind), 0 = eD2K
+    int metaKind = 0;
+    QString magnet;       ///< torrents only, may be empty
+    int64_t metaAgeDays = 0;
+    QString metaIndexer;
+
+    [[nodiscard]] bool isMeta() const { return metaKind != 0; }
+    [[nodiscard]] bool isTorrent() const { return metaKind == 1 || metaKind == 2; }
+    [[nodiscard]] bool isUsenet() const { return metaKind == 3; }
 };
 
 /// Table model backing the search results tree view in the Search panel.

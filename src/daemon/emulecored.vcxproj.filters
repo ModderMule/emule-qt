@@ -36,7 +36,13 @@
     <ClCompile Include="IpcServer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="IpcClientHandlerMeta.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MetaSearchService.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="UsenetBridge.cpp">
@@ -60,6 +66,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="IpcServer.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="MetaSearchService.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="DaemonUsenetWebBackend.h">

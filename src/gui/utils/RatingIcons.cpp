@@ -91,12 +91,18 @@ FileMark ratingMark(bool hasComment, int userRating)
 QIcon fileMarksIcon(const QString& fileType, bool containerSuspect, bool ownComment,
                     FileMark mark)
 {
-    // A row with nothing to add is the common case; hand back the plain type
+    return fileMarksIcon(fileTypeIcon(fileType), fileType, containerSuspect, ownComment, mark);
+}
+
+QIcon fileMarksIcon(const QIcon& base, const QString& baseKey, bool containerSuspect,
+                    bool ownComment, FileMark mark)
+{
+    // A row with nothing to add is the common case; hand back the plain base
     // icon rather than a one-cell composite of it.
     if (!containerSuspect && !ownComment && mark == FileMark::None)
-        return fileTypeIcon(fileType);
+        return base;
 
-    const QString key = fileType + QLatin1Char('|')
+    const QString key = baseKey + QLatin1Char('|')
                       + QLatin1Char(containerSuspect ? '1' : '0')
                       + QLatin1Char(ownComment ? '1' : '0')
                       + QString::number(static_cast<int>(mark));
@@ -121,7 +127,7 @@ QIcon fileMarksIcon(const QString& fileType, bool containerSuspect, bool ownComm
     canvas.fill(Qt::transparent);
     {
         QPainter painter(&canvas);
-        drawInto(painter, fileTypeIcon(fileType), 0, kDpr);
+        drawInto(painter, base, 0, kDpr);
         if (ownComment) {
             // Over the type icon, not beside it: MFC draws this one as an image-list
             // overlay (INDEXTOOVERLAYMASK(1)), so it never costs the row any width.

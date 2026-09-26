@@ -324,6 +324,33 @@
     <ClCompile Include="search\SearchList.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="enodemeta\GrpcWeb.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="enodemeta\MetaAccountStore.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="enodemeta\MetaApiClient.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="enodemeta\MetaHash.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="enodemeta\MetaIdentity.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GeneratedFiles\enodemeta_proto\meta.qpb.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GeneratedFiles\enodemeta_proto\api.qpb.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GeneratedFiles\enodemeta_proto\meta_qtprotoreg.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GeneratedFiles\enodemeta_proto\api_qtprotoreg.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
     <ClCompile Include="search\SearchParams.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -769,6 +796,27 @@
     </ClInclude>
     <QtMoc Include="search\SearchList.h">
       <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="enodemeta\GrpcWeb.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="enodemeta\MetaAccountStore.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="enodemeta\MetaApiClient.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="enodemeta\MetaHash.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="enodemeta\MetaIdentity.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="GeneratedFiles\enodemeta_proto\meta.qpb.h">
+      <Filter>Generated Files</Filter>
+    </QtMoc>
+    <QtMoc Include="GeneratedFiles\enodemeta_proto\api.qpb.h">
+      <Filter>Generated Files</Filter>
     </QtMoc>
     <ClInclude Include="search\SearchParams.h">
       <Filter>Header Files</Filter>

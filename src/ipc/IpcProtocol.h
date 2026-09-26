@@ -537,6 +537,37 @@ enum class IpcMsgType : int {
     /// `setKey` groups the volumes of one archive set, empty for other files.
     InspectNzb              = 741,
 
+    // -- eNode meta search (750-754) -------------------------------------------
+    //
+    // Torrent/Usenet rows an eNode server blends into eD2K search answers. A row
+    // is recognised by its meta hash (`metaKind` in GetSearchResults), never by
+    // its name. The metafile comes from that server's Meta API, which may need
+    // an account. Every failure carries a MetaStatus map as the LAST field:
+    //   {status: MetaStatus, serverName, serverAddr: "addr:port", authMode,
+    //    registrationUrl, accountUrl, msgCode, pendingSteps: [{title, kind, url}]}
+
+    /// [searchID, hash] -> [true, {content: bytes, fileName, kind}] or
+    /// [false, error, meta]. For saving the .torrent/.nzb in the GUI; capped
+    /// below MaxPayloadSize.
+    FetchMetaFile           = 750,
+
+    /// [searchID, hash, force, category, priority, paused] -> the AddNzb reply
+    /// ([ok, itemId|error, outcome]) plus meta as field 3. Usenet rows only:
+    /// the daemon fetches, verifies and queues the NZB.
+    DownloadMetaResult      = 751,
+
+    /// [serverAddr] -> [true, {meta keys + loggedIn, username, state,
+    /// expiresAt}] or [false, error, meta]. AccountApi.GetAuthStatus.
+    GetMetaAuthStatus       = 752,
+
+    /// [serverAddr, username, password] -> [ok, error, meta + loggedIn,
+    /// username, state]. AccountApi.Login; the daemon keeps the token, never
+    /// the password.
+    MetaLogin               = 753,
+
+    /// [serverAddr] -> [ok, error]. AccountApi.Logout, then forget the token.
+    MetaLogout              = 754,
+
     // -- Responses (Core -> GUI) ---------------------------------------------
 
     HandshakeOk          = 300,  ///< [version, motd]
@@ -627,6 +658,23 @@ enum class CategoryAction : int {
     /// Resume the single highest-ranked paused download in this category.
     ResumeNext = 4,
 };
+
+/// Outcome of an eNode Meta API request (the `status` key of a meta map).
+enum class MetaStatus : int {
+    Ok = 0,
+    NoMetaApi,         ///< the row's server announced no Meta API
+    AuthRequired,      ///< log in first (show the login dialog)
+    AccountInactive,   ///< logged in, but registration steps are open
+    NotFound,
+    VerifyFailed,      ///< the bytes do not match the row's meta hash
+    Unavailable,
+    RateLimited,
+    TooLarge,
+    Error,
+};
+
+/// MetaStatus pending-step kinds mirror enode.meta.v1.StepKind; account states
+/// mirror AccountState (1 pending, 2 active, 3 expired, 4 disabled).
 
 // ---------------------------------------------------------------------------
 // Framing constants

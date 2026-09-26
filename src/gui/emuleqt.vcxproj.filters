@@ -133,6 +133,9 @@
     <ClCompile Include="utils\NzbAdd.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\MetaResultActions.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\NzbDrop.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -179,6 +182,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\AddNzbUrlDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dialogs\MetaAccountDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\PasteLinksDialog.cpp">
@@ -348,6 +354,9 @@
     <ClInclude Include="utils\NzbAdd.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <QtMoc Include="utils\MetaResultActions.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <ClInclude Include="utils\NzbDrop.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -466,6 +475,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\AddNzbUrlDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\MetaAccountDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\PasteLinksDialog.h">
@@ -1147,6 +1159,9 @@
       <Filter>Resource Files</Filter>
     </None>
     <None Include="..\..\resources\icons\Usenet.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Torrent.ico">
       <Filter>Resource Files</Filter>
     </None>
     <None Include="..\..\resources\icons\User.ico">

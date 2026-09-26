@@ -22,6 +22,7 @@ class QTreeView;
 namespace eMule {
 
 class IpcClient;
+class MetaResultActions;
 class PanelPoller;
 class LogWidget;
 class ServerListModel;
@@ -104,6 +105,7 @@ private:
 
     // IPC client
     IpcClient* m_ipc = nullptr;
+    MetaResultActions* m_metaActions = nullptr;   ///< "eNode Account...", lazily
 
     // Kad status (updated via IPC push events)
     bool m_kadRunning    = false;

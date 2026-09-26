@@ -14,6 +14,7 @@
 #include "utils/IpcFeedback.h"
 #include "utils/ListActivation.h"
 #include "utils/MenuUtils.h"
+#include "utils/MetaResultActions.h"
 #include "utils/PreviewLauncher.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/ViewNavigation.h"
@@ -53,6 +54,7 @@
 #include <QStringListModel>
 #include <QTabBar>
 #include <QTreeView>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -903,6 +905,11 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     auto* tab = currentTab();
     bool anyNotSpam    = false;
     bool anyDownloadable = false;
+    bool anyEd2k = false;
+    bool anyUsenet = false;
+    bool anyTorrent = false;
+    bool anyMagnet = false;
+    bool singleMeta = false;
     QString singleHash;
     QString singleName;
     int64_t singleSize = 0;
@@ -914,28 +921,52 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             continue;
         if (!result->isSpam)
             anyNotSpam = true;
-        if (!m_downloadModel || !m_downloadModel->findByHash(result->hash))
+        anyEd2k |= !result->isMeta();
+        anyUsenet |= result->isUsenet();
+        anyTorrent |= result->isTorrent();
+        anyMagnet |= !result->isMeta() || !result->magnet.isEmpty();
+        // eD2K rows: not already in the transfer list. Usenet rows: the daemon asks.
+        if (result->isUsenet() || (!result->isMeta()
+                                   && (!m_downloadModel || !m_downloadModel->findByHash(result->hash))))
             anyDownloadable = true;
         if (singleSel) {
             singleHash = result->hash;
             singleName = result->fileName;
             singleSize = result->fileSize;
+            singleMeta = result->isMeta();
         }
     }
 
     // Download — the default action, bold, as in MFC (SetDefaultItem at :731).
+    // Queues eD2K rows and Usenet rows (eMuleQt's Usenet downloader).
     auto* downloadAction = m_contextMenu->addAction(menuIcon("Download.ico"), tr("Download"));
     downloadAction->setEnabled(hasSelection && anyDownloadable);
     connect(downloadAction, &QAction::triggered, this, [this] {
         downloadResults(m_resultView->selectionModel()->selectedRows());
     });
-    setMenuDefaultAction(m_contextMenu, downloadAction->isEnabled() ? downloadAction : nullptr);
+    QAction* defaultAction = downloadAction->isEnabled() ? downloadAction : nullptr;
+
+    // eNode Usenet rows: the .nzb itself
+    if (anyUsenet) {
+        auto* nzbAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Usenet.ico")),
+                                                   tr("Download NZB File..."));
+        connect(nzbAction, &QAction::triggered, this, [this] { saveMetaFiles(/*nzb*/ true); });
+    }
+    // eNode torrent rows: the .torrent — the default for them until BitTorrent lands
+    if (anyTorrent) {
+        auto* torrentAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Torrent.ico")),
+                                                       tr("Download Torrent"));
+        connect(torrentAction, &QAction::triggered, this, [this] { saveMetaFiles(/*nzb*/ false); });
+        if (!anyEd2k && !anyUsenet)
+            defaultAction = torrentAction;
+    }
+    setMenuDefaultAction(m_contextMenu, defaultAction);
 
     // Details... — extended controls only, exactly as MFC gates it, because the
     // sheet's Metadata page is itself an extended-controls feature.
     if (thePrefs.showExtControls()) {
         auto* detailsAction = m_contextMenu->addAction(menuIcon("FileInfo.ico"), tr("Details..."));
-        detailsAction->setEnabled(singleSel && tab);
+        detailsAction->setEnabled(singleSel && tab && !singleMeta);
         const uint32_t searchID = tab ? tab->searchID : 0;
         connect(detailsAction, &QAction::triggered, this, [this, searchID, singleHash] {
             fetchAndShowSearchDetails(searchID, singleHash, SearchDetailDialog::Metadata);
@@ -946,7 +977,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // IDD_COMMENTLST for MP_CMT, SearchListCtrl.cpp:817-824).
     {
         auto* commentsAction = m_contextMenu->addAction(menuIcon("FileComments.ico"), tr("Comments..."));
-        commentsAction->setEnabled(singleSel && tab);
+        commentsAction->setEnabled(singleSel && tab && !singleMeta);
         const uint32_t searchID = tab ? tab->searchID : 0;
         connect(commentsAction, &QAction::triggered, this, [this, searchID, singleHash] {
             fetchAndShowSearchDetails(searchID, singleHash, SearchDetailDialog::Comments);
@@ -956,25 +987,27 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     m_contextMenu->addSeparator();
 
     // Copy eD2K Links
+    // meta rows have no eD2K link to give (never mint ed2k:// for a pseudo-hash)
     auto* copyLinkAction = m_contextMenu->addAction(menuIcon("eD2kLink.ico"), tr("Copy eD2K Links"));
-    copyLinkAction->setEnabled(hasSelection);
+    copyLinkAction->setEnabled(hasSelection && anyEd2k);
     connect(copyLinkAction, &QAction::triggered, this, [this] {
         QStringList links;
         for (const auto& i : m_resultView->selectionModel()->selectedRows())
-            links << buildEd2kLink(i.row());
+            if (const QString link = buildEd2kLink(i.row()); !link.isEmpty())
+                links << link;
         if (!links.isEmpty())
             QApplication::clipboard()->setText(links.join(QLatin1Char('\n')));
     });
 
     // Copy eD2K Links (HTML)
     auto* copyHtmlAction = m_contextMenu->addAction(menuIcon("Copy.ico"), tr("Copy eD2K Links (HTML)"));
-    copyHtmlAction->setEnabled(hasSelection);
+    copyHtmlAction->setEnabled(hasSelection && anyEd2k);
     connect(copyHtmlAction, &QAction::triggered, this, [this] {
         QStringList links;
         for (const auto& i : m_resultView->selectionModel()->selectedRows()) {
             const QString link = buildEd2kLink(i.row());
             auto* tab = currentTab();
-            if (!tab) continue;
+            if (!tab || link.isEmpty()) continue;
             const auto proxyIdx = tab->proxy->index(i.row(), 0);
             const auto srcIdx = tab->proxy->mapToSource(proxyIdx);
             const auto* result = tab->model->resultAt(srcIdx.row());
@@ -983,6 +1016,18 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
         }
         if (!links.isEmpty())
             QApplication::clipboard()->setText(links.join(QStringLiteral("<br>\n")));
+    });
+
+    // Copy Magnet Links — eD2K rows as urn:ed2k, torrents their own; Usenet has none
+    auto* copyMagnetAction = m_contextMenu->addAction(menuIcon("eD2kLink.ico"), tr("Copy Magnet Links"));
+    copyMagnetAction->setEnabled(hasSelection && anyMagnet);
+    connect(copyMagnetAction, &QAction::triggered, this, [this] {
+        QStringList links;
+        for (const auto& i : m_resultView->selectionModel()->selectedRows())
+            if (const QString link = buildMagnetLink(i.row()); !link.isEmpty())
+                links << link;
+        if (!links.isEmpty())
+            QApplication::clipboard()->setText(links.join(QLatin1Char('\n')));
     });
 
     // Mark as Spam / Mark as not Spam — MFC inserts this right before Remove, with
@@ -1066,7 +1111,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // Search Related Files — MFC turns the file name into a fresh search.
     auto* relatedAction = m_contextMenu->addAction(menuIcon("KadFileSearch.ico"),
                                                    tr("Search Related Files"));
-    relatedAction->setEnabled(singleSel && !singleName.isEmpty());
+    relatedAction->setEnabled(singleSel && !singleName.isEmpty() && !singleMeta);
     connect(relatedAction, &QAction::triggered, this, [this, singleName] {
         const qsizetype dotIdx = singleName.lastIndexOf(QLatin1Char('.'));
         startSearchFromExternal(dotIdx > 0 ? singleName.left(dotIdx) : singleName);
@@ -1075,7 +1120,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // Web Services — greyed when webservices.dat is empty or the selection is not
     // exactly one file, matching MFC's flag2 (SearchListCtrl.cpp:724-727).
     auto* webMenu = m_contextMenu->addMenu(menuIcon("Web.ico"), tr("Web Services"));
-    if (singleSel)
+    if (singleSel && !singleMeta)   // web services key on the eD2K hash
         WebServices::instance().populateFileMenu(webMenu, singleHash, singleName,
                                                  static_cast<uint64_t>(singleSize));
     webMenu->setEnabled(!webMenu->isEmpty());
@@ -1157,12 +1202,17 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
             row.length             = m.value(QStringLiteral("length")).toInteger();
             row.bitrate            = m.value(QStringLiteral("bitrate")).toInteger();
             row.codec              = m.value(QStringLiteral("codec")).toString();
+            row.metaKind           = static_cast<int>(m.value(QStringLiteral("metaKind")).toInteger());
+            row.magnet             = m.value(QStringLiteral("magnet")).toString();
+            row.metaAgeDays        = m.value(QStringLiteral("metaAge")).toInteger();
+            row.metaIndexer        = m.value(QStringLiteral("metaIndexer")).toString();
             rows.push_back(std::move(row));
         }
 
         // Find the matching tab and update
         for (size_t i = 0; i < m_tabs.size(); ++i) {
-            if (m_tabs[i].searchID == searchID) {
+            // ED2K and indexer searches number their ids independently
+            if (m_tabs[i].searchID == searchID && !m_tabs[i].isIndexer()) {
                 const QString selKey = (m_tabBar->currentIndex() == static_cast<int>(i))
                     ? saveSelection() : QString{};
 
@@ -1198,12 +1248,38 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
     if (category < 0)
         category = m_categoryTabs->count() > 1 ? std::max(m_categoryTabs->currentIndex(), 0) : 0;
 
+    // eNode rows leave here: Usenet goes to the Usenet queue, a torrent is saved
+    // as a .torrent until BitTorrent downloads exist
+    QModelIndexList ed2kRows;
+    if (!tab->isIndexer() && tab->model) {
+        QList<MetaResultActions::Row> usenet;
+        QList<MetaResultActions::Row> torrents;
+        for (const auto& idx : proxyRows) {
+            const int srcRow = tab->proxy->mapToSource(tab->proxy->index(idx.row(), 0)).row();
+            const auto* r = tab->model->resultAt(srcRow);
+            if (r && r->isUsenet())
+                usenet.append({r->hash, r->fileName, true});
+            else if (r && r->isTorrent())
+                torrents.append({r->hash, r->fileName, false});
+            else
+                ed2kRows.append(idx);
+        }
+        if (!usenet.isEmpty())
+            metaActions()->downloadUsenet(tab->searchID, usenet, category, QPointer(tab->model));
+        if (!torrents.isEmpty())
+            metaActions()->saveMetaFiles(tab->searchID, torrents);
+        if (ed2kRows.isEmpty())
+            return;
+    } else {
+        ed2kRows = proxyRows;
+    }
+
     // Triaged once for the whole action, not once per row: selecting twenty rows
     // of which three are already downloaded must raise one question, not three.
     QList<int> plain;
     QList<int> known;
     QStringList knownNames;
-    for (const auto& idx : proxyRows) {
+    for (const auto& idx : std::as_const(ed2kRows)) {
         const int proxyRow = idx.row();
         const int srcRow = tab->proxy->mapToSource(tab->proxy->index(proxyRow, 0)).row();
 
@@ -1307,7 +1383,7 @@ QString SearchPanel::buildEd2kLink(int proxyRow)
     const auto proxyIdx = tab->proxy->index(proxyRow, 0);
     const auto srcIdx = tab->proxy->mapToSource(proxyIdx);
     const auto* result = tab->model->resultAt(srcIdx.row());
-    if (!result)
+    if (!result || result->isMeta())
         return {};
 
     return QStringLiteral("ed2k://|file|%1|%2|%3|/")
@@ -1319,6 +1395,46 @@ void SearchPanel::copyEd2kLink(int row)
     const QString link = buildEd2kLink(row);
     if (!link.isEmpty())
         QApplication::clipboard()->setText(link);
+}
+
+void SearchPanel::saveMetaFiles(bool nzb)
+{
+    auto* tab = currentTab();
+    if (!tab || tab->isIndexer() || !tab->model)
+        return;
+    QList<MetaResultActions::Row> rows;
+    for (const auto& idx : m_resultView->selectionModel()->selectedRows()) {
+        const auto* r = tab->model->resultAt(tab->proxy->mapToSource(idx).row());
+        if (r && (nzb ? r->isUsenet() : r->isTorrent()))
+            rows.append({r->hash, r->fileName, nzb});
+    }
+    metaActions()->saveMetaFiles(tab->searchID, rows);
+}
+
+MetaResultActions* SearchPanel::metaActions()
+{
+    if (!m_metaActions)
+        m_metaActions = new MetaResultActions(m_ipc, this);
+    return m_metaActions;
+}
+
+QString SearchPanel::buildMagnetLink(int proxyRow)
+{
+    auto* tab = currentTab();
+    if (!tab || tab->isIndexer() || !tab->model)
+        return {};
+    const auto srcIdx = tab->proxy->mapToSource(tab->proxy->index(proxyRow, 0));
+    const auto* result = tab->model->resultAt(srcIdx.row());
+    if (!result)
+        return {};
+    if (result->isMeta())
+        return result->magnet;   // server-supplied for torrents; Usenet has none
+
+    // the form ED2KLink::parseMagnetLink reads back
+    return QStringLiteral("magnet:?xt=urn:ed2k:%1&xl=%2&dn=%3")
+        .arg(result->hash.toUpper())
+        .arg(result->fileSize)
+        .arg(QString::fromUtf8(QUrl::toPercentEncoding(result->fileName)));
 }
 
 // ---------------------------------------------------------------------------

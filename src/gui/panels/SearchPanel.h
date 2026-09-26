@@ -40,6 +40,7 @@ namespace eMule {
 class DownloadListModel;
 class IndexerResultsModel;
 class IpcClient;
+class MetaResultActions;
 class SearchResultsModel;
 
 /// Per-search tab state.
@@ -184,7 +185,12 @@ private:
     /// Send one ED2K download request for a proxy row.
     void sendDownloadRequest(int proxyRow, int category);
     [[nodiscard]] QString buildEd2kLink(int proxyRow);
+    /// magnet:?xt=urn:ed2k for eD2K rows, the server's magnet for torrents, empty for Usenet.
+    [[nodiscard]] QString buildMagnetLink(int proxyRow);
     void copyEd2kLink(int row);
+    /// Save the selected eNode rows' .nzb (@p nzb) or .torrent files.
+    void saveMetaFiles(bool nzb);
+    [[nodiscard]] MetaResultActions* metaActions();
     void closeSearch(int tabIndex);
     void closeAllSearches();
     void switchToTab(int index);
@@ -280,6 +286,7 @@ private:
 
     // IPC
     IpcClient* m_ipc = nullptr;
+    MetaResultActions* m_metaActions = nullptr;   ///< lazily, once m_ipc is set
 
     /// Coalescing window for result refreshes. The daemon pushes one event per
     /// arriving result *and* per source-count bump, and a refresh refetches the

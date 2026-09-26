@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          submodules: true   # external/enodemeta: .proto + test vectors
 
       - name: Install system dependencies
         run: |
@@ -28,14 +30,15 @@ jobs:
             libgl1-mesa-dev \
             libdbus-1-dev \
             libxkbcommon-dev \
-            zlib1g-dev
+            zlib1g-dev \
+            protobuf-compiler   # protoc for qt_add_protobuf (enodemeta)
 
       - name: Install Qt 6
         uses: jurplel/install-qt-action@v4
         with:
           version: "6.10.3"
           arch: linux_gcc_64
-          modules: qthttpserver qtwebsockets qtmultimedia
+          modules: qthttpserver qtwebsockets qtmultimedia qtgrpc   # qtgrpc ships QtProtobuf
           cache: true
 
       - name: Set up ccache

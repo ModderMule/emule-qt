@@ -1,0 +1,3 @@
+[submodule "external/enodemeta"]
+	path = external/enodemeta
+	url = https://github.com/ModderMule/enodemeta

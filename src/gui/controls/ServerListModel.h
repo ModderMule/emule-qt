@@ -36,6 +36,8 @@ struct ServerRow {
     uint32_t softFiles = 0;
     uint32_t lowIdUsers = 0;
     bool obfuscation = false;
+    bool hasMetaApi = false;   ///< eNode server announcing a Meta API (torrent/Usenet downloads)
+    QString addrPort;          ///< daemon's "addr:port" key for Meta API requests
     uint32_t files = 0;
 
     // Server identity for IPC connect-to-specific-server. numericIp is 0 for an IPv6

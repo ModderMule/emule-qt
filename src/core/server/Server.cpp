@@ -77,6 +77,8 @@ Server::Server(const Server& other)
     , m_cryptPingReplyPending(other.m_cryptPingReplyPending)
     , m_triedCryptOnce(other.m_triedCryptOnce)
     , m_auxPortsList(other.m_auxPortsList)
+    , m_metaApiUrl(other.m_metaApiUrl)
+    , m_metaApiPin(other.m_metaApiPin)
 {
 }
 

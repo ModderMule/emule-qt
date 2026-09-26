@@ -64,6 +64,11 @@ enum class FileMark : int {
 [[nodiscard]] QIcon fileMarksIcon(const QString& fileType, bool containerSuspect,
                                   bool ownComment, FileMark mark);
 
+/// Same, over an arbitrary base icon (e.g. a network badge). @p baseKey names
+/// the base for the composite cache and must differ from every file type.
+[[nodiscard]] QIcon fileMarksIcon(const QIcon& base, const QString& baseKey,
+                                  bool containerSuspect, bool ownComment, FileMark mark);
+
 /// The lines that explain those marks, for the lists that draw them. Empty when the
 /// row has nothing to add, otherwise each line starts with its own newline so a
 /// caller can append it straight onto its tooltip.

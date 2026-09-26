@@ -173,6 +173,8 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
         row.softFiles   = static_cast<uint32_t>(m.value(QStringLiteral("softFiles")).toInteger());
         row.lowIdUsers  = static_cast<uint32_t>(m.value(QStringLiteral("lowIDUsers")).toInteger());
         row.obfuscation = m.value(QStringLiteral("obfuscation")).toBool();
+        row.hasMetaApi  = m.value(QStringLiteral("hasMetaApi")).toBool();
+        row.addrPort    = m.value(QStringLiteral("addrPort")).toString();
 
         const int pref  = static_cast<int>(m.value(QStringLiteral("preference")).toInteger());
         row.preferenceValue = pref;

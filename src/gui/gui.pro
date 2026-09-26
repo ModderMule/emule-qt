@@ -4,7 +4,7 @@ TEMPLATE = app
 CONFIG  += c++2b
 TARGET   = emuleqt
 
-QT += core gui widgets network multimedia
+QT += core gui widgets network multimedia protobuf
 
 INCLUDEPATH += \
     $$PWD/.. \
@@ -123,6 +123,8 @@ SOURCES += \
     dialogs/AddNzbFilesDialog.cpp \
     dialogs/NzbFileChooserDialog.cpp \
     dialogs/AddNzbUrlDialog.cpp \
+    dialogs/MetaAccountDialog.cpp \
+    utils/MetaResultActions.cpp \
     dialogs/PasteLinksDialog.cpp \
     dialogs/PasteTextDialog.cpp \
     dialogs/SearchDetailDialog.cpp \
@@ -193,6 +195,8 @@ HEADERS += \
     dialogs/AddNzbFilesDialog.h \
     dialogs/NzbFileChooserDialog.h \
     dialogs/AddNzbUrlDialog.h \
+    dialogs/MetaAccountDialog.h \
+    utils/MetaResultActions.h \
     dialogs/PasteLinksDialog.h \
     dialogs/PasteTextDialog.h \
     dialogs/SearchDetailDialog.h \

@@ -15,6 +15,7 @@
 
 
 #include <QHostAddress>
+#include <QUrl>
 
 namespace eMule {
 
@@ -315,6 +316,9 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
 
         QString name;
         QString description;
+        QString metaApiUrl;
+        QString metaApiPin;
+        uint32 metaApiVersion = 0;
 
         // Parse tags
         try {
@@ -325,6 +329,12 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
                     name = tag.strValue();
                 else if (tag.nameId() == ST_DESCRIPTION && tag.isStr())
                     description = tag.strValue();
+                else if (tag.nameId() == ST_META_API && tag.isStr())
+                    metaApiUrl = tag.strValue();
+                else if (tag.nameId() == ST_META_API_FP && tag.isStr())
+                    metaApiPin = tag.strValue();
+                else if (tag.nameId() == ST_META_API_VER && tag.isInt())
+                    metaApiVersion = tag.intValue();
                 else if (tag.nameId() == CT_MOD_SVR_IP_V6 && tag.isHash()) {
                     // The server's own public IPv6 (informational — we still reach it on
                     // the address we dialed). Self-describing tags skip cleanly; unknown
@@ -373,6 +383,20 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
             // (b) pointed reconnects at the IPv4.
             if (serverIP != 0 && !m_curServer->ipAddress().isIPv6())
                 m_curServer->setIpAddress(Address::fromNetworkOrder(serverIP));
+
+            // eNode Meta API: contract v1 over http(s) only
+            const QUrl apiUrl(metaApiUrl);
+            const bool apiOk = metaApiVersion == 1 && apiUrl.isValid() && !apiUrl.host().isEmpty()
+                && (apiUrl.scheme() == u"https" || apiUrl.scheme() == u"http");
+            if (apiOk) {
+                m_curServer->setMetaApi(metaApiUrl, metaApiPin);
+                logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: Meta API %1%2")
+                                     .arg(metaApiUrl, metaApiPin.isEmpty() ? QString()
+                                                                           : QStringLiteral(" (pinned)")));
+            } else if (!metaApiUrl.isEmpty()) {
+                logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: ignoring Meta API '%1' (version %2)")
+                                     .arg(metaApiUrl).arg(metaApiVersion));
+            }
         }
 
         logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: name='%1' (%2:%3) tags=%4")

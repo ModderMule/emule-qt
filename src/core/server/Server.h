@@ -121,6 +121,17 @@ public:
     [[nodiscard]] bool isStaticMember() const           { return m_staticMember; }
     void setStaticMember(bool s)                        { m_staticMember = s; }
 
+    // -- eNode Meta API (OP_SERVERIDENT, runtime only, not in server.met) --
+
+    [[nodiscard]] const QString& metaApiUrl() const     { return m_metaApiUrl; }
+    [[nodiscard]] const QString& metaApiPin() const     { return m_metaApiPin; }
+    [[nodiscard]] bool hasMetaApi() const               { return !m_metaApiUrl.isEmpty(); }
+    void setMetaApi(const QString& url, const QString& pin)
+    {
+        m_metaApiUrl = url;
+        m_metaApiPin = pin;
+    }
+
     // -- Stats ------------------------------------------------------------
 
     [[nodiscard]] uint32 files() const          { return m_files; }
@@ -300,6 +311,10 @@ private:
 
     // Aux
     QString m_auxPortsList;
+
+    // eNode Meta API
+    QString m_metaApiUrl;
+    QString m_metaApiPin;
 };
 
 } // namespace eMule

@@ -985,6 +985,7 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     srvCaps |= SRVCAP_ZLIB;
     if (sendIPv6Tag)
         srvCaps |= SRVCAP_IPV6;   // "I speak the IPv6 server extension"
+    srvCaps |= SRVCAP_META_SEARCH;   // eNode: we can act on torrent/Usenet rows
     Tag tagFlags(static_cast<uint8>(CT_SERVER_FLAGS), srvCaps);
     tagFlags.writeTagToFile(data);
 
@@ -1140,6 +1141,9 @@ void ServerConnect::onServerIdent(ServerSocket* socket, const uint8* serverHash,
     if (!name.isEmpty())
         entry->setName(name);
     entry->setDescription(description);
+    // the socket parsed ST_META_API into its own copy of the server
+    if (const Server* cur = socket->currentServer(); cur && cur != entry && cur->hasMetaApi())
+        entry->setMetaApi(cur->metaApiUrl(), cur->metaApiPin());
     // A hash of "****" (0x2A2A2A2A) marks an eFarm server. MFC: ServerSocket.cpp:463-470.
     if (serverHash != nullptr
         && serverHash[0] == 0x2A && serverHash[1] == 0x2A

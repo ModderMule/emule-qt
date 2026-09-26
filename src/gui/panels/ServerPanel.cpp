@@ -2,6 +2,7 @@
 #include "panels/ServerPanel.h"
 
 #include "app/IpcClient.h"
+#include "utils/MetaResultActions.h"
 #include "core/app/AppConfig.h"
 #include "controls/AbstractListView.h"
 #include "controls/LogWidget.h"
@@ -565,6 +566,20 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
     });
 
     m_serverMenu->addSeparator();
+
+    // -- eNode Account... (servers with a Meta API) ----------------------------
+    auto* accountAction = m_serverMenu->addAction(tr("eNode Account..."));
+    accountAction->setIcon(ico("Server.ico", QStyle::SP_DialogApplyButton));
+    accountAction->setEnabled(hasSelection && row->hasMetaApi && !row->addrPort.isEmpty());
+    if (accountAction->isEnabled()) {
+        const QString addrPort = row->addrPort;
+        const QString name = row->name;
+        connect(accountAction, &QAction::triggered, this, [this, addrPort, name] {
+            if (!m_metaActions)
+                m_metaActions = new MetaResultActions(m_ipc, this);
+            m_metaActions->manageAccount(addrPort, name);
+        });
+    }
 
     // -- Find... --------------------------------------------------------------
     auto* findAction = m_serverMenu->addAction(tr("Find..."));

@@ -6,6 +6,7 @@
 /// Represents a single search result from ED2K or Kademlia, with source
 /// tracking, spam scoring, and parent/child hierarchy for duplicate grouping.
 
+#include "enodemeta/MetaHash.h"
 #include "files/AbstractFile.h"
 #include "search/SearchParams.h"
 #include "utils/Types.h"
@@ -55,6 +56,28 @@ public:
         {
             return a.ip == b.ip && a.port == b.port;
         }
+    };
+
+    /// eNode meta row (torrent/Usenet release inside an eD2K answer).
+    struct MetaInfo {
+        enodemeta::Kind kind = enodemeta::Kind::Unspecified;  ///< from the hash, not the name
+        uint8  hashFlags = 0;       ///< enodemeta::HashFlag bits
+        uint32 fileIndex = enodemeta::kFileIndexWholeSet32;
+        uint64 totalSize = 0;
+        uint32 seeders = 0;
+        uint32 peers = 0;
+        uint32 ageDays = 0;
+        uint32 flags = 0;           ///< META_FLAG_* (FT_META_FLAGS)
+        QString catalogId;          ///< FT_META_ID, echoed on GetMetaFile
+        QString filePath;
+        QString indexer;
+        QString magnet;
+
+        [[nodiscard]] bool isTorrent() const
+        {
+            return kind == enodemeta::Kind::BtV1 || kind == enodemeta::Kind::BtV2;
+        }
+        [[nodiscard]] bool isNzb() const { return kind == enodemeta::Kind::Nzb; }
     };
 
     /// Whether this file is known locally.
@@ -132,6 +155,15 @@ public:
     void setSearchID(uint32 id) { m_searchID = id; }
     [[nodiscard]] bool isKadResult() const { return m_kadResult; }
 
+    // --- eNode meta rows ---
+
+    /// Hash parsed as an eNode meta hash (and its tags agreed).
+    [[nodiscard]] bool isMetaResult() const { return m_meta.kind != enodemeta::Kind::Unspecified; }
+    [[nodiscard]] const MetaInfo& meta() const { return m_meta; }
+    /// Meta row whose tags contradict its hash, or of an unknown scheme version —
+    /// the search list drops these (enodemeta plan §8.1).
+    [[nodiscard]] bool isInvalidMetaResult() const { return m_metaInvalid; }
+
     // --- GUI parent/child hierarchy ---
 
     [[nodiscard]] SearchFile* listParent() const { return m_listParent; }
@@ -157,6 +189,10 @@ private:
     /// Convert old-style string-named ED2K tags to numeric-named equivalents.
     static void convertED2KTag(Tag& tag);
 
+    /// Classify by hash, cross-check the FT_META_* tags, strip the name prefix.
+    void resolveMeta(bool hadKindTag, uint8 tagKind, bool hadVersionTag, uint8 tagVersion,
+                     bool hadIndexTag);
+
     // Data members
     std::list<SClient>   m_clients;
     std::list<SServer>   m_servers;
@@ -174,6 +210,8 @@ private:
     KnownType m_knownType = KnownType::NotDetermined;
     bool m_kadResult = false;
     bool m_listExpanded = false;
+    MetaInfo m_meta;
+    bool m_metaInvalid = false;
 };
 
 } // namespace eMule

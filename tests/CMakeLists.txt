@@ -258,6 +258,9 @@ emule_add_test(tst_SearchExpr    FOLDER "Search")
 emule_add_test(tst_SearchParams  FOLDER "Search")
 emule_add_test(tst_SearchFile    FOLDER "Search")
 emule_add_test(tst_SearchList    FOLDER "Search")
+emule_add_test(tst_EnodeMeta     FOLDER "Search")
+target_compile_definitions(tst_EnodeMeta PRIVATE
+    ENODEMETA_TESTDATA="${CMAKE_SOURCE_DIR}/external/enodemeta/testdata")
 emule_add_test(tst_SearchExprParser FOLDER "Search")
 emule_add_test(tst_GlobalSearchScheduler FOLDER "Search")
 
@@ -483,6 +486,23 @@ target_include_directories(tst_ListSorting PRIVATE
     "${CMAKE_SOURCE_DIR}/src/core"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_ListSorting PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
+# eNode torrent/Usenet rows in the result list, and the Meta API account dialog.
+emule_add_test(tst_MetaSearchGui FOLDER "Gui"
+    SOURCES tst_MetaSearchGui.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/SearchResultsModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MetaAccountDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/MenuUtils.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
+target_include_directories(tst_MetaSearchGui PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_SOURCE_DIR}/src/core"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_MetaSearchGui PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
 # The add/edit category dialog. Constructed directly with a DownloadCategory, so

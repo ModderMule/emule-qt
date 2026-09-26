@@ -4,7 +4,7 @@ TEMPLATE = lib
 CONFIG  += staticlib c++2b
 TARGET   = emulecore
 
-QT += core network multimedia httpserver concurrent
+QT += core network multimedia httpserver concurrent protobuf
 QT -= gui
 
 DEFINES += QT_NO_CAST_FROM_ASCII
@@ -156,6 +156,11 @@ SOURCES += \
     search/SearchExpr.cpp \
     search/SearchExprParser.cpp \
     search/SearchFile.cpp \
+    enodemeta/GrpcWeb.cpp \
+    enodemeta/MetaAccountStore.cpp \
+    enodemeta/MetaApiClient.cpp \
+    enodemeta/MetaHash.cpp \
+    enodemeta/MetaIdentity.cpp \
     search/SearchList.cpp \
     search/SearchParams.cpp \
     server/Server.cpp \
@@ -290,6 +295,11 @@ HEADERS += \
     search/SearchExpr.h \
     search/SearchExprParser.h \
     search/SearchFile.h \
+    enodemeta/GrpcWeb.h \
+    enodemeta/MetaAccountStore.h \
+    enodemeta/MetaApiClient.h \
+    enodemeta/MetaHash.h \
+    enodemeta/MetaIdentity.h \
     search/SearchList.h \
     search/SearchParams.h \
     server/Server.h \
@@ -333,3 +343,32 @@ HEADERS += \
     webserver/WebServer.h \
     webserver/WebSessionManager.h \
     webserver/WebTemplateEngine.h
+
+# eNode Meta API messages, generated from the shared enodemeta .proto (see
+# src/core/CMakeLists.txt). The protos import "enode/meta/v1/x.proto", so they are
+# flattened into the build dir with that prefix dropped, then run through protoc
+# with Qt's qtprotobufgen plugin. Needs protoc on PATH and the Qt Protobuf module.
+ENODEMETA_PROTO_SRC = $$PWD/../../external/enodemeta/proto/enode/meta/v1
+ENODEMETA_PROTO_OUT = $$OUT_PWD/enodemeta_proto
+QTPROTOBUFGEN = $$[QT_HOST_LIBEXECS]/qtprotobufgen
+win32: QTPROTOBUFGEN = $${QTPROTOBUFGEN}.exe
+mkpath($$ENODEMETA_PROTO_OUT)
+for(proto, $$list(meta api)) {
+    PROTO_TEXT = $$cat($$ENODEMETA_PROTO_SRC/$${proto}.proto, blob)
+    PROTO_TEXT = $$replace(PROTO_TEXT, "enode/meta/v1/", "")
+    write_file($$ENODEMETA_PROTO_OUT/$${proto}.proto, PROTO_TEXT)
+}
+!system(protoc --plugin=protoc-gen-qtprotobufgen=$$shell_quote($$QTPROTOBUFGEN) \
+        --qtprotobufgen_out=$$shell_quote($$ENODEMETA_PROTO_OUT) \
+        -I$$shell_quote($$ENODEMETA_PROTO_OUT) meta.proto api.proto): \
+    error("protoc failed generating the eNode Meta API messages")
+# ToDo: runs at qmake time only — re-run qmake after the enodemeta submodule moves
+INCLUDEPATH += $$ENODEMETA_PROTO_OUT
+SOURCES += \
+    $$ENODEMETA_PROTO_OUT/meta.qpb.cpp \
+    $$ENODEMETA_PROTO_OUT/api.qpb.cpp \
+    $$ENODEMETA_PROTO_OUT/meta_qtprotoreg.cpp \
+    $$ENODEMETA_PROTO_OUT/api_qtprotoreg.cpp
+HEADERS += \
+    $$ENODEMETA_PROTO_OUT/meta.qpb.h \
+    $$ENODEMETA_PROTO_OUT/api.qpb.h

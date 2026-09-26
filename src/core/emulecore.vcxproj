@@ -41,10 +41,10 @@
   <Import Project="$(QtMsBuild)\qt_defaults.props" Condition="Exists('$(QtMsBuild)\qt_defaults.props')" />
   <Import Project="..\..\QtVersion.props" />
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <QtModules>core;gui;network;concurrent;multimedia;websockets;httpserver</QtModules>
+    <QtModules>core;gui;network;concurrent;multimedia;websockets;httpserver;protobuf</QtModules>
   </PropertyGroup>
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <QtModules>core;gui;network;concurrent;multimedia;websockets;httpserver</QtModules>
+    <QtModules>core;gui;network;concurrent;multimedia;websockets;httpserver;protobuf</QtModules>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') OR !Exists('$(QtMsBuild)\Qt.props')">
     <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
@@ -71,7 +71,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;.;..\vcpkg_installed\x64-windows\include;..\vcpkg_installed\x64-windows\include\miniupnpc;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;GeneratedFiles\enodemeta_proto;.;..\vcpkg_installed\x64-windows\include;..\vcpkg_installed\x64-windows\include\miniupnpc;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
       <AssemblerListingLocation>release\</AssemblerListingLocation>
       <BrowseInformation>false</BrowseInformation>
@@ -118,7 +118,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;.;..\vcpkg_installed\x64-windows\include;..\vcpkg_installed\x64-windows\include\miniupnpc;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;GeneratedFiles\enodemeta_proto;.;..\vcpkg_installed\x64-windows\include;..\vcpkg_installed\x64-windows\include\miniupnpc;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
       <AssemblerListingLocation>debug\</AssemblerListingLocation>
       <BrowseInformation>false</BrowseInformation>
@@ -275,6 +275,27 @@
     <ClCompile Include="search\SearchFile.cpp" />
     <ClCompile Include="search\SearchList.cpp" />
     <ClCompile Include="search\SearchParams.cpp" />
+    <ClCompile Include="enodemeta\GrpcWeb.cpp" />
+    <ClCompile Include="enodemeta\MetaAccountStore.cpp" />
+    <ClCompile Include="enodemeta\MetaApiClient.cpp" />
+    <ClCompile Include="enodemeta\MetaHash.cpp" />
+    <ClCompile Include="enodemeta\MetaIdentity.cpp" />
+    <ClCompile Include="GeneratedFiles\enodemeta_proto\meta.qpb.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ForcedIncludeFiles></ForcedIncludeFiles>
+    </ClCompile>
+    <ClCompile Include="GeneratedFiles\enodemeta_proto\api.qpb.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ForcedIncludeFiles></ForcedIncludeFiles>
+    </ClCompile>
+    <ClCompile Include="GeneratedFiles\enodemeta_proto\meta_qtprotoreg.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ForcedIncludeFiles></ForcedIncludeFiles>
+    </ClCompile>
+    <ClCompile Include="GeneratedFiles\enodemeta_proto\api_qtprotoreg.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ForcedIncludeFiles></ForcedIncludeFiles>
+    </ClCompile>
     <ClCompile Include="server\Server.cpp" />
     <ClCompile Include="server\ServerConnect.cpp" />
     <ClCompile Include="server\ServerList.cpp" />
@@ -437,6 +458,13 @@
     <ClInclude Include="search\SearchFile.h" />
     <QtMoc Include="search\SearchList.h" />
     <ClInclude Include="search\SearchParams.h" />
+    <ClInclude Include="enodemeta\GrpcWeb.h" />
+    <ClInclude Include="enodemeta\MetaAccountStore.h" />
+    <QtMoc Include="enodemeta\MetaApiClient.h" />
+    <ClInclude Include="enodemeta\MetaHash.h" />
+    <ClInclude Include="enodemeta\MetaIdentity.h" />
+    <QtMoc Include="GeneratedFiles\enodemeta_proto\meta.qpb.h" />
+    <QtMoc Include="GeneratedFiles\enodemeta_proto\api.qpb.h" />
     <ClInclude Include="server\Server.h" />
     <ClInclude Include="server\ServerMsgType.h" />
     <QtMoc Include="server\ServerConnect.h" />
@@ -474,6 +502,15 @@
     <ClInclude Include="webserver\WebTemplateEngine.h" />
     <ClInclude Include="utils\WinCompat.h" />
   </ItemGroup>
+  <!-- eNode Meta API messages from the shared enodemeta .proto (CMake: src/core/CMakeLists.txt).
+       The protos import "enode/meta/v1/x.proto"; flatten them and drop that prefix, then run
+       protoc with Qt's qtprotobufgen plugin (Qt ships host tools in bin on Windows).
+       Needs protoc on PATH and the Qt Protobuf module (qtgrpc). -->
+  <Target Name="GenerateEnodeMetaProto" BeforeTargets="QtMoc;ClCompile" Inputs="..\..\external\enodemeta\proto\enode\meta\v1\meta.proto;..\..\external\enodemeta\proto\enode\meta\v1\api.proto" Outputs="GeneratedFiles\enodemeta_proto\meta.qpb.cpp;GeneratedFiles\enodemeta_proto\api.qpb.cpp">
+    <MakeDir Directories="GeneratedFiles\enodemeta_proto" />
+    <Exec Command="powershell -NoProfile -Command &quot;foreach ($p in 'meta','api') { $t = [IO.File]::ReadAllText('..\..\external\enodemeta\proto\enode\meta\v1\' + $p + '.proto').Replace('enode/meta/v1/', ''); [IO.File]::WriteAllText('GeneratedFiles\enodemeta_proto\' + $p + '.proto', $t) }&quot;" />
+    <Exec Command="protoc --plugin=protoc-gen-qtprotobufgen=&quot;$(QTDIR)\bin\qtprotobufgen.exe&quot; --qtprotobufgen_out=GeneratedFiles\enodemeta_proto -IGeneratedFiles\enodemeta_proto meta.proto api.proto" />
+  </Target>
   <ItemGroup>
     <CustomBuild Include="debug\moc_predefs.h.cbt">
       <FileType>Document</FileType>

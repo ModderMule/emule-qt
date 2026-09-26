@@ -167,6 +167,8 @@ namespace eMule::Ipc {
         {QStringLiteral("lowIDUsers"),  static_cast<qint64>(s.lowIDUsers())},
         {QStringLiteral("obfuscation"), s.supportsObfuscationTCP()},
         {QStringLiteral("serverId"),    static_cast<qint64>(s.serverId())},
+        {QStringLiteral("hasMetaApi"),  s.hasMetaApi()},
+        {QStringLiteral("addrPort"),    s.addressWithPort()},   // key of the Meta API requests
     };
 }
 
@@ -210,6 +212,17 @@ namespace eMule::Ipc {
     m.insert(QStringLiteral("length"),  static_cast<qint64>(f.getIntTagValue(FT_MEDIA_LENGTH)));
     m.insert(QStringLiteral("bitrate"), static_cast<qint64>(f.getIntTagValue(FT_MEDIA_BITRATE)));
     m.insert(QStringLiteral("codec"),   f.getStrTagValue(FT_MEDIA_CODEC));
+    // eNode meta row: the network comes from the hash (0 = plain eD2K)
+    const auto& meta = f.meta();
+    m.insert(QStringLiteral("metaKind"), static_cast<int>(meta.kind));
+    if (f.isMetaResult()) {
+        m.insert(QStringLiteral("magnet"),      meta.magnet);
+        m.insert(QStringLiteral("metaSeeders"), static_cast<qint64>(meta.seeders));
+        m.insert(QStringLiteral("metaPeers"),   static_cast<qint64>(meta.peers));
+        m.insert(QStringLiteral("metaAge"),     static_cast<qint64>(meta.ageDays));
+        m.insert(QStringLiteral("metaIndexer"), meta.indexer);
+        m.insert(QStringLiteral("metaFlags"),   static_cast<qint64>(meta.flags));
+    }
     return m;
 }
 

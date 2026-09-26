@@ -976,7 +976,8 @@ std::unique_ptr<Packet> buildGlobalSearchPacket(const Server& server,
         SafeMemFile data;
         data.writeUInt32(1);   // tag count
         Tag(static_cast<uint8>(CT_SERVER_UDPSEARCH_FLAGS),
-            static_cast<uint32>(SRVCAP_UDP_NEWTAGS_LARGEFILES)).writeNewEd2kTag(data);
+            static_cast<uint32>(SRVCAP_UDP_NEWTAGS_LARGEFILES | SRVCAP_UDP_META_SEARCH))
+            .writeNewEd2kTag(data);
         const QByteArray prefix = data.buffer();
 
         auto packet = std::make_unique<Packet>(

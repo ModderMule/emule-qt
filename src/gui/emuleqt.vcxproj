@@ -41,10 +41,10 @@
   <Import Project="$(QtMsBuild)\qt_defaults.props" Condition="Exists('$(QtMsBuild)\qt_defaults.props')" />
   <Import Project="..\..\QtVersion.props" />
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <QtModules>core;gui;network;widgets;multimedia</QtModules>
+    <QtModules>core;gui;network;widgets;multimedia;protobuf</QtModules>
   </PropertyGroup>
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <QtModules>core;gui;network;widgets;multimedia</QtModules>
+    <QtModules>core;gui;network;widgets;multimedia;protobuf</QtModules>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') OR !Exists('$(QtMsBuild)\Qt.props')">
     <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
@@ -214,6 +214,7 @@
     <ClCompile Include="utils\FileAssociation.cpp" />
     <ClCompile Include="utils\FileTypeIcons.cpp" />
     <ClCompile Include="utils\NzbAdd.cpp" />
+    <ClCompile Include="utils\MetaResultActions.cpp" />
     <ClCompile Include="utils\NzbDrop.cpp" />
     <ClCompile Include="utils\PriorityText.cpp" />
     <ClCompile Include="utils\Smileys.cpp" />
@@ -260,6 +261,7 @@
     <ClCompile Include="dialogs\AddNzbFilesDialog.cpp" />
     <ClCompile Include="dialogs\NzbFileChooserDialog.cpp" />
     <ClCompile Include="dialogs\AddNzbUrlDialog.cpp" />
+    <ClCompile Include="dialogs\MetaAccountDialog.cpp" />
     <ClCompile Include="dialogs\PasteLinksDialog.cpp" />
     <ClCompile Include="dialogs\PasteTextDialog.cpp" />
     <ClCompile Include="dialogs\ToolbarCustomizeDialog.cpp" />
@@ -308,6 +310,7 @@
     <ClInclude Include="utils\FileTypeIcons.h" />
     <ClInclude Include="controls\KnownTypeStyle.h" />
     <ClInclude Include="utils\NzbAdd.h" />
+    <QtMoc Include="utils\MetaResultActions.h" />
     <ClInclude Include="utils\NzbDrop.h" />
     <ClInclude Include="utils\PriorityText.h" />
     <ClInclude Include="utils\Smileys.h" />
@@ -378,6 +381,7 @@
     <QtMoc Include="dialogs\AddNzbFilesDialog.h" />
     <QtMoc Include="dialogs\NzbFileChooserDialog.h" />
     <QtMoc Include="dialogs\AddNzbUrlDialog.h" />
+    <QtMoc Include="dialogs\MetaAccountDialog.h" />
     <QtMoc Include="dialogs\PasteLinksDialog.h" />
     <QtMoc Include="dialogs\PasteTextDialog.h" />
     <QtMoc Include="dialogs\ToolbarCustomizeDialog.h" />
@@ -619,6 +623,7 @@
     <None Include="..\..\resources\icons\Up1down1.ico" />
     <None Include="..\..\resources\icons\Upload.ico" />
     <None Include="..\..\resources\icons\Usenet.ico" />
+    <None Include="..\..\resources\icons\Torrent.ico" />
     <None Include="..\..\resources\icons\User.ico" />
     <None Include="..\..\resources\icons\UserAdd.ico" />
     <None Include="..\..\resources\icons\UserDelete.ico" />

@@ -41,10 +41,10 @@
   <Import Project="$(QtMsBuild)\qt_defaults.props" Condition="Exists('$(QtMsBuild)\qt_defaults.props')" />
   <Import Project="..\..\QtVersion.props" />
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <QtModules>core;gui;network;multimedia;websockets;httpserver;concurrent</QtModules>
+    <QtModules>core;gui;network;multimedia;websockets;httpserver;concurrent;protobuf</QtModules>
   </PropertyGroup>
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <QtModules>core;gui;network;multimedia;websockets;httpserver;concurrent</QtModules>
+    <QtModules>core;gui;network;multimedia;websockets;httpserver;concurrent;protobuf</QtModules>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') OR !Exists('$(QtMsBuild)\Qt.props')">
     <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
@@ -72,7 +72,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;.;..;..\core;..\ipc;..\usenet;..\vcpkg_installed\x64-windows\include;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;.;..;..\core;..\core\GeneratedFiles\enodemeta_proto;..\ipc;..\usenet;..\vcpkg_installed\x64-windows\include;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
       <AssemblerListingLocation>release\</AssemblerListingLocation>
       <BrowseInformation>false</BrowseInformation>
@@ -127,7 +127,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;.;..;..\core;..\ipc;..\usenet;..\vcpkg_installed\x64-windows\include;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;.;..;..\core;..\core\GeneratedFiles\enodemeta_proto;..\ipc;..\usenet;..\vcpkg_installed\x64-windows\include;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
       <AssemblerListingLocation>debug\</AssemblerListingLocation>
       <BrowseInformation>false</BrowseInformation>
@@ -182,8 +182,10 @@
     <ClCompile Include="DaemonApp.cpp" />
     <ClCompile Include="DaemonUsenetWebBackend.cpp" />
     <ClCompile Include="IpcClientHandler.cpp" />
+    <ClCompile Include="IpcClientHandlerMeta.cpp" />
     <ClCompile Include="IpcServer.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="MetaSearchService.cpp" />
     <ClCompile Include="UsenetBridge.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -193,6 +195,7 @@
     <QtMoc Include="DaemonApp.h" />
     <QtMoc Include="IpcClientHandler.h" />
     <QtMoc Include="IpcServer.h" />
+    <QtMoc Include="MetaSearchService.h" />
     <ClInclude Include="DaemonUsenetWebBackend.h" />
     <ClInclude Include="UsenetBridge.h" />
   </ItemGroup>

@@ -26,13 +26,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          submodules: true   # external/enodemeta: .proto + test vectors
 
       # - name: Install Qt 6
       #   uses: jurplel/install-qt-action@v4
       #   with:
       #     version: "6.10.3"
       #     arch: win64_msvc2022_64
-      #     modules: qthttpserver qtwebsockets qtmultimedia
+      #     modules: qthttpserver qtwebsockets qtmultimedia qtgrpc
 
       - name: Install Qt 6
         shell: pwsh
@@ -44,12 +46,18 @@ jobs:
           aqt list-qt windows desktop --modules 6.10.3 win64_msvc2022_64
 
           Write-Host "=== Installing Qt base + modules ==="
-          aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 -m qthttpserver qtwebsockets qtmultimedia -O $qtDir --base https://ftp.fau.de/qtproject/
+          aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 -m qthttpserver qtwebsockets qtmultimedia qtgrpc -O $qtDir --base https://ftp.fau.de/qtproject/
 
           $root = "$qtDir\6.10.3\msvc2022_64"
           echo "QT_ROOT_DIR=$root" >> $env:GITHUB_ENV
           echo "CMAKE_PREFIX_PATH=$root" >> $env:GITHUB_ENV
           echo "$root\bin" >> $env:GITHUB_PATH
+
+          # qtgrpc ships QtProtobuf + qtprotobufgen (enodemeta messages)
+          if (-not (Test-Path "$root\lib\cmake\Qt6ProtobufTools")) {
+            Write-Host "ERROR: Qt6ProtobufTools NOT found" -ForegroundColor Red
+            exit 1
+          }
 
           Write-Host "=== Verifying Qt6WebSockets ==="
           if (Test-Path "$root\lib\cmake\Qt6WebSockets") {
@@ -127,6 +135,9 @@ jobs:
         with:
           path: ~\AppData\Local\vcpkg\archives
           key: vcpkg-${{ env.VCPKG_TARGET_TRIPLET }}-${{ hashFiles('src/vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Install protoc
+        run: choco install protoc -y --no-progress   # for qt_add_protobuf (enodemeta)
 
       # let Ninja use the MSVC compiler (also puts dumpbin on PATH for the
       # bundle verification step below)

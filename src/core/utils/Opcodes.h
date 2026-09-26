@@ -388,6 +388,10 @@
 // Stock eMule drops unknown server.met tags (srchybrid/Server.cpp:243) and then rejects
 // the ip==0 entry in AddServer, so it ignores IPv6 servers rather than mis-dialing them.
 #define ST_IPV6                     0x99
+// eNode Meta API discovery, OP_SERVERIDENT only (0x9D is ST_NAT_PORT).
+#define ST_META_API_FP              0x9C    // string "sha256/<base64>" SPKI pin
+#define ST_META_API                 0x9E    // string: Meta API base URL
+#define ST_META_API_VER             0x9F    // uint32: contract version (1)
 
 // ---------------------------------------------------------------------------
 // File tags
@@ -461,6 +465,29 @@
 // eMuleQt
 // collision-free for known.met / .part.met under the FT_ prefix.
 #define FT_KADNOTECACHE             0x90  // cached Kad notes-search results (filenames + comments, keyed by publisher)
+
+// eNode meta search rows (torrent/Usenet in eD2K results) — enodemeta/tags/tags.go.
+// 0x60-0x6F is unused under FT_ in stock, MorphXT and eMuleAI.
+#define FT_META_KIND                0x60  // uint8: 1=bt-v1/hybrid 2=bt-v2 3=nzb
+#define FT_META_VERSION             0x61  // uint8: meta hash scheme version
+#define FT_META_FILEINDEX           0x62  // uint32: full-width file index, 0xFFFFFFFF = whole release
+#define FT_META_FILEPATH            0x63  // string: path in torrent / NZB subject
+#define FT_META_TOTALSIZE           0x64  // uint64: whole release size
+#define FT_META_ID                  0x65  // string: catalog_id, echoed on GetMetaFile
+// 0x66 permanently unused (was a per-row URL)
+#define FT_META_SEEDERS             0x67  // uint32
+#define FT_META_PEERS               0x68  // uint32
+#define FT_META_AGE                 0x69  // uint32: days
+#define FT_META_INDEXER             0x6A  // string
+#define FT_META_FLAGS               0x6B  // uint32: META_FLAG_* bitfield
+#define FT_META_MAGNET              0x6C  // string: magnet URI (torrents)
+
+// FT_META_FLAGS bits
+#define META_FLAG_PASSWORD_PROTECTED 0x01
+#define META_FLAG_NEEDS_PAR2         0x02
+#define META_FLAG_PRIVATE_TRACKER    0x04
+#define META_FLAG_MAGNET_ONLY        0x08  // no fetchable metafile, the magnet is all there is
+#define META_FLAG_V2_AVAILABLE       0x10
 
 // Media tags
 #define FT_MEDIA_ARTIST             0xD0
@@ -705,9 +732,11 @@
 #define SRVCAP_REQUESTCRYPT         0x0400
 #define SRVCAP_REQUIRECRYPT         0x0800
 #define SRVCAP_IPV6                 0x1000    // login bit: "I speak the IPv6 server extension"
+#define SRVCAP_META_SEARCH          0x2000    // login bit: can act on eNode meta (torrent/Usenet) rows
 
 // Values for CT_SERVER_UDPSEARCH_FLAGS
 #define SRVCAP_UDP_NEWTAGS_LARGEFILES   0x01
+#define SRVCAP_UDP_META_SEARCH          0x02    // wants eNode meta rows in UDP answers
 
 // ---------------------------------------------------------------------------
 // eMule tag names (ET_*)

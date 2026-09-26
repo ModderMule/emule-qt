@@ -74,6 +74,31 @@ file(GLOB_RECURSE APP_SOURCES     CONFIGURE_DEPENDS "app/*.cpp"     "app/*.h")
 # Module 11: Archive support (ZIP/RAR/7z via libarchive)
 file(GLOB_RECURSE ARCHIVE_SOURCES CONFIGURE_DEPENDS "archive/*.cpp" "archive/*.h")
 
+# eNode meta search: meta hash, metafile identity, Meta API client
+file(GLOB_RECURSE ENODEMETA_SOURCES CONFIGURE_DEPENDS "enodemeta/*.cpp" "enodemeta/*.h")
+
+# -- eNode Meta API messages, generated from the shared enodemeta .proto ------
+# The protos import each other as "enode/meta/v1/x.proto", which qt_add_protobuf
+# can't map (it passes each file's own dir as -I first) — so copy them flat into
+# the build tree with the import prefix dropped.
+set(ENODEMETA_PROTO_SRC "${CMAKE_SOURCE_DIR}/external/enodemeta/proto/enode/meta/v1")
+set(ENODEMETA_PROTO_OUT "${CMAKE_CURRENT_BINARY_DIR}/enodemeta_proto")
+if(NOT EXISTS "${ENODEMETA_PROTO_SRC}/api.proto")
+    message(FATAL_ERROR "external/enodemeta is missing — run: git submodule update --init")
+endif()
+foreach(_proto meta api)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ENODEMETA_PROTO_SRC}/${_proto}.proto")
+    file(READ "${ENODEMETA_PROTO_SRC}/${_proto}.proto" _content)
+    string(REPLACE "\"enode/meta/v1/" "\"" _content "${_content}")
+    file(CONFIGURE OUTPUT "${ENODEMETA_PROTO_OUT}/${_proto}.proto" CONTENT "${_content}" @ONLY)
+endforeach()
+
+add_library(emulemetaproto STATIC)
+qt_add_protobuf(emulemetaproto
+    PROTO_FILES "${ENODEMETA_PROTO_OUT}/meta.proto" "${ENODEMETA_PROTO_OUT}/api.proto"
+)
+set_target_properties(emulemetaproto PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 # -- Library target ---------------------------------------------------------
 
 add_library(emulecore STATIC
@@ -97,6 +122,7 @@ add_library(emulecore STATIC
     ${WEB_SOURCES}
     ${MEDIA_SOURCES}
     ${ARCHIVE_SOURCES}
+    ${ENODEMETA_SOURCES}
     ${APP_SOURCES}
 )
 
@@ -116,6 +142,8 @@ target_link_libraries(emulecore
         Qt6::Multimedia
         Qt6::HttpServer
         eMule::CommonSettings
+        emulemetaproto
+        Qt6::Protobuf
     PUBLIC
         ZLIB::ZLIB
         OpenSSL::Crypto
@@ -173,5 +201,5 @@ source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES
     ${FILES_SOURCES}   ${XFER_SOURCES}    ${SEARCH_SOURCES} ${IPFILT_SOURCES}
     ${STATS_SOURCES}   ${PREFS_SOURCES}   ${CHAT_SOURCES}   ${FRIEND_SOURCES}
     ${WEB_SOURCES}     ${MEDIA_SOURCES}   ${ARCHIVE_SOURCES}
-    ${APP_SOURCES}
+    ${ENODEMETA_SOURCES} ${APP_SOURCES}
 )

@@ -4,6 +4,9 @@
 
 #include "search/SearchFile.h"
 #include "protocol/Tag.h"
+#include "utils/Log.h"
+
+#include <QRegularExpression>
 
 
 namespace eMule {
@@ -49,6 +52,11 @@ SearchFile::SearchFile(FileDataIO& data, bool optUTF8,
     }
 
     // Read tags
+    bool hadMetaKind = false;
+    bool hadMetaVersion = false;
+    bool hadMetaIndex = false;
+    uint8 metaKind = 0;
+    uint8 metaVersion = 0;
     const uint32 tagCount = data.readUInt32();
     for (uint32 i = 0; i < tagCount; ++i) {
         Tag tag(data, optUTF8);
@@ -114,6 +122,74 @@ SearchFile::SearchFile(FileDataIO& data, bool optUTF8,
                 m_directory = tag.strValue();
             break;
 
+        // eNode meta rows: read, then keep the tag so storeToFile round-trips it
+        case FT_META_KIND:
+            if (tag.isInt()) {
+                hadMetaKind = true;
+                metaKind = static_cast<uint8>(tag.intValue());
+            }
+            addTagUnique(std::move(tag));
+            break;
+        case FT_META_VERSION:
+            if (tag.isInt()) {
+                hadMetaVersion = true;
+                metaVersion = static_cast<uint8>(tag.intValue());
+            }
+            addTagUnique(std::move(tag));
+            break;
+        case FT_META_FILEINDEX:
+            if (tag.isInt()) {
+                hadMetaIndex = true;
+                m_meta.fileIndex = tag.intValue();
+            }
+            addTagUnique(std::move(tag));
+            break;
+        case FT_META_FILEPATH:
+            if (tag.isStr())
+                m_meta.filePath = tag.strValue();
+            addTagUnique(std::move(tag));
+            break;
+        case FT_META_TOTALSIZE:
+            if (tag.isInt64(true))
+                m_meta.totalSize = tag.int64Value();
+            addTagUnique(std::move(tag));
+            break;
+        case FT_META_ID:
+            if (tag.isStr())
+                m_meta.catalogId = tag.strValue();
+            addTagUnique(std::move(tag));
+            break;
+        case FT_META_SEEDERS:
+            if (tag.isInt())
+                m_meta.seeders = tag.intValue();
+            addTagUnique(std::move(tag));
+            break;
+        case FT_META_PEERS:
+            if (tag.isInt())
+                m_meta.peers = tag.intValue();
+            addTagUnique(std::move(tag));
+            break;
+        case FT_META_AGE:
+            if (tag.isInt())
+                m_meta.ageDays = tag.intValue();
+            addTagUnique(std::move(tag));
+            break;
+        case FT_META_INDEXER:
+            if (tag.isStr())
+                m_meta.indexer = tag.strValue();
+            addTagUnique(std::move(tag));
+            break;
+        case FT_META_FLAGS:
+            if (tag.isInt())
+                m_meta.flags = tag.intValue();
+            addTagUnique(std::move(tag));
+            break;
+        case FT_META_MAGNET:
+            if (tag.isStr())
+                m_meta.magnet = tag.strValue();
+            addTagUnique(std::move(tag));
+            break;
+
         case FT_MEDIA_ARTIST:
         case FT_MEDIA_ALBUM:
         case FT_MEDIA_TITLE:
@@ -140,6 +216,8 @@ SearchFile::SearchFile(FileDataIO& data, bool optUTF8,
         m_servers.push_back(srv);
     }
 
+    resolveMeta(hadMetaKind, metaKind, hadMetaVersion, metaVersion, hadMetaIndex);
+
     // Auto-detect file type from filename if not provided
     if (fileType().isEmpty() && !fileName().isEmpty())
         setFileType(getFileTypeByName(fileName()));
@@ -163,6 +241,8 @@ SearchFile::SearchFile(const SearchFile* other)
     , m_clientPort(other->m_clientPort)
     , m_knownType(other->m_knownType)
     , m_kadResult(other->m_kadResult)
+    , m_meta(other->m_meta)
+    , m_metaInvalid(other->m_metaInvalid)
 {
 }
 
@@ -353,6 +433,56 @@ void SearchFile::convertED2KTag(Tag& tag)
             tag = Tag(static_cast<uint8>(FT_MEDIA_LENGTH), tag.intValue());
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// eNode meta rows
+// ---------------------------------------------------------------------------
+
+void SearchFile::resolveMeta(bool hadKindTag, uint8 tagKind, bool hadVersionTag, uint8 tagVersion,
+                             bool hadIndexTag)
+{
+    const auto parsed = enodemeta::parse(fileHash());
+    if (!parsed) {
+        // tags claim a meta row the hash can't back: another scheme version, or garbage
+        if (hadKindTag) {
+            m_metaInvalid = true;
+            logServerVerbose(QStringLiteral("Search: dropping meta row '%1' (%2)")
+                                 .arg(fileName(), enodemeta::parseErrorText(parsed.error())));
+        }
+        m_meta = {};
+        return;
+    }
+
+    // The hash decides the network; tags only have to agree (plan §8.1). An
+    // unknown FT_META_VERSION is dropped silently — the forward-compat hinge.
+    const bool versionOk = !hadVersionTag || tagVersion == enodemeta::kVersion1;
+    const bool tagsAgree = !hadKindTag
+        || enodemeta::crossCheck(*parsed, tagKind, hadVersionTag ? tagVersion : parsed->version,
+                                 hadIndexTag ? m_meta.fileIndex : parsed->fileIndex);
+    if (!versionOk || !tagsAgree) {
+        m_metaInvalid = true;
+        logServerVerbose(QStringLiteral("Search: dropping meta row '%1' — tags disagree with its hash")
+                             .arg(fileName()));
+        m_meta = {};
+        return;
+    }
+
+    m_meta.kind = parsed->kind;
+    m_meta.hashFlags = parsed->flags;
+    if (!hadIndexTag)
+        m_meta.fileIndex = parsed->fileIndex == enodemeta::kFileIndexWholeSet
+            ? enodemeta::kFileIndexWholeSet32 : parsed->fileIndex;
+    if (m_meta.isNzb())
+        m_sourceCount = 0;   // a Usenet release has no peers; the server sends 0 anyway
+
+    // eNode prefixes the name for legacy clients ("[torrent] ", configurable as
+    // e.g. "[torrent example.org] "); we show an icon instead. Only a bracket
+    // naming the network is dropped — "[Group] Title" stays.
+    static const QRegularExpression kPrefix(QStringLiteral("^\\[(?:torrent|usenet)(?:\\s[^\\]]*)?\\]\\s*"),
+                                            QRegularExpression::CaseInsensitiveOption);
+    if (const auto m = kPrefix.match(fileName()); m.hasMatch() && m.capturedLength() < fileName().size())
+        setFileName(fileName().mid(m.capturedLength()), true);
 }
 
 } // namespace eMule

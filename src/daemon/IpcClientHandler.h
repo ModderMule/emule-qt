@@ -197,6 +197,13 @@ private:
     void handleSetUsenetPaused(const Ipc::IpcMessage& msg);
     void handleSetUsenetFilesSkipped(const Ipc::IpcMessage& msg);
     void handleInspectNzb(const Ipc::IpcMessage& msg);
+
+    // eNode meta search (750-754) — IpcClientHandlerMeta.cpp
+    void handleFetchMetaFile(const Ipc::IpcMessage& msg);
+    void handleDownloadMetaResult(const Ipc::IpcMessage& msg);
+    void handleGetMetaAuthStatus(const Ipc::IpcMessage& msg);
+    void handleMetaLogin(const Ipc::IpcMessage& msg);
+    void handleMetaLogout(const Ipc::IpcMessage& msg);
     void handleSetUsenetItemPassword(const Ipc::IpcMessage& msg);
     void handleListUsenetArchiveEntries(const Ipc::IpcMessage& msg);
     void handleSetDownloadCategory(const Ipc::IpcMessage& msg);

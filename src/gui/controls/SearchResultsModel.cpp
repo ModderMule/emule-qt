@@ -43,7 +43,7 @@ QColor availabilityShade(int64_t sources)
 /// MFC CSearchFile::IsComplete (SearchFile.cpp:382-396): -1 unknown, 1 complete, 0 not.
 int completeness(const SearchResultRow& r)
 {
-    if (r.isKad)
+    if (r.isKad || r.isMeta())   // eNode torrent/Usenet rows carry no eD2K completeness
         return -1;
     if (r.inDirectory && r.sourceCount == 1 && r.completeSourceCount == 0)
         return -1;   // a browsed file: nobody said how complete it is
@@ -55,7 +55,7 @@ QString completeSourcesText(const SearchResultRow& r)
 {
     int complete = completeness(r);
     int64_t completeSources = r.completeSourceCount;
-    if (complete < 0 && static_cast<uint64_t>(r.fileSize) <= PARTSIZE) {
+    if (complete < 0 && !r.isMeta() && static_cast<uint64_t>(r.fileSize) <= PARTSIZE) {
         complete = 1;   // a single part is complete wherever it is found
         if (r.inDirectory)
             completeSources = 1;
@@ -139,6 +139,15 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
         // No container mark and no own-comment overlay: these files are on other
         // people's disks, so we have neither their bytes nor a comment to publish.
         // MFC's search list registers the overlay image and then never draws it.
+        // eNode torrent/Usenet rows show their network (the toolbar icons) instead
+        if (r.isUsenet()) {
+            static const QIcon usenet(QStringLiteral(":/icons/Usenet.ico"));
+            return fileMarksIcon(usenet, QStringLiteral("net:usenet"), false, false, mark);
+        }
+        if (r.isTorrent()) {
+            static const QIcon torrent(QStringLiteral(":/icons/Torrent.ico"));
+            return fileMarksIcon(torrent, QStringLiteral("net:torrent"), false, false, mark);
+        }
         return fileMarksIcon(r.fileType, /*containerSuspect*/ false,
                              /*ownComment*/ false, mark);
     }

@@ -5,7 +5,7 @@ CONFIG  += console c++2b
 CONFIG  -= app_bundle
 TARGET   = emulecored
 
-QT += core network multimedia httpserver
+QT += core network multimedia httpserver protobuf
 QT -= gui
 
 INCLUDEPATH += \
@@ -68,8 +68,10 @@ SOURCES += \
     DaemonApp.cpp \
     DaemonUsenetWebBackend.cpp \
     IpcClientHandler.cpp \
+    IpcClientHandlerMeta.cpp \
     IpcServer.cpp \
     main.cpp \
+    MetaSearchService.cpp \
     UsenetBridge.cpp
 
 HEADERS += \
@@ -80,4 +82,8 @@ HEADERS += \
     DaemonUsenetWebBackend.h \
     IpcClientHandler.h \
     IpcServer.h \
+    MetaSearchService.h \
     UsenetBridge.h
+
+# generated eNode Meta API messages (core.pro)
+INCLUDEPATH += $$OUT_PWD/../core/enodemeta_proto

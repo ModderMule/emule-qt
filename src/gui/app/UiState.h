@@ -135,6 +135,14 @@ public:
     [[nodiscard]] const QString& skinProfilePath() const { return m_skinProfilePath; }
     void setSkinProfilePath(const QString& path) { m_skinProfilePath = path; }
 
+    /// Where the last .torrent/.nzb from a search result was saved (empty = Downloads).
+    [[nodiscard]] const QString& metaFileSaveDir() const { return m_metaFileSaveDir; }
+    void setMetaFileSaveDir(const QString& dir)
+    {
+        m_metaFileSaveDir = dir;
+        scheduleSave();
+    }
+
     /// Number of statistics colours, in MFC's index order
     /// (srchybrid/Preferences.h:198 — m_adwStatsColors[15]), plus our own slots
     /// appended after MFC's: 15 is the Download graph's Usenet line.
@@ -181,6 +189,7 @@ private:
     int  m_toolbarButtonStyle = 3;
     QString m_toolbarSkinPath;
     QString m_skinProfilePath;
+    QString m_metaFileSaveDir;
     std::array<QColor, kStatsColorCount> m_statsColors = defaultStatsColors();
     QMap<QString, QByteArray> m_headerStates;
     QSet<QString> m_statsTreeExpanded;

@@ -54,6 +54,7 @@ inline constexpr ToolbarButtonDef kAllButtons[] = {
     {ToolbarButtonId::IRC,         "IRC",           "IRC.ico",        QStyle::SP_DialogApplyButton,        6},
     {ToolbarButtonId::Statistics,  "Statistics",     "Statistics.ico", QStyle::SP_DialogHelpButton,         7},
     {ToolbarButtonId::Usenet,      "Usenet",        "Usenet.ico",     QStyle::SP_DriveNetIcon,             8},
+    // ToDo: Torrent toolbar button (Torrent.ico) once BitTorrent lands
     {ToolbarButtonId::DownloadsFolder, "Downloads Folder", "DownloadsFolder.ico",
                                                     QStyle::SP_DirOpenIcon,             -1},
     {ToolbarButtonId::Options,     "Options",       "Preferences.ico",QStyle::SP_FileDialogDetailedView,  -1},

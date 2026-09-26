@@ -31,7 +31,44 @@ private slots:
     void isValidSearchResultClientIPPort_invalid();
     void serverEquality();
     void clientManagement();
+    void metaRow_recognizedByHash();
+    void metaRow_tagsDisagree_invalid();
+    void metaRow_unknownVersion_invalid();
+    void metaRow_hashWithoutTags_stillMeta();
+    void metaRow_ed2kUnaffected();
 };
+
+/// Helper: an eNode meta row — hash + name + size + FT_META_* tags.
+struct MetaTags {
+    int kind = 1;
+    int version = 1;
+    uint32 fileIndex = 0xFFFFFFFF;
+    bool withTags = true;
+};
+
+static QByteArray buildMetaPacket(const uint8* hash, const QString& name, uint32 size, const MetaTags& t)
+{
+    SafeMemFile mem;
+    mem.write(hash, 16);
+    mem.writeUInt32(0);
+    mem.writeUInt16(0);
+    mem.writeUInt32(t.withTags ? 7 : 2);
+    Tag(FT_FILENAME, name).writeNewEd2kTag(mem, UTF8Mode::Raw);
+    Tag(FT_FILESIZE, size).writeNewEd2kTag(mem);
+    if (t.withTags) {
+        Tag(FT_META_KIND, static_cast<uint32>(t.kind)).writeNewEd2kTag(mem);
+        Tag(FT_META_VERSION, static_cast<uint32>(t.version)).writeNewEd2kTag(mem);
+        Tag(FT_META_FILEINDEX, t.fileIndex).writeNewEd2kTag(mem);
+        Tag(FT_META_ID, QStringLiteral("bt:v1:0CEC613B424DC858488612F7571BEFAF67C52616")).writeNewEd2kTag(mem, UTF8Mode::Raw);
+        Tag(FT_META_MAGNET, QStringLiteral("magnet:?xt=urn:btih:0cec613b424dc858488612f7571befaf67c52616"))
+            .writeNewEd2kTag(mem, UTF8Mode::Raw);
+    }
+    return mem.takeBuffer();
+}
+
+/// Whole-release bt-v1 meta hash from the shared vectors (flags 0, index 0xFFFF).
+static const uint8 kBtV1WholeHash[16] = {0xED, 0x2B, 0x01, 0x10, 0xFF, 0xFF,
+                                         0x1E, 0x1B, 0x36, 0x20, 0xAD, 0xE2, 0xAF, 0x9D, 0x6E, 0x90};
 
 /// Helper: build a minimal search result packet with one file
 static QByteArray buildSearchResultPacket(const uint8* hash,
@@ -278,6 +315,85 @@ void tst_SearchFile::clientManagement()
     // Adding different client should work
     file.addClient(c2);
     QCOMPARE(file.clients().size(), std::size_t{2});
+}
+
+void tst_SearchFile::metaRow_recognizedByHash()
+{
+    QByteArray packet = buildMetaPacket(kBtV1WholeHash, QStringLiteral("[torrent] Some.Release"), 5000, {});
+    SafeMemFile data(packet);
+    SearchFile file(data, true, 0x0A000001, 4661);
+
+    QVERIFY(file.isMetaResult());
+    QVERIFY(!file.isInvalidMetaResult());
+    QVERIFY(file.meta().isTorrent());
+    QCOMPARE(file.fileName(), QStringLiteral("Some.Release"));   // legacy prefix stripped
+    QVERIFY(file.meta().magnet.startsWith(QStringLiteral("magnet:?xt=urn:btih:")));
+    QVERIFY(file.meta().catalogId.startsWith(QStringLiteral("bt:v1:")));
+
+    // an operator-configured prefix goes too, a release group's bracket stays
+    for (const auto& [in, out] : {std::pair{QStringLiteral("[torrent example.org] A.B"), QStringLiteral("A.B")},
+                                  std::pair{QStringLiteral("[USENET] C"), QStringLiteral("C")},
+                                  std::pair{QStringLiteral("[Group] D"), QStringLiteral("[Group] D")}}) {
+        QByteArray p = buildMetaPacket(kBtV1WholeHash, in, 5000, {});
+        SafeMemFile d(p);
+        QCOMPARE(SearchFile(d, true).fileName(), out);
+    }
+
+    SearchFile copy(&file);
+    QVERIFY(copy.meta().isTorrent());
+}
+
+void tst_SearchFile::metaRow_tagsDisagree_invalid()
+{
+    MetaTags t;
+    t.kind = 3;   // tag says nzb, hash says bt-v1
+    QByteArray packet = buildMetaPacket(kBtV1WholeHash, QStringLiteral("x"), 5000, t);
+    SafeMemFile data(packet);
+    SearchFile file(data, true);
+    QVERIFY(file.isInvalidMetaResult());
+    QVERIFY(!file.isMetaResult());
+}
+
+void tst_SearchFile::metaRow_unknownVersion_invalid()
+{
+    MetaTags t;
+    t.version = 2;
+    QByteArray packet = buildMetaPacket(kBtV1WholeHash, QStringLiteral("x"), 5000, t);
+    SafeMemFile data(packet);
+    SearchFile file(data, true);
+    QVERIFY(file.isInvalidMetaResult());
+}
+
+void tst_SearchFile::metaRow_hashWithoutTags_stillMeta()
+{
+    // the network comes from the hash; a name prefix alone decides nothing
+    MetaTags t;
+    t.withTags = false;
+    QByteArray packet = buildMetaPacket(kBtV1WholeHash, QStringLiteral("Plain.Name"), 5000, t);
+    SafeMemFile data(packet);
+    SearchFile file(data, true);
+    QVERIFY(file.isMetaResult());
+    QVERIFY(file.meta().isTorrent());
+
+    uint8 md4[16];
+    std::memset(md4, 0x11, 16);
+    QByteArray packet2 = buildSearchResultPacket(md4, 1, 1, QStringLiteral("[usenet] not.really"), 100);
+    SafeMemFile data2(packet2);
+    SearchFile ed2k(data2, true);
+    QVERIFY(!ed2k.isMetaResult());
+    QCOMPARE(ed2k.fileName(), QStringLiteral("[usenet] not.really"));
+}
+
+void tst_SearchFile::metaRow_ed2kUnaffected()
+{
+    uint8 hash[16];
+    std::memset(hash, 0xAB, 16);
+    QByteArray packet = buildSearchResultPacket(hash, 0x0A010203, 4662, QStringLiteral("test.mp3"), 12345, 10);
+    SafeMemFile data(packet);
+    SearchFile file(data, true);
+    QVERIFY(!file.isMetaResult());
+    QVERIFY(!file.isInvalidMetaResult());
+    QCOMPARE(file.sourceCount(), uint32{10});
 }
 
 QTEST_MAIN(tst_SearchFile)

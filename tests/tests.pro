@@ -4,12 +4,13 @@ TEMPLATE = app
 CONFIG  += console testcase c++2b
 TARGET   = emuleqt_tests
 
-QT += core network multimedia httpserver testlib
+QT += core network multimedia httpserver testlib protobuf
 QT -= gui
 
 INCLUDEPATH += \
     $$PWD/../src/core \
     $$PWD/../src/ipc \
+    $$OUT_PWD/../src/core/enodemeta_proto \
     $$PWD
 
 LIBS += \
@@ -57,7 +58,8 @@ win32 {
 # Test data paths
 DEFINES += \
     EMULE_TEST_DATA_DIR=\\\"$$PWD/data/\\\" \
-    EMULE_PROJECT_DATA_DIR=\\\"$$PWD/../data/\\\"
+    EMULE_PROJECT_DATA_DIR=\\\"$$PWD/../data/\\\" \
+    ENODEMETA_TESTDATA=\\\"$$PWD/../external/enodemeta/testdata\\\"
 
 HEADERS += \
     TestHelpers.h
@@ -137,6 +139,7 @@ SOURCES += \
     tst_SearchExpr.cpp \
     tst_SearchExprParser.cpp \
     tst_SearchFile.cpp \
+    tst_EnodeMeta.cpp \
     tst_SearchList.cpp \
     tst_SearchParams.cpp \
     tst_Server.cpp \

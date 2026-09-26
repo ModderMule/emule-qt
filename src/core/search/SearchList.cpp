@@ -264,6 +264,10 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
 {
     std::unique_ptr<SearchFile> fileOwner(rawFile);
 
+    // eNode meta row whose tags contradict its hash (plan §8.1)
+    if (fileOwner->isInvalidMetaResult())
+        return;
+
     // Apply file type filter
     if (!m_resultFileType.isEmpty() && !fileOwner->fileType().isEmpty()) {
         if (fileOwner->fileType() != m_resultFileType)

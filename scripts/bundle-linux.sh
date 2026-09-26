@@ -175,6 +175,9 @@ WRAPPER
 
     cp "$STAGE_DIR/emuleqt" "$APPDIR/usr/bin/emuleqt"
     chmod +x "$APPDIR/usr/bin/emuleqt"
+    # The daemon too: it links Qt modules the GUI may not import (QtProtobuf)
+    cp "$STAGE_DIR/emulecored" "$APPDIR/usr/bin/emulecored"
+    chmod +x "$APPDIR/usr/bin/emulecored"
 
     # Minimal .desktop file required by linuxdeploy
     cat > "$APPDIR/usr/share/applications/emuleqt.desktop" <<DESKTOP
@@ -199,7 +202,7 @@ DESKTOP
     # Run linuxdeploy with Qt plugin (deploy only, no AppImage output)
     export QMAKE="${QMAKE:-$(command -v qmake 2>/dev/null || echo "")}"
     # Deploy Qt libs into AppDir without producing an AppImage
-    "$LINUXDEPLOY" --appdir "$APPDIR" --plugin qt
+    "$LINUXDEPLOY" --appdir "$APPDIR" --executable "$APPDIR/usr/bin/emulecored" --plugin qt
 
     # Copy deployed libraries and plugins into our staging directory
     if [ -d "$APPDIR/usr/lib" ]; then
