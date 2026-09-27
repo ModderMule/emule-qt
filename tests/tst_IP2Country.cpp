@@ -61,6 +61,38 @@ QByteArray makeTarGz(const QByteArray& mmdb)
     return out;
 }
 
+/// The test database with its metadata build_epoch moved by @p delta seconds.
+/// Its encoding is uint64 of 4 bytes: control 0x04, extended type 0x02, then big-endian.
+QByteArray shiftedBuildEpoch(qint64 delta)
+{
+    QFile f(testDb());
+    if (!f.open(QIODevice::ReadOnly))
+        return {};
+    QByteArray d = f.readAll();
+    const qsizetype at = d.lastIndexOf("build_epoch") + 11;
+    if (at < 11 || d.at(at) != 0x04 || d.at(at + 1) != 0x02)
+        return {};
+    quint32 epoch = 0;
+    for (int i = 0; i < 4; ++i)
+        epoch = (epoch << 8) | static_cast<quint8>(d.at(at + 2 + i));
+    epoch = static_cast<quint32>(epoch + delta);
+    for (int i = 3; i >= 0; --i, epoch >>= 8)
+        d[at + 2 + i] = static_cast<char>(epoch & 0xFF);
+    return d;
+}
+
+bool writeFile(const QString& path, const QByteArray& data)
+{
+    QFile f(path);
+    return f.open(QIODevice::WriteOnly | QIODevice::Truncate) && f.write(data) == data.size();
+}
+
+QByteArray readFile(const QString& path)
+{
+    QFile f(path);
+    return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+}
+
 /// One-shot HTTP responder that records the request headers.
 class FakeMaxMind : public QObject {
 public:
@@ -157,10 +189,26 @@ private slots:
     void updater_rejectedCredentials();
     void updater_noCredentialsNoRequest();
 
+    void bundle_adoptedWhenLiveMissingOrInvalid();
+    void bundle_adoptedWhenNewer();
+    void bundle_olderOrEqualIgnored();
+    void bundle_invalidIgnored();
+    void bundle_sameDirIsNoop();
+
     void resolver_literalAddresses();
 
 private:
+    [[nodiscard]] QString livePath() const
+    {
+        return m_dir.filePath(QString::fromLatin1(kGeoIpDatabaseFilename));
+    }
+    [[nodiscard]] QString bundlePath() const
+    {
+        return m_bundle.filePath(QString::fromLatin1(kGeoIpDatabaseFilename));
+    }
+
     QTemporaryDir m_dir;
+    QTemporaryDir m_bundle;
     IP2Country m_db;
 };
 
@@ -178,7 +226,8 @@ void tst_IP2Country::cleanup()
 {
     theApp.ip2Country = nullptr;
     m_db.close();
-    QFile::remove(m_dir.filePath(QString::fromLatin1(kGeoIpDatabaseFilename)));
+    QFile::remove(livePath());
+    QFile::remove(bundlePath());
 }
 
 void tst_IP2Country::lookup_knownRanges()
@@ -332,6 +381,7 @@ void tst_IP2Country::updater_notModifiedKeepsDatabase()
 
     GeoIpUpdater updater(&m_db, m_dir.path());
     updater.setDownloadUrl(server.url());
+    updater.setBundleDir(QString());   // a fetched data/config copy must not interfere
     updater.start();   // opens the existing file; auto-update is off
     QVERIFY(m_db.isLoaded());
     QSignalSpy changed(&updater, &GeoIpUpdater::databaseChanged);
@@ -406,6 +456,87 @@ void tst_IP2Country::updater_noCredentialsNoRequest()
     QTest::qWait(50);
     QVERIFY(!updater.isRunning());
     QCOMPARE(server.requests, 0);
+}
+
+void tst_IP2Country::bundle_adoptedWhenLiveMissingOrInvalid()
+{
+    QVERIFY(QFile::copy(testDb(), bundlePath()));
+    {
+        GeoIpUpdater updater(&m_db, m_dir.path());
+        updater.setBundleDir(m_bundle.path());
+        updater.start();
+        QVERIFY(m_db.isLoaded());
+        QCOMPARE(readFile(livePath()), readFile(testDb()));
+    }
+    m_db.close();
+
+    QVERIFY(writeFile(livePath(), QByteArray("truncated download")));
+    GeoIpUpdater updater(&m_db, m_dir.path());
+    updater.setBundleDir(m_bundle.path());
+    updater.start();
+    QVERIFY(m_db.isLoaded());
+    QCOMPARE(readFile(livePath()), readFile(testDb()));
+    QCOMPARE(m_db.countryCode(QHostAddress(QStringLiteral("89.160.20.130"))), QStringLiteral("SE"));
+}
+
+void tst_IP2Country::bundle_adoptedWhenNewer()
+{
+    const QByteArray newer = shiftedBuildEpoch(86400);
+    QVERIFY(!newer.isEmpty());
+    QVERIFY(QFile::copy(testDb(), livePath()));
+    QVERIFY(writeFile(bundlePath(), newer));
+    QCOMPARE(IP2Country::buildDateOf(bundlePath()),
+             IP2Country::buildDateOf(testDb()).addSecs(86400));
+
+    GeoIpUpdater updater(&m_db, m_dir.path());
+    updater.setBundleDir(m_bundle.path());
+    QSignalSpy changed(&updater, &GeoIpUpdater::databaseChanged);
+    updater.start();
+    QCOMPARE(changed.count(), 1);
+    QCOMPARE(readFile(livePath()), newer);
+    QCOMPARE(m_db.buildDate(), IP2Country::buildDateOf(bundlePath()));
+    QVERIFY(!QFileInfo::exists(livePath() + QStringLiteral(".new")));
+}
+
+void tst_IP2Country::bundle_olderOrEqualIgnored()
+{
+    // A download newer than the release's copy must survive the next start
+    const QByteArray downloaded = shiftedBuildEpoch(86400);
+    QVERIFY(writeFile(livePath(), downloaded));
+    for (const QByteArray& bundled : {readFile(testDb()), downloaded}) {
+        QVERIFY(writeFile(bundlePath(), bundled));
+        GeoIpUpdater updater(&m_db, m_dir.path());
+        updater.setBundleDir(m_bundle.path());
+        QSignalSpy changed(&updater, &GeoIpUpdater::databaseChanged);
+        updater.start();
+        QCOMPARE(changed.count(), 0);
+        QCOMPARE(readFile(livePath()), downloaded);
+        QVERIFY(m_db.isLoaded());
+        m_db.close();
+    }
+}
+
+void tst_IP2Country::bundle_invalidIgnored()
+{
+    QVERIFY(QFile::copy(testDb(), livePath()));
+    QVERIFY(writeFile(bundlePath(), QByteArray("not a database")));
+    GeoIpUpdater updater(&m_db, m_dir.path());
+    updater.setBundleDir(m_bundle.path());
+    updater.start();
+    QVERIFY(m_db.isLoaded());
+    QCOMPARE(readFile(livePath()), readFile(testDb()));
+}
+
+void tst_IP2Country::bundle_sameDirIsNoop()
+{
+    // Windows portable mode: config/ next to the exe is both bundle and config dir
+    QVERIFY(QFile::copy(testDb(), livePath()));
+    GeoIpUpdater updater(&m_db, m_dir.path());
+    updater.setBundleDir(m_dir.path());
+    QSignalSpy changed(&updater, &GeoIpUpdater::databaseChanged);
+    updater.start();
+    QCOMPARE(changed.count(), 0);
+    QVERIFY(m_db.isLoaded());
 }
 
 void tst_IP2Country::resolver_literalAddresses()

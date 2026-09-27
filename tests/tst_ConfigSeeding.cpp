@@ -48,6 +48,7 @@ private slots:
     void aHandEditedAssetSurvivesAnUnchangedBundle();
     void aHandEditedAssetGetsANewSiblingNotAnOverwrite();
     void liveDataFilesAreSeededOnceAndNeverRefreshed();
+    void theGeoIpDatabaseIsLeftToItsUpdater();
     void aDeletedFileIsSeededAgain();
     void aPreManifestInstallIsAdoptedWithABackup();
     void aFileDroppedFromTheBundleIsPruned();
@@ -176,6 +177,30 @@ void TestConfigSeeding::liveDataFilesAreSeededOnceAndNeverRefreshed()
     QCOMPARE(report.conflicts, 0);
     QCOMPARE(readFile(live(QStringLiteral("server.met"))), QByteArrayLiteral("the user's servers"));
     QVERIFY(!QFile::exists(live(QStringLiteral("server.met.new"))));
+}
+
+void TestConfigSeeding::theGeoIpDatabaseIsLeftToItsUpdater()
+{
+    // Seeded when missing; afterwards GeoIpUpdater owns it (newest build wins), so
+    // its downloads never read as edits here: no sidecar, no conflict, no prune.
+    const QString mmdb = QStringLiteral("GeoLite2-Country.mmdb");
+    makeBundle();
+    writeFile(bundle(mmdb), QByteArrayLiteral("release build"));
+    QCOMPARE(AppConfig::seedFrom(m_bundleDir.path(), m_configDir.path()).seeded, 4);
+    QCOMPARE(readFile(live(mmdb)), QByteArrayLiteral("release build"));
+
+    writeFile(live(mmdb), QByteArrayLiteral("downloaded build"));
+    writeFile(bundle(mmdb), QByteArrayLiteral("next release build"));
+    auto report = AppConfig::seedFrom(m_bundleDir.path(), m_configDir.path());
+    QCOMPARE(report.refreshed, 0);
+    QCOMPARE(report.conflicts, 0);
+    QCOMPARE(readFile(live(mmdb)), QByteArrayLiteral("downloaded build"));
+    QVERIFY(!QFile::exists(live(mmdb + QStringLiteral(".new"))));
+
+    QVERIFY(QFile::remove(bundle(mmdb)));
+    report = AppConfig::seedFrom(m_bundleDir.path(), m_configDir.path());
+    QCOMPARE(report.pruned, 0);
+    QVERIFY(QFile::exists(live(mmdb)));
 }
 
 void TestConfigSeeding::aDeletedFileIsSeededAgain()

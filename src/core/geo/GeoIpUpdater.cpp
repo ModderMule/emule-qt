@@ -4,11 +4,13 @@
 
 #include "geo/GeoIpUpdater.h"
 #include "geo/IP2Country.h"
+#include "app/AppConfig.h"
 #include "archive/ArchiveUnpack.h"
 #include "net/HttpDefaults.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 
+#include <QCoreApplication>
 #include <QLocale>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -66,8 +68,9 @@ QString GeoIpUpdater::databasePath() const
 
 void GeoIpUpdater::start()
 {
+    adoptBundledDatabase();
     const QString path = databasePath();
-    if (QFileInfo::exists(path)) {
+    if (!m_ip2Country->isLoaded() && QFileInfo::exists(path)) {
         QString error;
         if (m_ip2Country->open(path, &error))
             logInfo(QStringLiteral("IP2Country: loaded %1 (built %2)")
@@ -123,6 +126,52 @@ void GeoIpUpdater::checkSchedule()
         return;
 
     updateNow();
+}
+
+bool GeoIpUpdater::adoptBundledDatabase()
+{
+    if (!m_bundleDir) {
+        m_bundleDir = QString();
+        for (const QString& c : AppConfig::bundleCandidates(QCoreApplication::applicationDirPath()))
+            if (QDir(c).exists()) {
+                m_bundleDir = c;
+                break;
+            }
+    }
+    if (m_bundleDir->isEmpty())
+        return false;
+
+    const QString bundled = QDir(*m_bundleDir).filePath(QString::fromLatin1(kGeoIpDatabaseFilename));
+    const QString target = databasePath();
+    const QFileInfo bundledInfo(bundled);
+    // Windows portable mode: the bundle is the config dir
+    if (!bundledInfo.exists() || bundledInfo.canonicalFilePath() == QFileInfo(target).canonicalFilePath())
+        return false;
+
+    const QDateTime bundledBuilt = IP2Country::buildDateOf(bundled);
+    if (!bundledBuilt.isValid()) {
+        logWarning(QStringLiteral("IP2Country: bundled %1 is invalid, ignored").arg(bundled));
+        return false;
+    }
+    // Newest build wins: never roll back a database the updater downloaded
+    if (const QDateTime liveBuilt = IP2Country::buildDateOf(target);
+        liveBuilt.isValid() && liveBuilt >= bundledBuilt)
+        return false;
+
+    QFile in(bundled);
+    if (!in.open(QIODevice::ReadOnly)) {
+        logWarning(QStringLiteral("IP2Country: cannot read %1").arg(bundled));
+        return false;
+    }
+    QString error;
+    if (!installDatabase(in.readAll(), error)) {
+        logWarning(QStringLiteral("IP2Country: cannot adopt the bundled database: %1").arg(error));
+        return false;
+    }
+    logInfo(QStringLiteral("IP2Country: updated GeoLite2-Country from the bundle (built %1)")
+                .arg(bundledBuilt.toString(Qt::ISODate)));
+    emit databaseChanged();
+    return true;
 }
 
 void GeoIpUpdater::startRequest(const QUrl& url, bool withCredentials)

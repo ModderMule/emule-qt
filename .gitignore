@@ -134,6 +134,9 @@ docker/httpcache/nodes.log
 # Environment secrets
 .env
 
+# GeoLite2 database fetched for release bundles (scripts/fetch-geoip.sh)
+data/config/GeoLite2-Country.mmdb
+
 # Dev automation workspace
 dev/
 data/nzb

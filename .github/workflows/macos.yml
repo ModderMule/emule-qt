@@ -4,6 +4,11 @@ name: macOS CI
 # push/tags trigger here or a tag would build twice.
 on:
   workflow_call:
+    inputs:
+      geoip:
+        description: Ship the GeoLite2-Country database from release.yml's geoip-db artifact
+        type: boolean
+        default: false
   workflow_dispatch:
 
 permissions:
@@ -62,6 +67,15 @@ jobs:
         run: |
           VERSION=$(grep -m1 '^ *VERSION [0-9]' CMakeLists.txt | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
           echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      # Release builds only: release.yml downloads the database once and hands it
+      # to all three platforms; the bundlers copy data/config wholesale.
+      - name: Fetch GeoLite2-Country database
+        if: ${{ inputs.geoip }}
+        uses: actions/download-artifact@v8
+        with:
+          name: geoip-db
+          path: data/config
 
       - name: Bundle
         run: scripts/bundle-macos.sh --dmg build

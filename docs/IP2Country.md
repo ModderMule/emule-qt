@@ -10,15 +10,35 @@ and MorphXT's own 18×16 flag icons, compiled into the GUI.
 
 ## Setup
 
+Nothing to do: every release ships `GeoLite2-Country.mmdb` in its `config/` folder, and the
+first start copies it into the config directory.
+
+To keep the database current between releases (MaxMind publishes a new build twice a week):
+
 1. Create a free MaxMind account at <https://www.maxmind.com/en/geolite2/signup>.
 2. In the MaxMind account portal, generate a **license key**.
 3. In eMule Qt, open **Options → Display → Country flags (IP2Country)**. Enter the account ID and
    the license key, then press **Update now** or **Apply**.
 
-The daemon downloads `GeoLite2-Country.mmdb` into its config directory. The database is **never
-bundled** with a release, so each user needs their own account. Instead of entering an account,
-you can also copy a `GeoLite2-Country.mmdb` (or a compatible country database, such as DB-IP
-Lite) into the config directory by hand. The daemon uses it on its next start.
+You can also copy a `GeoLite2-Country.mmdb` (or a compatible country database, such as DB-IP
+Lite) into the config directory by hand. The daemon uses it on its next start, unless the
+bundled copy is newer (see below).
+
+## Bundled database
+
+- **Fetch:** `scripts/fetch-geoip.sh [dest]` downloads the latest GeoLite2-Country, checks it
+  against MaxMind's SHA-256 file, and writes it to `data/config/` by default. The bundlers
+  copy `data/config` wholesale, so the file ships in every archive. It is gitignored.
+- **Credentials:** `MAXMIND_ACCOUNT_ID` / `MAXMIND_LICENSE_KEY` from the environment, falling
+  back to the project `.env`. They never go into the repo, a URL or the script's output.
+- **CI:** the `geoip` job in `.github/workflows/release.yml` runs the script once per release,
+  with the two values as repository secrets, and hands the file to the Linux, macOS and Windows
+  builds as the `geoip-db` artifact. Without the secrets the release fails. Plain CI runs
+  build without a database.
+- **Seeding:** `AppConfig` copies the file only when it is missing (it sits in `kSeedOnce`
+  with `server.met` and `nodes.dat`). After that, `GeoIpUpdater::start()` owns it: it adopts
+  the bundled copy when its build date is newer than the live one, and never rolls back a
+  newer download. A hash-based refresh would read every download as a user edit.
 
 ## Where the flag shows
 

@@ -606,7 +606,7 @@ Ha commenti</translation>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2840"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2842"/>
         <source>Test</source>
         <translation>Test</translation>
     </message>
@@ -4234,36 +4234,36 @@ Scaricarlo di nuovo?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2750"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2752"/>
         <source>Options</source>
         <translation>Opzioni</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1808"/>
+        <location line="+1810"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-1807"/>
-        <location line="+1808"/>
+        <location line="-1809"/>
+        <location line="+1810"/>
         <source>Cancel</source>
         <translation>Annulla</translation>
     </message>
     <message>
-        <location line="-1807"/>
-        <location line="+5360"/>
+        <location line="-1809"/>
+        <location line="+5362"/>
         <source>Apply</source>
         <translation>Applica</translation>
     </message>
     <message>
-        <location line="-5359"/>
+        <location line="-5361"/>
         <source>Help</source>
         <translation>Aiuto</translation>
     </message>
     <message>
         <location line="+250"/>
-        <location line="+1784"/>
+        <location line="+1786"/>
         <location line="+63"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -4272,7 +4272,7 @@ Scaricarlo di nuovo?</translation>
         <translation>Filtro IP</translation>
     </message>
     <message>
-        <location line="-1871"/>
+        <location line="-1873"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>Filtro IP ricaricato: %1 voci.</translation>
     </message>
@@ -4303,18 +4303,18 @@ Scaricarlo di nuovo?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5282"/>
+        <location line="+5284"/>
         <source>Language</source>
         <translation>Lingua</translation>
     </message>
     <message>
-        <location line="-5279"/>
+        <location line="-5281"/>
         <source>System Default</source>
         <translation>Predefinito di sistema</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+642"/>
+        <location line="+644"/>
         <location line="+293"/>
         <location line="+372"/>
         <location line="+276"/>
@@ -4322,7 +4322,7 @@ Scaricarlo di nuovo?</translation>
         <translation>Varie</translation>
     </message>
     <message>
-        <location line="-1580"/>
+        <location line="-1582"/>
         <source>Bring to front on link click</source>
         <translation>Porta in primo piano al clic su link</translation>
     </message>
@@ -4408,25 +4408,25 @@ Scaricarlo di nuovo?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5208"/>
+        <location line="+5210"/>
         <source>Core</source>
         <translation>Core</translation>
     </message>
     <message>
-        <location line="-5203"/>
+        <location line="-5205"/>
         <source>Address:</source>
         <translation>Indirizzo:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1102"/>
+        <location line="+1104"/>
         <location line="+633"/>
         <location line="+410"/>
         <source>Port:</source>
         <translation>Porta:</translation>
     </message>
     <message>
-        <location line="-2142"/>
+        <location line="-2144"/>
         <source>authentication token</source>
         <translation>token di autenticazione</translation>
     </message>
@@ -4531,7 +4531,12 @@ Vuoi davvero continuare?</translation>
         <translation>Usa icone originali di eMule</translation>
     </message>
     <message>
-        <location line="+45"/>
+        <location line="+32"/>
+        <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
+        <translation>Ogni versione include un database. Un account &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; gratuito e facoltativo lo mantiene aggiornato tra una versione e l&apos;altra. Questo prodotto include dati GeoLite2 creati da MaxMind.</translation>
+    </message>
+    <message>
+        <location line="+15"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation>Risparmia CPU &amp;&amp; memoria</translation>
     </message>
@@ -5555,7 +5560,7 @@ Ogni regola sostituisce un modello regex con una stringa di sostituzione.</trans
         <translation>Slot upload (senza overhead)</translation>
     </message>
     <message>
-        <location line="-1459"/>
+        <location line="-1461"/>
         <source>Country flags (IP2Country)</source>
         <translation>Bandiere dei paesi (IP2Country)</translation>
     </message>
@@ -5605,12 +5610,11 @@ Ogni regola sostituisce un modello regex con una stringa di sostituzione.</trans
         <translation>Aggiorna ora</translation>
     </message>
     <message>
-        <location line="+7"/>
         <source>Needs a free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account. This product includes GeoLite2 data created by MaxMind.</source>
-        <translation>Richiede un account gratuito &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt;. Questo prodotto include dati GeoLite2 creati da MaxMind.</translation>
+        <translation type="vanished">Richiede un account gratuito &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt;. Questo prodotto include dati GeoLite2 creati da MaxMind.</translation>
     </message>
     <message>
-        <location line="+292"/>
+        <location line="+301"/>
         <source>Use for news servers</source>
         <translation>Usa per i news server</translation>
     </message>

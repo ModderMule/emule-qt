@@ -601,7 +601,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2840"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2842"/>
         <source>Test</source>
         <translation>테스트</translation>
     </message>
@@ -4222,36 +4222,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2750"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2752"/>
         <source>Options</source>
         <translation>옵션</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1808"/>
+        <location line="+1810"/>
         <source>OK</source>
         <translation>확인</translation>
     </message>
     <message>
-        <location line="-1807"/>
-        <location line="+1808"/>
+        <location line="-1809"/>
+        <location line="+1810"/>
         <source>Cancel</source>
         <translation>취소</translation>
     </message>
     <message>
-        <location line="-1807"/>
-        <location line="+5360"/>
+        <location line="-1809"/>
+        <location line="+5362"/>
         <source>Apply</source>
         <translation>적용</translation>
     </message>
     <message>
-        <location line="-5359"/>
+        <location line="-5361"/>
         <source>Help</source>
         <translation>도움말</translation>
     </message>
     <message>
         <location line="+250"/>
-        <location line="+1784"/>
+        <location line="+1786"/>
         <location line="+63"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -4260,7 +4260,7 @@ Download it again?</source>
         <translation>IP 필터</translation>
     </message>
     <message>
-        <location line="-1871"/>
+        <location line="-1873"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 필터 다시 로드됨: %1개 항목.</translation>
     </message>
@@ -4291,18 +4291,18 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5282"/>
+        <location line="+5284"/>
         <source>Language</source>
         <translation>언어</translation>
     </message>
     <message>
-        <location line="-5279"/>
+        <location line="-5281"/>
         <source>System Default</source>
         <translation>시스템 기본값</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+642"/>
+        <location line="+644"/>
         <location line="+293"/>
         <location line="+372"/>
         <location line="+276"/>
@@ -4310,7 +4310,7 @@ Download it again?</source>
         <translation>기타</translation>
     </message>
     <message>
-        <location line="-1580"/>
+        <location line="-1582"/>
         <source>Bring to front on link click</source>
         <translation>링크 클릭 시 앞으로 가져오기</translation>
     </message>
@@ -4396,25 +4396,25 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5208"/>
+        <location line="+5210"/>
         <source>Core</source>
         <translation>코어</translation>
     </message>
     <message>
-        <location line="-5203"/>
+        <location line="-5205"/>
         <source>Address:</source>
         <translation>주소:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1102"/>
+        <location line="+1104"/>
         <location line="+633"/>
         <location line="+410"/>
         <source>Port:</source>
         <translation>포트:</translation>
     </message>
     <message>
-        <location line="-2142"/>
+        <location line="-2144"/>
         <source>authentication token</source>
         <translation>인증 토큰</translation>
     </message>
@@ -4519,7 +4519,12 @@ Are you sure you want to continue?</source>
         <translation>원본 eMule 아이콘 사용</translation>
     </message>
     <message>
-        <location line="+45"/>
+        <location line="+32"/>
+        <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
+        <translation>각 릴리스에는 데이터베이스가 포함되어 있습니다. 선택 사항인 무료 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; 계정을 사용하면 릴리스 사이에도 최신 상태로 유지됩니다. 이 제품에는 MaxMind에서 만든 GeoLite2 데이터가 포함되어 있습니다.</translation>
+    </message>
+    <message>
+        <location line="+15"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation>CPU &amp;&amp; 메모리 사용량 절약</translation>
     </message>
@@ -5543,7 +5548,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>업로드 슬롯(오버헤드 없음)</translation>
     </message>
     <message>
-        <location line="-1459"/>
+        <location line="-1461"/>
         <source>Country flags (IP2Country)</source>
         <translation>국기 (IP2Country)</translation>
     </message>
@@ -5593,12 +5598,11 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>지금 업데이트</translation>
     </message>
     <message>
-        <location line="+7"/>
         <source>Needs a free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account. This product includes GeoLite2 data created by MaxMind.</source>
-        <translation>무료 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; 계정이 필요합니다. 이 제품에는 MaxMind가 만든 GeoLite2 데이터가 포함되어 있습니다.</translation>
+        <translation type="vanished">무료 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; 계정이 필요합니다. 이 제품에는 MaxMind가 만든 GeoLite2 데이터가 포함되어 있습니다.</translation>
     </message>
     <message>
-        <location line="+292"/>
+        <location line="+301"/>
         <source>Use for news servers</source>
         <translation>뉴스 서버에도 사용</translation>
     </message>

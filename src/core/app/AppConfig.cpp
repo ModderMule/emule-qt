@@ -3,6 +3,7 @@
 /// @brief Application config directory helpers — implementation.
 
 #include "app/AppConfig.h"
+#include "geo/IP2Country.h"
 
 #include "utils/Log.h"
 
@@ -120,8 +121,10 @@ namespace {
 
 /// Live data the app itself rewrites. Seeded when missing, never refreshed --
 /// a refresh would wipe the user's server list and Kad bootstrap contacts.
+/// GeoLite2-Country.mmdb is refreshed by GeoIpUpdater instead (newest build wins),
+/// since its own downloads would otherwise read as user edits here.
 /// Everything else in the bundle is a program asset that tracks the build.
-constexpr std::array kSeedOnce{"nodes.dat", "server.met", "webservices.dat"};
+constexpr std::array kSeedOnce{"nodes.dat", "server.met", "webservices.dat", kGeoIpDatabaseFilename};
 
 /// Records what the last pass wrote, so we can tell a stale file from an edited
 /// one. Without it the two are indistinguishable and we would have to either

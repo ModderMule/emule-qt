@@ -981,8 +981,10 @@ QWidget* OptionsDialog::createDisplayPage()
     m_geoIpStatusLabel->setWordWrap(true);
     geoGrid->addWidget(m_geoIpStatusLabel, 3, 0, 1, 4);
     auto* geoInfo = new QLabel(
-        tr("Needs a free <a href=\"https://www.maxmind.com/en/geolite2/signup\">MaxMind "
-           "GeoLite2</a> account. This product includes GeoLite2 data created by MaxMind."),
+        tr("A database ships with each release. An optional free "
+           "<a href=\"https://www.maxmind.com/en/geolite2/signup\">MaxMind GeoLite2</a> "
+           "account keeps it current in between. This product includes GeoLite2 data "
+           "created by MaxMind."),
         geoGroup);
     geoInfo->setWordWrap(true);
     geoInfo->setOpenExternalLinks(true);

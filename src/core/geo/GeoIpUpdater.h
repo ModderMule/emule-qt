@@ -7,6 +7,9 @@
 /// and GeoLite2 needs an account ID + license key sent as HTTP Basic auth. The
 /// license key must never reach a log line, so nothing here prints the request.
 ///
+/// Releases also ship a copy in config/; start() adopts it when its build is newer
+/// than the live one, so neither a release nor a download ever rolls the other back.
+///
 /// Schedule: an hourly tick updates when the database is missing or the last
 /// successful check is a week old. A failure blocks automatic retries for 6 h —
 /// GeoLite2 caps downloads per account per day.
@@ -19,6 +22,7 @@
 #include <QUrl>
 
 #include <functional>
+#include <optional>
 
 class QNetworkAccessManager;
 class QNetworkReply;
@@ -36,7 +40,7 @@ public:
     GeoIpUpdater(IP2Country* ip2Country, const QString& configDir, QObject* parent = nullptr);
     ~GeoIpUpdater() override;
 
-    /// Open an existing database and arm the schedule.
+    /// Adopt a newer bundled database, open the database and arm the schedule.
     void start();
     void stop();
 
@@ -50,6 +54,10 @@ public:
     /// Tests point this at a local server; defaults to the MaxMind permalink.
     void setDownloadUrl(const QUrl& url) { m_url = url; }
 
+    /// Where the release's config/ lives; empty disables adopting. Defaults to the
+    /// first existing AppConfig::bundleCandidates() entry.
+    void setBundleDir(const QString& dir) { m_bundleDir = dir; }
+
     /// Update if due (missing db / week-old check) and not backing off.
     void checkSchedule();
 
@@ -59,6 +67,7 @@ signals:
     void updateFinished(bool ok, const QString& message);
 
 private:
+    bool adoptBundledDatabase();
     void startRequest(const QUrl& url, bool withCredentials);
     void finish(bool ok, const QString& message);
     void onReplyFinished();
@@ -66,6 +75,7 @@ private:
 
     IP2Country* m_ip2Country = nullptr;
     QString m_configDir;
+    std::optional<QString> m_bundleDir;
     QUrl m_url;
     QTimer m_timer;
     QNetworkAccessManager* m_nam = nullptr;

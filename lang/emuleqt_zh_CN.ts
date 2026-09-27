@@ -601,7 +601,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2840"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2842"/>
         <source>Test</source>
         <translation>测试</translation>
     </message>
@@ -4222,36 +4222,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2750"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2752"/>
         <source>Options</source>
         <translation>选项</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1808"/>
+        <location line="+1810"/>
         <source>OK</source>
         <translation>确定</translation>
     </message>
     <message>
-        <location line="-1807"/>
-        <location line="+1808"/>
+        <location line="-1809"/>
+        <location line="+1810"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="-1807"/>
-        <location line="+5360"/>
+        <location line="-1809"/>
+        <location line="+5362"/>
         <source>Apply</source>
         <translation>应用</translation>
     </message>
     <message>
-        <location line="-5359"/>
+        <location line="-5361"/>
         <source>Help</source>
         <translation>帮助</translation>
     </message>
     <message>
         <location line="+250"/>
-        <location line="+1784"/>
+        <location line="+1786"/>
         <location line="+63"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -4260,7 +4260,7 @@ Download it again?</source>
         <translation>IP 过滤器</translation>
     </message>
     <message>
-        <location line="-1871"/>
+        <location line="-1873"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 过滤器已重新加载：%1 条目。</translation>
     </message>
@@ -4291,18 +4291,18 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5282"/>
+        <location line="+5284"/>
         <source>Language</source>
         <translation>语言</translation>
     </message>
     <message>
-        <location line="-5279"/>
+        <location line="-5281"/>
         <source>System Default</source>
         <translation>系统默认</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+642"/>
+        <location line="+644"/>
         <location line="+293"/>
         <location line="+372"/>
         <location line="+276"/>
@@ -4310,7 +4310,7 @@ Download it again?</source>
         <translation>其他</translation>
     </message>
     <message>
-        <location line="-1580"/>
+        <location line="-1582"/>
         <source>Bring to front on link click</source>
         <translation>点击链接时置前</translation>
     </message>
@@ -4396,25 +4396,25 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5208"/>
+        <location line="+5210"/>
         <source>Core</source>
         <translation>核心</translation>
     </message>
     <message>
-        <location line="-5203"/>
+        <location line="-5205"/>
         <source>Address:</source>
         <translation>地址：</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1102"/>
+        <location line="+1104"/>
         <location line="+633"/>
         <location line="+410"/>
         <source>Port:</source>
         <translation>端口：</translation>
     </message>
     <message>
-        <location line="-2142"/>
+        <location line="-2144"/>
         <source>authentication token</source>
         <translation>认证令牌</translation>
     </message>
@@ -4519,7 +4519,12 @@ Are you sure you want to continue?</source>
         <translation>使用原版 eMule 图标</translation>
     </message>
     <message>
-        <location line="+45"/>
+        <location line="+32"/>
+        <source>A database ships with each release. An optional free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account keeps it current in between. This product includes GeoLite2 data created by MaxMind.</source>
+        <translation>每个版本都附带一个数据库。可选的免费 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; 帐户可在版本之间保持其最新。本产品包含由 MaxMind 创建的 GeoLite2 数据。</translation>
+    </message>
+    <message>
+        <location line="+15"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation>节省 CPU &amp;&amp; 内存</translation>
     </message>
@@ -5543,7 +5548,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>上传位（无开销）</translation>
     </message>
     <message>
-        <location line="-1459"/>
+        <location line="-1461"/>
         <source>Country flags (IP2Country)</source>
         <translation>国旗 (IP2Country)</translation>
     </message>
@@ -5593,12 +5598,11 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>立即更新</translation>
     </message>
     <message>
-        <location line="+7"/>
         <source>Needs a free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account. This product includes GeoLite2 data created by MaxMind.</source>
-        <translation>需要免费的 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; 账户。本产品包含由 MaxMind 创建的 GeoLite2 数据。</translation>
+        <translation type="vanished">需要免费的 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; 账户。本产品包含由 MaxMind 创建的 GeoLite2 数据。</translation>
     </message>
     <message>
-        <location line="+292"/>
+        <location line="+301"/>
         <source>Use for news servers</source>
         <translation>同时用于新闻服务器</translation>
     </message>

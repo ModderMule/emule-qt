@@ -4,6 +4,11 @@ name: Windows CI
 # push/tags trigger here or a tag would build twice.
 on:
   workflow_call:
+    inputs:
+      geoip:
+        description: Ship the GeoLite2-Country database from release.yml's geoip-db artifact
+        type: boolean
+        default: false
   workflow_dispatch:
 
 permissions:
@@ -180,6 +185,15 @@ jobs:
         run: |
           $v = (Select-String -Path CMakeLists.txt -Pattern '^\s+VERSION\s+(\d+\.\d+\.\d+)').Matches[0].Groups[1].Value
           echo "APP_VERSION=$v" >> $env:GITHUB_ENV
+
+      # Release builds only: release.yml downloads the database once and hands it
+      # to all three platforms; the bundlers copy data/config wholesale.
+      - name: Fetch GeoLite2-Country database
+        if: ${{ inputs.geoip }}
+        uses: actions/download-artifact@v8
+        with:
+          name: geoip-db
+          path: data/config
 
       # -RequireVcpkg: without it a triplet the bundler cannot resolve only
       # produced a note, and the job stayed green while shipping a zip with no

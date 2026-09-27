@@ -178,6 +178,19 @@ bool IP2Country::isValidDatabase(const QString& path, QString* error)
     return true;
 }
 
+QDateTime IP2Country::buildDateOf(const QString& path)
+{
+    if (!isValidDatabase(path))
+        return {};
+    MMDB_s mmdb{};
+    const QByteArray native = QFile::encodeName(path);
+    if (MMDB_open(native.constData(), MMDB_MODE_MMAP, &mmdb) != MMDB_SUCCESS)
+        return {};
+    const auto epoch = static_cast<qint64>(mmdb.metadata.build_epoch);
+    MMDB_close(&mmdb);
+    return QDateTime::fromSecsSinceEpoch(epoch, QTimeZone::UTC);
+}
+
 std::shared_ptr<IP2Country::Db> IP2Country::current() const
 {
     QMutexLocker lock(&m_mutex);

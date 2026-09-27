@@ -7,8 +7,9 @@
 /// GeoIPCountryWhois.csv range table. The daemon resolves; the GUI only ever sees
 /// the two-letter code ("cc" on the IPC rows) and maps it to a flag and a name.
 ///
-/// The database is never bundled — GeoIpUpdater downloads it with the user's MaxMind
-/// credentials, and a file dropped into the config dir by hand works too.
+/// Releases bundle a copy in config/ (GeoIpUpdater adopts it when newer); with the
+/// user's MaxMind credentials GeoIpUpdater keeps it current. A file dropped into the
+/// config dir by hand works too.
 
 #include "net/Address.h"
 
@@ -49,6 +50,9 @@ public:
 
     /// Validate a candidate file without touching the active database.
     [[nodiscard]] static bool isValidDatabase(const QString& path, QString* error = nullptr);
+
+    /// Build date of the database at @p path; invalid when it isn't a valid one.
+    [[nodiscard]] static QDateTime buildDateOf(const QString& path);
 
 private:
     struct Db;

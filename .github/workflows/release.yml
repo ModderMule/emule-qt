@@ -63,26 +63,62 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "OK: tag ${GITHUB_REF_NAME} matches project version ${version}"
 
+  # One GeoLite2-Country download per release, shared by all three platforms: they
+  # ship the same file, and it costs one of the account's daily GeoLite downloads.
+  # Needs the MAXMIND_ACCOUNT_ID / MAXMIND_LICENSE_KEY repo secrets; without them
+  # the release fails rather than silently shipping no database.
+  geoip:
+    name: Fetch GeoLite2-Country
+    needs: guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (script only)
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          sparse-checkout: scripts/fetch-geoip.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Download
+        env:
+          MAXMIND_ACCOUNT_ID: ${{ secrets.MAXMIND_ACCOUNT_ID }}
+          MAXMIND_LICENSE_KEY: ${{ secrets.MAXMIND_LICENSE_KEY }}
+        run: scripts/fetch-geoip.sh geoip
+
+      - name: Upload
+        uses: actions/upload-artifact@v6
+        with:
+          name: geoip-db
+          path: geoip/GeoLite2-Country.mmdb
+          retention-days: 1
+          if-no-files-found: error
+
   linux:
     name: Linux
-    needs: guard
+    needs: [guard, geoip]
     permissions:
       contents: read
     uses: ./.github/workflows/linux.yml
+    with:
+      geoip: true
 
   macos:
     name: macOS
-    needs: guard
+    needs: [guard, geoip]
     permissions:
       contents: read
     uses: ./.github/workflows/macos.yml
+    with:
+      geoip: true
 
   windows:
     name: Windows
-    needs: guard
+    needs: [guard, geoip]
     permissions:
       contents: read
     uses: ./.github/workflows/windows.yml
+    with:
+      geoip: true
 
   release:
     name: Publish GitHub Release
@@ -165,6 +201,8 @@ jobs:
             echo '```'
             echo
             echo "</details>"
+            echo
+            echo "This release includes GeoLite2 data created by MaxMind, available from https://www.maxmind.com."
           } > release-notes.md
 
           cat release-notes.md
