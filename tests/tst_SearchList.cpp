@@ -2,6 +2,7 @@
 /// @brief Tests for search/SearchList — session management, dedup, spam, persistence, signals.
 
 #include "TestHelpers.h"
+#include "client/UpDownClient.h"
 #include "search/SearchList.h"
 #include "search/SearchFile.h"
 #include "search/SearchParams.h"
@@ -87,6 +88,9 @@ private slots:
     void storeAndLoadSearches_roundTrip();
     void signal_resultAdded();
     void signal_resultUpdated();
+    void clientSharedFiles_opensOwnTab();
+    void clientSharedFiles_reusesTabThenReopensAfterClose();
+    void clientSharedFiles_emptyListStillOpensTab();
 };
 
 void tst_SearchList::construct()
@@ -539,6 +543,87 @@ void tst_SearchList::signal_resultUpdated()
     }
 
     QCOMPARE(spy.count(), 1);
+}
+
+void tst_SearchList::clientSharedFiles_opensOwnTab()
+{
+    // A peer's list used to land in whatever ED2K search was current (and was
+    // filtered by its file type). MFC gives it its own tab: SearchList.cpp:182-220.
+    SearchList list;
+    SearchParams params;
+    params.type = SearchType::Ed2kGlobal;
+    const uint32 ed2kID = list.newSearch(QStringLiteral("Video"), params);
+
+    UpDownClient alice;
+    alice.setUserName(QStringLiteral("Alice"));
+    QSignalSpy headerSpy(&list, &SearchList::tabHeaderUpdated);
+
+    const QByteArray packet = buildTCPSearchPacket(2);
+    const uint32 id = list.processClientSharedFiles(
+        alice, reinterpret_cast<const uint8*>(packet.constData()),
+        static_cast<uint32>(packet.size()), QStringLiteral("Music"));
+
+    QVERIFY(id != 0);
+    QVERIFY(id != ed2kID);
+    QCOMPARE(alice.searchID(), id);
+    QCOMPARE(list.currentSearchID(), ed2kID);   // the running search keeps its routing
+    QCOMPARE(list.resultCount(ed2kID), uint32{0});
+    QCOMPARE(list.resultCount(id), uint32{2});  // .mp3 despite the "Video" filter
+
+    const auto* entry = list.searchEntry(id);
+    QVERIFY(entry != nullptr);
+    QVERIFY(entry->clientSharedFiles);
+    QCOMPARE(entry->title, QStringLiteral("Alice"));
+
+    list.forEachResult(id, [](const SearchFile* f) {
+        QCOMPARE(f->directory(), QStringLiteral("Music"));
+    });
+    QCOMPARE(headerSpy.count(), 1);
+    QCOMPARE(headerSpy.at(0).at(0).toUInt(), id);
+}
+
+void tst_SearchList::clientSharedFiles_reusesTabThenReopensAfterClose()
+{
+    SearchList list;
+    UpDownClient bob;
+    bob.setUserName(QStringLiteral("Bob"));
+
+    uint8 otherBase[16];
+    std::memset(otherBase, 0x55, 16);
+    const QByteArray first = buildTCPSearchPacket(1);
+    const QByteArray second = buildTCPSearchPacket(1, otherBase);
+
+    const uint32 id = list.processClientSharedFiles(
+        bob, reinterpret_cast<const uint8*>(first.constData()), static_cast<uint32>(first.size()));
+    // A second directory answer goes into the same tab
+    QCOMPARE(list.processClientSharedFiles(
+                 bob, reinterpret_cast<const uint8*>(second.constData()),
+                 static_cast<uint32>(second.size())),
+             id);
+    QCOMPARE(list.resultCount(id), uint32{2});
+
+    // The user closed the tab (RemoveSearch): the next answer opens a fresh one
+    list.removeResults(id);
+    const uint32 reopened = list.processClientSharedFiles(
+        bob, reinterpret_cast<const uint8*>(first.constData()), static_cast<uint32>(first.size()));
+    QVERIFY(reopened != id);
+    QCOMPARE(bob.searchID(), reopened);
+    QVERIFY(list.searchEntry(reopened) != nullptr);
+    QCOMPARE(list.resultCount(reopened), uint32{1});
+}
+
+void tst_SearchList::clientSharedFiles_emptyListStillOpensTab()
+{
+    SearchList list;
+    UpDownClient carol;
+    carol.setUserName(QStringLiteral("Carol"));
+
+    const QByteArray empty = buildTCPSearchPacket(0);
+    const uint32 id = list.processClientSharedFiles(
+        carol, reinterpret_cast<const uint8*>(empty.constData()), static_cast<uint32>(empty.size()));
+    QVERIFY(id != 0);
+    QVERIFY(list.searchEntry(id) != nullptr);
+    QCOMPARE(list.resultCount(id), uint32{0});
 }
 
 QTEST_MAIN(tst_SearchList)

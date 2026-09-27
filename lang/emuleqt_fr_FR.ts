@@ -197,9 +197,14 @@ Le Cache HTTP sera activé et cette clé enregistrée pour les envois.</translat
 <context>
     <name>IpcFeedback</name>
     <message>
-        <location filename="../src/gui/utils/IpcFeedback.cpp" line="+24"/>
+        <location filename="../src/gui/utils/IpcFeedback.cpp" line="+27"/>
         <source>The request was rejected by eMule.</source>
         <translation>La requête a été rejetée par eMule.</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Not connected to daemon — %1</source>
+        <translation>Non connecté au démon — %1</translation>
     </message>
 </context>
 <context>
@@ -299,7 +304,7 @@ Activez l&apos;interface web ou l&apos;API REST dans Options → Interface web.<
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+556"/>
+        <location filename="../src/gui/app/main.cpp" line="+565"/>
         <source>Download Added</source>
         <translation>Téléchargement ajouté</translation>
     </message>
@@ -314,7 +319,7 @@ Activez l&apos;interface web ou l&apos;API REST dans Options → Interface web.<
         <translation>Message de %1</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+11"/>
         <source>Log Entry</source>
         <translation>Entrée de journal</translation>
     </message>
@@ -434,7 +439,7 @@ Has comments</source>
 Contient des commentaires</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+56"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+55"/>
         <source>Server</source>
         <translation>Serveur</translation>
     </message>
@@ -450,7 +455,7 @@ Contient des commentaires</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+73"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+75"/>
         <source>Passive</source>
         <translation>Passif</translation>
     </message>
@@ -467,7 +472,7 @@ Contient des commentaires</translation>
         <translation>Cache HTTP</translation>
     </message>
     <message>
-        <location line="+226"/>
+        <location line="+148"/>
         <source>Yes</source>
         <translation>Oui</translation>
     </message>
@@ -540,7 +545,7 @@ Contient des commentaires</translation>
         <translation>Échange de sources</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="-227"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="-149"/>
         <location filename="../src/gui/controls/DownloadListModel.cpp" line="+3"/>
         <source>SLS</source>
         <translation>SLS</translation>
@@ -601,7 +606,7 @@ Contient des commentaires</translation>
         <translation type="vanished">%1 octets</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2779"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2840"/>
         <source>Test</source>
         <translation>Test</translation>
     </message>
@@ -685,7 +690,7 @@ Le télécharger à nouveau ?</translation>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4110"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4112"/>
         <source>Bytes</source>
         <translation>octets</translation>
     </message>
@@ -1005,7 +1010,7 @@ Le télécharger à nouveau ?</translation>
 <context>
     <name>eMule::ArchivePreviewPanel</name>
     <message>
-        <location filename="../src/gui/dialogs/ArchivePreviewPanel.cpp" line="+68"/>
+        <location filename="../src/gui/dialogs/ArchivePreviewPanel.cpp" line="+69"/>
         <source>Scanning...</source>
         <translation>Analyse...</translation>
     </message>
@@ -1392,7 +1397,7 @@ Ses téléchargements conservent leurs fichiers et passent dans Tous.</translati
 <context>
     <name>eMule::ClientDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+62"/>
+        <location filename="../src/gui/dialogs/ClientDetailDialog.cpp" line="+65"/>
         <source>Client Details: %1</source>
         <translation>Détails du client : %1</translation>
     </message>
@@ -1432,7 +1437,12 @@ Ses téléchargements conservent leurs fichiers et passent dans Tous.</translati
         <translation>Logiciel client</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+11"/>
+        <source>Country</source>
+        <translation>Pays</translation>
+    </message>
+    <message>
+        <location line="+16"/>
         <location line="+4"/>
         <source>Server</source>
         <translation>Serveur</translation>
@@ -1537,7 +1547,7 @@ Ses téléchargements conservent leurs fichiers et passent dans Tous.</translati
 <context>
     <name>eMule::ClientListModel</name>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+304"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+226"/>
         <location line="+13"/>
         <location line="+13"/>
         <location line="+15"/>
@@ -1657,7 +1667,12 @@ Ses téléchargements conservent leurs fichiers et passent dans Tous.</translati
         <translation>Téléchargé</translation>
     </message>
     <message>
-        <location line="-176"/>
+        <location line="-201"/>
+        <source>Country</source>
+        <translation>Pays</translation>
+    </message>
+    <message>
+        <location line="+25"/>
         <location line="+36"/>
         <source>Low ID</source>
         <translation>Low ID</translation>
@@ -1686,34 +1701,28 @@ Ses téléchargements conservent leurs fichiers et passent dans Tous.</translati
 <context>
     <name>eMule::ClientSharedFilesDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ClientSharedFilesDialog.cpp" line="+33"/>
         <source>Shared Files — %1</source>
-        <translation>Fichiers partagés — %1</translation>
+        <translation type="vanished">Fichiers partagés — %1</translation>
     </message>
     <message>
-        <location line="+5"/>
         <source>File Name</source>
-        <translation>Nom du fichier</translation>
+        <translation type="vanished">Nom du fichier</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Size</source>
-        <translation>Taille</translation>
+        <translation type="vanished">Taille</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Hash</source>
-        <translation>Hash</translation>
+        <translation type="vanished">Hash</translation>
     </message>
     <message>
-        <location line="+43"/>
         <source>Download Selected</source>
-        <translation>Télécharger la sélection</translation>
+        <translation type="vanished">Télécharger la sélection</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>Close</source>
-        <translation>Fermer</translation>
+        <translation type="vanished">Fermer</translation>
     </message>
 </context>
 <context>
@@ -1932,7 +1941,7 @@ Ses téléchargements conservent leurs fichiers et passent dans Tous.</translati
 <context>
     <name>eMule::CommentsPanel</name>
     <message>
-        <location filename="../src/gui/dialogs/CommentsPanel.cpp" line="+60"/>
+        <location filename="../src/gui/dialogs/CommentsPanel.cpp" line="+61"/>
         <source>Kad</source>
         <translation>Kad</translation>
     </message>
@@ -1943,12 +1952,12 @@ Ses téléchargements conservent leurs fichiers et passent dans Tous.</translati
     </message>
     <message>
         <location line="+0"/>
-        <location line="+50"/>
+        <location line="+55"/>
         <source>Search Kad</source>
         <translation>Rechercher dans Kad</translation>
     </message>
     <message>
-        <location line="-32"/>
+        <location line="-37"/>
         <source>Rating</source>
         <translation>Évaluation</translation>
     </message>
@@ -1983,7 +1992,7 @@ Ses téléchargements conservent leurs fichiers et passent dans Tous.</translati
         <translation>Copier</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+11"/>
         <source>Edit spam filter...</source>
         <translation>Modifier le filtre anti-spam...</translation>
     </message>
@@ -2092,7 +2101,7 @@ Entrez l&apos;adresse et le jeton d&apos;authentification d&apos;un noyau distan
 <context>
     <name>eMule::DownloadListModel</name>
     <message>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+614"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+628"/>
         <source>Downloading</source>
         <translation>Téléchargement</translation>
     </message>
@@ -2101,17 +2110,22 @@ Entrez l&apos;adresse et le jeton d&apos;authentification d&apos;un noyau distan
         <translation type="vanished">Auto [%1]</translation>
     </message>
     <message>
-        <location line="-441"/>
+        <location line="-455"/>
         <source>Queue Full</source>
         <translation>File pleine</translation>
     </message>
     <message>
-        <location line="+35"/>
+        <location line="+43"/>
         <source>Available parts: %1 / %2</source>
         <translation>Parties disponibles : %1 / %2</translation>
     </message>
     <message>
-        <location line="+78"/>
+        <location line="+2"/>
+        <source>Country: %1</source>
+        <translation>Pays : %1</translation>
+    </message>
+    <message>
+        <location line="+81"/>
         <source>File Name:	%1
 ED2K Hash:	%2
 Size:	%3
@@ -2184,6 +2198,11 @@ Données transférées :	%12</translation>
         <location line="+1"/>
         <source>Seen Complete</source>
         <translation>Vu complet</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Country</source>
+        <translation>Pays</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -2460,7 +2479,7 @@ Données transférées :	%12</translation>
 <context>
     <name>eMule::FindInListDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/FindInListDialog.cpp" line="+23"/>
+        <location filename="../src/gui/dialogs/FindInListDialog.cpp" line="+71"/>
         <source>Search</source>
         <translation>Recherche</translation>
     </message>
@@ -2803,7 +2822,7 @@ Données transférées :	%12</translation>
 <context>
     <name>eMule::IrcPanel</name>
     <message>
-        <location filename="../src/gui/panels/IrcPanel.cpp" line="+131"/>
+        <location filename="../src/gui/panels/IrcPanel.cpp" line="+119"/>
         <source>Select an IRC nick.</source>
         <translation>Choisissez un pseudo IRC.</translation>
     </message>
@@ -2935,7 +2954,7 @@ Veuillez en choisir un autre :</translation>
 <context>
     <name>eMule::KadContactsModel</name>
     <message>
-        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+67"/>
+        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+75"/>
         <source>Status</source>
         <translation>Statut</translation>
     </message>
@@ -2948,6 +2967,11 @@ Veuillez en choisir un autre :</translation>
         <location line="+1"/>
         <source>Distance</source>
         <translation>Distance</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Country</source>
+        <translation>Pays</translation>
     </message>
 </context>
 <context>
@@ -2976,49 +3000,49 @@ Veuillez en choisir un autre :</translation>
 <context>
     <name>eMule::KadPanel</name>
     <message>
-        <location filename="../src/gui/panels/KadPanel.cpp" line="+113"/>
+        <location filename="../src/gui/panels/KadPanel.cpp" line="+115"/>
         <location line="+12"/>
         <location line="+189"/>
         <location line="+2"/>
         <location line="+37"/>
-        <location line="+192"/>
+        <location line="+195"/>
         <source>▸ Contacts (0)</source>
         <translation>▸ Contacts (0)</translation>
     </message>
     <message>
-        <location line="-431"/>
+        <location line="-434"/>
         <location line="+12"/>
-        <location line="+369"/>
-        <location line="+94"/>
+        <location line="+371"/>
+        <location line="+97"/>
         <source>▸ Current Searches (0)</source>
         <translation>▸ Recherches en cours (0)</translation>
     </message>
     <message>
-        <location line="-268"/>
-        <location line="+332"/>
+        <location line="-273"/>
+        <location line="+337"/>
         <source>▸ Search Details</source>
         <translation>▸ Détails de recherche</translation>
     </message>
     <message>
-        <location line="-252"/>
+        <location line="-255"/>
         <source>Recheck Firewall</source>
         <translation>Revérifier le pare-feu</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+239"/>
+        <location line="+242"/>
         <source>Connect</source>
         <translation>Connecter</translation>
     </message>
     <message>
-        <location line="-447"/>
-        <location line="+223"/>
+        <location line="-452"/>
+        <location line="+225"/>
         <location line="+28"/>
         <source>Bootstrap</source>
         <translation>Bootstrap</translation>
     </message>
     <message>
-        <location line="-262"/>
+        <location line="-264"/>
         <source>Downloading...</source>
         <translation>Téléchargement...</translation>
     </message>
@@ -3046,7 +3070,7 @@ Veuillez en choisir un autre :</translation>
         <translation>Échec de l&apos;enregistrement de nodes.dat : %1</translation>
     </message>
     <message>
-        <location line="+210"/>
+        <location line="+212"/>
         <source>IP Address:</source>
         <translation>Adresse IP :</translation>
     </message>
@@ -3061,7 +3085,7 @@ Veuillez en choisir un autre :</translation>
         <translation>Nodes.dat depuis URL :</translation>
     </message>
     <message>
-        <location line="+137"/>
+        <location line="+140"/>
         <location line="+3"/>
         <source>▸ Contacts (%1)</source>
         <translation>▸ Contacts (%1)</translation>
@@ -3166,18 +3190,18 @@ Veuillez en choisir un autre :</translation>
 <context>
     <name>eMule::MainWindow</name>
     <message>
-        <location filename="../src/gui/app/MainWindow.cpp" line="+80"/>
+        <location filename="../src/gui/app/MainWindow.cpp" line="+81"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="+97"/>
+        <location line="+104"/>
         <location line="+9"/>
         <source>New Version Available</source>
         <translation>Nouvelle version disponible</translation>
     </message>
     <message>
-        <location line="+169"/>
+        <location line="+174"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K : Connecté (LowID)</translation>
     </message>
@@ -3264,14 +3288,14 @@ Veuillez en choisir un autre :</translation>
         <translation>FAQ</translation>
     </message>
     <message>
-        <location line="-533"/>
+        <location line="-538"/>
         <location line="+7"/>
-        <location line="+529"/>
+        <location line="+534"/>
         <source>Version Check</source>
         <translation>Vérification de version</translation>
     </message>
     <message>
-        <location line="-591"/>
+        <location line="-596"/>
         <source>Quit eMule Qt</source>
         <translation>Quitter eMule Qt</translation>
     </message>
@@ -3328,7 +3352,7 @@ Enable at least one under Options → Connection to connect.</source>
 Activez-en au moins un dans Options → Connexion pour vous connecter.</translation>
     </message>
     <message>
-        <location line="+190"/>
+        <location line="+195"/>
         <source>Connected</source>
         <translation>Connecté</translation>
     </message>
@@ -3629,34 +3653,33 @@ Activez-la dans Options → Interface web, puis réessayez.</translation>
 <context>
     <name>eMule::MessagesPanel</name>
     <message>
-        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+145"/>
-        <location line="+383"/>
+        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+149"/>
+        <location line="+396"/>
         <source> ...failed</source>
         <translation> ...échoué</translation>
     </message>
     <message>
-        <location line="-381"/>
+        <location line="-394"/>
         <source>Me</source>
         <translation>Moi</translation>
     </message>
     <message>
-        <location line="+76"/>
+        <location line="+93"/>
         <source>Friends (0)</source>
         <translation>Amis (0)</translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location line="+42"/>
         <source>Info</source>
         <translation>Info</translation>
     </message>
     <message>
         <location line="+15"/>
-        <location line="+334"/>
         <source>Name:</source>
         <translation>Nom :</translation>
     </message>
     <message>
-        <location line="-333"/>
+        <location line="+1"/>
         <source>Hash:</source>
         <translation>Hash :</translation>
     </message>
@@ -3706,7 +3729,7 @@ Activez-la dans Options → Interface web, puis réessayez.</translation>
         <translation>Fermer</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+21"/>
         <source>Add...</source>
         <translation>Ajouter...</translation>
     </message>
@@ -3716,7 +3739,7 @@ Activez-la dans Options → Interface web, puis réessayez.</translation>
         <translation>Supprimer</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+3"/>
         <source>Send Message</source>
         <translation>Envoyer un message</translation>
     </message>
@@ -3726,7 +3749,12 @@ Activez-la dans Options → Interface web, puis réessayez.</translation>
         <translation>Voir les fichiers partagés</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+2"/>
+        <source>cannot view shared files.</source>
+        <translation>impossible d&apos;afficher les fichiers partagés.</translation>
+    </message>
+    <message>
+        <location line="+14"/>
         <source>Establish Friend Slot</source>
         <translation>Établir un emplacement ami</translation>
     </message>
@@ -3766,9 +3794,8 @@ Activez-la dans Options → Interface web, puis réessayez.</translation>
         <translation> ...OK</translation>
     </message>
     <message>
-        <location line="+76"/>
         <source>Find Friend</source>
-        <translation>Rechercher un ami</translation>
+        <translation type="vanished">Rechercher un ami</translation>
     </message>
 </context>
 <context>
@@ -3979,7 +4006,7 @@ Le télécharger à nouveau ?</translation>
 <context>
     <name>eMule::MetadataPage</name>
     <message>
-        <location filename="../src/gui/dialogs/MetadataPage.cpp" line="+104"/>
+        <location filename="../src/gui/dialogs/MetadataPage.cpp" line="+108"/>
         <source>No metadata tags available.</source>
         <translation>Aucune balise de métadonnées disponible.</translation>
     </message>
@@ -4002,6 +4029,16 @@ Le télécharger à nouveau ?</translation>
         <location line="+20"/>
         <source>Unknown</source>
         <translation>Inconnu</translation>
+    </message>
+    <message>
+        <location line="+37"/>
+        <source>Copy</source>
+        <translation>Copier</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Select All</source>
+        <translation>Tout sélectionner</translation>
     </message>
 </context>
 <context>
@@ -4197,36 +4234,36 @@ Le télécharger à nouveau ?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2692"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2750"/>
         <source>Options</source>
         <translation>Options</translation>
     </message>
     <message>
-        <location line="+49"/>
-        <location line="+1762"/>
+        <location line="+61"/>
+        <location line="+1808"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-1761"/>
-        <location line="+1762"/>
+        <location line="-1807"/>
+        <location line="+1808"/>
         <source>Cancel</source>
         <translation>Annuler</translation>
     </message>
     <message>
-        <location line="-1761"/>
-        <location line="+5303"/>
+        <location line="-1807"/>
+        <location line="+5360"/>
         <source>Apply</source>
         <translation>Appliquer</translation>
     </message>
     <message>
-        <location line="-5302"/>
+        <location line="-5359"/>
         <source>Help</source>
         <translation>Aide</translation>
     </message>
     <message>
-        <location line="+245"/>
-        <location line="+1743"/>
+        <location line="+250"/>
+        <location line="+1784"/>
         <location line="+63"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -4235,7 +4272,7 @@ Le télécharger à nouveau ?</translation>
         <translation>Filtre IP</translation>
     </message>
     <message>
-        <location line="-1830"/>
+        <location line="-1871"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>Filtre IP rechargé : %1 entrées.</translation>
     </message>
@@ -4266,18 +4303,18 @@ Le télécharger à nouveau ?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5228"/>
+        <location line="+5282"/>
         <source>Language</source>
         <translation>Langue</translation>
     </message>
     <message>
-        <location line="-5225"/>
+        <location line="-5279"/>
         <source>System Default</source>
         <translation>Par défaut du système</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+601"/>
+        <location line="+642"/>
         <location line="+293"/>
         <location line="+372"/>
         <location line="+276"/>
@@ -4285,7 +4322,7 @@ Le télécharger à nouveau ?</translation>
         <translation>Divers</translation>
     </message>
     <message>
-        <location line="-1539"/>
+        <location line="-1580"/>
         <source>Bring to front on link click</source>
         <translation>Mettre au premier plan lors du clic sur un lien</translation>
     </message>
@@ -4371,25 +4408,25 @@ Le télécharger à nouveau ?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5154"/>
+        <location line="+5208"/>
         <source>Core</source>
         <translation>Noyau</translation>
     </message>
     <message>
-        <location line="-5149"/>
+        <location line="-5203"/>
         <source>Address:</source>
         <translation>Adresse :</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1061"/>
+        <location line="+1102"/>
         <location line="+633"/>
-        <location line="+409"/>
+        <location line="+410"/>
         <source>Port:</source>
         <translation>Port :</translation>
     </message>
     <message>
-        <location line="-2100"/>
+        <location line="-2142"/>
         <source>authentication token</source>
         <translation>jeton d&apos;authentification</translation>
     </message>
@@ -4494,7 +4531,7 @@ Voulez-vous vraiment continuer ?</translation>
         <translation>Utiliser les icônes eMule originales</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+45"/>
         <source>Save CPU &amp;&amp; Memory Usage</source>
         <translation>Économiser le CPU &amp;&amp; la mémoire</translation>
     </message>
@@ -4533,8 +4570,8 @@ Voulez-vous vraiment continuer ?</translation>
         <location line="+599"/>
         <location line="+928"/>
         <location line="+108"/>
-        <location line="+289"/>
-        <location line="+1006"/>
+        <location line="+290"/>
+        <location line="+1016"/>
         <location line="+152"/>
         <location line="+1036"/>
         <location line="+270"/>
@@ -4543,7 +4580,7 @@ Voulez-vous vraiment continuer ?</translation>
         <translation>Activé</translation>
     </message>
     <message>
-        <location line="-4415"/>
+        <location line="-4426"/>
         <source>Reset</source>
         <translation>Réinitialiser</translation>
     </message>
@@ -4751,23 +4788,23 @@ Voulez-vous vraiment continuer ?</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1663"/>
-        <location line="+1009"/>
+        <location line="+1664"/>
+        <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>Nom :</translation>
     </message>
     <message>
-        <location line="-2820"/>
+        <location line="-2831"/>
         <location line="+655"/>
         <location line="+695"/>
         <location line="+19"/>
-        <location line="+318"/>
+        <location line="+319"/>
         <source>Password:</source>
         <translation>Mot de passe :</translation>
     </message>
     <message>
-        <location line="-1653"/>
+        <location line="-1654"/>
         <source>Update</source>
         <translation>Mettre à jour</translation>
     </message>
@@ -5136,12 +5173,12 @@ Chaque règle remplace un modèle regex par une chaîne de remplacement.</transl
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1089"/>
+        <location line="+1090"/>
         <source>None</source>
         <translation>Aucun</translation>
     </message>
     <message>
-        <location line="-1088"/>
+        <location line="-1089"/>
         <source>Plain</source>
         <translation>Non chiffré</translation>
     </message>
@@ -5183,13 +5220,13 @@ Chaque règle remplace un modèle regex par une chaîne de remplacement.</transl
     <message>
         <location line="+4"/>
         <location line="+902"/>
-        <location line="+1016"/>
+        <location line="+1027"/>
         <location line="+154"/>
         <source>Name</source>
         <translation>Nom</translation>
     </message>
     <message>
-        <location line="-2070"/>
+        <location line="-2081"/>
         <source>Users</source>
         <translation>Utilisateurs</translation>
     </message>
@@ -5518,7 +5555,62 @@ Chaque règle remplace un modèle regex par une chaîne de remplacement.</transl
         <translation>Emplacements d&apos;envoi (sans overhead)</translation>
     </message>
     <message>
-        <location line="-1139"/>
+        <location line="-1459"/>
+        <source>Country flags (IP2Country)</source>
+        <translation>Drapeaux des pays (IP2Country)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Show country flags</source>
+        <translation>Afficher les drapeaux des pays</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Country column:</source>
+        <translation>Colonne Pays :</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Hidden</source>
+        <translation>Masquée</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Short name</source>
+        <translation>Nom court</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Long name</source>
+        <translation>Nom complet</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>MaxMind account ID:</source>
+        <translation>ID de compte MaxMind :</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>License key:</source>
+        <translation>Clé de licence :</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Update the database weekly</source>
+        <translation>Mettre à jour la base chaque semaine</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Update now</source>
+        <translation>Mettre à jour</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Needs a free &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; account. This product includes GeoLite2 data created by MaxMind.</source>
+        <translation>Nécessite un compte &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; gratuit. Ce produit inclut des données GeoLite2 créées par MaxMind.</translation>
+    </message>
+    <message>
+        <location line="+292"/>
         <source>Use for news servers</source>
         <translation>Utiliser pour les serveurs de news</translation>
     </message>
@@ -5720,25 +5812,25 @@ Chaque connexion Usenet transite alors par le proxy : sa vitesse limite donc le 
     </message>
     <message>
         <location line="+26"/>
-        <location line="+37"/>
+        <location line="+38"/>
         <source>Account</source>
         <translation>Compte</translation>
     </message>
     <message>
-        <location line="-35"/>
+        <location line="-36"/>
         <source>Advanced</source>
         <translation>Avancé</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+627"/>
-        <location line="+264"/>
+        <location line="+628"/>
+        <location line="+274"/>
         <location line="+15"/>
         <source>News servers</source>
         <translation>Serveurs de news</translation>
     </message>
     <message>
-        <location line="-900"/>
+        <location line="-911"/>
         <source>Host</source>
         <translation>Hôte</translation>
     </message>
@@ -5763,7 +5855,7 @@ Chaque connexion Usenet transite alors par le proxy : sa vitesse limite donc le 
         <translation>Utilisé</translation>
     </message>
     <message>
-        <location line="+40"/>
+        <location line="+41"/>
         <source>Display name (optional)</source>
         <translation>Nom affiché (facultatif)</translation>
     </message>
@@ -5829,13 +5921,13 @@ Chaque connexion Usenet transite alors par le proxy : sa vitesse limite donc le 
     </message>
     <message>
         <location line="+2"/>
-        <location line="+994"/>
+        <location line="+1004"/>
         <location line="+165"/>
         <source> days</source>
         <translation> jours</translation>
     </message>
     <message>
-        <location line="-1158"/>
+        <location line="-1168"/>
         <source>Retention:</source>
         <translation>Rétention :</translation>
     </message>
@@ -6025,12 +6117,12 @@ La réponse n&apos;est jamais un verdict. Rien ici ne peut empêcher un article 
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1290"/>
+        <location line="+1300"/>
         <source>never</source>
         <translation>jamais</translation>
     </message>
     <message>
-        <location line="-1287"/>
+        <location line="-1297"/>
         <source>A release that looks emptier than this is added paused, with the reason shown, so you decide rather than the guess. It is never failed and never refused.
 
 A shortfall the release&apos;s own PAR2 recovery volumes can cover does not pause it, however low the figure goes.</source>
@@ -6273,7 +6365,7 @@ Reprendre le publie malgré tout.</translation>
         <translation>La liste des serveurs de news n&apos;a pas pu être enregistrée.</translation>
     </message>
     <message>
-        <location line="+136"/>
+        <location line="+146"/>
         <source>(unchanged)</source>
         <translation>(inchangé)</translation>
     </message>
@@ -7068,7 +7160,7 @@ En ajouter un plus tard ne récupère pas son catalogue antérieur : un nouvel i
         <translation>Taille de la file : %1</translation>
     </message>
     <message>
-        <location line="+589"/>
+        <location line="+591"/>
         <source>Proxy settings will only apply to new connections.
 Restart eMule for all connections to use the new proxy settings.
 
@@ -7079,7 +7171,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
 Les connexions aux serveurs de news basculent immédiatement.</translation>
     </message>
     <message>
-        <location line="+846"/>
+        <location line="+865"/>
         <source>File types</source>
         <translation>Types de fichiers</translation>
     </message>
@@ -7089,9 +7181,44 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Impossible de mettre à jour l&apos;association des fichiers .nzb : %1</translation>
     </message>
     <message>
-        <location line="-5163"/>
-        <location line="+1283"/>
-        <location line="+1009"/>
+        <location line="+520"/>
+        <source>Database: not connected to the core</source>
+        <translation>Base de données : non connecté au noyau</translation>
+    </message>
+    <message>
+        <location line="+27"/>
+        <source>Downloading the GeoLite2 country database...</source>
+        <translation>Téléchargement de la base des pays GeoLite2...</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Update failed: the core did not answer</source>
+        <translation>Échec de la mise à jour : le noyau n’a pas répondu</translation>
+    </message>
+    <message>
+        <location line="+53"/>
+        <source>Database: GeoLite2-Country from %1</source>
+        <translation>Base de données : GeoLite2-Country du %1</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Database: none — enter your MaxMind account ID and license key</source>
+        <translation>Base de données : aucune — saisissez votre ID de compte et votre clé de licence MaxMind</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source> (update running)</source>
+        <translation> (mise à jour en cours)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Last update failed: %1</source>
+        <translation>Échec de la dernière mise à jour : %1</translation>
+    </message>
+    <message>
+        <location line="-5811"/>
+        <location line="+1284"/>
+        <location line="+1019"/>
         <location line="+154"/>
         <location line="+1324"/>
         <location line="+281"/>
@@ -7099,7 +7226,7 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Supprimer</translation>
     </message>
     <message>
-        <location line="-3840"/>
+        <location line="-3851"/>
         <source>New eMule Qt version detected</source>
         <translation>Nouvelle version d&apos;eMule Qt détectée</translation>
     </message>
@@ -7109,7 +7236,7 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Mettre à jour depuis une URL : (format filter.dat ou PeerGuardian, .gz/.zip acceptés)</translation>
     </message>
     <message>
-        <location line="+2915"/>
+        <location line="+2926"/>
         <source>Write eMule core logs to disk</source>
         <translation>Écrire les journaux du noyau eMule sur le disque</translation>
     </message>
@@ -7169,14 +7296,14 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Bail demandé :</translation>
     </message>
     <message>
-        <location line="-2195"/>
-        <location line="+903"/>
+        <location line="-2205"/>
+        <location line="+913"/>
         <location line="+1296"/>
         <source> s</source>
         <translation> s</translation>
     </message>
     <message>
-        <location line="-2241"/>
+        <location line="-2251"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
@@ -7185,7 +7312,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
 Réglez-le légèrement en dessous de votre forfait. Le volume est mesuré ici, il est donc inférieur de quelques pour cent à celui de votre fournisseur, et les articles déjà en cours de transfert lorsque la limite est atteinte se terminent quand même.</translation>
     </message>
     <message>
-        <location line="+2356"/>
+        <location line="+2366"/>
         <source>New</source>
         <translation>Nouveau</translation>
     </message>
@@ -7293,9 +7420,9 @@ Réglez-le légèrement en dessous de votre forfait. Le volume est mesuré ici, 
         <translation>Nouveau planning</translation>
     </message>
     <message>
-        <location line="-3866"/>
-        <location line="+1286"/>
-        <location line="+1009"/>
+        <location line="-3877"/>
+        <location line="+1287"/>
+        <location line="+1019"/>
         <location line="+154"/>
         <location line="+1578"/>
         <source>Add</source>
@@ -7324,7 +7451,7 @@ Réglez-le légèrement en dessous de votre forfait. Le volume est mesuré ici, 
         <translation>La page de paramètres %1 n&apos;est pas encore implémentée.</translation>
     </message>
     <message>
-        <location line="+176"/>
+        <location line="+178"/>
         <source>Proxy</source>
         <translation>Proxy</translation>
     </message>
@@ -7345,7 +7472,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Les paramètres de connexion au noyau prendront effet après le redémarrage de l&apos;application.</translation>
     </message>
     <message>
-        <location line="+27"/>
+        <location line="+35"/>
         <source>Icons</source>
         <translation>Icônes</translation>
     </message>
@@ -7462,14 +7589,14 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+222"/>
-        <location line="+720"/>
-        <location line="+376"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+238"/>
+        <location line="+710"/>
+        <location line="+360"/>
         <source>Download</source>
         <translation>Téléchargement</translation>
     </message>
     <message>
-        <location line="-1076"/>
+        <location line="-1050"/>
         <source>Close All Searches</source>
         <translation>Fermer toutes les recherches</translation>
     </message>
@@ -7636,23 +7763,23 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
     <message>
         <location line="+32"/>
         <location line="+24"/>
-        <location line="+106"/>
+        <location line="+109"/>
         <source>Not connected to daemon — search cannot be started.</source>
         <translation>Non connecté au démon — la recherche ne peut pas être lancée.</translation>
     </message>
     <message>
-        <location line="-73"/>
+        <location line="-76"/>
         <source>Search</source>
         <translation>Recherche</translation>
     </message>
     <message>
-        <location line="+47"/>
+        <location line="+27"/>
         <source>Kad: &quot;%1&quot; is already being searched — using &quot;%2&quot; as the search target.</source>
         <translation>Kad : &quot;%1&quot; fait déjà l&apos;objet d&apos;une recherche — &quot;%2&quot; est utilisé comme cible de recherche.</translation>
     </message>
     <message>
-        <location line="+47"/>
-        <location line="+191"/>
+        <location line="+70"/>
+        <location line="+178"/>
         <source>Usenet search</source>
         <translation>Recherche Usenet</translation>
     </message>
@@ -7722,7 +7849,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Copier les liens eD2K</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+5"/>
         <source>Copy eD2K Links (HTML)</source>
         <translation>Copier les liens eD2K (HTML)</translation>
     </message>
@@ -7737,13 +7864,13 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Marquer comme non-spam</translation>
     </message>
     <message>
-        <location line="+61"/>
-        <location line="+700"/>
+        <location line="+48"/>
+        <location line="+691"/>
         <source>Preview</source>
         <translation>Aperçu</translation>
     </message>
     <message>
-        <location line="-481"/>
+        <location line="-468"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -7752,7 +7879,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
 %1</translation>
     </message>
     <message>
-        <location line="+727"/>
+        <location line="+714"/>
         <source>Asking servers: %1 / %2</source>
         <translation>Interrogation des serveurs : %1 / %2</translation>
     </message>
@@ -7762,7 +7889,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Tous</translation>
     </message>
     <message>
-        <location line="-1046"/>
+        <location line="-1024"/>
         <location line="+14"/>
         <source>Mark as Spam</source>
         <translation>Marquer comme spam</translation>
@@ -7773,7 +7900,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Supprimer</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+7"/>
         <source>Close Search Results</source>
         <translation>Fermer les résultats de recherche</translation>
     </message>
@@ -7798,7 +7925,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Services web</translation>
     </message>
     <message>
-        <location line="+679"/>
+        <location line="+670"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Aperçu indisponible — le serveur web n&apos;est pas en cours d&apos;exécution ou aucun jeton de flux n&apos;a été reçu.</translation>
     </message>
@@ -7806,12 +7933,12 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
 <context>
     <name>eMule::SearchResultsModel</name>
     <message>
-        <location filename="../src/gui/controls/SearchResultsModel.cpp" line="+70"/>
+        <location filename="../src/gui/controls/SearchResultsModel.cpp" line="+72"/>
         <source>Yes</source>
         <translation>Oui</translation>
     </message>
     <message>
-        <location line="+128"/>
+        <location line="+147"/>
         <source>File Name</source>
         <translation>Nom du fichier</translation>
     </message>
@@ -7874,7 +8001,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+74"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+76"/>
         <location line="+3"/>
         <source>Yes</source>
         <translation>Oui</translation>
@@ -7886,7 +8013,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Non</translation>
     </message>
     <message>
-        <location line="+61"/>
+        <location line="+71"/>
         <source>Server Name</source>
         <translation>Nom du serveur</translation>
     </message>
@@ -7941,7 +8068,12 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Limite de fichiers Soft</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="+3"/>
+        <source>Country</source>
+        <translation>Pays</translation>
+    </message>
+    <message>
+        <location line="+32"/>
         <source>High</source>
         <translation>Haute</translation>
     </message>
@@ -7960,7 +8092,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation type="vanished">Fichiers Soft</translation>
     </message>
     <message>
-        <location line="-35"/>
+        <location line="-36"/>
         <source>Low ID</source>
         <translation>Low ID</translation>
     </message>
@@ -7973,25 +8105,25 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+235"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+239"/>
         <source>Disconnect</source>
         <translation>Déconnecter</translation>
     </message>
     <message>
         <location line="+2"/>
         <location line="+24"/>
-        <location line="+50"/>
+        <location line="+53"/>
         <source>Cancel</source>
         <translation>Annuler</translation>
     </message>
     <message>
-        <location line="-72"/>
-        <location line="+454"/>
+        <location line="-75"/>
+        <location line="+416"/>
         <source>Connect</source>
         <translation>Connecter</translation>
     </message>
     <message>
-        <location line="-505"/>
+        <location line="-467"/>
         <source>Invalid URL: %1</source>
         <translation>URL invalide : %1</translation>
     </message>
@@ -8021,7 +8153,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>server.met téléchargé, &quot;%1&quot; décompressé (%2 octets). Analyse en cours...</translation>
     </message>
     <message>
-        <location line="+601"/>
+        <location line="+568"/>
         <location line="+2"/>
         <location line="+24"/>
         <location line="+39"/>
@@ -8119,7 +8251,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>▸ Serveurs (%1)</translation>
     </message>
     <message>
-        <location line="-636"/>
+        <location line="-600"/>
         <source>Connect To</source>
         <translation>Se connecter à</translation>
     </message>
@@ -8135,12 +8267,12 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
     </message>
     <message>
         <location line="+1"/>
-        <location line="+525"/>
+        <location line="+489"/>
         <source>Normal</source>
         <translation>Normale</translation>
     </message>
     <message>
-        <location line="-524"/>
+        <location line="-488"/>
         <source>High</source>
         <translation>Haute</translation>
     </message>
@@ -8170,17 +8302,17 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Copier les liens eD2K</translation>
     </message>
     <message>
-        <location line="+16"/>
+        <location line="+6"/>
         <source>Paste eD2K Links</source>
         <translation>Coller les liens eD2K</translation>
     </message>
     <message>
-        <location line="+35"/>
+        <location line="+12"/>
         <source>Remove</source>
         <translation>Supprimer</translation>
     </message>
     <message>
-        <location line="+21"/>
+        <location line="+6"/>
         <source>Remove All</source>
         <translation>Tout supprimer</translation>
     </message>
@@ -8200,7 +8332,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>▸ Serveurs (0)</translation>
     </message>
     <message>
-        <location line="+64"/>
+        <location line="+71"/>
         <source>New Server</source>
         <translation>Nouveau serveur</translation>
     </message>
@@ -8216,17 +8348,17 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
     </message>
     <message>
         <location line="+9"/>
-        <location line="+120"/>
+        <location line="+125"/>
         <source>Name:</source>
         <translation>Nom :</translation>
     </message>
     <message>
-        <location line="-114"/>
+        <location line="-119"/>
         <source>Add to list</source>
         <translation>Ajouter à la liste</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+21"/>
         <source>Update server.met from URL</source>
         <translation>Mettre à jour server.met depuis l&apos;URL</translation>
     </message>
@@ -8241,7 +8373,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Mettre à jour</translation>
     </message>
     <message>
-        <location line="+46"/>
+        <location line="+48"/>
         <source>My Info</source>
         <translation>Mes infos</translation>
     </message>
@@ -8295,13 +8427,21 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <source>Firewalled</source>
         <translation>Derrière pare-feu</translation>
     </message>
+    <message numerus="yes">
+        <location line="+567"/>
+        <source>%n server(s) not added — LAN addresses are filtered</source>
+        <translation>
+            <numerusform>%n serveur non ajouté — les adresses LAN sont filtrées</numerusform>
+            <numerusform>%n serveurs non ajoutés — les adresses LAN sont filtrées</numerusform>
+        </translation>
+    </message>
     <message>
-        <location line="-46"/>
+        <location line="-613"/>
         <source>Low ID</source>
         <translation>Low ID</translation>
     </message>
     <message>
-        <location line="+277"/>
+        <location line="+296"/>
         <source>Invalid server.met header: 0x%1</source>
         <translation>En-tête server.met invalide : 0x%1</translation>
     </message>
@@ -8394,30 +8534,30 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
     <message>
         <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+129"/>
         <location line="+12"/>
-        <location line="+380"/>
         <location line="+362"/>
+        <location line="+375"/>
         <location line="+99"/>
         <source>Shared Files (0)</source>
         <translation>Fichiers partagés (0)</translation>
     </message>
     <message>
-        <location line="-755"/>
+        <location line="-750"/>
         <source>Open File</source>
         <translation>Ouvrir le fichier</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1308"/>
+        <location line="+1303"/>
         <source>Open Folder</source>
         <translation>Ouvrir le dossier</translation>
     </message>
     <message>
-        <location line="-1296"/>
+        <location line="-1291"/>
         <source>Rename...</source>
         <translation>Renommer...</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+1626"/>
         <source>Rename File</source>
         <translation>Renommer le fichier</translation>
     </message>
@@ -8427,12 +8567,12 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Nouveau nom de fichier :</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="-1618"/>
         <source>Delete From Disk</source>
         <translation>Supprimer du disque</translation>
     </message>
     <message>
-        <location line="+798"/>
+        <location line="+811"/>
         <source>Delete File</source>
         <translation>Supprimer le fichier</translation>
     </message>
@@ -8442,12 +8582,12 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Êtes-vous sûr de vouloir supprimer définitivement « %1 » du disque ?</translation>
     </message>
     <message>
-        <location line="-777"/>
+        <location line="-790"/>
         <source>Unshare</source>
         <translation>Ne plus partager</translation>
     </message>
     <message>
-        <location line="+810"/>
+        <location line="+823"/>
         <source>Unshare File</source>
         <translation>Annuler le partage du fichier</translation>
     </message>
@@ -8461,7 +8601,7 @@ The file will remain on disk.</source>
 Le fichier restera sur le disque.</translation>
     </message>
     <message>
-        <location line="-793"/>
+        <location line="-806"/>
         <source>Priority (Upload)</source>
         <translation>Priorité (Envoi)</translation>
     </message>
@@ -8591,7 +8731,7 @@ Le fichier restera sur le disque.</translation>
         <translation>Tous les répertoires</translation>
     </message>
     <message>
-        <location line="+130"/>
+        <location line="+143"/>
         <source>Current Session</source>
         <translation>Session actuelle</translation>
     </message>
@@ -8695,12 +8835,12 @@ Le fichier restera sur le disque.</translation>
         <translation>Copier</translation>
     </message>
     <message>
-        <location line="-511"/>
+        <location line="-524"/>
         <source>Release</source>
         <translation>Release</translation>
     </message>
     <message>
-        <location line="+485"/>
+        <location line="+498"/>
         <source>Basic Options</source>
         <translation>Options de base</translation>
     </message>
@@ -10439,139 +10579,155 @@ Cliquer de nouveau sur « Restaurer les statistiques » rechargera vos statistiq
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+615"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+600"/>
         <source>Downloads</source>
         <translation>Téléchargements</translation>
     </message>
     <message>
-        <location line="-284"/>
+        <location line="-265"/>
         <source>Priority (Download)</source>
         <translation>Priorité (Téléchargement)</translation>
     </message>
     <message>
         <location line="+29"/>
-        <location line="+1517"/>
+        <location line="+1490"/>
         <location line="+98"/>
         <source>Low</source>
         <translation>Basse</translation>
     </message>
     <message>
-        <location line="-1614"/>
-        <location line="+1516"/>
+        <location line="-1587"/>
+        <location line="+1489"/>
         <location line="+99"/>
         <source>Normal</source>
         <translation>Normale</translation>
     </message>
     <message>
-        <location line="-1614"/>
-        <location line="+1515"/>
+        <location line="-1587"/>
+        <location line="+1488"/>
         <location line="+100"/>
         <source>High</source>
         <translation>Haute</translation>
     </message>
     <message>
-        <location line="-1613"/>
-        <location line="+1615"/>
+        <location line="-1586"/>
+        <location line="+1588"/>
         <source>Very Low</source>
         <translation>Très basse</translation>
     </message>
     <message>
-        <location line="-1614"/>
-        <location line="+1615"/>
+        <location line="-1587"/>
+        <location line="+1588"/>
         <source>Very High</source>
         <translation>Très haute</translation>
     </message>
     <message>
-        <location line="-1613"/>
-        <location line="+1616"/>
+        <location line="-1586"/>
+        <location line="+1589"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-1605"/>
-        <location line="+512"/>
-        <location line="+1001"/>
+        <location line="-1578"/>
+        <location line="+509"/>
+        <location line="+977"/>
         <source>Pause</source>
         <translation>Pause</translation>
     </message>
     <message>
-        <location line="-1504"/>
-        <location line="+509"/>
-        <location line="+997"/>
+        <location line="-1477"/>
+        <location line="+506"/>
+        <location line="+973"/>
         <source>Stop</source>
         <translation>Arrêter</translation>
     </message>
     <message>
-        <location line="-1497"/>
-        <location line="+506"/>
-        <location line="+993"/>
+        <location line="-1470"/>
+        <location line="+503"/>
+        <location line="+969"/>
         <source>Resume</source>
         <translation>Reprendre</translation>
     </message>
     <message>
-        <location line="-1486"/>
-        <location line="+499"/>
-        <location line="+989"/>
+        <location line="-1459"/>
+        <location line="+496"/>
+        <location line="+965"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>Annuler</translation>
     </message>
     <message>
-        <location line="-1489"/>
-        <location line="+510"/>
+        <location line="+174"/>
+        <location line="+77"/>
+        <source>cannot view shared files.</source>
+        <translation>impossible d&apos;afficher les fichiers partagés.</translation>
+    </message>
+    <message>
+        <location line="+174"/>
         <source>Cancel Download</source>
         <translation>Annuler le téléchargement</translation>
     </message>
     <message>
-        <location line="-509"/>
-        <location line="+510"/>
+        <location line="+1"/>
+        <location line="+31"/>
         <source>Cancel download &quot;%1&quot;?</source>
         <translation>Annuler le téléchargement &quot;%1&quot; ?</translation>
     </message>
     <message>
-        <location line="-506"/>
-        <location line="+510"/>
+        <location line="-27"/>
+        <location line="+29"/>
         <source>Cancel Downloads</source>
         <translation>Annuler les téléchargements</translation>
     </message>
     <message>
-        <location line="-509"/>
-        <location line="+510"/>
+        <location line="-28"/>
+        <location line="+27"/>
         <source>Cancel %1 selected downloads?</source>
         <translation>Annuler les %1 téléchargements sélectionnés ?</translation>
     </message>
     <message>
-        <location line="-497"/>
-        <location line="+508"/>
+        <location line="+25"/>
+        <location line="+12"/>
+        <source>Rename</source>
+        <translation>Renommer</translation>
+    </message>
+    <message>
+        <location line="-12"/>
+        <source>File name:</source>
+        <translation>Nom du fichier :</translation>
+    </message>
+    <message>
+        <location line="-1939"/>
+        <location line="+494"/>
         <source>Open File</source>
         <translation>Ouvrir le fichier</translation>
     </message>
     <message>
-        <location line="-499"/>
-        <location line="+513"/>
+        <location line="-485"/>
+        <location line="+499"/>
         <source>Preview</source>
         <translation>Aperçu</translation>
     </message>
     <message>
-        <location line="-507"/>
-        <location line="+1573"/>
-        <location line="+82"/>
+        <location line="-493"/>
+        <location line="+1559"/>
+        <location line="+83"/>
         <source>Details...</source>
         <translation>Détails...</translation>
     </message>
     <message>
-        <location line="-1649"/>
+        <location line="-1636"/>
         <source>Comments...</source>
         <translation>Commentaires...</translation>
     </message>
     <message>
         <location line="+17"/>
-        <location line="+532"/>
+        <location line="+518"/>
         <source>Clear Completed</source>
         <translation>Effacer les terminés</translation>
     </message>
     <message>
-        <location line="-522"/>
+        <location line="-508"/>
         <source>eD2K Links...</source>
         <translation>Liens eD2K...</translation>
     </message>
@@ -10581,14 +10737,14 @@ Cliquer de nouveau sur « Restaurer les statistiques » rechargera vos statistiq
         <translation>Coller les liens eD2K</translation>
     </message>
     <message>
-        <location line="+21"/>
-        <location line="+1579"/>
+        <location line="+15"/>
+        <location line="+1572"/>
         <location line="+77"/>
         <source>Find...</source>
         <translation>Rechercher...</translation>
     </message>
     <message>
-        <location line="-1652"/>
+        <location line="-1645"/>
         <source>Search Related Files</source>
         <translation>Rechercher les fichiers associés</translation>
     </message>
@@ -10599,7 +10755,7 @@ Cliquer de nouveau sur « Restaurer les statistiques » rechargera vos statistiq
     </message>
     <message>
         <location line="+11"/>
-        <location line="+454"/>
+        <location line="+446"/>
         <source>Assign To Category</source>
         <translation>Assigner à une catégorie</translation>
     </message>
@@ -10632,19 +10788,19 @@ Cliquer de nouveau sur « Restaurer les statistiques » rechargera vos statistiq
         <translation>Clients connus</translation>
     </message>
     <message>
-        <location line="-965"/>
+        <location line="-941"/>
         <source>Clients on queue:   0</source>
         <translation>Clients en file :   0</translation>
     </message>
     <message>
-        <location line="-330"/>
-        <location line="+457"/>
+        <location line="-346"/>
+        <location line="+449"/>
         <source>(Unassign)</source>
         <translation>(Retirer l&apos;affectation)</translation>
     </message>
     <message>
-        <location line="-104"/>
-        <location line="+990"/>
+        <location line="-80"/>
+        <location line="+966"/>
         <source>Priority</source>
         <translation>Priorité</translation>
     </message>
@@ -10742,27 +10898,27 @@ Cliquer de nouveau sur « Restaurer les statistiques » rechargera vos statistiq
     </message>
     <message>
         <location line="+120"/>
-        <location line="+81"/>
+        <location line="+82"/>
         <source>Add To Friends</source>
         <translation>Ajouter aux amis</translation>
     </message>
     <message>
-        <location line="-59"/>
+        <location line="-60"/>
         <location line="+7"/>
-        <location line="+76"/>
+        <location line="+77"/>
         <location line="+3"/>
         <source>Send Message</source>
         <translation>Envoyer un message</translation>
     </message>
     <message>
-        <location line="-79"/>
-        <location line="+79"/>
+        <location line="-80"/>
+        <location line="+80"/>
         <source>Message:</source>
         <translation>Message :</translation>
     </message>
     <message>
-        <location line="-68"/>
-        <location line="+81"/>
+        <location line="-69"/>
+        <location line="+82"/>
         <source>View Shared Files</source>
         <translation>Voir les fichiers partagés</translation>
     </message>
@@ -11520,14 +11676,14 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Adresse</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3593"/>
-        <location line="+3485"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3595"/>
+        <location line="+3487"/>
         <location line="+45"/>
         <source>Session expired — log in again</source>
         <translation>Session expirée — reconnectez-vous</translation>
     </message>
     <message>
-        <location line="-3528"/>
+        <location line="-3530"/>
         <source>Guests cannot add downloads</source>
         <translation>Les invités ne peuvent pas ajouter de téléchargements</translation>
     </message>
@@ -11623,7 +11779,7 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Échec de la connexion</translation>
     </message>
     <message>
-        <location line="+205"/>
+        <location line="+207"/>
         <location line="+1819"/>
         <source>Web Control Panel</source>
         <translation>Panneau de contrôle Web</translation>
@@ -12290,7 +12446,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Fichiers NZB :</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1240"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1242"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>Nom</translation>
@@ -12672,7 +12828,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Vitesse d&apos;envoi</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1237"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1239"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation>Envois</translation>

@@ -23,6 +23,7 @@
 namespace eMule {
 
 class FileDataIO;
+class UpDownClient;
 
 // ---------------------------------------------------------------------------
 // UDPServerRecord — per-UDP-server spam tracking
@@ -39,6 +40,8 @@ struct UDPServerRecord {
 
 struct SearchListEntry {
     uint32 searchID = 0;
+    QString title;                  ///< tab title for client lists (peer's user name)
+    bool clientSharedFiles = false; ///< MFC SSearchParams::bClientSharedFiles
     std::list<std::unique_ptr<SearchFile>> files;
 
     SearchListEntry() = default;
@@ -81,6 +84,14 @@ public:
     bool processSearchAnswer(const uint8* packet, uint32 size,
                              bool optUTF8,
                              uint32 serverIP, uint16 serverPort);
+
+    /// Process a peer's shared file list (MFC ProcessSearchAnswer with sender).
+    /// Results go to the sender's own tab, created on first use; returns its ID.
+    uint32 processClientSharedFiles(UpDownClient& sender, const uint8* packet, uint32 size,
+                                    const QString& directory = {});
+
+    /// Entry for a search ID, or nullptr.
+    [[nodiscard]] const SearchListEntry* searchEntry(uint32 searchID) const { return findEntry(searchID); }
 
     /// Process a single UDP search result.
     void processUDPSearchAnswer(const uint8* packet, uint32 size,

@@ -38,6 +38,7 @@ Website: [emule-qt.org](https://emule-qt.org/)
 - **CLI Control** — Drive a running daemon from the shell: `--add-link`, `--add-nzb`, `--connect`, `--disconnect`, `--connect-kad`
 - **Extended Source Exchange** — Source exchange widened with each source's server endpoint, user hash, and obfuscation options, negotiated per peer
 - **Save/Load Sources** — Each part file's best sources are written to disk and re-injected on restart, so a download resumes at speed instead of rebuilding its source list
+- **Country Flags** — MorphXT-style flags next to every client, source, server, Kad contact, friend and news server, from a MaxMind GeoLite2 database the daemon keeps up to date ([details](docs/IP2Country.md))
 - **Upload Queue Persistence** — The waiting list survives a restart with every peer's earned wait time intact, so queued peers keep their position ([details](docs/upload-queue-storage.md))
 - **Hardened Kademlia** — Node reputation with one-node-per-IP enforcement, variance-based adaptive timeouts, and a public IP adopted only once several independent peers agree on it
 - **Persistent Statistics** — Graph history is collected in the core rather than the window, so traces survive a GUI restart and two GUIs on one daemon see the same picture

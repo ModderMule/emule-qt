@@ -2391,13 +2391,24 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
             theApp.uploadQueue->removeFromUploadQueue(this);
     }
 
+    // A hashset request that died with the connection goes back to the file, or no
+    // other source is ever asked for it. MFC BaseClient.cpp:1143-1151.
+    if (m_reqFile) {
+        if (m_hashsetRequestingMD4)
+            m_reqFile->setMD4HashsetNeeded(true);
+        if (m_hashsetRequestingAICH)
+            m_reqFile->setAICHPartHashsetNeeded(true);
+    }
+    m_hashsetRequestingMD4 = false;   // MFC BaseClient.cpp:1223-1224
+    m_hashsetRequestingAICH = false;
+
     // A shared-file-list request died with the connection. Reset the counter, or
     // requestSharedFileList()'s "already in progress" refusal would latch forever.
     // MFC BaseClient.cpp:1152-1155.
     if (m_fileListRequested) {
         m_fileListRequested = 0;
-        logWarning(QStringLiteral("Failed to retrieve shared files from user %1")
-                       .arg(userName()));
+        logStatusWarning(QStringLiteral("Failed to retrieve shared files from user %1")
+                             .arg(statusName()));
     }
 
     // MFC BaseClient.cpp:1122-1132. A transfer that drops is still a good source: back on the
@@ -2598,7 +2609,8 @@ void UpDownClient::checkQueueRankFlood()
 void UpDownClient::requestSharedFileList()
 {
     if (m_noViewSharedFiles) {
-        logDebug(QStringLiteral("Client %1 doesn't allow viewing shared files").arg(userName()));
+        logStatusWarning(QStringLiteral("User %1 does not allow viewing their shared files")
+                             .arg(statusName()));
         return;
     }
 
@@ -2608,11 +2620,12 @@ void UpDownClient::requestSharedFileList()
     // would leave the counter at 0 at connect time, which is the value the whole
     // OP_ASKSHAREDDIRS answer chain keys off.
     if (m_fileListRequested != 0) {
-        logWarning(QStringLiteral("Requesting shared files from user %1 is already in progress")
-                       .arg(userName()));
+        logStatusWarning(QStringLiteral("Requesting shared files from user %1 (%2) is already in progress")
+                             .arg(statusName()).arg(m_userIDHybrid));
         return;
     }
 
+    logStatusInfo(QStringLiteral("Requesting shared files from '%1'").arg(statusName()));
     m_fileListRequested = 1;
     tryToConnect(true);
 }
@@ -2633,39 +2646,28 @@ void UpDownClient::processSharedFileList(const uint8* data, uint32 size, const Q
     if (dir.isEmpty())
         m_fileListRequested = 0;
 
-    if (!data || size == 0)
+    if (!data || size < 4 || !theApp.searchList)
         return;
 
-    // Process the shared file list through SearchList
-    if (theApp.searchList) {
-        theApp.searchList->processSearchAnswer(data, size,
-                                                m_unicodeSupport,
-                                                m_serverAddress.toNetworkUint32(), m_serverPort);
+    // Into the peer's own Search tab, not the current ED2K search (MFC BaseClient.cpp:1797)
+    const uint32 fileCount = peekUInt32(data);
+    uint32 searchID = 0;
+    try {
+        searchID = theApp.searchList->processClientSharedFiles(*this, data, size, dir);
+    } catch (const std::exception& ex) {
+        logWarning(QStringLiteral("Malformed shared file list from %1: %2")
+                       .arg(userName(), QString::fromUtf8(ex.what())));
+        searchID = m_searchID; // tab may exist already; show what did parse
     }
+    if (searchID == 0)
+        return;
 
-    // Build CBOR array of files and emit signal for the GUI
-    {
-        SafeMemFile smf(data, size);
-        const uint32 count = smf.readUInt32();
-        QCborArray filesArr;
-        for (uint32 i = 0; i < count; ++i) {
-            try {
-                SearchFile sf(smf, m_unicodeSupport);
-                QCborMap entry;
-                entry.insert(QStringLiteral("hash"), md4str(sf.fileHash()));
-                entry.insert(QStringLiteral("fileName"), sf.fileName());
-                entry.insert(QStringLiteral("fileSize"), static_cast<qint64>(static_cast<uint64>(sf.fileSize())));
-                filesArr.append(entry);
-            } catch (...) {
-                break;
-            }
-        }
-        if (!filesArr.isEmpty()) {
-            emit sharedFileListReceived(
-                QByteArray(reinterpret_cast<const char*>(m_userHash.data()), 16),
-                userName(), filesArr);
-        }
-    }
+    if (fileCount == 0 && dir.isEmpty())
+        logStatusInfo(QStringLiteral("User %1 shares no files").arg(statusName()));
+
+    emit sharedFileListReceived(
+        QByteArray(reinterpret_cast<const char*>(m_userHash.data()), 16),
+        userName(), searchID);
 }
 
 // ===========================================================================
@@ -4815,6 +4817,7 @@ void UpDownClient::processSharedDirsAnswer(const uint8* data, uint32 size)
 
     if (dirCount == 0) {
         m_fileListRequested = 0;
+        logStatusInfo(QStringLiteral("User %1 shares no files").arg(statusName()));
         return;
     }
 
@@ -4864,7 +4867,8 @@ void UpDownClient::processSharedDenied()
 {
     m_fileListRequested = 0;
     m_noViewSharedFiles = true;
-    logDebug(QStringLiteral("Client %1 denied shared file browse request").arg(userName()));
+    logStatusWarning(QStringLiteral("User %1 (%2) denied access to list of shared directories/files")
+                         .arg(statusName()).arg(m_userIDHybrid));
 }
 
 // ===========================================================================
@@ -4990,6 +4994,18 @@ void UpDownClient::processChangeClientID(const uint8* data, uint32 size)
         logDebug(QStringLiteral("OP_CHANGE_CLIENT_ID from %1: unknown contents (id=%2)")
                      .arg(userName(), ipstr(newUserID)));
     }
+}
+
+// ===========================================================================
+// statusName — who a user-facing log line talks about
+// ===========================================================================
+
+QString UpDownClient::statusName() const
+{
+    // A peer we never shook hands with has no name yet; the address still tells them apart
+    if (!m_username.isEmpty())
+        return m_username;
+    return QStringLiteral("%1:%2").arg(m_userAddress.toString()).arg(m_userPort);
 }
 
 } // namespace eMule

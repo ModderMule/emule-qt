@@ -9,6 +9,9 @@
 #include "controls/FriendListModel.h"
 #include "dialogs/AddFriendDialog.h"
 #include "dialogs/DetailDialog.h"
+#include "dialogs/FindInListDialog.h"
+#include "utils/CountryFlags.h"
+#include "utils/IpcFeedback.h"
 #include "utils/ListActivation.h"
 #include "utils/PanelPoller.h"
 #include "utils/Smileys.h"
@@ -24,6 +27,7 @@
 #include <QHBoxLayout>
 #include <QHostAddress>
 #include <QInputDialog>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListView>
@@ -150,7 +154,24 @@ void MessagesPanel::onSendClicked()
             updateChatDisplay();
     });
 
+    m_inputHistory[target].add(text);
     m_messageInput->clear();
+}
+
+bool MessagesPanel::eventFilter(QObject* obj, QEvent* event)
+{
+    if (obj == m_messageInput && event->type() == QEvent::KeyPress) {
+        const auto* ke = static_cast<QKeyEvent*>(event);
+        if (ke->key() == Qt::Key_Up || ke->key() == Qt::Key_Down) {
+            if (!m_activeFriendHash.isEmpty()) {
+                if (const auto text = m_inputHistory[m_activeFriendHash].scroll(
+                        ke->key() == Qt::Key_Down))
+                    m_messageInput->setText(*text);
+            }
+            return true;
+        }
+    }
+    return QWidget::eventFilter(obj, event);
 }
 
 void MessagesPanel::onCloseClicked()
@@ -234,6 +255,7 @@ void MessagesPanel::setupUi()
     m_friendListView->setModel(m_friendModel);
     m_friendListView->setSelectionMode(QAbstractItemView::SingleSelection);
     m_friendListView->setContextMenuPolicy(Qt::CustomContextMenu);
+    CountryFlags::bindFlagColumn(m_friendListView);
     leftLayout->addWidget(m_friendListView, 1);
 
     connect(m_friendListView, &QListView::clicked,
@@ -249,7 +271,16 @@ void MessagesPanel::setupUi()
         if (const FriendRow* row = m_friendModel->rowAt(index.row()))
             showClientDetails(this, m_ipc, row->hash);
     };
-    bindListActivation(m_friendListView, showFriendDetails, showFriendDetails);
+    // FriendListCtrl.cpp:253 PreTranslateMessage: Del removes, Insert adds. Its general-
+    // purpose find (Ctrl+F / F3) opens the chat like a click, so the info pane follows.
+    ListKeyHandlers keys;
+    keys.activate = showFriendDetails;
+    keys.details = showFriendDetails;
+    keys.remove = [this] { removeSelectedFriend(); };
+    keys.insert = [this] { showAddFriendDialog(); };
+    keys.find = true;
+    keys.found = [this](const QModelIndex& index) { onFriendClicked(index); };
+    bindListKeys(m_friendListView, std::move(keys));
 
     // Info section
     auto* infoGroup = new QGroupBox(tr("Info"), leftWidget);
@@ -339,6 +370,7 @@ void MessagesPanel::setupUi()
     connect(m_sendBtn, &QPushButton::clicked, this, &MessagesPanel::onSendClicked);
     connect(m_closeBtn, &QPushButton::clicked, this, &MessagesPanel::onCloseClicked);
     connect(m_messageInput, &QLineEdit::returnPressed, this, &MessagesPanel::onSendClicked);
+    m_messageInput->installEventFilter(this);
 
     m_splitter->addWidget(rightWidget);
 
@@ -355,22 +387,7 @@ void MessagesPanel::setupUi()
     connect(addAction, &QAction::triggered, this, &MessagesPanel::showAddFriendDialog);
 
     auto* removeAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/UserDelete.ico")), tr("Remove"));
-    connect(removeAction, &QAction::triggered, this, [this]() {
-        if (!m_ipc || !m_ipc->isConnected())
-            return;
-        const auto sel = m_friendListView->currentIndex();
-        if (!sel.isValid())
-            return;
-        const auto* row = m_friendModel->rowAt(sel.row());
-        if (!row)
-            return;
-
-        IpcMessage msg(IpcMsgType::RemoveFriend);
-        msg.append(row->hash);
-        m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
-            requestFriendList();
-        });
-    });
+    connect(removeAction, &QAction::triggered, this, &MessagesPanel::removeSelectedFriend);
 
     auto* sendMsgAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/UserMessage.ico")), tr("Send Message"));
     connect(sendMsgAction, &QAction::triggered, this, [this]() {
@@ -381,7 +398,7 @@ void MessagesPanel::setupUi()
 
     auto* viewSharedAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/SharedFilesList.ico")), tr("View Shared Files"));
     connect(viewSharedAction, &QAction::triggered, this, [this]() {
-        if (!m_ipc || !m_ipc->isConnected())
+        if (!IpcFeedback::requireConnection(m_ipc, tr("cannot view shared files.")))
             return;
         const auto sel = m_friendListView->currentIndex();
         if (!sel.isValid())
@@ -599,22 +616,30 @@ void MessagesPanel::showAddFriendDialog()
 
 void MessagesPanel::showFindDialog()
 {
-    bool ok = false;
-    const QString text = QInputDialog::getText(this, tr("Find Friend"),
-                                                tr("Name:"), QLineEdit::Normal,
-                                                {}, &ok);
-    if (!ok || text.isEmpty())
+    // The shared list find, so F3 can repeat it; a hit opens the chat like a click.
+    const QPersistentModelIndex before = m_friendListView->currentIndex();
+    showFindInListDialog(this, m_friendListView);
+    const QModelIndex after = m_friendListView->currentIndex();
+    if (after.isValid() && after != before)
+        onFriendClicked(after);
+}
+
+void MessagesPanel::removeSelectedFriend()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    const auto sel = m_friendListView->currentIndex();
+    if (!sel.isValid())
+        return;
+    const auto* row = m_friendModel->rowAt(sel.row());
+    if (!row)
         return;
 
-    const int count = m_friendModel->rowCount();
-    for (int i = 0; i < count; ++i) {
-        const auto* row = m_friendModel->rowAt(i);
-        if (row && row->name.contains(text, Qt::CaseInsensitive)) {
-            m_friendListView->setCurrentIndex(m_friendModel->index(i));
-            onFriendClicked(m_friendModel->index(i));
-            return;
-        }
-    }
+    IpcMessage msg(IpcMsgType::RemoveFriend);
+    msg.append(row->hash);
+    m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
+        requestFriendList();
+    });
 }
 
 // ---------------------------------------------------------------------------

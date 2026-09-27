@@ -13,6 +13,54 @@
 
 namespace eMule {
 
+namespace {
+
+/// Last term/column per view, parented to the view so it dies with it.
+class FindState : public QObject {
+public:
+    explicit FindState(QAbstractItemView* view) : QObject(view)
+    {
+        setObjectName(QString::fromLatin1(kName));
+    }
+
+    static constexpr const char* kName = "eMuleFindInListState";
+
+    QString term;
+    int     column = 0;
+};
+
+FindState* findState(QAbstractItemView* view, bool create)
+{
+    // By name, not type: FindState has no Q_OBJECT, which findChild<T> requires.
+    auto* state = static_cast<FindState*>(view->findChild<QObject*>(
+        QString::fromLatin1(FindState::kName), Qt::FindDirectChildrenOnly));
+    if (!state && create)
+        state = new FindState(view);
+    return state;
+}
+
+/// Select the first row after @p startRow (stepping by @p step, wrapping) whose
+/// @p column text contains @p term. startRow == -1 with step 1 starts at the top.
+bool selectMatch(QAbstractItemView* view, const QString& term, int column, int startRow, int step)
+{
+    auto* model = view->model();
+    const int rows = model ? model->rowCount() : 0;
+    if (rows <= 0 || column >= model->columnCount())
+        return false;
+    for (int i = 1; i <= rows; ++i) {
+        const int row = ((startRow + step * i) % rows + rows) % rows;
+        const QModelIndex idx = model->index(row, column);
+        if (idx.data(Qt::DisplayRole).toString().contains(term, Qt::CaseInsensitive)) {
+            view->setCurrentIndex(idx);
+            view->scrollTo(idx);
+            return true;
+        }
+    }
+    return false;
+}
+
+} // anonymous namespace
+
 void showFindInListDialog(QWidget* parent, QAbstractItemView* view)
 {
     auto* model = view ? view->model() : nullptr;
@@ -41,6 +89,11 @@ void showFindInListDialog(QWidget* parent, QAbstractItemView* view)
     }
     layout->addRow(QCoreApplication::translate("eMule::FindInListDialog", "Search in column:"),
                    columnCombo);
+    // A headerless one-column list (the friends QListView) has nothing to choose.
+    if (columnCombo->count() == 0)
+        columnCombo->addItem(QString(), 0);
+    if (columnCombo->count() == 1)
+        layout->setRowVisible(columnCombo, false);
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     layout->addRow(buttons);
@@ -55,14 +108,28 @@ void showFindInListDialog(QWidget* parent, QAbstractItemView* view)
         return;
 
     const int column = columnCombo->currentData().toInt();
-    for (int row = 0; row < model->rowCount(); ++row) {
-        const QModelIndex idx = model->index(row, column);
-        if (idx.data(Qt::DisplayRole).toString().contains(term, Qt::CaseInsensitive)) {
-            view->setCurrentIndex(idx);
-            view->scrollTo(idx);
-            return;
-        }
+    auto* state = findState(view, true);
+    state->term = term;
+    state->column = column;
+    selectMatch(view, term, column, -1, 1);
+}
+
+void findNextInList(QWidget* parent, QAbstractItemView* view, bool backwards)
+{
+    if (!view || !view->model())
+        return;
+    const FindState* state = findState(view, false);
+    if (!state || state->term.isEmpty()) {
+        showFindInListDialog(parent, view);
+        return;
     }
+    // A source/child row counts as its top-level parent: find only walks top level.
+    QModelIndex current = view->currentIndex();
+    while (current.parent().isValid())
+        current = current.parent();
+    const int rows = view->model()->rowCount();
+    const int start = current.isValid() ? current.row() : (backwards ? rows : -1);
+    selectMatch(view, state->term, state->column, start, backwards ? -1 : 1);
 }
 
 } // namespace eMule

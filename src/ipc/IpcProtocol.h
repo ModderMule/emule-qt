@@ -32,8 +32,9 @@ enum class IpcMsgType : int {
     ResumeDownload       = 113,  ///< [hash: string]
     CancelDownload       = 114,  ///< [hash: string]
     SetDownloadPriority  = 115,  ///< [hash, priority, isAuto]
-    ClearCompleted       = 116,  ///< [] — remove completed downloads
+    ClearCompleted       = 116,  ///< [hashes?: array] — remove completed downloads (all, or just these)
     GetDownloadSources   = 117,  ///< [hash: string] — source clients for one download
+    RenameDownload       = 118,  ///< [hash: string, newName: string] — rename an unfinished download
     GetUploads           = 120,
     GetDownloadClients   = 121,  ///< [] — source clients we are downloading from
     GetKnownClients      = 122,  ///< [] — all known clients
@@ -132,6 +133,16 @@ enum class IpcMsgType : int {
     /// content"; a changed templatePath is a config change and already goes
     /// through SetPreferences → restartWebServer().
     ReloadWebTemplate       = 272,
+
+    /// [] → {loaded, buildDate (secs), lastCheck (secs), updating} — GeoLite2 state
+    /// for the Options page.
+    GetGeoIpStatus          = 273,
+    /// [] → [ok: bool, message: string, status: map as GetGeoIpStatus]. Downloads
+    /// GeoLite2-Country now with the stored MaxMind credentials; answers when done.
+    UpdateGeoIpDatabase     = 274,
+    /// [hosts: string[]] → {host: cc}. Resolves each hostname daemon-side and maps
+    /// the address to a country; "" when unknown. Used by the news-server list.
+    LookupHostCountries     = 275,
 
     /// [fromSeq: int] -> {epoch, oldestSeq, samples: [[seq, down, up], ...]}
     /// Sample history for the toolbar download/upload graph. Core samples once a
@@ -595,7 +606,7 @@ enum class IpcMsgType : int {
     PushChatMessage       = 500,  ///< [senderHash, senderName, message]
     PushChatState         = 501,  ///< [friendHash, ChatConnectProgress] — dial progress
     PushFriendListChanged = 510,  ///< [] — friend list changed
-    PushClientSharedFiles = 520,  ///< [clientHash, CborArray of files] — response to browse
+    PushClientSharedFiles = 520,  ///< [clientHash, userName, searchID] — browse answer landed in that Search tab
     PushPortMapStatus     = 530,  ///< [{status, statusText, method, methodText, externalAddress}]
     /// [] — the category list changed; re-fetch with GetCategories.
     /// Carries no payload on purpose: every consumer wants the whole list
@@ -691,6 +702,10 @@ inline constexpr uint32_t MaxPayloadSize = 16 * 1024 * 1024;
 /// the IPC connection (IpcConnection::onReadyRead) — so both ends clamp instead of
 /// trusting how much the user selected.
 inline constexpr int MaxEd2kLinkBatch = 1000;
+
+/// AddServer Error code: the address is LAN/loopback and filterLANIPs is on. Distinct
+/// from a duplicate (Result false), so the GUI can tell the user instead of staying quiet.
+inline constexpr int ErrServerLanFiltered = 422;
 
 /// Default IPC TCP port.
 inline constexpr uint16_t DefaultIpcPort = 4712;

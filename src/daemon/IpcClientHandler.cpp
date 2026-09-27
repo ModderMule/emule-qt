@@ -29,6 +29,9 @@
 #include "files/CollectionFile.h"
 #include "files/CollectionKeys.h"
 #include "ipfilter/IPFilter.h"
+#include "geo/GeoIpUpdater.h"
+#include "geo/HostCountryResolver.h"
+#include "geo/IP2Country.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "files/KnownFile.h"
@@ -242,6 +245,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::GetKnownClients:      handleGetKnownClients(msg); break;
     case IpcMsgType::SetDownloadPriority:  handleSetDownloadPriority(msg); break;
     case IpcMsgType::ClearCompleted:       handleClearCompleted(msg); break;
+    case IpcMsgType::RenameDownload:       handleRenameDownload(msg); break;
     case IpcMsgType::GetDownloadSources:   handleGetDownloadSources(msg); break;
     case IpcMsgType::GetServers:           handleGetServers(msg); break;
     case IpcMsgType::RemoveServer:         handleRemoveServer(msg); break;
@@ -299,6 +303,9 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::MarkSearchSpam:       handleMarkSearchSpam(msg); break;
     case IpcMsgType::ResetStats:           handleResetStats(msg); break;
     case IpcMsgType::ReloadWebTemplate:    handleReloadWebTemplate(msg); break;
+    case IpcMsgType::GetGeoIpStatus:       handleGetGeoIpStatus(msg); break;
+    case IpcMsgType::UpdateGeoIpDatabase:  handleUpdateGeoIpDatabase(msg); break;
+    case IpcMsgType::LookupHostCountries:  handleLookupHostCountries(msg); break;
     case IpcMsgType::RestoreStats:         handleRestoreStats(msg); break;
     case IpcMsgType::ProbeHttpCacheServer: handleProbeHttpCacheServer(msg); break;
     case IpcMsgType::ApplyHttpCacheConfig: handleApplyHttpCacheConfig(msg); break;
@@ -618,15 +625,59 @@ void IpcClientHandler::handleClearCompleted(const IpcMessage& msg)
         return;
     }
 
+    // Optional hash list: the download list's Del removes just the selected completed
+    // rows (MFC MPG_DELETE, DownloadListCtrl.cpp:1262); no list = Clear Completed.
+    QSet<QString> only;
+    for (const QCborValue& v : msg.fieldArray(0))
+        only.insert(v.toString().toUpper());
+
     // Collect completed files first, then remove (avoid modifying during iteration)
     std::vector<PartFile*> completed;
     for (auto* pf : theApp.downloadQueue->files()) {
-        if (pf->status() == PartFileStatus::Complete)
-            completed.push_back(pf);
+        if (pf->status() != PartFileStatus::Complete)
+            continue;
+        if (!only.isEmpty() && !only.contains(md4str(pf->fileHash()).toUpper()))
+            continue;
+        completed.push_back(pf);
     }
     for (auto* pf : completed)
         theApp.downloadQueue->removeFile(pf);
 
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+void IpcClientHandler::handleRenameDownload(const IpcMessage& msg)
+{
+    const QString hash = msg.fieldString(0);
+    const QString newName = msg.fieldString(1).trimmed();
+    if (!theApp.downloadQueue) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Download queue unavailable")));
+        return;
+    }
+    uint8 hashBuf[16]{};
+    if (!hexToHash(hash, hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+    auto* pf = theApp.downloadQueue->fileByID(hashBuf);
+    if (!pf) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
+        return;
+    }
+    // MFC MPG_F2 (DownloadListCtrl.cpp:1405): not once completing/complete, and the
+    // name must survive the ed2k link format (IsValidEd2kString: no '|').
+    if (newName.isEmpty() || newName.contains(u'|')) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid file name")));
+        return;
+    }
+    const PartFileStatus st = pf->status();
+    if (st == PartFileStatus::Complete || st == PartFileStatus::Completing) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 409, QStringLiteral("Download already completed")));
+        return;
+    }
+    // Only the display/target name; the .part files keep their numbered names.
+    pf->setFileName(newName, true);
+    pf->savePartFile();
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
@@ -730,6 +781,19 @@ void IpcClientHandler::handleAddServer(const IpcMessage& msg)
         server->setName(name);
     if (thePrefs.manualServerHighPriority())
         server->setPreference(ServerPriority::High);
+
+    // addServer() drops a LAN/loopback literal under filterLANIPs with the same null a
+    // duplicate gets, so a pasted 127.0.0.1 link vanished without a word. Say why, once,
+    // here on the user path — not inside addServer, which server.met loads hit in bulk.
+    if (!server->hasDynIP() && !ServerList::isGoodServerIP(*server)) {
+        const QString text = tr("Server %1:%2 not added — LAN address filtered "
+                                "(\"Filter server and client LAN IPs\" is on)")
+                                 .arg(server->address())
+                                 .arg(port);
+        logWarning(text);
+        sendMessage(IpcMessage::makeError(msg.seqId(), ErrServerLanFiltered, text));
+        return;
+    }
 
     const QString key = server->address();
     Server* added = theApp.serverList->addServer(std::move(server));
@@ -1267,16 +1331,12 @@ void IpcClientHandler::handleDownloadSearchFile(const IpcMessage& msg)
     // re-encode the name, since a '%' or '|' in it would otherwise corrupt the link.
     const QString ed2kLink = rawLink.startsWith(QStringLiteral("ed2k://"), Qt::CaseInsensitive)
         ? rawLink
-        : QStringLiteral("ed2k://|file|%1|%2|%3|/")
-              .arg(urlEncode(stripInvalidFilenameChars(fileName))).arg(fileSize).arg(hash);
+        : ed2kFileLink(fileName, fileSize, hash);
 
-    const QStringList tempDirs = thePrefs.tempDirs();
-    const QString tempDir = tempDirs.isEmpty()
-        ? QDir(thePrefs.configDir()).filePath(QStringLiteral("Temp"))
-        : tempDirs.first();
     const uint32 cat = category > 0 && category < static_cast<qint64>(thePrefs.categoryCount())
         ? static_cast<uint32>(category) : 0;
-    const bool ok = theApp.downloadQueue->addDownloadFromED2KLink(ed2kLink, tempDir, cat);
+    const bool ok = theApp.downloadQueue->addDownloadFromED2KLink(
+        ed2kLink, DownloadQueue::defaultTempDir(), cat);
     sendMessage(IpcMessage::makeResult(msg.seqId(), ok));
 }
 
@@ -1929,6 +1989,7 @@ void IpcClientHandler::handleGetKadContacts(const IpcMessage& msg)
                 m.insert(QStringLiteral("distance"), c->getDistance().toBinaryString());
                 m.insert(QStringLiteral("ip"), static_cast<qint64>(c->address().toUint32()));
                 m.insert(QStringLiteral("addr"), c->address().toString());   // IPv6-capable form
+                m.insert(QStringLiteral("cc"), countryCodeOf(c->address()));
                 m.insert(QStringLiteral("udpPort"), c->getUDPPort());
                 m.insert(QStringLiteral("tcpPort"), c->getTCPPort());
                 m.insert(QStringLiteral("version"), c->getVersion());
@@ -2662,6 +2723,65 @@ void IpcClientHandler::handleReloadWebTemplate(const IpcMessage& msg)
 }
 
 // ---------------------------------------------------------------------------
+// IP2Country — GeoLite2 status, manual update, hostname lookup
+// ---------------------------------------------------------------------------
+
+namespace {
+
+[[nodiscard]] QCborMap geoIpStatus()
+{
+    QCborMap st;
+    const IP2Country* db = theApp.ip2Country;
+    st[QStringLiteral("loaded")] = db && db->isLoaded();
+    st[QStringLiteral("buildDate")] =
+        (db && db->isLoaded()) ? db->buildDate().toSecsSinceEpoch() : qint64(0);
+    st[QStringLiteral("lastCheck")] = thePrefs.geoIpLastCheck();
+    st[QStringLiteral("updating")] = theApp.geoIpUpdater && theApp.geoIpUpdater->isRunning();
+    return st;
+}
+
+} // namespace
+
+void IpcClientHandler::handleGetGeoIpStatus(const IpcMessage& msg)
+{
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(geoIpStatus())));
+}
+
+void IpcClientHandler::handleUpdateGeoIpDatabase(const IpcMessage& msg)
+{
+    if (!theApp.geoIpUpdater) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("IP2Country not running")));
+        return;
+    }
+    const QPointer<IpcClientHandler> self(this);
+    const int seqId = msg.seqId();
+    theApp.geoIpUpdater->updateNow([self, seqId](bool ok, const QString& message) {
+        if (!self)
+            return;
+        QCborArray out{ok, message, geoIpStatus()};
+        self->sendMessage(IpcMessage::makeResult(seqId, true, QCborValue(out)));
+    });
+}
+
+void IpcClientHandler::handleLookupHostCountries(const IpcMessage& msg)
+{
+    QStringList hosts;
+    for (const QCborValue& v : msg.fieldArray(0))
+        hosts.append(v.toString());
+
+    const QPointer<IpcClientHandler> self(this);
+    const int seqId = msg.seqId();
+    resolveHostCountries(hosts, this, [self, seqId](const QHash<QString, QString>& result) {
+        if (!self)
+            return;
+        QCborMap out;
+        for (auto it = result.cbegin(); it != result.cend(); ++it)
+            out[it.key()] = it.value();
+        self->sendMessage(IpcMessage::makeResult(seqId, true, QCborValue(out)));
+    });
+}
+
+// ---------------------------------------------------------------------------
 // handleResetStats — reset session statistics
 // ---------------------------------------------------------------------------
 
@@ -3258,14 +3378,23 @@ void IpcClientHandler::handleRequestClientSharedFiles(const IpcMessage& msg)
 
     uint8 hashBuf[16]{};
     if (!hexToHash(hash, hashBuf)) {
+        logStatusWarning(QStringLiteral("Cannot view shared files: the client has no valid user hash"));
         sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
         return;
     }
     auto* client = theApp.clientList->findByUserHash(hashBuf);
+    // An offline friend has no client yet; dial one from its stored address (MFC
+    // FriendListCtrl.cpp:206-215).
+    if (!client && theApp.friendList) {
+        if (Friend* f = theApp.friendList->searchFriend(hashBuf))
+            client = f->ensureLinkedClient();
+    }
     if (!client) {
+        logStatusWarning(QStringLiteral("Cannot view shared files: client %1 not found").arg(hash));
         sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Client not found")));
         return;
     }
+    // Refusals and failures are logged to the status channel by the client itself.
     client->requestSharedFileList();
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
@@ -3618,6 +3747,18 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setWarnUntrustedFiles(val.toBool());
     else if (key == QStringLiteral("ipFilterUpdateUrl"))
         thePrefs.setIpFilterUpdateUrl(val.toString());
+    else if (key == QStringLiteral("geoIpAccountId") || key == QStringLiteral("geoIpLicenseKey")
+             || key == QStringLiteral("geoIpAutoUpdate")) {
+        if (key == QStringLiteral("geoIpAccountId"))
+            thePrefs.setGeoIpAccountId(val.toString().trimmed());
+        else if (key == QStringLiteral("geoIpLicenseKey"))
+            thePrefs.setGeoIpLicenseKey(val.toString().trimmed());
+        else
+            thePrefs.setGeoIpAutoUpdate(val.toBool());
+        // New credentials on a fresh install shouldn't wait for the hourly tick
+        if (theApp.geoIpUpdater)
+            QTimer::singleShot(0, theApp.geoIpUpdater, &GeoIpUpdater::checkSchedule);
+    }
     else if (key == QStringLiteral("appToken"))
         thePrefs.setAppToken(val.toString());
     else if (key == QStringLiteral("usenetEnabled"))

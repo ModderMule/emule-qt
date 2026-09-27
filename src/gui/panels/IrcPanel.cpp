@@ -85,27 +85,15 @@ bool IrcPanel::eventFilter(QObject* obj, QEvent* event)
     if (obj == m_input && event->type() == QEvent::KeyPress) {
         auto* ke = static_cast<QKeyEvent*>(event);
         if (ke->key() == Qt::Key_Up || ke->key() == Qt::Key_Down) {
-            auto* ch = activeChannel();
-            if (!ch || ch->inputHistory.isEmpty())
-                return true;
-
-            if (ke->key() == Qt::Key_Up) {
-                if (ch->historyPos < 0)
-                    ch->historyPos = static_cast<int>(ch->inputHistory.size()) - 1;
-                else if (ch->historyPos > 0)
-                    --ch->historyPos;
-            } else {
-                if (ch->historyPos >= 0 && ch->historyPos < ch->inputHistory.size() - 1)
-                    ++ch->historyPos;
-                else {
-                    ch->historyPos = -1;
-                    m_input->clear();
-                    return true;
-                }
+            if (auto* ch = activeChannel()) {
+                if (const auto text = ch->history.scroll(ke->key() == Qt::Key_Down))
+                    m_input->setText(*text);
             }
-
-            if (ch->historyPos >= 0 && ch->historyPos < ch->inputHistory.size())
-                m_input->setText(ch->inputHistory[ch->historyPos]);
+            return true;
+        }
+        // Tab completes a nick instead of moving the focus on (IrcWnd.cpp:462).
+        if (ke->key() == Qt::Key_Tab && ke->modifiers() == Qt::NoModifier) {
+            autoCompleteNick();
             return true;
         }
     }
@@ -1212,10 +1200,52 @@ void IrcPanel::addToHistory(const QString& text)
     if (!ch)
         return;
 
-    ch->inputHistory.append(text);
-    if (ch->inputHistory.size() > 100)
-        ch->inputHistory.removeFirst();
-    ch->historyPos = -1;
+    ch->history.add(text);
+}
+
+void IrcPanel::autoCompleteNick()
+{
+    auto* ch = activeChannel();
+    if (!ch)
+        return;
+    const QString input = m_input->text();
+    if (input.isEmpty()) {
+        ch->typed.clear();
+        ch->tabbed.clear();
+        return;
+    }
+    if (input != ch->tabbed) {   // edited since the last Tab: restart
+        ch->typed = input;
+        ch->tabbed.clear();
+    }
+
+    const qsizetype start = ch->typed.lastIndexOf(QLatin1Char(' ')) + 1;
+    const QString word = ch->typed.mid(start);    // what is being completed
+    const QString prev = ch->tabbed.mid(start);   // the last completion offered
+    const QString head = ch->typed.left(start);
+
+    // Next nick after prev in case-insensitive order, wrapping to the first.
+    QString first;
+    QString next;
+    for (QString nick : std::as_const(ch->nicks)) {
+        while (!nick.isEmpty() && QStringLiteral("@+%&~").contains(nick.front()))
+            nick.remove(0, 1);   // mode prefix
+        if (!nick.startsWith(word, Qt::CaseInsensitive))
+            continue;
+        if (first.isEmpty() || first.compare(nick, Qt::CaseInsensitive) > 0)
+            first = nick;
+        if (prev.compare(nick, Qt::CaseInsensitive) < 0
+            && (next.isEmpty() || next.compare(nick, Qt::CaseInsensitive) > 0))
+            next = nick;
+    }
+    if (!next.isEmpty())
+        ch->tabbed = head + next;
+    else if (!first.isEmpty())
+        ch->tabbed = head + first;
+    ch->typed = head + word;
+    if (ch->tabbed.isEmpty())
+        ch->tabbed = ch->typed;
+    m_input->setText(ch->tabbed);
 }
 
 // ---------------------------------------------------------------------------

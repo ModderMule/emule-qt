@@ -886,9 +886,10 @@ signals:
     void uploadStateChanged(UploadState newState);
     void downloadStateChanged(DownloadState newState);
     void chatMessageReceived(const QString& fromUser, const QString& message);
+    /// A shared-file answer landed in the peer's search tab @p searchID.
     void sharedFileListReceived(const QByteArray& userHash,
                                 const QString& userName,
-                                const QCborArray& files);
+                                uint32 searchID);
     void captchaRequestReceived(const QString& fromUser, const QImage& captchaImage);
     void previewAnswerReceived(const std::array<uint8, 16>& fileHash,
                                const std::vector<QImage>& images);
@@ -910,6 +911,8 @@ protected:
     void addPayloadDown(uint64 bytes);
 
 private:
+    /// User name, or address:port when the peer has not said hello yet.
+    [[nodiscard]] QString statusName() const;
     void init();
 
     // -- Phase 2 — hello/muleInfo internals ---------------------------------

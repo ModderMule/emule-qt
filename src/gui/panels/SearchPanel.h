@@ -63,6 +63,9 @@ struct SearchTab {
     /// nothing can say "no results" instead of looking like it is still running.
     bool finished = false;
 
+    /// A peer's shared file list (MFC bClientSharedFiles), not a keyword search.
+    bool clientSharedFiles = false;
+
     [[nodiscard]] bool isIndexer() const { return indexerModel != nullptr; }
     [[nodiscard]] int resultCount() const;
 };
@@ -94,6 +97,10 @@ public:
                                  const QString& fileType = {},
                                  int method = -1,
                                  const QString& tabTitle = {});
+
+    /// Show a peer's shared file list in its own tab, creating it on first use and
+    /// selecting it. MFC CSearchList::ProcessSearchAnswer(…, sender, …).
+    void showClientSharedFiles(uint32_t searchID, const QString& userName);
 
     /// Set the stream token for preview streaming (received from daemon GetStats).
     void setStreamToken(const QString& token) { m_streamToken = token; }
@@ -200,6 +207,12 @@ private:
     void restoreSelection(const QString& key);
     void saveSearches();
     void loadSearches();
+
+    /// Append @p tab with its tab-bar entry; returns the new tab index.
+    int addResultTab(SearchTab tab);
+
+    /// Tab-bar icon for @p tab (method or client-list icon), or null.
+    [[nodiscard]] static QIcon tabIcon(const SearchTab& tab);
     void setupAutoComplete();
     void addToSearchHistory(const QString& expression);
     void sendPreview(const QString& hash);
@@ -212,6 +225,10 @@ private:
     /// Open the MFC-style search-result detail sheet for @p hash in tab @p searchID.
     /// Open the result sheet for @p index (proxy coordinates) — the Alt+Enter action.
     void showResultDetails(const QModelIndex& index);
+
+    // MFC CSearchListCtrl commands, shared by the context menu and the list keys.
+    void removeSelectedResults();    ///< MP_REMOVE / MPG_DELETE (Del, ⌫)
+    void copySelectedEd2kLinks();    ///< MP_GETED2KLINK — also Ctrl+C here (SearchListCtrl.cpp:1465)
 
     void fetchAndShowSearchDetails(uint32_t searchID, const QString& hash,
                                    SearchDetailDialog::Page page);

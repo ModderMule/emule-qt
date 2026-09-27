@@ -117,6 +117,11 @@ public:
 
     // -- Connecting -----------------------------------------------------------
 
+    /// The linked client, or a fresh one built from the stored address and registered
+    /// with the client list. Null only when we have no address to dial at all.
+    /// MFC FriendListCtrl.cpp:206-215 (MP_SHOWLIST) builds one the same way.
+    [[nodiscard]] UpDownClient* ensureLinkedClient();
+
     /// The client to hold a chat session on: the linked one, or a fresh client built from
     /// the stored address and registered with the client list. Null only when we have no
     /// address to dial at all. MFC CFriend::GetClientForChatSession (srchybrid/Friend.cpp:210).

@@ -17,7 +17,7 @@ LIBS += \
 
 # Third-party libraries
 unix {
-    LIBS += -lssl -lcrypto -lz -lminiupnpc -lyaml-cpp -larchive
+    LIBS += -lssl -lcrypto -lz -lminiupnpc -lyaml-cpp -larchive -lmaxminddb
 }
 macx {
     LIBS += -framework IOKit -framework CoreFoundation -framework CoreServices
@@ -55,10 +55,12 @@ win32 {
         -L"$$MINIUPNPC_DIR/lib" -lminiupnpc \
         -L"$$YAMLCPP_DIR/lib" -lyaml-cpp \
         -L"$$LIBARCHIVE_DIR/lib" -larchive \
+        -lmaxminddb \
         -lws2_32 -liphlpapi
 }
 
 RESOURCES += ../../resources/emuleqt.qrc
+RESOURCES += ../../resources/flags.qrc
 
 TRANSLATIONS += \
     ../../lang/emuleqt_en.ts \
@@ -124,6 +126,8 @@ SOURCES += \
     dialogs/NzbFileChooserDialog.cpp \
     dialogs/AddNzbUrlDialog.cpp \
     dialogs/MetaAccountDialog.cpp \
+    utils/ClientIcons.cpp \
+    utils/CountryFlags.cpp \
     utils/MetaResultActions.cpp \
     dialogs/PasteLinksDialog.cpp \
     dialogs/PasteTextDialog.cpp \
@@ -196,6 +200,9 @@ HEADERS += \
     dialogs/NzbFileChooserDialog.h \
     dialogs/AddNzbUrlDialog.h \
     dialogs/MetaAccountDialog.h \
+    utils/ClientIcons.h \
+    utils/CountryFlags.h \
+    utils/InputHistory.h \
     utils/MetaResultActions.h \
     dialogs/PasteLinksDialog.h \
     dialogs/PasteTextDialog.h \

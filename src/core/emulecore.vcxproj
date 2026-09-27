@@ -209,6 +209,9 @@
     <ClCompile Include="friends\FriendList.cpp" />
     <ClCompile Include="net\HttpClientReqSocket.cpp" />
     <ClCompile Include="ipfilter\IPFilter.cpp" />
+    <ClCompile Include="geo\GeoIpUpdater.cpp" />
+    <ClCompile Include="geo\HostCountryResolver.cpp" />
+    <ClCompile Include="geo\IP2Country.cpp" />
     <ClCompile Include="transfer\ImportParts.cpp" />
     <ClCompile Include="chat\IrcClient.cpp" />
     <ClCompile Include="kademlia\KadContact.cpp" />
@@ -379,6 +382,9 @@
     <QtMoc Include="portmap\UPnPWorker.h" />
     <QtMoc Include="net\HttpClientReqSocket.h" />
     <QtMoc Include="ipfilter\IPFilter.h" />
+    <QtMoc Include="geo\GeoIpUpdater.h" />
+    <ClInclude Include="geo\HostCountryResolver.h" />
+    <ClInclude Include="geo\IP2Country.h" />
     <ClInclude Include="transfer\ImportParts.h" />
     <ClInclude Include="transfer\UploadQueueStore.h" />
     <QtMoc Include="chat\IrcClient.h" />

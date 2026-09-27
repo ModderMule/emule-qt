@@ -18,7 +18,9 @@
 #include "dialogs/ClientDetailDialog.h"
 #include "dialogs/FindInListDialog.h"
 #include "utils/StatusBarNotifier.h"
+#include "utils/CountryFlags.h"
 #include "utils/Ed2kLinkImporter.h"
+#include "utils/IpcFeedback.h"
 #include "utils/ListActivation.h"
 #include "utils/MenuUtils.h"
 #include "utils/PanelPoller.h"
@@ -28,6 +30,7 @@
 
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
+#include "protocol/ED2KLink.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 
@@ -95,6 +98,7 @@ ClientRow parseClient(const QCborMap& m)
     row.sourceFrom      = static_cast<int>(m.value(QStringLiteral("sourceFrom")).toInteger());
     row.ip              = static_cast<uint32_t>(m.value(QStringLiteral("ip")).toInteger());
     row.addr            = m.value(QStringLiteral("addr")).toString();
+    row.cc              = m.value(QStringLiteral("cc")).toString();
     row.port            = static_cast<uint16_t>(m.value(QStringLiteral("port")).toInteger());
     row.isBanned        = m.value(QStringLiteral("isBanned")).toBool();
     row.softwareId      = static_cast<int>(m.value(QStringLiteral("softwareId")).toInteger(-1));
@@ -406,21 +410,8 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
 
     // -- 3. Cancel (batch, with confirmation for multiple) --
     {
-        auto* cancelAct = m_downloadMenu->addAction(menuIcon("Cancel.ico"), tr("Cancel"), this, [this, allHashes, dl]() {
-            if (allHashes.size() == 1) {
-                const QString name = dl ? dl->fileName : allHashes.first();
-                if (QMessageBox::question(this, tr("Cancel Download"),
-                        tr("Cancel download \"%1\"?").arg(name),
-                        QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
-                    return;
-            } else {
-                if (QMessageBox::question(this, tr("Cancel Downloads"),
-                        tr("Cancel %1 selected downloads?").arg(allHashes.size()),
-                        QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
-                    return;
-            }
-            sendDownloadActionBatch(allHashes, 2);
-        });
+        auto* cancelAct = m_downloadMenu->addAction(menuIcon("Cancel.ico"), tr("Cancel"),
+                                                    this, &TransferPanel::cancelSelectedDownloads);
         cancelAct->setEnabled(hasSel);
     }
 
@@ -491,13 +482,7 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
             Ed2kLinkImporter::linkKindsIn(clipText)
             & (Ed2kLinkImporter::LinkKind::File | Ed2kLinkImporter::LinkKind::HttpCache);
         pasteAct->setEnabled(hasImportableLink && m_ipc && m_ipc->isConnected());
-        connect(pasteAct, &QAction::triggered, this, [this, clipText]() {
-            // Manual: picking the menu entry is the confirmation, and a completed or
-            // cancelled file is left alone so it can be re-downloaded on purpose.
-            Ed2kLinkImporter::importLinks(clipText, m_ipc, this,
-                                          Ed2kLinkImporter::Source::Manual,
-                                          Ed2kLinkImporter::Prompt::Silent);
-        });
+        connect(pasteAct, &QAction::triggered, this, &TransferPanel::pasteDownloadLinks);
     }
 
     m_downloadMenu->addSeparator();
@@ -720,16 +705,16 @@ QWidget* TransferPanel::createDownloadsSection()
     // :1545 MPG_ALTENTER): Enter opens a finished download and does nothing on a source
     // row — expanding is the double click's job, not Enter's — while Alt+Enter opens the
     // file sheet for a download row and the client sheet for a source row.
-    bindListActivation(m_downloadView,
-        [this](const QModelIndex& index) {
+    ListKeyHandlers keys;
+    keys.activate = [this](const QModelIndex& index) {
             if (index.parent().isValid())
                 return;
             const QModelIndex srcIdx = ViewNav::toSource(index);
             const auto* dl = m_downloadModel->downloadAt(srcIdx.row());
             if (dl && dl->isComplete())
                 openDownload(m_downloadModel->hashAt(srcIdx.row()));
-        },
-        [this](const QModelIndex& index) {
+        };
+    keys.details = [this](const QModelIndex& index) {
             const QModelIndex srcIdx = ViewNav::toSource(index);
             if (!index.parent().isValid()) {
                 showDownloadDetails(m_downloadModel->hashAt(srcIdx.row()));
@@ -740,7 +725,16 @@ QWidget* TransferPanel::createDownloadsSection()
                 fetchAndShowClientDetails(src->userHash,
                                           makeSourceWalker(parentHash, src->userHash));
             }
-        });
+        };
+    // Del, F2, Ctrl+C/V, Ctrl+F/F3 and Alt+Left/Right (DownloadListCtrl.cpp:1224
+    // OnCommand, TransferWnd.cpp:1153 expand keys). No MP_CUT on this list.
+    keys.remove = [this] { removeSelectedDownloads(); };
+    keys.rename = [this] { renameSelectedDownload(); };
+    keys.copy = [this] { copyEd2kLinks(saveDownloadSelectionMulti()); };
+    keys.paste = [this] { pasteDownloadLinks(); };
+    keys.find = true;
+    keys.expandKeys = true;
+    bindListKeys(m_downloadView, std::move(keys));
 
     // Track collapse via user interaction (clicking the arrow)
     connect(m_downloadView, &QTreeView::collapsed, this, [this](const QModelIndex& proxyIdx) {
@@ -765,9 +759,10 @@ QWidget* TransferPanel::createDownloadsSection()
     header->setStretchLastSection(true);
     header->setDefaultSectionSize(90);
     // Name, Size, Completed, Speed, Progress, Sources, Priority, Status,
-    // Remaining, Last Seen Complete, Last Reception, Category, Added On.
+    // Remaining, Last Seen Complete, Last Reception, Category, Added On, Country.
     downloadView->bindColumns(QStringLiteral("downloads"),
-        {220, 65, 65, 65, 90, 65, 70, 65, 80, 80, 80, 60, 120});
+        {220, 65, 65, 65, 90, 65, 70, 65, 80, 80, 80, 60, 120, 100});
+    CountryFlags::bindCountryColumn(downloadView, DownloadListModel::ColCountry);
 
     // Hidden until mounted, for the reason given in createClientView().
     downloadView->hide();
@@ -805,17 +800,18 @@ QWidget* TransferPanel::createBottomPane()
     // reusing them would let that stale layout override these defaults.
     clientSlot(Uploading).view = createClientView(
         clientSlot(Uploading).model, QStringLiteral("clientsUploading3"),
-        // User Name, File, Speed, Transferred, Waited, Upload Time, Status, Obtained Parts
-        {150, 220, 70, 90, 80, 80, 90, 120});
+        // User Name, File, Speed, Transferred, Waited, Upload Time, Status, Obtained Parts, Country
+        {150, 220, 70, 90, 80, 80, 90, 120, 100});
     clientSlot(Downloading).view = createClientView(
         clientSlot(Downloading).model, QStringLiteral("clientsDownloading3"),
-        // User Name, Software, File, Speed, Available Parts, Transferred, Transferred, Source Type
-        {150, 90, 220, 70, 100, 90, 90, 100});
+        // User Name, Software, File, Speed, Available Parts, Transferred, Transferred, Source Type,
+        // Country
+        {150, 90, 220, 70, 100, 90, 90, 100, 100});
     clientSlot(OnQueue).view = createClientView(
         clientSlot(OnQueue).model, QStringLiteral("clientsOnQueue3"),
         // User Name, File, File Priority, Rating, Score, Asked, Last Seen,
-        // Entered Queue, Banned, Obtained Parts
-        {150, 220, 80, 70, 60, 60, 100, 110, 60, 120});
+        // Entered Queue, Banned, Obtained Parts, Country
+        {150, 220, 80, 70, 60, 60, 100, 110, 60, 120, 100});
     // Obtained Parts is MFC's upload status bar (UploadListCtrl.cpp:165, QueueListCtrl.cpp:168)
     clientSlot(Uploading).view->setItemDelegateForColumn(
         7, new UploadStatusDelegate(false, clientSlot(Uploading).view));
@@ -824,8 +820,8 @@ QWidget* TransferPanel::createBottomPane()
     clientSlot(Known).view = createClientView(
         clientSlot(Known).model, QStringLiteral("clientsKnown3"),
         // User Name, Upload Status, Transferred, Download Status, Transferred Down,
-        // Software, Connected, Hash
-        {150, 100, 90, 100, 110, 90, 80, 240});
+        // Software, Connected, Hash, Country
+        {150, 100, 90, 100, 110, 90, 80, 240, 100});
 
     // Context menu and double-click are wired per view, and a view keeps them when it
     // moves to the other pane.
@@ -850,7 +846,12 @@ QWidget* TransferPanel::createBottomPane()
         // MFC maps Enter and Alt+Enter to the same command on every client list
         // (srchybrid/ClientListCtrl.cpp:387, UploadListCtrl.cpp:420,
         // QueueListCtrl.cpp:451, DownloadClientsCtrl.cpp:397).
-        bindListActivation(view, showDetails, showDetails);
+        // Plus the general-purpose find (Ctrl+F / F3) every MFC client list enables.
+        ListKeyHandlers keys;
+        keys.activate = showDetails;
+        keys.details = showDetails;
+        keys.find = true;
+        bindListKeys(view, std::move(keys));
     }
 
     // The view itself is mounted by applyViews().
@@ -906,31 +907,7 @@ QToolBar* TransferPanel::createActionToolbar()
 
     m_actCancel = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/Delete.ico")), tr("Cancel"));
-    connect(m_actCancel, &QAction::triggered, this, [this]() {
-        const QStringList hashes = saveDownloadSelectionMulti();
-        if (hashes.isEmpty())
-            return;
-        if (hashes.size() == 1) {
-            // Find file name for single-download confirmation
-            QString fileName;
-            for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
-                if (m_downloadModel->hashAt(i) == hashes.first()) {
-                    fileName = m_downloadModel->downloadAt(i)->fileName;
-                    break;
-                }
-            }
-            if (QMessageBox::question(this, tr("Cancel Download"),
-                    tr("Cancel download \"%1\"?").arg(fileName),
-                    QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
-                return;
-        } else {
-            if (QMessageBox::question(this, tr("Cancel Downloads"),
-                    tr("Cancel %1 selected downloads?").arg(hashes.size()),
-                    QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
-                return;
-        }
-        sendDownloadActionBatch(hashes, 2);
-    });
+    connect(m_actCancel, &QAction::triggered, this, &TransferPanel::cancelSelectedDownloads);
 
     toolbar->addSeparator();
 
@@ -1058,6 +1035,7 @@ QTreeView* TransferPanel::createClientView(ClientListModel* model,
     hdr->setStretchLastSection(true);
     hdr->setDefaultSectionSize(100);
     view->bindColumns(headerKey, columnWidths);
+    CountryFlags::bindCountryColumn(view, model->countryColumn());
 
     // A child widget that is in no layout is still shown with its parent, at its
     // default geometry — an unmounted list would float over the pane headers at the
@@ -1187,6 +1165,9 @@ void TransferPanel::requestDownloadSources(const QString& hash)
             src.userHash        = m.value(QStringLiteral("userHash")).toString();
             src.ip              = m.value(QStringLiteral("ip")).toInteger();
             src.addr            = m.value(QStringLiteral("addr")).toString();
+            src.cc              = m.value(QStringLiteral("cc")).toString();
+            src.softwareId      = static_cast<int>(m.value(QStringLiteral("softwareId")).toInteger(-1));
+            src.hasCredit       = m.value(QStringLiteral("hasCredit")).toBool();
             src.port            = m.value(QStringLiteral("port")).toInteger();
             src.isFriend        = m.value(QStringLiteral("isFriend")).toBool();
             if (auto spm = m.value(QStringLiteral("sourcePartMap")).toArray(); !spm.isEmpty()) {
@@ -1363,12 +1344,14 @@ void TransferPanel::sendSetPriorityBatch(const QStringList& hashes, int priority
     }, this, [this]() { requestDownloads(); });
 }
 
-void TransferPanel::sendClearCompleted()
+void TransferPanel::sendClearCompleted(const QStringList& hashes)
 {
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
     IpcMessage msg(IpcMsgType::ClearCompleted);
+    if (!hashes.isEmpty())
+        msg.append(QCborArray::fromStringList(hashes));
     m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
         requestDownloads();
     });
@@ -1379,11 +1362,8 @@ void TransferPanel::copyEd2kLink(const QString& hash)
     for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
         const auto* dl = m_downloadModel->downloadAt(i);
         if (dl && dl->hash == hash) {
-            const QString link = QStringLiteral("ed2k://|file|%1|%2|%3|/")
-                .arg(dl->fileName)
-                .arg(dl->fileSize)
-                .arg(dl->hash);
-            QApplication::clipboard()->setText(link);
+            QApplication::clipboard()->setText(
+                ed2kFileLink(dl->fileName, static_cast<uint64>(dl->fileSize), dl->hash));
             return;
         }
     }
@@ -1396,10 +1376,7 @@ void TransferPanel::copyEd2kLinks(const QStringList& hashes)
         for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
             const auto* dl = m_downloadModel->downloadAt(i);
             if (dl && dl->hash == hash) {
-                links.append(QStringLiteral("ed2k://|file|%1|%2|%3|/")
-                    .arg(dl->fileName)
-                    .arg(dl->fileSize)
-                    .arg(dl->hash));
+                links.append(ed2kFileLink(dl->fileName, static_cast<uint64>(dl->fileSize), dl->hash));
                 break;
             }
         }
@@ -2071,7 +2048,8 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
     if (client) {
         const QString clientHash = client->userHash;
         connect(viewSharedAct, &QAction::triggered, this, [this, clientHash]() {
-            if (!m_ipc || !m_ipc->isConnected())
+            // Outcome (tab, refusal, failure) comes back as a push and a status log line
+            if (!IpcFeedback::requireConnection(m_ipc, tr("cannot view shared files.")))
                 return;
             IpcMessage msg(IpcMsgType::RequestClientSharedFiles);
             msg.append(clientHash);
@@ -2148,7 +2126,7 @@ void TransferPanel::showSourceContextMenu(const SourceRow& src, const QString& p
     {
         const QString clientHash = src.userHash;
         menu.addAction(menuIcon("UserFiles.ico"), tr("View Shared Files"), this, [this, clientHash]() {
-            if (!m_ipc || !m_ipc->isConnected())
+            if (!IpcFeedback::requireConnection(m_ipc, tr("cannot view shared files.")))
                 return;
             IpcMessage msg(IpcMsgType::RequestClientSharedFiles);
             msg.append(clientHash);
@@ -2308,6 +2286,104 @@ DetailWalker TransferPanel::makeClientWalker(QTreeView* view, ClientListModel* m
         return ViewNav::peekStep(view, clientIndexFor(view, model, *anchor), delta).isValid();
     };
     return walker;
+}
+
+// ---------------------------------------------------------------------------
+// Download list commands — context menu, toolbar and list keys
+// ---------------------------------------------------------------------------
+
+void TransferPanel::cancelSelectedDownloads()
+{
+    const QStringList hashes = saveDownloadSelectionMulti();
+    if (hashes.isEmpty())
+        return;
+    if (hashes.size() == 1) {
+        const DownloadRow* dl = m_downloadModel->findByHash(hashes.first());
+        const QString name = dl ? dl->fileName : hashes.first();
+        if (QMessageBox::question(this, tr("Cancel Download"),
+                tr("Cancel download \"%1\"?").arg(name),
+                QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
+            return;
+    } else {
+        if (QMessageBox::question(this, tr("Cancel Downloads"),
+                tr("Cancel %1 selected downloads?").arg(hashes.size()),
+                QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
+            return;
+    }
+    sendDownloadActionBatch(hashes, 2);
+}
+
+void TransferPanel::removeSelectedDownloads()
+{
+    // MFC MPG_DELETE (DownloadListCtrl.cpp:1262): a completed file only leaves the
+    // list, a completing one is left alone, anything else is cancelled — after the
+    // usual question, which is skipped when nothing is being cancelled.
+    const QModelIndex current = m_downloadView->currentIndex();
+    if (current.isValid() && current.parent().isValid())
+        return;   // source row: no command on it
+
+    QStringList toCancel;
+    QStringList completed;
+    for (const QString& hash : saveDownloadSelectionMulti()) {
+        const DownloadRow* dl = m_downloadModel->findByHash(hash);
+        if (!dl || dl->status == QLatin1String("completing"))
+            continue;
+        (dl->isComplete() ? completed : toCancel) << hash;
+    }
+    if (!toCancel.isEmpty()) {
+        const QString question = (toCancel.size() == 1)
+            ? tr("Cancel download \"%1\"?").arg(m_downloadModel->findByHash(toCancel.first())->fileName)
+            : tr("Cancel %1 selected downloads?").arg(toCancel.size());
+        if (QMessageBox::question(this, tr("Cancel Downloads"), question,
+                                  QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+            != QMessageBox::Yes)
+            return;
+        sendDownloadActionBatch(toCancel, 2);
+    }
+    if (!completed.isEmpty())
+        sendClearCompleted(completed);
+}
+
+void TransferPanel::renameSelectedDownload()
+{
+    // MFC MPG_F2 (DownloadListCtrl.cpp:1394): one unfinished file. The Ctrl+F2 /
+    // multi-select "filename cleanup" has no Qt counterpart yet.
+    const QStringList hashes = saveDownloadSelectionMulti();
+    if (hashes.size() != 1 || !m_ipc || !m_ipc->isConnected())
+        return;
+    const DownloadRow* dl = m_downloadModel->findByHash(hashes.first());
+    if (!dl || dl->isComplete() || dl->status == QLatin1String("completing")) {
+        QApplication::beep();
+        return;
+    }
+
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, tr("Rename"), tr("File name:"),
+                                               QLineEdit::Normal, dl->fileName, &ok).trimmed();
+    if (!ok || name.isEmpty() || name == dl->fileName)
+        return;
+
+    IpcMessage msg(IpcMsgType::RenameDownload);
+    msg.append(hashes.first());
+    msg.append(name);
+    QPointer<TransferPanel> self(this);
+    m_ipc->sendRequest(std::move(msg), [self](const IpcMessage& resp) {
+        if (!self)
+            return;
+        if (IpcFeedback::checkOrWarn(resp, self, tr("Rename")))
+            self->requestDownloads();
+    });
+}
+
+void TransferPanel::pasteDownloadLinks()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    // Manual: pasting is the confirmation, and a completed or cancelled file is left
+    // alone so it can be re-downloaded on purpose.
+    Ed2kLinkImporter::importLinks(QApplication::clipboard()->text().trimmed(), m_ipc, this,
+                                  Ed2kLinkImporter::Source::Manual,
+                                  Ed2kLinkImporter::Prompt::Silent);
 }
 
 } // namespace eMule

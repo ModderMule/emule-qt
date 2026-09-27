@@ -74,6 +74,8 @@ class tst_MetaSearchGui : public QObject {
 
 private slots:
     void networkIconReplacesFileType();
+    void ed2kLinkRefusedForMetaRows();
+    void magnetLinkForMetaRows();
     void loginDialog_authRequired();
     void loginDialog_inactiveShowsSteps();
     void loginDialog_rejectsNonWebLinks();
@@ -105,6 +107,38 @@ void tst_MetaSearchGui::networkIconReplacesFileType()
     view.header()->resizeSection(0, 260);
     view.resize(560, 110);
     shoot(&view, QStringLiteral("meta_results.png"));
+}
+
+void tst_MetaSearchGui::ed2kLinkRefusedForMetaRows()
+{
+    // phase 6: a meta hash is no MD4 — never mint ed2k:// for it
+    QVERIFY(row(QStringLiteral("Torrent.Release"), 1).ed2kLink().isEmpty());
+    QVERIFY(row(QStringLiteral("Torrent.V2.Release"), 2).ed2kLink().isEmpty());
+    QVERIFY(row(QStringLiteral("Usenet.Release"), 3).ed2kLink().isEmpty());
+
+    SearchResultRow plain = row(QStringLiteral("plain.iso"), 0);
+    plain.hash = QStringLiteral("0123456789abcdef0123456789abcdef");
+    QCOMPARE(plain.ed2kLink(),
+             QStringLiteral("ed2k://|file|plain.iso|1754017281|0123456789abcdef0123456789abcdef|/"));
+
+    // a '|' or '%' in the name must not corrupt the link
+    plain.fileName = QStringLiteral("a|b 50%.iso");
+    QCOMPARE(plain.ed2kLink(),
+             QStringLiteral("ed2k://|file|a_b%2050%25.iso|1754017281|0123456789abcdef0123456789abcdef|/"));
+}
+
+void tst_MetaSearchGui::magnetLinkForMetaRows()
+{
+    SearchResultRow torrent = row(QStringLiteral("Torrent.Release"), 1);
+    torrent.magnet = QStringLiteral("magnet:?xt=urn:btih:1111111111111111111111111111111111111111");
+    QCOMPARE(torrent.magnetLink(), torrent.magnet);   // the server's, never urn:ed2k
+    QVERIFY(row(QStringLiteral("Torrent.NoMagnet"), 1).magnetLink().isEmpty());
+    QVERIFY(row(QStringLiteral("Usenet.Release"), 3).magnetLink().isEmpty());
+
+    SearchResultRow plain = row(QStringLiteral("a b.iso"), 0);
+    plain.hash = QStringLiteral("0123456789abcdef0123456789abcdef");
+    QCOMPARE(plain.magnetLink(),
+             QStringLiteral("magnet:?xt=urn:ed2k:0123456789ABCDEF0123456789ABCDEF&xl=1754017281&dn=a%20b.iso"));
 }
 
 void tst_MetaSearchGui::loginDialog_authRequired()

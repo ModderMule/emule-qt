@@ -108,6 +108,10 @@ private:
                           std::function<void(const QStringList& links, bool hintAvailable)> apply);
     [[nodiscard]] const SharedFileRow* currentFile() const;
     [[nodiscard]] QStringList selectedHashes() const;
+
+    // MFC CSharedFilesCtrl::OnCommand, shared by the context menu and the list keys.
+    void renameSelectedFile();        ///< MP_RENAME / MPG_F2
+    void deleteSelectedFiles();       ///< MPG_DELETE (Del, ⌫) — complete files only, confirmed
     [[nodiscard]] std::vector<const SharedFileRow*> rowsForHashes(const QStringList& hashes) const;
     [[nodiscard]] int computePopularityRank(int64_t value,
                                             int64_t (SharedFileRow::*field)) const;

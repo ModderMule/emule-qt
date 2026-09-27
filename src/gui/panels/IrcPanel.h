@@ -8,6 +8,8 @@
 ///   - Right: Tabbed area with Status, Channels, and dynamic channel tabs
 ///   - Bottom: Connect/Close buttons, format toolbar, input field, Send button
 
+#include "utils/InputHistory.h"
+
 #include <QFont>
 #include <QMap>
 #include <QString>
@@ -55,8 +57,9 @@ struct IrcChannel {
     QStringList nicks;
     QString topic;
     QWidget* widget = nullptr;   ///< QTextBrowser or QTreeWidget in the tab
-    QVector<QString> inputHistory;
-    int historyPos = -1;
+    InputHistory history;        ///< Up/Down recall (IrcWnd.cpp:458)
+    QString typed;               ///< Tab completion: what the user typed (MFC m_sTyped)
+    QString tabbed;              ///< Tab completion: last completed input (MFC m_sTabd)
     Type type = Normal;
 };
 
@@ -144,6 +147,8 @@ private:
     void processInput(const QString& text);
     void handleSlashCommand(const QString& cmd, const QString& args);
     void addToHistory(const QString& text);
+    /// Tab: complete the last word to the next matching nick (IrcChannelTabCtrl.cpp:84).
+    void autoCompleteNick();
 
     // Format buttons
     void insertFormatCode(char code);

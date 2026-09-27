@@ -6,6 +6,8 @@
 #include "webserver/WebTemplateEngine.h"
 #include "webserver/WebTemplateStrings.h"
 #include "utils/ByteRateSampler.h"
+#include "utils/OtherFunctions.h"
+#include "enodemeta/MetaHash.h"
 #include "utils/StringUtils.h"
 
 #include "app/AppConfig.h"
@@ -383,6 +385,7 @@ private slots:
     void usenetActionsNeedAnAdminSession();
     void usenetAddFromThePageCarriesBytesAndOptions();
     void usenetPageWithoutBackendSaysUnavailable();
+    void webEd2kActionRefusesAMetaHash();
     void restUsenetListNeedsKeyAndReturnsRows();
     void restUsenetStatsIsNotShadowedByItemRoute();
     void restUsenetItemActionsAndErrors();
@@ -2341,6 +2344,43 @@ void tst_WebServer::usenetPageWithoutBackendSaysUnavailable()
     QCOMPARE(sendRaw(port, QByteArrayLiteral("POST"), QStringLiteral("/usenet/action?ses=%1").arg(ses),
                      QByteArrayLiteral("op=pause&id=x"),
                      QByteArrayLiteral("application/x-www-form-urlencoded")).statusCode, 503);
+
+    server->stop();
+}
+
+void tst_WebServer::webEd2kActionRefusesAMetaHash()
+{
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    const QStringList savedTemp = thePrefs.tempDirs();
+    const auto restore = qScopeGuard([&] {
+        m_downloadQueue->deleteAll();
+        thePrefs.setTempDirs(savedTemp);
+    });
+    thePrefs.setTempDirs({temp.path()});
+    QCOMPARE(m_downloadQueue->fileCount(), 0);
+
+    auto server = startUsenetUi(nullptr);
+    const uint16 port = server->port();
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+    QVERIFY(!ses.isEmpty());
+    const auto addLink = [&](const uint8* hash, const QString& name) {
+        const QString link = QStringLiteral("ed2k://|file|%1|1000|%2|/").arg(name, md4str(hash));
+        rawGetBody(port, QStringLiteral("/?ses=%1&w=transfer&ed2k=%2")
+                             .arg(ses, QString::fromLatin1(QUrl::toPercentEncoding(link))));
+    };
+
+    // an eNode torrent row's meta hash is no eD2K file
+    const auto meta = enodemeta::build(enodemeta::Kind::BtV1, 0, 0, QByteArray(20, '\x33'));
+    QVERIFY(meta);
+    addLink(meta->data(), QStringLiteral("torrent.mkv"));
+    QCOMPARE(m_downloadQueue->fileCount(), 0);
+
+    // control: a real link is queued, into the configured temp dir
+    const uint8 md4[16] = {0x57, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+    addLink(md4, QStringLiteral("plain.bin"));
+    QCOMPARE(m_downloadQueue->fileCount(), 1);
+    QCOMPARE(QDir(temp.path()).entryList({QStringLiteral("*.part.met")}, QDir::Files).size(), 1);
 
     server->stop();
 }

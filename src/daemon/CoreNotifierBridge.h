@@ -101,7 +101,7 @@ private slots:
     // Client shared files signals
     void onClientSharedFilesReceived(const QByteArray& userHash,
                                      const QString& userName,
-                                     const QCborArray& files);
+                                     uint32 searchID);
 
     // Port-mapping signals
     void onPortMapStatusChanged(eMule::PortMapStatus status);

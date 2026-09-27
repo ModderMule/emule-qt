@@ -267,6 +267,7 @@ emule_add_test(tst_GlobalSearchScheduler FOLDER "Search")
 # Module 14: IP Filter & Security
 emule_add_test(tst_IPFilter      FOLDER "IPFilter")
 emule_add_test(tst_IPFilterMatch FOLDER "IPFilter")
+emule_add_test(tst_IP2Country   FOLDER "IPFilter")
 
 # Module 17: Chat & IRC
 emule_add_test(tst_IrcProtocol   FOLDER "Chat")
@@ -476,6 +477,8 @@ emule_add_test(tst_ListSorting FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/SearchResultsModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/KadContactsModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UploadStatusDelegate.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/ClientIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
             # The Usenet model marks a password-protected release with menuIcon().
             "${CMAKE_SOURCE_DIR}/src/gui/utils/MenuUtils.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/PriorityText.cpp"
@@ -486,6 +489,26 @@ target_include_directories(tst_ListSorting PRIVATE
     "${CMAKE_SOURCE_DIR}/src/core"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_ListSorting PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
+# Country flags (IP2Country): flag icons, the Country column rule, the models' "cc"
+# plumbing, and saved header layouts surviving an appended column.
+emule_add_test(tst_CountryFlags FOLDER "Gui"
+    SOURCES tst_CountryFlags.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/ClientListModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/ServerListModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/KadContactsModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/ClientIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/PriorityText.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
+            "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc"
+            "${CMAKE_SOURCE_DIR}/resources/flags.qrc")
+target_include_directories(tst_CountryFlags PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_SOURCE_DIR}/src/core"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_CountryFlags PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
 # eNode torrent/Usenet rows in the result list, and the Meta API account dialog.
@@ -527,6 +550,7 @@ target_link_libraries(tst_CategoryDialog PRIVATE
 emule_add_test(tst_OptionsDialogSizing FOLDER "Gui"
     SOURCES tst_OptionsDialogSizing.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FirstStartWizard.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/panels/StatisticsPanel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/AccordionSidebar.cpp"
@@ -615,6 +639,8 @@ endif()
 emule_add_test(tst_DownloadStatusText FOLDER "Gui"
     SOURCES tst_DownloadStatusText.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadListModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/ClientIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/PriorityText.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp")
@@ -630,6 +656,8 @@ emule_add_test(tst_FileMarks FOLDER "Gui"
     SOURCES tst_FileMarks.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadListModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/SharedFilesModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/ClientIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/PriorityText.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
@@ -650,12 +678,25 @@ emule_add_test(tst_CommentsPanel FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/ListActivation.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FindInListDialog.cpp"
             "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
 target_include_directories(tst_CommentsPanel PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_SOURCE_DIR}/src/core"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_CommentsPanel PRIVATE Qt6::Widgets)
+
+# MFC list accelerators (Del/⌫, F2, clipboard, find) and the find-next state — the
+# event filter and dialog compile standalone against the stub pch.
+emule_add_test(tst_ListKeys FOLDER "Gui"
+    SOURCES tst_ListKeys.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/ListActivation.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FindInListDialog.cpp")
+target_include_directories(tst_ListKeys PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_ListKeys PRIVATE Qt6::Widgets)
 
 # Tray icon download meter — pure painting, so the real source compiles standalone.
 emule_add_test(tst_TrayMeterIcon FOLDER "Gui"

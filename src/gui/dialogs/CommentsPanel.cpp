@@ -5,6 +5,7 @@
 #include "CommentsPanel.h"
 
 #include "controls/AbstractListView.h"
+#include "utils/ListActivation.h"
 #include "controls/SortableItems.h"
 #include "prefs/Preferences.h"
 #include "utils/RatingIcons.h"
@@ -109,6 +110,11 @@ void CommentsPanel::buildUi(const QString& stateKey)
         copyAct->setEnabled(!m_tree->selectedItems().isEmpty());
         menu.exec(m_tree->viewport()->mapToGlobal(pos));
     });
+
+    // CCommentListCtrl answers MP_COPYSELECTED, so Ctrl+C copies too.
+    ListKeyHandlers keys;
+    keys.copy = [this] { copySelectedComments(); };
+    bindListKeys(m_tree, std::move(keys));
 
     auto* buttons = new QHBoxLayout;
     m_filterBtn = new QPushButton(tr("Edit spam filter..."));

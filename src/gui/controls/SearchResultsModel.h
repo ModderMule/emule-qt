@@ -43,6 +43,11 @@ struct SearchResultRow {
     [[nodiscard]] bool isMeta() const { return metaKind != 0; }
     [[nodiscard]] bool isTorrent() const { return metaKind == 1 || metaKind == 2; }
     [[nodiscard]] bool isUsenet() const { return metaKind == 3; }
+
+    /// ed2k:// link; empty for meta rows (their hash is not an MD4).
+    [[nodiscard]] QString ed2kLink() const;
+    /// urn:ed2k magnet, or the server's magnet for a meta row (empty for Usenet).
+    [[nodiscard]] QString magnetLink() const;
 };
 
 /// Table model backing the search results tree view in the Search panel.

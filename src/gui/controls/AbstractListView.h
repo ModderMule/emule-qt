@@ -22,6 +22,7 @@
 #include <QTreeView>
 #include <QTreeWidget>
 
+#include <functional>
 #include <initializer_list>
 
 #include "app/UiState.h"
@@ -56,6 +57,21 @@ public:
         }
 
         theUiState.bindHeaderView(hdr, stateKey);
+        applyColumnPolicy();
+    }
+
+    /// Visibility rules a saved layout must not override (e.g. the Country column
+    /// follows the Options setting). Re-run after every restore.
+    void setColumnPolicy(std::function<void(QHeaderView*)> policy)
+    {
+        m_columnPolicy = std::move(policy);
+        applyColumnPolicy();
+    }
+
+    void applyColumnPolicy()
+    {
+        if (m_columnPolicy && this->header()->count() > 0)
+            m_columnPolicy(this->header());
     }
 
 protected:
@@ -71,11 +87,13 @@ protected:
         if (!m_restoredOnShow && !m_stateKey.isEmpty()) {
             m_restoredOnShow = true;
             theUiState.applyHeaderState(this->header(), m_stateKey);
+            applyColumnPolicy();
         }
     }
 
 private:
     QString m_stateKey;
+    std::function<void(QHeaderView*)> m_columnPolicy;
     bool    m_restoredOnShow = false;
 };
 

@@ -35,7 +35,10 @@ struct SourceRow {
     QString userHash;
     int64_t ip = 0;      ///< eD2K byte order; 0 for an IPv6 peer — prefer addr.
     QString addr;        ///< Literal address, both families. Empty when unknown.
+    QString cc;          ///< ISO country code (GeoLite2), empty when unknown.
     int64_t port = 0;
+    int softwareId = -1;
+    bool hasCredit = false;
     bool isFriend = false;
     QByteArray partMap;  // per-part: 0=no, 1=both, 2=client-only, 3=pending, 4=receiving
 };
@@ -119,6 +122,7 @@ public:
         ColLastReception,
         ColCategory,
         ColAddedOn,
+        ColCountry,          ///< source rows only (MorphXT IP2Country)
         ColCount
     };
 

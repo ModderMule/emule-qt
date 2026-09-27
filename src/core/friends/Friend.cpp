@@ -103,29 +103,34 @@ void Friend::setLinkedClient(UpDownClient* client)
 // Connecting — MFC srchybrid/Friend.cpp:210-437
 // ---------------------------------------------------------------------------
 
+UpDownClient* Friend::ensureLinkedClient()
+{
+    if (UpDownClient* client = linkedClient(true))
+        return client;
+
+    if (m_lastUsedAddress.isNull() || m_lastUsedPort == 0)
+        return nullptr;   // nothing to dial
+
+    // Built from the stored address rather than a user ID: setUserAddress() carries an
+    // IPv6 friend, where the uint32 form would collapse to 0.0.0.0.
+    auto* client = new UpDownClient(m_lastUsedPort, m_lastUsedAddress.toNetworkUint32(),
+                                    0, 0, nullptr, /*ed2kID*/ true);
+    client->setUserAddress(m_lastUsedAddress);
+    client->setUserName(m_name);
+    if (hasUserhash())
+        client->setUserHash(m_userHash.data());
+
+    if (theApp.clientList)
+        theApp.clientList->addClient(client);
+    setLinkedClient(client);
+    return client;
+}
+
 UpDownClient* Friend::clientForChatSession()
 {
-    UpDownClient* client = linkedClient(true);
-
-    if (!client) {
-        if (m_lastUsedAddress.isNull() || m_lastUsedPort == 0)
-            return nullptr;   // nothing to dial
-
-        // Built from the stored address rather than a user ID: setUserAddress() carries an
-        // IPv6 friend, where the uint32 form would collapse to 0.0.0.0.
-        client = new UpDownClient(m_lastUsedPort, m_lastUsedAddress.toNetworkUint32(),
-                                  0, 0, nullptr, /*ed2kID*/ true);
-        client->setUserAddress(m_lastUsedAddress);
-        client->setUserName(m_name);
-        if (hasUserhash())
-            client->setUserHash(m_userHash.data());
-
-        if (theApp.clientList)
-            theApp.clientList->addClient(client);
-        setLinkedClient(client);
-    }
-
-    client->setChatState(ChatState::Chatting);
+    UpDownClient* client = ensureLinkedClient();
+    if (client)
+        client->setChatState(ChatState::Chatting);
     return client;
 }
 

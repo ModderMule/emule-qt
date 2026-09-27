@@ -35,8 +35,9 @@ static void unixSignalHandler(int)
 #include "app/MainWindow.h"
 #include "app/PowerManager.h"
 #include "app/UiState.h"
+#include "utils/CountryFlags.h"
 #include "utils/FileAssociation.h"
-#include "dialogs/ClientSharedFilesDialog.h"
+#include "utils/StatusBarNotifier.h"
 #include "dialogs/CoreConnectDialog.h"
 #include "controls/LogWidget.h"
 #include "panels/IrcPanel.h"
@@ -208,6 +209,9 @@ int main(int argc, char* argv[])
                     .arg(seed.seeded).arg(seed.refreshed).arg(seed.conflicts).arg(seed.pruned));
     }
     eMule::theUiState.load(configDir);
+    eMule::CountryFlags::setSettings(
+        eMule::theUiState.showCountryFlags(),
+        static_cast<eMule::CountryFlags::NameMode>(eMule::theUiState.countryNameMode()));
 
     // Applied at every start, not only the first: idempotent, so it takes the
     // association back from an application that took it away, and removes it
@@ -400,6 +404,11 @@ int main(int argc, char* argv[])
                               ? eMule::ServerMsgType::Error
                           : severity == QtWarningMsg ? eMule::ServerMsgType::Warning
                                                      : eMule::ServerMsgType::Info);
+            else if (cat == QStringLiteral("emule.status")) {
+                // MFC LOG_STATUSBAR: main Log tab plus the status bar, warnings included
+                logWidget->appendLog(colored, timestamp, seqId);
+                eMule::StatusBarNotifier::post(text);
+            }
             else if (cat == QStringLiteral("emule.net"))
                 logWidget->appendVerbose(colored, timestamp, seqId);
             else if (severity == QtDebugMsg || severity == QtWarningMsg)
@@ -565,15 +574,6 @@ int main(int argc, char* argv[])
                     QObject::tr("Chat Message from %1").arg(user), text);
             }
         });
-        // Client shared files response → show dialog
-        QObject::connect(&ipcClient, &eMule::IpcClient::clientSharedFilesReceived,
-                         &mainWindow, [&mainWindow, &ipcClient](const eMule::Ipc::IpcMessage& msg) {
-            const QString clientName = msg.fieldString(1);
-            const QCborArray files = msg.fieldArray(2);
-            auto* dlg = new eMule::ClientSharedFilesDialog(clientName, files, &ipcClient, &mainWindow);
-            dlg->show();
-        });
-
         QObject::connect(&ipcClient, &eMule::IpcClient::logMessageReceived,
                          &mainWindow, [&mainWindow](const eMule::Ipc::IpcMessage& msg) {
             if (eMule::thePrefs.notifyOnLog()) {

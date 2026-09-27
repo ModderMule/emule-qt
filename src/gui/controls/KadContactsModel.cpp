@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "controls/KadContactsModel.h"
+#include "utils/CountryFlags.h"
 
 #include <QFont>
 
@@ -31,6 +32,8 @@ QVariant KadContactsModel::data(const QModelIndex& index, int role) const
             return c.clientId;
         case ColDistance:
             return c.distance;
+        case ColCountry:
+            return CountryFlags::columnText(c.cc);
         default:
             break;
         }
@@ -41,14 +44,19 @@ QVariant KadContactsModel::data(const QModelIndex& index, int role) const
         case ColStatus:   return c.type;
         case ColClientId: return c.clientId;
         case ColDistance:  return c.distance;
+        case ColCountry:   return CountryFlags::sortKey(c.cc);
         default:          break;
         }
     }
 
     if (role == Qt::DecorationRole && index.column() == ColStatus)
-        return m_icons[static_cast<size_t>(contactImage(c))];
+        return CountryFlags::withFlag(m_icons[static_cast<size_t>(contactImage(c))], c.cc);
 
-    if (role == Qt::FontRole && index.column() != ColStatus) {
+    if (role == Qt::ToolTipRole && (index.column() == ColStatus || index.column() == ColCountry)
+        && !c.cc.isEmpty())
+        return CountryFlags::tooltip(c.cc);
+
+    if (role == Qt::FontRole && index.column() != ColStatus && index.column() != ColCountry) {
         QFont font;
         font.setFamily(QStringLiteral("Courier New"));
         font.setPointSize(8);
@@ -67,6 +75,7 @@ QVariant KadContactsModel::headerData(int section, Qt::Orientation orientation, 
     case ColStatus:   return tr("Status");
     case ColClientId: return tr("Client ID");
     case ColDistance:  return tr("Distance");
+    case ColCountry:   return tr("Country");
     default:          return {};
     }
 }

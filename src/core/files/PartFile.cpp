@@ -510,114 +510,15 @@ void PartFile::flushBuffer(bool forceICH, bool noAICH)
         return;
     }
 
+    // Only what reached the disk is re-checked; a failed write marks nothing
+    // (MFC DeleteWrittenItem, srchybrid/PartFile.cpp:4524-4526)
+    for (const auto& bd : m_bufferedData)
+        markChangedParts(bd.start, bd.end);
+
     m_bufferedData.clear();
     m_totalBufferData = 0;
 
-    // Hash verification per changed part (MD4 + AICH), mirroring MFC's
-    // CPartFile::FlushBuffer (srchybrid/PartFile.cpp:4160-4220).
-    for (uint32 p = 0; p < partCount(); ++p) {
-        const uint64 partStart = static_cast<uint64>(p) * PARTSIZE;
-        const uint64 partEnd = std::min(partStart + PARTSIZE - 1,
-                                        static_cast<uint64>(fileSize()) - 1);
-
-        if (isComplete(p)) {
-            bool aichAgreed = false;
-            if (hashSinglePart(p, &aichAgreed)) {
-                // The part verified, so it is no longer a candidate for recovery.
-                m_corruptionBlackBox.verifiedData(partStart, partEnd);
-                dropCorruptedPart(p);
-
-                // We now hold a whole verified part, which is MFC's condition for a
-                // part file becoming a shared file (srchybrid/PartFile.cpp:4194).
-                // Idempotent, which matters here: this loop re-checks every already
-                // complete part on every flush, not just the ones this buffer touched.
-                addToSharedFiles();
-
-                // A chunk we fetched over the HTTP Cache may now be handed on to other
-                // peers — but only because MD4 actually matched, which is a stronger
-                // claim than hashSinglePart() returning true. That function answers
-                // true for a part it could not check at all (index out of range, file
-                // it could not open, short read) and its md4OK starts life true, only
-                // falsified when a per-part hash exists to compare against. Relaying
-                // means vouching for the bytes, so demand the hash really existed.
-                if (theApp.httpCache && fileIdentifier().getMD4PartHash(p) != nullptr) {
-                    std::array<uint8, 16> hash{};
-                    std::memcpy(hash.data(), fileHash(), 16);
-                    theApp.httpCache->reportPartVerified(hash, p);
-                }
-                continue;
-            }
-
-            logWarning(QStringLiteral("PartFile: hash mismatch for part %1 of '%2' — re-downloading")
-                           .arg(p).arg(fileName()));
-            addGap(partStart, partEnd);
-
-            // Add part to corrupted list, if not already there
-            if (std::ranges::find(m_corruptedParts, static_cast<uint16>(p)) == m_corruptedParts.end())
-                m_corruptedParts.push_back(static_cast<uint16>(p));
-
-            // Request AICH recovery data if AICH didn't already agree. noAICH is
-            // separate from forceICH because the destructor flushes with noAICH: a part
-            // failing MD4 there must not start a request against a file being destroyed.
-            if (!forceICH && !noAICH && !aichAgreed)
-                requestAICHRecovery(p);
-
-            // Track corruption loss
-            const uint64 lost = partEnd - partStart + 1;
-            m_corruptionLoss += lost;
-            if (theApp.statistics)
-                theApp.statistics->addCorruptionLoss(lost);
-
-            // MFC only ever assigns blame from AICH recovery, which needs a second
-            // source to supply the reference hash and so may never arrive. When one
-            // sender supplied the whole part that detour is unnecessary: nobody else
-            // could have contributed the bad bytes. This is the ordinary case for an
-            // HTTP Cache chunk, which is always one whole part from one peer.
-            if (!m_corruptionBlackBox
-                     .soleSenderOfWholePart(static_cast<uint16>(p), lost)
-                     .isNull()) {
-                markPartCorrupted(p);
-                punishCorruptionSenders(static_cast<uint16>(p));
-            }
-
-            // Tell the peer that offered this part over the HTTP Cache, so its own
-            // three-strike counter retires the chunk instead of handing it to the next
-            // downloader. A no-op for a part we did not fetch that way.
-            if (theApp.httpCache) {
-                std::array<uint8, 16> hash{};
-                std::memcpy(hash.data(), fileHash(), 16);
-                theApp.httpCache->reportPartCorrupt(hash, p);
-            }
-
-        } else if (isCorruptedPart(p) && (thePrefs.useICH() || forceICH)) {
-            // Intelligent Corruption Handling: the part still has gaps, but the
-            // bytes behind them were never erased — only distrusted. If MD4 over
-            // the whole part matches, they were fine all along and re-downloading
-            // them would be wasted traffic.
-            if (!hashSinglePart(p))
-                continue;
-
-            m_corruptionBlackBox.verifiedData(partStart, partEnd);
-
-            const uint64 recovered = totalGapSizeInPart(p);
-            fillGap(partStart, partEnd);
-            removeBlockFromList(partStart, partEnd);
-            dropCorruptedPart(p);
-
-            // Recovery just produced a whole good part — MFC shares here too
-            // (srchybrid/PartFile.cpp:4227).
-            addToSharedFiles();
-
-            m_corruptionLoss = (m_corruptionLoss >= recovered) ? m_corruptionLoss - recovered : 0;
-            if (theApp.statistics) {
-                theApp.statistics->subCorruptionLoss(recovered);
-                theApp.statistics->addIchPartSaved();
-            }
-
-            logInfo(QStringLiteral("PartFile: ICH recovered %1 bytes of part %2 of '%3'")
-                        .arg(recovered).arg(p).arg(fileName()));
-        }
-    }
+    verifyChangedParts(forceICH, noAICH);
 
     // If no gaps remain, file is complete
     if (m_gapList.empty()) {
@@ -631,6 +532,32 @@ void PartFile::flushBuffer(bool forceICH, bool noAICH)
         savePartFile();
         m_nextMetSaveTime = curTick + 30000; // save every ~30s
     }
+}
+
+// ===========================================================================
+// hashsetReceived — verify parts that completed without a hashset
+// ===========================================================================
+
+void PartFile::hashsetReceived()
+{
+    // MFC has no equivalent and leaves such parts unverified
+    if (m_status == PartFileStatus::Completing || m_status == PartFileStatus::Complete)
+        return;
+
+    bool any = false;
+    for (uint32 p = 0; p < m_partsAwaitingHashset.size() && p < partCount(); ++p) {
+        if (!m_partsAwaitingHashset[p])
+            continue;
+        // Back to awaiting via hashSinglePart if the hashset still doesn't cover it
+        m_partsAwaitingHashset[p] = false;
+        markChangedParts(static_cast<uint64>(p) * PARTSIZE, static_cast<uint64>(p) * PARTSIZE);
+        any = true;
+    }
+    if (any)
+        verifyChangedParts(/*forceICH*/ false, /*noAICH*/ false);
+
+    // Persist the new hashset
+    savePartFile();
 }
 
 // ===========================================================================
@@ -1719,6 +1646,13 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
     // MFC LoadPartFile: final hashset-needed check based on actual hash counts
     m_md4HashsetNeeded = !fileIdentifier().hasExpectedMD4HashCount();
 
+    // Parts finished in an earlier session without a hashset were never checked
+    if (m_md4HashsetNeeded) {
+        m_partsAwaitingHashset.assign(partCount(), false);
+        for (uint32 p = 0; p < partCount(); ++p)
+            m_partsAwaitingHashset[p] = isComplete(p);
+    }
+
     // Set status. MFC's latch (srchybrid/PartFile.cpp:1093-1105): start Empty, and
     // promote to Ready as soon as one part verifies complete — that, not "is it
     // running", is what Ready means. Pause is not stored; status() overlays it.
@@ -1993,6 +1927,10 @@ bool PartFile::savePartFile()
 void PartFile::completeFile()
 {
     setStatus(PartFileStatus::Completing);
+
+    // MFC PartFile.cpp:2975
+    m_changedParts.clear();
+    m_partsAwaitingHashset.clear();
 
     // A completed file needs no more sources. MFC PartFile.cpp:4334-4335.
     if (kadFileSearchID()) {
@@ -2583,6 +2521,10 @@ bool PartFile::hashSinglePart(uint32 partNumber, bool* aichAgreed)
                      .arg(partNumber).arg(fileName()));
         setMD4HashsetNeeded(true);
         setAICHPartHashsetNeeded(true);
+        // Checked once more when a hashset arrives (hashsetReceived)
+        if (m_partsAwaitingHashset.size() < partCount())
+            m_partsAwaitingHashset.resize(partCount(), false);
+        m_partsAwaitingHashset[partNumber] = true;
         return true;
     }
 
@@ -3297,6 +3239,142 @@ void PartFile::punishCorruptionSenders(uint16 part)
         else
             theApp.clientList->addBannedClient(guilty.addr);
     }
+}
+
+
+// ===========================================================================
+// markChangedParts (private)
+// ===========================================================================
+
+void PartFile::markChangedParts(uint64 start, uint64 end)
+{
+    if (partCount() == 0)
+        return;
+    if (m_changedParts.size() < partCount())
+        m_changedParts.resize(partCount(), false);
+
+    // A range can span parts (MFC SafeHash loop)
+    const uint64 last = std::min<uint64>(end / PARTSIZE, partCount() - 1);
+    for (uint64 p = start / PARTSIZE; p <= last; ++p)
+        m_changedParts[p] = true;
+}
+
+// ===========================================================================
+// verifyChangedParts (private)
+// ===========================================================================
+
+void PartFile::verifyChangedParts(bool forceICH, bool noAICH)
+{
+    // Hash verification per changed part (MD4 + AICH), mirroring MFC's
+    // CPartFile::FlushBuffer (srchybrid/PartFile.cpp:4154-4220). Flag cleared first.
+    for (uint32 p = 0; p < partCount(); ++p) {
+        if (p >= m_changedParts.size() || !m_changedParts[p])
+            continue;
+        m_changedParts[p] = false;
+
+        const uint64 partStart = static_cast<uint64>(p) * PARTSIZE;
+        const uint64 partEnd = std::min(partStart + PARTSIZE - 1,
+                                        static_cast<uint64>(fileSize()) - 1);
+
+        if (isComplete(p)) {
+            bool aichAgreed = false;
+            if (hashSinglePart(p, &aichAgreed)) {
+                // The part verified, so it is no longer a candidate for recovery.
+                m_corruptionBlackBox.verifiedData(partStart, partEnd);
+                dropCorruptedPart(p);
+
+                // We now hold a whole verified part, which is MFC's condition for a
+                // part file becoming a shared file (srchybrid/PartFile.cpp:4194).
+                // Idempotent: a part is re-checked whenever it is rewritten or a
+                // late hashset arrives.
+                addToSharedFiles();
+
+                // A chunk we fetched over the HTTP Cache may now be handed on to other
+                // peers — but only because MD4 actually matched, which is a stronger
+                // claim than hashSinglePart() returning true. That function answers
+                // true for a part it could not check at all (index out of range, file
+                // it could not open, short read) and its md4OK starts life true, only
+                // falsified when a per-part hash exists to compare against. Relaying
+                // means vouching for the bytes, so demand the hash really existed.
+                if (theApp.httpCache && fileIdentifier().getMD4PartHash(p) != nullptr) {
+                    std::array<uint8, 16> hash{};
+                    std::memcpy(hash.data(), fileHash(), 16);
+                    theApp.httpCache->reportPartVerified(hash, p);
+                }
+                continue;
+            }
+
+            logWarning(QStringLiteral("PartFile: hash mismatch for part %1 of '%2' — re-downloading")
+                           .arg(p).arg(fileName()));
+            addGap(partStart, partEnd);
+
+            // Add part to corrupted list, if not already there
+            if (std::ranges::find(m_corruptedParts, static_cast<uint16>(p)) == m_corruptedParts.end())
+                m_corruptedParts.push_back(static_cast<uint16>(p));
+
+            // Request AICH recovery data if AICH didn't already agree. noAICH is
+            // separate from forceICH because the destructor flushes with noAICH: a part
+            // failing MD4 there must not start a request against a file being destroyed.
+            if (!forceICH && !noAICH && !aichAgreed)
+                requestAICHRecovery(p);
+
+            // Track corruption loss
+            const uint64 lost = partEnd - partStart + 1;
+            m_corruptionLoss += lost;
+            if (theApp.statistics)
+                theApp.statistics->addCorruptionLoss(lost);
+
+            // MFC only ever assigns blame from AICH recovery, which needs a second
+            // source to supply the reference hash and so may never arrive. When one
+            // sender supplied the whole part that detour is unnecessary: nobody else
+            // could have contributed the bad bytes. This is the ordinary case for an
+            // HTTP Cache chunk, which is always one whole part from one peer.
+            if (!m_corruptionBlackBox
+                     .soleSenderOfWholePart(static_cast<uint16>(p), lost)
+                     .isNull()) {
+                markPartCorrupted(p);
+                punishCorruptionSenders(static_cast<uint16>(p));
+            }
+
+            // Tell the peer that offered this part over the HTTP Cache, so its own
+            // three-strike counter retires the chunk instead of handing it to the next
+            // downloader. A no-op for a part we did not fetch that way.
+            if (theApp.httpCache) {
+                std::array<uint8, 16> hash{};
+                std::memcpy(hash.data(), fileHash(), 16);
+                theApp.httpCache->reportPartCorrupt(hash, p);
+            }
+
+        } else if (isCorruptedPart(p) && (thePrefs.useICH() || forceICH)) {
+            // Intelligent Corruption Handling: the part still has gaps, but the
+            // bytes behind them were never erased — only distrusted. If MD4 over
+            // the whole part matches, they were fine all along and re-downloading
+            // them would be wasted traffic.
+            if (!hashSinglePart(p))
+                continue;
+
+            m_corruptionBlackBox.verifiedData(partStart, partEnd);
+
+            const uint64 recovered = totalGapSizeInPart(p);
+            fillGap(partStart, partEnd);
+            removeBlockFromList(partStart, partEnd);
+            dropCorruptedPart(p);
+
+            // Recovery just produced a whole good part — MFC shares here too
+            // (srchybrid/PartFile.cpp:4227).
+            addToSharedFiles();
+
+            m_corruptionLoss = (m_corruptionLoss >= recovered) ? m_corruptionLoss - recovered : 0;
+            if (theApp.statistics) {
+                theApp.statistics->subCorruptionLoss(recovered);
+                theApp.statistics->addIchPartSaved();
+            }
+
+            logInfo(QStringLiteral("PartFile: ICH recovered %1 bytes of part %2 of '%3'")
+                        .arg(recovered).arg(p).arg(fileName()));
+        }
+    }
+
 }
 
 } // namespace eMule

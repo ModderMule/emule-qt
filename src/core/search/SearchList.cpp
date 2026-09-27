@@ -3,6 +3,7 @@
 /// @brief Search result manager — port of MFC CSearchList.
 
 #include "search/SearchList.h"
+#include "client/UpDownClient.h"
 #include "protocol/Tag.h"
 #include "utils/SafeFile.h"
 #include "utils/Log.h"
@@ -203,6 +204,53 @@ bool SearchList::processSearchAnswer(const uint8* packet, uint32 size,
 }
 
 // ---------------------------------------------------------------------------
+// Result processing — a peer's shared file list
+// ---------------------------------------------------------------------------
+
+uint32 SearchList::processClientSharedFiles(UpDownClient& sender, const uint8* packet,
+                                            uint32 size, const QString& directory)
+{
+    // MFC SearchList.cpp:182-220. One tab per peer, reused across answers; a closed
+    // tab (entry removed) gets a fresh ID so the GUI opens a new one.
+    uint32 searchID = sender.searchID();
+    if (searchID == 0 || !findEntry(searchID)) {
+        searchID = m_nextSearchID++;
+        sender.setSearchID(searchID);
+
+        SearchListEntry newEntry;
+        newEntry.searchID = searchID;
+        newEntry.title = sender.userName();
+        newEntry.clientSharedFiles = true;
+        m_fileLists.push_back(std::move(newEntry));
+        m_foundFilesCount[searchID] = 0;
+        m_foundSourcesCount[searchID] = 0;
+    }
+
+    const uint32 senderIP = sender.userAddress().toNetworkUint32();
+    const uint32 serverIP = sender.serverAddress().toNetworkUint32();
+
+    SafeMemFile data(packet, size);
+    for (uint32 results = size >= 4 ? data.readUInt32() : 0; results > 0; --results) {
+        auto* file = new SearchFile(data, sender.unicodeSupport(), serverIP,
+                                    sender.serverPort(), directory);
+        if (file->isLargeFile() && !sender.supportsLargeFiles()) {
+            logDebug(QStringLiteral("Client offers large file (%1) but did not announce support for it - ignoring file")
+                         .arg(file->fileName()));
+            delete file;
+            continue;
+        }
+        // The peer itself is the source, whatever ID it wrote into the record.
+        if (senderIP != 0 && sender.userPort() != 0)
+            file->addClient({senderIP, sender.userPort(), serverIP, sender.serverPort()});
+        file->setSearchID(searchID);
+        addToList(file, true);
+    }
+
+    emit tabHeaderUpdated(searchID);
+    return searchID;
+}
+
+// ---------------------------------------------------------------------------
 // Result processing — UDP (single result per packet)
 // ---------------------------------------------------------------------------
 
@@ -268,8 +316,8 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
     if (fileOwner->isInvalidMetaResult())
         return;
 
-    // Apply file type filter
-    if (!m_resultFileType.isEmpty() && !fileOwner->fileType().isEmpty()) {
+    // Apply file type filter; a peer's list is shown whole (MFC SearchList.cpp:406)
+    if (!clientResponse && !m_resultFileType.isEmpty() && !fileOwner->fileType().isEmpty()) {
         if (fileOwner->fileType() != m_resultFileType)
             return; // filtered out, unique_ptr will delete
     }

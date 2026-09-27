@@ -669,4 +669,16 @@ std::vector<ED2KLinkSource> ownLinkSourceHints()
     return hints;
 }
 
+// ---------------------------------------------------------------------------
+// ed2kFileLink
+// ---------------------------------------------------------------------------
+
+QString ed2kFileLink(const QString& name, uint64 size, const QString& hexHash)
+{
+    return QStringLiteral("ed2k://|file|%1|%2|%3|/")
+        .arg(urlEncode(stripInvalidFilenameChars(name)))
+        .arg(size)
+        .arg(hexHash);
+}
+
 } // namespace eMule

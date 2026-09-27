@@ -27,6 +27,8 @@ class DownloadQueue;
 class Endpoint;
 class FriendList;
 class IPFilter;
+class IP2Country;
+class GeoIpUpdater;
 class LastCommonRouteFinder;
 class KnownFileList;
 class ListenSocket;
@@ -138,6 +140,8 @@ private:
     // Owned components
     std::unique_ptr<DownloadQueue> m_downloadQueue;
     std::unique_ptr<IPFilter> m_ipFilter;
+    std::unique_ptr<IP2Country> m_ip2Country;
+    std::unique_ptr<GeoIpUpdater> m_geoIpUpdater;
     std::unique_ptr<KnownFileList> m_knownFileList;
     std::unique_ptr<SharedFileList> m_sharedFileList;
     std::unique_ptr<UploadQueue> m_uploadQueue;

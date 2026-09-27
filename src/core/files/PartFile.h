@@ -231,6 +231,8 @@ public:
     ///                  destructor flushes this way, since a request would outlive us.
     ///                  MFC srchybrid/PartFile.h:232.
     void flushBuffer(bool forceICH = false, bool noAICH = false);
+    /// A hashset arrived: verify the parts that completed while we had none.
+    void hashsetReceived();
 
     // -- Block selection ------------------------------------------------------
 
@@ -444,6 +446,10 @@ private:
     void completeFile();
     void performFileMove(const QString& srcPath, const QString& destPath);
     bool hashSinglePart(uint32 partNumber, bool* aichAgreed = nullptr);
+    /// Flag the parts [start, end] touches for the next verification pass.
+    void markChangedParts(uint64 start, uint64 end);
+    /// MD4/AICH/ICH check of the changed parts only (MFC FlushBuffer's part loop).
+    void verifyChangedParts(bool forceICH, bool noAICH);
     /// Take @p partNumber off the corrupted list; true if it was on it.
     bool dropCorruptedPart(uint32 partNumber);
     /// Report — at most once per kKadSkipLogInterval — why process() wanted a Kad
@@ -483,6 +489,10 @@ private:
     std::vector<uint16> m_srcPartFrequency;
     std::vector<uint16> m_corruptedParts;
     CorruptionBlackBox m_corruptionBlackBox;
+    // Parts written since the last verification (MFC m_aChangedPart)
+    std::vector<bool> m_changedParts;
+    // Complete parts checked without a hashset; re-checked once one arrives
+    std::vector<bool> m_partsAwaitingHashset;
 
     // Open file handle for .part file
     QFile m_partFileHandle;

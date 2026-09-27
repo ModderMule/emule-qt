@@ -133,7 +133,8 @@ private:
     void sendSetCategoryBatch(const QStringList& hashes, int category);
     void sendSetPriority(const QString& hash, int priority, bool isAuto);
     void sendSetPriorityBatch(const QStringList& hashes, int priority, bool isAuto);
-    void sendClearCompleted();
+    /// Remove completed downloads from the list — all, or only @p hashes.
+    void sendClearCompleted(const QStringList& hashes = {});
     void copyEd2kLink(const QString& hash);
     void copyEd2kLinks(const QStringList& hashes);
     void showDownloadDetails(const QString& hash);
@@ -198,6 +199,13 @@ private:
                                              const ClientListModel* model,
                                              const QString& userHash) const;
     [[nodiscard]] DetailWalker makeDownloadWalker(const QString& fileHash);
+
+    // -- Download list commands (MFC CDownloadListCtrl::OnCommand) -------------
+    // Shared by the context menu, the toolbar and the list keys.
+    void cancelSelectedDownloads();   ///< MP_CANCEL, with confirmation
+    void removeSelectedDownloads();   ///< MPG_DELETE (Del, ⌫)
+    void renameSelectedDownload();    ///< MPG_F2
+    void pasteDownloadLinks();        ///< MP_PASTE (Ctrl+V)
     [[nodiscard]] DetailWalker makeSourceWalker(const QString& parentHash,
                                                 const QString& userHash);
     [[nodiscard]] DetailWalker makeClientWalker(QTreeView* view, ClientListModel* model,

@@ -57,6 +57,7 @@ struct ClientRow {
     int softwareId = -1;
     uint32_t ip = 0;     ///< eD2K byte order; 0 for an IPv6 peer — prefer addr.
     QString  addr;       ///< Literal address, both families. Empty when unknown.
+    QString  cc;         ///< ISO country code from the daemon's GeoLite2 lookup.
     uint16_t port = 0;
     bool isBanned = false;
     bool hasCredit = false;
@@ -97,6 +98,9 @@ public:
 
     [[nodiscard]] int clientCount() const { return count(); }
     [[nodiscard]] ClientListMode mode() const { return m_mode; }
+
+    /// The Country column, always the last one.
+    [[nodiscard]] int countryColumn() const { return columnCountValue() - 1; }
     [[nodiscard]] const ClientRow* clientAt(int row) const { return rowAt(row); }
 
 protected:

@@ -9,6 +9,7 @@
 #include "files/PartFile.h"
 #include "transfer/DownloadQueue.h"
 #include "client/UpDownClient.h"
+#include "enodemeta/MetaHash.h"
 #include "client/ClientList.h"
 #include "ipfilter/IPFilter.h"
 #include "kademlia/Kademlia.h"
@@ -80,6 +81,8 @@ private slots:
     void construction_empty();
     void addDownload_basic();
     void addDownload_paused();
+    void addDownloadFromED2KLink_refusesMetaHash();
+    void addDownloadFromED2KLink_emptyTempDirUsesDefault();
     void removeFile_basic();
     void deleteAll_keepsCompletedFileOwnedByKnownList();
     void fileByID_found();
@@ -250,6 +253,63 @@ void tst_DownloadQueue::addDownload_paused()
     dq.addDownload(pf, true);
     QCOMPARE(dq.fileCount(), 1);
     QVERIFY(pf->isPaused());
+
+    dq.deleteAll();
+}
+
+namespace {
+
+QString fileLinkFor(const uint8* hash, const QString& name)
+{
+    return QStringLiteral("ed2k://|file|%1|1000|%2|/").arg(name, md4str(hash));
+}
+
+int partMetCount(const QString& dir)
+{
+    return static_cast<int>(QDir(dir).entryList({QStringLiteral("*.part.met")}, QDir::Files).size());
+}
+
+} // namespace
+
+void tst_DownloadQueue::addDownloadFromED2KLink_refusesMetaHash()
+{
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    DownloadQueue dq;
+
+    // a torrent row and a Usenet row, as eNode mints them
+    const auto torrent = enodemeta::build(enodemeta::Kind::BtV1, 0, 0, QByteArray(20, '\x11'));
+    const auto nzb = enodemeta::build(enodemeta::Kind::Nzb, 0, 0, QByteArray(32, '\x22'));
+    QVERIFY(torrent && nzb);
+
+    QVERIFY(!dq.addDownloadFromED2KLink(fileLinkFor(torrent->data(), QStringLiteral("t.mkv")), temp.path()));
+    QVERIFY(!dq.addDownloadFromED2KLink(fileLinkFor(nzb->data(), QStringLiteral("u.mkv")), temp.path()));
+    QCOMPARE(dq.fileCount(), 0);
+    QCOMPARE(partMetCount(temp.path()), 0);
+
+    // control: an ordinary MD4 link through the same door is queued
+    const uint8 md4[16] = {0x4D, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+    QVERIFY(dq.addDownloadFromED2KLink(fileLinkFor(md4, QStringLiteral("plain.bin")), temp.path()));
+    QCOMPARE(dq.fileCount(), 1);
+    QCOMPARE(partMetCount(temp.path()), 1);
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::addDownloadFromED2KLink_emptyTempDirUsesDefault()
+{
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    const QStringList saved = thePrefs.tempDirs();
+    const auto restore = qScopeGuard([&saved] { thePrefs.setTempDirs(saved); });
+    thePrefs.setTempDirs({temp.path()});
+    QCOMPARE(DownloadQueue::defaultTempDir(), temp.path());
+
+    DownloadQueue dq;
+    const uint8 md4[16] = {0x4E, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+    QVERIFY(dq.addDownloadFromED2KLink(fileLinkFor(md4, QStringLiteral("default.bin")), QString()));
+    QCOMPARE(dq.fileCount(), 1);
+    QCOMPARE(partMetCount(temp.path()), 1);
 
     dq.deleteAll();
 }

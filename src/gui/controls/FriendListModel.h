@@ -5,6 +5,7 @@
 
 #include <QAbstractListModel>
 #include <QCborArray>
+#include <QIcon>
 #include <QString>
 
 #include <cstdint>
@@ -17,6 +18,7 @@ struct FriendRow {
     QString name;
     int64_t ip = 0;      ///< eD2K byte order; 0 for an IPv6 friend — prefer addr.
     QString addr;        ///< Literal address, both families. Empty when unknown.
+    QString cc;          ///< ISO country code (GeoLite2), empty when unknown.
     int     port = 0;
     int64_t lastSeen = 0;
     int64_t lastChatted = 0;
@@ -49,6 +51,8 @@ public:
     [[nodiscard]] int findByHash(const QString& hash) const;
 
 private:
+    [[nodiscard]] static QIcon baseIcon(const FriendRow& row);
+
     std::vector<FriendRow> m_rows;
 };
 

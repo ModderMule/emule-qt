@@ -19,6 +19,8 @@ struct KadContactRow {
     QString clientId;
     QString distance;
     uint32_t ip = 0;
+    QString addr;          ///< literal address, both families
+    QString cc;            ///< ISO country code (GeoLite2), empty when unknown
     uint16_t udpPort = 0;
     uint16_t tcpPort = 0;
     uint8_t version = 0;
@@ -36,6 +38,7 @@ public:
         ColStatus = 0,
         ColClientId,
         ColDistance,
+        ColCountry,          ///< MorphXT IP2Country
         ColCount
     };
 

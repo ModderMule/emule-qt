@@ -161,8 +161,8 @@ public:
     /// still need that part can be handed the same URL and key for free. Only called
     /// once MD4 genuinely matched — relaying means vouching for the bytes.
     ///
-    /// Idempotent, and it has to be: PartFile::flushBuffer() re-verifies every already
-    /// complete part on every flush, so this arrives repeatedly for the same part.
+    /// Idempotent, and it has to be: PartFile re-verifies a part whenever it is rewritten
+    /// or a late hashset arrives, so this can arrive more than once for the same part.
     void reportPartVerified(const std::array<uint8, 16>& fileHash, uint32 partIndex);
 
     /// Is this chunk now being passed on to other peers, and was it a borrowed one?

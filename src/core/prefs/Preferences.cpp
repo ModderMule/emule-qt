@@ -524,6 +524,12 @@ struct Preferences::Data {
     bool useOriginalIcons = true;
     QString logFont;  // Empty = system default; QFont::toString() format
 
+    // IP2Country (MaxMind GeoLite2 download)
+    QString geoIpAccountId;
+    QString geoIpLicenseKey;
+    bool geoIpAutoUpdate = true;
+    qint64 geoIpLastCheck = 0;             // secs since epoch, last successful check
+
     // GUI (Files page)
     bool watchClipboard4ED2KLinks = true;
     bool useAdvancedCalcRemainingTime = true;
@@ -2703,6 +2709,22 @@ bool Preferences::useOriginalIcons() const { return get(&Data::useOriginalIcons)
 
 void Preferences::setUseOriginalIcons(bool val) { set(&Data::useOriginalIcons, val); }
 
+QString Preferences::geoIpAccountId() const { return get(&Data::geoIpAccountId); }
+
+void Preferences::setGeoIpAccountId(const QString& val) { set(&Data::geoIpAccountId, val); }
+
+QString Preferences::geoIpLicenseKey() const { return get(&Data::geoIpLicenseKey); }
+
+void Preferences::setGeoIpLicenseKey(const QString& val) { set(&Data::geoIpLicenseKey, val); }
+
+bool Preferences::geoIpAutoUpdate() const { return get(&Data::geoIpAutoUpdate); }
+
+void Preferences::setGeoIpAutoUpdate(bool val) { set(&Data::geoIpAutoUpdate, val); }
+
+qint64 Preferences::geoIpLastCheck() const { return get(&Data::geoIpLastCheck); }
+
+void Preferences::setGeoIpLastCheck(qint64 val) { set(&Data::geoIpLastCheck, val); }
+
 QString Preferences::logFont() const { return get(&Data::logFont); }
 
 void Preferences::setLogFont(const QString& val) { set(&Data::logFont, val); }
@@ -2910,6 +2932,10 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("enableSearchResultFilter"), enableSearchResultFilter());
     prefs.insert(QStringLiteral("warnUntrustedFiles"), warnUntrustedFiles());
     prefs.insert(QStringLiteral("ipFilterUpdateUrl"), ipFilterUpdateUrl());
+    prefs.insert(QStringLiteral("geoIpAccountId"), geoIpAccountId());
+    prefs.insert(QStringLiteral("geoIpLicenseKey"), geoIpLicenseKey());
+    prefs.insert(QStringLiteral("geoIpAutoUpdate"), geoIpAutoUpdate());
+    prefs.insert(QStringLiteral("geoIpLastCheck"), geoIpLastCheck());
     prefs.insert(QStringLiteral("appToken"), appToken());
 
     // Usenet. The server list travels over GetNewsServers=720 instead, because
@@ -3144,6 +3170,10 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->useSafeKad                = p.value(QStringLiteral("useSafeKad")).toBool();
     m_data->useFastKad                = p.value(QStringLiteral("useFastKad")).toBool();
     m_data->ipFilterUpdateUrl         = p.value(QStringLiteral("ipFilterUpdateUrl")).toString();
+    m_data->geoIpAccountId            = p.value(QStringLiteral("geoIpAccountId")).toString();
+    m_data->geoIpLicenseKey           = p.value(QStringLiteral("geoIpLicenseKey")).toString();
+    m_data->geoIpAutoUpdate           = p.value(QStringLiteral("geoIpAutoUpdate")).toBool(true);
+    m_data->geoIpLastCheck            = p.value(QStringLiteral("geoIpLastCheck")).toInteger();
     m_data->appToken                  = p.value(QStringLiteral("appToken")).toString();
     m_data->usenetEnabled             = p.value(QStringLiteral("usenetEnabled")).toBool();
     m_data->usenetRetryIntervalSeconds =
@@ -3790,6 +3820,14 @@ bool Preferences::load(const QString& filePath)
                 m_data->bugReportApiKey = QString::fromStdString(sec["bugReportApiKey"].as<std::string>());
             if (sec["bugReportDomain"])
                 m_data->bugReportDomain = QString::fromStdString(sec["bugReportDomain"].as<std::string>());
+        }
+
+        // IP2Country
+        if (auto geo = root["geoip"]) {
+            m_data->geoIpAccountId = QString::fromStdString(geo["accountId"].as<std::string>(m_data->geoIpAccountId.toStdString()));
+            m_data->geoIpLicenseKey = QString::fromStdString(geo["licenseKey"].as<std::string>(m_data->geoIpLicenseKey.toStdString()));
+            m_data->geoIpAutoUpdate = geo["autoUpdate"].as<bool>(m_data->geoIpAutoUpdate);
+            m_data->geoIpLastCheck = geo["lastCheck"].as<qint64>(m_data->geoIpLastCheck);
         }
 
         // IRC
@@ -4837,6 +4875,14 @@ bool Preferences::saveImpl(const QString& filePath) const
         out << YAML::Key << "bugReportApiKey" << YAML::Value << m_data->bugReportApiKey.toStdString();
     if (!m_data->bugReportDomain.isEmpty())
         out << YAML::Key << "bugReportDomain" << YAML::Value << m_data->bugReportDomain.toStdString();
+    out << YAML::EndMap;
+
+    // IP2Country
+    out << YAML::Key << "geoip" << YAML::Value << YAML::BeginMap;
+    out << YAML::Key << "accountId" << YAML::Value << m_data->geoIpAccountId.toStdString();
+    out << YAML::Key << "licenseKey" << YAML::Value << m_data->geoIpLicenseKey.toStdString();
+    out << YAML::Key << "autoUpdate" << YAML::Value << m_data->geoIpAutoUpdate;
+    out << YAML::Key << "lastCheck" << YAML::Value << m_data->geoIpLastCheck;
     out << YAML::EndMap;
 
     // IRC

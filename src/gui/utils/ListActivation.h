@@ -1,7 +1,8 @@
 #pragma once
 
 /// @file ListActivation.h
-/// @brief MFC's list keyboard accelerators — Enter and Alt+Enter — in one place.
+/// @brief MFC's list keyboard accelerators — Enter, Alt+Enter, Del, F2, Ctrl+C/V/X,
+///        Ctrl+F/F3 and friends — in one place.
 
 #include <QModelIndex>
 
@@ -13,6 +14,31 @@ namespace eMule {
 
 /// What one of the two accelerators does, given the focused row.
 using ListActivationHandler = std::function<void(const QModelIndex&)>;
+
+/// A selection-wide command (Del, F2, Copy, ...). Reads the view's selection itself.
+using ListCommandHandler = std::function<void()>;
+
+/// Every key CMuleListCtrl turns into a command (srchybrid/MuleListCtrl.cpp:1028
+/// OnKeyDown). Each list answers only some of them in its OnCommand; an empty
+/// handler means "not answered here" and the key travels on to Qt untouched.
+struct ListKeyHandlers {
+    ListActivationHandler activate;   ///< Enter        — IDA_ENTER
+    ListActivationHandler details;    ///< Alt+Enter    — MPG_ALTENTER
+    ListCommandHandler    remove;     ///< Del / ⌫      — MPG_DELETE
+    ListCommandHandler    rename;     ///< F2           — MPG_F2
+    ListCommandHandler    copy;       ///< Copy key     — MP_COPYSELECTED
+    ListCommandHandler    paste;      ///< Paste key    — MP_PASTE
+    ListCommandHandler    cut;        ///< Cut key      — MP_CUT
+    ListCommandHandler    insert;     ///< Insert       — FriendListCtrl's MP_ADDFRIEND
+    ListCommandHandler    refresh;    ///< F5           — SharedFilesCtrl's reload
+    /// Ctrl+F / F3 / Shift+F3 — MFC's "general purpose find" (FindInListDialog).
+    bool find = false;
+    /// Run after a find moved the current row — for lists whose details follow a click.
+    ListActivationHandler found;
+    /// Alt+Right / Alt+Left expand / collapse the current tree row
+    /// (TransferWnd.cpp:1153, SearchListCtrl.cpp:1517). Numpad +/- is native.
+    bool expandKeys = false;
+};
 
 /// Give @p view MFC's two list accelerators: Enter runs the list's primary
 /// action, Alt+Enter opens its detail dialog.
@@ -39,5 +65,13 @@ using ListActivationHandler = std::function<void(const QModelIndex&)>;
 void bindListActivation(QAbstractItemView* view,
                         ListActivationHandler activate,
                         ListActivationHandler details = {});
+
+/// Give @p view every MFC list key it answers. Enter and Alt+Enter behave as in
+/// bindListActivation(). Del and Backspace are the same key here (⌫ is the Mac's
+/// delete key). Copy/Paste/Cut/Find match the platform sequence, so it's Cmd on
+/// macOS. Like the Enter pair, nothing fires while a cell editor is open.
+///
+/// Call once per view; a second call installs a second filter.
+void bindListKeys(QAbstractItemView* view, ListKeyHandlers handlers);
 
 } // namespace eMule

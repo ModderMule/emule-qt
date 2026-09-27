@@ -12,6 +12,7 @@
 #include "client/DeadSourceList.h"
 #include "client/UpDownClient.h"
 #include "client/URLClient.h"
+#include "enodemeta/MetaHash.h"
 #include "net/HostResolver.h"
 #include "files/KnownFileList.h"
 #include "files/PartFile.h"
@@ -673,6 +674,13 @@ bool DownloadQueue::addDownloadFromED2KLink(const QString& link, const QString& 
         return false;
     }
 
+    // meta hash = eNode torrent/Usenet row, never an eD2K download
+    if (enodemeta::isMetaHash(fileLink->hash.data())) {
+        logWarning(QStringLiteral("addDownloadFromED2KLink: refusing torrent/Usenet meta hash: %1")
+                       .arg(fileLink->name));
+        return false;
+    }
+
     // Check for duplicate
     if (isFileExisting(fileLink->hash.data())) {
         logInfo(QStringLiteral("addDownloadFromED2KLink: file already exists: %1").arg(fileLink->name));
@@ -704,7 +712,7 @@ bool DownloadQueue::addDownloadFromED2KLink(const QString& link, const QString& 
     if (fileLink->hashset)
         partFile->fileIdentifier().loadMD4HashsetFromFile(*fileLink->hashset, true);
 
-    if (!partFile->createPartFile(tempDir)) {
+    if (!partFile->createPartFile(tempDir.isEmpty() ? defaultTempDir() : tempDir)) {
         logError(QStringLiteral("addDownloadFromED2KLink: failed to create part file for %1")
                      .arg(fileLink->name));
         delete partFile;
@@ -716,6 +724,14 @@ bool DownloadQueue::addDownloadFromED2KLink(const QString& link, const QString& 
     // After addDownload: the file must be queued before sources are attached.
     addLinkSources(partFile, fileLink->hostnameSources);
     return true;
+}
+
+QString DownloadQueue::defaultTempDir()
+{
+    const QStringList tempDirs = thePrefs.tempDirs();
+    return tempDirs.isEmpty()
+        ? QDir(thePrefs.configDir()).filePath(QStringLiteral("Temp"))
+        : tempDirs.first();
 }
 
 // ===========================================================================

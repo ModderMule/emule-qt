@@ -79,6 +79,7 @@ private:
     void handleGetKnownClients(const Ipc::IpcMessage& msg);
     void handleSetDownloadPriority(const Ipc::IpcMessage& msg);
     void handleClearCompleted(const Ipc::IpcMessage& msg);
+    void handleRenameDownload(const Ipc::IpcMessage& msg);
     void handleGetDownloadSources(const Ipc::IpcMessage& msg);
     void handleGetServers(const Ipc::IpcMessage& msg);
     void handleRemoveServer(const Ipc::IpcMessage& msg);
@@ -136,6 +137,9 @@ private:
     void handleMarkSearchSpam(const Ipc::IpcMessage& msg);
     void handleResetStats(const Ipc::IpcMessage& msg);
     void handleReloadWebTemplate(const Ipc::IpcMessage& msg);
+    void handleGetGeoIpStatus(const Ipc::IpcMessage& msg);
+    void handleUpdateGeoIpDatabase(const Ipc::IpcMessage& msg);
+    void handleLookupHostCountries(const Ipc::IpcMessage& msg);
     void handleRestoreStats(const Ipc::IpcMessage& msg);
 
     // The only two handlers that answer after their call returns: both wait on a

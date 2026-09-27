@@ -5,6 +5,7 @@
 #include "dialogs/ArchivePreviewPanel.h"
 #include "archive/ArchiveReader.h"
 #include "controls/AbstractListView.h"
+#include "utils/ListActivation.h"
 #include "controls/SortableItems.h"
 #include "utils/StringUtils.h"
 
@@ -245,6 +246,8 @@ void ArchivePreviewPanel::buildUi()
     m_treeView->setAlternatingRowColors(true);
     m_treeView->setSortingEnabled(true);
     m_treeView->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    // CListCtrlX always has Ctrl+F / F3 find (ListCtrlX.cpp:460)
+    bindListKeys(m_treeView, {.find = true});
     // Name is Interactive, not Stretch: a Qt-owned width can't be resized by the
     // user, so there would be nothing to remember.
     m_treeView->header()->setStretchLastSection(true);

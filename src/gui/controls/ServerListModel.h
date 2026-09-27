@@ -45,6 +45,7 @@ struct ServerRow {
     // numericIp is still sent so an older daemon keeps working.
     uint32_t numericIp = 0;
     QString  addr;
+    QString  cc;               ///< ISO country code (GeoLite2), empty when unknown
 
     // Unique server identity for connected-server highlighting
     uint32_t serverId = 0;
@@ -69,6 +70,7 @@ public:
         ColSoftFiles,
         ColLowID,
         ColObfuscation,
+        ColCountry,          ///< MorphXT IP2Country
         ColCount
     };
 

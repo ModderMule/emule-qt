@@ -2456,6 +2456,13 @@ QHttpServerResponse WebServer::handlePage(const QHttpServerRequest& request)
 
 void WebServer::dispatchActions(const QUrlQuery& query, const QString& page)
 {
+    // --- ED2K link addition (any page, param "ed2k") ---
+    // First: the page branches below return early (MFC WebServer.cpp:1396 runs it unconditionally)
+    // FullyDecoded: PrettyDecoded leaves the '|' separators as %7C
+    if (const QString ed2k = query.queryItemValue(QStringLiteral("ed2k"), QUrl::FullyDecoded);
+        !ed2k.isEmpty() && m_downloadQueue)
+        m_downloadQueue->addDownloadFromED2KLink(ed2k, DownloadQueue::defaultTempDir());
+
     // --- Transfer actions (page=transfer, param "op") ---
     if (page == QStringLiteral("transfer")) {
         const QString op = query.queryItemValue(QStringLiteral("op"));
@@ -2569,11 +2576,6 @@ void WebServer::dispatchActions(const QUrlQuery& query, const QString& page)
         }
         return;
     }
-
-    // --- ED2K link addition (any page, param "ed2k") ---
-    const QString ed2k = query.queryItemValue(QStringLiteral("ed2k"));
-    if (!ed2k.isEmpty() && m_downloadQueue)
-        m_downloadQueue->addDownloadFromED2KLink(ed2k, QString());
 }
 
 QHttpServerResponse WebServer::renderPage(const QString& page, const QString& sessionId,

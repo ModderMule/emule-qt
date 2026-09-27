@@ -1176,8 +1176,8 @@ void HttpCacheManager::reportPartVerified(const std::array<uint8, 16>& fileHash,
     const QString key = entryKey(fileHash, partIndex);
 
     // Already offering this chunk — either our own publish or a promotion from an
-    // earlier flush. flushBuffer() re-verifies every complete part on every flush, so
-    // this is the ordinary case once a part is done, not an edge case.
+    // earlier verification. A part is verified again when rewritten or when a late
+    // hashset arrives, so this repeats.
     if (m_entries.contains(key))
         return;
 

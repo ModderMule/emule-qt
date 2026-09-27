@@ -28,6 +28,7 @@ file(GLOB_RECURSE GUI_UTIL_SOURCES  CONFIGURE_DEPENDS "utils/*.cpp"    "utils/*.
 
 set(RESOURCES
     "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc"
+    "${CMAKE_SOURCE_DIR}/resources/flags.qrc"
 )
 
 # -- Executable target ------------------------------------------------------

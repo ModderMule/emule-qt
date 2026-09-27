@@ -128,7 +128,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
           <MultiProcessorCompilation>true</MultiProcessorCompilation>
         </ClCompile>
         <Link>
-          <AdditionalDependencies>emuleusenet.lib;emuleindexer.lib;emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;z.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\\lib\\Qt6HttpServer.lib;%(AdditionalDependencies)</AdditionalDependencies>
+          <AdditionalDependencies>emuleusenet.lib;emuleindexer.lib;emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;z.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;maxminddb.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\\lib\\Qt6HttpServer.lib;%(AdditionalDependencies)</AdditionalDependencies>
           <AdditionalLibraryDirectories>..\\..\\bin\\$(Configuration);..\\..\\src\\vcpkg_installed\\x64-windows\\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
           <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
           <DataExecutionPrevention>true</DataExecutionPrevention>
@@ -181,7 +181,7 @@ VCXPROJ_TEMPLATE = textwrap.dedent("""\
           <MultiProcessorCompilation>true</MultiProcessorCompilation>
         </ClCompile>
         <Link>
-          <AdditionalDependencies>emuleusenet.lib;emuleindexer.lib;emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;zd.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\\lib\\Qt6HttpServerd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+          <AdditionalDependencies>emuleusenet.lib;emuleindexer.lib;emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;zd.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;maxminddb.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\\lib\\Qt6HttpServerd.lib;%(AdditionalDependencies)</AdditionalDependencies>
           <AdditionalLibraryDirectories>..\\..\\bin\\$(Configuration);..\\..\\src\\vcpkg_installed\\x64-windows\\debug\\lib;..\\..\\src\\vcpkg_installed\\x64-windows\\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
           <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
           <DataExecutionPrevention>true</DataExecutionPrevention>

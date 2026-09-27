@@ -56,6 +56,10 @@ public:
     /// Select the item carrying @p id, expanding its group. False for an unknown id.
     bool setCurrentItemId(int id);
 
+    /// Move to the next (@p step 1) or previous (-1) item across all groups in display
+    /// order, wrapping — TreePropSheet's Ctrl+Tab / Ctrl+PgDn page stepping.
+    void stepCurrentItem(int step);
+
     /// Expand @p group and make its remembered current item the current one — what
     /// CSlideBar::SelectGroup() does by posting WM_SBN_SELCHANGED. Anything less leaves
     /// the header stack and the visible page disagreeing.

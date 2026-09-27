@@ -250,25 +250,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
     // Rename
     {
         auto* act = m_contextMenu->addAction(menuIcon("Rename.ico"), tr("Rename..."), this,
-                                             [this, hashes]() {
-            const SharedFileRow* f = m_model->findByHash(hashes.value(0));
-            if (!f || !m_ipc || !m_ipc->isConnected())
-                return;
-            const QString hash = f->hash;
-            const QString oldName = f->fileName;
-            bool ok = false;
-            const QString newName = QInputDialog::getText(
-                this, tr("Rename File"), tr("New file name:"),
-                QLineEdit::Normal, oldName, &ok);
-            if (!ok || newName.trimmed().isEmpty() || newName.trimmed() == oldName)
-                return;
-            IpcMessage msg(IpcMsgType::RenameSharedFile);
-            msg.append(hash);
-            msg.append(newName.trimmed());
-            m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
-                requestSharedFiles();
-            });
-        });
+                                             &SharedFilesPanel::renameSelectedFile);
         act->setEnabled(singleSel && single && !single->isPartFile);
     }
 
@@ -628,7 +610,20 @@ QWidget* SharedFilesPanel::createTopSection()
         else
             openRow(index);
     });
-    bindListActivation(m_fileView, openRow, detailsForRow);
+    // MFC CSharedFilesCtrl (SharedFilesCtrl.cpp:805 OnCommand, :1381 OnKeyDown): F2
+    // renames, Del deletes from disk, Ctrl+C copies eD2K links, F5 reloads, Ctrl+F/F3 find.
+    ListKeyHandlers keys;
+    keys.activate = openRow;
+    keys.details = detailsForRow;
+    keys.rename = [this] { renameSelectedFile(); };
+    keys.remove = [this] { deleteSelectedFiles(); };
+    keys.copy = [this] {
+        if (const QStringList hashes = selectedHashes(); !hashes.isEmpty())
+            copyEd2kLinks(hashes);
+    };
+    keys.refresh = [this] { onReloadClicked(); };
+    keys.find = true;
+    bindListKeys(m_fileView, std::move(keys));
     // Both signals are needed: ctrl+arrow moves the current row without changing the
     // selection, and ctrl-clicking a non-current row changes the selection without moving
     // the current row. The bottom tabs have to follow either one.
@@ -1860,6 +1855,49 @@ bool SharedFilesPanel::hasSubdirectories(const QString& path)
             return true;
     }
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// File list commands — context menu and list keys
+// ---------------------------------------------------------------------------
+
+void SharedFilesPanel::renameSelectedFile()
+{
+    const QStringList hashes = selectedHashes();
+    const SharedFileRow* f = hashes.size() == 1 ? m_model->findByHash(hashes.first()) : nullptr;
+    if (!f || !m_ipc || !m_ipc->isConnected())
+        return;
+    if (f->isPartFile) {
+        QApplication::beep();   // MFC MessageBeep: a part file is renamed on the download list
+        return;
+    }
+    const QString hash = f->hash;
+    const QString oldName = f->fileName;
+    bool ok = false;
+    const QString newName = QInputDialog::getText(
+        this, tr("Rename File"), tr("New file name:"),
+        QLineEdit::Normal, oldName, &ok);
+    if (!ok || newName.trimmed().isEmpty() || newName.trimmed() == oldName)
+        return;
+    IpcMessage msg(IpcMsgType::RenameSharedFile);
+    msg.append(hash);
+    msg.append(newName.trimmed());
+    m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
+        requestSharedFiles();
+    });
+}
+
+void SharedFilesPanel::deleteSelectedFiles()
+{
+    // Part files are skipped, as in MFC (SharedFilesCtrl.cpp:936) — deleting one here
+    // would destroy an in-progress download. sendDeleteFilesBatch() asks first.
+    QStringList complete;
+    for (const QString& hash : selectedHashes()) {
+        if (const SharedFileRow* f = m_model->findByHash(hash); f && !f->isPartFile)
+            complete << hash;
+    }
+    if (!complete.isEmpty())
+        sendDeleteFilesBatch(complete);
 }
 
 } // namespace eMule

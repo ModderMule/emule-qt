@@ -74,6 +74,11 @@ private slots:
     void hashSinglePart_missingHashsetsBailAndFlagBothNeeded();
     void hashSinglePart_aichDisagreementCondemnsThePart();
 
+    // Changed-part tracking — MFC m_aChangedPart, srchybrid/PartFile.cpp:4154-4158
+    void flushBuffer_verifiesOnlyChangedParts();
+    void hashsetReceived_condemnsBadPartCompletedWithoutHashset();
+    void hashsetReceived_checksEachWaitingPartOnce();
+
 private:
     QTemporaryDir m_tempDir;
 };
@@ -1116,6 +1121,127 @@ void tst_PartFile::hashSinglePart_aichDisagreementCondemnsThePart()
     QVERIFY2(pf.isCorruptedPart(0),
              "MD4 agreed but AICH did not — eMule condemns the part either way");
     QCOMPARE(pf.totalGapSizeInPart(0), uint64{PARTSIZE});
+}
+
+namespace {
+
+// Overwrite the head of part 0 behind PartFile's back
+void clobberPartZeroOnDisk(const QString& dir)
+{
+    const auto parts = QDir(dir).entryList({QStringLiteral("*.part")}, QDir::Files);
+    QCOMPARE(parts.size(), 1);
+    QFile f(dir + u'/' + parts.first());
+    QVERIFY(f.open(QIODevice::ReadWrite));
+    QVERIFY(f.seek(0));
+    QCOMPARE(f.write(QByteArray(4096, '\0')), qint64{4096});
+}
+
+std::array<uint8, 16> md4Of(const std::vector<uint8>& data)
+{
+    std::array<uint8, 16> h{};
+    KnownFile::createHashFromMemory(data.data(), static_cast<uint32>(data.size()), h.data(), nullptr);
+    return h;
+}
+
+} // namespace
+
+// A flush re-checks only the parts it wrote. Re-hashing every finished part on every
+// flush cost GBs of disk reads per flush near the end of a large download.
+void tst_PartFile::flushBuffer_verifiesOnlyChangedParts()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/changed-temp");
+    QDir().mkpath(tempDir);
+    ScopedStatistics stats;
+
+    PartFile pf;
+    pf.setFileName(QStringLiteral("changed.bin"));
+    pf.setFileSize(PARTSIZE * 2 + 1000);     // three parts, never completes here
+    pf.setTmpPath(tempDir);
+    QVERIFY(pf.createPartFile(tempDir));
+
+    const auto data = makePattern(PARTSIZE);
+    auto& hashSet = pf.fileIdentifier().getRawMD4HashSet();
+    hashSet.assign(3, md4Of(data));
+    hashSet[2].fill(0xEE);
+    QVERIFY(pf.fileIdentifier().hasExpectedMD4HashCount());
+
+    pf.writeToBuffer(PARTSIZE, data.data(), 0, PARTSIZE - 1, nullptr);
+    pf.flushBuffer();
+    QCOMPARE(pf.totalGapSizeInPart(0), uint64{0});
+
+    // Part 0 goes bad on disk; the next flush only touches part 1
+    clobberPartZeroOnDisk(tempDir);
+    pf.writeToBuffer(PARTSIZE, data.data(), PARTSIZE, 2 * PARTSIZE - 1, nullptr);
+    pf.flushBuffer();
+
+    QCOMPARE(pf.totalGapSizeInPart(1), uint64{0});
+    QVERIFY2(pf.totalGapSizeInPart(0) == 0 && !pf.isCorruptedPart(0),
+             "part 0 was not written, so it must not be re-hashed");
+}
+
+// A part finished without a hashset passes unverified; once the hashset arrives it is
+// checked, and a bad one is sent back for re-download.
+void tst_PartFile::hashsetReceived_condemnsBadPartCompletedWithoutHashset()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/late-bad-temp");
+    QDir().mkpath(tempDir);
+    ScopedStatistics stats;
+
+    PartFile pf;
+    pf.setFileName(QStringLiteral("late-bad.bin"));
+    pf.setFileSize(PARTSIZE * 2 + 1000);
+    pf.setTmpPath(tempDir);
+    QVERIFY(pf.createPartFile(tempDir));
+
+    const auto data = makePattern(PARTSIZE);
+    pf.writeToBuffer(PARTSIZE, data.data(), 0, PARTSIZE - 1, nullptr);
+    pf.flushBuffer();
+    QCOMPARE(pf.totalGapSizeInPart(0), uint64{0});
+    QVERIFY(!pf.isCorruptedPart(0));
+
+    auto& hashSet = pf.fileIdentifier().getRawMD4HashSet();
+    hashSet.assign(3, std::array<uint8, 16>{});
+    for (auto& h : hashSet)
+        h.fill(0xEE);
+    pf.hashsetReceived();
+
+    QVERIFY(pf.isCorruptedPart(0));
+    QCOMPARE(pf.totalGapSizeInPart(0), uint64{PARTSIZE});
+}
+
+// A waiting part is checked once when the hashset lands, then left alone like any
+// other verified part.
+void tst_PartFile::hashsetReceived_checksEachWaitingPartOnce()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/late-good-temp");
+    QDir().mkpath(tempDir);
+    ScopedStatistics stats;
+
+    PartFile pf;
+    pf.setFileName(QStringLiteral("late-good.bin"));
+    pf.setFileSize(PARTSIZE * 2 + 1000);
+    pf.setTmpPath(tempDir);
+    QVERIFY(pf.createPartFile(tempDir));
+
+    const auto data = makePattern(PARTSIZE);
+    pf.writeToBuffer(PARTSIZE, data.data(), 0, PARTSIZE - 1, nullptr);
+    pf.flushBuffer();
+
+    auto& hashSet = pf.fileIdentifier().getRawMD4HashSet();
+    hashSet.assign(3, md4Of(data));
+    hashSet[2].fill(0xEE);
+    pf.hashsetReceived();
+
+    QCOMPARE(pf.totalGapSizeInPart(0), uint64{0});
+    QVERIFY(!pf.isCorruptedPart(0));
+
+    clobberPartZeroOnDisk(tempDir);
+    pf.writeToBuffer(PARTSIZE, data.data(), PARTSIZE, 2 * PARTSIZE - 1, nullptr);
+    pf.flushBuffer();
+    pf.hashsetReceived();   // a second hashset answer re-checks nothing
+
+    QCOMPARE(pf.totalGapSizeInPart(1), uint64{0});
+    QVERIFY(pf.totalGapSizeInPart(0) == 0 && !pf.isCorruptedPart(0));
 }
 
 QTEST_GUILESS_MAIN(tst_PartFile)

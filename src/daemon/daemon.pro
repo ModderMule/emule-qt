@@ -25,7 +25,7 @@ LIBS += \
 
 # Third-party libraries (system-installed or from CMake build)
 unix {
-    LIBS += -lssl -lcrypto -lz -lminiupnpc -lyaml-cpp -larchive
+    LIBS += -lssl -lcrypto -lz -lminiupnpc -lyaml-cpp -larchive -lmaxminddb
 }
 macx {
     LIBS += -framework IOKit -framework CoreFoundation -framework CoreServices
@@ -58,6 +58,7 @@ win32 {
         -L"$$MINIUPNPC_DIR/lib" -lminiupnpc \
         -L"$$YAMLCPP_DIR/lib" -lyaml-cpp \
         -L"$$LIBARCHIVE_DIR/lib" -larchive \
+        -lmaxminddb \
         -lws2_32 -liphlpapi
 }
 

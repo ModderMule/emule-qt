@@ -7,6 +7,8 @@
 #include "app/CoreSession.h"
 #include "app/AppContext.h"
 #include "ipfilter/IPFilter.h"
+#include "geo/GeoIpUpdater.h"
+#include "geo/IP2Country.h"
 #include "client/ClientCredits.h"
 #include "client/ClientList.h"
 #include "files/CollectionKeys.h"
@@ -709,6 +711,15 @@ void CoreSession::initClientInfra()
             logInfo(QStringLiteral("IP filter loaded: %1 entries").arg(count));
     }
 
+    // Country flags: open the GeoLite2 db and keep it fresh
+    if (!theApp.ip2Country) {
+        m_ip2Country = std::make_unique<IP2Country>();
+        theApp.ip2Country = m_ip2Country.get();
+        m_geoIpUpdater = std::make_unique<GeoIpUpdater>(m_ip2Country.get(), thePrefs.configDir());
+        theApp.geoIpUpdater = m_geoIpUpdater.get();
+        m_geoIpUpdater->start();
+    }
+
     if (!theApp.clientList) {
         m_clientList = std::make_unique<ClientList>(this);
         theApp.clientList = m_clientList.get();
@@ -787,6 +798,15 @@ void CoreSession::shutdownClientInfra()
     if (m_ipFilter) {
         theApp.ipFilter = nullptr;
         m_ipFilter.reset();
+    }
+
+    if (m_geoIpUpdater) {
+        theApp.geoIpUpdater = nullptr;
+        m_geoIpUpdater.reset();
+    }
+    if (m_ip2Country) {
+        theApp.ip2Country = nullptr;
+        m_ip2Country.reset();
     }
 }
 

@@ -29,15 +29,15 @@ win32 {
     LIBS += -L"$$OPENSSL_DIR/lib" -lssl -lcrypto -L"$$ZLIB_DIR/lib" -lzlib
 }
 
-# Third-party: miniupnpc, yaml-cpp, libarchive
+# Third-party: miniupnpc, yaml-cpp, libarchive, libmaxminddb
 # Prefer pkg-config when available; fall back to system paths.
 unix:!macx {
     CONFIG += link_pkgconfig
-    PKGCONFIG += miniupnpc yaml-cpp libarchive
+    PKGCONFIG += miniupnpc yaml-cpp libarchive libmaxminddb
 }
 macx {
     # Homebrew / system-installed
-    LIBS += -lminiupnpc -lyaml-cpp -larchive
+    LIBS += -lminiupnpc -lyaml-cpp -larchive -lmaxminddb
 }
 win32 {
     MINIUPNPC_DIR = $$(MINIUPNPC_DIR)
@@ -53,7 +53,8 @@ win32 {
     LIBS += \
         -L"$$MINIUPNPC_DIR/lib" -lminiupnpc \
         -L"$$YAMLCPP_DIR/lib" -lyaml-cpp \
-        -L"$$LIBARCHIVE_DIR/lib" -larchive
+        -L"$$LIBARCHIVE_DIR/lib" -larchive \
+        -lmaxminddb
 }
 
 # macOS frameworks
@@ -103,6 +104,9 @@ SOURCES += \
     friends/Friend.cpp \
     friends/FriendList.cpp \
     ipfilter/IPFilter.cpp \
+    geo/GeoIpUpdater.cpp \
+    geo/HostCountryResolver.cpp \
+    geo/IP2Country.cpp \
     kademlia/Kademlia.cpp \
     kademlia/KadContact.cpp \
     kademlia/KadEntry.cpp \
@@ -233,6 +237,9 @@ HEADERS += \
     friends/FriendConnectProgress.h \
     friends/FriendList.h \
     ipfilter/IPFilter.h \
+    geo/GeoIpUpdater.h \
+    geo/HostCountryResolver.h \
+    geo/IP2Country.h \
     kademlia/Kademlia.h \
     kademlia/KadClientSearcher.h \
     kademlia/KadContact.h \

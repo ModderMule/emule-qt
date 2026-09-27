@@ -10,6 +10,8 @@
 
 #include <QColor>
 #include <QDialog>
+#include <QHash>
+#include <QSet>
 #include <QIcon>
 
 #include <array>
@@ -210,6 +212,13 @@ private:
     /// Launch the port test page. Empty @p ipv4 / @p ipv6 hints are omitted from the URL.
     void openPortTestUrl(int tcpPort, int udpPort, const QString& ipv4, const QString& ipv6);
 
+    /// Country flags group: ask the daemon for the GeoLite2 state / download it now.
+    void requestGeoIpStatus();
+    void updateGeoIpNow();
+    /// Ask the daemon for the country of every news-server host not known yet.
+    void lookupNewsServerCountries();
+    void showGeoIpStatus(const QCborMap& status, const QString& message = {});
+
     static QIcon makePadlockIcon();
 
     IpcClient* m_ipc = nullptr;
@@ -260,6 +269,13 @@ private:
     QCheckBox* m_useAutoCompletionCheck = nullptr;
     QCheckBox* m_useOriginalIconsCheck = nullptr;
     bool m_initialUseOriginalIcons = false;
+    QCheckBox* m_showCountryFlagsCheck = nullptr;
+    QComboBox* m_countryNameCombo = nullptr;
+    QLineEdit* m_geoIpAccountEdit = nullptr;
+    QLineEdit* m_geoIpLicenseEdit = nullptr;
+    QCheckBox* m_geoIpAutoUpdateCheck = nullptr;
+    QPushButton* m_geoIpUpdateBtn = nullptr;
+    QLabel* m_geoIpStatusLabel = nullptr;
     QPushButton* m_selectFontBtn = nullptr;
     QLabel* m_fontPreviewLabel = nullptr;
     QString m_currentLogFont;
@@ -444,6 +460,8 @@ private:
     /// daemon keeps what it has.
     QList<QCborMap> m_newsServers;
     int m_currentNewsServer = -1;
+    QHash<QString, QString> m_newsServerCountries;   ///< host -> cc, from LookupHostCountries
+    QSet<QString> m_newsServerLookups;               ///< hosts with a lookup in flight
 
     // Indexers page
     QTreeWidget*  m_indexerTable = nullptr;

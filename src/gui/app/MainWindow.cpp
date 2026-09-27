@@ -59,6 +59,7 @@
 #include <QMessageBox>
 #include <QFile>
 #include <QPointer>
+#include <QShortcut>
 #include <QSoundEffect>
 #include <QStackedWidget>
 #include <QStatusBar>
@@ -85,6 +86,13 @@ MainWindow::MainWindow(QWidget* parent)
     setupPages();
     rebuildToolbar();
     setupStatusBar();
+
+    // MFC CemuleDlg::PreTranslateMessage (EmuleDlg.cpp:3021): Ctrl+Tab cycles windows.
+    // NextChild/PreviousChild carry each platform's binding (Ctrl+Tab everywhere).
+    connect(new QShortcut(QKeySequence::NextChild, this), &QShortcut::activated,
+            this, [this] { cycleTab(1); });
+    connect(new QShortcut(QKeySequence::PreviousChild, this), &QShortcut::activated,
+            this, [this] { cycleTab(-1); });
 
     // Anywhere in the GUI can now put a line in the status bar without knowing about
     // MainWindow — the Qt stand-in for MFC's LOG_STATUSBAR (srchybrid/EmuleDlg.cpp:897).
@@ -296,6 +304,11 @@ void MainWindow::setIpcClient(IpcClient* ipc)
     if (ipc)
         connect(ipc, &IpcClient::connected, this, &MainWindow::onClipboardChanged,
                 Qt::UniqueConnection);
+
+    // "View Shared Files" answer: the peer's list is a Search tab (MFC), and we go there.
+    if (ipc)
+        connect(ipc, &IpcClient::clientSharedFilesReceived, this,
+                &MainWindow::onClientSharedFilesReceived, Qt::UniqueConnection);
 
     if (!m_speedHistoryTimer) {
         m_speedHistoryTimer = new QTimer(this);
@@ -1662,6 +1675,34 @@ void MainWindow::applySpeedHistory(const QCborMap& data)
         m_speedSeq = static_cast<quint32>(s.at(0).toInteger());
         m_speedGraph->appendSample(s.at(1).toDouble(), s.at(2).toDouble());
     }
+}
+
+void MainWindow::cycleTab(int direction)
+{
+    // Toolbar order, which the user can rearrange; a hidden button is skipped.
+    const QList<QAction*> tabs = m_tabGroup ? m_tabGroup->actions() : QList<QAction*>{};
+    if (tabs.isEmpty())
+        return;
+    const auto count = static_cast<int>(tabs.size());
+    int pos = 0;
+    for (int i = 0; i < count; ++i) {
+        if (tabs[i]->data().toInt() == m_pages->currentIndex()) {
+            pos = i;
+            break;
+        }
+    }
+    pos = (pos + direction + count) % count;
+    switchToTab(static_cast<Tab>(tabs[pos]->data().toInt()));
+}
+
+void MainWindow::onClientSharedFilesReceived(const Ipc::IpcMessage& msg)
+{
+    // [clientHash, userName, searchID]
+    const auto searchID = static_cast<uint32_t>(msg.fieldInt(2));
+    if (searchID == 0 || !m_searchPanel)
+        return;
+    m_searchPanel->showClientSharedFiles(searchID, msg.fieldString(1));
+    switchToTab(TabSearch);
 }
 
 } // namespace eMule

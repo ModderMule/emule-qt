@@ -25,6 +25,8 @@ class ClientUDPSocket;
 class DownloadQueue;
 class FriendList;
 class IPFilter;
+class IP2Country;
+class GeoIpUpdater;
 class KnownFileList;
 class ListenSocket;
 class GlobalSearchScheduler;
@@ -52,6 +54,8 @@ struct AppContext {
     SharedFileList*  sharedFileList = nullptr;
     KnownFileList*   knownFileList  = nullptr;
     IPFilter*        ipFilter       = nullptr;
+    IP2Country*      ip2Country     = nullptr;
+    GeoIpUpdater*    geoIpUpdater   = nullptr;
     ListenSocket*    listenSocket   = nullptr;
     FriendList*      friendList     = nullptr;
     ServerConnect*   serverConnect  = nullptr;

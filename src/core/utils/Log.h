@@ -108,6 +108,12 @@ void logError(const QString& msg);
 /// Log a debug message (only in debug/verbose mode).
 void logDebug(const QString& msg);
 
+/// Log to the main Log tab and the GUI status bar (MFC LOG_STATUSBAR).
+void logStatusInfo(const QString& msg);
+
+/// Warning variant of logStatusInfo().
+void logStatusWarning(const QString& msg);
+
 // ---------------------------------------------------------------------------
 // Console output format
 // ---------------------------------------------------------------------------

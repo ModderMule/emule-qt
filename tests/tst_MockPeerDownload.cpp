@@ -881,7 +881,7 @@ void tst_MockPeerDownload::initTestCase()
     m_partFile->setFileName(QStringLiteral("eMuleQt-testfile-20MB.bin"));
     m_partFile->setFileSize(EMFileSize(m_fileSize));
     m_partFile->setFileHash(m_fileHash.data());
-    m_partFile->fileIdentifier().setMD4HashSet(m_partHashes);
+    // No MD4 hashset seeded: it must arrive via OP_HASHSETANSWER2, or parts go unverified
     m_partFile->aichRecoveryHashSet().setMasterHash(m_aichMasterHash, EAICHStatus::Verified);
 
     QVERIFY(m_partFile->createPartFile(m_tmpDir->filePath(QStringLiteral("temp"))));
@@ -948,6 +948,9 @@ void tst_MockPeerDownload::downloadFlow_partFileReachesCompletion()
 
     // 6. Verify completed size
     QCOMPARE(static_cast<uint64>(m_partFile->completedSize()), m_fileSize);
+
+    // The hashset came from the peer, so every part was really MD4-checked
+    QVERIFY(m_partFile->fileIdentifier().hasExpectedMD4HashCount());
 
     // 7. Verify both compressed and uncompressed blocks were served
     QVERIFY(m_mockUploader->compressedBlocksSent() > 0);

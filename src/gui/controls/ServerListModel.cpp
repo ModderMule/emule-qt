@@ -3,10 +3,12 @@
 
 #include "prefs/Preferences.h"
 #include "utils/ColorUtils.h"
+#include "utils/CountryFlags.h"
 #include "utils/StringUtils.h"
 
 #include <QCborMap>
 #include <QColor>
+#include <QIcon>
 
 namespace eMule {
 
@@ -75,6 +77,7 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
         case ColSoftFiles:   return formatShortNumber(r.softFiles);
         case ColLowID:       return formatShortNumber(r.lowIdUsers);
         case ColObfuscation: return r.obfuscation ? tr("Yes") : tr("No");
+        case ColCountry:     return CountryFlags::columnText(r.cc);
         default:             break;
         }
     }
@@ -94,9 +97,18 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
         case ColSoftFiles:   return r.softFiles;
         case ColLowID:       return r.lowIdUsers;
         case ColObfuscation: return r.obfuscation ? 1 : 0;
+        case ColCountry:     return CountryFlags::sortKey(r.cc);
         default:             break;
         }
     }
+
+    // MorphXT puts the flag where the server icon would be
+    if (role == Qt::DecorationRole && index.column() == ColName && CountryFlags::showFlags())
+        return CountryFlags::withFlag(QIcon(), r.cc);
+
+    if (role == Qt::ToolTipRole && (index.column() == ColName || index.column() == ColCountry)
+        && !r.cc.isEmpty())
+        return CountryFlags::tooltip(r.cc);
 
     // MFC ServerListCtrl.cpp:209-214: light grey once dead, grey from the second failure.
     // deadServerRetries 0 means "never remove" here, so nothing counts as dead.
@@ -148,6 +160,7 @@ QVariant ServerListModel::headerData(int section, Qt::Orientation orientation, i
     case ColSoftFiles:   return tr("Soft File Limit");
     case ColLowID:       return tr("Low ID");
     case ColObfuscation: return tr("Obfuscation");
+    case ColCountry:     return tr("Country");
     default:             return {};
     }
 }
@@ -186,6 +199,7 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
 
         row.numericIp = static_cast<uint32_t>(m.value(QStringLiteral("ip")).toInteger());
         row.addr      = m.value(QStringLiteral("addr")).toString();
+        row.cc        = m.value(QStringLiteral("cc")).toString();
         row.serverId  = static_cast<uint32_t>(m.value(QStringLiteral("serverId")).toInteger());
         rows.push_back(std::move(row));
     }

@@ -127,4 +127,8 @@ using ED2KLink = std::variant<ED2KFileLink, ED2KServerLink,
 /// links that reach an error path are the malformed ones.
 [[nodiscard]] QString redactLinkSecret(const QString& uri);
 
+/// Plain `ed2k://|file|name|size|hash|/` from a hex hash, name stripped + percent-encoded
+/// like ED2KFileLink::toLink (MFC CreateED2kLink), so '|' or '%' can't corrupt it.
+[[nodiscard]] QString ed2kFileLink(const QString& name, uint64 size, const QString& hexHash);
+
 } // namespace eMule

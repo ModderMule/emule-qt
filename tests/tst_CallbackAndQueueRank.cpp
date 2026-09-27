@@ -24,6 +24,7 @@
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
+#include "search/SearchList.h"
 #include "transfer/DownloadQueue.h"
 #include "transfer/UploadQueue.h"
 #include "utils/OtherFunctions.h"
@@ -418,6 +419,8 @@ private slots:
     void incomingHello_muleHelloPeer_getsNoEmuleInfo();
     // Deferred shared-file-list request — MFC BaseClient.cpp:1567-1573, :1783-1791
     void requestSharedFileList_sendsAfterHandshakeAndRefusesDuplicate();
+    // Browse outcome is visible: denial on the status log, answer in its own tab
+    void requestSharedFileList_deniedAndAnsweredAreReported();
     // OP_REASKCALLBACKTCP — the IPv6 sentinel relay form
     void reaskCallbackTcp_parsesIPv6SentinelForm();
     // OP_QUEUEFULL threshold — MFC srchybrid/ClientUDPSocket.cpp:299
@@ -1417,6 +1420,102 @@ void tst_CallbackAndQueueRank::requestSharedFileList_sendsAfterHandshakeAndRefus
 
     m_clientList->removeClient(shyClient);
     delete shyClient;
+}
+
+namespace {
+
+// emule.status lines — what the GUI puts in the Log tab and status bar
+QStringList g_statusLines;
+QtMessageHandler g_prevHandler = nullptr;
+
+void captureStatusLines(QtMsgType type, const QMessageLogContext& ctx, const QString& msg)
+{
+    if (ctx.category && std::strcmp(ctx.category, "emule.status") == 0)
+        g_statusLines << msg;
+    if (g_prevHandler)
+        g_prevHandler(type, ctx, msg);
+}
+
+} // namespace
+
+void tst_CallbackAndQueueRank::requestSharedFileList_deniedAndAnsweredAreReported()
+{
+    // Both outcomes used to be silent: a denial was a debug line and an answer went
+    // into whatever ED2K search happened to be current.
+    g_statusLines.clear();
+    g_prevHandler = qInstallMessageHandler(captureStatusLines);
+    struct HandlerReset {
+        ~HandlerReset() { qInstallMessageHandler(g_prevHandler); }
+    } handlerReset;
+
+    SearchList searchList;
+    theApp.searchList = &searchList;
+    struct SearchListReset {
+        ~SearchListReset() { theApp.searchList = nullptr; }
+    } searchListReset;
+
+    std::array<uint8, 16> browseHash{};
+    browseHash.fill(0x75);
+    constexpr uint16 kBrowsePort = 4992;
+
+    auto* peer = new MockCallbackPeer(browseHash, kBrowsePort, this,
+                                      /*muleTags*/ true, /*allowBrowse*/ true);
+    peer->connectToHost(QHostAddress::LocalHost, m_listenSocket->connectedPort());
+    QVERIFY(peer->waitForConnected(5000));
+    peer->sendOpeningHello();
+    QTRY_VERIFY_WITH_TIMEOUT(peer->receivedHelloAnswer(), 5000);
+
+    auto* client = m_clientList->findByUserHash(browseHash.data());
+    QVERIFY(client != nullptr);
+    QSignalSpy answerSpy(client, &UpDownClient::sharedFileListReceived);
+
+    // 1. Answer: a flat list lands in the peer's own tab and is announced
+    client->requestSharedFileList();
+    QVERIFY(g_statusLines.join(u'\n').contains(QStringLiteral("Requesting shared files")));
+    QTRY_VERIFY_WITH_TIMEOUT(peer->receivedAskSharedDirs() || peer->receivedAskSharedFiles(), 5000);
+
+    SafeMemFile list;
+    list.writeUInt32(1);
+    std::array<uint8, 16> fileHash{};
+    fileHash.fill(0x42);
+    list.write(fileHash.data(), 16);
+    list.writeUInt32(0);
+    list.writeUInt16(0);
+    list.writeUInt32(2);
+    Tag(FT_FILENAME, QStringLiteral("shared.avi")).writeNewEd2kTag(list, UTF8Mode::Raw);
+    Tag(FT_FILESIZE, uint32{123456}).writeNewEd2kTag(list);
+    peer->sendPacket(std::make_unique<Packet>(list, OP_EDONKEYPROT, OP_ASKSHAREDFILESANSWER));
+
+    QTRY_COMPARE_WITH_TIMEOUT(answerSpy.count(), 1, 5000);
+    const auto searchID = answerSpy.at(0).at(2).value<uint32>();
+    QVERIFY(searchID != 0);
+    QCOMPARE(client->searchID(), searchID);
+    QCOMPARE(searchList.resultCount(searchID), uint32{1});
+    QCOMPARE(client->fileListRequested(), 0);
+
+    // 2. Denial (friends-only peer): reported, counter released
+    g_statusLines.clear();
+    peer->clearSharedFileListFlags();
+    client->requestSharedFileList();
+    QCOMPARE(client->fileListRequested(), 1);
+    peer->sendPacket(std::make_unique<Packet>(OP_ASKSHAREDDENIEDANS, 0));
+    QTRY_COMPARE_WITH_TIMEOUT(client->fileListRequested(), 0, 5000);
+    QVERIFY2(g_statusLines.join(u'\n').contains(QStringLiteral("denied access")),
+             qPrintable(g_statusLines.join(u'\n')));
+
+    // ...and the next click is refused visibly instead of silently
+    g_statusLines.clear();
+    client->requestSharedFileList();
+    QCOMPARE(client->fileListRequested(), 0);
+    QVERIFY2(g_statusLines.join(u'\n').contains(QStringLiteral("does not allow")),
+             qPrintable(g_statusLines.join(u'\n')));
+
+    peer->close();
+    peer->deleteLater();
+    QCoreApplication::processEvents();
+
+    m_clientList->removeClient(client);
+    delete client;
 }
 
 void tst_CallbackAndQueueRank::reaskCallbackTcp_parsesIPv6SentinelForm()

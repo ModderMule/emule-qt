@@ -119,6 +119,22 @@ public:
         scheduleSave();
     }
 
+    /// Country flag next to the client/server icon (IP2Country). Display-only.
+    [[nodiscard]] bool showCountryFlags() const { return m_showCountryFlags; }
+    void setShowCountryFlags(bool on)
+    {
+        m_showCountryFlags = on;
+        scheduleSave();
+    }
+
+    /// Country column: 0 hidden, 1 short (ISO code), 2 long name.
+    [[nodiscard]] int countryNameMode() const { return m_countryNameMode; }
+    void setCountryNameMode(int mode)
+    {
+        m_countryNameMode = mode;
+        scheduleSave();
+    }
+
     /// Toolbar button order (empty = default).
     [[nodiscard]] const QList<int>& toolbarButtonOrder() const { return m_toolbarButtonOrder; }
     void setToolbarButtonOrder(const QList<int>& order) { m_toolbarButtonOrder = order; }
@@ -170,6 +186,7 @@ private:
     /// Shared by all eight bind*Splitter() entry points.
     void bindSplitter(QSplitter* splitter, QList<int>& sizes);
 
+
     QList<int> m_serverSplitSizes;
     QList<int> m_kadSplitSizes;
     QList<int> m_transferSplitSizes;
@@ -185,6 +202,8 @@ private:
     int  m_optionsLastPage = 0;
     int64_t m_lastVersionCheck = 0;
     bool m_associateNzbFiles = true;
+    bool m_showCountryFlags = true;
+    int  m_countryNameMode = 0;
     QList<int> m_toolbarButtonOrder;
     int  m_toolbarButtonStyle = 3;
     QString m_toolbarSkinPath;

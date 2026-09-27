@@ -9,7 +9,11 @@
 ///   - Bottom: Log tabs (Server Info | Log | Verbose) with Reset button
 ///   - Vertical splitter between server list and log area
 
+#include <QStringList>
 #include <QWidget>
+
+#include <functional>
+#include <vector>
 
 class QLabel;
 class QLineEdit;
@@ -63,13 +67,34 @@ private:
     /// Apply the manual-order display mode (#24): when useUserSortedServerList is
     /// enabled, show servers in the daemon's list order with column sorting off.
     void applyServerSortMode();
-    [[nodiscard]] QString saveSelection() const;
-    void restoreSelection(const QString& key);
+    [[nodiscard]] QStringList saveSelection() const;
+    void restoreSelection(const QStringList& keys);
 
     void showFindDialog();
     void requestKadStatus();
     void requestServerState();
     void parseAndAddServersFromMet(const QByteArray& data);
+
+    /// One server's IPC identity. addr keys an IPv6 server, whose numericIp is 0.
+    struct ServerKey {
+        uint32_t ip = 0;
+        QString  addr;
+        uint16_t port = 0;
+        QString  link;   ///< ed2k://|server|...|/ for the clipboard
+    };
+    /// Selected servers in view order — snapshot it; a refresh resets the model.
+    [[nodiscard]] std::vector<ServerKey> selectedServers() const;
+
+    // MFC CServerListCtrl::OnCommand, shared by the context menu and the list keys.
+    void removeSelectedServers();     ///< MP_REMOVE / MPG_DELETE (Del, ⌫)
+    void copySelectedServerLinks();   ///< MP_COPYSELECTED (Ctrl+C)
+    void cutSelectedServers();        ///< MP_CUT (Ctrl+X)
+    void pasteServerLinks();          ///< MP_PASTE (Ctrl+V)
+
+    /// Send AddServer. @p done gets added, or the daemon's text when the address was
+    /// LAN-filtered (empty for a duplicate or a dropped connection).
+    void sendAddServer(const QString& address, uint16_t port, const QString& name,
+                       std::function<void(bool added, const QString& rejected)> done);
 
     // Models
     ServerListModel* m_serverListModel = nullptr;

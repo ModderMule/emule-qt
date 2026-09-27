@@ -392,6 +392,34 @@ if(EMULE_USENET_PAR2)
 endif()
 
 # ---------------------------------------------------------------------------
+# libmaxminddb — GeoLite2 country lookup for the client/server flags
+#
+# Apache-2.0. Windows takes the vcpkg build; elsewhere we always build it static
+# so a Homebrew/distro dylib can never end up as a new bundle dependency.
+# ---------------------------------------------------------------------------
+if(WIN32)
+    find_package(maxminddb CONFIG QUIET)
+endif()
+if(NOT TARGET maxminddb::maxminddb)
+    FetchContent_Declare(maxminddb
+        GIT_REPOSITORY https://github.com/maxmind/libmaxminddb.git
+        GIT_TAG        1.14.1
+    )
+    set(MAXMINDDB_BUILD_BINARIES OFF CACHE BOOL "" FORCE)
+    set(MAXMINDDB_INSTALL        OFF CACHE BOOL "" FORCE)
+    set(_emule_saved_build_testing ${BUILD_TESTING})
+    set(BUILD_TESTING OFF)
+    set(_emule_saved_shared ${BUILD_SHARED_LIBS})
+    set(BUILD_SHARED_LIBS OFF)
+    FetchContent_MakeAvailable(maxminddb)
+    set(BUILD_TESTING ${_emule_saved_build_testing})
+    set(BUILD_SHARED_LIBS ${_emule_saved_shared})
+    if(TARGET maxminddb AND NOT TARGET maxminddb::maxminddb)
+        add_library(maxminddb::maxminddb ALIAS maxminddb)
+    endif()
+endif()
+
+# ---------------------------------------------------------------------------
 # Subdirectories
 # ---------------------------------------------------------------------------
 add_subdirectory(src)

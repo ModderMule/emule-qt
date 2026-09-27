@@ -1498,6 +1498,20 @@ public:
     [[nodiscard]] bool useOriginalIcons() const;
     void setUseOriginalIcons(bool val);
 
+    // -- IP2Country (MaxMind GeoLite2 download) --------------------------------
+
+    [[nodiscard]] QString geoIpAccountId() const;
+    void setGeoIpAccountId(const QString& val);
+
+    [[nodiscard]] QString geoIpLicenseKey() const;
+    void setGeoIpLicenseKey(const QString& val);
+
+    [[nodiscard]] bool geoIpAutoUpdate() const;
+    void setGeoIpAutoUpdate(bool val);
+
+    [[nodiscard]] qint64 geoIpLastCheck() const;
+    void setGeoIpLastCheck(qint64 val);
+
     [[nodiscard]] QString logFont() const;
     void setLogFont(const QString& val);
 

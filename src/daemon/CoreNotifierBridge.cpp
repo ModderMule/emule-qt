@@ -497,12 +497,12 @@ void CoreNotifierBridge::connectClientSharedFilesSignal(UpDownClient* client)
 
 void CoreNotifierBridge::onClientSharedFilesReceived(const QByteArray& userHash,
                                                       const QString& userName,
-                                                      const QCborArray& files)
+                                                      uint32 searchID)
 {
     IpcMessage msg(IpcMsgType::PushClientSharedFiles, 0);
     msg.append(md4str(reinterpret_cast<const uint8*>(userHash.constData())));
     msg.append(userName);
-    msg.append(files);
+    msg.append(static_cast<qint64>(searchID));
     m_ipcServer->broadcast(msg);
 }
 

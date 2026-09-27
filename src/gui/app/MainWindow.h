@@ -34,6 +34,8 @@ namespace eMule {
 class MiniMuleWidget;
 #endif
 
+namespace Ipc { class IpcMessage; }
+
 class IpcClient;
 class IrcPanel;
 class SpeedGraph;
@@ -202,9 +204,13 @@ private slots:
     void onSchedulerToggle();
     void onToolbarContextMenu(const QPoint& pos);
     void onSubmitBugReport();
+    void onClientSharedFilesReceived(const eMule::Ipc::IpcMessage& msg);
 
 private:
     void rebuildToolbar();
+    /// Ctrl+Tab / Ctrl+Shift+Tab: next / previous window button in toolbar order
+    /// (MFC CemuleDlg::GetNextWindowToolbarButton, EmuleDlg.cpp:2975).
+    void cycleTab(int direction);
     void loadToolbarSkin(const QString& path);
     void clearToolbarSkin();
     QString skinsDir() const;

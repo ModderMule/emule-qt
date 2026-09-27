@@ -13,6 +13,7 @@
 #include "files/KnownFile.h"
 #include "files/PartFile.h"
 #include "friends/Friend.h"
+#include "geo/IP2Country.h"
 #include "search/SearchFile.h"
 #include "server/Server.h"
 #include "server/ServerList.h"
@@ -153,6 +154,7 @@ namespace eMule::Ipc {
         // "address" may be a dynIP hostname; "addr" is always the literal we dialed, and is
         // the only field that survives an IPv6 server ("ip" is 0 for those).
         {QStringLiteral("addr"),        s.ipAddress().toString()},
+        {QStringLiteral("cc"),          countryCodeOf(s.ipAddress())},   // empty until resolved
         {QStringLiteral("port"),        s.port()},
         {QStringLiteral("description"), s.description()},
         {QStringLiteral("version"),     s.version()},
@@ -179,6 +181,7 @@ namespace eMule::Ipc {
         {QStringLiteral("name"),        f.name()},
         {QStringLiteral("ip"),          static_cast<qint64>(f.lastUsedAddress().toNetworkUint32())},
         {QStringLiteral("addr"),        f.lastUsedAddress().toString()},   // IPv6-capable form
+        {QStringLiteral("cc"),          countryCodeOf(f.lastUsedAddress())},
         {QStringLiteral("port"),        f.lastUsedPort()},
         {QStringLiteral("lastSeen"),    static_cast<qint64>(f.lastSeen())},
         {QStringLiteral("lastChatted"), static_cast<qint64>(f.lastChatted())},
@@ -329,6 +332,8 @@ namespace eMule::Ipc {
     // carries both families, so anything that must survive IPv6 reads that instead.
     m.insert(QStringLiteral("ip"),   static_cast<qint64>(c.connectAddress().toNetworkUint32()));
     m.insert(QStringLiteral("addr"), c.connectAddress().toString());
+    m.insert(QStringLiteral("cc"),   countryCodeOf(c.connectAddress().isNull() ? c.userAddress()
+                                                                               : c.connectAddress()));
     m.insert(QStringLiteral("port"), static_cast<qint64>(c.userPort()));
     // Upload timing and connection state
     m.insert(QStringLiteral("uploadStartDelay"), static_cast<qint64>(c.getUpStartTimeDelay()));

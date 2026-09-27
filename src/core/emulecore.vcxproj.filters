@@ -138,6 +138,15 @@
     <ClCompile Include="ipfilter\IPFilter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="geo\GeoIpUpdater.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="geo\HostCountryResolver.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="geo\IP2Country.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="transfer\ImportParts.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -566,6 +575,15 @@
     <QtMoc Include="ipfilter\IPFilter.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="geo\GeoIpUpdater.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="geo\HostCountryResolver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="geo\IP2Country.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="transfer\ImportParts.h">
       <Filter>Header Files</Filter>
     </ClInclude>

@@ -464,11 +464,12 @@ void UpDownClient::processFileStatus(bool udpPacket, SafeMemFile& data, PartFile
 
 void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdentifiers)
 {
-    // Control flow for fileIdentifiers=true (OP_HASHSETANSWER2):
-    //   readIdentifier (skip header) → readHashSetsFromPacket → verify →
-    //   if state==ReqHashSet → sendStartupLoadReq (requests upload slot).
-    // The FileIdentifier header must be consumed first because the server's
-    // sendHashsetPacket writes: writeIdentifier + writeHashSetsToPacket.
+    // MFC DownloadClient.cpp:712-768. OP_HASHSETANSWER2 is FileIdentifier + options +
+    // hashsets; OP_HASHSETANSWER is hash(16) + count(2) + N×hash(16).
+    if (!m_hashsetRequestingMD4 && (!fileIdentifiers || !m_hashsetRequestingAICH)) {
+        logDebug(QStringLiteral("processHashSet: unrequested hashset from %1").arg(userName()));
+        return;
+    }
     if (!data || size < 16 || !m_reqFile) {
         m_hashsetRequestingMD4 = false;
         m_hashsetRequestingAICH = false;
@@ -476,62 +477,57 @@ void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdent
     }
 
     SafeMemFile file(data, size);
+    auto& ident = m_reqFile->fileIdentifier();
 
     if (fileIdentifiers) {
-        // New-style: OP_HASHSETANSWER2 format is FileIdentifier + hashset data.
-        // Skip the FileIdentifier header first — the hashset reader expects to
-        // start at the options byte, not at the identifier descriptor.
         FileIdentifierSA headerIdent;
-        if (!headerIdent.readIdentifier(file)) {
-            logDebug(QStringLiteral("processHashSet: failed to read FileIdentifier header from %1").arg(userName()));
-            m_hashsetRequestingMD4 = false;
-            m_hashsetRequestingAICH = false;
+        if (!headerIdent.readIdentifier(file) || !ident.compareRelaxed(headerIdent)) {
+            logDebug(QStringLiteral("processHashSet: bad or wrong FileIdentifier from %1").arg(userName()));
             return;
         }
 
-        auto& ident = m_reqFile->fileIdentifier();
-        bool md4 = false;
-        bool aich = false;
-
+        // In/out: what we asked for goes in, what was actually delivered comes out.
+        // Passing false here made the reader skip every hashset as unrequested.
+        bool md4 = m_hashsetRequestingMD4;
+        bool aich = m_hashsetRequestingAICH;
         if (!ident.readHashSetsFromPacket(file, md4, aich)) {
-            logDebug(QStringLiteral("processHashSet: readHashSetsFromPacket failed from %1").arg(userName()));
+            logDebug(QStringLiteral("processHashSet: corrupt hashset from %1").arg(userName()));
+            if (m_hashsetRequestingMD4)
+                m_reqFile->setMD4HashsetNeeded(true);
+            if (m_hashsetRequestingAICH)
+                m_reqFile->setAICHPartHashsetNeeded(true);
             m_hashsetRequestingMD4 = false;
             m_hashsetRequestingAICH = false;
             return;
         }
 
-        if (md4) {
-            // Verify MD4 hashset against file hash
-            if (!ident.calculateMD4HashByHashSet(true, true)) {
-                logDebug(QStringLiteral("processHashSet: MD4 hashset verification failed from %1").arg(userName()));
-            }
-            m_hashsetRequestingMD4 = false;
+        if (m_hashsetRequestingMD4 && !md4) {
+            logDebug(QStringLiteral("processHashSet: %1 did not deliver the MD4 hashset for %2")
+                         .arg(userName(), m_reqFile->fileName()));
+            m_reqFile->setMD4HashsetNeeded(true);
         }
-
-        if (aich) {
-            if (!ident.verifyAICHHashSet()) {
-                logDebug(QStringLiteral("processHashSet: AICH hashset verification failed from %1").arg(userName()));
-            }
-            m_hashsetRequestingAICH = false;
+        if (m_hashsetRequestingAICH && !aich) {
+            logDebug(QStringLiteral("processHashSet: %1 did not deliver the AICH part hashset for %2")
+                         .arg(userName(), m_reqFile->fileName()));
+            m_reqFile->setAICHPartHashsetNeeded(true);
         }
-    } else {
-        // Legacy: OP_HASHSETANSWER — packet is hash(16) + count(2) + N×hash(16)
-        // loadMD4HashsetFromFile reads the full structure (hash + count + parts),
-        // so pass the file from position 0 without pre-reading the hash.
-        auto& ident = m_reqFile->fileIdentifier();
-        if (!ident.loadMD4HashsetFromFile(file, true)) {
-            logDebug(QStringLiteral("processHashSet: loadMD4HashsetFromFile failed from %1").arg(userName()));
-            m_hashsetRequestingMD4 = false;
-            return;
-        }
-
-        // Verify the hashset — concatenate part hashes and check MD4 root
-        if (!ident.calculateMD4HashByHashSet(true, true)) {
-            logDebug(QStringLiteral("processHashSet: MD4 verification failed from %1").arg(userName()));
-        }
-
+        if (md4 || aich)
+            m_reqFile->hashsetReceived();
+    } else if (!md4equ(data, m_reqFile->fileHash())) {
+        logDebug(QStringLiteral("processHashSet: wrong file id from %1").arg(userName()));
+        return;
+    } else if (!ident.loadMD4HashsetFromFile(file, true)) {
+        // Verifies count and root hash against ours
+        logDebug(QStringLiteral("processHashSet: bad MD4 hashset from %1").arg(userName()));
+        m_reqFile->setMD4HashsetNeeded(true);
         m_hashsetRequestingMD4 = false;
+        return;
+    } else {
+        m_reqFile->hashsetReceived();
     }
+
+    m_hashsetRequestingMD4 = false;
+    m_hashsetRequestingAICH = false;
 
     if (thePrefs.logRawSocketPackets())
         logDebug(QStringLiteral("processHashSet: state=%1 reqFile=%2")

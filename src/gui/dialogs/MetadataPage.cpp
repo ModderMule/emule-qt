@@ -5,10 +5,14 @@
 #include "MetadataPage.h"
 
 #include "controls/AbstractListView.h"
+#include "utils/ListActivation.h"
 
+#include <QApplication>
 #include <QCborArray>
+#include <QClipboard>
 #include <QHeaderView>
 #include <QLabel>
+#include <QMenu>
 #include <QTreeWidget>
 
 namespace eMule {
@@ -151,6 +155,33 @@ QWidget* createMetadataPage(const QCborMap& details, const QString& stateKey)
     }
 
     tree->sortByColumn(0, Qt::AscendingOrder);
+
+    // MFC CMetaDataDlg (MetaDataDlg.cpp:135, :516, :545): Copy puts the Value of each
+    // selected tag on the clipboard, one per line — from the menu or Ctrl+C.
+    auto copyValues = [tree] {
+        QStringList values;
+        for (const QTreeWidgetItem* item : tree->selectedItems())
+            if (const QString v = item->text(2); !v.isEmpty())
+                values << v;
+        if (!values.isEmpty())
+            QApplication::clipboard()->setText(values.join(QLatin1Char('\n')));
+    };
+    ListKeyHandlers keys;
+    keys.copy = copyValues;
+    bindListKeys(tree, std::move(keys));
+
+    tree->setContextMenuPolicy(Qt::CustomContextMenu);
+    QObject::connect(tree, &QTreeWidget::customContextMenuRequested, tree,
+                     [tree, copyValues](const QPoint& pos) {
+        QMenu menu(tree);
+        menu.addAction(QCoreApplication::translate("eMule::MetadataPage", "Copy"), copyValues)
+            ->setEnabled(!tree->selectedItems().isEmpty());
+        menu.addSeparator();
+        menu.addAction(QCoreApplication::translate("eMule::MetadataPage", "Select All"),
+                       tree, &QTreeWidget::selectAll);
+        menu.exec(tree->viewport()->mapToGlobal(pos));
+    });
+
     layout->addWidget(tree);
     return page;
 }

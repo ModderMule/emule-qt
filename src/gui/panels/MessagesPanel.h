@@ -10,6 +10,9 @@
 
 #include "IpcMessage.h"
 
+#include "utils/InputHistory.h"
+
+#include <QHash>
 #include <QMap>
 #include <QSet>
 #include <QString>
@@ -67,6 +70,8 @@ signals:
 
 protected:
     void showEvent(QShowEvent* event) override;
+    /// Up/Down in the message input recall sent lines (ChatWnd.cpp:374).
+    bool eventFilter(QObject* obj, QEvent* event) override;
 
 private slots:
     void onFriendClicked(const QModelIndex& index);
@@ -94,6 +99,7 @@ private:
 
     void showAddFriendDialog();
     void showFindDialog();
+    void removeSelectedFriend();   ///< MP_REMOVEFRIEND — menu and Del/⌫
 
     [[nodiscard]] int findTabByHash(const QString& friendHash) const;
     /// @p activate false opens it in the background, as an incoming message does.
@@ -147,6 +153,7 @@ private:
 
     // Chat history (session-only, keyed by friend hash)
     QMap<QString, QVector<ChatMsg>> m_chatHistory;
+    QHash<QString, InputHistory> m_inputHistory;   ///< per friend hash, sent lines
 
     // Unread sessions (MFC chat item `notify`), blinking while any are left
     QSet<QString> m_notifyHashes;

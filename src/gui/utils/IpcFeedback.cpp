@@ -4,6 +4,9 @@
 
 #include "utils/IpcFeedback.h"
 
+#include "app/IpcClient.h"
+#include "utils/StatusBarNotifier.h"
+
 #include <QCoreApplication>
 #include <QMessageBox>
 
@@ -24,6 +27,15 @@ bool checkOrWarn(const Ipc::IpcMessage& resp, QWidget* parent,
         text = QCoreApplication::translate("IpcFeedback", "The request was rejected by eMule.");
 
     QMessageBox::warning(parent, title, text);
+    return false;
+}
+
+bool requireConnection(const IpcClient* ipc, const QString& what)
+{
+    if (ipc && ipc->isConnected())
+        return true;
+    StatusBarNotifier::post(
+        QCoreApplication::translate("IpcFeedback", "Not connected to daemon — %1").arg(what), 4000);
     return false;
 }
 

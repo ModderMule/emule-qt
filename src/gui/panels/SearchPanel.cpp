@@ -25,6 +25,7 @@
 #include "IpcMessage.h"
 
 #include <QApplication>
+#include <QShortcut>
 #include <QPointer>
 #include <QTimer>
 #include <QClipboard>
@@ -211,9 +212,24 @@ void SearchPanel::setupUi()
 
     // MFC CSearchListCtrl (srchybrid/SearchListCtrl.cpp:800, :817): Enter downloads the
     // selection, exactly as a double click does, and Alt+Enter opens the result sheet.
-    bindListActivation(m_resultView,
-        [this](const QModelIndex& index) { downloadResults({index}); },
-        [this](const QModelIndex& index) { showResultDetails(index); });
+    // Del removes results from the list, Ctrl+C copies eD2K links (SearchListCtrl.cpp:804,
+    // :1465), Ctrl+F/F3 find. The tab-level Ctrl+W lives in setupUi's shortcut.
+    ListKeyHandlers keys;
+    keys.activate = [this](const QModelIndex& index) { downloadResults({index}); };
+    keys.details = [this](const QModelIndex& index) { showResultDetails(index); };
+    keys.remove = [this] { removeSelectedResults(); };
+    keys.copy = [this] { copySelectedEd2kLinks(); };
+    keys.find = true;
+    bindListKeys(m_resultView, std::move(keys));
+
+    // MFC CSearchDlg::PreTranslateMessage (SearchDlg.cpp:283): Ctrl+W closes the
+    // current search tab. QKeySequence::Close is Cmd+W on macOS.
+    auto* closeTabShortcut = new QShortcut(QKeySequence::Close, this);
+    closeTabShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(closeTabShortcut, &QShortcut::activated, this, [this] {
+        if (m_tabBar->currentIndex() >= 0)
+            closeSearch(m_tabBar->currentIndex());
+    });
     mainLayout->addWidget(m_resultView, 1);
 
     // Bottom bar — Download on the left (matches MFC)
@@ -489,27 +505,7 @@ void SearchPanel::sendSearchRequest(const SearchRequest& req)
         tab.title = tabTitle;
         tab.method = resolvedMethod;
         tab.model = new SearchResultsModel(this);
-        tab.proxy = new QSortFilterProxyModel(this);
-        tab.proxy->setSourceModel(tab.model);
-        tab.proxy->setSortRole(Qt::UserRole);
-        m_tabs.push_back(tab);
-
-        int idx;
-        if (thePrefs.useOriginalIcons()) {
-            static constexpr const char* methodIcons[] = {
-                ":/icons/KadServer.ico",   // 0 = Automatic
-                ":/icons/Server.ico",      // 1 = Ed2k Server
-                ":/icons/Global.ico",      // 2 = Ed2k Global
-                ":/icons/SearchKad.ico",   // 3 = Kademlia
-            };
-            const int mi = (resolvedMethod >= 0 && resolvedMethod <= 3) ? resolvedMethod : 0;
-            idx = m_tabBar->addTab(QIcon(QString::fromLatin1(methodIcons[mi])),
-                                   QStringLiteral("%1 (0)").arg(tabTitle));
-        } else {
-            idx = m_tabBar->addTab(QStringLiteral("%1 (0)").arg(tabTitle));
-        }
-        m_tabBar->setVisible(true);
-        m_tabBar->setCurrentIndex(idx);
+        m_tabBar->setCurrentIndex(addResultTab(std::move(tab)));
         m_cancelBtn->setEnabled(true);
 
         // A Kad search is indexed under a single keyword; when the first one is
@@ -523,6 +519,29 @@ void SearchPanel::sendSearchRequest(const SearchRequest& req)
                                     6000);
         }
     });
+}
+
+void SearchPanel::showClientSharedFiles(uint32_t searchID, const QString& userName)
+{
+    if (searchID == 0)
+        return;
+
+    // Same search-ID space as ED2K/Kad tabs, separate from the indexer's.
+    const auto it = std::ranges::find_if(m_tabs, [searchID](const SearchTab& tab) {
+        return !tab.isIndexer() && tab.searchID == searchID;
+    });
+    int idx = static_cast<int>(std::distance(m_tabs.begin(), it));
+    if (it == m_tabs.end()) {
+        SearchTab tab;
+        tab.searchID = searchID;
+        tab.title = userName.isEmpty() ? QStringLiteral("-") : userName;
+        tab.clientSharedFiles = true;
+        tab.finished = true;   // nothing to cancel; answers just land
+        tab.model = new SearchResultsModel(this);
+        idx = addResultTab(std::move(tab));
+    }
+    m_tabBar->setCurrentIndex(idx);
+    requestSearchResults(searchID);
 }
 
 int SearchTab::resultCount() const
@@ -575,20 +594,7 @@ void SearchPanel::sendIndexerSearchRequest(const SearchRequest& req)
         tab.title = tabTitle;
         tab.method = static_cast<int>(SearchType::UsenetIndexer);
         tab.indexerModel = new IndexerResultsModel(this);
-        tab.proxy = new QSortFilterProxyModel(this);
-        tab.proxy->setSourceModel(tab.indexerModel);
-        tab.proxy->setSortRole(Qt::UserRole);
-        m_tabs.push_back(tab);
-
-        int idx;
-        if (thePrefs.useOriginalIcons()) {
-            idx = m_tabBar->addTab(QIcon(QStringLiteral(":/icons/Search.ico")),
-                                   QStringLiteral("%1 (0)").arg(tabTitle));
-        } else {
-            idx = m_tabBar->addTab(QStringLiteral("%1 (0)").arg(tabTitle));
-        }
-        m_tabBar->setVisible(true);
-        m_tabBar->setCurrentIndex(idx);
+        m_tabBar->setCurrentIndex(addResultTab(std::move(tab)));
         m_cancelBtn->setEnabled(true);
     });
 }
@@ -990,14 +996,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // meta rows have no eD2K link to give (never mint ed2k:// for a pseudo-hash)
     auto* copyLinkAction = m_contextMenu->addAction(menuIcon("eD2kLink.ico"), tr("Copy eD2K Links"));
     copyLinkAction->setEnabled(hasSelection && anyEd2k);
-    connect(copyLinkAction, &QAction::triggered, this, [this] {
-        QStringList links;
-        for (const auto& i : m_resultView->selectionModel()->selectedRows())
-            if (const QString link = buildEd2kLink(i.row()); !link.isEmpty())
-                links << link;
-        if (!links.isEmpty())
-            QApplication::clipboard()->setText(links.join(QLatin1Char('\n')));
-    });
+    connect(copyLinkAction, &QAction::triggered, this, &SearchPanel::copySelectedEd2kLinks);
 
     // Copy eD2K Links (HTML)
     auto* copyHtmlAction = m_contextMenu->addAction(menuIcon("Copy.ico"), tr("Copy eD2K Links (HTML)"));
@@ -1060,20 +1059,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // Remove (remove from local results list)
     auto* removeAction = m_contextMenu->addAction(menuIcon("ListRemove.ico"), tr("Remove"));
     removeAction->setEnabled(hasSelection);
-    connect(removeAction, &QAction::triggered, this, [this] {
-        auto* tab = currentTab();
-        if (!tab) return;
-        std::vector<int> sourceRows;
-        for (const auto& i : m_resultView->selectionModel()->selectedRows()) {
-            const auto srcIdx = tab->proxy->mapToSource(i);
-            sourceRows.push_back(srcIdx.row());
-        }
-        std::sort(sourceRows.rbegin(), sourceRows.rend());
-        for (int r : sourceRows)
-            tab->model->removeRow(r);
-        m_tabBar->setTabText(m_tabBar->currentIndex(),
-            QStringLiteral("%1 (%2)").arg(tab->title).arg(tab->model->resultCount()));
-    });
+    connect(removeAction, &QAction::triggered, this, &SearchPanel::removeSelectedResults);
 
     m_contextMenu->addSeparator();
 
@@ -1222,6 +1208,10 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
                 m_tabBar->setTabText(static_cast<int>(i),
                     QStringLiteral("%1 (%2)").arg(m_tabs[i].title)
                         .arg(m_tabs[i].model->resultCount()));
+                // The footer only refreshed on tab switch, so it lagged behind the rows
+                if (m_tabBar->currentIndex() == static_cast<int>(i))
+                    m_statusLabel->setText(QStringLiteral("%1 results")
+                                               .arg(m_tabs[i].model->resultCount()));
 
                 if (!selKey.isEmpty())
                     restoreSelection(selKey);
@@ -1383,11 +1373,7 @@ QString SearchPanel::buildEd2kLink(int proxyRow)
     const auto proxyIdx = tab->proxy->index(proxyRow, 0);
     const auto srcIdx = tab->proxy->mapToSource(proxyIdx);
     const auto* result = tab->model->resultAt(srcIdx.row());
-    if (!result || result->isMeta())
-        return {};
-
-    return QStringLiteral("ed2k://|file|%1|%2|%3|/")
-        .arg(result->fileName).arg(result->fileSize).arg(result->hash);
+    return result ? result->ed2kLink() : QString();
 }
 
 void SearchPanel::copyEd2kLink(int row)
@@ -1425,16 +1411,7 @@ QString SearchPanel::buildMagnetLink(int proxyRow)
         return {};
     const auto srcIdx = tab->proxy->mapToSource(tab->proxy->index(proxyRow, 0));
     const auto* result = tab->model->resultAt(srcIdx.row());
-    if (!result)
-        return {};
-    if (result->isMeta())
-        return result->magnet;   // server-supplied for torrents; Usenet has none
-
-    // the form ED2KLink::parseMagnetLink reads back
-    return QStringLiteral("magnet:?xt=urn:ed2k:%1&xl=%2&dn=%3")
-        .arg(result->hash.toUpper())
-        .arg(result->fileSize)
-        .arg(QString::fromUtf8(QUrl::toPercentEncoding(result->fileName)));
+    return result ? result->magnetLink() : QString();
 }
 
 // ---------------------------------------------------------------------------
@@ -1681,6 +1658,8 @@ void SearchPanel::saveSearches()
 
         QJsonObject searchObj;
         searchObj[QStringLiteral("title")] = tab.title;
+        searchObj[QStringLiteral("method")] = tab.method;
+        searchObj[QStringLiteral("clientSharedFiles")] = tab.clientSharedFiles;
 
         QJsonArray resultsArr;
         for (int r = 0; r < tab.model->resultCount(); ++r) {
@@ -1771,14 +1750,12 @@ void SearchPanel::loadSearches()
         SearchTab tab;
         tab.searchID = 0;
         tab.title = title;
+        tab.method = searchObj[QStringLiteral("method")].toInt();
+        tab.clientSharedFiles = searchObj[QStringLiteral("clientSharedFiles")].toBool();
+        tab.finished = true;
         tab.model = new SearchResultsModel(this);
-        tab.proxy = new QSortFilterProxyModel(this);
-        tab.proxy->setSourceModel(tab.model);
-        tab.proxy->setSortRole(Qt::UserRole);
         tab.model->setResults(std::move(rows));
-        m_tabs.push_back(tab);
-
-        m_tabBar->addTab(QStringLiteral("%1 (%2)").arg(title).arg(tab.model->resultCount()));
+        addResultTab(std::move(tab));
     }
 
     if (!m_tabs.empty()) {
@@ -2089,6 +2066,85 @@ void SearchPanel::updateCategoryTabs()
     const bool show = m_categoryTabs->count() > 1;
     m_downloadToLabel->setVisible(show);
     m_categoryTabs->setVisible(show);
+}
+
+// ---------------------------------------------------------------------------
+// Result list commands — context menu and list keys
+// ---------------------------------------------------------------------------
+
+void SearchPanel::removeSelectedResults()
+{
+    // Local list only (MFC searchlist->RemoveResult); the daemon's copy stays.
+    auto* tab = currentTab();
+    if (!tab || !m_resultView->selectionModel())
+        return;
+    std::vector<int> sourceRows;
+    for (const auto& i : m_resultView->selectionModel()->selectedRows())
+        sourceRows.push_back(tab->proxy->mapToSource(i).row());
+    if (sourceRows.empty())
+        return;
+    std::sort(sourceRows.rbegin(), sourceRows.rend());
+    for (int r : sourceRows)
+        tab->model->removeRow(r);
+    m_tabBar->setTabText(m_tabBar->currentIndex(),
+        QStringLiteral("%1 (%2)").arg(tab->title).arg(tab->model->resultCount()));
+}
+
+void SearchPanel::copySelectedEd2kLinks()
+{
+    if (!m_resultView->selectionModel())
+        return;
+    // selectedRows() is click order; the clipboard wants view order.
+    QModelIndexList rows = m_resultView->selectionModel()->selectedRows();
+    std::ranges::sort(rows, {}, &QModelIndex::row);
+    QStringList links;
+    for (const auto& i : rows)
+        if (const QString link = buildEd2kLink(i.row()); !link.isEmpty())
+            links << link;
+    if (!links.isEmpty())
+        QApplication::clipboard()->setText(links.join(QLatin1Char('\n')));
+}
+
+// ---------------------------------------------------------------------------
+// Tab creation helpers
+// ---------------------------------------------------------------------------
+
+int SearchPanel::addResultTab(SearchTab tab)
+{
+    tab.proxy = new QSortFilterProxyModel(this);
+    if (tab.isIndexer())
+        tab.proxy->setSourceModel(tab.indexerModel);
+    else
+        tab.proxy->setSourceModel(tab.model);
+    tab.proxy->setSortRole(Qt::UserRole);
+
+    const QString label = QStringLiteral("%1 (%2)").arg(tab.title).arg(tab.resultCount());
+    const QIcon icon = tabIcon(tab);
+    m_tabs.push_back(std::move(tab));
+
+    const int idx = icon.isNull() ? m_tabBar->addTab(label) : m_tabBar->addTab(icon, label);
+    m_tabBar->setVisible(true);
+    return idx;
+}
+
+QIcon SearchPanel::tabIcon(const SearchTab& tab)
+{
+    if (!thePrefs.useOriginalIcons())
+        return {};
+    if (tab.isIndexer())
+        return QIcon(QStringLiteral(":/icons/Search.ico"));
+    // MFC SearchResultsWnd.cpp:1367 — sriClient ("StatsClients" = User.ico)
+    if (tab.clientSharedFiles)
+        return QIcon(QStringLiteral(":/icons/User.ico"));
+
+    static constexpr const char* methodIcons[] = {
+        ":/icons/KadServer.ico",   // 0 = Automatic
+        ":/icons/Server.ico",      // 1 = Ed2k Server
+        ":/icons/Global.ico",      // 2 = Ed2k Global
+        ":/icons/SearchKad.ico",   // 3 = Kademlia
+    };
+    const int mi = (tab.method >= 0 && tab.method <= 3) ? tab.method : 0;
+    return QIcon(QString::fromLatin1(methodIcons[mi]));
 }
 
 } // namespace eMule

@@ -7,6 +7,8 @@
 #include "client/ClientStateDefs.h"
 #include "prefs/Preferences.h"
 
+#include "utils/ClientIcons.h"
+#include "utils/CountryFlags.h"
 #include "utils/OtherFunctions.h"
 #include "utils/PriorityText.h"
 #include "utils/RatingIcons.h"
@@ -257,9 +259,14 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             case ColLastReception: return {};
             case ColCategory:      return {};
             case ColAddedOn:       return {};
+            case ColCountry:       return CountryFlags::columnText(s.cc);
             default: break;
             }
         }
+
+        if (role == Qt::DecorationRole && index.column() == ColFileName)
+            return CountryFlags::withFlag(clientSoftwareIcon(s.softwareId, s.hasCredit, s.isFriend),
+                                          s.cc);
 
         if (role == Qt::UserRole) {
             switch (index.column()) {
@@ -277,12 +284,20 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
                 return s.remoteQueueRank > 0 ? static_cast<qlonglong>(s.remoteQueueRank) : qlonglong(INT_MAX);
             }
             case ColStatus:        return downloadStateSortOrder(s.downloadState);
+            case ColCountry:       return CountryFlags::sortKey(s.cc);
             default:               return {};
             }
         }
 
-        if (role == Qt::ToolTipRole && s.partCount > 0)
-            return tr("Available parts: %1 / %2").arg(s.availPartCount).arg(s.partCount);
+        if (role == Qt::ToolTipRole) {
+            QStringList lines;
+            if (s.partCount > 0)
+                lines << tr("Available parts: %1 / %2").arg(s.availPartCount).arg(s.partCount);
+            if (const QString country = CountryFlags::tooltip(s.cc); !country.isEmpty())
+                lines << tr("Country: %1").arg(country);
+            if (!lines.isEmpty())
+                return lines.join(u'\n');
+        }
 
         // A source fetching over HTTP Cache is not costing the uploader anything,
         // which is worth seeing at a glance — MFC gave PeerCache its own bar for
@@ -439,6 +454,7 @@ QVariant DownloadListModel::headerData(int section, Qt::Orientation orientation,
     case ColStatus:     return tr("Status");
     case ColRemaining:      return tr("Remaining");
     case ColSeenComplete:   return tr("Seen Complete");
+    case ColCountry:        return tr("Country");
     case ColLastReception:  return tr("Last reception");
     case ColCategory:       return tr("Category");
     case ColAddedOn:        return tr("Added On");

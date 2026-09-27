@@ -164,6 +164,16 @@ void logDebug(const QString& msg)
     qCDebug(lcEmuleGeneral).noquote() << msg;
 }
 
+void logStatusInfo(const QString& msg)
+{
+    qCInfo(lcEmuleStatus).noquote() << msg;
+}
+
+void logStatusWarning(const QString& msg)
+{
+    qCWarning(lcEmuleStatus).noquote() << msg;
+}
+
 // ---------------------------------------------------------------------------
 // Console message pattern
 // ---------------------------------------------------------------------------

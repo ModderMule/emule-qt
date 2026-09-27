@@ -14,6 +14,7 @@
 #include "panels/StatisticsPanel.h"
 #include "net/HttpFileDownload.h"
 #include "prefs/Preferences.h"
+#include "utils/CountryFlags.h"
 #include "utils/DialogSizing.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/WebServices.h"
@@ -31,6 +32,7 @@
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
+#include <QGridLayout>
 #include <QCryptographicHash>
 #include <QDesktopServices>
 #include <QFile>
@@ -61,6 +63,7 @@
 #include <QSlider>
 #include <QDoubleSpinBox>
 #include <QSpinBox>
+#include <QShortcut>
 #include <QStackedWidget>
 #include <QStyle>
 #include <QTabWidget>
@@ -104,6 +107,18 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     m_sidebar = new AccordionSidebar(this);
     setupSidebar();
     mainLayout->addWidget(m_sidebar);
+
+    // TreePropSheet::PreTranslateMessage (TreePropSheet.cpp:842): Ctrl+Tab / Ctrl+PgDn
+    // next page, Ctrl+Shift+Tab / Ctrl+PgUp previous.
+    for (const auto& [keys, step] : {std::pair{QKeySequence::NextChild, 1},
+                                     std::pair{QKeySequence::PreviousChild, -1}}) {
+        connect(new QShortcut(keys, this), &QShortcut::activated,
+                this, [this, step] { m_sidebar->stepCurrentItem(step); });
+    }
+    connect(new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_PageDown), this),
+            &QShortcut::activated, this, [this] { m_sidebar->stepCurrentItem(1); });
+    connect(new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_PageUp), this),
+            &QShortcut::activated, this, [this] { m_sidebar->stepCurrentItem(-1); });
 
     // Right side: header + pages + buttons
     auto* rightLayout = new QVBoxLayout;
@@ -205,6 +220,11 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_disableQueueListCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_useAutoCompletionCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_useOriginalIconsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_showCountryFlagsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_countryNameCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
+    connect(m_geoIpAccountEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    connect(m_geoIpLicenseEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    connect(m_geoIpAutoUpdateCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
 
     // Connection page
     connect(m_capacityDownloadSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
@@ -931,6 +951,47 @@ QWidget* OptionsDialog::createDisplayPage()
 
     m_useOriginalIconsCheck = new QCheckBox(tr("Use original eMule icons"), page);
     layout->addWidget(m_useOriginalIconsCheck);
+
+    // --- Country flags (MorphXT IP2Country, GeoLite2 database) ---
+    auto* geoGroup = new QGroupBox(tr("Country flags (IP2Country)"), page);
+    auto* geoGrid = new QGridLayout(geoGroup);
+    m_showCountryFlagsCheck = new QCheckBox(tr("Show country flags"), geoGroup);
+    geoGrid->addWidget(m_showCountryFlagsCheck, 0, 0, 1, 2);
+    geoGrid->addWidget(new QLabel(tr("Country column:"), geoGroup), 0, 2);
+    m_countryNameCombo = new QComboBox(geoGroup);
+    m_countryNameCombo->addItem(tr("Hidden"));
+    m_countryNameCombo->addItem(tr("Short name"));
+    m_countryNameCombo->addItem(tr("Long name"));
+    geoGrid->addWidget(m_countryNameCombo, 0, 3);
+
+    geoGrid->addWidget(new QLabel(tr("MaxMind account ID:"), geoGroup), 1, 0);
+    m_geoIpAccountEdit = new QLineEdit(geoGroup);
+    geoGrid->addWidget(m_geoIpAccountEdit, 1, 1);
+    geoGrid->addWidget(new QLabel(tr("License key:"), geoGroup), 1, 2);
+    m_geoIpLicenseEdit = new QLineEdit(geoGroup);
+    m_geoIpLicenseEdit->setEchoMode(QLineEdit::Password);
+    geoGrid->addWidget(m_geoIpLicenseEdit, 1, 3);
+
+    m_geoIpAutoUpdateCheck = new QCheckBox(tr("Update the database weekly"), geoGroup);
+    geoGrid->addWidget(m_geoIpAutoUpdateCheck, 2, 0, 1, 2);
+    m_geoIpUpdateBtn = new QPushButton(tr("Update now"), geoGroup);
+    geoGrid->addWidget(m_geoIpUpdateBtn, 2, 3);
+
+    m_geoIpStatusLabel = new QLabel(geoGroup);
+    m_geoIpStatusLabel->setWordWrap(true);
+    geoGrid->addWidget(m_geoIpStatusLabel, 3, 0, 1, 4);
+    auto* geoInfo = new QLabel(
+        tr("Needs a free <a href=\"https://www.maxmind.com/en/geolite2/signup\">MaxMind "
+           "GeoLite2</a> account. This product includes GeoLite2 data created by MaxMind."),
+        geoGroup);
+    geoInfo->setWordWrap(true);
+    geoInfo->setOpenExternalLinks(true);
+    geoInfo->setStyleSheet(QStringLiteral("color: gray;"));
+    geoGrid->addWidget(geoInfo, 4, 0, 1, 4);
+    geoGrid->setColumnStretch(1, 1);
+    geoGrid->setColumnStretch(3, 1);
+    connect(m_geoIpUpdateBtn, &QPushButton::clicked, this, &OptionsDialog::updateGeoIpNow);
+    layout->addWidget(geoGroup);
 
     // --- Save CPU & Memory Usage group ---
     auto* cpuGroup = new QGroupBox(tr("Save CPU && Memory Usage"), page);
@@ -2868,6 +2929,7 @@ QWidget* OptionsDialog::createUsenetPage()
     // the last: stretchLastSection owns it, and resizing a stretched section
     // fights the stretch instead of widening it.
     table->bindColumns(QStringLiteral("optionsUsenetServers"), {95, 130, 42, 52, 78, 0});
+    CountryFlags::bindFlagColumn(m_usenetServerTable);
     giveListRoom(m_usenetServerTable, 5, ListGrowth::Capped);
     serversLayout->addWidget(m_usenetServerTable);
 
@@ -3499,6 +3561,8 @@ void OptionsDialog::refreshNewsServerTable()
 
     if (keep >= 0 && keep < m_usenetServerTable->topLevelItemCount())
         m_usenetServerTable->setCurrentItem(m_usenetServerTable->topLevelItem(keep));
+
+    lookupNewsServerCountries();
 }
 
 void OptionsDialog::updateNewsServerRow(int index)
@@ -3516,6 +3580,14 @@ void OptionsDialog::updateNewsServerRow(int index)
 
     item->setText(0, name.isEmpty() ? host : name);
     item->setText(1, host);
+    // Flag of the host's resolved address, looked up by the daemon
+    const QString cc = m_newsServerCountries.value(host.trimmed());
+    item->setIcon(0, CountryFlags::showFlags() ? CountryFlags::withFlag(QIcon(), cc) : QIcon());
+    item->setToolTip(0, CountryFlags::tooltip(cc));
+    item->setToolTip(1, CountryFlags::tooltip(cc));
+    if (!host.trimmed().isEmpty() && !m_newsServerCountries.contains(host.trimmed()))
+        QMetaObject::invokeMethod(this, &OptionsDialog::lookupNewsServerCountries,
+                                  Qt::QueuedConnection);
     item->setText(2, QString::number(s.value(QStringLiteral("port")).toInteger(kDefaultNntpTlsPort)));
     item->setText(3, QString::number(s.value(QStringLiteral("level")).toInteger(0)));
     item->setText(4, QString::number(s.value(QStringLiteral("maxConnections"))
@@ -5789,6 +5861,8 @@ void OptionsDialog::loadSettings()
     m_useAutoCompletionCheck->setChecked(thePrefs.useAutoCompletion());
     m_useOriginalIconsCheck->setChecked(thePrefs.useOriginalIcons());
     m_initialUseOriginalIcons = thePrefs.useOriginalIcons();
+    m_showCountryFlagsCheck->setChecked(theUiState.showCountryFlags());
+    m_countryNameCombo->setCurrentIndex(theUiState.countryNameMode());
 
     // Display - font
     m_currentLogFont = thePrefs.logFont();
@@ -5986,6 +6060,14 @@ void OptionsDialog::saveSettings()
     thePrefs.setUseUserSortedServerList(m_useUserSortedServerListCheck->isChecked());
     thePrefs.setEnableIpcLog(m_enableIpcLogCheck->isChecked());
     thePrefs.setStartCoreWithConsole(m_startCoreWithConsoleCheck->isChecked());
+    if (m_showCountryFlagsCheck->isChecked() != theUiState.showCountryFlags()
+        || m_countryNameCombo->currentIndex() != theUiState.countryNameMode()) {
+        theUiState.setShowCountryFlags(m_showCountryFlagsCheck->isChecked());
+        theUiState.setCountryNameMode(m_countryNameCombo->currentIndex());
+        CountryFlags::setSettings(
+            m_showCountryFlagsCheck->isChecked(),
+            static_cast<CountryFlags::NameMode>(m_countryNameCombo->currentIndex()));
+    }
     if (m_useOriginalIconsCheck->isChecked() != m_initialUseOriginalIcons) {
         QMessageBox::information(this, tr("Icons"),
             tr("The icon change will take effect after restarting the application."));
@@ -6231,6 +6313,14 @@ void OptionsDialog::saveSettings()
         req.append(m_warnUntrustedFilesCheck->isChecked());
         req.append(QStringLiteral("ipFilterUpdateUrl"));
         req.append(m_ipFilterUpdateUrlEdit->text().trimmed());
+
+        // Display page: IP2Country download (daemon-side)
+        req.append(QStringLiteral("geoIpAccountId"));
+        req.append(m_geoIpAccountEdit->text().trimmed());
+        req.append(QStringLiteral("geoIpLicenseKey"));
+        req.append(m_geoIpLicenseEdit->text().trimmed());
+        req.append(QStringLiteral("geoIpAutoUpdate"));
+        req.append(m_geoIpAutoUpdateCheck->isChecked());
 
         // Usenet page. The server list goes over SetNewsServers=721 instead --
         // it carries credentials and has its own keep-the-stored-password rule.
@@ -6665,6 +6755,9 @@ void OptionsDialog::saveSettings()
         thePrefs.setEnableSearchResultFilter(m_enableSearchResultFilterCheck->isChecked());
         thePrefs.setWarnUntrustedFiles(m_warnUntrustedFilesCheck->isChecked());
         thePrefs.setIpFilterUpdateUrl(m_ipFilterUpdateUrlEdit->text().trimmed());
+        thePrefs.setGeoIpAccountId(m_geoIpAccountEdit->text().trimmed());
+        thePrefs.setGeoIpLicenseKey(m_geoIpLicenseEdit->text().trimmed());
+        thePrefs.setGeoIpAutoUpdate(m_geoIpAutoUpdateCheck->isChecked());
 
         // Statistics page fallback
         thePrefs.setGraphsUpdateSec(static_cast<uint32>(m_statsGraphUpdateSlider->value()));
@@ -6934,6 +7027,10 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_enableSearchResultFilterCheck->setChecked(prefs.value(QStringLiteral("enableSearchResultFilter")).toBool(true));
     m_warnUntrustedFilesCheck->setChecked(prefs.value(QStringLiteral("warnUntrustedFiles")).toBool(true));
     m_ipFilterUpdateUrlEdit->setText(prefs.value(QStringLiteral("ipFilterUpdateUrl")).toString());
+    m_geoIpAccountEdit->setText(prefs.value(QStringLiteral("geoIpAccountId")).toString());
+    m_geoIpLicenseEdit->setText(prefs.value(QStringLiteral("geoIpLicenseKey")).toString());
+    m_geoIpAutoUpdateCheck->setChecked(prefs.value(QStringLiteral("geoIpAutoUpdate")).toBool(true));
+    requestGeoIpStatus();
 
     // Usenet page
     m_usenetEnabledCheck->setChecked(prefs.value(QStringLiteral("usenetEnabled")).toBool(false));
@@ -7264,6 +7361,110 @@ quint32 OptionsDialog::portMapProtocolMask() const
     if (m_portMapUPnPCheck != nullptr && m_portMapUPnPCheck->isChecked())
         mask |= 4u;
     return mask;
+}
+
+void OptionsDialog::requestGeoIpStatus()
+{
+    if (!m_ipc || !m_ipc->isConnected()) {
+        m_geoIpUpdateBtn->setEnabled(false);
+        m_geoIpStatusLabel->setText(tr("Database: not connected to the core"));
+        return;
+    }
+    m_geoIpUpdateBtn->setEnabled(true);
+    Ipc::IpcMessage req(Ipc::IpcMsgType::GetGeoIpStatus);
+    m_ipc->sendRequest(std::move(req),
+                       [this, self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
+        if (!self || !resp.isValid() || !resp.fieldBool(0))
+            return;
+        showGeoIpStatus(resp.field(1).toMap());
+    });
+}
+
+void OptionsDialog::updateGeoIpNow()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    // Store what's in the fields first, so "Update now" works before Apply
+    Ipc::IpcMessage creds(Ipc::IpcMsgType::SetPreferences);
+    creds.append(QStringLiteral("geoIpAccountId"));
+    creds.append(m_geoIpAccountEdit->text().trimmed());
+    creds.append(QStringLiteral("geoIpLicenseKey"));
+    creds.append(m_geoIpLicenseEdit->text().trimmed());
+    m_ipc->sendRequest(std::move(creds));
+
+    m_geoIpUpdateBtn->setEnabled(false);
+    m_geoIpStatusLabel->setText(tr("Downloading the GeoLite2 country database..."));
+    Ipc::IpcMessage req(Ipc::IpcMsgType::UpdateGeoIpDatabase);
+    m_ipc->sendRequest(std::move(req),
+                       [this, self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
+        if (!self)
+            return;
+        m_geoIpUpdateBtn->setEnabled(true);
+        if (!resp.isValid() || !resp.fieldBool(0)) {
+            m_geoIpStatusLabel->setText(tr("Update failed: the core did not answer"));
+            return;
+        }
+        const QCborArray out = resp.field(1).toArray();
+        const bool ok = out.at(0).toBool();
+        const QString message = out.at(1).toString();
+        showGeoIpStatus(out.at(2).toMap(), ok ? QString() : message);
+        if (ok)
+            CountryFlags::notifyChanged();
+    });
+}
+
+void OptionsDialog::lookupNewsServerCountries()
+{
+    if (!m_ipc || !m_ipc->isConnected() || !m_usenetServerTable)
+        return;
+
+    QCborArray hosts;
+    for (const QCborMap& server : std::as_const(m_newsServers)) {
+        const QString host = server.value(QStringLiteral("host")).toString().trimmed();
+        if (host.isEmpty() || m_newsServerCountries.contains(host)
+            || m_newsServerLookups.contains(host))
+            continue;
+        m_newsServerLookups.insert(host);
+        hosts.append(host);
+    }
+    if (hosts.isEmpty())
+        return;
+
+    Ipc::IpcMessage req(Ipc::IpcMsgType::LookupHostCountries);
+    req.append(hosts);
+    m_ipc->sendRequest(std::move(req),
+                       [this, self = QPointer<OptionsDialog>(this), hosts](const Ipc::IpcMessage& resp) {
+        if (!self)
+            return;
+        const QCborMap result = resp.isValid() && resp.fieldBool(0) ? resp.fieldMap(1) : QCborMap();
+        for (const QCborValue& h : hosts) {
+            const QString host = h.toString();
+            m_newsServerLookups.remove(host);
+            // A failed lookup still records "", so a dead host isn't re-asked per repaint
+            m_newsServerCountries.insert(host, result.value(host).toString());
+        }
+        for (int i = 0; i < m_newsServers.size(); ++i)
+            updateNewsServerRow(i);
+    });
+}
+
+void OptionsDialog::showGeoIpStatus(const QCborMap& status, const QString& message)
+{
+    QString text;
+    if (status.value(QStringLiteral("loaded")).toBool()) {
+        const QDateTime built = QDateTime::fromSecsSinceEpoch(
+            status.value(QStringLiteral("buildDate")).toInteger());
+        text = tr("Database: GeoLite2-Country from %1")
+                   .arg(QLocale().toString(built.date(), QLocale::ShortFormat));
+    } else {
+        text = tr("Database: none — enter your MaxMind account ID and license key");
+    }
+    if (status.value(QStringLiteral("updating")).toBool())
+        text += tr(" (update running)");
+    if (!message.isEmpty())
+        text += QStringLiteral("\n") + tr("Last update failed: %1").arg(message);
+    m_geoIpStatusLabel->setText(text);
 }
 
 } // namespace eMule

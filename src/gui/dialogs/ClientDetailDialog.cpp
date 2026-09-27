@@ -6,9 +6,12 @@
 
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QHBoxLayout>
+#include <QLabel>
 #include <QVBoxLayout>
 
 #include "net/Address.h"
+#include "utils/CountryFlags.h"
 #include "utils/DialogSizing.h"
 #include "utils/OtherFunctions.h"
 #include "utils/StringUtils.h"
@@ -89,6 +92,18 @@ QWidget* ClientDetailDialog::buildContent(const QCborMap& d)
         addDetailRow(form, tr("ID"), lowID ? tr("Low ID") : tr("High ID"));
 
         addDetailRow(form, tr("Client Software"), str(d, QLatin1StringView("software")));
+
+        // Country (MorphXT IP2Country): flag + long name
+        if (const QString cc = str(d, QLatin1StringView("cc")); !cc.isEmpty()) {
+            auto* row = new QWidget;
+            auto* rowLayout = new QHBoxLayout(row);
+            rowLayout->setContentsMargins(0, 0, 0, 0);
+            auto* flagLabel = new QLabel(row);
+            flagLabel->setPixmap(CountryFlags::flag(cc).pixmap(QSize(18, 16)));
+            rowLayout->addWidget(flagLabel);
+            rowLayout->addWidget(new QLabel(CountryFlags::tooltip(cc), row), 1);
+            form->addRow(QStringLiteral("<b>%1:</b>").arg(tr("Country")), row);
+        }
 
         // Server. Prefer the string form: "serverIP" is 0 for an IPv6 server, which would
         // otherwise render the row as "\u2014" even though the address is known.

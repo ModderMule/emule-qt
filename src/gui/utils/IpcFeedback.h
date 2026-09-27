@@ -14,6 +14,10 @@
 
 class QWidget;
 
+namespace eMule {
+class IpcClient;
+}
+
 namespace eMule::IpcFeedback {
 
 /// True when @p resp reports success; otherwise shows a warning box and returns false.
@@ -33,5 +37,9 @@ namespace eMule::IpcFeedback {
 /// @param fallback  Shown when the daemon sent no message of its own.
 bool checkOrWarn(const Ipc::IpcMessage& resp, QWidget* parent,
                  const QString& title, const QString& fallback = {});
+
+/// True when @p ipc is connected; otherwise posts "Not connected to daemon — @p what"
+/// to the status bar and returns false. For menu actions that would else do nothing.
+bool requireConnection(const IpcClient* ipc, const QString& what);
 
 } // namespace eMule::IpcFeedback

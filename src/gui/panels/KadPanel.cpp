@@ -3,6 +3,8 @@
 
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
+#include "utils/CountryFlags.h"
+#include "utils/ListActivation.h"
 #include "controls/ContactsGraph.h"
 #include "controls/KadContactHistogram.h"
 #include "controls/KadContactsModel.h"
@@ -369,13 +371,15 @@ QWidget* KadPanel::createContactsPanel()
     m_contactsView->setSelectionMode(QAbstractItemView::SingleSelection);
     m_contactsView->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_contactsView->setUniformRowHeights(true);
+    bindListKeys(m_contactsView, {.find = true});   // Ctrl+F / F3 (general-purpose find)
 
     // Style the header — defaults used on first launch, then overridden by saved state
     auto* header = m_contactsView->header();
     header->setStretchLastSection(true);
     header->setDefaultSectionSize(200);
-    // Status, Client ID, Distance.
-    contactsView->bindColumns(QStringLiteral("kadContacts"), {70, 200, 200});
+    // Status, Client ID, Distance, Country.
+    contactsView->bindColumns(QStringLiteral("kadContacts"), {110, 200, 200, 100});
+    CountryFlags::bindCountryColumn(contactsView, KadContactsModel::ColCountry);
 
     // Compact monospace font for hex/binary display
     QFont monoFont(QStringLiteral("Courier New"), 9);
@@ -513,6 +517,7 @@ QWidget* KadPanel::createSearchesPanel()
     m_searchesView->setSelectionMode(QAbstractItemView::SingleSelection);
     m_searchesView->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_searchesView->setUniformRowHeights(true);
+    bindListKeys(m_searchesView, {.find = true});   // Ctrl+F / F3 (general-purpose find)
 
     auto* header = m_searchesView->header();
     header->setStretchLastSection(true);
@@ -556,6 +561,8 @@ void KadPanel::requestContacts()
             row.clientId = m.value(QStringLiteral("clientId")).toString();
             row.distance = m.value(QStringLiteral("distance")).toString();
             row.ip = static_cast<uint32_t>(m.value(QStringLiteral("ip")).toInteger());
+            row.addr = m.value(QStringLiteral("addr")).toString();
+            row.cc = m.value(QStringLiteral("cc")).toString();
             row.udpPort = static_cast<uint16_t>(m.value(QStringLiteral("udpPort")).toInteger());
             row.tcpPort = static_cast<uint16_t>(m.value(QStringLiteral("tcpPort")).toInteger());
             row.version = static_cast<uint8_t>(m.value(QStringLiteral("version")).toInteger());

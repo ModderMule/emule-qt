@@ -68,6 +68,9 @@ file(GLOB_RECURSE PORTMAP_SOURCES CONFIGURE_DEPENDS "portmap/*.cpp" "portmap/*.h
 # Module 20: Media & preview
 file(GLOB_RECURSE MEDIA_SOURCES   CONFIGURE_DEPENDS "media/*.cpp"   "media/*.h")
 
+# IP2Country: GeoLite2 lookup + downloader
+file(GLOB_RECURSE GEO_SOURCES     CONFIGURE_DEPENDS "geo/*.cpp"     "geo/*.h")
+
 # Application context
 file(GLOB_RECURSE APP_SOURCES     CONFIGURE_DEPENDS "app/*.cpp"     "app/*.h")
 
@@ -123,6 +126,7 @@ add_library(emulecore STATIC
     ${MEDIA_SOURCES}
     ${ARCHIVE_SOURCES}
     ${ENODEMETA_SOURCES}
+    ${GEO_SOURCES}
     ${APP_SOURCES}
 )
 
@@ -150,6 +154,8 @@ target_link_libraries(emulecore
         libminiupnpc-static
         yaml-cpp::yaml-cpp
         archive_static
+    PRIVATE
+        maxminddb::maxminddb
 )
 
 if(WIN32)
@@ -201,5 +207,5 @@ source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES
     ${FILES_SOURCES}   ${XFER_SOURCES}    ${SEARCH_SOURCES} ${IPFILT_SOURCES}
     ${STATS_SOURCES}   ${PREFS_SOURCES}   ${CHAT_SOURCES}   ${FRIEND_SOURCES}
     ${WEB_SOURCES}     ${MEDIA_SOURCES}   ${ARCHIVE_SOURCES}
-    ${ENODEMETA_SOURCES} ${APP_SOURCES}
+    ${ENODEMETA_SOURCES} ${GEO_SOURCES} ${APP_SOURCES}
 )

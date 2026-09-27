@@ -16,5 +16,7 @@ Q_LOGGING_CATEGORY(lcEmuleServer,  "emule.server")
 // through there); a separate category keeps it independent of the global `verbose`.
 Q_LOGGING_CATEGORY(lcEmuleServerVerbose, "emule.serverv")
 Q_LOGGING_CATEGORY(lcEmuleCrypto,  "emule.crypto")
+// MFC LOG_STATUSBAR: the GUI puts these in the main Log tab and the status bar.
+Q_LOGGING_CATEGORY(lcEmuleStatus,  "emule.status")
 
 } // namespace eMule

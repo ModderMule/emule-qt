@@ -253,9 +253,6 @@
     <ClCompile Include="dialogs\BugReportDialog.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
-    <ClCompile Include="dialogs\ClientSharedFilesDialog.cpp">
-      <Filter>Generated Files</Filter>
-    </ClCompile>
     <ClCompile Include="dialogs\UsenetArchiveEntryDialog.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
@@ -272,6 +269,12 @@
       <Filter>Generated Files</Filter>
     </ClCompile>
     <ClCompile Include="utils\RatingIcons.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\ClientIcons.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\CountryFlags.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
     <ClCompile Include="dialogs\ToolbarCustomizeDialog.cpp">
@@ -324,6 +327,9 @@
     <ClInclude Include="utils\HttpCacheLinkImporter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="utils\InputHistory.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\FileTypeIcons.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -336,6 +342,12 @@
     <ClInclude Include="utils\RatingIcons.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="utils\ClientIcons.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="utils\CountryFlags.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <ClInclude Include="utils\IpcFeedback.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -538,9 +550,6 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\BugReportDialog.h">
-      <Filter>Generated Files</Filter>
-    </QtMoc>
-    <QtMoc Include="dialogs\ClientSharedFilesDialog.h">
       <Filter>Generated Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\ToolbarCustomizeDialog.h">
@@ -1216,6 +1225,9 @@
       <Filter>Resource Files</Filter>
     </None>
     <QtRcc Include="..\..\resources\emuleqt.qrc">
+      <Filter>Resource Files</Filter>
+    </QtRcc>
+    <QtRcc Include="..\..\resources\flags.qrc">
       <Filter>Resource Files</Filter>
     </QtRcc>
     <None Include="..\..\resources\icons\italic.ico">

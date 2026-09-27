@@ -252,6 +252,22 @@ bool AccordionSidebar::setCurrentItemId(int id)
     return false;
 }
 
+void AccordionSidebar::stepCurrentItem(int step)
+{
+    const int total = itemCount();
+    if (total == 0)
+        return;
+    const int current = currentOrdinal();
+    int target = ((current < 0 ? (step > 0 ? -1 : 0) : current) + step + total) % total;
+    for (const Group& group : m_groups) {
+        if (target < group.list->count()) {
+            setCurrentItemId(group.list->item(target)->data(Qt::UserRole).toInt());
+            return;
+        }
+        target -= group.list->count();
+    }
+}
+
 void AccordionSidebar::setCurrentGroup(int group)
 {
     if (group < 0 || group >= int(m_groups.size()))

@@ -6,6 +6,7 @@
 #include "controls/KnownTypeStyle.h"
 
 #include "prefs/Preferences.h"
+#include "protocol/ED2KLink.h"
 #include "utils/ColorUtils.h"
 #include "utils/FileTypeIcons.h"
 #include "utils/Opcodes.h"
@@ -17,6 +18,7 @@
 #include <QHash>
 #include <QIcon>
 #include <QStyleHints>
+#include <QUrl>
 
 #include <algorithm>
 
@@ -99,6 +101,25 @@ QString formatBitrate(int64_t bitrate)
 }
 
 } // anonymous namespace
+
+QString SearchResultRow::ed2kLink() const
+{
+    if (isMeta())   // never mint ed2k:// for a meta pseudo-hash
+        return {};
+    return ed2kFileLink(fileName, static_cast<uint64>(fileSize), hash);
+}
+
+QString SearchResultRow::magnetLink() const
+{
+    if (isMeta())
+        return magnet;   // server-supplied for torrents; Usenet has none
+
+    // the form ED2KLink::parseMagnetLink reads back
+    return QStringLiteral("magnet:?xt=urn:ed2k:%1&xl=%2&dn=%3")
+        .arg(hash.toUpper())
+        .arg(fileSize)
+        .arg(QString::fromUtf8(QUrl::toPercentEncoding(fileName)));
+}
 
 SearchResultsModel::SearchResultsModel(QObject* parent)
     : AbstractTableModel<SearchResultRow>(parent)

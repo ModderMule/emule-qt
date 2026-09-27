@@ -85,8 +85,11 @@ public:
     // -- File management ------------------------------------------------------
 
     void addDownload(PartFile* file, bool paused = false);
+    /// Refuses eNode meta hashes (torrent/Usenet rows). Empty @p tempDir = defaultTempDir().
     bool addDownloadFromED2KLink(const QString& link, const QString& tempDir,
                                   uint32 category = 0, bool paused = false);
+    /// First configured temp dir, else <configDir>/Temp.
+    [[nodiscard]] static QString defaultTempDir();
     void removeFile(PartFile* file);
     void deleteAll();
     [[nodiscard]] int fileCount() const { return count(); }

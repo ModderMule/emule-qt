@@ -599,7 +599,8 @@ def tcp_probe(ip: str, port: int, timeout: float, nick: str, listen_port: int,
 def _handle_tcp_packet(out: dict, proto: int, opcode: int, body: bytes) -> None:
     entry = {"proto": f"0x{proto:02X}", "opcode": f"0x{opcode:02X}", "len": len(body)}
     try:
-        if opcode == OP_SERVERMESSAGE and proto == OP_EDONKEYPROT:
+        # packed (0xD4) frames arrive here already inflated
+        if opcode == OP_SERVERMESSAGE and proto in (OP_EDONKEYPROT, OP_PACKEDPROT):
             entry["type"] = "OP_SERVERMESSAGE"
             text = Reader(body).string()
             entry["text"] = text
@@ -656,7 +657,9 @@ def _handle_tcp_packet(out: dict, proto: int, opcode: int, body: bytes) -> None:
 # --- software fingerprinting ------------------------------------------------
 
 SOFTWARE_PATTERNS = [
-    (r"ed2k[-_ ]?rust", "ed2k-rust"),
+    (r"ed2k[-_ ]?rust|andrey23127/ed2k-server", "ed2k-rust"),
+    (r"goed2k[-_ ]?server", "goed2k-server"),
+    (r"enode[-_ ]?go", "eNode-go"),
     (r"\bmldonkey\b", "MLDonkey"),
     (r"\bhybrid\b", "eDonkey hybrid"),
     (r"\bjed2k\b", "jed2k"),
@@ -666,6 +669,9 @@ SOFTWARE_PATTERNS = [
     (r"\bsatan\b", "Satan-eDonkey"),
     (r"\beserver\b|\blugdunum\b", "eserver (Lugdunum)"),
 ]
+
+
+ED2K_RUST_IDENT_HASH = "DEADBEEFCAFEBABE123456789ABCDEF0"
 
 
 def guess_software(entry: dict) -> dict:
@@ -685,14 +691,20 @@ def guess_software(entry: dict) -> dict:
         if re.search(pattern, haystack):
             name = label
             break
+    if name is None and ident.get("hash") == ED2K_RUST_IDENT_HASH:
+        # ed2k-rust ships a placeholder server hash operators don't change
+        name = "ed2k-rust (placeholder ident hash)"
     if name is None and (status.get("vendor_extension") or {}).get("x25519_public_key"):
         # Only the ed2kNET line publishes an X25519 key in its status reply.
         name = "ed2kNET-family (X25519 key in OP_GLOBSERVSTATRES)"
     if name is None and version:
-        # eserver is the only widely deployed server that reports a bare "MM.mm"
-        # version tag over UDP, so treat that shape as eserver-compatible.
-        name = ("eserver (Lugdunum)-compatible" if re.fullmatch(r"\d+\.\d+", str(version))
-                else None)
+        # ed2k-rust: version 18.1 + 44-byte status (trailing observed client IP).
+        # Otherwise eserver is the only widely deployed server reporting a bare
+        # "MM.mm" version tag over UDP, so treat that shape as eserver-compatible.
+        if str(version) == "18.1" and status.get("raw_len") == 44:
+            name = "ed2k-rust-compatible (18.1, 44-byte status)"
+        elif re.fullmatch(r"\d+\.\d+", str(version)):
+            name = "eserver (Lugdunum)-compatible"
     banner = next((m for m in tcp.get("messages", [])
                    if re.search(r"version|server\s+\d|\bv\d", m, re.I)), None)
     return {"software": name, "version": version, "version_banner": banner}

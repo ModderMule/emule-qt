@@ -6,13 +6,12 @@
 
 #include "client/ClientStateDefs.h"
 #include "prefs/Preferences.h"
+#include "utils/ClientIcons.h"
+#include "utils/CountryFlags.h"
 #include "utils/PriorityText.h"
 #include "utils/StringUtils.h"
 
 #include <QColor>
-#include <QIcon>
-#include <QPainter>
-#include <QPixmap>
 
 namespace eMule {
 
@@ -64,96 +63,11 @@ QString sourceFromStr(int sf)
     }
 }
 
-// Column counts per mode (matching MFC screenshots)
-constexpr int UploadingColCount    = 8;  // +Upload Time
-constexpr int DownloadingColCount  = 8;  // two Transfer columns
-constexpr int OnQueueColCount      = 10; // File Pri, Rating, Score, Asked, Last Seen, Entered Queue, Banned, Obtained Parts
-constexpr int KnownClientsColCount = 8;  // +Connected
-
-// ClientSoftware enum values from ClientStateDefs.h
-constexpr int SoftEMule          = 0;
-constexpr int SoftCDonkey        = 1;
-constexpr int SoftXMule          = 2;
-constexpr int SoftAMule          = 3;
-constexpr int SoftShareaza       = 4;
-constexpr int SoftMLDonkey       = 10;
-constexpr int SoftLphant         = 20;
-constexpr int SoftEDonkeyHybrid  = 50;
-// SoftEDonkey (51) and SoftOldEMule (52) fall through to default icon
-constexpr int SoftURL            = 53;
-
-/// Get client software icon matching MFC GetDisplayImage() logic.
-/// "Plus" variants indicate the client has credit (scoreRatio > 1.0).
-/// Friend clients show the software icon with a small friend badge overlay
-/// at the bottom-right corner (preserving software identity).
-QIcon clientSoftwareIcon(int softwareId, bool hasCredit, bool isFriend)
-{
-    static QHash<int, QIcon> cache;
-
-    // URL source → Server icon (MFC index 15)
-    if (softwareId == SoftURL) {
-        static QIcon urlIcon(QStringLiteral(":/icons/Server.ico"));
-        return urlIcon;
-    }
-
-    // Cache key: combine softwareId + hasCredit + isFriend
-    const int key = softwareId * 4 + (hasCredit ? 2 : 0) + (isFriend ? 1 : 0);
-    auto it = cache.find(key);
-    if (it != cache.end())
-        return it.value();
-
-    QString path;
-    switch (softwareId) {
-    case SoftEMule:
-    case SoftCDonkey:
-    case SoftXMule:
-        path = hasCredit ? QStringLiteral(":/icons/ClientCompatiblePlus.ico")
-                         : QStringLiteral(":/icons/ClientCompatible.ico");
-        break;
-    case SoftAMule:
-        path = hasCredit ? QStringLiteral(":/icons/ClientaMulePlus.ico")
-                         : QStringLiteral(":/icons/ClientaMule.ico");
-        break;
-    case SoftShareaza:
-        path = hasCredit ? QStringLiteral(":/icons/ClientShareazaPlus.ico")
-                         : QStringLiteral(":/icons/ClientShareaza.ico");
-        break;
-    case SoftMLDonkey:
-        path = hasCredit ? QStringLiteral(":/icons/ClientMLDonkeyPlus.ico")
-                         : QStringLiteral(":/icons/ClientMLDonkey.ico");
-        break;
-    case SoftLphant:
-        path = hasCredit ? QStringLiteral(":/icons/ClientlPhantPlus.ico")
-                         : QStringLiteral(":/icons/ClientlPhant.ico");
-        break;
-    case SoftEDonkeyHybrid:
-        path = hasCredit ? QStringLiteral(":/icons/ClienteDonkeyHybridPlus.ico")
-                         : QStringLiteral(":/icons/ClienteDonkeyHybrid.ico");
-        break;
-    default:
-        path = hasCredit ? QStringLiteral(":/icons/ClientDefaultPlus.ico")
-                         : QStringLiteral(":/icons/ClientDefault.ico");
-        break;
-    }
-
-    if (!isFriend) {
-        QIcon icon(path);
-        cache.insert(key, icon);
-        return icon;
-    }
-
-    // Composite: software icon + friend badge at bottom-right
-    QPixmap pixmap = QIcon(path).pixmap(16, 16);
-    {
-        QPainter painter(&pixmap);
-        static const QPixmap friendBadge =
-            QIcon(QStringLiteral(":/icons/Friend.ico")).pixmap(10, 10);
-        painter.drawPixmap(6, 6, 10, 10, friendBadge);
-    }
-    QIcon composite(pixmap);
-    cache.insert(key, composite);
-    return composite;
-}
+// Column counts per mode (matching MFC screenshots), each +1 for MorphXT's Country
+constexpr int UploadingColCount    = 9;  // +Upload Time
+constexpr int DownloadingColCount  = 9;  // two Transfer columns
+constexpr int OnQueueColCount      = 11; // File Pri, Rating, Score, Asked, Last Seen, Entered Queue, Banned, Obtained Parts
+constexpr int KnownClientsColCount = 9;  // +Connected
 
 } // anonymous namespace
 
@@ -181,17 +95,22 @@ QVariant ClientListModel::data(const QModelIndex& index, int role) const
 
     const auto& c = m_rows[static_cast<size_t>(index.row())];
 
+    const bool isCountry = index.column() == countryColumn();
+
     if (role == Qt::DisplayRole)
-        return displayData(c, index.column());
+        return isCountry ? QVariant(CountryFlags::columnText(c.cc)) : displayData(c, index.column());
 
     if (role == Qt::UserRole)
-        return sortData(c, index.column());
+        return isCountry ? QVariant(CountryFlags::sortKey(c.cc)) : sortData(c, index.column());
 
     if (role == UpStatusRole)
         return QVariant::fromValue(c.upStatus);
 
     if (role == Qt::DecorationRole && index.column() == 0)
-        return clientSoftwareIcon(c.softwareId, c.hasCredit, c.isFriend);
+        return CountryFlags::withFlag(clientSoftwareIcon(c.softwareId, c.hasCredit, c.isFriend), c.cc);
+
+    if (role == Qt::ToolTipRole && (index.column() == 0 || isCountry) && !c.cc.isEmpty())
+        return CountryFlags::tooltip(c.cc);
 
     // Same teal the downloads list uses for an HTTP Cache source, so the two
     // halves of the feature read the same way. MFC gave PeerCache its own bar
@@ -207,6 +126,8 @@ QVariant ClientListModel::headerData(int section, Qt::Orientation orientation, i
 {
     if (orientation != Qt::Horizontal || role != Qt::DisplayRole)
         return {};
+    if (section == countryColumn())
+        return tr("Country");
     return headerLabel(section);
 }
 

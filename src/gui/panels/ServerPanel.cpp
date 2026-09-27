@@ -2,6 +2,7 @@
 #include "panels/ServerPanel.h"
 
 #include "app/IpcClient.h"
+#include "utils/CountryFlags.h"
 #include "utils/MetaResultActions.h"
 #include "core/app/AppConfig.h"
 #include "controls/AbstractListView.h"
@@ -14,6 +15,7 @@
 #include "utils/ListActivation.h"
 #include "utils/MenuUtils.h"
 #include "utils/PanelPoller.h"
+#include "utils/StatusBarNotifier.h"
 #include "IpcMessage.h"
 #include "net/HttpFileDownload.h"
 #include "prefs/Preferences.h"
@@ -45,6 +47,9 @@
 #include <QTimer>
 #include <QTreeView>
 #include <QVBoxLayout>
+
+#include <algorithm>
+#include <memory>
 
 namespace eMule {
 
@@ -163,16 +168,15 @@ void ServerPanel::onAddServerClicked()
     // The daemon classifies without resolving: a hostname is stored as a dynIP and
     // re-resolved on every connect (A then AAAA), so an AAAA-only host works and
     // nothing blocks the GUI thread. Accepts an IPv6 literal, bracketed or bare.
-    Ipc::IpcMessage req(Ipc::IpcMsgType::AddServer);
-    req.append(ip);
-    req.append(static_cast<qint64>(port));
-    req.append(name);
-    m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage& resp) {
-        if (resp.fieldBool(0)) {
+    sendAddServer(ip, port, name, [this](bool added, const QString& rejected) {
+        if (added) {
             m_newServerIp->clear();
             m_newServerPort->setText(QStringLiteral("4661")); // default port, not translatable
             m_newServerName->clear();
             requestServerList();
+        } else if (!rejected.isEmpty()) {
+            // Inputs stay so the address can be fixed; the daemon already logged it.
+            StatusBarNotifier::post(rejected);
         }
     });
 }
@@ -278,6 +282,9 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
 
     const bool hasSelection = (row != nullptr);
     const bool hasItems = (m_serverListModel->rowCount() > 0);
+    // Remove/Copy act on every selected row (MFC GetFirstSelectedItemPosition loops)
+    const bool anySelected = m_serverListView->selectionModel()
+                             && m_serverListView->selectionModel()->hasSelection();
 
     // Build menu fresh each time
     if (!m_serverMenu)
@@ -483,18 +490,8 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
     // -- Copy eD2K Links ------------------------------------------------------
     auto* copyLinkAction = m_serverMenu->addAction(tr("Copy eD2K Links"));
     copyLinkAction->setIcon(ico("eD2kLink.ico", QStyle::SP_FileIcon));
-    copyLinkAction->setEnabled(hasSelection);
-    if (hasSelection) {
-        // row->ip is Server::address() — a bare literal or hostname, never "ip:port".
-        // The old section(':',0,0) was a no-op for IPv4 and truncated an IPv6 to "2001";
-        // ED2KServerLink::toLink() adds the brackets an IPv6 literal needs.
-        const QString address = row->ip;
-        const uint16_t port = row->port;
-        connect(copyLinkAction, &QAction::triggered, this, [address, port]() {
-            ED2KServerLink link{address, port};
-            QApplication::clipboard()->setText(link.toLink());
-        });
-    }
+    copyLinkAction->setEnabled(anySelected);
+    connect(copyLinkAction, &QAction::triggered, this, &ServerPanel::copySelectedServerLinks);
 
     // -- Paste eD2K Links -----------------------------------------------------
     auto* pasteLinkAction = m_serverMenu->addAction(tr("Paste eD2K Links"));
@@ -506,51 +503,13 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
     const bool hasEd2kLink =
         Ed2kLinkImporter::linkKindsIn(clipText).testFlag(Ed2kLinkImporter::LinkKind::Server);
     pasteLinkAction->setEnabled(hasEd2kLink && m_ipc && m_ipc->isConnected());
-    connect(pasteLinkAction, &QAction::triggered, this, [this, clipText]() {
-        // Parse each line in the clipboard
-        const QStringList lines = clipText.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
-        for (const QString& line : lines) {
-            auto parsed = parseED2KLink(line.trimmed());
-            if (!parsed)
-                continue;
-            if (auto* srvLink = std::get_if<ED2KServerLink>(&*parsed)) {
-                // Accept literals of either family and hostnames alike: the old
-                // QHostAddress::isNull() gate rejected every hostname server link.
-                if (srvLink->port == 0)
-                    continue;
-                if (m_ipc && m_ipc->isConnected()) {
-                    Ipc::IpcMessage req(Ipc::IpcMsgType::AddServer);
-                    req.append(srvLink->address);
-                    req.append(static_cast<qint64>(srvLink->port));
-                    req.append(QString()); // no name
-                    m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage&) {
-                        requestServerList();
-                    });
-                }
-            }
-        }
-    });
+    connect(pasteLinkAction, &QAction::triggered, this, &ServerPanel::pasteServerLinks);
 
     // -- Remove ---------------------------------------------------------------
     auto* removeAction = m_serverMenu->addAction(tr("Remove"));
     removeAction->setIcon(ico("Delete.ico", QStyle::SP_DialogDiscardButton));
-    removeAction->setEnabled(hasSelection);
-    if (hasSelection) {
-        const uint32_t ip = row->numericIp;
-        const QString addr = row->addr;
-        const uint16_t port = row->port;
-        connect(removeAction, &QAction::triggered, this, [this, ip, addr, port]() {
-            if (m_ipc && m_ipc->isConnected()) {
-                Ipc::IpcMessage req(Ipc::IpcMsgType::RemoveServer);
-                req.append(static_cast<qint64>(ip));
-                req.append(static_cast<qint64>(port));
-                req.append(addr);
-                m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage&) {
-                    requestServerList();
-                });
-            }
-        });
-    }
+    removeAction->setEnabled(anySelected);
+    connect(removeAction, &QAction::triggered, this, &ServerPanel::removeSelectedServers);
 
     // -- Remove All -----------------------------------------------------------
     auto* removeAllAction = m_serverMenu->addAction(tr("Remove All"));
@@ -650,7 +609,7 @@ QWidget* ServerPanel::createServerListPanel()
     m_serverListView->setRootIsDecorated(false);
     m_serverListView->setAlternatingRowColors(true);
     m_serverListView->setSortingEnabled(true);
-    m_serverListView->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_serverListView->setSelectionMode(QAbstractItemView::ExtendedSelection);   // MFC multi-select
     m_serverListView->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_serverListView->setUniformRowHeights(true);
 
@@ -658,19 +617,26 @@ QWidget* ServerPanel::createServerListPanel()
     header->setStretchLastSection(true);
     header->setDefaultSectionSize(80);
     // Name, IP, Description, Ping, Users, Max Users, Files, Preference, Failed,
-    // Static, Soft File Limit, LowID, Obfuscation.
+    // Static, Soft File Limit, LowID, Obfuscation, Country.
     serverView->bindColumns(QStringLiteral("serverList"),
-        {140, 140, 160, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80});
+        {140, 140, 160, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 100});
+    CountryFlags::bindCountryColumn(serverView, ServerListModel::ColCountry);
 
     m_serverListView->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_serverListView, &QTreeView::doubleClicked,
             this, &ServerPanel::onServerDoubleClicked);
 
-    // MFC CServerListCtrl (srchybrid/ServerListCtrl.cpp:392): Enter connects, the same
-    // as a double click. There is no server detail sheet in the original, so Alt+Enter
-    // is deliberately left unbound here.
-    bindListActivation(m_serverListView,
-        [this](const QModelIndex& index) { onServerDoubleClicked(index); });
+    // MFC CServerListCtrl::OnCommand (srchybrid/ServerListCtrl.cpp:387): Enter connects,
+    // the same as a double click; no server detail sheet, so Alt+Enter stays unbound.
+    // Del removes, Ctrl+C/X/V copy, cut and paste server links, Ctrl+F/F3 find.
+    ListKeyHandlers keys;
+    keys.activate = [this](const QModelIndex& index) { onServerDoubleClicked(index); };
+    keys.remove = [this] { removeSelectedServers(); };
+    keys.copy = [this] { copySelectedServerLinks(); };
+    keys.cut = [this] { cutSelectedServers(); };
+    keys.paste = [this] { pasteServerLinks(); };
+    keys.find = true;
+    bindListKeys(m_serverListView, std::move(keys));
     connect(m_serverListView, &QTreeView::customContextMenuRequested,
             this, &ServerPanel::onServerContextMenu);
     applyServerSortMode();   // #24: initial manual-order display mode
@@ -730,6 +696,9 @@ QWidget* ServerPanel::createControlsPanel()
     addBtnRow->addWidget(m_addServerBtn);
     nsLayout->addLayout(addBtnRow);
     connect(m_addServerBtn, &QPushButton::clicked, this, &ServerPanel::onAddServerClicked);
+    // MFC CServerWnd::PreTranslateMessage (ServerWnd.cpp:642): Enter in a field adds
+    for (QLineEdit* edit : {m_newServerIp, m_newServerPort, m_newServerName})
+        connect(edit, &QLineEdit::returnPressed, this, &ServerPanel::onAddServerClicked);
 
     layout->addWidget(newServerGroup);
 
@@ -756,6 +725,8 @@ QWidget* ServerPanel::createControlsPanel()
     urlRow->addWidget(m_updateBtn);
     layout->addLayout(urlRow);
     connect(m_updateBtn, &QPushButton::clicked, this, &ServerPanel::onUpdateServerMetClicked);
+    connect(m_updateUrlEdit, &QLineEdit::returnPressed,
+            this, &ServerPanel::onUpdateServerMetClicked);
 
     // Separator
     auto* separator = new QFrame;
@@ -921,10 +892,10 @@ void ServerPanel::requestServerList()
         return;
 
     const int srvScroll = m_serverListView->verticalScrollBar()->value();
-    const QString key = saveSelection();
+    const QStringList keys = saveSelection();
 
     Ipc::IpcMessage req(Ipc::IpcMsgType::GetServers);
-    m_ipc->sendRequest(std::move(req), [this, key, srvScroll](const Ipc::IpcMessage& resp) {
+    m_ipc->sendRequest(std::move(req), [this, keys, srvScroll](const Ipc::IpcMessage& resp) {
         if (!resp.fieldBool(0))
             return;
         const QCborArray servers = resp.fieldArray(1);
@@ -932,7 +903,7 @@ void ServerPanel::requestServerList()
         m_serversLabel->setText(
             tr("\u25B8 Servers (%1)").arg(m_serverListModel->rowCount()));
         applyServerSortMode();   // #24: honor manual-order display mode
-        restoreSelection(key);
+        restoreSelection(keys);
         m_serverListView->verticalScrollBar()->setValue(srvScroll);
     });
 }
@@ -956,35 +927,54 @@ void ServerPanel::applyServerSortMode()
     }
 }
 
-QString ServerPanel::saveSelection() const
+QStringList ServerPanel::saveSelection() const
 {
+    // Current row first so restore can put the focus back on it.
+    QStringList keys;
     auto* sel = m_serverListView->selectionModel();
     if (!sel || !sel->hasSelection())
-        return {};
-    const QModelIndex idx = sel->currentIndex();
-    if (!idx.isValid())
-        return {};
-    return idx.siblingAtColumn(ServerListModel::ColIP)
-        .data(Qt::DisplayRole).toString();
+        return keys;
+    const QModelIndex current = sel->currentIndex();
+    if (current.isValid() && sel->isRowSelected(current.row(), current.parent()))
+        keys << current.siblingAtColumn(ServerListModel::ColIP).data(Qt::DisplayRole).toString();
+    for (const QModelIndex& idx : sel->selectedRows(ServerListModel::ColIP)) {
+        const QString key = idx.data(Qt::DisplayRole).toString();
+        if (!keys.contains(key))
+            keys << key;
+    }
+    return keys;
 }
 
-void ServerPanel::restoreSelection(const QString& key)
+void ServerPanel::restoreSelection(const QStringList& keys)
 {
-    if (key.isEmpty())
+    if (keys.isEmpty())
         return;
 
     auto* proxyModel = qobject_cast<QSortFilterProxyModel*>(
         m_serverListView->model());
-    if (!proxyModel)
+    auto* sel = m_serverListView->selectionModel();
+    if (!proxyModel || !sel)
         return;
 
+    // setCurrentIndex(NoUpdate) + one select(): the view's own setCurrentIndex()
+    // would ClearAndSelect and collapse a multi-row selection to one row.
+    QItemSelection selection;
+    QModelIndex current;
+    const int lastCol = proxyModel->columnCount() - 1;
     for (int row = 0; row < proxyModel->rowCount(); ++row) {
         const QModelIndex idx = proxyModel->index(row, ServerListModel::ColIP);
-        if (idx.data(Qt::DisplayRole).toString() == key) {
-            m_serverListView->setCurrentIndex(idx);
-            return;
-        }
+        const qsizetype pos = keys.indexOf(idx.data(Qt::DisplayRole).toString());
+        if (pos < 0)
+            continue;
+        selection.select(proxyModel->index(row, 0), proxyModel->index(row, lastCol));
+        if (pos == 0)
+            current = idx;
     }
+    if (selection.isEmpty())
+        return;
+    if (current.isValid())
+        sel->setCurrentIndex(current, QItemSelectionModel::NoUpdate);
+    sel->select(selection, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
 }
 
 void ServerPanel::showFindDialog()
@@ -1293,6 +1283,156 @@ done:
     // Refresh the server list view
     if (m_ipc && m_ipc->isConnected())
         requestServerList();
+}
+
+// ---------------------------------------------------------------------------
+// Selection commands — context menu and list keys share these
+// ---------------------------------------------------------------------------
+
+std::vector<ServerPanel::ServerKey> ServerPanel::selectedServers() const
+{
+    std::vector<ServerKey> out;
+    auto* proxy = qobject_cast<QSortFilterProxyModel*>(m_serverListView->model());
+    auto* sel = m_serverListView->selectionModel();
+    if (!proxy || !sel)
+        return out;
+
+    // selectedRows() is in click order; the clipboard wants view order.
+    QModelIndexList rows = sel->selectedRows();
+    std::ranges::sort(rows, {}, &QModelIndex::row);
+    out.reserve(static_cast<size_t>(rows.size()));
+    for (const QModelIndex& idx : rows) {
+        const ServerRow* row = m_serverListModel->rowAt(proxy->mapToSource(idx).row());
+        if (!row)
+            continue;
+        // row->ip is Server::address() — a bare literal or hostname, never "ip:port";
+        // ED2KServerLink::toLink() adds the brackets an IPv6 literal needs.
+        out.push_back({row->numericIp, row->addr, row->port,
+                       ED2KServerLink{row->ip, row->port}.toLink()});
+    }
+    return out;
+}
+
+void ServerPanel::removeSelectedServers()
+{
+    const std::vector<ServerKey> servers = selectedServers();
+    if (servers.empty() || !m_ipc || !m_ipc->isConnected())
+        return;
+
+    // MFC AutoSelectItem: focus moves on to the row after the removed block, so a
+    // second Del keeps deleting. Select it now; the refresh restores it by key.
+    auto* proxy = m_serverListView->model();
+    auto* sel = m_serverListView->selectionModel();
+    int lastSelected = 0;
+    for (const QModelIndex& idx : sel->selectedRows())
+        lastSelected = std::max(lastSelected, idx.row());
+    int next = -1;
+    for (int row = lastSelected; row < proxy->rowCount(); ++row) {
+        if (!sel->isRowSelected(row, {})) {
+            next = row;
+            break;
+        }
+    }
+    for (int row = proxy->rowCount() - 1; next < 0 && row >= 0; --row) {
+        if (!sel->isRowSelected(row, {}))
+            next = row;
+    }
+    if (next >= 0)
+        m_serverListView->setCurrentIndex(proxy->index(next, 0));
+    else
+        sel->clearSelection();
+
+    // One refresh after the last reply, not one per server.
+    auto pending = std::make_shared<int>(static_cast<int>(servers.size()));
+    for (const ServerKey& key : servers) {
+        Ipc::IpcMessage req(Ipc::IpcMsgType::RemoveServer);
+        req.append(static_cast<qint64>(key.ip));
+        req.append(static_cast<qint64>(key.port));
+        req.append(key.addr);
+        m_ipc->sendRequest(std::move(req), [this, pending](const Ipc::IpcMessage&) {
+            if (--*pending == 0)
+                requestServerList();
+        });
+    }
+}
+
+void ServerPanel::copySelectedServerLinks()
+{
+    QStringList links;
+    for (const ServerKey& key : selectedServers())
+        links << key.link;
+    if (!links.isEmpty())
+        QApplication::clipboard()->setText(links.join(QLatin1Char('\n')));
+}
+
+void ServerPanel::cutSelectedServers()
+{
+    // MFC MP_CUT (ServerListCtrl.cpp:415): copy the links, then delete the servers.
+    copySelectedServerLinks();
+    removeSelectedServers();
+}
+
+void ServerPanel::pasteServerLinks()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    // Each clipboard line may hold one server link; a file link or junk is skipped.
+    std::vector<ED2KServerLink> links;
+    const QString clipText = QApplication::clipboard()->text().trimmed();
+    for (const QString& line : clipText.split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
+        auto parsed = parseED2KLink(line.trimmed());
+        if (!parsed)
+            continue;
+        // Literals of either family and hostnames alike: the daemon classifies them.
+        if (auto* srvLink = std::get_if<ED2KServerLink>(&*parsed); srvLink && srvLink->port != 0)
+            links.push_back(*srvLink);
+    }
+    if (links.empty())
+        return;
+
+    // One status-bar line and one refresh per paste, after the last reply.
+    struct Batch {
+        size_t      pending = 0;
+        QStringList rejected;
+    };
+    auto batch = std::make_shared<Batch>();
+    batch->pending = links.size();
+    for (const ED2KServerLink& link : links) {
+        sendAddServer(link.address, link.port, QString(),
+                      [this, batch](bool, const QString& rejected) {
+            if (!rejected.isEmpty())
+                batch->rejected << rejected;
+            if (--batch->pending != 0)
+                return;
+            if (batch->rejected.size() == 1)
+                StatusBarNotifier::post(batch->rejected.constFirst());
+            else if (batch->rejected.size() > 1)
+                StatusBarNotifier::post(tr("%n server(s) not added — LAN addresses are filtered",
+                                           nullptr, static_cast<int>(batch->rejected.size())));
+            requestServerList();
+        });
+    }
+}
+
+void ServerPanel::sendAddServer(const QString& address, uint16_t port, const QString& name,
+                                std::function<void(bool added, const QString& rejected)> done)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    Ipc::IpcMessage req(Ipc::IpcMsgType::AddServer);
+    req.append(address);
+    req.append(static_cast<qint64>(port));
+    req.append(name);
+    m_ipc->sendRequest(std::move(req), [done = std::move(done)](const Ipc::IpcMessage& resp) {
+        // Error(ErrServerLanFiltered, text) is the only rejection worth telling the
+        // user about; Result(false) is a duplicate, which MFC stays quiet on too.
+        const bool lanFiltered = resp.isValid() && resp.type() == Ipc::IpcMsgType::Error
+                                 && resp.fieldInt(0) == Ipc::ErrServerLanFiltered;
+        const bool added = resp.isValid() && resp.type() == Ipc::IpcMsgType::Result
+                           && resp.fieldBool(0);
+        done(added, lanFiltered ? resp.fieldString(1) : QString());
+    });
 }
 
 } // namespace eMule

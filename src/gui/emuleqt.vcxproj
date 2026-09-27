@@ -97,7 +97,7 @@
       <ForcedIncludeFiles>pch.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;z.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\lib\Qt6EntryPoint.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;z.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;maxminddb.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\lib\Qt6EntryPoint.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>..\..\bin\$(Configuration);..\vcpkg_installed\x64-windows\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
       <DataExecutionPrevention>true</DataExecutionPrevention>
@@ -161,7 +161,7 @@
       <ForcedIncludeFiles>pch.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;zd.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\lib\Qt6EntryPointd.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>emulecore.lib;emuleipc.lib;libssl.lib;libcrypto.lib;zd.lib;miniupnpc.lib;yaml-cpp.lib;archive.lib;maxminddb.lib;ws2_32.lib;iphlpapi.lib;$(QTDIR)\lib\Qt6EntryPointd.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>..\..\bin\$(Configuration);..\vcpkg_installed\x64-windows\debug\lib;..\vcpkg_installed\x64-windows\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
       <DataExecutionPrevention>true</DataExecutionPrevention>
@@ -208,7 +208,6 @@
     <ClCompile Include="dialogs\BugReportDialog.cpp" />
     <ClCompile Include="app\AutoStart.cpp" />
     <ClCompile Include="dialogs\ClientDetailDialog.cpp" />
-    <ClCompile Include="dialogs\ClientSharedFilesDialog.cpp" />
     <ClCompile Include="dialogs\UsenetArchiveEntryDialog.cpp" />
     <ClCompile Include="dialogs\UsenetDetailsDialog.cpp" />
     <ClCompile Include="utils\FileAssociation.cpp" />
@@ -219,6 +218,8 @@
     <ClCompile Include="utils\PriorityText.cpp" />
     <ClCompile Include="utils\Smileys.cpp" />
     <ClCompile Include="utils\RatingIcons.cpp" />
+    <ClCompile Include="utils\ClientIcons.cpp" />
+    <ClCompile Include="utils\CountryFlags.cpp" />
     <ClCompile Include="controls\ClientListModel.cpp" />
     <ClCompile Include="app\CommandLineExec.cpp" />
     <ClCompile Include="app\ExternalLinkHandler.cpp" />
@@ -320,11 +321,14 @@
     <ClInclude Include="dialogs\FindInListDialog.h" />
     <ClInclude Include="dialogs\MetadataPage.h" />
     <ClInclude Include="utils\IpcFeedback.h" />
+    <ClInclude Include="utils\InputHistory.h" />
     <ClInclude Include="utils\ListActivation.h" />
     <ClInclude Include="utils\MenuUtils.h" />
     <ClInclude Include="utils\ColorUtils.h" />
     <ClInclude Include="utils\ViewNavigation.h" />
     <QtMoc Include="utils\PanelPoller.h" />
+    <QtMoc Include="utils\CountryFlags.h" />
+    <ClInclude Include="utils\ClientIcons.h" />
     <ClInclude Include="utils\PreviewLauncher.h" />
     <ClInclude Include="utils\TextLinks.h" />
     <ClInclude Include="utils\StatusBarNotifier.h" />
@@ -337,7 +341,6 @@
     <QtMoc Include="dialogs\BugReportDialog.h" />
     <ClInclude Include="app\AutoStart.h" />
     <QtMoc Include="dialogs\ClientDetailDialog.h" />
-    <QtMoc Include="dialogs\ClientSharedFilesDialog.h" />
     <QtMoc Include="dialogs\UsenetArchiveEntryDialog.h" />
     <QtMoc Include="dialogs\UsenetDetailsDialog.h" />
     <QtMoc Include="controls\ClientListModel.h" />
@@ -642,6 +645,7 @@
     <None Include="..\..\resources\icons\emuleCollView.ico" />
     <None Include="..\..\resources\icons\emuleCollectionFileType.ico" />
     <QtRcc Include="..\..\resources\emuleqt.qrc" />
+    <QtRcc Include="..\..\resources\flags.qrc" />
     <None Include="..\..\resources\icons\italic.ico" />
     <None Include="..\..\resources\images\mule_wiz_hdr.gif" />
     <None Include="..\..\resources\icons\resetformat.ico" />

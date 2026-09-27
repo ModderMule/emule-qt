@@ -22,6 +22,7 @@ private slots:
     void fileLink_withHostnameSources();
     void fileLink_withIpSources();
     void fileLink_toLink();
+    void fileLinkHelper_encodesTheName();
 
     // IPv6 / source-hint parsing
     void fileLink_ipv6Source_bracketed();
@@ -123,6 +124,21 @@ void tst_ED2KLink::fileLink_basic()
     QVERIFY(md4equ(link.hash.data(), kTestHashBytes.data()));
     QVERIFY(!link.hasValidAICHHash);
     QVERIFY(link.hostnameSources.empty());
+}
+
+void tst_ED2KLink::fileLinkHelper_encodesTheName()
+{
+    // '|' would split the link, '%' would decode into a different name
+    const QString name = QStringLiteral("a|b 100%25 ü.mkv");
+    const QString uri = ed2kFileLink(name, 12345, kTestHash);
+    QCOMPARE(uri, QStringLiteral("ed2k://|file|a_b%20100%2525%20%C3%BC.mkv|12345|%1|/").arg(kTestHash));
+
+    auto result = parseED2KLink(uri);
+    QVERIFY(result.has_value());
+    const auto& link = std::get<ED2KFileLink>(*result);
+    QCOMPARE(link.name, QStringLiteral("a_b 100%25 ü.mkv"));   // only the invalid '|' changes
+    QCOMPARE(link.size, uint64{12345});
+    QVERIFY(md4equ(link.hash.data(), kTestHashBytes.data()));
 }
 
 void tst_ED2KLink::fileLink_withPartHashes()

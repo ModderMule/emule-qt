@@ -20,4 +20,9 @@ namespace eMule {
 /// active filter apply.
 void showFindInListDialog(QWidget* parent, QAbstractItemView* view);
 
+/// F3 / Shift+F3: repeat the view's last find from the row after (or before)
+/// the current one, wrapping around. With no earlier find on @p view it opens
+/// the dialog instead — MFC CMuleListCtrl::OnFindNext does the same.
+void findNextInList(QWidget* parent, QAbstractItemView* view, bool backwards = false);
+
 } // namespace eMule
