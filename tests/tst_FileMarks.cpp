@@ -31,6 +31,8 @@ private slots:
     void theModelDecoratesOnlyTheNameColumn();
     void theTooltipTellsTheTwoKindsOfWrongApart();
     void theSharedListDrawsTheSameFakeMarkAsTheDownloadList();
+    void aNetworkBadgeFollowsTheTypeIcon();
+    void anEmptyBadgeKeepsTheSlot();
 
 private:
     [[nodiscard]] static QImage renderOf(const QIcon& icon);
@@ -225,6 +227,48 @@ void tst_FileMarks::theSharedListDrawsTheSameFakeMarkAsTheDownloadList()
     QVERIFY(fromDownloads.contains(QStringLiteral("contents are MP4")));
     QCOMPARE(fromShared.section(QStringLiteral("\n\n"), 1),
              fromDownloads.section(QStringLiteral("\n\n"), 1));
+}
+
+void tst_FileMarks::aNetworkBadgeFollowsTheTypeIcon()
+{
+    // An eNode torrent/Usenet row keeps the type icon every eD2K row has, and the
+    // network mark follows it, so a torrent .mp4 still reads as a video.
+    const QString torrent = QStringLiteral(":/icons/Torrent.ico");
+    const QString usenet = QStringLiteral(":/icons/Usenet.ico");
+    const QIcon plain = fileMarksIcon(QStringLiteral("Video"), false, false, FileMark::None);
+    const QIcon videoTorrent = fileMarksIcon(QStringLiteral("Video"), false, false,
+                                             FileMark::None, torrent);
+    const QIcon audioTorrent = fileMarksIcon(QStringLiteral("Audio"), false, false,
+                                             FileMark::None, torrent);
+    const QIcon videoUsenet = fileMarksIcon(QStringLiteral("Video"), false, false,
+                                            FileMark::None, usenet);
+
+    const QImage vt = renderOf(videoTorrent);
+    QVERIFY(renderOf(plain) != vt);
+    QVERIFY(vt != renderOf(audioTorrent));   // the type icon survives the badge
+    QVERIFY(vt != renderOf(videoUsenet));    // and the two networks differ
+
+    // Type icon, 2 px gap, badge: 34 px wide, drawn at a device pixel ratio of 2.
+    QCOMPARE(videoTorrent.availableSizes(), QList<QSize>{QSize(68, 32)});
+}
+
+void tst_FileMarks::anEmptyBadgeKeepsTheSlot()
+{
+    // An eD2K row beside torrent/Usenet rows keeps the badge width, so names line up
+    const QIcon blank = fileMarksIcon(QStringLiteral("Video"), false, false, FileMark::None,
+                                      QString(kEmptyBadge));
+    const QIcon torrent = fileMarksIcon(QStringLiteral("Video"), false, false, FileMark::None,
+                                        QStringLiteral(":/icons/Torrent.ico"));
+    QCOMPARE(blank.availableSizes(), torrent.availableSizes());
+
+    // Blank slot: nothing drawn right of the type icon
+    const QImage b = renderOf(blank);
+    QVERIFY(b != renderOf(torrent));
+    bool empty = true;
+    for (int y = 0; y < 32 && empty; ++y)
+        for (int x = 36; x < 68 && empty; ++x)
+            empty = qAlpha(b.pixel(x, y)) == 0;
+    QVERIFY(empty);
 }
 
 QTEST_MAIN(tst_FileMarks)

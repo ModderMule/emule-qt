@@ -229,6 +229,7 @@
     <ClCompile Include="dialogs\CoreConnectDialog.cpp" />
     <ClCompile Include="controls\CategoryFilterProxy.cpp" />
     <ClCompile Include="controls\CategoryTabBar.cpp" />
+    <ClCompile Include="controls\FitTextTabBar.cpp" />
     <ClCompile Include="controls\DownloadListModel.cpp" />
     <ClCompile Include="controls\DownloadProgressDelegate.cpp" />
     <ClCompile Include="controls\UsenetFileCheckList.cpp" />
@@ -303,6 +304,7 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="controls\AbstractListView.h" />
     <ClInclude Include="controls\SortableItems.h" />
+    <ClInclude Include="controls\FitTextTabBar.h" />
     <ClInclude Include="controls\PartBarPainter.h" />
     <ClInclude Include="controls\AbstractTableModel.h" />
     <ClInclude Include="controls\TrayMeterIcon.h" />

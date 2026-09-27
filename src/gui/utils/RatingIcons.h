@@ -61,13 +61,22 @@ enum class FileMark : int {
 /// the rating indicator is switched on, since your own note is not an opinion the
 /// preference governs. Only the shared list has anything to say here — a download or
 /// a search hit is not a file you publish.
-[[nodiscard]] QIcon fileMarksIcon(const QString& fileType, bool containerSuspect,
-                                  bool ownComment, FileMark mark);
+///
+/// @p badgePath is an icon drawn right after the type icon — the search list's
+/// torrent/Usenet network mark for eNode meta rows — so the row still shows what
+/// kind of file it is. Empty draws nothing; kEmptyBadge keeps the slot blank so
+/// names line up with rows that have a badge (as the country flag slot does).
+inline constexpr QLatin1StringView kEmptyBadge{"-"};
 
-/// Same, over an arbitrary base icon (e.g. a network badge). @p baseKey names
-/// the base for the composite cache and must differ from every file type.
+[[nodiscard]] QIcon fileMarksIcon(const QString& fileType, bool containerSuspect,
+                                  bool ownComment, FileMark mark,
+                                  const QString& badgePath = {});
+
+/// Same, over an arbitrary base icon. @p baseKey names the base for the composite
+/// cache and must differ from every file type.
 [[nodiscard]] QIcon fileMarksIcon(const QIcon& base, const QString& baseKey,
-                                  bool containerSuspect, bool ownComment, FileMark mark);
+                                  bool containerSuspect, bool ownComment, FileMark mark,
+                                  const QString& badgePath = {});
 
 /// The lines that explain those marks, for the lists that draw them. Empty when the
 /// row has nothing to add, otherwise each line starts with its own newline so a

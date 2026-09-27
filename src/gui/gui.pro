@@ -90,6 +90,7 @@ SOURCES += \
     controls/ContentScrollArea.cpp \
     controls/CategoryFilterProxy.cpp \
     controls/CategoryTabBar.cpp \
+    controls/FitTextTabBar.cpp \
     controls/DownloadListModel.cpp \
     controls/DownloadProgressDelegate.cpp \
     controls/UsenetFileCheckList.cpp \
@@ -162,6 +163,7 @@ HEADERS += \
     controls/ContentScrollArea.h \
     controls/CategoryFilterProxy.h \
     controls/CategoryTabBar.h \
+    controls/FitTextTabBar.h \
     controls/DownloadListModel.h \
     controls/DownloadProgressDelegate.h \
     controls/PartBarPainter.h \

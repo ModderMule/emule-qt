@@ -6,6 +6,7 @@
 
 #include "app/IpcClient.h"
 #include "app/UiState.h"
+#include "controls/FitTextTabBar.h"
 #include "controls/FriendListModel.h"
 #include "dialogs/AddFriendDialog.h"
 #include "dialogs/DetailDialog.h"
@@ -328,9 +329,8 @@ void MessagesPanel::setupUi()
     rightLayout->addLayout(messagesHeader);
 
     // Per-friend chat tab bar (hidden when no chats are open)
-    m_chatTabBar = new QTabBar(rightWidget);
+    m_chatTabBar = new FitTextTabBar(rightWidget);
     m_chatTabBar->setTabsClosable(true);
-    m_chatTabBar->setExpanding(false);
     m_chatTabBar->setVisible(false);
     connect(m_chatTabBar, &QTabBar::currentChanged,
             this, &MessagesPanel::onChatTabChanged);

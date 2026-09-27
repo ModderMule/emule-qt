@@ -108,6 +108,10 @@ public:
     /// Set the download model for preview-eligibility checks.
     void setDownloadModel(DownloadListModel* model) { m_downloadModel = model; }
 
+    /// Write the ED2K/Kad tabs to StoredSearches.json (or remove it when off/empty).
+    /// Called on close, not only from the destructor: a killed GUI never gets there.
+    void saveSearches();
+
 private slots:
     void onStartSearch();
     void onCancelSearch();
@@ -205,8 +209,9 @@ private:
     [[nodiscard]] SearchTab* currentTab();
     [[nodiscard]] QString saveSelection() const;
     void restoreSelection(const QString& key);
-    void saveSearches();
     void loadSearches();
+    /// saveSearches() at most every 2 s, after results or tabs changed
+    void scheduleSaveSearches();
 
     /// Append @p tab with its tab-bar entry; returns the new tab index.
     int addResultTab(SearchTab tab);
@@ -312,6 +317,10 @@ private:
     /// 1262-result list in ~10s: 363 MB of CBOR and 1500 model resets, which
     /// starved every other reply on the socket for over a second at a time.
     QTimer* m_resultRefreshTimer = nullptr;
+    QTimer* m_saveTimer = nullptr;
+    /// saveSearches() is a no-op until loadSearches() ran, or an early quit would
+    /// overwrite the stored tabs with an empty list.
+    bool m_searchesLoaded = false;
 
     /// Search IDs that have pending pushes, drained by m_resultRefreshTimer.
     QSet<uint32_t> m_dirtySearchIDs;

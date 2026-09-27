@@ -67,6 +67,9 @@
     <ClCompile Include="controls\CategoryTabBar.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="controls\FitTextTabBar.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="controls\DownloadListModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -358,6 +361,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="controls\KnownTypeStyle.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="controls\FitTextTabBar.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\ColorUtils.h">

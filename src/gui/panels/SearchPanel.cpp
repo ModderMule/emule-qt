@@ -8,11 +8,14 @@
 #include "app/UiState.h"
 #include "controls/AbstractListView.h"
 #include "controls/DownloadListModel.h"
+#include "controls/FitTextTabBar.h"
 #include "controls/IndexerResultsModel.h"
 #include "controls/SearchResultsModel.h"
 #include "dialogs/FindInListDialog.h"
+#include "utils/CountryFlags.h"
 #include "utils/IpcFeedback.h"
 #include "utils/ListActivation.h"
+#include "utils/Log.h"
 #include "utils/MenuUtils.h"
 #include "utils/MetaResultActions.h"
 #include "utils/PreviewLauncher.h"
@@ -190,10 +193,9 @@ void SearchPanel::setupUi()
     mainLayout->addWidget(createSearchBar());
 
     // Tab bar for multiple searches
-    m_tabBar = new QTabBar(this);
+    // Tabs fit their full "title (count)"; scroll arrows once they overflow
+    m_tabBar = new FitTextTabBar(this);
     m_tabBar->setTabsClosable(true);
-    m_tabBar->setExpanding(true);
-    m_tabBar->setElideMode(Qt::ElideRight);
     m_tabBar->setVisible(false);
     connect(m_tabBar, &QTabBar::currentChanged, this, &SearchPanel::onTabChanged);
     connect(m_tabBar, &QTabBar::tabCloseRequested, this, &SearchPanel::onTabCloseRequested);
@@ -207,6 +209,9 @@ void SearchPanel::setupUi()
     m_resultView->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_resultView->setContextMenuPolicy(Qt::CustomContextMenu);
     m_resultView->setAllColumnsShowFocus(true);
+    // Type icon + full-size network badge / marks, not squeezed into 16 px
+    m_resultView->setItemDelegateForColumn(SearchResultsModel::ColFileName,
+                                           new FlagDecorationDelegate(m_resultView));
     connect(m_resultView, &QTreeView::customContextMenuRequested, this, &SearchPanel::onResultContextMenu);
     connect(m_resultView, &QTreeView::doubleClicked, this, &SearchPanel::onResultDoubleClicked);
 
@@ -1215,6 +1220,7 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
 
                 if (!selKey.isEmpty())
                     restoreSelection(selKey);
+                scheduleSaveSearches();
                 break;
             }
         }
@@ -1448,6 +1454,7 @@ void SearchPanel::closeSearch(int tabIndex)
         m_statusLabel->clear();
         m_cancelBtn->setEnabled(false);
     }
+    scheduleSaveSearches();
 }
 
 // ---------------------------------------------------------------------------
@@ -1481,6 +1488,7 @@ void SearchPanel::closeAllSearches()
     m_resultView->setModel(nullptr);
     m_statusLabel->clear();
     m_cancelBtn->setEnabled(false);
+    scheduleSaveSearches();
 }
 
 // ---------------------------------------------------------------------------
@@ -1640,6 +1648,8 @@ void SearchPanel::addToSearchHistory(const QString& expression)
 
 void SearchPanel::saveSearches()
 {
+    if (!m_searchesLoaded)
+        return;
     const QString path = thePrefs.configDir() + QStringLiteral("/StoredSearches.json");
 
     if (!thePrefs.storeSearches() || m_tabs.empty()) {
@@ -1664,7 +1674,9 @@ void SearchPanel::saveSearches()
         QJsonArray resultsArr;
         for (int r = 0; r < tab.model->resultCount(); ++r) {
             const auto* row = tab.model->resultAt(r);
-            if (!row) continue;
+            // Torrent/Usenet rows download through the live search (by searchID),
+            // gone after a restart, like indexer tabs; they'd come back as eD2K rows.
+            if (!row || row->isMeta()) continue;
             QJsonObject rowObj;
             rowObj[QStringLiteral("hash")]                = row->hash;
             rowObj[QStringLiteral("fileName")]            = row->fileName;
@@ -1693,12 +1705,15 @@ void SearchPanel::saveSearches()
     root[QStringLiteral("searches")] = searchesArr;
 
     QFile file(path);
-    if (file.open(QIODevice::WriteOnly))
-        file.write(QJsonDocument(root).toJson(QJsonDocument::Compact));
+    if (file.open(QIODevice::WriteOnly) && file.write(QJsonDocument(root).toJson(QJsonDocument::Compact)) >= 0)
+        logInfo(QStringLiteral("Stored %1 searches to %2").arg(searchesArr.size()).arg(path));
+    else
+        logWarning(QStringLiteral("Could not store searches to %1: %2").arg(path, file.errorString()));
 }
 
 void SearchPanel::loadSearches()
 {
+    m_searchesLoaded = true;
     if (!thePrefs.storeSearches())
         return;
 
@@ -1762,6 +1777,19 @@ void SearchPanel::loadSearches()
         m_tabBar->setVisible(true);
         m_tabBar->setCurrentIndex(0);
     }
+}
+
+void SearchPanel::scheduleSaveSearches()
+{
+    if (!m_saveTimer) {
+        m_saveTimer = new QTimer(this);
+        m_saveTimer->setSingleShot(true);
+        m_saveTimer->setInterval(2000);
+        connect(m_saveTimer, &QTimer::timeout, this, &SearchPanel::saveSearches);
+    }
+    // Not restarted: a running search pushes steadily and must still get written
+    if (!m_saveTimer->isActive())
+        m_saveTimer->start();
 }
 
 // ---------------------------------------------------------------------------
@@ -2088,6 +2116,7 @@ void SearchPanel::removeSelectedResults()
         tab->model->removeRow(r);
     m_tabBar->setTabText(m_tabBar->currentIndex(),
         QStringLiteral("%1 (%2)").arg(tab->title).arg(tab->model->resultCount()));
+    scheduleSaveSearches();
 }
 
 void SearchPanel::copySelectedEd2kLinks()

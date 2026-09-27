@@ -160,17 +160,17 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
         // No container mark and no own-comment overlay: these files are on other
         // people's disks, so we have neither their bytes nor a comment to publish.
         // MFC's search list registers the overlay image and then never draws it.
-        // eNode torrent/Usenet rows show their network (the toolbar icons) instead
-        if (r.isUsenet()) {
-            static const QIcon usenet(QStringLiteral(":/icons/Usenet.ico"));
-            return fileMarksIcon(usenet, QStringLiteral("net:usenet"), false, false, mark);
-        }
-        if (r.isTorrent()) {
-            static const QIcon torrent(QStringLiteral(":/icons/Torrent.ico"));
-            return fileMarksIcon(torrent, QStringLiteral("net:torrent"), false, false, mark);
-        }
+        // eNode torrent/Usenet rows keep their type icon and add their network
+        // (the toolbar icons) right after it; eD2K rows beside them keep the slot blank.
+        QString network;
+        if (r.isUsenet())
+            network = QStringLiteral(":/icons/Usenet.ico");
+        else if (r.isTorrent())
+            network = QStringLiteral(":/icons/Torrent.ico");
+        else if (m_hasMeta)
+            network = kEmptyBadge;
         return fileMarksIcon(r.fileType, /*containerSuspect*/ false,
-                             /*ownComment*/ false, mark);
+                             /*ownComment*/ false, mark, network);
     }
 
     // Raw values for sorting
@@ -261,6 +261,12 @@ void SearchResultsModel::updateKnownTypes(const QHash<QString, int>& typesByHash
     }
 }
 
+void SearchResultsModel::setResults(std::vector<SearchResultRow> results)
+{
+    setRows(std::move(results));
+    updateHasMeta();
+}
+
 void SearchResultsModel::removeRow(int row)
 {
     if (row < 0 || row >= static_cast<int>(m_rows.size()))
@@ -268,6 +274,19 @@ void SearchResultsModel::removeRow(int row)
     beginRemoveRows({}, row, row);
     m_rows.erase(m_rows.begin() + row);
     endRemoveRows();
+    updateHasMeta();
+}
+
+void SearchResultsModel::updateHasMeta()
+{
+    const bool hasMeta = std::ranges::any_of(m_rows, &SearchResultRow::isMeta);
+    if (hasMeta == m_hasMeta)
+        return;
+    m_hasMeta = hasMeta;
+    // The eD2K rows gain or lose their blank badge slot
+    if (!m_rows.empty())
+        emit dataChanged(index(0, ColFileName), index(rowCount() - 1, ColFileName),
+                         {Qt::DecorationRole});
 }
 
 } // namespace eMule

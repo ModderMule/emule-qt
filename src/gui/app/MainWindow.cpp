@@ -557,6 +557,8 @@ void MainWindow::closeEvent(QCloseEvent* event)
     // another way (crash, kill, logout) would otherwise lose the whole session's
     // layout — column widths above all.
     theUiState.save();
+    if (m_searchPanel)
+        m_searchPanel->saveSearches();
     QMainWindow::closeEvent(event);
     // Explicit quit — on macOS the QSystemTrayIcon keeps the event loop alive
     // even after the last window is closed, preventing aboutToQuit from firing.

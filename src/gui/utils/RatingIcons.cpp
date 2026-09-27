@@ -44,6 +44,8 @@ QString markIconPath(FileMark mark)
 
 void drawInto(QPainter& painter, const QIcon& icon, int x, int dpr)
 {
+    if (icon.isNull())
+        return;   // a reserved slot: keeps its width, draws nothing
     const QPixmap pm = icon.pixmap(QSize(kMarkPx, kMarkPx), dpr);
     if (!pm.isNull())
         painter.drawPixmap(QRect(x, 0, kMarkPx, kMarkPx), pm);
@@ -89,20 +91,21 @@ FileMark ratingMark(bool hasComment, int userRating)
 }
 
 QIcon fileMarksIcon(const QString& fileType, bool containerSuspect, bool ownComment,
-                    FileMark mark)
+                    FileMark mark, const QString& badgePath)
 {
-    return fileMarksIcon(fileTypeIcon(fileType), fileType, containerSuspect, ownComment, mark);
+    return fileMarksIcon(fileTypeIcon(fileType), fileType, containerSuspect, ownComment, mark,
+                         badgePath);
 }
 
 QIcon fileMarksIcon(const QIcon& base, const QString& baseKey, bool containerSuspect,
-                    bool ownComment, FileMark mark)
+                    bool ownComment, FileMark mark, const QString& badgePath)
 {
     // A row with nothing to add is the common case; hand back the plain base
     // icon rather than a one-cell composite of it.
-    if (!containerSuspect && !ownComment && mark == FileMark::None)
+    if (!containerSuspect && !ownComment && mark == FileMark::None && badgePath.isEmpty())
         return base;
 
-    const QString key = baseKey + QLatin1Char('|')
+    const QString key = baseKey + QLatin1Char('|') + badgePath + QLatin1Char('|')
                       + QLatin1Char(containerSuspect ? '1' : '0')
                       + QLatin1Char(ownComment ? '1' : '0')
                       + QString::number(static_cast<int>(mark));
@@ -112,6 +115,8 @@ QIcon fileMarksIcon(const QIcon& base, const QString& baseKey, bool containerSus
         return *it;
 
     QStringList marks;
+    if (!badgePath.isEmpty())
+        marks << badgePath;   // right after the type icon, before any verdict on the file
     if (containerSuspect)
         marks << QStringLiteral(":/icons/RatingBad.ico");   // the red exclamation
     if (const QString ratingPath = markIconPath(mark); !ratingPath.isEmpty())
@@ -138,7 +143,7 @@ QIcon fileMarksIcon(const QIcon& base, const QString& baseKey, bool containerSus
         int x = kMarkPx;
         for (const QString& path : marks) {
             x += kGapPx;
-            drawInto(painter, QIcon(path), x, kDpr);
+            drawInto(painter, path == kEmptyBadge ? QIcon() : QIcon(path), x, kDpr);
             x += kMarkPx;
         }
     }

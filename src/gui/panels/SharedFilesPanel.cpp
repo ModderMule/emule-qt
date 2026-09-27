@@ -14,6 +14,7 @@
 #include "dialogs/FindInListDialog.h"
 #include "dialogs/MediaInfoPanel.h"
 #include "prefs/Preferences.h"
+#include "utils/CountryFlags.h"
 #include "utils/IpcFeedback.h"
 #include "utils/ListActivation.h"
 #include "utils/Log.h"
@@ -644,6 +645,9 @@ QWidget* SharedFilesPanel::createTopSection()
 
     m_fileView->setItemDelegateForColumn(SharedFilesModel::ColSharedParts,
                                           new SharedPartsDelegate(m_fileView));
+    // Type icon + rating/container marks at full size, not squeezed into 16 px
+    m_fileView->setItemDelegateForColumn(SharedFilesModel::ColFileName,
+                                         new FlagDecorationDelegate(m_fileView));
 
     rightLayout->addWidget(m_fileView, 1);
     m_horzSplitter->addWidget(rightWidget);

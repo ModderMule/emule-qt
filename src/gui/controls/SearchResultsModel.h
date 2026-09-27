@@ -78,7 +78,7 @@ public:
                                       int role = Qt::DisplayRole) const override;
 
     /// Replace all results with a new snapshot.
-    void setResults(std::vector<SearchResultRow> results) { setRows(std::move(results)); }
+    void setResults(std::vector<SearchResultRow> results);
 
     /// Remove a single row by source-model row index.
     void removeRow(int row);
@@ -99,6 +99,12 @@ public:
 
 protected:
     [[nodiscard]] int columnCountValue() const override { return ColCount; }
+
+private:
+    void updateHasMeta();
+
+    /// Any torrent/Usenet row: eD2K rows then reserve the network badge slot.
+    bool m_hasMeta = false;
 };
 
 } // namespace eMule

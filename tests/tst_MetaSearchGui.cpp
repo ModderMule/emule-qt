@@ -73,7 +73,7 @@ class tst_MetaSearchGui : public QObject {
     Q_OBJECT
 
 private slots:
-    void networkIconReplacesFileType();
+    void networkBadgeFollowsFileType();
     void ed2kLinkRefusedForMetaRows();
     void magnetLinkForMetaRows();
     void loginDialog_authRequired();
@@ -82,7 +82,7 @@ private slots:
     void loginDialog_acceptsWhenActive();
 };
 
-void tst_MetaSearchGui::networkIconReplacesFileType()
+void tst_MetaSearchGui::networkBadgeFollowsFileType()
 {
     SearchResultsModel model;
     model.setResults({row(QStringLiteral("Ubuntu.Server.iso"), 0, QStringLiteral("Iso")),
@@ -94,12 +94,21 @@ void tst_MetaSearchGui::networkIconReplacesFileType()
     };
     QVERIFY(!icon(1).isNull());
     QVERIFY(!icon(2).isNull());
-    const QImage ed2k = icon(0).pixmap(16).toImage();
-    const QImage torrent = icon(1).pixmap(16).toImage();
-    const QImage usenet = icon(2).pixmap(16).toImage();
+    // Type icon + own badge slot; the eD2K row keeps a blank one so names line up
+    const QList<QSize> wide{QSize(68, 32)};
+    QCOMPARE(icon(0).availableSizes(), wide);
+    QCOMPARE(icon(1).availableSizes(), wide);
+    QCOMPARE(icon(2).availableSizes(), wide);
+    const QImage ed2k = icon(0).pixmap(QSize(34, 16), 2).toImage();
+    const QImage torrent = icon(1).pixmap(QSize(34, 16), 2).toImage();
+    const QImage usenet = icon(2).pixmap(QSize(34, 16), 2).toImage();
     QVERIFY(torrent != usenet);
     QVERIFY(torrent != ed2k);
-    QCOMPARE(usenet, QIcon(QStringLiteral(":/icons/Usenet.ico")).pixmap(16).toImage());
+
+    // Without meta rows an eD2K row is back to the plain type icon
+    model.removeRow(2);
+    model.removeRow(1);
+    QVERIFY(icon(0).availableSizes() != wide);
 
     QTreeView view;
     view.setRootIsDecorated(false);
