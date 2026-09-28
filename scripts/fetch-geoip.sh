@@ -8,8 +8,10 @@ set -euo pipefail
 # GeoIpUpdater adopts a bundled copy when its build is newer than the live one
 # (docs/IP2Country.md). data/config/GeoLite2-Country.mmdb is gitignored.
 #
+# Runs locally from scripts/publish-release.sh, which uploads the result for
+# release.yml -- CI has no MaxMind credentials.
 # Credentials, never in the repo:
-#   MAXMIND_ACCOUNT_ID, MAXMIND_LICENSE_KEY  from the environment (CI secrets),
+#   MAXMIND_ACCOUNT_ID, MAXMIND_LICENSE_KEY  from the environment,
 #   falling back to the project-root .env (gitignored).
 # The key goes in HTTP Basic auth only -- never in a URL or on stdout. curl does
 # not forward it on MaxMind's redirect to the storage host (no --location-trusted);

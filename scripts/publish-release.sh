@@ -15,6 +15,12 @@ set -euo pipefail
 # -- setting "latest", "date" and pointing "releaseNotes" at the GitHub release
 # page for the tag just created -- and rsyncs it to the webserver.
 #
+# Before tagging it also downloads the GeoLite2-Country database via
+# scripts/fetch-geoip.sh (MAXMIND_ACCOUNT_ID / MAXMIND_LICENSE_KEY in .env) and
+# rsyncs it next to the manifest; release.yml's geoip job fetches it from
+# https://emule-qt.org/pub/ and checks it against the SHA-256 the tag message
+# carries. CI has no MaxMind credentials.
+#
 # Tags use the vMAJOR.MINOR.PATCH form to match existing tags (v0.1.6, ...).
 #
 # Requires these keys in the project-root .env (gitignored):
@@ -222,7 +228,8 @@ else
   else
     echo "  commit   : (none -- tagging existing HEAD at version ${CURRENT})"
   fi
-  echo "  tag      : ${TAG}  (annotated)"
+  echo "  geoip    : scripts/fetch-geoip.sh -> rsync to ${PUBLISH_REMOTE_PATH}"
+  echo "  tag      : ${TAG}  (annotated, carries the GeoLite2 SHA-256)"
   echo "  push     : ${REMOTE} ${BRANCH}  and  ${REMOTE} ${TAG}"
 fi
 echo "  manifest : ${PUBLISH_LOCAL_JSON}"
@@ -240,13 +247,42 @@ if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
   exit 1
 fi
 
+# --- GeoLite2 database --------------------------------------------------------
+# Fetched here because CI has no MaxMind credentials. Uploaded before the tag
+# push: release.yml's geoip job downloads it within seconds of the push.
+abort_before_tag() {
+  echo "error: $1 -- nothing committed, tagged or pushed" >&2
+  if [[ "$BUMPED" -eq 1 ]]; then
+    echo "reverting version files" >&2
+    git checkout -- .
+  fi
+  exit 1
+}
+
+GEOIP_SHA=""
+if [[ "$PUBLISH_ONLY" -eq 0 ]]; then
+  GEOIP_DB="$ROOT/data/config/GeoLite2-Country.mmdb"
+  scripts/fetch-geoip.sh || abort_before_tag "GeoLite2 download failed"
+  GEOIP_SHA="$(shasum -a 256 "$GEOIP_DB" | awk '{print $1}')"
+  [[ "$GEOIP_SHA" =~ ^[0-9a-f]{64}$ ]] || abort_before_tag "could not hash ${GEOIP_DB}"
+
+  echo "Uploading GeoLite2-Country.mmdb (sha256 ${GEOIP_SHA}) ..."
+  if ! SSHPASS="$PUBLISH_SSH_PASS" rsync -avz \
+         -e 'sshpass -e ssh -o StrictHostKeyChecking=accept-new' \
+         "$GEOIP_DB" \
+         "${PUBLISH_SSH_USER}@${PUBLISH_SSH_HOST}:${PUBLISH_REMOTE_PATH}"; then
+    abort_before_tag "GeoLite2 upload failed"
+  fi
+fi
+
 # --- commit / tag / push ----------------------------------------------------
 if [[ "$PUBLISH_ONLY" -eq 0 ]]; then
   if [[ "$BUMPED" -eq 1 ]]; then
     git add -A
     git commit -m "release: ${TAG}"
   fi
-  git tag -a "${TAG}" -m "Release ${TAG}"
+  # release.yml's geoip job reads this line to verify the hosted database
+  git tag -a "${TAG}" -m "Release ${TAG}" -m "GeoLite2-Country-SHA256: ${GEOIP_SHA}"
   git push "${REMOTE}" "${BRANCH}"
   git push "${REMOTE}" "${TAG}"
 

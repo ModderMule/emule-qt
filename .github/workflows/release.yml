@@ -63,27 +63,52 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "OK: tag ${GITHUB_REF_NAME} matches project version ${version}"
 
-  # One GeoLite2-Country download per release, shared by all three platforms: they
-  # ship the same file, and it costs one of the account's daily GeoLite downloads.
-  # Needs the MAXMIND_ACCOUNT_ID / MAXMIND_LICENSE_KEY repo secrets; without them
-  # the release fails rather than silently shipping no database.
+  # One GeoLite2-Country database per release, shared by all three platforms.
+  # CI has no MaxMind credentials: scripts/publish-release.sh downloads it
+  # locally, rsyncs it to https://emule-qt.org/pub/ before pushing the tag and
+  # writes its SHA-256 into the annotated tag message. This job fetches it and
+  # fails on a mismatch rather than silently shipping a stale/foreign database.
   geoip:
     name: Fetch GeoLite2-Country
     needs: guard
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.ref_name }}
+      GEOIP_URL: https://emule-qt.org/pub/GeoLite2-Country.mmdb
     steps:
-      - name: Checkout (script only)
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 1
-          sparse-checkout: scripts/fetch-geoip.sh
-          sparse-checkout-cone-mode: false
+      # Direct tag fetch instead of actions/checkout, which rewrites annotated
+      # tags as lightweight ones and so loses the message.
+      - name: Read expected SHA-256 from the tag
+        id: tag
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git -c "http.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)" \
+            fetch -q --depth=1 origin "+refs/tags/${TAG}:refs/tags/${TAG}"
+          sha="$(git for-each-ref --format='%(contents)' "refs/tags/${TAG}" \
+                 | sed -n 's/^GeoLite2-Country-SHA256: *\([0-9a-f]\{64\}\) *$/\1/p' | head -n1)"
+          if [ -z "$sha" ]; then
+            echo "::error::Tag ${TAG} has no 'GeoLite2-Country-SHA256:' line -- create release tags with scripts/publish-release.sh"
+            exit 1
+          fi
+          echo "sha256=${sha}" >> "$GITHUB_OUTPUT"
 
       - name: Download
         env:
-          MAXMIND_ACCOUNT_ID: ${{ secrets.MAXMIND_ACCOUNT_ID }}
-          MAXMIND_LICENSE_KEY: ${{ secrets.MAXMIND_LICENSE_KEY }}
-        run: scripts/fetch-geoip.sh geoip
+          EXPECTED: ${{ steps.tag.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          mkdir -p geoip
+          curl -fsSL --retry 3 --retry-delay 5 -o geoip/GeoLite2-Country.mmdb "$GEOIP_URL"
+          actual="$(sha256sum geoip/GeoLite2-Country.mmdb | awk '{print $1}')"
+          if [ "$actual" != "$EXPECTED" ]; then
+            echo "::error::${GEOIP_URL} is not the database tagged in ${TAG} (expected ${EXPECTED}, got ${actual}). A later publish may have replaced it -- re-upload the matching file."
+            exit 1
+          fi
+          echo "OK: GeoLite2-Country.mmdb sha256 ${actual}"
 
       - name: Upload
         uses: actions/upload-artifact@v6
