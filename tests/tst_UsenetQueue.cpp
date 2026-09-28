@@ -268,6 +268,8 @@ private slots:
     void theDuplicateIndexSurvivesARestart();
     void aRefusalSentenceCarriesNoEmDash();
     void aReleaseRemovedFromTheQueueIsStillRecognisedWhenReAdded();
+    void clearCompletedDropsOnlyCompleteItems();
+    void autoClearDropsAFinishedReleaseAfterItsListeners();
     void forcingAnAddOverridesTheHistoryButNeverTheLiveQueue();
     void aForcedReAddLeavesTheFinishedRowAndStillRefusesAThird();
     void anAutomaticAddOfSomethingInTheHistoryIsTerminalNotRetryable();
@@ -313,6 +315,8 @@ private slots:
     void theDiskNeverOverwritesAnAllowanceItDidNotWrite();
     void theFloorOutranksAProxyTheRoundNeverReaches();
     void aCheckingItemNeverGoesSilentWhenTheProxyComesBack();
+    void doneEncodedBytesCountsDoneArticlesOfWantedFiles();
+    void progressCountsTheBytesOfAnArticleStillInFlight();
 };
 
 void tst_UsenetQueue::downloadsAnNzbByteIdentically()
@@ -1063,6 +1067,103 @@ void tst_UsenetQueue::aReleaseRemovedFromTheQueueIsStillRecognisedWhenReAdded()
     QVERIFY(queue.addNzb(nzb, QStringLiteral("gone"), error, {}, &outcome).isEmpty());
     QCOMPARE(outcome, UsenetAddOutcome::AlreadyDownloaded);
     QVERIFY(queue.items().empty());
+}
+
+void tst_UsenetQueue::clearCompletedDropsOnlyCompleteItems()
+{
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setRememberDownloadedFiles(true);
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(1119, 1)}, 0);
+
+    const auto add = [&](const QString& name, UsenetItemStatus status) {
+        QString error;
+        // Own message ids, or the duplicate check refuses the next add.
+        const QString id = queue.addNzb(makeNzb(name, 3, 1700000000, name), name, error);
+        if (!id.isEmpty())
+            const_cast<UsenetQueueItem*>(queue.findItem(id))->status = status;
+        return id;
+    };
+    const QString done1 = add(QStringLiteral("a.bin"), UsenetItemStatus::Complete);
+    const QString failed = add(QStringLiteral("b.bin"), UsenetItemStatus::Failed);
+    const QString paused = add(QStringLiteral("c.bin"), UsenetItemStatus::Paused);
+    const QString done2 = add(QStringLiteral("d.bin"), UsenetItemStatus::Complete);
+    const QString queued = add(QStringLiteral("e.bin"), UsenetItemStatus::Queued);
+    for (const QString& id : {done1, failed, paused, done2, queued})
+        QVERIFY(!id.isEmpty());
+
+    QSignalSpy removed(&queue, &UsenetQueue::itemRemoved);
+    QCOMPARE(queue.clearCompleted(), 2);
+    QCOMPARE(removed.size(), 2);
+    QVERIFY(!queue.findItem(done1));
+    QVERIFY(!queue.findItem(done2));
+    QVERIFY(queue.findItem(failed));
+    QVERIFY(queue.findItem(paused));
+    QVERIFY(queue.findItem(queued));
+
+    // Cleared, not cancelled: the history still calls it downloaded.
+    QString error;
+    UsenetAddOutcome outcome = UsenetAddOutcome::Added;
+    QVERIFY(queue.addNzb(makeNzb(QStringLiteral("a.bin"), 3, 1700000000, QStringLiteral("a.bin")),
+                         QStringLiteral("a.bin"),
+                         error, {}, &outcome).isEmpty());
+    QCOMPARE(outcome, UsenetAddOutcome::AlreadyDownloaded);
+
+    QCOMPARE(queue.clearCompleted(), 0);
+}
+
+void tst_UsenetQueue::autoClearDropsAFinishedReleaseAfterItsListeners()
+{
+    const QByteArray whole = payload(kPartSize * 2);
+
+    FakeNntpServer server;
+    server.addGroup(QStringLiteral("alt.binaries.test"), 2, 1, 2);
+    for (int p = 1; p <= 2; ++p)
+        server.addArticle(messageIdFor(p), makeArticle(whole, p, 2,
+                                                       QStringLiteral("auto.bin")));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+    thePrefs.setAutoRemoveFinishedDownloads(true);
+    const auto restore = qScopeGuard([] { thePrefs.setAutoRemoveFinishedDownloads(false); });
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 2)}, 60);
+    queue.start();
+
+    // A finish listener must still find the item in the list.
+    bool listedAtFinish = false;
+    connect(&queue, &UsenetQueue::itemFinished, this, [&](const QString& id) {
+        listedAtFinish = queue.findItem(id) != nullptr;
+    });
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QSignalSpy removed(&queue, &UsenetQueue::itemRemoved);
+
+    QString error;
+    const QString id = queue.addNzb(makeNzb(QStringLiteral("auto.bin"), 2),
+                                    QStringLiteral("auto"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+
+    QVERIFY2(finished.wait(30000), "the download never reported a terminal outcome");
+    QVERIFY(finished.at(0).at(1).toBool());
+    QVERIFY(listedAtFinish);
+
+    QTRY_COMPARE(removed.size(), 1);
+    QCOMPARE(removed.at(0).at(0).toString(), id);
+    QVERIFY(!queue.findItem(id));
+    // The files stay; only the row goes.
+    QVERIFY(QFile::exists(QDir(thePrefs.incomingDir()).filePath(QStringLiteral("auto.bin"))));
+
+    queue.stop();
 }
 
 void tst_UsenetQueue::forcingAnAddOverridesTheHistoryButNeverTheLiveQueue()
@@ -4870,6 +4971,84 @@ void tst_UsenetQueue::aCheckingItemNeverGoesSilentWhenTheProxyComesBack()
 
     QCOMPARE(silences, 0);
     QVERIFY2(saidChecking, "the recovered proxy never handed the item back to its check");
+
+    queue.stop();
+}
+
+// The unit progress is measured in: NZB (encoded) bytes, like totalEncodedBytes(),
+// with a missing article counted as done and a skipped file left out.
+void tst_UsenetQueue::doneEncodedBytesCountsDoneArticlesOfWantedFiles()
+{
+    UsenetQueueItem item;
+    for (const QString& name : {QStringLiteral("a.bin"), QStringLiteral("b.bin")}) {
+        NzbFileInfo info;
+        info.fileName = name;
+        for (int p = 1; p <= 4; ++p)
+            info.segments.append(NzbSegment{messageIdFor(p, name), 1000 * p, p});
+        item.nzb.files.append(info);
+    }
+    item.files.resize(2);
+    item.files[0].done.resize(4);
+    item.files[1].done.resize(4);
+
+    item.files[0].done.setBit(0);   // 1000
+    item.files[0].done.setBit(2);   // 3000, e.g. missing everywhere
+    item.files[1].done.setBit(3);   // 4000
+    QCOMPARE(item.doneEncodedBytes(), qint64(8000));
+
+    item.files[1].skipped = true;
+    QCOMPARE(item.doneEncodedBytes(), qint64(4000));
+    QCOMPARE(item.totalEncodedBytes(), qint64(10000));
+}
+
+// Under a rate limit a whole batch of articles finishes together, so progress
+// counted in finished articles sits still and then jumps. The bytes of an article
+// still being read must count.
+void tst_UsenetQueue::progressCountsTheBytesOfAnArticleStillInFlight()
+{
+    ScopedStatistics stats;
+    const QByteArray whole = payload(kPartSize * kParts);
+
+    FakeNntpServer server;
+    server.addGroup(QStringLiteral("alt.binaries.test"), kParts, 1, kParts);
+    for (int p = 1; p <= kParts; ++p)
+        server.addArticle(messageIdFor(p), makeArticle(whole, p, kParts,
+                                                       QStringLiteral("flight.bin")));
+    server.setHoldArticleHalfway(messageIdFor(kParts));   // last: nothing pipelines behind it
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 4)}, 60);
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    const QString id = queue.addNzb(makeNzb(QStringLiteral("flight.bin"), kParts),
+                                    QStringLiteral("flight"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+
+    // Every article but the held one lands; that one is half read.
+    QTRY_VERIFY_WITH_TIMEOUT(queue.findItem(id)->doneSegmentCount() == kParts - 1, 20000);
+    const qint64 done = queue.findItem(id)->doneEncodedBytes();
+    QCOMPARE(done, qint64(3500) * (kParts - 1));
+    QTRY_VERIFY_WITH_TIMEOUT(queue.itemProgressBytes(id) > done, 10000);
+    QVERIFY(queue.itemProgressBytes(id) < queue.findItem(id)->totalEncodedBytes());
+    QCOMPARE(queue.fileProgressBytes(id).size(), 1);
+    QCOMPARE(queue.fileProgressBytes(id).at(0), queue.itemProgressBytes(id));
+
+    server.releaseHeld();
+    QVERIFY2(finished.wait(30000), "no terminal outcome");
+    QVERIFY2(finished.at(0).at(1).toBool(), qPrintable(finished.at(0).at(2).toString()));
+
+    // Nothing in flight any more: exactly the done articles, no stale counter.
+    QCOMPARE(queue.itemProgressBytes(id), queue.findItem(id)->totalEncodedBytes());
 
     queue.stop();
 }

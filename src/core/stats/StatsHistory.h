@@ -53,7 +53,7 @@ struct StatsGraphSample {
 /// One point of the toolbar download/upload graph.
 struct SpeedSample {
     uint32 seq  = 0;
-    float  down = 0.0f;
+    float  down = 0.0f;   ///< KB/s, eD2K + Usenet
     float  up   = 0.0f;
 };
 

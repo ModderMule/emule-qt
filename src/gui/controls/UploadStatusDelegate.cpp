@@ -3,6 +3,7 @@
 /// @brief The Obtained Parts bar, MFC CUpDownClient::DrawUpStatusBar.
 
 #include "controls/UploadStatusDelegate.h"
+#include "controls/BarShader.h"
 #include "controls/ClientListModel.h"
 
 #include "utils/Opcodes.h"
@@ -10,7 +11,6 @@
 #include <QPainter>
 
 #include <algorithm>
-#include <cmath>
 
 namespace eMule {
 
@@ -20,22 +20,20 @@ void paintUpStatusBar(QPainter& painter, const QRect& rect, const UpStatusBar& b
     if (size <= 0 || rect.width() <= 0 || rect.height() <= 0)
         return;
 
-    // MFC UploadClient.cpp:57-70, flat colours like the other part bars; greyed for a
-    // slot past the active upload count.
+    // MFC UploadClient.cpp:57-70; greyed for a slot past the active upload count
+    const bool flat = useFlatBar();
     const QColor neither     = bar.greyed ? QColor(248, 248, 248) : QColor(224, 224, 224);
     const QColor nextSending = bar.greyed ? QColor(255, 244, 191) : QColor(255, 208, 0);
-    const QColor both        = bar.greyed ? QColor(191, 191, 191) : QColor(0, 0, 0);
+    const QColor both        = bar.greyed ? QColor(191, 191, 191)
+                                          : (flat ? QColor(0, 0, 0) : QColor(104, 104, 104));
     const QColor sending     = bar.greyed ? QColor(191, 229, 191) : QColor(0, 150, 0);
 
-    const double scale = static_cast<double>(rect.width()) / static_cast<double>(size);
+    BarShader shader(static_cast<uint64_t>(size));
     const auto fill = [&](int64_t start, int64_t end, const QColor& color) {
         start = std::clamp<int64_t>(start, 0, size);
         end = std::clamp<int64_t>(end, 0, size);
-        if (end <= start)
-            return;
-        const int x0 = rect.left() + static_cast<int>(std::floor(static_cast<double>(start) * scale));
-        const int x1 = rect.left() + static_cast<int>(std::ceil(static_cast<double>(end) * scale));
-        painter.fillRect(x0, rect.top(), std::max(1, x1 - x0), rect.height(), color);
+        if (end > start)
+            shader.fillRange(static_cast<uint64_t>(start), static_cast<uint64_t>(end), color);
     };
     const auto part = static_cast<int64_t>(PARTSIZE);
 
@@ -48,6 +46,7 @@ void paintUpStatusBar(QPainter& painter, const QRect& rect, const UpStatusBar& b
         fill(next * part, (next + 1) * part, nextSending);
     for (const auto& [start, end] : bar.sentRanges)
         fill(start, end + 1, sending);
+    shader.draw(painter, rect, flat, barDepth3D());
 }
 
 UploadStatusDelegate::UploadStatusDelegate(bool onlyWithParts, QObject* parent)

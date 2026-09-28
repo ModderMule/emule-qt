@@ -14,6 +14,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QRegularExpression>
 #include <QSet>
 
 namespace eMule::usenet {
@@ -50,6 +51,7 @@ constexpr int kPar2MagicLen = 8;
 [[nodiscard]] QStringList par2FilesIn(const QString& dir)
 {
     QStringList result;
+    QStringList hidden;
     const QFileInfoList entries = QDir(dir).entryInfoList(QDir::Files | QDir::NoDotAndDotDot,
                                                           QDir::Name);
     for (const QFileInfo& fi : entries) {
@@ -60,7 +62,40 @@ constexpr int kPar2MagicLen = 8;
         if (fi.size() >= kPar2MagicLen && looksLikePar2(fi.absoluteFilePath())) {
             logUsenet(QStringLiteral("Usenet: \"%1\" is a PAR2 file under another name")
                         .arg(fi.fileName()));
-            result.append(fi.absoluteFilePath());
+            hidden.append(fi.absoluteFilePath());
+        }
+    }
+    if (hidden.isEmpty())
+        return result;
+
+    // libpar2 rejects an index not named *.par2 ("PAR2 error") and finds the
+    // volumes by "<base>.*.par2", so give the hidden ones names of that shape.
+    // ".volN+0" keeps chooseIndexFile() on the index.
+    QDir d(dir);
+    QString base;
+    if (!result.isEmpty()) {
+        static const QRegularExpression volTail(QStringLiteral("\\.vol\\d*[+-]\\d+$"),
+                                                QRegularExpression::CaseInsensitiveOption);
+        base = QFileInfo(Par2Verifier::chooseIndexFile(result)).completeBaseName();
+        base.remove(volTail);
+    } else {
+        base = QFileInfo(hidden.first()).fileName();
+    }
+
+    int vol = 0;
+    for (const QString& path : std::as_const(hidden)) {
+        QString target = d.filePath(base + QLatin1String(".par2"));
+        while (QFile::exists(target))
+            target = d.filePath(QStringLiteral("%1.vol%2+0.par2").arg(base).arg(vol++));
+
+        if (QFile::rename(path, target)) {
+            logUsenet(QStringLiteral("Usenet: named PAR2 file \"%1\" as \"%2\"")
+                        .arg(QFileInfo(path).fileName(), QFileInfo(target).fileName()));
+            result.append(target);
+        } else {
+            logUsenetWarning(QStringLiteral("Usenet: cannot rename PAR2 file \"%1\"; "
+                                            "PAR2 will not read it").arg(path));
+            result.append(path);
         }
     }
     return result;

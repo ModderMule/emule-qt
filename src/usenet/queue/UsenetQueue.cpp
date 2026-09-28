@@ -29,6 +29,7 @@
 #include <QUuid>
 
 #include <algorithm>
+#include <numeric>
 
 namespace eMule::usenet {
 
@@ -543,6 +544,19 @@ bool UsenetQueue::removeItem(const QString& id, bool deleteFiles)
         return true;
     }
     return false;
+}
+
+int UsenetQueue::clearCompleted()
+{
+    QStringList ids;
+    for (const auto& rt : m_items) {
+        if (rt->item->status == UsenetItemStatus::Complete)
+            ids << rt->item->id;
+    }
+    int removed = 0;
+    for (const QString& id : std::as_const(ids))
+        removed += removeItem(id, false) ? 1 : 0;
+    return removed;
 }
 
 bool UsenetQueue::pauseItem(const QString& id)
@@ -1351,6 +1365,35 @@ bool UsenetQueue::hasActiveDownloads() const
     return false;
 }
 
+qint64 UsenetQueue::itemRate(const QString& id) const
+{
+    qsizetype total = 0;
+    qsizetype mine = 0;
+    for (const auto& rt : m_items) {
+        total += rt->inFlight.size();
+        if (rt->item->id == id)
+            mine = rt->inFlight.size();
+    }
+    return total > 0 ? currentRate() * mine / total : 0;
+}
+
+qint64 UsenetQueue::itemProgressBytes(const QString& id) const
+{
+    const auto found = std::ranges::find_if(
+        m_items, [&id](const auto& rt) { return rt->item->id == id; });
+    if (found == m_items.cend())
+        return 0;
+    const QList<qint64> perFile = fileProgressBytes(**found);
+    return std::accumulate(perFile.cbegin(), perFile.cend(), qint64(0));
+}
+
+QList<qint64> UsenetQueue::fileProgressBytes(const QString& id) const
+{
+    const auto found = std::ranges::find_if(
+        m_items, [&id](const auto& rt) { return rt->item->id == id; });
+    return found == m_items.cend() ? QList<qint64>{} : fileProgressBytes(**found);
+}
+
 void UsenetQueue::setEnginePaused(bool paused)
 {
     if (paused == m_enginePaused)
@@ -1958,8 +2001,10 @@ void UsenetQueue::dispatch()
                     req.group = info.groups.isEmpty() ? QString() : info.groups.first();
                     req.level = payLevel;
                     req.ignoreServers = std::move(ignore);
+                    req.received = std::make_shared<std::atomic<qint64>>(0);
 
                     rt->inFlight.insert(key);
+                    rt->inFlightBytes.insert(key, req.received);
                     ++rt->planCursor;
 
                     if (rt->item->status == UsenetItemStatus::Queued) {
@@ -2047,6 +2092,9 @@ void UsenetQueue::onTick()
     }
 
     for (auto& rt : m_items) {
+        // Finished and requeued articles leave inFlight at many sites; drop their
+        // counters here rather than at each of them.
+        rt->inFlightBytes.removeIf([&rt](auto it) { return !rt->inFlight.contains(it.key()); });
         if (rt->dirty) {
             persist(*rt);
             emit itemChanged(rt->item->id);
@@ -3684,6 +3732,16 @@ void UsenetQueue::onPostFinished(const UsenetPostResult& result)
     // Everything worth keeping has been moved out by now; what is left is
     // scratch, archive volumes and recovery data.
     QDir(QDir(thePrefs.usenetTempDir()).filePath(rt->item->id)).removeRecursively();
+
+    // "Auto clear completed downloads" (MFC PartFile.cpp:3000). Deferred so the
+    // finish listeners see the item first.
+    if (thePrefs.autoRemoveFinishedDownloads()) {
+        QTimer::singleShot(0, this, [this, id = rt->item->id] {
+            const ItemRuntime* done = runtimeFor(id);
+            if (done && done->item->status == UsenetItemStatus::Complete)
+                removeItem(id, false);
+        });
+    }
 }
 
 bool UsenetQueue::requestPar2Volumes(ItemRuntime& rt, int blocks)
@@ -5283,6 +5341,24 @@ void UsenetQueue::logQueueState()
     m_diagNoServer = 0;
     m_diagStarvedSkips = 0;
     m_diagRequeued = 0;
+}
+
+QList<qint64> UsenetQueue::fileProgressBytes(const ItemRuntime& rt)
+{
+    const UsenetQueueItem& item = *rt.item;
+    QList<qint64> out(item.files.size(), 0);
+    for (int f = 0; f < item.files.size() && f < item.nzb.files.size(); ++f) {
+        const UsenetFileState& st = item.files.at(f);
+        if (!st.isSkipped())
+            out[f] = st.doneEncodedBytes(item.nzb.files.at(f));
+    }
+    for (const quint64 key : rt.inFlight) {
+        const auto counter = rt.inFlightBytes.value(key);
+        const int f = int(key >> 32);
+        if (counter && f < out.size() && !item.files.at(f).isSkipped())
+            out[f] += counter->load(std::memory_order_relaxed);
+    }
+    return out;
 }
 
 } // namespace eMule::usenet

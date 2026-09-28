@@ -13,8 +13,10 @@
 /// models whose Qt::UserRole answers feed a QSortFilterProxyModel — plus the MFC
 /// colour cues those same models carry in Qt::ForegroundRole.
 
+#include "controls/BarShader.h"
 #include "controls/ClientListModel.h"
 #include "controls/DownloadListModel.h"
+#include "controls/DownloadProgressDelegate.h"
 #include "controls/KadContactsModel.h"
 #include "controls/KnownTypeStyle.h"
 #include "controls/SearchResultsModel.h"
@@ -22,6 +24,7 @@
 #include "controls/SortableItems.h"
 #include "controls/UploadStatusDelegate.h"
 #include "controls/UsenetQueueModel.h"
+#include "ipc/CborSerializers.h"
 #include "prefs/Preferences.h"
 #include "utils/ColorUtils.h"
 #include "utils/Opcodes.h"
@@ -38,6 +41,8 @@
 #include <QTest>
 #include <QTreeWidget>
 
+#include <functional>
+
 using namespace eMule;
 
 namespace {
@@ -52,7 +57,7 @@ UsenetItemRow release(const QString& id, qint64 totalBytes, int percent,
     r.status = status;
     r.statusText = id;
     r.totalBytes = totalBytes;
-    r.decodedBytes = totalBytes * percent / 100;
+    r.progressBytes = totalBytes * percent / 100;
     r.percent = percent;
     r.speed = speed;
     r.healthPercent = health;
@@ -116,6 +121,12 @@ private slots:
     void onQueueColumnsFollowMfc();
     void uploadStatusBarFollowsMfc();
     void kadContactImageFollowsMfc();
+
+    // --- progress bars (BarShader, MFC CBarShader) --------------------------
+    void barShaderShadesRoundBars();
+    void barShaderBlendsSubPixelSpans();
+    void downloadBarDrawsDataWhereItSits();
+    void barRangesAreCappedKeepingTheEnds();
 };
 
 // ---------------------------------------------------------------------------
@@ -860,6 +871,7 @@ void tst_ListSorting::uploadStatusBarFollowsMfc()
     const auto part = static_cast<int64_t>(PARTSIZE);
     bar.sentRanges = {{2 * part, 2 * part + part / 2 - 1}};
 
+    thePrefs.setDepth3D(0);   // flat palette and no shading
     const auto render = [](const UpStatusBar& b) {
         QImage image(300, 10, QImage::Format_RGB32);
         image.fill(Qt::white);
@@ -882,6 +894,12 @@ void tst_ListSorting::uploadStatusBarFollowsMfc()
     // Nothing to draw without a size
     image = render(UpStatusBar{});
     QCOMPARE(image.pixelColor(50, 5), QColor(Qt::white));
+
+    // Round: had parts turn MFC's 3D grey
+    thePrefs.setDepth3D(5);
+    bar.greyed = false;
+    image = render(bar);
+    QCOMPARE(image.pixelColor(50, 5), QColor(104, 104, 104));
 }
 
 void tst_ListSorting::kadContactImageFollowsMfc()
@@ -901,6 +919,132 @@ void tst_ListSorting::kadContactImageFollowsMfc()
     QCOMPARE(KadContactsModel::contactImage(old), 3);
     old.type = 7;
     QCOMPARE(KadContactsModel::contactImage(old), 4);
+}
+
+// ---------------------------------------------------------------------------
+// controls/BarShader.h, DownloadProgressDelegate.h — MFC CBarShader / DrawStatusBar
+// ---------------------------------------------------------------------------
+
+namespace {
+
+QImage renderBar(int width, int height, const std::function<void(QPainter&, const QRect&)>& paint)
+{
+    QImage image(width, height, QImage::Format_RGB32);
+    image.fill(Qt::white);
+    QPainter painter(&image);
+    paint(painter, image.rect());
+    return image;
+}
+
+} // namespace
+
+void tst_ListSorting::barShaderShadesRoundBars()
+{
+    // MFC BuildModifiers: depth 5 starts at sin(0) (black edge), the middle is always 1
+    const std::vector<float> mods = BarShader::shadeModifiers(16, 5);
+    QCOMPARE(mods.size(), size_t(8));
+    QCOMPARE(mods.front(), 0.0f);
+    QCOMPARE(mods.back(), 1.0f);
+    QVERIFY(BarShader::shadeModifiers(16, 1).front() > 0.8f);
+
+    BarShader shader(100);
+    shader.fill(QColor(0, 224, 0));
+    QImage round = renderBar(100, 16, [&](QPainter& p, const QRect& r) { shader.draw(p, r, false, 5); });
+    QCOMPARE(round.pixelColor(50, 0), QColor(0, 0, 0));
+    QCOMPARE(round.pixelColor(50, 15), QColor(0, 0, 0));
+    QCOMPARE(round.pixelColor(50, 7), QColor(0, 224, 0));
+    QCOMPARE(round.pixelColor(50, 8), QColor(0, 224, 0));
+
+    QImage flat = renderBar(100, 16, [&](QPainter& p, const QRect& r) { shader.draw(p, r, true, 5); });
+    QCOMPARE(flat.pixelColor(50, 0), QColor(0, 224, 0));
+
+    // Black is never shaded, and the preview-style level 0 is flat
+    shader.fill(QColor(0, 0, 0));
+    round = renderBar(100, 16, [&](QPainter& p, const QRect& r) { shader.draw(p, r, false, 5); });
+    QCOMPARE(round.pixelColor(50, 7), QColor(0, 0, 0));
+}
+
+void tst_ListSorting::barShaderBlendsSubPixelSpans()
+{
+    // 100 bytes per pixel: half white, half black averages to mid grey
+    BarShader shader(1000);
+    shader.fill(Qt::black);
+    shader.fillRange(0, 50, Qt::white);
+    shader.fillRange(500, 1000, QColor(255, 0, 0));
+    const QImage image = renderBar(10, 4, [&](QPainter& p, const QRect& r) { shader.draw(p, r, true, 0); });
+    QCOMPARE(image.pixelColor(0, 1), QColor(128, 128, 128));
+    QCOMPARE(image.pixelColor(3, 1), QColor(0, 0, 0));
+    QCOMPARE(image.pixelColor(7, 1), QColor(255, 0, 0));
+
+    // A later range overwrites, and the colour after it resumes
+    shader.fillRange(600, 700, QColor(0, 0, 255));
+    const QImage over = renderBar(10, 4, [&](QPainter& p, const QRect& r) { shader.draw(p, r, true, 0); });
+    QCOMPARE(over.pixelColor(6, 1), QColor(0, 0, 255));
+    QCOMPARE(over.pixelColor(7, 1), QColor(255, 0, 0));
+}
+
+void tst_ListSorting::downloadBarDrawsDataWhereItSits()
+{
+    // Part 0 complete; part 1 has its first half downloaded, its second half a gap
+    // one source offers. 200 px, so each part is 100 px.
+    const auto part = static_cast<qint64>(PARTSIZE);
+    DownloadBarData bar;
+    bar.fileSize = 2 * part;
+    bar.partMap = QByteArray("\x00\x02", 2);
+    bar.partFreq = {0, 1};
+    bar.gaps = {part + part / 2, 2 * part - 1};
+
+    thePrefs.setDepth3D(0);
+    const auto render = [&](bool detail) {
+        return renderBar(200, 16, [&](QPainter& p, const QRect& r) {
+            paintDownloadBar(p, r, bar, 75.0, false, detail);
+        });
+    };
+
+    // MFC: downloaded bytes are "have" black wherever they are
+    QImage image = render(false);
+    QCOMPARE(image.pixelColor(50, 8), QColor(0, 0, 0));
+    QCOMPARE(image.pixelColor(125, 8), QColor(0, 0, 0));
+    QCOMPARE(image.pixelColor(175, 8), QColor(0, 210, 255));
+    QCOMPARE(image.pixelColor(10, 1), QColor(0, 150, 0));      // strip, flat green
+    QCOMPARE(image.pixelColor(190, 1), QColor(224, 224, 224)); // flat track
+    QCOMPARE(image.pixelColor(100, 1), QColor(0, 150, 0));     // no dots
+
+    // MorphXT: the started part shows its data in grey, requested in green, plus a dot
+    image = render(true);
+    QCOMPARE(image.pixelColor(50, 8), QColor(0, 0, 0));
+    QCOMPARE(image.pixelColor(125, 8), QColor(160, 160, 160));
+    QCOMPARE(image.pixelColor(175, 8), QColor(0, 210, 255));
+    QCOMPARE(image.pixelColor(100, 1), QColor(128, 128, 128));
+    bar.partMap = QByteArray("\x00\xff", 2);
+    image = render(true);
+    QCOMPARE(image.pixelColor(125, 8), QColor(0, 224, 0));
+
+    // Round: no grey track under the strip, the shaded bar shows through
+    thePrefs.setDepth3D(5);
+    image = render(false);
+    QVERIFY(image.pixelColor(190, 1) != QColor(224, 224, 224));
+    QCOMPARE(image.pixelColor(10, 1), QColor(0, 224, 0));
+    thePrefs.setDepth3D(0);
+}
+
+void tst_ListSorting::barRangesAreCappedKeepingTheEnds()
+{
+    std::vector<std::pair<uint64, uint64>> ranges;
+    for (uint64 i = 0; i < 1500; ++i)
+        ranges.emplace_back(i * 10, i * 10 + 4);
+    // one wide distance must survive the merge
+    ranges.back() = {1'000'000, 1'000'004};
+
+    const QCborArray packed = Ipc::packBarRanges(ranges);
+    QCOMPARE(packed.size(), 2 * Ipc::kMaxBarRanges);
+    QCOMPARE(packed.first().toInteger(), 0);
+    QCOMPARE(packed.last().toInteger(), 1'000'004);
+    QCOMPARE(packed.at(packed.size() - 2).toInteger(), 1'000'000);
+    for (qsizetype i = 1; i < packed.size(); ++i)
+        QVERIFY(packed.at(i - 1).toInteger() <= packed.at(i).toInteger());
+
+    QCOMPARE(Ipc::packBarRanges({{5, 9}}).size(), 2);
 }
 
 QTEST_MAIN(tst_ListSorting)

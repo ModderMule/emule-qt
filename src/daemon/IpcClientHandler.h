@@ -201,6 +201,7 @@ private:
     void handleSetUsenetPaused(const Ipc::IpcMessage& msg);
     void handleSetUsenetFilesSkipped(const Ipc::IpcMessage& msg);
     void handleInspectNzb(const Ipc::IpcMessage& msg);
+    void handleClearUsenetCompleted(const Ipc::IpcMessage& msg);
 
     // eNode meta search (750-754) — IpcClientHandlerMeta.cpp
     void handleFetchMetaFile(const Ipc::IpcMessage& msg);

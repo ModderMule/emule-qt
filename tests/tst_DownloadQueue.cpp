@@ -85,6 +85,7 @@ private slots:
     void addDownloadFromED2KLink_emptyTempDirUsesDefault();
     void removeFile_basic();
     void deleteAll_keepsCompletedFileOwnedByKnownList();
+    void autoClear_removesACompletedFileWhenEnabled();
     void fileByID_found();
     void fileByID_notFound();
     void fileByKadFileSearchID_found();
@@ -375,6 +376,50 @@ void tst_DownloadQueue::deleteAll_keepsCompletedFileOwnedByKnownList()
     // KnownFileList owns pf now and frees it exactly once (no double-free).
     kfl.clear();
     QCOMPARE(kfl.count(), size_t(0));
+}
+
+// "Auto clear completed downloads" (MFC PartFile.cpp:3000): the finished file
+// leaves the list, deferred past the completion listeners, and stays known.
+void tst_DownloadQueue::autoClear_removesACompletedFileWhenEnabled()
+{
+    const auto restore = qScopeGuard([] { thePrefs.setAutoRemoveFinishedDownloads(false); });
+
+    for (const bool autoClear : {false, true}) {
+        thePrefs.setAutoRemoveFinishedDownloads(autoClear);
+
+        KnownFileList kfl;
+        const QString knownDir = m_tempDir.path() + QStringLiteral("/known_autoclear%1").arg(autoClear);
+        QDir().mkpath(knownDir);
+        kfl.init(knownDir);
+
+        DownloadQueue dq;
+        dq.setKnownFileList(&kfl);
+
+        uint8 hash[16] = {0xAC, 0x1E, 0xA2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, uint8(autoClear)};
+        auto* pf = createTestPartFile(hash, QStringLiteral("autoclear.bin"));
+        pf->setStatus(PartFileStatus::Complete);
+        dq.addDownload(pf);
+
+        bool listedAtCompletion = false;
+        connect(&dq, &DownloadQueue::fileCompleted, this,
+                [&](PartFile* f) { listedAtCompletion = dq.fileCount() == 1 && f == pf; });
+        QSignalSpy removed(&dq, &DownloadQueue::fileRemoved);
+        emit pf->partNotifier()->downloadCompleted();
+
+        QTRY_VERIFY(kfl.isFilePtrInList(pf));
+        QVERIFY(listedAtCompletion);
+        if (autoClear) {
+            QTRY_COMPARE(dq.fileCount(), 0);
+            QCOMPARE(removed.size(), 1);
+        } else {
+            QTest::qWait(50);
+            QCOMPARE(dq.fileCount(), 1);
+            QCOMPARE(removed.size(), 0);
+            dq.removeFile(pf);
+        }
+        QVERIFY(kfl.isFilePtrInList(pf));   // still alive, owned by the known list
+        kfl.clear();
+    }
 }
 
 void tst_DownloadQueue::fileByID_found()

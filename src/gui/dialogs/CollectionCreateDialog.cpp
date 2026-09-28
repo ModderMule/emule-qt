@@ -189,8 +189,8 @@ void CollectionCreateDialog::populateSharedFiles()
         return;
 
     Ipc::IpcMessage msg(Ipc::IpcMsgType::GetSharedFiles);
-    m_ipc->sendRequest(std::move(msg), [this](const Ipc::IpcMessage& resp) {
-        if (resp.type() != Ipc::IpcMsgType::Result)
+    m_ipc->sendRequest(std::move(msg), [this, self = QPointer<CollectionCreateDialog>(this)](const Ipc::IpcMessage& resp) {
+        if (!self || resp.type() != Ipc::IpcMsgType::Result)
             return;
 
         const QCborArray arr = resp.fieldArray(1);

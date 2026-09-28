@@ -23,7 +23,10 @@
 #include <QCborArray>
 #include <QCborMap>
 
+#include <algorithm>
 #include <set>
+#include <utility>
+#include <vector>
 
 namespace eMule::Ipc {
 
@@ -94,6 +97,83 @@ namespace eMule::Ipc {
     return arr;
 }
 
+/// Most byte ranges one bar list carries; a bar is a few hundred pixels wide.
+inline constexpr qsizetype kMaxBarRanges = 1024;
+
+/// Byte ranges [start, end] (inclusive, sorted) as a flat [s0, e0, s1, e1, ...]
+/// array. Past kMaxBarRanges the closest neighbours merge, so the outline and
+/// the first/last byte survive while the push stays small.
+[[nodiscard]] inline QCborArray packBarRanges(std::vector<std::pair<uint64, uint64>> ranges)
+{
+    while (static_cast<qsizetype>(ranges.size()) > kMaxBarRanges) {
+        // Merge across the smallest distances; one pass drops exactly the excess
+        std::vector<uint64> distances;
+        distances.reserve(ranges.size() - 1);
+        for (size_t i = 1; i < ranges.size(); ++i)
+            distances.push_back(ranges[i].first - ranges[i - 1].second);
+        const size_t excess = ranges.size() - static_cast<size_t>(kMaxBarRanges);
+        std::vector<uint64> sorted = distances;
+        std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(excess - 1),
+                         sorted.end());
+        const uint64 threshold = sorted[excess - 1];
+
+        std::vector<std::pair<uint64, uint64>> merged;
+        merged.reserve(ranges.size());
+        merged.push_back(ranges.front());
+        size_t budget = excess;
+        for (size_t i = 1; i < ranges.size(); ++i) {
+            if (budget > 0 && distances[i - 1] <= threshold) {
+                merged.back().second = std::max(merged.back().second, ranges[i].second);
+                --budget;
+            } else {
+                merged.push_back(ranges[i]);
+            }
+        }
+        ranges = std::move(merged);
+    }
+
+    QCborArray arr;
+    for (const auto& [start, end] : ranges) {
+        arr.append(static_cast<qint64>(start));
+        arr.append(static_cast<qint64>(end));
+    }
+    return arr;
+}
+
+/// The file's gaps, byte-exact, for MFC's DrawStatusBar.
+[[nodiscard]] inline QCborArray buildGapRanges(const PartFile& f)
+{
+    std::vector<std::pair<uint64, uint64>> ranges;
+    ranges.reserve(f.gapList().size());
+    for (const Gap& gap : f.gapList())
+        ranges.emplace_back(gap.start, gap.end);
+    std::ranges::sort(ranges);
+    return packBarRanges(std::move(ranges));
+}
+
+/// The not-yet-received remainder of each requested block (MFC's yellow).
+[[nodiscard]] inline QCborArray buildPendingRanges(const PartFile& f)
+{
+    std::vector<std::pair<uint64, uint64>> ranges;
+    ranges.reserve(f.requestedBlockList().size());
+    for (const auto* blk : f.requestedBlockList()) {
+        const uint64 start = blk->startOffset + blk->transferredByClient;
+        if (start <= blk->endOffset)
+            ranges.emplace_back(start, blk->endOffset);
+    }
+    std::ranges::sort(ranges);
+    return packBarRanges(std::move(ranges));
+}
+
+/// Raw source count per part; partMap's 255 (requested) hides it.
+[[nodiscard]] inline QCborArray buildPartFrequency(const PartFile& f)
+{
+    QCborArray arr;
+    for (const uint16 freq : f.srcPartFrequency())
+        arr.append(freq);
+    return arr;
+}
+
 [[nodiscard]] inline QCborMap toCbor(const PartFile& f)
 {
     const ContainerCheck& cc = f.containerCheck();
@@ -127,6 +207,10 @@ namespace eMule::Ipc {
         {QStringLiteral("acceptedReqs"),        static_cast<qint64>(f.statistic.allTimeAccepts())},
         {QStringLiteral("transferredData"),     static_cast<qint64>(f.statistic.allTimeTransferred())},
         {QStringLiteral("partMap"),             buildPartMap(f)},
+        // Byte-exact bar data: the progress bar draws gaps and pending blocks where they sit
+        {QStringLiteral("gaps"),                buildGapRanges(f)},
+        {QStringLiteral("pending"),             buildPendingRanges(f)},
+        {QStringLiteral("partFreq"),            buildPartFrequency(f)},
         {QStringLiteral("isPreviewPossible"),  f.isPreviewPossible()},
         // Comment/rating marks. userRating(true) folds in MFC's pseudo-rating 6,
         // "a Kad note lookup is running", so the GUI rebuilds the whole predicate

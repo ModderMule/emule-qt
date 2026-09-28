@@ -349,6 +349,17 @@ Par2Result Par2Verifier::run(const QString& par2Path, const QString& basePath,
                              bool doRepair, bool renameOnly)
 {
     Par2Result result;
+    // Every failure logs, early exits included: a silent "PAR2 error" is
+    // indistinguishable from a damaged release.
+    const auto logged = [&par2Path](Par2Result r) {
+        if (r.outcome == Par2Outcome::Error || r.outcome == Par2Outcome::RepairFailed) {
+            logUsenetWarning(QStringLiteral("PAR2: %1 on \"%2\": %3")
+                               .arg(describePar2Outcome(r.outcome),
+                                    QFileInfo(par2Path).fileName(),
+                                    r.message.isEmpty() ? QStringLiteral("no detail") : r.message));
+        }
+        return r;
+    };
 
     if (par2Path.isEmpty() || !QFileInfo::exists(par2Path)) {
         result.outcome = Par2Outcome::NoPar2Files;
@@ -397,7 +408,7 @@ Par2Result Par2Verifier::run(const QString& par2Path, const QString& basePath,
         if (!commandline.Parse(int(argv.size()), argv.data())) {
             result.outcome = Par2Outcome::Error;
             result.message = QStringLiteral("par2 rejected its own arguments");
-            return result;
+            return logged(std::move(result));
         }
 
         RepairerBridge repairer(sout, serr, m_progress, m_cancel);
@@ -407,7 +418,7 @@ Par2Result Par2Verifier::run(const QString& par2Path, const QString& basePath,
             result.outcome = pre == Par2::eInsufficientCriticalData ? Par2Outcome::NoPar2Files
                                                                    : Par2Outcome::Error;
             result.message = QString::fromStdString(serr.str()).trimmed();
-            return result;
+            return logged(std::move(result));
         }
 
         // The extra files have to be handed over twice. PreProcess() reads them
@@ -478,14 +489,7 @@ Par2Result Par2Verifier::run(const QString& par2Path, const QString& basePath,
         result.message = QStringLiteral("unknown par2 failure");
     }
 
-    if (result.outcome == Par2Outcome::Error || result.outcome == Par2Outcome::RepairFailed) {
-        logUsenetWarning(QStringLiteral("PAR2: %1 on \"%2\": %3")
-                       .arg(describePar2Outcome(result.outcome),
-                            QFileInfo(par2Path).fileName(),
-                            result.message.isEmpty() ? QStringLiteral("no detail")
-                                                     : result.message));
-    }
-    return result;
+    return logged(std::move(result));
 }
 
 #else // !EMULE_HAVE_PAR2

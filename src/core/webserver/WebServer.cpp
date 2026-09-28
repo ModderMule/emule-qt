@@ -3308,11 +3308,11 @@ namespace {
 }
 
 /// What the Progress column shows: a post-processing stage moves no segments.
-[[nodiscard]] qint64 usenetShownPercent(const QCborMap& row)
+[[nodiscard]] double usenetShownPercent(const QCborMap& row)
 {
     return usenetStatusIsPostProcessing(usenetRowStatus(row))
-               ? row.value(QStringLiteral("postPercent")).toInteger()
-               : row.value(QStringLiteral("percent")).toInteger();
+               ? row.value(QStringLiteral("postPercent")).toDouble()
+               : row.value(QStringLiteral("percent")).toDouble();
 }
 
 /// The Qt window's status words. The row's own statusText comes from the daemon,
@@ -3541,8 +3541,8 @@ namespace {
     if (column == QLatin1String("speed"))
         return num(a, QLatin1String("speed")) < num(b, QLatin1String("speed"));
     if (column == QLatin1String("remaining")) {
-        return num(a, QLatin1String("totalBytes")) - num(a, QLatin1String("decodedBytes"))
-             < num(b, QLatin1String("totalBytes")) - num(b, QLatin1String("decodedBytes"));
+        return num(a, QLatin1String("totalBytes")) - num(a, QLatin1String("progressBytes"))
+             < num(b, QLatin1String("totalBytes")) - num(b, QLatin1String("progressBytes"));
     }
     if (column == QLatin1String("priority"))
         return num(a, QLatin1String("priority")) < num(b, QLatin1String("priority"));
@@ -3611,30 +3611,15 @@ QList<QCborMap> WebServer::usenetRows(int category)
     if (!usenetAvailable())
         return rows;
 
-    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-    QSet<QString> present;
     for (const auto& v : m_usenetBackend->queue()) {
         QCborMap row = v.toMap();
-        const QString id = row.value(QStringLiteral("id")).toString();
-        present.insert(id);
-
-        // Sampled on every request, whichever browser or script asked; the
-        // sampler ignores readings closer together than its window.
-        const qint64 rate = m_usenetRates[id].update(
-            row.value(QStringLiteral("decodedBytes")).toInteger(), nowMs);
-        row.insert(QStringLiteral("speed"),
-                   usenetRowStatus(row) == UsenetWireStatus::Downloading ? rate : qint64(0));
+        // The daemon's per-item rate; decodedBytes moves in batches.
+        if (usenetRowStatus(row) != UsenetWireStatus::Downloading || !row.contains(QStringLiteral("speed")))
+            row.insert(QStringLiteral("speed"), qint64(0));
 
         if (category > 0 && row.value(QStringLiteral("category")).toInteger() != category)
             continue;
         rows.append(row);
-    }
-
-    for (auto it = m_usenetRates.begin(); it != m_usenetRates.end();) {
-        if (present.contains(it.key()))
-            ++it;
-        else
-            it = m_usenetRates.erase(it);
     }
     return rows;
 }
@@ -3644,6 +3629,7 @@ QJsonObject WebServer::usenetStatsJson(const QList<QCborMap>& rows) const
     int active = 0;
     qint64 total = 0;
     qint64 done = 0;
+    qint64 progress = 0;
     QString stalled;
     for (const QCborMap& row : rows) {
         const int status = usenetRowStatus(row);
@@ -3654,6 +3640,7 @@ QJsonObject WebServer::usenetStatsJson(const QList<QCborMap>& rows) const
         }
         total += row.value(QStringLiteral("totalBytes")).toInteger();
         done += row.value(QStringLiteral("decodedBytes")).toInteger();
+        progress += row.value(QStringLiteral("progressBytes")).toInteger();
         // Queue-level, so every stalled row carries the same sentence.
         if (stalled.isEmpty())
             stalled = row.value(QStringLiteral("stalledReason")).toString();
@@ -3665,7 +3652,9 @@ QJsonObject WebServer::usenetStatsJson(const QList<QCborMap>& rows) const
     out.insert(QStringLiteral("active"), active);
     out.insert(QStringLiteral("totalBytes"), total);
     out.insert(QStringLiteral("decodedBytes"), done);
-    out.insert(QStringLiteral("percent"), total > 0 ? int(done * 100 / total) : 0);
+    // Encoded like totalBytes, in-flight articles included; decodedBytes is neither.
+    out.insert(QStringLiteral("progressBytes"), progress);
+    out.insert(QStringLiteral("percent"), total > 0 ? int(std::min(progress, total) * 100 / total) : 0);
     out.insert(QStringLiteral("stalledReason"), stalled);
     return out;
 }
@@ -3759,11 +3748,8 @@ QHttpServerResponse WebServer::handleRestUsenetItem(const QString& id)
     if (details.isEmpty())
         return jsonError(404, usenetNotFoundText());
 
-    // A rate only exists across requests; report the last one sampled.
-    const auto it = m_usenetRates.constFind(id);
-    const bool downloading = usenetRowStatus(details) == UsenetWireStatus::Downloading;
-    details.insert(QStringLiteral("speed"),
-                   it != m_usenetRates.cend() && downloading ? it->rate : qint64(0));
+    if (usenetRowStatus(details) != UsenetWireStatus::Downloading || !details.contains(QStringLiteral("speed")))
+        details.insert(QStringLiteral("speed"), qint64(0));
     return jsonSuccess(details.toJsonObject());
 }
 
@@ -4021,6 +4007,8 @@ QHttpServerResponse WebServer::handleWebUsenetAction(const QHttpServerRequest& r
     }
     if (op == QLatin1String("enginepause") || op == QLatin1String("engineresume"))
         return handleUsenetEngineOp(op == QLatin1String("enginepause"));
+    if (op == QLatin1String("clearcompleted"))
+        return jsonSuccess(QJsonObject{{QStringLiteral("done"), m_usenetBackend->clearCompleted()}});
 
     const QStringList ids = form.allQueryItemValues(QStringLiteral("id"), QUrl::FullyDecoded);
     if (ids.isEmpty())
@@ -4167,7 +4155,7 @@ QString WebServer::buildUsenetList(const QString& sessionId, const QUrlQuery& qu
         const QString id = row.value(QStringLiteral("id")).toString();
         const int status = usenetRowStatus(row);
         const qint64 total = row.value(QStringLiteral("totalBytes")).toInteger();
-        const qint64 decoded = row.value(QStringLiteral("decodedBytes")).toInteger();
+        const qint64 progress = row.value(QStringLiteral("progressBytes")).toInteger();
         const auto [previewFile, previewNote] = usenetPreviewTarget(row);
         const QCborMap payload = usenetPayload(row);
         const QCborArray files = row.value(QStringLiteral("files")).toArray();
@@ -4221,10 +4209,10 @@ QString WebServer::buildUsenetList(const QString& sessionId, const QUrlQuery& qu
         v[QStringLiteral("UsenetRowClass")] = usenetRowClass(status);
         v[QStringLiteral("UsenetSize")] = formatByteSize(total);
         v[QStringLiteral("UsenetPercent")] =
-            QString::number(qBound(qint64(0), usenetShownPercent(row), qint64(100)));
+            QString::number(std::clamp(usenetShownPercent(row), 0.0, 100.0), 'f', 1);
         v[QStringLiteral("UsenetStatus")] = htmlText(usenetStatusText(row));
         v[QStringLiteral("UsenetSpeed")] = speed > 0 ? formatByteRate(speed) : QString();
-        v[QStringLiteral("UsenetRemaining")] = formatByteSize(qMax(qint64(0), total - decoded));
+        v[QStringLiteral("UsenetRemaining")] = formatByteSize(qMax(qint64(0), total - progress));
         v[QStringLiteral("UsenetPriority")] =
             htmlText(usenetPriorityName(int(row.value(QStringLiteral("priority")).toInteger())));
         v[QStringLiteral("UsenetHealth")] = usenetHealthText(row);

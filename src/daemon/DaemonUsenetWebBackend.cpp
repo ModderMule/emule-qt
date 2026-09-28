@@ -118,6 +118,12 @@ bool DaemonUsenetWebBackend::remove(const QString& id, bool deleteFiles)
     return q && q->removeItem(id, deleteFiles);
 }
 
+int DaemonUsenetWebBackend::clearCompleted()
+{
+    auto* q = UsenetBridge::queue();
+    return q ? q->clearCompleted() : 0;
+}
+
 bool DaemonUsenetWebBackend::setPriority(const QString& id, int priority)
 {
     auto* q = UsenetBridge::queue();

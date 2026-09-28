@@ -55,6 +55,7 @@ private slots:
     void aFileWithoutAMapIsDrawnFromItsState();
     void aReleaseBarLaysItsFilesOutBySize();
     void aCheckboxClickAsksAndChangesNothing();
+    void hasCompletedFollowsTheRows();
 };
 
 void tst_UsenetQueueModel::aFileWithoutAMapIsDrawnFromItsState()
@@ -127,4 +128,28 @@ void tst_UsenetQueueModel::aCheckboxClickAsksAndChangesNothing()
 }
 
 QTEST_MAIN(tst_UsenetQueueModel)
+void tst_UsenetQueueModel::hasCompletedFollowsTheRows()
+{
+    const auto row = [](const QString& id, int status) {
+        QCborMap m = itemMap(status, {});
+        m.insert(QStringLiteral("id"), id);
+        return usenetRowFromCbor(m);
+    };
+
+    UsenetQueueModel model;
+    QVERIFY(!model.hasCompleted());
+
+    // Failed (4) and Verifying (5) are not what Clear Completed removes.
+    model.setItems({row(QStringLiteral("a"), 1), row(QStringLiteral("b"), 4)});
+    QVERIFY(!model.hasCompleted());
+    model.upsertItem(row(QStringLiteral("a"), 5));
+    QVERIFY(!model.hasCompleted());
+
+    model.upsertItem(row(QStringLiteral("a"), 3));
+    QVERIFY(model.hasCompleted());
+
+    model.removeItem(QStringLiteral("a"));
+    QVERIFY(!model.hasCompleted());
+}
+
 #include "tst_UsenetQueueModel.moc"

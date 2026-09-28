@@ -756,6 +756,7 @@ img { border: 0; }
  <a class="un-btn admin-only needs-sel" href="#" onclick="unAct('pause');return false;"><span class="icon icon-l_pause"></span>{{Pause}}</a>
  <a class="un-btn admin-only needs-sel" href="#" onclick="unAct('resume');return false;"><span class="icon icon-l_resume"></span>{{Resume}}</a>
  <a class="un-btn admin-only needs-sel" href="#" onclick="unRemove(false);return false;"><span class="icon icon-l_remove"></span>{{Remove}}</a>
+ <a class="un-btn admin-only disabled" id="un-clearbtn" href="#" onclick="unClearCompleted();return false;"><span class="icon icon-m_clearcompleted"></span>{{Clear Completed}}</a>
  <span class="un-toolsep admin-only"></span>
  <a class="un-btn admin-only" id="un-enginebtn" href="#" onclick="unEngineToggle();return false;"><span class="icon icon-l_pause"></span><span class="un-enginetext">{{Pause All}}</span></a>
  <div class="un-cattabs">[UsenetCategoryTabs]</div>
@@ -809,6 +810,7 @@ function unRestore(){
  Object.keys(UN.sel).forEach(function(id){if(!seen[id])delete UN.sel[id];});
  var any=Object.keys(UN.sel).length>0;
  document.querySelectorAll('.un-toolbar .needs-sel').forEach(function(b){b.classList.toggle('disabled',!any);});
+ var cb=document.getElementById('un-clearbtn');if(cb)cb.classList.toggle('disabled',!document.querySelector('#un-list tr.un-item[data-status="complete"]'));
  unEngineSync();
 }
 // Pause All / Resume All follows the list fragment, which the server renders with the engine state.
@@ -865,7 +867,7 @@ unList.addEventListener('contextmenu',function(e){
  var tr=e.target.closest('tr.un-item,tr.un-file');
  if(tr){var id=tr.dataset.id;if(!UN.sel[id]){UN.sel={};UN.sel[id]=1;}UN.cur=id;unRestore();unMenu(e,tr);return;}
  if(!UN.admin)return;
- var m=document.getElementById('usenetmenu');m.innerHTML=unAddEntries();showMenu(e,m);
+ var m=document.getElementById('usenetmenu');m.innerHTML=unAddEntries()+UN_SEP+unMi('m_clearcompleted','{{js:Clear Completed}}','unClearCompleted()');showMenu(e,m);
 });
 
 // --- double-click: a finished release opens, a file opens, anything else expands
@@ -955,7 +957,7 @@ function unMenu(e,tr){
  h+=openable&&one?unMi('filetype_other','{{js:Open File}}',isFile?'unOpenFile(UN.menuRow)':'unOpenPayload(UN.menuRow)',true):unMiOff('filetype_other','{{js:Open File}}');
  h+=unMi('l_shared','{{js:Open Folder}}','unOpenFolder(unItem(UN.menuId))');
  h+=unMi('l_info','{{js:Details…}}','unShowDetails(UN.menuId)');
- if(UN.admin)h+=UN_SEP+unMi('l_remove','{{js:Remove}}','unRemove(false)')+unMi('l_cancel','{{js:Remove and Delete Files}}','unRemove(true)');
+ if(UN.admin)h+=UN_SEP+unMi('l_remove','{{js:Remove}}','unRemove(false)')+unMi('l_cancel','{{js:Remove and Delete Files}}','unRemove(true)')+UN_SEP+unMi('m_clearcompleted','{{js:Clear Completed}}','unClearCompleted()');
  var m=document.getElementById('usenetmenu');m.innerHTML=h;showMenu(e,m);
 }
 document.querySelectorAll('.un-cattab').forEach(function(a){
@@ -992,6 +994,13 @@ function unRemove(del){
  var n=Object.keys(UN.sel).length;if(!n)return;
  if(del&&!confirm(unFmt('{{js:Remove %1 download(s) and delete the files already fetched?}}',n)))return;
  unAct(del?'removedelete':'remove');
+}
+// Every Complete release, whatever is selected; files stay in incoming.
+function unClearCompleted(){
+ unPost('/usenet/action',unForm({op:'clearcompleted'})).then(function(j){
+  if(j.status!==200)unNotice(unErr(j),true);
+  unRefresh();
+ });
 }
 function unPassword(){
  var id=Object.keys(UN.sel)[0],tr=unItem(id);if(!tr)return;

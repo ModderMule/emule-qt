@@ -4,6 +4,7 @@
 
 #include "controls/UsenetProgressDelegate.h"
 
+#include "controls/BarShader.h"
 #include "controls/PartBarPainter.h"
 #include "controls/UsenetQueueModel.h"
 #include "prefs/Preferences.h"
@@ -19,7 +20,7 @@ namespace {
 QColor barColorActive(quint8 code)
 {
     switch (code) {
-    case kUsenetBarDone:     return {104, 104, 104};
+    case kUsenetBarDone:     return useFlatBar() ? QColor(0, 0, 0) : QColor(104, 104, 104);
     case kUsenetBarMissing:  return {255, 0, 0};
     case kUsenetBarInFlight: return {255, 208, 0};
     case kUsenetBarSkipped:  return {224, 224, 224};
@@ -31,7 +32,7 @@ QColor barColorActive(quint8 code)
 QColor barColorPaused(quint8 code)
 {
     switch (code) {
-    case kUsenetBarDone:     return {116, 116, 116};
+    case kUsenetBarDone:     return useFlatBar() ? QColor(64, 64, 64) : QColor(116, 116, 116);
     case kUsenetBarMissing:  return {191, 64, 64};
     case kUsenetBarInFlight: return {191, 168, 64};
     case kUsenetBarSkipped:  return {224, 224, 224};
@@ -58,11 +59,14 @@ void UsenetProgressDelegate::paint(QPainter* painter, const QStyleOptionViewItem
     }
 
     if (index.data(kUsenetBarCompleteRole).toBool()) {
-        painter->fillRect(bar, QColor(0, 224, 0));
+        const bool flat = useFlatBar();
+        BarShader::fillBarRect(*painter, bar, flat ? QColor(0, 150, 0) : QColor(0, 224, 0), flat,
+                               barDepth3D());
     } else {
         const QByteArray codes = index.data(kUsenetBarRole).toByteArray();
         if (codes.isEmpty()) {
-            painter->fillRect(bar, barColorActive(kUsenetBarQueued));
+            BarShader::fillBarRect(*painter, bar, barColorActive(kUsenetBarQueued), useFlatBar(),
+                                   barDepth3D());
         } else {
             const bool paused = index.data(kUsenetBarPausedRole).toBool();
             paintPartBar(*painter, bar, codes, paused ? barColorPaused : barColorActive);

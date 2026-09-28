@@ -627,7 +627,8 @@ int main(int argc, char* argv[])
                     return stats.value(QString(k)).toDouble();
                 };
                 const double upRate = val(QLatin1StringView("rateUp"));
-                const double downRate = val(QLatin1StringView("rateDown"));
+                const double downRate = val(QLatin1StringView("rateDown"))
+                                      + val(QLatin1StringView("rateDownUsenet"));
                 mainWindow.updateTransferRates(
                     upRate, downRate,
                     val(QLatin1StringView("upOverheadRate")),

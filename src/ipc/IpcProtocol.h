@@ -547,6 +547,9 @@ enum class IpcMsgType : int {
     /// Add NZB dialog can offer its files. `index` is what AddNzb's field 8 names;
     /// `setKey` groups the volumes of one archive set, empty for other files.
     InspectNzb              = 741,
+    /// [] -> [ok, count]. Remove every Complete item from the list, files kept.
+    /// The Usenet twin of ClearCompleted.
+    ClearUsenetCompleted    = 742,
 
     // -- eNode meta search (750-754) -------------------------------------------
     //

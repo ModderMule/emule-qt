@@ -73,6 +73,9 @@
     <ClCompile Include="controls\DownloadListModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="controls\BarShader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="controls\DownloadProgressDelegate.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -313,6 +316,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="controls\SortableItems.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="controls\BarShader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="controls\PartBarPainter.h">
@@ -1174,6 +1180,9 @@
       <Filter>Resource Files</Filter>
     </None>
     <None Include="..\..\resources\icons\Usenet.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\UsenetSearch.ico">
       <Filter>Resource Files</Filter>
     </None>
     <None Include="..\..\resources\icons\Torrent.ico">

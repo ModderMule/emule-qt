@@ -231,6 +231,7 @@
     <ClCompile Include="controls\CategoryTabBar.cpp" />
     <ClCompile Include="controls\FitTextTabBar.cpp" />
     <ClCompile Include="controls\DownloadListModel.cpp" />
+    <ClCompile Include="controls\BarShader.cpp" />
     <ClCompile Include="controls\DownloadProgressDelegate.cpp" />
     <ClCompile Include="controls\UsenetFileCheckList.cpp" />
     <ClCompile Include="controls\UsenetProgressDelegate.cpp" />
@@ -305,6 +306,7 @@
     <ClInclude Include="controls\AbstractListView.h" />
     <ClInclude Include="controls\SortableItems.h" />
     <ClInclude Include="controls\FitTextTabBar.h" />
+    <ClInclude Include="controls\BarShader.h" />
     <ClInclude Include="controls\PartBarPainter.h" />
     <ClInclude Include="controls\AbstractTableModel.h" />
     <ClInclude Include="controls\TrayMeterIcon.h" />
@@ -628,6 +630,7 @@
     <None Include="..\..\resources\icons\Up1down1.ico" />
     <None Include="..\..\resources\icons\Upload.ico" />
     <None Include="..\..\resources\icons\Usenet.ico" />
+    <None Include="..\..\resources\icons\UsenetSearch.ico" />
     <None Include="..\..\resources\icons\Torrent.ico" />
     <None Include="..\..\resources\icons\User.ico" />
     <None Include="..\..\resources\icons\UserAdd.ico" />

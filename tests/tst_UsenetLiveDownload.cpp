@@ -57,17 +57,21 @@ constexpr int kProgressLogMs = 5000;
 
 constexpr int kDefaultBudgetMinutes = 45;
 
-QString describe(const UsenetQueueItem* item)
+QString describe(const UsenetQueue& queue, const UsenetQueueItem* item)
 {
     if (!item)
         return QStringLiteral("(item gone)");
 
-    QString line = QStringLiteral("  %1  %2%  %3/%4 segments, %5 MB decoded")
+    // progress = done articles plus in-flight bytes, what the GUI's bar shows.
+    const qint64 total = item->totalEncodedBytes();
+    const qint64 progress = queue.itemProgressBytes(item->id);
+    QString line = QStringLiteral("  %1  %2%  %3/%4 segments, %5 MB decoded, progress %6%")
                        .arg(describeUsenetItemStatus(item->status))
                        .arg(item->percentComplete())
                        .arg(item->doneSegmentCount())
                        .arg(item->segmentCount())
-                       .arg(item->decodedBytes() / (1024 * 1024));
+                       .arg(item->decodedBytes() / (1024 * 1024))
+                       .arg(total > 0 ? double(progress) * 100.0 / double(total) : 0.0, 0, 'f', 2);
 
     if (item->isPostProcessing())
         line += QStringLiteral("  [%1% %2]").arg(item->postPercent).arg(item->postDetail);
@@ -232,12 +236,12 @@ void tst_UsenetLiveDownload::downloadsRepairsUnpacksAndPublishes()
     while (finished.isEmpty() && !deadline.hasExpired()) {
         finished.wait(kProgressLogMs);
         if (finished.isEmpty())
-            qInfo().noquote() << describe(queue.findItem(id));
+            qInfo().noquote() << describe(queue, queue.findItem(id));
     }
 
     QVERIFY2(!finished.isEmpty(),
              qPrintable(QStringLiteral("no completion within %1 min — last state:%2")
-                            .arg(budgetMin).arg(describe(queue.findItem(id)))));
+                            .arg(budgetMin).arg(describe(queue, queue.findItem(id)))));
 
     const bool success = finished.first().at(1).toBool();
     const QString message = finished.first().at(2).toString();

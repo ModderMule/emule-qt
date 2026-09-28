@@ -215,6 +215,7 @@ void UsenetWorker::startJob(Job* job)
         return;
 
     job->fetcher = std::make_unique<ArticleFetcher>();
+    job->fetcher->setProgressSink(job->request.received);
     connect(job->fetcher.get(), &ArticleFetcher::finished, this,
             [this, job](NntpError error, const QString& text) {
                 finishJob(job, error, text);

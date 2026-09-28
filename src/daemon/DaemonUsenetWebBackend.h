@@ -30,6 +30,7 @@ public:
     bool pause(const QString& id) override;
     bool resume(const QString& id) override;
     bool remove(const QString& id, bool deleteFiles) override;
+    int clearCompleted() override;
     bool setPriority(const QString& id, int priority) override;
     bool setCategory(const QString& id, int category) override;
     bool setPassword(const QString& id, const QString& password) override;

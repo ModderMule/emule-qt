@@ -152,6 +152,9 @@ void StatsHistory::takeSpeedSample()
         s.down = st->rateDown();
         s.up   = st->rateUp();
     }
+    // The toolbar shows total download, so Usenet counts too.
+    if (m_usenetDownRate)
+        s.down += std::max(0.0f, m_usenetDownRate());
 
     m_speed.push_back(s);
     if (m_speed.size() > kSpeedCapacity)

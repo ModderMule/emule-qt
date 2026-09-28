@@ -487,7 +487,6 @@
     <QtMoc Include="stats\StatsHistory.h" />
     <ClInclude Include="stats\StatsSnapshot.h" />
     <ClInclude Include="utils\StringUtils.h" />
-    <ClInclude Include="utils\ByteRateSampler.h" />
     <ClInclude Include="utils\UsenetDisplay.h" />
     <ClInclude Include="protocol\Tag.h" />
     <ClInclude Include="utils\ThreadUtils.h" />

@@ -92,6 +92,7 @@ SOURCES += \
     controls/CategoryTabBar.cpp \
     controls/FitTextTabBar.cpp \
     controls/DownloadListModel.cpp \
+    controls/BarShader.cpp \
     controls/DownloadProgressDelegate.cpp \
     controls/UsenetFileCheckList.cpp \
     controls/UsenetProgressDelegate.cpp \
@@ -166,6 +167,7 @@ HEADERS += \
     controls/FitTextTabBar.h \
     controls/DownloadListModel.h \
     controls/DownloadProgressDelegate.h \
+    controls/BarShader.h \
     controls/PartBarPainter.h \
     controls/UsenetFileCheckList.h \
     controls/UsenetProgressDelegate.h \

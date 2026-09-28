@@ -5,7 +5,6 @@
 #include "webserver/WebServer.h"
 #include "webserver/WebTemplateEngine.h"
 #include "webserver/WebTemplateStrings.h"
-#include "utils/ByteRateSampler.h"
 #include "utils/OtherFunctions.h"
 #include "enodemeta/MetaHash.h"
 #include "utils/StringUtils.h"
@@ -101,6 +100,7 @@ QCborArray fakeUsenetRows()
         {QStringLiteral("percent"), 25},
         {QStringLiteral("totalBytes"), qint64(2000000)},
         {QStringLiteral("decodedBytes"), qint64(500000)},
+        {QStringLiteral("progressBytes"), qint64(500000)},
         {QStringLiteral("healthPercent"), -1},
         {QStringLiteral("files"), QCborArray{usenetFileRow(0, QStringLiteral("Movie.mkv")),
                                              usenetFileRow(1, QStringLiteral("Movie.par2"), true)}},
@@ -116,6 +116,7 @@ QCborArray fakeUsenetRows()
         {QStringLiteral("percent"), 100},
         {QStringLiteral("totalBytes"), qint64(1000000)},
         {QStringLiteral("decodedBytes"), qint64(1000000)},
+        {QStringLiteral("progressBytes"), qint64(1000000)},
         {QStringLiteral("healthPercent"), 100},
         {QStringLiteral("healthProbed"), true},
         {QStringLiteral("files"), QCborArray{usenetFileRow(0, QStringLiteral("Other.mkv"))}},
@@ -213,6 +214,11 @@ public:
         calls << QStringLiteral("remove:%1:%2")
                      .arg(id, deleteFiles ? QStringLiteral("true") : QStringLiteral("false"));
         return true;
+    }
+    int clearCompleted() override
+    {
+        calls << QStringLiteral("clearcompleted");
+        return 1;
     }
     bool setPriority(const QString& id, int priority) override
     {
@@ -379,7 +385,6 @@ private slots:
     void graphVars_withNoSamplesAreEmpty();
 
     // Usenet — the web page and the REST API
-    void byteRateSamplerIgnoresReadingsInsideItsWindow();
     void usenetPageRendersTheQueueEscaped();
     void usenetListFragmentFiltersAndSorts();
     void usenetActionsNeedAnAdminSession();
@@ -2133,15 +2138,6 @@ QString tst_WebServer::webLogin(uint16 port, const QString& password)
     return m.hasMatch() ? m.captured(1) : QString();
 }
 
-void tst_WebServer::byteRateSamplerIgnoresReadingsInsideItsWindow()
-{
-    ByteRateSampler s;
-    QCOMPARE(s.update(0, 1000), qint64(0));        // the first reading only anchors
-    QCOMPARE(s.update(400, 1200), qint64(0));      // 200 ms on: too close to measure
-    QCOMPARE(s.update(1000, 2000), qint64(1000));  // 1000 bytes over 1 s
-    QCOMPARE(s.update(1000, 3000), qint64(0));     // standing still reads as zero
-}
-
 void tst_WebServer::usenetPageRendersTheQueueEscaped()
 {
     FakeUsenetBackend fake;
@@ -2257,9 +2253,16 @@ void tst_WebServer::usenetActionsNeedAnAdminSession()
     QVERIFY(fake.calls.contains(QStringLiteral("cat:1:0")));
     QCOMPARE(post(admin, QByteArrayLiteral("op=catcancel&v=9")).statusCode, 400);
 
+    // Clear Completed needs no selection.
+    r = post(admin, QByteArrayLiteral("op=clearcompleted"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("done")).toInt(), 1);
+    QVERIFY(fake.calls.contains(QStringLiteral("clearcompleted")));
+
     // Guests look; they do not touch.
     const qsizetype before = fake.calls.size();
     QCOMPARE(post(guest, QByteArrayLiteral("op=pause&id=item-a")).statusCode, 403);
+    QCOMPARE(post(guest, QByteArrayLiteral("op=clearcompleted")).statusCode, 403);
     QCOMPARE(post(QString(), QByteArrayLiteral("op=pause&id=item-a")).statusCode, 401);
     QCOMPARE(fake.calls.size(), before);
 

@@ -86,6 +86,8 @@ public:
     /// A person pressed Resume: overrules a check that stopped the release.
     virtual bool resume(const QString& id) = 0;
     virtual bool remove(const QString& id, bool deleteFiles) = 0;
+    /// Drop every Complete release from the list, files kept. Returns the count.
+    virtual int clearCompleted() = 0;
     virtual bool setPriority(const QString& id, int priority) = 0;
     virtual bool setCategory(const QString& id, int category) = 0;
     virtual bool setPassword(const QString& id, const QString& password) = 0;

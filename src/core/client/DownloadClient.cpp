@@ -1078,6 +1078,7 @@ void UpDownClient::startDownload()
     setDownloadState(DownloadState::Downloading);
     m_downStartTime = static_cast<uint32>(getTickCount());
     m_sentCancelTransfer = false;
+    m_lastPartAsked = UINT16_MAX;   // fresh chunk pick, MFC StartDownload
     sendBlockRequests();
 }
 

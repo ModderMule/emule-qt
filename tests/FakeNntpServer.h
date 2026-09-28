@@ -127,16 +127,25 @@ public:
     /// download carries on around it.
     void setHoldArticle(const QString& messageId) { m_holdId = normalizeId(messageId); }
 
+    /// Like setHoldArticle(), but send the first half of the body before holding:
+    /// an article that is partly read, as under a rate limit.
+    void setHoldArticleHalfway(const QString& messageId)
+    {
+        m_holdId = normalizeId(messageId);
+        m_holdHalfway = true;
+    }
+
     /// Serve every held BODY and stop holding.
     void releaseHeld()
     {
         m_holdId.clear();
+        m_holdHalfway = false;
         const auto held = m_held;
         m_held.clear();
-        for (const auto& [sock, id] : held) {
+        for (const auto& [sock, id, sentLines] : held) {
             if (!sock)
                 continue;
-            serveBody(sock, id);
+            serveBody(sock, id, sentLines);
             m_conns[sock.data()].busy = false;
             pump(sock);
         }
@@ -384,7 +393,15 @@ private:
         // Held: nothing goes out until releaseHeld(). The socket stays open and
         // silent, exactly like a provider that is simply slow.
         if (!m_holdId.isEmpty() && key == m_holdId) {
-            m_held.append({QPointer<QTcpSocket>(sock), key});
+            int sentLines = -1;
+            if (m_holdHalfway && m_articles.contains(key)) {
+                const QList<QByteArray> lines = m_articles.value(key).split('\n');
+                sentLines = int(lines.size() / 2);
+                writeLine(sock, QStringLiteral("222 0 <%1> Body follows").arg(key).toLatin1());
+                for (int i = 0; i < sentLines; ++i)
+                    writeStuffedLine(sock, lines.at(i));
+            }
+            m_held.append({QPointer<QTcpSocket>(sock), key, sentLines});
             m_conns[sock].busy = true;
             return;
         }
@@ -392,16 +409,19 @@ private:
         serveBody(sock, key);
     }
 
-    void serveBody(QTcpSocket* sock, const QString& key)
+    /// @p sentLines >= 0: the status line and that many body lines already went out.
+    void serveBody(QTcpSocket* sock, const QString& key, int sentLines = -1)
     {
         const auto it = m_articles.constFind(key);
         if (it == m_articles.cend()) {
             writeLine(sock, QByteArrayLiteral("430 No article with that message-id"));
             return;
         }
-        writeLine(sock, QStringLiteral("222 0 <%1> Body follows").arg(key).toLatin1());
-        for (const QByteArray& bodyLine : it->split('\n'))
-            writeStuffedLine(sock, bodyLine);
+        if (sentLines < 0)
+            writeLine(sock, QStringLiteral("222 0 <%1> Body follows").arg(key).toLatin1());
+        const QList<QByteArray> lines = it->split('\n');
+        for (qsizetype i = std::max(sentLines, 0); i < lines.size(); ++i)
+            writeStuffedLine(sock, lines.at(i));
         writeLine(sock, QByteArrayLiteral("."));
     }
 
@@ -463,7 +483,13 @@ private:
 
     /// The article BODY sits on until releaseHeld(), and who is waiting for it.
     QString m_holdId;
-    QList<QPair<QPointer<QTcpSocket>, QString>> m_held;
+    struct Held {
+        QPointer<QTcpSocket> sock;
+        QString id;
+        int sentLines = -1;   ///< body lines already sent; -1 = none, not even 222
+    };
+    QList<Held> m_held;
+    bool m_holdHalfway = false;
 
     /// Articles STAT denies but BODY still serves. See setStatRefusal().
     QSet<QString> m_statRefusals;

@@ -1466,6 +1466,9 @@ public:
 
     [[nodiscard]] bool showDwlPercentage() const;
     void setShowDwlPercentage(bool val);
+    /// MorphXT bar detail: downloaded data of unfinished parts in its own colour, part boundary dots.
+    [[nodiscard]] bool showPartProgressDetail() const;
+    void setShowPartProgressDetail(bool val);
 
     [[nodiscard]] bool showRatesInTitle() const;
     void setShowRatesInTitle(bool val);

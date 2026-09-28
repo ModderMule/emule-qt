@@ -10,6 +10,7 @@
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
 #include "controls/AccordionSidebar.h"
+#include "controls/BarShader.h"
 #include "controls/ContentScrollArea.h"
 #include "panels/StatisticsPanel.h"
 #include "net/HttpFileDownload.h"
@@ -57,6 +58,7 @@
 #include <QPainter>
 #include <QPointer>
 #include <QProcess>
+#include <QPainter>
 #include <QPushButton>
 #include <QScreen>
 #include <QSettings>
@@ -209,6 +211,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_minimizeToTrayCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_transferDoubleClickCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showDwlPercentageCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_showPartProgressDetailCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showRatesInTitleCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showCatTabInfosCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_autoRemoveFinishedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -510,6 +513,31 @@ void OptionsDialog::markDirty()
 
 namespace {
 
+/// The Display page's progress-bar style sample, MFC C3DPreviewControl.
+class BarStylePreview : public QWidget {
+public:
+    explicit BarStylePreview(QWidget* parent) : QWidget(parent) { setFixedSize(34, 18); }
+
+    void setLevel(int level)
+    {
+        m_level = level;
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter painter(this);
+        const QRect frame = rect();
+        painter.fillRect(frame, QColor(104, 104, 104));
+        BarShader::fillBarRect(painter, frame.adjusted(1, 1, -1, -1), QColor(192, 192, 255),
+                               m_level == 0, m_level);
+    }
+
+private:
+    int m_level = 0;
+};
+
 /// Value label beside a Connection-page limit slider.
 QString limitText(int kbps)
 {
@@ -602,7 +630,7 @@ void OptionsDialog::setupSidebar()
     };
     static constexpr PageDef kUsenetPages[] = {
         {PageUsenet,        "Usenet",                QStyle::SP_DriveNetIcon,           "Usenet.ico"},
-        {PageIndexers,      "Indexers",              QStyle::SP_FileDialogContentsView, "Search.ico"},
+        {PageIndexers,      "Indexers",              QStyle::SP_FileDialogContentsView, "UsenetSearch.ico"},
         {PageFeeds,         "Feeds",                 QStyle::SP_BrowserReload,          "SearchEdit.ico"},
     };
 
@@ -885,20 +913,14 @@ QWidget* OptionsDialog::createDisplayPage()
     // --- Progressbar style row ---
     auto* progressRow = new QHBoxLayout;
     progressRow->addWidget(new QLabel(tr("Progressbar style"), page));
-    // Preview placeholder (small colored rectangle)
-    auto* preview = new QLabel(page);
-    preview->setFixedSize(60, 16);
-    preview->setFrameShape(QLabel::Box);
-    preview->setAutoFillBackground(true);
-    auto previewPal = preview->palette();
-    previewPal.setColor(QPalette::Window, QColor(0x99, 0x99, 0xCC));
-    preview->setPalette(previewPal);
+    auto* preview = new BarStylePreview(page);
     progressRow->addWidget(preview);
     progressRow->addWidget(new QLabel(tr("flat"), page));
     m_depth3DSlider = new QSlider(Qt::Horizontal, page);
     m_depth3DSlider->setRange(0, 5);
     m_depth3DSlider->setTickPosition(QSlider::TicksBelow);
     m_depth3DSlider->setTickInterval(1);
+    connect(m_depth3DSlider, &QSlider::valueChanged, preview, &BarStylePreview::setLevel);
     progressRow->addWidget(m_depth3DSlider);
     progressRow->addWidget(new QLabel(tr("round"), page));
     layout->addLayout(progressRow);
@@ -921,6 +943,12 @@ QWidget* OptionsDialog::createDisplayPage()
 
     m_showDwlPercentageCheck = new QCheckBox(tr("Show percentage of download completion in progressbar"), page);
     layout->addWidget(m_showDwlPercentageCheck);
+
+    m_showPartProgressDetailCheck = new QCheckBox(tr("Show downloaded data of unfinished parts and part boundaries"), page);
+    m_showPartProgressDetailCheck->setToolTip(
+        tr("Colours the data already downloaded in incomplete parts (green while being "
+           "requested, grey otherwise) and marks every part boundary on the progress line."));
+    layout->addWidget(m_showPartProgressDetailCheck);
 
     m_showRatesInTitleCheck = new QCheckBox(tr("Show transfer rates on title"), page);
     layout->addWidget(m_showRatesInTitleCheck);
@@ -3498,8 +3526,8 @@ void OptionsDialog::loadNewsServers()
         return;
 
     m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::GetNewsServers),
-                       [this](const Ipc::IpcMessage& resp) {
-        if (!resp.fieldBool(0))
+                       [this, self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
+        if (!self || !resp.isValid() || !resp.fieldBool(0))
             return;
 
         m_newsServers.clear();
@@ -4283,8 +4311,8 @@ void OptionsDialog::loadIndexers()
         return;
 
     m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::GetIndexers),
-                       [this](const Ipc::IpcMessage& resp) {
-        if (!resp.fieldBool(0))
+                       [this, self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
+        if (!self || !resp.isValid() || !resp.fieldBool(0))
             return;
 
         m_indexers.clear();
@@ -4366,8 +4394,8 @@ void OptionsDialog::loadFeeds()
         return;
 
     m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::GetIndexerFeeds),
-                       [this](const Ipc::IpcMessage& resp) {
-        if (!resp.fieldBool(0))
+                       [this, self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
+        if (!self || !resp.isValid() || !resp.fieldBool(0))
             return;
 
         m_feeds.clear();
@@ -5727,8 +5755,9 @@ void OptionsDialog::loadSchedulerData()
         return;
 
     Ipc::IpcMessage req(Ipc::IpcMsgType::GetSchedules);
-    m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage& resp) {
-        if (!resp.fieldBool(0))
+    // dialog may close before the reply lands
+    m_ipc->sendRequest(std::move(req), [this, self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
+        if (!self || !resp.isValid() || !resp.fieldBool(0))
             return;
         const QCborMap data = resp.fieldMap(1);
 
@@ -5848,6 +5877,7 @@ void OptionsDialog::loadSettings()
     m_minimizeToTrayCheck->setChecked(thePrefs.minimizeToTray());
     m_transferDoubleClickCheck->setChecked(thePrefs.transferDoubleClick());
     m_showDwlPercentageCheck->setChecked(thePrefs.showDwlPercentage());
+    m_showPartProgressDetailCheck->setChecked(thePrefs.showPartProgressDetail());
     m_showRatesInTitleCheck->setChecked(thePrefs.showRatesInTitle());
     m_showCatTabInfosCheck->setChecked(thePrefs.showCatTabInfos());
     m_autoRemoveFinishedCheck->setChecked(thePrefs.autoRemoveFinishedDownloads());
@@ -6043,6 +6073,7 @@ void OptionsDialog::saveSettings()
     thePrefs.setMinimizeToTray(m_minimizeToTrayCheck->isChecked());
     thePrefs.setTransferDoubleClick(m_transferDoubleClickCheck->isChecked());
     thePrefs.setShowDwlPercentage(m_showDwlPercentageCheck->isChecked());
+    thePrefs.setShowPartProgressDetail(m_showPartProgressDetailCheck->isChecked());
     thePrefs.setShowRatesInTitle(m_showRatesInTitleCheck->isChecked());
     thePrefs.setShowCatTabInfos(m_showCatTabInfosCheck->isChecked());
     thePrefs.setAutoRemoveFinishedDownloads(m_autoRemoveFinishedCheck->isChecked());
@@ -6577,6 +6608,8 @@ void OptionsDialog::saveSettings()
         req.append(m_transferDoubleClickCheck->isChecked());
         req.append(QStringLiteral("showDwlPercentage"));
         req.append(m_showDwlPercentageCheck->isChecked());
+        req.append(QStringLiteral("showPartProgressDetail"));
+        req.append(m_showPartProgressDetailCheck->isChecked());
         req.append(QStringLiteral("showRatesInTitle"));
         req.append(m_showRatesInTitleCheck->isChecked());
         req.append(QStringLiteral("showCatTabInfos"));
@@ -7325,7 +7358,9 @@ void OptionsDialog::openPortTest()
     }
 
     Ipc::IpcMessage req(Ipc::IpcMsgType::GetNetworkInfo);
-    m_ipc->sendRequest(std::move(req), [this, tcp, udp](const Ipc::IpcMessage& resp) {
+    m_ipc->sendRequest(std::move(req), [this, self = QPointer<OptionsDialog>(this), tcp, udp](const Ipc::IpcMessage& resp) {
+        if (!self)
+            return;
         const QCborMap ed2k = resp.fieldMap(1).value(QStringLiteral("ed2k")).toMap();
         openPortTestUrl(tcp, udp,
                         ed2k.value(QStringLiteral("publicIPv4")).toString(),

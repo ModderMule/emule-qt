@@ -152,6 +152,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::SetUsenetFilesSkipped: return QStringLiteral("SetUsenetFilesSkipped");
     case T::SetUsenetPaused:      return QStringLiteral("SetUsenetPaused");
     case T::InspectNzb:           return QStringLiteral("InspectNzb");
+    case T::ClearUsenetCompleted: return QStringLiteral("ClearUsenetCompleted");
     default:
         return QStringLiteral("Unknown(%1)").arg(static_cast<int>(type));
     }

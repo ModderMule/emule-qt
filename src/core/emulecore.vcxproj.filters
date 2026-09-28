@@ -884,9 +884,6 @@
     <ClInclude Include="utils\StringUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="utils\ByteRateSampler.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="utils\UsenetDisplay.h">
       <Filter>Header Files</Filter>
     </ClInclude>

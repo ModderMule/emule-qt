@@ -22,6 +22,8 @@
 
 #include <algorithm>
 #include <cstring>
+#include <functional>
+#include <set>
 #include <span>
 #include <vector>
 
@@ -48,6 +50,11 @@ private slots:
     void writeToBuffer_fillsGap();
     void flushBuffer_writesToDisk();
     void getNextRequestedBlock_basic();
+    void chunkSelection_spreadsTies();
+    void chunkSelection_rarestFirst();
+    void chunkSelection_shortLastPartNotFavoured();
+    void emptyBlock_alignsToEmBlockSize();
+    void requestedBlock_shrinksAroundTaken();
     void statusTransitions();
     void priority_setAndGet();
     void autoDownPriority();
@@ -327,6 +334,127 @@ void tst_PartFile::getNextRequestedBlock_basic()
     QVERIFY(blocks[0]->startOffset < static_cast<uint64>(pf.fileSize()));
 
     // Clean up (blocks are owned by PartFile's requested list)
+}
+
+namespace {
+
+/// First part a fresh complete source is given, on a fresh file of @p parts parts.
+uint32 firstPickedPart(uint16 parts, const std::function<void(PartFile&)>& setup = {})
+{
+    PartFile pf;
+    pf.setFileName(QStringLiteral("pick.bin"));
+    pf.setFileSize(PARTSIZE * parts);
+    uint8 hash[16] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+    pf.setFileHash(hash);
+    if (setup)
+        setup(pf);
+
+    UpDownClient client;
+    client.setCompleteSource(true);
+    Requested_Block_Struct* blocks[1] = {};
+    int count = 1;
+    if (!pf.getNextRequestedBlock(&client, blocks, count))
+        return UINT32_MAX;
+    return static_cast<uint32>(blocks[0]->startOffset / PARTSIZE);
+}
+
+} // namespace
+
+void tst_PartFile::chunkSelection_spreadsTies()
+{
+    // All parts equally available: MFC picks at random among the best, so the
+    // file doesn't fill left to right
+    std::set<uint32> picked;
+    for (int i = 0; i < 60; ++i)
+        picked.insert(firstPickedPart(20));
+    QVERIFY(!picked.contains(UINT32_MAX));
+    QVERIFY2(picked.size() > 5, "tied chunks must be picked at random");
+}
+
+void tst_PartFile::chunkSelection_rarestFirst()
+{
+    for (int i = 0; i < 20; ++i) {
+        const uint32 part = firstPickedPart(20, [](PartFile& pf) {
+            auto& freq = pf.srcPartFrequency();
+            std::ranges::fill(freq, uint16{50});
+            freq[7] = 1;
+        });
+        QCOMPARE(part, 7u);
+    }
+}
+
+void tst_PartFile::chunkSelection_shortLastPartNotFavoured()
+{
+    // Last part is 2 KB with 1.5 KB done (75 % of itself), part 0 is half done.
+    // Completion counts against PARTSIZE, so the short last part gets no head start.
+    for (int i = 0; i < 20; ++i) {
+        PartFile pf;
+        pf.setFileName(QStringLiteral("last.bin"));
+        pf.setFileSize(PARTSIZE * 2 + 2048);
+        uint8 hash[16] = {1};
+        pf.setFileHash(hash);
+        pf.fillGap(0, PARTSIZE * 2 + 2048 - 1);
+        pf.addGap(PARTSIZE / 2, PARTSIZE - 1);                 // part 0: half left
+        pf.addGap(PARTSIZE * 2 + 1536, PARTSIZE * 2 + 2047);   // part 2: 512 B left
+
+        UpDownClient client;
+        client.setCompleteSource(true);
+        Requested_Block_Struct* blocks[1] = {};
+        int count = 1;
+        QVERIFY(pf.getNextRequestedBlock(&client, blocks, count));
+        QCOMPARE(blocks[0]->startOffset / PARTSIZE, uint64{0});
+    }
+}
+
+void tst_PartFile::emptyBlock_alignsToEmBlockSize()
+{
+    PartFile pf;
+    pf.setFileSize(PARTSIZE * 2);
+    pf.fillGap(0, PARTSIZE * 2 - 1);
+    const uint64 partStart = PARTSIZE;
+    pf.addGap(partStart + 1000, partStart + 3 * EMBLOCKSIZE);
+
+    Requested_Block_Struct block;
+    QVERIFY(pf.getNextEmptyBlockInPart(1, &block));
+    QCOMPARE(block.startOffset, partStart + 1000);
+    // ends on the part-relative block boundary, not start + EMBLOCKSIZE
+    QCOMPARE(block.endOffset, partStart + EMBLOCKSIZE - 1);
+}
+
+void tst_PartFile::requestedBlock_shrinksAroundTaken()
+{
+    // Another source holds the middle of the first block: we get the free
+    // prefix, then the free suffix, instead of skipping the whole block
+    PartFile pf;
+    pf.setFileName(QStringLiteral("shrink.bin"));
+    pf.setFileSize(PARTSIZE * 4);   // no endgame
+    uint8 hash[16] = {1};
+    pf.setFileHash(hash);
+
+    UpDownClient other;
+    other.setCompleteSource(true);
+    other.setClientVersion(makeClientVersion(0, 50, 0));
+    UpDownClient client;
+    client.setCompleteSource(true);
+
+    // pin both sources to part 0: everything else is already there
+    pf.fillGap(PARTSIZE, PARTSIZE * 4 - 1);
+    Requested_Block_Struct* taken[1] = {};
+    int one = 1;
+    QVERIFY(pf.getNextRequestedBlock(&other, taken, one));
+    QCOMPARE(taken[0]->startOffset, uint64{0});
+    // narrow the other request to the middle of block 0
+    taken[0]->startOffset = 50000;
+    taken[0]->endOffset = 60000;
+
+    Requested_Block_Struct* blocks[2] = {};
+    int count = 2;
+    QVERIFY(pf.getNextRequestedBlock(&client, blocks, count));
+    QCOMPARE(count, 2);
+    QCOMPARE(blocks[0]->startOffset, uint64{0});
+    QCOMPARE(blocks[0]->endOffset, uint64{49999});
+    QCOMPARE(blocks[1]->startOffset, uint64{60001});
+    QCOMPARE(blocks[1]->endOffset, uint64{EMBLOCKSIZE - 1});
 }
 
 void tst_PartFile::statusTransitions()

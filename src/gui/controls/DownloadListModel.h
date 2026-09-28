@@ -11,6 +11,8 @@
 #include <QAbstractItemModel>
 #include <QByteArray>
 #include <QHash>
+#include <QList>
+#include <QMetaType>
 #include <QString>
 #include <QStringList>
 
@@ -43,6 +45,16 @@ struct SourceRow {
     QByteArray partMap;  // per-part: 0=no, 1=both, 2=client-only, 3=pending, 4=receiving
 };
 
+/// Byte-exact inputs of MFC's CPartFile::DrawStatusBar, as the bar delegate reads them.
+/// Ranges are flat [start, end, start, end, ...] pairs with inclusive ends.
+struct DownloadBarData {
+    int64_t fileSize = 0;
+    QList<qint64> gaps;
+    QList<qint64> pending;
+    QList<quint16> partFreq;
+    QByteArray partMap;
+};
+
 /// Row data for one download (PartFile) shown in the downloads list.
 struct DownloadRow {
     QString hash;
@@ -72,6 +84,10 @@ struct DownloadRow {
     int64_t acceptedRequests = 0;
     int64_t transferredData = 0;
     QByteArray partMap;  // per-part status: 0=done, 1=no-src, 2-254=src-freq, 255=downloading
+    QList<qint64> gaps;       ///< flat [start, end] pairs, inclusive
+    QList<qint64> pending;    ///< requested blocks not yet received, same shape
+    QList<quint16> partFreq;  ///< source count per part
+    bool hasBarRanges = false; ///< daemon sent gaps; else the bar falls back to partMap
     bool isPreviewPossible = false;
 
     // Comment/rating, as MFC's indicator reads them. userRating is the wire
@@ -107,6 +123,8 @@ public:
     // its value, and so the proxy needs to know neither of them.
     static constexpr int PartMapRole = Qt::UserRole + 1;
     static constexpr int PausedRole  = Qt::UserRole + 2;
+    /// DownloadBarData for a file row's progress cell; invalid on source rows.
+    static constexpr int BarDataRole = Qt::UserRole + 3;
 
     enum Column {
         ColFileName = 0,
@@ -196,3 +214,5 @@ private:
 };
 
 } // namespace eMule
+
+Q_DECLARE_METATYPE(eMule::DownloadBarData)

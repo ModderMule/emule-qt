@@ -90,6 +90,17 @@ void UsenetFileState::addWritten(qint64 start, qint64 length)
     written = std::move(merged);
 }
 
+qint64 UsenetFileState::doneEncodedBytes(const NzbFileInfo& info) const
+{
+    qint64 total = 0;
+    const qsizetype n = std::min(done.size(), info.segments.size());
+    for (qsizetype i = 0; i < n; ++i) {
+        if (done.testBit(i))
+            total += info.segments.at(i).bytes;
+    }
+    return total;
+}
+
 qint64 UsenetFileState::availableEnd() const
 {
     return availableFrom(0);
@@ -170,6 +181,16 @@ qint64 UsenetQueueItem::decodedBytes() const
     return total;
 }
 
+qint64 UsenetQueueItem::doneEncodedBytes() const
+{
+    qint64 total = 0;
+    for (int i = 0; i < files.size() && i < nzb.files.size(); ++i) {
+        if (!files.at(i).isSkipped())
+            total += files.at(i).doneEncodedBytes(nzb.files.at(i));
+    }
+    return total;
+}
+
 int UsenetQueueItem::segmentCount() const
 {
     int n = 0;
@@ -201,9 +222,19 @@ QString UsenetQueueItem::bestFileName(int fileIndex) const
     const UsenetFileState& st = files.at(fileIndex);
     if (!st.par2FileName.isEmpty())
         return st.par2FileName;
-    if (!st.articleFileName.isEmpty())
-        return st.articleFileName;
-    return nzb.files.at(fileIndex).fileName;
+
+    const NzbFileInfo& info = nzb.files.at(fileIndex);
+    if (st.articleFileName.isEmpty())
+        return info.fileName;
+
+    // libpar2 opens only *.par2 and finds a set's volumes by name. A PAR2 file
+    // whose yEnc name is a hex string would sit on disk invisible to it.
+    const auto par2Named = [](const QString& n) {
+        return n.endsWith(QLatin1String(".par2"), Qt::CaseInsensitive);
+    };
+    if (info.isPar2() && !par2Named(st.articleFileName))
+        return par2Named(info.fileName) ? info.fileName : st.articleFileName + QLatin1String(".par2");
+    return st.articleFileName;
 }
 
 bool UsenetQueueItem::isFilePreviewable(int fileIndex) const

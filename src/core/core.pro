@@ -338,7 +338,6 @@ HEADERS += \
     utils/SafeFile.h \
     utils/SettingsUtils.h \
     utils/StringUtils.h \
-    utils/ByteRateSampler.h \
     utils/UsenetDisplay.h \
     utils/ThreadUtils.h \
     utils/TimeUtils.h \

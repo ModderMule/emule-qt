@@ -349,6 +349,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::SetUsenetPaused:     handleSetUsenetPaused(msg); break;
     case IpcMsgType::SetUsenetFilesSkipped: handleSetUsenetFilesSkipped(msg); break;
     case IpcMsgType::InspectNzb:          handleInspectNzb(msg); break;
+    case IpcMsgType::ClearUsenetCompleted: handleClearUsenetCompleted(msg); break;
     case IpcMsgType::FetchMetaFile:       handleFetchMetaFile(msg); break;
     case IpcMsgType::DownloadMetaResult:  handleDownloadMetaResult(msg); break;
     case IpcMsgType::GetMetaAuthStatus:   handleGetMetaAuthStatus(msg); break;
@@ -4037,6 +4038,8 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
         thePrefs.setTransferDoubleClick(val.toBool());
     else if (key == QStringLiteral("showDwlPercentage"))
         thePrefs.setShowDwlPercentage(val.toBool());
+    else if (key == QStringLiteral("showPartProgressDetail"))
+        thePrefs.setShowPartProgressDetail(val.toBool());
     else if (key == QStringLiteral("showRatesInTitle"))
         thePrefs.setShowRatesInTitle(val.toBool());
     else if (key == QStringLiteral("showCatTabInfos"))
@@ -5702,6 +5705,19 @@ void IpcClientHandler::handleSetUsenetPaused(const IpcMessage& msg)
     // No engine needed: the preference is what start() reads.
     UsenetBridge::setEnginePaused(msg.fieldBool(0));
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+void IpcClientHandler::handleClearUsenetCompleted(const IpcMessage& msg)
+{
+    auto* queue = UsenetBridge::queue();
+    if (!queue) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503,
+                                          QStringLiteral("Usenet engine unavailable")));
+        return;
+    }
+    IpcMessage reply = IpcMessage::makeResult(msg.seqId(), true);
+    reply.append(static_cast<qint64>(queue->clearCompleted()));
+    sendMessage(reply);
 }
 
 void IpcClientHandler::handleSetUsenetFilesSkipped(const IpcMessage& msg)

@@ -14,7 +14,6 @@
 /// with while it runs.
 
 #include "controls/CategoryFilterProxy.h"
-#include "utils/ByteRateSampler.h"
 #include "utils/UsenetDisplay.h"
 
 #include <QAbstractItemModel>
@@ -146,9 +145,10 @@ struct UsenetItemRow {
     /// resolves it to a folder -- that happens at completion, daemon-side.
     int category = 0;
 
-    int percent = 0;
+    /// Share of totalBytes done, in-flight articles included; fractional.
+    double percent = 0;
     qint64 totalBytes = 0;
-    qint64 decodedBytes = 0;
+    qint64 progressBytes = 0;   ///< same unit as totalBytes (encoded)
     int segmentCount = 0;
     int doneSegments = 0;
     int missingSegments = 0;
@@ -191,13 +191,8 @@ struct UsenetItemRow {
     /// reports, since it went in as an optional key rather than a version bump.
     QList<UsenetPublishedFile> publishedFiles;
 
-    /// Bytes per second, derived by the model from consecutive updates. The
-    /// daemon does not send a per-item rate: it measures the engine as a whole,
-    /// and attributing that across items would be a guess.
+    /// Wire bytes per second: the daemon's engine rate, split by articles in flight.
     qint64 speed = 0;
-
-    /// Set by the model when it computes speed; not from the wire.
-    ByteRateSampler rateSampler;
 
     /// The release's bar: its files laid end to end by size. Built once per
     /// decode by usenetRowFromCbor(), not per paint.
@@ -308,6 +303,8 @@ public:
     [[nodiscard]] QString idAt(int row) const;
     [[nodiscard]] const UsenetItemRow* findById(const QString& id) const;
     [[nodiscard]] int itemCount() const { return int(m_items.size()); }
+    /// Any item in Complete state — what Clear Completed would remove.
+    [[nodiscard]] bool hasCompleted() const;
 
 signals:
     /// The user ticked (@p skipped false) or cleared a file row's checkbox.

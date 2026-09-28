@@ -21,6 +21,8 @@
 #include <QFileInfo>
 #include <QUrl>
 
+#include <algorithm>
+
 namespace eMule::UsenetBridge {
 
 namespace {
@@ -47,6 +49,9 @@ QCborMap itemToCbor(const usenet::UsenetQueueItem& item)
     auto* q = queue();
     const QList<usenet::UsenetQueue::FileView> views =
         q ? q->fileViews(item.id) : QList<usenet::UsenetQueue::FileView>{};
+    // Done articles plus the bytes of those still being read: completions come in
+    // lockstep batches under a rate limit, so a count of them steps.
+    const QList<qint64> progress = q ? q->fileProgressBytes(item.id) : QList<qint64>{};
 
     QCborArray files;
     for (int i = 0; i < item.files.size() && i < item.nzb.files.size(); ++i) {
@@ -71,12 +76,16 @@ QCborMap itemToCbor(const usenet::UsenetQueueItem& item)
                 ++done;
         }
         const int total = int(info.segments.size());
+        const qint64 encoded = info.encodedBytes();
+        const qint64 fileProgress = i < progress.size() ? progress.at(i) : st.doneEncodedBytes(info);
+        const int filePercent = encoded > 0 ? int(std::min<qint64>(fileProgress * 100 / encoded, 100))
+                                : total > 0 ? done * 100 / total : 0;
 
         QCborMap fileMap{
             {QStringLiteral("name"),      name},
             {QStringLiteral("size"),      static_cast<qint64>(st.declaredSize > 0
                                               ? st.declaredSize : info.encodedBytes())},
-            {QStringLiteral("percent"),   total > 0 ? done * 100 / total : 0},
+            {QStringLiteral("percent"),   filePercent},
             {QStringLiteral("finalPath"), st.finalPath},
             {QStringLiteral("isPar2"),    info.isPar2()},
             {QStringLiteral("missingSegments"), st.missingSegments},
@@ -105,6 +114,19 @@ QCborMap itemToCbor(const usenet::UsenetQueueItem& item)
             fileMap.insert(QStringLiteral("segmentMap"), view.segmentMap);
         files.append(fileMap);
     }
+
+    // Same unit as totalEncodedBytes(), which is what makes the two comparable.
+    const qint64 totalBytes = item.totalEncodedBytes();
+    qint64 progressBytes = 0;
+    for (int i = 0; i < progress.size() && i < item.files.size(); ++i) {
+        if (!item.files.at(i).isSkipped())
+            progressBytes += progress.at(i);
+    }
+    if (progress.isEmpty())
+        progressBytes = item.doneEncodedBytes();
+    progressBytes = std::min(progressBytes, totalBytes);
+    const double percent = totalBytes > 0 ? double(progressBytes) * 100.0 / double(totalBytes)
+                           : item.status == usenet::UsenetItemStatus::Complete ? 100.0 : 0.0;
 
     int missing = 0;
     for (const auto& st : item.files) {
@@ -144,9 +166,13 @@ QCborMap itemToCbor(const usenet::UsenetQueueItem& item)
         {QStringLiteral("statusText"),      usenet::describeUsenetItemStatus(item.status)},
         {QStringLiteral("priority"),        item.priority},
         {QStringLiteral("category"),        item.category},
-        {QStringLiteral("percent"),         item.percentComplete()},
-        {QStringLiteral("totalBytes"),      static_cast<qint64>(item.totalEncodedBytes())},
+        {QStringLiteral("percent"),         percent},
+        {QStringLiteral("totalBytes"),      totalBytes},
+        {QStringLiteral("progressBytes"),   progressBytes},
         {QStringLiteral("decodedBytes"),    static_cast<qint64>(item.decodedBytes())},
+        // Wire bytes/s. Not derivable from decodedBytes, which moves in batches.
+        {QStringLiteral("speed"),           item.status == usenet::UsenetItemStatus::Downloading && queue()
+                                                ? queue()->itemRate(item.id) : qint64(0)},
         {QStringLiteral("segmentCount"),    item.segmentCount()},
         {QStringLiteral("doneSegments"),    item.doneSegmentCount()},
         {QStringLiteral("missingSegments"), missing},
@@ -269,6 +295,10 @@ void insertDownloadSplit(QCborMap& stats)
     stats.insert(QStringLiteral("maxDownloadKb"), static_cast<qint64>(split.ceilingKb));
     stats.insert(QStringLiteral("usenetLimitKb"), split.usenetKb());
     stats.insert(QStringLiteral("ed2kBudgetKb"), split.ed2kKb());
+    // Added to rateDown by the GUI's status bar and tray.
+    const auto* q = queue();
+    stats.insert(QStringLiteral("rateDownUsenet"),
+                 q ? static_cast<double>(q->currentRate()) / 1024.0 : 0.0);
 }
 
 bool categoryExists(int category)

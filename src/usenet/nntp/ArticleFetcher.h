@@ -26,6 +26,7 @@
 #include <QObject>
 #include <QString>
 
+#include <atomic>
 #include <memory>
 
 namespace eMule::usenet {
@@ -36,6 +37,10 @@ class GroupCommand;
 class NntpCommand;
 class NntpSocket;
 class StatCommand;
+
+/// Encoded body bytes of one article in flight, written on the worker thread and
+/// read on the queue's. What makes progress move between article completions.
+using ArticleProgress = std::shared_ptr<std::atomic<qint64>>;
 
 class ArticleFetcher : public QObject {
     Q_OBJECT
@@ -68,6 +73,9 @@ public:
     /// @p group is honoured for the same reason fetch() honours it: a server
     /// that demands a selected group for BODY will demand one for STAT.
     void stat(NntpSocket* socket, const NzbSegment& segment, const QString& group = {});
+
+    /// Where fetch() publishes the body bytes read so far. Kept across runs.
+    void setProgressSink(ArticleProgress sink) { m_progress = std::move(sink); }
 
     /// Whether the last stat() found the article. Meaningless after a fetch().
     [[nodiscard]] bool articleExists() const { return m_articleExists; }
@@ -119,12 +127,13 @@ private:
     void startVerb();
     void startBody();
     void startStat();
-    void checkNearlyDone();
+    void onBodyProgress();
     void finish(NntpError error, const QString& text);
 
     NntpSocket* m_socket = nullptr;
     ArticleWriter* m_writer = nullptr;
     NzbSegment m_segment;
+    ArticleProgress m_progress;
     QString m_group;
     Mode m_mode = Mode::Body;
 

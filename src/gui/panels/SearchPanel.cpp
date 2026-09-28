@@ -314,7 +314,7 @@ QWidget* SearchPanel::createSearchBar()
     // Not in "Automatic": an indexer search spends a paid quota and hands the
     // query to a third party, so it has to be chosen deliberately. See the note
     // on resolveAutomaticSearchType().
-    m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Search.ico")),
+    m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/UsenetSearch.ico")),
                            tr("Usenet (Indexer)"), 5);  // SearchType::UsenetIndexer
     typeRow->addWidget(m_methodCombo);
     m_resetBtn = new QPushButton(tr("Reset"), container);
@@ -2162,7 +2162,7 @@ QIcon SearchPanel::tabIcon(const SearchTab& tab)
     if (!thePrefs.useOriginalIcons())
         return {};
     if (tab.isIndexer())
-        return QIcon(QStringLiteral(":/icons/Search.ico"));
+        return QIcon(QStringLiteral(":/icons/UsenetSearch.ico"));
     // MFC SearchResultsWnd.cpp:1367 — sriClient ("StatsClients" = User.ico)
     if (tab.clientSharedFiles)
         return QIcon(QStringLiteral(":/icons/User.ico"));

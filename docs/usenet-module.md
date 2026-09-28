@@ -822,6 +822,15 @@ Post-processing can, and does — every PAR2 packet begins with the eight bytes
 on disk. `payloadFilesIn()` applies the same test, or a par2 file under a hidden
 name would be published as if it were the movie.
 
+Finding them is not enough. libpar2 refuses an index whose name does not end in
+`.par2` (`CommandLine::Parse()` fails, reported as "PAR2 error"), and it finds a
+set's volumes only by `<base>.*.par2`. So `par2FilesIn()` renames each hidden
+one: the first becomes `<base>.par2` (or joins an existing index's base), the rest
+`<base>.volN+0.par2`, and `.vol` keeps `chooseIndexFile()` on the index. A post
+whose *subjects* say `.par2` but whose `=ybegin` names are hex never gets that
+far: `bestFileName()` seals a file the NZB calls PAR2 under a `.par2` name. Both
+cases failed good releases before 2026-09-28 (`hexNamedPar2Volumes*` tests).
+
 `par2FileName` persists as one optional sidecar key. **`kStateVersion` does not
 move for it** — absent means "no PAR2 name known", which is what every sidecar
 written before it existed meant, and `load()` refuses a version it does not know,
@@ -2815,10 +2824,19 @@ statistics), the availability re-check and the category-wide walk. IPC, the page
 and the REST API are thin wrappers over the same functions, so a field added to
 the GUI's row is in the web page and the API the moment it exists.
 
-The one thing the daemon cannot say is a per-item speed — the engine measures
-itself as a whole. `ByteRateSampler` (`src/core/utils/ByteRateSampler.h`) derives
-it from `decodedBytes` for the GUI's model and for the web server alike; the web
-server samples on every request, whichever browser or script asked.
+A row's `speed` is `UsenetQueue::itemRate()`: the engine's wire rate split by
+articles in flight. It used to be sampled from `decodedBytes`, but under a rate
+limit ~100 equal-speed articles finish together every ~20 s, so that read 0 and
+then a huge spike.
+
+Progress has the same problem and the same fix. `percent` (a fractional value;
+the list shows one decimal, like ED2K) and `progressBytes` are
+`UsenetQueue::itemProgressBytes()`: the NZB-encoded bytes of done articles plus
+the body bytes read so far of each article in flight. The count comes from the
+worker thread through a shared atomic in `UsenetFetchRequest::received`, which
+`ArticleFetcher` updates on every `bodyProgress`. Remaining is
+`totalBytes - progressBytes`, both in encoded bytes. The segment map under the
+strip still steps per article, because it shows article states.
 
 ### The page
 

@@ -7,7 +7,6 @@
 /// Provides CRUD access to downloads, uploads, servers, search, shared files,
 /// friends, statistics, and preferences.
 
-#include "utils/ByteRateSampler.h"
 #include "utils/Types.h"
 #include "webserver/UsenetWebBackend.h"
 
@@ -489,8 +488,6 @@ private:
 
     // Web UI languages (injected by DaemonApp; not owned)
     TranslationRouter* m_translations = nullptr;
-    /// Per-item rate, derived from `decodedBytes` across requests.
-    QHash<QString, ByteRateSampler> m_usenetRates;
 
     // Random token for preview streaming authentication
     QString m_streamToken;

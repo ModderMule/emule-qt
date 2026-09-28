@@ -407,7 +407,6 @@ public:
     [[nodiscard]] const std::vector<uint16>& corruptedParts() const { return m_corruptedParts; }
     /// True while @p partNumber has failed a hash check and has not been recovered.
     [[nodiscard]] bool isCorruptedPart(uint32 partNumber) const;
-    [[nodiscard]] std::vector<uint16> calcDownloadingParts(const UpDownClient* exclude) const;
 
     void updateFileRatingCommentAvail(bool forceUpdate = false) override;
 
@@ -460,6 +459,8 @@ private:
     /// Condemn a whole part in EMBLOCKSIZE steps, which is the only granularity
     /// CorruptionBlackBox::corruptedData() accepts.
     void markPartCorrupted(uint32 partNumber);
+    /// Trim [start, end] to a range nobody has requested or buffered; false if none is left.
+    [[nodiscard]] bool shrinkToAvoidAlreadyRequested(uint64& start, uint64& end) const;
 
     // -- Private members ------------------------------------------------------
 

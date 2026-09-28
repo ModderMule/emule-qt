@@ -243,9 +243,12 @@ void tst_StatsHistory::usenetRateSource_isSampledClampedAndClearable()
     QCOMPARE(samples[1].usenetDown, 0.0f);
     QCOMPARE(samples[2].usenetDown, 0.0f);
 
-    // The toolbar's speed samples stay eD2K-only.
-    for (const auto& s : hist.speedSince(0))
-        QCOMPARE(s.down, 0.0f);
+    // The toolbar's speed samples carry the total, Usenet included.
+    const auto speed = hist.speedSince(0);
+    QCOMPARE(speed.size(), size_t{3});
+    QCOMPARE(speed[0].down, 512.0f);
+    QCOMPARE(speed[1].down, 0.0f);
+    QCOMPARE(speed[2].down, 0.0f);
 }
 
 QTEST_MAIN(tst_StatsHistory)

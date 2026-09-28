@@ -326,11 +326,15 @@ void MainWindow::showOptionsDialog(int page)
         dlg.selectPage(page);
     const bool hadSpeedGraph = (m_speedGraph != nullptr);
     const bool hadDwlPercentage = thePrefs.showDwlPercentage();
+    const bool hadPartDetail = thePrefs.showPartProgressDetail();
+    const int hadDepth3D = thePrefs.depth3D();
 
     dlg.exec();
 
-    // Progress bars read the pref at paint; paused rows get no push to repaint them
-    if (thePrefs.showDwlPercentage() != hadDwlPercentage)
+    // Progress bars read the prefs at paint; paused rows get no push to repaint them
+    if (thePrefs.showDwlPercentage() != hadDwlPercentage
+        || thePrefs.showPartProgressDetail() != hadPartDetail
+        || thePrefs.depth3D() != hadDepth3D)
         update();
 
     // Rebuild toolbar if speed graph visibility changed

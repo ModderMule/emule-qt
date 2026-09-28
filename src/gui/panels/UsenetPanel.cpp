@@ -307,6 +307,10 @@ void UsenetPanel::setupUi()
                                         this, &UsenetPanel::onResume);
     m_removeAction = toolbar->addAction(menuIcon("ListRemove.ico"), tr("Remove"),
                                         this, [this] { onRemove(false); });
+    // Greyed while nothing is Complete, like the Transfers toolbar's.
+    m_clearCompletedAction = toolbar->addAction(menuIcon("DeleteAll.ico"), tr("Clear Completed"),
+                                                this, &UsenetPanel::onClearCompleted);
+    m_clearCompletedAction->setEnabled(false);
     toolbar->addSeparator();
     // The engine, not the selection: nothing new starts, and no release's
     // status changes — so Resume All cannot wake what the user paused one by one.
@@ -361,6 +365,10 @@ void UsenetPanel::setupUi()
             [this](const QString& itemId, int fileIndex, bool skipped) {
         UsenetFileCheckList::sendSkip(m_ipc, this, itemId, {fileIndex}, skipped);
     });
+    connect(m_model, &QAbstractItemModel::modelReset, this, &UsenetPanel::updateClearCompletedState);
+    connect(m_model, &QAbstractItemModel::rowsInserted, this, &UsenetPanel::updateClearCompletedState);
+    connect(m_model, &QAbstractItemModel::rowsRemoved, this, &UsenetPanel::updateClearCompletedState);
+    connect(m_model, &QAbstractItemModel::dataChanged, this, &UsenetPanel::updateClearCompletedState);
 
     m_proxy = new QSortFilterProxyModel(this);
     m_proxy->setSourceModel(m_model);
@@ -689,6 +697,9 @@ void UsenetPanel::onContextMenu(const QPoint& pos)
         menu.addAction(menuIcon("Delete.ico"), tr("Remove and Delete Files"), this,
                        [this] { onRemove(true); });
     }
+    // With or without a selection, as in the Transfers list.
+    menu.addSeparator();
+    menu.addAction(m_clearCompletedAction);
     menu.exec(m_view->viewport()->mapToGlobal(pos));
 }
 
@@ -816,6 +827,14 @@ void UsenetPanel::onRemove(bool deleteFiles)
         m_ipc->sendRequest(msg, [](const Ipc::IpcMessage&) {});
     }
     m_poller->refreshNow();
+}
+
+void UsenetPanel::onClearCompleted()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::ClearUsenetCompleted),
+                       [this](const Ipc::IpcMessage&) { m_poller->refreshNow(); });
 }
 
 void UsenetPanel::onSetPriority(int priority)
@@ -1149,7 +1168,7 @@ void UsenetPanel::updateSummary()
             ++active;
         }
         total += row->totalBytes;
-        done += row->decodedBytes;
+        done += row->progressBytes;
     }
 
     const int percent = total > 0 ? int(done * 100 / total) : 0;
@@ -1293,6 +1312,12 @@ void UsenetPanel::sendSetCategory(const QStringList& ids, int category)
     // The daemon pushes the changed rows, but a refresh here is what makes the
     // release leave the tab it was filtered into while the user is watching.
     m_poller->refreshNow();
+}
+
+void UsenetPanel::updateClearCompletedState()
+{
+    if (m_clearCompletedAction)
+        m_clearCompletedAction->setEnabled(m_model->hasCompleted());
 }
 
 } // namespace eMule

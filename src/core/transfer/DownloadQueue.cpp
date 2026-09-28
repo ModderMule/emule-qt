@@ -36,6 +36,7 @@
 
 #include <QDir>
 #include <QDirIterator>
+#include <QTimer>
 
 #include <ctime>
 
@@ -1750,7 +1751,8 @@ void DownloadQueue::onDownloadCompleted(PartFile* file)
 
     // Keep completed file in the queue so it remains visible in the UI.
     // It will be skipped by process() loops (status != Ready/Empty).
-    // Explicit removal happens via "Clear Completed" → removeFile().
+    // Removal happens via "Clear Completed" → removeFile(), or below when the
+    // user enabled auto clear.
 
     // A finished download frees a slot, so the user's "start next paused file"
     // preferences get their turn — preferring the category the finished file
@@ -1759,6 +1761,17 @@ void DownloadQueue::onDownloadCompleted(PartFile* file)
     startNextFileIfPrefs(static_cast<int>(file->category()));
 
     emit fileCompleted(file);
+
+    // "Auto clear completed downloads" (MFC PartFile.cpp:3000). Deferred so the
+    // completion listeners see the file in the list first. KnownFileList owns it
+    // from here, so leaving the queue frees nothing.
+    if (thePrefs.autoRemoveFinishedDownloads()) {
+        QTimer::singleShot(0, this, [this, file] {
+            if (std::ranges::find(files(), file) != files().end()
+                && file->status() == PartFileStatus::Complete)
+                removeFile(file);
+        });
+    }
 }
 
 // ===========================================================================

@@ -22,6 +22,7 @@
 /// discovers a dead provider independently, which is correct — they hold
 /// independent connections to it.
 
+#include "nntp/ArticleFetcher.h"
 #include "nntp/NewsServer.h"
 #include "nntp/NntpError.h"
 #include "nzb/NzbInfo.h"
@@ -69,6 +70,9 @@ struct UsenetFetchRequest {
     /// would still litter the temp tree with empty files for articles it only
     /// asked about.
     bool probeOnly = false;
+
+    /// Body bytes read so far, shared with the queue. Null for a probe.
+    ArticleProgress received;
 };
 
 struct UsenetFetchResult {

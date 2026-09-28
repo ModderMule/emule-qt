@@ -507,11 +507,12 @@ struct Preferences::Data {
     bool bringToFrontOnLinkClick = true;
 
     // GUI (Display page)
-    int depth3D = 0;                        // 0=flat, 5=round
+    int depth3D = 5;                        // 0=flat, 5=round (MFC default)
     int tooltipDelay = 1;                   // seconds
     bool minimizeToTray = true;
     bool transferDoubleClick = true;
     bool showDwlPercentage = false;
+    bool showPartProgressDetail = false;
     bool showRatesInTitle = false;
     bool showCatTabInfos = false;
     bool autoRemoveFinishedDownloads = false;
@@ -2668,6 +2669,10 @@ bool Preferences::showDwlPercentage() const { return get(&Data::showDwlPercentag
 
 void Preferences::setShowDwlPercentage(bool val) { set(&Data::showDwlPercentage, val); }
 
+bool Preferences::showPartProgressDetail() const { return get(&Data::showPartProgressDetail); }
+
+void Preferences::setShowPartProgressDetail(bool val) { set(&Data::showPartProgressDetail, val); }
+
 bool Preferences::showRatesInTitle() const { return get(&Data::showRatesInTitle); }
 
 void Preferences::setShowRatesInTitle(bool val) { set(&Data::showRatesInTitle, val); }
@@ -3924,6 +3929,7 @@ bool Preferences::load(const QString& filePath)
             m_data->minimizeToTray = d["minimizeToTray"].as<bool>(m_data->minimizeToTray);
             m_data->transferDoubleClick = d["transferDoubleClick"].as<bool>(m_data->transferDoubleClick);
             m_data->showDwlPercentage = d["showDwlPercentage"].as<bool>(m_data->showDwlPercentage);
+            m_data->showPartProgressDetail = d["showPartProgressDetail"].as<bool>(m_data->showPartProgressDetail);
             m_data->showRatesInTitle = d["showRatesInTitle"].as<bool>(m_data->showRatesInTitle);
             m_data->showCatTabInfos = d["showCatTabInfos"].as<bool>(m_data->showCatTabInfos);
             m_data->autoRemoveFinishedDownloads = d["autoRemoveFinishedDownloads"].as<bool>(m_data->autoRemoveFinishedDownloads);
@@ -4977,6 +4983,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "minimizeToTray" << YAML::Value << m_data->minimizeToTray;
     out << YAML::Key << "transferDoubleClick" << YAML::Value << m_data->transferDoubleClick;
     out << YAML::Key << "showDwlPercentage" << YAML::Value << m_data->showDwlPercentage;
+    out << YAML::Key << "showPartProgressDetail" << YAML::Value << m_data->showPartProgressDetail;
     out << YAML::Key << "showRatesInTitle" << YAML::Value << m_data->showRatesInTitle;
     out << YAML::Key << "showCatTabInfos" << YAML::Value << m_data->showCatTabInfos;
     out << YAML::Key << "autoRemoveFinishedDownloads" << YAML::Value << m_data->autoRemoveFinishedDownloads;

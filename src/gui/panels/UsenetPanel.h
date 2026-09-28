@@ -133,6 +133,7 @@ private:
     void onPause();
     void onResume();
     void onRemove(bool deleteFiles);
+    void onClearCompleted();
     void onSetPriority(int priority);
     void onOpenFolder();
     void onPreview();
@@ -175,6 +176,8 @@ private:
 
     void updateActions();
     void updateSummary();
+    /// Clear Completed is greyed while no item is Complete.
+    void updateClearCompletedState();
 
     IpcClient* m_ipc = nullptr;
     PanelPoller* m_poller = nullptr;
@@ -202,6 +205,7 @@ private:
     QAction* m_pauseAction = nullptr;
     QAction* m_resumeAction = nullptr;
     QAction* m_removeAction = nullptr;
+    QAction* m_clearCompletedAction = nullptr;
     QAction* m_previewAction = nullptr;
     QAction* m_checkAction = nullptr;
     QAction* m_pauseAllAction = nullptr;

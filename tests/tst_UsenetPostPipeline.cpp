@@ -175,7 +175,8 @@ struct PostedRelease {
 /// part instead makes the file short, which never reaches the interesting case.
 PostedRelease postRelease(const QString& dir, FakeNntpServer& server,
                           const QString& dropFrom = {}, const QList<int>& dropParts = {},
-                          const QList<int>& corruptParts = {})
+                          const QList<int>& corruptParts = {},
+                          const QHash<QString, QString>& subjectNames = {})
 {
     PostedRelease out;
     QByteArray xml;
@@ -195,7 +196,7 @@ PostedRelease postRelease(const QString& dir, FakeNntpServer& server,
         xml += QStringLiteral(
                    "  <file poster=\"tester\" date=\"1700000000\" "
                    "subject=\"&quot;%1&quot; yEnc (1/%2)\">\n")
-                   .arg(name).arg(parts).toUtf8();
+                   .arg(subjectNames.value(name, name)).arg(parts).toUtf8();
         xml += QStringLiteral("    <groups><group>%1</group></groups>\n")
                    .arg(QLatin1String(kGroup)).toUtf8();
         xml += "    <segments>\n";
@@ -345,6 +346,8 @@ private slots:
     void theIndexPar2IsFetchedFirstOnAnObfuscatedRelease();
     void aReleaseWithNoPar2IsScheduledExactlyAsBefore();
     void aDamagedObfuscatedReleaseBuysOnlyTheBlocksItNeeds();
+    void hexNamedPar2VolumesWithRealSubjectsRepair();
+    void hexNamedPar2VolumesWithHexSubjectsRepair();
     void anSfvMismatchFailsAReleaseWithNoPar2();
     void aCleanSfvPublishesThePayloadButNotTheSfv();
     void anSfvListingAnUnpostedSampleStillPublishes();
@@ -851,6 +854,90 @@ void tst_UsenetPostPipeline::aReleaseWithNoPar2IsScheduledExactlyAsBefore()
              QStringList{QStringLiteral("deadbeefdeadbeef.bin")});
 
     queue.stop();
+}
+
+// ---------------------------------------------------------------------------
+// PAR2 files whose =ybegin name is hex
+// ---------------------------------------------------------------------------
+//
+// A real post (2026-09-28): volumes only, no index .par2, every =ybegin name a
+// hex string. Sealed under that name, libpar2 refused them ("PAR2 error") and a
+// good release failed. One corrupt part proves par2 really reads the volumes.
+
+namespace {
+
+PostedRelease postHexNamedPar2(const QString& stage, FakeNntpServer& server, bool realSubjects)
+{
+    writeFile(QDir(stage).filePath(QStringLiteral("Movie.mkv")), payload(60000, 31));
+    createPar2Set(stage, QStringLiteral("Rel"), {QStringLiteral("Movie.mkv")}, 4000, 8);
+    QFile::remove(QDir(stage).filePath(QStringLiteral("Rel.par2")));
+
+    QHash<QString, QString> subjects;
+    const QStringList vols =
+        QDir(stage).entryList({QStringLiteral("*.par2")}, QDir::Files, QDir::Name);
+    for (int i = 0; i < vols.size(); ++i) {
+        const QString hex = QString::number(0xa1b2c3d4u + uint(i), 16);
+        QFile::rename(QDir(stage).filePath(vols.at(i)), QDir(stage).filePath(hex));
+        // "vol-NN" as that post had it: no block counts, so not a known volume.
+        if (realSubjects)
+            subjects.insert(hex, QStringLiteral("Rel.vol-%1.par2").arg(i + 1, 2, 10, QLatin1Char('0')));
+    }
+    return postRelease(stage, server, QStringLiteral("Movie.mkv"), {}, {2}, subjects);
+}
+
+void runHexNamedPar2(bool realSubjects)
+{
+    eMule::testing::TempDir tmp;
+    const QString stage = tmp.filePath(QStringLiteral("stage"));
+    QVERIFY(QDir().mkpath(stage));
+
+    FakeNntpServer server;
+    const PostedRelease rel = postHexNamedPar2(stage, server, realSubjects);
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 4)}, 60);
+    queue.setPostProcessingOptions({});
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    const QString id = queue.addNzb(rel.nzb, QStringLiteral("Rel"), error);
+    QVERIFY2(!id.isEmpty(), qPrintable(error));
+    QVERIFY2(finished.wait(120000), "no terminal outcome");
+    QVERIFY2(finished.at(0).at(1).toBool(), qPrintable(finished.at(0).at(2).toString()));
+
+    const auto* item = queue.findItem(id);
+    QVERIFY(item);
+    QCOMPARE(item->status, UsenetItemStatus::Complete);
+    QCOMPARE(namesIn(thePrefs.incomingDir()), QStringList{QStringLiteral("Movie.mkv")});
+    queue.stop();
+}
+
+} // namespace
+
+void tst_UsenetPostPipeline::hexNamedPar2VolumesWithRealSubjectsRepair()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    runHexNamedPar2(/*realSubjects*/ true);
+#endif
+}
+
+void tst_UsenetPostPipeline::hexNamedPar2VolumesWithHexSubjectsRepair()
+{
+#ifndef EMULE_HAVE_PAR2
+    QSKIP("built without libpar2-turbo");
+#else
+    runHexNamedPar2(/*realSubjects*/ false);
+#endif
 }
 
 void tst_UsenetPostPipeline::aDamagedObfuscatedReleaseBuysOnlyTheBlocksItNeeds()

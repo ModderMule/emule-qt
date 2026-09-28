@@ -114,6 +114,7 @@
         <file alias="Transfer.ico">icons/Transfer.ico</file>
         <file alias="Statistics.ico">icons/Statistics.ico</file>
         <file alias="Usenet.ico">icons/Usenet.ico</file>
+        <file alias="UsenetSearch.ico">icons/UsenetSearch.ico</file>
         <file alias="Torrent.ico">icons/Torrent.ico</file>
         <file alias="DownloadsFolder.ico">icons/DownloadsFolder.ico</file>
         <file alias="Preferences.ico">icons/Preferences.ico</file>

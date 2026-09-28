@@ -435,6 +435,13 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
     if (role == PausedRole && index.column() == ColProgress)
         return d.isPaused || d.isStopped;
 
+    if (role == BarDataRole && index.column() == ColProgress) {
+        if (!d.hasBarRanges)
+            return {};
+        return QVariant::fromValue(DownloadBarData{d.fileSize, d.gaps, d.pending, d.partFreq,
+                                                   d.partMap});
+    }
+
     return {};
 }
 

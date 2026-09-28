@@ -4,6 +4,7 @@
 #include "nntp/NntpSocket.h"
 #include "queue/ArticleWriter.h"
 
+#include <algorithm>
 #include <limits>
 
 namespace eMule::usenet {
@@ -131,19 +132,25 @@ void ArticleFetcher::startBody()
 
     if (m_socket) {
         connect(m_socket, &NntpSocket::bodyProgress,
-                this, &ArticleFetcher::checkNearlyDone, Qt::UniqueConnection);
-        checkNearlyDone();
+                this, &ArticleFetcher::onBodyProgress, Qt::UniqueConnection);
+        onBodyProgress();
     }
 }
 
-void ArticleFetcher::checkNearlyDone()
+void ArticleFetcher::onBodyProgress()
 {
-    if (m_nearlyDone || !m_bodyCommand || m_bodyCommand->failed())
+    if (!m_bodyCommand || m_bodyCommand->failed())
         return;
     // Still queued behind another command: nothing of ours drained yet.
     const qint64 drained = m_socket->currentCommand() == m_bodyCommand.get()
                                ? m_socket->commandBodyBytes()
                                : 0;
+    if (m_progress) {
+        m_progress->store(m_segment.bytes > 0 ? std::min(drained, m_segment.bytes) : drained,
+                          std::memory_order_relaxed);
+    }
+    if (m_nearlyDone)
+        return;
     const qint64 lookahead = pipelineLookahead(m_socket->readRateLimit(),
                                                m_socket->readBufferCapBytes(),
                                                m_socket->responseLatencyMs());
@@ -203,7 +210,7 @@ void ArticleFetcher::finish(NntpError error, const QString& text)
         disconnect(m_socket, &NntpSocket::commandFinished,
                    this, &ArticleFetcher::onCommandFinished);
         disconnect(m_socket, &NntpSocket::bodyProgress,
-                   this, &ArticleFetcher::checkNearlyDone);
+                   this, &ArticleFetcher::onBodyProgress);
     }
     emit finished(error, text);
 }

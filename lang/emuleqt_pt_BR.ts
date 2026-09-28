@@ -606,7 +606,7 @@ Tem comentários</translation>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2836"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2864"/>
         <source>Test</source>
         <translation>Testar</translation>
     </message>
@@ -690,7 +690,7 @@ Baixar novamente?</translation>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4112"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4100"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -2101,7 +2101,7 @@ Insira o endereço e o token de autenticação de um núcleo remoto.</translatio
 <context>
     <name>eMule::DownloadListModel</name>
     <message>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+628"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+635"/>
         <source>Downloading</source>
         <translation>Baixando</translation>
     </message>
@@ -2110,7 +2110,7 @@ Insira o endereço e o token de autenticação de um núcleo remoto.</translatio
         <translation type="vanished">Auto [%1]</translation>
     </message>
     <message>
-        <location line="-455"/>
+        <location line="-462"/>
         <source>Queue Full</source>
         <translation>Fila cheia</translation>
     </message>
@@ -2150,7 +2150,7 @@ Requisições aceitas:	%11
 Dados transferidos:	%12</translation>
     </message>
     <message>
-        <location line="+69"/>
+        <location line="+76"/>
         <source>File Name</source>
         <translation>Nome do arquivo</translation>
     </message>
@@ -3207,7 +3207,7 @@ Por favor, escolha outro:</translation>
         <translation>Nova versão disponível</translation>
     </message>
     <message>
-        <location line="+180"/>
+        <location line="+184"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K: Conectado (LowID)</translation>
     </message>
@@ -3294,14 +3294,14 @@ Por favor, escolha outro:</translation>
         <translation>FAQ</translation>
     </message>
     <message>
-        <location line="-546"/>
+        <location line="-550"/>
         <location line="+7"/>
-        <location line="+542"/>
+        <location line="+546"/>
         <source>Version Check</source>
         <translation>Verificar versão</translation>
     </message>
     <message>
-        <location line="-604"/>
+        <location line="-608"/>
         <source>Quit eMule Qt</source>
         <translation>Sair do eMule Qt</translation>
     </message>
@@ -3358,7 +3358,7 @@ Enable at least one under Options → Connection to connect.</source>
 Ative pelo menos uma em Opções → Conexão para conectar.</translation>
     </message>
     <message>
-        <location line="+201"/>
+        <location line="+205"/>
         <source>Connected</source>
         <translation>Conectado</translation>
     </message>
@@ -4240,36 +4240,36 @@ Baixar novamente?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2746"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2772"/>
         <source>Options</source>
         <translation>Opções</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1804"/>
+        <location line="+1830"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-1803"/>
-        <location line="+1804"/>
+        <location line="-1829"/>
+        <location line="+1830"/>
         <source>Cancel</source>
         <translation>Cancelar</translation>
     </message>
     <message>
-        <location line="-1803"/>
-        <location line="+5359"/>
+        <location line="-1829"/>
+        <location line="+5385"/>
         <source>Apply</source>
         <translation>Aplicar</translation>
     </message>
     <message>
-        <location line="-5358"/>
+        <location line="-5384"/>
         <source>Help</source>
         <translation>Ajuda</translation>
     </message>
     <message>
-        <location line="+250"/>
-        <location line="+1780"/>
+        <location line="+251"/>
+        <location line="+1805"/>
         <location line="+63"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -4278,7 +4278,7 @@ Baixar novamente?</translation>
         <translation>Filtro IP</translation>
     </message>
     <message>
-        <location line="-1867"/>
+        <location line="-1892"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>Filtro IP recarregado: %1 entradas.</translation>
     </message>
@@ -4288,7 +4288,7 @@ Baixar novamente?</translation>
         <translation>Opções -&gt; %1 -&gt; %2</translation>
     </message>
     <message>
-        <location line="+152"/>
+        <location line="+177"/>
         <source>General options</source>
         <translation>Opções gerais</translation>
     </message>
@@ -4309,12 +4309,12 @@ Baixar novamente?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5281"/>
+        <location line="+5283"/>
         <source>Language</source>
         <translation>Idioma</translation>
     </message>
     <message>
-        <location line="-5278"/>
+        <location line="-5280"/>
         <source>System Default</source>
         <translation>Padrão do sistema</translation>
     </message>
@@ -4414,12 +4414,12 @@ Baixar novamente?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5207"/>
+        <location line="+5209"/>
         <source>Core</source>
         <translation>Núcleo</translation>
     </message>
     <message>
-        <location line="-5202"/>
+        <location line="-5204"/>
         <source>Address:</source>
         <translation>Endereço:</translation>
     </message>
@@ -4467,12 +4467,12 @@ Tem certeza de que deseja continuar?</translation>
         <translation>Estilo da barra de progresso</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+3"/>
         <source>flat</source>
         <translation>plano</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+7"/>
         <source>round</source>
         <translation>arredondado</translation>
     </message>
@@ -4498,6 +4498,16 @@ Tem certeza de que deseja continuar?</translation>
     </message>
     <message>
         <location line="+3"/>
+        <source>Show downloaded data of unfinished parts and part boundaries</source>
+        <translation>Mostrar dados baixados de partes incompletas e limites das partes</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Colours the data already downloaded in incomplete parts (green while being requested, grey otherwise) and marks every part boundary on the progress line.</source>
+        <translation>Colore os dados já baixados das partes incompletas (verde enquanto são solicitados, cinza caso contrário) e marca cada limite de parte na linha de progresso.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
         <source>Show transfer rates on title</source>
         <translation>Mostrar taxas de transferência no título</translation>
     </message>
@@ -7171,7 +7181,7 @@ Adicionar um depois não busca o acervo antigo dele: um indexador novo tem sua p
         <translation>Tamanho da fila: %1</translation>
     </message>
     <message>
-        <location line="+591"/>
+        <location line="+593"/>
         <source>Proxy settings will only apply to new connections.
 Restart eMule for all connections to use the new proxy settings.
 
@@ -7182,7 +7192,7 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
 As conexões com servidores de notícias mudam imediatamente.</translation>
     </message>
     <message>
-        <location line="+864"/>
+        <location line="+867"/>
         <source>File types</source>
         <translation>Tipos de arquivo</translation>
     </message>
@@ -7192,7 +7202,7 @@ As conexões com servidores de notícias mudam imediatamente.</translation>
         <translation>Não foi possível atualizar a associação do arquivo .nzb: %1</translation>
     </message>
     <message>
-        <location line="+520"/>
+        <location line="+522"/>
         <source>Database: not connected to the core</source>
         <translation>Banco de dados: não conectado ao núcleo</translation>
     </message>
@@ -7227,7 +7237,7 @@ As conexões com servidores de notícias mudam imediatamente.</translation>
         <translation>Última atualização falhou: %1</translation>
     </message>
     <message>
-        <location line="-5813"/>
+        <location line="-5820"/>
         <location line="+1284"/>
         <location line="+1019"/>
         <location line="+154"/>
@@ -7457,12 +7467,12 @@ Defina um valor um pouco abaixo do seu plano. O volume é medido aqui, então fi
         <translation>Editar valor</translation>
     </message>
     <message>
-        <location line="+93"/>
+        <location line="+94"/>
         <source>The %1 settings page is not yet implemented.</source>
         <translation>A página de configurações %1 ainda não foi implementada.</translation>
     </message>
     <message>
-        <location line="+178"/>
+        <location line="+179"/>
         <source>Proxy</source>
         <translation>Proxy</translation>
     </message>
@@ -7483,7 +7493,7 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
         <translation>As configurações de conexão ao núcleo terão efeito após reiniciar o aplicativo.</translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location line="+33"/>
         <source>Icons</source>
         <translation>Ícones</translation>
     </message>
@@ -10601,68 +10611,68 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
     </message>
     <message>
         <location line="+29"/>
-        <location line="+1493"/>
+        <location line="+1504"/>
         <location line="+98"/>
         <source>Low</source>
         <translation>Baixa</translation>
     </message>
     <message>
-        <location line="-1590"/>
-        <location line="+1492"/>
+        <location line="-1601"/>
+        <location line="+1503"/>
         <location line="+99"/>
         <source>Normal</source>
         <translation>Normal</translation>
     </message>
     <message>
-        <location line="-1590"/>
-        <location line="+1491"/>
+        <location line="-1601"/>
+        <location line="+1502"/>
         <location line="+100"/>
         <source>High</source>
         <translation>Alta</translation>
     </message>
     <message>
-        <location line="-1589"/>
-        <location line="+1591"/>
+        <location line="-1600"/>
+        <location line="+1602"/>
         <source>Very Low</source>
         <translation>Muito baixa</translation>
     </message>
     <message>
-        <location line="-1590"/>
-        <location line="+1591"/>
+        <location line="-1601"/>
+        <location line="+1602"/>
         <source>Very High</source>
         <translation>Muito alta</translation>
     </message>
     <message>
-        <location line="-1589"/>
-        <location line="+1592"/>
+        <location line="-1600"/>
+        <location line="+1603"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-1581"/>
+        <location line="-1592"/>
         <location line="+512"/>
-        <location line="+977"/>
+        <location line="+988"/>
         <source>Pause</source>
         <translation>Pausar</translation>
     </message>
     <message>
-        <location line="-1480"/>
+        <location line="-1491"/>
         <location line="+509"/>
-        <location line="+973"/>
+        <location line="+984"/>
         <source>Stop</source>
         <translation>Parar</translation>
     </message>
     <message>
-        <location line="-1473"/>
+        <location line="-1484"/>
         <location line="+506"/>
-        <location line="+969"/>
+        <location line="+980"/>
         <source>Resume</source>
         <translation>Retomar</translation>
     </message>
     <message>
-        <location line="-1462"/>
+        <location line="-1473"/>
         <location line="+499"/>
-        <location line="+965"/>
+        <location line="+976"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>Cancelar</translation>
@@ -10708,7 +10718,7 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
         <translation>Nome do arquivo:</translation>
     </message>
     <message>
-        <location line="-1942"/>
+        <location line="-1953"/>
         <location line="+497"/>
         <source>Open File</source>
         <translation>Abrir arquivo</translation>
@@ -10721,13 +10731,13 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
     </message>
     <message>
         <location line="-496"/>
-        <location line="+1562"/>
+        <location line="+1573"/>
         <location line="+83"/>
         <source>Details...</source>
         <translation>Detalhes...</translation>
     </message>
     <message>
-        <location line="-1639"/>
+        <location line="-1650"/>
         <source>Comments...</source>
         <translation>Comentários...</translation>
     </message>
@@ -10749,13 +10759,13 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
     </message>
     <message>
         <location line="+15"/>
-        <location line="+1575"/>
+        <location line="+1586"/>
         <location line="+77"/>
         <source>Find...</source>
         <translation>Buscar...</translation>
     </message>
     <message>
-        <location line="-1648"/>
+        <location line="-1659"/>
         <source>Search Related Files</source>
         <translation>Buscar arquivos relacionados</translation>
     </message>
@@ -10779,7 +10789,7 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
         <translation type="vanished">Todos</translation>
     </message>
     <message>
-        <location line="+842"/>
+        <location line="+853"/>
         <source>Uploading</source>
         <translation>Enviando</translation>
     </message>
@@ -10799,7 +10809,7 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
         <translation>Clientes conhecidos</translation>
     </message>
     <message>
-        <location line="-941"/>
+        <location line="-952"/>
         <source>Clients on queue:   0</source>
         <translation>Clientes na fila:   0</translation>
     </message>
@@ -10811,12 +10821,12 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
     </message>
     <message>
         <location line="-80"/>
-        <location line="+966"/>
+        <location line="+977"/>
         <source>Priority</source>
         <translation>Prioridade</translation>
     </message>
     <message>
-        <location line="-929"/>
+        <location line="-940"/>
         <source>Open Folder</source>
         <translation>Abrir pasta</translation>
     </message>
@@ -10846,7 +10856,7 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
         <translation>Procurar</translation>
     </message>
     <message>
-        <location line="+442"/>
+        <location line="+453"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Pré-visualização indisponível — o servidor web não está em execução ou o token de stream não foi recebido.</translation>
     </message>
@@ -11229,12 +11239,12 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
         <location filename="../src/gui/panels/UsenetPanel.cpp" line="+164"/>
         <location line="+7"/>
         <location line="+44"/>
-        <location line="+483"/>
+        <location line="+494"/>
         <source>Add NZB</source>
         <translation>Adicionar NZB</translation>
     </message>
     <message>
-        <location line="-533"/>
+        <location line="-544"/>
         <location line="+50"/>
         <location line="+62"/>
         <source>Not connected to the eMule core.</source>
@@ -11257,29 +11267,34 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
     </message>
     <message>
         <location line="+3"/>
-        <location line="+938"/>
+        <location line="+957"/>
         <source>Pause</source>
         <translation>Pausar</translation>
     </message>
     <message>
-        <location line="-934"/>
-        <location line="+937"/>
+        <location line="-953"/>
+        <location line="+956"/>
         <source>Resume</source>
         <translation>Retomar</translation>
     </message>
     <message>
-        <location line="-935"/>
+        <location line="-954"/>
         <source>Remove</source>
         <translation>Remover</translation>
     </message>
     <message>
-        <location line="+5"/>
-        <location line="+893"/>
+        <location line="+3"/>
+        <source>Clear Completed</source>
+        <translation>Limpar concluídos</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <location line="+908"/>
         <source>Pause All</source>
         <translation>Pausar tudo</translation>
     </message>
     <message>
-        <location line="-886"/>
+        <location line="-901"/>
         <source>Add NZB from URL…</source>
         <translation>Adicionar NZB de URL…</translation>
     </message>
@@ -11294,7 +11309,7 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
         <translation>Verificar disponibilidade</translation>
     </message>
     <message>
-        <location line="+261"/>
+        <location line="+265"/>
         <source>Priority</source>
         <translation>Prioridade</translation>
     </message>
@@ -11356,7 +11371,7 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
         <translation>Remover e excluir arquivos</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+12"/>
         <source>NZB files (*.nzb);;All files (*)</source>
         <translation>Arquivos NZB (*.nzb);;Todos os arquivos (*)</translation>
     </message>
@@ -11400,7 +11415,7 @@ Clicar em &quot;Restaurar estatísticas&quot; novamente recarregará suas estat�
         </translation>
     </message>
     <message>
-        <location line="+55"/>
+        <location line="+63"/>
         <location line="+82"/>
         <source>Nothing has completed yet for &quot;%1&quot;.</source>
         <translation>Nada foi concluído ainda para &quot;%1&quot;.</translation>
@@ -11687,14 +11702,14 @@ Há uma senha definida para este lançamento.</translation>
         <translation>Endereço</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3595"/>
-        <location line="+3487"/>
-        <location line="+45"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3583"/>
+        <location line="+3473"/>
+        <location line="+47"/>
         <source>Session expired — log in again</source>
         <translation>Sessão expirada — faça login novamente</translation>
     </message>
     <message>
-        <location line="-3530"/>
+        <location line="-3518"/>
         <source>Guests cannot add downloads</source>
         <translation>Convidados não podem adicionar downloads</translation>
     </message>
@@ -11791,12 +11806,12 @@ Há uma senha definida para este lançamento.</translation>
     </message>
     <message>
         <location line="+207"/>
-        <location line="+1819"/>
+        <location line="+1807"/>
         <source>Web Control Panel</source>
         <translation>Painel de controle web</translation>
     </message>
     <message>
-        <location line="-1810"/>
+        <location line="-1798"/>
         <source>Not connected</source>
         <translation>Não conectado</translation>
     </message>
@@ -11878,30 +11893,30 @@ Há uma senha definida para este lançamento.</translation>
     </message>
     <message>
         <location line="+149"/>
-        <location line="+1036"/>
+        <location line="+1024"/>
         <source>Queued</source>
         <translation>Na fila</translation>
     </message>
     <message>
-        <location line="-1035"/>
-        <location line="+1034"/>
+        <location line="-1023"/>
+        <location line="+1022"/>
         <source>Downloading</source>
         <translation>Baixando</translation>
     </message>
     <message>
-        <location line="-1033"/>
+        <location line="-1021"/>
         <source>Paused</source>
         <translation>Pausado</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+867"/>
+        <location line="+855"/>
         <location line="+164"/>
         <source>Complete</source>
         <translation>Concluído</translation>
     </message>
     <message>
-        <location line="-1030"/>
+        <location line="-1018"/>
         <source>Failed</source>
         <translation>Falhou</translation>
     </message>
@@ -12018,7 +12033,7 @@ Há uma senha definida para este lançamento.</translation>
         <translation>Normal</translation>
     </message>
     <message>
-        <location line="+97"/>
+        <location line="+86"/>
         <source>Only a queued or downloading release can be paused</source>
         <translation>Apenas um lançamento na fila ou baixando pode ser pausado</translation>
     </message>
@@ -12029,21 +12044,21 @@ Há uma senha definida para este lançamento.</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+120"/>
+        <location line="+117"/>
         <location line="+165"/>
         <source>priority must be a number from -2 to 2</source>
         <translation>a prioridade deve ser um número de -2 a 2</translation>
     </message>
     <message>
-        <location line="-279"/>
-        <location line="+120"/>
+        <location line="-276"/>
+        <location line="+117"/>
         <location line="+74"/>
         <location line="+78"/>
         <source>Unknown category</source>
         <translation>Categoria desconhecida</translation>
     </message>
     <message>
-        <location line="-260"/>
+        <location line="-257"/>
         <location line="+4"/>
         <source>files must be a list of file numbers</source>
         <translation>files deve ser uma lista de números de arquivo</translation>
@@ -12054,7 +12069,7 @@ Há uma senha definida para este lançamento.</translation>
         <translation>Ação desconhecida</translation>
     </message>
     <message>
-        <location line="+241"/>
+        <location line="+238"/>
         <source>Post the .nzb as the request body, or give a url</source>
         <translation>Envie o .nzb como corpo da requisição ou informe uma URL</translation>
     </message>
@@ -12064,7 +12079,7 @@ Há uma senha definida para este lançamento.</translation>
         <translation>Convidados não podem alterar downloads</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+19"/>
         <source>Nothing selected</source>
         <translation>Nada selecionado</translation>
     </message>
@@ -12305,7 +12320,7 @@ A rede ociosa empresta sua parte à outra.</translation>
         <translation>Velocidade de download</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1358"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1346"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Downloads</source>
         <translation>Downloads</translation>

@@ -257,6 +257,7 @@ private:
     QCheckBox* m_minimizeToTrayCheck = nullptr;
     QCheckBox* m_transferDoubleClickCheck = nullptr;
     QCheckBox* m_showDwlPercentageCheck = nullptr;
+    QCheckBox* m_showPartProgressDetailCheck = nullptr;
     QCheckBox* m_showRatesInTitleCheck = nullptr;
     QCheckBox* m_showCatTabInfosCheck = nullptr;
     QCheckBox* m_autoRemoveFinishedCheck = nullptr;

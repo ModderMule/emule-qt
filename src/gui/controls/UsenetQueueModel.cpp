@@ -5,7 +5,6 @@
 #include "utils/StringUtils.h"
 
 #include <QCborArray>
-#include <QDateTime>
 #include <QFont>
 #include <QIcon>
 #include <QLocale>
@@ -65,9 +64,10 @@ UsenetItemRow usenetRowFromCbor(const QCborMap& m)
     r.healthProbed = m.value(QStringLiteral("healthProbed")).toBool();
     r.priority = int(m.value(QStringLiteral("priority")).toInteger());
     r.category = int(m.value(QStringLiteral("category")).toInteger());
-    r.percent = int(m.value(QStringLiteral("percent")).toInteger());
+    r.percent = m.value(QStringLiteral("percent")).toDouble();
     r.totalBytes = m.value(QStringLiteral("totalBytes")).toInteger();
-    r.decodedBytes = m.value(QStringLiteral("decodedBytes")).toInteger();
+    r.progressBytes = m.value(QStringLiteral("progressBytes")).toInteger();
+    r.speed = m.value(QStringLiteral("speed")).toInteger();
     r.segmentCount = int(m.value(QStringLiteral("segmentCount")).toInteger());
     r.doneSegments = int(m.value(QStringLiteral("doneSegments")).toInteger());
     r.missingSegments = int(m.value(QStringLiteral("missingSegments")).toInteger());
@@ -387,7 +387,7 @@ QVariant UsenetQueueModel::data(const QModelIndex& index, int role) const
         case Qt::ToolTipRole: {
             const QLocale locale;
             QString tip = tr("%1% — %2 of %3 articles")
-                              .arg(QString::number(it.percent), locale.toString(it.doneSegments),
+                              .arg(QString::number(it.percent, 'f', 1), locale.toString(it.doneSegments),
                                    locale.toString(it.segmentCount));
             if (it.missingSegments > 0)
                 tip += tr(", %n missing", nullptr, it.missingSegments);
@@ -408,7 +408,7 @@ QVariant UsenetQueueModel::data(const QModelIndex& index, int role) const
             // tells the user nothing; show the stage's own progress instead.
             return isPostProcessing(it.status)
                 ? QStringLiteral("%1%").arg(it.postPercent)
-                : QStringLiteral("%1%").arg(it.percent);
+                : QStringLiteral("%1%").arg(it.percent, 0, 'f', 1);
         case ColStatus:
             if (!it.error.isEmpty())
                 return QStringLiteral("%1 — %2").arg(it.statusText, it.error);
@@ -418,7 +418,7 @@ QVariant UsenetQueueModel::data(const QModelIndex& index, int role) const
                 return QStringLiteral("%1 — %2").arg(it.statusText, it.stalledReason);
             return it.statusText;
         case ColSpeed:     return it.speed > 0 ? formatByteRate(it.speed) : QString{};
-        case ColRemaining: return formatByteSize(it.totalBytes - it.decodedBytes);
+        case ColRemaining: return formatByteSize(std::max<qint64>(it.totalBytes - it.progressBytes, 0));
         case ColPriority:  return usenetPriorityName(it.priority);
         case ColHealth:
             // A dash, not "100%": -1 means nothing was ever asked, and showing
@@ -453,7 +453,7 @@ QVariant UsenetQueueModel::data(const QModelIndex& index, int role) const
             return isPostProcessing(it.status) ? it.postPercent : it.percent;
         case ColStatus:    return statusRank(it);
         case ColSpeed:     return QVariant::fromValue(it.speed);
-        case ColRemaining: return QVariant::fromValue(it.totalBytes - it.decodedBytes);
+        case ColRemaining: return QVariant::fromValue(std::max<qint64>(it.totalBytes - it.progressBytes, 0));
         case ColPriority:
             // The number, now that the cell shows a word: sorting "Very high"
             // and "Very low" alphabetically puts them next to each other.
@@ -674,11 +674,8 @@ void UsenetQueueModel::setItems(const QList<UsenetItemRow>& items)
     if (!arrivals.isEmpty()) {
         const int first = int(m_items.size());
         beginInsertRows({}, first, first + int(arrivals.size()) - 1);
-        for (const UsenetItemRow& r : arrivals) {
-            UsenetItemRow copy = r;
-            copy.rateSampler.update(r.decodedBytes, QDateTime::currentMSecsSinceEpoch());
-            m_items.push_back(std::move(copy));
-        }
+        for (const UsenetItemRow& r : arrivals)
+            m_items.push_back(r);
         endInsertRows();
     }
 }
@@ -705,9 +702,7 @@ void UsenetQueueModel::upsertItem(const UsenetItemRow& item)
 
     const int first = int(m_items.size());
     beginInsertRows({}, first, first);
-    UsenetItemRow copy = item;
-    copy.rateSampler.update(item.decodedBytes, QDateTime::currentMSecsSinceEpoch());
-    m_items.push_back(std::move(copy));
+    m_items.push_back(item);
     endInsertRows();
 }
 
@@ -766,22 +761,23 @@ const UsenetItemRow* UsenetQueueModel::findById(const QString& id) const
     return row < 0 ? nullptr : &m_items[size_t(row)];
 }
 
+bool UsenetQueueModel::hasCompleted() const
+{
+    return std::ranges::any_of(m_items, [](const UsenetItemRow& item) {
+        return item.status == UsenetRowStatus::Complete;
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Private
 // ---------------------------------------------------------------------------
 
 void UsenetQueueModel::applyInto(UsenetItemRow& target, const UsenetItemRow& incoming)
 {
-    // Derive the rate before overwriting the sample it is measured against. The
-    // daemon reports the engine's total rate, not a per-item one, so an item's
-    // own speed can only come from its own byte counter moving.
-    ByteRateSampler sampler = target.rateSampler;
-    const qint64 speed = sampler.update(incoming.decodedBytes, QDateTime::currentMSecsSinceEpoch());
-
+    // The daemon's per-item rate; sampling decodedBytes here swung 0 ↔ huge.
     target = incoming;
-
-    target.speed = incoming.status == UsenetRowStatus::Downloading ? speed : 0;
-    target.rateSampler = sampler;
+    if (target.status != UsenetRowStatus::Downloading)
+        target.speed = 0;
 }
 
 int UsenetQueueModel::statusRank(const UsenetItemRow& item)

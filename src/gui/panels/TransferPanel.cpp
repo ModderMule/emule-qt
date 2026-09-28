@@ -1109,6 +1109,17 @@ void TransferPanel::requestDownloads()
                 for (qsizetype i = 0; i < partArr.size(); ++i)
                     row.partMap[static_cast<qsizetype>(i)] = static_cast<char>(partArr[i].toInteger(0));
             }
+            if (const QCborValue gapsVal = m.value(QStringLiteral("gaps")); gapsVal.isArray()) {
+                const auto readInts = [](const QCborArray& arr, auto& out) {
+                    out.reserve(arr.size());
+                    for (const auto& v : arr)
+                        out.append(static_cast<typename std::decay_t<decltype(out)>::value_type>(v.toInteger()));
+                };
+                row.hasBarRanges = true;
+                readInts(gapsVal.toArray(), row.gaps);
+                readInts(m.value(QStringLiteral("pending")).toArray(), row.pending);
+                readInts(m.value(QStringLiteral("partFreq")).toArray(), row.partFreq);
+            }
             rows.push_back(std::move(row));
         }
 

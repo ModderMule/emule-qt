@@ -186,6 +186,8 @@ public:
     bool recheckItem(const QString& id);
 
     bool removeItem(const QString& id, bool deleteFiles);
+    /// Drop every Complete item from the list, files kept. Returns the count.
+    int clearCompleted();
     bool pauseItem(const QString& id);
 
     /// Who is resuming. Only the user may overrule a check that stopped an item:
@@ -384,6 +386,18 @@ public:
     /// not decoded: it is what the line carries and what the rate limit charges.
     [[nodiscard]] qint64 currentRate() const { return m_rateWindow.bytesPerSecond(); }
 
+    /// One item's share of currentRate(), split by articles in flight. An item's
+    /// decoded bytes move only when articles finish, in batches under a rate
+    /// limit, so a rate sampled from them swings between 0 and huge.
+    [[nodiscard]] qint64 itemRate(const QString& id) const;
+
+    /// Encoded bytes done plus bytes of articles still in flight, so progress
+    /// moves while a batch of articles is being read, not only when it lands.
+    /// Same unit as UsenetQueueItem::totalEncodedBytes().
+    [[nodiscard]] qint64 itemProgressBytes(const QString& id) const;
+    /// itemProgressBytes() per NZB file index.
+    [[nodiscard]] QList<qint64> fileProgressBytes(const QString& id) const;
+
     /// Whether anything is actually downloading, i.e. whether Usenet needs a
     /// share of the budget at all. An item parked on a spent allowance does not
     /// count: it is not downloading and reserving a share of the line for it
@@ -535,6 +549,9 @@ private:
         std::unique_ptr<UsenetQueueItem> item;
         QHash<quint64, SegmentAttempt> attempts;
         QSet<quint64> inFlight;
+        /// Body bytes read so far per in-flight article, written by the worker.
+        /// Keys not in `inFlight` are stale; onTick() prunes them.
+        QHash<quint64, ArticleProgress> inFlightBytes;
         /// Order segments are handed out in: the index PAR2 last, because it is
         /// only worth having if something else came up short. Recovery volumes
         /// are not in here at all until requestPar2Volumes() adds them.
@@ -715,6 +732,7 @@ private:
     void noteDispatchPark(const QString& reason);
     /// The periodic Usenet state line, while there is anything to say.
     void logQueueState();
+    [[nodiscard]] static QList<qint64> fileProgressBytes(const ItemRuntime& rt);
     void checkFileCompletion(ItemRuntime& rt, int fileIndex);
 
     /// Close a finished file off in the item's scratch directory: pad it out to

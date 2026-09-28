@@ -216,6 +216,10 @@ struct UsenetFileState {
 
     [[nodiscard]] bool allSegmentsDone() const;
 
+    /// Encoded bytes (NZB `bytes`) of the done articles of @p info, missing ones
+    /// included — the unit of totalEncodedBytes().
+    [[nodiscard]] qint64 doneEncodedBytes(const NzbFileInfo& info) const;
+
     /// Merge `[start, end)` into `written`, coalescing with any neighbours.
     void addWritten(qint64 start, qint64 length);
 
@@ -347,6 +351,8 @@ public:
     /// left out, so percent and remaining describe what will actually arrive.
     [[nodiscard]] qint64 totalEncodedBytes() const;
     [[nodiscard]] qint64 decodedBytes() const;
+    /// Encoded bytes of every done article, skipped files left out.
+    [[nodiscard]] qint64 doneEncodedBytes() const;
     [[nodiscard]] int segmentCount() const;
     [[nodiscard]] int doneSegmentCount() const;
 
@@ -359,7 +365,8 @@ public:
     /// volume headers is Tier B (phase 6b). Better a disabled menu entry than a
     /// preview that fails at play time.
     /// The best name known for @p fileIndex: the PAR2 set's, else the one yEnc
-    /// declared, else what the subject parser recovered from the NZB.
+    /// declared, else what the subject parser recovered from the NZB. A file the
+    /// NZB calls PAR2 always gets a `.par2` name.
     ///
     /// Empty when none of the three has an answer yet. Callers add their own
     /// last-resort fallback, because it genuinely differs — sealFile() invents
