@@ -2,7 +2,7 @@
 
 A port of MorphXT/EastShare's IP2Country feature. Each client, source, server, Kad contact,
 friend and news server gets a country flag after its icon. There is also an optional **Country**
-column.
+column, hidden by default.
 
 MorphXT used a `GeoIPCountryWhois.csv` file and a `countryflag32.dll` resource DLL. eMule Qt
 replaces them with a MaxMind **GeoLite2-Country** database (`.mmdb`, read through libmaxminddb)
@@ -62,13 +62,13 @@ Behind a proxy the flag therefore still shows the news server's country, not the
 | Setting | Where it is stored | Default |
 |---|---|---|
 | Show country flags | GUI, `uistate.yml` `showCountryFlags` | on |
-| Country column (Hidden / Short name / Long name) | GUI, `uistate.yml` `countryNameMode` | Hidden |
 | MaxMind account ID / license key | daemon, `preferences.yml` `geoip.accountId` / `geoip.licenseKey` | empty |
 | Update the database weekly | daemon, `preferences.yml` `geoip.autoUpdate` | on |
 
-The Country column follows the Options setting, not the saved header layout. The "Short name" is
-the ISO 3166-1 alpha-2 code. MorphXT's "mid" name (ISO3) is dropped because the mmdb has no ISO3
-codes.
+The Country column is an ordinary column: it starts hidden and is shown or hidden from the list's
+header menu (see [List columns](list-columns.md)). It always shows the long name ("Germany"); the
+flag tooltip adds the ISO 3166-1 alpha-2 code ("Germany (DE)"). MorphXT's Short/Mid/Long name
+setting is not ported, and an old `countryNameMode` key in `uistate.yml` is ignored.
 
 ## How it works
 

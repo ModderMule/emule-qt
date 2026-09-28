@@ -619,8 +619,9 @@ QWidget* ServerPanel::createServerListPanel()
     // Name, IP, Description, Ping, Users, Max Users, Files, Preference, Failed,
     // Static, Soft File Limit, LowID, Obfuscation, Country.
     serverView->bindColumns(QStringLiteral("serverList"),
-        {140, 140, 160, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 100});
-    CountryFlags::bindCountryColumn(serverView, ServerListModel::ColCountry);
+        {140, 140, 160, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 100},
+        {ServerListModel::ColCountry});
+    CountryFlags::bindFlagColumn(serverView);
 
     m_serverListView->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_serverListView, &QTreeView::doubleClicked,

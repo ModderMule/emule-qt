@@ -86,7 +86,6 @@ void UiState::load(const QString& configDir)
         m_lastVersionCheck = root["lastVersionCheck"].as<int64_t>(m_lastVersionCheck);
         m_associateNzbFiles = root["associateNzbFiles"].as<bool>(m_associateNzbFiles);
         m_showCountryFlags = root["showCountryFlags"].as<bool>(m_showCountryFlags);
-        m_countryNameMode = std::clamp(root["countryNameMode"].as<int>(m_countryNameMode), 0, 2);
         m_toolbarButtonStyle = root["toolbarButtonStyle"].as<int>(m_toolbarButtonStyle);
 
         m_toolbarSkinPath = QString::fromStdString(
@@ -174,7 +173,6 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "lastVersionCheck" << YAML::Value << m_lastVersionCheck;
     out << YAML::Key << "associateNzbFiles" << YAML::Value << m_associateNzbFiles;
     out << YAML::Key << "showCountryFlags" << YAML::Value << m_showCountryFlags;
-    out << YAML::Key << "countryNameMode" << YAML::Value << m_countryNameMode;
     out << YAML::Key << "toolbarButtonStyle" << YAML::Value << m_toolbarButtonStyle;
 
     if (!m_toolbarSkinPath.isEmpty())
@@ -413,12 +411,7 @@ void UiState::bindHeaderView(QHeaderView* header, const QString& key)
     // A header with no sections (model not attached yet, or just swapped to
     // nullptr) serialises to an empty state that restoreState() later rejects on
     // a column count mismatch — caching it would silently destroy the saved layout.
-    auto capture = [this, header, key]() {
-        if (header->count() == 0)
-            return;
-        m_headerStates[key] = header->saveState();
-        scheduleSave();
-    };
+    auto capture = [this, header, key]() { captureHeaderState(header, key); };
     capture();
 
     QObject::connect(header, &QHeaderView::sectionResized, header, capture);
@@ -435,6 +428,14 @@ void UiState::applyHeaderState(QHeaderView* header, const QString& key)
 {
     if (auto it = m_headerStates.constFind(key); it != m_headerStates.constEnd() && !it->isEmpty())
         header->restoreState(*it);
+}
+
+void UiState::captureHeaderState(QHeaderView* header, const QString& key)
+{
+    if (header->count() == 0)
+        return;
+    m_headerStates[key] = header->saveState();
+    scheduleSave();
 }
 
 void UiState::guardSelectionOnReset(QAbstractItemView* view)

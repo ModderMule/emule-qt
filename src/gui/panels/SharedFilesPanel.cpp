@@ -636,12 +636,10 @@ QWidget* SharedFilesPanel::createTopSection()
     auto* header = m_fileView->header();
     header->setStretchLastSection(true);
     header->setDefaultSectionSize(90);
-    // Hide Folder column by default (like MFC)
-    header->hideSection(SharedFilesModel::ColFolder);
     // File Name, Size, Type, Priority, Requests, Transferred, Shared Parts,
-    // Complete Sources, Shared Networks, Folder.
+    // Complete Sources, Shared Networks, Folder (hidden by default, like MFC).
     fileView->bindColumns(QStringLiteral("sharedfiles"),
-        {220, 75, 70, 80, 80, 120, 80, 100, 100, 200});
+        {220, 75, 70, 80, 80, 120, 80, 100, 100, 200}, {SharedFilesModel::ColFolder});
 
     m_fileView->setItemDelegateForColumn(SharedFilesModel::ColSharedParts,
                                           new SharedPartsDelegate(m_fileView));

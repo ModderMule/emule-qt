@@ -132,9 +132,21 @@ into `NntpCheckCon` with a different state enum, leaving two near-identical
   the whole queue.
 - The caller passes the servers already tried, keyed by `NewsServer::key()`
   (`host:port/user`), so an escalation never asks the same account twice.
+- **"Too many connections" caps, it does not block.** `NntpSocket` reads a
+  400/502 greeting or a 481/482/502 AUTHINFO refusal whose text names the
+  connection limit as `NntpError::TooManyConnections` (the text decides, as in
+  SABnzbd; Newshosting answers `502 Too many connections.` to AUTHINFO PASS).
+  The worker releases the refused socket and calls `limitConnections()`, which
+  holds that bucket at the connections still open for the retry interval.
+  Nothing is dropped, the pool emits `capacityChanged()` so the queue stops
+  dispatching past it, and the article goes back unspent. When the hold runs
+  out the cap lifts, and a probe past the real limit costs one refused
+  connection. It used to be an `AuthFailed` that blocked the account in every
+  worker it hit and dropped their healthy connections too. Another client on
+  the same account then produced a minute-long stall, a reconnect storm into
+  the same limit, and the next stall (log.log, 2026-09-28).
 - A server that fails at the transport level is **blocked** for a retry interval
-  rather than removed: "too many connections" is the commonest Usenet failure
-  and it cures itself. Blocking drops that server's **idle** connections at once
+  rather than removed, since most transport failures cure themselves. Blocking drops that server's **idle** connections at once
   and flags the leased ones to be dropped when their article finishes: aborting
   a leased socket raises no `failed()`, so the article on it would never
   finish — its in-flight slot held forever, its item stalled, and the job left
@@ -805,7 +817,7 @@ header.
 |---|---|
 | `tst_UsenetSmoke` | the library links and moc ran |
 | `tst_NntpSocket` | greeting, auth, TLS modes, watchdog, dot-unstuffing, rate limit; and every "cannot answer for this article" code (430/423/420/412) mapping to `ArticleNotFound` rather than to a protocol error, which is fatal to the connection and would back the whole account off on every probe. Proxy, against `tests/FakeProxyServer.h`: SOCKS5 with credentials **asked by host name** (ATYP 3), HTTP `CONNECT` answering a 407, an application-wide proxy **ignored** by a socket with none of its own, and a refused proxy reported as `ProxyFailed` naming the proxy |
-| `tst_NntpServerPool` | level normalisation, rotation, exclusion, backoff; grouped accounts sharing one connection budget and an ungrouped pair keeping separate ones; a server divided down to zero connections keeping its rung but leasing nothing; the shared ladder built from the configured levels only; every lease connecting through the pool's proxy |
+| `tst_NntpServerPool` | level normalisation, rotation, exclusion, backoff; the connection-limit cap keeping every open lease, lifting after its hold and off at retry interval 0; grouped accounts sharing one connection budget and an ungrouped pair keeping separate ones; a server divided down to zero connections keeping its rung but leasing nothing; the shared ladder built from the configured levels only; every lease connecting through the pool's proxy |
 | `tst_UsenetReleaseChecks` | the checks without a queue. SFV: comments, tabs, quotes and paths parsed; a clean set in either case; a damaged file named; an expected file gone is damage while **a listed sample nobody posted is not**; nothing present checks nothing; cancel. Unwanted: extension lists normalised; video tags; a program in a media release, **none in a software release**, a double extension without media, an empty list off; a program named `.mkv` fake while an MP4 named `.mkv` and **an unrecognised container are not**. The repair estimate: a covered hole repairable, losing more than the set holds unrepairable, **a file still downloading claiming no damage**, a repost counting its best copy, a repeated part number not a hole, **recovery data counted whatever it is called**, and nothing to judge from being Unknown |
 | `tst_UsenetPrefs` | round trip, encryption, ordering, mint condition, caps; news servers following the proxy unless switched off, **eD2K's route unmoved by that switch**, and SOCKS4 reached as SOCKS5; subject patterns: a round trip, **no `subjectPatterns` block written while the defaults are in use** — what keeps every existing preferences.yml byte-identical — a pattern that will not compile surviving a save because the typo is the record of what was meant, one with no role dropped on load, the cap and the name de-duplication, and a trailing space in a pattern *not* trimmed away |
 | `tst_UsenetYenc` | CRC vector, every byte value, the four traps above |
@@ -860,7 +872,7 @@ pointing `EMULE_NZB_DIR` at something large:
   when the row ends — the user's own incoming directory is never touched.
 - **Never set `EMULE_NNTP_MAXCONN` above what the account allows.** A provider
   answers an over-subscribed login with `502 Too many connections`, and the
-  server pool then backs that server off for a minute. Consecutive rows are the
+  pool then holds each worker at what it has for a minute. Consecutive rows are the
   usual way to trip it: the previous row's sockets are not yet released
   server-side when the next one opens its own.
 

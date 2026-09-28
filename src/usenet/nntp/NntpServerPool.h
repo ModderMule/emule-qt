@@ -16,8 +16,10 @@
 ///   - `ignoreServers` carries the accounts already asked for this article, so
 ///     an escalation never asks the same one twice.
 ///   - A server that fails at the transport level is **blocked** for a retry
-///     interval rather than removed, because "too many connections" is the most
-///     common failure on Usenet and it cures itself.
+///     interval rather than removed.
+///   - "Too many connections" is not such a failure: the account is fine and so
+///     are its open connections. It **caps** the account at what it holds now
+///     for the retry interval, and nothing is dropped.
 ///
 /// Connections are created lazily and kept: the TLS handshake and the AUTHINFO
 /// round trip cost more than the article fetch that follows, so a pool that
@@ -31,6 +33,8 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
+
+class QTimer;
 
 #include <memory>
 #include <vector>
@@ -112,6 +116,12 @@ public:
     void blockServer(const QString& serverKey);
     [[nodiscard]] bool isServerBlocked(const QString& serverKey) const;
 
+    /// The provider refused a connection over its limit: hold this server's
+    /// connection budget at what is open now for the retry interval. Open and
+    /// connecting leases are untouched. Returns the new cap, or -1 when nothing
+    /// changed (disabled, unknown server, or a renewal at the same cap).
+    int limitConnections(const QString& serverKey);
+
     /// Route for connections opened from now on. Open ones keep theirs:
     /// UsenetQueue rebuilds its workers, and with them their pools, on every
     /// settings change, which is what makes a new proxy take effect.
@@ -135,6 +145,10 @@ public:
 
     [[nodiscard]] int busyCount() const;
     [[nodiscard]] int totalCount() const { return static_cast<int>(m_connections.size()); }
+
+signals:
+    /// capacity() changed without a setServers(): a cap was set or ran out.
+    void capacityChanged();
 
 private:
     struct Lease {
@@ -161,7 +175,16 @@ private:
     /// already uses for the ArticleFetcher, for the same reason.
     static void retire(Lease& lease);
 
+    /// A limitConnections() hold on one bucket.
+    struct Cap {
+        int limit = 0;
+        qint64 untilMs = 0;
+    };
+
     [[nodiscard]] int connectionsInBucket(const QString& bucket) const;
+    [[nodiscard]] int effectiveLimit(const NntpConnectionBucket& bucket) const;
+    void armCapTimer();
+    void onCapTimer();
     [[nodiscard]] qint64 nowSeconds() const;
     void rebuildServerIndex();
     void dropConnections(const QString& serverKey);
@@ -171,6 +194,8 @@ private:
     QHash<QString, int> m_normalizedLevel;   ///< server key -> 0..maxLevel
     QHash<QString, NntpConnectionBucket> m_buckets;   ///< server key -> its budget
     QHash<QString, qint64> m_blockedUntil;   ///< server key -> epoch seconds
+    QHash<QString, Cap> m_caps;              ///< bucket id -> connection-limit hold
+    QTimer* m_capTimer = nullptr;            ///< lifts the next cap to expire
 
     std::vector<Lease> m_connections;
 

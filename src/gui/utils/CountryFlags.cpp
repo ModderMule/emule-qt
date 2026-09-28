@@ -22,7 +22,6 @@ constexpr int kGap = 2;
 constexpr int kFlagWidth = 18;   // MorphXT flags: 18x12 plus a 2 px border top/bottom
 
 bool s_showFlags = true;
-CountryFlags::NameMode s_nameMode = CountryFlags::NameMode::Hidden;
 
 [[nodiscard]] qreal pixelRatio()
 {
@@ -38,17 +37,11 @@ bool showFlags()
     return s_showFlags;
 }
 
-NameMode nameMode()
+void setSettings(bool showFlags)
 {
-    return s_nameMode;
-}
-
-void setSettings(bool showFlags, NameMode mode)
-{
-    if (showFlags == s_showFlags && mode == s_nameMode)
+    if (showFlags == s_showFlags)
         return;
     s_showFlags = showFlags;
-    s_nameMode = mode;
     notifyChanged();
 }
 
@@ -79,12 +72,7 @@ QString countryName(const QString& cc)
 
 QString columnText(const QString& cc)
 {
-    switch (nameMode()) {
-    case NameMode::Short: return cc.toUpper();
-    case NameMode::Long:  return countryName(cc);
-    case NameMode::Hidden: break;
-    }
-    return {};
+    return countryName(cc);
 }
 
 QString tooltip(const QString& cc)

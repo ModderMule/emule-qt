@@ -64,6 +64,12 @@ public:
     /// Answer AUTHINFO PASS with 481 regardless of what was sent.
     void setRejectAuth(bool reject) { m_rejectAuth = reject; }
 
+    /// Account connection limit, the Newshosting way: a login past @p limit
+    /// concurrently authenticated connections gets "502 Too many connections."
+    /// to AUTHINFO PASS. 0 (the default) is unlimited.
+    void setConnectionLimit(int limit) { m_connectionLimit = limit; }
+    [[nodiscard]] int refusedLogins() const { return m_refusedLogins; }
+
     void setCapabilities(QStringList caps) { m_capabilities = std::move(caps); }
 
     /// Make CAPABILITIES answer "500 command not recognized", as pre-RFC-3977
@@ -213,9 +219,17 @@ private:
         }
         if (kind == QLatin1String("PASS")) {
             m_sawPlaintextPassword = true;
-            if (!m_rejectAuth && m_offeredUser == m_user && value == m_pass)
+            const bool valid = !m_rejectAuth && m_offeredUser == m_user && value == m_pass;
+            if (valid && m_connectionLimit > 0 && m_authed.size() >= m_connectionLimit) {
+                ++m_refusedLogins;
+                writeLine(sock, QByteArrayLiteral("502 Too many connections."));
+                sock->disconnectFromHost();
+            } else if (valid) {
+                m_authed.insert(sock);
+                connect(sock, &QObject::destroyed, this, [this, sock] { m_authed.remove(sock); });
+                connect(sock, &QTcpSocket::disconnected, this, [this, sock] { m_authed.remove(sock); });
                 writeLine(sock, QByteArrayLiteral("281 Authentication accepted"));
-            else
+            } else
                 writeLine(sock, QByteArrayLiteral("481 Authentication failed"));
             return;
         }
@@ -338,6 +352,9 @@ private:
     QByteArray m_greeting = QByteArrayLiteral("200 eMuleQt fake NNTP service ready");
     bool m_mute = false;
     bool m_rejectAuth = false;
+    int m_connectionLimit = 0;
+    int m_refusedLogins = 0;
+    QSet<QTcpSocket*> m_authed;
     bool m_supportsCaps = true;
     bool m_dropOnNextCommand = false;
 

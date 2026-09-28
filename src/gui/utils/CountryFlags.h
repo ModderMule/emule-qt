@@ -5,8 +5,8 @@
 ///        server, Kad contact and friend rows (MorphXT/EastShare IP2Country).
 ///
 /// The flag sits right after the row's own icon in the name column, as in MorphXT.
-/// The optional Country column shows the name, and its visibility follows the
-/// Options setting rather than the saved header layout.
+/// The Country column shows the long name; it starts hidden and is toggled from
+/// the list's header menu like any other column.
 ///
 /// Settings are held here (seeded from UiState at startup) so the list models stay
 /// free of UiState and compile standalone in the GUI tests.
@@ -48,14 +48,10 @@ protected:
 
 namespace CountryFlags {
 
-/// Country column content; Hidden also hides the column. Persisted in UiState.
-enum class NameMode : int { Hidden = 0, Short = 1, Long = 2 };
-
 [[nodiscard]] bool showFlags();
-[[nodiscard]] NameMode nameMode();
 
-/// Update the settings and repaint every bound view.
-void setSettings(bool showFlags, NameMode mode);
+/// Update the setting and repaint every bound view.
+void setSettings(bool showFlags);
 
 /// Repaint every bound view (e.g. after a new database arrived).
 void notifyChanged();
@@ -66,7 +62,7 @@ void notifyChanged();
 /// English long name ("Germany"), or the code itself when Qt doesn't know it.
 [[nodiscard]] QString countryName(const QString& cc);
 
-/// Country column text for the current mode.
+/// Country column text: the long name.
 [[nodiscard]] QString columnText(const QString& cc);
 
 /// Sort key for a Country column: the displayed text.
@@ -82,19 +78,6 @@ void notifyChanged();
 
 /// Widen column 0's decoration for the flag and repaint on setting changes.
 void bindFlagColumn(QAbstractItemView* view);
-
-/// bindFlagColumn() plus the Country column: hidden or shown per nameMode(), also
-/// after a saved layout is restored. @p View is a ListTreeView / ListTreeWidget.
-template<class View>
-void bindCountryColumn(View* view, int column)
-{
-    view->setColumnPolicy([column](QHeaderView* header) {
-        header->setSectionHidden(column, nameMode() == NameMode::Hidden);
-    });
-    bindFlagColumn(view);
-    QObject::connect(CountryFlagsNotifier::instance(), &CountryFlagsNotifier::changed, view,
-                     [view] { view->applyColumnPolicy(); });
-}
 
 } // namespace CountryFlags
 

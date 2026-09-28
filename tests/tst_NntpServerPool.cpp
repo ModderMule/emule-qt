@@ -70,6 +70,9 @@ private slots:
     void blockedServerIsSkippedAndRestored();
     void blockingKeepsBusyLeasesAliveUntilRelease();
     void retryIntervalZeroDisablesBlocking();
+    void connectionLimitCapsWithoutDroppingAnything();
+    void connectionCapLiftsAfterTheHold();
+    void retryIntervalZeroDisablesTheConnectionCap();
     void changingCredentialsDropsConnections();
     void generationBumpsOnEveryChange();
     void groupedServersShareOneConnectionBudget();
@@ -327,6 +330,93 @@ void tst_NntpServerPool::retryIntervalZeroDisablesBlocking()
 
     pool.blockServer(a.key());
     QVERIFY(!pool.isServerBlocked(a.key()));
+}
+
+// "Too many connections" costs the refused connection only. Backing the account
+// off instead dropped every healthy one for a minute, then reopened them all at
+// once into the same limit: the stop/burst cycle in log.log on 2026-09-28.
+void tst_NntpServerPool::connectionLimitCapsWithoutDroppingAnything()
+{
+    FakeNntpServer server;
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    const NewsServer solo = make(QStringLiteral("solo"), port, 0, /*maxConnections*/ 4);
+    NntpServerPool pool;
+    pool.setServers({solo});
+    QSignalSpy capacity(&pool, &NntpServerPool::capacityChanged);
+
+    NntpSocket* busy = pool.acquire(0);
+    NntpSocket* idle = pool.acquire(0);
+    NntpSocket* refused = pool.acquire(0);
+    QVERIFY(busy && idle && refused);
+    QSignalSpy busyReady(busy, &NntpSocket::ready);
+    QSignalSpy idleReady(idle, &NntpSocket::ready);
+    QVERIFY(busyReady.count() > 0 || busyReady.wait(5000));
+    QVERIFY(idleReady.count() > 0 || idleReady.wait(5000));
+    pool.release(idle);
+
+    // The worker releases the refused lease first, then caps.
+    QPointer<NntpSocket> busyGuard(busy);
+    QPointer<NntpSocket> idleGuard(idle);
+    pool.release(refused, /*reusable*/ false);
+    QCOMPARE(pool.limitConnections(solo.key()), 2);
+    QTest::qWait(50);   // let any deleteLater() run
+
+    QVERIFY(!pool.isServerBlocked(solo.key()));
+    QCOMPARE(capacity.count(), 1);
+    QCOMPARE(pool.capacity(), 2);
+    QVERIFY(!busyGuard.isNull() && busyGuard->isReady());
+    QVERIFY(!idleGuard.isNull() && idleGuard->isReady());
+
+    // The idle connection is still handed out; a third is not opened.
+    QCOMPARE(pool.acquire(0), idle);
+    QCOMPARE(pool.acquire(0), nullptr);
+    QCOMPARE(pool.totalCount(), 2);
+
+    // A renewal at the same cap is silent.
+    QCOMPARE(pool.limitConnections(solo.key()), -1);
+    QCOMPARE(capacity.count(), 1);
+}
+
+void tst_NntpServerPool::connectionCapLiftsAfterTheHold()
+{
+    FakeNntpServer server;
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    const NewsServer solo = make(QStringLiteral("solo"), port, 0, /*maxConnections*/ 3);
+    NntpServerPool pool;
+    pool.setRetryInterval(1);
+    pool.setServers({solo});
+    QSignalSpy capacity(&pool, &NntpServerPool::capacityChanged);
+
+    QVERIFY(pool.acquire(0) != nullptr);
+    QCOMPARE(pool.limitConnections(solo.key()), 1);
+    QCOMPARE(pool.acquire(0), nullptr);
+
+    // The hold ends by itself and says so, or the queue keeps dispatching
+    // against the lowered capacity forever.
+    QVERIFY(capacity.wait(3000) || capacity.count() >= 2);
+    QCOMPARE(capacity.count(), 2);
+    QCOMPARE(pool.capacity(), 3);
+    QVERIFY(pool.acquire(0) != nullptr);
+}
+
+void tst_NntpServerPool::retryIntervalZeroDisablesTheConnectionCap()
+{
+    FakeNntpServer server;
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    const NewsServer solo = make(QStringLiteral("solo"), port, 0, 3);
+    NntpServerPool pool;
+    pool.setRetryInterval(0);
+    pool.setServers({solo});
+
+    QVERIFY(pool.acquire(0) != nullptr);
+    QCOMPARE(pool.limitConnections(solo.key()), -1);
+    QCOMPARE(pool.capacity(), 3);
 }
 
 void tst_NntpServerPool::changingCredentialsDropsConnections()

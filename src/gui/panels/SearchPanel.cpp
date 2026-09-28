@@ -1997,6 +1997,7 @@ void SearchPanel::setupResultHeader(bool forIndexer)
         m_resultView->bindColumns(kIndexerHeaderKey, {380, 80, 70, 120, 60, 110, 60, 60, 80});
         m_resultView->setColumnHidden(IndexerResultsModel::ColSeeders, true);
         m_resultView->setColumnHidden(IndexerResultsModel::ColPeers, true);
+        m_resultView->setLockedColumns({IndexerResultsModel::ColSeeders, IndexerResultsModel::ColPeers});
         return;
     }
 

@@ -58,6 +58,14 @@ enum class NntpError : quint8 {
     /// each of them off and spent the article's retries until the item failed or
     /// the article was booked missing.
     ProxyFailed,
+
+    // -- Server-level, but only for this one connection. ----------------------
+    ///
+    /// 400/502 at the greeting or AUTHINFO naming the connection limit. The
+    /// account is fine and its other connections keep working: the pool stops
+    /// opening more for a while instead of backing the account off, which used
+    /// to drop every healthy connection for a minute (SABnzbd/NZBGet do the same).
+    TooManyConnections,
 };
 
 /// Whether the article should be retried on the *next* priority level rather
@@ -81,6 +89,7 @@ enum class NntpError : quint8 {
     case NntpError::AuthFailed:
     case NntpError::ProtocolError:
     case NntpError::ProxyFailed:
+    case NntpError::TooManyConnections:
         return true;
     case NntpError::None:
     case NntpError::ArticleNotFound:

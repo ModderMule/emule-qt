@@ -2273,6 +2273,13 @@ void UsenetQueue::handleSegmentFailure(ItemRuntime& rt, const UsenetFetchResult&
         return;
     }
 
+    // The provider refused the connection before the article was asked. The
+    // worker has capped its pool; the article just goes back, unspent.
+    if (result.error == NntpError::TooManyConnections) {
+        rt.plan.insert(qBound(0, rt.planCursor, int(rt.plan.size())), key);
+        return;
+    }
+
     const qint64 posted = (result.fileIndex >= 0
                            && result.fileIndex < rt.item->nzb.files.size())
                               ? rt.item->nzb.files.at(result.fileIndex).date
@@ -4339,6 +4346,12 @@ void UsenetQueue::handleProbeResult(ItemRuntime& rt, const UsenetFetchResult& re
     if (result.error == NntpError::ProxyFailed) {
         rt.checkPlan.insert(qBound(0, rt.checkCursor, int(rt.checkPlan.size())), key);
         noteProxyStall(result.text);
+        return;
+    }
+
+    // Nor is a connection the provider refused over its limit: never asked.
+    if (result.error == NntpError::TooManyConnections) {
+        rt.checkPlan.insert(qBound(0, rt.checkCursor, int(rt.checkPlan.size())), key);
         return;
     }
 

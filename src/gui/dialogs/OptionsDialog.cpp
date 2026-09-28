@@ -221,7 +221,6 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_useAutoCompletionCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_useOriginalIconsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_showCountryFlagsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
-    connect(m_countryNameCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
     connect(m_geoIpAccountEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_geoIpLicenseEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_geoIpAutoUpdateCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -956,13 +955,7 @@ QWidget* OptionsDialog::createDisplayPage()
     auto* geoGroup = new QGroupBox(tr("Country flags (IP2Country)"), page);
     auto* geoGrid = new QGridLayout(geoGroup);
     m_showCountryFlagsCheck = new QCheckBox(tr("Show country flags"), geoGroup);
-    geoGrid->addWidget(m_showCountryFlagsCheck, 0, 0, 1, 2);
-    geoGrid->addWidget(new QLabel(tr("Country column:"), geoGroup), 0, 2);
-    m_countryNameCombo = new QComboBox(geoGroup);
-    m_countryNameCombo->addItem(tr("Hidden"));
-    m_countryNameCombo->addItem(tr("Short name"));
-    m_countryNameCombo->addItem(tr("Long name"));
-    geoGrid->addWidget(m_countryNameCombo, 0, 3);
+    geoGrid->addWidget(m_showCountryFlagsCheck, 0, 0, 1, 4);
 
     geoGrid->addWidget(new QLabel(tr("MaxMind account ID:"), geoGroup), 1, 0);
     m_geoIpAccountEdit = new QLineEdit(geoGroup);
@@ -5864,7 +5857,6 @@ void OptionsDialog::loadSettings()
     m_useOriginalIconsCheck->setChecked(thePrefs.useOriginalIcons());
     m_initialUseOriginalIcons = thePrefs.useOriginalIcons();
     m_showCountryFlagsCheck->setChecked(theUiState.showCountryFlags());
-    m_countryNameCombo->setCurrentIndex(theUiState.countryNameMode());
 
     // Display - font
     m_currentLogFont = thePrefs.logFont();
@@ -6062,13 +6054,9 @@ void OptionsDialog::saveSettings()
     thePrefs.setUseUserSortedServerList(m_useUserSortedServerListCheck->isChecked());
     thePrefs.setEnableIpcLog(m_enableIpcLogCheck->isChecked());
     thePrefs.setStartCoreWithConsole(m_startCoreWithConsoleCheck->isChecked());
-    if (m_showCountryFlagsCheck->isChecked() != theUiState.showCountryFlags()
-        || m_countryNameCombo->currentIndex() != theUiState.countryNameMode()) {
+    if (m_showCountryFlagsCheck->isChecked() != theUiState.showCountryFlags()) {
         theUiState.setShowCountryFlags(m_showCountryFlagsCheck->isChecked());
-        theUiState.setCountryNameMode(m_countryNameCombo->currentIndex());
-        CountryFlags::setSettings(
-            m_showCountryFlagsCheck->isChecked(),
-            static_cast<CountryFlags::NameMode>(m_countryNameCombo->currentIndex()));
+        CountryFlags::setSettings(m_showCountryFlagsCheck->isChecked());
     }
     if (m_useOriginalIconsCheck->isChecked() != m_initialUseOriginalIcons) {
         QMessageBox::information(this, tr("Icons"),

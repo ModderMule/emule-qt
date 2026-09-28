@@ -270,7 +270,6 @@ private:
     QCheckBox* m_useOriginalIconsCheck = nullptr;
     bool m_initialUseOriginalIcons = false;
     QCheckBox* m_showCountryFlagsCheck = nullptr;
-    QComboBox* m_countryNameCombo = nullptr;
     QLineEdit* m_geoIpAccountEdit = nullptr;
     QLineEdit* m_geoIpLicenseEdit = nullptr;
     QCheckBox* m_geoIpAutoUpdateCheck = nullptr;

@@ -63,8 +63,15 @@ void UsenetWorker::setServers(QList<NewsServer> servers, int retryIntervalSec,
     // Constructed lazily and here rather than in the constructor: the object is
     // moveToThread()'d after construction, and the pool's sockets must belong to
     // the thread that runs them.
-    if (!m_pool)
+    if (!m_pool) {
         m_pool = std::make_unique<NntpServerPool>();
+        // A connection-limit hold shrinks the pool without a setServers(). The
+        // queue must hear it: an article it dispatches past the capacity comes
+        // back "nothing leasable" and parks every dispatch until the next tick.
+        connect(m_pool.get(), &NntpServerPool::capacityChanged, this, [this] {
+            emit capacityChanged(m_index, computeCapacity());
+        });
+    }
 
     m_pool->setProxy(proxy);
     m_pool->setRetryInterval(retryIntervalSec);
@@ -265,9 +272,11 @@ void UsenetWorker::finishJob(Job* job, NntpError error, const QString& text)
         // real 60 s stall for any caller whose pool outlives the shutdown.
         // Nor is a dead proxy: it fails every account at once, and backing each
         // off would outlast the proxy coming back. The queue waits for it instead.
+        // Nor is a provider at its connection limit: that costs this one
+        // connection, and the others keep downloading (see below).
         if (!reusable && !m_shuttingDown && !result.serverKey.isEmpty()
             && error != NntpError::ArticleNotFound && error != NntpError::GroupNotFound
-            && error != NntpError::ProxyFailed) {
+            && error != NntpError::ProxyFailed && error != NntpError::TooManyConnections) {
             // Name the error. A backoff is the most consequential thing this
             // module does on its own — it takes a provider out for a minute —
             // and "backed off" with no cause is unactionable in a log.
@@ -281,6 +290,18 @@ void UsenetWorker::finishJob(Job* job, NntpError error, const QString& text)
         m_jobsBySocket.remove(job->socket);
         m_pool->release(job->socket, reusable);
         job->socket = nullptr;
+
+        // After release(), so the refused connection is not counted into the cap.
+        if (error == NntpError::TooManyConnections && !m_shuttingDown
+            && !result.serverKey.isEmpty()) {
+            if (const int cap = m_pool->limitConnections(result.serverKey); cap >= 0) {
+                logWarning(QStringLiteral("Usenet: %1 is at its connection limit; worker %2 holds at %3 for %4 s")
+                               .arg(result.serverKey)
+                               .arg(m_index)
+                               .arg(cap)
+                               .arg(m_pool->retryInterval()));
+            }
+        }
     }
 
     m_jobs.removeOne(job);

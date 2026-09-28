@@ -760,9 +760,12 @@ QWidget* TransferPanel::createDownloadsSection()
     header->setDefaultSectionSize(90);
     // Name, Size, Completed, Speed, Progress, Sources, Priority, Status,
     // Remaining, Last Seen Complete, Last Reception, Category, Added On, Country.
+    // Hidden by default as in MFC: Last Seen Complete, Last Reception, Category.
     downloadView->bindColumns(QStringLiteral("downloads"),
-        {220, 65, 65, 65, 90, 65, 70, 65, 80, 80, 80, 60, 120, 100});
-    CountryFlags::bindCountryColumn(downloadView, DownloadListModel::ColCountry);
+        {220, 65, 65, 65, 90, 65, 70, 65, 80, 80, 80, 60, 120, 100},
+        {DownloadListModel::ColSeenComplete, DownloadListModel::ColLastReception,
+         DownloadListModel::ColCategory, DownloadListModel::ColCountry});
+    CountryFlags::bindFlagColumn(downloadView);
 
     // Hidden until mounted, for the reason given in createClientView().
     downloadView->hide();
@@ -1034,8 +1037,8 @@ QTreeView* TransferPanel::createClientView(ClientListModel* model,
     auto* hdr = view->header();
     hdr->setStretchLastSection(true);
     hdr->setDefaultSectionSize(100);
-    view->bindColumns(headerKey, columnWidths);
-    CountryFlags::bindCountryColumn(view, model->countryColumn());
+    view->bindColumns(headerKey, columnWidths, {model->countryColumn()});
+    CountryFlags::bindFlagColumn(view);
 
     // A child widget that is in no layout is still shown with its parent, at its
     // default geometry — an unmounted list would float over the pane headers at the

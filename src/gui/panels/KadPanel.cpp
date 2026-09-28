@@ -378,8 +378,9 @@ QWidget* KadPanel::createContactsPanel()
     header->setStretchLastSection(true);
     header->setDefaultSectionSize(200);
     // Status, Client ID, Distance, Country.
-    contactsView->bindColumns(QStringLiteral("kadContacts"), {110, 200, 200, 100});
-    CountryFlags::bindCountryColumn(contactsView, KadContactsModel::ColCountry);
+    contactsView->bindColumns(QStringLiteral("kadContacts"), {110, 200, 200, 100},
+                              {KadContactsModel::ColCountry});
+    CountryFlags::bindFlagColumn(contactsView);
 
     // Compact monospace font for hex/binary display
     QFont monoFont(QStringLiteral("Courier New"), 9);

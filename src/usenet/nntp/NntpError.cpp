@@ -20,6 +20,7 @@ QString describeNntpError(NntpError e)
     case NntpError::ProtocolError:     return QCoreApplication::translate("Usenet", "Protocol error");
     case NntpError::WriteFailed:       return QCoreApplication::translate("Usenet", "Could not write the article");
     case NntpError::ProxyFailed:       return QCoreApplication::translate("Usenet", "Proxy failed");
+    case NntpError::TooManyConnections: return QCoreApplication::translate("Usenet", "Too many connections");
     }
     return QCoreApplication::translate("Usenet", "Unknown error");
 }

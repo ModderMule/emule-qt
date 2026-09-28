@@ -66,6 +66,22 @@ constexpr int kAuthRejected         = 481;
 constexpr int kAuthOutOfSequence    = 482;
 constexpr int kCommandUnavailable   = 502;
 
+/// Whether a refusal names the account's connection limit. Providers disagree on
+/// the code (400/502 at the greeting, 502 or 481 at AUTHINFO) but not on the
+/// words, so the text decides, as in SABnzbd. A wrong password says neither.
+bool saysTooManyConnections(const QString& text)
+{
+    return text.contains(QLatin1String("connection"), Qt::CaseInsensitive)
+        || text.contains(QLatin1String("too many"), Qt::CaseInsensitive);
+}
+
+/// AUTHINFO refusal: the connection limit, or the credentials.
+NntpError authRefusal(const QString& text)
+{
+    return saysTooManyConnections(text) ? NntpError::TooManyConnections
+                                        : NntpError::AuthFailed;
+}
+
 } // namespace
 
 NntpSocket::NntpSocket(QObject* parent)
@@ -483,9 +499,9 @@ void NntpSocket::handleStatusLine(const QByteArray& raw)
     switch (m_state) {
     case State::Greeting:
         // 200 posting allowed, 201 posting prohibited — both fine for reading.
-        // 400 and 502 at the greeting almost always mean "too many connections"
-        // or "account blocked", which back the whole server off rather than
-        // failing just this article.
+        // 400 and 502 at the greeting mean "too many connections" (the pool
+        // stops growing) or "account blocked" (the whole server backs off),
+        // never a fault of the article.
         if (code == kGreetingPostingOk || code == kGreetingPostingNo) {
             if (m_server.tlsMode == TlsMode::StartTls) {
                 m_state = State::StartTlsSent;
@@ -497,7 +513,9 @@ void NntpSocket::handleStatusLine(const QByteArray& raw)
                 armResponseTimer();
             }
         } else if (code == kServiceUnavailable || code == kCommandUnavailable) {
-            fail(NntpError::ServerUnavailable, line);
+            fail(saysTooManyConnections(text) ? NntpError::TooManyConnections
+                                              : NntpError::ServerUnavailable,
+                 line);
         } else {
             fail(NntpError::ProtocolError, QStringLiteral("Unexpected greeting: %1").arg(line));
         }
@@ -533,7 +551,7 @@ void NntpSocket::handleStatusLine(const QByteArray& raw)
             // Some providers authenticate on the user name alone.
             enterReady();
         } else {
-            fail(NntpError::AuthFailed, line);
+            fail(authRefusal(text), line);
         }
         break;
 
@@ -541,7 +559,7 @@ void NntpSocket::handleStatusLine(const QByteArray& raw)
         if (code == kAuthAccepted)
             enterReady();
         else if (code == kAuthRejected || code == kAuthOutOfSequence || code == kCommandUnavailable)
-            fail(NntpError::AuthFailed, line);
+            fail(authRefusal(text), line);
         else
             fail(NntpError::ProtocolError, QStringLiteral("AUTHINFO PASS: %1").arg(line));
         break;

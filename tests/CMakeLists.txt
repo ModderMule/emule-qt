@@ -491,7 +491,7 @@ target_include_directories(tst_ListSorting PRIVATE
 target_link_libraries(tst_ListSorting PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
-# Country flags (IP2Country): flag icons, the Country column rule, the models' "cc"
+# Country flags (IP2Country): flag icons, the Country column default, the models' "cc"
 # plumbing, and saved header layouts surviving an appended column.
 emule_add_test(tst_CountryFlags FOLDER "Gui"
     SOURCES tst_CountryFlags.cpp
@@ -509,6 +509,17 @@ target_include_directories(tst_CountryFlags PRIVATE
     "${CMAKE_SOURCE_DIR}/src/core"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_CountryFlags PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
+# List header column menu (MFC CMuleListCtrl): hide/show, default-hidden, persistence.
+emule_add_test(tst_ListHeaderMenu FOLDER "Gui"
+    SOURCES tst_ListHeaderMenu.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp")
+target_include_directories(tst_ListHeaderMenu PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_SOURCE_DIR}/src/core"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_ListHeaderMenu PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
 # eNode torrent/Usenet rows in the result list, and the Meta API account dialog.

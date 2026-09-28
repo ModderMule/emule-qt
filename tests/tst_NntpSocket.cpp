@@ -70,6 +70,8 @@ private slots:
     void noCredentials_skipsAuthinfo();
     void wrongPassword_failsWithAuthFailed();
     void greeting400_backsOffTheServer();
+    void greetingTooManyConnections_isItsOwnError();
+    void authTooManyConnections_isNotAnAuthFailure();
     void respondsToNothing_timesOut();
     void capabilities_readsMultilineBlock();
     void capabilities_unsupported_isNotFatalToTheServer();
@@ -157,8 +159,8 @@ void tst_NntpSocket::wrongPassword_failsWithAuthFailed()
 void tst_NntpSocket::greeting400_backsOffTheServer()
 {
     FakeNntpServer server;
-    // What a provider says when the account's connection limit is reached.
-    server.setGreeting(QByteArrayLiteral("400 Too many connections"));
+    // A refusal that does not name the connection limit: the server backs off.
+    server.setGreeting(QByteArrayLiteral("400 Service temporarily unavailable"));
     const quint16 port = server.start();
     QVERIFY(port != 0);
 
@@ -173,6 +175,51 @@ void tst_NntpSocket::greeting400_backsOffTheServer()
     // Must not escalate: the article is very probably here, we just could not
     // get a connection to ask.
     QVERIFY(!escalatesToNextLevel(error));
+}
+
+// The connection limit at the greeting. Not ServerUnavailable: that backs the
+// account off, and the account's other connections are fine.
+void tst_NntpSocket::greetingTooManyConnections_isItsOwnError()
+{
+    FakeNntpServer server;
+    server.setGreeting(QByteArrayLiteral("502 Too many connections"));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NntpSocket socket;
+    QSignalSpy failed(&socket, &NntpSocket::failed);
+
+    socket.connectToServer(localServer(port));
+    QVERIFY(failed.wait(5000));
+
+    const auto error = failed.first().at(0).value<NntpError>();
+    QCOMPARE(error, NntpError::TooManyConnections);
+    QVERIFY(!escalatesToNextLevel(error));
+    QVERIFY(isFatalToConnection(error));
+}
+
+// Newshosting's shape (log.log, 2026-09-28): the limit is enforced at AUTHINFO
+// PASS with a 502. It used to read as a credential failure.
+void tst_NntpSocket::authTooManyConnections_isNotAnAuthFailure()
+{
+    FakeNntpServer server;
+    server.setConnectionLimit(1);
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NntpSocket first;
+    QSignalSpy firstReady(&first, &NntpSocket::ready);
+    first.connectToServer(localServer(port));
+    QVERIFY(firstReady.wait(5000));
+
+    NntpSocket second;
+    QSignalSpy failed(&second, &NntpSocket::failed);
+    second.connectToServer(localServer(port));
+    QVERIFY(failed.wait(5000));
+
+    QCOMPARE(failed.first().at(0).value<NntpError>(), NntpError::TooManyConnections);
+    QCOMPARE(server.refusedLogins(), 1);
+    QVERIFY(first.isReady());
 }
 
 void tst_NntpSocket::respondsToNothing_timesOut()

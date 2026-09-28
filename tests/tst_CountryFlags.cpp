@@ -1,6 +1,6 @@
 /// @file tst_CountryFlags.cpp
-/// @brief GUI half of IP2Country: flag icons, the Country column and its visibility
-///        rule, the models' "cc" plumbing, and header layouts surviving the extra column.
+/// @brief GUI half of IP2Country: flag icons, the Country column and its default
+///        visibility, the models' "cc" plumbing, and header layouts surviving the extra column.
 
 #include "controls/AbstractListView.h"
 #include "controls/ClientListModel.h"
@@ -26,18 +26,18 @@ private slots:
     void flag_knownAndUnknownCodes();
     void flag_everyIsoTerritoryHasOne();
     void withFlag_widthAndOffSwitch();
-    void columnText_followsMode();
+    void columnText_isLongName();
     void clientModel_countryColumnAndDecoration();
     void serverModel_parsesCc();
     void kadModel_countryColumn();
-    void bindCountryColumn_followsSettingOverSavedLayout();
+    void countryColumn_hiddenByDefaultSavedLayoutWins();
     void restoreHeader_keepsLayoutWhenColumnAppended();
     void delegate_widensComposedDecoration();
 };
 
 void tst_CountryFlags::init()
 {
-    CountryFlags::setSettings(true, CountryFlags::NameMode::Hidden);
+    CountryFlags::setSettings(true);
 }
 
 void tst_CountryFlags::flag_knownAndUnknownCodes()
@@ -88,26 +88,22 @@ void tst_CountryFlags::withFlag_widthAndOffSwitch()
     const QSize alone = CountryFlags::withFlag(QIcon(), QStringLiteral("SE")).availableSizes().value(0);
     QCOMPARE(alone.width() * 16, 18 * alone.height());
 
-    CountryFlags::setSettings(false, CountryFlags::NameMode::Hidden);
+    CountryFlags::setSettings(false);
     QCOMPARE(CountryFlags::withFlag(base, QStringLiteral("SE")).cacheKey(), base.cacheKey());
 }
 
-void tst_CountryFlags::columnText_followsMode()
+void tst_CountryFlags::columnText_isLongName()
 {
-    CountryFlags::setSettings(true, CountryFlags::NameMode::Short);
-    QCOMPARE(CountryFlags::columnText(QStringLiteral("se")), QStringLiteral("SE"));
-    CountryFlags::setSettings(true, CountryFlags::NameMode::Long);
+    QCOMPARE(CountryFlags::columnText(QStringLiteral("se")), QStringLiteral("Sweden"));
     QCOMPARE(CountryFlags::columnText(QStringLiteral("SE")), QStringLiteral("Sweden"));
     QCOMPARE(CountryFlags::columnText(QString()), QString());
-    CountryFlags::setSettings(true, CountryFlags::NameMode::Hidden);
-    QCOMPARE(CountryFlags::columnText(QStringLiteral("SE")), QString());
     QCOMPARE(CountryFlags::tooltip(QStringLiteral("SE")), QStringLiteral("Sweden (SE)"));
     QCOMPARE(CountryFlags::tooltip(QString()), QString());
 }
 
 void tst_CountryFlags::clientModel_countryColumnAndDecoration()
 {
-    CountryFlags::setSettings(true, CountryFlags::NameMode::Long);
+    CountryFlags::setSettings(true);
     for (const auto mode : {ClientListMode::Uploading, ClientListMode::Downloading,
                             ClientListMode::OnQueue, ClientListMode::KnownClients}) {
         ClientListModel model(mode);
@@ -131,52 +127,48 @@ void tst_CountryFlags::clientModel_countryColumnAndDecoration()
 
 void tst_CountryFlags::serverModel_parsesCc()
 {
-    CountryFlags::setSettings(true, CountryFlags::NameMode::Short);
+    CountryFlags::setSettings(true);
     ServerListModel model;
     QCborMap m;
     m.insert(QStringLiteral("name"), QStringLiteral("srv"));
     m.insert(QStringLiteral("address"), QStringLiteral("81.2.69.160"));
     m.insert(QStringLiteral("cc"), QStringLiteral("GB"));
     model.refreshFromCborArray(QCborArray{m});
-    QCOMPARE(model.data(model.index(0, ServerListModel::ColCountry)).toString(), QStringLiteral("GB"));
+    QCOMPARE(model.data(model.index(0, ServerListModel::ColCountry)).toString(), QStringLiteral("United Kingdom"));
     QVERIFY(!model.data(model.index(0, ServerListModel::ColName), Qt::DecorationRole)
                  .value<QIcon>().isNull());
 
-    CountryFlags::setSettings(false, CountryFlags::NameMode::Short);
+    CountryFlags::setSettings(false);
     QVERIFY(!model.data(model.index(0, ServerListModel::ColName), Qt::DecorationRole).isValid());
 }
 
 void tst_CountryFlags::kadModel_countryColumn()
 {
-    CountryFlags::setSettings(true, CountryFlags::NameMode::Short);
+    CountryFlags::setSettings(true);
     KadContactsModel model;
     KadContactRow row;
     row.cc = QStringLiteral("SE");
     model.setContacts({row});
     QCOMPARE(model.columnCount(), int(KadContactsModel::ColCount));
-    QCOMPARE(model.data(model.index(0, KadContactsModel::ColCountry)).toString(), QStringLiteral("SE"));
+    QCOMPARE(model.data(model.index(0, KadContactsModel::ColCountry)).toString(), QStringLiteral("Sweden"));
 }
 
-void tst_CountryFlags::bindCountryColumn_followsSettingOverSavedLayout()
+void tst_CountryFlags::countryColumn_hiddenByDefaultSavedLayoutWins()
 {
     ClientListModel model(ClientListMode::KnownClients);
     ListTreeView view;
     view.setModel(&model);
-    view.bindColumns(QStringLiteral("tst_countryFlags_known"));
-    CountryFlags::bindCountryColumn(&view, model.countryColumn());
-
+    view.bindColumns(QStringLiteral("tst_countryFlags_known"), {}, {model.countryColumn()});
     QVERIFY(view.header()->isSectionHidden(model.countryColumn()));
 
-    CountryFlags::setSettings(true, CountryFlags::NameMode::Long);
-    QVERIFY(!view.header()->isSectionHidden(model.countryColumn()));
+    // Shown from the header menu, then saved: a re-bind must keep it shown
+    view.header()->setSectionHidden(model.countryColumn(), false);
+    theUiState.captureHeaderState(view.header(), QStringLiteral("tst_countryFlags_known"));
 
-    // A saved layout with the column visible must not win over "Hidden"
-    const QByteArray shown = view.header()->saveState();
-    CountryFlags::setSettings(true, CountryFlags::NameMode::Hidden);
-    view.header()->restoreState(shown);
-    QVERIFY(!view.header()->isSectionHidden(model.countryColumn()));
-    view.applyColumnPolicy();
-    QVERIFY(view.header()->isSectionHidden(model.countryColumn()));
+    ListTreeView other;
+    other.setModel(&model);
+    other.bindColumns(QStringLiteral("tst_countryFlags_known"), {}, {model.countryColumn()});
+    QVERIFY(!other.header()->isSectionHidden(model.countryColumn()));
 }
 
 void tst_CountryFlags::restoreHeader_keepsLayoutWhenColumnAppended()
@@ -209,7 +201,7 @@ void tst_CountryFlags::restoreHeader_keepsLayoutWhenColumnAppended()
 
 void tst_CountryFlags::delegate_widensComposedDecoration()
 {
-    CountryFlags::setSettings(true, CountryFlags::NameMode::Hidden);
+    CountryFlags::setSettings(true);
     ClientListModel model(ClientListMode::Uploading);
     ClientRow row;
     row.userName = QStringLiteral("peer");

@@ -235,6 +235,7 @@ private slots:
     void leavesNoScratchBehind();
     void persistedStateResumesInsteadOfRefetching();
     void connectionBudgetIsDividedNotReplicated();
+    void aConnectionLimitBelowTheConfiguredOneStillDownloads();
     void missingArticlesEscalateToTheNextLevel();
     void everyServerOnALevelIsAskedBeforeEscalating();
     void retentionSkipsAServerThatCannotHoldTheArticle();
@@ -505,6 +506,51 @@ void tst_UsenetQueue::connectionBudgetIsDividedNotReplicated()
     QVERIFY2(server.connectionCount() <= kMaxConnections,
              qPrintable(QStringLiteral("opened %1 connections, limit is %2")
                             .arg(server.connectionCount()).arg(kMaxConnections)));
+
+    queue.stop();
+}
+
+// Another client on the same account leaves fewer connections than configured.
+// The refusals used to back the account off for 60 s in every worker that got
+// one and drop its working connections too; this test then timed out.
+void tst_UsenetQueue::aConnectionLimitBelowTheConfiguredOneStillDownloads()
+{
+    constexpr int kPartsHere = 16;
+    const QByteArray whole = payload(kPartSize * kPartsHere);
+
+    FakeNntpServer server;
+    server.setConnectionLimit(2);
+    server.addGroup(QStringLiteral("alt.binaries.test"), kPartsHere, 1, kPartsHere);
+    for (int p = 1; p <= kPartsHere; ++p)
+        server.addArticle(messageIdFor(p), makeArticle(whole, p, kPartsHere,
+                                                       QStringLiteral("limit.bin")));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    // 24 over a limit of 2: whatever the worker count, every worker is refused
+    // at least once, so each would have backed the account off.
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 24)}, 60);
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    QVERIFY(!queue.addNzb(makeNzb(QStringLiteral("limit.bin"), kPartsHere),
+                          QStringLiteral("limit"), error).isEmpty());
+
+    QVERIFY2(finished.wait(20000), "stalled at the provider's connection limit");
+    QVERIFY2(finished.at(0).at(1).toBool(), "completed with missing articles");
+    QVERIFY2(server.refusedLogins() > 0, "the limit was never hit, the test proves nothing");
+
+    QFile f(QDir(thePrefs.incomingDir()).filePath(QStringLiteral("limit.bin")));
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    QCOMPARE(f.readAll(), whole);
 
     queue.stop();
 }

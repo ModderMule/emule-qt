@@ -73,6 +73,10 @@ public:
     /// pushed back once the new model's columns exist.
     void applyHeaderState(QHeaderView* header, const QString& key);
 
+    /// Cache @p header's current state under @p key and schedule a save. For
+    /// changes no header signal reports (show/hide a column).
+    void captureHeaderState(QHeaderView* header, const QString& key);
+
     /// Clear a view's selection/current index the moment its model begins a reset,
     /// before the (proxy) persistent-index mapping is torn down. Prevents a deferred
     /// QHeaderView::paintEvent from dereferencing a stale index in
@@ -124,14 +128,6 @@ public:
     void setShowCountryFlags(bool on)
     {
         m_showCountryFlags = on;
-        scheduleSave();
-    }
-
-    /// Country column: 0 hidden, 1 short (ISO code), 2 long name.
-    [[nodiscard]] int countryNameMode() const { return m_countryNameMode; }
-    void setCountryNameMode(int mode)
-    {
-        m_countryNameMode = mode;
         scheduleSave();
     }
 
@@ -203,7 +199,6 @@ private:
     int64_t m_lastVersionCheck = 0;
     bool m_associateNzbFiles = true;
     bool m_showCountryFlags = true;
-    int  m_countryNameMode = 0;
     QList<int> m_toolbarButtonOrder;
     int  m_toolbarButtonStyle = 3;
     QString m_toolbarSkinPath;

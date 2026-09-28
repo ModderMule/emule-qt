@@ -209,9 +209,7 @@ int main(int argc, char* argv[])
                     .arg(seed.seeded).arg(seed.refreshed).arg(seed.conflicts).arg(seed.pruned));
     }
     eMule::theUiState.load(configDir);
-    eMule::CountryFlags::setSettings(
-        eMule::theUiState.showCountryFlags(),
-        static_cast<eMule::CountryFlags::NameMode>(eMule::theUiState.countryNameMode()));
+    eMule::CountryFlags::setSettings(eMule::theUiState.showCountryFlags());
 
     // Applied at every start, not only the first: idempotent, so it takes the
     // association back from an application that took it away, and removes it

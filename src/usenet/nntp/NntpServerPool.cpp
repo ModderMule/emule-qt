@@ -4,8 +4,10 @@
 #include "utils/Log.h"
 
 #include <QDateTime>
+#include <QTimer>
 
 #include <algorithm>
+#include <limits>
 #include <set>
 
 namespace eMule::usenet {
@@ -77,6 +79,9 @@ void NntpServerPool::setServers(QList<NewsServer> servers)
     }
 
     m_servers = std::move(servers);
+    // New configuration, fresh start: a cap measured against the old limits
+    // says nothing about the new ones.
+    m_caps.clear();
     rebuildServerIndex();
     ++m_generation;
 }
@@ -131,7 +136,8 @@ NntpSocket* NntpServerPool::acquire(int level, const QStringList& ignoreServers)
         // exists to prevent. A limit of 0 means this pool may not lease this
         // account at all.
         const NntpConnectionBucket bucket = m_buckets.value(key);
-        if (bucket.limit <= 0 || connectionsInBucket(bucket.id) >= bucket.limit)
+        const int limit = effectiveLimit(bucket);
+        if (limit <= 0 || connectionsInBucket(bucket.id) >= limit)
             continue;
 
         auto socket = std::make_unique<NntpSocket>();
@@ -203,6 +209,36 @@ void NntpServerPool::blockServer(const QString& serverKey)
     dropConnections(serverKey);
 }
 
+int NntpServerPool::limitConnections(const QString& serverKey)
+{
+    if (m_retryIntervalSec <= 0)
+        return -1;
+    const auto bucketIt = m_buckets.constFind(serverKey);
+    if (bucketIt == m_buckets.cend())
+        return -1;
+    const NntpConnectionBucket& bucket = *bucketIt;
+
+    // What is open now is what the provider accepted. Still-connecting leases
+    // count: most get in, and one that does not lowers the cap again.
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    int limit = std::min(connectionsInBucket(bucket.id), bucket.limit);
+
+    const auto capIt = m_caps.constFind(bucket.id);
+    const bool active = capIt != m_caps.cend() && capIt->untilMs > now;
+    if (active)
+        limit = std::min(limit, capIt->limit);
+    const bool lowered = !active || limit < capIt->limit;
+
+    // A refusal during the hold restarts it: the limit is still being hit.
+    m_caps.insert(bucket.id, {limit, now + qint64(m_retryIntervalSec) * 1000});
+    armCapTimer();
+
+    if (!lowered)
+        return -1;
+    emit capacityChanged();
+    return limit;
+}
+
 bool NntpServerPool::isServerBlocked(const QString& serverKey) const
 {
     const auto it = m_blockedUntil.constFind(serverKey);
@@ -228,7 +264,7 @@ int NntpServerPool::capacity() const
     // pool can ever lease and every excess job would come back "no server".
     QHash<QString, int> seen;
     for (auto it = m_buckets.cbegin(); it != m_buckets.cend(); ++it)
-        seen.insert(it->id, it->limit);
+        seen.insert(it->id, effectiveLimit(*it));
 
     int total = 0;
     for (const int limit : std::as_const(seen))
@@ -250,6 +286,54 @@ int NntpServerPool::connectionsInBucket(const QString& bucket) const
 {
     return static_cast<int>(std::ranges::count_if(
         m_connections, [&bucket](const Lease& l) { return l.bucket == bucket; }));
+}
+
+int NntpServerPool::effectiveLimit(const NntpConnectionBucket& bucket) const
+{
+    const auto it = m_caps.constFind(bucket.id);
+    if (it == m_caps.cend() || it->untilMs <= QDateTime::currentMSecsSinceEpoch())
+        return bucket.limit;
+    return std::min(bucket.limit, it->limit);
+}
+
+void NntpServerPool::armCapTimer()
+{
+    if (m_caps.isEmpty()) {
+        if (m_capTimer)
+            m_capTimer->stop();
+        return;
+    }
+    if (!m_capTimer) {
+        m_capTimer = new QTimer(this);
+        m_capTimer->setSingleShot(true);
+        connect(m_capTimer, &QTimer::timeout, this, &NntpServerPool::onCapTimer);
+    }
+
+    qint64 next = std::numeric_limits<qint64>::max();
+    for (const Cap& cap : std::as_const(m_caps))
+        next = std::min(next, cap.untilMs);
+    const qint64 delay = std::max<qint64>(0, next - QDateTime::currentMSecsSinceEpoch());
+    m_capTimer->start(int(std::min<qint64>(delay, std::numeric_limits<int>::max())));
+}
+
+void NntpServerPool::onCapTimer()
+{
+    // The hold is over: back to the configured limit. Connections past what the
+    // provider allows are refused again and cap it again. That costs one failed
+    // connection per probe, never the ones already working.
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    bool lifted = false;
+    for (auto it = m_caps.begin(); it != m_caps.end();) {
+        if (it->untilMs <= now) {
+            it = m_caps.erase(it);
+            lifted = true;
+        } else {
+            ++it;
+        }
+    }
+    armCapTimer();
+    if (lifted)
+        emit capacityChanged();
 }
 
 qint64 NntpServerPool::nowSeconds() const
