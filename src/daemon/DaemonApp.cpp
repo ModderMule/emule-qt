@@ -664,6 +664,9 @@ void DaemonApp::applyLogFilterRules()
         rules << QStringLiteral("emule.kad.debug=true");
     if (thePrefs.serverVerboseLog())
         rules << QStringLiteral("emule.serverv.debug=true");
+    // Usenet debug lines are rate-bounded (no per-article lines) and have their
+    // own tab and file, so they are always on.
+    rules << QStringLiteral("emule.usenet.debug=true");
 
     QLoggingCategory::setFilterRules(rules.join(QLatin1Char('\n')));
 }

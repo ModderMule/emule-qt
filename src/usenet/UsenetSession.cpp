@@ -73,10 +73,10 @@ void UsenetSession::start()
     applyPreferences();
 
     const int configured = m_pool->servers().size();
-    logInfo(QStringLiteral("Usenet: engine started, %1 server(s) configured")
+    logUsenet(QStringLiteral("Usenet: engine started, %1 server(s) configured")
                 .arg(configured));
     if (configured == 0) {
-        logInfo(QStringLiteral("Usenet: no news servers configured — "
+        logUsenet(QStringLiteral("Usenet: no news servers configured — "
                                "add one under Options > Usenet"));
     }
 
@@ -115,7 +115,7 @@ void UsenetSession::stop()
 
     m_queue->stop();
     m_pool->closeIdleConnections();
-    logInfo(QStringLiteral("Usenet: engine stopped"));
+    logUsenet(QStringLiteral("Usenet: engine stopped"));
 }
 
 void UsenetSession::applyPreferences()
@@ -173,7 +173,7 @@ void UsenetSession::remapCategories(const QHash<uint32, uint32>& oldToNew)
 
     const int changed = UsenetQueueStore::remapCategories(oldToNew);
     if (changed > 0) {
-        logInfo(QStringLiteral("Usenet: renumbered the category of %1 stored item(s)")
+        logUsenet(QStringLiteral("Usenet: renumbered the category of %1 stored item(s)")
                     .arg(changed));
     }
 }
@@ -273,13 +273,13 @@ void UsenetSession::logSplitChange(const DownloadSplit& split)
         return;
 
     if (now) {
-        logInfo(QStringLiteral("Bandwidth: download limit %1 KB/s shared — "
+        logUsenet(QStringLiteral("Bandwidth: download limit %1 KB/s shared — "
                                "Usenet up to %2 KB/s, eD2K up to %3 KB/s")
                     .arg(split.ceilingKb)
                     .arg(split.usenetKb())
                     .arg(split.ed2kKb()));
     } else {
-        logInfo(QStringLiteral("Bandwidth: download limit no longer shared — "
+        logUsenet(QStringLiteral("Bandwidth: download limit no longer shared — "
                                "Usenet and eD2K may each use all of it"));
     }
 

@@ -443,7 +443,7 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
         // session (same token), IDs are kept so only missed events are fetched.
         const QString newToken = msg.fieldString(2);
         if (newToken != m_daemonToken) {
-            m_lastKadId = m_lastServerId = m_lastLogId = m_lastVerboseId = 0;
+            m_lastKadId = m_lastUsenetId = m_lastServerId = m_lastLogId = m_lastVerboseId = 0;
             m_lastServerMsgId = 0;
             m_daemonToken = newToken;
         }
@@ -584,10 +584,12 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
         const auto severity  = static_cast<QtMsgType>(msg.fieldInt(2));
 
         const bool isKad     = (cat == QStringLiteral("emule.kad"));
+        const bool isUsenet  = (cat == QStringLiteral("emule.usenet"));
         const bool isServer  = (cat == QStringLiteral("emule.server"));
         const bool isVerbose = (severity == QtDebugMsg);
 
         int64_t& typeId = isKad    ? m_lastKadId
+                        : isUsenet ? m_lastUsenetId
                         : isServer ? m_lastServerId
                         : isVerbose? m_lastVerboseId
                         :            m_lastLogId;
@@ -628,7 +630,7 @@ void IpcClient::requestLogSync()
     //  - Fresh GUI start: all IDs == currentMax → min == currentMax → empty response.
     //  - Daemon restart: all IDs == 0 → min == 0 → full new-daemon buffer shown.
     //  - Reconnect within session: min of per-type IDs → only missed events fetched.
-    const int64_t fromId = std::min({m_lastKadId, m_lastServerId,
+    const int64_t fromId = std::min({m_lastKadId, m_lastUsenetId, m_lastServerId,
                                      m_lastLogId,  m_lastVerboseId});
     IpcMessage req(IpcMsgType::SyncLogs);
     req.append(static_cast<qint64>(fromId));
@@ -646,10 +648,12 @@ void IpcClient::requestLogSync()
 
             // Select per-type checkpoint; skip if already seen for this type
             const bool isKad     = (cat == QStringLiteral("emule.kad"));
+            const bool isUsenet  = (cat == QStringLiteral("emule.usenet"));
             const bool isServer  = (cat == QStringLiteral("emule.server"));
             const bool isVerbose = (severity == QtDebugMsg);
 
             int64_t& typeId = isKad    ? m_lastKadId
+                            : isUsenet ? m_lastUsenetId
                             : isServer ? m_lastServerId
                             : isVerbose? m_lastVerboseId
                             :            m_lastLogId;

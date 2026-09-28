@@ -78,7 +78,7 @@ void UsenetUsageTracker::load()
 
         // Only a *newer* file is refused, so a key added later needs no bump.
         if (root["version"] && root["version"].as<int>(0) > kUsageVersion) {
-            logWarning(QStringLiteral("Usenet: %1 is version %2, newer than %3 — ignoring")
+            logUsenetWarning(QStringLiteral("Usenet: %1 is version %2, newer than %3 — ignoring")
                            .arg(path)
                            .arg(root["version"].as<int>(0))
                            .arg(kUsageVersion));
@@ -116,7 +116,7 @@ void UsenetUsageTracker::load()
             e.stored = row;
         }
     } catch (const std::exception& ex) {
-        logWarning(QStringLiteral("Usenet: cannot read %1 (%2) — usage starts from zero")
+        logUsenetWarning(QStringLiteral("Usenet: cannot read %1 (%2) — usage starts from zero")
                        .arg(path, QString::fromUtf8(ex.what())));
     }
 }
@@ -220,7 +220,7 @@ bool UsenetUsageTracker::rollOverIfDue()
             // start charging it twice, so refuse and say so once.
             if (!e.clockBackLogged) {
                 e.clockBackLogged = true;
-                logWarning(QStringLiteral("Usenet: %1 usage period starts %2 but today is %3 — "
+                logUsenetWarning(QStringLiteral("Usenet: %1 usage period starts %2 but today is %3 — "
                                           "the clock moved back; not resetting the counter")
                                .arg(e.stored.name.isEmpty() ? e.stored.accountId : e.stored.name,
                                     e.stored.periodStart.toString(Qt::ISODate),
@@ -229,7 +229,7 @@ bool UsenetUsageTracker::rollOverIfDue()
             continue;
         }
 
-        logInfo(QStringLiteral("Usenet: %1 allowance reset — new period starts %2")
+        logUsenet(QStringLiteral("Usenet: %1 allowance reset — new period starts %2")
                     .arg(e.stored.name.isEmpty() ? e.stored.accountId : e.stored.name,
                          computed.toString(Qt::ISODate)));
 

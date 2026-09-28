@@ -249,6 +249,7 @@ void BugReportDialog::onSubmitClicked()
         addLogFile("logfile",     "logfile.txt",     truncateLog(m_logWidget->logText()));
         addLogFile("logVerbose",  "logVerbose.txt",  truncateLog(m_logWidget->verboseText()));
         addLogFile("logKad",      "logKad.txt",      truncateLog(m_logWidget->kadText()));
+        addLogFile("logUsenet",   "logUsenet.txt",   truncateLog(m_logWidget->usenetText()));
     }
 
     // Screenshot files

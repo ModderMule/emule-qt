@@ -36,6 +36,7 @@ private slots:
     // Log file sink
     void logFileSink_splitsDebugIntoVerboseFile();
     void logFileSink_routesKadToItsOwnFile();
+    void logFileSink_routesUsenetToItsOwnFile();
     void logFileSink_disabledWritesNothing();
     void logFileSink_messageHandlerFeedsSink();
 
@@ -221,6 +222,7 @@ void tst_Log::logFileSink_splitsDebugIntoVerboseFile()
 
     // Only emule.kad reaches the Kad file — a non-Kad debug line must not.
     QVERIFY(kad.isEmpty());
+    QVERIFY(readAll(tmp.filePath(QStringLiteral("emuleqt_Usenet.log"))).isEmpty());
 }
 
 // Kad is routed by category, not by severity, so that the file holds the same
@@ -247,6 +249,33 @@ void tst_Log::logFileSink_routesKadToItsOwnFile()
     QVERIFY(!verbose.contains(QStringLiteral("a kad line")));
     QVERIFY(verbose.contains(QStringLiteral("emule.net: a net line")));
     QVERIFY(!kad.contains(QStringLiteral("a net line")));
+}
+
+// Usenet has its own GUI tab, so its own file, whatever the severity.
+void tst_Log::logFileSink_routesUsenetToItsOwnFile()
+{
+    eMule::testing::TempDir tmp;
+    installLogFileMessageHandler();
+    applyLogFileSink(tmp.path(), QStringLiteral("emulecored"), true, 1048576);
+
+    logUsenet(QStringLiteral("a usenet info"));
+    logUsenetWarning(QStringLiteral("a usenet warning"));
+    writeToLogFileSink(QtDebugMsg, "emule.usenet", QStringLiteral("a usenet debug"));
+    writeToLogFileSink(QtDebugMsg, "emule.kad", QStringLiteral("a kad line"));
+    closeLogFileSink();
+
+    const QString main = readAll(tmp.filePath(QStringLiteral("emulecored.log")));
+    const QString verbose = readAll(tmp.filePath(QStringLiteral("emulecored_Verbose.log")));
+    const QString kad = readAll(tmp.filePath(QStringLiteral("emulecored_Kad.log")));
+    const QString usenet = readAll(tmp.filePath(QStringLiteral("emulecored_Usenet.log")));
+
+    QVERIFY(usenet.contains(QStringLiteral("emule.usenet: a usenet info")));
+    QVERIFY(usenet.contains(QStringLiteral("emule.usenet: a usenet warning")));
+    QVERIFY(usenet.contains(QStringLiteral("emule.usenet: a usenet debug")));
+    QVERIFY(!usenet.contains(QStringLiteral("a kad line")));
+    QVERIFY(!main.contains(QStringLiteral("usenet")));
+    QVERIFY(!verbose.contains(QStringLiteral("usenet")));
+    QVERIFY(!kad.contains(QStringLiteral("usenet")));
 }
 
 void tst_Log::logFileSink_disabledWritesNothing()

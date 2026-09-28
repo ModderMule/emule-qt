@@ -304,7 +304,7 @@ Activez l&apos;interface web ou l&apos;API REST dans Options → Interface web.<
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+563"/>
+        <location filename="../src/gui/app/main.cpp" line="+567"/>
         <source>Download Added</source>
         <translation>Téléchargement ajouté</translation>
     </message>
@@ -606,7 +606,7 @@ Contient des commentaires</translation>
         <translation type="vanished">%1 octets</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2835"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2836"/>
         <source>Test</source>
         <translation>Test</translation>
     </message>
@@ -1089,12 +1089,12 @@ Le télécharger à nouveau ?</translation>
     <message>
         <location filename="../src/gui/dialogs/BugReportDialog.cpp" line="+54"/>
         <location line="+133"/>
-        <location line="+127"/>
+        <location line="+128"/>
         <source>Submit Bug Report</source>
         <translation>Envoyer un rapport de bug</translation>
     </message>
     <message>
-        <location line="-255"/>
+        <location line="-256"/>
         <source>Report Details</source>
         <translation>Détails du rapport</translation>
     </message>
@@ -1196,7 +1196,7 @@ Le télécharger à nouveau ?</translation>
         <translation>Veuillez remplir les champs titre et description.</translation>
     </message>
     <message>
-        <location line="+122"/>
+        <location line="+123"/>
         <source>Bug report submitted successfully.</source>
         <translation>Rapport de bug envoyé avec succès.</translation>
     </message>
@@ -3170,7 +3170,13 @@ Veuillez en choisir un autre :</translation>
         <translation>Détaillé</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+9"/>
+        <location line="+2"/>
+        <source>Usenet</source>
+        <translation>Usenet</translation>
+    </message>
+    <message>
+        <location line="+9"/>
         <location line="+2"/>
         <source>Kad</source>
         <translation>Kad</translation>
@@ -3182,7 +3188,7 @@ Veuillez en choisir un autre :</translation>
         <translation>IPC</translation>
     </message>
     <message>
-        <location line="+305"/>
+        <location line="+345"/>
         <source>Click here to check if a new version is available</source>
         <translation>Cliquez ici pour vérifier si une nouvelle version est disponible</translation>
     </message>
@@ -3201,7 +3207,7 @@ Veuillez en choisir un autre :</translation>
         <translation>Nouvelle version disponible</translation>
     </message>
     <message>
-        <location line="+174"/>
+        <location line="+180"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K : Connecté (LowID)</translation>
     </message>
@@ -3288,14 +3294,14 @@ Veuillez en choisir un autre :</translation>
         <translation>FAQ</translation>
     </message>
     <message>
-        <location line="-540"/>
+        <location line="-546"/>
         <location line="+7"/>
-        <location line="+536"/>
+        <location line="+542"/>
         <source>Version Check</source>
         <translation>Vérification de version</translation>
     </message>
     <message>
-        <location line="-598"/>
+        <location line="-604"/>
         <source>Quit eMule Qt</source>
         <translation>Quitter eMule Qt</translation>
     </message>
@@ -3352,7 +3358,7 @@ Enable at least one under Options → Connection to connect.</source>
 Activez-en au moins un dans Options → Connexion pour vous connecter.</translation>
     </message>
     <message>
-        <location line="+195"/>
+        <location line="+201"/>
         <source>Connected</source>
         <translation>Connecté</translation>
     </message>
@@ -4234,35 +4240,35 @@ Le télécharger à nouveau ?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2745"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2746"/>
         <source>Options</source>
         <translation>Options</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1803"/>
+        <location line="+1804"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-1802"/>
-        <location line="+1803"/>
+        <location line="-1803"/>
+        <location line="+1804"/>
         <source>Cancel</source>
         <translation>Annuler</translation>
     </message>
     <message>
-        <location line="-1802"/>
-        <location line="+5355"/>
+        <location line="-1803"/>
+        <location line="+5359"/>
         <source>Apply</source>
         <translation>Appliquer</translation>
     </message>
     <message>
-        <location line="-5354"/>
+        <location line="-5358"/>
         <source>Help</source>
         <translation>Aide</translation>
     </message>
     <message>
-        <location line="+249"/>
+        <location line="+250"/>
         <location line="+1780"/>
         <location line="+63"/>
         <location line="+5"/>
@@ -4303,12 +4309,12 @@ Le télécharger à nouveau ?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5277"/>
+        <location line="+5281"/>
         <source>Language</source>
         <translation>Langue</translation>
     </message>
     <message>
-        <location line="-5274"/>
+        <location line="-5278"/>
         <source>System Default</source>
         <translation>Par défaut du système</translation>
     </message>
@@ -4408,12 +4414,12 @@ Le télécharger à nouveau ?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5203"/>
+        <location line="+5207"/>
         <source>Core</source>
         <translation>Noyau</translation>
     </message>
     <message>
-        <location line="-5198"/>
+        <location line="-5202"/>
         <source>Address:</source>
         <translation>Adresse :</translation>
     </message>
@@ -4579,13 +4585,13 @@ Voulez-vous vraiment continuer ?</translation>
         <location line="+1016"/>
         <location line="+152"/>
         <location line="+1036"/>
-        <location line="+270"/>
+        <location line="+273"/>
         <location line="+29"/>
         <source>Enabled</source>
         <translation>Activé</translation>
     </message>
     <message>
-        <location line="-4426"/>
+        <location line="-4429"/>
         <source>Reset</source>
         <translation>Réinitialiser</translation>
     </message>
@@ -7065,7 +7071,12 @@ En ajouter un plus tard ne récupère pas son catalogue antérieur : un nouvel i
         <translation>Journaliser les paquets socket bruts</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+9"/>
+        <source>Show Usenet log tab</source>
+        <translation>Afficher l&apos;onglet du journal Usenet</translation>
+    </message>
+    <message>
+        <location line="+12"/>
         <source>Upload SpeedSense (not recommended)</source>
         <translation>Détection de vitesse d&apos;envoi (non recommandé)</translation>
     </message>
@@ -7160,7 +7171,7 @@ En ajouter un plus tard ne récupère pas son catalogue antérieur : un nouvel i
         <translation>Taille de la file : %1</translation>
     </message>
     <message>
-        <location line="+590"/>
+        <location line="+591"/>
         <source>Proxy settings will only apply to new connections.
 Restart eMule for all connections to use the new proxy settings.
 
@@ -7171,7 +7182,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
 Les connexions aux serveurs de news basculent immédiatement.</translation>
     </message>
     <message>
-        <location line="+861"/>
+        <location line="+864"/>
         <source>File types</source>
         <translation>Types de fichiers</translation>
     </message>
@@ -7216,17 +7227,17 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Échec de la dernière mise à jour : %1</translation>
     </message>
     <message>
-        <location line="-5806"/>
+        <location line="-5813"/>
         <location line="+1284"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1324"/>
+        <location line="+1327"/>
         <location line="+281"/>
         <source>Remove</source>
         <translation>Supprimer</translation>
     </message>
     <message>
-        <location line="-3851"/>
+        <location line="-3854"/>
         <source>New eMule Qt version detected</source>
         <translation>Nouvelle version d&apos;eMule Qt détectée</translation>
     </message>
@@ -7261,7 +7272,7 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Journaliser l&apos;adresse IP publique au démarrage</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+6"/>
         <source>Enable IPC log tab</source>
         <translation>Activer l&apos;onglet de journal IPC</translation>
     </message>
@@ -7296,14 +7307,14 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Bail demandé :</translation>
     </message>
     <message>
-        <location line="-2205"/>
+        <location line="-2208"/>
         <location line="+913"/>
-        <location line="+1296"/>
+        <location line="+1299"/>
         <source> s</source>
         <translation> s</translation>
     </message>
     <message>
-        <location line="-2251"/>
+        <location line="-2254"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
@@ -7312,7 +7323,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
 Réglez-le légèrement en dessous de votre forfait. Le volume est mesuré ici, il est donc inférieur de quelques pour cent à celui de votre fournisseur, et les articles déjà en cours de transfert lorsque la limite est atteinte se terminent quand même.</translation>
     </message>
     <message>
-        <location line="+2366"/>
+        <location line="+2369"/>
         <source>New</source>
         <translation>Nouveau</translation>
     </message>
@@ -7420,11 +7431,11 @@ Réglez-le légèrement en dessous de votre forfait. Le volume est mesuré ici, 
         <translation>Nouveau planning</translation>
     </message>
     <message>
-        <location line="-3877"/>
+        <location line="-3880"/>
         <location line="+1287"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1578"/>
+        <location line="+1581"/>
         <source>Add</source>
         <translation>Ajouter</translation>
     </message>
@@ -7451,7 +7462,7 @@ Réglez-le légèrement en dessous de votre forfait. Le volume est mesuré ici, 
         <translation>La page de paramètres %1 n&apos;est pas encore implémentée.</translation>
     </message>
     <message>
-        <location line="+177"/>
+        <location line="+178"/>
         <source>Proxy</source>
         <translation>Proxy</translation>
     </message>
@@ -7472,7 +7483,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Les paramètres de connexion au noyau prendront effet après le redémarrage de l&apos;application.</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+32"/>
         <source>Icons</source>
         <translation>Icônes</translation>
     </message>

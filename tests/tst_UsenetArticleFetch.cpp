@@ -27,6 +27,8 @@
 #include <QTemporaryDir>
 #include <QTest>
 
+#include <limits>
+
 using namespace eMule::usenet;
 using eMule::testing::FakeNntpServer;
 
@@ -107,6 +109,7 @@ private slots:
     void missingArticleEscalatesAndKeepsTheConnection();
     void obfuscatedNameComesFromTheArticle();
     void aCrcMismatchIsReportedAsCorrupt();
+    void pipelineLookaheadCoversBuffersAndTwoRoundTrips();
 };
 
 void tst_UsenetArticleFetch::assemblesAMultiPartFileOutOfOrder()
@@ -343,6 +346,19 @@ void tst_UsenetArticleFetch::aCrcMismatchIsReportedAsCorrupt()
     fetcher.fetch(&socket, missing, &writer);
     QVERIFY(doneMissing.wait(5000));
     QCOMPARE(doneMissing.first().at(0).value<NntpError>(), NntpError::ArticleNotFound);
+}
+
+void tst_UsenetArticleFetch::pipelineLookaheadCoversBuffersAndTwoRoundTrips()
+{
+    // Unlimited: a whole article lands within one round trip, so arm at once.
+    QCOMPARE(ArticleFetcher::pipelineLookahead(0, 0, 220),
+             std::numeric_limits<qint64>::max());
+    // ~97 connections sharing 3000 KB/s: four 64 KiB buffers plus 2 x 220 ms.
+    constexpr qint64 rate = 31 * 1024;
+    QCOMPARE(ArticleFetcher::pipelineLookahead(rate, 64 * 1024, 220),
+             4 * 64 * 1024 + rate * 440 / 1000);
+    // A fast limited socket: more than a 387 KB article, so arm at send.
+    QVERIFY(ArticleFetcher::pipelineLookahead(1024 * 1024, 1024 * 1024, 220) > 387 * 1024);
 }
 
 QTEST_MAIN(tst_UsenetArticleFetch)

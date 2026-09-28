@@ -70,7 +70,7 @@ void UsenetWatchFolder::applyPreferences()
         return;
 
     if (!QDir().mkpath(m_dir)) {
-        logWarning(QStringLiteral("Usenet: cannot use the watch folder %1").arg(m_dir));
+        logUsenetWarning(QStringLiteral("Usenet: cannot use the watch folder %1").arg(m_dir));
         m_dir.clear();
         return;
     }
@@ -80,7 +80,7 @@ void UsenetWatchFolder::applyPreferences()
     connect(m_watcher, &QFileSystemWatcher::directoryChanged, this, &UsenetWatchFolder::scan);
     m_rescan->start();
 
-    logInfo(QStringLiteral("Usenet: watching %1 for .nzb files").arg(m_dir));
+    logUsenet(QStringLiteral("Usenet: watching %1 for .nzb files").arg(m_dir));
 
     // Nothing ever fires an event for what was already there.
     scan();
@@ -153,7 +153,7 @@ void UsenetWatchFolder::consume(const QString& path)
 
     switch (outcome) {
     case UsenetAddOutcome::Added:
-        logInfo(QStringLiteral("Usenet: queued \"%1\" from the watch folder")
+        logUsenet(QStringLiteral("Usenet: queued \"%1\" from the watch folder")
                     .arg(QFileInfo(path).fileName()));
         fileTo(path, kProcessedDir);
         return;
@@ -164,13 +164,13 @@ void UsenetWatchFolder::consume(const QString& path)
         // leaving it would make every scan re-read it. The reason leads, because
         // it already says which kind of "already" this was — the line used to
         // claim "already queued" for both.
-        logInfo(QStringLiteral("Usenet: %1 (\"%2\" was not queued)")
+        logUsenet(QStringLiteral("Usenet: %1 (\"%2\" was not queued)")
                     .arg(error, QFileInfo(path).fileName()));
         fileTo(path, kProcessedDir);
         return;
 
     case UsenetAddOutcome::Invalid:
-        logWarning(QStringLiteral("Usenet: \"%1\" is not a usable NZB — %2")
+        logUsenetWarning(QStringLiteral("Usenet: \"%1\" is not a usable NZB — %2")
                        .arg(QFileInfo(path).fileName(), error));
         fileTo(path, kFailedDir);
         return;
@@ -183,7 +183,7 @@ void UsenetWatchFolder::consume(const QString& path)
     // get retried on every scan for as long as the daemon runs.
     Sighting& sighting = m_seen[path];
     if (++sighting.attempts >= kMaxAttempts) {
-        logWarning(QStringLiteral("Usenet: giving up on \"%1\" — %2")
+        logUsenetWarning(QStringLiteral("Usenet: giving up on \"%1\" — %2")
                        .arg(QFileInfo(path).fileName(), error));
         fileTo(path, kFailedDir);
     }
@@ -193,13 +193,13 @@ void UsenetWatchFolder::fileTo(const QString& path, const char* subdir)
 {
     const QString target = QDir(m_dir).filePath(QLatin1String(subdir));
     if (!QDir().mkpath(target)) {
-        logWarning(QStringLiteral("Usenet: cannot create %1").arg(target));
+        logUsenetWarning(QStringLiteral("Usenet: cannot create %1").arg(target));
         return;
     }
 
     const QString destination = uniqueIn(target, QFileInfo(path).fileName());
     if (!QFile::rename(path, destination)) {
-        logWarning(QStringLiteral("Usenet: could not move %1 into %2")
+        logUsenetWarning(QStringLiteral("Usenet: could not move %1 into %2")
                        .arg(QFileInfo(path).fileName(), QLatin1String(subdir)));
         return;
     }

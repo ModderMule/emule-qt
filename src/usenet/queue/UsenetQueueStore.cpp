@@ -242,12 +242,12 @@ bool writeSidecarAtomically(const QString& path, const char* text)
     {
         std::ofstream file(tempPath.toStdString(), std::ios::out | std::ios::trunc);
         if (!file.is_open()) {
-            logError(QStringLiteral("Usenet: cannot write %1").arg(tempPath));
+            logUsenetError(QStringLiteral("Usenet: cannot write %1").arg(tempPath));
             return false;
         }
         file << text;
         if (!file.good()) {
-            logError(QStringLiteral("Usenet: write failed for %1").arg(tempPath));
+            logUsenetError(QStringLiteral("Usenet: write failed for %1").arg(tempPath));
             return false;
         }
     }
@@ -258,7 +258,7 @@ bool writeSidecarAtomically(const QString& path, const char* text)
             QFile::remove(path);
     }
     if (!QFile::rename(tempPath, path)) {
-        logError(QStringLiteral("Usenet: rename failed %1 -> %2").arg(tempPath, path));
+        logUsenetError(QStringLiteral("Usenet: rename failed %1 -> %2").arg(tempPath, path));
         if (QFile::exists(bakPath))
             QFile::rename(bakPath, path);
         return false;
@@ -462,7 +462,7 @@ int UsenetQueueStore::remapCategories(const QHash<uint32, uint32>& oldToNew)
         UsenetQueueItem item;
         QString error;
         if (!load(path, item, error)) {
-            logWarning(QStringLiteral("Usenet: cannot renumber categories in %1: %2")
+            logUsenetWarning(QStringLiteral("Usenet: cannot renumber categories in %1: %2")
                            .arg(path, error));
             continue;
         }

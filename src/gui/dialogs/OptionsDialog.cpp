@@ -360,6 +360,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_logWebServerCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logPublicIPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_enableIpcLogCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_showUsenetLogCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_startCoreWithConsoleCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_closeUPnPCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_portMapPcpCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -5205,6 +5206,9 @@ QWidget* OptionsDialog::createExtendedPage()
     m_logPublicIPCheck = new QCheckBox(tr("Log public IP address on startup"), verboseGroup);
     verboseLayout->addWidget(m_logPublicIPCheck);
 
+    m_showUsenetLogCheck = new QCheckBox(tr("Show Usenet log tab"), verboseGroup);
+    verboseLayout->addWidget(m_showUsenetLogCheck);
+
     m_enableIpcLogCheck = new QCheckBox(tr("Enable IPC log tab"), verboseGroup);
     verboseLayout->addWidget(m_enableIpcLogCheck);
 
@@ -5914,6 +5918,7 @@ void OptionsDialog::loadSettings()
     // The GUI acts on this one (LogWidget, IpcClient), so its own copy is the truth;
     // GetPreferences never carried it, which loaded the box unticked every time.
     m_enableIpcLogCheck->setChecked(thePrefs.enableIpcLog());
+    m_showUsenetLogCheck->setChecked(thePrefs.showUsenetLog());
 
     // Load daemon-owned settings: fetch synchronously from daemon if connected,
     // otherwise fall back to local thePrefs.
@@ -6053,6 +6058,7 @@ void OptionsDialog::saveSettings()
     // display mode and Move Up/Down menu reflect the change immediately (#24).
     thePrefs.setUseUserSortedServerList(m_useUserSortedServerListCheck->isChecked());
     thePrefs.setEnableIpcLog(m_enableIpcLogCheck->isChecked());
+    thePrefs.setShowUsenetLog(m_showUsenetLogCheck->isChecked());
     thePrefs.setStartCoreWithConsole(m_startCoreWithConsoleCheck->isChecked());
     if (m_showCountryFlagsCheck->isChecked() != theUiState.showCountryFlags()) {
         theUiState.setShowCountryFlags(m_showCountryFlagsCheck->isChecked());
@@ -6496,6 +6502,8 @@ void OptionsDialog::saveSettings()
         req.append(m_logPublicIPCheck->isChecked());
         req.append(QStringLiteral("enableIpcLog"));
         req.append(m_enableIpcLogCheck->isChecked());
+        req.append(QStringLiteral("showUsenetLog"));
+        req.append(m_showUsenetLogCheck->isChecked());
         req.append(QStringLiteral("startCoreWithConsole"));
         req.append(m_startCoreWithConsoleCheck->isChecked());
         // USS

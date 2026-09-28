@@ -58,7 +58,7 @@ constexpr int kPar2MagicLen = 8;
             continue;
         }
         if (fi.size() >= kPar2MagicLen && looksLikePar2(fi.absoluteFilePath())) {
-            logInfo(QStringLiteral("Usenet: \"%1\" is a PAR2 file under another name")
+            logUsenet(QStringLiteral("Usenet: \"%1\" is a PAR2 file under another name")
                         .arg(fi.fileName()));
             result.append(fi.absoluteFilePath());
         }
@@ -99,10 +99,10 @@ void removePar2Backups(const QStringList& backups)
         if (!QFile::exists(path))
             continue;
         if (QFile::remove(path))
-            logInfo(QStringLiteral("Usenet: removed PAR2 backup \"%1\"")
+            logUsenet(QStringLiteral("Usenet: removed PAR2 backup \"%1\"")
                         .arg(QFileInfo(path).fileName()));
         else
-            logWarning(QStringLiteral("Usenet: cannot remove PAR2 backup \"%1\"").arg(path));
+            logUsenetWarning(QStringLiteral("Usenet: cannot remove PAR2 backup \"%1\"").arg(path));
     }
 }
 
@@ -166,7 +166,7 @@ void removeStaleCopiesOfCoveredFiles(const QString& par2Path, const QString& dir
             continue;
 
         if (QFile::remove(fi.absoluteFilePath())) {
-            logInfo(QStringLiteral("Usenet: removed \"%1\", a stale copy of \"%2\"")
+            logUsenet(QStringLiteral("Usenet: removed \"%1\", a stale copy of \"%2\"")
                         .arg(fi.fileName(), good));
         }
     }
@@ -340,7 +340,7 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
             result.repaired = par2Repaired;
             result.blocksRepaired += renamed.repairedBlocks;
             if (renamed.renamedFiles > 0) {
-                logInfo(QStringLiteral("Usenet: recovered %1 filename(s) from PAR2")
+                logUsenet(QStringLiteral("Usenet: recovered %1 filename(s) from PAR2")
                             .arg(renamed.renamedFiles));
             }
         }
@@ -369,7 +369,7 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
             if (judged.onlySkipped) {
                 onlySkippedMissing = true;
                 result.par2Outcome = Par2Outcome::Clean;
-                logInfo(QStringLiteral("Usenet: \"%1\" verified; only skipped files are absent")
+                logUsenet(QStringLiteral("Usenet: \"%1\" verified; only skipped files are absent")
                             .arg(job.itemId));
             } else if (check.outcome == Par2Outcome::NeedMoreBlocks && !judged.needed.isEmpty()) {
                 result.needsSkippedFiles = judged.needed;
@@ -411,7 +411,7 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
                 emit finished(result);
                 return;
             }
-            logInfo(QStringLiteral("Usenet: repaired \"%1\"").arg(job.itemId));
+            logUsenet(QStringLiteral("Usenet: repaired \"%1\"").arg(job.itemId));
         } else if (!onlySkippedMissing && !check.ok()) {
             result.message = QObject::tr("Verification failed: %1")
                                  .arg(describePar2Outcome(check.outcome));
@@ -449,11 +449,11 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
             return;
         }
         if (!sfv.unposted.isEmpty()) {
-            logInfo(QStringLiteral("Usenet: the SFV lists file(s) this release never posted: %1")
+            logUsenet(QStringLiteral("Usenet: the SFV lists file(s) this release never posted: %1")
                         .arg(describeFileList(sfv.unposted)));
         }
         if (sfv.outcome == SfvCheck::Outcome::NothingToCheck) {
-            logInfo(QStringLiteral("Usenet: the SFV of \"%1\" lists none of its files; not checked")
+            logUsenet(QStringLiteral("Usenet: the SFV of \"%1\" lists none of its files; not checked")
                         .arg(job.itemId));
         }
         if (sfv.outcome == SfvCheck::Outcome::Damaged) {
@@ -469,7 +469,7 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
             return;
         }
         if (sfv.outcome == SfvCheck::Outcome::Clean) {
-            logInfo(QStringLiteral("Usenet: %1 file(s) passed the SFV check").arg(sfv.checked));
+            logUsenet(QStringLiteral("Usenet: %1 file(s) passed the SFV check").arg(sfv.checked));
             verifiedSfvFiles = sfv.sfvFiles;
         }
     }
@@ -478,7 +478,7 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
     for (const QString& name : job.discardAfterVerify) {
         const QString path = QDir(job.workDir).filePath(name);
         if (QFileInfo(path).isFile() && QFile::remove(path))
-            logInfo(QStringLiteral("Usenet: dropped skipped file \"%1\"").arg(name));
+            logUsenet(QStringLiteral("Usenet: dropped skipped file \"%1\"").arg(name));
     }
 
     if (m_stopRequested) {
@@ -516,7 +516,7 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
             directConsumed += done.consumed;
         }
         if (volumesRewritten && !job.directUnpacked.isEmpty()) {
-            logInfo(QStringLiteral("Usenet: discarding what was unpacked during the "
+            logUsenet(QStringLiteral("Usenet: discarding what was unpacked during the "
                                    "download; the release needed a repair"));
         }
 
@@ -681,7 +681,7 @@ bool UsenetPostProcessor::stageForPublish(const QStringList& files, const QStrin
                                           UsenetPostResult& result)
 {
     if (destDir.isEmpty()) {
-        logError(QStringLiteral("Usenet: no incoming directory configured"));
+        logUsenetError(QStringLiteral("Usenet: no incoming directory configured"));
         return false;
     }
     QDir().mkpath(destDir);
@@ -699,7 +699,7 @@ bool UsenetPostProcessor::stageForPublish(const QStringList& files, const QStrin
         // the post-processing thread rather than the daemon's.
         if (!QFile::rename(source, stagedPath)) {
             if (!QFile::copy(source, stagedPath)) {
-                logError(QStringLiteral("Usenet: cannot place \"%1\" in %2").arg(name, destDir));
+                logUsenetError(QStringLiteral("Usenet: cannot place \"%1\" in %2").arg(name, destDir));
                 return false;
             }
             QFile::remove(source);

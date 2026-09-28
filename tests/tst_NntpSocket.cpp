@@ -84,12 +84,17 @@ private slots:
     void readRateLimit_repaysTimeSpentWaiting();
     void readRateLimit_reapplyingKeepsBankedCredit();
     void readRateLimit_reapplyingGrantsNoExtraBudget();
+    void readRateLimit_boundsTheSocketBuffer_data();
+    void readRateLimit_boundsTheSocketBuffer();
     void invalidServer_failsWithoutConnecting();
     void openConnections_countsAuthenticatedSocketsPerAccount();
     void connectsThroughASocks5ProxyByHostName();
     void connectsThroughAnHttpConnectProxyWithAuthentication();
     void withNoProxyOfItsOwnAnApplicationProxyIsIgnored();
     void aProxyFailureNamesTheProxyNotTheServer();
+    void pipelinedCommandsFinishInOrder_data();
+    void pipelinedCommandsFinishInOrder();
+    void aDropFailsEveryPipelinedCommand();
 };
 
 void tst_NntpSocket::connectsAuthenticatesAndBecomesReady()
@@ -800,4 +805,155 @@ void tst_NntpSocket::aProxyFailureNamesTheProxyNotTheServer()
 }
 
 QTEST_MAIN(tst_NntpSocket)
+void tst_NntpSocket::readRateLimit_boundsTheSocketBuffer_data()
+{
+    // TLS too: QSslSocket buffers in two layers, and a capped buffer that never
+    // resumed hung every live connection until the response watchdog fired.
+    QTest::addColumn<bool>("tls");
+    QTest::newRow("cleartext") << false;
+    QTest::newRow("tls") << true;
+}
+
+void tst_NntpSocket::readRateLimit_boundsTheSocketBuffer()
+{
+    QFETCH(bool, tls);
+
+    // The bucket paces the drain; the buffer cap is what paces the wire. Without
+    // it Qt read the whole response at link speed and the provider saw bursts
+    // then silence. ~420 KB at 128 KB/s: the old code buffered all of it.
+    QStringList many;
+    many.reserve(6000);
+    for (int i = 0; i < 6000; ++i)
+        many.append(QStringLiteral("CAP-%1 with some padding to make the line longer").arg(i));
+
+    FakeNntpServer server;
+    server.setImplicitTls(tls);
+    server.setCapabilities(many);
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NewsServer target = localServer(port);
+    if (tls) {
+        target.tlsMode = TlsMode::Implicit;
+        target.certVerification = CertVerification::None;
+    }
+
+    constexpr qint64 rate = 128 * 1024;
+    NntpSocket socket;
+    socket.setReadRateLimit(rate);   // before connect: applied to the new socket
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+    socket.connectToServer(target);
+    QVERIFY(ready.wait(5000));
+
+    qint64 peak = 0;
+    QTimer probe;
+    connect(&probe, &QTimer::timeout, &socket,
+            [&] { peak = std::max(peak, socket.bufferedBytes()); });
+    probe.start(10);
+
+    CapabilitiesCommand caps;
+    QSignalSpy done(&socket, &NntpSocket::commandFinished);
+    socket.sendCommand(&caps);
+    QVERIFY(done.wait(20000));
+    probe.stop();
+
+    QVERIFY(!caps.failed());
+    QCOMPARE(caps.capabilities().size(), many.size());
+    QVERIFY2(peak > 0, "probe never saw buffered data");
+    // Qt may overshoot its cap by one read chunk. TLS has two capped layers
+    // (encrypted and decrypted), so up to twice that — still far below 420 KB.
+    const qint64 bound = (tls ? 2 : 1) * rate + 16 * 1024;
+    QVERIFY2(peak <= bound, qPrintable(QStringLiteral("buffered %1 bytes").arg(peak)));
+}
+
+void tst_NntpSocket::pipelinedCommandsFinishInOrder_data()
+{
+    QTest::addColumn<bool>("tls");
+    QTest::newRow("cleartext") << false;
+    QTest::newRow("tls") << true;
+}
+
+void tst_NntpSocket::pipelinedCommandsFinishInOrder()
+{
+    QFETCH(bool, tls);
+
+    // Sent back to back while the first is unanswered; each must get its own
+    // response, a multi-line one in the middle included.
+    FakeNntpServer server;
+    server.setImplicitTls(tls);
+    server.setResponseDelay(50);
+    server.addArticle(QStringLiteral("a@x"), QByteArrayLiteral("payload"));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NewsServer target = localServer(port);
+    if (tls) {
+        target.tlsMode = TlsMode::Implicit;
+        target.certVerification = CertVerification::None;
+    }
+
+    NntpSocket socket;
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+    socket.connectToServer(target);
+    QVERIFY(ready.wait(5000));
+
+    StatCommand first(QStringLiteral("a@x"));
+    CapabilitiesCommand caps;
+    StatCommand last(QStringLiteral("missing@x"));
+    QList<NntpCommand*> order;
+    connect(&socket, &NntpSocket::commandFinished, &socket,
+            [&order](NntpCommand* c) { order.append(c); });
+
+    socket.sendCommand(&first);
+    QVERIFY(socket.acceptsCommands());
+    socket.sendCommand(&caps);
+    socket.sendCommand(&last);
+    QCOMPARE(socket.pipelinedCount(), 2);
+
+    QTRY_COMPARE_WITH_TIMEOUT(order.size(), 3, 5000);
+    QCOMPARE(order, (QList<NntpCommand*>{&first, &caps, &last}));
+    QVERIFY(!first.failed());
+    QVERIFY(first.exists());
+    QVERIFY(!caps.failed());
+    QVERIFY(caps.has(QLatin1StringView("READER")));
+    QCOMPARE(last.error(), NntpError::ArticleNotFound);
+    QVERIFY(socket.isReady());
+    QCOMPARE(socket.pipelinedCount(), 0);
+    QVERIFY2(server.maxOutstanding() >= 3,
+             qPrintable(QStringLiteral("outstanding %1").arg(server.maxOutstanding())));
+}
+
+void tst_NntpSocket::aDropFailsEveryPipelinedCommand()
+{
+    // The connection dies under the first: the ones behind it must hear about
+    // it too, in order, or their owners wait forever.
+    FakeNntpServer server;
+    server.setResponseDelay(50);
+    server.addArticle(QStringLiteral("b@x"), QByteArrayLiteral("payload"));
+    server.setDropOnArticle(QStringLiteral("a@x"));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NntpSocket socket;
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+    socket.connectToServer(localServer(port));
+    QVERIFY(ready.wait(5000));
+
+    StatCommand first(QStringLiteral("a@x"));
+    StatCommand second(QStringLiteral("b@x"));
+    QList<NntpCommand*> order;
+    connect(&socket, &NntpSocket::commandFinished, &socket,
+            [&order](NntpCommand* c) { order.append(c); });
+    QSignalSpy failed(&socket, &NntpSocket::failed);
+
+    socket.sendCommand(&first);
+    socket.sendCommand(&second);
+
+    QTRY_COMPARE_WITH_TIMEOUT(order.size(), 2, 5000);
+    QCOMPARE(order, (QList<NntpCommand*>{&first, &second}));
+    QCOMPARE(first.error(), NntpError::Disconnected);
+    QCOMPARE(second.error(), NntpError::Disconnected);
+    QCOMPARE(failed.size(), 1);
+}
+
 #include "tst_NntpSocket.moc"

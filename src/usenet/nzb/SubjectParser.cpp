@@ -103,7 +103,7 @@ SubjectRuleSet SubjectRuleSet::compile(const QList<UsenetSubjectPattern>& patter
 
     for (const UsenetSubjectRole role : needDefaults) {
         if (mentioned[roleIndex(role)] > 0) {
-            logWarning(QStringLiteral("No usable subject rule left for \"%1\"; "
+            logUsenetWarning(QStringLiteral("No usable subject rule left for \"%1\"; "
                                       "falling back to the built-in ones")
                            .arg(usenetSubjectRoleName(role)));
         }
@@ -201,7 +201,7 @@ bool SubjectRuleSet::buildRule(const UsenetSubjectPattern& p, Rule& out, bool wa
 {
     const auto refuse = [&](const QString& why) {
         if (warn)
-            logWarning(QStringLiteral("Subject rule \"%1\": %2").arg(p.name, why));
+            logUsenetWarning(QStringLiteral("Subject rule \"%1\": %2").arg(p.name, why));
         return false;
     };
 

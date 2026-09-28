@@ -199,7 +199,7 @@ void NntpServerPool::blockServer(const QString& serverKey)
     const bool alreadyBlocked = isServerBlocked(serverKey);
     m_blockedUntil.insert(serverKey, nowSeconds() + m_retryIntervalSec);
     if (!alreadyBlocked) {
-        logWarning(QStringLiteral("Usenet: %1 backed off for %2 s")
+        logUsenetWarning(QStringLiteral("Usenet: %1 backed off for %2 s")
                        .arg(serverKey)
                        .arg(m_retryIntervalSec));
     }
@@ -245,6 +245,18 @@ bool NntpServerPool::isServerBlocked(const QString& serverKey) const
     if (it == m_blockedUntil.cend())
         return false;
     return *it > nowSeconds();
+}
+
+bool NntpServerPool::canPipeline(const NntpSocket* socket, int level,
+                                 const QStringList& ignoreServers) const
+{
+    const auto it = std::ranges::find_if(m_connections, [socket](const Lease& l) {
+        return l.socket.get() == socket;
+    });
+    if (it == m_connections.end() || !it->inUse || it->retireOnRelease)
+        return false;
+    return levelOf(it->serverKey) == level && !ignoreServers.contains(it->serverKey)
+        && !isServerBlocked(it->serverKey);
 }
 
 void NntpServerPool::closeIdleConnections()
@@ -318,18 +330,35 @@ void NntpServerPool::armCapTimer()
 
 void NntpServerPool::onCapTimer()
 {
-    // The hold is over: back to the configured limit. Connections past what the
-    // provider allows are refused again and cap it again. That costs one failed
-    // connection per probe, never the ones already working.
+    // The hold is over: probe one connection more, not the whole configured
+    // limit. Lifting it outright had every worker open its missing connections
+    // at once against an account another client still used; all were refused,
+    // one 502 at a time, and until then they diluted the rate share. A probe
+    // that gets in steps again after kCapProbeStepMs; one that is refused holds
+    // the count for the retry interval again (limitConnections()).
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     bool lifted = false;
     for (auto it = m_caps.begin(); it != m_caps.end();) {
-        if (it->untilMs <= now) {
-            it = m_caps.erase(it);
-            lifted = true;
-        } else {
+        if (it->untilMs > now) {
             ++it;
+            continue;
         }
+        int configured = 0;
+        for (const NntpConnectionBucket& bucket : std::as_const(m_buckets)) {
+            if (bucket.id == it.key())
+                configured = std::max(configured, bucket.limit);
+        }
+        lifted = true;
+        if (it->limit + 1 >= configured) {
+            logUsenetDebug(QStringLiteral("Usenet: connection cap on %1 lifted").arg(it.key()));
+            it = m_caps.erase(it);
+            continue;
+        }
+        it->limit += 1;
+        it->untilMs = now + kCapProbeStepMs;
+        logUsenetDebug(QStringLiteral("Usenet: connection cap on %1 probing %2 of %3")
+                           .arg(it.key()).arg(it->limit).arg(configured));
+        ++it;
     }
     armCapTimer();
     if (lifted)

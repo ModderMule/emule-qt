@@ -214,6 +214,7 @@ private:
     bool m_usenetEnginePaused = false;
     bool m_autoReconnect = false;
     int64_t m_lastKadId     = 0;
+    int64_t m_lastUsenetId  = 0;
     int64_t m_lastServerId  = 0;
     int64_t m_lastLogId     = 0;  // Log tab
     int64_t m_lastVerboseId = 0;

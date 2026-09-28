@@ -1,7 +1,8 @@
 #pragma once
 
 /// @file LogWidget.h
-/// @brief Tabbed log display matching the MFC "Server Info | Log | Verbose" tabs.
+/// @brief Tabbed log display matching the MFC "Server Info | Log | Verbose" tabs,
+/// plus Usenet, Kad and IPC.
 ///
 /// Installs a Qt message handler to capture qCInfo/qCWarning/qCDebug output
 /// from the core logging categories and routes them to the appropriate tabs.
@@ -18,9 +19,9 @@ class QTextBrowser;
 
 namespace eMule {
 
-/// Tabbed log widget with Server Info, Log, Verbose, Kad, and IPC tabs.
+/// Tabbed log widget with Server Info, Log, Verbose, Usenet, Kad, and IPC tabs.
 /// Captures Qt logging category output from the core layer.
-/// The IPC tab is shown only when enableIpcLog preference is true.
+/// The Usenet tab follows showUsenetLog, the IPC tab enableIpcLog.
 class LogWidget : public QWidget {
     Q_OBJECT
 
@@ -50,12 +51,24 @@ public:
     /// Append a message to the Kad tab.
     void appendKad(const QString& msg, const QString& ts = {}, qint64 seqId = 0);
 
+    /// Append a message to the Usenet tab.
+    void appendUsenet(const QString& msg, const QString& ts = {}, qint64 seqId = 0);
+
+    /// Route one emule.usenet line: to the Usenet tab when it is shown, else
+    /// to Log/Verbose by severity as before the tab existed. Debug lines are
+    /// dropped when hidden, they would flood Verbose.
+    void routeUsenet(QtMsgType type, const QString& colored,
+                     const QString& ts = {}, qint64 seqId = 0);
+
     /// Append an IPC message to the IPC tab.
     /// @p outgoing: true = GUI→daemon (green), false = daemon→GUI (purple).
     void appendIpcMessage(const QString& msg, bool outgoing);
 
     /// Show or hide the IPC tab.
     void setIpcTabVisible(bool visible);
+
+    /// Show or hide the Usenet tab.
+    void setUsenetTabVisible(bool visible);
 
     /// Clear all tabs.
     void clearAll();
@@ -64,6 +77,7 @@ public:
     [[nodiscard]] QString logText() const;
     [[nodiscard]] QString verboseText() const;
     [[nodiscard]] QString kadText() const;
+    [[nodiscard]] QString usenetText() const;
 
     /// Set a custom font on all log browser tabs.
     void setCustomFont(const QFont& font);
@@ -74,8 +88,8 @@ public:
     /// Remove the global message handler.
     void removeMessageHandler();
 
-    /// Open or close the GUI's own log files (emuleqt.log, emuleqt_Verbose.log
-    /// and emuleqt_Kad.log in the config directory) to match the logToDiskGui
+    /// Open or close the GUI's own log files (emuleqt.log, emuleqt_Verbose.log,
+    /// emuleqt_Kad.log and emuleqt_Usenet.log in the config directory) to match the logToDiskGui
     /// pref. The daemon runs DaemonApp::applyLogFileSettings() for its own set
     /// — one switch per process. Safe to call at startup and whenever the pref
     /// changes at runtime.
@@ -115,13 +129,17 @@ private:
     QTextBrowser* m_logBrowser = nullptr;
     QTextBrowser* m_verboseBrowser = nullptr;
     QTextBrowser* m_kadBrowser = nullptr;
+    QTextBrowser* m_usenetBrowser = nullptr;
     QTextBrowser* m_ipcLogBrowser = nullptr;
     int m_ipcTabIndex = -1;
+    int m_usenetTabIndex = -1;
+    bool m_usenetTabVisible = true;
 
     /// Parallel sequence-ID lists (one per sorted browser) for ordered insertion.
     QList<qint64> m_logSeqIds;
     QList<qint64> m_verboseSeqIds;
     QList<qint64> m_kadSeqIds;
+    QList<qint64> m_usenetSeqIds;
 
     /// Static instance pointer for the message handler callback.
     static LogWidget* s_instance;

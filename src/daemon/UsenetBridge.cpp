@@ -428,7 +428,7 @@ int applyCategoryAction(int category, UsenetWebCategoryAction action)
     const QString verb = action == UsenetWebCategoryAction::Pause    ? QStringLiteral("Pause")
                          : action == UsenetWebCategoryAction::Resume ? QStringLiteral("Resume")
                                                                      : QStringLiteral("Cancel");
-    logInfo(QStringLiteral("Usenet: %1 applied to %2 item(s) in \"%3\"")
+    logUsenet(QStringLiteral("Usenet: %1 applied to %2 item(s) in \"%3\"")
                 .arg(verb, QString::number(acted), thePrefs.category(category).displayName()));
     return acted;
 }

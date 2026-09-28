@@ -56,6 +56,42 @@ Web side: `src/core/webserver/UsenetWebBackend.h` (the interface core may see),
 `src/daemon/DaemonUsenetWebBackend.{h,cpp}` (its implementation) and
 `src/daemon/UsenetBridge.{h,cpp}` (what IPC, the page and the REST API share).
 
+## Logging
+
+All Usenet and NNTP lines go to their own category, `emule.usenet`, through
+`logUsenet` / `logUsenetWarning` / `logUsenetError` / `logUsenetDebug`
+(`core/utils/Log.h`). Never use `logInfo` in `src/usenet/`.
+
+- **Where they show:**
+  - The GUI's **Usenet** log tab, which sits between Verbose and Kad.
+  - The `emulecored_Usenet.log` file, whatever the severity.
+- **Hiding the tab:** Options → Extended → "Show Usenet log tab" (`showUsenetLog`,
+  default on). When it is off, the GUI routes these lines back to Log (info and
+  errors) and Verbose (warnings). Debug lines are dropped there.
+- **Debug is always on** (`emule.usenet.debug=true` in the daemon filter rules),
+  so nothing may be logged per article.
+- **What the debug lines cover:**
+  - connect, ready and idle close for each connection
+  - a cap lifting
+  - rate-share changes for each worker
+  - dispatch parked or resumed, with the reason
+  - a pipelined article requeued
+  - a state line every 5 s (`UsenetQueue::logQueueState`) while anything is
+    active:
+
+```
+Usenet: 2998 KB/s (limit 3000) | 98 conns open | in flight 110 of 98 (+14 slots, 12 pipelined)
+        | per worker 13/13/12/12/12/12/12/12 | no-server 0, starved skips 0, requeued 0 | 1 active
+```
+
+Reading the state line:
+- **`per worker`** is each worker's current connection budget. A 502 cap shows
+  up there as a lower number.
+- **`no-server`** counts dispatches that found nothing leasable.
+- **`starved skips`** counts dispatch rounds that skipped such a worker until
+  the next 250 ms tick. Starvation is **per worker**: one worker at its cap no
+  longer parks the other seven.
+
 ## Sockets
 
 `NntpSocket` is a new class on a bare `QSslSocket`, modelled on
@@ -75,8 +111,9 @@ Two things it fixes relative to `SmtpClient`, which has neither:
   providers also offer 443, and STARTTLS runs on the cleartext port 119.
 
 Inbound rate limiting is `NntpSocket::setReadRateLimit()`, a token bucket with a
-refill timer. `0` means unlimited, as everywhere else in eMuleQt. It is driven by
-the budget split described below.
+refill timer, backed by capped Qt and kernel (`SO_RCVBUF`) receive buffers so the
+limit is TCP backpressure, not RAM buffering. `0` means unlimited, as everywhere else in
+eMuleQt. It is driven by the budget split described below.
 
 ### Through the user's proxy
 
@@ -140,8 +177,12 @@ into `NntpCheckCon` with a different state enum, leaving two near-identical
   holds that bucket at the connections still open for the retry interval.
   Nothing is dropped, the pool emits `capacityChanged()` so the queue stops
   dispatching past it, and the article goes back unspent. When the hold runs
-  out the cap lifts, and a probe past the real limit costs one refused
-  connection. It used to be an `AuthFailed` that blocked the account in every
+  out the cap grows by **one** connection every `kCapProbeStepMs` (5 s) until a
+  502 holds it again or it reaches the configured limit. Lifting it outright
+  had all 8 workers open every missing connection at once. Those sockets
+  counted in the rate split while still in their handshake, and cut a 3000 KB/s
+  limit to about 2400 until they were refused. The split now counts only
+  logged-in sockets (`UsenetWorker::applyRateLimits`). It used to be an `AuthFailed` that blocked the account in every
   worker it hit and dropped their healthy connections too. Another client on
   the same account then produced a minute-long stall, a reconnect storm into
   the same limit, and the next stall (log.log, 2026-09-28).
@@ -817,7 +858,7 @@ header.
 |---|---|
 | `tst_UsenetSmoke` | the library links and moc ran |
 | `tst_NntpSocket` | greeting, auth, TLS modes, watchdog, dot-unstuffing, rate limit; and every "cannot answer for this article" code (430/423/420/412) mapping to `ArticleNotFound` rather than to a protocol error, which is fatal to the connection and would back the whole account off on every probe. Proxy, against `tests/FakeProxyServer.h`: SOCKS5 with credentials **asked by host name** (ATYP 3), HTTP `CONNECT` answering a 407, an application-wide proxy **ignored** by a socket with none of its own, and a refused proxy reported as `ProxyFailed` naming the proxy |
-| `tst_NntpServerPool` | level normalisation, rotation, exclusion, backoff; the connection-limit cap keeping every open lease, lifting after its hold and off at retry interval 0; grouped accounts sharing one connection budget and an ungrouped pair keeping separate ones; a server divided down to zero connections keeping its rung but leasing nothing; the shared ladder built from the configured levels only; every lease connecting through the pool's proxy |
+| `tst_NntpServerPool` | level normalisation, rotation, exclusion, backoff; the connection-limit cap keeping every open lease, probing one connection more per step after its hold and off at retry interval 0; grouped accounts sharing one connection budget and an ungrouped pair keeping separate ones; a server divided down to zero connections keeping its rung but leasing nothing; the shared ladder built from the configured levels only; every lease connecting through the pool's proxy |
 | `tst_UsenetReleaseChecks` | the checks without a queue. SFV: comments, tabs, quotes and paths parsed; a clean set in either case; a damaged file named; an expected file gone is damage while **a listed sample nobody posted is not**; nothing present checks nothing; cancel. Unwanted: extension lists normalised; video tags; a program in a media release, **none in a software release**, a double extension without media, an empty list off; a program named `.mkv` fake while an MP4 named `.mkv` and **an unrecognised container are not**. The repair estimate: a covered hole repairable, losing more than the set holds unrepairable, **a file still downloading claiming no damage**, a repost counting its best copy, a repeated part number not a hole, **recovery data counted whatever it is called**, and nothing to judge from being Unknown |
 | `tst_UsenetPrefs` | round trip, encryption, ordering, mint condition, caps; news servers following the proxy unless switched off, **eD2K's route unmoved by that switch**, and SOCKS4 reached as SOCKS5; subject patterns: a round trip, **no `subjectPatterns` block written while the defaults are in use** — what keeps every existing preferences.yml byte-identical — a pattern that will not compile surviving a save because the typo is the record of what was meant, one with no role dropped on load, the cap and the name de-duplication, and a trailing space in a pattern *not* trimmed away |
 | `tst_UsenetYenc` | CRC vector, every byte value, the four traps above |
@@ -833,7 +874,7 @@ header.
 | `tst_UsenetNzbUrl` | the URL intake: `file:`, `qrc:`, `ftp:`, `data:`, hostless and relative links refused; a **private address accepted**, pinned so nobody blocks the self-hosted-indexer case; the display name stripped of `.nzb`/`.gz`, percent-decoded, and empty for API-style URLs; a plain and a gzipped `.nzb` fetched; a 404 reported as a *download* failure rather than a parse one; and no callback after its context dies |
 | `tst_UsenetPar2` | verify, repair, rename and the blocks-needed figure, against sets built in-process by `Par2::par2creator`. The file list: every name returned with **every source file deleted first**, `hash16k` equal to a `QCryptographicHash` digest of the first 16 KiB — the case that fails the moment anyone reaches for `MD5Hash::print()`, which emits `hash[15]` first — a short file hashing whole for both fields, and a truncated index answering rather than dereferencing the null `CreateSourceFileList()` leaves behind. The defect: a damaged obfuscated file costing **the 2 blocks it lost and not the 15 it has**, and a repair reporting the `.1` it moved aside — plus the second, unreported leftover, the obfuscated original par2 never touched. `Par2NameIndex`: length and opening bytes keyed *together*, two identical files in a set left unnamed, and a scratch file one byte short of the window not matched |
 | `tst_UsenetUnpack` | volume-set detection across all three naming schemes; path-traversal and reserved-name refusals; a multi-volume RAR set extracted through the whole list, and a set skipped because it was unpacked during the download |
-| `tst_UsenetPostPipeline` | a repair discarding what was unpacked while downloading, and corrupt volumes never reaching the published release; phase 4 end to end: a healthy release fetches **no** recovery volumes; a damaged one fetches them, repairs, unpacks and publishes the payload alone; an unrepairable one publishes nothing. Names: a fully obfuscated release — par2 built over the real names, the payload then renamed to hex and only then posted, so the subject *and* `=ybegin` are junk — carrying `par2FileName` and sealed under the real one, which is what separates this from the post-processing rename that would also end up with the right name on disk; the index `.par2` fetched **before** the payload and dragging no recovery volume with it; a release with no par2 scheduled exactly as before; a damaged obfuscated release buying **≤4 recovery blocks for 2 damaged ones** rather than 15; and `<name>.1` never published, with and without the cleanup preference. Without PAR2: an SFV mismatch failing the release (and the check off publishing it), a clean SFV publishing the payload but not itself, an unposted sample listed and still publishing. Held back: a program in a movie release, **a program in a software release published**, an archive whose only member is `movie.mkv.exe` **never extracted**; through the queue, a stopped release paused with its reason, **left alone by a bulk resume and a password**, keeping both across a restart, and published by the user's Resume. Unrepairable: six volumes with the first gone and two recovery blocks, stopped **before a single `BODY` for the second volume**, with rename off; Resume downloading it anyway and failing it **without buying the recovery volumes** that could never cover it. The cycle re-entering a queue that is waiting: paused mid-verify, both ways back into fetching — for recovery volumes and for a file the user skipped — say **why** instead of going blank, buy nothing while they wait, and finish when the pause lifts |
+| `tst_UsenetPostPipeline` | a repair discarding what was unpacked while downloading, and corrupt volumes never reaching the published release; phase 4 end to end: a healthy release fetches **no** recovery volumes; a damaged one fetches them, repairs, unpacks and publishes the payload alone; an unrepairable one publishes nothing. Names: a fully obfuscated release — par2 built over the real names, the payload then renamed to hex and only then posted, so the subject *and* `=ybegin` are junk — carrying `par2FileName` and sealed under the real one, which is what separates this from the post-processing rename that would also end up with the right name on disk; the index `.par2` fetched **before** the payload and dragging no recovery volume with it; a release with no par2 scheduled exactly as before; a damaged obfuscated release buying **≤4 recovery blocks for 2 damaged ones** rather than 15; and `<name>.1` never published, with and without the cleanup preference. Without PAR2: an SFV mismatch failing the release (and the check off publishing it), a clean SFV publishing the payload but not itself, an unposted sample listed and still publishing. Held back: a program in a movie release, **a program in a software release published**, an archive whose only member is `movie.mkv.exe` **never extracted**; through the queue, a stopped release paused with its reason, **left alone by a bulk resume and a password**, keeping both across a restart, and published by the user's Resume. Unrepairable: six volumes with the first gone and two recovery blocks, stopped **before a `BODY` for the second volume** (at most the one pipelined behind the last article), with rename off; Resume downloading it anyway and failing it **without buying the recovery volumes** that could never cover it. The cycle re-entering a queue that is waiting: paused mid-verify, both ways back into fetching — for recovery volumes and for a file the user skipped — say **why** instead of going blank, buy nothing while they wait, and finish when the pause lifts |
 | `tst_UsenetStream` | phase 6a: part-number dispatch order over a shuffled NZB, a failed article retried *before* later ones, interval merge and the hole that stops it, `written` surviving a restart, the previewable predicate. Phase 6b: a stored RAR set resolving to the file inside it and reading back byte-identically across volume boundaries; **a seek to 80% that never issues a `BODY` for the volumes it skipped** — the exit criterion, asserted; a compressed set saying why; a `.001` split set. Multi-file sets: every inner file enumerated with its ordinal, each mapping to its own bytes across a volume boundary, **a set whose first file is an `.nfo` streaming the movie with no `entry=` named**, and a listing on a paused item that neither fetches nor guesses. Preview from the extraction: a **solid stored** set — refused by the map, extractable by libarchive, which is the only fixture that separates the two sources — streamed out of `_unpacked/` with the archive's own declared size as the total, listed and marked playable, and a control case proving the same set is refused when nothing is extracting it |
 | `tst_RarReader` | phase 6b: RAR4 and RAR5 stored volumes — name, method, packed/unpacked sizes, data offset, split flags, `LHD_LARGE` sizes past 4 GB, RAR5 multi-byte vints; compressed read but not stored; solid and encrypted refused with a reason; every truncated prefix asking for more bytes rather than reading past the buffer; a volume carrying two file headers listing both; resuming mid-volume at a computed offset, and a resumed block at a wrong address caught by its header CRC |
 | `tst_UsenetPassword` | password-protected releases: a header-encrypted RAR failing rather than completing empty with its volumes deleted; a data-encrypted one naming the password; ZIP decrypting through libarchive and refusing a wrong passphrase; an encrypted 7z going through `ExternalUnpacker` and coming back byte-identical; a configured unpacker that is not a binary refusing rather than substituting; stored paths harvested out of a staging directory; an incomplete 7z set listing nothing; the biggest playable member chosen over the sample; the `{{password}}` name convention reaching the queue; manual beating the NZB where automatic does not; a failed release retrying — without re-downloading — the moment a password is set; and, end to end, a genuinely encrypted release posted as articles, downloaded, unpacked with its password and published byte-identically |
@@ -849,7 +890,11 @@ Offline tests run against `tests/FakeNntpServer.h`, a scriptable in-process NNTP
 server modelled on NZBGet's `daemon/nserv/`. It exists because the interesting
 cases are the refusals — 400 at the greeting, 481 on auth, 430 for a missing
 article, a server that simply stops answering — and none can be provoked against
-a real provider on demand.
+a real provider on demand. `setImplicitTls()` serves implicit TLS with a fixed
+self-signed loopback certificate (client uses `CertVerification::None`) for what
+only QSslSocket does, like its two-layer read buffer. Commands on one connection
+are answered in order, so pipelining is testable; `setResponseDelay()` adds a
+round trip and `maxOutstanding()` reports the deepest queue seen.
 
 The live tests skip when their environment is unset, so an unconfigured checkout
 never looks broken:
@@ -2197,6 +2242,99 @@ credit above. An unchanged figure is now a no-op, and a new one keeps the
 socket's credit or debt within the new burst cap —
 `readRateLimit_reapplyingKeepsBankedCredit` and
 `readRateLimit_reapplyingGrantsNoExtraBudget`.
+
+The bucket only paces the **drain**. What paces the **wire** is how much a
+limited socket may buffer below it. `NntpSocket::applyBufferCaps()` caps both
+layers at one burst's worth (`readBufferCap()`, 64 KiB to 1 MiB, 16 KiB steps):
+- Qt's read buffer (`setReadBufferSize`; over TLS Qt keeps two capped layers,
+  encrypted and decrypted)
+- the kernel's receive buffer (`ReceiveBufferSizeSocketOption`, i.e. `SO_RCVBUF`,
+  which Qt maps to `setsockopt` on macOS, Linux and Windows alike; Linux doubles it)
+
+Without them, Qt and the OS's auto-tuned receive buffer (MBs on every OS) took
+whole articles at link speed and the bucket drained them from RAM afterwards.
+Measured live at a ~3 MB/s limit with ~96 connections, the wire swung between 0
+and 37 MB/s, with 10 of 60 seconds near zero: the "stops, then 10 MB/s" users
+see, and bursty for the provider and anything else sharing the line. With both
+caps (live, 3000 KB/s, 100 connections): 3129 KB/s average, bursts down from
+~40 MB to ~18 MB, and near-zero seconds down from 44 to 25 per minute.
+
+Rules the caps depend on:
+- **`drain()` must empty Qt's buffer.** It reads whole lines and used to leave
+  the partial last line in Qt's buffer. QSslSocket decrypts more only from a read
+  that empties that buffer (`readData()` → `_q_flushReadBuffer`), so with a cap
+  every TLS connection hung until the 60 s watchdog and the account got backed
+  off. The tail now moves to `m_partialLine`.
+  `readRateLimit_boundsTheSocketBuffer(tls)` hung before that fix. `FakeNntpServer::setImplicitTls()`
+  serves TLS with a fixed self-signed loopback certificate for it.
+- **The kernel buffer only grows, or shrinks when 2× too big.** Every sibling
+  lease shifts the per-socket rate, and shrinking `SO_RCVBUF` shrinks the TCP
+  window under a sender that is mid-article.
+- **Not smaller than 64 KiB.** 16 KiB measured ~40 % of the limit: over a 220 ms
+  round trip the window sat near zero.
+
+What remained was lockstep, not buffering. Equal rates on equal-sized articles
+make every connection finish together; each then went quiet while its last
+buffered ~190 KB drained before it asked for the next article. Random per-article
+rate weights broke the lockstep but measured 25 % less throughput (186 vs 248 MB
+in the same 100 s), so they were not kept. Pipelining is the fix (next section).
+
+### BODY pipelining
+
+A connection asks for its next article before the current one has drained (RFC
+3977 §3.5), so the provider's bytes queue behind it in the same TCP stream. Depth
+is one extra article per connection; no connection is added, so the account's
+limit and 502 caps are untouched. Always on, no setting.
+
+- **Socket.** `NntpSocket::sendCommand()` while a command runs writes the request
+  at once and queues it in `m_pipeline`; `finishCommand()` makes the next one
+  current and `drain()` keeps parsing. `fail()` fails every queued command, in
+  order. It also times idle-line commands to their status line
+  (`responseLatencyMs()`, smoothed).
+- **When.** `ArticleFetcher` emits `nearlyDone()` once the BODY's remaining bytes
+  (NZB `bytes` minus `commandBodyBytes()`) fall within
+  `pipelineLookahead()`: 4 buffer caps (Qt ×2 for TLS, kernel, Linux doubling)
+  plus two round trips at the socket's rate. Unlimited arms at send: an article
+  lands in 5–45 ms against a 220 ms round trip. 2 caps measured worse (dips
+  while the provider waited for the request).
+- **Worker.** A nearly-done connection is a *slot*. `fetchSegment()` prefers an
+  idle or new lease, else attaches the job as that socket's `follower`
+  (`NntpServerPool::canPipeline()`: same rung, not ignored, not backed off, not
+  retiring). On finish the follower takes the lease over. If the socket goes away
+  instead, the follower comes back `requeue`: never asked, so no retry, no
+  `tried`, no statistics, no blame. It is reported before the article ahead of
+  it. A `ProtocolError` on a pipelined pair puts that server in `m_noPipeline`
+  (one article at a time for the session).
+- **Queue.** `pipelineSlotsChanged(slots, followers)` lets `dispatch()` go
+  `capacity + slots` deep; probes stay within plain capacity. `activeFetches()`
+  subtracts followers, since they share a connection. `returnToPlan()` puts a
+  requeued or unleasable article back at the cursor but behind earlier parts of
+  its file: a dispatch can miss its slot when the connection dies under the
+  article whose retry must go first.
+- **Cost.** A release stopped by a check can have bought one article per
+  connection past the stop.
+
+Live, 3000 KB/s, 100 connections: 3011 KB/s average, bursts ~6.7 MB (were ~18),
+near-zero seconds ~4 per 84 s (were 25 per minute), no timeouts. The drain is flat
+at the limit every second. What's left is a one-second wire dip about every 12 s;
+arming at send made no difference, so it isn't the request timing. Articles still
+finish in batches (equal rates), but the wire no longer waits for them.
+Unlimited: ~96 vs ~80 MB/s over one 5 s interval (single sample, near line rate).
+
+`FakeNntpServer` answers each connection strictly in order, as a real server
+does: a held or delayed BODY (`setResponseDelay()`) holds everything behind it.
+`maxOutstanding()` proves a client pipelined.
+
+The limit reaches the workers weighted by live download sockets
+(`UsenetQueue::rateShares()`), not as a fixed 1/N each, so every socket gets the
+same rate and an idle worker's slice isn't wasted. Each worker reports its count
+with `liveSocketsChanged`; the queue redistributes at most once per tick and
+sends only the shares that changed. An idle worker gets a trickle, never 0 (0
+means unlimited).
+
+`tst_UsenetLiveDownload` takes `EMULE_NNTP_RATE_KB` to run under a limit. Watch
+the wire with `nettop -P -L 61 -s 1 -p <pid> -J bytes_in -x`: the GUI and
+`currentRate()` show the drain, which is flat even when the wire is not.
 
 ## IPC
 

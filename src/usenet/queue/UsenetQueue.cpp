@@ -39,6 +39,8 @@ namespace {
 /// completed segment, so this timer only has to cover the "nothing came back"
 /// case (every server blocked, every connection busy).
 constexpr int kTickMs = 250;
+/// How often logQueueState() writes its line while anything is active.
+constexpr int kStateLogIntervalMs = 5000;
 
 /// How many times a *connection* fault is retried on the same level before the
 /// segment is given up. Transport faults cure themselves — "too many connections"
@@ -165,7 +167,7 @@ void UsenetQueue::start()
         auto item = std::make_unique<UsenetQueueItem>();
         QString error;
         if (!UsenetQueueStore::load(path, *item, error)) {
-            logWarning(QStringLiteral("Usenet: ignoring unreadable queue state %1: %2")
+            logUsenetWarning(QStringLiteral("Usenet: ignoring unreadable queue state %1: %2")
                            .arg(path, error));
             continue;
         }
@@ -184,7 +186,7 @@ void UsenetQueue::start()
     }
 
     if (!m_items.empty()) {
-        logInfo(QStringLiteral("Usenet: restored %1 queued item(s)").arg(int(m_items.size())));
+        logUsenet(QStringLiteral("Usenet: restored %1 queued item(s)").arg(int(m_items.size())));
     }
     for (auto& rt : m_items)
         noteWaitReason(*rt);
@@ -256,7 +258,7 @@ void UsenetQueue::applyServers(const QList<NewsServer>& servers, int retryInterv
     m_servers.reserve(servers.size());
     for (const NewsServer& s : servers) {
         if (s.enabled && s.isValid() && s.maxConnections <= 0) {
-            logWarning(QStringLiteral("Usenet: ignoring %1 — it allows no connections")
+            logUsenetWarning(QStringLiteral("Usenet: ignoring %1 — it allows no connections")
                            .arg(s.displayName()));
             continue;
         }
@@ -363,7 +365,7 @@ QString UsenetQueue::addNzb(const QByteArray& data, const QString& name, QString
     // clean up after itself, so a refusal must happen ahead of it.
     const UsenetAddOutcome verdict = findDuplicate(nzb, displayName, options.force, error);
     if (verdict != UsenetAddOutcome::Added) {
-        logInfo(QStringLiteral("Usenet: not adding \"%1\": %2").arg(displayName, error));
+        logUsenet(QStringLiteral("Usenet: not adding \"%1\": %2").arg(displayName, error));
         report(verdict);
         return {};
     }
@@ -391,7 +393,7 @@ QString UsenetQueue::addNzb(const QByteArray& data, const QString& name, QString
                          ? options.category
                          : matchAutoCategory(thePrefs.categories(), item->name);
     if (options.category <= 0 && item->category > 0) {
-        logInfo(QStringLiteral("Usenet: auto-categorised %1 into \"%2\"")
+        logUsenet(QStringLiteral("Usenet: auto-categorised %1 into \"%2\"")
                     .arg(item->name,
                          thePrefs.category(item->category).displayName()));
     }
@@ -438,7 +440,7 @@ QString UsenetQueue::addNzb(const QByteArray& data, const QString& name, QString
     m_items.push_back(std::move(rt));
 
     const NzbShortfall shortfall = m_items.back()->item->nzb.shortfall();
-    logInfo(QStringLiteral("Usenet: queued \"%1\" (%2 file(s), %3 article(s))")
+    logUsenet(QStringLiteral("Usenet: queued \"%1\" (%2 file(s), %3 article(s))")
                 .arg(m_items.back()->item->name)
                 .arg(m_items.back()->item->nzb.files.size())
                 .arg(m_items.back()->item->segmentCount()));
@@ -446,7 +448,7 @@ QString UsenetQueue::addNzb(const QByteArray& data, const QString& name, QString
         // The NZB is short of what its own subject counters claim. Said once,
         // as information: those articles may still be on every server, and this
         // has changed nothing about what will be fetched.
-        logWarning(QStringLiteral("Usenet: \"%1\" lists %2% of the articles its "
+        logUsenetWarning(QStringLiteral("Usenet: \"%1\" lists %2% of the articles its "
                                   "subjects claim (%3 not listed)%4")
                        .arg(m_items.back()->item->name)
                        .arg(shortfall.percent())
@@ -575,7 +577,7 @@ bool UsenetQueue::resumeItem(const QString& id, ResumeIntent intent)
         if (intent != ResumeIntent::User)
             return false;
         rt->item->checksOverridden |= int(rt->item->stopReason);
-        logInfo(QStringLiteral("Usenet: \"%1\" resumed past its check — %2")
+        logUsenet(QStringLiteral("Usenet: \"%1\" resumed past its check — %2")
                     .arg(rt->item->name, rt->item->stopDetail));
     }
     rt->item->stopReason = UsenetStopReason::None;
@@ -599,7 +601,7 @@ bool UsenetQueue::resumeItem(const QString& id, ResumeIntent intent)
     if (rt->item->status == UsenetItemStatus::Failed
         && !rt->item->failedLadder.isEmpty()
         && rt->item->failedLadder != serverLadderDigest()) {
-        logInfo(QStringLiteral("Usenet: \"%1\" is being resumed with a different "
+        logUsenet(QStringLiteral("Usenet: \"%1\" is being resumed with a different "
                                "set of accounts — asking again for what was missing")
                     .arg(rt->item->name));
         if (retryMissingArticles(id))
@@ -653,7 +655,7 @@ bool UsenetQueue::retryMissingArticles(const QString& id)
     // map, and guessing from the count would re-ask the whole file.
     for (const UsenetFileState& st : rt->item->files) {
         if (st.missingSegments != int(st.missing.count(true))) {
-            logWarning(QStringLiteral("Usenet: cannot retry \"%1\" — it was queued "
+            logUsenetWarning(QStringLiteral("Usenet: cannot retry \"%1\" — it was queued "
                                       "before this version recorded which articles "
                                       "were missing")
                            .arg(rt->item->name));
@@ -672,7 +674,7 @@ bool UsenetQueue::retryMissingArticles(const QString& id)
 
     if (rt->refetch.armed == 0) {
         if (!refused.isEmpty()) {
-            logWarning(QStringLiteral("Usenet: nothing to retry for \"%1\" — %2 no "
+            logUsenetWarning(QStringLiteral("Usenet: nothing to retry for \"%1\" — %2 no "
                                       "longer on disk")
                            .arg(rt->item->name, refused.join(QStringLiteral(", "))));
         }
@@ -699,7 +701,7 @@ bool UsenetQueue::retryMissingArticles(const QString& id)
     rebuildPlan(*rt);
     persist(*rt);
 
-    logInfo(QStringLiteral("Usenet: asking again for %1 missing article(s) of \"%2\"")
+    logUsenet(QStringLiteral("Usenet: asking again for %1 missing article(s) of \"%2\"")
                 .arg(rt->refetch.armed)
                 .arg(rt->item->name));
 
@@ -848,7 +850,7 @@ QString UsenetQueue::setFilesSkipped(const QString& id, const QList<int>& fileIn
                          || UsenetUnpacker::volumePositionOf(volumeNameOf(*rt, f)).index >= 0;
     }
 
-    logInfo(QStringLiteral("Usenet: \"%1\" — %2 %3 file(s)")
+    logUsenet(QStringLiteral("Usenet: \"%1\" — %2 %3 file(s)")
                 .arg(item.name, skipped ? QStringLiteral("skipping") : QStringLiteral("fetching"))
                 .arg(targets.size()));
 
@@ -1299,18 +1301,21 @@ void UsenetQueue::promoteRange(ItemRuntime& rt, int fileIndex, qint64 offset, qi
 void UsenetQueue::setRateLimit(qint64 bytesPerSecond)
 {
     m_rateLimit = std::max<qint64>(0, bytesPerSecond);
+    distributeRateLimit();
+}
 
-    const int workerCount = m_workers.size();
-    if (workerCount <= 0)
-        return;
+QList<qint64> UsenetQueue::rateShares(qint64 limit, const QList<int>& live)
+{
+    QList<qint64> shares(live.size(), 0);
+    if (limit <= 0 || live.isEmpty())
+        return shares;
 
-    const qint64 share = m_rateLimit <= 0
-                             ? 0
-                             : std::max<qint64>(1, m_rateLimit / workerCount);
-    for (UsenetWorker* w : m_workers) {
-        QMetaObject::invokeMethod(w, "setRateLimit", Qt::QueuedConnection,
-                                  Q_ARG(qint64, share));
-    }
+    qint64 total = 0;
+    for (const int n : live)
+        total += std::max(n, 1);
+    for (qsizetype i = 0; i < live.size(); ++i)
+        shares[i] = std::max<qint64>(1, limit * std::max(live.at(i), 1) / total);
+    return shares;
 }
 
 bool UsenetQueue::setAccountUsage(const QString& accountId, qint64 periodBytes,
@@ -1353,14 +1358,14 @@ void UsenetQueue::setEnginePaused(bool paused)
     m_enginePaused = paused;
 
     if (paused) {
-        logInfo(QStringLiteral("Usenet: all downloads paused — articles in flight finish, "
+        logUsenet(QStringLiteral("Usenet: all downloads paused — articles in flight finish, "
                                "nothing new starts"));
         for (auto& rt : m_items) {
             if (noteWaitReason(*rt))
                 emit itemChanged(rt->item->id);
         }
     } else {
-        logInfo(QStringLiteral("Usenet: downloads resumed"));
+        logUsenet(QStringLiteral("Usenet: downloads resumed"));
         restoreWaitReasons();
         // A parked item's allowance may have changed while nothing was asked;
         // the next round re-parks whatever is still over.
@@ -1373,10 +1378,13 @@ void UsenetQueue::setEnginePaused(bool paused)
 
 int UsenetQueue::activeFetches() const
 {
+    // Connections, not articles: a pipelined one shares its connection.
     int total = 0;
     for (const int inFlight : m_workerInFlight)
         total += inFlight;
-    return total;
+    for (const int followers : m_workerFollowers)
+        total -= followers;
+    return std::max(0, total);
 }
 
 // ---------------------------------------------------------------------------
@@ -1432,8 +1440,35 @@ void UsenetQueue::startWorkers()
 
         m_threads.append(thread);
         m_workers.append(worker);
+        connect(worker, &UsenetWorker::liveSocketsChanged, this,
+                [this, generation](int workerIndex, int live) {
+                    if (generation != m_workerGeneration || workerIndex < 0
+                        || workerIndex >= m_workerLive.size())
+                        return;
+                    m_workerLive[workerIndex] = live;
+                    m_rateSharesDirty = true;
+                }, Qt::QueuedConnection);
+        connect(worker, &UsenetWorker::pipelineSlotsChanged, this,
+                [this, generation](int workerIndex, int slotCount, int followers) {
+                    if (generation != m_workerGeneration || workerIndex < 0
+                        || workerIndex >= m_workerSlots.size())
+                        return;
+                    const bool grew = slotCount > m_workerSlots.at(workerIndex);
+                    m_workerSlots[workerIndex] = slotCount;
+                    m_workerFollowers[workerIndex] = followers;
+                    if (grew) {
+                        m_workerStarved[workerIndex] = false;
+                        dispatch();
+                    }
+                }, Qt::QueuedConnection);
+
         m_workerCapacity.append(0);
         m_workerInFlight.append(0);
+        m_workerLive.append(0);
+        m_workerSlots.append(0);
+        m_workerFollowers.append(0);
+        m_workerStarved.append(false);
+        m_workerShare.append(-1);
 
         thread->start();
     }
@@ -1490,7 +1525,7 @@ void UsenetQueue::startWorkers()
 
     setRateLimit(m_rateLimit);
 
-    logInfo(QStringLiteral("Usenet: %1 worker thread(s) over %2 connection(s)")
+    logUsenet(QStringLiteral("Usenet: %1 worker thread(s) over %2 connection(s)")
                 .arg(workerCount)
                 .arg(totalConnections));
 }
@@ -1516,6 +1551,11 @@ void UsenetQueue::stopWorkers()
     m_workers.clear();
     m_workerCapacity.clear();
     m_workerInFlight.clear();
+    m_workerLive.clear();
+    m_workerSlots.clear();
+    m_workerFollowers.clear();
+    m_workerStarved.clear();
+    m_workerShare.clear();
     m_workerLevels.clear();
     m_workerServers.clear();
 
@@ -1590,6 +1630,7 @@ void UsenetQueue::onCapacityChanged(int workerIndex, int capacity)
 {
     if (workerIndex >= 0 && workerIndex < m_workerCapacity.size()) {
         m_workerCapacity[workerIndex] = capacity;
+        m_workerStarved[workerIndex] = false;
         dispatch();
     }
 }
@@ -1745,19 +1786,17 @@ void UsenetQueue::dispatch()
     // No usable account configured. nextServableLevel() answers -1 for every
     // segment in that state, and acting on it would convert the whole queue into
     // missing articles because the user disabled their servers.
-    if (m_ladder.isEmpty())
+    if (m_ladder.isEmpty()) {
+        noteDispatchPark(QStringLiteral("no usable server"));
         return;
+    }
 
     // The user paused everything. Before the probes too: a check is traffic.
     // Articles already in flight still land through onSegmentFinished().
-    if (m_enginePaused)
+    if (m_enginePaused) {
+        noteDispatchPark(QStringLiteral("engine paused"));
         return;
-
-    // A dispatch round that found nothing leasable stays parked until the next
-    // tick clears this. Without it, every "no connection available" result would
-    // trigger another identical round.
-    if (m_starved)
-        return;
+    }
 
     // No room to put what we would ask for. Like the allowance, this waits: it
     // never touches `tried`, never spends a retry and never reaches
@@ -1769,13 +1808,18 @@ void UsenetQueue::dispatch()
     // before the first tick had ever looked at the volume. Self-gated, so this
     // is a syscall at most every kDiskCheckIntervalMs however often it is asked.
     refreshDiskState();
-    if (m_diskBlocked)
+    if (m_diskBlocked) {
+        noteDispatchPark(QStringLiteral("disk below the free-space floor"));
         return;
+    }
 
     // A connection died at the proxy, which every account is behind. Waiting it
     // out is the only answer that cannot spend retries or back providers off.
-    if (m_proxyBlockedUntilMs > QDateTime::currentMSecsSinceEpoch())
+    if (m_proxyBlockedUntilMs > QDateTime::currentMSecsSinceEpoch()) {
+        noteDispatchPark(QStringLiteral("proxy failed"));
         return;
+    }
+    noteDispatchPark({});
 
     // Once per round rather than once per segment, so every segment in a round
     // sees the same answer and a meter crossing its allowance mid-round cannot
@@ -1825,7 +1869,13 @@ void UsenetQueue::dispatch()
     bool noMoreWork = false;
 
     for (int w = 0; w < m_workers.size() && !noMoreWork; ++w) {
-        while (m_workerInFlight.at(w) < m_workerCapacity.at(w)) {
+        // Nothing leasable there last time: the others still get work.
+        if (m_workerStarved.value(w)) {
+            ++m_diagStarvedSkips;
+            continue;
+        }
+        // Pipeline slots: a nearly finished article takes the next one behind it.
+        while (m_workerInFlight.at(w) < m_workerCapacity.at(w) + m_workerSlots.at(w)) {
             bool dispatched = false;
             bool rungMismatch = false;
 
@@ -1914,6 +1964,7 @@ void UsenetQueue::dispatch()
 
                     if (rt->item->status == UsenetItemStatus::Queued) {
                         rt->item->status = UsenetItemStatus::Downloading;
+                        logUsenet(QStringLiteral("Usenet: downloading \"%1\"").arg(rt->item->name));
                         emit itemChanged(rt->item->id);
                     }
 
@@ -1952,7 +2003,15 @@ void UsenetQueue::dispatch()
 
 void UsenetQueue::onTick()
 {
-    m_starved = false;
+    m_workerStarved.fill(false);
+    if (++m_diagTicks * kTickMs >= kStateLogIntervalMs) {
+        m_diagTicks = 0;
+        logQueueState();
+    }
+
+    // Coalesced here: live counts move on every lease and release.
+    if (m_rateSharesDirty)
+        distributeRateLimit();
 
     // Cheap: self-gated to kDiskCheckIntervalMs, and a no-op when the user has
     // the check switched off.
@@ -2139,6 +2198,14 @@ void UsenetQueue::onSegmentFinished(const UsenetFetchResult& result, bool curren
 
     if (result.error == NntpError::None) {
         markSegmentDone(*rt, result);
+    } else if (result.requeue) {
+        // Pipelined behind an article whose connection went away: never asked.
+        // Back at the cursor like below, no retry, no starve. No dispatch either:
+        // the article ahead of it reports right after and is put in front, and
+        // dispatching now could park this one ahead of that retry.
+        returnToPlan(*rt, key);
+        ++m_diagRequeued;
+        return;
     } else if (result.noServerAvailable) {
         // Nothing was leasable. Put the segment back untouched — no retry spent,
         // no level moved — and wait for the tick. Re-dispatching here instead
@@ -2152,10 +2219,11 @@ void UsenetQueue::onSegmentFinished(const UsenetFetchResult& result, bool curren
         //
         // It cannot block the rest of the plan: dispatch() advances the cursor
         // as it hands a segment out, so the same round goes on to the next one,
-        // and m_starved is what holds this to one attempt per tick.
-        rt->plan.insert(qBound(0, rt->planCursor, int(rt->plan.size())),
-                        SegmentKey{result.fileIndex, result.segmentIndex}.packed());
-        m_starved = true;
+        // and m_workerStarved is what holds this to one attempt per tick.
+        // Behind a retry of an earlier part: a pipelined dispatch can miss its
+        // slot when the connection dies under the article that retry is for.
+        returnToPlan(*rt, key);
+        markStarved(result.workerIndex);
         return;
     } else {
         handleSegmentFailure(*rt, result);
@@ -2472,7 +2540,7 @@ void UsenetQueue::sealFile(ItemRuntime& rt, int fileIndex)
         if (QFile::rename(st.tempPath, sealedPath)) {
             st.tempPath = sealedPath;
         } else {
-            logWarning(QStringLiteral("Usenet: cannot name \"%1\" in the work folder; "
+            logUsenetWarning(QStringLiteral("Usenet: cannot name \"%1\" in the work folder; "
                                       "post-processing may not recognise it").arg(name));
         }
     }
@@ -2502,7 +2570,7 @@ void UsenetQueue::sealFile(ItemRuntime& rt, int fileIndex)
     }
 
     if (st.missingSegments > 0) {
-        logInfo(QStringLiteral("Usenet: assembled \"%1\" with %2 article(s) missing")
+        logUsenet(QStringLiteral("Usenet: assembled \"%1\" with %2 article(s) missing")
                     .arg(QFileInfo(st.tempPath).fileName())
                     .arg(st.missingSegments));
     }
@@ -3288,7 +3356,7 @@ void UsenetQueue::beginPostProcessing(ItemRuntime& rt)
     if (!volumeHasRoom(incoming)) {
         if (rt.item->stalledReason.isEmpty()) {
             rt.item->stalledReason = tr("waiting for disk space to publish");
-            logWarning(QStringLiteral("Usenet: \"%1\" is downloaded but \"%2\" has no "
+            logUsenetWarning(QStringLiteral("Usenet: \"%1\" is downloaded but \"%2\" has no "
                                       "room for it")
                            .arg(rt.item->name, incoming));
             emit itemChanged(rt.item->id);
@@ -3523,7 +3591,7 @@ void UsenetQueue::onPostFinished(const UsenetPostResult& result)
                 continue;
             QString error;
             if (!createTargetFile(rt->item->files.at(f).tempPath, error)) {
-                logWarning(QStringLiteral("Usenet: %1").arg(error));
+                logUsenetWarning(QStringLiteral("Usenet: %1").arg(error));
                 continue;
             }
             rt->item->files[f].neededForRepair = true;
@@ -3535,7 +3603,7 @@ void UsenetQueue::onPostFinished(const UsenetPostResult& result)
             return;
         }
 
-        logInfo(QStringLiteral("Usenet: \"%1\" needs %2 skipped file(s) for its repair; "
+        logUsenet(QStringLiteral("Usenet: \"%1\" needs %2 skipped file(s) for its repair; "
                                "fetching them")
                     .arg(rt->item->name).arg(fetched));
 
@@ -3567,7 +3635,7 @@ void UsenetQueue::onPostFinished(const UsenetPostResult& result)
             return;
         }
 
-        logInfo(QStringLiteral("Usenet: \"%1\" needs %2 recovery block(s); fetching volumes")
+        logUsenet(QStringLiteral("Usenet: \"%1\" needs %2 recovery block(s); fetching volumes")
                     .arg(rt->item->name).arg(result.blocksNeeded));
 
         rt->item->status = UsenetItemStatus::Downloading;
@@ -3656,7 +3724,7 @@ bool UsenetQueue::requestPar2Volumes(ItemRuntime& rt, int blocks)
         QString error;
         if (c.fileIndex >= rt.item->files.size()
             || !createTargetFile(rt.item->files.at(c.fileIndex).tempPath, error)) {
-            logWarning(QStringLiteral("Usenet: %1").arg(error));
+            logUsenetWarning(QStringLiteral("Usenet: %1").arg(error));
             continue;
         }
 
@@ -3681,7 +3749,7 @@ void UsenetQueue::publishStaged(ItemRuntime& rt, const UsenetPostResult& result)
         // in-place and therefore atomic: there is no instant at which a
         // half-written file is visible under a shareable name.
         if (!QFile::rename(stagedPath, finalPath)) {
-            logError(QStringLiteral("Usenet: cannot name \"%1\"")
+            logUsenetError(QStringLiteral("Usenet: cannot name \"%1\"")
                          .arg(QFileInfo(finalPath).fileName()));
             QFile::remove(stagedPath);
             continue;
@@ -3692,12 +3760,12 @@ void UsenetQueue::publishStaged(ItemRuntime& rt, const UsenetPostResult& result)
         // directory outright because isShareableDirectory() excludes it. Using
         // the wrong one logs a warning and shares nothing until a full rescan.
         if (theApp.sharedFileList && !theApp.sharedFileList->addFileInSharedLocation(finalPath)) {
-            logWarning(QStringLiteral("Usenet: \"%1\" completed but is not in a shared "
+            logUsenetWarning(QStringLiteral("Usenet: \"%1\" completed but is not in a shared "
                                       "location; it will not be offered to peers")
                            .arg(QFileInfo(finalPath).fileName()));
         }
 
-        logInfo(QStringLiteral("Usenet: completed \"%1\"")
+        logUsenet(QStringLiteral("Usenet: completed \"%1\"")
                     .arg(QFileInfo(finalPath).fileName()));
 
         published.append(finalPath);
@@ -3749,7 +3817,7 @@ void UsenetQueue::failItem(ItemRuntime& rt, const QString& message)
     rt.item->failedLadder = serverLadderDigest();
     persist(rt);
 
-    logWarning(QStringLiteral("Usenet: \"%1\" failed: %2")
+    logUsenetWarning(QStringLiteral("Usenet: \"%1\" failed: %2")
                    .arg(rt.item->name, rt.item->error));
 
     emit itemChanged(rt.item->id);
@@ -4006,7 +4074,7 @@ void UsenetQueue::refreshQuotaState()
         // 32 MB off the overshoot.
         if (spent * 10 >= *allowance * 9 && !m_quotaWarned.contains(bucket)) {
             warned.insert(bucket);
-            logWarning(QStringLiteral("Usenet: %1 has used %2% of its allowance")
+            logUsenetWarning(QStringLiteral("Usenet: %1 has used %2% of its allowance")
                            .arg(s.displayName())
                            .arg(*allowance > 0 ? spent * 100 / *allowance : 0));
         }
@@ -4058,7 +4126,7 @@ void UsenetQueue::noteQuotaStall(ItemRuntime& rt, const QStringList& tried, qint
     // fill log.log inside an hour.
     if (!m_quotaStallLogged) {
         m_quotaStallLogged = true;
-        logWarning(QStringLiteral("Usenet: %1 is waiting — %2")
+        logUsenetWarning(QStringLiteral("Usenet: %1 is waiting — %2")
                        .arg(rt.item->name, rt.item->stalledReason));
     }
 
@@ -4111,7 +4179,7 @@ void UsenetQueue::markSegmentMissing(ItemRuntime& rt, int fileIndex, int segment
     rt.attempts.remove(SegmentKey{fileIndex, segmentIndex}.packed());
     rt.dirty = true;
 
-    logWarning(QStringLiteral("Usenet: article %1 unavailable — %2")
+    logUsenetWarning(QStringLiteral("Usenet: article %1 unavailable — %2")
                    .arg(messageId, reason));
 }
 
@@ -4183,6 +4251,8 @@ void UsenetQueue::dispatchProbes()
     for (int w = 0; w < m_workers.size(); ++w) {
         if (w >= m_workerCapacity.size() || w >= m_workerInFlight.size())
             break;
+        if (m_workerStarved.value(w))
+            continue;
 
         const int reserved = std::max(1, m_workerCapacity.at(w) / kProbeCapacityDivisor);
         int spent = 0;
@@ -4311,7 +4381,7 @@ void UsenetQueue::handleProbeResult(ItemRuntime& rt, const UsenetFetchResult& re
         // Nothing leasable. Not an answer about the article — put it back and
         // let the next round ask.
         rt.checkPlan.insert(qBound(0, rt.checkCursor, int(rt.checkPlan.size())), key);
-        m_starved = true;
+        markStarved(result.workerIndex);
         return;
     }
 
@@ -4428,7 +4498,7 @@ void UsenetQueue::finishHealthCheck(ItemRuntime& rt)
         item.status = UsenetItemStatus::Paused;
         item.stalledReason = tr("only %1% of this release looks available")
                                  .arg(verdict.percent);
-        logWarning(QStringLiteral("Usenet: \"%1\" paused before downloading — "
+        logUsenetWarning(QStringLiteral("Usenet: \"%1\" paused before downloading — "
                                   "%2% available, %3 short, %4 recovery")
                        .arg(item.name)
                        .arg(verdict.percent)
@@ -4442,7 +4512,7 @@ void UsenetQueue::finishHealthCheck(ItemRuntime& rt)
         item.stalledReason.clear();
         noteWaitReason(rt);
         if (verdict.probed) {
-            logInfo(QStringLiteral("Usenet: \"%1\" checked out at %2%")
+            logUsenet(QStringLiteral("Usenet: \"%1\" checked out at %2%")
                         .arg(item.name)
                         .arg(verdict.percent));
         }
@@ -4536,7 +4606,7 @@ UsenetAddOutcome UsenetQueue::findDuplicate(const NzbInfo& nzb, const QString& n
         return UsenetAddOutcome::Added;   // asked, and answered yes
 
     if (softMatch != nullptr) {
-        logInfo(QStringLiteral("Usenet: \"%1\" looks like a repost of \"%2\" "
+        logUsenet(QStringLiteral("Usenet: \"%1\" looks like a repost of \"%2\" "
                                "(same name and size, different articles) — adding it anyway")
                     .arg(name, softMatch->name));
     }
@@ -4644,7 +4714,7 @@ void UsenetQueue::learnPar2Names(ItemRuntime& rt)
         return;
 
     if (QFileInfo(indexPath).size() > kMaxPar2IndexBytes) {
-        logInfo(QStringLiteral("Usenet: PAR2 index for \"%1\" is too large to read for names")
+        logUsenet(QStringLiteral("Usenet: PAR2 index for \"%1\" is too large to read for names")
                     .arg(rt.item->name));
         rt.par2NamesState = ItemRuntime::Par2NamesState::Unavailable;
         return;
@@ -4675,7 +4745,7 @@ void UsenetQueue::learnPar2Names(ItemRuntime& rt)
             rt.par2Names.claim(QFileInfo(st.tempPath).fileName());
     }
 
-    logInfo(QStringLiteral("Usenet: PAR2 set names %1 file(s) of \"%2\" (%3 ms)")
+    logUsenet(QStringLiteral("Usenet: PAR2 set names %1 file(s) of \"%2\" (%3 ms)")
                 .arg(rt.par2Names.size())
                 .arg(rt.item->name)
                 .arg(clock.elapsed()));
@@ -4727,7 +4797,7 @@ void UsenetQueue::resolvePar2Name(ItemRuntime& rt, int fileIndex)
     // The set cache is keyed by base name, and this changes it.
     rt.streamIndex.invalidate();
 
-    logInfo(QStringLiteral("Usenet: PAR2 names file %1 of \"%2\" \"%3\"")
+    logUsenet(QStringLiteral("Usenet: PAR2 names file %1 of \"%2\" \"%3\"")
                 .arg(fileIndex).arg(rt.item->name, safe));
     emit itemChanged(rt.item->id);
 }
@@ -4792,7 +4862,7 @@ bool UsenetQueue::rearmMissingSegments(ItemRuntime& rt, int fileIndex)
         if (rescued.isEmpty() || !usable(rescued))
             return false;
 
-        logInfo(QStringLiteral("Usenet: \"%1\" was renamed by the repair — "
+        logUsenet(QStringLiteral("Usenet: \"%1\" was renamed by the repair — "
                                "retrying against \"%2\"")
                     .arg(rt.item->name, QFileInfo(rescued).fileName()));
         st.tempPath = rescued;
@@ -4843,7 +4913,7 @@ void UsenetQueue::noteRefetchResolved(ItemRuntime& rt, int fileIndex, int segmen
     // turn a region it read as zeros into a real volume header.
     rt.streamIndex.invalidate();
 
-    logInfo(QStringLiteral("Usenet: retry of \"%1\" recovered %2 of %3 article(s)")
+    logUsenet(QStringLiteral("Usenet: retry of \"%1\" recovered %2 of %3 article(s)")
                 .arg(rt.item->name)
                 .arg(rt.refetch.landed)
                 .arg(rt.refetch.armed));
@@ -4900,11 +4970,11 @@ void UsenetQueue::refreshDiskState(bool force)
     if (blocked) {
         if (!m_diskStallLogged) {
             m_diskStallLogged = true;
-            logWarning(QStringLiteral("Usenet: paused — %1 (%2)").arg(reason, dir));
+            logUsenetWarning(QStringLiteral("Usenet: paused — %1 (%2)").arg(reason, dir));
         }
     } else {
         m_diskStallLogged = false;
-        logInfo(QStringLiteral("Usenet: resuming — the download folder has room again"));
+        logUsenet(QStringLiteral("Usenet: resuming — the download folder has room again"));
     }
 }
 
@@ -4926,7 +4996,7 @@ void UsenetQueue::noteProxyStall(const QString& text)
 
     const QString reason = tr("waiting for the proxy — %1").arg(text);
     if (m_proxyStallReason.isEmpty()) {
-        logWarning(QStringLiteral("Usenet: waiting for the proxy, retrying every %1 s — %2")
+        logUsenetWarning(QStringLiteral("Usenet: waiting for the proxy, retrying every %1 s — %2")
                        .arg(waitSec)
                        .arg(text));
     }
@@ -4958,7 +5028,7 @@ void UsenetQueue::noteProxyRecovered()
         noteWaitReason(*rt);
         emit itemChanged(rt->item->id);
     }
-    logInfo(QStringLiteral("Usenet: news servers are reachable again"));
+    logUsenet(QStringLiteral("Usenet: news servers are reachable again"));
 }
 
 bool UsenetQueue::noteWaitReason(ItemRuntime& rt)
@@ -5052,7 +5122,7 @@ bool UsenetQueue::stopForCheck(ItemRuntime& rt, UsenetStopReason reason, const Q
     cancelEncryptedPreview(rt);
     persist(rt);
 
-    logWarning(QStringLiteral("Usenet: paused \"%1\" — %2").arg(rt.item->name, detail));
+    logUsenetWarning(QStringLiteral("Usenet: paused \"%1\" — %2").arg(rt.item->name, detail));
     emit itemChanged(rt.item->id);
     return true;
 }
@@ -5120,6 +5190,99 @@ QString UsenetQueue::serverLadderDigest() const
                                  QCryptographicHash::Sha1)
             .toHex()
             .left(16));
+}
+
+void UsenetQueue::distributeRateLimit()
+{
+    // By live sockets, not an equal slice per worker: a fixed 1/N left an idle
+    // worker's slice unused and gave a thinly loaded worker's sockets more than
+    // a busy one's. Sent only on change; setReadRateLimit keeps banked credit.
+    m_rateSharesDirty = false;
+    const QList<qint64> shares = rateShares(m_rateLimit, m_workerLive);
+    for (qsizetype i = 0; i < m_workers.size() && i < shares.size(); ++i) {
+        if (shares.at(i) == m_workerShare.at(i))
+            continue;
+        m_workerShare[i] = shares.at(i);
+        logUsenetDebug(QStringLiteral("Usenet: worker %1 rate share %2 KB/s over %3 socket(s)")
+                           .arg(i)
+                           .arg(shares.at(i) / 1024)
+                           .arg(m_workerLive.value(i)));
+        QMetaObject::invokeMethod(m_workers.at(i), "setRateLimit", Qt::QueuedConnection,
+                                  Q_ARG(qint64, shares.at(i)));
+    }
+}
+
+void UsenetQueue::returnToPlan(ItemRuntime& rt, quint64 key)
+{
+    int at = qBound(0, rt.planCursor, int(rt.plan.size()));
+    const quint64 file = key >> 32;
+    while (at < rt.plan.size() && (rt.plan.at(at) >> 32) == file && rt.plan.at(at) < key)
+        ++at;
+    rt.plan.insert(at, key);
+}
+
+void UsenetQueue::markStarved(int workerIndex)
+{
+    ++m_diagNoServer;
+    if (workerIndex >= 0 && workerIndex < m_workerStarved.size())
+        m_workerStarved[workerIndex] = true;
+}
+
+void UsenetQueue::noteDispatchPark(const QString& reason)
+{
+    if (reason == m_dispatchParkReason)
+        return;
+    if (reason.isEmpty())
+        logUsenetDebug(QStringLiteral("Usenet: dispatch resumed (was: %1)").arg(m_dispatchParkReason));
+    else
+        logUsenetDebug(QStringLiteral("Usenet: dispatch parked: %1").arg(reason));
+    m_dispatchParkReason = reason;
+}
+
+void UsenetQueue::logQueueState()
+{
+    int active = 0;
+    for (const auto& rt : m_items) {
+        if (rt->item->isActive() || rt->item->status == UsenetItemStatus::Checking)
+            ++active;
+    }
+    int inFlight = 0, capacity = 0, slotCount = 0, followers = 0;
+    for (qsizetype i = 0; i < m_workers.size(); ++i) {
+        inFlight += m_workerInFlight.value(i);
+        capacity += m_workerCapacity.value(i);
+        slotCount += m_workerSlots.value(i);
+        followers += m_workerFollowers.value(i);
+    }
+    // Quiet when idle: nothing queued, nothing on the wire.
+    if (active == 0 && inFlight == 0)
+        return;
+
+    QStringList caps;
+    for (const int cap : std::as_const(m_workerCapacity))
+        caps.append(QString::number(cap));
+
+    logUsenetDebug(QStringLiteral("Usenet: %1 KB/s (limit %2) | %3 conns open | in flight %4 "
+                                  "of %5 (+%6 slots, %7 pipelined) | per worker %8 | "
+                                  "no-server %9, starved skips %10, requeued %11 | %12 active%13")
+                       .arg(currentRate() / 1024)
+                       .arg(m_rateLimit > 0 ? QString::number(m_rateLimit / 1024)
+                                            : QStringLiteral("none"))
+                       .arg(NntpSocket::openConnectionCount())
+                       .arg(inFlight)
+                       .arg(capacity)
+                       .arg(slotCount)
+                       .arg(followers)
+                       .arg(caps.join(QLatin1Char('/')))
+                       .arg(m_diagNoServer)
+                       .arg(m_diagStarvedSkips)
+                       .arg(m_diagRequeued)
+                       .arg(active)
+                       .arg(m_dispatchParkReason.isEmpty()
+                                ? QString()
+                                : QStringLiteral(" | parked: %1").arg(m_dispatchParkReason)));
+    m_diagNoServer = 0;
+    m_diagStarvedSkips = 0;
+    m_diagRequeued = 0;
 }
 
 } // namespace eMule::usenet

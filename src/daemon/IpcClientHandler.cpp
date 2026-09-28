@@ -3894,6 +3894,8 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setLogWebServer(val.toBool());
     else if (key == QStringLiteral("enableIpcLog"))
         thePrefs.setEnableIpcLog(val.toBool());
+    else if (key == QStringLiteral("showUsenetLog"))
+        thePrefs.setShowUsenetLog(val.toBool());
     else if (key == QStringLiteral("startCoreWithConsole"))
         thePrefs.setStartCoreWithConsole(val.toBool());
     else if (key == QStringLiteral("queueSize"))

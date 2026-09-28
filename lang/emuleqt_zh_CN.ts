@@ -300,7 +300,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+563"/>
+        <location filename="../src/gui/app/main.cpp" line="+567"/>
         <source>Download Added</source>
         <translation>下载已添加</translation>
     </message>
@@ -601,7 +601,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2835"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2836"/>
         <source>Test</source>
         <translation>测试</translation>
     </message>
@@ -1077,12 +1077,12 @@ Download it again?</source>
     <message>
         <location filename="../src/gui/dialogs/BugReportDialog.cpp" line="+54"/>
         <location line="+133"/>
-        <location line="+127"/>
+        <location line="+128"/>
         <source>Submit Bug Report</source>
         <translation>提交错误报告</translation>
     </message>
     <message>
-        <location line="-255"/>
+        <location line="-256"/>
         <source>Report Details</source>
         <translation>报告详情</translation>
     </message>
@@ -1184,7 +1184,7 @@ Download it again?</source>
         <translation>请填写标题和描述两项。</translation>
     </message>
     <message>
-        <location line="+122"/>
+        <location line="+123"/>
         <source>Bug report submitted successfully.</source>
         <translation>错误报告已成功提交。</translation>
     </message>
@@ -3158,7 +3158,13 @@ Please choose another:</source>
         <translation>详细</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+9"/>
+        <location line="+2"/>
+        <source>Usenet</source>
+        <translation>Usenet</translation>
+    </message>
+    <message>
+        <location line="+9"/>
         <location line="+2"/>
         <source>Kad</source>
         <translation>Kad</translation>
@@ -3170,7 +3176,7 @@ Please choose another:</source>
         <translation>IPC</translation>
     </message>
     <message>
-        <location line="+305"/>
+        <location line="+345"/>
         <source>Click here to check if a new version is available</source>
         <translation>点击此处检查是否有新版本</translation>
     </message>
@@ -3189,7 +3195,7 @@ Please choose another:</source>
         <translation>有新版本可用</translation>
     </message>
     <message>
-        <location line="+174"/>
+        <location line="+180"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K：已连接 (LowID)</translation>
     </message>
@@ -3276,14 +3282,14 @@ Please choose another:</source>
         <translation>常见问题</translation>
     </message>
     <message>
-        <location line="-540"/>
+        <location line="-546"/>
         <location line="+7"/>
-        <location line="+536"/>
+        <location line="+542"/>
         <source>Version Check</source>
         <translation>版本检查</translation>
     </message>
     <message>
-        <location line="-598"/>
+        <location line="-604"/>
         <source>Quit eMule Qt</source>
         <translation>退出 eMule Qt</translation>
     </message>
@@ -3340,7 +3346,7 @@ Enable at least one under Options → Connection to connect.</source>
 请在“选项 → 连接”中至少启用一个后再连接。</translation>
     </message>
     <message>
-        <location line="+195"/>
+        <location line="+201"/>
         <source>Connected</source>
         <translation>已连接</translation>
     </message>
@@ -4222,35 +4228,35 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2745"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2746"/>
         <source>Options</source>
         <translation>选项</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1803"/>
+        <location line="+1804"/>
         <source>OK</source>
         <translation>确定</translation>
     </message>
     <message>
-        <location line="-1802"/>
-        <location line="+1803"/>
+        <location line="-1803"/>
+        <location line="+1804"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="-1802"/>
-        <location line="+5355"/>
+        <location line="-1803"/>
+        <location line="+5359"/>
         <source>Apply</source>
         <translation>应用</translation>
     </message>
     <message>
-        <location line="-5354"/>
+        <location line="-5358"/>
         <source>Help</source>
         <translation>帮助</translation>
     </message>
     <message>
-        <location line="+249"/>
+        <location line="+250"/>
         <location line="+1780"/>
         <location line="+63"/>
         <location line="+5"/>
@@ -4291,12 +4297,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5277"/>
+        <location line="+5281"/>
         <source>Language</source>
         <translation>语言</translation>
     </message>
     <message>
-        <location line="-5274"/>
+        <location line="-5278"/>
         <source>System Default</source>
         <translation>系统默认</translation>
     </message>
@@ -4396,12 +4402,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5203"/>
+        <location line="+5207"/>
         <source>Core</source>
         <translation>核心</translation>
     </message>
     <message>
-        <location line="-5198"/>
+        <location line="-5202"/>
         <source>Address:</source>
         <translation>地址：</translation>
     </message>
@@ -4567,13 +4573,13 @@ Are you sure you want to continue?</source>
         <location line="+1016"/>
         <location line="+152"/>
         <location line="+1036"/>
-        <location line="+270"/>
+        <location line="+273"/>
         <location line="+29"/>
         <source>Enabled</source>
         <translation>已启用</translation>
     </message>
     <message>
-        <location line="-4426"/>
+        <location line="-4429"/>
         <source>Reset</source>
         <translation>重置</translation>
     </message>
@@ -7053,7 +7059,12 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>记录原始套接字数据包</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+9"/>
+        <source>Show Usenet log tab</source>
+        <translation>显示 Usenet 日志标签页</translation>
+    </message>
+    <message>
+        <location line="+12"/>
         <source>Upload SpeedSense (not recommended)</source>
         <translation>上传速度感应（不推荐）</translation>
     </message>
@@ -7148,7 +7159,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>队列大小：%1</translation>
     </message>
     <message>
-        <location line="+590"/>
+        <location line="+591"/>
         <source>Proxy settings will only apply to new connections.
 Restart eMule for all connections to use the new proxy settings.
 
@@ -7159,7 +7170,7 @@ News server connections switch over immediately.</source>
 新闻服务器连接会立即切换。</translation>
     </message>
     <message>
-        <location line="+861"/>
+        <location line="+864"/>
         <source>File types</source>
         <translation>文件类型</translation>
     </message>
@@ -7204,17 +7215,17 @@ News server connections switch over immediately.</source>
         <translation>上次更新失败：%1</translation>
     </message>
     <message>
-        <location line="-5806"/>
+        <location line="-5813"/>
         <location line="+1284"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1324"/>
+        <location line="+1327"/>
         <location line="+281"/>
         <source>Remove</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location line="-3851"/>
+        <location line="-3854"/>
         <source>New eMule Qt version detected</source>
         <translation>检测到新的 eMule Qt 版本</translation>
     </message>
@@ -7249,7 +7260,7 @@ News server connections switch over immediately.</source>
         <translation>启动时记录公网 IP 地址</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+6"/>
         <source>Enable IPC log tab</source>
         <translation>启用 IPC 日志标签</translation>
     </message>
@@ -7284,14 +7295,14 @@ News server connections switch over immediately.</source>
         <translation>请求的租期：</translation>
     </message>
     <message>
-        <location line="-2205"/>
+        <location line="-2208"/>
         <location line="+913"/>
-        <location line="+1296"/>
+        <location line="+1299"/>
         <source> s</source>
         <translation> 秒</translation>
     </message>
     <message>
-        <location line="-2251"/>
+        <location line="-2254"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
@@ -7300,7 +7311,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
 请设置得略低于您的套餐。此数值在本地测量，因此会比服务商的数值低几个百分点；达到上限时已在传输中的文章仍会完成。</translation>
     </message>
     <message>
-        <location line="+2366"/>
+        <location line="+2369"/>
         <source>New</source>
         <translation>新建</translation>
     </message>
@@ -7408,11 +7419,11 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>新建计划</translation>
     </message>
     <message>
-        <location line="-3877"/>
+        <location line="-3880"/>
         <location line="+1287"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1578"/>
+        <location line="+1581"/>
         <source>Add</source>
         <translation>添加</translation>
     </message>
@@ -7439,7 +7450,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>设置页面 %1 尚未实现。</translation>
     </message>
     <message>
-        <location line="+177"/>
+        <location line="+178"/>
         <source>Proxy</source>
         <translation>代理</translation>
     </message>
@@ -7460,7 +7471,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>核心连接设置将在重启应用程序后生效。</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+32"/>
         <source>Icons</source>
         <translation>图标</translation>
     </message>

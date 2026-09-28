@@ -4,13 +4,17 @@
 /// @brief The part-bar drawing every progress delegate shares.
 ///
 /// eD2K's download and shared lists and the Usenet queue all draw the same MFC
-/// bar: equal slices coloured by a status byte, a thin percent strip on top.
+/// bar: equal slices coloured by a status byte, a thin percent strip on top,
+/// and optionally the percentage as text (Display > showDwlPercentage).
 /// Only the colour table differs, so that is the one thing passed in.
 
 #include <QByteArray>
 #include <QColor>
+#include <QFont>
+#include <QFontMetrics>
 #include <QPainter>
 #include <QRect>
+#include <QString>
 
 #include <algorithm>
 
@@ -49,6 +53,19 @@ inline void paintProgressStrip(QPainter& painter, const QRect& rect, double perc
         painter.fillRect(QRect(rect.left(), rect.top(), filled, kStripHeight),
                          QColor(0, 224, 0));
     }
+}
+
+/// MFC's "show percentage" overlay: the cell text in white, centred on the bar.
+inline void paintPercentText(QPainter& painter, const QRect& rect, const QFont& font,
+                             const QString& text)
+{
+    if (text.isEmpty() || rect.width() <= 0)
+        return;
+
+    painter.setFont(font);
+    painter.setPen(Qt::white);
+    const QString shown = painter.fontMetrics().elidedText(text, Qt::ElideRight, rect.width());
+    painter.drawText(rect, Qt::AlignCenter | Qt::TextSingleLine, shown);
 }
 
 } // namespace eMule

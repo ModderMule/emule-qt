@@ -19,7 +19,8 @@
 ///     interval rather than removed.
 ///   - "Too many connections" is not such a failure: the account is fine and so
 ///     are its open connections. It **caps** the account at what it holds now
-///     for the retry interval, and nothing is dropped.
+///     for the retry interval, and nothing is dropped. After that the cap
+///     grows one connection per kCapProbeStepMs until a 502 holds it again.
 ///
 /// Connections are created lazily and kept: the TLS handshake and the AUTHINFO
 /// round trip cost more than the article fetch that follows, so a pool that
@@ -112,6 +113,11 @@ public:
     /// again is how one dead provider stalls a whole queue.
     void release(NntpSocket* socket, bool reusable = true);
 
+    /// Whether a leased @p socket may take a pipelined article for @p level:
+    /// right rung, not excluded, not backed off, not due to retire on release.
+    [[nodiscard]] bool canPipeline(const NntpSocket* socket, int level,
+                                   const QStringList& ignoreServers) const;
+
     /// Back this server off for the retry interval.
     void blockServer(const QString& serverKey);
     [[nodiscard]] bool isServerBlocked(const QString& serverKey) const;
@@ -174,6 +180,10 @@ private:
     /// moment the stack unwinds. deleteLater() is the same answer UsenetWorker
     /// already uses for the ArticleFetcher, for the same reason.
     static void retire(Lease& lease);
+
+    /// After a hold, the cap grows by one connection this often while the
+    /// provider keeps accepting them.
+    static constexpr qint64 kCapProbeStepMs = 5'000;
 
     /// A limitConnections() hold on one bucket.
     struct Cap {

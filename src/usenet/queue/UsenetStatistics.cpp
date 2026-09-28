@@ -72,8 +72,9 @@ void UsenetStatistics::noteResult(const UsenetFetchResult& result)
         server->wireBytes += raw;
 
     // Nothing could be leased, so nobody was asked anything; or we tore the
-    // worker down mid-article (engine stop, settings save) and nobody answered.
-    if (result.noServerAvailable || result.aborted)
+    // worker down mid-article (engine stop, settings save) and nobody answered;
+    // or a pipelined article lost its connection before it was asked.
+    if (result.noServerAvailable || result.aborted || result.requeue)
         return;
 
     if (result.probeOnly) {

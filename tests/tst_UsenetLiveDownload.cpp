@@ -18,6 +18,7 @@
 ///   EMULE_NZB_DIR         directory of .nzb files (required)
 ///   EMULE_NZB_MAX_MB      skip a release larger than this (optional)
 ///   EMULE_NZB_TIMEOUT_MIN per-release budget, default 45 (optional)
+///   EMULE_NNTP_RATE_KB    download limit in KB/s, as the daemon's split sets it (optional)
 ///
 /// **Everything it writes, it removes.** Config, scratch and incoming all live
 /// inside one TempDir whose destructor runs on a pass, on a QSKIP and on a
@@ -212,6 +213,8 @@ void tst_UsenetLiveDownload::downloadsRepairsUnpacksAndPublishes()
                                     .cleanup = true,
                                     .directUnpack = true});
     queue.start();
+    if (const int kb = liveEnv("EMULE_NNTP_RATE_KB").toInt(); kb > 0)
+        queue.setRateLimit(qint64(kb) * 1024);
 
     QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
 

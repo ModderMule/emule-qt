@@ -164,6 +164,26 @@ void logDebug(const QString& msg)
     qCDebug(lcEmuleGeneral).noquote() << msg;
 }
 
+void logUsenet(const QString& msg)
+{
+    qCInfo(lcEmuleUsenet).noquote() << msg;
+}
+
+void logUsenetWarning(const QString& msg)
+{
+    qCWarning(lcEmuleUsenet).noquote() << msg;
+}
+
+void logUsenetError(const QString& msg)
+{
+    qCCritical(lcEmuleUsenet).noquote() << msg;
+}
+
+void logUsenetDebug(const QString& msg)
+{
+    qCDebug(lcEmuleUsenet).noquote() << msg;
+}
+
 void logStatusInfo(const QString& msg)
 {
     qCInfo(lcEmuleStatus).noquote() << msg;
@@ -194,8 +214,8 @@ void installConsoleMessagePattern(const QString& processTag)
 // Rotating log file sink
 // ---------------------------------------------------------------------------
 //
-// Three files per process, mirroring the reference's theLog / theVerboseLog
-// (srchybrid/Emule.cpp:528-533) plus a dedicated Kad log. Disabled until a
+// Four files per process, mirroring the reference's theLog / theVerboseLog
+// (srchybrid/Emule.cpp:528-533) plus dedicated Kad and Usenet logs. Disabled until a
 // process opts in.
 
 namespace {
@@ -204,6 +224,7 @@ QMutex s_sinkMutex;
 LogFile s_sinkLog;            ///< non-debug lines
 LogFile s_sinkVerboseLog;     ///< debug lines, except Kad
 LogFile s_sinkKadLog;         ///< emule.kad, whatever its severity
+LogFile s_sinkUsenetLog;      ///< emule.usenet, whatever its severity
 bool s_sinkEnabled = false;
 
 } // namespace
@@ -218,6 +239,7 @@ void applyLogFileSink(const QString& dir, const QString& baseName,
         s_sinkLog.close();
         s_sinkVerboseLog.close();
         s_sinkKadLog.close();
+        s_sinkUsenetLog.close();
 
         if (!enabled)
             return;
@@ -226,6 +248,7 @@ void applyLogFileSink(const QString& dir, const QString& baseName,
         const QString logPath = base + QStringLiteral(".log");
         const QString verbosePath = base + QStringLiteral("_Verbose.log");
         const QString kadPath = base + QStringLiteral("_Kad.log");
+        const QString usenetPath = base + QStringLiteral("_Usenet.log");
 
         if (!s_sinkLog.create(logPath, maxSize))
             failedPath = logPath;
@@ -233,6 +256,8 @@ void applyLogFileSink(const QString& dir, const QString& baseName,
             failedPath = verbosePath;
         else if (!s_sinkKadLog.create(kadPath, maxSize))
             failedPath = kadPath;
+        else if (!s_sinkUsenetLog.create(usenetPath, maxSize))
+            failedPath = usenetPath;
         else
             s_sinkEnabled = true;
 
@@ -240,6 +265,8 @@ void applyLogFileSink(const QString& dir, const QString& baseName,
             s_sinkLog.close();
             s_sinkVerboseLog.close();
             s_sinkKadLog.close();
+            s_sinkUsenetLog.close();
+        s_sinkUsenetLog.close();
         }
     }
 
@@ -265,6 +292,8 @@ void writeToLogFileSink(QtMsgType type, const char* category, const QString& msg
     // qCWarning(lcEmuleKad) lands here too, exactly as it would in the Kad tab.
     if (category && std::strcmp(category, "emule.kad") == 0)
         s_sinkKadLog.log(line);
+    else if (category && std::strcmp(category, "emule.usenet") == 0)
+        s_sinkUsenetLog.log(line);
     // Debug is the reference's LOG_DEBUG: it goes to the verbose log only.
     else if (type == QtDebugMsg)
         s_sinkVerboseLog.log(line);
@@ -279,6 +308,7 @@ void closeLogFileSink()
     s_sinkLog.close();
     s_sinkVerboseLog.close();
     s_sinkKadLog.close();
+    s_sinkUsenetLog.close();
 }
 
 namespace {

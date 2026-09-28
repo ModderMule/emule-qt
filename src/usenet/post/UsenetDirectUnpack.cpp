@@ -127,7 +127,7 @@ void UsenetDirectUnpack::run(const eMule::usenet::UsenetDirectUnpackJob& job)
     }
 
     for (const QString& rejected : reader.rejectedEntries()) {
-        logWarning(QStringLiteral("Usenet: skipped unsafe archive member \"%1\" while unpacking \"%2\"")
+        logUsenetWarning(QStringLiteral("Usenet: skipped unsafe archive member \"%1\" while unpacking \"%2\"")
                        .arg(rejected, job.setKey));
     }
 
@@ -153,7 +153,7 @@ void UsenetDirectUnpack::run(const eMule::usenet::UsenetDirectUnpackJob& job)
         for (const QString& path : reader.extractedFiles())
             QFile::remove(path);
         result.error = QStringLiteral("extraction failed");
-        logWarning(QStringLiteral("Usenet: direct unpack of \"%1\" failed; the normal "
+        logUsenetWarning(QStringLiteral("Usenet: direct unpack of \"%1\" failed; the normal "
                                   "unpack will run at the end").arg(job.setKey));
         emit finished(result);
         return;
@@ -166,7 +166,7 @@ void UsenetDirectUnpack::run(const eMule::usenet::UsenetDirectUnpackJob& job)
     result.extracted = reader.extractedFiles();
     result.ok = true;
 
-    logInfo(QStringLiteral("Usenet: unpacked \"%1\" while downloading (%2 file(s))")
+    logUsenet(QStringLiteral("Usenet: unpacked \"%1\" while downloading (%2 file(s))")
                 .arg(job.setKey).arg(result.extracted.size()));
     emit finished(result);
 }

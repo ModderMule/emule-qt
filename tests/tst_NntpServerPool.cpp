@@ -396,9 +396,16 @@ void tst_NntpServerPool::connectionCapLiftsAfterTheHold()
     QCOMPARE(pool.acquire(0), nullptr);
 
     // The hold ends by itself and says so, or the queue keeps dispatching
-    // against the lowered capacity forever.
+    // against the lowered capacity forever. It probes one connection more, not
+    // the whole limit: the rest of the account may still be in use elsewhere.
     QVERIFY(capacity.wait(3000) || capacity.count() >= 2);
     QCOMPARE(capacity.count(), 2);
+    QCOMPARE(pool.capacity(), 2);
+    QVERIFY(pool.acquire(0) != nullptr);
+    QCOMPARE(pool.acquire(0), nullptr);
+
+    // Accepted, so it steps on to the configured limit.
+    QVERIFY(capacity.wait(8000));
     QCOMPARE(pool.capacity(), 3);
     QVERIFY(pool.acquire(0) != nullptr);
 }

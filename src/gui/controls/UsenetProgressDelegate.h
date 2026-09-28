@@ -7,7 +7,8 @@
 /// release details dialog draw one bar from one set of values: dark grey for
 /// articles in, blue for ones still to fetch, amber in flight, red missing on
 /// every server, light grey for a file left out. A finished file or release is
-/// solid green, as MFC draws a completed download.
+/// solid green, as MFC draws a completed download. The cell text is drawn on
+/// top when showDwlPercentage is on.
 
 #include <QStyledItemDelegate>
 

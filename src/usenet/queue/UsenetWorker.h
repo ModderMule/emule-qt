@@ -28,6 +28,7 @@
 
 #include <QHash>
 #include <QList>
+#include <QSet>
 #include <QNetworkProxy>
 #include <QObject>
 #include <QString>
@@ -132,6 +133,10 @@ struct UsenetFetchResult {
     /// Failed because we tore the worker down (engine stop, settings save), not
     /// because the provider did anything. Statistics must not blame the server.
     bool aborted = false;
+
+    /// Pipelined behind an article whose connection then died: never asked.
+    /// Back at the cursor, no retry spent, nobody blamed.
+    bool requeue = false;
 };
 
 class UsenetWorker : public QObject {
@@ -152,7 +157,8 @@ public slots:
 
     /// This worker's share of the Usenet download budget, in bytes per second.
     /// 0 is unlimited, as everywhere else in eMuleQt. Split again across the
-    /// worker's live sockets, so the sum stays within the share.
+    /// worker's live sockets, so the sum stays within the share. The queue
+    /// sizes it by liveSocketsChanged().
     void setRateLimit(qint64 bytesPerSecond);
 
     void fetchSegment(eMule::usenet::UsenetFetchRequest request);
@@ -168,6 +174,17 @@ signals:
     /// whenever the server list changes. The queue uses it to size its dispatch.
     void capacityChanged(int workerIndex, int capacity);
 
+    /// Download sockets actually leased, probes excluded. The queue weights this
+    /// worker's share of the rate limit by it.
+    void liveSocketsChanged(int workerIndex, int live);
+
+    /// Pipeline capacity: connections whose article is nearly done, free or
+    /// already holding a follower. The queue dispatches that many beyond
+    /// capacityChanged().
+    /// @p followers of them already hold one, which is in flight but not a
+    /// connection of its own.
+    void pipelineSlotsChanged(int workerIndex, int slotCount, int followers);
+
 private:
     struct Job;
 
@@ -175,12 +192,21 @@ private:
     void finishJob(Job* job, NntpError error, const QString& text);
     void applyRateLimits();
     [[nodiscard]] int computeCapacity() const;
+    void watchForFailure(Job* job);
+    void onNearlyDone(Job* job);
+    [[nodiscard]] NntpSocket* takeSlot(const UsenetFetchRequest& request);
+    void reportSlots();
 
     int m_index = 0;
     std::unique_ptr<NntpServerPool> m_pool;
-    QHash<NntpSocket*, Job*> m_jobsBySocket;
+    QHash<NntpSocket*, Job*> m_jobsBySocket;   ///< the job whose response is being read
+    QSet<NntpSocket*> m_slots;                 ///< nearly done, no follower yet
+    QSet<QString> m_noPipeline;                ///< servers that broke on pipelining
     QList<Job*> m_jobs;
     qint64 m_rateLimit = 0;
+    int m_reportedLive = -1;   ///< last liveSocketsChanged() value
+    int m_reportedSlots = 0;   ///< last pipelineSlotsChanged() values
+    int m_reportedFollowers = 0;
     bool m_shuttingDown = false;
 };
 

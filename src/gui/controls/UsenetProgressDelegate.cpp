@@ -6,6 +6,7 @@
 
 #include "controls/PartBarPainter.h"
 #include "controls/UsenetQueueModel.h"
+#include "prefs/Preferences.h"
 
 #include <QPainter>
 
@@ -58,18 +59,19 @@ void UsenetProgressDelegate::paint(QPainter* painter, const QStyleOptionViewItem
 
     if (index.data(kUsenetBarCompleteRole).toBool()) {
         painter->fillRect(bar, QColor(0, 224, 0));
-        painter->restore();
-        return;
+    } else {
+        const QByteArray codes = index.data(kUsenetBarRole).toByteArray();
+        if (codes.isEmpty()) {
+            painter->fillRect(bar, barColorActive(kUsenetBarQueued));
+        } else {
+            const bool paused = index.data(kUsenetBarPausedRole).toBool();
+            paintPartBar(*painter, bar, codes, paused ? barColorPaused : barColorActive);
+        }
+        paintProgressStrip(*painter, bar, index.data(kUsenetBarPercentRole).toDouble());
     }
 
-    const QByteArray codes = index.data(kUsenetBarRole).toByteArray();
-    if (codes.isEmpty()) {
-        painter->fillRect(bar, barColorActive(kUsenetBarQueued));
-    } else {
-        const bool paused = index.data(kUsenetBarPausedRole).toBool();
-        paintPartBar(*painter, bar, codes, paused ? barColorPaused : barColorActive);
-    }
-    paintProgressStrip(*painter, bar, index.data(kUsenetBarPercentRole).toDouble());
+    if (thePrefs.showDwlPercentage())
+        paintPercentText(*painter, bar, opt.font, index.data(Qt::DisplayRole).toString());
 
     painter->restore();
 }

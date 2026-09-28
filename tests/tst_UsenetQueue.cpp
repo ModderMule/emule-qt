@@ -33,6 +33,8 @@
 #include <QTcpServer>
 #include <QTest>
 
+#include <numeric>
+
 using namespace eMule;
 using namespace eMule::usenet;
 using eMule::testing::FakeNntpServer;
@@ -236,6 +238,9 @@ private slots:
     void persistedStateResumesInsteadOfRefetching();
     void connectionBudgetIsDividedNotReplicated();
     void aConnectionLimitBelowTheConfiguredOneStillDownloads();
+    void rateSharesFollowLiveSockets();
+    void theNextArticleIsPipelinedOnTheSameConnection();
+    void aPipelinedArticleOnADroppedConnectionIsRequeuedNotBlamed();
     void missingArticlesEscalateToTheNextLevel();
     void everyServerOnALevelIsAskedBeforeEscalating();
     void retentionSkipsAServerThatCannotHoldTheArticle();
@@ -513,6 +518,138 @@ void tst_UsenetQueue::connectionBudgetIsDividedNotReplicated()
 // Another client on the same account leaves fewer connections than configured.
 // The refusals used to back the account off for 60 s in every worker that got
 // one and drop its working connections too; this test then timed out.
+void tst_UsenetQueue::rateSharesFollowLiveSockets()
+{
+    // Weighted by live sockets so every socket gets the same rate. A fixed 1/N
+    // per worker left an idle worker's slice unused.
+    constexpr qint64 limit = 3'600'000;
+    const auto sum = [](const QList<qint64>& v) {
+        return std::accumulate(v.cbegin(), v.cend(), qint64(0));
+    };
+
+    const QList<qint64> busy = UsenetQueue::rateShares(limit, {12, 12, 0, 12});
+    QCOMPARE(busy.size(), 4);
+    QCOMPARE(busy.at(0), busy.at(1));
+    QCOMPARE(busy.at(1), busy.at(3));
+    QVERIFY(busy.at(2) > 0);                      // a trickle, never "unlimited"
+    QVERIFY(busy.at(2) * 10 < busy.at(0));
+    QVERIFY(sum(busy) <= limit);
+    QVERIFY(sum(busy) >= limit - 4);
+
+    const QList<qint64> uneven = UsenetQueue::rateShares(limit, {1, 11});
+    QCOMPARE(uneven.at(0), limit / 12);
+    QCOMPARE(uneven.at(1), limit * 11 / 12);
+
+    const QList<qint64> idle = UsenetQueue::rateShares(limit, {0, 0, 0, 0});
+    QCOMPARE(idle, QList<qint64>(4, limit / 4));
+
+    QCOMPARE(UsenetQueue::rateShares(0, {3, 5}), QList<qint64>(2, 0));
+}
+
+void tst_UsenetQueue::theNextArticleIsPipelinedOnTheSameConnection()
+{
+    // One connection, a slow server: the next BODY goes out before the current
+    // one is answered, and every article still lands in its place.
+    ScopedStatistics stats;
+    constexpr int kPartsHere = 12;
+    const QByteArray whole = payload(kPartSize * kPartsHere);
+
+    FakeNntpServer server;
+    server.setResponseDelay(30);
+    server.addGroup(QStringLiteral("alt.binaries.test"), kPartsHere, 1, kPartsHere);
+    for (int p = 1; p <= kPartsHere; ++p)
+        server.addArticle(messageIdFor(p), makeArticle(whole, p, kPartsHere,
+                                                       QStringLiteral("pipe.bin")));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 1)}, 60);
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    QVERIFY(!queue.addNzb(makeNzb(QStringLiteral("pipe.bin"), kPartsHere),
+                          QStringLiteral("pipe"), error).isEmpty());
+
+    QVERIFY2(finished.wait(20000), "the pipelined download never finished");
+    QVERIFY2(finished.at(0).at(1).toBool(), "completed with missing articles");
+    QCOMPARE(server.connectionCount(), 1);
+    QVERIFY2(server.maxOutstanding() >= 2, "never pipelined");
+
+    QFile f(QDir(thePrefs.incomingDir()).filePath(QStringLiteral("pipe.bin")));
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    QCOMPARE(f.readAll(), whole);
+
+    const UsenetCounters& c = stats->usenetSession();
+    QCOMPARE(c.articlesDownloaded, uint64(kPartsHere));
+    // Bytes of a follower read before its turn go to the article ahead of it:
+    // same account, so the meter still matches the statistics exactly.
+    const QString account = serverConfig(port, 1).accountId;
+    QCOMPARE(qint64(queue.stats().servers().value(account).wireBytes),
+             queue.usage().totalBytes(account));
+
+    queue.stop();
+}
+
+void tst_UsenetQueue::aPipelinedArticleOnADroppedConnectionIsRequeuedNotBlamed()
+{
+    // The connection dies under article 3 with article 4 queued behind it. 4 was
+    // never answered: it goes back to the plan with no retry spent and no
+    // connection error booked; only 3's drop is the provider's.
+    ScopedStatistics stats;
+    constexpr int kPartsHere = 8;
+    const QByteArray whole = payload(kPartSize * kPartsHere);
+
+    FakeNntpServer server;
+    server.setResponseDelay(30);
+    server.setDropOnArticle(messageIdFor(3));
+    server.addGroup(QStringLiteral("alt.binaries.test"), kPartsHere, 1, kPartsHere);
+    for (int p = 1; p <= kPartsHere; ++p)
+        server.addArticle(messageIdFor(p), makeArticle(whole, p, kPartsHere,
+                                                       QStringLiteral("drop.bin")));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 1)}, 1);   // 1 s backoff after the drop
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    QVERIFY(!queue.addNzb(makeNzb(QStringLiteral("drop.bin"), kPartsHere),
+                          QStringLiteral("drop"), error).isEmpty());
+
+    QVERIFY2(finished.wait(20000), "stalled after the pipelined drop");
+    QVERIFY2(finished.at(0).at(1).toBool(), "completed with missing articles");
+
+    const QString follower = QStringLiteral("BODY <%1>").arg(messageIdFor(4));
+    QVERIFY2(server.receivedCommands().count(follower) == 2,
+             "article 4 was not pipelined behind the drop, the test proves nothing");
+
+    const UsenetCounters& c = stats->usenetSession();
+    QCOMPARE(c.connectionErrors, uint64(1));
+    QCOMPARE(c.articlesDownloaded, uint64(kPartsHere));
+
+    QFile f(QDir(thePrefs.incomingDir()).filePath(QStringLiteral("drop.bin")));
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    QCOMPARE(f.readAll(), whole);
+
+    queue.stop();
+}
+
 void tst_UsenetQueue::aConnectionLimitBelowTheConfiguredOneStillDownloads()
 {
     constexpr int kPartsHere = 16;

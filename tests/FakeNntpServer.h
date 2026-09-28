@@ -9,9 +9,14 @@
 /// simply stops answering. None of those can be provoked against a real provider
 /// on demand, and all of them route differently in the client.
 ///
-/// Cleartext only. TLS adds a certificate fixture and tests the Qt handshake
-/// rather than our state machine; the implicit/STARTTLS branch is covered by the
-/// live test instead.
+/// Cleartext by default. setImplicitTls() serves implicit TLS with a fixed
+/// self-signed loopback certificate (client must use CertVerification::None),
+/// for what only QSslSocket does — e.g. its two-layer read buffer. STARTTLS is
+/// covered by the live test.
+///
+/// Answers each connection's commands strictly in order, as a real server
+/// does with pipelined requests: a held or delayed BODY holds every command
+/// behind it on that connection.
 ///
 /// No Q_OBJECT: it declares no signals or slots of its own, so it stays
 /// header-only. Same choice, same reason, as tests/FakeCacheServer.h.
@@ -22,9 +27,15 @@
 #include <QPointer>
 #include <QString>
 #include <QSet>
+#include <QSslCertificate>
+#include <QSslKey>
+#include <QSslSocket>
 #include <QStringList>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QTimer>
+
+#include <algorithm>
 
 namespace eMule::testing {
 
@@ -45,6 +56,9 @@ public:
     }
 
     // -- Scripting ----------------------------------------------------------
+
+    /// Serve implicit TLS (like port 563). Set before start().
+    void setImplicitTls(bool on) { m_tls = on; }
 
     /// The greeting. Default is "posting allowed".
     void setGreeting(QByteArray line) { m_greeting = std::move(line); }
@@ -120,10 +134,20 @@ public:
         const auto held = m_held;
         m_held.clear();
         for (const auto& [sock, id] : held) {
-            if (sock)
-                serveBody(sock, id);
+            if (!sock)
+                continue;
+            serveBody(sock, id);
+            m_conns[sock.data()].busy = false;
+            pump(sock);
         }
     }
+
+    /// Answer each STAT and BODY @p ms late, like a provider's round trip, so
+    /// a client that pipelines has commands outstanding.
+    void setResponseDelay(int ms) { m_responseDelayMs = ms; }
+
+    /// Most commands ever unanswered on one connection. 2+ = the client pipelined.
+    [[nodiscard]] int maxOutstanding() const { return m_maxOutstanding; }
 
     // -- Observation --------------------------------------------------------
 
@@ -146,11 +170,49 @@ public:
     /// regression where AUTHINFO is sent before a requested TLS upgrade.
     [[nodiscard]] bool sawPlaintextPassword() const { return m_sawPlaintextPassword; }
 
+protected:
+    void incomingConnection(qintptr descriptor) override
+    {
+        if (!m_tls) {
+            QTcpServer::incomingConnection(descriptor);
+            return;
+        }
+        // Self-signed P-256, CN/SAN localhost + 127.0.0.1, valid to 2126. Test only.
+        static const QByteArray kCert =
+            "-----BEGIN CERTIFICATE-----\n"
+            "MIIBmzCCAUGgAwIBAgIUC1WEbmC0BI0mr3SmG+qtxthmhD8wCgYIKoZIzj0EAwIw\n"
+            "FDESMBAGA1UEAwwJbG9jYWxob3N0MCAXDTI2MDkyODA4NTYyMVoYDzIxMjYwOTA0\n"
+            "MDg1NjIxWjAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwWTATBgcqhkjOPQIBBggqhkjO\n"
+            "PQMBBwNCAAS+0ZhPfvISF3TX3kZb50KtMWbMx0RukvMYI4yYnVFLRTe7BZMyEH7L\n"
+            "FzfLStKioL1VfnsgdNgLr7xQTyqJ6oRpo28wbTAdBgNVHQ4EFgQUig9YSzddLaJj\n"
+            "zdew3pUxWY4wDBcwHwYDVR0jBBgwFoAUig9YSzddLaJjzdew3pUxWY4wDBcwDwYD\n"
+            "VR0TAQH/BAUwAwEB/zAaBgNVHREEEzARgglsb2NhbGhvc3SHBH8AAAEwCgYIKoZI\n"
+            "zj0EAwIDSAAwRQIge22a6b/s91ZSU0HlXE0NQcrH4b/HYZORBBsvPDFeDiwCIQCB\n"
+            "KcSh/M2KsR1IzfGpTO7zO4owqG9roUPpLG4d4DAdag==\n"
+            "-----END CERTIFICATE-----\n";
+        static const QByteArray kKey =
+            "-----BEGIN PRIVATE KEY-----\n"
+            "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg3pgHfe3BTofo+Hi1\n"
+            "zc2QutXqGASCltKC+oaLXZWoVXShRANCAAS+0ZhPfvISF3TX3kZb50KtMWbMx0Ru\n"
+            "kvMYI4yYnVFLRTe7BZMyEH7LFzfLStKioL1VfnsgdNgLr7xQTyqJ6oRp\n"
+            "-----END PRIVATE KEY-----\n";
+        auto* sock = new QSslSocket(this);
+        if (!sock->setSocketDescriptor(descriptor)) {
+            delete sock;
+            return;
+        }
+        sock->setLocalCertificate(QSslCertificate(kCert));
+        sock->setPrivateKey(QSslKey(kKey, QSsl::Ec));
+        addPendingConnection(sock);   // writes queue until the handshake is done
+        sock->startServerEncryption();
+    }
+
 private:
     void onNewConnection()
     {
         while (QTcpSocket* sock = nextPendingConnection()) {
             ++m_connections;
+            connect(sock, &QObject::destroyed, this, [this, sock] { m_conns.remove(sock); });
             connect(sock, &QTcpSocket::readyRead, sock, [this, sock] { onReadyRead(sock); });
             connect(sock, &QTcpSocket::disconnected, sock, &QObject::deleteLater);
 
@@ -176,9 +238,36 @@ private:
             if (m_mute)
                 continue;
 
-            handleCommand(sock, line);
+            Conn& conn = m_conns[sock];
+            conn.pending.append(line);
+            m_maxOutstanding = std::max(m_maxOutstanding,
+                                        int(conn.pending.size()) + (conn.busy ? 1 : 0));
+            pump(sock);
             if (sock->state() != QAbstractSocket::ConnectedState)
                 return;
+        }
+    }
+
+    /// Answer queued commands in order until one is held or delayed.
+    void pump(QTcpSocket* sock)
+    {
+        while (sock->state() == QAbstractSocket::ConnectedState) {
+            Conn& conn = m_conns[sock];
+            if (conn.busy || conn.pending.isEmpty())
+                return;
+            const QString line = conn.pending.takeFirst();
+            const QString verb = line.section(u' ', 0, 0).toUpper();
+            if (m_responseDelayMs > 0
+                && (verb == QLatin1String("BODY") || verb == QLatin1String("STAT"))) {
+                conn.busy = true;
+                QTimer::singleShot(m_responseDelayMs, sock, [this, sock, line] {
+                    m_conns[sock].busy = false;
+                    handleCommand(sock, line);
+                    pump(sock);
+                });
+                return;
+            }
+            handleCommand(sock, line);
         }
     }
 
@@ -296,6 +385,7 @@ private:
         // silent, exactly like a provider that is simply slow.
         if (!m_holdId.isEmpty() && key == m_holdId) {
             m_held.append({QPointer<QTcpSocket>(sock), key});
+            m_conns[sock].busy = true;
             return;
         }
 
@@ -351,6 +441,7 @@ private:
 
     QByteArray m_greeting = QByteArrayLiteral("200 eMuleQt fake NNTP service ready");
     bool m_mute = false;
+    bool m_tls = false;
     bool m_rejectAuth = false;
     int m_connectionLimit = 0;
     int m_refusedLogins = 0;
@@ -376,6 +467,16 @@ private:
 
     /// Articles STAT denies but BODY still serves. See setStatRefusal().
     QSet<QString> m_statRefusals;
+
+    /// Per connection: commands not yet answered, and whether the head one is
+    /// held or delayed.
+    struct Conn {
+        QStringList pending;
+        bool busy = false;
+    };
+    QHash<QTcpSocket*, Conn> m_conns;
+    int m_responseDelayMs = 0;
+    int m_maxOutstanding = 0;
 
     QStringList m_received;
     int m_connections = 0;

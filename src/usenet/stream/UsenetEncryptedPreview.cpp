@@ -97,7 +97,7 @@ void UsenetEncryptedPreview::run(const eMule::usenet::UsenetEncryptedPreviewJob&
 
     QFile::remove(job.outPath);
     if (!QFile::rename(partial, job.outPath)) {
-        logWarning(QStringLiteral("Usenet: could not publish the preview prefix for \"%1\"")
+        logUsenetWarning(QStringLiteral("Usenet: could not publish the preview prefix for \"%1\"")
                        .arg(member));
         QFile::remove(partial);
         emit finished(result);
@@ -105,7 +105,7 @@ void UsenetEncryptedPreview::run(const eMule::usenet::UsenetEncryptedPreviewJob&
     }
 
     result.bytes = bytes;
-    logInfo(QStringLiteral("Usenet: encrypted preview of \"%1\" reaches %2 of %3 byte(s)")
+    logUsenet(QStringLiteral("Usenet: encrypted preview of \"%1\" reaches %2 of %3 byte(s)")
                 .arg(member).arg(bytes).arg(memberSize));
     emit finished(result);
 }

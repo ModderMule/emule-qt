@@ -4,6 +4,8 @@
 #include "nntp/NntpSocket.h"
 #include "queue/ArticleWriter.h"
 
+#include <limits>
+
 namespace eMule::usenet {
 
 ArticleFetcher::ArticleFetcher(QObject* parent)
@@ -42,6 +44,14 @@ void ArticleFetcher::stat(NntpSocket* socket, const NzbSegment& segment,
     startVerb();
 }
 
+qint64 ArticleFetcher::pipelineLookahead(qint64 bytesPerSecond, qint64 bufferCap,
+                                         qint64 latencyMs)
+{
+    if (bytesPerSecond <= 0)
+        return std::numeric_limits<qint64>::max();
+    return 4 * bufferCap + bytesPerSecond * 2 * std::max<qint64>(latencyMs, 0) / 1000;
+}
+
 // ---------------------------------------------------------------------------
 // Private
 // ---------------------------------------------------------------------------
@@ -59,11 +69,13 @@ bool ArticleFetcher::beginRun(NntpSocket* socket, const NzbSegment& segment,
     m_writeError.clear();
     m_positioned = false;
     m_articleExists = false;
+    m_nearlyDone = false;
     m_groupCommand.reset();
     m_bodyCommand.reset();
     m_statCommand.reset();
 
-    if (!m_socket || !m_socket->isReady()) {
+    // Busy is fine: the command is pipelined behind the running one.
+    if (!m_socket || !m_socket->acceptsCommands()) {
         finish(NntpError::Disconnected, QStringLiteral("Connection is not ready"));
         return false;
     }
@@ -116,6 +128,29 @@ void ArticleFetcher::startBody()
         });
 
     m_socket->sendCommand(m_bodyCommand.get());
+
+    if (m_socket) {
+        connect(m_socket, &NntpSocket::bodyProgress,
+                this, &ArticleFetcher::checkNearlyDone, Qt::UniqueConnection);
+        checkNearlyDone();
+    }
+}
+
+void ArticleFetcher::checkNearlyDone()
+{
+    if (m_nearlyDone || !m_bodyCommand || m_bodyCommand->failed())
+        return;
+    // Still queued behind another command: nothing of ours drained yet.
+    const qint64 drained = m_socket->currentCommand() == m_bodyCommand.get()
+                               ? m_socket->commandBodyBytes()
+                               : 0;
+    const qint64 lookahead = pipelineLookahead(m_socket->readRateLimit(),
+                                               m_socket->readBufferCapBytes(),
+                                               m_socket->responseLatencyMs());
+    if (m_segment.bytes > 0 && m_segment.bytes - drained > lookahead)
+        return;
+    m_nearlyDone = true;
+    emit nearlyDone();
 }
 
 void ArticleFetcher::onCommandFinished(NntpCommand* command)
@@ -164,9 +199,12 @@ void ArticleFetcher::onCommandFinished(NntpCommand* command)
 
 void ArticleFetcher::finish(NntpError error, const QString& text)
 {
-    if (m_socket)
+    if (m_socket) {
         disconnect(m_socket, &NntpSocket::commandFinished,
                    this, &ArticleFetcher::onCommandFinished);
+        disconnect(m_socket, &NntpSocket::bodyProgress,
+                   this, &ArticleFetcher::checkNearlyDone);
+    }
     emit finished(error, text);
 }
 

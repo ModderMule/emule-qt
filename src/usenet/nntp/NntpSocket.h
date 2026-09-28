@@ -26,7 +26,9 @@
 #include "nntp/NntpError.h"
 
 #include <QByteArray>
+#include <QElapsedTimer>
 #include <QHash>
+#include <QList>
 #include <QNetworkProxy>
 #include <QObject>
 #include <QSslError>
@@ -58,9 +60,29 @@ public:
     [[nodiscard]] const QNetworkProxy& proxy() const { return m_proxy; }
 
     /// Send @p command. It must outlive the commandFinished() signal; the
-    /// socket does not take ownership. One at a time — a second call while a
-    /// command is running is refused and logged.
+    /// socket does not take ownership. A call while a command is running
+    /// pipelines it: written at once, answered in order. Refused and logged
+    /// when not connected and authenticated.
     void sendCommand(NntpCommand* command);
+
+    /// Whether sendCommand() would take a command now (ready or running one).
+    [[nodiscard]] bool acceptsCommands() const
+    {
+        return m_state == State::Ready || m_state == State::CommandStatus
+            || m_state == State::CommandBody;
+    }
+
+    /// The command whose response is being read, or nullptr.
+    [[nodiscard]] const NntpCommand* currentCommand() const { return m_command; }
+
+    /// Commands sent behind the current one, not yet answering.
+    [[nodiscard]] int pipelinedCount() const { return int(m_pipeline.size()); }
+
+    /// Wire bytes of the current command's body drained so far.
+    [[nodiscard]] qint64 commandBodyBytes() const { return m_bodyBytes; }
+
+    /// Smoothed time from a command to its status line on an idle connection.
+    [[nodiscard]] qint64 responseLatencyMs() const { return m_latencyMs; }
 
     /// Polite close: QUIT, then disconnect. Safe to call when not connected.
     void close();
@@ -84,6 +106,12 @@ public:
     /// is exactly the stall that was once diagnosed in EMSocket.
     void setReadRateLimit(qint64 bytesPerSecond);
     [[nodiscard]] qint64 readRateLimit() const { return m_readRateLimit; }
+
+    /// Bytes Qt holds for this connection not yet drained. Bounded while limited.
+    [[nodiscard]] qint64 bufferedBytes() const;
+
+    /// Per-layer receive buffer cap for the current limit; 0 = unbounded.
+    [[nodiscard]] qint64 readBufferCapBytes() const;
 
     /// Inbound bytes since the last call, then zeroed.
     ///
@@ -134,6 +162,9 @@ signals:
 
     void disconnected();
 
+    /// A drain() pass consumed lines while a command runs. Same thread only.
+    void bodyProgress();
+
 private:
     /// Transport + auth only. Command state lives in NntpCommand.
     enum class State : quint8 {
@@ -158,6 +189,7 @@ private:
     void onResponseTimeout();
     void onIdleTimeout();
     void onReadBudgetRefill();
+    void applyBufferCaps();
 
     void applyTlsConfiguration();
     void sendLine(QByteArrayView line);
@@ -180,6 +212,11 @@ private:
     State m_state = State::Disconnected;
 
     NntpCommand* m_command = nullptr;
+    QList<NntpCommand*> m_pipeline;   ///< sent, answered after m_command
+    qint64 m_bodyBytes = 0;
+    QElapsedTimer m_latencyClock;     ///< valid while an idle-line command awaits status
+    qint64 m_latencyMs = 250;
+    bool m_latencySampled = false;
 
     QTimer* m_responseTimer = nullptr;
     QTimer* m_idleTimer = nullptr;
@@ -189,6 +226,8 @@ private:
     int m_idleTimeoutMs = 0;
 
     qint64 m_readRateLimit = 0;
+    QByteArray m_partialLine;   ///< line tail taken out of Qt's buffer by drain(); never holds '\n'
+    qint64 m_kernelBufferCap = 0;   ///< SO_RCVBUF last set by applyBufferCaps(); 0 = OS default
     qint64 m_readBudget = 0;
     qint64 m_bytesRead = 0;
 

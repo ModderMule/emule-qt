@@ -4,7 +4,7 @@
 /// @brief Custom delegate that paints colored progress bars in the download list.
 ///
 /// Matches the MFC eMule progress bar style: green filled portion,
-/// dark gray remainder, with centered percentage text overlay.
+/// dark gray remainder, plus the centered percentage when showDwlPercentage is on.
 
 #include <QStyledItemDelegate>
 

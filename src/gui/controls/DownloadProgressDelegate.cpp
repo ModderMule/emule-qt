@@ -5,6 +5,7 @@
 #include "controls/DownloadProgressDelegate.h"
 #include "controls/DownloadListModel.h"
 #include "controls/PartBarPainter.h"
+#include "prefs/Preferences.h"
 
 #include <QPainter>
 
@@ -87,12 +88,8 @@ void DownloadProgressDelegate::paint(QPainter* painter, const QStyleOptionViewIt
     // Completed files: solid green bar matching MFC eMule (RGB 0,224,0)
     if (!isSourceRow && percent >= 100.0) {
         painter->fillRect(barRect, QColor(0, 224, 0));
-        painter->restore();
-        return;
-    }
-
-    // Layer 1: Part map (full bar height)
-    if (!partMap.isEmpty()) {
+    } else if (!partMap.isEmpty()) {
+        // Layer 1: Part map (full bar height)
         paintPartBar(*painter, barRect, partMap, [isSourceRow, paused](uint8_t status) {
             return isSourceRow ? sourcePartColor(status)
                  : paused      ? partColorPaused(status)
@@ -113,8 +110,12 @@ void DownloadProgressDelegate::paint(QPainter* painter, const QStyleOptionViewIt
     }
 
     // Layer 2: Thin green progress overlay (top 3px) — file rows only
-    if (!isSourceRow)
+    if (!isSourceRow && percent < 100.0)
         paintProgressStrip(*painter, barRect, percent);
+
+    // Layer 3: percentage text — file rows only, as MFC's DrawFileItem
+    if (!isSourceRow && thePrefs.showDwlPercentage())
+        paintPercentText(*painter, barRect, opt.font, index.data(Qt::DisplayRole).toString());
 
     painter->restore();
 }

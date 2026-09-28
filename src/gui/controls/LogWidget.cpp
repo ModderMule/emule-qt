@@ -88,6 +88,18 @@ LogWidget::LogWidget(QWidget* parent)
         m_tabBar->addTab(tr("Verbose"));
     m_stack->addWidget(m_verboseBrowser);
 
+    // Usenet tab (shown only when showUsenetLog is true)
+    m_usenetBrowser = new QTextBrowser;
+    m_usenetBrowser->setReadOnly(true);
+    m_usenetBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
+    m_usenetTabIndex = m_tabBar->count();
+    if (thePrefs.useOriginalIcons())
+        m_tabBar->addTab(QIcon(QStringLiteral(":/icons/Usenet.ico")), tr("Usenet"));
+    else
+        m_tabBar->addTab(tr("Usenet"));
+    m_stack->addWidget(m_usenetBrowser);
+    setUsenetTabVisible(thePrefs.showUsenetLog());
+
     // Kad tab
     m_kadBrowser = new QTextBrowser;
     m_kadBrowser->setReadOnly(true);
@@ -198,6 +210,29 @@ void LogWidget::appendKad(const QString& msg, const QString& ts, qint64 seqId)
     trimToLimit(m_kadBrowser, m_kadSeqIds);
 }
 
+void LogWidget::appendUsenet(const QString& msg, const QString& ts, qint64 seqId)
+{
+    const QString timestamp = ts.isEmpty()
+        ? QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss"))
+        : ts;
+    if (seqId == 0)
+        seqId = QDateTime::currentDateTime().toSecsSinceEpoch();
+    const QString html = QStringLiteral("<font color='gray'>%1</font> %2").arg(timestamp, msg);
+    insertSorted(m_usenetBrowser, m_usenetSeqIds, seqId, html);
+    trimToLimit(m_usenetBrowser, m_usenetSeqIds);
+}
+
+void LogWidget::routeUsenet(QtMsgType type, const QString& colored,
+                            const QString& ts, qint64 seqId)
+{
+    if (m_usenetTabVisible)
+        appendUsenet(colored, ts, seqId);
+    else if (type == QtWarningMsg)
+        appendVerbose(colored, ts, seqId);
+    else if (type != QtDebugMsg)
+        appendLog(colored, ts, seqId);
+}
+
 void LogWidget::insertSorted(QTextBrowser* browser, QList<qint64>& seqIds,
                               qint64 seqId, const QString& html)
 {
@@ -278,16 +313,25 @@ void LogWidget::setIpcTabVisible(bool visible)
         m_tabBar->setTabVisible(m_ipcTabIndex, visible);
 }
 
+void LogWidget::setUsenetTabVisible(bool visible)
+{
+    m_usenetTabVisible = visible;
+    if (m_usenetTabIndex >= 0)
+        m_tabBar->setTabVisible(m_usenetTabIndex, visible);
+}
+
 void LogWidget::clearAll()
 {
     m_serverInfoBrowser->clear();
     m_logBrowser->clear();
     m_verboseBrowser->clear();
     m_kadBrowser->clear();
+    m_usenetBrowser->clear();
     if (m_ipcLogBrowser) m_ipcLogBrowser->clear();
     m_logSeqIds.clear();
     m_verboseSeqIds.clear();
     m_kadSeqIds.clear();
+    m_usenetSeqIds.clear();
     appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v%1 ready</font>")
                   .arg(QString(kAppVersion)));
     // The reference's Reset leaves the Server Info pane empty — the startup banner
@@ -297,11 +341,12 @@ void LogWidget::clearAll()
 QString LogWidget::logText() const { return m_logBrowser->toPlainText(); }
 QString LogWidget::verboseText() const { return m_verboseBrowser->toPlainText(); }
 QString LogWidget::kadText() const { return m_kadBrowser->toPlainText(); }
+QString LogWidget::usenetText() const { return m_usenetBrowser->toPlainText(); }
 
 void LogWidget::setCustomFont(const QFont& font)
 {
     for (auto* browser : {m_serverInfoBrowser, m_logBrowser, m_verboseBrowser,
-                          m_kadBrowser, m_ipcLogBrowser})
+                          m_usenetBrowser, m_kadBrowser, m_ipcLogBrowser})
         if (browser) browser->setFont(font);
 }
 
@@ -385,6 +430,13 @@ void LogWidget::messageHandler(QtMsgType type, const QMessageLogContext& context
     if (isKad) {
         QMetaObject::invokeMethod(s_instance, [colored]() {
             if (s_instance) s_instance->appendKad(colored);
+        }, Qt::QueuedConnection);
+        return;
+    }
+
+    if (std::strcmp(cat, "emule.usenet") == 0) {
+        QMetaObject::invokeMethod(s_instance, [type, colored]() {
+            if (s_instance) s_instance->routeUsenet(type, colored);
         }, Qt::QueuedConnection);
         return;
     }

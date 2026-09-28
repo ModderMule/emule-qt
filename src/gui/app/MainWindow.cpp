@@ -325,8 +325,13 @@ void MainWindow::showOptionsDialog(int page)
     if (page >= 0 && page < OptionsDialog::PageCount)
         dlg.selectPage(page);
     const bool hadSpeedGraph = (m_speedGraph != nullptr);
+    const bool hadDwlPercentage = thePrefs.showDwlPercentage();
 
     dlg.exec();
+
+    // Progress bars read the pref at paint; paused rows get no push to repaint them
+    if (thePrefs.showDwlPercentage() != hadDwlPercentage)
+        update();
 
     // Rebuild toolbar if speed graph visibility changed
     if (thePrefs.showSpeedGraph() != hadSpeedGraph)
@@ -336,6 +341,7 @@ void MainWindow::showOptionsDialog(int page)
             static_cast<int>(thePrefs.speedGraphTimeRangeMin()));
 
     m_serverPanel->logWidget()->setIpcTabVisible(thePrefs.enableIpcLog());
+    m_serverPanel->logWidget()->setUsenetTabVisible(thePrefs.showUsenetLog());
 
     // The daemon reacts to logToDiskCore over IPC; logToDiskGui is ours to act on.
     LogWidget::applyLogFileSettings();

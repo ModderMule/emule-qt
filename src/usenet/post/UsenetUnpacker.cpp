@@ -206,7 +206,7 @@ UsenetUnpacker::Result UsenetUnpacker::unpack(const QString& sourceDir, const QS
 
             if (reader.extractAll(destDir)) {
                 for (const QString& rejected : reader.rejectedEntries()) {
-                    logWarning(
+                    logUsenetWarning(
                         QStringLiteral("Usenet: skipped unsafe archive member \"%1\" in \"%2\"")
                             .arg(rejected, QFileInfo(set.firstVolume).fileName()));
                 }
@@ -214,7 +214,7 @@ UsenetUnpacker::Result UsenetUnpacker::unpack(const QString& sourceDir, const QS
                 result.extractedFiles += produced;
                 result.consumedArchives += set.volumes;
 
-                logInfo(QStringLiteral("Usenet: unpacked \"%1\" (%2 file(s))")
+                logUsenet(QStringLiteral("Usenet: unpacked \"%1\" (%2 file(s))")
                             .arg(QFileInfo(set.firstVolume).fileName())
                             .arg(produced.size()));
                 continue;
@@ -251,7 +251,7 @@ UsenetUnpacker::Result UsenetUnpacker::unpack(const QString& sourceDir, const QS
     // it. Even with ArchiveReader fixed, nothing downstream should depend on
     // that fix to stay safe.
     if (allOk && result.extractedFiles.isEmpty() && !result.consumedArchives.isEmpty()) {
-        logWarning(QStringLiteral("Usenet: archive sets in \"%1\" produced no files")
+        logUsenetWarning(QStringLiteral("Usenet: archive sets in \"%1\" produced no files")
                        .arg(sourceDir));
         result.consumedArchives.clear();
         result.error = QObject::tr("The archives produced no files");
@@ -297,10 +297,10 @@ bool UsenetUnpacker::unpackEncrypted(const ArchiveSet& set, const QString& destD
         // would be wrong here — the passphrase was refused. Worth retrying
         // through the tool anyway: it reads variants libarchive does not, and
         // its answer is what separates "wrong password" from "broken archive".
-        logInfo(QStringLiteral("Usenet: the password for \"%1\" was refused; asking %2")
+        logUsenet(QStringLiteral("Usenet: the password for \"%1\" was refused; asking %2")
                     .arg(name, external.toolName()));
     } else {
-        logInfo(QStringLiteral("Usenet: \"%1\" is encrypted %2, which libarchive cannot "
+        logUsenet(QStringLiteral("Usenet: \"%1\" is encrypted %2, which libarchive cannot "
                                "decrypt; using %3")
                     .arg(name, format, external.toolName()));
     }
@@ -308,7 +308,7 @@ bool UsenetUnpacker::unpackEncrypted(const ArchiveSet& set, const QString& destD
     const auto outcome = external.extract(set.volumes, destDir, password);
 
     for (const QString& rejected : outcome.rejectedEntries) {
-        logWarning(QStringLiteral("Usenet: skipped unsafe archive member \"%1\" in \"%2\"")
+        logUsenetWarning(QStringLiteral("Usenet: skipped unsafe archive member \"%1\" in \"%2\"")
                        .arg(rejected, name));
     }
 
@@ -339,7 +339,7 @@ bool UsenetUnpacker::unpackEncrypted(const ArchiveSet& set, const QString& destD
     if (outcome.ok()) {
         result.extractedFiles += outcome.extractedFiles;
         result.consumedArchives += set.volumes;
-        logInfo(QStringLiteral("Usenet: unpacked \"%1\" with %2 (%3 file(s))")
+        logUsenet(QStringLiteral("Usenet: unpacked \"%1\" with %2 (%3 file(s))")
                     .arg(name, external.toolName())
                     .arg(outcome.extractedFiles.size()));
         return true;

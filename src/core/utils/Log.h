@@ -108,6 +108,13 @@ void logError(const QString& msg);
 /// Log a debug message (only in debug/verbose mode).
 void logDebug(const QString& msg);
 
+/// Usenet/NNTP variants of the above: emule.usenet, shown in the GUI's Usenet
+/// tab and written to the _Usenet file.
+void logUsenet(const QString& msg);
+void logUsenetWarning(const QString& msg);
+void logUsenetError(const QString& msg);
+void logUsenetDebug(const QString& msg);
+
 /// Log to the main Log tab and the GUI status bar (MFC LOG_STATUSBAR).
 void logStatusInfo(const QString& msg);
 
@@ -133,19 +140,20 @@ void installConsoleMessagePattern(const QString& processTag);
 // Rotating log file sink
 // ---------------------------------------------------------------------------
 //
-// Three files per process — `<baseName>.log`, `<baseName>_Verbose.log` and
-// `<baseName>_Kad.log` — mirroring the reference's theLog / theVerboseLog plus a
-// dedicated Kad log. Both message handlers feed it, so what lands on disk is
-// what the GUI log tabs show, Kad tab included.
+// Four files per process — `<baseName>.log`, `<baseName>_Verbose.log`,
+// `<baseName>_Kad.log` and `<baseName>_Usenet.log` — mirroring the reference's
+// theLog / theVerboseLog plus dedicated Kad and Usenet logs. Both message
+// handlers feed it, so what lands on disk is what the GUI log tabs show.
 
-/// Open (or with @p enabled false, close) this process's three log files in
+/// Open (or with @p enabled false, close) this process's four log files in
 /// @p dir. Safe to call repeatedly — the settings are user-togglable.
 /// Reports an open failure via logError() and leaves the sink closed.
 void applyLogFileSink(const QString& dir, const QString& baseName,
                       bool enabled, uint32 maxSize);
 
 /// Append one line to the sink, or do nothing if it is closed. Thread-safe.
-/// emule.kad goes to the _Kad file whatever its severity; of the rest,
+/// emule.kad goes to the _Kad file and emule.usenet to the _Usenet file whatever
+/// the severity; of the rest,
 /// QtDebugMsg goes to the _Verbose file and every other severity to the main one.
 void writeToLogFileSink(QtMsgType type, const char* category, const QString& msg);
 
@@ -155,7 +163,7 @@ void writeToLogFileSink(QtMsgType type, const char* category, const QString& msg
 /// LogWidget exist, which their own handlers necessarily miss.
 void installLogFileMessageHandler();
 
-/// Close all three files.
+/// Close all four files.
 void closeLogFileSink();
 
 // ---------------------------------------------------------------------------

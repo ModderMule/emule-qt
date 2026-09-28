@@ -69,7 +69,7 @@ void UsenetHistory::load()
 
         // Only a *newer* file is refused, so a key added later needs no bump.
         if (root["version"] && root["version"].as<int>(0) > kHistoryVersion) {
-            logWarning(QStringLiteral("Usenet: %1 is version %2, newer than %3 — ignoring")
+            logUsenetWarning(QStringLiteral("Usenet: %1 is version %2, newer than %3 — ignoring")
                            .arg(path)
                            .arg(root["version"].as<int>(0))
                            .arg(kHistoryVersion));
@@ -105,11 +105,11 @@ void UsenetHistory::load()
 
         reindex();
         if (!m_byDigest.isEmpty()) {
-            logInfo(QStringLiteral("Usenet: remembered %1 past download(s)")
+            logUsenet(QStringLiteral("Usenet: remembered %1 past download(s)")
                         .arg(m_byDigest.size()));
         }
     } catch (const std::exception& ex) {
-        logWarning(QStringLiteral("Usenet: cannot read %1 (%2) — starting with no history")
+        logUsenetWarning(QStringLiteral("Usenet: cannot read %1 (%2) — starting with no history")
                        .arg(path, QString::fromUtf8(ex.what())));
         m_byDigest.clear();
         m_digestsByFoldedName.clear();

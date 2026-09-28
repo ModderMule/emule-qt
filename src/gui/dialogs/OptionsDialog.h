@@ -578,6 +578,7 @@ private:
     QCheckBox*    m_logWebServerCheck = nullptr;
     QCheckBox*    m_logPublicIPCheck = nullptr;
     QCheckBox*    m_enableIpcLogCheck = nullptr;
+    QCheckBox*    m_showUsenetLogCheck = nullptr;
     QCheckBox*    m_startCoreWithConsoleCheck = nullptr;
     QCheckBox*    m_closeUPnPCheck = nullptr;
     QCheckBox*    m_portMapPcpCheck = nullptr;

@@ -393,6 +393,8 @@ int main(int argc, char* argv[])
             const qint64 seqId = ts > 0 ? static_cast<qint64>(ts) : 0;
             if (cat == QStringLiteral("emule.kad"))
                 logWidget->appendKad(colored, timestamp, seqId);
+            else if (cat == QStringLiteral("emule.usenet"))
+                logWidget->routeUsenet(severity, colored, timestamp, seqId);
             else if (cat == QStringLiteral("emule.server"))
                 // Raw text, not `colored` — appendServerInfo escapes internally.
                 // The pane's real feed is PushServerMessage; this only catches
@@ -423,8 +425,10 @@ int main(int argc, char* argv[])
             // YAML baseline — matching the first-connect flow where thePrefs.load()
             // runs before the async GetPreferences/updateFromCbor overlay.
             const bool ipcLog = eMule::thePrefs.enableIpcLog();
+            const bool usenetLog = eMule::thePrefs.showUsenetLog();
             eMule::thePrefs.load(prefsPath);
             eMule::thePrefs.setEnableIpcLog(ipcLog);
+            eMule::thePrefs.setShowUsenetLog(usenetLog);
 
             // Request initial eD2K connection state
             eMule::Ipc::IpcMessage reqConn(eMule::Ipc::IpcMsgType::GetConnection);

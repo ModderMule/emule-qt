@@ -85,7 +85,7 @@ void NzbUrlFetch::fetch(QObject* context, const QUrl& url, Callback done)
     // The host only. A newznab link carries its api key in the query, and some
     // indexers put a token in the *path* instead, which redactApiKey() cannot
     // reach — so nothing but the host is ever logged.
-    logInfo(QStringLiteral("Usenet: fetching NZB from %1").arg(url.host()));
+    logUsenet(QStringLiteral("Usenet: fetching NZB from %1").arg(url.host()));
 
     HttpFileDownload::Options opts;
     opts.timeoutMs = 30000;

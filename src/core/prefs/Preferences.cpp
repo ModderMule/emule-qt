@@ -225,6 +225,7 @@ struct Preferences::Data {
     bool logRawSocketPackets = false;
     bool logWebServer = false;
     bool enableIpcLog = false;        // GUI-only: show IPC tab in LogWidget
+    bool showUsenetLog = true;        // GUI-only: show Usenet tab in LogWidget
     bool startCoreWithConsole = false; // GUI-only: launch daemon in terminal window
 
     // Files
@@ -1094,6 +1095,8 @@ void Preferences::setLogWebServer(bool val) { set(&Data::logWebServer, val); }
 
 bool Preferences::enableIpcLog() const { return get(&Data::enableIpcLog); }
 void Preferences::setEnableIpcLog(bool val) { set(&Data::enableIpcLog, val); }
+bool Preferences::showUsenetLog() const { return get(&Data::showUsenetLog); }
+void Preferences::setShowUsenetLog(bool val) { set(&Data::showUsenetLog, val); }
 bool Preferences::startCoreWithConsole() const { return get(&Data::startCoreWithConsole); }
 void Preferences::setStartCoreWithConsole(bool val) { set(&Data::startCoreWithConsole, val); }
 
@@ -3933,6 +3936,7 @@ bool Preferences::load(const QString& filePath)
             m_data->useAutoCompletion = d["useAutoCompletion"].as<bool>(m_data->useAutoCompletion);
             m_data->useOriginalIcons = d["useOriginalIcons"].as<bool>(m_data->useOriginalIcons);
             m_data->enableIpcLog = d["enableIpcLog"].as<bool>(m_data->enableIpcLog);
+            m_data->showUsenetLog = d["showUsenetLog"].as<bool>(m_data->showUsenetLog);
             m_data->startCoreWithConsole = d["startCoreWithConsole"].as<bool>(m_data->startCoreWithConsole);
             m_data->logFont = QString::fromStdString(d["logFont"].as<std::string>(m_data->logFont.toStdString()));
             m_data->watchClipboard4ED2KLinks = d["watchClipboard4ED2KLinks"].as<bool>(m_data->watchClipboard4ED2KLinks);
@@ -4985,6 +4989,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "useAutoCompletion" << YAML::Value << m_data->useAutoCompletion;
     out << YAML::Key << "useOriginalIcons" << YAML::Value << m_data->useOriginalIcons;
     out << YAML::Key << "enableIpcLog" << YAML::Value << m_data->enableIpcLog;
+    out << YAML::Key << "showUsenetLog" << YAML::Value << m_data->showUsenetLog;
     out << YAML::Key << "startCoreWithConsole" << YAML::Value << m_data->startCoreWithConsole;
     if (!m_data->logFont.isEmpty())
         out << YAML::Key << "logFont" << YAML::Value << m_data->logFont.toStdString();

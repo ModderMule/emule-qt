@@ -3,6 +3,7 @@
 #include "nntp/NntpCommand.h"
 #include "utils/Log.h"
 
+#include <QElapsedTimer>
 #include <QMutex>
 #include <QScopeGuard>
 #include <QSslConfiguration>
@@ -53,6 +54,22 @@ constexpr int kRefillIntervalMs = 100;
 /// the wait; the cap stops a long idle from turning into an unbounded burst.
 constexpr int kBurstTicks = 10;
 
+/// Read-buffer cap for a limited socket, per layer: one burst's worth, rounded
+/// up to 16 KiB steps so small rate shifts don't re-apply it. Without it the
+/// buffers take whole articles at link speed and the wire sees bursts then
+/// silence. Bounded, a full buffer closes the TCP window and the provider sends
+/// at the limited rate. 64 KiB floor: 16 KiB measured live at 40 % of the limit,
+/// the TCP window stuck near zero over a 220 ms round trip.
+/// 0 = unbounded when unlimited.
+[[nodiscard]] qint64 readBufferCap(qint64 bytesPerSecond)
+{
+    if (bytesPerSecond <= 0)
+        return 0;
+    constexpr qint64 kStep = 16 * 1024;
+    const qint64 burst = bytesPerSecond * kRefillIntervalMs / 1000 * kBurstTicks;
+    return std::clamp<qint64>((burst + kStep - 1) / kStep * kStep, 64 * 1024, 1024 * 1024);
+}
+
 /// NNTP status codes this class acts on. Everything else is passed to the
 /// running command or reported as a protocol error.
 constexpr int kGreetingPostingOk    = 200;
@@ -102,7 +119,7 @@ NntpSocket::~NntpSocket()
 void NntpSocket::connectToServer(const NewsServer& server)
 {
     if (m_state != State::Disconnected) {
-        logWarning(QStringLiteral("NNTP: already connected to %1, ignoring connect to %2")
+        logUsenetWarning(QStringLiteral("NNTP: already connected to %1, ignoring connect to %2")
                        .arg(m_server.displayName(), server.displayName()));
         return;
     }
@@ -114,10 +131,15 @@ void NntpSocket::connectToServer(const NewsServer& server)
     m_server = server;
     m_failed = false;
     m_transportUp = false;
+    m_partialLine.clear();
+    m_kernelBufferCap = 0;   // a new OS socket starts at the default
 
     if (!m_socket) {
         m_socket = new QSslSocket(this);
-        connect(m_socket, &QSslSocket::connected,     this, [this] { m_transportUp = true; });
+        connect(m_socket, &QSslSocket::connected,     this, [this] {
+            m_transportUp = true;
+            applyBufferCaps();   // SO_RCVBUF needs the OS socket
+        });
         connect(m_socket, &QSslSocket::readyRead,     this, &NntpSocket::onReadyRead);
         connect(m_socket, &QSslSocket::errorOccurred, this, &NntpSocket::onSocketError);
         connect(m_socket, &QSslSocket::sslErrors,     this, &NntpSocket::onSslErrors);
@@ -133,10 +155,11 @@ void NntpSocket::connectToServer(const NewsServer& server)
     // Every connect, not only the first: a reused NntpSocket may have been given
     // a different route since.
     m_socket->setProxy(m_proxy);
+    applyBufferCaps();
     applyTlsConfiguration();
 
     m_state = State::Connecting;
-    logInfo(QStringLiteral("NNTP: connecting to %1:%2%3%4")
+    logUsenetDebug(QStringLiteral("NNTP: connecting to %1:%2%3%4")
                 .arg(m_server.host)
                 .arg(m_server.port)
                 .arg(m_server.tlsMode == TlsMode::None ? QString{}
@@ -162,8 +185,17 @@ void NntpSocket::sendCommand(NntpCommand* command)
 {
     if (!command)
         return;
+
+    // Pipelined (RFC 3977 §3.5): written now, answered in order after the
+    // running command. Keeps the wire busy while the current body drains.
+    if (m_state == State::CommandStatus || m_state == State::CommandBody) {
+        m_pipeline.append(command);
+        sendLine(command->requestLine());
+        return;
+    }
+
     if (m_state != State::Ready) {
-        logWarning(QStringLiteral("NNTP: %1 not ready, dropping command")
+        logUsenetWarning(QStringLiteral("NNTP: %1 not ready, dropping command")
                        .arg(m_server.displayName()));
         command->fail(NntpError::ProtocolError, QStringLiteral("Connection not ready"));
         command->onComplete();
@@ -176,7 +208,9 @@ void NntpSocket::sendCommand(NntpCommand* command)
 
     m_command = command;
     m_state = State::CommandStatus;
+    m_bodyBytes = 0;
     sendLine(command->requestLine());
+    m_latencyClock.start();   // only a command on an idle line times the server
     armResponseTimer();
 }
 
@@ -198,6 +232,9 @@ void NntpSocket::close()
 
 void NntpSocket::abort()
 {
+    // No callbacks: the owner is tearing this connection down on purpose.
+    m_command = nullptr;
+    m_pipeline.clear();
     disarmTimers();
     enterDisconnected();
     if (m_socket)
@@ -221,6 +258,8 @@ void NntpSocket::setReadRateLimit(qint64 bytesPerSecond)
     if (bytesPerSecond == m_readRateLimit)
         return;
     m_readRateLimit = bytesPerSecond;
+    if (m_socket)
+        applyBufferCaps();
 
     if (m_readRateLimit == 0) {
         if (m_refillTimer)
@@ -246,6 +285,16 @@ void NntpSocket::setReadRateLimit(qint64 bytesPerSecond)
         m_readBudget = perTick;
         m_refillTimer->start(kRefillIntervalMs);
     }
+}
+
+qint64 NntpSocket::bufferedBytes() const
+{
+    return m_socket ? m_socket->bytesAvailable() : 0;
+}
+
+qint64 NntpSocket::readBufferCapBytes() const
+{
+    return readBufferCap(m_readRateLimit);
 }
 
 qint64 NntpSocket::totalWireBytesRead()
@@ -344,7 +393,7 @@ void NntpSocket::onSslErrors(const QList<QSslError>& errors)
     switch (m_server.certVerification) {
     case CertVerification::None:
         // The user asked for this explicitly. Say so once rather than silently.
-        logWarning(QStringLiteral("NNTP: %1 — ignoring %2 certificate error(s), "
+        logUsenetWarning(QStringLiteral("NNTP: %1 — ignoring %2 certificate error(s), "
                                   "verification is disabled for this server")
                        .arg(m_server.displayName())
                        .arg(errors.size()));
@@ -410,8 +459,11 @@ void NntpSocket::onResponseTimeout()
 
 void NntpSocket::onIdleTimeout()
 {
-    if (m_state == State::Ready)
+    if (m_state == State::Ready) {
+        logUsenetDebug(QStringLiteral("NNTP: %1 idle for %2 s, closing")
+                           .arg(m_server.displayName()).arg(m_idleTimeoutMs / 1000));
         close();
+    }
 }
 
 void NntpSocket::onReadBudgetRefill()
@@ -450,10 +502,24 @@ void NntpSocket::drain()
     // Published once per call rather than per line: one atomic add per read
     // burst instead of one per ~128-byte yEnc line.
     qint64 drained = 0;
+    // Last: a bodyProgress() slot may pipeline another command.
+    const auto progress = qScopeGuard([this, &drained] {
+        if (drained > 0 && m_command && m_state != State::Disconnected)
+            emit bodyProgress();
+    });
     const auto publish = qScopeGuard(
         [&drained] { g_wireBytesRead.fetch_add(drained, std::memory_order_relaxed); });
 
-    while (m_socket->canReadLine()) {
+    while (true) {
+        if (!m_socket->canReadLine()) {
+            // Take the partial line so Qt's buffer runs empty: only a read that
+            // empties it makes QSslSocket decrypt more. With a capped buffer,
+            // leaving the tail there hung the connection until the watchdog.
+            if (m_socket->bytesAvailable() > 0)
+                m_partialLine += m_socket->readAll();
+            return;
+        }
+
         // A limit of 0 means unlimited — read everything the socket holds.
         if (m_readRateLimit > 0 && m_readBudget <= 0) {
             // Out of budget. The refill timer calls back into drain(), so the
@@ -463,6 +529,10 @@ void NntpSocket::drain()
         }
 
         QByteArray raw = m_socket->readLine();
+        if (!m_partialLine.isEmpty()) {
+            raw.prepend(m_partialLine);
+            m_partialLine.clear();
+        }
         m_readBudget -= raw.size();
         m_bytesRead += raw.size();   // before the CRLF chop: this is the wire count
         drained += raw.size();
@@ -471,10 +541,12 @@ void NntpSocket::drain()
         while (raw.endsWith('\n') || raw.endsWith('\r'))
             raw.chop(1);
 
-        if (m_state == State::CommandBody)
+        if (m_state == State::CommandBody) {
+            m_bodyBytes += raw.size() + 2;
             handleBodyLine(raw);
-        else
+        } else {
             handleStatusLine(raw);
+        }
 
         if (m_state == State::Disconnected)
             return;
@@ -570,8 +642,15 @@ void NntpSocket::handleStatusLine(const QByteArray& raw)
             fail(NntpError::ProtocolError, QStringLiteral("Unsolicited response: %1").arg(line));
             break;
         }
+        if (m_latencyClock.isValid()) {
+            const qint64 ms = m_latencyClock.elapsed();
+            m_latencyClock.invalidate();
+            m_latencyMs = m_latencySampled ? (m_latencyMs * 3 + ms) / 4 : ms;
+            m_latencySampled = true;
+        }
         cmd->onStatus(code, text);
         if (!cmd->failed() && cmd->hasBodyFor(code)) {
+            m_bodyBytes = 0;
             m_state = State::CommandBody;
             armResponseTimer();
         } else {
@@ -646,7 +725,7 @@ void NntpSocket::enterReady()
         m_idleTimer->start(m_idleTimeoutMs);
     }
 
-    logInfo(QStringLiteral("NNTP: %1 ready").arg(m_server.displayName()));
+    logUsenetDebug(QStringLiteral("NNTP: %1 ready").arg(m_server.displayName()));
     emit ready();
 }
 
@@ -654,11 +733,21 @@ void NntpSocket::finishCommand()
 {
     NntpCommand* cmd = m_command;
     m_command = nullptr;
-    m_state = State::Ready;
-    if (m_responseTimer)
-        m_responseTimer->stop();
-    if (m_idleTimer && m_idleTimeoutMs > 0)
-        m_idleTimer->start(m_idleTimeoutMs);
+    m_bodyBytes = 0;
+    m_latencyClock.invalidate();
+    if (!m_pipeline.isEmpty()) {
+        // Next answer is already on its way, maybe already buffered: drain()
+        // carries on parsing it as this command's status.
+        m_command = m_pipeline.takeFirst();
+        m_state = State::CommandStatus;
+        armResponseTimer();
+    } else {
+        m_state = State::Ready;
+        if (m_responseTimer)
+            m_responseTimer->stop();
+        if (m_idleTimer && m_idleTimeoutMs > 0)
+            m_idleTimer->start(m_idleTimeoutMs);
+    }
 
     if (cmd) {
         cmd->onComplete();
@@ -676,13 +765,17 @@ void NntpSocket::fail(NntpError error, const QString& text)
 
     // A command in flight learns why it died before the socket goes away, so
     // the scheduler sees the real reason rather than a generic disconnect.
-    if (NntpCommand* cmd = std::exchange(m_command, nullptr)) {
+    // Pipelined ones too, in order.
+    QList<NntpCommand*> dying = std::exchange(m_pipeline, {});
+    if (NntpCommand* cmd = std::exchange(m_command, nullptr))
+        dying.prepend(cmd);
+    for (NntpCommand* cmd : std::as_const(dying)) {
         cmd->fail(error, text);
         cmd->onComplete();
         emit commandFinished(cmd);
     }
 
-    logWarning(QStringLiteral("NNTP: %1 — %2: %3")
+    logUsenetWarning(QStringLiteral("NNTP: %1 — %2: %3")
                    .arg(m_server.displayName(), describeNntpError(error), text));
 
     const bool wasConnected = m_state != State::Disconnected;
@@ -740,6 +833,31 @@ void NntpSocket::markClosed()
         && --it.value() <= 0)
         reg.byAccount.erase(it);
     --reg.total;
+}
+
+void NntpSocket::applyBufferCaps()
+{
+    // Both layers. Qt's cap alone leaves the kernel's auto-tuned receive buffer
+    // (MBs on macOS/Linux/Windows) to take whole articles at link speed: every
+    // connection bursts at once, then all go quiet while the bucket drains them.
+    // SO_RCVBUF via Qt maps to setsockopt on every OS; Linux doubles the value.
+    const qint64 cap = readBufferCap(m_readRateLimit);
+    m_socket->setReadBufferSize(cap);
+    if (m_socket->state() != QAbstractSocket::ConnectedState || cap == m_kernelBufferCap)
+        return;
+    // Shrinking the kernel buffer shrinks the TCP window under a sender, and
+    // rates shift on every sibling lease. Only grow, or shrink when 2x too big.
+    const bool grow = m_kernelBufferCap == 0 || cap == 0 || cap > m_kernelBufferCap;
+    if (!grow && cap * 2 > m_kernelBufferCap)
+        return;
+    if (cap > 0) {
+        m_socket->setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, int(cap));
+    } else {
+        // Auto-tuning can't be switched back on; a large fixed buffer is next best.
+        m_socket->setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption,
+                                  4 * 1024 * 1024);
+    }
+    m_kernelBufferCap = cap;
 }
 
 } // namespace eMule::usenet

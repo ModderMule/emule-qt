@@ -366,9 +366,13 @@ public:
     [[nodiscard]] ArchiveListing listArchiveEntries(const QString& itemId, int fileIndex);
 
     /// Bytes per second this engine may use in total. 0 is unlimited, as
-    /// everywhere else in eMuleQt. Divided across workers, then across their
-    /// sockets.
+    /// everywhere else in eMuleQt. Divided across workers by their live sockets,
+    /// then across those sockets, so every socket gets the same rate.
     void setRateLimit(qint64 bytesPerSecond);
+
+    /// Per-worker shares of @p limit, weighted by live sockets. An idle worker
+    /// weighs 1 and gets a trickle, never 0 (which would mean unlimited).
+    [[nodiscard]] static QList<qint64> rateShares(qint64 limit, const QList<int>& live);
 
     /// Post-processing settings, refreshed from preferences at each job. Kept
     /// here rather than read inside the pipeline so a job carries a consistent
@@ -401,7 +405,8 @@ public:
     [[nodiscard]] const UsenetStatistics& stats() const { return m_stats; }
 
     /// Articles in flight across every worker right now — probes and jobs still
-    /// waiting on a handshake included, so an upper bound on busy connections.
+    /// waiting on a handshake included, pipelined ones not (they share a
+    /// connection), so an upper bound on busy connections.
     [[nodiscard]] int activeFetches() const;
 
     /// Whether @p s has spent its allowance. Grouped accounts share one meter:
@@ -685,6 +690,7 @@ private:
     ///        so such a result may be counted but must not be *booked*.
     void onSegmentFinished(const UsenetFetchResult& result, bool current);
     void onCapacityChanged(int workerIndex, int capacity);
+    void distributeRateLimit();
     void onTick();
 
     /// Segment indices covering `[offset, offset + length)` of @p fileIndex's
@@ -700,6 +706,15 @@ private:
 
     void markSegmentDone(ItemRuntime& rt, const UsenetFetchResult& result);
     void handleSegmentFailure(ItemRuntime& rt, const UsenetFetchResult& result);
+    /// Put a never-asked article back at the cursor, but behind earlier parts
+    /// of its file already waiting there (a retry that must go first).
+    void returnToPlan(ItemRuntime& rt, quint64 key);
+    /// Worker @p workerIndex had nothing leasable: skip it until the tick.
+    void markStarved(int workerIndex);
+    /// Log why dispatch() stopped, or that it resumed; once per change.
+    void noteDispatchPark(const QString& reason);
+    /// The periodic Usenet state line, while there is anything to say.
+    void logQueueState();
     void checkFileCompletion(ItemRuntime& rt, int fileIndex);
 
     /// Close a finished file off in the item's scratch directory: pad it out to
@@ -1104,6 +1119,11 @@ private:
     QList<UsenetWorker*> m_workers;
     QList<int> m_workerCapacity;
     QList<int> m_workerInFlight;
+    QList<int> m_workerLive;        ///< live download sockets per worker
+    QList<int> m_workerSlots;       ///< pipeline capacity per worker, on top of capacity
+    QList<int> m_workerFollowers;   ///< pipelined articles in flight per worker
+    QList<qint64> m_workerShare;    ///< rate share last sent, -1 = none yet
+    bool m_rateSharesDirty = false; ///< m_workerLive moved since the last distribution
 
     /// Which set of workers the per-slot lists above describe. Bumped by
     /// stopWorkers(), captured by each worker's connections, and compared on
@@ -1195,9 +1215,17 @@ private:
     TickRateWindow m_rateWindow;
     qint64 m_lastWireBytes = 0;     ///< NntpSocket::totalWireBytesRead() at the last tick
 
-    /// Set when a dispatch round found every server blocked or busy. Cleared on
-    /// the next tick, which is what turns a spin into a 250 ms retry.
-    bool m_starved = false;
+    /// Per worker: its last dispatch found nothing leasable. Cleared on the next
+    /// tick (a spin becomes a 250 ms retry) or when its capacity or slots grow.
+    /// Per worker, so one full worker does not park the other seven.
+    QList<bool> m_workerStarved;
+
+    /// Diagnostics for logQueueState(), reset per line.
+    int m_diagNoServer = 0;          ///< noServerAvailable results
+    int m_diagStarvedSkips = 0;      ///< worker rounds skipped as starved
+    int m_diagRequeued = 0;          ///< pipelined articles put back
+    int m_diagTicks = 0;
+    QString m_dispatchParkReason;    ///< last reason logged by noteDispatchPark()
 
     /// The scratch volume is below the floor the user set, so nothing new is
     /// started until it is not.

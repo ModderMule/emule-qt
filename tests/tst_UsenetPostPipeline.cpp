@@ -673,6 +673,23 @@ int firstBodyIndexFor(const QStringList& commands, const QString& fileName)
     return -1;
 }
 
+/// BODYs for @p fileName's articles in what the server saw.
+int bodyCountFor(const QStringList& commands, const QString& fileName)
+{
+    int count = 0;
+    for (const QString& command : commands) {
+        if (!command.startsWith(QLatin1String("BODY"), Qt::CaseInsensitive))
+            continue;
+        for (int p = 1; p <= 40; ++p) {
+            if (command.contains(messageIdFor(fileName, p))) {
+                ++count;
+                break;
+            }
+        }
+    }
+    return count;
+}
+
 } // namespace
 
 void tst_UsenetPostPipeline::anObfuscatedReleaseIsNamedFromPar2WhileItDownloads()
@@ -1463,7 +1480,8 @@ void tst_UsenetPostPipeline::aReleaseThatCannotBeRepairedStopsBeforeTheRest()
     });
 
     UsenetQueue queue;
-    // One connection: nothing is in flight beside the article that tips it over.
+    // One connection: beside the article that tips it over, only the one
+    // pipelined behind it can be in flight.
     queue.applyServers({serverConfig(port, 1)}, 60);
     // Rename off too: the block size has to be learned without it.
     queue.setPostProcessingOptions({.rename = false});
@@ -1478,8 +1496,12 @@ void tst_UsenetPostPipeline::aReleaseThatCannotBeRepairedStopsBeforeTheRest()
     QCOMPARE(item->stopReason, UsenetStopReason::Unrepairable);
     QVERIFY2(item->stalledReason.contains(QLatin1String("cannot be repaired")),
              qPrintable(item->stalledReason));
-    QVERIFY2(firstBodyIndexFor(server.receivedCommands(), QStringLiteral("Rel.part2.bin")) < 0,
-             "the rest of a release that could not be repaired was paid for anyway");
+    int bought = 0;
+    for (int v = 2; v <= 6; ++v)
+        bought += bodyCountFor(server.receivedCommands(), QStringLiteral("Rel.part%1.bin").arg(v));
+    QVERIFY2(bought <= 1, qPrintable(QStringLiteral(
+        "the rest of a release that could not be repaired was paid for anyway (%1 articles)")
+        .arg(bought)));
     for (const UsenetFileState& st : item->files)
         QVERIFY2(st.par2FileName.isEmpty(), "a name was applied with rename off");
 

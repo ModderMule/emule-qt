@@ -92,12 +92,23 @@ public:
     /// actually readable — see UsenetFileState::written.
     [[nodiscard]] qint64 decodedOffset() const { return m_decodedOffset; }
 
+    /// Bytes before the end of a BODY at which the next one should be sent:
+    /// everything the buffers can hold (Qt x2 for TLS, kernel, Linux doubling:
+    /// 4 caps) plus two round trips of drain, so the provider never runs dry.
+    /// Unlimited = the whole article, since it lands within one round trip.
+    [[nodiscard]] static qint64 pipelineLookahead(qint64 bytesPerSecond, qint64 bufferCap,
+                                                  qint64 latencyMs);
+
 signals:
     /// The segment is done. @p error is NntpError::None on success.
     ///
     /// escalatesToNextLevel(error) distinguishes "this server does not have it"
     /// from "this connection went wrong" — the distinction the queue routes on.
     void finished(eMule::usenet::NntpError error, const QString& text);
+
+    /// The BODY is close enough to its end that the next article should be
+    /// pipelined behind it. At most once per fetch().
+    void nearlyDone();
 
 private:
     /// Which verb this run issues. The rest of the sequence is identical.
@@ -108,6 +119,7 @@ private:
     void startVerb();
     void startBody();
     void startStat();
+    void checkNearlyDone();
     void finish(NntpError error, const QString& text);
 
     NntpSocket* m_socket = nullptr;
@@ -130,6 +142,7 @@ private:
     QString m_writeError;
     bool m_positioned = false;
     bool m_articleExists = false;
+    bool m_nearlyDone = false;
 };
 
 } // namespace eMule::usenet

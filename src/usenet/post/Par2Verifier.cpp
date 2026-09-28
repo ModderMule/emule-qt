@@ -479,7 +479,7 @@ Par2Result Par2Verifier::run(const QString& par2Path, const QString& basePath,
     }
 
     if (result.outcome == Par2Outcome::Error || result.outcome == Par2Outcome::RepairFailed) {
-        logWarning(QStringLiteral("PAR2: %1 on \"%2\": %3")
+        logUsenetWarning(QStringLiteral("PAR2: %1 on \"%2\": %3")
                        .arg(describePar2Outcome(result.outcome),
                             QFileInfo(par2Path).fileName(),
                             result.message.isEmpty() ? QStringLiteral("no detail")
