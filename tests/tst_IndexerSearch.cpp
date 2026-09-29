@@ -11,11 +11,15 @@
 
 #include "IndexerClient.h"
 #include "IndexerSearch.h"
+#include "IndexerSearchList.h"
 #include "IndexerQuery.h"
+
+#include "prefs/Preferences.h"
 
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QTemporaryDir>
 #include <QTest>
 #include <QUrlQuery>
 
@@ -38,6 +42,7 @@ private slots:
     void pagingStopsAtTheCap();
     void pagingStopsWhenTheIndexerRunsOut();
     void stopEndsTheSearchAndKeepsWhatArrived();
+    void grabCache_grabsARowAfterARestart();
 };
 
 namespace {
@@ -58,6 +63,19 @@ QByteArray feed(const QStringList& titles, int offset, int total)
     }
     out += "</channel></rss>";
     return out;
+}
+
+/// One item whose enclosure points back at @p base, so a grab hits the fake.
+QByteArray feedWithNzb(const QString& base)
+{
+    return QStringLiteral(
+               R"(<?xml version="1.0"?><rss version="2.0"
+                  xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/"><channel>)"
+               R"(<newznab:response offset="0" total="1"/>)"
+               R"(<item><title>Release</title><guid>g1</guid>)"
+               R"(<enclosure url="%1/get/Release.nzb" length="1"/>)"
+               R"(<newznab:attr name="size" value="1000"/></item></channel></rss>)")
+        .arg(base).toUtf8();
 }
 
 IndexerConfig configFor(const FakeIndexerServer& server, const QString& name)
@@ -277,6 +295,69 @@ void tst_IndexerSearch::stopEndsTheSearchAndKeepsWhatArrived()
 
     // The page we cancelled is not the indexer failing.
     QCOMPARE(stats->indexerSession().apiErrors, uint64(0));
+}
+
+void tst_IndexerSearch::grabCache_grabsARowAfterARestart()
+{
+    // A restored GUI tab grabs with searchId 0; the daemon must still know the URL.
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString savedConfigDir = thePrefs.configDir();
+    thePrefs.setConfigDir(dir.path());
+
+    QString base;
+    FakeIndexerServer server([&base](const QUrl& url) {
+        if (url.path().endsWith(QStringLiteral(".nzb")))
+            return qMakePair(200, QByteArray("<nzb/>"));
+        return qMakePair(200, feedWithNzb(base));
+    });
+    base = server.baseUrl();
+    thePrefs.setIndexers({configFor(server, QStringLiteral("One"))});
+    thePrefs.setIndexerMaxPages(1);
+
+    QString resultId;
+    {
+        IndexerSearchList list;
+        QSignalSpy finished(&list, &IndexerSearchList::searchFinished);
+        IndexerQuery query;
+        query.text = QStringLiteral("x");
+        QString error;
+        const quint32 id = list.startSearch(query, IndexerKind::Newznab, {}, error);
+        QVERIFY2(id != 0, qPrintable(error));
+        QVERIFY(finished.wait(5000));
+        QCOMPARE(list.search(id)->results().size(), 1);
+        resultId = list.search(id)->results().first().id;
+    }   // destructor flushes the cache
+
+    IndexerSearchList restarted;
+    bool done = false;
+    bool ok = false;
+    QByteArray payload;
+    QString name;
+    restarted.grab(0, resultId, [&](bool okIn, const QByteArray& body, const QString& nameIn,
+                                    const QString&, const QString&) {
+        done = true;
+        ok = okIn;
+        payload = body;
+        name = nameIn;
+    });
+    QTRY_VERIFY_WITH_TIMEOUT(done, 5000);
+    QVERIFY(ok);
+    QCOMPARE(payload, QByteArray("<nzb/>"));
+    QCOMPARE(name, QStringLiteral("Release"));
+
+    // an id nobody cached still fails cleanly
+    done = ok = false;
+    restarted.grab(0, QStringLiteral("nope"), [&](bool okIn, const QByteArray&, const QString&,
+                                                  const QString&, const QString&) {
+        done = true;
+        ok = okIn;
+    });
+    QVERIFY(done);
+    QVERIFY(!ok);
+
+    thePrefs.setIndexers({});
+    thePrefs.setConfigDir(savedConfigDir);
 }
 
 QTEST_MAIN(tst_IndexerSearch)

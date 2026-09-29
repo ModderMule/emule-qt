@@ -309,6 +309,12 @@ inline constexpr qsizetype kMaxBarRanges = 1024;
         m.insert(QStringLiteral("metaAge"),     static_cast<qint64>(meta.ageDays));
         m.insert(QStringLiteral("metaIndexer"), meta.indexer);
         m.insert(QStringLiteral("metaFlags"),   static_cast<qint64>(meta.flags));
+        // what FetchMetaFile/DownloadMetaResult need once the live search is gone
+        m.insert(QStringLiteral("metaCatalogId"), meta.catalogId);
+        QCborArray servers;
+        for (const auto& s : f.servers())
+            servers.append(QCborArray{static_cast<qint64>(s.ip), static_cast<qint64>(s.port)});
+        m.insert(QStringLiteral("metaServers"), servers);
     }
     return m;
 }

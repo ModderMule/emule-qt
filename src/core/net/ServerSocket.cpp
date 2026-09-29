@@ -9,6 +9,7 @@
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
 #include "server/Server.h"
+#include "server/ServerList.h"
 #include "stats/Statistics.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
@@ -687,13 +688,12 @@ void ServerSocket::onDnsLookupFinished()
     const QHostAddress addr = m_dnsLookup->hostAddressRecords().first().value();
     const Address resolved = Address::fromQHostAddress(addr);   // either family
 
-    if (auto* filter = theApp.ipFilter) {
-        if (filter->isFiltered(resolved, thePrefs.ipFilterLevel())) {
-            logWarning(QStringLiteral("DNS resolved IP %1 is filtered by IPFilter")
-                           .arg(ipstr(resolved)));
-            setConnectionState(ServerConnState::ServerDead);
-            return;
-        }
+    // A dynIP server skipped the addServer filter; check the resolved IP now and have
+    // the list entry deleted. MFC: CServerSocket::OnHostnameResolved() — ServerSocket.cpp:91.
+    if (ServerList::isFilteredServerIP(resolved, u"TCP/DNSResolve", m_curServer->dynIP())) {
+        emit dynIPFiltered(resolved);
+        setConnectionState(ServerConnState::Error);   // CS_ERROR: no failed-count bump
+        return;
     }
 
     m_curServer->setIpAddress(resolved);

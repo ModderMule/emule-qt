@@ -33,6 +33,7 @@
 #include <QTimer>
 #include <QClipboard>
 #include <QComboBox>
+#include <QDateTime>
 #include <QCompleter>
 #include <QFile>
 #include <QGridLayout>
@@ -653,6 +654,7 @@ void SearchPanel::onIndexerResultsPush(const IpcMessage& msg)
     // Append rather than reset: rows arrive per indexer, and a reset on every
     // batch would throw away the user's selection each time another one replied.
     tab->indexerModel->addResults(rows);
+    scheduleSaveSearches();
 
     const int tabIndex = int(tab - m_tabs.data());
     m_tabBar->setTabText(tabIndex, QStringLiteral("%1 (%2)")
@@ -1197,6 +1199,8 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
             row.magnet             = m.value(QStringLiteral("magnet")).toString();
             row.metaAgeDays        = m.value(QStringLiteral("metaAge")).toInteger();
             row.metaIndexer        = m.value(QStringLiteral("metaIndexer")).toString();
+            row.metaCatalogId      = m.value(QStringLiteral("metaCatalogId")).toString();
+            row.metaServers        = m.value(QStringLiteral("metaServers")).toArray();
             rows.push_back(std::move(row));
         }
 
@@ -1254,9 +1258,9 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
             const int srcRow = tab->proxy->mapToSource(tab->proxy->index(idx.row(), 0)).row();
             const auto* r = tab->model->resultAt(srcRow);
             if (r && r->isUsenet())
-                usenet.append({r->hash, r->fileName, true});
+                usenet.append({r->hash, r->fileName, true, r->metaRef()});
             else if (r && r->isTorrent())
-                torrents.append({r->hash, r->fileName, false});
+                torrents.append({r->hash, r->fileName, false, r->metaRef()});
             else
                 ed2kRows.append(idx);
         }
@@ -1398,7 +1402,7 @@ void SearchPanel::saveMetaFiles(bool nzb)
     for (const auto& idx : m_resultView->selectionModel()->selectedRows()) {
         const auto* r = tab->model->resultAt(tab->proxy->mapToSource(idx).row());
         if (r && (nzb ? r->isUsenet() : r->isTorrent()))
-            rows.append({r->hash, r->fileName, nzb});
+            rows.append({r->hash, r->fileName, nzb, r->metaRef()});
     }
     metaActions()->saveMetaFiles(tab->searchID, rows);
 }
@@ -1646,6 +1650,111 @@ void SearchPanel::addToSearchHistory(const QString& expression)
 // Search persistence
 // ---------------------------------------------------------------------------
 
+namespace {
+
+QJsonObject ed2kRowToJson(const SearchResultRow& row)
+{
+    QJsonObject o;
+    o[QStringLiteral("hash")]                = row.hash;
+    o[QStringLiteral("fileName")]            = row.fileName;
+    o[QStringLiteral("fileType")]            = row.fileType;
+    o[QStringLiteral("fileSize")]            = static_cast<qint64>(row.fileSize);
+    o[QStringLiteral("sourceCount")]         = static_cast<qint64>(row.sourceCount);
+    o[QStringLiteral("completeSourceCount")] = static_cast<qint64>(row.completeSourceCount);
+    o[QStringLiteral("isKad")]               = row.isKad;
+    o[QStringLiteral("inDirectory")]         = row.inDirectory;
+    o[QStringLiteral("artist")]              = row.artist;
+    o[QStringLiteral("album")]               = row.album;
+    o[QStringLiteral("title")]               = row.title;
+    o[QStringLiteral("codec")]               = row.codec;
+    o[QStringLiteral("length")]              = static_cast<qint64>(row.length);
+    o[QStringLiteral("bitrate")]             = static_cast<qint64>(row.bitrate);
+    o[QStringLiteral("knownType")]           = row.knownType;
+    o[QStringLiteral("isSpam")]              = row.isSpam;
+    if (row.isMeta()) {
+        // torrent/Usenet rows: the daemon refetches their metafile by this
+        o[QStringLiteral("metaKind")]      = row.metaKind;
+        o[QStringLiteral("magnet")]        = row.magnet;
+        o[QStringLiteral("metaAge")]       = static_cast<qint64>(row.metaAgeDays);
+        o[QStringLiteral("metaIndexer")]   = row.metaIndexer;
+        o[QStringLiteral("metaCatalogId")] = row.metaCatalogId;
+        o[QStringLiteral("metaServers")]   = row.metaServers.toJsonArray();
+    }
+    return o;
+}
+
+SearchResultRow ed2kRowFromJson(const QJsonObject& r)
+{
+    SearchResultRow row;
+    row.hash                = r[QStringLiteral("hash")].toString();
+    row.fileName            = r[QStringLiteral("fileName")].toString();
+    row.fileType            = r[QStringLiteral("fileType")].toString();
+    row.fileSize            = static_cast<qint64>(r[QStringLiteral("fileSize")].toDouble());
+    row.sourceCount         = static_cast<qint64>(r[QStringLiteral("sourceCount")].toDouble());
+    row.completeSourceCount = static_cast<qint64>(r[QStringLiteral("completeSourceCount")].toDouble());
+    row.isKad               = r[QStringLiteral("isKad")].toBool();
+    row.inDirectory         = r[QStringLiteral("inDirectory")].toBool();
+    row.artist              = r[QStringLiteral("artist")].toString();
+    row.album               = r[QStringLiteral("album")].toString();
+    row.title               = r[QStringLiteral("title")].toString();
+    row.codec               = r[QStringLiteral("codec")].toString();
+    row.length              = static_cast<qint64>(r[QStringLiteral("length")].toDouble());
+    row.bitrate             = static_cast<qint64>(r[QStringLiteral("bitrate")].toDouble());
+    row.knownType           = r[QStringLiteral("knownType")].toInt();
+    row.isSpam              = r[QStringLiteral("isSpam")].toBool();
+    row.metaKind            = r[QStringLiteral("metaKind")].toInt();
+    row.magnet              = r[QStringLiteral("magnet")].toString();
+    row.metaAgeDays         = static_cast<qint64>(r[QStringLiteral("metaAge")].toDouble());
+    row.metaIndexer         = r[QStringLiteral("metaIndexer")].toString();
+    row.metaCatalogId       = r[QStringLiteral("metaCatalogId")].toString();
+    row.metaServers         = QCborArray::fromJsonArray(r[QStringLiteral("metaServers")].toArray());
+    return row;
+}
+
+// No download URL here: the daemon keeps it and grabs a restored row by `id`.
+QJsonObject indexerRowToJson(const IndexerResultRow& row)
+{
+    QJsonObject o;
+    o[QStringLiteral("id")]                = row.id;
+    o[QStringLiteral("indexerName")]       = row.indexerName;
+    o[QStringLiteral("title")]             = row.title;
+    o[QStringLiteral("size")]              = static_cast<qint64>(row.size);
+    o[QStringLiteral("published")]         = static_cast<qint64>(row.published);
+    o[QStringLiteral("category")]          = row.category;
+    o[QStringLiteral("grabs")]             = row.grabs;
+    o[QStringLiteral("files")]             = row.files;
+    o[QStringLiteral("passwordProtected")] = row.passwordProtected;
+    o[QStringLiteral("seeders")]           = row.seeders;
+    o[QStringLiteral("peers")]             = row.peers;
+    o[QStringLiteral("isUsenet")]          = row.isUsenet;
+    o[QStringLiteral("knownType")]         = row.knownType;
+    return o;
+}
+
+IndexerResultRow indexerRowFromJson(const QJsonObject& r)
+{
+    IndexerResultRow row;
+    row.id                = r[QStringLiteral("id")].toString();
+    row.indexerName       = r[QStringLiteral("indexerName")].toString();
+    row.title             = r[QStringLiteral("title")].toString();
+    row.size              = static_cast<qint64>(r[QStringLiteral("size")].toDouble());
+    row.published         = static_cast<qint64>(r[QStringLiteral("published")].toDouble());
+    row.category          = r[QStringLiteral("category")].toString();
+    row.grabs             = r[QStringLiteral("grabs")].toInt(-1);
+    row.files             = r[QStringLiteral("files")].toInt(-1);
+    row.passwordProtected = r[QStringLiteral("passwordProtected")].toBool();
+    row.seeders           = r[QStringLiteral("seeders")].toInt(-1);
+    row.peers             = r[QStringLiteral("peers")].toInt(-1);
+    row.isUsenet          = r[QStringLiteral("isUsenet")].toBool(true);
+    row.knownType         = r[QStringLiteral("knownType")].toInt();
+    // age moves on while the tab sits on disk
+    if (row.published > 0)
+        row.ageDays = static_cast<int>((QDateTime::currentSecsSinceEpoch() - row.published) / 86400);
+    return row;
+}
+
+} // namespace
+
 void SearchPanel::saveSearches()
 {
     if (!m_searchesLoaded)
@@ -1657,44 +1766,27 @@ void SearchPanel::saveSearches()
         return;
     }
 
+    // Every kind is stored. Rows that download through the daemon (torrent/Usenet
+    // meta rows, indexer rows) stay downloadable after a restart: meta rows carry
+    // their catalog id + servers, indexer rows are grabbed from the daemon's grab
+    // cache by id.
     QJsonArray searchesArr;
     for (const auto& tab : m_tabs) {
-        // Indexer tabs are not restored. A stored ED2K result stays downloadable
-        // by its hash; an indexer row is only downloadable through a live search
-        // on the daemon, and that search is gone by the next start. Writing the
-        // rows out would restore a tab whose every double-click failed.
-        if (tab.isIndexer())
-            continue;
-
         QJsonObject searchObj;
         searchObj[QStringLiteral("title")] = tab.title;
         searchObj[QStringLiteral("method")] = tab.method;
         searchObj[QStringLiteral("clientSharedFiles")] = tab.clientSharedFiles;
+        searchObj[QStringLiteral("indexer")] = tab.isIndexer();
 
         QJsonArray resultsArr;
-        for (int r = 0; r < tab.model->resultCount(); ++r) {
-            const auto* row = tab.model->resultAt(r);
-            // Torrent/Usenet rows download through the live search (by searchID),
-            // gone after a restart, like indexer tabs; they'd come back as eD2K rows.
-            if (!row || row->isMeta()) continue;
-            QJsonObject rowObj;
-            rowObj[QStringLiteral("hash")]                = row->hash;
-            rowObj[QStringLiteral("fileName")]            = row->fileName;
-            rowObj[QStringLiteral("fileType")]            = row->fileType;
-            rowObj[QStringLiteral("fileSize")]            = static_cast<qint64>(row->fileSize);
-            rowObj[QStringLiteral("sourceCount")]         = static_cast<qint64>(row->sourceCount);
-            rowObj[QStringLiteral("completeSourceCount")] = static_cast<qint64>(row->completeSourceCount);
-            rowObj[QStringLiteral("isKad")]               = row->isKad;
-            rowObj[QStringLiteral("inDirectory")]         = row->inDirectory;
-            rowObj[QStringLiteral("artist")]              = row->artist;
-            rowObj[QStringLiteral("album")]               = row->album;
-            rowObj[QStringLiteral("title")]               = row->title;
-            rowObj[QStringLiteral("codec")]               = row->codec;
-            rowObj[QStringLiteral("length")]              = static_cast<qint64>(row->length);
-            rowObj[QStringLiteral("bitrate")]             = static_cast<qint64>(row->bitrate);
-            rowObj[QStringLiteral("knownType")]           = row->knownType;
-            rowObj[QStringLiteral("isSpam")]              = row->isSpam;
-            resultsArr.append(rowObj);
+        if (tab.isIndexer()) {
+            for (int r = 0; r < tab.indexerModel->resultCount(); ++r)
+                if (const auto* row = tab.indexerModel->resultAt(r))
+                    resultsArr.append(indexerRowToJson(*row));
+        } else {
+            for (int r = 0; r < tab.model->resultCount(); ++r)
+                if (const auto* row = tab.model->resultAt(r))
+                    resultsArr.append(ed2kRowToJson(*row));
         }
         searchObj[QStringLiteral("results")] = resultsArr;
         searchesArr.append(searchObj);
@@ -1736,31 +1828,7 @@ void SearchPanel::loadSearches()
         const QString title = searchObj[QStringLiteral("title")].toString();
         if (title.isEmpty()) continue;
 
-        std::vector<SearchResultRow> rows;
         const auto resultsArr = searchObj[QStringLiteral("results")].toArray();
-        rows.reserve(static_cast<size_t>(resultsArr.size()));
-
-        for (const auto& rVal : resultsArr) {
-            const auto r = rVal.toObject();
-            SearchResultRow row;
-            row.hash                = r[QStringLiteral("hash")].toString();
-            row.fileName            = r[QStringLiteral("fileName")].toString();
-            row.fileType            = r[QStringLiteral("fileType")].toString();
-            row.fileSize            = static_cast<qint64>(r[QStringLiteral("fileSize")].toDouble());
-            row.sourceCount         = static_cast<qint64>(r[QStringLiteral("sourceCount")].toDouble());
-            row.completeSourceCount = static_cast<qint64>(r[QStringLiteral("completeSourceCount")].toDouble());
-            row.isKad               = r[QStringLiteral("isKad")].toBool();
-            row.inDirectory         = r[QStringLiteral("inDirectory")].toBool();
-            row.artist              = r[QStringLiteral("artist")].toString();
-            row.album               = r[QStringLiteral("album")].toString();
-            row.title               = r[QStringLiteral("title")].toString();
-            row.codec               = r[QStringLiteral("codec")].toString();
-            row.length              = static_cast<qint64>(r[QStringLiteral("length")].toDouble());
-            row.bitrate             = static_cast<qint64>(r[QStringLiteral("bitrate")].toDouble());
-            row.knownType           = r[QStringLiteral("knownType")].toInt();
-            row.isSpam              = r[QStringLiteral("isSpam")].toBool();
-            rows.push_back(std::move(row));
-        }
 
         SearchTab tab;
         tab.searchID = 0;
@@ -1768,8 +1836,22 @@ void SearchPanel::loadSearches()
         tab.method = searchObj[QStringLiteral("method")].toInt();
         tab.clientSharedFiles = searchObj[QStringLiteral("clientSharedFiles")].toBool();
         tab.finished = true;
-        tab.model = new SearchResultsModel(this);
-        tab.model->setResults(std::move(rows));
+
+        if (searchObj[QStringLiteral("indexer")].toBool()) {
+            std::vector<IndexerResultRow> rows;
+            rows.reserve(static_cast<size_t>(resultsArr.size()));
+            for (const auto& rVal : resultsArr)
+                rows.push_back(indexerRowFromJson(rVal.toObject()));
+            tab.indexerModel = new IndexerResultsModel(this);
+            tab.indexerModel->addResults(rows);
+        } else {
+            std::vector<SearchResultRow> rows;
+            rows.reserve(static_cast<size_t>(resultsArr.size()));
+            for (const auto& rVal : resultsArr)
+                rows.push_back(ed2kRowFromJson(rVal.toObject()));
+            tab.model = new SearchResultsModel(this);
+            tab.model->setResults(std::move(rows));
+        }
         addResultTab(std::move(tab));
     }
 

@@ -498,6 +498,12 @@ void CoreSession::initServerConnect()
         logWarning(QStringLiteral("No server.met found at %1 — server list is empty").arg(serverMetPath));
     }
 
+    // 1a. A newly loaded filter file re-checks the list (IPC reload, any loadFromFile).
+    // MFC: CPPgSecurity::OnReloadIPFilter() → RemoveAllFilteredServers().
+    if (theApp.ipFilter)
+        connect(theApp.ipFilter, &IPFilter::filterLoaded, m_serverList.get(),
+                [list = m_serverList.get()](int) { list->removeFilteredServers(); });
+
     // 1b. Auto-update server list from URL if configured
     if (thePrefs.autoUpdateServerList() && !thePrefs.serverListURL().isEmpty())
         autoUpdateServerList();

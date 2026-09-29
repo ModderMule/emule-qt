@@ -8,12 +8,14 @@
 
 #include <QColor>
 #include <QDateTime>
+#include <QFontDatabase>
 #include <QIcon>
 #include <QStackedWidget>
 #include <QTabBar>
 #include <QTextBlock>
 #include <QTextBrowser>
 #include <QTextCursor>
+#include <QTextDocument>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -32,6 +34,22 @@ constexpr int kServerInfoTabIndex = 0;
 /// Internal URL for the banner's version-check link — not a real scheme, just a
 /// sentinel the panel recognises and turns into an in-app check.
 constexpr QLatin1StringView kVersionCheckUrl{"emuleqt:versioncheck"};
+
+/// Server Info font. eMule shows server messages in the dialog font, Tahoma, so
+/// servers lay out login-message ASCII art for it: e.g. eNode-go's banner relies
+/// on '$' and '`' sharing one advance width. Any other face breaks the rows apart.
+/// Where Tahoma is missing (usually Linux) the bundled Wine clone stands in; its
+/// design widths match Tahoma's.
+QFont serverInfoFont()
+{
+    static const bool registered = [] {
+        if (QFontDatabase::hasFamily(QStringLiteral("Tahoma")))
+            return true;
+        return QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/WineTahoma.ttf")) >= 0;
+    }();
+    Q_UNUSED(registered);
+    return QFont(QStringLiteral("Tahoma"), 10);
+}
 
 } // namespace
 
@@ -61,7 +79,10 @@ LogWidget::LogWidget(QWidget* parent)
     // reference routes clicks the same way (CServerWnd::OnEnLinkServerBox).
     TextLinks::wireLinkClicks(m_serverInfoBrowser, this,
                               [this](const QString& link) { emit linkActivated(link); });
-    m_serverInfoBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
+    m_serverInfoBrowser->setFont(serverInfoFont());
+    // Fractional design-unit advances instead of per-glyph pixel rounding: glyphs
+    // that share a width in the font then share it on screen at every size.
+    m_serverInfoBrowser->document()->setUseDesignMetrics(true);
     if (thePrefs.useOriginalIcons())
         m_tabBar->addTab(QIcon(QStringLiteral(":/icons/ServerInfo.ico")), tr("Server Info"));
     else

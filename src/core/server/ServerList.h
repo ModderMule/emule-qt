@@ -72,10 +72,23 @@ public:
     /// Remove servers with failedCount >= maxRetries. Returns count removed.
     int removeDeadServers(uint32 maxRetries);
 
+    /// Remove every resolved server the IP filter now blocks (after a filter load).
+    /// No-op unless filterServerByIP is on. Returns count removed.
+    /// Port of CServerListCtrl::RemoveAllFilteredServers().
+    int removeFilteredServers();
+
     /// Remove every other entry sharing `except`'s address string and port —
     /// used after a dynIP server resolves so stale duplicates don't accumulate.
     /// Port of CServerList::RemoveDuplicatesByAddress().
     void removeDuplicatesByAddress(const Server* except);
+
+    /// Remove every other entry sharing `except`'s IP and port. No-op for a null IP.
+    /// Port of CServerList::RemoveDuplicatesByIP().
+    void removeDuplicatesByIP(const Server* except);
+
+    /// A dynIP name resolved: store @p ip on the list entry for @p dn:@p port and drop
+    /// its IP twins. Returns the entry, or nullptr if it's not in the list.
+    Server* applyResolvedIP(const QString& dn, uint16 port, const Address& ip);
 
     /// Emit serverUpdated(server) so views refresh after an in-place mutation.
     void notifyServerUpdated(Server* server) { emit serverUpdated(server); }
@@ -165,6 +178,17 @@ public:
     // -- IP validation ----------------------------------------------------
 
     [[nodiscard]] static bool isGoodServerIP(const Server& server);
+    [[nodiscard]] static bool isGoodServerIP(const Address& ip);
+
+    /// True if filterServerByIP is on and @p ip is blocked by the IP filter. Logs a hit
+    /// as "IPFilter(<context>): Filtered server ..." (MFC wording) when logFilteredIPs.
+    [[nodiscard]] static bool isFilteredServerIP(const Address& ip, QStringView context,
+                                                 const QString& serverName);
+
+    /// Post-DNS check of MFC's UDP path: a LAN/invalid IP (unless it's the connected
+    /// server's) or an IP-filtered one. Logs the hit like isFilteredServerIP().
+    [[nodiscard]] static bool isRejectedResolvedIP(const Address& ip, QStringView context,
+                                                   const QString& serverName);
 
 signals:
     void serverAdded(Server* server);

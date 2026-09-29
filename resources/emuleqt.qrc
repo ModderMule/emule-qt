@@ -277,4 +277,8 @@
         <file alias="mule_wiz_hdr.gif">images/mule_wiz_hdr.gif</file>
         <file alias="Logo.jpg">images/Logo.jpg</file>
     </qresource>
+    <!-- Tahoma fallback for systems without it (see fonts/WineTahoma.LICENSE.txt) -->
+    <qresource prefix="/fonts">
+        <file alias="WineTahoma.ttf">fonts/WineTahoma.ttf</file>
+    </qresource>
 </RCC>

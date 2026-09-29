@@ -10,6 +10,7 @@
 #include "IpcProtocol.h"
 #include "enodemeta/MetaAccountStore.h"
 #include "enodemeta/MetaApiClient.h"
+#include "search/SearchFile.h"
 
 #include <QCborMap>
 #include <QObject>
@@ -19,8 +20,6 @@
 #include <optional>
 
 namespace eMule {
-
-class SearchFile;
 
 class MetaSearchService : public QObject {
     Q_OBJECT
@@ -43,6 +42,8 @@ public:
 
     /// The Meta API of the server that returned @p file, else the connected one's.
     [[nodiscard]] std::optional<Target> targetForResult(const SearchFile& file) const;
+    /// Same, from the answering servers alone — a restored row has no SearchFile.
+    [[nodiscard]] std::optional<Target> targetForServers(const std::list<SearchFile::SServer>& servers) const;
     /// By "addr:port" from a GUI request.
     [[nodiscard]] std::optional<Target> targetForServer(const QString& serverAddr) const;
 

@@ -1,0 +1,18 @@
+WineTahoma.ttf — the Wine project's metric-compatible Tahoma replacement
+(tahoma.ttf from Wine 10.0, taken from Debian's wine-common 10.0~repack-12).
+
+Copyright (C) 2004 Larry Snyder. Based on Bitstream Vera Sans (C) Bitstream Inc.
+https://www.winehq.org
+
+This library is free software; you can redistribute it and/or modify it under
+the terms of the GNU Lesser General Public License as published by the Free
+Software Foundation; either version 2.1 of the License, or (at your option) any
+later version.
+
+This library is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU Lesser General Public License for more details:
+https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+
+eMule Qt loads it only when the system has no "Tahoma" family (typically Linux),
+so the Server Info pane uses the same advance widths as eMule's default font.

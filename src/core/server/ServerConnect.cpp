@@ -262,14 +262,27 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
                 onServerStatus(socket, users, files);
             });
 
-    // A dynIP server that resolves leaves stale duplicate entries sharing its
-    // address; collapse them (#18). MFC: CServerList::RemoveDuplicatesByAddress().
+    // A resolved dynIP server: store the IP on the list entry and collapse its IP
+    // twins (MFC: CServerSocket::OnHostNameResolved — ServerSocket.cpp:79), plus
+    // same-DN duplicates (#18, RemoveDuplicatesByAddress).
     connect(socket, &ServerSocket::dynIPResolved, this,
-            [this, socket](const Address& /*addr*/, const QString& /*hostname*/) {
-                if (!theApp.serverList)
+            [this, socket](const Address& addr, const QString& hostname) {
+                const Server* connected = socket->currentServer();
+                if (!connected)
                     return;
-                if (Server* entry = resolveListEntry(socket))
-                    theApp.serverList->removeDuplicatesByAddress(entry);
+                if (Server* entry = m_serverList.applyResolvedIP(hostname, connected->port(), addr))
+                    m_serverList.removeDuplicatesByAddress(entry);
+            });
+
+    // Resolved into the IP filter: delete the entry. Look up by DN — the socket copy
+    // has no IP yet. MFC: CServerSocket::OnHostnameResolved() — ServerSocket.cpp:91.
+    connect(socket, &ServerSocket::dynIPFiltered, this,
+            [this, socket](const Address& /*addr*/) {
+                const Server* connected = socket->currentServer();
+                if (!connected)
+                    return;
+                if (Server* entry = m_serverList.findByAddress(connected->address(), connected->port()))
+                    m_serverList.removeServer(entry);
             });
 
     connect(socket, &ServerSocket::searchResultReceived,

@@ -140,6 +140,9 @@ signals:
     /// hostname resolves to an IPv6, which a uint32 cannot carry.
     void dynIPResolved(const eMule::Address& addr, const QString& hostname);
 
+    /// A dynIP server resolved to an IP-filtered address; the list entry must go.
+    void dynIPFiltered(const eMule::Address& addr);
+
     /// Connection failed or broken.
     void connectionFailed(eMule::ServerConnState reason);
 

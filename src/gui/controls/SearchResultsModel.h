@@ -3,6 +3,8 @@
 /// @file SearchResultsModel.h
 /// @brief Table model for search results in the Search window.
 
+#include <QCborArray>
+#include <QCborMap>
 #include <QHash>
 #include <QString>
 
@@ -39,6 +41,8 @@ struct SearchResultRow {
     QString magnet;       ///< torrents only, may be empty
     int64_t metaAgeDays = 0;
     QString metaIndexer;
+    QString metaCatalogId;   ///< FT_META_ID, echoed on the metafile fetch
+    QCborArray metaServers;  ///< answering servers, [[ip, port], …]
 
     [[nodiscard]] bool isMeta() const { return metaKind != 0; }
     [[nodiscard]] bool isTorrent() const { return metaKind == 1 || metaKind == 2; }
@@ -48,6 +52,8 @@ struct SearchResultRow {
     [[nodiscard]] QString ed2kLink() const;
     /// urn:ed2k magnet, or the server's magnet for a meta row (empty for Usenet).
     [[nodiscard]] QString magnetLink() const;
+    /// What the daemon needs to fetch a meta row whose search is gone (a restored tab).
+    [[nodiscard]] QCborMap metaRef() const;
 };
 
 /// Table model backing the search results tree view in the Search panel.

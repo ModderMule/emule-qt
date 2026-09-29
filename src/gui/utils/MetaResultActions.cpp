@@ -120,6 +120,7 @@ void MetaResultActions::sendDownload(quint32 searchID, const Row& row, int categ
     msg.append(static_cast<qint64>(category));
     msg.append(qint64(0));   // priority: normal
     msg.append(false);       // paused
+    msg.append(row.ref);
 
     QPointer<MetaResultActions> self(this);
     m_ipc->sendRequest(std::move(msg), [self, searchID, row, category, model](const IpcMessage& resp) {
@@ -167,6 +168,7 @@ void MetaResultActions::fetchAndSave(quint32 searchID, const Row& row, const QSt
     IpcMessage msg(IpcMsgType::FetchMetaFile);
     msg.append(static_cast<qint64>(searchID));
     msg.append(row.hash);
+    msg.append(row.ref);
 
     QPointer<MetaResultActions> self(this);
     m_ipc->sendRequest(std::move(msg), [self, searchID, row, path, pathIsDir](const IpcMessage& resp) {

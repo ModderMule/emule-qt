@@ -313,16 +313,10 @@ Server* ServerList::addServer(std::unique_ptr<Server> server)
         return nullptr;
 
     // Reject IP-filtered servers. dynIP servers are filtered post-DNS in
-    // ServerSocket::onDnsLookupFinished, so skip them here (matching MFC).
-    // MFC: CServerList::AddServer() — ServerList.cpp:210-222.
-    // The Address overload is load-bearing, not a convenience: toNetworkUint32() is 0 for
-    // every IPv6 server, so the uint32 form would test the wrong value for all of them.
-    if (!server->hasDynIP() && thePrefs.filterServerByIP() && theApp.ipFilter
-        && theApp.ipFilter->isFiltered(server->ipAddress(), thePrefs.ipFilterLevel())) {
-        logWarning(QStringLiteral("IPFilter(addServer): filtered server %1 (%2)")
-                       .arg(server->name(), theApp.ipFilter->lastHitDescription()));
+    // ServerSocket::onDnsLookupFinished (TCP) and UDPSocket::queueDNSRequest (UDP),
+    // so skip them here (matching MFC). MFC: CServerList::AddServer() — ServerList.cpp:210-222.
+    if (!server->hasDynIP() && isFilteredServerIP(server->ipAddress(), u"AddServer", server->name()))
         return nullptr;
-    }
 
     // On a duplicate, keep the existing entry but revive it: a re-announced server
     // is alive, so reset its failed count to prevent premature reaping (#30). MFC:
@@ -430,6 +424,27 @@ int ServerList::removeDeadServers(uint32 maxRetries)
     return removed;
 }
 
+int ServerList::removeFilteredServers()
+{
+    if (!thePrefs.filterServerByIP() || !theApp.ipFilter)
+        return 0;
+
+    int removed = 0;
+    for (auto i = static_cast<ptrdiff_t>(m_servers.size()) - 1; i >= 0; --i) {
+        const Server* srv = m_servers[static_cast<size_t>(i)].get();
+        // Unresolved dynIP entries have no address yet; the DNS paths check them
+        if (!isFilteredServerIP(srv->ipAddress(), u"Updated", srv->name()))
+            continue;
+        emit serverAboutToBeRemoved(srv);
+        adjustPositionsAfterRemoval(static_cast<size_t>(i));
+        m_servers.erase(m_servers.begin() + i);
+        ++removed;
+    }
+    if (removed > 0)
+        logInfo(QStringLiteral("Removed %1 IP-filtered server(s)").arg(removed));
+    return removed;
+}
+
 void ServerList::removeAllServers()
 {
     for (const auto& srv : m_servers)
@@ -459,6 +474,37 @@ void ServerList::removeDuplicatesByAddress(const Server* except)
             m_servers.erase(m_servers.begin() + i);
         }
     }
+}
+
+void ServerList::removeDuplicatesByIP(const Server* except)
+{
+    if (except == nullptr || except->ipAddress().isNull())
+        return;
+
+    const Address ip = except->ipAddress();
+    const uint16 port = except->port();
+
+    // MFC: CServerList::RemoveDuplicatesByIP() — ServerList.cpp:879.
+    for (auto i = static_cast<ptrdiff_t>(m_servers.size()) - 1; i >= 0; --i) {
+        const Server* srv = m_servers[static_cast<size_t>(i)].get();
+        if (srv != except && srv->port() == port && srv->ipAddress() == ip) {
+            emit serverAboutToBeRemoved(srv);
+            adjustPositionsAfterRemoval(static_cast<size_t>(i));
+            m_servers.erase(m_servers.begin() + i);
+        }
+    }
+}
+
+Server* ServerList::applyResolvedIP(const QString& dn, uint16 port, const Address& ip)
+{
+    // MFC: SetIP + RemoveDuplicatesByIP — ServerSocket.cpp:79 / UDPSocket.cpp:618.
+    Server* entry = findByAddress(dn, port);
+    if (entry == nullptr)
+        return nullptr;
+    entry->setIpAddress(ip);
+    removeDuplicatesByIP(entry);
+    notifyServerUpdated(entry);
+    return entry;
 }
 
 void ServerList::moveServerDown(const Server* server)
@@ -1104,8 +1150,42 @@ bool ServerList::isGoodServerIP(const Server& server)
     // #29: only reject RFC1918/LAN addresses when the filterLANIPs pref is set, so a
     // private-network server can be added for LAN test setups. MFC: IsGoodIP() —
     // OtherFunctions.cpp:2068 (isRoutable(allowLan) mirrors that: allowLan == !filter).
-    return server.port() != 0
-        && (server.hasDynIP() || server.ipAddress().isRoutable(!thePrefs.filterLANIPs()));
+    return server.port() != 0 && (server.hasDynIP() || isGoodServerIP(server.ipAddress()));
+}
+
+bool ServerList::isGoodServerIP(const Address& ip)
+{
+    return ip.isRoutable(!thePrefs.filterLANIPs());
+}
+
+bool ServerList::isFilteredServerIP(const Address& ip, QStringView context, const QString& serverName)
+{
+    // The Address overload is load-bearing: toNetworkUint32() is 0 for every IPv6
+    // server, so the uint32 form would test the wrong value for all of them.
+    if (!thePrefs.filterServerByIP() || !theApp.ipFilter || ip.isNull()
+        || !theApp.ipFilter->isFiltered(ip, thePrefs.ipFilterLevel()))
+        return false;
+
+    if (thePrefs.logFilteredIPs())
+        logInfo(QStringLiteral("IPFilter(%1): Filtered server \"%2\" (IP=%3) - IP filter (%4)")
+                    .arg(context, serverName, ipstr(ip), theApp.ipFilter->lastHitDescription()));
+    return true;
+}
+
+bool ServerList::isRejectedResolvedIP(const Address& ip, QStringView context, const QString& serverName)
+{
+    // MFC: CUDPSocket DNS reply — UDPSocket.cpp:599-613. A connected server on a
+    // "bad" IP can't be that bad (LAN debugging), so it's exempt.
+    if (!isGoodServerIP(ip)) {
+        const Server* connected = theApp.serverConnect ? theApp.serverConnect->currentServer() : nullptr;
+        if (connected == nullptr || connected->ipAddress() != ip) {
+            if (thePrefs.logFilteredIPs())
+                logInfo(QStringLiteral("IPFilter(%1): Filtered server \"%2\" (IP=%3) - Invalid IP or LAN address.")
+                            .arg(context, serverName, ipstr(ip)));
+            return true;
+        }
+    }
+    return isFilteredServerIP(ip, context, serverName);
 }
 
 // ---------------------------------------------------------------------------

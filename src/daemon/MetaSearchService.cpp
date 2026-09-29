@@ -52,8 +52,14 @@ MetaSearchService::MetaSearchService(QObject* parent)
 
 std::optional<MetaSearchService::Target> MetaSearchService::targetForResult(const SearchFile& file) const
 {
+    return targetForServers(file.servers());
+}
+
+std::optional<MetaSearchService::Target>
+MetaSearchService::targetForServers(const std::list<SearchFile::SServer>& servers) const
+{
     if (theApp.serverList) {
-        for (const auto& s : file.servers()) {
+        for (const auto& s : servers) {
             const Server* srv = theApp.serverList->findByIPTcp(s.ip, s.port);
             if (!srv)
                 srv = theApp.serverList->getServerByIP(s.ip);

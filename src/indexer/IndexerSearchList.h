@@ -23,6 +23,9 @@
 #include <QList>
 #include <QObject>
 #include <QString>
+#include <QUrl>
+
+class QTimer;
 
 #include <functional>
 #include <memory>
@@ -80,7 +83,13 @@ public:
 
     /// Fetch one result's .nzb. Runs here rather than in the GUI because the URL
     /// carries the API key, and the GUI is never given one.
+    ///
+    /// When the search is gone (@p searchId 0: a tab the GUI restored after a
+    /// restart) the row comes from the grab cache by @p resultId.
     void grab(quint32 searchId, const QString& resultId, GrabCallback done);
+
+    /// Write the grab cache now if it changed. Called on shutdown.
+    void flushGrabCache();
 
 signals:
     void resultsReady(quint32 searchId, const QList<eMule::indexer::IndexerResult>& rows);
@@ -88,6 +97,24 @@ signals:
     void searchFinished(quint32 searchId, const QString& error);
 
 private:
+    /// What grab() needs of a result once its search is gone.
+    struct CachedGrab {
+        QString indexerName;
+        QString title;
+        QString password;
+        QUrl downloadUrl;
+        qint64 savedAt = 0;   ///< Unix seconds
+    };
+
+    void rememberGrabs(const QList<IndexerResult>& rows);
+    void loadGrabCache();
+    void scheduleGrabCacheSave();
+    void pruneGrabCache();
+    [[nodiscard]] static QString grabCachePath();
+    [[nodiscard]] const IndexerConfig* accountNamed(const QString& displayName) const;
+    void fetchGrab(const IndexerConfig& account, const QUrl& url, const QString& name,
+                   const QString& password, GrabCallback done);
+
     IndexerClient* m_client = nullptr;
     QList<IndexerConfig> m_accounts;
 
@@ -100,6 +127,12 @@ private:
     int m_maxPages = 3;
     int m_resultLimit = 100;
     int m_capsRefreshDays = 7;
+
+    /// Keyed by IndexerResult::id. Persisted in the config dir (Indexers/),
+    /// which already holds the API keys; never sent to the GUI.
+    QHash<QString, CachedGrab> m_grabCache;
+    QTimer* m_grabCacheTimer = nullptr;
+    bool m_grabCacheDirty = false;
 };
 
 /// The daemon's indexer session, published for the IPC handlers. Null until

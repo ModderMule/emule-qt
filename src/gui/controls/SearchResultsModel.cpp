@@ -121,6 +121,14 @@ QString SearchResultRow::magnetLink() const
         .arg(QString::fromUtf8(QUrl::toPercentEncoding(fileName)));
 }
 
+QCborMap SearchResultRow::metaRef() const
+{
+    return {{QStringLiteral("name"), fileName},
+            {QStringLiteral("metaKind"), metaKind},
+            {QStringLiteral("metaCatalogId"), metaCatalogId},
+            {QStringLiteral("metaServers"), metaServers}};
+}
+
 SearchResultsModel::SearchResultsModel(QObject* parent)
     : AbstractTableModel<SearchResultRow>(parent)
 {

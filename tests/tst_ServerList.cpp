@@ -158,6 +158,11 @@ private slots:
 
     // Divergence-audit follow-ups (#11, #13, #18, #24, #29, #30, #33, #34)
     void addServer_ipFilterRejects();                  // #11
+    void isFilteredServerIP_gates();
+    void removeFilteredServers_dropsNewlyBlocked();
+    void removeDuplicatesByIP_collapses();
+    void applyResolvedIP_setsIpAndDedupes();
+    void isRejectedResolvedIP_lanAndFilter();
     void addTagFromFile_stPortDoesNotOverridePort();   // #13
     void removeDuplicatesByAddress_collapses();        // #18
     void applyUserOrder_reordersList();                // #24
@@ -1698,6 +1703,173 @@ void tst_ServerList::addServer_ipFilterRejects()
 
     theApp.ipFilter = savedFilter;
     thePrefs.setFilterServerByIP(savedPref);
+}
+
+// isFilteredServerIP: pref gate, null address (unresolved dynIP), and IPv6 ranges.
+void tst_ServerList::isFilteredServerIP_gates()
+{
+    const Address v4 = Address::fromString(QStringLiteral("5.6.7.9"));
+    const Address v6 = Address::fromString(QStringLiteral("2001:db8:1234::7"));
+
+    IPFilter filter;
+    filter.addIPRange(ntohl(v4.toNetworkUint32()), ntohl(v4.toNetworkUint32()), 0, "gate v4");
+    filter.addIPRange6(v6.ipv6Bytes(), v6.ipv6Bytes(), 0, "gate v6");
+
+    IPFilter* savedFilter = theApp.ipFilter;
+    const bool savedPref = thePrefs.filterServerByIP();
+    theApp.ipFilter = &filter;
+
+    thePrefs.setFilterServerByIP(false);
+    QVERIFY(!ServerList::isFilteredServerIP(v4, u"Test", QStringLiteral("S")));
+
+    thePrefs.setFilterServerByIP(true);
+    QVERIFY(ServerList::isFilteredServerIP(v4, u"Test", QStringLiteral("S")));
+    QVERIFY(ServerList::isFilteredServerIP(v6, u"Test", QStringLiteral("S")));
+    QVERIFY(!ServerList::isFilteredServerIP(Address(), u"Test", QStringLiteral("S")));
+    QVERIFY(!ServerList::isFilteredServerIP(Address::fromString(QStringLiteral("9.8.7.6")),
+                                            u"Test", QStringLiteral("S")));
+
+    theApp.ipFilter = nullptr;
+    QVERIFY(!ServerList::isFilteredServerIP(v4, u"Test", QStringLiteral("S")));
+
+    theApp.ipFilter = savedFilter;
+    thePrefs.setFilterServerByIP(savedPref);
+}
+
+// A filter loaded after servers were added removes the now-blocked ones; unresolved
+// dynIP entries are left to the DNS paths. Port of RemoveAllFilteredServers().
+void tst_ServerList::removeFilteredServers_dropsNewlyBlocked()
+{
+    const Address blockedIp = Address::fromString(QStringLiteral("5.6.7.10"));
+
+    IPFilter filter;
+    IPFilter* savedFilter = theApp.ipFilter;
+    const bool savedPref = thePrefs.filterServerByIP();
+    theApp.ipFilter = &filter;
+    thePrefs.setFilterServerByIP(true);
+
+    {
+        ServerList list;
+        QVERIFY(list.addServer(makeServer(Address::fromString(QStringLiteral("9.8.7.6")).toNetworkUint32(),
+                                          4661, QStringLiteral("Clean"))) != nullptr);
+        QVERIFY(list.addServer(makeServer(blockedIp.toNetworkUint32(), 4662, QStringLiteral("Blocked"))) != nullptr);
+        QVERIFY(list.addServer(makeDynServer(QStringLiteral("dyn.example.com"), 4663, QStringLiteral("Dyn"))) != nullptr);
+        list.nextServer();   // advance round-robin so removal has to adjust it
+
+        filter.addIPRange(ntohl(blockedIp.toNetworkUint32()), ntohl(blockedIp.toNetworkUint32()),
+                          0, "reload test block");
+
+        // Pref off: nothing happens
+        thePrefs.setFilterServerByIP(false);
+        QCOMPARE(list.removeFilteredServers(), 0);
+        QCOMPARE(list.serverCount(), size_t{3});
+
+        thePrefs.setFilterServerByIP(true);
+        QSignalSpy spy(&list, &ServerList::serverAboutToBeRemoved);
+        QCOMPARE(list.removeFilteredServers(), 1);
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(list.serverCount(), size_t{2});
+        QVERIFY(list.findByIPTcp(blockedIp, 4662) == nullptr);
+        QVERIFY(list.findByAddress(QStringLiteral("dyn.example.com"), 4663) != nullptr);
+        QVERIFY(list.nextServer() != nullptr);
+    }
+
+    theApp.ipFilter = savedFilter;
+    thePrefs.setFilterServerByIP(savedPref);
+}
+
+// Port of RemoveDuplicatesByIP: only same IP + same port twins go.
+void tst_ServerList::removeDuplicatesByIP_collapses()
+{
+    const Address ip = Address::fromString(QStringLiteral("5.6.7.11"));
+
+    ServerList list;
+    auto* keep = list.addServer(makeDynServer(QStringLiteral("dyn.example.com"), 4661, QStringLiteral("Keep")));
+    QVERIFY(keep != nullptr);
+    // Twin first: once keep has the IP, addServer rejects the twin as a duplicate
+    QVERIFY(list.addServer(makeServer(ip.toNetworkUint32(), 4661, QStringLiteral("Twin"))) != nullptr);
+    keep->setIpAddress(ip);
+    QVERIFY(list.addServer(makeServer(ip.toNetworkUint32(), 4665, QStringLiteral("OtherPort"))) != nullptr);
+    QVERIFY(list.addServer(makeServer(Address::fromString(QStringLiteral("9.8.7.6")).toNetworkUint32(),
+                                      4661, QStringLiteral("Unrelated"))) != nullptr);
+
+    list.removeDuplicatesByIP(nullptr);
+    QCOMPARE(list.serverCount(), size_t{4});
+
+    list.removeDuplicatesByIP(keep);
+    QCOMPARE(list.serverCount(), size_t{3});
+    QCOMPARE(list.findByIPTcp(ip, 4661), keep);
+    QVERIFY(list.findByIPTcp(ip, 4665) != nullptr);
+}
+
+// A resolved dynIP name lands on the list entry (MFC SetIP), collapses IP twins, and
+// makes the entry visible to a filter reload.
+void tst_ServerList::applyResolvedIP_setsIpAndDedupes()
+{
+    const Address ip = Address::fromString(QStringLiteral("5.6.7.12"));
+
+    IPFilter filter;
+    IPFilter* savedFilter = theApp.ipFilter;
+    const bool savedPref = thePrefs.filterServerByIP();
+    theApp.ipFilter = &filter;
+    thePrefs.setFilterServerByIP(true);
+
+    {
+        ServerList list;
+        QVERIFY(list.addServer(makeServer(ip.toNetworkUint32(), 4661, QStringLiteral("Twin"))) != nullptr);
+        auto* dyn = list.addServer(makeDynServer(QStringLiteral("dyn.example.org"), 4661, QStringLiteral("Dyn")));
+        QVERIFY(dyn != nullptr);
+        QVERIFY(dyn->ipAddress().isNull());
+
+        QVERIFY(list.applyResolvedIP(QStringLiteral("nope.example.org"), 4661, ip) == nullptr);
+
+        QSignalSpy updated(&list, &ServerList::serverUpdated);
+        QCOMPARE(list.applyResolvedIP(QStringLiteral("dyn.example.org"), 4661, ip), dyn);
+        QCOMPARE(dyn->ipAddress(), ip);
+        QCOMPARE(updated.count(), 1);
+        QCOMPARE(list.serverCount(), size_t{1});
+
+        // Unresolved it was skipped; resolved, a reload catches it
+        filter.addIPRange(ntohl(ip.toNetworkUint32()), ntohl(ip.toNetworkUint32()), 0, "resolved block");
+        QCOMPARE(list.removeFilteredServers(), 1);
+        QCOMPARE(list.serverCount(), size_t{0});
+    }
+
+    theApp.ipFilter = savedFilter;
+    thePrefs.setFilterServerByIP(savedPref);
+}
+
+// MFC UDP post-DNS: LAN/invalid first (not gated by filterServerByIP), then the filter.
+void tst_ServerList::isRejectedResolvedIP_lanAndFilter()
+{
+    const Address lan = Address::fromString(QStringLiteral("192.168.3.17"));
+    const Address pub = Address::fromString(QStringLiteral("9.8.7.13"));
+
+    IPFilter filter;
+    IPFilter* savedFilter = theApp.ipFilter;
+    ServerConnect* savedConnect = theApp.serverConnect;
+    const bool savedFilterPref = thePrefs.filterServerByIP();
+    const bool savedLanPref = thePrefs.filterLANIPs();
+    theApp.ipFilter = &filter;
+    theApp.serverConnect = nullptr;
+
+    thePrefs.setFilterServerByIP(false);
+    thePrefs.setFilterLANIPs(true);
+    QVERIFY(ServerList::isRejectedResolvedIP(lan, u"Test", QStringLiteral("S")));
+    QVERIFY(!ServerList::isRejectedResolvedIP(pub, u"Test", QStringLiteral("S")));
+
+    thePrefs.setFilterLANIPs(false);
+    QVERIFY(!ServerList::isRejectedResolvedIP(lan, u"Test", QStringLiteral("S")));
+
+    filter.addIPRange(ntohl(pub.toNetworkUint32()), ntohl(pub.toNetworkUint32()), 0, "pub block");
+    QVERIFY(!ServerList::isRejectedResolvedIP(pub, u"Test", QStringLiteral("S")));
+    thePrefs.setFilterServerByIP(true);
+    QVERIFY(ServerList::isRejectedResolvedIP(pub, u"Test", QStringLiteral("S")));
+
+    theApp.ipFilter = savedFilter;
+    theApp.serverConnect = savedConnect;
+    thePrefs.setFilterServerByIP(savedFilterPref);
+    thePrefs.setFilterLANIPs(savedLanPref);
 }
 
 // #13 — an ST_PORT tag in a server.met entry must NOT override the authoritative

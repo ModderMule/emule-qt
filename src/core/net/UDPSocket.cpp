@@ -396,16 +396,28 @@ void UDPSocket::queueDNSRequest(const Server& server, uint16 port,
     const auto pref = thePrefs.serverPreferIPv6() ? HostResolver::Preference::PreferIPv6
                                                   : HostResolver::Preference::PreferIPv4;
     const QString host = server.dynIP();
+    const uint16 tcpPort = server.port();
     std::vector<uint8> payload(data, data + size);
 
     m_hostResolver->resolve(host, pref, this,
-        [this, host, port, payload = std::move(payload)](const HostResolver::Result& result) {
+        [this, host, port, tcpPort, payload = std::move(payload)](const HostResolver::Result& result) {
             if (!result.ok()) {
                 logWarning(QStringLiteral("UDPSocket: DNS lookup failed for %1: %2")
                                .arg(host, result.errorString));
                 return;
             }
-            sendBuffer(Endpoint(result.first(), port),
+            // Store the IP on the list entry, then drop a LAN/invalid or IP-filtered
+            // server with its packet. MFC: CUDPSocket DNS reply — UDPSocket.cpp:599-632.
+            const Address ip = result.first();
+            const bool reject = ServerList::isRejectedResolvedIP(ip, u"UDP/DNSResolve", host);
+            auto* list = theApp.serverList;
+            Server* entry = list ? list->applyResolvedIP(host, tcpPort, ip) : nullptr;
+            if (reject) {
+                if (entry)
+                    list->removeServer(entry);
+                return;
+            }
+            sendBuffer(Endpoint(ip, port),
                        payload.data(), static_cast<uint32>(payload.size()));
         });
 }

@@ -108,7 +108,7 @@ public:
     /// Set the download model for preview-eligibility checks.
     void setDownloadModel(DownloadListModel* model) { m_downloadModel = model; }
 
-    /// Write the ED2K/Kad tabs to StoredSearches.json (or remove it when off/empty).
+    /// Write every search tab to StoredSearches.json (or remove it when off/empty).
     /// Called on close, not only from the destructor: a killed GUI never gets there.
     void saveSearches();
 

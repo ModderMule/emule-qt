@@ -8,6 +8,7 @@
 /// them may answer AuthRequired / AccountInactive: one MetaAccountDialog per
 /// server opens, and every request that hit it is retried once it accepts.
 
+#include <QCborMap>
 #include <QHash>
 #include <QList>
 #include <QObject>
@@ -16,7 +17,6 @@
 
 #include <functional>
 
-class QCborMap;
 class QWidget;
 
 namespace eMule {
@@ -34,6 +34,7 @@ public:
         QString hash;
         QString name;
         bool nzb = false;
+        QCborMap ref;   ///< SearchResultRow::metaRef(), for a row whose search is gone
     };
 
     MetaResultActions(IpcClient* ipc, QWidget* parentWidget);
