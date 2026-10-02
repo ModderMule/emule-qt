@@ -41,6 +41,7 @@
 #include "post/UsenetPostProcessor.h"
 #include "queue/UsenetHealth.h"
 #include "queue/UsenetHistory.h"
+#include "queue/UsenetStateWriter.h"
 #include "queue/UsenetQueueItem.h"
 #include "queue/UsenetStatistics.h"
 #include "queue/UsenetUsage.h"
@@ -57,6 +58,7 @@
 #include <QSet>
 #include <QString>
 
+#include <algorithm>
 #include <array>
 #include <memory>
 #include <vector>
@@ -109,6 +111,20 @@ public:
         return m_sumMs > 0 ? m_sumBytes * 1000 / m_sumMs : 0;
     }
 
+    /// Mean over the newest @p ticks only (≈0.5 s at 2): spots an engine pressing
+    /// its cap without waiting for the full window to catch up.
+    [[nodiscard]] qint64 recentBytesPerSecond(int ticks = 2) const
+    {
+        qint64 bytes = 0;
+        qint64 ms = 0;
+        for (int i = 1; i <= std::min(ticks, kTicks); ++i) {
+            const auto at = static_cast<size_t>((m_next - i + kTicks) % kTicks);
+            bytes += m_bytes[at];
+            ms += m_ms[at];
+        }
+        return ms > 0 ? bytes * 1000 / ms : 0;
+    }
+
 private:
     std::array<qint64, kTicks> m_bytes{};
     std::array<qint64, kTicks> m_ms{};
@@ -132,6 +148,16 @@ public:
     void stop();
 
     [[nodiscard]] bool isRunning() const { return m_running; }
+
+    /// Block until every posted `.nzbstate` write is on disk. stop() does this;
+    /// tests that read a sidecar mid-run call it first.
+    void flushState() { m_stateWriter.flush(); }
+
+    /// Sidecar writes so far. For tests of the save debounce.
+    [[nodiscard]] int stateWrites() const { return m_stateWriter.writesPerformed(); }
+
+    /// Direct-unpack runs started so far. For tests.
+    [[nodiscard]] int directUnpackStarts() const { return m_directUnpackStarts; }
 
     /// Re-slice the server list across the workers. Safe while running.
     void applyServers(const QList<NewsServer>& servers, int retryIntervalSec);
@@ -385,6 +411,8 @@ public:
     /// ticks (2 s). Feeds the ED2K/Usenet budget split, its only consumer. Wire,
     /// not decoded: it is what the line carries and what the rate limit charges.
     [[nodiscard]] qint64 currentRate() const { return m_rateWindow.bytesPerSecond(); }
+    /// The last ~0.5 s of currentRate(); the bandwidth split's pressing signal.
+    [[nodiscard]] qint64 recentRate() const { return m_rateWindow.recentBytesPerSecond(); }
 
     /// One item's share of currentRate(), split by articles in flight. An item's
     /// decoded bytes move only when articles finish, in batches under a rate
@@ -1152,6 +1180,12 @@ private:
     QList<NewsServer> m_servers;
     int m_retryIntervalSec = 60;
 
+    /// What the running workers were built from. A save that changes none of it
+    /// (a new speed limit, say) keeps every connection instead of rebuilding.
+    QList<NewsServer> m_workerServersBuilt;
+    int m_workerRetryBuilt = 0;
+    QNetworkProxy m_workerProxyBuilt{QNetworkProxy::NoProxy};
+
     /// Distinct configured levels, ascending — the failover ladder. A level's
     /// index here is its rung. Built by nntpLevelLadder() from the same list and
     /// the same predicate every worker's pool uses, so the two cannot number the
@@ -1184,6 +1218,9 @@ private:
     /// a queue that was never started still gets a truthful answer.
     mutable UsenetHistory m_history;
 
+    /// `.nzbstate` writes, off this thread and debounced per item.
+    UsenetStateWriter m_stateWriter;
+
     /// Keys of accounts that have spent their allowance. Recomputed per dispatch
     /// round and **never** written into SegmentAttempt::tried, so a rollover or
     /// a raised cap takes effect on the very next dispatch with no state to
@@ -1215,6 +1252,7 @@ private:
     /// blocked for as long as its download takes, so this is capped rather than
     /// left to grow with the queue; a set over the cap just unpacks at the end.
     int m_directUnpackRuns = 0;
+    int m_directUnpackStarts = 0;          ///< lifetime count; tests
     static constexpr int kMaxDirectUnpacks = 2;
 
     /// Encrypted-preview re-runs in flight. One, deliberately: a run decrypts

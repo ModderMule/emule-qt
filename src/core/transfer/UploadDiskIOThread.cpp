@@ -145,7 +145,9 @@ void UploadDiskIOThread::readBlock(const BlockReadRequest& req)
     else
         packets = createStandardPackets(fileHash, isPartFile, req.startOffset, req.endOffset, data);
 
-    emit blockPacketsReady(req.client, packets);
+    emit blockPacketsReady(req.client,
+                           QByteArray(reinterpret_cast<const char*>(fileHash), 16),
+                           req.startOffset, req.endOffset, packets);
 }
 
 QList<std::shared_ptr<Packet>> UploadDiskIOThread::createStandardPackets(

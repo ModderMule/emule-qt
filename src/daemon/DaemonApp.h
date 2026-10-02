@@ -24,6 +24,7 @@ class WebServer;
 
 class IpcServer;
 class CoreNotifierBridge;
+class PowerManager;
 
 namespace usenet { class UsenetSession; }
 namespace indexer { class IndexerFeedList; class IndexerSearchList; }
@@ -139,6 +140,7 @@ private:
     std::unique_ptr<usenet::UsenetSession> m_usenetSession;
     std::unique_ptr<indexer::IndexerSearchList> m_indexerSearches;
     std::unique_ptr<indexer::IndexerFeedList> m_indexerFeeds;
+    std::unique_ptr<PowerManager> m_powerManager;
     TranslationRouter* m_translations = nullptr;
     bool m_running = false;
 

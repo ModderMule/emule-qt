@@ -380,12 +380,16 @@ std::vector<HttpCacheManager::Candidate> HttpCacheManager::findCandidates() cons
         if (!file)
             return;
 
-        for (const auto* block : client->blockRequests()) {
-            if (!block)
-                continue;
-            const uint32 part = static_cast<uint32>(block->startOffset / PARTSIZE);
-            ++seeds[{file, part}];
-        }
+        // Every block asked for this slot: requests move to the done list as soon as their
+        // data is queued, so pending alone is empty most of the time.
+        const auto seed = [&seeds, file](const Requested_Block_Struct* block) {
+            if (block && md4equ(block->fileID.data(), file->fileHash()))
+                ++seeds[{file, static_cast<uint32>(block->startOffset / PARTSIZE)}];
+        };
+        for (const auto* block : client->blockRequests())
+            seed(block);
+        for (const auto* block : client->doneBlocks())
+            seed(block);
     });
 
     if (seeds.empty())

@@ -44,7 +44,8 @@ Server* nextGlobalSearchTarget(ServerList& list, const Server* connected,
     while (++examined < count) {
         toask = list.nextSearchServer();
         if (toask == nullptr
-            || (toask != connected && toask->failedCount() < deadServerRetries))
+            || ((connected == nullptr || toask->serverId() != connected->serverId())
+                && toask->failedCount() < deadServerRetries))
             break;
         toask = nullptr;
     }
@@ -199,14 +200,11 @@ void GlobalSearchScheduler::onSweepTick()
     auto pkt = buildGlobalSearchPacket(*toask, m_searchTerms, m_is64BitSearch);
     if (pkt) {
         if (theApp.searchList)
-            theApp.searchList->addSentUDPRequestIP(m_searchID,
-                                                   toask->ipAddress().toNetworkUint32());
+            theApp.searchList->addSentUDPRequestIP(m_searchID, toask->ipAddress());
 
         const auto udpPort = static_cast<uint16>(toask->port() + 4);
-        logServerVerbose(QStringLiteral("  -> %1 (%2:%3) UDP:%4 opcode=0x%5 (%6 of %7)")
-                             .arg(toask->name())
-                             .arg(ipstr(toask->ipAddress()))
-                             .arg(toask->port())
+        logServerVerbose(QStringLiteral("  -> %1 (%2) UDP:%3 opcode=0x%4 (%5 of %6)")
+                             .arg(toask->name(), toask->addressWithPort())
                              .arg(udpPort)
                              .arg(pkt->opcode, 2, 16, QLatin1Char('0'))
                              .arg(m_examined)

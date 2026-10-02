@@ -60,6 +60,7 @@ class tst_GlobalSearchScheduler : public QObject {
 private slots:
     // nextGlobalSearchTarget — the rotation rule
     void target_skipsTheConnectedServer();
+    void target_skipsTheConnectedServerCopy();
     void target_skipsDeadServers();
     void target_stopsAfterOnePass();
     void target_allDeadTerminates();
@@ -86,6 +87,21 @@ void tst_GlobalSearchScheduler::target_skipsTheConnectedServer()
     for (int i = 0; i < 4; ++i) {
         const Server* picked = nextGlobalSearchTarget(list, connected, 3, examined);
         QVERIFY(picked == nullptr || picked != connected);
+    }
+}
+
+void tst_GlobalSearchScheduler::target_skipsTheConnectedServerCopy()
+{
+    // ServerConnect::currentServer() is the socket's copy, never a list pointer — the
+    // skip has to go by server id or the connected server is asked over UDP too.
+    ServerList list;
+    fillServers(list, 5);
+    const Server copy(*list.serverAt(1));
+
+    uint32 examined = 0;
+    for (int i = 0; i < 5; ++i) {
+        const Server* picked = nextGlobalSearchTarget(list, &copy, 3, examined);
+        QVERIFY(picked == nullptr || picked->serverId() != copy.serverId());
     }
 }
 

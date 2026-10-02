@@ -351,6 +351,12 @@ public:
     /// left out, so percent and remaining describe what will actually arrive.
     [[nodiscard]] qint64 totalEncodedBytes() const;
     [[nodiscard]] qint64 decodedBytes() const;
+
+    /// File @p fileIndex has, or will have, zeros where content belongs: an
+    /// article missing everywhere, one the NZB never listed, or a sealed file
+    /// shorter than yEnc declared. Unlisted articles never count as
+    /// missingSegments, yet sealFile() pads them just the same.
+    [[nodiscard]] bool fileHasHoles(int fileIndex) const;
     /// Encoded bytes of every done article, skipped files left out.
     [[nodiscard]] qint64 doneEncodedBytes() const;
     [[nodiscard]] int segmentCount() const;

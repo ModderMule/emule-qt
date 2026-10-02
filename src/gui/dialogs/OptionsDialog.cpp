@@ -247,6 +247,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_kadEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_ed2kEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_separateIPv6QueueCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_ipv6PrivacyAddressCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
 
     // Server page
     connect(m_addServersFromServerCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -1213,6 +1214,11 @@ QWidget* OptionsDialog::createConnectionPage()
            "waiting, so IPv6 peers are not outbid on score alone. When only one family "
            "is waiting, no slot is held back."));
     netLayout->addWidget(m_separateIPv6QueueCheck);
+    m_ipv6PrivacyAddressCheck = new QCheckBox(tr("Use IPv6 privacy address"), netGroup);
+    m_ipv6PrivacyAddressCheck->setToolTip(
+        tr("Connect to IPv6 peers and servers from the rotating temporary (RFC 4941) address. "
+           "Off: always use the stable address, so peers can reach the address we advertise."));
+    netLayout->addWidget(m_ipv6PrivacyAddressCheck);
     row4->addWidget(netGroup);
 
     layout->addLayout(row4);
@@ -6195,6 +6201,8 @@ void OptionsDialog::saveSettings()
         req.append(m_ed2kEnabledCheck->isChecked());
         req.append(QStringLiteral("separateIPv6Queue"));
         req.append(m_separateIPv6QueueCheck->isChecked());
+        req.append(QStringLiteral("ipv6UsePrivacyAddress"));
+        req.append(m_ipv6PrivacyAddressCheck->isChecked());
 
         // Server page
         req.append(QStringLiteral("safeServerConnect"));
@@ -6709,6 +6717,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setKadEnabled(m_kadEnabledCheck->isChecked());
         thePrefs.setNetworkED2K(m_ed2kEnabledCheck->isChecked());
         thePrefs.setSeparateIPv6Queue(m_separateIPv6QueueCheck->isChecked());
+        thePrefs.setIpv6UsePrivacyAddress(m_ipv6PrivacyAddressCheck->isChecked());
 
         // Server page fallback
         thePrefs.setSafeServerConnect(m_safeServerConnectCheck->isChecked());
@@ -6949,6 +6958,8 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     // Defaults to true — bare toBool() would silently uncheck it against an older daemon.
     m_separateIPv6QueueCheck->setChecked(
         prefs.value(QStringLiteral("separateIPv6Queue")).toBool(true));
+    m_ipv6PrivacyAddressCheck->setChecked(
+        prefs.value(QStringLiteral("ipv6UsePrivacyAddress")).toBool(false));
 
     // Server page
     m_safeServerConnectCheck->setChecked(prefs.value(QStringLiteral("safeServerConnect")).toBool());

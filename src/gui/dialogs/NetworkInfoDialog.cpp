@@ -169,6 +169,27 @@ void NetworkInfoDialog::populateInfo(const QCborMap& info)
         html += QStringLiteral("<tr><td>ID:</td><td>%1</td></tr>").arg(clientID);
         html += QStringLiteral("<tr><td></td><td>%1</td></tr>")
                     .arg(lowID ? tr("Low ID") : tr("High ID"));
+
+        // IPv6 + the server's dial-back verdict (ST_IPV6_STATUS). A v6 session is
+        // structurally Low ID, so this row is what says whether inbound v6 works.
+        const QString ipv6 = ed2k.value(QStringLiteral("publicIPv6")).toString();
+        if (!ipv6.isEmpty()) {
+            constexpr qint64 kReachable = 0x02;   // IPV6ST_REACHABLE
+            constexpr qint64 kProbed    = 0x04;   // IPV6ST_PROBED
+            const qint64 st = ed2k.value(QStringLiteral("ipv6Status")).toInteger();
+            QString v6Status;
+            if ((st & kProbed) && (st & kReachable))
+                v6Status = tr("Open");
+            else if (st & kProbed)
+                v6Status = tr("Firewalled");
+            else if (st & kReachable)
+                v6Status = QStringLiteral("%1 (%2)").arg(tr("Open"), tr("unverified"));
+            else
+                v6Status = tr("Unknown");
+            html += QStringLiteral("<tr><td>IPv6:</td><td>[%1]:%2</td></tr>")
+                        .arg(ipv6.toHtmlEscaped()).arg(tcpPort);
+            html += QStringLiteral("<tr><td>IPv6 Status:</td><td>%1</td></tr>").arg(v6Status);
+        }
     }
     html += QStringLiteral("</table><br>");
 

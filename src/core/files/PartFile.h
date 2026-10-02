@@ -188,6 +188,9 @@ public:
     void fillGap(uint64 start, uint64 end);
     [[nodiscard]] bool isComplete(uint64 start, uint64 end) const;
     [[nodiscard]] bool isComplete(uint32 part) const;
+    /// Complete and already on disk: a filled gap may still sit in the write buffer.
+    /// MFC IsCompleteBDSafe — the test an upload read must pass. @p end inclusive, clamped.
+    [[nodiscard]] bool isCompleteBDSafe(uint64 start, uint64 end) const;
     /// KnownFile::isPartComplete — a partfile answers from its gap list.
     [[nodiscard]] bool isPartComplete(uint32 part) const override { return isComplete(part); }
 

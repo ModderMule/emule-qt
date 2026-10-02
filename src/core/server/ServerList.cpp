@@ -487,7 +487,8 @@ void ServerList::removeDuplicatesByIP(const Server* except)
     // MFC: CServerList::RemoveDuplicatesByIP() — ServerList.cpp:879.
     for (auto i = static_cast<ptrdiff_t>(m_servers.size()) - 1; i >= 0; --i) {
         const Server* srv = m_servers[static_cast<size_t>(i)].get();
-        if (srv != except && srv->port() == port && srv->ipAddress() == ip) {
+        if (srv != except && srv->port() == port
+            && (srv->hasAddress(ip) || srv->hasAddress(except->ipv6Address()))) {
             emit serverAboutToBeRemoved(srv);
             adjustPositionsAfterRemoval(static_cast<size_t>(i));
             m_servers.erase(m_servers.begin() + i);
@@ -503,6 +504,68 @@ Server* ServerList::applyResolvedIP(const QString& dn, uint16 port, const Addres
         return nullptr;
     entry->setIpAddress(ip);
     removeDuplicatesByIP(entry);
+    notifyServerUpdated(entry);
+    return entry;
+}
+
+Server* ServerList::attachAddress(Server* entry, const Address& addr)
+{
+    if (entry == nullptr || addr.isNull() || entry->hasDynIP() || entry->hasAddress(addr))
+        return entry;
+
+    // Only fill a missing family; never swap an address the entry already holds.
+    const Address current = addr.isIPv6() ? entry->ipv6Address() : entry->ipv4Address();
+    if (!current.isNull()) {
+        logServerVerbose(QStringLiteral("attachAddress: %1 already has %2, ignoring %3")
+                             .arg(entry->name(), ipstr(current), ipstr(addr)));
+        return entry;
+    }
+    if (!isGoodServerIP(addr) || isFilteredServerIP(addr, u"ServerIdent", entry->name()))
+        return entry;
+
+    // The twin row of the same server, reached on the other family.
+    Server* twin = nullptr;
+    for (const auto& srv : m_servers) {
+        if (srv.get() != entry && srv->port() == entry->port() && srv->hasAddress(addr)) {
+            twin = srv.get();
+            break;
+        }
+    }
+    if (twin != nullptr) {
+        const bool hashConflict = twin->hasServerHash() && entry->hasServerHash()
+                                  && twin->serverHash() != entry->serverHash();
+        // A twin that already pairs addr with a different address of entry's family
+        // is some other server — a claim is not enough to take it over.
+        const Address twinOther = twin->otherFamilyAddress(addr);
+        const bool familyConflict = !twinOther.isNull() && !entry->hasAddress(twinOther);
+        if (hashConflict || familyConflict) {
+            logInfo(QStringLiteral("Server %1 claims %2, which belongs to server %3 — not merged")
+                        .arg(entry->addressWithPort(), ipstr(addr), twin->addressWithPort()));
+            return entry;
+        }
+    }
+
+    entry->addAddress(addr);
+    if (twin != nullptr) {
+        // Keep the stronger user settings of both rows.
+        const auto rank = [](ServerPriority p) {
+            return p == ServerPriority::High ? 2 : p == ServerPriority::Normal ? 1 : 0;
+        };
+        if (rank(twin->preference()) > rank(entry->preference()))
+            entry->setPreference(twin->preference());
+        entry->setStaticMember(entry->isStaticMember() || twin->isStaticMember());
+        entry->setFailedCount(std::min(entry->failedCount(), twin->failedCount()));
+        if (entry->obfuscationPortTCP() == 0)
+            entry->setObfuscationPortTCP(twin->obfuscationPortTCP());
+        if (entry->obfuscationPortUDP() == 0)
+            entry->setObfuscationPortUDP(twin->obfuscationPortUDP());
+        logInfo(QStringLiteral("Merged server %1 into %2 (%3)")
+                    .arg(twin->addressWithPort(), entry->name(), entry->addressWithPort()));
+        removeServer(twin);
+    } else {
+        logServerVerbose(QStringLiteral("attachAddress: %1 is also reachable at %2")
+                             .arg(entry->addressWithPort(), ipstr(addr)));
+    }
     notifyServerUpdated(entry);
     return entry;
 }
@@ -532,7 +595,7 @@ void ServerList::applyUserOrder(const std::vector<std::pair<Address, uint16>>& o
     for (const auto& [addr, port] : order) {
         for (size_t i = 0; i < m_servers.size(); ++i) {
             if (!placed[i] && m_servers[i]
-                && m_servers[i]->ipAddress() == addr
+                && m_servers[i]->hasAddress(addr)
                 && m_servers[i]->port() == port) {
                 reordered.push_back(std::move(m_servers[i]));
                 placed[i] = true;
@@ -566,7 +629,18 @@ Server* ServerList::findByIPTcp(uint32 ip, uint16 port) const
 Server* ServerList::findByIPTcp(const Address& addr, uint16 port) const
 {
     for (const auto& srv : m_servers) {
-        if (srv->ipAddress() == addr && srv->port() == port)
+        if (srv->hasAddress(addr) && srv->port() == port)
+            return srv.get();
+    }
+    return nullptr;
+}
+
+Server* ServerList::findById(uint32 serverId) const
+{
+    if (serverId == 0)
+        return nullptr;
+    for (const auto& srv : m_servers) {
+        if (srv->serverId() == serverId)
             return srv.get();
     }
     return nullptr;
@@ -582,7 +656,7 @@ Server* ServerList::findByIPUdp(const Address& addr, uint16 udpPort, bool obfusc
     if (addr.isNull())
         return nullptr;
     for (const auto& srv : m_servers) {
-        if (srv->ipAddress() == addr
+        if (srv->hasAddress(addr)
             && (udpPort == srv->port() + 4
                 || (obfuscationPorts
                     && (udpPort == srv->obfuscationPortUDP()
@@ -825,11 +899,9 @@ void ServerList::serverStats()
         // Re-ask in ~20s if the server never answers the obfuscated probe.
         target->setLastPingedTime(now - static_cast<uint32>(UDPSERVSTATREASKTIME) + 20);
 
-        logDebug(QStringLiteral("ServerList: obfuscated crypt-ping -> %1 (%2:%3) "
-                                "challenge=0x%4 pad=%5")
-                     .arg(target->name())
-                     .arg(ipstr(target->ipAddress()))
-                     .arg(target->port())
+        logDebug(QStringLiteral("ServerList: obfuscated crypt-ping -> %1 (%2) "
+                                "challenge=0x%3 pad=%4")
+                     .arg(target->name(), target->addressWithPort())
                      .arg(obfChallenge, 8, 16, QLatin1Char('0'))
                      .arg(padding));
 
@@ -859,10 +931,8 @@ void ServerList::serverStats()
         now - static_cast<uint32>(QRandomGenerator::global()->bounded(HR2S(1))));
     target->incFailedCount();
 
-    logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATREQ -> %1 (%2:%3) challenge=0x%4")
-                 .arg(target->name())
-                 .arg(ipstr(target->ipAddress()))
-                 .arg(target->port())
+    logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATREQ -> %1 (%2) challenge=0x%3")
+                 .arg(target->name(), target->addressWithPort())
                  .arg(challenge, 8, 16, QLatin1Char('0')));
 
     theApp.serverConnect->sendUDPPacket(std::move(packet), *target,
@@ -908,9 +978,8 @@ void ServerList::processStatusResponse(const uint8* data, uint32 size, const End
     // obfuscation port; findByIPUdp handles both.
     Server* server = findByIPUdp(from.address(), from.port(), true);
     if (server == nullptr) {
-        logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATRES from unknown server %1:%2")
-                     .arg(ipstr(from.address()))
-                     .arg(from.port()));
+        logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATRES from unknown server %1")
+                     .arg(from.toString()));
         return;
     }
 
@@ -1178,7 +1247,7 @@ bool ServerList::isRejectedResolvedIP(const Address& ip, QStringView context, co
     // "bad" IP can't be that bad (LAN debugging), so it's exempt.
     if (!isGoodServerIP(ip)) {
         const Server* connected = theApp.serverConnect ? theApp.serverConnect->currentServer() : nullptr;
-        if (connected == nullptr || connected->ipAddress() != ip) {
+        if (connected == nullptr || !connected->hasAddress(ip)) {
             if (thePrefs.logFilteredIPs())
                 logInfo(QStringLiteral("IPFilter(%1): Filtered server \"%2\" (IP=%3) - Invalid IP or LAN address.")
                             .arg(context, serverName, ipstr(ip)));
@@ -1206,6 +1275,11 @@ bool ServerList::isDuplicate(const Server& server) const
         && findByIPTcp(server.ipAddress(), server.port()))
         return true;
 
+    // A dual-stack entry is a duplicate by either of its addresses.
+    if (!server.hasDynIP() && server.hasBothFamilies()
+        && findByIPTcp(server.ipv6Address(), server.port()))
+        return true;
+
     return false;
 }
 
@@ -1227,8 +1301,7 @@ void ServerList::noteObservedIPv4(const Server& server, const Endpoint& from, ui
     // Reached only after the challenge echoed in this reply matched one we generated, so an
     // off-path forger has to guess a 32-bit value. That binding is what makes a single
     // datagram worth counting as a vote at all; the rest is plausibility.
-    const QString who = server.name().isEmpty() ? ipstr(server.ipAddress().toNetworkUint32())
-                                                : server.name();
+    const QString who = server.name().isEmpty() ? from.toString() : server.name();
     const auto reject = [&who](const QString& why) {
         logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATRES from %1 — %2").arg(who, why));
     };

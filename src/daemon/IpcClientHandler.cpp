@@ -55,7 +55,9 @@
 #include "media/ContainerSniffer.h"
 #include "portmap/PortMapper.h"
 #include "kademlia/KadPrefs.h"
+#include "net/IPv6SourcePin.h"
 #include "net/ListenSocket.h"
+#include "net/LocalIPv6.h"
 #include "net/ProxySettings.h"
 #include "prefs/Preferences.h"
 #include "net/Packet.h"
@@ -783,13 +785,20 @@ void IpcClientHandler::handleAddServer(const IpcMessage& msg)
     if (thePrefs.manualServerHighPriority())
         server->setPreference(ServerPriority::High);
 
+    // Optional 4th field: the other-family address of a dual-stack server (server.met
+    // import of an entry with an IPv4 header plus ST_IPV6).
+    if (const Address addr6 = Address::fromString(msg.fieldString(3));
+        !addr6.isNull() && !server->hasDynIP() && addr6.isIPv4() != server->ipAddress().isIPv4()
+        && ServerList::isGoodServerIP(addr6))
+        server->addAddress(addr6);
+
     // addServer() drops a LAN/loopback literal under filterLANIPs with the same null a
     // duplicate gets, so a pasted 127.0.0.1 link vanished without a word. Say why, once,
     // here on the user path — not inside addServer, which server.met loads hit in bulk.
     if (!server->hasDynIP() && !ServerList::isGoodServerIP(*server)) {
         const QString text = tr("Server %1:%2 not added — LAN address filtered "
                                 "(\"Filter server and client LAN IPs\" is on)")
-                                 .arg(server->address())
+                                 .arg(server->bracketedAddress())
                                  .arg(port);
         logWarning(text);
         sendMessage(IpcMessage::makeError(msg.seqId(), ErrServerLanFiltered, text));
@@ -892,7 +901,10 @@ void IpcClientHandler::handleGetServerState(const IpcMessage& msg)
             info.insert(QStringLiteral("serverId"), static_cast<qint64>(srv->serverId()));
             info.insert(QStringLiteral("serverName"), srv->name());
             info.insert(QStringLiteral("serverDescription"), srv->description());
-            info.insert(QStringLiteral("serverAddress"), srv->address());
+            // The address this session dialed: a dual-stack server may be on its IPv6
+            info.insert(QStringLiteral("serverAddress"),
+                        srv->hasDynIP() ? srv->address()
+                                        : theApp.serverConnect->sessionAddress().toString());
             info.insert(QStringLiteral("serverVersion"), srv->version());
             info.insert(QStringLiteral("serverUsers"), static_cast<qint64>(srv->users()));
             info.insert(QStringLiteral("serverFiles"), static_cast<qint64>(srv->files()));
@@ -1014,8 +1026,6 @@ void IpcClientHandler::handleConnectToServer(const IpcMessage& msg)
 
     // If IP and port fields are provided, connect to a specific server
     if (msg.fieldCount() >= 2) {
-        const auto port = static_cast<uint16>(msg.fieldInt(1));
-
         if (!theApp.serverList) {
             sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("ServerList unavailable")));
             return;
@@ -1030,7 +1040,7 @@ void IpcClientHandler::handleConnectToServer(const IpcMessage& msg)
         // Already connected to this exact server — no-op
         if (theApp.serverConnect->isConnected()) {
             const auto* cur = theApp.serverConnect->currentServer();
-            if (cur && cur->ipAddress() == srv->ipAddress() && cur->port() == port) {
+            if (cur && cur->serverId() == srv->serverId()) {
                 sendMessage(IpcMessage::makeResult(msg.seqId(), true));
                 return;
             }
@@ -1917,16 +1927,17 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
         if (!applyPreferenceA(key, val) && !applyPreferenceB(key, val))
             applyPreferenceC(key, val);
     }
-    // Detect whether shared directory settings changed before saving
+    // Detect whether shared directory / standby settings changed before saving
     bool sharedDirsChanged = false;
+    bool standbyChanged = false;
     for (int i = 0; i + 1 < msg.fieldCount(); i += 2) {
         const QString k = msg.fieldString(i);
         if (k == QStringLiteral("incomingDir")
             || k == QStringLiteral("sharedDirs")
-            || k == QStringLiteral("tempDirs")) {
+            || k == QStringLiteral("tempDirs"))
             sharedDirsChanged = true;
-            break;
-        }
+        else if (k == QStringLiteral("preventStandby"))
+            standbyChanged = true;
     }
 
     rebaseCategoryDirs(oldIncomingDir);
@@ -1939,6 +1950,8 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
 
     // Notify web server config changes
     emit webServerConfigChanged();
+    if (standbyChanged)
+        emit standbyConfigChanged();
 
     // Propagate config changes to running ServerConnect
     if (theApp.serverConnect) {
@@ -2221,6 +2234,8 @@ void IpcClientHandler::handleGetNetworkInfo(const IpcMessage& msg)
     // would withhold it exactly when someone is diagnosing why they cannot connect. Empty when
     // the host has no usable public IPv6.
     ed2k.insert(QStringLiteral("publicIPv6"), theApp.publicIPv6().toString());
+    // Server's ST_IPV6_STATUS verdict on that address (IPV6ST_* bits; 0 = no verdict).
+    ed2k.insert(QStringLiteral("ipv6Status"), static_cast<qint64>(theApp.publicIPv6Status()));
     // Dotted-quad form of publicIP, so callers that just need a literal (the port test URL) do
     // not each reimplement the ED2K byte order. Empty until a server tells us our IPv4.
     ed2k.insert(QStringLiteral("publicIPv4"),
@@ -3624,6 +3639,17 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setEnableUPnP(val.toBool());
     else if (key == QStringLiteral("separateIPv6Queue"))
         thePrefs.setSeparateIPv6Queue(val.toBool(true));
+    else if (key == QStringLiteral("ipv6UsePrivacyAddress")) {
+        const bool on = val.toBool(false);
+        if (on != thePrefs.ipv6UsePrivacyAddress()) {
+            thePrefs.setIpv6UsePrivacyAddress(on);
+            // Re-pick the advertised address so it matches the new source choice.
+            updatePublicIPv6(scanLocalIPv6());
+            logInfo(on ? QStringLiteral("IPv6: using the temporary privacy address as source")
+                       : QStringLiteral("IPv6: sending from the stable address %1")
+                             .arg(IPv6SourcePin::pinAddress().toString()));
+        }
+    }
     // Proxy
     else if (key == QStringLiteral("proxyType"))
         thePrefs.setProxyType(static_cast<int>(val.toInteger()));

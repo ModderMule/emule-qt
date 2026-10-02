@@ -33,7 +33,6 @@ static void unixSignalHandler(int)
 #include "app/ExternalLinkHandler.h"
 #include "app/IpcClient.h"
 #include "app/MainWindow.h"
-#include "app/PowerManager.h"
 #include "app/UiState.h"
 #include "utils/CountryFlags.h"
 #include "utils/FileAssociation.h"
@@ -257,11 +256,6 @@ int main(int argc, char* argv[])
         mainWindow.messagesPanel()->setCustomFont(f);
         mainWindow.ircPanel()->setCustomFont(f);
     }
-
-    // Power management — prevent idle sleep if enabled
-    eMule::PowerManager powerManager;
-    if (eMule::thePrefs.preventStandby())
-        powerManager.setPreventStandby(true);
 
     // Apply --tab and --subtab arguments
     cli.applyTabArgs(mainWindow);

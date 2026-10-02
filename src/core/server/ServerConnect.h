@@ -117,8 +117,10 @@ public:
     void connectToAnyServer(size_t startAt = 0, bool prioSort = true,
                             bool isAuto = true, bool noCrypt = false);
 
-    /// Connect to a specific server.
-    void connectToServer(Server* server, bool multiconnect = false, bool noCrypt = false);
+    /// Connect to a specific server. @p dialAddress picks one of a dual-stack
+    /// server's addresses (the other-family retry); null = preferred family.
+    void connectToServer(Server* server, bool multiconnect = false, bool noCrypt = false,
+                         const Address& dialAddress = {});
 
     /// Abort all pending connection attempts.
     void stopConnectionTry();
@@ -152,6 +154,8 @@ public:
 
     /// Get the server we are currently connected to, or nullptr.
     [[nodiscard]] Server* currentServer() const;
+    /// The address the live session dialed (a dual-stack server has two); null when offline.
+    [[nodiscard]] Address sessionAddress() const;
 
     [[nodiscard]] uint32 localIP() const { return m_localIP; }
 
@@ -216,6 +220,11 @@ private:
     /// Resolve the persistent ServerList entry backing this socket's connected
     /// server (the socket itself only mutates a throwaway copy).
     Server* resolveListEntry(ServerSocket* socket);
+    /// The list entry behind a socket's Server copy — by id, then IP, then address.
+    Server* listEntryFor(const Server* copy) const;
+    /// The other-family address to retry a dual-stack server on after a failed TCP
+    /// connect, or null (connected once, already a retry, single-family server).
+    Address otherFamilyFor(const ServerSocket* socket, const Server* listServer) const;
     void applyServerFlags(ServerSocket* socket, uint32 tcpFlags);
     void onServerIdent(ServerSocket* socket, const uint8* serverHash,
                        const QString& name, const QString& description);

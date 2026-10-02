@@ -81,6 +81,7 @@ namespace eMule {
         {QStringLiteral("address"),     s.address()},
         {QStringLiteral("ip"),          static_cast<qint64>(s.ipAddress().toNetworkUint32())},
         {QStringLiteral("addr"),        s.ipAddress().toString()},   // IPv6-capable form
+        {QStringLiteral("addr6"),       s.hasBothFamilies() ? s.ipv6Address().toString() : QString()},
         {QStringLiteral("port"),        s.port()},
         {QStringLiteral("description"), s.description()},
         {QStringLiteral("version"),     s.version()},

@@ -131,7 +131,9 @@ void NntpSocket::connectToServer(const NewsServer& server)
     m_server = server;
     m_failed = false;
     m_transportUp = false;
-    m_partialLine.clear();
+    m_in.clear();
+    m_inPos = 0;
+    m_selectedGroup.clear();
     m_kernelBufferCap = 0;   // a new OS socket starts at the default
 
     if (!m_socket) {
@@ -289,7 +291,7 @@ void NntpSocket::setReadRateLimit(qint64 bytesPerSecond)
 
 qint64 NntpSocket::bufferedBytes() const
 {
-    return m_socket ? m_socket->bytesAvailable() : 0;
+    return (m_socket ? m_socket->bytesAvailable() : 0) + (m_in.size() - m_inPos);
 }
 
 qint64 NntpSocket::readBufferCapBytes() const
@@ -498,62 +500,104 @@ void NntpSocket::drain()
 {
     if (!m_socket)
         return;
+    // A handler can reach drain() again (setReadRateLimit on a lease or release).
+    // The outer loop is still holding views into m_in and carries on reading
+    // anyway, so the nested call has nothing to add.
+    if (m_draining)
+        return;
+    m_draining = true;
 
     // Published once per call rather than per line: one atomic add per read
     // burst instead of one per ~128-byte yEnc line.
     qint64 drained = 0;
+    bool bodyConsumed = false;
     // Last: a bodyProgress() slot may pipeline another command.
-    const auto progress = qScopeGuard([this, &drained] {
+    const auto progress = qScopeGuard([this, &drained, &bodyConsumed] {
+        m_draining = false;
+        // Once per read, not per line: QTimer::start() per line was ~800k timer
+        // re-registrations a second at full speed.
+        if (bodyConsumed && m_state == State::CommandBody)
+            armResponseTimer();
         if (drained > 0 && m_command && m_state != State::Disconnected)
             emit bodyProgress();
     });
     const auto publish = qScopeGuard(
         [&drained] { g_wireBytesRead.fetch_add(drained, std::memory_order_relaxed); });
 
-    while (true) {
-        if (!m_socket->canReadLine()) {
-            // Take the partial line so Qt's buffer runs empty: only a read that
-            // empties it makes QSslSocket decrypt more. With a capped buffer,
-            // leaving the tail there hung the connection until the watchdog.
-            if (m_socket->bytesAvailable() > 0)
-                m_partialLine += m_socket->readAll();
-            return;
+    qsizetype pos = m_inPos;
+    const auto keepPos = qScopeGuard([this, &pos] { m_inPos = pos; });
+
+    while (m_state != State::Disconnected) {
+        if (pos < m_in.size()) {
+            const QByteArrayView unread(m_in.constData() + pos, m_in.size() - pos);
+
+            // Block path: the command takes the raw, still dot-stuffed bytes and
+            // says where its body ended. What follows is the next pipelined
+            // status line, parsed below on this same pass.
+            if (m_state == State::CommandBody && m_command && m_command->wantsRawBody()) {
+                bool ended = false;
+                const qsizetype used = m_command->onBodyData(unread, ended);
+                pos += used;
+                m_bodyBytes += used;
+                bodyConsumed = bodyConsumed || used > 0;
+                if (ended) {
+                    finishCommand();
+                    continue;
+                }
+                // Not ended means it took everything (partial lines it buffers
+                // itself), so all that is left to do is read more.
+            } else if (const qsizetype nl = unread.indexOf('\n'); nl >= 0) {
+                QByteArrayView line = unread.first(nl);
+                pos += nl + 1;
+                // Strip CR. Everything downstream works on the bare line.
+                while (line.endsWith('\r'))
+                    line.chop(1);
+
+                if (m_state == State::CommandBody) {
+                    m_bodyBytes += line.size() + 2;
+                    bodyConsumed = true;
+                    handleBodyLine(line);
+                } else {
+                    handleStatusLine(line);
+                }
+                continue;
+            }
         }
 
-        // A limit of 0 means unlimited — read everything the socket holds.
-        if (m_readRateLimit > 0 && m_readBudget <= 0) {
+        // Only here, with no views into m_in outstanding, may it move.
+        if (pos > 0) {
+            m_in.remove(0, pos);
+            pos = 0;
+        }
+
+        // Take everything we may: only a read that empties Qt's buffer makes
+        // QSslSocket decrypt more. A limit of 0 means unlimited.
+        const qint64 available = m_socket->bytesAvailable();
+        if (available <= 0)
+            break;
+        qint64 want = available;
+        if (m_readRateLimit > 0) {
             // Out of budget. The refill timer calls back into drain(), so the
             // buffered remainder is not stranded waiting for a readyRead that
             // will never come for bytes already delivered.
-            return;
+            if (m_readBudget <= 0)
+                break;
+            want = std::min(want, m_readBudget);
         }
-
-        QByteArray raw = m_socket->readLine();
-        if (!m_partialLine.isEmpty()) {
-            raw.prepend(m_partialLine);
-            m_partialLine.clear();
-        }
-        m_readBudget -= raw.size();
-        m_bytesRead += raw.size();   // before the CRLF chop: this is the wire count
-        drained += raw.size();
-
-        // Strip CRLF / LF. Everything downstream works on the bare line.
-        while (raw.endsWith('\n') || raw.endsWith('\r'))
-            raw.chop(1);
-
-        if (m_state == State::CommandBody) {
-            m_bodyBytes += raw.size() + 2;
-            handleBodyLine(raw);
-        } else {
-            handleStatusLine(raw);
-        }
-
-        if (m_state == State::Disconnected)
-            return;
+        const qsizetype old = m_in.size();
+        m_in.resize(old + want);
+        const qint64 got = m_socket->read(m_in.data() + old, want);
+        m_in.resize(old + std::max<qint64>(0, got));
+        if (got <= 0)
+            break;
+        if (m_readRateLimit > 0)
+            m_readBudget -= got;
+        m_bytesRead += got;   // the wire count
+        drained += got;
     }
 }
 
-void NntpSocket::handleStatusLine(const QByteArray& raw)
+void NntpSocket::handleStatusLine(QByteArrayView raw)
 {
     const QString line = QString::fromLatin1(raw);
     bool codeOk = false;
@@ -678,7 +722,7 @@ void NntpSocket::handleStatusLine(const QByteArray& raw)
     }
 }
 
-void NntpSocket::handleBodyLine(const QByteArray& raw)
+void NntpSocket::handleBodyLine(QByteArrayView raw)
 {
     // A lone "." ends the block. "..", and any other leading-dot line, is a
     // stuffed line whose first dot the server added (RFC 3977 §3.1.1).
@@ -686,8 +730,6 @@ void NntpSocket::handleBodyLine(const QByteArray& raw)
         finishCommand();
         return;
     }
-
-    armResponseTimer();
 
     if (m_command) {
         QByteArrayView line{raw};
@@ -805,6 +847,7 @@ void NntpSocket::disarmTimers()
 void NntpSocket::enterDisconnected()
 {
     m_state = State::Disconnected;
+    m_selectedGroup.clear();
     markClosed();
 }
 

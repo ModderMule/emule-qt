@@ -107,6 +107,11 @@ public:
     void setReadRateLimit(qint64 bytesPerSecond);
     [[nodiscard]] qint64 readRateLimit() const { return m_readRateLimit; }
 
+    /// The newsgroup in effect once everything already sent has run; empty when
+    /// none or unknown. Lets a fetcher skip a GROUP round trip per article.
+    [[nodiscard]] const QString& selectedGroup() const { return m_selectedGroup; }
+    void setSelectedGroup(const QString& group) { m_selectedGroup = group; }
+
     /// Bytes Qt holds for this connection not yet drained. Bounded while limited.
     [[nodiscard]] qint64 bufferedBytes() const;
 
@@ -194,8 +199,8 @@ private:
     void applyTlsConfiguration();
     void sendLine(QByteArrayView line);
     void drain();
-    void handleStatusLine(const QByteArray& raw);
-    void handleBodyLine(const QByteArray& raw);
+    void handleStatusLine(QByteArrayView raw);
+    void handleBodyLine(QByteArrayView raw);
     void beginAuthOrReady();
     void enterReady();
     void finishCommand();
@@ -226,7 +231,10 @@ private:
     int m_idleTimeoutMs = 0;
 
     qint64 m_readRateLimit = 0;
-    QByteArray m_partialLine;   ///< line tail taken out of Qt's buffer by drain(); never holds '\n'
+    QByteArray m_in;            ///< read off the socket, not yet parsed from m_inPos on
+    qsizetype m_inPos = 0;
+    bool m_draining = false;    ///< drain() is on the stack; a nested call returns
+    QString m_selectedGroup;    ///< see selectedGroup(); reset with the connection
     qint64 m_kernelBufferCap = 0;   ///< SO_RCVBUF last set by applyBufferCaps(); 0 = OS default
     qint64 m_readBudget = 0;
     qint64 m_bytesRead = 0;

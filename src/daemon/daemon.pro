@@ -30,6 +30,9 @@ unix {
 macx {
     LIBS += -framework IOKit -framework CoreFoundation -framework CoreServices
 }
+linux {
+    QT += dbus
+}
 win32 {
     DEFINES += NOMINMAX WIN32_LEAN_AND_MEAN
 
@@ -73,6 +76,7 @@ SOURCES += \
     IpcServer.cpp \
     main.cpp \
     MetaSearchService.cpp \
+    PowerManager.cpp \
     UsenetBridge.cpp
 
 HEADERS += \
@@ -84,6 +88,7 @@ HEADERS += \
     IpcClientHandler.h \
     IpcServer.h \
     MetaSearchService.h \
+    PowerManager.h \
     UsenetBridge.h
 
 # generated eNode Meta API messages (core.pro)

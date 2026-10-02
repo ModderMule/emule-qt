@@ -253,6 +253,8 @@ void tst_TcpConnect::tryToConnect_establishesTcpConnection()
         m_helloSpy = new QSignalSpy(socket, &ClientReqSocket::helloReceived);
     }, Qt::DirectConnection);
 
+    QSignalSpy stateSpy(client, &UpDownClient::downloadStateChanged);
+
     // Initiate connection
     QVERIFY(client->tryToConnect());
     QCOMPARE(client->connectingState(), ConnectingState::DirectTCP);
@@ -266,8 +268,12 @@ void tst_TcpConnect::tryToConnect_establishesTcpConnection()
     // Wait for connectionEstablished() to reset connecting state
     QTRY_COMPARE_WITH_TIMEOUT(client->connectingState(), ConnectingState::None, 5000);
 
-    // Download state should transition to Connected
-    QCOMPARE(client->downloadState(), DownloadState::Connected);
+    // Connecting → Connected. Check the recorded transitions, not the current state: the
+    // listener doesn't share test.bin, so its NOFIL answer may already have moved the client
+    // on to None before the poll above returns.
+    QVERIFY(stateSpy.count() >= 2);
+    QCOMPARE(stateSpy.at(0).at(0).value<DownloadState>(), DownloadState::Connecting);
+    QCOMPARE(stateSpy.at(1).at(0).value<DownloadState>(), DownloadState::Connected);
 
     // Socket should be set
     QVERIFY(client->socket() != nullptr);

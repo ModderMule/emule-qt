@@ -60,6 +60,8 @@ CT_NAME = 0x01
 CT_VERSION = 0x11
 CT_SERVER_FLAGS = 0x20
 CT_EMULE_VERSION = 0xFB
+CT_MOD_IP_V6 = 0xAE
+OP_PUBLICIP6 = 0xE2    # ed2kNET, on OP_EMULEPROT
 EDONKEYVERSION = 0x3C
 
 SRVCAP_ZLIB = 0x0001
@@ -68,6 +70,7 @@ SRVCAP_UNICODE = 0x0010
 SRVCAP_LARGEFILES = 0x0100
 SRVCAP_SUPPORTCRYPT = 0x0200
 SRVCAP_REQUESTCRYPT = 0x0400
+SRVCAP_IPV6 = 0x1000
 
 ST_TAGS = {
     0x01: "name", 0x0B: "description", 0x0C: "ping", 0x0D: "fail",
@@ -77,7 +80,9 @@ ST_TAGS = {
     0x93: "aux_ports", 0x94: "lowid_users", 0x95: "udp_key",
     0x96: "udp_key_ip", 0x97: "tcp_obfuscation_port",
     0x98: "udp_obfuscation_port",
+    0xAB: "ipv6_status", 0xAD: "your_ip", 0xAF: "server_ipv6",
 }
+IPV6_STATUS_BITS = [(0x01, "HAVE"), (0x02, "PROBED"), (0x04, "REACHABLE")]
 
 UDP_FLAGS = [
     (0x00000001, "ExtGetSources"), (0x00000002, "ExtGetFiles"),
@@ -521,25 +526,33 @@ def _old_tag(tag_id: int, value) -> bytes:
     return bytes([0x03]) + struct.pack("<H", 1) + bytes([tag_id]) + struct.pack("<I", value)
 
 
-def build_login(user_hash: bytes, listen_port: int, nick: str, emule_ver: int) -> bytes:
+def build_login(user_hash: bytes, listen_port: int, nick: str, emule_ver: int,
+                ipv6: bytes | None = None) -> bytes:
     caps = SRVCAP_NEWTAGS | SRVCAP_LARGEFILES | SRVCAP_UNICODE | SRVCAP_ZLIB | SRVCAP_SUPPORTCRYPT
-    body = user_hash + struct.pack("<I", 0) + struct.pack("<H", listen_port) + struct.pack("<I", 4)
+    if ipv6:
+        caps |= SRVCAP_IPV6    # coupled with CT_MOD_IP_V6 (docs/protocol/ipv6-spec.md 4.1)
+    body = user_hash + struct.pack("<I", 0) + struct.pack("<H", listen_port)
+    body += struct.pack("<I", 5 if ipv6 else 4)
     body += _old_tag(CT_NAME, nick)
     body += _old_tag(CT_VERSION, EDONKEYVERSION)
     body += _old_tag(CT_SERVER_FLAGS, caps)
     body += _old_tag(CT_EMULE_VERSION, emule_ver)
+    if ipv6:
+        body += bytes([0x01]) + struct.pack("<H", 1) + bytes([CT_MOD_IP_V6]) + ipv6
     payload = bytes([OP_LOGINREQUEST]) + body
     return bytes([OP_EDONKEYPROT]) + struct.pack("<I", len(payload)) + payload
 
 
 def tcp_probe(ip: str, port: int, timeout: float, nick: str, listen_port: int,
-              linger: float, obfuscated: bool = False) -> dict:
+              linger: float, obfuscated: bool = False, ipv6: str | None = None) -> dict:
     out: dict = {"connected": False, "obfuscated": obfuscated, "messages": [], "packets": []}
+    if ipv6:
+        out["advertised_ipv6"] = ipv6
     user_hash = bytearray(random.getrandbits(8) for _ in range(16))
     user_hash[5] = 14      # eMule client marks, as MFC sets them
     user_hash[14] = 111
     out["user_hash"] = bytes(user_hash).hex().upper()
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock = socket.socket(socket.AF_INET6 if ":" in ip else socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(timeout)
     started = time.monotonic()
     try:
@@ -551,7 +564,8 @@ def tcp_probe(ip: str, port: int, timeout: float, nick: str, listen_port: int,
             send_key, recv_key, hs = dh_server_handshake(sock, timeout)
             out["handshake"] = hs
             out["handshake_ms"] = round((time.monotonic() - started) * 1000, 1)
-        login = build_login(bytes(user_hash), listen_port, nick, EMULE_VERSION_TAG)
+        login = build_login(bytes(user_hash), listen_port, nick, EMULE_VERSION_TAG,
+                            socket.inet_pton(socket.AF_INET6, ipv6) if ipv6 else None)
         sock.sendall(send_key.crypt(login) if send_key else login)
         buf = b""
         deadline = time.monotonic() + linger
@@ -597,7 +611,8 @@ def tcp_probe(ip: str, port: int, timeout: float, nick: str, listen_port: int,
 
 
 def _handle_tcp_packet(out: dict, proto: int, opcode: int, body: bytes) -> None:
-    entry = {"proto": f"0x{proto:02X}", "opcode": f"0x{opcode:02X}", "len": len(body)}
+    entry = {"proto": f"0x{proto:02X}", "opcode": f"0x{opcode:02X}", "len": len(body),
+             "raw_hex": body[:64].hex()}
     try:
         # packed (0xD4) frames arrive here already inflated
         if opcode == OP_SERVERMESSAGE and proto in (OP_EDONKEYPROT, OP_PACKEDPROT):
@@ -634,6 +649,13 @@ def _handle_tcp_packet(out: dict, proto: int, opcode: int, body: bytes) -> None:
             ident.update(r.taglist())
             if "version" in ident:
                 ident["version"] = fmt_version(ident["version"])
+            for key in ("your_ip", "server_ipv6"):
+                if isinstance(ident.get(key), str) and len(ident[key]) == 32:
+                    ident[key] = socket.inet_ntop(socket.AF_INET6, bytes.fromhex(ident[key]))
+            if isinstance(ident.get("ipv6_status"), int):
+                ident["ipv6_status_decoded"] = decode_flags(ident["ipv6_status"], IPV6_STATUS_BITS)
+            if r.p < len(body):
+                ident["trailing_hex"] = body[r.p:].hex()
             out["server_ident"] = ident
         elif opcode == OP_SERVERLIST:
             entry["type"] = "OP_SERVERLIST"
@@ -641,9 +663,19 @@ def _handle_tcp_packet(out: dict, proto: int, opcode: int, body: bytes) -> None:
             count = r.u8()
             entry["count"] = count
             out["server_list_offered"] = count
+            r.raw(count * 6)
+            if r.p < len(body):    # optional IPv6 block (ipv6-spec 4.6)
+                v6 = r.u8()
+                entry["v6"] = [f"[{socket.inet_ntop(socket.AF_INET6, r.raw(16))}]:{r.u16()}"
+                               for _ in range(v6)]
+                out["server_list_v6"] = entry["v6"]
         elif opcode == OP_REJECT:
             entry["type"] = "OP_REJECT"
             out["rejected"] = True
+        elif proto == OP_EMULEPROT and opcode == OP_PUBLICIP6:
+            entry["type"] = "OP_PUBLICIP6 (ed2kNET)"
+            entry["head_hex"] = body[:32].hex()
+            out["ed2knet_publicip6"] = body.hex()
         elif opcode == OP_CALLBACKREQUESTED:
             entry["type"] = "OP_CALLBACKREQUESTED"
         else:
@@ -759,7 +791,8 @@ def probe_one(ip: str, port: int, args, known: dict) -> dict:
         entry["known_from_server_met"] = known[f"{ip}:{port}"]
     entry["udp"] = udp_probe(ip, port, args.timeout, args.retries)
     if args.tcp:
-        entry["tcp"] = tcp_probe(ip, port, args.timeout, args.nick, args.listen_port, args.linger)
+        entry["tcp"] = tcp_probe(ip, port, args.timeout, args.nick, args.listen_port, args.linger,
+                                 ipv6=args.ipv6)
         # A server that accepts the TCP connection and then says nothing to a plain
         # login is the symptom in issue #6 — retry the same login over eMule's
         # obfuscated (DH-768/RC4) server handshake to tell "mute" from "crypt-only".
@@ -767,7 +800,8 @@ def probe_one(ip: str, port: int, args, known: dict) -> dict:
         if silent and args.obf_retry:
             obf_port = ((entry["udp"].get("status") or {}).get("tcp_obfuscation_port") or port)
             entry["tcp_obfuscated"] = tcp_probe(ip, obf_port, args.timeout, args.nick,
-                                                args.listen_port, args.linger, obfuscated=True)
+                                                args.listen_port, args.linger, obfuscated=True,
+                                                ipv6=args.ipv6)
     entry["fingerprint"] = guess_software(entry)
     return entry
 
@@ -787,13 +821,15 @@ def main() -> int:
     ap.add_argument("--no-tcp", dest="tcp", action="store_false", help="skip the TCP login probe")
     ap.add_argument("--no-obf-retry", dest="obf_retry", action="store_false",
                     help="do not retry a silent plain login over the obfuscated handshake")
+    ap.add_argument("--ipv6", metavar="ADDR",
+                    help="advertise this public IPv6 at login (SRVCAP_IPV6 + CT_MOD_IP_V6)")
     ap.add_argument("--out", help="write JSON here instead of stdout (forced to a .local.json name)")
     args = ap.parse_args()
 
     targets: list[tuple[str, int]] = []
     for spec in args.servers:
         host, _, p = spec.rpartition(":")
-        targets.append((host, int(p)))
+        targets.append((host.strip("[]"), int(p)))
     if args.met:
         targets += [tuple(k.split(":")) for k in load_met(args.met)]
         targets = [(h, int(p)) for h, p in targets]
@@ -816,7 +852,7 @@ def main() -> int:
     results.sort(key=lambda e: order.get(e["address"], 1 << 30))
     doc = {"probed_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
            "probe": {"timeout": args.timeout, "retries": args.retries,
-                     "tcp_login": args.tcp, "nick": args.nick},
+                     "tcp_login": args.tcp, "nick": args.nick, "ipv6": args.ipv6},
            "servers": results}
     text = json.dumps(doc, indent=2, ensure_ascii=False)
     if args.out:

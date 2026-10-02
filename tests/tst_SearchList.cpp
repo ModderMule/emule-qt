@@ -79,6 +79,7 @@ private slots:
     void addToList_fileTypeFilter();
     void removeResults_clearsSearch();
     void processSearchAnswer_tcp();
+    void processUDPSearchAnswer_ipv6OnlyFromAskedServer();
     void spamRating_hashHit();
     void spamRating_nameHit();
     void spamRating_belowThreshold();
@@ -258,6 +259,28 @@ void tst_SearchList::removeResults_clearsSearch()
     QCOMPARE(list.foundFiles(id), uint32{0});
 }
 
+void tst_SearchList::processUDPSearchAnswer_ipv6OnlyFromAskedServer()
+{
+    // The sent-request set was uint32-keyed: every IPv6 server collapsed to 0, so
+    // asking one let any IPv6 sender in.
+    SearchList list;
+    const uint32 id = list.newSearch({}, SearchParams{});
+    const Address asked = Address::fromString(QStringLiteral("2001:678:6d4:9202::278"));
+    const Address stranger = Address::fromString(QStringLiteral("2a01:4f8::1"));
+
+    uint8 hash[16] = {0x42};
+    const QByteArray packet = buildSingleResultPacket(hash, QStringLiteral("v6.iso"), 1000);
+    const auto* data = reinterpret_cast<const uint8*>(packet.constData());
+    const auto size = static_cast<uint32>(packet.size());
+
+    QSignalSpy added(&list, &SearchList::resultAdded);
+    list.addSentUDPRequestIP(id, asked);
+    list.processUDPSearchAnswer(data, size, true, Endpoint(stranger, 5555));
+    QCOMPARE(added.count(), 0);
+    list.processUDPSearchAnswer(data, size, true, Endpoint(asked, 5555));
+    QCOMPARE(added.count(), 1);
+}
+
 void tst_SearchList::processSearchAnswer_tcp()
 {
     SearchList list;
@@ -272,7 +295,7 @@ void tst_SearchList::processSearchAnswer_tcp()
     bool moreResults = list.processSearchAnswer(
         reinterpret_cast<const uint8*>(packet.constData()),
         static_cast<uint32>(packet.size()),
-        true, 0xC0A80001, 4661);
+        true, Endpoint(Address::fromString(QStringLiteral("192.168.0.1")), 4661));
 
     QVERIFY(!moreResults); // no trailing byte
     QCOMPARE(addedSpy.count(), 2);

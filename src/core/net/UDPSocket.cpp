@@ -5,6 +5,7 @@
 #include "net/UDPSocket.h"
 #include "net/EncryptedDatagramSocket.h"
 #include "net/HostResolver.h"
+#include "net/IPv6SourcePin.h"
 #include "app/AppContext.h"
 #include "ipfilter/IPFilter.h"
 #include "prefs/Preferences.h"
@@ -198,11 +199,23 @@ SocketSentBytes UDPSocket::sendControlData(uint32 maxNumberOfBytesToSend, uint32
     while (!m_controlQueue.empty() && result.sentBytesControlPackets < maxNumberOfBytesToSend) {
         auto& pkt = m_controlQueue.front();
 
-        qint64 sent = m_socket.writeDatagram(
-            reinterpret_cast<const char*>(pkt.data.data()),
-            static_cast<qint64>(pkt.data.size()),
-            pkt.destination.address().toQHostAddress(),
-            pkt.destination.port());
+        qint64 sent = 0;
+        if (const Address source = IPv6SourcePin::sourceFor(pkt.destination.address());
+            source.isNull()) {
+            sent = m_socket.writeDatagram(
+                reinterpret_cast<const char*>(pkt.data.data()),
+                static_cast<qint64>(pkt.data.size()),
+                pkt.destination.address().toQHostAddress(),
+                pkt.destination.port());
+        } else {
+            // IPv6 server: send from the pinned stable address, as TCP does
+            QNetworkDatagram datagram(
+                QByteArray(reinterpret_cast<const char*>(pkt.data.data()),
+                           static_cast<qsizetype>(pkt.data.size())),
+                pkt.destination.address().toQHostAddress(), pkt.destination.port());
+            datagram.setSender(source.toQHostAddress());
+            sent = m_socket.writeDatagram(datagram);
+        }
 
         if (sent < 0) {
             // #32: MFC increments a server's failed-count on WSAECONNRESET (an ICMP

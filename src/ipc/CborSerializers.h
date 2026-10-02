@@ -238,6 +238,8 @@ inline constexpr qsizetype kMaxBarRanges = 1024;
         // "address" may be a dynIP hostname; "addr" is always the literal we dialed, and is
         // the only field that survives an IPv6 server ("ip" is 0 for those).
         {QStringLiteral("addr"),        s.ipAddress().toString()},
+        // A dual-stack server's IPv6 next to its IPv4 "addr" (empty otherwise).
+        {QStringLiteral("addr6"),       s.hasBothFamilies() ? s.ipv6Address().toString() : QString()},
         {QStringLiteral("cc"),          countryCodeOf(s.ipAddress())},   // empty until resolved
         {QStringLiteral("port"),        s.port()},
         {QStringLiteral("description"), s.description()},

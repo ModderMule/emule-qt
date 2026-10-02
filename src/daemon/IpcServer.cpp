@@ -94,6 +94,8 @@ void IpcServer::onNewConnection()
                 this, &IpcServer::webTemplateReloadRequested);
         connect(handler.get(), &IpcClientHandler::usenetConfigChanged,
                 this, &IpcServer::usenetConfigChanged);
+        connect(handler.get(), &IpcClientHandler::standbyConfigChanged,
+                this, &IpcServer::standbyConfigChanged);
         connect(handler.get(), &IpcClientHandler::indexerConfigChanged,
                 this, &IpcServer::indexerConfigChanged);
         // Broadcast rather than forward to the daemon: nothing outside the GUIs

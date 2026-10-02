@@ -131,6 +131,8 @@ struct NewsServer {
     NntpCertVerification certVerification = NntpCertVerification::Strict;
     bool enabled = true;
 
+    bool operator==(const NewsServer&) const = default;
+
     /// Whether an allowance is actually in force. A kind with no byte figure is
     /// a half-filled form, not a cap of zero.
     [[nodiscard]] bool isMetered() const

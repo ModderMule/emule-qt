@@ -29,6 +29,7 @@ namespace eMule::usenet {
 ///   requestLine()  -> written to the socket
 ///   onStatus()     -> the 3-digit response line
 ///   onBodyLine()   -> zero or more dot-unstuffed lines, iff hasBodyFor(code)
+///   onBodyData()   -> instead of onBodyLine() when wantsRawBody()
 ///   onComplete()   -> exactly once, whether it succeeded or failed
 ///
 /// Not a QObject: commands are short-lived, owned by whoever issued them, and
@@ -58,6 +59,20 @@ public:
     /// A view, not a copy: article bodies reach hundreds of KB and the whole
     /// point of streaming them is not to hold one twice.
     virtual void onBodyLine(QByteArrayView line) { Q_UNUSED(line); }
+
+    /// Take the body as raw wire bytes (still dot-stuffed, with CRLFs) rather
+    /// than line by line. For bodies big enough that per-line calls dominate.
+    [[nodiscard]] virtual bool wantsRawBody() const { return false; }
+
+    /// A block of raw body bytes. Return how many were consumed and set @p ended
+    /// once the terminating ".\r\n" was among them; bytes after it belong to the
+    /// next response. Without an end, everything must be consumed (buffer a
+    /// partial line internally).
+    virtual qsizetype onBodyData(QByteArrayView wire, bool& ended)
+    {
+        ended = false;
+        return wire.size();
+    }
 
     /// Called once when the command is done, successfully or not.
     virtual void onComplete() {}
@@ -147,6 +162,8 @@ public:
     [[nodiscard]] bool hasBodyFor(int code) const override;
     void onStatus(int code, const QString& text) override;
     void onBodyLine(QByteArrayView line) override;
+    [[nodiscard]] bool wantsRawBody() const override { return true; }
+    qsizetype onBodyData(QByteArrayView wire, bool& ended) override;
     void onComplete() override;
 
     /// Header fields and the CRC verdict. Valid once the command completes;

@@ -425,6 +425,26 @@ void AppContext::clearPublicIPv6Observed()
     noteEffectiveIPv6Change();
 }
 
+void AppContext::setPublicIPv6Status(uint8 status)
+{
+    if (status == m_publicIPv6Status)
+        return;
+    m_publicIPv6Status = status;
+
+    const Address ours = publicIPv6();
+    const QString endpoint = ours.isNull() ? QStringLiteral("our IPv6")
+                                           : Endpoint(ours, thePrefs.port()).toString();
+    if (publicIPv6ProbedUnreachable()) {
+        logWarning(QStringLiteral("IPv6: server could not reach %1 inbound — firewalled, not "
+                                  "advertising our IPv6 to peers")
+                       .arg(endpoint));
+    } else if ((status & IPV6ST_PROBED) && (status & IPV6ST_REACHABLE)) {
+        logInfo(QStringLiteral("IPv6: server verified %1 is reachable inbound").arg(endpoint));
+    } else if (status & IPV6ST_REACHABLE) {
+        logDebug(QStringLiteral("IPv6: server assumes %1 is reachable (not tested)").arg(endpoint));
+    }
+}
+
 bool AppContext::publicIPv6ProbedUnreachable() const
 {
     // The server actually dial-back-probed our advertised v6 and it failed — do not

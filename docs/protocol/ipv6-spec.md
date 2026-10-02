@@ -147,6 +147,15 @@ existing IPv6-capable eMule fork, so that the two implementations agree on the w
 
 An absent tag, or a value of `0`, means "no verdict". Unset bits mean "no".
 
+The server probes the family the session arrived on, so a v6-connected session gets a verdict too.
+
+| Bits | Reading |
+| --- | --- |
+| `HAVE\|REACHABLE\|PROBED` | verified reachable — published as a v6 source |
+| `HAVE\|PROBED` | verified unreachable (firewalled) — not published, no v6 callbacks routed to us; we stop advertising our v6 |
+| `HAVE\|REACHABLE` | assumed reachable, not tested (server has probing off) |
+| absent | no verdict — assume nothing |
+
 **`CT_SERVER_FLAGS` (`0x20`), UINT32 — client→server login capabilities:**
 
 | Mask | Meaning |
@@ -205,6 +214,15 @@ on creates dead sources for every peer that believes you.
 
 Tiers 1 and 3 are accepted only if the reflected address is **also assigned to a local interface**.
 This prevents a hostile or broken peer from convincing a client to advertise someone else's address.
+
+**Source address.** Tier 4 prefers a stable address over an RFC 4941 temporary one. macOS and
+Windows send from the temporary address by default, so what peers observe (tiers 1 and 3, and the
+IPv6 UDP obfuscation key of §3.4) would differ from what is advertised. This implementation
+therefore pins the source per socket, which needs no root or administrator rights: outgoing TCP
+binds the stable address before connecting, and UDP sets it as the datagram's source address
+(`IPV6_PKTINFO`). The "Use IPv6 privacy address" option (`ipv6UsePrivacyAddress`) turns this off.
+The OS then chooses the source, and tier 4 picks the temporary address so that the advertised and
+the observed address still agree.
 
 ### 2.2 The advertise gate
 
@@ -667,8 +685,13 @@ Observed emission conditions (server-dependent, but a useful baseline):
 - `ST_IPV6_STATUS` SHOULD be sent by servers as `TAGTYPE_UINT8`; receivers MUST accept any integer
   width (§0.3). Only the combination `IPV6ST_PROBED` set **and** `IPV6ST_REACHABLE` clear suppresses
   further advertisement — an absent tag or an unprobed verdict never suppresses.
-- `CT_MOD_SVR_IP_V6` is informational; this implementation logs it and keeps using the address it
-  dialled.
+- `CT_MOD_SVR_IP_V6` never changes the session: the client keeps using the address it dialled. This
+  implementation uses it to merge the server's IPv4 and IPv6 into **one** server-list entry (over an
+  IPv4 session: the tag; over an IPv6 session: the ident's 4-byte IP field). A merge absorbs an
+  existing entry for the other address only when that entry does not pair it with a different
+  address, and when the two entries' ident hashes, if both are known, are equal. A dual-stack entry
+  dials IPv4 first — only an IPv4 session can yield a HighID (§4.7) — and retries the same server
+  once over IPv6 when the TCP connect fails.
 
 ### 4.4 Inline IPv6 sources — the `0xFFFFFFFF` sentinel
 
@@ -790,6 +813,10 @@ rejects the resulting `ip == 0` entry when adding the server. It therefore *igno
 rather than mis-dialling them. An IPv6-aware reader recognises `header ip == 0` plus an `ST_IPV6`
 tag as a valid IPv6 server. A dynIP (hostname) entry takes precedence over `ST_IPV6`, and a second
 `ST_IPV6` tag MUST NOT overwrite the first.
+
+A **dual-stack** entry (§4.3) writes its IPv4 in the header and its IPv6 in `ST_IPV6`. Stock eMule
+skips the tag and keeps a plain IPv4 server; an IPv6-aware reader loads both addresses into one
+entry.
 
 Validation of such an entry MUST test routability of the actual 128-bit address, not of the
 `uint32` projection (which is 0 and would reject every IPv6 server).

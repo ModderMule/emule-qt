@@ -268,7 +268,6 @@
     <ClCompile Include="dialogs\PasteLinksDialog.cpp" />
     <ClCompile Include="dialogs\PasteTextDialog.cpp" />
     <ClCompile Include="dialogs\ToolbarCustomizeDialog.cpp" />
-    <ClCompile Include="app\PowerManager.cpp" />
     <ClCompile Include="panels\SearchPanel.cpp" />
     <ClCompile Include="controls\IndexerResultsModel.cpp" />
     <ClCompile Include="controls\SearchResultsModel.cpp" />
@@ -392,7 +391,6 @@
     <QtMoc Include="dialogs\PasteLinksDialog.h" />
     <QtMoc Include="dialogs\PasteTextDialog.h" />
     <QtMoc Include="dialogs\ToolbarCustomizeDialog.h" />
-    <ClInclude Include="app\PowerManager.h" />
     <QtMoc Include="panels\SearchPanel.h" />
     <QtMoc Include="controls\IndexerResultsModel.h" />
     <QtMoc Include="controls\SearchResultsModel.h" />

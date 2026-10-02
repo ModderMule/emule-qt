@@ -8,6 +8,7 @@
 
 #include "utils/Types.h"
 
+#include <QByteArray>
 #include <QList>
 #include <QThread>
 
@@ -52,8 +53,10 @@ public:
     [[nodiscard]] static bool shouldCompressFile(const QString& fileName);
 
 signals:
-    /// Emitted when block packets are ready to be sent.
-    void blockPacketsReady(eMule::UpDownClient* client,
+    /// Emitted when block packets are ready to be sent. fileId/start/end name the requested
+    /// block, so the receiver can match it against the client's still-pending requests.
+    void blockPacketsReady(eMule::UpDownClient* client, QByteArray fileId,
+                           quint64 startOffset, quint64 endOffset,
                            QList<std::shared_ptr<eMule::Packet>> packets);
     /// Emitted on read error for a client.
     void readError(eMule::UpDownClient* client);

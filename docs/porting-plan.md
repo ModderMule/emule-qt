@@ -143,7 +143,7 @@ Core protocol logic — mostly platform-independent, needs socket layer porting.
 
 - [x] Port `Server.cpp/h` (server entity class)
 - [x] Port `ServerList.cpp/h` (server list persistence and management)
-- [x] Port `ServerConnect.cpp/h` (server connection state machine) — `server/ServerConnect.h/.cpp`, state machine with multi-server connect, timeout, retry, Qt signals
+- [x] Port `ServerConnect.cpp/h` (server connection state machine) — `servers`, state machine with multi-server connect, timeout, retry, Qt signals
 - [ ] Port `WebServices.cpp/h` *(deferred: GUI module)*
 
 ---
@@ -366,7 +366,7 @@ Replace the MFC application framework with Qt Widgets. The GUI connects to the `
 - [x] Migrate icons/bitmaps from `res/` to Qt resource file — all icons in `resources/icons/` and `resources/smileys/`
 - [x] `Ed2kSchemeHandler` — `gui/app/Ed2kSchemeHandler.h/.cpp` (ed2k:// URL scheme handler)
 - [x] `AutoStart` — `gui/app/AutoStart.h/.cpp` (platform-specific autostart registration)
-- [x] `PowerManager` — `gui/app/PowerManager.h/.cpp` (prevents sleep during transfers)
+- [x] `PowerManager` — `daemon/PowerManager.h/.cpp` (daemon-side; MFC 60 s gate: connected/uploading/downloading incl. Usenet; logind on Linux)
 - [x] `VersionChecker` — `gui/app/VersionChecker.h/.cpp` (checks for updates)
 - [x] `UiState` — `gui/app/UiState.h/.cpp` (UI state persistence)
 - [x] `CommandLineExec` (GUI) — `gui/app/CommandLineExec.h/.cpp` (CLI argument handling for GUI)

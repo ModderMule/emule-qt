@@ -186,6 +186,7 @@
     <ClCompile Include="IpcServer.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="MetaSearchService.cpp" />
+    <ClCompile Include="PowerManager.cpp" />
     <ClCompile Include="UsenetBridge.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -196,6 +197,7 @@
     <QtMoc Include="IpcClientHandler.h" />
     <QtMoc Include="IpcServer.h" />
     <QtMoc Include="MetaSearchService.h" />
+    <QtMoc Include="PowerManager.h" />
     <ClInclude Include="DaemonUsenetWebBackend.h" />
     <ClInclude Include="UsenetBridge.h" />
   </ItemGroup>

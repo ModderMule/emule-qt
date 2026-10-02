@@ -68,7 +68,20 @@ public:
         /// from the rate: an engine throttled to a trickle would otherwise read
         /// as uninterested and never get its share back.
         bool active = false;
-        qint64 rateBytesPerSec = 0;     ///< measured, smoothed
+        qint64 rateBytesPerSec = 0;     ///< measured over ~2 s
+        qint64 recentBytesPerSec = 0;   ///< measured over ~0.5 s; spots an engine pressing its cap
+    };
+
+    /// What the split remembers between ticks: each engine's last reserve and
+    /// cap, so an engine pressing its cap can claim its share in a few ticks
+    /// instead of 25 % at a time.
+    struct SplitState {
+        qint64 usenetReserveKb = 0;
+        qint64 ed2kReserveKb = 0;
+        qint64 usenetCapKb = 0;         ///< 0 = none published yet
+        qint64 ed2kCapKb = 0;
+
+        bool operator==(const SplitState&) const = default;
     };
 
     /// maxDownload() divided between the two engines, as last published.
@@ -99,12 +112,14 @@ public:
     ///
     /// The share is a floor while both engines are busy, never a cap on one whose
     /// counterpart is idle or under-using: each engine is held back only because
-    /// the other is active, and only by what the other measurably reserves. Pure,
-    /// so the arithmetic is testable without a queue.
+    /// the other is active, and only by what the other measurably reserves. Pure
+    /// apart from @p state (may be null = stateless), so the arithmetic is
+    /// testable without a queue.
     [[nodiscard]] static DownloadSplit computeDownloadSplit(uint32 ceilingKb,
                                                             int usenetSharePercent,
                                                             EngineDemand usenet,
-                                                            EngineDemand ed2k);
+                                                            EngineDemand ed2k,
+                                                            SplitState* state = nullptr);
 
     /// The split currently in force. Unthrottled while the engine is stopped.
     [[nodiscard]] DownloadSplit lastSplit() const { return m_split; }
@@ -143,6 +158,7 @@ private:
     std::unique_ptr<UsenetWatchFolder> m_watchFolder;
     QTimer* m_bandwidthTimer = nullptr;
     DownloadSplit m_split;
+    SplitState m_splitState;
     DownloadSplit m_loggedSplit;
     QElapsedTimer m_splitLogClock;
     bool m_running = false;

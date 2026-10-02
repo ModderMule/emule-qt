@@ -198,11 +198,17 @@ public slots:
                          const uint8* data, uint32 size);
 
 private slots:
-    void onBlockPacketsReady(eMule::UpDownClient* client,
+    void onBlockPacketsReady(eMule::UpDownClient* client, QByteArray fileId,
+                             quint64 startOffset, quint64 endOffset,
                              QList<std::shared_ptr<eMule::Packet>> packets);
     void onReadError(eMule::UpDownClient* client);
 
 private:
+    /// Point the client's upload file at the file a block request names — MFC
+    /// srchybrid/UploadQueue.cpp:339-358. Removes the slot when that file is no longer
+    /// shared; returns false then.
+    bool followRequestedFile(UpDownClient* client, const uint8* fileId);
+
     /// Outcome of the shared waiting-list admission gates.
     enum class QueueAdmission {
         Ok,             ///< may be appended to the waiting list

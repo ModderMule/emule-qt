@@ -578,7 +578,7 @@ Has comments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2864"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2870"/>
         <source>Test</source>
         <translation type="unfinished"></translation>
     </message>
@@ -660,7 +660,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4100"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4106"/>
         <source>Bytes</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3050,7 +3050,7 @@ Please choose another:</source>
 <context>
     <name>eMule::LogWidget</name>
     <message>
-        <location filename="../src/gui/controls/LogWidget.cpp" line="+66"/>
+        <location filename="../src/gui/controls/LogWidget.cpp" line="+87"/>
         <location line="+2"/>
         <source>Server Info</source>
         <translation type="unfinished"></translation>
@@ -3850,7 +3850,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+43"/>
+        <location line="+44"/>
         <source>Queued &quot;%1&quot; for Usenet download.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3872,7 +3872,7 @@ Download it again?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+24"/>
+        <location line="+25"/>
         <source>Could not download &quot;%1&quot;: %2</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4008,23 +4008,24 @@ Download it again?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+87"/>
+        <location line="+108"/>
         <source>Connecting</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-85"/>
-        <location line="+87"/>
+        <location line="-106"/>
+        <location line="+108"/>
         <source>Disconnected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-72"/>
+        <location line="-93"/>
+        <location line="+26"/>
         <source>Unknown</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="-17"/>
         <source>Low ID</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4034,7 +4035,7 @@ Download it again?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+27"/>
+        <location line="+48"/>
         <source>Obfuscated</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4044,19 +4045,23 @@ Download it again?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location line="-35"/>
+        <location line="+67"/>
         <location line="+13"/>
         <source>Firewalled</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-13"/>
+        <location line="-82"/>
+        <location line="+4"/>
+        <location line="+65"/>
         <location line="+15"/>
         <source>Open</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-80"/>
+        <location line="+82"/>
         <source>unverified</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4123,36 +4128,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2772"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2778"/>
         <source>Options</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1830"/>
+        <location line="+1836"/>
         <source>OK</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1829"/>
-        <location line="+1830"/>
+        <location line="-1835"/>
+        <location line="+1836"/>
         <source>Cancel</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1829"/>
-        <location line="+5385"/>
+        <location line="-1835"/>
+        <location line="+5391"/>
         <source>Apply</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5384"/>
+        <location line="-5390"/>
         <source>Help</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+251"/>
-        <location line="+1805"/>
+        <location line="+252"/>
+        <location line="+1810"/>
         <location line="+63"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -4161,7 +4166,7 @@ Download it again?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1892"/>
+        <location line="-1897"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4192,18 +4197,18 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5283"/>
+        <location line="+5288"/>
         <source>Language</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5280"/>
+        <location line="-5285"/>
         <source>System Default</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+638"/>
+        <location line="+643"/>
         <location line="+293"/>
         <location line="+372"/>
         <location line="+276"/>
@@ -4211,7 +4216,7 @@ Download it again?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1576"/>
+        <location line="-1581"/>
         <source>Bring to front on link click</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4297,25 +4302,25 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5209"/>
+        <location line="+5214"/>
         <source>Core</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5204"/>
+        <location line="-5209"/>
         <source>Address:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1098"/>
+        <location line="+1103"/>
         <location line="+633"/>
         <location line="+410"/>
         <source>Port:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2138"/>
+        <location line="-2143"/>
         <source>authentication token</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4459,7 +4464,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+599"/>
+        <location line="+604"/>
         <location line="+928"/>
         <location line="+108"/>
         <location line="+290"/>
@@ -4472,7 +4477,7 @@ Are you sure you want to continue?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4429"/>
+        <location line="-4434"/>
         <source>Reset</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4613,7 +4618,7 @@ Are you sure you want to continue?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+54"/>
+        <location line="+59"/>
         <location line="+1313"/>
         <source>General</source>
         <translation type="unfinished"></translation>
@@ -5446,7 +5451,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1492"/>
+        <location line="-1497"/>
         <source>Show downloaded data of unfinished parts and part boundaries</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5486,7 +5491,17 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+301"/>
+        <location line="+217"/>
+        <source>Use IPv6 privacy address</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Connect to IPv6 peers and servers from the rotating temporary (RFC 4941) address. Off: always use the stable address, so peers can reach the address we advertise.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+87"/>
         <source>Use for news servers</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7017,7 +7032,7 @@ News server connections switch over immediately.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+867"/>
+        <location line="+870"/>
         <source>File types</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7027,7 +7042,7 @@ News server connections switch over immediately.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+522"/>
+        <location line="+524"/>
         <source>Database: not connected to the core</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7062,7 +7077,7 @@ News server connections switch over immediately.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5820"/>
+        <location line="-5825"/>
         <location line="+1284"/>
         <location line="+1019"/>
         <location line="+154"/>
@@ -7421,14 +7436,14 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+243"/>
-        <location line="+710"/>
-        <location line="+361"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+244"/>
+        <location line="+711"/>
+        <location line="+363"/>
         <source>Download</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1051"/>
+        <location line="-1054"/>
         <source>Close All Searches</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7611,7 +7626,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
     </message>
     <message>
         <location line="+70"/>
-        <location line="+178"/>
+        <location line="+179"/>
         <source>Usenet search</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7697,19 +7712,19 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
     </message>
     <message>
         <location line="+48"/>
-        <location line="+714"/>
+        <location line="+794"/>
         <source>Preview</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-490"/>
+        <location line="-568"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+737"/>
+        <location line="+815"/>
         <source>Asking servers: %1 / %2</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7719,7 +7734,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1048"/>
+        <location line="-1128"/>
         <location line="+14"/>
         <source>Mark as Spam</source>
         <translation type="unfinished"></translation>
@@ -7755,7 +7770,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+693"/>
+        <location line="+773"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7768,7 +7783,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+147"/>
+        <location line="+155"/>
         <source>File Name</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7843,7 +7858,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+71"/>
+        <location line="+82"/>
         <source>Server Name</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7903,6 +7918,11 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location line="+1"/>
+        <source>IPv6</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location line="+32"/>
         <source>High</source>
         <translation type="unfinished"></translation>
@@ -7918,7 +7938,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-36"/>
+        <location line="-37"/>
         <source>Low ID</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8156,7 +8176,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="unfinished"></translation>
     </message>
     <message numerus="yes">
-        <location line="+567"/>
+        <location line="+578"/>
         <source>%n server(s) not added — LAN addresses are filtered</source>
         <translation type="unfinished">
             <numerusform></numerusform>
@@ -8164,7 +8184,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         </translation>
     </message>
     <message>
-        <location line="-613"/>
+        <location line="-624"/>
         <source>Low ID</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8267,7 +8287,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+214"/>
+        <location line="+219"/>
         <source>Invalid server.met header: 0x%1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8297,7 +8317,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+43"/>
+        <location line="+49"/>
         <source>server.met processed: %1 servers added, %2 skipped (duplicates/invalid).</source>
         <translation type="unfinished"></translation>
     </message>
@@ -11380,14 +11400,14 @@ A password is set for this release.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3583"/>
-        <location line="+3473"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3589"/>
+        <location line="+3479"/>
         <location line="+47"/>
         <source>Session expired — log in again</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-3518"/>
+        <location line="-3524"/>
         <source>Guests cannot add downloads</source>
         <translation type="unfinished"></translation>
     </message>
@@ -11484,17 +11504,17 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+207"/>
-        <location line="+1807"/>
+        <location line="+1813"/>
         <source>Web Control Panel</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1798"/>
+        <location line="-1804"/>
         <source>Not connected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+289"/>
+        <location line="+295"/>
         <source>Connected</source>
         <translation type="unfinished"></translation>
     </message>
@@ -12144,7 +12164,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1242"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1248"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation type="unfinished"></translation>
@@ -12526,7 +12546,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1239"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1245"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation type="unfinished"></translation>

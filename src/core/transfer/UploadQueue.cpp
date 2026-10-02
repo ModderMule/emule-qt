@@ -85,14 +85,29 @@ void UploadQueue::setDiskIOThread(UploadDiskIOThread* diskIO)
 // onBlockPacketsReady — enqueue disk-read packets on the client's socket
 // ===========================================================================
 
-void UploadQueue::onBlockPacketsReady(UpDownClient* client,
+void UploadQueue::onBlockPacketsReady(UpDownClient* client, QByteArray fileId,
+                                       quint64 startOffset, quint64 endOffset,
                                        QList<std::shared_ptr<Packet>> packets)
 {
+    // A read can land after its slot ended — pointer compare only, the client may be gone.
+    if (!client || !isDownloading(client))
+        return;
     if (thePrefs.logRawSocketPackets())
         logDebug(QStringLiteral("onBlockPacketsReady: client=%1 packets=%2")
-                     .arg(client ? client->userName() : QStringLiteral("null"))
+                     .arg(client->userName())
                      .arg(packets.size()));
-    if (!client || !client->socket())
+    if (!client->socket() || fileId.size() != 16)
+        return;
+
+    // Queue → done, MFC srchybrid/UploadDiskIOThread.cpp:262. A block no longer pending was
+    // flushed with an earlier slot; its data is not wanted any more.
+    const auto* id = reinterpret_cast<const uint8*>(fileId.constData());
+    if (!client->markBlockDone(id, startOffset, endOffset))
+        return;
+
+    // MFC's IO thread waits for the main thread to switch the file before reading a block
+    // of another one (srchybrid/UploadDiskIOThread.cpp:204-211); the switch happens here.
+    if (!followRequestedFile(client, id))
         return;
 
     auto* sock = client->socket();
@@ -103,7 +118,8 @@ void UploadQueue::onBlockPacketsReady(UpDownClient* client,
             // difference is payloadInBuffer(), which is how the upload status tells a stalled
             // slot from a transferring one. MFC's buffer-limit early return around the same
             // counter is deliberately not ported: this disk thread is request-driven, so the
-            // peer's own block requests already bound how much is in flight.
+            // peer's own block requests already bound how much is in flight. That bound holds
+            // only because addReqBlock() drops re-requested blocks.
             client->addQueueSessionUploadAdded(pkt->statsPayload);
 
             // EMSocket takes ownership via unique_ptr; copy from shared_ptr
@@ -898,6 +914,10 @@ bool UploadQueue::removeFromUploadQueue(UpDownClient* client)
     client->setUploadState(UploadState::None);
     client->setCollectionUploadSlot(false);
 
+    // Block lists live as long as the slot — MFC deletes them with its UploadingToClient_Struct
+    // (srchybrid/UploadQueue.cpp:723). Left over, they would dedup the next slot's requests.
+    client->flushSendBlocks();
+
     m_highestNumberOfFullyActivatedSlotsSinceLastCall = 0;
 
     // Renumber remaining slots
@@ -1148,6 +1168,11 @@ void UploadQueue::process()
         // Use big send buffer for fast uploads
         if (EMSocket* sock = cur->getFileUploadSocket())
             sock->useBigSendBuffer();
+
+        // Follow the file the peer is actually pulling. Reads are quick, so this mostly
+        // fires from onBlockPacketsReady(); here it catches a block still waiting on disk.
+        if (!cur->blockRequests().empty())
+            followRequestedFile(cur, cur->blockRequests().front()->fileID.data());
     }
 
     // Save bandwidth data for rate calculation
@@ -1295,6 +1320,28 @@ void UploadQueue::answerReask(const Endpoint& replyTo, SafeMemFile& in,
     theApp.clientUDP->sendPacket(std::move(response), replyTo,
                                   sender->shouldReceiveCryptUDPPackets(),
                                   sender->userHash(), false, 0);
+}
+
+// ===========================================================================
+// followRequestedFile — MFC CUploadQueue::Process (srchybrid/UploadQueue.cpp:339-358)
+// ===========================================================================
+
+bool UploadQueue::followRequestedFile(UpDownClient* client, const uint8* fileId)
+{
+    if (md4equ(fileId, client->reqUpFileId()))
+        return true;
+
+    if (KnownFile* file = m_sharedFiles ? m_sharedFiles->getFileByID(fileId) : nullptr) {
+        client->setUploadFileID(file);
+        return true;
+    }
+
+    if (thePrefs.logUlDlEvents()) {
+        logDebug(QStringLiteral("%1: requested file of a block request is not shared — "
+                                "removing from upload list").arg(client->userName()));
+    }
+    removeFromUploadQueue(client);
+    return false;
 }
 
 } // namespace eMule

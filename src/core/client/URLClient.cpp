@@ -472,7 +472,7 @@ void URLClient::connectToHost()
     // Initiate TCP connection
     const auto connAddr = connectAddress();
     const QHostAddress addr = connAddr.toQHostAddress();
-    reqSocket->connectToHost(addr, m_urlPort);
+    reqSocket->connectToPeer(connAddr, m_urlPort);
     reqSocket->waitForOnConnect();
 
     logDebug(QStringLiteral("URLClient::connectToHost: connecting to %1:%2").arg(addr.toString()).arg(m_urlPort));

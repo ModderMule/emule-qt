@@ -90,6 +90,11 @@ public:
     /// its IP twins. Returns the entry, or nullptr if it's not in the list.
     Server* applyResolvedIP(const QString& dn, uint16 port, const Address& ip);
 
+    /// Give @p entry its missing other-family address and absorb the twin row that
+    /// holds it (same port). Refused when the twin's ident hash differs or the twin
+    /// pairs @p addr with another address. Returns @p entry.
+    Server* attachAddress(Server* entry, const Address& addr);
+
     /// Emit serverUpdated(server) so views refresh after an in-place mutation.
     void notifyServerUpdated(Server* server) { emit serverUpdated(server); }
 
@@ -106,6 +111,8 @@ public:
     [[nodiscard]] Server* findByIPUdp(const Address& addr, uint16 udpPort,
                                       bool obfuscationPorts = true) const;
     [[nodiscard]] Server* findByAddress(const QString& address, uint16 port) const;
+    /// Stable within one daemon run; survives the Server copy a ServerSocket holds.
+    [[nodiscard]] Server* findById(uint32 serverId) const;
 
     /// IP-only lookup (ignores port). Port of CServerList::GetServerByIP().
     [[nodiscard]] Server* getServerByIP(uint32 ip) const;

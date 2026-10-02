@@ -56,7 +56,19 @@ public:
     /// Initiate connection to a server. Takes a copy of the server data.
     /// @param server  Server to connect to.
     /// @param noCrypt Disable encryption for this connection attempt.
-    void connectTo(const Server& server, bool noCrypt = false);
+    /// @param dialAddress One of the server's addresses to dial (dual-stack family
+    ///        fallback); null = the server's preferred-family address.
+    void connectTo(const Server& server, bool noCrypt = false, const Address& dialAddress = {});
+
+    /// The address this session dialed — decides the session family, which a
+    /// dual-stack Server copy can no longer tell by itself.
+    [[nodiscard]] const Address& sessionAddress() const { return m_sessionAddress; }
+
+    /// True when this attempt is the dual-stack retry on the other family.
+    [[nodiscard]] bool isFamilyFallback() const { return m_familyFallback; }
+
+    /// True once the TCP connect succeeded (before any login).
+    [[nodiscard]] bool tcpConnected() const { return m_tcpConnected; }
 
     /// Get the current connection state.
     [[nodiscard]] ServerConnState connectionState() const { return m_connectionState; }
@@ -140,6 +152,10 @@ signals:
     /// hostname resolves to an IPv6, which a uint32 cannot carry.
     void dynIPResolved(const eMule::Address& addr, const QString& hostname);
 
+    /// OP_SERVERIDENT named the server's address of the other family: its IPv6
+    /// (CT_MOD_SVR_IP_V6) over an IPv4 session, its IPv4 over an IPv6 session.
+    void serverAddressLearned(const eMule::Address& addr);
+
     /// A dynIP server resolved to an IP-filtered address; the list entry must go.
     void dynIPFiltered(const eMule::Address& addr);
 
@@ -167,6 +183,7 @@ private:
 
     // --- State ---
     std::unique_ptr<Server> m_curServer;
+    Address m_sessionAddress;
     std::unique_ptr<QDnsLookup> m_dnsLookup;
     ServerConnState m_connectionState = ServerConnState::NotConnected;
     uint32 m_lastTransmission = 0;
@@ -177,6 +194,8 @@ private:
     bool m_pendingLogin = false;
     bool m_lowIDBounced = false;
     bool m_dnsTriedFallback = false;   // the other-family retry has been used
+    bool m_familyFallback = false;     // dual-stack retry on the other family
+    bool m_tcpConnected = false;
 
     QElapsedTimer m_elapsedTimer;
 };

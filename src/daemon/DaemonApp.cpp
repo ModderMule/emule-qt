@@ -5,6 +5,7 @@
 #include "CoreNotifierBridge.h"
 #include "DaemonUsenetWebBackend.h"
 #include "IpcServer.h"
+#include "PowerManager.h"
 #include "UsenetBridge.h"
 
 #include "IpcMessage.h"
@@ -18,6 +19,8 @@
 #include "stats/Statistics.h"
 #include "stats/StatsHistory.h"
 #include "stats/StatsSnapshot.h"
+#include "transfer/DownloadQueue.h"
+#include "transfer/UploadQueue.h"
 #include "UsenetSession.h"
 #include "IndexerFeedList.h"
 #include "IndexerSearchList.h"
@@ -176,6 +179,19 @@ bool DaemonApp::start()
     connectIndexerFeedSink();
     m_indexerFeeds->applyPreferences();
 
+    // Prevent standby. MFC ResetStandByIdleTimer's condition, plus Usenet.
+    m_powerManager = std::make_unique<PowerManager>([] {
+        const auto* usenetSession = usenet::theUsenetSession;
+        return theApp.isConnected()
+            || (theApp.uploadQueue && theApp.uploadQueue->uploadQueueLength() > 0)
+            || (theApp.downloadQueue && theApp.downloadQueue->datarate() > 0)
+            || (usenetSession && usenetSession->queue()
+                && usenetSession->queue()->currentRate() > 0);
+    });
+    connect(m_ipcServer.get(), &IpcServer::standbyConfigChanged,
+            m_powerManager.get(), &PowerManager::evaluate);
+    m_powerManager->start();
+
     m_running = true;
     logInfo(QStringLiteral("Daemon started — IPC server on %1:%2")
                 .arg(addr.toString()).arg(port));
@@ -194,6 +210,9 @@ void DaemonApp::stop()
         flushCumulativeStats(thePrefs);
         thePrefs.save();
     }
+
+    // First: its predicate reads the Usenet session and core queues.
+    m_powerManager.reset();
 
     stopWebServer();
 

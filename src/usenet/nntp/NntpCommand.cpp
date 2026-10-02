@@ -186,6 +186,11 @@ void BodyCommand::onBodyLine(QByteArrayView line)
     m_decoder.feedLine(line);
 }
 
+qsizetype BodyCommand::onBodyData(QByteArrayView wire, bool& ended)
+{
+    return m_decoder.feedRaw(wire, ended);
+}
+
 void BodyCommand::onComplete()
 {
     if (failed())

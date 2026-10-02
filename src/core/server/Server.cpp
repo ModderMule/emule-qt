@@ -47,6 +47,7 @@ Server::Server(FileDataIO& data, bool optUTF8)
 Server::Server(const Server& other)
     : m_serverId(other.m_serverId)
     , m_address(other.m_address)
+    , m_addressV6(other.m_addressV6)
     , m_port(other.m_port)
     , m_dynIP(other.m_dynIP)
     , m_name(other.m_name)
@@ -77,6 +78,8 @@ Server::Server(const Server& other)
     , m_cryptPingReplyPending(other.m_cryptPingReplyPending)
     , m_triedCryptOnce(other.m_triedCryptOnce)
     , m_auxPortsList(other.m_auxPortsList)
+    , m_serverHash(other.m_serverHash)
+    , m_hasServerHash(other.m_hasServerHash)
     , m_metaApiUrl(other.m_metaApiUrl)
     , m_metaApiPin(other.m_metaApiPin)
 {
@@ -93,9 +96,56 @@ QString Server::address() const
 
 QString Server::addressWithPort() const
 {
+    return QStringLiteral("%1:%2").arg(bracketedAddress()).arg(m_port);
+}
+
+QString Server::bracketedAddress() const
+{
     if (m_dynIP.isEmpty() && m_address.isIPv6())
-        return Endpoint(m_address, m_port).toString();
-    return QStringLiteral("%1:%2").arg(address()).arg(m_port);
+        return QStringLiteral("[%1]").arg(ipstr(m_address));
+    return address();
+}
+
+// ---------------------------------------------------------------------------
+// Dual-stack addresses
+// ---------------------------------------------------------------------------
+
+bool Server::addAddress(const Address& addr)
+{
+    if (addr.isNull() || !m_dynIP.isEmpty())
+        return false;
+    if (addr.isIPv4()) {
+        if (m_address.isIPv6() && m_addressV6.isNull())
+            m_addressV6 = m_address;    // v6-only entry learns its IPv4: v4 becomes primary
+        m_address = addr;
+    } else if (m_address.isIPv4()) {
+        m_addressV6 = addr;
+    } else {
+        m_address = addr;               // null or v6 primary: replace
+    }
+    return true;
+}
+
+const Address& Server::dialAddress(bool preferIPv6) const
+{
+    if (preferIPv6 && !m_addressV6.isNull())
+        return m_addressV6;
+    return m_address;
+}
+
+Address Server::otherFamilyAddress(const Address& current) const
+{
+    if (m_addressV6.isNull() || current.isNull())
+        return {};
+    return current.isIPv6() ? ipv4Address() : m_addressV6;
+}
+
+void Server::setServerHash(const uint8* hash)
+{
+    if (!hash)
+        return;
+    std::copy_n(hash, m_serverHash.size(), m_serverHash.begin());
+    m_hasServerHash = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -187,14 +237,17 @@ void Server::addTagFromFile(const Tag& tag)
         if (tag.isStr() && !tag.strValue().isEmpty() && m_dynIP.isEmpty()) {
             m_dynIP = tag.strValue();
             m_address = Address();  // reset outdated IP when dynIP is set
+            m_addressV6 = Address();
         }
         break;
     case ST_IPV6:
-        // Local extension: the address of an IPv6 server. Unlike ST_IP this is not a
-        // redirect vector — the header IP was 0, so this tag carries the only address
-        // the entry has. A dynIP wins, matching the ST_DYNIP case above.
-        if (tag.isHash() && m_address.isNull() && m_dynIP.isEmpty())
-            m_address = Address::fromIPv6Bytes(tag.hashValue());
+        // Local extension: the server's IPv6. With a 0 header it is the only address;
+        // next to an IPv4 header it is the second address of a dual-stack server
+        // (stock eMule skips the tag and keeps the IPv4). First tag wins; a dynIP wins.
+        if (tag.isHash() && m_dynIP.isEmpty() && ipv6Address().isNull()) {
+            if (const Address v6 = Address::fromIPv6Bytes(tag.hashValue()); v6.isIPv6())
+                addAddress(v6);
+        }
         break;
     case ST_PORT:
     case ST_IP:
@@ -293,10 +346,10 @@ uint32 Server::writeTags(FileDataIO& file) const
         ++count;
     }
 
-    // An IPv6 server's address does not fit the 4-byte header field, which stays 0 —
-    // so persist it here or the entry is lost on the next load.
-    if (m_address.isIPv6()) {
-        Tag(ST_IPV6, m_address.ipv6Bytes().data()).writeNewEd2kTag(file);
+    // An IPv6 does not fit the 4-byte header field (0 for a v6-only server, the IPv4
+    // for a dual-stack one) — persist it here or it is lost on the next load.
+    if (const Address v6 = ipv6Address(); v6.isIPv6() && m_dynIP.isEmpty()) {
+        Tag(ST_IPV6, v6.ipv6Bytes().data()).writeNewEd2kTag(file);
         ++count;
     }
 

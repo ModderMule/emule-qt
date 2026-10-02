@@ -144,6 +144,14 @@ void tst_UploadDiskIOThread::queueBlockRead_emitsSignal()
     // Either we got packets or an error (error is ok if file path resolution differs)
     QVERIFY(readySpy.count() > 0 || errorSpy.count() > 0);
 
+    // The signal names the block it answers, so the queue can match it to a pending request.
+    if (readySpy.count() > 0) {
+        const auto args = readySpy.first();
+        QCOMPARE(args.at(1).toByteArray(), QByteArray(reinterpret_cast<const char*>(hash), 16));
+        QCOMPARE(args.at(2).toULongLong(), quint64{0});
+        QCOMPARE(args.at(3).toULongLong(), quint64{EMBLOCKSIZE});
+    }
+
     thread.endThread();
 }
 

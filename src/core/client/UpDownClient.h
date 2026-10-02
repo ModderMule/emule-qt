@@ -748,6 +748,9 @@ public:
     void updateUploadingStatisticsData();
     void sendOutOfPartReqsAndAddToWaitingQueue();
     void flushSendBlocks();
+    /// Move a block whose data is ready from the request queue to the head of the done list.
+    /// False when it is no longer pending (flushed with an ended slot).
+    bool markBlockDone(const uint8* fileId, uint64 startOffset, uint64 endOffset);
     void sendHashsetPacket(const uint8* data, uint32 size, bool fileIdentifiers);
     void sendRankingInfo();
     void sendCommentInfo(const KnownFile* file);
@@ -768,9 +771,9 @@ public:
     [[nodiscard]] EMSocket* getFileUploadSocket() const;
     [[nodiscard]] bool isUpPartAvailable(uint32 part) const;
     [[nodiscard]] KnownFile* uploadFile() const { return m_uploadFile; }
-    /// Blocks this peer has asked us to send but that have not been served yet.
-    /// HttpCacheManager reads it to learn which part the peer is actually pulling,
-    /// which is what makes an offer worth publishing rather than speculative.
+    /// Blocks this peer has asked us to send whose data is not queued yet. Together with
+    /// doneBlocks() it is everything requested this slot; HttpCacheManager reads both to
+    /// learn which part the peer is actually pulling.
     [[nodiscard]] const std::list<Requested_Block_Struct*>& blockRequests() const
     {
         return m_blockRequests;
@@ -831,6 +834,9 @@ public:
                            bool isAboutToAsk = false);
     void dontSwapTo(PartFile* file);
     void removeFileFromOtherLists(PartFile* file);
+    /// Drop every A4AF link, on this side and on each file's.
+    void removeFromAllOtherLists();
+    [[nodiscard]] std::size_t otherRequestCount() const { return m_otherRequests.size(); }
     [[nodiscard]] bool isSwapSuspended(const PartFile* file,
                                        bool allowShortReaskTime = false,
                                        bool fileIsNNP = false) const;

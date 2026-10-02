@@ -199,9 +199,6 @@
     <ClCompile Include="dialogs\PasteTextDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="app\PowerManager.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="panels\SearchPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -511,9 +508,6 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="app\PendingOpenQueue.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="app\PowerManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <QtMoc Include="panels\SearchPanel.h">

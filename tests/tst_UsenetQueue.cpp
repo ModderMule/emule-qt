@@ -21,6 +21,7 @@
 #include "queue/UsenetQueue.h"
 #include "queue/UsenetQueueItem.h"
 #include "queue/UsenetQueueStore.h"
+#include "queue/UsenetStateWriter.h"
 
 #include "prefs/Preferences.h"
 
@@ -230,12 +231,16 @@ private slots:
     void theCategorySurvivesARestart();
     void aPar2NameSurvivesARestart();
     void aSidecarWithNoPar2NameKeyReadsAsUnknown();
+    void theStateWriterCoalescesAndDebounces();
+    void aRemoveBeatsAPendingStateSave();
     void anOldSidecarWithNoCategoryKeyLoadsAsAll();
     void deletingACategoryRemapsTheLiveQueue();
     void aQueueThatIsNotRunningIsStillRemappedOnDisk();
     void anAutomaticAddStillGetsAutoCategorised();
     void leavesNoScratchBehind();
     void persistedStateResumesInsteadOfRefetching();
+    void awkwardSidecarStringsSurviveTheRoundTrip();
+    void anUnchangedSettingsSaveKeepsTheConnections();
     void connectionBudgetIsDividedNotReplicated();
     void aConnectionLimitBelowTheConfiguredOneStillDownloads();
     void rateSharesFollowLiveSockets();
@@ -478,6 +483,124 @@ void tst_UsenetQueue::persistedStateResumesInsteadOfRefetching()
     QVERIFY(!loaded.files.at(0).done.testBit(3));
     QCOMPARE(loaded.files.at(0).missingSegments, 1);
     QCOMPARE(loaded.doneSegmentCount(), 2);
+}
+
+void tst_UsenetQueue::awkwardSidecarStringsSurviveTheRoundTrip()
+{
+    // The sidecar writer picks plain or quoted per scalar itself; every string
+    // YAML could read differently must come back byte for byte.
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+
+    const QStringList awkward = {
+        QString(),
+        QStringLiteral("null"),
+        QStringLiteral("~"),
+        QStringLiteral("yes"),
+        QStringLiteral("123"),
+        QStringLiteral("- leading dash"),
+        QStringLiteral("key: value # not a comment"),
+        QStringLiteral("[1/9] - \"quoted\" {x}, y"),
+        QStringLiteral("back\\slash\ttab\nnewline"),
+        QStringLiteral("  padded  "),
+        QStringLiteral("Ümlaut 日本語 \u0085 ﻿ end"),
+        QStringLiteral("<part1of9.abc@news.example>"),
+        QStringLiteral("&anchor *alias !tag |block >fold %dir @at `tick'"),
+    };
+
+    UsenetQueueItem item;
+    item.id = QStringLiteral("aaaaaaaa-2222-3333-4444-555555555555");
+    item.name = awkward.join(QLatin1Char('|'));
+    item.error = awkward.at(7);
+    item.nzb.password = awkward.at(8);
+    item.failedLadder = awkward.at(6);
+    item.publishedPaths = awkward.mid(1);
+    for (const QString& text : awkward) {
+        NzbFileInfo info;
+        info.subject = text;
+        info.poster = text;
+        info.fileName = text;
+        info.groups << text << QStringLiteral("alt.binaries.test");
+        info.segments.append(NzbSegment{text, 1234, 1});
+        info.segments.append(NzbSegment{messageIdFor(2), 5678, 2});
+        item.nzb.files.append(info);
+    }
+    item.initFileStates(tmp.path());
+    item.files[1].par2FileName = awkward.at(10);
+    item.files[1].done.setBit(1);
+    item.files[1].addWritten(0, 1234);
+
+    QVERIFY(UsenetQueueStore::save(item));
+
+    UsenetQueueItem loaded;
+    QString error;
+    QVERIFY2(UsenetQueueStore::load(UsenetQueueStore::statePath(item.id), loaded, error),
+             qPrintable(error));
+    QCOMPARE(loaded.name, item.name);
+    QCOMPARE(loaded.error, item.error);
+    QCOMPARE(loaded.nzb.password, item.nzb.password);
+    QCOMPARE(loaded.failedLadder, item.failedLadder);
+    QCOMPARE(loaded.publishedPaths, item.publishedPaths);
+    QCOMPARE(loaded.nzb.files.size(), awkward.size());
+    for (qsizetype i = 0; i < awkward.size(); ++i) {
+        const NzbFileInfo& got = loaded.nzb.files.at(i);
+        QCOMPARE(got.subject, awkward.at(i));
+        QCOMPARE(got.poster, awkward.at(i));
+        QCOMPARE(got.fileName, awkward.at(i));
+        QCOMPARE(got.groups, item.nzb.files.at(i).groups);
+        QCOMPARE(got.segments.size(), 2);
+        QCOMPARE(got.segments.at(0).messageId, awkward.at(i));
+        QCOMPARE(got.segments.at(0).bytes, 1234);
+        QCOMPARE(got.segments.at(1).number, 2);
+        QCOMPARE(loaded.files.at(i).tempPath, item.files.at(i).tempPath);
+    }
+    QCOMPARE(loaded.files.at(1).par2FileName, awkward.at(10));
+    QVERIFY(loaded.files.at(1).done.testBit(1));
+    QCOMPARE(loaded.files.at(1).written, item.files.at(1).written);
+}
+
+void tst_UsenetQueue::anUnchangedSettingsSaveKeepsTheConnections()
+{
+    // Every SetPreferences reapplies the server list. Unchanged, the workers and
+    // their connections stay; changed, they are rebuilt.
+    constexpr int kPartsHere = 12;
+    const QByteArray whole = payload(kPartSize * kPartsHere);
+
+    FakeNntpServer server;
+    server.setResponseDelay(60);
+    server.addGroup(QStringLiteral("alt.binaries.test"), kPartsHere, 1, kPartsHere);
+    for (int p = 1; p <= kPartsHere; ++p)
+        server.addArticle(messageIdFor(p), makeArticle(whole, p, kPartsHere,
+                                                       QStringLiteral("keep.bin")));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({});
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(port, 1)}, 60);
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    QVERIFY(!queue.addNzb(makeNzb(QStringLiteral("keep.bin"), kPartsHere),
+                          QStringLiteral("keep"), error).isEmpty());
+    QTRY_COMPARE_WITH_TIMEOUT(server.connectionCount(), 1, 5000);
+
+    queue.applyServers({serverConfig(port, 1)}, 60);
+    QTest::qWait(200);
+    QCOMPARE(server.connectionCount(), 1);
+
+    queue.applyServers({serverConfig(port, 1)}, 30);   // a real change rebuilds
+    QTRY_COMPARE_WITH_TIMEOUT(server.connectionCount(), 2, 5000);
+
+    QVERIFY2(finished.wait(20000), "the download never finished");
+    QVERIFY2(finished.at(0).at(1).toBool(), "completed with missing articles");
+    queue.stop();
 }
 
 void tst_UsenetQueue::connectionBudgetIsDividedNotReplicated()
@@ -2213,6 +2336,49 @@ void tst_UsenetQueue::aPar2NameSurvivesARestart()
     // to preserve: re-deriving it would mean re-reading the .par2 and re-hashing
     // 16 KiB of every file before anything could be decided again.
     QCOMPARE(loaded.bestFileName(0), QStringLiteral("Real.Name.mkv"));
+}
+
+void tst_UsenetQueue::theStateWriterCoalescesAndDebounces()
+{
+    UsenetQueueItem item;
+    item.id = QStringLiteral("writer-debounce");
+    item.name = QStringLiteral("debounce");
+    UsenetQueueStore::remove(item.id);
+
+    // A hundred dirty ticks in a burst: the first writes at once, the rest
+    // collapse into one more write of the newest snapshot.
+    UsenetStateWriter writer;
+    for (int i = 0; i < 100; ++i) {
+        item.priority = i;
+        writer.post(item);
+    }
+    writer.flush();
+    QVERIFY2(writer.writesPerformed() <= 2, qPrintable(QString::number(writer.writesPerformed())));
+
+    UsenetQueueItem loaded;
+    QString error;
+    QVERIFY2(UsenetQueueStore::load(UsenetQueueStore::statePath(item.id), loaded, error),
+             qPrintable(error));
+    QCOMPARE(loaded.priority, 99);
+    UsenetQueueStore::remove(item.id);
+}
+
+void tst_UsenetQueue::aRemoveBeatsAPendingStateSave()
+{
+    UsenetQueueItem item;
+    item.id = QStringLiteral("writer-remove");
+    item.name = QStringLiteral("remove");
+
+    UsenetStateWriter writer;
+    writer.post(item);
+    writer.flush();                       // on disk, and the debounce clock runs
+    QVERIFY(QFile::exists(UsenetQueueStore::statePath(item.id)));
+
+    item.priority = 7;
+    writer.post(item);                    // held by the debounce...
+    writer.postRemove(item.id);           // ...and dropped by the remove
+    writer.flush();
+    QVERIFY(!QFile::exists(UsenetQueueStore::statePath(item.id)));
 }
 
 void tst_UsenetQueue::aSidecarWithNoPar2NameKeyReadsAsUnknown()

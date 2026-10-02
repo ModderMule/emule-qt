@@ -7,6 +7,7 @@
 
 #include "TestHelpers.h"
 #include "app/AppContext.h"
+#include "net/IPv6SourcePin.h"
 #include "net/LocalIPv6.h"
 #include "prefs/Preferences.h"
 
@@ -66,6 +67,7 @@ private slots:
     void select_emptyReport_returnsNull();
     void select_rejectsUlaAndLinkLocal();
     void select_preservesOsOrderAmongStable();
+    void select_privacyPreferenceMovesTemporaryFirst();
 
     // resolveIPv6Override
     void override_empty_isNull();
@@ -93,6 +95,7 @@ private slots:
     // updatePublicIPv6 — tier plumbing
     void update_populatesLocalSetAndTierSlots();
     void update_doesNotDisturbServerObservedTier();
+    void update_pinsStableSourceUnlessPrivacyOn();
 
     // misc
     void disableCommand_isNonEmpty();
@@ -133,6 +136,17 @@ void tst_LocalIPv6::select_fallsBackToTemporary()
 {
     const auto r = makeReport({makeEntry(kTemporary, IPv6AddressKind::Temporary)});
     QCOMPARE(selectPreferredIPv6(r).toString(), QString::fromLatin1(kTemporary));
+}
+
+void tst_LocalIPv6::select_privacyPreferenceMovesTemporaryFirst()
+{
+    const auto r = makeReport({makeEntry(kStable, IPv6AddressKind::Stable),
+                               makeEntry(kTemporary, IPv6AddressKind::Temporary)});
+    QCOMPARE(selectPreferredIPv6(r, /*preferTemporary*/ true).toString(),
+             QString::fromLatin1(kTemporary));
+    // No temporary address: the usual tiers apply
+    const auto stableOnly = makeReport({makeEntry(kStable, IPv6AddressKind::Stable)});
+    QCOMPARE(selectPreferredIPv6(stableOnly, true).toString(), QString::fromLatin1(kStable));
 }
 
 void tst_LocalIPv6::select_skipsDeprecatedStable()
@@ -470,6 +484,38 @@ void tst_LocalIPv6::update_populatesLocalSetAndTierSlots()
     QCOMPARE(theApp.publicIPv6Local().toString(), QString::fromLatin1(kStable));
 
     thePrefs.setPublicIPv6Override(QString());
+}
+
+void tst_LocalIPv6::update_pinsStableSourceUnlessPrivacyOn()
+{
+    thePrefs.setPublicIPv6Override(QString());
+    thePrefs.setIpv6UsePrivacyAddress(false);
+    theApp.clearPublicIPv6Observed();
+    theApp.setPublicIPv6Override(Address{});
+    theApp.setPublicIPv6Local(Address{});
+
+    const Address stable = Address::fromString(QString::fromLatin1(kStable));
+    const Address temporary = Address::fromString(QString::fromLatin1(kTemporary));
+    const Address peerV6 = Address::fromString(QStringLiteral("2606:4700::1"));
+    const Address peerV4 = Address::fromString(QStringLiteral("93.184.216.34"));
+    const auto report = makeReport({makeEntry(kTemporary, IPv6AddressKind::Temporary),
+                                    makeEntry(kStable, IPv6AddressKind::Stable)});
+
+    // Default: advertise and send from the stable address; IPv4 is never touched
+    QCOMPARE(updatePublicIPv6(report), stable);
+    QCOMPARE(IPv6SourcePin::pinAddress(), stable);
+    QCOMPARE(IPv6SourcePin::sourceFor(peerV6), stable);
+    QVERIFY(IPv6SourcePin::sourceFor(peerV4).isNull());
+
+    // "Use IPv6 privacy address": the OS picks the source, and we advertise the
+    // temporary address it will pick
+    thePrefs.setIpv6UsePrivacyAddress(true);
+    QCOMPARE(updatePublicIPv6(report), temporary);
+    QVERIFY(IPv6SourcePin::sourceFor(peerV6).isNull());
+
+    thePrefs.setIpv6UsePrivacyAddress(false);
+    theApp.setPublicIPv6Local(Address{});
+    IPv6SourcePin::setPinAddress(Address{});
 }
 
 void tst_LocalIPv6::update_doesNotDisturbServerObservedTier()

@@ -174,6 +174,8 @@
     <ClCompile Include="post\UsenetReleaseChecks.cpp" />
     <ClCompile Include="post\UsenetUnpacker.cpp" />
     <ClCompile Include="queue\ArticleWriter.cpp" />
+    <ClCompile Include="queue\UsenetStateWriter.cpp" />
+    <ClCompile Include="queue\ArticleFileCache.cpp" />
     <ClCompile Include="queue\UsenetHealth.cpp" />
     <ClCompile Include="queue\UsenetHistory.cpp" />
     <ClCompile Include="queue\UsenetQueue.cpp" />
@@ -202,6 +204,8 @@
     <ClInclude Include="post\UsenetReleaseChecks.h" />
     <ClInclude Include="post\UsenetUnpacker.h" />
     <ClInclude Include="queue\ArticleWriter.h" />
+    <ClInclude Include="queue\UsenetStateWriter.h" />
+    <ClInclude Include="queue\ArticleFileCache.h" />
     <ClInclude Include="queue\UsenetHealth.h" />
     <ClInclude Include="queue\UsenetHistory.h" />
     <ClInclude Include="queue\UsenetQueueItem.h" />

@@ -90,7 +90,7 @@ void ServerConnect::tryAnotherConnectionRequest()
             bool alreadyConnecting = false;
             for (const auto& [ts, sock] : m_connectionAttempts) {
                 const Server* cs = sock ? sock->currentServer() : nullptr;
-                if (cs && cs->ipAddress() == candidate->ipAddress() && cs->port() == candidate->port()) {
+                if (cs && cs->serverId() == candidate->serverId()) {
                     alreadyConnecting = true;
                     break;
                 }
@@ -118,8 +118,8 @@ void ServerConnect::tryAnotherConnectionRequest()
         } else {
             // Only auto-connect to static servers if configured
             if (!m_config.autoConnectStaticOnly || next->isStaticMember()) {
-                logServerVerbose(QStringLiteral("tryAnotherConnectionRequest: next candidate %1 (%2:%3) obfuscated=%4 (slot %5/%6)")
-                                     .arg(next->name()).arg(next->address()).arg(next->port())
+                logServerVerbose(QStringLiteral("tryAnotherConnectionRequest: next candidate %1 (%2) obfuscated=%3 (slot %4/%5)")
+                                     .arg(next->name(), next->addressWithPort())
                                      .arg(m_tryObfuscated)
                                      .arg(m_connectionAttempts.size() + 1).arg(m_maxSimCons));
                 connectToServer(next, true, !m_tryObfuscated);
@@ -192,7 +192,8 @@ void ServerConnect::connectToAnyServer(size_t startAt, bool prioSort,
 // ConnectToServer
 // ---------------------------------------------------------------------------
 
-void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCrypt)
+void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCrypt,
+                                    const Address& dialAddress)
 {
     if (!server)
         return;
@@ -257,6 +258,13 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
                 onServerIdent(socket, serverHash, name, description);
             });
 
+    // Dual-stack: the ident named the server's other address — one row per server.
+    connect(socket, &ServerSocket::serverAddressLearned, this,
+            [this, socket](const Address& addr) {
+                if (Server* entry = resolveListEntry(socket))
+                    m_serverList.attachAddress(entry, addr);
+            });
+
     connect(socket, &ServerSocket::serverStatusReceived, this,
             [this, socket](uint32 users, uint32 files) {
                 onServerStatus(socket, users, files);
@@ -281,7 +289,7 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
                 const Server* connected = socket->currentServer();
                 if (!connected)
                     return;
-                if (Server* entry = m_serverList.findByAddress(connected->address(), connected->port()))
+                if (Server* entry = listEntryFor(connected))
                     m_serverList.removeServer(entry);
             });
 
@@ -345,12 +353,12 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
                 client->tryToConnect();
             });
 
-    logServerVerbose(QStringLiteral("connectToServer: %1 (%2:%3) multiconnect=%4 noCrypt=%5 openSockets=%6")
-                         .arg(server->name()).arg(server->address()).arg(server->port())
+    logServerVerbose(QStringLiteral("connectToServer: %1 (%2) multiconnect=%3 noCrypt=%4 openSockets=%5")
+                         .arg(server->name()).arg(server->addressWithPort())
                          .arg(multiconnect).arg(noCrypt).arg(m_openSockets.size()));
 
     socket->initProxySupport(thePrefs.proxySettings());
-    socket->connectTo(*server, noCrypt);
+    socket->connectTo(*server, noCrypt, dialAddress);
 
     qint64 timestamp = m_elapsedTimer.elapsed();
     m_connectionAttempts[timestamp] = socket;
@@ -418,15 +426,13 @@ void ServerConnect::connectionEstablished(ServerSocket* sender)
         // TCP connected, send login request
         const Server* cserver = sender->currentServer();
         if (cserver) {
-            logInfo(QStringLiteral("Connected to %1 (%2:%3), sending login request (obfuscating=%4 encReady=%5)")
-                       .arg(cserver->name())
-                       .arg(cserver->address())
-                       .arg(cserver->port())
+            logInfo(QStringLiteral("Connected to %1 (%2), sending login request (obfuscating=%3 encReady=%4)")
+                       .arg(cserver->name(), Endpoint(sender->sessionAddress(), cserver->port()).toString())
                        .arg(sender->isObfuscating())
                        .arg(sender->isEncryptionLayerReady()));
 
             // Reset failed count on the server list copy
-            Server* listServer = m_serverList.findByAddress(cserver->address(), cserver->port());
+            Server* listServer = listEntryFor(cserver);
             if (listServer)
                 listServer->resetFailedCount();
         }
@@ -446,10 +452,8 @@ void ServerConnect::connectionEstablished(ServerSocket* sender)
 
         const Server* cserver = sender->currentServer();
         if (cserver) {
-            logInfo(QStringLiteral("Connected to %1 (%2:%3)")
-                       .arg(cserver->name())
-                       .arg(cserver->address())
-                       .arg(cserver->port()));
+            logInfo(QStringLiteral("Connected to %1 (%2)")
+                       .arg(cserver->name(), Endpoint(sender->sessionAddress(), cserver->port()).toString()));
         }
 
         // Stop other connection attempts now that we're connected
@@ -463,7 +467,7 @@ void ServerConnect::connectionEstablished(ServerSocket* sender)
 
         // Update obfuscation info on the server list entry
         if (cserver) {
-            Server* listServer = m_serverList.findByAddress(cserver->address(), cserver->port());
+            Server* listServer = listEntryFor(cserver);
             if (listServer && cserver->supportsObfuscationTCP()) {
                 listServer->setTCPFlags(cserver->tcpFlags() | SrvTcpFlag::TcpObfuscation);
                 listServer->setObfuscationPortTCP(cserver->obfuscationPortTCP());
@@ -473,7 +477,7 @@ void ServerConnect::connectionEstablished(ServerSocket* sender)
         }
 
         emit stateChanged();
-        emit connectedToServer(cserver ? m_serverList.findByAddress(cserver->address(), cserver->port()) : nullptr);
+        emit connectedToServer(cserver ? listEntryFor(cserver) : nullptr);
     }
 }
 
@@ -493,9 +497,15 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
     const bool lostLiveConnection = m_connected && sender == m_connectedSocket;
 
     const Server* cserver = sender->currentServer();
-    Server* listServer = cserver
-        ? m_serverList.findByAddress(cserver->address(), cserver->port())
-        : nullptr;
+    Server* listServer = cserver ? listEntryFor(cserver) : nullptr;
+
+    // Dual-stack: a server unreachable on one family gets one attempt on the other
+    // before the failure counts against it.
+    const Address otherFamily = (!lostLiveConnection
+                                 && (failState == ServerConnState::ServerDead
+                                     || failState == ServerConnState::FatalError))
+        ? otherFamilyFor(sender, listServer)
+        : Address();
 
     switch (sender->connectionState()) {
     case ServerConnState::FatalError:
@@ -504,23 +514,19 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
 
     case ServerConnState::Disconnected:
         if (cserver) {
-            logInfo(QStringLiteral("Lost connection to %1 (%2:%3)")
-                        .arg(cserver->name())
-                        .arg(cserver->address())
-                        .arg(cserver->port()));
+            logInfo(QStringLiteral("Lost connection to %1 (%2)")
+                        .arg(cserver->name(), Endpoint(sender->sessionAddress(), cserver->port()).toString()));
         }
         break;
 
     case ServerConnState::ServerDead:
         if (cserver) {
-            logInfo(QStringLiteral("Server %1 (%2:%3) is dead (obfuscating=%4 encReady=%5)")
-                        .arg(cserver->name())
-                        .arg(cserver->address())
-                        .arg(cserver->port())
+            logInfo(QStringLiteral("Server %1 (%2) is dead (obfuscating=%3 encReady=%4)")
+                        .arg(cserver->name(), Endpoint(sender->sessionAddress(), cserver->port()).toString())
                         .arg(sender->isObfuscating())
                         .arg(sender->isEncryptionLayerReady()));
         }
-        if (listServer) {
+        if (listServer && otherFamily.isNull()) {
             listServer->incFailedCount();
             if (thePrefs.deadServerRetries() > 0
                 && listServer->failedCount() >= thePrefs.deadServerRetries()) {
@@ -537,15 +543,22 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
 
     case ServerConnState::ServerFull:
         if (cserver) {
-            logInfo(QStringLiteral("Server %1 (%2:%3) is full")
-                        .arg(cserver->name())
-                        .arg(cserver->address())
-                        .arg(cserver->port()));
+            logInfo(QStringLiteral("Server %1 (%2) is full")
+                        .arg(cserver->name(), Endpoint(sender->sessionAddress(), cserver->port()).toString()));
         }
         break;
 
     default:
         break;
+    }
+
+    if (!otherFamily.isNull() && listServer) {
+        logInfo(QStringLiteral("Server %1 unreachable over %2 — trying %3")
+                    .arg(listServer->name(), ipstr(sender->sessionAddress()), ipstr(otherFamily)));
+        const bool single = m_singleConnecting;
+        destroySocket(sender);
+        connectToServer(listServer, !single, false, otherFamily);
+        return;
     }
 
     // Handle the failure based on state
@@ -747,14 +760,25 @@ void ServerConnect::checkForTimeout()
         if (curTick >= startTime + timeout) {
             const Server* cserver = socket->currentServer();
             if (cserver) {
-                logInfo(QStringLiteral("Connection attempt timed out: %1 (%2:%3)")
-                           .arg(cserver->name())
-                           .arg(cserver->address())
-                           .arg(cserver->port()));
+                logInfo(QStringLiteral("Connection attempt timed out: %1 (%2)")
+                           .arg(cserver->name(), Endpoint(socket->sessionAddress(), cserver->port()).toString()));
             }
 
+            Server* listServer = cserver ? listEntryFor(cserver) : nullptr;
+            const Address otherFamily = otherFamilyFor(socket, listServer);
+            const Address tried = socket->sessionAddress();
             m_connectionAttempts.erase(startTime);
             destroySocket(socket);
+
+            if (!otherFamily.isNull()) {
+                logInfo(QStringLiteral("Server %1 unreachable over %2 — trying %3")
+                            .arg(listServer->name(), ipstr(tried), ipstr(otherFamily)));
+                const bool single = m_singleConnecting;
+                connectToServer(listServer, !single, false, otherFamily);
+                if (single)
+                    break;      // stopConnectionTry() ran; the remaining copy is stale
+                continue;
+            }
 
             if (m_singleConnecting)
                 stopConnectionTry();
@@ -821,6 +845,13 @@ Server* ServerConnect::currentServer() const
     return nullptr;
 }
 
+Address ServerConnect::sessionAddress() const
+{
+    if (m_connected && m_connectedSocket)
+        return m_connectedSocket->sessionAddress();
+    return {};
+}
+
 bool ServerConnect::isLocalServer(uint32 ip, uint16 port) const
 {
     if (!m_connected || !m_connectedSocket || !m_connectedSocket->currentServer())
@@ -856,8 +887,8 @@ void ServerConnect::destroySocket(ServerSocket* socket)
         return;
 
     if (const Server* cs = socket->currentServer())
-        logServerVerbose(QStringLiteral("destroySocket: %1 (%2:%3)")
-                             .arg(cs->name()).arg(cs->address()).arg(cs->port()));
+        logServerVerbose(QStringLiteral("destroySocket: %1 (%2)")
+                             .arg(cs->name(), Endpoint(socket->sessionAddress(), cs->port()).toString()));
 
     // Remove from open sockets list
     auto it = std::find(m_openSockets.begin(), m_openSockets.end(), socket);
@@ -913,8 +944,9 @@ void ServerConnect::initLocalIP()
     m_localIP = 0;
 
     // IPv6 public address refresh (independent of the IPv4 selection below). Unlike
-    // IPv4-behind-NAT, a local global-unicast IPv6 is generally reachable directly, so
-    // we use one as our public IPv6. Selection prefers a stable address over an RFC 4941
+    // IPv4-behind-NAT, a local global-unicast IPv6 is routable end to end, so we use one
+    // as our public IPv6. Routable != reachable: a stateful router firewall often drops
+    // unsolicited inbound v6 — the server's dial-back (ST_IPV6_STATUS) is the arbiter. Selection prefers a stable address over an RFC 4941
     // temporary one and honours the publicIPv6Override pref — see net/LocalIPv6.h.
     // Running it here (per connect) picks up a prefix renumber without a restart; it is
     // silent unless the selected address actually changed. The startup advisory is
@@ -1090,6 +1122,18 @@ void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID, uint3
     // runs just before the socket promotes to Connected, matching srchybrid's order
     // (m_clientid set, then SetConnectionState(CS_CONNECTED), then SetClientID).
     setClientID(clientID);
+
+    // ed2k-server (Rust) puts its OWN configured IP here, not ours. Adopting it would
+    // make us claim the server's address. Same rung as ServerList::noteObservedIPv4().
+    if (serverReportedIP != 0) {
+        const Address reported = Address::fromNetworkOrder(serverReportedIP);
+        const Server* cur = socket->currentServer();
+        if (reported == socket->sessionAddress() || (cur && cur->hasAddress(reported))) {
+            logServerVerbose(QStringLiteral("OP_IDCHANGE: reported IP %1 is the server's own address — ignored")
+                                 .arg(reported.toString()));
+            serverReportedIP = 0;
+        }
+    }
     if (eMule::isLowID(clientID) && serverReportedIP != 0)
         theApp.setPublicIP(serverReportedIP);
 }
@@ -1115,18 +1159,29 @@ Server* ServerConnect::resolveListEntry(ServerSocket* socket)
 {
     if (!socket || !theApp.serverList)
         return nullptr;
-    Server* connected = socket->currentServer();   // the socket's throwaway copy
-    if (!connected)
+    return listEntryFor(socket->currentServer());   // the socket's throwaway copy
+}
+
+Server* ServerConnect::listEntryFor(const Server* copy) const
+{
+    if (!copy)
         return nullptr;
-    // Prefer an exact IP+TCP-port match; fall back to the address string (which
-    // handles a dynIP server whose numeric IP may have changed). MFC uses
-    // GetServerByAddress() (a DN+port lookup) for the same purpose.
-    // Address-typed: the uint32 form is 0 for an IPv6 server, which would alias it to
-    // whichever entry has a null address instead of finding the right one.
-    Server* entry = theApp.serverList->findByIPTcp(connected->ipAddress(), connected->port());
-    if (!entry)
-        entry = theApp.serverList->findByAddress(connected->address(), connected->port());
-    return entry;
+    // The copy keeps the entry's id, which neither an ident IP rewrite nor a
+    // dual-stack merge changes. Fall back to IP (either family), then the address
+    // string (a dynIP server whose numeric IP changed). MFC: GetServerByAddress().
+    if (Server* entry = m_serverList.findById(copy->serverId()))
+        return entry;
+    if (Server* entry = m_serverList.findByIPTcp(copy->ipAddress(), copy->port()))
+        return entry;
+    return m_serverList.findByAddress(copy->address(), copy->port());
+}
+
+Address ServerConnect::otherFamilyFor(const ServerSocket* socket, const Server* listServer) const
+{
+    if (!m_connecting || !socket || !listServer || socket->tcpConnected()
+        || socket->isFamilyFallback())
+        return {};
+    return listServer->otherFamilyAddress(socket->sessionAddress());
 }
 
 void ServerConnect::applyServerFlags(ServerSocket* socket, uint32 tcpFlags)
@@ -1151,6 +1206,7 @@ void ServerConnect::onServerIdent(ServerSocket* socket, const uint8* serverHash,
     Server* entry = resolveListEntry(socket);
     if (!entry)
         return;
+    entry->setServerHash(serverHash);
     if (!name.isEmpty())
         entry->setName(name);
     entry->setDescription(description);
@@ -1268,13 +1324,13 @@ void ServerConnect::onServerMessage(ServerSocket* socket, const QString& message
                 const bool obfu = socket->isObfuscating();
                 emit serverMessageReceived(
                     ServerMsgType::Success,
-                    QStringLiteral("%1: %2 %3 (%4:%5)")
+                    QStringLiteral("%1: %2 %3 (%4)")
                         .arg(QTime::currentTime().toString(QStringLiteral("HH:mm:ss")),
                              obfu ? tr("Connection established on (obfuscated):")
                                   : tr("Connection established on:"),
                              srv->name().isEmpty() ? srv->address() : srv->name(),
-                             srv->address())
-                        .arg(obfu ? srv->obfuscationPortTCP() : srv->port()));
+                             Endpoint(socket->sessionAddress(),
+                                      obfu ? srv->obfuscationPortTCP() : srv->port()).toString()));
             }
         }
 
@@ -1292,12 +1348,11 @@ QString ServerConnect::serverMessageLogLine(const QString& prefix, const Server*
     while (!rest.isEmpty() && (rest.front() == QLatin1Char(' ') || rest.front() == QLatin1Char(':')))
         rest.remove(0, 1);
 
-    return QStringLiteral("%1 %2 (%3:%4) - %5")
+    return QStringLiteral("%1 %2 (%3) - %4")
         .arg(prefix,
              srv && !srv->name().isEmpty() ? srv->name() : tr("Server"),
-             srv ? srv->address() : QString{})
-        .arg(srv ? srv->port() : 0)
-        .arg(rest.trimmed());
+             srv ? srv->addressWithPort() : QString{},
+             rest.trimmed());
 }
 
 } // namespace eMule

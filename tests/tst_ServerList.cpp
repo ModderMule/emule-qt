@@ -130,6 +130,15 @@ private slots:
     void textImport_ed2kLinkIPv6();
     void findByIPUdp_ipv6();
 
+    // Dual-stack merge (one row per server)
+    void attachAddress_absorbsTwin();
+    void attachAddress_keepsStrongerUserSettings();
+    void attachAddress_refusesHashConflict();
+    void attachAddress_refusesForeignPairing();
+    void dualStack_lookupsMatchEitherFamily();
+    void dualStack_metRoundTripOneRow();
+    void findById_matchesCopy();
+
     // Stats
     void stats_aggregation();
 
@@ -707,6 +716,130 @@ void tst_ServerList::findByIPUdp_ipv6()
     QCOMPARE(list.findByIPUdp(v6, 4673), srv);                 // TCP + 12 (obfuscated)
     QVERIFY(list.findByIPUdp(v6, 9999) == nullptr);
     QVERIFY(list.findByIPUdp(Address{}, 4665) == nullptr);     // a null address never matches
+}
+
+// ---------------------------------------------------------------------------
+// Dual-stack merge
+// ---------------------------------------------------------------------------
+
+namespace {
+const char* const kDualV4 = "176.125.242.230";
+const char* const kDualV6 = "2001:678:6d4:9202::278";
+Address addr(const char* text) { return Address::fromString(QString::fromLatin1(text)); }
+} // namespace
+
+void tst_ServerList::attachAddress_absorbsTwin()
+{
+    ServerList list;
+    Server* v4 = list.addServer(std::make_unique<Server>(addr(kDualV4), 5555));
+    Server* v6 = list.addServer(makeIPv6Server(kDualV6, 5555));
+    QVERIFY(v4 && v6);
+    QCOMPARE(list.serverCount(), size_t{2});
+
+    QSignalSpy removed(&list, &ServerList::serverAboutToBeRemoved);
+    QCOMPARE(list.attachAddress(v4, addr(kDualV6)), v4);
+    QCOMPARE(list.serverCount(), size_t{1});
+    QCOMPARE(removed.count(), 1);
+    QCOMPARE(list.serverAt(0), v4);
+    QCOMPARE(v4->ipv6Address(), addr(kDualV6));
+
+    // The v6 literal is now a duplicate of the merged row
+    QVERIFY(list.addServer(makeIPv6Server(kDualV6, 5555)) == nullptr);
+    QCOMPARE(list.serverCount(), size_t{1});
+}
+
+void tst_ServerList::attachAddress_keepsStrongerUserSettings()
+{
+    ServerList list;
+    Server* v6 = list.addServer(makeIPv6Server(kDualV6, 5555));
+    Server* v4 = list.addServer(std::make_unique<Server>(addr(kDualV4), 5555));
+    v4->setStaticMember(true);
+    v4->setPreference(ServerPriority::High);
+    v4->setFailedCount(0);
+    v6->setFailedCount(3);
+
+    // Connected over IPv6; the ident names the IPv4 — the IPv4 becomes primary
+    list.attachAddress(v6, addr(kDualV4));
+    QCOMPARE(list.serverCount(), size_t{1});
+    QCOMPARE(v6->ipAddress(), addr(kDualV4));
+    QCOMPARE(v6->ipv6Address(), addr(kDualV6));
+    QVERIFY(v6->isStaticMember());
+    QCOMPARE(v6->preference(), ServerPriority::High);
+    QCOMPARE(v6->failedCount(), uint32{0});
+}
+
+void tst_ServerList::attachAddress_refusesHashConflict()
+{
+    ServerList list;
+    Server* v4 = list.addServer(std::make_unique<Server>(addr(kDualV4), 5555));
+    Server* v6 = list.addServer(makeIPv6Server(kDualV6, 5555));
+    uint8 hashA[16] = {1};
+    uint8 hashB[16] = {2};
+    v4->setServerHash(hashA);
+    v6->setServerHash(hashB);
+
+    list.attachAddress(v4, addr(kDualV6));
+    QCOMPARE(list.serverCount(), size_t{2});   // different servers: not merged
+    QVERIFY(!v4->hasBothFamilies());
+}
+
+void tst_ServerList::attachAddress_refusesForeignPairing()
+{
+    ServerList list;
+    // An existing dual-stack row owns kDualV6 together with another IPv4
+    auto owner = std::make_unique<Server>(addr("185.25.48.89"), 5555);
+    owner->addAddress(addr(kDualV6));
+    Server* ownerRow = list.addServer(std::move(owner));
+    Server* claimer = list.addServer(std::make_unique<Server>(addr(kDualV4), 5555));
+    QVERIFY(ownerRow && claimer);
+
+    list.attachAddress(claimer, addr(kDualV6));   // a claim is not enough
+    QCOMPARE(list.serverCount(), size_t{2});
+    QVERIFY(!claimer->hasBothFamilies());
+}
+
+void tst_ServerList::dualStack_lookupsMatchEitherFamily()
+{
+    ServerList list;
+    auto srv = std::make_unique<Server>(addr(kDualV4), 5555);
+    srv->addAddress(addr(kDualV6));
+    Server* row = list.addServer(std::move(srv));
+    QVERIFY(row);
+
+    QCOMPARE(list.findByIPTcp(addr(kDualV4), 5555), row);
+    QCOMPARE(list.findByIPTcp(addr(kDualV6), 5555), row);
+    QCOMPARE(list.findByIPUdp(addr(kDualV4), 5559), row);
+    QCOMPARE(list.findByIPUdp(addr(kDualV6), 5559), row);
+    QVERIFY(list.findByIPTcp(addr(kDualV6), 4661) == nullptr);
+}
+
+void tst_ServerList::dualStack_metRoundTripOneRow()
+{
+    TempDir tmp;
+    const QString metPath = tmp.filePath(QStringLiteral("server.met"));
+
+    ServerList original;
+    auto srv = std::make_unique<Server>(addr(kDualV4), 5555);
+    srv->addAddress(addr(kDualV6));
+    srv->setName(QStringLiteral("eNode-go"));
+    original.addServer(std::move(srv));
+    QVERIFY(original.saveServerMet(metPath));
+
+    ServerList loaded;
+    QVERIFY(loaded.loadServerMet(metPath));
+    QCOMPARE(loaded.serverCount(), size_t{1});
+    const Server* back = loaded.serverAt(0);
+    QCOMPARE(back->ipAddress(), addr(kDualV4));
+    QCOMPARE(back->ipv6Address(), addr(kDualV6));
+}
+
+void tst_ServerList::findById_matchesCopy()
+{
+    ServerList list;
+    Server* row = list.addServer(std::make_unique<Server>(addr(kDualV4), 5555));
+    const Server copy(*row);   // what a ServerSocket holds
+    QCOMPARE(list.findById(copy.serverId()), row);
+    QVERIFY(list.findById(0) == nullptr);
 }
 
 // ---------------------------------------------------------------------------

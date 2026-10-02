@@ -163,7 +163,8 @@ void UsenetQueue::start()
     refreshQuotaState();
 
     // Restore before the workers exist, so nothing dispatches into a half-built
-    // queue.
+    // queue. A remove posted while stopped must land before the listing.
+    m_stateWriter.flush();
     for (const QString& path : UsenetQueueStore::listStateFiles()) {
         auto item = std::make_unique<UsenetQueueItem>();
         QString error;
@@ -245,6 +246,7 @@ void UsenetQueue::stop()
     for (auto& rt : m_items)
         persist(*rt);
     m_items.clear();
+    m_stateWriter.flush();
 
     // Absolute, so this cannot double-count whatever the last timed flush wrote.
     m_usage.flush();
@@ -290,6 +292,15 @@ void UsenetQueue::applyServers(const QList<NewsServer>& servers, int retryInterv
     m_usage.rollOverIfDue();
     refreshQuotaState();
     unparkQuotaStalls();
+
+    // Every SetPreferences lands here. With nothing the workers use changed,
+    // keep them: a rebuild drops and re-handshakes every connection, and the
+    // live probes with them. A proxy stall still takes the rebuild as its retry.
+    if (m_running && !m_workers.isEmpty() && m_servers == m_workerServersBuilt
+        && m_retryIntervalSec == m_workerRetryBuilt && m_proxy == m_workerProxyBuilt
+        && m_proxyBlockedUntilMs == 0 && m_proxyStallReason.isEmpty()) {
+        return;
+    }
 
     // Abandon any probe in flight. Its answer was about the old account list, and
     // the workers holding its requests are about to be torn down — without this
@@ -536,7 +547,7 @@ bool UsenetQueue::removeItem(const QString& id, bool deleteFiles)
                                    : UsenetHistoryState::Cancelled);
         m_history.save();
 
-        UsenetQueueStore::remove(id);
+        m_stateWriter.postRemove(id);
         m_items.erase(m_items.begin() + i);
 
         emit itemRemoved(id);
@@ -1565,6 +1576,10 @@ void UsenetQueue::startWorkers()
                                   Q_ARG(int, m_retryIntervalSec),
                                   Q_ARG(QNetworkProxy, m_proxy));
     }
+
+    m_workerServersBuilt = m_servers;
+    m_workerRetryBuilt = m_retryIntervalSec;
+    m_workerProxyBuilt = m_proxy;
 
     setRateLimit(m_rateLimit);
 
@@ -2706,7 +2721,7 @@ void UsenetQueue::pumpDirectUnpack(ItemRuntime& rt, int fileIndex)
     // A hole is padded with zeros by sealFile(), which decompresses into
     // garbage or a CRC failure. Stop the set here and let PAR2 do its job; the
     // end-of-download unpack will run on the repaired volumes.
-    if (st.missingSegments > 0) {
+    if (rt.item->fileHasHoles(fileIndex)) {
         auto it = rt.directUnpack.find(position.baseName);
         if (it != rt.directUnpack.end() && it->running && it->worker)
             it->worker->cancel();
@@ -2725,9 +2740,11 @@ void UsenetQueue::pumpDirectUnpack(ItemRuntime& rt, int fileIndex)
     // happens to seal first is not the set's state: a release whose NZB lists
     // part03 ahead of part01 sealed part03 long ago, and dropping it on the floor
     // parks the run on an index nobody will ever offer.
-    const auto existing = rt.directUnpack.constFind(position.baseName);
-    const bool haveRun = existing != rt.directUnpack.constEnd() && existing->worker != nullptr;
-    if (!haveRun) {
+    //
+    // One run per set: an entry outlives its worker, so a run that finished,
+    // failed or was cancelled stays that way. Restarting it on every later
+    // volume re-read the set from volume one each time.
+    if (!rt.directUnpack.contains(position.baseName)) {
         if (!startDirectUnpack(rt, position.baseName))
             return;
     }
@@ -2757,6 +2774,16 @@ bool UsenetQueue::startDirectUnpack(ItemRuntime& rt, const QString& baseName)
     if (m_directUnpackRuns >= kMaxDirectUnpacks)
         return false;   // over the cap: this set falls back to the end-of-download path
 
+    // A damaged set needs PAR2 first, and a zero-led volume one reads as an
+    // empty archive. The end-of-download unpack runs on the repaired volumes.
+    for (int f = 0; f < rt.item->files.size(); ++f) {
+        if (rt.item->files.at(f).isSkipped())
+            continue;
+        const auto pos = UsenetUnpacker::volumePositionOf(volumeNameOf(rt, f));
+        if (pos.index >= 0 && pos.baseName == baseName && rt.item->fileHasHoles(f))
+            return false;
+    }
+
     DirectUnpackRun& run = rt.directUnpack[baseName];
     run.worker = new UsenetDirectUnpack;
     run.thread = new QThread;
@@ -2770,6 +2797,7 @@ bool UsenetQueue::startDirectUnpack(ItemRuntime& rt, const QString& baseName)
     run.running = true;
     run.closing = false;
     ++m_directUnpackRuns;
+    ++m_directUnpackStarts;
 
     const UsenetFileState& first = rt.item->files.at(firstIndex);
     UsenetDirectUnpackJob job;
@@ -2784,7 +2812,7 @@ bool UsenetQueue::startDirectUnpack(ItemRuntime& rt, const QString& baseName)
     // been given, so anything offered ahead of time simply waits in the map.
     for (int f = 0; f < rt.item->files.size(); ++f) {
         const UsenetFileState& st = rt.item->files.at(f);
-        if (!st.finalized || st.missingSegments > 0 || st.isSkipped())
+        if (!st.finalized || st.isSkipped() || rt.item->fileHasHoles(f))
             continue;
         const auto pos = UsenetUnpacker::volumePositionOf(volumeNameOf(rt, f));
         if (pos.index < 0 || pos.baseName != baseName)
@@ -2810,8 +2838,7 @@ void UsenetQueue::restartDirectUnpack(ItemRuntime& rt)
             continue;
         seen.insert(pos.baseName);
 
-        const auto it = rt.directUnpack.constFind(pos.baseName);
-        if (it != rt.directUnpack.constEnd() && it->worker != nullptr)
+        if (rt.directUnpack.contains(pos.baseName))
             continue;
         startDirectUnpack(rt, pos.baseName);
     }
@@ -3289,7 +3316,7 @@ QStringList UsenetQueue::sealedVolumesOf(const ItemRuntime& rt, const QString& b
         // missingSegments matters as much as finalized: sealFile() pads a hole
         // with zeros, and zeros inside an encrypted stream are not a short read,
         // they are wrong bytes that decrypt to garbage.
-        if (!st.finalized || st.missingSegments > 0)
+        if (!st.finalized || rt.item->fileHasHoles(f))
             continue;
         const int ordinal = volumeOrdinal(rt, f, baseName);
         if (ordinal >= 0)
@@ -3534,8 +3561,12 @@ void UsenetQueue::beginPostProcessing(ItemRuntime& rt)
             job.directUnpacked.append(run.result);
     }
 
-    for (const auto& st : rt.item->files) {
-        if (st.missingSegments > 0) {
+    // Unlisted articles too: without PAR2 a zero-padded file must not publish.
+    // Only sealed, wanted files — an unfetched recovery volume is no damage.
+    for (int f = 0; f < rt.item->files.size(); ++f) {
+        const UsenetFileState& st = rt.item->files.at(f);
+        if (st.missingSegments > 0
+            || (st.finalized && !st.isSkipped() && rt.item->fileHasHoles(f))) {
             job.hasMissingSegments = true;
             break;
         }
@@ -3885,7 +3916,10 @@ void UsenetQueue::failItem(ItemRuntime& rt, const QString& message)
 void UsenetQueue::persist(ItemRuntime& rt)
 {
     rt.dirty = false;
-    UsenetQueueStore::save(*rt.item);
+    // A snapshot, not a save: copying is O(1) (implicitly shared Qt members) and
+    // the YAML is written on the writer's thread, so a large NZB no longer stalls
+    // dispatch four times a second.
+    m_stateWriter.post(*rt.item);
 }
 
 UsenetQueue::ItemRuntime* UsenetQueue::runtimeFor(const QString& id)

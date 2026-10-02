@@ -36,6 +36,9 @@
     <ClCompile Include="IpcServer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="PowerManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="IpcClientHandlerMeta.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -66,6 +69,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="IpcServer.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="PowerManager.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="MetaSearchService.h">

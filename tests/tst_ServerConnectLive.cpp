@@ -226,9 +226,7 @@ void tst_ServerConnectLive::initTestCase()
     m_searchList = new SearchList();
     connect(m_udpSocket, &UDPSocket::globalSearchResult,
             this, [this](const uint8* data, uint32 size, const Endpoint& server) {
-                m_searchList->processUDPSearchAnswer(data, size, true,
-                                                     server.address().toNetworkUint32(),
-                                                     server.port());
+                m_searchList->processUDPSearchAnswer(data, size, true, server);
             });
 
     // Wire UDP server-status replies (OP_GLOBSERVSTATRES) → ServerList so the
@@ -460,7 +458,7 @@ void tst_ServerConnectLive::udpGlobalSearch()
                      && obfServer->supportsObfuscationUDP(),
                  "Obfuscation preconditions not met — the send would go out in the clear");
 
-        m_searchList->addSentUDPRequestIP(searchID, obfServer->ipAddress().toNetworkUint32());
+        m_searchList->addSentUDPRequestIP(searchID, obfServer->ipAddress());
         const uint16 udpPort = static_cast<uint16>(obfServer->port() + 4);
         qDebug() << "Sending OBFUSCATED OP_GLOBSEARCHREQ3 \"" << keyword << "\" to"
                  << obfServer->name() << "keyUDP:" << Qt::hex << obfServer->serverKeyUDP();
@@ -483,7 +481,7 @@ void tst_ServerConnectLive::udpGlobalSearch()
             addTarget(m_serverList->serverAt(i));
 
         for (Server* srv : targets)
-            m_searchList->addSentUDPRequestIP(searchID, srv->ipAddress().toNetworkUint32());
+            m_searchList->addSentUDPRequestIP(searchID, srv->ipAddress());
 
         for (Server* srv : targets) {
             auto pkt = buildGlobalSearchPacket(*srv, payload, /*is64BitSearch*/ false);

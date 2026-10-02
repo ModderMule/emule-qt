@@ -143,6 +143,8 @@ UpDownClient::~UpDownClient()
         }
         m_reqFile = nullptr;
     }
+    // Never leave this client in another file's A4AF list.
+    removeFromAllOtherLists();
 
     // Remove from upload file
     if (m_uploadFile) {
@@ -576,7 +578,12 @@ bool UpDownClient::compare(const UpDownClient* other, bool ignoreUserHash) const
     if ((userPort() != 0 && userPort() == other->userPort())
         || (kadPort() != 0 && kadPort() == other->kadPort()))
     {
-        if (!m_userAddress.isNull() && !other->m_userAddress.isNull()) {
+        // MFC compares verified IPv4s here. A HighID peer reached over IPv6 has a v6
+        // userAddress but keeps its v4 ID, so a family mismatch means "no verified IP on one
+        // side" and falls through to the ID, as MFC does for an unset GetIP().
+        if (!m_userAddress.isNull() && !other->m_userAddress.isNull()
+            && m_userAddress.isIPv4() == other->m_userAddress.isIPv4())
+        {
             if (m_userAddress == other->m_userAddress)
                 return true;
         } else if (userIDHybrid() == other->userIDHybrid()) {
@@ -2092,7 +2099,7 @@ void UpDownClient::connect()
                  .arg(static_cast<int>(reqSocket->state()))
                  .arg(reqSocket->socketDescriptor()));
 
-    reqSocket->connectToHost(addr, m_userPort);
+    reqSocket->connectToPeer(m_connectAddress, m_userPort);
 
     logDebug(QStringLiteral("connect: after connectToHost — socketState=%1 fd=%2")
                  .arg(static_cast<int>(reqSocket->state()))

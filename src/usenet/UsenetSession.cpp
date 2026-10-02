@@ -26,6 +26,10 @@ namespace {
 /// so this bounds how long a just-woken engine sits below its floor while the
 /// other still holds the line. The recompute itself is a few integer ops.
 constexpr int kBandwidthTickMs = 500;
+/// eD2K rate windows the split reads; matched to Usenet's TickRateWindow (2 s)
+/// rather than DownloadQueue's 10 s MFC average, so freed bandwidth is lent promptly.
+constexpr uint32 kSplitRateWindowMs = 2000;
+constexpr uint32 kSplitRecentWindowMs = 500;
 
 /// Split log gate: a move smaller than this, in percent of the old cap, is noise
 /// from the rate measurements and not worth a line.
@@ -110,6 +114,7 @@ void UsenetSession::stop()
     // Quietly: "engine stopped" below already says why, and a restart should log
     // its first split afresh rather than diff it against a stale one.
     m_split = {};
+    m_splitState = {};
     m_loggedSplit = {};
     m_splitLogClock.invalidate();
 
@@ -171,6 +176,8 @@ void UsenetSession::remapCategories(const QHash<uint32, uint32>& oldToNew)
         return;
     }
 
+    if (m_queue)
+        m_queue->flushState();   // pending writes first, or they would undo the remap
     const int changed = UsenetQueueStore::remapCategories(oldToNew);
     if (changed > 0) {
         logUsenet(QStringLiteral("Usenet: renumbered the category of %1 stored item(s)")
@@ -181,7 +188,8 @@ void UsenetSession::remapCategories(const QHash<uint32, uint32>& oldToNew)
 UsenetSession::DownloadSplit UsenetSession::computeDownloadSplit(uint32 ceilingKb,
                                                                 int usenetSharePercent,
                                                                 EngineDemand usenet,
-                                                                EngineDemand ed2k)
+                                                                EngineDemand ed2k,
+                                                                SplitState* state)
 {
     DownloadSplit split;
     split.ceilingKb = ceilingKb;
@@ -189,8 +197,11 @@ UsenetSession::DownloadSplit UsenetSession::computeDownloadSplit(uint32 ceilingK
     // 0 means unlimited on the download side — there is no UNLIMITED sentinel the
     // way there is for upload — so there is nothing to divide and both engines
     // run free.
-    if (ceilingKb == 0)
+    if (ceilingKb == 0) {
+        if (state)
+            *state = {};
         return split;
+    }
 
     const qint64 ceiling = ceilingKb;
     const int percent = std::clamp(usenetSharePercent, 1, 99);
@@ -201,19 +212,35 @@ UsenetSession::DownloadSplit UsenetSession::computeDownloadSplit(uint32 ceilingK
         std::clamp<qint64>(ceiling * percent / 100, 1, std::max<qint64>(1, ceiling - 1));
     const qint64 ed2kFloor = std::max<qint64>(1, ceiling - usenetFloor);
 
-    // What an engine holds back from the other: what it measurably uses plus a
-    // quarter, so the loan never becomes the thing capping it and it can grow a
-    // step per tick. Never less than a quarter of its floor, so an engine that is
-    // busy but momentarily at zero — between articles, sources still queueing —
-    // can restart without waiting on a tick. Never more than its floor, which is
-    // what makes the share hold once both engines are saturated.
-    const auto reserve = [](const EngineDemand& d, qint64 floorKb) -> qint64 {
+    // What an engine holds back from the other: what it uses over ~2 s plus a
+    // quarter, so the loan never becomes the thing capping it. Never more than
+    // its floor, which is what makes the share hold once both are saturated.
+    //
+    // The minimum is small (32 KB/s or 1/16 of the floor): a busy engine at a
+    // trickle used to keep a quarter of its floor idle. Restarting from there
+    // is the pressing rule's job — an engine at >= 90 % of its cap doubles its
+    // reserve each tick, so it is back at its share within ~2 s.
+    const auto reserve = [](const EngineDemand& d, qint64 floorKb, qint64 prevReserveKb,
+                            qint64 prevCapKb) -> qint64 {
         if (!d.active)
             return 0;
-        const qint64 measuredKb = std::max<qint64>(0, d.rateBytesPerSec) / 1024;
-        return std::clamp(measuredKb + measuredKb / 4,
-                          std::max<qint64>(1, floorKb / 4), floorKb);
+        const qint64 avgKb = std::max<qint64>(0, d.rateBytesPerSec) / 1024;
+        const qint64 recentKb = std::max<qint64>(0, d.recentBytesPerSec) / 1024;
+        const qint64 minKb = std::min(floorKb, std::max<qint64>({1, 32, floorKb / 16}));
+        qint64 want = std::max(avgKb + avgKb / 4, minKb);
+        const bool pressing =
+            prevCapKb > 0 && std::max(avgKb, recentKb) * 10 >= prevCapKb * 9;
+        if (pressing)
+            want = std::max(want, prevReserveKb * 2);
+        return std::min(want, floorKb);
     };
+
+    const qint64 usenetReserve = reserve(usenet, usenetFloor,
+                                         state ? state->usenetReserveKb : 0,
+                                         state ? state->usenetCapKb : 0);
+    const qint64 ed2kReserve = reserve(ed2k, ed2kFloor,
+                                       state ? state->ed2kReserveKb : 0,
+                                       state ? state->ed2kCapKb : 0);
 
     // Symmetric: each engine is held back only because the other is active, and
     // only by what the other reserves. An idle engine lends its whole share.
@@ -223,8 +250,15 @@ UsenetSession::DownloadSplit UsenetSession::computeDownloadSplit(uint32 ceilingK
     // sentinel — its 0 is unlimited, which would ignore maxDownload outright — so
     // it always gets a number.
     if (usenet.active)
-        split.ed2kBudgetKb = std::max<qint64>(1, ceiling - reserve(usenet, usenetFloor));
-    split.usenetLimitBytes = std::max<qint64>(1, ceiling - reserve(ed2k, ed2kFloor)) * 1024;
+        split.ed2kBudgetKb = std::max<qint64>(1, ceiling - usenetReserve);
+    split.usenetLimitBytes = std::max<qint64>(1, ceiling - ed2kReserve) * 1024;
+
+    if (state) {
+        state->usenetReserveKb = usenetReserve;
+        state->ed2kReserveKb = ed2kReserve;
+        state->usenetCapKb = split.usenetKb();
+        state->ed2kCapKb = split.ed2kKb();
+    }
     return split;
 }
 
@@ -234,18 +268,21 @@ UsenetSession::DownloadSplit UsenetSession::computeDownloadSplit(uint32 ceilingK
 
 void UsenetSession::updateBandwidthSplit()
 {
-    const EngineDemand usenet{m_queue->hasActiveDownloads(), m_queue->currentRate()};
+    const EngineDemand usenet{m_queue->hasActiveDownloads(), m_queue->currentRate(),
+                              m_queue->recentRate()};
 
     // Core runs on this thread, so the queue can be read directly. hasActiveTransfers
     // counts sources actually sending, which a throttle slows but never zeroes.
     EngineDemand ed2k;
     if (theApp.downloadQueue) {
         ed2k.active = theApp.downloadQueue->hasActiveTransfers();
-        ed2k.rateBytesPerSec = theApp.downloadQueue->datarate();
+        ed2k.rateBytesPerSec = theApp.downloadQueue->datarateOver(kSplitRateWindowMs);
+        ed2k.recentBytesPerSec = theApp.downloadQueue->datarateOver(kSplitRecentWindowMs);
     }
 
     m_split = computeDownloadSplit(thePrefs.maxDownload(),
-                                   thePrefs.usenetDownloadSharePercent(), usenet, ed2k);
+                                   thePrefs.usenetDownloadSharePercent(), usenet, ed2k,
+                                   &m_splitState);
 
     thePrefs.setEd2kDownloadBudget(m_split.ed2kBudgetKb);
     m_queue->setRateLimit(m_split.usenetLimitBytes);

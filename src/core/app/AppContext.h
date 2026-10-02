@@ -184,7 +184,9 @@ struct AppContext {
     void clearPublicIPv6Observed();
 
     /// Server's ST_IPV6_STATUS verdict on our advertised IPv6 (IPV6ST_* bits; 0 = unknown).
-    void setPublicIPv6Status(uint8 status) { m_publicIPv6Status = status; }
+    /// Covers v4 *and* v6 sessions: eNode-go dial-back-probes whichever family we arrived on,
+    /// so a v6 session behind a stateful firewall reads HAVE|PROBED. Logs verdict changes.
+    void setPublicIPv6Status(uint8 status);
     [[nodiscard]] uint8 publicIPv6Status() const { return m_publicIPv6Status; }
     /// True when the server probed our v6 and found it unreachable — suppress advertising.
     [[nodiscard]] bool publicIPv6ProbedUnreachable() const;

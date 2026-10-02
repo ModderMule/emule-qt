@@ -554,7 +554,7 @@ void CoreSession::initServerConnect()
                     return;
                 auto* srv = theApp.serverConnect ? theApp.serverConnect->currentServer() : nullptr;
                 theApp.searchList->processSearchAnswer(data, size, true,
-                    srv ? srv->ipAddress().toNetworkUint32() : 0, srv ? srv->port() : 0);
+                    srv ? Endpoint(theApp.serverConnect->sessionAddress(), srv->port()) : Endpoint());
 
                 // The local server has answered — a global search may now start
                 // walking the rest of the list. MFC: CSearchResultsWnd::LocalEd2kSearchEnd
@@ -575,13 +575,13 @@ void CoreSession::initServerConnect()
     connect(m_serverUDP.get(), &UDPSocket::globalSearchResult,
             this, [](const uint8* data, uint32 size, const Endpoint& server) {
                 if (theApp.searchList) {
-                    uint32 ip = server.address().toNetworkUint32();
                     // The answer arrives from the server's UDP port (TCP+4); the
                     // SearchFile must record the real TCP port so it keys against
                     // the server-list entry. MFC: CUDPSocket::ProcessPacket() —
                     // UDPSocket.cpp:237 (passes nUDPPort - 4).
-                    uint16 port = static_cast<uint16>(server.port() - 4);
-                    theApp.searchList->processUDPSearchAnswer(data, size, true, ip, port);
+                    const auto port = static_cast<uint16>(server.port() - 4);
+                    theApp.searchList->processUDPSearchAnswer(data, size, true,
+                                                              Endpoint(server.address(), port));
                 }
             });
 

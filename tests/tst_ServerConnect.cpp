@@ -76,6 +76,17 @@ static void writeIdChange(QTcpSocket* sock, uint32 clientID, uint32 tcpFlags = 0
     writeRawPacket(sock, OP_EDONKEYPROT, OP_IDCHANGE, payload, 8);
 }
 
+/// Helper: extended OP_IDCHANGE — clientID, tcpFlags, auxPort, serverReportedIP (+12).
+static void writeIdChangeExtended(QTcpSocket* sock, uint32 clientID, uint32 tcpFlags,
+                                  uint32 reportedIP)
+{
+    char payload[16] = {};
+    std::memcpy(payload, &clientID, 4);
+    std::memcpy(payload + 4, &tcpFlags, 4);
+    std::memcpy(payload + 12, &reportedIP, 4);
+    writeRawPacket(sock, OP_EDONKEYPROT, OP_IDCHANGE, payload, 16);
+}
+
 /// Create a default config for testing.
 static ServerConnectConfig makeTestConfig()
 {
@@ -145,6 +156,8 @@ private slots:
     void setClientID_highIDBecomesPublicIP();
     void setClientID_lowIDDoesNot();
     void disconnect_clearsPublicIP();
+    void lowIDLogin_reportedIP_adopted();
+    void lowIDLogin_serverOwnReportedIP_notAdopted();
 
     // StopConnectionTry
     void stopConnectionTry_clearsConnecting();
@@ -467,6 +480,43 @@ void tst_ServerConnect::disconnect_clearsPublicIP()
     QCOMPARE(conn.clientID(), uint32{0});
 
     serverSide->close();
+}
+
+/// Logs into a loopback server with a LowID + extended IDCHANGE; returns publicIP() after.
+static uint32 publicIPAfterLowIDLogin(uint32 reportedIP)
+{
+    QTcpServer tcpServer;
+    if (!tcpServer.listen(QHostAddress::LocalHost, 0))
+        return ~0u;
+    Server srv = makeLoopbackServer(tcpServer.serverPort());
+    ServerList list;
+    ServerConnect conn(list);
+    conn.setConfig(makeTestConfig());
+    conn.connectToServer(&srv, false, true);
+
+    if (!tcpServer.waitForNewConnection(5000))
+        return ~0u;
+    auto* serverSide = tcpServer.nextPendingConnection();
+    QTest::qWait(200);
+    writeIdChangeExtended(serverSide, 0x00000042, 0, reportedIP);
+    if (!QTest::qWaitFor([&] { return conn.isConnected(); }, 5000))
+        return ~0u;
+    const uint32 ip = theApp.publicIP();
+    conn.disconnect();
+    serverSide->close();
+    return ip;
+}
+
+void tst_ServerConnect::lowIDLogin_reportedIP_adopted()
+{
+    // 10.2.3.4 in ED2K order — asymmetric, so a byte-order slip can't pass.
+    QCOMPARE(publicIPAfterLowIDLogin(0x0403020A), uint32{0x0403020A});
+}
+
+void tst_ServerConnect::lowIDLogin_serverOwnReportedIP_notAdopted()
+{
+    // ed2k-server reports its own IP here; the loopback server's own is 127.0.0.1.
+    QCOMPARE(publicIPAfterLowIDLogin(0x0100007F), uint32{0});
 }
 
 void tst_ServerConnect::disconnect_whileNotConnected_returnsFalse()

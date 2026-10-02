@@ -21,6 +21,7 @@
 #include "decode/YencDecoder.h"
 #include "nntp/ArticleFetcher.h"
 #include "nntp/NntpSocket.h"
+#include "queue/ArticleFileCache.h"
 #include "queue/ArticleWriter.h"
 
 #include <QSignalSpy>
@@ -110,6 +111,11 @@ private slots:
     void obfuscatedNameComesFromTheArticle();
     void aCrcMismatchIsReportedAsCorrupt();
     void pipelineLookaheadCoversBuffersAndTwoRoundTrips();
+    void pipelinedBodiesBackToBackDecode_data();
+    void pipelinedBodiesBackToBackDecode();
+    void groupIsSentOncePerConnectionAndGroup();
+    void writersSharingAHandleKeepTheirOwnOffsets();
+    void theCacheRecreatesADeletedDirectory();
 };
 
 void tst_UsenetArticleFetch::assemblesAMultiPartFileOutOfOrder()
@@ -177,6 +183,162 @@ void tst_UsenetArticleFetch::assemblesAMultiPartFileOutOfOrder()
     // Byte-for-byte, not a hash of the parts: an off-by-one from the 1-based
     // `begin` shifts everything while every pcrc32 still passes.
     QCOMPARE(assembled, whole);
+}
+
+void tst_UsenetArticleFetch::pipelinedBodiesBackToBackDecode_data()
+{
+    QTest::addColumn<qint64>("rateLimit");
+    QTest::newRow("unlimited") << qint64(0);
+    QTest::newRow("limited") << qint64(16 * 1024);
+}
+
+void tst_UsenetArticleFetch::pipelinedBodiesBackToBackDecode()
+{
+    QFETCH(qint64, rateLimit);
+
+    // Both BODYs are written before either is answered, and the server answers
+    // them back to back: the first body's "." and the second's status line
+    // arrive in the same read. The block decoder must stop at the terminator
+    // and leave the rest for the next command.
+    const QByteArray whole = payload(kPartSize * 2);
+    FakeNntpServer server;
+    for (int part = 1; part <= 2; ++part)
+        server.addArticle(messageIdFor(part), makeArticle(whole, part, 2, QStringLiteral("p.bin")));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NewsServer config;
+    config.host = QStringLiteral("127.0.0.1");
+    config.port = port;
+    config.tlsMode = TlsMode::None;
+    config.user = QStringLiteral("testuser");
+    config.pass = QStringLiteral("testpass");
+
+    NntpSocket socket;
+    socket.setReadRateLimit(rateLimit);
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+    socket.connectToServer(config);
+    QVERIFY(ready.wait(5000));
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    ArticleWriter writers[2];
+    ArticleFetcher fetchers[2];
+    QSignalSpy done0(&fetchers[0], &ArticleFetcher::finished);
+    QSignalSpy done1(&fetchers[1], &ArticleFetcher::finished);
+    for (int i = 0; i < 2; ++i) {
+        QString error;
+        QVERIFY2(writers[i].open(dir.filePath(QStringLiteral("p%1.bin").arg(i)), error),
+                 qPrintable(error));
+        NzbSegment segment;
+        segment.messageId = messageIdFor(i + 1);
+        segment.number = i + 1;
+        fetchers[i].fetch(&socket, segment, &writers[i]);
+    }
+    QVERIFY(done1.count() == 1 || done1.wait(10000));
+    QCOMPARE(done0.count(), 1);
+    QCOMPARE(done0.first().at(0).value<NntpError>(), NntpError::None);
+    QCOMPARE(done1.first().at(0).value<NntpError>(), NntpError::None);
+    QVERIFY(socket.isReady());
+
+    for (int i = 0; i < 2; ++i) {
+        QString error;
+        QVERIFY(writers[i].flush(error));
+        writers[i].close();
+        QFile f(dir.filePath(QStringLiteral("p%1.bin").arg(i)));
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        // Each writer only saw its own part, at its own offset.
+        QCOMPARE(f.readAll().mid(i * kPartSize, kPartSize), whole.mid(i * kPartSize, kPartSize));
+    }
+}
+
+void tst_UsenetArticleFetch::groupIsSentOncePerConnectionAndGroup()
+{
+    const QByteArray whole = payload(kPartSize * 3);
+    FakeNntpServer server;
+    server.addGroup(QStringLiteral("alt.binaries.a"), 3, 1, 3);
+    server.addGroup(QStringLiteral("alt.binaries.b"), 3, 1, 3);
+    for (int part = 1; part <= 3; ++part)
+        server.addArticle(messageIdFor(part), makeArticle(whole, part, 3, QStringLiteral("g.bin")));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NewsServer config;
+    config.host = QStringLiteral("127.0.0.1");
+    config.port = port;
+    config.tlsMode = TlsMode::None;
+    config.user = QStringLiteral("testuser");
+    config.pass = QStringLiteral("testpass");
+
+    NntpSocket socket;
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+    socket.connectToServer(config);
+    QVERIFY(ready.wait(5000));
+
+    QTemporaryDir dir;
+    ArticleWriter writer;
+    QString error;
+    QVERIFY2(writer.open(dir.filePath(QStringLiteral("g.bin")), error), qPrintable(error));
+
+    const auto fetch = [&](int part, const QString& group) {
+        NzbSegment segment;
+        segment.messageId = messageIdFor(part);
+        segment.number = part;
+        ArticleFetcher fetcher;
+        QSignalSpy done(&fetcher, &ArticleFetcher::finished);
+        fetcher.fetch(&socket, segment, &writer, group);
+        return done.wait(5000) && done.first().at(0).value<NntpError>() == NntpError::None;
+    };
+    const auto groupsSent = [&] {
+        return server.receivedCommands().filter(QStringLiteral("GROUP ")).size();
+    };
+
+    QVERIFY(fetch(1, QStringLiteral("alt.binaries.a")));
+    QVERIFY(fetch(2, QStringLiteral("alt.binaries.a")));
+    QCOMPARE(groupsSent(), 1);
+    QVERIFY(fetch(3, QStringLiteral("alt.binaries.b")));
+    QCOMPARE(groupsSent(), 2);
+}
+
+void tst_UsenetArticleFetch::writersSharingAHandleKeepTheirOwnOffsets()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QStringLiteral("shared.bin"));
+    ArticleFileCache cache;
+    ArticleWriter a(&cache);
+    ArticleWriter b(&cache);
+    QString error;
+    QVERIFY2(a.open(path, error), qPrintable(error));
+    QVERIFY2(b.open(path, error), qPrintable(error));
+    QCOMPARE(cache.openCount(), 1);   // one handle for both
+
+    // Interleaved blocks, as two connections of one worker deliver them.
+    QVERIFY(a.seekTo(0, error));
+    QVERIFY(b.seekTo(8, error));
+    QVERIFY(a.write("AAAA", error));
+    QVERIFY(b.write("BBBB", error));
+    QVERIFY(a.write("aaaa", error));
+    QVERIFY(b.write("bbbb", error));
+
+    a.close();
+    QCOMPARE(cache.openCount(), 1);
+    b.close();
+    QCOMPARE(cache.openCount(), 0);   // the last writer closes the file
+
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    QCOMPARE(f.readAll(), QByteArrayLiteral("AAAAaaaaBBBBbbbb"));
+}
+
+void tst_UsenetArticleFetch::theCacheRecreatesADeletedDirectory()
+{
+    QTemporaryDir dir;
+    const QString sub = dir.filePath(QStringLiteral("item/gone"));
+    ArticleFileCache cache;
+    ArticleWriter w(&cache);
+    QString error;
+    QVERIFY2(w.open(sub + QStringLiteral("/x.bin"), error), qPrintable(error));
+    QVERIFY(QFileInfo::exists(sub + QStringLiteral("/x.bin")));
 }
 
 void tst_UsenetArticleFetch::missingArticleEscalatesAndKeepsTheConnection()

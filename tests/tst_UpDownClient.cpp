@@ -171,6 +171,12 @@ private slots:
     void addReqBlock_rejectedWhenNotUploading();
     void addReqBlock_collectionSlotRejectsOtherFile();
     void addReqBlock_collectionSlotAcceptsCollection();
+    void addReqBlock_dropsDuplicates();
+    void addReqBlock_dropsUnknownFile();
+    void addReqBlock_dropsPastEofAndOversized();
+    void addReqBlock_partFileServesOnlyFlushedData();
+    void setUploadFileID_keepsBlockRequests();
+    void markBlockDone_movesToDoneHead();
     void ban_setsState();
     void unBan_clearsState();
 
@@ -1799,12 +1805,12 @@ void tst_UpDownClient::addRequestCount_tracksRequests()
 
 namespace {
 
-/// A shared file plus a block request naming it, which is all the two guards below read.
-Requested_Block_Struct* blockFor(const KnownFile* file)
+/// A block request naming a shared file — clamped to its size, as addReqBlock rejects EOF.
+Requested_Block_Struct* blockFor(const KnownFile* file, uint64 start = 0, uint64 end = 10240)
 {
     auto* block = new Requested_Block_Struct;
-    block->startOffset = 0;
-    block->endOffset = 10240;
+    block->startOffset = start;
+    block->endOffset = std::min<uint64>(end, file->fileSize());
     md4cpy(block->fileID.data(), file->fileHash());
     return block;
 }
@@ -1893,6 +1899,172 @@ void tst_UpDownClient::addReqBlock_collectionSlotAcceptsCollection()
     // collection over the cap is treated like any other oversized file.
     client.addReqBlock(blockFor(big));
     QCOMPARE(client.blockRequests().size(), size_t{1});
+
+    theApp.sharedFileList = nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// addReqBlock sanity checks — MFC srchybrid/UploadClient.cpp:347-410
+// ---------------------------------------------------------------------------
+
+void tst_UpDownClient::addReqBlock_dropsDuplicates()
+{
+    KnownFileList knownFiles;
+    SharedFileList sharedFiles(&knownFiles);
+    theApp.sharedFileList = &sharedFiles;
+    KnownFile* file = shareFile(sharedFiles, 0x41, QStringLiteral("movie.avi"), 10u * 1024 * 1024);
+    QVERIFY(file);
+
+    UpDownClient client;
+    client.setUploadState(UploadState::Uploading);
+
+    // Older clients resend still-pending blocks in every OP_REQUESTPARTS.
+    client.addReqBlock(blockFor(file, 0, EMBLOCKSIZE));
+    client.addReqBlock(blockFor(file, 0, EMBLOCKSIZE));
+    QCOMPARE(client.blockRequests().size(), size_t{1});
+
+    // ...and a block already served is not served again.
+    QVERIFY(client.markBlockDone(file->fileHash(), 0, EMBLOCKSIZE));
+    client.addReqBlock(blockFor(file, 0, EMBLOCKSIZE));
+    QVERIFY(client.blockRequests().empty());
+    QCOMPARE(client.doneBlocks().size(), size_t{1});
+
+    // A different range is a new request.
+    client.addReqBlock(blockFor(file, EMBLOCKSIZE, 2 * EMBLOCKSIZE));
+    QCOMPARE(client.blockRequests().size(), size_t{1});
+
+    theApp.sharedFileList = nullptr;
+}
+
+void tst_UpDownClient::addReqBlock_dropsUnknownFile()
+{
+    KnownFileList knownFiles;
+    SharedFileList sharedFiles(&knownFiles);
+    theApp.sharedFileList = &sharedFiles;
+    KnownFile* file = shareFile(sharedFiles, 0x42, QStringLiteral("movie.avi"), 10u * 1024 * 1024);
+    QVERIFY(file);
+
+    UpDownClient client;
+    client.setUploadState(UploadState::Uploading);
+
+    auto* block = blockFor(file);
+    block->fileID.fill(0x99);
+    client.addReqBlock(block);
+    QVERIFY(client.blockRequests().empty());
+
+    theApp.sharedFileList = nullptr;
+}
+
+void tst_UpDownClient::addReqBlock_dropsPastEofAndOversized()
+{
+    KnownFileList knownFiles;
+    SharedFileList sharedFiles(&knownFiles);
+    theApp.sharedFileList = &sharedFiles;
+    const uint64 size = 10u * 1024 * 1024;
+    KnownFile* file = shareFile(sharedFiles, 0x43, QStringLiteral("movie.avi"), size);
+    QVERIFY(file);
+
+    UpDownClient client;
+    client.setUploadState(UploadState::Uploading);
+
+    auto* pastEof = blockFor(file, size - 100);
+    pastEof->endOffset = size + 1;
+    client.addReqBlock(pastEof);
+    QVERIFY(client.blockRequests().empty());
+
+    client.addReqBlock(blockFor(file, 0, 3 * EMBLOCKSIZE + 1));
+    QVERIFY(client.blockRequests().empty());
+
+    // Up to the very end, and up to three blocks at once, is fine.
+    client.addReqBlock(blockFor(file, size - 100, size));
+    client.addReqBlock(blockFor(file, 0, 3 * EMBLOCKSIZE));
+    QCOMPARE(client.blockRequests().size(), size_t{2});
+
+    theApp.sharedFileList = nullptr;
+}
+
+void tst_UpDownClient::addReqBlock_partFileServesOnlyFlushedData()
+{
+    KnownFileList knownFiles;
+    SharedFileList sharedFiles(&knownFiles);
+    theApp.sharedFileList = &sharedFiles;
+
+    std::array<uint8, 16> hash{};
+    hash.fill(0x44);
+    auto* partFile = new PartFile();
+    partFile->setFileHash(hash.data());
+    partFile->setFileName(QStringLiteral("partial.bin"));
+    partFile->setFileSize(EMFileSize(2 * PARTSIZE));
+    partFile->fillGap(0, PARTSIZE - 1);
+    QVERIFY(sharedFiles.safeAddKFile(partFile));
+
+    UpDownClient client;
+    client.setUploadState(UploadState::Uploading);
+
+    // On disk: served.
+    client.addReqBlock(blockFor(partFile, 0, EMBLOCKSIZE));
+    QCOMPARE(client.blockRequests().size(), size_t{1});
+
+    // Still a gap: it would go out as zeros.
+    client.addReqBlock(blockFor(partFile, PARTSIZE, PARTSIZE + EMBLOCKSIZE));
+    QCOMPARE(client.blockRequests().size(), size_t{1});
+
+    // Gap filled but only in the write buffer: not readable from disk yet.
+    const QByteArray data(10240, 'x');
+    partFile->writeToBuffer(data.size(), reinterpret_cast<const uint8*>(data.constData()),
+                            PARTSIZE, PARTSIZE + data.size() - 1, nullptr);
+    QVERIFY(partFile->isComplete(PARTSIZE, PARTSIZE + data.size() - 1));
+    QVERIFY(!partFile->isCompleteBDSafe(PARTSIZE, PARTSIZE + data.size() - 1));
+    client.addReqBlock(blockFor(partFile, PARTSIZE, PARTSIZE + data.size()));
+    QCOMPARE(client.blockRequests().size(), size_t{1});
+
+    theApp.sharedFileList = nullptr;
+}
+
+void tst_UpDownClient::setUploadFileID_keepsBlockRequests()
+{
+    KnownFileList knownFiles;
+    SharedFileList sharedFiles(&knownFiles);
+    theApp.sharedFileList = &sharedFiles;
+    KnownFile* fileA = shareFile(sharedFiles, 0x45, QStringLiteral("a.avi"), 10u * 1024 * 1024);
+    KnownFile* fileB = shareFile(sharedFiles, 0x46, QStringLiteral("b.avi"), 10u * 1024 * 1024);
+    QVERIFY(fileA && fileB);
+
+    UpDownClient client;
+    client.setUploadState(UploadState::Uploading);
+    client.setUploadFileID(fileA);
+    client.addReqBlock(blockFor(fileA));
+
+    // An A4AF peer asking about another file mid-slot must not lose its pending blocks
+    // (MFC SetUploadFileID leaves the block lists alone).
+    client.setUploadFileID(fileB);
+    QCOMPARE(client.blockRequests().size(), size_t{1});
+
+    client.setUploadFileID(nullptr);
+    theApp.sharedFileList = nullptr;
+}
+
+void tst_UpDownClient::markBlockDone_movesToDoneHead()
+{
+    KnownFileList knownFiles;
+    SharedFileList sharedFiles(&knownFiles);
+    theApp.sharedFileList = &sharedFiles;
+    KnownFile* file = shareFile(sharedFiles, 0x47, QStringLiteral("movie.avi"), 10u * 1024 * 1024);
+    QVERIFY(file);
+
+    UpDownClient client;
+    client.setUploadState(UploadState::Uploading);
+    client.addReqBlock(blockFor(file, 0, EMBLOCKSIZE));
+    client.addReqBlock(blockFor(file, EMBLOCKSIZE, 2 * EMBLOCKSIZE));
+
+    QVERIFY(client.markBlockDone(file->fileHash(), 0, EMBLOCKSIZE));
+    QVERIFY(client.markBlockDone(file->fileHash(), EMBLOCKSIZE, 2 * EMBLOCKSIZE));
+    QVERIFY(client.blockRequests().empty());
+    QCOMPARE(client.doneBlocks().size(), size_t{2});
+    QCOMPARE(client.doneBlocks().front()->startOffset, uint64{EMBLOCKSIZE}); // newest first
+
+    // Not pending (flushed, or never asked for): the caller drops the data.
+    QVERIFY(!client.markBlockDone(file->fileHash(), 0, EMBLOCKSIZE));
 
     theApp.sharedFileList = nullptr;
 }

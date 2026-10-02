@@ -78,9 +78,14 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
         case ColLowID:       return formatShortNumber(r.lowIdUsers);
         case ColObfuscation: return r.obfuscation ? tr("Yes") : tr("No");
         case ColCountry:     return CountryFlags::columnText(r.cc);
+        case ColIPv6:        return r.addr6.isEmpty() ? QString{}
+                                                      : QStringLiteral("[%1] : %2").arg(r.addr6).arg(r.port);
         default:             break;
         }
     }
+
+    if (role == ServerIdRole)
+        return r.serverId;
 
     if (role == Qt::UserRole) {
         switch (index.column()) {
@@ -98,6 +103,7 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
         case ColLowID:       return r.lowIdUsers;
         case ColObfuscation: return r.obfuscation ? 1 : 0;
         case ColCountry:     return CountryFlags::sortKey(r.cc);
+        case ColIPv6:        return r.addr6;
         default:             break;
         }
     }
@@ -109,6 +115,11 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
     if (role == Qt::ToolTipRole && (index.column() == ColName || index.column() == ColCountry)
         && !r.cc.isEmpty())
         return CountryFlags::tooltip(r.cc);
+
+    // Both addresses of a dual-stack server
+    if (role == Qt::ToolTipRole && (index.column() == ColIP || index.column() == ColIPv6)
+        && !r.addr6.isEmpty())
+        return QStringLiteral("%1 : %2\n[%3] : %2").arg(r.ip).arg(r.port).arg(r.addr6);
 
     // MFC ServerListCtrl.cpp:209-214: light grey once dead, grey from the second failure.
     // deadServerRetries 0 means "never remove" here, so nothing counts as dead.
@@ -161,6 +172,7 @@ QVariant ServerListModel::headerData(int section, Qt::Orientation orientation, i
     case ColLowID:       return tr("Low ID");
     case ColObfuscation: return tr("Obfuscation");
     case ColCountry:     return tr("Country");
+    case ColIPv6:        return tr("IPv6");
     default:             return {};
     }
 }
@@ -199,6 +211,7 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
 
         row.numericIp = static_cast<uint32_t>(m.value(QStringLiteral("ip")).toInteger());
         row.addr      = m.value(QStringLiteral("addr")).toString();
+        row.addr6     = m.value(QStringLiteral("addr6")).toString();
         row.cc        = m.value(QStringLiteral("cc")).toString();
         row.serverId  = static_cast<uint32_t>(m.value(QStringLiteral("serverId")).toInteger());
         rows.push_back(std::move(row));

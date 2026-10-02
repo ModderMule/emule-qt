@@ -51,6 +51,9 @@ signals:
     /// Forwarded from any client's IpcClientHandler::usenetConfigChanged.
     void usenetConfigChanged();
 
+    /// Forwarded from any client's IpcClientHandler::standbyConfigChanged.
+    void standbyConfigChanged();
+
     /// Forwarded from any client's IpcClientHandler::indexerConfigChanged.
     void indexerConfigChanged();
 

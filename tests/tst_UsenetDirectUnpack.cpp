@@ -18,6 +18,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTest>
 #include <QThread>
@@ -88,6 +89,65 @@ QByteArray postStoredSetOutOfOrder(FakeNntpServer& server, QByteArray& innerOut)
                       volumes.at(i)});
     }
     return postFiles(server, files, kArticleSize);
+}
+
+/// Drop the NZB line naming @p messageId: an article the poster's indexer
+/// never listed. Real NZBs do this; the subject still counts it.
+QByteArray withoutSegment(QByteArray nzb, const QString& messageId)
+{
+    const QByteArray needle = '>' + messageId.toUtf8() + '<';
+    const qsizetype at = nzb.indexOf(needle);
+    if (at < 0)
+        return {};
+    const qsizetype begin = nzb.lastIndexOf('\n', at) + 1;
+    const qsizetype end = nzb.indexOf('\n', at) + 1;
+    nzb.remove(begin, end - begin);
+    return nzb;
+}
+
+/// Point the segment naming @p messageId at an article no server has.
+QByteArray withMissingSegment(QByteArray nzb, const QString& messageId)
+{
+    const QByteArray from = '>' + messageId.toUtf8() + '<';
+    return nzb.replace(from, QByteArrayLiteral(">gone@example.com<"));
+}
+
+/// Run @p nzb with direct unpack on and PAR2 off.
+struct DamagedOutcome {
+    bool terminal = false;
+    bool finishedOk = false;
+    int runsStarted = -1;
+    bool published = false;
+};
+
+DamagedOutcome runDamaged(FakeNntpServer& server, const QByteArray& nzb)
+{
+    DamagedOutcome outcome;
+
+    // A probe would pause it first — for the right reason, but not this one.
+    const int oldHealth = thePrefs.usenetHealthCheck();
+    thePrefs.setUsenetHealthCheck(0);
+    const auto restore = qScopeGuard([oldHealth] { thePrefs.setUsenetHealthCheck(oldHealth); });
+
+    UsenetQueue queue;
+    queue.applyServers({serverConfig(server.serverPort(), 2)}, 60);
+    queue.setPostProcessingOptions({.par2 = false, .rename = false, .unpack = true,
+                                    .cleanup = true, .directUnpack = true});
+    queue.start();
+
+    QString error;
+    if (queue.addNzb(nzb, QStringLiteral("release"), error).isEmpty())
+        return outcome;
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    outcome.terminal = finished.wait(60000);
+    if (outcome.terminal)
+        outcome.finishedOk = finished.first().at(1).toBool();
+    outcome.runsStarted = queue.directUnpackStarts();
+    outcome.published = QFileInfo::exists(
+        QDir(thePrefs.incomingDir()).filePath(QStringLiteral("Some.Release.mkv")));
+    queue.stop();
+    return outcome;
 }
 
 /// Run a release to completion and report whether the payload was already
@@ -165,6 +225,9 @@ private slots:
     void aDownloadedSetIsAlreadyUnpackedWhenPostProcessingStarts();
     void aSetWhoseNzbScramblesItsVolumesIsStillUnpackedWhileDownloading();
     void withTheOptionOffTheSetIsUnpackedAtTheEndAsBefore();
+    void aSetWithAnUnlistedArticleIsNotUnpackedWhileDownloading();
+    void aCancelledRunIsNotRestartedByLaterVolumes();
+    void anEmptyExtractionIsAFailure();
 
 private:
     /// Start a worker on its own thread and hand back both, already running.
@@ -452,6 +515,72 @@ void tst_UsenetDirectUnpack::withTheOptionOffTheSetIsUnpackedAtTheEndAsBefore()
     QVERIFY(outcome.finishedOk);
     QVERIFY(!outcome.payloadReadyBeforePostProcessing);
     QCOMPARE(outcome.published, patterned(kVolumePayload * kVolumeCount));
+}
+
+// The NZB lists 1 of part01's 2 articles. sealFile() pads the gap with zeros,
+// libarchive read that as an empty archive, and every later volume restarted a
+// run that "unpacked 0 files". The set is damaged before anything downloads.
+void tst_UsenetDirectUnpack::aSetWithAnUnlistedArticleIsNotUnpackedWhileDownloading()
+{
+    eMule::testing::TempDir tmp;
+    useTempPrefs(tmp);
+
+    FakeNntpServer server;
+    QVERIFY(server.listen());
+    server.addGroup(QStringLiteral("alt.binaries.test"), 1, 1, 1);
+    QByteArray inner;
+    const QByteArray nzb = withoutSegment(postStoredSet(server, inner), multiId(0, 1));
+    QVERIFY(!nzb.isEmpty());
+
+    const DamagedOutcome outcome = runDamaged(server, nzb);
+    QVERIFY2(outcome.terminal, "the download never reported a terminal outcome");
+    QCOMPARE(outcome.runsStarted, 0);
+    // No PAR2 to repair with: a zero-padded volume must fail, not publish.
+    QVERIFY(!outcome.finishedOk);
+    QVERIFY(!outcome.published);
+}
+
+// part03 is short an article. A run that started on part01 is cancelled when
+// part03 seals, and part04/05 sealing after it must not start a fresh one.
+void tst_UsenetDirectUnpack::aCancelledRunIsNotRestartedByLaterVolumes()
+{
+    eMule::testing::TempDir tmp;
+    useTempPrefs(tmp);
+
+    FakeNntpServer server;
+    QVERIFY(server.listen());
+    server.addGroup(QStringLiteral("alt.binaries.test"), 1, 1, 1);
+    QByteArray inner;
+    const QByteArray nzb = withMissingSegment(postStoredSet(server, inner), multiId(2, 1));
+
+    const DamagedOutcome outcome = runDamaged(server, nzb);
+    QVERIFY2(outcome.terminal, "the download never reported a terminal outcome");
+    // 0 when part03 resolved before part01 sealed, 1 otherwise; never more.
+    QVERIFY2(outcome.runsStarted <= 1,
+             qPrintable(QStringLiteral("%1 runs started").arg(outcome.runsStarted)));
+    QVERIFY(!outcome.finishedOk);
+    QVERIFY(!outcome.published);
+}
+
+void tst_UsenetDirectUnpack::anEmptyExtractionIsAFailure()
+{
+    eMule::testing::TempDir tmp;
+    const QString dest = QDir(tmp.path()).filePath(QStringLiteral("_unpacked"));
+    UsenetDirectUnpack* worker = nullptr;
+    QThread* thread = nullptr;
+    start(worker, thread, {QStringLiteral("item"), QStringLiteral("rel"), dest, {}});
+    QSignalSpy spy(worker, &UsenetDirectUnpack::finished);
+
+    // What a volume one whose leading articles were never listed looks like.
+    worker->offerVolume(0, writeVolume(tmp.path(), 0, QByteArray(64 * 1024, '\0')));
+    worker->endOfSet();
+
+    QVERIFY(spy.wait(10000));
+    const auto result = spy.first().at(0).value<UsenetDirectUnpackResult>();
+    QVERIFY(!result.ok);
+    QVERIFY(result.extracted.isEmpty());
+
+    stop(worker, thread);
 }
 
 // --- helpers ---------------------------------------------------------------

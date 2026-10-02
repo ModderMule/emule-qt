@@ -4,6 +4,8 @@
 
 #include "net/EMSocket.h"
 #include "app/AppContext.h"
+#include "net/Address.h"
+#include "net/IPv6SourcePin.h"
 #include "prefs/Preferences.h"
 #include "transfer/UploadBandwidthThrottler.h"
 #include "utils/Log.h"
@@ -138,8 +140,9 @@ void EMSocket::setConState(EMSState val)
 
 void EMSocket::onConnected()
 {
-    logDebug(QStringLiteral("EMSocket::onConnected — peer=%1:%2 fd=%3")
-                 .arg(peerAddress().toString()).arg(peerPort()).arg(socketDescriptor()));
+    logDebug(QStringLiteral("EMSocket::onConnected — peer=%1 fd=%2")
+                 .arg(Endpoint(Address::fromQHostAddress(peerAddress()), peerPort()).toString())
+                 .arg(socketDescriptor()));
     m_conState.store(EMSState::Connected, std::memory_order_release);
     onSocketConnected(); // trigger encryption handshake if needed
 }
@@ -944,6 +947,12 @@ void EMSocket::initProxySupport(const ProxySettings& settings)
     const QNetworkProxy proxy = toNetworkProxy(settings);
     if (proxy.type() != QNetworkProxy::NoProxy)
         setProxy(proxy);
+}
+
+void EMSocket::connectToPeer(const Address& addr, uint16 port)
+{
+    IPv6SourcePin::bindForConnect(*this, addr);
+    connectToHost(addr.toQHostAddress(), port);
 }
 
 // ---------------------------------------------------------------------------

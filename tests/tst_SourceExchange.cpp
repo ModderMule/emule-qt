@@ -1146,8 +1146,18 @@ void tst_SourceExchange::publicIPv6_tierPrecedenceAndAdvertiseGate()
     QVERIFY(!theApp.shouldAdvertisePublicIPv6());                    // but must not publish it
     theApp.setPublicIPv6Status(IPV6ST_HAVE | IPV6ST_PROBED | IPV6ST_REACHABLE);
     QVERIFY(theApp.shouldAdvertisePublicIPv6());
+    theApp.setPublicIPv6Status(IPV6ST_HAVE | IPV6ST_REACHABLE);      // assumed, not tested
+    QVERIFY(!theApp.publicIPv6ProbedUnreachable());
+    QVERIFY(theApp.shouldAdvertisePublicIPv6());
 
+    // A v6 session is probed too (eNode-go): a firewalled verdict must not outlive the
+    // session, so the next login re-advertises and gets re-probed.
+    theApp.setPublicIPv6Status(IPV6ST_HAVE | IPV6ST_PROBED);
+    QVERIFY(!theApp.shouldAdvertisePublicIPv6());
     theApp.clearPublicIPv6Observed();
+    QCOMPARE(theApp.publicIPv6Status(), uint8{0});
+    QVERIFY(theApp.shouldAdvertisePublicIPv6());                     // pinned tier still confident
+
     theApp.setPublicIPv6Override(Address{});
     theApp.setLocalIPv6Addresses({});
 }

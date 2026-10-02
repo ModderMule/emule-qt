@@ -5,6 +5,7 @@
 #include "TestHelpers.h"
 #include "transfer/UploadQueue.h"
 #include "transfer/UploadBandwidthThrottler.h"
+#include "transfer/UploadDiskIOThread.h"
 #include "app/AppContext.h"
 #include "client/ClientCredits.h"
 #include "client/ClientList.h"
@@ -105,6 +106,10 @@ private slots:
     void collectionSlot_bypassNeedsConnectedSocket();
     void collectionSlot_notGrantedToAClientAlreadyUploading();
     void collectionSlot_nonCollectionClearsFlag();
+    void removeFromUploadQueue_flushesBlocks();
+    void process_switchesUploadFileToHeadBlock();
+    void onBlockPacketsReady_marksDoneAndDropsForEndedSlot();
+    void onBlockPacketsReady_followsTheBlocksFile();
     void checkForTimeOver_keepsSlotWhileOnCollection();
     void checkForTimeOver_endsSessionOnOtherFile();
     void checkForTimeOver_endsSessionWhenFileUnshared();
@@ -2597,6 +2602,146 @@ void tst_UploadQueue::findBestClient_considersIpv6ReachableLowIdPeer()
 
     QCOMPARE(started.count(), 1);
     QCOMPARE(started.at(0).at(0).value<eMule::UpDownClient*>(), v6);
+}
+
+// ---------------------------------------------------------------------------
+// Block-request lifetime — MFC keeps the lists in UploadingToClient_Struct
+// ---------------------------------------------------------------------------
+
+namespace {
+
+Requested_Block_Struct* uploadBlock(const KnownFile* file, uint64 start, uint64 end)
+{
+    auto* block = new Requested_Block_Struct;
+    block->startOffset = start;
+    block->endOffset = end;
+    md4cpy(block->fileID.data(), file->fileHash());
+    return block;
+}
+
+} // namespace
+
+void tst_UploadQueue::removeFromUploadQueue_flushesBlocks()
+{
+    QueueRankEnv env;
+    UploadQueue queue;
+    env.wire(queue);
+    GlobalUploadQueue queueGuard(&queue);
+
+    KnownFile* file = env.addNamedFile(0xD1, QStringLiteral("movie.avi"), 10u * 1024 * 1024);
+    auto* client = env.makeClient(70, file);
+    QVERIFY(env.connectSocket(client));
+    QVERIFY(queue.addClientToQueue(client));
+    QCOMPARE(client->uploadState(), UploadState::Uploading);
+
+    client->addReqBlock(uploadBlock(file, 0, EMBLOCKSIZE));
+    QCOMPARE(client->blockRequests().size(), size_t{1});
+
+    // Left over, the old slot's lists would dedup the next slot's requests away.
+    QVERIFY(queue.removeFromUploadQueue(client));
+    QVERIFY(client->blockRequests().empty());
+    QVERIFY(client->doneBlocks().empty());
+}
+
+void tst_UploadQueue::process_switchesUploadFileToHeadBlock()
+{
+    QueueRankEnv env;
+    UploadQueue queue;
+    env.wire(queue);
+    GlobalUploadQueue queueGuard(&queue);
+
+    KnownFile* fileA = env.addNamedFile(0xD2, QStringLiteral("a.avi"), 10u * 1024 * 1024);
+    KnownFile* fileB = env.addNamedFile(0xD3, QStringLiteral("b.avi"), 10u * 1024 * 1024);
+    auto* client = env.makeClient(71, fileB);
+    QVERIFY(env.connectSocket(client));
+    QVERIFY(queue.addClientToQueue(client));
+    QCOMPARE(client->uploadState(), UploadState::Uploading);
+
+    // An A4AF peer named file B, then keeps pulling file A.
+    client->addReqBlock(uploadBlock(fileA, 0, EMBLOCKSIZE));
+    QCOMPARE(client->blockRequests().size(), size_t{1});
+    QCOMPARE(client->uploadFile(), fileB);
+
+    queue.process();
+
+    QCOMPARE(client->uploadFile(), fileA);
+    QVERIFY(md4equ(client->reqUpFileId(), fileA->fileHash()));
+    QCOMPARE(client->blockRequests().size(), size_t{1});
+    QVERIFY(queue.isDownloading(client));
+
+    queue.removeFromUploadQueue(client);
+}
+
+void tst_UploadQueue::onBlockPacketsReady_marksDoneAndDropsForEndedSlot()
+{
+    QueueRankEnv env;
+    UploadQueue queue;
+    env.wire(queue);
+    GlobalUploadQueue queueGuard(&queue);
+    UploadDiskIOThread diskIO;
+    queue.setDiskIOThread(&diskIO);
+    // The real thread would answer addReqBlock itself; the test emits on its behalf.
+    diskIO.endThread();
+
+    KnownFile* file = env.addNamedFile(0xD4, QStringLiteral("movie.avi"), 10u * 1024 * 1024);
+    const QByteArray fileId(reinterpret_cast<const char*>(file->fileHash()), 16);
+    auto* client = env.makeClient(72, file);
+    QVERIFY(env.connectSocket(client));
+    QVERIFY(queue.addClientToQueue(client));
+    client->addReqBlock(uploadBlock(file, 0, EMBLOCKSIZE));
+    client->addReqBlock(uploadBlock(file, EMBLOCKSIZE, 2 * EMBLOCKSIZE));
+
+    // A read for a pending block moves it queue -> done.
+    emit diskIO.blockPacketsReady(client, fileId, 0, EMBLOCKSIZE, {});
+    QTRY_COMPARE(client->doneBlocks().size(), size_t{1});
+    QCOMPARE(client->blockRequests().size(), size_t{1});
+
+    // A read nobody asked for is ignored.
+    emit diskIO.blockPacketsReady(client, fileId, 5 * EMBLOCKSIZE, 6 * EMBLOCKSIZE, {});
+    QTest::qWait(50);
+    QCOMPARE(client->doneBlocks().size(), size_t{1});
+
+    // A read landing after the slot ended must not be sent, nor touch the client's lists.
+    // A matching pending block is planted to prove the slot test, not the lookup, drops it.
+    QVERIFY(queue.removeFromUploadQueue(client));
+    client->setUploadState(UploadState::Uploading);
+    client->addReqBlock(uploadBlock(file, EMBLOCKSIZE, 2 * EMBLOCKSIZE));
+    QCOMPARE(client->blockRequests().size(), size_t{1});
+    emit diskIO.blockPacketsReady(client, fileId, EMBLOCKSIZE, 2 * EMBLOCKSIZE, {});
+    QTest::qWait(50);
+    QVERIFY(client->doneBlocks().empty());
+    client->setUploadState(UploadState::None);
+
+    queue.setDiskIOThread(nullptr);
+}
+
+void tst_UploadQueue::onBlockPacketsReady_followsTheBlocksFile()
+{
+    QueueRankEnv env;
+    UploadQueue queue;
+    env.wire(queue);
+    GlobalUploadQueue queueGuard(&queue);
+    UploadDiskIOThread diskIO;
+    queue.setDiskIOThread(&diskIO);
+    diskIO.endThread();
+
+    KnownFile* fileA = env.addNamedFile(0xD5, QStringLiteral("a.avi"), 10u * 1024 * 1024);
+    KnownFile* fileB = env.addNamedFile(0xD6, QStringLiteral("b.avi"), 10u * 1024 * 1024);
+    auto* client = env.makeClient(73, fileB);
+    QVERIFY(env.connectSocket(client));
+    QVERIFY(queue.addClientToQueue(client));
+    client->addReqBlock(uploadBlock(fileA, 0, EMBLOCKSIZE));
+
+    // Reads finish long before the next process() tick, so the switch has to happen as the
+    // block's data lands — otherwise the pending list is empty whenever process() looks.
+    emit diskIO.blockPacketsReady(client,
+                                  QByteArray(reinterpret_cast<const char*>(fileA->fileHash()), 16),
+                                  0, EMBLOCKSIZE, {});
+    QTRY_COMPARE(client->uploadFile(), fileA);
+    QCOMPARE(client->doneBlocks().size(), size_t{1});
+
+    queue.removeFromUploadQueue(client);
+    queue.setDiskIOThread(nullptr);
 }
 
 QTEST_GUILESS_MAIN(tst_UploadQueue)

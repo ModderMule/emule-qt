@@ -115,6 +115,14 @@ refill timer, backed by capped Qt and kernel (`SO_RCVBUF`) receive buffers so th
 limit is TCP backpressure, not RAM buffering. `0` means unlimited, as everywhere else in
 eMuleQt. It is driven by the budget split described below.
 
+`drain()` reads into one buffer (`m_in`) — everything available, or the remaining
+budget when limited, so a read still empties Qt's buffer and QSslSocket keeps
+decrypting — and parses lines as views into it. A re-entrant `drain()` (a handler
+re-applying the rate limit) returns at once; the outer loop is still reading. The
+response timer is re-armed once per `drain()`, not per body line.
+`selectedGroup()` remembers the GROUP in effect, so `ArticleFetcher` sends GROUP
+once per connection and group rather than once per article.
+
 ### Through the user's proxy
 
 The Proxy page's proxy carries news-server connections too, unless its
@@ -531,9 +539,22 @@ page's toggle all send one request (`SetUsenetPaused`). All three follow
 
 ## yEnc
 
-`YencDecoder` streams: it is fed one dot-unstuffed line at a time and writes
-decoded bytes through a sink. Nothing buffers a whole article — they run to
-roughly 750 KB encoded.
+`YencDecoder` streams and writes decoded bytes through a sink. Nothing buffers a
+whole article — they run to roughly 750 KB encoded.
+
+The download path is `feedRaw()`: `BodyCommand` asks `NntpSocket` for the raw
+body (`NntpCommand::wantsRawBody()`), still dot-stuffed with CRLFs, in whatever
+blocks the socket read. Header and trailer lines (`=ybegin`, `=ypart`, `=yend`,
+the final `.`) go line by line; the payload between them is one
+`rapidyenc_decode_incremental()` call per block, which unstuffs dots itself and
+stops at `\r\n=y` or `\r\n.\r\n` — nzbget's `Decoder::DecodeBuffer` model. One
+CRC update and one sink call per block, where the old per-line path made a heap
+copy, a `QTimer::start()`, a rapidyenc call and a CRC call per ~128-byte line.
+`feedRaw()` returns how many bytes it consumed, so a pipelined response that
+starts in the same read as the terminator is left for the socket.
+`feedLine()` (one dot-unstuffed line) remains for line-based callers;
+`setLineModeForTests()` forces `feedRaw()` through the line path so both are
+tested in one binary.
 
 Four things it handles that a naive decoder does not:
 
@@ -887,7 +908,7 @@ header.
 | `tst_UsenetStream` | phase 6a: part-number dispatch order over a shuffled NZB, a failed article retried *before* later ones, interval merge and the hole that stops it, `written` surviving a restart, the previewable predicate. Phase 6b: a stored RAR set resolving to the file inside it and reading back byte-identically across volume boundaries; **a seek to 80% that never issues a `BODY` for the volumes it skipped** — the exit criterion, asserted; a compressed set saying why; a `.001` split set. Multi-file sets: every inner file enumerated with its ordinal, each mapping to its own bytes across a volume boundary, **a set whose first file is an `.nfo` streaming the movie with no `entry=` named**, and a listing on a paused item that neither fetches nor guesses. Preview from the extraction: a **solid stored** set — refused by the map, extractable by libarchive, which is the only fixture that separates the two sources — streamed out of `_unpacked/` with the archive's own declared size as the total, listed and marked playable, and a control case proving the same set is refused when nothing is extracting it |
 | `tst_RarReader` | phase 6b: RAR4 and RAR5 stored volumes — name, method, packed/unpacked sizes, data offset, split flags, `LHD_LARGE` sizes past 4 GB, RAR5 multi-byte vints; compressed read but not stored; solid and encrypted refused with a reason; every truncated prefix asking for more bytes rather than reading past the buffer; a volume carrying two file headers listing both; resuming mid-volume at a computed offset, and a resumed block at a wrong address caught by its header CRC |
 | `tst_UsenetPassword` | password-protected releases: a header-encrypted RAR failing rather than completing empty with its volumes deleted; a data-encrypted one naming the password; ZIP decrypting through libarchive and refusing a wrong passphrase; an encrypted 7z going through `ExternalUnpacker` and coming back byte-identical; a configured unpacker that is not a binary refusing rather than substituting; stored paths harvested out of a staging directory; an incomplete 7z set listing nothing; the biggest playable member chosen over the sample; the `{{password}}` name convention reaching the queue; manual beating the NZB where automatic does not; a failed release retrying — without re-downloading — the moment a password is set; and, end to end, a genuinely encrypted release posted as articles, downloaded, unpacked with its password and published byte-identically |
-| `tst_UsenetDirectUnpack` | extraction that keeps pace with the download: volumes offered one at a time, a run blocking on one that has not landed and resuming when it does, cancel unwinding without leaving half a file, a set that ends short failing rather than hanging, and end to end — the payload complete before post-processing starts, and the same release unchanged with the option off. A blocked run reporting bytes that read back as the payload's prefix and naming the volume it needs; **a set whose NZB scrambles its volume order still unpacked while downloading**, which is what the sealed-volume replay exists for |
+| `tst_UsenetDirectUnpack` | extraction that keeps pace with the download: volumes offered one at a time, a run blocking on one that has not landed and resuming when it does, cancel unwinding without leaving half a file, a set that ends short failing rather than hanging, and end to end — the payload complete before post-processing starts, and the same release unchanged with the option off. A blocked run reporting bytes that read back as the payload's prefix and naming the volume it needs; **a set whose NZB scrambles its volume order still unpacked while downloading**, which is what the sealed-volume replay exists for. A set whose NZB leaves out an article never starts a run and fails without PAR2 instead of publishing zeros; a cancelled run is not restarted by later volumes; an extraction of nothing is a failure |
 | `tst_UsenetDetailsDialog` | the release details view, driven through `applyDetails()`: every NZB file becoming a row with its article tally, an **unassessed health rendering as `—` and never as 100%**, a per-release fact that says so when the files disagree rather than quietly naming the first one, numeric columns sorting by magnitude rather than by text, and PAR2 rows greyed with the theme-following brush while a payload row carries no explicit brush at all |
 | `tst_UsenetArchiveEntryDialog` | the chooser: unplayable rows listed but neither selectable nor enabled and carrying the disabled palette brush, a playable row with no explicit brush at all, the chosen ordinal surviving a re-sort, and a single playable file answered without ever showing a window |
 | `tst_UsenetLiveConnect` | real TLS + auth (`live`) |
@@ -951,8 +972,22 @@ rebuilding fixes it. Check
 One `QThread` per worker, each owning its **own** `NntpServerPool` and its own
 sockets. The pool has no locking and its sockets have thread affinity, so sharing
 one is not an option — a pool per worker is what makes the design lock-free.
-Nothing but queued signals crosses a thread boundary, and there is not a mutex in
-the module.
+Nothing but queued signals crosses a thread boundary. The one mutex is
+`UsenetStateWriter`'s (below).
+
+**Sidecar writes have their own thread.** `UsenetQueue::persist()` posts a
+snapshot of the item (O(1): implicitly shared Qt members) to `UsenetStateWriter`,
+which keeps only the newest per item and writes at most once a second per item.
+Before, every dirty tick (4/s while downloading) re-serialised the whole
+`.nzbstate` — every segment's message-id — on the dispatch thread. A remove is
+never delayed and runs in posting order; `stop()` and `start()` flush.
+
+**Output files are opened once per worker, not per article.** `ArticleFileCache`
+hands every job on the same file one unbuffered handle; each `ArticleWriter`
+keeps its own position and seeks before writing. The handle closes when the
+worker's last job on that file ends, as before, so `sealFile()`'s rename never
+meets an open handle. The directory is only created when an open fails for want
+of it.
 
 **The connection budget is divided, not replicated.** N workers each honouring
 `NewsServer::maxConnections` would open N times what the user configured, and
@@ -1060,10 +1095,10 @@ attempt, there is no stale `tried` list to get in the way.
 
 Three things make that safe, and each of them was a way to be quietly wrong:
 
-- ⚠️ **`missingSegments` is not a damage estimate.** Direct unpack (`:2038`), the
-  sealed-volume replay (`:2114`), `sealedVolumesOf()` for the encrypted preview
-  (`:2601`) and `job.hasMissingSegments` (`:2783`) all read it as *this file has
-  zeros in it right now*. So a retry does **not** decrement it when it arms a
+- ⚠️ **`missingSegments` is not a damage estimate.** Direct unpack, the
+  sealed-volume replay, `sealedVolumesOf()` for the encrypted preview and
+  `job.hasMissingSegments` all read it — through `fileHasHoles()`, which adds
+  unlisted articles — as *this file has zeros in it right now*. So a retry does **not** decrement it when it arms a
   segment; `markSegmentDone()` does, when the bytes are actually on disk.
 - ⚠️ **Nothing is un-sealed.** The file keeps `finalized`, its sealed name and its
   padded length, and the re-fetched article overwrites its own zeros at the
@@ -1270,7 +1305,7 @@ out of the dispatch order until a rollover, a usage correction or a settings sav
 can change the answer; without that the plan cursor reaches the end with work
 still pending and `onTick()` rebuilds a 10 000-entry plan four times a second
 until the billing day. It also stops counting as an active download, or
-`updateBandwidthSplit()` would reserve a quarter of Usenet's share for an engine
+`updateBandwidthSplit()` would hold a reserve of Usenet's share for an engine
 fetching nothing, indefinitely.
 
 The ceiling is **soft**: articles already in flight are not aborted, because the
@@ -2016,6 +2051,21 @@ simply unpacks at the end, which is the fallback every refusal here lands on —
 a missing article in a volume, an encrypted RAR, a set whose first volume never
 arrives, the preference switched off.
 
+**A damaged set is never followed.** `UsenetQueueItem::fileHasHoles()` is the one
+test: an article missing everywhere, one the NZB never listed (the subject says
+1/106, the NZB lists 47 — known before anything downloads), or a sealed file
+shorter than yEnc declared. Unlisted articles never count as `missingSegments`,
+yet `sealFile()` zero-pads them just the same, and libarchive reads a zero block
+as an empty tar: the run "succeeded" with 0 files. `startDirectUnpack()` refuses a
+set with any holed member, the replay skips them, a sealing holed volume cancels
+the run, and an extraction that produced nothing reports failure.
+
+**One run per set per download.** A `DirectUnpackRun` entry outlives its worker,
+and `pumpDirectUnpack()` starts a run only when the set has no entry at all. Keyed
+on the worker instead, every later volume restarted a finished or cancelled run
+from volume one. Resume and skip changes call `cancelDirectUnpack()` first, which
+clears the map, so a deliberate restart still works.
+
 `checkItemCompletion()` holds the item open until every run has answered, so by
 the time post-processing starts the payload is either there or it never was.
 `UsenetUnpacker::unpack()` then takes a list of first volumes to skip, and
@@ -2142,15 +2192,18 @@ uses:
 
 | | active | rate |
 |---|---|---|
-| Usenet | `UsenetQueue::hasActiveDownloads()` | `UsenetQueue::currentRate()` — wire bytes, 2 s window |
-| ED2K | `DownloadQueue::hasActiveTransfers()` | `DownloadQueue::datarate()`, 10 s window |
+| Usenet | `UsenetQueue::hasActiveDownloads()` | `currentRate()` (2 s) and `recentRate()` (last 0.5 s) — wire bytes |
+| ED2K | `DownloadQueue::hasActiveTransfers()` | `datarateOver(2000)` and `datarateOver(500)` — not `datarate()`'s 10 s MFC window |
 
-An active engine *reserves* what it uses plus a quarter, clamped between a
-quarter of its floor and its whole floor. Each engine may then take the ceiling
-minus what the **other** reserves:
+An active engine *reserves* what it uses plus a quarter, between a small minimum
+and its whole floor. Each engine may then take the ceiling minus what the
+**other** reserves. The split keeps a `SplitState` between ticks (each engine's
+last reserve and cap):
 
 ```
-reserve     = active ? clamp(rate * 5/4, floor / 4, floor) : 0
+min         = max(32 KB/s, floor / 16)          (never above floor)
+pressing    = max(rate2s, rate0.5s) >= 90 % of its last cap
+reserve     = active ? min(floor, max(rate2s * 5/4, min, pressing ? 2 * lastReserve : 0)) : 0
 ED2K cap    = Usenet active ? ceiling - reserve(Usenet) : whole ceiling
 Usenet cap  = ceiling - reserve(ED2K)
 ```
@@ -2158,8 +2211,14 @@ Usenet cap  = ceiling - reserve(ED2K)
 - Both saturated → each reserves its whole floor, and the configured split holds.
 - One idle → the other gets the whole line.
 - One busy but slow (a few ED2K sources, every news server backed off) → the other
-  gets everything it leaves, less a quarter of its floor kept so it can restart
-  without waiting a tick.
+  gets everything it leaves bar a quarter of its rate (or the small minimum).
+  Until 2026-10-01 the minimum was a quarter of the floor: at an 80/20 split of
+  6500 KB/s, a trickling ED2K held 325 KB/s idle (812 at 50/50).
+- One waking or growing → as long as it presses its cap its reserve at least
+  doubles per tick, so it is back at its share within ~2 s, never past it. This
+  is what lets the minimum be small. A Python model of a fluctuating ED2K
+  halved the idle bandwidth (80 %: 179 → 75 KB/s, 50 %: 564 → 241 KB/s) and
+  raised ED2K's share attainment on wake from 0.91–0.96 to 0.98–0.99.
 
 Usenet's rate is NNTP **wire** bytes, counted as lines are read
 (`NntpSocket::totalWireBytesRead()`), never decoded bytes at article completion.

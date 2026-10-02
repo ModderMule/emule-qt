@@ -65,10 +65,12 @@ ServerSocket::~ServerSocket()
 // Connection
 // ---------------------------------------------------------------------------
 
-void ServerSocket::connectTo(const Server& server, bool noCrypt)
+void ServerSocket::connectTo(const Server& server, bool noCrypt, const Address& dialAddress)
 {
     m_curServer = std::make_unique<Server>(server);
     m_noCrypt = noCrypt;
+    m_familyFallback = !dialAddress.isNull();
+    m_tcpConnected = false;
     m_startNewMessageLog = true;
 
     setConnectionState(ServerConnState::Connecting);
@@ -82,6 +84,7 @@ void ServerSocket::connectTo(const Server& server, bool noCrypt)
             logServerVerbose(QStringLiteral("connectTo: dynIP '%1' is a literal — no DNS needed")
                                  .arg(m_curServer->dynIP()));
             m_curServer->setIpAddress(literal);
+            m_sessionAddress = literal;
         } else {
             logServerVerbose(QStringLiteral("connectTo: resolving dynIP hostname '%1' for server %2")
                                  .arg(m_curServer->dynIP()).arg(m_curServer->name()));
@@ -91,9 +94,14 @@ void ServerSocket::connectTo(const Server& server, bool noCrypt)
         }
     }
 
-    // Direct connection via IP. toQHostAddress() dials both families — an IPv6 server
-    // (from an OP_SERVERLIST v6 block) connects over IPv6, an IPv4 one exactly as before.
-    QHostAddress addr = m_curServer->ipAddress().toQHostAddress();
+    // Direct connection via IP. A dual-stack server dials the preferred family (IPv4
+    // unless serverPreferIPv6: only an IPv4 session can hand out a HighID); ServerConnect
+    // passes the other family explicitly when that one failed.
+    if (!m_curServer->hasDynIP()) {
+        m_sessionAddress = (!dialAddress.isNull() && m_curServer->hasAddress(dialAddress))
+            ? dialAddress
+            : m_curServer->dialAddress(thePrefs.serverPreferIPv6());
+    }
     uint16 port = m_curServer->port();
 
     // Configure encryption
@@ -102,14 +110,14 @@ void ServerSocket::connectTo(const Server& server, bool noCrypt)
         port = m_curServer->obfuscationPortTCP();
     }
 
-    logInfo(QStringLiteral("Connecting to server %1 (%2:%3) noCrypt=%4 supportsObfuTCP=%5 obfuPort=%6")
+    logInfo(QStringLiteral("Connecting to server %1 (%2) noCrypt=%3 supportsObfuTCP=%4 obfuPort=%5")
                 .arg(m_curServer->name())
-                .arg(addr.toString()).arg(port)
+                .arg(Endpoint(m_sessionAddress, port).toString())
                 .arg(noCrypt)
                 .arg(m_curServer->supportsObfuscationTCP())
                 .arg(m_curServer->obfuscationPortTCP()));
 
-    connectToHost(addr, port);
+    connectToPeer(m_sessionAddress, port);
 }
 
 // ---------------------------------------------------------------------------
@@ -320,6 +328,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         QString metaApiUrl;
         QString metaApiPin;
         uint32 metaApiVersion = 0;
+        Address serverIPv6;
 
         // Parse tags
         try {
@@ -337,11 +346,12 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
                 else if (tag.nameId() == ST_META_API_VER && tag.isInt())
                     metaApiVersion = tag.intValue();
                 else if (tag.nameId() == CT_MOD_SVR_IP_V6 && tag.isHash()) {
-                    // The server's own public IPv6 (informational — we still reach it on
-                    // the address we dialed). Self-describing tags skip cleanly; unknown
-                    // tags such as ST_NAT_PORT are consumed and ignored (S6 out of scope).
+                    // The server's own public IPv6: over an IPv4 session it joins the
+                    // list entry (one row per dual-stack server). Unknown tags such as
+                    // ST_NAT_PORT are consumed and ignored (S6 out of scope).
+                    serverIPv6 = Address::fromIPv6Bytes(tag.hashValue());
                     logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: server IPv6 %1")
-                                         .arg(Address::fromIPv6Bytes(tag.hashValue()).toString()));
+                                         .arg(serverIPv6.toString()));
                 }
                 else if (tag.nameId() == CT_MOD_YOUR_IP && tag.isHash()) {
                     // The server tells us the IPv6 it observed our session arriving on — the
@@ -352,12 +362,12 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
                     // connectTo() dials it, and the dynIP path writes the resolved address
                     // back before connecting.
                     const Address observed = Address::fromIPv6Bytes(tag.hashValue());
-                    if (!m_curServer || !m_curServer->ipAddress().isIPv6()) {
+                    if (!m_curServer || !m_sessionAddress.isIPv6()) {
                         logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: ignoring CT_MOD_YOUR_IP "
                                                         "(%1): this session is IPv4")
                                              .arg(observed.toString()));
                     } else {
-                        theApp.setPublicIPv6Observed(observed, m_curServer->address());
+                        theApp.setPublicIPv6Observed(observed, m_sessionAddress.toString());
                     }
                 }
                 else if (tag.nameId() == ST_IPV6_STATUS && tag.isInt()) {
@@ -374,16 +384,26 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
             // Tag parsing failed — acceptable, name/desc may be partial
         }
 
+        // The address of the other family, for the dual-stack merge (emitted below,
+        // after serverIdentReceived has stored the ident hash on the list entry).
+        Address learned;
         if (m_curServer) {
-            // Update server's reported IP if different — but never over an IPv6 session.
+            m_curServer->setServerHash(serverHash);
             // The ident body has a 4-byte IP field, so a dual-stack server always reports
-            // its IPv4 there. Applying it to a server we reached over IPv6 replaced the
-            // address we are connected to, which then (a) made the CT_MOD_YOUR_IP family
-            // guard above fail on every later ident — and a server sends a second one in
-            // reply to OP_GETSERVERLIST, which we request right after connecting — and
-            // (b) pointed reconnects at the IPv4.
-            if (serverIP != 0 && !m_curServer->ipAddress().isIPv6())
-                m_curServer->setIpAddress(Address::fromNetworkOrder(serverIP));
+            // its IPv4 there. Over an IPv4 session it updates the reported IP, as MFC
+            // does. Over an IPv6 session it must not replace the address we are
+            // connected to — that broke the CT_MOD_YOUR_IP family guard on the second
+            // ident (sent after OP_GETSERVERLIST) — it is the server's other address.
+            const Address identIP = Address::fromNetworkOrder(serverIP);
+            if (m_sessionAddress.isIPv6()) {
+                if (identIP.isIPv4() && !m_curServer->hasAddress(identIP))
+                    learned = identIP;
+            } else {
+                if (identIP.isIPv4())
+                    m_curServer->setIpAddress(identIP);
+                if (serverIPv6.isIPv6() && !m_curServer->hasAddress(serverIPv6))
+                    learned = serverIPv6;
+            }
 
             // eNode Meta API: contract v1 over http(s) only
             const QUrl apiUrl(metaApiUrl);
@@ -400,11 +420,14 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
             }
         }
 
-        logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: name='%1' (%2:%3) tags=%4")
+        logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: name='%1' (%2) ident=%3 tags=%4")
                              .arg(name)
-                             .arg(Address::fromNetworkOrder(serverIP).toString()).arg(serverPort)
+                             .arg(Endpoint(m_sessionAddress, peerPort()).toString())
+                             .arg(Endpoint::fromNetworkOrder(serverIP, serverPort).toString())
                              .arg(tagCount));
         emit serverIdentReceived(serverHash, serverIP, serverPort, name, description);
+        if (!learned.isNull())
+            emit serverAddressLearned(learned);
         break;
     }
 
@@ -523,10 +546,10 @@ void ServerSocket::setConnectionState(ServerConnState newState)
 
 void ServerSocket::onError(int errorCode)
 {
-    logWarning(QStringLiteral("ServerSocket error: %1 server=%2 peer=%3:%4 connState=%5 cryptState=%6")
+    logWarning(QStringLiteral("ServerSocket error: %1 server=%2 peer=%3 connState=%4 cryptState=%5")
                    .arg(errorCode)
                    .arg(m_curServer ? m_curServer->name() : QStringLiteral("?"))
-                   .arg(peerAddress().toString()).arg(peerPort())
+                   .arg(Endpoint(m_sessionAddress, peerPort()).toString())
                    .arg(static_cast<int>(m_connectionState))
                    .arg(static_cast<int>(m_streamCryptState)));
 
@@ -557,9 +580,12 @@ void ServerSocket::onError(int errorCode)
 
 void ServerSocket::onSocketConnected()
 {
-    logInfo(QStringLiteral("ServerSocket connected to %1 (%2:%3) serverCrypt=%4")
+    // Darwin 27 answers a refused connect with EISCONN and Qt emits connected() with
+    // no peer (port 0) before the refusal — that is not a TCP connect.
+    m_tcpConnected = peerPort() != 0;
+    logInfo(QStringLiteral("ServerSocket connected to %1 (%2) serverCrypt=%3")
                 .arg(m_curServer ? m_curServer->name() : QStringLiteral("?"))
-                .arg(peerAddress().toString()).arg(peerPort())
+                .arg(Endpoint(Address::fromQHostAddress(peerAddress()), peerPort()).toString())
                 .arg(isServerCryptEnabledConnection()));
     m_lastTransmission = static_cast<uint32>(m_elapsedTimer.elapsed());
 
@@ -603,10 +629,10 @@ void ServerSocket::onSocketError(QAbstractSocket::SocketError error)
     if (m_isDeleting)
         return;
 
-    logWarning(QStringLiteral("ServerSocket::onSocketError: %1 (%2) server=%3 peer=%4:%5 connState=%6 cryptState=%7")
+    logWarning(QStringLiteral("ServerSocket::onSocketError: %1 (%2) server=%3 peer=%4 connState=%5 cryptState=%6")
                    .arg(static_cast<int>(error)).arg(errorString())
                    .arg(m_curServer ? m_curServer->name() : QStringLiteral("?"))
-                   .arg(peerAddress().toString()).arg(peerPort())
+                   .arg(Endpoint(m_sessionAddress, peerPort()).toString())
                    .arg(static_cast<int>(m_connectionState))
                    .arg(static_cast<int>(m_streamCryptState)));
 
@@ -697,6 +723,7 @@ void ServerSocket::onDnsLookupFinished()
     }
 
     m_curServer->setIpAddress(resolved);
+    m_sessionAddress = resolved;
     emit dynIPResolved(resolved, m_curServer->dynIP());
 
     // Now connect
@@ -706,7 +733,7 @@ void ServerSocket::onDnsLookupFinished()
         port = m_curServer->obfuscationPortTCP();
     }
 
-    connectToHost(addr, port);
+    connectToPeer(resolved, port);
 }
 
 } // namespace eMule

@@ -45,6 +45,7 @@ struct ServerRow {
     // numericIp is still sent so an older daemon keeps working.
     uint32_t numericIp = 0;
     QString  addr;
+    QString  addr6;            ///< dual-stack server's IPv6 next to its IPv4 addr, else empty
     QString  cc;               ///< ISO country code (GeoLite2), empty when unknown
 
     // Unique server identity for connected-server highlighting
@@ -71,8 +72,13 @@ public:
         ColLowID,
         ColObfuscation,
         ColCountry,          ///< MorphXT IP2Country
+        ColIPv6,             ///< dual-stack server's IPv6 (hidden by default)
         ColCount
     };
+
+    /// Row identity for selection save/restore: the daemon's serverId, which a
+    /// dual-stack merge does not change (the IP column text can).
+    static constexpr int ServerIdRole = Qt::UserRole + 1;
 
     explicit ServerListModel(QObject* parent = nullptr);
 

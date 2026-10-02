@@ -61,9 +61,6 @@ target_link_libraries(emuleqt
 
 if(APPLE)
     target_link_libraries(emuleqt PRIVATE "-framework IOKit" "-framework CoreFoundation" "-framework CoreServices")
-elseif(LINUX)
-    find_package(Qt6 REQUIRED COMPONENTS DBus)
-    target_link_libraries(emuleqt PRIVATE Qt6::DBus)
 elseif(WIN32)
     # SHChangeNotify in FileAssociation.cpp -- Qt happens to drag shell32 in, but
     # not by contract.

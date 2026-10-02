@@ -317,7 +317,6 @@ int UploadQueueStore::loadAndInject(UploadQueue* queue, const QString& path)
 
         // Dedup before constructing: ClientList::addClient() only checks pointer identity,
         // so a second object for a peer we already know would sit there undetected.
-        // Same recipe DownloadQueue::checkAndAddSource() uses.
         const Address dedupAddr = v4.isNull() ? v6 : v4;
         if (clients->findByUserHash(rec.userHash.data(),
                                     dedupAddr.toNetworkUint32(), rec.userPort))

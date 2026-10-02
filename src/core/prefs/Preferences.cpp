@@ -153,6 +153,8 @@ struct Preferences::Data {
     // Alternate freed upload slots between IPv4 and IPv6 peers when both are waiting,
     // so a small IPv6 population isn't permanently outbid on score alone.
     bool separateIPv6Queue = true;
+    // Use the OS-preferred temporary IPv6 source instead of pinning the stable address.
+    bool ipv6UsePrivacyAddress = false;
     // Resolve a server hostname AAAA-first instead of A-first. Off by default: a client
     // that reaches a server over IPv6 with no routable IPv4 is assigned a LowID
     // unconditionally, so preferring AAAA on a dual-stack server costs a HighID for
@@ -778,6 +780,10 @@ void Preferences::setIpv4PublicServerConfirmWindowSecs(uint32 val) { set(&Data::
 bool Preferences::separateIPv6Queue() const { return get(&Data::separateIPv6Queue); }
 
 void Preferences::setSeparateIPv6Queue(bool val) { set(&Data::separateIPv6Queue, val); }
+
+bool Preferences::ipv6UsePrivacyAddress() const { return get(&Data::ipv6UsePrivacyAddress); }
+
+void Preferences::setIpv6UsePrivacyAddress(bool val) { set(&Data::ipv6UsePrivacyAddress, val); }
 
 bool Preferences::serverPreferIPv6() const { return get(&Data::serverPreferIPv6); }
 
@@ -2869,6 +2875,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("schedulerEnabled"), schedulerEnabled());
     prefs.insert(QStringLiteral("enableUPnP"), enableUPnP());
     prefs.insert(QStringLiteral("separateIPv6Queue"), separateIPv6Queue());
+    prefs.insert(QStringLiteral("ipv6UsePrivacyAddress"), ipv6UsePrivacyAddress());
 
     // Server
     prefs.insert(QStringLiteral("safeServerConnect"), safeServerConnect());
@@ -3102,6 +3109,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->enableUPnP       = p.value(QStringLiteral("enableUPnP")).toBool();
     // Defaults to true, so a missing key (older daemon) must NOT read back as false.
     m_data->separateIPv6Queue = p.value(QStringLiteral("separateIPv6Queue")).toBool(true);
+    m_data->ipv6UsePrivacyAddress = p.value(QStringLiteral("ipv6UsePrivacyAddress")).toBool(false);
 
     // Server
     m_data->safeServerConnect       = p.value(QStringLiteral("safeServerConnect")).toBool();
@@ -3524,6 +3532,7 @@ bool Preferences::load(const QString& filePath)
             m_data->ipv4PublicServerConfirmThreshold = static_cast<uint32>(n["ipv4PublicServerConfirmThreshold"].as<int>(static_cast<int>(m_data->ipv4PublicServerConfirmThreshold)));
             m_data->ipv4PublicServerConfirmWindowSecs = static_cast<uint32>(n["ipv4PublicServerConfirmWindowSecs"].as<int>(static_cast<int>(m_data->ipv4PublicServerConfirmWindowSecs)));
             m_data->separateIPv6Queue = n["separateIPv6Queue"].as<bool>(m_data->separateIPv6Queue);
+            m_data->ipv6UsePrivacyAddress = n["ipv6UsePrivacyAddress"].as<bool>(m_data->ipv6UsePrivacyAddress);
             m_data->serverPreferIPv6 = n["serverPreferIPv6"].as<bool>(m_data->serverPreferIPv6);
             m_data->maxConsPerFive = static_cast<uint16>(n["maxConsPerFive"].as<int>(m_data->maxConsPerFive));
             m_data->showOverhead = n["showOverhead"].as<bool>(m_data->showOverhead);
@@ -4583,6 +4592,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "ipv4PublicServerConfirmThreshold" << YAML::Value << static_cast<int>(m_data->ipv4PublicServerConfirmThreshold);
     out << YAML::Key << "ipv4PublicServerConfirmWindowSecs" << YAML::Value << static_cast<int>(m_data->ipv4PublicServerConfirmWindowSecs);
     out << YAML::Key << "separateIPv6Queue" << YAML::Value << m_data->separateIPv6Queue;
+    out << YAML::Key << "ipv6UsePrivacyAddress" << YAML::Value << m_data->ipv6UsePrivacyAddress;
     out << YAML::Key << "serverPreferIPv6" << YAML::Value << m_data->serverPreferIPv6;
     out << YAML::Key << "maxConsPerFive" << YAML::Value << static_cast<int>(m_data->maxConsPerFive);
     out << YAML::Key << "showOverhead" << YAML::Value << m_data->showOverhead;

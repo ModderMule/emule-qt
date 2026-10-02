@@ -11,7 +11,11 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include <algorithm>
+#include <charconv>
+#include <concepts>
 #include <fstream>
+#include <string_view>
 
 namespace eMule::usenet {
 
@@ -60,6 +64,120 @@ constexpr int kStateVersion = 2;
 
 [[nodiscard]] std::string toStd(const QString& s) { return s.toStdString(); }
 
+/// Hand-rolled YAML out, read back by yaml-cpp. YAML::Emitter runs a regex per
+/// scalar to choose its quoting, and a sidecar has three scalars per segment:
+/// a 10 000-segment release cost a busy thread every second it downloaded.
+class SidecarWriter {
+public:
+    explicit SidecarWriter(std::size_t reserve) { m_text.reserve(reserve); }
+
+    /// `indent` + `name: `; the value follows.
+    void key(std::string_view indent, std::string_view name)
+    {
+        m_text += indent;
+        m_text += name;
+        m_text += ": ";
+    }
+
+    void str(const QString& s)
+    {
+        const QByteArray utf8 = s.toUtf8();
+        if (isPlainSafe(utf8))
+            m_text.append(utf8.constData(), std::size_t(utf8.size()));
+        else
+            quoted(utf8);
+    }
+
+    template <typename T>
+        requires std::integral<T>
+    void num(T v)
+    {
+        if constexpr (std::same_as<T, bool>) {
+            m_text += v ? "true" : "false";
+        } else {
+            char buf[24];
+            const auto end = std::to_chars(buf, buf + sizeof buf, v).ptr;
+            m_text.append(buf, end);
+        }
+    }
+
+    void raw(std::string_view text) { m_text += text; }
+    void endLine() { m_text += '\n'; }
+
+    template <typename T>
+    void field(std::string_view indent, std::string_view name, const T& v)
+    {
+        key(indent, name);
+        if constexpr (std::same_as<T, QString>)
+            str(v);
+        else
+            num(v);
+        endLine();
+    }
+
+    [[nodiscard]] const std::string& text() const { return m_text; }
+
+private:
+    /// Plain only when no YAML reading of it can differ: a conservative charset
+    /// that is safe in flow context too, a safe first char, and no null/bool word.
+    static bool isPlainSafe(const QByteArray& s)
+    {
+        if (s.isEmpty())
+            return false;
+        const auto ok = [](char c) {
+            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+                || c == '.' || c == '_' || c == '-' || c == '/' || c == '@' || c == '+'
+                || c == '=' || c == '<' || c == '>' || c == '$';
+        };
+        if (!std::ranges::all_of(s, ok))
+            return false;
+        const char first = s.front();
+        if (first == '-' || first == '<' || first == '>' || first == '@' || first == '=')
+            return false;
+        // Words a resolver turns into null/bool; as<std::string>() then falls back.
+        static constexpr std::string_view kWords[] = {
+            "null", "Null", "NULL", "true", "True", "TRUE", "false", "False", "FALSE",
+            "yes", "Yes", "YES", "no", "No", "NO", "on", "On", "ON", "off", "Off", "OFF",
+            "y", "Y", "n", "N"};
+        const std::string_view view(s.constData(), std::size_t(s.size()));
+        return std::ranges::find(kWords, view) == std::end(kWords);
+    }
+
+    void quoted(const QByteArray& s)
+    {
+        static constexpr char kHex[] = "0123456789ABCDEF";
+        m_text += '"';
+        for (qsizetype i = 0; i < s.size(); ++i) {
+            const auto c = static_cast<unsigned char>(s.at(i));
+            if (c == '"' || c == '\\') {
+                m_text += '\\';
+                m_text += char(c);
+            } else if (c < 0x20 || c == 0x7F) {
+                m_text += "\\x";
+                m_text += kHex[c >> 4];
+                m_text += kHex[c & 0xF];
+            } else if (c == 0xC2 && i + 1 < s.size()
+                       && static_cast<unsigned char>(s.at(i + 1)) < 0xA0) {
+                // C1 controls (U+0080..U+009F) are not printable YAML.
+                const auto low = static_cast<unsigned char>(s.at(++i));
+                m_text += "\\u00";
+                m_text += kHex[low >> 4];
+                m_text += kHex[low & 0xF];
+            } else if (c == 0xEF && i + 2 < s.size()
+                       && static_cast<unsigned char>(s.at(i + 1)) == 0xBB
+                       && static_cast<unsigned char>(s.at(i + 2)) == 0xBF) {
+                m_text += "\\uFEFF";
+                i += 2;
+            } else {
+                m_text += char(c);
+            }
+        }
+        m_text += '"';
+    }
+
+    std::string m_text;
+};
+
 [[nodiscard]] QString fromStd(const YAML::Node& node, const char* key)
 {
     if (!node[key])
@@ -86,108 +204,126 @@ bool UsenetQueueStore::save(const UsenetQueueItem& item)
     if (item.id.isEmpty())
         return false;
 
-    YAML::Emitter out;
-    out << YAML::BeginMap;
-    out << YAML::Key << "version" << YAML::Value << kStateVersion;
-    out << YAML::Key << "id" << YAML::Value << toStd(item.id);
-    out << YAML::Key << "name" << YAML::Value << toStd(item.name);
-    out << YAML::Key << "status" << YAML::Value << int(item.status);
-    out << YAML::Key << "priority" << YAML::Value << item.priority;
+    qsizetype segmentCount = 0;
+    for (const NzbFileInfo& info : item.nzb.files)
+        segmentCount += info.segments.size();
+    SidecarWriter out(4096 + std::size_t(segmentCount) * 96);
+
+    out.field("", "version", kStateVersion);
+    out.field("", "id", item.id);
+    out.field("", "name", item.name);
+    out.field("", "status", int(item.status));
+    out.field("", "priority", item.priority);
     // Written unconditionally: an absent key reads as 0, which is the implicit
     // "All" category, which is what every sidecar written before categories
     // existed already means. That is why kStateVersion does not move for it.
-    out << YAML::Key << "category" << YAML::Value << item.category;
+    out.field("", "category", item.category);
     // Optional keys, and kStateVersion deliberately does not move for them:
     // load() *refuses* a sidecar newer than it knows, so a bump would make an
     // older daemon drop the whole queue rather than lose one advisory figure.
     // Same call already made for requestedPar2 and partLength.
     if (item.healthPercent >= 0) {
-        out << YAML::Key << "healthPercent" << YAML::Value << item.healthPercent;
-        out << YAML::Key << "healthMissingBytes" << YAML::Value
-            << static_cast<long long>(item.healthMissingBytes);
-        out << YAML::Key << "healthRecoveryBytes" << YAML::Value
-            << static_cast<long long>(item.healthRecoveryBytes);
-        out << YAML::Key << "healthProbed" << YAML::Value << item.healthProbed;
+        out.field("", "healthPercent", item.healthPercent);
+        out.field("", "healthMissingBytes", static_cast<long long>(item.healthMissingBytes));
+        out.field("", "healthRecoveryBytes", static_cast<long long>(item.healthRecoveryBytes));
+        out.field("", "healthProbed", item.healthProbed);
     }
     if (!item.publishedPaths.isEmpty()) {
-        out << YAML::Key << "publishedPaths" << YAML::Value << YAML::BeginSeq;
-        for (const QString& path : item.publishedPaths)
-            out << toStd(path);
-        out << YAML::EndSeq;
+        out.key("", "publishedPaths");
+        out.endLine();
+        for (const QString& path : item.publishedPaths) {
+            out.raw("  - ");
+            out.str(path);
+            out.endLine();
+        }
     }
     if (!item.requestedPar2.isEmpty()) {
         QList<int> requested(item.requestedPar2.cbegin(), item.requestedPar2.cend());
         std::sort(requested.begin(), requested.end());   // stable file, readable diffs
-        out << YAML::Key << "requestedPar2" << YAML::Value << YAML::Flow << YAML::BeginSeq;
-        for (int index : requested)
-            out << index;
-        out << YAML::EndSeq;
+        out.key("", "requestedPar2");
+        out.raw("[");
+        for (qsizetype i = 0; i < requested.size(); ++i) {
+            if (i > 0)
+                out.raw(", ");
+            out.num(requested.at(i));
+        }
+        out.raw("]");
+        out.endLine();
     }
     if (!item.error.isEmpty())
-        out << YAML::Key << "error" << YAML::Value << toStd(item.error);
+        out.field("", "error", item.error);
     if (!item.nzb.password.isEmpty())
-        out << YAML::Key << "password" << YAML::Value << toStd(item.nzb.password);
+        out.field("", "password", item.nzb.password);
     // Written only when true, like every other optional key here, so an existing
     // sidecar gains nothing and kStateVersion stays where it is.
     if (item.passwordRequired)
-        out << YAML::Key << "passwordRequired" << YAML::Value << true;
+        out.field("", "passwordRequired", true);
     // The accounts that could not supply it, as they were when it failed. Absent
     // means "never failed under this version", and Resume then re-asks nothing —
     // which is what keeps the first run after an upgrade quiet.
     if (!item.failedLadder.isEmpty())
-        out << YAML::Key << "failedLadder" << YAML::Value << toStd(item.failedLadder);
+        out.field("", "failedLadder", item.failedLadder);
     // Which check stopped it and what it found: a paused item has to be able to
     // say why after a restart, and an overruled check must stay overruled.
     if (item.stopReason != UsenetStopReason::None) {
-        out << YAML::Key << "stopReason" << YAML::Value << int(item.stopReason);
-        out << YAML::Key << "stopDetail" << YAML::Value << toStd(item.stopDetail);
+        out.field("", "stopReason", int(item.stopReason));
+        out.field("", "stopDetail", item.stopDetail);
     }
     if (item.checksOverridden != 0)
-        out << YAML::Key << "checksOverridden" << YAML::Value << item.checksOverridden;
+        out.field("", "checksOverridden", item.checksOverridden);
 
-    out << YAML::Key << "files" << YAML::Value << YAML::BeginSeq;
+    out.raw(item.nzb.files.isEmpty() ? "files: []\n" : "files:\n");
+    constexpr std::string_view kIn = "    ";
     for (int i = 0; i < item.nzb.files.size(); ++i) {
         const NzbFileInfo& info = item.nzb.files.at(i);
         const UsenetFileState& st = i < item.files.size() ? item.files.at(i)
                                                          : UsenetFileState{};
 
-        out << YAML::BeginMap;
-        out << YAML::Key << "subject" << YAML::Value << toStd(info.subject);
-        out << YAML::Key << "poster" << YAML::Value << toStd(info.poster);
-        out << YAML::Key << "date" << YAML::Value << static_cast<long long>(info.date);
-        out << YAML::Key << "fileName" << YAML::Value << toStd(info.fileName);
-        out << YAML::Key << "partsTotal" << YAML::Value << info.partsTotal;
+        out.field("  - ", "subject", info.subject);
+        out.field(kIn, "poster", info.poster);
+        out.field(kIn, "date", static_cast<long long>(info.date));
+        out.field(kIn, "fileName", info.fileName);
+        out.field(kIn, "partsTotal", info.partsTotal);
 
-        out << YAML::Key << "groups" << YAML::Value << YAML::Flow << YAML::BeginSeq;
-        for (const QString& g : info.groups)
-            out << toStd(g);
-        out << YAML::EndSeq;
-
-        out << YAML::Key << "segments" << YAML::Value << YAML::BeginSeq;
-        for (const NzbSegment& seg : info.segments) {
-            out << YAML::Flow << YAML::BeginMap;
-            out << YAML::Key << "id" << YAML::Value << toStd(seg.messageId);
-            out << YAML::Key << "bytes" << YAML::Value << static_cast<long long>(seg.bytes);
-            out << YAML::Key << "number" << YAML::Value << seg.number;
-            out << YAML::EndMap;
+        out.key(kIn, "groups");
+        out.raw("[");
+        for (qsizetype g = 0; g < info.groups.size(); ++g) {
+            if (g > 0)
+                out.raw(", ");
+            out.str(info.groups.at(g));
         }
-        out << YAML::EndSeq;
+        out.raw("]");
+        out.endLine();
 
-        out << YAML::Key << "tempPath" << YAML::Value << toStd(st.tempPath);
-        out << YAML::Key << "finalPath" << YAML::Value << toStd(st.finalPath);
-        out << YAML::Key << "articleFileName" << YAML::Value << toStd(st.articleFileName);
+        out.key(kIn, "segments");
+        if (info.segments.isEmpty())
+            out.raw("[]");
+        out.endLine();
+        for (const NzbSegment& seg : info.segments) {
+            out.raw("      - {id: ");
+            out.str(seg.messageId);
+            out.raw(", bytes: ");
+            out.num(static_cast<long long>(seg.bytes));
+            out.raw(", number: ");
+            out.num(seg.number);
+            out.raw("}\n");
+        }
+
+        out.field(kIn, "tempPath", st.tempPath);
+        out.field(kIn, "finalPath", st.finalPath);
+        out.field(kIn, "articleFileName", st.articleFileName);
         // Optional, and kStateVersion deliberately does not move for it: absent
         // means "no PAR2 name known", which is exactly what every sidecar
         // written before this existed meant. load() refuses a version it does
         // not know, so bumping would make an older daemon drop the whole queue
         // rather than lose one name.
         if (!st.par2FileName.isEmpty())
-            out << YAML::Key << "par2FileName" << YAML::Value << toStd(st.par2FileName);
-        out << YAML::Key << "declaredSize" << YAML::Value << static_cast<long long>(st.declaredSize);
-        out << YAML::Key << "decodedBytes" << YAML::Value << static_cast<long long>(st.decodedBytes);
-        out << YAML::Key << "finalized" << YAML::Value << st.finalized;
-        out << YAML::Key << "missingSegments" << YAML::Value << st.missingSegments;
-        out << YAML::Key << "done" << YAML::Value << toStd(bitsToBase64(st.done));
+            out.field(kIn, "par2FileName", st.par2FileName);
+        out.field(kIn, "declaredSize", static_cast<long long>(st.declaredSize));
+        out.field(kIn, "decodedBytes", static_cast<long long>(st.decodedBytes));
+        out.field(kIn, "finalized", st.finalized);
+        out.field(kIn, "missingSegments", st.missingSegments);
+        out.field(kIn, "done", bitsToBase64(st.done));
 
         // Which of those resolved bits are holes rather than arrivals. Optional,
         // and kStateVersion stays where it is for the reason above: absent means
@@ -195,14 +331,14 @@ bool UsenetQueueStore::save(const UsenetQueueItem& item)
         // rather than guessing which articles the count stood for. Written only
         // when there is a hole, so an unblemished release gains no key.
         if (st.missingSegments > 0 && st.missing.count(true) > 0)
-            out << YAML::Key << "missing" << YAML::Value << toStd(bitsToBase64(st.missing));
+            out.field(kIn, "missing", bitsToBase64(st.missing));
 
         // Optional, written only when true: absent means "downloaded", which is
         // what every older sidecar meant.
         if (st.skipped)
-            out << YAML::Key << "skipped" << YAML::Value << true;
+            out.field(kIn, "skipped", true);
         if (st.neededForRepair)
-            out << YAML::Key << "neededForRepair" << YAML::Value << true;
+            out.field(kIn, "neededForRepair", true);
 
         // Byte ranges on disk, "start-end" per entry, half-open. Separate from
         // `done` because the two answer different questions: a done bit means
@@ -215,23 +351,27 @@ bool UsenetQueueStore::save(const UsenetQueueItem& item)
         // re-derives from the first article after a restart, so an old sidecar
         // costs at most one article's delay before a seek works.
         if (st.partLength > 0)
-            out << YAML::Key << "partLength" << YAML::Value << (long long)st.partLength;
+            out.field(kIn, "partLength", static_cast<long long>(st.partLength));
 
         // Written in plan order, so this is one or two entries in practice.
         if (!st.written.isEmpty()) {
-            out << YAML::Key << "written" << YAML::Value << YAML::Flow << YAML::BeginSeq;
+            out.key(kIn, "written");
+            out.raw("[");
+            bool first = true;
             for (const auto& r : st.written) {
-                out << toStd(QStringLiteral("%1-%2").arg(r.first).arg(r.second));
+                if (!first)
+                    out.raw(", ");
+                first = false;
+                out.num(static_cast<long long>(r.first));
+                out.raw("-");
+                out.num(static_cast<long long>(r.second));
             }
-            out << YAML::EndSeq;
+            out.raw("]");
+            out.endLine();
         }
-
-        out << YAML::EndMap;
     }
-    out << YAML::EndSeq;
-    out << YAML::EndMap;
 
-    return writeSidecarAtomically(statePath(item.id), out.c_str());
+    return writeSidecarAtomically(statePath(item.id), out.text().c_str());
 }
 
 bool writeSidecarAtomically(const QString& path, const char* text)

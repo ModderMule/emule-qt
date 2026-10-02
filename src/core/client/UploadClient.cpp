@@ -244,8 +244,8 @@ void UpDownClient::setUploadFileID(KnownFile* newReqFile)
     if (m_uploadFile == newReqFile)
         return;
 
-    // Flush pending block requests from old file before switching
-    flushSendBlocks();
+    // Block lists stay: they belong to the slot, not the file (MFC SetUploadFileID leaves
+    // them alone). Flushing here dropped the old file's in-flight blocks mid-slot.
 
     // Remove from old file's uploading list
     if (m_uploadFile) {
@@ -273,7 +273,7 @@ void UpDownClient::setUploadFileID(KnownFile* newReqFile)
 }
 
 // ===========================================================================
-// addReqBlock — MFC UploadClient.cpp:322-368
+// addReqBlock — MFC UploadClient.cpp:322-418
 // ===========================================================================
 
 void UpDownClient::addReqBlock(Requested_Block_Struct* reqBlock)
@@ -308,25 +308,74 @@ void UpDownClient::addReqBlock(Requested_Block_Struct* reqBlock)
         }
     }
 
-    // Validate block range
-    if (reqBlock->startOffset >= reqBlock->endOffset) {
+    // MFC srchybrid/UploadClient.cpp:347-410. Every check runs here so the disk thread can
+    // trust what it is handed; a bad request is dropped, never fatal to the slot.
+    const auto drop = [&](const QString& why) {
+        if (thePrefs.logUlDlEvents()) {
+            logDebug(QStringLiteral("addReqBlock: %1 — %2 (%3-%4) dropped")
+                         .arg(userName(), why)
+                         .arg(reqBlock->startOffset).arg(reqBlock->endOffset));
+        }
+        delete reqBlock;
+    };
+
+    // The block names its file; the disk read follows it, not m_uploadFile, which an A4AF
+    // peer may have pointed elsewhere mid-slot.
+    KnownFile* srcFile = theApp.sharedFileList
+        ? theApp.sharedFileList->getFileByID(reqBlock->fileID.data()) : nullptr;
+    if (!srcFile) {
+        drop(QStringLiteral("requested file not found"));
+        return;
+    }
+
+    // A part file must not serve a gap or unflushed bytes: they would go out as zeros and
+    // read as corruption.
+    if (srcFile->isPartFile() && reqBlock->endOffset > reqBlock->startOffset
+        && !static_cast<PartFile*>(srcFile)->isCompleteBDSafe(reqBlock->startOffset,
+                                                               reqBlock->endOffset - 1))
+    {
+        drop(QStringLiteral("requested block is not complete"));
+        return;
+    }
+
+    if (reqBlock->startOffset >= reqBlock->endOffset
+        || reqBlock->endOffset > srcFile->fileSize())
+    {
+        drop(QStringLiteral("invalid block range or past EOF"));
+        return;
+    }
+
+    if (reqBlock->endOffset - reqBlock->startOffset > EMBLOCKSIZE * 3) {
+        drop(QStringLiteral("requested block too large"));
+        return;
+    }
+
+    // Older clients re-request blocks still pending; serving each copy again doubles the
+    // upload and lets the buffer grow past the peer's request window.
+    const auto sameBlock = [reqBlock](const Requested_Block_Struct* b) {
+        return b && b->startOffset == reqBlock->startOffset
+            && b->endOffset == reqBlock->endOffset
+            && md4equ(b->fileID.data(), reqBlock->fileID.data());
+    };
+    if (std::ranges::any_of(m_doneBlocks, sameBlock)
+        || std::ranges::any_of(m_blockRequests, sameBlock))
+    {
         delete reqBlock;
         return;
     }
 
-    // Add to block request queue
     m_blockRequests.push_back(reqBlock);
 
     // Signal disk IO thread to start reading the block from disk
     if (thePrefs.logRawSocketPackets())
-        logDebug(QStringLiteral("addReqBlock: start=%1 end=%2 uploadFile=%3 uploadQueue=%4")
+        logDebug(QStringLiteral("addReqBlock: start=%1 end=%2 file=%3 uploadQueue=%4")
                      .arg(reqBlock->startOffset).arg(reqBlock->endOffset)
-                     .arg(m_uploadFile ? m_uploadFile->fileName() : QStringLiteral("null"))
+                     .arg(srcFile->fileName())
                      .arg(theApp.uploadQueue != nullptr));
-    if (theApp.uploadQueue && m_uploadFile) {
+    if (theApp.uploadQueue) {
         if (auto* diskIO = theApp.uploadQueue->diskIOThread()) {
             BlockReadRequest readReq;
-            readReq.file = m_uploadFile;
+            readReq.file = srcFile;
             readReq.client = this;
             readReq.startOffset = reqBlock->startOffset;
             readReq.endOffset = reqBlock->endOffset;
@@ -464,6 +513,23 @@ void UpDownClient::flushSendBlocks()
     for (auto* block : m_doneBlocks)
         delete block;
     m_doneBlocks.clear();
+}
+
+// ===========================================================================
+// markBlockDone — MFC UploadDiskIOThread.cpp:262 (queue head → done head)
+// ===========================================================================
+
+bool UpDownClient::markBlockDone(const uint8* fileId, uint64 startOffset, uint64 endOffset)
+{
+    const auto it = std::ranges::find_if(m_blockRequests, [&](const Requested_Block_Struct* b) {
+        return b && b->startOffset == startOffset && b->endOffset == endOffset
+            && md4equ(b->fileID.data(), fileId);
+    });
+    if (it == m_blockRequests.end())
+        return false;
+    m_doneBlocks.push_front(*it);
+    m_blockRequests.erase(it);
+    return true;
 }
 
 // ===========================================================================

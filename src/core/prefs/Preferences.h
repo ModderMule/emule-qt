@@ -164,6 +164,12 @@ public:
     [[nodiscard]] bool separateIPv6Queue() const;
     void setSeparateIPv6Queue(bool val);
 
+    /// Send outgoing IPv6 from the rotating RFC 4941 temporary address (the OS choice)
+    /// and advertise that one. Off (default): pin the stable address as the source of
+    /// every IPv6 connection and datagram, so peers reach the address we advertise.
+    [[nodiscard]] bool ipv6UsePrivacyAddress() const;
+    void setIpv6UsePrivacyAddress(bool val);
+
     /// Resolve a server hostname AAAA-first instead of A-first. Off by default: reaching
     /// a server over IPv6 without a routable IPv4 yields a LowID unconditionally, so
     /// preferring AAAA on a dual-stack server would cost a HighID for nothing. The other

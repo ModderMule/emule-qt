@@ -6,7 +6,6 @@
 
 #if EMULE_HAVE_RAPIDYENC
 #  include <rapidyenc.h>
-#  include <mutex>
 static_assert(sizeof(RapidYencDecoderState) <= sizeof(int),
               "YencDecoder::m_rapidState is too small for RapidYencDecoderState");
 #endif
@@ -14,6 +13,21 @@ static_assert(sizeof(RapidYencDecoderState) <= sizeof(int),
 namespace eMule::usenet {
 
 namespace {
+
+bool s_lineModeForTests = false;
+
+#if EMULE_HAVE_RAPIDYENC
+/// Both tables at once, thread-safe, once per process.
+void ensureRapidInit()
+{
+    static const bool done = [] {
+        rapidyenc_decode_init();
+        rapidyenc_crc_init();
+        return true;
+    }();
+    Q_UNUSED(done);
+}
+#endif
 
 /// Reflected CRC-32 (poly 0xEDB88320) — the zip/gzip one, which is what yEnc's
 /// pcrc32 is. Built once at first use.
@@ -64,8 +78,7 @@ quint32 yencCrc32(quint32 crc, QByteArrayView data)
 #if EMULE_HAVE_RAPIDYENC
     // Same polynomial as the table below -- tst_UsenetYenc pins both against
     // the standard "123456789" vector, so a divergence fails loudly.
-    static std::once_flag init;
-    std::call_once(init, [] { rapidyenc_crc_init(); });
+    ensureRapidInit();
     return rapidyenc_crc(data.data(), size_t(data.size()), crc);
 #else
     const auto& table = crcTable();
@@ -99,6 +112,9 @@ void YencDecoder::reset()
     m_expectedCrc = 0;
     m_haveExpectedCrc = false;
     m_out.clear();
+    m_rawData = false;
+    m_sawEnd = false;
+    m_lineBuf.clear();
     // Must be cleared with m_escape, which it mirrors on the SIMD path: a
     // leftover escape state would silently corrupt the *next* article.
     m_rapidState = 0;
@@ -170,6 +186,7 @@ void YencDecoder::parsePart(QByteArrayView line)
 
 void YencDecoder::parseEnd(QByteArrayView line)
 {
+    m_sawEnd = true;
     m_expectedSize = headerNumber(line, "size=", -1);
 
     const auto crcText = headerValue(line, "pcrc32=");
@@ -203,8 +220,7 @@ void YencDecoder::decodeInto(QByteArrayView line)
 
 #if EMULE_HAVE_RAPIDYENC
     {
-        static std::once_flag init;
-        std::call_once(init, [] { rapidyenc_decode_init(); });
+        ensureRapidInit();
 
         // is_raw = 0. Read the flag the right way round: rapidyenc.h says "if
         // `is_raw` is non-zero, will also handle NNTP dot unstuffing" — so a 1
@@ -266,6 +282,78 @@ void YencDecoder::decodeInto(QByteArrayView line)
         m_sink(decoded);
 }
 
+void YencDecoder::setLineModeForTests(bool on)
+{
+    s_lineModeForTests = on;
+}
+
+qsizetype YencDecoder::feedRaw(QByteArrayView wire, bool& ended)
+{
+    ended = false;
+#if EMULE_HAVE_RAPIDYENC
+    const bool blocks = !s_lineModeForTests;
+#else
+    const bool blocks = false;
+#endif
+
+    qsizetype pos = 0;
+    while (pos < wire.size()) {
+        if (m_rawData) {
+            bool control = false;
+            bool article = false;
+            pos += decodeRawBlock(wire.sliced(pos), control, article);
+            if (article) {
+                ended = true;
+                return pos;
+            }
+            if (control) {
+                // "\r\n=y" consumed through the 'y': the rest of that line is a
+                // control line, finished in line mode.
+                m_rawData = false;
+                m_lineBuf = QByteArrayLiteral("=y");
+                m_rapidState = 0;   // RYDEC_STATE_CRLF for any later payload
+            }
+            continue;
+        }
+
+        const qsizetype nl = wire.indexOf('\n', pos);
+        if (nl < 0) {
+            m_lineBuf.append(wire.sliced(pos));
+            return wire.size();
+        }
+
+        QByteArrayView line = wire.sliced(pos, nl + 1 - pos);
+        pos = nl + 1;
+        if (!m_lineBuf.isEmpty()) {
+            m_lineBuf.append(line);
+            line = m_lineBuf;
+        }
+
+        switch (handleRawLine(line)) {
+        case RawLine::Ended:
+            m_lineBuf.clear();
+            ended = true;
+            return pos;
+        case RawLine::Payload:
+            if (blocks) {
+                // The first payload line, CRLF included, then the rest as blocks.
+                bool control = false;
+                bool article = false;
+                decodeRawBlock(line, control, article);
+                m_rawData = true;
+            }
+            break;
+        case RawLine::PayloadNext:
+            m_rawData = blocks;
+            break;
+        case RawLine::Consumed:
+            break;
+        }
+        m_lineBuf.clear();
+    }
+    return pos;
+}
+
 QString YencDecoder::statusText() const
 {
     switch (m_status) {
@@ -283,6 +371,82 @@ QString YencDecoder::statusText() const
         return QCoreApplication::translate("Usenet", "Malformed yEnc header");
     }
     return QCoreApplication::translate("Usenet", "Unknown");
+}
+
+// ---------------------------------------------------------------------------
+// Private — feedRaw()
+// ---------------------------------------------------------------------------
+
+YencDecoder::RawLine YencDecoder::handleRawLine(QByteArrayView lineWithEol)
+{
+    QByteArrayView line = lineWithEol;
+    while (line.endsWith('\n') || line.endsWith('\r'))
+        line.chop(1);
+
+    // A lone "." ends the block; any other leading dot was stuffed by the server.
+    if (line == ".")
+        return RawLine::Ended;
+    if (line.startsWith('.'))
+        line = line.sliced(1);
+
+    // =ybegin stays in line mode: =ypart may follow, and when it does not
+    // (single-part posts) the next line is payload and says so itself.
+    if (line.startsWith("=ybegin ")) {
+        parseBegin(line);
+        return RawLine::Consumed;
+    }
+    if (line.startsWith("=ypart ")) {
+        parsePart(line);
+        return RawLine::PayloadNext;
+    }
+    if (line.startsWith("=yend")) {
+        parseEnd(line);
+        return RawLine::Consumed;
+    }
+
+    // Headers before =ybegin and anything after =yend are not payload.
+    if (!m_sawBegin || m_sawEnd)
+        return RawLine::Consumed;
+
+#if EMULE_HAVE_RAPIDYENC
+    if (!s_lineModeForTests)
+        return RawLine::Payload;   // the caller decodes it, stuffed, as the first block
+#endif
+    decodeInto(line);
+    return RawLine::Consumed;
+}
+
+qsizetype YencDecoder::decodeRawBlock(QByteArrayView wire, bool& control, bool& article)
+{
+    control = false;
+    article = false;
+#if EMULE_HAVE_RAPIDYENC
+    ensureRapidInit();
+    m_out.resize(wire.size());
+    const void* src = wire.data();
+    void* dst = m_out.data();
+    auto* state = reinterpret_cast<RapidYencDecoderState*>(&m_rapidState);
+    const RapidYencDecoderEnd end =
+        rapidyenc_decode_incremental(&src, &dst, size_t(wire.size()), state);
+    emitDecoded(static_cast<char*>(dst) - m_out.data());
+    control = end == RYDEC_END_CONTROL;
+    article = end == RYDEC_END_ARTICLE;
+    return static_cast<const char*>(src) - wire.data();
+#else
+    Q_UNUSED(wire);
+    return wire.size();   // unreachable: feedRaw() never enters block mode
+#endif
+}
+
+void YencDecoder::emitDecoded(qsizetype produced)
+{
+    if (produced <= 0)
+        return;
+    const QByteArrayView decoded(m_out.constData(), produced);
+    m_crc = yencCrc32(m_crc, decoded);
+    m_decodedBytes += produced;
+    if (m_sink)
+        m_sink(decoded);
 }
 
 } // namespace eMule::usenet

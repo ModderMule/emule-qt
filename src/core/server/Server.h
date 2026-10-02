@@ -13,6 +13,8 @@
 
 #include <QString>
 
+#include <array>
+
 namespace eMule {
 
 // ---------------------------------------------------------------------------
@@ -86,8 +88,32 @@ public:
 
     // -- Network ----------------------------------------------------------
 
+    /// Primary address: the IPv4 when known, else the IPv6. The server.met header
+    /// value and the MFC-compatible identity.
     [[nodiscard]] const Address& ipAddress() const { return m_address; }
     void setIpAddress(const Address& addr)  { m_address = addr; }
+
+    // A dual-stack server keeps its IPv6 next to the IPv4 primary (one list row).
+    [[nodiscard]] Address ipv4Address() const   { return m_address.isIPv4() ? m_address : Address(); }
+    [[nodiscard]] Address ipv6Address() const   { return m_address.isIPv6() ? m_address : m_addressV6; }
+    [[nodiscard]] bool hasBothFamilies() const  { return !m_addressV6.isNull(); }
+
+    /// True when @p addr is either of this server's addresses.
+    [[nodiscard]] bool hasAddress(const Address& addr) const
+    {
+        return !addr.isNull() && (addr == m_address || addr == m_addressV6);
+    }
+
+    /// Add an address of either family without losing the other one: an IPv4
+    /// becomes the primary (the IPv6 moves aside), an IPv6 joins an IPv4 primary.
+    /// Same-family addresses replace. Returns false for a null address or a dynIP server.
+    bool addAddress(const Address& addr);
+
+    /// Address to dial: the preferred family when both are known, else the primary.
+    [[nodiscard]] const Address& dialAddress(bool preferIPv6) const;
+
+    /// The address of the other family than @p current, or null when there is none.
+    [[nodiscard]] Address otherFamilyAddress(const Address& current) const;
 
     [[nodiscard]] uint16  port() const      { return m_port; }
     void setPort(uint16 port)               { m_port = port; }
@@ -103,6 +129,10 @@ public:
     /// "host:port", or "[2001:db8::1]:port" for an IPv6 literal — the round-trippable
     /// endpoint form used by staticservers.dat and anything parsing with parseHostPort().
     [[nodiscard]] QString addressWithPort() const;
+
+    /// address(), bracketed for an IPv6 literal — for "%1:%2" texts that must stay
+    /// translatable with a separate port.
+    [[nodiscard]] QString bracketedAddress() const;
 
     // -- Metadata ---------------------------------------------------------
 
@@ -225,6 +255,11 @@ public:
 
     [[nodiscard]] uint32 serverId() const               { return m_serverId; }
 
+    /// Server hash from OP_SERVERIDENT (runtime only). Guards dual-stack merges.
+    [[nodiscard]] bool hasServerHash() const            { return m_hasServerHash; }
+    [[nodiscard]] const std::array<uint8, 16>& serverHash() const { return m_serverHash; }
+    void setServerHash(const uint8* hash);
+
     // -- Aux --------------------------------------------------------------
 
     [[nodiscard]] const QString& auxPortsList() const   { return m_auxPortsList; }
@@ -269,6 +304,7 @@ private:
 
     // Network
     Address m_address;
+    Address m_addressV6;        // set only while m_address is the IPv4
     uint16  m_port = 0;
     QString m_dynIP;
 
@@ -311,6 +347,10 @@ private:
 
     // Aux
     QString m_auxPortsList;
+
+    // Ident hash
+    std::array<uint8, 16> m_serverHash{};
+    bool    m_hasServerHash = false;
 
     // eNode Meta API
     QString m_metaApiUrl;

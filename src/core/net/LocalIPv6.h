@@ -72,7 +72,10 @@ struct IPv6PrivacyReport {
 /// Unknown outranks Temporary deliberately: an unclassifiable address is far more likely
 /// stable, so a detection failure can never make selection worse than plain first-match.
 /// Only Address::isPublicIP() candidates are considered; tentative is never selected.
-[[nodiscard]] Address selectPreferredIPv6(const IPv6PrivacyReport& report);
+/// @p preferTemporary ("Use IPv6 privacy address") moves Temporary to the front, so we
+/// advertise the address the OS sends from.
+[[nodiscard]] Address selectPreferredIPv6(const IPv6PrivacyReport& report,
+                                          bool preferTemporary = false);
 
 /// Resolve the operator's publicIPv6Override preference against @p report.
 /// Returns null when @p override is empty, is not an IPv6 literal, is not global-unicast,
@@ -102,7 +105,8 @@ struct IPv6PrivacyReport {
 /// override is reported once at startup instead of on every server reconnect.
 void logIPv6PrivacyAdvisory(const IPv6PrivacyReport& report, const Address& effective);
 
-/// Select (honouring the publicIPv6Override pref) and publish into AppContext.
+/// Select (honouring the publicIPv6Override and ipv6UsePrivacyAddress prefs) and publish
+/// into AppContext, plus the outgoing-source pin (IPv6SourcePin).
 /// Publishes only a non-null selection, so a peer-learned publicIPv6 is never clobbered
 /// on a v4-only host. Silent except when the published address actually changes, so the
 /// per-reconnect refresh from ServerConnect::initLocalIP() produces no log noise.

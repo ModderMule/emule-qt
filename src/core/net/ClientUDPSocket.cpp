@@ -4,6 +4,7 @@
 
 #include "net/ClientUDPSocket.h"
 #include "net/EncryptedDatagramSocket.h"
+#include "net/IPv6SourcePin.h"
 #include "app/AppContext.h"
 #include "client/ClientList.h"
 #include "ipfilter/IPFilter.h"
@@ -229,8 +230,19 @@ void ClientUDPSocket::flushSendQueue()
     }
 
     for (auto& dg : toSend) {
-        qint64 sent = m_socket.writeDatagram(
-            dg.data, dg.destination.address().toQHostAddress(), dg.destination.port());
+        // An IPv6 datagram leaves from the pinned stable address: the receiver keys
+        // obfuscation on the IP it observes, which must be the one we advertise.
+        qint64 sent = 0;
+        if (const Address source = IPv6SourcePin::sourceFor(dg.destination.address());
+            source.isNull()) {
+            sent = m_socket.writeDatagram(
+                dg.data, dg.destination.address().toQHostAddress(), dg.destination.port());
+        } else {
+            QNetworkDatagram datagram(dg.data, dg.destination.address().toQHostAddress(),
+                                      dg.destination.port());
+            datagram.setSender(source.toQHostAddress());
+            sent = m_socket.writeDatagram(datagram);
+        }
         if (sent < 0) {
             logWarning(QStringLiteral("UDP send failed to %1 — %2")
                 .arg(dg.destination.toString()).arg(m_socket.errorString()));

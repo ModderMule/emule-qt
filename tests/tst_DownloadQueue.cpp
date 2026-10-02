@@ -104,6 +104,13 @@ private slots:
     void checkAndAddSource_rejectsOwnUserHash();
     void checkAndAddSource_rejectsCryptIncompatible();
     void checkAndAddSource_rejectsSourceForAStoppedDownload();
+    void checkAndAddSource_dedupsPreHelloHighIdByUserId();
+    void checkAndAddSource_dedupsAfterHelloAgainstHashlessServerSource();
+    void checkAndAddSource_a4afForSourceOfAnotherFile();
+    void a4af_destroyedClientLeavesNoDanglingEntry();
+    void a4af_removeSourceUnlinksBothSides();
+    void checkAndAddSource_adoptsKnownClient();
+    void checkAndAddSource_ipv6Dedup();
     void checkAndAddKnownSource_addsAPassiveSource();
     void checkAndAddKnownSource_a4afWhenItAlreadySourcesAnotherFile();
     void addServerSources_dropsLowIdWhenFirewalled();
@@ -1858,6 +1865,230 @@ void tst_DownloadQueue::checkAndAddKnownSource_a4afWhenItAlreadySourcesAnotherFi
 
     client.removeFileFromOtherLists(fileB);
     fileA->removeSource(&client);
+    dq.deleteAll();
+}
+
+// ---------------------------------------------------------------------------
+// checkAndAddSource duplicate detection — MFC DownloadQueue.cpp:488-526
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A source as a server / SLS / Kad ingress builds it: ED2K ID only, no userAddress, no hash.
+std::unique_ptr<UpDownClient> makePreHelloSource(PartFile* pf, const char* ip, uint16 port)
+{
+    const Address addr = Address::fromString(QString::fromLatin1(ip));
+    return std::make_unique<UpDownClient>(port, addr.toNetworkUint32(), 0, 0, pf, true);
+}
+
+/// A v6-only source as makeSourceClient() builds it.
+std::unique_ptr<UpDownClient> makeV6OnlySource(PartFile* pf, const char* ip, uint16 port)
+{
+    const Address v6 = Address::fromString(QString::fromLatin1(ip));
+    auto c = std::make_unique<UpDownClient>(port, kNoIPv4SourceId, 0, 0, pf, true);
+    c->setUserIPv6(v6);
+    c->setOpenIPv6(true);
+    c->setUserAddress(v6);
+    return c;
+}
+
+} // namespace
+
+// The live bug: an SLS source and a server source for one HighID peer both got in,
+// because neither has a userAddress or hash before the hello. compare() falls back to
+// userIDHybrid + port for exactly this case.
+void tst_DownloadQueue::checkAndAddSource_dedupsPreHelloHighIdByUserId()
+{
+    DownloadQueue dq;
+    uint8 hash[16] = {50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    auto* pf = createTestPartFile(hash, QStringLiteral("dedup_prehello.bin"));
+    dq.addDownload(pf);
+    {
+        auto sls = makePreHelloSource(pf, "81.2.69.160", 28022);
+        sls->setSourceFrom(SourceFrom::SLS);
+        QVERIFY(!sls->hasLowID());
+        QCOMPARE(dq.checkAndAddSource(pf, sls.get()), sls.get());
+
+        auto srv = makePreHelloSource(pf, "81.2.69.160", 28022);
+        QVERIFY2(!dq.checkAndAddSource(pf, srv.get()), "same ID + port is the same peer");
+        QCOMPARE(pf->sourceCount(), 1);
+
+        auto otherPort = makePreHelloSource(pf, "81.2.69.160", 28023);
+        QCOMPARE(dq.checkAndAddSource(pf, otherPort.get()), otherPort.get());
+        QCOMPARE(pf->sourceCount(), 2);
+
+        pf->removeSource(sls.get());
+        pf->removeSource(otherPort.get());
+    }
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::checkAndAddSource_dedupsAfterHelloAgainstHashlessServerSource()
+{
+    DownloadQueue dq;
+    uint8 hash[16] = {50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2};
+    auto* pf = createTestPartFile(hash, QStringLiteral("dedup_posthello.bin"));
+    dq.addDownload(pf);
+    {
+        // Already said hello: verified address and a user hash.
+        auto known = makePreHelloSource(pf, "81.2.69.161", 4662);
+        const uint8 userHash[16] = {0xC2, 0x59, 0x75, 0x21, 7, 0x0E, 0xFD, 0x50,
+                                    0, 0xE2, 0xC7, 0x58, 0xD8, 0x6F, 0x73, 0x01};
+        known->setUserAddress(Address::fromString(QStringLiteral("81.2.69.161")));
+        known->setUserHash(userHash);
+        QCOMPARE(dq.checkAndAddSource(pf, known.get()), known.get());
+
+        auto srv = makePreHelloSource(pf, "81.2.69.161", 4662);
+        QVERIFY(!srv->hasValidHash());
+        QVERIFY(!dq.checkAndAddSource(pf, srv.get()));
+        QCOMPARE(pf->sourceCount(), 1);
+
+        pf->removeSource(known.get());
+    }
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::checkAndAddSource_a4afForSourceOfAnotherFile()
+{
+    DownloadQueue dq;
+    uint8 hashA[16] = {50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3};
+    uint8 hashB[16] = {50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4};
+    auto* fileA = createTestPartFile(hashA, QStringLiteral("dedup_a4af_a.bin"));
+    auto* fileB = createTestPartFile(hashB, QStringLiteral("dedup_a4af_b.bin"));
+    dq.addDownload(fileA);
+    dq.addDownload(fileB);
+    {
+        auto onA = makePreHelloSource(fileA, "81.2.69.162", 4662);
+        QCOMPARE(dq.checkAndAddSource(fileA, onA.get()), onA.get());
+        // Connected: the A4AF is recorded but the client is not swapped away.
+        onA->setDownloadState(DownloadState::Connected);
+
+        auto forB = makePreHelloSource(fileB, "81.2.69.162", 4662);
+        QVERIFY2(!dq.checkAndAddSource(fileB, forB.get()),
+                 "a peer already sourcing another file becomes A4AF, not a second object");
+        QCOMPARE(fileB->sourceCount(), 0);
+        QCOMPARE(fileB->a4afSourceCount(), 1);
+
+        onA->removeFileFromOtherLists(fileB);
+        fileA->removeSource(onA.get());
+    }
+    dq.deleteAll();
+}
+
+// A client freed while it is an A4AF candidate used to stay in the other file's list,
+// and deleteAll() then walked a freed pointer.
+void tst_DownloadQueue::a4af_destroyedClientLeavesNoDanglingEntry()
+{
+    DownloadQueue dq;
+    uint8 hashA[16] = {50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7};
+    uint8 hashB[16] = {50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8};
+    auto* fileA = createTestPartFile(hashA, QStringLiteral("a4af_dtor_a.bin"));
+    auto* fileB = createTestPartFile(hashB, QStringLiteral("a4af_dtor_b.bin"));
+    dq.addDownload(fileA);
+    dq.addDownload(fileB);
+    {
+        auto client = makePreHelloSource(fileA, "81.2.69.164", 4662);
+        QCOMPARE(dq.checkAndAddSource(fileA, client.get()), client.get());
+        QVERIFY(client->addRequestForAnotherFile(fileB));
+        QCOMPARE(fileB->a4afSrcList().size(), size_t(1));
+        fileA->removeSource(client.get());
+    }
+    QVERIFY(fileB->a4afSrcList().empty());
+    QCOMPARE(fileB->sourceCount(), 0);
+    dq.deleteAll();
+}
+
+// MFC RemoveSource unlinks the A4AF on both sides (DownloadQueue.cpp:636-657).
+void tst_DownloadQueue::a4af_removeSourceUnlinksBothSides()
+{
+    DownloadQueue dq;
+    uint8 hashA[16] = {50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9};
+    uint8 hashB[16] = {50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10};
+    auto* fileA = createTestPartFile(hashA, QStringLiteral("a4af_rm_a.bin"));
+    auto* fileB = createTestPartFile(hashB, QStringLiteral("a4af_rm_b.bin"));
+    dq.addDownload(fileA);
+    dq.addDownload(fileB);
+    {
+        auto client = makePreHelloSource(fileA, "81.2.69.165", 4662);
+        QCOMPARE(dq.checkAndAddSource(fileA, client.get()), client.get());
+        QVERIFY(client->addRequestForAnotherFile(fileB));
+
+        dq.removeSource(client.get());
+        QCOMPARE(fileA->sourceCount(), 0);
+        QVERIFY(fileB->a4afSrcList().empty());
+        QCOMPARE(client->otherRequestCount(), size_t(0));
+    }
+    dq.deleteAll();
+}
+
+// A new source for a peer we already know (say, one on our upload queue) adopts that
+// instance instead of adding a second one. MFC DownloadQueue.cpp:508-521.
+void tst_DownloadQueue::checkAndAddSource_adoptsKnownClient()
+{
+    DownloadQueue dq;
+    ClientList cl;
+    dq.setClientList(&cl);
+    uint8 hash[16] = {50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5};
+    auto* pf = createTestPartFile(hash, QStringLiteral("dedup_adopt.bin"));
+    dq.addDownload(pf);
+    {
+        UpDownClient known;
+        const Address addr = Address::fromString(QStringLiteral("81.2.69.163"));
+        known.setUserAddress(addr);
+        known.setUserIDHybrid(addr.toUint32());
+        known.setUserPort(4662);
+        cl.addClient(&known);
+
+        auto src = makePreHelloSource(pf, "81.2.69.163", 4662);
+        QCOMPARE(dq.checkAndAddSource(pf, src.get()), &known);
+        QCOMPARE(cl.clientCount(), 1);
+        QCOMPARE(pf->sourceCount(), 1);
+        QCOMPARE(known.reqFile(), pf);
+
+        pf->removeSource(&known);
+        cl.removeClient(&known);
+    }
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::checkAndAddSource_ipv6Dedup()
+{
+    DownloadQueue dq;
+    uint8 hash[16] = {50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6};
+    auto* pf = createTestPartFile(hash, QStringLiteral("dedup_ipv6.bin"));
+    dq.addDownload(pf);
+    {
+        // Two v6-only sources: same address + port is one peer, another address is not.
+        auto a = makeV6OnlySource(pf, "2a03:2880:f10c:83:face:b00c:0:25de", 4662);
+        QCOMPARE(dq.checkAndAddSource(pf, a.get()), a.get());
+        auto aAgain = makeV6OnlySource(pf, "2a03:2880:f10c:83:face:b00c:0:25de", 4662);
+        QVERIFY(!dq.checkAndAddSource(pf, aAgain.get()));
+        auto c = makeV6OnlySource(pf, "2a03:2880:f10c:83:face:b00c:0:25df", 4662);
+        QCOMPARE(dq.checkAndAddSource(pf, c.get()), c.get());
+        QCOMPARE(pf->sourceCount(), 2);
+
+        // Dual-stack HighID source carrying a's IPv6 as a hint: no shared IPv4 key, the
+        // advertised v6 + port is what identifies it.
+        auto dual = makePreHelloSource(pf, "81.2.69.170", 4662);
+        dual->setUserIPv6(Address::fromString(QStringLiteral("2a03:2880:f10c:83:face:b00c:0:25de")));
+        QVERIFY2(!dq.checkAndAddSource(pf, dual.get()), "same advertised v6 + port");
+        QCOMPARE(pf->sourceCount(), 2);
+
+        // HighID peer we reached over v6 keeps its v4 ID; a verified-v4 copy must not be
+        // told apart just because the address families differ.
+        auto overV6 = makePreHelloSource(pf, "81.2.69.180", 4700);
+        overV6->setUserAddress(Address::fromString(QStringLiteral("2a03:2880:f10c:83:face:b00c:0:9")));
+        QVERIFY(!overV6->hasLowID());
+        QCOMPARE(dq.checkAndAddSource(pf, overV6.get()), overV6.get());
+        auto overV4 = makePreHelloSource(pf, "81.2.69.180", 4700);
+        overV4->setUserAddress(Address::fromString(QStringLiteral("81.2.69.180")));
+        QVERIFY(!dq.checkAndAddSource(pf, overV4.get()));
+        QCOMPARE(pf->sourceCount(), 3);
+
+        pf->removeSource(a.get());
+        pf->removeSource(c.get());
+        pf->removeSource(overV6.get());
+    }
     dq.deleteAll();
 }
 

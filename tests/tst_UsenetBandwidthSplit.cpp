@@ -28,7 +28,19 @@ constexpr uint32 kCeiling = 3500;   // KB/s
 constexpr qint64 kKB = 1024;
 
 Demand idle() { return {}; }
-Demand busy(qint64 kbPerSec) { return {true, kbPerSec * kKB}; }
+Demand busy(qint64 kbPerSec) { return {true, kbPerSec * kKB, kbPerSec * kKB}; }
+/// Busy with a 2 s average and a separate last-0.5 s reading.
+Demand busy(qint64 avgKbPerSec, qint64 recentKbPerSec)
+{
+    return {true, avgKbPerSec * kKB, recentKbPerSec * kKB};
+}
+
+/// The reserve floor an active engine never drops below: 32 KB/s or 1/16 of
+/// its share, whichever is larger.
+constexpr qint64 minReserve(qint64 floorKb)
+{
+    return std::min(floorKb, std::max<qint64>(32, floorKb / 16));
+}
 
 Split split(Demand usenet, Demand ed2k, int percent = 50, uint32 ceiling = kCeiling)
 {
@@ -48,11 +60,12 @@ Settled settle(qint64 usenetAppetiteKb, qint64 ed2kAppetiteKb, int percent = 50)
 {
     Settled s;
     Split previous;
+    UsenetSession::SplitState state;
     for (int round = 0; round < 12; ++round) {
-        const Demand usenet{usenetAppetiteKb > 0, s.usenetKb * kKB};
-        const Demand ed2k{ed2kAppetiteKb > 0, s.ed2kKb * kKB};
+        const Demand usenet{usenetAppetiteKb > 0, s.usenetKb * kKB, s.usenetKb * kKB};
+        const Demand ed2k{ed2kAppetiteKb > 0, s.ed2kKb * kKB, s.ed2kKb * kKB};
         previous = s.split;
-        s.split = UsenetSession::computeDownloadSplit(kCeiling, percent, usenet, ed2k);
+        s.split = UsenetSession::computeDownloadSplit(kCeiling, percent, usenet, ed2k, &state);
         s.usenetKb = std::min(usenetAppetiteKb, s.split.usenetKb());
         s.ed2kKb = std::min(ed2kAppetiteKb, s.split.ed2kKb());
     }
@@ -74,7 +87,10 @@ private slots:
     void slowEd2kLendsUsenetWhatItLeaves();
     void slowUsenetLendsEd2kWhatItLeaves();
     void idleUsenetLeavesEd2kTheWholeLine();
-    void aBusyEngineKeepsAQuarterOfItsFloor();
+    void aBusyEngineKeepsTheMinimumReserve();
+    void aPressingEngineDoublesTowardsItsShare();
+    void idleBandwidthIsLentWithinOneTick();
+    void unlimitedCeilingClearsTheState();
     void shareIsClampedAtBothEnds();
     void aOneKilobyteCeilingStillCapsBoth();
     void settlesWithoutOscillating_data();
@@ -84,6 +100,7 @@ private slots:
     void rateWindowSpreadsAnArticleBurst();
     void rateWindowIsNotDilutedWhileWarmingUp();
     void rateWindowSlidesAndClears();
+    void rateWindowRecentReadsTheNewestTicks();
 };
 
 // ---------------------------------------------------------------------------
@@ -162,9 +179,10 @@ void tst_UsenetBandwidthSplit::slowEd2kLendsUsenetWhatItLeaves()
     QCOMPARE(s.usenetKb(), 2500);
     QCOMPARE(s.ed2kKb(), 1750);
 
-    // Below a quarter of its floor the quarter is what it keeps.
+    // At a trickle only the small minimum is held back, not a quarter of the
+    // floor: that quarter used to sit idle.
     s = split(busy(3500), busy(50));
-    QCOMPARE(s.usenetKb(), 3500 - 1750 / 4);
+    QCOMPARE(s.usenetKb(), 3500 - minReserve(1750));
 }
 
 void tst_UsenetBandwidthSplit::slowUsenetLendsEd2kWhatItLeaves()
@@ -175,7 +193,7 @@ void tst_UsenetBandwidthSplit::slowUsenetLendsEd2kWhatItLeaves()
     QCOMPARE(s.usenetKb(), 1750);
 
     s = split(busy(100), busy(3500));
-    QCOMPARE(s.ed2kKb(), 3500 - 1750 / 4);
+    QCOMPARE(s.ed2kKb(), 3500 - 125);
 }
 
 void tst_UsenetBandwidthSplit::idleUsenetLeavesEd2kTheWholeLine()
@@ -186,24 +204,72 @@ void tst_UsenetBandwidthSplit::idleUsenetLeavesEd2kTheWholeLine()
     QCOMPARE(s.usenetKb(), 1750);
 }
 
-void tst_UsenetBandwidthSplit::aBusyEngineKeepsAQuarterOfItsFloor()
+void tst_UsenetBandwidthSplit::aBusyEngineKeepsTheMinimumReserve()
 {
     // Both busy, both momentarily at zero — between articles, sources still
-    // queueing. Neither may be squeezed below a quarter of its floor.
+    // queueing. Neither may be squeezed below the minimum reserve.
     const Split s = split(busy(0), busy(0));
-    QCOMPARE(s.usenetKb(), 3500 - 1750 / 4);
-    QCOMPARE(s.ed2kKb(), 3500 - 1750 / 4);
+    QCOMPARE(s.usenetKb(), 3500 - minReserve(1750));
+    QCOMPARE(s.ed2kKb(), 3500 - minReserve(1750));
 
     for (int percent : {1, 20, 50, 80, 99}) {
         const qint64 usenetFloor = qint64(kCeiling) * percent / 100;
         const qint64 ed2kFloor = kCeiling - usenetFloor;
         const Split hungryUsenet = split(busy(9000), busy(0), percent);
         const Split hungryEd2k = split(busy(0), busy(9000), percent);
-        QVERIFY2(hungryUsenet.usenetKb() <= kCeiling - std::max<qint64>(1, ed2kFloor / 4),
+        QVERIFY2(hungryUsenet.usenetKb() <= kCeiling - minReserve(ed2kFloor),
                  qPrintable(QString::number(percent)));
-        QVERIFY2(hungryEd2k.ed2kKb() <= kCeiling - std::max<qint64>(1, usenetFloor / 4),
+        QVERIFY2(hungryEd2k.ed2kKb() <= kCeiling - minReserve(usenetFloor),
                  qPrintable(QString::number(percent)));
     }
+}
+
+void tst_UsenetBandwidthSplit::aPressingEngineDoublesTowardsItsShare()
+{
+    // ED2K wakes: its 2 s average is still zero, but the last half second runs
+    // at its cap. Each tick it presses, its reserve at least doubles, so Usenet
+    // gives the line back within a few ticks instead of 25 % at a time.
+    UsenetSession::SplitState state;
+    Split s = UsenetSession::computeDownloadSplit(kCeiling, 50, busy(9000), busy(0), &state);
+    qint64 reserve = kCeiling - s.usenetKb();
+    QCOMPARE(reserve, minReserve(1750));
+
+    int ticks = 0;
+    while (reserve < 1750) {
+        s = UsenetSession::computeDownloadSplit(kCeiling, 50, busy(9000),
+                                                busy(0, s.ed2kKb()), &state);
+        const qint64 next = kCeiling - s.usenetKb();
+        QVERIFY(next >= std::min<qint64>(1750, reserve * 2));
+        reserve = next;
+        QVERIFY2(++ticks <= 5, "not at its share within five ticks");
+    }
+    QCOMPARE(s.usenetKb(), 1750);   // never past the share
+}
+
+void tst_UsenetBandwidthSplit::idleBandwidthIsLentWithinOneTick()
+{
+    // ED2K held its whole share, then its sources slow to 100 KB/s. The next
+    // tick lends everything but that plus a quarter.
+    UsenetSession::SplitState state;
+    for (int i = 0; i < 6; ++i) {
+        const Split s = UsenetSession::computeDownloadSplit(kCeiling, 50, busy(9000),
+                                                            busy(1750), &state);
+        Q_UNUSED(s);
+    }
+    QCOMPARE(state.ed2kReserveKb, 1750);
+
+    const Split s = UsenetSession::computeDownloadSplit(kCeiling, 50, busy(9000),
+                                                        busy(100), &state);
+    QCOMPARE(s.usenetKb(), 3500 - 125);
+}
+
+void tst_UsenetBandwidthSplit::unlimitedCeilingClearsTheState()
+{
+    UsenetSession::SplitState state;
+    (void)UsenetSession::computeDownloadSplit(kCeiling, 50, busy(9000), busy(9000), &state);
+    QVERIFY(state.usenetReserveKb > 0);
+    (void)UsenetSession::computeDownloadSplit(0, 50, busy(9000), busy(9000), &state);
+    QCOMPARE(state, UsenetSession::SplitState{});
 }
 
 void tst_UsenetBandwidthSplit::shareIsClampedAtBothEnds()
@@ -240,7 +306,8 @@ void tst_UsenetBandwidthSplit::settlesWithoutOscillating_data()
     QTest::newRow("eD2K idle")        << qint64(9000) << qint64(0)    << qint64(3500) << qint64(1750);
     QTest::newRow("eD2K slow")        << qint64(9000) << qint64(800)  << qint64(2500) << qint64(1750);
     QTest::newRow("Usenet near share") << qint64(1500) << qint64(9000) << qint64(1750) << qint64(1750);
-    QTest::newRow("Usenet slow")      << qint64(300)  << qint64(9000) << qint64(1750) << qint64(3063);
+    QTest::newRow("Usenet slow")      << qint64(300)  << qint64(9000) << qint64(1750) << qint64(3125);
+    QTest::newRow("eD2K trickle")     << qint64(9000) << qint64(40)   << qint64(3500 - minReserve(1750)) << qint64(1750);
     QTest::newRow("Usenet idle")      << qint64(0)    << qint64(9000) << qint64(1750) << qint64(3500);
 }
 
@@ -319,6 +386,17 @@ void tst_UsenetBandwidthSplit::rateWindowSlidesAndClears()
     w.push(80 * kKB, 250);
     w.clear();
     QCOMPARE(w.bytesPerSecond(), 0);
+}
+
+void tst_UsenetBandwidthSplit::rateWindowRecentReadsTheNewestTicks()
+{
+    TickRateWindow w;
+    for (int i = 0; i < TickRateWindow::kTicks; ++i)
+        w.push(0, 250);
+    w.push(100 * kKB, 250);
+    w.push(100 * kKB, 250);
+    QCOMPARE(w.recentBytesPerSecond(), 400 * kKB);
+    QCOMPARE(w.bytesPerSecond(), 100 * kKB);
 }
 
 QTEST_MAIN(tst_UsenetBandwidthSplit)

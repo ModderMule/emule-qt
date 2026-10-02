@@ -70,9 +70,11 @@ PartFile::~PartFile()
         if (client->reqFile() == this)
             client->setReqFile(nullptr);
     }
-    for (auto* client : m_a4afSrcList) {
+    // Copy: removeFileFromOtherLists() edits m_a4afSrcList. Leaves no client pointing here.
+    for (auto* client : std::vector(m_a4afSrcList)) {
         if (client->reqFile() == this)
             client->setReqFile(nullptr);
+        client->removeFileFromOtherLists(this);
     }
 
     // Clear requested blocks list — blocks are owned by clients'
@@ -303,6 +305,20 @@ bool PartFile::isComplete(uint64 start, uint64 end) const
             return false; // Gap intersects the range
     }
     return true;
+}
+
+bool PartFile::isCompleteBDSafe(uint64 start, uint64 end) const
+{
+    // MFC srchybrid/PartFile.cpp:1631-1651
+    if (fileSize() == 0)
+        return false;
+    end = std::min(end, fileSize() - 1);
+    if (start > end || !isComplete(start, end))
+        return false;
+    // Sorted by end, not start, so no early break.
+    return std::ranges::none_of(m_bufferedData, [&](const BufferedData& bd) {
+        return bd.start <= end && bd.end >= start;
+    });
 }
 
 bool PartFile::isComplete(uint32 part) const
@@ -3119,7 +3135,8 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
         // Queued, not dialled — MFC PartFile.cpp:3927. process() reaches it through
         // askForDownload(), which owns the socket cap, the re-ask throttle, the LowID
         // handling and the A4AF swap that a direct tryToConnect() skipped.
-        if (!theApp.downloadQueue || !theApp.downloadQueue->checkAndAddSource(this, client))
+        // A result other than `client` means it was rejected or folded into a known one.
+        if (!theApp.downloadQueue || theApp.downloadQueue->checkAndAddSource(this, client) != client)
             delete client;
     }
     } catch (...) {

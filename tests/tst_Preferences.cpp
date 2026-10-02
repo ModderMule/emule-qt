@@ -40,6 +40,8 @@ private slots:
         // Default ON: IPv6 peers are a small population and would otherwise be outbid
         // on upload score by the IPv4 majority indefinitely.
         QCOMPARE(prefs.separateIPv6Queue(), true);
+        // Default OFF: outgoing IPv6 is pinned to the stable address we advertise.
+        QCOMPARE(prefs.ipv6UsePrivacyAddress(), false);
     }
 
     void defaults_bandwidth()
@@ -157,6 +159,7 @@ private slots:
             p1.setEnableUPnP(false);
             p1.setCloseUPnPOnExit(false);
             p1.setSeparateIPv6Queue(false);   // non-default, so a lost key would show
+            p1.setIpv6UsePrivacyAddress(true);
             // One switch per process — both must survive the round trip
             p1.setLogToDiskCore(true);
             p1.setLogToDiskGui(true);
@@ -199,6 +202,7 @@ private slots:
         QCOMPARE(p2.enableUPnP(), false);
         QCOMPARE(p2.closeUPnPOnExit(), false);
         QCOMPARE(p2.separateIPv6Queue(), false);
+        QCOMPARE(p2.ipv6UsePrivacyAddress(), true);
         QCOMPARE(p2.logToDiskCore(), true);
         QCOMPARE(p2.logToDiskGui(), true);
         QCOMPARE(p2.maxLogFileSize(), 2048u);

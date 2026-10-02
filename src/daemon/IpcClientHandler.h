@@ -54,6 +54,9 @@ signals:
     /// connection pool. Same forwarding route as webServerConfigChanged.
     void usenetConfigChanged();
 
+    /// preventStandby changed; the daemon re-evaluates its sleep hold now.
+    void standbyConfigChanged();
+
     /// The indexer account list changed and the daemon should re-read it.
     void indexerConfigChanged();
 

@@ -2876,13 +2876,19 @@ QString WebServer::buildServerListPage(bool /*isAdmin*/, const QString& sessionI
             // All three come from the servers themselves.
             lineVars[QStringLiteral("ServerName")] = htmlText(srv->name());
             lineVars[QStringLiteral("ServerAddr")] = htmlText(srv->address());
+            // A dual-stack server's IPv6 on a second line of the address cell
+            lineVars[QStringLiteral("ServerAddr6")] = srv->hasBothFamilies()
+                ? QStringLiteral("<br>[%1]").arg(htmlText(srv->ipv6Address().toString()))
+                : QString();
             lineVars[QStringLiteral("ServerPort")] = QString::number(srv->port());
             lineVars[QStringLiteral("ServerDescription")] = htmlText(srv->description());
             lineVars[QStringLiteral("ServerPing")] = QString::number(srv->ping());
             lineVars[QStringLiteral("ServerUsers")] = QString::number(srv->users());
             lineVars[QStringLiteral("ServerFiles")] = QString::number(srv->files());
 
-            bool isConnected = m_serverConnect && m_serverConnect->currentServer() == srv.get();
+            // currentServer() is the socket's copy; the id is shared with the list entry.
+            const Server* cur = m_serverConnect ? m_serverConnect->currentServer() : nullptr;
+            bool isConnected = cur && cur->serverId() == srv->serverId();
             lineVars[QStringLiteral("ServerStatus")] = isConnected
                 ? QStringLiteral("connected") : QStringLiteral("disconnected");
             lineVars[QStringLiteral("ServerStatusText")] =
@@ -3116,7 +3122,7 @@ QString WebServer::buildServerInfoPage()
         if (const Server* srv = m_serverConnect->currentServer()) {
             // One arg() per line: a server name holding "%2" has to stay text.
             info += tr("Connected to: %1 (%2:%3)")
-                        .arg(srv->name(), srv->address(), QString::number(srv->port()))
+                        .arg(srv->name(), srv->bracketedAddress(), QString::number(srv->port()))
                     + QLatin1Char('\n');
             info += tr("Client ID: %1 (%2)")
                         .arg(QString::number(m_serverConnect->clientID()),

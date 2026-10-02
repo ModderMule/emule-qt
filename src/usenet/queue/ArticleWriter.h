@@ -15,18 +15,24 @@
 /// Two file-system notes:
 ///   - `reserve()` sets the final size once, up front. Growing a file by
 ///     seeking past its end repeatedly is what fragments it badly.
-///   - This is a plain synchronous writer. Phase 3 moves it to a worker thread;
-///     nothing here holds Qt object affinity, so that move costs nothing.
+///   - Given an ArticleFileCache, writers on the same file share one unbuffered
+///     handle and each keeps its own position, so concurrent articles on one
+///     file still land at their own offsets.
 
 #include <QByteArrayView>
 #include <QFile>
 #include <QString>
 
+#include <memory>
+
 namespace eMule::usenet {
+
+class ArticleFileCache;
 
 class ArticleWriter {
 public:
-    ArticleWriter() = default;
+    /// @p cache may be null: the writer then opens a handle of its own.
+    explicit ArticleWriter(ArticleFileCache* cache = nullptr) : m_cache(cache) {}
     ~ArticleWriter();
 
     ArticleWriter(const ArticleWriter&) = delete;
@@ -47,19 +53,21 @@ public:
 
     bool write(QByteArrayView data, QString& error);
 
-    /// Push the OS buffers out. Called at the end of a file, not per article:
-    /// per-article fsync on a 100-part release is a measurable stall for no
-    /// safety worth having.
+    /// Kept for callers; the handle is unbuffered, so there is nothing to push.
+    /// Never an fsync: per-article fsync on a 100-part release is a measurable
+    /// stall for no safety worth having.
     bool flush(QString& error);
 
     void close();
 
-    [[nodiscard]] bool isOpen() const { return m_file.isOpen(); }
+    [[nodiscard]] bool isOpen() const { return m_file && m_file->isOpen(); }
     [[nodiscard]] qint64 bytesWritten() const { return m_bytesWritten; }
-    [[nodiscard]] QString path() const { return m_file.fileName(); }
+    [[nodiscard]] QString path() const { return m_file ? m_file->fileName() : QString(); }
 
 private:
-    QFile m_file;
+    ArticleFileCache* m_cache = nullptr;
+    std::shared_ptr<QFile> m_file;
+    qint64 m_pos = 0;               ///< this writer's position; the handle may be shared
     qint64 m_bytesWritten = 0;
 };
 

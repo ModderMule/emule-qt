@@ -1621,6 +1621,18 @@ void UpDownClient::removeFileFromOtherLists(PartFile* file)
         return;
     m_otherRequests.remove(file);
     m_otherNoNeeded.remove(file);
+    // Both sides, as addRequestForAnotherFile() links them; a one-sided unlink left a
+    // freed client in the file's A4AF list.
+    std::erase(file->a4afSrcList(), this);
+}
+
+void UpDownClient::removeFromAllOtherLists()
+{
+    // Copies: removeFileFromOtherLists() edits both lists. MFC DownloadQueue.cpp:636-657.
+    for (auto* file : std::list<PartFile*>(m_otherRequests))
+        removeFileFromOtherLists(file);
+    for (auto* file : std::list<PartFile*>(m_otherNoNeeded))
+        removeFileFromOtherLists(file);
 }
 
 // ===========================================================================

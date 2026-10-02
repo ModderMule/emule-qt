@@ -32,6 +32,12 @@ private slots:
     void writeTags_ipv6RoundTrip();
     void writeTags_noIPv6TagForIPv4();
 
+    // Dual-stack (one row per server)
+    void dualStack_addAddressKeepsBothFamilies();
+    void dualStack_dialOrderAndOtherFamily();
+    void dualStack_metRoundTrip();
+    void dualStack_dynIPRefusesAddress();
+
     // Tag deserialization
     void addTag_serverName();
     void addTag_description();
@@ -308,6 +314,85 @@ void tst_Server::writeTags_noIPv6TagForIPv4()
         Tag tag(f, true);
         QVERIFY(tag.nameId() != ST_IPV6);
     }
+}
+
+void tst_Server::dualStack_addAddressKeepsBothFamilies()
+{
+    const Address v4 = Address::fromString(QStringLiteral("176.125.242.230"));
+    const Address v6 = Address::fromString(QStringLiteral("2001:678:6d4:9202::278"));
+
+    // v6-only entry learns its IPv4 (ident over an IPv6 session): v4 becomes primary
+    Server srv(v6, 5555);
+    QVERIFY(srv.addAddress(v4));
+    QCOMPARE(srv.ipAddress(), v4);
+    QCOMPARE(srv.ipv4Address(), v4);
+    QCOMPARE(srv.ipv6Address(), v6);
+    QVERIFY(srv.hasBothFamilies());
+    QVERIFY(srv.hasAddress(v4));
+    QVERIFY(srv.hasAddress(v6));
+    QVERIFY(!srv.hasAddress(Address()));
+    QCOMPARE(srv.address(), QStringLiteral("176.125.242.230"));   // dedup key stays the IPv4
+
+    // v4 entry learns its IPv6 (CT_MOD_SVR_IP_V6 over an IPv4 session)
+    Server other(v4, 5555);
+    QVERIFY(!other.hasBothFamilies());
+    QVERIFY(other.addAddress(v6));
+    QCOMPARE(other.ipAddress(), v4);
+    QCOMPARE(other.ipv6Address(), v6);
+
+    // The copy a ServerSocket works on keeps both
+    const Server copy(other);
+    QVERIFY(copy.hasBothFamilies());
+    QCOMPARE(copy.serverId(), other.serverId());
+}
+
+void tst_Server::dualStack_dialOrderAndOtherFamily()
+{
+    const Address v4 = Address::fromString(QStringLiteral("176.125.242.230"));
+    const Address v6 = Address::fromString(QStringLiteral("2001:678:6d4:9202::278"));
+    Server srv(v4, 5555);
+    srv.addAddress(v6);
+
+    QCOMPARE(srv.dialAddress(false), v4);   // IPv4 first: only it can give a HighID
+    QCOMPARE(srv.dialAddress(true), v6);
+    QCOMPARE(srv.otherFamilyAddress(v4), v6);
+    QCOMPARE(srv.otherFamilyAddress(v6), v4);
+
+    Server single(v6, 5555);
+    QCOMPARE(single.dialAddress(false), v6);
+    QVERIFY(single.otherFamilyAddress(v6).isNull());
+}
+
+void tst_Server::dualStack_metRoundTrip()
+{
+    const Address v4 = Address::fromString(QStringLiteral("176.125.242.230"));
+    const Address v6 = Address::fromString(QStringLiteral("2001:678:6d4:9202::278"));
+    Server original(v4, 5555);
+    original.addAddress(v6);
+    original.setName(QStringLiteral("eNode-go"));
+
+    // Header IPv4 + ST_IPV6 tag — stock eMule skips the tag and keeps the IPv4
+    SafeMemFile f;
+    f.writeUInt32(original.ipAddress().toNetworkUint32());
+    f.writeUInt16(original.port());
+    const qint64 countPos = f.position();
+    f.writeUInt32(0);
+    const uint32 tagCount = original.writeTags(f);
+    f.seek(countPos, 0);
+    f.writeUInt32(tagCount);
+
+    f.seek(0, 0);
+    Server restored(f);
+    QCOMPARE(restored.ipAddress(), v4);
+    QCOMPARE(restored.ipv6Address(), v6);
+    QCOMPARE(restored.name(), original.name());
+}
+
+void tst_Server::dualStack_dynIPRefusesAddress()
+{
+    auto dyn = Server::fromAddressString(QStringLiteral("srv.example.com"), 4661);
+    QVERIFY(!dyn->addAddress(Address::fromString(QStringLiteral("2001:db8::1"))));
+    QVERIFY(!dyn->hasBothFamilies());
 }
 
 void tst_Server::addTag_maxUsers()

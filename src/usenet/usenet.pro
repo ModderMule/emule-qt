@@ -39,6 +39,8 @@ SOURCES += \
     post/UsenetReleaseChecks.cpp \
     post/UsenetUnpacker.cpp \
     queue/ArticleWriter.cpp \
+    queue/UsenetStateWriter.cpp \
+    queue/ArticleFileCache.cpp \
     queue/UsenetQueue.cpp \
     queue/UsenetWatchFolder.cpp \
     queue/UsenetQueueItem.cpp \
@@ -73,6 +75,8 @@ HEADERS += \
     post/UsenetReleaseChecks.h \
     post/UsenetUnpacker.h \
     queue/ArticleWriter.h \
+    queue/UsenetStateWriter.h \
+    queue/ArticleFileCache.h \
     queue/UsenetQueue.h \
     queue/UsenetWatchFolder.h \
     queue/UsenetQueueItem.h \

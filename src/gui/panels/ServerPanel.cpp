@@ -617,10 +617,10 @@ QWidget* ServerPanel::createServerListPanel()
     header->setStretchLastSection(true);
     header->setDefaultSectionSize(80);
     // Name, IP, Description, Ping, Users, Max Users, Files, Preference, Failed,
-    // Static, Soft File Limit, LowID, Obfuscation, Country.
+    // Static, Soft File Limit, LowID, Obfuscation, Country, IPv6.
     serverView->bindColumns(QStringLiteral("serverList"),
-        {140, 140, 160, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 100},
-        {ServerListModel::ColCountry});
+        {140, 140, 160, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 100, 220},
+        {ServerListModel::ColCountry, ServerListModel::ColIPv6});
     CountryFlags::bindFlagColumn(serverView);
 
     m_serverListView->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -910,7 +910,8 @@ void ServerPanel::requestServerList()
 }
 
 // ---------------------------------------------------------------------------
-// Selection save/restore — keyed by IP:port column value
+// Selection save/restore — keyed by the daemon's serverId (a dual-stack merge
+// can change the IP column text of a selected row)
 // ---------------------------------------------------------------------------
 
 void ServerPanel::applyServerSortMode()
@@ -936,10 +937,13 @@ QStringList ServerPanel::saveSelection() const
     if (!sel || !sel->hasSelection())
         return keys;
     const QModelIndex current = sel->currentIndex();
+    const auto keyOf = [](const QModelIndex& idx) {
+        return QString::number(idx.data(ServerListModel::ServerIdRole).toUInt());
+    };
     if (current.isValid() && sel->isRowSelected(current.row(), current.parent()))
-        keys << current.siblingAtColumn(ServerListModel::ColIP).data(Qt::DisplayRole).toString();
+        keys << keyOf(current);
     for (const QModelIndex& idx : sel->selectedRows(ServerListModel::ColIP)) {
-        const QString key = idx.data(Qt::DisplayRole).toString();
+        const QString key = keyOf(idx);
         if (!keys.contains(key))
             keys << key;
     }
@@ -964,7 +968,8 @@ void ServerPanel::restoreSelection(const QStringList& keys)
     const int lastCol = proxyModel->columnCount() - 1;
     for (int row = 0; row < proxyModel->rowCount(); ++row) {
         const QModelIndex idx = proxyModel->index(row, ServerListModel::ColIP);
-        const qsizetype pos = keys.indexOf(idx.data(Qt::DisplayRole).toString());
+        const qsizetype pos = keys.indexOf(
+            QString::number(idx.data(ServerListModel::ServerIdRole).toUInt()));
         if (pos < 0)
             continue;
         selection.select(proxyModel->index(row, 0), proxyModel->index(row, lastCol));
@@ -1243,18 +1248,22 @@ void ServerPanel::parseAndAddServersFromMet(const QByteArray& data)
             }
         }
 
-        // Build address string for AddServer IPC
+        // Build address string for AddServer IPC. A dual-stack entry (IPv4 header
+        // plus ST_IPV6 tag) sends the IPv4 as the address and the IPv6 as addr6.
         QString address;
+        QString address6;
         if (!dynIP.isEmpty()) {
             address = dynIP;
-        } else if (!ipv6.isNull()) {
-            // IPv6 server: the 4-byte header field was 0 and the address came in the tag.
-            address = ipv6.toString();
         } else if (ip != 0) {
             // server.met stores IPs in eD2K byte order (first octet in LSB) — swap for QHostAddress
             const quint32 swapped = ((ip & 0xFF) << 24) | ((ip & 0xFF00) << 8)
                                   | ((ip >> 8) & 0xFF00) | ((ip >> 24) & 0xFF);
             address = QHostAddress(swapped).toString();
+            if (!ipv6.isNull())
+                address6 = ipv6.toString();
+        } else if (!ipv6.isNull()) {
+            // IPv6 server: the 4-byte header field was 0 and the address came in the tag.
+            address = ipv6.toString();
         }
 
         if (address.isEmpty() || port == 0) {
@@ -1271,6 +1280,8 @@ void ServerPanel::parseAndAddServersFromMet(const QByteArray& data)
             req.append(address);
             req.append(static_cast<qint64>(port));
             req.append(serverName);
+            if (!address6.isEmpty())
+                req.append(address6);
             m_ipc->sendRequest(std::move(req));
             ++addedCount;
         }

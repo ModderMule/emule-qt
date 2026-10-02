@@ -102,9 +102,7 @@ void tst_ServerGlobalSearchLive::initTestCase()
     // unpack it the same way CoreSession::start() does.
     connect(m_udpSocket, &UDPSocket::globalSearchResult,
             this, [this](const uint8* data, uint32 size, const Endpoint& server) {
-                m_searchList->processUDPSearchAnswer(data, size, true,
-                                                     server.address().toNetworkUint32(),
-                                                     server.port());
+                m_searchList->processUDPSearchAnswer(data, size, true, server);
             });
 }
 
@@ -126,7 +124,7 @@ void tst_ServerGlobalSearchLive::globalSearchTwoServers()
 
     // Register IPs so spam tracking allows results through
     for (Server* srv : targets)
-        m_searchList->addSentUDPRequestIP(searchID, srv->ipAddress().toNetworkUint32());
+        m_searchList->addSentUDPRequestIP(searchID, srv->ipAddress());
 
     // Build the search-terms payload once for keyword "eMulev0.50a", then let
     // buildGlobalSearchPacket pick the per-server opcode (REQ/REQ2/REQ3) from each

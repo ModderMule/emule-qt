@@ -9,6 +9,7 @@
 /// - Integration with bandwidth throttler via ThrottledFileSocket
 /// - Proxy support via QNetworkProxy
 
+#include "net/Address.h"
 #include "net/EncryptedStreamSocket.h"
 #include "net/Packet.h"
 #include "net/ProxySettings.h"
@@ -113,6 +114,10 @@ public:
     // --- Proxy ---
 
     void initProxySupport(const ProxySettings& settings);
+
+    /// connectToHost() for eD2K peers and servers: an IPv6 connect leaves from the
+    /// pinned stable address (IPv6SourcePin) unless privacy addressing or a proxy is on.
+    void connectToPeer(const Address& addr, uint16 port);
 
     /// How many times the send-retry timer has fired on this socket. Exposed for
     /// tests and wakeup diagnostics: a socket that cannot send must back off rather

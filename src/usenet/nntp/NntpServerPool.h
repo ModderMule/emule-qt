@@ -137,6 +137,10 @@ public:
     void setRetryInterval(int seconds) { m_retryIntervalSec = seconds; }
     [[nodiscard]] int retryInterval() const { return m_retryIntervalSec; }
 
+    /// How long a pooled connection may sit unused before it says QUIT. Applies
+    /// to connections opened from now on; 0 keeps them forever.
+    void setIdleTimeout(int ms) { m_idleTimeoutMs = ms; }
+
     /// Bumped whenever the server list changes.
     [[nodiscard]] int generation() const { return m_generation; }
 
@@ -185,6 +189,11 @@ private:
     /// provider keeps accepting them.
     static constexpr qint64 kCapProbeStepMs = 5'000;
 
+    /// A pooled connection unused this long says QUIT. Reconnecting costs a few
+    /// round trips; an idle engine holding the account's whole budget locks
+    /// every other client on it out.
+    static constexpr int kIdleTimeoutMs = 30'000;
+
     /// A limitConnections() hold on one bucket.
     struct Cap {
         int limit = 0;
@@ -198,6 +207,10 @@ private:
     [[nodiscard]] qint64 nowSeconds() const;
     void rebuildServerIndex();
     void dropConnections(const QString& serverKey);
+
+    /// Forget idle leases whose socket is no longer Ready: closed by the idle
+    /// timer or by the server. They still counted against the bucket.
+    void dropClosedIdle();
 
     QList<NewsServer> m_servers;
     QNetworkProxy m_proxy{QNetworkProxy::NoProxy};
@@ -215,6 +228,7 @@ private:
 
     int m_maxLevel = 0;
     int m_retryIntervalSec = 60;
+    int m_idleTimeoutMs = kIdleTimeoutMs;
     int m_generation = 0;
 };
 

@@ -220,8 +220,9 @@ void tst_IPFilter::loadFromFile_realWorld_filterDat()
 
     IPFilter filter;
     const int count = filter.loadFromFile(path);
-    QVERIFY2(count > 200000,
-             qPrintable(QStringLiteral("Expected >200000 entries, got %1").arg(count)));
+    // Floor, not an exact count: the bundled list is refreshed (172k as of 0.5.5).
+    QVERIFY2(count > 150000,
+             qPrintable(QStringLiteral("Expected >150000 entries, got %1").arg(count)));
 }
 
 void tst_IPFilter::loadFromFile_realWorld_peerGuardian()

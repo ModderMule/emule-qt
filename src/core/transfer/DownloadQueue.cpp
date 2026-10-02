@@ -210,7 +210,7 @@ void DownloadQueue::deleteAll()
             client->removeFileFromOtherLists(file);
         }
 
-        for (auto* client : file->a4afSrcList())
+        for (auto* client : std::vector(file->a4afSrcList()))  // copy — the call edits it
             client->removeFileFromOtherLists(file);
         file->a4afSrcList().clear();
     }
@@ -328,17 +328,17 @@ bool isSelf(uint32 hybridID, uint16 port,
 
 } // namespace
 
-bool DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* source)
+UpDownClient* DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* source)
 {
     if (!file || !source)
-        return false;
+        return nullptr;
 
     // Never add ourselves as a source for our own download.
     if (isSelf(source->userIDHybrid(), source->userPort(),
                source->serverAddress(), source->serverPort())) {
         logDebug(QStringLiteral("Source rejected — that is us: %1:%2")
                      .arg(ipstr(source->userAddress())).arg(source->userPort()));
-        return false;
+        return nullptr;
     }
 
     // The same test by identity rather than address: a source exchange can hand us our
@@ -346,68 +346,69 @@ bool DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* source)
     if (source->hasValidHash() && md4equ(source->userHash(), thePrefs.userHash().data())) {
         logDebug(QStringLiteral("Source rejected — user hash matches our own: %1")
                      .arg(ipstr(source->userAddress())));
-        return false;
+        return nullptr;
     }
 
     if (!sourceFiltersPass(file, source, /*ignoreGlobalDeadList*/ false))
-        return false;
+        return nullptr;
 
-    // ClientList dedup across files — check if a matching client already exists globally
-    if (m_clientList) {
-        UpDownClient* existing = nullptr;
-        if (source->hasValidHash())
-            existing = m_clientList->findByUserHash(source->userHash(), source->userAddress().toNetworkUint32(), source->userPort());
-        // Address-typed lookup: findByIP() would compare toNetworkUint32(), which is 0
-        // for an IPv6 source, so it matched every address-less client (server sources
-        // are built without a userAddress) on the same port and rejected the IPv6
-        // source as a bogus duplicate.
-        if (!existing)
-            existing = m_clientList->findByAddress(source->userAddress(), source->userPort());
-        if (existing && existing != source) {
-            logDebug(QStringLiteral("Source rejected — duplicate in ClientList: IP=%1:%2")
-                         .arg(ipstr(source->userAddress())).arg(source->userPort()));
-            return false;
-        }
-    }
-
-    // Check if source already exists in the file's source list
-    const auto& srcList = file->srcList();
-    for (const auto* existing : srcList) {
-        if (existing == source)
-            return false;
-
-        // Compare by user hash if available
-        if (existing->hasValidHash() && source->hasValidHash()) {
-            if (md4equ(existing->userHash(), source->userHash())) {
-                logDebug(QStringLiteral("Source rejected — duplicate hash in file source list: IP=%1:%2")
-                             .arg(ipstr(source->userAddress())).arg(source->userPort()));
-                return false;
+    // Already a source of some download? compare() matches a pre-hello source by
+    // userIDHybrid + port, which is what keeps a server, SLS, SX and Kad copy of the same
+    // peer from each getting in before any of them has said hello. A match on another
+    // file becomes an A4AF request instead. MFC DownloadQueue.cpp:488-505.
+    const auto scan = [&](PartFile* curFile) {
+        for (auto* cur : curFile->srcList()) {
+            if (cur == source)
+                return true;
+            if (!cur->compare(source, /*ignoreUserHash*/ true)
+                && !cur->compare(source, /*ignoreUserHash*/ false)
+                && !sameIPv6Endpoint(cur, source))
+            {
+                continue;
             }
+            if (curFile != file && cur->addRequestForAnotherFile(file)) {
+                if (cur->downloadState() != DownloadState::Connected) {
+                    cur->swapToAnotherFile(
+                        QStringLiteral("New A4AF source found. DownloadQueue::checkAndAddSource()"),
+                        false, false, false, nullptr, true, false);
+                }
+            }
+            logDebug(QStringLiteral("Source rejected — already a source of %1: %2:%3")
+                         .arg(curFile->fileName(), ipstr(cur->connectAddress()))
+                         .arg(cur->userPort()));
+            return true;
         }
-
-        // Compare by IP:port
-        if (existing->userAddress() == source->userAddress() &&
-            existing->userPort() == source->userPort() &&
-            !existing->userAddress().isNull())
-        {
-            logDebug(QStringLiteral("Source rejected — duplicate IP:port in file source list: %1:%2")
-                         .arg(ipstr(source->userAddress())).arg(source->userPort()));
-            return false;
-        }
+        return false;
+    };
+    // `file` first: it need not be in files() (tests), and a same-file hit is the common case.
+    if (scan(file))
+        return nullptr;
+    for (auto* curFile : files()) {
+        if (curFile && curFile != file && scan(curFile))
+            return nullptr;
     }
 
     // Check max sources per file
     if (file->sourceCount() >= thePrefs.maxSourcesPerFile()) {
         logDebug(QStringLiteral("Source rejected — max sources reached (%1/%2) for %3")
                      .arg(file->sourceCount()).arg(thePrefs.maxSourcesPerFile()).arg(file->fileName()));
-        return false;
+        return nullptr;
     }
 
-    source->setReqFile(file);  // MFC: SetRequestFile(sender)
-    file->addSource(source);
-    if (m_clientList)
-        m_clientList->addClient(source, true);  // skipDupTest=true, already checked above
-    return true;
+    // Really new as a source, but perhaps a client we already know — one on our upload
+    // queue, say. Then that instance becomes the source and `source` is left to the caller
+    // to delete. MFC DownloadQueue.cpp:508-526.
+    UpDownClient* adopted = source;
+    if (m_clientList) {
+        if (auto* known = m_clientList->attachToAlreadyKnown(source, nullptr))
+            adopted = known;
+        else
+            m_clientList->addClient(source, true);  // skipDupTest: attachToAlreadyKnown() just did it
+    }
+
+    adopted->setReqFile(file);  // MFC: SetRequestFile(sender)
+    file->addSource(adopted);
+    return adopted;
 }
 
 bool DownloadQueue::checkAndAddKnownSource(PartFile* file, UpDownClient* source,
@@ -466,6 +467,8 @@ void DownloadQueue::removeSource(UpDownClient* source)
         if (hadSource)
             file->updatePartsInfo();
     }
+    // And every file that links it as A4AF — MFC DownloadQueue.cpp:636-657.
+    source->removeFromAllOtherLists();
 }
 
 void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& result)
@@ -518,14 +521,12 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
         }
         if (buddyIPv6)
             client->setBuddyIPv6(Address::fromIPv6Bytes(buddyIPv6));
-        if (checkAndAddSource(file, client)) {
+        if (addSourceAndConnect(file, client)) {
             logDebug(QStringLiteral("addKadSourceResult: source ADDED type=%1 file=%2 totalSources=%3")
                          .arg(sourceType).arg(file->fileName()).arg(file->sourceCount()));
-            client->tryToConnect();
         } else {
             logDebug(QStringLiteral("addKadSourceResult: source REJECTED type=%1 IP=%2:%3")
                          .arg(sourceType).arg(ip).arg(tcpPort));
-            delete client;
         }
     };
 
@@ -774,10 +775,12 @@ void DownloadQueue::addUDPGlobalSources(const uint8* data, uint32 size, const En
 
     // Attribute the sources to the server that actually answered. Fall back to
     // the sender's TCP port (UDP - 4) if it is not (yet) in our list.
+    // The stamp is the ed2k (IPv4) form, used for LowID callbacks through the server;
+    // an IPv6 sender yields 0 unless its list entry also knows the IPv4.
     uint32 srvIP = from.address().toNetworkUint32();
     uint16 srvPort = (from.port() >= 4) ? static_cast<uint16>(from.port() - 4) : from.port();
     if (theApp.serverList) {
-        if (auto* srv = theApp.serverList->findByIPUdp(srvIP, from.port(), true)) {
+        if (auto* srv = theApp.serverList->findByIPUdp(from.address(), from.port(), true)) {
             srvIP = srv->ipAddress().toNetworkUint32();
             srvPort = srv->port();
         }
@@ -906,10 +909,7 @@ void DownloadQueue::addServerSourceClient(PartFile* file, uint32 userId, uint16 
     if (hasHash)
         client->setUserHash(userHash);
 
-    if (checkAndAddSource(file, client))
-        client->tryToConnect();
-    else
-        delete client;
+    addSourceAndConnect(file, client);
 }
 
 void DownloadQueue::addServerSourceClientIPv6(PartFile* file, const uint8* ipv6, uint16 port,
@@ -938,10 +938,7 @@ void DownloadQueue::addServerSourceClientIPv6(PartFile* file, const uint8* ipv6,
     if (hasHash)
         client->setUserHash(userHash);
 
-    if (checkAndAddSource(file, client))
-        client->tryToConnect();
-    else
-        delete client;
+    addSourceAndConnect(file, client);
 }
 
 UpDownClient* DownloadQueue::makeSourceClient(PartFile* file, uint32 ed2kUserId,
@@ -1084,13 +1081,7 @@ bool DownloadQueue::addVettedSource(PartFile* file, uint32 ed2kUserId, const Add
     if (hints.udpPort != 0)
         client->setUDPPort(hints.udpPort);
 
-    if (!checkAndAddSource(file, client)) {
-        delete client;
-        return false;
-    }
-
-    client->tryToConnect();
-    return true;
+    return addSourceAndConnect(file, client);
 }
 
 void DownloadQueue::addLinkUrlSource(PartFile* file, const ED2KLinkSource& source)
@@ -1117,12 +1108,8 @@ void DownloadQueue::addLinkUrlSource(PartFile* file, const ED2KLinkSource& sourc
     client->setRequestFile(file);
     client->setSourceFrom(SourceFrom::Link);
 
-    if (checkAndAddSource(file, client)) {
-        client->tryToConnect();
+    if (addSourceAndConnect(file, client))
         file->updatePartsInfo();   // MFC PartFile.cpp:2555
-    } else {
-        delete client;
-    }
 }
 
 // ===========================================================================
@@ -1374,9 +1361,8 @@ bool DownloadQueue::sendNextUDPPacket()
         return false;
 
     // The connected server is already queried over TCP — skip it over UDP.
-    Server* connected = m_serverConnect->currentServer();
-    if (connected)
-        connected = sl->findByAddress(connected->address(), connected->port());
+    const Server* copy = m_serverConnect->currentServer();
+    const Server* connected = copy ? sl->findById(copy->serverId()) : nullptr;
 
     // True while `s` is still a live entry (a server may be reaped between ticks).
     auto stillListed = [&](const Server* s) -> bool {
@@ -1543,11 +1529,10 @@ bool DownloadQueue::sendGlobGetSourcesUDPPacket(SafeMemFile& data, bool ext2Pack
     if (theApp.statistics)
         theApp.statistics->addUpDataOverheadServer(pktSize);
 
-    logDebug(QStringLiteral("DownloadQueue: sending %1 to server %2:%3 (%4 files, %5 large)")
+    logDebug(QStringLiteral("DownloadQueue: sending %1 to server %2 (%3 files, %4 large)")
                  .arg(ext2Packet ? QStringLiteral("OP_GlobGetSources2")
-                                 : QStringLiteral("OP_GlobGetSources"))
-                 .arg(m_curUdpServer->address())
-                 .arg(m_curUdpServer->port())
+                                 : QStringLiteral("OP_GlobGetSources"),
+                      m_curUdpServer->addressWithPort())
                  .arg(nFiles)
                  .arg(nIncludedLargeFiles));
 
@@ -1677,6 +1662,20 @@ void DownloadQueue::applyAutoCategory(PartFile* file) const
     file->setCategory(static_cast<uint32>(match));
     logInfo(QStringLiteral("Auto-categorised %1 into \"%2\"")
                 .arg(file->fileName(), categories.at(match).displayName()));
+}
+
+uint32 DownloadQueue::datarateOver(uint32 windowMs) const
+{
+    const uint32 now = static_cast<uint32>(getTickCount());
+    uint64 sum = 0;
+    uint32 count = 0;
+    for (auto it = m_averageDRList.crbegin(); it != m_averageDRList.crend(); ++it) {
+        if (now - it->timestamp > windowMs)
+            break;
+        sum += it->dataLen;
+        ++count;
+    }
+    return count > 0 ? static_cast<uint32>(sum / count) : 0;
 }
 
 bool DownloadQueue::hasActiveTransfers() const
@@ -1847,6 +1846,33 @@ bool DownloadQueue::sourceFiltersPass(PartFile* file, UpDownClient* source,
     }
 
     return true;
+}
+
+// ===========================================================================
+// sameIPv6Endpoint — private; IPv6 addition to checkAndAddSource()'s duplicate scan
+// ===========================================================================
+
+bool DownloadQueue::sameIPv6Endpoint(const UpDownClient* a, const UpDownClient* b)
+{
+    // A v6-only source and a dual-stack one carrying the same v6 hint share no IPv4 key.
+    return !a->userIPv6().isNull() && a->userIPv6() == b->userIPv6()
+           && a->userPort() != 0 && a->userPort() == b->userPort();
+}
+
+// ===========================================================================
+// addSourceAndConnect — private; checkAndAddSource() plus the caller's half of it
+// ===========================================================================
+
+bool DownloadQueue::addSourceAndConnect(PartFile* file, UpDownClient* client)
+{
+    auto* added = checkAndAddSource(file, client);
+    if (added != client)
+        delete client;
+    // Dial only a fresh source. A known client it was folded into is asked by
+    // PartFile::process() like any other DownloadState::None source.
+    if (added == client)
+        client->tryToConnect();
+    return added != nullptr;
 }
 
 } // namespace eMule

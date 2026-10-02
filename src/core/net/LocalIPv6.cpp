@@ -10,6 +10,7 @@
 
 #include "net/LocalIPv6.h"
 #include "app/AppContext.h"
+#include "net/IPv6SourcePin.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 
@@ -454,7 +455,7 @@ void classifyByPrefixLifetime(std::vector<LocalIPv6Address>& addrs)
     }
 }
 
-Address selectPreferredIPv6(const IPv6PrivacyReport& report)
+Address selectPreferredIPv6(const IPv6PrivacyReport& report, bool preferTemporary)
 {
     const auto pick = [&report](auto&& predicate) -> Address {
         for (const auto& a : report.addresses) {
@@ -465,6 +466,14 @@ Address selectPreferredIPv6(const IPv6PrivacyReport& report)
         }
         return {};
     };
+
+    // By request: advertise the rotating address the OS sends from.
+    if (preferTemporary) {
+        if (const Address a = pick([](const LocalIPv6Address& e) {
+                return e.kind == IPv6AddressKind::Temporary && !e.deprecated; });
+            !a.isNull())
+            return a;
+    }
 
     // Tier 1 — the goal.
     if (const Address a = pick([](const LocalIPv6Address& e) {
@@ -594,29 +603,29 @@ void logIPv6PrivacyAdvisory(const IPv6PrivacyReport& report, const Address& effe
     if (!privacyOn || !report.hasTemporaryAddress())
         return;
 
-    // Lines 2-3 — only when privacy addressing is actually in play.
-    QString why = QStringLiteral(
-        "IPv6: this system also holds a temporary privacy address (RFC 4941)");
-    if (report.policy == IPv6PrivacyPolicy::EnabledPreferred) {
-        why += QStringLiteral(" and prefers it as the outgoing source. Peers then see a source IP "
-                              "different from the one we advertise, which breaks obfuscated IPv6 "
-                              "UDP and expires published sources when the address rotates.");
-    } else {
-        why += QStringLiteral(". Published sources expire when it rotates.");
+    // Line 2 — only when privacy addressing is actually in play. The per-socket source pin
+    // (IPv6SourcePin) keeps peers seeing the address we advertise without root/admin.
+    if (thePrefs.ipv6UsePrivacyAddress()) {
+        logInfo(QStringLiteral("IPv6: using the temporary privacy address as source "
+                               "(\"Use IPv6 privacy address\" is on) — published sources "
+                               "expire when it rotates"));
+        return;
     }
-    logInfo(why);
+    const Address pin = IPv6SourcePin::pinAddress();
+    const auto pinEntry = std::find_if(report.addresses.begin(), report.addresses.end(),
+                                       [&pin](const LocalIPv6Address& a) { return a.address == pin; });
+    if (!pin.isNull() && pinEntry != report.addresses.end()
+        && pinEntry->kind != IPv6AddressKind::Temporary) {
+        logInfo(QStringLiteral("IPv6: sending from %1 instead of the temporary privacy address")
+                    .arg(pin.toString()));
+        return;
+    }
 
-    const QString cmd = ipv6PrivacyDisableCommand();
-    if (!cmd.isEmpty())
-        logInfo(QStringLiteral("IPv6: to disable privacy addresses run:  %1").arg(cmd));
-
-    // The policy change only stops *new* temporary addresses. Ones already assigned keep
-    // their SLAAC lifetime — up to a week — and stay preferred as the outgoing source until
-    // removed, so the advisory is incomplete without these. Naming the actual addresses
-    // costs nothing: they are already in the report.
-    for (const QString& removal : ipv6TemporaryAddressRemovalCommands(report))
-        logInfo(QStringLiteral("IPv6: the policy change does not remove addresses already "
-                               "assigned — also run:  %1").arg(removal));
+    // No stable address to pin: only the system setting can give us one.
+    logInfo(QStringLiteral("IPv6: no stable address to send from — peers see a rotating "
+                           "temporary address"));
+    if (const QString cmd = ipv6PrivacyDisableCommand(); !cmd.isEmpty())
+        logInfo(QStringLiteral("IPv6: to disable privacy addresses system-wide run:  %1").arg(cmd));
 }
 
 Address updatePublicIPv6(const IPv6PrivacyReport& report)
@@ -640,9 +649,14 @@ Address updatePublicIPv6(const IPv6PrivacyReport& report)
 
     // Feed the auto-selection its own slot. Comparing against theApp.publicIPv6() instead
     // would compare a tier-4 candidate with whatever higher tier currently wins.
-    const Address auto_ = selectPreferredIPv6(report);
+    const bool usePrivacy = thePrefs.ipv6UsePrivacyAddress();
+    const Address auto_ = selectPreferredIPv6(report, usePrivacy);
     if (!auto_.isNull())
         theApp.setPublicIPv6Local(auto_);
+
+    // Outgoing IPv6 leaves from the address we advertise from this tier: the override
+    // or the stable pick. Inert while the privacy setting is on (the OS chooses).
+    IPv6SourcePin::setPinAddress(!override.isNull() ? override : selectPreferredIPv6(report));
 
     return theApp.publicIPv6();
 }

@@ -24,9 +24,6 @@ macx {
     ICON = ../../resources/icons/eMule.icns
     QMAKE_INFO_PLIST = Info.plist.in
 }
-linux {
-    QT += dbus
-}
 win32 {
     DEFINES += NOMINMAX WIN32_LEAN_AND_MEAN
 
@@ -81,7 +78,6 @@ SOURCES += \
     app/main.cpp \
     app/MainWindow.cpp \
     app/MiniMuleWidget.cpp \
-    app/PowerManager.cpp \
     app/UiState.cpp \
     app/VersionChecker.cpp \
     controls/AccordionSidebar.cpp \
@@ -153,7 +149,6 @@ HEADERS += \
     app/MainWindow.h \
     app/MiniMuleWidget.h \
     app/PendingOpenQueue.h \
-    app/PowerManager.h \
     app/UiState.h \
     app/VersionChecker.h \
     controls/AccordionSidebar.h \

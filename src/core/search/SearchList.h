@@ -7,6 +7,7 @@
 /// spam detection, and persistence of search tabs and spam filters.
 
 #include "files/KnownFileList.h"
+#include "net/Address.h"
 #include "search/SearchFile.h"
 #include "search/SearchParams.h"
 #include "utils/Types.h"
@@ -18,6 +19,7 @@
 #include <list>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace eMule {
@@ -81,9 +83,9 @@ public:
 
     /// Process TCP search results from a server.
     /// Returns true if "more results available" flag was set.
+    /// @param server The answering server's address and TCP port (either family).
     bool processSearchAnswer(const uint8* packet, uint32 size,
-                             bool optUTF8,
-                             uint32 serverIP, uint16 serverPort);
+                             bool optUTF8, const Endpoint& server);
 
     /// Process a peer's shared file list (MFC ProcessSearchAnswer with sender).
     /// Results go to the sender's own tab, created on first use; returns its ID.
@@ -94,9 +96,9 @@ public:
     [[nodiscard]] const SearchListEntry* searchEntry(uint32 searchID) const { return findEntry(searchID); }
 
     /// Process a single UDP search result.
+    /// @param server The answering server's address and TCP port (UDP port - 4).
     void processUDPSearchAnswer(const uint8* packet, uint32 size,
-                                bool optUTF8,
-                                uint32 serverIP, uint16 serverPort);
+                                bool optUTF8, const Endpoint& server);
 
     /// Core add-to-list with deduplication and parent/child grouping.
     /// Takes ownership of the SearchFile pointer.
@@ -191,10 +193,10 @@ public:
     /// that is not in this set are dropped as unsolicited, so the set must not be
     /// grown by a search that has already been superseded.
     /// MFC: CSearchList::SentUDPRequestNotification — srchybrid/SearchList.cpp:1183-1187.
-    void addSentUDPRequestIP(uint32 searchID, uint32 ip)
+    void addSentUDPRequestIP(uint32 searchID, const Address& ip)
     {
-        if (searchID == m_currentEd2kSearchID)
-            m_curED2KSentRequestsIPs.insert({ip, true});
+        if (searchID == m_currentEd2kSearchID && !ip.isNull())
+            m_curED2KSentRequestsIPs.insert(ip);
     }
 
     // --- Persistence ---
@@ -234,7 +236,7 @@ private:
     std::unordered_map<uint32, uint32> m_foundSourcesCount;
 
     // UDP server tracking
-    std::unordered_map<uint32, bool> m_curED2KSentRequestsIPs;
+    std::unordered_set<Address> m_curED2KSentRequestsIPs;   // Address: v6 servers are 0 as uint32
     std::unordered_map<uint32, UDPServerRecord> m_udpServerRecords;
 
     // Spam filter databases

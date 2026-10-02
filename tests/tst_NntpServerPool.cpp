@@ -67,6 +67,8 @@ private slots:
     void acquireRespectsMaxConnections();
     void releaseReusesAnIdleConnection();
     void releaseUnusableDropsIt();
+    void idleConnectionIsClosedAndForgotten();
+    void closedIdleConnectionFreesItsBudget();
     void blockedServerIsSkippedAndRestored();
     void blockingKeepsBusyLeasesAliveUntilRelease();
     void retryIntervalZeroDisablesBlocking();
@@ -248,6 +250,57 @@ void tst_NntpServerPool::releaseUnusableDropsIt()
     QSignalSpy ready2(second, &NntpSocket::ready);
     QVERIFY(ready2.wait(5000));
     QCOMPARE(server.connectionCount(), 2);
+}
+
+void tst_NntpServerPool::idleConnectionIsClosedAndForgotten()
+{
+    FakeNntpServer server;
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NntpServerPool pool;
+    pool.setIdleTimeout(200);
+    pool.setServers({make(QStringLiteral("solo"), port, 0, 1)});
+
+    NntpSocket* first = pool.acquire(0);
+    QVERIFY(first != nullptr);
+    QSignalSpy ready(first, &NntpSocket::ready);
+    QVERIFY(ready.wait(5000));
+    pool.release(first);
+    QCOMPARE(pool.totalCount(), 1);
+
+    // An idle engine must not sit on the account's connections.
+    QTRY_COMPARE_WITH_TIMEOUT(pool.totalCount(), 0, 5000);
+
+    NntpSocket* second = pool.acquire(0);
+    QVERIFY(second != nullptr);
+    QSignalSpy ready2(second, &NntpSocket::ready);
+    QVERIFY(ready2.wait(5000));
+    QCOMPARE(server.connectionCount(), 2);
+}
+
+void tst_NntpServerPool::closedIdleConnectionFreesItsBudget()
+{
+    FakeNntpServer server;
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NntpServerPool pool;
+    pool.setServers({make(QStringLiteral("solo"), port, 0, 1)});
+
+    NntpSocket* first = pool.acquire(0);
+    QVERIFY(first != nullptr);
+    QSignalSpy ready(first, &NntpSocket::ready);
+    QVERIFY(ready.wait(5000));
+    pool.release(first);
+
+    // Closed while pooled, before its disconnect is processed: the dead lease
+    // must not keep holding the only slot.
+    first->close();
+    NntpSocket* second = pool.acquire(0);
+    QVERIFY(second != nullptr);
+    QVERIFY(second != first);
+    QCOMPARE(pool.totalCount(), 1);
 }
 
 void tst_NntpServerPool::blockedServerIsSkippedAndRestored()

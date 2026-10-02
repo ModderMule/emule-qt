@@ -140,7 +140,7 @@ Core protocol logic — mostly platform-independent, needs socket layer porting.
 
 - [x] Port `Server.cpp/h` (server entity class)
 - [x] Port `ServerList.cpp/h` (server list persistence and management)
-- [x] Port `ServerConnect.cpp/h` (server connection state machine) — `server/ServerConnect.h/.cpp`, state machine with multi-server connect, timeout, retry, Qt signals
+- [x] Port `ServerConnect.cpp/h` (server connection state machine) — `servers`, state machine with multi-server connect, timeout, retry, Qt signals
 - [ ] Port `WebServices.cpp/h` *(deferred: GUI module)*
 
 ---

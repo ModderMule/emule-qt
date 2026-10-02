@@ -46,7 +46,7 @@ enum class IpcMsgType : int {
     RemoveAllServers     = 132,  ///< []
     SetServerPriority    = 133,  ///< [ip: int64, port: int64, priority: int, addr: string]
     SetServerStatic      = 134,  ///< [ip: int64, port: int64, isStatic: bool, addr: string]
-    AddServer            = 135,  ///< [address: string, port: int64, name: string]
+    AddServer            = 135,  ///< [address: string, port: int64, name: string, addr6?: string] — addr6 = other-family address of a dual-stack server
     SetServerOrder       = 136,  ///< [CborArray of [ip:int64, port:int64, addr:string]] (#24)
     GetConnection        = 140,
     ConnectToServer      = 141,  ///< [] or [ip: int64, port: int64, addr: string]

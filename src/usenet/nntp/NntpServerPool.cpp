@@ -93,6 +93,8 @@ int NntpServerPool::levelOf(const QString& serverKey) const
 
 NntpSocket* NntpServerPool::acquire(int level, const QStringList& ignoreServers)
 {
+    dropClosedIdle();
+
     // Build the candidate list for this level, in configuration order.
     QList<const NewsServer*> candidates;
     for (const auto& s : m_servers) {
@@ -144,6 +146,10 @@ NntpSocket* NntpServerPool::acquire(int level, const QStringList& ignoreServers)
         NntpSocket* raw = socket.get();
         m_connections.push_back(Lease{std::move(socket), key, bucket.id, level, true});
         raw->setProxy(m_proxy);
+        raw->setIdleTimeout(m_idleTimeoutMs);
+        // Queued: abort() in retire() can emit this from inside erase_if.
+        connect(raw, &NntpSocket::disconnected, this, &NntpServerPool::dropClosedIdle,
+                Qt::QueuedConnection);
         raw->connectToServer(*server);
         m_rotation[level] = (start + i + 1) % candidates.size();
         return raw;
@@ -409,6 +415,17 @@ void NntpServerPool::dropConnections(const QString& serverKey)
             return false;
         }
 
+        retire(lease);
+        return true;
+    });
+}
+
+void NntpServerPool::dropClosedIdle()
+{
+    // release() pools only Ready sockets, so an idle lease that is not Ready is dead.
+    std::erase_if(m_connections, [](Lease& lease) {
+        if (lease.inUse || lease.socket->isReady())
+            return false;
         retire(lease);
         return true;
     });

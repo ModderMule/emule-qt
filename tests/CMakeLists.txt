@@ -109,6 +109,7 @@ emule_add_test(tst_FileIdentifier   FOLDER "Crypto")
 # Module 29d: Networking
 emule_add_test(tst_Address            FOLDER "Net")
 emule_add_test(tst_LocalIPv6         FOLDER "Net")
+emule_add_test(tst_IPv6SourcePin     FOLDER "Net")
 emule_add_test(tst_Packet            FOLDER "Net")
 emule_add_test(tst_EncryptedDatagram FOLDER "Net")
 emule_add_test(tst_EMSocket          FOLDER "Net")
@@ -295,6 +296,17 @@ emule_add_test(tst_PreferencesIpc FOLDER "Ipc" LIBRARIES eMule::Ipc yaml-cpp::ya
 emule_add_test(tst_PushCoalescer FOLDER "Ipc" LIBRARIES eMule::Ipc)
 # Daemon log buffer and its main-thread forward to the IPC sockets.
 emule_add_test(tst_LogRelay FOLDER "Ipc" LIBRARIES eMule::Ipc)
+
+# Daemon standby prevention — compiles the daemon source standalone.
+emule_add_test(tst_PowerManager FOLDER "Daemon"
+    SOURCES tst_PowerManager.cpp "${CMAKE_SOURCE_DIR}/src/daemon/PowerManager.cpp")
+target_include_directories(tst_PowerManager PRIVATE "${CMAKE_SOURCE_DIR}/src/daemon")
+if(APPLE)
+    target_link_libraries(tst_PowerManager PRIVATE "-framework IOKit" "-framework CoreFoundation")
+elseif(LINUX)
+    find_package(Qt6 REQUIRED COMPONENTS DBus)
+    target_link_libraries(tst_PowerManager PRIVATE Qt6::DBus)
+endif()
 
 # Usenet (NNTP) module
 emule_add_test(tst_UsenetSmoke FOLDER "Usenet" LIBRARIES eMule::Usenet)

@@ -67,6 +67,19 @@ public:
     /// Feed one line, without its CRLF, already dot-unstuffed.
     void feedLine(QByteArrayView line);
 
+    /// Feed raw BODY bytes straight off the wire: still dot-stuffed, CRLFs
+    /// intact, split anywhere. Header and trailer lines go line by line; the
+    /// payload between them is decoded a whole block at a time (rapidyenc's
+    /// incremental decoder, which also unstuffs and finds the end). Returns how
+    /// many bytes were consumed and sets @p ended once the terminating "."
+    /// line was among them; anything after it belongs to the next response.
+    /// Without an end, every byte is consumed.
+    qsizetype feedRaw(QByteArrayView wire, bool& ended);
+
+    /// Force feedRaw() through its line path even with rapidyenc built in, so
+    /// tests cover both in one binary.
+    static void setLineModeForTests(bool on);
+
     /// Final verdict. Valid once =yend has been seen; Incomplete before that.
     [[nodiscard]] Status status() const { return m_status; }
     [[nodiscard]] QString statusText() const;
@@ -102,6 +115,16 @@ private:
     void parseEnd(QByteArrayView line);
     void decodeInto(QByteArrayView line);
 
+    /// What a raw line turned out to be: done with, the end of the body, a
+    /// payload line (decode it), or a header after which the payload starts.
+    enum class RawLine : quint8 { Consumed, Ended, Payload, PayloadNext };
+    /// One complete raw line (CRLF included) in feedRaw()'s line mode.
+    RawLine handleRawLine(QByteArrayView lineWithEol);
+    /// Decode raw payload bytes; returns bytes consumed. Sets @p control at a
+    /// "\r\n=y" (consumed through the 'y') and @p article at "\r\n.\r\n".
+    qsizetype decodeRawBlock(QByteArrayView wire, bool& control, bool& article);
+    void emitDecoded(qsizetype produced);
+
     Sink m_sink;
     Status m_status = Status::NoBinaryData;
 
@@ -122,7 +145,12 @@ private:
     quint32 m_expectedCrc = 0;
     bool m_haveExpectedCrc = false;
 
-    QByteArray m_out;               ///< reused per line; never holds an article
+    QByteArray m_out;               ///< reused per line/block; never holds an article
+
+    // feedRaw() state
+    bool m_rawData = false;         ///< in the payload, decoding blocks
+    bool m_sawEnd = false;
+    QByteArray m_lineBuf;           ///< a raw line split across reads
 
     /// rapidyenc's RapidYencDecoderState, held opaquely so this header does not
     /// drag <rapidyenc.h> into every consumer. It is a small enum-sized value;

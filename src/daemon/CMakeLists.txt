@@ -23,6 +23,14 @@ target_link_libraries(emulecored
         eMule::CommonSettings
 )
 
+# PowerManager: idle-sleep prevention
+if(APPLE)
+    target_link_libraries(emulecored PRIVATE "-framework IOKit" "-framework CoreFoundation")
+elseif(LINUX)
+    find_package(Qt6 REQUIRED COMPONENTS DBus)
+    target_link_libraries(emulecored PRIVATE Qt6::DBus)
+endif()
+
 set_target_properties(emulecored PROPERTIES
     FOLDER "Daemon"
 )

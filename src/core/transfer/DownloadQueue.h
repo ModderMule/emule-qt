@@ -106,7 +106,11 @@ public:
 
     // -- Source management (basic) --------------------------------------------
 
-    bool checkAndAddSource(PartFile* file, UpDownClient* source);
+    /// Add a freshly built source client. MFC CheckAndAddSource (srchybrid/DownloadQueue.cpp:454).
+    /// @return the client now sourcing @p file — @p source, or an already known client it
+    /// was folded into — or nullptr when rejected. Whenever the result is not @p source,
+    /// the caller still owns @p source and must delete it.
+    UpDownClient* checkAndAddSource(PartFile* file, UpDownClient* source);
     /// Add a client we are already talking to — one that asked us for a file we happen to
     /// be downloading — as a source for it. Unlike checkAndAddSource() the client stays in
     /// the ClientList either way, and a client that already sources another file becomes an
@@ -236,6 +240,9 @@ public:
     // -- Stats ----------------------------------------------------------------
 
     [[nodiscard]] uint32 datarate() const { return m_datarate; }
+    /// Mean rate over the samples of the last @p windowMs (bytes/s). Shorter than
+    /// datarate()'s 10 s MFC window; the ED2K/Usenet split reads it.
+    [[nodiscard]] uint32 datarateOver(uint32 windowMs) const;
     [[nodiscard]] bool hasActiveTransfers() const;
     [[nodiscard]] uint32 successfulDownloadCount() const { return m_successfulDownCount; }
     [[nodiscard]] uint32 failedDownloadCount() const { return m_failedDownCount; }
@@ -262,6 +269,14 @@ private:
     /// a usable High ID, the IP filter and the global dead list.
     [[nodiscard]] bool sourceFiltersPass(PartFile* file, UpDownClient* source,
                                         bool ignoreGlobalDeadList) const;
+
+    /// Same advertised IPv6 and TCP port. Not in MFC; kept out of UpDownClient::compare()
+    /// because an advertised address must not re-home a live socket in attachToAlreadyKnown.
+    /// checkAndAddSource(), then delete @p client if unused or dial it if fresh.
+    /// @return whether @p file gained a source.
+    bool addSourceAndConnect(PartFile* file, UpDownClient* client);
+
+    [[nodiscard]] static bool sameIPv6Endpoint(const UpDownClient* a, const UpDownClient* b);
 
     /// When the volume was last measured, for checkDiskspaceTimed().
     QElapsedTimer m_diskCheckClock;

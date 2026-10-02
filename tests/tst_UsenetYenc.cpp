@@ -71,6 +71,60 @@ QByteArray patternBytes(int n)
     return data;
 }
 
+/// Lines as a BODY response puts them on the wire: dot-stuffed, CRLF, and the
+/// terminating ".". @p tail is whatever the server sends next.
+QByteArray toWire(const QByteArrayList& lines, const QByteArray& tail = {})
+{
+    QByteArray wire;
+    for (const QByteArray& line : lines) {
+        if (line.startsWith('.'))
+            wire.append('.');
+        wire.append(line);
+        wire.append("\r\n");
+    }
+    wire.append(".\r\n");
+    wire.append(tail);
+    return wire;
+}
+
+struct RawResult {
+    QByteArray out;
+    qsizetype consumed = 0;
+    bool ended = false;
+};
+
+/// Feed @p wire in the given chunk sizes (cycled), stopping at the end.
+RawResult decodeRaw(YencDecoder& decoder, const QByteArray& wire, QList<qsizetype> chunks)
+{
+    RawResult r;
+    decoder.setSink([&r](QByteArrayView chunk) { r.out.append(chunk); });
+    decoder.reset();
+    qsizetype pos = 0;
+    int c = 0;
+    while (pos < wire.size() && !r.ended) {
+        const qsizetype n = std::min(chunks.at(c++ % chunks.size()), wire.size() - pos);
+        const qsizetype used = decoder.feedRaw(QByteArrayView(wire).sliced(pos, n), r.ended);
+        if (!r.ended && used != n)
+            return r;   // contract broken: a test assertion catches consumed
+        pos += used;
+    }
+    r.consumed = pos;
+    return r;
+}
+
+QByteArrayList multipartArticle(const QByteArray& data, qint64 begin, qint64 total)
+{
+    QByteArrayList lines;
+    lines << QByteArrayLiteral("=ybegin part=2 total=3 line=128 size=")
+                 + QByteArray::number(total) + " name=raw test.bin";
+    lines << QByteArrayLiteral("=ypart begin=") + QByteArray::number(begin)
+                 + " end=" + QByteArray::number(begin + data.size() - 1);
+    lines << encodeYenc(data);
+    lines << QByteArrayLiteral("=yend size=") + QByteArray::number(data.size())
+                 + " part=2 pcrc32=" + QByteArray::number(yencCrc32(0, data), 16);
+    return lines;
+}
+
 } // namespace
 
 class tst_UsenetYenc : public QObject {
@@ -90,6 +144,17 @@ private slots:
     void danglingEscapeDoesNotLeakIntoTheNextArticle();
     void decoderIsReusable();
     void decodesALineBeginningWithAnEncodedDot();
+
+    void rawFeedMatchesAtEverySplit_data();
+    void rawFeedMatchesAtEverySplit();
+    void rawFeedUnstuffsEncodedDots_data();
+    void rawFeedUnstuffsEncodedDots();
+    void rawFeedHandlesSinglePartAndGluedHeaders_data();
+    void rawFeedHandlesSinglePartAndGluedHeaders();
+    void rawFeedReportsAMissingYend_data();
+    void rawFeedReportsAMissingYend();
+    void rawFeedSkipsHeadersBeforeYbegin();
+    void cleanup();
 };
 
 void tst_UsenetYenc::crc32MatchesTheStandardVector()
@@ -362,6 +427,149 @@ void tst_UsenetYenc::decoderIsReusable()
     QCOMPARE(decoder.fileName(), QStringLiteral("b.bin"));
     QCOMPARE(decoder.offset(), 200);
     QCOMPARE(decoder.partSize(), 150);
+}
+
+void tst_UsenetYenc::cleanup()
+{
+    YencDecoder::setLineModeForTests(false);
+}
+
+void tst_UsenetYenc::rawFeedMatchesAtEverySplit_data()
+{
+    QTest::addColumn<bool>("lineMode");
+    QTest::newRow("blocks") << false;
+    QTest::newRow("lines") << true;
+}
+
+void tst_UsenetYenc::rawFeedMatchesAtEverySplit()
+{
+    QFETCH(bool, lineMode);
+    YencDecoder::setLineModeForTests(lineMode);
+
+    // Every byte value, so escapes land everywhere, including on read edges.
+    QByteArray data = patternBytes(2000);
+    for (int b = 0; b < 256; ++b)
+        data.append(static_cast<char>(b));
+    const QByteArray tail = QByteArrayLiteral("222 0 <next@x>\r\n");
+    const QByteArray wire = toWire(multipartArticle(data, 3001, 9000), tail);
+
+    YencDecoder decoder;
+    for (qsizetype k = 1; k < wire.size(); ++k) {
+        const RawResult r = decodeRaw(decoder, wire, {k, wire.size()});
+        QVERIFY2(r.ended, qPrintable(QStringLiteral("split %1").arg(k)));
+        QCOMPARE(r.consumed, wire.size() - tail.size());
+        QCOMPARE(r.out, data);
+        QCOMPARE(decoder.status(), YencDecoder::Status::Ok);
+        QCOMPARE(decoder.offset(), 3000);
+        QCOMPARE(decoder.fileName(), QStringLiteral("raw test.bin"));
+    }
+
+    // And in small irregular reads.
+    const RawResult r = decodeRaw(decoder, wire, {1, 7, 3, 64, 2, 129, 5});
+    QVERIFY(r.ended);
+    QCOMPARE(r.out, data);
+    QCOMPARE(decoder.status(), YencDecoder::Status::Ok);
+}
+
+void tst_UsenetYenc::rawFeedUnstuffsEncodedDots_data()
+{
+    rawFeedMatchesAtEverySplit_data();
+}
+
+void tst_UsenetYenc::rawFeedUnstuffsEncodedDots()
+{
+    QFETCH(bool, lineMode);
+    YencDecoder::setLineModeForTests(lineMode);
+
+    // 0x04 encodes to '.', so every line starts with one and the server
+    // stuffs each: the decoder must remove exactly one dot per line.
+    const QByteArray data(1000, '\x04');
+    const QByteArray wire = toWire(multipartArticle(data, 1, 1000));
+    QVERIFY(wire.contains("\r\n.."));
+
+    YencDecoder decoder;
+    for (qsizetype k : {qsizetype(1), qsizetype(2), qsizetype(3), qsizetype(130), wire.size()}) {
+        const RawResult r = decodeRaw(decoder, wire, {k});
+        QVERIFY(r.ended);
+        QCOMPARE(r.out, data);
+        QCOMPARE(decoder.status(), YencDecoder::Status::Ok);
+    }
+}
+
+void tst_UsenetYenc::rawFeedHandlesSinglePartAndGluedHeaders_data()
+{
+    rawFeedMatchesAtEverySplit_data();
+}
+
+void tst_UsenetYenc::rawFeedHandlesSinglePartAndGluedHeaders()
+{
+    QFETCH(bool, lineMode);
+    YencDecoder::setLineModeForTests(lineMode);
+
+    const QByteArray data = patternBytes(700);
+    YencDecoder decoder;
+
+    // No =ypart: the payload starts on the line after =ybegin, at offset 0.
+    QByteArrayList single;
+    single << QByteArrayLiteral("=ybegin line=128 size=700 name=single.bin");
+    single << encodeYenc(data);
+    single << QByteArrayLiteral("=yend size=700 crc32=") + QByteArray::number(yencCrc32(0, data), 16);
+    RawResult r = decodeRaw(decoder, toWire(single), {50});
+    QVERIFY(r.ended);
+    QCOMPARE(r.out, data);
+    QCOMPARE(decoder.offset(), 0);
+    QCOMPARE(decoder.status(), YencDecoder::Status::Ok);
+
+    // =ypart glued onto the =ybegin line.
+    QByteArrayList glued;
+    glued << QByteArrayLiteral("=ybegin part=1 total=2 line=128 size=1400 name=g.bin=ypart begin=701 end=1400");
+    glued << encodeYenc(data);
+    glued << QByteArrayLiteral("=yend size=700 part=1 pcrc32=") + QByteArray::number(yencCrc32(0, data), 16);
+    r = decodeRaw(decoder, toWire(glued), {33});
+    QVERIFY(r.ended);
+    QCOMPARE(r.out, data);
+    QCOMPARE(decoder.offset(), 700);
+    QCOMPARE(decoder.fileName(), QStringLiteral("g.bin"));
+    QCOMPARE(decoder.status(), YencDecoder::Status::Ok);
+}
+
+void tst_UsenetYenc::rawFeedReportsAMissingYend_data()
+{
+    rawFeedMatchesAtEverySplit_data();
+}
+
+void tst_UsenetYenc::rawFeedReportsAMissingYend()
+{
+    QFETCH(bool, lineMode);
+    YencDecoder::setLineModeForTests(lineMode);
+
+    const QByteArray data = patternBytes(500);
+    QByteArrayList lines = multipartArticle(data, 1, 500);
+    lines.removeLast();   // no =yend: the "." arrives straight after payload
+    const QByteArray tail = QByteArrayLiteral("430 no such article\r\n");
+    const QByteArray wire = toWire(lines, tail);
+
+    YencDecoder decoder;
+    for (qsizetype k : {qsizetype(1), qsizetype(2), qsizetype(4), qsizetype(100)}) {
+        const RawResult r = decodeRaw(decoder, wire, {k});
+        QVERIFY(r.ended);
+        QCOMPARE(r.consumed, wire.size() - tail.size());
+        QCOMPARE(r.out, data);
+        QCOMPARE(decoder.status(), YencDecoder::Status::Incomplete);
+    }
+}
+
+void tst_UsenetYenc::rawFeedSkipsHeadersBeforeYbegin()
+{
+    const QByteArray data = patternBytes(300);
+    QByteArrayList lines;
+    lines << QByteArrayLiteral("Subject: test") << QByteArrayLiteral("") ;
+    lines << multipartArticle(data, 1, 300);
+    YencDecoder decoder;
+    const RawResult r = decodeRaw(decoder, toWire(lines), {17});
+    QVERIFY(r.ended);
+    QCOMPARE(r.out, data);
+    QCOMPARE(decoder.status(), YencDecoder::Status::Ok);
 }
 
 QTEST_MAIN(tst_UsenetYenc)

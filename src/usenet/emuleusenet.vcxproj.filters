@@ -69,6 +69,12 @@
     <ClCompile Include="queue\ArticleWriter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="queue\UsenetStateWriter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="queue\ArticleFileCache.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="queue\UsenetHealth.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -147,6 +153,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="queue\ArticleWriter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="queue\UsenetStateWriter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="queue\ArticleFileCache.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="queue\UsenetHealth.h">

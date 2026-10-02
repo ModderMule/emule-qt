@@ -159,6 +159,16 @@ void UsenetDirectUnpack::run(const eMule::usenet::UsenetDirectUnpackJob& job)
         return;
     }
 
+    // libarchive reads a zero block as an empty tar, so a zero-padded volume
+    // one "succeeds" with nothing in it. Nothing extracted is not an unpack.
+    if (reader.extractedFiles().isEmpty()) {
+        result.error = QStringLiteral("nothing extracted");
+        logUsenetWarning(QStringLiteral("Usenet: direct unpack of \"%1\" found no files; the "
+                                        "normal unpack will run at the end").arg(job.setKey));
+        emit finished(result);
+        return;
+    }
+
     {
         QMutexLocker lock(&m_mutex);
         result.consumed = QStringList(m_volumes.values());

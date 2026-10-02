@@ -23,6 +23,7 @@
 /// independent connections to it.
 
 #include "nntp/ArticleFetcher.h"
+#include "queue/ArticleFileCache.h"
 #include "nntp/NewsServer.h"
 #include "nntp/NntpError.h"
 #include "nzb/NzbInfo.h"
@@ -203,6 +204,7 @@ private:
 
     int m_index = 0;
     std::unique_ptr<NntpServerPool> m_pool;
+    ArticleFileCache m_files;                   ///< one handle per file across this worker's jobs
     QHash<NntpSocket*, Job*> m_jobsBySocket;   ///< the job whose response is being read
     QSet<NntpSocket*> m_slots;                 ///< nearly done, no follower yet
     QSet<QString> m_noPipeline;                ///< servers that broke on pipelining

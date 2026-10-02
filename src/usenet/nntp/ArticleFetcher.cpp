@@ -88,8 +88,12 @@ bool ArticleFetcher::beginRun(NntpSocket* socket, const NzbSegment& segment,
 
 void ArticleFetcher::startVerb()
 {
-    if (!m_group.isEmpty()) {
+    // GROUP once per connection and group, not per article: the round trip also
+    // kept a follower's BODY from being pipelined. BODY by message-id does not
+    // depend on the group, so a GROUP still in flight ahead of us is harmless.
+    if (!m_group.isEmpty() && m_socket->selectedGroup() != m_group) {
         m_groupCommand = std::make_unique<GroupCommand>(m_group);
+        m_socket->setSelectedGroup(m_group);
         m_socket->sendCommand(m_groupCommand.get());
         return;
     }
@@ -164,6 +168,8 @@ void ArticleFetcher::onCommandFinished(NntpCommand* command)
 {
     if (command == m_groupCommand.get()) {
         if (m_groupCommand->failed()) {
+            if (m_socket && m_socket->selectedGroup() == m_group)
+                m_socket->setSelectedGroup({});
             finish(m_groupCommand->error(), m_groupCommand->errorText());
             return;
         }

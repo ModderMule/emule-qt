@@ -172,9 +172,11 @@ void SearchList::addKadKeywordResult(uint32 searchID, const uint8* fileHash,
 // ---------------------------------------------------------------------------
 
 bool SearchList::processSearchAnswer(const uint8* packet, uint32 size,
-                                     bool optUTF8,
-                                     uint32 serverIP, uint16 serverPort)
+                                     bool optUTF8, const Endpoint& server)
 {
+    // SearchFile keeps the ed2k (IPv4) form; an IPv6 server records 0 there.
+    const uint32 serverIP = server.address().toNetworkUint32();
+    const uint16 serverPort = server.port();
     SafeMemFile data(packet, size);
 
     const uint32 resultCount = data.readUInt32();
@@ -196,8 +198,8 @@ bool SearchList::processSearchAnswer(const uint8* packet, uint32 size,
                                "are available; narrow your search to see them."));
     }
 
-    logServerVerbose(QStringLiteral("TCP search answer from %1:%2 — parsed %3 result(s), moreResults=%4")
-                         .arg(ipstr(serverIP)).arg(serverPort).arg(resultCount).arg(moreResults));
+    logServerVerbose(QStringLiteral("TCP search answer from %1 — parsed %2 result(s), moreResults=%3")
+                         .arg(server.toString()).arg(resultCount).arg(moreResults));
 
     emit tabHeaderUpdated(m_currentEd2kSearchID);
     return moreResults;
@@ -255,15 +257,18 @@ uint32 SearchList::processClientSharedFiles(UpDownClient& sender, const uint8* p
 // ---------------------------------------------------------------------------
 
 void SearchList::processUDPSearchAnswer(const uint8* packet, uint32 size,
-                                        bool optUTF8,
-                                        uint32 serverIP, uint16 serverPort)
+                                        bool optUTF8, const Endpoint& server)
 {
     // Validate server was in our request list
-    if (m_curED2KSentRequestsIPs.find(serverIP) == m_curED2KSentRequestsIPs.end()) {
-        logServerVerbose(QStringLiteral("UDP search answer from %1:%2 DROPPED — sender not in our sent-request set")
-                             .arg(ipstr(serverIP)).arg(serverPort));
+    if (!m_curED2KSentRequestsIPs.contains(server.address())) {
+        logServerVerbose(QStringLiteral("UDP search answer from %1 DROPPED — sender not in our sent-request set")
+                             .arg(server.toString()));
         return;
     }
+
+    // SearchFile and the spam records keep the ed2k (IPv4) form; 0 for an IPv6 server.
+    const uint32 serverIP = server.address().toNetworkUint32();
+    const uint16 serverPort = server.port();
 
     SafeMemFile data(packet, size);
     uint32 parsedResults = 0;
@@ -297,8 +302,8 @@ void SearchList::processUDPSearchAnswer(const uint8* packet, uint32 size,
         }
     } while (data.position() < data.length());
 
-    logServerVerbose(QStringLiteral("UDP search answer from %1:%2 — parsed %3 result(s)")
-                         .arg(ipstr(serverIP)).arg(serverPort).arg(parsedResults));
+    logServerVerbose(QStringLiteral("UDP search answer from %1 — parsed %2 result(s)")
+                         .arg(server.toString()).arg(parsedResults));
 
     emit tabHeaderUpdated(m_currentEd2kSearchID);
 }

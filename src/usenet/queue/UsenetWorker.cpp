@@ -6,9 +6,6 @@
 #include "queue/ArticleWriter.h"
 #include "utils/Log.h"
 
-#include <QDir>
-#include <QFileInfo>
-
 #include <algorithm>
 #include <utility>
 
@@ -19,8 +16,8 @@ namespace eMule::usenet {
 /// The writer is per-job, never shared. Two fetchers on one ArticleWriter would
 /// interleave seek() and write() and place bytes at each other's offsets, and
 /// because yEnc verifies the payload rather than its placement the CRCs would
-/// still pass. Separate QFile handles writing disjoint absolute ranges is the
-/// only safe arrangement.
+/// still pass. Writers may share a file *handle* (ArticleFileCache), because
+/// each keeps its own position and seeks before writing.
 struct UsenetWorker::Job {
     UsenetFetchRequest request;
     NntpSocket* socket = nullptr;
@@ -117,12 +114,9 @@ void UsenetWorker::fetchSegment(UsenetFetchRequest request)
     // would create a directory and an empty file for every article it merely
     // asked about.
     if (!job->request.probeOnly) {
-        // The directory is created here rather than by the queue because a user can
-        // delete the temp tree while the daemon runs, and the next article should
-        // recreate it instead of failing every remaining segment.
-        QDir().mkpath(QFileInfo(job->request.targetPath).absolutePath());
-
-        job->writer = std::make_unique<ArticleWriter>();
+        // The cache recreates the directory if a user deleted the temp tree
+        // while the daemon runs, instead of failing every remaining segment.
+        job->writer = std::make_unique<ArticleWriter>(&m_files);
         QString error;
         if (!job->writer->open(job->request.targetPath, error)) {
             Job* raw = job.release();

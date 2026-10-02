@@ -181,6 +181,20 @@ qint64 UsenetQueueItem::decodedBytes() const
     return total;
 }
 
+bool UsenetQueueItem::fileHasHoles(int fileIndex) const
+{
+    if (fileIndex < 0 || fileIndex >= files.size())
+        return false;
+    const UsenetFileState& st = files.at(fileIndex);
+    if (st.missingSegments > 0)
+        return true;
+    // Known before anything downloads: the subject says 1/106, the NZB lists 47.
+    if (fileIndex < nzb.files.size() && !nzb.files.at(fileIndex).hasAllSegments())
+        return true;
+    // No counter in the subject: the bytes that arrived are the only witness.
+    return st.finalized && (st.declaredSize <= 0 || st.decodedBytes < st.declaredSize);
+}
+
 qint64 UsenetQueueItem::doneEncodedBytes() const
 {
     qint64 total = 0;

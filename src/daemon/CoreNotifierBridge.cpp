@@ -268,7 +268,10 @@ void CoreNotifierBridge::onServerStateChanged()
             info.insert(QStringLiteral("serverId"), static_cast<qint64>(srv->serverId()));
             info.insert(QStringLiteral("serverName"), srv->name());
             info.insert(QStringLiteral("serverDescription"), srv->description());
-            info.insert(QStringLiteral("serverAddress"), srv->address());
+            // The address this session dialed: a dual-stack server may be on its IPv6
+            info.insert(QStringLiteral("serverAddress"),
+                        srv->hasDynIP() ? srv->address()
+                                        : theApp.serverConnect->sessionAddress().toString());
             info.insert(QStringLiteral("serverVersion"), srv->version());
             info.insert(QStringLiteral("serverUsers"), static_cast<qint64>(srv->users()));
             info.insert(QStringLiteral("serverFiles"), static_cast<qint64>(srv->files()));
