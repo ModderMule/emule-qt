@@ -295,6 +295,7 @@
     <ClCompile Include="utils\ListActivation.cpp" />
     <ClCompile Include="utils\MenuUtils.cpp" />
     <ClCompile Include="utils\ViewNavigation.cpp" />
+    <ClCompile Include="utils\ViewSelection.cpp" />
     <ClCompile Include="utils\PanelPoller.cpp" />
     <ClCompile Include="utils\PreviewLauncher.cpp" />
     <ClCompile Include="utils\StatusBarNotifier.cpp" />
@@ -329,6 +330,7 @@
     <ClInclude Include="utils\MenuUtils.h" />
     <ClInclude Include="utils\ColorUtils.h" />
     <ClInclude Include="utils\ViewNavigation.h" />
+    <ClInclude Include="utils\ViewSelection.h" />
     <QtMoc Include="utils\PanelPoller.h" />
     <QtMoc Include="utils\CountryFlags.h" />
     <ClInclude Include="utils\ClientIcons.h" />

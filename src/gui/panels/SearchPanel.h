@@ -15,6 +15,7 @@
 
 #include "controls/AbstractListView.h"
 #include "dialogs/SearchDetailDialog.h"
+#include "utils/ViewSelection.h"
 
 #include <QSet>
 
@@ -207,8 +208,10 @@ private:
     void switchToTab(int index);
     void updateDownloadButton();
     [[nodiscard]] SearchTab* currentTab();
-    [[nodiscard]] QString saveSelection() const;
-    void restoreSelection(const QString& key);
+    /// Keyed by hash (indexer rows: result id), every selected row.
+    [[nodiscard]] ViewSelection saveSelection() const;
+    void restoreSelection(const ViewSelection& state);
+    [[nodiscard]] QString keyAtViewRow(int viewRow) const;
     void loadSearches();
     /// saveSearches() at most every 2 s, after results or tabs changed
     void scheduleSaveSearches();

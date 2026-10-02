@@ -881,7 +881,7 @@ void SharedFilesPanel::requestSharedFiles()
             return;
         }
 
-        const SelectionState selection = saveSelection();
+        const ViewSelection selection = saveSelection();
 
         // Response is a map: { "files": [...], "totalRequests": N, ... }
         const QCborMap resultMap = resp.fieldMap(1);
@@ -980,7 +980,7 @@ void SharedFilesPanel::requestBrowseDirectory(const QString& dirPath)
             return;
         }
 
-        const SelectionState selection = saveSelection();
+        const ViewSelection selection = saveSelection();
         const QCborArray arr = resp.fieldArray(1);
 
         std::vector<SharedFileRow> rows;
@@ -1464,64 +1464,21 @@ std::vector<const SharedFileRow*> SharedFilesPanel::rowsForHashes(const QStringL
     return rows;
 }
 
-SharedFilesPanel::SelectionState SharedFilesPanel::saveSelection() const
+ViewSelection SharedFilesPanel::saveSelection() const
 {
-    SelectionState state;
-    state.hashes = selectedHashes();
-    state.scrollValue = m_fileView->verticalScrollBar()->value();
-
-    // The anchor, not hashes.first(): it is what the bottom tabs show.
-    const QModelIndex current = m_fileView->selectionModel()->currentIndex();
-    if (current.isValid())
-        state.currentHash = m_model->hashAt(m_proxy->mapToSource(current).row());
-
-    return state;
+    return captureViewSelection(m_fileView, [this](int row) { return hashAtViewRow(row); });
 }
 
-void SharedFilesPanel::restoreSelection(const SelectionState& state)
+void SharedFilesPanel::restoreSelection(const ViewSelection& state)
 {
-    m_fileView->verticalScrollBar()->setValue(state.scrollValue);
-    if (state.hashes.isEmpty())
-        return;
-
-    // One pass over the model instead of a linear scan per selected hash.
-    QHash<QString, int> rowByHash;
-    rowByHash.reserve(m_model->fileCount());
-    for (int row = 0; row < m_model->fileCount(); ++row)
-        rowByHash.insert(m_model->hashAt(row), row);
-
-    QItemSelection selection;
-    QModelIndex currentIdx;
-    for (const QString& hash : state.hashes) {
-        const auto it = rowByHash.constFind(hash);
-        if (it == rowByHash.cend())
-            continue;   // gone from the share since the request went out
-
-        const QModelIndex proxyIdx = m_proxy->mapFromSource(m_model->index(it.value(), 0));
-        if (!proxyIdx.isValid())
-            continue;   // hidden by the folder filter
-
-        // selectedRows() only reports a row when every model column is selected — the
-        // hidden Folder column included — so select the whole row, not just column 0.
-        selection.select(proxyIdx,
-                         m_proxy->index(proxyIdx.row(), SharedFilesModel::ColCount - 1));
-        if (hash == state.currentHash)
-            currentIdx = proxyIdx;
-    }
-
-    if (selection.isEmpty())
-        return;
-    if (!currentIdx.isValid())
-        currentIdx = selection.indexes().constFirst();   // anchor vanished — take a survivor
-
     m_restoringSelection = true;
-    // QAbstractItemView::setCurrentIndex() would ClearAndSelect and collapse the whole
-    // selection to one row, so go through the selection model.
-    m_fileView->selectionModel()->setCurrentIndex(currentIdx, QItemSelectionModel::NoUpdate);
-    m_fileView->selectionModel()->select(selection, QItemSelectionModel::ClearAndSelect);
+    restoreViewSelection(m_fileView, state, [this](int row) { return hashAtViewRow(row); });
     m_restoringSelection = false;
+}
 
-    m_fileView->verticalScrollBar()->setValue(state.scrollValue);
+QString SharedFilesPanel::hashAtViewRow(int viewRow) const
+{
+    return m_model->hashAt(m_proxy->mapToSource(m_proxy->index(viewRow, 0)).row());
 }
 
 // ---------------------------------------------------------------------------

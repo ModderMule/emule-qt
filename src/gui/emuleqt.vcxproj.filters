@@ -130,6 +130,9 @@
     <ClCompile Include="utils\ViewNavigation.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\ViewSelection.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\PanelPoller.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -358,6 +361,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\ViewNavigation.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\ViewSelection.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\FileAssociation.h">

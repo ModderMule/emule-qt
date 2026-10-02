@@ -221,7 +221,10 @@ void SearchPanel::setupUi()
     // Del removes results from the list, Ctrl+C copies eD2K links (SearchListCtrl.cpp:804,
     // :1465), Ctrl+F/F3 find. The tab-level Ctrl+W lives in setupUi's shortcut.
     ListKeyHandlers keys;
-    keys.activate = [this](const QModelIndex& index) { downloadResults({index}); };
+    keys.activate = [this](const QModelIndex& index) {
+        const auto rows = m_resultView->selectionModel()->selectedRows();
+        downloadResults(rows.isEmpty() ? QModelIndexList{index} : rows);
+    };
     keys.details = [this](const QModelIndex& index) { showResultDetails(index); };
     keys.remove = [this] { removeSelectedResults(); };
     keys.copy = [this] { copySelectedEd2kLinks(); };
@@ -881,8 +884,9 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     if (auto* indexerTab = currentTab(); indexerTab && indexerTab->isIndexer()) {
         QAction* grab = m_contextMenu->addAction(tr("&Download"));
         grab->setEnabled(hasSelection);
+        // read at trigger time: a result push may reset the model while the menu is up
         connect(grab, &QAction::triggered, this,
-                [this, selection] { downloadResults(selection); });
+                [this] { downloadResults(m_resultView->selectionModel()->selectedRows()); });
 
         // One click for "just download it", one submenu for "and file it there".
         // Priority and paused are not offered here: the queue's own menu covers
@@ -893,14 +897,15 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             for (int i = 1; i < m_categoryTitles.size(); ++i) {
                 const QString title = m_categoryTitles.at(i);
                 connect(toMenu->addAction(title), &QAction::triggered, this,
-                        [this, selection, i] { downloadResults(selection, i); });
+                        [this, i] { downloadResults(m_resultView->selectionModel()->selectedRows(), i); });
             }
         }
 
         QAction* copyName = m_contextMenu->addAction(tr("Copy &Name"));
         copyName->setEnabled(singleSel);
-        connect(copyName, &QAction::triggered, this, [this, selection] {
+        connect(copyName, &QAction::triggered, this, [this] {
             auto* tab = currentTab();
+            const auto selection = m_resultView->selectionModel()->selectedRows();
             if (!tab || !tab->isIndexer() || selection.isEmpty())
                 return;
             const auto src = tab->proxy->mapToSource(selection.first());
@@ -1208,8 +1213,8 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
         for (size_t i = 0; i < m_tabs.size(); ++i) {
             // ED2K and indexer searches number their ids independently
             if (m_tabs[i].searchID == searchID && !m_tabs[i].isIndexer()) {
-                const QString selKey = (m_tabBar->currentIndex() == static_cast<int>(i))
-                    ? saveSelection() : QString{};
+                const ViewSelection selection = (m_tabBar->currentIndex() == static_cast<int>(i))
+                    ? saveSelection() : ViewSelection{};
 
                 m_tabs[i].model->setResults(std::move(rows));
 
@@ -1222,8 +1227,8 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
                     m_statusLabel->setText(QStringLiteral("%1 results")
                                                .arg(m_tabs[i].model->resultCount()));
 
-                if (!selKey.isEmpty())
-                    restoreSelection(selKey);
+                if (!selection.isEmpty())
+                    restoreSelection(selection);
                 scheduleSaveSearches();
                 break;
             }
@@ -1538,65 +1543,26 @@ SearchTab* SearchPanel::currentTab()
 // Selection preservation
 // ---------------------------------------------------------------------------
 
-QString SearchPanel::saveSelection() const
+ViewSelection SearchPanel::saveSelection() const
 {
-    const auto* sel = m_resultView->selectionModel();
-    if (!sel || !sel->hasSelection())
-        return {};
+    return captureViewSelection(m_resultView, [this](int row) { return keyAtViewRow(row); });
+}
 
-    const auto rows = sel->selectedRows();
-    if (rows.isEmpty())
-        return {};
+void SearchPanel::restoreSelection(const ViewSelection& state)
+{
+    restoreViewSelection(m_resultView, state, [this](int row) { return keyAtViewRow(row); });
+}
 
-    // Get hash from the proxy model's first selected row
-    const auto proxyIdx = rows.first();
+QString SearchPanel::keyAtViewRow(int viewRow) const
+{
     auto* tab = const_cast<SearchPanel*>(this)->currentTab();
     if (!tab)
         return {};
-
-    const auto srcIdx = tab->proxy->mapToSource(proxyIdx);
+    const int srcRow = tab->proxy->mapToSource(tab->proxy->index(viewRow, 0)).row();
+    // an indexer row has no hash
     if (tab->isIndexer())
-        return tab->indexerModel->idAt(srcIdx.row());
-    return tab->model->hashAt(srcIdx.row());
-}
-
-void SearchPanel::restoreSelection(const QString& key)
-{
-    if (key.isEmpty())
-        return;
-
-    auto* tab = currentTab();
-    if (!tab)
-        return;
-
-    // Find the row with the matching key in the source model, then map to proxy.
-    // An indexer row is keyed by its result id — it has no hash.
-    if (tab->isIndexer()) {
-        for (int r = 0; r < tab->indexerModel->resultCount(); ++r) {
-            if (tab->indexerModel->idAt(r) != key)
-                continue;
-            const auto proxyIdx =
-                tab->proxy->mapFromSource(tab->indexerModel->index(r, 0));
-            if (proxyIdx.isValid()) {
-                m_resultView->setCurrentIndex(proxyIdx);
-                m_resultView->scrollTo(proxyIdx);
-            }
-            return;
-        }
-        return;
-    }
-
-    for (int r = 0; r < tab->model->resultCount(); ++r) {
-        if (tab->model->hashAt(r) == key) {
-            const auto srcIdx = tab->model->index(r, 0);
-            const auto proxyIdx = tab->proxy->mapFromSource(srcIdx);
-            if (proxyIdx.isValid()) {
-                m_resultView->setCurrentIndex(proxyIdx);
-                m_resultView->scrollTo(proxyIdx);
-            }
-            return;
-        }
-    }
+        return tab->indexerModel->idAt(srcRow);
+    return tab->model ? tab->model->hashAt(srcRow) : QString{};
 }
 
 // ---------------------------------------------------------------------------

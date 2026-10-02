@@ -545,6 +545,7 @@ emule_add_test(tst_MetaSearchGui FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/MenuUtils.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/ViewSelection.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
             "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
 target_include_directories(tst_MetaSearchGui PRIVATE

@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "dialogs/DetailDialog.h"
+#include "utils/ViewSelection.h"
 
 class QCheckBox;
 class QGroupBox;
@@ -75,13 +76,6 @@ private slots:
     void onFolderItemExpanded(QTreeWidgetItem* item);
 
 private:
-    /// The file list's view state, all of which a model reset destroys.
-    struct SelectionState {
-        QStringList hashes;    ///< every selected row, in view order
-        QString currentHash;   ///< current/anchor row — drives the bottom tabs
-        int scrollValue = 0;
-    };
-
     void setupUi();
     QWidget* createTopSection();
     QWidget* createBottomTabs();
@@ -115,8 +109,10 @@ private:
     [[nodiscard]] std::vector<const SharedFileRow*> rowsForHashes(const QStringList& hashes) const;
     [[nodiscard]] int computePopularityRank(int64_t value,
                                             int64_t (SharedFileRow::*field)) const;
-    [[nodiscard]] SelectionState saveSelection() const;
-    void restoreSelection(const SelectionState& state);
+    /// Keyed by file hash; the current row drives the bottom tabs.
+    [[nodiscard]] ViewSelection saveSelection() const;
+    void restoreSelection(const ViewSelection& state);
+    [[nodiscard]] QString hashAtViewRow(int viewRow) const;
     void fetchAndShowSharedFileDetails(const QString& hash, int tab);
 
     /// The list's primary action, MFC's CSharedFilesCtrl::OpenFile()

@@ -5,6 +5,7 @@
 
 #include "controls/SearchResultsModel.h"
 #include "dialogs/MetaAccountDialog.h"
+#include "utils/ViewSelection.h"
 #include "IpcProtocol.h"
 
 #include <QApplication>
@@ -16,6 +17,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSignalSpy>
+#include <QSortFilterProxyModel>
 #include <QTest>
 #include <QTreeView>
 
@@ -76,6 +78,7 @@ private slots:
     void networkBadgeFollowsFileType();
     void ed2kLinkRefusedForMetaRows();
     void magnetLinkForMetaRows();
+    void multiSelectionSurvivesReset();
     void loginDialog_authRequired();
     void loginDialog_inactiveShowsSteps();
     void loginDialog_rejectsNonWebLinks();
@@ -148,6 +151,59 @@ void tst_MetaSearchGui::magnetLinkForMetaRows()
     plain.hash = QStringLiteral("0123456789abcdef0123456789abcdef");
     QCOMPARE(plain.magnetLink(),
              QStringLiteral("magnet:?xt=urn:ed2k:0123456789ABCDEF0123456789ABCDEF&xl=1754017281&dn=a%20b.iso"));
+}
+
+void tst_MetaSearchGui::multiSelectionSurvivesReset()
+{
+    // a result push resets the model; a multi-select must not shrink to one row
+    const auto rows = [](bool reversed) {
+        std::vector<SearchResultRow> v;
+        for (int i = 0; i < 5; ++i) {
+            SearchResultRow r = row(QStringLiteral("Release.%1").arg(i), 1);
+            r.hash = QStringLiteral("%1").arg(i, 32, 16, QLatin1Char('A'));
+            v.push_back(std::move(r));
+        }
+        if (reversed)
+            std::ranges::reverse(v);
+        return v;
+    };
+
+    SearchResultsModel model;
+    model.setResults(rows(false));
+    QSortFilterProxyModel proxy;
+    proxy.setSourceModel(&model);
+    QTreeView view;
+    view.setModel(&proxy);
+    view.setSelectionMode(QAbstractItemView::ExtendedSelection);
+    view.setSelectionBehavior(QAbstractItemView::SelectRows);
+    view.setColumnHidden(SearchResultsModel::ColCodec, true);
+
+    const auto keyOf = [&](int viewRow) {
+        return model.hashAt(proxy.mapToSource(proxy.index(viewRow, 0)).row());
+    };
+    const auto selectedKeys = [&] {
+        QStringList keys;
+        for (const QModelIndex& idx : view.selectionModel()->selectedRows())
+            keys.append(keyOf(idx.row()));
+        keys.sort();
+        return keys;
+    };
+
+    for (const int r : {1, 2, 4})
+        view.selectionModel()->select(proxy.index(r, 0),
+                                      QItemSelectionModel::Select | QItemSelectionModel::Rows);
+    view.selectionModel()->setCurrentIndex(proxy.index(2, 0), QItemSelectionModel::NoUpdate);
+    const QStringList before = selectedKeys();
+    QCOMPARE(before.size(), 3);
+
+    const ViewSelection saved = captureViewSelection(&view, keyOf);
+    QCOMPARE(saved.keys.size(), 3);
+    model.setResults(rows(true));   // reset + rows moved
+    view.selectionModel()->clearSelection();
+    restoreViewSelection(&view, saved, keyOf);
+
+    QCOMPARE(selectedKeys(), before);
+    QCOMPARE(keyOf(view.selectionModel()->currentIndex().row()), saved.currentKey);
 }
 
 void tst_MetaSearchGui::loginDialog_authRequired()
