@@ -23,6 +23,7 @@ private slots:
     void loadServerMet_fromProjectData();
     void serverMet_hasExpectedServers();
     void serverMet_serverProperties();
+    void serverMet_eNodeGoConnectsFirst();
 };
 
 // ---------------------------------------------------------------------------
@@ -114,6 +115,42 @@ void tst_ServerMetData::serverMet_serverProperties()
         // Either a numeric IP or a dynIP must be set
         QVERIFY(!srv->ipAddress().isNull() || srv->hasDynIP());
     }
+}
+
+// ---------------------------------------------------------------------------
+// Test: the shipped list auto-connects to eNode-go first
+// ---------------------------------------------------------------------------
+
+void tst_ServerMetData::serverMet_eNodeGoConnectsFirst()
+{
+    const QString srcPath = projectDataDir() + QStringLiteral("/config/server.met");
+    TempDir configDir;
+    const QString dstPath = configDir.filePath(QStringLiteral("server.met"));
+    QVERIFY(QFile::copy(srcPath, dstPath));
+
+    ServerList list;
+    QVERIFY(list.loadServerMet(dstPath));
+    QCOMPARE(list.serverCount(), size_t{11});
+
+    // eNode-go is entry 0 and the only High server, so it leads the
+    // connectToAnyServer() order with or without priority sorting
+    const auto isENodeGo = [](const Server* srv) {
+        return srv->name() == QStringLiteral("eNode-go")
+            && srv->address() == QStringLiteral("176.125.242.230")
+            && srv->port() == 5555;
+    };
+    QVERIFY(isENodeGo(list.serverAt(0)));
+
+    size_t highCount = 0;
+    for (size_t i = 0; i < list.serverCount(); ++i) {
+        if (list.serverAt(i)->preference() == ServerPriority::High)
+            ++highCount;
+    }
+    QCOMPARE(highCount, size_t{1});
+    QCOMPARE(list.serverAt(0)->preference(), ServerPriority::High);
+
+    list.sortByPreference();
+    QVERIFY(isENodeGo(list.serverAt(0)));
 }
 
 QTEST_GUILESS_MAIN(tst_ServerMetData)

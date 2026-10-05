@@ -18,6 +18,7 @@
 #include "net/ClientUDPSocket.h"
 #include "prefs/Preferences.h"
 #include "protocol/ED2KLink.h"
+#include "search/SearchFile.h"
 #include "server/Server.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
@@ -116,6 +117,8 @@ private slots:
     void addServerSources_dropsLowIdWhenFirewalled();
     void addServerSources_dropsIpFilteredHighId();
     void addServerSources_dropsBannedHighId();
+    void seedFromSearchResult_seedsParentAndChildClients();
+    void seedFromSearchResult_seedsAICH();
     void addServerSources_parsesIPv6Sentinel();
     void addServerSources_vetsIPv6LikeIPv4();
     void addKadSources_type6KeepsDirectCallback();
@@ -956,6 +959,120 @@ void tst_DownloadQueue::addServerSources_dropsLowIdWhenFirewalled()
     QCOMPARE(pf->sourceCount(), 1);
     QCOMPARE(pf->srcList().front()->userIDHybrid(),
              Address::fromString(QStringLiteral("77.66.55.44")).toUint32());
+
+    dq.deleteAll();
+}
+
+// A download started from a search result takes the clients that answered for it. A
+// merged answer keeps its clients on the child row, so both levels are read; the vetting
+// is the server-source one.
+void tst_DownloadQueue::seedFromSearchResult_seedsParentAndChildClients()
+{
+    QVERIFY(theApp.isFirewalled());
+
+    DownloadQueue dq;
+
+    uint8 hash[16] = {43, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5};
+    auto* pf = createTestPartFile(hash, QStringLiteral("search_seed_test.bin"));
+    dq.addDownload(pf);
+
+    const uint32 server = Address::fromString(QStringLiteral("99.88.77.66")).toNetworkUint32();
+    const uint32 onParent = Address::fromString(QStringLiteral("77.66.55.44")).toNetworkUint32();
+    const uint32 onChild = Address::fromString(QStringLiteral("88.77.66.55")).toNetworkUint32();
+
+    SearchFile parent;
+    parent.setFileHash(hash);
+    parent.addClient({onParent, 4662, server, 4661});
+    parent.addClient({0x00000123u, 4663, server, 4661});   // LowID while firewalled: dropped
+
+    SearchFile child(&parent);
+    child.setListParent(&parent);
+    parent.addListChild(&child);
+    child.addClient({onChild, 4664, server, 4661});
+    // the copied parent client must not be added twice
+
+    dq.seedFromSearchResult(pf, parent);
+
+    QCOMPARE(pf->sourceCount(), 2);
+    std::vector<uint32> ids;
+    for (const UpDownClient* client : pf->srcList())
+        ids.push_back(client->userIDHybrid());
+    std::ranges::sort(ids);
+    std::vector<uint32> expected{Address::fromString(QStringLiteral("77.66.55.44")).toUint32(),
+                                 Address::fromString(QStringLiteral("88.77.66.55")).toUint32()};
+    std::ranges::sort(expected);
+    QCOMPARE(ids, expected);
+
+    dq.deleteAll();
+}
+
+// The result's AICH hash seeds the recovery set like a link's does — unless the answers
+// disagree, or the download already has one.
+void tst_DownloadQueue::seedFromSearchResult_seedsAICH()
+{
+    DownloadQueue dq;
+
+    const uint8 rawA[20] = {0xA1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+    const uint8 rawB[20] = {0xB2, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+    const AICHHash hashA(rawA);
+    const AICHHash hashB(rawB);
+
+    // Agreed hash: taken, recovery set usable at once
+    {
+        uint8 hash[16] = {44, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6};
+        auto* pf = createTestPartFile(hash, QStringLiteral("search_aich_ok.bin"));
+        dq.addDownload(pf);
+
+        SearchFile parent;
+        parent.setFileHash(hash);
+        parent.fileIdentifier().setAICHHash(hashA);
+        SearchFile child(&parent);
+        child.setListParent(&parent);
+        parent.addListChild(&child);
+
+        dq.seedFromSearchResult(pf, parent);
+
+        QVERIFY(pf->fileIdentifier().hasAICHHash());
+        QVERIFY(pf->fileIdentifier().getAICHHash() == hashA);
+        QVERIFY(pf->aichRecoveryHashSet().hasValidMasterHash());
+        QCOMPARE(pf->aichRecoveryHashSet().getStatus(), EAICHStatus::Verified);
+    }
+
+    // Two answers, two hashes: none
+    {
+        uint8 hash[16] = {45, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7};
+        auto* pf = createTestPartFile(hash, QStringLiteral("search_aich_conflict.bin"));
+        dq.addDownload(pf);
+
+        SearchFile parent;
+        parent.setFileHash(hash);
+        parent.fileIdentifier().setAICHHash(hashA);
+        SearchFile child(&parent);
+        child.setListParent(&parent);
+        parent.addListChild(&child);
+        child.fileIdentifier().setAICHHash(hashB);
+
+        dq.seedFromSearchResult(pf, parent);
+
+        QVERIFY(!pf->fileIdentifier().hasAICHHash());
+        QVERIFY(!pf->aichRecoveryHashSet().hasValidMasterHash());
+    }
+
+    // The download's own hash stays
+    {
+        uint8 hash[16] = {46, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8};
+        auto* pf = createTestPartFile(hash, QStringLiteral("search_aich_keep.bin"));
+        pf->fileIdentifier().setAICHHash(hashB);
+        dq.addDownload(pf);
+
+        SearchFile parent;
+        parent.setFileHash(hash);
+        parent.fileIdentifier().setAICHHash(hashA);
+
+        dq.seedFromSearchResult(pf, parent);
+
+        QVERIFY(pf->fileIdentifier().getAICHHash() == hashB);
+    }
 
     dq.deleteAll();
 }

@@ -77,7 +77,6 @@ void FriendList::save(const QString& configDir) const
     const QString filePath = QDir(configDir).filePath(
         QString::fromLatin1(kFriendsMetFilename));
     const QString tmpPath = filePath + QStringLiteral(".tmp");
-    const QString bakPath = filePath + QStringLiteral(".bak");
 
     try {
         QFile::remove(tmpPath);
@@ -94,21 +93,8 @@ void FriendList::save(const QString& configDir) const
 
             for (const auto& f : m_friends)
                 f->writeToFile(file);
-        } // file closed before rename
 
-        // Rotate: current → .bak
-        QFile::remove(bakPath);
-        if (QFile::exists(filePath)) {
-            if (!QFile::rename(filePath, bakPath))
-                QFile::remove(filePath);
-        }
-
-        // Rename temp → final
-        if (!QFile::rename(tmpPath, filePath)) {
-            logError(QStringLiteral("FriendList: failed to rename tmp → %1").arg(filePath));
-            if (QFile::exists(bakPath))
-                QFile::rename(bakPath, filePath);
-            return;
+            commitAndReplace(file, tmpPath, filePath, theApp.commitFilesNow());
         }
 
         logInfo(QStringLiteral("FriendList: saved %1 friends to %2")

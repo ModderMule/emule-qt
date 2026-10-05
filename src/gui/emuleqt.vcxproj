@@ -326,6 +326,7 @@
     <ClInclude Include="dialogs\MetadataPage.h" />
     <ClInclude Include="utils\IpcFeedback.h" />
     <ClInclude Include="utils\InputHistory.h" />
+    <ClInclude Include="utils\UrlPrefField.h" />
     <ClInclude Include="utils\ListActivation.h" />
     <ClInclude Include="utils\MenuUtils.h" />
     <ClInclude Include="utils\ColorUtils.h" />

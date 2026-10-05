@@ -49,6 +49,9 @@ public:
     /// Remove all expired sessions.
     void purgeExpired();
 
+    /// Sessions not yet expired. MFC CWebServer::GetSessionCount.
+    [[nodiscard]] int activeCount() const;
+
     /// Update the session timeout.
     void setTimeoutMinutes(int minutes);
 

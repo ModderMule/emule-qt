@@ -559,6 +559,14 @@ void KnownFile::addUploadingClient(UpDownClient* client)
     emit m_notifier.fileUpdated();
 }
 
+void KnownFile::detachUploadingClients()
+{
+    const auto clients = std::move(m_uploadingClients);
+    m_uploadingClients.clear();
+    for (UpDownClient* client : clients)
+        client->setUploadFileID(nullptr);
+}
+
 void KnownFile::removeUploadingClient(UpDownClient* client)
 {
     auto it = std::ranges::find(m_uploadingClients, client);
@@ -1101,12 +1109,11 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
         fileIdentifier().calculateMD4HashByHashSet(false);
     }
 
-    // Verify AICH tree
-    auto hashAlg = std::unique_ptr<AICHHashAlgo>(AICHRecoveryHashSet::getNewHashAlgo());
-    if (aichHashSet.m_hashTree.reCalculateHash(hashAlg.get(), false)) {
-        fileIdentifier().setAICHHash(aichHashSet.getMasterHash());
-        m_aichRecoverHashSetAvailable = true;
-    }
+    // Finish the AICH tree, keep its part hashes and store the recovery set. Without
+    // the store nobody can ever be served recovery data for this file — MFC
+    // CreateFromFile, srchybrid/KnownFile.cpp:456-470.
+    aichHashSet.reCalculateHash(false);
+    m_aichRecoverHashSetAvailable = adoptAndStoreAICHHashSet(aichHashSet);
 
     setLastSeen(std::time(nullptr));
     updateMetaDataTags();
@@ -1121,27 +1128,30 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
 
 bool KnownFile::createAICHHashSetOnly()
 {
-    const QString path = filePath();
-    if (path.isEmpty())
+    AICHRecoveryHashSet aichHashSet(static_cast<uint64>(fileSize()));
+    if (!buildAICHHashSet(filePath(), static_cast<uint64>(fileSize()), aichHashSet))
+        return false;
+
+    m_aichRecoverHashSetAvailable = adoptAndStoreAICHHashSet(aichHashSet);
+    return m_aichRecoverHashSetAvailable;
+}
+
+bool KnownFile::buildAICHHashSet(const QString& path, uint64 expectedSize,
+                                 AICHRecoveryHashSet& out)
+{
+    if (path.isEmpty() || expectedSize == 0)
         return false;
 
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
         return false;
-
-    const uint64 length = static_cast<uint64>(file.size());
-    if (length != static_cast<uint64>(fileSize()))
+    if (static_cast<uint64>(file.size()) != expectedSize)
         return false;
 
-    AICHRecoveryHashSet aichHashSet(length);
-    uint64 remaining = length;
-    const uint16 parts = partCount();
-
-    for (uint16 part = 0; part < parts; ++part) {
+    uint64 remaining = expectedSize;
+    for (uint64 start = 0; remaining > 0; start += PARTSIZE) {
         const uint64 partLength = std::min(remaining, static_cast<uint64>(PARTSIZE));
-
-        AICHHashTree* partTree = aichHashSet.m_hashTree.findHash(
-            static_cast<uint64>(part) * PARTSIZE, partLength);
+        AICHHashTree* partTree = out.m_hashTree.findHash(start, partLength);
 
         // Only feed AICH, discard MD4
         uint8 dummyHash[16]{};
@@ -1149,13 +1159,33 @@ bool KnownFile::createAICHHashSetOnly()
         remaining -= partLength;
     }
 
-    auto hashAlg = std::unique_ptr<AICHHashAlgo>(AICHRecoveryHashSet::getNewHashAlgo());
-    if (aichHashSet.m_hashTree.reCalculateHash(hashAlg.get(), false)) {
-        fileIdentifier().setAICHHash(aichHashSet.getMasterHash());
-        m_aichRecoverHashSetAvailable = true;
-        return true;
+    out.reCalculateHash(false);
+    if (!out.verifyHashTree(true))
+        return false;
+    out.setStatus(EAICHStatus::HashSetComplete);
+    return true;
+}
+
+bool KnownFile::adoptAndStoreAICHHashSet(AICHRecoveryHashSet& hashSet)
+{
+    if (!hashSet.verifyHashTree(true)) {
+        logWarning(QStringLiteral("Failed to calculate AICH hashset for %1").arg(fileName()));
+        return false;
     }
-    return false;
+    hashSet.setStatus(EAICHStatus::HashSetComplete);
+    fileIdentifier().setAICHHash(hashSet.getMasterHash());
+    if (!fileIdentifier().setAICHHashSet(hashSet))
+        logDebug(QStringLiteral("Failed to store AICH part hashset for %1").arg(fileName()));
+
+    // No store configured (a bare KnownFile, a unit test): nothing to save to, and
+    // nothing to serve recovery data from.
+    if (!AICHRecoveryHashSet::hasKnown2MetPath())
+        return false;
+    if (!hashSet.saveHashSet()) {   // frees the set
+        logWarning(QStringLiteral("Failed to save AICH hashset for %1").arg(fileName()));
+        return false;
+    }
+    return true;
 }
 
 // ---------------------------------------------------------------------------

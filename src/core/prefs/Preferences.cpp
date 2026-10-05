@@ -3,6 +3,7 @@
 /// @brief Central preferences with YAML persistence — implementation.
 
 #include "prefs/Preferences.h"
+#include "utils/OtherFunctions.h"
 
 #include "app/AppConfig.h"
 #include "crypto/AesCbc.h"
@@ -99,6 +100,13 @@ sanitizeHttpCacheServers(const QList<HttpCacheServerConfig>& servers)
     return QDir::cleanPath(QDir(a).absolutePath())
                .compare(QDir::cleanPath(QDir(b).absolutePath()), Qt::CaseInsensitive)
            == 0;
+}
+
+/// Trimmed @p value, or @p fallback when that leaves nothing.
+QString urlOrDefault(const QString& value, QLatin1StringView fallback)
+{
+    const QString trimmed = value.trimmed();
+    return trimmed.isEmpty() ? QString(fallback) : trimmed;
 }
 
 } // namespace
@@ -446,6 +454,7 @@ struct Preferences::Data {
     // Kademlia
     bool kadEnabled = true;
     uint32 kadUDPKey = 0;  // 0 = generate random on first run
+    QString nodesDatURL = Preferences::kDefaultNodesDatURL;  // URL for nodes.dat download
     // Cached Kad notes-search results (filenames/comments) shown on the File Details page.
     int kadFileNameExpiryDays = 30;   // drop cached entries older than this
     int kadFileNameMaxCount = 100;    // keep at most this many newest entries per file
@@ -460,7 +469,7 @@ struct Preferences::Data {
     bool filterServerByIP = false;      // Apply IP filter to server addresses
     uint32 deadServerRetries = 20;      // Remove dead servers after N failed attempts (0 = disabled)
     bool autoUpdateServerList = false;  // Auto-update server list from URL at startup
-    QString serverListURL;              // URL for server.met download
+    QString serverListURL = Preferences::kDefaultServerListURL;  // URL for server.met download
     bool smartLowIdCheck = true;        // Try another server if we get a LowID
     bool manualServerHighPriority = false; // Set manually added servers to high priority
 
@@ -541,6 +550,7 @@ struct Preferences::Data {
     QString videoPlayerArgs;
     bool createBackupToPreview = true;
     bool autoCleanupFilenames = false;
+    QString filenameCleanups = QString::fromUtf16(kDefaultFilenameCleanups);
 
     // Notifications (GUI-side)
     int notifySoundType = 0;         // 0=noSound, 1=soundFile, 2=speech
@@ -2403,6 +2413,13 @@ uint32 Preferences::kadUDPKey() const { return get(&Data::kadUDPKey); }
 
 void Preferences::setKadUDPKey(uint32 val) { set(&Data::kadUDPKey, val); }
 
+QString Preferences::nodesDatURL() const { return get(&Data::nodesDatURL); }
+
+void Preferences::setNodesDatURL(const QString& val)
+{
+    set(&Data::nodesDatURL, urlOrDefault(val, kDefaultNodesDatURL));
+}
+
 int Preferences::kadFileNameExpiryDays() const { return get(&Data::kadFileNameExpiryDays); }
 
 void Preferences::setKadFileNameExpiryDays(int val) { set(&Data::kadFileNameExpiryDays, val); }
@@ -2445,7 +2462,10 @@ void Preferences::setAutoUpdateServerList(bool val) { set(&Data::autoUpdateServe
 
 QString Preferences::serverListURL() const { return get(&Data::serverListURL); }
 
-void Preferences::setServerListURL(const QString& val) { set(&Data::serverListURL, val); }
+void Preferences::setServerListURL(const QString& val)
+{
+    set(&Data::serverListURL, urlOrDefault(val, kDefaultServerListURL));
+}
 
 bool Preferences::smartLowIdCheck() const { return get(&Data::smartLowIdCheck); }
 
@@ -2771,6 +2791,10 @@ bool Preferences::autoCleanupFilenames() const { return get(&Data::autoCleanupFi
 
 void Preferences::setAutoCleanupFilenames(bool val) { set(&Data::autoCleanupFilenames, val); }
 
+QString Preferences::filenameCleanups() const { return get(&Data::filenameCleanups); }
+
+void Preferences::setFilenameCleanups(const QString& val) { set(&Data::filenameCleanups, val); }
+
 // ---------------------------------------------------------------------------
 // Getters / setters — Notifications (GUI-side)
 // ---------------------------------------------------------------------------
@@ -2887,6 +2911,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("deadServerRetries"), static_cast<qint64>(deadServerRetries()));
     prefs.insert(QStringLiteral("autoUpdateServerList"), autoUpdateServerList());
     prefs.insert(QStringLiteral("serverListURL"), serverListURL());
+    prefs.insert(QStringLiteral("nodesDatURL"), nodesDatURL());
     prefs.insert(QStringLiteral("smartLowIdCheck"), smartLowIdCheck());
     prefs.insert(QStringLiteral("manualServerHighPriority"), manualServerHighPriority());
 
@@ -3120,7 +3145,10 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->addServersFromClients   = p.value(QStringLiteral("addServersFromClients")).toBool();
     m_data->deadServerRetries       = static_cast<uint32>(p.value(QStringLiteral("deadServerRetries")).toInteger());
     m_data->autoUpdateServerList    = p.value(QStringLiteral("autoUpdateServerList")).toBool();
-    m_data->serverListURL           = p.value(QStringLiteral("serverListURL")).toString();
+    m_data->serverListURL           = urlOrDefault(p.value(QStringLiteral("serverListURL")).toString(),
+                                                   kDefaultServerListURL);
+    m_data->nodesDatURL             = urlOrDefault(p.value(QStringLiteral("nodesDatURL")).toString(),
+                                                   kDefaultNodesDatURL);
     m_data->smartLowIdCheck         = p.value(QStringLiteral("smartLowIdCheck")).toBool();
     m_data->manualServerHighPriority = p.value(QStringLiteral("manualServerHighPriority")).toBool();
 
@@ -3513,7 +3541,9 @@ bool Preferences::load(const QString& filePath)
             m_data->deadServerRetries = s["deadServerRetries"].as<uint32>(m_data->deadServerRetries);
             m_data->autoUpdateServerList = s["autoUpdateServerList"].as<bool>(m_data->autoUpdateServerList);
             if (s["serverListURL"])
-                m_data->serverListURL = QString::fromStdString(s["serverListURL"].as<std::string>(""));
+                m_data->serverListURL = urlOrDefault(
+                    QString::fromStdString(s["serverListURL"].as<std::string>("")),
+                    kDefaultServerListURL);
             m_data->smartLowIdCheck = s["smartLowIdCheck"].as<bool>(m_data->smartLowIdCheck);
             m_data->manualServerHighPriority = s["manualServerHighPriority"].as<bool>(m_data->manualServerHighPriority);
         }
@@ -3922,6 +3952,10 @@ bool Preferences::load(const QString& filePath)
         if (auto k = root["kademlia"]) {
             m_data->kadEnabled = k["enabled"].as<bool>(m_data->kadEnabled);
             m_data->kadUDPKey = k["udpKey"].as<uint32>(m_data->kadUDPKey);
+            if (k["nodesDatURL"])
+                m_data->nodesDatURL = urlOrDefault(
+                    QString::fromStdString(k["nodesDatURL"].as<std::string>("")),
+                    kDefaultNodesDatURL);
             m_data->kadFileNameExpiryDays = k["fileNameExpiryDays"].as<int>(m_data->kadFileNameExpiryDays);
             m_data->kadFileNameMaxCount = k["fileNameMaxCount"].as<int>(m_data->kadFileNameMaxCount);
         }
@@ -3960,6 +3994,7 @@ bool Preferences::load(const QString& filePath)
             m_data->videoPlayerArgs = QString::fromStdString(d["videoPlayerArgs"].as<std::string>(m_data->videoPlayerArgs.toStdString()));
             m_data->createBackupToPreview = d["createBackupToPreview"].as<bool>(m_data->createBackupToPreview);
             m_data->autoCleanupFilenames = d["autoCleanupFilenames"].as<bool>(m_data->autoCleanupFilenames);
+            m_data->filenameCleanups = QString::fromStdString(d["filenameCleanups"].as<std::string>(m_data->filenameCleanups.toStdString()));
         }
 
         // Notifications
@@ -4572,8 +4607,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "filterServerByIP" << YAML::Value << m_data->filterServerByIP;
     out << YAML::Key << "deadServerRetries" << YAML::Value << m_data->deadServerRetries;
     out << YAML::Key << "autoUpdateServerList" << YAML::Value << m_data->autoUpdateServerList;
-    if (!m_data->serverListURL.isEmpty())
-        out << YAML::Key << "serverListURL" << YAML::Value << m_data->serverListURL.toStdString();
+    out << YAML::Key << "serverListURL" << YAML::Value << m_data->serverListURL.toStdString();
     out << YAML::Key << "smartLowIdCheck" << YAML::Value << m_data->smartLowIdCheck;
     out << YAML::Key << "manualServerHighPriority" << YAML::Value << m_data->manualServerHighPriority;
     out << YAML::EndMap;
@@ -4977,6 +5011,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "kademlia" << YAML::Value << YAML::BeginMap;
     out << YAML::Key << "enabled" << YAML::Value << m_data->kadEnabled;
     out << YAML::Key << "udpKey" << YAML::Value << m_data->kadUDPKey;
+    out << YAML::Key << "nodesDatURL" << YAML::Value << m_data->nodesDatURL.toStdString();
     out << YAML::Key << "fileNameExpiryDays" << YAML::Value << m_data->kadFileNameExpiryDays;
     out << YAML::Key << "fileNameMaxCount" << YAML::Value << m_data->kadFileNameMaxCount;
     out << YAML::EndMap;
@@ -5016,6 +5051,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "videoPlayerArgs" << YAML::Value << m_data->videoPlayerArgs.toStdString();
     out << YAML::Key << "createBackupToPreview" << YAML::Value << m_data->createBackupToPreview;
     out << YAML::Key << "autoCleanupFilenames" << YAML::Value << m_data->autoCleanupFilenames;
+    out << YAML::Key << "filenameCleanups" << YAML::Value << m_data->filenameCleanups.toStdString();
     out << YAML::EndMap;
 
     // Notifications

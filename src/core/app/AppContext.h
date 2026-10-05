@@ -69,6 +69,13 @@ struct AppContext {
     Scheduler*   scheduler      = nullptr;
     PortMapper*  portMapper     = nullptr;
 
+    /// Set once the core starts tearing down (MFC theApp.IsClosing()).
+    bool closing = false;
+
+    /// MFC CommitAndClose policy (srchybrid/OtherFunctions.cpp:313): force a saved file
+    /// to disk when commitFiles is 2, or 1 while shutting down.
+    [[nodiscard]] bool commitFilesNow() const;
+
     /// Returns our server-assigned client ID (0 if not connected).
     [[nodiscard]] uint32 getID() const;
 

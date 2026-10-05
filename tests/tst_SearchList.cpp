@@ -76,6 +76,9 @@ private slots:
     void addToList_newParent();
     void addToList_duplicate_merges();
     void addToList_duplicate_sameName_merges();
+    void addToList_kadOrigin_serverResultWins_data();
+    void addToList_kadOrigin_serverResultWins();
+    void addToList_kadOrigin_keptWhenAllAnswersAreKad();
     void addToList_fileTypeFilter();
     void removeResults_clearsSearch();
     void processSearchAnswer_tcp();
@@ -92,6 +95,10 @@ private slots:
     void clientSharedFiles_opensOwnTab();
     void clientSharedFiles_reusesTabThenReopensAfterClose();
     void clientSharedFiles_emptyListStillOpensTab();
+    void kadKeywordResult_setsKadFlagAndMaxesSources();
+    void kadKeywordResult_adoptsTheOneAgreedAICHHash();
+    void kadKeywordResult_ignoresRareOrCompetingAICHHashes();
+    void storeAndLoadSearches_keepsKadFlag();
 };
 
 void tst_SearchList::construct()
@@ -204,6 +211,118 @@ void tst_SearchList::addToList_duplicate_sameName_merges()
     QVERIFY(parent != nullptr);
     // Should have 1 child (first copy), and that child has merged sources
     QCOMPARE(parent->listChildCount(), uint32{1});
+}
+
+// One search answer for @p hash; with @p kad the server found the file on Kad and
+// says so with FT_META_NETWORK.
+static SearchFile* makeAnswer(const uint8* hash, const QString& name, uint32 sources, bool kad,
+                              uint32 serverIP, uint32 searchID)
+{
+    SafeMemFile mem;
+    mem.write(hash, 16);
+    mem.writeUInt32(0);
+    mem.writeUInt16(0);
+    mem.writeUInt32(kad ? 4 : 3);
+    Tag(FT_FILENAME, name).writeNewEd2kTag(mem, UTF8Mode::Raw);
+    Tag(FT_FILESIZE, uint32{8000}).writeNewEd2kTag(mem);
+    Tag(FT_SOURCES, sources).writeNewEd2kTag(mem);
+    if (kad)
+        Tag(FT_META_NETWORK, uint32{META_NETWORK_KAD}).writeNewEd2kTag(mem);
+    QByteArray packet = mem.takeBuffer();
+    SafeMemFile data(packet);
+    auto* file = new SearchFile(data, true, serverIP, 4661);
+    file->setSearchID(searchID);
+    return file;
+}
+
+static bool hasNetworkTag(const SearchFile* file)
+{
+    return std::ranges::any_of(file->tags(),
+                               [](const Tag& t) { return t.nameId() == FT_META_NETWORK; });
+}
+
+void tst_SearchList::addToList_kadOrigin_serverResultWins_data()
+{
+    QTest::addColumn<bool>("kadFirst");
+    QTest::addColumn<QString>("kadName");
+
+    // The Kad answer's name once its "[kad …] " prefix is gone: the same as the
+    // server's, or another one, which makes it a second name variant
+    QTest::newRow("server then kad, same name") << false << QStringLiteral("[kad emule-qt.org] same.avi");
+    QTest::newRow("kad then server, same name") << true << QStringLiteral("[kad emule-qt.org] same.avi");
+    QTest::newRow("server then kad, other name") << false << QStringLiteral("[kad] other.avi");
+    QTest::newRow("kad then server, other name") << true << QStringLiteral("[kad] other.avi");
+}
+
+void tst_SearchList::addToList_kadOrigin_serverResultWins()
+{
+    QFETCH(bool, kadFirst);
+    QFETCH(QString, kadName);
+
+    eMule::testing::TempDir tempDir;
+    SearchList list;
+    SearchParams params;
+    uint32 id = list.newSearch({}, params);
+
+    uint8 hash[16];
+    std::memset(hash, 0xCD, 16);
+
+    // One server has the file itself, another only found it on Kad
+    auto* own = makeAnswer(hash, QStringLiteral("same.avi"), 5, false, 0xC0A80001, id);
+    auto* kad = makeAnswer(hash, kadName, 3, true, 0xC0A80002, id);
+    QVERIFY(kad->isKadOrigin());
+    QVERIFY(!own->isKadOrigin());
+    qInfo() << "input: kadFirst =" << kadFirst << "kad name =" << kadName;
+
+    list.addToList(kadFirst ? kad : own);
+    SearchFile* parent = list.searchFileByHash(hash, id);
+    QVERIFY(parent != nullptr);
+    QCOMPARE(parent->isKadOrigin(), kadFirst);
+    list.addToList(kadFirst ? own : kad);
+
+    qInfo() << "output: parent" << parent->fileName() << "kadOrigin =" << parent->isKadOrigin()
+            << "children =" << parent->listChildCount();
+    QVERIFY(!parent->isKadOrigin());
+    QVERIFY(!hasNetworkTag(parent));
+    QVERIFY(!parent->fileName().startsWith(QLatin1Char('[')));
+    QVERIFY(parent->listChildCount() >= 1);
+    for (const auto* child : parent->listChildren()) {
+        qInfo() << "output: child" << child->fileName() << "kadOrigin =" << child->isKadOrigin();
+        QVERIFY(!child->isKadOrigin());
+        QVERIFY(!hasNetworkTag(child));
+    }
+
+    // A stored search must not bring the flag back
+    list.storeSearches(tempDir.path());
+    SearchList loaded;
+    loaded.loadSearches(tempDir.path());
+    SearchFile* restored = loaded.searchFileByHash(hash, id);
+    QVERIFY(restored != nullptr);
+    qInfo() << "output: restored kadOrigin =" << restored->isKadOrigin();
+    QVERIFY(!restored->isKadOrigin());
+}
+
+void tst_SearchList::addToList_kadOrigin_keptWhenAllAnswersAreKad()
+{
+    SearchList list;
+    SearchParams params;
+    uint32 id = list.newSearch({}, params);
+
+    uint8 hash[16];
+    std::memset(hash, 0xCE, 16);
+
+    // Two servers, both found the file on Kad only
+    list.addToList(makeAnswer(hash, QStringLiteral("[kad] same.avi"), 3, true, 0xC0A80001, id));
+    list.addToList(makeAnswer(hash, QStringLiteral("[kad emule-qt.org] same.avi"), 4, true, 0xC0A80002, id));
+
+    SearchFile* parent = list.searchFileByHash(hash, id);
+    QVERIFY(parent != nullptr);
+    qInfo() << "output: parent" << parent->fileName() << "kadOrigin =" << parent->isKadOrigin()
+            << "children =" << parent->listChildCount();
+    QVERIFY(parent->isKadOrigin());
+    QVERIFY(hasNetworkTag(parent));
+    QCOMPARE(parent->listChildCount(), uint32{1});
+    QVERIFY(parent->listChildren().front()->isKadOrigin());
 }
 
 void tst_SearchList::addToList_fileTypeFilter()
@@ -647,6 +766,155 @@ void tst_SearchList::clientSharedFiles_emptyListStillOpensTab()
     QVERIFY(id != 0);
     QVERIFY(list.searchEntry(id) != nullptr);
     QCOMPARE(list.resultCount(id), uint32{0});
+}
+
+// ---------------------------------------------------------------------------
+// Kad keyword results
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// TAG_KADAICHHASHRESULT blob: count, then (popularity, hash[20]) per entry.
+/// Each hash is 20 bytes of its fill value.
+Tag kadAICHVotes(const std::vector<std::pair<uint8, uint8>>& popularityAndFill)
+{
+    QByteArray blob(1, static_cast<char>(popularityAndFill.size()));
+    for (const auto& [popularity, fill] : popularityAndFill) {
+        blob.append(static_cast<char>(popularity));
+        blob.append(QByteArray(20, static_cast<char>(fill)));
+    }
+    return Tag::makeBsob(QByteArrayLiteral(TAG_KADAICHHASHRESULT), std::move(blob));
+}
+
+Tag kadPublishInfo(uint8 publishers)
+{
+    return Tag(QByteArrayLiteral(TAG_PUBLISHINFO),
+               (uint32{1} << 24) | (uint32{publishers} << 16) | uint32{100});
+}
+
+} // namespace
+
+// Our own Kad search: the result knows it, so counts take the max (every node reports
+// the total) and completeness is unknown. The flag used to stay false.
+void tst_SearchList::kadKeywordResult_setsKadFlagAndMaxesSources()
+{
+    SearchList list;
+    SearchParams params;
+    const uint32 id = list.newSearch({}, params);
+
+    uint8 hash[16];
+    std::memset(hash, 0x5A, 16);
+
+    list.addKadKeywordResult(id, hash, QStringLiteral("kad.mp3"), 4242, QStringLiteral("Audio"), 5, 2);
+    list.addKadKeywordResult(id, hash, QStringLiteral("kad.mp3"), 4242, QStringLiteral("Audio"), 3, 1);
+
+    SearchFile* found = list.searchFileByHash(hash, id);
+    QVERIFY(found != nullptr);
+    QVERIFY(found->isKadResult());
+    QCOMPARE(found->sourceCount(), uint32{5});
+    QCOMPARE(found->isComplete(), -1);
+    for (const SearchFile* child : found->listChildren()) {
+        QVERIFY(child->isKadResult());
+        QCOMPARE(child->sourceCount(), uint32{5});
+    }
+}
+
+void tst_SearchList::kadKeywordResult_adoptsTheOneAgreedAICHHash()
+{
+    SearchList list;
+    SearchParams params;
+    const uint32 id = list.newSearch({}, params);
+
+    uint8 hash[16];
+    std::memset(hash, 0x5B, 16);
+
+    // 6 publishers, 2 of them reported the hash: 6 / 2 <= 3
+    list.addKadKeywordResult(id, hash, QStringLiteral("aich.bin"), 4242, {}, 5, 0,
+                             {kadPublishInfo(6), kadAICHVotes({{2, 0xA1}})});
+
+    SearchFile* found = list.searchFileByHash(hash, id);
+    QVERIFY(found != nullptr);
+    QCOMPARE(found->kadPublishInfo() >> 16 & 0xFF, uint32{6});
+    QVERIFY(found->fileIdentifier().hasAICHHash());
+    const QByteArray expected(20, static_cast<char>(0xA1));
+    QCOMPARE(QByteArray(reinterpret_cast<const char*>(found->fileIdentifier().getAICHHash().getRawHash()), 20),
+             expected);
+    // Result properties, never tags: a tag would travel into the download
+    for (const Tag& tag : found->tags())
+        QVERIFY(tag.name() != QByteArrayLiteral(TAG_PUBLISHINFO)
+                && tag.name() != QByteArrayLiteral(TAG_KADAICHHASHRESULT));
+}
+
+void tst_SearchList::kadKeywordResult_ignoresRareOrCompetingAICHHashes()
+{
+    SearchList list;
+    SearchParams params;
+    const uint32 id = list.newSearch({}, params);
+
+    uint8 rare[16], competing[16], truncated[16], noInfo[16];
+    std::memset(rare, 0x5C, 16);
+    std::memset(competing, 0x5D, 16);
+    std::memset(truncated, 0x5E, 16);
+    std::memset(noInfo, 0x5F, 16);
+
+    // 8 publishers, 2 reported it: 8 / 2 > 3
+    list.addKadKeywordResult(id, rare, QStringLiteral("rare.bin"), 4242, {}, 5, 0,
+                             {kadPublishInfo(8), kadAICHVotes({{2, 0xA1}})});
+    // Two different hashes
+    list.addKadKeywordResult(id, competing, QStringLiteral("competing.bin"), 4242, {}, 5, 0,
+                             {kadPublishInfo(4), kadAICHVotes({{2, 0xA1}, {2, 0xB2}})});
+    // A count byte promising more than the blob holds
+    Tag shortBlob = Tag::makeBsob(QByteArrayLiteral(TAG_KADAICHHASHRESULT),
+                                  QByteArray("\x02\x02", 2) + QByteArray(20, '\xA1'));
+    list.addKadKeywordResult(id, truncated, QStringLiteral("truncated.bin"), 4242, {}, 5, 0,
+                             {kadPublishInfo(2), shortBlob});
+    // No publish info to weigh the vote against
+    list.addKadKeywordResult(id, noInfo, QStringLiteral("noinfo.bin"), 4242, {}, 5, 0,
+                             {kadAICHVotes({{2, 0xA1}})});
+
+    for (const uint8* hash : {rare, competing, truncated, noInfo}) {
+        SearchFile* found = list.searchFileByHash(hash, id);
+        QVERIFY(found != nullptr);
+        QVERIFY(!found->fileIdentifier().hasAICHHash());
+    }
+}
+
+// The stored file has no search type of its own: without the Kad byte a reloaded Kad
+// result came back as an eD2K one.
+void tst_SearchList::storeAndLoadSearches_keepsKadFlag()
+{
+    eMule::testing::TempDir tempDir;
+
+    SearchList original;
+    SearchParams params;
+    const uint32 kadID = original.newSearch({}, params);
+    const uint32 ed2kID = original.newSearch({}, params);
+
+    uint8 kadHash[16], ed2kHash[16];
+    std::memset(kadHash, 0x61, 16);
+    std::memset(ed2kHash, 0x62, 16);
+
+    original.addKadKeywordResult(kadID, kadHash, QStringLiteral("kad.mp3"), 4242, {}, 5, 0);
+
+    QByteArray packet = buildSingleResultPacket(ed2kHash, QStringLiteral("ed2k.mp3"), 77777, 10);
+    SafeMemFile data(packet);
+    auto* file = new SearchFile(data, true, 0xC0A80001, 4661);
+    file->setSearchID(ed2kID);
+    original.addToList(file);
+
+    original.storeSearches(tempDir.path());
+
+    SearchList loaded;
+    loaded.loadSearches(tempDir.path());
+
+    SearchFile* kadFound = loaded.searchFileByHash(kadHash, kadID);
+    QVERIFY(kadFound != nullptr);
+    QVERIFY(kadFound->isKadResult());
+    QCOMPARE(kadFound->fileName(), QStringLiteral("kad.mp3"));
+
+    SearchFile* ed2kFound = loaded.searchFileByHash(ed2kHash, ed2kID);
+    QVERIFY(ed2kFound != nullptr);
+    QVERIFY(!ed2kFound->isKadResult());
 }
 
 QTEST_MAIN(tst_SearchList)

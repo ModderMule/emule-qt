@@ -182,6 +182,10 @@ public:
     void stop();
     [[nodiscard]] bool isRunning() const;
     [[nodiscard]] uint16 port() const;
+    /// Bound to TLS (HTTPS requested and the cert/key loaded).
+    [[nodiscard]] bool isHttps() const;
+    /// Logged-in web UI sessions not yet expired; 0 when stopped.
+    [[nodiscard]] int sessionCount() const;
 
     /// Random token for authenticating preview streaming requests.
     /// Regenerated every time the web server starts.

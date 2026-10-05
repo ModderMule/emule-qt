@@ -90,8 +90,10 @@ void tst_KnownFileList::safeAddKFile_duplicate()
     QVERIFY(list.safeAddKFile(file2));
 
     QCOMPARE(list.count(), size_t{1});
-    // Stats delta: 800 - 500 = 300 added to initial 500
-    QCOMPARE(list.totalTransferred, uint64{800});
+    // The replacement inherits the old entry's history (MFC MergeFileStats,
+    // srchybrid/KnownFileList.cpp:302), so both the file and the total hold the sum.
+    QCOMPARE(list.totalTransferred, uint64{1300});
+    QCOMPARE(file2->statistic.allTimeTransferred(), uint64{1300});
 
     // Should find file2, not file1
     auto* found = list.findKnownFileByID(hash);

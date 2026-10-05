@@ -16,8 +16,11 @@
 #include <QObject>
 #include <QString>
 
+#include <atomic>
 #include <cstdint>
 #include <ctime>
+
+class QThread;
 
 namespace eMule::kad {
 
@@ -26,8 +29,15 @@ class Indexed : public QObject {
     Q_OBJECT
 
 public:
+    /// In memory only: nothing is loaded and nothing is saved.
     explicit Indexed(QObject* parent = nullptr);
+    /// Persistent: loads key_index.dat / src_index.dat / load_index.dat from
+    /// @p configDir on a background thread and writes them back on destruction.
+    /// Until the load finishes every public method refuses work, as MFC does.
+    explicit Indexed(const QString& configDir, QObject* parent = nullptr);
     ~Indexed() override;
+
+    [[nodiscard]] bool isLoaded() const { return m_dataLoaded.load(std::memory_order_acquire); }
 
     Indexed(const Indexed&) = delete;
     Indexed& operator=(const Indexed&) = delete;
@@ -58,7 +68,21 @@ public:
     uint32 m_totalIndexLoad = 0;
 
 private:
-    void readFile();
+    /// Loader thread body: read the three index files (MFC CLoadDataThread::Run).
+    void loadFiles();
+    void loadLoadFile(const QString& path);
+    void loadKeyFile(const QString& path);
+    void loadSourceFile(const QString& path);
+    /// Write the three index files; main thread, load finished.
+    void writeFiles();
+    [[nodiscard]] bool aborting() const { return m_abortLoading.load(std::memory_order_relaxed); }
+
+    // Non-locking cores. `fromFile` keeps the stored lifetime instead of stamping a
+    // fresh one — MFC's bIgnoreThreadLock paths.
+    bool addKeywordLocked(const UInt128& keyID, const UInt128& sourceID,
+                          KeyEntry* entry, uint8& outLoad, bool fromFile);
+    bool addLoadLocked(const UInt128& keyID, time_t time);
+
     void clean();
     // Non-locking core of clean(): caller must already hold m_mutex. Called from
     // the serve paths (which hold the lock) as well as clean() itself. Splitting
@@ -89,7 +113,7 @@ private:
     bool addSourceEntry(SrcHashMap& index, uint32& counter, uint32 perFileMax,
                         time_t lifetimeSecs, const SourcePolicy& policy,
                         const UInt128& keyID, const UInt128& sourceID,
-                        Entry* entry, uint8& outLoad);
+                        Entry* entry, uint8& outLoad, bool fromFile = false);
 
     time_t m_nextClean = 0;
     KeyHashMap m_keywords;
@@ -97,7 +121,11 @@ private:
     SrcHashMap m_notes;
     LoadMap m_loads;
     QMutex m_mutex;
-    bool m_dataLoaded = false;
+
+    QString m_configDir;                       // empty = not persistent
+    QThread* m_loader = nullptr;
+    std::atomic<bool> m_abortLoading{false};
+    std::atomic<bool> m_dataLoaded{true};      // false only while m_loader runs
 };
 
 } // namespace eMule::kad

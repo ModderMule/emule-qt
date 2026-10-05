@@ -1,13 +1,35 @@
 {
-  "Show Usenet log tab": {
+  "Filename Cleanup": {
     "_context": "eMule::OptionsDialog",
-    "de_DE": "Usenet-Log-Registerkarte anzeigen",
-    "es_ES": "Mostrar pestaña de registro de Usenet",
-    "fr_FR": "Afficher l'onglet du journal Usenet",
-    "it_IT": "Mostra scheda registro Usenet",
-    "ja_JP": "Usenet ログタブを表示",
-    "ko_KR": "Usenet 로그 탭 표시",
-    "pt_BR": "Mostrar aba de log da Usenet",
-    "zh_CN": "显示 Usenet 日志标签页"
+    "de_DE": "Dateinamen bereinigen",
+    "es_ES": "Limpieza de nombres de archivo",
+    "fr_FR": "Nettoyage des noms de fichiers",
+    "it_IT": "Pulizia dei nomi dei file",
+    "ja_JP": "ファイル名のクリーンアップ",
+    "ko_KR": "파일 이름 정리",
+    "pt_BR": "Limpeza de nomes de arquivo",
+    "zh_CN": "文件名清理"
+  },
+  "Text to remove from the names of new downloads. Case is ignored.": {
+    "_context": "eMule::OptionsDialog",
+    "de_DE": "Text, der aus den Namen neuer Downloads entfernt wird. Groß-/Kleinschreibung wird ignoriert.",
+    "es_ES": "Texto que se elimina de los nombres de las descargas nuevas. No se distingue entre mayúsculas y minúsculas.",
+    "fr_FR": "Texte à supprimer des noms des nouveaux téléchargements. La casse est ignorée.",
+    "it_IT": "Testo da rimuovere dai nomi dei nuovi download. Maiuscole e minuscole vengono ignorate.",
+    "ja_JP": "新しいダウンロードの名前から削除するテキストです。大文字と小文字は区別されません。",
+    "ko_KR": "새 다운로드의 이름에서 제거할 텍스트입니다. 대소문자는 구분하지 않습니다.",
+    "pt_BR": "Texto a remover dos nomes dos novos downloads. Maiúsculas e minúsculas são ignoradas.",
+    "zh_CN": "要从新下载的名称中移除的文本。不区分大小写。"
+  },
+  "Reset to Default": {
+    "_context": "eMule::OptionsDialog",
+    "de_DE": "Auf Standard zurücksetzen",
+    "es_ES": "Restablecer valores predeterminados",
+    "fr_FR": "Rétablir les valeurs par défaut",
+    "it_IT": "Ripristina predefiniti",
+    "ja_JP": "既定値に戻す",
+    "ko_KR": "기본값으로 재설정",
+    "pt_BR": "Restaurar padrão",
+    "zh_CN": "恢复默认值"
   }
 }

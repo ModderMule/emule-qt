@@ -45,6 +45,9 @@ public:
     /// Connect this panel to the IPC client for data updates.
     void setIpcClient(IpcClient* client);
 
+    /// Reload the server.met URL field after the daemon's preferences or Options changed it.
+    void refreshUpdateUrl();
+
     /// Get the log widget so it can be shared with MainWindow if needed.
     [[nodiscard]] LogWidget* logWidget() const { return m_logWidget; }
 

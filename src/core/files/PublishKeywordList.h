@@ -34,6 +34,7 @@ public:
 
     void addRef(KnownFile* file);
     void removeRef(KnownFile* file);
+    void removeAllReferences() { m_files.clear(); }
 
     /// Rotate the first @p count entries to the back (round-robin publishing).
     void rotateReferences(int count);
@@ -73,6 +74,10 @@ public:
 
     /// Reset the round-robin iterator to the beginning.
     void resetNextKeyword();
+
+    /// Drop every file reference but keep the keywords and their publish times
+    /// (MFC RemoveAllKeywordReferences). Follow with purgeUnreferencedKeywords().
+    void removeAllKeywordReferences();
 
     /// Remove keywords with zero file references.
     void purgeUnreferencedKeywords();

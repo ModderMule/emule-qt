@@ -339,6 +339,9 @@
     <ClInclude Include="utils\InputHistory.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="utils\UrlPrefField.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\FileTypeIcons.h">
       <Filter>Header Files</Filter>
     </ClInclude>

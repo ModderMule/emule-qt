@@ -16,6 +16,7 @@
 #include "utils/MenuUtils.h"
 #include "utils/PanelPoller.h"
 #include "utils/StatusBarNotifier.h"
+#include "utils/UrlPrefField.h"
 #include "IpcMessage.h"
 #include "net/HttpFileDownload.h"
 #include "prefs/Preferences.h"
@@ -183,9 +184,7 @@ void ServerPanel::onAddServerClicked()
 
 void ServerPanel::onUpdateServerMetClicked()
 {
-    const QString urlStr = m_updateUrlEdit->text().trimmed();
-    if (urlStr.isEmpty())
-        return;
+    const QString urlStr = urlPrefFieldValue(m_updateUrlEdit, Preferences::kDefaultServerListURL);
 
     const QUrl url(urlStr);
     if (!url.isValid() || url.scheme().isEmpty()) {
@@ -223,6 +222,11 @@ void ServerPanel::onUpdateServerMetClicked()
 
             parseAndAddServersFromMet(data);
         });
+}
+
+void ServerPanel::refreshUpdateUrl()
+{
+    refreshUrlPrefField(m_updateUrlEdit, &Preferences::serverListURL);
 }
 
 void ServerPanel::onRefreshTimer()
@@ -721,6 +725,11 @@ QWidget* ServerPanel::createControlsPanel()
     auto* urlRow = new QHBoxLayout;
     urlRow->setSpacing(4);
     m_updateUrlEdit = new QLineEdit;
+    // Same value as Options "List..." and the startup auto-update.
+    bindUrlPrefField(m_updateUrlEdit, QStringLiteral("serverListURL"),
+                     Preferences::kDefaultServerListURL,
+                     &Preferences::serverListURL, &Preferences::setServerListURL,
+                     [this] { return m_ipc; });
     urlRow->addWidget(m_updateUrlEdit, 1);
     m_updateBtn = new QPushButton(tr("Update"));
     urlRow->addWidget(m_updateBtn);

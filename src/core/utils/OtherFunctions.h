@@ -99,6 +99,16 @@ inline void md4cpy(void* dst, const void* src) noexcept
 /// URL-decode a percent-encoded string.
 [[nodiscard]] QString urlDecode(const QString& input);
 
+/// Stock default for the "auto cleanup file names" word list ('|'-separated).
+inline constexpr auto kDefaultFilenameCleanups =
+    u"http|www.|.com|.de|.org|.net|shared|powered|sponsored|sharelive|filedonkey|";
+
+/// Tidy a download's name: drop the listed substrings, turn dots and underscores into
+/// spaces, strip [ad] groups, title-case. MFC CleanupFilename
+/// (srchybrid/OtherFunctions.cpp:1252). @p cleanups is the '|'-separated word list.
+[[nodiscard]] QString cleanupFilename(const QString& filename, const QString& cleanups,
+                                      bool keepExtension = true);
+
 /// Encode a URL query parameter (space → '+', special chars → %XX).
 [[nodiscard]] QString encodeUrlQueryParam(const QString& query);
 

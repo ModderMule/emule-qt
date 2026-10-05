@@ -14,6 +14,7 @@
 #include "app/UiState.h"
 #include "utils/IpcFeedback.h"
 #include "utils/PanelPoller.h"
+#include "utils/UrlPrefField.h"
 
 #include "IpcMessage.h"
 
@@ -177,9 +178,7 @@ void KadPanel::onBootstrapClicked()
         msg.append(qint64(port));
         m_ipc->sendRequest(std::move(msg));
     } else {
-        const QString url = m_urlEdit->text().trimmed();
-        if (url.isEmpty())
-            return;
+        const QString url = urlPrefFieldValue(m_urlEdit, Preferences::kDefaultNodesDatURL);
 
         m_bootstrapBtn->setEnabled(false);
         m_bootstrapBtn->setText(tr("Downloading..."));
@@ -225,6 +224,11 @@ void KadPanel::onBootstrapClicked()
     }
 }
 
+void KadPanel::refreshNodesUrl()
+{
+    refreshUrlPrefField(m_urlEdit, &Preferences::nodesDatURL);
+}
+
 void KadPanel::onBootstrapTypeChanged()
 {
     const bool ipMode = m_bootstrapIpRadio->isChecked();
@@ -247,7 +251,7 @@ void KadPanel::updateBootstrapButton()
         const int     port = m_portEdit->text().trimmed().toInt();
         valid = !ip.isEmpty() && port >= 1 && port <= 65535;
     } else {
-        valid = !m_urlEdit->text().trimmed().isEmpty();
+        valid = true;   // an empty URL means the default
     }
     m_bootstrapBtn->setEnabled(valid);
 }
@@ -442,6 +446,9 @@ QWidget* KadPanel::createControlsPanel()
     urlRow->addWidget(m_bootstrapUrlRadio);
     m_urlEdit = new QLineEdit;
     m_urlEdit->setPlaceholderText(QStringLiteral("http://"));
+    bindUrlPrefField(m_urlEdit, QStringLiteral("nodesDatURL"), Preferences::kDefaultNodesDatURL,
+                     &Preferences::nodesDatURL, &Preferences::setNodesDatURL,
+                     [this] { return m_ipc; });
     m_urlEdit->setEnabled(false);
     urlRow->addWidget(m_urlEdit, 1);
     layout->addLayout(urlRow);

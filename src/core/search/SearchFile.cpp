@@ -190,6 +190,13 @@ SearchFile::SearchFile(FileDataIO& data, bool optUTF8,
             addTagUnique(std::move(tag));
             break;
 
+        // The server found this file on Kad. Kept, so a stored search restores it.
+        case FT_META_NETWORK:
+            if (tag.isInt() && tag.intValue() == META_NETWORK_KAD)
+                m_kadOrigin = true;
+            addTagUnique(std::move(tag));
+            break;
+
         case FT_MEDIA_ARTIST:
         case FT_MEDIA_ALBUM:
         case FT_MEDIA_TITLE:
@@ -217,6 +224,7 @@ SearchFile::SearchFile(FileDataIO& data, bool optUTF8,
     }
 
     resolveMeta(hadMetaKind, metaKind, hadMetaVersion, metaVersion, hadMetaIndex);
+    stripKadPrefix();
 
     // Auto-detect file type from filename if not provided
     if (fileType().isEmpty() && !fileName().isEmpty())
@@ -243,6 +251,7 @@ SearchFile::SearchFile(const SearchFile* other)
     , m_kadResult(other->m_kadResult)
     , m_meta(other->m_meta)
     , m_metaInvalid(other->m_metaInvalid)
+    , m_kadOrigin(other->m_kadOrigin)
 {
 }
 
@@ -480,6 +489,23 @@ void SearchFile::resolveMeta(bool hadKindTag, uint8 tagKind, bool hadVersionTag,
     // e.g. "[torrent example.org] "); we show an icon instead. Only a bracket
     // naming the network is dropped — "[Group] Title" stays.
     static const QRegularExpression kPrefix(QStringLiteral("^\\[(?:torrent|usenet)(?:\\s[^\\]]*)?\\]\\s*"),
+                                            QRegularExpression::CaseInsensitiveOption);
+    if (const auto m = kPrefix.match(fileName()); m.hasMatch() && m.capturedLength() < fileName().size())
+        setFileName(fileName().mid(m.capturedLength()), true);
+}
+
+void SearchFile::stripKadPrefix()
+{
+    // Only a pseudo-hash row is a torrent or an NZB; a meta row is never also this
+    if (isMetaResult() || m_metaInvalid)
+        m_kadOrigin = false;
+    if (!m_kadOrigin)
+        return;
+
+    // The tag decides, never the name: a file that is merely called "[kad] …" and
+    // carries no FT_META_NETWORK keeps its name. As for torrent/Usenet rows, only a
+    // bracket naming the network goes, so "[kad example.org] " does and "[Group] " stays.
+    static const QRegularExpression kPrefix(QStringLiteral("^\\[kad(?:\\s[^\\]]*)?\\]\\s*"),
                                             QRegularExpression::CaseInsensitiveOption);
     if (const auto m = kPrefix.match(fileName()); m.hasMatch() && m.capturedLength() < fileName().size())
         setFileName(fileName().mid(m.capturedLength()), true);

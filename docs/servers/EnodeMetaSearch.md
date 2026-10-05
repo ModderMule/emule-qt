@@ -1,4 +1,4 @@
-# eNode meta search: torrent and Usenet results
+# eNode meta search: torrent, Usenet and Kad results
 
 eNode-go servers can mix torrent and Usenet releases into ordinary eD2K search
 answers. eMuleQt recognises these rows, shows a network icon in front of each
@@ -26,10 +26,50 @@ kind: 1 = bt-v1/hybrid, 2 = bt-v2, 3 = nzb
 - **Name prefix.** The server adds a prefix such as `[torrent] ` or
   `[usenet example.org] ` for legacy clients. Only a bracket that names the
   network is stripped; `[Group] Title` is left alone.
-- **Capability bits.** The client announces `SRVCAP_META_SEARCH` (0x2000) at
+- **Capability bits.** The client announces `SRVCAP_META_SEARCH` (0x10000) at
   login, and puts `SRVCAP_UDP_META_SEARCH` (0x02) in the `GLOBSEARCHREQ3` flags.
 - **Never an eD2K file.** A meta hash is never queued as an eD2K download: the
   daemon refuses it in `DownloadSearchFile`.
+
+## Kad results: by tag
+
+An eNode-go server can also answer with files it found on the Kad network
+(`metaSearch.kad`, fed by kademlia-crawler). These are not meta rows. Each one is an
+ordinary eD2K file with its real MD4 in the hash slot, and it downloads like any
+other search result.
+
+- **Recognition.** One tag: `FT_META_NETWORK` (0x6D, uint8) with the value
+  `META_NETWORK_KAD` (3). `SearchFile` sets `isKadOrigin()` from it. The row has
+  no `FT_META_KIND` and none of the other 0x60–0x6C tags, so `resolveMeta()`
+  treats it as a plain eD2K row.
+- **Not `isKadResult()`.** That flag is for a result of our own Kad search and
+  changes how source counts merge. A Kad-origin row came from a server, so its
+  counts add up per server as usual.
+- **Name prefix.** The server may prefix the name, for example
+  `[kad emule-qt.org] `, for clients that don't read the tag.
+  `SearchFile::stripKadPrefix()` drops a leading `[kad …]` bracket, and only when
+  the tag is present. A file that is just named `[kad] …` keeps its name.
+- **Icon.** The search list draws `Kad.ico` in the badge slot after the file-type
+  icon, where torrent and Usenet rows have theirs
+  (`SearchResultsModel::data`, `fileMarksIcon`). eD2K rows in the same list keep
+  a blank slot so the names line up.
+- **Complete Sources.** Kad seldom reports complete sources. A Kad-origin row
+  with a count of 0 shows `?` instead of a red `0%`.
+- **Merging.** Answers with the same hash become one file
+  (`SearchList::addToList`). That file is Kad-origin only while every answer for
+  it carried the tag. As soon as one server has the file itself, the file is a
+  plain server result: no Kad icon, a normal Complete Sources value. The arrival
+  order does not matter, and the name stays without the prefix.
+- **Persistence.** The tag is kept on the file, so `searches.met` restores the
+  flag. A file that turned into a plain server result loses the tag as well. The
+  GUI's stored tabs keep the flag as `kadOrigin`.
+- **Download.** Unchanged. The daemon builds an `ed2k://` link from hash, name
+  and size. Sources come from the server's `OP_GETSOURCES` and from our own Kad
+  source search, which is where a Kad-only file's sources are.
+- **Server-side precedence.** If a user shares the same file on the server, the
+  server sends its own row without the tag, so that file has no Kad badge.
+
+IPC: `toCbor(SearchFile)` adds `kadOrigin`; the web JSON has it too.
 
 ## Discovery
 
@@ -129,8 +169,13 @@ for the field layouts.
 - **`tst_SearchFile`:** a meta row is recognised by its hash, a row with
   contradicting tags or an unknown version is dropped, and the prefix is
   stripped.
-- **`tst_MetaSearchGui`:** network icons, and the dialog's login, pending and
-  accept states. Set `EMULE_TEST_SHOTS=<dir>` to get PNGs.
+- **`tst_SearchFile` (Kad):** `FT_META_NETWORK` sets the Kad-origin flag, the
+  `[kad …]` prefix is stripped only with the tag, the flag survives store and
+  load, and a meta row ignores the tag.
+- **`tst_SearchList`:** a file one server has itself is a plain result even when another server found it on Kad, in either order and after a stored search is loaded; two Kad-origin answers keep the flag.
+- **`tst_MetaSearchGui`:** network icons, the Kad badge and its `?` for unknown
+  completeness, and the dialog's login, pending and accept states. Set
+  `EMULE_TEST_SHOTS=<dir>` to get PNGs.
 - **Live check** (manual, 2026-09-26), against a local eNode-go with torrent meta
   search on:
   - 50 of 50 rows were recognised.

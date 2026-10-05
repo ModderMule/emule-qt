@@ -5,6 +5,10 @@
 /// Creates and wires the upload pipeline components on start().
 
 #include "app/CoreSession.h"
+#include "crypto/AICHData.h"
+#include "crypto/AICHHashSet.h"
+#include "crypto/AICHSyncThread.h"
+#include "net/BindAddress.h"
 #include "app/AppContext.h"
 #include "ipfilter/IPFilter.h"
 #include "geo/GeoIpUpdater.h"
@@ -61,12 +65,14 @@ namespace eMule {
 CoreSession::CoreSession(QObject* parent)
     : QObject(parent)
 {
+    theApp.closing = false;
     m_timer.setInterval(100);
     connect(&m_timer, &QTimer::timeout, this, &CoreSession::onTimer);
 }
 
 CoreSession::~CoreSession()
 {
+    theApp.closing = true;   // the saves below are the last ones: commit them
     stop();
     // Before every shutdownXxx(): shutdownClientInfra() destroys ClientCredits, and the
     // waiting clients point straight at those objects to compute their wait times. Saving
@@ -126,6 +132,8 @@ void CoreSession::stopWorkerThreads()
         m_uploadDiskIO->endThread();
         m_uploadDiskIO->wait();
     }
+    // Holds the shared list; gone before shutdownUploadPipeline() frees it.
+    m_aichSync.reset();
     if (m_lastCommonRouteFinder) {
         m_lastCommonRouteFinder->endThread();
         m_lastCommonRouteFinder->wait();
@@ -233,9 +241,19 @@ void CoreSession::initUploadPipeline()
         m_httpCache->start();
     }
 
+    // Before the scan: a file hashed by it stores its AICH recovery set in known2.
+    AICHRecoveryHashSet::setKnown2MetPath(
+        thePrefs.configDir() + QChar(u'/') + QString::fromUtf16(kKnown2MetFilename));
+
     // Initial scan of shared files
     if (theApp.sharedFileList)
         theApp.sharedFileList->reload();
+
+    // MFC starts CAICHSyncThread once the shared list exists (srchybrid/EmuleDlg.cpp:641).
+    if (theApp.sharedFileList) {
+        m_aichSync = std::make_unique<AICHSyncThread>(thePrefs.configDir(), theApp.sharedFileList);
+        m_aichSync->start(QThread::LowPriority);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -527,6 +545,7 @@ void CoreSession::initServerConnect()
     cfg.userNick              = thePrefs.nick();
     cfg.listenPort            = thePrefs.port();
     cfg.smartLowIdCheck       = thePrefs.smartLowIdCheck();
+    cfg.bindAddress           = BindAddress::ipv4Literal();
     cfg.emuleVersionTag       = (static_cast<uint32>(SEND_EMULE_VERSION_MJR) << 17)
                               | (static_cast<uint32>(SEND_EMULE_VERSION_MIN) << 10)
                               | (static_cast<uint32>(SEND_EMULE_VERSION_UPD) <<  7);

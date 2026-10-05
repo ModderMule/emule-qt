@@ -23,6 +23,8 @@
 
 namespace eMule {
 
+class AICHRecoveryHashSet;
+
 class AICHHashTree;
 class Collection;
 class FileDataIO;
@@ -174,6 +176,9 @@ public:
     // Upload client tracking
     void addUploadingClient(UpDownClient* client);
     void removeUploadingClient(UpDownClient* client);
+    /// Make every uploading client let go of this file. Call before deleting a file
+    /// that may still be uploaded; the destructor does not do it.
+    void detachUploadingClients();
     [[nodiscard]] const std::vector<UpDownClient*>& uploadingClients() const { return m_uploadingClients; }
     [[nodiscard]] int uploadingClientCount() const { return static_cast<int>(m_uploadingClients.size()); }
     [[nodiscard]] bool hasUploadingClients() const { return !m_uploadingClients.empty(); }
@@ -194,6 +199,10 @@ public:
     bool createFromFile(const QString& directory, const QString& filename,
                         std::function<void(int)> progressCallback = {});
     bool createAICHHashSetOnly();
+    /// Read @p path and build its complete AICH recovery set into @p out. Touches no
+    /// KnownFile, so it is safe on a worker thread.
+    static bool buildAICHHashSet(const QString& path, uint64 expectedSize,
+                                 AICHRecoveryHashSet& out);
 
     // Core hash computation
     static void createHash(QIODevice& device, uint64 length,
@@ -291,6 +300,10 @@ private:
 
     FileNotifier m_notifier;
     std::unique_ptr<Collection> m_collection;
+    /// Take master + part hashes from a finished set and save it to known2. Returns
+    /// whether recovery data can now be served.
+    bool adoptAndStoreAICHHashSet(AICHRecoveryHashSet& hashSet);
+
     std::vector<UpDownClient*> m_uploadingClients;
     std::vector<uint16> m_availPartFrequency;
     std::vector<QString> m_kadKeywords;

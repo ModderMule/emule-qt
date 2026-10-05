@@ -1028,8 +1028,6 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
 
     uint32 srvCaps = SRVCAP_NEWTAGS | SRVCAP_LARGEFILES | SRVCAP_UNICODE | cryptFlags;
     srvCaps |= SRVCAP_ZLIB;
-    if (sendIPv6Tag)
-        srvCaps |= SRVCAP_IPV6;   // "I speak the IPv6 server extension"
     srvCaps |= SRVCAP_META_SEARCH;   // eNode: we can act on torrent/Usenet rows
     Tag tagFlags(static_cast<uint8>(CT_SERVER_FLAGS), srvCaps);
     tagFlags.writeTagToFile(data);

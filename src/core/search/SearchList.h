@@ -24,6 +24,7 @@
 
 namespace eMule {
 
+class AICHHash;
 class FileDataIO;
 class UpDownClient;
 
@@ -44,6 +45,7 @@ struct SearchListEntry {
     uint32 searchID = 0;
     QString title;                  ///< tab title for client lists (peer's user name)
     bool clientSharedFiles = false; ///< MFC SSearchParams::bClientSharedFiles
+    bool kad = false;               ///< our own Kad keyword search (MFC SearchTypeKademlia)
     std::list<std::unique_ptr<SearchFile>> files;
 
     SearchListEntry() = default;
@@ -227,6 +229,14 @@ private:
 
     /// Compute the name-without-keywords for spam detection.
     static QString computeNameWithoutKeywords(const QString& name, const QString& fileType);
+
+    /// Drop a row's Kad-origin flag and its FT_META_NETWORK tag.
+    static void clearKadOrigin(SearchFile* file);
+
+    /// The AICH hash a Kad result's votes agree on, if there is exactly one and enough
+    /// publishers reported it. @p votes is the raw TAG_KADAICHHASHRESULT blob.
+    [[nodiscard]] static bool acceptedKadAICHHash(const QByteArray& votes, uint32 publishInfo,
+                                                  AICHHash& out);
 
     // --- Data ---
     std::vector<SearchListEntry> m_fileLists;

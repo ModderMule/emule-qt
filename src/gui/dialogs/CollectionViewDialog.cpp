@@ -67,6 +67,8 @@ CollectionViewDialog::CollectionViewDialog(const Collection& collection,
         // the two are separate roles precisely so neither can shadow the other.
         item->setData(1, Qt::UserRole, static_cast<qint64>(cf->fileSize()));
         item->setText(2, md4str(cf->fileHash()));
+        // The full link: the only thing that carries the entry's AICH hash to the daemon
+        item->setData(0, Qt::UserRole, cf->getED2kLink());
     }
 
     // Select all items by default (matching MFC behavior)
@@ -148,6 +150,7 @@ void CollectionViewDialog::downloadSelected()
         msg.append(hash);
         msg.append(name);
         msg.append(size);
+        msg.append(item->data(0, Qt::UserRole).toString());
         m_ipc->sendRequest(std::move(msg), [](const Ipc::IpcMessage&) {});
     }
 }

@@ -3,6 +3,7 @@
 /// @brief TCP server accepting incoming peer connections — replaces MFC CListenSocket.
 
 #include "net/ListenSocket.h"
+#include "net/BindAddress.h"
 #include "app/AppContext.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
@@ -39,7 +40,12 @@ ListenSocket::~ListenSocket()
 
 bool ListenSocket::startListening(uint16 port)
 {
-    if (!listen(QHostAddress::Any, port)) {   // dual-stack (AF_INET6, IPV6_V6ONLY=0): accept v4 + v6
+    // Any is dual-stack (AF_INET6, IPV6_V6ONLY=0): accept v4 + v6. A bind address
+    // narrows it to that one address and family.
+    const auto bindTo = BindAddress::listenAddress();
+    if (!bindTo)
+        return false;   // unusable bind address, already reported
+    if (!listen(*bindTo, port)) {
         logError(QStringLiteral("ListenSocket: Failed to listen on port %1: %2")
                      .arg(port).arg(errorString()));
         return false;

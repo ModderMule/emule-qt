@@ -92,7 +92,10 @@ void Kademlia::start(KadPrefs* prefs)
     m_udpListener = new KademliaUDPListener(this);
 
     // Create indexed storage
-    m_indexed = new Indexed(this);
+    // Persistent: loads what other nodes stored with us last time, saves it on stop.
+    // Never the shared temp dir: index files left there would leak between runs.
+    m_indexed = thePrefs.configDir().isEmpty() ? new Indexed(this)
+                                               : new Indexed(thePrefs.configDir(), this);
 
     // s_instance is set in the constructor, so the zones created below can
     // already register via Kademlia::instance().
@@ -465,8 +468,10 @@ void Kademlia::process()
             m_bootstrap = now;
             m_bootstrapping = true;
             if (m_udpListener) {
+                // Obfuscate with the contact's KadID. MFC Kademlia.cpp:293-294.
+                const UInt128 targetID(bc->getClientID());
                 m_udpListener->bootstrap(bc->address().toUint32(), bc->getUDPPort(),
-                                         bc->getVersion());
+                                         bc->getVersion(), &targetID);
             }
             delete bc;
         } else if (m_bootstrapping) {

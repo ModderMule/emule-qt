@@ -80,24 +80,10 @@ bool ServerList::saveServerMet(const QString& filePath)
             file.seek(endPos, 0);
         }
 
-        file.close();
+        commitAndReplace(file, tmpPath, filePath, theApp.commitFilesNow());
     } catch (const FileException& ex) {
         logError(QStringLiteral("Error saving server.met: %1").arg(QLatin1StringView(ex.what())));
         QFile::remove(tmpPath);
-        return false;
-    }
-
-    // Rotate: current → .bak, then rename tmp → final
-    const QString bakPath = filePath + QStringLiteral(".bak");
-    QFile::remove(bakPath);
-    if (QFile::exists(filePath)) {
-        if (!QFile::rename(filePath, bakPath))
-            QFile::remove(filePath);
-    }
-    if (!QFile::rename(tmpPath, filePath)) {
-        logError(QStringLiteral("Failed to rename %1 to %2").arg(tmpPath, filePath));
-        if (QFile::exists(bakPath))
-            QFile::rename(bakPath, filePath);
         return false;
     }
 

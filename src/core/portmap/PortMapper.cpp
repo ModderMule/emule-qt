@@ -7,6 +7,7 @@
 #include "portmap/PcpBackend.h"
 #include "portmap/PortMapWire.h"
 #include "portmap/UPnPBackend.h"
+#include "net/BindAddress.h"
 #include "utils/Log.h"
 
 #include <QStringList>
@@ -234,8 +235,11 @@ void PortMapper::buildBackends()
         add(std::make_unique<PcpBackend>(this));
     if ((m_enabledMask & BitNatPmp) != 0)
         add(std::make_unique<NatPmpBackend>(this));
-    if ((m_enabledMask & BitUPnP) != 0)
-        add(std::make_unique<UPnPBackend>(this));
+    if ((m_enabledMask & BitUPnP) != 0) {
+        auto upnp = std::make_unique<UPnPBackend>(this);
+        upnp->setBindAddress(BindAddress::ipv4Literal());   // MFC UPnPImplMiniLib.cpp:224
+        add(std::move(upnp));
+    }
 }
 
 void PortMapper::connectBackend(PortMapBackend* backend)

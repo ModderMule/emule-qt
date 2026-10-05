@@ -187,7 +187,22 @@ bool AICHRecoveryHashSet::isPartDataAvailable(uint64 partStartPos, EMFileSize fi
 
 void AICHRecoveryHashSet::setKnown2MetPath(const QString& path)
 {
+    QMutexLocker lock(&s_mutKnown2File);
+    if (path != s_known2MetPath)
+        s_storedHashes.clear();   // positions belong to the old file
     s_known2MetPath = path;
+}
+
+bool AICHRecoveryHashSet::hasKnown2MetPath()
+{
+    QMutexLocker lock(&s_mutKnown2File);
+    return !s_known2MetPath.isEmpty();
+}
+
+bool AICHRecoveryHashSet::isStored(const AICHHash& hash)
+{
+    QMutexLocker lock(&s_mutKnown2File);
+    return s_storedHashes.contains(hash);
 }
 
 uint64 AICHRecoveryHashSet::addStoredAICHHash(const AICHHash& hash, uint64 filePos)
@@ -330,6 +345,7 @@ bool AICHRecoveryHashSet::saveHashSet()
 
     QMutexLocker lock(&s_mutKnown2File);
 
+    qint64 rollbackPos = 0;
     SafeFile file;
     if (!file.open(s_known2MetPath,
                    QIODevice::ReadWrite | QIODevice::Append)) {
@@ -365,6 +381,7 @@ bool AICHRecoveryHashSet::saveHashSet()
         // Write hashset at end of file
         file.seek(0, 2); // SEEK_END
         const qint64 hashSetWritePos = file.position();
+        rollbackPos = hashSetWritePos;
         m_hashTree.m_hash.write(file);
 
         // Calculate expected hash count
@@ -379,15 +396,20 @@ bool AICHRecoveryHashSet::saveHashSet()
 
         file.writeUInt32(hashCount);
 
-        if (!m_hashTree.writeLowestLevelHashes(file, 0, true, true)) {
-            qCWarning(lcEmuleGeneral, "Failed to save HashSet: WriteLowestLevelHashes() failed!");
-            return false;
-        }
+        if (!m_hashTree.writeLowestLevelHashes(file, 0, true, true))
+            throw FileException("WriteLowestLevelHashes() failed");
 
+        // A buffered append only meets a full disk here.
+        file.commit(false);
         addStoredAICHHash(m_hashTree.m_hash, static_cast<uint64>(hashSetWritePos));
         qCDebug(lcEmuleGeneral, "Saved AICH hashset: %u hashes + 1 master", hashCount);
     } catch (const std::exception& ex) {
-        qCWarning(lcEmuleGeneral, "Exception saving AICH hashset: %s", ex.what());
+        qCWarning(lcEmuleGeneral, "Failed to save AICH hashset: %s", ex.what());
+        // A half-written record would poison every later read of the file
+        // (MFC SaveHashSet, srchybrid/SHAHashSet.cpp:757-768).
+        file.close();
+        if (rollbackPos > 0)
+            QFile::resize(s_known2MetPath, rollbackPos);
         freeHashSet();
         return false;
     }
@@ -410,6 +432,8 @@ bool AICHRecoveryHashSet::loadHashSet()
         EMULE_ASSERT(false);
         return false;
     }
+
+    QMutexLocker lock(&s_mutKnown2File);
 
     SafeFile file;
     if (!file.open(s_known2MetPath, QIODevice::ReadOnly)) {

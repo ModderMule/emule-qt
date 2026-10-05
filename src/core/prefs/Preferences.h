@@ -135,12 +135,13 @@ public:
     [[nodiscard]] uint16 maxHalfConnections() const;
     void setMaxHalfConnections(uint16 val);
 
+    /// One IPv4 or IPv6 literal every P2P socket binds to; empty = any. See BindAddress.h.
     [[nodiscard]] QString bindAddress() const;
     void setBindAddress(const QString& val);
 
     /// Pin the public IPv6 we advertise, instead of auto-selecting a stable address.
     /// Must be a global-unicast IPv6 literal assigned to a local interface; anything
-    /// else is reported and ignored. Independent of bindAddress, which stays IPv4.
+    /// else is reported and ignored. Not used while bindAddress is set (see BindAddress.h).
     [[nodiscard]] QString publicIPv6Override() const;
     void setPublicIPv6Override(const QString& val);
 
@@ -1299,6 +1300,14 @@ public:
     [[nodiscard]] uint32 kadUDPKey() const;
     void setKadUDPKey(uint32 val);
 
+    /// nodes.dat source for the Kad panel's bootstrap-from-URL.
+    /// Never empty: an empty value falls back to kDefaultNodesDatURL.
+    [[nodiscard]] QString nodesDatURL() const;
+    void setNodesDatURL(const QString& val);
+
+    static constexpr QLatin1StringView kDefaultNodesDatURL{
+        "https://upd.emule-security.org/nodes.dat"};
+
     // Cached Kad notes-search filenames/comments on the File Details page (core-only).
     [[nodiscard]] int kadFileNameExpiryDays() const;
     void setKadFileNameExpiryDays(int val);
@@ -1328,8 +1337,13 @@ public:
     [[nodiscard]] bool autoUpdateServerList() const;
     void setAutoUpdateServerList(bool val);
 
+    /// server.met source for the Servers panel and the startup auto-update.
+    /// Never empty: an empty value falls back to kDefaultServerListURL.
     [[nodiscard]] QString serverListURL() const;
     void setServerListURL(const QString& val);
+
+    static constexpr QLatin1StringView kDefaultServerListURL{
+        "https://upd.emule-security.org/server.met"};
 
     [[nodiscard]] bool smartLowIdCheck() const;
     void setSmartLowIdCheck(bool val);
@@ -1545,6 +1559,9 @@ public:
 
     [[nodiscard]] bool autoCleanupFilenames() const;
     void setAutoCleanupFilenames(bool val);
+    /// '|'-separated substrings the auto cleanup strips from a new download's name.
+    [[nodiscard]] QString filenameCleanups() const;
+    void setFilenameCleanups(const QString& val);
 
     // -- Notifications (GUI-side) --------------------------------------------
 

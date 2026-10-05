@@ -1188,6 +1188,7 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
             row.sourceCount        = m.value(QStringLiteral("sourceCount")).toInteger();
             row.completeSourceCount = m.value(QStringLiteral("completeSourceCount")).toInteger();
             row.isKad              = m.value(QStringLiteral("isKad")).toBool();
+            row.kadOrigin          = m.value(QStringLiteral("kadOrigin")).toBool();
             row.inDirectory        = m.value(QStringLiteral("inDirectory")).toBool();
             row.fileType           = m.value(QStringLiteral("fileType")).toString();
             row.knownType          = static_cast<int>(m.value(QStringLiteral("knownType")).toInteger());
@@ -1365,6 +1366,7 @@ void SearchPanel::sendDownloadRequest(int row, int category)
     msg.append(static_cast<qint64>(result->fileSize));
     msg.append(QString());   // no link: the daemon builds one
     msg.append(static_cast<qint64>(category));
+    msg.append(static_cast<qint64>(tab->searchID));   // daemon seeds sources + AICH from the result
     // Model and hash, not tab index and row: the tab at that index can be another
     // search by the time the reply lands (an indexer one has no model at all), and
     // every result push resets the rows.
@@ -1628,6 +1630,7 @@ QJsonObject ed2kRowToJson(const SearchResultRow& row)
     o[QStringLiteral("sourceCount")]         = static_cast<qint64>(row.sourceCount);
     o[QStringLiteral("completeSourceCount")] = static_cast<qint64>(row.completeSourceCount);
     o[QStringLiteral("isKad")]               = row.isKad;
+    o[QStringLiteral("kadOrigin")]           = row.kadOrigin;
     o[QStringLiteral("inDirectory")]         = row.inDirectory;
     o[QStringLiteral("artist")]              = row.artist;
     o[QStringLiteral("album")]               = row.album;
@@ -1659,6 +1662,7 @@ SearchResultRow ed2kRowFromJson(const QJsonObject& r)
     row.sourceCount         = static_cast<qint64>(r[QStringLiteral("sourceCount")].toDouble());
     row.completeSourceCount = static_cast<qint64>(r[QStringLiteral("completeSourceCount")].toDouble());
     row.isKad               = r[QStringLiteral("isKad")].toBool();
+    row.kadOrigin           = r[QStringLiteral("kadOrigin")].toBool();
     row.inDirectory         = r[QStringLiteral("inDirectory")].toBool();
     row.artist              = r[QStringLiteral("artist")].toString();
     row.album               = r[QStringLiteral("album")].toString();

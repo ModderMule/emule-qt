@@ -104,6 +104,7 @@ emule_add_test(tst_MD5              FOLDER "Crypto")
 emule_add_test(tst_SHA              FOLDER "Crypto")
 emule_add_test(tst_AICHHashTree     FOLDER "Crypto")
 emule_add_test(tst_AICHHashSet      FOLDER "Crypto")
+emule_add_test(tst_AICHSyncThread   FOLDER "Crypto")
 emule_add_test(tst_FileIdentifier   FOLDER "Crypto")
 
 # Module 29d: Networking
@@ -427,6 +428,16 @@ target_include_directories(tst_UsenetArchiveEntryDialog PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_UsenetArchiveEntryDialog PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
+# The nodes.dat / server.met URL inputs: empty falls back to the default.
+emule_add_test(tst_UrlPrefField FOLDER "Gui"
+    SOURCES tst_UrlPrefField.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp")
+target_include_directories(tst_UrlPrefField PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_UrlPrefField PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
 # The release details view. Same shape as the chooser above: driven through

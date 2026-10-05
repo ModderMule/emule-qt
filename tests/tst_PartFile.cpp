@@ -72,6 +72,8 @@ private slots:
     void updatePartsInfo_rebuildsFrequencyAndCompleteCount();
     void getFilledArray_basic();
     void writeToBuffer_countsCompressionGain();
+    void createPartFile_cleansTheNameWhenAsked();
+    void writeToBuffer_refusesDuplicatesAndCompleteParts();
     void ich_recoversCorruptedPartOnRehash();
     void seedAICHRecoveryMasterHash_adoptsTheIdentifierHash();
 
@@ -938,6 +940,68 @@ std::vector<uint8> makePattern(size_t size)
 // A compressed block covers more of the file than it took on the wire; that
 // difference is the gain. Before this, writeToBuffer() dropped transize on the
 // floor and both compression rows sat at whatever the .part.met last held.
+// MFC CreatePartFile, srchybrid/PartFile.cpp:449. The option existed and did nothing.
+void tst_PartFile::createPartFile_cleansTheNameWhenAsked()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/cleanup-temp");
+    QDir().mkpath(tempDir);
+    const bool before = thePrefs.autoCleanupFilenames();
+
+    auto nameAfterCreate = [&](bool cleanup) {
+        thePrefs.setAutoCleanupFilenames(cleanup);
+        PartFile pf;
+        pf.setFileName(QStringLiteral("www.site.com_My.Movie.avi"), true);
+        pf.setFileSize(1000);
+        pf.setTmpPath(tempDir);
+        return pf.createPartFile(tempDir) ? pf.fileName() : QStringLiteral("<create failed>");
+    };
+
+    QCOMPARE(nameAfterCreate(false), QStringLiteral("www.site.com_My.Movie.avi"));
+    QCOMPARE(nameAfterCreate(true), QStringLiteral("Site My Movie.avi"));
+
+    thePrefs.setAutoCleanupFilenames(before);
+}
+
+namespace { std::array<uint8, 16> md4Of(const std::vector<uint8>& data); }
+
+// MFC srchybrid/PartFile.cpp:3966-3985. The endgame hands one block to several sources,
+// so a second copy is routine: it must not be written again, and a late block must never
+// land on a part that already verified.
+void tst_PartFile::writeToBuffer_refusesDuplicatesAndCompleteParts()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/dup-temp");
+    QDir().mkpath(tempDir);
+
+    PartFile pf;
+    pf.setFileName(QStringLiteral("dup.bin"));
+    pf.setFileSize(PARTSIZE * 2 + 1000);
+    pf.setTmpPath(tempDir);
+    QVERIFY(pf.createPartFile(tempDir));
+
+    const auto data = makePattern(PARTSIZE);
+    auto& hashSet = pf.fileIdentifier().getRawMD4HashSet();
+    hashSet.assign(3, md4Of(data));
+    hashSet[2].fill(0xEE);
+
+    // First copy is taken, the second is not.
+    QCOMPARE(pf.writeToBuffer(1000, data.data(), PARTSIZE, PARTSIZE + 999, nullptr), 1000u);
+    QCOMPARE(pf.writeToBuffer(1000, data.data(), PARTSIZE, PARTSIZE + 999, nullptr), 0u);
+
+    // Past the end of the file.
+    const uint64 size = PARTSIZE * 2 + 1000;
+    QCOMPARE(pf.writeToBuffer(10, data.data(), size - 5, size + 4, nullptr), 0u);
+
+    // Part 0 completes and verifies; nothing may be written into it afterwards, not
+    // even a range that straddles into the still-open part 1.
+    QCOMPARE(pf.writeToBuffer(PARTSIZE, data.data(), 0, PARTSIZE - 1, nullptr),
+             static_cast<uint32>(PARTSIZE));
+    pf.flushBuffer();
+    QVERIFY(pf.isComplete(0u));
+    const uint64 before = pf.totalGapSizeInPart(1);
+    QCOMPARE(pf.writeToBuffer(2000, data.data(), PARTSIZE - 1000, PARTSIZE + 999 + 0, nullptr), 0u);
+    QCOMPARE(pf.totalGapSizeInPart(1), before);
+}
+
 void tst_PartFile::writeToBuffer_countsCompressionGain()
 {
     const QString tempDir = m_tempDir.path() + QStringLiteral("/temp");

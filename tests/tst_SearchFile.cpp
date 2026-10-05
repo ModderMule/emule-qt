@@ -36,6 +36,10 @@ private slots:
     void metaRow_unknownVersion_invalid();
     void metaRow_hashWithoutTags_stillMeta();
     void metaRow_ed2kUnaffected();
+    void kadOrigin_recognizedByTag();
+    void kadOrigin_prefixStrippedOnlyWithTag();
+    void kadOrigin_survivesStoreAndLoad();
+    void kadOrigin_ignoredOnMetaRow();
 };
 
 /// Helper: an eNode meta row — hash + name + size + FT_META_* tags.
@@ -63,6 +67,24 @@ static QByteArray buildMetaPacket(const uint8* hash, const QString& name, uint32
         Tag(FT_META_MAGNET, QStringLiteral("magnet:?xt=urn:btih:0cec613b424dc858488612f7571befaf67c52616"))
             .writeNewEd2kTag(mem, UTF8Mode::Raw);
     }
+    return mem.takeBuffer();
+}
+
+/// Helper: a file eNode found on Kad — a real MD4, the classic tags and
+/// FT_META_NETWORK as the only meta tag. network 0 leaves the tag out.
+static QByteArray buildKadOriginPacket(const uint8* hash, const QString& name, uint32 size,
+                                       uint32 sources, uint32 network = META_NETWORK_KAD)
+{
+    SafeMemFile mem;
+    mem.write(hash, 16);
+    mem.writeUInt32(0);
+    mem.writeUInt16(0);
+    mem.writeUInt32(network != 0 ? 4 : 3);
+    Tag(FT_FILENAME, name).writeNewEd2kTag(mem, UTF8Mode::Raw);
+    Tag(FT_FILESIZE, size).writeNewEd2kTag(mem);
+    Tag(FT_SOURCES, sources).writeNewEd2kTag(mem);
+    if (network != 0)
+        Tag(FT_META_NETWORK, network).writeNewEd2kTag(mem);
     return mem.takeBuffer();
 }
 
@@ -394,6 +416,99 @@ void tst_SearchFile::metaRow_ed2kUnaffected()
     QVERIFY(!file.isMetaResult());
     QVERIFY(!file.isInvalidMetaResult());
     QCOMPARE(file.sourceCount(), uint32{10});
+}
+
+void tst_SearchFile::kadOrigin_recognizedByTag()
+{
+    uint8 hash[16];
+    std::memset(hash, 0x4B, 16);
+    QByteArray packet = buildKadOriginPacket(hash, QStringLiteral("[kad] Night.Of.The.Living.Dead.avi"), 7000, 17);
+    SafeMemFile data(packet);
+    SearchFile file(data, true, 0x0A000001, 4661);
+
+    // an ordinary eD2K file: real hash, not a meta row, not dropped, downloadable
+    QVERIFY(file.isKadOrigin());
+    QVERIFY(!file.isMetaResult());
+    QVERIFY(!file.isInvalidMetaResult());
+    QVERIFY(md4equ(file.fileHash(), hash));
+    QCOMPARE(file.fileName(), QStringLiteral("Night.Of.The.Living.Dead.avi"));
+    QCOMPARE(file.sourceCount(), uint32{17});
+    // found by the server, not by our own Kad search: sources still add up per server
+    QVERIFY(!file.isKadResult());
+
+    SearchFile copy(&file);
+    QVERIFY(copy.isKadOrigin());
+
+    // a network we do not know is not Kad
+    QByteArray other = buildKadOriginPacket(hash, QStringLiteral("[kad] x.avi"), 7000, 1, 9);
+    SafeMemFile otherData(other);
+    SearchFile unknown(otherData, true);
+    QVERIFY(!unknown.isKadOrigin());
+    QCOMPARE(unknown.fileName(), QStringLiteral("[kad] x.avi"));
+}
+
+void tst_SearchFile::kadOrigin_prefixStrippedOnlyWithTag()
+{
+    uint8 hash[16];
+    std::memset(hash, 0x4C, 16);
+
+    // with the tag: the network's bracket goes, whatever the operator put in it
+    for (const auto& [in, out] : {std::pair{QStringLiteral("[kad emule-qt.org] A.B.avi"), QStringLiteral("A.B.avi")},
+                                  std::pair{QStringLiteral("[KAD] C.avi"), QStringLiteral("C.avi")},
+                                  std::pair{QStringLiteral("D.avi"), QStringLiteral("D.avi")},
+                                  std::pair{QStringLiteral("[Group] E.avi"), QStringLiteral("[Group] E.avi")},
+                                  std::pair{QStringLiteral("[kadabra] F.avi"), QStringLiteral("[kadabra] F.avi")},
+                                  std::pair{QStringLiteral("[kad]"), QStringLiteral("[kad]")}}) {
+        QByteArray p = buildKadOriginPacket(hash, in, 7000, 3);
+        SafeMemFile d(p);
+        SearchFile f(d, true);
+        QVERIFY(f.isKadOrigin());
+        QCOMPARE(f.fileName(), out);
+    }
+
+    // without the tag the name decides nothing: a file merely called "[kad …]" keeps it
+    QByteArray plain = buildKadOriginPacket(hash, QStringLiteral("[kad emule-qt.org] A.B.avi"), 7000, 3, 0);
+    SafeMemFile plainData(plain);
+    SearchFile file(plainData, true);
+    QVERIFY(!file.isKadOrigin());
+    QCOMPARE(file.fileName(), QStringLiteral("[kad emule-qt.org] A.B.avi"));
+}
+
+void tst_SearchFile::kadOrigin_survivesStoreAndLoad()
+{
+    uint8 hash[16];
+    std::memset(hash, 0x4D, 16);
+    QByteArray packet = buildKadOriginPacket(hash, QStringLiteral("[kad emule-qt.org] stored.avi"), 7000, 5);
+    SafeMemFile data(packet);
+    SearchFile file(data, true);
+
+    SafeMemFile stored;
+    file.storeToFile(stored);
+    stored.seek(0, 0);
+    SearchFile loaded(stored, true);
+
+    QVERIFY(loaded.isKadOrigin());
+    QCOMPARE(loaded.fileName(), QStringLiteral("stored.avi"));
+    QCOMPARE(loaded.sourceCount(), uint32{5});
+}
+
+void tst_SearchFile::kadOrigin_ignoredOnMetaRow()
+{
+    // a pseudo-hash row is a torrent or an NZB and never also a Kad file
+    SafeMemFile mem;
+    mem.write(kBtV1WholeHash, 16);
+    mem.writeUInt32(0);
+    mem.writeUInt16(0);
+    mem.writeUInt32(3);
+    Tag(FT_FILENAME, QStringLiteral("[torrent] Some.Release")).writeNewEd2kTag(mem, UTF8Mode::Raw);
+    Tag(FT_FILESIZE, uint32{5000}).writeNewEd2kTag(mem);
+    Tag(FT_META_NETWORK, uint32{META_NETWORK_KAD}).writeNewEd2kTag(mem);
+    QByteArray packet = mem.takeBuffer();
+    SafeMemFile data(packet);
+    SearchFile file(data, true);
+
+    QVERIFY(file.isMetaResult());
+    QVERIFY(!file.isKadOrigin());
 }
 
 QTEST_MAIN(tst_SearchFile)

@@ -7,6 +7,7 @@
 
 #include "files/PartFile.h"
 #include "app/AppContext.h"
+#include "utils/OtherFunctions.h"
 #include "files/SharedFileList.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
@@ -51,6 +52,10 @@ PartFile::PartFile(uint32 category)
 
 PartFile::~PartFile()
 {
+    // The flush below can verify a part, and a verified part shares the file — which
+    // would hand a dying object to the shared list (or call into one already gone).
+    m_destroying = true;
+
     // Flush any remaining buffered data
     if (!m_bufferedData.empty()) {
         flushBuffer(/*forceICH*/ false, /*noAICH*/ true);   // MFC srchybrid/PartFile.cpp:294
@@ -184,7 +189,8 @@ void PartFile::addToSharedFiles()
     // so this is the one-way latch. A file already Ready is in the share; the re-add
     // after a reload goes through DownloadQueue::addPartFilesToShare() instead.
     // Reads the raw member, not status(): a paused file still gets promoted and shared.
-    if (!theApp.sharedFileList || m_status != PartFileStatus::Empty || !canBeShared())
+    if (m_destroying || !theApp.sharedFileList || m_status != PartFileStatus::Empty
+        || !canBeShared())
         return;
 
     setStatus(PartFileStatus::Ready);
@@ -420,20 +426,17 @@ void PartFile::updateCompletedInfos()
 // Buffered I/O
 // ===========================================================================
 
-void PartFile::writeToBuffer(uint64 transize, const uint8* data,
-                              uint64 start, uint64 end,
-                              Requested_Block_Struct* block,
-                              const Address& sender)
+uint32 PartFile::writeToBuffer(uint64 transize, const uint8* data,
+                                uint64 start, uint64 end,
+                                Requested_Block_Struct* block,
+                                const Address& sender)
 {
-    if (!data || start > end)
-        return;
+    if (!data || start > end || end >= static_cast<uint64>(fileSize()))
+        return 0;
 
-    // Who to blame if this part later fails its hash (MFC: srchybrid/PartFile.cpp:3988).
-    // A null sender is the "importing parts" case MFC guards the same way, plus every
-    // transfer that has no peer behind it at all — see the URLClient and HttpCacheClient
-    // call sites.
-    if (!sender.isNull())
-        m_corruptionBlackBox.transferredData(start, end, sender);
+    // The rehash worker is reading the .part right now; a write would race it.
+    if (m_status == PartFileStatus::Hashing || m_status == PartFileStatus::WaitingForHash)
+        return 0;
 
     // A compressed block covers more of the file than it took on the wire; the
     // difference is what compression saved (MFC: srchybrid/PartFile.cpp:3959-3963).
@@ -444,6 +447,26 @@ void PartFile::writeToBuffer(uint64 transize, const uint8* data,
         if (theApp.statistics)
             theApp.statistics->addCompressionGain(gain);
     }
+
+    // Duplicate (the endgame hands one block to several sources) or data aimed at a
+    // part that is already complete: never write it twice, never over verified data,
+    // and never blame its sender — MFC srchybrid/PartFile.cpp:3966-3985.
+    if (isComplete(start, end))
+        return 0;
+    const auto startPart = static_cast<uint32>(start / PARTSIZE);
+    const auto endPart = static_cast<uint32>(end / PARTSIZE);
+    if (isComplete(startPart) || (endPart != startPart && isComplete(endPart))) {
+        logDebug(QStringLiteral("Received data touches an already complete part - ignored: %1")
+                     .arg(fileName()));
+        return 0;
+    }
+
+    // Who to blame if this part later fails its hash (MFC: srchybrid/PartFile.cpp:3988).
+    // A null sender is the "importing parts" case MFC guards the same way, plus every
+    // transfer that has no peer behind it at all — see the URLClient and HttpCacheClient
+    // call sites.
+    if (!sender.isNull())
+        m_corruptionBlackBox.transferredData(start, end, sender);
 
     // Create buffered data entry with copy of data
     BufferedData bd;
@@ -469,6 +492,8 @@ void PartFile::writeToBuffer(uint64 transize, const uint8* data,
     if (m_gapList.empty()
         || (status() != PartFileStatus::Ready && status() != PartFileStatus::Empty))
         flushBuffer();
+
+    return static_cast<uint32>(end - start + 1);
 }
 
 void PartFile::flushBuffer(bool forceICH, bool noAICH)
@@ -536,8 +561,9 @@ void PartFile::flushBuffer(bool forceICH, bool noAICH)
 
     verifyChangedParts(forceICH, noAICH);
 
-    // If no gaps remain, file is complete
-    if (m_gapList.empty()) {
+    // If no gaps remain, file is complete. Not from the destructor: completing starts a
+    // move on this object; the saved .part.met completes it on the next start instead.
+    if (m_gapList.empty() && !m_destroying) {
         completeFile();
         return;
     }
@@ -601,8 +627,8 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
 
     // Endgame: when very few blocks remain, allow multiple sources to
     // request the same block simultaneously so they race to complete it.
-    // Duplicate completions are harmless — processBlockPacket discards
-    // data for already-filled ranges, and removeBlockFromList cleans up.
+    // Duplicate completions are harmless — writeToBuffer refuses data for
+    // already-filled ranges, and processBlockPacket then drops the loser's block.
     const bool endgame = (totalGapSize() <= ENDGAME_BLOCK_THRESHOLD * EMBLOCKSIZE);
 
     auto senderHasPart = [&](uint32 p) {
@@ -914,9 +940,9 @@ QString PartFile::partDataPath() const
 
 void PartFile::applyRehashResult(const QByteArray& partOk)
 {
-    // Rebuild the gap list from what the disk actually holds: a verified part is
-    // present, anything else has to be fetched again.
-    m_gapList.clear();
+    // Only a part we believed complete can be proven wrong. A half-downloaded part never
+    // matches its hash, and its gaps already say what is missing — clearing them would
+    // throw the received blocks away (MFC srchybrid/PartFile.cpp:1486-1528).
     const uint32 parts = partCount();
     const auto total = static_cast<uint64>(fileSize());
     uint32 good = 0;
@@ -925,14 +951,20 @@ void PartFile::applyRehashResult(const QByteArray& partOk)
         const uint64 start = static_cast<uint64>(part) * PARTSIZE;
         if (start >= total)
             break;
-        const uint64 end = std::min(start + PARTSIZE, total) - 1;
+        if (!isComplete(part))
+            continue;
 
-        const bool ok = part < static_cast<uint32>(partOk.size())
-                        && partOk[static_cast<qsizetype>(part)] != 0;
-        if (ok)
+        // A part the worker could not read stays trusted: no evidence, no verdict.
+        const auto state = part < static_cast<uint32>(partOk.size())
+            ? static_cast<RehashPart>(partOk[static_cast<qsizetype>(part)])
+            : RehashUnread;
+        if (state == RehashBad) {
+            logWarning(QStringLiteral("Rehash found corrupted part %1 in %2")
+                           .arg(part).arg(fileName()));
+            addGap(start, std::min(start + PARTSIZE, total) - 1);
+        } else {
             ++good;
-        else
-            addGap(start, end);
+        }
     }
 
     updateCompletedInfos();
@@ -1374,6 +1406,14 @@ bool PartFile::createPartFile(const QString& tempDir)
     m_tCreated = std::time(nullptr);
     m_status = PartFileStatus::Empty;
 
+    // "Auto cleanup file names of new downloads" — MFC CreatePartFile,
+    // srchybrid/PartFile.cpp:449. Here, so every intake route gets it.
+    if (thePrefs.autoCleanupFilenames()) {
+        const QString cleaned = cleanupFilename(fileName(), thePrefs.filenameCleanups());
+        if (!cleaned.isEmpty())
+            setFileName(cleaned);
+    }
+
     // Save initial .part.met
     savePartFile();
 
@@ -1675,9 +1715,8 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
             logWarning(QStringLiteral("Part file changed since last run, rehashing: %1")
                            .arg(fileName()));
             m_status = PartFileStatus::WaitingForHash;
-            if (theApp.sharedFileList) {
+            if (theApp.sharedFileList && theApp.sharedFileList->enqueuePartFileRehash(this)) {
                 m_fileOp = PartFileOp::Hashing;
-                theApp.sharedFileList->enqueuePartFileRehash(this);
                 m_status = PartFileStatus::Hashing;
             } else {
                 // Nothing can move it on from WaitingForHash, so say so rather than
@@ -1890,24 +1929,13 @@ bool PartFile::savePartFile()
         file.writeUInt32(tagCount);
         file.seek(endPos, SEEK_SET);
 
+        // A full disk only shows up here; a short .part.met must never replace a good one.
+        commitAndReplace(file, tempPath, m_fullName, theApp.commitFilesNow());
+
     } catch (const FileException& ex) {
         logError(QStringLiteral("PartFile::savePartFile: error writing %1: %2")
                      .arg(tempPath, QString::fromStdString(ex.what())));
-        return false;
-    }
-
-    // Rotate: current → .bak, then rename temp → final
-    const QString bakPath = m_fullName + QStringLiteral(".bak");
-    QFile::remove(bakPath);
-    if (QFile::exists(m_fullName)) {
-        if (!QFile::rename(m_fullName, bakPath))
-            QFile::remove(m_fullName);
-    }
-    if (!QFile::rename(tempPath, m_fullName)) {
-        logError(QStringLiteral("PartFile::savePartFile: rename failed %1 → %2")
-                     .arg(tempPath, m_fullName));
-        if (QFile::exists(bakPath))
-            QFile::rename(bakPath, m_fullName);
+        QFile::remove(tempPath);
         return false;
     }
 

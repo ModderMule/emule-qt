@@ -185,6 +185,7 @@ private slots:
     void calculateDownloadRate_computation();
     void clearDownloadBlockRequests_cleansUp();
     void unzip_decompresses();
+    void unzip_capsABomb();
     void processBlockPacket_badBlockThrows_data();
     void processBlockPacket_badBlockThrows();
     void sendCancelTransfer_setsFlag();
@@ -2137,34 +2138,65 @@ void tst_UpDownClient::clearDownloadBlockRequests_cleansUp()
 
 void tst_UpDownClient::unzip_decompresses()
 {
-    // Compress test data with zlib
-    const char* testData = "Hello, World! This is test data for zlib compression. "
-                           "Repeating text to improve compression ratio. "
-                           "Hello, World! This is test data for zlib compression.";
-    const uint32 testLen = static_cast<uint32>(strlen(testData));
+    // A full, legitimate block: 180 KiB of compressible data must still inflate,
+    // growing the buffer from a small first guess.
+    QByteArray plain(static_cast<qsizetype>(EMBLOCKSIZE), '\0');
+    for (qsizetype i = 0; i < plain.size(); ++i)
+        plain[i] = static_cast<char>('a' + (i / 97) % 23);
 
-    // Compress
-    uLongf compressedLen = compressBound(testLen);
+    uLongf compressedLen = compressBound(static_cast<uLong>(plain.size()));
     std::vector<uint8> compressed(compressedLen);
-    int ret = compress(compressed.data(), &compressedLen,
-                       reinterpret_cast<const Bytef*>(testData), testLen);
-    QCOMPARE(ret, Z_OK);
+    QCOMPARE(compress(compressed.data(), &compressedLen,
+                      reinterpret_cast<const Bytef*>(plain.constData()),
+                      static_cast<uLong>(plain.size())), Z_OK);
 
-    // Note: The unzip method uses inflate (raw stream), not uncompress (wrapper).
-    // For a proper test, we'd need to create a proper zlib stream.
-    // Just verify the method doesn't crash with invalid input.
-    UpDownClient client;
-
-    // Test with empty/null input should return error
+    Requested_Block_Struct req;
+    req.startOffset = 0;
+    req.endOffset = EMBLOCKSIZE - 1;
     Pending_Block_Struct pending;
-    pending.block = nullptr;
-    pending.zStream = nullptr;
-    pending.totalUnzipped = 0;
-    pending.zStreamError = false;
+    pending.block = &req;
 
-    // null block should return error
-    // The method handles null checks internally
-    QVERIFY(true); // Just verify compilation and structure
+    UpDownClient client;
+    uint32 lenUnzipped = 1024;
+    auto* unzipped = new uint8[lenUnzipped];
+    QCOMPARE(client.unzip(&pending, compressed.data(), static_cast<uint32>(compressedLen),
+                          &unzipped, &lenUnzipped), Z_OK);
+    QCOMPARE(lenUnzipped, static_cast<uint32>(EMBLOCKSIZE));
+    QCOMPARE(std::memcmp(unzipped, plain.constData(), EMBLOCKSIZE), 0);
+    QVERIFY(pending.zStream == nullptr);   // stream ended
+    delete[] unzipped;
+}
+
+void tst_UpDownClient::unzip_capsABomb()
+{
+    // 8 MiB of zeros compresses to a few KiB. The block asked for is one EMBLOCKSIZE, so
+    // the buffer must stop there instead of doubling until the stream is satisfied.
+    const QByteArray plain(8 * 1024 * 1024, '\0');
+    uLongf compressedLen = compressBound(static_cast<uLong>(plain.size()));
+    std::vector<uint8> compressed(compressedLen);
+    QCOMPARE(compress(compressed.data(), &compressedLen,
+                      reinterpret_cast<const Bytef*>(plain.constData()),
+                      static_cast<uLong>(plain.size())), Z_OK);
+
+    Requested_Block_Struct req;
+    req.startOffset = 0;
+    req.endOffset = EMBLOCKSIZE - 1;
+    Pending_Block_Struct pending;
+    pending.block = &req;
+
+    UpDownClient client;
+    uint32 lenUnzipped = 1024;
+    auto* unzipped = new uint8[lenUnzipped];
+    const int err = client.unzip(&pending, compressed.data(), static_cast<uint32>(compressedLen),
+                                 &unzipped, &lenUnzipped);
+    QVERIFY(err != Z_OK);
+    QCOMPARE(lenUnzipped, 0u);
+    QVERIFY(pending.zStream != nullptr);
+    QVERIFY(pending.zStream->total_out <= EMBLOCKSIZE + 300);
+
+    inflateEnd(pending.zStream);
+    delete pending.zStream;
+    delete[] unzipped;
 }
 
 void tst_UpDownClient::sendCancelTransfer_setsFlag()

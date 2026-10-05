@@ -825,7 +825,6 @@ void RoutingZone::writeFile()
         return;
 
     const QString tmpPath = s_nodesFilename + QStringLiteral(".tmp");
-    const QString bakPath = s_nodesFilename + QStringLiteral(".bak");
 
     try {
         // Ensure parent directory exists
@@ -858,21 +857,8 @@ void RoutingZone::writeFile()
                 contact->getUDPKey().storeToFile(sf);
                 sf.writeUInt8(contact->isIpVerified() ? 1 : 0);
             }
-        } // file closed before rename
 
-        // Rotate: current → .bak
-        QFile::remove(bakPath);
-        if (QFile::exists(s_nodesFilename)) {
-            if (!QFile::rename(s_nodesFilename, bakPath))
-                QFile::remove(s_nodesFilename);
-        }
-
-        // Rename temp → final
-        if (!QFile::rename(tmpPath, s_nodesFilename)) {
-            logKad(QStringLiteral("Failed to rename tmp → nodes.dat"));
-            if (QFile::exists(bakPath))
-                QFile::rename(bakPath, s_nodesFilename);
-            return;
+            commitAndReplace(sf, tmpPath, s_nodesFilename, theApp.commitFilesNow());
         }
 
         // Counterpart to the "Loaded nodes.dat — N contacts" line at startup. A
@@ -1008,9 +994,9 @@ void RoutingZone::readBootstrapNodesDat(SafeFile& sf)
     ContactArray candidates;
     candidates.reserve(numContacts);
     for (uint32 i = 0; i < numContacts; ++i) {
-        uint8 idBytes[16];
-        sf.readHash16(idBytes);
-        UInt128 id(idBytes);
+        // MFC uses ReadUInt128 → GetDataPtr() (raw host-order bytes).
+        UInt128 id;
+        sf.readHash16(id.getDataPtr());
 
         uint32 ip = sf.readUInt32();
         uint16 udpPort = sf.readUInt16();

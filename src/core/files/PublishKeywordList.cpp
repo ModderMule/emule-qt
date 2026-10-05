@@ -123,6 +123,12 @@ void PublishKeywordList::resetNextKeyword()
     m_nextKeywordIter = m_keywords.begin();
 }
 
+void PublishKeywordList::removeAllKeywordReferences()
+{
+    for (auto& kw : m_keywords)
+        kw.removeAllReferences();
+}
+
 void PublishKeywordList::purgeUnreferencedKeywords()
 {
     for (auto it = m_keywords.begin(); it != m_keywords.end(); ) {

@@ -21,6 +21,10 @@
 #include <QFile>
 #include <QTest>
 
+#include <algorithm>
+#include <array>
+#include <cstring>
+
 using namespace eMule;
 using namespace eMule::kad;
 using namespace eMule::testing;
@@ -40,6 +44,7 @@ private slots:
     void loadBootstrapDat_v3_fromProjectData();
     void bootstrapDat_v3_contactsHaveValidProperties();
     void bootstrapDat_v3_fileFormat();
+    void bootstrapDat_v3_idByteOrder();
 
 private:
     static void clearBootstrapList();
@@ -299,6 +304,59 @@ void tst_KadNodesData::bootstrapDat_v3_fileFormat()
 
     logDebug(QStringLiteral("nodes-bootstrap.dat v3: %1 contacts, %2 bytes")
                  .arg(numContacts).arg(sf.length()));
+}
+
+// ---------------------------------------------------------------------------
+// Test: v3 bootstrap contact IDs are read raw, like MFC ReadUInt128
+// ---------------------------------------------------------------------------
+
+void tst_KadNodesData::bootstrapDat_v3_idByteOrder()
+{
+    struct Entry {
+        std::array<uint8, 16> id;
+        uint32 ip;
+        uint8 version;
+    };
+    // Asymmetric bytes — a per-word swap can't map any of these onto itself.
+    const std::array<Entry, 3> entries{{
+        {{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+          0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F}, 0x51A2B3C4, 8},
+        {{0xF1, 0xE2, 0xD3, 0xC4, 0xB5, 0xA6, 0x97, 0x88,
+          0x79, 0x6A, 0x5B, 0x4C, 0x3D, 0x2E, 0x1F, 0x10}, 0x5E0D2C4B, 9},
+        {{0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0,
+          0x0F, 0x1E, 0x2D, 0x3C, 0x4B, 0x5A, 0x69, 0x87}, 0xB2437A19, 9},
+    }};
+
+    const QString path = m_tmpDir->filePath(QStringLiteral("nodes.dat"));
+    {
+        SafeFile sf;
+        QVERIFY(sf.open(path, QIODevice::WriteOnly));
+        sf.writeUInt32(0);  // marker
+        sf.writeUInt32(3);  // version
+        sf.writeUInt32(1);  // bootstrap edition
+        sf.writeUInt32(static_cast<uint32>(entries.size()));
+        for (const Entry& e : entries) {
+            sf.writeHash16(e.id.data());
+            sf.writeUInt32(e.ip);
+            sf.writeUInt16(4672);
+            sf.writeUInt16(4662);
+            sf.writeUInt8(e.version);
+        }
+    }
+
+    UInt128 localId;
+    localId.setValueRandom();
+    RoutingZone zone(localId, path);
+
+    const ContactList& contacts = Kademlia::s_bootstrapList;
+    QCOMPARE(contacts.size(), entries.size());
+
+    for (const Contact* c : contacts) {
+        const auto it = std::ranges::find(entries, c->address().toUint32(), &Entry::ip);
+        QVERIFY2(it != entries.end(), "Bootstrap contact with an IP not in the file");
+        QVERIFY2(std::memcmp(c->getClientID().getData(), it->id.data(), 16) == 0,
+                 "Bootstrap contact ID bytes differ from the file bytes");
+    }
 }
 
 QTEST_MAIN(tst_KadNodesData)

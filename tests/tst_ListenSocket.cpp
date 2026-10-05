@@ -8,6 +8,7 @@
 #include "ipfilter/IPFilter.h"
 #include "net/Address.h"
 #include "net/ClientReqSocket.h"
+#include "net/EMSocket.h"
 #include "net/ListenSocket.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
@@ -131,6 +132,8 @@ private slots:
 
     void constructionDefaults();
     void startAndStopListening();
+    void bindAddress_narrowsListenerAndOutgoing();
+    void bindAddress_unusableLiteralFailsClosed();
     void acceptIncomingConnection();
     void clientReqSocketDefaults();
     void clientReqSocketTimeout();
@@ -737,6 +740,58 @@ void tst_ListenSocket::unknownProtocol_disconnectsAndChargesOverhead()
     QVERIFY(socket.isTornDown());
     QCOMPARE(disconnected.count(), 1);
     QCOMPARE(m_statistics->downDataOverheadOther(), static_cast<uint64>(body.size()));
+}
+
+// The bind address is honoured by every P2P socket: MFC passes it to each Create()
+// (srchybrid/ListenSocket.cpp:1877,1963). Here it also pins the address family.
+void tst_ListenSocket::bindAddress_narrowsListenerAndOutgoing()
+{
+    const QString before = thePrefs.bindAddress();
+    thePrefs.setBindAddress(QStringLiteral("127.0.0.1"));
+
+    ListenSocket listener;
+    QVERIFY(listener.startListening(0));
+    QCOMPARE(listener.serverAddress(), QHostAddress(QHostAddress::LocalHost));
+
+    // Same family: leaves from the bind address.
+    ClientReqSocket v4;
+    QSignalSpy v4Connected(&v4, &QAbstractSocket::connected);
+    v4.connectToPeer(Address::fromQHostAddress(QHostAddress(QHostAddress::LocalHost)),
+                     listener.serverPort());
+    QVERIFY(v4Connected.wait(3000));
+    QCOMPARE(v4.localAddress(), QHostAddress(QHostAddress::LocalHost));
+
+    // Other family: never dialled, reported as a failed connect.
+    ClientReqSocket v6;
+    QSignalSpy v6Connected(&v6, &QAbstractSocket::connected);
+    QSignalSpy v6Error(&v6, &QAbstractSocket::errorOccurred);
+    v6.connectToPeer(Address::fromQHostAddress(QHostAddress(QHostAddress::LocalHostIPv6)),
+                     listener.serverPort());
+    QVERIFY(v6Error.wait(3000));
+    QCOMPARE(v6Connected.count(), 0);
+    QCOMPARE(v6.state(), QAbstractSocket::UnconnectedState);
+
+    listener.stopListening();
+    thePrefs.setBindAddress(before);
+}
+
+void tst_ListenSocket::bindAddress_unusableLiteralFailsClosed()
+{
+    const QString before = thePrefs.bindAddress();
+    thePrefs.setBindAddress(QStringLiteral("not-an-address"));
+
+    // Falling back to "any" would be exactly the leak the setting exists to prevent.
+    ListenSocket listener;
+    QVERIFY(!listener.startListening(0));
+    QVERIFY(!listener.isListening());
+
+    ClientReqSocket out;
+    QSignalSpy error(&out, &QAbstractSocket::errorOccurred);
+    out.connectToPeer(Address::fromQHostAddress(QHostAddress(QHostAddress::LocalHost)), 9);
+    QVERIFY(error.wait(3000));
+    QCOMPARE(out.state(), QAbstractSocket::UnconnectedState);
+
+    thePrefs.setBindAddress(before);
 }
 
 QTEST_MAIN(tst_ListenSocket)

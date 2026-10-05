@@ -160,7 +160,7 @@ The server probes the family the session arrived on, so a v6-connected session g
 
 | Mask | Meaning |
 | --- | --- |
-| `0x1000` | `SRVCAP_IPV6` — "I speak the IPv6 server extension" |
+| — | No IPv6 bit. `SRVCAP_IPV6` (`0x1000`) is withdrawn; see the note below |
 
 **Server→client capability flags** (`OP_IDCHANGE` TCP flags word; `OP_GLOBSERVSTATRES` UDP flags word):
 
@@ -169,14 +169,18 @@ The server probes the family the session arrived on, so a v6-connected session g
 | `0x00004000` | Server speaks the IPv6 extension (TCP and UDP respectively) |
 | `0x00008000` | `NatRendezvous` — parsed and ignored by this implementation |
 
-> **The two directions deliberately use different values** — `0x1000` client→server,
-> `0x4000` server→client. This asymmetry is easy to get wrong.
+> **`SRVCAP_IPV6` (`0x1000`) is withdrawn — do not set it.** Lugdunum eserver reads login bit
+> `0x1000` as support for its NAT callback (UDP `0xA6`/`0xA7`, TCP `0x37`) and advertises the same
+> bit in its own TCP flags word. A client that sets it there is given an odd LowID, a longer
+> `OP_IDCHANGE` and callback notices. NeoLoader uses `0x1000` the same way and `0x2000` for IPv6.
+> eMuleQt reserves `0x1000` as `SRVCAP_NATTRAVERSAL` for that feature and leaves `0x2000` unused.
 >
-> A note on `0x1000`: at least one server implementation uses `0x1000`/`0x2000` unofficially in its
-> **server→client** flag words (ChaCha20 / AES256 capability). That is a different word from the
-> login `CT_SERVER_FLAGS`, so there is no confirmed collision in the client→server direction — but
-> the reuse is a reason not to treat `0x1000` as authoritative on its own. In practice it is not:
-> see the gating rule in §4.1.
+> Nothing is lost: no server gated on the bit. The capability signal is the `CT_MOD_IP_V6` login
+> tag, or the session having arrived over IPv6 (§4.1).
+>
+> At least one other server implementation uses `0x1000`/`0x2000` unofficially in its
+> **server→client** flag words (ChaCha20 / AES256 capability), so those two bits are not a
+> reliable signal in that direction either.
 
 ### 1.4 Sentinel
 
@@ -603,18 +607,16 @@ All login tags MUST use the **old** tag format — the server has not yet parsed
 when it begins reading them, and new-format tags cause a parse failure and immediate disconnect on
 real servers.
 
-Simultaneously set `SRVCAP_IPV6` (`0x1000`) in the `CT_SERVER_FLAGS` (`0x20`) bitfield.
+Do not set an IPv6 bit in the `CT_SERVER_FLAGS` (`0x20`) bitfield; `SRVCAP_IPV6` (`0x1000`) is
+withdrawn (§1.3).
 
-> **`SRVCAP_IPV6` and `CT_MOD_IP_V6` are strictly coupled**: send both or neither.
->
-> **Which of the two actually gates anything is server-dependent, and it is not the bit.** At least
-> one server ignores `CT_SERVER_FLAGS` entirely except for the crypt bits, and decides
+> **The tag is the signal.** Servers decide
 > sentinel-safety from *the presence of the `CT_MOD_IP_V6` tag* (any value) or from the session
 > having arrived over IPv6. Over UDP there is no login state at all, so the gate there is simply the
 > query's own source family. A client MUST therefore be sentinel-safe (§4.4) whenever it sends
-> either signal — and, in practice, should just be sentinel-safe unconditionally, as eMuleQt is.
+> the tag or connects over IPv6 — and, in practice, should just be sentinel-safe unconditionally, as eMuleQt is.
 >
-> A consequence worth knowing: because both signals are gated on having a confident public IPv6 of
+> A consequence worth knowing: because the tag is gated on having a confident public IPv6 of
 > your own (§2.2), a client with a working sentinel parser but no IPv6 address of its own currently
 > has **no way to tell such a server so**, and receives no IPv6 sources. There is no channel for
 > "I can parse them, I just cannot be one".
@@ -728,7 +730,7 @@ everything else.
 > **The 16 bytes are mandatory to consume.** A client that recognises the sentinel but skips the
 > record without consuming them desynchronises the remainder of the source list — and with the UDP
 > form, the remainder of the datagram. This is precisely why a server MUST only emit sentinel
-> records to a session that advertised `SRVCAP_IPV6` (§4.1). Any short read MUST abort the rest of
+> records to a session that sent `CT_MOD_IP_V6` (§4.1). Any short read MUST abort the rest of
 > the block rather than attempting recovery.
 
 **Client acceptance rules for an IPv6 source:**
@@ -1170,7 +1172,7 @@ A client claiming interoperability with these extensions should implement, at mi
 
 **Required to exchange IPv6 sources with servers**
 
-- [ ] `CT_MOD_IP_V6` login tag in **old** tag format, plus `SRVCAP_IPV6` (§4.1) — send both, but do not assume the server reads the bit
+- [ ] `CT_MOD_IP_V6` login tag in **old** tag format (§4.1) — no `CT_SERVER_FLAGS` bit; `0x1000` is Lugdunum's NAT bit
 - [ ] Inline sentinel record parsing, **including consuming the 16 trailing bytes** (§4.4)
 - [ ] `OP_CALLBACKREQUESTED_IPV6` (§4.5)
 - [ ] `OP_SERVERLIST` trailing IPv6 block, bounds-checked (§4.6)

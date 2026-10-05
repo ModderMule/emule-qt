@@ -76,6 +76,7 @@ class tst_MetaSearchGui : public QObject {
 
 private slots:
     void networkBadgeFollowsFileType();
+    void kadOriginGetsKadBadge();
     void ed2kLinkRefusedForMetaRows();
     void magnetLinkForMetaRows();
     void multiSelectionSurvivesReset();
@@ -119,6 +120,61 @@ void tst_MetaSearchGui::networkBadgeFollowsFileType()
     view.header()->resizeSection(0, 260);
     view.resize(560, 110);
     shoot(&view, QStringLiteral("meta_results.png"));
+}
+
+void tst_MetaSearchGui::kadOriginGetsKadBadge()
+{
+    // A file the server found on Kad: an eD2K row with the Kad icon after its type icon
+    SearchResultRow kad = row(QStringLiteral("Night.Of.The.Living.Dead.avi"), 0);
+    kad.hash = QStringLiteral("4B4B4B4B4B4B4B4B4B4B4B4B4B4B4B4B");
+    kad.kadOrigin = true;
+    SearchResultRow kadComplete = kad;
+    kadComplete.completeSourceCount = 2;
+
+    SearchResultsModel model;
+    model.setResults({row(QStringLiteral("Ubuntu.Server.iso"), 0, QStringLiteral("Iso")),
+                      kad,
+                      row(QStringLiteral("UBUNTU Linux Server"), 1),
+                      kadComplete});
+
+    const auto icon = [&](int r) {
+        return model.data(model.index(r, SearchResultsModel::ColFileName), Qt::DecorationRole).value<QIcon>();
+    };
+    const auto complete = [&](int r) {
+        return model.data(model.index(r, SearchResultsModel::ColComplete), Qt::DisplayRole).toString();
+    };
+    const QList<QSize> wide{QSize(68, 32)};
+    QCOMPARE(icon(1).availableSizes(), wide);
+    const QImage ed2kImg = icon(0).pixmap(QSize(34, 16), 2).toImage();
+    const QImage kadImg = icon(1).pixmap(QSize(34, 16), 2).toImage();
+    const QImage torrentImg = icon(2).pixmap(QSize(34, 16), 2).toImage();
+    QVERIFY(kadImg != torrentImg);
+    // same type as the torrent row ("Video"), so only the badge can differ; and the
+    // eD2K row's slot is blank where the Kad row's is drawn
+    QVERIFY(kadImg.copy(34, 0, 34, 32) != ed2kImg.copy(34, 0, 34, 32));
+
+    // still an eD2K file: a link, and "?" where Kad reported no complete sources
+    QVERIFY(model.rowAt(1)->ed2kLink().startsWith(QStringLiteral("ed2k://|file|")));
+    QCOMPARE(complete(1), QStringLiteral("?"));
+    QVERIFY(complete(3) != QStringLiteral("?"));
+    QVERIFY(!model.data(model.index(1, SearchResultsModel::ColComplete), Qt::ForegroundRole).isValid()
+            || model.data(model.index(1, SearchResultsModel::ColComplete), Qt::ForegroundRole).value<QColor>()
+                   != QColor(255, 0, 0));
+
+    // Kad rows alone reserve the slot too: the eD2K row beside them stays aligned
+    model.removeRow(2);
+    QCOMPARE(icon(0).availableSizes(), wide);
+    model.removeRow(2);
+    model.removeRow(1);
+    QVERIFY(icon(0).availableSizes() != wide);
+
+    model.setResults({row(QStringLiteral("Ubuntu.Server.iso"), 0, QStringLiteral("Iso")), kad, kadComplete});
+    QTreeView view;
+    view.setRootIsDecorated(false);
+    view.setModel(&model);
+    view.header()->resizeSection(0, 260);
+    view.resize(560, 110);
+    shoot(&view, QStringLiteral("kad_results.png"));
 }
 
 void tst_MetaSearchGui::ed2kLinkRefusedForMetaRows()

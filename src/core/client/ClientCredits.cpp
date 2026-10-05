@@ -318,7 +318,6 @@ bool ClientCreditsList::loadList(const QString& filePath)
 bool ClientCreditsList::saveList(const QString& filePath) const
 {
     const QString tmpPath = filePath + QStringLiteral(".tmp");
-    const QString bakPath = filePath + QStringLiteral(".bak");
 
     try {
         QFile::remove(tmpPath);
@@ -343,21 +342,8 @@ bool ClientCreditsList::saveList(const QString& filePath) const
                 if (credit->uploadedTotal() || credit->downloadedTotal())
                     file.write(&credit->m_credits, sizeof(CreditStruct));
             }
-        } // file closed before rename
 
-        // Rotate: current → .bak
-        QFile::remove(bakPath);
-        if (QFile::exists(filePath)) {
-            if (!QFile::rename(filePath, bakPath))
-                QFile::remove(filePath);
-        }
-
-        // Rename temp → final
-        if (!QFile::rename(tmpPath, filePath)) {
-            logError(QStringLiteral("clients.met: failed to rename tmp → clients.met"));
-            if (QFile::exists(bakPath))
-                QFile::rename(bakPath, filePath);
-            return false;
+            commitAndReplace(file, tmpPath, filePath, theApp.commitFilesNow());
         }
 
         return true;

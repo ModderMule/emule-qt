@@ -149,6 +149,84 @@ QString urlDecode(const QString& input)
     return QUrl::fromPercentEncoding(input.toUtf8());
 }
 
+QString cleanupFilename(const QString& filename, const QString& cleanups, bool keepExtension)
+{
+    QString clean = urlDecode(filename).toLower();
+
+    // Substrings from the preferences
+    for (const QString& token : cleanups.toLower().split(u'|', Qt::SkipEmptyParts))
+        clean.remove(token);
+
+    // "." becomes a space, except the extension dot and a dot between two digits
+    const qsizetype extPos = keepExtension ? clean.lastIndexOf(u'.') : clean.size();
+    for (qsizetype i = 0; i < extPos; ++i) {
+        if (clean[i] != u'.')
+            continue;
+        if (i <= 0 || i >= clean.size() - 1 || !clean[i - 1].isDigit() || !clean[i + 1].isDigit())
+            clean[i] = u' ';
+    }
+
+    // Space-holders
+    clean.replace(u'_', u' ');
+    clean.replace(u'+', u' ');
+    clean.replace(u'=', u' ');
+
+    // Characters no file name may hold
+    for (const QChar bad : QStringView(u"\"*<>?|\\/:"))
+        clean.remove(bad);
+
+    // [ad] groups go, unless they are mostly digits (a year, an episode number)
+    qsizetype pos1 = -1;
+    for (;;) {
+        pos1 = clean.indexOf(u'[', pos1 + 1);
+        if (pos1 < 0)
+            break;
+        const qsizetype pos2 = clean.indexOf(u']', pos1);
+        if (pos2 <= pos1)
+            break;
+        if (pos2 - pos1 > 1) {
+            qsizetype numCount = pos2 - pos1 - 1;
+            for (qsizetype i = pos2 - pos1 - 1; i > 0; --i) {
+                if (clean[pos1 + i].isDigit())
+                    numCount -= 2;
+            }
+            if (numCount < 0)
+                continue;
+        }
+        clean.remove(pos1, pos2 - pos1 + 1);
+        --pos1;
+    }
+
+    // Title case
+    if (clean.size() > 1) {
+        clean[0] = clean[0].toUpper();
+
+        qsizetype toPos = clean.lastIndexOf(u'.') - 1;
+        if (toPos < 0)
+            toPos = clean.size() - 1;
+
+        for (qsizetype i = 0; i < toPos; ++i) {
+            if (!clean[i].isLetter() && clean[i] != u'\'') {
+                if (i >= clean.size() - 2 || !clean[i + 2].isDigit())
+                    clean[i + 1] = clean[i + 1].toUpper();
+            }
+        }
+    }
+
+    // Leftovers of the removals above
+    clean.replace(QStringLiteral("()"), QString());
+    clean.replace(QStringLiteral("  "), QStringLiteral(" "));
+    clean.replace(QStringLiteral(" ."), QStringLiteral("."));
+    clean.replace(QStringLiteral("( "), QStringLiteral("("));
+    clean.replace(QStringLiteral(" )"), QStringLiteral(")"));
+    clean.replace(QStringLiteral("()"), QString());
+    clean.replace(QStringLiteral("{ "), QStringLiteral("{"));
+    clean.replace(QStringLiteral(" }"), QStringLiteral("}"));
+    clean.replace(QStringLiteral("{}"), QString());
+
+    return clean.trimmed();
+}
+
 QString encodeUrlQueryParam(const QString& query)
 {
     return QString::fromUtf8(QUrl::toPercentEncoding(query, QByteArrayLiteral(""), QByteArrayLiteral("+")));

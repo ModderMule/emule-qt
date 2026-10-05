@@ -285,6 +285,27 @@ void NetworkInfoDialog::populateInfo(const QCborMap& info)
             html += QStringLiteral("<tr><td>Extern UDP Port:</td><td>%1</td></tr>")
                         .arg(externPort);
 
+        // Buddy — MFC shows it only while UDP-firewalled (NetworkInfoDlg.cpp:256)
+        if (udpFW) {
+            QString buddy;
+            switch (kad.value(QStringLiteral("buddyStatus")).toInteger()) {
+            case 1: buddy = tr("Connecting"); break;
+            case 2: {
+                buddy = tr("Connected");
+                const QString addr = kad.value(QStringLiteral("buddyAddress")).toString();
+                const QString name = kad.value(QStringLiteral("buddyName")).toString();
+                if (!addr.isEmpty())
+                    buddy += QStringLiteral(" (%1:%2%3)")
+                                 .arg(addr.toHtmlEscaped())
+                                 .arg(kad.value(QStringLiteral("buddyPort")).toInteger())
+                                 .arg(name.isEmpty() ? QString() : QStringLiteral(", ") + name.toHtmlEscaped());
+                break;
+            }
+            default: buddy = tr("None"); break;
+            }
+            html += QStringLiteral("<tr><td>Buddy:</td><td>%1</td></tr>").arg(buddy);
+        }
+
         // Kad hash
         html += QStringLiteral("<tr><td>Hash:</td><td>%1</td></tr>")
                     .arg(kad.value(QStringLiteral("hash")).toString());
@@ -318,7 +339,28 @@ void NetworkInfoDialog::populateInfo(const QCborMap& info)
     // -----------------------------------------------------------------------
     html += QStringLiteral("<b>Web Interface</b><br>");
     html += QStringLiteral("<table cellpadding='1'>");
-    html += QStringLiteral("<tr><td>Status:</td><td>%1</td></tr>").arg(tr("Disabled"));
+    const QCborMap web = info.value(QStringLiteral("web")).toMap();
+    const bool webEnabled = web.value(QStringLiteral("enabled")).toBool();
+    const bool webRunning = web.value(QStringLiteral("running")).toBool();
+    QString webStatus = webEnabled ? tr("Enabled") : tr("Disabled");
+    if (webEnabled && !webRunning)
+        webStatus += QStringLiteral(" (%1)").arg(tr("not running"));
+    html += QStringLiteral("<tr><td>Status:</td><td>%1</td></tr>").arg(webStatus);
+    if (webRunning) {
+        html += QStringLiteral("<tr><td></td><td>%1</td></tr>")
+                    .arg(tr("%n active session(s)", nullptr,
+                            static_cast<int>(web.value(QStringLiteral("sessions")).toInteger())));
+        QString host = web.value(QStringLiteral("host")).toString();
+        if (host.contains(u':'))
+            host = QStringLiteral("[%1]").arg(host);   // IPv6 literal
+        const QString url = QStringLiteral("%1://%2:%3/")
+                                .arg(web.value(QStringLiteral("https")).toBool() ? QStringLiteral("https")
+                                                                                 : QStringLiteral("http"))
+                                .arg(host)
+                                .arg(web.value(QStringLiteral("port")).toInteger());
+        html += QStringLiteral("<tr><td>URL:</td><td><a href='%1'>%1</a></td></tr>")
+                    .arg(url.toHtmlEscaped());
+    }
     html += QStringLiteral("</table>");
 
     html += QStringLiteral("</body></html>");

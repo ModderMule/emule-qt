@@ -116,6 +116,7 @@ namespace eMule {
         {QStringLiteral("sourceCount"),         static_cast<qint64>(f.sourceCount())},
         {QStringLiteral("completeSourceCount"), static_cast<qint64>(f.completeSourceCount())},
         {QStringLiteral("isKadResult"),         f.isKadResult()},
+        {QStringLiteral("kadOrigin"),           f.isKadOrigin()},
         {QStringLiteral("spamRating"),          static_cast<qint64>(f.spamRating())},
     };
 }

@@ -77,6 +77,8 @@ private slots:
     void peekPoke_uint16();
     void peekPoke_uint32();
     void peekPoke_uint64();
+    void cleanupFilename_followsStock_data();
+    void cleanupFilename_followsStock();
 };
 
 // ---------------------------------------------------------------------------
@@ -432,6 +434,32 @@ void tst_OtherFunctions::peekPoke_uint64()
     std::array<uint8, 8> buf = {};
     pokeUInt64(buf.data(), UINT64_C(0x0102030405060708));
     QCOMPARE(peekUInt64(buf.data()), uint64{UINT64_C(0x0102030405060708)});
+}
+
+// MFC CleanupFilename, srchybrid/OtherFunctions.cpp:1252-1331.
+void tst_OtherFunctions::cleanupFilename_followsStock_data()
+{
+    QTest::addColumn<QString>("in");
+    QTest::addColumn<QString>("out");
+
+    QTest::newRow("words, dots, underscores, ad group")
+        << QStringLiteral("www.site.com_My.Movie.2019.[ad stuff].avi")
+        << QStringLiteral("Site My Movie 2019.avi");
+    QTest::newRow("dot between digits stays")
+        << QStringLiteral("show.1.5.final.mkv") << QStringLiteral("Show 1.5 Final.mkv");
+    QTest::newRow("digit-heavy bracket stays")
+        << QStringLiteral("album [2019].mp3") << QStringLiteral("Album [2019].mp3");
+    QTest::newRow("url-encoded and plus")
+        << QStringLiteral("some%20file+name.txt") << QStringLiteral("Some File Name.txt");
+    QTest::newRow("bad characters")
+        << QStringLiteral("what?is*this.bin") << QStringLiteral("Whatisthis.bin");
+}
+
+void tst_OtherFunctions::cleanupFilename_followsStock()
+{
+    QFETCH(QString, in);
+    QFETCH(QString, out);
+    QCOMPARE(cleanupFilename(in, QString::fromUtf16(kDefaultFilenameCleanups)), out);
 }
 
 QTEST_MAIN(tst_OtherFunctions)

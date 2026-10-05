@@ -32,6 +32,7 @@ class IPFilter;
 class KnownFileList;
 class PartFile;
 class SafeMemFile;
+class SearchFile;
 class Server;
 class ServerConnect;
 class SharedFileList;
@@ -143,6 +144,12 @@ public:
 
     /// Upper bound on hostname lookups triggered by a single link.
     static constexpr int kMaxLinkDnsSources = 4;
+
+    /// Seed @p file with what the search result it was started from already knows: the
+    /// clients that answered for it and its AICH hash. MFC CDownloadQueue::
+    /// AddSearchToDownload and CPartFile(CSearchFile*). @p result is the top-level row;
+    /// its children are read too, since merged answers keep their clients there.
+    void seedFromSearchResult(PartFile* file, const SearchFile& result);
 
     /// Add a Kad-discovered file source. Finds the matching PartFile by hash
     /// and stores the source info for later connection.

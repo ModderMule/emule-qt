@@ -31,6 +31,7 @@ struct SearchResultRow {
     int64_t bitrate = 0;
     int knownType = 0;
     bool isKad = false;         ///< Kad results carry no complete-source count
+    bool kadOrigin = false;     ///< server result the server found on Kad: Kad badge
     bool inDirectory = false;   ///< from browsing a client's shared files
     bool isSpam = false;
     bool hasComment = false;

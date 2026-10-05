@@ -88,6 +88,10 @@ public:
 
     /// Set the path to known2_64.met. Must be called before any save/load.
     static void setKnown2MetPath(const QString& path);
+    [[nodiscard]] static bool hasKnown2MetPath();
+
+    /// Is a hashset with this master hash in known2_64.met (per the loaded index)?
+    [[nodiscard]] static bool isStored(const AICHHash& hash);
 
     /// Record a stored AICH hash and its file position. Returns the old
     /// position if a duplicate was replaced, 0 otherwise.

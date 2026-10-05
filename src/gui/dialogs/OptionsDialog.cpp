@@ -43,7 +43,10 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include "utils/OtherFunctions.h"
+
 #include <QInputDialog>
+#include <QListWidget>
 #include <QLabel>
 #include <QLineEdit>
 #include <QFormLayout>
@@ -1395,7 +1398,9 @@ QWidget* OptionsDialog::createServerPage()
                                             tr("Enter the URL for server.met download:"),
                                             QLineEdit::Normal, m_serverListURLValue, &ok);
         if (ok) {
-            m_serverListURLValue = url;
+            // empty = back to the shipped default
+            m_serverListURLValue = url.trimmed().isEmpty()
+                ? QString(Preferences::kDefaultServerListURL) : url.trimmed();
             markDirty();
         }
     });
@@ -1647,57 +1652,7 @@ QWidget* OptionsDialog::createFilesPage()
     cleanupRow->addWidget(m_autoCleanupFilenamesCheck);
     cleanupRow->addStretch();
     auto* editCleanupBtn = new QPushButton(tr("Edit..."), initGroup);
-    connect(editCleanupBtn, &QPushButton::clicked, this, [this]() {
-        auto* dlg = new QDialog(this);
-        dlg->setAttribute(Qt::WA_DeleteOnClose);
-        dlg->setWindowTitle(tr("Filename Cleanup Rules"));
-        auto* layout = new QVBoxLayout(dlg);
-        layout->addWidget(new QLabel(
-            tr("Define patterns to automatically clean up filenames of new downloads.\n"
-               "Each rule replaces a regex pattern with a replacement string.")));
-
-        auto* table = new ListTreeWidget(dlg);
-        table->setHeaderLabels({tr("Pattern"), tr("Replacement"), tr("Enabled")});
-        table->setRootIsDecorated(false);
-        table->setColumnCount(3);
-        // Interactive, not Stretch/ResizeToContents: a Qt-owned width can't be
-        // resized by the user, so there would be nothing to remember.
-        table->header()->setStretchLastSection(true);
-        table->bindColumns(QStringLiteral("optionsFilenameRules"), {240, 200, 90});
-        layout->addWidget(table);
-
-        // Default cleanup rules (common in eMule)
-        auto addRule = [table](const QString& pattern, const QString& replacement, bool enabled) {
-            auto* item = new QTreeWidgetItem(table);
-            item->setText(0, pattern);
-            item->setText(1, replacement);
-            item->setCheckState(2, enabled ? Qt::Checked : Qt::Unchecked);
-            item->setFlags(item->flags() | Qt::ItemIsEditable);
-        };
-        addRule(QStringLiteral("\\[www\\..*?\\]"), QString(), true);
-        addRule(QStringLiteral("_"), QStringLiteral(" "), true);
-
-        auto* btnLayout = new QHBoxLayout;
-        auto* addBtn = new QPushButton(tr("Add"), dlg);
-        connect(addBtn, &QPushButton::clicked, dlg, [addRule]() {
-            addRule(QString(), QString(), true);
-        });
-        auto* removeBtn = new QPushButton(tr("Remove"), dlg);
-        connect(removeBtn, &QPushButton::clicked, dlg, [table]() {
-            delete table->currentItem();
-        });
-        btnLayout->addWidget(addBtn);
-        btnLayout->addWidget(removeBtn);
-        btnLayout->addStretch();
-        layout->addLayout(btnLayout);
-
-        auto* btnBox = new QDialogButtonBox(QDialogButtonBox::Close, dlg);
-        connect(btnBox, &QDialogButtonBox::rejected, dlg, &QDialog::close);
-        layout->addWidget(btnBox);
-
-        DialogSizing::applySize(dlg, QSize(500, 350), {}, DialogSizing::Fit::Layout);
-        dlg->show();
-    });
+    connect(editCleanupBtn, &QPushButton::clicked, this, &OptionsDialog::editFilenameCleanups);
     cleanupRow->addWidget(editCleanupBtn);
     initLayout->addLayout(cleanupRow);
 
@@ -5913,6 +5868,7 @@ void OptionsDialog::loadSettings()
     m_videoPlayerArgsEdit->setText(thePrefs.videoPlayerArgs());
     m_createBackupToPreviewCheck->setChecked(thePrefs.createBackupToPreview());
     m_autoCleanupFilenamesCheck->setChecked(thePrefs.autoCleanupFilenames());
+    m_filenameCleanups = thePrefs.filenameCleanups();
 
     // Notifications page (GUI-side)
     m_soundGroup->button(thePrefs.notifySoundType())->setChecked(true);
@@ -6120,6 +6076,7 @@ void OptionsDialog::saveSettings()
     thePrefs.setVideoPlayerArgs(m_videoPlayerArgsEdit->text());
     thePrefs.setCreateBackupToPreview(m_createBackupToPreviewCheck->isChecked());
     thePrefs.setAutoCleanupFilenames(m_autoCleanupFilenamesCheck->isChecked());
+    thePrefs.setFilenameCleanups(m_filenameCleanups);
 
     // Notifications page (GUI-side)
     thePrefs.setNotifySoundType(m_soundGroup->checkedId());
@@ -6223,6 +6180,7 @@ void OptionsDialog::saveSettings()
         req.append(m_autoUpdateServerListCheck->isChecked());
         req.append(QStringLiteral("serverListURL"));
         req.append(m_serverListURLValue);
+        thePrefs.setServerListURL(m_serverListURLValue);   // the Servers panel field shows it
         req.append(QStringLiteral("smartLowIdCheck"));
         req.append(m_smartLowIdCheck->isChecked());
         req.append(QStringLiteral("manualServerHighPriority"));
@@ -6656,6 +6614,8 @@ void OptionsDialog::saveSettings()
         req.append(m_createBackupToPreviewCheck->isChecked());
         req.append(QStringLiteral("autoCleanupFilenames"));
         req.append(m_autoCleanupFilenamesCheck->isChecked());
+        req.append(QStringLiteral("filenameCleanups"));
+        req.append(m_filenameCleanups);
 
         // Notifications page (GUI-side)
         req.append(QStringLiteral("notifySoundType"));
@@ -7509,6 +7469,70 @@ void OptionsDialog::showGeoIpStatus(const QCborMap& status, const QString& messa
     if (!message.isEmpty())
         text += QStringLiteral("\n") + tr("Last update failed: %1").arg(message);
     m_geoIpStatusLabel->setText(text);
+}
+
+// The word list behind "Auto cleanup file names of new downloads" (MFC FilenameCleanups).
+// Edited as one entry per line; stored '|'-separated like stock.
+void OptionsDialog::editFilenameCleanups()
+{
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Filename Cleanup"));
+    auto* layout = new QVBoxLayout(&dlg);
+    layout->addWidget(new QLabel(
+        tr("Text to remove from the names of new downloads. Case is ignored."), &dlg));
+
+    auto* list = new QListWidget(&dlg);
+    auto addWord = [list](const QString& word) {
+        auto* item = new QListWidgetItem(word, list);
+        item->setFlags(item->flags() | Qt::ItemIsEditable);
+        return item;
+    };
+    auto fill = [&](const QString& words) {
+        list->clear();
+        for (const QString& word : words.split(u'|', Qt::SkipEmptyParts))
+            addWord(word);
+    };
+    fill(m_filenameCleanups);
+    layout->addWidget(list);
+
+    auto* btnLayout = new QHBoxLayout;
+    auto* addBtn = new QPushButton(tr("Add"), &dlg);
+    connect(addBtn, &QPushButton::clicked, &dlg, [list, addWord]() {
+        auto* item = addWord(QString());
+        list->setCurrentItem(item);
+        list->editItem(item);
+    });
+    auto* removeBtn = new QPushButton(tr("Remove"), &dlg);
+    connect(removeBtn, &QPushButton::clicked, &dlg, [list]() { delete list->currentItem(); });
+    auto* resetBtn = new QPushButton(tr("Reset to Default"), &dlg);
+    connect(resetBtn, &QPushButton::clicked, &dlg,
+            [fill]() { fill(QString::fromUtf16(kDefaultFilenameCleanups)); });
+    btnLayout->addWidget(addBtn);
+    btnLayout->addWidget(removeBtn);
+    btnLayout->addStretch();
+    btnLayout->addWidget(resetBtn);
+    layout->addLayout(btnLayout);
+
+    auto* btnBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    connect(btnBox, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(btnBox, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    layout->addWidget(btnBox);
+
+    DialogSizing::applySize(&dlg, QSize(360, 380), {}, DialogSizing::Fit::Layout);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    QString words;
+    for (int i = 0; i < list->count(); ++i) {
+        // '|' is the separator, so it cannot be part of an entry.
+        const QString word = list->item(i)->text().remove(u'|').trimmed();
+        if (!word.isEmpty())
+            words += word + u'|';
+    }
+    if (words != m_filenameCleanups) {
+        m_filenameCleanups = words;
+        markDirty();
+    }
 }
 
 } // namespace eMule

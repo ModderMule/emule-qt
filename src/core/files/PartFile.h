@@ -225,10 +225,11 @@ public:
     ///                the CUpDownClient here; an Address is enough and lets a caller name
     ///                somebody other than itself (see HttpCacheClient). A null Address means
     ///                "nobody to blame" and records nothing.
-    void writeToBuffer(uint64 transize, const uint8* data,
-                       uint64 start, uint64 end,
-                       Requested_Block_Struct* block,
-                       const Address& sender = {});
+    /// Returns the bytes accepted: 0 for a duplicate or for data touching a complete part.
+    uint32 writeToBuffer(uint64 transize, const uint8* data,
+                         uint64 start, uint64 end,
+                         Requested_Block_Struct* block,
+                         const Address& sender = {});
     /// @param forceICH  re-hash without asking AICH first (the ICH pass).
     /// @param noAICH    never start an AICH recovery request from this flush — the
     ///                  destructor flushes this way, since a request would outlive us.
@@ -293,10 +294,16 @@ public:
     /// Full path of the .part data file (the .part.met path minus its ".met").
     [[nodiscard]] QString partDataPath() const;
 
-    /// Apply a completed rehash: one byte per part, 1 for verified. Rebuilds the gap
-    /// list from what is actually on disk and re-latches the status.
+    /// Per-part verdict of a rehash. Unread = the worker could not read that far.
+    enum RehashPart : char { RehashBad = 0, RehashOk = 1, RehashUnread = 2 };
+
+    /// Apply a completed rehash: one RehashPart per part. Re-gaps complete parts that
+    /// hashed bad, leaves everything else alone, and re-latches the status.
     /// MFC CPartFile::PartFileHashFinished (srchybrid/PartFile.cpp:1479-1573).
     void applyRehashResult(const QByteArray& partOk);
+    /// New token for a rehash about to be queued; a result carrying another one is stale.
+    uint64 beginRehash() { return m_rehashToken = ++s_rehashSerial; }
+    [[nodiscard]] uint64 rehashToken() const { return m_rehashToken; }
     [[nodiscard]] bool isStopped() const { return m_stopped; }
     [[nodiscard]] bool isPaused() const { return m_paused; }
     [[nodiscard]] bool isInsufficient() const { return m_insufficient; }
@@ -494,6 +501,8 @@ private:
     std::vector<uint16> m_corruptedParts;
     CorruptionBlackBox m_corruptionBlackBox;
     // Parts written since the last verification (MFC m_aChangedPart)
+    uint64 m_rehashToken = 0;
+    static inline uint64 s_rehashSerial = 0;
     std::vector<bool> m_changedParts;
     // Complete parts checked without a hashset; re-checked once one arrives
     std::vector<bool> m_partsAwaitingHashset;
@@ -522,6 +531,7 @@ private:
 
     // State flags
     bool m_paused = false;
+    bool m_destroying = false;   // set first thing in the destructor
     bool m_stopped = false;
     bool m_insufficient = false;
     bool m_completionError = false;

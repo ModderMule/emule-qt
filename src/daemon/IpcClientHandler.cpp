@@ -59,6 +59,7 @@
 #include "net/ListenSocket.h"
 #include "net/LocalIPv6.h"
 #include "net/ProxySettings.h"
+#include "net/BindAddress.h"
 #include "prefs/Preferences.h"
 #include "net/Packet.h"
 #include "protocol/ED2KLink.h"
@@ -83,6 +84,7 @@
 #include <QDate>
 #include <QFileInfo>
 #include <QHostAddress>
+#include <QNetworkInterface>
 #include <QPointer>
 #include <QProcess>
 #include <QSet>
@@ -181,6 +183,31 @@ SearchFile::KnownType determineKnownType(const uint8* hash)
 bool hexToHash(const QString& hex, uint8* out)
 {
     return decodeBase16(hex, out, 16) == 16;
+}
+
+/// Host shown in the web interface URL. MFC: YourHostname if it looks like a
+/// FQDN, else the local IP (srchybrid/NetworkInfoDlg.cpp:320).
+QString webInterfaceHost()
+{
+    const QString hostname = thePrefs.ed2kHostname().trimmed();
+    if (hostname.contains(u'.'))
+        return hostname;
+
+    const QHostAddress listen(thePrefs.webServerListenAddress());
+    if (!listen.isNull() && listen != QHostAddress::Any && listen != QHostAddress::AnyIPv4
+        && listen != QHostAddress::AnyIPv6)
+        return listen.toString();
+
+    if (theApp.serverConnect && theApp.serverConnect->localIP() != 0)
+        return ipstr(theApp.serverConnect->localIP());
+
+    // Not on a server yet: first non-loopback IPv4 of this host
+    for (const QHostAddress& addr : QNetworkInterface::allAddresses()) {
+        if (addr.protocol() == QAbstractSocket::IPv4Protocol && !addr.isLoopback()
+            && !addr.isLinkLocal())
+            return addr.toString();
+    }
+    return QStringLiteral("127.0.0.1");
 }
 
 } // anonymous namespace
@@ -1328,13 +1355,17 @@ void IpcClientHandler::handleDownloadSearchFile(const IpcMessage& msg)
     const QString rawLink  = msg.fieldString(3);
 
     // a meta hash is not an eD2K file — never queue it (enodemeta "four nevers")
-    if (uint8 hashBuf[16]{}; hexToHash(hash, hashBuf) && enodemeta::isMetaHash(hashBuf)) {
+    uint8 hashBuf[16]{};
+    const bool hashOk = hexToHash(hash, hashBuf);
+    if (hashOk && enodemeta::isMetaHash(hashBuf)) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 400,
                                           QStringLiteral("Torrent/Usenet results are not eD2K downloads")));
         return;
     }
     // The search window's "->" category (MFC SearchResultsWnd.cpp:542); older senders omit it.
     const qint64 category  = msg.fieldInt(4);
+    // The search the row belongs to; 0 from link senders and restored tabs.
+    const auto searchID    = static_cast<uint32>(msg.fieldInt(5));
 
     // Prefer the original link text when the GUI has one: it carries the AICH hash,
     // part hashes and source hints, none of which survive a hash/name/size round-trip.
@@ -1348,6 +1379,16 @@ void IpcClientHandler::handleDownloadSearchFile(const IpcMessage& msg)
         ? static_cast<uint32>(category) : 0;
     const bool ok = theApp.downloadQueue->addDownloadFromED2KLink(
         ed2kLink, DownloadQueue::defaultTempDir(), cat);
+
+    // A rebuilt link carries nothing but hash, name and size: hand over what the search
+    // result knows (MFC DownloadQueue.cpp:175-200). An already queued download gains from
+    // it too, hence not gated on ok.
+    if (hashOk && searchID != 0 && theApp.searchList) {
+        const SearchFile* result = theApp.searchList->searchFileByHash(hashBuf, searchID);
+        PartFile* file = theApp.downloadQueue->fileByID(hashBuf);
+        if (result && file)
+            theApp.downloadQueue->seedFromSearchResult(file, *result);
+    }
     sendMessage(IpcMessage::makeResult(msg.seqId(), ok));
 }
 
@@ -1968,6 +2009,7 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
         cfg.serverKeepAliveTimeout = thePrefs.serverKeepAliveTimeout();
         cfg.listenPort             = thePrefs.port();
         cfg.smartLowIdCheck        = thePrefs.smartLowIdCheck();
+        cfg.bindAddress            = BindAddress::ipv4Literal();
         theApp.serverConnect->setConfig(cfg);
     }
 
@@ -2306,6 +2348,19 @@ void IpcClientHandler::handleGetNetworkInfo(const IpcMessage& msg)
         kadInfo.insert(QStringLiteral("udpVerified"),
                        kad::UDPFirewallTester::isVerified());
 
+        // Buddy (firewall traversal): 0 none, 1 connecting, 2 connected (BuddyStatus)
+        if (theApp.clientList) {
+            const BuddyStatus bs = theApp.clientList->buddyStatus();
+            kadInfo.insert(QStringLiteral("buddyStatus"), static_cast<int>(bs));
+            const UpDownClient* buddy = theApp.clientList->getBuddy();
+            if (bs == BuddyStatus::Connected && buddy) {
+                kadInfo.insert(QStringLiteral("buddyName"), buddy->userName());
+                if (!buddy->userAddress().isNull())
+                    kadInfo.insert(QStringLiteral("buddyAddress"), buddy->userAddress().toString());
+                kadInfo.insert(QStringLiteral("buddyPort"), buddy->userPort());
+            }
+        }
+
         auto* prefs = kad->getPrefs();
         if (prefs) {
             kadInfo.insert(QStringLiteral("ip"),
@@ -2342,6 +2397,20 @@ void IpcClientHandler::handleGetNetworkInfo(const IpcMessage& msg)
         }
     }
     info.insert(QStringLiteral("kad"), kadInfo);
+
+    // -- Web interface (MFC NetworkInfoDlg "Web Interface") ------------------
+    QCborMap webInfo;
+    const WebServer* ws = DaemonApp::instance() ? DaemonApp::instance()->webServer() : nullptr;
+    const bool wsRunning = ws && ws->isRunning();
+    webInfo.insert(QStringLiteral("enabled"), thePrefs.webServerEnabled());
+    webInfo.insert(QStringLiteral("running"), wsRunning);
+    if (wsRunning) {
+        webInfo.insert(QStringLiteral("sessions"), ws->sessionCount());
+        webInfo.insert(QStringLiteral("https"), ws->isHttps());
+        webInfo.insert(QStringLiteral("port"), ws->port());
+        webInfo.insert(QStringLiteral("host"), webInterfaceHost());
+    }
+    info.insert(QStringLiteral("web"), webInfo);
 
     // Port mapping — reported alongside the firewall state because they answer
     // the same user question, and because a Degraded mapping is precisely the
@@ -3682,6 +3751,8 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setAutoUpdateServerList(val.toBool());
     else if (key == QStringLiteral("serverListURL"))
         thePrefs.setServerListURL(val.toString());
+    else if (key == QStringLiteral("nodesDatURL"))
+        thePrefs.setNodesDatURL(val.toString());
     else if (key == QStringLiteral("smartLowIdCheck"))
         thePrefs.setSmartLowIdCheck(val.toBool());
     else if (key == QStringLiteral("manualServerHighPriority"))
@@ -4104,6 +4175,8 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
         thePrefs.setCreateBackupToPreview(val.toBool());
     else if (key == QStringLiteral("autoCleanupFilenames"))
         thePrefs.setAutoCleanupFilenames(val.toBool());
+    else if (key == QStringLiteral("filenameCleanups"))
+        thePrefs.setFilenameCleanups(val.toString());
 
     // Notifications page (GUI-side)
     else if (key == QStringLiteral("notifySoundType"))

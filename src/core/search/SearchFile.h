@@ -154,6 +154,7 @@ public:
     [[nodiscard]] uint32 searchID() const { return m_searchID; }
     void setSearchID(uint32 id) { m_searchID = id; }
     [[nodiscard]] bool isKadResult() const { return m_kadResult; }
+    void setKadResult(bool val) { m_kadResult = val; }
 
     // --- eNode meta rows ---
 
@@ -163,6 +164,12 @@ public:
     /// Meta row whose tags contradict its hash, or of an unknown scheme version —
     /// the search list drops these (enodemeta plan §8.1).
     [[nodiscard]] bool isInvalidMetaResult() const { return m_metaInvalid; }
+
+    /// A server result the server itself found on Kad (FT_META_NETWORK): an ordinary
+    /// eD2K file, downloadable like any other. Not a result of our own Kad search —
+    /// that is isKadResult().
+    [[nodiscard]] bool isKadOrigin() const { return m_kadOrigin; }
+    void setKadOrigin(bool val) { m_kadOrigin = val; }
 
     // --- GUI parent/child hierarchy ---
 
@@ -193,6 +200,9 @@ private:
     void resolveMeta(bool hadKindTag, uint8 tagKind, bool hadVersionTag, uint8 tagVersion,
                      bool hadIndexTag);
 
+    /// Drop the "[kad …] " name prefix of a Kad-origin row; the icon says it instead.
+    void stripKadPrefix();
+
     // Data members
     std::list<SClient>   m_clients;
     std::list<SServer>   m_servers;
@@ -212,6 +222,7 @@ private:
     bool m_listExpanded = false;
     MetaInfo m_meta;
     bool m_metaInvalid = false;
+    bool m_kadOrigin = false;
 };
 
 } // namespace eMule

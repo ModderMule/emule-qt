@@ -83,6 +83,9 @@ public:
 
     bool open(const QString& filePath, QIODevice::OpenMode mode);
     void close();
+    /// Flush, optionally force the data to disk, and close. Unlike close() this reports
+    /// failure: a buffered write only meets a full disk here. Throws FileException.
+    void commit(bool sync);
     [[nodiscard]] bool isOpen() const;
     [[nodiscard]] QString filePath() const;
 
@@ -95,6 +98,12 @@ public:
 private:
     QFile m_file;
 };
+
+/// Finish a "write tmp, then swap in" save: commit @p file (already written to
+/// @p tmpPath) and move it over @p finalPath, keeping the previous file as
+/// finalPath + ".bak". On any failure the tmp is removed, the previous file stays in
+/// place and FileException is thrown. Replaces MFC's CommitAndClose + rename.
+void commitAndReplace(SafeFile& file, const QString& tmpPath, const QString& finalPath, bool sync);
 
 // ---------------------------------------------------------------------------
 // SafeMemFile — QBuffer-backed in-memory

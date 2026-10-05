@@ -45,6 +45,7 @@ class PortMapper;
 struct PortMapRequest;
 class UploadBandwidthThrottler;
 class UploadDiskIOThread;
+class AICHSyncThread;
 class HttpCacheManager;
 class UploadQueue;
 
@@ -148,6 +149,7 @@ private:
     std::unique_ptr<HttpCacheManager> m_httpCache;
     std::unique_ptr<UploadBandwidthThrottler> m_uploadThrottler;
     std::unique_ptr<UploadDiskIOThread> m_uploadDiskIO;
+    std::unique_ptr<AICHSyncThread> m_aichSync;
     std::unique_ptr<kad::Kademlia> m_kademlia;
     std::unique_ptr<ClientUDPSocket> m_clientUDP;
     std::unique_ptr<ClientCreditsList> m_clientCredits;

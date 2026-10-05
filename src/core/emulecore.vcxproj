@@ -247,6 +247,7 @@
     <ClCompile Include="portmap\UPnPWorker.cpp" />
     <ClCompile Include="net\HostResolver.cpp" />
     <ClCompile Include="net\LocalIPv6.cpp" />
+    <ClCompile Include="net\BindAddress.cpp" />
     <ClCompile Include="net\IPv6SourcePin.cpp" />
     <ClCompile Include="utils\CrashHandler.cpp" />
     <ClCompile Include="utils\Log.cpp" />
@@ -437,6 +438,7 @@
     <ClInclude Include="portmap\NatPmpMessages.h" />
     <ClInclude Include="portmap\PcpMessages.h" />
     <ClInclude Include="net\LocalIPv6.h" />
+    <ClInclude Include="net\BindAddress.h" />
     <ClInclude Include="net\IPv6SourcePin.h" />
     <ClInclude Include="net\Packet.h" />
     <ClInclude Include="net\PeerVetting.h" />

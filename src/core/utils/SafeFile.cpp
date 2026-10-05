@@ -7,6 +7,16 @@
 #include <QIODevice>
 #include <QStringDecoder>
 
+#include <filesystem>
+#include <system_error>
+
+#ifdef Q_OS_WIN
+#include <io.h>
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 
 namespace eMule {
 
@@ -216,6 +226,56 @@ void SafeFile::close()
 {
     if (m_file.isOpen())
         m_file.close();
+}
+
+void SafeFile::commit(bool sync)
+{
+    if (!m_file.isOpen())
+        return;
+
+    const std::string name = m_file.fileName().toStdString();
+    bool ok = m_file.flush();
+    if (ok && sync) {
+        const int fd = m_file.handle();
+#if defined(Q_OS_WIN)
+        ok = fd >= 0 && ::_commit(fd) == 0;
+#elif defined(Q_OS_MACOS)
+        // fsync() alone leaves the data in the drive cache on macOS.
+        ok = fd >= 0 && (::fcntl(fd, F_FULLFSYNC) == 0 || ::fsync(fd) == 0);
+#else
+        ok = fd >= 0 && ::fsync(fd) == 0;
+#endif
+    }
+    m_file.close();
+    if (!ok || m_file.error() != QFileDevice::NoError)
+        throw FileException("Failed to commit file: " + name);
+}
+
+void commitAndReplace(SafeFile& file, const QString& tmpPath, const QString& finalPath, bool sync)
+{
+    try {
+        file.commit(sync);
+    } catch (...) {
+        file.close();
+        QFile::remove(tmpPath);
+        throw;
+    }
+
+    // Previous generation becomes the backup. If that fails the swap below still
+    // replaces it in one step, so there is never a moment without a file.
+    const QString bakPath = finalPath + QStringLiteral(".bak");
+    QFile::remove(bakPath);
+    const bool backedUp = QFile::exists(finalPath) && QFile::rename(finalPath, bakPath);
+
+    std::error_code ec;
+    std::filesystem::rename(std::filesystem::path(tmpPath.toStdU16String()),
+                            std::filesystem::path(finalPath.toStdU16String()), ec);
+    if (ec) {
+        if (backedUp && !QFile::exists(finalPath))
+            QFile::rename(bakPath, finalPath);
+        QFile::remove(tmpPath);
+        throw FileException("Failed to replace " + finalPath.toStdString() + ": " + ec.message());
+    }
 }
 
 bool SafeFile::isOpen() const

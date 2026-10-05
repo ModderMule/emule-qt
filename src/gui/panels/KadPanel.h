@@ -44,6 +44,9 @@ public:
     /// Connect this panel to the IPC client for data updates.
     void setIpcClient(IpcClient* client);
 
+    /// Reload the nodes.dat URL field after the daemon's preferences landed.
+    void refreshNodesUrl();
+
     /// Switch to a sub-tab by index (0 = Contacts, 1 = Search Details).
     void switchToSubTab(int index);
 

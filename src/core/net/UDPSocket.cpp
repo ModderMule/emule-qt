@@ -3,6 +3,7 @@
 /// @brief Server UDP communication socket — replaces MFC CUDPSocket.
 
 #include "net/UDPSocket.h"
+#include "net/BindAddress.h"
 #include "net/EncryptedDatagramSocket.h"
 #include "net/HostResolver.h"
 #include "net/IPv6SourcePin.h"
@@ -65,7 +66,10 @@ bool UDPSocket::create()
     // still resolve via toIPv4Address() below, so the server UDP path is unchanged for
     // the realistic case: IPv4 transport to a dual-stack server, with IPv6 sources
     // carried inside the payload. Dialing a v6-only server over UDP is a later step.
-    if (!m_socket.bind(QHostAddress::Any, bindPort)) {
+    const auto bindTo = BindAddress::listenAddress();
+    if (!bindTo)
+        return false;
+    if (!m_socket.bind(*bindTo, bindPort)) {
         logError(QStringLiteral("UDPSocket: Failed to bind server UDP port %1: %2")
                      .arg(bindPort).arg(m_socket.errorString()));
         return false;
@@ -198,6 +202,12 @@ SocketSentBytes UDPSocket::sendControlData(uint32 maxNumberOfBytesToSend, uint32
 
     while (!m_controlQueue.empty() && result.sentBytesControlPackets < maxNumberOfBytesToSend) {
         auto& pkt = m_controlQueue.front();
+
+        // Bound to one family: the other one has no route from this socket.
+        if (!BindAddress::canReach(pkt.destination.address())) {
+            m_controlQueue.pop_front();
+            continue;
+        }
 
         qint64 sent = 0;
         if (const Address source = IPv6SourcePin::sourceFor(pkt.destination.address());

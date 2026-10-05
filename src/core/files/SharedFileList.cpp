@@ -70,14 +70,20 @@ void HashingThread::runRehash(const Job& job)
 {
     logInfo(QStringLiteral("Rehashing part file: %1").arg(job.rehashPartPath));
 
-    const auto partCount = static_cast<uint32>(job.rehashPartHashes.size());
-    QByteArray partOk(static_cast<qsizetype>(partCount), '\0');
+    // A file below PARTSIZE has no part hashes: its one part is checked against the
+    // file hash (MFC srchybrid/PartFile.cpp:1493-1495).
+    const bool singlePart = job.rehashPartHashes.empty();
+    const auto partCount = singlePart ? 1u : static_cast<uint32>(job.rehashPartHashes.size());
+
+    // Unread until proven either way: a part we could not read says nothing about the
+    // data, and the PartFile must not throw it away on that account.
+    QByteArray partOk(static_cast<qsizetype>(partCount), static_cast<char>(PartFile::RehashUnread));
 
     QFile file(job.rehashPartPath);
     if (!file.open(QIODevice::ReadOnly)) {
-        logError(QStringLiteral("Rehash failed to open %1").arg(job.rehashPartPath));
-        // Every part reads as bad, which is the safe answer: the data gets re-fetched.
-        emit partFileRehashed(job.rehashFileHash, partOk);
+        logWarning(QStringLiteral("Rehash: cannot open %1: %2")
+                       .arg(job.rehashPartPath, file.errorString()));
+        emit partFileRehashed(job.rehashFileHash, partOk, job.rehashToken);
         return;
     }
 
@@ -90,20 +96,26 @@ void HashingThread::runRehash(const Job& job)
         if (!file.seek(static_cast<qint64>(start)))
             break;
         const QByteArray data = file.read(static_cast<qint64>(len));
-        if (static_cast<uint64>(data.size()) != len)
-            break;   // truncated .part — the rest stays marked missing
+        if (static_cast<uint64>(data.size()) != len) {
+            logWarning(QStringLiteral("Rehash: short read in %1 at part %2")
+                           .arg(job.rehashPartPath).arg(part));
+            break;   // the rest stays unread
+        }
 
         std::array<uint8, 16> actual{};
         KnownFile::createHashFromMemory(reinterpret_cast<const uint8*>(data.constData()),
                                         static_cast<uint32>(len), actual.data(), nullptr);
 
-        if (actual == job.rehashPartHashes[part])
-            partOk[static_cast<qsizetype>(part)] = 1;
+        const bool ok = singlePart
+            ? std::memcmp(actual.data(), job.rehashFileHash.constData(), 16) == 0
+            : actual == job.rehashPartHashes[part];
+        partOk[static_cast<qsizetype>(part)] =
+            static_cast<char>(ok ? PartFile::RehashOk : PartFile::RehashBad);
 
         emit hashingProgress(static_cast<int>((part + 1) * 100 / std::max(1u, partCount)));
     }
 
-    emit partFileRehashed(job.rehashFileHash, partOk);
+    emit partFileRehashed(job.rehashFileHash, partOk, job.rehashToken);
 }
 
 void HashingThread::run()
@@ -193,6 +205,9 @@ void SharedFileList::reload()
         m_hashingInProgress = false;
     }
 
+    // The map is about to be emptied without a removeFile() per entry, so the keyword
+    // refs have to go with it — MFC Reload(), srchybrid/SharedFileList.cpp:788.
+    m_keywords.removeAllKeywordReferences();
     clearEntities();
 
     // Deliberately unlocked: the scan feeds every file back in through safeAddKFile()
@@ -209,6 +224,9 @@ void SharedFileList::reload()
     // MFC re-adds from inside FindSharedFiles (srchybrid/SharedFileList.cpp:551).
     if (theApp.downloadQueue)
         theApp.downloadQueue->addPartFilesToShare();
+
+    // Whatever was not re-added above is no longer shared.
+    m_keywords.purgeUnreferencedKeywords();
 }
 
 // ---------------------------------------------------------------------------
@@ -240,6 +258,11 @@ bool SharedFileList::safeAddKFile(KnownFile* file, bool onlyAdd)
 // ---------------------------------------------------------------------------
 // removeFile
 // ---------------------------------------------------------------------------
+
+bool SharedFileList::isFilePtrInList(const KnownFile* file) const
+{
+    return file && getFileByID(file->fileHash()) == file;
+}
 
 bool SharedFileList::removeFile(KnownFile* file)
 {
@@ -1053,6 +1076,18 @@ void SharedFileList::onHashingFinished(KnownFile* file, uint64 generation)
         }
     }
 
+    // Same content already shared from another path: keep the one we have and never
+    // let the known list replace (and delete) an object that is still shared —
+    // MFC FileHashingFinished, srchybrid/SharedFileList.cpp:735-741.
+    if (const KnownFile* dup = getFileByID(file->fileHash())) {
+        logInfo(QStringLiteral("Duplicate file not shared: %1 has the same content as %2")
+                    .arg(file->filePath(), dup->filePath()));
+        delete file;
+        QMutexLocker hashLocker(&m_hashMutex);
+        hashNextFile();
+        return;
+    }
+
     // Add to known files
     if (m_knownFiles)
         m_knownFiles->safeAddKFile(file);
@@ -1077,12 +1112,13 @@ void SharedFileList::onHashingFinished(KnownFile* file, uint64 generation)
     hashNextFile();
 }
 
-void SharedFileList::enqueuePartFileRehash(PartFile* file)
+bool SharedFileList::enqueuePartFileRehash(PartFile* file)
 {
     if (!file || !m_hashingThread)
-        return;
+        return false;
 
     HashingThread::Job job;
+    job.rehashToken = file->beginRehash();
     job.rehashFileHash = QByteArray(reinterpret_cast<const char*>(file->fileHash()), 16);
     job.rehashPartPath = file->partDataPath();
     job.rehashFileSize = static_cast<uint64>(file->fileSize());
@@ -1091,9 +1127,11 @@ void SharedFileList::enqueuePartFileRehash(PartFile* file)
     // Everything the worker needs is copied above, on this thread — it must not reach
     // back into the PartFile, which the download queue may delete meanwhile.
     m_hashingThread->enqueue(std::move(job));
+    return true;
 }
 
-void SharedFileList::onPartFileRehashed(const QByteArray& fileHash, const QByteArray& partOk)
+void SharedFileList::onPartFileRehashed(const QByteArray& fileHash, const QByteArray& partOk,
+                                        uint64 token)
 {
     if (fileHash.size() != 16 || !theApp.downloadQueue)
         return;
@@ -1105,7 +1143,12 @@ void SharedFileList::onPartFileRehashed(const QByteArray& fileHash, const QByteA
     if (!file)
         return;
 
+    // Same hash, different object: cancelled and re-added while the worker ran.
+    if (token != file->rehashToken())
+        return;
+
     file->applyRehashResult(partOk);
+    emit partFileRehashApplied(fileHash, partOk);
 }
 
 void SharedFileList::onHashingFailed(const QString& directory, const QString& filename, uint64 generation)

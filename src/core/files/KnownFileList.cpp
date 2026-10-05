@@ -7,8 +7,10 @@
 #include "files/KnownFileList.h"
 #include "app/AppContext.h"
 #include "files/KnownFile.h"
+#include "files/PartFile.h"
 #include "files/SharedFileList.h"
 #include "prefs/Preferences.h"
+#include "transfer/DownloadQueue.h"
 #include "protocol/Tag.h"
 #include "utils/Log.h"
 #include "utils/SafeFile.h"
@@ -68,7 +70,6 @@ void KnownFileList::save()
 {
     const QString knownPath = m_configDir + QStringLiteral("/known.met");
     const QString tmpPath   = knownPath + QStringLiteral(".tmp");
-    const QString bakPath   = knownPath + QStringLiteral(".bak");
 
     try {
         // Clean up stale .tmp from a previous failed save
@@ -99,23 +100,8 @@ void KnownFileList::save()
             for (const KnownFile* knownFile : toWrite) {
                 knownFile->writeToFile(file);
             }
-        } // file closed before rename
 
-        // Rotate: current → .bak (preserves old data as backup)
-        QFile::remove(bakPath);
-        if (QFile::exists(knownPath)) {
-            if (!QFile::rename(knownPath, bakPath)) {
-                logWarning(QStringLiteral("known.met: failed to create backup"));
-                QFile::remove(knownPath);
-            }
-        }
-
-        // Rename temp → final
-        if (!QFile::rename(tmpPath, knownPath)) {
-            logError(QStringLiteral("known.met: failed to rename tmp → known.met"));
-            if (QFile::exists(bakPath))
-                QFile::rename(bakPath, knownPath);
-            return;
+            commitAndReplace(file, tmpPath, knownPath, theApp.commitFilesNow());
         }
     } catch (const std::exception& e) {
         logError(QStringLiteral("Failed to save known.met: %1").arg(QString::fromUtf8(e.what())));
@@ -165,13 +151,37 @@ bool KnownFileList::safeAddKFile(KnownFile* file)
     MD4Key key(file->fileHash());
     auto it = m_filesMap.find(key);
     if (it != m_filesMap.end()) {
-        // Merge statistics from old file
         KnownFile* existing = it->second;
-        totalTransferred += file->statistic.allTimeTransferred() - existing->statistic.allTimeTransferred();
-        totalRequested += file->statistic.allTimeRequests() - existing->statistic.allTimeRequests();
-        totalAccepted += file->statistic.allTimeAccepts() - existing->statistic.allTimeAccepts();
+        if (existing == file)
+            return true;
+
+        // The old object is about to die; nothing may keep pointing at it
+        // (MFC SafeAddKFile, srchybrid/KnownFileList.cpp:276-336).
+        bool wasShared = false;
+        if (theApp.sharedFileList && theApp.sharedFileList->isFilePtrInList(existing))
+            wasShared = theApp.sharedFileList->removeFile(existing);
+        if (theApp.downloadQueue && existing->isPartFile())
+            theApp.downloadQueue->removeFile(static_cast<PartFile*>(existing));
+
+        // The new file inherits the old one's history, so the totals only grow by
+        // what the new file brought itself.
+        totalTransferred += file->statistic.allTimeTransferred();
+        totalRequested += file->statistic.allTimeRequests();
+        totalAccepted += file->statistic.allTimeAccepts();
+        if (file->fileSize() == existing->fileSize())
+            file->statistic.mergeFileStats(existing->statistic);
+        else {
+            totalTransferred -= existing->statistic.allTimeTransferred();
+            totalRequested -= existing->statistic.allTimeRequests();
+            totalAccepted -= existing->statistic.allTimeAccepts();
+        }
+
+        existing->detachUploadingClients();
         delete existing;
         it->second = file;
+
+        if (wasShared)
+            theApp.sharedFileList->safeAddKFile(file);
     } else {
         m_filesMap[key] = file;
         totalTransferred += file->statistic.allTimeTransferred();
@@ -415,7 +425,6 @@ void KnownFileList::saveCancelledFiles()
 {
     const QString filePath = m_configDir + QStringLiteral("/cancelled.met");
     const QString tmpPath  = filePath + QStringLiteral(".tmp");
-    const QString bakPath  = filePath + QStringLiteral(".bak");
 
     // No seed minting here: addCancelledFileID() owns that, so the header can never
     // claim a seed the records below it were not derived from.
@@ -440,18 +449,8 @@ void KnownFileList::saveCancelledFiles()
                     file.writeUInt8(0);   // tag count
                 }
             }
-        }
 
-        QFile::remove(bakPath);
-        if (QFile::exists(filePath)) {
-            if (!QFile::rename(filePath, bakPath))
-                QFile::remove(filePath);
-        }
-
-        if (!QFile::rename(tmpPath, filePath)) {
-            logError(QStringLiteral("cancelled.met: failed to rename tmp → cancelled.met"));
-            if (QFile::exists(bakPath))
-                QFile::rename(bakPath, filePath);
+            commitAndReplace(file, tmpPath, filePath, theApp.commitFilesNow());
         }
     } catch (const std::exception& e) {
         logError(QStringLiteral("Failed to save cancelled.met: %1").arg(QString::fromUtf8(e.what())));

@@ -1306,7 +1306,7 @@ void tst_ServerLocalTest::stopServerFixtures()
 // Round 7: IPv6 — connect over ::1 (S1/S2) and confirm the fixture source path
 //
 // This exercises the dual-stack client against the same local eNode over IPv6
-// transport: the login carries CT_MOD_IP_V6 + SRVCAP_IPV6 (S1), the session is
+// transport: the login carries CT_MOD_IP_V6 (S1), the session is
 // sentinel-safe, and a v6-aware eNode may return an inline 0xFFFFFFFF IPv6 source
 // (S3a). It QSKIPs cleanly when the server is not reachable over IPv6, so it is
 // safe on any eNode build; run it against an ipv6.enabled eNode-go with IPv6

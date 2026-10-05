@@ -337,7 +337,7 @@
 //
 // 0xB3-0xBB are NOT free: the compatibility target claims them for its eServer
 // buddy relay (OP_ESERVER_BUDDY_REQUEST .. OP_ESERVER_UDP_PROBE). Stock eMule,
-// MorphXT, Applejuice and eSE-LiveTV all stop at OP_HASHSETANSWER2 0xB2, so
+// MorphXT, and eSE-LiveTV all stop at OP_HASHSETANSWER2 0xB2, so
 // 0xBC is the first value unclaimed everywhere. It also exists as a CT_* tag id
 // (CT_EMULE_USERHASH), but tags live inside payloads and opcodes in the header,
 // so the two never meet on the wire.
@@ -481,6 +481,10 @@
 #define FT_META_INDEXER             0x6A  // string
 #define FT_META_FLAGS               0x6B  // uint32: META_FLAG_* bitfield
 #define FT_META_MAGNET              0x6C  // string: magnet URI (torrents)
+// A real eD2K file (its own MD4 in the hash slot) the server's catalogue found on
+// another network. The row's only meta tag: FT_META_KIND never comes with it.
+#define FT_META_NETWORK             0x6D  // uint8: META_NETWORK_*
+#define META_NETWORK_KAD            3     // found on the Kad network
 
 // FT_META_FLAGS bits
 #define META_FLAG_PASSWORD_PROTECTED 0x01
@@ -731,8 +735,9 @@
 #define SRVCAP_SUPPORTCRYPT         0x0200
 #define SRVCAP_REQUESTCRYPT         0x0400
 #define SRVCAP_REQUIRECRYPT         0x0800
-#define SRVCAP_IPV6                 0x1000    // login bit: "I speak the IPv6 server extension"
-#define SRVCAP_META_SEARCH          0x2000    // login bit: can act on eNode meta (torrent/Usenet) rows
+#define SRVCAP_NATTRAVERSAL         0x1000    // login bit: Lugdunum NAT callback (UDP 0xA6/0xA7, TCP 0x37); not sent yet
+// 0x2000 is NeoLoader's IPv6 login bit; we signal IPv6 with the CT_MOD_IP_V6 tag instead.
+#define SRVCAP_META_SEARCH          0x10000   // login bit: can act on eNode meta (torrent/Usenet) rows
 
 // Values for CT_SERVER_UDPSEARCH_FLAGS
 #define SRVCAP_UDP_NEWTAGS_LARGEFILES   0x01

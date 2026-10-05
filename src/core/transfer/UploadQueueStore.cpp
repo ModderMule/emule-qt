@@ -151,7 +151,6 @@ bool UploadQueueFile::write(const QString& path,
                             uint32 savedAtUnix)
 {
     const QString tmpPath = path + QStringLiteral(".tmp");
-    const QString bakPath = path + QStringLiteral(".bak");
 
     try {
         QFile::remove(tmpPath);
@@ -197,19 +196,8 @@ bool UploadQueueFile::write(const QString& path,
                 file.writeUInt8(rec.emuleVersion);
                 file.writeUInt8(rec.compatibleClient);
             }
-        } // closed before rename
 
-        QFile::remove(bakPath);
-        if (QFile::exists(path)) {
-            if (!QFile::rename(path, bakPath))
-                QFile::remove(path);
-        }
-
-        if (!QFile::rename(tmpPath, path)) {
-            logError(QStringLiteral("uploadqueue.met: failed to rename tmp → final"));
-            if (QFile::exists(bakPath))
-                QFile::rename(bakPath, path);
-            return false;
+            commitAndReplace(file, tmpPath, path, theApp.commitFilesNow());
         }
     } catch (const std::exception& e) {
         logError(QStringLiteral("uploadqueue.met: save failed (%1)")

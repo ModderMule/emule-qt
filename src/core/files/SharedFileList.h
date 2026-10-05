@@ -57,6 +57,7 @@ public:
         QString rehashPartPath;
         uint64 rehashFileSize = 0;
         std::vector<std::array<uint8, 16>> rehashPartHashes;
+        uint64 rehashToken = 0;   // echoed back so a stale result can be told apart
 
         [[nodiscard]] bool isRehash() const { return !rehashFileHash.isEmpty(); }
     };
@@ -75,7 +76,8 @@ signals:
     void hashingFailed(const QString& directory, const QString& filename, uint64 generation);
     void hashingProgress(int percent);
     /// One byte per part: 1 if it verified against the hashset, 0 if it did not.
-    void partFileRehashed(const QByteArray& fileHash, const QByteArray& partOk);
+    /// partOk holds one PartFile::RehashPart value per part.
+    void partFileRehashed(const QByteArray& fileHash, const QByteArray& partOk, uint64 token);
 
 protected:
     void run() override;
@@ -131,6 +133,8 @@ public:
     void process();
 
     KnownFile* getFileByID(const uint8* hash) const;
+    /// True when exactly this object is shared, not merely one with its hash.
+    [[nodiscard]] bool isFilePtrInList(const KnownFile* file) const;
     bool isUnsharedFile(const uint8* hash) const;
 
     // -- Share membership (MFC CSharedFileList::ShouldBeShared and friends) ------
@@ -190,7 +194,8 @@ public:
     /// Queue a part file for re-verification against its own MD4 hashset, because its
     /// .part no longer matches the date recorded in the .part.met. MFC spawns a
     /// CAddFileThread for this (srchybrid/PartFile.cpp:1136).
-    void enqueuePartFileRehash(PartFile* file);
+    /// False when nothing was queued; the caller must then not wait for a result.
+    bool enqueuePartFileRehash(PartFile* file);
 
     // Server / Kad publishing
     void sendListToServer();
@@ -205,6 +210,8 @@ public:
 signals:
     void fileAdded(eMule::KnownFile* file);
     void fileRemoved(eMule::KnownFile* file);
+    /// A part-file rehash result was applied (not emitted for a stale or orphaned one).
+    void partFileRehashApplied(const QByteArray& fileHash, const QByteArray& partOk);
 
 private:
     /// Pick the files to put in the next OP_OFFERFILES, honouring the server's large
@@ -222,7 +229,7 @@ private:
     [[nodiscard]] QString sharedFilesConfigPath() const;
 
     void onHashingFinished(KnownFile* file, uint64 generation);
-    void onPartFileRehashed(const QByteArray& fileHash, const QByteArray& partOk);
+    void onPartFileRehashed(const QByteArray& fileHash, const QByteArray& partOk, uint64 token);
     void onHashingFailed(const QString& directory, const QString& filename, uint64 generation);
 
     /// Index-based access for the Kad round-robin. Lock-free by design:

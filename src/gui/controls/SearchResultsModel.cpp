@@ -47,6 +47,10 @@ int completeness(const SearchResultRow& r)
 {
     if (r.isKad || r.isMeta())   // eNode torrent/Usenet rows carry no eD2K completeness
         return -1;
+    // Found on Kad by the server: Kad seldom says how many sources are complete,
+    // so a zero is "not reported", not "nobody has it all"
+    if (r.kadOrigin && r.completeSourceCount == 0)
+        return -1;
     if (r.inDirectory && r.sourceCount == 1 && r.completeSourceCount == 0)
         return -1;   // a browsed file: nobody said how complete it is
     return r.sourceCount > 0 && r.completeSourceCount > 0 ? 1 : 0;
@@ -169,12 +173,15 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
         // people's disks, so we have neither their bytes nor a comment to publish.
         // MFC's search list registers the overlay image and then never draws it.
         // eNode torrent/Usenet rows keep their type icon and add their network
-        // (the toolbar icons) right after it; eD2K rows beside them keep the slot blank.
+        // (the toolbar icons) right after it, and so does a file the server found on
+        // Kad; eD2K rows beside them keep the slot blank.
         QString network;
         if (r.isUsenet())
             network = QStringLiteral(":/icons/Usenet.ico");
         else if (r.isTorrent())
             network = QStringLiteral(":/icons/Torrent.ico");
+        else if (r.kadOrigin)
+            network = QStringLiteral(":/icons/Kad.ico");
         else if (m_hasMeta)
             network = kEmptyBadge;
         return fileMarksIcon(r.fileType, /*containerSuspect*/ false,
@@ -287,7 +294,8 @@ void SearchResultsModel::removeRow(int row)
 
 void SearchResultsModel::updateHasMeta()
 {
-    const bool hasMeta = std::ranges::any_of(m_rows, &SearchResultRow::isMeta);
+    const bool hasMeta = std::ranges::any_of(
+        m_rows, [](const SearchResultRow& r) { return r.isMeta() || r.kadOrigin; });
     if (hasMeta == m_hasMeta)
         return;
     m_hasMeta = hasMeta;

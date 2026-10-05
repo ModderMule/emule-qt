@@ -70,7 +70,6 @@ SRVCAP_UNICODE = 0x0010
 SRVCAP_LARGEFILES = 0x0100
 SRVCAP_SUPPORTCRYPT = 0x0200
 SRVCAP_REQUESTCRYPT = 0x0400
-SRVCAP_IPV6 = 0x1000
 
 ST_TAGS = {
     0x01: "name", 0x0B: "description", 0x0C: "ping", 0x0D: "fail",
@@ -529,8 +528,6 @@ def _old_tag(tag_id: int, value) -> bytes:
 def build_login(user_hash: bytes, listen_port: int, nick: str, emule_ver: int,
                 ipv6: bytes | None = None) -> bytes:
     caps = SRVCAP_NEWTAGS | SRVCAP_LARGEFILES | SRVCAP_UNICODE | SRVCAP_ZLIB | SRVCAP_SUPPORTCRYPT
-    if ipv6:
-        caps |= SRVCAP_IPV6    # coupled with CT_MOD_IP_V6 (docs/protocol/ipv6-spec.md 4.1)
     body = user_hash + struct.pack("<I", 0) + struct.pack("<H", listen_port)
     body += struct.pack("<I", 5 if ipv6 else 4)
     body += _old_tag(CT_NAME, nick)
@@ -822,7 +819,7 @@ def main() -> int:
     ap.add_argument("--no-obf-retry", dest="obf_retry", action="store_false",
                     help="do not retry a silent plain login over the obfuscated handshake")
     ap.add_argument("--ipv6", metavar="ADDR",
-                    help="advertise this public IPv6 at login (SRVCAP_IPV6 + CT_MOD_IP_V6)")
+                    help="advertise this public IPv6 at login (CT_MOD_IP_V6 login tag)")
     ap.add_argument("--out", help="write JSON here instead of stdout (forced to a .local.json name)")
     args = ap.parse_args()
 

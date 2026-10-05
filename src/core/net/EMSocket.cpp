@@ -5,6 +5,7 @@
 #include "net/EMSocket.h"
 #include "app/AppContext.h"
 #include "net/Address.h"
+#include "net/BindAddress.h"
 #include "net/IPv6SourcePin.h"
 #include "prefs/Preferences.h"
 #include "transfer/UploadBandwidthThrottler.h"
@@ -951,7 +952,30 @@ void EMSocket::initProxySupport(const ProxySettings& settings)
 
 void EMSocket::connectToPeer(const Address& addr, uint16 port)
 {
-    IPv6SourcePin::bindForConnect(*this, addr);
+    if (BindAddress::isConfigured()) {
+        // A proxied socket connects to the proxy, which the user chose as the route;
+        // Qt cannot bind one anyway.
+        const bool proxied = thePrefs.proxySettings().useProxy;
+        const auto bindTo = BindAddress::listenAddress();
+        const bool reachable = BindAddress::canReach(addr);
+        if (!reachable || !bindTo
+            || (!proxied && state() == QAbstractSocket::UnconnectedState && !bind(*bindTo, 0)))
+        {
+            // Never dial from another address. Reported like any failed connect, but
+            // queued: callers wire their handlers up right after this call.
+            const QString why = reachable
+                ? QStringLiteral("cannot bind to the configured bind address")
+                : QStringLiteral("destination is not reachable from the bind address");
+            QMetaObject::invokeMethod(this, [this, why] {
+                setSocketError(QAbstractSocket::NetworkError);
+                setErrorString(why);
+                emit errorOccurred(QAbstractSocket::NetworkError);
+            }, Qt::QueuedConnection);
+            return;
+        }
+    } else {
+        IPv6SourcePin::bindForConnect(*this, addr);
+    }
     connectToHost(addr.toQHostAddress(), port);
 }
 

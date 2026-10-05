@@ -203,6 +203,7 @@ HEADERS += \
     utils/CountryFlags.h \
     utils/InputHistory.h \
     utils/MetaResultActions.h \
+    utils/UrlPrefField.h \
     dialogs/PasteLinksDialog.h \
     dialogs/PasteTextDialog.h \
     dialogs/SearchDetailDialog.h \

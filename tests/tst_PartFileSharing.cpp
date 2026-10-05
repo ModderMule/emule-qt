@@ -28,6 +28,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -93,6 +94,11 @@ private slots:
     // Rehash on load (MFC PS_WAITINGFORHASH)
     void changedPartFileIsRehashedAndLosesTheBadPart();
     void untouchedPartFileIsNotRehashed();
+    void rehashKeepsAHalfDownloadedPart();
+    void rehashWithUnreadablePartFileChangesNothing();
+    void rehashChecksASmallFileAgainstItsFileHash();
+    void staleRehashResultIsDropped();
+    void destroyingAFileWithBufferedDataDoesNotShareIt();
 
 private:
     /// A part file whose part 0 hash is real, so hashSinglePart() has something to
@@ -414,6 +420,124 @@ void tst_PartFileSharing::untouchedPartFileIsNotRehashed()
     QVERIFY(reloaded->isComplete(0u));
 
     m_file = std::move(reloaded);
+}
+
+// The reason for the rehash is usually a crash mid-download, and a crash mid-download is
+// exactly when a part is half there. Those blocks must survive.
+void tst_PartFileSharing::rehashKeepsAHalfDownloadedPart()
+{
+    PartFile* file = makeFile(QStringLiteral("half"));
+    QVERIFY(file);
+
+    writeGoodPart(*file);                       // part 0, complete and verified
+    const QByteArray block(500, 'h');           // part 1 (1000 bytes), half of it
+    QCOMPARE(file->writeToBuffer(500, reinterpret_cast<const uint8*>(block.constData()),
+                                 PARTSIZE, PARTSIZE + 499, nullptr, kPeerAddress), 500u);
+    file->flushBuffer();
+    const uint64 gapBefore = file->totalGapSizeInPart(1);
+    QVERIFY(gapBefore > 0);
+
+    // Part 0 verified, part 1 "bad" — which is all a half-filled part can ever hash to.
+    QByteArray verdict;
+    verdict.append(static_cast<char>(PartFile::RehashOk));
+    verdict.append(static_cast<char>(PartFile::RehashBad));
+    file->applyRehashResult(verdict);
+
+    QVERIFY(file->isComplete(0u));
+    QCOMPARE(file->totalGapSizeInPart(1), gapBefore);
+    QVERIFY(file->isComplete(PARTSIZE, PARTSIZE + 499));
+    QCOMPARE(file->status(true), PartFileStatus::Ready);
+}
+
+// A .part that cannot be read proves nothing about its contents.
+void tst_PartFileSharing::rehashWithUnreadablePartFileChangesNothing()
+{
+    PartFile* file = makeFile(QStringLiteral("unread"));
+    QVERIFY(file);
+    writeGoodPart(*file);
+    file->flushBuffer();
+    QVERIFY(file->isComplete(0u));
+
+    file->applyRehashResult(QByteArray(2, static_cast<char>(PartFile::RehashUnread)));
+
+    QVERIFY2(file->isComplete(0u), "an unread part must not be discarded");
+    QCOMPARE(file->status(true), PartFileStatus::Ready);
+}
+
+// Below PARTSIZE there is no part hashset; the one part is the file hash. End to end,
+// because the worker is where that case lives.
+void tst_PartFileSharing::rehashChecksASmallFileAgainstItsFileHash()
+{
+    const QByteArray content(300000, 's');
+    std::array<uint8, 16> hash{};
+    KnownFile::createHashFromMemory(reinterpret_cast<const uint8*>(content.constData()),
+                                    static_cast<uint32>(content.size()), hash.data(), nullptr);
+
+    auto file = std::make_unique<PartFile>();
+    file->setFileName(QStringLiteral("small.bin"));
+    file->setFileSize(EMFileSize(static_cast<uint64>(content.size())));
+    file->setTmpPath(m_tempDir);
+    file->setFileHash(hash.data());
+    QVERIFY(file->createPartFile(m_tempDir));
+    m_file = std::move(file);
+
+    m_queue->addDownload(m_file.get());
+
+    // Straight onto the disk, behind the PartFile's back: the gaps stay, so nothing
+    // completes, and the worker has a whole file to judge.
+    auto verdictFor = [&](const QByteArray& bytes) -> int {
+        QFile part(m_file->partDataPath());
+        if (!part.open(QIODevice::ReadWrite) || part.write(bytes) != bytes.size())
+            return -1;
+        part.close();
+        QSignalSpy done(m_shared.get(), &SharedFileList::partFileRehashApplied);
+        if (!m_shared->enqueuePartFileRehash(m_file.get()) || !done.wait(10000))
+            return -1;
+        const QByteArray verdict = done.first().at(1).toByteArray();
+        return verdict.size() == 1 ? verdict[0] : -1;
+    };
+
+    QCOMPARE(verdictFor(content), static_cast<int>(PartFile::RehashOk));
+    QByteArray damaged = content;
+    damaged[100] = 'X';
+    QCOMPARE(verdictFor(damaged), static_cast<int>(PartFile::RehashBad));
+}
+
+// Cancelled and re-added under the same hash while the worker ran: not this file's result.
+void tst_PartFileSharing::staleRehashResultIsDropped()
+{
+    PartFile* file = makeFile(QStringLiteral("stale"));
+    QVERIFY(file);
+    writeGoodPart(*file);
+    file->flushBuffer();
+    m_queue->addDownload(file);
+
+    QVERIFY(m_shared->enqueuePartFileRehash(file));
+    file->beginRehash();   // a newer rehash supersedes the queued one
+
+    QSignalSpy applied(m_shared.get(), &SharedFileList::partFileRehashApplied);
+    QVERIFY(!applied.wait(1500));
+    QVERIFY(file->isComplete(0u));
+}
+
+// The destructor flushes what is still buffered, and that flush can verify a part. It
+// must not then share the object that is being destroyed.
+void tst_PartFileSharing::destroyingAFileWithBufferedDataDoesNotShareIt()
+{
+    PartFile* file = makeFile(QStringLiteral("dying"));
+    QVERIFY(file);
+    std::array<uint8, 16> hash{};
+    std::memcpy(hash.data(), file->fileHash(), 16);
+
+    writeGoodPart(*file);                 // buffered, not flushed
+    QVERIFY(!m_shared->getFileByID(hash.data()));
+
+    m_queue->removeFile(file);
+    m_file.reset();
+
+    QVERIFY2(!m_shared->getFileByID(hash.data()),
+             "a destroyed part file must not be left in the shared list");
+    QCOMPARE(m_shared->getCount(), 0);
 }
 
 // ---------------------------------------------------------------------------

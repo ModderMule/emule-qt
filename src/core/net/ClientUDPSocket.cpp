@@ -3,6 +3,7 @@
 /// @brief Client-to-client UDP socket — replaces MFC CClientUDPSocket.
 
 #include "net/ClientUDPSocket.h"
+#include "net/BindAddress.h"
 #include "net/EncryptedDatagramSocket.h"
 #include "net/IPv6SourcePin.h"
 #include "app/AppContext.h"
@@ -55,7 +56,10 @@ ClientUDPSocket::~ClientUDPSocket()
 
 bool ClientUDPSocket::create()
 {
-    if (!m_socket.bind(QHostAddress::Any, 0)) {   // dual-stack (AF_INET6, IPV6_V6ONLY=0)
+    const auto bindTo = BindAddress::listenAddress();   // Any = dual-stack
+    if (!bindTo)
+        return false;
+    if (!m_socket.bind(*bindTo, 0)) {
         logError(QStringLiteral("ClientUDPSocket: Failed to bind: %1").arg(m_socket.errorString()));
         return false;
     }
@@ -66,7 +70,10 @@ bool ClientUDPSocket::create()
 bool ClientUDPSocket::rebind(uint16 port)
 {
     m_socket.close();
-    if (!m_socket.bind(QHostAddress::Any, port)) {   // dual-stack
+    const auto bindTo = BindAddress::listenAddress();   // Any = dual-stack
+    if (!bindTo)
+        return false;
+    if (!m_socket.bind(*bindTo, port)) {
         logError(QStringLiteral("ClientUDPSocket: Failed to rebind to port %1: %2")
                      .arg(port).arg(m_socket.errorString()));
         return false;
@@ -230,6 +237,10 @@ void ClientUDPSocket::flushSendQueue()
     }
 
     for (auto& dg : toSend) {
+        // Bound to one family: the other one has no route from this socket.
+        if (!BindAddress::canReach(dg.destination.address()))
+            continue;
+
         // An IPv6 datagram leaves from the pinned stable address: the receiver keys
         // obfuscation on the IP it observes, which must be the one we advertise.
         qint64 sent = 0;

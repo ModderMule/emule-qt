@@ -300,7 +300,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+567"/>
+        <location filename="../src/gui/app/main.cpp" line="+564"/>
         <source>Download Added</source>
         <translation>다운로드 추가됨</translation>
     </message>
@@ -601,7 +601,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2870"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2825"/>
         <source>Test</source>
         <translation>테스트</translation>
     </message>
@@ -651,7 +651,7 @@ Download it again?</source>
 <context>
     <name>Rating</name>
     <message>
-        <location filename="../src/core/utils/OtherFunctions.cpp" line="+405"/>
+        <location filename="../src/core/utils/OtherFunctions.cpp" line="+483"/>
         <source>Not rated</source>
         <translation>평가 없음</translation>
     </message>
@@ -685,7 +685,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4106"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4116"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -2988,49 +2988,49 @@ Please choose another:</source>
 <context>
     <name>eMule::KadPanel</name>
     <message>
-        <location filename="../src/gui/panels/KadPanel.cpp" line="+115"/>
+        <location filename="../src/gui/panels/KadPanel.cpp" line="+116"/>
         <location line="+12"/>
-        <location line="+189"/>
+        <location line="+192"/>
         <location line="+2"/>
         <location line="+37"/>
-        <location line="+196"/>
+        <location line="+199"/>
         <source>▸ Contacts (0)</source>
         <translation>▸ 연락처 (0)</translation>
     </message>
     <message>
-        <location line="-435"/>
+        <location line="-441"/>
         <location line="+12"/>
-        <location line="+372"/>
+        <location line="+378"/>
         <location line="+97"/>
         <source>▸ Current Searches (0)</source>
         <translation>▸ 현재 검색 (0)</translation>
     </message>
     <message>
-        <location line="-274"/>
-        <location line="+338"/>
+        <location line="-277"/>
+        <location line="+341"/>
         <source>▸ Search Details</source>
         <translation>▸ 검색 상세</translation>
     </message>
     <message>
-        <location line="-255"/>
+        <location line="-258"/>
         <source>Recheck Firewall</source>
         <translation>방화벽 재확인</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+242"/>
+        <location line="+245"/>
         <source>Connect</source>
         <translation>연결</translation>
     </message>
     <message>
-        <location line="-453"/>
-        <location line="+226"/>
-        <location line="+28"/>
+        <location line="-461"/>
+        <location line="+231"/>
+        <location line="+31"/>
         <source>Bootstrap</source>
         <translation>부트스트랩</translation>
     </message>
     <message>
-        <location line="-265"/>
+        <location line="-273"/>
         <source>Downloading...</source>
         <translation>다운로드 중...</translation>
     </message>
@@ -3038,12 +3038,12 @@ Please choose another:</source>
         <location line="+14"/>
         <location line="+5"/>
         <location line="+8"/>
-        <location line="+69"/>
+        <location line="+74"/>
         <source>Kademlia</source>
         <translation>Kademlia</translation>
     </message>
     <message>
-        <location line="-81"/>
+        <location line="-86"/>
         <source>Failed to download nodes.dat: %1</source>
         <translation>nodes.dat 다운로드 실패: %1</translation>
     </message>
@@ -3058,7 +3058,7 @@ Please choose another:</source>
         <translation>nodes.dat 저장 실패: %1</translation>
     </message>
     <message>
-        <location line="+213"/>
+        <location line="+218"/>
         <source>IP Address:</source>
         <translation>IP 주소:</translation>
     </message>
@@ -3073,7 +3073,7 @@ Please choose another:</source>
         <translation>URL에서 Nodes.dat:</translation>
     </message>
     <message>
-        <location line="+140"/>
+        <location line="+143"/>
         <location line="+3"/>
         <source>▸ Contacts (%1)</source>
         <translation>▸ 연락처 (%1)</translation>
@@ -3195,7 +3195,7 @@ Please choose another:</source>
         <translation>새 버전 사용 가능</translation>
     </message>
     <message>
-        <location line="+184"/>
+        <location line="+185"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K: 연결됨 (LowID)</translation>
     </message>
@@ -3282,14 +3282,14 @@ Please choose another:</source>
         <translation>자주 묻는 질문</translation>
     </message>
     <message>
-        <location line="-550"/>
+        <location line="-551"/>
         <location line="+7"/>
-        <location line="+546"/>
+        <location line="+547"/>
         <source>Version Check</source>
         <translation>버전 확인</translation>
     </message>
     <message>
-        <location line="-608"/>
+        <location line="-609"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt 종료</translation>
     </message>
@@ -3346,7 +3346,7 @@ Enable at least one under Options → Connection to connect.</source>
 연결하려면 옵션 → 연결에서 최소한 하나를 활성화하세요.</translation>
     </message>
     <message>
-        <location line="+205"/>
+        <location line="+206"/>
         <source>Connected</source>
         <translation>연결됨</translation>
     </message>
@@ -4108,17 +4108,19 @@ Download it again?</source>
     </message>
     <message>
         <location line="+52"/>
+        <location line="+151"/>
         <source>Connected</source>
         <translation>연결됨</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-149"/>
         <location line="+108"/>
+        <location line="+39"/>
         <source>Connecting</source>
         <translation>연결 중</translation>
     </message>
     <message>
-        <location line="-106"/>
+        <location line="-145"/>
         <location line="+108"/>
         <source>Disconnected</source>
         <translation>연결 해제됨</translation>
@@ -4150,7 +4152,24 @@ Download it again?</source>
         <translation>보통</translation>
     </message>
     <message>
-        <location line="-35"/>
+        <location line="+126"/>
+        <source>Enabled</source>
+        <translation>활성화됨</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>not running</source>
+        <translation>실행 중 아님</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+4"/>
+        <source>%n active session(s)</source>
+        <translation>
+            <numerusform>활성 세션 %n개</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="-167"/>
         <location line="+67"/>
         <location line="+13"/>
         <source>Firewalled</source>
@@ -4171,7 +4190,12 @@ Download it again?</source>
         <translation>미확인</translation>
     </message>
     <message>
-        <location line="+53"/>
+        <location line="+36"/>
+        <source>None</source>
+        <translation>없음</translation>
+    </message>
+    <message>
+        <location line="+41"/>
         <source>Disabled</source>
         <translation>비활성화됨</translation>
     </message>
@@ -4233,36 +4257,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2778"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2730"/>
         <source>Options</source>
         <translation>옵션</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1836"/>
+        <location line="+1788"/>
         <source>OK</source>
         <translation>확인</translation>
     </message>
     <message>
-        <location line="-1835"/>
-        <location line="+1836"/>
+        <location line="-1787"/>
+        <location line="+1788"/>
         <source>Cancel</source>
         <translation>취소</translation>
     </message>
     <message>
-        <location line="-1835"/>
-        <location line="+5391"/>
+        <location line="-1787"/>
+        <location line="+5343"/>
         <source>Apply</source>
         <translation>적용</translation>
     </message>
     <message>
-        <location line="-5390"/>
+        <location line="-5342"/>
         <source>Help</source>
         <translation>도움말</translation>
     </message>
     <message>
         <location line="+252"/>
-        <location line="+1810"/>
+        <location line="+1762"/>
         <location line="+63"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -4271,7 +4295,7 @@ Download it again?</source>
         <translation>IP 필터</translation>
     </message>
     <message>
-        <location line="-1897"/>
+        <location line="-1849"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 필터 다시 로드됨: %1개 항목.</translation>
     </message>
@@ -4302,26 +4326,26 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5288"/>
+        <location line="+5241"/>
         <source>Language</source>
         <translation>언어</translation>
     </message>
     <message>
-        <location line="-5285"/>
+        <location line="-5238"/>
         <source>System Default</source>
         <translation>시스템 기본값</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+643"/>
-        <location line="+293"/>
+        <location line="+645"/>
+        <location line="+243"/>
         <location line="+372"/>
         <location line="+276"/>
         <source>Miscellaneous</source>
         <translation>기타</translation>
     </message>
     <message>
-        <location line="-1581"/>
+        <location line="-1533"/>
         <source>Bring to front on link click</source>
         <translation>링크 클릭 시 앞으로 가져오기</translation>
     </message>
@@ -4407,25 +4431,25 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5214"/>
+        <location line="+5167"/>
         <source>Core</source>
         <translation>코어</translation>
     </message>
     <message>
-        <location line="-5209"/>
+        <location line="-5162"/>
         <source>Address:</source>
         <translation>주소:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1103"/>
+        <location line="+1055"/>
         <location line="+633"/>
         <location line="+410"/>
         <source>Port:</source>
         <translation>포트:</translation>
     </message>
     <message>
-        <location line="-2143"/>
+        <location line="-2095"/>
         <source>authentication token</source>
         <translation>인증 토큰</translation>
     </message>
@@ -4581,8 +4605,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+604"/>
-        <location line="+928"/>
+        <location line="+1484"/>
         <location line="+108"/>
         <location line="+290"/>
         <location line="+1016"/>
@@ -4594,7 +4617,7 @@ Are you sure you want to continue?</source>
         <translation>활성화됨</translation>
     </message>
     <message>
-        <location line="-4434"/>
+        <location line="-4386"/>
         <source>Reset</source>
         <translation>초기화</translation>
     </message>
@@ -4746,12 +4769,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+53"/>
-        <location line="+1313"/>
+        <location line="+1265"/>
         <source>General</source>
         <translation>일반</translation>
     </message>
     <message>
-        <location line="-1310"/>
+        <location line="-1262"/>
         <source>Enable proxy</source>
         <translation>프록시 활성화</translation>
     </message>
@@ -4812,15 +4835,15 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1664"/>
+        <location line="+1616"/>
         <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>이름:</translation>
     </message>
     <message>
-        <location line="-2831"/>
-        <location line="+655"/>
+        <location line="-2783"/>
+        <location line="+607"/>
         <location line="+695"/>
         <location line="+19"/>
         <location line="+319"/>
@@ -4828,7 +4851,7 @@ Are you sure you want to continue?</source>
         <translation>비밀번호:</translation>
     </message>
     <message>
-        <location line="-1654"/>
+        <location line="-1606"/>
         <source>Update</source>
         <translation>업데이트</translation>
     </message>
@@ -4863,7 +4886,7 @@ Are you sure you want to continue?</source>
         <translation>server.met 다운로드 URL을 입력하세요:</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+11"/>
         <source>Update server list when connecting to a server</source>
         <translation>서버 연결 시 서버 목록 업데이트</translation>
     </message>
@@ -4994,34 +5017,30 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+587"/>
+        <location line="+537"/>
         <source>Edit...</source>
         <translation>편집...</translation>
     </message>
     <message>
-        <location line="-583"/>
         <source>Filename Cleanup Rules</source>
-        <translation>파일명 정리 규칙</translation>
+        <translation type="vanished">파일명 정리 규칙</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Define patterns to automatically clean up filenames of new downloads.
 Each rule replaces a regex pattern with a replacement string.</source>
-        <translation>새 다운로드의 파일명을 자동으로 정리하는 패턴을 정의합니다.
+        <translation type="vanished">새 다운로드의 파일명을 자동으로 정리하는 패턴을 정의합니다.
 각 규칙은 정규식 패턴을 대체 문자열로 바꿉니다.</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>Pattern</source>
-        <translation>패턴</translation>
+        <translation type="vanished">패턴</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Replacement</source>
-        <translation>대체</translation>
+        <translation type="vanished">대체</translation>
     </message>
     <message>
-        <location line="+50"/>
+        <location line="-526"/>
         <source>Try to transfer full chunks to all uploads</source>
         <translation>모든 업로드에 전체 청크 전송 시도</translation>
     </message>
@@ -5579,7 +5598,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>업로드 슬롯(오버헤드 없음)</translation>
     </message>
     <message>
-        <location line="-1460"/>
+        <location line="-1412"/>
         <source>Country flags (IP2Country)</source>
         <translation>국기 (IP2Country)</translation>
     </message>
@@ -5643,7 +5662,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
 그러면 모든 Usenet 연결이 프록시를 지나가므로 프록시 속도가 다운로드 속도를 좌우하며, 많은 HTTP 프록시는 443 포트로의 연결만 허용합니다.</translation>
     </message>
     <message>
-        <location line="+1133"/>
+        <location line="+1085"/>
         <source>Download Usenet</source>
         <translation>Usenet 다운로드</translation>
     </message>
@@ -7184,7 +7203,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>대기열 크기: %1</translation>
     </message>
     <message>
-        <location line="+593"/>
+        <location line="+594"/>
         <source>Proxy settings will only apply to new connections.
 Restart eMule for all connections to use the new proxy settings.
 
@@ -7195,7 +7214,7 @@ News server connections switch over immediately.</source>
 뉴스 서버 연결은 즉시 전환됩니다.</translation>
     </message>
     <message>
-        <location line="+870"/>
+        <location line="+874"/>
         <source>File types</source>
         <translation>파일 유형</translation>
     </message>
@@ -7240,17 +7259,32 @@ News server connections switch over immediately.</source>
         <translation>마지막 업데이트 실패: %1</translation>
     </message>
     <message>
-        <location line="-5825"/>
-        <location line="+1284"/>
+        <location line="+9"/>
+        <source>Filename Cleanup</source>
+        <translation>파일 이름 정리</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Text to remove from the names of new downloads. Case is ignored.</source>
+        <translation>새 다운로드의 이름에서 제거할 텍스트입니다. 대소문자는 구분하지 않습니다.</translation>
+    </message>
+    <message>
+        <location line="+25"/>
+        <source>Reset to Default</source>
+        <translation>기본값으로 재설정</translation>
+    </message>
+    <message>
+        <location line="-4583"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1327"/>
         <location line="+281"/>
+        <location line="+1800"/>
         <source>Remove</source>
         <translation>제거</translation>
     </message>
     <message>
-        <location line="-3854"/>
+        <location line="-5654"/>
         <source>New eMule Qt version detected</source>
         <translation>새 eMule Qt 버전이 감지되었습니다</translation>
     </message>
@@ -7444,16 +7478,16 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>새 일정</translation>
     </message>
     <message>
-        <location line="-3880"/>
-        <location line="+1287"/>
+        <location line="-2593"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1581"/>
+        <location line="+1822"/>
         <source>Add</source>
         <translation>추가</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="-1814"/>
         <source>Action Value</source>
         <translation>동작 값</translation>
     </message>
@@ -7475,7 +7509,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>설정 페이지 %1은(는) 아직 구현되지 않았습니다.</translation>
     </message>
     <message>
-        <location line="+179"/>
+        <location line="+180"/>
         <source>Proxy</source>
         <translation>프록시</translation>
     </message>
@@ -7613,14 +7647,14 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+244"/>
-        <location line="+711"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+247"/>
+        <location line="+713"/>
         <location line="+363"/>
         <source>Download</source>
         <translation>다운로드</translation>
     </message>
     <message>
-        <location line="-1054"/>
+        <location line="-1056"/>
         <source>Close All Searches</source>
         <translation>모든 검색 닫기</translation>
     </message>
@@ -7838,7 +7872,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>다운로드(&amp;D)</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+10"/>
         <source>Download &amp;To</source>
         <translation>다음 위치로 다운로드(&amp;T)</translation>
     </message>
@@ -7848,7 +7882,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>이름 복사(&amp;N)</translation>
     </message>
     <message>
-        <location line="+65"/>
+        <location line="+66"/>
         <source>Download NZB File...</source>
         <translation>NZB 파일 다운로드...</translation>
     </message>
@@ -7889,12 +7923,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+48"/>
-        <location line="+794"/>
+        <location line="+755"/>
         <source>Preview</source>
         <translation>미리보기</translation>
     </message>
     <message>
-        <location line="-568"/>
+        <location line="-529"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -7903,7 +7937,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 %1</translation>
     </message>
     <message>
-        <location line="+815"/>
+        <location line="+776"/>
         <source>Asking servers: %1 / %2</source>
         <translation>서버 조회 중: %1 / %2</translation>
     </message>
@@ -7913,7 +7947,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>전체</translation>
     </message>
     <message>
-        <location line="-1128"/>
+        <location line="-1089"/>
         <location line="+14"/>
         <source>Mark as Spam</source>
         <translation>스팸으로 표시</translation>
@@ -7949,7 +7983,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>웹 서비스</translation>
     </message>
     <message>
-        <location line="+773"/>
+        <location line="+734"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>미리보기를 사용할 수 없습니다 — 웹 서버가 실행 중이 아니거나 스트림 토큰을 받지 못했습니다.</translation>
     </message>
@@ -8134,7 +8168,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+239"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+243"/>
         <source>Disconnect</source>
         <translation>연결 해제</translation>
     </message>
@@ -8152,7 +8186,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>연결</translation>
     </message>
     <message>
-        <location line="-468"/>
+        <location line="-473"/>
         <source>Invalid URL: %1</source>
         <translation>잘못된 URL: %1</translation>
     </message>
@@ -8182,7 +8216,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>server.met을 다운로드하고 &quot;%1&quot;의 압축을 풀었습니다(%2바이트). 분석 중...</translation>
     </message>
     <message>
-        <location line="+569"/>
+        <location line="+579"/>
         <location line="+2"/>
         <location line="+24"/>
         <location line="+39"/>
@@ -8280,7 +8314,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>▸ 서버 (%1)</translation>
     </message>
     <message>
-        <location line="-601"/>
+        <location line="-606"/>
         <source>Connect To</source>
         <translation>연결 대상</translation>
     </message>
@@ -8296,12 +8330,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+490"/>
+        <location line="+495"/>
         <source>Normal</source>
         <translation>보통</translation>
     </message>
     <message>
-        <location line="-489"/>
+        <location line="-494"/>
         <source>High</source>
         <translation>높음</translation>
     </message>
@@ -8377,12 +8411,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+9"/>
-        <location line="+125"/>
+        <location line="+130"/>
         <source>Name:</source>
         <translation>이름:</translation>
     </message>
     <message>
-        <location line="-119"/>
+        <location line="-124"/>
         <source>Add to list</source>
         <translation>목록에 추가</translation>
     </message>
@@ -8397,7 +8431,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>URL에서 server.met 업데이트:</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+13"/>
         <source>Update</source>
         <translation>업데이트</translation>
     </message>
@@ -8575,17 +8609,17 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1304"/>
+        <location line="+1261"/>
         <source>Open Folder</source>
         <translation>폴더 열기</translation>
     </message>
     <message>
-        <location line="-1292"/>
+        <location line="-1249"/>
         <source>Rename...</source>
         <translation>이름 바꾸기...</translation>
     </message>
     <message>
-        <location line="+1627"/>
+        <location line="+1584"/>
         <source>Rename File</source>
         <translation>파일 이름 변경</translation>
     </message>
@@ -8595,7 +8629,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>새 파일 이름:</translation>
     </message>
     <message>
-        <location line="-1619"/>
+        <location line="-1576"/>
         <source>Delete From Disk</source>
         <translation>디스크에서 삭제</translation>
     </message>
@@ -8823,7 +8857,7 @@ The file will remain on disk.</source>
         <translation>해당 파일의 공유를 해제할 수 없습니다</translation>
     </message>
     <message>
-        <location line="+518"/>
+        <location line="+475"/>
         <source>Share Directory</source>
         <translation>디렉터리 공유</translation>
     </message>
@@ -8848,7 +8882,7 @@ The file will remain on disk.</source>
         <translation>파일 열기를 사용할 수 없습니다 — 웹 서버가 실행 중이 아니거나 스트림 토큰을 받지 못했습니다.</translation>
     </message>
     <message>
-        <location line="-868"/>
+        <location line="-825"/>
         <source>Content</source>
         <translation>콘텐츠</translation>
     </message>

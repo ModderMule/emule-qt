@@ -442,6 +442,16 @@ uint16 WebServer::port() const
     return 0;
 }
 
+bool WebServer::isHttps() const
+{
+    return isRunning() && qobject_cast<QSslServer*>(m_tcpServer) != nullptr;
+}
+
+int WebServer::sessionCount() const
+{
+    return m_sessionManager ? m_sessionManager->activeCount() : 0;
+}
+
 // ---------------------------------------------------------------------------
 // Dependency injection
 // ---------------------------------------------------------------------------

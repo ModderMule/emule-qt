@@ -4,6 +4,7 @@
 
 #include "search/SearchList.h"
 #include "client/UpDownClient.h"
+#include "crypto/AICHData.h"
 #include "protocol/Tag.h"
 #include "utils/SafeFile.h"
 #include "utils/Log.h"
@@ -145,9 +146,12 @@ void SearchList::addKadKeywordResult(uint32 searchID, const uint8* fileHash,
         m_foundFilesCount[searchID] = 0;
         m_foundSourcesCount[searchID] = 0;
     }
+    entry->kad = true;
 
     // Build a SearchFile from the Kad result data
     auto* file = new SearchFile();
+    // Before the counts: Kad takes the max of them, eD2K the sum
+    file->setKadResult(true);
     file->setFileHash(fileHash);
     if (!name.isEmpty())
         file->setFileName(name, true);
@@ -160,8 +164,25 @@ void SearchList::addKadKeywordResult(uint32 searchID, const uint8* fileHash,
     // Attach the imported Kad media/format metadata so the result carries the
     // same bitrate/length/codec/artist/album tags as an ED2K hit — the IPC
     // serializer already reads these from the file's tag list.
-    for (const auto& tag : metaTags)
-        file->addTagUnique(tag);
+    // Publish info and the AICH votes are properties of the result, never tags: a tag
+    // would travel into the download and get published (MFC Search.cpp:1112-1114).
+    QByteArray aichVotes;
+    for (const auto& tag : metaTags) {
+        // A Kad tag names itself by one-byte string or by id, depending on the reader
+        const QByteArray key = tag.name().isEmpty() && tag.nameId() != 0
+            ? QByteArray(1, static_cast<char>(tag.nameId())) : tag.name();
+        if (key == QByteArrayLiteral(TAG_PUBLISHINFO)) {
+            if (tag.isInt())
+                file->setKadPublishInfo(tag.intValue());
+        } else if (key == QByteArrayLiteral(TAG_KADAICHHASHRESULT)) {
+            if (tag.isBsob())
+                aichVotes = tag.blobValue();
+        } else {
+            file->addTagUnique(tag);
+        }
+    }
+    if (AICHHash aichHash; acceptedKadAICHHash(aichVotes, file->kadPublishInfo(), aichHash))
+        file->fileIdentifier().setAICHHash(aichHash);
 
     addToList(file, false, 0);
     emit tabHeaderUpdated(searchID);
@@ -356,6 +377,15 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
 
     if (parent) {
         // --- Found existing parent with same hash ---
+
+        // A file is Kad-origin only while every answer for it says so. One server that
+        // has the file itself makes it a plain server result, in either arrival order.
+        if (!parent->isKadOrigin() || !fileOwner->isKadOrigin()) {
+            clearKadOrigin(fileOwner.get());
+            clearKadOrigin(parent);
+            for (auto* child : parent->listChildren())
+                clearKadOrigin(child);
+        }
 
         // If parent has no children yet, create first child as copy of parent
         if (parent->listChildCount() == 0) {
@@ -773,7 +803,7 @@ void SearchList::storeSearches(const QString& configDir) const
         return;
 
     file.writeUInt8(MET_HEADER_I64TAGS);
-    file.writeUInt8(1); // version
+    file.writeUInt8(2); // version; 2 adds the per-search Kad byte
 
     // Count non-empty search entries
     uint32 count = 0;
@@ -789,6 +819,7 @@ void SearchList::storeSearches(const QString& configDir) const
 
         // Write search params placeholder (we store searchID + file count)
         file.writeUInt32(entry.searchID);
+        file.writeUInt8(entry.kad ? 1 : 0);
 
         // Count top-level files (non-children)
         uint32 fileCount = 0;
@@ -818,19 +849,22 @@ void SearchList::loadSearches(const QString& configDir)
         return;
 
     const uint8 version = file.readUInt8();
-    if (version != 1)
+    if (version != 1 && version != 2)
         return;
 
     const uint32 searchCount = file.readUInt32();
     for (uint32 s = 0; s < searchCount; ++s) {
         const uint32 searchID = file.readUInt32();
+        // v1 had no search type: its Kad results come back as eD2K ones
+        const bool kad = version >= 2 && file.readUInt8() != 0;
         const uint32 fileCount = file.readUInt32();
 
         SearchListEntry entry;
         entry.searchID = searchID;
+        entry.kad = kad;
 
         for (uint32 i = 0; i < fileCount; ++i) {
-            auto searchFile = std::make_unique<SearchFile>(file, true);
+            auto searchFile = std::make_unique<SearchFile>(file, true, 0, 0, QString(), kad);
             searchFile->setSearchID(searchID);
             entry.files.push_back(std::move(searchFile));
         }
@@ -1004,6 +1038,53 @@ QString SearchList::computeNameWithoutKeywords(const QString& name, const QStrin
     result = result.simplified().toLower();
 
     return result;
+}
+
+// ---------------------------------------------------------------------------
+// clearKadOrigin — private; turn a Kad-origin row into a plain server result
+// ---------------------------------------------------------------------------
+
+void SearchList::clearKadOrigin(SearchFile* file)
+{
+    if (!file->isKadOrigin())
+        return;
+    file->setKadOrigin(false);
+    // The tag too, or a stored search would restore the flag from it
+    file->deleteTag(FT_META_NETWORK);
+}
+
+// ---------------------------------------------------------------------------
+// acceptedKadAICHHash — private; the one AICH hash a Kad result may carry
+// ---------------------------------------------------------------------------
+
+bool SearchList::acceptedKadAICHHash(const QByteArray& votes, uint32 publishInfo, AICHHash& out)
+{
+    // TAG_KADAICHHASHRESULT: count, then (popularity, hash[20]) each — MFC Search.cpp:1129-1143.
+    // A short blob is a corrupt one: nothing from it is used.
+    if (votes.isEmpty())
+        return false;
+    const auto* p = reinterpret_cast<const uint8*>(votes.constData());
+    const qsizetype entrySize = 1 + static_cast<qsizetype>(kAICHHashSize);
+    const uint8 count = p[0];
+    if (votes.size() < 1 + count * entrySize)
+        return false;
+
+    uint32 found = 0;
+    uint8 popularity = 0;
+    for (uint8 i = 0; i < count; ++i) {
+        const uint8* e = p + 1 + i * entrySize;
+        if (e[0] == 0)
+            continue;
+        ++found;
+        popularity = e[0];
+        out = AICHHash(e + 1);
+    }
+
+    // Exactly one hash, reported by more than a third of the publishers, is as good as
+    // a link's. Several, or a rare one, are ignored: a wrong AICH hash breaks recovery,
+    // and MD4 alone still downloads the file (MFC SearchList.cpp:784-803).
+    const uint8 publishers = static_cast<uint8>((publishInfo >> 16) & 0xFF);
+    return found == 1 && publishers > 0 && publishers / popularity <= 3;
 }
 
 } // namespace eMule

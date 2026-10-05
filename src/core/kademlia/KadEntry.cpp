@@ -426,55 +426,88 @@ float KeyEntry::getTrustValue()
     return m_trustValue;
 }
 
+// File layout, as stock writes it (srchybrid/kademlia/kademlia/Entry.cpp:536-577):
+//   <AICH count 2><{AICH hash 20}> <name count 4><{<name><popularity 4>}>
+//   <publisher count 4><{<IP 4><last publish 4><AICH idx 2>}>
 void KeyEntry::writePublishTrackingDataToFile(FileDataIO& data)
 {
-    if (!m_publishingIPs || m_publishingIPs->empty()) {
+    // Only hashes somebody still reports are written; their indices close up.
+    std::vector<uint16> newIndex(m_aichHashes.size(), kNoAICHHash);
+    uint16 next = 0;
+    for (size_t i = 0; i < m_aichHashes.size(); ++i) {
+        if (i < m_aichHashPopularity.size() && m_aichHashPopularity[i] > 0)
+            newIndex[i] = next++;
+    }
+    data.writeUInt16(next);
+    for (size_t i = 0; i < m_aichHashes.size(); ++i) {
+        if (newIndex[i] != kNoAICHHash) {
+            QByteArray hash = m_aichHashes[i];
+            hash.resize(20, '\0');
+            data.write(hash.constData(), 20);
+        }
+    }
+
+    data.writeUInt32(static_cast<uint32>(m_fileNames.size()));
+    for (const auto& name : m_fileNames) {
+        io::writeStringUTF8(data, name.fileName);
+        data.writeUInt32(name.popularityIndex);
+    }
+
+    if (!m_publishingIPs) {
         data.writeUInt32(0);
         return;
     }
-
     data.writeUInt32(static_cast<uint32>(m_publishingIPs->size()));
     for (const auto& pip : *m_publishingIPs) {
         data.writeUInt32(pip.ip.toUint32());
         data.writeUInt32(static_cast<uint32>(pip.lastPublish));
-        // AICH hash index (v9+)
-        data.writeUInt16(pip.aichHashIdx);
-    }
-
-    // Write AICH hashes
-    data.writeUInt8(static_cast<uint8>(m_aichHashes.size()));
-    for (const auto& hash : m_aichHashes) {
-        data.write(hash.constData(), 20);
+        data.writeUInt16(pip.aichHashIdx < newIndex.size() ? newIndex[pip.aichHashIdx]
+                                                           : kNoAICHHash);
     }
 }
 
 void KeyEntry::readPublishTrackingDataFromFile(FileDataIO& data, bool includesAICH)
 {
-    uint32 count = data.readUInt32();
-    if (count == 0)
-        return;
+    if (includesAICH) {
+        for (uint32 i = data.readUInt16(); i > 0; --i) {
+            QByteArray hash(20, Qt::Uninitialized);
+            data.read(hash.data(), 20);
+            m_aichHashes.push_back(std::move(hash));
+            m_aichHashPopularity.push_back(0);
+        }
+    }
 
+    const uint32 nameCount = data.readUInt32();
+    for (uint32 i = 0; i < nameCount; ++i) {
+        FileNameEntry name;
+        name.fileName = io::readStringUTF8(data);
+        name.popularityIndex = data.readUInt32();
+        m_fileNames.push_back(std::move(name));
+    }
+
+    // Always created: its existence is what marks the entry as already tracked, so
+    // the merge on insert leaves the loaded history alone.
     if (!m_publishingIPs)
         m_publishingIPs = new std::list<PublishingIP>();
 
-    for (uint32 i = 0; i < count; ++i) {
+    const uint32 ipCount = data.readUInt32();
+    for (uint32 i = 0; i < ipCount; ++i) {
         PublishingIP pip;
         pip.ip = Address::fromHostOrder(data.readUInt32());
         pip.lastPublish = static_cast<time_t>(data.readUInt32());
-        if (includesAICH)
+        if (includesAICH) {
             pip.aichHashIdx = data.readUInt16();
+            if (pip.aichHashIdx != kNoAICHHash) {
+                if (pip.aichHashIdx >= m_aichHashes.size())
+                    pip.aichHashIdx = kNoAICHHash;   // corrupt index
+                else if (m_aichHashPopularity[pip.aichHashIdx] < 255)
+                    ++m_aichHashPopularity[pip.aichHashIdx];
+            }
+        }
         m_publishingIPs->push_back(pip);
         adjustGlobalPublishTracking(pip.ip, true);
     }
-
-    if (includesAICH) {
-        uint8 aichCount = data.readUInt8();
-        m_aichHashes.resize(aichCount);
-        for (uint8 i = 0; i < aichCount; ++i) {
-            m_aichHashes[i].resize(20);
-            data.read(m_aichHashes[i].data(), 20);
-        }
-    }
+    recalculateTrustValue();
 }
 
 void KeyEntry::dirtyDeletePublishData()

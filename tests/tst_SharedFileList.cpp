@@ -4,7 +4,9 @@
 #include "TestHelpers.h"
 #include "files/KnownFile.h"
 #include "files/KnownFileList.h"
+#include "app/AppContext.h"
 #include "files/SharedFileList.h"
+#include "client/UpDownClient.h"
 
 #include "prefs/Preferences.h"
 #include "server/Server.h"
@@ -46,6 +48,9 @@ private slots:
     void excludeFile_refusedForCategoryIncomingDir();
     void sharedFilesConfig_roundTrips();
     void rescan_addsKeywordsThroughTheFrontDoor();
+    void reload_dropsKeywordsOfFilesNoLongerShared();
+    void knownListReplace_unhooksTheSharedOldObject();
+    void hashFinished_duplicateContentKeepsTheSharedFile();
 
     // OP_OFFERFILES selection (MFC SendListToServer)
     void offer_capIsTheServersSoftFilesLimit();
@@ -504,6 +509,141 @@ void tst_SharedFileList::rescan_addsKeywordsThroughTheFrontDoor()
     // map entry as the direct write did.
     QVERIFY2(!shared.safeAddKFile(known), "a duplicate hash must be rejected");
     QCOMPARE(shared.getCount(), 1);
+}
+
+// MFC Reload() (srchybrid/SharedFileList.cpp:784-796). The map is emptied wholesale, so
+// without this the keyword refs of everything that was shared stay behind for good.
+void tst_SharedFileList::reload_dropsKeywordsOfFilesNoLongerShared()
+{
+    eMule::testing::TempDir tmp;
+    const QString shareDir = tmp.filePath(QStringLiteral("share"));
+    QVERIFY(!writeFile(shareDir, QStringLiteral("staying.bin"), QByteArray(512, 's')).isEmpty());
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({shareDir});
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+
+    auto makeKnown = [&](const QString& name, uint8 pattern, bool onDisk) {
+        auto* known = new KnownFile();
+        uint8 hash[16];
+        std::memset(hash, pattern, 16);
+        known->setFileHash(hash);
+        known->setFileName(name);
+        if (onDisk) {
+            const QFileInfo fi(QDir(shareDir).filePath(name));
+            known->setFileSize(static_cast<uint64>(fi.size()));
+            known->setUtcFileDate(static_cast<time_t>(fi.lastModified().toSecsSinceEpoch()));
+            known->setFilePath(fi.absoluteFilePath());
+            known->setPath(fi.absolutePath());
+        } else {
+            known->setFileSize(1000);
+        }
+        knownFiles.safeAddKFile(known);
+        return known;
+    };
+
+    makeKnown(QStringLiteral("staying.bin"), 0xC1, true);
+    KnownFile* gone = makeKnown(QStringLiteral("vanished.bin"), 0xC2, false);
+
+    shared.reload();
+    QVERIFY(shared.safeAddKFile(gone));   // shared by hand, in no shared directory
+    QCOMPARE(shared.getCount(), 2);
+    const int both = shared.m_keywords.keywordCount();
+    QVERIFY(both >= 2);
+
+    shared.reload();                      // the rescan does not find "vanished"
+    QCOMPARE(shared.getCount(), 1);
+    QVERIFY2(shared.m_keywords.keywordCount() < both,
+             "keywords of a file that is no longer shared must be purged");
+
+    PublishKeyword* kw = nullptr;
+    shared.m_keywords.resetNextKeyword();
+    while ((kw = shared.m_keywords.getNextKeyword()) != nullptr) {
+        for (const KnownFile* f : kw->fileRefs())
+            QVERIFY2(f != gone, "no keyword may still reference the dropped file");
+    }
+}
+
+// MFC SafeAddKFile (srchybrid/KnownFileList.cpp:276-336). Replacing a known entry deletes
+// the old object, so it has to leave the shared list, its keywords and its uploaders first.
+void tst_SharedFileList::knownListReplace_unhooksTheSharedOldObject()
+{
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    theApp.sharedFileList = &shared;
+
+    uint8 hash[16];
+    std::memset(hash, 0xD1, 16);
+    auto make = [&](const QString& name) {
+        auto* f = new KnownFile();
+        f->setFileHash(hash);
+        f->setFileName(name);
+        f->setFileSize(4096);
+        return f;
+    };
+
+    KnownFile* older = make(QStringLiteral("older name.bin"));
+    older->statistic.setAllTimeTransferred(700);
+    QVERIFY(knownFiles.safeAddKFile(older));
+    QVERIFY(shared.safeAddKFile(older));
+
+    UpDownClient client;
+    client.setUploadFileID(older);
+
+    KnownFile* newer = make(QStringLiteral("newer name.bin"));
+    newer->statistic.setAllTimeTransferred(50);
+    QVERIFY(knownFiles.safeAddKFile(newer));   // deletes `older`
+
+    QCOMPARE(shared.getFileByID(hash), newer);
+    QCOMPARE(shared.getCount(), 1);
+    QVERIFY2(client.uploadFile() == nullptr, "an uploader must not keep the deleted file");
+    QCOMPARE(newer->statistic.allTimeTransferred(), uint64{750});
+    QCOMPARE(knownFiles.totalTransferred, uint64{750});
+
+    shared.m_keywords.resetNextKeyword();
+    while (PublishKeyword* kw = shared.m_keywords.getNextKeyword()) {
+        for (const KnownFile* f : kw->fileRefs())
+            QCOMPARE(f, newer);
+    }
+
+    // Adding the same object again is a no-op, not a self-delete.
+    QVERIFY(knownFiles.safeAddKFile(newer));
+    QCOMPARE(shared.getFileByID(hash), newer);
+
+    theApp.sharedFileList = nullptr;
+}
+
+// MFC FileHashingFinished (srchybrid/SharedFileList.cpp:732-765): the same content at a
+// second path is dropped before the known list ever sees it.
+void tst_SharedFileList::hashFinished_duplicateContentKeepsTheSharedFile()
+{
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    theApp.sharedFileList = &shared;
+
+    uint8 hash[16];
+    std::memset(hash, 0xD2, 16);
+    auto* first = new KnownFile();
+    first->setFileHash(hash);
+    first->setFileName(QStringLiteral("first.bin"));
+    first->setFileSize(4096);
+    QVERIFY(knownFiles.safeAddKFile(first));
+    QVERIFY(shared.safeAddKFile(first));
+
+    auto* second = new KnownFile();
+    second->setFileHash(hash);
+    second->setFileName(QStringLiteral("second.bin"));
+    second->setFileSize(4096);
+    shared.onHashingFinished(second, shared.m_generation);
+
+    QCOMPARE(shared.getFileByID(hash), first);
+    QCOMPARE(knownFiles.findKnownFileByID(hash), first);
+    QCOMPARE(first->fileName(), QStringLiteral("first.bin"));   // still alive and readable
+
+    theApp.sharedFileList = nullptr;
 }
 
 // ---------------------------------------------------------------------------

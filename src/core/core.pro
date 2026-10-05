@@ -129,6 +129,7 @@ SOURCES += \
     media/MediaInfo.cpp \
     media/PreviewApps.cpp \
     media/PreviewThread.cpp \
+    net/BindAddress.cpp \
     net/ClientReqSocket.cpp \
     net/ClientUDPSocket.cpp \
     net/EMSocket.cpp \
@@ -267,6 +268,7 @@ HEADERS += \
     media/MediaInfo.h \
     media/PreviewApps.h \
     media/PreviewThread.h \
+    net/BindAddress.h \
     net/ClientReqSocket.h \
     net/ClientUDPSocket.h \
     net/EMSocket.h \

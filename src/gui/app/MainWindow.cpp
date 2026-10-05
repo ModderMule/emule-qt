@@ -346,6 +346,7 @@ void MainWindow::showOptionsDialog(int page)
 
     m_serverPanel->logWidget()->setIpcTabVisible(thePrefs.enableIpcLog());
     m_serverPanel->logWidget()->setUsenetTabVisible(thePrefs.showUsenetLog());
+    m_serverPanel->refreshUpdateUrl();   // Options "List..." edits the same URL
 
     // The daemon reacts to logToDiskCore over IPC; logToDiskGui is ours to act on.
     LogWidget::applyLogFileSettings();

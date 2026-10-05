@@ -5,6 +5,7 @@
 #include "app/AppContext.h"
 #include "client/UpDownClient.h"
 #include "kademlia/Kademlia.h"
+#include "net/BindAddress.h"
 #include "prefs/Preferences.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
@@ -30,6 +31,12 @@ uint32 AppContext::getID() const
     if (serverConnect && serverConnect->isConnected())
         return serverConnect->clientID();
     return 0;
+}
+
+bool AppContext::commitFilesNow() const
+{
+    const int mode = thePrefs.commitFiles();
+    return mode >= 2 || (mode >= 1 && closing);
 }
 
 bool AppContext::isConnected() const
@@ -207,6 +214,10 @@ namespace {
 
 Address AppContext::publicIPv6() const
 {
+    // Bound to an IPv4 address: no socket of ours speaks IPv6, so advertise none.
+    if (BindAddress::isIPv4Only())
+        return Address{};
+
     // Descending confidence. The server sees our actual egress, so it outranks even the
     // operator's pin; the pin in turn outranks what peers claim, which outranks a guess
     // made purely from the interface list.

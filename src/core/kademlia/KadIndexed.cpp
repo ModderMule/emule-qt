@@ -11,14 +11,40 @@
 #include "kademlia/KadUDPListener.h"
 #include "utils/SafeFile.h"
 
+#include "app/AppContext.h"
+
 #include <QDir>
 #include <QFile>
+#include <QThread>
 
 
 namespace eMule::kad {
 
 namespace {
 constexpr uint32 kCleanInterval = 60 * 30; // 30 minutes
+
+// File versions stock writes (srchybrid/kademlia/kademlia/Indexed.cpp:146-235) and
+// the highest ones its reader accepts.
+constexpr uint32 kLoadFileVersion = 1;
+constexpr uint32 kSourceFileVersion = 2;
+constexpr uint32 kKeyFileVersion = 4;
+
+constexpr auto kKeyFileName = "/key_index.dat";
+constexpr auto kSourceFileName = "/src_index.dat";
+constexpr auto kLoadFileName = "/load_index.dat";
+
+// The address tags stay in the tag list and are mirrored into the entry's fields.
+void mirrorAddressTag(Entry& entry, const Tag& tag)
+{
+    if (!tag.isInt())
+        return;
+    switch (tag.nameId()) {
+    case FT_SOURCEIP:    entry.m_address = Address::fromHostOrder(static_cast<uint32>(tag.intValue())); break;
+    case FT_SOURCEPORT:  entry.m_tcpPort = static_cast<uint16>(tag.intValue()); break;
+    case FT_SOURCEUPORT: entry.m_udpPort = static_cast<uint16>(tag.intValue()); break;
+    default: break;
+    }
+}
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -31,8 +57,31 @@ Indexed::Indexed(QObject* parent)
     m_nextClean = time(nullptr) + kCleanInterval;
 }
 
+Indexed::Indexed(const QString& configDir, QObject* parent)
+    : QObject(parent)
+    , m_configDir(configDir)
+{
+    m_nextClean = time(nullptr) + kCleanInterval;
+
+    m_dataLoaded.store(false, std::memory_order_release);
+    m_loader = QThread::create([this] { loadFiles(); });
+    m_loader->setObjectName(QStringLiteral("KadIndexLoad"));
+    m_loader->start(QThread::LowPriority);
+}
+
 Indexed::~Indexed()
 {
+    if (m_loader) {
+        // Still loading: what is in memory is partial, so the files stay as they are.
+        const bool complete = isLoaded();
+        m_abortLoading.store(true, std::memory_order_relaxed);
+        m_loader->wait();
+        delete m_loader;
+        m_loader = nullptr;
+        if (complete)
+            writeFiles();
+    }
+
     destroyIndex(m_keywords);
     destroyIndex(m_sources);
     destroyIndex(m_notes);
@@ -40,13 +89,25 @@ Indexed::~Indexed()
     // Clean up loads
     for (auto& [key, load] : m_loads)
         delete load;
+
+    // MFC resets it with the index (Indexed.cpp:251). Only for the real one: an
+    // in-memory index must not wipe the tracking of entries it never owned.
+    if (!m_configDir.isEmpty())
+        KeyEntry::resetGlobalTrackingMap();
 }
 
 bool Indexed::addKeyword(const UInt128& keyID, const UInt128& sourceID,
                           KeyEntry* entry, uint8& outLoad)
 {
+    if (!isLoaded())
+        return false;
     QMutexLocker lock(&m_mutex);
+    return addKeywordLocked(keyID, sourceID, entry, outLoad, false);
+}
 
+bool Indexed::addKeywordLocked(const UInt128& keyID, const UInt128& sourceID,
+                               KeyEntry* entry, uint8& outLoad, bool fromFile)
+{
     if (!entry)
         return false;
 
@@ -58,7 +119,8 @@ bool Indexed::addKeyword(const UInt128& keyID, const UInt128& sourceID,
         return false;
     }
 
-    entry->m_lifetime = time(nullptr) + KADEMLIAREPUBLISHTIMEK;
+    if (!fromFile)
+        entry->m_lifetime = time(nullptr) + KADEMLIAREPUBLISHTIMEK;
 
     // Reject malformed publishes rather than indexing something unservable.
     // MFC Indexed.cpp:361-362.
@@ -175,6 +237,8 @@ const Indexed::SourcePolicy Indexed::kNotePolicy{
 bool Indexed::addSources(const UInt128& keyID, const UInt128& sourceID,
                           Entry* entry, uint8& outLoad)
 {
+    if (!isLoaded())
+        return false;
     QMutexLocker lock(&m_mutex);
     return addSourceEntry(m_sources, m_totalIndexSource, KADEMLIAMAXSOURCEPERFILE,
                           KADEMLIAREPUBLISHTIMES, kSourcePolicy,
@@ -184,6 +248,8 @@ bool Indexed::addSources(const UInt128& keyID, const UInt128& sourceID,
 bool Indexed::addNotes(const UInt128& keyID, const UInt128& sourceID,
                         Entry* entry, uint8& outLoad)
 {
+    if (!isLoaded())
+        return false;
     QMutexLocker lock(&m_mutex);
     return addSourceEntry(m_notes, m_totalIndexNotes, KADEMLIAMAXNOTESPERFILE,
                           KADEMLIAREPUBLISHTIMEN, kNotePolicy,
@@ -192,14 +258,22 @@ bool Indexed::addNotes(const UInt128& keyID, const UInt128& sourceID,
 
 bool Indexed::addLoad(const UInt128& keyID, time_t loadTime)
 {
+    if (!isLoaded())
+        return false;
     QMutexLocker lock(&m_mutex);
+    return addLoadLocked(keyID, loadTime);
+}
+
+// MFC AddLoad (Indexed.cpp:583-602): `loadTime` is when the overload mark expires.
+bool Indexed::addLoadLocked(const UInt128& keyID, time_t loadTime)
+{
+    // Needed when the client restarts: a mark from the file may be long over.
+    if (time(nullptr) > loadTime)
+        return false;
 
     HashKeyOwn hashKey(keyID.getData());
-    auto it = m_loads.find(hashKey);
-    if (it != m_loads.end()) {
-        it->second->time = loadTime;
-        return true;
-    }
+    if (m_loads.contains(hashKey))
+        return false;
 
     auto* load = new Load();
     load->keyID = keyID;
@@ -211,6 +285,9 @@ bool Indexed::addLoad(const UInt128& keyID, time_t loadTime)
 
 uint32 Indexed::getFileKeyCount() const
 {
+    // The loader is filling the map; MFC answers 0 until it is done.
+    if (!isLoaded())
+        return 0;
     return static_cast<uint32>(m_keywords.size());
 }
 
@@ -218,6 +295,8 @@ void Indexed::sendValidKeywordResult(const UInt128& keyID, const SearchTerm* sea
                                       uint32 ip, uint16 port, bool /*oldClient*/,
                                       uint16 startPosition, const KadUDPKey& senderKey)
 {
+    if (!isLoaded())
+        return;
     QMutexLocker lock(&m_mutex);
 
     auto* udpListener = Kademlia::getInstanceUDPListener();
@@ -285,6 +364,8 @@ void Indexed::sendValidSourceResult(const UInt128& keyID, uint32 ip, uint16 port
                                      uint16 startPosition, uint64 fileSize,
                                      const KadUDPKey& senderKey)
 {
+    if (!isLoaded())
+        return;
     QMutexLocker lock(&m_mutex);
 
     auto* udpListener = Kademlia::getInstanceUDPListener();
@@ -336,6 +417,8 @@ void Indexed::sendValidSourceResult(const UInt128& keyID, uint32 ip, uint16 port
 void Indexed::sendValidNoteResult(const UInt128& keyID, uint32 ip, uint16 port,
                                    uint64 fileSize, const KadUDPKey& senderKey)
 {
+    if (!isLoaded())
+        return;
     QMutexLocker lock(&m_mutex);
 
     auto* udpListener = Kademlia::getInstanceUDPListener();
@@ -380,15 +463,19 @@ void Indexed::sendValidNoteResult(const UInt128& keyID, uint32 ip, uint16 port,
 
 bool Indexed::sendStoreRequest(const UInt128& keyID)
 {
+    // MFC SendStoreRequest (Indexed.cpp:841-859).
+    if (!isLoaded())
+        return true;   // not "overloaded" just because we are still loading
     QMutexLocker lock(&m_mutex);
 
     HashKeyOwn hashKey(keyID.getData());
     auto it = m_loads.find(hashKey);
     if (it != m_loads.end()) {
-        // Check if enough time has passed since last store
-        time_t now = time(nullptr);
-        if ((now - it->second->time) < KADEMLIAREPUBLISHTIMEK)
-            return false;
+        if (it->second->time >= time(nullptr))
+            return false;   // still marked overloaded
+        delete it->second;
+        m_loads.erase(it);
+        --m_totalIndexLoad;
     }
     return true;
 }
@@ -400,7 +487,7 @@ bool Indexed::sendStoreRequest(const UInt128& keyID)
 bool Indexed::addSourceEntry(SrcHashMap& index, uint32& counter, uint32 perFileMax,
                              time_t lifetimeSecs, const SourcePolicy& policy,
                              const UInt128& keyID, const UInt128& sourceID,
-                             Entry* entry, uint8& outLoad)
+                             Entry* entry, uint8& outLoad, bool fromFile)
 {
     // Non-locking: addSources/addNotes already hold m_mutex.
     if (!entry)
@@ -408,7 +495,8 @@ bool Indexed::addSourceEntry(SrcHashMap& index, uint32& counter, uint32 perFileM
 
     // Reject malformed publishes outright rather than letting them occupy a
     // slot. MFC Indexed.cpp:452-458 / :524-526.
-    entry->m_lifetime = time(nullptr) + lifetimeSecs;
+    if (!fromFile)
+        entry->m_lifetime = time(nullptr) + lifetimeSecs;
     if (!policy.isPublishable(*entry))
         return false;
 
@@ -487,146 +575,218 @@ bool Indexed::addSourceEntry(SrcHashMap& index, uint32& counter, uint32 perFileM
     return true;
 }
 
-void Indexed::readFile()
+// -- Persistence ----------------------------------------------------------------
+// Formats are stock's, so an index written by either client loads in the other:
+//   load_index.dat  <1><save time><count>{<key 16><expiry 4>}
+//   src_index.dat   <2><expiry><keys>{<key><sources>{<source><entries>{<lifetime><tags>}}}
+//   key_index.dat   <4><expiry><own KadID><keys>{<key><sources>{<source><entries>
+//                                               {<lifetime><publish tracking><tags>}}}
+// MFC Indexed.cpp:88-265 (write) and :903-1064 (read).
+
+void Indexed::loadFiles()
 {
-    auto* prefs = Kademlia::getInstancePrefs();
-    if (!prefs) {
-        m_dataLoaded = true;
+    // Never under m_mutex as a whole: each insert takes it, so a waiting destructor
+    // is not held up behind a large file.
+    try {
+        loadLoadFile(m_configDir + QLatin1StringView(kLoadFileName));
+        loadKeyFile(m_configDir + QLatin1StringView(kKeyFileName));
+        loadSourceFile(m_configDir + QLatin1StringView(kSourceFileName));
+    } catch (const std::exception& ex) {
+        logKad(QStringLiteral("Kad: index load stopped: %1").arg(QLatin1StringView(ex.what())));
+    }
+
+    if (!aborting()) {
+        logKad(QStringLiteral("Kad: index loaded — %1 keyword, %2 source and %3 load entries")
+                   .arg(m_totalIndexKeyword).arg(m_totalIndexSource).arg(m_totalIndexLoad));
+        m_dataLoaded.store(true, std::memory_order_release);
+    }
+}
+
+void Indexed::loadLoadFile(const QString& path)
+{
+    SafeFile sf;
+    if (aborting() || !sf.open(path, QIODevice::ReadOnly))
         return;
+    if (sf.readUInt32() >= 2)
+        return;
+    sf.readUInt32();   // save time
+    for (uint32 n = sf.readUInt32(); n > 0 && !aborting(); --n) {
+        const UInt128 keyID = io::readUInt128(sf);
+        const auto expiry = static_cast<time_t>(sf.readUInt32());
+        QMutexLocker lock(&m_mutex);
+        addLoadLocked(keyID, expiry);
     }
+}
 
-    // Determine config directory from prefs filename (same dir as preferencesKad.dat)
-    // The index files are stored in the same directory.
-    QString configDir = QDir::tempPath();
+void Indexed::loadKeyFile(const QString& path)
+{
+    SafeFile sf;
+    if (aborting() || !sf.open(path, QIODevice::ReadOnly))
+        return;
 
-    // Load key_index.dat
-    {
-        QString keyFile = configDir + QStringLiteral("/key_index.dat");
-        if (QFile::exists(keyFile)) {
-            try {
-                SafeFile sf;
-                if (sf.open(keyFile, QIODevice::ReadOnly)) {
-                    uint32 version = sf.readUInt32();
-                    if (version == 3) {
-                        time_t savetime = static_cast<time_t>(sf.readUInt32());
-                        // Check if data is too old (more than 24h)
-                        if ((time(nullptr) - savetime) < 86400) {
-                            uint32 numKeys = sf.readUInt32();
-                            for (uint32 k = 0; k < numKeys && sf.position() < sf.length(); ++k) {
-                                uint8 keyIDBytes[16];
-                                sf.readHash16(keyIDBytes);
-                                UInt128 keyID(keyIDBytes);
-                                uint32 numSources = sf.readUInt32();
-                                for (uint32 s = 0; s < numSources && sf.position() < sf.length(); ++s) {
-                                    uint8 srcIDBytes[16];
-                                    sf.readHash16(srcIDBytes);
-                                    UInt128 sourceID(srcIDBytes);
-                                    uint32 numEntries = sf.readUInt32();
-                                    for (uint32 e = 0; e < numEntries && sf.position() < sf.length(); ++e) {
-                                        TagList tags = io::readKadTagList(sf);
-                                        auto* entry = new KeyEntry();
-                                        entry->m_keyID = keyID;
-                                        entry->m_sourceID = sourceID;
-                                        for (auto& tag : tags) {
-                                            if (tag.nameId() == FT_FILENAME && tag.isStr()) {
-                                                if (entry->getCommonFileName().isEmpty())
-                                                    entry->setFileName(tag.strValue());
-                                            } else if (tag.nameId() == FT_FILESIZE) {
-                                                if (entry->m_size == 0)
-                                                    entry->m_size = tag.isInt() ? tag.intValue()
-                                                                  : tag.isInt64(false) ? tag.int64Value() : 0;
-                                            } else {
-                                                entry->addTag(std::move(tag));
-                                            }
-                                        }
-                                        uint8 load = 0;
-                                        if (!addKeyword(keyID, sourceID, entry, load))
-                                            delete entry;
-                                    }
-                                }
-                            }
-                        }
+    const uint32 version = sf.readUInt32();
+    if (version >= 5)
+        return;
+    if (static_cast<time_t>(sf.readUInt32()) <= time(nullptr))
+        return;   // everything in it has expired
+    // Keywords are stored with the nodes closest to them; under another KadID these
+    // are no longer ours to answer for.
+    auto* prefs = Kademlia::getInstancePrefs();
+    if (!prefs || !(io::readUInt128(sf) == prefs->kadId()))
+        return;
+
+    for (uint32 keys = sf.readUInt32(); keys > 0 && !aborting(); --keys) {
+        const UInt128 keyID = io::readUInt128(sf);
+        for (uint32 sources = sf.readUInt32(); sources > 0 && !aborting(); --sources) {
+            const UInt128 sourceID = io::readUInt128(sf);
+            for (uint32 entries = sf.readUInt32(); entries > 0 && !aborting(); --entries) {
+                auto entry = std::make_unique<KeyEntry>();
+                entry->m_keyID = keyID;
+                entry->m_sourceID = sourceID;
+                entry->m_source = false;
+                entry->m_lifetime = static_cast<time_t>(sf.readUInt32());
+                if (version >= 3)
+                    entry->readPublishTrackingDataFromFile(sf, version >= 4);
+
+                for (auto& tag : io::readKadTagList(sf)) {
+                    if (tag.nameId() == FT_FILENAME) {
+                        if (tag.isStr() && entry->getCommonFileName().isEmpty())
+                            entry->setFileName(tag.strValue());
+                    } else if (tag.nameId() == FT_FILESIZE) {
+                        entry->m_size = tag.isInt() ? tag.intValue()
+                                      : tag.isInt64(false) ? tag.int64Value() : 0;
+                    } else {
+                        mirrorAddressTag(*entry, tag);
+                        entry->addTag(std::move(tag));
                     }
-                    logKad(QStringLiteral("Kad: Loaded %1 keywords from key_index.dat")
-                               .arg(m_totalIndexKeyword));
                 }
-            } catch (const FileException& ex) {
-                logKad(QStringLiteral("Kad: Failed to load key_index.dat: %1").arg(QLatin1StringView(ex.what())));
+
+                uint8 load = 0;
+                QMutexLocker lock(&m_mutex);
+                if (addKeywordLocked(keyID, sourceID, entry.get(), load, true))
+                    entry.release();   // the index owns it now
             }
         }
     }
+}
 
-    // Load src_index.dat
-    {
-        QString srcFile = configDir + QStringLiteral("/src_index.dat");
-        if (QFile::exists(srcFile)) {
-            try {
-                SafeFile sf;
-                if (sf.open(srcFile, QIODevice::ReadOnly)) {
-                    uint32 version = sf.readUInt32();
-                    if (version == 2) {
-                        time_t savetime = static_cast<time_t>(sf.readUInt32());
-                        if ((time(nullptr) - savetime) < 86400) {
-                            uint32 numKeys = sf.readUInt32();
-                            for (uint32 k = 0; k < numKeys && sf.position() < sf.length(); ++k) {
-                                uint8 keyIDBytes[16];
-                                sf.readHash16(keyIDBytes);
-                                UInt128 keyID(keyIDBytes);
-                                uint32 numSources = sf.readUInt32();
-                                for (uint32 s = 0; s < numSources && sf.position() < sf.length(); ++s) {
-                                    uint8 srcIDBytes[16];
-                                    sf.readHash16(srcIDBytes);
-                                    UInt128 sourceID(srcIDBytes);
-                                    TagList tags = io::readKadTagList(sf);
-                                    auto* entry = new Entry();
-                                    entry->m_keyID = keyID;
-                                    entry->m_sourceID = sourceID;
-                                    for (auto& tag : tags)
-                                        entry->addTag(std::move(tag));
-                                    uint8 load = 0;
-                                    if (!addSources(keyID, sourceID, entry, load))
-                                        delete entry;
-                                }
-                            }
-                        }
-                    }
-                    logKad(QStringLiteral("Kad: Loaded %1 sources from src_index.dat")
-                               .arg(m_totalIndexSource));
+void Indexed::loadSourceFile(const QString& path)
+{
+    SafeFile sf;
+    if (aborting() || !sf.open(path, QIODevice::ReadOnly))
+        return;
+
+    if (sf.readUInt32() >= 3)
+        return;
+    if (static_cast<time_t>(sf.readUInt32()) <= time(nullptr))
+        return;
+
+    for (uint32 keys = sf.readUInt32(); keys > 0 && !aborting(); --keys) {
+        const UInt128 keyID = io::readUInt128(sf);
+        for (uint32 sources = sf.readUInt32(); sources > 0 && !aborting(); --sources) {
+            const UInt128 sourceID = io::readUInt128(sf);
+            for (uint32 entries = sf.readUInt32(); entries > 0 && !aborting(); --entries) {
+                auto entry = std::make_unique<Entry>();
+                entry->m_keyID = keyID;
+                entry->m_sourceID = sourceID;
+                entry->m_source = true;
+                entry->m_lifetime = static_cast<time_t>(sf.readUInt32());
+                for (auto& tag : io::readKadTagList(sf)) {
+                    mirrorAddressTag(*entry, tag);
+                    entry->addTag(std::move(tag));
                 }
-            } catch (const FileException& ex) {
-                logKad(QStringLiteral("Kad: Failed to load src_index.dat: %1").arg(QLatin1StringView(ex.what())));
+
+                uint8 load = 0;
+                QMutexLocker lock(&m_mutex);
+                if (addSourceEntry(m_sources, m_totalIndexSource, KADEMLIAMAXSOURCEPERFILE,
+                                   KADEMLIAREPUBLISHTIMES, kSourcePolicy, keyID, sourceID,
+                                   entry.get(), load, true))
+                    entry.release();
             }
         }
     }
+}
 
-    // Load load_index.dat
-    {
-        QString loadFile = configDir + QStringLiteral("/load_index.dat");
-        if (QFile::exists(loadFile)) {
-            try {
-                SafeFile sf;
-                if (sf.open(loadFile, QIODevice::ReadOnly)) {
-                    uint32 version = sf.readUInt32();
-                    if (version == 1) {
-                        uint32 numEntries = sf.readUInt32();
-                        for (uint32 i = 0; i < numEntries && sf.position() < sf.length(); ++i) {
-                            uint8 keyIDBytes[16];
-                            sf.readHash16(keyIDBytes);
-                            UInt128 keyID(keyIDBytes);
-                            time_t loadTime = static_cast<time_t>(sf.readUInt32());
-                            addLoad(keyID, loadTime);
-                        }
-                    }
-                    logKad(QStringLiteral("Kad: Loaded %1 load entries from load_index.dat")
-                               .arg(m_totalIndexLoad));
+void Indexed::writeFiles()
+{
+    if (m_configDir.isEmpty())
+        return;
+    QDir().mkpath(m_configDir);
+    QMutexLocker lock(&m_mutex);
+    const auto now = static_cast<uint32>(time(nullptr));
+    const bool sync = theApp.commitFilesNow();
+
+    auto save = [&](const char* name, auto&& body) {
+        const QString path = m_configDir + QLatin1StringView(name);
+        const QString tmp = path + QStringLiteral(".tmp");
+        try {
+            QFile::remove(tmp);
+            SafeFile sf(tmp, QIODevice::WriteOnly);
+            body(sf);
+            commitAndReplace(sf, tmp, path, sync);
+        } catch (const std::exception& ex) {
+            logKad(QStringLiteral("Kad: failed to write %1: %2")
+                       .arg(path, QLatin1StringView(ex.what())));
+            QFile::remove(tmp);
+        }
+    };
+
+    save(kLoadFileName, [&](SafeFile& sf) {
+        sf.writeUInt32(kLoadFileVersion);
+        sf.writeUInt32(now);
+        sf.writeUInt32(static_cast<uint32>(m_loads.size()));
+        for (const auto& [key, load] : m_loads) {
+            io::writeUInt128(sf, load->keyID);
+            sf.writeUInt32(static_cast<uint32>(load->time));
+        }
+    });
+
+    save(kSourceFileName, [&](SafeFile& sf) {
+        sf.writeUInt32(kSourceFileVersion);
+        sf.writeUInt32(now + KADEMLIAREPUBLISHTIMES);
+        sf.writeUInt32(static_cast<uint32>(m_sources.size()));
+        for (const auto& [key, srcHash] : m_sources) {
+            io::writeUInt128(sf, srcHash->keyID);
+            sf.writeUInt32(static_cast<uint32>(srcHash->sourceList.size()));
+            for (const Source* source : srcHash->sourceList) {
+                io::writeUInt128(sf, source->sourceID);
+                sf.writeUInt32(static_cast<uint32>(source->entryList.size()));
+                for (const Entry* entry : source->entryList) {
+                    sf.writeUInt32(static_cast<uint32>(entry->m_lifetime));
+                    entry->writeTagList(sf);
                 }
-            } catch (const FileException& ex) {
-                logKad(QStringLiteral("Kad: Failed to load load_index.dat: %1").arg(QLatin1StringView(ex.what())));
             }
         }
-    }
+    });
 
-    m_dataLoaded = true;
+    save(kKeyFileName, [&](SafeFile& sf) {
+        auto* prefs = Kademlia::getInstancePrefs();
+        if (!prefs)
+            throw FileException("no Kad ID to stamp the keyword index with");
+        sf.writeUInt32(kKeyFileVersion);
+        sf.writeUInt32(now + KADEMLIAREPUBLISHTIMEK);
+        io::writeUInt128(sf, prefs->kadId());
+        sf.writeUInt32(static_cast<uint32>(m_keywords.size()));
+        for (const auto& [key, keyHash] : m_keywords) {
+            io::writeUInt128(sf, keyHash->keyID);
+            sf.writeUInt32(static_cast<uint32>(keyHash->mapSource.size()));
+            for (const auto& [srcKey, source] : keyHash->mapSource) {
+                io::writeUInt128(sf, source->sourceID);
+                // Counted first: only key entries carry the tracking block.
+                const auto keyEntries = static_cast<uint32>(std::ranges::count_if(
+                    source->entryList, [](const Entry* e) { return e->isKeyEntry(); }));
+                sf.writeUInt32(keyEntries);
+                for (Entry* entry : source->entryList) {
+                    if (!entry->isKeyEntry())
+                        continue;
+                    auto* keyEntry = static_cast<KeyEntry*>(entry);
+                    sf.writeUInt32(static_cast<uint32>(keyEntry->m_lifetime));
+                    keyEntry->writePublishTrackingDataToFile(sf);
+                    keyEntry->writeTagList(sf);
+                }
+            }
+        }
+    });
 }
 
 void Indexed::clean()

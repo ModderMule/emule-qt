@@ -932,11 +932,10 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
             return;
         }
 
-        m_reqFile->writeToBuffer(uTransferredFileDataSize,
-                                  data + nHeaderSize,
-                                  nStartPos, nEndPos,
-                                  curBlock->block, connectAddress());
-        lenWritten = uTransferredFileDataSize;
+        lenWritten = m_reqFile->writeToBuffer(uTransferredFileDataSize,
+                                               data + nHeaderSize,
+                                               nStartPos, nEndPos,
+                                               curBlock->block, connectAddress());
     } else {
         // --- Compressed data ---
         // Allocate initial decompression buffer
@@ -961,11 +960,10 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
                     logDebug(QStringLiteral("processBlockPacket: decompressed data exceeds block boundary from %1").arg(userName()));
                     m_reqFile->removeBlockFromList(curBlock->block->startOffset, curBlock->block->endOffset);
                 } else {
-                    m_reqFile->writeToBuffer(uTransferredFileDataSize,
-                                              unzipped,
-                                              writeStart, writeEnd,
-                                              curBlock->block, connectAddress());
-                    lenWritten = lenUnzipped;
+                    lenWritten = m_reqFile->writeToBuffer(uTransferredFileDataSize,
+                                                           unzipped,
+                                                           writeStart, writeEnd,
+                                                           curBlock->block, connectAddress());
                 }
             }
         } else {
@@ -982,6 +980,19 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
             curBlock->totalUnzipped = 0;
         }
         delete[] unzipped;
+    }
+
+    // Refused, and someone else already filled the whole block (endgame race): this
+    // source has nothing left to add to it, so let it move on. No transfer credit.
+    if (lenWritten == 0 && !curBlock->zStreamError && curBlock->block
+        && m_reqFile->isComplete(curBlock->block->startOffset, curBlock->block->endOffset))
+    {
+        m_pendingBlocks.erase(itPos);
+        m_reqFile->removeBlockFromList(curBlock->block->startOffset, curBlock->block->endOffset);
+        clearPendingBlockRequest(curBlock);
+        delete curBlock;
+        sendBlockRequests();
+        return;
     }
 
     // If data was written, check for block completion and request more
@@ -1972,13 +1983,32 @@ int UpDownClient::unzip(Pending_Block_Struct* block, const uint8* zipped,
 
     } else if (err == Z_OK && zS->avail_out == 0 && zS->avail_in != 0) {
         // Output buffer was too small — expand and recurse
-        uint32 newLength = *lenUnzipped * 2;
-        if (newLength == 0)
-            newLength = lenZipped * 2;
+        // Never past what the block can still hold (+300 slack for the stream trailer):
+        // a peer-chosen stream must not size our buffer. MFC has no cap here.
+        uint64 remaining = EMBLOCKSIZE;
+        if (block->block && block->block->endOffset >= block->block->startOffset) {
+            const uint64 blockLen = block->block->endOffset - block->block->startOffset + 1;
+            remaining = blockLen > block->totalUnzipped ? blockLen - block->totalUnzipped : 0;
+        }
+        const uint64 cap = std::min<uint64>(remaining, EMBLOCKSIZE) + 300;
+        if (*lenUnzipped >= cap) {
+            logDebug(QStringLiteral("unzip: output exceeds the requested block, dropping"));
+            *lenUnzipped = 0;
+            return Z_BUF_ERROR;
+        }
+        uint64 grown = static_cast<uint64>(*lenUnzipped) * 2;
+        if (grown == 0)
+            grown = static_cast<uint64>(lenZipped) * 2;
+        const auto newLength = static_cast<uint32>(std::clamp<uint64>(grown, 1, cap));
 
         // Copy successfully unzipped data so far to a larger buffer
-        uint8* temp = new uint8[newLength];
+        uint8* temp = new (std::nothrow) uint8[newLength];
         uint32 alreadyOut = static_cast<uint32>(zS->total_out - block->totalUnzipped);
+        if (!temp || alreadyOut > newLength) {
+            delete[] temp;
+            *lenUnzipped = 0;
+            return Z_DATA_ERROR;
+        }
         std::memcpy(temp, *unzipped, alreadyOut);
         delete[] *unzipped;
         *unzipped = temp;

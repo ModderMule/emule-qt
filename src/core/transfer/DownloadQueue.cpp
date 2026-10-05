@@ -22,6 +22,7 @@
 #include "net/PeerVetting.h"
 #include "prefs/Preferences.h"
 #include "protocol/ED2KLink.h"
+#include "search/SearchFile.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
 #include "server/Server.h"
@@ -726,6 +727,58 @@ bool DownloadQueue::addDownloadFromED2KLink(const QString& link, const QString& 
     // After addDownload: the file must be queued before sources are attached.
     addLinkSources(partFile, fileLink->hostnameSources);
     return true;
+}
+
+// ===========================================================================
+// seedFromSearchResult
+// ===========================================================================
+
+void DownloadQueue::seedFromSearchResult(PartFile* file, const SearchFile& result)
+{
+    if (!file)
+        return;
+
+    // The row and its children: a merged answer keeps its clients on the child
+    std::vector<const SearchFile*> rows{&result};
+    for (const SearchFile* child : result.listChildren())
+        rows.push_back(child);
+
+    // AICH: one hash the answers agree on is as good as a link's (MFC PartFile.cpp:95-98).
+    // Two different ones and none is taken: a wrong hash breaks recovery.
+    if (!file->fileIdentifier().hasAICHHash()) {
+        const AICHHash* agreed = nullptr;
+        bool conflict = false;
+        for (const SearchFile* row : rows) {
+            if (!row->fileIdentifier().hasAICHHash())
+                continue;
+            const AICHHash& hash = row->fileIdentifier().getAICHHash();
+            if (!agreed)
+                agreed = &hash;
+            else if (*agreed != hash)
+                conflict = true;
+        }
+        if (agreed && !conflict) {
+            file->fileIdentifier().setAICHHash(*agreed);
+            file->seedAICHRecoveryMasterHash();
+            file->savePartFile();  // the .part.met was written before the hash arrived
+        }
+    }
+
+    if (file->isStopped())
+        return;
+
+    // Sources: the client of an OP_GLOBSEARCHRES answer, and those of a peer's shared
+    // list (MFC DownloadQueue.cpp:175-200). Vetted like any server source.
+    std::vector<SearchFile::SClient> seen;
+    for (const SearchFile* row : rows) {
+        for (const SearchFile::SClient& client : row->clients()) {
+            if (std::ranges::find(seen, client) != seen.end())
+                continue;
+            seen.push_back(client);
+            addServerSourceClient(file, client.ip, client.port, /*obfuscated*/ false, 0,
+                                  nullptr, false, client.serverIP, client.serverPort);
+        }
+    }
 }
 
 QString DownloadQueue::defaultTempDir()

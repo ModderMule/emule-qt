@@ -6,6 +6,8 @@
 #include "utils/SafeFile.h"
 #include "utils/OtherFunctions.h"
 
+#include <QDir>
+#include <QFile>
 #include <QTest>
 
 #include <array>
@@ -34,6 +36,9 @@ private slots:
     // SafeFile (file-backed)
     void safeFile_writeAndRead();
     void safeFile_seekModes();
+    void commitAndReplace_swapsInAndKeepsABackup();
+    void commitAndReplace_failureKeepsThePreviousFile();
+    void commit_reportsAFailedFlush();
 
     // Error handling
     void memFile_readPastEnd();
@@ -250,6 +255,67 @@ void tst_SafeFile::memFile_readPastEnd()
 
     f.readUInt8(); // OK
     QVERIFY_THROWS_EXCEPTION(FileException, f.readUInt8());
+}
+
+namespace {
+QByteArray slurp(const QString& path)
+{
+    QFile f(path);
+    return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray("<unreadable>");
+}
+} // namespace
+
+void tst_SafeFile::commitAndReplace_swapsInAndKeepsABackup()
+{
+    eMule::testing::TempDir tmp;
+    const QString final = tmp.filePath(QStringLiteral("state.met"));
+    const QString scratch = final + QStringLiteral(".tmp");
+
+    for (const char* generation : {"one", "two", "three"}) {
+        SafeFile file(scratch, QIODevice::WriteOnly);
+        file.write(generation, static_cast<qint64>(std::strlen(generation)));
+        commitAndReplace(file, scratch, final, /*sync*/ true);
+        QVERIFY(!file.isOpen());
+        QVERIFY(!QFile::exists(scratch));
+        QCOMPARE(slurp(final), QByteArray(generation));
+    }
+    QCOMPARE(slurp(final + QStringLiteral(".bak")), QByteArray("two"));
+}
+
+void tst_SafeFile::commitAndReplace_failureKeepsThePreviousFile()
+{
+#ifdef Q_OS_WIN
+    QSKIP("an open file cannot be unlinked on Windows");
+#else
+    eMule::testing::TempDir tmp;
+    const QString final = tmp.filePath(QStringLiteral("state.met"));
+    const QString scratch = final + QStringLiteral(".tmp");
+    {
+        QFile seed(final);
+        QVERIFY(seed.open(QIODevice::WriteOnly));
+        seed.write("good");
+    }
+
+    SafeFile file(scratch, QIODevice::WriteOnly);
+    file.writeUInt32(42);
+    QVERIFY(QFile::remove(scratch));   // the swap now has nothing to move into place
+    QVERIFY_THROWS_EXCEPTION(FileException, commitAndReplace(file, scratch, final, false));
+    QCOMPARE(slurp(final), QByteArray("good"));
+#endif
+}
+
+void tst_SafeFile::commit_reportsAFailedFlush()
+{
+#ifdef Q_OS_LINUX
+    // Every write to /dev/full fails with ENOSPC — but only once the buffer is flushed,
+    // which is exactly the error close() used to swallow.
+    SafeFile file;
+    QVERIFY(file.open(QStringLiteral("/dev/full"), QIODevice::WriteOnly));
+    file.writeUInt32(1);
+    QVERIFY_THROWS_EXCEPTION(FileException, file.commit(false));
+#else
+    QSKIP("needs /dev/full");
+#endif
 }
 
 QTEST_MAIN(tst_SafeFile)

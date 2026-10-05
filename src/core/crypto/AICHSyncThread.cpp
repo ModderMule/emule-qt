@@ -6,7 +6,6 @@
 #include "AICHHashSet.h"
 #include "FileIdentifier.h"
 #include "files/KnownFile.h"
-#include "files/KnownFileList.h"
 #include "files/SharedFileList.h"
 #include "utils/Log.h"
 #include "utils/SafeFile.h"
@@ -16,187 +15,189 @@
 
 namespace eMule {
 
-AICHSyncThread::AICHSyncThread(const QString& configDir,
-                                SharedFileList* sharedFiles,
-                                KnownFileList* knownFiles,
-                                QObject* parent)
+AICHSyncThread::AICHSyncThread(const QString& configDir, SharedFileList* sharedFiles,
+                               QObject* parent)
     : QThread(parent)
     , m_configDir(configDir)
     , m_sharedFiles(sharedFiles)
-    , m_knownFiles(knownFiles)
 {
+    // Queued by default: the signals are emitted from run(), this object lives elsewhere.
+    connect(this, &AICHSyncThread::indexLoaded, this, &AICHSyncThread::onIndexLoaded);
+    connect(this, &AICHSyncThread::hashSetBuilt, this, &AICHSyncThread::onHashSetBuilt);
+}
+
+AICHSyncThread::~AICHSyncThread()
+{
+    requestStop();
+    wait();
+}
+
+void AICHSyncThread::requestStop()
+{
+    m_stopping.store(true, std::memory_order_relaxed);
+    QMutexLocker locker(&m_jobMutex);
+    m_jobReady.wakeAll();
 }
 
 void AICHSyncThread::run()
 {
-    if (isClosing())
+    if (isClosing() || !loadIndex())
         return;
 
-    const QString known2Path = m_configDir + QChar(u'/') + QString::fromUtf16(kKnown2MetFilename);
-    AICHRecoveryHashSet::setKnown2MetPath(known2Path);
+    emit indexLoaded();
 
-    // Collect all master hashes from known2_64.met
-    std::vector<AICHHash> known2Hashes;
-    std::vector<uint64> known2HashPositions;
+    // Wait for the owner thread's list of files without a hashset, then work it off.
+    for (;;) {
+        Job job;
+        {
+            QMutexLocker locker(&m_jobMutex);
+            while (!isClosing() && m_jobs.empty() && !m_jobsQueued)
+                m_jobReady.wait(&m_jobMutex);
+            if (isClosing() || m_jobs.empty())
+                break;
+            job = std::move(m_jobs.front());
+            m_jobs.pop_front();
+        }
+
+        AICHRecoveryHashSet hashSet(job.size);
+        bool ok = KnownFile::buildAICHHashSet(job.path, job.size, hashSet);
+        QByteArray master;
+        if (ok) {
+            master = QByteArray(reinterpret_cast<const char*>(hashSet.getMasterHash().getRawHash()),
+                                kAICHHashSize);
+            ok = hashSet.saveHashSet();
+        }
+        if (!ok)
+            logWarning(QStringLiteral("Failed to create AICH hashset for %1").arg(job.path));
+        emit hashSetBuilt(job.fileHash, master, ok);
+    }
+}
+
+bool AICHSyncThread::loadIndex()
+{
+    const QString known2Path = m_configDir + QChar(u'/') + QString::fromUtf16(kKnown2MetFilename);
+
+    std::vector<std::pair<AICHHash, uint64>> entries;
 
     QMutexLocker lockKnown2Met(&AICHRecoveryHashSet::s_mutKnown2File);
 
     SafeFile file;
-    bool justCreated = convertKnown2ToKnown264(file);
-
-    if (!justCreated) {
-        if (!file.open(known2Path, QIODevice::ReadWrite)) {
-            // Try creating the file
-            if (!file.open(known2Path, QIODevice::ReadWrite | QIODevice::NewOnly)) {
-                qCWarning(lcEmuleGeneral, "Failed to open known2_64.met");
-                return;
-            }
-        }
+    const bool justCreated = convertKnown2ToKnown264(file);
+    if (!justCreated && !file.open(known2Path, QIODevice::ReadWrite)
+        && !file.open(known2Path, QIODevice::ReadWrite | QIODevice::NewOnly))
+    {
+        logWarning(QStringLiteral("Failed to open known2_64.met"));
+        return false;
     }
 
-    uint64 lastVerifiedPos = 0;
+    // Everything up to here parsed cleanly; anything behind it is a torn record.
+    qint64 verifiedEnd = 0;
+    bool damaged = false;
     try {
-        if (file.length() >= 1) {
+        const qint64 size = file.length();
+        if (size >= 1) {
             file.seek(0, 0);
-            const uint8 header = file.readUInt8();
-            if (header != kKnown2MetVersion) {
-                qCWarning(lcEmuleGeneral, "known2_64.met has wrong version header");
-                return;
+            if (file.readUInt8() != kKnown2MetVersion) {
+                logWarning(QStringLiteral("known2_64.met has wrong version header"));
+                return false;
             }
+            verifiedEnd = file.position();
 
-            const qint64 existingSize = file.length();
-            while (file.position() < existingSize) {
-                known2HashPositions.push_back(static_cast<uint64>(file.position()));
-                AICHHash hash(file);
-                known2Hashes.push_back(hash);
+            while (file.position() < size) {
+                const auto pos = static_cast<uint64>(file.position());
+                const AICHHash hash(file);
                 const uint32 hashCount = file.readUInt32();
-                if (file.position() + static_cast<qint64>(hashCount) * kAICHHashSize > existingSize) {
-                    qCWarning(lcEmuleGeneral, "known2_64.met truncated");
+                if (file.position() + static_cast<qint64>(hashCount) * kAICHHashSize > size) {
+                    damaged = true;
                     break;
                 }
-                file.seek(static_cast<qint64>(hashCount) * kAICHHashSize, 1); // SEEK_CUR
-                lastVerifiedPos = static_cast<uint64>(file.position());
+                file.seek(static_cast<qint64>(hashCount) * kAICHHashSize, 1);   // SEEK_CUR
+                entries.emplace_back(hash, pos);
+                verifiedEnd = file.position();
             }
         } else {
             file.writeUInt8(kKnown2MetVersion);
+            file.commit(false);
         }
-    } catch (const std::exception& ex) {
-        qCWarning(lcEmuleGeneral, "Error reading known2_64.met: %s", ex.what());
-        // Truncate to last verified position
-        if (lastVerifiedPos > 0) {
-            try {
-                // Reopen with truncation
-                file.close();
-                QFile qf(known2Path);
-                if (qf.open(QIODevice::ReadWrite))
-                    qf.resize(static_cast<qint64>(lastVerifiedPos));
-            } catch (...) {}
-        }
-        return;
+    } catch (const std::exception&) {
+        damaged = true;   // a record header cut short
     }
 
-    // Match shared files against known hashes
-    std::vector<AICHHash> usedHashes;
-    std::vector<KnownFile*> filesToHash;
-    bool loggedPartHashWarning = false;
-
-    m_sharedFiles->forEachFile([&](KnownFile* pFile) {
-        if (isClosing() || pFile->isPartFile())
-            return;
-
-        FileIdentifier& fileId = pFile->fileIdentifier();
-        if (fileId.hasAICHHash()) {
-            bool aichFound = false;
-            for (std::size_t i = known2Hashes.size(); i-- > 0;) {
-                if (known2Hashes[i] == fileId.getAICHHash()) {
-                    aichFound = true;
-                    usedHashes.push_back(known2Hashes[i]);
-                    pFile->setAICHRecoverHashSetAvailable(true);
-
-                    // Upgrade: create AICH part hashes if missing
-                    if (!fileId.hasExpectedAICHHashCount()) {
-                        if (!loggedPartHashWarning) {
-                            loggedPartHashWarning = true;
-                            qCWarning(lcEmuleGeneral,
-                                "Missing AICH part hashsets - creating from recovery sets");
-                        }
-                        AICHRecoveryHashSet tempHashSet(pFile->fileSize());
-                        tempHashSet.setMasterHash(fileId.getAICHHash(),
-                                                   EAICHStatus::HashSetComplete);
-                        if (tempHashSet.loadHashSet()) {
-                            if (!fileId.setAICHHashSet(tempHashSet)) {
-                                qCWarning(lcEmuleGeneral,
-                                    "Failed to create AICH part hashset for %s",
-                                    qUtf8Printable(pFile->fileName()));
-                            }
-                        } else {
-                            qCWarning(lcEmuleGeneral,
-                                "Failed to load AICH recovery hashset for %s",
-                                qUtf8Printable(pFile->fileName()));
-                        }
-                    }
-                    break;
-                }
-            }
-            if (aichFound)
-                return;
-        }
-        pFile->setAICHRecoverHashSetAvailable(false);
-        filesToHash.push_back(pFile);
-    });
-
-    // Index all hashes (regardless of purging)
-    for (std::size_t i = 0; i < known2Hashes.size() && !isClosing(); ++i)
-        AICHRecoveryHashSet::addStoredAICHHash(known2Hashes[i], known2HashPositions[i]);
-
-    lockKnown2Met.unlock();
-
-    emit syncComplete(static_cast<int>(filesToHash.size()));
-
-    // Hash files that need AICH hashing
-    if (!filesToHash.empty()) {
-        logInfo(QStringLiteral("AICH sync: %1 files need hashing")
-                    .arg(filesToHash.size()));
-
-        // Wait for any normal hashing to complete
-        while (m_sharedFiles->getHashingCount() > 0) {
-            if (isClosing())
-                return;
-            QThread::msleep(100);
-        }
-
-        int done = 0;
-        for (KnownFile* pFile : filesToHash) {
-            if (isClosing())
-                return;
-
-            emit hashingProgress(static_cast<int>(filesToHash.size()) - done);
-
-            // Verify file is still in the known/shared lists
-            if (!m_knownFiles->isKnownFile(pFile)
-                || !m_sharedFiles->getFileByID(pFile->fileHash()))
-            {
-                ++done;
-                continue;
-            }
-
-            qCDebug(lcEmuleGeneral, "AICH hashing: %s",
-                     qUtf8Printable(pFile->fileName()));
-
-            const bool success = pFile->createAICHHashSetOnly();
-            emit fileHashed(pFile, success);
-
-            if (!success) {
-                qCWarning(lcEmuleGeneral, "Failed to create AICH hashset for %s",
-                           qUtf8Printable(pFile->fileName()));
-            }
-            ++done;
-        }
-
-        emit hashingProgress(0);
+    if (damaged) {
+        logWarning(QStringLiteral("known2_64.met is damaged at offset %1 — cutting off the tail")
+                       .arg(verifiedEnd));
+        file.close();
+        // verifiedEnd is never below the version byte, so the header survives.
+        if (!QFile::resize(known2Path, verifiedEnd))
+            return false;
     }
 
-    qCDebug(lcEmuleGeneral, "AICHSyncThread finished");
+    for (const auto& [hash, pos] : entries)
+        AICHRecoveryHashSet::addStoredAICHHash(hash, pos);
+    return true;
+}
+
+// -- Owner thread -------------------------------------------------------------
+
+void AICHSyncThread::onIndexLoaded()
+{
+    std::deque<Job> jobs;
+    if (m_sharedFiles && !isClosing()) {
+        m_sharedFiles->forEachFile([&](KnownFile* file) {
+            if (file->isPartFile())
+                return;
+
+            FileIdentifier& fileId = file->fileIdentifier();
+            if (fileId.hasAICHHash() && AICHRecoveryHashSet::isStored(fileId.getAICHHash())) {
+                file->setAICHRecoverHashSetAvailable(true);
+                if (!fileId.hasExpectedAICHHashCount())
+                    applyStoredHashSet(file);
+                return;
+            }
+
+            file->setAICHRecoverHashSetAvailable(false);
+            if (file->filePath().isEmpty())
+                return;
+            jobs.push_back({QByteArray(reinterpret_cast<const char*>(file->fileHash()), 16),
+                            file->filePath(), static_cast<uint64>(file->fileSize())});
+        });
+    }
+
+    const auto count = static_cast<int>(jobs.size());
+    if (count > 0)
+        logInfo(QStringLiteral("AICH sync: %1 files need hashing").arg(count));
+    {
+        QMutexLocker locker(&m_jobMutex);
+        m_jobs = std::move(jobs);
+        m_jobsQueued = true;
+        m_jobReady.wakeAll();
+    }
+    emit syncComplete(count);
+}
+
+void AICHSyncThread::onHashSetBuilt(const QByteArray& fileHash, const QByteArray& masterHash,
+                                    bool success)
+{
+    // By hash, not by pointer: the file may have been unshared or replaced meanwhile.
+    KnownFile* file = (m_sharedFiles && fileHash.size() == 16)
+        ? m_sharedFiles->getFileByID(reinterpret_cast<const uint8*>(fileHash.constData()))
+        : nullptr;
+    if (file && !file->isPartFile() && success && masterHash.size() == kAICHHashSize) {
+        file->fileIdentifier().setAICHHash(
+            AICHHash(reinterpret_cast<const uint8*>(masterHash.constData())));
+        applyStoredHashSet(file);
+        file->setAICHRecoverHashSetAvailable(true);
+    }
+    emit fileHashed(fileHash, success);
+}
+
+void AICHSyncThread::applyStoredHashSet(KnownFile* file)
+{
+    FileIdentifier& fileId = file->fileIdentifier();
+    AICHRecoveryHashSet stored(file->fileSize());
+    stored.setMasterHash(fileId.getAICHHash(), EAICHStatus::HashSetComplete);
+    if (!stored.loadHashSet() || !fileId.setAICHHashSet(stored))
+        logDebug(QStringLiteral("Failed to create AICH part hashset for %1").arg(file->fileName()));
 }
 
 bool AICHSyncThread::convertKnown2ToKnown264(SafeFile& targetFile)

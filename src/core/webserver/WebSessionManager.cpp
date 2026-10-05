@@ -6,6 +6,8 @@
 
 #include <QRandomGenerator>
 
+#include <algorithm>
+
 namespace eMule {
 
 WebSessionManager::WebSessionManager(int timeoutMinutes)
@@ -91,6 +93,14 @@ void WebSessionManager::purgeExpired()
         else
             ++it;
     }
+}
+
+int WebSessionManager::activeCount() const
+{
+    const auto now = QDateTime::currentDateTime();
+    return static_cast<int>(std::ranges::count_if(m_sessions, [&](const WebSession& s) {
+        return s.lastAccess.secsTo(now) <= m_timeoutMinutes * 60;
+    }));
 }
 
 void WebSessionManager::setTimeoutMinutes(int minutes)

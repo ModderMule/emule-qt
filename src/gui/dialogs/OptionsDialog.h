@@ -91,6 +91,7 @@ private slots:
     void markDirty();
 
 private:
+    void editFilenameCleanups();
     void setupSidebar();
     void setupPages();
     void setupButtons();
@@ -343,6 +344,7 @@ private:
     QCheckBox* m_autoSharedFilesPrioCheck = nullptr;
     QCheckBox* m_autoDownloadPrioCheck = nullptr;
     QCheckBox* m_autoCleanupFilenamesCheck = nullptr;
+    QString m_filenameCleanups;   // '|'-separated, edited via editFilenameCleanups()
     QCheckBox* m_transferFullChunksCheck = nullptr;
     QCheckBox* m_previewPrioCheck = nullptr;
     QCheckBox* m_watchClipboardCheck = nullptr;

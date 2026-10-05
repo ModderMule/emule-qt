@@ -467,6 +467,9 @@ int main(int argc, char* argv[])
                 // The graph maxima just landed, and the rate scopes are pinned to them.
                 if (auto* stats = mainWindow.statisticsPanel())
                     stats->applySettings();
+                // The update-URL fields show daemon-owned prefs.
+                mainWindow.serverPanel()->refreshUpdateUrl();
+                mainWindow.kadPanel()->refreshNodesUrl();
             });
 
             // Automatic version check: one now if the interval has elapsed, then

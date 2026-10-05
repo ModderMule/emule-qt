@@ -802,6 +802,10 @@ public:
     void processBlockPacketWithValidation(const uint8* data, uint32 size,
                                           bool packed, bool i64Offsets);
     virtual void sendCancelTransfer();
+    /// Inflate one compressed-part packet into *unzipped, growing it up to what the
+    /// requested block can still hold. Public for tests.
+    int unzip(Pending_Block_Struct* block, const uint8* zipped, uint32 lenZipped,
+              uint8** unzipped, uint32* lenUnzipped, int recursion = 0);
     void startDownload();
     void sendHashSetRequest();
     [[nodiscard]] uint32 calculateDownloadRate();
@@ -979,8 +983,6 @@ private:
     bool isInNoNeededList(const PartFile* file) const;
     bool recentlySwappedForSourceExchange() const;
     void setSwapForSourceExchangeTick();
-    int unzip(Pending_Block_Struct* block, const uint8* zipped, uint32 lenZipped,
-              uint8** unzipped, uint32* lenUnzipped, int recursion = 0);
 
     // Captcha helpers
     [[nodiscard]] static QString generateCaptchaText();

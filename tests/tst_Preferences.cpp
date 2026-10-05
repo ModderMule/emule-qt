@@ -532,6 +532,82 @@ private slots:
         QCOMPARE(prefs.enableUPnP(), true);
     }
 
+    // -- Update URLs ----------------------------------------------------------
+
+    void updateUrls_defaults()
+    {
+        Preferences prefs;
+        QCOMPARE(prefs.serverListURL(), QString(Preferences::kDefaultServerListURL));
+        QCOMPARE(prefs.nodesDatURL(), QString(Preferences::kDefaultNodesDatURL));
+    }
+
+    void updateUrls_emptyFallsBackToDefault()
+    {
+        Preferences prefs;
+        prefs.setServerListURL(QStringLiteral("  https://example.org/server.met "));
+        prefs.setNodesDatURL(QStringLiteral("https://example.org/nodes.dat"));
+        QCOMPARE(prefs.serverListURL(), QStringLiteral("https://example.org/server.met"));
+        QCOMPARE(prefs.nodesDatURL(), QStringLiteral("https://example.org/nodes.dat"));
+
+        prefs.setServerListURL(QString());
+        prefs.setNodesDatURL(QStringLiteral("   "));
+        QCOMPARE(prefs.serverListURL(), QString(Preferences::kDefaultServerListURL));
+        QCOMPARE(prefs.nodesDatURL(), QString(Preferences::kDefaultNodesDatURL));
+    }
+
+    void updateUrls_yamlRoundTrip()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("urls.yaml"));
+        {
+            Preferences prefs;
+            QVERIFY(prefs.load(file));
+            prefs.setServerListURL(QStringLiteral("https://example.org/server.met"));
+            prefs.setNodesDatURL(QStringLiteral("https://example.org/nodes.dat"));
+            QVERIFY(prefs.save());
+        }
+        Preferences prefs;
+        QVERIFY(prefs.load(file));
+        QCOMPARE(prefs.serverListURL(), QStringLiteral("https://example.org/server.met"));
+        QCOMPARE(prefs.nodesDatURL(), QStringLiteral("https://example.org/nodes.dat"));
+    }
+
+    void updateUrls_emptyYamlValueLoadsDefault()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("empty_urls.yaml"));
+        {
+            QFile f(file);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("serverConnection:\n  serverListURL: \"\"\nkademlia:\n  nodesDatURL: \"\"\n");
+            f.close();
+        }
+        Preferences prefs;
+        QVERIFY(prefs.load(file));
+        QCOMPARE(prefs.serverListURL(), QString(Preferences::kDefaultServerListURL));
+        QCOMPARE(prefs.nodesDatURL(), QString(Preferences::kDefaultNodesDatURL));
+    }
+
+    void updateUrls_ipcMapRoundTrip()
+    {
+        Preferences daemon;
+        daemon.setServerListURL(QStringLiteral("https://example.org/server.met"));
+        daemon.setNodesDatURL(QStringLiteral("https://example.org/nodes.dat"));
+        QCborMap map = daemon.toIpcMap();
+
+        Preferences gui;
+        gui.updateFromCbor(map);
+        QCOMPARE(gui.serverListURL(), QStringLiteral("https://example.org/server.met"));
+        QCOMPARE(gui.nodesDatURL(), QStringLiteral("https://example.org/nodes.dat"));
+
+        // An older daemon's map has no nodes.dat key; an empty one must not stick either.
+        map.remove(QStringLiteral("nodesDatURL"));
+        map.insert(QStringLiteral("serverListURL"), QString());
+        gui.updateFromCbor(map);
+        QCOMPARE(gui.serverListURL(), QString(Preferences::kDefaultServerListURL));
+        QCOMPARE(gui.nodesDatURL(), QString(Preferences::kDefaultNodesDatURL));
+    }
+
     // -- Validation -----------------------------------------------------------
 
     void validate_nickTruncation()

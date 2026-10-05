@@ -3,6 +3,10 @@
 
 #include "TestHelpers.h"
 
+#include "TestFixtures.h"
+#include "kademlia/Kademlia.h"
+#include "kademlia/KadPrefs.h"
+#include "kademlia/KadIO.h"
 #include "kademlia/KadEntry.h"
 #include "kademlia/KadIndexed.h"
 #include "kademlia/KadResultPacketWriter.h"
@@ -11,6 +15,7 @@
 #include "utils/MapKey.h"
 #include "utils/SafeFile.h"
 
+#include <QFile>
 #include <QTest>
 
 #include <ctime>
@@ -71,6 +76,8 @@ private slots:
     void addSources_rejectsIncompleteEntries();
     void addNotes_dedupePerIpOrSourceId();
     void addNotes_acceptEntryWithoutPorts();
+    void persistent_roundTripsKeywordsSourcesAndLoad();
+    void persistent_ignoresAnExpiredKeyFile();
 };
 
 void tst_KadIndexed::construct_empty()
@@ -482,6 +489,92 @@ void tst_KadIndexed::addNotes_acceptEntryWithoutPorts()
 
     QVERIFY(indexed.addNotes(UInt128(uint32{704}), UInt128(uint32{1}), note, load));
     QCOMPARE(indexed.m_totalIndexNotes, uint32{1});
+}
+
+// MFC writes the index on shutdown and reads it back on a worker at start
+// (srchybrid/kademlia/kademlia/Indexed.cpp:88-265, 903-1064). The port did neither, so
+// every restart forgot everything other nodes had stored with us.
+void tst_KadIndexed::persistent_roundTripsKeywordsSourcesAndLoad()
+{
+    eMule::testing::KadFixture kad;          // supplies the KadID the key file is bound to
+    eMule::testing::TempDir dir;
+
+    const UInt128 keyID(uint32{0x1111});
+    const UInt128 fileID(uint32{0x2222});
+    const UInt128 loadKey(uint32{0x3333});
+    const QString keyFile = dir.filePath(QStringLiteral("key_index.dat"));
+
+    auto lifetimeInKeyFile = [&]() -> quint32 {
+        // <version 4><expiry 4><KadID 16><keys 4> <key 16><sources 4> <source 16><entries 4>
+        QFile f(keyFile);
+        if (!f.open(QIODevice::ReadOnly) || !f.seek(68))
+            return 0;
+        quint32 v = 0;
+        f.read(reinterpret_cast<char*>(&v), sizeof v);
+        return v;
+    };
+
+    {
+        Indexed indexed(dir.path());
+        QTRY_VERIFY(indexed.isLoaded());
+
+        uint8 load = 0;
+        QVERIFY(indexed.addKeyword(keyID, UInt128(uint32{0x10}),
+                                   makeKeyEntry(0x0A000001, QStringLiteral("stored name.avi")), load));
+
+        // As the listener stores a source: the address rides in the tags.
+        Entry* source = makeSourceEntry(0x0A000002);
+        source->addTag(Tag(uint8{FT_SOURCEIP}, uint32{0x0A000002}));
+        source->addTag(Tag(uint8{FT_SOURCEPORT}, uint32{4662}));
+        source->addTag(Tag(uint8{FT_SOURCEUPORT}, uint32{4672}));
+        QVERIFY(indexed.addSources(fileID, UInt128(uint32{0x20}), source, load));
+
+        QVERIFY(indexed.addLoad(loadKey, time(nullptr) + 3600));
+        QVERIFY2(!indexed.addLoad(UInt128(uint32{0x4444}), time(nullptr) - 10),
+                 "a mark that is already over is not stored");
+    }   // destructor writes
+
+    QVERIFY(QFile::exists(keyFile));
+    QVERIFY(QFile::exists(dir.filePath(QStringLiteral("src_index.dat"))));
+    QVERIFY(QFile::exists(dir.filePath(QStringLiteral("load_index.dat"))));
+    const quint32 firstLifetime = lifetimeInKeyFile();
+    QVERIFY(firstLifetime != 0);
+
+    QTest::qSleep(1100);   // so a lifetime re-stamped on load would show
+
+    {
+        Indexed indexed(dir.path());
+        // Nothing is served or accepted while the loader runs.
+        QTRY_VERIFY(indexed.isLoaded());
+
+        QCOMPARE(indexed.m_totalIndexKeyword, uint32{1});
+        QCOMPARE(indexed.m_totalIndexSource, uint32{1});
+        QCOMPARE(indexed.m_totalIndexLoad, uint32{1});
+        QCOMPARE(indexed.getFileKeyCount(), uint32{1});
+        QVERIFY2(!indexed.sendStoreRequest(loadKey), "the overload mark must survive a restart");
+        QVERIFY(indexed.sendStoreRequest(UInt128(uint32{0x5555})));
+    }
+
+    QCOMPARE(lifetimeInKeyFile(), firstLifetime);
+}
+
+void tst_KadIndexed::persistent_ignoresAnExpiredKeyFile()
+{
+    eMule::testing::KadFixture kad;
+    eMule::testing::TempDir dir;
+
+    {
+        SafeFile f(dir.filePath(QStringLiteral("key_index.dat")), QIODevice::WriteOnly);
+        f.writeUInt32(4);                                        // version
+        f.writeUInt32(static_cast<uint32>(time(nullptr)) - 60);  // expired a minute ago
+        io::writeUInt128(f, Kademlia::getInstancePrefs()->kadId());
+        f.writeUInt32(1);                                        // claims one key, then ends
+    }
+
+    Indexed indexed(dir.path());
+    QTRY_VERIFY(indexed.isLoaded());
+    QCOMPARE(indexed.m_totalIndexKeyword, uint32{0});
+    QCOMPARE(indexed.getFileKeyCount(), uint32{0});
 }
 
 QTEST_GUILESS_MAIN(tst_KadIndexed)

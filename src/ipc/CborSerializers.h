@@ -287,6 +287,8 @@ inline constexpr qsizetype kMaxBarRanges = 1024;
     // MFC CSearchFile::IsComplete(): neither a Kad hit nor a browsed file carries
     // complete-source information, so the GUI shows "?" instead of 0%.
     m.insert(QStringLiteral("isKad"),               f.isKadResult());
+    // a server result the server found on Kad (FT_META_NETWORK): gets the Kad badge
+    m.insert(QStringLiteral("kadOrigin"),           f.isKadOrigin());
     m.insert(QStringLiteral("inDirectory"),         !f.directory().isEmpty());
     m.insert(QStringLiteral("fileType"),            f.fileType());
     m.insert(QStringLiteral("searchID"),            static_cast<qint64>(f.searchID()));
