@@ -28,6 +28,8 @@ private slots:
     void hashingAFileStoresItsRecoverySet();
     void syncBuildsTheSetOfAFileThatHasNone();
     void syncCutsOffATornRecord();
+    void purgeDropsOnlyWhatNothingRefersTo();
+    void purgeLeavesACleanFileUntouched();
 
 private:
     [[nodiscard]] QString known2Path() const { return m_dir->filePath(QStringLiteral("known2_64.met")); }
@@ -143,6 +145,114 @@ void tst_AICHSyncThread::syncCutsOffATornRecord()
 
     QCOMPARE(QFileInfo(known2Path()).size(), goodSize);
     QVERIFY(AICHRecoveryHashSet::isStored(file.fileIdentifier().getAICHHash()));
+}
+
+// MFC AICHSyncThread.cpp:163-247. known2 only ever grew.
+void tst_AICHSyncThread::purgeDropsOnlyWhatNothingRefersTo()
+{
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+
+    // known: stays. Hashed before the "session" below starts.
+    QVERIFY(!writeFile(QStringLiteral("known.bin"), EMBLOCKSIZE * 2 + 10, 'k').isEmpty());
+    auto* known = new KnownFile();
+    QVERIFY(known->createFromFile(m_dir->path(), QStringLiteral("known.bin")));
+    knownFiles.safeAddKFile(known);
+
+    // orphan: its file is in no list any more
+    QVERIFY(!writeFile(QStringLiteral("orphan.bin"), EMBLOCKSIZE * 3 + 10, 'o').isEmpty());
+    KnownFile orphan;
+    QVERIFY(orphan.createFromFile(m_dir->path(), QStringLiteral("orphan.bin")));
+    const AICHHash orphanHash = orphan.fileIdentifier().getAICHHash();
+    const qint64 withOrphan = QFileInfo(known2Path()).size();
+
+    // an older copy of the known file's record, as a crash-and-rehash leaves behind
+    {
+        QFile f(known2Path());
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const QByteArray all = f.readAll();
+        f.close();
+        const QByteArray master(reinterpret_cast<const char*>(
+                                    known->fileIdentifier().getAICHHash().getRawHash()), kAICHHashSize);
+        const qsizetype at = all.indexOf(master);
+        QVERIFY(at == 1);
+        const qsizetype len = kAICHHashSize + 4 + 3 * kAICHHashSize;   // three block hashes
+        QVERIFY(f.open(QIODevice::Append));
+        f.write(all.mid(at, len));
+    }
+    const qint64 before = QFileInfo(known2Path()).size();
+    QVERIFY(before > withOrphan);
+
+    // a new process: nothing counts as saved in this session
+    AICHRecoveryHashSet::setKnown2MetPath(QString());
+    AICHRecoveryHashSet::setKnown2MetPath(known2Path());
+
+    // hashed while the sync runs its course: in no list yet, and must survive
+    QVERIFY(!writeFile(QStringLiteral("fresh.bin"), EMBLOCKSIZE + 10, 'f').isEmpty());
+    KnownFile fresh;
+    QVERIFY(fresh.createFromFile(m_dir->path(), QStringLiteral("fresh.bin")));
+
+    AICHSyncThread sync(m_dir->path(), &shared);
+    sync.setPurgeSource(&knownFiles);
+    QSignalSpy purged(&sync, &AICHSyncThread::purged);
+    sync.start();
+    QVERIFY(purged.wait(10000));
+    sync.requestStop();
+    QVERIFY(sync.wait(5000));
+
+    QCOMPARE(purged.first().at(0).toUInt(), 2u);   // the orphan and the older duplicate
+    QVERIFY(QFileInfo(known2Path()).size() < before);
+    QVERIFY(!AICHRecoveryHashSet::isStored(orphanHash));
+    QVERIFY(AICHRecoveryHashSet::isStored(fresh.fileIdentifier().getAICHHash()));
+
+    // what stayed can still be read back from its new place
+    for (KnownFile* file : {known, &fresh}) {
+        AICHRecoveryHashSet stored(file->fileSize());
+        stored.setMasterHash(file->fileIdentifier().getAICHHash(), EAICHStatus::HashSetComplete);
+        QVERIFY2(stored.loadHashSet(), qPrintable(file->fileName()));
+    }
+}
+
+void tst_AICHSyncThread::purgeLeavesACleanFileUntouched()
+{
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    QVERIFY(!writeFile(QStringLiteral("known.bin"), EMBLOCKSIZE + 10, 'k').isEmpty());
+    auto* known = new KnownFile();
+    QVERIFY(known->createFromFile(m_dir->path(), QStringLiteral("known.bin")));
+    knownFiles.safeAddKFile(known);
+
+    AICHRecoveryHashSet::setKnown2MetPath(QString());
+    AICHRecoveryHashSet::setKnown2MetPath(known2Path());
+    const QDateTime stamp = QFileInfo(known2Path()).lastModified();
+    const qint64 size = QFileInfo(known2Path()).size();
+
+    {
+        AICHSyncThread sync(m_dir->path(), &shared);
+        sync.setPurgeSource(&knownFiles);
+        QSignalSpy synced(&sync, &AICHSyncThread::syncComplete);
+        QSignalSpy purged(&sync, &AICHSyncThread::purged);
+        sync.start();
+        QVERIFY(synced.wait(10000));
+        QTest::qWait(200);
+        QCOMPARE(purged.count(), 0);
+    }
+    QCOMPARE(QFileInfo(known2Path()).size(), size);
+    QCOMPARE(QFileInfo(known2Path()).lastModified(), stamp);
+
+    // an empty known list reads as "known.met did not load": nothing is dropped
+    KnownFileList empty;
+    {
+        AICHSyncThread sync(m_dir->path(), &shared);
+        sync.setPurgeSource(&empty);
+        QSignalSpy synced(&sync, &AICHSyncThread::syncComplete);
+        QSignalSpy purged(&sync, &AICHSyncThread::purged);
+        sync.start();
+        QVERIFY(synced.wait(10000));
+        QTest::qWait(200);
+        QCOMPARE(purged.count(), 0);
+    }
+    QCOMPARE(QFileInfo(known2Path()).size(), size);
 }
 
 QTEST_MAIN(tst_AICHSyncThread)

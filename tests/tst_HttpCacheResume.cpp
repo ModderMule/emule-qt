@@ -28,6 +28,7 @@
 #include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QUrl>
 #include <QTimer>
 
 #include <algorithm>
@@ -248,6 +249,7 @@ private slots:
     void wholePartFetchIssuesOneRequest();
     void fetchIdentifiesItself();
     void downloadedBytesAreAccountedOnce();
+    void localNameIsRefusedForANonLocalSender();
 
 private:
     /// Build an offer describing @p cipher, served from @p server.
@@ -344,9 +346,10 @@ HttpCacheResult tst_HttpCacheResume::runFetch(FakeCacheServer& server, PartFile&
     std::array<uint8, 16> peerHash{};
     peerHash.fill(0x42);
 
-    // Any address will do here: this test is about the transfer, and nothing in it
-    // reaches the MD4 check that would consult the attribution.
-    const Address peerAddress = Address::fromHostOrder(0x0A0B0C0D);
+    // A loopback peer, because the fake server is on loopback and a local URL is
+    // only fetched for a sender that could reach it too. Otherwise any address
+    // would do: nothing here reaches the MD4 check that consults the attribution.
+    const Address peerAddress = Address::fromHostOrder(0x7F000002);
 
     if (!client->beginFetch(makeOffer(server, cipher), &file, peerHash, peerAddress))
         return HttpCacheResult::BadOffer;
@@ -355,6 +358,42 @@ HttpCacheResult tst_HttpCacheResume::runFetch(FakeCacheServer& server, PartFile&
         return HttpCacheResult::HttpFailed;
 
     return spy.first().at(1).value<HttpCacheResult>();
+}
+
+// A literal local host is screened before a fetch starts; a *name* can only be
+// judged once it resolves. "localhost" from a peer out on the internet must be
+// refused at that point — with LAN mode on, which is what lets the address past
+// the shared peer rules — and refused for good, not retried.
+void tst_HttpCacheResume::localNameIsRefusedForANonLocalSender()
+{
+    FakeCacheServer server(m_cipher);
+    QVERIFY(server.listen(QHostAddress::LocalHost));
+
+    PartFile file;
+    file.setFileSize(kFileSize);
+    file.setFileHash(m_fileHash.data());
+    file.setTmpPath(m_tempDir);
+    QVERIFY(file.createPartFile(m_tempDir));
+
+    HttpCacheOffer offer = makeOffer(server, m_cipher);
+    QUrl url(offer.url);
+    url.setHost(QStringLiteral("localhost"));
+    offer.url = url.toString();
+
+    auto* client = new HttpCacheClient();
+    client->setResumeDelayOverrideMsForTest(50);
+    QSignalSpy spy(client, &HttpCacheClient::fetchFinished);
+
+    std::array<uint8, 16> peerHash{};
+    peerHash.fill(0x42);
+
+    QVERIFY(client->beginFetch(offer, &file, peerHash,
+                               Address::fromString(QStringLiteral("87.65.43.21"))));
+
+    QVERIFY(spy.wait(30'000));
+    QCOMPARE(spy.first().at(1).value<HttpCacheResult>(), HttpCacheResult::BadOffer);
+    QCOMPARE(server.connectionCount(), 0);
+    QCOMPARE(client->attemptCount(), 0);   // not one request went out
 }
 
 QByteArray tst_HttpCacheResume::readBackPart(PartFile& file) const
@@ -543,7 +582,7 @@ void tst_HttpCacheResume::wholePartFetchIssuesOneRequest()
     peerHash.fill(0x42);
 
     QVERIFY(client->beginFetch(makeOffer(server, m_cipher), &file, peerHash,
-                               Address::fromHostOrder(0x0A0B0C0D)));
+                               Address::fromHostOrder(0x7F000002)));
 
     int nudges = 0;
     auto* prodder = new QTimer(client);

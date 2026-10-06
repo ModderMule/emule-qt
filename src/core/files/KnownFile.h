@@ -121,6 +121,9 @@ public:
     void setUpPriority(uint8 priority, bool save = true);
     [[nodiscard]] bool isAutoUpPriority() const { return m_autoUpPriority; }
     void setAutoUpPriority(bool flag) { m_autoUpPriority = flag; }
+    /// FT_ULPRIORITY as stored in known.met and .part.met (kPrAuto = automatic).
+    void setUpPriorityFromTag(uint32 value);
+    [[nodiscard]] uint32 upPriorityTagValue() const;
 
     // Auto-priority (adjusts priority based on uploading client count)
     void updateAutoUpPriority();
@@ -131,7 +134,9 @@ public:
 
     // Kademlia
     [[nodiscard]] uint32 kadFileSearchID() const { return m_kadFileSearchID; }
-    void setKadFileSearchID(uint32 id) { m_kadFileSearchID = id; }
+    void setKadFileSearchID(uint32 id);
+    /// Tell the shared list that something a list row shows has changed.
+    void noteChanged();
 
     [[nodiscard]] time_t lastPublishTimeKadSrc() const { return m_lastPublishTimeKadSrc; }
     void setLastPublishTimeKadSrc(time_t t, uint32 buddyIP = 0);
@@ -209,7 +214,7 @@ public:
                                  AICHRecoveryHashSet& out);
 
     // Core hash computation
-    static void createHash(QIODevice& device, uint64 length,
+    static bool createHash(QIODevice& device, uint64 length,
                            uint8* md4HashOut, AICHHashTree* aichTree);
     static bool createHashFromFile(const QString& filePath, uint64 length,
                                    uint8* md4HashOut, AICHHashTree* aichTree);

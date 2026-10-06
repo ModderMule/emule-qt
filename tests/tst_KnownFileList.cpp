@@ -25,6 +25,7 @@ private slots:
     void safeAddKFile_duplicate();
     void findKnownFile_byMetadata();
     void findKnownFile_notFound();
+    void findKnownFile_followsAddReplaceRemove();
     void findKnownFileByID();
     void findKnownFileByPath();
     void isKnownFile_check();
@@ -444,6 +445,49 @@ void tst_KnownFileList::clear_deletesAll()
     list.clear();
     QCOMPARE(list.count(), size_t{0});
     QCOMPARE(list.totalTransferred, uint64{0});
+}
+
+// The size index has to stay in step with the hash map through every change.
+void tst_KnownFileList::findKnownFile_followsAddReplaceRemove()
+{
+    KnownFileList list;
+    const auto make = [](uint8 hashByte, const QString& name, time_t date, uint64 size) {
+        auto* f = new KnownFile();
+        uint8 hash[16];
+        std::memset(hash, hashByte, 16);
+        f->setFileHash(hash);
+        f->setFileName(name);
+        f->setUtcFileDate(date);
+        f->setFileSize(size);
+        return f;
+    };
+
+    // Two records of the same size: told apart by name and date
+    auto* a = make(1, QStringLiteral("One.bin"), 100, 5000);
+    auto* b = make(2, QStringLiteral("two.bin"), 200, 5000);
+    QVERIFY(list.safeAddKFile(a));
+    QVERIFY(list.safeAddKFile(b));
+    QCOMPARE(list.findKnownFile(QStringLiteral("one.BIN"), 100, 5000), a);   // case-insensitive
+    QCOMPARE(list.findKnownFile(QStringLiteral("two.bin"), 200, 5000), b);
+    QVERIFY(!list.findKnownFile(QStringLiteral("one.bin"), 101, 5000));
+    QVERIFY(!list.findKnownFile(QStringLiteral("one.bin"), 100, 5001));
+
+    // A date that changes after the add is still found
+    a->setUtcFileDate(150);
+    QCOMPARE(list.findKnownFile(QStringLiteral("one.bin"), 150, 5000), a);
+
+    // Same hash again replaces the record: the old object must not be handed out
+    auto* a2 = make(1, QStringLiteral("renamed.bin"), 300, 5000);
+    QVERIFY(list.safeAddKFile(a2));
+    QVERIFY(!list.findKnownFile(QStringLiteral("one.bin"), 150, 5000));
+    QCOMPARE(list.findKnownFile(QStringLiteral("renamed.bin"), 300, 5000), a2);
+
+    list.remove(b);
+    QVERIFY(!list.findKnownFile(QStringLiteral("two.bin"), 200, 5000));
+    delete b;
+
+    list.clear();
+    QVERIFY(!list.findKnownFile(QStringLiteral("renamed.bin"), 300, 5000));
 }
 
 QTEST_MAIN(tst_KnownFileList)

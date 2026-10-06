@@ -2,13 +2,14 @@
 """
 kadnet.py — Orchestrate a Kademlia LAN test network with Docker.
 
-Generates a nodes.dat seed file, a docker-compose YAML, and manages
+Generates a nodes.dat seed file per node, a docker-compose YAML, and manages
 the lifecycle of N emulecored containers on a private bridge network.
 
 Usage:
     python3 docker/kad/kadnet.py                    # 100 nodes, build + start
     python3 docker/kad/kadnet.py --nodes 10         # 10 nodes
     python3 docker/kad/kadnet.py --nodes 50 --build # rebuild image first
+    python3 docker/kad/kadnet.py --netmon           # with the network monitor
     python3 docker/kad/kadnet.py --down             # tear down
     python3 docker/kad/kadnet.py --logs             # follow logs
 """
@@ -17,6 +18,7 @@ import argparse
 import hashlib
 import ipaddress
 import os
+import random
 import struct
 import subprocess
 import sys
@@ -25,7 +27,10 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
 COMPOSE_FILE = os.path.join(SCRIPT_DIR, "docker-compose.kadnet.yml")
 SEED_DIR = os.path.join(SCRIPT_DIR, "seed")
-NODES_DAT_FILE = os.path.join(SEED_DIR, "nodes.dat")
+# Contacts per node's nodes.dat. Each node gets its own set: a node that sits
+# in everyone's routing table from the start can never pass the UDP firewall
+# check, because testers refuse requesters they already know.
+SEEDS_PER_NODE = 6
 # Shared with docker/httpcache: both rigs run the same emulecored image, so the
 # Dockerfile lives one level up rather than inside either rig.
 DOCKERFILE = os.path.join(PROJECT_ROOT, "docker", "daemon.Dockerfile")
@@ -99,7 +104,22 @@ def generate_nodes_dat(seed_ips: list[str], kad_ids: list[bytes],
             f.write(struct.pack("<B", KADEMLIA_VERSION))  # version
             f.write(struct.pack("<II", 0, 0))        # KadUDPKey (value=0, ip=0)
             f.write(struct.pack("<B", 0))            # ipVerified = false
-    print(f"Generated {path} with {num_contacts} seed contacts")
+
+
+def pick_seeds(index: int, num_nodes: int) -> list[int]:
+    """Pick the node indices (0-based) seeded into node `index`'s nodes.dat.
+
+    The predecessor is always included so the seed graph is a connected ring;
+    the rest are a deterministic random sample of the other nodes.
+    """
+    others = [i for i in range(num_nodes) if i != index]
+    count = min(SEEDS_PER_NODE, len(others))
+    prev = (index - 1) % num_nodes
+    picked = [prev] if others else []
+    pool = [i for i in others if i != prev]
+    rng = random.Random(f"emuleqt-kadnet-seeds-{index}")
+    picked += rng.sample(pool, count - len(picked))
+    return picked
 
 
 def generate_compose(
@@ -111,6 +131,7 @@ def generate_compose(
     ipc_port: int,
     ipc_token: str,
     path: str,
+    netmon: bool = False,
 ):
     """Generate docker-compose.kadnet.yml with N node services."""
     network = ipaddress.IPv4Network(subnet)
@@ -139,7 +160,7 @@ def generate_compose(
             "ports": [f"{host_ipc_port}:{ipc_port}"],
             "volumes": [
                 f"{volume_name}:/root/.config/eMule/Core",
-                "./seed/nodes.dat:/seed/nodes.dat:ro",
+                f"./seed/node-{i}-nodes.dat:/seed/nodes.dat:ro",
                 f"./seed/node-{i}-preferencesKad.dat:/seed/preferencesKad.dat:ro",
                 f"./crashes/node-{i}:/root/.config/eMule/Core/crashes",
             ],
@@ -148,6 +169,9 @@ def generate_compose(
             },
             "restart": "unless-stopped",
         }
+        if netmon:
+            services[service_name]["environment"]["NETMON"] = "1"
+            services[service_name]["volumes"].append(f"./netmon/node-{i}:/netmon")
         volumes[volume_name] = {"driver": "local"}
 
     # Write YAML manually to avoid pyyaml dependency
@@ -243,6 +267,10 @@ def main():
         "--build", action="store_true", help="Rebuild Docker image before starting"
     )
     parser.add_argument(
+        "--netmon", action="store_true",
+        help="Start the network monitor in every node (output in docker/kad/netmon/)"
+    )
+    parser.add_argument(
         "--down", action="store_true", help="Tear down the network and remove volumes"
     )
     parser.add_argument(
@@ -287,6 +315,12 @@ def main():
     for i in range(1, args.nodes + 1):
         os.makedirs(os.path.join(crashes_dir, f"node-{i}"), exist_ok=True)
 
+    # Per-node network monitor output, only when asked for
+    if args.netmon:
+        netmon_dir = os.path.join(SCRIPT_DIR, "netmon")
+        for i in range(1, args.nodes + 1):
+            os.makedirs(os.path.join(netmon_dir, f"node-{i}"), exist_ok=True)
+
     # Generate per-node preferencesKad.dat files (so each daemon starts
     # with a known KadID that matches the entries in nodes.dat)
     os.makedirs(SEED_DIR, exist_ok=True)
@@ -295,10 +329,14 @@ def main():
         generate_preferences_kad_dat(kad_ids[i], ips[i], pref_path)
     print(f"Generated {args.nodes} preferencesKad.dat files in {SEED_DIR}")
 
-    # Generate seed nodes.dat (use first 10 nodes or all if fewer)
-    seed_count = min(10, args.nodes)
-    generate_nodes_dat(ips[:seed_count], kad_ids[:seed_count],
-                       args.tcp_port, args.udp_port, NODES_DAT_FILE)
+    # Generate a nodes.dat per node, each with its own handful of seeds
+    for i in range(args.nodes):
+        seeds = pick_seeds(i, args.nodes)
+        generate_nodes_dat([ips[s] for s in seeds], [kad_ids[s] for s in seeds],
+                           args.tcp_port, args.udp_port,
+                           os.path.join(SEED_DIR, f"node-{i + 1}-nodes.dat"))
+    print(f"Generated {args.nodes} nodes.dat files with "
+          f"{min(SEEDS_PER_NODE, args.nodes - 1)} seed contacts each")
 
     # Generate docker-compose
     generate_compose(
@@ -310,6 +348,7 @@ def main():
         args.ipc_port,
         args.ipc_token,
         COMPOSE_FILE,
+        args.netmon,
     )
 
     # Start the network

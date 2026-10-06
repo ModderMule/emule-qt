@@ -7,6 +7,8 @@
 /// via FileNotifier signal emissions.
 
 #include "files/KnownFile.h"
+#include "app/AppContext.h"
+#include "files/SharedFileList.h"
 #include "files/Collection.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
@@ -182,19 +184,8 @@ bool KnownFile::loadTagsFromFile(FileDataIO& file)
                 statistic.setAllTimeAccepts(tag.intValue());
             break;
         case FT_ULPRIORITY:
-            if (tag.isInt()) {
-                auto val = static_cast<uint8>(tag.intValue());
-                if (val == kPrAuto) {
-                    m_autoUpPriority = true;
-                    m_upPriority = kPrNormal;
-                } else {
-                    m_autoUpPriority = false;
-                    if (val <= kPrVeryLow)
-                        m_upPriority = val;
-                    else
-                        m_upPriority = kPrNormal;
-                }
-            }
+            if (tag.isInt())
+                setUpPriorityFromTag(tag.intValue());
             break;
         case FT_KADLASTPUBLISHSRC:
             if (tag.isInt())
@@ -370,9 +361,7 @@ bool KnownFile::writeToFile(FileDataIO& file) const
             .writeNewEd2kTag(file);
 
     // Priority
-    Tag(FT_ULPRIORITY,
-        static_cast<uint32>(m_autoUpPriority ? kPrAuto : m_upPriority))
-        .writeNewEd2kTag(file);
+    Tag(FT_ULPRIORITY, upPriorityTagValue()).writeNewEd2kTag(file);
 
     // Flags: the metadata version, only when there is one (MFC KnownFile.cpp:897-909)
     if (m_metaDataVer > 0)
@@ -537,6 +526,21 @@ void KnownFile::setUpPriority(uint8 priority, bool /*save*/)
         break;
     }
     emit m_notifier.priorityChanged(m_upPriority);
+    noteChanged();
+}
+
+void KnownFile::noteChanged()
+{
+    if (theApp.sharedFileList)
+        theApp.sharedFileList->noteFileChanged(fileHash());
+}
+
+void KnownFile::setKadFileSearchID(uint32 id)
+{
+    const bool flipped = (m_kadFileSearchID != 0) != (id != 0);
+    m_kadFileSearchID = id;
+    if (flipped)
+        noteChanged();   // "published to Kad" as the list shows it
 }
 
 // ---------------------------------------------------------------------------
@@ -547,6 +551,7 @@ void KnownFile::setPublishedED2K(bool val)
 {
     m_publishedED2K = val;
     emit m_notifier.fileUpdated();
+    noteChanged();
 }
 
 void KnownFile::setLastPublishTimeKadSrc(time_t t, uint32 buddyIP)
@@ -568,6 +573,7 @@ void KnownFile::addUploadingClient(UpDownClient* client)
     m_uploadingClients.push_back(client);
     updateAutoUpPriority();
     emit m_notifier.fileUpdated();
+    noteChanged();
 }
 
 void KnownFile::detachUploadingClients()
@@ -586,6 +592,7 @@ void KnownFile::removeUploadingClient(UpDownClient* client)
     m_uploadingClients.erase(it);
     updateAutoUpPriority();
     emit m_notifier.fileUpdated();
+    noteChanged();
 }
 
 // ---------------------------------------------------------------------------
@@ -609,6 +616,7 @@ void KnownFile::updateAutoUpPriority()
     if (m_upPriority != newPriority) {
         m_upPriority = newPriority;
         emit m_notifier.priorityChanged(m_upPriority);
+        noteChanged();
     }
 }
 
@@ -709,6 +717,23 @@ void KnownFile::updateMetaDataTags()
     if (hasMetaDataTags())
         m_metaDataVer = kMetaDataVer;
     emit m_notifier.metadataUpdated();
+    noteChanged();
+}
+
+void KnownFile::setUpPriorityFromTag(uint32 value)
+{
+    if (value == kPrAuto) {
+        m_autoUpPriority = true;
+        m_upPriority = kPrNormal;
+        return;
+    }
+    m_autoUpPriority = false;
+    m_upPriority = value <= kPrVeryLow ? static_cast<uint8>(value) : kPrNormal;
+}
+
+uint32 KnownFile::upPriorityTagValue() const
+{
+    return m_autoUpPriority ? kPrAuto : m_upPriority;
 }
 
 bool KnownFile::hasMetaDataTags() const
@@ -775,8 +800,10 @@ void KnownFile::updateFileRatingCommentAvail(bool /*forceUpdate*/)
         changed = true;
     }
 
-    if (changed)
+    if (changed) {
         emit m_notifier.fileUpdated();
+        noteChanged();
+    }
 }
 
 // ===========================================================================
@@ -1140,7 +1167,10 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
         AICHHashTree* partTree = aichHashSet.m_hashTree.findHash(
             static_cast<uint64>(part) * PARTSIZE, partLength);
 
-        createHash(file, partLength, partHash.data(), partTree);
+        if (!createHash(file, partLength, partHash.data(), partTree)) {
+            logError(QStringLiteral("KnownFile::createFromFile: read error in '%1'").arg(fullPath));
+            return false;
+        }
         md4HashSet.push_back(partHash);
         remaining -= partLength;
 
@@ -1148,6 +1178,15 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
             int percent = static_cast<int>((static_cast<uint64>(part) + 1) * 100 / parts);
             progressCallback(percent);
         }
+    }
+
+    // Still being written: the hash would be stored under a size and date the file no
+    // longer has. The caller tries again later.
+    fi.refresh();
+    if (static_cast<uint64>(fi.size()) != length
+        || static_cast<time_t>(fi.lastModified().toSecsSinceEpoch()) != utcFileDate()) {
+        logInfo(QStringLiteral("File changed while it was hashed: %1").arg(fullPath));
+        return false;
     }
 
     // Compute final file hash
@@ -1211,7 +1250,8 @@ bool KnownFile::buildAICHHashSet(const QString& path, uint64 expectedSize,
 
         // Only feed AICH, discard MD4
         uint8 dummyHash[16]{};
-        createHash(file, partLength, dummyHash, partTree);
+        if (!createHash(file, partLength, dummyHash, partTree))
+            return false;
         remaining -= partLength;
     }
 
@@ -1248,16 +1288,19 @@ bool KnownFile::adoptAndStoreAICHHashSet(AICHRecoveryHashSet& hashSet)
 // Core hash computation
 // ---------------------------------------------------------------------------
 
-void KnownFile::createHash(QIODevice& device, uint64 length,
+bool KnownFile::createHash(QIODevice& device, uint64 length,
                            uint8* md4HashOut, AICHHashTree* aichTree)
 {
-    static constexpr uint32 kReadBlockSize = 8 * 1024; // 8 KB
+    static constexpr uint32 kReadBlockSize = 64 * 1024;
+    // the AICH split below handles one block boundary per read
+    static_assert(kReadBlockSize <= EMBLOCKSIZE);
 
     auto hashAlg = aichTree ? std::unique_ptr<AICHHashAlgo>(AICHRecoveryHashSet::getNewHashAlgo())
                             : nullptr;
 
     MD4Hasher md4Hasher;
-    uint8 buf[kReadBlockSize];
+    const auto buffer = std::make_unique_for_overwrite<uint8[]>(kReadBlockSize);
+    uint8* const buf = buffer.get();
     uint64 read = 0;
     uint64 blockStart = 0;   ///< file offset of the AICH block being hashed
     uint64 blockFilled = 0;  ///< bytes of that block already fed to hashAlg
@@ -1270,7 +1313,7 @@ void KnownFile::createHash(QIODevice& device, uint64 length,
 
         md4Hasher.add(buf, static_cast<std::size_t>(got));
 
-        // An AICH block is a hash of exactly EMBLOCKSIZE bytes, and 8 KB does not divide
+        // An AICH block is a hash of exactly EMBLOCKSIZE bytes, and the read size does not divide
         // it, so a read that straddles the boundary has to be split — the tail belongs to
         // the next block. MFC srchybrid/KnownFile.cpp:945-959. Feeding the whole chunk and
         // dropping the remainder, as this used to, put a few KB of the next block into
@@ -1307,6 +1350,10 @@ void KnownFile::createHash(QIODevice& device, uint64 length,
             aichTree->setBlockHash(blockFilled, blockStart, hashAlg.get());
         aichTree->reCalculateHash(hashAlg.get(), false);
     }
+
+    // Short of what was asked for: a read error or a file that shrank. The hash of
+    // what did arrive is not the hash of the file.
+    return read == length;
 }
 
 bool KnownFile::createHashFromFile(const QString& filePath, uint64 length,
@@ -1316,8 +1363,7 @@ bool KnownFile::createHashFromFile(const QString& filePath, uint64 length,
     if (!file.open(QIODevice::ReadOnly))
         return false;
 
-    createHash(file, length, md4HashOut, aichTree);
-    return true;
+    return createHash(file, length, md4HashOut, aichTree);
 }
 
 bool KnownFile::createHashFromMemory(const uint8* data, uint32 size,
@@ -1327,8 +1373,7 @@ bool KnownFile::createHashFromMemory(const uint8* data, uint32 size,
     QBuffer buffer(&ba);
     buffer.open(QIODevice::ReadOnly);
 
-    createHash(buffer, size, md4HashOut, aichTree);
-    return true;
+    return createHash(buffer, size, md4HashOut, aichTree);
 }
 
 // ---------------------------------------------------------------------------
@@ -1373,6 +1418,7 @@ void KnownFile::updatePartsInfo()
     }
 
     emit m_notifier.fileUpdated();
+    noteChanged();
 }
 
 // ---------------------------------------------------------------------------

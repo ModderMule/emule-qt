@@ -313,6 +313,12 @@ UpDownClient* UploadQueue::findBestClientInQueue()
         // anyway, so telling it our new IPv6 costs no extra wakeup.
         cur->flushPendingIPChange();
 
+        // Just lost a slot for taking nothing from it: not its turn again yet.
+        if (isSlotCoolingDown(cur, curTick)) {
+            ++it;
+            continue;
+        }
+
         // MFC srchybrid/UploadQueue.cpp:131, now behind the shared predicate so this site and
         // score()'s sysValue guard cannot drift apart. The predicate adds the IPv6 case:
         // tryToConnect() will dial a v6-reachable peer whose IPv4 side is Low-ID, so the
@@ -1088,6 +1094,75 @@ void UploadQueue::updateDatarates()
 // process — MFC CUploadQueue::Process (called ~100ms)
 // ===========================================================================
 
+// ---------------------------------------------------------------------------
+// Dead-slot recycling
+// ---------------------------------------------------------------------------
+
+bool UploadQueue::isSlotCoolingDown(const UpDownClient* client, uint64 curTick) const
+{
+    if (m_slotCooldowns.empty() || !client)
+        return false;
+    const auto it = m_slotCooldowns.find(client->userAddress());
+    return it != m_slotCooldowns.end() && curTick < it->second.until;
+}
+
+void UploadQueue::recycleDeadSlots(uint64 curTick)
+{
+    // A full line loses nothing to a dead slot: the others take up its share.
+    const uint32 capKB = uploadCapKB();
+    const bool underfilled = capKB == UNLIMITED
+        || static_cast<uint64>(m_datarate) * 102 / 100 < static_cast<uint64>(capKB) * 1024;
+    if (!underfilled) {
+        m_underfillSince = 0;
+        m_deadSlotSince.clear();
+        return;
+    }
+    if (m_underfillSince == 0)
+        m_underfillSince = curTick;
+
+    std::erase_if(m_deadSlotSince, [this](const auto& entry) {
+        return std::ranges::find(m_uploadingList, entry.first) == m_uploadingList.end();
+    });
+
+    UpDownClient* dead = nullptr;
+    for (UpDownClient* cur : m_uploadingList) {
+        if (!cur->socket() || cur->friendSlot() || cur->uploadState() != UploadState::Uploading
+            || cur->upSlotActivity(cur->getUpStartTimeDelay()) == UpDownClient::UpSlotActivity::Busy) {
+            m_deadSlotSince.erase(cur);
+            continue;
+        }
+        const uint64 since = m_deadSlotSince.try_emplace(cur, curTick).first->second;
+        if (!dead && curTick - since >= kDeadSlotMs)
+            dead = cur;
+    }
+    if (!dead || curTick - m_underfillSince < kUnderfillMs)
+        return;
+
+    // Only for someone: with nobody to take it, the slot is no use to anyone freed.
+    const bool replacement = std::ranges::any_of(m_waitingList, [&](const UpDownClient* c) {
+        return c->isReachableForSlot() && !isSlotCoolingDown(c, curTick);
+    });
+    if (!replacement)
+        return;
+
+    std::erase_if(m_slotCooldowns, [curTick](const auto& entry) {
+        return curTick - entry.second.lastStrike > kSlotStrikeMemoryMs;
+    });
+    SlotCooldown& cooldown = m_slotCooldowns[dead->userAddress()];
+    const uint64 wait = std::min<uint64>(uint64{kSlotCooldownMs} << std::min<uint32>(cooldown.strikes, 10),
+                                         kSlotCooldownMaxMs);
+    ++cooldown.strikes;
+    cooldown.lastStrike = curTick;
+    cooldown.until = curTick + wait;
+
+    logDebug(QStringLiteral("Upload slot of %1 is taking nothing — given to the next in line "
+                            "(not chosen again for %2 s)")
+                 .arg(dead->userName()).arg(wait / 1000));
+    m_deadSlotSince.erase(dead);
+    if (removeFromUploadQueue(dead))
+        dead->sendOutOfPartReqsAndAddToWaitingQueue();
+}
+
 void UploadQueue::process()
 {
     const uint64 curTick = getTickCount();
@@ -1134,6 +1209,9 @@ void UploadQueue::process()
     // is self-throttled to the same cadence, so driving it from the ~100 ms tick is
     // equivalent without adding a timer of our own.
     updateMaxClientScore();
+
+    // Before the promotion below, so a freed slot is filled in the same pass.
+    recycleDeadSlots(curTick);
 
     // Check if we should accept a new client
     if (forceNewClient())

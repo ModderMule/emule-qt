@@ -24,6 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         git \
         pkg-config \
+        protobuf-compiler \
         python3 \
         python3-pip \
         python3-venv \
@@ -39,11 +40,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libxkbcommon-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Qt 6.10.2 via aqtinstall
+# Install Qt 6.10.2 via aqtinstall (qtgrpc ships QtProtobuf; protoc comes from apt)
 RUN python3 -m venv /opt/aqt-venv \
     && /opt/aqt-venv/bin/pip install aqtinstall \
     && /opt/aqt-venv/bin/aqt install-qt linux desktop 6.10.2 linux_gcc_64 \
-        -m qtmultimedia qthttpserver qtwebsockets \
+        -m qtmultimedia qthttpserver qtwebsockets qtgrpc \
         --base https://ftp.fau.de/qtproject/ \
         --outputdir /opt/Qt \
     && rm -rf /opt/aqt-venv
@@ -57,6 +58,7 @@ WORKDIR /src
 COPY . .
 
 RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+        -DEMULE_BUILD_TESTS=OFF -DEMULE_SEED_FROM_SOURCE_TREE=OFF \
     && cmake --build build --target emulecored --parallel "$(nproc)"
 
 # === Stage 2: Minimal runtime ===============================================
@@ -67,6 +69,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libssl3t64 \
+        ca-certificates \
         zlib1g \
         libglib2.0-0t64 \
         libdbus-1-3 \
@@ -82,11 +85,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libegl1 \
         libgssapi-krb5-2 \
         binutils \
+        iproute2 \
+        procps \
+        tcpdump \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Qt shared libs from builder
 COPY --from=builder /opt/Qt/6.10.2/gcc_64/lib /opt/qt/lib
 ENV LD_LIBRARY_PATH=/opt/qt/lib
+
+# TLS backend only — the rest of the plugin tree is GUI/multimedia
+COPY --from=builder /opt/Qt/6.10.2/gcc_64/plugins/tls /opt/qt/plugins/tls
+ENV QT_PLUGIN_PATH=/opt/qt/plugins
 
 # Copy daemon binary
 COPY --from=builder /src/build/src/daemon/emulecored /usr/local/bin/emulecored
@@ -95,7 +105,12 @@ COPY --from=builder /src/build/src/daemon/emulecored /usr/local/bin/emulecored
 COPY --from=builder /src/data/config /usr/local/share/emuleqt/config
 
 # Verify no missing shared libraries (fail build early instead of at runtime)
-RUN ldd /usr/local/bin/emulecored | grep "not found" && exit 1 || true
+RUN ldd /usr/local/bin/emulecored /opt/qt/plugins/tls/libqopensslbackend.so \
+        | grep "not found" && exit 1 || true
+
+# Network monitor — always in the image, runs only with NETMON=1
+COPY docker/netmon.sh /usr/local/bin/netmon.sh
+RUN chmod +x /usr/local/bin/netmon.sh
 
 # Copy entrypoint
 COPY docker/kad/entrypoint.sh /entrypoint.sh

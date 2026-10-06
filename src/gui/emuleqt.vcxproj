@@ -299,6 +299,7 @@
     <ClCompile Include="utils\ViewNavigation.cpp" />
     <ClCompile Include="utils\ViewSelection.cpp" />
     <ClCompile Include="utils\PanelPoller.cpp" />
+    <ClCompile Include="utils\SharedFilesFetch.cpp" />
     <ClCompile Include="utils\PreviewLauncher.cpp" />
     <ClCompile Include="utils\StatusBarNotifier.cpp" />
     <ClCompile Include="utils\WebServices.cpp" />
@@ -320,6 +321,7 @@
     <QtMoc Include="utils\MetaResultActions.h" />
     <ClInclude Include="utils\NzbDrop.h" />
     <ClInclude Include="utils\PriorityText.h" />
+    <ClInclude Include="utils\SharedFilesFetch.h" />
     <ClInclude Include="utils\Smileys.h" />
     <ClInclude Include="utils\RatingIcons.h" />
     <ClInclude Include="utils\Ed2kLinkImporter.h" />

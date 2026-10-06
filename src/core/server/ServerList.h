@@ -69,8 +69,9 @@ public:
     /// Remove all servers.
     void removeAllServers();
 
-    /// Remove servers with failedCount >= maxRetries. Returns count removed.
-    int removeDeadServers(uint32 maxRetries);
+    /// Does an unanswered stat ping count against the server? Only with fresh proof
+    /// that our own line is up: a server connection or a recent Kad packet.
+    [[nodiscard]] static bool statPingCounts(bool ed2kConnected, time_t lastKadContact, time_t now);
 
     /// Remove every resolved server the IP filter now blocks (after a filter load).
     /// No-op unless filterServerByIP is on. Returns count removed.

@@ -7,6 +7,8 @@
 #include "app/AppContext.h"
 #include "prefs/Preferences.h"
 #include "ipfilter/IPFilter.h"
+#include "kademlia/Kademlia.h"
+#include "kademlia/KadPrefs.h"
 #include "net/Packet.h"
 #include "protocol/ED2KLink.h"
 #include "protocol/Tag.h"
@@ -403,23 +405,6 @@ bool ServerList::removeServer(const Server* server)
     return false;
 }
 
-int ServerList::removeDeadServers(uint32 maxRetries)
-{
-    if (maxRetries == 0)
-        return 0;
-
-    int removed = 0;
-    for (auto i = static_cast<ptrdiff_t>(m_servers.size()) - 1; i >= 0; --i) {
-        if (m_servers[static_cast<size_t>(i)]->failedCount() >= maxRetries) {
-            emit serverAboutToBeRemoved(m_servers[static_cast<size_t>(i)].get());
-            adjustPositionsAfterRemoval(static_cast<size_t>(i));
-            m_servers.erase(m_servers.begin() + i);
-            ++removed;
-        }
-    }
-    return removed;
-}
-
 int ServerList::removeFilteredServers()
 {
     if (!thePrefs.filterServerByIP() || !theApp.ipFilter)
@@ -813,6 +798,12 @@ void ServerList::sortByPreference()
 // UDP server status — OP_GLOBSERVSTATREQ / OP_GLOBSERVSTATRES
 // ---------------------------------------------------------------------------
 
+bool ServerList::statPingCounts(bool ed2kConnected, time_t lastKadContact, time_t now)
+{
+    constexpr time_t kFreshSecs = 120;
+    return ed2kConnected || (lastKadContact > 0 && now - lastKadContact <= kFreshSecs);
+}
+
 void ServerList::serverStats()
 {
     if (m_servers.empty() || !theApp.serverConnect)
@@ -930,7 +921,12 @@ void ServerList::serverStats()
     // at once (matches eMule's `tNow - (rand() % HR2S(1))`).
     target->setLastPingedTime(
         now - static_cast<uint32>(QRandomGenerator::global()->bounded(HR2S(1))));
-    target->incFailedCount();
+    // An unanswered ping only says something about the server while our own line is
+    // known to be up; Kad reports connected for many minutes after its last packet.
+    auto* kad = kad::Kademlia::instance();
+    const time_t lastKad = (kad && kad->getPrefs()) ? kad->getPrefs()->lastContact() : 0;
+    if (statPingCounts(theApp.serverConnect->isConnected(), lastKad, now))
+        target->incFailedCount();
 
     logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATREQ -> %1 (%2) challenge=0x%3")
                  .arg(target->name(), target->addressWithPort())

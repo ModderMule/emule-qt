@@ -8,6 +8,7 @@
 #include "crypto/AesCbc.h"
 #include "httpcache/HttpCacheManager.h"
 #include "httpcache/HttpCacheOffer.h"
+#include "httpcache/HttpCacheReach.h"
 #include "net/Address.h"
 #include "prefs/Preferences.h"
 #include "net/Packet.h"
@@ -17,8 +18,11 @@
 
 #include <QScopeGuard>
 #include <QTest>
+#include <QUrl>
 
 using namespace eMule;
+
+Q_DECLARE_METATYPE(eMule::CacheReach)
 
 namespace {
 
@@ -83,6 +87,14 @@ private slots:
     void urlIsAcceptable_screensBothFamilies_data();
     void urlIsAcceptable_screensBothFamilies();
     void urlIsAcceptable_labModeOpensUpIPv6Only();
+    void urlIsAcceptable_localHostNeedsALocalSender();
+
+    void reach_classifiesAddresses_data();
+    void reach_classifiesAddresses();
+    void reach_classifiesHostLiterals();
+    void reach_allowsPeer_data();
+    void reach_allowsPeer();
+    void chooseServer_skipsIneligibleServers();
 };
 
 // ---------------------------------------------------------------------------
@@ -452,7 +464,9 @@ void tst_HttpCacheOffer::urlIsAcceptable_screensBothFamilies()
     thePrefs.setFilterLANIPs(true);
     const auto restore = qScopeGuard([savedFilter] { thePrefs.setFilterLANIPs(savedFilter); });
 
-    QCOMPARE(HttpCacheManager::urlIsAcceptable(url), acceptable);
+    // A local sender, so every refusal below is the URL's doing and not the sender's.
+    QCOMPARE(HttpCacheManager::urlIsAcceptable(url, Address::fromString(QStringLiteral("192.168.7.23"))),
+             acceptable);
 }
 
 void tst_HttpCacheOffer::urlIsAcceptable_labModeOpensUpIPv6Only()
@@ -466,13 +480,170 @@ void tst_HttpCacheOffer::urlIsAcceptable_labModeOpensUpIPv6Only()
     thePrefs.setFilterLANIPs(false);
     const auto restore = qScopeGuard([savedFilter] { thePrefs.setFilterLANIPs(savedFilter); });
 
-    QVERIFY(HttpCacheManager::urlIsAcceptable(QStringLiteral("http://[::1]:8080/x")));
-    QVERIFY(HttpCacheManager::urlIsAcceptable(QStringLiteral("http://[fd00::1]/x")));
-    QVERIFY(HttpCacheManager::urlIsAcceptable(QStringLiteral("http://127.0.0.1:8080/x")));
+    const Address loopbackPeer = Address::fromString(QStringLiteral("127.0.0.3"));
+
+    QVERIFY(HttpCacheManager::urlIsAcceptable(QStringLiteral("http://[::1]:8080/x"), loopbackPeer));
+    QVERIFY(HttpCacheManager::urlIsAcceptable(QStringLiteral("http://[fd00::1]/x"), loopbackPeer));
+    QVERIFY(HttpCacheManager::urlIsAcceptable(QStringLiteral("http://127.0.0.1:8080/x"), loopbackPeer));
 
     // Still not peer addresses under any configuration.
-    QVERIFY(!HttpCacheManager::urlIsAcceptable(QStringLiteral("http://[ff02::1]/x")));
-    QVERIFY(!HttpCacheManager::urlIsAcceptable(QStringLiteral("http://[::]/x")));
+    QVERIFY(!HttpCacheManager::urlIsAcceptable(QStringLiteral("http://[ff02::1]/x"), loopbackPeer));
+    QVERIFY(!HttpCacheManager::urlIsAcceptable(QStringLiteral("http://[::]/x"), loopbackPeer));
+}
+
+void tst_HttpCacheOffer::urlIsAcceptable_localHostNeedsALocalSender()
+{
+    // LAN mode opens local hosts up, but only to somebody who is local too: without
+    // this any peer on the internet — or any Kad record — could aim us at this
+    // machine or at a box on its LAN.
+    const ScopedLabNetworkMode labOn{true};
+    const bool savedFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restore = qScopeGuard([savedFilter] { thePrefs.setFilterLANIPs(savedFilter); });
+
+    const Address lanPeer = Address::fromString(QStringLiteral("192.168.7.23"));
+    const Address loopbackPeer = Address::fromString(QStringLiteral("127.0.0.3"));
+    const Address publicPeer = Address::fromString(QStringLiteral("87.65.43.21"));
+    const Address nobody;   // a Kad record
+
+    const QString lanUrl = QStringLiteral("http://192.168.7.9:8080/x");
+    const QString loopbackUrl = QStringLiteral("http://127.0.0.1:8080/x");
+    const QString publicUrl = QStringLiteral("http://93.184.216.34/x");
+
+    QVERIFY(HttpCacheManager::urlIsAcceptable(lanUrl, lanPeer));
+    QVERIFY(HttpCacheManager::urlIsAcceptable(lanUrl, loopbackPeer));
+    QVERIFY(!HttpCacheManager::urlIsAcceptable(lanUrl, publicPeer));
+    QVERIFY(!HttpCacheManager::urlIsAcceptable(lanUrl, nobody));
+
+    // A loopback URL is this machine: a LAN peer's 127.0.0.1 is not ours.
+    QVERIFY(HttpCacheManager::urlIsAcceptable(loopbackUrl, loopbackPeer));
+    QVERIFY(!HttpCacheManager::urlIsAcceptable(loopbackUrl, lanPeer));
+    QVERIFY(!HttpCacheManager::urlIsAcceptable(loopbackUrl, publicPeer));
+    QVERIFY(!HttpCacheManager::urlIsAcceptable(loopbackUrl, nobody));
+    QVERIFY(!HttpCacheManager::urlIsAcceptable(QStringLiteral("http://[::1]:8080/x"), publicPeer));
+
+    // A public host never depended on the sender.
+    QVERIFY(HttpCacheManager::urlIsAcceptable(publicUrl, publicPeer));
+    QVERIFY(HttpCacheManager::urlIsAcceptable(publicUrl, nobody));
+}
+
+// ---------------------------------------------------------------------------
+// Local-address rule
+// ---------------------------------------------------------------------------
+
+void tst_HttpCacheOffer::reach_classifiesAddresses_data()
+{
+    QTest::addColumn<QString>("address");
+    QTest::addColumn<CacheReach>("reach");
+
+    QTest::newRow("public v4")     << QStringLiteral("93.184.216.34") << CacheReach::Public;
+    QTest::newRow("public v6")     << QStringLiteral("2606:4700::1")  << CacheReach::Public;
+    QTest::newRow("v4 loopback")   << QStringLiteral("127.0.0.1")     << CacheReach::Loopback;
+    QTest::newRow("v4 loopback 2") << QStringLiteral("127.8.9.10")    << CacheReach::Loopback;
+    QTest::newRow("v6 loopback")   << QStringLiteral("::1")           << CacheReach::Loopback;
+    QTest::newRow("10/8")          << QStringLiteral("10.20.30.40")   << CacheReach::Lan;
+    QTest::newRow("172.16/12")     << QStringLiteral("172.20.1.2")    << CacheReach::Lan;
+    QTest::newRow("192.168/16")    << QStringLiteral("192.168.7.23")  << CacheReach::Lan;
+    QTest::newRow("v4 link-local") << QStringLiteral("169.254.3.4")   << CacheReach::Lan;
+    QTest::newRow("v6 link-local") << QStringLiteral("fe80::12:34")   << CacheReach::Lan;
+    QTest::newRow("v6 ULA")        << QStringLiteral("fd00::12:34")   << CacheReach::Lan;
+    // Just outside the private ranges.
+    QTest::newRow("172.32")        << QStringLiteral("172.32.1.2")    << CacheReach::Public;
+    QTest::newRow("192.169")       << QStringLiteral("192.169.7.23")  << CacheReach::Public;
+}
+
+void tst_HttpCacheOffer::reach_classifiesAddresses()
+{
+    QFETCH(QString, address);
+    QFETCH(CacheReach, reach);
+
+    QCOMPARE(classifyCacheAddress(Address::fromString(address)), reach);
+}
+
+void tst_HttpCacheOffer::reach_classifiesHostLiterals()
+{
+    QCOMPARE(classifyCacheHostLiteral(QStringLiteral("localhost")), CacheReach::Loopback);
+    QCOMPARE(classifyCacheHostLiteral(QStringLiteral("LocalHost")), CacheReach::Loopback);
+    QCOMPARE(classifyCacheHostLiteral(QStringLiteral("cache.localhost")), CacheReach::Loopback);
+    QCOMPARE(classifyCacheHostLiteral(QStringLiteral("127.0.0.1")), CacheReach::Loopback);
+    QCOMPARE(classifyCacheHostLiteral(QStringLiteral("::ffff:127.0.0.1")), CacheReach::Loopback);
+    QCOMPARE(classifyCacheHostLiteral(QStringLiteral("::ffff:192.168.7.23")), CacheReach::Lan);
+    QCOMPARE(classifyCacheHostLiteral(QStringLiteral("176.125.242.230")), CacheReach::Public);
+
+    // A name says nothing until it is resolved, and the wildcard is nowhere.
+    QCOMPARE(classifyCacheHostLiteral(QStringLiteral("danielmac.local")), CacheReach::Unknown);
+    QCOMPARE(classifyCacheHostLiteral(QStringLiteral("example.com")), CacheReach::Unknown);
+    QCOMPARE(classifyCacheHostLiteral(QStringLiteral("0.0.0.0")), CacheReach::Unknown);
+    QCOMPARE(classifyCacheAddress(Address{}), CacheReach::Unknown);
+
+    QCOMPARE(strictestCacheReach(CacheReach::Public, CacheReach::Lan), CacheReach::Lan);
+    QCOMPARE(strictestCacheReach(CacheReach::Loopback, CacheReach::Lan), CacheReach::Loopback);
+    QCOMPARE(strictestCacheReach(CacheReach::Public, CacheReach::Public), CacheReach::Public);
+}
+
+void tst_HttpCacheOffer::reach_allowsPeer_data()
+{
+    QTest::addColumn<CacheReach>("reach");
+    QTest::addColumn<QString>("peer");
+    QTest::addColumn<bool>("lanMode");
+    QTest::addColumn<bool>("allowed");
+
+    const QString pub = QStringLiteral("87.65.43.21");
+    const QString lan = QStringLiteral("192.168.7.23");
+    const QString loop = QStringLiteral("127.0.0.3");
+
+    QTest::newRow("public server, public peer")       << CacheReach::Public   << pub  << false << true;
+    QTest::newRow("public server, lan peer")          << CacheReach::Public   << lan  << false << true;
+
+    QTest::newRow("lan server, lan peer, lan mode")   << CacheReach::Lan      << lan  << true  << true;
+    QTest::newRow("lan server, loop peer, lan mode")  << CacheReach::Lan      << loop << true  << true;
+    QTest::newRow("lan server, public peer")          << CacheReach::Lan      << pub  << true  << false;
+    QTest::newRow("lan server, lan peer, filtered")   << CacheReach::Lan      << lan  << false << false;
+    QTest::newRow("lan server, v6 ULA peer")          << CacheReach::Lan
+                                                      << QStringLiteral("fd00::12:34") << true << true;
+
+    QTest::newRow("loop server, loop peer, lan mode") << CacheReach::Loopback << loop << true  << true;
+    QTest::newRow("loop server, lan peer")            << CacheReach::Loopback << lan  << true  << false;
+    QTest::newRow("loop server, public peer")         << CacheReach::Loopback << pub  << true  << false;
+    QTest::newRow("loop server, loop peer, filtered") << CacheReach::Loopback << loop << false << false;
+
+    QTest::newRow("unresolved, lan peer")             << CacheReach::Unknown  << lan  << true  << false;
+    QTest::newRow("unresolved, public peer")          << CacheReach::Unknown  << pub  << true  << false;
+}
+
+void tst_HttpCacheOffer::reach_allowsPeer()
+{
+    QFETCH(CacheReach, reach);
+    QFETCH(QString, peer);
+    QFETCH(bool, lanMode);
+    QFETCH(bool, allowed);
+
+    QCOMPARE(cacheReachAllowsPeer(reach, Address::fromString(peer), lanMode), allowed);
+}
+
+void tst_HttpCacheOffer::chooseServer_skipsIneligibleServers()
+{
+    // The filter is how process() passes over a server on a local address that the
+    // peers waiting for a chunk cannot reach. It is a skip like any other: the
+    // rotation moves on to the next server instead of giving up.
+    const QList<HttpCacheServerConfig> servers{
+        {QStringLiteral("local"), QStringLiteral("http://192.168.7.9:8080"),
+         QStringLiteral("key"), {}, true},
+        {QStringLiteral("public"), QStringLiteral("http://176.125.242.230:8080"),
+         QStringLiteral("key"), {}, true},
+    };
+    const QHash<QString, HttpCacheManager::ServerHealth> healthy;
+
+    const auto publicOnly = [](const HttpCacheServerConfig& server) {
+        return classifyCacheHostLiteral(QUrl(server.baseUrl).host()) == CacheReach::Public;
+    };
+
+    QCOMPARE(HttpCacheManager::chooseServer(servers, healthy, 0, 1000), 0);
+    QCOMPARE(HttpCacheManager::chooseServer(servers, healthy, 0, 1000, publicOnly), 1);
+    QCOMPARE(HttpCacheManager::chooseServer(servers, healthy, 1, 1000, publicOnly), 1);
+
+    const auto nobody = [](const HttpCacheServerConfig&) { return false; };
+    QCOMPARE(HttpCacheManager::chooseServer(servers, healthy, 0, 1000, nobody), -1);
 }
 
 #include "tst_HttpCacheOffer.moc"

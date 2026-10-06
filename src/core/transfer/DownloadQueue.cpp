@@ -240,6 +240,29 @@ void DownloadQueue::deleteAll()
     m_items.clear();
 }
 
+void DownloadQueue::cancelFile(PartFile* file)
+{
+    if (!file)
+        return;
+
+    auto* known = m_knownFileList ? m_knownFileList : theApp.knownFileList;
+    auto* shared = m_sharedFileList ? m_sharedFileList : theApp.sharedFileList;
+
+    // No preference check here: KnownFileList::addCancelledFileID() owns it.
+    if (known)
+        known->addCancelledFileID(file->fileHash());
+    file->stopFile(true);
+    removeFile(file);
+    // A completed download was handed to the known and shared lists, which hold
+    // non-owning references; unlink both before freeing or the next known.met
+    // save walks a dead pointer.
+    if (known)
+        known->remove(file);
+    if (shared)
+        shared->removeFile(file);
+    delete file;
+}
+
 // ===========================================================================
 // Lookup
 // ===========================================================================

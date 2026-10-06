@@ -275,15 +275,89 @@ WebServer::~WebServer()
     stop();
 }
 
+QString WebServer::redactedUrl(const QUrl& url)
+{
+    QUrlQuery query(url);
+    if (!query.hasQueryItem(QStringLiteral("token")))
+        return url.toString();
+    query.removeAllQueryItems(QStringLiteral("token"));
+    query.addQueryItem(QStringLiteral("token"), QStringLiteral("***"));
+    QUrl copy(url);
+    copy.setQuery(query);
+    return copy.toString();
+}
+
+bool WebServer::isSecretHeader(QStringView name)
+{
+    return name.compare(QLatin1StringView("cookie"), Qt::CaseInsensitive) == 0
+        || name.compare(QLatin1StringView("x-api-key"), Qt::CaseInsensitive) == 0
+        || name.compare(QLatin1StringView("authorization"), Qt::CaseInsensitive) == 0;
+}
+
+namespace {
+
+/// Load certificate and private key. @return empty on success, else what is wrong.
+QString loadTlsIdentity(const QString& certPath, const QString& keyPath, QSslConfiguration& out)
+{
+    if (certPath.isEmpty() || keyPath.isEmpty())
+        return QStringLiteral("no certificate or key file is set");
+
+    QFile certFile(certPath);
+    if (!certFile.open(QIODevice::ReadOnly))
+        return QStringLiteral("the certificate file cannot be read (%1)").arg(certPath);
+    QFile keyFile(keyPath);
+    if (!keyFile.open(QIODevice::ReadOnly))
+        return QStringLiteral("the key file cannot be read (%1)").arg(keyPath);
+
+    const QList<QSslCertificate> chain = QSslCertificate::fromData(certFile.readAll(), QSsl::Pem);
+    if (chain.isEmpty() || chain.first().isNull())
+        return QStringLiteral("the certificate file holds no PEM certificate");
+
+    // The PEM does not say which algorithm QSslKey should expect
+    const QByteArray keyData = keyFile.readAll();
+    QSslKey key;
+    for (const auto algo : {QSsl::Rsa, QSsl::Ec, QSsl::Dsa}) {
+        key = QSslKey(keyData, algo, QSsl::Pem);
+        if (!key.isNull())
+            break;
+    }
+    if (key.isNull())
+        return QStringLiteral("the key file holds no usable RSA, EC or DSA key");
+
+    out = QSslConfiguration::defaultConfiguration();
+    out.setLocalCertificateChain(chain);
+    out.setPrivateKey(key);
+    return {};
+}
+
+} // namespace
+
 bool WebServer::start(const WebServerConfig& config)
 {
     if (m_server)
         stop();
 
     m_config = config;
+    m_requestedConfig = config;
 
     if (!m_config.enabled)
         return false;
+
+    // HTTPS asked for: it is TLS or nothing. Without a usable certificate neither
+    // surface is served; the server stays up on loopback for the preview stream only.
+    QSslConfiguration sslConfig;
+    if (m_config.httpsEnabled) {
+        const QString problem = loadTlsIdentity(m_config.certPath, m_config.keyPath, sslConfig);
+        if (!problem.isEmpty()) {
+            logError(QStringLiteral("WebServer: HTTPS is enabled but %1 — web interface and "
+                                    "REST API stay off").arg(problem));
+            m_config.httpsEnabled   = false;
+            m_config.webUiEnabled   = false;
+            m_config.restApiEnabled = false;
+            m_config.guestEnabled   = false;
+            m_config.listenAddress  = QStringLiteral("127.0.0.1");
+        }
+    }
 
     // Initialize session manager
     m_sessionManager = std::make_unique<WebSessionManager>(m_config.sessionTimeout);
@@ -366,53 +440,69 @@ bool WebServer::start(const WebServerConfig& config)
         ? QHostAddress::Any
         : QHostAddress(m_config.listenAddress);
 
-    bool useSsl = false;
-    if (m_config.httpsEnabled && !m_config.certPath.isEmpty() && !m_config.keyPath.isEmpty()) {
-        QFile certFile(m_config.certPath);
-        QFile keyFile(m_config.keyPath);
-        if (certFile.open(QIODevice::ReadOnly) && keyFile.open(QIODevice::ReadOnly)) {
-            auto* sslServer = new QSslServer(m_server.get());
-            QSslConfiguration sslConfig = QSslConfiguration::defaultConfiguration();
-            sslConfig.setLocalCertificate(QSslCertificate(certFile.readAll(), QSsl::Pem));
-            sslConfig.setPrivateKey(QSslKey(keyFile.readAll(), QSsl::Rsa));
-            sslServer->setSslConfiguration(sslConfig);
-
-            if (sslServer->listen(addr, m_config.port)) {
-                m_server->bind(sslServer);
-                m_tcpServer = sslServer;
-                useSsl = true;
-            } else {
-                logError(QStringLiteral("WebServer: HTTPS failed to listen on port %1: %2")
-                             .arg(m_config.port).arg(sslServer->errorString()));
-                delete sslServer;
-            }
-        } else {
-            logError(QStringLiteral("WebServer: failed to open cert/key files, falling back to HTTP"));
-        }
-    }
-
-    if (!useSsl) {
+    if (m_config.httpsEnabled) {
+        auto* sslServer = new QSslServer(m_server.get());
+        sslServer->setSslConfiguration(sslConfig);
+        m_tcpServer = sslServer;
+    } else {
         m_tcpServer = new QTcpServer(m_server.get());
-
-        if (!m_tcpServer->listen(addr, m_config.port)) {
-            logError(QStringLiteral("WebServer: failed to listen on port %1: %2")
-                         .arg(m_config.port)
-                         .arg(m_tcpServer->errorString()));
-            m_server.reset();
-            m_tcpServer = nullptr;
-            return false;
-        }
-
-        m_server->bind(m_tcpServer);
     }
+
+    if (!m_tcpServer->listen(addr, m_config.port)) {
+        logError(QStringLiteral("WebServer: failed to listen on port %1: %2")
+                     .arg(m_config.port)
+                     .arg(m_tcpServer->errorString()));
+        m_server.reset();
+        m_tcpServer = nullptr;
+        return false;
+    }
+    m_server->bind(m_tcpServer);
 
     const auto actualPort = m_tcpServer->serverPort();
-    logInfo(QStringLiteral("WebServer: listening on port %1%2")
+    logInfo(QStringLiteral("WebServer: listening on %1 port %2%3")
+                .arg(addr == QHostAddress::Any ? QStringLiteral("all interfaces") : addr.toString())
                 .arg(actualPort)
                 .arg(m_config.httpsEnabled ? QStringLiteral(" (HTTPS)") : QString()));
+    if (!addr.isLoopback() && (m_config.webUiEnabled || m_config.restApiEnabled))
+        logInfo(QStringLiteral("WebServer: reachable from other hosts; set a listen address "
+                               "of 127.0.0.1 to keep it local"));
 
     emit started(actualPort);
     return true;
+}
+
+WebServerConfig WebServerConfig::fromPreferences(const Preferences& prefs)
+{
+    // The web UI and the REST API are two independent surfaces — either can be
+    // enabled without the other.
+    WebServerConfig config;
+    config.enabled        = true;
+    config.port           = prefs.webServerPort();
+    config.webUiEnabled   = prefs.webServerEnabled();
+    config.restApiEnabled = prefs.webServerRestApiEnabled();
+
+    if (config.webUiEnabled || config.restApiEnabled) {
+        // Either surface needs the shared server + auth settings: REST authenticates
+        // with apiKey, the web UI with a session login.
+        config.listenAddress       = prefs.webServerListenAddress();
+        config.apiKey              = prefs.webServerApiKey();
+        config.gzipEnabled         = prefs.webServerGzipEnabled();
+        config.corsAllowedOrigins  = prefs.webServerCorsAllowedOrigins();
+        config.templatePath        = prefs.webServerTemplatePath();
+        config.sessionTimeout      = prefs.webServerSessionTimeout();
+        config.httpsEnabled        = prefs.webServerHttpsEnabled();
+        config.certPath            = prefs.webServerCertPath();
+        config.keyPath             = prefs.webServerKeyPath();
+        config.adminPasswordHash   = prefs.webServerAdminPassword();
+        config.adminAllowHiLevFunc = prefs.webServerAdminAllowHiLevFunc();
+        config.guestEnabled        = prefs.webServerGuestEnabled();
+        config.guestPasswordHash   = prefs.webServerGuestPassword();
+    } else {
+        // Preview-only: keep it on localhost and expose neither surface.
+        config.listenAddress = QStringLiteral("127.0.0.1");
+        config.guestEnabled  = false;
+    }
+    return config;
 }
 
 void WebServer::reloadTemplate()
@@ -805,8 +895,9 @@ void WebServer::registerRoutes()
 
 WebServer::AuthResult WebServer::checkAuth(const QHttpHeaders& headers) const
 {
+    // No key configured means nobody gets in, not everybody.
     if (m_config.apiKey.isEmpty())
-        return {true, QHttpServerResponse(QHttpServerResponse::StatusCode::Ok)};
+        return {false, jsonError(401, QStringLiteral("Unauthorized: no API key is configured"))};
 
     const auto key = headers.combinedValue(QByteArrayLiteral("X-Api-Key"));
     if (key.isEmpty() || QString::fromUtf8(key) != m_config.apiKey)
@@ -907,12 +998,13 @@ QHttpServerResponse WebServer::handlePreviewStream(const QString& hash, const QH
     const bool dbg = m_preferences && m_preferences->logWebServer();
 
     if (dbg) {
-        logDebug(QStringLiteral("Preview: GET %1").arg(req.url().toString()));
+        logDebug(QStringLiteral("Preview: GET %1").arg(redactedUrl(req.url())));
         const auto reqHeaders = req.headers();
         for (qsizetype i = 0; i < reqHeaders.size(); ++i) {
+            const QString name = QString::fromLatin1(reqHeaders.nameAt(i));
             logDebug(QStringLiteral("Preview request header: %1: %2")
-                .arg(QString::fromLatin1(reqHeaders.nameAt(i)),
-                     QString::fromLatin1(reqHeaders.valueAt(i))));
+                .arg(name, isSecretHeader(name) ? QStringLiteral("***")
+                                                : QString::fromLatin1(reqHeaders.valueAt(i))));
         }
     }
 
@@ -2239,7 +2331,7 @@ QHttpServerResponse WebServer::handleGetSearchResults(uint32 searchID)
         });
 
     if (!found)
-        return jsonSuccess(QJsonArray{});
+        return jsonError(404, QStringLiteral("Search not found"));
 
     QJsonObject result{
         {QStringLiteral("searchID"),     static_cast<qint64>(searchID)},
@@ -2387,16 +2479,56 @@ QHttpServerResponse WebServer::handlePatchPreferences(const QJsonObject& body)
     if (!m_preferences)
         return jsonError(500, QStringLiteral("Preferences not available"));
 
-    if (body.contains(QStringLiteral("nick")))
-        m_preferences->setNick(body[QStringLiteral("nick")].toString());
-    if (body.contains(QStringLiteral("maxUpload")))
-        m_preferences->setMaxUpload(static_cast<uint32>(body[QStringLiteral("maxUpload")].toDouble()));
-    if (body.contains(QStringLiteral("maxDownload")))
-        m_preferences->setMaxDownload(static_cast<uint32>(body[QStringLiteral("maxDownload")].toDouble()));
-    if (body.contains(QStringLiteral("autoConnect")))
-        m_preferences->setAutoConnect(body[QStringLiteral("autoConnect")].toBool());
-    if (body.contains(QStringLiteral("kadEnabled")))
-        m_preferences->setKadEnabled(body[QStringLiteral("kadEnabled")].toBool());
+    // Validate everything first: one bad field and nothing is changed.
+    const auto limit = [](const QJsonValue& v) -> std::optional<uint32> {
+        const double d = v.toDouble(-1);
+        if (!v.isDouble() || d < 0 || d > double(UINT32_MAX) || d != std::floor(d))
+            return std::nullopt;
+        return static_cast<uint32>(d);
+    };
+
+    std::optional<QString> nick;
+    std::optional<uint32> maxUpload, maxDownload;
+    std::optional<bool> autoConnect, kadEnabled;
+    for (auto it = body.begin(); it != body.end(); ++it) {
+        const QString key = it.key();
+        const QJsonValue value = it.value();
+        bool ok = true;
+        if (key == QLatin1StringView("nick")) {
+            const QString text = value.toString().trimmed();
+            ok = value.isString() && !text.isEmpty() && text.size() <= 50;
+            nick = text;
+        } else if (key == QLatin1StringView("maxUpload")) {
+            maxUpload = limit(value);
+            ok = maxUpload.has_value();
+        } else if (key == QLatin1StringView("maxDownload")) {
+            maxDownload = limit(value);
+            ok = maxDownload.has_value();
+        } else if (key == QLatin1StringView("autoConnect")) {
+            ok = value.isBool();
+            autoConnect = value.toBool();
+        } else if (key == QLatin1StringView("kadEnabled")) {
+            ok = value.isBool();
+            kadEnabled = value.toBool();
+        } else {
+            return jsonError(400, QStringLiteral("Unknown or read-only preference: %1").arg(key));
+        }
+        if (!ok)
+            return jsonError(400, QStringLiteral("Invalid value for %1").arg(key));
+    }
+
+    if (nick)
+        m_preferences->setNick(*nick);
+    if (maxUpload)
+        m_preferences->setMaxUpload(*maxUpload);
+    if (maxDownload)
+        m_preferences->setMaxDownload(*maxDownload);
+    if (autoConnect)
+        m_preferences->setAutoConnect(*autoConnect);
+    if (kadEnabled)
+        m_preferences->setKadEnabled(*kadEnabled);
+    if (!body.isEmpty())
+        m_preferences->save();
 
     return handleGetPreferences();
 }
@@ -2606,7 +2738,7 @@ void WebServer::dispatchActions(const QUrlQuery& query, const QString& page)
         else if (op == QStringLiteral("resume"))
             file->resumeFile();
         else if (op == QStringLiteral("cancel"))
-            file->stopFile(true);
+            m_downloadQueue->cancelFile(file);   // frees the file
         else if (op == QStringLiteral("priolow")) {
             file->setAutoDownPriority(false);
             file->setDownPriority(kPrLow);

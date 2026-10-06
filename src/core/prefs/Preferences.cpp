@@ -2342,7 +2342,11 @@ void Preferences::setWebServerPort(uint16 val) { set(&Data::webServerPort, val);
 
 QString Preferences::webServerApiKey() const { return get(&Data::webServerApiKey); }
 
-void Preferences::setWebServerApiKey(const QString& val) { set(&Data::webServerApiKey, val); }
+void Preferences::setWebServerApiKey(const QString& val)
+{
+    // Never empty: an empty key would be no key. Clearing it asks for a new one.
+    set(&Data::webServerApiKey, val.trimmed().isEmpty() ? generateApiKey() : val.trimmed());
+}
 
 QString Preferences::webServerListenAddress() const { return get(&Data::webServerListenAddress); }
 

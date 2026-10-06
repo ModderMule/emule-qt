@@ -97,6 +97,10 @@ public:
     bool disconnected(const QString& reason, bool fromSocket = false) override;
     void sendCancelTransfer() override;
 
+    /// On top of the shared rules: a local address is only dialled in LAN mode for
+    /// an offer from a local peer — the same test a literal host gets up front.
+    bool acceptResolvedAddress(const Address& addr) override;
+
     /// "Downloading (HTTP Cache)" and friends, so the transfer list shows at a
     /// glance that these bytes are not costing the uploader anything.
     [[nodiscard]] QString downloadStateDisplayString() const override;

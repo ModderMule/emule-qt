@@ -45,7 +45,7 @@ ipc:
 upnp:
   enableUPnP: false
 
-webServer:
+webserver:
   enabled: false
 
 directories:
@@ -88,6 +88,12 @@ fi
 
 # Enable kernel core dumps as fallback
 ulimit -c unlimited 2>/dev/null || true
+
+# Optional network monitor (kadnet.py --netmon)
+if [ "${NETMON:-0}" = "1" ]; then
+    echo "[entrypoint] Network monitor on — writing to ${NETMON_DIR:-/netmon}"
+    /usr/local/bin/netmon.sh &
+fi
 
 echo "[entrypoint] Starting emulecored as ${NODE_NICK} (TCP=${TCP_PORT}, UDP=${UDP_PORT}, IPC=${IPC_PORT})"
 exec emulecored

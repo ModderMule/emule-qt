@@ -5,8 +5,12 @@
 #include "AICHSyncThread.h"
 #include "AICHHashSet.h"
 #include "FileIdentifier.h"
+#include "app/AppContext.h"
 #include "files/KnownFile.h"
+#include "files/KnownFileList.h"
+#include "files/PartFile.h"
 #include "files/SharedFileList.h"
+#include "transfer/DownloadQueue.h"
 #include "utils/Log.h"
 #include "utils/SafeFile.h"
 
@@ -39,6 +43,12 @@ void AICHSyncThread::requestStop()
     m_jobReady.wakeAll();
 }
 
+void AICHSyncThread::setPurgeSource(KnownFileList* knownFiles)
+{
+    m_knownFiles = knownFiles;
+    m_purgeAllowed = knownFiles != nullptr;
+}
+
 void AICHSyncThread::run()
 {
     if (isClosing() || !loadIndex())
@@ -53,7 +63,24 @@ void AICHSyncThread::run()
             QMutexLocker locker(&m_jobMutex);
             while (!isClosing() && m_jobs.empty() && !m_jobsQueued)
                 m_jobReady.wait(&m_jobMutex);
-            if (isClosing() || m_jobs.empty())
+            if (isClosing())
+                break;
+            if (m_purgeQueued) {
+                m_purgeQueued = false;
+                const std::unordered_set<AICHHash> keep = std::move(m_keep);
+                locker.unlock();
+                uint32 dropped = 0;
+                uint64 bytes = 0;
+                if (!AICHRecoveryHashSet::compactKnown2(
+                        [&keep](const AICHHash& hash) { return keep.contains(hash); }, dropped, bytes))
+                    logWarning(QStringLiteral("AICH sync: could not purge known2_64.met"));
+                else if (dropped > 0)
+                    logInfo(QStringLiteral("AICH sync: dropped %1 unused hashsets (%2 bytes)")
+                                .arg(dropped).arg(bytes));
+                emit purged(dropped, bytes);
+                continue;
+            }
+            if (m_jobs.empty())
                 break;
             job = std::move(m_jobs.front());
             m_jobs.pop_front();
@@ -133,7 +160,8 @@ bool AICHSyncThread::loadIndex()
     }
 
     for (const auto& [hash, pos] : entries)
-        AICHRecoveryHashSet::addStoredAICHHash(hash, pos);
+        if (AICHRecoveryHashSet::addStoredAICHHash(hash, pos) != 0)
+            m_hasDuplicates = true;
     return true;
 }
 
@@ -142,6 +170,8 @@ bool AICHSyncThread::loadIndex()
 void AICHSyncThread::onIndexLoaded()
 {
     std::deque<Job> jobs;
+    // Reading a set back is disk I/O; the walk holds the shared-map lock.
+    std::vector<KnownFile*> needPartHashes;
     if (m_sharedFiles && !isClosing()) {
         m_sharedFiles->forEachFile([&](KnownFile* file) {
             if (file->isPartFile())
@@ -151,7 +181,7 @@ void AICHSyncThread::onIndexLoaded()
             if (fileId.hasAICHHash() && AICHRecoveryHashSet::isStored(fileId.getAICHHash())) {
                 file->setAICHRecoverHashSetAvailable(true);
                 if (!fileId.hasExpectedAICHHashCount())
-                    applyStoredHashSet(file);
+                    needPartHashes.push_back(file);
                 return;
             }
 
@@ -163,12 +193,21 @@ void AICHSyncThread::onIndexLoaded()
         });
     }
 
+    // Same thread as every add and remove of the share, so the pointers are still good.
+    for (KnownFile* file : needPartHashes)
+        applyStoredHashSet(file);
+
+    std::unordered_set<AICHHash> keep;
+    const bool purge = !isClosing() && collectKeepSet(keep);
+
     const auto count = static_cast<int>(jobs.size());
     if (count > 0)
         logInfo(QStringLiteral("AICH sync: %1 files need hashing").arg(count));
     {
         QMutexLocker locker(&m_jobMutex);
         m_jobs = std::move(jobs);
+        m_keep = std::move(keep);
+        m_purgeQueued = purge;
         m_jobsQueued = true;
         m_jobReady.wakeAll();
     }
@@ -189,6 +228,37 @@ void AICHSyncThread::onHashSetBuilt(const QByteArray& fileHash, const QByteArray
         file->setAICHRecoverHashSetAvailable(true);
     }
     emit fileHashed(fileHash, success);
+}
+
+bool AICHSyncThread::collectKeepSet(std::unordered_set<AICHHash>& keep) const
+{
+    // An empty known list is more likely a known.met that failed to load than a
+    // share with no history; dropping every set on that evidence is not worth it.
+    if (!m_purgeAllowed || !m_knownFiles || m_knownFiles->count() == 0)
+        return false;
+
+    const auto add = [&keep](const FileIdentifier& id) {
+        if (id.hasAICHHash())
+            keep.insert(id.getAICHHash());
+    };
+    m_knownFiles->forEachFile([&](const KnownFile* file) { add(file->fileIdentifier()); });
+    if (m_sharedFiles)
+        m_sharedFiles->forEachFile([&](KnownFile* file) { add(file->fileIdentifier()); });
+    if (theApp.downloadQueue) {
+        for (const PartFile* file : theApp.downloadQueue->files()) {
+            add(file->fileIdentifier());
+            if (file->aichRecoveryHashSet().hasValidMasterHash())
+                keep.insert(file->aichRecoveryHashSet().getMasterHash());
+        }
+    }
+
+    // Worth a rewrite only when something would go.
+    if (m_hasDuplicates)
+        return true;
+    const AICHHash zero;
+    return std::ranges::any_of(AICHRecoveryHashSet::storedHashes(), [&](const AICHHash& hash) {
+        return hash == zero || !keep.contains(hash);
+    });
 }
 
 void AICHSyncThread::applyStoredHashSet(KnownFile* file)

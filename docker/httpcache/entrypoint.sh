@@ -13,6 +13,7 @@
 #   TCP_PORT/UDP_PORT/IPC_PORT/IPC_TOKEN
 #   CACHE_BASE_URL   e.g. http://cache
 #   CACHE_API_KEY    upload credential; empty disables publishing
+#   FILTER_LAN_IPS   general.filterLANIPs; "false" (LAN mode) unless the rig says otherwise
 #   ALLOW_UPLOAD     "true" to publish chunks (needs CACHE_API_KEY too)
 #   MIN_CLIENTS      httpCache.minClients
 #   PUBLISH_RATE_KBS httpCache.publishRateKBs
@@ -43,9 +44,21 @@ MIN_CLIENTS="${MIN_CLIENTS:-2}"
 PUBLISH_RATE_KBS="${PUBLISH_RATE_KBS:-8192}"
 MAX_FETCHES="${MAX_FETCHES:-2}"
 MAX_UPLOAD_KBS="${MAX_UPLOAD_KBS:-0}"
+FILTER_LAN_IPS="${FILTER_LAN_IPS:-false}"
 DOWNLOAD_LINK="${DOWNLOAD_LINK:-}"
 
 mkdir -p "${HOME}/incoming" "${HOME}/temp"
+
+# The upload account is a server list. A node without a key gets no entry at all:
+# it only fetches, and a fetch needs nothing but the URL it was offered.
+CACHE_SERVERS=""
+if [ -n "$CACHE_API_KEY" ]; then
+    CACHE_SERVERS="servers:
+    - name: \"cachenet\"
+      baseUrl: \"${CACHE_BASE_URL}\"
+      apiKey: \"${CACHE_API_KEY}\"
+      enabled: true"
+fi
 
 # Generate preferences.yml on first run only, so a restart keeps the identity
 # and the download queue it built up.
@@ -55,10 +68,11 @@ general:
   nick: "${NODE_NICK}"
   ${USER_HASH:+userHash: "${USER_HASH}"}
   autoConnect: false
-  # Load-bearing twice over: isGoodIP() would otherwise reject every 172.x peer
-  # on this bridge network, AND HttpCacheManager::urlIsAcceptable() would refuse
-  # the cache URL once its hostname resolves to one.
-  filterLANIPs: false
+  # Load-bearing three times over when false: isGoodIP() would otherwise reject
+  # every 172.x peer on the bridge network, HttpCacheManager::urlIsAcceptable()
+  # would refuse the cache URL once its hostname resolves to one, and the uploader
+  # would never publish to a cache on a local address in the first place.
+  filterLANIPs: ${FILTER_LAN_IPS}
   promptOnExit: false
   reconnect: false
 
@@ -100,8 +114,7 @@ httpCache:
   enabled: true
   allowDownload: true
   allowUpload: ${ALLOW_UPLOAD}
-  baseUrl: "${CACHE_BASE_URL}"
-  apiKey: "${CACHE_API_KEY}"
+  ${CACHE_SERVERS}
   minClients: ${MIN_CLIENTS}
   # Left at 0 the publish rate is a quarter of the upload limit — 62 KB/s at the
   # default 250, i.e. over two minutes for one 9.28 MB part. The cache server is

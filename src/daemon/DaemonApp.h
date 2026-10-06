@@ -100,6 +100,7 @@ private:
     void startWebServer();
     void stopWebServer();
     void restartWebServer();
+    void onWebServerConfigChanged();
 
     /// Re-apply the news-server list after an Options save. Reached from any
     /// IPC client through IpcServer::usenetConfigChanged.

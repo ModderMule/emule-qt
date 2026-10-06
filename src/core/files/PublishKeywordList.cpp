@@ -24,13 +24,15 @@ void PublishKeyword::addRef(KnownFile* file)
 {
     if (!file)
         return;
-    if (std::ranges::find(m_files, file) != m_files.end())
+    if (!m_fileSet.insert(file).second)
         return;
     m_files.push_back(file);
 }
 
 void PublishKeyword::removeRef(KnownFile* file)
 {
+    if (m_fileSet.erase(file) == 0)
+        return;
     auto it = std::ranges::find(m_files, file);
     if (it != m_files.end())
         m_files.erase(it);
@@ -64,21 +66,19 @@ void PublishKeywordList::addKeywords(KnownFile* file)
     if (words.empty())
         kad::getWords(file->fileName(), words);
 
+    std::vector<QString>& registered = m_wordsOf[file];
     for (const auto& word : words) {
-        QString lower = kad::kadTagStrToLower(word);
+        const QString lower = kad::kadTagStrToLower(word);
 
         // Find existing keyword or create new one
-        auto it = std::ranges::find_if(m_keywords,
-            [&lower](const PublishKeyword& kw) {
-                return kad::kadTagStrToLower(kw.keyword()) == lower;
-            });
-
-        if (it != m_keywords.end()) {
-            it->addRef(file);
-        } else {
+        auto it = m_index.constFind(lower);
+        if (it == m_index.constEnd()) {
             m_keywords.emplace_back(word);
-            m_keywords.back().addRef(file);
+            it = m_index.insert(lower, std::prev(m_keywords.end()));
         }
+        (*it)->addRef(file);
+        if (!std::ranges::contains(registered, lower))
+            registered.push_back(lower);
     }
 
     // Initialize the round-robin iterator when first keywords are added.
@@ -93,16 +93,20 @@ void PublishKeywordList::removeKeywords(KnownFile* file)
     if (!file)
         return;
 
-    for (auto it = m_keywords.begin(); it != m_keywords.end(); ) {
-        it->removeRef(file);
-        if (it->refCount() == 0) {
-            if (m_nextKeywordIter == it)
-                ++m_nextKeywordIter;
-            it = m_keywords.erase(it);
-        } else {
-            ++it;
-        }
+    const auto wordsIt = m_wordsOf.find(file);
+    if (wordsIt == m_wordsOf.end())
+        return;
+
+    for (const QString& lower : wordsIt->second) {
+        const auto it = m_index.constFind(lower);
+        if (it == m_index.constEnd())
+            continue;
+        const KeywordIter kw = *it;
+        kw->removeRef(file);
+        if (kw->refCount() == 0)
+            eraseKeyword(kw);
     }
+    m_wordsOf.erase(wordsIt);
 }
 
 PublishKeyword* PublishKeywordList::getNextKeyword()
@@ -127,25 +131,33 @@ void PublishKeywordList::removeAllKeywordReferences()
 {
     for (auto& kw : m_keywords)
         kw.removeAllReferences();
+    m_wordsOf.clear();
 }
 
 void PublishKeywordList::purgeUnreferencedKeywords()
 {
     for (auto it = m_keywords.begin(); it != m_keywords.end(); ) {
-        if (it->refCount() == 0) {
-            if (m_nextKeywordIter == it)
-                ++m_nextKeywordIter;
-            it = m_keywords.erase(it);
-        } else {
+        if (it->refCount() == 0)
+            it = eraseKeyword(it);
+        else
             ++it;
-        }
     }
 }
 
 void PublishKeywordList::removeAllKeywords()
 {
     m_keywords.clear();
+    m_index.clear();
+    m_wordsOf.clear();
     m_nextKeywordIter = m_keywords.end();
+}
+
+PublishKeywordList::KeywordIter PublishKeywordList::eraseKeyword(KeywordIter it)
+{
+    if (m_nextKeywordIter == it)
+        ++m_nextKeywordIter;
+    m_index.remove(kad::kadTagStrToLower(it->keyword()));
+    return m_keywords.erase(it);
 }
 
 } // namespace eMule

@@ -3,6 +3,7 @@
 /// @file SharedFilesModel.h
 /// @brief Table model for the Shared Files list.
 
+#include <QHash>
 #include <QSortFilterProxyModel>
 #include <QString>
 
@@ -50,8 +51,7 @@ struct SharedFileRow {
     QByteArray sharePartMap;    ///< Per-part availability encoding for status bar
     bool isCollection = false;
     bool hasCollectionAuthorKey = false;
-    QString partHashesStr;              ///< "p=HASH1:HASH2:...|" or empty (for ed2k link building)
-    QString aichHashStr;                ///< "h=AICHHASH|" or empty (for ed2k link building)
+    bool hasPartHashes = false;         ///< a link with the part hashes can be asked for
     int64_t uploadDataRate = 0;         ///< bytes/sec upload rate for this file
 
     // -- Share membership, only meaningful in browse mode (see setBrowseMode) -----
@@ -62,6 +62,8 @@ struct SharedFileRow {
     /// directory is always shared, eMule's own directories never are. Renders as
     /// MFC's CBS_CHECKEDDISABLED / CBS_UNCHECKEDDISABLED.
     bool shareToggleable = false;
+
+    bool operator==(const SharedFileRow&) const = default;
 };
 
 /// Table model backing the shared files tree view.
@@ -100,8 +102,23 @@ public:
     void setBrowseMode(bool on);
     [[nodiscard]] bool browseMode() const { return m_browseMode; }
 
-    /// Replace all files with a new snapshot.
-    void setFiles(std::vector<SharedFileRow> files) { setRows(std::move(files)); }
+    /// Bring the list in line with a new snapshot: rows that left are removed, rows
+    /// that changed are updated in place, new ones are appended. The view keeps its
+    /// selection and scroll position, which a model reset would drop.
+    /// @return true when it had to fall back to a reset (rows without a hash, or
+    ///         nearly everything changed).
+    bool setFiles(std::vector<SharedFileRow> files);
+
+    /// Replace everything with a reset — a browsed directory, whose unshared rows
+    /// have no hash to match by.
+    void resetFiles(std::vector<SharedFileRow> files);
+
+    /// Add or update single rows (a push from the daemon).
+    void upsertFiles(std::vector<SharedFileRow> files);
+    /// Drop the row of @p hexHash. False if there is none.
+    bool removeFile(const QString& hexHash);
+
+    void clear();
 
     [[nodiscard]] int fileCount() const { return count(); }
 
@@ -115,7 +132,7 @@ public:
     [[nodiscard]] bool containsHash(const QString& hexHash) const;
 
     /// Row for @p hexHash, or nullptr. Lets callers hold a hash instead of a row pointer —
-    /// setFiles() replaces the whole vector, so any kept pointer dangles after a refresh.
+    /// rows move when others are removed, so any kept pointer dangles after a change.
     [[nodiscard]] const SharedFileRow* findByHash(const QString& hexHash) const;
 
 signals:
@@ -128,7 +145,13 @@ protected:
     [[nodiscard]] int columnCountValue() const override { return ColCount; }
 
 private:
+    /// The daemon sends hashes in upper case, the GUI's own are lower case.
+    [[nodiscard]] static QString keyOf(const QString& hexHash) { return hexHash.toLower(); }
+    void reindex();
+
     bool m_browseMode = false;
+    /// keyOf(hash) -> row. Rows without a hash (browse mode) are not in it.
+    QHash<QString, int> m_rowOf;
 };
 
 // ---------------------------------------------------------------------------

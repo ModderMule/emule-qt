@@ -564,6 +564,13 @@ void UpDownClient::processAcceptUpload()
         m_sentCancelTransfer = false;  // MFC: SetSentCancelTransfer(0)
 
         if (m_downloadState == DownloadState::OnQueue) {
+            // Its last sessions gave us nothing; not again just yet. It keeps its
+            // place as a source and is asked again after the pause.
+            if (isDownloadCoolingDown()) {
+                logDebug(QStringLiteral("processAcceptUpload: %1 is cooling down, declining").arg(userName()));
+                sendCancelTransfer();
+                return;
+            }
             setDownloadState(DownloadState::Downloading);
             m_downStartTime = getTickCount();
 
@@ -612,6 +619,19 @@ bool UpDownClient::addRequestForAnotherFile(PartFile* file)
 }
 
 // ===========================================================================
+// setReqFile
+// ===========================================================================
+
+void UpDownClient::setReqFile(PartFile* f)
+{
+    // A reservation names its holder; one left behind in the old file would outlive
+    // this client there and keep the block from everyone else meanwhile.
+    if (m_reqFile && m_reqFile != f && !m_pendingBlocks.empty())
+        clearDownloadBlockRequests();
+    m_reqFile = f;
+}
+
+// ===========================================================================
 // clearDownloadBlockRequests
 // ===========================================================================
 
@@ -621,8 +641,7 @@ void UpDownClient::clearDownloadBlockRequests()
         // MFC: CPartFile::RemoveBlockFromList — return block range to the
         // PartFile so getNextRequestedBlock() can re-issue it to another source.
         if (m_reqFile && pending->block) {
-            m_reqFile->removeBlockFromList(pending->block->startOffset,
-                                           pending->block->endOffset);
+            m_reqFile->removeBlockFromList(pending->block);
         }
         clearPendingBlockRequest(pending);
         delete pending;
@@ -737,6 +756,7 @@ void UpDownClient::sendBlockRequests()
             continue;
         pblock[nr++] = pending;
         pending->queued = 1;
+        pending->block->requested = true;
     }
 
     if (nr == 0) {
@@ -828,8 +848,6 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
         return;
     }
 
-    m_lastBlockReceived = getTickCount();
-
     // Parse the packet header using SafeMemFile, matching MFC approach.
     // Header layout depends on packed vs. unpacked and 32-bit vs. 64-bit offsets:
     //   hash(16) + startOffset(4|8) + [compressedSize(4) | endOffset(4|8)]
@@ -884,16 +902,6 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
         theApp.statistics->addTransferData(clientSoft(), userPort(),
                                            false, false, uTransferredFileDataSize);
 
-    // Accumulate for rate averaging (drained in calculateDownloadRate)
-    m_downDataRateMS += uTransferredFileDataSize;
-
-    // Reward the peer for what it just sent us — MFC srchybrid/DownloadClient.cpp:1000-1002.
-    // Keyed on m_userAddress, which is MFC's GetIP(): the address we have actually seen this
-    // peer at, and the same key the ident gate in score() uses. Without this call the whole
-    // credit system is inert — scoreRatio() stays at 1.0 and clients.met never fills.
-    if (m_credits)
-        m_credits->addDownloaded(uTransferredFileDataSize, m_userAddress);
-
     // Move end back by one (MFC uses inclusive end offset)
     --nEndPos;
 
@@ -912,13 +920,44 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
     }
 
     if (!curBlock) {
-        // No matching pending block — drop packet
+        // Data nobody asked for. MFC drops it, but only after it has counted as
+        // progress, speed and credit — so a peer sending nothing else held the slot
+        // for ever. Here it counts as none of those, and too much of it ends the
+        // transfer. Packets still under way for a block we gave up are not held
+        // against the peer.
+        if (m_downloadState != DownloadState::Downloading || isInAbandonedBlock(nStartPos))
+            return;
+        const uint64 now = getTickCount();
+        if (m_unmatchedPackets == 0 || now - m_unmatchedWindowStart > kUnmatchedWindowMs) {
+            m_unmatchedPackets = 0;
+            m_unmatchedWindowStart = now;
+        }
+        if (++m_unmatchedPackets >= kMaxUnmatchedPackets) {
+            logDebug(QStringLiteral("processBlockPacket: %1 keeps sending data we did not ask for")
+                         .arg(userName()));
+            noteDownloadSessionEndedByPeer();
+            sendCancelTransfer();
+            setDownloadState(DownloadState::OnQueue);
+        }
         return;
     }
 
+    // The peer sent something we asked for: that is progress, speed and credit.
+    m_lastBlockReceived = getTickCount();
+
+    // Accumulate for rate averaging (drained in calculateDownloadRate)
+    m_downDataRateMS += uTransferredFileDataSize;
+
+    // Reward the peer for what it just sent us — MFC srchybrid/DownloadClient.cpp:1000-1002.
+    // Keyed on m_userAddress, which is MFC's GetIP(): the address we have actually seen this
+    // peer at, and the same key the ident gate in score() uses. Without this call the whole
+    // credit system is inert — scoreRatio() stays at 1.0 and clients.met never fills.
+    if (m_credits)
+        m_credits->addDownloaded(uTransferredFileDataSize, m_userAddress);
+
     if (curBlock->zStreamError) {
         // Previous decompression error — discard and remove block
-        m_reqFile->removeBlockFromList(curBlock->block->startOffset, curBlock->block->endOffset);
+        m_reqFile->removeBlockFromList(curBlock->block);
         return;
     }
 
@@ -931,7 +970,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
         // Security check: received end must not exceed requested end
         if (nEndPos > curBlock->block->endOffset) {
             logDebug(QStringLiteral("processBlockPacket: block exceeds requested boundary from %1").arg(userName()));
-            m_reqFile->removeBlockFromList(curBlock->block->startOffset, curBlock->block->endOffset);
+            m_reqFile->removeBlockFromList(curBlock->block);
             return;
         }
 
@@ -961,7 +1000,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
                     writeEnd > curBlock->block->endOffset)
                 {
                     logDebug(QStringLiteral("processBlockPacket: decompressed data exceeds block boundary from %1").arg(userName()));
-                    m_reqFile->removeBlockFromList(curBlock->block->startOffset, curBlock->block->endOffset);
+                    m_reqFile->removeBlockFromList(curBlock->block);
                 } else {
                     lenWritten = m_reqFile->writeToBuffer(uTransferredFileDataSize,
                                                            unzipped,
@@ -971,7 +1010,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
             }
         } else {
             logDebug(QStringLiteral("processBlockPacket: decompression error %1 from %2").arg(result).arg(userName()));
-            m_reqFile->removeBlockFromList(curBlock->block->startOffset, curBlock->block->endOffset);
+            m_reqFile->removeBlockFromList(curBlock->block);
 
             // Clean up the failed zstream
             if (curBlock->zStream) {
@@ -990,8 +1029,11 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
     if (lenWritten == 0 && !curBlock->zStreamError && curBlock->block
         && m_reqFile->isComplete(curBlock->block->startOffset, curBlock->block->endOffset))
     {
+        // the rest of this block is still on its way from the peer
+        m_abandonedBlocks.push_back({curBlock->block->startOffset, curBlock->block->endOffset,
+                                     getTickCount()});
         m_pendingBlocks.erase(itPos);
-        m_reqFile->removeBlockFromList(curBlock->block->startOffset, curBlock->block->endOffset);
+        m_reqFile->removeBlockFromList(curBlock->block);
         clearPendingBlockRequest(curBlock);
         delete curBlock;
         sendBlockRequests();
@@ -1007,6 +1049,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
         m_transferredDown += uTransferredFileDataSize;
         m_curSessionPayloadDown += lenWritten;
         curBlock->block->transferredByClient += lenWritten;
+        curBlock->block->lastProgressTick = getTickCount();
 
         // Check if block is complete (end of decompressed/uncompressed data matches block end)
         bool complete = false;
@@ -1023,8 +1066,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
             // Remove from PartFile's requested-blocks list so the range
             // is no longer considered "already requested" by other sources.
             if (m_reqFile && curBlock->block) {
-                m_reqFile->removeBlockFromList(curBlock->block->startOffset,
-                                               curBlock->block->endOffset);
+                m_reqFile->removeBlockFromList(curBlock->block);
             }
 
             clearPendingBlockRequest(curBlock);
@@ -1202,6 +1244,7 @@ void UpDownClient::checkDownloadTimeout()
 
     if ((curTick - m_lastBlockReceived) > DOWNLOADTIMEOUT) {
         logDebug(QStringLiteral("Download timeout for %1").arg(userName()));
+        noteDownloadSessionEndedByPeer();
         // HTTP sources have no cancel opcode and resume through disconnected().
         if (!m_socket || m_socket->isRawDataMode()) {
             disconnected(QStringLiteral("Download timeout"));
@@ -1671,9 +1714,14 @@ uint32 UpDownClient::timeUntilReask() const
 
 uint32 UpDownClient::timeUntilReask(const PartFile* file, bool allowShortReaskTime) const
 {
+    // Not before the pause after fruitless sessions is over.
+    const uint64 curTick = getTickCount();
+    const uint32 cooldown = (file == m_reqFile && m_downloadCooldownUntil > curTick)
+        ? static_cast<uint32>(m_downloadCooldownUntil - curTick) : 0;
+
     const uint64 lastAsk = lastAskedTime(file);
     if (lastAsk == 0)
-        return 0;
+        return cooldown;
 
     uint32 reaskTime;
     if (allowShortReaskTime || (file == m_reqFile && m_downloadState == DownloadState::None)) {
@@ -1689,12 +1737,47 @@ uint32 UpDownClient::timeUntilReask(const PartFile* file, bool allowShortReaskTi
         reaskTime = FILEREASKTIME;
     }
 
-    const uint64 curTick = getTickCount();
     const uint64 elapsed = curTick - lastAsk;
 
     if (elapsed >= reaskTime)
-        return 0;
-    return reaskTime - static_cast<uint32>(elapsed);
+        return cooldown;
+    return std::max(reaskTime - static_cast<uint32>(elapsed), cooldown);
+}
+
+// ===========================================================================
+// Sessions that deliver nothing
+// ===========================================================================
+
+void UpDownClient::noteDownloadSessionEndedByPeer()
+{
+    if (m_downloadState != DownloadState::Downloading || sessionPayloadDown() >= EMBLOCKSIZE)
+        return;
+
+    const uint64 now = getTickCount();
+    if (m_fruitlessSessionTick != 0 && now - m_fruitlessSessionTick <= kFruitlessWindowMs) {
+        m_fruitlessSessionTick = 0;
+        m_downloadCooldownUntil = now + kDownloadCooldownMs;
+        logDebug(QStringLiteral("Two download sessions with %1 gave no data; pausing it for %2 s")
+                     .arg(userName()).arg(kDownloadCooldownMs / 1000));
+    } else {
+        m_fruitlessSessionTick = now;
+    }
+}
+
+bool UpDownClient::isDownloadCoolingDown() const
+{
+    return m_downloadCooldownUntil != 0 && getTickCount() < m_downloadCooldownUntil;
+}
+
+bool UpDownClient::isInAbandonedBlock(uint64 offset)
+{
+    const uint64 now = getTickCount();
+    std::erase_if(m_abandonedBlocks, [now](const AbandonedBlock& b) {
+        return now - b.tick > kUnmatchedWindowMs;
+    });
+    return std::ranges::any_of(m_abandonedBlocks, [offset](const AbandonedBlock& b) {
+        return offset >= b.start && offset <= b.end;
+    });
 }
 
 // MFC DownloadClient.cpp:2019-2023. Purely the per-file re-ask map, keyed on the current

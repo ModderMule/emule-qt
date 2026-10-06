@@ -4,6 +4,7 @@
 #include "IpcClientHandler.h"
 #include "UsenetBridge.h"
 #include "CoreNotifierBridge.h"
+#include "SharedFileRows.h"
 #include "DaemonApp.h"
 
 #include "ipc/CborSerializers.h"
@@ -685,7 +686,12 @@ void IpcClientHandler::handleRenameDownload(const IpcMessage& msg)
         return;
     }
     // Only the display/target name; the .part files keep their numbered names.
+    const bool shared = theApp.sharedFileList && theApp.sharedFileList->isFilePtrInList(pf);
+    if (shared)
+        theApp.sharedFileList->removeKeywords(pf);
     pf->setFileName(newName, true);
+    if (shared)
+        theApp.sharedFileList->addKeywords(pf);
     pf->savePartFile();
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
@@ -1232,196 +1238,59 @@ void IpcClientHandler::handleGetKnownTypes(const IpcMessage& msg)
 
 void IpcClientHandler::handleGetSharedFiles(const IpcMessage& msg)
 {
-    QCborArray files;
-    QSet<QString> addedHashes;
+    // [afterHash, limit] — a page of the list in hash order, starting behind afterHash.
+    // A share of some ten thousand files does not fit one IPC frame, so a client that
+    // wants all of it asks page by page; the hash cursor stays right while files come
+    // and go between the pages. No fields: everything in one reply, as before.
+    uint8 afterHash[16]{};
+    const bool hasCursor = hexToHash(msg.fieldString(0), afterHash);
+    const qint64 limit = std::max<qint64>(msg.fieldInt(1), 0);
 
-    auto appendFile = [&](KnownFile* kf, bool isPartFile, int64_t completedSz) {
-        QCborMap m;
-        const QString hash = md4str(kf->fileHash());
-        m.insert(QStringLiteral("hash"), hash);
-        m.insert(QStringLiteral("fileName"), kf->fileName());
-        m.insert(QStringLiteral("fileSize"), static_cast<qint64>(kf->fileSize()));
-        m.insert(QStringLiteral("fileType"), kf->fileType());
-        // Comment/rating marks, same shape as the download rows.
-        m.insert(QStringLiteral("hasComment"), kf->hasComment());
-        m.insert(QStringLiteral("userRating"), static_cast<int>(kf->userRating(true)));
-        // Separately, whether *we* commented or rated it — MFC's shared list draws that
-        // as an overlay on the type icon rather than as a rating mark
-        // (srchybrid/SharedFilesCtrl.cpp:561-562). Costs one lazy fileinfo.ini read per
-        // file, once, exactly as the original's per-file CIni does.
-        m.insert(QStringLiteral("ownComment"),
-                 !kf->getFileComment().isEmpty() || kf->getFileRating() > 0);
-        // The fake-file mark. Only what has already been settled: this loop walks a
-        // share that can hold tens of thousands of files, so it may not open any of
-        // them. SharedFileList::warmContainerChecks() does the reading a slice per
-        // tick, so a file the sweep has not reached yet reads as clean for now —
-        // Unchecked is not suspect, and claiming otherwise would be worse than late.
-        const ContainerCheck& cc = kf->containerCheckIfResolved();
-        m.insert(QStringLiteral("containerSuspect"), cc.isSuspect());
-        m.insert(QStringLiteral("containerExpected"), cc.expected);
-        m.insert(QStringLiteral("containerActual"), cc.actual);
-        m.insert(QStringLiteral("upPriority"), static_cast<int>(kf->upPriority()));
-        m.insert(QStringLiteral("isAutoUpPriority"), kf->isAutoUpPriority());
-        m.insert(QStringLiteral("requests"), static_cast<qint64>(kf->statistic.requests()));
-        m.insert(QStringLiteral("acceptedUploads"), static_cast<qint64>(kf->statistic.accepts()));
-        m.insert(QStringLiteral("transferred"), static_cast<qint64>(kf->statistic.transferred()));
-        m.insert(QStringLiteral("allTimeRequests"), static_cast<qint64>(kf->statistic.allTimeRequests()));
-        m.insert(QStringLiteral("allTimeAccepted"), static_cast<qint64>(kf->statistic.allTimeAccepts()));
-        m.insert(QStringLiteral("allTimeTransferred"), static_cast<qint64>(kf->statistic.allTimeTransferred()));
-        m.insert(QStringLiteral("completeSources"), static_cast<int>(kf->completeSourcesCount()));
-        m.insert(QStringLiteral("publishedED2K"), kf->publishedED2K());
-        m.insert(QStringLiteral("kadPublished"), kf->kadFileSearchID() != 0);
-        m.insert(QStringLiteral("filePath"), kf->filePath());
-        // Whether the user is allowed to unshare it — the incoming directory is not
-        // unshareable by accident, it is unshareable by design (MFC ShouldBeShared with
-        // bMustBeShared, srchybrid/SharedFilesCtrl.cpp:1598). The GUI greys the menu
-        // entry with this rather than guessing at the incoming path from the rows.
-        m.insert(QStringLiteral("canUnshare"),
-                 theApp.sharedFileList
-                     && !theApp.sharedFileList->shouldBeShared(kf->path(), kf->filePath(), true));
-        m.insert(QStringLiteral("path"), QFileInfo(kf->filePath()).absolutePath());
-        m.insert(QStringLiteral("ed2kLink"), kf->getED2kLink());
-        m.insert(QStringLiteral("isPartFile"), isPartFile);
-        m.insert(QStringLiteral("uploadingClients"), kf->uploadingClientCount());
-
-        int queuedClients = 0;
-        int64_t uploadDataRate = 0;
-        if (theApp.uploadQueue) {
-            const uint8* fileHashPtr = kf->fileHash();
-            theApp.uploadQueue->forEachWaiting([&](UpDownClient* c) {
-                if (md4equ(c->reqUpFileId(), fileHashPtr))
-                    ++queuedClients;
-            });
-            theApp.uploadQueue->forEachUploading([&](UpDownClient* c) {
-                if (md4equ(c->reqUpFileId(), fileHashPtr))
-                    uploadDataRate += c->upDatarate();
-            });
-        }
-        m.insert(QStringLiteral("queuedClients"), queuedClients);
-        m.insert(QStringLiteral("uploadDataRate"), static_cast<qint64>(uploadDataRate));
-
-        // ED2K link building components for GUI-side link variants
-        const auto& fid = kf->fileIdentifier();
-        QString partHashesStr;
-        if (fid.getAvailableMD4PartHashCount() > 0 && fid.hasExpectedMD4HashCount()) {
-            partHashesStr = QStringLiteral("p=");
-            for (uint16 j = 0; j < fid.getAvailableMD4PartHashCount(); ++j) {
-                if (j > 0)
-                    partHashesStr += QChar(u':');
-                partHashesStr += encodeBase16({fid.getMD4PartHash(j), 16});
-            }
-            partHashesStr += QChar(u'|');
-        }
-        m.insert(QStringLiteral("partHashesStr"), partHashesStr);
-
-        QString aichHashStr;
-        if (fid.hasAICHHash())
-            aichHashStr = QStringLiteral("h=%1|").arg(fid.getAICHHash().getString());
-        m.insert(QStringLiteral("aichHashStr"), aichHashStr);
-
-        m.insert(QStringLiteral("partCount"), static_cast<int>(kf->partCount()));
-        m.insert(QStringLiteral("completedSize"), static_cast<qint64>(completedSz));
-
-        // Build per-part availability map for share status bar
-        {
-            QCborArray partMapArr;
-            const auto& availFreq = kf->availPartFrequency();
-            const int pc = static_cast<int>(kf->partCount());
-
-            if (isPartFile) {
-                auto* pf = static_cast<PartFile*>(kf);
-                const auto& srcFreq = pf->srcPartFrequency();
-                const bool hasSources = kf->hasUploadingClients() || kf->completeSourcesCountHi() > 0;
-
-                if (hasSources || pf->status() != PartFileStatus::Paused) {
-                    const uint16 baseSources = kf->completeSourcesCountLo()
-                                               ? kf->completeSourcesCountLo() - 1 : 0;
-                    for (int i = 0; i < pc; ++i) {
-                        if (!pf->isComplete(static_cast<uint32>(i))) {
-                            partMapArr.append(255); // gap — light grey
-                        } else {
-                            // Use srcPartFrequency when actively downloading, availPartFrequency otherwise
-                            uint16 freq = 0;
-                            if (pf->status() != PartFileStatus::Paused && i < static_cast<int>(srcFreq.size()))
-                                freq = srcFreq[static_cast<size_t>(i)];
-                            else if (i < static_cast<int>(availFreq.size()))
-                                freq = std::max(availFreq[static_cast<size_t>(i)], baseSources);
-                            // Encode: 0 → 1(red), else clamp(freq+1, 2, 254)
-                            partMapArr.append(freq == 0 ? 1 : std::clamp<int>(freq + 1, 2, 254));
-                        }
-                    }
-                } else {
-                    // Paused with no sources — complete=0, incomplete=255
-                    for (int i = 0; i < pc; ++i)
-                        partMapArr.append(pf->isComplete(static_cast<uint32>(i)) ? 0 : 255);
-                }
-            } else {
-                // Complete KnownFile
-                if (kf->hasUploadingClients() || kf->completeSourcesCountHi() > 1) {
-                    const uint16 baseSources = kf->completeSourcesCountLo()
-                                               ? kf->completeSourcesCountLo() - 1 : 0;
-                    for (int i = 0; i < pc; ++i) {
-                        uint16 freq = baseSources;
-                        if (i < static_cast<int>(availFreq.size()))
-                            freq = std::max(availFreq[static_cast<size_t>(i)], baseSources);
-                        partMapArr.append(freq == 0 ? 1 : std::clamp<int>(freq + 1, 2, 254));
-                    }
-                }
-                // else: empty array → delegate draws solid dark grey
-            }
-
-            if (!partMapArr.isEmpty())
-                m.insert(QStringLiteral("sharePartMap"), partMapArr);
-        }
-
-        // Collection metadata
-        const bool isColl = Collection::hasCollectionExtension(kf->fileName());
-        m.insert(QStringLiteral("isCollection"), isColl);
-        m.insert(QStringLiteral("hasCollectionAuthorKey"),
-                 isColl && kf->collection() && !kf->collection()->m_authorKey.isEmpty());
-
-        files.append(m);
-        addedHashes.insert(hash);
+    // Collected under the map lock, built outside it.
+    std::vector<KnownFile*> all;
+    std::unordered_set<MD4Key> seen;
+    const auto collect = [&](KnownFile* kf) {
+        if (seen.insert(MD4Key(kf->fileHash())).second)
+            all.push_back(kf);
     };
-
-    if (theApp.sharedFileList) {
-        theApp.sharedFileList->forEachFile([&](KnownFile* kf) {
-            appendFile(kf, false, static_cast<int64_t>(kf->fileSize()));
-        });
-    }
-
+    if (theApp.sharedFileList)
+        theApp.sharedFileList->forEachFile(collect);
     // Also include PartFiles with at least some completed data
     if (theApp.downloadQueue) {
         for (auto* pf : theApp.downloadQueue->files()) {
-            if (static_cast<uint64>(pf->completedSize()) > 0) {
-                const QString hash = md4str(pf->fileHash());
-                if (!addedHashes.contains(hash))
-                    appendFile(pf, true, static_cast<int64_t>(pf->completedSize()));
-            }
+            if (static_cast<uint64>(pf->completedSize()) > 0)
+                collect(pf);
         }
     }
 
-    // Compute aggregate totals across all shared files for percentage bars
-    int64_t totalRequests = 0, totalAccepted = 0, totalTransferred = 0;
-    int64_t totalAllTimeReqs = 0, totalAllTimeAcc = 0, totalAllTimeTx = 0;
-    for (int i = 0; i < files.size(); ++i) {
-        const QCborMap m = files.at(i).toMap();
-        totalRequests    += m.value(QStringLiteral("requests")).toInteger();
-        totalAccepted    += m.value(QStringLiteral("acceptedUploads")).toInteger();
-        totalTransferred += m.value(QStringLiteral("transferred")).toInteger();
-        totalAllTimeReqs += m.value(QStringLiteral("allTimeRequests")).toInteger();
-        totalAllTimeAcc  += m.value(QStringLiteral("allTimeAccepted")).toInteger();
-        totalAllTimeTx   += m.value(QStringLiteral("allTimeTransferred")).toInteger();
+    const auto less = [](const uint8* a, const uint8* b) { return std::memcmp(a, b, 16) < 0; };
+    std::ranges::sort(all, [&](const KnownFile* a, const KnownFile* b) {
+        return less(a->fileHash(), b->fileHash());
+    });
+    auto first = all.begin();
+    if (hasCursor) {
+        first = std::upper_bound(all.begin(), all.end(), afterHash,
+            [&](const uint8* hash, const KnownFile* f) { return less(hash, f->fileHash()); });
+    }
+    const auto remaining = static_cast<qint64>(all.end() - first);
+    const qint64 count = limit > 0 ? std::min(limit, remaining) : remaining;
+
+    // One pass over the upload queue and one resolution of the share rules for the
+    // whole reply, not one of each per file.
+    const auto loads = sharedFileLoads();
+    const SharedFileList::ShareRules rules = theApp.sharedFileList
+        ? theApp.sharedFileList->shareRules() : SharedFileList::ShareRules{};
+
+    QCborArray files;
+    for (auto it = first; it != first + count; ++it) {
+        const auto loadIt = loads.find(MD4Key((*it)->fileHash()));
+        files.append(sharedFileRow(*it, rules, loadIt != loads.end() ? loadIt->second : SharedFileLoad{}));
     }
 
     QCborMap result;
     result.insert(QStringLiteral("files"), files);
-    result.insert(QStringLiteral("totalRequests"), static_cast<qint64>(totalRequests));
-    result.insert(QStringLiteral("totalAccepted"), static_cast<qint64>(totalAccepted));
-    result.insert(QStringLiteral("totalTransferred"), static_cast<qint64>(totalTransferred));
-    result.insert(QStringLiteral("totalAllTimeRequests"), static_cast<qint64>(totalAllTimeReqs));
-    result.insert(QStringLiteral("totalAllTimeAccepted"), static_cast<qint64>(totalAllTimeAcc));
-    result.insert(QStringLiteral("totalAllTimeTransferred"), static_cast<qint64>(totalAllTimeTx));
+    result.insert(QStringLiteral("more"), count < remaining);
+    result.insert(QStringLiteral("total"), static_cast<qint64>(all.size()));
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(result)));
 }
 
@@ -1458,8 +1327,13 @@ void IpcClientHandler::handleSetSharedFilePriority(const IpcMessage& msg)
 
 void IpcClientHandler::handleReloadSharedFiles(const IpcMessage& msg)
 {
-    if (theApp.sharedFileList)
-        theApp.sharedFileList->reload();
+    // Field 0 set: re-read the media tags instead of rescanning (MFC Ctrl+Reload).
+    if (theApp.sharedFileList) {
+        if (msg.fieldCount() > 0 && msg.fieldBool(0))
+            theApp.sharedFileList->rebuildMetaData();
+        else
+            theApp.sharedFileList->reload();
+    }
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
@@ -2901,8 +2775,12 @@ void IpcClientHandler::handleRenameSharedFile(const IpcMessage& msg)
         sendMessage(IpcMessage::makeError(msg.seqId(), 500, QStringLiteral("Rename failed")));
         return;
     }
+    // The Kad keywords are the words of the name (MFC SharedFilesCtrl rename).
+    theApp.sharedFileList->removeKeywords(file);
     file->setFileName(newName);
     file->setFilePath(newPath);
+    theApp.sharedFileList->addKeywords(file);
+    file->noteChanged();
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
@@ -3031,6 +2909,8 @@ void IpcClientHandler::handleBrowseDirectory(const IpcMessage& msg)
             hashByPath.insert(f->filePath().toLower(), md4str(f->fileHash()));
     });
 
+    const SharedFileList::ShareRules rules = theApp.sharedFileList->shareRules();
+
     QCborArray files;
     for (const QFileInfo& fi : dir.entryInfoList(QDir::Files | QDir::NoDotAndDotDot)) {
         const QString filePath = fi.absoluteFilePath();
@@ -3042,9 +2922,9 @@ void IpcClientHandler::handleBrowseDirectory(const IpcMessage& msg)
             || name.endsWith(Preferences::kCompletingSuffix, Qt::CaseInsensitive))
             continue;
 
-        const bool isShared = theApp.sharedFileList->shouldBeShared(dirPath, filePath, false);
+        const bool isShared = theApp.sharedFileList->shouldBeShared(rules, dirPath, filePath, false);
         // Forced on for the incoming directory, forced off where sharing is impossible.
-        const bool forcedOn = theApp.sharedFileList->shouldBeShared(dirPath, filePath, true);
+        const bool forcedOn = theApp.sharedFileList->shouldBeShared(rules, dirPath, filePath, true);
         const bool canToggle = !forcedOn && dirShareable;
 
         // Only known once the file has been hashed and shared; the GUI uses it to line
@@ -3950,8 +3830,12 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
         thePrefs.setWebServerPort(static_cast<uint16>(val.toInteger()));
     else if (key == QStringLiteral("webServerApiKey"))
         thePrefs.setWebServerApiKey(val.toString());
-    else if (key == QStringLiteral("webServerListenAddress"))
-        thePrefs.setWebServerListenAddress(val.toString());
+    else if (key == QStringLiteral("webServerListenAddress")) {
+        // Empty = all interfaces; anything else has to be an address
+        const QString address = val.toString().trimmed();
+        if (address.isEmpty() || !QHostAddress(address).isNull())
+            thePrefs.setWebServerListenAddress(address);
+    }
     else if (key == QStringLiteral("webServerRestApiEnabled"))
         thePrefs.setWebServerRestApiEnabled(val.toBool());
     else if (key == QStringLiteral("webServerGzipEnabled"))
@@ -5872,24 +5756,8 @@ void IpcClientHandler::rebaseCategoryDirs(const QString& oldIncomingDir)
 
 void IpcClientHandler::cancelDownloadFile(PartFile* pf)
 {
-    if (!pf || !theApp.downloadQueue)
-        return;
-
-    // No preference check here: KnownFileList::addCancelledFileID() owns it, so
-    // every caller inherits the gate rather than each remembering it.
-    if (theApp.knownFileList)
-        theApp.knownFileList->addCancelledFileID(pf->fileHash());
-    pf->stopFile(true);
-    theApp.downloadQueue->removeFile(pf);
-    // A *completed* download was handed to KnownFileList/SharedFileList, which
-    // then hold non-owning references to it. Cancelling removes the file entirely,
-    // so unlink it from both before freeing — otherwise the freed pointer would
-    // dangle in their maps and crash the next known.met save (KnownFile::writeToFile).
-    if (theApp.knownFileList)
-        theApp.knownFileList->remove(pf);
-    if (theApp.sharedFileList)
-        theApp.sharedFileList->removeFile(pf);
-    delete pf;
+    if (pf && theApp.downloadQueue)
+        theApp.downloadQueue->cancelFile(pf);
 }
 
 bool IpcClientHandler::rejectIfKadUnavailable(const IpcMessage& msg, bool requireConnected)

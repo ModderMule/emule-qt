@@ -137,6 +137,7 @@ signals:
     void globalSearchProgress(const Ipc::IpcMessage& msg);
     void logMessageReceived(const Ipc::IpcMessage& msg);
     void sharedFileUpdated(const Ipc::IpcMessage& msg);
+    void sharedFileRemoved(const Ipc::IpcMessage& msg);
     void uploadUpdated(const Ipc::IpcMessage& msg);
     void kadUpdated(const Ipc::IpcMessage& msg);
     void kadSearchesChanged(const Ipc::IpcMessage& msg);

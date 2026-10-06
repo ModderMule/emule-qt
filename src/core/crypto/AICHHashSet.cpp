@@ -10,7 +10,9 @@
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
 
+#include <QFile>
 #include <QMutexLocker>
+#include <QSaveFile>
 
 #include <algorithm>
 
@@ -25,6 +27,7 @@ inline constexpr int kMinPercentageToTrust = 92;
 QMutex AICHRecoveryHashSet::s_mutKnown2File;
 QString AICHRecoveryHashSet::s_known2MetPath;
 std::unordered_map<AICHHash, uint64> AICHRecoveryHashSet::s_storedHashes;
+std::unordered_set<AICHHash> AICHRecoveryHashSet::s_savedThisSession;
 std::vector<AICHRecoveryHashSet::RequestedData> AICHRecoveryHashSet::s_requestedData;
 
 // ---------------------------------------------------------------------------
@@ -207,8 +210,10 @@ bool AICHRecoveryHashSet::isPartDataAvailable(uint64 partStartPos, EMFileSize fi
 void AICHRecoveryHashSet::setKnown2MetPath(const QString& path)
 {
     QMutexLocker lock(&s_mutKnown2File);
-    if (path != s_known2MetPath)
+    if (path != s_known2MetPath) {
         s_storedHashes.clear();   // positions belong to the old file
+        s_savedThisSession.clear();
+    }
     s_known2MetPath = path;
 }
 
@@ -236,6 +241,102 @@ uint64 AICHRecoveryHashSet::addStoredAICHHash(const AICHHash& hash, uint64 fileP
     }
     s_storedHashes[hash] = filePos;
     return 0;
+}
+
+std::vector<AICHHash> AICHRecoveryHashSet::storedHashes()
+{
+    QMutexLocker lock(&s_mutKnown2File);
+    std::vector<AICHHash> hashes;
+    hashes.reserve(s_storedHashes.size());
+    for (const auto& [hash, pos] : s_storedHashes)
+        hashes.push_back(hash);
+    return hashes;
+}
+
+bool AICHRecoveryHashSet::compactKnown2(const std::function<bool(const AICHHash&)>& keep,
+                                        uint32& droppedSets, uint64& droppedBytes)
+{
+    droppedSets = 0;
+    droppedBytes = 0;
+
+    QMutexLocker lock(&s_mutKnown2File);
+    if (s_known2MetPath.isEmpty())
+        return false;
+
+    struct Record {
+        AICHHash hash;
+        qint64 pos = 0;
+        qint64 length = 0;
+        bool keep = false;
+    };
+    std::vector<Record> records;
+    qint64 fileSize = 0;
+    try {
+        SafeFile file;
+        if (!file.open(s_known2MetPath, QIODevice::ReadOnly))
+            return false;
+        fileSize = file.length();
+        if (fileSize < 1 || file.readUInt8() != kKnown2MetVersion)
+            return false;
+        while (file.position() < fileSize) {
+            Record rec;
+            rec.pos = file.position();
+            rec.hash = AICHHash(file);
+            const qint64 payload = static_cast<qint64>(file.readUInt32()) * kAICHHashSize;
+            if (file.position() + payload > fileSize)
+                return false;   // a torn record: the sync cuts those off, not us
+            file.seek(payload, 1);   // SEEK_CUR
+            rec.length = file.position() - rec.pos;
+            records.push_back(rec);
+        }
+    } catch (const std::exception&) {
+        return false;
+    }
+
+    // The newest record of a hash is the one in use (addStoredAICHHash keeps the
+    // highest position); MFC zeroes the master of the older one for the next purge.
+    const AICHHash zero;
+    std::unordered_map<AICHHash, qint64> newest;
+    for (const Record& rec : records)
+        newest[rec.hash] = rec.pos;
+    for (Record& rec : records) {
+        rec.keep = rec.hash != zero && newest[rec.hash] == rec.pos
+                   && (s_savedThisSession.contains(rec.hash) || keep(rec.hash));
+        if (!rec.keep) {
+            ++droppedSets;
+            droppedBytes += static_cast<uint64>(rec.length);
+        }
+    }
+    if (droppedSets == 0)
+        return true;
+
+    // A new file, swapped in whole: a crash leaves the old one or the new one.
+    std::unordered_map<AICHHash, uint64> index;
+    {
+        QFile in(s_known2MetPath);
+        QSaveFile out(s_known2MetPath);
+        if (!in.open(QIODevice::ReadOnly) || !out.open(QIODevice::WriteOnly))
+            return false;
+        const char version = static_cast<char>(kKnown2MetVersion);
+        bool ok = out.write(&version, 1) == 1;
+        for (const Record& rec : records) {
+            if (!ok)
+                break;
+            if (!rec.keep)
+                continue;
+            index[rec.hash] = static_cast<uint64>(out.pos());
+            const QByteArray bytes = in.seek(rec.pos) ? in.read(rec.length) : QByteArray();
+            ok = bytes.size() == rec.length && out.write(bytes) == rec.length;
+        }
+        if (!ok || !out.commit()) {
+            out.cancelWriting();
+            droppedSets = 0;
+            droppedBytes = 0;
+            return false;
+        }
+    }
+    s_storedHashes = std::move(index);
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -394,6 +495,7 @@ bool AICHRecoveryHashSet::saveHashSet()
         if (s_storedHashes.contains(m_hashTree.m_hash)) {
             qCDebug(lcEmuleGeneral, "AICH hashset already present in known2.met - %s",
                      qUtf8Printable(m_hashTree.m_hash.getString()));
+            s_savedThisSession.insert(m_hashTree.m_hash);
             return true;
         }
 
@@ -421,6 +523,7 @@ bool AICHRecoveryHashSet::saveHashSet()
         // A buffered append only meets a full disk here.
         file.commit(false);
         addStoredAICHHash(m_hashTree.m_hash, static_cast<uint64>(hashSetWritePos));
+        s_savedThisSession.insert(m_hashTree.m_hash);
         qCDebug(lcEmuleGeneral, "Saved AICH hashset: %u hashes + 1 master", hashCount);
     } catch (const std::exception& ex) {
         qCWarning(lcEmuleGeneral, "Failed to save AICH hashset: %s", ex.what());

@@ -2,6 +2,7 @@
 /// @brief Core signal to IPC push event bridge — implementation.
 
 #include "CoreNotifierBridge.h"
+#include "SharedFileRows.h"
 #include "IpcServer.h"
 
 #include "IpcMessage.h"
@@ -47,10 +48,10 @@ constexpr std::size_t kMaxServerMessageBacklog = 200;
 /// the data, while a per-item signal storm collapses into a handful of sends.
 constexpr int kPushWindowMs = 250;
 
-/// SharedFileList::fileAdded fires once per file *inside the directory scan*, so a
-/// reload of a large share is thousands of events in a few seconds. Nothing there
-/// is interactive — the poll covers the gap — so this one gets a wider window.
-constexpr int kSharedFileWindowMs = 1000;
+/// Shared-file rows go out in batches: this often, at most this many at a time. A
+/// scan that adds thousands of files becomes a few pushes a second, each row sent once.
+constexpr int kSharedFlushMs = 250;
+constexpr int kSharedFlushRows = 500;
 
 /// Function-local static: the backlog outlives individual GUI connections but is
 /// per-daemon-process, mirroring how DaemonApp keeps its log ring buffer.
@@ -70,6 +71,22 @@ CoreNotifierBridge::CoreNotifierBridge(IpcServer* ipcServer, QObject* parent)
     connect(m_pushes, &Ipc::PushCoalescer::ready, this, [this](const IpcMessage& msg) {
         m_ipcServer->broadcast(msg);
     });
+
+    m_sharedFlushTimer.setSingleShot(true);
+    m_sharedFlushTimer.setInterval(kSharedFlushMs);
+    connect(&m_sharedFlushTimer, &QTimer::timeout, this, &CoreNotifierBridge::flushSharedFiles);
+
+    // The transferred counters and the rate of a file being uploaded change with
+    // every block and have no signal; only the handful of files in upload slots do.
+    m_sharedRatesTimer.setInterval(1000);
+    connect(&m_sharedRatesTimer, &QTimer::timeout, this, [this] {
+        if (m_ipcServer->clientCount() == 0 || !theApp.uploadQueue)
+            return;
+        theApp.uploadQueue->forEachUploading([this](UpDownClient* c) {
+            onSharedFileChanged(QByteArray(reinterpret_cast<const char*>(c->reqUpFileId()), 16));
+        });
+    });
+    m_sharedRatesTimer.start();
 }
 
 CoreNotifierBridge::~CoreNotifierBridge() = default;
@@ -131,8 +148,15 @@ void CoreNotifierBridge::connectAll()
 
     // SharedFileList
     if (theApp.sharedFileList) {
-        connect(theApp.sharedFileList, &SharedFileList::fileAdded,
-                this, &CoreNotifierBridge::onSharedFileAdded);
+        const auto changed = [this](KnownFile* file) {
+            onSharedFileChanged(QByteArray(reinterpret_cast<const char*>(file->fileHash()), 16));
+        };
+        connect(theApp.sharedFileList, &SharedFileList::fileAdded, this, changed);
+        connect(theApp.sharedFileList, &SharedFileList::fileRelocated, this, changed);
+        connect(theApp.sharedFileList, &SharedFileList::fileChanged,
+                this, &CoreNotifierBridge::onSharedFileChanged);
+        connect(theApp.sharedFileList, &SharedFileList::fileRemoved,
+                this, &CoreNotifierBridge::onSharedFileRemoved);
     }
 
     // UploadQueue
@@ -145,6 +169,16 @@ void CoreNotifierBridge::connectAll()
                 this, &CoreNotifierBridge::onUploadChanged);
         connect(theApp.uploadQueue, &UploadQueue::clientRemovedFromQueue,
                 this, &CoreNotifierBridge::onUploadChanged);
+
+        // Each of these moves a count on the row of the file the client asks for.
+        const auto fileOfClient = [this](UpDownClient* c) {
+            if (c)
+                onSharedFileChanged(QByteArray(reinterpret_cast<const char*>(c->reqUpFileId()), 16));
+        };
+        connect(theApp.uploadQueue, &UploadQueue::uploadStarted, this, fileOfClient);
+        connect(theApp.uploadQueue, &UploadQueue::uploadEnded, this, fileOfClient);
+        connect(theApp.uploadQueue, &UploadQueue::clientAddedToQueue, this, fileOfClient);
+        connect(theApp.uploadQueue, &UploadQueue::clientRemovedFromQueue, this, fileOfClient);
     }
 
     // ClientList (Known Clients tab)
@@ -375,11 +409,75 @@ void CoreNotifierBridge::onGlobalSearchProgress(uint32 searchID, uint32 asked,
     }, kPushWindowMs, searchID);
 }
 
-void CoreNotifierBridge::onSharedFileAdded()
+void CoreNotifierBridge::onSharedFileChanged(const QByteArray& fileHash)
 {
-    m_pushes->post(IpcMsgType::PushSharedFileUpdate,
-                   [] { return IpcMessage(IpcMsgType::PushSharedFileUpdate, 0); },
-                   kSharedFileWindowMs);
+    // Nobody to tell: a client that connects later starts from the full list.
+    if (fileHash.size() != 16 || m_ipcServer->clientCount() == 0)
+        return;
+    m_dirtySharedFiles.insert(MD4Key(reinterpret_cast<const uint8*>(fileHash.constData())));
+    if (!m_sharedFlushTimer.isActive())
+        m_sharedFlushTimer.start();
+}
+
+void CoreNotifierBridge::onSharedFileRemoved(KnownFile* file)
+{
+    if (!file)
+        return;
+    m_dirtySharedFiles.erase(MD4Key(file->fileHash()));
+    // Not held back: an update for the same file that is sent later must find the
+    // removal already delivered.
+    IpcMessage msg(IpcMsgType::PushSharedFileRemoved, 0);
+    msg.append(md4str(file->fileHash()));
+    m_ipcServer->broadcast(msg);
+}
+
+void CoreNotifierBridge::flushSharedFiles()
+{
+    if (m_ipcServer->clientCount() == 0) {
+        m_dirtySharedFiles.clear();
+        return;
+    }
+
+    const SharedFileList::ShareRules rules = theApp.sharedFileList
+        ? theApp.sharedFileList->shareRules() : SharedFileList::ShareRules{};
+    // one walk of the upload queue for a big batch, one per file for a small one
+    const bool bulk = m_dirtySharedFiles.size() > 8;
+    const auto loads = bulk ? sharedFileLoads() : std::unordered_map<MD4Key, SharedFileLoad>{};
+
+    QCborArray rows;
+    auto it = m_dirtySharedFiles.begin();
+    while (it != m_dirtySharedFiles.end() && rows.size() < kSharedFlushRows) {
+        const MD4Key key = *it;
+        it = m_dirtySharedFiles.erase(it);
+
+        KnownFile* file = theApp.sharedFileList
+            ? theApp.sharedFileList->getFileByID(key.data.data()) : nullptr;
+        if (!file && theApp.downloadQueue) {
+            // listed too: a part file with data that is not shared yet
+            PartFile* part = theApp.downloadQueue->fileByID(key.data.data());
+            if (part && static_cast<uint64>(part->completedSize()) > 0)
+                file = part;
+        }
+        if (!file)
+            continue;   // hashed but not shared, or gone since
+
+        SharedFileLoad load;
+        if (bulk) {
+            if (const auto loadIt = loads.find(key); loadIt != loads.end())
+                load = loadIt->second;
+        } else {
+            load = sharedFileLoad(key.data.data());
+        }
+        rows.append(sharedFileRow(file, rules, load));
+    }
+
+    if (!rows.isEmpty()) {
+        IpcMessage msg(IpcMsgType::PushSharedFileUpdate, 0);
+        msg.append(rows);
+        m_ipcServer->broadcast(msg);
+    }
+    if (!m_dirtySharedFiles.empty())
+        m_sharedFlushTimer.start();
 }
 
 void CoreNotifierBridge::onUploadChanged()

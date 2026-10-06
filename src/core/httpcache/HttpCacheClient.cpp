@@ -7,6 +7,7 @@
 #include "app/AppContext.h"
 #include "client/ClientStructs.h"
 #include "files/PartFile.h"
+#include "httpcache/HttpCacheReach.h"
 #include "net/EMSocket.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
@@ -300,6 +301,24 @@ void HttpCacheClient::sendCancelTransfer()
         finish(HttpCacheResult::NotWanted);
 
     URLClient::sendCancelTransfer();
+}
+
+bool HttpCacheClient::acceptResolvedAddress(const Address& addr)
+{
+    if (!URLClient::acceptResolvedAddress(addr))
+        return false;
+
+    if (cacheReachAllowsPeer(classifyCacheAddress(addr), m_peerAddress, !thePrefs.filterLANIPs()))
+        return true;
+
+    logWarning(QStringLiteral("HTTP Cache: refusing %1 — it resolves to a local address (%2) "
+                              "and the offer did not come from a local peer")
+                   .arg(urlHost(), addr.toString()));
+
+    // Final: the name will resolve the same way on a retry.
+    finish(HttpCacheResult::BadOffer);
+    disconnected(QStringLiteral("URL host resolved to a local address"));
+    return false;
 }
 
 // ---------------------------------------------------------------------------

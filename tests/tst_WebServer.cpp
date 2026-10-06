@@ -45,6 +45,8 @@
 #include <QNetworkRequest>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QProcess>
+#include <QSslError>
 #include <QTest>
 #include <QTranslator>
 
@@ -409,6 +411,14 @@ private slots:
     void webLogin_backsOffAfterRepeatedFailures();
     void loginBackoff_timeline();
     void webOptionsForm_savesOrChangesNothing();
+    void rest_emptyApiKeyLetsNobodyIn();
+    void rest_patchPreferencesIsAllOrNothing();
+    void rest_unknownSearchResultsIs404();
+    void log_masksTokensAndSecretHeaders();
+    void https_withoutAUsableCertificateServesNothing();
+    void https_servesRsaAndEcKeys_data();
+    void https_servesRsaAndEcKeys();
+    void configFromPreferences_differsOnlyOnWhatTheServerUses();
     void webSearchForm_offlineSaysSo();
     void restUsenetListNeedsKeyAndReturnsRows();
     void restUsenetStatsIsNotShadowedByItemRoute();
@@ -1048,6 +1058,158 @@ std::unique_ptr<WebServer> tst_WebServer::startServer(
 
     server->start(config);
     return server;
+}
+
+void tst_WebServer::rest_emptyApiKeyLetsNobodyIn()
+{
+    auto server = startServer(false, true, {}, [](WebServer&, WebServerConfig& config) {
+        config.apiKey.clear();
+    });
+    QCOMPARE(rawGetStatus(server->port(), QStringLiteral("/api/v1/stats"), false), 401);
+    QCOMPARE(rawGetStatus(server->port(), QStringLiteral("/api/v1/stats"), true), 401);
+    server->stop();
+
+    // And the preferences never hold an empty one
+    Preferences prefs;
+    prefs.setWebServerApiKey(QString());
+    QVERIFY(prefs.webServerApiKey().size() >= 32);
+}
+
+void tst_WebServer::rest_patchPreferencesIsAllOrNothing()
+{
+    const QString nick = m_preferences->nick();
+    const uint32 up = m_preferences->maxUpload();
+    const auto patch = [&](const char* json) {
+        return sendRequest(QByteArrayLiteral("PATCH"), QStringLiteral("/api/v1/preferences"),
+                           QByteArray(json)).statusCode;
+    };
+
+    // A good field next to a bad one changes neither
+    QCOMPARE(patch(R"({"nick":"changed","maxUpload":-5})"), 400);
+    QCOMPARE(patch(R"({"nick":"changed","maxUpload":1.5})"), 400);
+    QCOMPARE(patch(R"({"nick":"changed","maxUpload":"12"})"), 400);
+    QCOMPARE(patch(R"({"nick":"changed","port":4662})"), 400);        // read-only
+    QCOMPARE(patch(R"({"nick":"changed","noSuchKey":true})"), 400);
+    QCOMPARE(patch(R"({"nick":""})"), 400);
+    QCOMPARE(patch(R"({"autoConnect":1})"), 400);
+    QCOMPARE(m_preferences->nick(), nick);
+    QCOMPARE(m_preferences->maxUpload(), up);
+
+    QCOMPARE(patch(R"({"maxUpload":77})"), 200);
+    QCOMPARE(m_preferences->maxUpload(), uint32{77});
+    m_preferences->setMaxUpload(up);
+}
+
+void tst_WebServer::rest_unknownSearchResultsIs404()
+{
+    QCOMPARE(sendRequest(QByteArrayLiteral("GET"),
+                         QStringLiteral("/api/v1/search/987654/results")).statusCode, 404);
+}
+
+void tst_WebServer::log_masksTokensAndSecretHeaders()
+{
+    const QString logged = WebServer::redactedUrl(
+        QUrl(QStringLiteral("http://h:1/stream/AB?token=s3cret&x=1")));
+    QVERIFY(!logged.contains(QStringLiteral("s3cret")));
+    QVERIFY(logged.contains(QStringLiteral("x=1")));
+    QCOMPARE(WebServer::redactedUrl(QUrl(QStringLiteral("http://h:1/a?x=1"))),
+             QStringLiteral("http://h:1/a?x=1"));
+    QVERIFY(WebServer::isSecretHeader(u"Cookie"));
+    QVERIFY(WebServer::isSecretHeader(u"X-Api-Key"));
+    QVERIFY(WebServer::isSecretHeader(u"authorization"));
+    QVERIFY(!WebServer::isSecretHeader(u"Range"));
+}
+
+// HTTPS asked for and not possible: no plaintext stand-in for either surface.
+void tst_WebServer::https_withoutAUsableCertificateServesNothing()
+{
+    auto server = startServer(true, true, {}, [](WebServer&, WebServerConfig& config) {
+        config.httpsEnabled = true;
+        config.certPath = QStringLiteral("/nonexistent/cert.pem");
+        config.keyPath = QStringLiteral("/nonexistent/key.pem");
+    });
+    // Still up, for the preview stream
+    QVERIFY(server->isRunning());
+    QVERIFY(!server->isHttps());
+    const uint16 port = server->port();
+    QCOMPARE(rawGetStatus(port, QStringLiteral("/api/v1/stats"), true), 404);
+    QCOMPARE(rawGetStatus(port, QStringLiteral("/"), false), 404);
+    // What was asked for is unchanged, so an unrelated preference save restarts nothing
+    QVERIFY(server->config().httpsEnabled);
+    server->stop();
+}
+
+void tst_WebServer::https_servesRsaAndEcKeys_data()
+{
+    QTest::addColumn<QStringList>("keyArgs");
+    QTest::newRow("rsa") << QStringList{QStringLiteral("rsa:2048")};
+    QTest::newRow("ec") << QStringList{QStringLiteral("ec"), QStringLiteral("-pkeyopt"),
+                                       QStringLiteral("ec_paramgen_curve:prime256v1")};
+}
+
+void tst_WebServer::https_servesRsaAndEcKeys()
+{
+    QFETCH(QStringList, keyArgs);
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString cert = dir.filePath(QStringLiteral("cert.pem"));
+    const QString key = dir.filePath(QStringLiteral("key.pem"));
+
+    QProcess openssl;
+    openssl.start(QStringLiteral("openssl"),
+                  QStringList{QStringLiteral("req"), QStringLiteral("-x509"), QStringLiteral("-newkey")}
+                      + keyArgs
+                      + QStringList{QStringLiteral("-nodes"), QStringLiteral("-keyout"), key,
+                                    QStringLiteral("-out"), cert, QStringLiteral("-days"),
+                                    QStringLiteral("2"), QStringLiteral("-subj"),
+                                    QStringLiteral("/CN=localhost")});
+    if (!openssl.waitForFinished(20000) || openssl.exitCode() != 0 || !QFile::exists(cert))
+        QSKIP("openssl is not available");
+
+    auto server = startServer(false, true, {}, [&](WebServer&, WebServerConfig& config) {
+        config.httpsEnabled = true;
+        config.certPath = cert;
+        config.keyPath = key;
+    });
+    QVERIFY(server->isRunning());
+    QVERIFY(server->isHttps());
+
+    QNetworkRequest req(QUrl(QStringLiteral("https://127.0.0.1:%1/api/v1/stats").arg(server->port())));
+    req.setRawHeader(QByteArrayLiteral("X-Api-Key"), m_apiKey.toUtf8());
+    QNetworkAccessManager nam;
+    QNetworkReply* reply = nam.get(req);
+    QObject::connect(reply, &QNetworkReply::sslErrors, reply,
+                     [reply](const QList<QSslError>&) { reply->ignoreSslErrors(); });
+    QEventLoop loop;
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    loop.exec();
+    QCOMPARE(reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(), 200);
+    reply->deleteLater();
+    server->stop();
+}
+
+// A preference save restarts the server only when its own settings changed.
+void tst_WebServer::configFromPreferences_differsOnlyOnWhatTheServerUses()
+{
+    Preferences prefs;
+    prefs.setWebServerEnabled(true);
+    const WebServerConfig before = WebServerConfig::fromPreferences(prefs);
+
+    prefs.setNick(QStringLiteral("someone else"));
+    prefs.setMaxUpload(prefs.maxUpload() + 7);
+    QVERIFY(WebServerConfig::fromPreferences(prefs) == before);
+
+    prefs.setWebServerPort(static_cast<uint16>(before.port + 1));
+    QVERIFY(!(WebServerConfig::fromPreferences(prefs) == before));
+    prefs.setWebServerPort(before.port);
+    prefs.setWebServerAdminPassword(QStringLiteral("0123456789abcdef"));
+    QVERIFY(!(WebServerConfig::fromPreferences(prefs) == before));
+
+    // Every setting the server takes reaches it
+    prefs.setWebServerCorsAllowedOrigins({QStringLiteral("http://app.example")});
+    QCOMPARE(WebServerConfig::fromPreferences(prefs).corsAllowedOrigins,
+             QStringList{QStringLiteral("http://app.example")});
 }
 
 // REST enabled, web UI disabled: /api/v1/* is served, the UI 404s.
@@ -2603,6 +2765,15 @@ void tst_WebServer::webActions_needAPostFromOurOwnPages()
     QCOMPARE(r.statusCode, 303);
     QCOMPARE(r.headers.value(QStringLiteral("location")), QStringLiteral("/?w=transfer"));
     QCOMPARE(m_downloadQueue->fileCount(), 1);
+
+    // Cancel takes the download out of the queue, not just its files off the disk —
+    // a listed entry would write its .part.met again on the next save.
+    QVERIFY(!QDir(temp.path()).entryList({QStringLiteral("*.part.met")}).isEmpty());
+    r = sendRaw(port, QByteArrayLiteral("POST"), QStringLiteral("/?ses=%1").arg(admin),
+                QByteArrayLiteral("w=transfer&op=cancel&file=") + md4str(md4).toLatin1(), form);
+    QCOMPARE(r.statusCode, 303);
+    QCOMPARE(m_downloadQueue->fileCount(), 0);
+    QVERIFY(QDir(temp.path()).entryList({QStringLiteral("*.part*")}).isEmpty());
 
     server->stop();
 }

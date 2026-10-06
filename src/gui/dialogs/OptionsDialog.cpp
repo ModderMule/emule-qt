@@ -55,6 +55,7 @@
 #include <QRadioButton>
 #include <QScrollArea>
 #include <QSoundEffect>
+#include <QHostAddress>
 #include <QMessageBox>
 #include <QDate>
 #include <QLocale>
@@ -2559,7 +2560,13 @@ QWidget* OptionsDialog::createWebInterfacePage()
     m_webPortSpin->setRange(1, 65535);
     m_webPortSpin->setValue(4711);
     portLayout->addWidget(m_webPortSpin);
-    portLayout->addStretch();
+    portLayout->addSpacing(12);
+    portLayout->addWidget(new QLabel(tr("Listen address:")));
+    m_webListenEdit = new QLineEdit;
+    m_webListenEdit->setPlaceholderText(tr("all interfaces"));
+    m_webListenEdit->setToolTip(tr("Address the web server listens on. Empty: every interface, "
+                                   "reachable from other hosts. 127.0.0.1: this computer only."));
+    portLayout->addWidget(m_webListenEdit, 1);
     generalLayout->addLayout(portLayout);
 
     // Template row
@@ -2762,7 +2769,7 @@ QWidget* OptionsDialog::createWebInterfacePage()
     for (auto* cb : {m_webGzipCheck, m_webUPnPCheck, m_webAdminHiLevCheck})
         connect(cb, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     for (auto* le : {m_webTemplateEdit, m_webCertEdit, m_webKeyEdit, m_webApiKeyEdit,
-                     m_webAdminPasswordEdit, m_webGuestPasswordEdit})
+                     m_webAdminPasswordEdit, m_webGuestPasswordEdit, m_webListenEdit})
         connect(le, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     for (auto* sb : {m_webPortSpin, m_webSessionTimeoutSpin})
         connect(sb, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
@@ -6376,6 +6383,16 @@ void OptionsDialog::saveSettings()
         req.append(m_webUPnPCheck->isChecked());
         req.append(QStringLiteral("webServerPort"));
         req.append(static_cast<qint64>(m_webPortSpin->value()));
+        // An address that does not parse is not sent; the stored one stays.
+        if (const QString listen = m_webListenEdit->text().trimmed();
+            listen.isEmpty() || !QHostAddress(listen).isNull()) {
+            req.append(QStringLiteral("webServerListenAddress"));
+            req.append(listen);
+        } else {
+            QMessageBox::warning(this, tr("Web Interface"),
+                                 tr("\"%1\" is not an IP address. The listen address was not changed.")
+                                     .arg(listen));
+        }
         req.append(QStringLiteral("webServerTemplatePath"));
         req.append(m_webTemplateEdit->text());
         req.append(QStringLiteral("webServerSessionTimeout"));
@@ -7107,6 +7124,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_webCertEdit->setText(prefs.value(QStringLiteral("webServerCertPath")).toString());
     m_webKeyEdit->setText(prefs.value(QStringLiteral("webServerKeyPath")).toString());
     m_webApiKeyEdit->setText(prefs.value(QStringLiteral("webServerApiKey")).toString());
+    m_webListenEdit->setText(prefs.value(QStringLiteral("webServerListenAddress")).toString());
     m_webAdminHiLevCheck->setChecked(prefs.value(QStringLiteral("webServerAdminAllowHiLevFunc")).toBool());
     m_webGuestEnabledCheck->setChecked(prefs.value(QStringLiteral("webServerGuestEnabled")).toBool());
     updateWebEnabledStates();
@@ -7279,6 +7297,7 @@ void OptionsDialog::updateWebEnabledStates()
 
     // Shared server-level controls — relevant whenever either surface is served.
     m_webPortSpin->setEnabled(anyOn);
+    m_webListenEdit->setEnabled(anyOn);
     m_webGzipCheck->setEnabled(anyOn);
     m_webUPnPCheck->setEnabled(anyOn);
     m_webHttpsCheck->setEnabled(anyOn);

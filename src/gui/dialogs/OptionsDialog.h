@@ -634,6 +634,7 @@ private:
     QLineEdit*    m_webKeyEdit = nullptr;
     QPushButton*  m_webKeyBrowseBtn = nullptr;
     QLineEdit*    m_webApiKeyEdit = nullptr;
+    QLineEdit*    m_webListenEdit = nullptr;
     QLineEdit*    m_webAdminPasswordEdit = nullptr;
     QCheckBox*    m_webAdminHiLevCheck = nullptr;
     QCheckBox*    m_webGuestEnabledCheck = nullptr;

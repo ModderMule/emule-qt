@@ -55,6 +55,12 @@ private slots:
     void chunkSelection_rarestFirst();
     void chunkSelection_shortLastPartNotFavoured();
     void emptyBlock_alignsToEmBlockSize();
+    void endPhase_followsWhatIsLeft();
+    void lateDownload_healthyHolderKeepsItsBlock();
+    void lateDownload_stalledBlockGoesToASecondSourceOnly();
+    void endgame_fastSourceDoublesUpOnASlowHolder();
+    void lateDownload_slowSourceReservesLittle();
+    void removeBlockFromList_dropsTheCallersOwnEntry();
     void requestedBlock_shrinksAroundTaken();
     void statusTransitions();
     void priority_setAndGet();
@@ -471,6 +477,225 @@ void tst_PartFile::requestedBlock_shrinksAroundTaken()
     QCOMPARE(blocks[1]->endOffset, uint64{EMBLOCKSIZE - 1});
 }
 
+namespace {
+
+/// A file with only the first @p blocksLeft blocks of part 0 missing.
+struct NearlyDone {
+    PartFile pf;
+    explicit NearlyDone(uint64 blocksLeft, uint16 parts = 12)
+    {
+        pf.setFileName(QStringLiteral("nearly.bin"));
+        pf.setFileSize(PARTSIZE * parts);
+        uint8 hash[16] = {7};
+        pf.setFileHash(hash);
+        pf.fillGap(blocksLeft * EMBLOCKSIZE, PARTSIZE * parts - 1);
+    }
+};
+
+/// A complete source that is transferring from @p pf at @p rate.
+void join(PartFile& pf, UpDownClient& client, uint32 rate)
+{
+    client.setCompleteSource(true);
+    client.setClientVersion(makeClientVersion(0, 50, 0));
+    client.setDownDatarate(rate);
+    pf.addDownloadingSource(&client);
+}
+
+std::vector<Requested_Block_Struct*> take(PartFile& pf, UpDownClient& client, int want)
+{
+    std::vector<Requested_Block_Struct*> blocks(static_cast<size_t>(want), nullptr);
+    int count = want;
+    if (!pf.getNextRequestedBlock(&client, blocks.data(), count))
+        count = 0;
+    blocks.resize(static_cast<size_t>(count));
+    return blocks;
+}
+
+void freeAll(PartFile& pf)
+{
+    const std::vector<Requested_Block_Struct*> blocks(pf.requestedBlockList().begin(),
+                                                      pf.requestedBlockList().end());
+    pf.removeAllRequestedBlocks();
+    for (auto* b : blocks)
+        delete b;
+}
+
+} // namespace
+
+void tst_PartFile::endPhase_followsWhatIsLeft()
+{
+    {
+        PartFile pf;
+        pf.setFileSize(PARTSIZE * 12);
+        QCOMPARE(pf.endPhase(), PartFile::EndPhase::Normal);
+        pf.fillGap(PARTSIZE * 2, PARTSIZE * 12 - 1);     // 2 of 12 parts left
+        QCOMPARE(pf.endPhase(), PartFile::EndPhase::Normal);
+        pf.fillGap(PARTSIZE, PARTSIZE * 2 - 1);          // 1 of 12: under 10 %
+        QCOMPARE(pf.endPhase(), PartFile::EndPhase::Late);
+        pf.fillGap(4 * EMBLOCKSIZE, PARTSIZE - 1);       // four blocks, still late
+        QCOMPARE(pf.endPhase(), PartFile::EndPhase::Late);
+        pf.fillGap(3 * EMBLOCKSIZE, 4 * EMBLOCKSIZE - 1);
+        QCOMPARE(pf.endPhase(), PartFile::EndPhase::Endgame);
+        pf.fillGap(0, 3 * EMBLOCKSIZE - 1);
+        QCOMPARE(pf.endPhase(), PartFile::EndPhase::Normal);   // nothing left to race for
+    }
+    {
+        // 99.9 % of a large file is more than three blocks
+        PartFile pf;
+        pf.setFileSize(PARTSIZE * 200);
+        pf.fillGap(8 * EMBLOCKSIZE, PARTSIZE * 200 - 1);
+        QCOMPARE(pf.endPhase(), PartFile::EndPhase::Endgame);
+    }
+}
+
+void tst_PartFile::lateDownload_healthyHolderKeepsItsBlock()
+{
+    // Two blocks left, two sources. It used to hand every source every block.
+    NearlyDone f(2);
+    QCOMPARE(f.pf.endPhase(), PartFile::EndPhase::Endgame);
+    UpDownClient first, second;
+    join(f.pf, first, 100'000);
+    join(f.pf, second, 100'000);
+
+    const auto held = take(f.pf, first, 3);
+    QCOMPARE(held.size(), size_t{2});
+    for (auto* b : held)
+        b->requested = true;   // the request went out
+    QVERIFY2(take(f.pf, second, 3).empty(), "both blocks are in good hands");
+    QCOMPARE(f.pf.requestedBlockList().size(), size_t{2});
+    freeAll(f.pf);
+}
+
+void tst_PartFile::lateDownload_stalledBlockGoesToASecondSourceOnly()
+{
+    NearlyDone f(1);
+    UpDownClient holder, second, third;
+    join(f.pf, holder, 50'000);
+    join(f.pf, second, 50'000);
+    join(f.pf, third, 50'000);
+
+    const auto held = take(f.pf, holder, 1);
+    QCOMPARE(held.size(), size_t{1});
+    held[0]->requested = true;
+    QVERIFY(take(f.pf, second, 1).empty());
+
+    // nothing written for long enough
+    held[0]->lastProgressTick -= PartFile::kStalledBlockMs + 1;
+    const auto doubled = take(f.pf, second, 1);
+    QCOMPARE(doubled.size(), size_t{1});
+    QCOMPARE(doubled[0]->startOffset, held[0]->startOffset);
+    QCOMPARE(doubled[0]->endOffset, held[0]->endOffset);
+    QCOMPARE(doubled[0]->holder, &second);
+
+    QVERIFY2(take(f.pf, third, 1).empty(), "never more than two on one block");
+    QVERIFY2(take(f.pf, holder, 1).empty(), "and not the holder a second time");
+    freeAll(f.pf);
+}
+
+void tst_PartFile::endgame_fastSourceDoublesUpOnASlowHolder()
+{
+    {
+        NearlyDone f(1);
+        UpDownClient slow, fast, alsoSlow;
+        join(f.pf, slow, 10'000);
+        const auto held = take(f.pf, slow, 1);   // alone so far: the whole block
+        QCOMPARE(held.size(), size_t{1});
+        QCOMPARE(held[0]->endOffset, uint64{EMBLOCKSIZE - 1});
+        held[0]->requested = true;
+        join(f.pf, alsoSlow, 40'000);
+        join(f.pf, fast, 50'000);
+
+        QVERIFY2(take(f.pf, alsoSlow, 1).empty(), "four times as fast is not enough");
+        QCOMPARE(take(f.pf, fast, 1).size(), size_t{1});
+        freeAll(f.pf);
+    }
+    {
+        // Merely late, not in the last stretch: speed alone is no reason
+        NearlyDone f(5);
+        QCOMPARE(f.pf.endPhase(), PartFile::EndPhase::Late);
+        UpDownClient slow, fast;
+        join(f.pf, slow, 10'000);
+        for (auto* b : take(f.pf, slow, 5))
+            b->requested = true;
+        QCOMPARE(f.pf.requestedBlockList().size(), size_t{5});
+        join(f.pf, fast, 500'000);
+        QVERIFY(take(f.pf, fast, 1).empty());
+        freeAll(f.pf);
+    }
+    {
+        // Reserved but never asked for, by a source that has delivered nothing
+        NearlyDone f(5);
+        UpDownClient idle, other;
+        join(f.pf, idle, 0);
+        join(f.pf, other, 0);
+        QCOMPARE(take(f.pf, idle, 5).size(), size_t{5});
+        QCOMPARE(take(f.pf, other, 2).size(), size_t{2});
+        freeAll(f.pf);
+    }
+}
+
+void tst_PartFile::lateDownload_slowSourceReservesLittle()
+{
+    NearlyDone f(6);
+    QCOMPARE(f.pf.endPhase(), PartFile::EndPhase::Late);
+    UpDownClient fast, slow, crawling;
+    join(f.pf, fast, 200'000);
+    join(f.pf, slow, 5'000);
+    join(f.pf, crawling, 100);
+
+    // one piece, ten seconds of its own rate
+    const auto small = take(f.pf, slow, 3);
+    QCOMPARE(small.size(), size_t{1});
+    QCOMPARE(small[0]->endOffset - small[0]->startOffset + 1,
+             uint64{5'000} * PartFile::kSlowReservationSecs);
+
+    // with a floor, so the request is still worth a packet
+    const auto tiny = take(f.pf, crawling, 3);
+    QCOMPARE(tiny.size(), size_t{1});
+    QCOMPARE(tiny[0]->endOffset - tiny[0]->startOffset + 1, PartFile::kMinSlowReservation);
+
+    // the fast one is not limited, and gets the rest of the first block too
+    const auto big = take(f.pf, fast, 3);
+    QCOMPARE(big.size(), size_t{3});
+    QCOMPARE(big[0]->startOffset, tiny[0]->endOffset + 1);
+    QCOMPARE(big[0]->endOffset, uint64{EMBLOCKSIZE - 1});
+    freeAll(f.pf);
+
+    // Early in the download nobody is limited
+    PartFile early;
+    early.setFileSize(PARTSIZE * 12);
+    uint8 hash[16] = {9};
+    early.setFileHash(hash);
+    UpDownClient a, b;
+    join(early, a, 200'000);
+    join(early, b, 5'000);
+    const auto full = take(early, b, 3);
+    QCOMPARE(full.size(), size_t{3});
+    QCOMPARE(full[0]->endOffset - full[0]->startOffset + 1, uint64{EMBLOCKSIZE});
+    freeAll(early);
+}
+
+void tst_PartFile::removeBlockFromList_dropsTheCallersOwnEntry()
+{
+    NearlyDone f(1);
+    UpDownClient holder, second;
+    join(f.pf, holder, 50'000);
+    join(f.pf, second, 50'000);
+    const auto held = take(f.pf, holder, 1);
+    held[0]->requested = true;
+    held[0]->lastProgressTick -= PartFile::kStalledBlockMs + 1;
+    const auto doubled = take(f.pf, second, 1);
+    QCOMPARE(f.pf.requestedBlockList().size(), size_t{2});
+
+    // same range twice: by range the first entry went, whoever asked
+    QVERIFY(f.pf.removeBlockFromList(doubled[0]));
+    QCOMPARE(f.pf.requestedBlockList().size(), size_t{1});
+    QCOMPARE(f.pf.requestedBlockList().front(), held[0]);
+    QVERIFY(!f.pf.removeBlockFromList(doubled[0]));
+    delete doubled[0];
+    freeAll(f.pf);
+}
+
 void tst_PartFile::statusTransitions()
 {
     PartFile pf;
@@ -596,6 +821,8 @@ void tst_PartFile::saveLoadRoundTrip()
     pf1.setDownPriority(kPrHigh);
     pf1.setAutoDownPriority(false);
     pf1.setCategory(2);
+    pf1.setAutoUpPriority(false);
+    pf1.setUpPriority(kPrVeryHigh, false);
 
     uint8 hash[16] = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
                       0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00};
@@ -619,6 +846,15 @@ void tst_PartFile::saveLoadRoundTrip()
     QCOMPARE(pf2.downPriority(), kPrHigh);
     QVERIFY(!pf2.isAutoDownPriority());
     QCOMPARE(pf2.category(), 2U);
+    QVERIFY(!pf2.isAutoUpPriority());
+    QCOMPARE(pf2.upPriority(), kPrVeryHigh);
+
+    // Automatic survives as well
+    pf1.setAutoUpPriority(true);
+    pf1.savePartFile();
+    PartFile pf3;
+    QCOMPARE(pf3.loadPartFile(tempDir, pf1.partMetFileName()), PartFileLoadResult::LoadSuccess);
+    QVERIFY(pf3.isAutoUpPriority());
 }
 
 void tst_PartFile::writeReadRoundTrip_withGaps()

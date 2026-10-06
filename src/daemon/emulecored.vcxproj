@@ -179,6 +179,7 @@
     <ClCompile Include="CliIpcClient.cpp" />
     <ClCompile Include="CommandLineExec.cpp" />
     <ClCompile Include="CoreNotifierBridge.cpp" />
+    <ClCompile Include="SharedFileRows.cpp" />
     <ClCompile Include="DaemonApp.cpp" />
     <ClCompile Include="DaemonUsenetWebBackend.cpp" />
     <ClCompile Include="IpcClientHandler.cpp" />
@@ -199,6 +200,7 @@
     <QtMoc Include="MetaSearchService.h" />
     <QtMoc Include="PowerManager.h" />
     <ClInclude Include="DaemonUsenetWebBackend.h" />
+    <ClInclude Include="SharedFileRows.h" />
     <ClInclude Include="UsenetBridge.h" />
   </ItemGroup>
   <ItemGroup>

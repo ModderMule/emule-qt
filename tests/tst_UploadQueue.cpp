@@ -133,6 +133,12 @@ private slots:
     void checkForTimeOver_scoreKickThrottledToSixSeconds();
     void checkForTimeOver_sessionLimitsFollowTransferFullChunks();
 
+    // Dead upload slots (recycleDeadSlots)
+    void upSlotActivity_tellsIdleFromStalledFromBusy();
+    void deadSlot_goesToAWaitingClient();
+    void deadSlot_staysWithoutSomeoneToTakeIt();
+    void deadSlot_cooldownDoublesAndKeepsThePeerOutOfTheNextPick();
+
     // A slot is never opened for a peer we could not dial
     void addUpNextClient_declinesWhenTheDialFails();
     void findBestClient_considersIpv6ReachableLowIdPeer();
@@ -2663,6 +2669,181 @@ Requested_Block_Struct* uploadBlock(const KnownFile* file, uint64 start, uint64 
 }
 
 } // namespace
+
+// ---------------------------------------------------------------------------
+// Dead upload slots
+// ---------------------------------------------------------------------------
+
+void tst_UploadQueue::upSlotActivity_tellsIdleFromStalledFromBusy()
+{
+    QueueRankEnv env;
+    UploadQueue queue;
+    env.wire(queue);
+    GlobalUploadQueue queueGuard(&queue);
+
+    KnownFile* file = env.addNamedFile(0xE1, QStringLiteral("movie.avi"), 10u * 1024 * 1024);
+    auto* client = env.makeClient(80, file);
+    QVERIFY(env.connectSocket(client));
+    QVERIFY(queue.addClientToQueue(client));
+    QCOMPARE(client->uploadState(), UploadState::Uploading);
+
+    using Activity = UpDownClient::UpSlotActivity;
+    // asked for nothing: idle from the first moment
+    QCOMPARE(client->upSlotActivity(0), Activity::Idle);
+    QCOMPARE(client->upSlotActivity(60'000), Activity::Idle);
+
+    // asked for a block: busy while warming up, stalled when nothing left for it after that
+    client->addReqBlock(uploadBlock(file, 0, EMBLOCKSIZE));
+    QCOMPARE(client->upSlotActivity(1'000), Activity::Busy);
+    QCOMPARE(client->upSlotActivity(UpDownClient::kUpSlotWarmupMs), Activity::Busy);
+    QCOMPARE(client->upDatarate(), 0u);
+    QCOMPARE(client->upSlotActivity(UpDownClient::kUpSlotWarmupMs + 1), Activity::Stalled);
+}
+
+void tst_UploadQueue::deadSlot_goesToAWaitingClient()
+{
+    SlotGateGuard gates;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(100);   // a limit, and nothing going out: not full
+
+    QueueRankEnv env;
+    UploadQueue queue;
+    env.wire(queue);
+    GlobalUploadQueue queueGuard(&queue);
+
+    KnownFile* file = env.addNamedFile(0xE2, QStringLiteral("movie.avi"), 10u * 1024 * 1024);
+    auto* working = env.makeClient(81, file);
+    auto* idle = env.makeClient(82, file);
+    for (auto* c : {working, idle}) {
+        QVERIFY(env.connectSocket(c));
+        QVERIFY(queue.addClientToQueue(c));
+        QCOMPARE(c->uploadState(), UploadState::Uploading);
+    }
+    working->addReqBlock(uploadBlock(file, 0, EMBLOCKSIZE));
+
+    auto* next = env.makeClient(83, file);
+    QVERIFY(env.connectSocket(next));
+    QVERIFY(queue.addClientToQueue(next));
+    QCOMPARE(next->uploadState(), UploadState::OnUploadQueue);
+
+    QSignalSpy ended(&queue, &UploadQueue::uploadEnded);
+    const uint64 t0 = getTickCount();
+    queue.recycleDeadSlots(t0);
+    queue.recycleDeadSlots(t0 + UploadQueue::kDeadSlotMs - 1);
+    QCOMPARE(ended.count(), 0);                                   // not dead long enough
+
+    queue.recycleDeadSlots(t0 + UploadQueue::kDeadSlotMs);
+    QCOMPARE(ended.count(), 1);
+    QCOMPARE(ended.at(0).at(0).value<eMule::UpDownClient*>(), idle);
+    QCOMPARE(working->uploadState(), UploadState::Uploading);     // it has requests: kept
+    // back in line like after a finished session — told so, not banned
+    QCOMPARE(idle->uploadState(), UploadState::OnUploadQueue);
+    QVERIFY(!idle->isBanned());
+    QCOMPARE(queue.waitingUserCount(), 2);
+
+    QVERIFY(queue.isSlotCoolingDown(idle, t0 + UploadQueue::kDeadSlotMs + 1));
+    QVERIFY(!queue.isSlotCoolingDown(next, t0 + UploadQueue::kDeadSlotMs + 1));
+    QVERIFY(!queue.isSlotCoolingDown(idle, t0 + UploadQueue::kDeadSlotMs + UploadQueue::kSlotCooldownMs));
+}
+
+void tst_UploadQueue::deadSlot_staysWithoutSomeoneToTakeIt()
+{
+    SlotGateGuard gates;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(100);
+
+    QueueRankEnv env;
+    UploadQueue queue;
+    env.wire(queue);
+    GlobalUploadQueue queueGuard(&queue);
+
+    KnownFile* file = env.addNamedFile(0xE3, QStringLiteral("movie.avi"), 10u * 1024 * 1024);
+    auto* idle = env.makeClient(84, file);
+    QVERIFY(env.connectSocket(idle));
+    QVERIFY(queue.addClientToQueue(idle));
+    QCOMPARE(queue.waitingUserCount(), 0);
+
+    QSignalSpy ended(&queue, &UploadQueue::uploadEnded);
+    const uint64 t0 = getTickCount();
+    queue.recycleDeadSlots(t0);
+    queue.recycleDeadSlots(t0 + 60'000);
+    QCOMPARE(ended.count(), 0);   // nobody is waiting
+
+    // someone waiting whom we could not reach anyway is no reason either
+    auto* lowId = env.makeClient(85, file);
+    queue.addClientToQueue(lowId);
+    QCOMPARE(lowId->uploadState(), UploadState::OnUploadQueue);
+    QVERIFY(!lowId->isReachableForSlot());
+    queue.recycleDeadSlots(t0 + 61'000);
+    QCOMPARE(ended.count(), 0);
+
+    // with someone who can take it, the slot is freed
+    auto* reachable = env.makeClient(86, file);
+    QVERIFY(env.connectSocket(reachable));
+    queue.addClientToQueue(reachable);
+    queue.recycleDeadSlots(t0 + 62'000);
+    QCOMPARE(ended.count(), 1);
+}
+
+void tst_UploadQueue::deadSlot_cooldownDoublesAndKeepsThePeerOutOfTheNextPick()
+{
+    SlotGateGuard gates;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(0);   // unlimited: a dead slot always costs something
+
+    QueueRankEnv env;
+    UploadQueue queue;
+    env.wire(queue);
+    GlobalUploadQueue queueGuard(&queue);
+
+    // The idler asks for the better file, so by score alone it would be picked again at once.
+    KnownFile* file = env.addNamedFile(0xE4, QStringLiteral("movie.avi"), 10u * 1024 * 1024);
+    auto* idle = env.makeClient(87, env.veryHigh());
+    QVERIFY(env.connectSocket(idle));
+    QVERIFY(queue.addClientToQueue(idle));
+    auto* other = env.makeClient(88, file);
+    QVERIFY(env.connectSocket(other));
+    QVERIFY(queue.addClientToQueue(other));
+    other->addReqBlock(uploadBlock(file, 0, EMBLOCKSIZE));
+    QCOMPARE(other->blockRequests().size(), size_t{1});
+    auto* next = env.makeClient(89, file);
+    QVERIFY(env.connectSocket(next));
+    QVERIFY(queue.addClientToQueue(next));
+    QCOMPARE(next->uploadState(), UploadState::OnUploadQueue);
+
+    uint64 t = getTickCount();
+    queue.recycleDeadSlots(t);
+    t += UploadQueue::kDeadSlotMs;
+    queue.recycleDeadSlots(t);
+    QCOMPARE(idle->uploadState(), UploadState::OnUploadQueue);
+    QVERIFY(queue.isSlotCoolingDown(idle, t + UploadQueue::kSlotCooldownMs - 1));
+    QVERIFY(!queue.isSlotCoolingDown(idle, t + UploadQueue::kSlotCooldownMs));
+
+    // The free slot goes to the one that is not cooling down, whatever the scores say.
+    QSignalSpy started(&queue, &UploadQueue::uploadStarted);
+    QTest::qWait(1100);                              // forceNewClient()'s 1 s throttle
+    queue.process();
+    QCOMPARE(started.count(), 1);
+    QCOMPARE(started.at(0).at(0).value<eMule::UpDownClient*>(), next);
+    next->addReqBlock(uploadBlock(file, 0, EMBLOCKSIZE));
+    QCOMPARE(next->blockRequests().size(), size_t{1});
+
+    // It gets a slot again later, wastes it again: twice the wait.
+    auto* waiting = env.makeClient(90, file);
+    QVERIFY(env.connectSocket(waiting));
+    QVERIFY(queue.addClientToQueue(waiting));
+    QVERIFY(queue.removeFromUploadQueue(other));
+    QVERIFY(queue.removeFromWaitingQueue(idle));
+    QVERIFY(queue.addUpNextClient(idle));
+    QCOMPARE(idle->uploadState(), UploadState::Uploading);
+    t += UploadQueue::kSlotCooldownMs + 1000;
+    queue.recycleDeadSlots(t);
+    t += UploadQueue::kDeadSlotMs;
+    queue.recycleDeadSlots(t);
+    QCOMPARE(idle->uploadState(), UploadState::OnUploadQueue);
+    QVERIFY(queue.isSlotCoolingDown(idle, t + 2 * UploadQueue::kSlotCooldownMs - 1));
+    QVERIFY(!queue.isSlotCoolingDown(idle, t + 2 * UploadQueue::kSlotCooldownMs));
+}
 
 void tst_UploadQueue::removeFromUploadQueue_flushesBlocks()
 {

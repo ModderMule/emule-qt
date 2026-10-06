@@ -5,15 +5,18 @@
 #include "files/KnownFile.h"
 #include "files/KnownFileList.h"
 #include "app/AppContext.h"
+#include "files/SharedDirWatcher.h"
 #include "files/SharedFileList.h"
 #include "client/UpDownClient.h"
 
 #include "prefs/Preferences.h"
 #include "server/Server.h"
 
+#include <QDataStream>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QSet>
 #include <QSignalSpy>
 #include <QTest>
 #include <QTemporaryDir>
@@ -48,9 +51,19 @@ private slots:
     void excludeFile_refusedForCategoryIncomingDir();
     void sharedFilesConfig_roundTrips();
     void scan_skipsAFileStillBeingDelivered();
+    void pathRules_matchOtherSpellingsByKey();
+    void directoryIndex_followsAddRemoveAndMove();
     void rescan_addsKeywordsThroughTheFrontDoor();
     void reload_dropsKeywordsOfFilesNoLongerShared();
     void knownListReplace_unhooksTheSharedOldObject();
+
+    // Incremental reload, hashing retries, the watcher
+    void reload_leavesUnchangedFilesAlone();
+    void reload_followsDeleteChangeAndRename();
+    void reload_doesNotHashAFileTwice();
+    void hashFailure_isRetriedThenRememberedUntilTheFileChanges();
+    void freshFile_isHeldBackWhileWatching();
+    void watching_picksUpACopiedInFileWithoutAReload();
     void hashFinished_duplicateContentKeepsTheSharedFile();
 
     // OP_OFFERFILES selection (MFC SendListToServer)
@@ -63,6 +76,12 @@ private slots:
     // Fake-file verdicts (warmContainerChecks)
     void theSweepSettlesVerdictsOffThePollPath();
     void theSweepStopsAndANewFileRestartsIt();
+
+    // Kad publish probe
+    void nextDueFile_isOneWalkAndRoundRobin();
+
+    // Rebuild of the media tags on request
+    void rebuildMetaData_rereadsSharedFilesOnly();
 
     // Locking (one mutex, no nesting)
     void concurrentIterationWhileMutating();
@@ -346,6 +365,83 @@ void tst_SharedFileList::unsharedMark_isNotAReAddGate()
              "a successful add must clear the mark");
 }
 
+void tst_SharedFileList::pathRules_matchOtherSpellingsByKey()
+{
+    eMule::testing::TempDir tmp;
+    const QString shareDir = tmp.filePath(QStringLiteral("Share"));
+    const QString path = writeFile(shareDir, QStringLiteral("One.bin"), QByteArray(64, 'o'));
+    QVERIFY(!path.isEmpty());
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({shareDir + QLatin1Char('/')});
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+
+    // trailing slash, case, and a ".." detour all name the same directory and file
+    const QString detour = shareDir + QStringLiteral("/../Share");
+    QVERIFY(shared.shouldBeShared(shareDir, path, false));
+    QVERIFY(shared.shouldBeShared(shareDir.toUpper(), path.toUpper(), false));
+    QVERIFY(shared.shouldBeShared(detour, detour + QStringLiteral("/One.bin"), false));
+    QVERIFY(!shared.shouldBeShared(shareDir + QStringLiteral("2"), path, false));
+
+    // an exclusion is found under any spelling too, among many others
+    for (int i = 0; i < 5000; ++i)
+        shared.m_singleExcludedFiles.insert(
+            SharedFileList::pathKey(shareDir + QStringLiteral("/x%1.bin").arg(i)), QString());
+    QVERIFY(shared.excludeFile(detour + QStringLiteral("/ONE.BIN")));
+    QVERIFY(!shared.shouldBeShared(shareDir, path, false));
+    QCOMPARE(shared.m_singleExcludedFiles.size(), 5001);
+
+    // one snapshot answers many questions
+    const SharedFileList::ShareRules rules = shared.shareRules();
+    QVERIFY(rules.sharedDirs.contains(SharedFileList::pathKey(shareDir)));
+    QVERIFY(!shared.shouldBeShared(rules, shareDir, path, false));
+    QVERIFY(shared.shouldBeShared(rules, shareDir, shareDir + QStringLiteral("/other.bin"), false));
+
+    // un-excluding by yet another spelling
+    QVERIFY(shared.addSingleSharedFile(path.toLower()));
+    QVERIFY(shared.shouldBeShared(shareDir, path, false));
+}
+
+void tst_SharedFileList::directoryIndex_followsAddRemoveAndMove()
+{
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+
+    KnownFile* a = makeFile(knownFiles, 0xD1, QStringLiteral("a.bin"));
+    KnownFile* b = makeFile(knownFiles, 0xD2, QStringLiteral("b.bin"));
+    KnownFile* c = makeFile(knownFiles, 0xD3, QStringLiteral("c.bin"));
+    a->setPath(QStringLiteral("/share/one"));
+    b->setPath(QStringLiteral("/share/one"));
+    c->setPath(QStringLiteral("/somewhere/else"));
+    c->setSharedDirectory(QStringLiteral("/linked"));   // what a peer is shown
+    for (KnownFile* f : {a, b, c})
+        QVERIFY(shared.safeAddKFile(f));
+
+    auto dirs = shared.sharedDirectories();
+    std::ranges::sort(dirs);
+    QCOMPARE(dirs, (std::vector<QString>{QStringLiteral("/linked"), QStringLiteral("/share/one")}));
+    QCOMPARE(shared.filesInDirectory(QStringLiteral("/share/one")).size(), size_t{2});
+    QCOMPARE(shared.filesInDirectory(QStringLiteral("/linked")), std::vector<KnownFile*>{c});
+    QVERIFY(shared.filesInDirectory(QStringLiteral("/somewhere/else")).empty());
+    QVERIFY(shared.filesInDirectory(QStringLiteral("/SHARE/ONE")).empty());   // exact, as before
+
+    // a completed download moves; nothing else re-files it
+    b->setPath(QStringLiteral("/incoming"));
+    shared.refreshDirectoryOf(b);
+    QCOMPARE(shared.filesInDirectory(QStringLiteral("/share/one")), std::vector<KnownFile*>{a});
+    QCOMPARE(shared.filesInDirectory(QStringLiteral("/incoming")), std::vector<KnownFile*>{b});
+
+    QVERIFY(shared.removeFile(a));
+    QVERIFY(shared.filesInDirectory(QStringLiteral("/share/one")).empty());
+    QCOMPARE(shared.sharedDirectories().size(), size_t{2});
+
+    shared.reload();   // nothing on disk: everything goes
+    QVERIFY(shared.sharedDirectories().empty());
+}
+
 void tst_SharedFileList::excludeFile_survivesReload()
 {
     eMule::testing::TempDir tmp;
@@ -532,6 +628,231 @@ void tst_SharedFileList::rescan_addsKeywordsThroughTheFrontDoor()
     // map entry as the direct write did.
     QVERIFY2(!shared.safeAddKFile(known), "a duplicate hash must be rejected");
     QCOMPARE(shared.getCount(), 1);
+}
+
+namespace {
+
+/// Share dir + config in a temp dir, nothing else shared.
+struct ShareEnv {
+    eMule::testing::TempDir tmp;
+    QString shareDir = tmp.filePath(QStringLiteral("share"));
+    ShareEnv()
+    {
+        QDir().mkpath(shareDir);
+        thePrefs.setConfigDir(tmp.path());
+        thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+        thePrefs.setSharedDirs({shareDir});
+    }
+    QString put(const QString& name, const QByteArray& content) const
+    {
+        return writeFile(shareDir, name, content);
+    }
+};
+
+KnownFile* sharedAt(const SharedFileList& shared, const QString& path)
+{
+    KnownFile* found = nullptr;
+    shared.forEachFile([&](KnownFile* f) {
+        if (f->filePath().compare(path, Qt::CaseInsensitive) == 0)
+            found = f;
+    });
+    return found;
+}
+
+} // namespace
+
+void tst_SharedFileList::reload_leavesUnchangedFilesAlone()
+{
+    ShareEnv env;
+    const QString a = env.put(QStringLiteral("alpha one.bin"), QByteArray(700, 'a'));
+    const QString b = env.put(QStringLiteral("beta two.bin"), QByteArray(900, 'b'));
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    shared.reload();
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 2, 10000);
+    KnownFile* const fa = sharedAt(shared, a);
+    KnownFile* const fb = sharedAt(shared, b);
+    QVERIFY(fa && fb);
+    fa->setPublishedED2K(true);
+
+    QSignalSpy added(&shared, &SharedFileList::fileAdded);
+    QSignalSpy removed(&shared, &SharedFileList::fileRemoved);
+    const int keywords = shared.m_keywords.keywordCount();
+    shared.reload();
+    QTest::qWait(200);
+
+    QCOMPARE(added.count(), 0);
+    QCOMPARE(removed.count(), 0);
+    QCOMPARE(sharedAt(shared, a), fa);
+    QCOMPARE(sharedAt(shared, b), fb);
+    QVERIFY2(fa->publishedED2K(), "an untouched file keeps its publish state");
+    QCOMPARE(shared.m_keywords.keywordCount(), keywords);
+    QCOMPARE(shared.getHashingCount(), 0);
+}
+
+void tst_SharedFileList::reload_followsDeleteChangeAndRename()
+{
+    ShareEnv env;
+    const QString gone = env.put(QStringLiteral("gone.bin"), QByteArray(500, 'g'));
+    const QString grown = env.put(QStringLiteral("grown.bin"), QByteArray(600, 'c'));
+    const QString before = env.put(QStringLiteral("before name.bin"), QByteArray(800, 'r'));
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    shared.reload();
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 3, 10000);
+    KnownFile* const renamed = sharedAt(shared, before);
+    QVERIFY(renamed);
+    const QByteArray renamedHash(reinterpret_cast<const char*>(renamed->fileHash()), 16);
+    const QByteArray grownHash(reinterpret_cast<const char*>(sharedAt(shared, grown)->fileHash()), 16);
+
+    QVERIFY(QFile::remove(gone));
+    QVERIFY(!env.put(QStringLiteral("grown.bin"), QByteArray(650, 'c')).isEmpty());
+    const QString after = QDir(env.shareDir).filePath(QStringLiteral("after name.bin"));
+    QVERIFY(QFile::rename(before, after));
+
+    QSignalSpy removed(&shared, &SharedFileList::fileRemoved);
+    QSignalSpy relocated(&shared, &SharedFileList::fileRelocated);
+    shared.rescanDirectory(env.shareDir);
+
+    // deleted: gone at once
+    QVERIFY(!sharedAt(shared, gone));
+    // renamed: the same object, no hashing, new name and keywords
+    QCOMPARE(relocated.count(), 1);
+    QCOMPARE(sharedAt(shared, after), renamed);
+    QCOMPARE(renamed->fileName(), QStringLiteral("after name.bin"));
+    QCOMPARE(QByteArray(reinterpret_cast<const char*>(renamed->fileHash()), 16), renamedHash);
+    bool hasAfter = false, hasBefore = false;
+    shared.m_keywords.resetNextKeyword();
+    while (PublishKeyword* kw = shared.m_keywords.getNextKeyword()) {
+        hasAfter |= kw->keyword() == QStringLiteral("after");
+        hasBefore |= kw->keyword() == QStringLiteral("before");
+    }
+    QVERIFY(hasAfter && !hasBefore);
+    // changed: out now, back with a new hash once hashed
+    QCOMPARE(removed.count(), 2);
+    QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, grown) != nullptr, 10000);
+    QVERIFY(QByteArray(reinterpret_cast<const char*>(sharedAt(shared, grown)->fileHash()), 16) != grownHash);
+    QCOMPARE(shared.getCount(), 2);
+}
+
+void tst_SharedFileList::reload_doesNotHashAFileTwice()
+{
+    ShareEnv env;
+    for (int i = 0; i < 40; ++i)
+        QVERIFY(!env.put(QStringLiteral("file %1.bin").arg(i), QByteArray(2000 + i, char('a' + i % 20))).isEmpty());
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    QSignalSpy added(&shared, &SharedFileList::fileAdded);
+    shared.reload();
+    // while the first ones are on the worker or done, and the rest still wait
+    for (int i = 0; i < 5; ++i) {
+        QTest::qWait(1);
+        shared.reload();
+    }
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 40, 20000);
+    QTest::qWait(200);
+    QCOMPARE(added.count(), 40);
+    QCOMPARE(shared.getHashingCount(), 0);
+}
+
+void tst_SharedFileList::hashFailure_isRetriedThenRememberedUntilTheFileChanges()
+{
+#ifdef Q_OS_WIN
+    QSKIP("needs POSIX permissions to make a file unreadable");
+#endif
+    ShareEnv env;
+    const QString locked = env.put(QStringLiteral("locked.bin"), QByteArray(400, 'l'));
+    QVERIFY(QFile::setPermissions(locked, QFileDevice::Permissions{}));
+    if (QFile(locked).open(QIODevice::ReadOnly))
+        QSKIP("running as a user who can read anything");
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    shared.m_hashRetrySecs = {0, 0, 0};
+    const QString key = SharedFileList::pathKey(locked);
+
+    shared.reload();
+    QTRY_VERIFY_WITH_TIMEOUT(shared.m_hashFailures.contains(key), 5000);
+    // three more tries, each started by the tick
+    for (int i = 0; i < 200 && !shared.m_hashFailures.value(key).givenUp; ++i) {
+        shared.process();
+        QTest::qWait(20);
+    }
+    QVERIFY(shared.m_hashFailures.value(key).givenUp);
+    QCOMPARE(shared.m_hashFailures.value(key).attempts, 3);
+
+    // remembered: neither the tick nor a reload queues it again
+    shared.process();
+    shared.reload();
+    QCOMPARE(shared.getHashingCount(), 0);
+    QCOMPARE(shared.getCount(), 0);
+
+    // readable, and changed: hashed
+    QVERIFY(QFile::setPermissions(locked, QFileDevice::ReadOwner | QFileDevice::WriteOwner));
+    QVERIFY(!env.put(QStringLiteral("locked.bin"), QByteArray(450, 'l')).isEmpty());
+    shared.reload();
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
+    QVERIFY(!shared.m_hashFailures.contains(key));
+}
+
+void tst_SharedFileList::freshFile_isHeldBackWhileWatching()
+{
+    ShareEnv env;
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    shared.m_settleSecs = 5;
+
+    const QString fresh = env.put(QStringLiteral("fresh.bin"), QByteArray(300, 'f'));
+    const QString old = env.put(QStringLiteral("old.bin"), QByteArray(310, 'o'));
+    {
+        QFile f(old);
+        QVERIFY(f.open(QIODevice::ReadWrite));
+        QVERIFY(f.setFileTime(QDateTime::currentDateTime().addSecs(-3600), QFileDevice::FileModificationTime));
+    }
+
+    shared.reload();
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
+    QVERIFY(sharedAt(shared, old));
+    QVERIFY2(shared.m_settleDirs.contains(env.shareDir), "the directory is looked at again later");
+
+    // the later look, once the file has been quiet long enough
+    {
+        QFile f(fresh);
+        QVERIFY(f.open(QIODevice::ReadWrite));
+        QVERIFY(f.setFileTime(QDateTime::currentDateTime().addSecs(-60), QFileDevice::FileModificationTime));
+    }
+    shared.m_settleDirs[env.shareDir] = 0;
+    shared.process();
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 2, 10000);
+    QVERIFY(shared.m_settleDirs.isEmpty());
+}
+
+void tst_SharedFileList::watching_picksUpACopiedInFileWithoutAReload()
+{
+    ShareEnv env;
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    shared.reload();
+    shared.setWatchingEnabled(true);
+    shared.m_settleSecs = 0;
+    QVERIFY(shared.watcher());
+    shared.watcher()->setTimings(100, 1000, 200);
+    QCOMPARE(shared.watcher()->roots().size(), 2);   // incoming + share
+
+    const QString path = env.put(QStringLiteral("dropped in.bin"), QByteArray(1234, 'd'));
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 15000);
+    QVERIFY(sharedAt(shared, path));
+
+    QVERIFY(QFile::remove(path));
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 0, 15000);
+
+    // a directory that stops being shared stops being watched
+    thePrefs.setSharedDirs({});
+    shared.reload();
+    QCOMPARE(shared.watcher()->roots().size(), 1);
 }
 
 // MFC Reload() (srchybrid/SharedFileList.cpp:784-796). The map is emptied wholesale, so
@@ -981,6 +1302,84 @@ void tst_SharedFileList::theSweepStopsAndANewFileRestartsIt()
     shared.process();
     QVERIFY(late->containerCheckResolved());
     QVERIFY(late->containerCheckIfResolved().isSuspect());
+}
+
+// The probe asks each file at most once per call and never a file past the first
+// "yes" — due() marks a file as published, so asking and not publishing loses a turn.
+void tst_SharedFileList::nextDueFile_isOneWalkAndRoundRobin()
+{
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    for (uint8 i = 1; i <= 5; ++i)
+        shared.safeAddKFile(makeFile(knownFiles, i, QStringLiteral("f%1.bin").arg(i)));
+
+    uint32 cursor = 0;
+    int asked = 0;
+    const auto always = [&asked](KnownFile*) { ++asked; return true; };
+
+    // Everything due: five calls hand out five different files, one question each
+    QSet<KnownFile*> seen;
+    for (int i = 0; i < 5; ++i)
+        seen.insert(shared.nextDueFile(cursor, always));
+    QCOMPARE(seen.size(), 5);
+    QCOMPARE(asked, 5);
+    // ... and the sixth wraps around
+    QVERIFY(seen.contains(shared.nextDueFile(cursor, always)));
+
+    // Nothing due: every file is asked exactly once, wherever the cursor stands
+    cursor = 3;
+    asked = 0;
+    QVERIFY(!shared.nextDueFile(cursor, [&asked](KnownFile*) { ++asked; return false; }));
+    QCOMPARE(asked, 5);
+
+    // Only one file due, behind the cursor: found on the wrap
+    KnownFile* only = *seen.begin();
+    cursor = 0;
+    shared.nextDueFile(cursor, [only](KnownFile* f) { return f == only; });
+    const uint32 after = cursor;
+    QCOMPARE(shared.nextDueFile(cursor, [only](KnownFile* f) { return f == only; }), only);
+    QCOMPARE(cursor, after);
+}
+
+// A record with a stale tag and one with none both end with what the file says.
+// MFC RebuildMetaData, srchybrid/SharedFileList.cpp:1381-1386.
+void tst_SharedFileList::rebuildMetaData_rereadsSharedFilesOnly()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+
+    // 2 s of 8 kHz mono 8-bit PCM
+    QByteArray wav;
+    QDataStream out(&wav, QIODevice::WriteOnly);
+    out.setByteOrder(QDataStream::LittleEndian);
+    const quint32 dataLen = 16000;
+    out.writeRawData("RIFF", 4);
+    out << quint32(36 + dataLen);
+    out.writeRawData("WAVEfmt ", 8);
+    out << quint32(16) << quint16(1) << quint16(1) << quint32(8000) << quint32(8000)
+        << quint16(1) << quint16(8);
+    out.writeRawData("data", 4);
+    out << dataLen;
+    wav.append(QByteArray(int(dataLen), '\x80'));
+
+    auto* stale = makeFileOnDisk(knownFiles, shared, 0x41, dir.path(), QStringLiteral("a.wav"), wav);
+    stale->addTagUnique(Tag(FT_MEDIA_LENGTH, uint32{999}));
+    stale->addTagUnique(Tag(FT_MEDIA_CODEC, QStringLiteral("PCM (Old Display Name)")));
+    auto* bare = makeFileOnDisk(knownFiles, shared, 0x42, dir.path(), QStringLiteral("b.wav"), wav);
+    QVERIFY(!bare->hasMetaDataTags());
+
+    QCOMPARE(shared.rebuildMetaData(), 2);
+    for (int i = 0; i < 20 && shared.isRebuildingMetaData(); ++i)
+        shared.process();
+    QVERIFY(!shared.isRebuildingMetaData());
+
+    for (KnownFile* f : {stale, bare}) {
+        QCOMPARE(f->getIntTagValue(FT_MEDIA_LENGTH), uint32{2});
+        QCOMPARE(f->metaDataVer(), KnownFile::kMetaDataVer);
+        QVERIFY(f->getStrTagValue(FT_MEDIA_CODEC) != QStringLiteral("PCM (Old Display Name)"));
+    }
 }
 
 QTEST_MAIN(tst_SharedFileList)

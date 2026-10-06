@@ -121,6 +121,7 @@ void KnownFileList::clear()
     for (auto& [key, file] : m_filesMap)
         delete file;
     m_filesMap.clear();
+    m_bySize.clear();
     m_cancelledFiles.clear();
     totalTransferred = 0;
     totalRequested = 0;
@@ -177,13 +178,16 @@ bool KnownFileList::safeAddKFile(KnownFile* file)
         }
 
         existing->detachUploadingClients();
+        unindexBySize(existing);
         delete existing;
         it->second = file;
+        indexBySize(file);
 
         if (wasShared)
             theApp.sharedFileList->safeAddKFile(file);
     } else {
         m_filesMap[key] = file;
+        indexBySize(file);
         totalTransferred += file->statistic.allTimeTransferred();
         totalRequested += file->statistic.allTimeRequests();
         totalAccepted += file->statistic.allTimeAccepts();
@@ -196,7 +200,11 @@ void KnownFileList::remove(const KnownFile* file)
     if (!file)
         return;
     MD4Key key(file->fileHash());
-    m_filesMap.erase(key);
+    // The record stored under this hash, which need not be the object passed in
+    if (auto it = m_filesMap.find(key); it != m_filesMap.end()) {
+        unindexBySize(it->second);
+        m_filesMap.erase(it);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -205,9 +213,11 @@ void KnownFileList::remove(const KnownFile* file)
 
 KnownFile* KnownFileList::findKnownFile(const QString& filename, time_t date, uint64 size) const
 {
-    for (const auto& [key, file] : m_filesMap) {
+    // Only the records of that size; a scan asks this once per file on disk.
+    const auto [first, last] = m_bySize.equal_range(size);
+    for (auto it = first; it != last; ++it) {
+        KnownFile* file = it->second;
         if (file->utcFileDate() == date
-            && static_cast<uint64>(file->fileSize()) == size
             && file->fileName().compare(filename, Qt::CaseInsensitive) == 0)
         {
             return file;
@@ -425,6 +435,7 @@ KnownFileList::MetRead KnownFileList::readKnownMet(const QString& filePath)
             }
 
             m_filesMap[key] = kf;
+            indexBySize(kf);
             totalTransferred += kf->statistic.allTimeTransferred();
             totalRequested += kf->statistic.allTimeRequests();
             totalAccepted += kf->statistic.allTimeAccepts();
@@ -485,6 +496,25 @@ KnownFileList::MetRead KnownFileList::readCancelledMet(const QString& filePath)
         logError(QStringLiteral("cancelled.met load error: %1").arg(QString::fromUtf8(e.what())));
         return MetRead::Damaged;
     }
+}
+
+void KnownFileList::indexBySize(KnownFile* file)
+{
+    m_bySize.emplace(static_cast<uint64>(file->fileSize()), file);
+}
+
+void KnownFileList::unindexBySize(const KnownFile* file)
+{
+    const auto [first, last] = m_bySize.equal_range(static_cast<uint64>(file->fileSize()));
+    for (auto it = first; it != last; ++it) {
+        if (it->second == file) {
+            m_bySize.erase(it);
+            return;
+        }
+    }
+    // Not under its size: it changed after the record was added. Find it the slow way
+    // rather than leave a pointer behind.
+    std::erase_if(m_bySize, [file](const auto& entry) { return entry.second == file; });
 }
 
 } // namespace eMule

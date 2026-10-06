@@ -51,6 +51,8 @@ class tst_ServerList : public QObject {
     Q_OBJECT
 
 private slots:
+    void statPing_countsOnlyWithAFreshSignOfLife();
+
     // Add/Remove
     void add_success();
     void add_duplicate_rejected();
@@ -2336,6 +2338,17 @@ void tst_ServerList::serverStats_fallsBackToPlaintextWhenPending()
     QVERIFY(!srv->cryptPingReplyPending());
     QCOMPARE(srv->challenge() & 0xFFFF0000u, 0x55AA0000u);
     QCOMPARE(srv->failedCount(), 1u);
+}
+
+// Kad calls itself connected long after its last packet; a ping lost in that window
+// says nothing about the server.
+void tst_ServerList::statPing_countsOnlyWithAFreshSignOfLife()
+{
+    const time_t now = 1'000'000;
+    QVERIFY(ServerList::statPingCounts(true, 0, now));            // on a server
+    QVERIFY(ServerList::statPingCounts(false, now - 30, now));    // Kad heard just now
+    QVERIFY(!ServerList::statPingCounts(false, now - 600, now));  // Kad silent for 10 min
+    QVERIFY(!ServerList::statPingCounts(false, 0, now));          // nothing at all
 }
 
 QTEST_MAIN(tst_ServerList)

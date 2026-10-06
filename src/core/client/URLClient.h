@@ -94,18 +94,20 @@ protected:
     /// "Downloaded Data" and the UL:DL ratios count what actually arrived.
     static void bookHttpDownload(uint64 bytes);
 
-private:
-    void sendHelloPacket() override {} // no-op for HTTP
-    void connectToHost(); // create socket and initiate TCP connection
-
     /// Gate every address we are about to dial through the shared peer rules.
     ///
     /// A URL host is chosen by somebody else — a peer's HTTP Cache offer, a Kad chunk
     /// record, an ed2k link — so the address behind it is no more trusted than a peer
     /// address, and DNS is part of the attack surface: a name that resolves to
     /// 127.0.0.1 or fd00::1 is exactly the request a literal one is screened for.
+    ///
+    /// Virtual so a subclass can add a rule of its own on top.
     /// @return true when the connection may proceed; false after disconnecting.
-    bool acceptResolvedAddress(const Address& addr);
+    virtual bool acceptResolvedAddress(const Address& addr);
+
+private:
+    void sendHelloPacket() override {} // no-op for HTTP
+    void connectToHost(); // create socket and initiate TCP connection
 
     HostResolver* m_hostResolver = nullptr;   // created on first hostname connect
     QString m_urlHost;

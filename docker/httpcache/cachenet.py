@@ -12,9 +12,14 @@ Every peer gets its own IP: eMule refuses a 4th client from the same address
 (UploadQueue::addClientToQueue, sameIPCount >= 3), so a swarm on one address
 would silently stop being a swarm at three.
 
+--public-peers puts the last N leechers on a second bridge with a routable-looking
+subnet. The cache stays on the private one, so those peers are what a real remote
+peer is to a LAN cache: never to be offered its URLs. Seeders sit on both.
+
 Usage:
     python3 docker/httpcache/cachenet.py                     # 20 peers, start
     python3 docker/httpcache/cachenet.py --peers 4 --build   # rebuild images first
+    python3 docker/httpcache/cachenet.py --peers 5 --public-peers 2   # mixed LAN/public swarm
     python3 docker/httpcache/cachenet.py --logs              # follow logs
     python3 docker/httpcache/cachenet.py --down              # tear down
 
@@ -202,7 +207,7 @@ def user_hash(node_index: int) -> str:
 # Compose generation
 # ---------------------------------------------------------------------------
 
-def write_service(f, name: str, svc: dict, network: str) -> None:
+def write_service(f, name: str, svc: dict) -> None:
     f.write(f"  {name}:\n")
     f.write(f"    image: {svc['image']}\n")
     f.write(f"    container_name: {svc['container_name']}\n")
@@ -233,13 +238,16 @@ def write_service(f, name: str, svc: dict, network: str) -> None:
         for vol in svc["volumes"]:
             f.write(f"      - {vol}\n")
     f.write("    networks:\n")
-    f.write(f"      {network}:\n")
-    f.write(f"        ipv4_address: {svc['ip']}\n")
+    for network, ip in svc["networks"].items():
+        f.write(f"      {network}:\n")
+        f.write(f"        ipv4_address: {ip}\n")
 
 
-def generate_compose(args, ips: dict, link: str, path: str) -> None:
+def generate_compose(args, ips: dict, pub_ips: dict, links: dict, path: str) -> None:
     network = ipaddress.IPv4Network(args.subnet)
     gateway = str(list(network.hosts())[0])
+    pub_network = ipaddress.IPv4Network(args.public_subnet)
+    pub_gateway = str(list(pub_network.hosts())[0])
 
     services = {}
     volumes = {"cache-data": None}
@@ -247,7 +255,7 @@ def generate_compose(args, ips: dict, link: str, path: str) -> None:
     services["cache"] = {
         "image": CACHE_IMAGE,
         "container_name": "cachenet-cache",
-        "ip": ips["cache"],
+        "networks": {"cachenet": ips["cache"]},
         "environment": {
             "CACHE_API_KEY_ID": "cachenet",
             "CACHE_API_KEY": args.api_key,
@@ -296,14 +304,23 @@ def generate_compose(args, ips: dict, link: str, path: str) -> None:
             "PUBLISH_RATE_KBS": str(args.publish_rate_kbs),
             "MAX_FETCHES": str(args.max_fetches),
             "MAX_UPLOAD_KBS": str(args.seed_upload_kbs if is_seeder else 0),
+            "FILTER_LAN_IPS": "true" if args.filter_lan_ips else "false",
         }
+        name = f"node-{i}"
         if not is_seeder:
-            env["DOWNLOAD_LINK"] = link
+            env["DOWNLOAD_LINK"] = links["public" if name in pub_ips else "lan"]
+
+        # A public peer is on the public bridge only; a seeder on both when there is one.
+        networks = {}
+        if is_seeder or name not in pub_ips:
+            networks["cachenet"] = ips[name]
+        if name in pub_ips:
+            networks["pubnet"] = pub_ips[name]
 
         services[f"node-{i}"] = {
             "image": DAEMON_IMAGE,
             "container_name": f"cachenet-node-{i}",
-            "ip": ips[f"node-{i}"],
+            "networks": networks,
             "entrypoint": ["/entrypoint-httpcache.sh"],
             "depends_on": {"cache": "service_healthy"},
             "environment": env,
@@ -319,11 +336,19 @@ def generate_compose(args, ips: dict, link: str, path: str) -> None:
         f.write("    ipam:\n")
         f.write("      config:\n")
         f.write(f"        - subnet: {args.subnet}\n")
-        f.write(f"          gateway: {gateway}\n\n")
+        f.write(f"          gateway: {gateway}\n")
+        if pub_ips:
+            f.write("  pubnet:\n")
+            f.write("    driver: bridge\n")
+            f.write("    ipam:\n")
+            f.write("      config:\n")
+            f.write(f"        - subnet: {args.public_subnet}\n")
+            f.write(f"          gateway: {pub_gateway}\n")
+        f.write("\n")
 
         f.write("services:\n")
         for name, svc in services.items():
-            write_service(f, name, svc, "cachenet")
+            write_service(f, name, svc)
         f.write("\n")
 
         f.write("volumes:\n")
@@ -376,6 +401,14 @@ def parse_args():
                         "(default: 30000000 = 3 parts + an 816000-byte tail)")
     p.add_argument("--subnet", default="172.30.0.0/16",
                    help="docker subnet (default: 172.30.0.0/16 — the Kad rig uses 172.20/16)")
+    p.add_argument("--public-peers", type=int, default=0,
+                   help="put the last N leechers on a routable-looking subnet the cache "
+                        "is not on (default: 0)")
+    p.add_argument("--public-subnet", default="45.83.0.0/16",
+                   help="subnet of that second bridge (default: 45.83.0.0/16)")
+    p.add_argument("--filter-lan-ips", action="store_true",
+                   help="general.filterLANIPs on every node — LAN mode off; 172.x peers are "
+                        "then refused, so combine with --public-peers")
     p.add_argument("--all-publish", action="store_true",
                    help="let every peer publish to the cache, not just the seeders")
     p.add_argument("--min-clients", type=int, default=2,
@@ -422,6 +455,8 @@ def main():
 
     if args.seeders < 1 or args.seeders >= args.peers:
         sys.exit(f"--seeders must be between 1 and {args.peers - 1}")
+    if args.public_peers < 0 or args.public_peers > args.peers - args.seeders:
+        sys.exit(f"--public-peers must be between 0 and {args.peers - args.seeders}")
     if args.file_size < MIN_PARTS * PARTSIZE:
         sys.exit(f"--file-size must be at least {MIN_PARTS * PARTSIZE} "
                  f"({MIN_PARTS} whole parts); the short tail part is never published")
@@ -443,6 +478,15 @@ def main():
     ips = {"cache": str(network.network_address + 5)}
     for i in range(1, args.peers + 1):
         ips[f"node-{i}"] = str(network.network_address + args.base_ip_offset + i - 1)
+
+    # The public bridge holds the last --public-peers leechers and every seeder.
+    pub_ips = {}
+    if args.public_peers:
+        pub_network = ipaddress.IPv4Network(args.public_subnet)
+        on_pubnet = (list(range(1, args.seeders + 1))
+                     + list(range(args.peers - args.public_peers + 1, args.peers + 1)))
+        for i in on_pubnet:
+            pub_ips[f"node-{i}"] = str(pub_network.network_address + args.base_ip_offset + i - 1)
 
     # Test file and link. Both are deterministic, so an unchanged size skips the
     # regeneration and the ~8 s MD4 pass with it.
@@ -473,10 +517,15 @@ def main():
     # ED2KFileLink::toLink(): the '/' terminates the parameter section and comes
     # BEFORE the source block — stock eMule's tokenizer stops at the first empty
     # token, so a link without it is unparseable to it.
-    sources = ",".join(f"{ips[f'node-{i}']}:{args.tcp_port}"
-                       for i in range(1, args.seeders + 1))
-    link = (f"ed2k://|file|{rig['fileName']}|{rig['fileSize']}|{rig['ed2kHash']}|/"
-            f"|sources,{sources}|/")
+    def link_for(addresses: dict) -> str:
+        sources = ",".join(f"{addresses[f'node-{i}']}:{args.tcp_port}"
+                           for i in range(1, args.seeders + 1))
+        return (f"ed2k://|file|{rig['fileName']}|{rig['fileSize']}|{rig['ed2kHash']}|/"
+                f"|sources,{sources}|/")
+
+    # A public peer has no route to a seeder's private address.
+    link = link_for(ips)
+    links = {"lan": link, "public": link_for(pub_ips) if pub_ips else link}
 
     rig.update({
         "peers": args.peers,
@@ -484,6 +533,10 @@ def main():
         "allPublish": args.all_publish,
         "subnet": args.subnet,
         "ips": ips,
+        "publicIps": pub_ips,
+        "publicPeers": [f"node-{i}" for i in range(args.peers - args.public_peers + 1,
+                                                   args.peers + 1)],
+        "filterLanIPs": args.filter_lan_ips,
         "partCount": part_count,
         "wholeParts": whole_parts,
         "partSize": PARTSIZE,
@@ -497,7 +550,7 @@ def main():
     print(f"Test file: {rig['fileName']} — {part_count} parts "
           f"({whole_parts} whole, publishable), ed2k {rig['ed2kHash']}")
 
-    generate_compose(args, ips, link, COMPOSE_FILE)
+    generate_compose(args, ips, pub_ips, links, COMPOSE_FILE)
     docker_compose("up", "-d")
 
     leechers = args.peers - args.seeders
@@ -505,6 +558,9 @@ def main():
     print(f"  Cache:     {args.cache_url} at {ips['cache']} (container cachenet-cache)")
     print(f"  Seeders:   {args.seeders}  ({', '.join(rig['seeders'])})")
     print(f"  Leechers:  {leechers}, each downloading {rig['fileName']}")
+    if pub_ips:
+        print(f"  Public:    {args.public_peers} of them on {args.public_subnet}, "
+              f"out of the cache's reach")
     print(f"  IPC ports: {args.ipc_port_host}–{args.ipc_port_host + args.peers - 1} "
           f"(token: {args.ipc_token})")
     print(f"\nExpect {whole_parts} chunks published and about "

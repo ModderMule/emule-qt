@@ -12,6 +12,7 @@
 #include "utils/EntityMap.h"
 
 #include <QMutex>
+#include <QHash>
 #include <QObject>
 #include <QSet>
 #include <QThread>
@@ -33,6 +34,7 @@ class KnownFile;
 class KnownFileList;
 class PartFile;
 class Server;
+class SharedDirWatcher;
 class ServerConnect;
 
 // ---------------------------------------------------------------------------
@@ -102,6 +104,7 @@ struct UnknownFileEntry {
     QString directory;
     QString filename;
     QString sharedDirectory;
+    QString key;   // SharedFileList::pathKey of the file
 };
 
 // ---------------------------------------------------------------------------
@@ -120,7 +123,16 @@ public:
     explicit SharedFileList(KnownFileList* knownFiles, QObject* parent = nullptr);
     ~SharedFileList() override;
 
+    /// Bring the share in line with the disk: files that are still there with the
+    /// same size and date are left alone, the rest leave, join, or go to hashing.
     void reload();
+    /// The same for one shared directory.
+    void rescanDirectory(const QString& dir);
+    /// Follow the shared directories on disk from now on (the daemon; a unit test
+    /// reloads by hand). Also holds back files that were written a moment ago.
+    void setWatchingEnabled(bool enabled);
+    [[nodiscard]] SharedDirWatcher* watcher() const { return m_watcher; }
+
     /// Add a file to the shared list.
     ///
     /// @param onlyAdd  suppress the "schedule an ED2K republish" flag, for bulk adds
@@ -132,6 +144,13 @@ public:
     /// re-add gate — safeAddKFile() clears it (MFC AddFile, srchybrid/SharedFileList.cpp:695).
     bool removeFile(KnownFile* file);
     void process();
+
+    /// Re-read the media tags of every shared file that is not a part file, a few per
+    /// tick; known.met is saved when the pass ends. MFC RebuildMetaData
+    /// (srchybrid/SharedFileList.cpp:1381-1386), there in one blocking loop.
+    /// @return number of files queued.
+    int rebuildMetaData();
+    [[nodiscard]] bool isRebuildingMetaData() const { return !m_metaRebuildQueue.empty(); }
 
     KnownFile* getFileByID(const uint8* hash) const;
     /// True when exactly this object is shared, not merely one with its hash.
@@ -149,6 +168,21 @@ public:
     /// Port of srchybrid/SharedFileList.cpp:1388-1418.
     [[nodiscard]] bool shouldBeShared(const QString& dirPath, const QString& filePath,
                                       bool mustBeShared) const;
+
+    /// The directory rules as path keys, resolved once for many questions — a scan or
+    /// a list reply asks per file. Single-file entries are read live.
+    struct ShareRules {
+        QSet<QString> incomingDirs;
+        QSet<QString> sharedDirs;
+        QString usenetTempRoot;
+    };
+    [[nodiscard]] ShareRules shareRules() const;
+    [[nodiscard]] bool shouldBeShared(const ShareRules& rules, const QString& dirPath,
+                                      const QString& filePath, bool mustBeShared) const;
+
+    /// Cleaned and case-folded: two spellings of one path give one key (MFC compares
+    /// with CompareNoCase).
+    [[nodiscard]] static QString pathKey(const QString& path);
 
     /// Stop sharing one file, durably: drops it from the list and records the path so
     /// no later scan picks it up again. Returns false if the file is not actually
@@ -186,6 +220,16 @@ public:
     void addKeywords(KnownFile* file);
     void removeKeywords(KnownFile* file);
 
+    /// The directories shared files sit in, as peers see them (sharedDirectory()),
+    /// and the files of one — from an index, not a walk of the share.
+    [[nodiscard]] std::vector<QString> sharedDirectories() const;
+    [[nodiscard]] std::vector<KnownFile*> filesInDirectory(const QString& dir) const;
+    /// Re-file a shared file whose directory changed (a download that completed).
+    void refreshDirectoryOf(KnownFile* file);
+
+    /// See fileChanged(). Any thread.
+    void noteFileChanged(const uint8* fileHash);
+
     /// Thread-safe iteration over all shared files. Lock is held during callback.
     void forEachFile(const std::function<void(KnownFile*)>& callback) const;
 
@@ -211,6 +255,12 @@ public:
 signals:
     void fileAdded(eMule::KnownFile* file);
     void fileRemoved(eMule::KnownFile* file);
+    /// A shared file was renamed or moved on disk; same object, new name and path.
+    void fileRelocated(eMule::KnownFile* file);
+    /// Something a list row shows changed for the file with this hash. By hash, not
+    /// by pointer: it may come from the hashing thread, for a file that is gone by
+    /// the time it is delivered — and for one that is not shared at all.
+    void fileChanged(const QByteArray& fileHash);
     /// A part-file rehash result was applied (not emitted for a stale or orphaned one).
     void partFileRehashApplied(const QByteArray& fileHash, const QByteArray& partOk);
 
@@ -224,8 +274,25 @@ private:
     /// (MFC CSharedFileList::CreateOfferedFilePacket).
     static std::vector<Tag> offeredTags(KnownFile& file, const Server* srv);
 
-    void findSharedFiles();
-    void addFilesFromDirectory(const QString& dir, const QString& sharedDir = {});
+    /// One file found on disk by a scan.
+    struct DiskEntry {
+        QString directory;
+        QString filename;
+        QString sharedDirectory;
+        uint64 size = 0;
+        time_t mtime = 0;
+    };
+
+    /// The diff behind reload() (@p onlyDir empty) and rescanDirectory().
+    void rescan(const QString& onlyDir);
+    /// The shareable files of one directory, by path key.
+    void listDirectory(const QString& dir, QHash<QString, DiskEntry>& out) const;
+    /// Every directory a scan walks: incoming directories first, then shared ones.
+    [[nodiscard]] QStringList shareRoots() const;
+    /// Point a shared file at the name and place it has on disk now.
+    void relocateFile(KnownFile* file, const DiskEntry& entry);
+    /// Hash retries and held-back directories that have come due.
+    void stepDeferredScans();
     /// Queue one explicitly-shared file for hashing (or re-add it if already known).
     /// Port of srchybrid/SharedFileList.cpp:1468.
     void checkAndAddSingleFile(const QString& filePath);
@@ -237,9 +304,9 @@ private:
     void onPartFileRehashed(const QByteArray& fileHash, const QByteArray& partOk, uint64 token);
     void onHashingFailed(const QString& directory, const QString& filename, uint64 generation);
 
-    /// Index-based access for the Kad round-robin. Lock-free by design:
-    /// **the caller must already hold m_mutex.**
-    KnownFile* fileAtIndexLocked(uint32 index) const;
+    /// First file at or after @p cursor (wrapping) for which @p due says yes; the
+    /// cursor moves past it. One walk of the map, not one per probe.
+    KnownFile* nextDueFile(uint32& cursor, const std::function<bool(KnownFile*)>& due);
 
     /// Parse an .emulecollection into the file, if it is one. Does disk I/O, so it
     /// runs outside the map lock — see the hook contract in EntityMap.h.
@@ -253,6 +320,9 @@ private:
     /// The list payloads then report whatever this has resolved so far.
     void warmContainerChecks();
 
+    /// One slice of a running rebuildMetaData() pass.
+    void stepMetaDataRebuild();
+
     // EntityMap<MD4Key, KnownFile> hooks. Storage (m_map) and the mutex guarding it
     // live in the base. These carry only work that must happen under that lock;
     // everything with a side effect lives in safeAddKFile()/removeFile().
@@ -265,11 +335,19 @@ private:
     /// written from the add/remove hooks, read by isUnsharedFile().
     std::unordered_set<MD4Key> m_unsharedFiles;
 
+    /// sharedDirectory() -> hashes of the files in it, and the directory each hash is
+    /// filed under. Same lock, same hooks. By hash, so a replaced object leaves no
+    /// pointer behind.
+    std::unordered_map<QString, std::unordered_set<MD4Key>> m_byDirectory;
+    std::unordered_map<MD4Key, QString> m_directoryOf;
+    void indexDirectoryLocked(KnownFile* file);
+    void unindexDirectoryLocked(const MD4Key& key);
+
     /// The durable share membership, persisted to Config/sharedfiles.dat. MFC's
-    /// m_liSingleSharedFiles / m_liSingleExcludedFiles. Paths are stored as given and
-    /// compared case-insensitively, as MFC does with CompareNoCase. Main thread only.
-    QSet<QString> m_singleSharedFiles;
-    QSet<QString> m_singleExcludedFiles;
+    /// m_liSingleSharedFiles / m_liSingleExcludedFiles. pathKey() -> the path as given
+    /// (that is what sharedfiles.dat keeps). Main thread only.
+    QHash<QString, QString> m_singleSharedFiles;
+    QHash<QString, QString> m_singleExcludedFiles;
 
     PublishKeywordList m_keywords;
     KnownFileList* m_knownFiles = nullptr;
@@ -284,6 +362,28 @@ private:
     std::list<UnknownFileEntry> m_waitingForHash;
     uint64 m_generation = 0;
     bool m_hashingInProgress = false;
+    QString m_hashingKey;   // path key of the file on the worker
+
+    /// A file that could not be hashed: tried again after a growing wait, then left
+    /// alone until its size or date changes. By path key. Main thread only.
+    struct HashFailure {
+        UnknownFileEntry entry;
+        uint64 size = 0;
+        time_t mtime = 0;
+        int attempts = 0;
+        time_t retryAt = 0;    // 0: no retry scheduled
+        bool queued = false;   // back in the hash queue
+        bool givenUp = false;
+    };
+    QHash<QString, HashFailure> m_hashFailures;
+    std::array<int, 3> m_hashRetrySecs{5, 30, 120};
+
+    /// Directories with a file too fresh to hash, and when to look again.
+    QHash<QString, time_t> m_settleDirs;
+    int m_settleSecs = 0;   // 0: hash at once (set by setWatchingEnabled)
+    static constexpr int kSettleRecheckSecs = 10;
+
+    SharedDirWatcher* m_watcher = nullptr;
 
     /// Set once a whole pass found every file resolved; cleared when a file joins the
     /// share. A part file whose first part has not landed never resolves and so keeps
@@ -296,6 +396,11 @@ private:
     /// cannot fill every slice forever and starve the rest. Wraps to 0 at the end.
     size_t m_containerSweepSkip = 0;
 
+    /// Files still to visit in a rebuildMetaData() pass, by hash — a file may leave the
+    /// share between ticks. Main thread only.
+    std::vector<MD4Key> m_metaRebuildQueue;
+    int m_metaRebuildTotal = 0;
+
     /// ED2K republish throttle — MFC m_lastPublishED2KFlag / m_lastPublishED2K
     /// (srchybrid/SharedFileList.cpp:1229-1236). Main thread only.
     bool m_republishED2K = false;
@@ -304,6 +409,11 @@ private:
     // Kad publishing round-robin state
     uint32 m_currFileSrc = 0;
     uint32 m_currFileNotes = 0;
+    /// A probe that found nothing due is not repeated every tick (MFC probes one
+    /// file per call and rests). Cleared when a file joins the share.
+    static constexpr time_t kPublishProbeRestSecs = 10;
+    time_t m_srcProbeRestUntil = 0;
+    time_t m_notesProbeRestUntil = 0;
     time_t m_lastPublishKadSrc = 0;
     time_t m_lastPublishKadNotes = 0;
 };

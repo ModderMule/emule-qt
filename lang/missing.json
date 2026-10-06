@@ -1,153 +1,57 @@
 {
-  "Too many failed logins. Try again in %n second(s).": {
-    "_context": "eMule::WebServer",
-    "de_DE": [
-      "Zu viele fehlgeschlagene Anmeldungen. Versuchen Sie es in %n Sekunde erneut.",
-      "Zu viele fehlgeschlagene Anmeldungen. Versuchen Sie es in %n Sekunden erneut."
-    ],
-    "es_ES": [
-      "Demasiados inicios de sesión fallidos. Inténtelo de nuevo en %n segundo.",
-      "Demasiados inicios de sesión fallidos. Inténtelo de nuevo en %n segundos."
-    ],
-    "fr_FR": [
-      "Trop de connexions échouées. Réessayez dans %n seconde.",
-      "Trop de connexions échouées. Réessayez dans %n secondes."
-    ],
-    "it_IT": [
-      "Troppi accessi non riusciti. Riprova tra %n secondo.",
-      "Troppi accessi non riusciti. Riprova tra %n secondi."
-    ],
-    "ja_JP": [
-      "ログインの失敗が多すぎます。%n 秒後にもう一度お試しください。"
-    ],
-    "ko_KR": [
-      "로그인 실패가 너무 많습니다. %n초 후에 다시 시도하세요."
-    ],
-    "pt_BR": [
-      "Muitas tentativas de login malsucedidas. Tente novamente em %n segundo.",
-      "Muitas tentativas de login malsucedidas. Tente novamente em %n segundos."
-    ],
-    "zh_CN": [
-      "登录失败次数过多。请在 %n 秒后重试。"
-    ]
+  "Listen address:": {
+    "_context": "eMule::OptionsDialog",
+    "de_DE": "Lauschadresse:",
+    "es_ES": "Dirección de escucha:",
+    "fr_FR": "Adresse d'écoute :",
+    "it_IT": "Indirizzo di ascolto:",
+    "ja_JP": "待ち受けアドレス:",
+    "ko_KR": "수신 주소:",
+    "pt_BR": "Endereço de escuta:",
+    "zh_CN": "监听地址:"
   },
-  "%n download(s) added": {
-    "_context": "eMule::WebServer",
-    "de_DE": [
-      "%n Download hinzugefügt",
-      "%n Downloads hinzugefügt"
-    ],
-    "es_ES": [
-      "%n descarga añadida",
-      "%n descargas añadidas"
-    ],
-    "fr_FR": [
-      "%n téléchargement ajouté",
-      "%n téléchargements ajoutés"
-    ],
-    "it_IT": [
-      "%n download aggiunto",
-      "%n download aggiunti"
-    ],
-    "ja_JP": [
-      "%n 件のダウンロードを追加しました"
-    ],
-    "ko_KR": [
-      "다운로드 %n개를 추가했습니다"
-    ],
-    "pt_BR": [
-      "%n download adicionado",
-      "%n downloads adicionados"
-    ],
-    "zh_CN": [
-      "已添加 %n 个下载"
-    ]
+  "all interfaces": {
+    "_context": "eMule::OptionsDialog",
+    "de_DE": "alle Schnittstellen",
+    "es_ES": "todas las interfaces",
+    "fr_FR": "toutes les interfaces",
+    "it_IT": "tutte le interfacce",
+    "ja_JP": "すべてのインターフェース",
+    "ko_KR": "모든 인터페이스",
+    "pt_BR": "todas as interfaces",
+    "zh_CN": "所有接口"
   },
-  "Not connected — the search could not be sent.": {
-    "_context": "eMule::WebServer",
-    "de_DE": "Nicht verbunden — die Suche konnte nicht gesendet werden.",
-    "es_ES": "No conectado — no se pudo enviar la búsqueda.",
-    "fr_FR": "Non connecté — la recherche n’a pas pu être envoyée.",
-    "it_IT": "Non connesso — impossibile inviare la ricerca.",
-    "ja_JP": "未接続 — 検索を送信できませんでした。",
-    "ko_KR": "연결되지 않음 — 검색을 보낼 수 없습니다.",
-    "pt_BR": "Não conectado — a pesquisa não pôde ser enviada.",
-    "zh_CN": "未连接 — 无法发送搜索。"
+  "Address the web server listens on. Empty: every interface, reachable from other hosts. 127.0.0.1: this computer only.": {
+    "_context": "eMule::OptionsDialog",
+    "de_DE": "Adresse, auf der der Webserver lauscht. Leer: jede Schnittstelle, von anderen Rechnern erreichbar. 127.0.0.1: nur dieser Computer.",
+    "es_ES": "Dirección en la que escucha el servidor web. Vacío: todas las interfaces, accesible desde otros equipos. 127.0.0.1: solo este equipo.",
+    "fr_FR": "Adresse sur laquelle le serveur web écoute. Vide : toutes les interfaces, accessible depuis d'autres machines. 127.0.0.1 : cet ordinateur uniquement.",
+    "it_IT": "Indirizzo su cui il server web è in ascolto. Vuoto: tutte le interfacce, raggiungibile da altri computer. 127.0.0.1: solo questo computer.",
+    "ja_JP": "Web サーバーが待ち受けるアドレス。空欄: すべてのインターフェース(他のホストからアクセス可能)。127.0.0.1: このコンピューターのみ。",
+    "ko_KR": "웹 서버가 수신하는 주소입니다. 비워 두면 모든 인터페이스에서 수신하며 다른 호스트에서 접근할 수 있습니다. 127.0.0.1: 이 컴퓨터만.",
+    "pt_BR": "Endereço em que o servidor web escuta. Vazio: todas as interfaces, acessível de outros computadores. 127.0.0.1: somente este computador.",
+    "zh_CN": "Web 服务器监听的地址。留空:所有接口,其他主机可访问。127.0.0.1:仅限本机。"
   },
-  "Nothing was saved: a value is missing or out of range.": {
-    "_context": "eMule::WebServer",
-    "de_DE": "Nichts gespeichert: Ein Wert fehlt oder liegt außerhalb des gültigen Bereichs.",
-    "es_ES": "No se guardó nada: falta un valor o está fuera de rango.",
-    "fr_FR": "Rien n’a été enregistré : une valeur est manquante ou hors limites.",
-    "it_IT": "Nessuna modifica salvata: un valore manca o è fuori intervallo.",
-    "ja_JP": "保存されませんでした: 値が未入力か、範囲外です。",
-    "ko_KR": "저장되지 않았습니다: 값이 없거나 범위를 벗어났습니다.",
-    "pt_BR": "Nada foi salvo: um valor está ausente ou fora do intervalo.",
-    "zh_CN": "未保存任何内容：某个值缺失或超出范围。"
+  "\"%1\" is not an IP address. The listen address was not changed.": {
+    "_context": "eMule::OptionsDialog",
+    "de_DE": "\"%1\" ist keine IP-Adresse. Die Lauschadresse wurde nicht geändert.",
+    "es_ES": "\"%1\" no es una dirección IP. La dirección de escucha no se ha cambiado.",
+    "fr_FR": "« %1 » n'est pas une adresse IP. L'adresse d'écoute n'a pas été modifiée.",
+    "it_IT": "\"%1\" non è un indirizzo IP. L'indirizzo di ascolto non è stato modificato.",
+    "ja_JP": "「%1」は IP アドレスではありません。待ち受けアドレスは変更されませんでした。",
+    "ko_KR": "\"%1\"은(는) IP 주소가 아닙니다. 수신 주소는 변경되지 않았습니다.",
+    "pt_BR": "\"%1\" não é um endereço IP. O endereço de escuta não foi alterado.",
+    "zh_CN": "“%1”不是 IP 地址。监听地址未更改。"
   },
-  "Saved. The new ports are used after a restart.": {
-    "_context": "eMule::WebServer",
-    "de_DE": "Gespeichert. Die neuen Ports werden nach einem Neustart verwendet.",
-    "es_ES": "Guardado. Los nuevos puertos se usarán tras reiniciar.",
-    "fr_FR": "Enregistré. Les nouveaux ports seront utilisés après un redémarrage.",
-    "it_IT": "Salvato. Le nuove porte verranno usate dopo un riavvio.",
-    "ja_JP": "保存しました。新しいポートは再起動後に使用されます。",
-    "ko_KR": "저장했습니다. 새 포트는 다시 시작한 후에 사용됩니다.",
-    "pt_BR": "Salvo. As novas portas serão usadas após reiniciar.",
-    "zh_CN": "已保存。新端口将在重启后生效。"
-  },
-  "Saved.": {
-    "_context": "eMule::WebServer",
-    "de_DE": "Gespeichert.",
-    "es_ES": "Guardado.",
-    "fr_FR": "Enregistré.",
-    "it_IT": "Salvato.",
-    "ja_JP": "保存しました。",
-    "ko_KR": "저장했습니다.",
-    "pt_BR": "Salvo.",
-    "zh_CN": "已保存。"
-  },
-  "\"%1\": %n result(s)": {
-    "_context": "eMule::WebServer",
-    "de_DE": [
-      "„%1“: %n Ergebnis",
-      "„%1“: %n Ergebnisse"
-    ],
-    "es_ES": [
-      "«%1»: %n resultado",
-      "«%1»: %n resultados"
-    ],
-    "fr_FR": [
-      "« %1 » : %n résultat",
-      "« %1 » : %n résultats"
-    ],
-    "it_IT": [
-      "\"%1\": %n risultato",
-      "\"%1\": %n risultati"
-    ],
-    "ja_JP": [
-      "「%1」: %n 件の結果"
-    ],
-    "ko_KR": [
-      "\"%1\": 결과 %n개"
-    ],
-    "pt_BR": [
-      "\"%1\": %n resultado",
-      "\"%1\": %n resultados"
-    ],
-    "zh_CN": [
-      "“%1”：%n 个结果"
-    ]
-  },
-  "Refresh": {
-    "_context": "eMule::WebServer",
-    "de_DE": "Aktualisieren",
-    "es_ES": "Actualizar",
-    "fr_FR": "Actualiser",
-    "it_IT": "Aggiorna",
-    "ja_JP": "更新",
-    "ko_KR": "새로 고침",
-    "pt_BR": "Atualizar",
-    "zh_CN": "刷新"
+  "Rescan the shared directories. Hold %1 to re-read the media information of all shared files instead.": {
+    "_context": "eMule::SharedFilesPanel",
+    "de_DE": "Freigegebene Verzeichnisse neu einlesen. %1 gedrückt halten, um stattdessen die Medieninformationen aller freigegebenen Dateien neu zu lesen.",
+    "es_ES": "Volver a examinar los directorios compartidos. Mantenga pulsado %1 para volver a leer la información multimedia de todos los archivos compartidos.",
+    "fr_FR": "Réanalyser les dossiers partagés. Maintenez %1 pour relire à la place les informations multimédia de tous les fichiers partagés.",
+    "it_IT": "Riesamina le cartelle condivise. Tieni premuto %1 per rileggere invece le informazioni multimediali di tutti i file condivisi.",
+    "ja_JP": "共有ディレクトリを再スキャンします。%1 を押しながらクリックすると、代わりにすべての共有ファイルのメディア情報を読み直します。",
+    "ko_KR": "공유 디렉터리를 다시 검색합니다. %1 키를 누른 채 클릭하면 대신 모든 공유 파일의 미디어 정보를 다시 읽습니다.",
+    "pt_BR": "Reexaminar os diretórios compartilhados. Mantenha %1 pressionado para reler as informações de mídia de todos os arquivos compartilhados.",
+    "zh_CN": "重新扫描共享目录。按住 %1 可改为重新读取所有共享文件的媒体信息。"
   }
 }

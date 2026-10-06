@@ -633,23 +633,32 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
     const uint64 fs = static_cast<uint64>(fileSize());
     int blocksFound = 0;
 
-    // Endgame: when very few blocks remain, allow multiple sources to
-    // request the same block simultaneously so they race to complete it.
-    // Duplicate completions are harmless — writeToBuffer refuses data for
-    // already-filled ranges, and processBlockPacket then drops the loser's block.
-    const bool endgame = (totalGapSize() <= ENDGAME_BLOCK_THRESHOLD * EMBLOCKSIZE);
+    // Near the end a block may get a second source — but only when its holder is not
+    // getting on with it (see EndPhase). Everyone racing every block, as before, had
+    // the slowest source set the pace of the last blocks and wasted the others' data.
+    // A duplicate completion is harmless: writeToBuffer refuses data for a filled
+    // range, and processBlockPacket then drops the loser's block.
+    const EndPhase phase = endPhase();
 
     auto senderHasPart = [&](uint32 p) {
         return sender->completeSource() || (p < partStatus.size() && partStatus[p] != 0);
     };
 
-    // Next block of a part not yet requested by anyone, shrunk around requested ranges
+    // Next block of a part not yet requested by anyone, shrunk around requested
+    // ranges — or, late in the download, one whose holder may be doubled up on.
     auto nextFreeBlock = [&](uint32 partNum, uint64& searchFrom, uint64& start, uint64& end) {
         Requested_Block_Struct probe;
         while (getNextEmptyBlockInPart(partNum, &probe, searchFrom)) {
             start = probe.startOffset;
             end = probe.endOffset;
-            if (endgame || shrinkToAvoidAlreadyRequested(start, end)) {
+            if (shrinkToAvoidAlreadyRequested(start, end)) {
+                searchFrom = end + 1;
+                return true;
+            }
+            if (phase != EndPhase::Normal
+                && maySecondSourceTake(sender, probe.startOffset, probe.endOffset, phase)) {
+                start = probe.startOffset;
+                end = probe.endOffset;
                 searchFrom = end + 1;
                 return true;
             }
@@ -658,17 +667,45 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
         return false;
     };
 
+    // Late in the download, a source much slower than another that has the same part
+    // reserves only what it can deliver soon, one piece at a time, so the fast one is
+    // not left waiting for it. 0: no limit. A rate of 0 is "not measured yet".
+    auto slowReservation = [&](uint32 partNum) -> uint64 {
+        if (phase == EndPhase::Normal)
+            return 0;
+        uint32 fastest = 0;
+        for (const auto* other : m_downloadingSources) {
+            if (other != sender && (other->completeSource() || other->isPartAvailable(partNum)))
+                fastest = std::max(fastest, other->downDatarate());
+        }
+        const uint64 mine = sender->downDatarate();
+        if (fastest == 0 || mine * kSlowSourceFactor > fastest)
+            return 0;
+        return mine == 0 ? uint64{EMBLOCKSIZE}
+                         : std::max(mine * kSlowReservationSecs, kMinSlowReservation);
+    };
+
+    const uint64 nowTick = getTickCount();
     auto allocateFromPart = [&](uint32 partNum) {
         uint64 searchFrom = 0;
         uint64 start = 0;
         uint64 end = 0;
+        const uint64 limit = slowReservation(partNum);
         while (blocksFound < count && nextFreeBlock(partNum, searchFrom, start, end)) {
+            if (limit > 0 && end - start + 1 > limit)
+                end = start + limit - 1;
             auto* reqBlock = new Requested_Block_Struct;
             reqBlock->startOffset = start;
             reqBlock->endOffset = end;
+            reqBlock->holder = sender;
+            reqBlock->lastProgressTick = nowTick;
             std::memcpy(reqBlock->fileID.data(), fileHash(), 16);
             newblocks[blocksFound++] = reqBlock;
             m_requestedBlocks.push_back(reqBlock);
+            if (limit > 0) {
+                count = blocksFound;   // one piece per round
+                break;
+            }
         }
     };
 
@@ -875,6 +912,55 @@ bool PartFile::removeBlockFromList(uint64 start, uint64 end)
         }
     }
     return false;
+}
+
+bool PartFile::removeBlockFromList(const Requested_Block_Struct* block)
+{
+    const auto it = std::ranges::find(m_requestedBlocks, block);
+    if (it == m_requestedBlocks.end())
+        return false;
+    m_requestedBlocks.erase(it);
+    return true;
+}
+
+PartFile::EndPhase PartFile::endPhase() const
+{
+    const uint64 size = static_cast<uint64>(fileSize());
+    const uint64 left = totalGapSize();
+    if (size == 0 || left == 0)
+        return EndPhase::Normal;
+
+    if (left <= ENDGAME_BLOCK_THRESHOLD * uint64{EMBLOCKSIZE} || left <= size / 1000
+        || left <= uint64{datarate()} * 30)
+        return EndPhase::Endgame;
+    return left <= size / 10 ? EndPhase::Late : EndPhase::Normal;
+}
+
+bool PartFile::maySecondSourceTake(const UpDownClient* sender, uint64 start, uint64 end,
+                                   EndPhase phase) const
+{
+    const Requested_Block_Struct* held = nullptr;
+    for (const auto* block : m_requestedBlocks) {
+        if (block->startOffset > end || block->endOffset < start)
+            continue;
+        if (held || block->holder == sender)
+            return false;   // two on it already, or the sender itself
+        held = block;
+    }
+    // Nobody holds it: the range is buffered data waiting for its flush.
+    if (!held || !held->holder)
+        return false;
+
+    // Reserved but never asked for, by a source that has delivered nothing so far.
+    if (!held->requested && held->holder->sessionDown() == 0)
+        return true;
+    // The holder has gone quiet on it.
+    if (getTickCount() - held->lastProgressTick >= kStalledBlockMs)
+        return true;
+    // In the last stretch a much faster source need not wait for a slow one.
+    const uint64 holderRate = held->holder->downDatarate();
+    return phase == EndPhase::Endgame && sender->downDatarate() > 0
+           && sender->downDatarate() >= holderRate * kSlowSourceFactor;
 }
 
 void PartFile::removeAllRequestedBlocks()
@@ -1356,6 +1442,7 @@ void PartFile::updatePartsInfo()
     }
 
     emit notifier()->fileUpdated();
+    noteChanged();
 }
 
 void PartFile::addSource(UpDownClient* client)
@@ -1592,6 +1679,10 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
                     m_compressionGain = tag.intValue();
                 else if (tag.isInt64(false))
                     m_compressionGain = tag.int64Value();
+                break;
+            case FT_ULPRIORITY:
+                if (tag.isInt())
+                    setUpPriorityFromTag(tag.intValue());
                 break;
             case FT_DLPRIORITY:
                 if (tag.isInt()) {
@@ -1896,6 +1987,10 @@ bool PartFile::savePartFile()
         Tag(FT_DLPRIORITY,
             static_cast<uint32>(m_autoDownPriority ? kPrAuto : m_downPriority))
             .writeNewEd2kTag(file);
+        tagCount++;
+
+        // Upload priority (MFC PartFile.cpp:1250)
+        Tag(FT_ULPRIORITY, upPriorityTagValue()).writeNewEd2kTag(file);
         tagCount++;
 
         // Status (paused)
@@ -2669,6 +2764,8 @@ void PartFile::performFileMove(const QString& srcPath, const QString& destPath, 
             setStatus(PartFileStatus::Complete);
             setFilePath(finalPath);
             setPath(QFileInfo(finalPath).absolutePath());
+            if (theApp.sharedFileList)
+                theApp.sharedFileList->refreshDirectoryOf(this);   // filed under the temp dir until now
             // The date known.met matches the file by at the next scan; without it the
             // file is rehashed in full (MFC srchybrid/PartFile.cpp:2930-2939).
             if (const qint64 mtime = QFileInfo(finalPath).lastModified().toSecsSinceEpoch();

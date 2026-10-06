@@ -536,8 +536,20 @@ void UpDownClient::sendOutOfPartReqsAndAddToWaitingQueue()
     // MFC: set flag AFTER sending packet
     m_sentOutOfPartReqs = true;
 
+    // ignoreTimeLimit (MFC srchybrid/UploadClient.cpp:499): we put the peer back, it
+    // did not ask — so this is not one of its requests and must not count as one.
     if (theApp.uploadQueue)
-        theApp.uploadQueue->addClientToQueue(this);
+        theApp.uploadQueue->addClientToQueue(this, /*ignoreTimeLimit=*/true);
+}
+
+UpDownClient::UpSlotActivity UpDownClient::upSlotActivity(uint32 slotAgeMs) const
+{
+    if (m_blockRequests.empty() && payloadInBuffer() == 0 && m_blockReadBytesQueued == 0)
+        return UpSlotActivity::Idle;
+    // m_upDatarate is an average over ten seconds: zero means nothing left in all of them.
+    if (slotAgeMs > kUpSlotWarmupMs && m_upDatarate == 0)
+        return UpSlotActivity::Stalled;
+    return UpSlotActivity::Busy;
 }
 
 // ===========================================================================

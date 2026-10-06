@@ -601,7 +601,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2825"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2832"/>
         <source>Test</source>
         <translation>测试</translation>
     </message>
@@ -685,7 +685,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4420"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4601"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -4280,7 +4280,7 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2730"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2736"/>
         <source>Options</source>
         <translation>选项</translation>
     </message>
@@ -4298,12 +4298,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="-1787"/>
-        <location line="+5343"/>
+        <location line="+5349"/>
         <source>Apply</source>
         <translation>应用</translation>
     </message>
     <message>
-        <location line="-5342"/>
+        <location line="-5348"/>
         <source>Help</source>
         <translation>帮助</translation>
     </message>
@@ -4349,12 +4349,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5241"/>
+        <location line="+5247"/>
         <source>Language</source>
         <translation>语言</translation>
     </message>
     <message>
-        <location line="-5238"/>
+        <location line="-5244"/>
         <source>System Default</source>
         <translation>系统默认</translation>
     </message>
@@ -4454,12 +4454,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5167"/>
+        <location line="+5173"/>
         <source>Core</source>
         <translation>核心</translation>
     </message>
     <message>
-        <location line="-5162"/>
+        <location line="-5168"/>
         <source>Address:</source>
         <translation>地址：</translation>
     </message>
@@ -4467,12 +4467,12 @@ Download it again?</source>
         <location line="+4"/>
         <location line="+1055"/>
         <location line="+633"/>
-        <location line="+410"/>
+        <location line="+416"/>
         <source>Port:</source>
         <translation>端口：</translation>
     </message>
     <message>
-        <location line="-2095"/>
+        <location line="-2101"/>
         <source>authentication token</source>
         <translation>认证令牌</translation>
     </message>
@@ -4629,7 +4629,7 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+2"/>
         <location line="+1484"/>
-        <location line="+108"/>
+        <location line="+114"/>
         <location line="+290"/>
         <location line="+1016"/>
         <location line="+152"/>
@@ -4640,7 +4640,7 @@ Are you sure you want to continue?</source>
         <translation>已启用</translation>
     </message>
     <message>
-        <location line="-4386"/>
+        <location line="-4392"/>
         <source>Reset</source>
         <translation>重置</translation>
     </message>
@@ -4858,23 +4858,23 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1616"/>
+        <location line="+1622"/>
         <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>名称：</translation>
     </message>
     <message>
-        <location line="-2783"/>
+        <location line="-2789"/>
         <location line="+607"/>
-        <location line="+695"/>
+        <location line="+701"/>
         <location line="+19"/>
         <location line="+319"/>
         <source>Password:</source>
         <translation>密码：</translation>
     </message>
     <message>
-        <location line="-1606"/>
+        <location line="-1612"/>
         <source>Update</source>
         <translation>更新</translation>
     </message>
@@ -5239,12 +5239,12 @@ Each rule replaces a regex pattern with a replacement string.</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1090"/>
+        <location line="+1096"/>
         <source>None</source>
         <translation>无</translation>
     </message>
     <message>
-        <location line="-1089"/>
+        <location line="-1095"/>
         <source>Plain</source>
         <translation>明文</translation>
     </message>
@@ -5285,14 +5285,14 @@ Each rule replaces a regex pattern with a replacement string.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+902"/>
+        <location line="+908"/>
         <location line="+1027"/>
         <location line="+154"/>
         <source>Name</source>
         <translation>名称</translation>
     </message>
     <message>
-        <location line="-2081"/>
+        <location line="-2087"/>
         <source>Users</source>
         <translation>用户</translation>
     </message>
@@ -5403,12 +5403,12 @@ Each rule replaces a regex pattern with a replacement string.</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+389"/>
+        <location line="+395"/>
         <source>Reload</source>
         <translation>重新加载</translation>
     </message>
     <message>
-        <location line="-366"/>
+        <location line="-372"/>
         <source>http://example.com/ipfilter.dat</source>
         <translation>http://example.com/ipfilter.dat</translation>
     </message>
@@ -5750,7 +5750,22 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>将端口加入 UPnP 设置</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+11"/>
+        <source>Listen address:</source>
+        <translation>监听地址:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>all interfaces</source>
+        <translation>所有接口</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Address the web server listens on. Empty: every interface, reachable from other hosts. 127.0.0.1: this computer only.</source>
+        <translation>Web 服务器监听的地址。留空:所有接口,其他主机可访问。127.0.0.1:仅限本机。</translation>
+    </message>
+    <message>
+        <location line="+7"/>
         <source>Template:</source>
         <translation>模板：</translation>
     </message>
@@ -7237,7 +7252,17 @@ News server connections switch over immediately.</source>
 新闻服务器连接会立即切换。</translation>
     </message>
     <message>
-        <location line="+874"/>
+        <location line="+410"/>
+        <source>Web Interface</source>
+        <translation>Web 界面</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>&quot;%1&quot; is not an IP address. The listen address was not changed.</source>
+        <translation>“%1”不是 IP 地址。监听地址未更改。</translation>
+    </message>
+    <message>
+        <location line="+473"/>
         <source>File types</source>
         <translation>文件类型</translation>
     </message>
@@ -7247,7 +7272,7 @@ News server connections switch over immediately.</source>
         <translation>无法更新 .nzb 文件关联：%1</translation>
     </message>
     <message>
-        <location line="+524"/>
+        <location line="+526"/>
         <source>Database: not connected to the core</source>
         <translation>数据库：未连接到核心</translation>
     </message>
@@ -7297,17 +7322,17 @@ News server connections switch over immediately.</source>
         <translation>恢复默认值</translation>
     </message>
     <message>
-        <location line="-4583"/>
+        <location line="-4595"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1327"/>
         <location line="+281"/>
-        <location line="+1800"/>
+        <location line="+1812"/>
         <source>Remove</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location line="-5654"/>
+        <location line="-5672"/>
         <source>New eMule Qt version detected</source>
         <translation>检测到新的 eMule Qt 版本</translation>
     </message>
@@ -7317,7 +7342,7 @@ News server connections switch over immediately.</source>
         <translation>从 URL 更新：（filter.dat 或 PeerGuardian 格式，支持 .gz/.zip）</translation>
     </message>
     <message>
-        <location line="+2926"/>
+        <location line="+2932"/>
         <source>Write eMule core logs to disk</source>
         <translation>将 eMule 核心日志写入磁盘</translation>
     </message>
@@ -7505,12 +7530,12 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1581"/>
-        <location line="+1822"/>
+        <location line="+1834"/>
         <source>Add</source>
         <translation>添加</translation>
     </message>
     <message>
-        <location line="-1814"/>
+        <location line="-1826"/>
         <source>Action Value</source>
         <translation>操作值</translation>
     </message>
@@ -8665,29 +8690,29 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+130"/>
         <location line="+12"/>
         <location line="+362"/>
-        <location line="+376"/>
+        <location line="+386"/>
         <location line="+99"/>
         <source>Shared Files (0)</source>
         <translation>共享文件 (0)</translation>
     </message>
     <message>
-        <location line="-751"/>
+        <location line="-761"/>
         <source>Open File</source>
         <translation>打开文件</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1261"/>
+        <location line="+1273"/>
         <source>Open Folder</source>
         <translation>打开文件夹</translation>
     </message>
     <message>
-        <location line="-1249"/>
+        <location line="-1261"/>
         <source>Rename...</source>
         <translation>重命名...</translation>
     </message>
     <message>
-        <location line="+1584"/>
+        <location line="+1596"/>
         <source>Rename File</source>
         <translation>重命名文件</translation>
     </message>
@@ -8697,12 +8722,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>新文件名:</translation>
     </message>
     <message>
-        <location line="-1576"/>
+        <location line="-1588"/>
         <source>Delete From Disk</source>
         <translation>从磁盘删除</translation>
     </message>
     <message>
-        <location line="+812"/>
+        <location line="+822"/>
         <source>Delete File</source>
         <translation>删除文件</translation>
     </message>
@@ -8712,12 +8737,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>确定要从磁盘永久删除&quot;%1&quot;吗？</translation>
     </message>
     <message>
-        <location line="-791"/>
+        <location line="-801"/>
         <source>Unshare</source>
         <translation>取消共享</translation>
     </message>
     <message>
-        <location line="+824"/>
+        <location line="+834"/>
         <source>Unshare File</source>
         <translation>取消共享文件</translation>
     </message>
@@ -8731,7 +8756,7 @@ The file will remain on disk.</source>
 文件将保留在磁盘上。</translation>
     </message>
     <message>
-        <location line="-807"/>
+        <location line="-817"/>
         <source>Priority (Upload)</source>
         <translation>优先级（上传）</translation>
     </message>
@@ -8831,7 +8856,7 @@ The file will remain on disk.</source>
         <translation>重新加载</translation>
     </message>
     <message>
-        <location line="+19"/>
+        <location line="+29"/>
         <source>File Name</source>
         <translation>文件名</translation>
     </message>
@@ -8925,7 +8950,7 @@ The file will remain on disk.</source>
         <translation>无法取消共享该文件</translation>
     </message>
     <message>
-        <location line="+475"/>
+        <location line="+477"/>
         <source>Share Directory</source>
         <translation>共享目录</translation>
     </message>
@@ -8950,7 +8975,7 @@ The file will remain on disk.</source>
         <translation>打开文件不可用 — Web 服务器未运行或未收到流令牌。</translation>
     </message>
     <message>
-        <location line="-825"/>
+        <location line="-827"/>
         <source>Content</source>
         <translation>内容</translation>
     </message>
@@ -8965,12 +8990,17 @@ The file will remain on disk.</source>
         <translation>复制</translation>
     </message>
     <message>
-        <location line="-525"/>
+        <location line="-535"/>
         <source>Release</source>
         <translation>发布</translation>
     </message>
     <message>
-        <location line="+499"/>
+        <location line="+214"/>
+        <source>Rescan the shared directories. Hold %1 to re-read the media information of all shared files instead.</source>
+        <translation>重新扫描共享目录。按住 %1 可改为重新读取所有共享文件的媒体信息。</translation>
+    </message>
+    <message>
+        <location line="+295"/>
         <source>Basic Options</source>
         <translation>基本选项</translation>
     </message>
@@ -11797,19 +11827,19 @@ A password is set for this release.</source>
         <translation>地址</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3890"/>
-        <location line="+3779"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3980"/>
+        <location line="+3869"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>会话已过期 — 请重新登录</translation>
     </message>
     <message>
-        <location line="-3824"/>
+        <location line="-3914"/>
         <source>Guests cannot add downloads</source>
         <translation>访客无法添加下载</translation>
     </message>
     <message>
-        <location line="+865"/>
+        <location line="+867"/>
         <source>Looking for comments on Kad</source>
         <translation>正在 Kad 上查找评论</translation>
     </message>
@@ -11891,7 +11921,7 @@ A password is set for this release.</source>
         <translation>下载此文件</translation>
     </message>
     <message>
-        <location line="+394"/>
+        <location line="+434"/>
         <source>Access denied — no password configured. Set a password in Options → Web Interface.</source>
         <translation>拒绝访问 — 未设置密码。请在“选项 → Web 界面”中设置密码。</translation>
     </message>
@@ -11915,7 +11945,7 @@ A password is set for this release.</source>
         </translation>
     </message>
     <message>
-        <location line="+29"/>
+        <location line="+32"/>
         <source>Not connected — the search could not be sent.</source>
         <translation>未连接 — 无法发送搜索。</translation>
     </message>
@@ -11936,12 +11966,12 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1908"/>
+        <location line="+1953"/>
         <source>Web Control Panel</source>
         <translation>Web 控制面板</translation>
     </message>
     <message>
-        <location line="-1901"/>
+        <location line="-1946"/>
         <source>Not connected</source>
         <translation>未连接</translation>
     </message>
@@ -11952,7 +11982,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+324"/>
+        <location line="+325"/>
         <source>Disconnected</source>
         <translation>已断开</translation>
     </message>
@@ -12030,30 +12060,30 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+149"/>
-        <location line="+1082"/>
+        <location line="+1126"/>
         <source>Queued</source>
         <translation>排队中</translation>
     </message>
     <message>
-        <location line="-1081"/>
-        <location line="+1080"/>
+        <location line="-1125"/>
+        <location line="+1124"/>
         <source>Downloading</source>
         <translation>正在下载</translation>
     </message>
     <message>
-        <location line="-1079"/>
+        <location line="-1123"/>
         <source>Paused</source>
         <translation>已暂停</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+914"/>
+        <location line="+958"/>
         <location line="+163"/>
         <source>Complete</source>
         <translation>已完成</translation>
     </message>
     <message>
-        <location line="-1076"/>
+        <location line="-1120"/>
         <source>Failed</source>
         <translation>失败</translation>
     </message>
@@ -12168,7 +12198,7 @@ A password is set for this release.</source>
         <translation>普通</translation>
     </message>
     <message>
-        <location line="+144"/>
+        <location line="+188"/>
         <source>Only a queued or downloading release can be paused</source>
         <translation>只能暂停排队中或下载中的发布内容</translation>
     </message>
@@ -12453,7 +12483,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>下载速度</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1407"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1451"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Downloads</source>
         <translation>下载</translation>
@@ -12605,7 +12635,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>NZB 文件：</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1479"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1523"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>名称</translation>
@@ -12992,7 +13022,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>上传速度</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1476"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1520"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation>上传</translation>

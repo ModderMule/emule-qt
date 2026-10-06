@@ -182,6 +182,7 @@
     <ClCompile Include="httpcache\HttpCacheManager.cpp" />
     <ClCompile Include="httpcache\HttpCacheOffer.cpp" />
     <ClCompile Include="httpcache\HttpCachePublisher.cpp" />
+    <ClCompile Include="httpcache\HttpCacheReach.cpp" />
     <ClCompile Include="httpcache\HttpCacheServerProbe.cpp" />
     <ClCompile Include="client\ClientCredits.cpp" />
     <ClCompile Include="client\ClientList.cpp" />
@@ -309,6 +310,7 @@
     <ClCompile Include="net\ServerSocket.cpp" />
     <ClCompile Include="utils\SettingsUtils.cpp" />
     <ClCompile Include="files\ShareableFile.cpp" />
+    <ClCompile Include="files\SharedDirWatcher.cpp" />
     <ClCompile Include="files\SharedFileList.cpp" />
     <ClCompile Include="net\SmtpClient.cpp" />
     <ClCompile Include="files\SourceSaver.cpp" />
@@ -347,6 +349,7 @@
     <ClInclude Include="net\HttpDefaults.h" />
     <ClInclude Include="net\HttpFileDownload.h" />
     <ClInclude Include="httpcache\HttpCacheOffer.h" />
+    <ClInclude Include="httpcache\HttpCacheReach.h" />
     <ClInclude Include="httpcache\HttpCacheServerProbe.h" />
     <ClInclude Include="httpcache\HttpCacheTypes.h" />
     <ClInclude Include="utils\ByteOrder.h" />
@@ -486,6 +489,7 @@
     <ClInclude Include="utils\SettingsUtils.h" />
     <ClInclude Include="files\ShareableFile.h" />
     <ClInclude Include="files\SourceSaver.h" />
+    <QtMoc Include="files\SharedDirWatcher.h" />
     <QtMoc Include="files\SharedFileList.h" />
     <QtMoc Include="net\SmtpClient.h" />
     <ClInclude Include="files\StatisticFile.h" />

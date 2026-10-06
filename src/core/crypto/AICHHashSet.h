@@ -14,7 +14,9 @@
 #include <QMutex>
 #include <QString>
 
+#include <functional>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace eMule {
@@ -105,6 +107,16 @@ public:
     /// position if a duplicate was replaced, 0 otherwise.
     static uint64 addStoredAICHHash(const AICHHash& hash, uint64 filePos);
 
+    /// Master hashes of every set in known2_64.met, per the loaded index.
+    [[nodiscard]] static std::vector<AICHHash> storedHashes();
+
+    /// Rewrite known2_64.met without the sets @p keep refuses, older duplicates and
+    /// zeroed masters; the index follows. A set saved or asked for again in this
+    /// session always stays. Nothing is written when nothing goes.
+    /// @return false when the file could not be read or replaced (it is left as it was).
+    static bool compactKnown2(const std::function<bool(const AICHHash&)>& keep,
+                              uint32& droppedSets, uint64& droppedBytes);
+
     /// Mutex for known2_64.met file access.
     static QMutex s_mutKnown2File;
 
@@ -147,6 +159,8 @@ private:
     // Static state for known2_64.met hash index
     static QString s_known2MetPath;
     static std::unordered_map<AICHHash, uint64> s_storedHashes;
+    /// Sets saved, or found already stored, since the program started.
+    static std::unordered_set<AICHHash> s_savedThisSession;
     static std::vector<RequestedData> s_requestedData;
 };
 

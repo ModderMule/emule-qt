@@ -18,6 +18,7 @@
 #include <deque>
 #include <functional>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 namespace eMule {
@@ -133,6 +134,26 @@ public:
     /// @param datarate        current upload datarate in bytes/s.
     /// MFC CUploadQueue::AcceptNewClient(INT_PTR) (srchybrid/UploadQueue.cpp:397).
     [[nodiscard]] bool acceptNewClient(int curUploadSlots, uint32 datarate) const;
+
+    /// Give the slot of a peer that is taking nothing to someone who is waiting.
+    ///
+    /// Only while the line is not full (rate + 2 % under the limit for kUnderfillMs,
+    /// or no limit at all) and a reachable client is waiting. A slot counts as dead
+    /// when the peer has asked for nothing for kDeadSlotMs, or has data queued and
+    /// took none of it after the warm-up (UpDownClient::upSlotActivity). Without this
+    /// such a slot lasts until the socket times out: 40 s, 200 s early in the slot.
+    ///
+    /// The peer goes back on the waiting list the way a finished session does — no
+    /// ban, it may simply be busy with another file — and its address is passed over
+    /// for a slot for kSlotCooldownMs, doubling each time it happens again.
+    /// One slot per call. @p curTick is passed in so a test can move time.
+    void recycleDeadSlots(uint64 curTick);
+    [[nodiscard]] bool isSlotCoolingDown(const UpDownClient* client, uint64 curTick) const;
+    static constexpr uint32 kDeadSlotMs = 5'000;
+    static constexpr uint32 kUnderfillMs = 2'000;
+    static constexpr uint32 kSlotCooldownMs = 30'000;
+    static constexpr uint32 kSlotCooldownMaxMs = 16 * 60 * 1000;
+    static constexpr uint32 kSlotStrikeMemoryMs = 60 * 60 * 1000;
 
     /// Whether this client's upload session should end now, freeing its slot.
     /// MFC CUploadQueue::CheckForTimeOver (srchybrid/UploadQueue.cpp:791). Public where MFC
@@ -285,6 +306,16 @@ private:
     /// is on, which is the default — MFC gates them the same way.
     uint64 m_maxScore = 0;
     uint64 m_lastCalculatedMaxScore = 0;
+
+    // Dead-slot recycling (recycleDeadSlots)
+    uint64 m_underfillSince = 0;                              // 0: the line is full
+    std::unordered_map<UpDownClient*, uint64> m_deadSlotSince;   // slot -> first seen dead
+    struct SlotCooldown {
+        uint64 until = 0;
+        uint64 lastStrike = 0;
+        uint32 strikes = 0;
+    };
+    std::unordered_map<Address, SlotCooldown> m_slotCooldowns;
 
     /// Earliest tick at which the score kick may fire again. MFC seeds it with the current
     /// tick and pushes it 6 s ahead on every kick (srchybrid/UploadQueue.cpp:833), so a

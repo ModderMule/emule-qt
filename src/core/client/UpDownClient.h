@@ -460,7 +460,8 @@ public:
     // -- Download tracking accessors ----------------------------------------
 
     [[nodiscard]] PartFile* reqFile() const { return m_reqFile; }
-    void setReqFile(PartFile* f) { m_reqFile = f; }
+    /// Blocks reserved in the file being left are given back to it first.
+    void setReqFile(PartFile* f);
 
     [[nodiscard]] uint32 remoteQueueRank() const { return m_remoteQueueRank; }
 
@@ -763,6 +764,16 @@ public:
     void startBlockReads();
     void updateUploadingStatisticsData();
     void sendOutOfPartReqsAndAddToWaitingQueue();
+
+    /// What an upload slot is doing, for the queue's dead-slot check.
+    enum class UpSlotActivity {
+        Busy,      ///< data is asked for and moving, or the slot is still warming up
+        Idle,      ///< the peer has asked for nothing: no request, nothing buffered, no read pending
+        Stalled    ///< data is waiting to go out and none has for the whole rate window
+    };
+    /// @param slotAgeMs  getUpStartTimeDelay(); passed in so a test can pick it.
+    [[nodiscard]] UpSlotActivity upSlotActivity(uint32 slotAgeMs) const;
+    static constexpr uint32 kUpSlotWarmupMs = 30'000;
     void flushSendBlocks();
     /// Move a block whose data is ready from the request queue to the head of the done list.
     /// False when it is no longer pending (flushed with an ended slot).
@@ -826,7 +837,23 @@ public:
     void sendHashSetRequest();
     [[nodiscard]] uint32 calculateDownloadRate();
     [[nodiscard]] uint32 downDatarate() const { return m_downDatarate; }
+    /// Normally measured by calculateDownloadRate(); settable for tests.
+    void setDownDatarate(uint32 bytesPerSec) { m_downDatarate = bytesPerSec; }
     virtual void checkDownloadTimeout();
+
+    /// Call before leaving Downloading because the *peer* ended the session (out of
+    /// part requests, silence, a drop, junk). One that carried less than a block is a
+    /// failed session; the second within kFruitlessWindowMs starts a pause during
+    /// which the source is not asked and an accept is turned down. Sessions we end
+    /// ourselves never count. No ban, no dead-listing.
+    void noteDownloadSessionEndedByPeer();
+    [[nodiscard]] bool isDownloadCoolingDown() const;
+    static constexpr uint32 kFruitlessWindowMs = 5 * 60 * 1000;
+    static constexpr uint32 kDownloadCooldownMs = 3 * 60 * 1000;
+    /// Block packets that match nothing we asked for, within kUnmatchedWindowMs,
+    /// before the transfer is cancelled.
+    static constexpr uint32 kMaxUnmatchedPackets = 32;
+    static constexpr uint32 kUnmatchedWindowMs = 15 * 1000;
     [[nodiscard]] uint16 availablePartCount() const;
     [[nodiscard]] bool isPartAvailable(uint32 part) const;
     void setRemoteQueueRank(uint32 rank, bool updateDisplay = false);
@@ -1102,6 +1129,20 @@ private:
     bool m_reaskPending = false;
     bool m_udpPending = false;
     bool m_transferredDownMini = false;
+    uint64 m_fruitlessSessionTick = 0;   // 0: no failed session on record
+    uint64 m_downloadCooldownUntil = 0;
+    uint32 m_unmatchedPackets = 0;
+    uint64 m_unmatchedWindowStart = 0;
+    /// Blocks we stopped waiting for while the peer may still be sending them (the
+    /// loser of an endgame race); their packets are not the peer's fault.
+    struct AbandonedBlock {
+        uint64 start = 0;
+        uint64 end = 0;
+        uint64 tick = 0;
+    };
+    std::vector<AbandonedBlock> m_abandonedBlocks;
+    /// True when @p offset lies in a block given up in the last kUnmatchedWindowMs.
+    [[nodiscard]] bool isInAbandonedBlock(uint64 offset);
     uint32 m_totalUDPPackets = 0;
     uint32 m_failedUDPPackets = 0;
     QString m_clientFilename;

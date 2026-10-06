@@ -43,7 +43,7 @@ class RoutingZone;
 enum class RecheckFirewallResult {
     Started,        ///< A new firewall check was started.
     NotRunning,     ///< Kad is not running.
-    LanMode,        ///< Running in LAN mode — firewall checks are disabled.
+    LanMode,        ///< LAN mode with skipFirewalledChecksInLanMode — checks are disabled.
     AlreadyRunning, ///< A NodeFwCheckUDP lookup is still in flight.
 };
 

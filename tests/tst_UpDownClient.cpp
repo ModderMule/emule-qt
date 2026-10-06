@@ -114,6 +114,9 @@ private slots:
     void processHelloPacket_parsesIPv6Tags();
     void processHelloPacket_rejectsHugeTagCount();
     void outOfPartReqs_onlyEndsARunningTransfer();
+    void leavingDownloading_releasesTheBlockReservations();
+    void unaskedBlockData_endsTheTransferAfterTooMuchOfIt();
+    void twoFruitlessSessions_pauseTheSource();
     void processHelloPacket_rejectsNonPublicIPv6();
     void processHelloPacket_parsesExtSXSkipTagsBit();
     void processChangeClientIP_acceptsPublicAndRejectsOthers();
@@ -3471,6 +3474,128 @@ void tst_UpDownClient::outOfPartReqs_onlyEndsARunningTransfer()
                                       Q_ARG(const uint8*, nullptr), Q_ARG(uint32, 0),
                                       Q_ARG(uint8, OP_OUTOFPARTREQS), Q_ARG(uint8, OP_EDONKEYPROT)));
     QCOMPARE(client.downloadState(), DownloadState::OnQueue);
+}
+
+namespace {
+
+/// A three-part file and a source that has all of it, mid-transfer with blocks asked for.
+struct DownloadingPair {
+    PartFile file;
+    UpDownClient client;
+    uint8 hash[16];
+
+    DownloadingPair()
+    {
+        fillHash(hash, 0x7A);
+        file.setFileHash(hash);
+        file.setFileSize(PARTSIZE * 3);
+        client.setReqFile(&file);
+        client.setCompleteSource(true);
+    }
+
+    void startSession()
+    {
+        client.setDownloadState(DownloadState::Downloading);
+        client.createBlockRequests(3);
+    }
+
+    /// A block packet for bytes nobody asked this source for.
+    [[nodiscard]] QByteArray strayPacket() const
+    {
+        SafeMemFile data;
+        data.writeHash16(hash);
+        const uint32 start = static_cast<uint32>(PARTSIZE * 2 + 5 * EMBLOCKSIZE);
+        data.writeUInt32(start);
+        data.writeUInt32(start + 100);
+        const QByteArray payload(100, 'x');
+        data.write(payload.constData(), payload.size());
+        return data.buffer();
+    }
+
+    void feed(const QByteArray& packet)
+    {
+        client.processBlockPacket(reinterpret_cast<const uint8*>(packet.constData()),
+                                  static_cast<uint32>(packet.size()), false, false);
+    }
+};
+
+} // namespace
+
+// MFC SetDownloadState clears them (srchybrid/DownloadClient.cpp:687). They used to stay
+// reserved until the source disconnected, so nobody else was given those blocks.
+void tst_UpDownClient::leavingDownloading_releasesTheBlockReservations()
+{
+    DownloadingPair p;
+    p.startSession();
+    QVERIFY(!p.client.pendingBlocks().empty());
+    QCOMPARE(p.file.requestedBlockList().size(), p.client.pendingBlocks().size());
+
+    QVERIFY(QMetaObject::invokeMethod(&p.client, "onPacketForClient", Qt::DirectConnection,
+                                      Q_ARG(const uint8*, nullptr), Q_ARG(uint32, 0),
+                                      Q_ARG(uint8, OP_OUTOFPARTREQS), Q_ARG(uint8, OP_EDONKEYPROT)));
+    QCOMPARE(p.client.downloadState(), DownloadState::OnQueue);
+    QVERIFY(p.client.pendingBlocks().empty());
+    QVERIFY2(p.file.requestedBlockList().empty(), "the blocks are free for other sources");
+}
+
+void tst_UpDownClient::unaskedBlockData_endsTheTransferAfterTooMuchOfIt()
+{
+    DownloadingPair p;
+    p.startSession();
+    const QByteArray stray = p.strayPacket();
+
+    for (uint32 i = 1; i < UpDownClient::kMaxUnmatchedPackets; ++i)
+        p.feed(stray);
+    QCOMPARE(p.client.downloadState(), DownloadState::Downloading);
+    QCOMPARE(p.client.sessionDown(), uint64{0});
+
+    p.feed(stray);
+    QCOMPARE(p.client.downloadState(), DownloadState::OnQueue);
+    QVERIFY(p.client.sentCancelTransfer());
+    QVERIFY(p.file.requestedBlockList().empty());
+
+    // in any other state the packets are dropped as before, and counted against nobody
+    for (uint32 i = 0; i < 2 * UpDownClient::kMaxUnmatchedPackets; ++i)
+        p.feed(stray);
+    QCOMPARE(p.client.downloadState(), DownloadState::OnQueue);
+    QVERIFY(!p.client.isDownloadCoolingDown());   // one bad session is not a pattern
+}
+
+void tst_UpDownClient::twoFruitlessSessions_pauseTheSource()
+{
+    const auto outOfParts = [](UpDownClient& client) {
+        QVERIFY(QMetaObject::invokeMethod(&client, "onPacketForClient", Qt::DirectConnection,
+                                          Q_ARG(const uint8*, nullptr), Q_ARG(uint32, 0),
+                                          Q_ARG(uint8, OP_OUTOFPARTREQS), Q_ARG(uint8, OP_EDONKEYPROT)));
+    };
+
+    // Sessions we end ourselves never count, however many.
+    {
+        DownloadingPair p;
+        for (int i = 0; i < 4; ++i) {
+            p.startSession();
+            p.client.setDownloadState(DownloadState::OnQueue);
+        }
+        QVERIFY(!p.client.isDownloadCoolingDown());
+    }
+
+    // Accepted, nothing delivered, thrown out again — twice in a row.
+    DownloadingPair p;
+    p.startSession();
+    outOfParts(p.client);
+    QVERIFY(!p.client.isDownloadCoolingDown());
+    p.client.processAcceptUpload();
+    QCOMPARE(p.client.downloadState(), DownloadState::Downloading);
+    outOfParts(p.client);
+    QVERIFY(p.client.isDownloadCoolingDown());
+
+    // During the pause an accept is turned down and the source is not asked.
+    p.client.processAcceptUpload();
+    QCOMPARE(p.client.downloadState(), DownloadState::OnQueue);
+    QVERIFY(p.client.sentCancelTransfer());
+    const uint32 wait = p.client.timeUntilReask(&p.file, /*allowShortReaskTime=*/true);
+    QVERIFY2(wait > 0 && wait <= UpDownClient::kDownloadCooldownMs,
+             "the pause holds the re-ask back, and by no more than its own length");
 }
 
 QTEST_MAIN(tst_UpDownClient)

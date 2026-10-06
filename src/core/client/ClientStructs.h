@@ -15,6 +15,8 @@ struct z_stream_s;
 
 namespace eMule {
 
+class UpDownClient;
+
 /// A block of file data requested from a peer (upload side tracks these).
 struct Requested_Block_Struct {
     uint64 startOffset = 0;
@@ -22,6 +24,12 @@ struct Requested_Block_Struct {
     std::array<uint8, 16> fileID{};
     uint32 transferredByClient = 0;
     bool readQueued = false;    // upload side: handed to the disk thread
+
+    // Download side: who holds the reservation and how it is doing. Read when the
+    // file decides whether a second source may take the same block.
+    UpDownClient* holder = nullptr;   // null: not an eD2K source (an HTTP transfer)
+    uint64 lastProgressTick = 0;      // reserved, or data last written
+    bool requested = false;           // the request has gone out to the peer
 };
 
 /// A pending download block with optional zlib decompression state.

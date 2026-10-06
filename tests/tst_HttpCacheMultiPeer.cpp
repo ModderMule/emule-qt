@@ -89,6 +89,7 @@ private slots:
     void serverErrorPausesFurtherPublishesButNotOffers();
     void twoServersShareTheChunks();
     void aSickServerLosesItsTurn();
+    void localServerNeedsLanMode();
 
     void cleanupTestCase();
 
@@ -210,6 +211,10 @@ void tst_HttpCacheMultiPeer::init()
 
     thePrefs.setHttpCacheMinClients(2);
     thePrefs.setHttpCacheMaxConcurrentPublishes(1);
+
+    // Servers and peers all live on loopback here, and a cache server on a local
+    // address is only used in LAN mode, for peers that are local too.
+    thePrefs.setFilterLANIPs(false);
 
     // A fresh manager per case, so entries, counters and any standing backoff all
     // start empty. Never start()ed: its 5 s timer would race every assertion here,
@@ -671,6 +676,36 @@ void tst_HttpCacheMultiPeer::aSickServerLosesItsTurn()
 // ---------------------------------------------------------------------------
 // Peers
 // ---------------------------------------------------------------------------
+
+// A cache server on loopback or a LAN address is reachable by nobody outside, so
+// with LAN filtering on it must cost no upload and produce no offer — however
+// many peers are asking. Clearing the filter is what declares this a private
+// network, and the same queue then publishes on the next tick.
+void tst_HttpCacheMultiPeer::localServerNeedsLanMode()
+{
+    thePrefs.setFilterLANIPs(true);
+
+    joinPeer();
+    joinPeer();
+    joinPeer();
+    QVERIFY(!QTest::currentTestFailed());
+
+    for (int i = 0; i < 3; ++i)
+        seedPart(i, 0);
+
+    tickQuietly();
+    QCOMPARE(m_server->uploadCount(), 0);
+    QCOMPARE(m_cache->sessionChunksPublished(), 0u);
+    for (int i = 0; i < 3; ++i)
+        QVERIFY(offersOf(i).empty());
+
+    thePrefs.setFilterLANIPs(false);
+
+    QVERIFY(tickUntil([this] { return m_cache->sessionChunksPublished() >= 1; }));
+    QCOMPARE(m_server->uploadCount(), 1);
+    for (int i = 0; i < 3; ++i)
+        QTRY_VERIFY_WITH_TIMEOUT(offersOf(i).size() == 1, 5000);
+}
 
 void tst_HttpCacheMultiPeer::useTwoServers()
 {

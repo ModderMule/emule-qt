@@ -484,10 +484,21 @@ void UpDownClient::setDownloadState(DownloadState state)
         // packets (e.g. multipacket answers) without being blocked by a stale
         // download limit from the previous file's transfer.
         if (m_downloadState == DownloadState::Downloading) {
+            // A session that carried a block's worth wipes the record of a bad one.
+            if (sessionPayloadDown() >= EMBLOCKSIZE)
+                m_fruitlessSessionTick = 0;
+            m_unmatchedPackets = 0;
+            m_abandonedBlocks.clear();
+
             // The session figures are per download session, not per client lifetime — this is
             // the mark MFC takes when the session ends (srchybrid/DownloadClient.cpp:674) and
             // it is what makes sessionDown() / sessionPayloadDown() mean anything.
             resetSessionDown();
+
+            // The blocks this source held go back to the file for the others
+            // (MFC srchybrid/DownloadClient.cpp:687). Without it they stayed reserved
+            // until the source disconnected.
+            clearDownloadBlockRequests();
 
             m_downDatarate = 0;
             m_downDataRateMS = 0;
@@ -2466,6 +2477,7 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
     // one that never answered our file request, and one we could not reach at all.
     bool sourceDied = false;
     if (m_downloadState == DownloadState::Downloading) {
+        noteDownloadSessionEndedByPeer();
         setDownloadState(DownloadState::OnQueue);
     } else {
         const bool unanswered = m_downloadState == DownloadState::Connected
@@ -2830,17 +2842,8 @@ void UpDownClient::sendSharedDirectories()
 
     // Collect unique directory pseudonyms from shared files
     std::vector<QString> dirs;
-    if (theApp.sharedFileList) {
-        theApp.sharedFileList->forEachFile([&](KnownFile* file) {
-            QString dir = file->sharedDirectory();
-            if (dir.isEmpty())
-                dir = file->path();
-            if (!dir.isEmpty()) {
-                if (std::ranges::find(dirs, dir) == dirs.end())
-                    dirs.push_back(dir);
-            }
-        });
-    }
+    if (theApp.sharedFileList)
+        dirs = theApp.sharedFileList->sharedDirectories();
 
     SafeMemFile data;
     data.writeUInt32(static_cast<uint32>(dirs.size()));
@@ -4319,8 +4322,10 @@ void UpDownClient::onPacketForClient(const uint8* data, uint32 size, uint8 opcod
     case OP_OUTOFPARTREQS:
         // Only ends a running transfer (MFC ListenSocket.cpp:601); in any other state it
         // would let a peer rewrite our view of it.
-        if (m_downloadState == DownloadState::Downloading)
+        if (m_downloadState == DownloadState::Downloading) {
+            noteDownloadSessionEndedByPeer();
             setDownloadState(DownloadState::OnQueue);
+        }
         break;
 
     case OP_REQUESTPARTS:
@@ -5092,16 +5097,9 @@ void UpDownClient::processAskSharedFilesDir(const uint8* data, uint32 size)
 
     // Collect files matching the requested directory
     const bool largePeer = supportsLargeFiles();
-    std::vector<KnownFile*> matchedFiles;
-    theApp.sharedFileList->forEachFile([&](KnownFile* file) {
-        if (!file->isLargeFile() || largePeer) {
-            QString dir = file->sharedDirectory();
-            if (dir.isEmpty())
-                dir = file->path();
-            if (dir == reqDir)
-                matchedFiles.push_back(file);
-        }
-    });
+    std::vector<KnownFile*> matchedFiles = theApp.sharedFileList->filesInDirectory(reqDir);
+    if (!largePeer)
+        std::erase_if(matchedFiles, [](const KnownFile* file) { return file->isLargeFile(); });
 
     SafeMemFile response;
     response.writeString(reqDir, UTF8Mode::Raw);

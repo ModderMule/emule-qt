@@ -109,6 +109,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushSearchResult:     return QStringLiteral("PushSearchResult");
     case T::PushLogMessage:       return QStringLiteral("PushLogMessage");
     case T::PushSharedFileUpdate: return QStringLiteral("PushSharedFileUpdate");
+    case T::PushSharedFileRemoved: return QStringLiteral("PushSharedFileRemoved");
     case T::PushUploadUpdate:     return QStringLiteral("PushUploadUpdate");
     case T::PushKadUpdate:        return QStringLiteral("PushKadUpdate");
     case T::PushKadSearchesChanged: return QStringLiteral("PushKadSearchesChanged");
@@ -615,6 +616,7 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
         setUsenetEnginePaused(msg.fieldMap(0).value(QStringLiteral("paused")).toBool());
         break;
     case IpcMsgType::PushSharedFileUpdate: emit sharedFileUpdated(msg); break;
+    case IpcMsgType::PushSharedFileRemoved: emit sharedFileRemoved(msg); break;
     case IpcMsgType::PushUploadUpdate:     emit uploadUpdated(msg); break;
     case IpcMsgType::PushKadUpdate:        emit kadUpdated(msg); break;
     case IpcMsgType::PushKadSearchesChanged: emit kadSearchesChanged(msg); break;

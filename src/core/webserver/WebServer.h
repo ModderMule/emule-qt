@@ -67,6 +67,12 @@ struct WebServerConfig {
     bool adminAllowHiLevFunc = false;
     bool guestEnabled = false;
     QString guestPasswordHash;
+
+    bool operator==(const WebServerConfig&) const = default;
+
+    /// What the preferences ask for. The server always runs (the GUI preview stream
+    /// needs it); with both surfaces off it is bound to loopback.
+    [[nodiscard]] static WebServerConfig fromPreferences(const Preferences& prefs);
 };
 
 // ---------------------------------------------------------------------------
@@ -182,6 +188,10 @@ public:
     bool start(const WebServerConfig& config);
     void stop();
     [[nodiscard]] bool isRunning() const;
+    /// For the log: a URL with its stream token masked, and which headers carry secrets.
+    [[nodiscard]] static QString redactedUrl(const QUrl& url);
+    [[nodiscard]] static bool isSecretHeader(QStringView name);
+    [[nodiscard]] const WebServerConfig& config() const { return m_requestedConfig; }
     [[nodiscard]] uint16 port() const;
     /// Bound to TLS (HTTPS requested and the cert/key loaded).
     [[nodiscard]] bool isHttps() const;
@@ -474,7 +484,8 @@ private:
     // Members
     std::unique_ptr<QHttpServer> m_server;
     QTcpServer* m_tcpServer = nullptr;  // Owned by m_server after listen()
-    WebServerConfig m_config;
+    WebServerConfig m_config;            ///< What is in effect
+    WebServerConfig m_requestedConfig;   ///< What start() was asked for
 
     // Template engine & session manager
     std::unique_ptr<class WebTemplateEngine> m_templateEngine;

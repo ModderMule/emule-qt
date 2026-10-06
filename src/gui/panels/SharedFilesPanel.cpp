@@ -3,6 +3,7 @@
 /// @brief Shared Files tab panel — implementation.
 
 #include "panels/SharedFilesPanel.h"
+#include "utils/SharedFilesFetch.h"
 
 #include "app/IpcClient.h"
 #include "app/UiState.h"
@@ -114,33 +115,34 @@ SharedFilesPanel::~SharedFilesPanel() = default;
 
 void SharedFilesPanel::setIpcClient(IpcClient* client)
 {
+    if (m_ipc)
+        disconnect(m_ipc, nullptr, this, nullptr);
     m_ipc = client;
+    m_haveSnapshot = false;
 
-    if (m_ipc && m_ipc->isConnected()) {
-        m_poller->setInterval(m_ipc->pollingInterval());
-        m_poller->setEnabled(true);
-    } else if (m_ipc) {
-        connect(m_ipc, &IpcClient::connected, this, [this]() {
-            m_poller->setInterval(m_ipc->pollingInterval());
-            m_poller->setEnabled(true);
-        });
-        connect(m_ipc, &IpcClient::disconnected, this, [this]() {
-            m_poller->setEnabled(false);
-            m_model->clear();
-            m_headerLabel->setText(tr("Shared Files (0)"));
-        });
-
-        // Pull the next poll forward rather than refetching here. SharedFileList
-        // emits fileAdded once per file *inside* the directory scan, so a reload of
-        // a large share used to mean one full-list refetch per file shared.
-        connect(m_ipc, &IpcClient::sharedFileUpdated, this, [this](const IpcMessage&) {
-            m_poller->nudge();
-        });
-    } else {
+    if (!m_ipc) {
         m_poller->setEnabled(false);
         m_model->clear();
         m_headerLabel->setText(tr("Shared Files (0)"));
+        return;
     }
+
+    // The list is fetched once and then kept current by pushes; the timer is only a
+    // net under them, for the few things that have no push.
+    m_poller->setInterval(kResyncMs);
+    connect(m_ipc, &IpcClient::connected, this, [this]() {
+        m_poller->setEnabled(true);
+    });
+    connect(m_ipc, &IpcClient::disconnected, this, [this]() {
+        m_poller->setEnabled(false);
+        m_haveSnapshot = false;
+        m_model->clear();
+        m_headerLabel->setText(tr("Shared Files (0)"));
+    });
+    connect(m_ipc, &IpcClient::sharedFileUpdated, this, &SharedFilesPanel::onSharedFilesPushed);
+    connect(m_ipc, &IpcClient::sharedFileRemoved, this, &SharedFilesPanel::onSharedFileRemovedPush);
+
+    m_poller->setEnabled(m_ipc->isConnected());
 }
 
 // ---------------------------------------------------------------------------
@@ -512,8 +514,18 @@ QWidget* SharedFilesPanel::createTopSection()
     m_reloadButton = new QPushButton(tr("Reload"));
     m_reloadButton->setFlat(true);
     m_reloadButton->setFixedHeight(22);
-    connect(m_reloadButton, &QPushButton::clicked,
-            this, &SharedFilesPanel::onReloadClicked);
+#ifdef Q_OS_MACOS
+    const QString modifierKey = QStringLiteral("\u2318");
+#else
+    const QString modifierKey = QStringLiteral("Ctrl");
+#endif
+    m_reloadButton->setToolTip(tr("Rescan the shared directories. Hold %1 to re-read the "
+                                  "media information of all shared files instead.")
+                                   .arg(modifierKey));
+    // Ctrl+click re-reads the media tags instead (MFC OnBnClickedReloadSharedFiles)
+    connect(m_reloadButton, &QPushButton::clicked, this, [this] {
+        onReloadClicked(QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier));
+    });
     headerRow->addWidget(m_reloadButton);
 
     layout->addLayout(headerRow);
@@ -861,6 +873,73 @@ QWidget* SharedFilesPanel::createBottomTabs()
 // IPC requests
 // ---------------------------------------------------------------------------
 
+namespace {
+
+/// One row as the daemon sends it, in the list reply and in a push.
+SharedFileRow sharedRowFromCbor(const QCborMap& m)
+{
+    SharedFileRow row;
+    row.hash              = m.value(QStringLiteral("hash")).toString();
+    row.fileName          = m.value(QStringLiteral("fileName")).toString();
+    row.fileSize          = m.value(QStringLiteral("fileSize")).toInteger();
+    row.fileType          = m.value(QStringLiteral("fileType")).toString();
+    row.hasComment        = m.value(QStringLiteral("hasComment")).toBool();
+    row.ownComment        = m.value(QStringLiteral("ownComment")).toBool();
+    row.userRating        = static_cast<int>(m.value(QStringLiteral("userRating")).toInteger());
+    row.containerSuspect  = m.value(QStringLiteral("containerSuspect")).toBool();
+    row.containerExpected = m.value(QStringLiteral("containerExpected")).toString();
+    row.containerActual   = m.value(QStringLiteral("containerActual")).toString();
+    row.upPriority        = static_cast<int>(m.value(QStringLiteral("upPriority")).toInteger());
+    row.isAutoUpPriority  = m.value(QStringLiteral("isAutoUpPriority")).toBool();
+    row.requests          = m.value(QStringLiteral("requests")).toInteger();
+    row.acceptedUploads   = m.value(QStringLiteral("acceptedUploads")).toInteger();
+    row.transferred       = m.value(QStringLiteral("transferred")).toInteger();
+    row.allTimeRequests   = m.value(QStringLiteral("allTimeRequests")).toInteger();
+    row.allTimeAccepted   = m.value(QStringLiteral("allTimeAccepted")).toInteger();
+    row.allTimeTransferred = m.value(QStringLiteral("allTimeTransferred")).toInteger();
+    row.completeSources   = static_cast<int>(m.value(QStringLiteral("completeSources")).toInteger());
+    row.publishedED2K     = m.value(QStringLiteral("publishedED2K")).toBool();
+    row.kadPublished      = m.value(QStringLiteral("kadPublished")).toBool();
+    row.path              = m.value(QStringLiteral("path")).toString();
+    row.filePath          = m.value(QStringLiteral("filePath")).toString();
+    row.shareToggleable   = m.value(QStringLiteral("canUnshare")).toBool();
+    row.ed2kLink          = m.value(QStringLiteral("ed2kLink")).toString();
+    row.isPartFile        = m.value(QStringLiteral("isPartFile")).toBool();
+    row.uploadingClients  = static_cast<int>(m.value(QStringLiteral("uploadingClients")).toInteger());
+    row.queuedClients     = static_cast<int>(m.value(QStringLiteral("queuedClients")).toInteger());
+    row.partCount         = static_cast<int>(m.value(QStringLiteral("partCount")).toInteger());
+    row.completedSize     = m.value(QStringLiteral("completedSize")).toInteger();
+
+    // Parse per-part availability map
+    const QCborArray partMapArr = m.value(QStringLiteral("sharePartMap")).toArray();
+    if (!partMapArr.isEmpty()) {
+        QByteArray pm;
+        pm.reserve(static_cast<qsizetype>(partMapArr.size()));
+        for (const auto& v : partMapArr)
+            pm.append(static_cast<char>(v.toInteger()));
+        row.sharePartMap = std::move(pm);
+    }
+
+    // Collection metadata
+    row.isCollection           = m.value(QStringLiteral("isCollection")).toBool();
+    row.hasCollectionAuthorKey = m.value(QStringLiteral("hasCollectionAuthorKey")).toBool();
+
+    row.hasPartHashes  = m.value(QStringLiteral("hasPartHashes")).toBool();
+    row.uploadDataRate = m.value(QStringLiteral("uploadDataRate")).toInteger();
+    return row;
+}
+
+std::vector<SharedFileRow> sharedRowsFromCbor(const QCborArray& arr)
+{
+    std::vector<SharedFileRow> rows;
+    rows.reserve(static_cast<size_t>(arr.size()));
+    for (const auto& val : arr)
+        rows.push_back(sharedRowFromCbor(val.toMap()));
+    return rows;
+}
+
+} // namespace
+
 void SharedFilesPanel::requestSharedFiles()
 {
     if (!m_ipc || !m_ipc->isConnected())
@@ -873,93 +952,74 @@ void SharedFilesPanel::requestSharedFiles()
         return;
     }
 
-    IpcMessage req(IpcMsgType::GetSharedFiles);
-    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
-        if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
-            m_model->clear();
-            m_headerLabel->setText(tr("Shared Files (0)"));
+    // A newer request overtakes one still collecting its pages.
+    const int fetchId = ++m_listFetchId;
+    fetchSharedFileRows(m_ipc, this, [this, fetchId](bool ok, const QCborArray& arr) {
+        if (fetchId != m_listFetchId)
+            return;
+        if (!ok) {
+            // a dropped connection clears the list in its own handler; a refused
+            // request leaves what is shown
             return;
         }
+        // The reply raced a click on a folder to browse.
+        if (!m_browseDir.isEmpty())
+            return;
 
         const ViewSelection selection = saveSelection();
 
-        // Response is a map: { "files": [...], "totalRequests": N, ... }
-        const QCborMap resultMap = resp.fieldMap(1);
-        const QCborArray arr = resultMap.value(QStringLiteral("files")).toArray();
-
-        m_totalRequests          = resultMap.value(QStringLiteral("totalRequests")).toInteger();
-        m_totalAccepted          = resultMap.value(QStringLiteral("totalAccepted")).toInteger();
-        m_totalTransferred       = resultMap.value(QStringLiteral("totalTransferred")).toInteger();
-        m_totalAllTimeRequests   = resultMap.value(QStringLiteral("totalAllTimeRequests")).toInteger();
-        m_totalAllTimeAccepted   = resultMap.value(QStringLiteral("totalAllTimeAccepted")).toInteger();
-        m_totalAllTimeTransferred = resultMap.value(QStringLiteral("totalAllTimeTransferred")).toInteger();
-
-        std::vector<SharedFileRow> rows;
-        rows.reserve(static_cast<size_t>(arr.size()));
-
-        for (const auto& val : arr) {
-            const QCborMap m = val.toMap();
-            SharedFileRow row;
-            row.hash              = m.value(QStringLiteral("hash")).toString();
-            row.fileName          = m.value(QStringLiteral("fileName")).toString();
-            row.fileSize          = m.value(QStringLiteral("fileSize")).toInteger();
-            row.fileType          = m.value(QStringLiteral("fileType")).toString();
-            row.hasComment        = m.value(QStringLiteral("hasComment")).toBool();
-            row.ownComment        = m.value(QStringLiteral("ownComment")).toBool();
-            row.userRating        = static_cast<int>(m.value(QStringLiteral("userRating")).toInteger());
-            row.containerSuspect  = m.value(QStringLiteral("containerSuspect")).toBool();
-            row.containerExpected = m.value(QStringLiteral("containerExpected")).toString();
-            row.containerActual   = m.value(QStringLiteral("containerActual")).toString();
-            row.upPriority        = static_cast<int>(m.value(QStringLiteral("upPriority")).toInteger());
-            row.isAutoUpPriority  = m.value(QStringLiteral("isAutoUpPriority")).toBool();
-            row.requests          = m.value(QStringLiteral("requests")).toInteger();
-            row.acceptedUploads   = m.value(QStringLiteral("acceptedUploads")).toInteger();
-            row.transferred       = m.value(QStringLiteral("transferred")).toInteger();
-            row.allTimeRequests   = m.value(QStringLiteral("allTimeRequests")).toInteger();
-            row.allTimeAccepted   = m.value(QStringLiteral("allTimeAccepted")).toInteger();
-            row.allTimeTransferred = m.value(QStringLiteral("allTimeTransferred")).toInteger();
-            row.completeSources   = static_cast<int>(m.value(QStringLiteral("completeSources")).toInteger());
-            row.publishedED2K     = m.value(QStringLiteral("publishedED2K")).toBool();
-            row.kadPublished      = m.value(QStringLiteral("kadPublished")).toBool();
-            row.path              = m.value(QStringLiteral("path")).toString();
-            row.filePath          = m.value(QStringLiteral("filePath")).toString();
-            row.shareToggleable   = m.value(QStringLiteral("canUnshare")).toBool();
-            row.ed2kLink          = m.value(QStringLiteral("ed2kLink")).toString();
-            row.isPartFile        = m.value(QStringLiteral("isPartFile")).toBool();
-            row.uploadingClients  = static_cast<int>(m.value(QStringLiteral("uploadingClients")).toInteger());
-            row.queuedClients     = static_cast<int>(m.value(QStringLiteral("queuedClients")).toInteger());
-            row.partCount         = static_cast<int>(m.value(QStringLiteral("partCount")).toInteger());
-            row.completedSize     = m.value(QStringLiteral("completedSize")).toInteger();
-
-            // Parse per-part availability map
-            const QCborArray partMapArr = m.value(QStringLiteral("sharePartMap")).toArray();
-            if (!partMapArr.isEmpty()) {
-                QByteArray pm;
-                pm.reserve(static_cast<qsizetype>(partMapArr.size()));
-                for (const auto& v : partMapArr)
-                    pm.append(static_cast<char>(v.toInteger()));
-                row.sharePartMap = std::move(pm);
-            }
-
-            // Collection metadata
-            row.isCollection           = m.value(QStringLiteral("isCollection")).toBool();
-            row.hasCollectionAuthorKey = m.value(QStringLiteral("hasCollectionAuthorKey")).toBool();
-
-            // ED2K link building components
-            row.partHashesStr  = m.value(QStringLiteral("partHashesStr")).toString();
-            row.aichHashStr    = m.value(QStringLiteral("aichHashStr")).toString();
-            row.uploadDataRate = m.value(QStringLiteral("uploadDataRate")).toInteger();
-
-            rows.push_back(std::move(row));
-        }
-
-        m_model->setFiles(std::move(rows));
-        m_headerLabel->setText(tr("Shared Files (%1)").arg(m_model->fileCount()));
-        restoreSelection(selection);
-        updateStatsTab();
-        updateContentTab();
-        updateEd2kTab();
+        // Updated in place: the view keeps selection and scroll by itself. Only a
+        // fallback to a reset (the first fill, or leaving a browsed directory) drops them.
+        if (m_model->setFiles(sharedRowsFromCbor(arr)))
+            restoreSelection(selection);
+        m_haveSnapshot = true;
+        afterSharedRowsChanged();
     });
+}
+
+void SharedFilesPanel::onSharedFilesPushed(const IpcMessage& msg)
+{
+    // A browsed directory lists files, shared or not: ask for it again instead.
+    if (!m_browseDir.isEmpty()) {
+        m_poller->nudge();
+        return;
+    }
+    // Before the first full list there is nothing to update; it will have these rows.
+    if (!m_haveSnapshot)
+        return;
+    m_model->upsertFiles(sharedRowsFromCbor(msg.fieldArray(0)));
+    afterSharedRowsChanged();
+}
+
+void SharedFilesPanel::onSharedFileRemovedPush(const IpcMessage& msg)
+{
+    if (!m_browseDir.isEmpty()) {
+        m_poller->nudge();
+        return;
+    }
+    if (m_haveSnapshot && m_model->removeFile(msg.fieldString(0)))
+        afterSharedRowsChanged();
+}
+
+void SharedFilesPanel::afterSharedRowsChanged()
+{
+    // The totals the percentage bars are measured against, over every listed file.
+    m_totalRequests = m_totalAccepted = m_totalTransferred = 0;
+    m_totalAllTimeRequests = m_totalAllTimeAccepted = m_totalAllTimeTransferred = 0;
+    for (int i = 0; i < m_model->fileCount(); ++i) {
+        const SharedFileRow* f = m_model->fileAt(i);
+        m_totalRequests           += f->requests;
+        m_totalAccepted           += f->acceptedUploads;
+        m_totalTransferred        += f->transferred;
+        m_totalAllTimeRequests    += f->allTimeRequests;
+        m_totalAllTimeAccepted    += f->allTimeAccepted;
+        m_totalAllTimeTransferred += f->allTimeTransferred;
+    }
+
+    m_headerLabel->setText(tr("Shared Files (%1)").arg(m_model->fileCount()));
+    updateStatsTab();
+    updateContentTab();
+    updateEd2kTab();
 }
 
 void SharedFilesPanel::requestBrowseDirectory(const QString& dirPath)
@@ -1009,7 +1069,8 @@ void SharedFilesPanel::requestBrowseDirectory(const QString& dirPath)
             rows.push_back(std::move(row));
         }
 
-        m_model->setFiles(std::move(rows));
+        m_haveSnapshot = false;   // the list now holds a directory, not the share
+        m_model->resetFiles(std::move(rows));
         m_headerLabel->setText(tr("%1 (%2 of %3 shared)")
                                    .arg(QDir(dirPath).dirName().isEmpty() ? dirPath
                                                                           : QDir(dirPath).dirName())
@@ -1185,7 +1246,7 @@ void SharedFilesPanel::updateEd2kTab()
     // simply leaves it out of the links that have none.
     const auto rows = rowsForHashes(hashes);
     const bool anyHashset = std::ranges::any_of(rows, [](const SharedFileRow* f) {
-        return !f->partHashesStr.isEmpty();
+        return f->hasPartHashes;
     });
     m_ed2kHashsetCheck->setEnabled(anyHashset);
     if (!anyHashset)
@@ -1353,12 +1414,14 @@ void SharedFilesPanel::updateContentTab()
 // Priority menu
 // ---------------------------------------------------------------------------
 
-void SharedFilesPanel::onReloadClicked()
+void SharedFilesPanel::onReloadClicked(bool rebuildMetaData)
 {
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
     IpcMessage msg(IpcMsgType::ReloadSharedFiles);
+    if (rebuildMetaData)
+        msg.append(true);
     m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
         requestSharedFiles();
     });
@@ -1676,7 +1739,7 @@ QModelIndex SharedFilesPanel::fileIndexFor(const QString& hash) const
 
 DetailWalker SharedFilesPanel::makeSharedFileWalker(const QString& hash)
 {
-    // Anchored on the hash, not a row: setFiles() resets the model on every poll
+    // Anchored on the hash, not a row: rows move when the list changes, and a reset
     // tick and UiState::guardSelectionOnReset() clears the current index with it.
     auto anchor = std::make_shared<QString>(hash);
 

@@ -236,15 +236,149 @@ QString SharedFilesModel::hashAt(int row) const
 
 bool SharedFilesModel::containsHash(const QString& hexHash) const
 {
-    return std::any_of(m_rows.begin(), m_rows.end(),
-        [&](const SharedFileRow& r) { return sameHash(r.hash, hexHash); });
+    return m_rowOf.contains(keyOf(hexHash));
 }
 
 const SharedFileRow* SharedFilesModel::findByHash(const QString& hexHash) const
 {
-    const auto it = std::find_if(m_rows.begin(), m_rows.end(),
-        [&](const SharedFileRow& r) { return sameHash(r.hash, hexHash); });
-    return it != m_rows.end() ? &*it : nullptr;
+    const auto it = m_rowOf.constFind(keyOf(hexHash));
+    return it != m_rowOf.constEnd() ? rowAt(*it) : nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// Updates
+// ---------------------------------------------------------------------------
+
+void SharedFilesModel::reindex()
+{
+    m_rowOf.clear();
+    m_rowOf.reserve(static_cast<qsizetype>(m_rows.size()));
+    for (size_t i = 0; i < m_rows.size(); ++i)
+        if (!m_rows[i].hash.isEmpty())
+            m_rowOf.insert(keyOf(m_rows[i].hash), static_cast<int>(i));
+}
+
+void SharedFilesModel::clear()
+{
+    AbstractTableModel::clear();
+    m_rowOf.clear();
+}
+
+void SharedFilesModel::resetFiles(std::vector<SharedFileRow> files)
+{
+    setRows(std::move(files));
+    reindex();
+}
+
+bool SharedFilesModel::setFiles(std::vector<SharedFileRow> files)
+{
+    // Matching is by hash; without one on every row there is nothing to match by.
+    const auto hasHash = [](const SharedFileRow& r) { return !r.hash.isEmpty(); };
+    if (m_rows.empty() || m_rowOf.size() != static_cast<qsizetype>(m_rows.size())
+        || !std::ranges::all_of(files, hasHash)) {
+        resetFiles(std::move(files));
+        return true;
+    }
+
+    QHash<QString, size_t> incoming;
+    incoming.reserve(static_cast<qsizetype>(files.size()));
+    for (size_t i = 0; i < files.size(); ++i)
+        incoming.insert(keyOf(files[i].hash), i);
+
+    // Rows that left, bottom-up and a run at a time. Removing one by one from a
+    // large list is quadratic; when most of it goes, a reset is the cheaper answer.
+    size_t leaving = 0;
+    for (const SharedFileRow& row : m_rows)
+        if (!incoming.contains(keyOf(row.hash)))
+            ++leaving;
+    if (leaving > 2000 && leaving > m_rows.size() / 2) {
+        resetFiles(std::move(files));
+        return true;
+    }
+    for (int last = static_cast<int>(m_rows.size()) - 1; last >= 0 && leaving > 0; --last) {
+        if (incoming.contains(keyOf(m_rows[static_cast<size_t>(last)].hash)))
+            continue;
+        int first = last;
+        while (first > 0 && !incoming.contains(keyOf(m_rows[static_cast<size_t>(first - 1)].hash)))
+            --first;
+        beginRemoveRows({}, first, last);
+        m_rows.erase(m_rows.begin() + first, m_rows.begin() + last + 1);
+        endRemoveRows();
+        leaving -= static_cast<size_t>(last - first + 1);
+        last = first;
+    }
+
+    // Survivors, in place; only the rows that differ are announced.
+    std::vector<bool> used(files.size(), false);
+    for (size_t r = 0; r < m_rows.size(); ++r) {
+        const size_t src = incoming.value(keyOf(m_rows[r].hash));
+        used[src] = true;
+        if (m_rows[r] == files[src])
+            continue;
+        m_rows[r] = std::move(files[src]);
+        emit dataChanged(index(static_cast<int>(r), 0), index(static_cast<int>(r), ColCount - 1));
+    }
+
+    // Arrivals, in one batch at the end.
+    const auto arrivals = static_cast<int>(std::ranges::count(used, false));
+    if (arrivals > 0) {
+        const int first = static_cast<int>(m_rows.size());
+        beginInsertRows({}, first, first + arrivals - 1);
+        for (size_t i = 0; i < files.size(); ++i)
+            if (!used[i])
+                m_rows.push_back(std::move(files[i]));
+        endInsertRows();
+    }
+
+    reindex();
+    return false;
+}
+
+void SharedFilesModel::upsertFiles(std::vector<SharedFileRow> files)
+{
+    std::vector<SharedFileRow> arrivals;
+    for (SharedFileRow& file : files) {
+        if (file.hash.isEmpty())
+            continue;
+        const auto it = m_rowOf.constFind(keyOf(file.hash));
+        if (it == m_rowOf.constEnd()) {
+            // the same file twice in one batch: the later row wins
+            const auto dup = std::ranges::find(arrivals, file.hash, &SharedFileRow::hash);
+            if (dup != arrivals.end())
+                *dup = std::move(file);
+            else
+                arrivals.push_back(std::move(file));
+            continue;
+        }
+        const int row = *it;
+        if (m_rows[static_cast<size_t>(row)] == file)
+            continue;
+        m_rows[static_cast<size_t>(row)] = std::move(file);
+        emit dataChanged(index(row, 0), index(row, ColCount - 1));
+    }
+    if (arrivals.empty())
+        return;
+
+    const int first = static_cast<int>(m_rows.size());
+    beginInsertRows({}, first, first + static_cast<int>(arrivals.size()) - 1);
+    for (SharedFileRow& file : arrivals) {
+        m_rowOf.insert(keyOf(file.hash), static_cast<int>(m_rows.size()));
+        m_rows.push_back(std::move(file));
+    }
+    endInsertRows();
+}
+
+bool SharedFilesModel::removeFile(const QString& hexHash)
+{
+    const auto it = m_rowOf.constFind(keyOf(hexHash));
+    if (it == m_rowOf.constEnd())
+        return false;
+    const int row = *it;
+    beginRemoveRows({}, row, row);
+    m_rows.erase(m_rows.begin() + row);
+    endRemoveRows();
+    reindex();   // every row behind it moved up
+    return true;
 }
 
 // ---------------------------------------------------------------------------

@@ -177,6 +177,8 @@ emule_add_test(tst_ContainerSniffer   FOLDER "Media")
 emule_add_test(tst_ShareableFile      FOLDER "Files")
 emule_add_test(tst_StatisticFile      FOLDER "Files")
 emule_add_test(tst_Collection         FOLDER "Files")
+emule_add_test(tst_PublishKeywordList FOLDER "Files")
+emule_add_test(tst_SharedDirWatcher   FOLDER "Files")
 emule_add_test(tst_CollectionFile     FOLDER "Files")
 emule_add_test(tst_KnownFile          FOLDER "Files")
 
@@ -689,6 +691,23 @@ target_include_directories(tst_DownloadStatusText PRIVATE
     "${CMAKE_SOURCE_DIR}/src/core"
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_DownloadStatusText PRIVATE Qt6::Widgets)
+
+# The shared-files list updated in place: diff of a new list, single-row pushes.
+emule_add_test(tst_SharedFilesModel FOLDER "Gui"
+    SOURCES tst_SharedFilesModel.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadListModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/SharedFilesModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/ClientIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/PriorityText.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
+target_include_directories(tst_SharedFilesModel PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_SOURCE_DIR}/src/core"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_SharedFilesModel PRIVATE Qt6::Widgets)
 
 # Column-0 marks: the rating icon and the red "not what it claims" exclamation.
 # Same standalone-source trick as tst_DownloadStatusText above.

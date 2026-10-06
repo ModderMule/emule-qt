@@ -92,6 +92,10 @@ public:
     /// First configured temp dir, else <configDir>/Temp.
     [[nodiscard]] static QString defaultTempDir();
     void removeFile(PartFile* file);
+    /// Cancel a download for good: remember the hash as cancelled, delete its temp
+    /// files, unlink it from queue, known and shared lists and free it.
+    /// The pointer is dead afterwards.
+    void cancelFile(PartFile* file);
     void deleteAll();
     [[nodiscard]] int fileCount() const { return count(); }
 

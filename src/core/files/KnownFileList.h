@@ -82,6 +82,12 @@ public:
     bool isCancelledFileByID(const uint8* hash) const;
 
     [[nodiscard]] size_t count() const { return m_filesMap.size(); }
+    /// Every record. Main thread, as everything else here.
+    void forEachFile(const std::function<void(const KnownFile*)>& callback) const
+    {
+        for (const auto& [key, file] : m_filesMap)
+            callback(file);
+    }
 
     uint64 totalTransferred = 0;
     uint32 totalRequested = 0;
@@ -98,6 +104,11 @@ private:
     MD4Key makeCancelledKey(const uint8* hash) const;
 
     std::unordered_map<MD4Key, KnownFile*> m_filesMap;
+    /// Same records by file size, for findKnownFile(): a scan asks once per file on
+    /// disk. Size never changes for a record, name and date may.
+    std::unordered_multimap<uint64, KnownFile*> m_bySize;
+    void indexBySize(KnownFile* file);
+    void unindexBySize(const KnownFile* file);
     std::unordered_set<MD4Key> m_cancelledFiles;
     uint32 m_cancelledSeed = 0;
     uint32 m_lastSaveTime = 0;

@@ -225,7 +225,8 @@ RecheckFirewallResult Kademlia::recheckFirewalled()
 {
     if (!m_running || !m_prefs)
         return RecheckFirewallResult::NotRunning;
-    if (isRunningInLANMode())
+    // LAN mode only blocks the check when the user asked to skip it
+    if (shouldSkipFirewallChecks())
         return RecheckFirewallResult::LanMode;
 
     // Only one NodeFwCheckUDP lookup at a time — each one queries 11 contacts,

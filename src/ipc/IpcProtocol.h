@@ -58,9 +58,11 @@ enum class IpcMsgType : int {
     ClearAllSearches     = 154,  ///< []
     DownloadSearchFile   = 155,  ///< [hash: string, fileName: string, fileSize: int64, link: string, category: int] — link wins if set; category optional
     GetKnownTypes        = 156,  ///< [hashes: QCborArray of strings] → [types: QCborArray of ints]
+    /// [afterHash?, limit?] -> {files: [row], more, total}. Rows in hash order behind
+    /// afterHash; no fields = all rows in one reply (may not fit a frame for a large share).
     GetSharedFiles       = 160,
     SetSharedFilePriority = 161, ///< [hash: string, priority: int, isAuto: bool]
-    ReloadSharedFiles    = 162, ///< [] — rescan shared directories from disk
+    ReloadSharedFiles    = 162, ///< [rebuildMetaData?] — rescan shared directories, or re-read media tags
     GetEd2kLink          = 163, ///< [hashes: QCborArray of strings, hashset: bool,
                                 ///<  sourceHint: bool, html: bool]
                                 ///<   → [ok: bool, [links: QCborArray of strings,
@@ -607,7 +609,10 @@ enum class IpcMsgType : int {
     PushSearchResult     = 430,
     PushGlobalSearchProgress = 431,  ///< [searchID, asked, total, running] — ED2K global UDP sweep
     PushLogMessage       = 450,  ///< [logId, category, severity: QtMsgType, message, timestamp: unix s]
+    /// [rows: array] — rows of shared files that were added or changed, same shape as
+    /// a GetSharedFiles row. Batched; a file is sent at most a few times a second.
     PushSharedFileUpdate = 460,
+    PushSharedFileRemoved = 461,  ///< [hash] — no longer shared
     PushUploadUpdate     = 470,
     PushKadUpdate        = 480,
     PushKadSearchesChanged = 481,

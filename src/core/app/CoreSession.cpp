@@ -246,12 +246,15 @@ void CoreSession::initUploadPipeline()
         thePrefs.configDir() + QChar(u'/') + QString::fromUtf16(kKnown2MetFilename));
 
     // Initial scan of shared files
-    if (theApp.sharedFileList)
+    if (theApp.sharedFileList) {
         theApp.sharedFileList->reload();
+        theApp.sharedFileList->setWatchingEnabled(true);
+    }
 
     // MFC starts CAICHSyncThread once the shared list exists (srchybrid/EmuleDlg.cpp:641).
     if (theApp.sharedFileList) {
         m_aichSync = std::make_unique<AICHSyncThread>(thePrefs.configDir(), theApp.sharedFileList);
+        m_aichSync->setPurgeSource(theApp.knownFileList);
         m_aichSync->start(QThread::LowPriority);
     }
 }

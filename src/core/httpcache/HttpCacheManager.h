@@ -28,6 +28,8 @@
 
 #include "httpcache/HttpCacheOffer.h"
 #include "httpcache/HttpCachePublisher.h"
+#include "httpcache/HttpCacheReach.h"
+#include "net/Address.h"
 #include "prefs/Preferences.h"
 #include "stats/NetworkCounters.h"
 #include "utils/Types.h"
@@ -38,12 +40,14 @@
 #include <QString>
 
 #include <array>
+#include <functional>
 #include <vector>
 
 class QTimer;
 
 namespace eMule {
 
+class HostResolver;
 class HttpCacheClient;
 class KnownFile;
 class PartFile;
@@ -120,11 +124,17 @@ public:
     /// is the round-robin and the skip is the failover — deliberately the same
     /// mechanism, so a server dropping out costs nothing but its turn.
     ///
+    /// @p eligible, when set, is one more reason to skip a server: process() uses
+    /// it to pass over a server on a local address that nobody waiting for this
+    /// chunk could reach.
+    ///
     /// Public and static for the same reason backoffFor() is: the policy can then
     /// be pinned by a test with no upload queue, no sockets and no peers.
+    using ServerFilter = std::function<bool(const HttpCacheServerConfig&)>;
     [[nodiscard]] static int chooseServer(const QList<HttpCacheServerConfig>& servers,
                                           const QHash<QString, ServerHealth>& health,
-                                          quint64 cursor, qint64 now);
+                                          quint64 cursor, qint64 now,
+                                          const ServerFilter& eligible = {});
 
     /// Could a chunk go to this server right now? Configured, switched on, and
     /// either never failed or past the pause its last failure earned.
@@ -235,7 +245,10 @@ public:
     /// testable on its own: a literal host of either family is screened against
     /// isGoodIP() and the IP filter before a connection is spent on it, and a name is
     /// left to URLClient, which vets it once resolved.
-    [[nodiscard]] static bool urlIsAcceptable(const QString& url);
+    ///
+    /// @param sender  who pointed us there; null for a Kad record. A local host is
+    ///                only accepted in LAN mode from a local sender (HttpCacheReach.h).
+    [[nodiscard]] static bool urlIsAcceptable(const QString& url, const Address& sender);
 
 signals:
     void statsChanged();
@@ -301,6 +314,15 @@ private:
     /// entry whose server went sick from one whose blob is suspect.
     [[nodiscard]] bool serverIsCoolingDown(const QString& baseUrl) const;
     void offerToQueue(Entry& entry);
+
+    /// Who can reach the host of @p url. A name is looked up in the background:
+    /// Unknown until the answer is in, which the next tick simply picks up.
+    [[nodiscard]] CacheReach reachOfUrl(const QString& url) const;
+    void noteHostReach(const QString& host, CacheReach reach, qint64 now) const;
+
+    /// Peers of @p candidate that could fetch from a host of this reach.
+    [[nodiscard]] static size_t reachablePeerCount(const Candidate& candidate, CacheReach reach,
+                                                   bool lanMode);
     [[nodiscard]] bool sendOffer(UpDownClient* peer, Entry& entry);
     void handleReport(UpDownClient* sender, const HttpCacheReport& report);
 
@@ -330,6 +352,18 @@ private:
     void rollDailyBudget();
 
     QTimer* m_timer = nullptr;
+
+    /// Reach per URL host, literals included so each is logged once. Names are
+    /// re-resolved after kHostReachTtlSeconds; a failed lookup is retried sooner.
+    struct HostReach {
+        CacheReach reach = CacheReach::Unknown;
+        qint64 checkedAt = 0;
+        bool pending = false;
+    };
+    static constexpr qint64 kHostReachTtlSeconds = 600;
+    static constexpr qint64 kHostReachRetrySeconds = 60;
+    mutable QHash<QString, HostReach> m_hostReach;
+    HostResolver* m_reachResolver = nullptr;
 
     /// Published chunks, keyed by fileHash+part.
     QHash<QString, Entry> m_entries;

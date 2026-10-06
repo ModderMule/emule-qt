@@ -51,10 +51,11 @@ namespace {
 /// verify nothing. The stub second part is never written either way.
 constexpr uint64 kFileSize = PARTSIZE + 1000;
 
-/// Neither of these is on loopback, so "the peer got banned" and "the cache
-/// server got banned" can never turn out to be the same assertion.
-const Address kPeerAddress = Address::fromString(QStringLiteral("87.65.43.21"));
-const Address kOtherPeerAddress = Address::fromString(QStringLiteral("12.34.56.78"));
+/// On loopback, because the fake cache server is and a local URL is only fetched
+/// for a sender that is local too — but neither is 127.0.0.1, so "the peer got
+/// banned" and "the cache server got banned" can never be the same assertion.
+const Address kPeerAddress = Address::fromString(QStringLiteral("127.0.0.2"));
+const Address kOtherPeerAddress = Address::fromString(QStringLiteral("127.0.0.3"));
 
 /// The eD2K file hash of a hash set: MD4 over the concatenated part hashes.
 std::array<uint8, 16> fileHashOf(const std::vector<std::array<uint8, 16>>& parts)

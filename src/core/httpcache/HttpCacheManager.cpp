@@ -16,6 +16,7 @@
 #include "client/ClientList.h"
 #include "ipfilter/IPFilter.h"
 #include "net/Address.h"
+#include "net/HostResolver.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
 #include "transfer/DownloadQueue.h"
@@ -30,6 +31,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <utility>
 
@@ -88,6 +90,13 @@ bool statusNeedsOperatorAction(int status)
     return status == 401 || status == 403 || status == 411 || status == 413 || status == 429;
 }
 
+/// Where a peer is, for the local-address rule: the socket's far end when there
+/// is one, since a NATed LAN peer may report a public address of its own.
+Address peerReachAddress(const UpDownClient* client)
+{
+    return client->connectAddress().isNull() ? client->userAddress() : client->connectAddress();
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -96,6 +105,7 @@ bool statusNeedsOperatorAction(int status)
 
 HttpCacheManager::HttpCacheManager(QObject* parent)
     : QObject(parent)
+    , m_reachResolver(new HostResolver(this))
 {
     m_budgetDay = QDateTime::currentSecsSinceEpoch() / 86400;
 }
@@ -125,6 +135,11 @@ void HttpCacheManager::start()
                          server.keyId.isEmpty() ? QString()
                                                 : QStringLiteral(" (key %1)").arg(server.keyId),
                          server.enabled ? QString() : QStringLiteral(" [disabled]")));
+
+        // Starts the lookup for a named host now, so the first tick already knows
+        // whether this server is a local one.
+        if (server.enabled)
+            (void)reachOfUrl(server.baseUrl);
     }
 }
 
@@ -153,6 +168,9 @@ void HttpCacheManager::stop()
     m_publishCooldown.clear();
     m_serverHealth.clear();
     m_publishCursor = 0;
+
+    m_reachResolver->cancelAll();
+    m_hostReach.clear();
 }
 
 int HttpCacheManager::activeFetchCount() const
@@ -235,14 +253,23 @@ void HttpCacheManager::process()
     // keep being pointed at them.
     const QList<HttpCacheServerConfig> servers = thePrefs.httpCacheServers();
     const qint64 now = QDateTime::currentSecsSinceEpoch();
+    const bool lanMode = !thePrefs.filterLANIPs();
+    const size_t minClients = std::max<size_t>(thePrefs.httpCacheMinClients(), 1);
 
     for (const auto& candidate : findCandidates()) {
         if (m_activePublishes >= static_cast<int>(thePrefs.httpCacheMaxConcurrentPublishes()))
             break;
 
-        const int index = chooseServer(servers, m_serverHealth, m_publishCursor, now);
+        // A server on a local address is only worth the upload when enough of the
+        // peers waiting for this part are local too — and never outside LAN mode.
+        const auto eligible = [&](const HttpCacheServerConfig& server) {
+            return reachablePeerCount(candidate, reachOfUrl(server.baseUrl), lanMode)
+                   >= minClients;
+        };
+
+        const int index = chooseServer(servers, m_serverHealth, m_publishCursor, now, eligible);
         if (index < 0)
-            break;   // every configured server is sick, disabled or unconfigured
+            continue;   // no server for this part: all sick, or none its peers can reach
 
         publish(candidate, servers.at(index));
     }
@@ -293,7 +320,7 @@ bool HttpCacheManager::serverIsUsable(const HttpCacheServerConfig& server,
 
 int HttpCacheManager::chooseServer(const QList<HttpCacheServerConfig>& servers,
                                    const QHash<QString, ServerHealth>& health, quint64 cursor,
-                                   qint64 now)
+                                   qint64 now, const ServerFilter& eligible)
 {
     const auto count = static_cast<quint64>(servers.size());
     if (count == 0)
@@ -301,7 +328,8 @@ int HttpCacheManager::chooseServer(const QList<HttpCacheServerConfig>& servers,
 
     for (quint64 step = 0; step < count; ++step) {
         const int index = static_cast<int>((cursor + step) % count);
-        if (serverIsUsable(servers.at(index), health, now))
+        const auto& server = servers.at(index);
+        if (serverIsUsable(server, health, now) && (!eligible || eligible(server)))
             return index;
     }
 
@@ -328,6 +356,9 @@ HttpCacheManager::kadChunksForFile(const std::array<uint8, 16>& fileHash) const
         if (entry.offer.expiresAt == 0 || entry.offer.expiresAt < now + kExpiryMarginSeconds)
             continue;
         if (entry.offer.url.size() > KADHC_MAX_URL_LEN)
+            continue;
+        // A Kad record is read by strangers: nobody out there reaches a local host.
+        if (reachOfUrl(entry.offer.url) != CacheReach::Public)
             continue;
 
         result.push_back(entry.offer);
@@ -475,10 +506,15 @@ void HttpCacheManager::publish(const Candidate& candidate, const HttpCacheServer
     request.partOffset = static_cast<uint64>(candidate.partIndex) * PARTSIZE;
     request.partLength = PARTSIZE;
 
-    logInfo(QStringLiteral("HTTP Cache: publishing part %1 of %2 to %3 for %4 peers")
+    // Waiting for the part vs. able to use this server — they differ for a local one.
+    const size_t reachable =
+        reachablePeerCount(candidate, reachOfUrl(server.baseUrl), !thePrefs.filterLANIPs());
+
+    logInfo(QStringLiteral("HTTP Cache: publishing part %1 of %2 to %3 for %4 peers (%5 can reach it)")
                 .arg(candidate.partIndex)
                 .arg(candidate.file->fileName(), QUrl(server.baseUrl).host())
-                .arg(candidate.peers.size()));
+                .arg(candidate.peers.size())
+                .arg(reachable));
 
     m_publishing.insert(key, true);
     ++m_activePublishes;
@@ -643,9 +679,21 @@ void HttpCacheManager::offerToQueue(Entry& entry)
 
     const uint32 part = entry.offer.partIndex;
 
+    // Keyed on the URL actually handed out, not on the server we posted to: a
+    // backend may serve blobs from another host, and a relayed chunk has no server.
+    const CacheReach reach = reachOfUrl(entry.offer.url);
+    const bool lanMode = !thePrefs.filterLANIPs();
+    if (reach == CacheReach::Unknown || (reach != CacheReach::Public && !lanMode))
+        return;
+
     std::vector<UpDownClient*> targets;
-    const auto collect = [&targets, &entry, part](UpDownClient* client) {
+    const auto collect = [&targets, &entry, part, reach, lanMode](UpDownClient* client) {
         if (!client || !client->supportsHttpCache())
+            return;
+
+        // A local host is no use to a peer that is not local. Not recorded in
+        // offeredTo, so the peer is picked up should that ever change.
+        if (!cacheReachAllowsPeer(reach, peerReachAddress(client), lanMode))
             return;
 
         KnownFile* file = client->uploadFile();
@@ -874,7 +922,8 @@ void HttpCacheManager::addKadChunks(const std::vector<HttpCacheOffer>& chunks)
         if (m_kadBadUrls.contains(offer.url))
             continue;
 
-        if (!urlIsAcceptable(offer.url)) {
+        // No sender: a Kad record pointing at a local host is never for us.
+        if (!urlIsAcceptable(offer.url, Address{})) {
             logWarning(QStringLiteral("HTTP Cache: refusing a Kad chunk record pointing at %1")
                            .arg(offer.url));
             continue;
@@ -971,7 +1020,7 @@ void HttpCacheManager::handleOffer(UpDownClient* sender, const HttpCacheOffer& o
         return;
     }
 
-    if (!urlIsAcceptable(offer.url)) {
+    if (!urlIsAcceptable(offer.url, sender->connectAddress())) {
         logWarning(QStringLiteral("HTTP Cache: refusing offer from %1 pointing at %2")
                        .arg(sender->userName(), offer.url));
         decline(HttpCacheResult::BadOffer);
@@ -1240,7 +1289,7 @@ void HttpCacheManager::reply(UpDownClient* peer, const HttpCacheReport& report, 
         peer->sendPacket(std::move(packet));
 }
 
-bool HttpCacheManager::urlIsAcceptable(const QString& url)
+bool HttpCacheManager::urlIsAcceptable(const QString& url, const Address& sender)
 {
     const QUrl parsed(url, QUrl::StrictMode);
     if (!parsed.isValid() || parsed.host().isEmpty())
@@ -1273,7 +1322,12 @@ bool HttpCacheManager::urlIsAcceptable(const QString& url)
     if (!isGoodIP(literal))
         return false;
 
-    return !(theApp.ipFilter && theApp.ipFilter->isFiltered(literal));
+    if (theApp.ipFilter && theApp.ipFilter->isFiltered(literal))
+        return false;
+
+    // LAN mode lets a local literal through isGoodIP(); it still has to come from
+    // a local sender, or any peer could aim us at this machine or its LAN.
+    return cacheReachAllowsPeer(classifyCacheAddress(literal), sender, !thePrefs.filterLANIPs());
 }
 
 // ---------------------------------------------------------------------------
@@ -1355,6 +1409,78 @@ void HttpCacheManager::rollDailyBudget()
 
     m_budgetDay = today;
     m_publishedToday = 0;
+}
+
+CacheReach HttpCacheManager::reachOfUrl(const QString& url) const
+{
+    const QString host = QUrl(url).host().toLower();
+    if (host.isEmpty())
+        return CacheReach::Unknown;
+
+    const qint64 now = QDateTime::currentSecsSinceEpoch();
+
+    if (const auto it = m_hostReach.constFind(host); it != m_hostReach.constEnd()) {
+        // A refresh keeps answering with the old verdict until the new one is in.
+        const qint64 ttl = it->reach == CacheReach::Unknown ? kHostReachRetrySeconds
+                                                            : kHostReachTtlSeconds;
+        if (it->pending || now - it->checkedAt < ttl)
+            return it->reach;
+    }
+
+    // An IP literal or "localhost" needs no lookup and never goes stale.
+    if (const CacheReach literal = classifyCacheHostLiteral(host);
+        literal != CacheReach::Unknown) {
+        noteHostReach(host, literal, std::numeric_limits<qint64>::max());
+        return literal;
+    }
+
+    // Hosts of relayed offers are a stranger's to choose; keep the table bounded.
+    if (m_hostReach.size() >= 256)
+        m_hostReach.removeIf([](const auto& entry) { return !entry.value().pending; });
+
+    HostReach& entry = m_hostReach[host];
+    entry.pending = true;
+
+    // Every address counts: a name that also resolves to a LAN address is a LAN name.
+    m_reachResolver->resolve(host, HostResolver::Preference::Any,
+        [this, host](const HostResolver::Result& result) {
+            CacheReach reach = CacheReach::Unknown;
+            if (result.ok()) {
+                reach = CacheReach::Public;
+                for (const Address& addr : result.addresses)
+                    reach = strictestCacheReach(reach, classifyCacheAddress(addr));
+            }
+            noteHostReach(host, reach, QDateTime::currentSecsSinceEpoch());
+        });
+
+    return entry.reach;
+}
+
+void HttpCacheManager::noteHostReach(const QString& host, CacheReach reach, qint64 now) const
+{
+    HostReach& entry = m_hostReach[host];
+    const bool changed = entry.checkedAt == 0 || entry.reach != reach;
+    entry = {reach, now, false};
+
+    if (!changed)
+        return;
+
+    if (reach == CacheReach::Lan || reach == CacheReach::Loopback) {
+        logInfo(QStringLiteral("HTTP Cache: %1 is on a local address — used only for LAN "
+                               "peers, and only while LAN IP filtering is off")
+                    .arg(host));
+    } else if (reach == CacheReach::Unknown) {
+        logDebug(QStringLiteral("HTTP Cache: cannot resolve %1 — skipped for now").arg(host));
+    }
+}
+
+size_t HttpCacheManager::reachablePeerCount(const Candidate& candidate, CacheReach reach,
+                                            bool lanMode)
+{
+    return static_cast<size_t>(std::ranges::count_if(candidate.peers,
+        [reach, lanMode](const UpDownClient* peer) {
+            return cacheReachAllowsPeer(reach, peerReachAddress(peer), lanMode);
+        }));
 }
 
 } // namespace eMule

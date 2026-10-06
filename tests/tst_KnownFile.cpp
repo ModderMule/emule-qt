@@ -193,6 +193,7 @@ private slots:
     void createHash_emptyData();
     void createHash_smallData();
     void createHash_exactPartSize();
+    void createHash_shortDataIsAFailure();
     void createFromFile_smallFile();
     void createFromFile_zeroFile();
     void createFromFile_nonExistent();
@@ -750,6 +751,26 @@ void tst_KnownFile::createHash_smallData()
     KnownFile::createHash(buf, static_cast<uint64>(testData.size()), hash, nullptr);
 
     // Verify via direct MD4
+    MD4Hasher hasher;
+    hasher.add(testData.constData(), static_cast<std::size_t>(testData.size()));
+    hasher.finish();
+    QVERIFY(md4equ(hash, hasher.getHash()));
+}
+
+void tst_KnownFile::createHash_shortDataIsAFailure()
+{
+    // The file ended (or a read failed) before the promised length: the hash of what
+    // arrived is not the hash of the file, and used to be returned as if it were.
+    QByteArray testData(200 * 1024, 'T');
+    QBuffer buf(&testData);
+    buf.open(QIODevice::ReadOnly);
+
+    uint8 hash[16]{};
+    QVERIFY(!KnownFile::createHash(buf, static_cast<uint64>(testData.size()) + 1, hash, nullptr));
+
+    // all of it, in reads larger than the old 8 KB: same hash as in one piece
+    buf.seek(0);
+    QVERIFY(KnownFile::createHash(buf, static_cast<uint64>(testData.size()), hash, nullptr));
     MD4Hasher hasher;
     hasher.add(testData.constData(), static_cast<std::size_t>(testData.size()));
     hasher.finish();

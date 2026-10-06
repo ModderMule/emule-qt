@@ -638,9 +638,10 @@ void tst_HttpCacheLive::clientFetchesWholePart()
     std::array<uint8, 16> peerHash{};
     peerHash.fill(0x7E);
 
-    // No live peer behind this fetch; the address only matters if the part later
-    // fails MD4, which a real round trip through the real server does not.
-    QVERIFY(client->beginFetch(offer, &file, peerHash, Address::fromHostOrder(0x7E7E7E01)));
+    // No live peer behind this fetch. A loopback address, because the self-started
+    // server is on loopback and a local URL is only fetched for a local sender; it
+    // makes no difference against a public server.
+    QVERIFY(client->beginFetch(offer, &file, peerHash, Address::fromHostOrder(0x7F000002)));
     QVERIFY2(spy.wait(180'000), "fetch never finished");
 
     QCOMPARE(spy.first().at(1).value<HttpCacheResult>(), HttpCacheResult::Ok);

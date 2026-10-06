@@ -63,6 +63,9 @@
     <ClCompile Include="httpcache\HttpCacheOffer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="httpcache\HttpCacheReach.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="httpcache\HttpCachePublisher.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -379,6 +382,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="files\ShareableFile.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="files\SharedDirWatcher.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="files\SharedFileList.cpp">
@@ -860,6 +866,9 @@
     <ClInclude Include="files\SourceSaver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <QtMoc Include="files\SharedDirWatcher.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="files\SharedFileList.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -918,6 +927,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="httpcache\HttpCacheOffer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="httpcache\HttpCacheReach.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="httpcache\HttpCacheServerProbe.h">

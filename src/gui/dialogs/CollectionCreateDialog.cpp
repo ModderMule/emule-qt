@@ -4,6 +4,7 @@
 
 #include "dialogs/CollectionCreateDialog.h"
 #include "app/IpcClient.h"
+#include "utils/SharedFilesFetch.h"
 #include "controls/AbstractListView.h"
 
 #include "IpcMessage.h"
@@ -188,12 +189,9 @@ void CollectionCreateDialog::populateSharedFiles()
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
-    Ipc::IpcMessage msg(Ipc::IpcMsgType::GetSharedFiles);
-    m_ipc->sendRequest(std::move(msg), [this, self = QPointer<CollectionCreateDialog>(this)](const Ipc::IpcMessage& resp) {
-        if (!self || resp.type() != Ipc::IpcMsgType::Result)
+    fetchSharedFileRows(m_ipc, this, [this](bool ok, const QCborArray& arr) {
+        if (!ok)
             return;
-
-        const QCborArray arr = resp.fieldArray(1);
 
         // Hashes already in the right pane. The trees have one column; the hash
         // lives in UserRole (reading text(2) matched nothing, so Modify listed

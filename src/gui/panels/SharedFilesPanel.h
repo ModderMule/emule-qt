@@ -83,6 +83,11 @@ private:
     /// Populate the list from one directory on disk rather than from the share, so
     /// unshared files show up too and can be ticked. MFC's "All Directories" mode.
     void requestBrowseDirectory(const QString& dirPath);
+    /// Rows of shared files that were added or changed / a file that left the share.
+    void onSharedFilesPushed(const Ipc::IpcMessage& msg);
+    void onSharedFileRemovedPush(const Ipc::IpcMessage& msg);
+    /// Totals, header and the detail tabs, after the listed rows changed.
+    void afterSharedRowsChanged();
     /// Ask the daemon to share or unshare one file, then refetch.
     void sendSetFileShared(const QString& filePath, bool shared);
     void sendSetPriorityBatch(const QStringList& hashes, int priority, bool isAuto);
@@ -92,7 +97,7 @@ private:
     void updateContentTab();
     void updateEd2kTab();
     [[nodiscard]] static bool isArchiveFile(const QString& fileType, const QString& fileName);
-    void onReloadClicked();
+    void onReloadClicked(bool rebuildMetaData = false);
     void showPriorityMenu();
     void showFindDialog();
     void copyEd2kLink();
@@ -175,6 +180,12 @@ private:
     QProgressBar* m_barTotalTransferred = nullptr;
 
     // Cached aggregate totals from IPC for percentage computation
+    /// Period of the full re-fetch that backs the pushes up.
+    static constexpr int kResyncMs = 30'000;
+    /// The model holds the shared list (not a browsed directory, not nothing).
+    bool m_haveSnapshot = false;
+    int m_listFetchId = 0;   // the newest list fetch; older ones are dropped
+
     int64_t m_totalRequests = 0;
     int64_t m_totalAccepted = 0;
     int64_t m_totalTransferred = 0;

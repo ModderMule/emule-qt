@@ -133,6 +133,9 @@
     <ClCompile Include="utils\ViewSelection.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\SharedFilesFetch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\PanelPoller.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

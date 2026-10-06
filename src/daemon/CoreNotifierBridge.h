@@ -7,6 +7,7 @@
 /// SearchList, SharedFileList, and UploadQueue, then broadcasts
 /// corresponding IPC push messages to all connected GUI clients.
 
+#include "files/KnownFileList.h"
 #include "portmap/PortMapTypes.h"
 #include "server/ServerMsgType.h"
 #include "friends/FriendConnectProgress.h"
@@ -17,9 +18,11 @@
 #include <vector>
 #include <QImage>
 #include <QObject>
+#include <QTimer>
 #include <QString>
 
 #include <deque>
+#include <unordered_set>
 
 namespace eMule {
 
@@ -79,7 +82,9 @@ private slots:
     void onGlobalSearchProgress(uint32 searchID, uint32 asked, uint32 total, bool running);
 
     // SharedFileList signals
-    void onSharedFileAdded();
+    void onSharedFileChanged(const QByteArray& fileHash);
+    void onSharedFileRemoved(eMule::KnownFile* file);
+    void flushSharedFiles();
 
     // UploadQueue signals
     void onUploadChanged();
@@ -132,6 +137,13 @@ private:
     /// quadratic in the item count. Owned as a child so its timers stop before the
     /// core objects its builders read.
     Ipc::PushCoalescer* m_pushes = nullptr;
+
+    /// Shared files whose row has to go out again. Sent in batches by
+    /// flushSharedFiles(); the file is looked up by hash then, so one that left
+    /// meanwhile is simply skipped.
+    std::unordered_set<MD4Key> m_dirtySharedFiles;
+    QTimer m_sharedFlushTimer;
+    QTimer m_sharedRatesTimer;
 };
 
 } // namespace eMule

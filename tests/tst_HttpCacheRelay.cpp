@@ -49,7 +49,9 @@ namespace {
 /// verify nothing. The stub second part is never written either way.
 constexpr uint64 kFileSize = PARTSIZE + 1000;
 
-const Address kPeerAddress = Address::fromString(QStringLiteral("87.65.43.21"));
+/// On loopback like the fake server: a local URL is only fetched for, and only
+/// relayed to, a peer that is local too.
+const Address kPeerAddress = Address::fromString(QStringLiteral("127.0.0.2"));
 
 std::array<uint8, 16> fileHashOf(const std::vector<std::array<uint8, 16>>& parts)
 {
@@ -128,6 +130,7 @@ private slots:
     void relayNeedsNoCacheAccount();
     void relayCanBeTurnedOff();
     void aDeclinedOfferIsCountedAsOne();
+    void aLocalUrlFromAPublicPeerIsDeclined();
 
 private:
     /// Drive one offer end to end: fetch, then run MD4 by flushing. @p body is what the
@@ -363,6 +366,45 @@ void tst_HttpCacheRelay::aDeclinedOfferIsCountedAsOne()
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// LAN mode lets a local URL through, but only from a sender that is local too.
+// A peer out on the internet naming 127.0.0.1 is aiming us at our own machine.
+void tst_HttpCacheRelay::aLocalUrlFromAPublicPeerIsDeclined()
+{
+    m_peer->setConnectAddress(Address::fromString(QStringLiteral("87.65.43.21")));
+
+    HttpCacheOffer offer;
+    std::memcpy(offer.fileHash.data(), m_file->fileHash(), offer.fileHash.size());
+    offer.partIndex = 0;
+    offer.plainLength = PARTSIZE;
+    offer.cipherLength = PARTSIZE + 16;
+    offer.url = QStringLiteral("http://127.0.0.1:1/chunk");
+    offer.key = aesRandomKey();
+    offer.iv = aesRandomIv();
+    offer.cipherSha256 = QCryptographicHash::hash(QByteArrayLiteral("x"),
+                                                  QCryptographicHash::Sha256);
+    offer.expiresAt = 1800000000;
+    QVERIFY(offer.isWellFormed());
+
+    const auto packet = HttpCacheCodec::buildOffer(offer);
+    QVERIFY(packet != nullptr);
+    m_cache->handlePacket(m_peer.get(),
+                          reinterpret_cast<const uint8*>(packet->pBuffer), packet->size);
+
+    const HttpCacheCounters& c = m_cache->sessionCounters();
+    QCOMPARE(c.offersReceived, uint64(1));
+    QCOMPARE(c.offersDeclined, uint64(1));
+    QCOMPARE(m_cache->activeFetchCount(), 0);
+
+    // The same offer from a loopback peer is taken up — the refusal above was
+    // about who sent it, not about the URL.
+    m_peer->setConnectAddress(kPeerAddress);
+    m_cache->handlePacket(m_peer.get(),
+                          reinterpret_cast<const uint8*>(packet->pBuffer), packet->size);
+    QCOMPARE(c.offersReceived, uint64(2));
+    QCOMPARE(c.offersDeclined, uint64(1));
+    QCOMPARE(m_cache->activeFetchCount(), 1);
+}
 
 void tst_HttpCacheRelay::runOffer(const QByteArray& plaintext, uint32 expiresAt)
 {

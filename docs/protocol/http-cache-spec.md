@@ -383,6 +383,10 @@ requested. An offer is accepted only when all of the following hold:
    unspecified address (`0.0.0.0`, `::`) is refused outright. A hostname is vetted the same way plus
    the ban list once resolved, in `URLClient`, because the resolver's answer is the sender's to
    choose: a name pointing at `127.0.0.1` asks for exactly what a literal one is screened for.
+   Clearing `filterLANIPs` lets a local address past those rules, and it is then held to the
+   local-address rule of §8.3: accepted only from a sender that is local too, never from a Kad
+   record. The literal is tested up front in `urlIsAcceptable()`, a name once resolved in
+   `HttpCacheClient::acceptResolvedAddress()`, and that refusal is final — `BadOffer`, no retry.
 9. `expiresAt`, if non-zero, leaves at least 120 seconds.
 
 During the fetch the downloader additionally:
@@ -695,6 +699,36 @@ One consequence for §11: a file's Kad source record may now advertise chunks li
 different servers. Nothing in the record format cares — each descriptor already carries its own
 absolute URL — and neither does a downloader, which is handed a URL either way.
 
+### 8.3 Servers on a local address
+
+A cache server on loopback or a LAN address is reachable by nobody outside, so pointing an
+internet peer at it costs an upload, a packet and — for a peer holding a slot — its place in the
+queue, for nothing. Such a server is therefore usable only in **LAN mode** (`filterLANIPs` off, the
+same switch that declares a private network everywhere else) and only for peers that are local
+themselves. The rule lives in `src/core/httpcache/HttpCacheReach.h` and is applied in both
+directions:
+
+| Host of the chunk URL | Who may be pointed at it |
+|---|---|
+| public | anybody |
+| private, link-local, ULA | in LAN mode, a peer whose address is itself local |
+| loopback | in LAN mode, a peer on loopback |
+| a name not resolved yet | nobody, until the lookup answers |
+
+"Local" is the address class (`Address::isLan()`), not a subnet match against an interface, so
+routed LANs and VPNs count. A peer is judged by its connect address — the socket's far end —
+because a NATed LAN peer may report a public address of its own. A name is resolved in the
+background and classified by the narrowest of its addresses; the verdict is cached for ten minutes.
+
+**Uploader.** `chooseServer()` skips a server whose base URL is local unless at least `minClients`
+of the peers waiting for that part pass the rule — a skip like any other, so the rotation moves on
+to the next server. `offerToQueue()` applies the rule per peer, keyed on the URL actually handed
+out (a backend may serve blobs from another host, and a relayed chunk has no server of ours).
+A peer passed over is not recorded as told, so it is picked up if the mode changes. A chunk on a
+local host is never written into a Kad record (§11.3).
+
+**Downloader.** See §6 item 8.
+
 ---
 
 ## 9. Reserved but unimplemented
@@ -819,6 +853,8 @@ are silently stripped by a storing node, so a string name is both cheaper and sa
 - **Only chunks the publisher published itself.** A relayed chunk (§3.4) is a borrowed URL on
   somebody else's TTL, and a DHT record outlives the chunk, so relayed entries are never
   advertised.
+- **Only chunks on a public host.** A record is read by strangers, none of whom can reach a
+  loopback or LAN address (§8.3).
 - A node that cannot publish a source record at all — firewalled with neither a direct UDP
   callback nor a buddy — publishes no chunks either, even though its chunks would be perfectly
   fetchable. Two gates enforce this: `KnownFile::publishSrc()`

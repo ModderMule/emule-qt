@@ -240,9 +240,20 @@ public:
     [[nodiscard]] uint64 totalGapSizeInPart(uint32 part) const;
     [[nodiscard]] uint64 totalGapSize() const;
 
-    // Endgame: when remaining gaps fit in this many EMBLOCKSIZE blocks,
-    // allow multiple sources to request the same block simultaneously.
+    /// How close the download is to its end, for block selection.
+    ///  - Late: 90 % there. A source much slower than another gets short reservations,
+    ///    and a block whose holder has gone quiet may be given to a second source.
+    ///  - Endgame: 99.9 %, or what is left would take the current rate under 30 s, or
+    ///    it fits in ENDGAME_BLOCK_THRESHOLD blocks. A much faster source may also
+    ///    double up on a slow holder's block.
+    /// Never more than two holders per block; a healthy holder keeps it to itself.
+    enum class EndPhase { Normal, Late, Endgame };
+    [[nodiscard]] EndPhase endPhase() const;
     static constexpr int ENDGAME_BLOCK_THRESHOLD = 3;
+    static constexpr uint32 kStalledBlockMs = 15'000;   // holder delivered nothing for this long
+    static constexpr uint32 kSlowSourceFactor = 5;      // "much slower / faster"
+    static constexpr uint32 kSlowReservationSecs = 10;  // a slow source reserves this much time
+    static constexpr uint64 kMinSlowReservation = 16 * 1024;
     [[nodiscard]] EMFileSize completedSize() const { return m_completedSize; }
     [[nodiscard]] float percentCompleted() const { return m_percentCompleted; }
     [[nodiscard]] uint64 compressionGain() const { return m_compressionGain; }
@@ -278,6 +289,9 @@ public:
                                 Requested_Block_Struct* reqBlock,
                                 uint64 searchFrom = 0) const;
     bool removeBlockFromList(uint64 start, uint64 end);
+    /// Exactly this reservation. With two holders of one range, the range alone
+    /// does not say whose entry to drop.
+    bool removeBlockFromList(const Requested_Block_Struct* block);
     void removeAllRequestedBlocks();
 
     /// Claim every still-missing block of one part for a non-ed2k transfer.
@@ -524,6 +538,9 @@ private:
     void markPartCorrupted(uint32 partNumber);
     /// Trim [start, end] to a range nobody has requested or buffered; false if none is left.
     [[nodiscard]] bool shrinkToAvoidAlreadyRequested(uint64& start, uint64& end) const;
+    /// May @p sender take [start, end] although another source holds it? See EndPhase.
+    [[nodiscard]] bool maySecondSourceTake(const UpDownClient* sender, uint64 start, uint64 end,
+                                           EndPhase phase) const;
 
     // -- Private members ------------------------------------------------------
 

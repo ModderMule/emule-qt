@@ -10,10 +10,10 @@
 ///
 /// The thread only ever touches files on disk. Everything that reads or changes a
 /// KnownFile happens in the two slots below, on the thread this object lives in.
-///
-// ToDo: purge hashsets no shared or known file refers to (MFC AICHSyncThread.cpp:163-247).
-// It must not drop the sets of part files still downloading.
+/// 4. drops the sets no known, shared or downloading file refers to
+///    (MFC AICHSyncThread.cpp:163-247), when told where to look for those files.
 
+#include "AICHData.h"
 #include "utils/Types.h"
 
 #include <QByteArray>
@@ -24,10 +24,12 @@
 
 #include <atomic>
 #include <deque>
+#include <unordered_set>
 
 namespace eMule {
 
 class KnownFile;
+class KnownFileList;
 class SafeFile;
 class SharedFileList;
 
@@ -44,9 +46,17 @@ public:
     /// Request graceful shutdown; follow with wait().
     void requestStop();
 
+    /// Allow the purge: every file that may still need its set is in @p knownFiles, the
+    /// shared list or the download queue (looked up when the purge runs — it does not
+    /// exist yet when this thread is made). Without this call nothing is ever dropped.
+    void setPurgeSource(KnownFileList* knownFiles);
+
 signals:
     /// The index is loaded and the shared files were matched; @p filesToHash lack a set.
     void syncComplete(int filesToHash);
+
+    /// Unreferenced sets were dropped from known2_64.met.
+    void purged(uint dropped, quint64 bytes);
 
     /// A missing hashset was built (or not). Emitted after it was applied to the file.
     void fileHashed(const QByteArray& fileHash, bool success);
@@ -78,6 +88,8 @@ private:
     bool convertKnown2ToKnown264(SafeFile& targetFile);
     /// Give @p file the part hashes of a set that is in known2. Owner thread.
     void applyStoredHashSet(KnownFile* file);
+    /// The master hashes still referred to, or false when that cannot be told. Owner thread.
+    bool collectKeepSet(std::unordered_set<AICHHash>& keep) const;
 
     QString m_configDir;
     SharedFileList* m_sharedFiles;
@@ -87,6 +99,12 @@ private:
     QWaitCondition m_jobReady;
     std::deque<Job> m_jobs;
     bool m_jobsQueued = false;   // the owner thread has handed over its list
+
+    KnownFileList* m_knownFiles = nullptr;
+    bool m_purgeAllowed = false;
+    bool m_hasDuplicates = false;                // seen by loadIndex()
+    bool m_purgeQueued = false;                  // guarded by m_jobMutex, as m_keep
+    std::unordered_set<AICHHash> m_keep;
 };
 
 } // namespace eMule

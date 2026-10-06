@@ -27,6 +27,9 @@
     <ClCompile Include="DaemonApp.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="SharedFileRows.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="DaemonUsenetWebBackend.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

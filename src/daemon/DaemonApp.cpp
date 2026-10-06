@@ -134,7 +134,7 @@ bool DaemonApp::start()
 
     // Connect web server config changes from any IPC client
     connect(m_ipcServer.get(), &IpcServer::webServerConfigChanged,
-            this, &DaemonApp::restartWebServer);
+            this, &DaemonApp::onWebServerConfigChanged);
     connect(m_ipcServer.get(), &IpcServer::webTemplateReloadRequested, this, [this] {
         if (m_webServer)
             m_webServer->reloadTemplate();
@@ -337,38 +337,7 @@ void DaemonApp::startWebServer()
         return text;
     });
 
-    // The web UI and the REST API are two independent surfaces — either can be
-    // enabled without the other. The HTTP server always runs (config.enabled)
-    // because the GUI's preview stream needs it even when both surfaces are off.
-    WebServerConfig config;
-    config.enabled        = true;
-    config.port           = thePrefs.webServerPort();
-    config.webUiEnabled   = thePrefs.webServerEnabled();
-    config.restApiEnabled = thePrefs.webServerRestApiEnabled();
-
-    if (config.webUiEnabled || config.restApiEnabled) {
-        // Either surface needs the shared server + auth settings. The REST API
-        // authenticates with apiKey; the web UI uses session login. Populate all
-        // of it so REST works even with the UI off, and vice versa.
-        config.listenAddress       = thePrefs.webServerListenAddress();
-        config.apiKey              = thePrefs.webServerApiKey();
-        config.gzipEnabled         = thePrefs.webServerGzipEnabled();
-        config.corsAllowedOrigins  = thePrefs.webServerCorsAllowedOrigins();
-        config.templatePath        = thePrefs.webServerTemplatePath();
-        config.sessionTimeout      = thePrefs.webServerSessionTimeout();
-        config.httpsEnabled        = thePrefs.webServerHttpsEnabled();
-        config.certPath            = thePrefs.webServerCertPath();
-        config.keyPath             = thePrefs.webServerKeyPath();
-        config.adminPasswordHash   = thePrefs.webServerAdminPassword();
-        config.adminAllowHiLevFunc = thePrefs.webServerAdminAllowHiLevFunc();
-        config.guestEnabled        = thePrefs.webServerGuestEnabled();
-        config.guestPasswordHash   = thePrefs.webServerGuestPassword();
-    } else {
-        // Preview-only — the server runs solely for the GUI's preview stream, so
-        // keep it on localhost and expose neither surface.
-        config.listenAddress = QStringLiteral("127.0.0.1");
-        config.guestEnabled  = false;
-    }
+    const WebServerConfig config = WebServerConfig::fromPreferences(thePrefs);
 
     m_webServer->start(config);
 
@@ -599,6 +568,19 @@ void DaemonApp::stopWebServer()
     }
     if (m_coreSession)
         m_coreSession->updatePortMappings();
+}
+
+void DaemonApp::onWebServerConfigChanged()
+{
+    // Fired after every preference save. A restart ends all web sessions and changes
+    // the stream token, so only do it when a setting the server uses has changed.
+    if (m_webServer && m_webServer->isRunning()
+        && m_webServer->config() == WebServerConfig::fromPreferences(thePrefs)) {
+        if (m_coreSession)
+            m_coreSession->updatePortMappings();   // webServerUPnP may have flipped
+        return;
+    }
+    restartWebServer();
 }
 
 void DaemonApp::restartWebServer()

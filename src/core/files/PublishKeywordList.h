@@ -9,10 +9,13 @@
 #include "kademlia/KadUInt128.h"
 #include "utils/Types.h"
 
+#include <QHash>
 #include <QString>
 
 #include <ctime>
 #include <list>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace eMule {
@@ -34,7 +37,7 @@ public:
 
     void addRef(KnownFile* file);
     void removeRef(KnownFile* file);
-    void removeAllReferences() { m_files.clear(); }
+    void removeAllReferences() { m_files.clear(); m_fileSet.clear(); }
 
     /// Rotate the first @p count entries to the back (round-robin publishing).
     void rotateReferences(int count);
@@ -49,7 +52,8 @@ public:
 private:
     QString m_keyword;
     kad::UInt128 m_kadID;
-    std::vector<KnownFile*> m_files;
+    std::vector<KnownFile*> m_files;        // publish order (rotated)
+    std::unordered_set<KnownFile*> m_fileSet;   // same entries, for the dedupe
     time_t m_nextPublishTime = 0;
     uint32 m_publishedCount = 0;
 };
@@ -65,7 +69,8 @@ public:
     /// Extract words from file name and add file references.
     void addKeywords(KnownFile* file);
 
-    /// Remove file references from all keywords.
+    /// Remove the file from the keywords it was added under — those, not the ones its
+    /// name gives now, so a rename in between leaves nothing behind.
     void removeKeywords(KnownFile* file);
 
     /// Get the next keyword for round-robin publishing.
@@ -91,8 +96,17 @@ public:
     [[nodiscard]] int keywordCount() const { return static_cast<int>(m_keywords.size()); }
 
 private:
+    using KeywordIter = std::list<PublishKeyword>::iterator;
+
+    /// Erase one keyword, keeping the cursor and the index in step.
+    KeywordIter eraseKeyword(KeywordIter it);
+
     std::list<PublishKeyword> m_keywords;
-    std::list<PublishKeyword>::iterator m_nextKeywordIter = m_keywords.end();
+    KeywordIter m_nextKeywordIter = m_keywords.end();
+    /// Lowercased keyword -> its list entry (std::list iterators stay valid).
+    QHash<QString, KeywordIter> m_index;
+    /// The lowercased words each file is referenced under.
+    std::unordered_map<KnownFile*, std::vector<QString>> m_wordsOf;
     time_t m_nextPublishTime = 0;
 };
 
