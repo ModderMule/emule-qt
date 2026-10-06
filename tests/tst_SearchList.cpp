@@ -3,6 +3,7 @@
 
 #include "TestHelpers.h"
 #include "client/UpDownClient.h"
+#include "crypto/AICHData.h"
 #include "search/SearchList.h"
 #include "search/SearchFile.h"
 #include "search/SearchParams.h"
@@ -76,6 +77,9 @@ private slots:
     void addToList_newParent();
     void addToList_duplicate_merges();
     void addToList_duplicate_sameName_merges();
+    void addToList_aichRoots_data();
+    void addToList_aichRoots();
+    void addToList_newNameChildCountsItsSources();
     void addToList_kadOrigin_serverResultWins_data();
     void addToList_kadOrigin_serverResultWins();
     void addToList_kadOrigin_keptWhenAllAnswersAreKad();
@@ -178,6 +182,86 @@ void tst_SearchList::addToList_duplicate_merges()
     SearchFile* parent = list.searchFileByHash(hash, id);
     QVERIFY(parent != nullptr);
     QCOMPARE(parent->listChildCount(), uint32{2}); // original + new name
+}
+
+using ResultRows = QList<QPair<int, int>>;
+
+void tst_SearchList::addToList_aichRoots_data()
+{
+    // One row per result: name index and AICH root (0 = none), then what the parent ends with.
+    QTest::addColumn<ResultRows>("results");
+    QTest::addColumn<int>("parentRoot");
+
+    using R = ResultRows;
+    QTest::newRow("one root") << R{{0, 1}} << 1;
+    QTest::newRow("same name, same root") << R{{0, 1}, {0, 1}} << 1;
+    QTest::newRow("same name, late root is adopted") << R{{0, 0}, {0, 1}} << 1;
+    QTest::newRow("same name, different roots") << R{{0, 1}, {0, 2}} << 0;
+    QTest::newRow("a third answer cannot bring one back") << R{{0, 1}, {0, 2}, {0, 1}} << 0;
+    QTest::newRow("new name brings the first root") << R{{0, 0}, {1, 1}} << 1;
+    QTest::newRow("different names, same root") << R{{0, 1}, {1, 1}} << 1;
+    QTest::newRow("different names, different roots") << R{{0, 1}, {1, 2}} << 0;
+    QTest::newRow("conflict in one name beats a root in another") << R{{0, 1}, {0, 2}, {1, 1}} << 0;
+}
+
+// The parent's root is seeded as Verified by a download, and every source reporting
+// another root is then dropped. So one bogus answer arriving first must not win
+// (MFC SearchList.cpp:489-503, 548-600).
+void tst_SearchList::addToList_aichRoots()
+{
+    QFETCH(ResultRows, results);
+    QFETCH(int, parentRoot);
+
+    SearchList list;
+    SearchParams params;
+    const uint32 id = list.newSearch({}, params);
+
+    uint8 hash[16];
+    std::memset(hash, 0xA7, 16);
+
+    const auto root = [](int n) {
+        uint8 raw[kAICHHashSize];
+        std::memset(raw, 0x40 + n, sizeof(raw));
+        return AICHHash(raw);
+    };
+
+    for (const auto& [nameIndex, rootIndex] : results) {
+        const QByteArray packet = buildSingleResultPacket(
+            hash, QStringLiteral("name%1.avi").arg(nameIndex), 10000, 1);
+        SafeMemFile data(packet);
+        auto* file = new SearchFile(data, true, 0xC0A80001, 4661);
+        file->setSearchID(id);
+        if (rootIndex != 0)
+            file->fileIdentifier().setAICHHash(root(rootIndex));
+        list.addToList(file);
+    }
+
+    const SearchFile* parent = list.searchFileByHash(hash, id);
+    QVERIFY(parent != nullptr);
+    QCOMPARE(parent->fileIdentifier().hasAICHHash(), parentRoot != 0);
+    if (parentRoot != 0)
+        QCOMPARE(parent->fileIdentifier().getAICHHash(), root(parentRoot));
+}
+
+void tst_SearchList::addToList_newNameChildCountsItsSources()
+{
+    SearchList list;
+    SearchParams params;
+    const uint32 id = list.newSearch({}, params);
+
+    uint8 hash[16];
+    std::memset(hash, 0xA8, 16);
+
+    for (const auto& [name, sources] : { std::pair{QStringLiteral("a.avi"), 5u},
+                                         std::pair{QStringLiteral("b.avi"), 3u} }) {
+        const QByteArray packet = buildSingleResultPacket(hash, name, 10000, sources);
+        SafeMemFile data(packet);
+        auto* file = new SearchFile(data, true, 0xC0A80001, 4661);
+        file->setSearchID(id);
+        list.addToList(file);
+    }
+
+    QCOMPARE(list.foundSources(id), uint32{8});
 }
 
 void tst_SearchList::addToList_duplicate_sameName_merges()

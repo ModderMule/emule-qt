@@ -198,7 +198,7 @@ void Friend::updateFriendConnectionState(FriendConnectReport report)
         // moved — ask Kad where it is now, at most once every ten minutes.
         if (m_connectState == FriendConnectState::Connecting && hasKadID()) {
             auto* kad = kad::Kademlia::instance();
-            const uint32 now = static_cast<uint32>(getTickCount());
+            const uint64 now = getTickCount();
             if (kad && kad->isRunning() && kad->isConnected()
                 && (m_lastKadSearch == 0 || now >= m_lastKadSearch + MIN2MS(10)))
             {
@@ -374,7 +374,7 @@ void Friend::loadFromFile(FileDataIO& file)
     m_lastSeen = static_cast<std::time_t>(file.readUInt32());
     m_lastChatted = static_cast<std::time_t>(file.readUInt32());
 
-    const uint32 tagCount = file.readUInt32();
+    const uint32 tagCount = readTagCount(file, kMaxFileTags);
     for (uint32 i = 0; i < tagCount; ++i) {
         const Tag tag(file, false);
         switch (tag.nameId()) {

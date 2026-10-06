@@ -261,15 +261,15 @@ private:
     // Data rate tracking
     std::deque<uint64> m_averageDRList;       // bandwidth samples
     std::deque<uint64> m_averageFriendDRList;  // friend bandwidth
-    std::deque<uint32> m_averageTickList;       // timestamps
+    std::deque<uint64> m_averageTickList;       // timestamps
     uint64 m_averageDRSum = 0;
     uint32 m_datarate = 0;
     uint32 m_friendDatarate = 0;
-    uint32 m_lastCalculatedDataRateTick = 0;
+    uint64 m_lastCalculatedDataRateTick = 0;
 
     // Active client tracking
     std::deque<int> m_activeClientsList;
-    std::deque<uint32> m_activeClientsTickList;
+    std::deque<uint64> m_activeClientsTickList;
     int m_maxActiveClients = 0;
     int m_maxActiveClientsShortTime = 0;
     int m_highestNumberOfFullyActivatedSlotsSinceLastCall = 0;
@@ -278,22 +278,22 @@ private:
     uint32 m_successfulUpCount = 0;
     uint32 m_failedUpCount = 0;
     uint32 m_totalUploadTime = 0;
-    uint32 m_lastStartUpload = 0;
+    uint64 m_lastStartUpload = 0;
 
     /// Best score on the waiting list, refreshed by updateMaxClientScore() and read only by
     /// checkForTimeOver()'s score kick. Both are inert while thePrefs.transferFullChunks()
     /// is on, which is the default — MFC gates them the same way.
     uint64 m_maxScore = 0;
-    uint32 m_lastCalculatedMaxScore = 0;
+    uint64 m_lastCalculatedMaxScore = 0;
 
     /// Earliest tick at which the score kick may fire again. MFC seeds it with the current
     /// tick and pushes it 6 s ahead on every kick (srchybrid/UploadQueue.cpp:833), so a
     /// batch of slots cannot all be dropped against one stale max score.
-    uint32 m_removedClientByScore = 0;
+    uint64 m_removedClientByScore = 0;
 
     // 5 s cache behind getAverageCombinedFilePrioAndCredit(). A tick of 0 means "never
     // computed" — see the note there.
-    uint32 m_lastCalculatedAverageCombined = 0;
+    uint64 m_lastCalculatedAverageCombined = 0;
     float m_averageCombinedFilePrioAndCredit = 0.0f;
 
     // Components (not owned)

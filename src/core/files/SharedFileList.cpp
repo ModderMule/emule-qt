@@ -70,50 +70,12 @@ void HashingThread::runRehash(const Job& job)
 {
     logInfo(QStringLiteral("Rehashing part file: %1").arg(job.rehashPartPath));
 
-    // A file below PARTSIZE has no part hashes: its one part is checked against the
-    // file hash (MFC srchybrid/PartFile.cpp:1493-1495).
-    const bool singlePart = job.rehashPartHashes.empty();
-    const auto partCount = singlePart ? 1u : static_cast<uint32>(job.rehashPartHashes.size());
-
-    // Unread until proven either way: a part we could not read says nothing about the
-    // data, and the PartFile must not throw it away on that account.
-    QByteArray partOk(static_cast<qsizetype>(partCount), static_cast<char>(PartFile::RehashUnread));
-
-    QFile file(job.rehashPartPath);
-    if (!file.open(QIODevice::ReadOnly)) {
-        logWarning(QStringLiteral("Rehash: cannot open %1: %2")
-                       .arg(job.rehashPartPath, file.errorString()));
-        emit partFileRehashed(job.rehashFileHash, partOk, job.rehashToken);
-        return;
-    }
-
-    for (uint32 part = 0; part < partCount; ++part) {
-        const uint64 start = static_cast<uint64>(part) * PARTSIZE;
-        if (start >= job.rehashFileSize)
-            break;
-        const uint64 len = std::min<uint64>(PARTSIZE, job.rehashFileSize - start);
-
-        if (!file.seek(static_cast<qint64>(start)))
-            break;
-        const QByteArray data = file.read(static_cast<qint64>(len));
-        if (static_cast<uint64>(data.size()) != len) {
-            logWarning(QStringLiteral("Rehash: short read in %1 at part %2")
-                           .arg(job.rehashPartPath).arg(part));
-            break;   // the rest stays unread
-        }
-
-        std::array<uint8, 16> actual{};
-        KnownFile::createHashFromMemory(reinterpret_cast<const uint8*>(data.constData()),
-                                        static_cast<uint32>(len), actual.data(), nullptr);
-
-        const bool ok = singlePart
-            ? std::memcmp(actual.data(), job.rehashFileHash.constData(), 16) == 0
-            : actual == job.rehashPartHashes[part];
-        partOk[static_cast<qsizetype>(part)] =
-            static_cast<char>(ok ? PartFile::RehashOk : PartFile::RehashBad);
-
-        emit hashingProgress(static_cast<int>((part + 1) * 100 / std::max(1u, partCount)));
-    }
+    const QByteArray partOk = PartFile::verifyPartData(
+        job.rehashPartPath, job.rehashFileSize, job.rehashFileHash, job.rehashPartHashes,
+        [this](uint32 done, uint32 count) {
+            emit hashingProgress(static_cast<int>(done * 100 / std::max(1u, count)));
+            return true;
+        });
 
     emit partFileRehashed(job.rehashFileHash, partOk, job.rehashToken);
 }
@@ -985,7 +947,8 @@ void SharedFileList::addFilesFromDirectory(const QString& dir, const QString& sh
         // the growing file is briefly visible *inside the incoming directory*,
         // which is always shared. The copy carries this suffix until the final
         // in-place rename, so a scan racing it finds nothing to publish.
-        if (filename.endsWith(Preferences::kUsenetPartSuffix, Qt::CaseInsensitive))
+        if (filename.endsWith(Preferences::kUsenetPartSuffix, Qt::CaseInsensitive)
+            || filename.endsWith(Preferences::kCompletingSuffix, Qt::CaseInsensitive))
             continue;
 
         // The user unshared this one individually. This — not the m_unsharedFiles

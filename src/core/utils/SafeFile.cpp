@@ -234,21 +234,25 @@ void SafeFile::commit(bool sync)
         return;
 
     const std::string name = m_file.fileName().toStdString();
-    bool ok = m_file.flush();
-    if (ok && sync) {
-        const int fd = m_file.handle();
-#if defined(Q_OS_WIN)
-        ok = fd >= 0 && ::_commit(fd) == 0;
-#elif defined(Q_OS_MACOS)
-        // fsync() alone leaves the data in the drive cache on macOS.
-        ok = fd >= 0 && (::fcntl(fd, F_FULLFSYNC) == 0 || ::fsync(fd) == 0);
-#else
-        ok = fd >= 0 && ::fsync(fd) == 0;
-#endif
-    }
+    const bool ok = sync ? flushToDisk(m_file) : m_file.flush();
     m_file.close();
     if (!ok || m_file.error() != QFileDevice::NoError)
         throw FileException("Failed to commit file: " + name);
+}
+
+bool flushToDisk(QFile& file)
+{
+    if (!file.flush())
+        return false;
+    const int fd = file.handle();
+#if defined(Q_OS_WIN)
+    return fd >= 0 && ::_commit(fd) == 0;
+#elif defined(Q_OS_MACOS)
+    // fsync() alone leaves the data in the drive cache on macOS.
+    return fd >= 0 && (::fcntl(fd, F_FULLFSYNC) == 0 || ::fsync(fd) == 0);
+#else
+    return fd >= 0 && ::fsync(fd) == 0;
+#endif
 }
 
 void commitAndReplace(SafeFile& file, const QString& tmpPath, const QString& finalPath, bool sync)

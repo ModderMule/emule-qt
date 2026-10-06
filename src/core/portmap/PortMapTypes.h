@@ -37,16 +37,15 @@ enum class PortMapPurpose : uint8 { Ed2kTcp, Ed2kClientUdp, WebServer };
 /// Lifecycle of the subsystem as a whole, and of one mapping.
 ///
 /// `Degraded` is load-bearing rather than cosmetic: a mapping can be granted and
-/// still be unreachable, either because the external port differs from the
-/// internal one (eD2K advertises thePrefs.port() and has no external-port tag,
-/// so a mismatch is a silent LowID) or because the external address is CGNAT
-/// space. Reporting either as `Mapped` would tell the user "forwarded" next to a
-/// permanently firewalled client.
+/// still be unreachable, because the external address is CGNAT space. Reporting
+/// that as `Mapped` would tell the user "forwarded" next to a permanently
+/// firewalled client. A different external port is fine: it is the port we
+/// advertise (AppContext::advertisedTcpPort).
 enum class PortMapStatus : uint8 {
     Unknown,        ///< not started
     Disabled,       ///< switched off by preference
     Probing,        ///< backend race in flight
-    Mapped,         ///< every mapping granted, ports and address usable
+    Mapped,         ///< every mapping granted on a public address
     Degraded,       ///< granted, but not usable from the Internet
     NotMapped,      ///< no backend could map
     Failed,         ///< a backend answered and refused
@@ -87,8 +86,7 @@ struct PortMapping {
     PortMapMethod method = PortMapMethod::None;
     QByteArray    opaqueId;             ///< PCP nonce / IGD2 pinhole UniqueID
 
-    /// True when the router honoured the port we asked for. eD2K cannot
-    /// advertise anything else, so a false here means LowID.
+    /// True when the router honoured the port we asked for.
     [[nodiscard]] bool portMatches() const noexcept
     {
         return externalPort != 0 && externalPort == request.internalPort;
@@ -98,7 +96,7 @@ struct PortMapping {
     /// A CGNAT address (100.64.0.0/10) fails isPublicIP() and lands here.
     [[nodiscard]] bool isUsable() const
     {
-        return portMatches() && externalAddress.isPublicIP();
+        return externalPort != 0 && externalAddress.isPublicIP();
     }
 };
 

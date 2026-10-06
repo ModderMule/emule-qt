@@ -141,6 +141,10 @@
 #define CLIENTBANTIME               HR2MS(2)    // 2h
 #define TRACKED_CLEANUP_TIME        HR2MS(1)    // 1 hour
 #define KEEPTRACK_TIME              HR2MS(2)    // 2h
+// Inbound connections dropped before a hello: this many from one address inside the
+// window is a ban.
+#define HANDSHAKEFAIL_BAN_COUNT     10
+#define HANDSHAKEFAIL_WINDOW        HR2MS(1)
 #define LOCALSERVERREQUESTS         SEC2MS(20)
 #define DISKSPACERECHECKTIME        MIN2MS(15)
 #define CLIENTLIST_CLEANUP_TIME     MIN2MS(34)  // 34 min

@@ -9,10 +9,12 @@
 
 #include "net/EMSocket.h"
 
+#include <QPointer>
 #include <QString>
 
 namespace eMule {
 
+class ListenSocket;
 class UpDownClient;
 
 // ---------------------------------------------------------------------------
@@ -134,12 +136,14 @@ protected:
 
     UpDownClient* m_client = nullptr;
     PeerSocketState m_socketState = PeerSocketState::Other;
+    QPointer<ListenSocket> m_countedBy;   ///< Listener holding this socket's state count.
     uint32 m_timeoutTimer = 0;
     uint32 m_deleteTimer = 0;
     bool m_deleteThis = false;
     bool m_portTestCon = false;
     bool m_incoming = false;
     bool m_helloSeen = false;
+    bool m_portTestSeen = false;
 
 private:
     void onSocketConnected();

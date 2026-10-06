@@ -6,6 +6,9 @@
 /// point of PortMapper never touching ListenSocket/ClientUDPSocket directly:
 /// the whole state machine is reachable from a unit test.
 
+#include <QScopeGuard>
+#include "prefs/Preferences.h"
+#include "app/AppContext.h"
 #include "TestHelpers.h"
 #include "portmap/PortMapBackend.h"
 #include "portmap/PortMapper.h"
@@ -161,7 +164,8 @@ private slots:
     void race_probeAnswerAfterTheRoundClosesIsStillUsed();
     void race_lateProbeIsIgnoredOnceSomethingIsMapped();
 
-    void status_portMismatchIsDegradedNotMapped();
+    void status_portMismatchIsMappedAndAdvertised();
+    void advertisedPort_ignoresAnUnreachableMapping();
     void status_cgnatExternalAddressIsDegraded();
 
     void desired_diffReleasesRemovedAndAddsNew();
@@ -503,7 +507,7 @@ void tst_PortMapper::race_lateProbeIsIgnoredOnceSomethingIsMapped()
 // Status
 // ---------------------------------------------------------------------------
 
-void tst_PortMapper::status_portMismatchIsDegradedNotMapped()
+void tst_PortMapper::status_portMismatchIsMappedAndAdvertised()
 {
     PortMapper mapper;
     auto backend = std::make_unique<FakeBackend>(PortMapMethod::Pcp);
@@ -514,10 +518,54 @@ void tst_PortMapper::status_portMismatchIsDegradedNotMapped()
     mapper.start();
     settle(mapper);
 
-    // Granted, but eD2K can only advertise the internal port, so this is a
-    // LowID in practice and must not be reported as success.
-    QCOMPARE(mapper.status(), PortMapStatus::Degraded);
+    // N4: a grant on another port works, as long as that is the port we advertise.
+    QCOMPARE(mapper.status(), PortMapStatus::Mapped);
     QCOMPARE(mapper.externalPort(PortMapPurpose::Ed2kTcp, PortMapProtocol::Tcp), uint16(5662));
+
+    const uint16 oldTcp = thePrefs.port();
+    const uint16 oldUdp = thePrefs.udpPort();
+    thePrefs.setPort(4662);
+    thePrefs.setUdpPort(4672);
+    theApp.portMapper = &mapper;
+    const auto restore = qScopeGuard([oldTcp, oldUdp] {
+        theApp.portMapper = nullptr;
+        thePrefs.setPort(oldTcp);
+        thePrefs.setUdpPort(oldUdp);
+    });
+    QCOMPARE(theApp.advertisedTcpPort(), uint16(5662));
+    QCOMPARE(theApp.advertisedUdpPort(), uint16(5672));
+    QVERIFY(theApp.isOwnTcpPort(4662));   // a peer may still know the old one
+    QVERIFY(theApp.isOwnTcpPort(5662));
+    QVERIFY(!theApp.isOwnTcpPort(6662));
+
+    // Without a mapper it is simply the port we listen on
+    theApp.portMapper = nullptr;
+    QCOMPARE(theApp.advertisedTcpPort(), uint16(4662));
+    QCOMPARE(theApp.advertisedUdpPort(), uint16(4672));
+}
+
+// A mapping on an address nobody can reach must not change what we advertise.
+void tst_PortMapper::advertisedPort_ignoresAnUnreachableMapping()
+{
+    PortMapper mapper;
+    auto backend = std::make_unique<FakeBackend>(PortMapMethod::Pcp);
+    backend->setPortOffset(1000);
+    backend->setExternalAddress(Address::fromString(QString::fromLatin1(kCgnatIp)));
+    mapper.addBackendForTest(std::move(backend));
+    mapper.setDesiredMappings(defaultDesired());
+    mapper.start();
+    settle(mapper);
+    QCOMPARE(mapper.status(), PortMapStatus::Degraded);
+
+    const uint16 oldTcp = thePrefs.port();
+    thePrefs.setPort(4662);
+    theApp.portMapper = &mapper;
+    const auto restore = qScopeGuard([oldTcp] {
+        theApp.portMapper = nullptr;
+        thePrefs.setPort(oldTcp);
+    });
+    QCOMPARE(theApp.mappedTcpPort(), uint16(0));
+    QCOMPARE(theApp.advertisedTcpPort(), uint16(4662));
 }
 
 void tst_PortMapper::status_cgnatExternalAddressIsDegraded()

@@ -13,6 +13,7 @@
 #include "stats/Statistics.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
+#include "utils/TimeUtils.h"
 
 
 #include <QHostAddress>
@@ -49,7 +50,6 @@ ServerSocket::ServerSocket(bool manualSingleConnect, QObject* parent)
     : EMSocket(parent)
     , m_manualSingleConnect(manualSingleConnect)
 {
-    m_elapsedTimer.start();
 
     connect(this, &QAbstractSocket::connected, this, &ServerSocket::onSocketConnected);
     connect(this, &QAbstractSocket::disconnected, this, &ServerSocket::onSocketDisconnected);
@@ -130,7 +130,7 @@ void ServerSocket::sendPacket(std::unique_ptr<Packet> packet, bool controlPacket
     if (auto* stats = theApp.statistics)
         stats->addUpDataOverheadServer(packet->size);
 
-    m_lastTransmission = static_cast<uint32>(m_elapsedTimer.elapsed());
+    m_lastTransmission = getTickCount();
     EMSocket::sendPacket(std::move(packet), controlPacket, actualPayloadSize, forceImmediateSend);
 }
 
@@ -140,7 +140,7 @@ void ServerSocket::sendPacket(std::unique_ptr<Packet> packet, bool controlPacket
 
 bool ServerSocket::packetReceived(Packet* packet)
 {
-    m_lastTransmission = static_cast<uint32>(m_elapsedTimer.elapsed());
+    m_lastTransmission = getTickCount();
 
     if (auto* stats = theApp.statistics)
         stats->addDownDataOverheadServer(packet->size);
@@ -333,6 +333,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         // Parse tags
         try {
             SafeMemFile tagData(const_cast<uint8*>(packet + 26), size - 26);
+            checkTagCount(tagData, tagCount, kMaxWireTags);
             for (uint32 i = 0; i < tagCount; ++i) {
                 Tag tag(tagData, true);
                 if (tag.nameId() == ST_SERVERNAME && tag.isStr())
@@ -587,7 +588,7 @@ void ServerSocket::onSocketConnected()
                 .arg(m_curServer ? m_curServer->name() : QStringLiteral("?"))
                 .arg(Endpoint(Address::fromQHostAddress(peerAddress()), peerPort()).toString())
                 .arg(isServerCryptEnabledConnection()));
-    m_lastTransmission = static_cast<uint32>(m_elapsedTimer.elapsed());
+    m_lastTransmission = getTickCount();
 
     if (isServerCryptEnabledConnection()) {
         // Defer WaitForLogin until DH handshake completes —

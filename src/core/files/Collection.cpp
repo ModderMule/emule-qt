@@ -104,7 +104,7 @@ bool Collection::initFromFile(const QString& filePath, const QString& fileName)
             const uint32 version = mem.readUInt32();
             if (version == kCollectionFileVersion1 || version == kCollectionFileVersion2) {
                 // Read header tags
-                const uint32 headerTagCount = mem.readUInt32();
+                const uint32 headerTagCount = readTagCount(mem, kMaxWireTags);
                 for (uint32 i = 0; i < headerTagCount; ++i) {
                     Tag tag(mem, true);
                     switch (tag.nameId()) {

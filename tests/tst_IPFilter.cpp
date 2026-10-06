@@ -1,6 +1,7 @@
 /// @file tst_IPFilter.cpp
 /// @brief Tests for ipfilter/IPFilter — loading, parsing, sort/merge, save/load roundtrip.
 
+#include <random>
 #include "TestHelpers.h"
 #include "ipfilter/IPFilter.h"
 
@@ -29,6 +30,9 @@ private slots:
     void sortAndMerge_adjacent_sameLevel();
     void sortAndMerge_adjacent_differentLevel();
     void sortAndMerge_duplicate_keepsLowestLevel();
+    void sortAndMerge_threeWayNestedStaysSorted();
+    void sortAndMerge_matchesBruteForce();
+    void sortAndMerge_rangeEndingAtTopAddress();
     void saveAndLoad_roundTrip();
     void loadFromFile_realWorld_filterDat();
     void loadFromFile_realWorld_peerGuardian();
@@ -177,6 +181,72 @@ void tst_IPFilter::sortAndMerge_duplicate_keepsLowestLevel()
 
     QCOMPARE(filter.entryCount(), 1);
     QCOMPARE(filter.entries()[0].level, static_cast<uint32>(50));
+}
+
+void tst_IPFilter::sortAndMerge_threeWayNestedStaysSorted()
+{
+    IPFilter filter;
+    filter.addIPRange(0, 100, 50, "outer");
+    filter.addIPRange(10, 20, 200, "inner A");
+    filter.addIPRange(15, 30, 200, "inner B");
+    filter.sortAndMerge();
+
+    // The strict outer range covers everything, so the weaker inner ones vanish.
+    QCOMPARE(filter.entryCount(), 1);
+    QCOMPARE(filter.entries()[0].start, uint32{0});
+    QCOMPARE(filter.entries()[0].end, uint32{100});
+    QCOMPARE(filter.entries()[0].level, uint32{50});
+}
+
+void tst_IPFilter::sortAndMerge_matchesBruteForce()
+{
+    struct Range { uint32 start, end, level; };
+    std::mt19937 rng(20261006);
+
+    for (int round = 0; round < 300; ++round) {
+        std::vector<Range> ranges;
+        IPFilter filter;
+        const int n = 2 + static_cast<int>(rng() % 9);
+        for (int i = 0; i < n; ++i) {
+            uint32 a = rng() % 64, b = rng() % 64;
+            if (a > b)
+                std::swap(a, b);
+            const uint32 level = 10 * (1 + rng() % 4);
+            ranges.push_back({a, b, level});
+            filter.addIPRange(a, b, level, "r");
+        }
+        filter.sortAndMerge();
+
+        const auto& out = filter.entries();
+        for (size_t i = 1; i < out.size(); ++i)
+            QVERIFY2(out[i - 1].end < out[i].start, "segments must be sorted and disjoint");
+
+        for (uint32 addr = 0; addr < 66; ++addr) {
+            uint32 want = UINT32_MAX;
+            for (const Range& r : ranges)
+                if (addr >= r.start && addr <= r.end)
+                    want = std::min(want, r.level);
+            uint32 got = UINT32_MAX;
+            for (const auto& e : out)
+                if (addr >= e.start && addr <= e.end)
+                    got = e.level;
+            QCOMPARE(got, want);
+        }
+    }
+}
+
+void tst_IPFilter::sortAndMerge_rangeEndingAtTopAddress()
+{
+    IPFilter filter;
+    filter.addIPRange(0xFFFFFF00u, 0xFFFFFFFFu, 100, "top");
+    filter.addIPRange(0xFFFFFF80u, 0xFFFFFFFFu, 50, "top half");
+    filter.sortAndMerge();
+
+    QCOMPARE(filter.entryCount(), 2);
+    QCOMPARE(filter.entries()[0].end, 0xFFFFFF7Fu);
+    QCOMPARE(filter.entries()[1].start, 0xFFFFFF80u);
+    QCOMPARE(filter.entries()[1].end, 0xFFFFFFFFu);
+    QCOMPARE(filter.entries()[1].level, uint32{50});
 }
 
 void tst_IPFilter::saveAndLoad_roundTrip()

@@ -9,6 +9,7 @@
 #include "net/Address.h"
 #include "stats/Statistics.h"
 #include "server/ServerConnect.h"
+#include "prefs/Preferences.h"
 #include "server/ServerList.h"
 #include "server/Server.h"
 #include "net/ServerSocket.h"
@@ -164,6 +165,8 @@ private slots:
 
     // Timeout checking
     void checkForTimeout_removesTimedOut();
+    void checkForTimeout_obfuscatedStallRetriesPlain_data();
+    void checkForTimeout_obfuscatedStallRetriesPlain();
 
     // State queries: isLocalServer
     void isLocalServer_matches();
@@ -674,6 +677,66 @@ void tst_ServerConnect::checkForTimeout_removesTimedOut()
     QVERIFY(!conn.isConnecting());
 }
 
+void tst_ServerConnect::checkForTimeout_obfuscatedStallRetriesPlain_data()
+{
+    QTest::addColumn<bool>("cryptRequired");
+    QTest::addColumn<int>("expectedDials");
+    QTest::newRow("plain retry allowed") << false << 2;
+    QTest::newRow("obfuscation required") << true << 1;
+}
+
+void tst_ServerConnect::checkForTimeout_obfuscatedStallRetriesPlain()
+{
+    QFETCH(bool, cryptRequired);
+    QFETCH(int, expectedDials);
+
+    // Accepts and never answers: the obfuscated handshake stalls until the timeout.
+    QTcpServer tcpServer;
+    QVERIFY(tcpServer.listen(QHostAddress::LocalHost, 0));
+
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);        // lets the loopback server into the list
+    const auto restore = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    ServerList list;
+    auto owned = std::make_unique<Server>(htonl(0x7F000001), tcpServer.serverPort());
+    owned->setTCPFlags(SrvTcpFlag::TcpObfuscation);
+    owned->setObfuscationPortTCP(tcpServer.serverPort());
+    Server* srv = list.addServer(std::move(owned));
+    QVERIFY(srv);
+
+    ServerConnectConfig cfg = makeTestConfig();
+    cfg.connectionTimeout = 50;
+    cfg.reconnectOnDisconnect = false;
+    cfg.cryptLayerPreferred = true;
+    cfg.cryptLayerRequired = cryptRequired;
+
+    ServerConnect conn(list);
+    conn.setConfig(cfg);
+    conn.connectToServer(srv, false, false);
+    QVERIFY(conn.isConnecting());
+
+    int dials = 0;
+    const auto drain = [&] {
+        while (tcpServer.waitForNewConnection(100)) {
+            ++dials;
+            tcpServer.nextPendingConnection()->setParent(&tcpServer);
+        }
+    };
+
+    drain();
+    QTest::qWait(100);
+    conn.checkForTimeout();         // obfuscated attempt timed out
+    drain();
+    QCOMPARE(conn.isConnecting(), !cryptRequired);
+
+    QTest::qWait(100);
+    conn.checkForTimeout();         // the plain retry times out too: now give up
+    drain();
+    QVERIFY(!conn.isConnecting());
+    QCOMPARE(dials, expectedDials);
+}
+
 // ---------------------------------------------------------------------------
 // Tests: isLocalServer
 // ---------------------------------------------------------------------------
@@ -985,7 +1048,7 @@ void tst_ServerConnect::statistics_timeAndReconnectsAcrossTwoConnections()
     peer->abort();
     QTRY_VERIFY_WITH_TIMEOUT(!conn.isConnected(), 5000);
 
-    QCOMPARE(stats->serverConnectTime(), uint32{0});   // the clock stopped
+    QCOMPARE(stats->serverConnectTime(), uint64{0});   // the clock stopped
     QCOMPARE(stats->thisServerDuration(), uint32{0});
     const uint32 firstSession = stats->serverDuration();
     QVERIFY2(firstSession >= 3, qPrintable(QString::number(firstSession)));
@@ -997,7 +1060,7 @@ void tst_ServerConnect::statistics_timeAndReconnectsAcrossTwoConnections()
 
     stats->setServerConnectTime(stats->serverConnectTime() - SEC2MS(5));
     QVERIFY(conn.disconnect());
-    QCOMPARE(stats->serverConnectTime(), uint32{0});
+    QCOMPARE(stats->serverConnectTime(), uint64{0});
     QVERIFY2(stats->serverDuration() >= firstSession + 5,
              qPrintable(QString::number(stats->serverDuration())));
 

@@ -67,7 +67,7 @@ bool UpDownClient::askForDownload()
     if (m_socket && m_socket->isConnected()) {
         // Already connected — none of the special cases below can apply, so just stamp the
         // clock and go. MFC srchybrid/DownloadClient.cpp:185-186.
-        m_lastTriedToConnect = static_cast<uint32>(getTickCount());
+        m_lastTriedToConnect = getTickCount();
     } else {
         if (theApp.listenSocket && theApp.listenSocket->tooManySockets()) {
             // A real state rather than a bare false, so the source shows why it is idle and
@@ -82,7 +82,7 @@ bool UpDownClient::askForDownload()
         // window plus 20 minutes per source, both in PartFile::process(). The one-minute
         // gate that used to live here was ours, and only needed because process() had
         // neither of those.
-        m_lastTriedToConnect = static_cast<uint32>(getTickCount());
+        m_lastTriedToConnect = getTickCount();
 
         if (hasLowID() && lastAskedTime() > 0) {
             // It is already on *our* upload queue, so it will re-ask us of its own accord
@@ -133,9 +133,9 @@ bool UpDownClient::isSourceRequestAllowed(PartFile* partFile, bool sourceExchang
     if (!extProtocolAvailable() || !(supportsSourceExchange2() || m_sourceExchange1Ver > 1))
         return false;
 
-    const uint32 curTick = static_cast<uint32>(getTickCount()) + CONNECTION_LATENCY;
-    const uint32 timePassedClient = curTick - m_lastAskedForSources;
-    const uint32 timePassedFile = curTick - partFile->lastAnsweredTime();
+    const uint64 curTick = getTickCount() + CONNECTION_LATENCY;
+    const uint64 timePassedClient = curTick - m_lastAskedForSources;
+    const uint64 timePassedFile = curTick - partFile->lastAnsweredTime();
     const bool neverAskedBefore = (m_lastAskedForSources == 0);
 
     // A file we are not currently asking this peer about would gain one source if it
@@ -217,7 +217,7 @@ void UpDownClient::sendFileRequest()
             m_reqFile->fileIdentifier().writeIdentifier(data);
             opcode = OP_MULTIPACKET_EXT2;
         } else {
-            data.writeHash16(m_reqUpFileId.data());
+            data.writeHash16(m_reqFile->fileHash());
             if (supportExtMultiPacket()) {
                 data.writeUInt64(static_cast<uint64>(m_reqFile->fileSize()));
                 opcode = OP_MULTIPACKET_EXT;
@@ -273,7 +273,7 @@ void UpDownClient::sendFileRequest()
         // OP_REQUESTFILENAME with extended info
         {
             SafeMemFile fnData;
-            fnData.writeHash16(m_reqUpFileId.data());
+            fnData.writeHash16(m_reqFile->fileHash());
             if (extendedRequestsVer() > 0) {
                 m_reqFile->writePartStatus(fnData);
                 if (extendedRequestsVer() > 1)
@@ -287,7 +287,7 @@ void UpDownClient::sendFileRequest()
         // MFC: unconditionally included when PeerCache is not active.
         {
             SafeMemFile idData;
-            idData.writeHash16(m_reqUpFileId.data());
+            idData.writeHash16(m_reqFile->fileHash());
             auto idPacket = std::make_unique<Packet>(idData, OP_EDONKEYPROT, OP_SETREQFILEID);
             sendPacket(std::move(idPacket));
         }
@@ -304,11 +304,11 @@ void UpDownClient::sendFileRequest()
                 sxPacket->pBuffer[0] = static_cast<char>(
                     supportsExtendedXS() ? SOURCEEXCHANGEEXT_VERSION : SOURCEEXCHANGE2_VERSION);
                 pokeUInt16(reinterpret_cast<uint8*>(sxPacket->pBuffer + 1), 0);
-                std::memcpy(sxPacket->pBuffer + 3, m_reqUpFileId.data(), 16);
+                std::memcpy(sxPacket->pBuffer + 3, m_reqFile->fileHash(), 16);
                 sendPacket(std::move(sxPacket));
             } else {
                 auto sxPacket = std::make_unique<Packet>(OP_REQUESTSOURCES, 16, OP_EMULEPROT);
-                std::memcpy(sxPacket->pBuffer, m_reqUpFileId.data(), 16);
+                std::memcpy(sxPacket->pBuffer, m_reqFile->fileHash(), 16);
                 sendPacket(std::move(sxPacket));
             }
             m_reqFile->setLastAnsweredTimeTimeout();
@@ -318,7 +318,7 @@ void UpDownClient::sendFileRequest()
         // AICH file hash request
         if (isSupportingAICH()) {
             auto aichPacket = std::make_unique<Packet>(OP_AICHFILEHASHREQ, 16, OP_EMULEPROT);
-            std::memcpy(aichPacket->pBuffer, m_reqUpFileId.data(), 16);
+            std::memcpy(aichPacket->pBuffer, m_reqFile->fileHash(), 16);
             sendPacket(std::move(aichPacket));
         }
     }
@@ -344,7 +344,7 @@ void UpDownClient::sendStartupLoadReq()
     m_unaskQueueRankRecv = 0;
 
     auto packet = std::make_unique<Packet>(OP_STARTUPLOADREQ, 16);
-    std::memcpy(packet->pBuffer, m_reqUpFileId.data(), 16);
+    std::memcpy(packet->pBuffer, m_reqFile->fileHash(), 16);
     packet->prot = OP_EDONKEYPROT;
     sendPacket(std::move(packet));
     setDownloadState(DownloadState::OnQueue);
@@ -565,7 +565,7 @@ void UpDownClient::processAcceptUpload()
 
         if (m_downloadState == DownloadState::OnQueue) {
             setDownloadState(DownloadState::Downloading);
-            m_downStartTime = static_cast<uint32>(getTickCount());
+            m_downStartTime = getTickCount();
 
             logDebug(QStringLiteral("processAcceptUpload: state → Downloading, sending block requests"));
             sendBlockRequests();
@@ -679,9 +679,12 @@ void UpDownClient::sendBlockRequests()
         return;
     }
 
+    if (!m_reqFile)
+        return;
+
     // MFC resets the block-receive timer here to prevent download timeout
     // before the first block arrives (especially on slow connections)
-    m_lastBlockReceived = static_cast<uint32>(getTickCount());
+    m_lastBlockReceived = getTickCount();
 
     // Dynamic block count based on download speed (MFC SendBlockRequests logic).
     // Fast sources pipeline more blocks to avoid round-trip stalls; slow sources
@@ -746,7 +749,7 @@ void UpDownClient::sendBlockRequests()
 
     // Build request packet: hash + 3 start offsets + 3 end offsets
     SafeMemFile data;
-    data.writeHash16(m_reqUpFileId.data());
+    data.writeHash16(m_reqFile->fileHash());
 
     for (int i = 0; i < 3; ++i) {
         const uint64 start = (i < nr) ? pblock[i]->block->startOffset : 0;
@@ -825,7 +828,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
         return;
     }
 
-    m_lastBlockReceived = static_cast<uint32>(getTickCount());
+    m_lastBlockReceived = getTickCount();
 
     // Parse the packet header using SafeMemFile, matching MFC approach.
     // Header layout depends on packed vs. unpacked and 32-bit vs. 64-bit offsets:
@@ -889,7 +892,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
     // peer at, and the same key the ident gate in score() uses. Without this call the whole
     // credit system is inert — scoreRatio() stays at 1.0 and clients.met never fills.
     if (m_credits)
-        m_credits->addDownloaded(uTransferredFileDataSize, m_userAddress.toNetworkUint32());
+        m_credits->addDownloaded(uTransferredFileDataSize, m_userAddress);
 
     // Move end back by one (MFC uses inclusive end offset)
     --nEndPos;
@@ -1046,7 +1049,7 @@ void UpDownClient::addPayloadDown(uint64 bytes)
     m_curSessionPayloadDown += bytes;
 
     if (m_credits)
-        m_credits->addDownloaded(static_cast<uint32>(bytes), m_userAddress.toNetworkUint32());
+        m_credits->addDownloaded(static_cast<uint32>(bytes), m_userAddress);
 }
 
 // ===========================================================================
@@ -1087,7 +1090,7 @@ void UpDownClient::sendCancelTransfer()
 void UpDownClient::startDownload()
 {
     setDownloadState(DownloadState::Downloading);
-    m_downStartTime = static_cast<uint32>(getTickCount());
+    m_downStartTime = getTickCount();
     m_sentCancelTransfer = false;
     m_lastPartAsked = UINT16_MAX;   // fresh chunk pick, MFC StartDownload
     sendBlockRequests();
@@ -1143,7 +1146,7 @@ void UpDownClient::sendHashSetRequest()
         m_reqFile->setMD4HashsetNeeded(false);
 
         SafeMemFile data;
-        data.writeHash16(m_reqUpFileId.data());
+        data.writeHash16(m_reqFile->fileHash());
         auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_HASHSETREQUEST);
         sendPacket(std::move(packet));
     }
@@ -1157,7 +1160,7 @@ void UpDownClient::sendHashSetRequest()
 
 uint32 UpDownClient::calculateDownloadRate()
 {
-    const uint32 curTick = static_cast<uint32>(getTickCount());
+    const uint64 curTick = getTickCount();
 
     // Drain accumulator into one sample per tick (MFC pattern)
     m_averageDDR.push_back({m_downDataRateMS, curTick});
@@ -1171,7 +1174,7 @@ uint32 UpDownClient::calculateDownloadRate()
     }
 
     if (m_averageDDR.size() > 1) {
-        const uint32 elapsed = curTick - m_averageDDR.front().timestamp;
+        const auto elapsed = static_cast<uint32>(curTick - m_averageDDR.front().timestamp);
         if (elapsed > 0)
             m_downDatarate = static_cast<uint32>((m_sumForAvgDownDataRate * 1000) / elapsed);
         else
@@ -1192,7 +1195,7 @@ void UpDownClient::checkDownloadTimeout()
     if (m_downloadState != DownloadState::Downloading)
         return;
 
-    const uint32 curTick = static_cast<uint32>(getTickCount());
+    const uint64 curTick = getTickCount();
 
     if (m_lastBlockReceived == 0)
         m_lastBlockReceived = curTick;
@@ -1265,7 +1268,21 @@ void UpDownClient::udpReaskFNF()
 {
     m_udpPending = false;
 
-    // File not found — remove source
+    // MFC DownloadClient.cpp:1313-1335. Not while it is sending us data.
+    if (m_downloadState == DownloadState::Downloading)
+        return;
+
+    if (m_reqFile)
+        m_reqFile->deadSourceList().addDeadSource(deadSourceKey(), hasLowID());
+
+    if (m_downloadState == DownloadState::OnQueue
+        || m_downloadState == DownloadState::NoNeededParts)
+    {
+        dontSwapTo(m_reqFile);
+        if (swapToAnotherFile(QStringLiteral("Source says it doesn't have the file (UDP)"),
+                              true, true, true, nullptr, false, false))
+            return;
+    }
     if (theApp.downloadQueue)
         theApp.downloadQueue->removeSource(this);
     setDownloadState(DownloadState::None);
@@ -1505,9 +1522,6 @@ bool UpDownClient::doSwap(PartFile* swapTo, bool removeCompletely, const QString
 
     // Set the new request file
     m_reqFile = swapTo;
-    if (m_reqFile->fileHash()) {
-        md4cpy(m_reqUpFileId.data(), m_reqFile->fileHash());
-    }
 
     // Add to new file's source list
     swapTo->addSource(this);
@@ -1580,7 +1594,7 @@ void UpDownClient::dontSwapTo(PartFile* file)
 
     FileStamp stamp;
     stamp.file = file;
-    stamp.timestamp = static_cast<uint32>(getTickCount());
+    stamp.timestamp = getTickCount();
     m_dontSwap.push_back(stamp);
 }
 
@@ -1593,7 +1607,7 @@ bool UpDownClient::isSwapSuspended(const PartFile* file, bool allowShortReaskTim
     if (!file)
         return false;
 
-    const uint32 curTick = static_cast<uint32>(getTickCount());
+    const uint64 curTick = getTickCount();
 
     for (const auto& stamp : m_dontSwap) {
         if (stamp.file == file) {
@@ -1617,13 +1631,13 @@ bool UpDownClient::recentlySwappedForSourceExchange() const
 {
     if (m_lastSwapForSourceExchangeTick == 0)
         return false;
-    const uint32 curTick = static_cast<uint32>(getTickCount());
+    const uint64 curTick = getTickCount();
     return (curTick - m_lastSwapForSourceExchangeTick) < SEC2MS(30);
 }
 
 void UpDownClient::setSwapForSourceExchangeTick()
 {
-    m_lastSwapForSourceExchangeTick = static_cast<uint32>(getTickCount());
+    m_lastSwapForSourceExchangeTick = getTickCount();
 }
 
 void UpDownClient::removeFileFromOtherLists(PartFile* file)
@@ -1657,7 +1671,7 @@ uint32 UpDownClient::timeUntilReask() const
 
 uint32 UpDownClient::timeUntilReask(const PartFile* file, bool allowShortReaskTime) const
 {
-    const uint32 lastAsk = lastAskedTime(file);
+    const uint64 lastAsk = lastAskedTime(file);
     if (lastAsk == 0)
         return 0;
 
@@ -1675,17 +1689,17 @@ uint32 UpDownClient::timeUntilReask(const PartFile* file, bool allowShortReaskTi
         reaskTime = FILEREASKTIME;
     }
 
-    const uint32 curTick = static_cast<uint32>(getTickCount());
-    const uint32 elapsed = curTick - lastAsk;
+    const uint64 curTick = getTickCount();
+    const uint64 elapsed = curTick - lastAsk;
 
     if (elapsed >= reaskTime)
         return 0;
-    return reaskTime - elapsed;
+    return reaskTime - static_cast<uint32>(elapsed);
 }
 
 // MFC DownloadClient.cpp:2019-2023. Purely the per-file re-ask map, keyed on the current
 // request file when none is named, and 0 — "never asked" — when the file is absent.
-uint32 UpDownClient::lastAskedTime(const PartFile* file) const
+uint64 UpDownClient::lastAskedTime(const PartFile* file) const
 {
     const PartFile* key = file ? file : m_reqFile;
     const auto it = m_fileReaskTimes.find(key);
@@ -1699,7 +1713,7 @@ uint32 UpDownClient::lastAskedTime(const PartFile* file) const
 void UpDownClient::setLastAskedTime()
 {
     if (m_reqFile)
-        m_fileReaskTimes[m_reqFile] = static_cast<uint32>(getTickCount());
+        m_fileReaskTimes[m_reqFile] = getTickCount();
 }
 
 // ===========================================================================
@@ -1708,7 +1722,7 @@ void UpDownClient::setLastAskedTime()
 
 void UpDownClient::updateDisplayedInfo(bool force)
 {
-    const uint32 curTick = static_cast<uint32>(getTickCount());
+    const uint64 curTick = getTickCount();
 
     if (!force) {
         // Rate-limit display updates
@@ -1873,8 +1887,7 @@ void UpDownClient::processAICHFileHash(SafeMemFile* data, PartFile* file,
 
     // Remember what this peer claims, and let it vote on what the real hash is.
     setReqFileAICHHash(masterHash);
-    partFile->aichRecoveryHashSet().untrustedHashReceived(
-        masterHash, m_connectAddress.toNetworkUint32());
+    partFile->aichRecoveryHashSet().untrustedHashReceived(masterHash, m_connectAddress);
 
     const auto& ident = partFile->fileIdentifier();
     if (!ident.hasAICHHash() || ident.getAICHHash() == masterHash)
@@ -1886,15 +1899,8 @@ void UpDownClient::processAICHFileHash(SafeMemFile* data, PartFile* file,
     logWarning(QStringLiteral("Client %1 reports a different AICH hash for %2 — removing source")
                    .arg(userName(), partFile->fileName()));
 
-    if (theApp.clientList) {
-        DeadSourceKey key;
-        key.hash = m_userHash;
-        key.serverAddress = m_serverAddress;
-        key.userID = m_userIDHybrid;
-        key.port = m_userPort;
-        key.kadPort = m_kadPort;
-        theApp.clientList->globalDeadSourceList.addDeadSource(key, hasLowID());
-    }
+    // Dead for this file only: it may be a fine source for another one.
+    partFile->deadSourceList().addDeadSource(deadSourceKey(), hasLowID());
 
     if (m_downloadState == DownloadState::ReqHashSet) {
         // Don't accept a hash set from it either — put the requests back.
@@ -1908,12 +1914,22 @@ void UpDownClient::processAICHFileHash(SafeMemFile* data, PartFile* file,
         }
     }
 
-    dontSwapTo(partFile);
-    if (!swapToAnotherFile(
-            QStringLiteral("Source says it doesn't have the file (AICH mismatch). processAICHFileHash()"),
-            true, true, true, nullptr, false, false)) {
-        if (theApp.downloadQueue)
-            theApp.downloadQueue->removeSource(this);
+    switch (m_downloadState) {
+    case DownloadState::ReqHashSet:
+    case DownloadState::Connected:
+    case DownloadState::OnQueue:
+    case DownloadState::NoNeededParts:
+    case DownloadState::Downloading:
+        dontSwapTo(partFile);
+        if (!swapToAnotherFile(
+                QStringLiteral("Source says it doesn't have the file (AICH mismatch). processAICHFileHash()"),
+                true, true, true, nullptr, false, false)) {
+            if (theApp.downloadQueue)
+                theApp.downloadQueue->removeSource(this);
+        }
+        break;
+    default:
+        break;
     }
 }
 

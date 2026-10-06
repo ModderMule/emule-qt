@@ -30,14 +30,20 @@ using SystemTimePoint = SystemClock::time_point;
 
 // ---- Tick / elapsed helpers -------------------------------------------------
 
+/// Added to every tick. The steady clock starts at boot, so without it a stamp set
+/// "in the past" (`getTickCount() - X`) would underflow soon after boot, and a real tick
+/// could be 0, which many stamps use for "never". ~35 years.
+inline constexpr std::uint64_t kTickEpochBias = std::uint64_t{1} << 40;
+
 /// Returns monotonic milliseconds since an arbitrary epoch (like GetTickCount
-/// but 64-bit, so no 49-day wrap).
+/// but 64-bit, so no 49-day wrap). Keep stamps in uint64: never narrow the result.
 [[nodiscard]] inline std::uint64_t getTickCount() noexcept
 {
-    return static_cast<std::uint64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            SteadyClock::now().time_since_epoch())
-            .count());
+    return kTickEpochBias
+         + static_cast<std::uint64_t>(
+               std::chrono::duration_cast<std::chrono::milliseconds>(
+                   SteadyClock::now().time_since_epoch())
+                   .count());
 }
 
 /// Returns the current steady-clock time point.

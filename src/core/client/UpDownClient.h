@@ -10,6 +10,7 @@
 /// Phase 3: connection management, secure identity, chat, preview, firewall,
 ///          upload methods, download methods.
 
+#include "client/DeadSourceList.h"
 #include "client/ClientStateDefs.h"
 #include "client/ClientStructs.h"
 #include "net/Address.h"
@@ -137,6 +138,8 @@ public:
     [[nodiscard]] uint32 userIDHybrid() const { return m_userIDHybrid; }
     void setUserIDHybrid(uint32 id) { m_userIDHybrid = id; }
     [[nodiscard]] bool hasLowID() const;
+    /// How the dead-source lists know this client (MFC CDeadSource ctor).
+    [[nodiscard]] DeadSourceKey deadSourceKey() const;
 
     /// True when we can hand this peer an upload slot right now: it is High-ID (so we can
     /// dial it), it is reachable over IPv6 regardless of its IPv4 Low-ID, or it already
@@ -219,7 +222,7 @@ public:
     /// True while *we* are downloading from this peer. NOT the analogue of MFC's
     /// CUpDownClient::IsDownloading(), which means the opposite — see isUploadingToPeer().
     [[nodiscard]] bool isDownloadingFromPeer() const { return m_downloadState == DownloadState::Downloading; }
-    [[nodiscard]] uint32 downStartTime() const { return m_downStartTime; }
+    [[nodiscard]] uint64 downStartTime() const { return m_downStartTime; }
     void setDownloadState(DownloadState state);
 
     [[nodiscard]] ChatState chatState() const { return m_chatState; }
@@ -250,6 +253,10 @@ public:
 
     [[nodiscard]] ChatCaptchaState chatCaptchaState() const { return m_chatCaptchaState; }
     void setChatCaptchaState(ChatCaptchaState state) { m_chatCaptchaState = state; }
+    void setSupportsCaptcha(bool v) { m_supportsCaptcha = v; }
+    void setSupportsPreview(bool v) { m_supportsPreview = v; }
+    /// The text the peer has to send back while a challenge is out.
+    [[nodiscard]] const QString& captchaChallenge() const { return m_captchaChallenge; }
 
     [[nodiscard]] ConnectingState connectingState() const { return m_connectingState; }
     void setConnectingState(ConnectingState state) { m_connectingState = state; }
@@ -420,8 +427,8 @@ public:
     void setAskedCount(uint32 c) { m_askedCount = c; }
     void incAskedCount() { ++m_askedCount; }
 
-    [[nodiscard]] uint32 lastUpRequest() const { return m_lastUpRequest; }
-    void setLastUpRequest(uint32 t) { m_lastUpRequest = t; }
+    [[nodiscard]] uint64 lastUpRequest() const { return m_lastUpRequest; }
+    void setLastUpRequest(uint64 t) { m_lastUpRequest = t; }
 
     [[nodiscard]] uint32 slotNumber() const { return m_slotNumber; }
     void setSlotNumber(uint32 s) { m_slotNumber = s; }
@@ -524,11 +531,11 @@ public:
 
     // -- Source exchange timestamps -------------------------------------------
 
-    [[nodiscard]] uint32 lastSourceRequestTime() const { return m_lastSourceRequest; }
-    void setLastSourceRequestTime(uint32 t) { m_lastSourceRequest = t; }
-    [[nodiscard]] uint32 lastSourceAnswerTime() const { return m_lastSourceAnswer; }
-    void setLastSourceAnswerTime(uint32 t) { m_lastSourceAnswer = t; }
-    [[nodiscard]] uint32 lastAskedForSourcesTime() const { return m_lastAskedForSources; }
+    [[nodiscard]] uint64 lastSourceRequestTime() const { return m_lastSourceRequest; }
+    void setLastSourceRequestTime(uint64 t) { m_lastSourceRequest = t; }
+    [[nodiscard]] uint64 lastSourceAnswerTime() const { return m_lastSourceAnswer; }
+    void setLastSourceAnswerTime(uint64 t) { m_lastSourceAnswer = t; }
+    [[nodiscard]] uint64 lastAskedForSourcesTime() const { return m_lastAskedForSources; }
     void setLastAskedForSourcesTime();
 
     // -- Debug strings ------------------------------------------------------
@@ -679,7 +686,8 @@ public:
     // -- Phase 3 — preview --------------------------------------------------
 
     void sendPreviewRequest(const AbstractFile& file);
-    void sendPreviewAnswer(const KnownFile* file);
+    /// @p fileHash null = "no such file" (zero hash on the wire). @p pngFrames may be empty.
+    void sendPreviewAnswer(const uint8* fileHash, const std::vector<QByteArray>& pngFrames);
     void processPreviewReq(const uint8* data, uint32 size);
     void processPreviewAnswer(const uint8* data, uint32 size);
 
@@ -745,6 +753,8 @@ public:
     bool processExtendedInfo(SafeMemFile& data, KnownFile* file);
     void setUploadFileID(KnownFile* newReqFile);
     void addReqBlock(Requested_Block_Struct* reqBlock);
+    /// Hand pending block requests to the disk thread while the send buffer has room.
+    void startBlockReads();
     void updateUploadingStatisticsData();
     void sendOutOfPartReqsAndAddToWaitingQueue();
     void flushSendBlocks();
@@ -761,7 +771,7 @@ public:
     /// Shared by every flood detector; the counter survives this object's destruction,
     /// so reconnecting does not wipe a strike. See ClientList::trackBadRequest.
     void registerBadRequest(const QString& reason);
-    [[nodiscard]] uint32 waitStartTime() const;
+    [[nodiscard]] uint64 waitStartTime() const;
     [[nodiscard]] uint32 getWaitTimeDelay() const;
     void setWaitStartTime();
     /// Rebase this client's queue position onto the live tick clock — see
@@ -850,10 +860,10 @@ public:
     [[nodiscard]] uint32 timeUntilReask(const PartFile* file, bool allowShortReaskTime = false) const;
     /// Tick of the last connect attempt — MFC's GetLastTriedToConnectTime(). Seeded to
     /// 20 minutes in the past by the constructor, so a brand-new source is dialable.
-    [[nodiscard]] uint32 lastTriedToConnect() const { return m_lastTriedToConnect; }
+    [[nodiscard]] uint64 lastTriedToConnect() const { return m_lastTriedToConnect; }
     /// MFC SetLastTriedToConnectTime() — stamps the 20-minute re-dial window.
     void setLastTriedToConnectNow();
-    [[nodiscard]] uint32 lastAskedTime(const PartFile* file = nullptr) const;
+    [[nodiscard]] uint64 lastAskedTime(const PartFile* file = nullptr) const;
     void setLastAskedTime();
     void updateDisplayedInfo(bool force = false);
 
@@ -901,6 +911,8 @@ signals:
                                 const QString& userName,
                                 uint32 searchID);
     void captchaRequestReceived(const QString& fromUser, const QImage& captchaImage);
+    /// The peer's verdict on the captcha answer we sent.
+    void captchaResultReceived(const QString& fromUser, bool solved);
     void previewAnswerReceived(const std::array<uint8, 16>& fileHash,
                                const std::vector<QImage>& images);
     void chatStateChanged();
@@ -984,7 +996,11 @@ private:
     bool recentlySwappedForSourceExchange() const;
     void setSwapForSourceExchangeTick();
 
-    // Captcha helpers
+    [[nodiscard]] bool expectsSourcesFor(const PartFile* file) const;
+
+    // Chat helpers
+    void sendChatPacket(const QString& message);
+    void sendCaptchaChallenge(const QString& message);
     [[nodiscard]] static QString generateCaptchaText();
     [[nodiscard]] static QImage generateCaptchaImage(const QString& text);
 
@@ -1043,11 +1059,11 @@ private:
     uint64 m_curSessionUp = 0;
     uint64 m_curQueueSessionPayloadUp = 0;
     uint64 m_addedPayloadQueueSession = 0;
-    uint32 m_uploadTime = 0;
-    uint32 m_lastUpRequest = 0;
+    uint64 m_uploadTime = 0;
+    uint64 m_lastUpRequest = 0;
     uint32 m_askedCount = 0;
     uint32 m_slotNumber = 0;
-    std::array<uint8, 16> m_reqUpFileId{};
+    std::array<uint8, 16> m_reqUpFileId{};   // upload side only; downloads ask with m_reqFile's hash
     std::vector<uint8> m_upPartStatus;
     uint16 m_upPartCount = 0;
     uint16 m_upCompleteSourcesCount = 0;
@@ -1062,8 +1078,8 @@ private:
     uint64 m_curSessionDown = 0;
     uint64 m_curSessionPayloadDown = 0;
     uint64 m_lastBlockOffset = UINT64_MAX;
-    uint32 m_downStartTime = 0;
-    uint32 m_lastBlockReceived = 0;
+    uint64 m_downStartTime = 0;
+    uint64 m_lastBlockReceived = 0;
     uint32 m_downAskedCount = 0;
     uint32 m_remoteQueueRank = 0;
     uint32 m_downDatarate = 0;
@@ -1130,15 +1146,15 @@ private:
 
     // -- Timestamps ---------------------------------------------------------
     Address m_lastSignatureAddress;
-    uint32 m_lastSourceRequest = 0;
-    uint32 m_lastSourceAnswer = 0;
-    uint32 m_lastAskedForSources = 0;
-    uint32 m_lastBuddyPingPongTime = 0;
-    uint32 m_lastRefreshedDLDisplay = 0;
-    uint32 m_lastRefreshedULDisplay = 0;
+    uint64 m_lastSourceRequest = 0;
+    uint64 m_lastSourceAnswer = 0;
+    uint64 m_lastAskedForSources = 0;
+    uint64 m_lastBuddyPingPongTime = 0;
+    uint64 m_lastRefreshedDLDisplay = 0;
+    uint64 m_lastRefreshedULDisplay = 0;
     uint32 m_randomUpdateWait = 0;
-    uint32 m_lastTriedToConnect = 0;
-    uint32 m_lastSwapForSourceExchangeTick = 0;
+    uint64 m_lastTriedToConnect = 0;
+    uint64 m_lastSwapForSourceExchangeTick = 0;
 
     // -- Chat / Comment -----------------------------------------------------
     QString m_fileComment;
@@ -1189,11 +1205,11 @@ private:
     std::list<PartFile*> m_otherNoNeeded;
 
     // Swap suspension tracking
-    struct FileStamp { PartFile* file = nullptr; uint32 timestamp = 0; };
+    struct FileStamp { PartFile* file = nullptr; uint64 timestamp = 0; };
     std::list<FileStamp> m_dontSwap;
 
     // Per-file reask times
-    std::unordered_map<const PartFile*, uint32> m_fileReaskTimes;
+    std::unordered_map<const PartFile*, uint64> m_fileReaskTimes;
 
     // Packets queued before connection established
     std::list<std::unique_ptr<Packet>> m_waitingPackets;
@@ -1204,6 +1220,11 @@ private:
     // Upload block queue
     std::list<Requested_Block_Struct*> m_blockRequests;
     std::list<Requested_Block_Struct*> m_doneBlocks;
+    uint64 m_blockReadBytesQueued = 0;      // bytes of m_blockRequests the disk thread holds
+    static constexpr size_t kMaxPendingBlockRequests = 1024;
+    static constexpr uint64 kMaxUploadBufferBytes = 8ull * 1024 * 1024;
+    // MFC UploadDiskIOThread.cpp:42 — above this a slot buffers five blocks, not one.
+    static constexpr uint32 BIGBUFFER_MINDATARATE = 75 * 1024;
 };
 
 } // namespace eMule

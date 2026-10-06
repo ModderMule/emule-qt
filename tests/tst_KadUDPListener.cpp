@@ -1,8 +1,15 @@
 /// @file tst_KadUDPListener.cpp
 /// @brief Tests for KadUDPListener.h — Kad UDP packet handler.
 
+#include "TestFixtures.h"
 #include "TestHelpers.h"
 
+#include "app/AppContext.h"
+#include "client/ClientList.h"
+#include "client/UpDownClient.h"
+#include "kademlia/Kademlia.h"
+#include "kademlia/KadIO.h"
+#include "kademlia/KadPrefs.h"
 #include "kademlia/KadSearchDefs.h"
 #include "kademlia/KadUDPListener.h"
 #include "kademlia/KadUDPKey.h"
@@ -12,6 +19,7 @@
 #include "utils/SafeFile.h"
 
 #include <QTest>
+#include <QtEndian>
 
 using namespace eMule;
 using namespace eMule::kad;
@@ -26,6 +34,10 @@ private slots:
     void sendNullPacket_basic();
     void findNodeIDByIP_queued();
     void expireClientSearch_noRequester();
+
+    // Answers nobody asked for
+    void findBuddyRes_unrequestedIsIgnored();
+    void firewalledAckRes_countsOnlyAskedNodesOnce();
 
     // createSearchExpressionTree
     void searchExprTree_tokenizesStringTerm();
@@ -89,6 +101,95 @@ void tst_KadUDPListener::expireClientSearch_noRequester()
     // Expire with no requester should not crash
     listener.expireClientSearch(nullptr);
     QVERIFY(true);
+}
+
+// ---------------------------------------------------------------------------
+// Answers nobody asked for
+// ---------------------------------------------------------------------------
+
+namespace {
+
+constexpr uint32 kNodeIP = 0x4D010203;   // 77.1.2.3, host order
+constexpr uint16 kNodeUdp = 4672;
+constexpr uint16 kNodeTcp = 4662;
+
+/// KADEMLIA_FINDBUDDY_RES as a helper node would send it to us.
+QByteArray buddyAnswer()
+{
+    UInt128 check(Kademlia::getInstancePrefs()->kadId());
+    check.xorWith(UInt128(true));
+    SafeMemFile io;
+    io.writeUInt8(KADEMLIA_FINDBUDDY_RES);
+    io::writeUInt128(io, check);
+    io::writeUInt128(io, UInt128(uint32{0xB0DD1E}));
+    io.writeUInt16(kNodeTcp);
+    return io.buffer();
+}
+
+void deliver(const QByteArray& packet, uint32 ip)
+{
+    Kademlia::getInstanceUDPListener()->processPacket(
+        reinterpret_cast<const uint8*>(packet.constData()), static_cast<uint32>(packet.size()),
+        ip, kNodeUdp, false, KadUDPKey(0));
+}
+
+} // namespace
+
+// The check value is our Kad ID inverted, which anyone can compute: without the
+// "did we ask" test one datagram made its sender our callback relay.
+void tst_KadUDPListener::findBuddyRes_unrequestedIsIgnored()
+{
+    ClientList clients;
+    theApp.clientList = &clients;
+    Kademlia::setClientList(&clients);
+    eMule::testing::KadFixture kadFixture;
+
+    deliver(buddyAnswer(), kNodeIP);
+    QVERIFY(clients.findByConnIP(qToBigEndian(kNodeIP), kNodeTcp) == nullptr);
+
+    // Asked: the same answer is taken, once.
+    Kademlia::getInstanceUDPListener()->sendNullPacket(KADEMLIA_FINDBUDDY_REQ, kNodeIP, kNodeUdp,
+                                                       KadUDPKey(0), nullptr);
+    deliver(buddyAnswer(), kNodeIP);
+    UpDownClient* buddy = clients.findByConnIP(qToBigEndian(kNodeIP), kNodeTcp);
+    QVERIFY(buddy != nullptr);
+    QCOMPARE(buddy->kadState(), KadState::QueuedBuddy);
+
+    clients.deleteAll();
+    Kademlia::setClientList(nullptr);
+    theApp.clientList = nullptr;
+}
+
+void tst_KadUDPListener::firewalledAckRes_countsOnlyAskedNodesOnce()
+{
+    ClientList clients;
+    theApp.clientList = &clients;
+    eMule::testing::KadFixture kadFixture;
+    KadPrefs* prefs = Kademlia::getInstancePrefs();
+    prefs->setFirewalled();   // counter 0
+    prefs->incFirewalled();   // one honest witness
+    QVERIFY(prefs->firewalled());
+
+    const QByteArray ack(1, static_cast<char>(KADEMLIA_FIREWALLED_ACK_RES));
+
+    // Two forged datagrams used to be enough to look reachable.
+    deliver(ack, kNodeIP);
+    deliver(ack, kNodeIP);
+    QVERIFY(prefs->firewalled());
+
+    // A node we asked counts, but only once.
+    prefs->setFirewalled();
+    clients.addKadFirewallRequest(qToBigEndian(kNodeIP));
+    deliver(ack, kNodeIP);
+    deliver(ack, kNodeIP);
+    QVERIFY(prefs->firewalled());
+
+    // A second asked node completes it.
+    clients.addKadFirewallRequest(qToBigEndian(kNodeIP + 0x10000));
+    deliver(ack, kNodeIP + 0x10000);
+    QVERIFY(!prefs->firewalled());
+
+    theApp.clientList = nullptr;
 }
 
 // ---------------------------------------------------------------------------

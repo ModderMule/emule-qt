@@ -328,8 +328,10 @@ void CoreSession::onTimer()
                 QStringLiteral("clients.met"));
             theApp.clientCredits->process(creditsPath);  // auto-save every 13 min
         }
-        if (theApp.listenSocket)
+        if (theApp.listenSocket) {
             theApp.listenSocket->process();
+            theApp.listenSocket->updateConnectionsStatus();
+        }
         if (theApp.knownFileList)
             theApp.knownFileList->process();
         if (theApp.sharedFileList)
@@ -1406,6 +1408,16 @@ void CoreSession::initPortMapper()
     connect(m_portMapper.get(), &PortMapper::statusChanged, this,
             [](PortMapStatus status) {
                 logInfo(QStringLiteral("Port mapping: %1").arg(portMapStatusName(status)));
+                // Peers pick a changed port up with the next hello; a server keeps the
+                // one from its login until we reconnect.
+                const uint16 mapped = theApp.mappedTcpPort();
+                if (status == PortMapStatus::Mapped && mapped != 0 && mapped != thePrefs.port())
+                    logInfo(QStringLiteral("Router mapped TCP port %1 to external port %2: "
+                                           "advertising %2%3")
+                                .arg(thePrefs.port()).arg(mapped)
+                                .arg(theApp.serverConnect && theApp.serverConnect->isConnected()
+                                         ? QStringLiteral(" (the server learns it at the next connect)")
+                                         : QString()));
             });
 
     connect(m_portMapper.get(), &PortMapper::mappingChanged, this,

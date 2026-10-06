@@ -6,6 +6,7 @@
 #include "client/UpDownClient.h"
 #include "kademlia/Kademlia.h"
 #include "net/BindAddress.h"
+#include "portmap/PortMapper.h"
 #include "prefs/Preferences.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
@@ -85,6 +86,44 @@ bool AppContext::canDoCallback(const UpDownClient* client) const
                                              client->serverPort());
     }
     return true;
+}
+
+namespace {
+
+/// External port of a usable mapping, 0 otherwise.
+uint16 mappedPort(const PortMapper* mapper, PortMapPurpose purpose, PortMapProtocol protocol)
+{
+    if (!mapper || mapper->status() != PortMapStatus::Mapped)
+        return 0;
+    return mapper->externalPort(purpose, protocol);
+}
+
+} // namespace
+
+uint16 AppContext::mappedTcpPort() const
+{
+    return mappedPort(portMapper, PortMapPurpose::Ed2kTcp, PortMapProtocol::Tcp);
+}
+
+uint16 AppContext::advertisedTcpPort() const
+{
+    const uint16 mapped = mappedTcpPort();
+    return mapped != 0 ? mapped : thePrefs.port();
+}
+
+uint16 AppContext::advertisedUdpPort() const
+{
+    // No UDP socket, nothing to advertise — whatever the router still maps
+    if (thePrefs.udpPort() == 0)
+        return 0;
+    const uint16 mapped = mappedPort(portMapper, PortMapPurpose::Ed2kClientUdp,
+                                     PortMapProtocol::Udp);
+    return mapped != 0 ? mapped : thePrefs.udpPort();
+}
+
+bool AppContext::isOwnTcpPort(uint16 port) const
+{
+    return port == thePrefs.port() || port == advertisedTcpPort();
 }
 
 uint32 AppContext::publicIP(bool ignoreKadIP) const

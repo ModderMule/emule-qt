@@ -24,6 +24,18 @@ private slots:
         QVERIFY(t2 >= t1);
     }
 
+    void testTickLeavesRoomForStampsInThePast()
+    {
+        // Stamps are pre-aged with `getTickCount() - X` and use 0 for "never"; neither
+        // may collide with a real tick, however soon after boot this runs.
+        const std::uint64_t tick = eMule::getTickCount();
+        QVERIFY(tick >= eMule::kTickEpochBias);
+        const std::uint64_t yearAgo = tick - 365ull * 24 * 3600 * 1000;
+        QVERIFY(yearAgo < tick);
+        QVERIFY(yearAgo != 0);
+        QVERIFY(tick > UINT32_MAX);     // nothing may squeeze it into 32 bits unnoticed
+    }
+
     void testNowMonotonicity()
     {
         const auto t1 = eMule::now();

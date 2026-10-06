@@ -202,9 +202,11 @@ private:
     [[nodiscard]] static int injectRecords(PartFile* file,
                                            const std::vector<SavedSource>& records);
     [[nodiscard]] static int32 jitter();
+    /// @p tick moved by the (signed) jitter.
+    [[nodiscard]] static uint64 jittered(uint64 tick);
 
-    uint32 m_lastSaved  = 0;
-    uint32 m_lastLoaded = 0;
+    uint64 m_lastSaved  = 0;
+    uint64 m_lastLoaded = 0;
 };
 
 } // namespace eMule

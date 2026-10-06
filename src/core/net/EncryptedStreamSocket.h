@@ -26,6 +26,7 @@ namespace eMule {
 
 inline constexpr int kErrWrongHeader = 0x01;
 inline constexpr int kErrTooBig = 0x02;
+inline constexpr int kErrSendQueueOverflow = 0x03;
 inline constexpr int kErrEncryption = 0x03;
 inline constexpr int kErrEncryptionNotAllowed = 0x04;
 

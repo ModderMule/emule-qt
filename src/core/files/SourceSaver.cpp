@@ -391,11 +391,10 @@ SourceSaver::SourceSaver()
     // already loads, injects and saves instead of waiting out the 10-minute window. The
     // extra jitter span is ours: MorphXT lands exactly on the threshold, so whether its
     // first tick fires depends on the sign of the random offset and on how long startup
-    // took. The arithmetic is deliberately allowed to wrap; every comparison is a signed
-    // delta.
-    const auto now = static_cast<uint32>(getTickCount());
+    // took. A stamp may lie in the future, so every comparison is a signed delta.
+    const auto now = getTickCount();
     m_lastLoaded = now - kReloadTimeMs - kTimerJitterMs;
-    m_lastSaved  = (now + static_cast<uint32>(jitter())) - kResaveTimeMs - kTimerJitterMs;
+    m_lastSaved  = jittered(now) - kResaveTimeMs - kTimerJitterMs;
 }
 
 bool SourceSaver::process(PartFile* file)
@@ -403,8 +402,8 @@ bool SourceSaver::process(PartFile* file)
     if (!file)
         return false;
 
-    const auto now = static_cast<uint32>(getTickCount());
-    if (static_cast<int32>(now - m_lastSaved) <= static_cast<int32>(kResaveTimeMs))
+    const auto now = getTickCount();
+    if (static_cast<int64>(now - m_lastSaved) <= static_cast<int64>(kResaveTimeMs))
         return false;
 
     const QString path = filePath(file->tmpPath(), file->partMetFileName());
@@ -420,15 +419,15 @@ bool SourceSaver::process(PartFile* file)
         return false;
     }
 
-    m_lastSaved = (now + static_cast<uint32>(jitter()));
+    m_lastSaved = jittered(now);
 
     // Read before overwriting: the previous set both tops up this save and is what gets
     // re-injected, exactly as MorphXT does (SourceSaver.cpp:64-71).
     const std::vector<SavedSource> previous = SourceListFile::read(path);
     const bool written = saveList(file, path, previous);
 
-    if (static_cast<int32>(now - m_lastLoaded) > static_cast<int32>(kReloadTimeMs)) {
-        m_lastLoaded = (now + static_cast<uint32>(jitter()));
+    if (static_cast<int64>(now - m_lastLoaded) > static_cast<int64>(kReloadTimeMs)) {
+        m_lastLoaded = jittered(now);
         static_cast<void>(injectRecords(file, previous));
     }
 
@@ -449,7 +448,7 @@ bool SourceSaver::saveNow(PartFile* file)
         return false;
     }
 
-    m_lastSaved = static_cast<uint32>(getTickCount()) + static_cast<uint32>(jitter());
+    m_lastSaved = jittered(getTickCount());
     return saveList(file, path, SourceListFile::read(path));
 }
 
@@ -743,6 +742,11 @@ int SourceSaver::injectRecords(PartFile* file, const std::vector<SavedSource>& r
                     .arg(added).arg(file->fileName()));
     }
     return added;
+}
+
+uint64 SourceSaver::jittered(uint64 tick)
+{
+    return static_cast<uint64>(static_cast<int64>(tick) + jitter());
 }
 
 int32 SourceSaver::jitter()

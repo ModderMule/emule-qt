@@ -15,7 +15,9 @@
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadPrefs.h"
 #include "net/Address.h"
+#include "net/ClientReqSocket.h"
 #include "net/ClientUDPSocket.h"
+#include "net/ListenSocket.h"
 #include "prefs/Preferences.h"
 #include "protocol/ED2KLink.h"
 #include "search/SearchFile.h"
@@ -110,6 +112,17 @@ private slots:
     void checkAndAddSource_a4afForSourceOfAnotherFile();
     void a4af_destroyedClientLeavesNoDanglingEntry();
     void a4af_removeSourceUnlinksBothSides();
+    void disconnect_failedSourceLeavesTheFile_data();
+    void disconnect_failedSourceLeavesTheFile();
+    void disconnect_removedSourceIsReaped();
+    void tryToConnect_precheckExitDropsTheSource_data();
+    void tryToConnect_precheckExitDropsTheSource();
+    void disconnect_proxyFailureKeepsTheSource();
+    void fileNotFound_removesAndDeadListsForThatFileOnly();
+    void fileNotFound_swapsToAnotherWantedFile();
+    void fileNotFound_forAFileWeDoNotDownloadChangesNothing();
+    void udpFileNotFound_ignoredWhileDownloading();
+    void deadSource_ipv6SourcesAreToldApartByAddress();
     void checkAndAddSource_adoptsKnownClient();
     void checkAndAddSource_ipv6Dedup();
     void checkAndAddKnownSource_addsAPassiveSource();
@@ -2134,6 +2147,337 @@ void tst_DownloadQueue::a4af_removeSourceUnlinksBothSides()
         QCOMPARE(fileA->sourceCount(), 0);
         QVERIFY(fileB->a4afSrcList().empty());
         QCOMPARE(client->otherRequestCount(), size_t(0));
+    }
+    dq.deleteAll();
+}
+
+namespace {
+
+/// Deliver OP_FILEREQANSNOFIL for `hash` the way the socket would.
+void deliverFileNotFound(UpDownClient* client, const uint8* hash)
+{
+    QVERIFY(QMetaObject::invokeMethod(client, "onFileRequestReceived", Qt::DirectConnection,
+                                      Q_ARG(const uint8*, hash), Q_ARG(uint32, 16),
+                                      Q_ARG(uint8, OP_FILEREQANSNOFIL)));
+}
+
+struct AppQueueScope {
+    explicit AppQueueScope(DownloadQueue* dq) { theApp.downloadQueue = dq; }
+    ~AppQueueScope() { theApp.downloadQueue = nullptr; }
+};
+
+} // namespace
+
+void tst_DownloadQueue::disconnect_failedSourceLeavesTheFile_data()
+{
+    QTest::addColumn<DownloadState>("state");
+    QTest::addColumn<bool>("connecting");
+    QTest::addColumn<bool>("removed");
+
+    QTest::newRow("connect timed out") << DownloadState::Connecting << true << true;
+    QTest::newRow("callback never came") << DownloadState::WaitCallback << true << true;
+    QTest::newRow("failed before a route was picked") << DownloadState::Connecting << false << true;
+    QTest::newRow("connected, never answered") << DownloadState::Connected << false << true;
+    QTest::newRow("hashset request unanswered") << DownloadState::ReqHashSet << false << true;
+    QTest::newRow("protocol error") << DownloadState::Error << false << true;
+    QTest::newRow("queued source reconnect failed") << DownloadState::OnQueue << true << true;
+    QTest::newRow("queued source drops") << DownloadState::OnQueue << false << false;
+    QTest::newRow("no needed parts drops") << DownloadState::NoNeededParts << false << false;
+    QTest::newRow("too many connections") << DownloadState::TooManyConns << false << false;
+}
+
+// MFC removes a source it could not reach or that never answered (BaseClient.cpp:1122-1192).
+// Kept instead, they filled a long download up to maxSourcesPerFile with dead peers.
+void tst_DownloadQueue::disconnect_failedSourceLeavesTheFile()
+{
+    QFETCH(DownloadState, state);
+    QFETCH(bool, connecting);
+    QFETCH(bool, removed);
+
+    DownloadQueue dq;
+    ClientList cl;
+    dq.setClientList(&cl);
+    AppQueueScope scope(&dq);
+    theApp.clientList = &cl;
+
+    uint8 hashA[16] = {53, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    auto* fileA = createTestPartFile(hashA, QStringLiteral("dead_src.bin"));
+    dq.addDownload(fileA);
+    {
+        auto client = makePreHelloSource(fileA, "81.2.69.180", 4662);
+        QCOMPARE(dq.checkAndAddSource(fileA, client.get()), client.get());
+        cl.removeClient(client.get());   // owned by this scope, not by the list
+        client->setDownloadState(state);
+        if (connecting)
+            client->setConnectingState(ConnectingState::DirectTCP);
+
+        const bool unneeded = client->disconnected(QStringLiteral("test"));
+
+        QCOMPARE(unneeded, removed);
+        QCOMPARE(fileA->sourceCount(), removed ? 0 : 1);
+        QCOMPARE(client->reqFile(), removed ? nullptr : fileA);
+        QCOMPARE(client->connectingState(), ConnectingState::None);
+        if (removed) {
+            QCOMPARE(client->downloadState(), DownloadState::None);
+            auto again = makePreHelloSource(fileA, "81.2.69.180", 4662);
+            QVERIFY2(dq.checkAndAddSource(fileA, again.get()) == nullptr,
+                     "a source we just failed to reach was taken straight back");
+        } else {
+            QCOMPARE(client->downloadState(), state);
+            dq.removeSource(client.get());
+        }
+    }
+    theApp.clientList = nullptr;
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::tryToConnect_precheckExitDropsTheSource_data()
+{
+    QTest::addColumn<bool>("lowId");
+    QTest::newRow("socket limit reached") << false;
+    QTest::newRow("LowID with no callback route") << true;
+}
+
+// L7: a connect attempt that ends in tryToConnect's own checks is a failed attempt like
+// any other (MFC srchybrid/BaseClient.cpp:1285-1372) — the source goes and is dead-listed.
+void tst_DownloadQueue::tryToConnect_precheckExitDropsTheSource()
+{
+    QFETCH(bool, lowId);
+
+    DownloadQueue dq;
+    ClientList cl;
+    dq.setClientList(&cl);
+    AppQueueScope scope(&dq);
+    theApp.clientList = &cl;
+
+    // Two sockets against a limit of one
+    ListenSocket listener;
+    ClientReqSocket busyA, busyB;
+    const uint16 oldMax = thePrefs.maxConnections();
+    if (!lowId) {
+        thePrefs.setMaxConnections(1);
+        listener.addSocket(&busyA);
+        listener.addSocket(&busyB);
+        theApp.listenSocket = &listener;
+    }
+    const auto restore = qScopeGuard([oldMax] {
+        theApp.listenSocket = nullptr;
+        theApp.clientList = nullptr;
+        thePrefs.setMaxConnections(oldMax);
+    });
+
+    uint8 hashA[16] = {54, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    auto* fileA = createTestPartFile(hashA, QStringLiteral("precheck.bin"));
+    dq.addDownload(fileA);
+    {
+        auto client = lowId
+            ? std::make_unique<UpDownClient>(uint16(4662), uint32(4711), htonl(0x51024501), uint16(4661),
+                                             fileA, true)
+            : makePreHelloSource(fileA, "81.2.69.181", 4662);
+        QCOMPARE(dq.checkAndAddSource(fileA, client.get()), client.get());
+        cl.removeClient(client.get());
+        client->setDownloadState(DownloadState::OnQueue);
+        QCOMPARE(client->hasLowID(), lowId);
+
+        QVERIFY(!client->tryToConnect());
+
+        QCOMPARE(fileA->sourceCount(), 0);
+        QCOMPARE(client->reqFile(), nullptr);
+        QCOMPARE(client->connectingState(), ConnectingState::None);
+        QVERIFY(cl.globalDeadSourceList.isDeadSource(client->deadSourceKey()));
+    }
+    listener.removeSocket(&busyA);
+    listener.removeSocket(&busyB);
+    dq.deleteAll();
+}
+
+// A connect that died at our own proxy says nothing about the peer (MFC :1185).
+void tst_DownloadQueue::disconnect_proxyFailureKeepsTheSource()
+{
+    DownloadQueue dq;
+    ClientList cl;
+    dq.setClientList(&cl);
+    AppQueueScope scope(&dq);
+    theApp.clientList = &cl;
+    const auto restore = qScopeGuard([] { theApp.clientList = nullptr; });
+
+    uint8 hashA[16] = {55, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    auto* fileA = createTestPartFile(hashA, QStringLiteral("proxy.bin"));
+    dq.addDownload(fileA);
+    {
+        auto client = makePreHelloSource(fileA, "81.2.69.182", 4662);
+        QCOMPARE(dq.checkAndAddSource(fileA, client.get()), client.get());
+        cl.removeClient(client.get());
+        client->setDownloadState(DownloadState::OnQueue);
+        client->setConnectingState(ConnectingState::DirectTCP);
+
+        auto* sock = new ClientReqSocket(client.get());
+        sock->setProxyConnectFailed(true);
+        client->setSocket(sock);
+
+        client->disconnected(QStringLiteral("Socket error: proxy"));
+
+        QCOMPARE(fileA->sourceCount(), 1);
+        QCOMPARE(client->reqFile(), fileA);
+        QCOMPARE(client->downloadState(), DownloadState::OnQueue);
+        QVERIFY(!cl.globalDeadSourceList.isDeadSource(client->deadSourceKey()));
+        dq.removeSource(client.get());
+    }
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    dq.deleteAll();
+}
+
+// removeSource() has to drop the client's file link too, or the reaper keeps it for ever.
+void tst_DownloadQueue::disconnect_removedSourceIsReaped()
+{
+    DownloadQueue dq;
+    ClientList cl;
+    dq.setClientList(&cl);
+    AppQueueScope scope(&dq);
+    theApp.clientList = &cl;
+
+    uint8 hashA[16] = {53, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2};
+    auto* fileA = createTestPartFile(hashA, QStringLiteral("reaped_src.bin"));
+    dq.addDownload(fileA);
+
+    auto* client = makePreHelloSource(fileA, "81.2.69.181", 4662).release();
+    QCOMPARE(dq.checkAndAddSource(fileA, client), client);
+    QVERIFY(cl.isValidClient(client));
+
+    cl.process();
+    QVERIFY2(cl.isValidClient(client), "a live source must not be reaped");
+
+    client->setDownloadState(DownloadState::Connecting);
+    client->disconnected(QStringLiteral("Connection try timeout"));
+    cl.process();
+    QVERIFY(!cl.isValidClient(client));
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+
+    theApp.clientList = nullptr;
+    dq.deleteAll();
+}
+
+// "I don't have that file" is about one file. MFC dead-lists the peer on that file for
+// 45 minutes (ListenSocket.cpp:431); without it the next source answer re-adds it.
+void tst_DownloadQueue::fileNotFound_removesAndDeadListsForThatFileOnly()
+{
+    DownloadQueue dq;
+    AppQueueScope scope(&dq);
+    uint8 hashA[16] = {51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    uint8 hashB[16] = {51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2};
+    auto* fileA = createTestPartFile(hashA, QStringLiteral("fnf_a.bin"));
+    auto* fileB = createTestPartFile(hashB, QStringLiteral("fnf_b.bin"));
+    dq.addDownload(fileA);
+    dq.addDownload(fileB);
+    {
+        auto client = makePreHelloSource(fileA, "81.2.69.170", 4662);
+        QCOMPARE(dq.checkAndAddSource(fileA, client.get()), client.get());
+        client->setDownloadState(DownloadState::OnQueue);
+
+        deliverFileNotFound(client.get(), hashA);
+        QCOMPARE(fileA->sourceCount(), 0);
+
+        auto again = makePreHelloSource(fileA, "81.2.69.170", 4662);
+        QVERIFY2(dq.checkAndAddSource(fileA, again.get()) == nullptr,
+                 "a source that said it lacks the file was taken back");
+
+        auto other = makePreHelloSource(fileB, "81.2.69.170", 4662);
+        QCOMPARE(dq.checkAndAddSource(fileB, other.get()), other.get());
+        dq.removeSource(other.get());
+    }
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::fileNotFound_swapsToAnotherWantedFile()
+{
+    DownloadQueue dq;
+    AppQueueScope scope(&dq);
+    uint8 hashA[16] = {51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3};
+    uint8 hashB[16] = {51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4};
+    auto* fileA = createTestPartFile(hashA, QStringLiteral("fnf_swap_a.bin"));
+    auto* fileB = createTestPartFile(hashB, QStringLiteral("fnf_swap_b.bin"));
+    dq.addDownload(fileA);
+    dq.addDownload(fileB);
+    {
+        auto client = makePreHelloSource(fileA, "81.2.69.171", 4662);
+        QCOMPARE(dq.checkAndAddSource(fileA, client.get()), client.get());
+        QVERIFY(client->addRequestForAnotherFile(fileB));
+        client->setDownloadState(DownloadState::OnQueue);
+
+        deliverFileNotFound(client.get(), hashA);
+
+        QCOMPARE(fileA->sourceCount(), 0);
+        QCOMPARE(fileB->sourceCount(), 1);
+        QCOMPARE(client->reqFile(), fileB);
+        QVERIFY2(fileA->a4afSrcList().empty(), "it must not come back to the file it lacks");
+        dq.removeSource(client.get());
+    }
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::fileNotFound_forAFileWeDoNotDownloadChangesNothing()
+{
+    DownloadQueue dq;
+    AppQueueScope scope(&dq);
+    uint8 hashA[16] = {51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5};
+    uint8 stranger[16] = {52, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9};
+    auto* fileA = createTestPartFile(hashA, QStringLiteral("fnf_other.bin"));
+    dq.addDownload(fileA);
+    {
+        auto client = makePreHelloSource(fileA, "81.2.69.172", 4662);
+        QCOMPARE(dq.checkAndAddSource(fileA, client.get()), client.get());
+        client->setDownloadState(DownloadState::OnQueue);
+
+        deliverFileNotFound(client.get(), stranger);
+
+        QCOMPARE(fileA->sourceCount(), 1);
+        QCOMPARE(client->downloadState(), DownloadState::OnQueue);
+        dq.removeSource(client.get());
+    }
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::udpFileNotFound_ignoredWhileDownloading()
+{
+    DownloadQueue dq;
+    AppQueueScope scope(&dq);
+    uint8 hashA[16] = {51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6};
+    auto* fileA = createTestPartFile(hashA, QStringLiteral("fnf_udp.bin"));
+    dq.addDownload(fileA);
+    {
+        auto client = makePreHelloSource(fileA, "81.2.69.173", 4662);
+        QCOMPARE(dq.checkAndAddSource(fileA, client.get()), client.get());
+
+        client->setDownloadState(DownloadState::Downloading);
+        client->udpReaskFNF();
+        QCOMPARE(fileA->sourceCount(), 1);
+
+        client->setDownloadState(DownloadState::OnQueue);
+        client->udpReaskFNF();
+        QCOMPARE(fileA->sourceCount(), 0);
+        QVERIFY(fileA->deadSourceList().isDeadSource(client->deadSourceKey()));
+    }
+    dq.deleteAll();
+}
+
+// IPv6-only sources all carry the same placeholder ID; matching on ID + port would make
+// one dead peer on port 4662 take every other one with it.
+void tst_DownloadQueue::deadSource_ipv6SourcesAreToldApartByAddress()
+{
+    DownloadQueue dq;
+    uint8 hashA[16] = {51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7};
+    auto* fileA = createTestPartFile(hashA, QStringLiteral("dead_v6.bin"));
+    dq.addDownload(fileA);
+    {
+        auto dead = makeV6OnlySource(fileA, "2a01:4f8::10", 4662);
+        auto alive = makeV6OnlySource(fileA, "2a01:4f8::11", 4662);
+        const Address server = Address::fromString(QStringLiteral("81.2.69.1"));
+        dead->setServerAddress(server);
+        alive->setServerAddress(server);
+
+        fileA->deadSourceList().addDeadSource(dead->deadSourceKey(), dead->hasLowID());
+        QVERIFY(fileA->deadSourceList().isDeadSource(dead->deadSourceKey()));
+        QVERIFY(!fileA->deadSourceList().isDeadSource(alive->deadSourceKey()));
     }
     dq.deleteAll();
 }

@@ -21,6 +21,7 @@ struct Requested_Block_Struct {
     uint64 endOffset = 0;
     std::array<uint8, 16> fileID{};
     uint32 transferredByClient = 0;
+    bool readQueued = false;    // upload side: handed to the disk thread
 };
 
 /// A pending download block with optional zlib decompression state.
@@ -36,7 +37,7 @@ struct Pending_Block_Struct {
 /// Tracks a file we've requested from this client (upload request tracking).
 struct Requested_File_Struct {
     std::array<uint8, 16> fileID{};
-    uint32 lastAsked = 0;
+    uint64 lastAsked = 0;
     uint8 badRequests = 0;
 };
 

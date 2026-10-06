@@ -358,12 +358,12 @@ private:
     uint64 m_totalDownTime = 0;  // seconds
     std::deque<TransferredData> m_averageDRList;  // 10-second averaging window
     uint32 m_udCounter = 0;
-    uint32 m_lastKademliaFileRequest = 0;
+    uint64 m_lastKademliaFileRequest = 0;
 
     // Global-UDP-source rotation cursors (port of CDownloadQueue members).
     Server*   m_curUdpServer = nullptr;       // cur_udpserver — current pass cursor (non-owning)
     PartFile* m_lastUdpFile = nullptr;        // m_lastfile — file cursor within the current server
-    uint32    m_lastUdpSearchTime = 0;        // m_lastudpsearchtime — 0 ⇒ start a new pass now
+    uint64    m_lastUdpSearchTime = 0;        // m_lastudpsearchtime — 0 ⇒ start a new pass now
     uint32    m_searchedServers = 0;          // m_iSearchedServers — servers covered this pass
     uint32    m_requestsSentToServer = 0;     // m_cRequestsSentToServer — per-server batch counter
 };

@@ -745,7 +745,7 @@ void PortMapper::recomputeStatus()
 
     const bool allUsable = std::all_of(m_active.begin(), m_active.end(),
                                        [](const Active& a) { return a.mapping.isUsable(); });
-    // Degraded, not Mapped: a granted-but-unreachable mapping reported as
+    // Degraded, not Mapped: a mapping on a non-public address reported as
     // success would show "forwarded" beside a permanently firewalled client.
     setStatus(allUsable ? PortMapStatus::Mapped : PortMapStatus::Degraded);
 }

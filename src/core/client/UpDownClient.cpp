@@ -37,6 +37,7 @@
 #include "server/Server.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
+#include "net/PeerVetting.h"
 #include "transfer/DownloadQueue.h"
 #include "stats/Statistics.h"
 #include "transfer/UploadQueue.h"
@@ -49,7 +50,9 @@
 #include <QCborArray>
 #include <QCborMap>
 #include <QImage>
-#include <QPainter>
+#include <QThreadPool>
+#include <QPointer>
+#include <QImageReader>
 #include <QRandomGenerator>
 
 
@@ -74,11 +77,6 @@ UpDownClient::UpDownClient(uint16 port, uint32 userId, uint32 serverIP,
     , m_reqFile(reqFile)
 {
     init();
-
-    // Copy file hash into m_reqUpFileId so sendFileRequest() sends the right hash.
-    // init() zeroes m_reqUpFileId, so this must come after init().
-    if (m_reqFile && m_reqFile->fileHash())
-        md4cpy(m_reqUpFileId.data(), m_reqFile->fileHash());
 
     m_userPort = port;
 
@@ -221,7 +219,7 @@ void UpDownClient::init()
     m_captchasSent = 0;
 
     m_buddyAddress = Address();
-    m_lastBuddyPingPongTime = static_cast<uint32>(getTickCount());
+    m_lastBuddyPingPongTime = getTickCount();
     setBuddyID(nullptr);
 
     m_clientSoft = ClientSoftware::Unknown;
@@ -279,7 +277,7 @@ void UpDownClient::init()
     m_sumForAvgDownDataRate = 0;
 
     m_lastRefreshedDLDisplay = 0;
-    m_lastRefreshedULDisplay = static_cast<uint32>(getTickCount());
+    m_lastRefreshedULDisplay = getTickCount();
 
     // Random update wait: 0..999ms
     static std::mt19937 rng{std::random_device{}()};
@@ -357,6 +355,25 @@ bool UpDownClient::hasLowID() const
     return isLowID(m_userIDHybrid);
 }
 
+DeadSourceKey UpDownClient::deadSourceKey() const
+{
+    DeadSourceKey key;
+    if (hasLowID() && !m_userIPv6.isNull()) {
+        key.ipv6 = m_userIPv6;
+        key.port = m_userPort;
+    } else if (!hasLowID() || !m_serverAddress.isNull()) {
+        key.serverAddress = m_serverAddress;
+        key.userID = m_userIDHybrid;
+        key.port = m_userPort;
+        key.kadPort = hasLowID() ? uint16{0} : m_kadPort;
+    } else {
+        // No ID to go by: the user hash (MFC: only for a peer with a buddy or direct
+        // callback — the others cannot be dialled anyway).
+        key.hash = m_userHash;
+    }
+    return key;
+}
+
 Friend* UpDownClient::friendPtr() const
 {
     // MFC srchybrid/BaseClient.cpp:2814-2819.
@@ -423,7 +440,7 @@ void UpDownClient::setUploadState(UploadState state)
         }
         if (state == UploadState::Uploading) {
             m_sentOutOfPartReqs = false;
-            m_uploadTime = static_cast<uint32>(getTickCount());
+            m_uploadTime = getTickCount();
         }
 
         m_uploadState = state;
@@ -446,7 +463,7 @@ void UpDownClient::setDownloadState(DownloadState state)
         if (state == DownloadState::Connecting)
             setLastTriedToConnectNow();
         else if (state == DownloadState::TooManyConnsKad)
-            m_lastTriedToConnect = static_cast<uint32>(getTickCount()) - MIN2MS(20);
+            m_lastTriedToConnect = getTickCount() - MIN2MS(20);
 
         // MFC: Increase socket timeout to 4x when entering Downloading state
         // to give the uploader time to start sending data blocks
@@ -904,7 +921,7 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
     uint16 nUserPort = data.readUInt16();
 
     // Read tags
-    const uint32 tagCount = data.readUInt32();
+    const uint32 tagCount = readTagCount(data, kMaxWireTags);
 
     bool bIsMule = false;
     bool bPrTag = false;
@@ -1257,7 +1274,7 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
     data.writeUInt32(theApp.getID());
 
     // Write our port
-    data.writeUInt16(thePrefs.port());
+    data.writeUInt16(theApp.advertisedTcpPort());
 
     // Determine if we need buddy tags (Low-ID + have buddy for Kad callback)
     const bool sendBuddyTags = theApp.clientList && theApp.clientList->getBuddy()
@@ -1300,7 +1317,7 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
             }
         }
     }
-    const uint32 udpPorts = (static_cast<uint32>(kadPortVal) << 16) | thePrefs.udpPort();
+    const uint32 udpPorts = (static_cast<uint32>(kadPortVal) << 16) | theApp.advertisedUdpPort();
     Tag(CT_EMULE_UDPPORTS, udpPorts).writeTagToFile(data);
 
     // CT_EMULE_MISCOPTIONS1 — capability bits
@@ -1434,7 +1451,7 @@ void UpDownClient::sendMuleInfoPacket(bool answer)
 
     Tag(ET_COMPRESSION, static_cast<uint32>(1)).writeTagToFile(data);
     Tag(ET_UDPVER, static_cast<uint32>(4)).writeTagToFile(data);
-    Tag(ET_UDPPORT, static_cast<uint32>(thePrefs.udpPort())).writeTagToFile(data);
+    Tag(ET_UDPPORT, static_cast<uint32>(theApp.advertisedUdpPort())).writeTagToFile(data);
     Tag(ET_SOURCEEXCHANGE, static_cast<uint32>(3)).writeTagToFile(data); // MFC: hardcodes 3 (legacy compat); MISCOPTIONS1 uses version 4
     Tag(ET_COMMENTS, static_cast<uint32>(1)).writeTagToFile(data);
     Tag(ET_EXTENDEDREQUEST, static_cast<uint32>(2)).writeTagToFile(data);
@@ -1488,7 +1505,7 @@ void UpDownClient::processMuleInfoPacket(const uint8* data, uint32 size)
         m_sharedDirectories = true;
 
     // Read tags
-    const uint32 tagCount = file.readUInt32();
+    const uint32 tagCount = readTagCount(file, kMaxWireTags);
 
     for (uint32 i = 0; i < tagCount; ++i) {
         // Not UTF-8: MFC BaseClient.cpp:772 reads EMULEINFO tags as plain strings.
@@ -1643,7 +1660,7 @@ bool UpDownClient::sendPacket(std::unique_ptr<Packet> packet, bool /*verifyConne
 
 void UpDownClient::setLastTriedToConnectNow()
 {
-    m_lastTriedToConnect = static_cast<uint32>(getTickCount());
+    m_lastTriedToConnect = getTickCount();
 }
 
 bool UpDownClient::checkHandshakeFinished() const
@@ -1709,8 +1726,13 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
     // accept and ignore. Every caller that passes true has already committed to the
     // connection (an upload slot just allocated, a Kad probe, an answered callback), so
     // refusing them here loses the slot or the probe outright.
+    // From here on a way out is a failed attempt: disconnected() reads this to drop the
+    // source (MFC srchybrid/BaseClient.cpp:1285).
+    m_connectingState = ConnectingState::Preconditions;
+
     if (!ignoreMaxCon && theApp.listenSocket && theApp.listenSocket->tooManySockets()) {
         logDebug(QStringLiteral("tryToConnect: too many sockets"));
+        disconnected(QStringLiteral("Too many connections"));
         return false;
     }
 
@@ -1727,7 +1749,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
     // Here it applied to every caller, so an upload slot handed to a peer we had spoken to
     // in the last minute was silently never dialled — and addUpNextClient() then opened the
     // slot anyway.
-    m_lastTriedToConnect = static_cast<uint32>(getTickCount());
+    m_lastTriedToConnect = getTickCount();
 
     // Choose the address to dial when none is set yet. Prefer IPv6 for a peer that
     // advertised a reachable IPv6 and for which we have a public IPv6 — this bypasses
@@ -1759,6 +1781,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
         }
         if (theApp.statistics)
             theApp.statistics->addFilteredClient();
+        disconnected(QStringLiteral("IPFilter"));   // drops it as a source, MFC :1318-1322
         return false;
     }
 
@@ -1769,6 +1792,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
         if (thePrefs.logBannedClients())
             logDebug(QStringLiteral("Refused to connect to banned client %1 (IP=%2)")
                          .arg(userName(), ipstr(m_connectAddress)));
+        disconnected(QStringLiteral("Banned IP"));
         return false;
     }
 
@@ -1830,10 +1854,9 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
         // Kept as a source rather than dropped, in the hope our own ID changes;
         // PartFile::process() revives it from this state.
         if (!directUdp && !kadCallback && !theApp.canDoCallback(this)) {
-            if (m_downloadState != DownloadState::LowToLowIP)
-                setDownloadState(DownloadState::LowToLowIP);
             logDebug(QStringLiteral("tryToConnect: LowID->LowID, no callback route to %1")
                          .arg(userName()));
+            disconnected(QStringLiteral("LowID->LowID"));
             return false;
         }
     }
@@ -1882,7 +1905,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
             (static_cast<uint8>(thePrefs.cryptLayerRequired()) << 2));
 
         SafeMemFile data;
-        data.writeUInt16(thePrefs.port());              // our TCP port
+        data.writeUInt16(theApp.advertisedTcpPort());              // our TCP port
         data.writeHash16(thePrefs.userHash().data());  // our user hash
         data.writeUInt8(connectOpts);          // connection/crypto options
 
@@ -1947,7 +1970,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
             kad::io::writeUInt128(data, buddyKadId);
             kad::UInt128 fileId(m_reqFile->fileHash());
             kad::io::writeUInt128(data, fileId);
-            data.writeUInt16(thePrefs.port());
+            data.writeUInt16(theApp.advertisedTcpPort());
 
             auto packet = std::make_unique<Packet>(data, OP_KADEMLIAHEADER, KADEMLIA_CALLBACK_REQ);
             m_connectingState = ConnectingState::KadCallback;
@@ -1988,6 +2011,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
             return true;
         }
         logDebug(QStringLiteral("tryToConnect: Kad buddy without known IP for %1").arg(userName()));
+        disconnected(QStringLiteral("LowID: buddy without known address"));
         return false;
     }
 
@@ -1998,6 +2022,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
                                                 : Endpoint(m_connectAddress, m_userPort).toString())
                  .arg(hasLowID())
                  .arg(hasValidBuddyID()));
+    disconnected(QStringLiteral("No connection path"));
     return false;
 }
 
@@ -2012,16 +2037,19 @@ void UpDownClient::connect()
     if (!reqSocket->createSocket()) {
         logDebug(QStringLiteral("connect: failed to create socket for %1").arg(userName()));
         delete reqSocket;
-        m_connectingState = ConnectingState::None;
+        // Still connecting: the connect timeout cleans up (MFC BaseClient.cpp:1390)
         return;
     }
 
     setSocket(reqSocket);
     m_incomingConnection = false;   // we are dialling out
 
-    // Register with ListenSocket for connection tracking
-    if (theApp.listenSocket)
+    // Register with ListenSocket for connection tracking; a dial counts against the
+    // per-5-s limit (MFC CClientReqSocket::Create).
+    if (theApp.listenSocket) {
         theApp.listenSocket->addSocket(reqSocket);
+        theApp.listenSocket->addConnection();
+    }
 
     // Connect socket signals
     QObject::connect(reqSocket, &ClientReqSocket::clientDisconnected,
@@ -2237,7 +2265,7 @@ void UpDownClient::connectionEstablished()
         if (f && f->isTryingToConnect()) {
             f->updateFriendConnectionState(FriendConnectReport::Established);
             if (m_credits
-                && m_credits->currentIdentState(m_connectAddress.toNetworkUint32())
+                && m_credits->currentIdentState(m_connectAddress)
                        == IdentState::IdFailed)
             {
                 f->updateFriendConnectionState(FriendConnectReport::SecureIdentFailed);
@@ -2362,6 +2390,10 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
     if (theApp.clientList)
         theApp.clientList->removeConnectingClient(this);
 
+    // Read before it is cleared: a connect attempt that ended here never reached the peer.
+    // A failure at our own proxy is not the peer's (MFC BaseClient.cpp:1185).
+    const bool proxyFailed = m_socket && m_socket->proxyConnectFailed();
+    const bool connectFailed = m_connectingState != ConnectingState::None && !proxyFailed;
     m_connectingState = ConnectingState::None;
 
     // Detach the socket so tryToConnect() can create a fresh one. One we did not get here from
@@ -2418,29 +2450,57 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
                              .arg(statusName()));
     }
 
-    // MFC BaseClient.cpp:1122-1132. A transfer that drops is still a good source: back on the
-    // queue, where PartFile::process() re-asks it. NoNeededParts is kept as it is. Only a
-    // connection that never got an answer to our file request counts as dead.
+    // MFC BaseClient.cpp:1122-1192. A transfer that drops is still a good source: back on the
+    // queue, where PartFile::process() re-asks it. A source waiting in the peer's queue or
+    // with no needed parts is kept as it is. Dead, and no longer a source of anything:
+    // one that never answered our file request, and one we could not reach at all.
+    bool sourceDied = false;
     if (m_downloadState == DownloadState::Downloading) {
         setDownloadState(DownloadState::OnQueue);
-    } else if (m_downloadState == DownloadState::Connected ||
-               m_downloadState == DownloadState::Connecting ||
-               m_downloadState == DownloadState::WaitCallback ||
-               m_downloadState == DownloadState::WaitCallbackKad ||
-               m_downloadState == DownloadState::ReqHashSet)
-    {
-        // Add to dead source list
-        if (theApp.clientList) {
-            DeadSourceKey key;
-            key.hash = m_userHash;
-            key.serverAddress = m_serverAddress;
-            key.userID = m_userIDHybrid;
-            key.port = m_userPort;
-            key.kadPort = m_kadPort;
-            theApp.clientList->globalDeadSourceList.addDeadSource(key, hasLowID());
+    } else {
+        const bool unanswered = m_downloadState == DownloadState::Connected
+                             || m_downloadState == DownloadState::ReqHashSet;
+        // A download state that only exists during an attempt says the same as the
+        // connecting state, for the callers that set one without the other.
+        const bool unreachable = connectFailed
+                              || (!proxyFailed
+                                  && (m_downloadState == DownloadState::Connecting
+                                      || m_downloadState == DownloadState::WaitCallback
+                                      || m_downloadState == DownloadState::WaitCallbackKad))
+                              || m_downloadState == DownloadState::Error;
+        if (!isEd2kClient()) {
+            // URL and HTTP Cache sources run their own retry and stay attached.
+            if (unanswered || m_downloadState == DownloadState::Connecting)
+                setDownloadState(DownloadState::None);
+        } else if (unanswered || unreachable) {
+            sourceDied = unreachable;
+            if (theApp.clientList)
+                theApp.clientList->globalDeadSourceList.addDeadSource(deadSourceKey(), hasLowID());
+            // Leaves the file's source list; the ClientList reaper takes the client
+            // once nothing else holds it. Without this a long download fills up with
+            // dead peers until maxSourcesPerFile refuses every new one.
+            if (theApp.downloadQueue && m_downloadState != DownloadState::None)
+                theApp.downloadQueue->removeSource(this);
+            else
+                setDownloadState(DownloadState::None);
         }
-        setDownloadState(DownloadState::None);
     }
+
+    // MFC's bDelete: is this client still needed for anything?
+    bool unneeded = sourceDied;
+    if (!sourceDied) {
+        switch (m_downloadState) {
+        case DownloadState::OnQueue:
+        case DownloadState::TooManyConns:
+        case DownloadState::NoNeededParts:
+        case DownloadState::LowToLowIP:
+            break;
+        default:
+            unneeded = m_uploadState != UploadState::OnUploadQueue;
+        }
+    }
+    if (m_chatState != ChatState::None)
+        unneeded = false;
 
     // Clear pending block requests on disconnect
     clearDownloadBlockRequests();
@@ -2474,7 +2534,8 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
     }
     setKadState(KadState::None);
 
-    return true;
+    // Callers do not delete on this: ClientList::process() reaps a client nothing needs.
+    return unneeded;
 }
 
 // ===========================================================================
@@ -2725,7 +2786,7 @@ void UpDownClient::sendPublicIPRequest()
 
 void UpDownClient::processPublicIPAnswer(const uint8* data, uint32 size)
 {
-    if (size < 4)
+    if (size != 4)
         return;
 
     SafeMemFile file(data, size);
@@ -3089,7 +3150,7 @@ void UpDownClient::processSignaturePacket(const uint8* data, uint32 size)
 
     m_lastSignatureAddress = m_userAddress;
 
-    bool verified = theApp.clientCredits->verifyIdent(m_credits, data + 1, data[0], m_userAddress.toNetworkUint32(), chaIPKind);
+    bool verified = theApp.clientCredits->verifyIdent(m_credits, data + 1, data[0], m_userAddress, chaIPKind);
     if (thePrefs.logSecureIdent())
         logDebug(QStringLiteral("processSignaturePacket: sigLen=%1 chaIPKind=%2 verified=%3 for %4")
                      .arg(data[0]).arg(chaIPKind).arg(verified).arg(userName()));
@@ -3196,7 +3257,7 @@ bool UpDownClient::hasPassedSecureIdent(bool passIfUnavailable) const
         return passIfUnavailable;
     }
 
-    const IdentState state = m_credits->currentIdentState(m_connectAddress.toNetworkUint32());
+    const IdentState state = m_credits->currentIdentState(m_connectAddress);
     if (state == IdentState::Identified)
         return true;
 
@@ -3217,92 +3278,98 @@ bool UpDownClient::hasPassedSecureIdent(bool passIfUnavailable) const
 
 void UpDownClient::processChatMessage(SafeMemFile& data, uint32 length)
 {
-    Q_UNUSED(length);
+    // MFC CUpDownClient::ProcessChatMessage (srchybrid/BaseClient.cpp:2625-2763)
+    const bool isFriend = m_friend != nullptr;
 
-    const QString message = data.readString(true);
+    if ((thePrefs.msgOnlyFriends() && !isFriend)
+        || (thePrefs.msgSecure() && !hasPassedSecureIdent(false))) {
+        if (!m_messageFiltered)
+            logDebug(QStringLiteral("Filtered message from '%1'").arg(statusName()));
+        m_messageFiltered = true;
+        return;
+    }
 
+    QByteArray raw(static_cast<qsizetype>(length), Qt::Uninitialized);
+    data.read(raw.data(), length);
+    QString message = QString::fromUtf8(raw);
+    // The length cap may have cut a character in two
+    while (message.endsWith(QChar::ReplacementCharacter))
+        message.chop(1);
     if (message.isEmpty())
         return;
 
-    // Apply filters
-    if (m_isSpammer) {
-        logDebug(QStringLiteral("Chat message from spammer %1 blocked").arg(userName()));
-        return;
-    }
-
-    // Rate limit: max 255 messages
-    if (m_messagesReceived >= 255)
-        return;
-
-    incMessagesReceived();
-
-    // Friends-only filter
-    if (thePrefs.msgOnlyFriends() && !m_friend) {
-        logDebug(QStringLiteral("Chat message from non-friend %1 blocked (msgOnlyFriends)").arg(userName()));
-        return;
-    }
-
-    // Secure-only filter
-    if (thePrefs.msgSecure() && !hasPassedSecureIdent(false)) {
-        logDebug(QStringLiteral("Chat message from unverified %1 blocked (msgSecure)").arg(userName()));
-        return;
-    }
-
-    // Configurable keyword spam filter
-    if (thePrefs.enableSpamFilter()) {
-        const QString filterStr = thePrefs.messageFilter();
-        if (!filterStr.isEmpty()) {
-            const QStringList keywords = filterStr.split(QLatin1Char('|'));
-            for (const auto& keyword : keywords) {
-                const QString trimmed = keyword.trimmed();
-                if (!trimmed.isEmpty() && message.contains(trimmed, Qt::CaseInsensitive)) {
-                    m_isSpammer = true;
-                    logDebug(QStringLiteral("Spam detected from %1: %2").arg(userName(), message));
-                    // MFC BaseClient.cpp:2647-2650 also closes the window on a spammer we
-                    // never wrote to; a chat we started ourselves is left alone. (We keep
-                    // setting m_isSpammer either way, which MFC gates on its adv-spam
-                    // preference — we have no such pref.)
-                    if (!friendPtr() && messagesSent() == 0)
-                        endChatSession();
-                    return;
-                }
-            }
+    // Word filter
+    const bool advSpamFilter = thePrefs.enableSpamFilter();
+    const QStringList keywords = thePrefs.messageFilter().split(QLatin1Char('|'));
+    for (const auto& keyword : keywords) {
+        const QString trimmed = keyword.trimmed();
+        if (trimmed.isEmpty() || !message.contains(trimmed, Qt::CaseInsensitive))
+            continue;
+        if (advSpamFilter && !isFriend && m_messagesSent == 0) {
+            m_isSpammer = true;
+            endChatSession();
         }
+        logDebug(QStringLiteral("Message from '%1' matched filter '%2'")
+                     .arg(statusName(), trimmed));
+        return;
     }
 
-    // Captcha challenge for first message from unknown clients
-    if (thePrefs.useChatCaptchas() && m_supportsCaptcha && m_messagesReceived == 1 && !m_friend
-        && m_chatCaptchaState == ChatCaptchaState::None)
+    // Captcha: outranks the checks below — whoever solves it is no spam bot
+    if (advSpamFilter && thePrefs.useChatCaptchas() && !isFriend
+        && m_messagesSent == 0 && m_messagesReceived == 0
+        && m_chatCaptchaState != ChatCaptchaState::CaptchaSolved)
     {
-        // Generate a simple captcha image using Qt
-        const QString captchaText = generateCaptchaText();
-        m_captchaChallenge = captchaText;
-        m_captchaPendingMsg = message;
+        if (m_chatCaptchaState != ChatCaptchaState::ChallengeSent) {
+            sendCaptchaChallenge(message);
+            return;
+        }
 
-        QImage captchaImg = generateCaptchaImage(captchaText);
-        if (!captchaImg.isNull()) {
-            // Encode as BMP for wire format (eMule captcha uses BMP)
-            QByteArray bmpData;
-            QBuffer buffer(&bmpData);
-            buffer.open(QIODevice::WriteOnly);
-            captchaImg.save(&buffer, "BMP");
-            buffer.close();
+        // The message after a challenge is the answer; anything before it is ignored
+        const QString answer = message.trimmed().right(m_captchaChallenge.length());
+        const bool solved = !m_captchaChallenge.isEmpty()
+                         && answer.compare(m_captchaChallenge, Qt::CaseInsensitive) == 0;
+        m_captchaChallenge.clear();
 
-            if (!bmpData.isEmpty()) {
-                SafeMemFile smf;
-                // Write captcha tag with BMP data
-                smf.writeUInt8(static_cast<uint8>(bmpData.size() & 0xFF));
-                smf.write(bmpData.constData(), bmpData.size());
+        auto result = std::make_unique<Packet>(OP_CHATCAPTCHARES, 1, OP_EMULEPROT, false);
+        if (!solved) {
+            m_chatCaptchaState = ChatCaptchaState::None;
+            m_captchaPendingMsg.clear();
+            result->pBuffer[0] = m_captchasSent < 3 ? 1 : 2;   // 2: no tries left
+        } else {
+            // Not persistent; from here on the message counter keeps the peer through
+            m_chatCaptchaState = ChatCaptchaState::CaptchaSolved;
+            message = std::exchange(m_captchaPendingMsg, QString());
+            m_captchasSent = 0;
+            result->pBuffer[0] = 0;
+        }
+        if (theApp.statistics)
+            theApp.statistics->addUpDataOverheadOther(result->size);
+        if (!safeConnectAndSendPacket(std::move(result)) || !solved)
+            return;
+    }
 
-                auto packet = std::make_unique<Packet>(smf, OP_EMULEPROT, OP_CHATCAPTCHAREQ);
-                sendPacket(std::move(packet));
-                m_chatCaptchaState = ChatCaptchaState::ChallengeSent;
-                return;
-            }
+    if (advSpamFilter && !isFriend) {
+        bool isSpam = m_isSpammer;
+        if (!isSpam && m_messagesSent == 0) {
+            // A link in a message we never answered, or four of them unanswered
+            static const QStringList kUrlIndicators = QStringLiteral(
+                "http:|www.|.de |.net |.com |.org |.to |.tk |.cc |.fr |ftp:|ed2k:|https:|ftp."
+                "|.info|.biz|.uk|.eu|.es|.tv|.cn|.tw|.ws|.nu|.jp").split(QLatin1Char('|'));
+            isSpam = m_messagesReceived > 3
+                  || std::ranges::any_of(kUrlIndicators, [&message](const QString& token) {
+                         return message.contains(token);
+                     });
+        }
+        if (isSpam) {
+            logDebug(QStringLiteral("'%1' has been marked as spammer").arg(statusName()));
+            m_isSpammer = true;
+            endChatSession();
+            return;
         }
     }
 
-    // GUI display
+    // Counted only when shown (MFC CChatSelector::ProcessMessage)
+    incMessagesReceived();
     emit chatMessageReceived(m_username, message);
 }
 
@@ -3330,20 +3397,15 @@ void UpDownClient::sendChatMessage(const QString& message)
     if (!m_socket || message.isEmpty())
         return;
 
-    // Handle captcha state machine
-    if (m_chatCaptchaState == ChatCaptchaState::CaptchaRecv) {
-        m_chatCaptchaState = ChatCaptchaState::SolutionSent;
-    }
-
-    SafeMemFile data;
-    const QByteArray utf8 = message.toUtf8();
-    data.writeUInt16(static_cast<uint16>(utf8.size()));
-    data.write(utf8.constData(), utf8.size());
-
-    auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_MESSAGE);
-    sendPacket(std::move(packet));
-
+    // MFC CChatSelector::SendText (srchybrid/ChatSelector.cpp:285-296)
     incMessagesSent();
+    m_isSpammer = false;
+    if (m_chatCaptchaState == ChatCaptchaState::CaptchaRecv)
+        m_chatCaptchaState = ChatCaptchaState::SolutionSent;   // this message is the answer
+    else if (m_chatCaptchaState != ChatCaptchaState::SolutionSent)
+        m_chatCaptchaState = ChatCaptchaState::Accepting;      // a challenge may come back
+
+    sendChatPacket(message);
 }
 
 // ===========================================================================
@@ -3352,43 +3414,40 @@ void UpDownClient::sendChatMessage(const QString& message)
 
 void UpDownClient::processCaptchaRequest(SafeMemFile& data)
 {
-    if (m_chatCaptchaState != ChatCaptchaState::None) {
-        m_chatCaptchaState = ChatCaptchaState::None;
+    // Only as the reply to a message we just sent (MFC srchybrid/BaseClient.cpp:2765-2797);
+    // otherwise any peer could push images at us.
+    if (m_chatCaptchaState != ChatCaptchaState::Accepting) {
+        logDebug(QStringLiteral("Unrequested captcha from %1 ignored").arg(statusName()));
         return;
     }
 
-    // Read BMP image data size
-    const uint32 imgSize = data.readUInt8();
-    if (imgSize == 0 || imgSize > 4096) {
-        logDebug(QStringLiteral("processCaptchaRequest: invalid image size %1").arg(imgSize));
-        m_chatCaptchaState = ChatCaptchaState::None;
+    try {
+        // Tags, for future use
+        for (uint32 i = data.readUInt8(); i > 0; --i)
+            Tag tag(data, true);
+    } catch (const FileException&) {
+        logDebug(QStringLiteral("Captcha from %1: bad tags").arg(statusName()));
         return;
     }
 
-    // Read image data
-    std::vector<uint8> imgData(imgSize);
-    data.read(imgData.data(), imgSize);
+    // A small captcha, not a wallpaper
+    const qint64 imgSize = data.length() - data.position();
+    if (imgSize <= 128 || imgSize >= 4096) {
+        logDebug(QStringLiteral("Captcha from %1: bad image size %2").arg(statusName()).arg(imgSize));
+        return;
+    }
+    QByteArray imgData(static_cast<qsizetype>(imgSize), Qt::Uninitialized);
+    data.read(imgData.data(), static_cast<uint32>(imgSize));
 
-    // Decode BMP using QImage
     QImage captchaImg;
-    if (!captchaImg.loadFromData(imgData.data(), static_cast<int>(imgSize), "BMP")) {
-        logDebug(QStringLiteral("processCaptchaRequest: failed to decode BMP captcha"));
-        m_chatCaptchaState = ChatCaptchaState::None;
-        return;
-    }
-
-    // Validate image dimensions (reasonable captcha size)
-    if (captchaImg.height() < 10 || captchaImg.height() > 50
-        || captchaImg.width() < 10 || captchaImg.width() > 150)
-    {
-        logDebug(QStringLiteral("processCaptchaRequest: invalid captcha dimensions %1x%2").arg(captchaImg.width()).arg(captchaImg.height()));
-        m_chatCaptchaState = ChatCaptchaState::None;
+    if (!captchaImg.loadFromData(imgData, "BMP")
+        || captchaImg.height() <= 10 || captchaImg.height() >= 50
+        || captchaImg.width() <= 10 || captchaImg.width() >= 150) {
+        logDebug(QStringLiteral("Captcha from %1: not a usable image").arg(statusName()));
         return;
     }
 
     m_chatCaptchaState = ChatCaptchaState::CaptchaRecv;
-
-    // Emit signal so the GUI can show the captcha to the user
     emit captchaRequestReceived(m_username, captchaImg);
 }
 
@@ -3398,15 +3457,13 @@ void UpDownClient::processCaptchaRequest(SafeMemFile& data)
 
 void UpDownClient::processCaptchaReqRes(uint8 status)
 {
-    switch (status) {
-    case 0: // Captcha solved correctly
-        m_chatCaptchaState = ChatCaptchaState::CaptchaSolved;
-        break;
-    default: // Captcha failed
-        m_chatCaptchaState = ChatCaptchaState::None;
-        m_captchasSent++;
-        break;
-    }
+    // Meaningful only while our answer is out (MFC srchybrid/BaseClient.cpp:2799-2811)
+    const bool expected = m_chatCaptchaState == ChatCaptchaState::SolutionSent;
+    m_chatCaptchaState = ChatCaptchaState::None;
+    if (expected)
+        emit captchaResultReceived(m_username, status == 0);
+    else
+        logDebug(QStringLiteral("Unrequested captcha result from %1 ignored").arg(statusName()));
 }
 
 // ===========================================================================
@@ -3436,59 +3493,54 @@ void UpDownClient::sendPreviewRequest(const AbstractFile& file)
     sendPacket(std::move(packet));
 }
 
+namespace {
+
+/// One PNG frame of at most 200 px for the image at @p path, empty when it cannot be
+/// read or is too large to decode. Runs on a pool thread.
+QByteArray renderPreviewFrame(const QString& path)
+{
+    static constexpr qint64 kMaxSourcePixels = 64ll * 1000 * 1000;
+
+    QImageReader reader(path);
+    const QSize dims = reader.size();
+    if (!dims.isValid() || dims.isEmpty()
+        || static_cast<qint64>(dims.width()) * dims.height() > kMaxSourcePixels)
+        return {};
+    if (dims.width() > 200 || dims.height() > 200)
+        reader.setScaledSize(dims.scaled(200, 200, Qt::KeepAspectRatio));
+    const QImage image = reader.read();
+    if (image.isNull())
+        return {};
+
+    QByteArray png;
+    QBuffer buffer(&png);
+    buffer.open(QIODevice::WriteOnly);
+    image.save(&buffer, "PNG");
+    return png;
+}
+
+} // namespace
+
 // ===========================================================================
 // sendPreviewAnswer
 // ===========================================================================
 
-void UpDownClient::sendPreviewAnswer(const KnownFile* file)
+void UpDownClient::sendPreviewAnswer(const uint8* fileHash, const std::vector<QByteArray>& pngFrames)
 {
+    m_previewAnsPending = false;
     if (!m_socket)
         return;
 
+    // MFC BaseClient.cpp:2073-2104: the hash of the file asked for, zero when unknown.
+    // The requester finds its search entry by it.
+    static constexpr uint8 kZeroHash[16] = {};
     SafeMemFile data;
-    data.writeHash16(m_reqUpFileId.data());
-
-    if (!file || file->filePath().isEmpty()) {
-        // No file or no path — send empty preview
-        data.writeUInt8(0);
-        auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_PREVIEWANSWER);
-        sendPacket(std::move(packet));
-        return;
+    data.writeHash16(fileHash ? fileHash : kZeroHash);
+    data.writeUInt8(static_cast<uint8>(pngFrames.size()));
+    for (const QByteArray& frame : pngFrames) {
+        data.writeUInt32(static_cast<uint32>(frame.size()));
+        data.write(frame.constData(), frame.size());
     }
-
-    // Try to generate preview frames from the file using Qt
-    // For video files, we could use QMediaPlayer in the future.
-    // For now, attempt to load as an image file (covers image previews).
-    QImage previewImg(file->filePath());
-    if (previewImg.isNull()) {
-        // Not an image file or failed to load — send empty preview
-        data.writeUInt8(0);
-        auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_PREVIEWANSWER);
-        sendPacket(std::move(packet));
-        return;
-    }
-
-    // Scale to reasonable preview size
-    previewImg = previewImg.scaled(200, 200, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-
-    // Encode as PNG
-    QByteArray pngData;
-    QBuffer buffer(&pngData);
-    buffer.open(QIODevice::WriteOnly);
-    previewImg.save(&buffer, "PNG");
-    buffer.close();
-
-    if (pngData.isEmpty()) {
-        data.writeUInt8(0);
-        auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_PREVIEWANSWER);
-        sendPacket(std::move(packet));
-        return;
-    }
-
-    // Write 1 frame
-    data.writeUInt8(1);
-    data.writeUInt32(static_cast<uint32>(pngData.size()));
-    data.write(pngData.constData(), pngData.size());
 
     auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_PREVIEWANSWER);
     sendPacket(std::move(packet));
@@ -3503,13 +3555,42 @@ void UpDownClient::processPreviewReq(const uint8* data, uint32 size)
     if (!data || size < 16)
         return;
 
-    // Look up file in shared files by hash
-    KnownFile* file = nullptr;
-    if (theApp.sharedFileList)
-        file = theApp.sharedFileList->getFileByID(data);
+    // MFC BaseClient.cpp:2117-2118: one answer at a time, and only for those who may
+    // see our files at all.
+    const int access = thePrefs.viewSharedFilesAccess();
+    if (m_previewAnsPending || access == 0 || (access == 1 && m_friend == nullptr))
+        return;
+    m_previewAnsPending = true;
 
-    // Send preview answer (possibly empty if file not found)
-    sendPreviewAnswer(file);
+    KnownFile* file = theApp.sharedFileList ? theApp.sharedFileList->getFileByID(data) : nullptr;
+    if (!file) {
+        sendPreviewAnswer(nullptr, {});
+        return;
+    }
+
+    std::array<uint8, 16> hash{};
+    std::memcpy(hash.data(), file->fileHash(), 16);
+    const QString path = file->filePath();
+    // Only still images can be previewed here; video frame grabbing is not ported.
+    if (path.isEmpty() || file->isPartFile()
+        || getED2KFileTypeID(file->fileName()) != ED2KFileType::Image)
+    {
+        sendPreviewAnswer(hash.data(), {});
+        return;
+    }
+
+    // Decoding and encoding stay off the main thread: a large image takes long enough
+    // to stall every socket.
+    QPointer<UpDownClient> self(this);
+    QThreadPool::globalInstance()->start([self, hash, path] {
+        std::vector<QByteArray> frames;
+        if (QByteArray png = renderPreviewFrame(path); !png.isEmpty())
+            frames.push_back(std::move(png));
+        QMetaObject::invokeMethod(qApp, [self, hash, frames = std::move(frames)] {
+            if (self)
+                self->sendPreviewAnswer(hash.data(), frames);
+        }, Qt::QueuedConnection);
+    });
 }
 
 // ===========================================================================
@@ -3535,26 +3616,35 @@ void UpDownClient::processPreviewAnswer(const uint8* data, uint32 size)
         return;
     }
 
-    std::vector<QImage> previewImages;
-    previewImages.reserve(frameCount);
+    // Stock sends four frames of 450 px. More, or bigger, is not a preview.
+    static constexpr uint8 kMaxFrames = 8;
+    static constexpr int kMaxFrameEdge = 2048;
 
-    for (uint8 i = 0; i < frameCount; ++i) {
+    std::vector<QImage> previewImages;
+    for (uint8 i = 0; i < std::min(frameCount, kMaxFrames); ++i) {
         const uint32 imgSize = file.readUInt32();
         if (imgSize == 0 || imgSize > size) {
             logDebug(QStringLiteral("processPreviewAnswer: frame %1 size exceeds packet").arg(i));
             break;
         }
 
-        std::vector<uint8> imgData(imgSize);
+        QByteArray imgData(static_cast<qsizetype>(imgSize), Qt::Uninitialized);
         file.read(imgData.data(), imgSize);
 
-        // Decode PNG using QImage (replaces CxImage)
-        QImage image;
-        if (image.loadFromData(imgData.data(), static_cast<int>(imgSize), "PNG") && !image.isNull()) {
-            previewImages.push_back(std::move(image));
-        } else {
-            logDebug(QStringLiteral("processPreviewAnswer: failed to decode frame %1").arg(i));
+        // The header says how much memory a decode takes; ask before decoding.
+        QBuffer buffer(&imgData);
+        buffer.open(QIODevice::ReadOnly);
+        QImageReader reader(&buffer, "png");
+        const QSize dims = reader.size();
+        if (!dims.isValid() || dims.width() > kMaxFrameEdge || dims.height() > kMaxFrameEdge) {
+            logDebug(QStringLiteral("processPreviewAnswer: frame %1 refused (%2x%3)")
+                         .arg(i).arg(dims.width()).arg(dims.height()));
+            continue;
         }
+        if (QImage image = reader.read(); !image.isNull())
+            previewImages.push_back(std::move(image));
+        else
+            logDebug(QStringLiteral("processPreviewAnswer: failed to decode frame %1").arg(i));
     }
 
     if (!previewImages.empty())
@@ -3715,7 +3805,7 @@ void UpDownClient::processKadFwTcpCheckAck()
         if (!addr.isNull())
             peerIpNet = Address::fromQHostAddress(addr).toNetworkUint32();
     }
-    if (theApp.clientList && !theApp.clientList->isKadFirewallCheckIP(peerIpNet)) {
+    if (theApp.clientList && !theApp.clientList->takeKadFirewallAck(peerIpNet)) {
         logWarning(QStringLiteral("Unrequested OP_KAD_FWTCPCHECK_ACK from %1").arg(dbgGetClientInfo()));
         return;
     }
@@ -3752,30 +3842,53 @@ void UpDownClient::processCallbackPacket(const uint8* data, uint32 size)
     if (!kadPrefs || check != kadPrefs->kadId())
         return;
 
+    // Only our buddy relays callbacks. The check value is our Kad ID inverted and the
+    // file is one we share — both public — so without this anyone could make us dial out.
+    if (!theApp.clientList || theApp.clientList->getBuddy() != this
+        || theApp.clientList->buddyStatus() != BuddyStatus::Connected)
+    {
+        logDebug(QStringLiteral("OP_CALLBACK from %1, which is not our buddy").arg(dbgGetClientInfo()));
+        return;
+    }
+
     // Read the file ID the requester wants
     kad::UInt128 fileId = kad::io::readUInt128(file);
     uint8 fileidMD4[16];
     fileId.toByteArray(fileidMD4);
 
-    // Verify we actually share this file
-    if (theApp.sharedFileList) {
-        if (!theApp.sharedFileList->getFileByID(fileidMD4))
-            return;
+    // A file we share or download, else a failed request (MFC ListenSocket.cpp:1382-1386)
+    const bool shared = theApp.sharedFileList && theApp.sharedFileList->getFileByID(fileidMD4);
+    if (!shared && !(theApp.downloadQueue && theApp.downloadQueue->fileByID(fileidMD4))) {
+        checkFailedFileIdReqs(fileidMD4);
+        return;
     }
 
     // Read the requester's IP and TCP port
     const uint32 ip = file.readUInt32();
     const uint16 tcp = file.readUInt16();
 
-    // Find or create a client for the requester
-    UpDownClient* callback = nullptr;
-    if (theApp.clientList)
-        callback = theApp.clientList->findByConnIP(ntohl(ip), tcp);
+    // The target comes from the packet: vet it like any other peer address, never
+    // ourselves, and at most one dial per address per rate window.
+    const Address target = vetPeerAddress(Address::fromHostOrder(ip), theApp.ipFilter,
+                                          theApp.clientList);
+    if (target.isNull() || tcp == 0
+        || (theApp.isOwnTcpPort(tcp) && target == Address::fromNetworkOrder(theApp.publicIP()))
+        || !theApp.clientList->allowCallbackRequest(target))
+    {
+        logDebug(QStringLiteral("OP_CALLBACK: refused target %1:%2")
+                     .arg(Address::fromHostOrder(ip).toString()).arg(tcp));
+        return;
+    }
+    theApp.clientList->addTrackCallbackRequests(target);
 
+    // Find or create a client for the requester
+    UpDownClient* callback = theApp.clientList->findByConnIP(ntohl(ip), tcp);
     if (!callback) {
-        callback = new UpDownClient(tcp, 0, ip, 0, nullptr);
-        if (theApp.clientList)
-            theApp.clientList->addClient(callback);
+        // The address goes in the userId slot (MFC ListenSocket.cpp:1392): with 0 there
+        // the client reads as LowID and is never dialled.
+        callback = new UpDownClient(tcp, ip, 0, 0, nullptr);
+        callback->setConnectAddress(target);
+        theApp.clientList->addClient(callback);
     }
 
     callback->tryToConnect(true);
@@ -3898,7 +4011,7 @@ void UpDownClient::processBuddyPong()
 
 bool UpDownClient::allowIncomingBuddyPingPong() const
 {
-    return static_cast<uint32>(getTickCount()) >= m_lastBuddyPingPongTime + MIN2MS(3);
+    return getTickCount() >= m_lastBuddyPingPongTime + MIN2MS(3);
 }
 
 // ===========================================================================
@@ -3910,12 +4023,12 @@ bool UpDownClient::allowIncomingBuddyPingPong() const
 
 bool UpDownClient::sendBuddyPingPong() const
 {
-    return static_cast<uint32>(getTickCount()) >= m_lastBuddyPingPongTime;
+    return getTickCount() >= m_lastBuddyPingPongTime;
 }
 
 void UpDownClient::setLastBuddyPingPongTime()
 {
-    m_lastBuddyPingPongTime = static_cast<uint32>(getTickCount()) + MIN2MS(10);
+    m_lastBuddyPingPongTime = getTickCount() + MIN2MS(10);
 }
 
 // ===========================================================================
@@ -3997,10 +4110,19 @@ void UpDownClient::onExtPacketReceived(const uint8* data, uint32 size, uint8 opc
         processPreviewAnswer(data, size);
         break;
 
-    case OP_PUBLICIP_REQ:
-        // Respond with our public IP
-        sendPublicIPRequest();
+    case OP_PUBLICIP_REQ: {
+        // Tell the peer the address we see it at (MFC srchybrid/ListenSocket.cpp:1336).
+        // The answer is 4 bytes, so an IPv6 peer gets none.
+        const Address& seen = m_connectAddress.isNull() ? m_userAddress : m_connectAddress;
+        if (!seen.isIPv4())
+            break;
+        auto packet = std::make_unique<Packet>(OP_PUBLICIP_ANSWER, 4, OP_EMULEPROT);
+        pokeUInt32(packet->pBuffer, seen.toNetworkUint32());
+        if (theApp.statistics)
+            theApp.statistics->addUpDataOverheadOther(packet->size);
+        sendPacket(std::move(packet));
         break;
+    }
 
     case OP_PUBLICIP_ANSWER:
         processPublicIPAnswer(data, size);
@@ -4132,7 +4254,10 @@ void UpDownClient::onPacketForClient(const uint8* data, uint32 size, uint8 opcod
         break;
 
     case OP_OUTOFPARTREQS:
-        setDownloadState(DownloadState::OnQueue);
+        // Only ends a running transfer (MFC ListenSocket.cpp:601); in any other state it
+        // would let a peer rewrite our view of it.
+        if (m_downloadState == DownloadState::Downloading)
+            setDownloadState(DownloadState::OnQueue);
         break;
 
     case OP_REQUESTPARTS:
@@ -4144,8 +4269,13 @@ void UpDownClient::onPacketForClient(const uint8* data, uint32 size, uint8 opcod
         break;
 
     case OP_END_OF_DOWNLOAD:
-        if (theApp.uploadQueue)
-            theApp.uploadQueue->removeFromUploadQueue(this);
+        // Only for the file it is being served (MFC srchybrid/ListenSocket.cpp:553)
+        if (size >= 16 && md4equ(m_reqUpFileId.data(), data)) {
+            if (theApp.uploadQueue)
+                theApp.uploadQueue->removeFromUploadQueue(this);
+        } else if (size >= 16) {
+            checkFailedFileIdReqs(data);
+        }
         break;
 
     case OP_CHANGE_CLIENT_ID:
@@ -4193,8 +4323,14 @@ void UpDownClient::onPacketForClient(const uint8* data, uint32 size, uint8 opcod
         break;
 
     case OP_MESSAGE: {
+        // MFC srchybrid/ListenSocket.cpp:643-664
+        if (size < 2)
+            throw FileException("OP_MESSAGE: invalid message packet");
         SafeMemFile io(data, size);
-        processChatMessage(io, size);
+        const uint32 length = io.readUInt16();
+        if (length + 2 != size)
+            throw FileException("OP_MESSAGE: invalid message packet");
+        processChatMessage(io, std::min<uint32>(length, MAX_CLIENT_MSG_LEN));
         break;
     }
 
@@ -4329,12 +4465,31 @@ void UpDownClient::onFileRequestReceived(const uint8* data, uint32 size, uint8 o
         break;
     }
 
-    case OP_FILEREQANSNOFIL:
-        // Remote peer doesn't have the file
-        if (theApp.downloadQueue)
-            theApp.downloadQueue->removeSource(this);
-        setDownloadState(DownloadState::None);
+    case OP_FILEREQANSNOFIL: {
+        // MFC ListenSocket.cpp:421-443
+        if (size != 16)
+            throw FileException("OP_FILEREQANSNOFIL: wrong packet size");
+        PartFile* file = theApp.downloadQueue ? theApp.downloadQueue->fileByID(data) : nullptr;
+        if (!file) {
+            checkFailedFileIdReqs(data);
+            break;
+        }
+        file->deadSourceList().addDeadSource(deadSourceKey(), hasLowID());
+        // It may still have another file we want: try that before dropping it.
+        switch (m_downloadState) {
+        case DownloadState::Connected:
+        case DownloadState::OnQueue:
+        case DownloadState::NoNeededParts:
+            dontSwapTo(file);
+            if (!swapToAnotherFile(QStringLiteral("Source says it doesn't have the file"),
+                                   true, true, true, nullptr, false, false))
+                theApp.downloadQueue->removeSource(this);
+            break;
+        default:
+            break;
+        }
         break;
+    }
 
     case OP_FILESTATUS: {
         // Payload: [16-byte fileHash] [2-byte partCount] [bitmap...]
@@ -4397,73 +4552,178 @@ void UpDownClient::onUploadRequestReceived(const uint8* data, uint32 size)
 // ===========================================================================
 
 // ===========================================================================
-// generateCaptchaText — random 4-character alphanumeric string
+// sendChatPacket — one OP_MESSAGE, no session bookkeeping
 // ===========================================================================
+
+void UpDownClient::sendChatPacket(const QString& message)
+{
+    SafeMemFile data;
+    const QByteArray utf8 = message.toUtf8();
+    data.writeUInt16(static_cast<uint16>(utf8.size()));
+    data.write(utf8.constData(), utf8.size());
+
+    auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_MESSAGE);
+    if (theApp.statistics)
+        theApp.statistics->addUpDataOverheadOther(packet->size);
+    safeConnectAndSendPacket(std::move(packet));
+}
+
+// ===========================================================================
+// sendCaptchaChallenge — hold @p message back until the peer proves it can read
+// ===========================================================================
+
+void UpDownClient::sendCaptchaChallenge(const QString& message)
+{
+    if (!m_supportsCaptcha) {
+        // Told once; its messages are dropped either way
+        if (m_captchasSent < 1) {
+            ++m_captchasSent;
+            sendChatPacket(QStringLiteral(
+                "In order to avoid spam messages, this user requires you to solve a captcha "
+                "before you can send a message to him. However your client does not support "
+                "captchas, so you will not be able to chat with this user."));
+        }
+        return;
+    }
+    if (m_captchasSent >= 3)   // no more than 3 tries
+        return;
+
+    const QString text = generateCaptchaText();
+    QByteArray bmp;
+    {
+        QBuffer buffer(&bmp);
+        buffer.open(QIODevice::WriteOnly);
+        if (!generateCaptchaImage(text).save(&buffer, "BMP"))
+            bmp.clear();
+    }
+    if (bmp.isEmpty()) {
+        logError(QStringLiteral("Failed to create the captcha for %1").arg(statusName()));
+        return;
+    }
+
+    SafeMemFile data;
+    data.writeUInt8(0);   // no tags, for future use
+    data.write(bmp.constData(), bmp.size());
+
+    m_captchaPendingMsg = message;
+    m_captchaChallenge = text;
+    m_chatCaptchaState = ChatCaptchaState::ChallengeSent;
+    ++m_captchasSent;
+
+    auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_CHATCAPTCHAREQ);
+    if (theApp.statistics)
+        theApp.statistics->addUpDataOverheadOther(packet->size);
+    safeConnectAndSendPacket(std::move(packet));
+}
+
+// ===========================================================================
+// Captcha text and image
+// ===========================================================================
+
+namespace {
+
+constexpr char kCaptchaChars[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+constexpr int kCaptchaCharCount = sizeof(kCaptchaChars) - 1;
+
+// 5x7 glyphs, one row per byte, in kCaptchaChars order. Drawn by hand because the
+// daemon is a QCoreApplication: anything touching QFont aborts there.
+constexpr uint8 kCaptchaGlyphs[kCaptchaCharCount][7] = {
+    { 0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001 },  // A
+    { 0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110 },  // B
+    { 0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110 },  // C
+    { 0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110 },  // D
+    { 0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111 },  // E
+    { 0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000 },  // F
+    { 0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b10001, 0b01111 },  // G
+    { 0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001 },  // H
+    { 0b00111, 0b00010, 0b00010, 0b00010, 0b00010, 0b10010, 0b01100 },  // J
+    { 0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001 },  // K
+    { 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111 },  // L
+    { 0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001 },  // M
+    { 0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001 },  // N
+    { 0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000 },  // P
+    { 0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101 },  // Q
+    { 0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001 },  // R
+    { 0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110 },  // S
+    { 0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100 },  // T
+    { 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110 },  // U
+    { 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100 },  // V
+    { 0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b10101, 0b01010 },  // W
+    { 0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001 },  // X
+    { 0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100 },  // Y
+    { 0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111 },  // Z
+    { 0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111 },  // 2
+    { 0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110 },  // 3
+    { 0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010 },  // 4
+    { 0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110 },  // 5
+    { 0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110 },  // 6
+    { 0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000 },  // 7
+    { 0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110 },  // 8
+    { 0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100 },  // 9
+};
+
+} // namespace
 
 QString UpDownClient::generateCaptchaText()
 {
-    static constexpr char chars[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    static constexpr int charCount = sizeof(chars) - 1;
-
     QString text;
     text.reserve(4);
     auto* rng = QRandomGenerator::global();
     for (int i = 0; i < 4; ++i)
-        text.append(QChar::fromLatin1(chars[rng->bounded(charCount)]));
+        text.append(QChar::fromLatin1(kCaptchaChars[rng->bounded(kCaptchaCharCount)]));
     return text;
 }
 
-// ===========================================================================
-// generateCaptchaImage — renders captcha text onto a small BMP-compatible image
-// ===========================================================================
-
+// MFC's shape (srchybrid/CaptchaGenerator.cpp): 32 px for the first letter, 18 for each
+// further one, 48 high, two colours — under 1 KB as a BMP, which is what the receiving
+// side's size check expects.
 QImage UpDownClient::generateCaptchaImage(const QString& text)
 {
-    constexpr int width = 120;
-    constexpr int height = 40;
+    constexpr int kLetter = 32;
+    constexpr int kCrowded = 18;
+    constexpr int kHeight = 48;
+    const int width = kLetter + static_cast<int>(text.length()) * kCrowded;
 
-    QImage image(width, height, QImage::Format_RGB32);
-    image.fill(Qt::white);
-
-    QPainter painter(&image);
-    if (!painter.isActive())
+    QImage canvas(width, kHeight, QImage::Format_RGB32);
+    if (canvas.isNull())
         return {};
+    canvas.fill(Qt::white);
 
     auto* rng = QRandomGenerator::global();
+    for (qsizetype i = 0; i < text.length(); ++i) {
+        const char* at = std::strchr(kCaptchaChars, text.at(i).toLatin1());
+        if (!at || *at == '\0')
+            continue;
+        const uint8* glyph = kCaptchaGlyphs[at - kCaptchaChars];
 
-    // Draw noise lines
-    for (int i = 0; i < 6; ++i) {
-        QPen pen(QColor::fromRgb(rng->bounded(200), rng->bounded(200), rng->bounded(200)));
-        pen.setWidth(1);
-        painter.setPen(pen);
-        painter.drawLine(rng->bounded(width), rng->bounded(height),
-                         rng->bounded(width), rng->bounded(height));
+        // Each letter gets its own size, tilt and place
+        const double scale = 2.6 + rng->bounded(6) / 10.0;
+        const double angle = (rng->bounded(37) - 18) * 3.14159265358979 / 180.0;
+        const double cosA = std::cos(angle);
+        const double sinA = std::sin(angle);
+        const int cx = kLetter / 2 + 4 + static_cast<int>(i) * (kCrowded + 2) + rng->bounded(4);
+        const int cy = kHeight / 2 + rng->bounded(7) - 3;
+
+        constexpr int kReach = 22;
+        for (int y = std::max(0, cy - kReach); y < std::min(kHeight, cy + kReach); ++y) {
+            for (int x = std::max(0, cx - kReach); x < std::min(width, cx + kReach); ++x) {
+                // Back into the glyph's own grid
+                const double dx = x - cx;
+                const double dy = y - cy;
+                const int col = static_cast<int>(std::floor((dx * cosA + dy * sinA) / scale + 2.5));
+                const int row = static_cast<int>(std::floor((dy * cosA - dx * sinA) / scale + 3.5));
+                if (col >= 0 && col < 5 && row >= 0 && row < 7 && (glyph[row] >> (4 - col)) & 1)
+                    canvas.setPixel(x, y, qRgb(0, 0, 0));
+            }
+        }
     }
 
-    // Draw each character with slight rotation and offset
-    QFont font(QStringLiteral("Arial"), 20, QFont::Bold);
-    painter.setFont(font);
+    // Speckle, so the letters are not clean shapes
+    for (int i = 0; i < width * kHeight / 60; ++i)
+        canvas.setPixel(rng->bounded(width), rng->bounded(kHeight),
+                        rng->bounded(2) ? qRgb(0, 0, 0) : qRgb(255, 255, 255));
 
-    const int charWidth = width / (text.length() + 1);
-    for (int i = 0; i < text.length(); ++i) {
-        painter.save();
-        const int x = charWidth * (i + 1) - charWidth / 2;
-        const int y = height / 2 + rng->bounded(10) - 5;
-        painter.translate(x, y);
-        painter.rotate(rng->bounded(30) - 15);
-        painter.setPen(QColor::fromRgb(rng->bounded(100), rng->bounded(100), rng->bounded(100)));
-        painter.drawText(0, 0, text.mid(i, 1));
-        painter.restore();
-    }
-
-    // Draw noise dots
-    for (int i = 0; i < 40; ++i) {
-        painter.setPen(QColor::fromRgb(rng->bounded(256), rng->bounded(256), rng->bounded(256)));
-        painter.drawPoint(rng->bounded(width), rng->bounded(height));
-    }
-
-    painter.end();
-    return image;
+    return canvas.convertToFormat(QImage::Format_Mono, Qt::ThresholdDither);
 }
 
 // ===========================================================================
@@ -4472,7 +4732,7 @@ QImage UpDownClient::generateCaptchaImage(const QString& text)
 
 void UpDownClient::setLastAskedForSourcesTime()
 {
-    m_lastAskedForSources = static_cast<uint32>(getTickCount());
+    m_lastAskedForSources = getTickCount();
 }
 
 // ===========================================================================
@@ -4531,10 +4791,16 @@ void UpDownClient::processAnswerSources(const uint8* data, uint32 size)
         return;
 
     auto* file = theApp.downloadQueue->fileByID(fileHash);
-    if (!file)
+    if (!file) {
+        checkFailedFileIdReqs(fileHash);
         return;
+    }
+    if (!expectsSourcesFor(file)) {
+        logDebug(QStringLiteral("Unrequested source answer from %1 dropped").arg(statusName()));
+        return;
+    }
 
-    m_lastSourceAnswer = static_cast<uint32>(getTickCount());
+    m_lastSourceAnswer = getTickCount();
     file->setLastAnsweredTime();
 
     file->addClientSources(io, m_sourceExchange1Ver, /*isSX2*/ false, this);
@@ -4593,10 +4859,16 @@ void UpDownClient::processAnswerSources2(const uint8* data, uint32 size)
         return;
 
     auto* file = theApp.downloadQueue->fileByID(fileHash);
-    if (!file)
+    if (!file) {
+        checkFailedFileIdReqs(fileHash);
         return;
+    }
+    if (!expectsSourcesFor(file)) {
+        logDebug(QStringLiteral("Unrequested source answer from %1 dropped").arg(statusName()));
+        return;
+    }
 
-    m_lastSourceAnswer = static_cast<uint32>(getTickCount());
+    m_lastSourceAnswer = getTickCount();
     file->setLastAnsweredTime();
 
     file->addClientSources(io, version, /*isSX2*/ true, this);
@@ -4622,8 +4894,8 @@ void UpDownClient::answerSourceRequest(KnownFile* file, uint8 requestedVersion,
     // MFC ListenSocket.cpp:1004-1015, kept expression-for-expression: the latency
     // allowance is added to the elapsed time rather than subtracted from the interval,
     // and the rare-file shortcut applies to part files only.
-    const uint32 timePassed =
-        static_cast<uint32>(getTickCount()) - m_lastSourceRequest + CONNECTION_LATENCY;
+    const uint64 timePassed =
+        getTickCount() - m_lastSourceRequest + CONNECTION_LATENCY;
     const bool neverAskedBefore = (m_lastSourceRequest == 0);
     const bool rareFile = file->isPartFile()
                           && static_cast<PartFile*>(file)->sourceCount() <= RARE_FILE;
@@ -4633,7 +4905,7 @@ void UpDownClient::answerSourceRequest(KnownFile* file, uint8 requestedVersion,
           || timePassed > SOURCECLIENTREASKS * MINCOMMONPENALTY))
         return;
 
-    m_lastSourceRequest = static_cast<uint32>(getTickCount());
+    m_lastSourceRequest = getTickCount();
 
     // ToDo: MFC meters this as AddUpDataOverheadSourceExchange; our sendPacket already
     // books it as "other" overhead, so categorising it here would double-count.
@@ -4674,7 +4946,7 @@ void UpDownClient::processAskSharedFiles()
     response.writeUInt32(static_cast<uint32>(files.size()));
 
     const uint32 clientID = theApp.publicIP();
-    const uint16 clientPort = thePrefs.port();
+    const uint16 clientPort = theApp.advertisedTcpPort();
 
     for (KnownFile* file : files) {
         response.writeHash16(file->fileHash());
@@ -4771,7 +5043,7 @@ void UpDownClient::processAskSharedFilesDir(const uint8* data, uint32 size)
     response.writeUInt32(static_cast<uint32>(matchedFiles.size()));
 
     const uint32 clientID = theApp.publicIP();
-    const uint16 clientPort = thePrefs.port();
+    const uint16 clientPort = theApp.advertisedTcpPort();
 
     for (KnownFile* file : matchedFiles) {
         response.writeHash16(file->fileHash());
@@ -5013,6 +5285,21 @@ QString UpDownClient::statusName() const
     if (!m_username.isEmpty())
         return m_username;
     return QStringLiteral("%1:%2").arg(m_userAddress.toString()).arg(m_userPort);
+}
+
+// ===========================================================================
+// expectsSourcesFor — is a source answer for this file one we asked for?
+// ===========================================================================
+
+bool UpDownClient::expectsSourcesFor(const PartFile* file) const
+{
+    // Never asked this client for sources: nothing to answer
+    if (m_lastAskedForSources == 0)
+        return false;
+    // We ask for m_reqFile; an A4AF swap may have moved it since
+    return file == m_reqFile
+        || std::ranges::find(m_otherRequests, file) != m_otherRequests.end()
+        || std::ranges::find(m_otherNoNeeded, file) != m_otherNoNeeded.end();
 }
 
 } // namespace eMule

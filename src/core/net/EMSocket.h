@@ -73,6 +73,11 @@ public:
     [[nodiscard]] EMSState getConState() const { return m_conState.load(std::memory_order_acquire); }
     void setConState(EMSState val);
 
+    /// The connect failed at our proxy, so it says nothing about the peer
+    /// (MFC CEMSocket::GetProxyConnectFailed).
+    [[nodiscard]] bool proxyConnectFailed() const { return m_proxyConnectFailed; }
+    void setProxyConnectFailed(bool failed) { m_proxyConnectFailed = failed; }
+
     /// Whether this socket is in raw data mode (for HTTP subclass).
     [[nodiscard]] virtual bool isRawDataMode() const { return false; }
 
@@ -103,7 +108,7 @@ public:
     SocketSentBytes sendControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize) override;
     SocketSentBytes sendFileAndControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize) override;
     [[nodiscard]] bool hasControlQueue() const override;
-    [[nodiscard]] uint32 getLastCalledSend() const override { return m_lastCalledSend; }
+    [[nodiscard]] uint64 getLastCalledSend() const override { return m_lastCalledSend; }
     [[nodiscard]] uint32 getNeededBytes() override;
     [[nodiscard]] bool isBusyExtensiveCheck() override;
     [[nodiscard]] bool isBusyQuickCheck() const override;
@@ -147,6 +152,7 @@ protected:
 
     uint32 m_timeOut = CONNECTION_TIMEOUT;
     std::atomic<EMSState> m_conState{EMSState::NotConnected};
+    bool m_proxyConnectFailed = false;
 
 private:
     // --- Internal send implementation ---
@@ -191,15 +197,26 @@ private:
 
     std::deque<std::unique_ptr<Packet>> m_controlQueue;
     std::deque<StandardPacketQueueEntry> m_standardQueue;
+    // Payload bytes waiting in each queue; guarded by m_sendLock like the queues.
+    uint64 m_controlQueueBytes = 0;
+    uint64 m_standardQueueBytes = 0;
+    bool m_queueOverflow = false;
     mutable std::mutex m_sendLock;
+
+    // A peer that stops reading must not make us buffer its answers without bound.
+    static constexpr size_t kMaxControlPackets = 1024;
+    static constexpr uint64 kMaxControlBytes = 8ull * 1024 * 1024;
+    static constexpr size_t kMaxStandardPackets = 2048;
+    static constexpr uint64 kMaxStandardBytes = 16ull * 1024 * 1024;
 
     // Statistics
     std::atomic<uint64> m_sentBytesCompleteFile{0};
     std::atomic<uint64> m_sentBytesPartFile{0};
     std::atomic<uint64> m_sentBytesControlPacket{0};
-    uint32 m_lastCalledSend = 0;
-    uint32 m_lastSent = 0;
-    uint32 m_lastFinishedStandard = 0;
+    // getTickCount() stamps. The first is read by the throttler thread without the lock.
+    std::atomic<uint64> m_lastCalledSend{0};
+    uint64 m_lastSent = 0;
+    uint64 m_lastFinishedStandard = 0;
     std::atomic<uint32> m_actualPayloadSizeSent{0};
     uint32 m_actualPayloadSize = 0;
     bool m_currentPacketIsControl = false;
@@ -232,7 +249,6 @@ private:
     /// matching the SO_SNDBUF size set by useBigSendBuffer()).
     static constexpr qint64 kBusyThreshold = 1024 * 1024;
 
-    QElapsedTimer m_elapsedTimer;
 };
 
 } // namespace eMule

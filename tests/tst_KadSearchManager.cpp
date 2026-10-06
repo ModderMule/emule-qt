@@ -1,10 +1,13 @@
 /// @file tst_KadSearchManager.cpp
 /// @brief Tests for KadSearchManager.h — search lifecycle management.
 
+#include "TestFixtures.h"
 #include "TestHelpers.h"
 
 #include "app/AppContext.h"
 #include "files/PartFile.h"
+#include "kademlia/Kademlia.h"
+#include "kademlia/KadIndexed.h"
 #include "kademlia/KadMiscUtils.h"
 #include "kademlia/KadSearch.h"
 #include "kademlia/KadSearchDefs.h"
@@ -36,6 +39,8 @@ private slots:
     void cancelNodeFWCheckUDPSearch_removesAll();
     void destroyedFileSearch_releasesPartFile();
     void destroyedFileSearch_allowsNextSearch();
+    void overloadedKeyword_isNotStoredAgain();
+    void lightlyLoadedKeyword_isStoredAgain();
 
 private:
     /// Start a keyword search for @p expression, asserting it starts.
@@ -256,6 +261,46 @@ void tst_KadSearchManager::destroyedFileSearch_allowsNextSearch()
 
     dq.deleteAll();
     theApp.downloadQueue = nullptr;
+}
+
+// MFC Search.cpp:158-159 + SearchManager.cpp:181-187: nodes that report a keyword as
+// overloaded are not asked to store it again until the mark runs out.
+void tst_KadSearchManager::overloadedKeyword_isNotStoredAgain()
+{
+    eMule::testing::KadFixture kadFixture;
+    QTRY_VERIFY(Kademlia::getInstanceIndexed()->isLoaded());
+
+    const UInt128 target(uint32{0x5101});
+    auto* search = SearchManager::prepareLookup(SearchType::StoreKeyword, true, target);
+    QVERIFY(search != nullptr);
+    SearchManager::processPublishResult(target, 60, true);
+    SearchManager::stopSearch(search->getSearchID(), false);
+
+    QVERIFY(SearchManager::prepareLookup(SearchType::StoreKeyword, false, target) == nullptr);
+    // Only keyword stores are held back.
+    auto* other = SearchManager::prepareLookup(SearchType::Keyword, false, target);
+    QVERIFY(other != nullptr);
+    delete other;
+
+    SearchManager::stopAllSearches();
+}
+
+void tst_KadSearchManager::lightlyLoadedKeyword_isStoredAgain()
+{
+    eMule::testing::KadFixture kadFixture;
+    QTRY_VERIFY(Kademlia::getInstanceIndexed()->isLoaded());
+
+    const UInt128 target(uint32{0x5102});
+    auto* search = SearchManager::prepareLookup(SearchType::StoreKeyword, true, target);
+    QVERIFY(search != nullptr);
+    SearchManager::processPublishResult(target, 20, true);
+    SearchManager::stopSearch(search->getSearchID(), false);
+
+    auto* again = SearchManager::prepareLookup(SearchType::StoreKeyword, false, target);
+    QVERIFY(again != nullptr);
+    delete again;
+
+    SearchManager::stopAllSearches();
 }
 
 // ---------------------------------------------------------------------------

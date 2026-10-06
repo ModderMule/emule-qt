@@ -225,6 +225,8 @@ private:
     /// The other-family address to retry a dual-stack server on after a failed TCP
     /// connect, or null (connected once, already a retry, single-family server).
     Address otherFamilyFor(const ServerSocket* socket, const Server* listServer) const;
+    /// Single-connect only: redial @p listServer plain if the obfuscated try was the first.
+    bool retryWithoutObfuscation(Server* listServer);
     void applyServerFlags(ServerSocket* socket, uint32 tcpFlags);
     void onServerIdent(ServerSocket* socket, const uint8* serverHash,
                        const QString& name, const QString& description);

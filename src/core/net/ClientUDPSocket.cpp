@@ -123,6 +123,11 @@ bool ClientUDPSocket::sendPacket(std::unique_ptr<Packet> packet, const Endpoint&
 
     {
         std::lock_guard lock(m_sendLock);
+        // A flood of requests we must answer cannot be allowed to queue without bound.
+        if (m_controlQueue.size() >= kMaxQueuedPackets) {
+            ++m_droppedQueueFull;
+            return false;
+        }
         m_controlQueue.push_back(std::move(pack));
     }
 
@@ -469,9 +474,16 @@ void ClientUDPSocket::purgeExpiredPackets()
 
     uint32 now = static_cast<uint32>(m_elapsedTimer.elapsed());
 
-    std::erase_if(m_controlQueue, [now](const UDPPack& pack) {
-        return (now - pack.queueTime) > UDPMAXQUEUETIME;
-    });
+    // Queued in arrival order, so the expired ones are all at the front.
+    while (!m_controlQueue.empty() && (now - m_controlQueue.front().queueTime) > UDPMAXQUEUETIME)
+        m_controlQueue.pop_front();
+
+    if (m_droppedQueueFull > 0 && now - m_lastQueueFullLog >= MIN2MS(1)) {
+        logWarning(QStringLiteral("Client UDP send queue full — dropped %1 packets")
+                       .arg(m_droppedQueueFull));
+        m_droppedQueueFull = 0;
+        m_lastQueueFullLog = now;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -484,11 +496,11 @@ QByteArray ClientUDPSocket::decompressKadPayload(const uint8* data, int len)
         return {};
 
     uLongf outSize = static_cast<uLongf>(len) * 10 + 300;
-    constexpr uLongf kMaxDecompressed = 250000;
+    constexpr uLongf kMaxDecompressed = kMaxKadDecompressed;
 
     QByteArray out;
     int result = Z_OK;
-    do {
+    for (;;) {
         out.resize(static_cast<qsizetype>(outSize));
         uLongf actualSize = outSize;
         result = uncompress(reinterpret_cast<Bytef*>(out.data()), &actualSize,
@@ -497,8 +509,11 @@ QByteArray ClientUDPSocket::decompressKadPayload(const uint8* data, int len)
             out.resize(static_cast<qsizetype>(actualSize));
             return out;
         }
-        outSize *= 2;
-    } while (result == Z_BUF_ERROR && outSize < kMaxDecompressed);
+        if (result != Z_BUF_ERROR || outSize >= kMaxDecompressed)
+            break;
+        // Last rung is the cap itself: MFC stops below it and rejects what would still fit.
+        outSize = std::min(outSize * 2, kMaxDecompressed);
+    }
 
     return {};
 }

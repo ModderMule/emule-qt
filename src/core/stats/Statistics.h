@@ -210,11 +210,11 @@ public:
     /// Seconds since the session started; 0 until it has been stamped.
     [[nodiscard]] uint32 uptimeSecs() const;
 
-    [[nodiscard]] uint32 transferStartTime() const { return m_transferStartTime.load(); }
-    void setTransferStartTime(uint32 val) { m_transferStartTime.store(val); }
+    [[nodiscard]] uint64 transferStartTime() const { return m_transferStartTime.load(); }
+    void setTransferStartTime(uint64 val) { m_transferStartTime.store(val); }
 
-    [[nodiscard]] uint32 serverConnectTime() const { return m_serverConnectTime; }
-    void setServerConnectTime(uint32 val) { m_serverConnectTime = val; }
+    [[nodiscard]] uint64 serverConnectTime() const { return m_serverConnectTime; }
+    void setServerConnectTime(uint64 val) { m_serverConnectTime = val; }
 
     // --- Per-client/port/source transfer breakdown ---
 
@@ -379,7 +379,7 @@ private:
     /// Internal rate history entry for time-windowed averaging.
     struct RateEntry {
         uint64 dataLen = 0;
-        uint32 timestamp = 0;
+        uint64 timestamp = 0;
     };
 
     Preferences* m_prefs = nullptr;
@@ -406,9 +406,9 @@ private:
     uint32 m_timeTransfers = 0;
     uint32 m_timeDownloads = 0;
     uint32 m_timeUploads = 0;
-    uint32 m_startTimeTransfers = 0;
-    uint32 m_startTimeDownloads = 0;
-    uint32 m_startTimeUploads = 0;
+    uint64 m_startTimeTransfers = 0;
+    uint64 m_startTimeDownloads = 0;
+    uint64 m_startTimeUploads = 0;
     uint32 m_timeThisTransfer = 0;
     uint32 m_timeThisDownload = 0;
     uint32 m_timeThisUpload = 0;
@@ -425,8 +425,8 @@ private:
     bool m_serverConnectedOnce = false;   // the next login is a reconnect
     uint32 m_filteredClients = 0;
     uint64 m_startTick = 0;
-    std::atomic<uint32> m_transferStartTime{0};   // stamped from transfer threads too
-    uint32 m_serverConnectTime = 0;
+    std::atomic<uint64> m_transferStartTime{0};   // stamped from transfer threads too
+    uint64 m_serverConnectTime = 0;
 
     // Cumulative values as they stood in Preferences when the session started.
     CumulativeTotals m_cumBase;

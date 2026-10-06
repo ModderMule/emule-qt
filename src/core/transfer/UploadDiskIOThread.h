@@ -10,8 +10,10 @@
 
 #include <QByteArray>
 #include <QList>
+#include <QString>
 #include <QThread>
 
+#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <deque>
@@ -25,13 +27,19 @@ class KnownFile;
 class Packet;
 class UpDownClient;
 
-/// Block read request posted to the IO thread.
+/// Block read request posted to the IO thread. Self-contained: the worker must not
+/// touch the KnownFile, which lives (and dies) on the main thread.
 struct BlockReadRequest {
-    KnownFile* file = nullptr;
-    UpDownClient* client = nullptr;
+    QString filePath;                   // where the bytes are (KnownFile::dataFilePath)
+    std::array<uint8, 16> fileHash{};
+    UpDownClient* client = nullptr;     // opaque token, only compared on return
     uint64 startOffset = 0;
     uint64 endOffset = 0;
-    bool disableCompression = false;
+    bool isPartFile = false;
+    bool compress = false;
+
+    /// Fill the file-derived fields. Main thread only.
+    void setFile(const KnownFile& file, bool peerTakesCompression);
 };
 
 class UploadDiskIOThread : public QThread {

@@ -18,6 +18,7 @@
 #include <QDir>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QScopeGuard>
 #include <QTest>
 
 #include <algorithm>
@@ -82,6 +83,17 @@ private slots:
     void hashSinglePart_exactlyOnePartSizeUsesThePartHash();
     void hashSinglePart_missingHashsetsBailAndFlagBothNeeded();
     void hashSinglePart_aichDisagreementCondemnsThePart();
+    void unreadablePart_isNotVerifiedAndBlocksCompletion();
+    void unreadablePart_ichDoesNotFillItsGaps();
+    void completion_damagedPartIsNotDelivered();
+    void copyThenRename_deliversAndLeavesNoStagedFile();
+    void copyThenRename_interruptedLeavesTheSourceOnly();
+    void copyThenRename_missingSourceFails();
+    void completion_setsTheKnownFileDate();
+    void completion_storesTheAICHRecoverySet();
+    void completion_loadedCompleteFileIsVerifiedAndDelivered_data();
+    void completion_loadedCompleteFileIsVerifiedAndDelivered();
+    void verifyPartData_reportsUnreadParts();
 
     // Changed-part tracking — MFC m_aChangedPart, srchybrid/PartFile.cpp:4154-4158
     void flushBuffer_verifiesOnlyChangedParts();
@@ -1241,6 +1253,379 @@ void tst_PartFile::hashSinglePart_missingHashsetsBailAndFlagBothNeeded()
     QCOMPARE(pf.corruptionLoss(), uint64{0});
     QVERIFY(pf.isMD4HashsetNeeded());
     QVERIFY(pf.isAICHPartHashsetNeeded());
+}
+
+namespace {
+
+/// Two-part file (one full part + 1000 bytes) with real part hashes, on disk.
+struct TwoPartFixture {
+    static constexpr uint64 kTail = 1000;
+    std::vector<uint8> data = makePattern(PARTSIZE + kTail);
+    PartFile pf;
+
+    explicit TwoPartFixture(const QString& tempDir, const QString& name)
+    {
+        pf.setFileName(name);
+        pf.setFileSize(PARTSIZE + kTail);
+        pf.setTmpPath(tempDir);
+        pf.createPartFile(tempDir);
+
+        auto& hashSet = pf.fileIdentifier().getRawMD4HashSet();
+        hashSet.resize(2);
+        KnownFile::createHashFromMemory(data.data(), PARTSIZE, hashSet[0].data(), nullptr);
+        KnownFile::createHashFromMemory(data.data() + PARTSIZE, kTail, hashSet[1].data(), nullptr);
+    }
+
+    void write(uint64 start, uint64 end, const uint8* from = nullptr)
+    {
+        pf.writeToBuffer(end - start + 1, from ? from : data.data() + start, start, end, nullptr);
+        pf.flushBuffer();
+    }
+};
+
+} // namespace
+
+// A part that cannot be read back has no verdict. It used to count as verified: shared,
+// and the file completed (MFC throws and puts the file in error, PartFile.cpp:4276-4313).
+void tst_PartFile::unreadablePart_isNotVerifiedAndBlocksCompletion()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/unread-temp");
+    const QString incoming = m_tempDir.path() + QStringLiteral("/unread-in");
+    QDir().mkpath(tempDir);
+    QDir().mkpath(incoming);
+    thePrefs.setIncomingDir(incoming);
+
+    ScopedStatistics stats;
+    TwoPartFixture f(tempDir, QStringLiteral("unread.bin"));
+    QVERIFY(f.pf.fileIdentifier().hasExpectedMD4HashCount());
+
+    f.write(0, PARTSIZE - 1);
+    QVERIFY(f.pf.isComplete(0u));
+    f.write(PARTSIZE + 100, PARTSIZE + TwoPartFixture::kTail - 1);
+
+    // The tail goes missing under us; the last write then leaves the file 900 bytes short.
+    const QString partPath = f.pf.partDataPath();
+    QVERIFY(QFile::resize(partPath, static_cast<qint64>(PARTSIZE + 50)));
+    f.write(PARTSIZE, PARTSIZE + 99);
+
+    QCOMPARE(f.pf.status(), PartFileStatus::Error);
+    QVERIFY(f.pf.completionError());
+    QVERIFY2(!f.pf.isCorruptedPart(1), "unreadable is not the same as corrupt");
+    QCOMPARE(f.pf.totalGapSizeInPart(1), uint64{0});
+    QTest::qWait(200);
+    QVERIFY(QDir(incoming).isEmpty());
+
+    // Bytes back in place: resume checks the part for real and completes.
+    {
+        QFile part(partPath);
+        QVERIFY(part.open(QIODevice::ReadWrite));
+        QVERIFY(part.seek(static_cast<qint64>(PARTSIZE)));
+        part.write(reinterpret_cast<const char*>(f.data.data() + PARTSIZE), TwoPartFixture::kTail);
+    }
+    f.pf.resumeFile();
+    QTRY_COMPARE_WITH_TIMEOUT(f.pf.status(), PartFileStatus::Complete, 5000);
+}
+
+// ICH re-hashes a corrupted part that still has gaps and, on a match, fills them all.
+// An unreadable part must not count as that match.
+void tst_PartFile::unreadablePart_ichDoesNotFillItsGaps()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/unread-ich-temp");
+    QDir().mkpath(tempDir);
+
+    const bool hadICH = thePrefs.useICH();
+    thePrefs.setUseICH(true);
+
+    ScopedStatistics stats;
+    TwoPartFixture f(tempDir, QStringLiteral("unread-ich.bin"));
+
+    // Part 1 arrives corrupt: gapped again and remembered as corrupted.
+    const std::vector<uint8> junk(TwoPartFixture::kTail, 0xAB);
+    f.write(PARTSIZE, PARTSIZE + TwoPartFixture::kTail - 1, junk.data());
+    QVERIFY(f.pf.isCorruptedPart(1));
+    QCOMPARE(f.pf.totalGapSizeInPart(1), TwoPartFixture::kTail);
+
+    QVERIFY(QFile::resize(f.pf.partDataPath(), static_cast<qint64>(PARTSIZE + 50)));
+    f.write(PARTSIZE, PARTSIZE + 99);
+
+    QCOMPARE(f.pf.totalGapSizeInPart(1), TwoPartFixture::kTail - 100);
+    QVERIFY(f.pf.isCorruptedPart(1));
+
+    thePrefs.setUseICH(hadICH);
+}
+
+// MFC re-reads the whole file before it delivers it (CompleteFile(false),
+// PartFile.cpp:2685-2694). A part that verified once and was damaged on disk since must
+// not reach the incoming folder, where it would be shared under a hash it no longer has.
+void tst_PartFile::completion_damagedPartIsNotDelivered()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/final-temp");
+    const QString incoming = m_tempDir.path() + QStringLiteral("/final-in");
+    QDir().mkpath(tempDir);
+    QDir().mkpath(incoming);
+    thePrefs.setIncomingDir(incoming);
+
+    ScopedStatistics stats;
+    TwoPartFixture f(tempDir, QStringLiteral("final.bin"));
+    QSignalSpy moved(f.pf.partNotifier(), &PartFileNotifier::fileMoveFinished);
+
+    f.write(0, PARTSIZE - 1);
+    QVERIFY(f.pf.isComplete(0u));
+
+    // Part 0 rots on disk after its check.
+    {
+        QFile part(f.pf.partDataPath());
+        QVERIFY(part.open(QIODevice::ReadWrite));
+        QVERIFY(part.seek(4096));
+        part.write(QByteArray(512, '\xEE'));
+    }
+
+    f.write(PARTSIZE, PARTSIZE + TwoPartFixture::kTail - 1);
+    QCOMPARE(f.pf.status(), PartFileStatus::Completing);
+
+    QTRY_COMPARE_WITH_TIMEOUT(moved.count(), 1, 10000);
+    QCOMPARE(moved.takeFirst().at(0).toBool(), false);
+    QCOMPARE(f.pf.status(), PartFileStatus::Ready);
+    QVERIFY(!f.pf.isComplete(0u));
+    QCOMPARE(f.pf.totalGapSizeInPart(0), uint64{PARTSIZE});
+    QVERIFY(f.pf.isComplete(1u));
+    QVERIFY(QDir(incoming).isEmpty());
+    QVERIFY(QFile::exists(f.pf.partDataPath()));
+
+    // Downloaded again, it is delivered — with the right bytes.
+    f.write(0, PARTSIZE - 1);
+    QTRY_COMPARE_WITH_TIMEOUT(f.pf.status(), PartFileStatus::Complete, 10000);
+    QFile delivered(incoming + QStringLiteral("/final.bin"));
+    QVERIFY(delivered.open(QIODevice::ReadOnly));
+    const QByteArray bytes = delivered.readAll();
+    QCOMPARE(bytes.size(), qsizetype(f.data.size()));
+    QVERIFY(std::memcmp(bytes.constData(), f.data.data(), f.data.size()) == 0);
+}
+
+// R10: across volumes the file is copied to a staged sibling and renamed in place, so
+// the final name never holds a half-written file.
+void tst_PartFile::copyThenRename_deliversAndLeavesNoStagedFile()
+{
+    const QString dir = m_tempDir.path() + QStringLiteral("/copy-ok");
+    QDir().mkpath(dir);
+    const QString src = dir + QStringLiteral("/001.part");
+    const QString dest = dir + QStringLiteral("/movie.bin");
+    const QString staged = dest + Preferences::kCompletingSuffix;
+
+    const std::vector<uint8> data = makePattern(700 * 1024 + 17);
+    QFile f(src);
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write(reinterpret_cast<const char*>(data.data()), static_cast<qint64>(data.size()));
+    f.close();
+    // What a crash during an earlier attempt left behind
+    QFile stale(staged);
+    QVERIFY(stale.open(QIODevice::WriteOnly));
+    stale.write(QByteArray(4 * 1024 * 1024, 'x'));
+    stale.close();
+
+    QVERIFY(FileMoveThread::copyThenRename(src, dest, [] { return true; }));
+
+    QVERIFY(!QFile::exists(staged));
+    QVERIFY(!QFile::exists(src));
+    QFile out(dest);
+    QVERIFY(out.open(QIODevice::ReadOnly));
+    const QByteArray bytes = out.readAll();
+    QCOMPARE(bytes.size(), qsizetype(data.size()));
+    QVERIFY(std::memcmp(bytes.constData(), data.data(), data.size()) == 0);
+}
+
+void tst_PartFile::copyThenRename_interruptedLeavesTheSourceOnly()
+{
+    const QString dir = m_tempDir.path() + QStringLiteral("/copy-stop");
+    QDir().mkpath(dir);
+    const QString src = dir + QStringLiteral("/001.part");
+    const QString dest = dir + QStringLiteral("/movie.bin");
+
+    QFile f(src);
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write(QByteArray(900 * 1024, 'p'));
+    f.close();
+
+    int blocks = 0;
+    QVERIFY(!FileMoveThread::copyThenRename(src, dest, [&blocks] { return ++blocks < 3; }));
+
+    QVERIFY(!QFile::exists(dest));
+    QVERIFY(!QFile::exists(dest + Preferences::kCompletingSuffix));
+    QCOMPARE(QFileInfo(src).size(), qint64(900 * 1024));
+}
+
+void tst_PartFile::copyThenRename_missingSourceFails()
+{
+    const QString dir = m_tempDir.path() + QStringLiteral("/copy-none");
+    QDir().mkpath(dir);
+    const QString dest = dir + QStringLiteral("/movie.bin");
+
+    QVERIFY(!FileMoveThread::copyThenRename(dir + QStringLiteral("/gone.part"), dest,
+                                            [] { return true; }));
+    QVERIFY(QDir(dir).isEmpty());
+}
+
+// R11: the delivered file's date is what known.met stores and the next scan matches by
+// (KnownFileList::findKnownFile). Left unset, every completed download was rehashed.
+void tst_PartFile::completion_setsTheKnownFileDate()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/date-temp");
+    const QString incoming = m_tempDir.path() + QStringLiteral("/date-in");
+    QDir().mkpath(tempDir);
+    QDir().mkpath(incoming);
+    thePrefs.setIncomingDir(incoming);
+
+    ScopedStatistics stats;
+    TwoPartFixture f(tempDir, QStringLiteral("dated.bin"));
+    QCOMPARE(f.pf.utcFileDate(), static_cast<time_t>(-1));
+
+    f.write(0, PARTSIZE + TwoPartFixture::kTail - 1);
+    QTRY_COMPARE_WITH_TIMEOUT(f.pf.status(), PartFileStatus::Complete, 10000);
+
+    const QFileInfo delivered(incoming + QStringLiteral("/dated.bin"));
+    QVERIFY(delivered.exists());
+    QCOMPARE(f.pf.utcFileDate(),
+             static_cast<time_t>(delivered.lastModified().toSecsSinceEpoch()));
+}
+
+// MFC srchybrid/PartFile.cpp:1543-1550: the completion hash also yields the AICH recovery
+// set. Without it the next start read every completed file once more to build it.
+void tst_PartFile::completion_storesTheAICHRecoverySet()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/aich-temp");
+    const QString incoming = m_tempDir.path() + QStringLiteral("/aich-in");
+    QDir().mkpath(tempDir);
+    QDir().mkpath(incoming);
+    thePrefs.setIncomingDir(incoming);
+    AICHRecoveryHashSet::setKnown2MetPath(m_tempDir.path() + QStringLiteral("/aich-known2_64.met"));
+    const auto restore = qScopeGuard([] { AICHRecoveryHashSet::setKnown2MetPath(QString()); });
+
+    ScopedStatistics stats;
+    TwoPartFixture f(tempDir, QStringLiteral("recoverable.bin"));
+    QVERIFY(!f.pf.isAICHRecoverHashSetAvailable());
+
+    f.write(0, PARTSIZE + TwoPartFixture::kTail - 1);
+    QTRY_COMPARE_WITH_TIMEOUT(f.pf.status(), PartFileStatus::Complete, 10000);
+
+    const QString delivered = incoming + QStringLiteral("/recoverable.bin");
+    AICHRecoveryHashSet expected(f.pf.fileSize());
+    QVERIFY(KnownFile::buildAICHHashSet(delivered, static_cast<uint64>(f.pf.fileSize()), expected));
+
+    QVERIFY(f.pf.fileIdentifier().hasAICHHash());
+    QCOMPARE(f.pf.fileIdentifier().getAICHHash(), expected.getMasterHash());
+    QVERIFY(AICHRecoveryHashSet::isStored(expected.getMasterHash()));
+    QVERIFY(f.pf.isAICHRecoverHashSetAvailable());
+    QVERIFY(f.pf.fileIdentifier().hasExpectedAICHHashCount());
+}
+
+void tst_PartFile::completion_loadedCompleteFileIsVerifiedAndDelivered_data()
+{
+    QTest::addColumn<bool>("truncated");
+    QTest::newRow("intact") << false;
+    QTest::newRow("tail missing") << true;
+}
+
+// A run that ended between "all downloaded" and "delivered" leaves a .part.met with no
+// gaps. Nothing used to pick that up again: the file sat at Completing for good.
+void tst_PartFile::completion_loadedCompleteFileIsVerifiedAndDelivered()
+{
+    QFETCH(bool, truncated);
+
+    const QString tag = truncated ? QStringLiteral("cut") : QStringLiteral("ok");
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/loaded-temp-") + tag;
+    const QString incoming = m_tempDir.path() + QStringLiteral("/loaded-in-") + tag;
+    QDir().mkpath(tempDir);
+    QDir().mkpath(incoming);
+    thePrefs.setIncomingDir(incoming);
+
+    ScopedStatistics stats;
+    QString metName;
+    QString partPath;
+    std::vector<uint8> data;
+    {
+        // Destroyed the instant its completion starts: the worker is interrupted before
+        // it can move anything, and the destructor saves the gapless .part.met.
+        TwoPartFixture f(tempDir, QStringLiteral("loaded.bin"));
+        metName = f.pf.partMetFileName();
+        partPath = f.pf.partDataPath();
+        data = f.data;
+        f.write(0, PARTSIZE - 1);
+        f.write(PARTSIZE, PARTSIZE + TwoPartFixture::kTail - 1);
+    }
+    QVERIFY2(QFile::exists(partPath), "the interrupted completion moved the file anyway");
+    QVERIFY(QDir(incoming).isEmpty());
+
+    PartFile loaded;
+    QCOMPARE(loaded.loadPartFile(tempDir, metName), PartFileLoadResult::LoadSuccess);
+    QCOMPARE(loaded.status(), PartFileStatus::Completing);
+    QSignalSpy moved(loaded.partNotifier(), &PartFileNotifier::fileMoveFinished);
+
+    // After the load, which gaps a short file by itself: the final check is on its own.
+    if (truncated)
+        QVERIFY(QFile::resize(partPath, static_cast<qint64>(PARTSIZE + 50)));
+
+    loaded.finishLoadedDownload();
+    QTRY_COMPARE_WITH_TIMEOUT(moved.count(), 1, 10000);
+
+    if (!truncated) {
+        QCOMPARE(moved.takeFirst().at(0).toBool(), true);
+        QCOMPARE(loaded.status(), PartFileStatus::Complete);
+        QVERIFY(QFile::exists(incoming + QStringLiteral("/loaded.bin")));
+        return;
+    }
+
+    QCOMPARE(moved.takeFirst().at(0).toBool(), false);
+    QCOMPARE(loaded.status(), PartFileStatus::Error);
+    QVERIFY(loaded.completionError());
+    QVERIFY(QDir(incoming).isEmpty());
+    QCOMPARE(loaded.totalGapSizeInPart(1), uint64{0});   // unread is not corrupt
+
+    // Readable again: resume delivers it.
+    {
+        QFile part(partPath);
+        QVERIFY(part.open(QIODevice::ReadWrite));
+        QVERIFY(part.seek(static_cast<qint64>(PARTSIZE)));
+        part.write(reinterpret_cast<const char*>(data.data() + PARTSIZE), TwoPartFixture::kTail);
+    }
+    loaded.resumeFile();
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.status(), PartFileStatus::Complete, 10000);
+}
+
+void tst_PartFile::verifyPartData_reportsUnreadParts()
+{
+    const QString dir = m_tempDir.path() + QStringLiteral("/verify-data");
+    QDir().mkpath(dir);
+    const QString path = dir + QStringLiteral("/data.part");
+
+    const auto data = makePattern(PARTSIZE + 1000);
+    std::vector<std::array<uint8, 16>> hashes(2);
+    KnownFile::createHashFromMemory(data.data(), PARTSIZE, hashes[0].data(), nullptr);
+    KnownFile::createHashFromMemory(data.data() + PARTSIZE, 1000, hashes[1].data(), nullptr);
+
+    const auto verdicts = [&] {
+        return PartFile::verifyPartData(path, data.size(), QByteArray(16, '\0'), hashes);
+    };
+    const auto v = [](PartFile::PartVerdict x) { return static_cast<char>(x); };
+    using V = PartFile::PartVerdict;
+
+    QCOMPARE(verdicts(), QByteArray(2, v(V::Unread)));          // no file at all
+
+    {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(reinterpret_cast<const char*>(data.data()), static_cast<qint64>(data.size()));
+    }
+    QCOMPARE(verdicts(), QByteArray(2, v(V::Ok)));
+
+    QVERIFY(QFile::resize(path, static_cast<qint64>(PARTSIZE + 10)));
+    QCOMPARE(verdicts(), QByteArray().append(v(V::Ok)).append(v(V::Unread)));
+
+    {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::ReadWrite));
+        f.write("damage", 6);
+    }
+    QCOMPARE(verdicts(), QByteArray().append(v(V::Bad)).append(v(V::Unread)));
 }
 
 // MD4 alone is not enough: MFC condemns a part whose AICH part hash disagrees, however

@@ -24,6 +24,8 @@ namespace eMule {
 class KnownFile;
 } // namespace eMule
 
+class tst_KadSearch;
+
 namespace eMule::kad {
 
 class Contact;
@@ -33,6 +35,7 @@ class KadClientSearcher;
 /// Core DHT search state machine.
 class Search {
     friend class SearchManager;
+    friend class ::tst_KadSearch;   // drives the walk without the 3 s jump-start clock
 
 public:
     Search();
@@ -45,7 +48,8 @@ public:
     void setSearchType(SearchType type);
     void setTargetID(const UInt128& target);
     [[nodiscard]] const UInt128& getTarget() const { return m_target; }
-    [[nodiscard]] uint32 getAnswers() const { return m_answers; }
+    /// Answering nodes: a store of many files takes several packets per node.
+    [[nodiscard]] uint32 getAnswers() const;
     [[nodiscard]] uint32 getKadPacketSent() const { return m_kadPacketSent; }
     [[nodiscard]] uint32 getRequestAnswer() const { return m_totalRequestAnswers; }
     [[nodiscard]] uint32 getNodeLoad() const;
@@ -102,6 +106,9 @@ public:
     [[nodiscard]] static std::vector<Tag> buildSourcePublishTags(const SourcePublishParams& params,
                                                                  bool& outCanPublish);
     [[nodiscard]] bool stopping() const { return m_stopping; }
+    /// This search sent its action packet (search / store request) to that node, so a
+    /// result from it is one we asked for.
+    [[nodiscard]] bool sentActionTo(uint32 ip, uint16 udpPort) const;
     void updateNodeLoad(uint8 load);
 
     [[nodiscard]] KadClientSearcher* getNodeSpecialSearchRequester() const { return m_nodeSpecialSearchRequester; }

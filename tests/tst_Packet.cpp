@@ -36,6 +36,8 @@ private slots:
     // Compression
     void packUnpack_roundtrip();
     void unPack_oversizedRejection();
+    void unPack_triesTheCapItself_data();
+    void unPack_triesTheCapItself();
 
     // RawPacket
     void rawPacket_noHeader();
@@ -221,6 +223,35 @@ void tst_Packet::unPack_oversizedRejection()
     // Try to unpack with tiny max size — should fail
     bool ok = pkt.unPackPacket(5);
     QVERIFY(!ok);
+}
+
+void tst_Packet::unPack_triesTheCapItself_data()
+{
+    QTest::addColumn<uint32>("bodySize");
+    QTest::addColumn<bool>("fits");
+
+    // Zeros pack ~1000:1, so the doubling ladder starts tiny and its last rung below
+    // the cap is 32000 — everything above that needs the cap to be tried.
+    QTest::newRow("between last rung and cap") << uint32(40000) << true;
+    QTest::newRow("cap - 1") << uint32(49999) << true;
+    QTest::newRow("exactly the cap") << uint32(50000) << true;
+    QTest::newRow("cap + 1") << uint32(50001) << false;
+}
+
+void tst_Packet::unPack_triesTheCapItself()
+{
+    QFETCH(uint32, bodySize);
+    QFETCH(bool, fits);
+
+    Packet pkt(0x40, bodySize, OP_EMULEPROT);
+    std::memset(pkt.pBuffer, 0, bodySize);
+    pkt.packPacket();
+    QCOMPARE(pkt.prot, static_cast<uint8>(OP_PACKEDPROT));
+    QVERIFY(pkt.size * 10 + 300 < 32000);   // the ladder really has to climb
+
+    QCOMPARE(pkt.unPackPacket(50000), fits);
+    if (fits)
+        QCOMPARE(pkt.size, bodySize);
 }
 
 // ---------------------------------------------------------------------------

@@ -111,6 +111,16 @@ struct AppContext {
     /// and it has no third tier at all.
     [[nodiscard]] uint32 publicIP(bool ignoreKadIP = false) const;
 
+    /// The port others must dial to reach us: the external port of an active router
+    /// mapping when it differs from the one we listen on, else the listening port.
+    /// Hello, server login, Kad and links all take it from here.
+    [[nodiscard]] uint16 advertisedTcpPort() const;
+    [[nodiscard]] uint16 advertisedUdpPort() const;
+    /// The router-mapped external TCP port, 0 without a usable mapping.
+    [[nodiscard]] uint16 mappedTcpPort() const;
+    /// @p port is one a peer could know us by (listening or advertised).
+    [[nodiscard]] bool isOwnTcpPort(uint16 port) const;
+
     /// Records an ED2K-derived public IP (HighID, server-reported IP, or a peer's
     /// OP_PUBLICIP answer). Pass 0 to clear it on server disconnect.
     /// MFC: CemuleApp::SetPublicIP() — Emule.cpp:1548.

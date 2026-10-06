@@ -103,12 +103,14 @@ private slots:
     // Collection priority slot — MFC srchybrid/UploadQueue.cpp:627-637, :798-808
     void collectionSlot_smallCollectionBypassesQueue();
     void collectionSlot_largeCollectionUsesNormalQueue();
+    void endOfDownload_releasesOnlyForTheServedFile();
     void collectionSlot_bypassNeedsConnectedSocket();
     void collectionSlot_notGrantedToAClientAlreadyUploading();
     void collectionSlot_nonCollectionClearsFlag();
     void removeFromUploadQueue_flushesBlocks();
     void process_switchesUploadFileToHeadBlock();
     void onBlockPacketsReady_marksDoneAndDropsForEndedSlot();
+    void blockReads_stopAtTheBufferLimit();
     void onBlockPacketsReady_followsTheBlocksFile();
     void checkForTimeOver_keepsSlotWhileOnCollection();
     void checkForTimeOver_endsSessionOnOtherFile();
@@ -766,11 +768,17 @@ void tst_UploadQueue::addClientToQueue_ipv6LimitIsOnePerAddress()
     QVERIFY(!queue.addClientToQueue(&second));
     QVERIFY(!queue.isOnUploadQueue(&second));
 
-    // A different IPv6 is unaffected — even one in the same /64, since we deliberately
-    // do not do prefix matching.
-    UpDownClient sameSubnet;
+    // Another address in the same /64 is taken — up to the IPv4 limit of three for the
+    // prefix, which is what one subscriber owns and can hop around in.
+    UpDownClient sameSubnet, third, fourth, otherPrefix;
     setupClient(sameSubnet, QStringLiteral("2606:4700::2"), 0x33, 4664);
     QVERIFY(queue.addClientToQueue(&sameSubnet));
+    setupClient(third, QStringLiteral("2606:4700::dead:beef:3"), 0x34, 4667);
+    QVERIFY(queue.addClientToQueue(&third));
+    setupClient(fourth, QStringLiteral("2606:4700::4"), 0x35, 4668);
+    QVERIFY2(!queue.addClientToQueue(&fourth), "a fourth client from one /64 was queued");
+    setupClient(otherPrefix, QStringLiteral("2606:4700:0:1::4"), 0x36, 4669);
+    QVERIFY(queue.addClientToQueue(&otherPrefix));
 
     // IPv4 keeps its own, looser rule: three from one address are still accepted.
     UpDownClient v4a, v4b;
@@ -1889,6 +1897,40 @@ void tst_UploadQueue::collectionSlot_smallCollectionBypassesQueue()
     QCOMPARE(queue.waitingUserCount(), 3);      // and it never joined the waiting list
 }
 
+// R12: OP_END_OF_DOWNLOAD ends the slot only when it names the file being served
+// (MFC srchybrid/ListenSocket.cpp:549-557).
+void tst_UploadQueue::endOfDownload_releasesOnlyForTheServedFile()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+
+    UploadQueue queue;
+    env.wire(queue);
+    theApp.uploadQueue = &queue;
+    const auto restore = qScopeGuard([] { theApp.uploadQueue = nullptr; });
+
+    auto* client = env.makeClient(60, env.veryHigh());
+    env.connectSocket(client);
+    QVERIFY(queue.addClientToQueue(client));
+    QVERIFY(queue.isDownloading(client));
+
+    const auto deliver = [client](const QByteArray& payload) {
+        QVERIFY(QMetaObject::invokeMethod(
+            client, "onPacketForClient", Qt::DirectConnection,
+            Q_ARG(const uint8*, reinterpret_cast<const uint8*>(payload.constData())),
+            Q_ARG(uint32, static_cast<uint32>(payload.size())),
+            Q_ARG(uint8, uint8(OP_END_OF_DOWNLOAD)), Q_ARG(uint8, uint8(OP_EDONKEYPROT))));
+    };
+
+    deliver(QByteArray(16, char(0x99)));     // some other file
+    QVERIFY(queue.isDownloading(client));
+    deliver(QByteArray(4, char(0x99)));      // too short to name a file
+    QVERIFY(queue.isDownloading(client));
+
+    deliver(QByteArray(reinterpret_cast<const char*>(env.veryHigh()->fileHash()), 16));
+    QVERIFY(!queue.isDownloading(client));
+}
+
 void tst_UploadQueue::collectionSlot_largeCollectionUsesNormalQueue()
 {
     QueueRankEnv env;
@@ -2058,7 +2100,7 @@ void tst_UploadQueue::addUpNextClient_clearsStrayCollectionFlag()
     client->restoreWaitStartTime(60'000);   // findBestClientInQueue() ignores a zero score
     // ...and purges anything whose last request is older than MAX_PURGEQUEUETIME, which a
     // default-constructed lastUpRequest of 0 always is against a boot-relative tick clock.
-    client->setLastUpRequest(static_cast<uint32>(getTickCount()));
+    client->setLastUpRequest(getTickCount());
     // A low-ID client with no socket is not "connectable", so it would be held back for the
     // next-connect shortcut instead of being picked.
     QVERIFY(env.connectSocket(client));
@@ -2259,10 +2301,10 @@ void tst_UploadQueue::waitStartTime_notClampedWhenNotUploading()
     client->restoreWaitStartTime(60'000);
 
     // m_uploadTime is 0 for a client that never held a slot, so a guard that forgot to test
-    // the upload state would clamp every one of them to 0 - 1 == UINT32_MAX.
+    // the upload state would clamp every one of them to 0 - 1 == UINT64_MAX.
     QVERIFY(!client->isUploadingToPeer());
     QVERIFY(client->waitStartTime() != 0);
-    QVERIFY(client->waitStartTime() != UINT32_MAX);
+    QVERIFY(client->waitStartTime() != UINT64_MAX);
 
     const uint32 waited = client->getWaitTimeDelay();
     QVERIFY2(waited > 59'000 && waited < 65'000,
@@ -2325,9 +2367,9 @@ void tst_UploadQueue::score_creditSystemOffDropsTheRatio()
 
     // Earn a ratio worth more than 1.0: scoreRatio is min(2*down/up, sqrt(down/1MB + 2), ...)
     // and needs at least 1 MiB downloaded from us before it moves at all (ClientCredits.cpp:123).
-    client->credits()->addDownloaded(20u * 1024u * 1024u, client->userAddress().toNetworkUint32());
-    client->credits()->addUploaded(1024u * 1024u, client->userAddress().toNetworkUint32());
-    const float ratio = client->credits()->scoreRatio(client->userAddress().toNetworkUint32());
+    client->credits()->addDownloaded(20u * 1024u * 1024u, client->userAddress());
+    client->credits()->addUploaded(1024u * 1024u, client->userAddress());
+    const float ratio = client->credits()->scoreRatio(client->userAddress());
     QVERIFY2(ratio > 1.5f, "the fixture must actually earn a ratio, or this proves nothing");
 
     thePrefs.setUseCreditSystem(true);
@@ -2352,8 +2394,9 @@ void tst_UploadQueue::score_badIdentScoresZero()
 
     // Identified against a different address than the one it is talking from: the signature
     // belongs to somebody else. MFC srchybrid/UploadClient.cpp:196-197.
-    client->credits()->verified(client->userAddress().toNetworkUint32() + 1);
-    QCOMPARE(client->credits()->currentIdentState(client->userAddress().toNetworkUint32()),
+    client->credits()->verified(
+        Address::fromNetworkOrder(client->userAddress().toNetworkUint32() + 1));
+    QCOMPARE(client->credits()->currentIdentState(client->userAddress()),
              IdentState::IdBadGuy);
 
     QCOMPARE(client->score(false), uint64{0});
@@ -2712,6 +2755,49 @@ void tst_UploadQueue::onBlockPacketsReady_marksDoneAndDropsForEndedSlot()
     QVERIFY(client->doneBlocks().empty());
     client->setUploadState(UploadState::None);
 
+    queue.setDiskIOThread(nullptr);
+}
+
+void tst_UploadQueue::blockReads_stopAtTheBufferLimit()
+{
+    QueueRankEnv env;
+    UploadQueue queue;
+    env.wire(queue);
+    GlobalUploadQueue queueGuard(&queue);
+    UploadDiskIOThread diskIO;
+    queue.setDiskIOThread(&diskIO);
+    diskIO.endThread();     // the test answers the reads itself
+
+    KnownFile* file = env.addNamedFile(0xD7, QStringLiteral("movie.avi"), 10u * 1024 * 1024);
+    const QByteArray fileId(reinterpret_cast<const char*>(file->fileHash()), 16);
+    auto* client = env.makeClient(75, file);
+    QVERIFY(env.connectSocket(client));
+    QVERIFY(queue.addClientToQueue(client));
+
+    const auto reading = [client] {
+        return std::ranges::count_if(client->blockRequests(),
+                                     [](const Requested_Block_Struct* b) { return b->readQueued; });
+    };
+
+    // Ten blocks asked for at once: only what fits the one-block buffer is read.
+    for (uint64 i = 0; i < 10; ++i)
+        client->addReqBlock(uploadBlock(file, i * EMBLOCKSIZE, (i + 1) * EMBLOCKSIZE));
+    QCOMPARE(client->blockRequests().size(), size_t{10});
+    QCOMPARE(reading(), 2);
+
+    // One read comes back and (with nothing buffered) the next one starts.
+    emit diskIO.blockPacketsReady(client, fileId, 0, EMBLOCKSIZE, {});
+    QTRY_COMPARE(client->doneBlocks().size(), size_t{1});
+    QCOMPARE(client->blockRequests().size(), size_t{9});
+    QCOMPARE(reading(), 2);
+
+    // A peer cannot make us hoard requests either.
+    for (uint64 i = 0; i < 2000; ++i)
+        client->addReqBlock(uploadBlock(file, 5'000'000 + i, 5'000'001 + i));
+    QCOMPARE(client->blockRequests().size(), size_t{1024});
+    QCOMPARE(reading(), 2);
+
+    queue.removeFromUploadQueue(client);
     queue.setDiskIOThread(nullptr);
 }
 

@@ -112,6 +112,8 @@ private slots:
     // Phase 2 tests — send format
     void sendHelloTypePacket_format();
     void processHelloPacket_parsesIPv6Tags();
+    void processHelloPacket_rejectsHugeTagCount();
+    void outOfPartReqs_onlyEndsARunningTransfer();
     void processHelloPacket_rejectsNonPublicIPv6();
     void processHelloPacket_parsesExtSXSkipTagsBit();
     void processChangeClientIP_acceptsPublicAndRejectsOthers();
@@ -179,6 +181,7 @@ private slots:
     void markBlockDone_movesToDoneHead();
     void ban_setsState();
     void unBan_clearsState();
+    void unBan_clearsTheWaitTime();
 
     // Phase 3 tests — download
     void setDownloadState_emitsSignalPhase3();
@@ -1714,7 +1717,7 @@ void tst_UpDownClient::hasPassedSecureIdent_identified()
     ClientCredits credits(hash);
 
     // Mark as identified
-    credits.verified(0xC0A80001);
+    credits.verified(Address::fromNetworkOrder(0xC0A80001));
 
     client.setCredits(&credits);
     client.setConnectAddress(Address::fromNetworkOrder(0xC0A80001));
@@ -2087,6 +2090,26 @@ void tst_UpDownClient::unBan_clearsState()
     client.unBan();
     QCOMPARE(client.uploadState(), UploadState::None);
     QVERIFY(!client.isBanned());
+}
+
+// L6: a ban ends with a fresh queue wait, not the one from before it.
+void tst_UpDownClient::unBan_clearsTheWaitTime()
+{
+    uint8 credHash[16];
+    std::memset(credHash, 0x5E, sizeof(credHash));
+    ClientCredits credits(credHash);
+    UpDownClient client;
+    client.setCredits(&credits);
+
+    client.restoreWaitStartTime(MIN2MS(30));
+    QVERIFY(getTickCount() - client.waitStartTime() >= MIN2MS(30));
+
+    client.ban(QStringLiteral("test ban"));
+    QVERIFY(getTickCount() - client.waitStartTime() >= MIN2MS(30));
+    client.unBan();
+    QVERIFY(getTickCount() - client.waitStartTime() < SEC2MS(5));
+
+    client.setCredits(nullptr);
 }
 
 // ---------------------------------------------------------------------------
@@ -3400,17 +3423,54 @@ void tst_UpDownClient::timeUntilReask_shortWindowForAnIdleSource()
 void tst_UpDownClient::setDownloadState_stampsTheConnectClock()
 {
     UpDownClient client;
-    const uint32 before = client.lastTriedToConnect();
+    const uint64 before = client.lastTriedToConnect();
 
     client.setDownloadState(DownloadState::Connecting);
-    const uint32 stamped = client.lastTriedToConnect();
+    const uint64 stamped = client.lastTriedToConnect();
     QVERIFY2(stamped != before, "entering Connecting must stamp the re-dial clock");
-    QVERIFY(static_cast<uint32>(getTickCount()) - stamped < SEC2MS(5));
+    QVERIFY(getTickCount() - stamped < SEC2MS(5));
 
     client.setDownloadState(DownloadState::TooManyConnsKad);
-    const uint32 rewound = client.lastTriedToConnect();
-    QVERIFY2(static_cast<uint32>(getTickCount()) - rewound >= MIN2MS(20),
+    const uint64 rewound = client.lastTriedToConnect();
+    QVERIFY2(getTickCount() - rewound >= MIN2MS(20),
              "a Kad source over the connection cap must be dialable again at once");
+}
+
+void tst_UpDownClient::processHelloPacket_rejectsHugeTagCount()
+{
+    uint8 hash[16];
+    fillHash(hash, 0xCD);
+
+    SafeMemFile data;
+    data.writeUInt8(16);
+    data.writeHash16(hash);
+    data.writeUInt32(0x0A0B0C0D);
+    data.writeUInt16(4662);
+    data.writeUInt32(0x00100000);               // a million tags
+    const QByteArray junk(8192, '\x05');         // BOOL-typed junk to chew on
+    data.write(junk.constData(), junk.size());
+    const QByteArray buf = data.buffer();
+
+    UpDownClient client;
+    QVERIFY_THROWS_EXCEPTION(FileException, (void)client.processHelloPacket(
+        reinterpret_cast<const uint8*>(buf.constData()), static_cast<uint32>(buf.size())));
+}
+
+void tst_UpDownClient::outOfPartReqs_onlyEndsARunningTransfer()
+{
+    UpDownClient client;
+
+    client.setDownloadState(DownloadState::NoNeededParts);
+    QVERIFY(QMetaObject::invokeMethod(&client, "onPacketForClient", Qt::DirectConnection,
+                                      Q_ARG(const uint8*, nullptr), Q_ARG(uint32, 0),
+                                      Q_ARG(uint8, OP_OUTOFPARTREQS), Q_ARG(uint8, OP_EDONKEYPROT)));
+    QCOMPARE(client.downloadState(), DownloadState::NoNeededParts);
+
+    client.setDownloadState(DownloadState::Downloading);
+    QVERIFY(QMetaObject::invokeMethod(&client, "onPacketForClient", Qt::DirectConnection,
+                                      Q_ARG(const uint8*, nullptr), Q_ARG(uint32, 0),
+                                      Q_ARG(uint8, OP_OUTOFPARTREQS), Q_ARG(uint8, OP_EDONKEYPROT)));
+    QCOMPARE(client.downloadState(), DownloadState::OnQueue);
 }
 
 QTEST_MAIN(tst_UpDownClient)

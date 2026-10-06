@@ -104,6 +104,8 @@ public:
     /// Same lookup for an address of either family. findByIPTcp() delegates here;
     /// an IPv6 server can only be found this way (its uint32 form is 0).
     [[nodiscard]] Server* findByIPTcp(const Address& addr, uint16 port) const;
+    /// Is @p addr an address of any listed server, whatever the port?
+    [[nodiscard]] bool isServerAddress(const Address& addr) const;
     [[nodiscard]] Server* findByIPUdp(uint32 ip, uint16 udpPort, bool obfuscationPorts = true) const;
     /// Same lookup for an address of either family. findByIPUdp(uint32) delegates here;
     /// prefer this form when the caller has an Endpoint, or an IPv6 server's reply

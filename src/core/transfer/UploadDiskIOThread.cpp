@@ -19,6 +19,8 @@
 
 #include <zlib.h>
 
+#include <cstring>
+
 namespace eMule {
 
 UploadDiskIOThread::UploadDiskIOThread(QObject* parent)
@@ -71,6 +73,16 @@ bool UploadDiskIOThread::shouldCompressFile(const QString& fileName)
     return !noCompress.contains(ext);
 }
 
+void BlockReadRequest::setFile(const KnownFile& file, bool peerTakesCompression)
+{
+    // A completed share reads from itself, a partfile from its .part; the rule
+    // lives on KnownFile so every reader agrees on it.
+    filePath = file.dataFilePath();
+    std::memcpy(fileHash.data(), file.fileHash(), 16);
+    isPartFile = file.isPartFile();
+    compress = peerTakesCompression && UploadDiskIOThread::shouldCompressFile(file.fileName());
+}
+
 void UploadDiskIOThread::run()
 {
     while (m_run.load()) {
@@ -93,7 +105,7 @@ void UploadDiskIOThread::run()
 
 void UploadDiskIOThread::readBlock(const BlockReadRequest& req)
 {
-    if (!req.file || !req.client)
+    if (req.filePath.isEmpty() || !req.client)
         return;
 
     if (req.startOffset >= req.endOffset) {
@@ -108,9 +120,7 @@ void UploadDiskIOThread::readBlock(const BlockReadRequest& req)
         return;
     }
 
-    // A completed share reads from itself, a partfile from its .part; the rule
-    // lives on KnownFile so every reader agrees on it.
-    const QString filePath = req.file->dataFilePath();
+    const QString& filePath = req.filePath;
 
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly)) {
@@ -134,13 +144,12 @@ void UploadDiskIOThread::readBlock(const BlockReadRequest& req)
         return;
     }
 
-    const uint8* fileHash = req.file->fileHash();
-    bool isPartFile = req.file->isPartFile();
+    const uint8* fileHash = req.fileHash.data();
+    const bool isPartFile = req.isPartFile;
 
-    // Create packets — try compression unless disabled or file type is pre-compressed
+    // Create packets — compressed unless the peer or the file type rules it out
     QList<std::shared_ptr<Packet>> packets;
-    bool compress = !req.disableCompression && shouldCompressFile(req.file->fileName());
-    if (compress)
+    if (req.compress)
         packets = createPackedPackets(fileHash, isPartFile, req.startOffset, req.endOffset, data);
     else
         packets = createStandardPackets(fileHash, isPartFile, req.startOffset, req.endOffset, data);

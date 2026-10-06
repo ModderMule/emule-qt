@@ -10,6 +10,7 @@
 #include "prefs/Preferences.h"
 #include "transfer/UploadBandwidthThrottler.h"
 #include "utils/Log.h"
+#include "utils/TimeUtils.h"
 
 #include <QTimer>
 
@@ -94,9 +95,11 @@ private:
 EMSocket::EMSocket(QObject* parent)
     : EncryptedStreamSocket(parent)
 {
-    m_elapsedTimer.start();
-    m_lastCalledSend = static_cast<uint32>(m_elapsedTimer.elapsed());
-    m_lastSent = m_lastCalledSend > SEC2MS(1) ? m_lastCalledSend - SEC2MS(1) : 0;
+    // All three from the global tick: the throttler compares them with its own
+    // (MFC stamps both sides from timeGetTime()).
+    const uint64 now = getTickCount();
+    m_lastCalledSend = now;
+    m_lastSent = now - SEC2MS(1);
 
     connect(this, &QTcpSocket::readyRead, this, &EMSocket::onReadyRead);
     connect(this, &QTcpSocket::connected, this, &EMSocket::onConnected);
@@ -161,6 +164,18 @@ void EMSocket::onSocketError(QAbstractSocket::SocketError /*error*/)
                  .arg(static_cast<int>(m_streamCryptState))
                  .arg(bytesAvailable())
                  .arg(peerAddress().toString()).arg(peerPort()));
+    switch (error()) {
+    case QAbstractSocket::ProxyAuthenticationRequiredError:
+    case QAbstractSocket::ProxyConnectionRefusedError:
+    case QAbstractSocket::ProxyConnectionClosedError:
+    case QAbstractSocket::ProxyConnectionTimeoutError:
+    case QAbstractSocket::ProxyNotFoundError:
+    case QAbstractSocket::ProxyProtocolError:
+        m_proxyConnectFailed = true;
+        break;
+    default:
+        break;
+    }
     // MFC's OnClose reads remaining buffered data before closing.
     // When the remote closes (RemoteHostClosedError), there may still be
     // data in Qt's read buffer that we need to process first.
@@ -450,13 +465,34 @@ void EMSocket::sendPacket(std::unique_ptr<Packet> packet, bool controlPacket,
     bool wakeThrottler = false;
     {
         std::lock_guard lock(m_sendLock);
-        if (controlPacket) {
+        // An empty queue takes anything, so one large legitimate answer always goes out.
+        const auto fits = [pktSize](size_t packets, uint64 bytes, size_t maxPackets, uint64 maxBytes) {
+            return packets == 0 || (packets < maxPackets && bytes + pktSize <= maxBytes);
+        };
+        if (m_queueOverflow) {
+            return;
+        } else if (controlPacket
+                       ? !fits(m_controlQueue.size(), m_controlQueueBytes, kMaxControlPackets, kMaxControlBytes)
+                       : !fits(m_standardQueue.size(), m_standardQueueBytes, kMaxStandardPackets, kMaxStandardBytes)) {
+            m_queueOverflow = true;
+            // Close from the event loop: callers keep using the socket after sendPacket().
+            QMetaObject::invokeMethod(this, [this] {
+                if (m_conState.load(std::memory_order_acquire) != EMSState::Disconnected) {
+                    logDebug(QStringLiteral("EMSocket: send queue overflow — closing %1")
+                                 .arg(peerAddress().toString()));
+                    onError(kErrSendQueueOverflow);
+                }
+            }, Qt::QueuedConnection);
+            return;
+        } else if (controlPacket) {
+            m_controlQueueBytes += pktSize;
             m_controlQueue.push_back(std::move(packet));
         } else {
+            m_standardQueueBytes += pktSize;
             bool first = (m_sendBuffer == nullptr || m_currentPacketIsControl) && m_standardQueue.empty();
             m_standardQueue.push_back({std::move(packet), actualPayloadSize});
             if (first) {
-                m_lastFinishedStandard = static_cast<uint32>(m_elapsedTimer.elapsed());
+                m_lastFinishedStandard = getTickCount();
                 m_accelerateUpload = true;
             }
             wakeThrottler = true;
@@ -514,8 +550,9 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
         minFragSize = 1;
 
     maxNumberOfBytesToSend = getNextFragSize(maxNumberOfBytesToSend, minFragSize);
-    m_lastCalledSend = static_cast<uint32>(m_elapsedTimer.elapsed());
-    bool wasLongTimeSinceSend = (m_lastCalledSend >= m_lastSent + SEC2MS(1));
+    const uint64 calledSend = getTickCount();
+    m_lastCalledSend = calledSend;
+    bool wasLongTimeSinceSend = (calledSend >= m_lastSent + SEC2MS(1));
 
     uint32 sentBytes = 0;
     while (sentBytes < maxNumberOfBytesToSend
@@ -538,6 +575,7 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
             if (m_currentPacketIsControl) {
                 curPacket = m_controlQueue.front().release();
                 m_controlQueue.pop_front();
+                m_controlQueueBytes -= std::min<uint64>(m_controlQueueBytes, curPacket ? curPacket->size : 0);
             } else {
                 if (m_standardQueue.empty()) {
                     return ret;
@@ -547,6 +585,7 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
                 m_actualPayloadSize = entry.actualPayloadSize;
                 m_currentPackageIsFromPartFile = curPacket->isFromPF();
                 m_standardQueue.pop_front();
+                m_standardQueueBytes -= std::min<uint64>(m_standardQueueBytes, curPacket ? curPacket->size : 0);
             }
 
             m_sendBufferLen = curPacket->getRealPacketSize();
@@ -603,7 +642,7 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
                     toSend = nextFrag - sentBytes;
             }
 
-            m_lastSent = static_cast<uint32>(m_elapsedTimer.elapsed());
+            m_lastSent = getTickCount();
 
             // Use native ::send() when called from the throttler's background
             // thread (Qt's write() is not thread-safe from non-owner threads).
@@ -677,7 +716,7 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
             if (!m_currentPacketIsControl) {
                 m_actualPayloadSizeSent.fetch_add(m_actualPayloadSize, std::memory_order_relaxed);
                 m_actualPayloadSize = 0;
-                m_lastFinishedStandard = static_cast<uint32>(m_elapsedTimer.elapsed());
+                m_lastFinishedStandard = getTickCount();
                 m_accelerateUpload = false;
             }
             m_sent = 0;
@@ -788,6 +827,8 @@ void EMSocket::clearQueues()
         std::lock_guard lock(m_sendLock);
         m_controlQueue.clear();
         m_standardQueue.clear();
+        m_controlQueueBytes = 0;
+        m_standardQueueBytes = 0;
     }
 
     m_downloadLimit = 0;
@@ -807,6 +848,7 @@ void EMSocket::truncateQueues()
 {
     std::lock_guard lock(m_sendLock);
     m_standardQueue.clear();
+    m_standardQueueBytes = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -852,9 +894,9 @@ uint32 EMSocket::getNeededBytes()
     if (!isControl && !m_controlQueue.empty())
         m_accelerateUpload = true;
 
-    uint32 now = static_cast<uint32>(m_elapsedTimer.elapsed());
-    uint32 timeSinceLastFinished = now - m_lastFinishedStandard;
-    uint32 timeSinceLastSend = now - m_lastCalledSend;
+    const uint64 now = getTickCount();
+    const auto timeSinceLastFinished = static_cast<uint32>(now - m_lastFinishedStandard);
+    const auto timeSinceLastSend = static_cast<uint32>(now - m_lastCalledSend);
     uint32 timeTotal = SEC2MS(m_accelerateUpload ? 3 : 5);
     uint64 sizeLeft, sizeTotal;
 

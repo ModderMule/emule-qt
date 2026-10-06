@@ -140,6 +140,8 @@ public:
     /// True if `ipNet` (network order) is a still-live Kad firewall-check request.
     /// Matches MFC CClientList::IsKadFirewallCheckIP (srchybrid/ClientList.cpp:852).
     [[nodiscard]] bool isKadFirewallCheckIP(uint32 ipNet) const;
+    /// A firewall-check ACK from `ipNet` counts: it was asked and has not acked yet.
+    [[nodiscard]] bool takeKadFirewallAck(uint32 ipNet);
 
     // -- Connecting client timeout (MFC CClientList::ProcessConnectingClientsList) --
 
@@ -163,6 +165,10 @@ public:
     void addBannedClient(const Address& addr);
     [[nodiscard]] bool isBannedClient(const Address& addr) const;
     void removeBannedClient(const Address& addr);
+
+    /// An inbound connection from @p addr ended before it said hello. Enough of them
+    /// inside HANDSHAKEFAIL_WINDOW ban the address.
+    void noteHandshakeFailure(const Address& addr);
 
     [[nodiscard]] int bannedCount() const;
     void removeAllBannedClients();
@@ -225,7 +231,7 @@ private:
 
     struct ConnectingClient {
         UpDownClient* client;
-        uint32 insertedTick;
+        uint64 insertedTick;
     };
 
     /// One record per tracked address. `items` grows per distinct TCP port; `inserted`
@@ -237,7 +243,7 @@ private:
             const ClientCredits* credits = nullptr;
         };
         std::vector<PortAndCredits> items;
-        uint32 inserted = 0;
+        uint64 inserted = 0;
         uint32 badRequests = 0;
     };
 
@@ -245,15 +251,25 @@ private:
     /// Address -> tick of the most recent accepted direct callback request.
     /// A map rather than MFC's list: it only ever asks about the newest entry per address,
     /// and the pruning walk stays proportional to the number of distinct addresses.
-    std::unordered_map<Address, uint32> m_directCallbackRequests;
+    std::unordered_map<Address, uint64> m_directCallbackRequests;
 
-    std::unordered_map<Address, uint32> m_bannedList;  // Address -> ban tick
+    std::unordered_map<Address, uint64> m_bannedList;  // Address -> ban tick
     std::unordered_map<Address, TrackedClient> m_trackedClients;
-    uint32 m_lastBanCleanUp = 0;
-    uint32 m_lastTrackedCleanUp = 0;
+    struct HandshakeFailures {
+        uint64 windowStart = 0;
+        uint32 count = 0;
+    };
+    std::unordered_map<Address, HandshakeFailures> m_handshakeFailures;
+    uint64 m_lastBanCleanUp = 0;
+    uint64 m_lastTrackedCleanUp = 0;
     // Kad firewall-check requests (MFC listFirewallCheckRequests): newest at front,
-    // (ipNet, insertedSec). Purged in addKadFirewallRequest; the query never removes.
-    mutable std::deque<std::pair<uint32, uint32>> m_kadFirewallRequests;
+    // Purged in addKadFirewallRequest; the query never removes.
+    struct KadFirewallRequest {
+        uint32 ipNet = 0;
+        uint64 inserted = 0;
+        bool acked = false;
+    };
+    std::deque<KadFirewallRequest> m_kadFirewallRequests;
     UpDownClient* m_buddy = nullptr;
     BuddyStatus m_buddyStatus = BuddyStatus::None;
 };

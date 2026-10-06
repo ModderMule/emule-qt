@@ -76,7 +76,7 @@ signals:
     void hashingFailed(const QString& directory, const QString& filename, uint64 generation);
     void hashingProgress(int percent);
     /// One byte per part: 1 if it verified against the hashset, 0 if it did not.
-    /// partOk holds one PartFile::RehashPart value per part.
+    /// partOk holds one PartFile::PartVerdict value per part.
     void partFileRehashed(const QByteArray& fileHash, const QByteArray& partOk, uint64 token);
 
 protected:

@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "controls/LogWidget.h"
 
+#include "controls/LogTextView.h"
+
 #include "app/AppConfig.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
@@ -27,9 +29,6 @@ LogWidget* LogWidget::s_instance = nullptr;
 QtMessageHandler LogWidget::s_previousHandler = nullptr;
 
 namespace {
-
-/// Server Info is the first tab, as in the reference (CServerWnd::PaneServerInfo).
-constexpr int kServerInfoTabIndex = 0;
 
 /// Internal URL for the banner's version-check link — not a real scheme, just a
 /// sentinel the panel recognises and turns into an in-app check.
@@ -72,7 +71,7 @@ LogWidget::LogWidget(QWidget* parent)
     connect(m_tabBar, &QTabBar::currentChanged, m_stack, &QStackedWidget::setCurrentIndex);
 
     // Server Info tab
-    m_serverInfoBrowser = new QTextBrowser;
+    m_serverInfoBrowser = new LogTextView;
     m_serverInfoBrowser->setReadOnly(true);
     // Links are re-emitted rather than opened here: ed2k:// must reach the in-app
     // importer, and the banner's version-check link is an internal action. The
@@ -90,7 +89,7 @@ LogWidget::LogWidget(QWidget* parent)
     m_stack->addWidget(m_serverInfoBrowser);
 
     // Log tab
-    m_logBrowser = new QTextBrowser;
+    m_logBrowser = new LogTextView;
     m_logBrowser->setReadOnly(true);
     m_logBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
     if (thePrefs.useOriginalIcons())
@@ -100,7 +99,7 @@ LogWidget::LogWidget(QWidget* parent)
     m_stack->addWidget(m_logBrowser);
 
     // Verbose tab
-    m_verboseBrowser = new QTextBrowser;
+    m_verboseBrowser = new LogTextView;
     m_verboseBrowser->setReadOnly(true);
     m_verboseBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
     if (thePrefs.useOriginalIcons())
@@ -110,7 +109,7 @@ LogWidget::LogWidget(QWidget* parent)
     m_stack->addWidget(m_verboseBrowser);
 
     // Usenet tab (shown only when showUsenetLog is true)
-    m_usenetBrowser = new QTextBrowser;
+    m_usenetBrowser = new LogTextView;
     m_usenetBrowser->setReadOnly(true);
     m_usenetBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
     m_usenetTabIndex = m_tabBar->count();
@@ -122,7 +121,7 @@ LogWidget::LogWidget(QWidget* parent)
     setUsenetTabVisible(thePrefs.showUsenetLog());
 
     // Kad tab
-    m_kadBrowser = new QTextBrowser;
+    m_kadBrowser = new LogTextView;
     m_kadBrowser->setReadOnly(true);
     m_kadBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
     if (thePrefs.useOriginalIcons())
@@ -132,7 +131,7 @@ LogWidget::LogWidget(QWidget* parent)
     m_stack->addWidget(m_kadBrowser);
 
     // IPC tab (shown only when enableIpcLog is true)
-    m_ipcLogBrowser = new QTextBrowser;
+    m_ipcLogBrowser = new LogTextView;
     m_ipcLogBrowser->setReadOnly(true);
     m_ipcLogBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
     m_ipcTabIndex = m_tabBar->count();
@@ -146,12 +145,20 @@ LogWidget::LogWidget(QWidget* parent)
     // Clear a tab's highlight once the user actually looks at it.
     connect(m_tabBar, &QTabBar::currentChanged, this, [this](int index) {
         m_tabBar->setTabTextColor(index, QColor{});
+        // MFC: a pane that got text while another was selected opens at its last
+        // line, unless its Autoscroll is off (CServerWnd::UpdateLogTabSelection —
+        // srchybrid/ServerWnd.cpp:550-582).
+        auto* view = qobject_cast<LogTextView*>(m_stack->widget(index));
+        if (m_unseenTabs.remove(index) && view && view->autoScroll())
+            view->scrollToBottom();
     });
 
     // Initial info message
     appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v%1 ready</font>")
                   .arg(QString(kAppVersion)));
     writeServerInfoBanner();
+    // The start-up lines are not "new activity" — don't highlight tabs for them.
+    clearHighlights();
 
     // Install handler to capture core log output
     installMessageHandler();
@@ -192,7 +199,7 @@ void LogWidget::appendServerInfo(const QString& text, ServerMsgType type)
     }
 
     trimToLimit(m_serverInfoBrowser);
-    highlightTab(kServerInfoTabIndex);
+    noteAppended(m_serverInfoBrowser);
 }
 
 void LogWidget::appendLog(const QString& msg, const QString& ts, qint64 seqId)
@@ -257,6 +264,8 @@ void LogWidget::routeUsenet(QtMsgType type, const QString& colored,
 void LogWidget::insertSorted(QTextBrowser* browser, QList<qint64>& seqIds,
                               qint64 seqId, const QString& html)
 {
+    noteAppended(browser);
+
     // Fast path: new entry is in order (most common case)
     if (seqIds.isEmpty() || seqId >= seqIds.last()) {
         browser->append(html);
@@ -326,6 +335,7 @@ void LogWidget::appendIpcMessage(const QString& msg, bool outgoing)
         QStringLiteral("<font color='gray'>%1</font> <font color='%2'>%3 %4</font>")
             .arg(ts, color, arrow, msg.toHtmlEscaped()));
     trimToLimit(m_ipcLogBrowser);
+    noteAppended(m_ipcLogBrowser);
 }
 
 void LogWidget::setIpcTabVisible(bool visible)
@@ -355,6 +365,7 @@ void LogWidget::clearAll()
     m_usenetSeqIds.clear();
     appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v%1 ready</font>")
                   .arg(QString(kAppVersion)));
+    clearHighlights();
     // The reference's Reset leaves the Server Info pane empty — the startup banner
     // is not re-written (srchybrid/ServerWnd.cpp:539).
 }
@@ -486,17 +497,25 @@ void LogWidget::writeServerInfoBanner()
             .arg(QString(kVersionCheckUrl),
                  tr("Click here to check if a new version is available").toHtmlEscaped()));
     m_serverInfoBrowser->append(QStringLiteral("<span>&nbsp;</span>"));
-
-    // The banner is not "new activity" — don't highlight the tab for it.
-    m_tabBar->setTabTextColor(kServerInfoTabIndex, QColor{});
 }
 
-void LogWidget::highlightTab(int index)
+void LogWidget::noteAppended(QTextBrowser* browser)
 {
     // MFC highlights the tab when the pane it feeds is not the visible one
-    // (StatusSelector.HighlightItem — srchybrid/EmuleDlg.cpp:969-971).
-    if (m_tabBar->currentIndex() != index)
-        m_tabBar->setTabTextColor(index, QColor(Qt::red));
+    // (StatusSelector.HighlightItem — srchybrid/EmuleDlg.cpp:916-918, 926-928,
+    // 969-971). The Usenet, Kad and IPC tabs follow the same rule.
+    const int index = m_stack->indexOf(browser);
+    if (index < 0 || index == m_tabBar->currentIndex())
+        return;
+    m_unseenTabs.insert(index);
+    m_tabBar->setTabTextColor(index, QColor(Qt::red));
+}
+
+void LogWidget::clearHighlights()
+{
+    m_unseenTabs.clear();
+    for (int i = 0; i < m_tabBar->count(); ++i)
+        m_tabBar->setTabTextColor(i, QColor{});
 }
 
 } // namespace eMule

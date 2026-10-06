@@ -93,4 +93,24 @@ private:
     uint8 m_nameId = 0;
 };
 
+/// Most tags a packet from the network may carry.
+inline constexpr uint32 kMaxWireTags = 256;
+/// Our own files (a part.met holds two tags per gap): bounded by the bytes left only.
+inline constexpr uint32 kMaxFileTags = UINT32_MAX;
+
+/// Throws unless @p count fits @p maxTags and the bytes left in @p data.
+inline void checkTagCount(const FileDataIO& data, uint32 count, uint32 maxTags)
+{
+    if (count > maxTags || static_cast<qint64>(count) > data.length() - data.position())
+        throw FileException("Implausible tag count");
+}
+
+/// Reads a uint32 tag count and validates it before any tag is built.
+[[nodiscard]] inline uint32 readTagCount(FileDataIO& data, uint32 maxTags)
+{
+    const uint32 count = data.readUInt32();
+    checkTagCount(data, count, maxTags);
+    return count;
+}
+
 } // namespace eMule

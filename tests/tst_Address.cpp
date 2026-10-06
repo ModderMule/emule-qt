@@ -89,6 +89,7 @@ private slots:
     void toIPv4_fromNonMapped();
     void toIPv4_alreadyV4();
     void conversion_roundTrip();
+    void peerKey_isThePrefixForIPv6();
 
     // Address-typed isGoodIP / isGoodIPPort
     void isGoodIP_ipv4_matchesUint32Form();
@@ -772,6 +773,24 @@ void tst_Address::conversion_roundTrip()
     auto mapped = orig.toIPv6Mapped();
     auto back = mapped.toIPv4();
     QCOMPARE(back, orig);
+}
+
+void tst_Address::peerKey_isThePrefixForIPv6()
+{
+    const auto v4 = Address::fromHostOrder(0x01020304u);
+    QCOMPARE(v4.peerKey(), v4);
+    QCOMPARE(Address().peerKey(), Address());
+
+    const auto a = Address::fromString(QStringLiteral("2001:db8:1:2:aaaa:bbbb:cccc:dddd"));
+    const auto b = Address::fromString(QStringLiteral("2001:db8:1:2::1"));
+    const auto other = Address::fromString(QStringLiteral("2001:db8:1:3::1"));
+    QCOMPARE(a.peerKey(), Address::fromString(QStringLiteral("2001:db8:1:2::")));
+    QCOMPARE(a.peerKey(), b.peerKey());
+    QVERIFY(a.peerKey() != other.peerKey());
+
+    // A mapped address is IPv4 and keeps all 32 bits.
+    const auto mapped = Address::fromString(QStringLiteral("::ffff:1.2.3.4"));
+    QCOMPARE(mapped.peerKey(), v4);
 }
 
 // ---------------------------------------------------------------------------

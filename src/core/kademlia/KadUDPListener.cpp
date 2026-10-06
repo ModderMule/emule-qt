@@ -79,7 +79,7 @@ void KademliaUDPListener::firewalledCheck(uint32 ip, uint16 udpPort,
     auto* prefs = Kademlia::getInstancePrefs();
     // The remote node TCP-connects to this port to verify we're reachable.
     // Must be the TCP listener port, not the Kad UDP port.
-    const uint16 tcpPort = thePrefs.port();
+    const uint16 tcpPort = theApp.advertisedTcpPort();
 
     if (kadVersion > KADEMLIA_VERSION6_49aBETA) {
         // Kad v2 (v7+): extended request with client hash + connect options for obfuscation support
@@ -124,7 +124,7 @@ void KademliaUDPListener::sendMyDetails(uint8 opcode, uint32 ip, uint16 udpPort,
     io::writeUInt128(packet, RoutingZone::localKadId());
 
     // Write our ED2K TCP port
-    packet.writeUInt16(thePrefs.port());
+    packet.writeUInt16(theApp.advertisedTcpPort());
 
     // Write version
     packet.writeUInt8(KADEMLIA_VERSION);
@@ -319,7 +319,7 @@ void KademliaUDPListener::processPacket(const uint8* data, uint32 len, uint32 ip
         process_KADEMLIA_FIREWALLED_RES(payload, payloadLen, ip, senderKey);
         break;
     case KADEMLIA_FIREWALLED_ACK_RES:
-        process_KADEMLIA_FIREWALLED_ACK_RES(payloadLen);
+        process_KADEMLIA_FIREWALLED_ACK_RES(payloadLen, ip);
         break;
     case KADEMLIA_FINDBUDDY_REQ:    // No v2 equivalent — part of modern buddy protocol
         process_KADEMLIA_FINDBUDDY_REQ(payload, payloadLen, ip, udpPort, senderKey);
@@ -692,7 +692,7 @@ void KademliaUDPListener::process_KADEMLIA2_BOOTSTRAP_REQ(uint32 ip, uint16 udpP
     // Write our own contact info
     io::writeUInt128(packet, RoutingZone::localKadId());
     // ED2K TCP port (MFC: thePrefs.GetPort(), line 505)
-    packet.writeUInt16(thePrefs.port());
+    packet.writeUInt16(theApp.advertisedTcpPort());
     packet.writeUInt8(KADEMLIA_VERSION);
 
     // Write contact list
@@ -1297,6 +1297,14 @@ void KademliaUDPListener::process_KADEMLIA2_SEARCH_RES(const uint8* data, uint32
                .arg(ipToString(ip)).arg(udpPort)
                .arg(target.toHexString()).arg(count));
 
+    // The target is public, so matching on it alone lets any host feed a running
+    // search. Take results only from a node this search sent its request to.
+    if (!SearchManager::expectsResultsFrom(target, ip, udpPort)) {
+        logKad(QStringLiteral("Kad: SEARCH_RES from %1:%2 — not asked, dropped")
+                   .arg(ipToString(ip)).arg(udpPort));
+        return;
+    }
+
     try {
         for (uint16 i = 0; i < count && io.position() < io.length(); ++i) {
             UInt128 answer = io::readUInt128(io);
@@ -1722,8 +1730,15 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED_RES(const uint8* data, uin
                .arg(ipToString(ip)).arg(ipToString(externalIP)));
 }
 
-void KademliaUDPListener::process_KADEMLIA_FIREWALLED_ACK_RES(uint32 /*len*/)
+void KademliaUDPListener::process_KADEMLIA_FIREWALLED_ACK_RES(uint32 /*len*/, uint32 ip)
 {
+    // Only a node we asked may vouch for us, and only once: two forged datagrams
+    // would otherwise make a firewalled node publish itself as reachable.
+    if (!theApp.clientList || !theApp.clientList->takeKadFirewallAck(htonl(ip))) {
+        logKad(QStringLiteral("Kad: unrequested FIREWALLED_ACK_RES from %1").arg(ipToString(ip)));
+        return;
+    }
+
     // The remote node successfully TCP-connected to our listen port,
     // confirming we are reachable.  Increment the firewall counter so
     // that KadPrefs::firewalled() eventually returns false.
@@ -1783,7 +1798,7 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_REQ(const uint8* data, uint
     SafeMemFile resPacket;
     io::writeUInt128(resPacket, buddyID);
     io::writeUInt128(resPacket, prefs->clientHash());
-    resPacket.writeUInt16(thePrefs.port());  // ED2K TCP port
+    resPacket.writeUInt16(theApp.advertisedTcpPort());  // ED2K TCP port
     if (!senderKey.isEmpty()) // connectOptions only sent with verified key (MFC line 1716)
         resPacket.writeUInt8(prefs->myConnectOptions());
     sendPacket(resPacket, KADEMLIA_FINDBUDDY_RES, ip, udpPort, senderKey, nullptr);
@@ -1799,6 +1814,11 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_RES(const uint8* data, uint
     // Matches MFC KademliaUDPListener.cpp:1725-1761
     if (len < 34) // 16 (checkID) + 16 (clientHash) + 2 (tcpPort)
         return;
+    if (!isOnOutTrackList(ip, KADEMLIA_FINDBUDDY_REQ)) {
+        logKad(QStringLiteral("Kad: unrequested FINDBUDDY_RES from %1:%2")
+                   .arg(ipToString(ip)).arg(udpPort));
+        return;
+    }
 
     SafeMemFile bio(data, len);
     UInt128 checkID = io::readUInt128(bio);

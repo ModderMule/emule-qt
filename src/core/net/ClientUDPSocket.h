@@ -89,6 +89,10 @@ public:
     /// ThrottledControlSocket: whether queued datagrams remain.
     [[nodiscard]] bool hasControlQueue() const override;
 
+    /// Inflate a packed Kad payload; empty when corrupt or larger than the cap.
+    static constexpr uint32 kMaxKadDecompressed = 250000;
+    static QByteArray decompressKadPayload(const uint8* data, int len);
+
 signals:
     /// Reask callback received from firewalled client.
     void reaskCallbackReceived(const Endpoint& sender,
@@ -145,8 +149,6 @@ private:
     bool processReservedProtPacket(uint8 protByte, const uint8* packet, uint32 size,
                                    uint8 opcode, uint32 senderIP, uint16 senderPort);
 
-    QByteArray decompressKadPayload(const uint8* data, int len);
-
     void purgeExpiredPackets();
 
     struct PreparedDatagram {
@@ -162,6 +164,11 @@ private:
     bool m_wouldBlock = false;
 
     QElapsedTimer m_elapsedTimer;
+
+    /// Most packets waiting to be sent; beyond it new ones are dropped.
+    static constexpr size_t kMaxQueuedPackets = 4096;
+    uint32 m_droppedQueueFull = 0;
+    uint32 m_lastQueueFullLog = 0;
 };
 
 } // namespace eMule

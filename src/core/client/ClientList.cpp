@@ -13,6 +13,7 @@
 #include "utils/OtherFunctions.h"
 #include "net/ClientReqSocket.h"
 #include "net/ListenSocket.h"
+#include "server/ServerList.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadPrefs.h"
@@ -29,7 +30,7 @@ namespace eMule {
 
 ClientList::ClientList(QObject* parent)
     : EntityList<UpDownClient>(parent)
-    , m_lastBanCleanUp(static_cast<uint32>(getTickCount()))
+    , m_lastBanCleanUp(getTickCount())
 {
     globalDeadSourceList.init(true);
 }
@@ -118,7 +119,7 @@ UpDownClient* ClientList::attachToAlreadyKnown(UpDownClient* newClient, ClientRe
                 // The known client is live on a different address, so one of the two is
                 // lying about its user hash. MFC ClientList.cpp:213-226.
                 if (found->credits()
-                    && found->credits()->currentIdentState(found->userAddress().toNetworkUint32())
+                    && found->credits()->currentIdentState(found->userAddress())
                            == IdentState::Identified)
                 {
                     // found is cryptographically identified, so the newcomer is the bad guy.
@@ -299,8 +300,8 @@ bool ClientList::incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
     if (m_buddyStatus == BuddyStatus::Connected && m_buddy)
         return false;
 
-    // Check if we already know this client
-    if (findByConnIP(ip, tcpPort))
+    // Check if we already know this client (the lookup takes network order)
+    if (findByConnIP(qToBigEndian(ip), tcpPort))
         return false;
 
     // Create a new client for the incoming buddy. Same reason as requestBuddy() for putting
@@ -330,6 +331,14 @@ void ClientList::requestBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
     if (m_buddyStatus == BuddyStatus::Connected)
         return;
 
+    // Not ourselves, and not a node we are running a firewall check with
+    // (MFC ClientList.cpp:697-703). A banned address is no relay either.
+    const Address addr = Address::fromHostOrder(ip);
+    if (theApp.isOwnTcpPort(tcpPort) && addr == Address::fromNetworkOrder(theApp.publicIP()))
+        return;
+    if (isKadFirewallCheckIP(addr.toNetworkUint32()) || isBannedClient(addr))
+        return;
+
     // Find existing client by IP+port, or create a new one.
     //
     // The contact's IP goes in the ctor's userId slot (host order, so ed2kID stays false),
@@ -339,7 +348,7 @@ void ClientList::requestBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
     // Low-ID bypasses, so the dial fell through to the callback branches, found no route and
     // returned false — an outgoing buddy could never be established at all, and
     // m_buddyStatus stuck at Connecting forever. A Kad contact always has a routable IP.
-    auto* client = findByConnIP(ip, tcpPort);
+    auto* client = findByConnIP(qToBigEndian(ip), tcpPort);   // network order
     if (!client) {
         client = new UpDownClient(tcpPort, ip, 0, 0, nullptr);
         client->setConnectAddress(Address::fromHostOrder(ip));
@@ -408,25 +417,48 @@ bool ClientList::doRequestFirewallCheckUDP(const kad::Contact& contact)
 
 void ClientList::addKadFirewallRequest(uint32 ipNet)
 {
-    const uint32 now = static_cast<uint32>(getTickCount());
-    m_kadFirewallRequests.push_front({ipNet, now});
+    const uint64 now = getTickCount();
+    m_kadFirewallRequests.push_front({ipNet, now, false});
     // Drop entries older than the 180 s window (oldest live at the back).
     while (!m_kadFirewallRequests.empty()
-           && now >= m_kadFirewallRequests.back().second + SEC2MS(180))
+           && now >= m_kadFirewallRequests.back().inserted + SEC2MS(180))
         m_kadFirewallRequests.pop_back();
 }
 
 bool ClientList::isKadFirewallCheckIP(uint32 ipNet) const
 {
-    const uint32 now = static_cast<uint32>(getTickCount());
+    const uint64 now = getTickCount();
     // Newest first: once we reach an expired entry, all older ones are expired too.
-    for (const auto& [ip, inserted] : m_kadFirewallRequests) {
-        if (now >= inserted + SEC2MS(180))
+    for (const auto& request : m_kadFirewallRequests) {
+        if (now >= request.inserted + SEC2MS(180))
             break;
-        if (ip == ipNet)
+        if (request.ipNet == ipNet)
             return true;
     }
     return false;
+}
+
+bool ClientList::takeKadFirewallAck(uint32 ipNet)
+{
+    const uint64 now = getTickCount();
+    bool asked = false;
+    for (auto& request : m_kadFirewallRequests) {
+        if (now >= request.inserted + SEC2MS(180))
+            break;
+        if (request.ipNet != ipNet)
+            continue;
+        // One address is one witness, however often it was asked or answers.
+        if (request.acked)
+            return false;
+        asked = true;
+    }
+    if (!asked)
+        return false;
+    for (auto& request : m_kadFirewallRequests) {
+        if (request.ipNet == ipNet)
+            request.acked = true;
+    }
+    return true;
 }
 
 // ===========================================================================
@@ -602,7 +634,7 @@ void ClientList::addConnectingClient(UpDownClient* client)
         if (cc.client == client)
             return;
     }
-    m_connectingClients.push_back({client, static_cast<uint32>(getTickCount())});
+    m_connectingClients.push_back({client, getTickCount()});
 }
 
 void ClientList::removeConnectingClient(const UpDownClient* client)
@@ -616,7 +648,7 @@ void ClientList::processConnectingClients()
 {
     // Time out clients that have been connecting for > 45 seconds.
     // Matches MFC ProcessConnectingClientsList() (srchybrid/ClientList.cpp:877-891).
-    const uint32 curTick = static_cast<uint32>(getTickCount());
+    const uint64 curTick = getTickCount();
     for (auto it = m_connectingClients.begin(); it != m_connectingClients.end(); ) {
         if (curTick >= it->insertedTick + 45000u) {
             auto* client = it->client;
@@ -636,21 +668,46 @@ void ClientList::processConnectingClients()
 void ClientList::addBannedClient(const Address& addr)
 {
     if (addr.isNull()) return;
-    m_bannedList[addr] = static_cast<uint32>(getTickCount());
+    m_bannedList[addr.peerKey()] = getTickCount();   // IPv6: the whole /64
 }
 
 bool ClientList::isBannedClient(const Address& addr) const
 {
     if (addr.isNull()) return false;
-    auto it = m_bannedList.find(addr);
+    auto it = m_bannedList.find(addr.peerKey());
     if (it == m_bannedList.end())
         return false;
-    return (static_cast<uint32>(getTickCount()) < it->second + CLIENTBANTIME);
+    return (getTickCount() < it->second + CLIENTBANTIME);
 }
 
 void ClientList::removeBannedClient(const Address& addr)
 {
-    m_bannedList.erase(addr);
+    m_bannedList.erase(addr.peerKey());
+}
+
+void ClientList::noteHandshakeFailure(const Address& addr)
+{
+    if (addr.isNull() || isBannedClient(addr))
+        return;
+    // A server probes our port when we log in; that must never cost it the callback path.
+    if (theApp.serverList && theApp.serverList->isServerAddress(addr))
+        return;
+
+    const uint64 now = getTickCount();
+    HandshakeFailures& entry = m_handshakeFailures[addr.peerKey()];
+    if (entry.count == 0 || now - entry.windowStart >= HANDSHAKEFAIL_WINDOW) {
+        entry.windowStart = now;
+        entry.count = 0;
+    }
+    if (++entry.count < HANDSHAKEFAIL_BAN_COUNT)
+        return;
+
+    m_handshakeFailures.erase(addr.peerKey());
+    addBannedClient(addr);
+    if (thePrefs.logBannedClients()) {
+        logWarning(QStringLiteral("Banned %1: %2 connections dropped before a hello")
+                       .arg(ipstr(addr)).arg(HANDSHAKEFAIL_BAN_COUNT));
+    }
 }
 
 int ClientList::bannedCount() const
@@ -678,7 +735,7 @@ void ClientList::addTrackClient(const UpDownClient* client)
     auto& record = m_trackedClients[addr];
     // Refresh the whole record, not just the matching port: MFC keeps an address alive
     // as long as any client behind it is active.
-    record.inserted = static_cast<uint32>(getTickCount());
+    record.inserted = getTickCount();
 
     const uint16 port = client->userPort();
     for (auto& item : record.items) {
@@ -720,7 +777,7 @@ void ClientList::trackBadRequest(const UpDownClient* client, int increaseCounter
         return;
 
     auto& record = m_trackedClients[addr];
-    record.inserted = static_cast<uint32>(getTickCount());
+    record.inserted = getTickCount();
 
     // Saturate at 0 rather than wrapping: callers pass a negative delta to reset the
     // counter, and an unsigned underflow there would read back as a huge strike count.
@@ -756,8 +813,8 @@ void ClientList::removeAllTrackedClients()
 
 void ClientList::addTrackCallbackRequests(const Address& addr)
 {
-    const uint32 curTick = static_cast<uint32>(getTickCount());
-    m_directCallbackRequests[addr] = curTick;
+    const uint64 curTick = getTickCount();
+    m_directCallbackRequests[addr.peerKey()] = curTick;
 
     std::erase_if(m_directCallbackRequests, [curTick](const auto& entry) {
         return curTick >= entry.second + SEC2MS(180);
@@ -766,10 +823,10 @@ void ClientList::addTrackCallbackRequests(const Address& addr)
 
 bool ClientList::allowCallbackRequest(const Address& addr) const
 {
-    const auto it = m_directCallbackRequests.find(addr);
+    const auto it = m_directCallbackRequests.find(addr.peerKey());
     if (it == m_directCallbackRequests.end())
         return true;
-    return static_cast<uint32>(getTickCount()) >= it->second + SEC2MS(180);
+    return getTickCount() >= it->second + SEC2MS(180);
 }
 
 // ===========================================================================
@@ -778,7 +835,7 @@ bool ClientList::allowCallbackRequest(const Address& addr) const
 
 void ClientList::cleanUpBannedList()
 {
-    const auto now = static_cast<uint32>(getTickCount());
+    const auto now = getTickCount();
     if (now - m_lastBanCleanUp < CLIENTBANTIME)
         return;
 
@@ -786,11 +843,16 @@ void ClientList::cleanUpBannedList()
     std::erase_if(m_bannedList, [now](const auto& pair) {
         return now >= pair.second + CLIENTBANTIME;
     });
+
+    const uint64 now64 = getTickCount();
+    std::erase_if(m_handshakeFailures, [now64](const auto& pair) {
+        return now64 - pair.second.windowStart >= HANDSHAKEFAIL_WINDOW;
+    });
 }
 
 void ClientList::cleanUpTrackedList()
 {
-    const auto now = static_cast<uint32>(getTickCount());
+    const auto now = getTickCount();
     if (now - m_lastTrackedCleanUp < TRACKED_CLEANUP_TIME)
         return;
 

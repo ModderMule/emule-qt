@@ -12,6 +12,10 @@ namespace eMule {
 
 bool operator==(const DeadSourceKey& a, const DeadSourceKey& b) noexcept
 {
+    // Reached over IPv6: the ID is a shared placeholder there, so only the address counts
+    if (!a.ipv6.isNull() || !b.ipv6.isNull())
+        return a.ipv6 == b.ipv6 && a.port == b.port;
+
     // High-ID or low-ID with server: match by ID + port (+ serverIP for low-ID)
     if (a.userID != 0 && a.userID == b.userID) {
         bool portMatch = (a.port != 0 && a.port == b.port)

@@ -51,8 +51,8 @@ uint64 UpDownClient::score(bool sysValue, bool isDownloading, bool onlyBaseValue
     // The identity checks below key off MFC's GetIP(), which is m_dwUserIP — the address we
     // actually saw this peer at, 0 until we have had a connection (srchybrid/UpdownClient.h:457).
     // That is m_userAddress here, not m_connectAddress: the latter can hold an IPv6 we merely
-    // intend to dial, and toNetworkUint32() on it is meaningless.
-    const uint32 identIP = m_userAddress.toNetworkUint32();
+    // intend to dial. The whole Address, so an IPv6 peer is bound to its address too.
+    const Address& identIP = m_userAddress;
 
     // A peer whose secure identity does not match the address it is talking from. MFC
     // srchybrid/UploadClient.cpp:196-197 — "bad clients", scored out of the queue entirely.
@@ -84,8 +84,8 @@ uint64 UpDownClient::score(bool sysValue, bool isDownloading, bool onlyBaseValue
 
     // Base value — MFC srchybrid/UploadClient.cpp:208-227, kept in milliseconds where MFC
     // divides by SEC2MS(1.0f). See the note on the declaration for why.
-    const uint32 curTick = static_cast<uint32>(getTickCount());
-    const uint32 waitTime = waitStartTime();
+    const uint64 curTick = getTickCount();
+    const uint64 waitTime = waitStartTime();
 
     // double, not float: the product below outgrows float's exact-integer range within an
     // hour of waiting, so the low bits of two clients' scores would be rounding noise.
@@ -168,7 +168,7 @@ float UpDownClient::getCombinedFilePrioAndCredit() const
     if (!m_credits)
         return 0.0f;
 
-    return 10.0f * m_credits->scoreRatio(m_userAddress.toNetworkUint32())
+    return 10.0f * m_credits->scoreRatio(m_userAddress)
                  * static_cast<float>(filePrioAsNumber());
 }
 
@@ -364,24 +364,65 @@ void UpDownClient::addReqBlock(Requested_Block_Struct* reqBlock)
         return;
     }
 
-    m_blockRequests.push_back(reqBlock);
+    // Requests are cheap to keep (MFC keeps them all) and some clients ask far ahead, so
+    // the limit is generous: more than one session can serve. It only stops hoarding.
+    if (m_blockRequests.size() >= kMaxPendingBlockRequests) {
+        drop(QStringLiteral("too many pending block requests"));
+        return;
+    }
 
-    // Signal disk IO thread to start reading the block from disk
-    if (thePrefs.logRawSocketPackets())
-        logDebug(QStringLiteral("addReqBlock: start=%1 end=%2 file=%3 uploadQueue=%4")
-                     .arg(reqBlock->startOffset).arg(reqBlock->endOffset)
-                     .arg(srcFile->fileName())
-                     .arg(theApp.uploadQueue != nullptr));
-    if (theApp.uploadQueue) {
-        if (auto* diskIO = theApp.uploadQueue->diskIOThread()) {
-            BlockReadRequest readReq;
-            readReq.file = srcFile;
-            readReq.client = this;
-            readReq.startOffset = reqBlock->startOffset;
-            readReq.endOffset = reqBlock->endOffset;
-            readReq.disableCompression = (m_dataCompVer == 0);
-            diskIO->queueBlockRead(std::move(readReq));
+    m_blockRequests.push_back(reqBlock);
+    startBlockReads();
+}
+
+// ===========================================================================
+// startBlockReads — MFC UploadDiskIOThread.cpp:173-262 (StartCreateNextBlockPackage)
+// ===========================================================================
+
+void UpDownClient::startBlockReads()
+{
+    if (m_uploadState != UploadState::Uploading || !theApp.uploadQueue || !theApp.sharedFileList)
+        return;
+    auto* diskIO = theApp.uploadQueue->diskIOThread();
+    if (!diskIO)
+        return;
+
+    // MFC buffers one block, five for a fast upload. The rate term keeps a slot faster
+    // than that fed between two calls; the cap bounds what one peer can make us hold.
+    uint64 limit = m_upDatarate > BIGBUFFER_MINDATARATE ? 5 * EMBLOCKSIZE + 1 : EMBLOCKSIZE + 1;
+    limit = std::max(limit, std::min<uint64>(uint64{m_upDatarate} * 2, kMaxUploadBufferBytes));
+
+    for (auto it = m_blockRequests.begin(); it != m_blockRequests.end();) {
+        Requested_Block_Struct* block = *it;
+        if (block->readQueued) {
+            ++it;
+            continue;
         }
+        if (payloadInBuffer() + m_blockReadBytesQueued >= limit)
+            break;
+
+        const KnownFile* srcFile = theApp.sharedFileList->getFileByID(block->fileID.data());
+        if (!srcFile) {
+            // Unshared since it was requested.
+            delete block;
+            it = m_blockRequests.erase(it);
+            continue;
+        }
+
+        if (thePrefs.logRawSocketPackets())
+            logDebug(QStringLiteral("startBlockReads: start=%1 end=%2 file=%3")
+                         .arg(block->startOffset).arg(block->endOffset).arg(srcFile->fileName()));
+
+        BlockReadRequest readReq;
+        readReq.setFile(*srcFile, m_dataCompVer != 0);
+        readReq.client = this;
+        readReq.startOffset = block->startOffset;
+        readReq.endOffset = block->endOffset;
+        diskIO->queueBlockRead(std::move(readReq));
+
+        block->readQueued = true;
+        m_blockReadBytesQueued += block->endOffset - block->startOffset;
+        ++it;
     }
 }
 
@@ -391,7 +432,7 @@ void UpDownClient::addReqBlock(Requested_Block_Struct* reqBlock)
 
 void UpDownClient::updateUploadingStatisticsData()
 {
-    const uint32 curTick = static_cast<uint32>(getTickCount());
+    const uint64 curTick = getTickCount();
 
     uint32 sentBytesCompleteFile = 0;
     uint32 sentBytesPartFile = 0;
@@ -415,7 +456,7 @@ void UpDownClient::updateUploadingStatisticsData()
         // Reward this peer for what we just gave it — MFC srchybrid/UploadClient.cpp:442.
         // Keyed on m_userAddress (MFC's GetIP()), matching the ident gate in score().
         if (m_credits && sentWire > 0)
-            m_credits->addUploaded(sentWire, m_userAddress.toNetworkUint32());
+            m_credits->addUploaded(sentWire, m_userAddress);
 
         // Per-file "Transferred" — MFC srchybrid/UploadClient.cpp:447-450. Looked up by the
         // requested file ID rather than through the cached m_uploadFile, because a file switch
@@ -470,7 +511,7 @@ void UpDownClient::updateUploadingStatisticsData()
         curTick > m_averageUDR.front().timestamp &&
         getUpStartTimeDelay() > 2000)
     {
-        const uint32 elapsed = curTick - m_averageUDR.front().timestamp;
+        const auto elapsed = static_cast<uint32>(curTick - m_averageUDR.front().timestamp);
         m_upDatarate = static_cast<uint32>((m_sumForAvgUpDataRate * 1000) / elapsed);
     } else {
         m_upDatarate = 0;
@@ -509,6 +550,7 @@ void UpDownClient::flushSendBlocks()
     for (auto* block : m_blockRequests)
         delete block;
     m_blockRequests.clear();
+    m_blockReadBytesQueued = 0;
 
     for (auto* block : m_doneBlocks)
         delete block;
@@ -527,6 +569,10 @@ bool UpDownClient::markBlockDone(const uint8* fileId, uint64 startOffset, uint64
     });
     if (it == m_blockRequests.end())
         return false;
+    if ((*it)->readQueued) {
+        const uint64 len = endOffset - startOffset;
+        m_blockReadBytesQueued -= std::min(m_blockReadBytesQueued, len);
+    }
     m_doneBlocks.push_front(*it);
     m_blockRequests.erase(it);
     return true;
@@ -654,7 +700,7 @@ void UpDownClient::addRequestCount(const uint8* fileID)
     if (!fileID)
         return;
 
-    const auto now = static_cast<uint32>(getTickCount());
+    const auto now = getTickCount();
 
     for (auto* req : m_requestedFiles) {
         if (md4equ(req->fileID.data(), fileID)) {
@@ -727,6 +773,12 @@ void UpDownClient::unBan()
         setUploadState(UploadState::None);
         if (theApp.clientList)
             theApp.clientList->removeBannedClient(m_connectAddress);
+        // A clean slate, as MFC (srchybrid/UploadClient.cpp:628-634)
+        clearWaitStartTime();
+        for (auto* req : m_requestedFiles) {
+            req->badRequests = 0;
+            req->lastAsked = 0;
+        }
     }
 }
 
@@ -734,14 +786,14 @@ void UpDownClient::unBan()
 // Wait time management — delegates to ClientCredits
 // ===========================================================================
 
-uint32 UpDownClient::waitStartTime() const
+uint64 UpDownClient::waitStartTime() const
 {
     if (!m_credits)
         return 0;
 
     // MFC's GetIP() — the address we have actually seen this peer at. Same choice as
     // score()'s ident and credit-ratio lookups; see the note there.
-    uint32 result = m_credits->secureWaitStartTime(m_userAddress.toNetworkUint32());
+    uint64 result = m_credits->secureWaitStartTime(m_userAddress);
 
     // Only reachable when two clients with an invalid secure hash are queued at once — if at
     // all — but score()'s uploading branch computes m_uploadTime - waitStartTime(), which
@@ -761,14 +813,14 @@ uint32 UpDownClient::getWaitTimeDelay() const
 {
     if (!m_credits)
         return 0;
-    uint32 wst = waitStartTime();
+    const uint64 wst = waitStartTime();
     if (wst == 0)
         return 0;
     // MFC: freeze waited time once upload starts (GetWaitTime = m_dwUploadTime - GetWaitStartTime)
     if (m_uploadTime > 0 && m_uploadTime >= wst)
-        return m_uploadTime - wst;
-    uint32 curTick = static_cast<uint32>(getTickCount());
-    return (curTick >= wst) ? (curTick - wst) : 0;
+        return static_cast<uint32>(m_uploadTime - wst);
+    const uint64 curTick = getTickCount();
+    return (curTick >= wst) ? static_cast<uint32>(curTick - wst) : 0;
 }
 
 void UpDownClient::setWaitStartTime()
@@ -778,13 +830,13 @@ void UpDownClient::setWaitStartTime()
     // and restarts the wait, so writing under one address and reading under another resets
     // the queue position on every single read.
     if (m_credits)
-        m_credits->setSecWaitStartTime(m_userAddress.toNetworkUint32());
+        m_credits->setSecWaitStartTime(m_userAddress);
 }
 
 void UpDownClient::restoreWaitStartTime(uint32 elapsedMs)
 {
     if (m_credits)
-        m_credits->restoreWaitStartTime(m_userAddress.toNetworkUint32(), elapsedMs);
+        m_credits->restoreWaitStartTime(m_userAddress, elapsedMs);
 }
 
 void UpDownClient::clearWaitStartTime()
@@ -822,7 +874,7 @@ bool UpDownClient::friendSlot() const
     // MFC srchybrid/UploadClient.cpp:688-699. Only meaningful once crypto is up: without it
     // there is no secure identity to fail, and every peer would look unidentified.
     if (m_credits && theApp.clientCredits && theApp.clientCredits->cryptoAvailable()) {
-        switch (m_credits->currentIdentState(m_userAddress.toNetworkUint32())) {
+        switch (m_credits->currentIdentState(m_userAddress)) {
         case IdentState::IdFailed:
         case IdentState::IdNeeded:
         case IdentState::IdBadGuy:
@@ -856,8 +908,8 @@ uint32 UpDownClient::getUpStartTimeDelay() const
 {
     if (m_uploadTime == 0)
         return 0;
-    uint32 curTick = static_cast<uint32>(getTickCount());
-    return (curTick >= m_uploadTime) ? (curTick - m_uploadTime) : 0;
+    const uint64 curTick = getTickCount();
+    return (curTick >= m_uploadTime) ? static_cast<uint32>(curTick - m_uploadTime) : 0;
 }
 
 // ===========================================================================
@@ -960,7 +1012,9 @@ void UpDownClient::processSetReqFileID(const uint8* data, uint32 size)
     if (size < 16)
         return;
 
-    setWaitStartTime();
+    // Only when unset: a re-ask must not restamp the wait (MFC ListenSocket.cpp:301).
+    if (!waitStartTime())
+        setWaitStartTime();
 
     KnownFile* file = findUploadFile(data);
     if (!file) {
@@ -989,7 +1043,9 @@ void UpDownClient::processRequestFileName(const uint8* data, uint32 size)
     if (size < 16)
         return;
 
-    setWaitStartTime();
+    // Only when unset: a re-ask must not restamp the wait (MFC ListenSocket.cpp:301).
+    if (!waitStartTime())
+        setWaitStartTime();
 
     SafeMemFile io(data, size);
     uint8 fileHash[16];
@@ -1069,7 +1125,9 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
         return;
     }
 
-    setWaitStartTime();
+    // Only when unset: a re-ask must not restamp the wait (MFC ListenSocket.cpp:301).
+    if (!waitStartTime())
+        setWaitStartTime();
 
     if (!md4equ(fileIdent.getMD4Hash(), m_reqUpFileId.data()))
         setCommentDirty(true);
@@ -1206,7 +1264,9 @@ void UpDownClient::processMultiPacketLegacy(const uint8* data, uint32 size, bool
         return;
     }
 
-    setWaitStartTime();
+    // Only when unset: a re-ask must not restamp the wait (MFC ListenSocket.cpp:301).
+    if (!waitStartTime())
+        setWaitStartTime();
 
     if (!md4equ(fileHash, m_reqUpFileId.data()))
         setCommentDirty(true);

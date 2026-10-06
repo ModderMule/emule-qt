@@ -183,6 +183,9 @@ Tag::Tag(FileDataIO& data, bool optUTF8)
     }
     case TAGTYPE_BLOB: {
         const uint32 blobLen = data.readUInt32();
+        // Peer-supplied length: check before allocating (MFC Packets.cpp:496).
+        if (static_cast<qint64>(blobLen) > data.length() - data.position())
+            throw FileException("Tag blob length exceeds remaining data");
         QByteArray blob(static_cast<qsizetype>(blobLen), Qt::Uninitialized);
         data.read(blob.data(), blobLen);
         m_value = std::move(blob);
@@ -196,6 +199,17 @@ Tag::Tag(FileDataIO& data, bool optUTF8)
         m_type = TAGTYPE_BLOB; // Treat BSOB as blob
         break;
     }
+    case TAGTYPE_BOOL:
+        // Skipped, never used (MFC Packets.cpp:482-484).
+        data.seek(1, 1);
+        m_type = TAGTYPE_NONE;
+        break;
+    case TAGTYPE_BOOLARRAY: {
+        const uint16 bits = data.readUInt16();
+        data.seek(bits / 8 + 1, 1);
+        m_type = TAGTYPE_NONE;
+        break;
+    }
     default:
         // Handle STR1–STR22 compact string types
         if (m_type >= TAGTYPE_STR1 && m_type <= TAGTYPE_STR22) {
@@ -203,7 +217,8 @@ Tag::Tag(FileDataIO& data, bool optUTF8)
             m_value = data.readString(optUTF8, strLen);
             m_type = TAGTYPE_STRING;
         } else {
-            logWarning(QStringLiteral("Unknown tag type 0x%1").arg(m_type, 2, 16, QChar(u'0')));
+            // Debug only: a peer picks the type, so this must not flood the log.
+            logDebug(QStringLiteral("Unknown tag type 0x%1").arg(m_type, 2, 16, QChar(u'0')));
             m_type = TAGTYPE_NONE;
         }
         break;

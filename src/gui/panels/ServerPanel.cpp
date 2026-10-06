@@ -121,6 +121,9 @@ void ServerPanel::setIpcClient(IpcClient* client)
             refreshMyInfo();
         });
 
+        // Daemon gone: nothing is connected any more, and no push will say so
+        connect(m_ipc, &IpcClient::disconnected, this, &ServerPanel::resetConnectionState);
+
         // If already connected, request immediately
         if (m_ipc->isConnected()) {
             requestServerList();
@@ -1454,6 +1457,20 @@ void ServerPanel::sendAddServer(const QString& address, uint16_t port, const QSt
                            && resp.fieldBool(0);
         done(added, lanFiltered ? resp.fieldString(1) : QString());
     });
+}
+
+void ServerPanel::resetConnectionState()
+{
+    m_ed2kConnected = m_ed2kConnecting = m_ed2kFirewalled = m_ed2kLowID = false;
+    m_ed2kClientID = 0;
+    m_ed2kPublicIP = 0;
+    m_kadRunning = m_kadConnected = m_kadFirewalled = false;
+    m_kadUdpFirewalled = m_kadUdpVerified = false;
+    m_kadIP = m_kadId = 0;
+    m_kadUsers = m_kadUsersExp = m_kadFiles = 0;
+    updateConnectButton(false, false);
+    m_serverListModel->setConnectedServer(0);
+    refreshMyInfo();
 }
 
 } // namespace eMule

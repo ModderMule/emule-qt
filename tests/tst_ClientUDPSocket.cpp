@@ -27,6 +27,9 @@ private slots:
     void rebindToPort();
     void sendControlDataEmptyQueue();
     void sendPacketQueues();
+    void sendPacket_queueIsCapped();
+    void decompressKadPayload_triesTheCapItself_data();
+    void decompressKadPayload_triesTheCapItself();
     void signalConnections();
     void receivesReservedProt_dispatchesInsteadOfDropping_data();
     void receivesReservedProt_dispatchesInsteadOfDropping();
@@ -96,6 +99,47 @@ void tst_ClientUDPSocket::sendPacketQueues()
     // Send to localhost
     uint32 ip = htonl(0x7F000001);
     QVERIFY(sock.sendPacket(std::move(pkt), ip, 12345, false, nullptr, false, 0));
+}
+
+void tst_ClientUDPSocket::sendPacket_queueIsCapped()
+{
+    // No throttler in this test, so nothing drains the queue.
+    ClientUDPSocket sock;
+    QVERIFY(sock.create());
+
+    const uint32 ip = htonl(0x7F000001);
+    for (int i = 0; i < 4096; ++i) {
+        QVERIFY(sock.sendPacket(std::make_unique<Packet>(OP_REASKFILEPING, 0, OP_EMULEPROT),
+                                ip, 12345, false, nullptr, false, 0));
+    }
+    QVERIFY(!sock.sendPacket(std::make_unique<Packet>(OP_REASKFILEPING, 0, OP_EMULEPROT),
+                             ip, 12345, false, nullptr, false, 0));
+}
+
+void tst_ClientUDPSocket::decompressKadPayload_triesTheCapItself_data()
+{
+    QTest::addColumn<int>("bodySize");
+    QTest::addColumn<bool>("fits");
+
+    // Zeros pack ~1000:1: the doubling ladder's last rung below the cap is 192000.
+    QTest::newRow("between last rung and cap") << 220000 << true;
+    QTest::newRow("cap - 1") << 249999 << true;
+    QTest::newRow("exactly the cap") << 250000 << true;
+    QTest::newRow("cap + 1") << 250001 << false;
+}
+
+void tst_ClientUDPSocket::decompressKadPayload_triesTheCapItself()
+{
+    QFETCH(int, bodySize);
+    QFETCH(bool, fits);
+
+    const QByteArray body(bodySize, '\0');
+    const QByteArray packed = qCompress(body).mid(4);   // drop Qt's length prefix
+    QVERIFY(packed.size() * 10 + 300 < 192000);
+
+    const QByteArray out = ClientUDPSocket::decompressKadPayload(
+        reinterpret_cast<const uint8*>(packed.constData()), static_cast<int>(packed.size()));
+    QCOMPARE(out.size(), fits ? bodySize : 0);
 }
 
 // ---------------------------------------------------------------------------

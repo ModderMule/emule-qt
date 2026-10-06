@@ -23,6 +23,7 @@ using SteadyTimePoint = std::chrono::steady_clock::time_point;
 struct DeadSourceKey {
     std::array<uint8, 16> hash{};  // user hash (for low-ID clients without server)
     Address serverAddress;         // server address (for low-ID identification)
+    Address ipv6;                  // set for a low-ID peer we reach over IPv6: then the identity
     uint32 userID   = 0;           // user ID (high-ID = IP, low-ID = server-assigned)
     uint16 port     = 0;           // user TCP port
     uint16 kadPort  = 0;           // Kademlia UDP port
@@ -37,6 +38,8 @@ template <>
 struct std::hash<eMule::DeadSourceKey> {
     std::size_t operator()(const eMule::DeadSourceKey& ds) const noexcept
     {
+        if (!ds.ipv6.isNull())
+            return ds.ipv6.hash();
         std::size_t h = ds.userID;
         if (h != 0) {
             if (eMule::isLowID(static_cast<eMule::uint32>(h)))

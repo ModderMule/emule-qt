@@ -57,6 +57,7 @@ private slots:
 
     // untrustedHashReceived
     void untrustedHash_trust_evaluation();
+    void untrustedHash_ipv6VotersCountPerNetwork();
 
     // isLargeFile
     void isLargeFile_smallFile();
@@ -391,6 +392,35 @@ void tst_AICHHashSet::untrustedHash_trust_evaluation()
     QCOMPARE(hs.getStatus(), EAICHStatus::Trusted);
     QVERIFY(hs.hasValidMasterHash());
     QCOMPARE(hs.getMasterHash(), hash);
+}
+
+// IPv6 voters all arrived as address 0: one vote between them, and the first root an
+// IPv6 peer named locked every other IPv6 peer out of naming a different one.
+void tst_AICHHashSet::untrustedHash_ipv6VotersCountPerNetwork()
+{
+    AICHHash hash;
+    hash.getRawHash()[0] = 0x42;
+
+    // Ten hosts inside one /48 are one voter.
+    AICHRecoveryHashSet sameNet(PARTSIZE);
+    sameNet.setStatus(EAICHStatus::Empty);
+    for (int host = 1; host <= 10; ++host)
+        sameNet.untrustedHashReceived(
+            hash, Address::fromString(QStringLiteral("2a01:4f8:1:%1::1").arg(host)));
+    QCOMPARE(sameNet.getStatus(), EAICHStatus::Untrusted);
+
+    // Ten networks are ten voters, enough to trust.
+    AICHRecoveryHashSet manyNets(PARTSIZE);
+    manyNets.setStatus(EAICHStatus::Empty);
+    for (int net = 1; net <= 10; ++net)
+        manyNets.untrustedHashReceived(
+            hash, Address::fromString(QStringLiteral("2a01:4f8:%1::1").arg(net)));
+    QCOMPARE(manyNets.getStatus(), EAICHStatus::Trusted);
+    QCOMPARE(manyNets.getMasterHash(), hash);
+
+    // An IPv4 and an IPv6 voter never share a key.
+    QVERIFY(AICHUntrustedHash::voterKey(Address::fromString(QStringLiteral("2a01:4f8:1::1")))
+            != AICHUntrustedHash::voterKey(Address::fromString(QStringLiteral("42.1.4.248"))));
 }
 
 // ---------------------------------------------------------------------------

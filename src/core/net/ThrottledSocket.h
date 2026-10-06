@@ -38,7 +38,8 @@ protected:
 class ThrottledFileSocket : public ThrottledControlSocket {
 public:
     virtual SocketSentBytes sendFileAndControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize) = 0;
-    [[nodiscard]] virtual uint32 getLastCalledSend() const = 0;
+    /// getTickCount() of the last send call — the throttler's own clock.
+    [[nodiscard]] virtual uint64 getLastCalledSend() const = 0;
     [[nodiscard]] virtual uint32 getNeededBytes() = 0;
     [[nodiscard]] virtual bool isBusyExtensiveCheck() = 0;
     [[nodiscard]] virtual bool isBusyQuickCheck() const = 0;

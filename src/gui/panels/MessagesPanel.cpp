@@ -8,6 +8,7 @@
 #include "app/UiState.h"
 #include "controls/FitTextTabBar.h"
 #include "controls/FriendListModel.h"
+#include "controls/LogTextView.h"
 #include "dialogs/AddFriendDialog.h"
 #include "dialogs/DetailDialog.h"
 #include "dialogs/FindInListDialog.h"
@@ -36,7 +37,10 @@
 #include <QPushButton>
 #include <QSplitter>
 #include <QTabBar>
+#include <QScrollBar>
 #include <QTextBrowser>
+#include <QTextDocument>
+#include <QUrl>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -75,6 +79,10 @@ void MessagesPanel::setIpcClient(IpcClient* client)
 
     connect(m_ipc, &IpcClient::chatStateReceived,
             this, &MessagesPanel::onChatStatePush);
+    connect(m_ipc, &IpcClient::chatCaptchaReceived,
+            this, &MessagesPanel::onChatCaptchaPush);
+    connect(m_ipc, &IpcClient::chatCaptchaResultReceived,
+            this, &MessagesPanel::onChatCaptchaResultPush);
     connect(m_ipc, &IpcClient::chatMessageReceived,
             this, &MessagesPanel::onChatMessagePush);
     connect(m_ipc, &IpcClient::friendListChanged,
@@ -339,7 +347,7 @@ void MessagesPanel::setupUi()
     rightLayout->addWidget(m_chatTabBar, 0, Qt::AlignLeft);
 
     // Chat browser
-    m_chatBrowser = new QTextBrowser(rightWidget);
+    m_chatBrowser = new LogTextView(rightWidget);
     m_chatBrowser->setReadOnly(true);
     // A friend's ed2k:// link has to reach the importer, not the OS.
     TextLinks::wireLinkClicks(m_chatBrowser, this,
@@ -494,12 +502,20 @@ void MessagesPanel::updateInfoSection(int row)
 
 void MessagesPanel::updateChatDisplay()
 {
+    // The pane is rebuilt from history on every message. Same chat and the user
+    // scrolled up: keep the position, as MFC's chat log does; else show the end.
+    const bool keepPosition = m_displayedFriendHash == m_activeFriendHash
+                              && !m_chatBrowser->isFollowing();
+    const int scrollValue = m_chatBrowser->verticalScrollBar()->value();
+    m_displayedFriendHash = m_activeFriendHash;
+
     m_chatBrowser->clear();
 
     if (m_activeFriendHash.isEmpty())
         return;
 
     const auto& msgs = m_chatHistory.value(m_activeFriendHash);
+    int imageNo = 0;
     for (const auto& msg : msgs) {
         const QString ts = QDateTime::fromSecsSinceEpoch(msg.timestamp)
                                .toString(QStringLiteral("HH:mm:ss"));
@@ -508,6 +524,13 @@ void MessagesPanel::updateChatDisplay()
             m_chatBrowser->append(
                 QStringLiteral("<font color='gray'>[%1] %2</font>")
                     .arg(ts, msg.text.toHtmlEscaped()));
+            if (!msg.image.isNull()) {
+                // clear() dropped the document's resources, so register it each time
+                const QUrl url(QStringLiteral("captcha://%1").arg(imageNo++));
+                m_chatBrowser->document()->addResource(QTextDocument::ImageResource, url,
+                                                       msg.image);
+                m_chatBrowser->append(QStringLiteral("<img src='%1'>").arg(url.toString()));
+            }
             continue;
         }
 
@@ -522,6 +545,11 @@ void MessagesPanel::updateChatDisplay()
                            "<font color='%2'><b>%3:</b></font> %4")
                 .arg(ts, color, msg.sender.toHtmlEscaped(), escapedText));
     }
+
+    if (keepPosition)
+        m_chatBrowser->restoreScrollValue(scrollValue);
+    else
+        m_chatBrowser->scrollToBottom();
 }
 
 void MessagesPanel::onChatStatePush(const IpcMessage& msg)
@@ -550,10 +578,48 @@ void MessagesPanel::onChatStatePush(const IpcMessage& msg)
         updateChatDisplay();
 }
 
-void MessagesPanel::appendChatStatus(const QString& friendHash, const QString& text)
+// MFC CChatSelector::ShowCaptchaRequest (srchybrid/ChatSelector.cpp:252-262): the peer
+// answers our first message with a picture; the letters go back as an ordinary message.
+void MessagesPanel::onChatCaptchaPush(const IpcMessage& msg)
+{
+    const QString senderHash = msg.fieldString(0);
+    const QImage image = QImage::fromData(
+        QByteArray::fromBase64(msg.fieldString(2).toLatin1()), "PNG");
+    if (senderHash.isEmpty() || image.isNull() || findTabByHash(senderHash) < 0)
+        return;
+
+    appendChatStatus(senderHash,
+                     tr("*** In order to avoid spam messages, this user requires you to solve "
+                        "a captcha before you can send him a message. Please enter the "
+                        "letters you see on this image as response:"),
+                     image);
+    if (senderHash.compare(m_activeFriendHash, Qt::CaseInsensitive) == 0)
+        updateChatDisplay();
+}
+
+void MessagesPanel::onChatCaptchaResultPush(const IpcMessage& msg)
+{
+    const QString senderHash = msg.fieldString(0);
+    if (senderHash.isEmpty() || findTabByHash(senderHash) < 0)
+        return;
+
+    appendChatStatus(senderHash,
+                     msg.fieldBool(1)
+                         ? tr("*** You have passed the captcha check and the user has "
+                              "received your message.")
+                         : tr("*** Your response to the captcha was wrong and your message "
+                              "has been ignored. You can request a new captcha by sending "
+                              "a new message."));
+    if (senderHash.compare(m_activeFriendHash, Qt::CaseInsensitive) == 0)
+        updateChatDisplay();
+}
+
+void MessagesPanel::appendChatStatus(const QString& friendHash, const QString& text,
+                                     const QImage& image)
 {
     ChatMsg cm;
     cm.text = text;
+    cm.image = image;
     cm.system = true;
     cm.timestamp = QDateTime::currentSecsSinceEpoch();
     m_chatHistory[friendHash].append(std::move(cm));

@@ -109,9 +109,11 @@ void DownloadQueue::init(const QStringList& tempDirs)
                 // bulk re-add in addPartFilesToShare() suppresses it (:73).
                 if (m_sharedFileList && partFile->status(/*ignorePause=*/true) == PartFileStatus::Ready)
                     m_sharedFileList->safeAddKFile(partFile);
+                // Nothing left to download: the last run stopped before the file was
+                // delivered. MFC completes it here too (srchybrid/PartFile.cpp:1108-1110).
+                partFile->finishLoadedDownload();
                 // Record the state the file came back in — a download that silently
-                // loads paused, or with an empty gap list (status Completing), is
-                // skipped by process() and will never ask for sources.
+                // loads paused is skipped by process() and will never ask for sources.
                 logInfo(QStringLiteral("Loaded part file: %1 — status=%2 paused=%3 gaps=%4 completed=%5/%6")
                             .arg(partFile->fileName())
                             .arg(static_cast<int>(partFile->status()))
@@ -314,14 +316,14 @@ bool isSelf(uint32 hybridID, uint16 port,
             if (theApp.serverConnect->localIP() == ed2kID)
                 return true;
         } else if (theApp.serverConnect->clientID() == ed2kID &&
-                   thePrefs.port() == port) {
+                   theApp.isOwnTcpPort(port)) {
             return true;
         }
     }
 
     auto* kadInst = kad::Kademlia::instance();
     if (kadInst && kadInst->isConnected() && !kadInst->isFirewalled() &&
-        kadInst->getIPAddress() == hybridID && thePrefs.port() == port)
+        kadInst->getIPAddress() == hybridID && theApp.isOwnTcpPort(port))
         return true;
 
     return false;
@@ -470,6 +472,11 @@ void DownloadQueue::removeSource(UpDownClient* source)
     }
     // And every file that links it as A4AF — MFC DownloadQueue.cpp:636-657.
     source->removeFromAllOtherLists();
+
+    // No longer a source of anything (MFC :664-666). A file link left behind would keep
+    // the client out of the ClientList reaper for good.
+    source->setDownloadState(DownloadState::None);
+    source->setReqFile(nullptr);
 }
 
 void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& result)
@@ -510,7 +517,7 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
 
     // Self-loop check (MFC:1525-1526)
     auto* kadInst = kad::Kademlia::instance();
-    if (kadInst && ip == kadInst->getIPAddress() && tcpPort == thePrefs.port())
+    if (kadInst && ip == kadInst->getIPAddress() && theApp.isOwnTcpPort(tcpPort))
         return;
 
     // Common finalization: checkAndAddSource + tryToConnect or delete
@@ -1267,7 +1274,7 @@ void DownloadQueue::checkDiskspace()
 
 void DownloadQueue::process()
 {
-    const uint32 curTick = static_cast<uint32>(getTickCount());
+    const uint64 curTick = getTickCount();
 
     // Prune samples older than 10 seconds
     while (!m_averageDRList.empty() &&
@@ -1601,7 +1608,7 @@ void DownloadQueue::stopUDPRequests()
     m_lastUdpFile = nullptr;
     m_searchedServers = 0;
     m_requestsSentToServer = 0;
-    m_lastUdpSearchTime = static_cast<uint32>(getTickCount());
+    m_lastUdpSearchTime = getTickCount();
 }
 
 // ===========================================================================
@@ -1719,7 +1726,7 @@ void DownloadQueue::applyAutoCategory(PartFile* file) const
 
 uint32 DownloadQueue::datarateOver(uint32 windowMs) const
 {
-    const uint32 now = static_cast<uint32>(getTickCount());
+    const uint64 now = getTickCount();
     uint64 sum = 0;
     uint32 count = 0;
     for (auto it = m_averageDRList.crbegin(); it != m_averageDRList.crend(); ++it) {
@@ -1832,12 +1839,12 @@ void DownloadQueue::onDownloadCompleted(PartFile* file)
 
 bool DownloadQueue::doKademliaFileRequest() const
 {
-    return static_cast<uint32>(getTickCount()) >= m_lastKademliaFileRequest + KADEMLIAASKTIME;
+    return getTickCount() >= m_lastKademliaFileRequest + KADEMLIAASKTIME;
 }
 
 void DownloadQueue::setLastKademliaFileRequest()
 {
-    m_lastKademliaFileRequest = static_cast<uint32>(getTickCount());
+    m_lastKademliaFileRequest = getTickCount();
 }
 
 // ===========================================================================
@@ -1885,17 +1892,17 @@ bool DownloadQueue::sourceFiltersPass(PartFile* file, UpDownClient* source,
 
     // A source that asks us for a file bypasses the global dead list: it is demonstrably
     // alive, whatever we concluded earlier. MFC's bIgnoreGlobDeadList.
-    if (m_clientList && !ignoreGlobalDeadList) {
-        DeadSourceKey key;
-        std::memcpy(key.hash.data(), source->userHash(), 16);
-        key.userID = source->userIDHybrid();
-        key.port = source->userPort();
-        key.kadPort = source->kadPort();
-        key.serverAddress = source->serverAddress();
-        if (m_clientList->globalDeadSourceList.isDeadSource(key)) {
-            logDebug(QStringLiteral("Source rejected — dead source: %1").arg(ipstr(source->userAddress())));
-            return false;
-        }
+    const DeadSourceKey deadKey = source->deadSourceKey();
+    if (m_clientList && !ignoreGlobalDeadList
+        && m_clientList->globalDeadSourceList.isDeadSource(deadKey))
+    {
+        logDebug(QStringLiteral("Source rejected — dead source: %1").arg(ipstr(source->userAddress())));
+        return false;
+    }
+    // It told us it does not have this file; asking us for it changes nothing about that.
+    if (file && file->deadSourceList().isDeadSource(deadKey)) {
+        logDebug(QStringLiteral("Source rejected — dead for this file: %1").arg(ipstr(source->userAddress())));
+        return false;
     }
 
     return true;

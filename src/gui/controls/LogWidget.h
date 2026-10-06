@@ -9,6 +9,7 @@
 
 #include "server/ServerMsgType.h"
 
+#include <QSet>
 #include <QWidget>
 
 #include <cstdint>
@@ -18,6 +19,8 @@ class QStackedWidget;
 class QTextBrowser;
 
 namespace eMule {
+
+class LogTextView;
 
 /// Tabbed log widget with Server Info, Log, Verbose, Usenet, Kad, and IPC tabs.
 /// Captures Qt logging category output from the core layer.
@@ -120,20 +123,27 @@ private:
     /// Info pane, as the reference does in CServerWnd::OnInitDialog.
     void writeServerInfoBanner();
 
-    /// Draw attention to a tab that is not currently selected.
-    void highlightTab(int index);
+    /// @p browser got text: if its tab is not the selected one, mark it unseen
+    /// and highlight the tab.
+    void noteAppended(QTextBrowser* browser);
+
+    /// Drop every tab's highlight and unseen mark.
+    void clearHighlights();
 
     QTabBar* m_tabBar = nullptr;
     QStackedWidget* m_stack = nullptr;
-    QTextBrowser* m_serverInfoBrowser = nullptr;
-    QTextBrowser* m_logBrowser = nullptr;
-    QTextBrowser* m_verboseBrowser = nullptr;
-    QTextBrowser* m_kadBrowser = nullptr;
-    QTextBrowser* m_usenetBrowser = nullptr;
-    QTextBrowser* m_ipcLogBrowser = nullptr;
+    LogTextView* m_serverInfoBrowser = nullptr;
+    LogTextView* m_logBrowser = nullptr;
+    LogTextView* m_verboseBrowser = nullptr;
+    LogTextView* m_kadBrowser = nullptr;
+    LogTextView* m_usenetBrowser = nullptr;
+    LogTextView* m_ipcLogBrowser = nullptr;
     int m_ipcTabIndex = -1;
     int m_usenetTabIndex = -1;
     bool m_usenetTabVisible = true;
+
+    /// Tabs with text the user has not looked at yet — the highlighted ones.
+    QSet<int> m_unseenTabs;
 
     /// Parallel sequence-ID lists (one per sorted browser) for ordered insertion.
     QList<qint64> m_logSeqIds;

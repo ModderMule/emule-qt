@@ -116,6 +116,8 @@ private:
     HostResolver* m_hostResolver = nullptr;   // created on first dynIP send
     mutable std::mutex m_sendLock;
     bool m_wouldBlock = false;
+
+    static constexpr size_t kMaxQueuedPackets = 1024;
 };
 
 } // namespace eMule

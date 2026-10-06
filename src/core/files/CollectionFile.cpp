@@ -16,7 +16,7 @@ CollectionFile::CollectionFile() = default;
 
 CollectionFile::CollectionFile(FileDataIO& data)
 {
-    const uint32 tagCount = data.readUInt32();
+    const uint32 tagCount = readTagCount(data, kMaxWireTags);
     for (uint32 i = 0; i < tagCount; ++i) {
         Tag tag(data, true);
         switch (tag.nameId()) {

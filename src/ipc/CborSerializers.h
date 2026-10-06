@@ -416,11 +416,11 @@ inline constexpr qsizetype kMaxBarRanges = 1024;
     // Client software identification
     m.insert(QStringLiteral("softwareId"), static_cast<int>(c.clientSoft()));
     // userAddress(), not connectAddress(): scoreRatio()'s ident gate keys off MFC's GetIP(),
-    // and a connectAddress can hold an IPv6 we merely intend to dial, for which
-    // toNetworkUint32() is 0 — a key that never matches m_identIP, so a securely identified
-    // peer reads back as IdBadGuy here while scoring correctly in the queue. Same key
+    // and a connectAddress can hold an IPv6 we merely intend to dial — a key that never
+    // matches m_identIP, so a securely identified peer reads back as IdBadGuy here while
+    // scoring correctly in the queue. Same key
     // score() uses, for the reason spelled out at core UploadClient.cpp:50-54.
-    m.insert(QStringLiteral("hasCredit"),  c.credits() ? (c.credits()->scoreRatio(c.userAddress().toNetworkUint32()) > 1.0f) : false);
+    m.insert(QStringLiteral("hasCredit"),  c.credits() ? (c.credits()->scoreRatio(c.userAddress()) > 1.0f) : false);
     m.insert(QStringLiteral("isFriend"),   c.friendPtr() != nullptr);
     // Network address. "ip" stays for compatibility but is 0 for an IPv6 peer — "addr"
     // carries both families, so anything that must survive IPv6 reads that instead.
@@ -449,8 +449,8 @@ inline constexpr qsizetype kMaxBarRanges = 1024;
     // figure, as in toCborDetailed(). The list asks without isDownloading, like MFC.
     m.insert(QStringLiteral("queueRating"), static_cast<qint64>(c.score(false, false, true) / 1000));
     m.insert(QStringLiteral("queueScore"),  static_cast<qint64>(c.score(false) / 1000));
-    const auto tick = static_cast<uint32>(getTickCount());
-    const uint32 lastUpRequest = c.lastUpRequest();
+    const auto tick = getTickCount();
+    const uint64 lastUpRequest = c.lastUpRequest();
     m.insert(QStringLiteral("lastUpRequestDelay"),
              lastUpRequest != 0 && tick >= lastUpRequest ? static_cast<qint64>(tick - lastUpRequest)
                                                          : qint64(0));
@@ -537,7 +537,7 @@ namespace eMule::Ipc {
 
     // Identification (credits)
     if (c.credits()) {
-        const auto identState = c.credits()->currentIdentState(c.connectAddress().toNetworkUint32());
+        const auto identState = c.credits()->currentIdentState(c.connectAddress());
         QString identStr;
         switch (identState) {
         case IdentState::Identified:   identStr = QStringLiteral("Verified (secure)"); break;
@@ -549,7 +549,7 @@ namespace eMule::Ipc {
         m.insert(QStringLiteral("identification"), identStr);
 
         // Credit totals come from toCbor()
-        m.insert(QStringLiteral("scoreRatio"),      static_cast<double>(c.credits()->scoreRatio(c.userAddress().toNetworkUint32())));
+        m.insert(QStringLiteral("scoreRatio"),      static_cast<double>(c.credits()->scoreRatio(c.userAddress())));
     } else {
         m.insert(QStringLiteral("identification"), QStringLiteral("Not available"));
         m.insert(QStringLiteral("scoreRatio"),      1.0);

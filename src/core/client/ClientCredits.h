@@ -4,6 +4,7 @@
 /// @brief Credit system + clients.met persistence — replaces MFC CClientCredits + CClientCreditsList.
 
 #include "client/ClientStateDefs.h"
+#include "net/Address.h"
 #include "utils/Types.h"
 #include "utils/MapKey.h"
 
@@ -76,40 +77,42 @@ public:
     [[nodiscard]] uint8 secIDKeyLen() const { return m_publicKeyLen; }
     [[nodiscard]] const CreditStruct& dataStruct() const { return m_credits; }
 
-    void addDownloaded(uint32 bytes, uint32 forIP);
-    void addUploaded(uint32 bytes, uint32 forIP);
+    void addDownloaded(uint32 bytes, const Address& forIP);
+    void addUploaded(uint32 bytes, const Address& forIP);
     [[nodiscard]] uint64 uploadedTotal() const;
     [[nodiscard]] uint64 downloadedTotal() const;
-    [[nodiscard]] float scoreRatio(uint32 forIP) const;
+    [[nodiscard]] float scoreRatio(const Address& forIP) const;
 
     void setLastSeen() { m_credits.lastSeen = static_cast<uint32>(std::time(nullptr)); }
     bool setSecureIdent(const uint8* ident, uint8 identLen);
 
-    [[nodiscard]] IdentState currentIdentState(uint32 forIP) const;
+    [[nodiscard]] IdentState currentIdentState(const Address& forIP) const;
 
-    uint32 secureWaitStartTime(uint32 forIP);
-    void setSecWaitStartTime(uint32 forIP);
+    uint64 secureWaitStartTime(const Address& forIP);
+    void setSecWaitStartTime(const Address& forIP);
     /// Restore a wait that began @p elapsedMs ago, for the upload queue store's load path.
     /// Everything else must use setSecWaitStartTime(), which always starts the clock now —
     /// this one exists because the wait clock is a process-relative tick that means nothing
     /// after a restart, so a persisted queue position has to be rebased onto the live clock.
-    void restoreWaitStartTime(uint32 forIP, uint32 elapsedMs);
+    void restoreWaitStartTime(const Address& forIP, uint32 elapsedMs);
     void clearWaitStartTime();
 
     uint32 cryptRndChallengeFor  = 0;
     uint32 cryptRndChallengeFrom = 0;
 
-    void verified(uint32 forIP);
+    void verified(const Address& forIP);
 
 private:
     void initializeIdent();
 
     CreditStruct m_credits{};
     IdentState m_identState = IdentState::NotAvailable;
-    uint32 m_identIP = 0;
-    uint32 m_secureWaitTime   = 0;
-    uint32 m_unsecureWaitTime = 0;
-    uint32 m_waitTimeIP = 0;
+    // The peer address the identity was proven at / the wait began at. Session only.
+    // An Address, not its IPv4 form: that is 0 for every IPv6 peer.
+    Address m_identIP;
+    uint64 m_secureWaitTime   = 0;
+    uint64 m_unsecureWaitTime = 0;
+    Address m_waitTimeIP;
     std::array<uint8, kMaxPubKeySize> m_publicKey{};
     uint8 m_publicKeyLen = 0;
     const ClientCreditsList* m_creditsList = nullptr;
@@ -141,7 +144,7 @@ public:
     uint8 createSignature(ClientCredits* target, uint8* output, uint8 maxSize,
                           uint32 challengeIP, uint8 chaIPKind) const;
     bool verifyIdent(ClientCredits* target, const uint8* signature, uint8 sigSize,
-                     uint32 forIP, uint8 chaIPKind);
+                     const Address& forIP, uint8 chaIPKind);
 
     [[nodiscard]] uint8 pubKeyLen() const { return m_myPublicKeyLen; }
     [[nodiscard]] const uint8* publicKey() const { return m_myPublicKey.data(); }

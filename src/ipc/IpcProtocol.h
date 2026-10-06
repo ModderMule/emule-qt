@@ -611,6 +611,8 @@ enum class IpcMsgType : int {
     PushKnownClientsChanged = 490,
     PushChatMessage       = 500,  ///< [senderHash, senderName, message]
     PushChatState         = 501,  ///< [friendHash, ChatConnectProgress] — dial progress
+    PushChatCaptcha       = 502,  ///< [senderHash, senderName, pngBase64] — solve it to chat
+    PushChatCaptchaResult = 503,  ///< [senderHash, solved: bool] — the peer's verdict
     PushFriendListChanged = 510,  ///< [] — friend list changed
     PushClientSharedFiles = 520,  ///< [clientHash, userName, searchID] — browse answer landed in that Search tab
     PushPortMapStatus     = 530,  ///< [{status, statusText, method, methodText, externalAddress}]

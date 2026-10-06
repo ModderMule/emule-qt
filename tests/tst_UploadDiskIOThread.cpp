@@ -131,7 +131,7 @@ void tst_UploadDiskIOThread::queueBlockRead_emitsSignal()
     UpDownClient client;
 
     BlockReadRequest req;
-    req.file = &kf;
+    req.setFile(kf, true);
     req.client = &client;
     req.startOffset = 0;
     req.endOffset = EMBLOCKSIZE;

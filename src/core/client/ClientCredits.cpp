@@ -3,6 +3,7 @@
 /// @brief Credit system + clients.met persistence — replaces MFC CClientCredits + CClientCreditsList.
 
 #include "client/ClientCredits.h"
+#include "utils/TimeUtils.h"
 #include "prefs/Preferences.h"
 #include "server/ServerConnect.h"
 #include "app/AppContext.h"
@@ -33,7 +34,7 @@ ClientCredits::ClientCredits(const CreditStruct& credits, const ClientCreditsLis
 {
     initializeIdent();
     clearWaitStartTime();
-    m_waitTimeIP = 0;
+    m_waitTimeIP = {};
 }
 
 ClientCredits::ClientCredits(const uint8* userHash, const ClientCreditsList* owner)
@@ -41,21 +42,18 @@ ClientCredits::ClientCredits(const uint8* userHash, const ClientCreditsList* own
 {
     md4cpy(m_credits.key.data(), userHash);
     initializeIdent();
-    // Initialize wait times to "now" — using a simple counter since these are
-    // relative comparison values (matching MFC GetTickCount() usage)
-    auto now = static_cast<uint32>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count() & 0xFFFFFFFF);
+    // Same clock as the upload path's stamps, which these are compared with.
+    const uint64 now = getTickCount();
     m_secureWaitTime = now;
     m_unsecureWaitTime = now;
-    m_waitTimeIP = 0;
+    m_waitTimeIP = {};
 }
 
 // ---------------------------------------------------------------------------
 // Credit accumulation
 // ---------------------------------------------------------------------------
 
-void ClientCredits::addDownloaded(uint32 bytes, uint32 forIP)
+void ClientCredits::addDownloaded(uint32 bytes, const Address& forIP)
 {
     // When crypto is available and identity is bad, refuse credits
     switch (currentIdentState(forIP)) {
@@ -74,7 +72,7 @@ void ClientCredits::addDownloaded(uint32 bytes, uint32 forIP)
     m_credits.downloadedHi = static_cast<uint32>(current >> 32);
 }
 
-void ClientCredits::addUploaded(uint32 bytes, uint32 forIP)
+void ClientCredits::addUploaded(uint32 bytes, const Address& forIP)
 {
     switch (currentIdentState(forIP)) {
     case IdentState::IdFailed:
@@ -106,7 +104,7 @@ uint64 ClientCredits::downloadedTotal() const
 // Score ratio — the credit formula
 // ---------------------------------------------------------------------------
 
-float ClientCredits::scoreRatio(uint32 forIP) const
+float ClientCredits::scoreRatio(const Address& forIP) const
 {
     // Identity check (when crypto is available, bad-ident clients get no credits)
     switch (currentIdentState(forIP)) {
@@ -163,10 +161,10 @@ void ClientCredits::initializeIdent()
     }
     cryptRndChallengeFor = 0;
     cryptRndChallengeFrom = 0;
-    m_identIP = 0;
+    m_identIP = {};
 }
 
-void ClientCredits::verified(uint32 forIP)
+void ClientCredits::verified(const Address& forIP)
 {
     m_identIP = forIP;
     // Copy key to persistent struct if not already done
@@ -194,7 +192,7 @@ bool ClientCredits::setSecureIdent(const uint8* ident, uint8 identLen)
     return true;
 }
 
-IdentState ClientCredits::currentIdentState(uint32 forIP) const
+IdentState ClientCredits::currentIdentState(const Address& forIP) const
 {
     if (m_identState != IdentState::Identified)
         return m_identState;
@@ -207,7 +205,7 @@ IdentState ClientCredits::currentIdentState(uint32 forIP) const
 // Wait time management
 // ---------------------------------------------------------------------------
 
-uint32 ClientCredits::secureWaitStartTime(uint32 forIP)
+uint64 ClientCredits::secureWaitStartTime(const Address& forIP)
 {
     if (m_unsecureWaitTime == 0 || m_secureWaitTime == 0)
         setSecWaitStartTime(forIP);
@@ -220,39 +218,28 @@ uint32 ClientCredits::secureWaitStartTime(uint32 forIP)
             return m_unsecureWaitTime;
 
         // IP changed — reset wait time
-        auto now = static_cast<uint32>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count() & 0xFFFFFFFF);
+        const uint64 now = getTickCount();
         m_unsecureWaitTime = now;
         m_waitTimeIP = forIP;
     }
     return m_unsecureWaitTime;
 }
 
-void ClientCredits::setSecWaitStartTime(uint32 forIP)
+void ClientCredits::setSecWaitStartTime(const Address& forIP)
 {
-    auto now = static_cast<uint32>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count() & 0xFFFFFFFF);
+    const uint64 now = getTickCount();
     m_unsecureWaitTime = now - 1;
     m_secureWaitTime = m_unsecureWaitTime;
     m_waitTimeIP = forIP;
 }
 
-void ClientCredits::restoreWaitStartTime(uint32 forIP, uint32 elapsedMs)
+void ClientCredits::restoreWaitStartTime(const Address& forIP, uint32 elapsedMs)
 {
-    auto now = static_cast<uint32>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count() & 0xFFFFFFFF);
+    const uint64 now = getTickCount();
 
-    // Deliberate 32-bit wrap: score() computes curTick - waitStartTime, and every other
-    // tick comparison in the upload path relies on the same wrapping arithmetic.
-    uint32 started = now - elapsedMs;
-
-    // 0 is the "never started" sentinel — secureWaitStartTime() re-initialises on it, which
-    // would silently throw away the position we are restoring. One tick either way is noise.
-    if (started == 0)
-        started = 1;
+    // Never 0 (the "never started" sentinel): the tick epoch is biased far above any
+    // elapsed time.
+    const uint64 started = now - elapsedMs;
 
     m_unsecureWaitTime = started;
     m_secureWaitTime   = started;
@@ -639,7 +626,7 @@ uint8 ClientCreditsList::createSignature(ClientCredits* target, uint8* output, u
 }
 
 bool ClientCreditsList::verifyIdent(ClientCredits* target, const uint8* signature, uint8 sigSize,
-                                    uint32 forIP, uint8 chaIPKind)
+                                    const Address& forIP, uint8 chaIPKind)
 {
     if (!target || target->secIDKeyLen() == 0)
         return false;
@@ -704,7 +691,7 @@ bool ClientCreditsList::verifyIdent(ClientCredits* target, const uint8* signatur
     if (chaIPKind != 0) {
         uint32 ip = 0;
         if (chaIPKind == kCryptCipLocalClient) {
-            ip = forIP;
+            ip = forIP.toNetworkUint32();   // the wire form: 0 for an IPv6 peer, as before
         } else if (chaIPKind == kCryptCipRemoteClient) {
             if (theApp.serverConnect) {
                 ip = theApp.serverConnect->isLowID()

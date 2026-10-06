@@ -1853,7 +1853,7 @@ Its downloads keep their files and move to All.</source>
         <translation>ハッシュ</translation>
     </message>
     <message>
-        <location line="+27"/>
+        <location line="+29"/>
         <source>Details</source>
         <translation>詳細</translation>
     </message>
@@ -2810,7 +2810,7 @@ ED2K ハッシュ:	%2
 <context>
     <name>eMule::IrcPanel</name>
     <message>
-        <location filename="../src/gui/panels/IrcPanel.cpp" line="+119"/>
+        <location filename="../src/gui/panels/IrcPanel.cpp" line="+120"/>
         <source>Select an IRC nick.</source>
         <translation>IRC ニックネームを選択してください。</translation>
     </message>
@@ -3138,9 +3138,17 @@ Please choose another:</source>
     </message>
 </context>
 <context>
+    <name>eMule::LogTextView</name>
+    <message>
+        <location filename="../src/gui/controls/LogTextView.cpp" line="+43"/>
+        <source>Autoscroll</source>
+        <translation>自動スクロール</translation>
+    </message>
+</context>
+<context>
     <name>eMule::LogWidget</name>
     <message>
-        <location filename="../src/gui/controls/LogWidget.cpp" line="+87"/>
+        <location filename="../src/gui/controls/LogWidget.cpp" line="+86"/>
         <location line="+2"/>
         <source>Server Info</source>
         <translation>サーバー情報</translation>
@@ -3176,7 +3184,7 @@ Please choose another:</source>
         <translation>IPC</translation>
     </message>
     <message>
-        <location line="+345"/>
+        <location line="+357"/>
         <source>Click here to check if a new version is available</source>
         <translation>クリックして新しいバージョンがあるか確認します</translation>
     </message>
@@ -3647,13 +3655,13 @@ Enable it under Options → Web Interface, then try again.</source>
 <context>
     <name>eMule::MessagesPanel</name>
     <message>
-        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+150"/>
-        <location line="+395"/>
+        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+158"/>
+        <location line="+415"/>
         <source> ...failed</source>
         <translation> ...失敗</translation>
     </message>
     <message>
-        <location line="-393"/>
+        <location line="-413"/>
         <source>Me</source>
         <translation>自分</translation>
     </message>
@@ -3763,7 +3771,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>フレンド (%1)</translation>
     </message>
     <message>
-        <location line="+71"/>
+        <location line="+91"/>
         <source>*** Connecting</source>
         <translation>*** 接続中</translation>
     </message>
@@ -3786,6 +3794,21 @@ Enable it under Options → Web Interface, then try again.</source>
         <location line="+1"/>
         <source> ...OK</source>
         <translation> ...OK</translation>
+    </message>
+    <message>
+        <location line="+20"/>
+        <source>*** In order to avoid spam messages, this user requires you to solve a captcha before you can send him a message. Please enter the letters you see on this image as response:</source>
+        <translation>*** スパムメッセージを防ぐため、このユーザーにメッセージを送るにはキャプチャを解く必要があります。この画像に表示されている文字を返信として入力してください:</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>*** You have passed the captcha check and the user has received your message.</source>
+        <translation>*** キャプチャの確認に成功し、ユーザーにメッセージが届きました。</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>*** Your response to the captcha was wrong and your message has been ignored. You can request a new captcha by sending a new message.</source>
+        <translation>*** キャプチャへの回答が間違っていたため、メッセージは無視されました。新しいメッセージを送ると、新しいキャプチャを要求できます。</translation>
     </message>
     <message>
         <source>Find Friend</source>
@@ -7649,12 +7672,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     <message>
         <location filename="../src/gui/panels/SearchPanel.cpp" line="+247"/>
         <location line="+713"/>
-        <location line="+363"/>
+        <location line="+364"/>
         <source>Download</source>
         <translation>ダウンロード</translation>
     </message>
     <message>
-        <location line="-1056"/>
+        <location line="-1057"/>
         <source>Close All Searches</source>
         <translation>すべての検索を閉じる</translation>
     </message>
@@ -7923,12 +7946,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+48"/>
-        <location line="+755"/>
+        <location line="+759"/>
         <source>Preview</source>
         <translation>プレビュー</translation>
     </message>
     <message>
-        <location line="-529"/>
+        <location line="-532"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -7937,7 +7960,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 %1</translation>
     </message>
     <message>
-        <location line="+776"/>
+        <location line="+779"/>
         <source>Asking servers: %1 / %2</source>
         <translation>サーバーに問い合わせ中：%1 / %2</translation>
     </message>
@@ -7947,7 +7970,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>すべて</translation>
     </message>
     <message>
-        <location line="-1089"/>
+        <location line="-1093"/>
         <location line="+14"/>
         <source>Mark as Spam</source>
         <translation>スパムとしてマーク</translation>
@@ -7983,7 +8006,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>Web サービス</translation>
     </message>
     <message>
-        <location line="+734"/>
+        <location line="+738"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>プレビューは利用できません — Web サーバーが実行されていないか、ストリームトークンを受信していません。</translation>
     </message>
@@ -7991,12 +8014,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::SearchResultsModel</name>
     <message>
-        <location filename="../src/gui/controls/SearchResultsModel.cpp" line="+72"/>
+        <location filename="../src/gui/controls/SearchResultsModel.cpp" line="+76"/>
         <source>Yes</source>
         <translation>はい</translation>
     </message>
     <message>
-        <location line="+155"/>
+        <location line="+158"/>
         <source>File Name</source>
         <translation>ファイル名</translation>
     </message>
@@ -8168,7 +8191,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+243"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+246"/>
         <source>Disconnect</source>
         <translation>切断</translation>
     </message>

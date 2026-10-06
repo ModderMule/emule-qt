@@ -31,16 +31,28 @@ std::vector<AICHRecoveryHashSet::RequestedData> AICHRecoveryHashSet::s_requested
 // AICHUntrustedHash
 // ---------------------------------------------------------------------------
 
-bool AICHUntrustedHash::addSigningIP(uint32 ip, bool testOnly)
+bool AICHUntrustedHash::addSigningIP(uint64 voter, bool testOnly)
 {
-    ip &= 0x00F0FFFF; // Use only the 20 most significant bits for unique IPs
     for (auto it = m_signingIPs.rbegin(); it != m_signingIPs.rend(); ++it) {
-        if (*it == ip)
+        if (*it == voter)
             return false;
     }
     if (!testOnly)
-        m_signingIPs.push_back(ip);
+        m_signingIPs.push_back(voter);
     return true;
+}
+
+uint64 AICHUntrustedHash::voterKey(const Address& from)
+{
+    if (from.isIPv6()) {
+        // toNetworkUint32() is 0 for every IPv6 peer: they all voted as one.
+        const auto& bytes = from.ipv6Bytes();
+        uint64 prefix = 0;
+        for (std::size_t i = 0; i < 6; ++i)
+            prefix = (prefix << 8) | bytes[i];
+        return prefix | (uint64{1} << 63);
+    }
+    return from.toNetworkUint32() & 0x00F0FFFFu;   // network order: the top 20 bits
 }
 
 // ---------------------------------------------------------------------------
@@ -92,6 +104,13 @@ bool AICHRecoveryHashSet::verifyHashTree(bool deleteBadTrees)
 
 void AICHRecoveryHashSet::untrustedHashReceived(const AICHHash& hash, uint32 fromIP)
 {
+    untrustedHashReceived(hash, Address::fromNetworkOrder(fromIP));
+}
+
+void AICHRecoveryHashSet::untrustedHashReceived(const AICHHash& hash, const Address& from)
+{
+    const uint64 fromIP = AICHUntrustedHash::voterKey(from);
+
     switch (m_status) {
     case EAICHStatus::Empty:
     case EAICHStatus::Untrusted:

@@ -106,6 +106,10 @@ public:
     [[nodiscard]] Address toIPv4() const;
     [[nodiscard]] Address toIPv6Mapped() const;
 
+    /// Key for per-peer limits (bans, rate windows). An IPv6 subscriber owns a whole
+    /// /64 and can move inside it at will, so the key is the prefix; IPv4 is unchanged.
+    [[nodiscard]] constexpr Address peerKey() const noexcept;
+
     // -- Comparison (C++23) ----------------------------------------------------
 
     [[nodiscard]] constexpr std::strong_ordering operator<=>(const Address& other) const noexcept;
@@ -138,6 +142,16 @@ constexpr Address Address::fromHostOrder(uint32 ip) noexcept
         a.m_family = Family::IPv4;
     }
     return a;
+}
+
+constexpr Address Address::peerKey() const noexcept
+{
+    Address key = *this;
+    if (m_family == Family::IPv6) {
+        for (std::size_t i = 8; i < key.m_v6.size(); ++i)
+            key.m_v6[i] = 0;
+    }
+    return key;
 }
 
 constexpr uint32 Address::toUint32() const noexcept

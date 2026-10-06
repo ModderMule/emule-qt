@@ -76,6 +76,8 @@ private:
     void showFindDialog();
     void requestKadStatus();
     void requestServerState();
+    /// Back to "not connected" when the daemon link drops.
+    void resetConnectionState();
     void parseAndAddServersFromMet(const QByteArray& data);
 
     /// One server's IPC identity. addr keys an IPv6 server, whose numericIp is 0.

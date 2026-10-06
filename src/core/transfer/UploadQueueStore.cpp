@@ -228,7 +228,7 @@ void UploadQueueStore::process(UploadQueue* queue, const QString& path)
         return;
     }
 
-    const auto now = static_cast<uint32>(getTickCount());
+    const auto now = getTickCount();
     if (now - m_lastSaved > kQueueResaveTimeMs) {
         m_lastSaved = now;
         static_cast<void>(save(queue, path));
@@ -257,7 +257,7 @@ int UploadQueueStore::loadAndInject(UploadQueue* queue, const QString& path)
     // counts as "the load has happened". Until this flips, saving is refused outright —
     // otherwise the first autosave would write our empty queue over the stored one.
     m_loaded    = true;
-    m_lastSaved = static_cast<uint32>(getTickCount());
+    m_lastSaved = getTickCount();
 
     const UploadQueueFile::Contents contents = UploadQueueFile::read(path);
     if (contents.records.empty())
@@ -280,7 +280,7 @@ int UploadQueueStore::loadAndInject(UploadQueue* queue, const QString& path)
         return 0;
 
     int added = 0;
-    const auto tickNow = static_cast<uint32>(getTickCount());
+    const auto tickNow = getTickCount();
 
     for (const QueuedClientRecord& rec : contents.records) {
         if (!rec.isRestorable())
@@ -329,7 +329,7 @@ int UploadQueueStore::loadAndInject(UploadQueue* queue, const QString& path)
         // to the wait time, since they were not queued while we were down. Relative order
         // among restored clients is preserved either way.
         client->restoreWaitStartTime(rec.waitedSeconds * 1000);
-        client->setLastUpRequest(tickNow - sinceRequest * 1000);
+        client->setLastUpRequest(tickNow - uint64{sinceRequest} * 1000);
 
         // Mandatory: without an upload file, score() returns 0 *and* the queue's noFile
         // purge fires on the first slot decision.
@@ -436,9 +436,10 @@ bool UploadQueueStore::makeRecord(const UpDownClient* client, QueuedClientRecord
 
     out.waitedSeconds = client->getWaitTimeDelay() / 1000;
 
-    const auto tickNow = static_cast<uint32>(getTickCount());
-    const uint32 last  = client->lastUpRequest();
-    out.sinceLastRequestSeconds = (tickNow > last) ? ((tickNow - last) / 1000) : 0;
+    const auto tickNow = getTickCount();
+    const uint64 last  = client->lastUpRequest();
+    out.sinceLastRequestSeconds =
+        (tickNow > last) ? static_cast<uint32>((tickNow - last) / 1000) : 0;
 
     out.askedCount       = client->askedCount();
     out.userName         = client->userName();

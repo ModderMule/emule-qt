@@ -114,6 +114,8 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushKnownClientsChanged: return QStringLiteral("PushKnownClientsChanged");
     case T::PushChatMessage:      return QStringLiteral("PushChatMessage");
     case T::PushChatState:        return QStringLiteral("PushChatState");
+    case T::PushChatCaptcha:      return QStringLiteral("PushChatCaptcha");
+    case T::PushChatCaptchaResult: return QStringLiteral("PushChatCaptchaResult");
     case T::PushFriendListChanged: return QStringLiteral("PushFriendListChanged");
     case T::PushClientSharedFiles: return QStringLiteral("PushClientSharedFiles");
     case T::PushPortMapStatus: return QStringLiteral("PushPortMapStatus");
@@ -618,6 +620,8 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushCategoriesChanged:   emit categoriesChanged(msg); break;
     case IpcMsgType::PushChatMessage:        emit chatMessageReceived(msg); break;
     case IpcMsgType::PushChatState:          emit chatStateReceived(msg); break;
+    case IpcMsgType::PushChatCaptcha:        emit chatCaptchaReceived(msg); break;
+    case IpcMsgType::PushChatCaptchaResult:  emit chatCaptchaResultReceived(msg); break;
     case IpcMsgType::PushFriendListChanged:  emit friendListChanged(msg); break;
     case IpcMsgType::PushClientSharedFiles:  emit clientSharedFilesReceived(msg); break;
     case IpcMsgType::PushPortMapStatus:      emit portMapStatusChanged(msg); break;

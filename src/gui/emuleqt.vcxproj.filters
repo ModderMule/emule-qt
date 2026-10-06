@@ -166,6 +166,9 @@
     <ClCompile Include="controls\KadSearchesModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="controls\LogTextView.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="controls\LogWidget.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -478,6 +481,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\KadSearchesModel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\LogTextView.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\LogWidget.h">

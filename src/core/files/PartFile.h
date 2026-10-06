@@ -12,6 +12,7 @@
 #include "crypto/AICHHashSet.h"
 #include "client/ClientStructs.h"
 #include "client/CorruptionBlackBox.h"
+#include "client/DeadSourceList.h"
 #include "utils/Opcodes.h"
 #include "utils/TimeUtils.h"
 
@@ -19,8 +20,13 @@
 #include <QObject>
 #include <QThread>
 
+#include <QPointer>
+
+#include <array>
 #include <ctime>
+#include <functional>
 #include <list>
+#include <optional>
 #include <vector>
 
 namespace eMule {
@@ -125,14 +131,39 @@ signals:
 class FileMoveThread : public QThread {
     Q_OBJECT
 public:
+    /// What the worker needs to re-check the data before it delivers it. Copied on the
+    /// main thread: the worker never touches the PartFile.
+    struct Verify {
+        QByteArray fileHash;
+        uint64 fileSize = 0;
+        std::vector<std::array<uint8, 16>> partHashes;
+    };
+
+    /// @p aichFileSize non-zero: also build the AICH recovery set and store it in known2
+    /// (MFC does it in the completion hash, srchybrid/PartFile.cpp:1543-1550).
     FileMoveThread(const QString& srcPath, const QString& destPath,
+                   std::optional<Verify> verify = std::nullopt, uint64 aichFileSize = 0,
                    QObject* parent = nullptr);
     void run() override;
+
+    /// Deliver across volumes: copy to a staged sibling of @p finalDest, put it on the
+    /// disk, rename it in place, then remove @p srcPath. On failure, or when
+    /// @p keepGoing says stop, nothing is left at the destination and the source stays.
+    static bool copyThenRename(const QString& srcPath, const QString& finalDest,
+                               const std::function<bool()>& keepGoing);
 signals:
+    /// The data does not match its hashes, or could not be read. One
+    /// PartFile::PartVerdict per part; nothing was moved.
+    void verifyFailed(const QByteArray& partOk);
+    void moveStarted();
+    /// The recovery set is in known2; @p masterHash is its 20-byte root. Before moveFinished.
+    void aichHashSetStored(const QByteArray& masterHash);
     void moveFinished(bool success, const QString& destPath);
 private:
     QString m_srcPath;
     QString m_destPath;
+    std::optional<Verify> m_verify;
+    uint64 m_aichFileSize = 0;
 };
 
 // ---------------------------------------------------------------------------
@@ -294,13 +325,27 @@ public:
     /// Full path of the .part data file (the .part.met path minus its ".met").
     [[nodiscard]] QString partDataPath() const;
 
-    /// Per-part verdict of a rehash. Unread = the worker could not read that far.
-    enum RehashPart : char { RehashBad = 0, RehashOk = 1, RehashUnread = 2 };
+    /// Verdict of a part check. Unread = the bytes could not be read, so no verdict.
+    enum class PartVerdict : char { Bad = 0, Ok = 1, Unread = 2 };
 
-    /// Apply a completed rehash: one RehashPart per part. Re-gaps complete parts that
+    /// Apply a completed rehash: one PartVerdict per part. Re-gaps complete parts that
     /// hashed bad, leaves everything else alone, and re-latches the status.
     /// MFC CPartFile::PartFileHashFinished (srchybrid/PartFile.cpp:1479-1573).
     void applyRehashResult(const QByteArray& partOk);
+
+    /// Check a .part file's parts against their MD4 hashes (a file below PARTSIZE against
+    /// @p fileHash). Runs on a worker and touches no PartFile. One PartVerdict per part;
+    /// a part that could not be read, and every part after it, stays Unread.
+    /// @p keepGoing is asked after each part and stops the pass by returning false.
+    /// @p aichOut, if given, is fed the same bytes; the caller finishes the tree.
+    [[nodiscard]] static QByteArray verifyPartData(
+        const QString& partPath, uint64 fileSize, const QByteArray& fileHash,
+        const std::vector<std::array<uint8, 16>>& partHashes,
+        const std::function<bool(uint32 partsDone, uint32 partCount)>& keepGoing = {},
+        AICHRecoveryHashSet* aichOut = nullptr);
+
+    /// A file loaded with nothing left to download: finish what the last run began.
+    void finishLoadedDownload();
     /// New token for a rehash about to be queued; a result carrying another one is stale.
     uint64 beginRehash() { return m_rehashToken = ++s_rehashSerial; }
     [[nodiscard]] uint64 rehashToken() const { return m_rehashToken; }
@@ -332,9 +377,9 @@ public:
     [[nodiscard]] int a4afSourceCount() const { return static_cast<int>(m_a4afSrcList.size()); }
 
     // MFC: m_ClientSrcAnswered — file-level timestamp for source exchange throttling
-    [[nodiscard]] uint32 lastAnsweredTime() const { return m_clientSrcAnswered; }
-    void setLastAnsweredTime() { m_clientSrcAnswered = static_cast<uint32>(getTickCount()); }
-    void setLastAnsweredTimeTimeout() { m_clientSrcAnswered = static_cast<uint32>(getTickCount()) + 2 * CONNECTION_LATENCY - SOURCECLIENTREASKS; }
+    [[nodiscard]] uint64 lastAnsweredTime() const { return m_clientSrcAnswered; }
+    void setLastAnsweredTime() { m_clientSrcAnswered = getTickCount(); }
+    void setLastAnsweredTimeTimeout() { m_clientSrcAnswered = getTickCount() + 2 * CONNECTION_LATENCY - SOURCECLIENTREASKS; }
     [[nodiscard]] const std::vector<UpDownClient*>& srcList() const { return m_srcList; }
     [[nodiscard]] std::vector<UpDownClient*>& srcList() { return m_srcList; }
     [[nodiscard]] const std::vector<UpDownClient*>& a4afSrcList() const { return m_a4afSrcList; }
@@ -425,6 +470,9 @@ public:
     void updatePartsInfo() override;
 
     // AICH recovery
+    /// Sources that said they do not have this file (MFC m_DeadSourceList).
+    [[nodiscard]] DeadSourceList& deadSourceList() { return m_deadSourceList; }
+
     [[nodiscard]] AICHRecoveryHashSet& aichRecoveryHashSet() { return m_aichRecoveryHashSet; }
     [[nodiscard]] const AICHRecoveryHashSet& aichRecoveryHashSet() const { return m_aichRecoveryHashSet; }
     [[nodiscard]] bool isMD4HashsetNeeded() const { return m_md4HashsetNeeded; }
@@ -452,9 +500,14 @@ protected:
 
 private:
     void initPartFile();
-    void completeFile();
-    void performFileMove(const QString& srcPath, const QString& destPath);
-    bool hashSinglePart(uint32 partNumber, bool* aichAgreed = nullptr);
+    /// @p alreadyVerified skips the re-read of the data (a rehash has just done it).
+    void completeFile(bool alreadyVerified = false);
+    /// Take over the AICH recovery set the move thread stored in known2.
+    void adoptCompletedAICHHashSet();
+    void performFileMove(const QString& srcPath, const QString& destPath, bool verify);
+    PartVerdict hashSinglePart(uint32 partNumber, bool* aichAgreed = nullptr);
+    /// completeFile(), unless a changed part could not be read back for its check.
+    void completeIfVerified();
     /// Flag the parts [start, end] touches for the next verification pass.
     void markChangedParts(uint64 start, uint64 end);
     /// MD4/AICH/ICH check of the changed parts only (MFC FlushBuffer's part loop).
@@ -463,7 +516,7 @@ private:
     bool dropCorruptedPart(uint32 partNumber);
     /// Report — at most once per kKadSkipLogInterval — why process() wanted a Kad
     /// source search for this file but did not start one.
-    void logKadSourceSearchSkipped(uint32 curTick, const QString& reason);
+    void logKadSourceSearchSkipped(uint64 curTick, const QString& reason);
     /// Ask the blackbox who ruined  part and ban whoever is over the threshold.
     void punishCorruptionSenders(uint16 part);
     /// Condemn a whole part in EMBLOCKSIZE steps, which is the only granularity
@@ -500,6 +553,7 @@ private:
     std::vector<uint16> m_srcPartFrequency;
     std::vector<uint16> m_corruptedParts;
     CorruptionBlackBox m_corruptionBlackBox;
+    DeadSourceList m_deadSourceList;
     // Parts written since the last verification (MFC m_aChangedPart)
     uint64 m_rehashToken = 0;
     static inline uint64 s_rehashSerial = 0;
@@ -535,17 +589,20 @@ private:
     bool m_stopped = false;
     bool m_insufficient = false;
     bool m_completionError = false;
+    bool m_completionRunning = false;   // verify + move in flight
+    QPointer<FileMoveThread> m_moveThread;
+    QByteArray m_completedAICHMaster;   // root of the set the move thread stored
     bool m_recoveringArchive = false;
 
     // Timestamps
     time_t m_tLastModified = 0;
     time_t m_tCreated = 0;
     time_t m_lastPausePurge = 0;
-    uint32 m_lastBufferFlushTime = 0;
-    uint32 m_nextMetSaveTime = 0;    // Next scheduled .part.met save (matches MFC m_nNextMetFlushTime)
-    uint32 m_lastPurgeTime = 0;
+    uint64 m_lastBufferFlushTime = 0;
+    uint64 m_nextMetSaveTime = 0;    // Next scheduled .part.met save (matches MFC m_nNextMetFlushTime)
+    uint64 m_lastPurgeTime = 0;
     uint32 m_dlActiveTime = 0;
-    uint32 m_clientSrcAnswered = 0;  // MFC: m_ClientSrcAnswered
+    uint64 m_clientSrcAnswered = 0;  // MFC: m_ClientSrcAnswered
 
     // Save/Load Sources (MorphXT CPartFile::m_sourcesaver)
     SourceSaver m_sourceSaver;
@@ -558,12 +615,12 @@ private:
     AICHRecoveryHashSet m_aichRecoveryHashSet;
 
     // Server source search state
-    uint32 m_lastSearchTimeServer = 0;
+    uint64 m_lastSearchTimeServer = 0;
 
     // Kad source search state
-    uint32 m_lastSearchTimeKad = 0;
+    uint64 m_lastSearchTimeKad = 0;
     uint8  m_totalSearchesKad = 0;
-    uint32 m_lastKadSkipLogTime = 0;   // throttle for logKadSourceSearchSkipped()
+    uint64 m_lastKadSkipLogTime = 0;   // throttle for logKadSourceSearchSkipped()
 
     // Per-download-state source counts
     std::array<uint32, 17> m_anStates{};

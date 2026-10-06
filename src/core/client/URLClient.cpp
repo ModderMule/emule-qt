@@ -450,8 +450,10 @@ void URLClient::connectToHost()
     setSocket(reqSocket);
 
     // Register with ListenSocket for tracking
-    if (theApp.listenSocket)
+    if (theApp.listenSocket) {
         theApp.listenSocket->addSocket(reqSocket);
+        theApp.listenSocket->addConnection();
+    }
 
     // Connect socket signals
     QObject::connect(reqSocket, &ClientReqSocket::clientDisconnected,

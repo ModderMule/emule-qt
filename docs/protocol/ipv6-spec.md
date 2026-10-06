@@ -167,13 +167,22 @@ The server probes the family the session arrived on, so a v6-connected session g
 | Mask | Meaning |
 | --- | --- |
 | `0x00004000` | Server speaks the IPv6 extension (TCP and UDP respectively) |
-| `0x00008000` | `NatRendezvous` — parsed and ignored by this implementation |
+| `0x00008000` | `NatRendezvous` — defined, never tested by this implementation |
 
 > **`SRVCAP_IPV6` (`0x1000`) is withdrawn — do not set it.** Lugdunum eserver reads login bit
 > `0x1000` as support for its NAT callback (UDP `0xA6`/`0xA7`, TCP `0x37`) and advertises the same
 > bit in its own TCP flags word. A client that sets it there is given an odd LowID, a longer
 > `OP_IDCHANGE` and callback notices. NeoLoader uses `0x1000` the same way and `0x2000` for IPv6.
 > eMuleQt reserves `0x1000` as `SRVCAP_NATTRAVERSAL` for that feature and leaves `0x2000` unused.
+>
+> **Planned use of `0x1000` (not implemented, not sent yet).** eMuleQt will set the bit to use the
+> Lugdunum callback for LowID-to-LowID transfers. It is IPv4-only and unrelated to this extension:
+> the notice carries a 4-byte address, and an IPv6-reachable peer is dialled directly anyway.
+> The callback only yields a UDP endpoint, so those transfers run the unchanged eMule
+> stream over a small reliable-UDP layer framed as `OP_UDPRESERVEDPROT2` (`0xB2`) sub-opcode
+> `0x10`, not over uTP. Two opcode values overlap with this spec and are told apart by direction:
+> Lugdunum's `0xA6` request is client→server while `OP_GLOBFOUNDSOURCES_IPV6` (`0xA6`) is
+> server→client. Design notes: `docs/protocol/lugdunum-nat-callback.local.md`.
 >
 > Nothing is lost: no server gated on the bit. The capability signal is the `CT_MOD_IP_V6` login
 > tag, or the session having arrived over IPv6 (§4.1).
@@ -1103,7 +1112,7 @@ sentinel of §4.4 carries the same sources from the same servers with no new opc
 negotiation, and a second ingest path would have to be kept in step with the first.
 
 Also out of scope and deliberately inert: NAT rendezvous / `PR_NAT` (the `0x00008000` server flag
-and any NAT-port tag are parsed and ignored), and µTP.
+is never tested and a NAT-port tag is skipped as an unknown tag), and µTP.
 
 ---
 

@@ -642,7 +642,7 @@ QString redactLinkSecret(const QString& uri)
 std::vector<ED2KLinkSource> ownLinkSourceHints()
 {
     std::vector<ED2KLinkSource> hints;
-    const uint16 port = thePrefs.port();
+    const uint16 port = theApp.advertisedTcpPort();
     if (port == 0)
         return hints;
 

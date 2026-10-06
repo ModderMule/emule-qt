@@ -3,6 +3,7 @@
 /// @brief Peer-to-peer TCP socket — replaces MFC CClientReqSocket.
 
 #include "net/ClientReqSocket.h"
+#include "client/ClientList.h"
 #include "app/AppContext.h"
 #include "client/UpDownClient.h"
 #include "net/ListenSocket.h"
@@ -47,6 +48,7 @@ ClientReqSocket::ClientReqSocket(UpDownClient* client, QObject* parent)
 
 ClientReqSocket::~ClientReqSocket()
 {
+    setPeerSocketState(PeerSocketState::Other);   // gives its half-open place back
     m_client = nullptr;
 }
 
@@ -69,7 +71,15 @@ void ClientReqSocket::disconnect(const QString& reason)
         return;
 
     logDebug(QStringLiteral("ClientReqSocket::disconnect: %1").arg(reason));
+
+    // Accepted, then gone without a hello: garbage, a failed handshake or a bare
+    // connect-and-drop. Counted per address before the socket loses its peer.
+    if (m_incoming && !m_helloSeen && !m_portTestSeen && theApp.clientList)
+        theApp.clientList->noteHandshakeFailure(Address::fromQHostAddress(peerAddress()));
+
     emit clientDisconnected(reason);
+
+    setPeerSocketState(PeerSocketState::Other);
 
     // Remove from ListenSocket tracking immediately
     if (theApp.listenSocket)
@@ -135,6 +145,7 @@ bool ClientReqSocket::checkTimeOut()
 
 void ClientReqSocket::safeDelete()
 {
+    setPeerSocketState(PeerSocketState::Other);
     m_deleteThis = true;
     m_deleteTimer = static_cast<uint32>(m_elapsedTimer.elapsed());
     close();
@@ -291,6 +302,8 @@ bool ClientReqSocket::checkHelloFirst(uint8 protocol, uint8 opcode, uint32 rawSi
     } else if (protocol == OP_EMULEPROT) {
         // The port test is the one exchange that legitimately reaches a socket which
         // never said hello (MFC ListenSocket.cpp:1810-1817).
+        if (opcode == OP_PORTTEST)
+            m_portTestSeen = true;
         if (opcode == OP_PORTTEST || !m_incoming || m_helloSeen)
             return true;
     } else {
@@ -488,6 +501,14 @@ bool ClientReqSocket::processExtPacket(const uint8* packet, uint32 size, uint8 o
 
 void ClientReqSocket::setPeerSocketState(PeerSocketState val)
 {
+    if (val == m_socketState)
+        return;
+    // Counted on the listener that saw the socket enter the state, so the pair of
+    // calls always balances.
+    if (m_socketState == PeerSocketState::Other)
+        m_countedBy = theApp.listenSocket;
+    if (m_countedBy)
+        m_countedBy->noteSocketState(m_socketState, val);
     m_socketState = val;
 }
 
@@ -509,6 +530,9 @@ void ClientReqSocket::onSocketConnected()
 {
     logDebug(QStringLiteral("ClientReqSocket::onSocketConnected — peer=%1:%2 fd=%3")
                  .arg(peerAddress().toString()).arg(peerPort()).arg(socketDescriptor()));
+
+    // The TCP connect is done, whatever the handshake still does: no longer half-open
+    setPeerSocketState(PeerSocketState::Complete);
 
     // If the encryption handshake is in progress, defer the connection
     // notification until onEncryptionHandshakeComplete().  Emitting now would

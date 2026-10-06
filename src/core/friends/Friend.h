@@ -188,7 +188,7 @@ private:
     std::time_t m_lastChatted = 0;
     bool m_friendSlot = false;
     FriendConnectState m_connectState = FriendConnectState::None;
-    uint32 m_lastKadSearch = 0;   ///< tick of the last Kad lookup; MFC's 10-minute gate
+    uint64 m_lastKadSearch = 0;   ///< tick of the last Kad lookup; MFC's 10-minute gate
 };
 
 } // namespace eMule

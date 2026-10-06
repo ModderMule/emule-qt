@@ -55,7 +55,7 @@ UploadQueue::UploadQueue(QObject* parent)
     : QObject(parent)
     // MFC seeds this with GetTickCount() (srchybrid/UploadQueue.cpp:72) so the very first
     // score kick is allowed rather than deferred by 6 s.
-    , m_removedClientByScore(static_cast<uint32>(getTickCount()))
+    , m_removedClientByScore(getTickCount())
 {
 }
 
@@ -115,17 +115,16 @@ void UploadQueue::onBlockPacketsReady(UpDownClient* client, QByteArray fileId,
         if (pkt) {
             // "Data put into upload buffers" — MFC srchybrid/UploadDiskIOThread.cpp:260-261.
             // Paired with m_curQueueSessionPayloadUp ("data actually transmitted"), the
-            // difference is payloadInBuffer(), which is how the upload status tells a stalled
-            // slot from a transferring one. MFC's buffer-limit early return around the same
-            // counter is deliberately not ported: this disk thread is request-driven, so the
-            // peer's own block requests already bound how much is in flight. That bound holds
-            // only because addReqBlock() drops re-requested blocks.
+            // difference is payloadInBuffer(): how the upload status tells a stalled slot
+            // from a transferring one, and what startBlockReads() holds against its limit.
             client->addQueueSessionUploadAdded(pkt->statsPayload);
 
             // EMSocket takes ownership via unique_ptr; copy from shared_ptr
             sock->sendPacket(std::make_unique<Packet>(*pkt), false, pkt->statsPayload);
         }
     }
+
+    client->startBlockReads();
 }
 
 // ===========================================================================
@@ -212,7 +211,7 @@ int UploadQueue::waitingPosition(const UpDownClient* client) const
 
 float UploadQueue::getAverageCombinedFilePrioAndCredit()
 {
-    const uint32 curTick = static_cast<uint32>(getTickCount());
+    const uint64 curTick = getTickCount();
 
     // Two guards MFC does not have.
     //
@@ -220,9 +219,7 @@ float UploadQueue::getAverageCombinedFilePrioAndCredit()
     // because its single caller tests the soft limit first. Not depending on caller
     // ordering costs one comparison.
     //
-    // First call: MFC leans on Windows GetTickCount() being large at process start, so its
-    // "curTick >= last + 5 s" is true the first time round. Our getTickCount() is a
-    // truncated steady_clock and can be small, so treat a zero tick as "never computed".
+    // First call: a zero stamp means "never computed".
     if (m_lastCalculatedAverageCombined == 0
         || curTick >= m_lastCalculatedAverageCombined + SEC2MS(5))
     {
@@ -294,7 +291,7 @@ UpDownClient* UploadQueue::findBestClientInQueue()
     uint64 bestScoreV6 = 0;
     UpDownClient* bestV4 = nullptr;
     UpDownClient* bestV6 = nullptr;
-    const uint32 curTick = static_cast<uint32>(getTickCount());
+    const uint64 curTick = getTickCount();
 
     for (auto it = m_waitingList.begin(); it != m_waitingList.end(); ) {
         UpDownClient* cur = *it;
@@ -427,7 +424,7 @@ bool UploadQueue::forceNewClient(bool allowEmptyWaitingQueue)
     if (curUploadSlots < MIN_UP_CLIENTS_ALLOWED)
         return true;
 
-    const uint32 curTick = static_cast<uint32>(getTickCount());
+    const uint64 curTick = getTickCount();
     if (curTick < m_lastStartUpload + SEC2MS(1) && m_datarate < 102400)
         return false;
 
@@ -562,7 +559,7 @@ bool UploadQueue::addUpNextClient(UpDownClient* directadd)
     // would let those paths silently desync the alternation.
     m_lastSlotWasIPv6 = newClient->isIPv6Connection();
 
-    m_lastStartUpload = static_cast<uint32>(getTickCount());
+    m_lastStartUpload = getTickCount();
 
     // Update statistics on the requested file
     if (m_sharedFiles) {
@@ -645,22 +642,32 @@ UploadQueue::QueueAdmission UploadQueue::checkWaitingListAdmission(UpDownClient*
     }
 
     // IPv6: at most one client per address, counting active uploads as well as the
-    // waiting list. Deliberately an exact 128-bit match — no prefix/range logic, since
-    // a single /64 legitimately belongs to one subscriber.
+    // waiting list, and at most three per /64 — the IPv4 limit applied to the prefix a
+    // subscriber owns, since a peer can take a fresh address inside it for every try.
     //
     // Gated on the address rather than isIPv6Connection() so the test and the comparison
     // below use the same value: a peer whose socket is v6 but whose userAddress is v4
     // would otherwise be compared against IPv4 addresses.
     if (client->userAddress().isIPv6()) {
         const Address& v6 = client->userAddress();
-        const auto sameV6 = [&](const UpDownClient* other) {
-            return other != client && other->userAddress() == v6;
+        const Address prefix = v6.peerKey();
+        int samePrefix = 0;
+        bool sameAddress = false;
+        const auto count = [&](const UpDownClient* other) {
+            if (other == client || !other->userAddress().isIPv6())
+                return;
+            if (other->userAddress() == v6)
+                sameAddress = true;
+            if (other->userAddress().peerKey() == prefix)
+                ++samePrefix;
         };
-        if (std::any_of(m_waitingList.begin(), m_waitingList.end(), sameV6)
-            || std::any_of(m_uploadingList.begin(), m_uploadingList.end(), sameV6))
-        {
-            logDebug(QStringLiteral("%1: rejected %2 — IPv6 %3 already queued or uploading")
-                         .arg(QLatin1String(context), client->userName(), ipstr(v6)));
+        std::for_each(m_waitingList.begin(), m_waitingList.end(), count);
+        std::for_each(m_uploadingList.begin(), m_uploadingList.end(), count);
+        if (sameAddress || samePrefix >= 3) {
+            logDebug(QStringLiteral("%1: rejected %2 — IPv6 %3 %4")
+                         .arg(QLatin1String(context), client->userName(), ipstr(v6),
+                              sameAddress ? QStringLiteral("already queued or uploading")
+                                          : QStringLiteral("has 3 clients in its /64")));
             return QueueAdmission::Rejected;
         }
     }
@@ -724,7 +731,7 @@ bool UploadQueue::addClientToQueue(UpDownClient* client, bool ignoreTimeLimit)
         return false;
 
     client->incAskedCount();
-    client->setLastUpRequest(static_cast<uint32>(getTickCount()));
+    client->setLastUpRequest(getTickCount());
 
     if (!ignoreTimeLimit)
         client->addRequestCount(client->reqUpFileId());
@@ -1009,7 +1016,7 @@ bool UploadQueue::checkForTimeOver(const UpDownClient* client)
     // the downloading flag freezes this client's base at the moment its slot went live, so a
     // long-running upload cannot outgrow the queue behind it.
     if (client->score(true, true) < m_maxScore) {
-        const uint32 curTick = static_cast<uint32>(getTickCount());
+        const uint64 curTick = getTickCount();
         if (curTick >= m_removedClientByScore) {
             if (thePrefs.logUlDlEvents()) {
                 logDebug(QStringLiteral("%1: upload session ended — score")
@@ -1039,7 +1046,7 @@ void UploadQueue::updateMaxClientScore(bool force)
     if (thePrefs.transferFullChunks())
         return;
 
-    const uint32 curTick = static_cast<uint32>(getTickCount());
+    const uint64 curTick = getTickCount();
     if (!force && m_lastCalculatedMaxScore != 0 && curTick < m_lastCalculatedMaxScore + SEC2MS(5))
         return;
     m_lastCalculatedMaxScore = curTick;
@@ -1058,14 +1065,14 @@ void UploadQueue::updateMaxClientScore(bool force)
 
 void UploadQueue::updateDatarates()
 {
-    const uint32 curTick = static_cast<uint32>(getTickCount());
+    const uint64 curTick = getTickCount();
 
     if (curTick < m_lastCalculatedDataRateTick + 500)
         return;
     m_lastCalculatedDataRateTick = curTick;
 
     if (m_averageDRList.size() >= 2 && m_averageTickList.back() > m_averageTickList.front()) {
-        uint32 duration = m_averageTickList.back() - m_averageTickList.front();
+        const auto duration = static_cast<uint32>(m_averageTickList.back() - m_averageTickList.front());
         if (duration > 0) {
             m_datarate = static_cast<uint32>(
                 (m_averageDRSum - m_averageDRList.front()) * 1000 / duration);
@@ -1083,7 +1090,7 @@ void UploadQueue::updateDatarates()
 
 void UploadQueue::process()
 {
-    const uint32 curTick = static_cast<uint32>(getTickCount());
+    const uint64 curTick = getTickCount();
 
     // Update active clients info from throttler
     if (m_throttler) {
@@ -1173,6 +1180,9 @@ void UploadQueue::process()
         // fires from onBlockPacketsReady(); here it catches a block still waiting on disk.
         if (!cur->blockRequests().empty())
             followRequestedFile(cur, cur->blockRequests().front()->fileID.data());
+
+        // The buffer drained since the last pass: read the next requested blocks.
+        cur->startBlockReads();
     }
 
     // Save bandwidth data for rate calculation
@@ -1293,7 +1303,7 @@ void UploadQueue::answerReask(const Endpoint& replyTo, SafeMemFile& in,
     }
 
     sender->incAskedCount();
-    sender->setLastUpRequest(static_cast<uint32>(getTickCount()));
+    sender->setLastUpRequest(getTickCount());
 
     // Refresh what it holds. UDP version 4 sends the whole extended info; version 3 only
     // the complete-source count (MFC ClientUDPSocket.cpp:258-274).

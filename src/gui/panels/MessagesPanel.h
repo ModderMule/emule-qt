@@ -13,6 +13,7 @@
 #include "utils/InputHistory.h"
 
 #include <QHash>
+#include <QImage>
 #include <QMap>
 #include <QSet>
 #include <QString>
@@ -34,6 +35,7 @@ namespace eMule {
 
 class FriendListModel;
 class IpcClient;
+class LogTextView;
 class PanelPoller;
 
 struct ChatMsg {
@@ -43,6 +45,8 @@ struct ChatMsg {
     /// A status line from the connection attempt ("*** Connecting"), shown without a
     /// sender and in grey, as MFC's chat window does with STATUS_MSG_COLOR.
     bool    system = false;
+    /// A captcha the peer wants solved, shown under a system line.
+    QImage  image;
     qint64  timestamp = 0;
 };
 
@@ -77,6 +81,8 @@ private slots:
     void onFriendClicked(const QModelIndex& index);
     void onSendClicked();
     void onChatStatePush(const Ipc::IpcMessage& msg);
+    void onChatCaptchaPush(const Ipc::IpcMessage& msg);
+    void onChatCaptchaResultPush(const Ipc::IpcMessage& msg);
     void onCloseClicked();
     void onRefreshTimer();
     void onFriendContextMenu(const QPoint& pos);
@@ -91,7 +97,8 @@ private:
     void requestFriendList();
     void updateInfoSection(int row);
     void updateChatDisplay();
-    void appendChatStatus(const QString& friendHash, const QString& text);
+    void appendChatStatus(const QString& friendHash, const QString& text,
+                          const QImage& image = {});
     void appendChatMessage(const QString& friendHash, const QString& sender,
                            const QString& text, bool outgoing);
     [[nodiscard]] QString saveSelection() const;
@@ -118,7 +125,7 @@ private:
     // Views
     QListView*    m_friendListView = nullptr;
     QLabel*       m_friendsLabel = nullptr;
-    QTextBrowser* m_chatBrowser = nullptr;
+    LogTextView*  m_chatBrowser = nullptr;
     QLineEdit*    m_messageInput = nullptr;
     QToolButton*  m_smileyBtn = nullptr;
     QPushButton*  m_sendBtn = nullptr;
@@ -150,6 +157,7 @@ private:
 
     // Active chat friend hash
     QString m_activeFriendHash;
+    QString m_displayedFriendHash;   ///< chat the browser currently shows
 
     // Chat history (session-only, keyed by friend hash)
     QMap<QString, QVector<ChatMsg>> m_chatHistory;

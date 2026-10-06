@@ -94,6 +94,8 @@ private slots:
     void retryChainQuiescesWhenEncryptionNotReady();
     void sharedReadBuffer_twoSocketsInterleave();
     void nestedPassDoesNotCorruptOuterBuffer();
+    void sendQueue_overflowClosesTheSocket();
+    void sendQueue_oneLargePacketIsKept();
     void fullReceive_falseOnShortRead();
     void fullReceive_trueWhenBufferFilled();
     void fullReceive_trueUnderAThrottleThatCapsTheRead();
@@ -682,6 +684,39 @@ void tst_EMSocket::fullReceive_trueUnderAThrottleThatCapsTheRead()
 
     serverSide->close();
     clientSocket.close();
+}
+
+void tst_EMSocket::sendQueue_overflowClosesTheSocket()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    TestEMSocket sock;
+    sock.connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(server.waitForNewConnection(5000));
+    QVERIFY(sock.waitForConnected(5000));
+
+    // Queued in one go, so nothing can drain in between: 3000 x 16 KiB = 48 MiB asked for.
+    for (int i = 0; i < 3000; ++i)
+        sock.sendPacket(std::make_unique<Packet>(OP_HASHSETANSWER, 16 * 1024, OP_EDONKEYPROT), true);
+
+    QTRY_COMPARE_WITH_TIMEOUT(sock.lastErrorCode, kErrSendQueueOverflow, 3000);
+}
+
+void tst_EMSocket::sendQueue_oneLargePacketIsKept()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    TestEMSocket sock;
+    sock.connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(server.waitForNewConnection(5000));
+    QVERIFY(sock.waitForConnected(5000));
+
+    // Bigger than the byte cap, but the queue is empty: a browse reply for a huge share.
+    sock.sendPacket(std::make_unique<Packet>(OP_ASKSHAREDFILESANSWER, 9 * 1024 * 1024, OP_EDONKEYPROT), true);
+    QTest::qWait(100);
+    QCOMPARE(sock.lastErrorCode, 0);
 }
 
 QTEST_MAIN(tst_EMSocket)

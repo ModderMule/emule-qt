@@ -7,14 +7,23 @@
 #include "client/ClientCredits.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
+#include "files/PartFile.h"
+#include "kademlia/KadIO.h"
+#include "kademlia/KadPrefs.h"
+#include "transfer/DownloadQueue.h"
+#include "utils/SafeFile.h"
 #include "net/Address.h"
 #include "net/ClientReqSocket.h"
+#include "server/Server.h"
+#include "server/ServerList.h"
+#include "utils/Opcodes.h"
 #include "utils/ByteOrder.h"
 #include "utils/OtherFunctions.h"
 
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTest>
+#include <QtEndian>
 
 #include <cstring>
 
@@ -30,6 +39,8 @@ private slots:
     {
         qRegisterMetaType<eMule::UpDownClient*>("UpDownClient*");
     }
+    void handshakeFailures_banAtTheThreshold();
+    void handshakeFailures_neverBanAListedServer();
     void addClient_basic();
     void addClient_duplicate();
     void addClient_skipDupTest();
@@ -50,6 +61,10 @@ private slots:
     void findByIP_notFound();
     void addBannedClient();
     void isBannedClient_true();
+    void requestBuddy_refusesFirewallCheckAndBannedNodes();
+    void kadFirewallAck_oncePerAskedAddress();
+    void callbackPacket_onlyFromBuddyToAVettedTarget();
+    void ban_coversTheIPv6Prefix();
     void removeBannedClient();
     void bannedCount();
     void signal_clientAdded();
@@ -294,6 +309,133 @@ void tst_ClientList::findByIP_notFound()
     QCOMPARE(list.findByIP(0xDEADBEEFu), nullptr);
 }
 
+// MFC ClientList.cpp:700-703: a node we are running a firewall check with is no buddy.
+void tst_ClientList::requestBuddy_refusesFirewallCheckAndBannedNodes()
+{
+    ClientList list;
+    const uint8 id[16] = {0xB1};
+    const uint32 checking = 0x4D020304, banned = 0x4D030405, fine = 0x4D040506;
+
+    list.addKadFirewallRequest(qToBigEndian(checking));
+    list.requestBuddy(checking, 4662, 4672, id, 0);
+    QVERIFY(list.findByConnIP(qToBigEndian(checking), 4662) == nullptr);
+
+    list.addBannedClient(Address::fromHostOrder(banned));
+    list.requestBuddy(banned, 4662, 4672, id, 0);
+    QVERIFY(list.findByConnIP(qToBigEndian(banned), 4662) == nullptr);
+
+    list.requestBuddy(fine, 4662, 4672, id, 0);
+    QVERIFY(list.findByConnIP(qToBigEndian(fine), 4662) != nullptr);
+    list.deleteAll();
+}
+
+void tst_ClientList::kadFirewallAck_oncePerAskedAddress()
+{
+    ClientList list;
+    const uint32 ip = qToBigEndian(uint32{0x4D050607});
+    QVERIFY(!list.takeKadFirewallAck(ip));
+    list.addKadFirewallRequest(ip);
+    list.addKadFirewallRequest(ip);   // asked twice is still one witness
+    QVERIFY(list.takeKadFirewallAck(ip));
+    QVERIFY(!list.takeKadFirewallAck(ip));
+    QVERIFY(list.isKadFirewallCheckIP(ip));   // the callback is still let in
+}
+
+// OP_CALLBACK makes us dial an address taken from the packet. Its check value (our Kad
+// ID inverted) and the file hash are public, so only our buddy may send it.
+void tst_ClientList::callbackPacket_onlyFromBuddyToAVettedTarget()
+{
+    eMule::testing::KadFixture kadFixture;
+    ClientList list;
+    theApp.clientList = &list;
+    DownloadQueue dq;
+    theApp.downloadQueue = &dq;
+
+    uint8 hash[16] = {0xCB, 1, 2, 3};
+    auto* pf = new PartFile;
+    pf->setFileName(QStringLiteral("callback.bin"));
+    pf->setFileHash(hash);
+    dq.addDownload(pf);
+
+    const auto packet = [&](uint32 ipHost, uint16 port, const uint8* fileHash) {
+        kad::UInt128 check(kadFixture.kadPrefs().kadId());
+        check.xorWith(kad::UInt128(true));
+        SafeMemFile io;
+        kad::io::writeUInt128(io, check);
+        kad::io::writeUInt128(io, kad::UInt128(fileHash));
+        io.writeUInt32(ipHost);
+        io.writeUInt16(port);
+        return io.buffer();
+    };
+    const auto send = [](UpDownClient* from, const QByteArray& data) {
+        from->processCallbackPacket(reinterpret_cast<const uint8*>(data.constData()),
+                                    static_cast<uint32>(data.size()));
+    };
+    const uint32 target = 0x4D0A0B0C;   // 77.10.11.12
+    const Address targetAddr = Address::fromHostOrder(target);
+    const auto dialled = [&] { return !list.allowCallbackRequest(targetAddr); };
+
+    auto* stranger = new UpDownClient();
+    list.addClient(stranger);
+    auto* buddy = new UpDownClient();
+    buddy->setKadState(KadState::ConnectedBuddy);
+    list.addClient(buddy);
+    list.setBuddy(buddy, BuddyStatus::Connected);
+
+    send(stranger, packet(target, 4662, hash));
+    QVERIFY2(!dialled(), "a client that is not our buddy made us dial out");
+
+    const uint8 unknown[16] = {0xEE};
+    send(buddy, packet(target, 4662, unknown));
+    QVERIFY(!dialled());
+
+    send(buddy, packet(0xC0A80105, 4662, hash));   // 192.168.1.5
+    QVERIFY(list.allowCallbackRequest(Address::fromHostOrder(0xC0A80105)));
+    send(buddy, packet(target, 0, hash));
+    QVERIFY(!dialled());
+
+    list.addBannedClient(targetAddr);
+    send(buddy, packet(target, 4662, hash));
+    QVERIFY(!dialled());
+    list.removeBannedClient(targetAddr);
+
+    send(buddy, packet(target, 4662, hash));
+    QVERIFY(dialled());
+
+    list.setBuddy(nullptr, BuddyStatus::None);
+    list.deleteAll();
+    dq.deleteAll();
+    theApp.downloadQueue = nullptr;
+    theApp.clientList = nullptr;
+}
+
+// A banned IPv6 peer used to be back on the next address of its own prefix.
+void tst_ClientList::ban_coversTheIPv6Prefix()
+{
+    ClientList list;
+    const auto banned = Address::fromString(QStringLiteral("2606:4700:1:2::10"));
+    const auto neighbour = Address::fromString(QStringLiteral("2606:4700:1:2:ffff::99"));
+    const auto elsewhere = Address::fromString(QStringLiteral("2606:4700:1:3::10"));
+
+    list.addBannedClient(banned);
+    QVERIFY(list.isBannedClient(banned));
+    QVERIFY(list.isBannedClient(neighbour));
+    QVERIFY(!list.isBannedClient(elsewhere));
+    QCOMPARE(list.bannedCount(), 1);
+
+    list.removeBannedClient(neighbour);
+    QVERIFY(!list.isBannedClient(banned));
+
+    // The callback rate window follows the same key.
+    list.addTrackCallbackRequests(banned);
+    QVERIFY(!list.allowCallbackRequest(neighbour));
+    QVERIFY(list.allowCallbackRequest(elsewhere));
+
+    // IPv4 stays exact.
+    list.addBannedClient(Address::fromHostOrder(0x4D010203));
+    QVERIFY(!list.isBannedClient(Address::fromHostOrder(0x4D010204)));
+}
+
 void tst_ClientList::addBannedClient()
 {
     ClientList list;
@@ -534,8 +676,8 @@ void tst_ClientList::attach_refusesAndBansIdentifiedImpostor()
     uint8 pubKey[10];
     std::memset(pubKey, 0xBB, sizeof(pubKey));
     QVERIFY(credits.setSecureIdent(pubKey, 10));
-    credits.verified(known.userAddress().toNetworkUint32());
-    QCOMPARE(credits.currentIdentState(known.userAddress().toNetworkUint32()),
+    credits.verified(known.userAddress());
+    QCOMPARE(credits.currentIdentState(known.userAddress()),
              IdentState::Identified);
     known.setCredits(&credits);
 
@@ -722,6 +864,36 @@ void tst_ClientList::process_reapsAChatterOnceTheSessionEnds()
     client->endChatSession();
     list.process();
     QCOMPARE(list.clientCount(), 0);
+}
+
+void tst_ClientList::handshakeFailures_banAtTheThreshold()
+{
+    ClientList list;
+    const Address peer = Address::fromHostOrder(0x08080404);
+    const Address other = Address::fromHostOrder(0x08080405);
+
+    for (int i = 0; i < HANDSHAKEFAIL_BAN_COUNT - 1; ++i)
+        list.noteHandshakeFailure(peer);
+    list.noteHandshakeFailure(other);
+    QVERIFY(!list.isBannedClient(peer));
+
+    list.noteHandshakeFailure(peer);
+    QVERIFY(list.isBannedClient(peer));
+    QVERIFY(!list.isBannedClient(other));
+}
+
+void tst_ClientList::handshakeFailures_neverBanAListedServer()
+{
+    ServerList servers;
+    QVERIFY(servers.addServer(std::make_unique<Server>(htonl(0x08080808), 4661)));
+    theApp.serverList = &servers;
+    const auto restore = qScopeGuard([] { theApp.serverList = nullptr; });
+
+    ClientList list;
+    const Address server = Address::fromHostOrder(0x08080808);
+    for (int i = 0; i < 3 * HANDSHAKEFAIL_BAN_COUNT; ++i)
+        list.noteHandshakeFailure(server);
+    QVERIFY(!list.isBannedClient(server));
 }
 
 QTEST_MAIN(tst_ClientList)

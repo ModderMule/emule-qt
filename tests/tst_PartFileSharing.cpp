@@ -439,8 +439,8 @@ void tst_PartFileSharing::rehashKeepsAHalfDownloadedPart()
 
     // Part 0 verified, part 1 "bad" — which is all a half-filled part can ever hash to.
     QByteArray verdict;
-    verdict.append(static_cast<char>(PartFile::RehashOk));
-    verdict.append(static_cast<char>(PartFile::RehashBad));
+    verdict.append(static_cast<char>(PartFile::PartVerdict::Ok));
+    verdict.append(static_cast<char>(PartFile::PartVerdict::Bad));
     file->applyRehashResult(verdict);
 
     QVERIFY(file->isComplete(0u));
@@ -458,7 +458,7 @@ void tst_PartFileSharing::rehashWithUnreadablePartFileChangesNothing()
     file->flushBuffer();
     QVERIFY(file->isComplete(0u));
 
-    file->applyRehashResult(QByteArray(2, static_cast<char>(PartFile::RehashUnread)));
+    file->applyRehashResult(QByteArray(2, static_cast<char>(PartFile::PartVerdict::Unread)));
 
     QVERIFY2(file->isComplete(0u), "an unread part must not be discarded");
     QCOMPARE(file->status(true), PartFileStatus::Ready);
@@ -497,10 +497,10 @@ void tst_PartFileSharing::rehashChecksASmallFileAgainstItsFileHash()
         return verdict.size() == 1 ? verdict[0] : -1;
     };
 
-    QCOMPARE(verdictFor(content), static_cast<int>(PartFile::RehashOk));
+    QCOMPARE(verdictFor(content), static_cast<int>(PartFile::PartVerdict::Ok));
     QByteArray damaged = content;
     damaged[100] = 'X';
-    QCOMPARE(verdictFor(damaged), static_cast<int>(PartFile::RehashBad));
+    QCOMPARE(verdictFor(damaged), static_cast<int>(PartFile::PartVerdict::Bad));
 }
 
 // Cancelled and re-added under the same hash while the worker ran: not this file's result.

@@ -37,7 +37,7 @@ Server::Server(FileDataIO& data, bool optUTF8)
     m_address = Address::fromNetworkOrder(data.readUInt32());
     m_port    = data.readUInt16();
 
-    const uint32 tagCount = data.readUInt32();
+    const uint32 tagCount = readTagCount(data, kMaxFileTags);
     for (uint32 i = 0; i < tagCount; ++i) {
         Tag tag(data, optUTF8);
         addTagFromFile(tag);

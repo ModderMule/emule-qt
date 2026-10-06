@@ -52,8 +52,8 @@ QByteArray PcpBackend::encodeMap(const Channel& channel, const PortMapRequest& r
     message.nonce = nonceFor(request);
     message.protocol = toPcpProtocol(request.protocol);
     message.internalPort = request.internalPort;
-    // Ask for the same external port: eD2K advertises thePrefs.port() and has no
-    // external-port tag, so anything else is a LowID even when it "succeeds".
+    // Ask for the same external port; a different grant still works, we then
+    // advertise that one.
     message.suggestedExternalPort = request.internalPort;
     message.lifetimeSecs = lifetimeSecs;
     message.externalFamilyIsIPv4 = request.family != PortMapFamily::IPv6;

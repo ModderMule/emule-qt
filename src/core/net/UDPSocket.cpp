@@ -397,6 +397,9 @@ void UDPSocket::sendBuffer(const Endpoint& dest, const uint8* data, uint32 size)
     {
         std::lock_guard lock(m_sendLock);
 
+        if (m_controlQueue.size() >= kMaxQueuedPackets)
+            return;     // nobody is draining: drop rather than grow
+
         ServerUDPPacket pkt;
         pkt.data.assign(data, data + size);
         pkt.destination = dest;

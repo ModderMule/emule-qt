@@ -174,7 +174,7 @@ private:
     static bool save(UploadQueue* queue, const QString& path);
 
     bool   m_loaded    = false;
-    uint32 m_lastSaved = 0;
+    uint64 m_lastSaved = 0;
 };
 
 } // namespace eMule

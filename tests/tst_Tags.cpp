@@ -54,6 +54,11 @@ private slots:
     void edgeCase_zeroBlob();
     void edgeCase_maxUint64();
 
+    // Hostile input
+    void hostile_blobLengthBeyondData();
+    void hostile_tagCountIsBounded();
+    void skips_boolAndBoolArray();
+
     // Mutators
     void mutator_setInt();
     void mutator_setInt64();
@@ -409,6 +414,54 @@ void tst_Tags::mutator_setStr()
     tag.setStr(QStringLiteral("new"));
     QVERIFY(tag.isStr());
     QCOMPARE(tag.strValue(), QStringLiteral("new"));
+}
+
+void tst_Tags::hostile_blobLengthBeyondData()
+{
+    // type BLOB | 0x80, name id, then a 4 GiB length with 4 bytes behind it.
+    const uint8 raw[] = {TAGTYPE_BLOB | 0x80, 0x20, 0xFF, 0xFF, 0xFF, 0xFF, 1, 2, 3, 4};
+    SafeMemFile data(const_cast<uint8*>(raw), sizeof(raw));
+    QVERIFY_THROWS_EXCEPTION(FileException, Tag(data, true));
+
+    const uint8 ok[] = {TAGTYPE_BLOB | 0x80, 0x20, 4, 0, 0, 0, 1, 2, 3, 4};
+    SafeMemFile good(const_cast<uint8*>(ok), sizeof(ok));
+    const Tag tag(good, true);
+    QCOMPARE(tag.blobValue(), QByteArray("\x01\x02\x03\x04", 4));
+}
+
+void tst_Tags::hostile_tagCountIsBounded()
+{
+    {   // more tags than the wire limit, with enough bytes behind it
+        QByteArray raw(4 + 4096, '\0');
+        raw[0] = char(0x01); raw[1] = char(0x01);      // 257
+        SafeMemFile data(reinterpret_cast<uint8*>(raw.data()), static_cast<uint32>(raw.size()));
+        QVERIFY_THROWS_EXCEPTION(FileException, (void)readTagCount(data, kMaxWireTags));
+    }
+    {   // more tags than bytes left
+        const uint8 raw[] = {100, 0, 0, 0, 1, 2, 3};
+        SafeMemFile data(const_cast<uint8*>(raw), sizeof(raw));
+        QVERIFY_THROWS_EXCEPTION(FileException, (void)readTagCount(data, kMaxFileTags));
+    }
+    {
+        const uint8 raw[] = {2, 0, 0, 0, 1, 2, 3, 4, 5, 6};
+        SafeMemFile data(const_cast<uint8*>(raw), sizeof(raw));
+        QCOMPARE(readTagCount(data, kMaxWireTags), uint32{2});
+    }
+}
+
+void tst_Tags::skips_boolAndBoolArray()
+{
+    // BOOL (1 byte), BOOLARRAY (9 bits -> 2 bytes), then a UINT8 that must still parse.
+    const uint8 raw[] = {TAGTYPE_BOOL | 0x80, 0x30, 1,
+                         TAGTYPE_BOOLARRAY | 0x80, 0x31, 9, 0, 0xAA, 0xBB,
+                         TAGTYPE_UINT8 | 0x80, 0x32, 7};
+    SafeMemFile data(const_cast<uint8*>(raw), sizeof(raw));
+    const Tag a(data, true);
+    const Tag b(data, true);
+    const Tag c(data, true);
+    QCOMPARE(c.nameId(), uint8{0x32});
+    QCOMPARE(c.intValue(), uint32{7});
+    QCOMPARE(data.position(), qint64(sizeof(raw)));
 }
 
 QTEST_MAIN(tst_Tags)

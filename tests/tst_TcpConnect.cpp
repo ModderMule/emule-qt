@@ -385,7 +385,7 @@ void tst_TcpConnect::secureIdent_completesHandshake()
     // Verify client-side
     QVERIFY(client->credits() != nullptr);
     QVERIFY(client->credits()->secIDKeyLen() > 0);
-    QCOMPARE(client->credits()->currentIdentState(loopbackNBO),
+    QCOMPARE(client->credits()->currentIdentState(Address::fromNetworkOrder(loopbackNBO)),
              IdentState::Identified);
     QCOMPARE(client->secureIdentState(), SecureIdentState::AllRequestsSend);
 

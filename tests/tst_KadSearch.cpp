@@ -1,9 +1,12 @@
 /// @file tst_KadSearch.cpp
 /// @brief Tests for KadSearch.h — Kademlia search state machine.
 
+#include "TestFixtures.h"
 #include "TestHelpers.h"
 
 #include "kademlia/KadContact.h"
+#include "kademlia/Kademlia.h"
+#include "kademlia/KadUDPListener.h"
 #include "kademlia/KadDefines.h"
 #include "kademlia/KadLookupHistory.h"
 #include "kademlia/KadSearch.h"
@@ -36,6 +39,12 @@ private slots:
     void getTypeName_allTypes();
     void updateNodeLoad_accumulates();
     void stopping_flag();
+    void answers_countNodesNotPackets();
+
+    // Walk and result acceptance
+    void walk_goesOnUntilTheKClosestAreAsked();
+    void results_onlyFromNodesTheSearchAsked();
+    void results_ignoredByStoreSearches();
 
     // Contact ownership (audit item #2)
     void processResponse_freesAllResultContacts();
@@ -57,6 +66,13 @@ private slots:
 
 private:
     void cleanupSearchManager();
+    /// A started search of @p type over @p count routing-table contacts ranked 1..count
+    /// by distance to the target.
+    Search* startWalk(SearchType type, uint32 count);
+    static uint32 walkIP(uint32 rank) { return (78u << 24) | (rank << 16) | (1u << 8) | 1u; }
+    static uint16 walkPort(uint32 rank) { return static_cast<uint16>(5000 + rank); }
+    static UInt128 walkTarget();
+    static void respond(uint32 rank);
 };
 
 void tst_KadSearch::cleanupSearchManager()
@@ -161,6 +177,181 @@ void tst_KadSearch::stopping_flag()
     uint32 searchID = search->getSearchID();
     SearchManager::stopSearch(searchID, false);
     // After stopSearch, the search is deleted — we just verify no crash
+}
+
+// A keyword store of 120 files takes three packets per node; counting packets made
+// four nodes look like the ten the store is meant to reach. MFC Search.cpp:1441-1447.
+void tst_KadSearch::answers_countNodesNotPackets()
+{
+    UInt128 target(uint32{450});
+    auto* search = SearchManager::prepareLookup(SearchType::StoreKeyword, false, target);
+    QVERIFY(search != nullptr);
+    for (uint32 i = 1; i <= 120; ++i)
+        search->addFileID(UInt128(i));
+    QVERIFY(SearchManager::startSearch(search));
+
+    for (int i = 0; i < 3; ++i)
+        SearchManager::processPublishResult(target, 0, false);
+    QCOMPARE(search->getAnswers(), uint32{1});
+
+    // Nine nodes' worth: still running.
+    for (int i = 3; i < 27; ++i)
+        SearchManager::processPublishResult(target, 0, false);
+    QVERIFY(SearchManager::alreadySearchingFor(target));
+    QCOMPARE(search->getAnswers(), uint32{9});
+
+    // The tenth node completes the store.
+    for (int i = 27; i < 30; ++i)
+        SearchManager::processPublishResult(target, 0, false);
+    QVERIFY(!SearchManager::alreadySearchingFor(target));
+}
+
+// ---------------------------------------------------------------------------
+// Walk and result acceptance
+// ---------------------------------------------------------------------------
+
+UInt128 tst_KadSearch::walkTarget()
+{
+    const uint8 bytes[16] = {0x55};
+    return UInt128(bytes);
+}
+
+Search* tst_KadSearch::startWalk(SearchType type, uint32 count)
+{
+    auto* search = SearchManager::prepareLookup(type, false, walkTarget());
+    if (!search)
+        return nullptr;
+    search->addFileID(walkTarget());
+    // Straight into the candidate map: a routing bin holds ten contacts at most.
+    for (uint32 rank = 1; rank <= count; ++rank) {
+        uint8 id[16] = {0x55};
+        id[15] = static_cast<uint8>(rank);   // distance to the target == rank
+        auto* contact = new Contact(UInt128(id), walkIP(rank), walkPort(rank), 4662,
+                                    walkTarget(), KADEMLIA_VERSION, KadUDPKey(), true);
+        search->m_possible[contact->getDistance()] = contact;
+        search->m_deleteList.push_back(contact);
+    }
+    return SearchManager::startSearch(search) ? search : nullptr;
+}
+
+void tst_KadSearch::respond(uint32 rank)
+{
+    ContactArray none;
+    SearchManager::processResponse(walkTarget(), walkIP(rank), walkPort(rank), none);
+}
+
+// Ten nodes answered, but one of the ten closest was never asked. The walk used to stop
+// here because nothing untried was closer than the *closest* responder.
+void tst_KadSearch::walk_goesOnUntilTheKClosestAreAsked()
+{
+    eMule::testing::KadFixture kadFixture;
+
+    Search* search = startWalk(SearchType::Keyword, 16);
+    QVERIFY(search != nullptr);
+    QCOMPARE(search->m_tried.size(), std::size_t{3});      // ranks 1-3
+    QCOMPARE(search->m_possible.size(), std::size_t{13});
+
+    // Ranks 8-14 were asked early (they came from the routing table) and answer.
+    for (auto it = std::next(search->m_possible.begin(), 4); search->m_tried.size() < 10; ) {
+        search->m_tried[it->first] = it->second;
+        it = search->m_possible.erase(it);
+    }
+    for (uint32 rank : {1u, 2u, 3u, 8u, 9u, 10u, 11u, 12u, 13u, 14u})
+        respond(rank);
+    QCOMPARE(search->m_responded.size(), std::size_t{10});
+    // The answers pulled in the three best candidates (4-6); 7 is still waiting.
+    QCOMPARE(search->m_tried.size(), std::size_t{13});
+    QCOMPARE(search->m_possible.size(), std::size_t{3});   // ranks 7, 15, 16
+    QVERIFY(!search->stopping());
+
+    search->go(1);
+    QVERIFY2(!search->stopping(), "rank 7 is closer than the 10th responder");
+    QCOMPARE(search->m_tried.size(), std::size_t{14});
+    QCOMPARE(search->m_possible.size(), std::size_t{2});
+
+    // Now the ten closest have all answered: nothing left that could improve on them.
+    for (uint32 rank : {4u, 5u, 6u, 7u})
+        respond(rank);
+    search->go(1);
+    QVERIFY(search->stopping());
+    QCOMPARE(search->m_tried.size(), std::size_t{14});
+
+    SearchManager::stopAllSearches();
+}
+
+namespace {
+
+/// KADEMLIA2_SEARCH_RES carrying one plain source for @p target.
+QByteArray sourceResult(const UInt128& target)
+{
+    SafeMemFile io;
+    io.writeUInt8(KADEMLIA2_SEARCH_RES);
+    io::writeUInt128(io, UInt128(uint32{0x5E4D}));
+    io::writeUInt128(io, target);
+    io.writeUInt16(1);
+    io::writeUInt128(io, UInt128(uint32{0xC11E47}));
+    TagList tags;
+    tags.emplace_back(FT_SOURCETYPE, uint32{1});
+    tags.emplace_back(FT_SOURCEIP, uint32{0x50010203});
+    tags.emplace_back(FT_SOURCEPORT, uint32{4662});
+    io::writeKadTagList(io, tags);
+    return io.buffer();
+}
+
+void deliverTo(const QByteArray& packet, uint32 ip, uint16 port)
+{
+    Kademlia::getInstanceUDPListener()->processPacket(
+        reinterpret_cast<const uint8*>(packet.constData()), static_cast<uint32>(packet.size()),
+        ip, port, false, KadUDPKey(0));
+}
+
+} // namespace
+
+// The target of a source search is the file hash, which is public: matching results on
+// it alone let any host hand us sources while the search ran.
+void tst_KadSearch::results_onlyFromNodesTheSearchAsked()
+{
+    eMule::testing::KadFixture kadFixture;
+    int sources = 0;
+    Kademlia::setKadSourceResultCallback([&](const Kademlia::KadSourceResult&) { ++sources; });
+
+    Search* search = startWalk(SearchType::File, 3);
+    QVERIFY(search != nullptr);
+    respond(1);
+    search->m_storeSent[search->m_tried.begin()->first] = true;   // source request sent to rank 1
+    QVERIFY(search->sentActionTo(walkIP(1), walkPort(1)));
+    QVERIFY(!search->sentActionTo(walkIP(2), walkPort(2)));   // asked for nodes only
+
+    const QByteArray packet = sourceResult(walkTarget());
+    deliverTo(packet, 0x51020304, 4672);              // a stranger
+    deliverTo(packet, walkIP(2), walkPort(2));        // in the walk, not asked for sources
+    deliverTo(packet, walkIP(1), walkPort(1) + 1);    // right address, wrong port
+    QCOMPARE(sources, 0);
+
+    deliverTo(packet, walkIP(1), walkPort(1));
+    QCOMPARE(sources, 1);
+
+    Kademlia::setKadSourceResultCallback({});
+    SearchManager::stopAllSearches();
+}
+
+void tst_KadSearch::results_ignoredByStoreSearches()
+{
+    eMule::testing::KadFixture kadFixture;
+    int sources = 0;
+    Kademlia::setKadSourceResultCallback([&](const Kademlia::KadSourceResult&) { ++sources; });
+
+    Search* search = startWalk(SearchType::StoreFile, 3);
+    QVERIFY(search != nullptr);
+    respond(1);
+    search->m_storeSent[search->m_tried.begin()->first] = true;   // as after a store packet
+    QVERIFY(search->sentActionTo(walkIP(1), walkPort(1)));
+
+    deliverTo(sourceResult(walkTarget()), walkIP(1), walkPort(1));
+    QCOMPARE(sources, 0);
+
+    Kademlia::setKadSourceResultCallback({});
+    SearchManager::stopAllSearches();
 }
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@
 #include "TestHelpers.h"
 #include "transfer/UploadBandwidthThrottler.h"
 #include "utils/Opcodes.h"
+#include "utils/TimeUtils.h"
 
 #include <QTest>
 
@@ -59,8 +60,13 @@ public:
         return result;
     }
 
-    [[nodiscard]] uint32 getLastCalledSend() const override { return 0; }
-    [[nodiscard]] uint32 getNeededBytes() override { return 1024; }
+    [[nodiscard]] uint64 getLastCalledSend() const override { return lastCalledSend.load(); }
+    // Only the trickle pass asks this, so the count tells that pass from the others.
+    [[nodiscard]] uint32 getNeededBytes() override
+    {
+        neededCalls.fetch_add(1, std::memory_order_relaxed);
+        return 1024;
+    }
     [[nodiscard]] bool isBusyExtensiveCheck() override { return false; }
     [[nodiscard]] bool isBusyQuickCheck() const override { return false; }
     [[nodiscard]] bool isEnoughFileDataQueued(uint32) const override { return true; }
@@ -68,6 +74,8 @@ public:
     [[nodiscard]] bool hasControlQueue() const override { return false; }
 
     std::atomic<int> fileSendCalls{0};
+    std::atomic<int> neededCalls{0};
+    std::atomic<uint64> lastCalledSend{0};   // 0 = silent for ever
 };
 
 /// Loop iterations an idle throttler may run in 500 ms. One 100 ms wait per
@@ -87,6 +95,7 @@ private slots:
     void idleWakesFastOnData();
     void wakesOnControlPacketQueued();
     void wakesOnAddToStandardList();
+    void trickleOnlyAfterASecondOfSilence();
     void controlQueueDrainsWhenSocketEmpty();
 };
 
@@ -237,6 +246,29 @@ void tst_UploadBandwidthThrottler::wakesOnAddToStandardList()
     QTRY_VERIFY_WITH_TIMEOUT(fake.fileSendCalls.load() > 0, 50);
 
     throttler.removeFromAllQueues(static_cast<ThrottledFileSocket*>(&fake));
+    throttler.endThread();
+}
+
+// The trickle pass is for a slot nobody has called send on for a second. Its stamp and
+// the throttler's tick must come from one clock: with two, the gate was always open and
+// every slot was offered bytes on every loop, outside the rate budget.
+void tst_UploadBandwidthThrottler::trickleOnlyAfterASecondOfSilence()
+{
+    FakeFileSocket busy;
+    FakeFileSocket silent;
+    busy.lastCalledSend = getTickCount() + MIN2MS(10);   // "just sent", for the whole test
+    silent.lastCalledSend = getTickCount() - SEC2MS(2);
+
+    UploadBandwidthThrottler throttler;
+    throttler.addToStandardList(0, &busy);
+    throttler.addToStandardList(1, &silent);
+
+    QTRY_VERIFY_WITH_TIMEOUT(silent.neededCalls.load() > 0, 500);
+    QTest::qWait(300);
+    QCOMPARE(busy.neededCalls.load(), 0);
+
+    throttler.removeFromAllQueues(static_cast<ThrottledFileSocket*>(&busy));
+    throttler.removeFromAllQueues(static_cast<ThrottledFileSocket*>(&silent));
     throttler.endThread();
 }
 

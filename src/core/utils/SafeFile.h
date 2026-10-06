@@ -99,6 +99,9 @@ private:
     QFile m_file;
 };
 
+/// Flush an open file and ask the OS to put it on the disk. @returns false on failure.
+[[nodiscard]] bool flushToDisk(QFile& file);
+
 /// Finish a "write tmp, then swap in" save: commit @p file (already written to
 /// @p tmpPath) and move it over @p finalPath, keeping the previous file as
 /// finalPath + ".bak". On any failure the tmp is removed, the previous file stays in

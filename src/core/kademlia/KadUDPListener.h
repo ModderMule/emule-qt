@@ -124,7 +124,7 @@ private:
                                            const KadUDPKey& senderKey);
     void process_KADEMLIA_FIREWALLED_RES(const uint8* data, uint32 len, uint32 ip,
                                           const KadUDPKey& senderKey);
-    void process_KADEMLIA_FIREWALLED_ACK_RES(uint32 len);
+    void process_KADEMLIA_FIREWALLED_ACK_RES(uint32 len, uint32 ip);
     void process_KADEMLIA_FINDBUDDY_REQ(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,
                                          const KadUDPKey& senderKey);
     void process_KADEMLIA_FINDBUDDY_RES(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,

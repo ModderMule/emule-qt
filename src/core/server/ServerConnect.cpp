@@ -18,6 +18,7 @@
 #include "transfer/DownloadQueue.h"
 #include "portmap/PortMapper.h"
 #include "utils/Log.h"
+#include "utils/TimeUtils.h"
 
 #include <QHostAddress>
 #include <QNetworkInterface>
@@ -600,13 +601,8 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
 
         if (m_singleConnecting) {
             // For single-connect, try without obfuscation before giving up
-            if (listServer && !m_config.cryptLayerRequired
-                && listServer->supportsObfuscationTCP() && !listServer->triedCrypt()) {
-                // This was a crypt connection attempt — retry without encryption
-                listServer->setTriedCrypt(true);
-                connectToServer(listServer, false, true /*noCrypt*/);
+            if (retryWithoutObfuscation(listServer))
                 break;
-            }
             stopConnectionTry();
             break;
         }
@@ -780,10 +776,14 @@ void ServerConnect::checkForTimeout()
                 continue;
             }
 
-            if (m_singleConnecting)
-                stopConnectionTry();
-            else
-                tryAnotherConnectionRequest();
+            if (m_singleConnecting) {
+                // An obfuscated attempt that just stalls gets the same plain retry a
+                // failed one does.
+                if (!retryWithoutObfuscation(listServer))
+                    stopConnectionTry();
+                break;      // either way the remaining copy is stale
+            }
+            tryAnotherConnectionRequest();
         }
     }
 }
@@ -800,8 +800,10 @@ void ServerConnect::keepConnectionAlive()
     if (!m_connected || !m_connectedSocket)
         return;
 
-    const qint64 elapsed = m_elapsedTimer.elapsed();
-    const qint64 lastTx = m_connectedSocket->lastTransmission();
+    // Same clock as the socket's stamp; two separate timers put the idle time off by
+    // however long after us the socket was created.
+    const uint64 elapsed = getTickCount();
+    const uint64 lastTx = m_connectedSocket->lastTransmission();
 
     if (elapsed >= lastTx + m_config.serverKeepAliveTimeout) {
         // "Ping" the server with an empty publish files packet
@@ -988,8 +990,9 @@ void ServerConnect::sendLoginPacket(ServerSocket* socket)
     // Client ID
     data.writeUInt32(m_clientID);
 
-    // Listening port
-    data.writeUInt16(m_config.listenPort);
+    // Listening port — the router's, when it mapped us to another one
+    const uint16 mappedPort = theApp.mappedTcpPort();
+    data.writeUInt16(mappedPort != 0 ? mappedPort : m_config.listenPort);
 
     // IPv6: advertise our public IPv6 to the server so it can publish us as a v6 source
     // and mark this session sentinel-safe. This is safe against legacy servers (they skip
@@ -1172,6 +1175,17 @@ Server* ServerConnect::listEntryFor(const Server* copy) const
     if (Server* entry = m_serverList.findByIPTcp(copy->ipAddress(), copy->port()))
         return entry;
     return m_serverList.findByAddress(copy->address(), copy->port());
+}
+
+bool ServerConnect::retryWithoutObfuscation(Server* listServer)
+{
+    if (!listServer || m_config.cryptLayerRequired
+        || !listServer->supportsObfuscationTCP() || listServer->triedCrypt())
+        return false;
+
+    listServer->setTriedCrypt(true);
+    connectToServer(listServer, false, true /*noCrypt*/);
+    return true;
 }
 
 Address ServerConnect::otherFamilyFor(const ServerSocket* socket, const Server* listServer) const

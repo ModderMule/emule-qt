@@ -147,6 +147,10 @@ signals:
     void chatMessageReceived(const Ipc::IpcMessage& msg);
     /// [friendHash, ChatConnectProgress] — how a chat dial to a friend is going.
     void chatStateReceived(const Ipc::IpcMessage& msg);
+    /// [senderHash, senderName, pngBase64] — the peer wants a captcha solved.
+    void chatCaptchaReceived(const Ipc::IpcMessage& msg);
+    /// [senderHash, solved] — whether the answer we sent was right.
+    void chatCaptchaResultReceived(const Ipc::IpcMessage& msg);
     void friendListChanged(const Ipc::IpcMessage& msg);
     void clientSharedFilesReceived(const Ipc::IpcMessage& msg);
     /// Port-mapping status changed (protocol chosen, mapping gained or lost).

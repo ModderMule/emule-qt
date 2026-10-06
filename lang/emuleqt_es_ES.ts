@@ -1865,7 +1865,7 @@ Sus descargas conservan sus archivos y pasan a Todas.</translation>
         <translation>Hash</translation>
     </message>
     <message>
-        <location line="+27"/>
+        <location line="+29"/>
         <source>Details</source>
         <translation>Detalles</translation>
     </message>
@@ -2822,7 +2822,7 @@ Datos transferidos:	%12</translation>
 <context>
     <name>eMule::IrcPanel</name>
     <message>
-        <location filename="../src/gui/panels/IrcPanel.cpp" line="+119"/>
+        <location filename="../src/gui/panels/IrcPanel.cpp" line="+120"/>
         <source>Select an IRC nick.</source>
         <translation>Seleccione un nick de IRC.</translation>
     </message>
@@ -3150,9 +3150,17 @@ Por favor elija otro:</translation>
     </message>
 </context>
 <context>
+    <name>eMule::LogTextView</name>
+    <message>
+        <location filename="../src/gui/controls/LogTextView.cpp" line="+43"/>
+        <source>Autoscroll</source>
+        <translation>AutoDesplazamiento</translation>
+    </message>
+</context>
+<context>
     <name>eMule::LogWidget</name>
     <message>
-        <location filename="../src/gui/controls/LogWidget.cpp" line="+87"/>
+        <location filename="../src/gui/controls/LogWidget.cpp" line="+86"/>
         <location line="+2"/>
         <source>Server Info</source>
         <translation>Info del servidor</translation>
@@ -3188,7 +3196,7 @@ Por favor elija otro:</translation>
         <translation>IPC</translation>
     </message>
     <message>
-        <location line="+345"/>
+        <location line="+357"/>
         <source>Click here to check if a new version is available</source>
         <translation>Haz clic aquí para comprobar si hay una nueva versión</translation>
     </message>
@@ -3659,13 +3667,13 @@ Actívela en Opciones → Interfaz web e inténtelo de nuevo.</translation>
 <context>
     <name>eMule::MessagesPanel</name>
     <message>
-        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+150"/>
-        <location line="+395"/>
+        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+158"/>
+        <location line="+415"/>
         <source> ...failed</source>
         <translation> ...fallido</translation>
     </message>
     <message>
-        <location line="-393"/>
+        <location line="-413"/>
         <source>Me</source>
         <translation>Yo</translation>
     </message>
@@ -3775,7 +3783,7 @@ Actívela en Opciones → Interfaz web e inténtelo de nuevo.</translation>
         <translation>Amigos (%1)</translation>
     </message>
     <message>
-        <location line="+71"/>
+        <location line="+91"/>
         <source>*** Connecting</source>
         <translation>*** Conectando</translation>
     </message>
@@ -3798,6 +3806,21 @@ Actívela en Opciones → Interfaz web e inténtelo de nuevo.</translation>
         <location line="+1"/>
         <source> ...OK</source>
         <translation> ...OK</translation>
+    </message>
+    <message>
+        <location line="+20"/>
+        <source>*** In order to avoid spam messages, this user requires you to solve a captcha before you can send him a message. Please enter the letters you see on this image as response:</source>
+        <translation>*** Para evitar mensajes no deseados, este usuario te pide que resuelvas un captcha antes de poder enviarle un mensaje. Por favor, escribe como respuesta las letras de la imagen:</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>*** You have passed the captcha check and the user has received your message.</source>
+        <translation>*** Has superado la prueba del captcha y el usuario ha recibido tu mensaje.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>*** Your response to the captcha was wrong and your message has been ignored. You can request a new captcha by sending a new message.</source>
+        <translation>*** Tu respuesta al captcha ha sido errónea y tu mensaje ha sido ignorado. Puedes pedir un nuevo captcha enviando un nuevo mensaje.</translation>
     </message>
     <message>
         <source>Find Friend</source>
@@ -7662,12 +7685,12 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
     <message>
         <location filename="../src/gui/panels/SearchPanel.cpp" line="+247"/>
         <location line="+713"/>
-        <location line="+363"/>
+        <location line="+364"/>
         <source>Download</source>
         <translation>Descarga</translation>
     </message>
     <message>
-        <location line="-1056"/>
+        <location line="-1057"/>
         <source>Close All Searches</source>
         <translation>Cerrar todas las búsquedas</translation>
     </message>
@@ -7936,12 +7959,12 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
     </message>
     <message>
         <location line="+48"/>
-        <location line="+755"/>
+        <location line="+759"/>
         <source>Preview</source>
         <translation>Vista previa</translation>
     </message>
     <message>
-        <location line="-529"/>
+        <location line="-532"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -7950,7 +7973,7 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
 %1</translation>
     </message>
     <message>
-        <location line="+776"/>
+        <location line="+779"/>
         <source>Asking servers: %1 / %2</source>
         <translation>Consultando servidores: %1 / %2</translation>
     </message>
@@ -7960,7 +7983,7 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
         <translation>Todas</translation>
     </message>
     <message>
-        <location line="-1089"/>
+        <location line="-1093"/>
         <location line="+14"/>
         <source>Mark as Spam</source>
         <translation>Marcar como spam</translation>
@@ -7996,7 +8019,7 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
         <translation>Servicios web</translation>
     </message>
     <message>
-        <location line="+734"/>
+        <location line="+738"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Vista previa no disponible — el servidor web no está en ejecución o no se recibió el token de transmisión.</translation>
     </message>
@@ -8004,12 +8027,12 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
 <context>
     <name>eMule::SearchResultsModel</name>
     <message>
-        <location filename="../src/gui/controls/SearchResultsModel.cpp" line="+72"/>
+        <location filename="../src/gui/controls/SearchResultsModel.cpp" line="+76"/>
         <source>Yes</source>
         <translation>Sí</translation>
     </message>
     <message>
-        <location line="+155"/>
+        <location line="+158"/>
         <source>File Name</source>
         <translation>Nombre del archivo</translation>
     </message>
@@ -8181,7 +8204,7 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+243"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+246"/>
         <source>Disconnect</source>
         <translation>Desconectar</translation>
     </message>

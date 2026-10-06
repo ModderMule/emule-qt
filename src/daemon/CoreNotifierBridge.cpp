@@ -29,6 +29,8 @@
 #include "transfer/UploadQueue.h"
 #include "UsenetBridge.h"
 
+#include <QBuffer>
+
 namespace eMule {
 
 using namespace Ipc;
@@ -468,6 +470,34 @@ void CoreNotifierBridge::onChatMessageReceived(const QString& fromUser,
     m_ipcServer->broadcast(msg);
 }
 
+void CoreNotifierBridge::onCaptchaRequestReceived(const QString& fromUser,
+                                                  const QImage& captchaImage)
+{
+    auto* client = qobject_cast<UpDownClient*>(sender());
+    QByteArray png;
+    QBuffer buffer(&png);
+    buffer.open(QIODevice::WriteOnly);
+    if (!client || !captchaImage.save(&buffer, "PNG"))
+        return;
+
+    IpcMessage msg(IpcMsgType::PushChatCaptcha, 0);
+    msg.append(md4str(client->userHash()));
+    msg.append(fromUser);
+    msg.append(QString::fromLatin1(png.toBase64()));
+    m_ipcServer->broadcast(msg);
+}
+
+void CoreNotifierBridge::onCaptchaResultReceived(const QString& /*fromUser*/, bool solved)
+{
+    auto* client = qobject_cast<UpDownClient*>(sender());
+    if (!client)
+        return;
+    IpcMessage msg(IpcMsgType::PushChatCaptchaResult, 0);
+    msg.append(md4str(client->userHash()));
+    msg.append(solved);
+    m_ipcServer->broadcast(msg);
+}
+
 // These are transitions, not a latest value, so they go out uncoalesced — a swallowed
 // "*** Connecting" leaves the chat window with a gap in the story.
 void CoreNotifierBridge::onFriendConnectionProgress(Friend* f, ChatConnectProgress step)
@@ -490,6 +520,10 @@ void CoreNotifierBridge::connectClientChatSignal(UpDownClient* client)
 {
     connect(client, &UpDownClient::chatMessageReceived,
             this, &CoreNotifierBridge::onChatMessageReceived);
+    connect(client, &UpDownClient::captchaRequestReceived,
+            this, &CoreNotifierBridge::onCaptchaRequestReceived);
+    connect(client, &UpDownClient::captchaResultReceived,
+            this, &CoreNotifierBridge::onCaptchaResultReceived);
 }
 
 void CoreNotifierBridge::connectClientSharedFilesSignal(UpDownClient* client)

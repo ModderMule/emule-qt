@@ -1,35 +1,13 @@
 {
-  "Filename Cleanup": {
-    "_context": "eMule::OptionsDialog",
-    "de_DE": "Dateinamen bereinigen",
-    "es_ES": "Limpieza de nombres de archivo",
-    "fr_FR": "Nettoyage des noms de fichiers",
-    "it_IT": "Pulizia dei nomi dei file",
-    "ja_JP": "ファイル名のクリーンアップ",
-    "ko_KR": "파일 이름 정리",
-    "pt_BR": "Limpeza de nomes de arquivo",
-    "zh_CN": "文件名清理"
-  },
-  "Text to remove from the names of new downloads. Case is ignored.": {
-    "_context": "eMule::OptionsDialog",
-    "de_DE": "Text, der aus den Namen neuer Downloads entfernt wird. Groß-/Kleinschreibung wird ignoriert.",
-    "es_ES": "Texto que se elimina de los nombres de las descargas nuevas. No se distingue entre mayúsculas y minúsculas.",
-    "fr_FR": "Texte à supprimer des noms des nouveaux téléchargements. La casse est ignorée.",
-    "it_IT": "Testo da rimuovere dai nomi dei nuovi download. Maiuscole e minuscole vengono ignorate.",
-    "ja_JP": "新しいダウンロードの名前から削除するテキストです。大文字と小文字は区別されません。",
-    "ko_KR": "새 다운로드의 이름에서 제거할 텍스트입니다. 대소문자는 구분하지 않습니다.",
-    "pt_BR": "Texto a remover dos nomes dos novos downloads. Maiúsculas e minúsculas são ignoradas.",
-    "zh_CN": "要从新下载的名称中移除的文本。不区分大小写。"
-  },
-  "Reset to Default": {
-    "_context": "eMule::OptionsDialog",
-    "de_DE": "Auf Standard zurücksetzen",
-    "es_ES": "Restablecer valores predeterminados",
-    "fr_FR": "Rétablir les valeurs par défaut",
-    "it_IT": "Ripristina predefiniti",
-    "ja_JP": "既定値に戻す",
-    "ko_KR": "기본값으로 재설정",
-    "pt_BR": "Restaurar padrão",
-    "zh_CN": "恢复默认值"
+  "Autoscroll": {
+    "_context": "eMule::LogTextView",
+    "de_DE": "Autoscrollen",
+    "es_ES": "AutoDesplazamiento",
+    "fr_FR": "Défilement automatique",
+    "it_IT": "Autoscorrimento",
+    "ja_JP": "自動スクロール",
+    "ko_KR": "자동 스크롤",
+    "pt_BR": "Autorrolagem",
+    "zh_CN": "自动滚动"
   }
 }

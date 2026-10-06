@@ -73,8 +73,8 @@ public:
     /// Get the current connection state.
     [[nodiscard]] ServerConnState connectionState() const { return m_connectionState; }
 
-    /// Timestamp of last packet transmission (ms from QElapsedTimer).
-    [[nodiscard]] uint32 lastTransmission() const { return m_lastTransmission; }
+    /// getTickCount() of the last packet sent or received.
+    [[nodiscard]] uint64 lastTransmission() const { return m_lastTransmission; }
 
     /// Whether this is a manually-initiated single-server connection.
     [[nodiscard]] bool isManualSingleConnect() const { return m_manualSingleConnect; }
@@ -186,7 +186,7 @@ private:
     Address m_sessionAddress;
     std::unique_ptr<QDnsLookup> m_dnsLookup;
     ServerConnState m_connectionState = ServerConnState::NotConnected;
-    uint32 m_lastTransmission = 0;
+    uint64 m_lastTransmission = 0;
     bool m_manualSingleConnect = false;
     bool m_startNewMessageLog = true;
     bool m_isDeleting = false;
@@ -197,7 +197,6 @@ private:
     bool m_familyFallback = false;     // dual-stack retry on the other family
     bool m_tcpConnected = false;
 
-    QElapsedTimer m_elapsedTimer;
 };
 
 } // namespace eMule

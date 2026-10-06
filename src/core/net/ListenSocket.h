@@ -17,6 +17,7 @@
 namespace eMule {
 
 class ClientReqSocket;
+enum class PeerSocketState : uint8;
 
 // ---------------------------------------------------------------------------
 // ListenSocket
@@ -62,18 +63,23 @@ public:
     /// Whether too many connections are open (for rate limiting).
     [[nodiscard]] bool tooManySockets(bool ignoreInterval = false) const;
 
-    /// Record a new connection attempt for rate tracking.
+    /// Record a new connection attempt, inbound or outbound, for rate tracking.
     void addConnection();
+
+    /// A pooled socket moved between Other / Half / Complete: keeps the half-open
+    /// count the dial limiter reads (MFC CClientReqSocket::SetConState).
+    void noteSocketState(PeerSocketState from, PeerSocketState to);
 
     /// Send a port test reply.
     bool sendPortTestReply(char result, bool doDisconnect = false);
 
     // -- Statistics -----------------------------------------------------------
 
-    /// Recalculate connection statistics.
+    /// Count the pooled sockets by transport state.
     void recalculateStats();
 
-    /// Update connection state counters.
+    /// Once a second: active / peak count and the running average the per-5-s
+    /// limit scales by.
     void updateConnectionsStatus();
 
     [[nodiscard]] uint32 openSockets() const { return static_cast<uint32>(m_socketList.size()); }

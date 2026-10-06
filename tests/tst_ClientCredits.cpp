@@ -7,6 +7,7 @@
 #include "utils/OtherFunctions.h"
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
+#include "utils/TimeUtils.h"
 
 #include <QTest>
 
@@ -15,6 +16,9 @@
 
 using namespace eMule;
 using namespace eMule::testing;
+
+/// IPv4 in network byte order, as the credit calls used to take it.
+static Address ip(uint32 nbo) { return Address::fromNetworkOrder(nbo); }
 
 class tst_ClientCredits : public QObject {
     Q_OBJECT
@@ -31,6 +35,8 @@ private slots:
     void identState_initial();
     void identState_verified();
     void identState_badGuy();
+    void identState_ipv6IsBoundToTheAddress();
+    void waitTime_ipv6AddressChangeRestartsTheUnsecureWait();
     void setSecureIdent_basic();
     void setSecureIdent_noOverwrite();
     void waitTime();
@@ -76,7 +82,7 @@ void tst_ClientCredits::construct_fromKey()
     QVERIFY(md4equ(c.key(), testHash));
     QCOMPARE(c.uploadedTotal(), uint64{0});
     QCOMPARE(c.downloadedTotal(), uint64{0});
-    QCOMPARE(c.scoreRatio(0x01020304), 1.0f);
+    QCOMPARE(c.scoreRatio(ip(0x01020304)), 1.0f);
 }
 
 void tst_ClientCredits::construct_fromStruct()
@@ -96,11 +102,11 @@ void tst_ClientCredits::construct_fromStruct()
 void tst_ClientCredits::addUploaded_addDownloaded()
 {
     ClientCredits c(testHash);
-    c.addUploaded(1000, 0x01020304);
+    c.addUploaded(1000, ip(0x01020304));
     QCOMPARE(c.uploadedTotal(), uint64{1000});
-    c.addDownloaded(2000, 0x01020304);
+    c.addDownloaded(2000, ip(0x01020304));
     QCOMPARE(c.downloadedTotal(), uint64{2000});
-    c.addUploaded(500, 0x01020304);
+    c.addUploaded(500, ip(0x01020304));
     QCOMPARE(c.uploadedTotal(), uint64{1500});
 }
 
@@ -124,11 +130,11 @@ void tst_ClientCredits::scoreRatio_noDownloads()
 {
     ClientCredits c(testHash);
     // No downloads → 1.0
-    QCOMPARE(c.scoreRatio(0x01020304), 1.0f);
+    QCOMPARE(c.scoreRatio(ip(0x01020304)), 1.0f);
 
     // Below 1MB downloaded → 1.0
-    c.addDownloaded(500000, 0x01020304);
-    QCOMPARE(c.scoreRatio(0x01020304), 1.0f);
+    c.addDownloaded(500000, ip(0x01020304));
+    QCOMPARE(c.scoreRatio(ip(0x01020304)), 1.0f);
 }
 
 void tst_ClientCredits::scoreRatio_withCredits()
@@ -141,7 +147,7 @@ void tst_ClientCredits::scoreRatio_withCredits()
     cs.lastSeen = static_cast<uint32>(std::time(nullptr));
 
     ClientCredits c(cs);
-    float ratio = c.scoreRatio(0x01020304);
+    float ratio = c.scoreRatio(ip(0x01020304));
     QVERIFY(ratio > 1.0f);
     QVERIFY(ratio <= 10.0f);
 }
@@ -157,7 +163,7 @@ void tst_ClientCredits::scoreRatio_cappedAt10()
     cs.lastSeen = static_cast<uint32>(std::time(nullptr));
 
     ClientCredits c(cs);
-    float ratio = c.scoreRatio(0x01020304);
+    float ratio = c.scoreRatio(ip(0x01020304));
     QCOMPARE(ratio, 10.0f);
 }
 
@@ -165,7 +171,7 @@ void tst_ClientCredits::identState_initial()
 {
     // No public key → NotAvailable
     ClientCredits c(testHash);
-    QCOMPARE(c.currentIdentState(0x01020304), IdentState::NotAvailable);
+    QCOMPARE(c.currentIdentState(ip(0x01020304)), IdentState::NotAvailable);
 
     // With public key → IdNeeded
     CreditStruct cs{};
@@ -175,7 +181,7 @@ void tst_ClientCredits::identState_initial()
     cs.lastSeen = static_cast<uint32>(std::time(nullptr));
 
     ClientCredits c2(cs);
-    QCOMPARE(c2.currentIdentState(0x01020304), IdentState::IdNeeded);
+    QCOMPARE(c2.currentIdentState(ip(0x01020304)), IdentState::IdNeeded);
 }
 
 void tst_ClientCredits::identState_verified()
@@ -185,10 +191,10 @@ void tst_ClientCredits::identState_verified()
     uint8 pubKey[10];
     std::memset(pubKey, 0xBB, sizeof(pubKey));
     QVERIFY(c.setSecureIdent(pubKey, 10));
-    QCOMPARE(c.currentIdentState(0x01020304), IdentState::IdNeeded);
+    QCOMPARE(c.currentIdentState(ip(0x01020304)), IdentState::IdNeeded);
 
-    c.verified(0x01020304);
-    QCOMPARE(c.currentIdentState(0x01020304), IdentState::Identified);
+    c.verified(ip(0x01020304));
+    QCOMPARE(c.currentIdentState(ip(0x01020304)), IdentState::Identified);
 }
 
 void tst_ClientCredits::identState_badGuy()
@@ -198,12 +204,12 @@ void tst_ClientCredits::identState_badGuy()
     uint8 pubKey[10];
     std::memset(pubKey, 0xCC, sizeof(pubKey));
     c.setSecureIdent(pubKey, 10);
-    c.verified(0x01020304);
+    c.verified(ip(0x01020304));
 
     // Same IP → Identified
-    QCOMPARE(c.currentIdentState(0x01020304), IdentState::Identified);
+    QCOMPARE(c.currentIdentState(ip(0x01020304)), IdentState::Identified);
     // Different IP → BadGuy
-    QCOMPARE(c.currentIdentState(0x09080706), IdentState::IdBadGuy);
+    QCOMPARE(c.currentIdentState(ip(0x09080706)), IdentState::IdBadGuy);
 }
 
 void tst_ClientCredits::setSecureIdent_basic()
@@ -214,7 +220,7 @@ void tst_ClientCredits::setSecureIdent_basic()
 
     QVERIFY(c.setSecureIdent(pubKey, 20));
     QCOMPARE(c.secIDKeyLen(), uint8{20});
-    QCOMPARE(c.currentIdentState(0x01020304), IdentState::IdNeeded);
+    QCOMPARE(c.currentIdentState(ip(0x01020304)), IdentState::IdNeeded);
 }
 
 void tst_ClientCredits::setSecureIdent_noOverwrite()
@@ -238,13 +244,13 @@ void tst_ClientCredits::waitTime()
     ClientCredits c(testHash);
 
     // After construction with key, wait times are initialized
-    uint32 wt = c.secureWaitStartTime(0x01020304);
+    uint64 wt = c.secureWaitStartTime(ip(0x01020304));
     QVERIFY(wt != 0);
 
     // Clear and verify
     c.clearWaitStartTime();
     // secureWaitStartTime should re-initialize when called after clear
-    uint32 wt2 = c.secureWaitStartTime(0x01020304);
+    uint64 wt2 = c.secureWaitStartTime(ip(0x01020304));
     QVERIFY(wt2 != 0);
 }
 
@@ -261,11 +267,11 @@ void tst_ClientCredits::persistence_roundTrip()
     {
         ClientCreditsList list;
         auto* c1 = list.getCredit(testHash);
-        c1->addUploaded(5000, 0x01020304);
-        c1->addDownloaded(10000, 0x01020304);
+        c1->addUploaded(5000, ip(0x01020304));
+        c1->addDownloaded(10000, ip(0x01020304));
 
         auto* c2 = list.getCredit(testHash2);
-        c2->addUploaded(1000, 0x01020304);
+        c2->addUploaded(1000, ip(0x01020304));
 
         QVERIFY(list.saveList(path));
     }
@@ -360,7 +366,7 @@ void tst_ClientCredits::getCredit_existing()
 {
     ClientCreditsList list;
     auto* c1 = list.getCredit(testHash);
-    c1->addUploaded(1000, 0x01020304);
+    c1->addUploaded(1000, ip(0x01020304));
 
     auto* c2 = list.getCredit(testHash);
     QCOMPARE(c1, c2);  // same pointer
@@ -481,9 +487,9 @@ void tst_ClientCredits::crypto_signVerifyRoundTrip()
     QVERIFY(sigLen > 0);
 
     // Verify (as if peer received our signature) — chaIPKind=0 means v1 (no IP binding)
-    bool verified = list.verifyIdent(peer, sig, sigLen, 0x01020304, 0);
+    bool verified = list.verifyIdent(peer, sig, sigLen, ip(0x01020304), 0);
     QVERIFY(verified);
-    QCOMPARE(peer->currentIdentState(0x01020304), IdentState::Identified);
+    QCOMPARE(peer->currentIdentState(ip(0x01020304)), IdentState::Identified);
 }
 
 void tst_ClientCredits::crypto_signVerifyTampered()
@@ -509,9 +515,9 @@ void tst_ClientCredits::crypto_signVerifyTampered()
     sig[0] ^= 0xFF;
 
     // Verification should fail — chaIPKind=0 means v1 (no IP binding)
-    bool verified = list.verifyIdent(peer, sig, sigLen, 0x01020304, 0);
+    bool verified = list.verifyIdent(peer, sig, sigLen, ip(0x01020304), 0);
     QVERIFY(!verified);
-    QCOMPARE(peer->currentIdentState(0x01020304), IdentState::IdFailed);
+    QCOMPARE(peer->currentIdentState(ip(0x01020304)), IdentState::IdFailed);
 }
 
 void tst_ClientCredits::crypto_signVerifyWithLocalIP()
@@ -537,9 +543,9 @@ void tst_ClientCredits::crypto_signVerifyWithLocalIP()
     uint8 sigLen = list.createSignature(peer, sig, sizeof(sig), pseudoIP, kCryptCipLocalClient);
     QVERIFY2(sigLen > 0, "createSignature with LocalClient IP failed");
 
-    bool verified = list.verifyIdent(peer, sig, sigLen, pseudoIP, kCryptCipLocalClient);
+    bool verified = list.verifyIdent(peer, sig, sigLen, ip(pseudoIP), kCryptCipLocalClient);
     QVERIFY2(verified, "verifyIdent with matching pseudo IP should succeed");
-    QCOMPARE(peer->currentIdentState(pseudoIP), IdentState::Identified);
+    QCOMPARE(peer->currentIdentState(ip(pseudoIP)), IdentState::Identified);
 }
 
 void tst_ClientCredits::crypto_signVerifyIPMismatch()
@@ -566,9 +572,9 @@ void tst_ClientCredits::crypto_signVerifyIPMismatch()
     QVERIFY(sigLen > 0);
 
     // Verify with different IP — signature covers ipA, but verifier builds message with ipB
-    bool verified = list.verifyIdent(peer, sig, sigLen, ipB, kCryptCipLocalClient);
+    bool verified = list.verifyIdent(peer, sig, sigLen, ip(ipB), kCryptCipLocalClient);
     QVERIFY2(!verified, "verifyIdent with mismatched IP must fail");
-    QCOMPARE(peer->currentIdentState(ipB), IdentState::IdFailed);
+    QCOMPARE(peer->currentIdentState(ip(ipB)), IdentState::IdFailed);
 }
 
 void tst_ClientCredits::crypto_signVerifyMixedIPKinds()
@@ -595,7 +601,7 @@ void tst_ClientCredits::crypto_signVerifyMixedIPKinds()
     QVERIFY(sigLen > 0);
 
     // Verify expecting IP (v2) — message buffer mismatch
-    bool verified = list.verifyIdent(peer, sig, sigLen, pseudoIP, kCryptCipLocalClient);
+    bool verified = list.verifyIdent(peer, sig, sigLen, ip(pseudoIP), kCryptCipLocalClient);
     QVERIFY2(!verified, "v1 signature must not verify as v2 (different message format)");
 }
 
@@ -640,9 +646,9 @@ void tst_ClientCredits::crypto_twoPartyCrossVerify()
     QVERIFY2(sigBtoALen > 0, "B's signature creation failed");
 
     // A verifies B's signature (using challenge A gave B, and B's public key)
-    bool verifiedB = listA.verifyIdent(creditA, sigBtoA, sigBtoALen, 0x01020304, 0);
+    bool verifiedB = listA.verifyIdent(creditA, sigBtoA, sigBtoALen, ip(0x01020304), 0);
     QVERIFY2(verifiedB, "A should verify B's signature successfully");
-    QCOMPARE(creditA->currentIdentState(0x01020304), IdentState::Identified);
+    QCOMPARE(creditA->currentIdentState(ip(0x01020304)), IdentState::Identified);
 
     // A signs for B (using challenge B gave A, and A's private key)
     uint8 sigAtoB[200];
@@ -650,9 +656,54 @@ void tst_ClientCredits::crypto_twoPartyCrossVerify()
     QVERIFY2(sigAtoBLen > 0, "A's signature creation failed");
 
     // B verifies A's signature
-    bool verifiedA = listB.verifyIdent(creditB, sigAtoB, sigAtoBLen, 0x01020304, 0);
+    bool verifiedA = listB.verifyIdent(creditB, sigAtoB, sigAtoBLen, ip(0x01020304), 0);
     QVERIFY2(verifiedA, "B should verify A's signature successfully");
-    QCOMPARE(creditB->currentIdentState(0x01020304), IdentState::Identified);
+    QCOMPARE(creditB->currentIdentState(ip(0x01020304)), IdentState::Identified);
+}
+
+// Every IPv6 address used to arrive here as 0, so once a user hash was verified over
+// IPv6, anyone presenting that hash from any IPv6 address read as Identified and took
+// its credits and wait time.
+void tst_ClientCredits::identState_ipv6IsBoundToTheAddress()
+{
+    const Address home = Address::fromString(QStringLiteral("2a01:4f8:1::10"));
+    const Address elsewhere = Address::fromString(QStringLiteral("2001:db8:7::99"));
+    const Address v4 = ip(0x01020304);
+
+    ClientCredits c(testHash);
+    uint8 fakeKey[40];
+    std::memset(fakeKey, 0x42, sizeof(fakeKey));
+    QVERIFY(c.setSecureIdent(fakeKey, sizeof(fakeKey)));
+
+    c.verified(home);
+    QCOMPARE(c.currentIdentState(home), IdentState::Identified);
+    QCOMPARE(c.currentIdentState(elsewhere), IdentState::IdBadGuy);
+    QCOMPARE(c.currentIdentState(v4), IdentState::IdBadGuy);
+
+    // And the other way round: verified over IPv4 says nothing about an IPv6 address.
+    c.verified(v4);
+    QCOMPARE(c.currentIdentState(v4), IdentState::Identified);
+    QCOMPARE(c.currentIdentState(home), IdentState::IdBadGuy);
+}
+
+void tst_ClientCredits::waitTime_ipv6AddressChangeRestartsTheUnsecureWait()
+{
+    const Address home = Address::fromString(QStringLiteral("2a01:4f8:1::10"));
+    const Address elsewhere = Address::fromString(QStringLiteral("2001:db8:7::99"));
+
+    // A key on file but not verified: the wait is the unsecure one, tied to the address.
+    CreditStruct stored{};
+    std::memcpy(stored.key.data(), testHash, 16);
+    stored.keySize = 40;
+    ClientCredits c(stored);
+
+    c.restoreWaitStartTime(home, MIN2MS(30));
+    const uint64 waitingSince = c.secureWaitStartTime(home);
+    QVERIFY(getTickCount() - waitingSince >= MIN2MS(30));
+    QCOMPARE(c.secureWaitStartTime(home), waitingSince);
+
+    QVERIFY2(getTickCount() - c.secureWaitStartTime(elsewhere) < SEC2MS(5),
+             "another IPv6 address inherited the wait time");
 }
 
 QTEST_MAIN(tst_ClientCredits)

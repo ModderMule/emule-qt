@@ -24,6 +24,7 @@
 
 #include "TestHelpers.h"
 #include "app/AppContext.h"
+#include "client/ClientCredits.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "crypto/AICHData.h"
@@ -40,9 +41,12 @@
 #include "utils/OtherFunctions.h"
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
+#include "utils/TimeUtils.h"
 
 #include <QHostAddress>
 #include <QTemporaryDir>
+#include <QBuffer>
+#include <QImage>
 #include <QTest>
 
 #include <algorithm>
@@ -330,6 +334,13 @@ public:
                                static_cast<uint32>(payload.size()), opcode);
     }
 
+    /// Deliver a standard-protocol file request (OP_SETREQFILEID, OP_REQUESTFILENAME).
+    void deliverFileRequest(const QByteArray& payload, uint8 opcode)
+    {
+        emit fileRequestReceived(reinterpret_cast<const uint8*>(payload.constData()),
+                                 static_cast<uint32>(payload.size()), opcode);
+    }
+
     /// Deliver a fully framed packet through the real dispatch, protocol byte and all.
     /// deliverExt() jumps straight to the signal and so skips packetReceived — which is
     /// exactly where an OP_PACKEDPROT payload gets inflated. Anything testing compression
@@ -531,6 +542,8 @@ private slots:
     void multipacketExt2_bundledSourceRequest_isAnswered_data();
     void multipacketExt2_bundledSourceRequest_isAnswered();
     void multipacketLegacy_bundledSourceRequest_isAnswered();
+    void fileRequest_keepsTheQueueWaitTime_data();
+    void fileRequest_keepsTheQueueWaitTime();
     void multipacket_sourceRequestDoesNotDesyncFollowingSubOpcodes();
     void multipacket_sourceAnswerIsSeparatePacket();
     void secondSourceRequestWithinIntervalIsRefused();
@@ -554,13 +567,27 @@ private slots:
     // -- F. The compressed transport, end to end --
     void packedExtSxAnswerFromPeerIsParsed();
     void packedClassicAnswerFromPeerIsParsed();
+    void publicIPRequest_isAnsweredWithThePeersAddress();
+    void publicIPRequest_doesNotLetThePeerSetOurAddress();
+    void publicIPRequest_ipv6PeerGetsNoAnswer();
+
+    // -- Preview requests --
+    void previewRequest_refusedWhenNobodyMaySeeOurFiles();
+    void previewRequest_answeredOnceWithTheFilesHash();
+    void previewRequest_unknownFileGetsAnEmptyAnswer();
+    void previewAnswer_dropsOversizedFrames();
+    void sourceAnswer_unrequestedIsDropped_data();
+    void sourceAnswer_unrequestedIsDropped();
 
 private:
     /// Stand up a download queue holding one PartFile with `hash`, run `body` through the
     /// socket of `peer` as a fully framed packet, and hand the PartFile to `check`.
+    /// What the peer is to the download when its answer arrives.
+    enum class Asked { Yes, Never, AnotherFile };
     static void deliverAnswerInto(const uint8* hash, UpDownClient* peer, uint8 protocol,
                                   uint8 opcode, const QByteArray& wire,
-                                  const std::function<void(PartFile&)>& check);
+                                  const std::function<void(PartFile&)>& check,
+                                  Asked asked = Asked::Yes);
 
     std::unique_ptr<QTemporaryDir> m_tmpDir;
     std::vector<UpDownClient*> m_clients;
@@ -630,7 +657,8 @@ void tst_SourceExchangeCompat::parseInto(const QByteArray& body, uint8 clientSXV
 void tst_SourceExchangeCompat::deliverAnswerInto(const uint8* hash, UpDownClient* peer,
                                                  uint8 protocol, uint8 opcode,
                                                  const QByteArray& wire,
-                                                 const std::function<void(PartFile&)>& check)
+                                                 const std::function<void(PartFile&)>& check,
+                                                 Asked asked)
 {
     DownloadQueue queue;
     theApp.downloadQueue = &queue;
@@ -639,10 +667,17 @@ void tst_SourceExchangeCompat::deliverAnswerInto(const uint8* hash, UpDownClient
     pf->setFileHash(hash);
     queue.addDownload(pf);
 
+    // An answer counts only from a source of the file that we asked
+    PartFile other;
+    if (asked != Asked::Never)
+        peer->setLastAskedForSourcesTime();
+    peer->setReqFile(asked == Asked::AnotherFile ? &other : pf);
+
     RecordingSocket sock;
     peer->wireIncomingSocket(&sock);
     const bool kept = sock.deliverWire(protocol, opcode, wire);
     peer->setSocket(nullptr);
+    peer->setReqFile(nullptr);
 
     QVERIFY(kept);
     check(*pf);
@@ -1485,7 +1520,10 @@ void tst_SourceExchangeCompat::standaloneRequest_versionByteMatchesPeerCapabilit
     RecordingSocket sock;
     peer->setSocket(&sock);
     peer->setReqFile(pf);
-    peer->setReqUpFileId(pf->fileHash());
+    // The peer also downloads another file from us: that id must not leak into what we ask.
+    uint8 uploadHash[16];
+    std::memset(uploadHash, 0x77, sizeof(uploadHash));
+    peer->setReqUpFileId(uploadHash);
     peer->setTestDisableMultiPacket(true);   // force the separate-packets path
 
     peer->sendFileRequest();
@@ -1504,6 +1542,18 @@ void tst_SourceExchangeCompat::standaloneRequest_versionByteMatchesPeerCapabilit
     }
     // The two request opcodes are alternatives, never both.
     QCOMPARE(sock.countOf(OP_REQUESTSOURCES2) + sock.countOf(OP_REQUESTSOURCES), 1);
+
+    // Every other request of the round names the download too, and the upload id is intact.
+    for (const uint8 op : { uint8(OP_REQUESTFILENAME), uint8(OP_SETREQFILEID) }) {
+        const auto* sent = sock.find(op);
+        QVERIFY(sent != nullptr);
+        QCOMPARE(std::memcmp(sent->payload.constData(), hash, 16), 0);
+    }
+    peer->sendStartupLoadReq();
+    const auto* startReq = sock.find(OP_STARTUPLOADREQ);
+    QVERIFY(startReq != nullptr);
+    QCOMPARE(std::memcmp(startReq->payload.constData(), hash, 16), 0);
+    QVERIFY(md4equ(peer->reqUpFileId(), uploadHash));
 
     peer->setSocket(nullptr);
     theApp.downloadQueue = nullptr;
@@ -1555,7 +1605,10 @@ void tst_SourceExchangeCompat::multipacketRequest_versionByteMatchesPeerCapabili
     RecordingSocket sock;
     peer->setSocket(&sock);
     peer->setReqFile(pf);
-    peer->setReqUpFileId(pf->fileHash());
+    // The peer also downloads another file from us: that id must not leak into what we ask.
+    uint8 uploadHash[16];
+    std::memset(uploadHash, 0x77, sizeof(uploadHash));
+    peer->setReqUpFileId(uploadHash);
 
     peer->sendFileRequest();
 
@@ -1688,6 +1741,62 @@ void tst_SourceExchangeCompat::multipacketExt2_bundledSourceRequest_isAnswered()
                                                  : requestedVersion);
     QCOMPARE(readU16(answer->payload.constData(), kSx2HeaderSize), uint16(1));
 
+    peer->setSocket(nullptr);
+}
+
+void tst_SourceExchangeCompat::fileRequest_keepsTheQueueWaitTime_data()
+{
+    QTest::addColumn<uint8>("opcode");
+
+    QTest::newRow("OP_SETREQFILEID") << uint8(OP_SETREQFILEID);
+    QTest::newRow("OP_REQUESTFILENAME") << uint8(OP_REQUESTFILENAME);
+    QTest::newRow("OP_MULTIPACKET") << uint8(OP_MULTIPACKET);
+    QTest::newRow("OP_MULTIPACKET_EXT2") << uint8(OP_MULTIPACKET_EXT2);
+}
+
+// A queued peer re-asks every half hour with exactly these packets. Restamping its wait
+// on each of them means its score never grows past one reask interval.
+void tst_SourceExchangeCompat::fileRequest_keepsTheQueueWaitTime()
+{
+    QFETCH(uint8, opcode);
+
+    SharedFileFixture fixture;
+    auto* file = fixture.file;
+
+    auto* peer = track(makeRequester());
+    uint8 credHash[16];
+    std::memset(credHash, 0x5D, sizeof(credHash));
+    ClientCredits credits(credHash);
+    peer->setCredits(&credits);
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+
+    peer->restoreWaitStartTime(MIN2MS(30));
+    const uint64 waitingSince = peer->waitStartTime();
+    QVERIFY(getTickCount() - waitingSince >= MIN2MS(30));
+
+    const auto ask = [&] {
+        SafeMemFile body;
+        if (opcode == OP_MULTIPACKET_EXT2)
+            file->fileIdentifier().writeIdentifier(body);
+        else
+            body.writeHash16(file->fileHash());
+        if (opcode == OP_SETREQFILEID || opcode == OP_REQUESTFILENAME)
+            sock.deliverFileRequest(body.buffer(), opcode);
+        else
+            sock.deliverExt(body.buffer(), opcode);
+    };
+
+    ask();
+    QVERIFY2(peer->uploadFile() == file, "the request was not handled at all");
+    QCOMPARE(peer->waitStartTime(), waitingSince);
+
+    // Purged from the queue: the next request starts a new wait.
+    peer->clearWaitStartTime();
+    ask();
+    QVERIFY(getTickCount() - peer->waitStartTime() < SEC2MS(5));
+
+    peer->setCredits(nullptr);
     peer->setSocket(nullptr);
 }
 
@@ -2103,6 +2212,87 @@ void tst_SourceExchangeCompat::packedClassicAnswerFromPeerIsParsed()
     });
 }
 
+// N3: OP_PUBLICIP_REQ is answered with the address we see the peer at
+// (MFC srchybrid/ListenSocket.cpp:1336-1348), not with a request of our own.
+void tst_SourceExchangeCompat::publicIPRequest_isAnsweredWithThePeersAddress()
+{
+    auto* peer = track(makeRequester());
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+    sock.markConnected();
+
+    sock.deliverExt({}, OP_PUBLICIP_REQ);
+    peer->setSocket(nullptr);
+
+    QCOMPARE(sock.countOf(OP_PUBLICIP_REQ), 0);
+    QCOMPARE(sock.countOf(OP_PUBLICIP_ANSWER), 1);
+    const auto* answer = sock.find(OP_PUBLICIP_ANSWER);
+    QCOMPARE(answer->prot, uint8(OP_EMULEPROT));
+    // 99.98.97.96 in network order on the wire
+    QCOMPARE(answer->payload, QByteArray::fromHex("63626160"));
+}
+
+// Asking us must not arm the "we asked" flag: the peer could then feed us an address.
+void tst_SourceExchangeCompat::publicIPRequest_doesNotLetThePeerSetOurAddress()
+{
+    theApp.setPublicIP(0);
+    auto* peer = track(makeRequester());
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+    sock.markConnected();
+
+    sock.deliverExt({}, OP_PUBLICIP_REQ);
+    sock.deliverExt(QByteArray::fromHex("50403020"), OP_PUBLICIP_ANSWER);
+    peer->setSocket(nullptr);
+
+    QCOMPARE(theApp.publicIP(), uint32{0});
+}
+
+void tst_SourceExchangeCompat::publicIPRequest_ipv6PeerGetsNoAnswer()
+{
+    auto* peer = track(makeRequester());
+    const Address v6 = Address::fromString(QStringLiteral("2a01:4f8::7"));
+    peer->setUserAddress(v6);
+    peer->setConnectAddress(v6);
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+    sock.markConnected();
+
+    sock.deliverExt({}, OP_PUBLICIP_REQ);
+    peer->setSocket(nullptr);
+
+    QVERIFY(sock.sent.empty());
+}
+
+// R12: an answer nobody asked for, or for a file the peer is no source of, adds nothing.
+void tst_SourceExchangeCompat::sourceAnswer_unrequestedIsDropped_data()
+{
+    QTest::addColumn<int>("asked");
+    QTest::newRow("never asked") << int(Asked::Never);
+    QTest::newRow("asked for another file") << int(Asked::AnotherFile);
+}
+
+void tst_SourceExchangeCompat::sourceAnswer_unrequestedIsDropped()
+{
+    QFETCH(int, asked);
+
+    std::vector<UpDownClient*> srcs;
+    for (int i = 0; i < 40; ++i) {
+        srcs.push_back(track(makeHighIdClient(QStringLiteral("71.2.%1.90").arg(i + 1),
+                                              static_cast<uint16>(4662 + i), uint8(0x40 + i))));
+    }
+
+    auto file = makeFile(srcs);
+    auto* peer = track(makeRequester(/*extSX*/ false));
+    auto packet = srcInfoFor(*file, peer, SOURCEEXCHANGE2_VERSION);
+    QVERIFY(packet != nullptr);
+    const QByteArray wire(packet->pBuffer, static_cast<int>(packet->size));
+
+    deliverAnswerInto(file->fileHash(), peer, packet->prot, packet->opcode, wire,
+                      [](PartFile& pf) { QCOMPARE(pf.sourceCount(), 0); },
+                      static_cast<Asked>(asked));
+}
+
 // ---------------------------------------------------------------------------
 // AICH recovery
 // ---------------------------------------------------------------------------
@@ -2207,6 +2397,139 @@ void tst_SourceExchangeCompat::standaloneSourceRequest_setsTheUploadFile()
              "the standalone source request went unanswered");
 
     peer->setSocket(nullptr);
+}
+
+// ---------------------------------------------------------------------------
+// Preview requests (MFC BaseClient.cpp:2073-2125)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// Restores the "who may see my files" preference on scope exit.
+struct SharedAccessGuard {
+    int saved = thePrefs.viewSharedFilesAccess();
+    explicit SharedAccessGuard(int access) { thePrefs.setViewSharedFilesAccess(access); }
+    ~SharedAccessGuard() { thePrefs.setViewSharedFilesAccess(saved); }
+};
+
+QByteArray pngOf(int width, int height)
+{
+    QImage image(width, height, QImage::Format_RGB32);
+    image.fill(Qt::darkCyan);
+    QByteArray png;
+    QBuffer buffer(&png);
+    buffer.open(QIODevice::WriteOnly);
+    image.save(&buffer, "PNG");
+    return png;
+}
+
+} // namespace
+
+void tst_SourceExchangeCompat::previewRequest_refusedWhenNobodyMaySeeOurFiles()
+{
+    SharedFileFixture fixture;
+    SharedAccessGuard access(0);
+
+    auto* peer = track(makeRequester());
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+    sock.markConnected();
+
+    sock.deliverExt(QByteArray(reinterpret_cast<const char*>(fixture.file->fileHash()), 16),
+                    OP_REQUESTPREVIEW);
+    QTest::qWait(50);
+    peer->setSocket(nullptr);
+    QVERIFY(sock.sent.empty());
+}
+
+void tst_SourceExchangeCompat::previewRequest_answeredOnceWithTheFilesHash()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QStringLiteral("holiday.png"));
+    {
+        QFile out(path);
+        QVERIFY(out.open(QIODevice::WriteOnly));
+        out.write(pngOf(1600, 800));
+    }
+
+    SharedFileFixture fixture;
+    fixture.file->setFileName(QStringLiteral("holiday.png"));
+    fixture.file->setFilePath(path);
+    SharedAccessGuard access(2);
+
+    auto* peer = track(makeRequester());
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+    sock.markConnected();
+
+    const QByteArray request(reinterpret_cast<const char*>(fixture.file->fileHash()), 16);
+    sock.deliverExt(request, OP_REQUESTPREVIEW);
+    sock.deliverExt(request, OP_REQUESTPREVIEW);   // while the first is being rendered
+    QVERIFY2(sock.sent.empty(), "the image was decoded on the main thread");
+
+    QTRY_COMPARE(sock.countOf(OP_PREVIEWANSWER), 1);
+    QTest::qWait(100);
+    QCOMPARE(sock.countOf(OP_PREVIEWANSWER), 1);
+
+    const QByteArray payload = sock.find(OP_PREVIEWANSWER)->payload;
+    QCOMPARE(payload.left(16), request);   // the hash asked for, not the upload file's
+    QCOMPARE(static_cast<uint8>(payload[16]), uint8{1});
+    const QImage frame = QImage::fromData(payload.mid(21), "PNG");
+    QCOMPARE(frame.size(), QSize(200, 100));
+
+    // Answered: the next request is served again.
+    sock.deliverExt(request, OP_REQUESTPREVIEW);
+    QTRY_COMPARE(sock.countOf(OP_PREVIEWANSWER), 2);
+    peer->setSocket(nullptr);
+}
+
+void tst_SourceExchangeCompat::previewRequest_unknownFileGetsAnEmptyAnswer()
+{
+    SharedFileFixture fixture;
+    SharedAccessGuard access(2);
+
+    auto* peer = track(makeRequester());
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+    sock.markConnected();
+
+    sock.deliverExt(QByteArray(16, '\x7E'), OP_REQUESTPREVIEW);
+    peer->setSocket(nullptr);
+
+    QCOMPARE(sock.countOf(OP_PREVIEWANSWER), 1);
+    QCOMPARE(sock.find(OP_PREVIEWANSWER)->payload, QByteArray(17, '\0'));
+}
+
+void tst_SourceExchangeCompat::previewAnswer_dropsOversizedFrames()
+{
+    SharedFileFixture fixture;
+    auto* peer = track(makeRequester());
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+    sock.markConnected();
+    peer->setSupportsPreview(true);
+    peer->sendPreviewRequest(*fixture.file);
+    QCOMPARE(sock.countOf(OP_REQUESTPREVIEW), 1);
+
+    std::vector<QSize> shown;
+    connect(peer, &UpDownClient::previewAnswerReceived, this,
+            [&](const std::array<uint8, 16>&, const std::vector<QImage>& images) {
+        for (const QImage& image : images)
+            shown.push_back(image.size());
+    });
+
+    SafeMemFile answer;
+    answer.writeHash16(fixture.file->fileHash());
+    answer.writeUInt8(2);
+    for (const QByteArray& png : { pngOf(4000, 16), pngOf(320, 200) }) {
+        answer.writeUInt32(static_cast<uint32>(png.size()));
+        answer.write(png.constData(), png.size());
+    }
+    sock.deliverExt(answer.buffer(), OP_PREVIEWANSWER);
+    peer->setSocket(nullptr);
+
+    QCOMPARE(shown.size(), std::size_t{1});
+    QCOMPARE(shown.front(), QSize(320, 200));
 }
 
 QTEST_MAIN(tst_SourceExchangeCompat)

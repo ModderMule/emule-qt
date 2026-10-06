@@ -132,7 +132,7 @@ bool KnownFile::loadDateFromFile(FileDataIO& file)
 
 bool KnownFile::loadTagsFromFile(FileDataIO& file)
 {
-    const uint32 tagCount = file.readUInt32();
+    const uint32 tagCount = readTagCount(file, kMaxFileTags);
 
     for (uint32 i = 0; i < tagCount; ++i) {
         Tag tag(file, true);

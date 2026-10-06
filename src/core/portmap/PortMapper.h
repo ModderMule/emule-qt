@@ -107,10 +107,9 @@ signals:
 private:
     /// How far a trial got, which is what decides the race.
     ///
-    /// Exact beats protocol preference on purpose: eD2K advertises
-    /// thePrefs.port() and has no external-port tag, so a PCP grant on a
-    /// different port is a silent LowID. A UPnP backend that honours the port
-    /// is genuinely better than a PCP backend that does not.
+    /// Exact beats protocol preference on purpose: a grant on the port we asked
+    /// for needs no re-advertising, and peers that learned our port earlier
+    /// still reach us.
     enum class TrialQuality : uint8 { None = 0, Partial = 1, Mismatched = 2, Exact = 3 };
 
     enum class State : uint8 { Idle, Probing, Trialling, Active, Stopped };

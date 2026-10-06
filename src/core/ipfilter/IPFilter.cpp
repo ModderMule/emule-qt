@@ -13,6 +13,9 @@
 #include <QFileInfo>
 #include <QSaveFile>
 
+#include <algorithm>
+#include <queue>
+
 
 
 namespace eMule {
@@ -30,7 +33,6 @@ using V6Key = std::array<uint8, 16>;
 [[nodiscard]] uint32 keyNext(uint32 k) { return k + 1; }
 [[nodiscard]] uint32 keyPrev(uint32 k) { return k - 1; }
 [[nodiscard]] bool keyIsMax(uint32 k) { return k == UINT32_MAX; }
-[[nodiscard]] bool keyIsMin(uint32 k) { return k == 0; }
 
 [[nodiscard]] V6Key keyNext(V6Key k)
 {
@@ -55,80 +57,86 @@ using V6Key = std::array<uint8, 16>;
     return std::all_of(k.begin(), k.end(), [](uint8 b) { return b == 0xFF; });
 }
 
-[[nodiscard]] bool keyIsMin(const V6Key& k)
-{
-    return std::all_of(k.begin(), k.end(), [](uint8 b) { return b == 0; });
-}
-
 // ---------------------------------------------------------------------------
 // sortAndMergeRanges — shared by the IPv4 and IPv6 tables
 // ---------------------------------------------------------------------------
 //
-// Sorts by start (then by level, stricter first) and merges. Overlaps between entries
-// of *different* levels are split into segments rather than collapsed: the lookup only
-// ever inspects the single entry with the largest start <= the address, so a range left
-// nested inside another would never be found.
+// Normalises the table into sorted, disjoint segments. Where ranges overlap, the lowest
+// (strictest) level wins. The lookup only ever inspects the single entry with the largest
+// start <= the address, so nothing may stay nested or out of order.
+//
+// Boundary sweep: cut the key space at every range start and every end+1, and give each
+// piece the strictest range covering it. Pairwise merging against the last output entry
+// is not enough — a third range starting inside an already split one lands out of order.
 template <typename Entry>
 void sortAndMergeRanges(std::vector<Entry>& entries, bool& modified)
 {
     if (entries.size() < 2)
         return;
 
+    using Key = decltype(Entry::start);
+
+    std::erase_if(entries, [](const Entry& e) { return e.end < e.start; });
     std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
         if (a.start != b.start)
             return a.start < b.start;
+        if (a.end != b.end)
+            return a.end < b.end;
         return a.level < b.level;
     });
 
+    std::vector<Key> cuts;
+    cuts.reserve(entries.size() * 2);
+    for (const Entry& e : entries) {
+        cuts.push_back(e.start);
+        if (!keyIsMax(e.end))
+            cuts.push_back(keyNext(e.end));
+    }
+    std::sort(cuts.begin(), cuts.end());
+    cuts.erase(std::unique(cuts.begin(), cuts.end()), cuts.end());
+
+    // Ranges covering the current cut, strictest on top; ended ones are dropped lazily.
+    const auto weaker = [&entries](size_t a, size_t b) {
+        if (entries[a].level != entries[b].level)
+            return entries[a].level > entries[b].level;
+        return a > b;
+    };
+    std::priority_queue<size_t, std::vector<size_t>, decltype(weaker)> active(weaker);
+
     std::vector<Entry> merged;
     merged.reserve(entries.size());
-    merged.push_back(std::move(entries[0]));
+    size_t next = 0;
 
-    for (size_t i = 1; i < entries.size(); ++i) {
-        auto& cur = entries[i];
-        auto& prev = merged.back();
+    for (size_t c = 0; c < cuts.size(); ++c) {
+        const Key from = cuts[c];
+        while (next < entries.size() && entries[next].start == from)
+            active.push(next++);
+        while (!active.empty() && entries[active.top()].end < from)
+            active.pop();
+        if (active.empty())
+            continue;
 
-        const bool overlapping = cur.start >= prev.start && cur.start <= prev.end;
-        const bool adjacent = !keyIsMax(prev.end) && cur.start == keyNext(prev.end)
-                              && cur.level == prev.level;
+        const Entry& top = entries[active.top()];
+        // No later cut means the covering range runs to the top of the key space.
+        const Key to = c + 1 < cuts.size() ? keyPrev(cuts[c + 1]) : top.end;
 
-        if (!overlapping && !adjacent) {
-            merged.push_back(std::move(cur));
+        if (!merged.empty() && merged.back().level == top.level
+            && !keyIsMax(merged.back().end) && keyNext(merged.back().end) == from)
+        {
+            merged.back().end = to;
             continue;
         }
-
-        if (cur.start == prev.start && cur.end == prev.end) {
-            // Duplicate range: keep the lowest (strictest) level
-            if (cur.level < prev.level)
-                prev.level = cur.level;
-        } else if (prev.level == cur.level) {
-            if (cur.end > prev.end)
-                prev.end = cur.end;
-        } else if (overlapping) {
-            // prev = [A..B, levelP], cur = [C..D, levelC], with A <= C <= B.
-            const auto a = prev.start;
-            const auto b = prev.end;
-            const auto c = cur.start;
-            const auto d = cur.end;
-            const uint32 levelP = prev.level;
-            const uint32 levelC = cur.level;
-            const uint32 minLevel = std::min(levelP, levelC);
-            const std::string descP = prev.desc;
-
-            merged.pop_back();
-
-            if (a < c && !keyIsMin(c))
-                merged.push_back(Entry{a, keyPrev(c), levelP, 0, descP});
-
-            merged.push_back(Entry{c, std::min(b, d), minLevel, 0, descP});
-
-            if (b > d && !keyIsMax(d))
-                merged.push_back(Entry{keyNext(d), b, levelP, 0, descP});
-            else if (d > b && !keyIsMax(b))
-                merged.push_back(Entry{keyNext(b), d, levelC, 0, cur.desc});
-        }
-        modified = true;
+        const bool whole = top.start == from && top.end == to;
+        merged.push_back(Entry{from, to, top.level, whole ? top.hits : 0, top.desc});
     }
+
+    const bool same = merged.size() == entries.size()
+        && std::equal(merged.begin(), merged.end(), entries.begin(),
+                      [](const Entry& a, const Entry& b) {
+                          return a.start == b.start && a.end == b.end && a.level == b.level;
+                      });
+    if (!same)
+        modified = true;
 
     entries = std::move(merged);
 }

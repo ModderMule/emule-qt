@@ -6,6 +6,7 @@
 #include "kademlia/KadClientSearcher.h"
 #include "kademlia/KadEntry.h"
 #include "kademlia/Kademlia.h"
+#include "kademlia/KadIndexed.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadIO.h"
 #include "kademlia/KadLog.h"
@@ -48,6 +49,24 @@ Search::Search()
 
 Search::~Search()
 {
+    // Feed the experimental user estimate with the closest node that answered us.
+    // Only lookups that converge on a target count. MFC Search.cpp:96-111.
+    switch (m_type) {
+    case SearchType::NodeComplete:
+    case SearchType::File:
+    case SearchType::Keyword:
+    case SearchType::Notes:
+    case SearchType::StoreFile:
+    case SearchType::StoreKeyword:
+    case SearchType::StoreNotes:
+    case SearchType::FindSource:
+        if (auto* kad = Kademlia::instance(); kad && !m_responded.empty())
+            kad->storeClosestDistance(m_responded.begin()->first);
+        break;
+    default: // Node, NodeSpecial, NodeFwCheckUDP, FindBuddy
+        break;
+    }
+
     // Notify NodeSpecial requester if still waiting.
     // Matches MFC Search.cpp:113-117.
     if (m_nodeSpecialSearchRequester) {
@@ -63,6 +82,15 @@ Search::~Search()
     if (theApp.downloadQueue) {
         if (auto* partFile = theApp.downloadQueue->fileByKadFileSearchID(getSearchID()))
             partFile->setKadFileSearchID(0);
+    }
+
+    // An overloaded keyword is left alone for a while. MFC Search.cpp:158-159.
+    if (m_type == SearchType::StoreKeyword && getNodeLoad() > 20) {
+        auto* kad = Kademlia::instance();
+        if (auto* indexed = Kademlia::getInstanceIndexed(); indexed && kad && kad->isRunning()) {
+            indexed->addLoad(m_target, time(nullptr)
+                                           + static_cast<time_t>(DAY2S(7) * (getNodeLoad() / 100.0)));
+        }
     }
 
     // Release the routing-zone contacts we pinned; the zone owns them.
@@ -305,6 +333,26 @@ void Search::updateNodeLoad(uint8 load)
     ++m_totalLoadResponses;
 }
 
+bool Search::sentActionTo(uint32 ip, uint16 udpPort) const
+{
+    for (const auto& [dist, sent] : m_storeSent) {
+        const auto it = m_tried.find(dist);
+        if (it == m_tried.end() || !it->second)
+            continue;
+        if (it->second->address().toUint32() == ip && it->second->getUDPPort() == udpPort)
+            return true;
+    }
+    return false;
+}
+
+uint32 Search::getAnswers() const
+{
+    if (m_fileIDs.empty())
+        return m_answers;
+    // MFC Search.cpp:1441-1447: one packet per 50 files, so average per node.
+    return m_answers / static_cast<uint32>((m_fileIDs.size() + 49) / 50);
+}
+
 uint32 Search::getNodeLoad() const
 {
     if (m_totalLoadResponses == 0)
@@ -354,13 +402,13 @@ void Search::go(uint32 maxToSend)
             return;  // Still empty — just return, don't stop (MFC behavior)
     }
 
-    // Convergence detection: when K contacts have responded (m_responded >= K),
-    // check whether the closest untried contact is farther than the closest
-    // responded contact.  If so, the iterative lookup has converged.
+    // Convergence: K contacts have responded and no untried one is closer than the
+    // K-th of them. Comparing with the single closest stopped the walk while most of
+    // the K closest nodes were still unasked, so they never got the action packet.
     if (!m_possible.empty() && m_responded.size() >= kK) {
-        UInt128 closestResponded = m_responded.begin()->first;
-        UInt128 closestPossible = m_possible.begin()->first;
-        if (!(closestPossible < closestResponded)) {
+        const UInt128 kthResponded = std::next(m_responded.begin(), kK - 1)->first;
+        const UInt128 closestPossible = m_possible.begin()->first;
+        if (!(closestPossible < kthResponded)) {
             logKad(QStringLiteral("Kad search %1: converged — best=%2 responded=%3 possible=%4 tried=%5")
                        .arg(m_searchID).arg(m_best.size()).arg(m_responded.size())
                        .arg(m_possible.size()).arg(m_tried.size()));
@@ -602,7 +650,7 @@ void Search::processResult(const UInt128& answer, TagList& info, uint32 fromIP, 
         processResultNotes(answer, info);
         break;
     default:
-        processResultFile(answer, info);
+        // Store, node and buddy searches ask for no results. MFC has no such arm.
         break;
     }
 }
@@ -1378,7 +1426,7 @@ void Search::storePacket(bool flushRemaining)
             sp.largeFile        = pubFile && pubFile->isLargeFile();
             sp.hasFileSize      = pubFile != nullptr;
             sp.fileSize         = pubFile ? static_cast<uint64>(pubFile->fileSize()) : 0;
-            sp.tcpPort          = thePrefs.port();
+            sp.tcpPort          = theApp.advertisedTcpPort();
             sp.internKadPort    = prefs ? prefs->internKadPort() : 0;
             sp.useExternKadPort = !prefs || prefs->useExternKadPort();
 
@@ -1522,7 +1570,7 @@ void Search::storePacket(bool flushRemaining)
             // Write our client hash so the remote can do a callback
             io::writeUInt128(packet, prefs->clientHash());
             // Write our ED2K TCP port so the remote can TCP-connect to us
-            packet.writeUInt16(thePrefs.port());
+            packet.writeUInt16(theApp.advertisedTcpPort());
 
             udpListener->sendPacket(packet, KADEMLIA_FINDBUDDY_REQ,
                                     contact->address().toUint32(), contact->getUDPPort(),
@@ -1542,7 +1590,7 @@ void Search::storePacket(bool flushRemaining)
             else
                 io::writeUInt128(packet, UInt128());
             // Write our ED2K TCP port so the callback works (MFC: thePrefs.GetPort())
-            packet.writeUInt16(thePrefs.port());
+            packet.writeUInt16(theApp.advertisedTcpPort());
 
             udpListener->sendPacket(packet, KADEMLIA_CALLBACK_REQ,
                                     contact->address().toUint32(), contact->getUDPPort(),

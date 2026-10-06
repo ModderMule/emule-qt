@@ -67,6 +67,8 @@ public:
     static uint8 getExpectedResponseContactCount(const UInt128& target);
     static void processResult(const UInt128& target, const UInt128& answer,
                               TagList& info, uint32 fromIP, uint16 fromPort);
+    /// A running search for @p target asked that node for results.
+    static bool expectsResultsFrom(const UInt128& target, uint32 fromIP, uint16 fromPort);
     static void processPublishResult(const UInt128& target, uint8 load, bool loadResponse);
     static void updateStats();
     static bool alreadySearchingFor(const UInt128& target);

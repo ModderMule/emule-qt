@@ -145,11 +145,14 @@ private slots:
     void clientReqSocketTimeout_notExtendedWhileDownloadingFromPeer();
     void tooManySockets();
     void statisticsUpdate();
+    void halfOpenSocketsLimitDialling();
+    void dialsCountAgainstThePerFiveSecondLimit();
 
     // Accept-path guards — MFC CListenSocket::OnAccept / AcceptConnectionCond
     void incomingConnection_rejectsFilteredIP();
     void incomingConnection_rejectsBannedClient();
     void incomingConnection_acceptsCleanIP();
+    void incomingConnection_dropsBeforeHelloEndInABan();
 
     // OP_PACKEDPROT decompression — MFC CClientReqSocket::PacketReceived
     // (srchybrid/ListenSocket.cpp:1804-1809)
@@ -392,11 +395,86 @@ void tst_ListenSocket::tooManySockets()
 void tst_ListenSocket::statisticsUpdate()
 {
     ListenSocket listener;
-    listener.addConnection();
-    QCOMPARE(listener.totalConnectionChecks(), 1u);
+    ClientReqSocket a, b;
+    listener.addSocket(&a);
+    listener.addSocket(&b);
 
-    listener.recalculateStats();
+    listener.updateConnectionsStatus();
+    QCOMPARE(listener.activeConnections(), 2u);
+    QCOMPARE(listener.peakConnections(), 2u);
+
+    listener.removeSocket(&a);
+    listener.removeSocket(&b);
+    listener.updateConnectionsStatus();
     QCOMPARE(listener.activeConnections(), 0u);
+    QCOMPARE(listener.peakConnections(), 2u);
+}
+
+// N1: sockets still connecting count as half-open, and that count limits new dials
+// (MFC CClientReqSocket::SetConState, srchybrid/ListenSocket.cpp:68-91).
+void tst_ListenSocket::halfOpenSocketsLimitDialling()
+{
+    const uint16 oldHalf = thePrefs.maxHalfConnections();
+    thePrefs.setMaxHalfConnections(2);
+    ListenSocket listener;
+    theApp.listenSocket = &listener;
+    const auto restore = qScopeGuard([oldHalf] {
+        theApp.listenSocket = nullptr;
+        thePrefs.setMaxHalfConnections(oldHalf);
+    });
+    QVERIFY(listener.startListening(0));
+
+    struct StateSocket : ClientReqSocket {
+        using ClientReqSocket::setPeerSocketState;
+    };
+    auto a = std::make_unique<StateSocket>();
+    auto b = std::make_unique<ClientReqSocket>();
+    listener.addSocket(a.get());
+    listener.addSocket(b.get());
+    a->waitForOnConnect();
+    QVERIFY(!listener.tooManySockets());
+    b->waitForOnConnect();
+    QCOMPARE(listener.totalHalfOpen(), 2u);
+    QVERIFY(listener.tooManySockets());
+
+    // N2: dialling at the limit must not shut inbound peers out
+    QVERIFY(!listener.tooManySockets(/*ignoreInterval*/ true));
+    QSignalSpy accepted(&listener, &ListenSocket::newClientConnection);
+    QTcpSocket inbound;
+    inbound.connectToHost(QHostAddress::LocalHost, listener.connectedPort());
+    QTRY_COMPARE_WITH_TIMEOUT(accepted.count(), 1, 5000);
+
+    // A socket that connected, or went away, gives its place back
+    a->setPeerSocketState(PeerSocketState::Complete);
+    QCOMPARE(listener.totalHalfOpen(), 1u);
+    QCOMPARE(listener.totalComplete(), 1u);
+    QVERIFY(!listener.tooManySockets());
+    listener.removeSocket(b.get());
+    b.reset();
+    QCOMPARE(listener.totalHalfOpen(), 0u);
+    listener.removeSocket(a.get());
+    a.reset();
+    QCOMPARE(listener.totalComplete(), 0u);
+
+    listener.killAllSockets();
+}
+
+// N1: outbound dials count against the per-5-second limit too.
+void tst_ListenSocket::dialsCountAgainstThePerFiveSecondLimit()
+{
+    const uint16 oldPerFive = thePrefs.maxConsPerFive();
+    thePrefs.setMaxConsPerFive(3);
+    const auto restore = qScopeGuard([oldPerFive] { thePrefs.setMaxConsPerFive(oldPerFive); });
+
+    ListenSocket listener;
+    for (int i = 0; i < 3; ++i)
+        listener.addConnection();
+    QVERIFY(listener.tooManySockets());
+    QVERIFY(!listener.tooManySockets(/*ignoreInterval*/ true));
+
+    for (int i = 0; i < 5; ++i)   // the window ends on the fifth one-second pass
+        listener.process();
+    QVERIFY(!listener.tooManySockets());
 }
 
 // ---------------------------------------------------------------------------
@@ -460,6 +538,29 @@ void tst_ListenSocket::incomingConnection_acceptsCleanIP()
     QCOMPARE(m_statistics->filteredClients(), filteredBefore);
 
     listener.killAllSockets();
+    listener.stopListening();
+}
+
+void tst_ListenSocket::incomingConnection_dropsBeforeHelloEndInABan()
+{
+    const Address loopback = Address::fromHostOrder(0x7F000001);
+
+    ListenSocket listener;
+    QVERIFY(listener.startListening(0));
+    // A dropped socket takes itself off the listener through the global.
+    theApp.listenSocket = &listener;
+    const auto restore = qScopeGuard([] { theApp.listenSocket = nullptr; });
+
+    // Ten connections that open and close without ever saying hello.
+    for (int i = 0; i < HANDSHAKEFAIL_BAN_COUNT; ++i) {
+        QVERIFY2(!m_clientList->isBannedClient(loopback), qPrintable(QString::number(i)));
+        QCOMPARE(probeConnection(listener), qsizetype(1));
+        QTRY_COMPARE(listener.openSockets(), 0u);
+    }
+
+    QVERIFY(m_clientList->isBannedClient(loopback));
+    QCOMPARE(probeConnection(listener), qsizetype(0));
+
     listener.stopListening();
 }
 
@@ -555,13 +656,7 @@ void tst_ListenSocket::packedPacket_underCapButOver50kSucceeds()
     const QByteArray wire = packBody(body, OP_ANSWERSOURCES2);
     QVERIFY(!wire.isEmpty());
 
-    // What actually decides this is not the cap alone. unPackPacket starts its output
-    // buffer at size * 10 + 300 (clamped to the cap) and doubles on Z_BUF_ERROR only while
-    // the *next* rung is still below the cap — so the ladder can stop short of the cap
-    // itself. Assert the first rung already clears the body, which is the case for any
-    // realistic ratio, so this test measures the cap and not zlib's mood.
-    QVERIFY(uint32(wire.size()) * 10 + 300 >= uint32(body.size()));
-    QVERIFY(wire.size() < 250000);      // ... and the cap is what lets that rung be allocated
+    QVERIFY(wire.size() < 250000);
 
     PacketProbeSocket socket;
     QVERIFY(socket.deliver(OP_PACKEDPROT, OP_ANSWERSOURCES2, wire));

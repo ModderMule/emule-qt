@@ -621,6 +621,11 @@ Server* ServerList::findByIPTcp(const Address& addr, uint16 port) const
     return nullptr;
 }
 
+bool ServerList::isServerAddress(const Address& addr) const
+{
+    return std::ranges::any_of(m_servers, [&](const auto& srv) { return srv->hasAddress(addr); });
+}
+
 Server* ServerList::findById(uint32 serverId) const
 {
     if (serverId == 0)
@@ -1107,7 +1112,7 @@ void ServerList::processDescResponse(const uint8* data, uint32 size, const Endpo
             server->setDescReqChallenge(0);
             srvinfo.seek(sizeof(uint32), 0);  // skip the challenge
 
-            for (uint32 tags = srvinfo.readUInt32(); tags > 0; --tags) {
+            for (uint32 tags = readTagCount(srvinfo, kMaxWireTags); tags > 0; --tags) {
                 Tag tag(srvinfo, true);
                 if (tag.nameId() == ST_SERVERNAME && tag.isStr())
                     server->setName(tag.strValue());

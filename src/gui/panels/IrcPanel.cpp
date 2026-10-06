@@ -6,6 +6,7 @@
 
 #include "app/UiState.h"
 #include "controls/AbstractListView.h"
+#include "controls/LogTextView.h"
 #include "controls/SortableItems.h"
 #include "chat/IrcClient.h"
 #include "prefs/Preferences.h"
@@ -603,7 +604,7 @@ void IrcPanel::setupUi()
     theUiState.bindIrcSplitter(m_splitter);
 
     // --- Status tab (always present) ---
-    m_statusBrowser = new QTextBrowser(this);
+    m_statusBrowser = new LogTextView(this);
     m_statusBrowser->setReadOnly(true);
     TextLinks::wireLinkClicks(m_statusBrowser, this,
                               [this](const QString& link) { emit linkActivated(link); });
@@ -846,8 +847,8 @@ int IrcPanel::ensureChannelTab(const QString& name, IrcChannel::Type type)
         return idx;
     }
 
-    // Normal channel or private — QTextBrowser
-    auto* browser = new QTextBrowser(this);
+    // Normal channel or private — LogTextView
+    auto* browser = new LogTextView(this);
     browser->setReadOnly(true);
     // Channels are full of ed2k:// links; those belong to the importer, not the OS.
     TextLinks::wireLinkClicks(browser, this,

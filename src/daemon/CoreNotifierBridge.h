@@ -12,6 +12,7 @@
 #include "friends/FriendConnectProgress.h"
 
 #include <QCborArray>
+#include <QImage>
 #include <QObject>
 #include <QString>
 
@@ -95,6 +96,8 @@ private slots:
 
     // Chat signals
     void onChatMessageReceived(const QString& fromUser, const QString& message);
+    void onCaptchaRequestReceived(const QString& fromUser, const QImage& captchaImage);
+    void onCaptchaResultReceived(const QString& fromUser, bool solved);
     void onFriendConnectionProgress(eMule::Friend* f, eMule::ChatConnectProgress step);
     void onFriendConnectingResult(eMule::Friend* f, bool success);
 

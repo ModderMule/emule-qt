@@ -2257,8 +2257,8 @@ void IpcClientHandler::handleGetNetworkInfo(const IpcMessage& msg)
     client.insert(QStringLiteral("nick"), thePrefs.nick());
     const auto hash = thePrefs.userHash();
     client.insert(QStringLiteral("hash"), md4str(hash.data()));
-    client.insert(QStringLiteral("tcpPort"), thePrefs.port());
-    client.insert(QStringLiteral("udpPort"), thePrefs.udpPort());
+    client.insert(QStringLiteral("tcpPort"), theApp.advertisedTcpPort());
+    client.insert(QStringLiteral("udpPort"), theApp.advertisedUdpPort());
     info.insert(QStringLiteral("client"), client);
 
     // -- eD2K section ---------------------------------------------------------
@@ -3216,7 +3216,8 @@ void IpcClientHandler::handleBrowseDirectory(const IpcMessage& msg)
         if (fi.size() == 0
             || name.endsWith(QStringLiteral(".part"), Qt::CaseInsensitive)
             || name.endsWith(QStringLiteral(".part.met"), Qt::CaseInsensitive)
-            || name.endsWith(Preferences::kUsenetPartSuffix, Qt::CaseInsensitive))
+            || name.endsWith(Preferences::kUsenetPartSuffix, Qt::CaseInsensitive)
+            || name.endsWith(Preferences::kCompletingSuffix, Qt::CaseInsensitive))
             continue;
 
         const bool isShared = theApp.sharedFileList->shouldBeShared(dirPath, filePath, false);

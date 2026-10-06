@@ -891,6 +891,9 @@ public:
     /// by name, which is what makes a cross-volume completion safe: the file is
     /// invisible to a scan until the final rename.
     static constexpr QLatin1StringView kUsenetPartSuffix{".usenetpart"};
+    /// A finished download being copied to another volume carries this suffix until
+    /// the final in-place rename. Never shared, never listed.
+    static constexpr QLatin1StringView kCompletingSuffix{".completing"};
 
     /// Usenet's share of the one global download budget, as a percentage, when
     /// both engines are downloading. ED2K gets the rest. Ignored entirely while

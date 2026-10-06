@@ -47,6 +47,7 @@ private slots:
     void excludeFile_refusedForIncomingDir();
     void excludeFile_refusedForCategoryIncomingDir();
     void sharedFilesConfig_roundTrips();
+    void scan_skipsAFileStillBeingDelivered();
     void rescan_addsKeywordsThroughTheFrontDoor();
     void reload_dropsKeywordsOfFilesNoLongerShared();
     void knownListReplace_unhooksTheSharedOldObject();
@@ -469,6 +470,26 @@ void tst_SharedFileList::sharedFilesConfig_roundTrips()
     QVERIFY2(!reloaded.shouldBeShared(shareDir, excludedPath, false),
              "an excluded file must stay excluded after a restart");
     QVERIFY(reloaded.containsSingleSharedFiles(outside));
+}
+
+// R10: a download still being copied in from another volume is not shared.
+void tst_SharedFileList::scan_skipsAFileStillBeingDelivered()
+{
+    eMule::testing::TempDir tmp;
+    const QString shareDir = tmp.filePath(QStringLiteral("share"));
+    QVERIFY(!writeFile(shareDir, QStringLiteral("movie.bin") + Preferences::kCompletingSuffix,
+                       QByteArray(512, 'c')).isEmpty());
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({shareDir});
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    shared.reload();
+
+    QCOMPARE(shared.getCount(), 0);
+    QCOMPARE(shared.getHashingCount(), 0);
 }
 
 void tst_SharedFileList::rescan_addsKeywordsThroughTheFrontDoor()

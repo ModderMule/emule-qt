@@ -241,14 +241,14 @@ void UploadBandwidthThrottler::runInternal()
 
     uint32 nEstimatedDataRate = 0;
     int nSlotsBusyLevel = 0;
-    uint32 nUploadStartTime = 0;
+    uint64 nUploadStartTime = 0;
     uint32 numberOfConsecutiveUpChanges = 0;
     uint32 numberOfConsecutiveDownChanges = 0;
     uint32 changesCount = 0;
     uint32 loopsCount = 0;
 
-    uint32 lastLoopTick = static_cast<uint32>(getTickCount());
-    uint32 lastTickReachedBandwidth = lastLoopTick;
+    uint64 lastLoopTick = getTickCount();
+    uint64 lastTickReachedBandwidth = lastLoopTick;
 
     while (m_run.load()) {
         m_loopIterations.fetch_add(1, std::memory_order_relaxed);
@@ -261,7 +261,7 @@ void UploadBandwidthThrottler::runInternal()
                 break;
         }
 
-        uint32 timeSinceLastLoop = static_cast<uint32>(getTickCount()) - lastLoopTick;
+        uint64 timeSinceLastLoop = getTickCount() - lastLoopTick;
 
         // Get current allowed data rate — prefer USS-aware value
         uint32 allowedDataRate = 0;
@@ -334,8 +334,8 @@ void UploadBandwidthThrottler::runInternal()
 
             if (nUploadStartTime == 0) {
                 if (static_cast<int>(m_standardOrder.size()) >= 3)
-                    nUploadStartTime = static_cast<uint32>(getTickCount());
-            } else if (static_cast<uint32>(getTickCount()) >= nUploadStartTime + SEC2MS(60)) {
+                    nUploadStartTime = getTickCount();
+            } else if (getTickCount() >= nUploadStartTime + SEC2MS(60)) {
                 if (nEstimatedDataRate == 0) {
                     if (nSlotsBusyLevel >= 250) {
                         // MFC seeds straight from the queue datarate (srchybrid:430); the
@@ -448,7 +448,7 @@ void UploadBandwidthThrottler::runInternal()
         constexpr uint32 kIdleSleepMs = 100;
 
         if (timeSinceLastLoop < sleepTime) {
-            uint32 dwSleep = sleepTime - timeSinceLastLoop;
+            auto dwSleep = static_cast<uint32>(sleepTime - timeSinceLastLoop);
             if (nCanSend == 0 && !recentlySentData) {
                 // No active sockets and nothing sent recently — wait for new data.
                 // std::max keeps the bandwidth pacing floor intact.
@@ -469,7 +469,7 @@ void UploadBandwidthThrottler::runInternal()
         if (!m_run.load())
             break;
 
-        const uint32 thisLoopTick = static_cast<uint32>(getTickCount());
+        const uint64 thisLoopTick = getTickCount();
         timeSinceLastLoop = thisLoopTick - lastLoopTick;
 
         // Calculate how many bytes we can spend
@@ -631,7 +631,7 @@ void UploadBandwidthThrottler::runInternal()
                 lastTickReachedBandwidth = thisLoopTick;
             } else if (realBytesToSpend > 999) {
                 realBytesToSpend = 999;
-                if (thisLoopTick >= lastTickReachedBandwidth + std::max(500u, timeSinceLastLoop) * 2) {
+                if (thisLoopTick >= lastTickReachedBandwidth + std::max<uint64>(500, timeSinceLastLoop) * 2) {
                     m_highestNumberOfFullyActivatedSlots = listSize + 1;
                     lastTickReachedBandwidth = thisLoopTick;
                 }

@@ -57,7 +57,7 @@ SearchFile::SearchFile(FileDataIO& data, bool optUTF8,
     bool hadMetaIndex = false;
     uint8 metaKind = 0;
     uint8 metaVersion = 0;
-    const uint32 tagCount = data.readUInt32();
+    const uint32 tagCount = readTagCount(data, kMaxWireTags);
     for (uint32 i = 0; i < tagCount; ++i) {
         Tag tag(data, optUTF8);
         convertED2KTag(tag);
@@ -252,6 +252,7 @@ SearchFile::SearchFile(const SearchFile* other)
     , m_meta(other->m_meta)
     , m_metaInvalid(other->m_metaInvalid)
     , m_kadOrigin(other->m_kadOrigin)
+    , m_multipleAICHFound(other->m_multipleAICHFound)
 {
 }
 

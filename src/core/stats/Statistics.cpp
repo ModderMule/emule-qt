@@ -85,13 +85,13 @@ void Statistics::recordRate()
     if (m_transferStartTime == 0)
         return;
 
-    const auto curTick = static_cast<uint32>(getTickCount());
+    const auto curTick = getTickCount();
     m_downRateHistory.push_front(RateEntry{m_sessionReceivedBytes.load(), curTick});
     m_upRateHistory.push_front(RateEntry{m_sessionSentBytes.load(), curTick});
 
     const uint32 avg = m_prefs ? MIN2MS(m_prefs->statsAverageMinutes()) : MIN2MS(5);
     if (curTick > avg) {
-        const uint32 cutoff = curTick - avg;
+        const uint64 cutoff = curTick - avg;
         while (!m_downRateHistory.empty() && cutoff > m_downRateHistory.back().timestamp)
             m_downRateHistory.pop_back();
         while (!m_upRateHistory.empty() && cutoff > m_upRateHistory.back().timestamp)
@@ -108,7 +108,7 @@ float Statistics::avgDownloadRate(AverageType type) const
     switch (type) {
     case AverageType::Session:
         if (m_transferStartTime > 0) {
-            const auto running = (static_cast<uint32>(getTickCount()) - m_transferStartTime) / SEC2MS(1);
+            const auto running = (getTickCount() - m_transferStartTime) / SEC2MS(1);
             if (running >= 5)
                 return static_cast<float>(m_sessionReceivedBytes.load()) / 1024.0f / static_cast<float>(running);
         }
@@ -116,7 +116,7 @@ float Statistics::avgDownloadRate(AverageType type) const
 
     case AverageType::Total:
         if (m_transferStartTime > 0) {
-            const auto running = (static_cast<uint32>(getTickCount()) - m_transferStartTime) / SEC2MS(1);
+            const auto running = (getTickCount() - m_transferStartTime) / SEC2MS(1);
             if (running >= 5) {
                 return (static_cast<float>(m_sessionReceivedBytes.load()) / 1024.0f / static_cast<float>(running) + m_connAvgDownBase) / 2.0f;
             }
@@ -140,7 +140,7 @@ float Statistics::avgUploadRate(AverageType type) const
     switch (type) {
     case AverageType::Session:
         if (m_transferStartTime > 0) {
-            const auto running = (static_cast<uint32>(getTickCount()) - m_transferStartTime) / SEC2MS(1);
+            const auto running = (getTickCount() - m_transferStartTime) / SEC2MS(1);
             if (running >= 5)
                 return static_cast<float>(m_sessionSentBytes.load()) / 1024.0f / static_cast<float>(running);
         }
@@ -148,7 +148,7 @@ float Statistics::avgUploadRate(AverageType type) const
 
     case AverageType::Total:
         if (m_transferStartTime > 0) {
-            const auto running = (static_cast<uint32>(getTickCount()) - m_transferStartTime) / SEC2MS(1);
+            const auto running = (getTickCount() - m_transferStartTime) / SEC2MS(1);
             if (running >= 5) {
                 return (static_cast<float>(m_sessionSentBytes.load()) / 1024.0f / static_cast<float>(running) + m_connAvgUpBase) / 2.0f;
             }
@@ -210,24 +210,24 @@ void Statistics::updateConnectionStats(float uploadRate, float downloadRate)
     }
 
     // Transfer time tracking
-    const auto curTick = static_cast<uint32>(getTickCount());
+    const auto curTick = getTickCount();
 
     if (uploadRate > 0 || downloadRate > 0) {
         if (m_startTimeTransfers != 0)
-            m_timeThisTransfer = (curTick - m_startTimeTransfers) / SEC2MS(1);
+            m_timeThisTransfer = static_cast<uint32>((curTick - m_startTimeTransfers) / SEC2MS(1));
         else
             m_startTimeTransfers = curTick;
 
         if (uploadRate > 0) {
             if (m_startTimeUploads != 0)
-                m_timeThisUpload = (curTick - m_startTimeUploads) / SEC2MS(1);
+                m_timeThisUpload = static_cast<uint32>((curTick - m_startTimeUploads) / SEC2MS(1));
             else
                 m_startTimeUploads = curTick;
         }
 
         if (downloadRate > 0) {
             if (m_startTimeDownloads != 0)
-                m_timeThisDownload = (curTick - m_startTimeDownloads) / SEC2MS(1);
+                m_timeThisDownload = static_cast<uint32>((curTick - m_startTimeDownloads) / SEC2MS(1));
             else
                 m_startTimeDownloads = curTick;
         }
@@ -256,7 +256,7 @@ void Statistics::updateConnectionStats(float uploadRate, float downloadRate)
     if (m_serverConnectTime == 0)
         m_timeThisServerDuration = 0;
     else
-        m_timeThisServerDuration = (curTick - m_serverConnectTime) / SEC2MS(1);
+        m_timeThisServerDuration = static_cast<uint32>((curTick - m_serverConnectTime) / SEC2MS(1));
 
     emit statsUpdated();
 }
@@ -301,7 +301,7 @@ void Statistics::serverConnected()
 
     // 0 is the "not connected" sentinel, so the one tick in 49 days that lands
     // on it borrows the next millisecond.
-    m_serverConnectTime = std::max<uint32>(1, static_cast<uint32>(getTickCount()));
+    m_serverConnectTime = getTickCount();
     m_timeThisServerDuration = 0;
 }
 
@@ -315,7 +315,7 @@ void Statistics::serverDisconnected()
     // From the stamp, not from whatever updateConnectionStats() computed up to a
     // second ago — MFC banks the stale value and loses that second per drop.
     m_timeThisServerDuration =
-        (static_cast<uint32>(getTickCount()) - m_serverConnectTime) / SEC2MS(1);
+        static_cast<uint32>((getTickCount() - m_serverConnectTime) / SEC2MS(1));
     m_serverConnectTime = 0;
     add2TotalServerDuration();
 }
@@ -440,7 +440,7 @@ void Statistics::addDownDataOverheadOther(uint32 data)
 
 void Statistics::compDownDatarateOverhead()
 {
-    const auto curTick = static_cast<uint32>(getTickCount());
+    const auto curTick = getTickCount();
 
     const uint64 msOverhead = m_downDataRateMSOverhead.exchange(0, std::memory_order_relaxed);
     m_avgDDROList.push_back(RateEntry{msOverhead, curTick});
@@ -512,7 +512,7 @@ void Statistics::addUpDataOverheadOther(uint32 data)
 
 void Statistics::compUpDatarateOverhead()
 {
-    const auto curTick = static_cast<uint32>(getTickCount());
+    const auto curTick = getTickCount();
 
     const uint64 msOverhead = m_upDataRateMSOverhead.exchange(0, std::memory_order_relaxed);
     m_avgUDROList.push_back(RateEntry{msOverhead, curTick});
@@ -873,10 +873,8 @@ void Statistics::markTransferStarted()
 {
     if (m_transferStartTime.load(std::memory_order_relaxed) != 0)
         return;
-    // max(1): 0 is the "not started" sentinel, and the 32-bit tick can wrap to it.
-    uint32 expected = 0;
-    m_transferStartTime.compare_exchange_strong(
-        expected, std::max<uint32>(1, static_cast<uint32>(getTickCount())));
+    uint64 expected = 0;    // 0 = not started; a real tick is never 0
+    m_transferStartTime.compare_exchange_strong(expected, getTickCount());
 }
 
 } // namespace eMule

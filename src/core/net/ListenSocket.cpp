@@ -79,7 +79,9 @@ bool ListenSocket::rebind(uint16 port)
 
 void ListenSocket::incomingConnection(qintptr socketDescriptor)
 {
-    if (tooManySockets()) {
+    // Only the hard limit: our own dialling must not lock inbound peers out
+    // (MFC srchybrid/ListenSocket.cpp:2068).
+    if (tooManySockets(true)) {
         // Reject — close immediately
         QTcpSocket temp;
         temp.setSocketDescriptor(socketDescriptor);
@@ -216,12 +218,20 @@ bool ListenSocket::tooManySockets(bool ignoreInterval) const
 void ListenSocket::addConnection()
 {
     ++m_openSocketsInterval;
-    ++m_totalConnectionChecks;
-    uint32 count = static_cast<uint32>(m_socketList.size());
-    if (count > m_maxConnectionReached)
-        m_maxConnectionReached = count;
-    if (count > m_peakConnections)
-        m_peakConnections = count;
+}
+
+void ListenSocket::noteSocketState(PeerSocketState from, PeerSocketState to)
+{
+    if (from == to)
+        return;
+    if (from == PeerSocketState::Half && m_nHalfOpen > 0)
+        --m_nHalfOpen;
+    else if (from == PeerSocketState::Complete && m_nComplete > 0)
+        --m_nComplete;
+    if (to == PeerSocketState::Half)
+        ++m_nHalfOpen;
+    else if (to == PeerSocketState::Complete)
+        ++m_nComplete;
 }
 
 bool ListenSocket::sendPortTestReply(char result, bool doDisconnect)
@@ -246,33 +256,33 @@ bool ListenSocket::sendPortTestReply(char result, bool doDisconnect)
 
 void ListenSocket::recalculateStats()
 {
-    uint32 count = static_cast<uint32>(m_socketList.size());
-    m_activeConnections = count;
-
-    if (m_totalConnectionChecks > 0) {
-        m_averageConnections =
-            (m_averageConnections * static_cast<float>(m_totalConnectionChecks - 1) +
-             static_cast<float>(count)) /
-            static_cast<float>(m_totalConnectionChecks);
-    }
-}
-
-void ListenSocket::updateConnectionsStatus()
-{
     m_connectionStates[0] = 0; // Other
     m_connectionStates[1] = 0; // Half
     m_connectionStates[2] = 0; // Complete
 
-    for (const auto* socket : m_socketList) {
-        // Count by examining socket state via isConnected()
-        if (socket->isConnected())
-            ++m_connectionStates[2];
-        else
-            ++m_connectionStates[0];
-    }
+    for (const auto* socket : m_socketList)
+        ++m_connectionStates[static_cast<int>(socket->peerSocketState())];
+}
 
-    m_nHalfOpen = m_connectionStates[1];
-    m_nComplete = m_connectionStates[2];
+// MFC CListenSocket::UpdateConnectionsStatus (srchybrid/ListenSocket.cpp:2266-2295)
+void ListenSocket::updateConnectionsStatus()
+{
+    m_activeConnections = static_cast<uint32>(m_socketList.size());
+    if (m_activeConnections > m_peakConnections)
+        m_peakConnections = m_activeConnections;
+    if (m_activeConnections > m_maxConnectionReached)
+        m_maxConnectionReached = m_activeConnections;
+
+    if (!theApp.isConnected())
+        return;
+
+    ++m_totalConnectionChecks;
+    const float keep = std::min(
+        0.99f, static_cast<float>(m_totalConnectionChecks - 1)
+                   / static_cast<float>(m_totalConnectionChecks));
+    m_averageConnections = std::max(
+        0.001f, m_averageConnections * keep
+                    + static_cast<float>(m_activeConnections) * (1.0f - keep));
 }
 
 float ListenSocket::maxConPerFiveModifier() const

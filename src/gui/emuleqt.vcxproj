@@ -255,6 +255,7 @@
     <ClCompile Include="controls\KadLookupGraph.cpp" />
     <ClCompile Include="panels\KadPanel.cpp" />
     <ClCompile Include="controls\KadSearchesModel.cpp" />
+    <ClCompile Include="controls\LogTextView.cpp" />
     <ClCompile Include="controls\LogWidget.cpp" />
     <ClCompile Include="app\MainWindow.cpp" />
     <ClCompile Include="panels\MessagesPanel.cpp" />
@@ -381,6 +382,7 @@
     <QtMoc Include="controls\KadLookupGraph.h" />
     <QtMoc Include="panels\KadPanel.h" />
     <QtMoc Include="controls\KadSearchesModel.h" />
+    <QtMoc Include="controls\LogTextView.h" />
     <QtMoc Include="controls\LogWidget.h" />
     <QtMoc Include="app\MainWindow.h" />
     <QtMoc Include="panels\MessagesPanel.h" />

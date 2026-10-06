@@ -56,6 +56,13 @@ PartFile::~PartFile()
     // would hand a dying object to the shared list (or call into one already gone).
     m_destroying = true;
 
+    // A QThread must not outlive its owner's signals half-way through a file: stop it at
+    // the next part and wait. It does not start the move once interrupted.
+    if (m_moveThread) {
+        m_moveThread->requestInterruption();
+        m_moveThread->wait();
+    }
+
     // Flush any remaining buffered data
     if (!m_bufferedData.empty()) {
         flushBuffer(/*forceICH*/ false, /*noAICH*/ true);   // MFC srchybrid/PartFile.cpp:294
@@ -113,6 +120,7 @@ bool PartFile::isPreviewPossible() const
 void PartFile::initPartFile()
 {
     m_status = PartFileStatus::Empty;
+    m_deadSourceList.init(/*globalList*/ false);
     m_fileOp = PartFileOp::None;
     m_downPriority = kPrNormal;
     m_autoDownPriority = thePrefs.autoDownloadPriority();
@@ -564,12 +572,12 @@ void PartFile::flushBuffer(bool forceICH, bool noAICH)
     // If no gaps remain, file is complete. Not from the destructor: completing starts a
     // move on this object; the saved .part.met completes it on the next start instead.
     if (m_gapList.empty() && !m_destroying) {
-        completeFile();
+        completeIfVerified();
         return;
     }
 
     // Periodic save of .part.met (separate timer from buffer flush — matches MFC m_nNextMetFlushTime)
-    const uint32 curTick = static_cast<uint32>(getTickCount());
+    const uint64 curTick = getTickCount();
     if (m_nextMetSaveTime < curTick) {
         savePartFile();
         m_nextMetSaveTime = curTick + 30000; // save every ~30s
@@ -956,9 +964,9 @@ void PartFile::applyRehashResult(const QByteArray& partOk)
 
         // A part the worker could not read stays trusted: no evidence, no verdict.
         const auto state = part < static_cast<uint32>(partOk.size())
-            ? static_cast<RehashPart>(partOk[static_cast<qsizetype>(part)])
-            : RehashUnread;
-        if (state == RehashBad) {
+            ? static_cast<PartVerdict>(partOk[static_cast<qsizetype>(part)])
+            : PartVerdict::Unread;
+        if (state == PartVerdict::Bad) {
             logWarning(QStringLiteral("Rehash found corrupted part %1 in %2")
                            .arg(part).arg(fileName()));
             addGap(start, std::min(start + PARTSIZE, total) - 1);
@@ -986,6 +994,67 @@ void PartFile::applyRehashResult(const QByteArray& partOk)
     // latched Ready ourselves. MFC does the same at srchybrid/PartFile.cpp:1570.
     if (m_status == PartFileStatus::Ready && theApp.sharedFileList && canBeShared())
         theApp.sharedFileList->safeAddKFile(this);
+
+    // Nothing left to download: deliver it. Every part read and matched means the
+    // final check has just been done; an unread one leaves it to completeFile().
+    if (m_gapList.empty() && !m_destroying) {
+        const bool allRead = !partOk.isEmpty()
+            && !partOk.left(static_cast<qsizetype>(parts)).contains(static_cast<char>(PartVerdict::Unread))
+            && static_cast<uint32>(partOk.size()) >= parts;
+        completeFile(allRead);
+    }
+}
+
+QByteArray PartFile::verifyPartData(
+    const QString& partPath, uint64 fileSize, const QByteArray& fileHash,
+    const std::vector<std::array<uint8, 16>>& partHashes,
+    const std::function<bool(uint32, uint32)>& keepGoing,
+    AICHRecoveryHashSet* aichOut)
+{
+    // A file below PARTSIZE has no part hashes: its one part is checked against the
+    // file hash (MFC srchybrid/PartFile.cpp:1493-1495).
+    const bool singlePart = partHashes.empty();
+    const auto partCount = static_cast<uint32>(
+        std::max<uint64>(1, (fileSize + PARTSIZE - 1) / PARTSIZE));
+
+    // Unread until proven either way: a part we could not read says nothing about the data.
+    QByteArray partOk(static_cast<qsizetype>(partCount), static_cast<char>(PartVerdict::Unread));
+
+    QFile file(partPath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        logWarning(QStringLiteral("Rehash: cannot open %1: %2").arg(partPath, file.errorString()));
+        return partOk;
+    }
+
+    for (uint32 part = 0; part < partCount; ++part) {
+        const uint64 start = static_cast<uint64>(part) * PARTSIZE;
+        if (start >= fileSize || (!singlePart && part >= partHashes.size()))
+            break;
+        const uint64 len = std::min<uint64>(PARTSIZE, fileSize - start);
+
+        if (!file.seek(static_cast<qint64>(start)))
+            break;
+        const QByteArray data = file.read(static_cast<qint64>(len));
+        if (static_cast<uint64>(data.size()) != len) {
+            logWarning(QStringLiteral("Rehash: short read in %1 at part %2").arg(partPath).arg(part));
+            break;   // the rest stays unread
+        }
+
+        std::array<uint8, 16> actual{};
+        AICHHashTree* aichPart = aichOut ? aichOut->m_hashTree.findHash(start, len) : nullptr;
+        KnownFile::createHashFromMemory(reinterpret_cast<const uint8*>(data.constData()),
+                                        static_cast<uint32>(len), actual.data(), aichPart);
+
+        const bool ok = singlePart
+            ? std::memcmp(actual.data(), fileHash.constData(), 16) == 0
+            : actual == partHashes[part];
+        partOk[static_cast<qsizetype>(part)] =
+            static_cast<char>(ok ? PartVerdict::Ok : PartVerdict::Bad);
+
+        if (keepGoing && !keepGoing(part + 1, partCount))
+            break;
+    }
+    return partOk;
 }
 
 // ===========================================================================
@@ -1051,7 +1120,7 @@ void PartFile::resumeFile()
 {
     // m_insufficient too: an out-of-space file has m_paused false (see pauseFile), and
     // would otherwise be unresumable.
-    if (!m_paused && !m_stopped && !m_insufficient)
+    if (!m_paused && !m_stopped && !m_insufficient && !m_completionError)
         return;
 
     m_paused = false;
@@ -1070,7 +1139,11 @@ void PartFile::resumeFile()
     // If we had a completion error but no gaps, retry completion
     if (m_completionError && m_gapList.empty()) {
         m_completionError = false;
-        completeFile();
+        // A part that could not be read back last time gets its check now; it may
+        // turn out corrupt and reopen the file.
+        setStatus(PartFileStatus::Ready);
+        verifyChangedParts(/*forceICH*/ false, /*noAICH*/ false);
+        completeIfVerified();
     }
 
     savePartFile();
@@ -1475,7 +1548,7 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
             m_md4HashsetNeeded = false;
 
         // Read tag count and iterate
-        const uint32 tagCount = file.readUInt32();
+        const uint32 tagCount = readTagCount(file, kMaxFileTags);
         m_gapList.clear();
 
         // Temporary gap storage (pairs of start/end)
@@ -1946,8 +2019,13 @@ bool PartFile::savePartFile()
 // completeFile (private) — initiates async file move
 // ===========================================================================
 
-void PartFile::completeFile()
+void PartFile::completeFile(bool alreadyVerified)
 {
+    // The flush below can land here again, and so can a late caller.
+    if (m_completionRunning)
+        return;
+    m_completionRunning = true;
+
     setStatus(PartFileStatus::Completing);
 
     // MFC PartFile.cpp:2975
@@ -1963,22 +2041,6 @@ void PartFile::completeFile()
     // Flush any remaining buffer
     if (!m_bufferedData.empty())
         flushBuffer();
-
-    // Verify AICH master hash if available
-    if (m_aichRecoveryHashSet.hasValidMasterHash()
-        && m_aichRecoveryHashSet.getStatus() == EAICHStatus::HashSetComplete)
-    {
-        // Save AICH hashset to known2_64.met
-        m_aichRecoveryHashSet.saveHashSet();
-
-        // Set AICH hash on file identifier if not already set
-        if (!fileIdentifier().hasAICHHash())
-            fileIdentifier().setAICHHash(m_aichRecoveryHashSet.getMasterHash());
-
-        // Extract AICH part hashes into FileIdentifier
-        if (!fileIdentifier().hasExpectedAICHHashCount())
-            fileIdentifier().setAICHHashSet(m_aichRecoveryHashSet);
-    }
 
     // Close the part file
     if (m_partFileHandle.isOpen())
@@ -1997,8 +2059,22 @@ void PartFile::completeFile()
     const QString incomingDir = thePrefs.incomingDirForCategory(static_cast<int>(m_category));
     const QString destPath = incomingDir + QDir::separator() + fileName();
 
-    // Perform the file move asynchronously
-    performFileMove(partPath, destPath);
+    // Re-read the whole file against its hashes before it is delivered and shared under
+    // them — MFC CompleteFile(false), srchybrid/PartFile.cpp:2685-2694. Without a hashset
+    // there is nothing to check against.
+    const bool canVerify = fileIdentifier().hasExpectedMD4HashCount();
+    if (!alreadyVerified && !canVerify)
+        logWarning(QStringLiteral("Completing '%1' without a final check: no part hashes")
+                       .arg(fileName()));
+
+    // Verify and move, both off the main thread
+    performFileMove(partPath, destPath, !alreadyVerified && canVerify);
+}
+
+void PartFile::finishLoadedDownload()
+{
+    if (m_status == PartFileStatus::Completing && !m_completionRunning)
+        completeIfVerified();
 }
 
 // ===========================================================================
@@ -2010,7 +2086,7 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
     if (m_paused || m_stopped)
         return 0;
 
-    const uint32 curTick = static_cast<uint32>(getTickCount());
+    const uint64 curTick = getTickCount();
 
     // Flush buffer if size or time threshold exceeded
     const uint32 bufferSize = thePrefs.fileBufferSize();
@@ -2397,15 +2473,54 @@ bool PartFile::readContainerHead(QByteArray& head) const
 // ===========================================================================
 
 FileMoveThread::FileMoveThread(const QString& srcPath, const QString& destPath,
-                               QObject* parent)
+                               std::optional<Verify> verify, uint64 aichFileSize, QObject* parent)
     : QThread(parent)
     , m_srcPath(srcPath)
     , m_destPath(destPath)
+    , m_verify(std::move(verify))
+    , m_aichFileSize(aichFileSize)
 {
 }
 
 void FileMoveThread::run()
 {
+    // The recovery set comes out of the same read as the final check; without it the
+    // next start has to read the whole file again just for this.
+    const bool wantAICH = m_aichFileSize > 0 && AICHRecoveryHashSet::hasKnown2MetPath();
+    AICHRecoveryHashSet aich(m_aichFileSize);
+    bool haveAICH = false;
+
+    if (m_verify) {
+        const QByteArray partOk = PartFile::verifyPartData(
+            m_srcPath, m_verify->fileSize, m_verify->fileHash, m_verify->partHashes,
+            [this](uint32, uint32) { return !isInterruptionRequested(); },
+            wantAICH ? &aich : nullptr);
+        if (isInterruptionRequested())
+            return;
+        if (partOk.count(static_cast<char>(PartFile::PartVerdict::Ok)) != partOk.size()) {
+            emit verifyFailed(partOk);
+            return;
+        }
+        if (wantAICH) {
+            aich.reCalculateHash(false);
+            haveAICH = aich.verifyHashTree(true);
+            if (haveAICH)
+                aich.setStatus(EAICHStatus::HashSetComplete);
+        }
+    } else if (wantAICH) {
+        // Already verified by a rehash, which builds no tree
+        haveAICH = KnownFile::buildAICHHashSet(m_srcPath, m_aichFileSize, aich);
+    }
+    if (isInterruptionRequested())
+        return;
+    if (haveAICH) {
+        const QByteArray master(reinterpret_cast<const char*>(aich.getMasterHash().getRawHash()),
+                                kAICHHashSize);
+        if (aich.saveHashSet())   // frees the set
+            emit aichHashSetStored(master);
+    }
+    emit moveStarted();
+
     // Ensure destination directory exists
     QDir destDir(QFileInfo(m_destPath).absolutePath());
     if (!destDir.exists())
@@ -2435,63 +2550,117 @@ void FileMoveThread::run()
         return;
     }
 
-    // Rename failed (cross-filesystem) — perform copy + delete
-    QFile srcFile(m_srcPath);
-    if (!srcFile.open(QIODevice::ReadOnly)) {
-        emit moveFinished(false, finalDest);
+    // Rename failed (cross-filesystem)
+    const bool ok = copyThenRename(m_srcPath, finalDest,
+                                   [this] { return !isInterruptionRequested(); });
+    if (!ok && isInterruptionRequested())
         return;
-    }
+    if (ok)
+        m_destPath = finalDest;
+    emit moveFinished(ok, finalDest);
+}
 
-    QFile destFile(finalDest);
-    if (!destFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        emit moveFinished(false, finalDest);
-        return;
-    }
+bool FileMoveThread::copyThenRename(const QString& srcPath, const QString& finalDest,
+                                    const std::function<bool()>& keepGoing)
+{
+    // Never a half-written file under the final name: a crash leaves only the staged
+    // sibling, which the next attempt replaces.
+    const QString staged = finalDest + Preferences::kCompletingSuffix;
+    QFile::remove(staged);
 
-    constexpr qint64 kBufSize = 256 * 1024;
-    char buf[kBufSize];
-    while (true) {
-        const qint64 got = srcFile.read(buf, kBufSize);
-        if (got <= 0)
+    QFile srcFile(srcPath);
+    if (!srcFile.open(QIODevice::ReadOnly))
+        return false;
+    QFile destFile(staged);
+    if (!destFile.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return false;
+
+    const qint64 total = srcFile.size();
+    qint64 copied = 0;
+    bool ok = true;
+    std::vector<char> buf(256 * 1024);
+    while (ok && copied < total) {
+        if (keepGoing && !keepGoing()) {
+            ok = false;
             break;
-        if (destFile.write(buf, got) != got) {
-            destFile.close();
-            QFile::remove(finalDest);
-            emit moveFinished(false, finalDest);
-            return;
         }
+        const qint64 got = srcFile.read(buf.data(), static_cast<qint64>(buf.size()));
+        // A read error is not the end of the file
+        if (got <= 0 || destFile.write(buf.data(), got) != got)
+            ok = false;
+        else
+            copied += got;
     }
-
-    srcFile.close();
+    ok = ok && copied == total && flushToDisk(destFile);
     destFile.close();
+    srcFile.close();
 
-    // Verify copy size
-    if (QFileInfo(finalDest).size() != QFileInfo(m_srcPath).size()) {
-        QFile::remove(finalDest);
-        emit moveFinished(false, finalDest);
-        return;
+    if (!ok || destFile.error() != QFileDevice::NoError || !QFile::rename(staged, finalDest)) {
+        QFile::remove(staged);
+        return false;
     }
-
-    // Remove source
-    QFile::remove(m_srcPath);
-    m_destPath = finalDest;
-    emit moveFinished(true, finalDest);
+    QFile::remove(srcPath);
+    return true;
 }
 
 // ===========================================================================
 // performFileMove (private) — launches async file move thread
 // ===========================================================================
 
-void PartFile::performFileMove(const QString& srcPath, const QString& destPath)
+void PartFile::performFileMove(const QString& srcPath, const QString& destPath, bool verify)
 {
-    auto* thread = new FileMoveThread(srcPath, destPath, &m_partNotifier);
+    std::optional<FileMoveThread::Verify> check;
+    if (verify) {
+        check.emplace();
+        check->fileHash = QByteArray(reinterpret_cast<const char*>(fileHash()), 16);
+        check->fileSize = static_cast<uint64>(fileSize());
+        check->partHashes = fileIdentifier().getRawMD4HashSet();
+    }
+
+    // Not a child of the notifier: a running QThread must never be destroyed. It deletes
+    // itself when done, and ~PartFile() interrupts and waits for it.
+    auto* thread = new FileMoveThread(srcPath, destPath, std::move(check),
+                                      static_cast<uint64>(fileSize()));
+    m_moveThread = thread;
+    m_completedAICHMaster.clear();
+
+    QObject::connect(thread, &FileMoveThread::aichHashSetStored, &m_partNotifier,
+                     [this](const QByteArray& masterHash) { m_completedAICHMaster = masterHash; });
+    m_fileOp = verify ? PartFileOp::Hashing : PartFileOp::Copying;
+
+    QObject::connect(thread, &FileMoveThread::moveStarted, &m_partNotifier, [this] {
+        m_fileOp = PartFileOp::Copying;
+    });
+
+    QObject::connect(thread, &FileMoveThread::verifyFailed,
+                     &m_partNotifier, [this](const QByteArray& partOk) {
+        m_completionRunning = false;
+        m_fileOp = PartFileOp::None;
+
+        if (partOk.contains(static_cast<char>(PartVerdict::Bad))) {
+            // Damaged on disk after it was verified. Those parts are downloaded again;
+            // the file goes back to being an ordinary download.
+            logWarning(QStringLiteral("Final check of '%1' found damaged parts — not delivered, "
+                                      "downloading them again").arg(fileName()));
+            applyRehashResult(partOk);
+        } else {
+            logError(QStringLiteral("Final check of '%1' could not read the file — not "
+                                    "delivered, resume to try again").arg(fileName()));
+            m_completionError = true;
+            setStatus(PartFileStatus::Error);
+        }
+        emit m_partNotifier.fileMoveFinished(false);
+    });
 
     QObject::connect(thread, &FileMoveThread::moveFinished,
                      &m_partNotifier, [this](bool success, const QString& finalPath) {
+        m_completionRunning = false;
+        m_fileOp = PartFileOp::None;
         if (success) {
             // Delete .part.met and .bak
             QFile::remove(m_fullName);
             QFile::remove(m_fullName + QStringLiteral(".bak"));
+            QFile::remove(m_fullName + QStringLiteral(".backup"));
 
             // The download is finished, so its saved source list is dead weight
             // (MorphXT CPartFile::PerformFileComplete, PartFile.cpp:4659).
@@ -2500,7 +2669,14 @@ void PartFile::performFileMove(const QString& srcPath, const QString& destPath)
             setStatus(PartFileStatus::Complete);
             setFilePath(finalPath);
             setPath(QFileInfo(finalPath).absolutePath());
-            m_tLastModified = std::time(nullptr);
+            // The date known.met matches the file by at the next scan; without it the
+            // file is rehashed in full (MFC srchybrid/PartFile.cpp:2930-2939).
+            if (const qint64 mtime = QFileInfo(finalPath).lastModified().toSecsSinceEpoch();
+                mtime > 0) {
+                m_tLastModified = static_cast<time_t>(mtime);
+                setUtcFileDate(m_tLastModified);
+            }
+            adoptCompletedAICHHashSet();
 
             // DownloadQueue handles SharedFileList/KnownFileList integration
             // via the downloadCompleted() signal connection
@@ -2522,13 +2698,13 @@ void PartFile::performFileMove(const QString& srcPath, const QString& destPath)
 // hashSinglePart (private) — verify MD4 + AICH for one part
 // ===========================================================================
 
-bool PartFile::hashSinglePart(uint32 partNumber, bool* aichAgreed)
+PartFile::PartVerdict PartFile::hashSinglePart(uint32 partNumber, bool* aichAgreed)
 {
     if (aichAgreed)
         *aichAgreed = false;
 
     if (partNumber >= partCount())
-        return true; // out of range, nothing to verify
+        return PartVerdict::Ok; // out of range, nothing to verify
 
     // We demand that MD4 and AICH agree, exactly as MFC does — a part is only good if
     // neither algorithm objects (srchybrid/PartFile.cpp:3124-3129).
@@ -2547,7 +2723,7 @@ bool PartFile::hashSinglePart(uint32 partNumber, bool* aichAgreed)
         if (m_partsAwaitingHashset.size() < partCount())
             m_partsAwaitingHashset.resize(partCount(), false);
         m_partsAwaitingHashset[partNumber] = true;
-        return true;
+        return PartVerdict::Ok;
     }
 
     const uint64 partStart = static_cast<uint64>(partNumber) * PARTSIZE;
@@ -2562,14 +2738,16 @@ bool PartFile::hashSinglePart(uint32 partNumber, bool* aichAgreed)
             partPath.chop(4);
         m_partFileHandle.setFileName(partPath);
         if (!m_partFileHandle.open(QIODevice::ReadWrite))
-            return true; // can't verify, assume OK
+            return PartVerdict::Unread;
     }
 
-    // Read part data from disk
-    m_partFileHandle.seek(static_cast<qint64>(partStart));
+    // Read part data from disk. A failure is no verdict: MFC throws here and the file
+    // goes to error (srchybrid/PartFile.cpp:4276-4313) — it never blesses the part.
+    if (!m_partFileHandle.seek(static_cast<qint64>(partStart)))
+        return PartVerdict::Unread;
     QByteArray partData = m_partFileHandle.read(static_cast<qint64>(partLen));
     if (static_cast<uint64>(partData.size()) != partLen)
-        return true; // can't read, assume OK
+        return PartVerdict::Unread;
 
     // A fresh tree that copies the geometry of the recovery set's node for this part:
     // the root it computes is then comparable with the stored part hash, and existing
@@ -2641,7 +2819,7 @@ bool PartFile::hashSinglePart(uint32 partNumber, bool* aichAgreed)
                           aichError ? QStringLiteral("corrupt") : QStringLiteral("ok")));
     }
 
-    return !md4Error && !aichError;
+    return (!md4Error && !aichError) ? PartVerdict::Ok : PartVerdict::Bad;
 }
 
 // ===========================================================================
@@ -2833,7 +3011,14 @@ void PartFile::aichRecoveryDataAvailable(uint32 partNumber)
 
     // Sanity check: if the part became complete, verify with MD4 too
     if (isComplete(partStart, partStart + partLen - 1)) {
-        if (!hashSinglePart(partNumber)) {
+        const PartVerdict verdict = hashSinglePart(partNumber);
+        if (verdict == PartVerdict::Unread) {
+            logError(QStringLiteral("PartFile AICH recovery: cannot read part %1 of '%2' back")
+                         .arg(partNumber).arg(fileName()));
+            markChangedParts(partStart, partStart);   // checked again on the next flush
+            return;
+        }
+        if (verdict == PartVerdict::Bad) {
             logWarning(QStringLiteral("PartFile AICH recovery: part %1 completed but MD4 disagrees — marking corrupt")
                            .arg(partNumber));
             if (!fileIdentifier().hasAICHHash())
@@ -2851,8 +3036,8 @@ void PartFile::aichRecoveryDataAvailable(uint32 partNumber)
         addToSharedFiles();
 
         // Check if entire file is now complete
-        if (m_gapList.empty() && m_bufferedData.empty())
-            completeFile();
+        if (m_bufferedData.empty())
+            completeIfVerified();
     }
 
     savePartFile();
@@ -3189,7 +3374,7 @@ bool PartFile::dropCorruptedPart(uint32 partNumber)
 // logKadSourceSearchSkipped (private)
 // ===========================================================================
 
-void PartFile::logKadSourceSearchSkipped(uint32 curTick, const QString& reason)
+void PartFile::logKadSourceSearchSkipped(uint64 curTick, const QString& reason)
 {
     // process() runs at 10 Hz, so the interesting part is *which* condition is
     // blocking, not how often. One line per file per interval keeps the Kad tab usable.
@@ -3283,6 +3468,25 @@ void PartFile::markChangedParts(uint64 start, uint64 end)
 }
 
 // ===========================================================================
+// completeIfVerified (private)
+// ===========================================================================
+
+void PartFile::completeIfVerified()
+{
+    if (!m_gapList.empty() || m_destroying)
+        return;
+
+    if (std::ranges::find(m_changedParts, true) != m_changedParts.end()) {
+        logError(QStringLiteral("PartFile: '%1' is fully downloaded but could not be read back "
+                                "to verify it — resume to try again").arg(fileName()));
+        m_completionError = true;
+        setStatus(PartFileStatus::Error);
+        return;
+    }
+    completeFile();
+}
+
+// ===========================================================================
 // verifyChangedParts (private)
 // ===========================================================================
 
@@ -3301,7 +3505,16 @@ void PartFile::verifyChangedParts(bool forceICH, bool noAICH)
 
         if (isComplete(p)) {
             bool aichAgreed = false;
-            if (hashSinglePart(p, &aichAgreed)) {
+            const PartVerdict verdict = hashSinglePart(p, &aichAgreed);
+            if (verdict == PartVerdict::Unread) {
+                // No verdict: neither blessed nor condemned, and looked at again on
+                // the next flush. completeIfVerified() keeps the file from finishing.
+                logError(QStringLiteral("PartFile: cannot read part %1 of '%2' back to verify it")
+                             .arg(p).arg(fileName()));
+                m_changedParts[p] = true;
+                continue;
+            }
+            if (verdict == PartVerdict::Ok) {
                 // The part verified, so it is no longer a candidate for recovery.
                 m_corruptionBlackBox.verifiedData(partStart, partEnd);
                 dropCorruptedPart(p);
@@ -3314,10 +3527,10 @@ void PartFile::verifyChangedParts(bool forceICH, bool noAICH)
 
                 // A chunk we fetched over the HTTP Cache may now be handed on to other
                 // peers — but only because MD4 actually matched, which is a stronger
-                // claim than hashSinglePart() returning true. That function answers
-                // true for a part it could not check at all (index out of range, file
-                // it could not open, short read) and its md4OK starts life true, only
-                // falsified when a per-part hash exists to compare against. Relaying
+                // claim than hashSinglePart() answering Ok. That is also its answer for
+                // a part it had no hash to check against (it then waits for the
+                // hashset), and its md4 error flag is only raised when a per-part hash
+                // exists to compare with. Relaying
                 // means vouching for the bytes, so demand the hash really existed.
                 if (theApp.httpCache && fileIdentifier().getMD4PartHash(p) != nullptr) {
                     std::array<uint8, 16> hash{};
@@ -3373,7 +3586,9 @@ void PartFile::verifyChangedParts(bool forceICH, bool noAICH)
             // bytes behind them were never erased — only distrusted. If MD4 over
             // the whole part matches, they were fine all along and re-downloading
             // them would be wasted traffic.
-            if (!hashSinglePart(p))
+            // Unread included: filling the gaps of a part nobody could read is the
+            // worst outcome this function has.
+            if (hashSinglePart(p) != PartVerdict::Ok)
                 continue;
 
             m_corruptionBlackBox.verifiedData(partStart, partEnd);
@@ -3422,6 +3637,33 @@ bool PartFile::shrinkToAvoidAlreadyRequested(uint64& start, uint64& end) const
         if (!shrink(bd.start, bd.end))
             return false;
     return true;
+}
+
+// ===========================================================================
+// adoptCompletedAICHHashSet (private) — MFC srchybrid/PartFile.cpp:1543-1550
+// ===========================================================================
+
+void PartFile::adoptCompletedAICHHashSet()
+{
+    if (m_completedAICHMaster.size() != kAICHHashSize) {
+        logDebug(QStringLiteral("No AICH recovery set stored for completed file %1").arg(fileName()));
+        return;
+    }
+    const AICHHash master(reinterpret_cast<const uint8*>(m_completedAICHMaster.constData()));
+    m_completedAICHMaster.clear();
+
+    // The data matched its MD4 hashes, so a different AICH root (from a link or a
+    // source) was the wrong one.
+    if (fileIdentifier().hasAICHHash() && fileIdentifier().getAICHHash() != master)
+        logWarning(QStringLiteral("AICH hash of '%1' replaced by the one of the delivered data")
+                       .arg(fileName()));
+    fileIdentifier().setAICHHash(master);
+
+    AICHRecoveryHashSet stored(fileSize());
+    stored.setMasterHash(master, EAICHStatus::HashSetComplete);
+    if (!stored.loadHashSet() || !fileIdentifier().setAICHHashSet(stored))
+        logDebug(QStringLiteral("Failed to create AICH part hashset for %1").arg(fileName()));
+    setAICHRecoverHashSetAvailable(true);
 }
 
 } // namespace eMule

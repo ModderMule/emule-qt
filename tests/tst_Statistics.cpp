@@ -73,8 +73,8 @@ void tst_Statistics::construct_default()
     QCOMPARE(stats.filteredClients(), uint32{0});
     QCOMPARE(stats.startTick(), uint64{0});
     QCOMPARE(stats.uptimeSecs(), uint32{0});
-    QCOMPARE(stats.transferStartTime(), uint32{0});
-    QCOMPARE(stats.serverConnectTime(), uint32{0});
+    QCOMPARE(stats.transferStartTime(), uint64{0});
+    QCOMPARE(stats.serverConnectTime(), uint64{0});
     QCOMPARE(stats.transferTime(), uint32{0});
     QCOMPARE(stats.uploadTime(), uint32{0});
     QCOMPARE(stats.downloadTime(), uint32{0});
@@ -177,7 +177,7 @@ void tst_Statistics::serverDuration_tracking()
     QCOMPARE(stats.serverDuration(), uint32{0});
 
     // Set server connect time to simulate connection
-    stats.setServerConnectTime(static_cast<uint32>(getTickCount()));
+    stats.setServerConnectTime(getTickCount());
     // After updateConnectionStats, serverDuration will be calculated
     stats.updateConnectionStats(0.0f, 0.0f);
     // Should be very close to 0 since we just set it
@@ -189,7 +189,7 @@ void tst_Statistics::add2TotalServerDuration_accumulates()
     Statistics stats;
     // Simulate a server connection that lasted some time
     // by setting internal state through the public API
-    stats.setServerConnectTime(static_cast<uint32>(getTickCount()) - SEC2MS(10));
+    stats.setServerConnectTime(getTickCount() - SEC2MS(10));
     stats.updateConnectionStats(0.0f, 0.0f);
 
     const uint32 dur1 = stats.serverDuration();
@@ -217,7 +217,7 @@ void tst_Statistics::serverConnected_countsReconnectsNotConnections()
     QVERIFY(stats.serverConnectTime() != 0);   // the clock is running
 
     stats.serverDisconnected();
-    QCOMPARE(stats.serverConnectTime(), uint32{0});
+    QCOMPARE(stats.serverConnectTime(), uint64{0});
 
     stats.serverConnected();
     QCOMPARE(stats.reconnects(), uint16{1});
@@ -346,10 +346,10 @@ void tst_Statistics::globalState_gettersSetters()
     QCOMPARE(stats.startTick(), uint64{12345});
 
     stats.setTransferStartTime(67890);
-    QCOMPARE(stats.transferStartTime(), uint32{67890});
+    QCOMPARE(stats.transferStartTime(), uint64{67890});
 
     stats.setServerConnectTime(11111);
-    QCOMPARE(stats.serverConnectTime(), uint32{11111});
+    QCOMPARE(stats.serverConnectTime(), uint64{11111});
 }
 
 void tst_Statistics::globalProgress_gettersSetters()
@@ -373,7 +373,7 @@ void tst_Statistics::avgDownloadRate_session()
     QCOMPARE(stats.avgDownloadRate(AverageType::Session), 0.0f);
 
     // Set transfer start time far enough in the past (>5 seconds)
-    stats.setTransferStartTime(static_cast<uint32>(getTickCount()) - SEC2MS(10));
+    stats.setTransferStartTime(getTickCount() - SEC2MS(10));
     stats.addSessionReceivedBytes(10240);  // 10 KB
 
     // Session average: 10240 bytes / 1024 / 10s = 1.0 KB/s
@@ -387,7 +387,7 @@ void tst_Statistics::avgUploadRate_session()
     Statistics stats;
     QCOMPARE(stats.avgUploadRate(AverageType::Session), 0.0f);
 
-    stats.setTransferStartTime(static_cast<uint32>(getTickCount()) - SEC2MS(10));
+    stats.setTransferStartTime(getTickCount() - SEC2MS(10));
     stats.addSessionSentBytes(10240);  // 10 KB
 
     const float rate = stats.avgUploadRate(AverageType::Session);
@@ -408,7 +408,7 @@ void tst_Statistics::recordRate_appendsHistory()
     QCOMPARE(stats.avgDownloadRate(AverageType::Time), 0.0f);
 
     // Set transfer start time and add some data
-    stats.setTransferStartTime(static_cast<uint32>(getTickCount()) - SEC2MS(60));
+    stats.setTransferStartTime(getTickCount() - SEC2MS(60));
     stats.addSessionReceivedBytes(1024 * 100);
     stats.recordRate();
 
@@ -445,10 +445,10 @@ void tst_Statistics::addTransferData_stampsTransferStartOnce()
 {
     Statistics stats;
     stats.addTransferData(ClientSoftware::eMule, 4662, false, false, 0);
-    QCOMPARE(stats.transferStartTime(), uint32{0});   // nothing moved, nothing stamped
+    QCOMPARE(stats.transferStartTime(), uint64{0});   // nothing moved, nothing stamped
 
     stats.addTransferData(ClientSoftware::eMule, 4662, false, false, 10);
-    const uint32 first = stats.transferStartTime();
+    const uint64 first = stats.transferStartTime();
     QVERIFY(first != 0);
 
     stats.addTransferData(ClientSoftware::eMule, 4662, false, true, 10);
@@ -466,7 +466,7 @@ void tst_Statistics::totalAverage_blendsWithTheRebaseSnapshotNotThePref()
 
     Statistics stats;
     stats.init(prefs);
-    stats.setTransferStartTime(static_cast<uint32>(getTickCount()) - SEC2MS(10));
+    stats.setTransferStartTime(getTickCount() - SEC2MS(10));
     stats.addSessionReceivedBytes(10 * 1024 * 10);   // 10 KB/s over 10 s
 
     const float total = stats.avgDownloadRate(AverageType::Total);

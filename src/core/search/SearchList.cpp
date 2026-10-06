@@ -405,7 +405,23 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
             }
         }
 
+        const uint32 addedSources = fileOwner->sourceCount();
+
         if (matchingChild) {
+            // Two answers for one name disagreeing on the AICH root: trust neither, and
+            // remember it so a third cannot bring one back (MFC SearchList.cpp:489-503).
+            if (fileOwner->fileIdentifier().hasAICHHash()) {
+                FileIdentifier& childId = matchingChild->fileIdentifier();
+                if (childId.hasAICHHash()) {
+                    if (childId.getAICHHash() != fileOwner->fileIdentifier().getAICHHash()) {
+                        matchingChild->setFoundMultipleAICH();
+                        childId.clearAICHHash();
+                    }
+                } else if (!matchingChild->hasFoundMultipleAICH()) {
+                    childId.setAICHHash(fileOwner->fileIdentifier().getAICHHash());
+                }
+            }
+
             // Merge sources into existing child
             matchingChild->addSources(fileOwner->sourceCount());
             matchingChild->addCompleteSources(fileOwner->completeSourceCount());
@@ -432,12 +448,25 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
         parent->addSources(bestSources);
         parent->addCompleteSources(bestComplete);
 
-        // AICH consensus: if new file has AICH and parent doesn't, adopt it
-        if (fileOwner && fileOwner->fileIdentifier().hasAICHHash() &&
-            !parent->fileIdentifier().hasAICHHash())
-        {
-            parent->fileIdentifier().setAICHHash(fileOwner->fileIdentifier().getAICHHash());
+        // The parent carries a root only when every child that has one agrees on it
+        // (MFC SearchList.cpp:548-600). It is seeded as Verified by a download.
+        const AICHHash* agreed = nullptr;
+        bool conflict = false;
+        for (const auto* child : parent->listChildren()) {
+            const FileIdentifier& childId = child->fileIdentifier();
+            if (childId.hasAICHHash()) {
+                if (!agreed)
+                    agreed = &childId.getAICHHash();
+                else if (*agreed != childId.getAICHHash())
+                    conflict = true;
+            } else if (child->hasFoundMultipleAICH()) {
+                conflict = true;
+            }
         }
+        if (agreed && !conflict)
+            parent->fileIdentifier().setAICHHash(*agreed);
+        else
+            parent->fileIdentifier().clearAICHHash();
 
         // Update spam rating
         if (!clientResponse) {
@@ -446,7 +475,7 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
         }
 
         // Update found sources count
-        m_foundSourcesCount[searchID] += fileOwner ? fileOwner->sourceCount() : 0;
+        m_foundSourcesCount[searchID] += addedSources;
 
         emit resultUpdated(parent);
 

@@ -9,6 +9,7 @@
 
 #include "AICHData.h"
 #include "AICHHashTree.h"
+#include "net/Address.h"
 
 #include <QMutex>
 #include <QString>
@@ -28,10 +29,15 @@ class UpDownClient;
 
 class AICHUntrustedHash {
 public:
-    bool addSigningIP(uint32 ip, bool testOnly);
+    /// @p voter is a voterKey(): one vote per network, not per address.
+    bool addSigningIP(uint64 voter, bool testOnly);
+
+    /// IPv4: the 20 most significant bits (MFC). IPv6: the /48, flagged so the two
+    /// families cannot collide.
+    [[nodiscard]] static uint64 voterKey(const Address& from);
 
     AICHHash m_hash;
-    std::vector<uint32> m_signingIPs;
+    std::vector<uint64> m_signingIPs;
 };
 
 // ---------------------------------------------------------------------------
@@ -44,6 +50,8 @@ public:
 
     bool reCalculateHash(bool dontReplace = false);
     bool verifyHashTree(bool deleteBadTrees);
+    void untrustedHashReceived(const AICHHash& hash, const Address& from);
+    /// IPv4 in network byte order.
     void untrustedHashReceived(const AICHHash& hash, uint32 fromIP);
     bool isPartDataAvailable(uint64 partStartPos, EMFileSize fileSize);
 

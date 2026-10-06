@@ -4,6 +4,7 @@
 
 #include "kademlia/KadSearchManager.h"
 #include "kademlia/Kademlia.h"
+#include "kademlia/KadIndexed.h"
 #include "kademlia/KadContact.h"
 #include "kademlia/KadLog.h"
 #include "kademlia/KadMiscUtils.h"
@@ -62,6 +63,12 @@ Search* SearchManager::prepareLookup(SearchType type, bool start, const UInt128&
     // Check if already searching for this target
     if (alreadySearchingFor(id))
         return nullptr;
+
+    // Overloaded keyword: no store until the mark runs out. MFC SearchManager.cpp:181-187.
+    if (type == SearchType::StoreKeyword) {
+        if (auto* indexed = Kademlia::getInstanceIndexed(); indexed && !indexed->sendStoreRequest(id))
+            return nullptr;
+    }
 
     auto* search = new Search();
     search->setTargetID(id);
@@ -234,6 +241,12 @@ void SearchManager::processResult(const UInt128& target, const UInt128& answer,
         logKad(QStringLiteral("Kad: SEARCH_RES result for %1 — search not found (already removed)")
                    .arg(target.toHexString()));
     }
+}
+
+bool SearchManager::expectsResultsFrom(const UInt128& target, uint32 fromIP, uint16 fromPort)
+{
+    const auto it = s_searches.find(target);
+    return it != s_searches.end() && it->second->sentActionTo(fromIP, fromPort);
 }
 
 void SearchManager::processPublishResult(const UInt128& target, uint8 load, bool loadResponse)

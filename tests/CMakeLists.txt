@@ -279,6 +279,7 @@ emule_add_test(tst_IrcClient     FOLDER "Chat")
 emule_add_test(tst_Friend       FOLDER "Friends")
 emule_add_test(tst_FriendList   FOLDER "Friends")
 emule_add_test(tst_FriendConnect FOLDER "Friends")
+emule_add_test(tst_ChatCaptcha   FOLDER "Friends")
 
 # Module 15: Statistics & Logging
 emule_add_test(tst_Statistics      FOLDER "Stats")
@@ -754,6 +755,17 @@ emule_add_test(tst_TextLinks FOLDER "Ipc"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Smileys.cpp")
 target_include_directories(tst_TextLinks PRIVATE "${CMAKE_SOURCE_DIR}/src/gui")
 target_link_libraries(tst_TextLinks PRIVATE Qt6::Widgets)
+
+# Tail-following log pane (Server Info, Log, IRC, chat) — the real source compiles
+# standalone against the stub pch.
+emule_add_test(tst_LogTextView FOLDER "Gui"
+    SOURCES tst_LogTextView.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/LogTextView.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/LogTextView.h")
+target_include_directories(tst_LogTextView PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_LogTextView PRIVATE Qt6::Widgets)
 
 # Version manifest parsing. VersionChecker's statics are pure, so no reply is needed.
 # src/gui comes first on the include path, so VersionChecker.cpp picks up the real

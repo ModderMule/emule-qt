@@ -122,6 +122,10 @@ public:
 
     // --- Kad publish info ---
 
+    /// Results for this name disagreed on the AICH root; none is taken any more.
+    [[nodiscard]] bool hasFoundMultipleAICH() const { return m_multipleAICHFound; }
+    void setFoundMultipleAICH() { m_multipleAICHFound = true; }
+
     [[nodiscard]] uint32 kadPublishInfo() const { return m_kadPublishInfo; }
     void setKadPublishInfo(uint32 val) { m_kadPublishInfo = val; }
 
@@ -213,6 +217,7 @@ private:
     uint32 m_sourceCount = 0;
     uint32 m_completeSourceCount = 0;
     uint32 m_kadPublishInfo = 0;
+    bool m_multipleAICHFound = false;
     uint32 m_searchID = 0;
     uint32 m_spamRating = 0;
     uint32 m_clientID = 0;

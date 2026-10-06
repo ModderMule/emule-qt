@@ -168,14 +168,18 @@ bool Packet::unPackPacket(uint32 maxDecompressedSize)
     char* unpack = nullptr;
     uLongf unpackedSize = 0;
     int result = Z_OK;
-    do {
+    for (;;) {
         delete[] unpack;
         unpack = new char[nNewSize];
         unpackedSize = nNewSize;
         result = uncompress(reinterpret_cast<Bytef*>(unpack), &unpackedSize,
                             reinterpret_cast<const Bytef*>(pBuffer), size);
-        nNewSize *= 2;
-    } while (result == Z_BUF_ERROR && nNewSize < maxDecompressedSize);
+        if (result != Z_BUF_ERROR || nNewSize >= maxDecompressedSize)
+            break;
+        // Last rung is the cap itself: MFC stops below it and rejects what would still fit.
+        nNewSize = static_cast<uint32>(
+            std::min<uint64>(uint64{nNewSize} * 2, maxDecompressedSize));
+    }
 
     if (result == Z_OK) {
         size = static_cast<uint32>(unpackedSize);
