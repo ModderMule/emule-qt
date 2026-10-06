@@ -153,6 +153,7 @@ signals:
     void chatCaptchaResultReceived(const Ipc::IpcMessage& msg);
     void friendListChanged(const Ipc::IpcMessage& msg);
     void clientSharedFilesReceived(const Ipc::IpcMessage& msg);
+    void searchPreviewReceived(const Ipc::IpcMessage& msg);
     /// Port-mapping status changed (protocol chosen, mapping gained or lost).
     void portMapStatusChanged(const Ipc::IpcMessage& msg);
 

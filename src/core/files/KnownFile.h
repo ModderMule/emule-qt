@@ -164,6 +164,10 @@ public:
 
     // Metadata version
     [[nodiscard]] uint32 metaDataVer() const { return m_metaDataVer; }
+    void setMetaDataVer(uint32 ver) { m_metaDataVer = ver; }
+    /// Version stamped on tags this client extracted (MFC META_DATA_VER).
+    static constexpr uint32 kMetaDataVer = 2;
+    [[nodiscard]] bool hasMetaDataTags() const;
 
     // Media metadata extraction
     void updateMetaDataTags();

@@ -3,6 +3,7 @@
 
 #include "TestHelpers.h"
 #include "webserver/WebServer.h"
+#include "webserver/WebSessionManager.h"
 #include "webserver/WebTemplateEngine.h"
 #include "webserver/WebTemplateStrings.h"
 #include "utils/OtherFunctions.h"
@@ -36,6 +37,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
+#include <QNetworkCookieJar>
 #include <QRegularExpression>
 #include <QScopeGuard>
 #include <QSet>
@@ -298,6 +300,14 @@ public:
 // Test fixture
 // ---------------------------------------------------------------------------
 
+/// Keeps nothing, so no session leaks from one request or test into the next.
+class NoCookieJar : public QNetworkCookieJar {
+public:
+    using QNetworkCookieJar::QNetworkCookieJar;
+    QList<QNetworkCookie> cookiesForUrl(const QUrl&) const override { return {}; }
+    bool setCookiesFromUrl(const QList<QNetworkCookie>&, const QUrl&) override { return false; }
+};
+
 class tst_WebServer : public QObject {
     Q_OBJECT
 
@@ -335,9 +345,12 @@ private slots:
     // Preferences tests
     void getPreferences();
     void patchPreferences();
+    void postSearch_offlineIsAnErrorNotAnIdleId();
+    void deleteSearch_removesResults();
 
     // CORS tests
     void corsOptionsRequest();
+    void corsAllowedOriginsOptIn();
 
     // Error tests
     void invalidEndpoint();
@@ -391,6 +404,12 @@ private slots:
     void usenetAddFromThePageCarriesBytesAndOptions();
     void usenetPageWithoutBackendSaysUnavailable();
     void webEd2kActionRefusesAMetaHash();
+    void webSession_isACookieNotAUrlParameter();
+    void webActions_needAPostFromOurOwnPages();
+    void webLogin_backsOffAfterRepeatedFailures();
+    void loginBackoff_timeline();
+    void webOptionsForm_savesOrChangesNothing();
+    void webSearchForm_offlineSaysSo();
     void restUsenetListNeedsKeyAndReturnsRows();
     void restUsenetStatsIsNotShadowedByItemRoute();
     void restUsenetItemActionsAndErrors();
@@ -483,6 +502,9 @@ private:
 
 void tst_WebServer::initTestCase()
 {
+    m_nam.setCookieJar(new NoCookieJar(&m_nam));
+    // A redirect is an answer to look at (login sets its cookie on one).
+    m_nam.setRedirectPolicy(QNetworkRequest::ManualRedirectPolicy);
     m_stats = std::make_unique<Statistics>();
     m_friendList = std::make_unique<FriendList>();
     m_serverList = std::make_unique<ServerList>();
@@ -787,6 +809,42 @@ void tst_WebServer::patchPreferences()
     QCOMPARE(m_preferences->nick(), QStringLiteral("WebTestNick"));
 }
 
+// Nothing is connected here: a search cannot go out, and saying "here is your id"
+// would leave the caller polling an id nobody asked anything for.
+void tst_WebServer::postSearch_offlineIsAnErrorNotAnIdleId()
+{
+    for (const char* type : {"ed2kServer", "kad", "automatic"}) {
+        const QJsonObject body{
+            {QStringLiteral("expression"), QStringLiteral("holiday")},
+            {QStringLiteral("type"), QString::fromLatin1(type)},
+        };
+        const auto resp = sendRequest(QByteArrayLiteral("POST"), QStringLiteral("/api/v1/search"),
+                                      QJsonDocument(body).toJson(QJsonDocument::Compact));
+        QVERIFY2(resp.statusCode == 409, type);
+        QVERIFY(!resp.json.object()[QStringLiteral("error")].toObject()
+                     [QStringLiteral("message")].toString().isEmpty());
+    }
+
+    const QJsonObject bad{
+        {QStringLiteral("expression"), QStringLiteral("holiday")},
+        {QStringLiteral("type"), QStringLiteral("carrier-pigeon")},
+    };
+    QCOMPARE(sendRequest(QByteArrayLiteral("POST"), QStringLiteral("/api/v1/search"),
+                         QJsonDocument(bad).toJson(QJsonDocument::Compact)).statusCode, 400);
+}
+
+void tst_WebServer::deleteSearch_removesResults()
+{
+    SearchParams params;
+    params.type = SearchType::Ed2kServer;
+    const uint32 id = m_searchList->newSearch({}, params);
+
+    const QString path = QStringLiteral("/api/v1/search/%1").arg(id);
+    QCOMPARE(sendRequest(QByteArrayLiteral("DELETE"), path).statusCode, 200);
+    QVERIFY(!m_searchList->hasSearch(id));
+    QCOMPARE(sendRequest(QByteArrayLiteral("DELETE"), path).statusCode, 404);
+}
+
 // ---------------------------------------------------------------------------
 // CORS tests
 // ---------------------------------------------------------------------------
@@ -798,17 +856,102 @@ void tst_WebServer::corsOptionsRequest()
     // OPTIONS should return 204 No Content
     QCOMPARE(resp.statusCode, 204);
 
-    // Check CORS headers — header names may be lowercase in the response
-    bool found = false;
-    for (auto it = resp.headers.cbegin(); it != resp.headers.cend(); ++it) {
-        if (it.key().compare(QStringLiteral("access-control-allow-origin"),
-                             Qt::CaseInsensitive) == 0) {
-            QCOMPARE(it.value(), QStringLiteral("*"));
-            found = true;
-            break;
+    // No response invites another origin to read it: "*" let any page the user
+    // visits read the replies to requests it made here.
+    const auto hasCors = [](const Response& r) {
+        for (auto it = r.headers.cbegin(); it != r.headers.cend(); ++it) {
+            if (it.key().startsWith(QStringLiteral("access-control-"), Qt::CaseInsensitive))
+                return true;
         }
+        return false;
+    };
+    QVERIFY(!hasCors(resp));
+    QVERIFY(!hasCors(sendRequest(QByteArrayLiteral("GET"), QStringLiteral("/api/v1/stats"))));
+}
+
+// corsAllowedOrigins: listed origins get Access-Control-* on /api/v1/*, nobody else.
+void tst_WebServer::corsAllowedOriginsOptIn()
+{
+    const QByteArray good = QByteArrayLiteral("http://app.example:5173");
+    const QString acao = QStringLiteral("access-control-allow-origin");
+    const auto hasCors = [](const Response& r) {
+        for (auto it = r.headers.cbegin(); it != r.headers.cend(); ++it) {
+            if (it.key().startsWith(QStringLiteral("access-control-")))
+                return true;
+        }
+        return false;
+    };
+    const auto ask = [this](uint16 port, const QByteArray& method, const QString& path,
+                            const QByteArray& origin, bool withKey) {
+        QList<std::pair<QByteArray, QByteArray>> headers;
+        if (!origin.isEmpty())
+            headers.append({QByteArrayLiteral("Origin"), origin});
+        if (withKey)
+            headers.append({QByteArrayLiteral("X-Api-Key"), m_apiKey.toUtf8()});
+        return sendRaw(port, method, path, {}, {}, headers);
+    };
+    const QString stats = QStringLiteral("/api/v1/stats");
+
+    {
+        auto server = startServer(/*webUiEnabled*/ true, /*restApiEnabled*/ true, {},
+            [](WebServer&, WebServerConfig& c) {
+                c.corsAllowedOrigins = {QStringLiteral("HTTP://App.Example:5173/")};
+            });
+        QVERIFY(server->isRunning());
+        const uint16 port = server->port();
+
+        // Listed origin: echoed on success and on the 401 alike
+        Response r = ask(port, QByteArrayLiteral("GET"), stats, good, true);
+        QCOMPARE(r.statusCode, 200);
+        QCOMPARE(r.headers.value(acao), QString::fromLatin1(good));
+        QVERIFY(r.headers.value(QStringLiteral("vary")).contains(QStringLiteral("Origin")));
+        QVERIFY(!r.headers.contains(QStringLiteral("access-control-allow-credentials")));
+
+        r = ask(port, QByteArrayLiteral("GET"), stats, good, false);
+        QCOMPARE(r.statusCode, 401);
+        QCOMPARE(r.headers.value(acao), QString::fromLatin1(good));
+
+        // Preflight carries no key and gets the full set
+        r = ask(port, QByteArrayLiteral("OPTIONS"), stats, good, false);
+        QCOMPARE(r.statusCode, 204);
+        QCOMPARE(r.headers.value(acao), QString::fromLatin1(good));
+        QVERIFY(r.headers.value(QStringLiteral("access-control-allow-methods")).contains(QStringLiteral("PATCH")));
+        QVERIFY(r.headers.value(QStringLiteral("access-control-allow-headers"))
+                    .contains(QStringLiteral("X-Api-Key"), Qt::CaseInsensitive));
+
+        // Unlisted origin, no origin, and anything outside /api/v1/: nothing
+        QVERIFY(!hasCors(ask(port, QByteArrayLiteral("GET"), stats, QByteArrayLiteral("http://evil.test"), true)));
+        QVERIFY(!hasCors(ask(port, QByteArrayLiteral("OPTIONS"), stats, QByteArrayLiteral("http://evil.test"), false)));
+        QVERIFY(!hasCors(ask(port, QByteArrayLiteral("GET"), stats, {}, true)));
+        QVERIFY(!hasCors(ask(port, QByteArrayLiteral("GET"), QStringLiteral("/"), good, false)));
+
+        // The gzip step rebuilds the response; the CORS headers have to survive it.
+        // An explicit Accept-Encoding keeps QNetworkAccessManager from inflating.
+        // Replies of 256 bytes or less are not compressed, hence the long nick.
+        const QString nick = m_preferences->nick();
+        m_preferences->setNick(QString(400, QLatin1Char('n')));
+        const auto restoreNick = qScopeGuard([&] { m_preferences->setNick(nick); });
+        r = sendRaw(port, QByteArrayLiteral("GET"), QStringLiteral("/api/v1/preferences"), {}, {},
+                    {{QByteArrayLiteral("Origin"), good},
+                     {QByteArrayLiteral("X-Api-Key"), m_apiKey.toUtf8()},
+                     {QByteArrayLiteral("Accept-Encoding"), QByteArrayLiteral("gzip")}});
+        QCOMPARE(r.statusCode, 200);
+        QCOMPARE(r.headers.value(QStringLiteral("content-encoding")), QStringLiteral("gzip"));
+        QCOMPARE(r.headers.value(acao), QString::fromLatin1(good));
+        QVERIFY(r.headers.value(QStringLiteral("vary")).contains(QStringLiteral("Origin")));
+        server->stop();
     }
-    QVERIFY(found);
+
+    {
+        auto server = startServer(/*webUiEnabled*/ false, /*restApiEnabled*/ true, {},
+            [](WebServer&, WebServerConfig& c) { c.corsAllowedOrigins = {QStringLiteral("*")}; });
+        QVERIFY(server->isRunning());
+        const Response r = ask(server->port(), QByteArrayLiteral("GET"), stats,
+                               QByteArrayLiteral("http://anyone.test"), true);
+        QCOMPARE(r.statusCode, 200);
+        QCOMPARE(r.headers.value(acao), QStringLiteral("*"));
+        server->stop();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -826,6 +969,24 @@ void tst_WebServer::invalidEndpoint()
 // ---------------------------------------------------------------------------
 // Web UI / REST API independence
 // ---------------------------------------------------------------------------
+
+// The web session travels in a cookie. Tests keep writing it as "ses=<id>" in the
+// path for brevity; this moves it into the Cookie header, where the server reads it.
+static QNetworkRequest sessionRequest(uint16 port, QString path)
+{
+    static const QRegularExpression rx(QStringLiteral("([?&])ses=([^&]*)&?"));
+    QByteArray cookie;
+    if (const QRegularExpressionMatch m = rx.match(path); m.hasMatch()) {
+        cookie = QByteArrayLiteral("emuleqt_ses_") + QByteArray::number(port) + '=' + m.captured(2).toLatin1();
+        path.replace(m.capturedStart(), m.capturedLength(), m.captured(1));
+        if (path.endsWith(QLatin1Char('?')) || path.endsWith(QLatin1Char('&')))
+            path.chop(1);
+    }
+    QNetworkRequest req(QUrl(QStringLiteral("http://127.0.0.1:%1%2").arg(port).arg(path)));
+    if (!cookie.isEmpty())
+        req.setRawHeader(QByteArrayLiteral("Cookie"), cookie);
+    return req;
+}
 
 int tst_WebServer::rawGetStatus(uint16 port, const QString& path, bool withKey)
 {
@@ -847,7 +1008,7 @@ int tst_WebServer::rawGetStatus(uint16 port, const QString& path, bool withKey)
 
 QString tst_WebServer::rawGetBody(uint16 port, const QString& path)
 {
-    QNetworkRequest req(QUrl(QStringLiteral("http://127.0.0.1:%1%2").arg(port).arg(path)));
+    QNetworkRequest req = sessionRequest(port, path);
     QNetworkReply* reply = m_nam.get(req);
     if (!reply->isFinished()) {
         QEventLoop loop;
@@ -2091,7 +2252,7 @@ tst_WebServer::Response tst_WebServer::sendRaw(uint16 port, const QByteArray& me
                                                const QByteArray& contentType,
                                                const QList<std::pair<QByteArray, QByteArray>>& headers)
 {
-    QNetworkRequest req(QUrl(QStringLiteral("http://127.0.0.1:%1%2").arg(port).arg(path)));
+    QNetworkRequest req = sessionRequest(port, path);
     if (!contentType.isEmpty())
         req.setHeader(QNetworkRequest::ContentTypeHeader, contentType);
     for (const auto& [key, value] : headers)
@@ -2111,6 +2272,8 @@ tst_WebServer::Response tst_WebServer::sendRaw(uint16 port, const QByteArray& me
     resp.statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     resp.rawBody = reply->readAll();
     resp.json = QJsonDocument::fromJson(resp.rawBody);
+    for (const auto& header : reply->rawHeaderList())
+        resp.headers[QString::fromUtf8(header).toLower()] = QString::fromUtf8(reply->rawHeader(header));
     reply->deleteLater();
     return resp;
 }
@@ -2129,12 +2292,12 @@ std::unique_ptr<WebServer> tst_WebServer::startUsenetUi(UsenetWebBackend* backen
 
 QString tst_WebServer::webLogin(uint16 port, const QString& password)
 {
-    // The form posts to "/", and the answer is a meta refresh carrying the session.
+    // The form posts to "/"; the answer is a redirect that sets the session cookie.
     const Response r = sendRaw(port, QByteArrayLiteral("POST"), QStringLiteral("/"),
                                QByteArrayLiteral("p=") + QUrl::toPercentEncoding(password),
                                QByteArrayLiteral("application/x-www-form-urlencoded"));
-    static const QRegularExpression rx(QStringLiteral("ses=([^&\"]+)"));
-    const QRegularExpressionMatch m = rx.match(QString::fromUtf8(r.rawBody));
+    static const QRegularExpression rx(QStringLiteral("emuleqt_ses_\\d+=([0-9a-f]+)"));
+    const QRegularExpressionMatch m = rx.match(r.headers.value(QStringLiteral("set-cookie")));
     return m.hasMatch() ? m.captured(1) : QString();
 }
 
@@ -2150,7 +2313,7 @@ void tst_WebServer::usenetPageRendersTheQueueEscaped()
     const QString page = rawGetBody(port, QStringLiteral("/?ses=%1&w=usenet").arg(ses));
 
     // The tab exists and is the active one.
-    QVERIFY(page.contains(QStringLiteral("nav-tab active\"><a href=\"?ses=%1&amp;w=usenet\"").arg(ses)));
+    QVERIFY(page.contains(QStringLiteral("nav-tab active\"><a href=\"?w=usenet\"")));
     QVERIFY(page.contains(QStringLiteral("icon-h_usenet")));
 
     // A name is data, not markup — and not a template key either: "[Session]"
@@ -2351,6 +2514,240 @@ void tst_WebServer::usenetPageWithoutBackendSaysUnavailable()
     server->stop();
 }
 
+// The session id used to ride in every URL: history, proxy logs, bookmarks, Referer.
+void tst_WebServer::webSession_isACookieNotAUrlParameter()
+{
+    auto server = startUsenetUi(nullptr);
+    const uint16 port = server->port();
+    const QByteArray form = QByteArrayLiteral("application/x-www-form-urlencoded");
+
+    const Response login = sendRaw(port, QByteArrayLiteral("POST"), QStringLiteral("/"),
+                                   QByteArrayLiteral("p=admin-pw"), form);
+    QCOMPARE(login.statusCode, 303);
+    QCOMPARE(login.headers.value(QStringLiteral("location")), QStringLiteral("/?w=transfer"));
+    const QString cookie = login.headers.value(QStringLiteral("set-cookie"));
+    QVERIFY(cookie.contains(QStringLiteral("HttpOnly")));
+    QVERIFY(cookie.contains(QStringLiteral("SameSite=Strict")));
+    QVERIFY(cookie.startsWith(QStringLiteral("emuleqt_ses_%1=").arg(port)));
+
+    const QString ses = webLogin(port, QStringLiteral("admin-pw"));
+    QVERIFY(!ses.isEmpty());
+
+    // With the cookie: the page, and the id is nowhere in it.
+    const QString page = rawGetBody(port, QStringLiteral("/?ses=%1&w=transfer").arg(ses));
+    QVERIFY(page.contains(QStringLiteral("nav-tab")));
+    QVERIFY(!page.contains(ses));
+    QVERIFY(!page.contains(QStringLiteral("ses=")));
+
+    // The id in the URL (written so the test helper leaves it there) is no session.
+    const QString viaUrl = rawGetBody(port, QStringLiteral("/?w=transfer&%73es=%1").arg(ses));
+    QVERIFY(viaUrl.contains(QStringLiteral("name=\"login\"")));
+    QVERIFY(rawGetBody(port, QStringLiteral("/?w=transfer")).contains(QStringLiteral("name=\"login\"")));
+
+    // Logging out is a POST, expires the cookie and kills the session.
+    const Response out = sendRaw(port, QByteArrayLiteral("POST"), QStringLiteral("/?ses=%1").arg(ses),
+                                 QByteArrayLiteral("w=logout"), form);
+    QVERIFY(out.headers.value(QStringLiteral("set-cookie")).contains(QStringLiteral("Max-Age=0")));
+    QVERIFY(rawGetBody(port, QStringLiteral("/?ses=%1&w=transfer").arg(ses))
+                .contains(QStringLiteral("name=\"login\"")));
+
+    server->stop();
+}
+
+// A GET shows and never acts: a link, a reload or a browser prefetch must change
+// nothing, and neither must a form on somebody else's page.
+void tst_WebServer::webActions_needAPostFromOurOwnPages()
+{
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    const QStringList savedTemp = thePrefs.tempDirs();
+    const auto restore = qScopeGuard([&] {
+        m_downloadQueue->deleteAll();
+        thePrefs.setTempDirs(savedTemp);
+    });
+    thePrefs.setTempDirs({temp.path()});
+    QCOMPARE(m_downloadQueue->fileCount(), 0);
+
+    auto server = startUsenetUi(nullptr);
+    const uint16 port = server->port();
+    const QByteArray form = QByteArrayLiteral("application/x-www-form-urlencoded");
+    const QString admin = webLogin(port, QStringLiteral("admin-pw"));
+    const QString guest = webLogin(port, QStringLiteral("guest-pw"));
+    QVERIFY(!admin.isEmpty() && !guest.isEmpty());
+
+    const uint8 md4[16] = {0x58, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+    const QByteArray link = QUrl::toPercentEncoding(
+        QStringLiteral("ed2k://|file|plain.bin|1000|%1|/").arg(md4str(md4)));
+
+    // As a GET, session and all: nothing.
+    rawGetBody(port, QStringLiteral("/?ses=%1&w=transfer&ed2k=%2").arg(admin, QString::fromLatin1(link)));
+    QCOMPARE(m_downloadQueue->fileCount(), 0);
+
+    // Posted from another site's page: refused.
+    Response r = sendRaw(port, QByteArrayLiteral("POST"), QStringLiteral("/?ses=%1").arg(admin),
+                         QByteArrayLiteral("w=transfer&ed2k=") + link, form,
+                         {{QByteArrayLiteral("Origin"), QByteArrayLiteral("http://evil.example")}});
+    QCOMPARE(r.statusCode, 403);
+    QCOMPARE(m_downloadQueue->fileCount(), 0);
+
+    // A guest may look, not act.
+    r = sendRaw(port, QByteArrayLiteral("POST"), QStringLiteral("/?ses=%1").arg(guest),
+                QByteArrayLiteral("w=transfer&ed2k=") + link, form);
+    QCOMPARE(m_downloadQueue->fileCount(), 0);
+
+    // Our own page (the browser names us as the origin): done, then a redirect so
+    // a reload repeats nothing.
+    r = sendRaw(port, QByteArrayLiteral("POST"), QStringLiteral("/?ses=%1").arg(admin),
+                QByteArrayLiteral("w=transfer&ed2k=") + link, form,
+                {{QByteArrayLiteral("Origin"), QByteArrayLiteral("http://127.0.0.1:") + QByteArray::number(port)}});
+    QCOMPARE(r.statusCode, 303);
+    QCOMPARE(r.headers.value(QStringLiteral("location")), QStringLiteral("/?w=transfer"));
+    QCOMPARE(m_downloadQueue->fileCount(), 1);
+
+    server->stop();
+}
+
+void tst_WebServer::webLogin_backsOffAfterRepeatedFailures()
+{
+    auto server = startUsenetUi(nullptr);
+    const uint16 port = server->port();
+    const QByteArray form = QByteArrayLiteral("application/x-www-form-urlencoded");
+    const auto tryPassword = [&](const QByteArray& pw) {
+        return sendRaw(port, QByteArrayLiteral("POST"), QStringLiteral("/"), QByteArrayLiteral("p=") + pw, form);
+    };
+
+    for (int i = 0; i < 3; ++i) {
+        const Response r = tryPassword("wrong");
+        QVERIFY(r.headers.value(QStringLiteral("set-cookie")).isEmpty());
+        QVERIFY(!r.headers.contains(QStringLiteral("retry-after")));
+    }
+    // From the fourth on the guess is not looked at — not even a right one.
+    Response r = tryPassword("wrong");
+    QVERIFY(r.headers.contains(QStringLiteral("retry-after")));
+    r = tryPassword("admin-pw");
+    QVERIFY(r.headers.contains(QStringLiteral("retry-after")));
+    QVERIFY(r.headers.value(QStringLiteral("set-cookie")).isEmpty());
+
+    server->stop();
+}
+
+void tst_WebServer::loginBackoff_timeline()
+{
+    WebSessionManager sessions;
+    const QString client = QStringLiteral("192.0.2.7");
+    qint64 now = 1'000'000;
+
+    for (int i = 0; i < 3; ++i) {
+        QCOMPARE(sessions.loginWaitSeconds(client, now), 0);
+        sessions.noteLoginFailure(client, now);
+        now += 100;
+    }
+    QCOMPARE(sessions.loginWaitSeconds(client, now), 5);          // 3 failures: 5 s
+    QCOMPARE(sessions.loginWaitSeconds(QStringLiteral("192.0.2.8"), now), 0);   // per client
+
+    now += 5000;
+    QCOMPARE(sessions.loginWaitSeconds(client, now), 0);
+    sessions.noteLoginFailure(client, now);
+    QCOMPARE(sessions.loginWaitSeconds(client, now), 10);         // doubles
+    for (int i = 0; i < 20; ++i)
+        sessions.noteLoginFailure(client, now);
+    QCOMPARE(sessions.loginWaitSeconds(client, now), 15 * 60);    // capped
+
+    sessions.noteLoginSuccess(client);
+    QCOMPARE(sessions.loginWaitSeconds(client, now), 0);
+
+    // An hour of quiet forgets the earlier failures.
+    sessions.noteLoginFailure(client, now);
+    sessions.noteLoginFailure(client, now);
+    sessions.noteLoginFailure(client, now + 61 * 60 * 1000);
+    QCOMPARE(sessions.loginWaitSeconds(client, now + 61 * 60 * 1000), 0);
+}
+
+// The options form used to submit "saveprefs" to a server that never read it.
+void tst_WebServer::webOptionsForm_savesOrChangesNothing()
+{
+    auto server = startUsenetUi(nullptr);
+    const uint16 port = server->port();
+    const QByteArray form = QByteArrayLiteral("application/x-www-form-urlencoded");
+    const QString admin = webLogin(port, QStringLiteral("admin-pw"));
+    const QString guest = webLogin(port, QStringLiteral("guest-pw"));
+
+    const QString nickBefore = m_preferences->nick();
+    const uint32 upBefore = m_preferences->maxUpload();
+    const uint16 tcpBefore = m_preferences->port();
+    const auto restore = qScopeGuard([&] {
+        m_preferences->setNick(nickBefore);
+        m_preferences->setMaxUpload(upBefore);
+        m_preferences->setPort(tcpBefore);
+    });
+    const auto submit = [&](const QString& ses, const QByteArray& fields) {
+        return sendRaw(port, QByteArrayLiteral("POST"), QStringLiteral("/?ses=%1").arg(ses),
+                       QByteArrayLiteral("w=options&saveprefs=true&") + fields, form);
+    };
+
+    // The page offers the form with the current values.
+    QString page = rawGetBody(port, QStringLiteral("/?ses=%1&w=options").arg(admin));
+    QVERIFY(page.contains(QStringLiteral("name=\"saveprefs\"")));
+    QVERIFY(!page.contains(QStringLiteral("[FormOff]")));
+    QVERIFY(!page.contains(QStringLiteral("[Session]")));
+
+    // A guest cannot save.
+    submit(guest, "nick=Guest+Was+Here&maxdown=1&maxup=1&port=4000&udpport=4001");
+    QCOMPARE(m_preferences->nick(), nickBefore);
+    QVERIFY(rawGetBody(port, QStringLiteral("/?ses=%1&w=options").arg(guest))
+                .contains(QStringLiteral("disabled")));
+
+    // One bad field: nothing changes, and the page says so once.
+    Response r = submit(admin, "nick=Web+Nick&maxdown=500&maxup=-5&port=4000&udpport=4001");
+    QCOMPARE(r.statusCode, 303);
+    QCOMPARE(m_preferences->nick(), nickBefore);
+    QCOMPARE(m_preferences->port(), tcpBefore);
+    page = rawGetBody(port, QStringLiteral("/?ses=%1&w=options").arg(admin));
+    QVERIFY(page.contains(QStringLiteral("class=\"failed\"")));
+    QVERIFY(!rawGetBody(port, QStringLiteral("/?ses=%1&w=options").arg(admin))
+                 .contains(QStringLiteral("class=\"failed\"")));
+    submit(admin, "nick=Web+Nick&maxdown=500&maxup=50&port=70000&udpport=4001");
+    QCOMPARE(m_preferences->nick(), nickBefore);
+
+    // All good: applied.
+    r = submit(admin, "nick=Web+Nick&maxdown=500&maxup=50&port=4000&udpport=4001");
+    QCOMPARE(r.statusCode, 303);
+    QCOMPARE(r.headers.value(QStringLiteral("location")), QStringLiteral("/?w=options"));
+    QCOMPARE(m_preferences->nick(), QStringLiteral("Web Nick"));
+    QCOMPARE(m_preferences->maxDownload(), uint32{500});
+    QCOMPARE(m_preferences->maxUpload(), uint32{50});
+    QCOMPARE(m_preferences->port(), uint16{4000});
+    QCOMPARE(m_preferences->udpPort(), uint16{4001});
+    page = rawGetBody(port, QStringLiteral("/?ses=%1&w=options").arg(admin));
+    QVERIFY(page.contains(QStringLiteral("value=\"Web Nick\"")));
+
+    server->stop();
+}
+
+void tst_WebServer::webSearchForm_offlineSaysSo()
+{
+    auto server = startUsenetUi(nullptr);
+    const uint16 port = server->port();
+    const QString admin = webLogin(port, QStringLiteral("admin-pw"));
+
+    QString page = rawGetBody(port, QStringLiteral("/?ses=%1&w=search").arg(admin));
+    QVERIFY(page.contains(QStringLiteral("name=\"tosearch\"")));
+    QVERIFY(!page.contains(QStringLiteral("[Search")));     // every key filled
+    QVERIFY(!page.contains(QStringLiteral("[FormOff]")));
+
+    const Response r = sendRaw(port, QByteArrayLiteral("POST"), QStringLiteral("/?ses=%1").arg(admin),
+                               QByteArrayLiteral("w=search&tosearch=holiday&type=Video&method=server"),
+                               QByteArrayLiteral("application/x-www-form-urlencoded"));
+    QCOMPARE(r.statusCode, 303);
+    QCOMPARE(r.headers.value(QStringLiteral("location")), QStringLiteral("/?w=search"));
+
+    // Nothing is connected in this fixture: the page says the search did not go out.
+    page = rawGetBody(port, QStringLiteral("/?ses=%1&w=search").arg(admin));
+    QVERIFY(page.contains(QStringLiteral("class=\"failed\"")));
+
+    server->stop();
+}
+
 void tst_WebServer::webEd2kActionRefusesAMetaHash()
 {
     QTemporaryDir temp;
@@ -2369,8 +2766,9 @@ void tst_WebServer::webEd2kActionRefusesAMetaHash()
     QVERIFY(!ses.isEmpty());
     const auto addLink = [&](const uint8* hash, const QString& name) {
         const QString link = QStringLiteral("ed2k://|file|%1|1000|%2|/").arg(name, md4str(hash));
-        rawGetBody(port, QStringLiteral("/?ses=%1&w=transfer&ed2k=%2")
-                             .arg(ses, QString::fromLatin1(QUrl::toPercentEncoding(link))));
+        sendRaw(port, QByteArrayLiteral("POST"), QStringLiteral("/?ses=%1").arg(ses),
+                QByteArrayLiteral("w=transfer&ed2k=") + QUrl::toPercentEncoding(link),
+                QByteArrayLiteral("application/x-www-form-urlencoded"));
     };
 
     // an eNode torrent row's meta hash is no eD2K file
@@ -2712,7 +3110,7 @@ void tst_WebServer::pagesEscapeHostileServerLogAndShareText()
 
     // Remote-controlled values reach the menu scripts through data attributes only.
     const QString servers = rawGetBody(port, QStringLiteral("/?ses=%1&w=server").arg(ses));
-    QVERIFY(servers.contains(QStringLiteral("servermenu(event,'%1',this.dataset.ip,this.dataset.port)").arg(ses)));
+    QVERIFY(servers.contains(QStringLiteral("servermenu(event,this.dataset.ip,this.dataset.port)")));
     const QString shared = rawGetBody(port, QStringLiteral("/?ses=%1&w=shared").arg(ses));
     // A share keeps only what a file name may hold; whatever survived, escaped.
     QVERIFY(!shared.contains(QStringLiteral("<x>")));

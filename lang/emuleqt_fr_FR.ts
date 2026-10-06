@@ -656,7 +656,7 @@ Le télécharger à nouveau ?</translation>
 <context>
     <name>Rating</name>
     <message>
-        <location filename="../src/core/utils/OtherFunctions.cpp" line="+483"/>
+        <location filename="../src/core/utils/OtherFunctions.cpp" line="+528"/>
         <source>Not rated</source>
         <translation>Non évalué</translation>
     </message>
@@ -690,7 +690,7 @@ Le télécharger à nouveau ?</translation>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4116"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4420"/>
         <source>Bytes</source>
         <translation>octets</translation>
     </message>
@@ -7661,6 +7661,39 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
     </message>
 </context>
 <context>
+    <name>eMule::PeerPreviewDialog</name>
+    <message>
+        <location filename="../src/gui/dialogs/PeerPreviewDialog.cpp" line="+17"/>
+        <source>Preview: %1</source>
+        <translation>Aperçu : %1</translation>
+    </message>
+    <message>
+        <location line="+15"/>
+        <source>Prior</source>
+        <translation>Précédent</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Next</source>
+        <translation>Suivant</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Close</source>
+        <translation>Fermer</translation>
+    </message>
+    <message>
+        <location line="+24"/>
+        <source>No images</source>
+        <translation>Aucune image</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Image %1 of %2</source>
+        <translation>Image %1 sur %2</translation>
+    </message>
+</context>
+<context>
     <name>eMule::SearchDetailDialog</name>
     <message>
         <location filename="../src/gui/dialogs/SearchDetailDialog.cpp" line="+42"/>
@@ -7683,14 +7716,14 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+247"/>
-        <location line="+713"/>
-        <location line="+364"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+249"/>
+        <location line="+719"/>
+        <location line="+374"/>
         <source>Download</source>
         <translation>Téléchargement</translation>
     </message>
     <message>
-        <location line="-1057"/>
+        <location line="-1073"/>
         <source>Close All Searches</source>
         <translation>Fermer toutes les recherches</translation>
     </message>
@@ -7918,7 +7951,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Copier le &amp;nom</translation>
     </message>
     <message>
-        <location line="+66"/>
+        <location line="+72"/>
         <source>Download NZB File...</source>
         <translation>Télécharger le fichier NZB...</translation>
     </message>
@@ -7958,13 +7991,15 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Marquer comme non-spam</translation>
     </message>
     <message>
-        <location line="+48"/>
-        <location line="+759"/>
+        <location line="+50"/>
+        <location line="+7"/>
+        <location line="+762"/>
+        <location line="+43"/>
         <source>Preview</source>
         <translation>Aperçu</translation>
     </message>
     <message>
-        <location line="-532"/>
+        <location line="-577"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -7973,7 +8008,17 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
 %1</translation>
     </message>
     <message>
-        <location line="+779"/>
+        <location line="+535"/>
+        <source>Preview requested - please wait</source>
+        <translation>Aperçu demandé - veuillez patienter</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>%1 sent no preview</source>
+        <translation>%1 n&apos;a envoyé aucun aperçu</translation>
+    </message>
+    <message>
+        <location line="+273"/>
         <source>Asking servers: %1 / %2</source>
         <translation>Interrogation des serveurs : %1 / %2</translation>
     </message>
@@ -7983,7 +8028,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Tous</translation>
     </message>
     <message>
-        <location line="-1093"/>
+        <location line="-1148"/>
         <location line="+14"/>
         <source>Mark as Spam</source>
         <translation>Marquer comme spam</translation>
@@ -8004,7 +8049,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Fermer tous les résultats de recherche</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+26"/>
         <source>Find...</source>
         <translation>Rechercher...</translation>
     </message>
@@ -8019,7 +8064,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Services web</translation>
     </message>
     <message>
-        <location line="+738"/>
+        <location line="+784"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Aperçu indisponible — le serveur web n&apos;est pas en cours d&apos;exécution ou aucun jeton de flux n&apos;a été reçu.</translation>
     </message>
@@ -11780,19 +11825,19 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Adresse</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3589"/>
-        <location line="+3479"/>
-        <location line="+47"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3890"/>
+        <location line="+3779"/>
+        <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Session expirée — reconnectez-vous</translation>
     </message>
     <message>
-        <location line="-3524"/>
+        <location line="-3824"/>
         <source>Guests cannot add downloads</source>
         <translation>Les invités ne peuvent pas ajouter de téléchargements</translation>
     </message>
     <message>
-        <location line="+859"/>
+        <location line="+865"/>
         <source>Looking for comments on Kad</source>
         <translation>Recherche de commentaires sur Kad</translation>
     </message>
@@ -11824,6 +11869,7 @@ Un mot de passe est défini pour cette release.</translation>
     </message>
     <message>
         <location line="+40"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+34"/>
         <source>Download</source>
         <translation>Téléchargement</translation>
     </message>
@@ -11873,39 +11919,83 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Télécharger ce fichier</translation>
     </message>
     <message>
-        <location line="+322"/>
+        <location line="+394"/>
         <source>Access denied — no password configured. Set a password in Options → Web Interface.</source>
         <translation>Accès refusé — aucun mot de passe configuré. Définissez-en un dans Options → Interface Web.</translation>
     </message>
+    <message numerus="yes">
+        <location line="+11"/>
+        <source>Too many failed logins. Try again in %n second(s).</source>
+        <translation>
+            <numerusform>Trop de connexions échouées. Réessayez dans %n seconde.</numerusform>
+            <numerusform>Trop de connexions échouées. Réessayez dans %n secondes.</numerusform>
+        </translation>
+    </message>
     <message>
-        <location line="+18"/>
+        <location line="+21"/>
         <source>Login failed</source>
         <translation>Échec de la connexion</translation>
     </message>
+    <message numerus="yes">
+        <location line="+226"/>
+        <source>%n download(s) added</source>
+        <translation>
+            <numerusform>%n téléchargement ajouté</numerusform>
+            <numerusform>%n téléchargements ajoutés</numerusform>
+        </translation>
+    </message>
     <message>
-        <location line="+207"/>
-        <location line="+1813"/>
+        <location line="+29"/>
+        <source>Not connected — the search could not be sent.</source>
+        <translation>Non connecté — la recherche n’a pas pu être envoyée.</translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>Nothing was saved: a value is missing or out of range.</source>
+        <translation>Rien n’a été enregistré : une valeur est manquante ou hors limites.</translation>
+    </message>
+    <message>
+        <location line="+22"/>
+        <source>Saved. The new ports are used after a restart.</source>
+        <translation>Enregistré. Les nouveaux ports seront utilisés après un redémarrage.</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Saved.</source>
+        <translation>Enregistré.</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <location line="+1908"/>
         <source>Web Control Panel</source>
         <translation>Panneau de contrôle Web</translation>
     </message>
     <message>
-        <location line="-1804"/>
+        <location line="-1901"/>
         <source>Not connected</source>
         <translation>Non connecté</translation>
     </message>
     <message>
-        <location line="+295"/>
+        <location line="+293"/>
         <source>Connected</source>
         <translation>Connecté</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+283"/>
+        <location line="+324"/>
         <source>Disconnected</source>
         <translation>Déconnecté</translation>
     </message>
+    <message numerus="yes">
+        <location line="-279"/>
+        <source>&quot;%1&quot;: %n result(s)</source>
+        <translation>
+            <numerusform>« %1 » : %n résultat</numerusform>
+            <numerusform>« %1 » : %n résultats</numerusform>
+        </translation>
+    </message>
     <message>
-        <location line="-84"/>
+        <location line="+192"/>
         <source>Active Connections</source>
         <translation>Connexions actives</translation>
     </message>
@@ -11915,7 +12005,7 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Temps</translation>
     </message>
     <message>
-        <location line="+29"/>
+        <location line="+33"/>
         <source>Connected to: %1 (%2:%3)</source>
         <translation>Connecté à : %1 (%2:%3)</translation>
     </message>
@@ -11960,7 +12050,7 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Connecté à aucun serveur</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="+33"/>
         <source>Running</source>
         <translation>En cours</translation>
     </message>
@@ -11971,30 +12061,30 @@ Un mot de passe est défini pour cette release.</translation>
     </message>
     <message>
         <location line="+149"/>
-        <location line="+1024"/>
+        <location line="+1082"/>
         <source>Queued</source>
         <translation>En file d&apos;attente</translation>
     </message>
     <message>
-        <location line="-1023"/>
-        <location line="+1022"/>
+        <location line="-1081"/>
+        <location line="+1080"/>
         <source>Downloading</source>
         <translation>En téléchargement</translation>
     </message>
     <message>
-        <location line="-1021"/>
+        <location line="-1079"/>
         <source>Paused</source>
         <translation>En pause</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+855"/>
-        <location line="+164"/>
+        <location line="+914"/>
+        <location line="+163"/>
         <source>Complete</source>
         <translation>Terminé</translation>
     </message>
     <message>
-        <location line="-1018"/>
+        <location line="-1076"/>
         <source>Failed</source>
         <translation>Échoué</translation>
     </message>
@@ -12111,7 +12201,7 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Normale</translation>
     </message>
     <message>
-        <location line="+86"/>
+        <location line="+144"/>
         <source>Only a queued or downloading release can be paused</source>
         <translation>Seule une release en attente ou en téléchargement peut être mise en pause</translation>
     </message>
@@ -12152,7 +12242,7 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Envoyez le .nzb comme corps de la requête, ou indiquez une URL</translation>
     </message>
     <message>
-        <location line="+43"/>
+        <location line="+45"/>
         <source>Guests cannot change downloads</source>
         <translation>Les invités ne peuvent pas modifier les téléchargements</translation>
     </message>
@@ -12163,7 +12253,7 @@ Un mot de passe est défini pour cette release.</translation>
     </message>
     <message>
         <location line="+49"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-33"/>
         <source>All</source>
         <translation>Tous</translation>
     </message>
@@ -12173,8 +12263,8 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Aucune catégorie</translation>
     </message>
     <message numerus="yes">
-        <location line="+115"/>
-        <location line="+164"/>
+        <location line="+114"/>
+        <location line="+163"/>
         <source>%n article(s) missing</source>
         <translation>
             <numerusform>%n article manquant</numerusform>
@@ -12182,7 +12272,7 @@ Un mot de passe est défini pour cette release.</translation>
         </translation>
     </message>
     <message>
-        <location line="-100"/>
+        <location line="-99"/>
         <source>No Usenet downloads. Use &quot;Add NZB…&quot; to queue one.</source>
         <translation>Aucun téléchargement Usenet. Utilisez « Ajouter un NZB… » pour en ajouter un.</translation>
     </message>
@@ -12210,7 +12300,7 @@ Whichever network is idle lends its share to the other.</source>
 Le réseau inactif prête sa part à l&apos;autre.</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+21"/>
         <source>No Usenet downloads here.</source>
         <translation>Aucun téléchargement Usenet ici.</translation>
     </message>
@@ -12393,12 +12483,12 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Document (.doc .pdf ...)</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Download Speed</source>
         <translation>Vitesse de téléchargement</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1346"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1407"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Downloads</source>
         <translation>Téléchargements</translation>
@@ -12550,7 +12640,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Fichiers NZB :</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1248"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1479"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>Nom</translation>
@@ -12724,6 +12814,11 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <location line="+1"/>
         <source>Reconnects</source>
         <translation>Reconnexions</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Refresh</source>
+        <translation>Actualiser</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -12932,7 +13027,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Vitesse d&apos;envoi</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1245"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1476"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation>Envois</translation>
@@ -12948,7 +13043,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+483"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+486"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet engine unavailable</source>
         <translation>Moteur Usenet indisponible</translation>

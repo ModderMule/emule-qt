@@ -530,6 +530,31 @@ void CoreNotifierBridge::connectClientSharedFilesSignal(UpDownClient* client)
 {
     connect(client, &UpDownClient::sharedFileListReceived,
             this, &CoreNotifierBridge::onClientSharedFilesReceived);
+    connect(client, &UpDownClient::previewAnswerReceived,
+            this, &CoreNotifierBridge::onPreviewAnswerReceived);
+}
+
+void CoreNotifierBridge::onPreviewAnswerReceived(const std::array<uint8, 16>& fileHash,
+                                                 const std::vector<QImage>& images)
+{
+    auto* client = qobject_cast<UpDownClient*>(sender());
+    QCborArray frames;
+    for (const QImage& image : images) {
+        QByteArray png;
+        QBuffer buffer(&png);
+        buffer.open(QIODevice::WriteOnly);
+        if (image.save(&buffer, "PNG"))
+            frames.append(QCborValue(png));
+    }
+    if (frames.isEmpty())
+        logStatusWarning(QStringLiteral("No preview from %1")
+                             .arg(client ? client->userName() : QString()));
+
+    IpcMessage msg(IpcMsgType::PushSearchPreview, 0);
+    msg.append(md4str(fileHash.data()));
+    msg.append(client ? client->userName() : QString());
+    msg.append(frames);
+    m_ipcServer->broadcast(msg);
 }
 
 void CoreNotifierBridge::onClientSharedFilesReceived(const QByteArray& userHash,

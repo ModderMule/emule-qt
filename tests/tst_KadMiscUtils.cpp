@@ -3,6 +3,7 @@
 
 #include "TestHelpers.h"
 
+#include "kademlia/KadLog.h"
 #include "kademlia/KadMiscUtils.h"
 #include "kademlia/KadUInt128.h"
 
@@ -21,6 +22,7 @@ private slots:
     void getWords_basic();
     void getWords_specialChars();
     void kadTagStrToLower_basic();
+    void logKad_buildsNoMessageWhileOff();
 };
 
 void tst_KadMiscUtils::ipToString_basic()
@@ -75,6 +77,23 @@ void tst_KadMiscUtils::kadTagStrToLower_basic()
              QStringLiteral("uppercase"));
     QCOMPARE(kadTagStrToLower(QStringLiteral("already lower")),
              QStringLiteral("already lower"));
+}
+
+void tst_KadMiscUtils::logKad_buildsNoMessageWhileOff()
+{
+    const bool was = isKadLoggingEnabled();
+    int built = 0;
+    const auto message = [&built] { ++built; return QStringLiteral("kad test line"); };
+
+    setKadLogging(false);
+    logKad(message());
+    QCOMPARE(built, 0);
+
+    setKadLogging(true);
+    logKad(message());
+    QCOMPARE(built, 1);
+
+    setKadLogging(was);
 }
 
 QTEST_GUILESS_MAIN(tst_KadMiscUtils)

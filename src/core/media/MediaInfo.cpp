@@ -1275,6 +1275,13 @@ bool extractMediaInfo(const QString& filePath, MediaInfo& info)
     if (readRMHeaders(filePath, info))
         return true;
 
+    // The remaining containers; each checks its own magic. MP3 last: it has none.
+    if (readMP4Headers(filePath, info) || readMatroskaHeaders(filePath, info)
+        || readASFHeaders(filePath, info)
+        || readFLACHeaders(filePath, info) || readOggHeaders(filePath, info)
+        || readMP3Headers(filePath, info))
+        return true;
+
     // Fallback: try QMediaFormat for format identification from MIME type
     if (!info.mimeType.isEmpty()) {
         QMediaFormat fmt;

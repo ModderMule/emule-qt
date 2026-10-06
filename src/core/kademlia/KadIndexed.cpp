@@ -305,8 +305,10 @@ void Indexed::sendValidKeywordResult(const UInt128& keyID, const SearchTerm* sea
 
     HashKeyOwn hashKey(keyID.getData());
     auto it = m_keywords.find(hashKey);
-    if (it == m_keywords.end())
+    if (it == m_keywords.end()) {
+        cleanLocked();   // on a miss too (MFC Indexed.cpp:690)
         return;
+    }
 
     KeyHash* keyHash = it->second;
 
@@ -374,8 +376,10 @@ void Indexed::sendValidSourceResult(const UInt128& keyID, uint32 ip, uint16 port
 
     HashKeyOwn hashKey(keyID.getData());
     auto it = m_sources.find(hashKey);
-    if (it == m_sources.end())
+    if (it == m_sources.end()) {
+        cleanLocked();   // on a miss too (MFC Indexed.cpp:766)
         return;
+    }
 
     SrcHash* srcHash = it->second;
 
@@ -439,6 +443,7 @@ void Indexed::sendValidNoteResult(const UInt128& keyID, uint32 ip, uint16 port,
 
     constexpr uint16 kMaxResults = 150;
     uint16 totalCount = 0;
+    const time_t now = time(nullptr);
 
     for (auto* source : srcHash->sourceList) {
         if (totalCount >= kMaxResults)
@@ -446,6 +451,8 @@ void Indexed::sendValidNoteResult(const UInt128& keyID, uint32 ip, uint16 port,
         for (auto* entry : source->entryList) {
             if (totalCount >= kMaxResults)
                 break;
+            if (entry->m_lifetime < now)
+                continue;   // expired, waiting for the next clean
             // MFC fileSize filter
             if (fileSize && entry->m_size && entry->m_size != fileSize)
                 continue;
@@ -500,14 +507,26 @@ bool Indexed::addSourceEntry(SrcHashMap& index, uint32& counter, uint32 perFileM
     if (!policy.isPublishable(*entry))
         return false;
 
-    if (counter >= KADEMLIAMAXENTRIES) {
-        outLoad = 100;
-        return false;
+    // A full index first gets rid of what has expired (at most once a minute), and
+    // even then only refuses what would grow it: a publisher replacing its own entry
+    // is still served.
+    if (counter >= KADEMLIAMAXENTRIES && !fromFile) {
+        const time_t now = time(nullptr);
+        if (now >= m_nextForcedClean) {
+            m_nextForcedClean = now + 60;
+            m_nextClean = 0;
+            cleanLocked();
+        }
     }
+    const bool full = counter >= KADEMLIAMAXENTRIES;
 
     HashKeyOwn hashKey(keyID.getData());
     auto it = index.find(hashKey);
     if (it == index.end()) {
+        if (full) {
+            outLoad = 100;
+            return false;
+        }
         auto* srcHash = new SrcHash();
         srcHash->keyID = keyID;
         auto* source = new Source();
@@ -564,6 +583,11 @@ bool Indexed::addSourceEntry(SrcHashMap& index, uint32& counter, uint32 perFileM
         ++counter;
         outLoad = 100;
         return true;
+    }
+
+    if (full) {
+        outLoad = 100;
+        return false;
     }
 
     auto* source = new Source();
@@ -789,9 +813,13 @@ void Indexed::writeFiles()
     });
 }
 
-void Indexed::clean()
+void Indexed::clean(bool force)
 {
+    if (!isLoaded())
+        return;
     QMutexLocker lock(&m_mutex);
+    if (force)
+        m_nextClean = 0;
     cleanLocked();
 }
 
@@ -810,9 +838,9 @@ void Indexed::cleanLocked()
             static_cast<KeyEntry*>(e)->cleanUpTrackedPublishers();
     });
     cleanIndex(m_sources, now, m_totalIndexSource);
-    // Notes are deliberately not expired at runtime: MFC's SendValidNoteResult
-    // omits Clean(), and its Clean() only walks keywords + sources
-    // (Indexed.cpp:690,766). They are bounded by the per-file cap instead.
+    // Notes too: they carry a 24 h lifetime nothing else enforces, and the index is
+    // capped in total, so entries that never expire end up locking it.
+    cleanIndex(m_notes, now, m_totalIndexNotes);
 }
 
 } // namespace eMule::kad

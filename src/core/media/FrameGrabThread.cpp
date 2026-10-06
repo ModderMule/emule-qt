@@ -91,12 +91,11 @@ void FrameGrabWorker::grabFrames(eMule::FrameGrabRequest request)
     }
 
     // Calculate seek positions
-    const qint64 startMs = static_cast<qint64>(request.startTimeSec * 1000.0);
+    // A clip shorter than the start offset is sampled from its beginning.
+    qint64 startMs = static_cast<qint64>(request.startTimeSec * 1000.0);
+    if (startMs >= durationMs)
+        startMs = 0;
     const qint64 availableMs = durationMs - startMs;
-    if (availableMs <= 0) {
-        emit error(QStringLiteral("Start time beyond media duration"));
-        return;
-    }
 
     const int frameCount = std::max(1, static_cast<int>(request.frameCount));
     std::vector<qint64> seekPositions;

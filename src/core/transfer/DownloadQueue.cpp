@@ -833,6 +833,18 @@ void DownloadQueue::addUDPGlobalSources(const uint8* data, uint32 size, const En
     if (!data || size < 17)
         return;
 
+    // Only an answer to a request of ours. The file hash is public, so without this
+    // any host could hand us 255 sources per block for a file we download.
+    const Server* asked = theApp.serverList
+        ? theApp.serverList->findByIPUdp(from.address(), from.port(), true) : nullptr;
+    if (!wasAskedForUdpSources(from.address())
+        && !(asked && (wasAskedForUdpSources(asked->ipAddress())
+                       || wasAskedForUdpSources(asked->ipv6Address())))) {
+        logDebug(QStringLiteral("DownloadQueue: unrequested OP_GlobFoundSources from %1 dropped")
+                     .arg(from.toString()));
+        return;
+    }
+
     // Attribute the sources to the server that actually answered. Fall back to
     // the sender's TCP port (UDP - 4) if it is not (yet) in our list.
     // The stamp is the ed2k (IPv4) form, used for LowID callbacks through the server;
@@ -1397,6 +1409,7 @@ void DownloadQueue::process()
 
 namespace {
 constexpr uint32 kMaxRequestsPerServer        = 35;   // MAX_REQUESTS_PER_SERVER
+constexpr uint64 kUdpSourceAnswerWindowMs    = 2 * 60 * 1000;   // answers to a request count this long
 constexpr uint32 kMaxUdpPacketData            = 510;  // MAX_UDP_PACKET_DATA
 constexpr uint32 kBytesPerFileG1              = 16;   // BYTES_PER_FILE_G1
 constexpr uint32 kBytesPerFileG2              = 20;   // BYTES_PER_FILE_G2
@@ -1598,8 +1611,32 @@ bool DownloadQueue::sendGlobGetSourcesUDPPacket(SafeMemFile& data, bool ext2Pack
 
     m_serverConnect->sendUDPPacket(std::move(pkt), *m_curUdpServer,
                                    static_cast<uint16>(m_curUdpServer->port() + 4));
+    const uint64 now = getTickCount();
+    noteUdpSourceRequest(m_curUdpServer->ipAddress(), now);
+    noteUdpSourceRequest(m_curUdpServer->ipv6Address(), now);
     m_requestsSentToServer += nFiles;
     return true;
+}
+
+void DownloadQueue::noteUdpSourceRequest(const Address& server, uint64 tick)
+{
+    if (server.isNull())
+        return;
+    const uint64 now = getTickCount();
+    std::erase_if(m_udpSourceRequests, [&](const UdpSourceRequest& r) {
+        return r.server == server || now - r.tick > kUdpSourceAnswerWindowMs;
+    });
+    m_udpSourceRequests.push_back({server, tick});
+}
+
+bool DownloadQueue::wasAskedForUdpSources(const Address& server) const
+{
+    if (server.isNull())
+        return false;
+    const uint64 now = getTickCount();
+    return std::ranges::any_of(m_udpSourceRequests, [&](const UdpSourceRequest& r) {
+        return r.server == server && now - r.tick <= kUdpSourceAnswerWindowMs;
+    });
 }
 
 void DownloadQueue::stopUDPRequests()

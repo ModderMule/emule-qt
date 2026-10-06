@@ -1,13 +1,153 @@
 {
-  "Autoscroll": {
-    "_context": "eMule::LogTextView",
-    "de_DE": "Autoscrollen",
-    "es_ES": "AutoDesplazamiento",
-    "fr_FR": "Défilement automatique",
-    "it_IT": "Autoscorrimento",
-    "ja_JP": "自動スクロール",
-    "ko_KR": "자동 스크롤",
-    "pt_BR": "Autorrolagem",
-    "zh_CN": "自动滚动"
+  "Too many failed logins. Try again in %n second(s).": {
+    "_context": "eMule::WebServer",
+    "de_DE": [
+      "Zu viele fehlgeschlagene Anmeldungen. Versuchen Sie es in %n Sekunde erneut.",
+      "Zu viele fehlgeschlagene Anmeldungen. Versuchen Sie es in %n Sekunden erneut."
+    ],
+    "es_ES": [
+      "Demasiados inicios de sesión fallidos. Inténtelo de nuevo en %n segundo.",
+      "Demasiados inicios de sesión fallidos. Inténtelo de nuevo en %n segundos."
+    ],
+    "fr_FR": [
+      "Trop de connexions échouées. Réessayez dans %n seconde.",
+      "Trop de connexions échouées. Réessayez dans %n secondes."
+    ],
+    "it_IT": [
+      "Troppi accessi non riusciti. Riprova tra %n secondo.",
+      "Troppi accessi non riusciti. Riprova tra %n secondi."
+    ],
+    "ja_JP": [
+      "ログインの失敗が多すぎます。%n 秒後にもう一度お試しください。"
+    ],
+    "ko_KR": [
+      "로그인 실패가 너무 많습니다. %n초 후에 다시 시도하세요."
+    ],
+    "pt_BR": [
+      "Muitas tentativas de login malsucedidas. Tente novamente em %n segundo.",
+      "Muitas tentativas de login malsucedidas. Tente novamente em %n segundos."
+    ],
+    "zh_CN": [
+      "登录失败次数过多。请在 %n 秒后重试。"
+    ]
+  },
+  "%n download(s) added": {
+    "_context": "eMule::WebServer",
+    "de_DE": [
+      "%n Download hinzugefügt",
+      "%n Downloads hinzugefügt"
+    ],
+    "es_ES": [
+      "%n descarga añadida",
+      "%n descargas añadidas"
+    ],
+    "fr_FR": [
+      "%n téléchargement ajouté",
+      "%n téléchargements ajoutés"
+    ],
+    "it_IT": [
+      "%n download aggiunto",
+      "%n download aggiunti"
+    ],
+    "ja_JP": [
+      "%n 件のダウンロードを追加しました"
+    ],
+    "ko_KR": [
+      "다운로드 %n개를 추가했습니다"
+    ],
+    "pt_BR": [
+      "%n download adicionado",
+      "%n downloads adicionados"
+    ],
+    "zh_CN": [
+      "已添加 %n 个下载"
+    ]
+  },
+  "Not connected — the search could not be sent.": {
+    "_context": "eMule::WebServer",
+    "de_DE": "Nicht verbunden — die Suche konnte nicht gesendet werden.",
+    "es_ES": "No conectado — no se pudo enviar la búsqueda.",
+    "fr_FR": "Non connecté — la recherche n’a pas pu être envoyée.",
+    "it_IT": "Non connesso — impossibile inviare la ricerca.",
+    "ja_JP": "未接続 — 検索を送信できませんでした。",
+    "ko_KR": "연결되지 않음 — 검색을 보낼 수 없습니다.",
+    "pt_BR": "Não conectado — a pesquisa não pôde ser enviada.",
+    "zh_CN": "未连接 — 无法发送搜索。"
+  },
+  "Nothing was saved: a value is missing or out of range.": {
+    "_context": "eMule::WebServer",
+    "de_DE": "Nichts gespeichert: Ein Wert fehlt oder liegt außerhalb des gültigen Bereichs.",
+    "es_ES": "No se guardó nada: falta un valor o está fuera de rango.",
+    "fr_FR": "Rien n’a été enregistré : une valeur est manquante ou hors limites.",
+    "it_IT": "Nessuna modifica salvata: un valore manca o è fuori intervallo.",
+    "ja_JP": "保存されませんでした: 値が未入力か、範囲外です。",
+    "ko_KR": "저장되지 않았습니다: 값이 없거나 범위를 벗어났습니다.",
+    "pt_BR": "Nada foi salvo: um valor está ausente ou fora do intervalo.",
+    "zh_CN": "未保存任何内容：某个值缺失或超出范围。"
+  },
+  "Saved. The new ports are used after a restart.": {
+    "_context": "eMule::WebServer",
+    "de_DE": "Gespeichert. Die neuen Ports werden nach einem Neustart verwendet.",
+    "es_ES": "Guardado. Los nuevos puertos se usarán tras reiniciar.",
+    "fr_FR": "Enregistré. Les nouveaux ports seront utilisés après un redémarrage.",
+    "it_IT": "Salvato. Le nuove porte verranno usate dopo un riavvio.",
+    "ja_JP": "保存しました。新しいポートは再起動後に使用されます。",
+    "ko_KR": "저장했습니다. 새 포트는 다시 시작한 후에 사용됩니다.",
+    "pt_BR": "Salvo. As novas portas serão usadas após reiniciar.",
+    "zh_CN": "已保存。新端口将在重启后生效。"
+  },
+  "Saved.": {
+    "_context": "eMule::WebServer",
+    "de_DE": "Gespeichert.",
+    "es_ES": "Guardado.",
+    "fr_FR": "Enregistré.",
+    "it_IT": "Salvato.",
+    "ja_JP": "保存しました。",
+    "ko_KR": "저장했습니다.",
+    "pt_BR": "Salvo.",
+    "zh_CN": "已保存。"
+  },
+  "\"%1\": %n result(s)": {
+    "_context": "eMule::WebServer",
+    "de_DE": [
+      "„%1“: %n Ergebnis",
+      "„%1“: %n Ergebnisse"
+    ],
+    "es_ES": [
+      "«%1»: %n resultado",
+      "«%1»: %n resultados"
+    ],
+    "fr_FR": [
+      "« %1 » : %n résultat",
+      "« %1 » : %n résultats"
+    ],
+    "it_IT": [
+      "\"%1\": %n risultato",
+      "\"%1\": %n risultati"
+    ],
+    "ja_JP": [
+      "「%1」: %n 件の結果"
+    ],
+    "ko_KR": [
+      "\"%1\": 결과 %n개"
+    ],
+    "pt_BR": [
+      "\"%1\": %n resultado",
+      "\"%1\": %n resultados"
+    ],
+    "zh_CN": [
+      "“%1”：%n 个结果"
+    ]
+  },
+  "Refresh": {
+    "_context": "eMule::WebServer",
+    "de_DE": "Aktualisieren",
+    "es_ES": "Actualizar",
+    "fr_FR": "Actualiser",
+    "it_IT": "Aggiorna",
+    "ja_JP": "更新",
+    "ko_KR": "새로 고침",
+    "pt_BR": "Atualizar",
+    "zh_CN": "刷新"
   }
 }

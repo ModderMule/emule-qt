@@ -63,6 +63,8 @@ private slots:
     void isBannedClient_true();
     void requestBuddy_refusesFirewallCheckAndBannedNodes();
     void kadFirewallAck_oncePerAskedAddress();
+    void requestTCP_reusesTheClientAndRefusesRepeats();
+    void processKadList_releasesAStaleIncomingBuddy();
     void callbackPacket_onlyFromBuddyToAVettedTarget();
     void ban_coversTheIPv6Prefix();
     void removeBannedClient();
@@ -326,6 +328,50 @@ void tst_ClientList::requestBuddy_refusesFirewallCheckAndBannedNodes()
 
     list.requestBuddy(fine, 4662, 4672, id, 0);
     QVERIFY(list.findByConnIP(qToBigEndian(fine), 4662) != nullptr);
+    list.deleteAll();
+}
+
+// MFC ClientList.cpp:662-692: one client per asking node, and no second check while
+// the first is pending.
+void tst_ClientList::requestTCP_reusesTheClientAndRefusesRepeats()
+{
+    ClientList list;
+    const uint32 node = 0x4D060708;
+
+    UpDownClient* first = list.requestTCP(node, 4662, 4672, nullptr, 0);
+    QVERIFY(first != nullptr);
+    QCOMPARE(first->kadState(), KadState::QueuedFwCheck);
+    QCOMPARE(first->kadPort(), uint16{4672});
+    QCOMPARE(list.clientCount(), 1);
+
+    QVERIFY(list.requestTCP(node, 4662, 4672, nullptr, 0) == nullptr);
+    QCOMPARE(list.clientCount(), 1);
+
+    // Check done: the same client is taken again, not a new one.
+    first->setKadState(KadState::None);
+    QCOMPARE(list.requestTCP(node, 4662, 4672, nullptr, 0), first);
+    QCOMPARE(list.clientCount(), 1);
+
+    list.deleteAll();
+}
+
+void tst_ClientList::processKadList_releasesAStaleIncomingBuddy()
+{
+    eMule::testing::KadFixture kadFixture;
+    ClientList list;
+    const uint8 id[16] = {0xB2};
+
+    QVERIFY(list.incomingBuddy(0x4D070809, 4662, 4672, id, id));
+    UpDownClient* claimant = list.findByConnIP(qToBigEndian(uint32{0x4D070809}), 4662);
+    QVERIFY(claimant != nullptr);
+
+    list.processKadList();
+    QCOMPARE(claimant->kadState(), KadState::IncomingBuddy);
+
+    claimant->setKadStateSince(std::time(nullptr) - 21 * 60);
+    list.processKadList();
+    QCOMPARE(claimant->kadState(), KadState::None);
+
     list.deleteAll();
 }
 

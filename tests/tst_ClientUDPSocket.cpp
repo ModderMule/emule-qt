@@ -34,6 +34,7 @@ private slots:
     void receivesReservedProt_dispatchesInsteadOfDropping_data();
     void receivesReservedProt_dispatchesInsteadOfDropping();
     void throwingHandler_doesNotEscapeReceiveLoop();
+    void kadDatagram_fromNativeIPv6IsDropped();
 };
 
 // ---------------------------------------------------------------------------
@@ -260,6 +261,40 @@ void tst_ClientUDPSocket::throwingHandler_doesNotEscapeReceiveLoop()
     // Both datagrams are metered as they are dispatched, the throwing one included.
     QTRY_COMPARE(stats.downDataOverheadOtherPackets(), static_cast<uint64>(2));
     QCOMPARE(thrown, 1);
+}
+
+// ---------------------------------------------------------------------------
+// Kad handlers take a host-order IPv4; a native IPv6 sender would arrive as 0.0.0.0.
+// ---------------------------------------------------------------------------
+
+void tst_ClientUDPSocket::kadDatagram_fromNativeIPv6IsDropped()
+{
+    ClientUDPSocket sock;
+    QVERIFY(sock.create());
+    const uint16 port = sock.connectedPort();
+    QVERIFY(port != 0);
+
+    QSignalSpy kadSpy(&sock, &ClientUDPSocket::kadPacketReceived);
+
+    QByteArray dgram;
+    dgram.append(static_cast<char>(OP_KADEMLIAHEADER));
+    dgram.append(static_cast<char>(KADEMLIA2_PING));
+
+    QUdpSocket v6;
+    if (!v6.bind(QHostAddress::LocalHostIPv6, 0)
+        || v6.writeDatagram(dgram, QHostAddress::LocalHostIPv6, port) != dgram.size())
+        QSKIP("no IPv6 loopback path to the socket");
+
+    QUdpSocket v4;
+    QVERIFY(v4.bind(QHostAddress::LocalHost, 0));
+    QCOMPARE(v4.writeDatagram(dgram, QHostAddress::LocalHost, port),
+             static_cast<qint64>(dgram.size()));
+
+    QTRY_COMPARE(kadSpy.count(), 1);
+    QTest::qWait(100);
+    QCOMPARE(kadSpy.count(), 1);
+    const auto sender = kadSpy.first().at(3).value<Endpoint>();
+    QVERIFY(sender.address().isIPv4());
 }
 
 QTEST_MAIN(tst_ClientUDPSocket)

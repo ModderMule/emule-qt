@@ -14,6 +14,29 @@ class tst_FrameGrabThread : public QObject {
     Q_OBJECT
 
 private slots:
+    // Opt-in: FRAMEGRAB_SAMPLE=<video file> grabs four frames from it.
+    void realVideo_fromEnv()
+    {
+        const QString sample = qEnvironmentVariable("FRAMEGRAB_SAMPLE");
+        if (sample.isEmpty())
+            QSKIP("FRAMEGRAB_SAMPLE not set");
+        FrameGrabThread thread;
+        QSignalSpy done(&thread, &FrameGrabThread::finished);
+        QSignalSpy failed(&thread, &FrameGrabThread::error);
+        FrameGrabRequest req;
+        req.filePath = sample;
+        req.frameCount = 4;
+        req.startTimeSec = 1.0;
+        req.maxWidth = 450;
+        thread.requestGrab(req);
+        QTRY_VERIFY_WITH_TIMEOUT(done.count() + failed.count() > 0, 60'000);
+        if (failed.count() > 0)
+            QFAIL(qPrintable(failed.first().at(0).toString()));
+        const auto result = done.first().at(0).value<FrameGrabResult>();
+        qInfo() << "frames" << result.frames.size() << result.frames.front().size();
+        QCOMPARE(result.frames.size(), size_t{4});
+    }
+
     void constructAndDestroy();
     void grabFromNonexistentFile();
     void grabFromNonMediaFile();
@@ -125,5 +148,5 @@ void tst_FrameGrabThread::reduceColor()
     QCOMPARE(reduced.height(), 100);
 }
 
-QTEST_MAIN(tst_FrameGrabThread)
+QTEST_GUILESS_MAIN(tst_FrameGrabThread)
 #include "tst_FrameGrabThread.moc"

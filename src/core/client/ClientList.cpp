@@ -24,6 +24,11 @@
 
 namespace eMule {
 
+namespace {
+/// How long a peer may claim us as its buddy without connecting.
+constexpr std::time_t kIncomingBuddyTimeoutSecs = 20 * 60;
+} // namespace
+
 // ===========================================================================
 // Construction / Destruction
 // ===========================================================================
@@ -292,12 +297,51 @@ void ClientList::setBuddy(UpDownClient* buddy, BuddyStatus status)
     m_buddyStatus = status;
 }
 
+UpDownClient* ClientList::requestTCP(uint32 ip, uint16 tcpPort, uint16 udpPort,
+                                     const uint8* userHash, uint8 connectOptions)
+{
+    // MFC ClientList.cpp:662-692.
+    const Address addr = Address::fromHostOrder(ip);
+    if (theApp.isOwnTcpPort(tcpPort) && addr == Address::fromNetworkOrder(theApp.publicIP()))
+        return nullptr;
+
+    UpDownClient* client = findByConnIP(qToBigEndian(ip), tcpPort);
+    if (client) {
+        if (client->kadState() != KadState::None)
+            return nullptr;
+        // An existing socket would report an open port whatever its real state.
+        if (client->socket())
+            return nullptr;
+    } else {
+        // IP in the userId slot, as every Kad-originated client: 0 there reads as LowID.
+        client = new UpDownClient(tcpPort, ip, 0, 0, nullptr);
+        client->setConnectAddress(addr);
+        addClient(client);
+    }
+
+    client->setKadPort(udpPort);
+    client->setKadState(KadState::QueuedFwCheck);
+    if (userHash && !isnulmd4(userHash)) {
+        client->setUserHash(userHash);
+        client->setConnectOptions(connectOptions, true, false);
+    }
+    return client;
+}
+
 bool ClientList::incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
                                const uint8* clientID, const uint8* buddyID)
 {
     // Already have a connected buddy — reject.
     // Matches MFC ClientList.cpp:721-747.
     if (m_buddyStatus == BuddyStatus::Connected && m_buddy)
+        return false;
+
+    // Not ourselves, and not a node we are running a firewall check with
+    // (MFC ClientList.cpp:724-730).
+    const Address addr = Address::fromHostOrder(ip);
+    if (theApp.isOwnTcpPort(tcpPort) && addr == Address::fromNetworkOrder(theApp.publicIP()))
+        return false;
+    if (isKadFirewallCheckIP(addr.toNetworkUint32()))
         return false;
 
     // Check if we already know this client (the lookup takes network order)
@@ -564,7 +608,9 @@ void ClientList::processKadList()
         case KadState::IncomingBuddy:
             // A firewalled peer wants us as its buddy. If we already have one, drop it;
             // otherwise it becomes ConnectedBuddy when its connection completes.
-            if (m_buddyStatus == BuddyStatus::Connected)
+            // A claim that never connects is let go, or the client is kept for good.
+            if (m_buddyStatus == BuddyStatus::Connected
+                || std::time(nullptr) - client->kadStateSince() > kIncomingBuddyTimeoutSecs)
                 client->setKadState(KadState::None);
             break;
 

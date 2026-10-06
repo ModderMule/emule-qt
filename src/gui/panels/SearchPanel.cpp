@@ -20,6 +20,7 @@
 #include "utils/MetaResultActions.h"
 #include "utils/PreviewLauncher.h"
 #include "utils/StatusBarNotifier.h"
+#include "dialogs/PeerPreviewDialog.h"
 #include "utils/ViewNavigation.h"
 #include "utils/WebServices.h"
 #include "prefs/Preferences.h"
@@ -118,6 +119,7 @@ void SearchPanel::setIpcClient(IpcClient* client)
     connect(m_resultRefreshTimer, &QTimer::timeout, this, [this] { drainDirtySearches(); });
 
     connect(m_ipc, &IpcClient::searchResultReceived, this, &SearchPanel::onSearchResultPush);
+    connect(m_ipc, &IpcClient::searchPreviewReceived, this, &SearchPanel::onSearchPreviewPush);
     // Download To needs the list before the menu opens, not after a round trip.
     connect(m_ipc, &IpcClient::categoriesChanged, this,
             [this](const Ipc::IpcMessage&) { requestCategories(); });
@@ -931,6 +933,8 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     QString singleHash;
     QString singleName;
     int64_t singleSize = 0;
+    int peerPreviews = 0;
+    QString peerPreviewHash;
     for (const auto& idx : selection) {
         if (!tab)
             break;
@@ -939,6 +943,10 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             continue;
         if (!result->isSpam)
             anyNotSpam = true;
+        if (result->previewPossible) {
+            ++peerPreviews;
+            peerPreviewHash = result->hash;
+        }
         anyEd2k |= !result->isMeta();
         anyUsenet |= result->isUsenet();
         anyTorrent |= result->isTorrent();
@@ -1092,12 +1100,21 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
 
     // Preview — MFC inserts it here, immediately above Find, and only when exactly
     // one previewable file is selected (SearchListCtrl.cpp:710-713).
+    bool streamPreview = false;
     if (singleSel && m_downloadModel && !m_streamToken.isEmpty()) {
         const auto* dl = m_downloadModel->findByHash(singleHash);
         if (dl && dl->isPreviewPossible) {
+            streamPreview = true;
             connect(m_contextMenu->addAction(menuIcon("Preview.ico"), tr("Preview")),
                     &QAction::triggered, this, [this, singleHash] { sendPreview(singleHash); });
         }
+    }
+    // A browsed peer's file: ask the peer for a few frames.
+    if (!streamPreview && tab && peerPreviews == 1) {
+        const uint32_t searchID = tab->searchID;
+        connect(m_contextMenu->addAction(menuIcon("Preview.ico"), tr("Preview")),
+                &QAction::triggered, this,
+                [this, searchID, peerPreviewHash] { requestPeerPreview(searchID, peerPreviewHash); });
     }
 
     // Find... — over the whole result list, so selection is irrelevant.
@@ -1194,6 +1211,7 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
             row.knownType          = static_cast<int>(m.value(QStringLiteral("knownType")).toInteger());
             row.isSpam             = m.value(QStringLiteral("isSpam")).toBool();
             row.hasComment         = m.value(QStringLiteral("hasComment")).toBool();
+            row.previewPossible    = m.value(QStringLiteral("previewPossible")).toBool();
             row.userRating         = static_cast<int>(m.value(QStringLiteral("userRating")).toInteger());
             row.artist             = m.value(QStringLiteral("artist")).toString();
             row.album              = m.value(QStringLiteral("album")).toString();
@@ -1847,6 +1865,51 @@ void SearchPanel::scheduleSaveSearches()
 // ---------------------------------------------------------------------------
 // Preview a search result via HTTP streaming
 // ---------------------------------------------------------------------------
+
+void SearchPanel::requestPeerPreview(uint32_t searchID, const QString& hash)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    IpcMessage msg(IpcMsgType::RequestSearchPreview);
+    msg.append(static_cast<qint64>(searchID));
+    msg.append(hash);
+    m_ipc->sendRequest(std::move(msg), [this](const IpcMessage& resp) {
+        if (IpcFeedback::checkOrWarn(resp, this, tr("Preview")))
+            StatusBarNotifier::post(tr("Preview requested - please wait"), 4000);
+    });
+}
+
+void SearchPanel::onSearchPreviewPush(const IpcMessage& msg)
+{
+    // [hash, userName, frames: bytes[]]
+    const QString hash = msg.fieldString(0);
+    const QString userName = msg.fieldString(1);
+
+    std::vector<QImage> frames;
+    for (const QCborValue& value : msg.field(2).toArray()) {
+        if (QImage image = QImage::fromData(value.toByteArray(), "PNG"); !image.isNull())
+            frames.push_back(std::move(image));
+    }
+    if (frames.empty()) {
+        StatusBarNotifier::post(tr("%1 sent no preview").arg(userName), 4000);
+        return;
+    }
+
+    // The name comes from the row; the daemon's hash text and ours differ in case.
+    QString fileName;
+    for (const auto& tab : m_tabs) {
+        if (!tab.model)
+            continue;
+        for (int row = 0; row < tab.model->rowCount() && fileName.isEmpty(); ++row) {
+            const auto* result = tab.model->resultAt(row);
+            if (result && result->hash.compare(hash, Qt::CaseInsensitive) == 0)
+                fileName = result->fileName;
+        }
+    }
+    auto* dialog = new PeerPreviewDialog(fileName.isEmpty() ? userName : fileName,
+                                         std::move(frames), this);
+    dialog->show();
+}
 
 void SearchPanel::sendPreview(const QString& hash)
 {

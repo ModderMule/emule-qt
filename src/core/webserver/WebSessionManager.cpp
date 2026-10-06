@@ -111,10 +111,67 @@ void WebSessionManager::setTimeoutMinutes(int minutes)
 QString WebSessionManager::generateSessionId() const
 {
     QByteArray bytes(16, Qt::Uninitialized);
-    auto* rng = QRandomGenerator::global();
+    auto* rng = QRandomGenerator::system();
     for (int i = 0; i < 16; ++i)
         bytes[i] = static_cast<char>(rng->bounded(256));
     return QString::fromLatin1(bytes.toHex());
+}
+
+// ---------------------------------------------------------------------------
+// Password guessing
+// ---------------------------------------------------------------------------
+
+namespace {
+
+constexpr int kFreeLoginTries = 3;
+constexpr qint64 kFirstLoginWaitMs = 5 * 1000;
+constexpr qint64 kMaxLoginWaitMs = 15 * 60 * 1000;
+constexpr qint64 kForgetFailuresMs = 60 * 60 * 1000;
+constexpr qsizetype kMaxTrackedClients = 4096;
+
+qint64 loginWaitMs(int failures)
+{
+    if (failures < kFreeLoginTries)
+        return 0;
+    const int doublings = std::min(failures - kFreeLoginTries, 16);
+    return std::min(kFirstLoginWaitMs << doublings, kMaxLoginWaitMs);
+}
+
+} // namespace
+
+int WebSessionManager::loginWaitSeconds(const QString& client, qint64 nowMs) const
+{
+    const auto it = m_failedLogins.constFind(client);
+    if (it == m_failedLogins.constEnd())
+        return 0;
+    const qint64 left = it->lastMs + loginWaitMs(it->count) - nowMs;
+    return left > 0 ? static_cast<int>((left + 999) / 1000) : 0;
+}
+
+void WebSessionManager::noteLoginFailure(const QString& client, qint64 nowMs)
+{
+    // Keep the table bounded: it is fed by whoever can reach the port.
+    if (m_failedLogins.size() >= kMaxTrackedClients) {
+        erase_if(m_failedLogins, [nowMs](const auto& entry) {
+            return nowMs - entry.value().lastMs > kForgetFailuresMs;
+        });
+        if (m_failedLogins.size() >= kMaxTrackedClients) {
+            erase_if(m_failedLogins, [](const auto& entry) {
+                return entry.value().count < kFreeLoginTries;
+            });
+        }
+    }
+
+    FailedLogins& entry = m_failedLogins[client];
+    if (nowMs - entry.lastMs > kForgetFailuresMs)
+        entry.count = 0;
+    ++entry.count;
+    entry.lastMs = nowMs;
+}
+
+void WebSessionManager::noteLoginSuccess(const QString& client)
+{
+    m_failedLogins.remove(client);
 }
 
 } // namespace eMule

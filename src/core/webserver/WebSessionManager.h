@@ -55,10 +55,25 @@ public:
     /// Update the session timeout.
     void setTimeoutMinutes(int minutes);
 
+    // --- Password guessing ---------------------------------------------------
+    // Three free tries per client address, then a wait that doubles from 5 s to
+    // 15 min. A success clears it; an hour without a failure forgets it.
+
+    /// Seconds @p client has to wait before a password is looked at again; 0 = now.
+    [[nodiscard]] int loginWaitSeconds(const QString& client, qint64 nowMs) const;
+    void noteLoginFailure(const QString& client, qint64 nowMs);
+    void noteLoginSuccess(const QString& client);
+
 private:
     [[nodiscard]] QString generateSessionId() const;
 
+    struct FailedLogins {
+        int count = 0;
+        qint64 lastMs = 0;
+    };
+
     QHash<QString, WebSession> m_sessions;
+    QHash<QString, FailedLogins> m_failedLogins;
     int m_timeoutMinutes;
 };
 

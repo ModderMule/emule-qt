@@ -31,9 +31,11 @@ SearchList::~SearchList() = default;
 // ---------------------------------------------------------------------------
 
 uint32 SearchList::newSearch(const QString& resultFileType, const SearchParams& params,
-                             uint32 forcedID)
+                             uint32 forcedID, bool takeEd2kRouting)
 {
-    m_resultFileType = resultFileType;
+    const bool ed2k = params.type == SearchType::Ed2kServer || params.type == SearchType::Ed2kGlobal;
+    if (!ed2k || takeEd2kRouting)
+        m_resultFileType = resultFileType;
     if (forcedID != 0) {
         m_currentSearchID = forcedID;
         if (m_nextSearchID <= forcedID)
@@ -47,7 +49,7 @@ uint32 SearchList::newSearch(const QString& resultFileType, const SearchParams& 
     // answers still arriving for it, nor wipe the set of servers we asked — without
     // that set those answers are dropped as unsolicited.
     // MFC: CSearchList::NewSearch — srchybrid/SearchList.cpp:152-156.
-    if (params.type == SearchType::Ed2kServer || params.type == SearchType::Ed2kGlobal) {
+    if (ed2k && takeEd2kRouting) {
         m_currentEd2kSearchID = m_currentSearchID;
         m_curED2KSentRequestsIPs.clear();
         m_udpServerRecords.clear();
@@ -200,19 +202,28 @@ bool SearchList::processSearchAnswer(const uint8* packet, uint32 size,
     const uint16 serverPort = server.port();
     SafeMemFile data(packet, size);
 
-    const uint32 resultCount = data.readUInt32();
-    for (uint32 i = 0; i < resultCount; ++i) {
-        auto* file = new SearchFile(data, optUTF8, serverIP, serverPort);
-        file->setSearchID(m_currentEd2kSearchID);
-        addToList(file, false, 0);
-    }
-
-    // Check for trailing "more results" flag. When set, the server capped the
-    // result set — surface it to the user so they can narrow the query (#19). MFC
-    // routes the same flag to the search window (ServerSocket.cpp:360-363).
+    // A broken record ends the answer, not the server session: what was read so far
+    // stays (MFC ServerSocket.cpp:586-600 keeps the connection for OP_SEARCHRESULT).
+    uint32 resultCount = 0;
+    uint32 parsed = 0;
     bool moreResults = false;
-    if (data.position() < data.length()) {
-        moreResults = data.readUInt8() != 0;
+    try {
+        resultCount = data.readUInt32();
+        for (; parsed < resultCount; ++parsed) {
+            auto* file = new SearchFile(data, optUTF8, serverIP, serverPort);
+            file->setSearchID(m_currentEd2kSearchID);
+            addToList(file, false, 0);
+        }
+
+        // Check for trailing "more results" flag. When set, the server capped the
+        // result set — surface it to the user so they can narrow the query (#19). MFC
+        // routes the same flag to the search window (ServerSocket.cpp:360-363).
+        if (data.position() < data.length())
+            moreResults = data.readUInt8() != 0;
+    } catch (const FileException& ex) {
+        logWarning(QStringLiteral("Malformed search answer from %1 — kept %2 of %3 result(s): %4")
+                       .arg(server.toString()).arg(parsed).arg(resultCount)
+                       .arg(QString::fromUtf8(ex.what())));
     }
     if (moreResults) {
         logInfo(QStringLiteral("Server returned only part of the matches — more results "
@@ -220,7 +231,7 @@ bool SearchList::processSearchAnswer(const uint8* packet, uint32 size,
     }
 
     logServerVerbose(QStringLiteral("TCP search answer from %1 — parsed %2 result(s), moreResults=%3")
-                         .arg(server.toString()).arg(resultCount).arg(moreResults));
+                         .arg(server.toString()).arg(parsed).arg(moreResults));
 
     emit tabHeaderUpdated(m_currentEd2kSearchID);
     return moreResults;
@@ -253,20 +264,31 @@ uint32 SearchList::processClientSharedFiles(UpDownClient& sender, const uint8* p
     const uint32 serverIP = sender.serverAddress().toNetworkUint32();
 
     SafeMemFile data(packet, size);
-    for (uint32 results = size >= 4 ? data.readUInt32() : 0; results > 0; --results) {
-        auto* file = new SearchFile(data, sender.unicodeSupport(), serverIP,
-                                    sender.serverPort(), directory);
-        if (file->isLargeFile() && !sender.supportsLargeFiles()) {
-            logDebug(QStringLiteral("Client offers large file (%1) but did not announce support for it - ignoring file")
-                         .arg(file->fileName()));
-            delete file;
-            continue;
+    try {
+        for (uint32 results = size >= 4 ? data.readUInt32() : 0; results > 0; --results) {
+            auto* file = new SearchFile(data, sender.unicodeSupport(), serverIP,
+                                        sender.serverPort(), directory);
+            if (file->isLargeFile() && !sender.supportsLargeFiles()) {
+                logDebug(QStringLiteral("Client offers large file (%1) but did not announce support for it - ignoring file")
+                             .arg(file->fileName()));
+                delete file;
+                continue;
+            }
+            // The peer itself is the source, whatever ID it wrote into the record.
+            if (senderIP != 0 && sender.userPort() != 0)
+                file->addClient({senderIP, sender.userPort(), serverIP, sender.serverPort()});
+            // MFC SearchList.cpp:218 offers this for videos; this client also answers
+            // for images.
+            const ED2KFileType type = getED2KFileTypeID(file->fileName());
+            file->setPreviewPossible(sender.supportsPreview()
+                                     && (type == ED2KFileType::Video || type == ED2KFileType::Image));
+            file->setSearchID(searchID);
+            addToList(file, true);
         }
-        // The peer itself is the source, whatever ID it wrote into the record.
-        if (senderIP != 0 && sender.userPort() != 0)
-            file->addClient({senderIP, sender.userPort(), serverIP, sender.serverPort()});
-        file->setSearchID(searchID);
-        addToList(file, true);
+    } catch (const FileException& ex) {
+        // The files read so far stay listed; the peer keeps its connection.
+        logWarning(QStringLiteral("Malformed shared file list from %1: %2")
+                       .arg(sender.userName(), QString::fromUtf8(ex.what())));
     }
 
     emit tabHeaderUpdated(searchID);

@@ -452,6 +452,10 @@ void Kademlia::process()
 
     time_t now = time(nullptr);
 
+    // Expire index entries on a clock, not only when somebody searches the index.
+    if (m_indexed)
+        m_indexed->clean();
+
     // 1. Bootstrap — while not yet connected, probe the shipped bootstrap list one
     //    contact at a time: one per 15 s, or every 2 s while the routing table is
     //    still empty. Log a failure once the list is exhausted without connecting.

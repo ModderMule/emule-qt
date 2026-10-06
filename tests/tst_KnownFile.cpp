@@ -150,6 +150,9 @@ private slots:
     void setFileSize_partCounts();
     void priority_setAndGet();
     void priority_invalid();
+    void load_flagsAreTheMetaDataVersion_data();
+    void load_flagsAreTheMetaDataVersion();
+    void saveLoad_keepsAutoPriorityAndMediaTags();
     void loadWriteRoundTrip();
     void shouldPartiallyPurgeFile();
     void publishTimes();
@@ -291,6 +294,98 @@ void tst_KnownFile::priority_invalid()
 
     f.setUpPriority(99);
     QCOMPARE(f.upPriority(), kPrNormal);
+}
+
+// One known.met record of a small file: date, hash, no part hashes, the given tags.
+static QByteArray knownRecord(const std::vector<Tag>& tags)
+{
+    SafeMemFile mem;
+    mem.writeUInt32(1700000000);
+    uint8 hash[16];
+    std::memset(hash, 0x5A, 16);
+    mem.write(hash, 16);
+    mem.writeUInt16(0);
+    mem.writeUInt32(static_cast<uint32>(tags.size() + 2));
+    Tag(FT_FILENAME, QStringLiteral("song.mp3")).writeNewEd2kTag(mem, UTF8Mode::OptBOM);
+    Tag(FT_FILESIZE, uint32{5000}).writeNewEd2kTag(mem);
+    for (const Tag& tag : tags)
+        tag.writeNewEd2kTag(mem, UTF8Mode::OptBOM);
+    return mem.takeBuffer();
+}
+
+// FT_FLAGS is the metadata version, as in the reference client; auto priority lives
+// in FT_ULPRIORITY alone.
+void tst_KnownFile::load_flagsAreTheMetaDataVersion_data()
+{
+    QTest::addColumn<int>("flags");        // -1 = no tag
+    QTest::addColumn<bool>("tagsKept");
+    QTest::newRow("reference, current version") << 2 << true;
+    QTest::newRow("older build, auto priority") << 0 << true;
+    QTest::newRow("older build, fixed priority") << 1 << true;
+    QTest::newRow("no version: tags untrusted") << -1 << false;
+}
+
+void tst_KnownFile::load_flagsAreTheMetaDataVersion()
+{
+    QFETCH(int, flags);
+    QFETCH(bool, tagsKept);
+
+    std::vector<Tag> tags;
+    tags.emplace_back(FT_ULPRIORITY, uint32{kPrHigh});
+    if (flags >= 0)
+        tags.emplace_back(FT_FLAGS, static_cast<uint32>(flags));
+    tags.emplace_back(FT_MEDIA_LENGTH, uint32{215});
+    tags.emplace_back(FT_MEDIA_CODEC, QStringLiteral("mp3"));
+
+    SafeMemFile in(knownRecord(tags));
+    KnownFile loaded;
+    QVERIFY(loaded.loadFromFile(in));
+
+    // The priority is never touched by the flags, whatever their value.
+    QCOMPARE(loaded.upPriority(), kPrHigh);
+    QVERIFY(!loaded.isAutoUpPriority());
+
+    QCOMPARE(loaded.getTag(FT_MEDIA_LENGTH) != nullptr, tagsKept);
+    QCOMPARE(loaded.metaDataVer(), tagsKept ? KnownFile::kMetaDataVer : uint32{0});
+}
+
+void tst_KnownFile::saveLoad_keepsAutoPriorityAndMediaTags()
+{
+    KnownFile original;
+    uint8 hash[16];
+    std::memset(hash, 0x3C, 16);
+    original.setFileHash(hash);
+    original.setFileSize(5000);
+    original.setFileName(QStringLiteral("song.mp3"));
+    original.setAutoUpPriority(true);
+    original.addTagUnique(Tag(FT_MEDIA_LENGTH, uint32{215}));
+    original.setMetaDataVer(KnownFile::kMetaDataVer);
+
+    SafeMemFile mem;
+    QVERIFY(original.writeToFile(mem));
+    mem.seek(0, 0);
+    KnownFile loaded;
+    QVERIFY(loaded.loadFromFile(mem));
+    QVERIFY(loaded.isAutoUpPriority());
+    QCOMPARE(loaded.metaDataVer(), KnownFile::kMetaDataVer);
+    QCOMPARE(loaded.getTag(FT_MEDIA_LENGTH)->intValue(), uint32{215});
+
+    // Without media tags no version tag is written at all.
+    KnownFile bare;
+    bare.setFileHash(hash);
+    bare.setFileSize(5000);
+    bare.setFileName(QStringLiteral("notes.txt"));
+    bare.setAutoUpPriority(false);
+    bare.setUpPriority(kPrLow);
+    SafeMemFile mem2;
+    QVERIFY(bare.writeToFile(mem2));
+    mem2.seek(0, 0);
+    KnownFile bareLoaded;
+    QVERIFY(bareLoaded.loadFromFile(mem2));
+    QCOMPARE(bareLoaded.getTag(FT_FLAGS), nullptr);
+    QCOMPARE(bareLoaded.metaDataVer(), uint32{0});
+    QCOMPARE(bareLoaded.upPriority(), kPrLow);
+    QVERIFY(!bareLoaded.isAutoUpPriority());
 }
 
 void tst_KnownFile::loadWriteRoundTrip()
@@ -577,13 +672,13 @@ void tst_KnownFile::updateMetaDataTags_aviFile()
     QCOMPARE(spy.count(), 1);
 
     // Should have set metaDataVer
-    QCOMPARE(f.metaDataVer(), uint32{1});
+    QCOMPARE(f.metaDataVer(), KnownFile::kMetaDataVer);
 
     // Should have created FT_MEDIA_CODEC tag (DIVX video)
     const Tag* codecTag = f.getTag(FT_MEDIA_CODEC);
     QVERIFY(codecTag != nullptr);
     QVERIFY(codecTag->isStr());
-    QVERIFY(codecTag->strValue().contains(u"DivX", Qt::CaseInsensitive));
+    QCOMPARE(codecTag->strValue(), QStringLiteral("divx"));   // the searchable id, not a label
 }
 
 // ---------------------------------------------------------------------------

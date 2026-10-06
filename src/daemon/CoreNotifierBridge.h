@@ -12,6 +12,9 @@
 #include "friends/FriendConnectProgress.h"
 
 #include <QCborArray>
+
+#include <array>
+#include <vector>
 #include <QImage>
 #include <QObject>
 #include <QString>
@@ -105,6 +108,8 @@ private slots:
     void onClientSharedFilesReceived(const QByteArray& userHash,
                                      const QString& userName,
                                      uint32 searchID);
+    void onPreviewAnswerReceived(const std::array<uint8, 16>& fileHash,
+                                 const std::vector<QImage>& images);
 
     // Port-mapping signals
     void onPortMapStatusChanged(eMule::PortMapStatus status);

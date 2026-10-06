@@ -2678,6 +2678,10 @@ void PartFile::performFileMove(const QString& srcPath, const QString& destPath, 
             }
             adoptCompletedAICHHashSet();
 
+            // Tags that came with the download are anyone's guess; publish only
+            // what the finished file says itself (MFC PartFile.cpp:3011-3014).
+            updateMetaDataTags();
+
             // DownloadQueue handles SharedFileList/KnownFileList integration
             // via the downloadCompleted() signal connection
             emit m_partNotifier.downloadCompleted();

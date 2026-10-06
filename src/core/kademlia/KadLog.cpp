@@ -6,22 +6,14 @@
 
 namespace eMule::kad {
 
-static bool s_kadLoggingEnabled = false;
-
-void logKad(const QString& msg)
+void logKadLine(const QString& msg)
 {
-    if (s_kadLoggingEnabled)
-        qCDebug(lcEmuleKad).noquote() << msg;
+    qCDebug(lcEmuleKad).noquote() << msg;
 }
 
 void setKadLogging(bool enabled)
 {
-    s_kadLoggingEnabled = enabled;
-}
-
-bool isKadLoggingEnabled()
-{
-    return s_kadLoggingEnabled;
+    detail::g_kadLoggingEnabled = enabled;
 }
 
 } // namespace eMule::kad

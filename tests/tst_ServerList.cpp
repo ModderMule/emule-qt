@@ -107,6 +107,7 @@ private slots:
     // Persistence: server.met
     void serverMet_saveLoad_roundTrip();
     void serverMet_corruptHeader();
+    void serverMet_fallsBackToTheBackup();
     void serverMet_merge();
 
     // Static servers
@@ -428,6 +429,36 @@ void tst_ServerList::serverMet_saveLoad_roundTrip()
     QCOMPARE(s2->dynIP(), QStringLiteral("dyn.example.com"));
     QCOMPARE(s2->ipAddress().toNetworkUint32(), uint32{0});
     QCOMPARE(s2->users(), uint32{2000});
+}
+
+// server.met.bak was written on every save and never read.
+void tst_ServerList::serverMet_fallsBackToTheBackup()
+{
+    TempDir tmp;
+    const QString metPath = tmp.filePath(QStringLiteral("server.met"));
+
+    {
+        ServerList list;
+        list.addServer(makeServer(0x08080808, 4661, QStringLiteral("S1")));
+        list.addServer(makeServer(0x08080404, 4662, QStringLiteral("S2")));
+        QVERIFY(list.saveServerMet(metPath));
+        QVERIFY(list.saveServerMet(metPath));
+    }
+    QVERIFY(QFile::exists(metPath + QStringLiteral(".bak")));
+
+    QFile f(metPath);
+    QVERIFY(f.open(QIODevice::ReadWrite));
+    QVERIFY(f.resize(f.size() - 6));
+    f.close();
+
+    ServerList cut;
+    QVERIFY(cut.loadServerMet(metPath));
+    QCOMPARE(cut.serverCount(), size_t{2});
+
+    QVERIFY(QFile::remove(metPath));
+    ServerList gone;
+    QVERIFY(gone.loadServerMet(metPath));
+    QCOMPARE(gone.serverCount(), size_t{2});
 }
 
 void tst_ServerList::serverMet_corruptHeader()

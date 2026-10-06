@@ -38,6 +38,7 @@ private slots:
     // Answers nobody asked for
     void findBuddyRes_unrequestedIsIgnored();
     void firewalledAckRes_countsOnlyAskedNodesOnce();
+    void firewalledReq_repeatedMakesOneClient();
 
     // createSearchExpressionTree
     void searchExprTree_tokenizesStringTerm();
@@ -154,6 +155,30 @@ void tst_KadUDPListener::findBuddyRes_unrequestedIsIgnored()
     UpDownClient* buddy = clients.findByConnIP(qToBigEndian(kNodeIP), kNodeTcp);
     QVERIFY(buddy != nullptr);
     QCOMPARE(buddy->kadState(), KadState::QueuedBuddy);
+
+    clients.deleteAll();
+    Kademlia::setClientList(nullptr);
+    theApp.clientList = nullptr;
+}
+
+// Each request used to allocate a client of its own, with whatever TCP port it named.
+void tst_KadUDPListener::firewalledReq_repeatedMakesOneClient()
+{
+    ClientList clients;
+    theApp.clientList = &clients;
+    Kademlia::setClientList(&clients);
+    eMule::testing::KadFixture kadFixture;
+
+    SafeMemFile io;
+    io.writeUInt8(KADEMLIA_FIREWALLED_REQ);
+    io.writeUInt16(kNodeTcp);
+    deliver(io.buffer(), kNodeIP);
+    deliver(io.buffer(), kNodeIP);
+
+    QCOMPARE(clients.clientCount(), 1);
+    UpDownClient* probe = clients.findByConnIP(qToBigEndian(kNodeIP), kNodeTcp);
+    QVERIFY(probe != nullptr);
+    QCOMPARE(probe->kadState(), KadState::QueuedFwCheck);
 
     clients.deleteAll();
     Kademlia::setClientList(nullptr);

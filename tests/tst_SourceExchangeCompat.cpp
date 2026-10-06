@@ -576,6 +576,8 @@ private slots:
     void previewRequest_answeredOnceWithTheFilesHash();
     void previewRequest_unknownFileGetsAnEmptyAnswer();
     void previewAnswer_dropsOversizedFrames();
+    void queuedPacket_waitsForTheHelloExchange();
+    void previewAnswer_withoutFramesReportsTheRequestedFile();
     void sourceAnswer_unrequestedIsDropped_data();
     void sourceAnswer_unrequestedIsDropped();
 
@@ -2498,6 +2500,69 @@ void tst_SourceExchangeCompat::previewRequest_unknownFileGetsAnEmptyAnswer()
 
     QCOMPARE(sock.countOf(OP_PREVIEWANSWER), 1);
     QCOMPARE(sock.find(OP_PREVIEWANSWER)->payload, QByteArray(17, '\0'));
+}
+
+// A peer that has nothing to show answers with no frames, or with a zero hash when it
+// does not know the file. Either way the requester hears about the file it asked for,
+// once, and may ask again.
+void tst_SourceExchangeCompat::previewAnswer_withoutFramesReportsTheRequestedFile()
+{
+    SharedFileFixture fixture;
+    auto* peer = track(makeRequester());
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+    sock.markConnected();
+
+    QVERIFY(peer->sendPreviewRequest(*fixture.file));
+    QVERIFY(!peer->sendPreviewRequest(*fixture.file));   // one at a time
+    QCOMPARE(sock.countOf(OP_REQUESTPREVIEW), 1);
+
+    int answers = 0;
+    QByteArray reported;
+    std::size_t frames = 99;
+    connect(peer, &UpDownClient::previewAnswerReceived, this,
+            [&](const std::array<uint8, 16>& hash, const std::vector<QImage>& images) {
+        ++answers;
+        reported = QByteArray(reinterpret_cast<const char*>(hash.data()), 16);
+        frames = images.size();
+    });
+
+    SafeMemFile answer;
+    const uint8 zero[16] = {};
+    answer.writeHash16(zero);
+    answer.writeUInt8(0);
+    sock.deliverExt(answer.buffer(), OP_PREVIEWANSWER);
+    sock.deliverExt(answer.buffer(), OP_PREVIEWANSWER);   // unasked: ignored
+
+    QCOMPARE(answers, 1);
+    QCOMPARE(frames, std::size_t{0});
+    QCOMPARE(reported, QByteArray(reinterpret_cast<const char*>(fixture.file->fileHash()), 16));
+
+    QVERIFY(peer->sendPreviewRequest(*fixture.file));
+    QCOMPARE(sock.countOf(OP_REQUESTPREVIEW), 2);
+    peer->setSocket(nullptr);
+}
+
+// A packet handed to safeConnectAndSendPacket() while our hello is unanswered used to go
+// out at once; the peer then drops us for asking before saying hello.
+void tst_SourceExchangeCompat::queuedPacket_waitsForTheHelloExchange()
+{
+    SharedFileFixture fixture;
+    auto* peer = track(makeRequester());
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+    sock.markConnected();
+
+    peer->sendHelloPacket();
+    QCOMPARE(sock.countOf(OP_HELLO), 1);
+    QVERIFY(peer->sendPreviewRequest(*fixture.file));
+    QCOMPARE(sock.countOf(OP_REQUESTPREVIEW), 0);
+
+    const auto answer = buildHelloAnswer(0x99, 0x0A0B0C0D, 4665, {});
+    emit sock.helloReceived(reinterpret_cast<const uint8*>(answer.constData()),
+                            static_cast<uint32>(answer.size()), OP_HELLOANSWER);
+    QCOMPARE(sock.countOf(OP_REQUESTPREVIEW), 1);
+    peer->setSocket(nullptr);
 }
 
 void tst_SourceExchangeCompat::previewAnswer_dropsOversizedFrames()

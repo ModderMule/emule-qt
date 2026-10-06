@@ -57,6 +57,7 @@ struct WebServerConfig {
     bool webUiEnabled = false;    ///< Serve the template web UI (/, login, static assets). Independent of restApiEnabled.
     bool restApiEnabled = false;  ///< Serve the JSON REST API (/api/v1/*). Independent of webUiEnabled.
     bool gzipEnabled = true;
+    QStringList corsAllowedOrigins;  ///< Origins that may call /api/v1/* from a browser. Empty = no CORS headers; "*" = any.
     QString templatePath;
     int sessionTimeout = 5;
     bool httpsEnabled = false;
@@ -377,7 +378,17 @@ private:
         QString id;
     };
     /// The `ses` of @p query, validated. Refreshes the session like a page view.
-    [[nodiscard]] WebSessionCheck webSession(const QUrlQuery& query);
+    /// The session named by the request's cookie; never by its URL.
+    [[nodiscard]] WebSessionCheck webSession(const QHttpServerRequest& request);
+    [[nodiscard]] QByteArray sessionCookieName() const;
+    /// Set-Cookie value; an empty @p sessionId expires the cookie.
+    [[nodiscard]] QByteArray sessionCookie(const QString& sessionId, bool secure) const;
+    /// False for a POST a page of another site made the browser send.
+    [[nodiscard]] static bool sameOrigin(const QHttpServerRequest& request);
+    /// Access-Control-* for a REST request whose Origin is in @p allowed; else nothing.
+    static void addCorsHeaders(const QStringList& allowed, const QHttpServerRequest& request,
+                               QHttpServerResponse& response);
+    [[nodiscard]] static QHttpServerResponse redirectTo(const QString& location);
 
     // Endpoint handlers — Uploads
     QHttpServerResponse handleGetUploads();
@@ -392,6 +403,7 @@ private:
 
     // Endpoint handlers — Search
     QHttpServerResponse handlePostSearch(const QJsonObject& body);
+    QHttpServerResponse handleDeleteSearch(uint32 searchID);
     QHttpServerResponse handleGetSearchResults(uint32 searchID);
 
     // Endpoint handlers — Shared files
@@ -410,12 +422,17 @@ private:
     QHttpServerResponse handlePatchPreferences(const QJsonObject& body);
 
     // Template web interface handlers
-    QHttpServerResponse handleLogin(const QHttpServerRequest& request);
+    /// POST /: the login form, or an action of a logged-in session.
+    QHttpServerResponse handlePost(const QHttpServerRequest& request);
+    QHttpServerResponse handleLogin(const QHttpServerRequest& request, const QUrlQuery& form);
     QHttpServerResponse handlePage(const QHttpServerRequest& request);
     QHttpServerResponse handleStaticFile(const QString& path);
     QHttpServerResponse renderPage(const QString& page, const QString& sessionId,
                                    const QUrlQuery& query);
     void dispatchActions(const QUrlQuery& query, const QString& page);
+    /// The search form, or the download boxes ticked in its result list.
+    void webSearchAction(const QUrlQuery& form);
+    void webOptionsAction(const QUrlQuery& form);
 
     // Template page builders
     [[nodiscard]] QString buildTransferPage(bool isAdmin, const QString& sessionId);
@@ -480,6 +497,14 @@ private:
     Statistics*     m_statistics    = nullptr;
     StatsHistory*   m_statsHistory  = nullptr;
     Preferences*    m_preferences   = nullptr;
+
+    // The web interface has one search at a time, like its single result page.
+    uint32  m_webSearchID = 0;
+    QString m_webSearchTitle;
+    QString m_webSearchNotice;      ///< shown once on the search page
+    bool    m_webSearchFailed = false;
+    QString m_webPrefsNotice;       ///< shown once on the options page
+    bool    m_webPrefsFailed = false;
 
     // Log provider callback (injected by DaemonApp)
     std::function<QString()> m_logProvider;

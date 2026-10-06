@@ -126,6 +126,7 @@ SOURCES += \
     kademlia/KadUInt128.cpp \
     media/FrameGrabThread.cpp \
     media/ContainerSniffer.cpp \
+    media/MediaContainers.cpp \
     media/MediaInfo.cpp \
     media/PreviewApps.cpp \
     media/PreviewThread.cpp \
@@ -168,6 +169,7 @@ SOURCES += \
     enodemeta/MetaIdentity.cpp \
     search/SearchList.cpp \
     search/SearchParams.cpp \
+    search/SearchStarter.cpp \
     server/Server.cpp \
     server/ServerConnect.cpp \
     server/ServerList.cpp \
@@ -311,6 +313,7 @@ HEADERS += \
     enodemeta/MetaIdentity.h \
     search/SearchList.h \
     search/SearchParams.h \
+    search/SearchStarter.h \
     server/Server.h \
     server/ServerConnect.h \
     server/ServerList.h \

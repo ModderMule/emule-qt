@@ -4,6 +4,7 @@
 
 #include "TestFixtures.h"
 #include "TestHelpers.h"
+#include "utils/TimeUtils.h"
 #include "app/AppContext.h"
 #include "files/KnownFileList.h"
 #include "files/PartFile.h"
@@ -148,6 +149,7 @@ private slots:
 
     void udpGlobalSourcesSingleBlock();
     void udpGlobalSourcesMultiBlock();
+    void udpGlobalSources_onlyFromAServerWeAsked();
 
     // #34 global-UDP-source rotation (SendNextUDPPacket port).
     void udpMaxFilesPerPacket_capsByServerCapability();
@@ -1564,12 +1566,52 @@ void tst_DownloadQueue::udpGlobalSourcesSingleBlock()
     // The answering server is unknown to this fixture, so attribution falls back
     // to the sender endpoint — irrelevant for a high-ID source.
     const Endpoint from(Address::fromString(QStringLiteral("1.2.3.4")), 4665);
+    dq.noteUdpSourceRequest(from.address(), getTickCount());
     dq.addUDPGlobalSources(reinterpret_cast<const uint8*>(body.constData()),
                            static_cast<uint32>(body.size()), from);
 
     QCOMPARE(pf->sourceCount(), 1);
     QCOMPARE(pf->srcList().front()->userIDHybrid(),
              Address::fromString(QStringLiteral("88.77.66.55")).toUint32());
+
+    dq.deleteAll();
+}
+
+// Stock takes OP_GLOBFOUNDSOURCES from anybody; the hash being public, that is a way
+// to hand us sources of the sender's choosing.
+void tst_DownloadQueue::udpGlobalSources_onlyFromAServerWeAsked()
+{
+    DownloadQueue dq;
+
+    uint8 hash[16] = {52, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    auto* pf = createTestPartFile(hash, QStringLiteral("udp_asked.bin"));
+    dq.addDownload(pf);
+
+    const uint32 src = Address::fromString(QStringLiteral("88.77.66.54")).toNetworkUint32();
+    const QByteArray body = makeServerSourceBody(hash, {src});
+    const Endpoint from(Address::fromString(QStringLiteral("1.2.3.5")), 4665);
+    const auto deliver = [&] {
+        dq.addUDPGlobalSources(reinterpret_cast<const uint8*>(body.constData()),
+                               static_cast<uint32>(body.size()), from);
+    };
+
+    deliver();                                   // never asked
+    QCOMPARE(pf->sourceCount(), 0);
+
+    const uint64 now = getTickCount();
+    if (now > 200'000) {
+        dq.noteUdpSourceRequest(from.address(), now - 180'000);   // asked long ago
+        deliver();
+        QCOMPARE(pf->sourceCount(), 0);
+    }
+
+    dq.noteUdpSourceRequest(Address::fromString(QStringLiteral("1.2.3.6")), now);
+    deliver();                                   // somebody else was asked
+    QCOMPARE(pf->sourceCount(), 0);
+
+    dq.noteUdpSourceRequest(from.address(), now);
+    deliver();
+    QCOMPARE(pf->sourceCount(), 1);
 
     dq.deleteAll();
 }
@@ -1602,6 +1644,7 @@ void tst_DownloadQueue::udpGlobalSourcesMultiBlock()
     body.append(makeServerSourceBody(hash2, {ip2}));
 
     const Endpoint from(Address::fromString(QStringLiteral("1.2.3.4")), 4665);
+    dq.noteUdpSourceRequest(from.address(), getTickCount());
     dq.addUDPGlobalSources(reinterpret_cast<const uint8*>(body.constData()),
                            static_cast<uint32>(body.size()), from);
 

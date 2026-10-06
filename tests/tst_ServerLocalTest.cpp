@@ -18,6 +18,7 @@
 /// Requires SERVER_TEST_CMD set in .env (QSKIP if not available).
 /// Only built when EMULE_LIVE_TESTS=ON (off by default).
 
+#include "utils/TimeUtils.h"
 #include "TestHelpers.h"
 
 #include "app/AppContext.h"
@@ -1268,6 +1269,8 @@ void tst_ServerLocalTest::requestFixtureSourcesUdp()
     packet->prot = OP_EDONKEYPROT;
     std::memcpy(packet->pBuffer, kSintelHash.constData(), 16);
     m_udpSocket->sendPacket(std::move(packet), udpDest, 5559);
+    // Sent by hand, so tell the queue: it only takes answers to requests it knows of.
+    m_downloadQueue->noteUdpSourceRequest(udpDest.ipAddress(), getTickCount());
     qDebug() << "Sent OP_GLOBGETSOURCES for Sintel";
 
     const bool got = QTest::qWaitFor([pf] { return pf->sourceCount() > 0; }, 15'000);

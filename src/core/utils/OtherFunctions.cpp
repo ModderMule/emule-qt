@@ -7,7 +7,10 @@
 #include "prefs/Preferences.h"
 
 #include <QCoreApplication>
+#include <QRandomGenerator>
 #include <QUrl>
+
+#include <array>
 
 
 namespace eMule {
@@ -321,7 +324,13 @@ QString ipstr(uint32 nIP, uint16 nPort)
 
 std::mt19937& randomEngine()
 {
-    thread_local std::mt19937 engine{std::random_device{}()};
+    // Seeded with 256 bits: one 32-bit seed lets a peer replay the stream from any output.
+    thread_local std::mt19937 engine = [] {
+        std::array<quint32, 8> seed{};
+        QRandomGenerator::system()->fillRange(seed.data(), seed.size());
+        std::seed_seq seq(seed.begin(), seed.end());
+        return std::mt19937{seq};
+    }();
     return engine;
 }
 
@@ -406,7 +415,7 @@ ED2KFileType getED2KFileTypeID(const QString& fileName)
     static constexpr std::array videoExts = {
         u".avi", u".mpg", u".mpeg", u".mp4", u".mkv", u".ogm", u".ogv",
         u".wmv", u".mov", u".divx", u".vob", u".flv", u".webm", u".ts",
-        u".m4v", u".rm", u".rmvb", u".3gp"
+        u".m4v", u".rm", u".rmvb", u".3gp", u".asf"
     };
     for (auto e : videoExts)
         if (ext == e) return ED2KFileType::Video;
@@ -456,6 +465,42 @@ ED2KFileType getED2KFileTypeID(const QString& fileName)
         return ED2KFileType::EmuleCollection;
 
     return ED2KFileType::Any;
+}
+
+QString ed2kFileTypeSearchTerm(ED2KFileType type)
+{
+    switch (type) {
+    case ED2KFileType::Audio:           return QStringLiteral(ED2KFTSTR_AUDIO);
+    case ED2KFileType::Video:           return QStringLiteral(ED2KFTSTR_VIDEO);
+    case ED2KFileType::Image:           return QStringLiteral(ED2KFTSTR_IMAGE);
+    case ED2KFileType::Document:        return QStringLiteral(ED2KFTSTR_DOCUMENT);
+    case ED2KFileType::Program:
+    case ED2KFileType::Archive:
+    case ED2KFileType::CDImage:         return QStringLiteral(ED2KFTSTR_PROGRAM);
+    case ED2KFileType::EmuleCollection: return QStringLiteral(ED2KFTSTR_EMULECOLLECTION);
+    default:                            return {};
+    }
+}
+
+QString ed2kFileTypeSearchTerm(const QString& typeName)
+{
+    if (typeName == QLatin1StringView(ED2KFTSTR_ARCHIVE) || typeName == QLatin1StringView(ED2KFTSTR_CDIMAGE))
+        return QStringLiteral(ED2KFTSTR_PROGRAM);
+    return typeName;
+}
+
+ED2KFileType ed2kFileTypeSearchID(ED2KFileType type)
+{
+    switch (type) {
+    case ED2KFileType::Audio:
+    case ED2KFileType::Video:
+    case ED2KFileType::Image:
+    case ED2KFileType::Program:
+    case ED2KFileType::Document:        return type;
+    case ED2KFileType::Archive:
+    case ED2KFileType::CDImage:         return ED2KFileType::Program;
+    default:                            return ED2KFileType::Any;
+    }
 }
 
 QString getFileTypeByName(const QString& fileName)

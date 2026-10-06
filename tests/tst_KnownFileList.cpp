@@ -6,6 +6,8 @@
 #include "files/KnownFileList.h"
 #include "prefs/Preferences.h"
 
+#include <QFile>
+#include <QFileInfo>
 #include <QTest>
 #include <QTemporaryDir>
 
@@ -30,6 +32,8 @@ private slots:
     void addCancelledFileID_and_check();
     void isCancelledFileByID_notCancelled();
     void saveLoadRoundTrip();
+    void load_fallsBackToTheBackup_data();
+    void load_fallsBackToTheBackup();
     void aCancelledHashIsStillCancelledAfterARestart();
     void aCancelledHashIsForgottenWhenTheUserAsksUsNotToRemember();
     void knownFilesAreNotWrittenWhenTheUserAsksUsNotToRemember();
@@ -255,6 +259,68 @@ void tst_KnownFileList::saveLoadRoundTrip()
         QCOMPARE(static_cast<uint64>(found->fileSize()), uint64{9999});
         QCOMPARE(found->statistic.allTimeTransferred(), uint64{5000});
     }
+}
+
+// A known.met that is gone, empty or cut short used to read as a first run or as a
+// shorter library, and the next save then rotated the good .bak away.
+void tst_KnownFileList::load_fallsBackToTheBackup_data()
+{
+    QTest::addColumn<QString>("damage");
+    QTest::newRow("missing") << QStringLiteral("missing");
+    QTest::newRow("empty") << QStringLiteral("empty");
+    QTest::newRow("truncated") << QStringLiteral("truncated");
+    QTest::newRow("bad header") << QStringLiteral("header");
+}
+
+void tst_KnownFileList::load_fallsBackToTheBackup()
+{
+    QFETCH(QString, damage);
+    eMule::testing::TempDir tmpDir;
+    const QString met = tmpDir.path() + QStringLiteral("/known.met");
+
+    const auto addFile = [](KnownFileList& list, uint8 fill, const QString& name) {
+        auto* file = new KnownFile();
+        uint8 hash[16];
+        std::memset(hash, fill, 16);
+        file->setFileHash(hash);
+        file->setFileName(name);
+        file->setFileSize(4321);
+        file->setUtcFileDate(1700000000);
+        list.safeAddKFile(file);
+    };
+    {
+        KnownFileList list;
+        list.init(tmpDir.path());
+        addFile(list, 0xA1, QStringLiteral("one.bin"));
+        addFile(list, 0xA2, QStringLiteral("two.bin"));
+        list.save();
+        list.save();   // the second save leaves the first as known.met.bak
+    }
+    QVERIFY(QFileInfo(met + QStringLiteral(".bak")).size() > 0);
+
+    if (damage == QLatin1String("missing")) {
+        QVERIFY(QFile::remove(met));
+    } else {
+        QFile f(met);
+        QVERIFY(f.open(QIODevice::ReadWrite));
+        if (damage == QLatin1String("empty"))
+            QVERIFY(f.resize(0));
+        else if (damage == QLatin1String("truncated"))
+            QVERIFY(f.resize(f.size() - 20));
+        else
+            QCOMPARE(f.write("\x01", 1), qint64{1});
+    }
+
+    {
+        KnownFileList list;
+        list.init(tmpDir.path());
+        QCOMPARE(list.count(), size_t{2});
+        list.save();
+    }
+    // The save after the fallback wrote the full list back.
+    KnownFileList again;
+    again.init(tmpDir.path());
+    QCOMPARE(again.count(), size_t{2});
 }
 
 void tst_KnownFileList::aCancelledHashIsStillCancelledAfterARestart()

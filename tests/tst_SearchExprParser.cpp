@@ -91,6 +91,10 @@ private slots:
     void all_comparison_operators();
 
     // --- Complex expressions ---
+    void ed2kPayload_carriesTheFilters();
+    void ed2kPayload_sizeAbove4GiB_data();
+    void ed2kPayload_sizeAbove4GiB();
+    void payload_archivesAreSearchedAsPro();
     void keyword_with_size_filter();
     void keyword_with_multiple_filters();
 
@@ -630,6 +634,90 @@ void tst_SearchExprParser::all_comparison_operators()
 // -----------------------------------------------------------------------
 // Complex expressions
 // -----------------------------------------------------------------------
+
+// The payload a server search sends: the expression AND every filter of the dialog.
+// (MFC GetSearchPacket, srchybrid/SearchResultsWnd.cpp:1031-1065.)
+void tst_SearchExprParser::ed2kPayload_carriesTheFilters()
+{
+    SearchParams params;
+    params.expression = QStringLiteral("holiday");
+    params.type = SearchType::Ed2kServer;
+    const QByteArray bare = buildSearchTermsPayload(params);
+    QVERIFY(!bare.isEmpty());
+
+    params.minSize = 1000;
+    params.extension = QStringLiteral("mkv");
+    params.availability = 5;
+    params.fileType = QStringLiteral("Video");
+    const QByteArray filtered = buildSearchTermsPayload(params);
+
+    // num32 term: 03 <value LE> <op> <namelen 1> <tag>
+    const auto num32 = [](uint32 value, uint8 op, uint8 tag) {
+        QByteArray t(1, char(0x03));
+        for (int i = 0; i < 4; ++i)
+            t += char((value >> (8 * i)) & 0xFF);
+        t += char(op);
+        t += QByteArray::fromHex("0100");
+        t += char(tag);
+        return t;
+    };
+    // string metatag: 02 <len> <text> <namelen 1> <tag>
+    const auto strTag = [](const QByteArray& text, uint8 tag) {
+        QByteArray t(1, char(0x02));
+        t += char(text.size());
+        t += char(0);
+        t += text;
+        t += QByteArray::fromHex("0100");
+        t += char(tag);
+        return t;
+    };
+    QVERIFY(filtered.size() > bare.size());
+    QVERIFY(filtered.contains(num32(1000, ED2K_SEARCH_OP_GREATER_EQUAL, FT_FILESIZE)));
+    QVERIFY(filtered.contains(num32(5, ED2K_SEARCH_OP_GREATER_EQUAL, FT_SOURCES)));
+    QVERIFY(filtered.contains(strTag("mkv", FT_FILEFORMAT)));
+    QVERIFY(filtered.contains(strTag("Video", FT_FILETYPE)));
+}
+
+void tst_SearchExprParser::ed2kPayload_sizeAbove4GiB_data()
+{
+    QTest::addColumn<bool>("supports64Bit");
+    QTest::newRow("server reads 64-bit terms") << true;
+    QTest::newRow("server does not: clamped") << false;
+}
+
+void tst_SearchExprParser::ed2kPayload_sizeAbove4GiB()
+{
+    QFETCH(bool, supports64Bit);
+
+    SearchParams params;
+    params.expression = QStringLiteral("holiday");
+    params.minSize = uint64{5} * 1024 * 1024 * 1024;
+
+    bool uses64Bit = !supports64Bit;
+    const QByteArray payload = buildSearchTermsPayload(params, {}, supports64Bit, &uses64Bit);
+    QCOMPARE(uses64Bit, supports64Bit);
+
+    const QByteArray clamped = QByteArray::fromHex("03ffffffff");
+    QByteArray wide(1, char(0x08));
+    for (int i = 0; i < 8; ++i)
+        wide += char((params.minSize >> (8 * i)) & 0xFF);
+    QCOMPARE(payload.contains(wide), supports64Bit);
+    QCOMPARE(payload.contains(clamped), !supports64Bit);
+}
+
+// Servers and Kad nodes file archives and CD images under "Pro".
+void tst_SearchExprParser::payload_archivesAreSearchedAsPro()
+{
+    SearchParams params;
+    params.expression = QStringLiteral("backup");
+    for (const char* type : {"Arc", "Iso", "Pro"}) {
+        params.fileType = QString::fromLatin1(type);
+        const QByteArray payload = buildSearchTermsPayload(params);
+        const QByteArray proTerm = QByteArray::fromHex("020300").append("Pro");
+        QVERIFY2(payload.contains(proTerm), type);
+        QVERIFY2(!payload.contains("Arc") && !payload.contains("Iso"), type);
+    }
+}
 
 void tst_SearchExprParser::keyword_with_size_filter()
 {

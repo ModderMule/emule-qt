@@ -17,6 +17,7 @@ class tst_SearchFile : public QObject {
 
 private slots:
     void construct_fromStream();
+    void construct_ratingIsScaledToFive();
     void construct_copy();
     void addSources_ed2k_additive();
     void addSources_kad_max();
@@ -138,6 +139,26 @@ void tst_SearchFile::construct_fromStream()
     QVERIFY(!file.clients().empty());
     QVERIFY(!file.servers().empty());
     QCOMPARE(file.servers().front().ip, uint32{0xC0A80001});
+}
+
+// A server reports the average rating on a 0-255 scale in the low byte.
+void tst_SearchFile::construct_ratingIsScaledToFive()
+{
+    uint8 hash[16];
+    std::memset(hash, 0xAC, 16);
+
+    SafeMemFile mem;
+    mem.write(hash, 16);
+    mem.writeUInt32(0x0A010203);
+    mem.writeUInt16(4662);
+    mem.writeUInt32(3);
+    Tag(FT_FILENAME, QStringLiteral("rated.avi")).writeNewEd2kTag(mem, UTF8Mode::Raw);
+    Tag(FT_FILESIZE, uint32{1000}).writeNewEd2kTag(mem);
+    Tag(FT_FILERATING, uint32{0x4000 | 204}).writeNewEd2kTag(mem);   // 204 / 51 = 4
+    SafeMemFile data(mem.takeBuffer());
+
+    SearchFile file(data, true, 0xC0A80001, 4661);
+    QCOMPARE(file.userRating(), uint32{4});
 }
 
 void tst_SearchFile::construct_copy()

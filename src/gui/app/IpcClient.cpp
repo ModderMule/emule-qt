@@ -96,6 +96,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::GetDownloadDetails:   return QStringLiteral("GetDownloadDetails");
     case T::PreviewDownload:      return QStringLiteral("PreviewDownload");
     case T::RequestClientSharedFiles: return QStringLiteral("RequestClientSharedFiles");
+    case T::RequestSearchPreview: return QStringLiteral("RequestSearchPreview");
     case T::GetClientDetails:     return QStringLiteral("GetClientDetails");
     case T::HandshakeOk:          return QStringLiteral("HandshakeOk");
     case T::Result:               return QStringLiteral("Result");
@@ -118,6 +119,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushChatCaptchaResult: return QStringLiteral("PushChatCaptchaResult");
     case T::PushFriendListChanged: return QStringLiteral("PushFriendListChanged");
     case T::PushClientSharedFiles: return QStringLiteral("PushClientSharedFiles");
+    case T::PushSearchPreview:    return QStringLiteral("PushSearchPreview");
     case T::PushPortMapStatus: return QStringLiteral("PushPortMapStatus");
     case T::GetIndexers:          return QStringLiteral("GetIndexers");
     case T::SetIndexers:          return QStringLiteral("SetIndexers");
@@ -624,6 +626,7 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushChatCaptchaResult:  emit chatCaptchaResultReceived(msg); break;
     case IpcMsgType::PushFriendListChanged:  emit friendListChanged(msg); break;
     case IpcMsgType::PushClientSharedFiles:  emit clientSharedFilesReceived(msg); break;
+    case IpcMsgType::PushSearchPreview:      emit searchPreviewReceived(msg); break;
     case IpcMsgType::PushPortMapStatus:      emit portMapStatusChanged(msg); break;
     default: break;
     }

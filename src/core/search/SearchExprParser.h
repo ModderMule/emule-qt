@@ -80,8 +80,13 @@ struct ParseResult {
 ///        which the receiving node re-tokenizes and ANDs.
 /// @return Encoded payload, empty if the expression fails to parse or there is
 ///         nothing left to send.
+/// @param supports64Bit False clamps a size above 4 GiB - 1 to that, for a target
+///        that cannot read a 64-bit term (MFC SearchResultsWnd.cpp:902-943).
+/// @param uses64Bit Set to whether a 64-bit term went in.
 [[nodiscard]] QByteArray buildSearchTermsPayload(const SearchParams& params,
-                                                  const QString& kadKeyword = QString());
+                                                 const QString& kadKeyword = {},
+                                                 bool supports64Bit = true,
+                                                 bool* uses64Bit = nullptr);
 
 // ---------------------------------------------------------------------------
 // buildGlobalSearchPacket — server-UDP global-search packet with opcode selection

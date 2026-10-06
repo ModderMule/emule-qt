@@ -14,6 +14,7 @@
 #include "app/AppConfig.h"
 #include "app/AppContext.h"
 #include "app/CoreSession.h"
+#include "kademlia/KadLog.h"
 #include "net/HttpDefaults.h"
 #include "prefs/Preferences.h"
 #include "stats/Statistics.h"
@@ -352,6 +353,7 @@ void DaemonApp::startWebServer()
         config.listenAddress       = thePrefs.webServerListenAddress();
         config.apiKey              = thePrefs.webServerApiKey();
         config.gzipEnabled         = thePrefs.webServerGzipEnabled();
+        config.corsAllowedOrigins  = thePrefs.webServerCorsAllowedOrigins();
         config.templatePath        = thePrefs.webServerTemplatePath();
         config.sessionTimeout      = thePrefs.webServerSessionTimeout();
         config.httpsEnabled        = thePrefs.webServerHttpsEnabled();
@@ -669,6 +671,7 @@ void DaemonApp::applyLogFilterRules()
 {
     // Refresh the emit-site gate for the dedicated server-verbose channel.
     setServerVerboseLogging(thePrefs.serverVerboseLog());
+    kad::setKadLogging(thePrefs.kadVerboseLog());
 
     // Compose category filter rules. Rules are evaluated top-to-bottom, so the
     // per-subsystem overrides below win over the "all off" baseline. Enabling a

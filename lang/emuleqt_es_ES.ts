@@ -656,7 +656,7 @@ Download it again?</source>
 <context>
     <name>Rating</name>
     <message>
-        <location filename="../src/core/utils/OtherFunctions.cpp" line="+483"/>
+        <location filename="../src/core/utils/OtherFunctions.cpp" line="+528"/>
         <source>Not rated</source>
         <translation>Sin valorar</translation>
     </message>
@@ -690,7 +690,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4116"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4420"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -7661,6 +7661,39 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
     </message>
 </context>
 <context>
+    <name>eMule::PeerPreviewDialog</name>
+    <message>
+        <location filename="../src/gui/dialogs/PeerPreviewDialog.cpp" line="+17"/>
+        <source>Preview: %1</source>
+        <translation>Vista previa: %1</translation>
+    </message>
+    <message>
+        <location line="+15"/>
+        <source>Prior</source>
+        <translation>Anterior</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Next</source>
+        <translation>Siguiente</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Close</source>
+        <translation>Cerrar</translation>
+    </message>
+    <message>
+        <location line="+24"/>
+        <source>No images</source>
+        <translation>Sin imágenes</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Image %1 of %2</source>
+        <translation>Imagen %1 de %2</translation>
+    </message>
+</context>
+<context>
     <name>eMule::SearchDetailDialog</name>
     <message>
         <location filename="../src/gui/dialogs/SearchDetailDialog.cpp" line="+42"/>
@@ -7683,14 +7716,14 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+247"/>
-        <location line="+713"/>
-        <location line="+364"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+249"/>
+        <location line="+719"/>
+        <location line="+374"/>
         <source>Download</source>
         <translation>Descarga</translation>
     </message>
     <message>
-        <location line="-1057"/>
+        <location line="-1073"/>
         <source>Close All Searches</source>
         <translation>Cerrar todas las búsquedas</translation>
     </message>
@@ -7918,7 +7951,7 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
         <translation>Copiar &amp;nombre</translation>
     </message>
     <message>
-        <location line="+66"/>
+        <location line="+72"/>
         <source>Download NZB File...</source>
         <translation>Descargar archivo NZB...</translation>
     </message>
@@ -7958,13 +7991,15 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
         <translation>Marcar como no spam</translation>
     </message>
     <message>
-        <location line="+48"/>
-        <location line="+759"/>
+        <location line="+50"/>
+        <location line="+7"/>
+        <location line="+762"/>
+        <location line="+43"/>
         <source>Preview</source>
         <translation>Vista previa</translation>
     </message>
     <message>
-        <location line="-532"/>
+        <location line="-577"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -7973,7 +8008,17 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
 %1</translation>
     </message>
     <message>
-        <location line="+779"/>
+        <location line="+535"/>
+        <source>Preview requested - please wait</source>
+        <translation>Vista previa solicitada - espere</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>%1 sent no preview</source>
+        <translation>%1 no envió ninguna vista previa</translation>
+    </message>
+    <message>
+        <location line="+273"/>
         <source>Asking servers: %1 / %2</source>
         <translation>Consultando servidores: %1 / %2</translation>
     </message>
@@ -7983,7 +8028,7 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
         <translation>Todas</translation>
     </message>
     <message>
-        <location line="-1093"/>
+        <location line="-1148"/>
         <location line="+14"/>
         <source>Mark as Spam</source>
         <translation>Marcar como spam</translation>
@@ -8004,7 +8049,7 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
         <translation>Cerrar todos los resultados de búsqueda</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+26"/>
         <source>Find...</source>
         <translation>Buscar...</translation>
     </message>
@@ -8019,7 +8064,7 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
         <translation>Servicios web</translation>
     </message>
     <message>
-        <location line="+738"/>
+        <location line="+784"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Vista previa no disponible — el servidor web no está en ejecución o no se recibió el token de transmisión.</translation>
     </message>
@@ -11780,19 +11825,19 @@ Esta publicación tiene una contraseña establecida.</translation>
         <translation>Dirección</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3589"/>
-        <location line="+3479"/>
-        <location line="+47"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3890"/>
+        <location line="+3779"/>
+        <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Sesión caducada — vuelva a iniciar sesión</translation>
     </message>
     <message>
-        <location line="-3524"/>
+        <location line="-3824"/>
         <source>Guests cannot add downloads</source>
         <translation>Los invitados no pueden añadir descargas</translation>
     </message>
     <message>
-        <location line="+859"/>
+        <location line="+865"/>
         <source>Looking for comments on Kad</source>
         <translation>Buscando comentarios en Kad</translation>
     </message>
@@ -11824,6 +11869,7 @@ Esta publicación tiene una contraseña establecida.</translation>
     </message>
     <message>
         <location line="+40"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+34"/>
         <source>Download</source>
         <translation>Descarga</translation>
     </message>
@@ -11873,39 +11919,83 @@ Esta publicación tiene una contraseña establecida.</translation>
         <translation>Descargar este archivo</translation>
     </message>
     <message>
-        <location line="+322"/>
+        <location line="+394"/>
         <source>Access denied — no password configured. Set a password in Options → Web Interface.</source>
         <translation>Acceso denegado — no hay contraseña configurada. Establezca una en Opciones → Interfaz web.</translation>
     </message>
+    <message numerus="yes">
+        <location line="+11"/>
+        <source>Too many failed logins. Try again in %n second(s).</source>
+        <translation>
+            <numerusform>Demasiados inicios de sesión fallidos. Inténtelo de nuevo en %n segundo.</numerusform>
+            <numerusform>Demasiados inicios de sesión fallidos. Inténtelo de nuevo en %n segundos.</numerusform>
+        </translation>
+    </message>
     <message>
-        <location line="+18"/>
+        <location line="+21"/>
         <source>Login failed</source>
         <translation>Error al iniciar sesión</translation>
     </message>
+    <message numerus="yes">
+        <location line="+226"/>
+        <source>%n download(s) added</source>
+        <translation>
+            <numerusform>%n descarga añadida</numerusform>
+            <numerusform>%n descargas añadidas</numerusform>
+        </translation>
+    </message>
     <message>
-        <location line="+207"/>
-        <location line="+1813"/>
+        <location line="+29"/>
+        <source>Not connected — the search could not be sent.</source>
+        <translation>No conectado — no se pudo enviar la búsqueda.</translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>Nothing was saved: a value is missing or out of range.</source>
+        <translation>No se guardó nada: falta un valor o está fuera de rango.</translation>
+    </message>
+    <message>
+        <location line="+22"/>
+        <source>Saved. The new ports are used after a restart.</source>
+        <translation>Guardado. Los nuevos puertos se usarán tras reiniciar.</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Saved.</source>
+        <translation>Guardado.</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <location line="+1908"/>
         <source>Web Control Panel</source>
         <translation>Panel de control web</translation>
     </message>
     <message>
-        <location line="-1804"/>
+        <location line="-1901"/>
         <source>Not connected</source>
         <translation>No conectado</translation>
     </message>
     <message>
-        <location line="+295"/>
+        <location line="+293"/>
         <source>Connected</source>
         <translation>Conectado</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+283"/>
+        <location line="+324"/>
         <source>Disconnected</source>
         <translation>Desconectado</translation>
     </message>
+    <message numerus="yes">
+        <location line="-279"/>
+        <source>&quot;%1&quot;: %n result(s)</source>
+        <translation>
+            <numerusform>«%1»: %n resultado</numerusform>
+            <numerusform>«%1»: %n resultados</numerusform>
+        </translation>
+    </message>
     <message>
-        <location line="-84"/>
+        <location line="+192"/>
         <source>Active Connections</source>
         <translation>Conexiones activas</translation>
     </message>
@@ -11915,7 +12005,7 @@ Esta publicación tiene una contraseña establecida.</translation>
         <translation>Tiempo</translation>
     </message>
     <message>
-        <location line="+29"/>
+        <location line="+33"/>
         <source>Connected to: %1 (%2:%3)</source>
         <translation>Conectado a: %1 (%2:%3)</translation>
     </message>
@@ -11960,7 +12050,7 @@ Esta publicación tiene una contraseña establecida.</translation>
         <translation>No conectado a ningún servidor</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="+33"/>
         <source>Running</source>
         <translation>En ejecución</translation>
     </message>
@@ -11971,30 +12061,30 @@ Esta publicación tiene una contraseña establecida.</translation>
     </message>
     <message>
         <location line="+149"/>
-        <location line="+1024"/>
+        <location line="+1082"/>
         <source>Queued</source>
         <translation>En cola</translation>
     </message>
     <message>
-        <location line="-1023"/>
-        <location line="+1022"/>
+        <location line="-1081"/>
+        <location line="+1080"/>
         <source>Downloading</source>
         <translation>Descargando</translation>
     </message>
     <message>
-        <location line="-1021"/>
+        <location line="-1079"/>
         <source>Paused</source>
         <translation>En pausa</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+855"/>
-        <location line="+164"/>
+        <location line="+914"/>
+        <location line="+163"/>
         <source>Complete</source>
         <translation>Completo</translation>
     </message>
     <message>
-        <location line="-1018"/>
+        <location line="-1076"/>
         <source>Failed</source>
         <translation>Fallido</translation>
     </message>
@@ -12111,7 +12201,7 @@ Esta publicación tiene una contraseña establecida.</translation>
         <translation>Normal</translation>
     </message>
     <message>
-        <location line="+86"/>
+        <location line="+144"/>
         <source>Only a queued or downloading release can be paused</source>
         <translation>Solo se puede pausar una publicación en cola o descargándose</translation>
     </message>
@@ -12152,7 +12242,7 @@ Esta publicación tiene una contraseña establecida.</translation>
         <translation>Envíe el .nzb como cuerpo de la solicitud o indique una URL</translation>
     </message>
     <message>
-        <location line="+43"/>
+        <location line="+45"/>
         <source>Guests cannot change downloads</source>
         <translation>Los invitados no pueden modificar descargas</translation>
     </message>
@@ -12163,7 +12253,7 @@ Esta publicación tiene una contraseña establecida.</translation>
     </message>
     <message>
         <location line="+49"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-33"/>
         <source>All</source>
         <translation>Todas</translation>
     </message>
@@ -12173,8 +12263,8 @@ Esta publicación tiene una contraseña establecida.</translation>
         <translation>Sin categoría</translation>
     </message>
     <message numerus="yes">
-        <location line="+115"/>
-        <location line="+164"/>
+        <location line="+114"/>
+        <location line="+163"/>
         <source>%n article(s) missing</source>
         <translation>
             <numerusform>Falta %n artículo</numerusform>
@@ -12182,7 +12272,7 @@ Esta publicación tiene una contraseña establecida.</translation>
         </translation>
     </message>
     <message>
-        <location line="-100"/>
+        <location line="-99"/>
         <source>No Usenet downloads. Use &quot;Add NZB…&quot; to queue one.</source>
         <translation>No hay descargas de Usenet. Use «Añadir NZB…» para poner una en cola.</translation>
     </message>
@@ -12210,7 +12300,7 @@ Whichever network is idle lends its share to the other.</source>
 La red que esté inactiva cede su parte a la otra.</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+21"/>
         <source>No Usenet downloads here.</source>
         <translation>No hay descargas de Usenet aquí.</translation>
     </message>
@@ -12393,12 +12483,12 @@ La red que esté inactiva cede su parte a la otra.</translation>
         <translation>Documento (.doc .pdf ...)</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Download Speed</source>
         <translation>Velocidad de descarga</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1346"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1407"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Downloads</source>
         <translation>Descargas</translation>
@@ -12550,7 +12640,7 @@ La red que esté inactiva cede su parte a la otra.</translation>
         <translation>Archivos NZB:</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1248"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1479"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>Nombre</translation>
@@ -12724,6 +12814,11 @@ La red que esté inactiva cede su parte a la otra.</translation>
         <location line="+1"/>
         <source>Reconnects</source>
         <translation>Reconexiones</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Refresh</source>
+        <translation>Actualizar</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -12932,7 +13027,7 @@ La red que esté inactiva cede su parte a la otra.</translation>
         <translation>Velocidad de subida</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1245"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1476"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation>Subidas</translation>
@@ -12948,7 +13043,7 @@ La red que esté inactiva cede su parte a la otra.</translation>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+483"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+486"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet engine unavailable</source>
         <translation>Motor de Usenet no disponible</translation>

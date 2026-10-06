@@ -100,6 +100,26 @@ struct MediaInfo {
 /// Parse RealMedia (.rm / .rmvb) headers from a file.
 [[nodiscard]] bool readRMHeaders(const QString& filePath, MediaInfo& info);
 
+/// MPEG audio: ID3v1/v2 texts, first frame, Xing/VBRI. A file without an ID3v2 tag
+/// must carry an MPEG audio extension.
+[[nodiscard]] bool readMP3Headers(const QString& filePath, MediaInfo& info);
+
+/// MP4 / M4A / MOV: movie header, first sample entries, iTunes texts.
+[[nodiscard]] bool readMP4Headers(const QString& filePath, MediaInfo& info);
+
+/// FLAC: STREAMINFO and Vorbis comments.
+[[nodiscard]] bool readFLACHeaders(const QString& filePath, MediaInfo& info);
+
+/// Ogg Vorbis / Opus: id header, comments, last granule.
+[[nodiscard]] bool readOggHeaders(const QString& filePath, MediaInfo& info);
+
+/// Matroska / WebM: segment info and track entries.
+[[nodiscard]] bool readMatroskaHeaders(const QString& filePath, MediaInfo& info);
+
+/// ASF (WMA / WMV): length, bitrate, codec ids, title / author / album from the
+/// header object.
+[[nodiscard]] bool readASFHeaders(const QString& filePath, MediaInfo& info);
+
 // ---------------------------------------------------------------------------
 // High-level API
 // ---------------------------------------------------------------------------

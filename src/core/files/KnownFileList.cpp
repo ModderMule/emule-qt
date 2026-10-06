@@ -303,58 +303,22 @@ bool KnownFileList::loadKnownFiles()
 {
     const QString filePath = m_configDir + QStringLiteral("/known.met");
 
-    if (!QFile::exists(filePath))
-        return true; // first run — no file is fine
-
-    if (QFileInfo(filePath).size() == 0)
-        return true; // empty file — treat as first run
-
-    try {
-        SafeFile file(filePath, QIODevice::ReadOnly);
-
-        uint8 version = file.readUInt8();
-        if (version != MET_HEADER && version != MET_HEADER_I64TAGS) {
-            logError(QStringLiteral("known.met: unsupported version 0x%1")
-                         .arg(version, 2, 16, QChar(u'0')));
-            return false;
-        }
-
-        uint32 count = file.readUInt32();
-        for (uint32 i = 0; i < count; ++i) {
-            auto* kf = new KnownFile();
-            if (!kf->loadFromFile(file)) {
-                logWarning(QStringLiteral("known.met: corrupt entry %1 of %2").arg(i).arg(count));
-                delete kf;
-                break; // file cursor is at unknown position, can't continue
-            }
-
-            MD4Key key(kf->fileHash());
-            if (m_filesMap.contains(key)) {
-                delete kf;
-                continue;
-            }
-
-            m_filesMap[key] = kf;
-            totalTransferred += kf->statistic.allTimeTransferred();
-            totalRequested += kf->statistic.allTimeRequests();
-            totalAccepted += kf->statistic.allTimeAccepts();
-        }
-
-        logInfo(QStringLiteral("Loaded %1 known files").arg(m_filesMap.size()));
+    const MetRead primary = readKnownMet(filePath);
+    if (primary == MetRead::Ok)
         return true;
-    } catch (const std::exception& e) {
-        logError(QStringLiteral("known.met load error: %1").arg(QString::fromUtf8(e.what())));
 
-        // Try .bak fallback (once only — remove .bak to prevent infinite recursion)
-        const QString bakPath = filePath + QStringLiteral(".bak");
-        if (QFile::exists(bakPath)) {
-            logInfo(QStringLiteral("Trying known.met.bak fallback..."));
-            QFile::remove(filePath);
-            if (QFile::rename(bakPath, filePath))
-                return loadKnownFiles();
-        }
-        return false;
+    // Missing, empty or damaged: the previous save is still there. A partial list must
+    // not stand in for it, or the next save rotates the good copy away. Entries already
+    // read stay; the .bak adds what they lack.
+    const QString bakPath = filePath + QStringLiteral(".bak");
+    if (QFileInfo(bakPath).size() > 0) {
+        logWarning(QStringLiteral("known.met %1, reading known.met.bak")
+                       .arg(primary == MetRead::Missing ? QStringLiteral("missing or empty")
+                                                        : QStringLiteral("damaged")));
+        if (readKnownMet(bakPath) == MetRead::Ok)
+            return true;
     }
+    return primary == MetRead::Missing; // no file at all is a first run
 }
 
 // ---------------------------------------------------------------------------
@@ -370,51 +334,17 @@ bool KnownFileList::loadCancelledFiles()
     if (!thePrefs.rememberCancelledFiles())
         return true;
 
-    if (!QFile::exists(filePath))
+    const MetRead primary = readCancelledMet(filePath);
+    if (primary == MetRead::Ok)
         return true;
 
-    try {
-        SafeFile file(filePath, QIODevice::ReadOnly);
-
-        uint8 header = file.readUInt8();
-        if (header != kCancelledMetHeader) {
-            // Either MFC's pre-0x0F layout or this port's old 0xE1 one. Neither is
-            // worth converting: the 0xE1 files were written with a seed that never
-            // matched their own records, so there is nothing in them to recover.
-            logWarning(QStringLiteral("cancelled.met: unsupported header 0x%1, starting a new list")
-                           .arg(header, 2, 16, QChar(u'0')));
-            QFile::remove(filePath);
+    const QString bakPath = filePath + QStringLiteral(".bak");
+    if (QFileInfo(bakPath).size() > 0) {
+        logWarning(QStringLiteral("cancelled.met unusable, reading cancelled.met.bak"));
+        if (readCancelledMet(bakPath) == MetRead::Ok)
             return true;
-        }
-
-        uint8 version = file.readUInt8();
-        if (version > kCancelledMetVersion)
-            return false;
-
-        m_cancelledSeed = file.readUInt32();
-        if (m_cancelledSeed == 0) {
-            // An empty list written before anything was ever cancelled. Mint now so
-            // the first insert does not have to.
-            m_cancelledSeed = (QRandomGenerator::global()->generate() % 0xFFFFFFFEu) + 1;
-        }
-
-        uint32 count = file.readUInt32();
-        for (uint32 i = 0; i < count; ++i) {
-            MD4Key key;
-            file.read(key.data.data(), 16);
-            // Always 0 today. Read and discarded so a later version can add fields
-            // here without this reader losing its place.
-            for (uint8 t = file.readUInt8(); t > 0; --t)
-                Tag skipped(file, false);
-            m_cancelledFiles.insert(key);
-        }
-
-        logInfo(QStringLiteral("Loaded %1 cancelled file hashes").arg(m_cancelledFiles.size()));
-        return true;
-    } catch (const std::exception& e) {
-        logError(QStringLiteral("cancelled.met load error: %1").arg(QString::fromUtf8(e.what())));
-        return false;
     }
+    return primary == MetRead::Missing;
 }
 
 // ---------------------------------------------------------------------------
@@ -455,6 +385,105 @@ void KnownFileList::saveCancelledFiles()
     } catch (const std::exception& e) {
         logError(QStringLiteral("Failed to save cancelled.met: %1").arg(QString::fromUtf8(e.what())));
         QFile::remove(tmpPath);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// .met readers (private)
+// ---------------------------------------------------------------------------
+
+KnownFileList::MetRead KnownFileList::readKnownMet(const QString& filePath)
+{
+    if (QFileInfo(filePath).size() <= 0)
+        return MetRead::Missing;
+
+    try {
+        SafeFile file(filePath, QIODevice::ReadOnly);
+
+        uint8 version = file.readUInt8();
+        if (version != MET_HEADER && version != MET_HEADER_I64TAGS) {
+            logError(QStringLiteral("known.met: unsupported version 0x%1")
+                         .arg(version, 2, 16, QChar(u'0')));
+            return MetRead::Damaged;
+        }
+
+        MetRead result = MetRead::Ok;
+        uint32 count = file.readUInt32();
+        for (uint32 i = 0; i < count; ++i) {
+            auto* kf = new KnownFile();
+            if (!kf->loadFromFile(file)) {
+                logWarning(QStringLiteral("known.met: corrupt entry %1 of %2").arg(i).arg(count));
+                delete kf;
+                result = MetRead::Damaged;
+                break; // file cursor is at unknown position, can't continue
+            }
+
+            MD4Key key(kf->fileHash());
+            if (m_filesMap.contains(key)) {
+                delete kf;
+                continue;
+            }
+
+            m_filesMap[key] = kf;
+            totalTransferred += kf->statistic.allTimeTransferred();
+            totalRequested += kf->statistic.allTimeRequests();
+            totalAccepted += kf->statistic.allTimeAccepts();
+        }
+
+        logInfo(QStringLiteral("Loaded %1 known files").arg(m_filesMap.size()));
+        return result;
+    } catch (const std::exception& e) {
+        logError(QStringLiteral("known.met load error: %1").arg(QString::fromUtf8(e.what())));
+        return MetRead::Damaged;
+    }
+}
+
+KnownFileList::MetRead KnownFileList::readCancelledMet(const QString& filePath)
+{
+    if (QFileInfo(filePath).size() <= 0)
+        return MetRead::Missing;
+
+    try {
+        SafeFile file(filePath, QIODevice::ReadOnly);
+
+        uint8 header = file.readUInt8();
+        if (header != kCancelledMetHeader) {
+            // Either MFC's pre-0x0F layout or this port's old 0xE1 one. Neither is
+            // worth converting: the 0xE1 files were written with a seed that never
+            // matched their own records, so there is nothing in them to recover.
+            logWarning(QStringLiteral("cancelled.met: unsupported header 0x%1, starting a new list")
+                           .arg(header, 2, 16, QChar(u'0')));
+            QFile::remove(filePath);
+            return MetRead::Ok;
+        }
+
+        uint8 version = file.readUInt8();
+        if (version > kCancelledMetVersion)
+            return MetRead::Damaged;
+
+        m_cancelledSeed = file.readUInt32();
+        if (m_cancelledSeed == 0) {
+            // An empty list written before anything was ever cancelled. Mint now so
+            // the first insert does not have to.
+            m_cancelledSeed = (QRandomGenerator::global()->generate() % 0xFFFFFFFEu) + 1;
+        }
+
+        uint32 count = file.readUInt32();
+        for (uint32 i = 0; i < count; ++i) {
+            MD4Key key;
+            file.read(key.data.data(), 16);
+            // Always 0 today. Read and discarded so a later version can add fields
+            // here without this reader losing its place.
+            for (uint8 t = file.readUInt8(); t > 0; --t)
+                Tag skipped(file, false);
+            m_cancelledFiles.insert(key);
+        }
+
+        logInfo(QStringLiteral("Loaded %1 cancelled file hashes").arg(m_cancelledFiles.size()));
+        return MetRead::Ok;
+    } catch (const std::exception& e) {
+        logError(QStringLiteral("cancelled.met load error: %1").arg(QString::fromUtf8(e.what())));
+        return MetRead::Damaged;
     }
 }
 

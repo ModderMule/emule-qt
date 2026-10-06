@@ -157,7 +157,7 @@ void EMSocket::onDisconnected()
     clearQueues();
 }
 
-void EMSocket::onSocketError(QAbstractSocket::SocketError /*error*/)
+void EMSocket::onSocketError(QAbstractSocket::SocketError socketError)
 {
     logDebug(QStringLiteral("EMSocket::onSocketError — error=%1 (%2) cryptState=%3 bytesAvail=%4 peer=%5:%6")
                  .arg(static_cast<int>(error())).arg(errorString())
@@ -198,6 +198,8 @@ void EMSocket::onSocketError(QAbstractSocket::SocketError /*error*/)
                 break;
         }
     }
+    // onError()'s int is shared with protocol error codes; this says it is a socket error.
+    m_socketErrorInFlight = socketError;
     onError(static_cast<int>(error()));
 }
 

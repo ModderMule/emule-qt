@@ -6,6 +6,7 @@
 /// Ported from MFC srchybrid/BaseClient.cpp + DownloadClient.cpp.
 
 #include "client/UpDownClient.h"
+#include "media/FrameGrabThread.h"
 #include "client/ClientCredits.h"
 #include "client/ClientList.h"
 #include "client/DeadSourceList.h"
@@ -45,6 +46,7 @@
 
 #include "utils/Log.h"
 
+#include <utility>
 #include <QBuffer>
 #include <QCoreApplication>
 #include <QCborArray>
@@ -2186,13 +2188,6 @@ void UpDownClient::connectionEstablished()
 
     m_connectingState = ConnectingState::None;
 
-    // Flush waiting packets
-    for (auto& packet : m_waitingPackets) {
-        if (m_socket)
-            m_socket->sendPacket(std::move(packet));
-    }
-    m_waitingPackets.clear();
-
     // Send HELLO on outgoing connections if handshake not started
     logDebug(QStringLiteral("connectionEstablished: handshakeFinished=%1 helloAnswerPending=%2 downloadState=%3")
                  .arg(checkHandshakeFinished()).arg(m_helloAnswerPending)
@@ -2287,6 +2282,15 @@ void UpDownClient::connectionEstablished()
 
 void UpDownClient::onHandshakeCompleted()
 {
+    // Packets queued by safeConnectAndSendPacket() while we were dialling. They go out
+    // here, not in connectionEstablished(): on an outgoing connection that one runs at
+    // TCP connect, and a peer drops whoever asks for something before saying hello.
+    // MFC BaseClient.cpp:1575-1579 (its ConnectionEstablished runs after the hello).
+    for (auto& packet : std::exchange(m_waitingPackets, {})) {
+        if (m_socket)
+            m_socket->sendPacket(std::move(packet));
+    }
+
     // (a) We owed this peer a file re-ask that askForDownload() delayed on one of its
     //     LowID paths, and it is now connected — send the request we held back.
     //     MFC BaseClient.cpp:1550-1556. The flag is cleared unconditionally, even when
@@ -2395,6 +2399,12 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
     const bool proxyFailed = m_socket && m_socket->proxyConnectFailed();
     const bool connectFailed = m_connectingState != ConnectingState::None && !proxyFailed;
     m_connectingState = ConnectingState::None;
+
+    // The preview we were waiting for is not coming.
+    if (m_previewReqPending) {
+        m_previewReqPending = false;
+        emit previewAnswerReceived(m_previewReqHash, {});
+    }
 
     // Detach the socket so tryToConnect() can create a fresh one. One we did not get here from
     // is still live and is closed too — MFC BaseClient.cpp:1204-1208. Left wired, it kept
@@ -2851,7 +2861,11 @@ bool UpDownClient::safeConnectAndSendPacket(std::unique_ptr<Packet> packet)
         return false;
 
     if (m_socket && m_socket->isConnected()) {
-        sendPacket(std::move(packet));
+        // Connected but our hello is still unanswered: after the handshake.
+        if (checkHandshakeFinished())
+            sendPacket(std::move(packet));
+        else
+            m_waitingPackets.push_back(std::move(packet));
         return true;
     }
 
@@ -3475,22 +3489,28 @@ void UpDownClient::processCaptchaReqRes(uint8 status)
 // sendPreviewRequest
 // ===========================================================================
 
-void UpDownClient::sendPreviewRequest(const AbstractFile& file)
+bool UpDownClient::sendPreviewRequest(const AbstractFile& file)
 {
-    if (!m_socket || !m_supportsPreview)
-        return;
-
-    if (m_previewReqPending)
-        return;
-
+    // MFC BaseClient.cpp:2059-2071. Whether the peer can answer was settled when the
+    // result was listed; a client made for this request has seen no hello yet.
+    if (m_previewReqPending) {
+        logStatusWarning(QStringLiteral("A preview from %1 is already being fetched").arg(userName()));
+        return false;
+    }
     m_previewReqPending = true;
+    std::memcpy(m_previewReqHash.data(), file.fileHash(), 16);
 
-    // Build and send OP_REQUESTPREVIEW with file hash
     SafeMemFile data;
     data.writeHash16(file.fileHash());
 
     auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_REQUESTPREVIEW);
-    sendPacket(std::move(packet));
+    if (!safeConnectAndSendPacket(std::move(packet)) && m_previewReqPending) {
+        // No way to the peer. disconnected() may have reported it already.
+        m_previewReqPending = false;
+        emit previewAnswerReceived(m_previewReqHash, {});
+        return false;
+    }
+    return true;
 }
 
 namespace {
@@ -3571,11 +3591,50 @@ void UpDownClient::processPreviewReq(const uint8* data, uint32 size)
     std::array<uint8, 16> hash{};
     std::memcpy(hash.data(), file->fileHash(), 16);
     const QString path = file->filePath();
-    // Only still images can be previewed here; video frame grabbing is not ported.
+    const ED2KFileType type = getED2KFileTypeID(file->fileName());
     if (path.isEmpty() || file->isPartFile()
-        || getED2KFileTypeID(file->fileName()) != ED2KFileType::Image)
+        || (type != ED2KFileType::Image && type != ED2KFileType::Video))
     {
         sendPreviewAnswer(hash.data(), {});
+        return;
+    }
+
+    if (type == ED2KFileType::Video) {
+        // Four frames from 15 s on, 450 px wide, reduced colours (MFC BaseClient.cpp:2125).
+        // A decoder per request; more than two at once get an empty answer.
+        static int s_grabsRunning = 0;
+        if (s_grabsRunning >= 2) {
+            sendPreviewAnswer(hash.data(), {});
+            return;
+        }
+        ++s_grabsRunning;
+        auto* grabber = new FrameGrabThread(qApp);
+        QPointer<UpDownClient> self(this);
+        const auto finish = [self, hash, grabber](const std::vector<QImage>& images) {
+            --s_grabsRunning;
+            grabber->deleteLater();
+            if (!self)
+                return;
+            std::vector<QByteArray> frames;
+            for (const QImage& image : images) {
+                QByteArray png;
+                QBuffer buffer(&png);
+                buffer.open(QIODevice::WriteOnly);
+                if (image.save(&buffer, "PNG"))
+                    frames.push_back(std::move(png));
+            }
+            self->sendPreviewAnswer(hash.data(), frames);
+        };
+        QObject::connect(grabber, &FrameGrabThread::finished, qApp,
+                [finish](const FrameGrabResult& result) { finish(result.frames); });
+        QObject::connect(grabber, &FrameGrabThread::error, qApp, [finish](const QString&) { finish({}); });
+        FrameGrabRequest request;
+        request.filePath = path;
+        request.frameCount = 4;
+        request.startTimeSec = 15.0;
+        request.reduceColor = true;
+        request.maxWidth = 450;
+        grabber->requestGrab(std::move(request));
         return;
     }
 
@@ -3610,9 +3669,14 @@ void UpDownClient::processPreviewAnswer(const uint8* data, uint32 size)
     std::array<uint8, 16> fileHash{};
     file.readHash16(fileHash.data());
 
+    // An answer for a file we did not ask about is no answer. A peer that does not
+    // know the file sends a zero hash.
     const uint8 frameCount = file.readUInt8();
-    if (frameCount == 0) {
-        logDebug(QStringLiteral("processPreviewAnswer: remote sent 0 frames"));
+    const bool ours = fileHash == m_previewReqHash;
+    if (frameCount == 0 || !ours) {
+        logDebug(QStringLiteral("processPreviewAnswer: remote sent %1")
+                     .arg(ours ? QStringLiteral("0 frames") : QStringLiteral("another file")));
+        emit previewAnswerReceived(m_previewReqHash, {});
         return;
     }
 
@@ -3647,8 +3711,7 @@ void UpDownClient::processPreviewAnswer(const uint8* data, uint32 size)
             logDebug(QStringLiteral("processPreviewAnswer: failed to decode frame %1").arg(i));
     }
 
-    if (!previewImages.empty())
-        emit previewAnswerReceived(fileHash, previewImages);
+    emit previewAnswerReceived(fileHash, previewImages);
 }
 
 // ===========================================================================
@@ -4961,11 +5024,13 @@ void UpDownClient::processAskSharedFiles()
         if (file->isLargeFile())
             tags.emplace_back(FT_FILESIZE_HI, static_cast<uint32>(sz >> 32));
 
-        if (!file->fileType().isEmpty())
-            tags.emplace_back(FT_FILETYPE, file->fileType());
+        // Peers get the published type term and the rating on the servers' 0-255
+        // scale. MFC SharedFileList.cpp:953-985.
+        if (const QString term = ed2kFileTypeSearchTerm(getED2KFileTypeID(file->fileName())); !term.isEmpty())
+            tags.emplace_back(FT_FILETYPE, term);
 
         if (file->getFileRating() > 0)
-            tags.emplace_back(FT_FILERATING, file->getFileRating());
+            tags.emplace_back(FT_FILERATING, file->getFileRating() * (255 / 5));
 
         response.writeUInt32(static_cast<uint32>(tags.size()));
         for (const auto& tag : tags) {
@@ -5058,11 +5123,13 @@ void UpDownClient::processAskSharedFilesDir(const uint8* data, uint32 size)
         if (file->isLargeFile())
             tags.emplace_back(FT_FILESIZE_HI, static_cast<uint32>(sz >> 32));
 
-        if (!file->fileType().isEmpty())
-            tags.emplace_back(FT_FILETYPE, file->fileType());
+        // Peers get the published type term and the rating on the servers' 0-255
+        // scale. MFC SharedFileList.cpp:953-985.
+        if (const QString term = ed2kFileTypeSearchTerm(getED2KFileTypeID(file->fileName())); !term.isEmpty())
+            tags.emplace_back(FT_FILETYPE, term);
 
         if (file->getFileRating() > 0)
-            tags.emplace_back(FT_FILERATING, file->getFileRating());
+            tags.emplace_back(FT_FILERATING, file->getFileRating() * (255 / 5));
 
         response.writeUInt32(static_cast<uint32>(tags.size()));
         for (const auto& tag : tags) {

@@ -40,7 +40,17 @@ ServerList::ServerList(QObject* parent)
 bool ServerList::loadServerMet(const QString& filePath)
 {
     removeAllServers();
-    if (!addServerMetToList(filePath, false))
+    bool ok = addServerMetToList(filePath, false);
+    if (!ok) {
+        // Missing or cut short: the previous save is still there. Whatever was read
+        // from the damaged file stays; duplicates are skipped.
+        const QString bakPath = filePath + QStringLiteral(".bak");
+        if (QFile::exists(bakPath)) {
+            logWarning(QStringLiteral("server.met unusable, reading server.met.bak"));
+            ok = addServerMetToList(bakPath, false);
+        }
+    }
+    if (!ok)
         return false;
     emit listReloaded();
     return true;
@@ -836,7 +846,7 @@ void ServerList::serverStats()
     // and never removed here (only on TCP-connect failure). MFC: CServerList::
     // ServerStats() — ServerList.cpp:267-270.
     const uint32 maxRetries = thePrefs.deadServerRetries();
-    if (maxRetries > 0 && target->failedCount() >= maxRetries) {
+    if (maxRetries > 0 && !target->isStaticMember() && target->failedCount() >= maxRetries) {
         logInfo(QStringLiteral("Removing dead server %1 (%2 failed stat pings)")
                     .arg(target->name()).arg(target->failedCount()));
         removeServer(target);

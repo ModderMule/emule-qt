@@ -117,6 +117,12 @@ public:
     [[nodiscard]] BuddyStatus buddyStatus() const { return m_buddyStatus; }
     void setBuddy(UpDownClient* buddy, BuddyStatus status);
 
+    /// A Kad node asked us to test its TCP port. Returns the client queued for the
+    /// dial, or nullptr when the request is refused (ourselves, or a client that is
+    /// already in a Kad state or connected). @p ip host order. MFC RequestTCP.
+    UpDownClient* requestTCP(uint32 ip, uint16 tcpPort, uint16 udpPort,
+                             const uint8* userHash, uint8 connectOptions);
+
     /// Called when a remote node wants to become our buddy.
     /// Returns true if accepted.
     /// Matches MFC CClientList::IncomingBuddy (srchybrid/ClientList.cpp:721).

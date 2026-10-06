@@ -34,7 +34,7 @@ Website: [emule-qt.org](https://emule-qt.org/)
 - **IPv6** — Dual-stack across client-to-client, client-to-server, Kademlia, and eD2K links, so IPv6-only and CGNAT users can participate fully — additive and legacy-safe ([spec](docs/protocol/ipv6-spec.md))
 - **HTTP Cache** — When several peers want the same part, encrypt and upload it once, then hand each peer a URL and key; the cache server never sees plaintext ([spec](docs/protocol/http-cache-spec.md))
 - **PCP & NAT-PMP Port Mapping** — Three backends raced at startup — PCP, NAT-PMP, and UPnP IGD1/IGD2 with IPv6 pinholes — graded on whether the exact port was actually granted ([details](docs/port-mapping.md))
-- **REST API** — A JSON `/api/v1/*` interface with API-key auth alongside the classic web UI, for scripts and dashboards
+- **REST API** — A JSON `/api/v1/*` interface with API-key auth alongside the classic web UI, for scripts and dashboards; browser apps on another origin are opted in with `webserver.corsAllowedOrigins` in `preferences.yml`
 - **CLI Control** — Drive a running daemon from the shell: `--add-link`, `--add-nzb`, `--connect`, `--disconnect`, `--connect-kad`
 - **Extended Source Exchange** — Source exchange widened with each source's server endpoint, user hash, and obfuscation options, negotiated per peer
 - **Save/Load Sources** — Each part file's best sources are written to disk and re-injected on restart, so a download resumes at speed instead of rebuilding its source list

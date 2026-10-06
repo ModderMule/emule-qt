@@ -218,6 +218,7 @@ private:
     void handleGetDownloadDetails(const Ipc::IpcMessage& msg);
     void handlePreviewDownload(const Ipc::IpcMessage& msg);
     void handleRequestClientSharedFiles(const Ipc::IpcMessage& msg);
+    void handleRequestSearchPreview(const Ipc::IpcMessage& msg);
     void handleGetClientDetails(const Ipc::IpcMessage& msg);
     void handleGetSharedFileDetails(const Ipc::IpcMessage& msg);
     void handleGetSearchResultDetails(const Ipc::IpcMessage& msg);

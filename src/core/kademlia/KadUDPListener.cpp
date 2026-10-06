@@ -1643,27 +1643,19 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED_REQ(const uint8* data, uin
     SafeMemFile io(data, len);
     uint16 tcpPort = io.readUInt16();
 
-    // Respond with their external IP so they can determine their public address
+    // The TCP check first: a refused one gets no answer either
+    // (MFC KademliaUDPListener.cpp:1590-1603). processKadList() does the dialling.
+    UpDownClient* client = theApp.clientList
+        ? theApp.clientList->requestTCP(ip, tcpPort, udpPort, nullptr, 0) : nullptr;
+    if (!client)
+        return;
+    if (auto* rz = Kademlia::getInstanceRoutingZone())
+        propagateLanCryptoInfo(client, rz->getContact(ip, udpPort, false));
+
+    // Their external IP, so they can determine their public address
     SafeMemFile resPacket;
     resPacket.writeUInt32(ip);
     sendPacket(resPacket, KADEMLIA_FIREWALLED_RES, ip, udpPort, senderKey, nullptr);
-
-    // Attempt TCP verification: connect to their TCP port to verify it's open.
-    // This is best-effort — failure is silently ignored.
-    // The probe target's IP in the userId slot (host order, ed2kID false), as MFC builds
-    // every Kad-originated client. With 0 there hasLowID() is true for a peer we can plainly
-    // reach, and the dial only worked because QueuedFwCheck is separately allowed past
-    // tryToConnect()'s Low-ID gate — the same latent shape that broke requestBuddy().
-    auto* client = new UpDownClient(tcpPort, ip, 0, 0, nullptr);
-    client->setConnectAddress(Address::fromHostOrder(ip));
-    client->setKadState(KadState::QueuedFwCheck);
-    if (auto* rz = Kademlia::getInstanceRoutingZone())
-        propagateLanCryptoInfo(client, rz->getContact(ip, udpPort, false));
-    // No dial here: ClientList::processKadList() owns the QueuedFwCheck transition, as MFC's
-    // ProcessKadList does (srchybrid/ClientList.cpp:487-490). Dialling inline as well meant
-    // one request produced two outgoing connections to the same peer.
-    if (theApp.clientList)
-        theApp.clientList->addClient(client);
 
     logKad(QStringLiteral("Kad: FIREWALLED_REQ from %1:%2, responded + TCP fw check")
                .arg(ipToString(ip)).arg(udpPort));
@@ -1681,26 +1673,18 @@ void KademliaUDPListener::process_KADEMLIA_FIREWALLED2_REQ(const uint8* data, ui
     UInt128 senderHash = io::readUInt128(io);  // sender's ED2K user hash for TCP encryption
     uint8 options = io.readUInt8();
 
-    // Respond with their external IP (no crypto target — matches SrcHybrid)
+    uint8 hashBytes[16];
+    senderHash.toByteArray(hashBytes);
+
+    // See process_KADEMLIA_FIREWALLED_REQ: no client, no answer.
+    if (!theApp.clientList
+        || !theApp.clientList->requestTCP(ip, tcpPort, udpPort, hashBytes, options))
+        return;
+
+    // Their external IP (no crypto target — matches SrcHybrid)
     SafeMemFile resPacket;
     resPacket.writeUInt32(ip);
     sendPacket(resPacket, KADEMLIA_FIREWALLED_RES, ip, udpPort, senderKey, nullptr);
-
-    // Attempt TCP verification: connect to their TCP port to verify it's open
-    auto* client = new UpDownClient(tcpPort, ip, 0, 0, nullptr);
-    client->setConnectAddress(Address::fromHostOrder(ip));
-    client->setKadState(KadState::QueuedFwCheck);
-    client->setConnectOptions(options, true, true);
-
-    // Use sender's hash from packet directly for TCP encryption (matches SrcHybrid RequestTCP)
-    uint8 hashBytes[16];
-    senderHash.toByteArray(hashBytes);
-    if (!isnulmd4(hashBytes))
-        client->setUserHash(hashBytes);
-
-    // See the note in process_KADEMLIA_FIREWALLED_REQ — processKadList() does the dialling.
-    if (theApp.clientList)
-        theApp.clientList->addClient(client);
 
     logKad(QStringLiteral("Kad: FIREWALLED2_REQ from %1:%2, responded + TCP fw check")
                .arg(ipToString(ip)).arg(udpPort));

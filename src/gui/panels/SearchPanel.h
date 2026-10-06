@@ -224,6 +224,9 @@ private:
     void setupAutoComplete();
     void addToSearchHistory(const QString& expression);
     void sendPreview(const QString& hash);
+    /// Ask the peer behind a browsed file for preview frames.
+    void requestPeerPreview(uint32_t searchID, const QString& hash);
+    void onSearchPreviewPush(const Ipc::IpcMessage& msg);
     void refreshKnownTypes();
 
     /// The same question for indexer tabs, over GetUsenetKnownTypes. A separate

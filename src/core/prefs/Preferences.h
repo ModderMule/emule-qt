@@ -1260,6 +1260,10 @@ public:
     [[nodiscard]] bool webServerGzipEnabled() const;
     void setWebServerGzipEnabled(bool val);
 
+    /// Origins allowed to call the REST API from a browser. Empty = no CORS.
+    [[nodiscard]] QStringList webServerCorsAllowedOrigins() const;
+    void setWebServerCorsAllowedOrigins(const QStringList& val);
+
     [[nodiscard]] bool webServerUPnP() const;
     void setWebServerUPnP(bool val);
 

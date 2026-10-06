@@ -17,6 +17,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QRandomGenerator>
 #include <QSaveFile>
 #include <QSet>
 #include <QStandardPaths>
@@ -24,6 +25,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstring>
 
 #include <yaml-cpp/yaml.h>
 
@@ -437,6 +439,7 @@ struct Preferences::Data {
     QString webServerListenAddress;     // Empty = any
     bool webServerRestApiEnabled = false;
     bool webServerGzipEnabled = true;
+    QStringList webServerCorsAllowedOrigins;  // Empty = no CORS; "*" = any origin. YAML only
     bool webServerUPnP = false;
     QString webServerTemplatePath;
     int webServerSessionTimeout = 5;    // minutes
@@ -2353,6 +2356,10 @@ bool Preferences::webServerGzipEnabled() const { return get(&Data::webServerGzip
 
 void Preferences::setWebServerGzipEnabled(bool val) { set(&Data::webServerGzipEnabled, val); }
 
+QStringList Preferences::webServerCorsAllowedOrigins() const { return get(&Data::webServerCorsAllowedOrigins); }
+
+void Preferences::setWebServerCorsAllowedOrigins(const QStringList& val) { set(&Data::webServerCorsAllowedOrigins, val); }
+
 bool Preferences::webServerUPnP() const { return get(&Data::webServerUPnP); }
 
 void Preferences::setWebServerUPnP(bool val) { set(&Data::webServerUPnP, val); }
@@ -3386,8 +3393,10 @@ void Preferences::validate()
 
     // kadUDPKey: generate random if 0
     if (m_data->kadUDPKey == 0) {
-        std::uniform_int_distribution<uint32> dist(1, UINT32_MAX);
-        m_data->kadUDPKey = dist(randomEngine());
+        // Secret: straight from the system generator, never the shared engine.
+        do {
+            m_data->kadUDPKey = QRandomGenerator::system()->generate();
+        } while (m_data->kadUDPKey == 0);
     }
 }
 
@@ -3936,6 +3945,11 @@ bool Preferences::load(const QString& filePath)
             m_data->webServerListenAddress = QString::fromStdString(ws["listenAddress"].as<std::string>(m_data->webServerListenAddress.toStdString()));
             m_data->webServerRestApiEnabled = ws["restApiEnabled"].as<bool>(m_data->webServerRestApiEnabled);
             m_data->webServerGzipEnabled = ws["gzipEnabled"].as<bool>(m_data->webServerGzipEnabled);
+            if (auto cors = ws["corsAllowedOrigins"]; cors && cors.IsSequence()) {
+                m_data->webServerCorsAllowedOrigins.clear();
+                for (std::size_t i = 0; i < cors.size(); ++i)
+                    m_data->webServerCorsAllowedOrigins.append(QString::fromStdString(cors[i].as<std::string>()));
+            }
             m_data->webServerUPnP = ws["upnp"].as<bool>(m_data->webServerUPnP);
             m_data->webServerTemplatePath = QString::fromStdString(ws["templatePath"].as<std::string>(m_data->webServerTemplatePath.toStdString()));
             m_data->webServerSessionTimeout = ws["sessionTimeout"].as<int>(m_data->webServerSessionTimeout);
@@ -4532,11 +4546,12 @@ uint16 Preferences::randomUDPPort()
 
 std::array<uint8, 16> Preferences::generateUserHash()
 {
+    // The hash is public; drawn from the system generator so it says nothing about
+    // any other value generated here.
     std::array<uint8, 16> hash{};
-    std::uniform_int_distribution<int> dist(0, 255);
-    auto& rng = randomEngine();
-    for (auto& byte : hash)
-        byte = static_cast<uint8>(dist(rng));
+    std::array<quint32, 4> words{};
+    QRandomGenerator::system()->fillRange(words.data(), words.size());
+    std::memcpy(hash.data(), words.data(), hash.size());
 
     // eMule markers — MFC Preferences.cpp:CreateUserHash()
     // Byte[5]:  14 (0x0E) — eMule client marker
@@ -4550,11 +4565,9 @@ std::array<uint8, 16> Preferences::generateUserHash()
 
 QString Preferences::generateApiKey()
 {
-    std::uniform_int_distribution<int> dist(0, 255);
-    auto& rng = randomEngine();
-    QByteArray bytes(16, Qt::Uninitialized);
-    for (int i = 0; i < 16; ++i)
-        bytes[i] = static_cast<char>(dist(rng));
+    std::array<quint32, 4> words{};
+    QRandomGenerator::system()->fillRange(words.data(), words.size());
+    const QByteArray bytes(reinterpret_cast<const char*>(words.data()), 16);
     return QString::fromLatin1(bytes.toHex());
 }
 
@@ -4995,6 +5008,10 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "listenAddress" << YAML::Value << m_data->webServerListenAddress.toStdString();
     out << YAML::Key << "restApiEnabled" << YAML::Value << m_data->webServerRestApiEnabled;
     out << YAML::Key << "gzipEnabled" << YAML::Value << m_data->webServerGzipEnabled;
+    out << YAML::Key << "corsAllowedOrigins" << YAML::Value << YAML::BeginSeq;
+    for (const auto& o : m_data->webServerCorsAllowedOrigins)
+        out << o.toStdString();
+    out << YAML::EndSeq;
     out << YAML::Key << "upnp" << YAML::Value << m_data->webServerUPnP;
     out << YAML::Key << "templatePath" << YAML::Value << m_data->webServerTemplatePath.toStdString();
     out << YAML::Key << "sessionTimeout" << YAML::Value << m_data->webServerSessionTimeout;

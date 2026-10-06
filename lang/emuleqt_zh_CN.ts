@@ -651,7 +651,7 @@ Download it again?</source>
 <context>
     <name>Rating</name>
     <message>
-        <location filename="../src/core/utils/OtherFunctions.cpp" line="+483"/>
+        <location filename="../src/core/utils/OtherFunctions.cpp" line="+528"/>
         <source>Not rated</source>
         <translation>未评分</translation>
     </message>
@@ -685,7 +685,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4116"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4420"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -7648,6 +7648,39 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
 </context>
 <context>
+    <name>eMule::PeerPreviewDialog</name>
+    <message>
+        <location filename="../src/gui/dialogs/PeerPreviewDialog.cpp" line="+17"/>
+        <source>Preview: %1</source>
+        <translation>预览：%1</translation>
+    </message>
+    <message>
+        <location line="+15"/>
+        <source>Prior</source>
+        <translation>上一张</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Next</source>
+        <translation>下一个</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Close</source>
+        <translation>关闭</translation>
+    </message>
+    <message>
+        <location line="+24"/>
+        <source>No images</source>
+        <translation>没有图像</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Image %1 of %2</source>
+        <translation>第 %1 张，共 %2 张</translation>
+    </message>
+</context>
+<context>
     <name>eMule::SearchDetailDialog</name>
     <message>
         <location filename="../src/gui/dialogs/SearchDetailDialog.cpp" line="+42"/>
@@ -7670,14 +7703,14 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+247"/>
-        <location line="+713"/>
-        <location line="+364"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+249"/>
+        <location line="+719"/>
+        <location line="+374"/>
         <source>Download</source>
         <translation>下载</translation>
     </message>
     <message>
-        <location line="-1057"/>
+        <location line="-1073"/>
         <source>Close All Searches</source>
         <translation>关闭所有搜索</translation>
     </message>
@@ -7905,7 +7938,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>复制名称(&amp;N)</translation>
     </message>
     <message>
-        <location line="+66"/>
+        <location line="+72"/>
         <source>Download NZB File...</source>
         <translation>下载 NZB 文件...</translation>
     </message>
@@ -7945,13 +7978,15 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>标记为非垃圾</translation>
     </message>
     <message>
-        <location line="+48"/>
-        <location line="+759"/>
+        <location line="+50"/>
+        <location line="+7"/>
+        <location line="+762"/>
+        <location line="+43"/>
         <source>Preview</source>
         <translation>预览</translation>
     </message>
     <message>
-        <location line="-532"/>
+        <location line="-577"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -7960,7 +7995,17 @@ Restart eMule for all connections to use the new proxy settings.</source>
 %1</translation>
     </message>
     <message>
-        <location line="+779"/>
+        <location line="+535"/>
+        <source>Preview requested - please wait</source>
+        <translation>已请求预览 - 请稍候</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>%1 sent no preview</source>
+        <translation>%1 未发送预览</translation>
+    </message>
+    <message>
+        <location line="+273"/>
         <source>Asking servers: %1 / %2</source>
         <translation>正在询问服务器：%1 / %2</translation>
     </message>
@@ -7970,7 +8015,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>全部</translation>
     </message>
     <message>
-        <location line="-1093"/>
+        <location line="-1148"/>
         <location line="+14"/>
         <source>Mark as Spam</source>
         <translation>标记为垃圾</translation>
@@ -7991,7 +8036,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>关闭所有搜索结果</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+26"/>
         <source>Find...</source>
         <translation>查找...</translation>
     </message>
@@ -8006,7 +8051,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>Web 服务</translation>
     </message>
     <message>
-        <location line="+738"/>
+        <location line="+784"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>预览不可用 — Web 服务器未运行或未收到流令牌。</translation>
     </message>
@@ -11752,19 +11797,19 @@ A password is set for this release.</source>
         <translation>地址</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3589"/>
-        <location line="+3479"/>
-        <location line="+47"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3890"/>
+        <location line="+3779"/>
+        <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>会话已过期 — 请重新登录</translation>
     </message>
     <message>
-        <location line="-3524"/>
+        <location line="-3824"/>
         <source>Guests cannot add downloads</source>
         <translation>访客无法添加下载</translation>
     </message>
     <message>
-        <location line="+859"/>
+        <location line="+865"/>
         <source>Looking for comments on Kad</source>
         <translation>正在 Kad 上查找评论</translation>
     </message>
@@ -11796,6 +11841,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+40"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+34"/>
         <source>Download</source>
         <translation>下载</translation>
     </message>
@@ -11845,39 +11891,80 @@ A password is set for this release.</source>
         <translation>下载此文件</translation>
     </message>
     <message>
-        <location line="+322"/>
+        <location line="+394"/>
         <source>Access denied — no password configured. Set a password in Options → Web Interface.</source>
         <translation>拒绝访问 — 未设置密码。请在“选项 → Web 界面”中设置密码。</translation>
     </message>
+    <message numerus="yes">
+        <location line="+11"/>
+        <source>Too many failed logins. Try again in %n second(s).</source>
+        <translation>
+            <numerusform>登录失败次数过多。请在 %n 秒后重试。</numerusform>
+        </translation>
+    </message>
     <message>
-        <location line="+18"/>
+        <location line="+21"/>
         <source>Login failed</source>
         <translation>登录失败</translation>
     </message>
+    <message numerus="yes">
+        <location line="+226"/>
+        <source>%n download(s) added</source>
+        <translation>
+            <numerusform>已添加 %n 个下载</numerusform>
+        </translation>
+    </message>
     <message>
-        <location line="+207"/>
-        <location line="+1813"/>
+        <location line="+29"/>
+        <source>Not connected — the search could not be sent.</source>
+        <translation>未连接 — 无法发送搜索。</translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>Nothing was saved: a value is missing or out of range.</source>
+        <translation>未保存任何内容：某个值缺失或超出范围。</translation>
+    </message>
+    <message>
+        <location line="+22"/>
+        <source>Saved. The new ports are used after a restart.</source>
+        <translation>已保存。新端口将在重启后生效。</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Saved.</source>
+        <translation>已保存。</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <location line="+1908"/>
         <source>Web Control Panel</source>
         <translation>Web 控制面板</translation>
     </message>
     <message>
-        <location line="-1804"/>
+        <location line="-1901"/>
         <source>Not connected</source>
         <translation>未连接</translation>
     </message>
     <message>
-        <location line="+295"/>
+        <location line="+293"/>
         <source>Connected</source>
         <translation>已连接</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+283"/>
+        <location line="+324"/>
         <source>Disconnected</source>
         <translation>已断开</translation>
     </message>
+    <message numerus="yes">
+        <location line="-279"/>
+        <source>&quot;%1&quot;: %n result(s)</source>
+        <translation>
+            <numerusform>“%1”：%n 个结果</numerusform>
+        </translation>
+    </message>
     <message>
-        <location line="-84"/>
+        <location line="+192"/>
         <source>Active Connections</source>
         <translation>活跃连接</translation>
     </message>
@@ -11887,7 +11974,7 @@ A password is set for this release.</source>
         <translation>时间</translation>
     </message>
     <message>
-        <location line="+29"/>
+        <location line="+33"/>
         <source>Connected to: %1 (%2:%3)</source>
         <translation>已连接到：%1 (%2:%3)</translation>
     </message>
@@ -11932,7 +12019,7 @@ A password is set for this release.</source>
         <translation>未连接到任何服务器</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="+33"/>
         <source>Running</source>
         <translation>运行中</translation>
     </message>
@@ -11943,30 +12030,30 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+149"/>
-        <location line="+1024"/>
+        <location line="+1082"/>
         <source>Queued</source>
         <translation>排队中</translation>
     </message>
     <message>
-        <location line="-1023"/>
-        <location line="+1022"/>
+        <location line="-1081"/>
+        <location line="+1080"/>
         <source>Downloading</source>
         <translation>正在下载</translation>
     </message>
     <message>
-        <location line="-1021"/>
+        <location line="-1079"/>
         <source>Paused</source>
         <translation>已暂停</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+855"/>
-        <location line="+164"/>
+        <location line="+914"/>
+        <location line="+163"/>
         <source>Complete</source>
         <translation>已完成</translation>
     </message>
     <message>
-        <location line="-1018"/>
+        <location line="-1076"/>
         <source>Failed</source>
         <translation>失败</translation>
     </message>
@@ -12081,7 +12168,7 @@ A password is set for this release.</source>
         <translation>普通</translation>
     </message>
     <message>
-        <location line="+86"/>
+        <location line="+144"/>
         <source>Only a queued or downloading release can be paused</source>
         <translation>只能暂停排队中或下载中的发布内容</translation>
     </message>
@@ -12122,7 +12209,7 @@ A password is set for this release.</source>
         <translation>请将 .nzb 作为请求正文发送，或提供 URL</translation>
     </message>
     <message>
-        <location line="+43"/>
+        <location line="+45"/>
         <source>Guests cannot change downloads</source>
         <translation>访客无法更改下载</translation>
     </message>
@@ -12133,7 +12220,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+49"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-33"/>
         <source>All</source>
         <translation>全部</translation>
     </message>
@@ -12143,15 +12230,15 @@ A password is set for this release.</source>
         <translation>无分类</translation>
     </message>
     <message numerus="yes">
-        <location line="+115"/>
-        <location line="+164"/>
+        <location line="+114"/>
+        <location line="+163"/>
         <source>%n article(s) missing</source>
         <translation>
             <numerusform>缺少 %n 篇文章</numerusform>
         </translation>
     </message>
     <message>
-        <location line="-100"/>
+        <location line="-99"/>
         <source>No Usenet downloads. Use &quot;Add NZB…&quot; to queue one.</source>
         <translation>没有 Usenet 下载。使用“添加 NZB…”将其加入队列。</translation>
     </message>
@@ -12179,7 +12266,7 @@ Whichever network is idle lends its share to the other.</source>
 空闲的网络会把自己的份额让给另一方。</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+21"/>
         <source>No Usenet downloads here.</source>
         <translation>此处没有 Usenet 下载。</translation>
     </message>
@@ -12361,12 +12448,12 @@ Whichever network is idle lends its share to the other.</source>
         <translation>文档 (.doc .pdf ...)</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Download Speed</source>
         <translation>下载速度</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1346"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1407"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Downloads</source>
         <translation>下载</translation>
@@ -12518,7 +12605,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>NZB 文件：</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1248"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1479"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>名称</translation>
@@ -12692,6 +12779,11 @@ Whichever network is idle lends its share to the other.</source>
         <location line="+1"/>
         <source>Reconnects</source>
         <translation>重新连接</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Refresh</source>
+        <translation>刷新</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -12900,7 +12992,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>上传速度</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1245"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1476"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation>上传</translation>
@@ -12916,7 +13008,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+483"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+486"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Usenet engine unavailable</source>
         <translation>Usenet 引擎不可用</translation>

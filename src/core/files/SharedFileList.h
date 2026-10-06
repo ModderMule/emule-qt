@@ -8,6 +8,7 @@
 
 #include "files/KnownFileList.h"
 #include "files/PublishKeywordList.h"
+#include "protocol/Tag.h"
 #include "utils/EntityMap.h"
 
 #include <QMutex>
@@ -218,6 +219,10 @@ private:
     /// file support and its GetSoftFiles() limit, and mark them published. Split out of
     /// sendListToServer() so both rules can be tested without a live server socket.
     std::vector<KnownFile*> takeFilesToOffer(const Server* srv);
+
+    /// The tag list of one OP_OFFERFILES record for @p srv
+    /// (MFC CSharedFileList::CreateOfferedFilePacket).
+    static std::vector<Tag> offeredTags(KnownFile& file, const Server* srv);
 
     void findSharedFiles();
     void addFilesFromDirectory(const QString& dir, const QString& sharedDir = {});

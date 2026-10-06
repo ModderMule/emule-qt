@@ -303,8 +303,10 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
     const Address senderAddress = Address::fromQHostAddress(datagram.senderAddress());
     const uint16 senderPort = static_cast<uint16>(datagram.senderPort());
     const Endpoint senderEP(senderAddress, senderPort);
-    // Host-order IPv4 for the IPv4-only Kad verify-key store; 0 for IPv6 (no Kad over v6).
-    const uint32 senderIPv4Host = senderAddress.isIPv4() ? senderAddress.toUint32() : 0;
+    // Kad is IPv4-only: its handlers take a host-order uint32, which is 0 for a native
+    // IPv6 sender. Such a datagram never reaches Kad.
+    const bool kadCapableSender = senderAddress.isIPv4();
+    const uint32 senderIPv4Host = kadCapableSender ? senderAddress.toUint32() : 0;
 
     // Address-typed: the filter now holds a per-family range table, so an IPv6 sender
     // is checked against the IPv6 ranges instead of passing unfiltered.
@@ -333,6 +335,9 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
         // Unencrypted eMule client UDP packet
         uint8 opcode = buf[1];
         processPacket(buf + 2, static_cast<uint32>(bufLen - 2), opcode, senderEP);
+    } else if ((protoByte == OP_KADEMLIAHEADER || protoByte == OP_KADEMLIAPACKEDPROT)
+               && !kadCapableSender) {
+        return;
     } else if (protoByte == OP_KADEMLIAHEADER) {
         // Uncompressed Kademlia packet — forward directly
         if (auto* stats = theApp.statistics)
@@ -365,7 +370,7 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
         auto userHash = thePrefs.userHash();
         const uint8* kadIDPtr = nullptr;
         uint32 kadRecvKey = 0;
-        if (auto* kadPrefs = eMule::kad::Kademlia::getInstancePrefs()) {
+        if (auto* kadPrefs = eMule::kad::Kademlia::getInstancePrefs(); kadPrefs && kadCapableSender) {
             // Use getData() (raw m_data bytes), NOT toByteArray() which
             // byte-swaps.  The wire format uses the raw uint32 representation,
             // so encryption keys must match that byte order.
@@ -382,6 +387,9 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
             if (innerProto == OP_EMULEPROT) {
                 processPacket(dr.data + 2, static_cast<uint32>(dr.length - 2),
                               opcode, senderEP);
+            } else if ((innerProto == OP_KADEMLIAHEADER || innerProto == OP_KADEMLIAPACKEDPROT)
+                       && !kadCapableSender) {
+                return;
             } else if (innerProto == OP_KADEMLIAHEADER) {
                 if (auto* stats = theApp.statistics)
                     stats->addDownDataOverheadKad(static_cast<uint32>(bufLen));

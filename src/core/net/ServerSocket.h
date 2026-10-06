@@ -162,6 +162,13 @@ signals:
     /// Connection failed or broken.
     void connectionFailed(eMule::ServerConnState reason);
 
+public:
+    /// What a socket error in @p current means. Only a refusal, a timeout or a close
+    /// by the server says anything about the server (ServerDead, which counts against
+    /// it); a local or network failure is FatalError and counts against nobody.
+    [[nodiscard]] static ServerConnState stateForSocketError(ServerConnState current,
+                                                             QAbstractSocket::SocketError error);
+
 protected:
     bool packetReceived(Packet* packet) override;
     void onError(int errorCode) override;

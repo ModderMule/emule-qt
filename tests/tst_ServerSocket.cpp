@@ -30,6 +30,10 @@ private slots:
     void processServerStatus();
     void processReject();
     void connectTo_literalInDynIPSkipsDns();
+    void socketError_classification_data();
+    void socketError_classification();
+    void socketError_reportsOnceThroughBothEntryPoints_data();
+    void socketError_reportsOnceThroughBothEntryPoints();
 };
 
 /// Helper: write raw ED2K packet bytes to a socket.
@@ -345,5 +349,73 @@ void tst_ServerSocket::connectTo_literalInDynIPSkipsDns()
     sock.close();
 }
 
+// ---------------------------------------------------------------------------
+// Test: only a failure of the server itself reads as "dead"
+// ---------------------------------------------------------------------------
+
+void tst_ServerSocket::socketError_classification_data()
+{
+    QTest::addColumn<ServerConnState>("current");
+    QTest::addColumn<QAbstractSocket::SocketError>("error");
+    QTest::addColumn<ServerConnState>("expected");
+
+    using S = ServerConnState;
+    using E = QAbstractSocket;
+    QTest::newRow("refused") << S::Connecting << E::ConnectionRefusedError << S::ServerDead;
+    QTest::newRow("timed out") << S::Connecting << E::SocketTimeoutError << S::ServerDead;
+    QTest::newRow("closed while connecting") << S::Connecting << E::RemoteHostClosedError << S::ServerDead;
+    QTest::newRow("closed at login") << S::WaitForLogin << E::RemoteHostClosedError << S::ServerFull;
+    // The outage cases: none of them may count against the server.
+    QTest::newRow("network down") << S::Connecting << E::NetworkError << S::FatalError;
+    QTest::newRow("network down at login") << S::WaitForLogin << E::NetworkError << S::FatalError;
+    QTest::newRow("bind refused") << S::Connecting << E::SocketAccessError << S::FatalError;
+    QTest::newRow("address gone") << S::Connecting << E::SocketAddressNotAvailableError << S::FatalError;
+    QTest::newRow("proxy down") << S::Connecting << E::ProxyConnectionRefusedError << S::FatalError;
+    QTest::newRow("resolver") << S::Connecting << E::HostNotFoundError << S::Error;
+    QTest::newRow("established") << S::Connected << E::NetworkError << S::Disconnected;
+}
+
+void tst_ServerSocket::socketError_classification()
+{
+    QFETCH(ServerConnState, current);
+    QFETCH(QAbstractSocket::SocketError, error);
+    QFETCH(ServerConnState, expected);
+    QCOMPARE(ServerSocket::stateForSocketError(current, error), expected);
+}
+
+void tst_ServerSocket::socketError_reportsOnceThroughBothEntryPoints_data()
+{
+    QTest::addColumn<QAbstractSocket::SocketError>("error");
+    QTest::addColumn<ServerConnState>("expected");
+    QTest::newRow("network down") << QAbstractSocket::NetworkError << ServerConnState::FatalError;
+    QTest::newRow("refused") << QAbstractSocket::ConnectionRefusedError << ServerConnState::ServerDead;
+}
+
+void tst_ServerSocket::socketError_reportsOnceThroughBothEntryPoints()
+{
+    QFETCH(QAbstractSocket::SocketError, error);
+    QFETCH(ServerConnState, expected);
+
+    // A listener that never accepts keeps the socket in Connecting.
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    server.pauseAccepting();
+
+    ServerSocket sock;
+    Server srv(uint32{0}, server.serverPort());
+    srv.setDynIP(QStringLiteral("127.0.0.1"));
+    sock.connectTo(srv);
+    QCOMPARE(sock.connectionState(), ServerConnState::Connecting);
+
+    QSignalSpy failed(&sock, &ServerSocket::connectionFailed);
+    emit sock.errorOccurred(error);   // reaches EMSocket's slot, then ServerSocket's
+
+    QCOMPARE(failed.count(), 1);
+    QCOMPARE(failed.first().first().value<ServerConnState>(), expected);
+    QCOMPARE(sock.connectionState(), expected);
+    sock.abort();
+}
+
 QTEST_MAIN(tst_ServerSocket)
 #include "tst_ServerSocket.moc"
+

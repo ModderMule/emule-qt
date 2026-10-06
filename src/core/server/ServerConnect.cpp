@@ -358,11 +358,16 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
                          .arg(server->name()).arg(server->addressWithPort())
                          .arg(multiconnect).arg(noCrypt).arg(m_openSockets.size()));
 
+    // Registered before the dial: a connect that fails inside connectTo() (an
+    // unusable bind address does) is torn down on the spot, and an entry added
+    // afterwards would hand checkForTimeout() a deleted socket.
+    qint64 timestamp = m_elapsedTimer.elapsed();
+    while (m_connectionAttempts.contains(timestamp))
+        ++timestamp;    // several dials can share a millisecond
+    m_connectionAttempts[timestamp] = socket;
+
     socket->initProxySupport(thePrefs.proxySettings());
     socket->connectTo(*server, noCrypt, dialAddress);
-
-    qint64 timestamp = m_elapsedTimer.elapsed();
-    m_connectionAttempts[timestamp] = socket;
 }
 
 // ---------------------------------------------------------------------------
@@ -529,7 +534,8 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
         }
         if (listServer && otherFamily.isNull()) {
             listServer->incFailedCount();
-            if (thePrefs.deadServerRetries() > 0
+            // Static servers are the user's own list: they only accumulate.
+            if (thePrefs.deadServerRetries() > 0 && !listServer->isStaticMember()
                 && listServer->failedCount() >= thePrefs.deadServerRetries()) {
                 logInfo(QStringLiteral("Removing dead server %1 (failed %2 times)")
                             .arg(listServer->name()).arg(listServer->failedCount()));

@@ -565,13 +565,66 @@ void ServerSocket::onError(int errorCode)
     // Both this and onSocketError() are live entry points — EMSocket funnels its
     // errors here, Qt's errorOccurred goes to onSocketError() — and either can land
     // first, so they must make the same decision.
+    // A Qt socket error: the code decides. EMSocket hands it over because the int
+    // above is shared with the protocol error codes (wrong header, encryption).
+    if (const auto socketError = std::exchange(m_socketErrorInFlight, std::nullopt)) {
+        setConnectionState(stateForSocketError(m_connectionState, *socketError));
+        return;
+    }
+
     if (m_connectionState == ServerConnState::Connected) {
         setConnectionState(ServerConnState::Disconnected);
     } else if (m_connectionState == ServerConnState::Connecting ||
                m_connectionState == ServerConnState::WaitForLogin) {
-        setConnectionState(ServerConnState::ServerDead);
+        setConnectionState(ServerConnState::ServerDead);   // the server sent garbage
     } else {
         setConnectionState(ServerConnState::FatalError);
+    }
+}
+
+ServerConnState ServerSocket::stateForSocketError(ServerConnState current,
+                                                  QAbstractSocket::SocketError error)
+{
+    // A drop on an established connection is a disconnect whatever the code.
+    if (current == ServerConnState::Connected)
+        return ServerConnState::Disconnected;
+
+    switch (error) {
+    case QAbstractSocket::ConnectionRefusedError:
+    case QAbstractSocket::SocketTimeoutError:
+        return ServerConnState::ServerDead;
+
+    case QAbstractSocket::RemoteHostClosedError:
+        // Closed on us before the login was answered: full, not dead.
+        // MFC CServerSocket::OnClose, srchybrid/ServerSocket.cpp:713-724.
+        return current == ServerConnState::WaitForLogin ? ServerConnState::ServerFull
+                                                        : ServerConnState::ServerDead;
+
+    case QAbstractSocket::HostNotFoundError:
+        return ServerConnState::Error;   // a resolver failure is not the server's
+
+    // Our side or the path: no route, interface gone, bind refused, proxy trouble.
+    // MFC leaves WSAENETUNREACH out of the dead-server errors for this reason
+    // (srchybrid/ServerSocket.cpp:117).
+    case QAbstractSocket::NetworkError:
+    case QAbstractSocket::SocketAccessError:
+    case QAbstractSocket::SocketResourceError:
+    case QAbstractSocket::AddressInUseError:
+    case QAbstractSocket::SocketAddressNotAvailableError:
+    case QAbstractSocket::UnsupportedSocketOperationError:
+    case QAbstractSocket::ProxyAuthenticationRequiredError:
+    case QAbstractSocket::ProxyConnectionRefusedError:
+    case QAbstractSocket::ProxyConnectionClosedError:
+    case QAbstractSocket::ProxyConnectionTimeoutError:
+    case QAbstractSocket::ProxyNotFoundError:
+    case QAbstractSocket::ProxyProtocolError:
+    case QAbstractSocket::OperationError:
+    case QAbstractSocket::TemporaryError:
+        return ServerConnState::FatalError;
+
+    default:
+        return current == ServerConnState::Connecting ? ServerConnState::ServerDead
+                                                      : ServerConnState::FatalError;
     }
 }
 
@@ -616,8 +669,10 @@ void ServerSocket::onSocketDisconnected()
 
     if (m_connectionState == ServerConnState::Connected) {
         setConnectionState(ServerConnState::Disconnected);
-    } else if (m_connectionState == ServerConnState::Connecting ||
-               m_connectionState == ServerConnState::WaitForLogin) {
+    } else if (m_connectionState == ServerConnState::WaitForLogin) {
+        // MFC CServerSocket::OnClose, srchybrid/ServerSocket.cpp:713-724.
+        setConnectionState(ServerConnState::ServerFull);
+    } else if (m_connectionState == ServerConnState::Connecting) {
         setConnectionState(ServerConnState::ServerDead);
     }
     // Any other state is already terminal: onSocketError() normally runs first (Qt
@@ -637,34 +692,19 @@ void ServerSocket::onSocketError(QAbstractSocket::SocketError error)
                    .arg(static_cast<int>(m_connectionState))
                    .arg(static_cast<int>(m_streamCryptState)));
 
-    // A drop on an established connection is a disconnect — see onError() above for
-    // why. In practice EMSocket routes the error to onError() first and this is the
-    // second notification, but the decision has to be the same either way.
-    if (m_connectionState == ServerConnState::Connected) {
-        setConnectionState(ServerConnState::Disconnected);
+    // Normally the second notification: EMSocket routed the error to onError()
+    // first and the state is already terminal. Firing again would report the same
+    // failure twice.
+    switch (m_connectionState) {
+    case ServerConnState::Connecting:
+    case ServerConnState::WaitForLogin:
+    case ServerConnState::Connected:
+        break;
+    default:
         return;
     }
-
-    switch (error) {
-    case QAbstractSocket::ConnectionRefusedError:
-    case QAbstractSocket::RemoteHostClosedError:
-    case QAbstractSocket::SocketTimeoutError:
-    case QAbstractSocket::HostNotFoundError:
-        setConnectionState(ServerConnState::ServerDead);
-        break;
-
-    case QAbstractSocket::SocketAccessError:
-    case QAbstractSocket::NetworkError:
-        setConnectionState(ServerConnState::FatalError);
-        break;
-
-    default:
-        if (m_connectionState == ServerConnState::Connecting)
-            setConnectionState(ServerConnState::ServerDead);
-        else
-            setConnectionState(ServerConnState::FatalError);
-        break;
-    }
+    m_socketErrorInFlight.reset();
+    setConnectionState(stateForSocketError(m_connectionState, error));
 }
 
 void ServerSocket::startDnsLookup(QDnsLookup::Type type)
@@ -708,7 +748,8 @@ void ServerSocket::onDnsLookupFinished()
         logWarning(QStringLiteral("DNS lookup failed for %1: %2")
                        .arg(m_curServer->dynIP())
                        .arg(m_dnsLookup->errorString()));
-        setConnectionState(ServerConnState::ServerDead);
+        // Not the server's failure (it may be our resolver): move on, count nothing.
+        setConnectionState(ServerConnState::Error);
         return;
     }
 

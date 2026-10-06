@@ -102,14 +102,17 @@ document.addEventListener('click',hideMenu);
 // Labels arrive as plain text in the page's language; every one is escaped on its way into markup.
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function ic(n){return '<span class="icon icon-'+n+'"></span> ';}
-function mi(href,icon,label,question){return '<a class="menuitems" href="'+esc(href)+'"'+(question?' data-q="'+esc(question)+'" onclick="return confirm(this.dataset.q)"':'')+'>'+ic(icon)+esc(label)+'</a>';}
+// State changes are POSTed with the session cookie; nothing that acts is a link.
+function post(q){var f=document.createElement('form');f.method='POST';f.action='/';new URLSearchParams(q).forEach(function(v,k){var i=document.createElement('input');i.type='hidden';i.name=k;i.value=v;f.appendChild(i);});document.body.appendChild(f);f.submit();return false;}
+function act(a){if(a.dataset.q&&!confirm(a.dataset.q))return false;return post(a.dataset.post);}
+function mi(q,icon,label,question){return '<a class="menuitems" href="#" data-post="'+esc(q)+'"'+(question?' data-q="'+esc(question)+'"':'')+' onclick="return act(this)">'+ic(icon)+esc(label)+'</a>';}
 var SEP='<div class="menusep"></div>';
 function setlang(code){var q=new URLSearchParams(location.search);q.set('setlang',code);location.search=q.toString();}
 
-function downmenu(e,ses,hash,st){
+function downmenu(e,hash,st){
  var m=document.getElementById('downmenu');
  var h='';
- var u='?ses='+encodeURIComponent(ses)+'&w=transfer&file='+encodeURIComponent(hash)+'&op=';
+ var u='w=transfer&file='+encodeURIComponent(hash)+'&op=';
  if(st==='paused'||st==='stopped')
   h+=mi(u+'resume','l_resume','{{js:Resume}}');
  if(st==='downloading'||st==='waiting')
@@ -124,14 +127,14 @@ function downmenu(e,ses,hash,st){
  h+=mi(u+'priohigh','high','{{js:Priority: High}}');
  h+=mi(u+'prioauto','l_none','{{js:Priority: Auto}}');
  h+=SEP;
- h+=mi('?ses='+encodeURIComponent(ses)+'&w=transfer&op=clearcompleted','m_clearcompleted','{{js:Clear Completed}}');
+ h+=mi('w=transfer&op=clearcompleted','m_clearcompleted','{{js:Clear Completed}}');
  m.innerHTML=h;
  showMenu(e,m);
 }
 
-function servermenu(e,ses,ip,port){
+function servermenu(e,ip,port){
  var m=document.getElementById('servermenu');
- var s='?ses='+encodeURIComponent(ses)+'&w=server';
+ var s='w=server';
  var u=s+'&ip='+encodeURIComponent(ip)+'&port='+encodeURIComponent(port)+'&c=';
  var h='';
  h+=mi(u+'connect','l_connect','{{js:Connect}}');
@@ -174,7 +177,7 @@ function sharedmenu(e,link){
     &nbsp;&nbsp;|&nbsp;&nbsp;
     <select class="lang-select" title="{{Language}}" onchange="setlang(this.value)">[LanguageOptions]</select>
     &nbsp;&nbsp;|&nbsp;&nbsp;
-    <a href="?ses=[ses]&amp;w=logout"><span class="icon icon-l_logout" style="vertical-align:middle"></span> {{Logout}}</a>
+    <a href="#" onclick="return post('w=logout')"><span class="icon icon-l_logout" style="vertical-align:middle"></span> {{Logout}}</a>
    </td>
   </tr>
  </table>
@@ -182,21 +185,21 @@ function sharedmenu(e,link){
 
 <div class="nav">
  <div class="nav-main">
-  <div class="nav-tab [Page_transfer]"><a href="?ses=[ses]&amp;w=transfer"><span class="icon icon-h_transfer"></span><br>{{Transfer}}</a></div>
-  <div class="nav-tab [Page_kad]"><a href="?ses=[ses]&amp;w=kad"><span class="icon icon-h_kad"></span><br>{{Kad}}</a></div>
-  <div class="nav-tab [Page_server]"><a href="?ses=[ses]&amp;w=server"><span class="icon icon-h_server"></span><br>{{Server}}</a></div>
-  <div class="nav-tab [Page_search]"><a href="?ses=[ses]&amp;w=search"><span class="icon icon-h_search"></span><br>{{Search}}</a></div>
-  <div class="nav-tab [Page_shared]"><a href="?ses=[ses]&amp;w=shared"><span class="icon icon-h_shared"></span><br>{{Shared}}</a></div>
-  <div class="nav-tab [Page_usenet]"><a href="?ses=[ses]&amp;w=usenet"><span class="icon icon-h_usenet"></span><br>{{Usenet}}</a></div>
-  <div class="nav-tab [Page_stats]"><a href="?ses=[ses]&amp;w=stats"><span class="icon icon-h_statistic"></span><br>{{Statistics}}</a></div>
-  <div class="nav-tab [Page_graphs]"><a href="?ses=[ses]&amp;w=graphs"><span class="icon icon-h_graph"></span><br>{{Graphs}}</a></div>
-  <div class="nav-tab [Page_options]"><a href="?ses=[ses]&amp;w=options"><span class="icon icon-h_preferences"></span><br>{{Preferences}}</a></div>
+  <div class="nav-tab [Page_transfer]"><a href="?w=transfer"><span class="icon icon-h_transfer"></span><br>{{Transfer}}</a></div>
+  <div class="nav-tab [Page_kad]"><a href="?w=kad"><span class="icon icon-h_kad"></span><br>{{Kad}}</a></div>
+  <div class="nav-tab [Page_server]"><a href="?w=server"><span class="icon icon-h_server"></span><br>{{Server}}</a></div>
+  <div class="nav-tab [Page_search]"><a href="?w=search"><span class="icon icon-h_search"></span><br>{{Search}}</a></div>
+  <div class="nav-tab [Page_shared]"><a href="?w=shared"><span class="icon icon-h_shared"></span><br>{{Shared}}</a></div>
+  <div class="nav-tab [Page_usenet]"><a href="?w=usenet"><span class="icon icon-h_usenet"></span><br>{{Usenet}}</a></div>
+  <div class="nav-tab [Page_stats]"><a href="?w=stats"><span class="icon icon-h_statistic"></span><br>{{Statistics}}</a></div>
+  <div class="nav-tab [Page_graphs]"><a href="?w=graphs"><span class="icon icon-h_graph"></span><br>{{Graphs}}</a></div>
+  <div class="nav-tab [Page_options]"><a href="?w=options"><span class="icon icon-h_preferences"></span><br>{{Preferences}}</a></div>
  </div>
  <div class="nav-right">
-  <a class="nav-link [Page_sinfo]" href="?ses=[ses]&amp;w=sinfo"><span class="icon icon-h_log" style="vertical-align:middle"></span>&nbsp;{{Server Info}}</a><br>
-  <a class="nav-link [Page_log]" href="?ses=[ses]&amp;w=log"><span class="icon icon-h_log" style="vertical-align:middle"></span>&nbsp;{{Log}}</a><br>
-  <a class="nav-link [Page_debuglog]" href="?ses=[ses]&amp;w=debuglog"><span class="icon icon-h_log" style="vertical-align:middle"></span>&nbsp;{{Debug}}</a><br>
-  <a class="nav-link [Page_myinfo]" href="?ses=[ses]&amp;w=myinfo"><span class="icon icon-l_info" style="vertical-align:middle"></span>&nbsp;{{My Info}}</a>
+  <a class="nav-link [Page_sinfo]" href="?w=sinfo"><span class="icon icon-h_log" style="vertical-align:middle"></span>&nbsp;{{Server Info}}</a><br>
+  <a class="nav-link [Page_log]" href="?w=log"><span class="icon icon-h_log" style="vertical-align:middle"></span>&nbsp;{{Log}}</a><br>
+  <a class="nav-link [Page_debuglog]" href="?w=debuglog"><span class="icon icon-h_log" style="vertical-align:middle"></span>&nbsp;{{Debug}}</a><br>
+  <a class="nav-link [Page_myinfo]" href="?w=myinfo"><span class="icon icon-l_info" style="vertical-align:middle"></span>&nbsp;{{My Info}}</a>
  </div>
 </div>
 
@@ -527,7 +530,7 @@ img { border: 0; }
 
 
 <--TMPL_SERVER_LINE-->
-<tr class="srv-[ServerStatus]" data-ip="[ServerAddr]" data-port="[ServerPort]" oncontextmenu="servermenu(event,'[Session]',this.dataset.ip,this.dataset.port)">
+<tr class="srv-[ServerStatus]" data-ip="[ServerAddr]" data-port="[ServerPort]" oncontextmenu="servermenu(event,this.dataset.ip,this.dataset.port)">
  <td class="left">[ServerName]</td>
  <td class="center">[ServerAddr][ServerAddr6]</td>
  <td class="center">[ServerPort]</td>
@@ -624,7 +627,7 @@ img { border: 0; }
 
 
 <--TMPL_TRANSFER_DOWN_LINE-->
-<tr oncontextmenu="downmenu(event,'[Session]','[DownloadFileHash]','[DownloadStatusKey]')">
+<tr oncontextmenu="downmenu(event,'[DownloadFileHash]','[DownloadStatusKey]')">
  <td class="left">
   <span class="icon icon-[DownloadStatus]" style="vertical-align:middle"></span>
   &nbsp;
@@ -777,7 +780,7 @@ img { border: 0; }
 <div id="un-details" hidden></div>
 <div id="un-chooser" class="un-chooser" hidden></div>
 <script>
-var UN={ses:'[Session]',token:'[StreamToken]',lang:'[WebLang]',admin:'[IsAdmin]'==='1',cat:[UsenetCat],sort:'[UsenetSort]',desc:'[UsenetDesc]',
+var UN={token:'[StreamToken]',lang:'[WebLang]',admin:'[IsAdmin]'==='1',cat:[UsenetCat],sort:'[UsenetSort]',desc:'[UsenetDesc]',
  cats:([UsenetCategoriesJson]).list,levels:([UsenetLevelsJson]).list,units:([UsenetUnitsJson]).list,maxUrls:[UsenetMaxUrls],
  sel:{},open:{},cur:null,details:null,busy:false,again:false,tick:0,menuRow:null,menuId:null,menuFile:-1};
 var UN_SEP='<div class="menusep"></div>';
@@ -785,12 +788,11 @@ var UN_SEP='<div class="menusep"></div>';
 function unSize(b){var u=UN.units,i=0;b=Number(b)||0;while(b>=1000&&i<4){b/=1024;i++;}return i?b.toFixed(2)+' '+u[i]:b+' '+u[0];}
 // "%1".."%9" in a translated sentence.
 function unFmt(s){var a=arguments;return String(s).replace(/%(\d)/g,function(m,i){return a[+i]==null?'':String(a[+i]);});}
-function unQ(){return 'ses='+encodeURIComponent(UN.ses);}
 function unNotice(msg,err){var n=document.getElementById('un-notice');if(!msg){n.hidden=true;return;}n.textContent=msg;n.className='un-notice'+(err?' error':'');n.hidden=false;}
 function unForm(o){var p=[];Object.keys(o).forEach(function(k){[].concat(o[k]).forEach(function(v){p.push(k+'='+encodeURIComponent(v));});});return p.join('&');}
 function unErr(j){return (j&&j.error&&j.error.message)||'{{js:That did not work.}}';}
 function unPost(path,body,headers){
- return fetch(path+(path.indexOf('?')<0?'?':'&')+unQ(),{method:'POST',cache:'no-store',
+ return fetch(path,{method:'POST',cache:'no-store',
   headers:headers||{'Content-Type':'application/x-www-form-urlencoded'},body:body})
   .then(function(r){return r.json().catch(function(){return {};}).then(function(j){j.status=r.status;return j;});})
   .catch(function(){return {status:0,error:{message:'{{js:Could not reach the eMule core.}}'}};});
@@ -830,8 +832,8 @@ function unEngineToggle(){
 function unRefresh(){
  if(UN.busy){UN.again=true;return;}
  UN.busy=true;
- var url=UN.details?('?'+unQ()+'&w=usenet&part=details&id='+encodeURIComponent(UN.details))
-                   :('?'+unQ()+'&w=usenet&part=list&cat='+UN.cat+'&sort='+UN.sort+'&desc='+UN.desc);
+ var url=UN.details?('?w=usenet&part=details&id='+encodeURIComponent(UN.details))
+                   :('?w=usenet&part=list&cat='+UN.cat+'&sort='+UN.sort+'&desc='+UN.desc);
  var marker=UN.details?'usenet-details':'usenet-list',box=document.getElementById(UN.details?'un-details':'un-list');
  fetch(url,{cache:'no-store'}).then(function(r){return r.text();}).then(function(html){
   // A login page instead of a fragment: the session ran out.
@@ -910,7 +912,7 @@ function unPreview(id,file,note){
  // Opened inside the click, or a popup blocker eats it once the listing returns.
  var win=window.open('about:blank','_blank'),started=Date.now();
  (function poll(){
-  fetch('/usenet/entries?'+unQ()+'&id='+encodeURIComponent(id)+'&file='+file,{cache:'no-store'})
+  fetch('/usenet/entries?id='+encodeURIComponent(id)+'&file='+file,{cache:'no-store'})
   .then(function(r){return r.json();}).then(function(j){
    var entries=j.entries||[],playable=entries.filter(function(x){return x.playable;});
    if(j.status===3){if(win)win.close();unNotice(j.note||'{{js:This archive cannot be previewed.}}',true);return;}
@@ -1200,8 +1202,7 @@ unRestore();
  <b>{{Search}}</b>
 </div>
 <div class="search-form">
- <form action="" method="GET">
-  <input type="hidden" name="ses" value="[Session]">
+ <form action="/" method="POST">
   <input type="hidden" name="w" value="search">
   <table border="0" cellpadding="4" cellspacing="0">
    <tr>
@@ -1233,12 +1234,27 @@ unRestore();
    </tr>
    <tr>
     <td></td>
-    <td><br><input type="submit" value="{{Search}}"></td>
+    <td><br><input type="submit" value="{{Search}}" [FormOff]></td>
    </tr>
   </table>
  </form>
+ [SearchNotice]
 </div>
+[SearchResults]
 <--TMPL_SEARCH_END-->
+
+
+<--TMPL_SEARCH_RESULTS-->
+<form action="/" method="POST">
+ <input type="hidden" name="w" value="search">
+ <p>[SearchSummary] &nbsp; <a href="?w=search">{{Refresh}}</a></p>
+ <table class="data-table">
+  <thead>[ResultHeader]</thead>
+  <tbody>[ResultLines]</tbody>
+ </table>
+ <br><input type="submit" value="{{Download}}" [FormOff]>
+</form>
+<--TMPL_SEARCH_RESULTS_END-->
 
 
 <--TMPL_SEARCH_RESULT_HEADER-->
@@ -1254,11 +1270,11 @@ unRestore();
 
 <--TMPL_SEARCH_RESULT_LINE-->
 <tr>
- <td class="left"><span class="icon icon-file" style="vertical-align:middle"></span>&nbsp;%s</td>
- <td class="right">%s</td>
- <td class="center" style="font-size:7pt">%s</td>
- <td class="center">%s</td>
- <td class="center"><input type="checkbox" name="downloads" value="%s"></td>
+ <td class="left"><span class="icon icon-file" style="vertical-align:middle"></span>&nbsp;[ResultName]</td>
+ <td class="right">[ResultSize]</td>
+ <td class="center" style="font-size:7pt">[ResultHash]</td>
+ <td class="center">[ResultSources]</td>
+ <td class="center"><input type="checkbox" name="downloads" value="[ResultHash]"></td>
 </tr>
 <--TMPL_SEARCH_RESULT_LINE_END-->
 
@@ -1437,8 +1453,7 @@ unRestore();
  <b>{{Preferences}}</b>
 </div>
 <br>
-<form action="" method="GET">
- <input type="hidden" name="ses" value="[Session]">
+<form action="/" method="POST">
  <input type="hidden" name="w" value="options">
  <input type="hidden" name="saveprefs" value="true">
  <table border="0" align="center" cellpadding="4" cellspacing="0" width="60%">
@@ -1472,7 +1487,7 @@ unRestore();
    <td class="pref-row"><input type="text" name="udpport" value="[UDPPort]" size="8"></td>
   </tr>
   <tr>
-   <td align="center" colspan="2"><br><input type="submit" value="{{Apply}}"></td>
+   <td align="center" colspan="2">[PrefsNotice]<br><input type="submit" value="{{Apply}}" [FormOff]></td>
   </tr>
  </table>
 </form>
@@ -1580,11 +1595,11 @@ unRestore();
  </tr>
  <tr>
   <td colspan="2" style="text-align:center; padding:8px;">
-   <a href="?ses=[Session]&amp;w=kad&amp;c=connect" style="padding:4px 12px; background:#0075B3; border:1px solid #002244; border-radius:3px;">{{Connect}}</a>
+   <a href="#" onclick="return post('w=kad&amp;c=connect')" style="padding:4px 12px; background:#0075B3; border:1px solid #002244; border-radius:3px;">{{Connect}}</a>
    &nbsp;
-   <a href="?ses=[Session]&amp;w=kad&amp;c=disconnect" style="padding:4px 12px; background:#0075B3; border:1px solid #002244; border-radius:3px;">{{Disconnect}}</a>
+   <a href="#" onclick="return post('w=kad&amp;c=disconnect')" style="padding:4px 12px; background:#0075B3; border:1px solid #002244; border-radius:3px;">{{Disconnect}}</a>
    &nbsp;
-   <a href="?ses=[Session]&amp;w=kad&amp;c=rcfirewall" style="padding:4px 12px; background:#0075B3; border:1px solid #002244; border-radius:3px;">{{Recheck Firewall}}</a>
+   <a href="#" onclick="return post('w=kad&amp;c=rcfirewall')" style="padding:4px 12px; background:#0075B3; border:1px solid #002244; border-radius:3px;">{{Recheck Firewall}}</a>
   </td>
  </tr>
 </table>

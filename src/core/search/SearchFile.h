@@ -157,6 +157,10 @@ public:
 
     [[nodiscard]] uint32 searchID() const { return m_searchID; }
     void setSearchID(uint32 id) { m_searchID = id; }
+
+    /// A peer's shared file it can show preview frames of (MFC IsPreviewPossible).
+    [[nodiscard]] bool isPreviewPossible() const { return m_previewPossible; }
+    void setPreviewPossible(bool possible) { m_previewPossible = possible; }
     [[nodiscard]] bool isKadResult() const { return m_kadResult; }
     void setKadResult(bool val) { m_kadResult = val; }
 
@@ -222,6 +226,7 @@ private:
     uint32 m_spamRating = 0;
     uint32 m_clientID = 0;
     uint16 m_clientPort = 0;
+    bool m_previewPossible = false;
     KnownType m_knownType = KnownType::NotDetermined;
     bool m_kadResult = false;
     bool m_listExpanded = false;

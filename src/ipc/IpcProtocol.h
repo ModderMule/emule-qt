@@ -128,6 +128,9 @@ enum class IpcMsgType : int {
     /// [searchID: int, hash: string] → comments/tags for one search result.
     /// The searchID is required because a hash is only unique within a search tab.
     GetSearchResultDetails  = 260,
+    /// [searchID: int, hash: string] — ask the peer behind a browsed file for preview
+    /// frames. The frames arrive later as PushSearchPreview.
+    RequestSearchPreview    = 276,
 
     /// [] → re-read the web server template from disk. For "same path, edited
     /// content"; a changed templatePath is a config change and already goes
@@ -614,6 +617,9 @@ enum class IpcMsgType : int {
     PushChatCaptcha       = 502,  ///< [senderHash, senderName, pngBase64] — solve it to chat
     PushChatCaptchaResult = 503,  ///< [senderHash, solved: bool] — the peer's verdict
     PushFriendListChanged = 510,  ///< [] — friend list changed
+    /// [hash, userName, frames: bytes[] (PNG)] — the answer to RequestSearchPreview;
+    /// no frames means the peer had nothing to show or could not be reached.
+    PushSearchPreview     = 521,
     PushClientSharedFiles = 520,  ///< [clientHash, userName, searchID] — browse answer landed in that Search tab
     PushPortMapStatus     = 530,  ///< [{status, statusText, method, methodText, externalAddress}]
     /// [] — the category list changed; re-fetch with GetCategories.

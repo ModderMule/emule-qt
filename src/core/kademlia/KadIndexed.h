@@ -62,6 +62,9 @@ public:
                              uint64 fileSize, const KadUDPKey& senderKey);
     bool sendStoreRequest(const UInt128& keyID);
 
+    /// Drop expired entries. Runs at most every 30 min unless @p force.
+    void clean(bool force = false);
+
     uint32 m_totalIndexSource = 0;
     uint32 m_totalIndexKeyword = 0;
     uint32 m_totalIndexNotes = 0;
@@ -83,7 +86,6 @@ private:
                           KeyEntry* entry, uint8& outLoad, bool fromFile);
     bool addLoadLocked(const UInt128& keyID, time_t time);
 
-    void clean();
     // Non-locking core of clean(): caller must already hold m_mutex. Called from
     // the serve paths (which hold the lock) as well as clean() itself. Splitting
     // it out avoids re-locking the non-recursive m_mutex → deadlock.
@@ -116,6 +118,7 @@ private:
                         Entry* entry, uint8& outLoad, bool fromFile = false);
 
     time_t m_nextClean = 0;
+    time_t m_nextForcedClean = 0;   // a full index forces a clean, but not per packet
     KeyHashMap m_keywords;
     SrcHashMap m_sources;
     SrcHashMap m_notes;

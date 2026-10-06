@@ -20,6 +20,7 @@
 #include "webserver/WebServer.h"
 #include "enodemeta/MetaHash.h"
 
+#include <QtEndian>
 #include <QDir>
 #include <QHostInfo>
 
@@ -69,6 +70,7 @@
 #include "search/SearchFile.h"
 #include "search/SearchList.h"
 #include "search/SearchParams.h"
+#include "search/SearchStarter.h"
 #include "server/Server.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
@@ -97,30 +99,6 @@ using namespace Ipc;
 
 namespace {
 
-/// Snapshot the connectivity that decides which network an Automatic search uses.
-/// Kept separate from resolveAutomaticSearchType() so the rule itself stays free of
-/// theApp and can be unit-tested without a network stack.
-AutoSearchState gatherAutoSearchState()
-{
-    AutoSearchState state;
-
-    const Server* server = nullptr;
-    if (theApp.serverConnect && theApp.serverConnect->isConnected()) {
-        state.serverConnected = true;
-        server = theApp.serverConnect->currentServer();
-    }
-    if (server) {
-        state.serverIsStatic = server->isStaticMember();
-        state.serverUsers = server->users();
-        state.serverFiles = server->files();
-    }
-
-    const auto* kadInst = kad::Kademlia::instance();
-    state.kadConnected = kadInst != nullptr && kadInst->isRunning() && kadInst->isConnected();
-
-    state.serverCount = theApp.serverList ? theApp.serverList->serverCount() : 0;
-    return state;
-}
 
 /// Open a filesystem path with the OS default handler. This runs from the
 /// headless daemon (a QCoreApplication), where QDesktopServices::openUrl has no
@@ -391,6 +369,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::GetDownloadDetails:   handleGetDownloadDetails(msg); break;
     case IpcMsgType::PreviewDownload:      handlePreviewDownload(msg); break;
     case IpcMsgType::RequestClientSharedFiles: handleRequestClientSharedFiles(msg); break;
+    case IpcMsgType::RequestSearchPreview: handleRequestSearchPreview(msg); break;
     case IpcMsgType::GetClientDetails:   handleGetClientDetails(msg); break;
     case IpcMsgType::GetSharedFileDetails: handleGetSharedFileDetails(msg); break;
     case IpcMsgType::GetSearchResultDetails: handleGetSearchResultDetails(msg); break;
@@ -1120,170 +1099,23 @@ void IpcClientHandler::handleStartSearch(const IpcMessage& msg)
     params.album           = msg.fieldString(12);
     params.artist          = msg.fieldString(13);
 
-    // "Automatic" is a chooser, not a network: resolve it to exactly one before
-    // anything is created or sent, so every path below sees a concrete type.
-    // MFC: CSearchResultsWnd::StartNewSearch — srchybrid/SearchResultsWnd.cpp:1134-1165.
-    if (params.type == SearchType::Automatic) {
-        const auto resolved = resolveAutomaticSearchType(gatherAutoSearchState());
-        if (!resolved) {
-            sendMessage(IpcMessage::makeResult(msg.seqId(), false,
-                QCborValue(tr("You are not connected to a server or the Kad network!"))));
-            return;
-        }
-        params.type = *resolved;
-        logInfo(tr("Automatic search method resolved to %1")
-                    .arg(params.type == SearchType::Kademlia ? tr("Kad") : tr("eD2K server")));
-    }
-
-    // An indexer search does not run here: StartIndexerSearch=704 carries a
-    // different payload and is answered by eMule::Indexer. Without this it would
-    // fall through to the ED2K branch below and quietly run a server search
-    // instead — a wrong answer, which is worse than a refusal.
-    if (params.type == SearchType::UsenetIndexer) {
-        sendMessage(IpcMessage::makeResult(
-            msg.seqId(), false,
-            QCborValue(tr("Indexer searches use StartIndexerSearch, not StartSearch."))));
+    // Shared with REST and the web interface: search/SearchStarter.
+    const SearchStartResult outcome = startSearch(*theApp.searchList, params);
+    if (!outcome.ok) {
+        sendMessage(IpcMessage::makeResult(msg.seqId(), false, QCborValue(outcome.error)));
         return;
     }
 
-    bool started = false;
-    uint32 searchID = 0;
-    kad::KeywordSelection kadKeywordSel;
-
-    if (params.type == SearchType::Kademlia) {
-        auto* kadInst = kad::Kademlia::instance();
-        if (!kadInst || !kadInst->isConnected()) {
-            sendMessage(IpcMessage::makeResult(msg.seqId(), false,
-                QCborValue(tr("Kad is not connected.\n\nWait until Kad is connected "
-                              "before starting a Kad search."))));
-            return;
-        }
-
-        const auto replyAlreadySearching = [this, &msg](const QString& keyword) {
-            sendMessage(IpcMessage::makeResult(msg.seqId(), false,
-                QCborValue(tr("There is already a Kad search ongoing for the keyword \"%1\".\n\n"
-                              "To search again for that keyword, either wait until this keyword "
-                              "search is finished or close the according search results pane.")
-                               .arg(keyword))));
-        };
-
-        // A Kad search is indexed under a single keyword. When the expression's
-        // first keyword is already the target of a running search, fall back to
-        // the next word long enough to be a keyword instead of refusing.
-        kadKeywordSel = kad::SearchManager::selectKeyword(params.expression);
-        if (kadKeywordSel.status == kad::KeywordStatus::TooShort) {
-            sendMessage(IpcMessage::makeResult(msg.seqId(), false,
-                QCborValue(tr("Keyword too short.\n\nThe keyword(s) used in a Kad search "
-                              "expression must have a minimum length of 3 characters."))));
-            return;
-        }
-        if (kadKeywordSel.status == kad::KeywordStatus::AllActive) {
-            replyAlreadySearching(kadKeywordSel.primaryKeyword);
-            return;
-        }
-        if (kadKeywordSel.isFallback) {
-            logInfo(tr("Kad: \"%1\" is already being searched — using \"%2\" as the search "
-                       "target for \"%3\"")
-                        .arg(kadKeywordSel.primaryKeyword, kadKeywordSel.keyword,
-                             params.expression));
-        }
-
-        // Build the AND/OR/NOT expression tree + filters that travel with the
-        // KADEMLIA2_SEARCH_KEY_REQ. Without it a multi-word search degenerates
-        // to a bare single-keyword query and remote nodes return everything
-        // indexed under the first keyword.
-        const QByteArray searchTerms = buildSearchTermsPayload(params, kadKeywordSel.keyword);
-
-        // Create Kad search first to get its auto-assigned ID
-        auto* kadSearch = kad::SearchManager::prepareFindKeywords(
-            params.expression,
-            static_cast<uint32>(searchTerms.size()),
-            searchTerms.isEmpty()
-                ? nullptr
-                : reinterpret_cast<const uint8*>(searchTerms.constData()),
-            kadKeywordSel.keyword);
-        if (kadSearch) {
-            searchID = kadSearch->getSearchID();
-            theApp.searchList->newSearch(params.fileType, params, searchID);
-            started = kad::SearchManager::startSearch(kadSearch);
-            if (!started) {
-                // Target was taken between selection and start — drop the
-                // half-built search instead of leaving an orphaned session.
-                delete kadSearch;
-                theApp.searchList->removeResults(searchID);
-                searchID = 0;
-            }
-        }
-        if (!started) {
-            replyAlreadySearching(kadKeywordSel.keyword);
-            return;
-        }
-    } else {
-        // Ed2k searches use SearchList's own counter
-        searchID = theApp.searchList->newSearch(params.fileType, params);
-    }
-    const bool isEd2kSearch = params.type == SearchType::Ed2kServer
-                              || params.type == SearchType::Ed2kGlobal;
-
-    // One ED2K search at a time — a new one supersedes whatever sweep is still
-    // running. Scoped to ED2K on purpose: MFC cancels from DoNewEd2kSearch
-    // (srchybrid/SearchResultsWnd.cpp:1225) and *not* from DoNewKadSearch, so
-    // opening a Kad tab must leave a running sweep alone.
-    if (isEd2kSearch && theApp.globalSearch)
-        theApp.globalSearch->cancel();
-
-    // Both ED2K methods start by asking the connected server over TCP; "global" then
-    // walks the rest of the list over UDP once that answer is in.
-    bool localRequestSent = false;
-    QByteArray payload;
-    if (isEd2kSearch) {
-        auto parsed = parseSearchExpression(params.expression);
-        payload = parsed.expr.toBytes();
-
-        if (payload.isEmpty()) {
-            logServerVerbose(QStringLiteral("Search \"%1\" produced an empty request payload")
-                                 .arg(params.expression));
-        } else if (theApp.serverConnect && theApp.serverConnect->isConnected()) {
-            auto pkt = std::make_unique<Packet>(OP_SEARCHREQUEST,
-                                                static_cast<uint32>(payload.size()));
-            pkt->prot = OP_EDONKEYPROT;
-            std::memcpy(pkt->pBuffer, payload.constData(), static_cast<size_t>(payload.size()));
-            const Server* cur = theApp.serverConnect->currentServer();
-            logServerVerbose(QStringLiteral(">>> TCP server search: expr=\"%1\" -> %2 (%3 byte payload)")
-                                 .arg(params.expression)
-                                 .arg(cur ? cur->name() : QStringLiteral("connected server"))
-                                 .arg(payload.size()));
-            theApp.serverConnect->sendPacket(std::move(pkt));
-            localRequestSent = true;
-            started = true;
-        } else {
-            logServerVerbose(QStringLiteral("TCP server search skipped for \"%1\" — not connected to a server")
-                                 .arg(params.expression));
-        }
-    }
-
-    if (params.type == SearchType::Ed2kGlobal && !payload.isEmpty() && theApp.globalSearch) {
-        // Hand the server list to the scheduler rather than blasting it here: it
-        // queries one server per 750 ms, and only after the local server has answered
-        // (or timed out). Without a local request there is nothing to wait for, so
-        // the sweep starts right away — that is how a Kad-only session still gets a
-        // global search, which MFC does not allow at all.
-        // The keyword expression carries no 64-bit size tag → is64=false.
-        theApp.globalSearch->start(searchID, payload, /*is64BitSearch*/ false,
-                                   /*awaitLocalAnswer*/ localRequestSent);
-        started = true;
-    }
-
     QCborMap result;
-    result.insert(QStringLiteral("searchID"), static_cast<qint64>(searchID));
-    result.insert(QStringLiteral("started"), started);
+    result.insert(QStringLiteral("searchID"), static_cast<qint64>(outcome.searchID));
+    result.insert(QStringLiteral("started"), outcome.started);
     // The network actually used — Automatic has been resolved by now, and the GUI
     // needs it for the tab icon.
-    result.insert(QStringLiteral("type"), static_cast<int>(params.type));
-    if (kadKeywordSel.isFallback) {
+    result.insert(QStringLiteral("type"), static_cast<int>(outcome.type));
+    if (!outcome.keyword.isEmpty()) {
         // Tells the GUI which keyword was used instead of the expression's first
-        result.insert(QStringLiteral("keyword"), kadKeywordSel.keyword);
-        result.insert(QStringLiteral("primaryKeyword"), kadKeywordSel.primaryKeyword);
+        result.insert(QStringLiteral("keyword"), outcome.keyword);
+        result.insert(QStringLiteral("primaryKeyword"), outcome.primaryKeyword);
     }
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(result)));
 }
@@ -1308,10 +1140,7 @@ void IpcClientHandler::handleGetSearchResults(const IpcMessage& msg)
 
 void IpcClientHandler::handleStopSearch(const IpcMessage& msg)
 {
-    const auto searchID = static_cast<uint32>(msg.fieldInt(0));
-    kad::SearchManager::stopSearch(searchID, false);
-    if (theApp.globalSearch)
-        theApp.globalSearch->cancelSearch(searchID);
+    stopSearch(static_cast<uint32>(msg.fieldInt(0)));
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
@@ -1321,11 +1150,7 @@ void IpcClientHandler::handleRemoveSearch(const IpcMessage& msg)
         sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("SearchList unavailable")));
         return;
     }
-    const auto searchID = static_cast<uint32>(msg.fieldInt(0));
-    kad::SearchManager::stopSearch(searchID, false);
-    if (theApp.globalSearch)
-        theApp.globalSearch->cancelSearch(searchID);
-    theApp.searchList->removeResults(searchID);
+    removeSearch(*theApp.searchList, static_cast<uint32>(msg.fieldInt(0)));
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
@@ -1335,10 +1160,7 @@ void IpcClientHandler::handleClearAllSearches(const IpcMessage& msg)
         sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("SearchList unavailable")));
         return;
     }
-    kad::SearchManager::stopAllSearches();
-    if (theApp.globalSearch)
-        theApp.globalSearch->cancel();
-    theApp.searchList->clear();
+    clearAllSearches(*theApp.searchList);
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
@@ -3482,6 +3304,61 @@ void IpcClientHandler::handleRequestClientSharedFiles(const IpcMessage& msg)
     }
     // Refusals and failures are logged to the status channel by the client itself.
     client->requestSharedFileList();
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// handleRequestSearchPreview — preview frames of a browsed peer's file
+// (MFC SearchListCtrl.cpp:825-840)
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleRequestSearchPreview(const IpcMessage& msg)
+{
+    const auto searchID = static_cast<uint32>(msg.fieldInt(0));
+    const QString hash = msg.fieldString(1);
+    if (!theApp.searchList || !theApp.clientList) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Search list unavailable")));
+        return;
+    }
+
+    uint8 hashBuf[16]{};
+    if (!hexToHash(hash, hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+    SearchFile* file = theApp.searchList->searchFileByHash(hashBuf, searchID);
+    if (!file || !file->isPreviewPossible()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("No preview for this file")));
+        return;
+    }
+
+    // The peer whose list this tab shows, if it is still known.
+    UpDownClient* client = nullptr;
+    theApp.clientList->forEachClient([&](UpDownClient* c) {
+        if (!client && c->searchID() == searchID)
+            client = c;
+    });
+    if (!client && !file->clients().empty()) {
+        // Gone since: a new client from the address the result recorded.
+        const SearchFile::SClient& src = file->clients().front();
+        const uint32 ipHost = qFromBigEndian(src.ip);
+        client = theApp.clientList->findByConnIP(src.ip, src.port);
+        if (!client) {
+            client = new UpDownClient(src.port, ipHost, 0, 0, nullptr);
+            client->setConnectAddress(Address::fromHostOrder(ipHost));
+            theApp.clientList->addClient(client);
+        }
+    }
+    if (!client) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Client not found")));
+        return;
+    }
+
+    if (!client->sendPreviewRequest(*file)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 409, QStringLiteral("Preview request not sent")));
+        return;
+    }
+    logStatusInfo(QStringLiteral("Preview requested from %1 - please wait").arg(client->userName()));
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 

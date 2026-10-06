@@ -133,6 +133,7 @@ bool KnownFile::loadDateFromFile(FileDataIO& file)
 bool KnownFile::loadTagsFromFile(FileDataIO& file)
 {
     const uint32 tagCount = readTagCount(file, kMaxFileTags);
+    bool sawFlags = false;
 
     for (uint32 i = 0; i < tagCount; ++i) {
         Tag tag(file, true);
@@ -204,9 +205,10 @@ bool KnownFile::loadTagsFromFile(FileDataIO& file)
                 m_lastPublishTimeKadNotes = static_cast<time_t>(tag.intValue());
             break;
         case FT_FLAGS:
-            // bit 0 = not auto-upload-priority (inverted)
+            // Bits 3-0: metadata version. MFC KnownFile.cpp:696-707. Auto priority
+            // comes from FT_ULPRIORITY alone.
             if (tag.isInt())
-                m_autoUpPriority = (tag.intValue() & 0x01) == 0;
+                sawFlags = true;
             break;
         case FT_AICH_HASH:
             if (tag.isStr()) {
@@ -244,6 +246,14 @@ bool KnownFile::loadTagsFromFile(FileDataIO& file)
             break;
         }
     }
+
+    // No version: the media tags are not ours to trust (MFC KnownFile.cpp:757-764).
+    // Earlier builds of this client stored a priority bit in the tag (values 0 and 1),
+    // with tags it had extracted itself, so those are kept and stamped.
+    if (!sawFlags)
+        removeMetaDataTags();
+    else
+        m_metaDataVer = hasMetaDataTags() ? kMetaDataVer : 0;
 
     return true;
 }
@@ -285,7 +295,8 @@ bool KnownFile::writeToFile(FileDataIO& file) const
 
     // Priority
     tagCount += 1; // FT_ULPRIORITY
-    tagCount += 1; // FT_FLAGS
+    if (m_metaDataVer > 0)
+        tagCount += 1; // FT_FLAGS
 
     // Kad publish times
     if (m_lastPublishTimeKadSrc > 0)
@@ -363,9 +374,9 @@ bool KnownFile::writeToFile(FileDataIO& file) const
         static_cast<uint32>(m_autoUpPriority ? kPrAuto : m_upPriority))
         .writeNewEd2kTag(file);
 
-    // Flags (bit 0 = NOT auto-priority)
-    Tag(FT_FLAGS, static_cast<uint32>(m_autoUpPriority ? 0u : 1u))
-        .writeNewEd2kTag(file);
+    // Flags: the metadata version, only when there is one (MFC KnownFile.cpp:897-909)
+    if (m_metaDataVer > 0)
+        Tag(FT_FLAGS, static_cast<uint32>(m_metaDataVer & 0x0F)).writeNewEd2kTag(file);
 
     // Kad timestamps
     if (m_lastPublishTimeKadSrc > 0)
@@ -607,6 +618,35 @@ void KnownFile::updateAutoUpPriority()
 
 static constexpr int kMaxED2KMetaTagLen = 128;
 
+namespace {
+
+// biCompression -> published codec id. MFC KnownFile.cpp:1288-1325.
+QString ed2kVideoCodec(uint32 compression)
+{
+    switch (compression) {
+    case 0: return QStringLiteral("rgb");
+    case 1: return QStringLiteral("rle8");
+    case 2: return QStringLiteral("rle4");
+    case 3: return QStringLiteral("bitfields");
+    case 4: return QStringLiteral("jpeg");
+    case 5: return QStringLiteral("png");
+    default: break;
+    }
+    QString codec;
+    for (int i = 0; i < 4; ++i) {
+        const auto ch = static_cast<char>((compression >> (8 * i)) & 0xFF);
+        const bool sym = (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z')
+                      || (ch >= 'A' && ch <= 'Z') || ch == '_' || ch == '.' || ch == ' ';
+        if (!sym)
+            return {};
+        codec += QLatin1Char(ch);
+    }
+    codec = codec.trimmed();
+    return codec.size() < 2 ? QString() : codec.toLower();
+}
+
+} // namespace
+
 void KnownFile::updateMetaDataTags()
 {
     if (thePrefs.extractMetaData() == 0) {
@@ -637,12 +677,18 @@ void KnownFile::updateMetaDataTags()
     if (bitrate > 0)
         addTagUnique(Tag(FT_MEDIA_BITRATE, bitrate));
 
-    // FT_MEDIA_CODEC — short codec identifier
+    // FT_MEDIA_CODEC — the lowercase id peers and servers search by
+    // (MFC GetED2KVideoCodec / GetED2KAudioCodec), not the display name.
     QString codec;
     if (info.videoStreamCount > 0 && info.video.codecTag != 0)
-        codec = videoFormatName(info.video.codecTag);
+        codec = ed2kVideoCodec(info.video.codecTag);
+    else if (info.videoStreamCount > 0 && !info.video.codecName.isEmpty())
+        codec = info.video.codecName;
     else if (info.audioStreamCount > 0 && info.audio.formatTag != 0)
         codec = audioFormatCodecId(info.audio.formatTag);
+    else if (info.audioStreamCount > 0)
+        codec = info.audio.codecName;
+    codec = codec.trimmed().toLower();
     if (!codec.isEmpty())
         addTagUnique(Tag(FT_MEDIA_CODEC, codec.left(kMaxED2KMetaTagLen)));
 
@@ -658,8 +704,18 @@ void KnownFile::updateMetaDataTags()
     if (!info.title.isEmpty())
         addTagUnique(Tag(FT_MEDIA_TITLE, info.title.left(kMaxED2KMetaTagLen)));
 
-    m_metaDataVer = 1;
+    // Only a file that got a tag carries a version (MFC KnownFile.cpp:1480-1540):
+    // the version is what makes the publishers look for media tags at all.
+    if (hasMetaDataTags())
+        m_metaDataVer = kMetaDataVer;
     emit m_notifier.metadataUpdated();
+}
+
+bool KnownFile::hasMetaDataTags() const
+{
+    static constexpr uint8 kMediaTags[] = {FT_MEDIA_LENGTH, FT_MEDIA_BITRATE, FT_MEDIA_CODEC,
+                                           FT_MEDIA_ARTIST, FT_MEDIA_ALBUM, FT_MEDIA_TITLE};
+    return std::ranges::any_of(kMediaTags, [this](uint8 id) { return getTag(id) != nullptr; });
 }
 
 void KnownFile::removeMetaDataTags()

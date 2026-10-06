@@ -68,9 +68,14 @@ public:
 
     // --- Session management ---
 
-    /// Start a new search. Returns the assigned search ID.
+    /// Start a new search. Returns the assigned search ID. @p takeEd2kRouting false
+    /// makes an ED2K search that sends nothing leave the server answers with the
+    /// search still collecting them.
     uint32 newSearch(const QString& resultFileType, const SearchParams& params,
-                     uint32 forcedID = 0);
+                     uint32 forcedID = 0, bool takeEd2kRouting = true);
+
+    /// True while @p searchID has a result list.
+    [[nodiscard]] bool hasSearch(uint32 searchID) const { return findEntry(searchID) != nullptr; }
 
     /// Clear all searches.
     void clear();

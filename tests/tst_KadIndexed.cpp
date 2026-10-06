@@ -2,6 +2,7 @@
 /// @brief Tests for KadIndexed.h — keyword/source/notes index.
 
 #include "TestHelpers.h"
+#include "utils/Opcodes.h"
 
 #include "TestFixtures.h"
 #include "kademlia/Kademlia.h"
@@ -75,6 +76,8 @@ private slots:
     void addSources_distinctHostsGetDistinctSlots();
     void addSources_rejectsIncompleteEntries();
     void addNotes_dedupePerIpOrSourceId();
+    void clean_dropsExpiredNotes();
+    void addNotes_fullIndexStillTakesReplacements();
     void addNotes_acceptEntryWithoutPorts();
     void persistent_roundTripsKeywordsSourcesAndLoad();
     void persistent_ignoresAnExpiredKeyFile();
@@ -474,6 +477,68 @@ void tst_KadIndexed::addNotes_dedupePerIpOrSourceId()
     // slot, since notes match on IP *or* sourceID.
     QVERIFY(indexed.addNotes(keyID, UInt128(uint32{999}), makeNote(0x0A000003, 999), load));
     QCOMPARE(indexed.m_totalIndexNotes, uint32{2});
+}
+
+// Notes carry a 24 h lifetime that nothing enforced.
+void tst_KadIndexed::clean_dropsExpiredNotes()
+{
+    Indexed indexed;
+    UInt128 keyID(uint32{710});
+    uint8 load = 0;
+
+    auto makeNote = [](uint32 ip) {
+        auto* e = new Entry();
+        e->m_address = Address::fromHostOrder(ip);
+        e->m_sourceID = UInt128(ip);
+        e->addTag(Tag(QByteArrayLiteral("comment"), QStringLiteral("old")));
+        return e;
+    };
+    Entry* stale = makeNote(0x0A000011);
+    QVERIFY(indexed.addNotes(keyID, UInt128(uint32{1}), stale, load));
+    QVERIFY(indexed.addNotes(keyID, UInt128(uint32{2}), makeNote(0x0A000012), load));
+    QCOMPARE(indexed.m_totalIndexNotes, uint32{2});
+
+    indexed.clean(true);
+    QCOMPARE(indexed.m_totalIndexNotes, uint32{2});
+
+    stale->m_lifetime = 1;
+    indexed.clean();                       // inside the 30 min gate: nothing
+    QCOMPARE(indexed.m_totalIndexNotes, uint32{2});
+    indexed.clean(true);
+    QCOMPARE(indexed.m_totalIndexNotes, uint32{1});
+}
+
+// At the total cap every note was refused, a publisher's own replacement included, and
+// nothing ever brought the count down again.
+void tst_KadIndexed::addNotes_fullIndexStillTakesReplacements()
+{
+    Indexed indexed;
+    UInt128 keyID(uint32{711});
+    uint8 load = 0;
+
+    auto makeNote = [](uint32 ip) {
+        auto* e = new Entry();
+        e->m_address = Address::fromHostOrder(ip);
+        e->m_sourceID = UInt128(ip);
+        e->addTag(Tag(QByteArrayLiteral("comment"), QStringLiteral("note")));
+        return e;
+    };
+    QVERIFY(indexed.addNotes(keyID, UInt128(uint32{1}), makeNote(0x0A000021), load));
+    const uint32 real = indexed.m_totalIndexNotes;
+    indexed.m_totalIndexNotes = KADEMLIAMAXENTRIES;
+
+    // Same publisher: replaces its entry.
+    QVERIFY(indexed.addNotes(keyID, UInt128(uint32{1}), makeNote(0x0A000021), load));
+    // Somebody new, on this file or another: refused.
+    Entry* refused = makeNote(0x0A000022);
+    QVERIFY(!indexed.addNotes(keyID, UInt128(uint32{2}), refused, load));
+    QCOMPARE(load, uint8{100});
+    delete refused;
+    refused = makeNote(0x0A000023);
+    QVERIFY(!indexed.addNotes(UInt128(uint32{712}), UInt128(uint32{3}), refused, load));
+    delete refused;
+
+    indexed.m_totalIndexNotes = real;
 }
 
 void tst_KadIndexed::addNotes_acceptEntryWithoutPorts()

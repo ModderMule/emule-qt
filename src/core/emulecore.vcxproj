@@ -254,6 +254,7 @@
     <ClCompile Include="crypto\MD4Hash.cpp" />
     <ClCompile Include="crypto\AesCbc.cpp" />
     <ClCompile Include="crypto\MD5Hash.cpp" />
+    <ClCompile Include="media\MediaContainers.cpp" />
     <ClCompile Include="media\MediaInfo.cpp" />
     <ClCompile Include="utils\OtherFunctions.cpp" />
     <ClCompile Include="net\Packet.cpp" />
@@ -280,6 +281,7 @@
     <ClCompile Include="search\SearchFile.cpp" />
     <ClCompile Include="search\SearchList.cpp" />
     <ClCompile Include="search\SearchParams.cpp" />
+    <ClCompile Include="search\SearchStarter.cpp" />
     <ClCompile Include="enodemeta\GrpcWeb.cpp" />
     <ClCompile Include="enodemeta\MetaAccountStore.cpp" />
     <ClCompile Include="enodemeta\MetaApiClient.cpp" />
@@ -468,6 +470,7 @@
     <ClInclude Include="search\SearchFile.h" />
     <QtMoc Include="search\SearchList.h" />
     <ClInclude Include="search\SearchParams.h" />
+    <ClInclude Include="search\SearchStarter.h" />
     <ClInclude Include="enodemeta\GrpcWeb.h" />
     <ClInclude Include="enodemeta\MetaAccountStore.h" />
     <QtMoc Include="enodemeta\MetaApiClient.h" />

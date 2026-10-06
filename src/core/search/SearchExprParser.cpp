@@ -6,6 +6,7 @@
 /// replacing the original Bison/Yacc + Flex implementation.
 
 #include "search/SearchExprParser.h"
+#include "utils/OtherFunctions.h"
 #include "protocol/ED2KLink.h"
 #include "protocol/Tag.h"
 #include "net/Packet.h"
@@ -861,9 +862,12 @@ void addAndAttr(SearchExpr& expr, const SearchAttr& attr)
 
 } // anonymous namespace
 
-QByteArray buildSearchTermsPayload(const SearchParams& params, const QString& kadKeyword)
+QByteArray buildSearchTermsPayload(const SearchParams& params, const QString& kadKeyword,
+                                   bool supports64Bit, bool* uses64Bit)
 {
     const bool forKad = !kadKeyword.isEmpty();
+    if (uses64Bit)
+        *uses64Bit = false;
 
     // Quoted strings are kept for Kad: they are matched against the result name
     // by the receiving node and by our own result filter.
@@ -927,8 +931,9 @@ QByteArray buildSearchTermsPayload(const SearchParams& params, const QString& ka
         addAndAttr(filters, SearchAttr(FT_FILESIZE, ED2K_SEARCH_OP_LESS_EQUAL, params.maxSize));
     if (params.minSize > 0)
         addAndAttr(filters, SearchAttr(FT_FILESIZE, ED2K_SEARCH_OP_GREATER_EQUAL, params.minSize));
+    // Archives and CD images are published and searched as "Pro" (MFC :968-975).
     if (!params.fileType.isEmpty())
-        addAndAttr(filters, SearchAttr(FT_FILETYPE, params.fileType.toUtf8()));
+        addAndAttr(filters, SearchAttr(FT_FILETYPE, ed2kFileTypeSearchTerm(params.fileType).toUtf8()));
     if (params.completeSources > 0)
         addAndAttr(filters, SearchAttr(FT_COMPLETE_SOURCES, ED2K_SEARCH_OP_GREATER_EQUAL, params.completeSources));
     if (params.minBitrate > 0)
@@ -955,6 +960,17 @@ QByteArray buildSearchTermsPayload(const SearchParams& params, const QString& ka
 
     if (expr.m_expr.empty())
         return {};
+    // A value above 4 GiB - 1 is written as a 64-bit term, which only some targets
+    // read; for the others it is clamped (MFC SearchResultsWnd.cpp:902-943). Covers
+    // the filters and any inline @size term alike.
+    for (SearchAttr& a : expr.m_expr) {
+        if (a.m_num <= UINT32_MAX)
+            continue;
+        if (!supports64Bit)
+            a.m_num = UINT32_MAX;
+        else if (uses64Bit)
+            *uses64Bit = true;
+    }
     return expr.toBytes();
 }
 

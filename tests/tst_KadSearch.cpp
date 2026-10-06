@@ -43,6 +43,8 @@ private slots:
 
     // Walk and result acceptance
     void walk_goesOnUntilTheKClosestAreAsked();
+    void nodeSearch_isOneRequestAndStopsOnTheFirstAnswer();
+    void nodeCompleteSearch_stillWalks();
     void results_onlyFromNodesTheSearchAsked();
     void results_ignoredByStoreSearches();
 
@@ -275,6 +277,45 @@ void tst_KadSearch::walk_goesOnUntilTheKClosestAreAsked()
     search->go(1);
     QVERIFY(search->stopping());
     QCOMPARE(search->m_tried.size(), std::size_t{14});
+
+    SearchManager::stopAllSearches();
+}
+
+// A bucket refresh is one request and ends on the first answer; it used to walk like
+// any other lookup.
+void tst_KadSearch::nodeSearch_isOneRequestAndStopsOnTheFirstAnswer()
+{
+    eMule::testing::KadFixture kadFixture;
+
+    Search* search = startWalk(SearchType::Node, 16);
+    QVERIFY(search != nullptr);
+    QCOMPARE(search->m_tried.size(), std::size_t{1});
+    QCOMPARE(search->m_possible.size(), std::size_t{15});
+
+    respond(1);
+    QCOMPARE(search->getAnswers(), uint32{1});
+    QVERIFY(search->m_possible.empty());
+    QCOMPARE(search->m_tried.size(), std::size_t{1});
+    QVERIFY(!search->stopping());
+
+    search->m_lastResponse -= 60;   // past the jump-start cooldown
+    search->jumpStart();
+    QVERIFY(search->stopping());
+    QCOMPARE(search->m_tried.size(), std::size_t{1});
+
+    SearchManager::stopAllSearches();
+}
+
+void tst_KadSearch::nodeCompleteSearch_stillWalks()
+{
+    eMule::testing::KadFixture kadFixture;
+
+    Search* search = startWalk(SearchType::NodeComplete, 16);
+    QVERIFY(search != nullptr);
+    QCOMPARE(search->m_tried.size(), std::size_t{3});
+
+    respond(1);
+    QVERIFY(!search->m_possible.empty());
 
     SearchManager::stopAllSearches();
 }

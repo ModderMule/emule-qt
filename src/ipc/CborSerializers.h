@@ -296,6 +296,8 @@ inline constexpr qsizetype kMaxBarRanges = 1024;
     m.insert(QStringLiteral("isSpam"),              f.isConsideredSpam());
     m.insert(QStringLiteral("hasComment"),          f.hasComment());
     m.insert(QStringLiteral("userRating"),          static_cast<int>(f.userRating(true)));
+    // a browsed peer's file it can send preview frames of (RequestSearchPreview)
+    m.insert(QStringLiteral("previewPossible"),     f.isPreviewPossible());
     // Media metadata from ED2K tags
     m.insert(QStringLiteral("artist"),  f.getStrTagValue(FT_MEDIA_ARTIST));
     m.insert(QStringLiteral("album"),   f.getStrTagValue(FT_MEDIA_ALBUM));

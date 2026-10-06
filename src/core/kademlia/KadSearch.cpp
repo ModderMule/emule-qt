@@ -173,8 +173,9 @@ void Search::preparePacketForTags(SafeMemFile& packet, KnownFile* file, uint8 ta
                    && file->fileIdentifier().hasAICHHash();
 
     // TAG_FILETYPE (0x03)
-    if (!file->fileType().isEmpty())
-        tags.emplace_back(FT_FILETYPE, file->fileType());
+    // The published term: archives and CD images go as "Pro" (MFC Search.cpp:1354).
+    if (const QString term = ed2kFileTypeSearchTerm(getED2KFileTypeID(file->fileName())); !term.isEmpty())
+        tags.emplace_back(FT_FILETYPE, term);
 
     // TAG_FILERATING (0xF7)
     if (file->getFileRating() > 0)
@@ -417,6 +418,10 @@ void Search::go(uint32 maxToSend)
         }
     }
 
+    // A bucket refresh asks one node (MFC Search.cpp:186).
+    if (m_type == SearchType::Node)
+        maxToSend = 1;
+
     // Send FindValue to the closest untried contacts
     uint32 sent = 0;
     auto it = m_possible.begin();
@@ -508,6 +513,15 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
     // owned by m_deleteList above, so returning frees them. MFC Search.cpp:346-373.
     if (m_type == SearchType::NodeFwCheckUDP) {
         ++m_answers;
+        return;
+    }
+
+    // A bucket refresh only wants the answer's contacts in the routing table, which
+    // the listener has done. Emptying the candidates lets the next jump-start stop
+    // the search. MFC Search.cpp:346-363.
+    if (m_type == SearchType::Node) {
+        ++m_answers;
+        m_possible.clear();
         return;
     }
 

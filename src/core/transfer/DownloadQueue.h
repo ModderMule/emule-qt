@@ -170,6 +170,9 @@ public:
     /// answering server (`from`). Port of the OP_GLOBFOUNDSOURCES case in
     /// CUDPSocket::ProcessPacket.
     void addUDPGlobalSources(const uint8* data, uint32 size, const Endpoint& from);
+    /// Record that @p server was sent a global source request at @p tick; only such a
+    /// server's OP_GLOBFOUNDSOURCES is taken for the next two minutes.
+    void noteUdpSourceRequest(const Address& server, uint64 tick);
 
     // -- Queue operations -----------------------------------------------------
 
@@ -366,6 +369,12 @@ private:
     uint64    m_lastUdpSearchTime = 0;        // m_lastudpsearchtime — 0 ⇒ start a new pass now
     uint32    m_searchedServers = 0;          // m_iSearchedServers — servers covered this pass
     uint32    m_requestsSentToServer = 0;     // m_cRequestsSentToServer — per-server batch counter
+
+    // Servers asked for sources over UDP and when; expires by time, so an answer that
+    // arrives after the pass moved on still counts.
+    struct UdpSourceRequest { Address server; uint64 tick = 0; };
+    std::vector<UdpSourceRequest> m_udpSourceRequests;
+    [[nodiscard]] bool wasAskedForUdpSources(const Address& server) const;
 };
 
 } // namespace eMule

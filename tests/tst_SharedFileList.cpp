@@ -57,6 +57,8 @@ private slots:
     void offer_capIsTheServersSoftFilesLimit();
     void offer_skipsLargeFilesForServersThatCannotIndexThem();
     void offer_marksPublishedSoTheNextPassIsEmpty();
+    void offer_usesThePublishedFileType();
+    void offer_carriesTheMediaTagsServersCanSearch();
 
     // Fake-file verdicts (warmContainerChecks)
     void theSweepSettlesVerdictsOffThePollPath();
@@ -741,6 +743,79 @@ void tst_SharedFileList::offer_skipsLargeFilesForServersThatCannotIndexThem()
     big.setTCPFlags(SrvTcpFlag::LargeFiles);
     QVERIFY(big.supportsLargeFilesTCP());
     QCOMPARE(static_cast<int>(shared.takeFilesToOffer(&big).size()), 2);
+}
+
+// Archives and CD images are published as "Pro", and a server that takes integer types
+// gets one. MFC SharedFileList.cpp:967-985.
+void tst_SharedFileList::offer_usesThePublishedFileType()
+{
+    KnownFileList knownFiles;
+    KnownFile* archive = makeFile(knownFiles, 0xD1, QStringLiteral("pack.zip"));
+    KnownFile* video = makeFile(knownFiles, 0xD2, QStringLiteral("clip.avi"));
+    KnownFile* coll = makeFile(knownFiles, 0xD3, QStringLiteral("set.emulecollection"));
+
+    auto typeTag = [](const std::vector<Tag>& tags) -> const Tag* {
+        for (const Tag& t : tags)
+            if (t.nameId() == FT_FILETYPE)
+                return &t;
+        return nullptr;
+    };
+
+    Server plain(0x01020304u, 4661);
+    QCOMPARE(typeTag(SharedFileList::offeredTags(*archive, &plain))->strValue(), QStringLiteral("Pro"));
+    QCOMPARE(typeTag(SharedFileList::offeredTags(*video, &plain))->strValue(), QStringLiteral("Video"));
+
+    Server typed(0x01020305u, 4661);
+    typed.setTCPFlags(SrvTcpFlag::TypeTagInteger);
+    const auto archiveTags = SharedFileList::offeredTags(*archive, &typed);
+    QVERIFY(typeTag(archiveTags)->isInt());
+    QCOMPARE(typeTag(archiveTags)->intValue(), uint32{4});   // Program
+    QCOMPARE(typeTag(SharedFileList::offeredTags(*video, &typed))->intValue(), uint32{2});
+    // No integer exists for a collection: it stays a string.
+    QCOMPARE(typeTag(SharedFileList::offeredTags(*coll, &typed))->strValue(),
+             QStringLiteral("EmuleCollection"));
+}
+
+// Length, bitrate and codec go to the server; without them no server can match the media
+// constraints of a search. MFC SharedFileList.cpp:997-1056.
+void tst_SharedFileList::offer_carriesTheMediaTagsServersCanSearch()
+{
+    KnownFileList knownFiles;
+    KnownFile* file = makeFile(knownFiles, 0xC4, QStringLiteral("song.mp3"));
+    file->addTagUnique(Tag(FT_MEDIA_LENGTH, uint32{3725}));
+    file->addTagUnique(Tag(FT_MEDIA_BITRATE, uint32{192}));
+    file->addTagUnique(Tag(FT_MEDIA_CODEC, QStringLiteral("mp3")));
+    file->addTagUnique(Tag(FT_MEDIA_ARTIST, QStringLiteral("Somebody")));
+
+    const auto find = [](const std::vector<Tag>& tags, uint8 id, const char* name) -> const Tag* {
+        for (const Tag& t : tags) {
+            if ((id != 0 && t.nameId() == id) || (name && t.name() == name))
+                return &t;
+        }
+        return nullptr;
+    };
+
+    Server modern(0x01020304u, 4661);
+    modern.setTCPFlags(SrvTcpFlag::NewTags | SrvTcpFlag::Compression);
+
+    // No version, no media tags.
+    QVERIFY(find(SharedFileList::offeredTags(*file, &modern), FT_MEDIA_LENGTH, nullptr) == nullptr);
+
+    file->setMetaDataVer(1);
+    const auto numeric = SharedFileList::offeredTags(*file, &modern);
+    QVERIFY(find(numeric, FT_MEDIA_LENGTH, nullptr) != nullptr);
+    QCOMPARE(find(numeric, FT_MEDIA_LENGTH, nullptr)->intValue(), uint32{3725});
+    QCOMPARE(find(numeric, FT_MEDIA_BITRATE, nullptr)->intValue(), uint32{192});
+    QCOMPARE(find(numeric, FT_MEDIA_CODEC, nullptr)->strValue(), QStringLiteral("mp3"));
+    QVERIFY(find(numeric, FT_MEDIA_ARTIST, nullptr) == nullptr);   // clients only
+
+    // An old server: names as text, the length as h:mm:ss.
+    Server old(0x01020305u, 4661);
+    const auto named = SharedFileList::offeredTags(*file, &old);
+    QVERIFY(find(named, FT_MEDIA_LENGTH, nullptr) == nullptr);
+    QCOMPARE(find(named, 0, FT_ED2K_MEDIA_LENGTH)->strValue(), QStringLiteral("1:02:05"));
+    QCOMPARE(find(named, 0, FT_ED2K_MEDIA_BITRATE)->intValue(), uint32{192});
+    QCOMPARE(find(named, 0, FT_ED2K_MEDIA_CODEC)->strValue(), QStringLiteral("mp3"));
 }
 
 void tst_SharedFileList::offer_marksPublishedSoTheNextPassIsEmpty()

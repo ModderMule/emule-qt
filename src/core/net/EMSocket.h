@@ -21,6 +21,7 @@
 #include <atomic>
 #include <deque>
 #include <memory>
+#include <optional>
 #include <mutex>
 
 namespace eMule {
@@ -153,6 +154,9 @@ protected:
     uint32 m_timeOut = CONNECTION_TIMEOUT;
     std::atomic<EMSState> m_conState{EMSState::NotConnected};
     bool m_proxyConnectFailed = false;
+
+    /// Set while onError() is called for a Qt socket error; the handler takes it.
+    std::optional<QAbstractSocket::SocketError> m_socketErrorInFlight;
 
 private:
     // --- Internal send implementation ---

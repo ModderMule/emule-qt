@@ -16,6 +16,7 @@
 #include "net/Address.h"
 #include "utils/Types.h"
 
+#include <ctime>
 #include <QCborArray>
 #include <QImage>
 #include <QObject>
@@ -243,7 +244,9 @@ public:
     void endChatSession();
 
     [[nodiscard]] KadState kadState() const { return m_kadState; }
-    void setKadState(KadState state) { m_kadState = state; }
+    void setKadState(KadState state) { m_kadState = state; m_kadStateSince = std::time(nullptr); }
+    [[nodiscard]] std::time_t kadStateSince() const { return m_kadStateSince; }
+    void setKadStateSince(std::time_t t) { m_kadStateSince = t; }
 
     [[nodiscard]] SecureIdentState secureIdentState() const { return m_secureIdentState; }
     void setSecureIdentState(SecureIdentState state) { m_secureIdentState = state; }
@@ -254,6 +257,7 @@ public:
     [[nodiscard]] ChatCaptchaState chatCaptchaState() const { return m_chatCaptchaState; }
     void setChatCaptchaState(ChatCaptchaState state) { m_chatCaptchaState = state; }
     void setSupportsCaptcha(bool v) { m_supportsCaptcha = v; }
+    [[nodiscard]] bool supportsPreview() const { return m_supportsPreview; }
     void setSupportsPreview(bool v) { m_supportsPreview = v; }
     /// The text the peer has to send back while a challenge is out.
     [[nodiscard]] const QString& captchaChallenge() const { return m_captchaChallenge; }
@@ -685,7 +689,9 @@ public:
 
     // -- Phase 3 — preview --------------------------------------------------
 
-    void sendPreviewRequest(const AbstractFile& file);
+    /// Ask the peer for preview frames of @p file, dialling if need be. False when a
+    /// request is already pending or the peer cannot be reached.
+    bool sendPreviewRequest(const AbstractFile& file);
     /// @p fileHash null = "no such file" (zero hash on the wire). @p pngFrames may be empty.
     void sendPreviewAnswer(const uint8* fileHash, const std::vector<QByteArray>& pngFrames);
     void processPreviewReq(const uint8* data, uint32 size);
@@ -913,6 +919,8 @@ signals:
     void captchaRequestReceived(const QString& fromUser, const QImage& captchaImage);
     /// The peer's verdict on the captcha answer we sent.
     void captchaResultReceived(const QString& fromUser, bool solved);
+    /// The answer to sendPreviewRequest(); @p images is empty when the peer had
+    /// nothing to show or went away first.
     void previewAnswerReceived(const std::array<uint8, 16>& fileHash,
                                const std::vector<QImage>& images);
     void chatStateChanged();
@@ -1048,6 +1056,7 @@ private:
     DownloadState m_downloadState = DownloadState::None;
     ChatState m_chatState = ChatState::None;
     KadState m_kadState = KadState::None;
+    std::time_t m_kadStateSince = 0;
     SecureIdentState m_secureIdentState = SecureIdentState::Unavailable;
     SourceFrom m_sourceFrom = SourceFrom::Server;
     ChatCaptchaState m_chatCaptchaState = ChatCaptchaState::None;
@@ -1105,6 +1114,7 @@ private:
     bool m_supportsPreview = false;
     bool m_previewReqPending = false;
     bool m_previewAnsPending = false;
+    std::array<uint8, 16> m_previewReqHash{};   // file of the pending request
     bool m_isSpammer = false;
     bool m_messageFiltered = false;
     bool m_peerCache = false;

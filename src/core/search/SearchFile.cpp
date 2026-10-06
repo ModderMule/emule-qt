@@ -90,8 +90,9 @@ SearchFile::SearchFile(FileDataIO& data, bool optUTF8,
 
         case FT_FILERATING:
             if (tag.isInt()) {
-                // Rating is packed: upper bits = rating value
-                m_userRating = (tag.intValue() & 0xFF) >> 1;
+                // Low byte = average rating on a 0-255 scale, high byte = share of
+                // raters. MFC SearchFile.cpp:213-225.
+                m_userRating = (tag.intValue() & 0xFF) / (255 / 5);
             }
             break;
 
@@ -247,6 +248,7 @@ SearchFile::SearchFile(const SearchFile* other)
     , m_spamRating(other->m_spamRating)
     , m_clientID(other->m_clientID)
     , m_clientPort(other->m_clientPort)
+    , m_previewPossible(other->m_previewPossible)
     , m_knownType(other->m_knownType)
     , m_kadResult(other->m_kadResult)
     , m_meta(other->m_meta)

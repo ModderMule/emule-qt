@@ -131,6 +131,10 @@ private slots:
     void cleanup() { theApp.setPublicIP(0); }
 
     // Construction & configuration
+    void failedConnect_countsOnlyTheServersOwnFailures_data();
+    void failedConnect_countsOnlyTheServersOwnFailures();
+    void failedConnect_neverRemovesAStaticServer();
+    void failedConnect_insideTheDialLeavesNoStaleAttempt();
     void constructionDefaults();
     void setConfig_updatesMaxSimCons();
 
@@ -1109,6 +1113,138 @@ void tst_ServerConnect::callbackRequested_dialsTheRequester()
     client->releaseSocket(/*destroy*/ true);
     clientList.removeClient(client);
     delete client;
+}
+
+// ---------------------------------------------------------------------------
+// Tests: what a failed connect does to the server's record
+// ---------------------------------------------------------------------------
+
+/// A loopback listener plus its entry in @p list (needs the LAN filter off).
+struct ListedLoopback {
+    QTcpServer listener;
+    Server* entry = nullptr;
+
+    explicit ListedLoopback(ServerList& list, const QString& name)
+    {
+        if (!listener.listen(QHostAddress::LocalHost, 0))
+            return;
+        auto owned = std::make_unique<Server>(htonl(0x7F000001), listener.serverPort());
+        owned->setName(name);
+        entry = list.addServer(std::move(owned));
+    }
+};
+
+/// Dial a list server and return the pending socket.
+static ServerSocket* dialListServer(ServerConnect& conn, Server* entry)
+{
+    conn.connectToServer(entry, false, true);
+    const auto sockets = conn.findChildren<ServerSocket*>();
+    return sockets.isEmpty() ? nullptr : sockets.last();
+}
+
+void tst_ServerConnect::failedConnect_countsOnlyTheServersOwnFailures_data()
+{
+    QTest::addColumn<QAbstractSocket::SocketError>("error");
+    QTest::addColumn<uint32>("expectedCount");
+    // Wi-Fi or VPN down: every server "fails" at once, and none of them is at fault.
+    QTest::newRow("network down") << QAbstractSocket::NetworkError << uint32{0};
+    QTest::newRow("bind refused") << QAbstractSocket::SocketAccessError << uint32{0};
+    QTest::newRow("refused") << QAbstractSocket::ConnectionRefusedError << uint32{1};
+    QTest::newRow("timed out") << QAbstractSocket::SocketTimeoutError << uint32{1};
+}
+
+void tst_ServerConnect::failedConnect_countsOnlyTheServersOwnFailures()
+{
+    QFETCH(QAbstractSocket::SocketError, error);
+    QFETCH(uint32, expectedCount);
+
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    ServerList list;
+    ListedLoopback listed(list, QStringLiteral("S"));
+    Server* entry = listed.entry;
+    QVERIFY(entry);
+
+    ServerConnect conn(list);
+    conn.setConfig(makeTestConfig());
+    ServerSocket* socket = dialListServer(conn, entry);
+    QVERIFY(socket);
+    QCOMPARE(socket->connectionState(), ServerConnState::Connecting);
+
+    emit socket->errorOccurred(error);
+
+    QCOMPARE(list.serverCount(), size_t{1});
+    QCOMPARE(entry->failedCount(), expectedCount);
+}
+
+void tst_ServerConnect::failedConnect_neverRemovesAStaticServer()
+{
+    const uint32 hadRetries = thePrefs.deadServerRetries();
+    thePrefs.setDeadServerRetries(1);
+    const auto restore = qScopeGuard([&] { thePrefs.setDeadServerRetries(hadRetries); });
+
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    ServerList list;
+    ListedLoopback first(list, QStringLiteral("static"));
+    ListedLoopback second(list, QStringLiteral("plain"));
+    Server* pinned = first.entry;
+    Server* plain = second.entry;
+    QVERIFY(pinned && plain);
+    pinned->setStaticMember(true);
+
+    ServerConnect conn(list);
+    conn.setConfig(makeTestConfig());
+
+    ServerSocket* socket = dialListServer(conn, pinned);
+    QVERIFY(socket);
+    emit socket->errorOccurred(QAbstractSocket::ConnectionRefusedError);
+    QCOMPARE(list.serverCount(), size_t{2});     // counted, kept
+    QCOMPARE(pinned->failedCount(), uint32{1});
+
+    socket = dialListServer(conn, plain);
+    QVERIFY(socket);
+    emit socket->errorOccurred(QAbstractSocket::ConnectionRefusedError);
+    QCOMPARE(list.serverCount(), size_t{1});     // the ordinary one goes at the limit
+    QCOMPARE(list.serverAt(0), pinned);
+}
+
+// With a bind address the host does not have, the connect fails inside the dial
+// itself. The attempt used to be registered after that, for a socket already
+// scheduled for deletion; the timeout check then walked into freed memory.
+void tst_ServerConnect::failedConnect_insideTheDialLeavesNoStaleAttempt()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    const QString hadBind = thePrefs.bindAddress();
+    thePrefs.setFilterLANIPs(false);
+    thePrefs.setBindAddress(QStringLiteral("192.0.2.55"));   // TEST-NET-1: nobody's address
+    const auto restore = qScopeGuard([&] {
+        thePrefs.setFilterLANIPs(hadLanFilter);
+        thePrefs.setBindAddress(hadBind);
+    });
+
+    ServerList list;
+    ListedLoopback listed(list, QStringLiteral("S"));
+    QVERIFY(listed.entry);
+
+    ServerConnectConfig cfg = makeTestConfig();
+    cfg.connectionTimeout = 10;
+    ServerConnect conn(list);
+    conn.setConfig(cfg);
+
+    conn.connectToServer(listed.entry, false, true);
+    // Let the failure and the deferred deletion of its socket run.
+    QTest::qWait(50);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QVERIFY(conn.findChildren<ServerSocket*>().isEmpty());
+    QVERIFY(!conn.isConnecting());
+
+    conn.checkForTimeout();                      // nothing left to time out
+    QCOMPARE(listed.entry->failedCount(), uint32{0});   // and nobody to blame
 }
 
 QTEST_MAIN(tst_ServerConnect)

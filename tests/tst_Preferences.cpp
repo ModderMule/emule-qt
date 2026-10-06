@@ -764,6 +764,25 @@ private slots:
         QCOMPARE(hash[14], static_cast<uint8>(111));
     }
 
+    // The public user hash must not share a generator stream with the secrets: the
+    // hash goes to every peer, and a replayable stream would lead to the API key.
+    void secrets_doNotComeFromTheSharedEngine()
+    {
+        randomEngine().seed(1234);
+        const std::mt19937 before = randomEngine();
+
+        const auto hashA = Preferences::generateUserHash();
+        const QString keyA = Preferences::generateApiKey();
+        QVERIFY(randomEngine() == before);   // nothing drawn from it
+
+        randomEngine().seed(1234);
+        const auto hashB = Preferences::generateUserHash();
+        const QString keyB = Preferences::generateApiKey();
+        QVERIFY(hashA != hashB);
+        QVERIFY(keyA != keyB);
+        QCOMPARE(keyA.size(), 32);
+    }
+
     void userHash_hexRoundTrip()
     {
         TempDir tmp;
@@ -923,6 +942,26 @@ private slots:
         QCOMPARE(p2.checkDiskspace(), false);
         QCOMPARE(p2.minFreeDiskSpace(), uint64{104857600});
         QCOMPARE(p2.enableSearchResultFilter(), false);
+    }
+
+    // YAML-only: no IPC key, so it has to survive the file on its own
+    void webServerCorsAllowedOrigins_roundTrip()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("cors_rt.yaml"));
+        const QStringList origins{QStringLiteral("https://app.example.com"),
+                                  QStringLiteral("http://localhost:5173")};
+        {
+            Preferences p1;
+            p1.load(tmp.filePath(QStringLiteral("nonexistent_cors.yaml")));
+            QVERIFY(p1.webServerCorsAllowedOrigins().isEmpty());  // CORS off by default
+            p1.setWebServerCorsAllowedOrigins(origins);
+            QVERIFY(p1.saveTo(file));
+        }
+
+        Preferences p2;
+        QVERIFY(p2.load(file));
+        QCOMPARE(p2.webServerCorsAllowedOrigins(), origins);
     }
 
     // -- Validation for new settings ------------------------------------------

@@ -674,20 +674,7 @@ void SharedFileList::sendListToServer()
         files.writeUInt32(clientID);
         files.writeUInt16(clientPort);
 
-        // Build tag list
-        std::vector<Tag> tags;
-        tags.emplace_back(FT_FILENAME, file->fileName());
-
-        auto sz = static_cast<uint64>(file->fileSize());
-        tags.emplace_back(FT_FILESIZE, static_cast<uint32>(sz & 0xFFFFFFFF));
-        if (file->isLargeFile())
-            tags.emplace_back(FT_FILESIZE_HI, static_cast<uint32>(sz >> 32));
-
-        if (!file->fileType().isEmpty())
-            tags.emplace_back(FT_FILETYPE, file->fileType());
-
-        if (file->getFileRating() > 0)
-            tags.emplace_back(FT_FILERATING, file->getFileRating());
+        const std::vector<Tag> tags = offeredTags(*file, srv);
 
         files.writeUInt32(static_cast<uint32>(tags.size()));
         for (const auto& tag : tags) {
@@ -1210,6 +1197,72 @@ void SharedFileList::warmContainerChecks()
     // A part file gets its turn again on the next wrap, by which time the first part
     // may have landed.
     m_containerSweepSkip = (tried == stillUnresolved) ? m_containerSweepSkip + tried : 0;
+}
+
+// ---------------------------------------------------------------------------
+// offeredTags (private)
+// ---------------------------------------------------------------------------
+
+std::vector<Tag> SharedFileList::offeredTags(KnownFile& file, const Server* srv)
+{
+    std::vector<Tag> tags;
+    tags.emplace_back(FT_FILENAME, file.fileName());
+
+    const auto sz = static_cast<uint64>(file.fileSize());
+    tags.emplace_back(FT_FILESIZE, static_cast<uint32>(sz & 0xFFFFFFFF));
+    if (file.isLargeFile())
+        tags.emplace_back(FT_FILESIZE_HI, static_cast<uint32>(sz >> 32));
+
+    // Archives and CD images are published as "Pro"; servers that take an integer
+    // type get one where there is one. MFC SharedFileList.cpp:967-985.
+    const ED2KFileType typeId = getED2KFileTypeID(file.fileName());
+    const ED2KFileType searchId = ed2kFileTypeSearchID(typeId);
+    if (srv && (srv->tcpFlags() & SrvTcpFlag::TypeTagInteger) && searchId != ED2KFileType::Any) {
+        tags.emplace_back(FT_FILETYPE, static_cast<uint32>(searchId));
+    } else if (const QString term = ed2kFileTypeSearchTerm(typeId); !term.isEmpty()) {
+        tags.emplace_back(FT_FILETYPE, term);
+    }
+
+    if (file.getFileRating() > 0)
+        tags.emplace_back(FT_FILERATING, file.getFileRating());
+
+    // Media tags, so the server can match the length / bitrate / codec constraints of
+    // a search. Artist, album and title go to clients only. MFC SharedFileList.cpp:997-1056.
+    if (file.metaDataVer() == 0)
+        return tags;
+
+    const bool newTags = srv && srv->supportsNewTags();
+    static constexpr struct { uint8 id; const char* name; } kMediaTags[] = {
+        {FT_MEDIA_LENGTH, FT_ED2K_MEDIA_LENGTH},
+        {FT_MEDIA_BITRATE, FT_ED2K_MEDIA_BITRATE},
+        {FT_MEDIA_CODEC, FT_ED2K_MEDIA_CODEC},
+    };
+    for (const auto& [id, name] : kMediaTags) {
+        const Tag* tag = file.getTag(id);
+        if (!tag)
+            continue;
+        if (tag->isStr() && !tag->strValue().isEmpty()) {
+            if (newTags)
+                tags.emplace_back(id, tag->strValue());
+            else
+                tags.emplace_back(QByteArray(name), tag->strValue());
+        } else if (tag->isInt() && tag->intValue() != 0) {
+            const uint32 value = tag->intValue();
+            if (id == FT_MEDIA_LENGTH && !(srv && srv->supportsZlib())) {
+                // Servers that old take the length as "h:mm:ss" text only.
+                const QString text = value >= 3600
+                    ? QStringLiteral("%1:%2:%3").arg(value / 3600)
+                          .arg((value / 60) % 60, 2, 10, QChar(u'0')).arg(value % 60, 2, 10, QChar(u'0'))
+                    : QStringLiteral("%1:%2").arg(value / 60).arg(value % 60, 2, 10, QChar(u'0'));
+                tags.emplace_back(QByteArray(name), text);
+            } else if (newTags) {
+                tags.emplace_back(id, value);
+            } else {
+                tags.emplace_back(QByteArray(name), value);
+            }
+        }
+    }
+    return tags;
 }
 
 } // namespace eMule

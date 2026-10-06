@@ -73,6 +73,7 @@ class tst_SearchList : public QObject {
 
 private slots:
     void construct();
+    void newSearch_withoutARequestLeavesTheRunningOneItsAnswers();
     void newSearch_initializesCounters();
     void addToList_newParent();
     void addToList_duplicate_merges();
@@ -94,9 +95,11 @@ private slots:
     void markFileAsNotSpam_removesFromFilter();
     void saveAndLoadSpamFilter_roundTrip();
     void storeAndLoadSearches_roundTrip();
+    void processSearchAnswer_truncatedKeepsWhatWasRead();
     void signal_resultAdded();
     void signal_resultUpdated();
     void clientSharedFiles_opensOwnTab();
+    void clientSharedFiles_marksWhatThePeerCanPreview();
     void clientSharedFiles_reusesTabThenReopensAfterClose();
     void clientSharedFiles_emptyListStillOpensTab();
     void kadKeywordResult_setsKadFlagAndMaxesSources();
@@ -484,6 +487,30 @@ void tst_SearchList::processUDPSearchAnswer_ipv6OnlyFromAskedServer()
     QCOMPARE(added.count(), 1);
 }
 
+// A short record used to throw through the server socket and drop the connection.
+void tst_SearchList::processSearchAnswer_truncatedKeepsWhatWasRead()
+{
+    SearchList list;
+    SearchParams params;
+    const uint32 id = list.newSearch({}, params);
+
+    QByteArray packet = buildTCPSearchPacket(3);
+    packet.chop(9);   // into the third record
+
+    QSignalSpy addedSpy(&list, &SearchList::resultAdded);
+    bool more = true;
+    try {
+        more = list.processSearchAnswer(reinterpret_cast<const uint8*>(packet.constData()),
+                                        static_cast<uint32>(packet.size()), true,
+                                        Endpoint::fromHostOrder(0x0A000001, 4661));
+    } catch (...) {
+        QFAIL("a malformed answer must not throw");
+    }
+    QVERIFY(!more);
+    QCOMPARE(addedSpy.count(), 2);
+    QCOMPARE(list.resultCount(id), uint32{2});
+}
+
 void tst_SearchList::processSearchAnswer_tcp()
 {
     SearchList list;
@@ -808,6 +835,45 @@ void tst_SearchList::clientSharedFiles_opensOwnTab()
     QCOMPARE(headerSpy.at(0).at(0).toUInt(), id);
 }
 
+// MFC SearchList.cpp:218 — only a browsed file of a peer that advertises preview.
+void tst_SearchList::clientSharedFiles_marksWhatThePeerCanPreview()
+{
+    SearchList list;
+
+    const auto listOf = [](std::initializer_list<QString> names) {
+        SafeMemFile mem;
+        mem.writeUInt32(static_cast<uint32>(names.size()));
+        uint8 hash[16] = {0x70};
+        for (const QString& name : names) {
+            ++hash[1];
+            const QByteArray one = buildSingleResultPacket(hash, name, 5000);
+            mem.write(one.constData(), static_cast<uint32>(one.size()));
+        }
+        return mem.takeBuffer();
+    };
+    const QByteArray packet = listOf({QStringLiteral("clip.avi"), QStringLiteral("shot.png"),
+                                      QStringLiteral("song.mp3")});
+    const auto previewable = [&](UpDownClient& peer) {
+        const uint32 id = list.processClientSharedFiles(
+            peer, reinterpret_cast<const uint8*>(packet.constData()),
+            static_cast<uint32>(packet.size()));
+        QStringList names;
+        list.forEachResult(id, [&](const SearchFile* f) {
+            if (f->isPreviewPossible())
+                names << f->fileName();
+        });
+        names.sort();
+        return names;
+    };
+
+    UpDownClient capable;
+    capable.setSupportsPreview(true);
+    QCOMPARE(previewable(capable), QStringList({QStringLiteral("clip.avi"), QStringLiteral("shot.png")}));
+
+    UpDownClient plain;
+    QCOMPARE(previewable(plain), QStringList());
+}
+
 void tst_SearchList::clientSharedFiles_reusesTabThenReopensAfterClose()
 {
     SearchList list;
@@ -999,6 +1065,26 @@ void tst_SearchList::storeAndLoadSearches_keepsKadFlag()
     SearchFile* ed2kFound = loaded.searchFileByHash(ed2kHash, ed2kID);
     QVERIFY(ed2kFound != nullptr);
     QVERIFY(!ed2kFound->isKadResult());
+}
+
+// A search that could send nothing (REST or web while offline) must not take the
+// server answers away from the one still collecting them.
+void tst_SearchList::newSearch_withoutARequestLeavesTheRunningOneItsAnswers()
+{
+    SearchList list;
+    SearchParams params;
+    params.type = SearchType::Ed2kServer;
+    const uint32 running = list.newSearch({}, params);
+    const uint32 idle = list.newSearch(QStringLiteral("Audio"), params, 0, /*takeEd2kRouting*/ false);
+    QVERIFY(idle != running);
+    QVERIFY(list.hasSearch(idle));
+
+    const QByteArray packet = buildTCPSearchPacket(2);
+    list.processSearchAnswer(reinterpret_cast<const uint8*>(packet.constData()),
+                             static_cast<uint32>(packet.size()), true,
+                             Endpoint::fromHostOrder(0x0A000001, 4661));
+    QCOMPARE(list.resultCount(running), uint32{2});
+    QCOMPARE(list.resultCount(idle), uint32{0});
 }
 
 QTEST_MAIN(tst_SearchList)

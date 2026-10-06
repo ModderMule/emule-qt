@@ -182,7 +182,8 @@ void tst_KadSearchExpr::typeFilter_matchesMetaTag()
     auto term = roundTrip(params);
     QVERIFY(term != nullptr);
 
-    const std::vector<Tag> iso{ Tag(FT_FILETYPE, QStringLiteral("iso")) };
+    // Nodes index a CD image under "Pro", so that is what an Iso search asks for.
+    const std::vector<Tag> iso{ Tag(FT_FILETYPE, QStringLiteral("pro")) };
     const std::vector<Tag> audio{ Tag(FT_FILETYPE, QStringLiteral("audio")) };
 
     QVERIFY(matches(term.get(), QStringLiteral("ubuntu-desktop.iso"), 1000, iso));
