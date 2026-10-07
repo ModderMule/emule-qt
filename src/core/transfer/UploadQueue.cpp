@@ -896,6 +896,12 @@ bool UploadQueue::saveStoreNow(const QString& path)
 // removeFromUploadQueue — MFC CUploadQueue::RemoveFromUploadQueue
 // ===========================================================================
 
+void UploadQueue::releaseUploadFile(const QString& path)
+{
+    if (m_diskIO)
+        m_diskIO->releaseFile(path);
+}
+
 bool UploadQueue::removeFromUploadQueue(UpDownClient* client)
 {
     auto it = std::find(m_uploadingList.begin(), m_uploadingList.end(), client);
@@ -903,6 +909,9 @@ bool UploadQueue::removeFromUploadQueue(UpDownClient* client)
         return false;
 
     m_uploadingList.erase(it);
+
+    if (m_diskIO)
+        m_diskIO->releaseClient(client);
 
     if (m_throttler && client->getFileUploadSocket())
         m_throttler->removeFromStandardList(client->getFileUploadSocket());
@@ -997,7 +1006,9 @@ bool UploadQueue::checkForTimeOver(const UpDownClient* client)
     if (thePrefs.transferFullChunks()) {
         // Let the client have a fixed amount per session — but keep going if nobody else
         // needs the slot.
-        if (client->queueSessionPayloadUp() > SESSIONMAXTRANS && !forceNewClient()) {
+        if (client->queueSessionPayloadUp() > SESSIONMAXTRANS && !forceNewClient()
+            && !(client->queueSessionPayloadUp() <= kSessionStretch * uint64{SESSIONMAXTRANS}
+                 && keepsProductiveSlot(client))) {
             if (thePrefs.logUlDlEvents()) {
                 logDebug(QStringLiteral("%1: upload session ended — max transferred amount")
                              .arg(client->userName()));
@@ -1008,7 +1019,9 @@ bool UploadQueue::checkForTimeOver(const UpDownClient* client)
     }
 
     // Try to keep clients from downloading forever — again, only if the slot is wanted.
-    if (client->getUpStartTimeDelay() > SESSIONMAXTIME && !forceNewClient()) {
+    if (client->getUpStartTimeDelay() > SESSIONMAXTIME && !forceNewClient()
+        && !(client->getUpStartTimeDelay() <= kSessionStretch * uint64{SESSIONMAXTIME}
+             && keepsProductiveSlot(client))) {
         if (thePrefs.logUlDlEvents()) {
             logDebug(QStringLiteral("%1: upload session ended — max time %2 min")
                          .arg(client->userName())
@@ -1104,6 +1117,17 @@ bool UploadQueue::isSlotCoolingDown(const UpDownClient* client, uint64 curTick) 
         return false;
     const auto it = m_slotCooldowns.find(client->userAddress());
     return it != m_slotCooldowns.end() && curTick < it->second.until;
+}
+
+// Rotating a slot that is taking data while the line has room costs throughput:
+// the next peer starts from nothing, and nobody was short of bandwidth.
+bool UploadQueue::keepsProductiveSlot(const UpDownClient* client) const
+{
+    if (m_underfillSince == 0 || uploadCapKB() == UNLIMITED)
+        return false;
+    if (getTickCount() - m_underfillSince < kUnderfillMs)
+        return false;
+    return client->upSlotActivity(client->getUpStartTimeDelay()) == UpDownClient::UpSlotActivity::Busy;
 }
 
 void UploadQueue::recycleDeadSlots(uint64 curTick)

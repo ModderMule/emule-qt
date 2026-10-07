@@ -212,12 +212,14 @@ Statistics::ExternalSessionCounters collectExternalSessionCounters()
     if (const auto* uq = theApp.uploadQueue) {
         ext.upSuccessfulSessions = uq->successfulUploadCount();
         ext.upFailedSessions = uq->failedUploadCount();
+        ext.upSessionSeconds = uq->totalUploadTime();
     }
     if (const auto* dq = theApp.downloadQueue) {
-        ext.downSuccessfulSessions = dq->successfulDownloadCount();
-        ext.downFailedSessions = dq->failedDownloadCount();
-        // A completed download is a successful one; MFC counts them the same way.
-        ext.downCompletedFiles = dq->successfulDownloadCount();
+        // Sessions are per source, files per download: two different counts.
+        ext.downSuccessfulSessions = dq->successfulDownSessions();
+        ext.downFailedSessions = dq->failedDownSessions();
+        ext.downSessionSeconds = dq->totalDownSessionTime();
+        ext.downCompletedFiles = dq->completedDownloadCount();
     }
     if (const auto* ls = theApp.listenSocket) {
         ext.connPeak = ls->peakConnections();
@@ -379,12 +381,10 @@ StatsSnapshot collectStatsSnapshot()
 
         out.cumUpSuccessful = static_cast<qint64>(cum.upSuccessfulSessions);
         out.cumUpFailed = static_cast<qint64>(cum.upFailedSessions);
-        out.cumUpAvgTime = static_cast<qint64>(
-            theApp.uploadQueue ? theApp.uploadQueue->averageUpTime() : 0);
+        out.cumUpAvgTime = static_cast<qint64>(cum.upAvgTime);
         out.cumDownSuccessful = static_cast<qint64>(cum.downSuccessfulSessions);
         out.cumDownFailed = static_cast<qint64>(cum.downFailedSessions);
-        out.cumDownAvgTime = static_cast<qint64>(
-            theApp.downloadQueue ? theApp.downloadQueue->averageDownTime() : 0);
+        out.cumDownAvgTime = static_cast<qint64>(cum.downAvgTime);
         out.cumDownCompletedFiles = static_cast<qint64>(cum.downCompletedFiles);
 
         out.cumUpOhTotal = static_cast<qint64>(cum.upOverheadTotal);
@@ -442,6 +442,9 @@ StatsSnapshot collectStatsSnapshot()
         out.downFileCount = static_cast<qint64>(dq->fileCount());
         out.downUdpReasks = static_cast<qint64>(dq->udpFileReasks());
         out.downUdpReasksFailed = static_cast<qint64>(dq->failedUDPFileReasks());
+        out.downSuccessful = static_cast<qint64>(dq->successfulDownSessions());
+        out.downFailed = static_cast<qint64>(dq->failedDownSessions());
+        out.downAvgTime = static_cast<qint64>(dq->averageDownTime());
 
         qint64 completedCount = 0;
         qint64 totalSources = 0;
@@ -452,6 +455,7 @@ StatsSnapshot collectStatsSnapshot()
             if (f->status() == PartFileStatus::Complete)
                 ++completedCount;
             totalSources += f->sourceCount();
+            out.downTransferring += f->transferringSrcCount();
 
             ++totalCount;
             const auto size = static_cast<qint64>(f->fileSize());
@@ -606,6 +610,10 @@ QCborMap toCborMap(const StatsSnapshot& s)
     put(QStringLiteral("upWaiting"), s.upWaiting);
     put(QStringLiteral("upQueueLength"), s.upQueueLength);
     put(QStringLiteral("upAvgTime"), s.upAvgTime);
+    put(QStringLiteral("downSuccessful"), s.downSuccessful);
+    put(QStringLiteral("downFailed"), s.downFailed);
+    put(QStringLiteral("downAvgTime"), s.downAvgTime);
+    put(QStringLiteral("downTransferring"), s.downTransferring);
 
     // Download queue
     put(QStringLiteral("downDatarate"), s.downDatarate);

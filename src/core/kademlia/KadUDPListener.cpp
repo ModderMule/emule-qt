@@ -504,10 +504,13 @@ bool KademliaUDPListener::addContact_KADEMLIA2(const uint8* data, uint32 len, ui
     if (bUDPFirewalled)
         return false;
 
-    // Add to routing table
+    // Add to routing table. The result says whether the table took the contact
+    // (added or updated) — false for our own ID, filtered IPs, full bins and
+    // denied updates. MFC: line 486.
+    bool addedOrUpdated = false;
     if (auto* rz = Kademlia::getInstanceRoutingZone()) {
-        if (update)
-            rz->addOrUpdateContact(contactID, ip, udpPort, tcpPort, version, udpKey, ipVerified);
+        addedOrUpdated = rz->addOrUpdateContact(contactID, ip, udpPort, tcpPort, version,
+                                                udpKey, ipVerified, update);
 
         // Store crypto info on the contact (from TAG_ENCRYPTION / client hash tags)
         if (peerConnectOptions || !(peerClientHash == 0u)) {
@@ -520,7 +523,7 @@ bool KademliaUDPListener::addContact_KADEMLIA2(const uint8* data, uint32 len, ui
         }
     }
 
-    return true;
+    return addedOrUpdated;
 }
 
 void KademliaUDPListener::sendLegacyChallenge(uint32 ip, uint16 udpPort, const UInt128& contactID)
@@ -779,6 +782,9 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_REQ(const uint8* data, uint32 
                                                        const KadUDPKey& senderKey,
                                                        bool validReceiverKey)
 {
+    if (len < 19) // 16 (ID) + 2 (TCP port) + 1 (version)
+        return;
+
     uint8 version = 0;
     bool ipVerified = validReceiverKey;
     UInt128 contactID;
@@ -804,12 +810,18 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_REQ(const uint8* data, uint32 
     sendMyDetails(KADEMLIA2_HELLO_RES, ip, udpPort, version,
                   senderKey, &contactID, addedOrUpdated && !validReceiverKey);
 
-    if (!addedOrUpdated)
-        return;
-
     // Peers too old for HELLO_RES_ACK still need verifying. The three version
-    // bands below are disjoint and together cover everything we accept.
-    if (!validReceiverKey && !hasActiveLegacyChallenge(ip)) {
+    // bands below are disjoint and together cover everything we accept. Only
+    // contacts the routing table took are worth a challenge; the port probe in
+    // the last band needs no table entry.
+    if (!addedOrUpdated) {
+        if (version > KADEMLIA_VERSION5_48a) {
+            if (auto* prefs = Kademlia::getInstancePrefs()) {
+                if (prefs->findExternKadPort(false))
+                    sendNullPacket(KADEMLIA2_PING, ip, udpPort, senderKey, nullptr);
+            }
+        }
+    } else if (!validReceiverKey && !hasActiveLegacyChallenge(ip)) {
         if (version == KADEMLIA_VERSION7_49a) {
             // v7 has sender/receiver keys but no HELLO_RES_ACK — a PING whose
             // PONG we can match proves the IP. A zero challenge is the wildcard
@@ -831,7 +843,8 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_REQ(const uint8* data, uint32 
         }
     }
 
-    // Check if firewalled — ask this node to report our external IP
+    // Check if firewalled — ask this node to report our external IP.
+    // Not tied to addedOrUpdated: any node that answers can report it (MFC :598).
     // Note: recheckIP() counts received responses, not sent requests.
     // Multiple HELLO_RES can arrive before any FIREWALLED_RES, causing
     // more than KADEMLIAFIREWALLCHECKS requests to be sent.
@@ -853,6 +866,9 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_RES(const uint8* data, uint32 
     m_hellosReceived.fetch_add(1, std::memory_order_relaxed);
 
     if (!isOnOutTrackList(ip, KADEMLIA2_HELLO_REQ))
+        return;
+
+    if (len < 19) // 16 (ID) + 2 (TCP port) + 1 (version)
         return;
 
     uint8 version = 0;
@@ -893,19 +909,21 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_RES(const uint8* data, uint32 
             sendNullPacket(KADEMLIA2_PING, ip, udpPort, senderKey, nullptr);
     }
 
-    if (!addedOrUpdated)
-        return;
+    // The rest is not tied to addedOrUpdated: a node the routing table had no
+    // room for still answered us, so it counts as contact, can resolve a node-ID
+    // lookup and can report our external IP — as in MFC.
+    if (addedOrUpdated) {
+        // If the contact's IP was verified (valid receiver key proves the remote
+        // echoed back our UDP verify key), mark it in the routing table.
+        if (ipVerified) {
+            if (auto* rz = Kademlia::getInstanceRoutingZone())
+                rz->verifyContact(contactID, ip);
+        }
 
-    // If the contact's IP was verified (valid receiver key proves the remote
-    // echoed back our UDP verify key), mark it in the routing table.
-    if (ipVerified) {
-        if (auto* rz = Kademlia::getInstanceRoutingZone())
-            rz->verifyContact(contactID, ip);
+        // SafeKad: track verified node identity
+        if (auto* sk = Kademlia::getInstanceSafeKad())
+            sk->trackNode(ip, udpPort, contactID, true);
     }
-
-    // SafeKad: track verified node identity
-    if (auto* sk = Kademlia::getInstanceSafeKad())
-        sk->trackNode(ip, udpPort, contactID, true);
 
     // Deliver node-ID result to any pending FetchNodeIDRequest for this IP.
     // The contact data starts with 16 bytes KadID + 2 bytes TCP port.
@@ -1043,8 +1061,16 @@ void KademliaUDPListener::process_KADEMLIA2_REQ(const uint8* data, uint32 len, u
     // In LAN mode with a small routing table, proactively discover the requester.
     // The REQ packet lacks the sender's KadID, so we send a HELLO_REQ to learn it.
     // The HELLO_RES handler will add them to our routing table automatically.
+    //
+    // Not when the requester is us: a search gets our own address back from peers
+    // as a closest contact and queries it (as MFC does), and we are never in our
+    // own routing table. Skipping our own address in the search before it sends
+    // KADEMLIA2_REQ would cut this off earlier, but deviates from MFC and is risky
+    // while we are unsure of our address — a wrong guess drops a real contact.
+    // Here a wrong guess only costs one HELLO.
     if (Kademlia::instance() && Kademlia::instance()->isRunningInLANMode()
-        && rz->getNumContacts() < 100 && !rz->getContact(ip, udpPort, false))
+        && rz->getNumContacts() < 100 && !rz->getContact(ip, udpPort, false)
+        && !isOwnKadAddress(ip, udpPort))
     {
         sendMyDetails(KADEMLIA2_HELLO_REQ, ip, udpPort,
                       KADEMLIA_VERSION, senderKey, nullptr, true);
@@ -1973,6 +1999,17 @@ void KademliaUDPListener::process_KADEMLIA2_FIREWALLUDP(const uint8* data, uint3
                    .arg(ipToString(ip)).arg(errorCode));
         UDPFirewallTester::setUDPFWCheckResult(false, /*testCancelled=*/true, ip, 0);
     }
+}
+
+bool KademliaUDPListener::isOwnKadAddress(uint32 ip, uint16 udpPort) const
+{
+    auto* prefs = Kademlia::getInstancePrefs();
+    // No confirmed address yet — can't tell, so say no
+    if (!prefs || prefs->ipAddress() == 0 || ip != prefs->ipAddress())
+        return false;
+
+    return udpPort == prefs->internKadPort()
+        || (prefs->externalKadPort() != 0 && udpPort == prefs->externalKadPort());
 }
 
 } // namespace eMule::kad

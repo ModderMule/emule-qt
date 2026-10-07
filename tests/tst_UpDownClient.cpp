@@ -2,6 +2,7 @@
 /// @brief Tests for client/UpDownClient — identity, state, Compare, version,
 ///        hello handshake, mule info exchange, connection, upload, download.
 
+#include "transfer/DownloadQueue.h"
 #include "TestFixtures.h"
 #include "TestHelpers.h"
 #include "app/AppContext.h"
@@ -117,6 +118,8 @@ private slots:
     void leavingDownloading_releasesTheBlockReservations();
     void unaskedBlockData_endsTheTransferAfterTooMuchOfIt();
     void twoFruitlessSessions_pauseTheSource();
+    void fruitlessPause_survivesAReconnectByUserHash();
+    void downloadSession_isBookedGoodOrBadWhenItEnds();
     void processHelloPacket_rejectsNonPublicIPv6();
     void processHelloPacket_parsesExtSXSkipTagsBit();
     void processChangeClientIP_acceptsPublicAndRejectsOthers();
@@ -3596,6 +3599,90 @@ void tst_UpDownClient::twoFruitlessSessions_pauseTheSource()
     const uint32 wait = p.client.timeUntilReask(&p.file, /*allowShortReaskTime=*/true);
     QVERIFY2(wait > 0 && wait <= UpDownClient::kDownloadCooldownMs,
              "the pause holds the re-ask back, and by no more than its own length");
+}
+
+// The record sat on the client object, so a peer shed it by reconnecting.
+void tst_UpDownClient::fruitlessPause_survivesAReconnectByUserHash()
+{
+    ClientList clientList;
+    auto* savedList = theApp.clientList;
+    theApp.clientList = &clientList;
+    const auto restore = qScopeGuard([&] { theApp.clientList = savedList; });
+
+    const auto outOfParts = [](UpDownClient& client) {
+        QVERIFY(QMetaObject::invokeMethod(&client, "onPacketForClient", Qt::DirectConnection,
+                                          Q_ARG(const uint8*, nullptr), Q_ARG(uint32, 0),
+                                          Q_ARG(uint8, OP_OUTOFPARTREQS), Q_ARG(uint8, OP_EDONKEYPROT)));
+    };
+    uint8 peerHash[16];
+    fillHash(peerHash, 0x3C);
+    uint8 otherHash[16];
+    fillHash(otherHash, 0x3D);
+
+    // one fruitless session per connection
+    for (int i = 0; i < 2; ++i) {
+        DownloadingPair p;
+        p.client.setUserHash(peerHash);
+        QVERIFY(!p.client.isDownloadCoolingDown());
+        p.startSession();
+        outOfParts(p.client);
+    }
+
+    DownloadingPair again;
+    again.client.setUserHash(peerHash);
+    QVERIFY2(again.client.isDownloadCoolingDown(), "a new object for the same peer inherits the pause");
+    again.client.setDownloadState(DownloadState::OnQueue);
+    again.client.processAcceptUpload();
+    QCOMPARE(again.client.downloadState(), DownloadState::OnQueue);
+    QVERIFY(again.client.timeUntilReask(&again.file, true) > 0);
+
+    // someone else, and a peer that has not said who it is, are free
+    DownloadingPair other;
+    other.client.setUserHash(otherHash);
+    QVERIFY(!other.client.isDownloadCoolingDown());
+    DownloadingPair anonymous;
+    QVERIFY(!anonymous.client.isDownloadCoolingDown());
+}
+
+// A download session is one source's stay in Downloading. It used to be one completed
+// file, and the flag saying a session delivered anything was never set.
+void tst_UpDownClient::downloadSession_isBookedGoodOrBadWhenItEnds()
+{
+    DownloadQueue dq;
+    auto* savedQueue = theApp.downloadQueue;
+    theApp.downloadQueue = &dq;
+    const auto restore = qScopeGuard([&] { theApp.downloadQueue = savedQueue; });
+
+    // addPayloadDown() is what the HTTP paths book written data with.
+    struct Exposer : UpDownClient { using UpDownClient::addPayloadDown; };
+    const auto deliver = [](UpDownClient& c) { (c.*(&Exposer::addPayloadDown))(100); };
+
+    DownloadingPair p;
+    p.startSession();
+    deliver(p.client);
+    p.client.setDownloadState(DownloadState::OnQueue);
+    QCOMPARE(dq.successfulDownSessions(), uint32{1});
+    QCOMPARE(dq.failedDownSessions(), uint32{0});
+
+    // Nothing arrived.
+    p.startSession();
+    p.client.setDownloadState(DownloadState::OnQueue);
+    QCOMPARE(dq.successfulDownSessions(), uint32{1});
+    QCOMPARE(dq.failedDownSessions(), uint32{1});
+
+    // Data, but it ended in an error.
+    p.startSession();
+    deliver(p.client);
+    p.client.setDownloadState(DownloadState::Error);
+    QCOMPARE(dq.successfulDownSessions(), uint32{1});
+    QCOMPARE(dq.failedDownSessions(), uint32{2});
+
+    // A state change that is not the end of a session books nothing.
+    p.client.setDownloadState(DownloadState::OnQueue);
+    p.client.setDownloadState(DownloadState::None);
+    QCOMPARE(dq.successfulDownSessions() + dq.failedDownSessions(), uint32{3});
+    // Files are counted apart from sessions.
+    QCOMPARE(dq.completedDownloadCount(), uint32{0});
 }
 
 QTEST_MAIN(tst_UpDownClient)

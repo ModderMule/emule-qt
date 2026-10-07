@@ -12,6 +12,7 @@
 #include "stats/Statistics.h"
 
 #include "utils/Log.h"
+#include "utils/TimeUtils.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -19,6 +20,8 @@
 
 #include <zlib.h>
 
+#include <algorithm>
+#include <chrono>
 #include <cstring>
 
 namespace eMule {
@@ -89,9 +92,18 @@ void UploadDiskIOThread::run()
         BlockReadRequest req;
         {
             std::unique_lock lock(m_mutex);
-            m_condition.wait(lock, [this] {
-                return !m_requestQueue.empty() || !m_run.load();
-            });
+            const auto ready = [this] { return !m_requestQueue.empty() || !m_run.load(); };
+            if (m_haveReaders.load()) {
+                // Only tick while there is something to close.
+                if (!m_condition.wait_for(lock, std::chrono::milliseconds(
+                                                    std::max<uint64>(m_idleCloseMs.load() / 2, 50)), ready)) {
+                    lock.unlock();
+                    closeIdleReaders();
+                    continue;
+                }
+            } else {
+                m_condition.wait(lock, ready);
+            }
             if (!m_run.load())
                 break;
             req = std::move(m_requestQueue.front());
@@ -120,26 +132,17 @@ void UploadDiskIOThread::readBlock(const BlockReadRequest& req)
         return;
     }
 
-    const QString& filePath = req.filePath;
-
-    QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly)) {
-        logWarning(QStringLiteral("UploadDiskIOThread: Cannot open file: %1").arg(filePath));
-        emit readError(req.client);
-        return;
+    QByteArray data;
+    {
+        std::lock_guard lock(m_readerMutex);
+        if (!readRange(req, data)) {
+            // Drop the reader so a retry starts from a fresh handle.
+            m_readers.erase(req.client);
+            m_haveReaders.store(!m_readers.empty());
+            data.clear();
+        }
     }
-
-    if (!file.seek(static_cast<qint64>(req.startOffset))) {
-        logWarning(QStringLiteral("UploadDiskIOThread: Seek failed at offset %1").arg(req.startOffset));
-        emit readError(req.client);
-        return;
-    }
-
-    QByteArray data = file.read(static_cast<qint64>(dataLen));
-    file.close();
-
     if (static_cast<uint64>(data.size()) != dataLen) {
-        logWarning(QStringLiteral("UploadDiskIOThread: Read mismatch — wanted: %1 got: %2").arg(dataLen).arg(data.size()));
         emit readError(req.client);
         return;
     }
@@ -157,6 +160,128 @@ void UploadDiskIOThread::readBlock(const BlockReadRequest& req)
     emit blockPacketsReady(req.client,
                            QByteArray(reinterpret_cast<const char*>(fileHash), 16),
                            req.startOffset, req.endOffset, packets);
+}
+
+void UploadDiskIOThread::releaseClient(const UpDownClient* client)
+{
+    std::lock_guard lock(m_readerMutex);
+    m_readers.erase(client);
+    m_haveReaders.store(!m_readers.empty());
+}
+
+void UploadDiskIOThread::releaseFile(const QString& path)
+{
+    std::lock_guard lock(m_readerMutex);
+    std::erase_if(m_readers, [&](const auto& kv) { return kv.second.path == path; });
+    m_haveReaders.store(!m_readers.empty());
+    const uint64 now = getTickCount();
+    std::erase_if(m_releasedPaths, [now](const auto& kv) { return kv.second <= now; });
+    m_releasedPaths[path] = now + kReleaseHoldMs;
+}
+
+std::size_t UploadDiskIOThread::cachedReaderCount()
+{
+    std::lock_guard lock(m_readerMutex);
+    return m_readers.size();
+}
+
+bool UploadDiskIOThread::readRange(const BlockReadRequest& req, QByteArray& data)
+{
+    const uint64 now = getTickCount();
+    const uint64 dataLen = req.endOffset - req.startOffset;
+
+    // A part file is renamed on completion and its bytes past the request may still
+    // change, so it gets neither a kept handle nor read-ahead. Same for a path that
+    // is about to be renamed or deleted.
+    const auto released = m_releasedPaths.find(req.filePath);
+    if (req.isPartFile || (released != m_releasedPaths.end() && released->second > now))
+        return readUncached(req, data);
+
+    Reader& reader = m_readers[req.client];
+    m_haveReaders.store(true);
+    if (!reader.file || reader.path != req.filePath) {
+        reader = Reader{};
+        reader.path = req.filePath;
+        reader.file = std::make_unique<QFile>(req.filePath);
+        if (!reader.file->open(QIODevice::ReadOnly)) {
+            logWarning(QStringLiteral("UploadDiskIOThread: Cannot open file: %1").arg(req.filePath));
+            return false;
+        }
+        ++m_openCount;
+    }
+    reader.lastUsed = now;
+
+    if (req.startOffset >= reader.aheadStart
+        && req.endOffset <= reader.aheadStart + static_cast<uint64>(reader.ahead.size()))
+    {
+        data = reader.ahead.mid(static_cast<qsizetype>(req.startOffset - reader.aheadStart),
+                                static_cast<qsizetype>(dataLen));
+        return true;
+    }
+
+    const uint64 fileSize = static_cast<uint64>(reader.file->size());
+    if (req.endOffset > fileSize) {
+        logWarning(QStringLiteral("UploadDiskIOThread: Read mismatch — wanted: %1 file ends at: %2")
+                       .arg(req.endOffset).arg(fileSize));
+        return false;
+    }
+    // Requests come a few blocks at a time and in order; fetch the next ones with this one.
+    const uint64 want = dataLen >= EMBLOCKSIZE
+        ? std::min(std::max(dataLen, kReadAheadBytes), fileSize - req.startOffset) : dataLen;
+
+    if (!reader.file->seek(static_cast<qint64>(req.startOffset))) {
+        logWarning(QStringLiteral("UploadDiskIOThread: Seek failed at offset %1").arg(req.startOffset));
+        return false;
+    }
+    QByteArray buf = reader.file->read(static_cast<qint64>(want));
+    ++m_diskReadCount;
+    if (static_cast<uint64>(buf.size()) < dataLen) {
+        logWarning(QStringLiteral("UploadDiskIOThread: Read mismatch — wanted: %1 got: %2")
+                       .arg(dataLen).arg(buf.size()));
+        return false;
+    }
+    if (static_cast<uint64>(buf.size()) == dataLen) {
+        reader.ahead.clear();
+        reader.aheadStart = 0;
+        data = std::move(buf);
+    } else {
+        data = buf.left(static_cast<qsizetype>(dataLen));
+        reader.aheadStart = req.startOffset;
+        reader.ahead = std::move(buf);
+    }
+    return true;
+}
+
+bool UploadDiskIOThread::readUncached(const BlockReadRequest& req, QByteArray& data)
+{
+    const uint64 dataLen = req.endOffset - req.startOffset;
+    QFile file(req.filePath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        logWarning(QStringLiteral("UploadDiskIOThread: Cannot open file: %1").arg(req.filePath));
+        return false;
+    }
+    ++m_openCount;
+    if (!file.seek(static_cast<qint64>(req.startOffset))) {
+        logWarning(QStringLiteral("UploadDiskIOThread: Seek failed at offset %1").arg(req.startOffset));
+        return false;
+    }
+    data = file.read(static_cast<qint64>(dataLen));
+    ++m_diskReadCount;
+    if (static_cast<uint64>(data.size()) != dataLen) {
+        logWarning(QStringLiteral("UploadDiskIOThread: Read mismatch — wanted: %1 got: %2")
+                       .arg(dataLen).arg(data.size()));
+        return false;
+    }
+    return true;
+}
+
+void UploadDiskIOThread::closeIdleReaders()
+{
+    std::lock_guard lock(m_readerMutex);
+    const uint64 now = getTickCount();
+    const uint64 idle = m_idleCloseMs.load();
+    std::erase_if(m_readers, [&](const auto& kv) { return now - kv.second.lastUsed >= idle; });
+    m_haveReaders.store(!m_readers.empty());
 }
 
 QList<std::shared_ptr<Packet>> UploadDiskIOThread::createStandardPackets(

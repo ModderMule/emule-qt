@@ -48,6 +48,7 @@
 #include "net/LastCommonRouteFinder.h"
 #include "transfer/UploadBandwidthThrottler.h"
 #include "transfer/UploadDiskIOThread.h"
+#include "files/PartFileWriteThread.h"
 #include "httpcache/HttpCacheManager.h"
 #include "transfer/UploadQueue.h"
 #include "transfer/UploadQueueStore.h"
@@ -849,6 +850,12 @@ void CoreSession::initDownloadQueue()
     if (theApp.downloadQueue)
         return;
 
+    // Before the queue: its files hand their writes to it from the first block on.
+    if (!m_partFileWriter) {
+        m_partFileWriter = std::make_unique<PartFileWriteThread>();
+        theApp.partFileWriter = m_partFileWriter.get();
+    }
+
     m_downloadQueue = std::make_unique<DownloadQueue>(this);
     theApp.downloadQueue = m_downloadQueue.get();
 
@@ -898,6 +905,11 @@ void CoreSession::shutdownDownloadQueue()
     if (m_downloadQueue && theApp.downloadQueue == m_downloadQueue.get())
         theApp.downloadQueue = nullptr;
     m_downloadQueue.reset();
+
+    // After the files: each collected its own pending write on the way out.
+    if (theApp.partFileWriter == m_partFileWriter.get())
+        theApp.partFileWriter = nullptr;
+    m_partFileWriter.reset();
 }
 
 // ---------------------------------------------------------------------------
@@ -1163,10 +1175,11 @@ void CoreSession::initKademlia()
     kad::Kademlia::setKadKeywordResultCallback(
         [](uint32 searchID, const uint8* fileHash, const QString& name,
            uint64 size, const QString& type, uint32 sources, uint32 completeSources,
-           const kad::TagList& metaTags) {
+           const kad::TagList& metaTags, uint32 fromIP) {
             if (theApp.searchList)
                 theApp.searchList->addKadKeywordResult(searchID, fileHash, name, size,
-                                                       type, sources, completeSources, metaTags);
+                                                       type, sources, completeSources, metaTags,
+                                                       fromIP);
         });
 
     // Wire Kad source result callback → DownloadQueue

@@ -39,6 +39,7 @@ class Statistics;
 class StatsHistory;
 class Scheduler;
 class LastCommonRouteFinder;
+class PartFileWriteThread;
 class PortMapper;
 class UploadBandwidthThrottler;
 class UpDownClient;
@@ -68,6 +69,9 @@ struct AppContext {
     LastCommonRouteFinder* lastCommonRouteFinder = nullptr;
     Scheduler*   scheduler      = nullptr;
     PortMapper*  portMapper     = nullptr;
+    /// Download writes and part hashing off the main thread. Null: PartFile does
+    /// both inline (unit tests).
+    PartFileWriteThread* partFileWriter = nullptr;
 
     /// Set once the core starts tearing down (MFC theApp.IsClosing()).
     bool closing = false;

@@ -56,6 +56,8 @@ void tst_ClientUDPSocket::createAndBind()
     ClientUDPSocket sock;
     QVERIFY(sock.create());
     QVERIFY(sock.connectedPort() != 0);
+    // Bursts of Kad answers overflow the OS default.
+    QVERIFY2(sock.receiveBufferSize() >= 64 * 1024, qPrintable(QString::number(sock.receiveBufferSize())));
 }
 
 // ---------------------------------------------------------------------------
@@ -71,6 +73,7 @@ void tst_ClientUDPSocket::rebindToPort()
 
     // Rebind to a different port (let OS choose)
     QVERIFY(sock.rebind(0));
+    QVERIFY2(sock.receiveBufferSize() >= 64 * 1024, qPrintable(QString::number(sock.receiveBufferSize())));
 }
 
 // ---------------------------------------------------------------------------

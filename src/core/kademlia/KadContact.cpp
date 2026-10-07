@@ -107,6 +107,18 @@ void Contact::setAddress(const Address& addr)
     }
 }
 
+int Contact::strength() const
+{
+    int s = (4 - std::min<int>(m_type, 4)) * 40;   // 0 = seen for hours ... 4 = expired
+    if (m_ipVerified)
+        s += 100;
+    if (m_receivedHelloPacket)
+        s += 30;
+    if (!m_udpKey.isEmpty())
+        s += 20;
+    return s;
+}
+
 void Contact::updateType()
 {
     time_t now = time(nullptr);

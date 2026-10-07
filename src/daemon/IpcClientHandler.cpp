@@ -2771,6 +2771,8 @@ void IpcClientHandler::handleRenameSharedFile(const IpcMessage& msg)
     const QString oldPath = file->filePath();
     const QString dir = QFileInfo(oldPath).absolutePath();
     const QString newPath = dir + QDir::separator() + newName;
+    if (theApp.uploadQueue)
+        theApp.uploadQueue->releaseUploadFile(oldPath);
     if (!QFile::rename(oldPath, newPath)) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 500, QStringLiteral("Rename failed")));
         return;
@@ -2809,6 +2811,8 @@ void IpcClientHandler::handleDeleteSharedFile(const IpcMessage& msg)
     }
     const QString path = file->filePath();
     theApp.sharedFileList->removeFile(file);
+    if (theApp.uploadQueue)
+        theApp.uploadQueue->releaseUploadFile(path);
     QFile::remove(path);
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
@@ -3679,10 +3683,15 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setServerKeepAliveTimeout(static_cast<uint32>(val.toInteger()));
     else if (key == QStringLiteral("filterLANIPs"))
         thePrefs.setFilterLANIPs(val.toBool());
-    else if (key == QStringLiteral("checkDiskspace"))
+    else if (key == QStringLiteral("checkDiskspace")) {
         thePrefs.setCheckDiskspace(val.toBool());
-    else if (key == QStringLiteral("minFreeDiskSpace"))
+        if (theApp.downloadQueue)
+            theApp.downloadQueue->checkDiskspace();
+    } else if (key == QStringLiteral("minFreeDiskSpace")) {
         thePrefs.setMinFreeDiskSpace(static_cast<uint64>(val.toInteger()));
+        if (theApp.downloadQueue)
+            theApp.downloadQueue->checkDiskspace();
+    }
     else if (key == QStringLiteral("logToDiskCore")) {
         thePrefs.setLogToDiskCore(val.toBool());
         DaemonApp::applyLogFileSettings();

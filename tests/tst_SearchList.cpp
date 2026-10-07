@@ -993,6 +993,22 @@ void tst_SearchList::kadKeywordResult_adoptsTheOneAgreedAICHHash()
     for (const Tag& tag : found->tags())
         QVERIFY(tag.name() != QByteArrayLiteral(TAG_PUBLISHINFO)
                 && tag.name() != QByteArrayLiteral(TAG_KADAICHHASHRESULT));
+
+    // The nodes that said so are remembered with the root: each is one voice, whatever
+    // popularity it claims. A repeat from the same node adds nobody.
+    QVERIFY(found->aichVoters().empty());          // no sender given above
+    list.addKadKeywordResult(id, hash, QStringLiteral("aich.bin"), 4242, {}, 5, 0,
+                             {kadPublishInfo(6), kadAICHVotes({{2, 0xA1}})}, 0x58010001u);
+    list.addKadKeywordResult(id, hash, QStringLiteral("aich.bin"), 4242, {}, 5, 0,
+                             {kadPublishInfo(6), kadAICHVotes({{2, 0xA1}})}, 0x59010001u);
+    list.addKadKeywordResult(id, hash, QStringLiteral("aich.bin"), 4242, {}, 5, 0,
+                             {kadPublishInfo(6), kadAICHVotes({{2, 0xA1}})}, 0x59010001u);
+    std::vector<Address> voters;
+    for (const SearchFile* row : found->listChildren())
+        voters.insert(voters.end(), row->aichVoters().begin(), row->aichVoters().end());
+    QCOMPARE(voters.size(), size_t{2});
+    for (const SearchFile* row : found->listChildren())
+        QVERIFY(!row->isAICHVouchedDirectly());
 }
 
 void tst_SearchList::kadKeywordResult_ignoresRareOrCompetingAICHHashes()

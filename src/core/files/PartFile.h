@@ -8,6 +8,7 @@
 /// Inherits KnownFile (non-QObject); uses PartFileNotifier for signals.
 
 #include "files/KnownFile.h"
+#include "files/SourceIndex.h"
 #include "files/SourceSaver.h"
 #include "crypto/AICHHashSet.h"
 #include "client/ClientStructs.h"
@@ -26,6 +27,7 @@
 #include <ctime>
 #include <functional>
 #include <list>
+#include <map>
 #include <optional>
 #include <vector>
 
@@ -34,6 +36,9 @@ namespace eMule {
 class UpDownClient;
 class SafeMemFile;
 class FileMoveThread;
+struct PartDigest;
+struct PartDigestRequest;
+struct PartFileWriteResult;
 
 // ---------------------------------------------------------------------------
 // Enums
@@ -276,7 +281,18 @@ public:
     /// @param noAICH    never start an AICH recovery request from this flush — the
     ///                  destructor flushes this way, since a request would outlive us.
     ///                  MFC srchybrid/PartFile.h:232.
+    /// Writes the buffer and checks the parts it completed, inline. Waits for a
+    /// write handed to the worker first, so on return nothing is in flight.
     void flushBuffer(bool forceICH = false, bool noAICH = false);
+    /// The same on the disk worker: returns at once, the outcome arrives through
+    /// applyFlushResult(). Until then the data counts as buffered — not servable,
+    /// and saved as gaps. Inline when there is no worker.
+    void flushBufferAsync();
+    void applyFlushResult(PartFileWriteResult& result, bool forceICH = false, bool noAICH = false);
+    [[nodiscard]] bool isFlushPending() const { return m_flushToken != 0; }
+    /// No gap left, but the disk worker has not said yet whether the last parts
+    /// are good. A source with nothing to ask for stays put until it has.
+    [[nodiscard]] bool awaitsFinalVerdict() const { return m_flushToken != 0 && m_gapList.empty(); }
     /// A hashset arrived: verify the parts that completed while we had none.
     void hashsetReceived();
 
@@ -366,6 +382,13 @@ public:
     [[nodiscard]] bool isStopped() const { return m_stopped; }
     [[nodiscard]] bool isPaused() const { return m_paused; }
     [[nodiscard]] bool isInsufficient() const { return m_insufficient; }
+    /// Bytes the .part still has to take on disk (it is created sparse).
+    [[nodiscard]] uint64 neededSpace() const
+    {
+        const uint64 size = static_cast<uint64>(fileSize());
+        const uint64 done = static_cast<uint64>(m_completedSize);
+        return size > done ? size - done : 0;
+    }
     void pauseFile(bool insufficient = false);
     void resumeFile();
     void stopFile(bool cancel = false);
@@ -395,7 +418,19 @@ public:
     void setLastAnsweredTime() { m_clientSrcAnswered = getTickCount(); }
     void setLastAnsweredTimeTimeout() { m_clientSrcAnswered = getTickCount() + 2 * CONNECTION_LATENCY - SOURCECLIENTREASKS; }
     [[nodiscard]] const std::vector<UpDownClient*>& srcList() const { return m_srcList; }
-    [[nodiscard]] std::vector<UpDownClient*>& srcList() { return m_srcList; }
+    [[nodiscard]] bool hasSource(const UpDownClient* client) const { return m_srcIndex.contains(client); }
+    /// The source that is @p candidate itself or the same peer as it (isSamePeer), or null.
+    [[nodiscard]] UpDownClient* findSourceLike(const UpDownClient* candidate) const;
+    /// The same, by walking the whole list. Only to check the index against.
+    [[nodiscard]] UpDownClient* findSourceLikeByScan(const UpDownClient* candidate) const;
+    /// The duplicate test of DownloadQueue::checkAndAddSource — MFC DownloadQueue.cpp:488-505.
+    [[nodiscard]] static bool isSamePeer(const UpDownClient* source, const UpDownClient* candidate);
+    /// @p client's hash, address, ID or port changed: file it under the new ones.
+    void rekeySource(UpDownClient* client) { m_srcIndex.rekey(client); }
+    /// Empty the source list without touching the clients or telling anyone. Tests.
+    void forgetAllSources();
+    /// isSamePeer() calls made by findSourceLike() so far, all files. Tests.
+    [[nodiscard]] static uint64 sourceCompareCount() { return s_sourceCompares; }
     [[nodiscard]] const std::vector<UpDownClient*>& a4afSrcList() const { return m_a4afSrcList; }
     [[nodiscard]] std::vector<UpDownClient*>& a4afSrcList() { return m_a4afSrcList; }
 
@@ -415,6 +450,8 @@ public:
     /// RemoteQueueFull. MFC CPartFile::GetValidSourcesCount() (PartFile.cpp:2116);
     /// isSourceRequestAllowed() weighs it against the raw source count.
     [[nodiscard]] int validSourcesCount() const;
+    /// Would start a Kad source search now, were it this file's turn.
+    [[nodiscard]] bool wantsKadSourceSearch(uint64 curTick) const;
 
     /// Source caps derived from the max-sources pref (this port has no per-file max).
     /// MFC CPartFile::GetMaxSourcePerFileSoft/UDP (PartFile.cpp:5349-5359).
@@ -496,6 +533,9 @@ public:
     /// Adopt the identifier's AICH root hash as a Verified recovery master hash.
     /// Call whenever an AICH hash arrives with a link or a search result.
     void seedAICHRecoveryMasterHash();
+    /// One signer's word for the AICH root. A root that becomes Trusted by it is
+    /// written to the identifier and the .part.met, so it survives a restart.
+    void voteAICHRoot(const AICHHash& root, const Address& from);
     void requestAICHRecovery(uint32 partNumber);
     void aichRecoveryDataAvailable(uint32 partNumber);
 
@@ -519,13 +559,20 @@ private:
     /// Take over the AICH recovery set the move thread stored in known2.
     void adoptCompletedAICHHashSet();
     void performFileMove(const QString& srcPath, const QString& destPath, bool verify);
-    PartVerdict hashSinglePart(uint32 partNumber, bool* aichAgreed = nullptr);
+    /// `given`: the part's digest when a worker already read it; else read here.
+    PartVerdict hashSinglePart(uint32 partNumber, bool* aichAgreed = nullptr,
+                               const PartDigest* given = nullptr);
+    [[nodiscard]] PartDigestRequest digestRequest(uint32 partNumber);
+    [[nodiscard]] QString partFilePath() const;
+    void finishPendingFlush(bool forceICH, bool noAICH);
+    void resumeIdleSources();
     /// completeFile(), unless a changed part could not be read back for its check.
     void completeIfVerified();
     /// Flag the parts [start, end] touches for the next verification pass.
     void markChangedParts(uint64 start, uint64 end);
     /// MD4/AICH/ICH check of the changed parts only (MFC FlushBuffer's part loop).
-    void verifyChangedParts(bool forceICH, bool noAICH);
+    void verifyChangedParts(bool forceICH, bool noAICH,
+                            const std::map<uint32, PartDigest>* digests = nullptr);
     /// Take @p partNumber off the corrupted list; true if it was on it.
     bool dropCorruptedPart(uint32 partNumber);
     /// Report — at most once per kKadSkipLogInterval — why process() wanted a Kad
@@ -556,6 +603,9 @@ private:
 
     // Buffered write data
     std::list<BufferedData> m_bufferedData;
+    std::list<BufferedData> m_flushingData;   // handed to the worker; data moved out
+    uint64 m_flushingBytes = 0;
+    quint64 m_flushToken = 0;                 // 0: nothing in flight
     uint64 m_totalBufferData = 0;
 
     // Requested blocks
@@ -563,6 +613,8 @@ private:
 
     // Source lists
     std::vector<UpDownClient*> m_srcList;
+    SourceIndex m_srcIndex;   // over m_srcList, kept by addSource / removeSource
+    static inline uint64 s_sourceCompares = 0;
     std::vector<UpDownClient*> m_a4afSrcList;
     std::vector<UpDownClient*> m_downloadingSources;
 

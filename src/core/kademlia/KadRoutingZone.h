@@ -46,13 +46,15 @@ public:
              uint8 version, const KadUDPKey& udpKey, bool ipVerified,
              bool update, bool fromHello, bool fromNodesDat);
 
-    /// Add without IP validation (already checked). Returns true if contact was added.
+    /// Add without IP validation (already checked). Returns true if the contact was
+    /// added or an existing entry updated, false if the table was not touched.
     bool addUnfiltered(const UInt128& id, uint32 ip, uint16 udpPort, uint16 tcpPort,
                        uint8 version, const KadUDPKey& udpKey, bool ipVerified,
                        bool update, bool fromHello, bool fromNodesDat);
 
-    /// Tree-walk add of a pre-built contact.
-    bool add(Contact* contact, bool update, bool& ipVerified);
+    /// Tree-walk add of a pre-built contact. True only for a new entry; `update`
+    /// is cleared unless an existing entry was updated.
+    bool add(Contact* contact, bool& update, bool& ipVerified);
 
     // -- Queries --------------------------------------------------------------
 

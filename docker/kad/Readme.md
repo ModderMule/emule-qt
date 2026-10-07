@@ -24,4 +24,13 @@ python3 docker/kad/kadnet.py --nodes 100 --netmon
 ```
 Each node then writes to `docker/kad/netmon/node-N/`:
 - `syn.txt` — every TCP SYN/FIN/RST on the daemon port, same clock as the daemon log
-- `samples.txt` — every 2 s: socket states, accept queue, kernel TCP counters, load, daemon CPU ticks
+- `samples.txt` — every 2 s: socket states, accept queue, kernel TCP counters, ARP table fill, load, daemon CPU ticks
+
+Watch `neigh=entries/thresh3,fulls:N`: the ARP table is one per Docker host, shared by all containers.
+With ~100 nodes it overflows the default 1024 entries and first packets to a new peer are dropped (stalled TCP connects, lost Kad packets).
+
+### ARP table limit
+Above ~30 nodes, start the rig with `--raise-arp-limit`. It runs one privileged container that raises the host limit; the setting lasts until Docker restarts.
+```bash
+python3 docker/kad/kadnet.py --nodes 100 --raise-arp-limit
+```

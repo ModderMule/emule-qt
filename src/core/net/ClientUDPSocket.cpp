@@ -32,6 +32,10 @@ namespace eMule {
 
 static constexpr int kMaxClientUDPPacketSize = 6000;
 
+// The OS default drops datagrams when several arrive in one burst (Kad answers).
+static constexpr int kReceiveBufferSize = 512 * 1024;
+static constexpr int kMinReceiveBufferSize = 64 * 1024;
+
 // ---------------------------------------------------------------------------
 // Construction / destruction
 // ---------------------------------------------------------------------------
@@ -64,6 +68,7 @@ bool ClientUDPSocket::create()
         return false;
     }
     m_port = m_socket.localPort();
+    growReceiveBuffer();
     return true;
 }
 
@@ -79,7 +84,13 @@ bool ClientUDPSocket::rebind(uint16 port)
         return false;
     }
     m_port = m_socket.localPort();
+    growReceiveBuffer();
     return true;
+}
+
+int ClientUDPSocket::receiveBufferSize()
+{
+    return m_socket.socketOption(QAbstractSocket::ReceiveBufferSizeSocketOption).toInt();
 }
 
 // ---------------------------------------------------------------------------
@@ -544,6 +555,16 @@ bool ClientUDPSocket::processReservedProtPacket(uint8 protByte, const uint8* /*p
                  .arg(size)
                  .arg(senderEP.toString()));
     return true;
+}
+
+void ClientUDPSocket::growReceiveBuffer()
+{
+    m_socket.setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, kReceiveBufferSize);
+    const int got = receiveBufferSize();
+    if (got < kMinReceiveBufferSize)
+        logWarning(QStringLiteral("ClientUDPSocket: receive buffer is only %1 bytes").arg(got));
+    else
+        logDebug(QStringLiteral("ClientUDPSocket: receive buffer %1 bytes").arg(got));
 }
 
 } // namespace eMule

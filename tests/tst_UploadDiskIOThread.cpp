@@ -28,6 +28,11 @@ private slots:
     void createStandardPackets_basic();
     void createPackedPackets_basic();
     void queueBlockRead_emitsSignal();
+    void contiguousBlocks_areOneOpenAndOneDiskRead();
+    void partFile_getsNoKeptHandleAndNoReadAhead();
+    void releaseFile_letsGoAndServesTheNewContent();
+    void releaseClient_and_idleClose_dropTheReader();
+    void shortTail_andPastTheEnd();
 };
 
 void tst_UploadDiskIOThread::construction_defaults()
@@ -153,6 +158,176 @@ void tst_UploadDiskIOThread::queueBlockRead_emitsSignal()
     }
 
     thread.endThread();
+}
+
+namespace {
+
+/// A file of @p blocks blocks (+ @p tail bytes) where every byte tells its block number.
+QString writeBlocks(const QTemporaryDir& dir, const QString& name, int blocks, int tail = 0,
+                    char base = 'a')
+{
+    const QString path = dir.path() + QLatin1Char('/') + name;
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly))
+        return {};
+    for (int i = 0; i < blocks; ++i)
+        f.write(QByteArray(EMBLOCKSIZE, static_cast<char>(base + i)));
+    f.write(QByteArray(tail, static_cast<char>(base + blocks)));
+    return path;
+}
+
+struct ReadRig {
+    UploadDiskIOThread thread;
+    QSignalSpy ready{&thread, &UploadDiskIOThread::blockPacketsReady};
+    QSignalSpy error{&thread, &UploadDiskIOThread::readError};
+    UpDownClient client;
+
+    ReadRig()
+    {
+        qRegisterMetaType<eMule::UpDownClient*>("eMule::UpDownClient*");
+        qRegisterMetaType<QList<std::shared_ptr<eMule::Packet>>>("QList<std::shared_ptr<eMule::Packet>>");
+    }
+
+    void ask(const QString& path, uint64 start, uint64 end, bool partFile = false,
+             UpDownClient* who = nullptr)
+    {
+        BlockReadRequest req;
+        req.filePath = path;
+        req.fileHash.fill(0x42);
+        req.client = who ? who : &client;
+        req.startOffset = start;
+        req.endOffset = end;
+        req.isPartFile = partFile;
+        thread.queueBlockRead(req);
+    }
+
+    /// Payload of the n-th answer, headers stripped (uncompressed, 32-bit offsets).
+    [[nodiscard]] QByteArray payload(int n) const
+    {
+        QByteArray out;
+        const auto packets = ready.at(n).at(4).value<QList<std::shared_ptr<eMule::Packet>>>();
+        for (const auto& p : packets)
+            out.append(reinterpret_cast<const char*>(p->pBuffer) + 24, static_cast<qsizetype>(p->size) - 24);
+        return out;
+    }
+};
+
+} // namespace
+
+// It used to open, seek, read and close the file for every block.
+void tst_UploadDiskIOThread::contiguousBlocks_areOneOpenAndOneDiskRead()
+{
+    QTemporaryDir dir;
+    const QString path = writeBlocks(dir, QStringLiteral("five.bin"), 5);
+    ReadRig rig;
+
+    for (uint64 i = 0; i < 3; ++i)
+        rig.ask(path, i * EMBLOCKSIZE, (i + 1) * EMBLOCKSIZE);
+    QTRY_COMPARE_WITH_TIMEOUT(rig.ready.count(), 3, 3000);
+    QCOMPARE(rig.error.count(), 0);
+    QCOMPARE(rig.thread.openCount(), uint64{1});
+    QCOMPARE(rig.thread.diskReadCount(), uint64{1});
+    for (int i = 0; i < 3; ++i)
+        QCOMPARE(rig.payload(i), QByteArray(EMBLOCKSIZE, static_cast<char>('a' + i)));
+
+    // the next three need the disk once more, not the open
+    rig.ask(path, 3 * EMBLOCKSIZE, 4 * EMBLOCKSIZE);
+    rig.ask(path, 4 * EMBLOCKSIZE, 5 * EMBLOCKSIZE);
+    QTRY_COMPARE_WITH_TIMEOUT(rig.ready.count(), 5, 3000);
+    QCOMPARE(rig.thread.openCount(), uint64{1});
+    QCOMPARE(rig.thread.diskReadCount(), uint64{2});
+    QCOMPARE(rig.payload(4), QByteArray(EMBLOCKSIZE, 'e'));
+
+    // a second slot on the same file has its own reader
+    UpDownClient second;
+    rig.ask(path, 0, EMBLOCKSIZE, false, &second);
+    QTRY_COMPARE_WITH_TIMEOUT(rig.ready.count(), 6, 3000);
+    QCOMPARE(rig.thread.openCount(), uint64{2});
+    QCOMPARE(rig.thread.cachedReaderCount(), std::size_t{2});
+}
+
+// Its bytes past the request may not be complete yet, and it is renamed on completion.
+void tst_UploadDiskIOThread::partFile_getsNoKeptHandleAndNoReadAhead()
+{
+    QTemporaryDir dir;
+    const QString path = writeBlocks(dir, QStringLiteral("001.part"), 3);
+    ReadRig rig;
+
+    for (uint64 i = 0; i < 3; ++i)
+        rig.ask(path, i * EMBLOCKSIZE, (i + 1) * EMBLOCKSIZE, /*partFile=*/true);
+    QTRY_COMPARE_WITH_TIMEOUT(rig.ready.count(), 3, 3000);
+    QCOMPARE(rig.thread.openCount(), uint64{3});
+    QCOMPARE(rig.thread.diskReadCount(), uint64{3});
+    QCOMPARE(rig.thread.cachedReaderCount(), std::size_t{0});
+    QCOMPARE(rig.payload(2), QByteArray(EMBLOCKSIZE, 'c'));
+}
+
+void tst_UploadDiskIOThread::releaseFile_letsGoAndServesTheNewContent()
+{
+    QTemporaryDir dir;
+    const QString path = writeBlocks(dir, QStringLiteral("swap.bin"), 3);
+    ReadRig rig;
+
+    rig.ask(path, 0, EMBLOCKSIZE);
+    QTRY_COMPARE_WITH_TIMEOUT(rig.ready.count(), 1, 3000);
+    QCOMPARE(rig.thread.cachedReaderCount(), std::size_t{1});
+
+    rig.thread.releaseFile(path);
+    QCOMPARE(rig.thread.cachedReaderCount(), std::size_t{0});
+    QVERIFY(QFile::remove(path));
+    QCOMPARE(writeBlocks(dir, QStringLiteral("swap.bin"), 3, 0, 'p'), path);
+
+    // block 1 was read ahead from the old file; it must not be served from memory,
+    // and for a moment the path stays uncached
+    rig.ask(path, EMBLOCKSIZE, 2 * EMBLOCKSIZE);
+    QTRY_COMPARE_WITH_TIMEOUT(rig.ready.count(), 2, 3000);
+    QCOMPARE(rig.payload(1), QByteArray(EMBLOCKSIZE, 'q'));
+    QCOMPARE(rig.thread.cachedReaderCount(), std::size_t{0});
+}
+
+void tst_UploadDiskIOThread::releaseClient_and_idleClose_dropTheReader()
+{
+    QTemporaryDir dir;
+    const QString path = writeBlocks(dir, QStringLiteral("idle.bin"), 2);
+    ReadRig rig;
+
+    rig.ask(path, 0, EMBLOCKSIZE);
+    QTRY_COMPARE_WITH_TIMEOUT(rig.ready.count(), 1, 3000);
+    QCOMPARE(rig.thread.cachedReaderCount(), std::size_t{1});
+    rig.thread.releaseClient(&rig.client);
+    QCOMPARE(rig.thread.cachedReaderCount(), std::size_t{0});
+
+    rig.thread.setIdleCloseMs(100);
+    rig.ask(path, 0, EMBLOCKSIZE);
+    QTRY_COMPARE_WITH_TIMEOUT(rig.ready.count(), 2, 3000);
+    QTRY_COMPARE_WITH_TIMEOUT(rig.thread.cachedReaderCount(), std::size_t{0}, 3000);
+
+    // and it comes back on demand
+    rig.ask(path, EMBLOCKSIZE, 2 * EMBLOCKSIZE);
+    QTRY_COMPARE_WITH_TIMEOUT(rig.ready.count(), 3, 3000);
+    QCOMPARE(rig.payload(2), QByteArray(EMBLOCKSIZE, 'b'));
+    QCOMPARE(rig.error.count(), 0);
+}
+
+void tst_UploadDiskIOThread::shortTail_andPastTheEnd()
+{
+    QTemporaryDir dir;
+    const QString path = writeBlocks(dir, QStringLiteral("tail.bin"), 1, 1000);
+    ReadRig rig;
+
+    // the read-ahead stops at the end of the file and still covers the tail
+    rig.ask(path, 0, EMBLOCKSIZE);
+    rig.ask(path, EMBLOCKSIZE, EMBLOCKSIZE + 1000);
+    QTRY_COMPARE_WITH_TIMEOUT(rig.ready.count(), 2, 3000);
+    QCOMPARE(rig.thread.diskReadCount(), uint64{1});
+    QCOMPARE(rig.payload(1), QByteArray(1000, 'b'));
+
+    // past the end is an error, and the next good request works again
+    rig.ask(path, EMBLOCKSIZE, EMBLOCKSIZE + 2000);
+    QTRY_COMPARE_WITH_TIMEOUT(rig.error.count(), 1, 3000);
+    rig.ask(path, 100, 200);
+    QTRY_COMPARE_WITH_TIMEOUT(rig.ready.count(), 3, 3000);
+    QCOMPARE(rig.payload(2), QByteArray(100, 'a'));
 }
 
 QTEST_GUILESS_MAIN(tst_UploadDiskIOThread)

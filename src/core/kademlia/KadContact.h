@@ -56,6 +56,10 @@ public:
     void checkingType();
     void expire();
 
+    /// How much this contact has proven itself, for the choice of who leaves a
+    /// full bin. A contact fresh off the wire scores low by construction.
+    [[nodiscard]] int strength() const;
+
     // -- Reference counting --------------------------------------------------
     [[nodiscard]] bool     inUse() const             { return m_inUse > 0; }
     [[nodiscard]] uint32   useCount() const          { return m_inUse; }

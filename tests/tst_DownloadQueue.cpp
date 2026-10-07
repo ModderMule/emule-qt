@@ -93,6 +93,10 @@ private slots:
     void fileByID_found();
     void fileByID_notFound();
     void fileByKadFileSearchID_found();
+    void kadSearch_goesToTheFileWithFewestSources();
+    void diskFloor_isJudgedPerVolumeAndResumesWithHeadroom();
+    void diskFloor_noFloorStopsOnlyWhatCannotFit();
+    void diskFloor_refusesTheWriteBeforeItHappens();
     void fileByKadFileSearchID_ignoresZero();
     void isFileExisting_basic();
     void sortByPriority_ordering();
@@ -126,6 +130,9 @@ private slots:
     void deadSource_ipv6SourcesAreToldApartByAddress();
     void checkAndAddSource_adoptsKnownClient();
     void checkAndAddSource_ipv6Dedup();
+    void sourceIndex_followsAnIdentityThatChanges();
+    void sourceIndex_forgetsARemovedSource();
+    void sourceIndex_keepsADuplicateTestOffTheFullScan();
     void checkAndAddKnownSource_addsAPassiveSource();
     void checkAndAddKnownSource_a4afWhenItAlreadySourcesAnotherFile();
     void addServerSources_dropsLowIdWhenFirewalled();
@@ -133,6 +140,7 @@ private slots:
     void addServerSources_dropsBannedHighId();
     void seedFromSearchResult_seedsParentAndChildClients();
     void seedFromSearchResult_seedsAICH();
+    void seedFromSearchResult_kadOnlyRootIsAVoteNotAFact();
     void addServerSources_parsesIPv6Sentinel();
     void addServerSources_vetsIPv6LikeIPv4();
     void addKadSources_type6KeepsDirectCallback();
@@ -222,6 +230,8 @@ struct UdpSourceEnv {
 void tst_DownloadQueue::initTestCase()
 {
     QVERIFY(m_tempDir.isValid());
+    // every indexed duplicate lookup in this suite is checked against the full scan
+    DownloadQueue::setVerifySourceIndex(true);
     thePrefs.setIncomingDir(m_tempDir.path() + QStringLiteral("/incoming"));
     thePrefs.setTempDirs({m_tempDir.path() + QStringLiteral("/temp")});
     QDir().mkpath(thePrefs.incomingDir());
@@ -477,6 +487,190 @@ void tst_DownloadQueue::fileByID_notFound()
     QVERIFY(found == nullptr);
 
     dq.deleteAll();
+}
+
+// The one Kad source search a second went to the first eligible file in priority
+// order; a starved file behind well-supplied ones waited for all of them.
+void tst_DownloadQueue::kadSearch_goesToTheFileWithFewestSources()
+{
+    DownloadQueue dq;
+    uint8 h1[16]{}, h2[16]{}, h3[16]{};
+    h1[0] = 0x71; h2[0] = 0x72; h3[0] = 0x73;
+    auto* rich = createTestPartFile(h1, QStringLiteral("rich.bin"), kPrHigh);
+    auto* some = createTestPartFile(h2, QStringLiteral("some.bin"), kPrNormal);
+    auto* starved = createTestPartFile(h3, QStringLiteral("starved.bin"), kPrLow);
+    dq.addDownload(rich);
+    dq.addDownload(some);
+    dq.addDownload(starved);
+
+    std::vector<std::unique_ptr<UpDownClient>> clients;
+    const auto give = [&clients](PartFile* file, int count) {
+        for (int i = 0; i < count; ++i) {
+            auto& c = clients.emplace_back(std::make_unique<UpDownClient>());
+            c->setDownloadState(DownloadState::OnQueue);
+            file->addSource(c.get());
+        }
+    };
+    give(rich, 6);
+    give(some, 3);
+
+    const uint64 now = getTickCount();
+    QCOMPARE(dq.files().front(), rich);                 // list order says "rich"
+    QCOMPARE(dq.pickKadSearchFile(now), starved);
+
+    // A file that has its search, or is not due yet, is out of the running.
+    starved->setKadFileSearchID(77);
+    QCOMPARE(dq.pickKadSearchFile(now), some);
+    starved->setKadFileSearchID(0);
+
+    starved->pauseFile();
+    QCOMPARE(dq.pickKadSearchFile(now), some);
+    starved->resumeFile();
+    QCOMPARE(dq.pickKadSearchFile(now), starved);
+
+    // Equal need: queue order decides.
+    give(starved, 3);
+    QCOMPARE(dq.pickKadSearchFile(now), some);
+
+    for (auto* file : {rich, some, starved})
+        file->forgetAllSources();
+}
+
+namespace {
+
+/// Disk-check prefs for one test, and a queue whose free space the test dictates.
+struct DiskFloorEnv {
+    explicit DiskFloorEnv(DownloadQueue& dq, uint64 floor)
+        : savedCheck(thePrefs.checkDiskspace()), savedFloor(thePrefs.minFreeDiskSpace())
+    {
+        thePrefs.setCheckDiskspace(true);
+        thePrefs.setMinFreeDiskSpace(floor);
+        dq.setFreeSpaceProbe([this](const QString& dir) -> std::optional<uint64> {
+            ++probes;
+            const auto it = free.find(QDir::cleanPath(dir));
+            return it == free.end() ? std::nullopt : std::optional<uint64>(it.value());
+        });
+    }
+    ~DiskFloorEnv()
+    {
+        thePrefs.setCheckDiskspace(savedCheck);
+        thePrefs.setMinFreeDiskSpace(savedFloor);
+    }
+    QHash<QString, uint64> free;   // directory -> free bytes; absent = unknown
+    int probes = 0;
+    bool savedCheck;
+    uint64 savedFloor;
+};
+
+constexpr uint64 kMiB = 1024ull * 1024;
+
+} // namespace
+
+// One volume was measured (the first temp directory) and its verdict applied to every
+// download; a file came back the moment free space touched the floor, to be parked
+// again by its next block.
+void tst_DownloadQueue::diskFloor_isJudgedPerVolumeAndResumesWithHeadroom()
+{
+    DownloadQueue dq;
+    DiskFloorEnv env(dq, 100 * kMiB);
+
+    uint8 h1[16]{}, h2[16]{}, h3[16]{};
+    h1[0] = 0x81; h2[0] = 0x82; h3[0] = 0x83;
+    auto* onFull = createTestPartFile(h1, QStringLiteral("a.bin"));
+    auto* onRoomy = createTestPartFile(h2, QStringLiteral("b.bin"));
+    auto* onUnknown = createTestPartFile(h3, QStringLiteral("c.bin"));
+    onFull->setTmpPath(QStringLiteral("/vol-full/temp"));
+    onRoomy->setTmpPath(QStringLiteral("/vol-roomy/temp"));
+    onUnknown->setTmpPath(QStringLiteral("/vol-unknown/temp"));
+    dq.addDownload(onFull);
+    dq.addDownload(onRoomy);
+    dq.addDownload(onUnknown);
+
+    env.free[QStringLiteral("/vol-full/temp")] = 99 * kMiB;
+    env.free[QStringLiteral("/vol-roomy/temp")] = 500 * kMiB;
+
+    dq.checkDiskspace();
+    QVERIFY(onFull->isInsufficient());
+    QVERIFY(!onRoomy->isInsufficient());
+    QVERIFY2(!onUnknown->isInsufficient(), "unknown is not full");
+
+    // At the floor, and a little above it: not yet. The file still needs a whole part.
+    const uint64 need = onFull->neededSpace();
+    QCOMPARE(need, uint64{PARTSIZE});
+    env.free[QStringLiteral("/vol-full/temp")] = 100 * kMiB + need - 1;
+    dq.checkDiskspace();
+    QVERIFY2(onFull->isInsufficient(), "resumed without room to write into");
+
+    env.free[QStringLiteral("/vol-full/temp")] = 100 * kMiB + need;
+    dq.checkDiskspace();
+    QVERIFY(!onFull->isInsufficient());
+
+    // A pause of the user's own is neither made nor undone by the check.
+    onRoomy->pauseFile();
+    env.free[QStringLiteral("/vol-roomy/temp")] = 1;
+    dq.checkDiskspace();
+    QVERIFY(!onRoomy->isInsufficient());
+    env.free[QStringLiteral("/vol-roomy/temp")] = 500 * kMiB;
+    dq.checkDiskspace();
+    QVERIFY(onRoomy->isPaused());
+
+    // Switched off, what the check parked comes back.
+    env.free[QStringLiteral("/vol-full/temp")] = 1;
+    dq.checkDiskspace();
+    QVERIFY(onFull->isInsufficient());
+    thePrefs.setCheckDiskspace(false);
+    dq.checkDiskspace();
+    QVERIFY(!onFull->isInsufficient());
+}
+
+void tst_DownloadQueue::diskFloor_noFloorStopsOnlyWhatCannotFit()
+{
+    DownloadQueue dq;
+    DiskFloorEnv env(dq, 0);
+
+    uint8 h1[16]{};
+    h1[0] = 0x84;
+    auto* file = createTestPartFile(h1, QStringLiteral("a.bin"));
+    file->setTmpPath(QStringLiteral("/vol/temp"));
+    dq.addDownload(file);
+
+    env.free[QStringLiteral("/vol/temp")] = uint64{PARTSIZE};
+    dq.checkDiskspace();
+    QVERIFY(!file->isInsufficient());
+
+    env.free[QStringLiteral("/vol/temp")] = uint64{PARTSIZE} - 1;
+    dq.checkDiskspace();
+    QVERIFY(file->isInsufficient());
+
+    env.free[QStringLiteral("/vol/temp")] = uint64{PARTSIZE};
+    dq.checkDiskspace();
+    QVERIFY(!file->isInsufficient());
+}
+
+// The write was tried first and the check ran after it failed. Two files on one volume
+// must not both count the same free bytes either.
+void tst_DownloadQueue::diskFloor_refusesTheWriteBeforeItHappens()
+{
+    DownloadQueue dq;
+    DiskFloorEnv env(dq, 100 * kMiB);
+
+    uint8 h1[16]{}, h2[16]{};
+    h1[0] = 0x85; h2[0] = 0x86;
+    auto* a = createTestPartFile(h1, QStringLiteral("a.bin"));
+    auto* b = createTestPartFile(h2, QStringLiteral("b.bin"));
+    a->setTmpPath(QStringLiteral("/vol/temp"));
+    b->setTmpPath(QStringLiteral("/vol/temp"));
+    dq.addDownload(a);
+    dq.addDownload(b);
+
+    env.free[QStringLiteral("/vol/temp")] = 100 * kMiB + 1000;
+    QVERIFY(dq.reserveForWrite(a, 600));
+    QVERIFY2(!dq.reserveForWrite(b, 600), "the first write already spent that room");
+    QVERIFY(dq.reserveForWrite(b, 400));
+    QCOMPARE(env.probes, 1);                 // measured once, then budgeted
+
+    thePrefs.setCheckDiskspace(false);
+    QVERIFY(dq.reserveForWrite(b, 1'000'000));
 }
 
 void tst_DownloadQueue::fileByKadFileSearchID_found()
@@ -937,14 +1131,14 @@ void tst_DownloadQueue::checkAndAddSource_rejectsUnusableHighIdOnly()
         auto lan = makeHighId("192.168.7.9", 4667);
         QVERIFY2(dq.checkAndAddSource(pf, lan.get()),
                  "lab mode (filterLANIPs=false) must still admit LAN sources");
-        pf->srcList().clear();
+        pf->forgetAllSources();
     }
 
     // And an ordinary public High ID is untouched.
     auto publicPeer = makeHighId("81.2.3.4", 4668);
     QVERIFY(dq.checkAndAddSource(pf, publicPeer.get()));
 
-    pf->srcList().clear();
+    pf->forgetAllSources();
     dq.deleteAll();
 }
 
@@ -1023,6 +1217,53 @@ void tst_DownloadQueue::seedFromSearchResult_seedsParentAndChildClients()
 
 // The result's AICH hash seeds the recovery set like a link's does — unless the answers
 // disagree, or the download already has one.
+// A root that only Kad nodes reported was taken as Verified: one lying node planted it,
+// and every honest source reporting the real one was then dropped as a liar.
+void tst_DownloadQueue::seedFromSearchResult_kadOnlyRootIsAVoteNotAFact()
+{
+    DownloadQueue dq;
+    const uint8 raw[20] = {0xC3, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+    const AICHHash root(raw);
+
+    uint8 hash[16] = {46, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8};
+    auto* pf = createTestPartFile(hash, QStringLiteral("kad_root.bin"));
+    pf->setTmpPath(m_tempDir.path());
+    dq.addDownload(pf);
+
+    SearchFile result;
+    result.setKadResult(true);
+    result.setFileHash(hash);
+    result.fileIdentifier().setAICHHash(root);
+    result.addAICHVoter(Address::fromString(QStringLiteral("88.1.0.1")));
+    result.addAICHVoter(Address::fromString(QStringLiteral("89.1.0.1")));
+
+    dq.seedFromSearchResult(pf, result);
+    QVERIFY2(!pf->fileIdentifier().hasAICHHash(), "two Kad nodes are not proof");
+    QCOMPARE(pf->aichRecoveryHashSet().getStatus(), EAICHStatus::Untrusted);
+    QVERIFY(pf->aichRecoveryHashSet().getMasterHash() == root);
+
+    // Sources agreeing with it carry it over the line; then it is kept like a link's.
+    for (int i = 0; i < 8; ++i)
+        pf->voteAICHRoot(root, Address::fromString(QStringLiteral("90.%1.0.1").arg(i * 16)));
+    QCOMPARE(pf->aichRecoveryHashSet().getStatus(), EAICHStatus::Trusted);
+    QVERIFY(pf->fileIdentifier().hasAICHHash());
+    QVERIFY(pf->fileIdentifier().getAICHHash() == root);
+
+    // A server answer carrying the same root makes it a fact at once.
+    uint8 hash2[16] = {47, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9};
+    auto* pf2 = createTestPartFile(hash2, QStringLiteral("server_root.bin"));
+    dq.addDownload(pf2);
+    SearchFile vouched;
+    vouched.setKadResult(true);
+    vouched.setFileHash(hash2);
+    vouched.fileIdentifier().setAICHHash(root);
+    vouched.setAICHVouchedDirectly();
+    dq.seedFromSearchResult(pf2, vouched);
+    QCOMPARE(pf2->aichRecoveryHashSet().getStatus(), EAICHStatus::Verified);
+
+    dq.deleteAll();
+}
+
 void tst_DownloadQueue::seedFromSearchResult_seedsAICH()
 {
     DownloadQueue dq;
@@ -1882,7 +2123,7 @@ void tst_DownloadQueue::process_flushesPendingIPChangeForSources()
     QCOMPARE(static_cast<uint8>(raw[5]), static_cast<uint8>(OP_CHANGE_CLIENT_IP));
     QVERIFY(!source.sendIPPending());
 
-    pf->srcList().clear();
+    pf->forgetAllSources();
     source.setSocket(nullptr);
     peer->close();
     QCoreApplication::processEvents();
@@ -1946,7 +2187,7 @@ void tst_DownloadQueue::process_udpReaskWindowIsDisjointFromTheTcpReask()
     QVERIFY2(!source.udpPacketPending(),
              "an answered source must not be re-asked again inside FILEREASKTIME");
 
-    pf->srcList().clear();
+    pf->forgetAllSources();
     dq.deleteAll();
 }
 
@@ -2593,6 +2834,163 @@ void tst_DownloadQueue::checkAndAddSource_ipv6Dedup()
         pf->removeSource(c.get());
         pf->removeSource(overV6.get());
     }
+    dq.deleteAll();
+}
+
+namespace {
+
+std::unique_ptr<UpDownClient> highIdSource(const QString& ip, uint16 port)
+{
+    auto c = std::make_unique<UpDownClient>();
+    const Address addr = Address::fromString(ip);
+    c->setUserAddress(addr);
+    c->setUserIDHybrid(addr.toUint32());
+    c->setUserPort(port);
+    return c;
+}
+
+} // namespace
+
+// A source is filed under what it was when it was added; the hello then changes all of it.
+void tst_DownloadQueue::sourceIndex_followsAnIdentityThatChanges()
+{
+    DownloadQueue dq;
+    uint8 hash[16] = {51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7};
+    auto* pf = createTestPartFile(hash, QStringLiteral("index_rekey.bin"));
+    dq.addDownload(pf);
+    {
+        auto src = highIdSource(QStringLiteral("81.2.70.10"), 4662);
+        QCOMPARE(dq.checkAndAddSource(pf, src.get()), src.get());
+        QVERIFY(pf->hasSource(src.get()));
+
+        // what a hello brings: a hash, another port, a Kad port, a server
+        uint8 userHash[16] = {0x9A, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+        src->setUserHash(userHash);
+        src->setUserPort(5000);
+        src->setKadPort(5001);
+
+        auto byHash = highIdSource(QStringLiteral("81.2.70.99"), 4999);   // moved, same hash
+        byHash->setUserHash(userHash);
+        QCOMPARE(pf->findSourceLike(byHash.get()), src.get());
+        QVERIFY(!dq.checkAndAddSource(pf, byHash.get()));
+
+        auto byNewPort = highIdSource(QStringLiteral("81.2.70.10"), 5000);
+        QVERIFY(!dq.checkAndAddSource(pf, byNewPort.get()));
+
+        auto byKadPort = highIdSource(QStringLiteral("81.2.70.10"), 6000);
+        byKadPort->setKadPort(5001);
+        QVERIFY(!dq.checkAndAddSource(pf, byKadPort.get()));
+
+        // the port it had before the hello is somebody else now — as the scan says too
+        auto byOldPort = highIdSource(QStringLiteral("81.2.70.10"), 4662);
+        QCOMPARE(pf->findSourceLikeByScan(byOldPort.get()), nullptr);
+        QCOMPARE(dq.checkAndAddSource(pf, byOldPort.get()), byOldPort.get());
+        QCOMPARE(pf->sourceCount(), 2);
+
+        // an ID change: LowID on a server
+        src->setUserIDHybrid(0x00001234u);
+        src->setServerAddress(Address::fromString(QStringLiteral("90.1.2.3")));
+        src->setServerPort(4661);
+        auto byServer = std::make_unique<UpDownClient>();
+        byServer->setUserIDHybrid(0x00001234u);
+        byServer->setServerAddress(Address::fromString(QStringLiteral("90.1.2.3")));
+        byServer->setServerPort(4661);
+        byServer->setUserPort(7000);
+        QCOMPARE(pf->findSourceLike(byServer.get()), src.get());
+        QCOMPARE(pf->findSourceLikeByScan(byServer.get()), src.get());
+
+        pf->removeSource(src.get());
+        pf->removeSource(byOldPort.get());
+    }
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::sourceIndex_forgetsARemovedSource()
+{
+    DownloadQueue dq;
+    uint8 hash[16] = {52, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8};
+    auto* pf = createTestPartFile(hash, QStringLiteral("index_remove.bin"));
+    dq.addDownload(pf);
+    {
+        auto src = highIdSource(QStringLiteral("81.2.71.10"), 4662);
+        src->setKadPort(4672);
+        QCOMPARE(dq.checkAndAddSource(pf, src.get()), src.get());
+        // changed after it was filed, then removed: no key of either state may linger
+        src->setUserPort(4700);
+        pf->removeSource(src.get());
+        QVERIFY(!pf->hasSource(src.get()));
+        QCOMPARE(pf->sourceCount(), 0);
+
+        for (const uint16 port : {uint16{4662}, uint16{4700}}) {
+            auto twin = highIdSource(QStringLiteral("81.2.71.10"), port);
+            twin->setKadPort(4672);
+            QCOMPARE(pf->findSourceLike(twin.get()), nullptr);
+        }
+        auto twin = highIdSource(QStringLiteral("81.2.71.10"), 4700);
+        QCOMPARE(dq.checkAndAddSource(pf, twin.get()), twin.get());
+        pf->removeSource(twin.get());
+    }
+    dq.deleteAll();
+}
+
+// It used to compare a candidate with every source of every file.
+void tst_DownloadQueue::sourceIndex_keepsADuplicateTestOffTheFullScan()
+{
+    constexpr int kFiles = 20;
+    constexpr int kSourcesPerFile = 300;
+    constexpr int kCandidates = 200;
+
+    DownloadQueue::setVerifySourceIndex(false);   // the check is the full scan
+    const auto verifyAgain = qScopeGuard([] { DownloadQueue::setVerifySourceIndex(true); });
+    const auto savedMax = thePrefs.maxSourcesPerFile();
+    thePrefs.setMaxSourcesPerFile(10'000);
+    const auto restoreMax = qScopeGuard([&] { thePrefs.setMaxSourcesPerFile(savedMax); });
+
+    DownloadQueue dq;
+    std::vector<PartFile*> files;
+    std::vector<std::unique_ptr<UpDownClient>> owned;
+    const auto ipOf = [](int file, int n) {
+        return QStringLiteral("81.%1.%2.%3").arg(10 + file).arg(n / 250).arg(1 + n % 250);
+    };
+    for (int f = 0; f < kFiles; ++f) {
+        uint8 hash[16] = {53, static_cast<uint8>(f), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9};
+        auto* pf = createTestPartFile(hash, QStringLiteral("index_scale_%1.bin").arg(f));
+        dq.addDownload(pf);
+        files.push_back(pf);
+        for (int n = 0; n < kSourcesPerFile; ++n) {
+            owned.push_back(highIdSource(ipOf(f, n), 4662));
+            owned.back()->setReqFile(pf);
+            pf->addSource(owned.back().get());
+        }
+    }
+
+    const uint64 before = PartFile::sourceCompareCount();
+    int duplicates = 0;
+    for (int i = 0; i < kCandidates; ++i) {
+        // every other one is already a source of some file
+        const bool known = i % 2 == 0;
+        auto candidate = known ? highIdSource(ipOf(i % kFiles, i), 4662)
+                               : highIdSource(QStringLiteral("82.1.%1.%2").arg(i / 250).arg(1 + i % 250), 4662);
+        UpDownClient* added = dq.checkAndAddSource(files.back(), candidate.get());
+        if (known) {
+            QVERIFY(!added);
+            ++duplicates;
+        } else {
+            QCOMPARE(added, candidate.get());
+            owned.push_back(std::move(candidate));
+        }
+    }
+    QCOMPARE(duplicates, kCandidates / 2);
+    const uint64 compares = PartFile::sourceCompareCount() - before;
+    QVERIFY2(compares <= 2 * kCandidates,
+             qPrintable(QStringLiteral("%1 compares for %2 candidates over %3 sources")
+                            .arg(compares).arg(kCandidates).arg(kFiles * kSourcesPerFile)));
+
+    for (auto* pf : files)
+        pf->forgetAllSources();
+    for (auto& c : owned)
+        c->setReqFile(nullptr);
+    owned.clear();
     dq.deleteAll();
 }
 

@@ -622,6 +622,8 @@ void Statistics::rebaseCumulative(const Preferences& prefs)
     b.downSuccessfulSessions = prefs.cumDownSuccessfulSessions();
     b.downFailedSessions = prefs.cumDownFailedSessions();
     b.downCompletedFiles = prefs.cumDownCompletedFiles();
+    b.upAvgTime = prefs.cumUpAvgTime();
+    b.downAvgTime = prefs.cumDownAvgTime();
 
     b.connPeak = prefs.cumConnPeak();
     b.connMaxLimitReached = prefs.cumConnMaxLimitReached();
@@ -696,6 +698,16 @@ Statistics::cumulativeTotals(const ExternalSessionCounters& ext) const
     t.downSuccessfulSessions += ext.downSuccessfulSessions;
     t.downFailedSessions += ext.downFailedSessions;
     t.downCompletedFiles += ext.downCompletedFiles;
+
+    // An average cannot be summed: rebuilt from the stored one and its count, so
+    // flushing it twice still writes the same number.
+    const auto average = [](uint32 baseAvg, uint32 baseCount, uint64 seconds, uint32 count) {
+        return count ? static_cast<uint32>((uint64{baseAvg} * baseCount + seconds) / count) : 0u;
+    };
+    t.upAvgTime = average(m_cumBase.upAvgTime, m_cumBase.upSuccessfulSessions,
+                          ext.upSessionSeconds, t.upSuccessfulSessions);
+    t.downAvgTime = average(m_cumBase.downAvgTime, m_cumBase.downSuccessfulSessions,
+                            ext.downSessionSeconds, t.downSuccessfulSessions);
 
     // Peak is a high-water mark across sessions, not a sum.
     t.connPeak = std::max(t.connPeak, ext.connPeak);
@@ -791,6 +803,8 @@ void Statistics::flushCumulativeToPrefs(Preferences& prefs,
     prefs.setCumDownSuccessfulSessions(t.downSuccessfulSessions);
     prefs.setCumDownFailedSessions(t.downFailedSessions);
     prefs.setCumDownCompletedFiles(t.downCompletedFiles);
+    prefs.setCumUpAvgTime(t.upAvgTime);
+    prefs.setCumDownAvgTime(t.downAvgTime);
 
     prefs.setCumHttpCache(t.httpCache);
 

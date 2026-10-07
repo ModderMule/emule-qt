@@ -5,7 +5,8 @@
 # NETMON=1 (see the rig entrypoints). Writes two text files to $NETMON_DIR:
 #   syn.txt      every TCP SYN/FIN/RST on the daemon port, timestamped
 #   samples.txt  one line per interval: socket states, accept queue,
-#                kernel TCP counters, load, CPU pressure, daemon CPU ticks
+#                kernel TCP counters, ARP table fill, load, CPU pressure,
+#                daemon CPU ticks
 #
 # Timestamps are wall-clock, so both files line up with the daemon log.
 
@@ -29,12 +30,17 @@ while :; do
     # Recv-Q/Send-Q of the listener = pending accepts / backlog
     listenq="$(ss -ltnH "sport = :${TCP_PORT}" 2>/dev/null | awk 'NR == 1 { printf "%s/%s", $2, $3 }')"
     counters="$(nstat -az 2>/dev/null | awk -v re="^(${COUNTERS})\$" '$1 ~ re { printf "%s%s:%s", (c++ ? "," : ""), $1, $2 }')"
+    # ARP table is shared by every container on the Docker host; a full one
+    # (entries near thresh3, table_fulls rising) silently drops first packets
+    neigh="$(ip -s ntable show name arp_cache 2>/dev/null | awk '
+        { for (i = 1; i < NF; i++) if ($i ~ /^(thresh3|entries|table_fulls|res_failed)$/ && !($i in v)) v[$i] = $(i + 1) }
+        END { printf "%s/%s,fulls:%s,res_failed:%s", v["entries"], v["thresh3"], v["table_fulls"], v["res_failed"] }')"
     load="$(cut -d' ' -f1-4 /proc/loadavg | tr ' ' ',')"
     psi="$(awk '/^some/ { print $2 "," $5 }' /proc/pressure/cpu 2>/dev/null)"
     pid="$(pidof emulecored 2>/dev/null | awk '{ print $1 }')"
     # utime,stime in clock ticks
     cpu="$(awk '{ print $14 "," $15 }' "/proc/${pid:-1}/stat" 2>/dev/null)"
-    echo "T=${now} states=${states} listenq=${listenq} counters=${counters} load=${load} psi=${psi} cpu=${cpu}" \
+    echo "T=${now} states=${states} listenq=${listenq} counters=${counters} neigh=${neigh} load=${load} psi=${psi} cpu=${cpu}" \
         >> "$NETMON_DIR/samples.txt"
     sleep "$NETMON_INTERVAL"
 done

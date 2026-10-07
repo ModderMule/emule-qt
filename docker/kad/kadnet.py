@@ -10,6 +10,7 @@ Usage:
     python3 docker/kad/kadnet.py --nodes 10         # 10 nodes
     python3 docker/kad/kadnet.py --nodes 50 --build # rebuild image first
     python3 docker/kad/kadnet.py --netmon           # with the network monitor
+    python3 docker/kad/kadnet.py --raise-arp-limit  # lift the host ARP table limit first
     python3 docker/kad/kadnet.py --down             # tear down
     python3 docker/kad/kadnet.py --logs             # follow logs
 """
@@ -35,6 +36,11 @@ SEEDS_PER_NODE = 6
 # Dockerfile lives one level up rather than inside either rig.
 DOCKERFILE = os.path.join(PROJECT_ROOT, "docker", "daemon.Dockerfile")
 IMAGE_NAME = "emuleqt-daemon:latest"
+# ARP table limits for --raise-arp-limit. The table is one per Docker host,
+# shared by all containers; N nodes can need N*(N-1) entries, the default
+# hard limit is 1024.
+ARP_GC_THRESH2 = 16384
+ARP_GC_THRESH3 = 32768
 
 # nodes.dat v2 constants
 NODES_FILE_VERSION2 = 0x00000002
@@ -228,6 +234,23 @@ def node_ips(num_nodes: int, subnet: str, base_ip_offset: int) -> list[str]:
     ]
 
 
+def raise_arp_limit():
+    """Raise the Docker host's ARP table limits (until the Docker VM restarts).
+
+    Not settable from a normal container, hence a privileged one on the host
+    network. Without it, first packets to a new peer are dropped once the
+    table is full: stalled TCP connects, lost Kad packets.
+    """
+    cmd = [
+        "docker", "run", "--rm", "--privileged", "--network", "host",
+        "--entrypoint", "sysctl", IMAGE_NAME, "-w",
+        f"net.ipv4.neigh.default.gc_thresh2={ARP_GC_THRESH2}",
+        f"net.ipv4.neigh.default.gc_thresh3={ARP_GC_THRESH3}",
+    ]
+    print(f"$ {' '.join(cmd)}")
+    subprocess.run(cmd, check=True)
+
+
 def docker_compose(*args):
     """Run docker compose with the generated file."""
     cmd = ["docker", "compose", "-f", COMPOSE_FILE, *args]
@@ -269,6 +292,11 @@ def main():
     parser.add_argument(
         "--netmon", action="store_true",
         help="Start the network monitor in every node (output in docker/kad/netmon/)"
+    )
+    parser.add_argument(
+        "--raise-arp-limit", action="store_true",
+        help="Raise the Docker host's ARP table limit first (privileged container; "
+             "needed above ~30 nodes, lasts until Docker restarts)"
     )
     parser.add_argument(
         "--down", action="store_true", help="Tear down the network and remove volumes"
@@ -350,6 +378,16 @@ def main():
         COMPOSE_FILE,
         args.netmon,
     )
+
+    if args.raise_arp_limit:
+        raise_arp_limit()
+    elif args.nodes * (args.nodes - 1) > 1024:
+        print(
+            f"WARNING: {args.nodes} nodes can overflow the Docker host's ARP table "
+            "(1024 entries by default) — connects to new peers will stall. "
+            "Use --raise-arp-limit.",
+            file=sys.stderr,
+        )
 
     # Start the network
     docker_compose("up", "-d")

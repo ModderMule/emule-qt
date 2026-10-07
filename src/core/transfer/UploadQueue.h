@@ -149,6 +149,10 @@ public:
     /// One slot per call. @p curTick is passed in so a test can move time.
     void recycleDeadSlots(uint64 curTick);
     [[nodiscard]] bool isSlotCoolingDown(const UpDownClient* client, uint64 curTick) const;
+    /// True while the line has been underfilled (known limit) for kUnderfillMs and
+    /// this slot is taking data: its session limits stretch to kSessionStretch times.
+    [[nodiscard]] bool keepsProductiveSlot(const UpDownClient* client) const;
+    static constexpr uint64 kSessionStretch = 3;
     static constexpr uint32 kDeadSlotMs = 5'000;
     static constexpr uint32 kUnderfillMs = 2'000;
     static constexpr uint32 kSlotCooldownMs = 30'000;
@@ -196,10 +200,13 @@ public:
     [[nodiscard]] uint32 successfulUploadCount() const { return m_successfulUpCount; }
     [[nodiscard]] uint32 failedUploadCount() const { return m_failedUpCount; }
     [[nodiscard]] uint32 averageUpTime() const;
+    [[nodiscard]] uint32 totalUploadTime() const { return m_totalUploadTime; }
 
     // Component access
     void setThrottler(UploadBandwidthThrottler* throttler) { m_throttler = throttler; }
     void setDiskIOThread(UploadDiskIOThread* diskIO);
+    /// Call before renaming or deleting a shared file: upload readers let go of it.
+    void releaseUploadFile(const QString& path);
     [[nodiscard]] UploadDiskIOThread* diskIOThread() const { return m_diskIO; }
     void setSharedFileList(SharedFileList* sharedFiles) { m_sharedFiles = sharedFiles; }
 
@@ -298,7 +305,7 @@ private:
     // Stats
     uint32 m_successfulUpCount = 0;
     uint32 m_failedUpCount = 0;
-    uint32 m_totalUploadTime = 0;
+    uint32 m_totalUploadTime = 0;   // seconds, successful sessions only
     uint64 m_lastStartUpload = 0;
 
     /// Best score on the waiting list, refreshed by updateMaxClientScore() and read only by

@@ -165,14 +165,16 @@ bool RoutingZone::addUnfiltered(const UInt128& id, uint32 ip, uint16 udpPort,
         contact->setReceivedHelloPacket();
 
     bool verifiedOut = ipVerified;
-    if (!add(contact, update, verifiedOut)) {
-        delete contact;
-        return false;
-    }
-    return true;
+    if (add(contact, update, verifiedOut))
+        return true;
+
+    // Not newly added — add() cleared `update` unless an existing entry was updated.
+    // MFC CRoutingZone::AddUnfiltered.
+    delete contact;
+    return update;
 }
 
-bool RoutingZone::add(Contact* contact, bool update, bool& ipVerified)
+bool RoutingZone::add(Contact* contact, bool& update, bool& ipVerified)
 {
     // Reject ourselves
     if (contact->getClientID() == s_localKadId) {
@@ -208,6 +210,7 @@ bool RoutingZone::add(Contact* contact, bool update, bool& ipVerified)
                            .arg(contact->address().toString(),
                                 existing->address().toString(),
                                 newKeyVal == 0 ? u"yes" : u"no"));
+                update = false;
             } else if (existing->getVersion() >= KADEMLIA_VERSION1_46c
                        && existing->getVersion() < KADEMLIA_VERSION6_49aBETA
                        && existing->getReceivedHelloPacket()) {
@@ -227,6 +230,7 @@ bool RoutingZone::add(Contact* contact, bool update, bool& ipVerified)
                                .arg(existing->address().toString(),
                                     contact->address().toString())
                                .arg(existing->getVersion()).arg(contact->getVersion()));
+                    update = false;
                 }
             } else if (m_bin->changeContactIPAddress(existing, contact->address().toUint32())
                        && contact->getVersion() >= existing->getVersion()) {
@@ -248,13 +252,19 @@ bool RoutingZone::add(Contact* contact, bool update, bool& ipVerified)
                     existing->setReceivedHelloPacket();
                 m_bin->setAlive(existing);
                 emit contactUpdated(existing);
+            } else {
+                update = false;
             }
         }
         return false; // Contact was not newly added (caller should delete)
     }
 
-    // New contact — try to add to bin
-    if (m_bin->addContact(contact)) {
+    // New contact — try to add to bin. With room left a refusal is an IP or subnet
+    // limit: final, and nothing for the split / replace code below to work around.
+    if (m_bin->getRemaining() > 0) {
+        update = false;
+        if (!m_bin->addContact(contact))
+            return false;
         emit contactAdded(contact);
         return true;
     }
@@ -267,19 +277,16 @@ bool RoutingZone::add(Contact* contact, bool update, bool& ipVerified)
         return m_subZones[bit]->add(contact, update, ipVerified);
     }
 
-    // Cannot split, try to replace worst contact
-    // Check if there's an expired contact we can replace
-    Contact* oldest = m_bin->getOldest();
-    if (oldest && oldest->getType() == 4 && !oldest->inUse()) {
-        m_bin->removeContact(oldest);
-        emit contactRemoved(oldest);
-        delete oldest;
-        if (m_bin->addContact(contact)) {
-            emit contactAdded(contact);
-            return true;
-        }
+    // Cannot split: the newcomer takes the place of an expired or clearly weaker
+    // contact, or is dropped. The old one only leaves once the new one is in.
+    if (Contact* gone = m_bin->replaceWeakest(contact)) {
+        emit contactRemoved(gone);
+        delete gone;
+        emit contactAdded(contact);
+        return true;
     }
 
+    update = false;
     return false;
 }
 
@@ -775,7 +782,8 @@ void RoutingZone::readFile(const QString& specialNodesdat)
                                         udpKey, ipVerified, s_localKadId);
 
             bool verifiedOut = ipVerified;
-            if (!add(contact, false, verifiedOut)) {
+            bool update = false;
+            if (!add(contact, update, verifiedOut)) {
                 delete contact;
             } else {
                 emit contactAdded(contact);

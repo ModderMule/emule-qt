@@ -204,6 +204,13 @@ public:
     // Statistics
     StatisticFile statistic;
 
+    /// All-time uploaded bytes over the file size. An empty file counts as served.
+    [[nodiscard]] double allTimeUploadRatio() const
+    {
+        const uint64 size = static_cast<uint64>(fileSize());
+        return size ? static_cast<double>(statistic.allTimeTransferred()) / static_cast<double>(size) : 1.0;
+    }
+
     // Hashing — creates MD4 hashset and AICH from disk file
     bool createFromFile(const QString& directory, const QString& filename,
                         std::function<void(int)> progressCallback = {});

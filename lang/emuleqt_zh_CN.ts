@@ -685,7 +685,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4601"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4602"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -1716,7 +1716,7 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::CollectionCreateDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CollectionCreateDialog.cpp" line="+54"/>
+        <location filename="../src/gui/dialogs/CollectionCreateDialog.cpp" line="+55"/>
         <source>Modify Collection...</source>
         <translation>修改合集...</translation>
     </message>
@@ -1787,7 +1787,7 @@ Its downloads keep their files and move to All.</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="+91"/>
+        <location line="+88"/>
         <source>Shared (%1)</source>
         <translation>已共享 (%1)</translation>
     </message>
@@ -8687,32 +8687,31 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::SharedFilesPanel</name>
     <message>
-        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+130"/>
-        <location line="+12"/>
-        <location line="+362"/>
-        <location line="+386"/>
-        <location line="+99"/>
+        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+126"/>
+        <location line="+14"/>
+        <location line="+366"/>
+        <location line="+533"/>
         <source>Shared Files (0)</source>
         <translation>共享文件 (0)</translation>
     </message>
     <message>
-        <location line="-761"/>
+        <location line="-809"/>
         <source>Open File</source>
         <translation>打开文件</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1273"/>
+        <location line="+1322"/>
         <source>Open Folder</source>
         <translation>打开文件夹</translation>
     </message>
     <message>
-        <location line="-1261"/>
+        <location line="-1310"/>
         <source>Rename...</source>
         <translation>重命名...</translation>
     </message>
     <message>
-        <location line="+1596"/>
+        <location line="+1645"/>
         <source>Rename File</source>
         <translation>重命名文件</translation>
     </message>
@@ -8722,12 +8721,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>新文件名:</translation>
     </message>
     <message>
-        <location line="-1588"/>
+        <location line="-1637"/>
         <source>Delete From Disk</source>
         <translation>从磁盘删除</translation>
     </message>
     <message>
-        <location line="+822"/>
+        <location line="+871"/>
         <source>Delete File</source>
         <translation>删除文件</translation>
     </message>
@@ -8737,12 +8736,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>确定要从磁盘永久删除&quot;%1&quot;吗？</translation>
     </message>
     <message>
-        <location line="-801"/>
+        <location line="-850"/>
         <source>Unshare</source>
         <translation>取消共享</translation>
     </message>
     <message>
-        <location line="+834"/>
+        <location line="+883"/>
         <source>Unshare File</source>
         <translation>取消共享文件</translation>
     </message>
@@ -8756,7 +8755,7 @@ The file will remain on disk.</source>
 文件将保留在磁盘上。</translation>
     </message>
     <message>
-        <location line="-817"/>
+        <location line="-866"/>
         <source>Priority (Upload)</source>
         <translation>优先级（上传）</translation>
     </message>
@@ -8935,7 +8934,7 @@ The file will remain on disk.</source>
         <translation>统计</translation>
     </message>
     <message>
-        <location line="+231"/>
+        <location line="+280"/>
         <source>%1 (%2 of %3 shared)</source>
         <translation>%1（%3 个中已共享 %2 个）</translation>
     </message>
@@ -8975,7 +8974,7 @@ The file will remain on disk.</source>
         <translation>打开文件不可用 — Web 服务器未运行或未收到流令牌。</translation>
     </message>
     <message>
-        <location line="-827"/>
+        <location line="-876"/>
         <source>Content</source>
         <translation>内容</translation>
     </message>
@@ -9036,17 +9035,17 @@ The file will remain on disk.</source>
     </message>
     <message>
         <location line="+24"/>
-        <location line="+411"/>
+        <location line="+460"/>
         <source>Requires a hostname configured in Preferences, or a public IPv6</source>
         <translation>需要在首选项中配置主机名，或拥有公网 IPv6</translation>
     </message>
     <message>
-        <location line="-299"/>
+        <location line="-298"/>
         <source>Shared Files (%1)</source>
         <translation>共享文件 (%1)</translation>
     </message>
     <message numerus="yes">
-        <location line="+112"/>
+        <location line="+111"/>
         <source>Are you sure you want to permanently delete %n selected file(s) from disk?</source>
         <translation>
             <numerusform>确定要从磁盘永久删除选中的 %n 个文件吗？</numerusform>
@@ -9168,22 +9167,22 @@ The files will remain on disk.</source>
         <location line="+10"/>
         <location line="+155"/>
         <location line="+19"/>
-        <location line="+1100"/>
+        <location line="+1128"/>
         <source>Uploads</source>
         <translation>上传</translation>
     </message>
     <message>
-        <location line="-1270"/>
+        <location line="-1298"/>
         <location line="+63"/>
         <location line="+78"/>
         <location line="+47"/>
-        <location line="+1001"/>
+        <location line="+1029"/>
         <location line="+70"/>
         <source>Session</source>
         <translation>会话</translation>
     </message>
     <message>
-        <location line="-1256"/>
+        <location line="-1284"/>
         <location line="+32"/>
         <source>Uploaded Data: 0 Bytes</source>
         <translation>已上传数据：0 Bytes</translation>
@@ -9241,13 +9240,13 @@ The files will remain on disk.</source>
         <location line="+6"/>
         <location line="+97"/>
         <location line="+19"/>
-        <location line="+936"/>
+        <location line="+964"/>
         <location line="+163"/>
         <source>Downloads</source>
         <translation>下载</translation>
     </message>
     <message>
-        <location line="-1208"/>
+        <location line="-1236"/>
         <location line="+39"/>
         <source>Downloaded Data: 0 Bytes</source>
         <translation>已下载数据：0 Bytes</translation>
@@ -9389,13 +9388,13 @@ The files will remain on disk.</source>
         <location line="+70"/>
         <location line="+60"/>
         <location line="+37"/>
-        <location line="+995"/>
+        <location line="+1023"/>
         <location line="+70"/>
         <source>Cumulative</source>
         <translation>累计</translation>
     </message>
     <message>
-        <location line="-1183"/>
+        <location line="-1211"/>
         <location line="+33"/>
         <source>Completed Downloads: 0</source>
         <translation>已完成下载：0</translation>
@@ -9439,12 +9438,12 @@ The files will remain on disk.</source>
     <message>
         <location line="+15"/>
         <location line="+21"/>
-        <location line="+925"/>
+        <location line="+953"/>
         <source>General</source>
         <translation>常规</translation>
     </message>
     <message>
-        <location line="-941"/>
+        <location line="-969"/>
         <source>Average Connections: 0.0</source>
         <translation>平均连接数：0.0</translation>
     </message>
@@ -9504,44 +9503,44 @@ The files will remain on disk.</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+458"/>
+        <location line="+486"/>
         <location line="+4"/>
         <source>Statistics Last Reset: %1</source>
         <translation>统计上次重置: %1</translation>
     </message>
     <message>
-        <location line="-749"/>
+        <location line="-777"/>
         <location line="+287"/>
-        <location line="+456"/>
+        <location line="+484"/>
         <location line="+7"/>
         <source>Unknown</source>
         <translation>未知</translation>
     </message>
     <message>
-        <location line="-757"/>
+        <location line="-785"/>
         <source>Statistics Tree</source>
         <translation>统计树</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+753"/>
+        <location line="+781"/>
         <source>Statistics last reset: %1</source>
         <translation>统计上次重置: %1</translation>
     </message>
     <message>
-        <location line="-726"/>
-        <location line="+1262"/>
+        <location line="-754"/>
+        <location line="+1290"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="-1197"/>
-        <location line="+1074"/>
+        <location line="-1225"/>
+        <location line="+1102"/>
         <source>Waiting...</source>
         <translation>等待...</translation>
     </message>
     <message>
-        <location line="-1071"/>
+        <location line="-1099"/>
         <location line="+404"/>
         <source>Session UL:DL Ratio (Friends UL excluded): %1</source>
         <translation>会话上传:下载比率 (排除对好友的上传)：%1</translation>
@@ -9552,7 +9551,7 @@ The files will remain on disk.</source>
         <translation>UDP 文件重新请求：0，失败：0 (0.0%)</translation>
     </message>
     <message>
-        <location line="+1028"/>
+        <location line="+1056"/>
         <source>Corrupt (Failed yEnc Check): %1</source>
         <translation>损坏（yEnc 校验失败）：%1</translation>
     </message>
@@ -9582,7 +9581,7 @@ The files will remain on disk.</source>
         <translation type="vanished">已获取块: 0</translation>
     </message>
     <message>
-        <location line="-1053"/>
+        <location line="-1081"/>
         <source>Run Time: 0:00:00</source>
         <translation>运行时间：0:00:00</translation>
     </message>
@@ -9774,20 +9773,20 @@ The files will remain on disk.</source>
         <location line="-45"/>
         <location line="+55"/>
         <location line="+60"/>
-        <location line="+48"/>
+        <location line="+76"/>
         <source>Default Port 4662: %1 %2</source>
         <translation>默认端口 4662：%1 %2</translation>
     </message>
     <message>
-        <location line="-160"/>
+        <location line="-188"/>
         <location line="+55"/>
         <location line="+60"/>
-        <location line="+48"/>
+        <location line="+76"/>
         <source>Other Ports: %1 %2</source>
         <translation>其他端口：%1 %2</translation>
     </message>
     <message>
-        <location line="-160"/>
+        <location line="-188"/>
         <location line="+55"/>
         <source>Complete File: %1 %2</source>
         <translation>完整文件：%1 %2</translation>
@@ -9816,19 +9815,23 @@ The files will remain on disk.</source>
     <message>
         <location line="+5"/>
         <location line="+48"/>
+        <location line="+72"/>
+        <location line="+12"/>
         <source>Successful: %1%2</source>
         <translation>成功：%1%2</translation>
     </message>
     <message>
-        <location line="-46"/>
+        <location line="-130"/>
         <location line="+48"/>
-        <location line="+639"/>
+        <location line="+72"/>
+        <location line="+12"/>
+        <location line="+583"/>
         <location line="+49"/>
         <source>Failed: %1</source>
         <translation>失败：%1</translation>
     </message>
     <message>
-        <location line="-733"/>
+        <location line="-761"/>
         <location line="+48"/>
         <source>Average Upload Per Session: %1</source>
         <translation>每次会话平均上传：%1</translation>
@@ -9847,39 +9850,39 @@ The files will remain on disk.</source>
     <message>
         <location line="+4"/>
         <location line="+60"/>
-        <location line="+48"/>
+        <location line="+76"/>
         <location line="+36"/>
         <source>Total Overhead (Packets)</source>
         <translation>总开销（数据包）</translation>
     </message>
     <message>
-        <location line="-143"/>
+        <location line="-171"/>
         <location line="+60"/>
-        <location line="+48"/>
+        <location line="+76"/>
         <location line="+36"/>
         <source>File Request Overhead (Packets)</source>
         <translation>文件请求开销（数据包）</translation>
     </message>
     <message>
-        <location line="-143"/>
+        <location line="-171"/>
         <location line="+60"/>
-        <location line="+48"/>
+        <location line="+76"/>
         <location line="+36"/>
         <source>Source Exchange Overhead (Packets)</source>
         <translation>来源交换开销（数据包）</translation>
     </message>
     <message>
-        <location line="-143"/>
+        <location line="-171"/>
         <location line="+60"/>
-        <location line="+48"/>
+        <location line="+76"/>
         <location line="+36"/>
         <source>Server Overhead (Packets)</source>
         <translation>服务器开销（数据包）</translation>
     </message>
     <message>
-        <location line="-143"/>
+        <location line="-171"/>
         <location line="+60"/>
-        <location line="+48"/>
+        <location line="+76"/>
         <location line="+36"/>
         <source>Kad Overhead (Packets)</source>
         <translation>Kad 开销（数据包）</translation>
@@ -9905,14 +9908,14 @@ The files will remain on disk.</source>
         <translation type="vanished">已获取块</translation>
     </message>
     <message>
-        <location line="-81"/>
-        <location line="+48"/>
+        <location line="-109"/>
+        <location line="+76"/>
         <location line="+533"/>
         <source>Downloaded Data: %1</source>
         <translation>已下载数据：%1</translation>
     </message>
     <message>
-        <location line="-563"/>
+        <location line="-591"/>
         <source>Active Downloads: %1</source>
         <translation>活跃下载：%1</translation>
     </message>
@@ -9928,7 +9931,7 @@ The files will remain on disk.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+37"/>
+        <location line="+65"/>
         <source>Completed Downloads: %1</source>
         <translation>已完成下载：%1</translation>
     </message>
@@ -10081,12 +10084,24 @@ The files will remain on disk.</source>
         <translation>服务器总时长：%1 %2</translation>
     </message>
     <message>
-        <location line="-495"/>
+        <location line="-523"/>
         <source>Current Server Duration: 0:00:00</source>
         <translation>当前服务器持续时间：0:00:00</translation>
     </message>
     <message>
-        <location line="+475"/>
+        <location line="+363"/>
+        <location line="+12"/>
+        <source>Average Download Per Session: %1</source>
+        <translation>每次会话平均下载：%1</translation>
+    </message>
+    <message>
+        <location line="-10"/>
+        <location line="+12"/>
+        <source>Average Download Time: %1</source>
+        <translation>平均下载时间：%1</translation>
+    </message>
+    <message>
+        <location line="+126"/>
         <source>Current Server Duration: %1 %2</source>
         <translation>当前服务器持续时间：%1 %2</translation>
     </message>

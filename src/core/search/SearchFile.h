@@ -8,6 +8,7 @@
 
 #include "enodemeta/MetaHash.h"
 #include "files/AbstractFile.h"
+#include "net/Address.h"
 #include "search/SearchParams.h"
 #include "utils/Types.h"
 
@@ -126,6 +127,15 @@ public:
     [[nodiscard]] bool hasFoundMultipleAICH() const { return m_multipleAICHFound; }
     void setFoundMultipleAICH() { m_multipleAICHFound = true; }
 
+    /// Kad nodes that answered with this row's AICH root. A root known only from
+    /// them is their claim, not a fact: a download takes it as votes.
+    [[nodiscard]] const std::vector<Address>& aichVoters() const { return m_aichVoters; }
+    void addAICHVoter(const Address& from);
+    void clearAICHVoters() { m_aichVoters.clear(); }
+    /// The root (also) came with a server or client answer.
+    [[nodiscard]] bool isAICHVouchedDirectly() const { return m_aichVouchedDirectly; }
+    void setAICHVouchedDirectly() { m_aichVouchedDirectly = true; }
+
     [[nodiscard]] uint32 kadPublishInfo() const { return m_kadPublishInfo; }
     void setKadPublishInfo(uint32 val) { m_kadPublishInfo = val; }
 
@@ -222,6 +232,8 @@ private:
     uint32 m_completeSourceCount = 0;
     uint32 m_kadPublishInfo = 0;
     bool m_multipleAICHFound = false;
+    bool m_aichVouchedDirectly = false;
+    std::vector<Address> m_aichVoters;
     uint32 m_searchID = 0;
     uint32 m_spamRating = 0;
     uint32 m_clientID = 0;

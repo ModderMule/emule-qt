@@ -6,6 +6,7 @@
 /// status machine, priority, block selection, persistence, source tracking.
 
 #include "files/PartFile.h"
+#include "files/PartFileWriteThread.h"
 #include "app/AppContext.h"
 #include "utils/OtherFunctions.h"
 #include "files/SharedFileList.h"
@@ -63,10 +64,8 @@ PartFile::~PartFile()
         m_moveThread->wait();
     }
 
-    // Flush any remaining buffered data
-    if (!m_bufferedData.empty()) {
-        flushBuffer(/*forceICH*/ false, /*noAICH*/ true);   // MFC srchybrid/PartFile.cpp:294
-    }
+    // Flush any remaining buffered data, and collect a write still with the worker
+    flushBuffer(/*forceICH*/ false, /*noAICH*/ true);   // MFC srchybrid/PartFile.cpp:294
 
     // Close the part file handle before saving metadata
     if (m_partFileHandle.isOpen())
@@ -329,10 +328,11 @@ bool PartFile::isCompleteBDSafe(uint64 start, uint64 end) const
     end = std::min(end, fileSize() - 1);
     if (start > end || !isComplete(start, end))
         return false;
-    // Sorted by end, not start, so no early break.
-    return std::ranges::none_of(m_bufferedData, [&](const BufferedData& bd) {
-        return bd.start <= end && bd.end >= start;
-    });
+    // Sorted by end, not start, so no early break. Data with the worker is not
+    // on disk yet either.
+    const auto overlaps = [&](const BufferedData& bd) { return bd.start <= end && bd.end >= start; };
+    return std::ranges::none_of(m_bufferedData, overlaps)
+        && std::ranges::none_of(m_flushingData, overlaps);
 }
 
 bool PartFile::isComplete(uint32 part) const
@@ -497,17 +497,141 @@ uint32 PartFile::writeToBuffer(uint64 transize, const uint8* data,
     // Flush immediately when the file is complete, or when it is in any state other
     // than plain downloading — an import writes whole parts through here and there is
     // nothing to gain from holding them (MFC srchybrid/PartFile.cpp:4031-4034).
-    if (m_gapList.empty()
-        || (status() != PartFileStatus::Ready && status() != PartFileStatus::Empty))
+    // The last block of a running download goes the way every other flush does;
+    // anything else (stopping, completing, erroring) wants it on disk now.
+    if (status() != PartFileStatus::Ready && status() != PartFileStatus::Empty)
         flushBuffer();
+    else if (m_gapList.empty())
+        flushBufferAsync();
 
     return static_cast<uint32>(end - start + 1);
 }
 
+void PartFile::flushBufferAsync()
+{
+    PartFileWriteThread* writer = theApp.partFileWriter;
+    if (!writer || m_destroying) {
+        flushBuffer();
+        return;
+    }
+    // One job per file: what came in since goes with the next one.
+    if (m_bufferedData.empty() || m_flushToken != 0)
+        return;
+
+    if (theApp.downloadQueue && !theApp.downloadQueue->reserveForWrite(this, m_totalBufferData)) {
+        if (!m_insufficient && !m_paused && !m_stopped)
+            pauseFile(/*insufficient*/ true);
+        return;
+    }
+
+    PartFileWriteJob job;
+    job.fileHash = QByteArray(reinterpret_cast<const char*>(fileHash()), 16);
+    job.token = PartFileWriteThread::nextToken();
+    job.partPath = partFilePath();
+
+    // The parts these bytes touch, plus any still waiting for a check, are read
+    // back by the worker — where a check can be made at all.
+    std::vector<bool> touched = m_changedParts;
+    touched.resize(partCount(), false);
+    job.chunks.reserve(m_bufferedData.size());
+    for (auto& bd : m_bufferedData) {
+        for (uint64 p = bd.start / PARTSIZE; p <= bd.end / PARTSIZE && p < touched.size(); ++p)
+            touched[p] = true;
+        job.chunks.push_back({bd.start, std::move(bd.data)});
+        bd.data.clear();
+    }
+    const bool canCheck = fileIdentifier().hasExpectedMD4HashCount()
+        || (fileIdentifier().hasAICHHash() && fileIdentifier().hasExpectedAICHHashCount());
+    if (canCheck) {
+        for (uint32 p = 0; p < touched.size(); ++p) {
+            if (touched[p] && (isComplete(p) || (isCorruptedPart(p) && thePrefs.useICH())))
+                job.digests.push_back(digestRequest(p));
+        }
+    }
+
+    m_flushingData.splice(m_flushingData.end(), m_bufferedData);
+    m_flushingBytes = m_totalBufferData;
+    m_totalBufferData = 0;
+    m_flushToken = job.token;
+
+    // The worker writes through its own handle; ours must not hold stale pages.
+    if (m_partFileHandle.isOpen())
+        m_partFileHandle.close();
+
+    writer->enqueue(std::move(job), this);
+}
+
+void PartFile::applyFlushResult(PartFileWriteResult& result, bool forceICH, bool noAICH)
+{
+    if (result.token != m_flushToken || m_flushToken == 0)
+        return;                          // not ours any more
+    m_flushToken = 0;
+
+    if (!result.written) {
+        logError(QStringLiteral("PartFile::flushBuffer: could not write %1: %2")
+                     .arg(fileName(), result.error));
+        // Held, not discarded: the bytes come back and the next flush tries again.
+        auto chunk = result.chunks.begin();
+        for (auto& bd : m_flushingData) {
+            if (chunk == result.chunks.end())
+                break;
+            bd.data = std::move(chunk->data);
+            ++chunk;
+        }
+        m_bufferedData.merge(m_flushingData, [](const BufferedData& a, const BufferedData& b) {
+            return a.end < b.end;
+        });
+        m_totalBufferData += m_flushingBytes;
+        m_flushingBytes = 0;
+        if (theApp.downloadQueue)
+            theApp.downloadQueue->checkDiskspace();
+        if (!m_destroying)
+            resumeIdleSources();   // nobody is held on a verdict that is not coming
+        return;
+    }
+
+    for (const auto& bd : m_flushingData)
+        markChangedParts(bd.start, bd.end);
+    m_flushingData.clear();
+    m_flushingBytes = 0;
+
+    verifyChangedParts(forceICH, noAICH, &result.digests);
+
+    // A part came back bad: the sources that were held on the verdict take it up.
+    if (!m_gapList.empty() && !m_destroying)
+        resumeIdleSources();
+
+    if (m_gapList.empty() && !m_destroying) {
+        // Blocks that arrived while this one was out still have to land first.
+        if (m_bufferedData.empty())
+            completeIfVerified();
+        else if (status() == PartFileStatus::Ready || status() == PartFileStatus::Empty)
+            flushBufferAsync();
+        return;
+    }
+
+    const uint64 curTick = getTickCount();
+    if (m_nextMetSaveTime < curTick) {
+        savePartFile();
+        m_nextMetSaveTime = curTick + 30000;
+    }
+}
+
 void PartFile::flushBuffer(bool forceICH, bool noAICH)
 {
+    finishPendingFlush(forceICH, noAICH);
+
     if (m_bufferedData.empty())
         return;
+
+    // Refused before the write, not after it failed: a volume at its floor stays
+    // there. The buffer is kept; the file comes back when there is room again.
+    if (!m_destroying && theApp.downloadQueue
+        && !theApp.downloadQueue->reserveForWrite(this, m_totalBufferData)) {
+        if (!m_insufficient && !m_paused && !m_stopped)
+            pauseFile(/*insufficient*/ true);
+        return;
+    }
 
     // Open file if not already open
     if (!m_partFileHandle.isOpen()) {
@@ -1375,6 +1499,17 @@ int PartFile::availableSourceCount() const
     }));
 }
 
+// The per-file half of the Kad source search conditions.
+bool PartFile::wantsKadSourceSearch(uint64 curTick) const
+{
+    if (m_paused || m_stopped || kadFileSearchID() || curTick < m_lastSearchTimeKad)
+        return false;
+    const PartFileStatus st = status();
+    if (st != PartFileStatus::Ready && st != PartFileStatus::Empty)
+        return false;
+    return static_cast<int>(maxSourcePerFileUDP()) > sourceCount();
+}
+
 int PartFile::validSourcesCount() const
 {
     return static_cast<int>(std::ranges::count_if(m_srcList, [](const UpDownClient* client) {
@@ -1449,9 +1584,10 @@ void PartFile::addSource(UpDownClient* client)
 {
     if (!client)
         return;
-    if (std::ranges::find(m_srcList, client) != m_srcList.end())
+    if (m_srcIndex.contains(client))
         return;
     m_srcList.push_back(client);
+    m_srcIndex.add(client);
 
     // Update part frequency
     if (client->completeSource()) {
@@ -1469,8 +1605,56 @@ void PartFile::addSource(UpDownClient* client)
     emit m_partNotifier.sourceAdded(client);
 }
 
+UpDownClient* PartFile::findSourceLike(const UpDownClient* candidate) const
+{
+    if (!candidate || m_srcList.empty())
+        return nullptr;
+    if (m_srcIndex.contains(candidate))
+        return const_cast<UpDownClient*>(candidate);
+
+    // The index names who could match; the old rule still decides.
+    static thread_local std::vector<UpDownClient*> maybe;
+    m_srcIndex.candidates(candidate, maybe);
+    for (UpDownClient* cur : maybe) {
+        ++s_sourceCompares;
+        if (isSamePeer(cur, candidate))
+            return cur;
+    }
+    return nullptr;
+}
+
+UpDownClient* PartFile::findSourceLikeByScan(const UpDownClient* candidate) const
+{
+    for (UpDownClient* cur : m_srcList) {
+        if (isSamePeer(cur, candidate))
+            return cur;
+    }
+    return nullptr;
+}
+
+bool PartFile::isSamePeer(const UpDownClient* source, const UpDownClient* candidate)
+{
+    if (source == candidate)
+        return true;
+    // compare() matches a pre-hello source by userIDHybrid + port. A v6-only source and a
+    // dual-stack one carrying the same v6 hint share no IPv4 key, hence the last test.
+    return source->compare(candidate, /*ignoreUserHash*/ true)
+        || source->compare(candidate, /*ignoreUserHash*/ false)
+        || (!source->userIPv6().isNull() && source->userIPv6() == candidate->userIPv6()
+            && source->userPort() != 0 && source->userPort() == candidate->userPort());
+}
+
+void PartFile::forgetAllSources()
+{
+    m_srcList.clear();
+    m_srcIndex.clear();
+}
+
 void PartFile::removeSource(UpDownClient* client)
 {
+    if (!m_srcIndex.contains(client))
+        return;
+    m_srcIndex.remove(client);
     auto it = std::ranges::find(m_srcList, client);
     if (it == m_srcList.end())
         return;
@@ -2069,14 +2253,15 @@ bool PartFile::savePartFile()
         // Write buffered (not-yet-flushed) data ranges as gaps too.
         // This data exists only in RAM — if we crash before flushing,
         // the reload must re-request these ranges. (MFC PartFile.cpp:1392-1433)
-        {
-            auto it = m_bufferedData.begin();
-            while (it != m_bufferedData.end()) {
+        // Data handed to the disk worker is no further along: same treatment.
+        for (const auto* pending : {&m_bufferedData, &m_flushingData}) {
+            auto it = pending->begin();
+            while (it != pending->end()) {
                 uint64 bStart = it->start;
                 uint64 bEnd   = it->end;
                 ++it;
                 // Merge contiguous entries
-                while (it != m_bufferedData.end() && it->start == bEnd + 1) {
+                while (it != pending->end() && it->start == bEnd + 1) {
                     bEnd = it->end;
                     ++it;
                 }
@@ -2133,9 +2318,8 @@ void PartFile::completeFile(bool alreadyVerified)
         setKadFileSearchID(0);
     }
 
-    // Flush any remaining buffer
-    if (!m_bufferedData.empty())
-        flushBuffer();
+    // Flush any remaining buffer, and wait out a write still with the worker
+    flushBuffer();
 
     // Close the part file
     if (m_partFileHandle.isOpen())
@@ -2193,7 +2377,7 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
                                    ((curTick - m_lastBufferFlushTime) > bufferTimeLimit * 1000);
 
         if (sizeExceeded || timeExceeded || m_lastBufferFlushTime == 0) {
-            flushBuffer();
+            flushBufferAsync();
             m_lastBufferFlushTime = curTick;
         }
     }
@@ -2403,6 +2587,8 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
             skipReason = "search id already set";
         else if (!theApp.downloadQueue->doKademliaFileRequest())
             skipReason = "queue ask throttle";
+        else if (!theApp.downloadQueue->isKadSearchTurn(this))
+            skipReason = "a file with fewer sources goes first";
 
         if (!skipReason) {
             // MFC stamps the queue-wide throttle before the search-ID check
@@ -2799,7 +2985,8 @@ void PartFile::performFileMove(const QString& srcPath, const QString& destPath, 
 // hashSinglePart (private) — verify MD4 + AICH for one part
 // ===========================================================================
 
-PartFile::PartVerdict PartFile::hashSinglePart(uint32 partNumber, bool* aichAgreed)
+PartFile::PartVerdict PartFile::hashSinglePart(uint32 partNumber, bool* aichAgreed,
+                                               const PartDigest* given)
 {
     if (aichAgreed)
         *aichAgreed = false;
@@ -2827,47 +3014,22 @@ PartFile::PartVerdict PartFile::hashSinglePart(uint32 partNumber, bool* aichAgre
         return PartVerdict::Ok;
     }
 
-    const uint64 partStart = static_cast<uint64>(partNumber) * PARTSIZE;
-    const uint64 partEnd = std::min(partStart + PARTSIZE - 1,
-                                     static_cast<uint64>(fileSize()) - 1);
-    const uint64 partLen = partEnd - partStart + 1;
-
-    // Open file if needed
-    if (!m_partFileHandle.isOpen()) {
-        QString partPath = m_fullName;
-        if (partPath.endsWith(QStringLiteral(".met")))
-            partPath.chop(4);
-        m_partFileHandle.setFileName(partPath);
-        if (!m_partFileHandle.open(QIODevice::ReadWrite))
-            return PartVerdict::Unread;
-    }
-
-    // Read part data from disk. A failure is no verdict: MFC throws here and the file
-    // goes to error (srchybrid/PartFile.cpp:4276-4313) — it never blesses the part.
-    if (!m_partFileHandle.seek(static_cast<qint64>(partStart)))
-        return PartVerdict::Unread;
-    QByteArray partData = m_partFileHandle.read(static_cast<qint64>(partLen));
-    if (static_cast<uint64>(partData.size()) != partLen)
-        return PartVerdict::Unread;
-
-    // A fresh tree that copies the geometry of the recovery set's node for this part:
-    // the root it computes is then comparable with the stored part hash, and existing
-    // recovery data is left alone (MFC PartFile.cpp:3139-3147).
-    std::unique_ptr<AICHHashTree> aichPartTree;
-    if (haveAICH) {
-        if (const AICHHashTree* node =
-                m_aichRecoveryHashSet.findPartHash(static_cast<uint16>(partNumber))) {
-            aichPartTree = std::make_unique<AICHHashTree>(node->m_dataSize,
-                                                          node->m_isLeftBranch,
-                                                          node->getBaseSize());
+    // Read the part back and hash it — unless the disk worker already did. A failed
+    // read is no verdict: MFC throws here and the file goes to error
+    // (srchybrid/PartFile.cpp:4276-4313) — it never blesses the part.
+    PartDigest own;
+    if (!given) {
+        if (!m_partFileHandle.isOpen()) {
+            m_partFileHandle.setFileName(partFilePath());
+            if (!m_partFileHandle.open(QIODevice::ReadWrite))
+                return PartVerdict::Unread;
         }
+        own = digestPart(m_partFileHandle, digestRequest(partNumber));
+        given = &own;
     }
-
-    // One pass fills both hashes, as MFC's single CreateHash call does.
-    uint8 computedHash[16]{};
-    KnownFile::createHashFromMemory(
-        reinterpret_cast<const uint8*>(partData.constData()),
-        static_cast<uint32>(partLen), computedHash, aichPartTree.get());
+    if (!given->read)
+        return PartVerdict::Unread;
+    const uint8* computedHash = given->md4.data();
 
     // MD4 — MFC PartFile.cpp:3155-3171
     bool md4Error = false;
@@ -2893,18 +3055,18 @@ PartFile::PartVerdict PartFile::hashSinglePart(uint32 partNumber, bool* aichAgre
 
     // AICH — MFC PartFile.cpp:3173-3184
     bool aichError = false;
-    const bool aichChecked = haveAICH && aichPartTree && aichPartTree->m_hashValid;
+    const bool aichChecked = haveAICH && given->aichValid;
     if (aichChecked) {
         if (partCount() > 1) {
             if (fileIdentifier().getAvailableAICHPartHashCount() > partNumber)
-                aichError = fileIdentifier().getRawAICHHashSet()[partNumber] != aichPartTree->m_hash;
+                aichError = fileIdentifier().getRawAICHHashSet()[partNumber] != given->aich;
             else {
                 logWarning(QStringLiteral("PartFile: AICH part hash %1 missing for '%2'")
                                .arg(partNumber).arg(fileName()));
                 setAICHPartHashsetNeeded(true);
             }
         } else
-            aichError = fileIdentifier().getAICHHash() != aichPartTree->m_hash;
+            aichError = fileIdentifier().getAICHHash() != given->aich;
     }
 
     // Only a check that actually ran may report agreement: the caller skips the AICH
@@ -2946,6 +3108,19 @@ void PartFile::seedAICHRecoveryMasterHash()
     // until the .part.met is reloaded on the next start, so recovery is effectively off
     // for exactly the downloads most likely to need it.
     m_aichRecoveryHashSet.setMasterHash(fileIdentifier().getAICHHash(), EAICHStatus::Verified);
+}
+
+void PartFile::voteAICHRoot(const AICHHash& root, const Address& from)
+{
+    m_aichRecoveryHashSet.untrustedHashReceived(root, from);
+
+    if (m_aichRecoveryHashSet.getStatus() == EAICHStatus::Trusted
+        && m_aichRecoveryHashSet.hasValidMasterHash() && !fileIdentifier().hasAICHHash())
+    {
+        fileIdentifier().setAICHHash(m_aichRecoveryHashSet.getMasterHash());
+        logInfo(QStringLiteral("AICH root of %1 is trusted by its sources").arg(fileName()));
+        savePartFile();
+    }
 }
 
 void PartFile::requestAICHRecovery(uint32 partNumber)
@@ -3137,7 +3312,7 @@ void PartFile::aichRecoveryDataAvailable(uint32 partNumber)
         addToSharedFiles();
 
         // Check if entire file is now complete
-        if (m_bufferedData.empty())
+        if (m_bufferedData.empty() && m_flushingData.empty())
             completeIfVerified();
     }
 
@@ -3569,6 +3744,74 @@ void PartFile::markChangedParts(uint64 start, uint64 end)
 }
 
 // ===========================================================================
+// Disk-worker helpers (private)
+// ===========================================================================
+
+void PartFile::finishPendingFlush(bool forceICH, bool noAICH)
+{
+    if (m_flushToken == 0)
+        return;
+    std::optional<PartFileWriteResult> result;
+    if (theApp.partFileWriter)
+        result = theApp.partFileWriter->waitFor(m_flushToken);
+    if (result) {
+        applyFlushResult(*result, forceICH, noAICH);
+        return;
+    }
+    // No worker and no result: the job cannot have run. Its bytes are gone with it,
+    // so the ranges go back to being gaps rather than being taken for written.
+    logError(QStringLiteral("PartFile: lost a pending write of '%1'").arg(fileName()));
+    m_flushToken = 0;
+    for (const auto& bd : m_flushingData)
+        addGap(bd.start, bd.end);
+    m_flushingData.clear();
+    m_flushingBytes = 0;
+}
+
+void PartFile::resumeIdleSources()
+{
+    // A copy: a source with nothing to get leaves the list from inside the call.
+    const std::vector<UpDownClient*> sources = m_downloadingSources;
+    for (UpDownClient* client : sources) {
+        if (std::ranges::find(m_downloadingSources, client) != m_downloadingSources.end()
+            && client->downloadState() == DownloadState::Downloading
+            && client->pendingBlocks().empty())
+            client->sendBlockRequests();
+    }
+}
+
+QString PartFile::partFilePath() const
+{
+    QString path = m_fullName.isEmpty() ? m_tmpPath + QDir::separator() + m_partMetFilename
+                                        : m_fullName;
+    if (path.endsWith(QStringLiteral(".met")))
+        path.chop(4);
+    return path;
+}
+
+PartDigestRequest PartFile::digestRequest(uint32 partNumber)
+{
+    PartDigestRequest request;
+    request.part = partNumber;
+    request.start = static_cast<uint64>(partNumber) * PARTSIZE;
+    const uint64 end = std::min(request.start + PARTSIZE - 1, static_cast<uint64>(fileSize()) - 1);
+    request.length = end - request.start + 1;
+
+    // The geometry of the recovery set's node for this part: the root computed with
+    // it compares with the stored part hash (MFC PartFile.cpp:3139-3147).
+    if (fileIdentifier().hasAICHHash() && fileIdentifier().hasExpectedAICHHashCount()) {
+        if (const AICHHashTree* node =
+                m_aichRecoveryHashSet.findPartHash(static_cast<uint16>(partNumber))) {
+            request.wantAICH = true;
+            request.aichDataSize = node->m_dataSize;
+            request.aichLeftBranch = node->m_isLeftBranch;
+            request.aichBaseSize = node->getBaseSize();
+        }
+    }
+    return request;
+}
+
+// ===========================================================================
 // completeIfVerified (private)
 // ===========================================================================
 
@@ -3591,8 +3834,16 @@ void PartFile::completeIfVerified()
 // verifyChangedParts (private)
 // ===========================================================================
 
-void PartFile::verifyChangedParts(bool forceICH, bool noAICH)
+void PartFile::verifyChangedParts(bool forceICH, bool noAICH,
+                                  const std::map<uint32, PartDigest>* digests)
 {
+    const auto digestOf = [digests](uint32 part) -> const PartDigest* {
+        if (!digests)
+            return nullptr;
+        const auto it = digests->find(part);
+        return it != digests->end() ? &it->second : nullptr;
+    };
+
     // Hash verification per changed part (MD4 + AICH), mirroring MFC's
     // CPartFile::FlushBuffer (srchybrid/PartFile.cpp:4154-4220). Flag cleared first.
     for (uint32 p = 0; p < partCount(); ++p) {
@@ -3605,8 +3856,15 @@ void PartFile::verifyChangedParts(bool forceICH, bool noAICH)
                                         static_cast<uint64>(fileSize()) - 1);
 
         if (isComplete(p)) {
+            // Complete by the gap list, but some of it still in memory or with the
+            // disk worker: what is on disk is not the part yet. Judged when it is
+            // (MFC tests IsCompleteBD here, srchybrid/PartFile.cpp:4163).
+            if (!isCompleteBDSafe(partStart, partEnd)) {
+                m_changedParts[p] = true;
+                continue;
+            }
             bool aichAgreed = false;
-            const PartVerdict verdict = hashSinglePart(p, &aichAgreed);
+            const PartVerdict verdict = hashSinglePart(p, &aichAgreed, digestOf(p));
             if (verdict == PartVerdict::Unread) {
                 // No verdict: neither blessed nor condemned, and looked at again on
                 // the next flush. completeIfVerified() keeps the file from finishing.
@@ -3689,7 +3947,7 @@ void PartFile::verifyChangedParts(bool forceICH, bool noAICH)
             // them would be wasted traffic.
             // Unread included: filling the gaps of a part nobody could read is the
             // worst outcome this function has.
-            if (hashSinglePart(p) != PartVerdict::Ok)
+            if (hashSinglePart(p, nullptr, digestOf(p)) != PartVerdict::Ok)
                 continue;
 
             m_corruptionBlackBox.verifiedData(partStart, partEnd);
@@ -3735,6 +3993,9 @@ bool PartFile::shrinkToAvoidAlreadyRequested(uint64& start, uint64& end) const
         if (!shrink(block->startOffset, block->endOffset))
             return false;
     for (const auto& bd : m_bufferedData)
+        if (!shrink(bd.start, bd.end))
+            return false;
+    for (const auto& bd : m_flushingData)
         if (!shrink(bd.start, bd.end))
             return false;
     return true;

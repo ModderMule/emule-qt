@@ -861,6 +861,34 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     m_itemDownCompletedSes->setText(0,
         tr("Completed Downloads: %1").arg(cborInt(stats, QLatin1StringView("completedDownloads"))));
 
+    // A source delivering right now counts as a good session already
+    // (srchybrid/StatisticsDlg.cpp:840).
+    const qint64 downRunning = cborInt(stats, QLatin1StringView("downTransferring"));
+    {
+        const qint64 good = cborInt(stats, QLatin1StringView("downSuccessful")) + downRunning;
+        const qint64 bad = cborInt(stats, QLatin1StringView("downFailed"));
+        const qint64 total = good + bad;
+        m_itemDownSesSuccessful->setText(0, tr("Successful: %1%2").arg(good)
+            .arg(total > 0 ? QStringLiteral(" (%1%)").arg(100 * good / total) : QString()));
+        m_itemDownSesFailed->setText(0, tr("Failed: %1").arg(bad));
+        m_itemDownSesAvgPerSession->setText(0,
+            tr("Average Download Per Session: %1").arg(formatByteSize(good > 0 ? recv / good : 0)));
+        m_itemDownSesAvgTime->setText(0,
+            tr("Average Download Time: %1").arg(formatDuration(cborInt(stats, QLatin1StringView("downAvgTime")))));
+    }
+    {
+        const qint64 good = cborInt(stats, QLatin1StringView("cumDownSuccessful")) + downRunning;
+        const qint64 bad = cborInt(stats, QLatin1StringView("cumDownFailed"));
+        const qint64 total = good + bad;
+        m_itemDownCumSuccessful->setText(0, tr("Successful: %1%2").arg(good)
+            .arg(total > 0 ? QStringLiteral(" (%1%)").arg(100 * good / total) : QString()));
+        m_itemDownCumFailed->setText(0, tr("Failed: %1").arg(bad));
+        m_itemDownCumAvgPerSession->setText(0,
+            tr("Average Download Per Session: %1").arg(formatByteSize(good > 0 ? cumTotalDown / good : 0)));
+        m_itemDownCumAvgTime->setText(0,
+            tr("Average Download Time: %1").arg(formatDuration(cborInt(stats, QLatin1StringView("cumDownAvgTime")))));
+    }
+
     // Download session compression/corruption
     const qint64 sesCompression = cborInt(stats, QLatin1StringView("sesCompressionGain"));
     const qint64 sesCorruption = cborInt(stats, QLatin1StringView("sesCorruptionLoss"));

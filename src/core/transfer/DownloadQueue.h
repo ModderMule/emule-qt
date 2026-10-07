@@ -19,7 +19,9 @@
 #include <QStringList>
 
 #include <deque>
+#include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 class tst_DownloadQueue;  // fwd-decl for the white-box unit-test friend below
@@ -124,6 +126,9 @@ public:
     bool checkAndAddKnownSource(PartFile* file, UpDownClient* source,
                                 bool ignoreGlobalDeadList = false);
     void removeSource(UpDownClient* source);
+    /// Check every indexed duplicate lookup against a full scan and abort on a
+    /// difference. For tests; costs what the index saves.
+    static void setVerifySourceIndex(bool on) { m_verifySourceIndex = on; }
 
     /// Vet one peer address the way every untrusted source ingress must: isGoodIP, the IP
     /// filter and the ban list. Returns a null Address when the address is unusable.
@@ -206,6 +211,19 @@ public:
     /// mechanism was already ported and had no caller until now.
     void checkDiskspace();
 
+    /// Before a flush: may `file` write `bytes` more without its volume going
+    /// under the floor? Charges them against the volume's budget when it may.
+    /// Unknown free space and a switched-off check both say yes.
+    [[nodiscard]] bool reserveForWrite(const PartFile* file, uint64 bytes);
+
+    /// Replaces the free-space measurement, for tests. With a probe set every
+    /// distinct temp directory counts as its own volume.
+    using FreeSpaceProbe = std::function<std::optional<uint64>(const QString& dir)>;
+    void setFreeSpaceProbe(FreeSpaceProbe probe);
+
+    /// A parked file comes back at floor + min(what the parked files need, this).
+    static constexpr uint64 kDiskResumeHeadroom = 1024ull * 1024 * 1024;
+
     /// checkDiskspace() at most every kDiskCheckIntervalMs, for the tick to
     /// call. MFC re-checks every 15 minutes (DISKSPACERECHECKTIME); a write
     /// failure calls the unthrottled one directly instead of waiting.
@@ -250,6 +268,11 @@ public:
 
     [[nodiscard]] bool doKademliaFileRequest() const;
     void setLastKademliaFileRequest();
+    /// The file the next Kad source search goes to: of those that want one, the one
+    /// with the fewest valid sources (ties: queue order). Null if none wants one.
+    [[nodiscard]] PartFile* pickKadSearchFile(uint64 curTick) const;
+    /// True if `file` is that one. Only meaningful inside process().
+    [[nodiscard]] bool isKadSearchTurn(const PartFile* file) const { return file == m_kadSearchTurn; }
 
     // -- Stats ----------------------------------------------------------------
 
@@ -258,8 +281,14 @@ public:
     /// datarate()'s 10 s MFC window; the ED2K/Usenet split reads it.
     [[nodiscard]] uint32 datarateOver(uint32 windowMs) const;
     [[nodiscard]] bool hasActiveTransfers() const;
-    [[nodiscard]] uint32 successfulDownloadCount() const { return m_successfulDownCount; }
-    [[nodiscard]] uint32 failedDownloadCount() const { return m_failedDownCount; }
+    [[nodiscard]] uint32 completedDownloadCount() const { return m_successfulDownCount; }
+
+    /// A source left Downloading (srchybrid/DownloadClient.cpp:676-682): successful
+    /// if it delivered anything and did not end in an error.
+    void noteDownloadSession(bool successful, uint32 seconds);
+    [[nodiscard]] uint32 successfulDownSessions() const { return m_downSessionsOk; }
+    [[nodiscard]] uint32 failedDownSessions() const { return m_downSessionsFailed; }
+    [[nodiscard]] uint64 totalDownSessionTime() const { return m_downSessionSeconds; }
     [[nodiscard]] uint32 averageDownTime() const;
 
     /// UDP file re-asks sent this session, and how many of them went unanswered.
@@ -290,10 +319,23 @@ private:
     /// @return whether @p file gained a source.
     bool addSourceAndConnect(PartFile* file, UpDownClient* client);
 
-    [[nodiscard]] static bool sameIPv6Endpoint(const UpDownClient* a, const UpDownClient* b);
+    static inline bool m_verifySourceIndex = false;
 
     /// When the volume was last measured, for checkDiskspaceTimed().
     QElapsedTimer m_diskCheckClock;
+
+    [[nodiscard]] static bool diskCheckApplies(const PartFile* file);
+    [[nodiscard]] QString volumeKey(const QString& dir) const;
+    /// Free bytes on dir's volume; cached for a second unless `fresh`.
+    [[nodiscard]] std::optional<uint64> probeFreeSpace(const QString& dir, bool fresh);
+
+    struct VolumeFree {
+        std::optional<uint64> free;
+        qint64 stamp = -1;
+    };
+    QHash<QString, VolumeFree> m_volumeFree;
+    QElapsedTimer m_volumeClock;
+    FreeSpaceProbe m_freeSpaceProbe;
 
     /// Whether the "no room" line has already been said for the current stall.
     bool m_diskStallLogged = false;
@@ -359,13 +401,15 @@ private:
     ServerConnect* m_serverConnect = nullptr;
     uint32 m_datarate = 0;
     uint32 m_successfulDownCount = 0;
-    uint32 m_failedDownCount = 0;
+    uint32 m_downSessionsOk = 0;
+    uint32 m_downSessionsFailed = 0;
+    uint64 m_downSessionSeconds = 0;
     uint32 m_udpFileReasks = 0;         // m_nUDPFileReasks
     uint32 m_failedUDPFileReasks = 0;   // m_nFailedUDPFileReasks
-    uint64 m_totalDownTime = 0;  // seconds
     std::deque<TransferredData> m_averageDRList;  // 10-second averaging window
     uint32 m_udCounter = 0;
     uint64 m_lastKademliaFileRequest = 0;
+    const PartFile* m_kadSearchTurn = nullptr;   // chosen per process() pass
 
     // Global-UDP-source rotation cursors (port of CDownloadQueue members).
     Server*   m_curUdpServer = nullptr;       // cur_udpserver — current pass cursor (non-owning)

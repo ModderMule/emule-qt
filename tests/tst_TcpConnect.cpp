@@ -4,6 +4,7 @@
 ///        a local ListenSocket, without requiring internet or Kad.
 ///        Also tests a full loopback file download via the ED2K protocol.
 
+#include "files/PartFileWriteThread.h"
 #include "TestHelpers.h"
 
 #include "app/AppContext.h"
@@ -45,6 +46,8 @@ using namespace eMule::testing;
 // ---------------------------------------------------------------------------
 // Test class
 // ---------------------------------------------------------------------------
+
+static eMule::PartFileWriteThread* s_partFileWriter = nullptr;
 
 class tst_TcpConnect : public QObject {
     Q_OBJECT
@@ -110,6 +113,7 @@ std::unique_ptr<PartFile> tst_TcpConnect::makePartFile()
 
 void tst_TcpConnect::initTestCase()
 {
+    DownloadQueue::setVerifySourceIndex(true);   // index checked against the full scan
     m_tmpDir = new TempDir();
 
     // 1. Preferences — load with configDir for RSA key generation
@@ -198,6 +202,10 @@ void tst_TcpConnect::initTestCase()
     m_downloadQueue = new DownloadQueue(this);
     m_downloadQueue->setClientList(m_clientList);
     theApp.downloadQueue = m_downloadQueue;
+
+    // Downloads write and hash through the disk worker, as the daemon's do.
+    s_partFileWriter = new PartFileWriteThread;
+    theApp.partFileWriter = s_partFileWriter;
 
     // 14. Create KnownFile from data/incoming/readme.txt and share it
     const QString dataIncoming = projectDataDir() + QStringLiteral("/incoming");
@@ -1084,6 +1092,14 @@ void tst_TcpConnect::cleanupTestCase()
     thePrefs.setLogRawSocketPackets(false);
 
     // Reset globals
+    // Nothing may still be with the worker when it goes.
+    if (theApp.downloadQueue) {
+        for (auto* file : theApp.downloadQueue->files())
+            file->flushBuffer();
+    }
+    theApp.partFileWriter = nullptr;
+    delete s_partFileWriter;
+    s_partFileWriter = nullptr;
     theApp.downloadQueue = nullptr;
     theApp.uploadQueue = nullptr;
     theApp.sharedFileList = nullptr;

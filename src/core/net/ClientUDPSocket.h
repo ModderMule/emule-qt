@@ -65,6 +65,9 @@ public:
     /// Get the bound port.
     [[nodiscard]] uint16 connectedPort() const { return m_port; }
 
+    /// SO_RCVBUF as the OS reports it.
+    [[nodiscard]] int receiveBufferSize();
+
     /// Send a packet to a peer. Takes ownership of packet.
     /// @param packet     Packet to send (can be nullptr for raw data).
     /// @param ip         Destination IP (host byte order).
@@ -137,6 +140,8 @@ private slots:
     void flushSendQueue();
 
 private:
+    void growReceiveBuffer();
+
     /// Filter, decrypt and dispatch one datagram. May throw — onReadyRead() catches.
     void processDatagram(const QNetworkDatagram& datagram);
     bool processPacket(const uint8* packet, uint32 size, uint8 opcode,

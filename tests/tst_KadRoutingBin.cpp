@@ -48,6 +48,8 @@ private slots:
     void getRandomContact();
     void globalIPLimits();
     void subnetLimits();
+    void replaceWeakest_takesTheExpiredOrClearlyWeakerOne();
+    void replaceWeakest_respectsTheLimitsAndRemovesNothingOnRefusal();
     void changeContactIPAddress();
     void hasOnlyLANNodes();
     void getNumContacts_filtering();
@@ -316,6 +318,104 @@ void tst_KadRoutingBin::subnetLimits()
     // Third from same /24 should be rejected (not LAN, so subnet limit applies)
     QVERIFY(!bin.addContact(c3));
     delete c3; // rejected
+}
+
+namespace {
+
+/// A bin filled with kK plain contacts, one public /24 each (88.<i>.1.1), ids 1..kK.
+void fillBin(RoutingBin& bin)
+{
+    for (uint32 i = 1; i <= kK; ++i)
+        QVERIFY(bin.addContact(makeContact(i, 0x58000101u | (i << 16))));
+}
+
+} // namespace
+
+// A full bin that cannot split dropped every newcomer unless the *front* contact
+// happened to be expired.
+void tst_KadRoutingBin::replaceWeakest_takesTheExpiredOrClearlyWeakerOne()
+{
+    RoutingBin bin;
+    fillBin(bin);
+
+    // Nobody expired, newcomer no better than anyone: it is the one dropped.
+    auto* plain = makeContact(50, 0x59000101u);
+    QVERIFY(bin.replaceWeakest(plain) == nullptr);
+    QCOMPARE(bin.getSize(), uint32{kK});
+
+    // An expired contact goes first, wherever it sits in the list.
+    Contact* fifth = bin.getContact(UInt128(uint32{5}));
+    QVERIFY(fifth != nullptr);
+    fifth->expire();
+    Contact* gone = bin.replaceWeakest(plain);
+    QCOMPARE(gone, fifth);
+    delete gone;
+    QCOMPARE(bin.getSize(), uint32{kK});
+    QCOMPARE(bin.getContact(UInt128(uint32{50})), plain);
+
+    // A verified contact that said hello outranks one that never proved anything.
+    auto* proven = makeContact(51, 0x5A000101u);
+    proven->setIpVerified(true);
+    proven->setReceivedHelloPacket();
+    QVERIFY(proven->strength() >= bin.getOldest()->strength() + RoutingBin::kReplaceMargin);
+    Contact* oldest = bin.getOldest();
+    gone = bin.replaceWeakest(proven);
+    QCOMPARE(gone, oldest);            // equal strength: the longest silent one
+    delete gone;
+
+    // ...but not one that is in use by a running lookup.
+    ContactArray all;
+    bin.getEntries(all);
+    for (auto* c : all)
+        c->incUse();
+    auto* another = makeContact(52, 0x5B000101u);
+    another->setIpVerified(true);
+    another->setReceivedHelloPacket();
+    QVERIFY(bin.replaceWeakest(another) == nullptr);
+    delete another;
+    for (auto* c : all)
+        c->decUse();
+}
+
+// The old code removed the expired contact first and then tried the add, which a
+// subnet limit could still refuse: a contact lost for nothing.
+void tst_KadRoutingBin::replaceWeakest_respectsTheLimitsAndRemovesNothingOnRefusal()
+{
+    RoutingBin bin;
+    // Two contacts share 88.1.1.x; the rest have a /24 each.
+    QVERIFY(bin.addContact(makeContact(1, 0x58010101u)));
+    QVERIFY(bin.addContact(makeContact(2, 0x58010102u)));
+    for (uint32 i = 3; i <= kK; ++i)
+        QVERIFY(bin.addContact(makeContact(i, 0x58000101u | (i << 16))));
+
+    Contact* expired = bin.getContact(UInt128(uint32{7}));
+    expired->expire();
+
+    // A third from 88.1.1.x would break the two-per-bin rule.
+    auto* third = makeContact(60, 0x58010103u);
+    QVERIFY(bin.replaceWeakest(third) == nullptr);
+    QCOMPARE(bin.getSize(), uint32{kK});
+    QCOMPARE(bin.getContact(UInt128(uint32{7})), expired);
+    delete third;
+
+    // An address already in the table elsewhere is refused too.
+    auto* sameIP = makeContact(61, 0x58010101u);
+    QVERIFY(bin.replaceWeakest(sameIP) == nullptr);
+    QCOMPARE(bin.getContact(UInt128(uint32{7})), expired);
+    delete sameIP;
+
+    // Replacing one of the two from that /24 keeps the count at two: allowed.
+    bin.getContact(UInt128(uint32{2}))->expire();
+    expired->updateType();             // no longer the first choice
+    auto* swap = makeContact(62, 0x58010104u);
+    Contact* gone = bin.replaceWeakest(swap);
+    QVERIFY(gone != nullptr);
+    QCOMPARE(gone->getClientID(), UInt128(uint32{2}));
+    delete gone;
+
+    // The global counts followed: the freed address can come back, a third cannot.
+    QVERIFY(RoutingBin::checkGlobalIPLimits(0x58010102u, 4672, false));
+    QVERIFY(!RoutingBin::checkGlobalIPLimits(0x58010104u, 4672, false));
 }
 
 // ---------------------------------------------------------------------------

@@ -88,6 +88,8 @@ private:
                               bool update, bool fromHelloReq, bool* outRequestsACK,
                               UInt128* outContactID);
     void sendLegacyChallenge(uint32 ip, uint16 udpPort, const UInt128& contactID);
+    /// True if ip:udpPort is our own Kad endpoint, as far as we know our address.
+    [[nodiscard]] bool isOwnKadAddress(uint32 ip, uint16 udpPort) const;
 
     void process_KADEMLIA2_BOOTSTRAP_REQ(uint32 ip, uint16 udpPort, const KadUDPKey& senderKey);
     void process_KADEMLIA2_BOOTSTRAP_RES(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,

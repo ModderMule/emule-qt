@@ -258,6 +258,8 @@ public:
         uint32 downSuccessfulSessions = 0;
         uint32 downFailedSessions = 0;
         uint32 downCompletedFiles = 0;
+        uint64 upSessionSeconds = 0;     ///< summed length of the successful sessions
+        uint64 downSessionSeconds = 0;
         uint32 connPeak = 0;
         uint32 connMaxLimitReached = 0;
 
@@ -283,6 +285,8 @@ public:
         uint32 downSuccessfulSessions = 0;
         uint32 downFailedSessions = 0;
         uint32 downCompletedFiles = 0;
+        uint32 upAvgTime = 0;             ///< seconds per successful session, all time
+        uint32 downAvgTime = 0;
 
         // Connections
         uint32 connPeak = 0;              ///< a maximum, not a sum

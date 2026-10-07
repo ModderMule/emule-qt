@@ -72,6 +72,66 @@ bool RoutingBin::addContact(Contact* contact)
     return false;
 }
 
+Contact* RoutingBin::replaceWeakest(Contact* newcomer)
+{
+    Q_ASSERT(newcomer != nullptr);
+    if (m_entries.size() < kK)
+        return nullptr;
+
+    // Expired first, then the least proven; the list is oldest first, so ties go
+    // to the one longest without a sign of life.
+    Contact* victim = nullptr;
+    int victimRank = 0;
+    for (auto* c : m_entries) {
+        if (c->getClientID() == newcomer->getClientID())
+            return nullptr;
+        if (c->inUse())
+            continue;
+        const int rank = c->getType() == 4 ? -1 : c->strength();
+        if (!victim || rank < victimRank) {
+            victim = c;
+            victimRank = rank;
+        }
+    }
+    if (!victim)
+        return nullptr;
+    if (victim->getType() != 4 && newcomer->strength() < victim->strength() + kReplaceMargin)
+        return nullptr;
+
+    // The limits, with the victim's own share taken out.
+    const uint32 ip = newcomer->address().toUint32();
+    const uint32 victimIP = victim->address().toUint32();
+    const bool lan = newcomer->address().isLan();
+    const bool sameSubnetAsVictim = ((ip ^ victimIP) & ~0xFFu) == 0;
+
+    const auto itIP = s_globalContactIPs.find(ip);
+    uint32 sameIP = itIP != s_globalContactIPs.end() ? itIP->second : 0;
+    if (ip == victimIP && sameIP > 0)
+        --sameIP;
+    if (sameIP >= kMaxContactsIP)
+        return nullptr;
+
+    const auto itSubnet = s_globalContactSubnets.find(ip & ~0xFFu);
+    uint32 sameSubnet = itSubnet != s_globalContactSubnets.end() ? itSubnet->second : 0;
+    if (sameSubnetAsVictim && sameSubnet > 0)
+        --sameSubnet;
+    if (sameSubnet >= kMaxContactsSubnet && !lan)
+        return nullptr;
+
+    uint32 inBin = 0;
+    for (const auto* c : m_entries) {
+        if (c != victim)
+            inBin += static_cast<uint32>(((ip ^ c->address().toUint32()) & ~0xFFu) == 0);
+    }
+    if (inBin >= 2 && !lan)
+        return nullptr;
+
+    removeContact(victim);
+    m_entries.push_back(newcomer);
+    adjustGlobalTracking(ip, true);
+    return victim;
+}
+
 void RoutingBin::setAlive(Contact* contact)
 {
     Q_ASSERT(contact != nullptr);

@@ -71,6 +71,7 @@ private slots:
     void construction_createsLeafRoot();
     void addContact_basic();
     void addContact_triggersSplit();
+    void addContact_reportsAddedOrUpdated();
     void addContact_rejectsSelfId();
     void addContact_rejectsKad1();
     void addContact_udpKeyGatesSameAddressUpdate();
@@ -148,6 +149,34 @@ void tst_KadRoutingZone::addContact_basic()
     QVERIFY(zone.add(contactId, ip, 4672, 4662, KADEMLIA_VERSION, KadUDPKey(),
                      true, false, false, false));
     QCOMPARE(zone.getNumContacts(), uint32{1});
+}
+
+// The result is "added or updated", not "newly added" — MFC AddUnfiltered.
+void tst_KadRoutingZone::addContact_reportsAddedOrUpdated()
+{
+    RoutingZone zone(m_localId, m_tmpDir->filePath(QStringLiteral("nodes.dat")));
+
+    const UInt128 id = makeId(42);
+    const uint32 ip = makePublicIP(1);
+    const uint32 myIP = theApp.publicIP();
+    const KadUDPKey goodKey(0x1111, myIP);
+    const KadUDPKey attackerKey(0x2222, myIP);
+
+    // New contact
+    QVERIFY(zone.addOrUpdateContact(id, ip, 4672, 4662, KADEMLIA_VERSION, goodKey, false));
+    // Known contact, accepted update
+    QVERIFY(zone.addOrUpdateContact(id, ip, 4672, 5555, KADEMLIA_VERSION, goodKey, false));
+    // Known contact, update not asked for — table untouched
+    QVERIFY(!zone.addOrUpdateContact(id, ip, 4672, 6666, KADEMLIA_VERSION, goodKey, false,
+                                     /*update=*/false, /*fromHello=*/false));
+    // Known contact, update denied (wrong sender key)
+    QVERIFY(!zone.addOrUpdateContact(id, ip, 4672, 7777, KADEMLIA_VERSION, attackerKey, false));
+    // Our own ID never enters the table
+    QVERIFY(!zone.addOrUpdateContact(m_localId, makePublicIP(2), 4672, 4662, KADEMLIA_VERSION,
+                                     KadUDPKey(), false));
+
+    QCOMPARE(zone.getNumContacts(), uint32{1});
+    QCOMPARE(zone.getContact(id)->getTCPPort(), uint16{5555});
 }
 
 void tst_KadRoutingZone::addContact_triggersSplit()

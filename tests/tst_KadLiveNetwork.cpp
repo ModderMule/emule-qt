@@ -1129,7 +1129,7 @@ void tst_KadLiveNetwork::keywordSearch_findsResults()
     Kademlia::setKadKeywordResultCallback(
         [this](uint32 /*searchID*/, const uint8* /*fileHash*/, const QString& name,
                uint64 size, const QString& /*type*/, uint32 sources, uint32 completeSources,
-               const kad::TagList& /*metaTags*/) {
+               const kad::TagList& /*metaTags*/, uint32 /*fromIP*/) {
             m_searchResults.push_back({name, size, sources, completeSources});
         });
 

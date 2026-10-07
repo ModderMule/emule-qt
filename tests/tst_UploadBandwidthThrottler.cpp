@@ -2,6 +2,7 @@
 /// @brief Tests for transfer/UploadBandwidthThrottler.
 
 #include "TestHelpers.h"
+#include "prefs/Preferences.h"
 #include "transfer/UploadBandwidthThrottler.h"
 #include "utils/Opcodes.h"
 #include "utils/TimeUtils.h"
@@ -56,7 +57,8 @@ public:
         fileSendCalls.fetch_add(1, std::memory_order_relaxed);
         SocketSentBytes result;
         result.success = true;
-        result.sentBytesStandardPackets = std::min(maxNumberOfBytesToSend, 1024u);
+        result.sentBytesStandardPackets = std::min(maxNumberOfBytesToSend, perCall.load());
+        sentBytes.fetch_add(result.sentBytesStandardPackets, std::memory_order_relaxed);
         return result;
     }
 
@@ -74,6 +76,8 @@ public:
     [[nodiscard]] bool hasControlQueue() const override { return false; }
 
     std::atomic<int> fileSendCalls{0};
+    std::atomic<uint32> perCall{1024};        // what one send call takes at most
+    std::atomic<uint64> sentBytes{0};
     std::atomic<int> neededCalls{0};
     std::atomic<uint64> lastCalledSend{0};   // 0 = silent for ever
 };
@@ -97,6 +101,7 @@ private slots:
     void wakesOnAddToStandardList();
     void trickleOnlyAfterASecondOfSilence();
     void controlQueueDrainsWhenSocketEmpty();
+    void surplusPassRotatesItsStartSlot();
 };
 
 void tst_UploadBandwidthThrottler::construction_defaults()
@@ -306,6 +311,46 @@ void tst_UploadBandwidthThrottler::controlQueueDrainsWhenSocketEmpty()
 
     throttler.removeFromAllQueues(static_cast<ThrottledControlSocket*>(&fake));
     throttler.endThread();
+}
+
+// One slot's fair share at this limit, and sockets that take less per call than a
+// loop has to give: what the first slot leaves goes to the surplus pass. Started at
+// slot 0 every time, the last slot never saw a byte.
+void tst_UploadBandwidthThrottler::surplusPassRotatesItsStartSlot()
+{
+    const uint32 oldLimit = thePrefs.maxUpload();
+    const bool oldDyn = thePrefs.dynUpEnabled();
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(5);   // KB/s: the equal pass serves one slot only
+
+    FakeFileSocket socks[3];
+    for (auto& s : socks) {
+        s.perCall = 2;   // a loop has ~6 bytes to give at this limit
+        s.lastCalledSend = getTickCount() + MIN2MS(10);   // keep the trickle pass out
+    }
+
+    {
+        UploadBandwidthThrottler throttler;
+        for (int i = 0; i < 3; ++i)
+            throttler.addToStandardList(i, &socks[i]);
+
+        QTest::qWait(3000);
+
+        for (auto& s : socks)
+            throttler.removeFromAllQueues(static_cast<ThrottledFileSocket*>(&s));
+        throttler.endThread();
+    }
+
+    thePrefs.setMaxUpload(oldLimit);
+    thePrefs.setDynUpEnabled(oldDyn);
+
+    const uint64 first = socks[0].sentBytes.load();
+    const uint64 last = socks[2].sentBytes.load();
+    qInfo("bytes per slot: %llu %llu %llu", static_cast<unsigned long long>(first),
+          static_cast<unsigned long long>(socks[1].sentBytes.load()),
+          static_cast<unsigned long long>(last));
+    QVERIFY(first > 0);
+    QVERIFY2(last * 8 >= first, "the last slot is starved of the surplus");
 }
 
 QTEST_GUILESS_MAIN(tst_UploadBandwidthThrottler)

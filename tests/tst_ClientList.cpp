@@ -40,6 +40,11 @@ private slots:
         qRegisterMetaType<eMule::UpDownClient*>("UpDownClient*");
     }
     void handshakeFailures_banAtTheThreshold();
+    void fruitlessLedger_secondSessionInTheWindowPauses();
+    void fruitlessLedger_secondPauseQuarantines();
+    void fruitlessLedger_tenEventsQuarantine();
+    void fruitlessLedger_productiveSessionStartsOver();
+    void fruitlessLedger_isBounded();
     void handshakeFailures_neverBanAListedServer();
     void addClient_basic();
     void addClient_duplicate();
@@ -940,6 +945,133 @@ void tst_ClientList::handshakeFailures_neverBanAListedServer()
     for (int i = 0; i < 3 * HANDSHAKEFAIL_BAN_COUNT; ++i)
         list.noteHandshakeFailure(server);
     QVERIFY(!list.isBannedClient(server));
+}
+
+// ---------------------------------------------------------------------------
+// FruitlessSessionLedger
+// ---------------------------------------------------------------------------
+
+namespace {
+using Ledger = eMule::FruitlessSessionLedger;
+constexpr uint64 kMin = 60 * 1000;
+
+std::array<uint8, 16> ledgerHash(uint32 n)
+{
+    std::array<uint8, 16> h{};
+    h[0] = 0x51;
+    std::memcpy(h.data() + 4, &n, sizeof(n));
+    return h;
+}
+} // namespace
+
+void tst_ClientList::fruitlessLedger_secondSessionInTheWindowPauses()
+{
+    Ledger ledger;
+    const auto peer = ledgerHash(1);
+    const auto other = ledgerHash(2);
+    uint64 now = 1'000'000;
+
+    QCOMPARE(ledger.noteFruitlessSession(peer.data(), now), Ledger::Verdict::Noted);
+    QCOMPARE(ledger.heldBackFor(peer.data(), now), uint64{0});
+
+    // outside the window the first one is forgotten
+    now += Ledger::kWindowMs + 1;
+    QCOMPARE(ledger.noteFruitlessSession(peer.data(), now), Ledger::Verdict::Noted);
+    now += kMin;
+    QCOMPARE(ledger.noteFruitlessSession(peer.data(), now), Ledger::Verdict::Paused);
+    QCOMPARE(ledger.heldBackFor(peer.data(), now), Ledger::kPauseMs);
+    QVERIFY(!ledger.isQuarantined(peer.data(), now));
+    QCOMPARE(ledger.heldBackFor(other.data(), now), uint64{0});
+
+    now += Ledger::kPauseMs;
+    QCOMPARE(ledger.heldBackFor(peer.data(), now), uint64{0});
+}
+
+void tst_ClientList::fruitlessLedger_secondPauseQuarantines()
+{
+    Ledger ledger;
+    const auto peer = ledgerHash(3);
+    uint64 now = 1'000'000;
+
+    ledger.noteFruitlessSession(peer.data(), now);
+    QCOMPARE(ledger.noteFruitlessSession(peer.data(), now + kMin), Ledger::Verdict::Paused);
+
+    // an hour later, the same again
+    now += 60 * kMin;
+    QCOMPARE(ledger.noteFruitlessSession(peer.data(), now), Ledger::Verdict::Noted);
+    QCOMPARE(ledger.noteFruitlessSession(peer.data(), now + kMin), Ledger::Verdict::Quarantined);
+    now += kMin;
+    QVERIFY(ledger.isQuarantined(peer.data(), now));
+    QCOMPARE(ledger.heldBackFor(peer.data(), now), Ledger::kQuarantineMs);
+
+    // a good session cannot buy it out
+    ledger.noteProductiveSession(peer.data());
+    QVERIFY(ledger.isQuarantined(peer.data(), now + kMin));
+
+    // served: the peer starts clean
+    now += Ledger::kQuarantineMs;
+    QVERIFY(!ledger.isQuarantined(peer.data(), now));
+    QCOMPARE(ledger.noteFruitlessSession(peer.data(), now), Ledger::Verdict::Noted);
+    QCOMPARE(ledger.noteFruitlessSession(peer.data(), now + kMin), Ledger::Verdict::Paused);
+}
+
+void tst_ClientList::fruitlessLedger_tenEventsQuarantine()
+{
+    Ledger ledger;
+    const auto peer = ledgerHash(4);
+    uint64 now = 1'000'000;
+
+    ledger.noteFruitlessSession(peer.data(), now);
+    QCOMPARE(ledger.noteFruitlessSession(peer.data(), now + 1000), Ledger::Verdict::Paused);
+    // the peer keeps accepting us during the pause: events 3..9 change nothing
+    for (uint32 i = 3; i < Ledger::kEventsToQuarantine; ++i)
+        QCOMPARE(ledger.noteDeclinedAccept(peer.data(), now + i * 1000), Ledger::Verdict::Paused);
+    QCOMPARE(ledger.noteDeclinedAccept(peer.data(), now + 10'000), Ledger::Verdict::Quarantined);
+    QVERIFY(ledger.isQuarantined(peer.data(), now + 11'000));
+
+    // spread over more than the window, declined accepts alone do nothing
+    const auto slow = ledgerHash(5);
+    for (uint32 i = 0; i < 3 * Ledger::kEventsToQuarantine; ++i)
+        QCOMPARE(ledger.noteDeclinedAccept(slow.data(), now + i * kMin), Ledger::Verdict::Noted);
+}
+
+void tst_ClientList::fruitlessLedger_productiveSessionStartsOver()
+{
+    Ledger ledger;
+    const auto peer = ledgerHash(6);
+    uint64 now = 1'000'000;
+
+    ledger.noteFruitlessSession(peer.data(), now);
+    ledger.noteProductiveSession(peer.data());
+    QCOMPARE(ledger.noteFruitlessSession(peer.data(), now + kMin), Ledger::Verdict::Noted);
+
+    // and it wipes an earlier pause from the count towards quarantine
+    QCOMPARE(ledger.noteFruitlessSession(peer.data(), now + 2 * kMin), Ledger::Verdict::Paused);
+    now += 30 * kMin;
+    ledger.noteProductiveSession(peer.data());
+    ledger.noteFruitlessSession(peer.data(), now);
+    QCOMPARE(ledger.noteFruitlessSession(peer.data(), now + kMin), Ledger::Verdict::Paused);
+}
+
+void tst_ClientList::fruitlessLedger_isBounded()
+{
+    Ledger ledger;
+    uint64 now = 1'000'000;
+    for (uint32 i = 0; i < Ledger::kMaxEntries; ++i)
+        ledger.noteFruitlessSession(ledgerHash(100 + i).data(), now + i);
+    QCOMPARE(ledger.count(), Ledger::kMaxEntries);
+
+    // full, nothing expired: the least recently used one goes
+    now += Ledger::kMaxEntries;
+    ledger.noteFruitlessSession(ledgerHash(1).data(), now);
+    QCOMPARE(ledger.count(), Ledger::kMaxEntries);
+    QCOMPARE(ledger.noteFruitlessSession(ledgerHash(100).data(), now + 1), Ledger::Verdict::Noted);
+    QCOMPARE(ledger.noteFruitlessSession(ledgerHash(101 + 5).data(), now + 2), Ledger::Verdict::Paused);
+
+    // everything idle past the TTL is dropped when room is needed
+    now += Ledger::kEntryTtlMs + Ledger::kMaxEntries;
+    ledger.noteFruitlessSession(ledgerHash(2).data(), now);
+    QCOMPARE(ledger.count(), std::size_t{1});
 }
 
 QTEST_MAIN(tst_ClientList)

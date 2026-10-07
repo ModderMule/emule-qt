@@ -7,6 +7,7 @@
 /// Phase 1 covers add/remove/find and banned IP tracking.
 
 #include "client/DeadSourceList.h"
+#include "client/FruitlessSessionLedger.h"
 #include "net/Address.h"
 #include "utils/EntityList.h"
 #include "utils/Types.h"
@@ -222,6 +223,7 @@ public:
     // -- Public member (matches MFC pattern) --------------------------------
 
     DeadSourceList globalDeadSourceList;
+    FruitlessSessionLedger fruitlessSessions;
 
 signals:
     void clientAdded(UpDownClient* client);

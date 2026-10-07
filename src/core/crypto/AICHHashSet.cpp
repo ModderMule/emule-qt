@@ -123,6 +123,14 @@ void AICHRecoveryHashSet::untrustedHashReceived(const AICHHash& hash, const Addr
         return;
     }
 
+    // One vote per signer, whichever root it went to first. MFC only refused a
+    // second root nobody had named yet; one that was already listed took the
+    // signer a second time (srchybrid/SHAHashSet.cpp:937-956).
+    for (auto& uh : m_untrustedHashes) {
+        if (uh.m_hash != hash && !uh.addSigningIP(fromIP, true))
+            return;
+    }
+
     bool found = false;
     for (auto& uh : m_untrustedHashes) {
         if (uh.m_hash == hash) {
@@ -132,14 +140,19 @@ void AICHRecoveryHashSet::untrustedHashReceived(const AICHHash& hash, const Addr
         }
     }
 
-    if (!found) {
-        // Check if this IP already signed a different hash
-        for (auto& uh : m_untrustedHashes) {
-            if (!uh.addSigningIP(fromIP, true)) {
-                // IP already signed another hash — ignore
-                return;
-            }
+    // Trust once given stays: the vote is recorded, the root is not re-opened. A
+    // handful of dissenters could otherwise switch recovery off at will.
+    if (m_status == EAICHStatus::Trusted && hasValidMasterHash()) {
+        if (!found) {
+            AICHUntrustedHash newEntry;
+            newEntry.m_hash = hash;
+            newEntry.addSigningIP(fromIP, false);
+            m_untrustedHashes.push_back(std::move(newEntry));
         }
+        return;
+    }
+
+    if (!found) {
         AICHUntrustedHash newEntry;
         newEntry.m_hash = hash;
         newEntry.addSigningIP(fromIP, false);

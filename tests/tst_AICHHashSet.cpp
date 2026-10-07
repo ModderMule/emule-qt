@@ -77,6 +77,7 @@ private slots:
     // Trust evaluation edge cases
     void untrustedHash_conflictingHashes_preventsTrust();
     void untrustedHash_sameIP_differentHash_ignored();
+    void untrustedHash_signerCountsForOneRootOnly();
 
 private:
     /// Build a fully hashed tree with deterministic block data (synthetic per-block).
@@ -722,12 +723,17 @@ void tst_AICHHashSet::untrustedHash_conflictingHashes_preventsTrust()
         hs.untrustedHashReceived(hash1, ip);
     QCOMPARE(hs.getStatus(), EAICHStatus::Trusted);
 
-    // Adding conflicting hashes REVOKES trust (re-evaluated each call)
-    // 10/13 = 76.9% < 92% → Untrusted
+    // Trust once given stays. It used to be re-evaluated on every vote, so three
+    // dissenters (10/13 = 76.9% < 92%) switched recovery off again.
     for (uint32 ip = 11; ip <= 13; ++ip)
         hs.untrustedHashReceived(hash2, ip);
-    QCOMPARE(hs.getStatus(), EAICHStatus::Untrusted);
-    QCOMPARE(hs.getMasterHash(), hash1); // hash1 still has the most IPs
+    QCOMPARE(hs.getStatus(), EAICHStatus::Trusted);
+    QCOMPARE(hs.getMasterHash(), hash1);
+    // ...however many: the root is not re-opened.
+    for (uint32 ip = 14; ip <= 60; ++ip)
+        hs.untrustedHashReceived(hash2, ip);
+    QCOMPARE(hs.getStatus(), EAICHStatus::Trusted);
+    QCOMPARE(hs.getMasterHash(), hash1);
 
     // Conflicting hashes from the start prevent trust entirely
     AICHRecoveryHashSet hs2(PARTSIZE);
@@ -753,6 +759,33 @@ void tst_AICHHashSet::untrustedHash_conflictingHashes_preventsTrust()
     // hash1=58, hash2=5, total=63, int(100*58/63)=92 ≥ 92 AND 58 ≥ 10 → Trusted!
     QCOMPARE(hs2.getStatus(), EAICHStatus::Trusted);
     QCOMPARE(hs2.getMasterHash(), hash1);
+}
+
+// A signer was refused a second root only while nobody else had named it. Once it was
+// listed, the same nine signers could back both roots and tip either over the line.
+void tst_AICHHashSet::untrustedHash_signerCountsForOneRootOnly()
+{
+    AICHRecoveryHashSet hs(PARTSIZE);
+    hs.setStatus(EAICHStatus::Empty);
+
+    AICHHash hash1, hash2;
+    hash1.getRawHash()[0] = 0x42;
+    hash2.getRawHash()[0] = 0x43;
+
+    for (uint32 ip = 1; ip <= 9; ++ip)
+        hs.untrustedHashReceived(hash1, ip);
+    hs.untrustedHashReceived(hash2, 100);        // someone else introduces the second root
+    for (uint32 ip = 1; ip <= 9; ++ip)
+        hs.untrustedHashReceived(hash2, ip);     // the first nine try to back it too
+
+    // hash1: 9, hash2: 1 — had the nine counted twice, hash2 would lead with 10.
+    QCOMPARE(hs.getStatus(), EAICHStatus::Untrusted);
+    QCOMPARE(hs.getMasterHash(), hash1);
+
+    // And they cannot be counted a second time for their own root either.
+    for (uint32 ip = 1; ip <= 9; ++ip)
+        hs.untrustedHashReceived(hash1, ip);
+    QCOMPARE(hs.getStatus(), EAICHStatus::Untrusted);
 }
 
 void tst_AICHHashSet::untrustedHash_sameIP_differentHash_ignored()

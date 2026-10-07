@@ -11,6 +11,7 @@
 #include "crypto/FileIdentifier.h"
 #include "crypto/SHAHash.h"
 #include "prefs/Preferences.h"
+#include "transfer/DownloadQueue.h"
 #include "stats/Statistics.h"
 #include "utils/OtherFunctions.h"
 #include "utils/SafeFile.h"
@@ -50,6 +51,7 @@ private slots:
     void completedSize_tracks();
     void writeToBuffer_fillsGap();
     void flushBuffer_writesToDisk();
+    void flushBuffer_isRefusedAtTheDiskFloorAndRetried();
     void getNextRequestedBlock_basic();
     void chunkSelection_spreadsTies();
     void chunkSelection_rarestFirst();
@@ -329,6 +331,47 @@ void tst_PartFile::flushBuffer_writesToDisk()
 
     // Verify the data was written by checking completed size
     QCOMPARE(pf.completedSize(), static_cast<EMFileSize>(100));
+}
+
+// At the floor the data stays in memory and the file parks itself; with room again the
+// same buffer goes to disk.
+void tst_PartFile::flushBuffer_isRefusedAtTheDiskFloorAndRetried()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/floor");
+    QDir().mkpath(tempDir);
+
+    const bool savedCheck = thePrefs.checkDiskspace();
+    const uint64 savedFloor = thePrefs.minFreeDiskSpace();
+    DownloadQueue dq;
+    auto* savedQueue = theApp.downloadQueue;
+    theApp.downloadQueue = &dq;
+    const auto restore = qScopeGuard([&] {
+        theApp.downloadQueue = savedQueue;
+        thePrefs.setCheckDiskspace(savedCheck);
+        thePrefs.setMinFreeDiskSpace(savedFloor);
+    });
+    thePrefs.setCheckDiskspace(true);
+    thePrefs.setMinFreeDiskSpace(1000);
+    uint64 freeBytes = 1050;
+    dq.setFreeSpaceProbe([&freeBytes](const QString&) { return std::optional<uint64>(freeBytes); });
+
+    PartFile pf;
+    pf.setFileSize(1000);
+    pf.setTmpPath(tempDir);
+    QVERIFY(pf.createPartFile(tempDir));
+
+    std::vector<uint8> data(100, 0xBB);
+    pf.writeToBuffer(100, data.data(), 0, 99, nullptr);
+    pf.flushBuffer();
+    QVERIFY(pf.isInsufficient());
+    QVERIFY2(!pf.isCompleteBDSafe(0, 99), "the block was reported written at the floor");
+
+    freeBytes = 5000;
+    dq.setFreeSpaceProbe([&freeBytes](const QString&) { return std::optional<uint64>(freeBytes); });
+    pf.resumeFile();
+    pf.flushBuffer();
+    QVERIFY(!pf.isInsufficient());
+    QVERIFY(pf.isCompleteBDSafe(0, 99));
 }
 
 void tst_PartFile::getNextRequestedBlock_basic()

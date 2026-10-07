@@ -333,6 +333,13 @@ void UpDownClient::setUserHash(const uint8* hash)
         std::memcpy(m_userHash.data(), hash, 16);
     else
         md4clr(m_userHash.data());
+    sourceIdentityChanged();
+}
+
+void UpDownClient::sourceIdentityChanged()
+{
+    if (m_reqFile)
+        m_reqFile->rekeySource(this);
 }
 
 bool UpDownClient::hasValidHash() const
@@ -485,10 +492,24 @@ void UpDownClient::setDownloadState(DownloadState state)
         // download limit from the previous file's transfer.
         if (m_downloadState == DownloadState::Downloading) {
             // A session that carried a block's worth wipes the record of a bad one.
-            if (sessionPayloadDown() >= EMBLOCKSIZE)
+            if (sessionPayloadDown() >= EMBLOCKSIZE) {
                 m_fruitlessSessionTick = 0;
+                if (auto* ledger = fruitlessLedger())
+                    ledger->noteProductiveSession(userHash());
+            }
             m_unmatchedPackets = 0;
             m_abandonedBlocks.clear();
+
+            // Session statistics (srchybrid/DownloadClient.cpp:676-682): a session that
+            // delivered something and did not end in an error was a successful one.
+            if (theApp.downloadQueue) {
+                const uint64 started = m_downStartTime;
+                const uint64 now = getTickCount();
+                theApp.downloadQueue->noteDownloadSession(
+                    m_transferredDownMini && state != DownloadState::Error,
+                    started && now > started ? static_cast<uint32>((now - started) / 1000) : 0);
+            }
+            m_transferredDownMini = false;
 
             // The session figures are per download session, not per client lifetime — this is
             // the mark MFC takes when the session ends (srchybrid/DownloadClient.cpp:674) and
@@ -574,6 +595,7 @@ void UpDownClient::clearHelloProperties()
     m_supportsHttpCache = false;
     m_userIPv6 = Address{};
     m_buddyIPv6 = Address{};
+    sourceIdentityChanged();
 }
 
 // ===========================================================================
@@ -921,6 +943,8 @@ bool UpDownClient::processHelloAnswer(const uint8* data, uint32 size)
 bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
 {
     m_helloInfo.clear();
+    // The hello rewrites hash, ID, ports and server — also when it throws half way.
+    const auto rekey = qScopeGuard([this] { sourceIdentityChanged(); });
 
     // Reset hello-only properties
     m_isHybrid = false;
@@ -5266,6 +5290,7 @@ void UpDownClient::processChangeClientIP(const uint8* data, uint32 size)
 
     m_userIPv6 = announced;
     m_openIPv6 = true;
+    sourceIdentityChanged();
 
     // Only re-point the dial address if we were already going to use IPv6 for this peer;
     // an IPv4 connection in progress must not be redirected mid-flight.
@@ -5323,7 +5348,7 @@ void UpDownClient::processChangeClientID(const uint8* data, uint32 size)
         // unknown server means we cannot use the ID either.
         if (!newServer)
             return;
-        m_userIDHybrid = newUserID;
+        setUserIDHybrid(newUserID);
         setServerAddress(Address::fromNetworkOrder(newServerIP));
         setServerPort(newServer->port());
     } else if (Address::fromNetworkOrder(newUserID) == m_userAddress) {

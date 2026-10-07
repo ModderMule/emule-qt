@@ -33,6 +33,7 @@ private slots:
     void flush_isIdempotent();
     void flush_addsToWhatWasAlreadyInPrefs();
     void flush_connPeakIsAHighWaterMark();
+    void flush_averageSessionTimeIsWeightedAndIdempotent();
     void resetCumulativeStats_zeroesAndStamps();
     void resetThenFlush_doesNotResurrectOldTotals();
     void backupThenRestore_returnsThePreResetTotals();
@@ -384,6 +385,35 @@ void tst_StatisticsReset::flush_isIdempotent()
     QCOMPARE(prefs.cumUpSuccessfulSessions(), upSessions);
     QCOMPARE(prefs.cumDownSuccessfulSessions(), downSessions);
     QCOMPARE(prefs.cumConnMaxLimitReached(), limitReached);
+}
+
+// The two average-time prefs were stored and loaded but nobody wrote or read them; the
+// "cumulative" average on screen was this session's.
+void tst_StatisticsReset::flush_averageSessionTimeIsWeightedAndIdempotent()
+{
+    Preferences prefs;
+    prefs.setCumUpSuccessfulSessions(10);
+    prefs.setCumUpAvgTime(100);            // 1000 s over 10 sessions
+    prefs.setCumDownSuccessfulSessions(0);
+    prefs.setCumDownAvgTime(0);
+
+    Statistics stats;
+    stats.init(prefs);
+
+    Statistics::ExternalSessionCounters ext;
+    ext.upSuccessfulSessions = 10;
+    ext.upSessionSeconds = 3000;           // 300 s each
+    ext.downSuccessfulSessions = 4;
+    ext.downSessionSeconds = 200;
+
+    const auto totals = stats.cumulativeTotals(ext);
+    QCOMPARE(totals.upAvgTime, uint32{200});
+    QCOMPARE(totals.downAvgTime, uint32{50});
+
+    stats.flushCumulativeToPrefs(prefs, ext);
+    stats.flushCumulativeToPrefs(prefs, ext);
+    QCOMPARE(prefs.cumUpAvgTime(), uint32{200});
+    QCOMPARE(prefs.cumDownAvgTime(), uint32{50});
 }
 
 void tst_StatisticsReset::flush_addsToWhatWasAlreadyInPrefs()

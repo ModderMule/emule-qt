@@ -36,6 +36,7 @@
 #include <algorithm>
 
 #include <QDir>
+#include <QStorageInfo>
 #include <QDirIterator>
 #include <QTimer>
 
@@ -179,6 +180,10 @@ void DownloadQueue::addDownload(PartFile* file, bool paused)
     // EntityList::addEntity appends + invokes onEntityAdded() (sort/log/emit).
     // Dup already checked above, so skip the base pointer check.
     addEntity(file, /*skipDupCheck=*/true);
+
+    // A new file can be the one that does not fit (srchybrid/DownloadQueue.cpp:314).
+    if (m_diskCheckClock.isValid())
+        checkDiskspace();
 }
 
 void DownloadQueue::removeFile(PartFile* file)
@@ -383,28 +388,26 @@ UpDownClient* DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* sou
     // peer from each getting in before any of them has said hello. A match on another
     // file becomes an A4AF request instead. MFC DownloadQueue.cpp:488-505.
     const auto scan = [&](PartFile* curFile) {
-        for (auto* cur : curFile->srcList()) {
-            if (cur == source)
-                return true;
-            if (!cur->compare(source, /*ignoreUserHash*/ true)
-                && !cur->compare(source, /*ignoreUserHash*/ false)
-                && !sameIPv6Endpoint(cur, source))
-            {
-                continue;
-            }
-            if (curFile != file && cur->addRequestForAnotherFile(file)) {
-                if (cur->downloadState() != DownloadState::Connected) {
-                    cur->swapToAnotherFile(
-                        QStringLiteral("New A4AF source found. DownloadQueue::checkAndAddSource()"),
-                        false, false, false, nullptr, true, false);
-                }
-            }
-            logDebug(QStringLiteral("Source rejected — already a source of %1: %2:%3")
-                         .arg(curFile->fileName(), ipstr(cur->connectAddress()))
-                         .arg(cur->userPort()));
-            return true;
+        UpDownClient* cur = curFile->findSourceLike(source);
+        if (m_verifySourceIndex && (cur != nullptr) != (curFile->findSourceLikeByScan(source) != nullptr)) {
+            qFatal("source index and full scan disagree for %s in %s",
+                   qPrintable(ipstr(source->userAddress())), qPrintable(curFile->fileName()));
         }
-        return false;
+        if (!cur)
+            return false;
+        if (cur == source)
+            return true;
+        if (curFile != file && cur->addRequestForAnotherFile(file)) {
+            if (cur->downloadState() != DownloadState::Connected) {
+                cur->swapToAnotherFile(
+                    QStringLiteral("New A4AF source found. DownloadQueue::checkAndAddSource()"),
+                    false, false, false, nullptr, true, false);
+            }
+        }
+        logDebug(QStringLiteral("Source rejected — already a source of %1: %2:%3")
+                     .arg(curFile->fileName(), ipstr(cur->connectAddress()))
+                     .arg(cur->userPort()));
+        return true;
     };
     // `file` first: it need not be in files() (tests), and a same-file hit is the common case.
     if (scan(file))
@@ -452,8 +455,7 @@ bool DownloadQueue::checkAndAddKnownSource(PartFile* file, UpDownClient* source,
     for (auto* cur : files()) {
         if (!cur)
             continue;
-        const auto& srcList = cur->srcList();
-        if (std::ranges::find(srcList, source) == srcList.end())
+        if (!cur->hasSource(source))
             continue;
 
         if (cur == file)
@@ -485,8 +487,7 @@ void DownloadQueue::removeSource(UpDownClient* source)
         return;
 
     for (auto* file : m_items) {
-        const auto& sources = file->srcList();
-        const bool hadSource = std::ranges::find(sources, source) != sources.end();
+        const bool hadSource = file->hasSource(source);
         file->removeSource(source);
         // Only the file that actually lost a source needs recounting — MFC
         // DownloadQueue.cpp:626-629.
@@ -778,6 +779,8 @@ void DownloadQueue::seedFromSearchResult(PartFile* file, const SearchFile& resul
     if (!file->fileIdentifier().hasAICHHash()) {
         const AICHHash* agreed = nullptr;
         bool conflict = false;
+        bool kadOnly = true;
+        std::vector<Address> voters;
         for (const SearchFile* row : rows) {
             if (!row->fileIdentifier().hasAICHHash())
                 continue;
@@ -786,11 +789,22 @@ void DownloadQueue::seedFromSearchResult(PartFile* file, const SearchFile& resul
                 agreed = &hash;
             else if (*agreed != hash)
                 conflict = true;
+            if (!row->isKadResult() || row->isAICHVouchedDirectly())
+                kadOnly = false;
+            voters.insert(voters.end(), row->aichVoters().begin(), row->aichVoters().end());
         }
         if (agreed && !conflict) {
-            file->fileIdentifier().setAICHHash(*agreed);
-            file->seedAICHRecoveryMasterHash();
-            file->savePartFile();  // the .part.met was written before the hash arrived
+            if (kadOnly) {
+                // Known only from Kad nodes: one lying node must not be able to plant a
+                // root that then gets every honest source dropped. Its word counts as
+                // a vote, and the sources' own votes decide.
+                for (const Address& voter : voters)
+                    file->voteAICHRoot(*agreed, voter);
+            } else {
+                file->fileIdentifier().setAICHHash(*agreed);
+                file->seedAICHRecoveryMasterHash();
+                file->savePartFile();  // the .part.met was written before the hash arrived
+            }
         }
     }
 
@@ -1259,52 +1273,100 @@ void DownloadQueue::checkDiskspaceTimed()
 
 void DownloadQueue::checkDiskspace()
 {
-    if (!thePrefs.checkDiskspace())
-        return;
-
-    const QString dir = thePrefs.tempDirs().isEmpty() ? thePrefs.incomingDir()
-                                                      : thePrefs.tempDirs().first();
-    const std::optional<std::uint64_t> free = eMule::tryFreeDiskSpace(dir);
-
-    // Unknown is not full. Unlike the Usenet queue, which waits and can afford
-    // to be wrong in the safe direction, pausing every eD2K download because a
-    // path could not be read would strand a whole session over a transient
-    // answer — and the write path now keeps its buffer and retries anyway.
-    if (!free.has_value())
-        return;
-
-    const bool room = qint64(*free) >= qint64(thePrefs.minFreeDiskSpace());
-
-    for (auto* file : m_items) {
-        if (!file)
-            continue;
-
-        const PartFileStatus st = file->status();
-        if (st == PartFileStatus::Complete || st == PartFileStatus::Completing
-            || st == PartFileStatus::Error)
-            continue;
-
-        if (!room) {
-            // Idempotent, and deliberately so: pauseFile() saves the .met, and a
-            // sweep that re-paused an already-paused file would rewrite every
-            // one of them every minute for as long as the disk is full.
-            if (!file->isInsufficient() && !file->isPaused())
-                file->pauseFile(/*insufficient*/ true);
-        } else if (file->isInsufficient()) {
-            // Only files *this* paused: resumeFile() clears m_insufficient, and
-            // one the user paused has m_paused set and is not touched here.
-            file->resumeFile();
+    // Switched off: nothing may stay parked for a floor that no longer applies.
+    if (!thePrefs.checkDiskspace()) {
+        for (auto* file : m_items) {
+            if (file && file->isInsufficient())
+                file->resumeFile();
         }
+        m_diskStallLogged = false;
+        return;
     }
 
-    if (!room && !m_diskStallLogged) {
-        m_diskStallLogged = true;
-        logWarning(QStringLiteral("Downloads paused: %1 has %2 free, %3 required")
-                       .arg(dir, formatByteSize(qint64(*free)),
-                            formatByteSize(qint64(thePrefs.minFreeDiskSpace()))));
-    } else if (room) {
-        m_diskStallLogged = false;
+    const uint64 floor = thePrefs.minFreeDiskSpace();
+
+    // One measurement per volume and pass, and what its parked files still need.
+    struct Volume {
+        std::optional<uint64> free;
+        uint64 parkedNeed = 0;
+    };
+    QHash<QString, Volume> volumes;
+    for (auto* file : m_items) {
+        if (!file || !diskCheckApplies(file))
+            continue;
+        const QString key = volumeKey(file->tmpPath());
+        auto it = volumes.find(key);
+        if (it == volumes.end())
+            it = volumes.insert(key, Volume{probeFreeSpace(file->tmpPath(), /*fresh*/ true), 0});
+        if (file->isInsufficient())
+            it->parkedNeed += file->neededSpace();
     }
+
+    bool anyShort = false;
+    for (auto* file : m_items) {
+        if (!file || !diskCheckApplies(file))
+            continue;
+        const Volume& vol = volumes[volumeKey(file->tmpPath())];
+
+        // Unknown is not full. Unlike the Usenet queue, which waits and can afford
+        // to be wrong in the safe direction, pausing eD2K downloads because a path
+        // could not be read would strand a whole session over a transient answer.
+        if (!vol.free.has_value())
+            continue;
+        const uint64 free = *vol.free;
+        const uint64 need = file->neededSpace();
+
+        if (!file->isInsufficient()) {
+            // Without a floor only a file that cannot fit any more is stopped
+            // (srchybrid/DownloadQueue.cpp:1001-1006).
+            const bool isShort = need > 0 && (floor > 0 ? free < floor : free < need);
+            if (isShort) {
+                anyShort = true;
+                // Idempotent: pauseFile() saves the .met, and a sweep that re-paused
+                // would rewrite every one of them on each pass.
+                if (!file->isPaused() && !file->isStopped()) {
+                    file->pauseFile(/*insufficient*/ true);
+                    if (!m_diskStallLogged)
+                        logWarning(QStringLiteral("Downloads paused: %1 has %2 free, %3 required")
+                                       .arg(file->tmpPath(), formatByteSize(qint64(free)),
+                                            formatByteSize(qint64(floor > 0 ? floor : need))));
+                    m_diskStallLogged = true;
+                }
+            }
+            continue;
+        }
+
+        // Back only with room to work in: resumed at the floor itself, the next
+        // block written would park it again.
+        const uint64 wanted = floor > 0 ? floor + std::min(vol.parkedNeed, kDiskResumeHeadroom) : need;
+        if (free >= wanted)
+            file->resumeFile();   // only files this paused: a user's pause has m_paused set
+        else
+            anyShort = true;
+    }
+
+    if (!anyShort)
+        m_diskStallLogged = false;
+}
+
+bool DownloadQueue::reserveForWrite(const PartFile* file, uint64 bytes)
+{
+    if (!file || !thePrefs.checkDiskspace())
+        return true;
+    const std::optional<uint64> free = probeFreeSpace(file->tmpPath(), /*fresh*/ false);
+    if (!free.has_value())
+        return true;
+    if (*free < thePrefs.minFreeDiskSpace() + bytes)
+        return false;
+    // Charged at once: the next file to flush must not count the same bytes as free.
+    m_volumeFree[volumeKey(file->tmpPath())].free = *free - bytes;
+    return true;
+}
+
+void DownloadQueue::setFreeSpaceProbe(FreeSpaceProbe probe)
+{
+    m_freeSpaceProbe = std::move(probe);
+    m_volumeFree.clear();
 }
 
 void DownloadQueue::process()
@@ -1347,6 +1409,10 @@ void DownloadQueue::process()
         else if (downspeed > 200)
             downspeed = 200;
     }
+
+    // The one search a second goes to the file that needs sources most, not to
+    // whichever comes first in the list.
+    m_kadSearchTurn = doKademliaFileRequest() ? pickKadSearchFile(curTick) : nullptr;
 
     for (auto* file : m_items) {
         if (file->status() != PartFileStatus::Ready &&
@@ -1713,8 +1779,6 @@ void DownloadQueue::onEntityRemoved(PartFile* file)
     if (m_sharedFileList && file->isPartFile())
         m_sharedFileList->removeFile(file);
 
-    if (file->status() != PartFileStatus::Complete)
-        ++m_failedDownCount;
     sortByPriority();
     emit fileRemoved(file);
 }
@@ -1809,9 +1873,17 @@ bool DownloadQueue::hasActiveTransfers() const
 
 uint32 DownloadQueue::averageDownTime() const
 {
-    return m_successfulDownCount > 0
-        ? static_cast<uint32>(m_totalDownTime / m_successfulDownCount)
-        : 0;
+    return m_downSessionsOk > 0 ? static_cast<uint32>(m_downSessionSeconds / m_downSessionsOk) : 0;
+}
+
+void DownloadQueue::noteDownloadSession(bool successful, uint32 seconds)
+{
+    if (successful) {
+        ++m_downSessionsOk;
+        m_downSessionSeconds += seconds;
+    } else {
+        ++m_downSessionsFailed;
+    }
 }
 
 void DownloadQueue::onDownloadCompleted(PartFile* file)
@@ -1820,7 +1892,6 @@ void DownloadQueue::onDownloadCompleted(PartFile* file)
         return;
 
     ++m_successfulDownCount;
-    m_totalDownTime += file->dlActiveTime();
 
     logInfo(QStringLiteral("Download completed: %1").arg(file->fileName()));
 
@@ -1907,6 +1978,58 @@ void DownloadQueue::setLastKademliaFileRequest()
     m_lastKademliaFileRequest = getTickCount();
 }
 
+PartFile* DownloadQueue::pickKadSearchFile(uint64 curTick) const
+{
+    PartFile* best = nullptr;
+    int bestSources = 0;
+    for (auto* file : m_items) {
+        if (!file || !file->wantsKadSourceSearch(curTick))
+            continue;
+        const int sources = file->validSourcesCount();
+        if (!best || sources < bestSources) {
+            best = file;
+            bestSources = sources;
+        }
+    }
+    return best;
+}
+
+// ===========================================================================
+// Disk-space helpers (private)
+// ===========================================================================
+
+bool DownloadQueue::diskCheckApplies(const PartFile* file)
+{
+    // ignorePause: the stored status, not the Paused / Insufficient overlay.
+    const PartFileStatus st = file->status(/*ignorePause*/ true);
+    return st != PartFileStatus::Complete && st != PartFileStatus::Completing
+        && st != PartFileStatus::Error;
+}
+
+QString DownloadQueue::volumeKey(const QString& dir) const
+{
+    // With a probe injected the directories are the volumes: tests name their own.
+    if (m_freeSpaceProbe)
+        return QDir::cleanPath(dir);
+    const QStorageInfo info(dir);
+    return info.isValid() ? info.rootPath() : QDir::cleanPath(dir);
+}
+
+std::optional<uint64> DownloadQueue::probeFreeSpace(const QString& dir, bool fresh)
+{
+    static constexpr qint64 kVolumeCacheMs = 1000;
+    if (!m_volumeClock.isValid())
+        m_volumeClock.start();
+    const qint64 now = m_volumeClock.elapsed();
+
+    VolumeFree& entry = m_volumeFree[volumeKey(dir)];
+    if (fresh || entry.stamp < 0 || now - entry.stamp > kVolumeCacheMs) {
+        entry.free = m_freeSpaceProbe ? m_freeSpaceProbe(dir) : eMule::tryFreeDiskSpace(dir);
+        entry.stamp = now;
+    }
+    return entry.free;
+}
+
 // ===========================================================================
 // sourceFiltersPass — private; the filters checkAndAddSource() and
 // checkAndAddKnownSource() share (MFC DownloadQueue.cpp:454-485 / :542-575)
@@ -1966,17 +2089,6 @@ bool DownloadQueue::sourceFiltersPass(PartFile* file, UpDownClient* source,
     }
 
     return true;
-}
-
-// ===========================================================================
-// sameIPv6Endpoint — private; IPv6 addition to checkAndAddSource()'s duplicate scan
-// ===========================================================================
-
-bool DownloadQueue::sameIPv6Endpoint(const UpDownClient* a, const UpDownClient* b)
-{
-    // A v6-only source and a dual-stack one carrying the same v6 hint share no IPv4 key.
-    return !a->userIPv6().isNull() && a->userIPv6() == b->userIPv6()
-           && a->userPort() != 0 && a->userPort() == b->userPort();
 }
 
 // ===========================================================================

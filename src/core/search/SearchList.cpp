@@ -136,7 +136,8 @@ void SearchList::addKadKeywordResult(uint32 searchID, const uint8* fileHash,
                                       const QString& name, uint64 size,
                                       const QString& type, uint32 sources,
                                       uint32 completeSources,
-                                      const std::vector<Tag>& metaTags)
+                                      const std::vector<Tag>& metaTags,
+                                      uint32 fromIP)
 {
     auto* entry = findEntry(searchID);
     if (!entry) {
@@ -183,8 +184,12 @@ void SearchList::addKadKeywordResult(uint32 searchID, const uint8* fileHash,
             file->addTagUnique(tag);
         }
     }
-    if (AICHHash aichHash; acceptedKadAICHHash(aichVotes, file->kadPublishInfo(), aichHash))
+    if (AICHHash aichHash; acceptedKadAICHHash(aichVotes, file->kadPublishInfo(), aichHash)) {
         file->fileIdentifier().setAICHHash(aichHash);
+        // The popularity in the blob is the node's own figure; the node is the voter.
+        if (fromIP != 0)
+            file->addAICHVoter(Address::fromHostOrder(fromIP));
+    }
 
     addToList(file, false, 0);
     emit tabHeaderUpdated(searchID);
@@ -438,9 +443,17 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
                     if (childId.getAICHHash() != fileOwner->fileIdentifier().getAICHHash()) {
                         matchingChild->setFoundMultipleAICH();
                         childId.clearAICHHash();
+                        matchingChild->clearAICHVoters();
                     }
                 } else if (!matchingChild->hasFoundMultipleAICH()) {
                     childId.setAICHHash(fileOwner->fileIdentifier().getAICHHash());
+                }
+                // Who stands behind the root the child now has.
+                if (childId.hasAICHHash()) {
+                    for (const Address& voter : fileOwner->aichVoters())
+                        matchingChild->addAICHVoter(voter);
+                    if (!fileOwner->isKadResult() || fileOwner->isAICHVouchedDirectly())
+                        matchingChild->setAICHVouchedDirectly();
                 }
             }
 

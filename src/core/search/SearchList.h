@@ -121,7 +121,8 @@ public:
                              const QString& name, uint64 size,
                              const QString& type, uint32 sources,
                              uint32 completeSources,
-                             const std::vector<Tag>& metaTags = {});
+                             const std::vector<Tag>& metaTags = {},
+                             uint32 fromIP = 0);
 
     // --- Queries ---
 

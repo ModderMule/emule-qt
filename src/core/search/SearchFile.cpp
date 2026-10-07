@@ -255,7 +255,15 @@ SearchFile::SearchFile(const SearchFile* other)
     , m_metaInvalid(other->m_metaInvalid)
     , m_kadOrigin(other->m_kadOrigin)
     , m_multipleAICHFound(other->m_multipleAICHFound)
+    , m_aichVouchedDirectly(other->m_aichVouchedDirectly)
+    , m_aichVoters(other->m_aichVoters)
 {
+}
+
+void SearchFile::addAICHVoter(const Address& from)
+{
+    if (!from.isNull() && std::ranges::find(m_aichVoters, from) == m_aichVoters.end())
+        m_aichVoters.push_back(from);
 }
 
 // ---------------------------------------------------------------------------

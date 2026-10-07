@@ -194,6 +194,7 @@
     <ClCompile Include="app\CoreSession.cpp" />
     <ClCompile Include="client\CorruptionBlackBox.cpp" />
     <ClCompile Include="client\DeadSourceList.cpp" />
+    <ClCompile Include="client\FruitlessSessionLedger.cpp" />
     <ClCompile Include="utils\DebugUtils.cpp" />
     <ClCompile Include="client\DownloadClient.cpp" />
     <ClCompile Include="transfer\DownloadQueue.cpp" />
@@ -263,6 +264,7 @@
     <ClCompile Include="files\PartFile.cpp" />
     <ClCompile Include="files\PartFileConvert.cpp" />
     <ClCompile Include="files\PartFileWriteThread.cpp" />
+    <ClCompile Include="files\SourceIndex.cpp" />
     <ClCompile Include="utils\PathUtils.cpp" />
     <ClCompile Include="utils\PerfLog.cpp" />
     <ClCompile Include="net\Pinger.cpp" />
@@ -367,6 +369,8 @@
     <QtMoc Include="app\CoreSession.h" />
     <ClInclude Include="client\CorruptionBlackBox.h" />
     <ClInclude Include="client\DeadSourceList.h" />
+    <ClInclude Include="client\FruitlessSessionLedger.h" />
+    <ClInclude Include="files\SourceIndex.h" />
     <ClInclude Include="utils\DebugUtils.h" />
     <QtMoc Include="transfer\DownloadQueue.h" />
     <ClInclude Include="protocol\ED2KLink.h" />

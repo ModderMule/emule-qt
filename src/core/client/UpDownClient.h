@@ -37,6 +37,7 @@ namespace eMule {
 class AICHHash;
 class ClientCredits;
 class ClientReqSocket;
+class FruitlessSessionLedger;
 class EMSocket;
 class Friend;
 class KnownFile;
@@ -96,16 +97,16 @@ public:
     [[nodiscard]] const Address& serverAddress() const  { return m_serverAddress; }
     [[nodiscard]] const Address& buddyAddress() const   { return m_buddyAddress; }
 
-    void setUserAddress(const Address& a)    { m_userAddress = a; m_connectAddress = a; }
+    void setUserAddress(const Address& a)    { m_userAddress = a; m_connectAddress = a; sourceIdentityChanged(); }
     void setConnectAddress(const Address& a) { m_connectAddress = a; }
-    void setServerAddress(const Address& a)  { m_serverAddress = a; }
+    void setServerAddress(const Address& a)  { m_serverAddress = a; sourceIdentityChanged(); }
     void setBuddyAddress(const Address& a)   { m_buddyAddress = a; }
 
     // IPv6 — the peer's advertised public IPv6 (from CT_MOD_IP_V6 in hello / SX / Kad).
     // m_openIPv6 latches true once we learn a reachable IPv6, letting the connection
     // logic prefer IPv6 even for an IPv4-LowID peer.
     [[nodiscard]] const Address& userIPv6() const  { return m_userIPv6; }
-    void setUserIPv6(const Address& a)             { m_userIPv6 = a; }
+    void setUserIPv6(const Address& a)             { m_userIPv6 = a; sourceIdentityChanged(); }
     [[nodiscard]] const Address& buddyIPv6() const { return m_buddyIPv6; }
     void setBuddyIPv6(const Address& a)            { m_buddyIPv6 = a; }
     [[nodiscard]] bool openIPv6() const            { return m_openIPv6; }
@@ -137,7 +138,7 @@ public:
     [[nodiscard]] bool isIPv6Connection() const;
 
     [[nodiscard]] uint32 userIDHybrid() const { return m_userIDHybrid; }
-    void setUserIDHybrid(uint32 id) { m_userIDHybrid = id; }
+    void setUserIDHybrid(uint32 id) { m_userIDHybrid = id; sourceIdentityChanged(); }
     [[nodiscard]] bool hasLowID() const;
     /// How the dead-source lists know this client (MFC CDeadSource ctor).
     [[nodiscard]] DeadSourceKey deadSourceKey() const;
@@ -161,15 +162,15 @@ public:
     [[nodiscard]] bool isReachableForSlot() const;
 
     [[nodiscard]] uint16 userPort() const { return m_userPort; }
-    void setUserPort(uint16 port) { m_userPort = port; }
+    void setUserPort(uint16 port) { m_userPort = port; sourceIdentityChanged(); }
 
     [[nodiscard]] uint16 serverPort() const { return m_serverPort; }
-    void setServerPort(uint16 port) { m_serverPort = port; }
+    void setServerPort(uint16 port) { m_serverPort = port; sourceIdentityChanged(); }
 
     [[nodiscard]] uint16 udpPort() const { return m_udpPort; }
     void setUDPPort(uint16 port) { m_udpPort = port; }
     [[nodiscard]] uint16 kadPort() const { return m_kadPort; }
-    void setKadPort(uint16 port) { m_kadPort = port; }
+    void setKadPort(uint16 port) { m_kadPort = port; sourceIdentityChanged(); }
 
     [[nodiscard]] uint16 buddyPort() const { return m_buddyPort; }
     void setBuddyPort(uint16 port) { m_buddyPort = port; }
@@ -733,6 +734,9 @@ public:
     /// this back as MFC's exact number in Client Details. (Spelled out rather than via
     /// SEC2MS, which would drag utils/Opcodes.h into this very widely included header.)
     static constexpr uint64 kFriendSlotScore = 0x0FFFFFFFull * 1000ull;
+    /// Score bonus for a file whose all-time upload is below this share of its size.
+    static constexpr double kUnderServedRatio = 0.5;
+    static constexpr double kUnderServedBonus = 50'000.0;   // 50 points as displayed
 
     /// Queue score — higher wins the next upload slot.
     ///
@@ -846,8 +850,12 @@ public:
     /// failed session; the second within kFruitlessWindowMs starts a pause during
     /// which the source is not asked and an accept is turned down. Sessions we end
     /// ourselves never count. No ban, no dead-listing.
+    /// With a valid user hash the record is kept in ClientList::fruitlessSessions, so
+    /// it survives a reconnect and a second pause becomes a quarantine.
     void noteDownloadSessionEndedByPeer();
     [[nodiscard]] bool isDownloadCoolingDown() const;
+    /// Milliseconds the source is still held back, 0 if it may be asked.
+    [[nodiscard]] uint64 downloadCooldownLeft(uint64 curTick) const;
     static constexpr uint32 kFruitlessWindowMs = 5 * 60 * 1000;
     static constexpr uint32 kDownloadCooldownMs = 3 * 60 * 1000;
     /// Block packets that match nothing we asked for, within kUnmatchedWindowMs,
@@ -968,6 +976,11 @@ protected:
     void addPayloadDown(uint64 bytes);
 
 private:
+    /// Hash, address, ID or a port changed: the download we are a source of files us
+    /// under them, so it has to hear. Every writer of those members ends here.
+    void sourceIdentityChanged();
+    /// The cross-connection record, or null without a valid hash / a client list.
+    [[nodiscard]] FruitlessSessionLedger* fruitlessLedger() const;
     /// User name, or address:port when the peer has not said hello yet.
     [[nodiscard]] QString statusName() const;
     void init();

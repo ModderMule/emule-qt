@@ -140,6 +140,11 @@ uint64 UpDownClient::score(bool sysValue, bool isDownloading, bool onlyBaseValue
     if ((m_emuleVersion != 0 || static_cast<uint8>(m_clientSoft) < 10) && m_emuleVersion <= 0x19)
         score *= 0.5;
 
+    // A file we have not yet given away half of once: its requesters move up by a
+    // fixed 50 points, so a fresh release spreads before the well-seeded ones.
+    if (!onlyBaseValue && m_uploadFile->allTimeUploadRatio() < kUnderServedRatio)
+        score += kUnderServedBonus;
+
     if (!onlyBaseValue && !sysValue) {
         // A peer we are also downloading from gets a one-unit nudge — enough to break a tie
         // in its favour and nothing more. Deliberately kept, and deliberately not MFC:

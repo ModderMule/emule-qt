@@ -111,11 +111,12 @@ public:
     /// Callback type for Kad keyword search results.
     /// Parameters: searchID, fileHash (16 bytes), name, size, type, sources,
     ///   completeSources, and the imported media/format metadata tags
-    ///   (FT_MEDIA_*, TAG_FILEFORMAT, …) attached to the result.
+    ///   (FT_MEDIA_*, TAG_FILEFORMAT, …) attached to the result, and the
+    ///   answering node's address (host order).
     using KadKeywordResultCallback = std::function<void(uint32 searchID,
         const uint8* fileHash, const QString& name, uint64 size,
         const QString& type, uint32 sources, uint32 completeSources,
-        const TagList& metaTags)>;
+        const TagList& metaTags, uint32 fromIP)>;
     /// One source found through a Kad file lookup.
     ///
     /// A struct rather than the positional parameter list this used to be: at thirteen

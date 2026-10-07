@@ -237,6 +237,7 @@ void UploadBandwidthThrottler::runInternal()
 {
     int64 realBytesToSpend = 0;
     int rememberedSlotCounter = 0;
+    int surplusStart = 0;
     bool recentlySentData = false;
 
     uint32 nEstimatedDataRate = 0;
@@ -601,11 +602,14 @@ void UploadBandwidthThrottler::runInternal()
                 ++rememberedSlotCounter;
             }
 
-            // Full priority: remaining bandwidth first-come first-served
-            for (int slotCounter = 0;
-                 slotCounter < listSize && bytesToSpend > 0 && spentBytes < static_cast<uint64>(bytesToSpend);
-                 ++slotCounter) {
-                ThrottledFileSocket* socket = m_standardOrder[static_cast<size_t>(slotCounter)];
+            // Full priority: remaining bandwidth first-come first-served. The start
+            // slot rotates, or slot 0 would take the surplus on every loop.
+            if (listSize > 0)
+                surplusStart = (surplusStart + 1) % listSize;
+            for (int pos = 0;
+                 pos < listSize && bytesToSpend > 0 && spentBytes < static_cast<uint64>(bytesToSpend);
+                 ++pos) {
+                ThrottledFileSocket* socket = m_standardOrder[static_cast<size_t>((surplusStart + pos) % listSize)];
                 if (socket && !socket->isBusyQuickCheck()) {
                     uint32 bytesToSpendTemp = static_cast<uint32>(bytesToSpend - static_cast<int64>(spentBytes));
                     SocketSentBytes sent = socket->sendFileAndControlData(
@@ -616,9 +620,11 @@ void UploadBandwidthThrottler::runInternal()
                     if (sent.sentBytesStandardPackets > 0 && !socket->isEnoughFileDataQueued(EMBLOCKSIZE))
                         bNeedMoreData = true;
 
-                    if (slotCounter >= m_highestNumberOfFullyActivatedSlots &&
+                    // Position in the pass, not the slot index: it counts how many
+                    // slots it took to spend the surplus.
+                    if (pos >= m_highestNumberOfFullyActivatedSlots &&
                         (lastSpent < bytesToSpendTemp || lastSpent >= doubleSendSize))
-                        m_highestNumberOfFullyActivatedSlots = slotCounter + 1;
+                        m_highestNumberOfFullyActivatedSlots = pos + 1;
                 }
             }
 

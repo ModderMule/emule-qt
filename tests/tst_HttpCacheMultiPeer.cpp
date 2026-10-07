@@ -37,6 +37,7 @@
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
+#include "transfer/DownloadQueue.h"
 #include "transfer/UploadQueue.h"
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
@@ -174,6 +175,7 @@ private:
 
 void tst_HttpCacheMultiPeer::initTestCase()
 {
+    DownloadQueue::setVerifySourceIndex(true);   // index checked against the full scan
     m_pipe.setup(this);
 
     m_filePath = projectDataDir() + QStringLiteral("/incoming/eMuleQt-testfile-20MB.bin");

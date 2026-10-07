@@ -568,6 +568,8 @@ void UpDownClient::processAcceptUpload()
             // place as a source and is asked again after the pause.
             if (isDownloadCoolingDown()) {
                 logDebug(QStringLiteral("processAcceptUpload: %1 is cooling down, declining").arg(userName()));
+                if (auto* ledger = fruitlessLedger())
+                    ledger->noteDeclinedAccept(userHash(), getTickCount());
                 sendCancelTransfer();
                 return;
             }
@@ -738,6 +740,11 @@ void UpDownClient::sendBlockRequests()
                      .arg(m_pendingBlocks.size()).arg(userName()));
 
     if (m_pendingBlocks.empty()) {
+        // Every gap is filled, but the last parts are still being written and
+        // hashed: one of them may come back bad, and this source is the one to
+        // ask again. The file calls back when the verdict is in.
+        if (m_reqFile && m_reqFile->awaitsFinalVerdict())
+            return;
         logDebug(QStringLiteral("sendBlockRequests: no blocks available — NoNeededParts"));
         sendCancelTransfer();
         setDownloadState(DownloadState::NoNeededParts);
@@ -1048,6 +1055,7 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
         // uTransferredFileDataSize is the wire payload, lenWritten the decompressed bytes.
         m_transferredDown += uTransferredFileDataSize;
         m_curSessionPayloadDown += lenWritten;
+        m_transferredDownMini = true;
         curBlock->block->transferredByClient += lenWritten;
         curBlock->block->lastProgressTick = getTickCount();
 
@@ -1089,6 +1097,8 @@ void UpDownClient::addPayloadDown(uint64 bytes)
     // which books the same three things: the running total, the session payload, and credit.
     m_transferredDown += bytes;
     m_curSessionPayloadDown += bytes;
+    if (bytes > 0)
+        m_transferredDownMini = true;
 
     if (m_credits)
         m_credits->addDownloaded(static_cast<uint32>(bytes), m_userAddress);
@@ -1716,8 +1726,8 @@ uint32 UpDownClient::timeUntilReask(const PartFile* file, bool allowShortReaskTi
 {
     // Not before the pause after fruitless sessions is over.
     const uint64 curTick = getTickCount();
-    const uint32 cooldown = (file == m_reqFile && m_downloadCooldownUntil > curTick)
-        ? static_cast<uint32>(m_downloadCooldownUntil - curTick) : 0;
+    const uint32 cooldown = file == m_reqFile
+        ? static_cast<uint32>(std::min<uint64>(downloadCooldownLeft(curTick), UINT32_MAX)) : 0;
 
     const uint64 lastAsk = lastAskedTime(file);
     if (lastAsk == 0)
@@ -1754,6 +1764,17 @@ void UpDownClient::noteDownloadSessionEndedByPeer()
         return;
 
     const uint64 now = getTickCount();
+    if (auto* ledger = fruitlessLedger()) {
+        using Verdict = FruitlessSessionLedger::Verdict;
+        const Verdict verdict = ledger->noteFruitlessSession(userHash(), now);
+        if (verdict != Verdict::Noted) {
+            logDebug(QStringLiteral("Download sessions with %1 gave no data; %2 for %3 s")
+                         .arg(userName(), verdict == Verdict::Quarantined
+                                              ? QStringLiteral("quarantined") : QStringLiteral("paused"))
+                         .arg(ledger->heldBackFor(userHash(), now) / 1000));
+        }
+        return;
+    }
     if (m_fruitlessSessionTick != 0 && now - m_fruitlessSessionTick <= kFruitlessWindowMs) {
         m_fruitlessSessionTick = 0;
         m_downloadCooldownUntil = now + kDownloadCooldownMs;
@@ -1766,7 +1787,20 @@ void UpDownClient::noteDownloadSessionEndedByPeer()
 
 bool UpDownClient::isDownloadCoolingDown() const
 {
-    return m_downloadCooldownUntil != 0 && getTickCount() < m_downloadCooldownUntil;
+    return downloadCooldownLeft(getTickCount()) != 0;
+}
+
+uint64 UpDownClient::downloadCooldownLeft(uint64 curTick) const
+{
+    // The object's own pause (earned before the hash was known) still holds.
+    const uint64 own = m_downloadCooldownUntil > curTick ? m_downloadCooldownUntil - curTick : 0;
+    const auto* ledger = fruitlessLedger();
+    return ledger ? std::max(own, ledger->heldBackFor(userHash(), curTick)) : own;
+}
+
+FruitlessSessionLedger* UpDownClient::fruitlessLedger() const
+{
+    return (theApp.clientList && hasValidHash()) ? &theApp.clientList->fruitlessSessions : nullptr;
 }
 
 bool UpDownClient::isInAbandonedBlock(uint64 offset)
@@ -1970,7 +2004,7 @@ void UpDownClient::processAICHFileHash(SafeMemFile* data, PartFile* file,
 
     // Remember what this peer claims, and let it vote on what the real hash is.
     setReqFileAICHHash(masterHash);
-    partFile->aichRecoveryHashSet().untrustedHashReceived(masterHash, m_connectAddress);
+    partFile->voteAICHRoot(masterHash, m_connectAddress);
 
     const auto& ident = partFile->fileIdentifier();
     if (!ident.hasAICHHash() || ident.getAICHHash() == masterHash)

@@ -122,6 +122,12 @@ struct StatsSnapshot {
     qint64 upQueueLength = 0;
     qint64 upAvgTime = 0;
 
+    // --- Download sessions (one per source that entered Downloading) ---
+    qint64 downSuccessful = 0;
+    qint64 downFailed = 0;
+    qint64 downAvgTime = 0;
+    qint64 downTransferring = 0;      ///< sources delivering right now
+
     // --- Download queue ---
     qint64 downDatarate = 0;
     qint64 downFileCount = 0;

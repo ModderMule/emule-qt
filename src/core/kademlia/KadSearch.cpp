@@ -1013,7 +1013,8 @@ void Search::processResultKeyword(const UInt128& answer, TagList& info, uint32 f
     if (cb) {
         uint8 fileHash[16];
         answer.toByteArray(fileHash);
-        cb(m_searchID, fileHash, fileName, fileSize, fileType, sources, completeSources, metaTags);
+        cb(m_searchID, fileHash, fileName, fileSize, fileType, sources, completeSources, metaTags,
+           fromIP);
     }
 
     if (m_lookupHistory)

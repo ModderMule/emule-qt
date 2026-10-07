@@ -690,7 +690,7 @@ Scaricarlo di nuovo?</translation>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4601"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4602"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -1728,7 +1728,7 @@ I suoi download mantengono i file e passano a Tutti.</translation>
 <context>
     <name>eMule::CollectionCreateDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CollectionCreateDialog.cpp" line="+54"/>
+        <location filename="../src/gui/dialogs/CollectionCreateDialog.cpp" line="+55"/>
         <source>Modify Collection...</source>
         <translation>Modifica collezione...</translation>
     </message>
@@ -1799,7 +1799,7 @@ I suoi download mantengono i file e passano a Tutti.</translation>
         <translation>Annulla</translation>
     </message>
     <message>
-        <location line="+91"/>
+        <location line="+88"/>
         <source>Shared (%1)</source>
         <translation>Condivisi (%1)</translation>
     </message>
@@ -8701,32 +8701,31 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
 <context>
     <name>eMule::SharedFilesPanel</name>
     <message>
-        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+130"/>
-        <location line="+12"/>
-        <location line="+362"/>
-        <location line="+386"/>
-        <location line="+99"/>
+        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+126"/>
+        <location line="+14"/>
+        <location line="+366"/>
+        <location line="+533"/>
         <source>Shared Files (0)</source>
         <translation>File condivisi (0)</translation>
     </message>
     <message>
-        <location line="-761"/>
+        <location line="-809"/>
         <source>Open File</source>
         <translation>Apri file</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1273"/>
+        <location line="+1322"/>
         <source>Open Folder</source>
         <translation>Apri cartella</translation>
     </message>
     <message>
-        <location line="-1261"/>
+        <location line="-1310"/>
         <source>Rename...</source>
         <translation>Rinomina...</translation>
     </message>
     <message>
-        <location line="+1596"/>
+        <location line="+1645"/>
         <source>Rename File</source>
         <translation>Rinomina file</translation>
     </message>
@@ -8736,12 +8735,12 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
         <translation>Nuovo nome file:</translation>
     </message>
     <message>
-        <location line="-1588"/>
+        <location line="-1637"/>
         <source>Delete From Disk</source>
         <translation>Elimina dal disco</translation>
     </message>
     <message>
-        <location line="+822"/>
+        <location line="+871"/>
         <source>Delete File</source>
         <translation>Elimina file</translation>
     </message>
@@ -8751,12 +8750,12 @@ Riavvia eMule per applicare le nuove impostazioni proxy a tutte le connessioni.<
         <translation>Sei sicuro di voler eliminare permanentemente &quot;%1&quot; dal disco?</translation>
     </message>
     <message>
-        <location line="-801"/>
+        <location line="-850"/>
         <source>Unshare</source>
         <translation>Non condividere</translation>
     </message>
     <message>
-        <location line="+834"/>
+        <location line="+883"/>
         <source>Unshare File</source>
         <translation>Annulla condivisione file</translation>
     </message>
@@ -8770,7 +8769,7 @@ The file will remain on disk.</source>
 Il file rimarrà sul disco.</translation>
     </message>
     <message>
-        <location line="-817"/>
+        <location line="-866"/>
         <source>Priority (Upload)</source>
         <translation>Priorità (Upload)</translation>
     </message>
@@ -8949,7 +8948,7 @@ Il file rimarrà sul disco.</translation>
         <translation>Statistiche</translation>
     </message>
     <message>
-        <location line="+231"/>
+        <location line="+280"/>
         <source>%1 (%2 of %3 shared)</source>
         <translation>%1 (%2 di %3 condivisi)</translation>
     </message>
@@ -8989,7 +8988,7 @@ Il file rimarrà sul disco.</translation>
         <translation>Apri file non disponibile — il server web non è in esecuzione o il token di streaming non è stato ricevuto.</translation>
     </message>
     <message>
-        <location line="-827"/>
+        <location line="-876"/>
         <source>Content</source>
         <translation>Contenuto</translation>
     </message>
@@ -9050,17 +9049,17 @@ Il file rimarrà sul disco.</translation>
     </message>
     <message>
         <location line="+24"/>
-        <location line="+411"/>
+        <location line="+460"/>
         <source>Requires a hostname configured in Preferences, or a public IPv6</source>
         <translation>Richiede un hostname configurato nelle Preferenze o un IPv6 pubblico</translation>
     </message>
     <message>
-        <location line="-299"/>
+        <location line="-298"/>
         <source>Shared Files (%1)</source>
         <translation>File condivisi (%1)</translation>
     </message>
     <message numerus="yes">
-        <location line="+112"/>
+        <location line="+111"/>
         <source>Are you sure you want to permanently delete %n selected file(s) from disk?</source>
         <translation>
             <numerusform>Vuoi davvero eliminare definitivamente dal disco %n file selezionato?</numerusform>
@@ -9187,22 +9186,22 @@ I file resteranno sul disco.</numerusform>
         <location line="+10"/>
         <location line="+155"/>
         <location line="+19"/>
-        <location line="+1100"/>
+        <location line="+1128"/>
         <source>Uploads</source>
         <translation>Upload</translation>
     </message>
     <message>
-        <location line="-1270"/>
+        <location line="-1298"/>
         <location line="+63"/>
         <location line="+78"/>
         <location line="+47"/>
-        <location line="+1001"/>
+        <location line="+1029"/>
         <location line="+70"/>
         <source>Session</source>
         <translation>Sessione</translation>
     </message>
     <message>
-        <location line="-1256"/>
+        <location line="-1284"/>
         <location line="+32"/>
         <source>Uploaded Data: 0 Bytes</source>
         <translation>Dati caricati: 0 Bytes</translation>
@@ -9260,13 +9259,13 @@ I file resteranno sul disco.</numerusform>
         <location line="+6"/>
         <location line="+97"/>
         <location line="+19"/>
-        <location line="+936"/>
+        <location line="+964"/>
         <location line="+163"/>
         <source>Downloads</source>
         <translation>Download</translation>
     </message>
     <message>
-        <location line="-1208"/>
+        <location line="-1236"/>
         <location line="+39"/>
         <source>Downloaded Data: 0 Bytes</source>
         <translation>Dati scaricati: 0 Bytes</translation>
@@ -9408,13 +9407,13 @@ I file resteranno sul disco.</numerusform>
         <location line="+70"/>
         <location line="+60"/>
         <location line="+37"/>
-        <location line="+995"/>
+        <location line="+1023"/>
         <location line="+70"/>
         <source>Cumulative</source>
         <translation>Cumulativo</translation>
     </message>
     <message>
-        <location line="-1183"/>
+        <location line="-1211"/>
         <location line="+33"/>
         <source>Completed Downloads: 0</source>
         <translation>Download completati: 0</translation>
@@ -9458,12 +9457,12 @@ I file resteranno sul disco.</numerusform>
     <message>
         <location line="+15"/>
         <location line="+21"/>
-        <location line="+925"/>
+        <location line="+953"/>
         <source>General</source>
         <translation>Generale</translation>
     </message>
     <message>
-        <location line="-941"/>
+        <location line="-969"/>
         <source>Average Connections: 0.0</source>
         <translation>Connessioni medie: 0.0</translation>
     </message>
@@ -9523,44 +9522,44 @@ I file resteranno sul disco.</numerusform>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+458"/>
+        <location line="+486"/>
         <location line="+4"/>
         <source>Statistics Last Reset: %1</source>
         <translation>Ultimo azzeramento statistiche: %1</translation>
     </message>
     <message>
-        <location line="-749"/>
+        <location line="-777"/>
         <location line="+287"/>
-        <location line="+456"/>
+        <location line="+484"/>
         <location line="+7"/>
         <source>Unknown</source>
         <translation>Sconosciuto</translation>
     </message>
     <message>
-        <location line="-757"/>
+        <location line="-785"/>
         <source>Statistics Tree</source>
         <translation>Albero statistiche</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+753"/>
+        <location line="+781"/>
         <source>Statistics last reset: %1</source>
         <translation>Ultimo azzeramento statistiche: %1</translation>
     </message>
     <message>
-        <location line="-726"/>
-        <location line="+1262"/>
+        <location line="-754"/>
+        <location line="+1290"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="-1197"/>
-        <location line="+1074"/>
+        <location line="-1225"/>
+        <location line="+1102"/>
         <source>Waiting...</source>
         <translation>In attesa...</translation>
     </message>
     <message>
-        <location line="-1071"/>
+        <location line="-1099"/>
         <location line="+404"/>
         <source>Session UL:DL Ratio (Friends UL excluded): %1</source>
         <translation>Rapporto UL:DL sessione (escluso slot amico): %1</translation>
@@ -9571,7 +9570,7 @@ I file resteranno sul disco.</numerusform>
         <translation>Richieste file UDP ripetute: 0, fallite: 0 (0.0%)</translation>
     </message>
     <message>
-        <location line="+1028"/>
+        <location line="+1056"/>
         <source>Corrupt (Failed yEnc Check): %1</source>
         <translation>Corrotti (controllo yEnc fallito): %1</translation>
     </message>
@@ -9601,7 +9600,7 @@ I file resteranno sul disco.</numerusform>
         <translation type="vanished">Blocchi recuperati: 0</translation>
     </message>
     <message>
-        <location line="-1053"/>
+        <location line="-1081"/>
         <source>Run Time: 0:00:00</source>
         <translation>Tempo di esecuzione: 0:00:00</translation>
     </message>
@@ -9793,20 +9792,20 @@ I file resteranno sul disco.</numerusform>
         <location line="-45"/>
         <location line="+55"/>
         <location line="+60"/>
-        <location line="+48"/>
+        <location line="+76"/>
         <source>Default Port 4662: %1 %2</source>
         <translation>Porta predefinita 4662: %1 %2</translation>
     </message>
     <message>
-        <location line="-160"/>
+        <location line="-188"/>
         <location line="+55"/>
         <location line="+60"/>
-        <location line="+48"/>
+        <location line="+76"/>
         <source>Other Ports: %1 %2</source>
         <translation>Altre porte: %1 %2</translation>
     </message>
     <message>
-        <location line="-160"/>
+        <location line="-188"/>
         <location line="+55"/>
         <source>Complete File: %1 %2</source>
         <translation>File completo: %1 %2</translation>
@@ -9835,19 +9834,23 @@ I file resteranno sul disco.</numerusform>
     <message>
         <location line="+5"/>
         <location line="+48"/>
+        <location line="+72"/>
+        <location line="+12"/>
         <source>Successful: %1%2</source>
         <translation>Riusciti: %1%2</translation>
     </message>
     <message>
-        <location line="-46"/>
+        <location line="-130"/>
         <location line="+48"/>
-        <location line="+639"/>
+        <location line="+72"/>
+        <location line="+12"/>
+        <location line="+583"/>
         <location line="+49"/>
         <source>Failed: %1</source>
         <translation>Falliti: %1</translation>
     </message>
     <message>
-        <location line="-733"/>
+        <location line="-761"/>
         <location line="+48"/>
         <source>Average Upload Per Session: %1</source>
         <translation>Upload medio per sessione: %1</translation>
@@ -9866,39 +9869,39 @@ I file resteranno sul disco.</numerusform>
     <message>
         <location line="+4"/>
         <location line="+60"/>
-        <location line="+48"/>
+        <location line="+76"/>
         <location line="+36"/>
         <source>Total Overhead (Packets)</source>
         <translation>Overhead totale (pacchetti)</translation>
     </message>
     <message>
-        <location line="-143"/>
+        <location line="-171"/>
         <location line="+60"/>
-        <location line="+48"/>
+        <location line="+76"/>
         <location line="+36"/>
         <source>File Request Overhead (Packets)</source>
         <translation>Overhead richieste file (pacchetti)</translation>
     </message>
     <message>
-        <location line="-143"/>
+        <location line="-171"/>
         <location line="+60"/>
-        <location line="+48"/>
+        <location line="+76"/>
         <location line="+36"/>
         <source>Source Exchange Overhead (Packets)</source>
         <translation>Overhead scambio fonti (pacchetti)</translation>
     </message>
     <message>
-        <location line="-143"/>
+        <location line="-171"/>
         <location line="+60"/>
-        <location line="+48"/>
+        <location line="+76"/>
         <location line="+36"/>
         <source>Server Overhead (Packets)</source>
         <translation>Overhead server (pacchetti)</translation>
     </message>
     <message>
-        <location line="-143"/>
+        <location line="-171"/>
         <location line="+60"/>
-        <location line="+48"/>
+        <location line="+76"/>
         <location line="+36"/>
         <source>Kad Overhead (Packets)</source>
         <translation>Overhead Kad (pacchetti)</translation>
@@ -9924,14 +9927,14 @@ I file resteranno sul disco.</numerusform>
         <translation type="vanished">Blocchi recuperati</translation>
     </message>
     <message>
-        <location line="-81"/>
-        <location line="+48"/>
+        <location line="-109"/>
+        <location line="+76"/>
         <location line="+533"/>
         <source>Downloaded Data: %1</source>
         <translation>Dati scaricati: %1</translation>
     </message>
     <message>
-        <location line="-563"/>
+        <location line="-591"/>
         <source>Active Downloads: %1</source>
         <translation>Download attivi: %1</translation>
     </message>
@@ -9947,7 +9950,7 @@ I file resteranno sul disco.</numerusform>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+37"/>
+        <location line="+65"/>
         <source>Completed Downloads: %1</source>
         <translation>Download completati: %1</translation>
     </message>
@@ -10100,12 +10103,24 @@ I file resteranno sul disco.</numerusform>
         <translation>Durata totale server: %1 %2</translation>
     </message>
     <message>
-        <location line="-495"/>
+        <location line="-523"/>
         <source>Current Server Duration: 0:00:00</source>
         <translation>Durata server attuale: 0:00:00</translation>
     </message>
     <message>
-        <location line="+475"/>
+        <location line="+363"/>
+        <location line="+12"/>
+        <source>Average Download Per Session: %1</source>
+        <translation>Download medio per sessione: %1</translation>
+    </message>
+    <message>
+        <location line="-10"/>
+        <location line="+12"/>
+        <source>Average Download Time: %1</source>
+        <translation>Tempo medio di download: %1</translation>
+    </message>
+    <message>
+        <location line="+126"/>
         <source>Current Server Duration: %1 %2</source>
         <translation>Durata server attuale: %1 %2</translation>
     </message>

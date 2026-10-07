@@ -29,6 +29,7 @@
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
 #include "stats/Statistics.h"
+#include "transfer/DownloadQueue.h"
 #include "transfer/UploadBandwidthThrottler.h"
 #include "transfer/UploadDiskIOThread.h"
 #include "transfer/UploadQueue.h"
@@ -168,6 +169,7 @@ private:
 
 void tst_MockPeerUpload::initTestCase()
 {
+    DownloadQueue::setVerifySourceIndex(true);   // index checked against the full scan
     m_pipe.setup(this);
 
     m_testFilePath = projectDataDir() + QStringLiteral("/incoming/eMuleQt-testfile-20MB.bin");

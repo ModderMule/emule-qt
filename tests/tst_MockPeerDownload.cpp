@@ -9,6 +9,7 @@
 ///
 /// Test file: data/incoming/eMuleQt-testfile-20MB.bin
 
+#include "files/PartFileWriteThread.h"
 #include "TestHelpers.h"
 
 #include "app/AppContext.h"
@@ -694,6 +695,8 @@ private:
 // Test class
 // ---------------------------------------------------------------------------
 
+static eMule::PartFileWriteThread* s_partFileWriter = nullptr;
+
 class tst_MockPeerDownload : public QObject {
     Q_OBJECT
 
@@ -737,6 +740,7 @@ private:
 
 void tst_MockPeerDownload::initTestCase()
 {
+    DownloadQueue::setVerifySourceIndex(true);   // index checked against the full scan
     m_tmpDir = new TempDir();
 
     // 1. Preferences
@@ -784,6 +788,10 @@ void tst_MockPeerDownload::initTestCase()
     m_downloadQueue->setSharedFileList(m_sharedFiles);
     m_downloadQueue->setKnownFileList(m_knownFiles);
     theApp.downloadQueue = m_downloadQueue;
+
+    // Downloads write and hash through the disk worker, as the daemon's do.
+    s_partFileWriter = new PartFileWriteThread;
+    theApp.partFileWriter = s_partFileWriter;
 
     // 8. Upload bandwidth throttler — kept idle (not started), present so
     //    theApp.uploadBandwidthThrottler is non-null. The process timer
@@ -1023,7 +1031,6 @@ void tst_MockPeerDownload::downloadFlow_corruptionDetectedAndRecovered()
     QVERIFY(partFile->createPartFile(tempDir2));
     m_downloadQueue->addDownload(partFile);
     m_partFile = partFile;
-
     // 4. Create fresh UpDownClient targeting the new mock
     auto* client = new UpDownClient(
         corruptMock->serverPort(), htonl(0x7F000001),
@@ -1126,6 +1133,10 @@ void tst_MockPeerDownload::cleanupTestCase()
     m_listenSocket = nullptr;
 
     // Reset all globals before deleting remaining non-QObject resources
+    // The queue is gone already; each file collected its own pending write.
+    theApp.partFileWriter = nullptr;
+    delete s_partFileWriter;
+    s_partFileWriter = nullptr;
     theApp.downloadQueue = nullptr;
     theApp.uploadBandwidthThrottler = nullptr;
     theApp.sharedFileList = nullptr;

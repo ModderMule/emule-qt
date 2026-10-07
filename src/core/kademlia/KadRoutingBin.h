@@ -25,6 +25,14 @@ public:
     void setTCPPort(uint32 ip, uint16 udpPort, uint16 tcpPort);
     void removeContact(Contact* contact, bool noTrackingAdjust = false);
 
+    /// Full bin: put `newcomer` in the place of the weakest contact not in use,
+    /// if that one is expired or `newcomer` is at least kReplaceMargin stronger.
+    /// Every IP / subnet limit is checked as if the victim were already gone, and
+    /// nothing is removed unless the newcomer goes in.
+    /// @return the contact that left (caller deletes it), or null.
+    [[nodiscard]] Contact* replaceWeakest(Contact* newcomer);
+    static constexpr int kReplaceMargin = 120;
+
     [[nodiscard]] Contact* getContact(const UInt128& id);
     [[nodiscard]] Contact* getContact(uint32 ip, uint16 port, bool tcpPort);
     [[nodiscard]] Contact* getOldest();

@@ -6,6 +6,7 @@
 /// Replaces Windows IOCP with a queue-based worker thread using QFile.
 /// Emits signals when block packets are ready for sending.
 
+#include "utils/Opcodes.h"
 #include "utils/Types.h"
 
 #include <QByteArray>
@@ -20,6 +21,9 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
+
+class QFile;
 
 namespace eMule {
 
@@ -57,6 +61,22 @@ public:
     /// Queue a block read for the given client/file.
     void queueBlockRead(BlockReadRequest request);
 
+    /// Close the reader kept for @p client — it left the upload queue.
+    void releaseClient(const UpDownClient* client);
+    /// Close every reader on @p path and keep it uncached for kReleaseHoldMs: the caller
+    /// is about to rename or delete the file. Waits for at most the read in progress.
+    void releaseFile(const QString& path);
+
+    // Bytes read beyond a full-block request of a complete file, kept for the next ones.
+    static constexpr uint64 kReadAheadBytes = 3 * EMBLOCKSIZE;
+    static constexpr uint64 kReleaseHoldMs = 3000;
+
+    /// A reader unused this long is closed. Settable for tests.
+    void setIdleCloseMs(uint64 ms) { m_idleCloseMs.store(ms); }
+    [[nodiscard]] uint64 openCount() const { return m_openCount.load(); }
+    [[nodiscard]] uint64 diskReadCount() const { return m_diskReadCount.load(); }
+    [[nodiscard]] std::size_t cachedReaderCount();
+
     /// Determine if a file should be compressed based on extension.
     [[nodiscard]] static bool shouldCompressFile(const QString& fileName);
 
@@ -73,7 +93,20 @@ protected:
     void run() override;
 
 private:
+    /// One slot's open file and what was read past its last request.
+    struct Reader {
+        std::unique_ptr<QFile> file;
+        QString path;
+        QByteArray ahead;
+        uint64 aheadStart = 0;
+        uint64 lastUsed = 0;
+    };
+
     void readBlock(const BlockReadRequest& req);
+    /// The bytes of @p req. Caller holds m_readerMutex.
+    [[nodiscard]] bool readRange(const BlockReadRequest& req, QByteArray& data);
+    [[nodiscard]] bool readUncached(const BlockReadRequest& req, QByteArray& data);
+    void closeIdleReaders();
 
     static QList<std::shared_ptr<Packet>> createStandardPackets(
         const uint8* fileHash, bool isPartFile,
@@ -86,6 +119,14 @@ private:
     std::condition_variable m_condition;
     std::deque<BlockReadRequest> m_requestQueue;
     std::atomic<bool> m_run{true};
+
+    std::mutex m_readerMutex;   // held across a read, so a release waits for it
+    std::unordered_map<const UpDownClient*, Reader> m_readers;
+    std::unordered_map<QString, uint64> m_releasedPaths;   // path → uncached until
+    std::atomic<bool> m_haveReaders{false};
+    std::atomic<uint64> m_idleCloseMs{10'000};
+    std::atomic<uint64> m_openCount{0};
+    std::atomic<uint64> m_diskReadCount{0};
 };
 
 } // namespace eMule

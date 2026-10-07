@@ -126,6 +126,7 @@ private slots:
     void score_badIdentScoresZero();
     void score_bannedOrEvildoerScoresZero();
     void score_oldEmuleHalved();
+    void score_underServedFileGetsAFixedBonus();
     void score_unreachableLowIdZeroOnlyForSysValue();
 
     // Score-based slot reclaim — MFC srchybrid/UploadQueue.cpp:781-836
@@ -138,6 +139,7 @@ private slots:
     void deadSlot_goesToAWaitingClient();
     void deadSlot_staysWithoutSomeoneToTakeIt();
     void deadSlot_cooldownDoublesAndKeepsThePeerOutOfTheNextPick();
+    void sessionLimit_waitsWhileTheSlotIsProductiveAndTheLineHasRoom();
 
     // A slot is never opened for a peer we could not dial
     void addUpNextClient_declinesWhenTheDialFails();
@@ -2437,6 +2439,31 @@ void tst_UploadQueue::score_bannedOrEvildoerScoresZero()
     QCOMPARE(evildoer->score(false), uint64{0});
 }
 
+// A file we have uploaded less than half of once ranks its requesters 50 points up.
+void tst_UploadQueue::score_underServedFileGetsAFixedBonus()
+{
+    QueueRankEnv env;
+    KnownFile* file = env.addNamedFile(0xD1, QStringLiteral("fresh.bin"), 1000);
+    auto* client = env.makeClient(131, file);
+    client->restoreWaitStartTime(60'000);
+
+    const auto bonus = static_cast<uint64>(UpDownClient::kUnderServedBonus);
+    const uint64 plain = 60'000ull * 7ull / 10ull;   // Normal priority
+
+    QCOMPARE(file->allTimeUploadRatio(), 0.0);
+    QCOMPARE(client->score(false), plain + bonus);
+
+    file->statistic.setAllTimeTransferred(499);
+    QCOMPARE(client->score(false), plain + bonus);
+
+    file->statistic.setAllTimeTransferred(500);
+    QCOMPARE(client->score(false), plain);
+
+    // The rating is the credit ratio alone; the file does not enter it.
+    file->statistic.setAllTimeTransferred(0);
+    QCOMPARE(client->score(false, false, /*onlyBaseValue=*/true), uint64{100'000});
+}
+
 void tst_UploadQueue::score_oldEmuleHalved()
 {
     QueueRankEnv env;
@@ -2744,6 +2771,57 @@ void tst_UploadQueue::deadSlot_goesToAWaitingClient()
     QVERIFY(queue.isSlotCoolingDown(idle, t0 + UploadQueue::kDeadSlotMs + 1));
     QVERIFY(!queue.isSlotCoolingDown(next, t0 + UploadQueue::kDeadSlotMs + 1));
     QVERIFY(!queue.isSlotCoolingDown(idle, t0 + UploadQueue::kDeadSlotMs + UploadQueue::kSlotCooldownMs));
+}
+
+// Four parts sent ends a session. With the line underfilled and the slot still taking
+// data, ending it only swaps a running transfer for one that has to start.
+void tst_UploadQueue::sessionLimit_waitsWhileTheSlotIsProductiveAndTheLineHasRoom()
+{
+    SlotGateGuard gates;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(100);
+    const bool savedChunks = thePrefs.transferFullChunks();
+    const auto restore = qScopeGuard([&] { thePrefs.setTransferFullChunks(savedChunks); });
+    thePrefs.setTransferFullChunks(true);
+
+    QueueRankEnv env;
+    UploadQueue queue;
+    env.wire(queue);
+    GlobalUploadQueue queueGuard(&queue);
+
+    KnownFile* file = env.addNamedFile(0xE7, QStringLiteral("movie.avi"), 10u * 1024 * 1024);
+    auto* busy = env.makeClient(91, file);
+    auto* idle = env.makeClient(92, file);
+    for (auto* c : {busy, idle}) {
+        QVERIFY(env.connectSocket(c));
+        QVERIFY(queue.addClientToQueue(c));
+    }
+    env.fillWaitingList(queue, 6, file);
+    std::vector<UpDownClient*> holders;
+    queue.forEachUploading([&](UpDownClient* c) { holders.push_back(c); });
+    for (auto* c : {busy, idle})
+        QVERIFY2(std::ranges::find(holders, c) != holders.end(), "the fixture needs both in a slot");
+
+    busy->addReqBlock(uploadBlock(file, 0, EMBLOCKSIZE));
+    busy->addQueueSessionPayloadUp(SESSIONMAXTRANS + 1);
+    idle->addQueueSessionPayloadUp(SESSIONMAXTRANS + 1);
+
+    // The line is full, or was until a moment ago: the limit stands.
+    QVERIFY(queue.checkForTimeOver(busy));
+
+    queue.recycleDeadSlots(getTickCount() - UploadQueue::kUnderfillMs - 1);   // underfilled since then
+    QVERIFY(queue.keepsProductiveSlot(busy));
+    QVERIFY2(!queue.checkForTimeOver(busy), "a slot taking data keeps going while the line has room");
+    QVERIFY2(queue.checkForTimeOver(idle), "a slot that asks for nothing is not worth keeping");
+
+    // No known limit: there is no telling whether the line has room.
+    thePrefs.setMaxUpload(0);
+    QVERIFY(queue.checkForTimeOver(busy));
+    thePrefs.setMaxUpload(100);
+    QVERIFY(!queue.checkForTimeOver(busy));
+
+    busy->addQueueSessionPayloadUp((UploadQueue::kSessionStretch - 1) * uint64{SESSIONMAXTRANS});
+    QVERIFY2(queue.checkForTimeOver(busy), "the stretch has an end");
 }
 
 void tst_UploadQueue::deadSlot_staysWithoutSomeoneToTakeIt()
