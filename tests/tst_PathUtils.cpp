@@ -60,7 +60,7 @@ private slots:
     void testCanonicalPath()
     {
         // The temp dir definitely exists
-        const QString canonical = eMule::canonicalPath(QStringLiteral("/tmp"));
+        const QString canonical = eMule::canonicalPath(QDir::tempPath());   // no /tmp on Windows
         QVERIFY(!canonical.isEmpty());
     }
 
@@ -74,7 +74,7 @@ private slots:
     void testPathsEqualSamePath()
     {
         // A path should equal itself
-        QVERIFY(eMule::pathsEqual(QStringLiteral("/tmp"), QStringLiteral("/tmp")));
+        QVERIFY(eMule::pathsEqual(QDir::tempPath(), QDir::tempPath()));
     }
 
     void testPathsEqualNonExistent()
@@ -120,8 +120,8 @@ private slots:
 
     void testFreeDiskSpace()
     {
-        const auto space = eMule::freeDiskSpace(QStringLiteral("/tmp"));
-        // /tmp should have some free space
+        const auto space = eMule::freeDiskSpace(QDir::tempPath());
+        // the temp dir should have some free space
         QVERIFY(space > 0);
     }
 
@@ -129,7 +129,7 @@ private slots:
     /// guard that pauses downloads has to know which it is looking at.
     void anUnreadableVolumeIsTellableFromAFullOne()
     {
-        QVERIFY(eMule::tryFreeDiskSpace(QStringLiteral("/tmp")).has_value());
+        QVERIFY(eMule::tryFreeDiskSpace(QDir::tempPath()).has_value());
         QVERIFY(!eMule::tryFreeDiskSpace(QString()).has_value());
         QCOMPARE(eMule::freeDiskSpace(QString()), std::uint64_t(0));
     }
@@ -146,7 +146,11 @@ private slots:
 
         const auto space = eMule::tryFreeDiskSpace(unborn);
         QVERIFY2(space.has_value(), "a path that does not exist yet read as unmeasurable");
-        QCOMPARE(space, eMule::tryFreeDiskSpace(tmp.path()));
+        // Same volume, not the same byte count: other processes write between the two reads
+        const auto ref = eMule::tryFreeDiskSpace(tmp.path());
+        QVERIFY(ref.has_value());
+        const std::uint64_t drift = *space > *ref ? *space - *ref : *ref - *space;
+        QVERIFY2(drift < (std::uint64_t{1} << 30), "answered for a different volume");
     }
 };
 

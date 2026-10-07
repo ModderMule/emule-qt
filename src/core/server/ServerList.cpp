@@ -1282,11 +1282,13 @@ bool ServerList::isDuplicate(const Server& server) const
 
 void ServerList::adjustPositionsAfterRemoval(size_t removedIndex)
 {
+    // Called before the erase; removing the last server leaves 0 — x86 traps on % 0
+    const size_t remaining = m_servers.empty() ? 0 : m_servers.size() - 1;
     auto adjust = [&](size_t& pos) {
         if (pos > removedIndex && pos > 0)
             --pos;
         else if (pos == removedIndex)
-            pos = m_servers.empty() ? 0 : pos % (m_servers.size() - 1);
+            pos = remaining == 0 ? 0 : pos % remaining;
     };
     adjust(m_serverPos);
     adjust(m_searchServerPos);

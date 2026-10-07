@@ -391,6 +391,8 @@ struct SharedFileFixture {
 
     ~SharedFileFixture()
     {
+        // Peers that requested this file are deleted in cleanup(), after it is gone
+        owned->detachUploadingClients();
         theApp.sharedFileList = nullptr;
         theApp.knownFileList = nullptr;
     }
@@ -1558,6 +1560,8 @@ void tst_SourceExchangeCompat::standaloneRequest_versionByteMatchesPeerCapabilit
     QVERIFY(md4equ(peer->reqUpFileId(), uploadHash));
 
     peer->setSocket(nullptr);
+    // Not a source of pf, and deleted in cleanup() after the queue is gone
+    peer->setReqFile(nullptr);
     theApp.downloadQueue = nullptr;
     queue.deleteAll();
 }
@@ -1631,6 +1635,7 @@ void tst_SourceExchangeCompat::multipacketRequest_versionByteMatchesPeerCapabili
     }
 
     peer->setSocket(nullptr);
+    peer->setReqFile(nullptr);   // deleted in cleanup(), after pf
     theApp.downloadQueue = nullptr;
     queue.deleteAll();
 }
@@ -2075,6 +2080,7 @@ void tst_SourceExchangeCompat::aichFileHash_legacyAnswerIsStored()
     QVERIFY(*peer->reqFileAICHHash() == root);
 
     peer->setSocket(nullptr);
+    peer->setReqFile(nullptr);   // deleted in cleanup(), after pf
     theApp.downloadQueue = nullptr;
     queue.deleteAll();
 }
@@ -2108,6 +2114,7 @@ void tst_SourceExchangeCompat::multipacketAnswer_unknownSubOpcodeDisconnects()
              "an invalid sub-opcode must drop the connection");
 
     peer->setSocket(nullptr);
+    peer->setReqFile(nullptr);   // deleted in cleanup(), after pf
     theApp.downloadQueue = nullptr;
     queue.deleteAll();
 }

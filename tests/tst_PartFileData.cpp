@@ -41,6 +41,10 @@ private:
 void tst_PartFileData::initTestCase()
 {
     QVERIFY(m_tempDir.isValid());
+    // data/002.part(.met) is a real download, gitignored — only where someone put one
+    if (!QFile::exists(projectDataDir() + QStringLiteral("/002.part.met"))
+        || !QFile::exists(projectDataDir() + QStringLiteral("/002.part")))
+        QSKIP("data/002.part and data/002.part.met are not in this checkout");
     thePrefs.setIncomingDir(m_tempDir.path() + QStringLiteral("/incoming"));
     thePrefs.setTempDirs({m_tempDir.path() + QStringLiteral("/temp")});
     QDir().mkpath(thePrefs.incomingDir());

@@ -381,7 +381,11 @@ void tst_EnodeMeta::accountStore_roundTrip()
     QCOMPARE(store.account(origin).username, QStringLiteral("alice"));
     QCOMPARE(store.account(origin).token, QStringLiteral("tok123"));
     QVERIFY(QFile::permissions(path) & QFileDevice::ReadOwner);
+#ifndef Q_OS_WIN
+    // Windows: setPermissions() only maps to the read-only attribute; access is the
+    // profile directory's ACL, and Qt reports ReadOther regardless.
     QVERIFY(!(QFile::permissions(path) & QFileDevice::ReadOther));
+#endif
 
     store.clearToken(origin);
     QVERIFY(!store.account(origin).hasToken());

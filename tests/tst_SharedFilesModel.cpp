@@ -208,7 +208,13 @@ void tst_SharedFilesModel::aLargeListIsDiffedQuickly()
     qInfo("diff of %d rows: %lld ms", kFiles, static_cast<long long>(ms));
     QCOMPARE(model.fileCount(), kFiles - 50 + 10);
     QCOMPARE(changed.count(), 500);
-    QVERIFY2(ms < 2000, "the diff is no longer linear");
+    // MSVC debug (checked iterators, debug heap) lands right at 2 s on a quiet machine
+#if defined(_MSC_VER) && defined(_DEBUG)
+    constexpr qint64 kBudgetMs = 10000;
+#else
+    constexpr qint64 kBudgetMs = 2000;
+#endif
+    QVERIFY2(ms < kBudgetMs, "the diff is no longer linear");
 }
 
 QTEST_MAIN(tst_SharedFilesModel)

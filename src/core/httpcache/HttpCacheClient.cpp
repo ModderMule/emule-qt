@@ -111,6 +111,11 @@ bool HttpCacheClient::sendHttpBlockRequests()
     if (m_requestInFlight)
         return true;
 
+    // Asked for blocks while still connecting: a GET queued now may never leave, and
+    // connectionEstablished() would then take it for sent. It asks again once we are up.
+    if (!socket() || !socket()->isConnected())
+        return false;
+
     ++m_totalAttempts;
     m_progressAtAttemptStart = m_cipherConsumed;
     m_expectedBodyStart = m_cipherConsumed;

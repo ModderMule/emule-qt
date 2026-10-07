@@ -1068,7 +1068,7 @@ void tst_DownloadQueue::checkAndAddSource_rejectsCryptIncompatible()
     QVERIFY2(dq.checkAndAddSource(pf, &peer), "with obfuscation on it is a fine source");
     QCOMPARE(pf->sourceCount(), 1);
 
-    pf->removeSource(&peer);
+    dq.removeSource(&peer);   // also clears its reqFile, which outlives the file
     dq.deleteAll();
 }
 
@@ -1139,6 +1139,9 @@ void tst_DownloadQueue::checkAndAddSource_rejectsUnusableHighIdOnly()
     QVERIFY(dq.checkAndAddSource(pf, publicPeer.get()));
 
     pf->forgetAllSources();
+    // Forgotten sources outlive pf; don't leave them a dangling reqFile
+    lowId->setReqFile(nullptr);
+    publicPeer->setReqFile(nullptr);
     dq.deleteAll();
 }
 
@@ -2124,6 +2127,7 @@ void tst_DownloadQueue::process_flushesPendingIPChangeForSources()
     QVERIFY(!source.sendIPPending());
 
     pf->forgetAllSources();
+    source.setReqFile(nullptr);   // outlives pf
     source.setSocket(nullptr);
     peer->close();
     QCoreApplication::processEvents();
@@ -2188,6 +2192,7 @@ void tst_DownloadQueue::process_udpReaskWindowIsDisjointFromTheTcpReask()
              "an answered source must not be re-asked again inside FILEREASKTIME");
 
     pf->forgetAllSources();
+    source.setReqFile(nullptr);   // outlives pf
     dq.deleteAll();
 }
 
@@ -2241,7 +2246,7 @@ void tst_DownloadQueue::checkAndAddKnownSource_addsAPassiveSource()
     QVERIFY(!dq.checkAndAddKnownSource(pf, &client, true));
     QCOMPARE(pf->sourceCount(), 1);
 
-    pf->removeSource(&client);
+    dq.removeSource(&client);   // also clears its reqFile, which outlives the file
     dq.deleteAll();
 }
 
@@ -2278,7 +2283,7 @@ void tst_DownloadQueue::checkAndAddKnownSource_a4afWhenItAlreadySourcesAnotherFi
     QCOMPARE(fileB->a4afSourceCount(), 1);
 
     client.removeFileFromOtherLists(fileB);
-    fileA->removeSource(&client);
+    dq.removeSource(&client);   // also clears its reqFile, which outlives the file
     dq.deleteAll();
 }
 

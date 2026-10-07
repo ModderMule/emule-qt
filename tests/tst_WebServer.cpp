@@ -1832,7 +1832,14 @@ void tst_WebServer::buildIncomingTree()
     write(QStringLiteral("big.bin"), m_bigFileBytes);
 
     // A symlink out of the tree. Nothing but canonicalisation catches this one.
-    QFile::link(QStringLiteral("/etc/hosts"), root.filePath(QStringLiteral("escape.txt")));
+    // Where the OS refuses the link (Windows without Developer Mode) the name simply
+    // does not exist, which is the same 404.
+#ifdef Q_OS_WIN
+    const QString outside = QCoreApplication::applicationFilePath();   // no /etc/hosts here
+#else
+    const QString outside = QStringLiteral("/etc/hosts");
+#endif
+    eMule::testing::makeSymlink(outside, root.filePath(QStringLiteral("escape.txt")));
 
     m_preferences->setIncomingDir(m_incoming->path());
 }
@@ -2398,7 +2405,7 @@ void tst_WebServer::aCustomTemplateOverridesAssetsOneFileAtATime()
     // A symlink out of the theme dir must fail containment, not follow.
     const QString secret = cfgDir.filePath(QStringLiteral("secret.css"));
     write(secret, QByteArrayLiteral("SECRET"));
-    if (QFile::link(secret, themeDir.filePath(QStringLiteral("leak.css"))))
+    if (eMule::testing::makeSymlink(secret, themeDir.filePath(QStringLiteral("leak.css"))))
         QCOMPARE(rawGetStatus(p, QStringLiteral("/leak.css"), /*withKey*/ false), 404);
 
     server->stop();
