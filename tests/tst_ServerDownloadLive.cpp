@@ -438,6 +438,11 @@ void tst_ServerDownloadLive::cleanupTestCase()
     if (m_listenSocket)
         m_listenSocket->stopListening();
 
+    // Queue asks the known-file list about each part file on its way out, and
+    // holds the .part open — it has to go before both the list and the temp dir
+    delete m_downloadQueue;
+    m_downloadQueue = nullptr;
+
     // Reset globals
     theApp.downloadQueue = nullptr;
     theApp.sharedFileList = nullptr;
