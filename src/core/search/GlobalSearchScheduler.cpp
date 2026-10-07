@@ -45,7 +45,7 @@ Server* nextGlobalSearchTarget(ServerList& list, const Server* connected,
         toask = list.nextSearchServer();
         if (toask == nullptr
             || ((connected == nullptr || toask->serverId() != connected->serverId())
-                && toask->failedCount() < deadServerRetries))
+                && !toask->isDeadFor(deadServerRetries)))
             break;
         toask = nullptr;
     }

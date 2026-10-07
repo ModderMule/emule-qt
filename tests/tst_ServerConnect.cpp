@@ -133,7 +133,9 @@ private slots:
     // Construction & configuration
     void failedConnect_countsOnlyTheServersOwnFailures_data();
     void failedConnect_countsOnlyTheServersOwnFailures();
-    void failedConnect_neverRemovesAStaticServer();
+    void failedConnect_disablesAtTheLimitButNeverAStaticServer();
+    void failedConnect_countIsClearedByTheLoginNotTheTcpConnect();
+    void connectTimeout_countsOnlyWhenTcpNeverCameUp();
     void failedConnect_insideTheDialLeavesNoStaleAttempt();
     void constructionDefaults();
     void setConfig_updatesMaxSimCons();
@@ -1179,7 +1181,7 @@ void tst_ServerConnect::failedConnect_countsOnlyTheServersOwnFailures()
     QCOMPARE(entry->failedCount(), expectedCount);
 }
 
-void tst_ServerConnect::failedConnect_neverRemovesAStaticServer()
+void tst_ServerConnect::failedConnect_disablesAtTheLimitButNeverAStaticServer()
 {
     const uint32 hadRetries = thePrefs.deadServerRetries();
     thePrefs.setDeadServerRetries(1);
@@ -1209,8 +1211,101 @@ void tst_ServerConnect::failedConnect_neverRemovesAStaticServer()
     socket = dialListServer(conn, plain);
     QVERIFY(socket);
     emit socket->errorOccurred(QAbstractSocket::ConnectionRefusedError);
-    QCOMPARE(list.serverCount(), size_t{1});     // the ordinary one goes at the limit
-    QCOMPARE(list.serverAt(0), pinned);
+    // At the limit the ordinary one is disabled, not removed: a removed server
+    // came back with the next server list.
+    QCOMPARE(list.serverCount(), size_t{2});
+    QVERIFY(plain->isDisabled());
+    QVERIFY(!pinned->isDisabled());
+
+    // Nothing dials it by itself any more.
+    for (int i = 0; i < 4; ++i)
+        QCOMPARE(list.nextServer(false), pinned);
+
+    // Being listed by another server is no sign of life; the user's own add is.
+    auto announced = std::make_unique<Server>(htonl(0x7F000001), plain->port());
+    QVERIFY(list.addServer(std::move(announced)) == nullptr);
+    QVERIFY(plain->isDisabled());
+    QCOMPARE(plain->failedCount(), uint32{1});
+
+    auto typed = std::make_unique<Server>(htonl(0x7F000001), plain->port());
+    QVERIFY(list.addServer(std::move(typed), ServerOrigin::Manual) == nullptr);
+    QVERIFY(!plain->isDisabled());
+    QCOMPARE(plain->failedCount(), uint32{0});
+}
+
+// A server that accepts the TCP connect and then says nothing used to have its
+// count wiped by that connect alone, so it could never reach the limit.
+void tst_ServerConnect::failedConnect_countIsClearedByTheLoginNotTheTcpConnect()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    ServerList list;
+    ListedLoopback listed(list, QStringLiteral("S"));
+    Server* entry = listed.entry;
+    QVERIFY(entry);
+    entry->setFailedCount(3);
+
+    ServerConnect conn(list);
+    conn.setConfig(makeTestConfig());
+    ServerSocket* socket = dialListServer(conn, entry);
+    QVERIFY(socket);
+
+    QTRY_COMPARE_WITH_TIMEOUT(socket->connectionState(), ServerConnState::WaitForLogin, 5000);
+    QCOMPARE(entry->failedCount(), uint32{3});
+
+    QTRY_VERIFY_WITH_TIMEOUT(listed.listener.hasPendingConnections(), 5000);
+    QTcpSocket* serverSide = listed.listener.nextPendingConnection();
+    QVERIFY(serverSide);
+    writeIdChange(serverSide, 0x12345678);
+    QTRY_VERIFY_WITH_TIMEOUT(conn.isConnected(), 5000);
+    QCOMPARE(entry->failedCount(), uint32{0});
+}
+
+void tst_ServerConnect::connectTimeout_countsOnlyWhenTcpNeverCameUp()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    ServerConnectConfig cfg = makeTestConfig();
+    cfg.connectionTimeout = 50;
+    cfg.reconnectOnDisconnect = false;
+
+    // Accepts and never answers: alive at TCP level, so the stall counts nothing.
+    {
+        ServerList list;
+        ListedLoopback listed(list, QStringLiteral("silent"));
+        QVERIFY(listed.entry);
+        ServerConnect conn(list);
+        conn.setConfig(cfg);
+        ServerSocket* socket = dialListServer(conn, listed.entry);
+        QVERIFY(socket);
+        QTRY_VERIFY_WITH_TIMEOUT(socket->tcpConnected(), 5000);
+        QTest::qWait(80);
+        conn.checkForTimeout();
+        QCOMPARE(listed.entry->failedCount(), uint32{0});
+    }
+
+    // TEST-NET-1 answers nobody: the connect hangs until our own timeout, which
+    // counts like a refusal.
+    {
+        ServerList list;
+        auto owned = std::make_unique<Server>(htonl(0xC0000201), 4661);
+        owned->setName(QStringLiteral("void"));
+        Server* entry = list.addServer(std::move(owned));
+        QVERIFY(entry);
+        ServerConnect conn(list);
+        conn.setConfig(cfg);
+        ServerSocket* socket = dialListServer(conn, entry);
+        QVERIFY(socket);
+        QTest::qWait(80);
+        if (socket->connectionState() != ServerConnState::Connecting)
+            QSKIP("no route at all: the connect failed locally instead of hanging");
+        conn.checkForTimeout();
+        QCOMPARE(entry->failedCount(), uint32{1});
+    }
 }
 
 // With a bind address the host does not have, the connect fails inside the dial

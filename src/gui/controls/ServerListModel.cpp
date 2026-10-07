@@ -72,7 +72,8 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
         case ColMaxUsers:    return r.users ? formatShortNumber(r.maxUsers) : QString{};
         case ColFiles:       return r.files ? formatShortNumber(r.files) : QString{};
         case ColPreference:  return r.preference;
-        case ColFailed:      return r.failed;
+        case ColFailed:      return r.disabled ? tr("%1 (disabled)").arg(r.failed)
+                                               : QVariant(r.failed);
         case ColStatic:      return r.isStatic ? tr("Yes") : tr("No");
         case ColSoftFiles:   return formatShortNumber(r.softFiles);
         case ColLowID:       return formatShortNumber(r.lowIdUsers);
@@ -127,7 +128,7 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
         if (m_connectedServerId != 0 && r.serverId == m_connectedServerId)
             return QColor(0x33, 0x99, 0xFF);
         const uint32_t deadRetries = thePrefs.deadServerRetries();
-        if (deadRetries > 0 && r.failed >= deadRetries)
+        if (r.disabled || (deadRetries > 0 && r.failed >= deadRetries))
             return dimmedText(0.75);
         if (r.failed >= 2)
             return dimmedText(0.5);
@@ -195,6 +196,7 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
         row.files       = static_cast<uint32_t>(m.value(QStringLiteral("files")).toInteger());
         row.failed      = static_cast<uint32_t>(m.value(QStringLiteral("failedCount")).toInteger());
         row.isStatic    = m.value(QStringLiteral("isStatic")).toBool();
+        row.disabled    = m.value(QStringLiteral("disabled")).toBool();
         row.softFiles   = static_cast<uint32_t>(m.value(QStringLiteral("softFiles")).toInteger());
         row.lowIdUsers  = static_cast<uint32_t>(m.value(QStringLiteral("lowIDUsers")).toInteger());
         row.obfuscation = m.value(QStringLiteral("obfuscation")).toBool();

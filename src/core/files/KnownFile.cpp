@@ -226,6 +226,10 @@ bool KnownFile::loadTagsFromFile(FileDataIO& file)
                 fileIdentifier().loadAICHHashsetFromFile(hashsetFile, false);
             }
             break;
+        case FT_MEDIAEXTRACTVER:
+            if (tag.isInt())
+                m_mediaExtractVer = tag.intValue();
+            break;
         case FT_KADNOTECACHE:
             // Consume here (don't fall through to addTagUnique) so it isn't both
             // deserialized and re-written from the extra-tags list.
@@ -288,6 +292,8 @@ bool KnownFile::writeToFile(FileDataIO& file) const
     tagCount += 1; // FT_ULPRIORITY
     if (m_metaDataVer > 0)
         tagCount += 1; // FT_FLAGS
+    if (m_mediaExtractVer > 0)
+        tagCount += 1; // FT_MEDIAEXTRACTVER
 
     // Kad publish times
     if (m_lastPublishTimeKadSrc > 0)
@@ -366,6 +372,8 @@ bool KnownFile::writeToFile(FileDataIO& file) const
     // Flags: the metadata version, only when there is one (MFC KnownFile.cpp:897-909)
     if (m_metaDataVer > 0)
         Tag(FT_FLAGS, static_cast<uint32>(m_metaDataVer & 0x0F)).writeNewEd2kTag(file);
+    if (m_mediaExtractVer > 0)
+        Tag(FT_MEDIAEXTRACTVER, m_mediaExtractVer).writeNewEd2kTag(file);
 
     // Kad timestamps
     if (m_lastPublishTimeKadSrc > 0)
@@ -665,9 +673,16 @@ void KnownFile::updateMetaDataTags()
     // Remove old media tags first
     removeMetaDataTags();
 
+    // Stamped before the result is known: "read, nothing found" is an answer too.
+    // A file that cannot be opened right now keeps its old stamp and is tried again.
     MediaInfo info;
-    if (!extractMediaInfo(filePath(), info))
+    const bool readable = QFileInfo(filePath()).isReadable();
+    if (readable)
+        m_mediaExtractVer = kMediaExtractVersion;
+    if (!readable || !extractSharedMediaInfo(filePath(), info)) {
+        noteChanged();
         return;
+    }
 
     // FT_MEDIA_LENGTH — duration in seconds (as integer)
     if (info.lengthSec > 0.0) {
@@ -734,6 +749,11 @@ void KnownFile::setUpPriorityFromTag(uint32 value)
 uint32 KnownFile::upPriorityTagValue() const
 {
     return m_autoUpPriority ? kPrAuto : m_upPriority;
+}
+
+bool KnownFile::mediaExtractIsStale() const
+{
+    return thePrefs.extractMetaData() != 0 && m_mediaExtractVer < kMediaExtractVersion;
 }
 
 bool KnownFile::hasMetaDataTags() const
@@ -1117,8 +1137,12 @@ void KnownFile::writeExtendedSourceExchangeData(SafeMemFile& data, const UpDownC
 // ---------------------------------------------------------------------------
 
 bool KnownFile::createFromFile(const QString& directory, const QString& filename,
-                               std::function<void(int)> progressCallback)
+                               std::function<void(int)> progressCallback,
+                               const FileStamp* scanned, bool* changedSinceScan)
 {
+    if (changedSinceScan)
+        *changedSinceScan = false;
+
     const QString fullPath = directory + u'/' + filename;
 
     QFile file(fullPath);
@@ -1127,15 +1151,25 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
         return false;
     }
 
+    // Size and date of the file we actually hold open, taken right before the read:
+    // the scan that queued it may be minutes old.
     const uint64 length = static_cast<uint64>(file.size());
+    const auto openedDate = static_cast<time_t>(
+        file.fileTime(QFileDevice::FileModificationTime).toSecsSinceEpoch());
+    if (scanned && (scanned->size != length || scanned->mtime != openedDate)) {
+        logInfo(QStringLiteral("File changed since it was scanned: %1").arg(fullPath));
+        if (changedSinceScan)
+            *changedSinceScan = true;
+        return false;
+    }
+
     setFileSize(length);
     setFileName(filename, true);
     setPath(directory);
     setFilePath(fullPath);
+    setUtcFileDate(openedDate);
 
-    // Set file date
     QFileInfo fi(fullPath);
-    setUtcFileDate(static_cast<time_t>(fi.lastModified().toSecsSinceEpoch()));
 
     if (length == 0) {
         // Empty file — single null hash

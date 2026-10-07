@@ -32,6 +32,7 @@ class ListenSocket;
 class GlobalSearchScheduler;
 class HttpCacheManager;
 class SearchList;
+class SeenFileIndex;
 class ServerConnect;
 class ServerList;
 class SharedFileList;
@@ -62,6 +63,7 @@ struct AppContext {
     ServerConnect*   serverConnect  = nullptr;
     ServerList*      serverList     = nullptr;
     SearchList*      searchList     = nullptr;
+    SeenFileIndex*   seenFileIndex  = nullptr;
     GlobalSearchScheduler* globalSearch = nullptr;
     Statistics*      statistics     = nullptr;
     StatsHistory*    statsHistory   = nullptr;

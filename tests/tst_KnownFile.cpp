@@ -6,6 +6,7 @@
 #include "crypto/MD4Hash.h"
 #include "client/UpDownClient.h"
 #include "files/KnownFile.h"
+#include "media/MediaInfo.h"
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
 #include "utils/SafeFile.h"
@@ -198,6 +199,8 @@ private slots:
     void createFromFile_zeroFile();
     void createFromFile_nonExistent();
     void createFromFile_setsDate();
+    void createFromFile_refusesAFileThatChangedSinceTheScan();
+    void mediaExtractVersion_isStampedStoredAndComparedOnLoad();
     void createFromFile_progressCallback();
     void updatePartsInfo_noClients();
     void updatePartsInfo_usesUploaderStatusAndCompleteCounts();
@@ -862,6 +865,88 @@ void tst_KnownFile::createFromFile_setsDate()
     time_t now = std::time(nullptr);
     QVERIFY(kf.utcFileDate() > now - 60);
     QVERIFY(kf.utcFileDate() <= now + 1);
+}
+
+// A scan may be minutes old by the time the worker gets to the file.
+void tst_KnownFile::createFromFile_refusesAFileThatChangedSinceTheScan()
+{
+    eMule::testing::TempDir tmpDir;
+    const QString filename = QStringLiteral("grown.bin");
+    QFile f(tmpDir.filePath(filename));
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write(QByteArray(900, 'x'));
+    f.close();
+    const QFileInfo fi(f.fileName());
+    const auto mtime = static_cast<time_t>(fi.lastModified().toSecsSinceEpoch());
+
+    bool changed = false;
+    KnownFile stale;
+    const KnownFile::FileStamp smaller{800, mtime};
+    QVERIFY(!stale.createFromFile(tmpDir.path(), filename, {}, &smaller, &changed));
+    QVERIFY(changed);
+
+    KnownFile older;
+    const KnownFile::FileStamp earlier{900, mtime - 30};
+    QVERIFY(!older.createFromFile(tmpDir.path(), filename, {}, &earlier, &changed));
+    QVERIFY(changed);
+
+    KnownFile same;
+    const KnownFile::FileStamp asScanned{900, mtime};
+    QVERIFY(same.createFromFile(tmpDir.path(), filename, {}, &asScanned, &changed));
+    QVERIFY(!changed);
+    QCOMPARE(same.utcFileDate(), mtime);
+
+    // An unreadable file is a failure, not a change.
+    KnownFile missing;
+    QVERIFY(!missing.createFromFile(tmpDir.path(), QStringLiteral("nope.bin"), {}, &asScanned,
+                                    &changed));
+    QVERIFY(!changed);
+}
+
+// The stamp is what lets a better extractor have another go at an old library,
+// without reading files with nothing in them again on every start.
+void tst_KnownFile::mediaExtractVersion_isStampedStoredAndComparedOnLoad()
+{
+    QVERIFY(thePrefs.extractMetaData() != 0);
+
+    // A record from before the stamp existed: its turn is still to come.
+    {
+        SafeMemFile in(knownRecord({}));
+        KnownFile old;
+        QVERIFY(old.loadFromFile(in));
+        QCOMPARE(old.mediaExtractVer(), uint32{0});
+        QVERIFY(old.mediaExtractIsStale());
+    }
+    {
+        SafeMemFile in(knownRecord({Tag(FT_MEDIAEXTRACTVER, uint32{kMediaExtractVersion})}));
+        KnownFile current;
+        QVERIFY(current.loadFromFile(in));
+        QVERIFY(!current.mediaExtractIsStale());
+        QVERIFY2(current.getTag(FT_MEDIAEXTRACTVER) == nullptr, "not kept as a stray tag");
+    }
+
+    // A file with nothing in it for the extractor is stamped all the same, and the
+    // stamp survives known.met.
+    eMule::testing::TempDir tmpDir;
+    const QString filename = QStringLiteral("notes.txt");
+    QFile f(tmpDir.filePath(filename));
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write(QByteArray(300, 'n'));
+    f.close();
+
+    KnownFile plain;
+    QVERIFY(plain.createFromFile(tmpDir.path(), filename));
+    QVERIFY(!plain.hasMetaDataTags());
+    QCOMPARE(plain.mediaExtractVer(), uint32{kMediaExtractVersion});
+    QVERIFY(!plain.mediaExtractIsStale());
+
+    SafeMemFile out;
+    QVERIFY(plain.writeToFile(out));
+    SafeMemFile in(out.takeBuffer());
+    KnownFile reloaded;
+    QVERIFY(reloaded.loadFromFile(in));
+    QCOMPARE(reloaded.mediaExtractVer(), uint32{kMediaExtractVersion});
+    QVERIFY(!reloaded.mediaExtractIsStale());
 }
 
 void tst_KnownFile::createFromFile_progressCallback()

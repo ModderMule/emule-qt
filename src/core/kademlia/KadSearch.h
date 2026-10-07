@@ -44,6 +44,13 @@ public:
     Search& operator=(const Search&) = delete;
 
     [[nodiscard]] uint32 getSearchID() const { return m_searchID; }
+    /// Take an id now for a search that is created later (a queued keyword search).
+    /// Every search of the client draws from this one counter — Kad lookups, and
+    /// through SearchList the server searches and peer file lists too — so an id
+    /// names one search, whatever network it runs on.
+    [[nodiscard]] static uint32 reserveSearchID();
+    /// An id that came from elsewhere (a stored search) is in use: stay clear of it.
+    static void noteSearchIDUsed(uint32 searchID);
     [[nodiscard]] SearchType getSearchType() const { return m_type; }
     void setSearchType(SearchType type);
     void setTargetID(const UInt128& target);

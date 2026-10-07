@@ -9,10 +9,12 @@
 
 #include "net/EMSocket.h"
 #include "net/Address.h"
+#include "server/ServerFailure.h"
 
 #include <QDnsLookup>
 
 #include <memory>
+#include <optional>
 
 namespace eMule {
 
@@ -69,6 +71,9 @@ public:
 
     /// True once the TCP connect succeeded (before any login).
     [[nodiscard]] bool tcpConnected() const { return m_tcpConnected; }
+
+    /// Phase and reason of the failure that ended this attempt (unset until one did).
+    [[nodiscard]] const ServerFailure& lastFailure() const { return m_lastFailure; }
 
     /// Get the current connection state.
     [[nodiscard]] ServerConnState connectionState() const { return m_connectionState; }
@@ -169,6 +174,10 @@ public:
     [[nodiscard]] static ServerConnState stateForSocketError(ServerConnState current,
                                                              QAbstractSocket::SocketError error);
 
+    /// Names a failure: @p socketError is empty for a protocol error or a plain close.
+    [[nodiscard]] static ServerFailure failureFor(ServerConnState current, bool tcpConnected,
+                                                  std::optional<QAbstractSocket::SocketError> socketError);
+
 protected:
     bool packetReceived(Packet* packet) override;
     void onError(int errorCode) override;
@@ -177,6 +186,8 @@ protected:
 private:
     bool processPacket(const uint8* packet, uint32 size, uint8 opcode);
     void setConnectionState(ServerConnState newState);
+    /// Record the failure, then move to @p newState (which reports it).
+    void failWith(ServerConnState newState, ServerFailure failure);
 
     // --- Slots ---
     void onSocketConnected();
@@ -193,6 +204,7 @@ private:
     Address m_sessionAddress;
     std::unique_ptr<QDnsLookup> m_dnsLookup;
     ServerConnState m_connectionState = ServerConnState::NotConnected;
+    ServerFailure m_lastFailure;
     uint64 m_lastTransmission = 0;
     bool m_manualSingleConnect = false;
     bool m_startNewMessageLog = true;

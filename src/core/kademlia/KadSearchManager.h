@@ -56,10 +56,13 @@ public:
     ///                       keyword is picked via selectKeyword(). Callers that
     ///                       build a search-terms blob must pass the same keyword
     ///                       they built it against.
+    /// @param searchID       An id from Search::reserveSearchID() to run under; 0 = a
+    ///                       fresh one.
     static Search* prepareFindKeywords(const QString& expression,
                                        uint32 searchTermsSize,
                                        const uint8* searchTermsData,
-                                       const QString& targetKeyword = QString());
+                                       const QString& targetKeyword = QString(),
+                                       uint32 searchID = 0);
     static bool startSearch(Search* search);
 
     static void processResponse(const UInt128& target, uint32 fromIP, uint16 fromPort,

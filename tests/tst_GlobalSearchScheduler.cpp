@@ -117,6 +117,17 @@ void tst_GlobalSearchScheduler::target_skipsDeadServers()
     const Server* picked = nextGlobalSearchTarget(list, nullptr, /*deadServerRetries*/ 3, examined);
     QVERIFY(picked != nullptr);
     QCOMPARE(picked->failedCount(), uint32{0});
+
+    // A disabled server is skipped whatever its count and whatever the limit.
+    ServerList second;
+    Server* off = second.addServer(makeServer(0x08080808, 4661));
+    second.addServer(makeServer(0x08090808, 4662));
+    second.addServer(makeServer(0x080A0808, 4663));
+    off->setDisabled(true);
+    examined = 0;
+    picked = nextGlobalSearchTarget(second, nullptr, /*deadServerRetries*/ 0, examined);
+    QVERIFY(picked != nullptr);
+    QVERIFY(picked != off);
 }
 
 void tst_GlobalSearchScheduler::target_stopsAfterOnePass()

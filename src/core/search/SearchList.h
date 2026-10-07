@@ -10,7 +10,10 @@
 #include "net/Address.h"
 #include "search/SearchFile.h"
 #include "search/SearchParams.h"
+#include "search/SearchQueue.h"
 #include "utils/Types.h"
+
+#include <QDateTime>
 
 #include <QObject>
 #include <QString>
@@ -46,6 +49,8 @@ struct SearchListEntry {
     QString title;                  ///< tab title for client lists (peer's user name)
     bool clientSharedFiles = false; ///< MFC SSearchParams::bClientSharedFiles
     bool kad = false;               ///< our own Kad keyword search (MFC SearchTypeKademlia)
+    /// When the search was asked for: a file on record before this is "seen before".
+    qint64 startedAt = QDateTime::currentSecsSinceEpoch();
     std::list<std::unique_ptr<SearchFile>> files;
 
     SearchListEntry() = default;
@@ -73,6 +78,24 @@ public:
     /// search still collecting them.
     uint32 newSearch(const QString& resultFileType, const SearchParams& params,
                      uint32 forcedID = 0, bool takeEd2kRouting = true);
+
+    /// An empty result list for a search that is sent later (see SearchQueue). Takes
+    /// @p forcedID when given, else the next id of its own.
+    uint32 reserveSearch(uint32 forcedID = 0);
+
+    /// The search is going out now: results are filtered by its file type, and for an
+    /// ED2K search the server answers (TCP and UDP) are filed under it from here on.
+    void beginSearch(uint32 searchID, const QString& resultFileType, bool ed2k);
+
+    /// The ED2K search @p searchID is over. A server answer arriving after this is
+    /// nobody's and is dropped — it used to land in whichever search came next.
+    void releaseEd2kRouting(uint32 searchID);
+
+    /// The search server answers are filed under; 0 when none is running.
+    [[nodiscard]] uint32 ed2kSearchInFlight() const { return m_currentEd2kSearchID; }
+
+    /// Holds and sends the searches of this list.
+    [[nodiscard]] SearchQueue& queue() { return *m_queue; }
 
     /// True while @p searchID has a result list.
     [[nodiscard]] bool hasSearch(uint32 searchID) const { return findEntry(searchID) != nullptr; }
@@ -222,6 +245,8 @@ public:
     void loadSpamFilter(const QString& configDir);
 
 signals:
+    /// A search was queued, sent, finished or failed.
+    void searchStateChanged(const eMule::SearchStatus& status);
     void resultAdded(eMule::SearchFile* file);
     void resultUpdated(eMule::SearchFile* file);
     void resultAboutToBeRemoved(eMule::SearchFile* file);
@@ -229,6 +254,13 @@ signals:
     void spamStatusChanged(eMule::SearchFile* file);
 
 private:
+    /// @p forcedID if given (and marked as taken), else a fresh id.
+    static uint32 takeSearchID(uint32 forcedID);
+
+    /// Record a sighting in the seen-files index; for a result new to its search,
+    /// first note on it what the index knew until now.
+    static void noteSeen(SearchFile& file, const SearchListEntry& entry, bool newToSearch);
+
     /// Find the SearchListEntry for a given search ID.
     [[nodiscard]] SearchListEntry* findEntry(uint32 searchID);
     [[nodiscard]] const SearchListEntry* findEntry(uint32 searchID) const;
@@ -268,7 +300,7 @@ private:
     /// The newest *ED2K* search — server answers (TCP and UDP) are filed under this,
     /// not under m_currentSearchID, which a Kad search started meanwhile would own.
     uint32 m_currentEd2kSearchID = 0;
-    uint32 m_nextSearchID = 1;
+    SearchQueue* m_queue = nullptr;
 };
 
 } // namespace eMule

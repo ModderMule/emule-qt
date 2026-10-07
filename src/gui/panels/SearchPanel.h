@@ -67,6 +67,12 @@ struct SearchTab {
     /// A peer's shared file list (MFC bClientSharedFiles), not a keyword search.
     bool clientSharedFiles = false;
 
+    /// Where an ED2K/Kad search stands (daemon SearchRunState): 0 queued, 1 running,
+    /// 2 finished, 3 failed. A tab restored from disk has no search behind it.
+    int runState = 2;
+    QString waitReason;   ///< queued: what it waits for
+    QString failure;      ///< failed: why
+
     [[nodiscard]] bool isIndexer() const { return indexerModel != nullptr; }
     [[nodiscard]] int resultCount() const;
 };
@@ -260,6 +266,10 @@ private:
     /// doing the sweeping. Called on progress pushes and on every tab switch.
     void updateSweepProgress();
 
+
+    /// The footer line for a tab: its result count, or why there are none yet.
+    [[nodiscard]] QString tabStatusText(const SearchTab& tab) const;
+    void onSearchStatePush(const Ipc::IpcMessage& msg);
 
     // Search controls
     QLineEdit* m_nameEdit = nullptr;

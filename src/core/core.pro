@@ -4,7 +4,7 @@ TEMPLATE = lib
 CONFIG  += staticlib c++2b
 TARGET   = emulecore
 
-QT += core network multimedia httpserver concurrent protobuf
+QT += core network multimedia httpserver concurrent protobuf sql
 QT -= gui
 
 DEFINES += QT_NO_CAST_FROM_ASCII

@@ -58,6 +58,16 @@ private slots:
     void knownListReplace_unhooksTheSharedOldObject();
 
     // Incremental reload, hashing retries, the watcher
+    void kadPublishTimes_surviveARestartUntilTheFilesChange();
+    void kadPublishStore_roundTripAndDamage();
+    void hashing_aFileChangedSinceTheScanIsNotAFailure();
+    void hashFailure_givenUpSurvivesARestart();
+    void hashOrder_coldStartTakesTheSmallFilesFirst();
+    void hashing_volumesRunSideBySideOneVolumeInSequence();
+    void moveBetweenSharedDirs_keepsTheFileAndHashesNothing_data();
+    void moveBetweenSharedDirs_keepsTheFileAndHashesNothing();
+    void singleSharedFile_itsDirectoryIsWatchedAndRescanned();
+    void staleMediaStamp_isBroughtUpToDateInTheBackground();
     void reload_leavesUnchangedFilesAlone();
     void reload_followsDeleteChangeAndRename();
     void reload_doesNotHashAFileTwice();
@@ -661,6 +671,123 @@ KnownFile* sharedAt(const SharedFileList& shared, const QString& path)
 
 } // namespace
 
+namespace {
+
+PublishKeyword* keywordNamed(PublishKeywordList& list, const QString& word)
+{
+    list.resetNextKeyword();
+    PublishKeyword* found = nullptr;
+    while (PublishKeyword* kw = list.getNextKeyword())
+        if (kw->keyword().compare(word, Qt::CaseInsensitive) == 0)
+            found = kw;
+    list.resetNextKeyword();
+    return found;
+}
+
+} // namespace
+
+// Keyword publish times used to live in memory only: every start published the
+// whole share again.
+void tst_SharedFileList::kadPublishTimes_surviveARestartUntilTheFilesChange()
+{
+    ShareEnv env;
+    env.put(QStringLiteral("holiday alpha.bin"), QByteArray(700, 'a'));
+    env.put(QStringLiteral("winter beta.bin"), QByteArray(900, 'b'));
+    const QString storePath = env.tmp.filePath(QStringLiteral("kadpublish.dat"));
+    const time_t now = std::time(nullptr);
+
+    KnownFileList knownFiles;
+    {
+        SharedFileList shared(&knownFiles);
+        shared.setKadPublishStorePath(storePath);
+        shared.reload();
+        QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 2, 10000);
+
+        PublishKeyword* holiday = keywordNamed(shared.m_keywords, QStringLiteral("holiday"));
+        PublishKeyword* winter = keywordNamed(shared.m_keywords, QStringLiteral("winter"));
+        QVERIFY(holiday && winter);
+        QVERIFY(shared.keywordIsDue(*holiday, now));
+        shared.noteKeywordPublished(*holiday, now, true);
+        shared.noteKeywordPublished(*winter, now, true);
+        QVERIFY(!shared.keywordIsDue(*holiday, now + 60));
+    }   // saved on the way out
+    QVERIFY(QFile::exists(storePath));
+
+    // Same files after a restart: nothing is due.
+    {
+        SharedFileList shared(&knownFiles);
+        shared.setKadPublishStorePath(storePath);
+        shared.reload();
+        QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 2, 10000);
+
+        PublishKeyword* holiday = keywordNamed(shared.m_keywords, QStringLiteral("holiday"));
+        QVERIFY(holiday);
+        QCOMPARE(holiday->nextPublishTime(), time_t{0});
+        QVERIFY(!shared.keywordIsDue(*holiday, now + 60));
+        QVERIFY(shared.keywordIsDue(*holiday, now + KADEMLIAREPUBLISHTIMEK + 1));
+    }
+
+    // A file added while we were off shares one keyword: that one is due, the
+    // other is not.
+    env.put(QStringLiteral("holiday gamma.bin"), QByteArray(800, 'c'));
+    {
+        SharedFileList shared(&knownFiles);
+        shared.setKadPublishStorePath(storePath);
+        shared.reload();
+        QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 3, 10000);
+
+        PublishKeyword* holiday = keywordNamed(shared.m_keywords, QStringLiteral("holiday"));
+        PublishKeyword* winter = keywordNamed(shared.m_keywords, QStringLiteral("winter"));
+        QVERIFY(holiday && winter);
+        QVERIFY(shared.keywordIsDue(*holiday, now + 60));
+        QVERIFY(!shared.keywordIsDue(*winter, now + 60));
+    }
+}
+
+void tst_SharedFileList::kadPublishStore_roundTripAndDamage()
+{
+    eMule::testing::TempDir tmp;
+    const QString path = tmp.filePath(QStringLiteral("kadpublish.dat"));
+    const time_t now = 1'000'000;
+
+    uint8 rawA[16]{1}, rawB[16]{2}, hash1[16]{0x11}, hash2[16]{0x22};
+    const kad::UInt128 a(rawA), b(rawB);
+    KadPublishStore::Fingerprint one{}, both{};
+    KadPublishStore::mix(one, hash1);
+    KadPublishStore::mix(both, hash1);
+    KadPublishStore::mix(both, hash2);
+
+    KadPublishStore store;
+    store.load(path);                       // no file: empty, no complaint
+    QCOMPARE(store.count(), size_t{0});
+    store.note(a, now + 500, one);
+    store.note(b, now - 5, both);           // already due: not worth keeping
+    QVERIFY(store.isDirty());
+    QVERIFY(store.save(path, now));
+    QVERIFY(!store.isDirty());
+
+    KadPublishStore loaded;
+    loaded.load(path);
+    QCOMPARE(loaded.count(), size_t{1});
+    QCOMPARE(loaded.dueTime(a, one), std::optional<time_t>(now + 500));
+    QVERIFY(!loaded.dueTime(a, both));      // other files behind the keyword
+    QVERIFY(!loaded.dueTime(b, both));
+
+    // Order of the files does not matter.
+    KadPublishStore::Fingerprint swapped{};
+    KadPublishStore::mix(swapped, hash2);
+    KadPublishStore::mix(swapped, hash1);
+    QCOMPARE(swapped, both);
+
+    // A cut-off file reads as nothing rather than as half a list.
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::ReadWrite));
+    QVERIFY(file.resize(file.size() - 7));
+    file.close();
+    loaded.load(path);
+    QCOMPARE(loaded.count(), size_t{0});
+}
+
 void tst_SharedFileList::reload_leavesUnchangedFilesAlone()
 {
     ShareEnv env;
@@ -796,6 +923,293 @@ void tst_SharedFileList::hashFailure_isRetriedThenRememberedUntilTheFileChanges(
     shared.reload();
     QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
     QVERIFY(!shared.m_hashFailures.contains(key));
+}
+
+void tst_SharedFileList::hashing_aFileChangedSinceTheScanIsNotAFailure()
+{
+    ShareEnv env;
+    const QString path = env.put(QStringLiteral("moving.bin"), QByteArray(500, 'm'));
+    const QFileInfo fi(path);
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    const QString key = SharedFileList::pathKey(path);
+    {
+        // As if the scan had seen it 100 bytes shorter.
+        QMutexLocker locker(&shared.m_hashMutex);
+        shared.queueForHash({fi.absolutePath(), fi.fileName(), {}, key, 400,
+                             static_cast<time_t>(fi.lastModified().toSecsSinceEpoch()),
+                             shared.volumeKeyFor(fi.absolutePath())});
+        shared.hashNextFile();
+    }
+    QCOMPARE(shared.getHashingCount(), 1);
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getHashingCount(), 0, 5000);
+
+    QCOMPARE(shared.getCount(), 0);
+    QVERIFY2(!shared.m_hashFailures.contains(key), "a file that moved on is not a failed one");
+    QVERIFY(shared.m_settleDirs.contains(fi.absolutePath()));
+
+    // The next look at the directory takes it as it is now.
+    shared.rescanDirectory(fi.absolutePath());
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
+}
+
+void tst_SharedFileList::hashFailure_givenUpSurvivesARestart()
+{
+    ShareEnv env;
+    const QString bad = env.put(QStringLiteral("bad.bin"), QByteArray(400, 'b'));
+    const QString storePath = env.tmp.filePath(QStringLiteral("hashfailures.dat"));
+    const QString key = SharedFileList::pathKey(bad);
+    const QFileInfo fi(bad);
+
+    KnownFileList knownFiles;
+    {
+        SharedFileList shared(&knownFiles);
+        shared.setHashFailureStorePath(storePath);
+        // Given up on, as after the retry ladder.
+        auto& failure = shared.m_hashFailures[key];
+        failure.entry = {fi.absolutePath(), fi.fileName(), {}, key};
+        failure.size = static_cast<uint64>(fi.size());
+        failure.mtime = static_cast<time_t>(fi.lastModified().toSecsSinceEpoch());
+        failure.attempts = 3;
+        failure.givenUp = true;
+        // One still on the ladder is not worth keeping.
+        auto& retrying = shared.m_hashFailures[QStringLiteral("/elsewhere/x.bin")];
+        retrying.entry = {QStringLiteral("/elsewhere"), QStringLiteral("x.bin"), {},
+                          QStringLiteral("/elsewhere/x.bin")};
+        retrying.retryAt = std::time(nullptr) + 3600;
+    }   // saved on the way out
+    QCOMPARE(HashFailureFile::read(storePath).size(), size_t{1});
+
+    {
+        SharedFileList shared(&knownFiles);
+        shared.setHashFailureStorePath(storePath);
+        QVERIFY(shared.m_hashFailures.value(key).givenUp);
+        shared.reload();
+        QCOMPARE(shared.getHashingCount(), 0);     // left alone
+        QTest::qWait(100);
+        QCOMPARE(shared.getCount(), 0);
+
+        // Changed: worth another look.
+        QVERIFY(!env.put(QStringLiteral("bad.bin"), QByteArray(450, 'b')).isEmpty());
+        shared.reload();
+        QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
+        QVERIFY(!shared.m_hashFailures.contains(key));
+    }
+    QCOMPARE(HashFailureFile::read(storePath).size(), size_t{0});
+}
+
+void tst_SharedFileList::hashOrder_coldStartTakesTheSmallFilesFirst()
+{
+    const auto entry = [](const char* name, uint64 size, const char* volume = "/") {
+        const QString file = QString::fromLatin1(name);
+        return UnknownFileEntry{QStringLiteral("/s"), file, {}, QStringLiteral("/s/") + file,
+                                size, 1, QString::fromLatin1(volume)};
+    };
+    const auto names = [](const std::vector<UnknownFileEntry>& entries) {
+        QStringList out;
+        for (const UnknownFileEntry& e : entries)
+            out << e.filename;
+        return out.join(u' ');
+    };
+    const uint64 mib = 1024 * 1024;
+
+    // A share with a history: path order within a volume, nothing else.
+    std::vector<UnknownFileEntry> entries{entry("c", 5), entry("a", 900), entry("b", 1, "/vol2"),
+                                          entry("d", 3)};
+    SharedFileList::orderForHashing(entries, false);
+    QCOMPARE(names(entries), QStringLiteral("a c d b"));
+
+    // Nothing hashed yet: smallest first, across volumes.
+    SharedFileList::orderForHashing(entries, true);
+    QCOMPARE(names(entries), QStringLiteral("b d c a"));
+
+    // The early group stops at 256 MiB; what is left keeps path order.
+    std::vector<UnknownFileEntry> big{entry("z-small", 1 * mib), entry("a-huge", 400 * mib),
+                                      entry("m-mid", 200 * mib), entry("b-large", 100 * mib)};
+    SharedFileList::orderForHashing(big, true);
+    QCOMPARE(names(big), QStringLiteral("z-small b-large a-huge m-mid"));
+
+    // ... and at 200 files.
+    std::vector<UnknownFileEntry> many;
+    for (int i = 0; i < 260; ++i)
+        many.push_back(entry(qPrintable(QStringLiteral("f%1").arg(i, 3, 10, QLatin1Char('0'))),
+                             static_cast<uint64>(1000 - i)));
+    SharedFileList::orderForHashing(many, true);
+    QCOMPARE(many.front().filename, QStringLiteral("f259"));      // the smallest
+    QCOMPARE(many[199].filename, QStringLiteral("f060"));
+    QCOMPARE(many[200].filename, QStringLiteral("f000"));         // then by path
+}
+
+// Two files on one disk only slow each other down; two disks can work at once.
+void tst_SharedFileList::hashing_volumesRunSideBySideOneVolumeInSequence()
+{
+    eMule::testing::TempDir tmp;
+    const QString dirA = tmp.filePath(QStringLiteral("diskA"));
+    const QString dirB = tmp.filePath(QStringLiteral("diskB"));
+    for (int i = 0; i < 3; ++i) {
+        QVERIFY(!writeFile(dirA, QStringLiteral("a%1.bin").arg(i), QByteArray(600 + i, 'a')).isEmpty());
+        QVERIFY(!writeFile(dirB, QStringLiteral("b%1.bin").arg(i), QByteArray(700 + i, 'b')).isEmpty());
+    }
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({dirA, dirB});
+
+    {
+        KnownFileList knownFiles;
+        SharedFileList shared(&knownFiles);
+        shared.m_volumeKeyFn = [](const QString& dir) { return QFileInfo(dir).fileName(); };
+        shared.reload();   // dispatches before any worker result is delivered
+
+        QCOMPARE(shared.m_hashWorkers.size(), size_t{2});
+        QCOMPARE(shared.m_hashing.size(), 2);
+        QSet<QString> volumes;
+        QSet<HashingThread*> workers;
+        for (const auto& h : std::as_const(shared.m_hashing)) {
+            volumes.insert(h.entry.volume);
+            workers.insert(h.worker);
+        }
+        QCOMPARE(volumes.size(), 2);
+        QCOMPARE(workers.size(), 2);
+        QCOMPARE(shared.getHashingCount(), 6);
+        QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 6, 10000);
+        QCOMPARE(shared.getHashingCount(), 0);
+    }
+
+    // Everything on one volume: one file at a time.
+    {
+        KnownFileList knownFiles;
+        SharedFileList shared(&knownFiles);
+        shared.m_volumeKeyFn = [](const QString&) { return QStringLiteral("one"); };
+        shared.reload();
+        QCOMPARE(shared.m_hashWorkers.size(), size_t{1});
+        QCOMPARE(shared.m_hashing.size(), 1);
+        QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 6, 10000);
+    }
+}
+
+// The watcher reports both directories of a move in one batch; seen one at a time
+// the file was unshared in the first rescan and re-added in the second.
+void tst_SharedFileList::moveBetweenSharedDirs_keepsTheFileAndHashesNothing_data()
+{
+    // Which directories the watcher reports, in which order: 'a' is where the file
+    // was, 'b' where it went. The two ends often arrive apart.
+    QTest::addColumn<QStringList>("reports");
+    QTest::newRow("both at once") << QStringList{QStringLiteral("a+b")};
+    QTest::newRow("old home only") << QStringList{QStringLiteral("a")};
+    QTest::newRow("old home first") << QStringList{QStringLiteral("a"), QStringLiteral("b")};
+    QTest::newRow("new home first") << QStringList{QStringLiteral("b"), QStringLiteral("a")};
+}
+
+void tst_SharedFileList::moveBetweenSharedDirs_keepsTheFileAndHashesNothing()
+{
+    QFETCH(QStringList, reports);
+
+    eMule::testing::TempDir tmp;
+    const QString dirA = tmp.filePath(QStringLiteral("a"));
+    const QString dirB = tmp.filePath(QStringLiteral("b"));
+    QDir().mkpath(dirB);
+    const QString before = writeFile(dirA, QStringLiteral("travels.bin"), QByteArray(900, 't'));
+    QVERIFY(!writeFile(dirA, QStringLiteral("stays.bin"), QByteArray(700, 's')).isEmpty());
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({dirA, dirB});
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    shared.reload();
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 2, 10000);
+    KnownFile* const file = sharedAt(shared, before);
+    QVERIFY(file);
+
+    const QString after = QDir(dirB).filePath(QStringLiteral("travels.bin"));
+    QVERIFY(QFile::rename(before, after));
+
+    QSignalSpy removed(&shared, &SharedFileList::fileRemoved);
+    QSignalSpy added(&shared, &SharedFileList::fileAdded);
+    QSignalSpy relocated(&shared, &SharedFileList::fileRelocated);
+    for (const QString& report : reports) {
+        if (report == QLatin1String("a+b"))
+            shared.rescanDirectories({dirA, dirB});
+        else
+            shared.rescanDirectories({report == QLatin1String("a") ? dirA : dirB});
+    }
+
+    QCOMPARE(removed.count(), 0);
+    QCOMPARE(added.count(), 0);
+    QCOMPARE(relocated.count(), 1);
+    QCOMPARE(sharedAt(shared, after), file);
+    QCOMPARE(shared.getCount(), 2);
+    QCOMPARE(shared.getHashingCount(), 0);
+}
+
+void tst_SharedFileList::singleSharedFile_itsDirectoryIsWatchedAndRescanned()
+{
+    ShareEnv env;
+    const QString outside = env.tmp.filePath(QStringLiteral("elsewhere"));
+    const QString single = writeFile(outside, QStringLiteral("lonely.bin"), QByteArray(600, 'l'));
+    QVERIFY(!writeFile(outside, QStringLiteral("neighbour.bin"), QByteArray(650, 'n')).isEmpty());
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    shared.setWatchingEnabled(true);
+    shared.m_settleSecs = 0;
+    QVERIFY(!shared.watcher()->roots().contains(outside));
+
+    QVERIFY(shared.addSingleSharedFile(single));
+    QVERIFY2(shared.watcher()->roots().contains(outside),
+             "the directory of a file shared by itself is watched");
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
+    KnownFile* const first = sharedAt(shared, single);
+    QVERIFY(first);
+    const QByteArray firstHash(reinterpret_cast<const char*>(first->fileHash()), 16);
+
+    // Rewritten in place: what the watcher's report leads to. Only that file is
+    // looked at — its neighbour is not shared and stays out.
+    QVERIFY(!writeFile(outside, QStringLiteral("lonely.bin"), QByteArray(640, 'L')).isEmpty());
+    shared.rescanDirectories({outside});
+    QTRY_VERIFY_WITH_TIMEOUT(sharedAt(shared, single) != nullptr
+                                 && QByteArray(reinterpret_cast<const char*>(
+                                        sharedAt(shared, single)->fileHash()), 16) != firstHash,
+                             10000);
+    QCOMPARE(shared.getCount(), 1);
+
+    QVERIFY(shared.excludeFile(single));
+    QVERIFY(!shared.watcher()->roots().contains(outside));
+}
+
+// A library hashed before the extractor stamped its work (or by an older one) is
+// read again, a slice per tick — a freshly hashed file is not.
+void tst_SharedFileList::staleMediaStamp_isBroughtUpToDateInTheBackground()
+{
+    ShareEnv env;
+    env.put(QStringLiteral("one.bin"), QByteArray(600, '1'));
+    env.put(QStringLiteral("two.bin"), QByteArray(700, '2'));
+
+    KnownFileList knownFiles;
+    {
+        SharedFileList shared(&knownFiles);
+        shared.reload();
+        QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 2, 10000);
+        QVERIFY2(shared.m_metaRebuildQueue.empty(), "just hashed: already up to date");
+
+        // As loaded from an older known.met.
+        int stale = 0;
+        shared.forEachFile([&](KnownFile* f) {
+            f->setMediaExtractVer(0);
+            ++stale;
+        });
+        QCOMPARE(stale, 2);
+    }
+
+    SharedFileList shared(&knownFiles);
+    shared.reload();
+    QCOMPARE(shared.getCount(), 2);
+    QCOMPARE(shared.m_metaRebuildQueue.size(), size_t{2});
+    for (int i = 0; i < 100 && !shared.m_metaRebuildQueue.empty(); ++i)
+        shared.process();
+    QVERIFY(shared.m_metaRebuildQueue.empty());
+    shared.forEachFile([](KnownFile* f) { QVERIFY(!f->mediaExtractIsStale()); });
 }
 
 void tst_SharedFileList::freshFile_isHeldBackWhileWatching()

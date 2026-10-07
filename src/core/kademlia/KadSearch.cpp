@@ -47,6 +47,17 @@ Search::Search()
     m_lookupHistory = std::make_unique<LookupHistory>();
 }
 
+uint32 Search::reserveSearchID()
+{
+    return s_nextSearchID++;
+}
+
+void Search::noteSearchIDUsed(uint32 searchID)
+{
+    if (s_nextSearchID <= searchID)
+        s_nextSearchID = searchID + 1;
+}
+
 Search::~Search()
 {
     // Feed the experimental user estimate with the closest node that answered us.

@@ -3,6 +3,7 @@
 /// @brief Shared file management — port of MFC CSharedFileList.
 
 #include "files/SharedFileList.h"
+#include "search/SeenFileIndex.h"
 #include "app/AppContext.h"
 #include "files/Collection.h"
 #include "files/KnownFile.h"
@@ -25,9 +26,12 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QStorageInfo>
 #include <QTextStream>
 
 #include <map>
+#include <numeric>
+#include <tuple>
 
 
 namespace eMule {
@@ -115,10 +119,14 @@ void HashingThread::run()
         logDebug(QStringLiteral("Hashing: %1/%2").arg(job.directory, job.filename));
 
         auto* kf = new KnownFile();
+        const KnownFile::FileStamp scanned{job.scannedSize, job.scannedMtime};
+        bool changedSinceScan = false;
         bool ok = kf->createFromFile(job.directory, job.filename,
                                      [this](int percent) {
                                          emit hashingProgress(percent);
-                                     });
+                                     },
+                                     job.scannedMtime != 0 ? &scanned : nullptr,
+                                     &changedSinceScan);
 
         if (ok) {
             logDebug(QStringLiteral("Hashed OK: %1/%2 (%3 bytes)")
@@ -129,7 +137,10 @@ void HashingThread::run()
             emit hashingFinished(kf, job.generation);
         } else {
             delete kf;
-            emit hashingFailed(job.directory, job.filename, job.generation);
+            if (changedSinceScan)
+                emit hashingDeferred(job.directory, job.filename, job.generation);
+            else
+                emit hashingFailed(job.directory, job.filename, job.generation);
         }
     }
 }
@@ -143,24 +154,32 @@ SharedFileList::SharedFileList(KnownFileList* knownFiles, QObject* parent)
     , m_knownFiles(knownFiles)
 {
     loadSharedFilesConfig();
-
-    m_hashingThread = new HashingThread(this);
-    connect(m_hashingThread, &HashingThread::hashingFinished,
-            this, &SharedFileList::onHashingFinished, Qt::QueuedConnection);
-    connect(m_hashingThread, &HashingThread::hashingFailed,
-            this, &SharedFileList::onHashingFailed, Qt::QueuedConnection);
-    connect(m_hashingThread, &HashingThread::partFileRehashed,
-            this, &SharedFileList::onPartFileRehashed, Qt::QueuedConnection);
-    m_hashingThread->start();
 }
 
 SharedFileList::~SharedFileList()
 {
-    if (m_hashingThread) {
-        m_hashingThread->requestStop();
-        m_hashingThread->wait();
-    }
+    for (HashingThread* worker : m_hashWorkers)
+        worker->requestStop();
+    for (HashingThread* worker : m_hashWorkers)
+        worker->wait();
+    saveHashFailures();
+    saveKadPublishStore();
     // Note: files in m_map are owned by KnownFileList, not us
+}
+
+void SharedFileList::setKadPublishStorePath(const QString& path)
+{
+    m_publishStorePath = path;
+    m_publishStore.load(path);
+    m_publishStoreSavedAt = std::time(nullptr);
+}
+
+void SharedFileList::saveKadPublishStore()
+{
+    if (m_publishStorePath.isEmpty() || !m_publishStore.isDirty())
+        return;
+    static_cast<void>(m_publishStore.save(m_publishStorePath, std::time(nullptr)));
+    m_publishStoreSavedAt = std::time(nullptr);
 }
 
 // ---------------------------------------------------------------------------
@@ -169,15 +188,39 @@ SharedFileList::~SharedFileList()
 
 void SharedFileList::reload()
 {
-    rescan({});
+    rescan(QStringList{});
     if (m_watcher)
-        m_watcher->setRoots(shareRoots());
+        m_watcher->setRoots(watchRoots());
 }
 
 void SharedFileList::rescanDirectory(const QString& dir)
 {
     if (!dir.isEmpty())
-        rescan(dir);
+        rescan(QStringList{dir});
+}
+
+void SharedFileList::rescanDirectories(const QStringList& dirs)
+{
+    if (!dirs.isEmpty())
+        rescan(dirs);
+}
+
+QStringList SharedFileList::watchRoots() const
+{
+    // Files shared one by one live in directories that are not shared; a change to
+    // them is only seen if those directories are watched as well.
+    QStringList roots = shareRoots();
+    QSet<QString> seen;
+    for (const QString& dir : roots)
+        seen.insert(pathKey(dir));
+    for (const QString& filePath : m_singleSharedFiles) {
+        const QString dir = QFileInfo(filePath).absolutePath();
+        if (seen.contains(pathKey(dir)))
+            continue;
+        seen.insert(pathKey(dir));
+        roots.append(dir);
+    }
+    return roots;
 }
 
 void SharedFileList::setWatchingEnabled(bool enabled)
@@ -192,9 +235,10 @@ void SharedFileList::setWatchingEnabled(bool enabled)
     }
     m_settleSecs = 5;
     m_watcher = new SharedDirWatcher(this);
-    connect(m_watcher, &SharedDirWatcher::directoryChanged, this, &SharedFileList::rescanDirectory);
+    connect(m_watcher, &SharedDirWatcher::directoriesChanged,
+            this, &SharedFileList::rescanDirectories);
     connect(m_watcher, &SharedDirWatcher::overflow, this, &SharedFileList::reload);
-    m_watcher->setRoots(shareRoots());
+    m_watcher->setRoots(watchRoots());
 }
 
 // ---------------------------------------------------------------------------
@@ -218,6 +262,19 @@ bool SharedFileList::safeAddKFile(KnownFile* file, bool onlyAdd)
     // stamp, which AddFile:723 sets unconditionally.
     if (!onlyAdd)
         m_republishED2K = true;
+
+    // What we share ourselves is a file we have seen, under the name we give it.
+    if (SeenFileIndex* seen = theApp.seenFileIndex; seen && !file->isPartFile()) {
+        seen->note(file->fileHash(), file->fileName(), static_cast<uint64>(file->fileSize()),
+                   QDateTime::currentSecsSinceEpoch());
+    }
+
+    // Never read by the media extractor, or by an older one: its turn comes in the
+    // background (a file that just finished hashing is already up to date).
+    if (!file->isPartFile() && file->mediaExtractIsStale()) {
+        m_metaRebuildQueue.emplace_back(file->fileHash());
+        ++m_metaRebuildTotal;
+    }
 
     emit fileAdded(file);
     return true;
@@ -370,6 +427,15 @@ void SharedFileList::process()
     warmContainerChecks();
     stepMetaDataRebuild();
     stepDeferredScans();
+
+    if (m_publishStore.isDirty()
+        && std::time(nullptr) >= m_publishStoreSavedAt + kKadPublishResaveSecs)
+        saveKadPublishStore();
+
+    if (const time_t now = std::time(nullptr); now >= m_hashFailuresCheckedAt + 60) {
+        m_hashFailuresCheckedAt = now;
+        saveHashFailures();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -486,6 +552,8 @@ bool SharedFileList::excludeFile(const QString& filePath)
     // First drop it from the explicitly-shared list, if that is why it was shared.
     const QString fileKey = pathKey(filePath);
     const bool wasSingleShared = m_singleSharedFiles.remove(fileKey);
+    if (wasSingleShared && m_watcher)
+        m_watcher->setRoots(watchRoots());
 
     if (!wasSingleShared && !shouldBeShared(dirPath, filePath, false))
         return false;   // we do not actually share it — nothing to exclude
@@ -556,6 +624,8 @@ bool SharedFileList::addSingleSharedFile(const QString& filePath)
 
     if (!wasExcluded && !shouldBeShared(dirPath, filePath, false))
         m_singleSharedFiles.insert(fileKey, filePath);   // the directory is not shared, so it needs its own entry
+    if (m_watcher)
+        m_watcher->setRoots(watchRoots());
 
     checkAndAddSingleFile(filePath);
     saveSharedFilesConfig();
@@ -854,7 +924,7 @@ void SharedFileList::publish()
                 return;
             }
 
-            if (tNow >= kw->nextPublishTime()) {
+            if (keywordIsDue(*kw, tNow)) {
                 // Prepare StoreKeyword search
                 auto* search = kad::SearchManager::prepareLookup(
                     kad::SearchType::StoreKeyword, false, kw->kadID());
@@ -891,11 +961,44 @@ void SharedFileList::publish()
 
                     // Rotate references so next publish starts with different files
                     kw->rotateReferences(added);
-                    kw->setNextPublishTime(tNow + KADEMLIAREPUBLISHTIMEK);
+                    noteKeywordPublished(*kw, tNow, added > 0);
                 }
             }
         }
     }
+}
+
+bool SharedFileList::keywordIsDue(PublishKeyword& kw, time_t now)
+{
+    // First look at this keyword since the start: a publish from the last session
+    // still stands if the same files are behind it.
+    if (kw.nextPublishTime() == 0) {
+        if (const auto due = m_publishStore.dueTime(kw.kadID(), keywordFingerprint(kw));
+            due && *due > now) {
+            kw.setNextPublishTime(*due);
+        }
+    }
+    return now >= kw.nextPublishTime();
+}
+
+void SharedFileList::noteKeywordPublished(PublishKeyword& kw, time_t now, bool sent)
+{
+    kw.setNextPublishTime(now + KADEMLIAREPUBLISHTIMEK);
+    if (sent)
+        m_publishStore.note(kw.kadID(), kw.nextPublishTime(), keywordFingerprint(kw));
+}
+
+KadPublishStore::Fingerprint SharedFileList::keywordFingerprint(const PublishKeyword& kw)
+{
+    // The same files publish() would offer: shared, complete ones.
+    KadPublishStore::Fingerprint fingerprint{};
+    QMutexLocker locker(&m_mutex);
+    for (const KnownFile* file : kw.fileRefs()) {
+        if (file->isPartFile() || !m_map.contains(MD4Key(file->fileHash())))
+            continue;
+        KadPublishStore::mix(fingerprint, file->fileHash());
+    }
+    return fingerprint;
 }
 
 // ---------------------------------------------------------------------------
@@ -924,14 +1027,15 @@ void SharedFileList::checkAndAddSingleFile(const QString& filePath)
 
     const QString key = pathKey(fi.absoluteFilePath());
     m_hashFailures.remove(key);   // asked for by hand: try again
+    const QString volume = volumeKeyFor(fi.absolutePath());
 
     QMutexLocker hashLocker(&m_hashMutex);
     const bool waiting = std::ranges::any_of(
         m_waitingForHash, [&key](const UnknownFileEntry& e) { return e.key == key; });
-    if (!waiting && key != m_hashingKey)
-        m_waitingForHash.push_back({fi.absolutePath(), fi.fileName(), {}, key});
-    if (!m_hashingInProgress)
-        hashNextFile();
+    if (!waiting && !m_hashing.contains(key))
+        queueForHash({fi.absolutePath(), fi.fileName(), {}, key, static_cast<uint64>(fi.size()),
+                      static_cast<time_t>(fi.lastModified().toSecsSinceEpoch()), volume});
+    hashNextFile();
 }
 
 // ---------------------------------------------------------------------------
@@ -958,18 +1062,120 @@ void SharedFileList::detectCollection(KnownFile* file)
 
 void SharedFileList::hashNextFile()
 {
-    if (m_waitingForHash.empty() || !m_hashingThread) {
-        m_hashingInProgress = false;
-        m_hashingKey.clear();
-        return;
+    // The workers that could take a file now. One with nothing of its own waiting is
+    // marked drained and not searched for again until the queue grows: one long
+    // volume must not cost a full walk of the queue per finished file.
+    QSet<HashingThread*> free;
+    for (HashingThread* worker : m_hashWorkers)
+        if (!m_drainedWorkers.contains(worker))
+            free.insert(worker);
+    for (const Hashing& h : m_hashing)
+        free.remove(h.worker);
+
+    for (auto it = m_waitingForHash.begin(); it != m_waitingForHash.end() && !free.isEmpty(); ) {
+        HashingThread* worker = workerFor(it->volume);
+        if (!free.remove(worker)) {
+            ++it;
+            continue;
+        }
+
+        HashingThread::Job job;
+        job.directory = it->directory;
+        job.filename = it->filename;
+        job.sharedDirectory = it->sharedDirectory;
+        job.generation = m_generation;
+        job.scannedSize = it->size;
+        job.scannedMtime = it->mtime;
+        m_hashing.insert(it->key, {worker, *it});
+        it = m_waitingForHash.erase(it);
+        worker->enqueue(std::move(job));
     }
 
-    m_hashingInProgress = true;
-    auto entry = std::move(m_waitingForHash.front());
-    m_waitingForHash.pop_front();
+    m_drainedWorkers.unite(free);   // walked the whole queue and found nothing for them
+}
 
-    m_hashingKey = entry.key;
-    m_hashingThread->enqueue({entry.directory, entry.filename, entry.sharedDirectory, m_generation});
+void SharedFileList::queueForHash(UnknownFileEntry entry)
+{
+    static_cast<void>(workerFor(entry.volume));   // exists before the queue is walked
+    m_waitingForHash.push_back(std::move(entry));
+    m_drainedWorkers.clear();
+}
+
+UnknownFileEntry SharedFileList::takeHashing(const QString& key)
+{
+    return m_hashing.take(key).entry;
+}
+
+QString SharedFileList::volumeKeyFor(const QString& directory)
+{
+    const QString dirKey = pathKey(directory);
+    if (const auto it = m_volumeOfDir.constFind(dirKey); it != m_volumeOfDir.constEnd())
+        return *it;
+    QString volume = m_volumeKeyFn ? m_volumeKeyFn(directory)
+                                   : QStorageInfo(directory).rootPath();
+    if (volume.isEmpty())
+        volume = QStringLiteral("/");   // not mounted or gone: any worker will do
+    m_volumeOfDir.insert(dirKey, volume);
+    return volume;
+}
+
+HashingThread* SharedFileList::workerFor(const QString& volume)
+{
+    if (const auto it = m_workerOfVolume.constFind(volume); it != m_workerOfVolume.constEnd())
+        return *it;
+
+    HashingThread* worker = nullptr;
+    if (static_cast<int>(m_hashWorkers.size()) < kMaxHashWorkers) {
+        worker = new HashingThread(this);
+        connect(worker, &HashingThread::hashingFinished,
+                this, &SharedFileList::onHashingFinished, Qt::QueuedConnection);
+        connect(worker, &HashingThread::hashingFailed,
+                this, &SharedFileList::onHashingFailed, Qt::QueuedConnection);
+        connect(worker, &HashingThread::hashingDeferred,
+                this, &SharedFileList::onHashingDeferred, Qt::QueuedConnection);
+        connect(worker, &HashingThread::partFileRehashed,
+                this, &SharedFileList::onPartFileRehashed, Qt::QueuedConnection);
+        worker->start();
+        m_hashWorkers.push_back(worker);
+    } else {
+        // More disks than workers: the extra ones share.
+        worker = m_hashWorkers[qHash(volume) % m_hashWorkers.size()];
+    }
+    m_workerOfVolume.insert(volume, worker);
+    return worker;
+}
+
+void SharedFileList::orderForHashing(std::vector<UnknownFileEntry>& entries, bool coldStart)
+{
+    // Path order within a volume: files of one directory lie together on disk.
+    std::ranges::sort(entries, [](const UnknownFileEntry& a, const UnknownFileEntry& b) {
+        return std::tie(a.volume, a.key) < std::tie(b.volume, b.key);
+    });
+    if (!coldStart || entries.size() < 2)
+        return;
+
+    // Nothing hashed yet: the smallest files go first, so a new profile has
+    // something to offer within seconds instead of after the first big file.
+    std::vector<size_t> bySize(entries.size());
+    std::iota(bySize.begin(), bySize.end(), size_t{0});
+    std::ranges::stable_sort(bySize, {}, [&](size_t i) { return entries[i].size; });
+
+    std::vector<bool> early(entries.size(), false);
+    std::vector<UnknownFileEntry> ordered;
+    ordered.reserve(entries.size());
+    uint64 bytes = 0;
+    for (size_t i : bySize) {
+        if (static_cast<int>(ordered.size()) >= kColdStartFiles
+            || bytes + entries[i].size > kColdStartBytes)
+            break;
+        bytes += entries[i].size;
+        early[i] = true;
+        ordered.push_back(entries[i]);
+    }
+    for (size_t i = 0; i < entries.size(); ++i)
+        if (!early[i])
+            ordered.push_back(std::move(entries[i]));
+    entries = std::move(ordered);
 }
 
 // ---------------------------------------------------------------------------
@@ -983,6 +1189,7 @@ void SharedFileList::onHashingFinished(KnownFile* file, uint64 generation)
 
     {
         QMutexLocker hashLocker(&m_hashMutex);
+        static_cast<void>(takeHashing(pathKey(file->filePath())));   // its worker is free
         // Reject stale completions from a previous generation
         if (generation != m_generation) {
             delete file;
@@ -1030,7 +1237,7 @@ void SharedFileList::onHashingFinished(KnownFile* file, uint64 generation)
 
 bool SharedFileList::enqueuePartFileRehash(PartFile* file)
 {
-    if (!file || !m_hashingThread)
+    if (!file)
         return false;
 
     HashingThread::Job job;
@@ -1042,7 +1249,9 @@ bool SharedFileList::enqueuePartFileRehash(PartFile* file)
 
     // Everything the worker needs is copied above, on this thread — it must not reach
     // back into the PartFile, which the download queue may delete meanwhile.
-    m_hashingThread->enqueue(std::move(job));
+    const QString volume = volumeKeyFor(QFileInfo(job.rehashPartPath).absolutePath());
+    QMutexLocker hashLocker(&m_hashMutex);
+    workerFor(volume)->enqueue(std::move(job));
     return true;
 }
 
@@ -1071,17 +1280,24 @@ void SharedFileList::onHashingFailed(const QString& directory, const QString& fi
 {
     QMutexLocker hashLocker(&m_hashMutex);
 
+    const QString path = directory + u'/' + filename;
+    const QString key = pathKey(path);
+    UnknownFileEntry tried = takeHashing(key);   // its worker is free
+
     // Reject stale completions from a previous generation
     if (generation != m_generation)
         return;
 
     // Often passing — a file still being copied, or held open by another program — so
     // it gets a few more tries before it is left alone until it changes.
-    const QString path = directory + u'/' + filename;
-    const QString key = pathKey(path);
     HashFailure& failure = m_hashFailures[key];
-    if (failure.entry.key.isEmpty())
-        failure.entry = {directory, filename, {}, key};
+    if (failure.entry.key.isEmpty()) {
+        // The entry as it was queued: a rebuilt one lost its shared directory.
+        if (tried.key.isEmpty())
+            tried = {directory, filename, {}, key};
+        failure.entry = std::move(tried);
+    }
+    failure.entry.mtime = 0;   // a retry hashes whatever is there by then
     failure.queued = false;
     const QFileInfo fi(path);
     failure.size = static_cast<uint64>(fi.size());
@@ -1101,6 +1317,70 @@ void SharedFileList::onHashingFailed(const QString& directory, const QString& fi
 
     // Continue with next file
     hashNextFile();
+}
+
+void SharedFileList::onHashingDeferred(const QString& directory, const QString& filename,
+                                       uint64 /*generation*/)
+{
+    // Not a failure: the file moved on between the scan and the read. Look at the
+    // directory again once it has had time to settle.
+    m_settleDirs.insert(directory, std::time(nullptr) + kSettleRecheckSecs);
+
+    QMutexLocker hashLocker(&m_hashMutex);
+    static_cast<void>(takeHashing(pathKey(directory + u'/' + filename)));
+    hashNextFile();
+}
+
+void SharedFileList::setHashFailureStorePath(const QString& path)
+{
+    m_hashFailureStorePath = path;
+    loadHashFailures();
+}
+
+void SharedFileList::loadHashFailures()
+{
+    for (const HashFailureRecord& rec : HashFailureFile::read(m_hashFailureStorePath)) {
+        const QString key = pathKey(rec.directory + u'/' + rec.filename);
+        HashFailure& failure = m_hashFailures[key];
+        failure.entry = {rec.directory, rec.filename, {}, key};
+        failure.size = rec.size;
+        failure.mtime = rec.mtime;
+        failure.attempts = static_cast<int>(m_hashRetrySecs.size());
+        failure.givenUp = true;
+    }
+    m_hashFailuresSaved = 0;
+    m_hashFailuresCheckedAt = 0;
+}
+
+void SharedFileList::saveHashFailures()
+{
+    if (m_hashFailureStorePath.isEmpty())
+        return;
+
+    // Only what we gave up on: a retry in progress starts over after a restart anyway.
+    std::vector<HashFailureRecord> records;
+    for (const HashFailure& failure : m_hashFailures)
+        if (failure.givenUp)
+            records.push_back({failure.entry.directory, failure.entry.filename,
+                               failure.size, failure.mtime});
+    std::ranges::sort(records, {}, [](const HashFailureRecord& r) {
+        return std::tie(r.directory, r.filename);
+    });
+
+    size_t signature = qHash(records.size()) + 1;   // never 0, the "nothing saved" mark
+    for (const HashFailureRecord& rec : records)
+        signature = qHashMulti(signature, rec.directory, rec.filename, rec.size,
+                               static_cast<qint64>(rec.mtime));
+    if (signature == m_hashFailuresSaved)
+        return;
+    // Nothing on disk and nothing to say: no empty file.
+    if (records.empty() && m_hashFailuresSaved == 0
+        && !QFile::exists(m_hashFailureStorePath)) {
+        m_hashFailuresSaved = signature;
+        return;
+    }
+    if (HashFailureFile::write(m_hashFailureStorePath, records))
+        m_hashFailuresSaved = signature;
 }
 
 // ---------------------------------------------------------------------------
@@ -1168,16 +1448,24 @@ void SharedFileList::listDirectory(const QString& dir, QHash<QString, DiskEntry>
     }
 }
 
-void SharedFileList::rescan(const QString& onlyDir)
+void SharedFileList::rescan(const QStringList& onlyDirs)
 {
-    const QString onlyKey = pathKey(onlyDir);
-    const bool full = onlyKey.isEmpty();
+    // The directories looked at as one: a file that left one of them and turned up in
+    // another is a move, not a removal and an addition.
+    QSet<QString> scope;
+    for (const QString& dir : onlyDirs)
+        if (!dir.isEmpty())
+            scope.insert(pathKey(dir));
+    bool full = scope.isEmpty();
+    if (!full)
+        widenScopeForMoves(scope);
+    full = scope.isEmpty();
     const time_t now = std::time(nullptr);
 
     // 1. What the disk offers. Deliberately unlocked: this walks the share from disk.
     QHash<QString, DiskEntry> onDisk;
     for (const QString& dir : shareRoots())
-        if (full || pathKey(dir) == onlyKey)
+        if (full || scope.contains(pathKey(dir)))
             listDirectory(dir, onDisk);
 
     // Files shared individually, outside any shared directory — otherwise a reload
@@ -1185,7 +1473,7 @@ void SharedFileList::rescan(const QString& onlyDir)
     for (const QString& filePath : m_singleSharedFiles) {
         const QFileInfo fi(filePath);
         const QString key = pathKey(fi.absoluteFilePath());
-        if ((!full && pathKey(fi.absolutePath()) != onlyKey) || onDisk.contains(key))
+        if ((!full && !scope.contains(pathKey(fi.absolutePath()))) || onDisk.contains(key))
             continue;
         if (fi.isFile() && fi.size() > 0)
             onDisk.insert(key, {fi.absolutePath(), fi.fileName(), {}, static_cast<uint64>(fi.size()),
@@ -1200,7 +1488,7 @@ void SharedFileList::rescan(const QString& onlyDir)
         if (!file || file->isPartFile())
             return;
         const QString key = pathKey(file->filePath());
-        if (!full && key.left(key.lastIndexOf(u'/')) != onlyKey)
+        if (!full && !scope.contains(key.left(key.lastIndexOf(u'/'))))
             return;
         const auto it = onDisk.constFind(key);
         if (it != onDisk.constEnd() && it->size == static_cast<uint64>(file->fileSize())
@@ -1221,10 +1509,18 @@ void SharedFileList::rescan(const QString& onlyDir)
             if (!present.contains(pathKey(file->filePath())))
                 gone[{static_cast<uint64>(file->fileSize()), file->utcFileDate()}].push_back(file);
         std::map<Stamp, std::vector<QString>> came;
-        for (auto it = onDisk.constBegin(); it != onDisk.constEnd(); ++it)
-            if (gone.contains(Stamp{it->size, it->mtime})
-                && !(m_knownFiles && m_knownFiles->findKnownFile(it->filename, it->mtime, it->size)))
-                came[{it->size, it->mtime}].push_back(it.key());
+        for (auto it = onDisk.constBegin(); it != onDisk.constEnd(); ++it) {
+            const auto goneIt = gone.find(Stamp{it->size, it->mtime});
+            if (goneIt == gone.end())
+                continue;
+            // A known file of that name, size and date joins by itself below — unless
+            // it is the very file that went: same name in another directory is a move.
+            KnownFile* known = m_knownFiles
+                ? m_knownFiles->findKnownFile(it->filename, it->mtime, it->size) : nullptr;
+            if (known && std::ranges::find(goneIt->second, known) == goneIt->second.end())
+                continue;
+            came[{it->size, it->mtime}].push_back(it.key());
+        }
         for (const auto& [stamp, keys] : came) {
             const auto& files = gone[stamp];
             if (keys.size() != 1 || files.size() != 1)
@@ -1240,6 +1536,7 @@ void SharedFileList::rescan(const QString& onlyDir)
         removeFile(file);
 
     // 4. What is new: known files join at once, the rest go to hashing.
+    const bool coldStart = full && m_knownFiles && m_knownFiles->count() == 0;
     int joined = 0;
     std::vector<UnknownFileEntry> toHash;
     QSet<QString> wantedUnknown;
@@ -1283,8 +1580,10 @@ void SharedFileList::rescan(const QString& onlyDir)
             continue;
         }
 
-        toHash.push_back({entry.directory, entry.filename, entry.sharedDirectory, key});
+        toHash.push_back({entry.directory, entry.filename, entry.sharedDirectory, key,
+                          entry.size, entry.mtime, volumeKeyFor(entry.directory)});
     }
+    orderForHashing(toHash, coldStart);
 
     if (joined > 0)
         m_republishED2K = true;   // once for the batch
@@ -1294,17 +1593,16 @@ void SharedFileList::rescan(const QString& onlyDir)
     {
         QMutexLocker hashLocker(&m_hashMutex);
         std::erase_if(m_waitingForHash, [&](const UnknownFileEntry& e) {
-            const bool inScope = full || pathKey(e.directory) == onlyKey;
+            const bool inScope = full || scope.contains(pathKey(e.directory));
             return inScope && !wantedUnknown.contains(e.key);
         });
         QSet<QString> waiting;
         for (const UnknownFileEntry& e : m_waitingForHash)
             waiting.insert(e.key);
         for (UnknownFileEntry& e : toHash)
-            if (!waiting.contains(e.key) && e.key != m_hashingKey)
-                m_waitingForHash.push_back(std::move(e));
-        if (!m_hashingInProgress)
-            hashNextFile();
+            if (!waiting.contains(e.key) && !m_hashing.contains(e.key))
+                queueForHash(std::move(e));
+        hashNextFile();
     }
 
     if (full) {
@@ -1318,8 +1616,54 @@ void SharedFileList::rescan(const QString& onlyDir)
 
     if (joined > 0 || relocated > 0 || !leaving.empty() || !toHash.empty())
         logInfo(QStringLiteral("Shared files%1: %2 joined, %3 left, %4 renamed, %5 to hash")
-                    .arg(full ? QString() : QStringLiteral(" in ") + onlyDir)
+                    .arg(full ? QString() : QStringLiteral(" in ") + onlyDirs.join(QStringLiteral(", ")))
                     .arg(joined).arg(leaving.size()).arg(relocated).arg(toHash.size()));
+}
+
+void SharedFileList::widenScopeForMoves(QSet<QString>& scope) const
+{
+    // The two ends of a move are reported apart, sometimes seconds apart. A shared
+    // file that is gone from a directory in scope is looked for under its own name
+    // in the other roots; a root that has it joins the scope, and the diff then sees
+    // one file moving instead of one leaving now and one arriving later.
+    struct Gone {
+        QString path;
+        QString filename;
+        uint64 size;
+        time_t mtime;
+    };
+    std::vector<Gone> candidates;
+    forEach([&](KnownFile* file) {
+        if (!file || file->isPartFile())
+            return;
+        const QString key = pathKey(file->filePath());
+        if (scope.contains(key.left(key.lastIndexOf(u'/'))))
+            candidates.push_back({file->filePath(), file->fileName(),
+                                  static_cast<uint64>(file->fileSize()), file->utcFileDate()});
+    });
+    if (candidates.empty())
+        return;
+
+    QStringList others;
+    for (const QString& root : shareRoots())
+        if (!scope.contains(pathKey(root)))
+            others.append(root);
+    if (others.isEmpty())
+        return;
+
+    // Unlocked from here: this stats the disk.
+    for (const Gone& gone : candidates) {
+        if (QFileInfo::exists(gone.path))
+            continue;   // still where it was
+        for (const QString& root : std::as_const(others)) {
+            if (scope.contains(pathKey(root)))
+                continue;
+            const QFileInfo fi(root + u'/' + gone.filename);
+            if (fi.isFile() && static_cast<uint64>(fi.size()) == gone.size
+                && static_cast<time_t>(fi.lastModified().toSecsSinceEpoch()) == gone.mtime)
+                scope.insert(pathKey(root));
+        }
+    }
 }
 
 void SharedFileList::relocateFile(KnownFile* file, const DiskEntry& entry)
@@ -1346,10 +1690,12 @@ void SharedFileList::stepDeferredScans()
                 continue;
             failure.queued = true;
             failure.retryAt = 0;
-            m_waitingForHash.push_back(failure.entry);
+            UnknownFileEntry entry = failure.entry;
+            if (entry.volume.isEmpty())
+                entry.volume = volumeKeyFor(entry.directory);
+            queueForHash(std::move(entry));
         }
-        if (!m_hashingInProgress)
-            hashNextFile();
+        hashNextFile();
     }
 
     QStringList due;
@@ -1378,10 +1724,7 @@ void SharedFileList::forEachFile(const std::function<void(KnownFile*)>& callback
 int SharedFileList::getHashingCount() const
 {
     QMutexLocker hashLocker(&m_hashMutex);
-    int count = static_cast<int>(m_waitingForHash.size());
-    if (m_hashingInProgress)
-        ++count;
-    return count;
+    return static_cast<int>(m_waitingForHash.size() + static_cast<size_t>(m_hashing.size()));
 }
 
 // ---------------------------------------------------------------------------
@@ -1448,6 +1791,7 @@ void SharedFileList::stepMetaDataRebuild()
 
     if (m_metaRebuildQueue.empty()) {
         logInfo(QStringLiteral("Meta data of %1 shared files rebuilt").arg(m_metaRebuildTotal));
+        m_metaRebuildTotal = 0;
         if (m_knownFiles)
             m_knownFiles->save();
     }

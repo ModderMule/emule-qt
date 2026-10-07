@@ -251,6 +251,7 @@ inline constexpr qsizetype kMaxBarRanges = 1024;
         {QStringLiteral("failedCount"), static_cast<qint64>(s.failedCount())},
         {QStringLiteral("preference"),  static_cast<int>(s.preference())},
         {QStringLiteral("isStatic"),    s.isStaticMember()},
+        {QStringLiteral("disabled"),    s.isDisabled()},
         {QStringLiteral("softFiles"),   static_cast<qint64>(s.softFiles())},
         {QStringLiteral("lowIDUsers"),  static_cast<qint64>(s.lowIDUsers())},
         {QStringLiteral("obfuscation"), s.supportsObfuscationTCP()},
@@ -293,6 +294,10 @@ inline constexpr qsizetype kMaxBarRanges = 1024;
     m.insert(QStringLiteral("fileType"),            f.fileType());
     m.insert(QStringLiteral("searchID"),            static_cast<qint64>(f.searchID()));
     m.insert(QStringLiteral("knownType"),           static_cast<int>(f.knownType()));
+    // From the seen-files index: met before this search, under how many names, since when.
+    m.insert(QStringLiteral("seenBefore"),          f.seenBefore());
+    m.insert(QStringLiteral("seenNames"),           f.seenNames());
+    m.insert(QStringLiteral("firstSeen"),           f.firstSeen());
     m.insert(QStringLiteral("isSpam"),              f.isConsideredSpam());
     m.insert(QStringLiteral("hasComment"),          f.hasComment());
     m.insert(QStringLiteral("userRating"),          static_cast<int>(f.userRating(true)));

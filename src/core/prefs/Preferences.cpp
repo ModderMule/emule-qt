@@ -251,6 +251,7 @@ struct Preferences::Data {
     bool startNextPausedFileOnlySameCat = false;
     bool rememberDownloadedFiles = true;
     bool rememberCancelledFiles = true;
+    bool seenFileIndex = true;   // remember files seen in search results (seenfiles.db)
 
     // Transfer
     // eMule 2026 bandwidth: larger buffer reduces disk flush frequency at high download speeds. MFC default: 4194304 (4 MB)
@@ -2601,6 +2602,8 @@ void Preferences::setRememberDownloadedFiles(bool val) { set(&Data::rememberDown
 bool Preferences::rememberCancelledFiles() const { return get(&Data::rememberCancelledFiles); }
 
 void Preferences::setRememberCancelledFiles(bool val) { set(&Data::rememberCancelledFiles, val); }
+bool Preferences::seenFileIndex() const { return get(&Data::seenFileIndex); }
+void Preferences::setSeenFileIndex(bool val) { set(&Data::seenFileIndex, val); }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Disk space
@@ -2946,6 +2949,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("startNextPausedFileOnlySameCat"), startNextPausedFileOnlySameCat());
     prefs.insert(QStringLiteral("rememberDownloadedFiles"), rememberDownloadedFiles());
     prefs.insert(QStringLiteral("rememberCancelledFiles"), rememberCancelledFiles());
+    prefs.insert(QStringLiteral("seenFileIndex"), seenFileIndex());
 
     // Notifications (daemon-side)
     prefs.insert(QStringLiteral("notifyOnLog"), notifyOnLog());
@@ -3185,6 +3189,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->startNextPausedFileOnlySameCat = p.value(QStringLiteral("startNextPausedFileOnlySameCat")).toBool();
     m_data->rememberDownloadedFiles       = p.value(QStringLiteral("rememberDownloadedFiles")).toBool();
     m_data->rememberCancelledFiles        = p.value(QStringLiteral("rememberCancelledFiles")).toBool();
+    m_data->seenFileIndex                 = p.value(QStringLiteral("seenFileIndex")).toBool(true);
 
     // Notifications
     m_data->notifyOnLog              = p.value(QStringLiteral("notifyOnLog")).toBool();
@@ -3719,6 +3724,7 @@ bool Preferences::load(const QString& filePath)
             m_data->startNextPausedFileOnlySameCat = f["startNextPausedFileOnlySameCat"].as<bool>(m_data->startNextPausedFileOnlySameCat);
             m_data->rememberDownloadedFiles = f["rememberDownloadedFiles"].as<bool>(m_data->rememberDownloadedFiles);
             m_data->rememberCancelledFiles = f["rememberCancelledFiles"].as<bool>(m_data->rememberCancelledFiles);
+            m_data->seenFileIndex = f["seenFileIndex"].as<bool>(m_data->seenFileIndex);
         }
 
         // Transfer
@@ -4782,6 +4788,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "startNextPausedFileOnlySameCat" << YAML::Value << m_data->startNextPausedFileOnlySameCat;
     out << YAML::Key << "rememberDownloadedFiles" << YAML::Value << m_data->rememberDownloadedFiles;
     out << YAML::Key << "rememberCancelledFiles" << YAML::Value << m_data->rememberCancelledFiles;
+    out << YAML::Key << "seenFileIndex" << YAML::Value << m_data->seenFileIndex;
     out << YAML::EndMap;
 
     // Transfer

@@ -135,6 +135,8 @@ signals:
     void searchResultReceived(const Ipc::IpcMessage& msg);
     /// ED2K global (UDP) sweep progress: [searchID, asked, total, running].
     void globalSearchProgress(const Ipc::IpcMessage& msg);
+    /// A search was queued, sent, finished or failed — see PushSearchState.
+    void searchStateChanged(const Ipc::IpcMessage& msg);
     void logMessageReceived(const Ipc::IpcMessage& msg);
     void sharedFileUpdated(const Ipc::IpcMessage& msg);
     void sharedFileRemoved(const Ipc::IpcMessage& msg);

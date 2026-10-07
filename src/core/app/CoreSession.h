@@ -34,6 +34,7 @@ class KnownFileList;
 class ListenSocket;
 class GlobalSearchScheduler;
 class SearchList;
+class SeenFileIndex;
 class ServerConnect;
 class ServerList;
 class SharedFileList;
@@ -122,6 +123,9 @@ private:
     void initStatistics();
     void shutdownStatistics();
     void initSearch();
+    /// The seen-files store; needed by the share scan and by searches, whichever
+    /// comes first.
+    void ensureSeenFileIndex();
     void shutdownSearch();
     void initServerConnect();
     void shutdownServerConnect();
@@ -159,6 +163,7 @@ private:
     std::unique_ptr<FriendList> m_friendList;
     std::unique_ptr<ListenSocket> m_listenSocket;
     std::unique_ptr<SearchList> m_searchList;
+    std::unique_ptr<SeenFileIndex> m_seenFileIndex;
     std::unique_ptr<GlobalSearchScheduler> m_globalSearch;
     std::unique_ptr<ServerList> m_serverList;
     std::unique_ptr<ServerConnect> m_serverConnect;

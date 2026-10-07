@@ -437,10 +437,6 @@ void ServerConnect::connectionEstablished(ServerSocket* sender)
                        .arg(sender->isObfuscating())
                        .arg(sender->isEncryptionLayerReady()));
 
-            // Reset failed count on the server list copy
-            Server* listServer = listEntryFor(cserver);
-            if (listServer)
-                listServer->resetFailedCount();
         }
 
         sendLoginPacket(sender);
@@ -474,6 +470,11 @@ void ServerConnect::connectionEstablished(ServerSocket* sender)
         // Update obfuscation info on the server list entry
         if (cserver) {
             Server* listServer = listEntryFor(cserver);
+            // The login was accepted: that, not the TCP connect, clears the count.
+            if (listServer) {
+                listServer->resetFailedCount();
+                m_serverList.notifyServerUpdated(listServer);
+            }
             if (listServer && cserver->supportsObfuscationTCP()) {
                 listServer->setTCPFlags(cserver->tcpFlags() | SrvTcpFlag::TcpObfuscation);
                 listServer->setObfuscationPortTCP(cserver->obfuscationPortTCP());
@@ -513,6 +514,12 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
         ? otherFamilyFor(sender, listServer)
         : Address();
 
+    if (const ServerFailure& failure = sender->lastFailure(); failure.isSet()) {
+        logServerVerbose(QStringLiteral("[%1] failure: phase=%2 reason=%3")
+                             .arg(cserver ? cserver->name() : QStringLiteral("?"))
+                             .arg(failure.phaseName(), failure.reasonName()));
+    }
+
     switch (sender->connectionState()) {
     case ServerConnState::FatalError:
         logError(QStringLiteral("Fatal connection error"));
@@ -532,17 +539,8 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
                         .arg(sender->isObfuscating())
                         .arg(sender->isEncryptionLayerReady()));
         }
-        if (listServer && otherFamily.isNull()) {
-            listServer->incFailedCount();
-            // Static servers are the user's own list: they only accumulate.
-            if (thePrefs.deadServerRetries() > 0 && !listServer->isStaticMember()
-                && listServer->failedCount() >= thePrefs.deadServerRetries()) {
-                logInfo(QStringLiteral("Removing dead server %1 (failed %2 times)")
-                            .arg(listServer->name()).arg(listServer->failedCount()));
-                m_serverList.removeServer(listServer);
-                listServer = nullptr;
-            }
-        }
+        if (listServer && otherFamily.isNull())
+            countFailure(listServer);
         break;
 
     case ServerConnState::Error:
@@ -730,6 +728,16 @@ void ServerConnect::onRetryTimer()
     connectToAnyServer(m_startAutoConnectPos, true, true);
 }
 
+void ServerConnect::countFailure(Server* listServer)
+{
+    // Static servers are the user's own list: they only accumulate.
+    if (listServer->noteFailure(thePrefs.deadServerRetries())) {
+        logInfo(QStringLiteral("Disabling dead server %1 (failed %2 times)")
+                    .arg(listServer->name()).arg(listServer->failedCount()));
+    }
+    m_serverList.notifyServerUpdated(listServer);
+}
+
 // ---------------------------------------------------------------------------
 // CheckForTimeout
 // ---------------------------------------------------------------------------
@@ -769,8 +777,21 @@ void ServerConnect::checkForTimeout()
             Server* listServer = cserver ? listEntryFor(cserver) : nullptr;
             const Address otherFamily = otherFamilyFor(socket, listServer);
             const Address tried = socket->sessionAddress();
+            // TCP never came up: the server did not answer at all, which counts like a
+            // refusal. A stall after the connect (handshake, login) says it is alive.
+            // An obfuscation port alone proves nothing while the plain port is still
+            // to be tried.
+            const bool unreachable = !socket->tcpConnected()
+                && (!socket->isServerCryptEnabledConnection() || m_config.cryptLayerRequired);
+            logServerVerbose(QStringLiteral("[%1] failure: phase=%2 reason=timeout-unreachable")
+                                 .arg(cserver ? cserver->name() : QStringLiteral("?"),
+                                      socket->tcpConnected() ? QStringLiteral("handshake")
+                                                             : QStringLiteral("connect")));
             m_connectionAttempts.erase(startTime);
             destroySocket(socket);
+
+            if (unreachable && listServer && otherFamily.isNull())
+                countFailure(listServer);
 
             if (!otherFamily.isNull()) {
                 logInfo(QStringLiteral("Server %1 unreachable over %2 — trying %3")

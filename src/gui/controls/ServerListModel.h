@@ -33,6 +33,7 @@ struct ServerRow {
     int preferenceValue = 0;
     uint32_t failed = 0;
     bool isStatic = false;
+    bool disabled = false;   // failed too often; kept, but not dialed automatically
     uint32_t softFiles = 0;
     uint32_t lowIdUsers = 0;
     bool obfuscation = false;

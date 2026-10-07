@@ -4,7 +4,7 @@ TEMPLATE = app
 CONFIG  += console testcase c++2b
 TARGET   = emuleqt_tests
 
-QT += core network multimedia httpserver testlib protobuf
+QT += core network multimedia httpserver testlib protobuf sql
 QT -= gui
 
 INCLUDEPATH += \

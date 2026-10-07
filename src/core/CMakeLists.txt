@@ -145,6 +145,7 @@ target_link_libraries(emulecore
         Qt6::Network
         Qt6::Multimedia
         Qt6::HttpServer
+        Qt6::Sql
         eMule::CommonSettings
         emulemetaproto
         Qt6::Protobuf

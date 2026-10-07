@@ -776,6 +776,253 @@ private slots:
         }
     }
 
+    // ---- shared files: gate, budget, the three later formats ----
+
+    void gate_holdsAMediaNameToItsOwnSignature_data()
+    {
+        QTest::addColumn<QByteArray>("head");
+        QTest::addColumn<QString>("name");
+        QTest::addColumn<int>("kind");
+        const auto row = [](const char* tag, const QByteArray& head, const char* name, MediaKind kind) {
+            QTest::newRow(tag) << head << QString::fromLatin1(name) << static_cast<int>(kind);
+        };
+        const QByteArray mp4 = buildMP4().left(64);
+        const QByteArray avi = QByteArray("RIFF\0\0\0\0AVI LIST", 16);
+        const QByteArray id3 = buildMP3(2).left(64);
+        const QByteArray bareMp3 = QByteArray(40, '\0') + be(0xFFFB9000u, 4) + QByteArray(40, '\0');
+
+        row("mp4 as itself", mp4, "film.mp4", MediaKind::Mp4);
+        row("mp4 called avi", mp4, "film.avi", MediaKind::None);
+        row("avi as itself", avi, "film.avi", MediaKind::Riff);
+        row("avi called mkv", avi, "film.mkv", MediaKind::None);
+        row("mp4 with no media name", mp4, "film.bin", MediaKind::Mp4);
+        row("tagged mp3", id3, "song.mp3", MediaKind::Mp3);
+        row("tag in front of flac", id3, "song.flac", MediaKind::Flac);
+        row("tag with no media name", id3, "song.dat", MediaKind::Mp3);
+        row("mp3 by frame sync", bareMp3, "song.mp3", MediaKind::Mp3);
+        // A sync is too weak to go by without the name ...
+        row("frame sync with no media name", bareMp3, "song.dat", MediaKind::None);
+        // ... and beyond the first twelve bytes it is not even looked for.
+        row("text called mp3", QByteArray(200, 'a'), "song.mp3", MediaKind::None);
+        row("zip called mkv", QByteArray("PK\x03\x04", 4) + QByteArray(60, '\0'), "film.mkv",
+            MediaKind::None);
+        row("ape", QByteArray("MAC \x96\x0F", 6) + QByteArray(60, '\0'), "a.ape", MediaKind::Ape);
+        row("wavpack", QByteArray("wvpk") + QByteArray(60, '\0'), "a.wv", MediaKind::WavPack);
+        row("adts", be(0xFFF15080u, 4) + QByteArray(60, '\0'), "a.aac", MediaKind::Aac);
+        row("nothing at all", QByteArray(), "film.mkv", MediaKind::None);
+    }
+
+    void gate_holdsAMediaNameToItsOwnSignature()
+    {
+        QFETCH(QByteArray, head);
+        QFETCH(QString, name);
+        QFETCH(int, kind);
+        QCOMPARE(static_cast<int>(mediaGate(head, name)), kind);
+    }
+
+    // What made a big library slow: megabytes read from files that turn out not to
+    // be what their name says, or not media at all.
+    void shared_aFileThatIsNotItsNameCostsOneSmallRead()
+    {
+        const QByteArray mp4 = buildMP4() + QByteArray(3 * 1024 * 1024, '\x44');
+        qint64 bytes = -1;
+
+        MediaInfo wrongName;
+        QVERIFY(!extractSharedMediaInfo(writeTempFile(mp4, u".avi"_s), wrongName, &bytes));
+        QCOMPARE(bytes, kMediaGateBytes);
+
+        MediaInfo notMedia;
+        QVERIFY(!extractSharedMediaInfo(writeTempFile(QByteArray(3 * 1024 * 1024, 'z'), u".iso"_s),
+                                        notMedia, &bytes));
+        QCOMPARE(bytes, kMediaSniffBytes);
+
+        // The same bytes under a name that promises nothing are still an MP4.
+        MediaInfo bySignature;
+        QVERIFY(extractSharedMediaInfo(writeTempFile(mp4, u".bin"_s), bySignature, &bytes));
+        QCOMPARE(bySignature.video.codecName, u"h264"_s);
+        QCOMPARE(bySignature.title, u"Film"_s);
+
+        MediaInfo missing;
+        QVERIFY(!extractSharedMediaInfo(u"/nonexistent/file.mp3"_s, missing, &bytes));
+        QCOMPARE(bytes, qint64{0});
+    }
+
+    void shared_aCoverPictureIsNeverRead()
+    {
+        // TIT2, a 3 MiB picture, then TALB: both texts, none of the picture.
+        const QByteArray picture = QByteArray("APIC") + be(3 * 1024 * 1024, 4) + QByteArray(2, '\0')
+                                 + QByteArray(3 * 1024 * 1024, '\x7E');
+        const QByteArray frames = id3Frame("TIT2", u"Song"_s) + picture + id3Frame("TALB", u"Record"_s);
+        QByteArray mp3("ID3\x03\x00\x00", 6);
+        const auto n = static_cast<uint32>(frames.size());
+        for (int shift : {21, 14, 7, 0})
+            mp3 += static_cast<char>((n >> shift) & 0x7F);
+        mp3 += frames;
+        for (int i = 0; i < 100; ++i)
+            mp3 += be(0xFFFB9000u, 4) + QByteArray(413, '\0');
+
+        MediaInfo info;
+        qint64 bytes = -1;
+        QVERIFY(extractSharedMediaInfo(writeTempFile(mp3, u".mp3"_s), info, &bytes));
+        QCOMPARE(info.title, u"Song"_s);
+        QCOMPARE(info.album, u"Record"_s);
+        QCOMPARE(info.audio.sampleRate, 44100u);
+        QVERIFY2(bytes < 300 * 1024, qPrintable(QString::number(bytes)));
+    }
+
+    void shared_sampleTablesOfALongFilmAreSteppedOver()
+    {
+        // The MP4 builder's movie, with 5 MiB of sample table and a 1 MiB cover in it.
+        const QByteArray mvhd = box("mvhd", be(0, 4) + be(0, 4) + be(0, 4) + be(1000, 4) + be(30000, 4)
+                                                + QByteArray(80, '\0'));
+        const QByteArray avc1 = QByteArray(6, '\0') + be(1, 2) + QByteArray(16, '\0') + be(1280, 2)
+                              + be(720, 2) + QByteArray(50, '\0');
+        const QByteArray stsd = box("stsd", be(0, 4) + be(1, 4) + box("avc1", avc1));
+        const QByteArray stsz = box("stsz", QByteArray(5 * 1024 * 1024, '\x01'));
+        const QByteArray hdlr = box("hdlr", be(0, 4) + be(0, 4) + QByteArray("vide") + QByteArray(13, '\0'));
+        const QByteArray trak = box("trak", box("mdia", hdlr + box("minf", box("stbl", stsz + stsd))));
+        const QByteArray cover = box("covr", box("data", QByteArray(1024 * 1024, '\x02')));
+        const QByteArray title = box("\xA9nam", box("data", be(1, 4) + be(0, 4) + QByteArray("Film")));
+        const QByteArray udta = box("udta", box("meta", be(0, 4) + box("ilst", cover + title)));
+        const QByteArray mp4 = box("ftyp", QByteArray("isom") + be(0, 4) + QByteArray("isom"))
+                             + box("moov", mvhd + trak + udta) + box("mdat", QByteArray(3000, '\x33'));
+
+        MediaInfo info;
+        qint64 bytes = -1;
+        QVERIFY(extractSharedMediaInfo(writeTempFile(mp4, u".mp4"_s), info, &bytes));
+        QCOMPARE(info.video.codecName, u"h264"_s);
+        QCOMPARE(info.video.width, 1280u);
+        QCOMPARE(info.title, u"Film"_s);
+        QCOMPARE(qRound(info.lengthSec), 30);
+        QVERIFY2(bytes < 64 * 1024, qPrintable(QString::number(bytes)));
+    }
+
+    void shared_theBudgetIsTheMostAFileCanCost()
+    {
+        // An Ogg whose comment packet claims far more than there is budget for.
+        QByteArray ogg = buildOggVorbis();
+        ogg += QByteArray(6 * 1024 * 1024, '\x11');
+        // A Matroska-looking file that is all one oversized element.
+        const QByteArray mkv = QByteArray("\x1A\x45\xDF\xA3\x84\x42\x86\x81\x01", 9)
+                             + QByteArray("\x18\x53\x80\x67\x08\x60\x00\x00", 8)
+                             + QByteArray("\x15\x49\xA9\x66\x08\x50\x00\x00", 8)
+                             + QByteArray(6 * 1024 * 1024, '\x22');
+        for (const auto& [data, suffix] : {std::pair{ogg, u".ogg"_s}, std::pair{mkv, u".mkv"_s}}) {
+            MediaInfo info;
+            qint64 bytes = -1;
+            static_cast<void>(extractSharedMediaInfo(writeTempFile(data, suffix), info, &bytes));
+            QVERIFY2(bytes <= kMediaReadBudget, qPrintable(suffix + u' ' + QString::number(bytes)));
+        }
+    }
+
+    void aac_adtsFramesGiveRateAndLength()
+    {
+        // 44.1 kHz stereo LC, 200 frames of 371 bytes: 127.8 kbit/s, 4.64 s.
+        QByteArray aac;
+        for (int i = 0; i < 200; ++i) {
+            const uint32 len = 371;
+            QByteArray frame(7, '\0');
+            frame[0] = static_cast<char>(0xFF);
+            frame[1] = static_cast<char>(0xF1);
+            frame[2] = static_cast<char>((1 << 6) | (4 << 2));            // LC, 44.1 kHz
+            frame[3] = static_cast<char>((2 << 6) | ((len >> 11) & 3));   // 2 channels
+            frame[4] = static_cast<char>((len >> 3) & 0xFF);
+            frame[5] = static_cast<char>(((len & 7) << 5) | 0x1F);
+            frame[6] = static_cast<char>(0xFC);
+            aac += frame + QByteArray(static_cast<qsizetype>(len) - 7, '\x21');
+        }
+        MediaInfo info;
+        QVERIFY(extractSharedMediaInfo(writeTempFile(aac, u".aac"_s), info));
+        QCOMPARE(info.audio.codecName, u"aac"_s);
+        QCOMPARE(info.audio.sampleRate, 44100u);
+        QCOMPARE(info.audio.channels, uint16{2});
+        QVERIFY(info.lengthEstimated);
+        QVERIFY2(std::abs(info.lengthSec - 4.64) < 0.05, qPrintable(QString::number(info.lengthSec)));
+        QVERIFY2(std::abs(static_cast<int>(info.audio.avgBytesPerSec * 8) - 127800) < 600,
+                 qPrintable(QString::number(info.audio.avgBytesPerSec * 8)));
+
+        // The same bytes under another media name are not an AVI.
+        MediaInfo wrong;
+        QVERIFY(!extractSharedMediaInfo(writeTempFile(aac, u".avi"_s), wrong));
+    }
+
+    void ape_headerAndApeTag()
+    {
+        // 3.99: descriptor (52 bytes), then the header. 44.1 kHz stereo, 100 frames of
+        // 73728 * 4 blocks plus a last one of 44100: 669.7 s.
+        QByteArray ape = QByteArray("MAC ") + le(3990, 2) + le(0, 2) + le(52, 4) + le(24, 4)
+                       + QByteArray(52 - 16, '\0');
+        ape += le(2000, 2) + le(0, 2) + le(73728 * 4, 4) + le(44100, 4) + le(101, 4)
+             + le(16, 2) + le(2, 2) + le(44100, 4);
+        ape += QByteArray(4000, '\x31');
+
+        const auto item = [](const char* key, const QByteArray& value) {
+            return le(static_cast<uint64>(value.size()), 4) + le(0, 4) + QByteArray(key)
+                 + QByteArray(1, '\0') + value;
+        };
+        // A cover first, to be stepped over inside the tag.
+        const QByteArray items = item("Cover Art (Front)", QByteArray(3000, '\x05'))
+                               + item("Title", "Piece") + item("ARTIST", "Player")
+                               + item("Album", "Disc");
+        ape += items + QByteArray("APETAGEX") + le(2000, 4)
+             + le(static_cast<uint64>(items.size() + 32), 4) + le(4, 4) + le(0, 4)
+             + QByteArray(8, '\0');
+
+        MediaInfo info;
+        QVERIFY(extractSharedMediaInfo(writeTempFile(ape, u".ape"_s), info));
+        QCOMPARE(info.audio.codecName, u"ape"_s);
+        QCOMPARE(info.audio.sampleRate, 44100u);
+        QCOMPARE(info.audio.channels, uint16{2});
+        QVERIFY2(std::abs(info.lengthSec - 669.7) < 0.1, qPrintable(QString::number(info.lengthSec)));
+        QCOMPARE(info.title, u"Piece"_s);
+        QCOMPARE(info.author, u"Player"_s);
+        QCOMPARE(info.album, u"Disc"_s);
+    }
+
+    void wavpack_blockHeaderAndApeTagBeforeId3v1()
+    {
+        // 48 kHz (index 10) mono, 480000 samples: ten seconds.
+        QByteArray wv = QByteArray("wvpk") + le(1000, 4) + le(0x410, 2) + le(0, 2) + le(480000, 4)
+                      + le(0, 4) + le(48000, 4) + le((10u << 23) | 0x4, 4) + le(0, 4);
+        wv += QByteArray(2000, '\x41');
+        const QByteArray title = le(4, 4) + le(0, 4) + QByteArray("Title") + QByteArray(1, '\0') + "Tune";
+        wv += title + QByteArray("APETAGEX") + le(2000, 4)
+            + le(static_cast<uint64>(title.size() + 32), 4) + le(1, 4) + le(0, 4) + QByteArray(8, '\0');
+        wv += QByteArray("TAG") + QByteArray(125, '\0');   // an ID3v1 tag behind it
+
+        MediaInfo info;
+        QVERIFY(extractSharedMediaInfo(writeTempFile(wv, u".wv"_s), info));
+        QCOMPARE(info.audio.codecName, u"wavpack"_s);
+        QCOMPARE(info.audio.sampleRate, 48000u);
+        QCOMPARE(info.audio.channels, uint16{1});
+        QCOMPARE(qRound(info.lengthSec), 10);
+        QCOMPARE(info.title, u"Tune"_s);
+    }
+
+    void shared_readsEveryFormatTheOpenReaderDoes()
+    {
+        // The gated path must not lose what the try-everything path finds.
+        const std::pair<QByteArray, QString> files[] = {
+            {buildMP3(100), u".mp3"_s},      {buildFLAC(), u".flac"_s},
+            {buildOggVorbis(), u".ogg"_s},   {buildMP4(), u".mp4"_s},
+            {buildMatroska(), u".mkv"_s},    {buildMatroskaWithTags(), u".mkv"_s},
+            {buildMinimalAVI(), u".avi"_s},
+        };
+        for (const auto& [data, suffix] : files) {
+            const QString path = writeTempFile(data, suffix);
+            MediaInfo open, gated;
+            QVERIFY2(extractMediaInfo(path, open), qPrintable(suffix));
+            QVERIFY2(extractSharedMediaInfo(path, gated), qPrintable(suffix));
+            QCOMPARE(gated.fileFormat, open.fileFormat);
+            QCOMPARE(gated.lengthSec, open.lengthSec);
+            QCOMPARE(gated.title, open.title);
+            QCOMPARE(gated.author, open.author);
+            QCOMPARE(gated.album, open.album);
+            QCOMPARE(gated.audio.codecName, open.audio.codecName);
+            QCOMPARE(gated.video.codecName, open.video.codecName);
+        }
+    }
+
     void extractMediaInfo_unknownFile()
     {
         QByteArray garbage(128, 'Z');

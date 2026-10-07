@@ -163,6 +163,19 @@ public:
     [[nodiscard]] KnownType knownType() const { return m_knownType; }
     void setKnownType(KnownType t) { m_knownType = t; }
 
+    // What the seen-files index knew when this result came in (SeenFileIndex):
+    // whether the file had turned up before this search, under how many names,
+    // and when first. All zero when the index is off.
+    [[nodiscard]] bool seenBefore() const { return m_seenBefore; }
+    [[nodiscard]] int seenNames() const { return m_seenNames; }
+    [[nodiscard]] qint64 firstSeen() const { return m_firstSeen; }
+    void setSeen(bool before, int names, qint64 firstSeen)
+    {
+        m_seenBefore = before;
+        m_seenNames = names;
+        m_firstSeen = firstSeen;
+    }
+
     // --- Search identity ---
 
     [[nodiscard]] uint32 searchID() const { return m_searchID; }
@@ -240,6 +253,9 @@ private:
     uint16 m_clientPort = 0;
     bool m_previewPossible = false;
     KnownType m_knownType = KnownType::NotDetermined;
+    bool m_seenBefore = false;
+    int m_seenNames = 0;
+    qint64 m_firstSeen = 0;
     bool m_kadResult = false;
     bool m_listExpanded = false;
     MetaInfo m_meta;

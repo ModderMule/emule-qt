@@ -32,6 +32,8 @@ private slots:
     void connectTo_literalInDynIPSkipsDns();
     void socketError_classification_data();
     void socketError_classification();
+    void failure_namesPhaseAndReason_data();
+    void failure_namesPhaseAndReason();
     void socketError_reportsOnceThroughBothEntryPoints_data();
     void socketError_reportsOnceThroughBothEntryPoints();
 };
@@ -381,6 +383,57 @@ void tst_ServerSocket::socketError_classification()
     QFETCH(QAbstractSocket::SocketError, error);
     QFETCH(ServerConnState, expected);
     QCOMPARE(ServerSocket::stateForSocketError(current, error), expected);
+}
+
+void tst_ServerSocket::failure_namesPhaseAndReason_data()
+{
+    QTest::addColumn<ServerConnState>("current");
+    QTest::addColumn<bool>("tcpConnected");
+    QTest::addColumn<int>("error");          // kNoError = no socket error
+    QTest::addColumn<QString>("phase");
+    QTest::addColumn<QString>("reason");
+
+    using S = ServerConnState;
+    using E = QAbstractSocket;
+    constexpr int kNoError = 1000;   // -1 is UnknownSocketError
+    const auto row = [](const char* name, S state, bool tcp, int error,
+                        const char* phase, const char* reason) {
+        QTest::newRow(name) << state << tcp << error
+                            << QString::fromLatin1(phase) << QString::fromLatin1(reason);
+    };
+    row("refused", S::Connecting, false, E::ConnectionRefusedError, "connect", "connection-refused");
+    row("timed out", S::Connecting, false, E::SocketTimeoutError, "connect", "timeout-unreachable");
+    row("closed in obfuscation", S::Connecting, true, E::RemoteHostClosedError,
+        "handshake", "protocol-rejection");
+    row("closed at login", S::WaitForLogin, true, E::RemoteHostClosedError,
+        "handshake", "protocol-rejection");
+    row("garbage at login", S::WaitForLogin, true, kNoError, "handshake", "protocol-rejection");
+    row("bind refused", S::Connecting, false, E::SocketAccessError,
+        "socket-setup", "local-bind-interface");
+    row("network down", S::Connecting, false, E::NetworkError,
+        "socket-setup", "local-bind-interface");
+    row("network down at login", S::WaitForLogin, true, E::NetworkError,
+        "handshake", "local-bind-interface");
+    row("resolver", S::Connecting, false, E::HostNotFoundError, "resolve", "dns-resolution");
+    row("unknown", S::Connecting, false, E::UnknownSocketError, "connect", "transport-other");
+    row("lost session", S::Connected, true, E::RemoteHostClosedError,
+        "established", "established-disconnect");
+}
+
+void tst_ServerSocket::failure_namesPhaseAndReason()
+{
+    QFETCH(ServerConnState, current);
+    QFETCH(bool, tcpConnected);
+    QFETCH(int, error);
+    QFETCH(QString, phase);
+    QFETCH(QString, reason);
+
+    const std::optional<QAbstractSocket::SocketError> socketError =
+        error == 1000 ? std::nullopt
+                  : std::optional(static_cast<QAbstractSocket::SocketError>(error));
+    const ServerFailure failure = ServerSocket::failureFor(current, tcpConnected, socketError);
+    QCOMPARE(QString(failure.phaseName()), phase);
+    QCOMPARE(QString(failure.reasonName()), reason);
 }
 
 void tst_ServerSocket::socketError_reportsOnceThroughBothEntryPoints_data()

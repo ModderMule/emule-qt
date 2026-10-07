@@ -5,6 +5,7 @@
 ///        the web interface alike.
 
 #include "search/SearchParams.h"
+#include "search/SearchQueue.h"
 
 #include <QString>
 
@@ -17,6 +18,10 @@ struct SearchStartResult {
     QString error;
     uint32 searchID = 0;
     bool started = false;       ///< a request actually left (or a sweep / Kad lookup runs)
+    /// Queued when it could not be sent yet — it goes out by itself later, @c reason
+    /// says what it waits for.
+    SearchRunState state = SearchRunState::Queued;
+    QString reason;
     SearchType type = SearchType::Ed2kServer;   ///< the network used, Automatic resolved
     QString keyword;            ///< Kad: the keyword searched when it is not the first one
     QString primaryKeyword;
@@ -25,11 +30,15 @@ struct SearchStartResult {
 /// Connectivity that decides which network an Automatic search uses.
 [[nodiscard]] AutoSearchState gatherAutoSearchState();
 
-/// Create the search in @p list and send its request(s).
+/// Create the search in @p list and send its request(s) — now, or as soon as the
+/// network it needs is there and the search before it is done (SearchQueue).
 [[nodiscard]] SearchStartResult startSearch(SearchList& list, SearchParams params);
 
-/// Stop asking; results stay.
-void stopSearch(uint32 searchID);
+/// Stop asking; results stay. A queued search is not sent any more.
+void stopSearch(SearchList& list, uint32 searchID);
+
+/// The queue's view of the running client: connectivity, id allocation, sending.
+[[nodiscard]] SearchQueueBackend defaultSearchQueueBackend(SearchList& list);
 
 /// Stop and drop the results. False when @p list has no such search.
 bool removeSearch(SearchList& list, uint32 searchID);

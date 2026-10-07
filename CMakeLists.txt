@@ -42,6 +42,7 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS
     HttpServer
     Protobuf
     ProtobufTools
+    Sql         # qtbase; the bundled SQLite driver backs the seen-files index
     Test
 )
 

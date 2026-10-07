@@ -295,6 +295,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_onlySameCatCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_rememberDownloadedCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_rememberCancelledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_seenFileIndexCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_videoPlayerCmdEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_videoPlayerArgsEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_createBackupToPreviewCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -1700,6 +1701,12 @@ QWidget* OptionsDialog::createFilesPage()
 
     m_rememberCancelledCheck = new QCheckBox(tr("Remember cancelled files"), miscGroup);
     miscLayout->addWidget(m_rememberCancelledCheck);
+
+    m_seenFileIndexCheck = new QCheckBox(tr("Remember files seen in search results"), miscGroup);
+    m_seenFileIndexCheck->setToolTip(
+        tr("Keeps a local record of the files that turned up in your searches and the "
+           "names they went by, so later searches can show what you have seen before."));
+    miscLayout->addWidget(m_seenFileIndexCheck);
 
     layout->addWidget(miscGroup);
 
@@ -6245,6 +6252,8 @@ void OptionsDialog::saveSettings()
         req.append(m_rememberDownloadedCheck->isChecked());
         req.append(QStringLiteral("rememberCancelledFiles"));
         req.append(m_rememberCancelledCheck->isChecked());
+        req.append(QStringLiteral("seenFileIndex"));
+        req.append(m_seenFileIndexCheck->isChecked());
 
         // Notifications page (daemon-side)
         req.append(QStringLiteral("notifyOnLog"));
@@ -6735,6 +6744,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setStartNextPausedFileOnlySameCat(m_onlySameCatCheck->isChecked());
         thePrefs.setRememberDownloadedFiles(m_rememberDownloadedCheck->isChecked());
         thePrefs.setRememberCancelledFiles(m_rememberCancelledCheck->isChecked());
+        thePrefs.setSeenFileIndex(m_seenFileIndexCheck->isChecked());
 
         // Notifications page (daemon-side) fallback
         thePrefs.setNotifyOnLog(m_notifyLogCheck->isChecked());
@@ -6997,6 +7007,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_onlySameCatCheck->setChecked(prefs.value(QStringLiteral("startNextPausedFileOnlySameCat")).toBool());
     m_rememberDownloadedCheck->setChecked(prefs.value(QStringLiteral("rememberDownloadedFiles")).toBool(true));
     m_rememberCancelledCheck->setChecked(prefs.value(QStringLiteral("rememberCancelledFiles")).toBool(true));
+    m_seenFileIndexCheck->setChecked(prefs.value(QStringLiteral("seenFileIndex")).toBool(true));
 
     // Notifications page (daemon-side)
     m_notifyLogCheck->setChecked(prefs.value(QStringLiteral("notifyOnLog")).toBool());

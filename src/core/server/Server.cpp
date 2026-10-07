@@ -63,6 +63,7 @@ Server::Server(const Server& other)
     , m_lowIDUsers(other.m_lowIDUsers)
     , m_ping(other.m_ping)
     , m_failedCount(other.m_failedCount)
+    , m_disabled(other.m_disabled)
     , m_lastPingedTime(other.m_lastPingedTime)
     , m_realLastPingedTime(other.m_realLastPingedTime)
     , m_lastPinged(other.m_lastPinged)
@@ -320,6 +321,10 @@ void Server::addTagFromFile(const Tag& tag)
         } else if (tag.nameId() == 0 && tag.name() == QByteArray("users")) {
             if (tag.isInt())
                 m_users = tag.intValue();
+        } else if (tag.nameId() == 0 && tag.name() == QByteArray("disabled")) {
+            // Local extension, string-named so it cannot collide with an ST_ id.
+            if (tag.isInt())
+                m_disabled = tag.intValue() != 0;
         } else {
             logWarning(QStringLiteral("Unknown server.met tag: nameId=0x%1")
                 .arg(tag.nameId(), 2, 16, QChar(u'0')));
@@ -360,6 +365,11 @@ uint32 Server::writeTags(FileDataIO& file) const
 
     if (m_failedCount != 0) {
         Tag(ST_FAIL, m_failedCount).writeNewEd2kTag(file);
+        ++count;
+    }
+
+    if (m_disabled) {
+        Tag(QByteArray("disabled"), uint32{1}).writeTagToFile(file);
         ++count;
     }
 

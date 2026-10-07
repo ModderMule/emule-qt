@@ -4,7 +4,7 @@ TEMPLATE = app
 CONFIG  += c++2b
 TARGET   = emuleqt
 
-QT += core gui widgets network multimedia protobuf
+QT += core gui widgets network multimedia protobuf sql
 
 INCLUDEPATH += \
     $$PWD/.. \

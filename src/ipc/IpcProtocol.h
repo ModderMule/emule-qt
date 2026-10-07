@@ -48,6 +48,7 @@ enum class IpcMsgType : int {
     SetServerStatic      = 134,  ///< [ip: int64, port: int64, isStatic: bool, addr: string]
     AddServer            = 135,  ///< [address: string, port: int64, name: string, addr6?: string] — addr6 = other-family address of a dual-stack server
     SetServerOrder       = 136,  ///< [CborArray of [ip:int64, port:int64, addr:string]] (#24)
+    SetServerEnabled     = 137,  ///< [ip: int64, port: int64, enabled: bool, addr: string] — lift or set the "disabled after too many failures" mark
     GetConnection        = 140,
     ConnectToServer      = 141,  ///< [] or [ip: int64, port: int64, addr: string]
     DisconnectFromServer = 142,
@@ -608,6 +609,12 @@ enum class IpcMsgType : int {
     PushServerMessage    = 421,  ///< [id, type: ServerMsgType, text: string] — one Server Info line
     PushSearchResult     = 430,
     PushGlobalSearchProgress = 431,  ///< [searchID, asked, total, running] — ED2K global UDP sweep
+    /// [searchID, state: SearchRunState (0 queued, 1 running, 2 finished, 3 failed),
+    ///  reason: string (queued: "waiting-for-server-connection" / "waiting-for-kad" /
+    ///  "waiting-for-connection" / "waiting-for-previous-search"), error: string (failed),
+    ///  type: SearchType (the network used once sent), keyword, primaryKeyword].
+    /// The StartSearch reply carries the same `state` and `reason`.
+    PushSearchState      = 432,
     PushLogMessage       = 450,  ///< [logId, category, severity: QtMsgType, message, timestamp: unix s]
     /// [rows: array] — rows of shared files that were added or changed, same shape as
     /// a GetSharedFiles row. Batched; a file is sent at most a few times a second.

@@ -5,7 +5,7 @@ CONFIG  += console c++2b
 CONFIG  -= app_bundle
 TARGET   = emulecored
 
-QT += core network multimedia httpserver protobuf
+QT += core network multimedia httpserver protobuf sql
 QT -= gui
 
 INCLUDEPATH += \

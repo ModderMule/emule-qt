@@ -72,6 +72,7 @@
 #include "search/SearchList.h"
 #include "search/SearchParams.h"
 #include "search/SearchStarter.h"
+#include "search/SeenFileIndex.h"
 #include "server/Server.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
@@ -262,6 +263,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::SetServerStatic:      handleSetServerStatic(msg); break;
     case IpcMsgType::AddServer:            handleAddServer(msg); break;
     case IpcMsgType::SetServerOrder:       handleSetServerOrder(msg); break;
+    case IpcMsgType::SetServerEnabled:     handleSetServerEnabled(msg); break;
     case IpcMsgType::GetConnection:        handleGetConnection(msg); break;
     case IpcMsgType::ConnectToServer:      handleConnectToServer(msg); break;
     case IpcMsgType::DisconnectFromServer: handleDisconnectFromServer(msg); break;
@@ -768,6 +770,25 @@ void IpcClientHandler::handleSetServerStatic(const IpcMessage& msg)
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
+void IpcClientHandler::handleSetServerEnabled(const IpcMessage& msg)
+{
+    if (!theApp.serverList) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("ServerList unavailable")));
+        return;
+    }
+    auto* srv = resolveServerFromMsg(msg, 0, 3);
+    if (!srv) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Server not found")));
+        return;
+    }
+    if (msg.fieldBool(2))
+        srv->resetFailedCount();   // a fresh start, or the next failure disables it again
+    else
+        srv->setDisabled(true);
+    theApp.serverList->notifyServerUpdated(srv);
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
 void IpcClientHandler::handleAddServer(const IpcMessage& msg)
 {
     if (!theApp.serverList) {
@@ -818,7 +839,7 @@ void IpcClientHandler::handleAddServer(const IpcMessage& msg)
     }
 
     const QString key = server->address();
-    Server* added = theApp.serverList->addServer(std::move(server));
+    Server* added = theApp.serverList->addServer(std::move(server), ServerOrigin::Manual);
     if (added) {
         sendMessage(IpcMessage::makeResult(msg.seqId(), true));
     } else {
@@ -1115,6 +1136,9 @@ void IpcClientHandler::handleStartSearch(const IpcMessage& msg)
     QCborMap result;
     result.insert(QStringLiteral("searchID"), static_cast<qint64>(outcome.searchID));
     result.insert(QStringLiteral("started"), outcome.started);
+    // Not sent yet is not an error any more: it waits and goes out by itself.
+    result.insert(QStringLiteral("state"), static_cast<int>(outcome.state));
+    result.insert(QStringLiteral("reason"), outcome.reason);
     // The network actually used — Automatic has been resolved by now, and the GUI
     // needs it for the tab icon.
     result.insert(QStringLiteral("type"), static_cast<int>(outcome.type));
@@ -1146,7 +1170,8 @@ void IpcClientHandler::handleGetSearchResults(const IpcMessage& msg)
 
 void IpcClientHandler::handleStopSearch(const IpcMessage& msg)
 {
-    stopSearch(static_cast<uint32>(msg.fieldInt(0)));
+    if (theApp.searchList)
+        stopSearch(*theApp.searchList, static_cast<uint32>(msg.fieldInt(0)));
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
@@ -3542,6 +3567,11 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setRememberDownloadedFiles(val.toBool());
     else if (key == QStringLiteral("rememberCancelledFiles"))
         thePrefs.setRememberCancelledFiles(val.toBool());
+    else if (key == QStringLiteral("seenFileIndex")) {
+        thePrefs.setSeenFileIndex(val.toBool());
+        if (theApp.seenFileIndex)
+            theApp.seenFileIndex->setEnabled(val.toBool());   // at once, no restart
+    }
     // Notifications
     else if (key == QStringLiteral("notifyOnLog"))
         thePrefs.setNotifyOnLog(val.toBool());

@@ -347,7 +347,7 @@ private slots:
     // Preferences tests
     void getPreferences();
     void patchPreferences();
-    void postSearch_offlineIsAnErrorNotAnIdleId();
+    void postSearch_offlineIsQueuedAndSaysSo();
     void deleteSearch_removesResults();
 
     // CORS tests
@@ -419,7 +419,7 @@ private slots:
     void https_servesRsaAndEcKeys_data();
     void https_servesRsaAndEcKeys();
     void configFromPreferences_differsOnlyOnWhatTheServerUses();
-    void webSearchForm_offlineSaysSo();
+    void webSearchForm_offlineSaysItWaits();
     void restUsenetListNeedsKeyAndReturnsRows();
     void restUsenetStatsIsNotShadowedByItemRoute();
     void restUsenetItemActionsAndErrors();
@@ -821,19 +821,58 @@ void tst_WebServer::patchPreferences()
 
 // Nothing is connected here: a search cannot go out, and saying "here is your id"
 // would leave the caller polling an id nobody asked anything for.
-void tst_WebServer::postSearch_offlineIsAnErrorNotAnIdleId()
+// A search that cannot go out yet used to be an idle id (then a 409). Now it is
+// taken — 202 — and waits: it is sent once the network is there.
+void tst_WebServer::postSearch_offlineIsQueuedAndSaysSo()
 {
-    for (const char* type : {"ed2kServer", "kad", "automatic"}) {
+    const std::pair<const char*, const char*> cases[] = {
+        {"ed2kServer", "waiting-for-server-connection"},
+        {"kad", "waiting-for-kad"},
+        {"automatic", "waiting-for-connection"},
+    };
+    for (const auto& [type, reason] : cases) {
         const QJsonObject body{
             {QStringLiteral("expression"), QStringLiteral("holiday")},
             {QStringLiteral("type"), QString::fromLatin1(type)},
         };
         const auto resp = sendRequest(QByteArrayLiteral("POST"), QStringLiteral("/api/v1/search"),
                                       QJsonDocument(body).toJson(QJsonDocument::Compact));
-        QVERIFY2(resp.statusCode == 409, type);
-        QVERIFY(!resp.json.object()[QStringLiteral("error")].toObject()
-                     [QStringLiteral("message")].toString().isEmpty());
+        QVERIFY2(resp.statusCode == 202, type);
+        const QJsonObject taken = resp.json.object();
+        QCOMPARE(taken[QStringLiteral("state")].toString(), QStringLiteral("queued"));
+        QCOMPARE(taken[QStringLiteral("reason")].toString(), QString::fromLatin1(reason));
+        QCOMPARE(taken[QStringLiteral("type")].toString(), QString::fromLatin1(type));
+
+        // The id is real: its results route answers, with the state.
+        const auto id = static_cast<uint32>(taken[QStringLiteral("searchID")].toInteger());
+        QVERIFY(m_searchList->hasSearch(id));
+        const auto results = sendRequest(QByteArrayLiteral("GET"),
+                                         QStringLiteral("/api/v1/search/%1/results").arg(id));
+        QCOMPARE(results.statusCode, 200);
+        QCOMPARE(results.json.object()[QStringLiteral("state")].toString(), QStringLiteral("queued"));
+        QCOMPARE(results.json.object()[QStringLiteral("reason")].toString(),
+                 QString::fromLatin1(reason));
+
+        // Asking the same again is the same search, not a second one.
+        const auto again = sendRequest(QByteArrayLiteral("POST"), QStringLiteral("/api/v1/search"),
+                                       QJsonDocument(body).toJson(QJsonDocument::Compact));
+        QCOMPARE(static_cast<uint32>(again.json.object()[QStringLiteral("searchID")].toInteger()), id);
+
+        QCOMPARE(sendRequest(QByteArrayLiteral("DELETE"),
+                             QStringLiteral("/api/v1/search/%1").arg(id)).statusCode, 200);
+        QVERIFY(!m_searchList->queue().status(id));
     }
+
+    // What can never be sent is still an error.
+    const QJsonObject tooShort{
+        {QStringLiteral("expression"), QStringLiteral("ab")},
+        {QStringLiteral("type"), QStringLiteral("kad")},
+    };
+    const auto refused = sendRequest(QByteArrayLiteral("POST"), QStringLiteral("/api/v1/search"),
+                                     QJsonDocument(tooShort).toJson(QJsonDocument::Compact));
+    QCOMPARE(refused.statusCode, 409);
+    QVERIFY(!refused.json.object()[QStringLiteral("error")].toObject()
+                 [QStringLiteral("message")].toString().isEmpty());
 
     const QJsonObject bad{
         {QStringLiteral("expression"), QStringLiteral("holiday")},
@@ -2895,7 +2934,7 @@ void tst_WebServer::webOptionsForm_savesOrChangesNothing()
     server->stop();
 }
 
-void tst_WebServer::webSearchForm_offlineSaysSo()
+void tst_WebServer::webSearchForm_offlineSaysItWaits()
 {
     auto server = startUsenetUi(nullptr);
     const uint16 port = server->port();
@@ -2912,9 +2951,11 @@ void tst_WebServer::webSearchForm_offlineSaysSo()
     QCOMPARE(r.statusCode, 303);
     QCOMPARE(r.headers.value(QStringLiteral("location")), QStringLiteral("/?w=search"));
 
-    // Nothing is connected in this fixture: the page says the search did not go out.
+    // Nothing is connected in this fixture: the search is kept and the page says
+    // what it waits for — as a notice, not as a failure.
     page = rawGetBody(port, QStringLiteral("/?ses=%1&w=search").arg(admin));
-    QVERIFY(page.contains(QStringLiteral("class=\"failed\"")));
+    QVERIFY(page.contains(QStringLiteral("waiting-for-server-connection")));
+    QVERIFY(!page.contains(QStringLiteral("class=\"failed\"")));
 
     server->stop();
 }

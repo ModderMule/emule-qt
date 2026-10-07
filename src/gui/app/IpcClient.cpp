@@ -38,6 +38,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::SetServerPriority:    return QStringLiteral("SetServerPriority");
     case T::SetServerStatic:      return QStringLiteral("SetServerStatic");
     case T::AddServer:            return QStringLiteral("AddServer");
+    case T::SetServerEnabled:     return QStringLiteral("SetServerEnabled");
     case T::GetConnection:        return QStringLiteral("GetConnection");
     case T::ConnectToServer:      return QStringLiteral("ConnectToServer");
     case T::DisconnectFromServer: return QStringLiteral("DisconnectFromServer");
@@ -584,6 +585,7 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     }
     case IpcMsgType::PushSearchResult:     emit searchResultReceived(msg); break;
     case IpcMsgType::PushGlobalSearchProgress: emit globalSearchProgress(msg); break;
+    case IpcMsgType::PushSearchState:     emit searchStateChanged(msg); break;
     case IpcMsgType::PushLogMessage: {
         const qint64 logId  = msg.fieldInt(0);
         const QString cat    = msg.fieldString(1);

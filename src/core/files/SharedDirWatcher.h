@@ -6,13 +6,17 @@
 /// Watches the roots non-recursively — the share model is one directory, no
 /// subdirectories. Events are held until a directory has been quiet for a moment,
 /// so a burst (a copy of many files) becomes one rescan. Roots the OS would not
-/// watch are compared by directory date now and then.
+/// watch, and roots on a network share (where a watch is accepted but tells
+/// nothing reliable), are reported at intervals; the rescan behind the report
+/// stats first and opens nothing that did not change.
 
 #include <QDateTime>
 #include <QHash>
 #include <QObject>
 #include <QStringList>
 #include <QTimer>
+
+#include <functional>
 
 class QFileSystemWatcher;
 
@@ -27,8 +31,13 @@ public:
     /// Replace the watched set. Unchanged roots keep their watch.
     void setRoots(const QStringList& dirs);
     [[nodiscard]] QStringList roots() const { return m_roots.keys(); }
-    /// Roots the OS refused to watch; these are polled.
+    /// Roots the OS refused to watch, or on a network share; these are polled.
     [[nodiscard]] QStringList polledRoots() const;
+
+    /// Test seam: whether a directory counts as being on a network share.
+    void setRemoteCheck(std::function<bool(const QString&)> check) { m_isRemote = std::move(check); }
+    /// True for a directory on a network filesystem.
+    [[nodiscard]] static bool isOnNetworkShare(const QString& dir);
 
     /// Quiet time before a changed directory is reported, the longest a busy one is
     /// held back, and the poll period. Tests shorten them.
@@ -39,6 +48,8 @@ public:
 
 signals:
     void directoryChanged(const QString& dir);
+    /// Everything that settled in one go; emitted with directoryChanged().
+    void directoriesChanged(const QStringList& dirs);
     /// Too much changed at once: rescan everything.
     void overflow();
 
@@ -49,7 +60,7 @@ private:
 
     struct Root {
         bool watched = false;
-        QDateTime lastModified;   // polled roots only
+        bool remote = false;      // network share: polled even when watched
     };
     struct Pending {
         qint64 firstMs = 0;
@@ -63,6 +74,7 @@ private:
     QTimer m_pollTimer;
     int m_settleMs = 2000;
     int m_maxHoldMs = 10000;
+    std::function<bool(const QString&)> m_isRemote;
 };
 
 } // namespace eMule

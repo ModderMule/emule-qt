@@ -99,6 +99,18 @@
     <ClCompile Include="client\DeadSourceList.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="files\KadPublishStore.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="files\HashFailureStore.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="search\SearchQueue.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="search\SeenFileIndex.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="client\FruitlessSessionLedger.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -542,6 +554,18 @@
     <ClInclude Include="client\DeadSourceList.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="server\ServerFailure.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="files\KadPublishStore.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="files\HashFailureStore.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="media\MediaReadBudget.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="client\FruitlessSessionLedger.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -861,6 +885,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <QtMoc Include="server\ServerConnect.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="search\SearchQueue.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="search\SeenFileIndex.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="server\ServerList.h">

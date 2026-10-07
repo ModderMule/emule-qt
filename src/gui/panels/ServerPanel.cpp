@@ -492,6 +492,26 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
         });
     }
 
+    // -- Enable (a server disabled after too many failures) --------------------
+    if (hasSelection && row->disabled) {
+        auto* enableAction = m_serverMenu->addAction(tr("Enable"));
+        const uint32_t ip = row->numericIp;
+        const QString addr = row->addr;
+        const uint16_t port = row->port;
+        connect(enableAction, &QAction::triggered, this, [this, ip, addr, port]() {
+            if (m_ipc && m_ipc->isConnected()) {
+                Ipc::IpcMessage req(Ipc::IpcMsgType::SetServerEnabled);
+                req.append(static_cast<qint64>(ip));
+                req.append(static_cast<qint64>(port));
+                req.append(true);
+                req.append(addr);
+                m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage&) {
+                    requestServerList();
+                });
+            }
+        });
+    }
+
     m_serverMenu->addSeparator();
 
     // -- Copy eD2K Links ------------------------------------------------------

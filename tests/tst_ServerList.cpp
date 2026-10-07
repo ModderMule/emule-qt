@@ -179,7 +179,8 @@ private slots:
     void removeDuplicatesByAddress_collapses();        // #18
     void applyUserOrder_reordersList();                // #24
     void isGoodServerIP_honorsFilterLANIPs();          // #29
-    void addDuplicate_resetsFailedCount();             // #30
+    void addDuplicate_onlyAManualAddRevives();
+    void disabledServer_isSkippedAndSurvivesServerMet();
     void moveServerDown_toBottom();                    // #33
     void getSuccServer_nonWrapping();                  // #34
     void getServerByIP_ipOnly();                       // #34
@@ -595,7 +596,7 @@ void tst_ServerList::add_ipv6_duplicateRejectedOnce()
 
     QVERIFY(list.addServer(makeIPv6Server("2a01:4f8::1", 4661)) == nullptr);
     QCOMPARE(list.serverCount(), size_t{1});
-    QCOMPARE(first->failedCount(), uint32{0});   // re-announced ⇒ revived
+    QCOMPARE(first->failedCount(), uint32{4});   // being announced is no sign of life
 }
 
 void tst_ServerList::serverMet_ipv6RoundTrip()
@@ -2145,20 +2146,61 @@ void tst_ServerList::isGoodServerIP_honorsFilterLANIPs()
     thePrefs.setFilterLANIPs(savedPref);
 }
 
-// #30 — re-announcing a duplicate server revives it by resetting its failed count.
-void tst_ServerList::addDuplicate_resetsFailedCount()
+// A re-announced duplicate keeps its record; only the user's own add revives it.
+void tst_ServerList::addDuplicate_onlyAManualAddRevives()
 {
     ServerList list;
     Server* s = list.addServer(makeServer(0x08080808, 4661));
     QVERIFY(s != nullptr);
-    s->incFailedCount();
-    s->incFailedCount();
-    QCOMPARE(s->failedCount(), uint32{2});
+    QVERIFY(!s->noteFailure(2));
+    QVERIFY(s->noteFailure(2));      // the second failure disables at a limit of 2
+    QVERIFY(s->isDisabled());
 
-    // A duplicate add is rejected (returns nullptr) but must reset the live entry.
     QVERIFY(list.addServer(makeServer(0x08080808, 4661)) == nullptr);
     QCOMPARE(list.serverCount(), size_t{1});
+    QCOMPARE(s->failedCount(), uint32{2});
+    QVERIFY(s->isDisabled());
+
+    QVERIFY(list.addServer(makeServer(0x08080808, 4661), ServerOrigin::Manual) == nullptr);
     QCOMPARE(s->failedCount(), uint32{0});
+    QVERIFY(!s->isDisabled());
+}
+
+void tst_ServerList::disabledServer_isSkippedAndSurvivesServerMet()
+{
+    eMule::testing::TempDir tmp;
+    const QString path = tmp.filePath(QStringLiteral("server.met"));
+    {
+        ServerList list;
+        Server* dead = list.addServer(makeServer(0x08080808, 4661));
+        Server* live = list.addServer(makeServer(0x08080809, 4661));
+        QVERIFY(dead && live);
+        dead->setDisabled(true);
+        dead->setFailedCount(20);
+
+        for (int i = 0; i < 4; ++i)
+            QCOMPARE(list.nextServer(false), live);
+
+        // A static server only accumulates, and no limit means no disabling.
+        live->setStaticMember(true);
+        QVERIFY(!live->noteFailure(1));
+        QVERIFY(!live->isDisabled());
+        live->setStaticMember(false);
+        QVERIFY(!live->noteFailure(0));
+        QVERIFY(!live->isDeadFor(0));
+        QVERIFY(dead->isDeadFor(0));
+        live->resetFailedCount();
+
+        QVERIFY(list.saveServerMet(path));
+    }
+    ServerList loaded;
+    QVERIFY(loaded.loadServerMet(path));
+    QCOMPARE(loaded.serverCount(), size_t{2});
+    Server* dead = loaded.findByIPTcp(0x08080808, 4661);
+    Server* live = loaded.findByIPTcp(0x08080809, 4661);
+    QVERIFY(dead && live);
+    QVERIFY(dead->isDisabled());
+    QVERIFY(!live->isDisabled());
 }
 
 // #33 — moveServerDown relocates a server to the bottom of the list.

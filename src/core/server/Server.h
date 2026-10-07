@@ -188,7 +188,30 @@ public:
     [[nodiscard]] uint32 failedCount() const    { return m_failedCount; }
     void setFailedCount(uint32 c)               { m_failedCount = c; }
     void incFailedCount()                       { ++m_failedCount; }
-    void resetFailedCount()                     { m_failedCount = 0; }
+    /// A sign of life: clears the count and a disabled mark with it.
+    void resetFailedCount()                     { m_failedCount = 0; m_disabled = false; }
+
+    /// Failed too often: kept in the list, but nothing dials or asks it by itself.
+    [[nodiscard]] bool isDisabled() const       { return m_disabled; }
+    void setDisabled(bool d)                    { m_disabled = d; }
+
+    /// Not worth asking: disabled, or at the dead-server threshold (0 = no threshold).
+    [[nodiscard]] bool isDeadFor(uint32 deadServerRetries) const
+    {
+        return m_disabled || (deadServerRetries > 0 && m_failedCount >= deadServerRetries);
+    }
+
+    /// Count one failure; at the threshold a non-static server is disabled.
+    /// @return true when this call disabled it.
+    bool noteFailure(uint32 deadServerRetries)
+    {
+        ++m_failedCount;
+        if (m_disabled || m_staticMember || deadServerRetries == 0
+            || m_failedCount < deadServerRetries)
+            return false;
+        m_disabled = true;
+        return true;
+    }
 
     // -- Timing -----------------------------------------------------------
 
@@ -324,6 +347,7 @@ private:
     uint32  m_lowIDUsers = 0;
     uint32  m_ping = 0;
     uint32  m_failedCount = 0;
+    bool    m_disabled = false;
 
     // Timing
     uint32  m_lastPingedTime = 0;

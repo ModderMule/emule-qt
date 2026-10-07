@@ -30,6 +30,9 @@ struct SearchResultRow {
     int64_t length = 0;
     int64_t bitrate = 0;
     int knownType = 0;
+    bool seenBefore = false;    ///< on record before this search (daemon seen-files index)
+    int seenNames = 0;          ///< names it has been seen under
+    int64_t firstSeen = 0;      ///< unix seconds; 0 = not on record
     bool isKad = false;         ///< Kad results carry no complete-source count
     bool kadOrigin = false;     ///< server result the server found on Kad: Kad badge
     bool inDirectory = false;   ///< from browsing a client's shared files
@@ -76,6 +79,7 @@ public:
         ColBitrate,
         ColCodec,
         ColKnown,
+        ColSeen,
         ColCount
     };
 
@@ -98,6 +102,9 @@ public:
 
     /// Get the full result row for a row index (nullptr if out of range).
     [[nodiscard]] const SearchResultRow* resultAt(int row) const { return rowAt(row); }
+
+    /// "12.03.25 · 3 names" for a file met before this search; empty otherwise.
+    [[nodiscard]] static QString seenText(const SearchResultRow& r);
 
     /// Update the knownType for a specific row (triggers dataChanged).
     void setKnownType(int row, int knownType);

@@ -3,6 +3,10 @@
 /// @brief Search result manager — port of MFC CSearchList.
 
 #include "search/SearchList.h"
+#include "search/SearchStarter.h"
+#include "app/AppContext.h"
+#include "kademlia/KadSearch.h"
+#include "search/SeenFileIndex.h"
 #include "client/UpDownClient.h"
 #include "crypto/AICHData.h"
 #include "protocol/Tag.h"
@@ -21,7 +25,9 @@ namespace eMule {
 
 SearchList::SearchList(QObject* parent)
     : QObject(parent)
+    , m_queue(new SearchQueue(defaultSearchQueueBackend(*this), this))
 {
+    connect(m_queue, &SearchQueue::stateChanged, this, &SearchList::searchStateChanged);
 }
 
 SearchList::~SearchList() = default;
@@ -36,13 +42,7 @@ uint32 SearchList::newSearch(const QString& resultFileType, const SearchParams& 
     const bool ed2k = params.type == SearchType::Ed2kServer || params.type == SearchType::Ed2kGlobal;
     if (!ed2k || takeEd2kRouting)
         m_resultFileType = resultFileType;
-    if (forcedID != 0) {
-        m_currentSearchID = forcedID;
-        if (m_nextSearchID <= forcedID)
-            m_nextSearchID = forcedID + 1;
-    } else {
-        m_currentSearchID = m_nextSearchID++;
-    }
+    m_currentSearchID = takeSearchID(forcedID);
 
     // Only an ED2K search takes over the server-answer routing. A Kad search started
     // while a global sweep is still walking the server list must not steal the UDP
@@ -63,6 +63,65 @@ uint32 SearchList::newSearch(const QString& resultFileType, const SearchParams& 
     m_foundSourcesCount[m_currentSearchID] = 0;
 
     return m_currentSearchID;
+}
+
+void SearchList::noteSeen(SearchFile& file, const SearchListEntry& entry, bool newToSearch)
+{
+    SeenFileIndex* index = theApp.seenFileIndex;
+    // A meta row (torrent / Usenet) has no eD2K hash to remember it by.
+    if (!index || !index->isActive() || file.isMetaResult())
+        return;
+
+    if (newToSearch) {
+        // Before this sighting is added, so a file met for the first time is not
+        // already "seen"; and relative to the search, so another result of the same
+        // search cannot make it so either.
+        const SeenFileIndex::Info known = index->lookup(file.fileHash());
+        file.setSeen(known.seenBefore(entry.startedAt), known.names, known.firstSeen);
+    }
+    index->note(file.fileHash(), file.fileName(), static_cast<uint64>(file.fileSize()),
+                QDateTime::currentSecsSinceEpoch());
+}
+
+uint32 SearchList::takeSearchID(uint32 forcedID)
+{
+    // One counter for every search of the client (see kad::Search::reserveSearchID):
+    // with a counter of its own this list handed out ids a Kad lookup already had,
+    // and stopping the one stopped the other.
+    if (forcedID == 0)
+        return kad::Search::reserveSearchID();
+    kad::Search::noteSearchIDUsed(forcedID);
+    return forcedID;
+}
+
+uint32 SearchList::reserveSearch(uint32 forcedID)
+{
+    const uint32 searchID = takeSearchID(forcedID);
+
+    SearchListEntry entry;
+    entry.searchID = searchID;
+    m_fileLists.push_back(std::move(entry));
+    m_foundFilesCount[searchID] = 0;
+    m_foundSourcesCount[searchID] = 0;
+    return searchID;
+}
+
+void SearchList::beginSearch(uint32 searchID, const QString& resultFileType, bool ed2k)
+{
+    m_resultFileType = resultFileType;
+    m_currentSearchID = searchID;
+    if (ed2k) {
+        // As in newSearch(): a new ED2K search owns the server answers from here on.
+        m_currentEd2kSearchID = searchID;
+        m_curED2KSentRequestsIPs.clear();
+        m_udpServerRecords.clear();
+    }
+}
+
+void SearchList::releaseEd2kRouting(uint32 searchID)
+{
+    if (searchID != 0 && m_currentEd2kSearchID == searchID)
+        m_currentEd2kSearchID = 0;
 }
 
 void SearchList::clear()
@@ -203,6 +262,13 @@ bool SearchList::processSearchAnswer(const uint8* packet, uint32 size,
                                      bool optUTF8, const Endpoint& server)
 {
     // SearchFile keeps the ed2k (IPv4) form; an IPv6 server records 0 there.
+    // The search this answers is over (or was closed): the results are nobody's.
+    if (m_currentEd2kSearchID == 0) {
+        logServerVerbose(QStringLiteral("TCP search answer from %1 dropped — no server "
+                                        "search is waiting for one").arg(server.toString()));
+        return false;
+    }
+
     const uint32 serverIP = server.address().toNetworkUint32();
     const uint16 serverPort = server.port();
     SafeMemFile data(packet, size);
@@ -253,7 +319,7 @@ uint32 SearchList::processClientSharedFiles(UpDownClient& sender, const uint8* p
     // tab (entry removed) gets a fresh ID so the GUI opens a new one.
     uint32 searchID = sender.searchID();
     if (searchID == 0 || !findEntry(searchID)) {
-        searchID = m_nextSearchID++;
+        searchID = takeSearchID(0);
         sender.setSearchID(searchID);
 
         SearchListEntry newEntry;
@@ -307,6 +373,9 @@ uint32 SearchList::processClientSharedFiles(UpDownClient& sender, const uint8* p
 void SearchList::processUDPSearchAnswer(const uint8* packet, uint32 size,
                                         bool optUTF8, const Endpoint& server)
 {
+    if (m_currentEd2kSearchID == 0)
+        return;   // the sweep this answers is over
+
     // Validate server was in our request list
     if (!m_curED2KSentRequestsIPs.contains(server.address())) {
         logServerVerbose(QStringLiteral("UDP search answer from %1 DROPPED — sender not in our sent-request set")
@@ -468,6 +537,7 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
                 matchingChild->addServer(server);
         } else {
             // New child with different filename
+            noteSeen(*fileOwner, *entry, /*newToSearch*/ false);
             fileOwner->setListParent(parent);
             parent->addListChild(fileOwner.get());
             entry->files.push_back(std::move(fileOwner));
@@ -518,6 +588,7 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
         // --- No parent found — new top-level entry ---
 
         SearchFile* newFile = fileOwner.get();
+        noteSeen(*newFile, *entry, /*newToSearch*/ true);
         entry->files.push_back(std::move(fileOwner));
 
         // Update counters
@@ -937,8 +1008,7 @@ void SearchList::loadSearches(const QString& configDir)
         m_foundFilesCount[searchID] = fileCount;
 
         // Update next search ID to be beyond any loaded
-        if (searchID >= m_nextSearchID)
-            m_nextSearchID = searchID + 1;
+        kad::Search::noteSearchIDUsed(searchID);
     }
 }
 

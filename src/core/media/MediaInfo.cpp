@@ -7,10 +7,12 @@
 // RealMedia parser, MIME detection via QMimeDatabase.
 
 #include "MediaInfo.h"
+#include "media/MediaReadBudget.h"
 #include "utils/OtherFunctions.h"
 
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QMediaFormat>
 #include <QMimeDatabase>
 #include <QtEndian>
@@ -626,6 +628,8 @@ QString detectMimeType(const QString& filePath)
 
 static bool readExact(QFile& f, void* buf, qint64 count)
 {
+    if (MediaReadBudget::take(count) != count)
+        return false;
     return f.read(static_cast<char*>(buf), count) == count;
 }
 
@@ -1316,6 +1320,157 @@ bool extractMediaInfo(const QString& filePath, MediaInfo& info)
     }
 
     return false;
+}
+
+// ===================================================================
+// Shared files: gate, one reader, a read budget
+// ===================================================================
+
+namespace {
+
+MediaKind kindForExtension(const QString& fileName)
+{
+    static const QHash<QString, MediaKind> kExtensions{
+        {QStringLiteral("avi"), MediaKind::Riff},      {QStringLiteral("divx"), MediaKind::Riff},
+        {QStringLiteral("wav"), MediaKind::Riff},
+        {QStringLiteral("rm"), MediaKind::RealMedia},  {QStringLiteral("rmvb"), MediaKind::RealMedia},
+        {QStringLiteral("mp4"), MediaKind::Mp4},       {QStringLiteral("m4a"), MediaKind::Mp4},
+        {QStringLiteral("m4v"), MediaKind::Mp4},       {QStringLiteral("m4b"), MediaKind::Mp4},
+        {QStringLiteral("mov"), MediaKind::Mp4},       {QStringLiteral("qt"), MediaKind::Mp4},
+        {QStringLiteral("3gp"), MediaKind::Mp4},       {QStringLiteral("3g2"), MediaKind::Mp4},
+        {QStringLiteral("f4v"), MediaKind::Mp4},
+        {QStringLiteral("mkv"), MediaKind::Matroska},  {QStringLiteral("mka"), MediaKind::Matroska},
+        {QStringLiteral("webm"), MediaKind::Matroska}, {QStringLiteral("mk3d"), MediaKind::Matroska},
+        {QStringLiteral("wmv"), MediaKind::Asf},       {QStringLiteral("wma"), MediaKind::Asf},
+        {QStringLiteral("asf"), MediaKind::Asf},
+        {QStringLiteral("flac"), MediaKind::Flac},
+        {QStringLiteral("ogg"), MediaKind::Ogg},       {QStringLiteral("oga"), MediaKind::Ogg},
+        {QStringLiteral("ogv"), MediaKind::Ogg},       {QStringLiteral("ogm"), MediaKind::Ogg},
+        {QStringLiteral("opus"), MediaKind::Ogg},
+        {QStringLiteral("mp3"), MediaKind::Mp3},       {QStringLiteral("mp2"), MediaKind::Mp3},
+        {QStringLiteral("mp1"), MediaKind::Mp3},       {QStringLiteral("mpa"), MediaKind::Mp3},
+        {QStringLiteral("aac"), MediaKind::Aac},
+        {QStringLiteral("ape"), MediaKind::Ape},       {QStringLiteral("mac"), MediaKind::Ape},
+        {QStringLiteral("wv"), MediaKind::WavPack},
+    };
+    const qsizetype dot = fileName.lastIndexOf(u'.');
+    return dot < 0 ? MediaKind::None : kExtensions.value(fileName.mid(dot + 1).toLower(), MediaKind::None);
+}
+
+/// A container named by its first twelve bytes.
+MediaKind kindBySignature(QByteArrayView head)
+{
+    const auto at = [&](qsizetype pos, const char* magic) {
+        const auto len = static_cast<qsizetype>(std::strlen(magic));
+        return head.size() >= pos + len
+            && std::memcmp(head.data() + pos, magic, static_cast<size_t>(len)) == 0;
+    };
+    if (at(0, "RIFF") && (at(8, "AVI ") || at(8, "WAVE")))
+        return MediaKind::Riff;
+    if (at(0, ".RMF"))
+        return MediaKind::RealMedia;
+    if (at(0, "\x1A\x45\xDF\xA3"))
+        return MediaKind::Matroska;
+    if (at(0, "\x30\x26\xB2\x75\x8E\x66\xCF\x11"))
+        return MediaKind::Asf;
+    if (at(0, "fLaC"))
+        return MediaKind::Flac;
+    if (at(0, "OggS"))
+        return MediaKind::Ogg;
+    if (at(0, "MAC "))
+        return MediaKind::Ape;
+    if (at(0, "wvpk"))
+        return MediaKind::WavPack;
+    // 'ftyp', or one of the boxes a QuickTime file may open with.
+    for (const char* box : {"ftyp", "moov", "mdat", "wide", "free", "skip", "pnot"})
+        if (at(4, box))
+            return MediaKind::Mp4;
+    return MediaKind::None;
+}
+
+/// An MPEG audio or ADTS frame sync somewhere in @p head: weak, so only asked of
+/// a file whose name already says so.
+bool hasFrameSync(QByteArrayView head, bool adts)
+{
+    for (qsizetype i = 0; i + 1 < head.size(); ++i) {
+        if (static_cast<uint8>(head[i]) != 0xFF)
+            continue;
+        const auto next = static_cast<uint8>(head[i + 1]);
+        if (adts ? (next & 0xF6) == 0xF0 : ((next & 0xE0) == 0xE0 && (next & 0x06) != 0))
+            return true;
+    }
+    return false;
+}
+
+} // namespace
+
+bool isGatedMediaExtension(const QString& fileName)
+{
+    return kindForExtension(fileName) != MediaKind::None;
+}
+
+MediaKind mediaGate(QByteArrayView head, const QString& fileName)
+{
+    const MediaKind promised = kindForExtension(fileName);
+    const MediaKind found = kindBySignature(head.first(std::min(head.size(), kMediaSniffBytes)));
+    const bool id3 = head.startsWith("ID3");
+
+    if (promised == MediaKind::None) {
+        // No promise in the name: a signature decides, and an ID3 tag means MPEG audio.
+        return found != MediaKind::None ? found : (id3 ? MediaKind::Mp3 : MediaKind::None);
+    }
+    if (found == promised)
+        return promised;
+
+    // The three that have no magic of their own or may hide behind a tag.
+    switch (promised) {
+    case MediaKind::Mp3:
+        return (id3 || hasFrameSync(head, false)) ? promised : MediaKind::None;
+    case MediaKind::Aac:
+        return (id3 || hasFrameSync(head, true)) ? promised : MediaKind::None;
+    case MediaKind::Flac:
+        return id3 ? promised : MediaKind::None;
+    default:
+        return MediaKind::None;   // the name promises a container the bytes are not
+    }
+}
+
+bool extractSharedMediaInfo(const QString& filePath, MediaInfo& info, qint64* bytesRead)
+{
+    MediaReadBudget budget(kMediaReadBudget);
+    const auto done = [&](bool ok) {
+        if (bytesRead)
+            *bytesRead = budget.used();
+        return ok;
+    };
+
+    const QString fileName = QFileInfo(filePath).fileName();
+    MediaKind kind = MediaKind::None;
+    {
+        QFile f(filePath);
+        if (!f.open(QIODevice::ReadOnly))
+            return done(false);
+        info.fileName = fileName;
+        info.fileSize = static_cast<uint64>(f.size());
+        const qint64 want = isGatedMediaExtension(fileName) ? kMediaGateBytes : kMediaSniffBytes;
+        kind = mediaGate(f.read(MediaReadBudget::take(want)), fileName);
+    }
+
+    switch (kind) {
+    case MediaKind::Riff:      return done(readRIFFHeaders(filePath, info));
+    case MediaKind::RealMedia: return done(readRMHeaders(filePath, info));
+    case MediaKind::Mp4:       return done(readMP4Headers(filePath, info));
+    case MediaKind::Matroska:  return done(readMatroskaHeaders(filePath, info));
+    case MediaKind::Asf:       return done(readASFHeaders(filePath, info));
+    case MediaKind::Flac:      return done(readFLACHeaders(filePath, info));
+    case MediaKind::Ogg:       return done(readOggHeaders(filePath, info));
+    case MediaKind::Mp3:       return done(readMP3Headers(filePath, info));
+    case MediaKind::Aac:       return done(readAACHeaders(filePath, info));
+    case MediaKind::Ape:       return done(readAPEHeaders(filePath, info));
+    case MediaKind::WavPack:   return done(readWavPackHeaders(filePath, info));
+    case MediaKind::None:      break;
+    }
+    return done(false);
 }
 
 } // namespace eMule

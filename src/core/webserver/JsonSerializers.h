@@ -90,6 +90,8 @@ namespace eMule {
         {QStringLiteral("ping"),        static_cast<qint64>(s.ping())},
         {QStringLiteral("failedCount"), static_cast<qint64>(s.failedCount())},
         {QStringLiteral("preference"),  static_cast<int>(s.preference())},
+        {QStringLiteral("isStatic"),    s.isStaticMember()},
+        {QStringLiteral("disabled"),    s.isDisabled()},
     };
 }
 
@@ -118,6 +120,9 @@ namespace eMule {
         {QStringLiteral("isKadResult"),         f.isKadResult()},
         {QStringLiteral("kadOrigin"),           f.isKadOrigin()},
         {QStringLiteral("spamRating"),          static_cast<qint64>(f.spamRating())},
+        {QStringLiteral("seenBefore"),          f.seenBefore()},
+        {QStringLiteral("seenNames"),           f.seenNames()},
+        {QStringLiteral("firstSeen"),           f.firstSeen()},   // unix seconds, 0 = never
     };
 }
 

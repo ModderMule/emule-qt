@@ -301,7 +301,7 @@ int ServerList::addServersFromTextFile(const QString& filePath)
 // Add / Remove
 // ---------------------------------------------------------------------------
 
-Server* ServerList::addServer(std::unique_ptr<Server> server)
+Server* ServerList::addServer(std::unique_ptr<Server> server, ServerOrigin origin)
 {
     if (!server)
         return nullptr;
@@ -316,18 +316,21 @@ Server* ServerList::addServer(std::unique_ptr<Server> server)
     if (!server->hasDynIP() && isFilteredServerIP(server->ipAddress(), u"AddServer", server->name()))
         return nullptr;
 
-    // On a duplicate, keep the existing entry but revive it: a re-announced server
-    // is alive, so reset its failed count to prevent premature reaping (#30). MFC:
-    // CServerList::AddServer() — ServerList.cpp:230-234. Name/description are NOT
-    // refreshed here (an OP_SERVERLIST placeholder must not clobber a real name);
-    // the load-merge path does that explicitly.
+    // On a duplicate, keep the existing entry. Only the user's own add revives it:
+    // a server named in somebody's list is not thereby alive, and reviving it there
+    // let a dead server keep its count at zero forever. (MFC resets on every
+    // duplicate — CServerList::AddServer(), ServerList.cpp:230-234.) Name/description
+    // are NOT refreshed here (an OP_SERVERLIST placeholder must not clobber a real
+    // name); the load-merge path does that explicitly.
     if (isDuplicate(*server)) {
-        Server* existing = findByAddress(server->address(), server->port());
-        if (existing == nullptr)
-            existing = findByIPTcp(server->ipAddress(), server->port());
-        if (existing != nullptr) {
-            existing->resetFailedCount();
-            emit serverUpdated(existing);
+        if (origin == ServerOrigin::Manual) {
+            Server* existing = findByAddress(server->address(), server->port());
+            if (existing == nullptr)
+                existing = findByIPTcp(server->ipAddress(), server->port());
+            if (existing != nullptr) {
+                existing->resetFailedCount();
+                emit serverUpdated(existing);
+            }
         }
         return nullptr;
     }
@@ -536,6 +539,7 @@ Server* ServerList::attachAddress(Server* entry, const Address& addr)
             entry->setPreference(twin->preference());
         entry->setStaticMember(entry->isStaticMember() || twin->isStaticMember());
         entry->setFailedCount(std::min(entry->failedCount(), twin->failedCount()));
+        entry->setDisabled(entry->isDisabled() && twin->isDisabled());
         if (entry->obfuscationPortTCP() == 0)
             entry->setObfuscationPortTCP(twin->obfuscationPortTCP());
         if (entry->obfuscationPortUDP() == 0)
@@ -714,6 +718,9 @@ Server* ServerList::nextServer(bool tryObfuscated)
         Server* srv = m_servers[m_serverPos].get();
         ++m_serverPos;
 
+        if (srv->isDisabled())
+            continue;   // failed too often; only a manual connect dials it
+
         if (!tryObfuscated || srv->supportsObfuscationTCP() || !srv->triedCrypt())
             return srv;
     }
@@ -832,17 +839,11 @@ void ServerList::serverStats()
             return;  // every server pinged recently
     }
 
-    // #27: retire a server that has failed too many stat pings, honoring the user's
-    // deadServerRetries pref. The port previously used a hardcoded MAX_SERVERFAILCOUNT
-    // and never removed here (only on TCP-connect failure). MFC: CServerList::
-    // ServerStats() — ServerList.cpp:267-270.
+    // #27: a server that failed too many stat pings is disabled, not removed — a
+    // removed one came straight back with the next server list. It is still pinged,
+    // so an answer revives it. (MFC removes: CServerList::ServerStats(),
+    // ServerList.cpp:267-270.)
     const uint32 maxRetries = thePrefs.deadServerRetries();
-    if (maxRetries > 0 && !target->isStaticMember() && target->failedCount() >= maxRetries) {
-        logInfo(QStringLiteral("Removing dead server %1 (%2 failed stat pings)")
-                    .arg(target->name()).arg(target->failedCount()));
-        removeServer(target);
-        return;
-    }
 
     target->setRealLastPingedTime(now);
 
@@ -925,8 +926,13 @@ void ServerList::serverStats()
     // known to be up; Kad reports connected for many minutes after its last packet.
     auto* kad = kad::Kademlia::instance();
     const time_t lastKad = (kad && kad->getPrefs()) ? kad->getPrefs()->lastContact() : 0;
-    if (statPingCounts(theApp.serverConnect->isConnected(), lastKad, now))
-        target->incFailedCount();
+    if (statPingCounts(theApp.serverConnect->isConnected(), lastKad, now)) {
+        if (target->noteFailure(maxRetries)) {
+            logInfo(QStringLiteral("Disabling dead server %1 (%2 failed stat pings)")
+                        .arg(target->name()).arg(target->failedCount()));
+        }
+        emit serverUpdated(target);
+    }
 
     logDebug(QStringLiteral("ServerList: OP_GLOBSERVSTATREQ -> %1 (%2) challenge=0x%3")
                  .arg(target->name(), target->addressWithPort())

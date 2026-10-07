@@ -156,6 +156,13 @@ if ($LASTEXITCODE -ne 0) {
     Write-Warning 'windeployqt reported errors (continuing).'
 }
 
+# Only SQLite is used (seen-files index): drop the SQL drivers that need client
+# libraries we do not ship (ODBC, PostgreSQL, ...).
+$sqlDrivers = Join-Path $stageDir 'sqldrivers'
+if (Test-Path $sqlDrivers) {
+    Get-ChildItem $sqlDrivers -File | Where-Object { $_.Name -notlike 'qsqlite*' } | Remove-Item -Force
+}
+
 # -- Copy OpenSSL DLLs if present --------------------------------------------
 
 # Qt's network module needs OpenSSL at runtime.  windeployqt does not always

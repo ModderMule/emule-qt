@@ -453,6 +453,10 @@ public:
     [[nodiscard]] bool rememberCancelledFiles() const;
     void setRememberCancelledFiles(bool val);
 
+    /// Keep a record of the files (and their names) seen in search results.
+    [[nodiscard]] bool seenFileIndex() const;
+    void setSeenFileIndex(bool val);
+
     // -- Transfer -------------------------------------------------------------
 
     [[nodiscard]] uint32 fileBufferSize() const;

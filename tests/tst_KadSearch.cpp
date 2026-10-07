@@ -4,6 +4,7 @@
 #include "TestFixtures.h"
 #include "TestHelpers.h"
 
+#include "files/KnownFile.h"
 #include "kademlia/KadContact.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadUDPListener.h"
@@ -33,6 +34,7 @@ class tst_KadSearch : public QObject {
 
 private slots:
     void cleanup();
+    void publishTags_carryMediaTagsOnlyForAVersionedFile();
     void construct_default();
     void setSearchType_basic();
     void addFileID_tracked();
@@ -826,6 +828,55 @@ void tst_KadSearch::httpCacheTags_carryTheRealFileSize()
     QVERIFY2(size != nullptr, "FT_FILESIZE dropped — chunk records would still be served "
                               "by this port's storer but filtered out by a stock one");
     QCOMPARE(size->int64Value(), p.fileSize);
+}
+
+// What a keyword publish says about a file: length, bitrate, codec and the three
+// texts — but only when the file carries a metadata version.
+void tst_KadSearch::publishTags_carryMediaTagsOnlyForAVersionedFile()
+{
+    KnownFile file;
+    uint8 hash[16];
+    std::memset(hash, 0x3C, 16);
+    file.setFileHash(hash);
+    file.setFileName(QStringLiteral("holiday song.mp3"));
+    file.setFileSize(5'000'000);
+    file.addTagUnique(Tag(FT_MEDIA_ARTIST, QStringLiteral("Band")));
+    file.addTagUnique(Tag(FT_MEDIA_ALBUM, QStringLiteral("Record")));
+    file.addTagUnique(Tag(FT_MEDIA_TITLE, QStringLiteral("Song")));
+    file.addTagUnique(Tag(FT_MEDIA_LENGTH, uint32{215}));
+    file.addTagUnique(Tag(FT_MEDIA_BITRATE, uint32{192}));
+    file.addTagUnique(Tag(FT_MEDIA_CODEC, QStringLiteral("mp3")));
+
+    const auto published = [&file] {
+        SafeMemFile packet;
+        Search::preparePacketForTags(packet, &file, KADEMLIA_VERSION);
+        SafeMemFile in(packet.takeBuffer());
+        return io::readKadTagList(in);
+    };
+    const auto find = [](const std::vector<Tag>& tags, uint8 id) -> const Tag* {
+        for (const Tag& tag : tags)
+            if (tag.nameId() == id)
+                return &tag;
+        return nullptr;
+    };
+
+    // No version: the media tags are not vouched for and stay home.
+    std::vector<Tag> tags = published();
+    QVERIFY(find(tags, FT_FILENAME) != nullptr);
+    for (uint8 id : {FT_MEDIA_ARTIST, FT_MEDIA_ALBUM, FT_MEDIA_TITLE, FT_MEDIA_LENGTH,
+                     FT_MEDIA_BITRATE, FT_MEDIA_CODEC})
+        QVERIFY2(find(tags, id) == nullptr, qPrintable(QString::number(id, 16)));
+
+    file.setMetaDataVer(KnownFile::kMetaDataVer);
+    tags = published();
+    QCOMPARE(find(tags, FT_MEDIA_ARTIST)->strValue(), QStringLiteral("Band"));
+    QCOMPARE(find(tags, FT_MEDIA_ALBUM)->strValue(), QStringLiteral("Record"));
+    QCOMPARE(find(tags, FT_MEDIA_TITLE)->strValue(), QStringLiteral("Song"));
+    QCOMPARE(find(tags, FT_MEDIA_LENGTH)->intValue(), uint64{215});
+    QCOMPARE(find(tags, FT_MEDIA_BITRATE)->intValue(), uint64{192});
+    QCOMPARE(find(tags, FT_MEDIA_CODEC)->strValue(), QStringLiteral("mp3"));
+    // The extractor's own stamp never leaves known.met.
+    QVERIFY(find(tags, FT_MEDIAEXTRACTVER) == nullptr);
 }
 
 QTEST_GUILESS_MAIN(tst_KadSearch)

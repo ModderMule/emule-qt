@@ -211,6 +211,11 @@ DESKTOP
     fi
     if [ -d "$APPDIR/usr/plugins" ]; then
         cp -a "$APPDIR/usr/plugins" "$STAGE_DIR/plugins"
+        # Only SQLite is used (seen-files index); the other SQL drivers need client
+        # libraries that are not in the tarball.
+        if [ -d "$STAGE_DIR/plugins/sqldrivers" ]; then
+            find "$STAGE_DIR/plugins/sqldrivers" -type f ! -name 'libqsqlite*' -delete
+        fi
         echo "  Bundled $(find "$STAGE_DIR/plugins" -name '*.so' | wc -l | tr -d ' ') Qt plugins"
     fi
 

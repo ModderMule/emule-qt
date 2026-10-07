@@ -172,6 +172,14 @@ public:
     void setMetaDataVer(uint32 ver) { m_metaDataVer = ver; }
     /// Version stamped on tags this client extracted (MFC META_DATA_VER).
     static constexpr uint32 kMetaDataVer = 2;
+
+    /// Version of the media extractor that last read this file; 0 = never read.
+    /// Stamped whether or not it found anything, so a file with nothing to find is
+    /// not read again on every start, and a better extractor still gets its turn.
+    [[nodiscard]] uint32 mediaExtractVer() const { return m_mediaExtractVer; }
+    void setMediaExtractVer(uint32 ver) { m_mediaExtractVer = ver; }
+    /// True when updateMetaDataTags() has something new to offer this file.
+    [[nodiscard]] bool mediaExtractIsStale() const;
     [[nodiscard]] bool hasMetaDataTags() const;
 
     // Media metadata extraction
@@ -212,8 +220,18 @@ public:
     }
 
     // Hashing — creates MD4 hashset and AICH from disk file
+    /// Size and date a directory scan saw for a file.
+    struct FileStamp {
+        uint64 size = 0;
+        time_t mtime = 0;
+    };
+
+    /// @param scanned       What the scan that queued this file saw, if anything. A
+    ///                      file that differs by the time it is opened is not read.
+    /// @param changedSinceScan  Set when that is why the call returned false.
     bool createFromFile(const QString& directory, const QString& filename,
-                        std::function<void(int)> progressCallback = {});
+                        std::function<void(int)> progressCallback = {},
+                        const FileStamp* scanned = nullptr, bool* changedSinceScan = nullptr);
     bool createAICHHashSetOnly();
     /// Read @p path and build its complete AICH recovery set into @p out. Touches no
     /// KnownFile, so it is safe on a worker thread.
@@ -334,6 +352,7 @@ private:
     uint32 m_kadFileSearchID = 0;
     uint32 m_lastBuddyIP = 0;
     uint32 m_metaDataVer = 0;
+    uint32 m_mediaExtractVer = 0;
 
     uint16 m_partCount = 0;
     uint16 m_ed2kPartCount = 0;

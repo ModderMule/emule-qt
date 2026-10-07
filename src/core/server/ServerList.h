@@ -17,6 +17,12 @@
 
 namespace eMule {
 
+/// Who put a server forward. Only the user's own add revives a known entry.
+enum class ServerOrigin {
+    Announced,   ///< OP_SERVERLIST, server.met merge, text import, a peer's hello
+    Manual       ///< typed or pasted by the user
+};
+
 struct ServerListStats {
     uint32 total = 0;
     uint32 failed = 0;
@@ -55,8 +61,10 @@ public:
     // -- Add/Remove -------------------------------------------------------
 
     /// Add a server. Returns raw pointer if added, nullptr on duplicate/bad IP.
-    /// Takes ownership of the server.
-    Server* addServer(std::unique_ptr<Server> server);
+    /// Takes ownership of the server. A duplicate is revived (failed count cleared,
+    /// re-enabled) only for a Manual origin: being listed by someone is no sign of life.
+    Server* addServer(std::unique_ptr<Server> server,
+                      ServerOrigin origin = ServerOrigin::Announced);
 
     /// Parse an OP_SERVERLIST (0x32) payload — uint8 count, [ip4 port2]*count —
     /// and add each as a Low-priority server (dedup/IP-validity via addServer).

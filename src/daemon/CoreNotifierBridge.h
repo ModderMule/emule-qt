@@ -9,6 +9,7 @@
 
 #include "files/KnownFileList.h"
 #include "portmap/PortMapTypes.h"
+#include "search/SearchQueue.h"
 #include "server/ServerMsgType.h"
 #include "friends/FriendConnectProgress.h"
 
@@ -77,6 +78,7 @@ private slots:
 
     // SearchList signals
     void onSearchResultAdded(eMule::SearchFile* file);
+    void onSearchStateChanged(const eMule::SearchStatus& status);
 
     // GlobalSearchScheduler signals
     void onGlobalSearchProgress(uint32 searchID, uint32 asked, uint32 total, bool running);

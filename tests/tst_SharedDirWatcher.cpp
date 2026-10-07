@@ -21,6 +21,8 @@ private slots:
     void otherDirectoriesAreNotReported();
     void aMissingRootIsPolledAndThenWatched();
     void tooManyDirectoriesAtOnceIsAnOverflow();
+    void aNetworkRootIsPolledEvenWhenWatched();
+    void aMoveReportsBothDirectories();
 };
 
 namespace {
@@ -138,6 +140,60 @@ void tst_SharedDirWatcher::tooManyDirectoriesAtOnceIsAnOverflow()
     QTRY_COMPARE_WITH_TIMEOUT(overflow.count(), 1, 10000);
     QTest::qWait(300);
     QCOMPARE(changed.count(), 0);
+}
+
+// A watch on a network share is accepted and then tells little; such a root is
+// reported at intervals whatever the watch says.
+void tst_SharedDirWatcher::aNetworkRootIsPolledEvenWhenWatched()
+{
+    eMule::testing::TempDir tmp;
+    const QString local = tmp.filePath(QStringLiteral("local"));
+    const QString remote = tmp.filePath(QStringLiteral("remote"));
+    QDir().mkpath(local);
+    QDir().mkpath(remote);
+
+    SharedDirWatcher watcher;
+    watcher.setRemoteCheck([&](const QString& dir) { return dir == remote; });
+    watcher.setTimings(50, 500, 100);
+    watcher.setRoots({local, remote});
+    QCOMPARE(watcher.polledRoots(), QStringList{remote});
+    QSignalSpy changed(&watcher, &SharedDirWatcher::directoryChanged);
+
+    // Nothing is touched: the reports come from the poll alone, and only for the
+    // remote root.
+    QTRY_VERIFY_WITH_TIMEOUT(changed.count() >= 2, 5000);
+    for (const auto& call : changed)
+        QCOMPARE(call.first().toString(), remote);
+}
+
+// Both ends of a move are reported, in batches — not necessarily the same one:
+// the OS may hand over the second directory more than a settle time later.
+void tst_SharedDirWatcher::aMoveReportsBothDirectories()
+{
+    eMule::testing::TempDir tmp;
+    const QString from = tmp.filePath(QStringLiteral("from"));
+    const QString to = tmp.filePath(QStringLiteral("to"));
+    QDir().mkpath(from);
+    QDir().mkpath(to);
+    touch(from, QStringLiteral("moved"));
+
+    SharedDirWatcher watcher;
+    watcher.setTimings(300, 20000, 60000);
+    watcher.setRoots({from, to});
+    QSignalSpy batches(&watcher, &SharedDirWatcher::directoriesChanged);
+    QSignalSpy single(&watcher, &SharedDirWatcher::directoryChanged);
+
+    QVERIFY(QFile::rename(QDir(from).filePath(QStringLiteral("moved")),
+                          QDir(to).filePath(QStringLiteral("moved"))));
+    const auto reported = [&] {
+        QSet<QString> dirs;
+        for (const auto& batch : batches)
+            for (const QString& dir : batch.first().toStringList())
+                dirs.insert(dir);
+        return dirs;
+    };
+    QTRY_COMPARE_WITH_TIMEOUT(reported(), (QSet<QString>{from, to}), 15000);
+    QCOMPARE(single.count(), 2);   // each directory once, whichever batch it was in
 }
 
 QTEST_GUILESS_MAIN(tst_SharedDirWatcher)

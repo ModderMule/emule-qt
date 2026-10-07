@@ -354,6 +354,7 @@ private:
     QCheckBox* m_onlySameCatCheck = nullptr;
     QCheckBox* m_rememberDownloadedCheck = nullptr;
     QCheckBox* m_rememberCancelledCheck = nullptr;
+    QCheckBox* m_seenFileIndexCheck = nullptr;
     QLineEdit* m_videoPlayerCmdEdit = nullptr;
     QLineEdit* m_videoPlayerArgsEdit = nullptr;
     QCheckBox* m_createBackupToPreviewCheck = nullptr;

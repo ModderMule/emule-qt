@@ -227,6 +227,8 @@ private:
     Address otherFamilyFor(const ServerSocket* socket, const Server* listServer) const;
     /// Single-connect only: redial @p listServer plain if the obfuscated try was the first.
     bool retryWithoutObfuscation(Server* listServer);
+    /// One failure that is the server's own; disables it at the threshold.
+    void countFailure(Server* listServer);
     void applyServerFlags(ServerSocket* socket, uint32 tcpFlags);
     void onServerIdent(ServerSocket* socket, const uint8* serverHash,
                        const QString& name, const QString& description);

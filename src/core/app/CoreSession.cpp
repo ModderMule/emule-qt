@@ -51,6 +51,7 @@
 #include "files/PartFileWriteThread.h"
 #include "httpcache/HttpCacheManager.h"
 #include "transfer/UploadQueue.h"
+#include "search/SeenFileIndex.h"
 #include "transfer/UploadQueueStore.h"
 #include "portmap/PortMapper.h"
 #include "utils/Log.h"
@@ -202,6 +203,10 @@ void CoreSession::initUploadPipeline()
     if (!theApp.sharedFileList) {
         m_sharedFileList = std::make_unique<SharedFileList>(theApp.knownFileList);
         theApp.sharedFileList = m_sharedFileList.get();
+        m_sharedFileList->setHashFailureStorePath(
+            QDir(thePrefs.configDir()).filePath(QString::fromLatin1(kHashFailureFileName)));
+        m_sharedFileList->setKadPublishStorePath(
+            QDir(thePrefs.configDir()).filePath(QString::fromLatin1(kKadPublishFileName)));
 
         // Wire server connect if available
         if (theApp.serverConnect)
@@ -248,6 +253,7 @@ void CoreSession::initUploadPipeline()
 
     // Initial scan of shared files
     if (theApp.sharedFileList) {
+        ensureSeenFileIndex();   // our own shares are files we have seen
         theApp.sharedFileList->reload();
         theApp.sharedFileList->setWatchingEnabled(true);
     }
@@ -340,6 +346,9 @@ void CoreSession::onTimer()
             theApp.knownFileList->process();
         if (theApp.sharedFileList)
             theApp.sharedFileList->process();
+        // Waiting searches: sent once their network is up, given up on after a while.
+        if (theApp.searchList)
+            theApp.searchList->queue().tick();
         if (theApp.uploadQueue) {
             // One-shot load once ED2K or Kad is up, then a 10-minute autosave. Placed after
             // sharedFileList->process() because a restored waiter is dropped unless the file
@@ -586,7 +595,15 @@ void CoreSession::initServerConnect()
                 // (srchybrid/SearchResultsWnd.cpp:455-470).
                 if (theApp.globalSearch)
                     theApp.globalSearch->onLocalAnswerReceived();
+                // ... and a plain server search is done: the next one may go.
+                theApp.searchList->queue().onServerAnswer();
             });
+
+    // A search asked for before the server was there goes out now.
+    connect(m_serverConnect.get(), &ServerConnect::connectedToServer, this, [](Server*) {
+        if (theApp.searchList)
+            theApp.searchList->queue().onServerConnected();
+    });
 
     // Losing the server connection ends a running global search, as in MFC
     // CServerConnect::ConnectionFailed (srchybrid/ServerConnect.cpp:346).
@@ -594,6 +611,9 @@ void CoreSession::initServerConnect()
             this, [] {
                 if (theApp.globalSearch)
                     theApp.globalSearch->cancel();
+                // A server search still waiting for its answer asks the next server.
+                if (theApp.searchList)
+                    theApp.searchList->queue().onServerDisconnected();
             });
 
     // 7. Wire UDP global search results → SearchList
@@ -1330,8 +1350,23 @@ void CoreSession::shutdownKademlia()
 // initSearch — create SearchList
 // ---------------------------------------------------------------------------
 
+void CoreSession::ensureSeenFileIndex()
+{
+    if (theApp.seenFileIndex)
+        return;
+    m_seenFileIndex = std::make_unique<SeenFileIndex>(this);
+    m_seenFileIndex->setEnabled(thePrefs.seenFileIndex());
+    // Opened even while switched off, so switching it on needs no restart. A failure
+    // (no SQLite driver, unreadable file) leaves it inert and says so once.
+    static_cast<void>(m_seenFileIndex->open(
+        QDir(thePrefs.configDir()).filePath(QString::fromLatin1(kSeenFileDbName))));
+    theApp.seenFileIndex = m_seenFileIndex.get();
+}
+
 void CoreSession::initSearch()
 {
+    ensureSeenFileIndex();
+
     if (!theApp.searchList) {
         m_searchList = std::make_unique<SearchList>(this);
         theApp.searchList = m_searchList.get();
@@ -1347,6 +1382,12 @@ void CoreSession::initSearch()
         if (theApp.searchList) {
             connect(theApp.searchList, &SearchList::tabHeaderUpdated,
                     m_globalSearch.get(), &GlobalSearchScheduler::onResultCountChanged);
+            // The sweep is what ends a global search.
+            connect(m_globalSearch.get(), &GlobalSearchScheduler::progress, theApp.searchList,
+                    [](uint32 searchID, uint32, uint32, bool running) {
+                        if (!running && theApp.searchList)
+                            theApp.searchList->queue().onSweepFinished(searchID);
+                    });
         }
     }
 }
@@ -1365,6 +1406,10 @@ void CoreSession::shutdownSearch()
     if (m_searchList && theApp.searchList == m_searchList.get())
         theApp.searchList = nullptr;
     m_searchList.reset();
+
+    if (m_seenFileIndex && theApp.seenFileIndex == m_seenFileIndex.get())
+        theApp.seenFileIndex = nullptr;
+    m_seenFileIndex.reset();   // writes what is waiting
 }
 
 // ---------------------------------------------------------------------------

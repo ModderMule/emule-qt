@@ -138,6 +138,7 @@ void SearchPanel::setIpcClient(IpcClient* client)
             [this]{ refreshUsenetKnownTypes(); });
     connect(m_ipc, &IpcClient::usenetItemRemoved, this,
             [this]{ refreshUsenetKnownTypes(); });
+    connect(m_ipc, &IpcClient::searchStateChanged, this, &SearchPanel::onSearchStatePush);
     connect(m_ipc, &IpcClient::globalSearchProgress, this, [this](const IpcMessage& msg) {
         const auto searchID = static_cast<uint32_t>(msg.fieldInt(0));
         const bool running = msg.fieldBool(3);
@@ -510,14 +511,29 @@ void SearchPanel::sendSearchRequest(const SearchRequest& req)
         const int resolvedMethod = typeValue.isInteger() ? static_cast<int>(typeValue.toInteger())
                                                          : method;
 
+        // The same search asked for again while it still waits or runs: the daemon
+        // hands back the one it has.
+        for (size_t i = 0; i < m_tabs.size(); ++i) {
+            if (m_tabs[i].searchID == searchID && !m_tabs[i].isIndexer()) {
+                m_tabBar->setCurrentIndex(static_cast<int>(i));
+                return;
+            }
+        }
+
         // Create new tab
         SearchTab tab;
         tab.searchID = searchID;
         tab.title = tabTitle;
         tab.method = resolvedMethod;
         tab.model = new SearchResultsModel(this);
+        // Not connected yet, or another server search is still out: it is queued and
+        // sent by the daemon when it can be.
+        const auto stateValue = data.value(QStringLiteral("state"));
+        tab.runState = stateValue.isInteger() ? static_cast<int>(stateValue.toInteger()) : 1;
+        tab.waitReason = data.value(QStringLiteral("reason")).toString();
         m_tabBar->setCurrentIndex(addResultTab(std::move(tab)));
         m_cancelBtn->setEnabled(true);
+        m_statusLabel->setText(tabStatusText(m_tabs[static_cast<size_t>(m_tabBar->currentIndex())]));
 
         // A Kad search is indexed under a single keyword; when the first one is
         // already busy the daemon falls back to a later word of the expression.
@@ -530,6 +546,62 @@ void SearchPanel::sendSearchRequest(const SearchRequest& req)
                                     6000);
         }
     });
+}
+
+QString SearchPanel::tabStatusText(const SearchTab& tab) const
+{
+    if (tab.isIndexer() || tab.clientSharedFiles)
+        return QStringLiteral("%1 results").arg(tab.resultCount());
+
+    switch (tab.runState) {
+    case 0:   // queued
+        if (tab.waitReason == QLatin1String("waiting-for-server-connection"))
+            return tr("Queued — waiting for a server connection");
+        if (tab.waitReason == QLatin1String("waiting-for-kad"))
+            return tr("Queued — waiting for Kad to connect");
+        if (tab.waitReason == QLatin1String("waiting-for-connection"))
+            return tr("Queued — waiting for a server or Kad connection");
+        if (tab.waitReason == QLatin1String("waiting-for-previous-search"))
+            return tr("Queued — waiting for the previous search to finish");
+        return tr("Queued");
+    case 3:   // failed
+        return tr("Search failed: %1").arg(tab.failure);
+    case 2:   // finished
+        if (tab.resultCount() == 0 && tab.searchID != 0)
+            return tr("No results");
+        break;
+    default:
+        break;
+    }
+    return QStringLiteral("%1 results").arg(tab.resultCount());
+}
+
+void SearchPanel::onSearchStatePush(const IpcMessage& msg)
+{
+    const auto searchID = static_cast<uint32_t>(msg.fieldInt(0));
+    for (size_t i = 0; i < m_tabs.size(); ++i) {
+        SearchTab& tab = m_tabs[i];
+        // ED2K and indexer searches number their ids independently
+        if (tab.searchID != searchID || tab.isIndexer() || tab.clientSharedFiles)
+            continue;
+
+        const int before = tab.runState;
+        tab.runState = static_cast<int>(msg.fieldInt(1));
+        tab.waitReason = msg.fieldString(2);
+        tab.failure = msg.fieldString(3);
+        // "Automatic" is resolved when the search is sent, which may be now.
+        if (tab.runState == 1)
+            tab.method = static_cast<int>(msg.fieldInt(4));
+
+        if (tab.runState == 3 && before != 3)
+            StatusBarNotifier::post(tr("Search \"%1\" failed: %2").arg(tab.title, tab.failure), 8000);
+
+        if (m_tabBar->currentIndex() == static_cast<int>(i)) {
+            m_statusLabel->setText(tabStatusText(tab));
+            m_cancelBtn->setEnabled(tab.runState == 0 || tab.runState == 1);
+        }
+        return;
+    }
 }
 
 void SearchPanel::showClientSharedFiles(uint32_t searchID, const QString& userName)
@@ -1209,6 +1281,9 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
             row.inDirectory        = m.value(QStringLiteral("inDirectory")).toBool();
             row.fileType           = m.value(QStringLiteral("fileType")).toString();
             row.knownType          = static_cast<int>(m.value(QStringLiteral("knownType")).toInteger());
+            row.seenBefore         = m.value(QStringLiteral("seenBefore")).toBool();
+            row.seenNames          = static_cast<int>(m.value(QStringLiteral("seenNames")).toInteger());
+            row.firstSeen          = m.value(QStringLiteral("firstSeen")).toInteger();
             row.isSpam             = m.value(QStringLiteral("isSpam")).toBool();
             row.hasComment         = m.value(QStringLiteral("hasComment")).toBool();
             row.previewPossible    = m.value(QStringLiteral("previewPossible")).toBool();
@@ -1243,8 +1318,7 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
                         .arg(m_tabs[i].model->resultCount()));
                 // The footer only refreshed on tab switch, so it lagged behind the rows
                 if (m_tabBar->currentIndex() == static_cast<int>(i))
-                    m_statusLabel->setText(QStringLiteral("%1 results")
-                                               .arg(m_tabs[i].model->resultCount()));
+                    m_statusLabel->setText(tabStatusText(m_tabs[i]));
 
                 if (!selection.isEmpty())
                     restoreSelection(selection);
@@ -1544,7 +1618,7 @@ void SearchPanel::switchToTab(int index)
     connect(m_resultView->selectionModel(), &QItemSelectionModel::selectionChanged,
             this, &SearchPanel::updateDownloadButton);
     updateDownloadButton();
-    m_statusLabel->setText(QStringLiteral("%1 results").arg(tab.resultCount()));
+    m_statusLabel->setText(tabStatusText(tab));
 }
 
 // ---------------------------------------------------------------------------
@@ -1657,6 +1731,9 @@ QJsonObject ed2kRowToJson(const SearchResultRow& row)
     o[QStringLiteral("length")]              = static_cast<qint64>(row.length);
     o[QStringLiteral("bitrate")]             = static_cast<qint64>(row.bitrate);
     o[QStringLiteral("knownType")]           = row.knownType;
+    o[QStringLiteral("seenBefore")]          = row.seenBefore;
+    o[QStringLiteral("seenNames")]           = row.seenNames;
+    o[QStringLiteral("firstSeen")]           = static_cast<qint64>(row.firstSeen);
     o[QStringLiteral("isSpam")]              = row.isSpam;
     if (row.isMeta()) {
         // torrent/Usenet rows: the daemon refetches their metafile by this
@@ -1689,6 +1766,9 @@ SearchResultRow ed2kRowFromJson(const QJsonObject& r)
     row.length              = static_cast<qint64>(r[QStringLiteral("length")].toDouble());
     row.bitrate             = static_cast<qint64>(r[QStringLiteral("bitrate")].toDouble());
     row.knownType           = r[QStringLiteral("knownType")].toInt();
+    row.seenBefore          = r[QStringLiteral("seenBefore")].toBool();
+    row.seenNames           = r[QStringLiteral("seenNames")].toInt();
+    row.firstSeen           = static_cast<qint64>(r[QStringLiteral("firstSeen")].toDouble());
     row.isSpam              = r[QStringLiteral("isSpam")].toBool();
     row.metaKind            = r[QStringLiteral("metaKind")].toInt();
     row.magnet              = r[QStringLiteral("magnet")].toString();

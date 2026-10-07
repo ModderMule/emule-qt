@@ -14,6 +14,8 @@
 #include "utils/StringUtils.h"
 
 #include <QColor>
+#include <QDateTime>
+#include <QLocale>
 #include <QGuiApplication>
 #include <QHash>
 #include <QIcon>
@@ -21,6 +23,7 @@
 #include <QUrl>
 
 #include <algorithm>
+#include <limits>
 
 namespace eMule {
 
@@ -159,6 +162,7 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
         case ColBitrate:      return formatBitrate(r.bitrate);
         case ColCodec:        return r.codec;
         case ColKnown:        return knownTypeString(r.knownType);
+        case ColSeen:         return seenText(r);
         default: break;
         }
     }
@@ -203,6 +207,9 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
         case ColBitrate:      return QVariant::fromValue(r.bitrate);
         case ColCodec:        return r.codec;
         case ColKnown:        return r.knownType;
+        // Oldest acquaintance first; what was never seen sorts last.
+        case ColSeen:         return r.seenBefore ? QVariant::fromValue<qint64>(r.firstSeen)
+                                                  : QVariant::fromValue<qint64>(std::numeric_limits<qint64>::max());
         default: break;
         }
     }
@@ -225,6 +232,16 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
     return {};
 }
 
+QString SearchResultsModel::seenText(const SearchResultRow& r)
+{
+    if (!r.seenBefore)
+        return {};
+    const QString since = QLocale().toString(
+        QDateTime::fromSecsSinceEpoch(r.firstSeen).date(), QLocale::ShortFormat);
+    // More than one name for the same content is worth a look.
+    return r.seenNames > 1 ? tr("%1 · %n name(s)", nullptr, r.seenNames).arg(since) : since;
+}
+
 QVariant SearchResultsModel::headerData(int section, Qt::Orientation orientation, int role) const
 {
     if (orientation != Qt::Horizontal || role != Qt::DisplayRole)
@@ -243,6 +260,7 @@ QVariant SearchResultsModel::headerData(int section, Qt::Orientation orientation
     case ColBitrate:      return tr("Bitrate");
     case ColCodec:        return tr("Codec");
     case ColKnown:        return tr("Known");
+    case ColSeen:         return tr("Seen");
     default:              return {};
     }
 }

@@ -5,8 +5,15 @@
 #include "files/SharedDirWatcher.h"
 #include "utils/Log.h"
 
+#include <QDir>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
+#include <QSet>
+#include <QStorageInfo>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 
 namespace eMule {
 
@@ -37,10 +44,11 @@ void SharedDirWatcher::setRoots(const QStringList& dirs)
         Root root;
         // false for a missing directory too; the poll picks it up when it appears
         root.watched = m_watcher->addPath(dir);
-        if (!root.watched) {
-            root.lastModified = QFileInfo(dir).lastModified();
+        root.remote = m_isRemote ? m_isRemote(dir) : isOnNetworkShare(dir);
+        if (!root.watched)
             logDebug(QStringLiteral("Shared directory is polled, not watched: %1").arg(dir));
-        }
+        else if (root.remote)
+            logDebug(QStringLiteral("Shared directory on a network share is polled too: %1").arg(dir));
         next.insert(dir, root);
     }
 
@@ -53,7 +61,8 @@ void SharedDirWatcher::setRoots(const QStringList& dirs)
     }
     m_roots = std::move(next);
 
-    const bool anyPolled = std::ranges::any_of(m_roots, [](const Root& r) { return !r.watched; });
+    const bool anyPolled = std::ranges::any_of(
+        m_roots, [](const Root& r) { return !r.watched || r.remote; });
     if (anyPolled && !m_pollTimer.isActive())
         m_pollTimer.start();
     else if (!anyPolled)
@@ -64,7 +73,7 @@ QStringList SharedDirWatcher::polledRoots() const
 {
     QStringList out;
     for (auto it = m_roots.constBegin(); it != m_roots.constEnd(); ++it)
-        if (!it->watched)
+        if (!it->watched || it->remote)
             out.append(it.key());
     return out;
 }
@@ -125,25 +134,39 @@ void SharedDirWatcher::flush()
             it->watched = m_watcher->addPath(dir);
         emit directoryChanged(dir);
     }
+    if (!due.isEmpty())
+        emit directoriesChanged(due);
 }
 
 void SharedDirWatcher::poll()
 {
     for (auto it = m_roots.begin(); it != m_roots.end(); ++it) {
-        if (it->watched)
+        if (it->watched && !it->remote)
             continue;
         // try the watch again: the directory may exist now, or the volume be back
-        if (m_watcher->addPath(it.key())) {
+        if (!it->watched && m_watcher->addPath(it.key()))
             it->watched = true;
-            onDirectoryEvent(it.key());
-            continue;
-        }
-        const QDateTime modified = QFileInfo(it.key()).lastModified();
-        if (modified != it->lastModified) {
-            it->lastModified = modified;
-            onDirectoryEvent(it.key());
-        }
+        // Reported every time: the directory's own date does not move when a file
+        // is rewritten in place, and the rescan this leads to only stats.
+        onDirectoryEvent(it.key());
     }
+}
+
+bool SharedDirWatcher::isOnNetworkShare(const QString& dir)
+{
+#ifdef Q_OS_WIN
+    if (dir.startsWith(QLatin1String("//")) || dir.startsWith(QLatin1String("\\\\")))
+        return true;
+    const QString root = QStorageInfo(dir).rootPath();
+    return !root.isEmpty()
+        && GetDriveTypeW(reinterpret_cast<LPCWSTR>(QDir::toNativeSeparators(root).utf16()))
+               == DRIVE_REMOTE;
+#else
+    static const QSet<QByteArray> kNetworkTypes{
+        "nfs", "nfs4", "smbfs", "cifs", "smb2", "smb3", "afpfs", "webdav", "davfs",
+        "fuse.sshfs", "sshfs", "9p", "ncpfs", "ceph", "glusterfs", "fuse.glusterfs"};
+    return kNetworkTypes.contains(QStorageInfo(dir).fileSystemType().toLower());
+#endif
 }
 
 } // namespace eMule

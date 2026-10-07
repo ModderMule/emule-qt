@@ -1547,7 +1547,7 @@ bool DownloadQueue::sendNextUDPPacket()
                 return false;
             }
         } while (m_curUdpServer == connected
-                 || m_curUdpServer->failedCount() >= thePrefs.deadServerRetries());
+                 || m_curUdpServer->isDeadFor(thePrefs.deadServerRetries()));
         return true;
     };
 

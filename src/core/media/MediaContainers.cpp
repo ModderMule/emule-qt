@@ -7,6 +7,7 @@
 /// short or odd file just yields false.
 
 #include "media/MediaInfo.h"
+#include "media/MediaReadBudget.h"
 
 #include <QFile>
 #include <QStringDecoder>
@@ -21,10 +22,43 @@
 
 namespace eMule {
 
+// ---------------------------------------------------------------------------
+// MediaReadBudget
+// ---------------------------------------------------------------------------
+
+namespace {
+thread_local MediaReadBudget* t_budget = nullptr;
+}
+
+MediaReadBudget::MediaReadBudget(qint64 bytes)
+    : m_left(bytes)
+    , m_outer(t_budget)
+{
+    t_budget = this;
+}
+
+MediaReadBudget::~MediaReadBudget()
+{
+    t_budget = m_outer;
+}
+
+qint64 MediaReadBudget::take(qint64 wanted)
+{
+    if (!t_budget || wanted <= 0)
+        return wanted;
+    const qint64 granted = std::min(wanted, t_budget->m_left);
+    t_budget->m_left -= granted;
+    t_budget->m_used += granted;
+    return granted;
+}
+
 namespace {
 
-constexpr qint64 kMaxTagBytes = 1024 * 1024;        // ID3v2 / comment packets
-constexpr qint64 kMaxMoovBytes = 16 * 1024 * 1024;  // MP4 movie box
+constexpr qint64 kMaxTagBytes = 1024 * 1024;        // comment packets, Matroska tags
+constexpr qint64 kMaxMoovBytes = 16 * 1024 * 1024;  // Matroska info / tracks
+constexpr qint64 kMaxMp4LeafBytes = 64 * 1024;      // an MP4 box worth copying
+constexpr qint64 kMaxMp4Pruned = 1024 * 1024;       // the boxes kept from one 'moov'
+constexpr qint64 kMaxTextBytes = 8 * 1024;          // one text frame as stored
 constexpr int kMaxTextChars = 1024;
 
 /// Bounds-checked big/little-endian reads over a byte buffer.
@@ -71,9 +105,12 @@ private:
 
 QByteArray readAt(QFile& f, qint64 pos, qint64 count)
 {
-    if (pos < 0 || count <= 0 || pos >= f.size() || !f.seek(pos))
+    if (pos < 0 || count <= 0 || pos >= f.size())
         return {};
-    return f.read(std::min(count, f.size() - pos));
+    count = MediaReadBudget::take(std::min(count, f.size() - pos));
+    if (count <= 0 || !f.seek(pos))
+        return {};
+    return f.read(count);
 }
 
 QString cleanText(QString text)
@@ -156,36 +193,45 @@ void readId3v2(QFile& f, MediaInfo& info)
     if (major < 2 || major > 4)
         return;
 
-    const QByteArray tag = readAt(f, 10, std::min<qint64>(synchsafe(hb, 6), kMaxTagBytes));
-    const Bytes b(tag);
-    qsizetype pos = 0;
+    // Frame by frame, seeking: only the three text frames are read. A tag is
+    // mostly its cover picture, and that never leaves the disk.
+    const qint64 end = std::min<qint64>(10 + static_cast<qint64>(synchsafe(hb, 6)), f.size());
+    qint64 pos = 10;
     if ((flags & 0x40) && major >= 3) {
         // Extended header: v2.3 counts the bytes after the size field, v2.4 all of it.
-        pos = major == 3 ? static_cast<qsizetype>(b.be(0, 4)) + 4 : static_cast<qsizetype>(synchsafe(b, 0));
+        const QByteArray ext = readAt(f, pos, 4);
+        const Bytes eb(ext);
+        if (ext.size() < 4)
+            return;
+        pos += major == 3 ? static_cast<qint64>(eb.be(0, 4)) + 4 : static_cast<qint64>(synchsafe(eb, 0));
     }
 
     const int idLen = major == 2 ? 3 : 4;
     const int headLen = major == 2 ? 6 : 10;
-    while (b.has(pos, headLen) && b.u8(pos) != 0) {
-        const QByteArrayView id = b.view(pos, idLen);
-        qsizetype size = 0;
+    for (int frames = 0; frames < 512 && pos + headLen <= end; ++frames) {
+        const QByteArray frameHead = readAt(f, pos, headLen);
+        const Bytes b(frameHead);
+        if (frameHead.size() < headLen || b.u8(0) == 0)
+            break;
+        const QByteArrayView id = b.view(0, idLen);
+        qint64 size = 0;
         if (major == 2)
-            size = static_cast<qsizetype>(b.be(pos + 3, 3));
+            size = static_cast<qint64>(b.be(3, 3));
         else if (major == 3)
-            size = static_cast<qsizetype>(b.be(pos + 4, 4));
+            size = static_cast<qint64>(b.be(4, 4));
         else
-            size = static_cast<qsizetype>(synchsafe(b, pos + 4));
+            size = static_cast<qint64>(synchsafe(b, 4));
         pos += headLen;
-        if (size <= 0 || !b.has(pos, size))
+        if (size <= 0 || pos + size > end)
             break;
 
-        const QByteArrayView body = b.view(pos, size);
-        if (id == "TIT2" || id == "TT2")
-            info.title = id3Text(body);
-        else if (id == "TPE1" || id == "TP1")
-            info.author = id3Text(body);
-        else if (id == "TALB" || id == "TAL")
-            info.album = id3Text(body);
+        const int which = (id == "TIT2" || id == "TT2") ? 0
+                        : (id == "TPE1" || id == "TP1") ? 1
+                        : (id == "TALB" || id == "TAL") ? 2 : -1;
+        if (which >= 0) {
+            const QString text = id3Text(readAt(f, pos, std::min(size, kMaxTextBytes)));
+            (which == 0 ? info.title : which == 1 ? info.author : info.album) = text;
+        }
         pos += size;
     }
 }
@@ -685,6 +731,83 @@ void walkMp4(QByteArrayView box, MediaInfo& info, Mp4State& state, int depth)
     }
 }
 
+/// The boxes of a 'moov' that walkMp4() can use, as a 'moov' payload of their own.
+/// The movie box of a long film is megabytes of sample tables; those are stepped
+/// over on disk, 16 header bytes each, and only the small boxes are read.
+QByteArray loadMp4Pruned(QFile& f, qint64 start, qint64 length, int depth)
+{
+    QByteArray out;
+    if (depth > 8)
+        return out;
+
+    const auto putHeader = [&out](uint32 type, qsizetype bodySize) {
+        const auto size = static_cast<uint32>(bodySize + 8);
+        const char header[8] = {
+            static_cast<char>(size >> 24), static_cast<char>(size >> 16),
+            static_cast<char>(size >> 8), static_cast<char>(size),
+            static_cast<char>(type >> 24), static_cast<char>(type >> 16),
+            static_cast<char>(type >> 8), static_cast<char>(type)};
+        out.append(header, 8);
+    };
+
+    const qint64 end = start + length;
+    qint64 pos = start;
+    for (int boxes = 0; boxes < 4096 && pos + 8 <= end && out.size() < kMaxMp4Pruned; ++boxes) {
+        const QByteArray head = readAt(f, pos, 16);
+        const Bytes b(head);
+        if (head.size() < 8)
+            break;
+        uint64 size = b.be(0, 4);
+        const uint32 type = static_cast<uint32>(b.be(4, 4));
+        qint64 headLen = 8;
+        if (size == 1 && head.size() >= 16) {
+            size = b.be(8, 8);
+            headLen = 16;
+        } else if (size == 0) {
+            size = static_cast<uint64>(end - pos);
+        }
+        if (size < static_cast<uint64>(headLen) || size > static_cast<uint64>(end - pos))
+            break;
+        const qint64 body = pos + headLen;
+        const qint64 bodySize = static_cast<qint64>(size) - headLen;
+
+        switch (type) {
+        case fcc("trak"): case fcc("mdia"): case fcc("minf"): case fcc("stbl"):
+        case fcc("udta"): case fcc("ilst"): {
+            const QByteArray inner = loadMp4Pruned(f, body, bodySize, depth + 1);
+            putHeader(type, inner.size());
+            out.append(inner);
+            break;
+        }
+        case fcc("meta"): {
+            // A FullBox in MP4 (version + flags first), a plain container in QuickTime.
+            const QByteArray probe = readAt(f, body, 8);
+            const bool plain = probe.size() >= 8 && Bytes(probe).be(4, 4) == fcc("hdlr");
+            const qint64 skip = plain ? 0 : 4;
+            if (bodySize < skip)
+                break;
+            const QByteArray inner = loadMp4Pruned(f, body + skip, bodySize - skip, depth + 1);
+            putHeader(type, inner.size() + skip);
+            out.append(probe.constData(), skip);
+            out.append(inner);
+            break;
+        }
+        default:
+            // A leaf: headers and texts are small. Sample tables and the cover are not.
+            if (bodySize <= kMaxMp4LeafBytes) {
+                const QByteArray leaf = readAt(f, body, bodySize);
+                if (leaf.size() == bodySize) {
+                    putHeader(type, leaf.size());
+                    out.append(leaf);
+                }
+            }
+            break;
+        }
+        pos += static_cast<qint64>(size);
+    }
+    return out;
+}
+
 } // namespace
 
 bool readMP4Headers(const QString& filePath, MediaInfo& info)
@@ -725,9 +848,7 @@ bool readMP4Headers(const QString& filePath, MediaInfo& info)
         if (size < static_cast<uint64>(headLen) || size > static_cast<uint64>(f.size() - pos))
             break;
         if (type == fcc("moov")) {
-            if (size - static_cast<uint64>(headLen) > static_cast<uint64>(kMaxMoovBytes))
-                return false;
-            moov = readAt(f, pos + headLen, static_cast<qint64>(size) - headLen);
+            moov = loadMp4Pruned(f, pos + headLen, static_cast<qint64>(size) - headLen, 0);
             break;
         }
         pos += static_cast<qint64>(size);
@@ -1192,6 +1313,212 @@ bool readASFHeaders(const QString& filePath, MediaInfo& info)
                                : overallBitsPerSec(static_cast<uint64>(f.size()), lengthSec);
         }
     }
+    return true;
+}
+
+// ===================================================================
+// APEv2 tag (Monkey's Audio, WavPack)
+// ===================================================================
+
+namespace {
+
+constexpr qint64 kMaxApeTagBytes = 256 * 1024;
+
+void readApeV2(QFile& f, MediaInfo& info)
+{
+    // At the very end, or in front of an ID3v1 tag.
+    for (const qint64 back : {qint64{32}, qint64{32 + 128}}) {
+        const qint64 footerPos = f.size() - back;
+        const QByteArray footer = readAt(f, footerPos, 32);
+        const Bytes fb(footer);
+        if (footer.size() < 32 || !fb.startsWith(0, "APETAGEX"))
+            continue;
+
+        const auto tagSize = static_cast<qint64>(fb.le(12, 4));   // items + footer
+        const uint64 itemCount = std::min<uint64>(fb.le(16, 4), 256);
+        if (tagSize < 32 || tagSize > footerPos + 32)
+            return;
+
+        // From the first item; a cover further in than this is not looked at.
+        const QByteArray items = readAt(f, footerPos + 32 - tagSize,
+                                        std::min(tagSize - 32, kMaxApeTagBytes));
+        const Bytes b(items);
+        qsizetype pos = 0;
+        for (uint64 n = 0; n < itemCount && b.has(pos, 9); ++n) {
+            const auto valueSize = static_cast<qsizetype>(b.le(pos, 4));
+            qsizetype keyEnd = pos + 8;
+            while (b.has(keyEnd, 1) && b.u8(keyEnd) != 0 && keyEnd - pos < 8 + 255)
+                ++keyEnd;
+            if (!b.has(keyEnd, 1) || b.u8(keyEnd) != 0)
+                return;
+            const QByteArray key = b.view(pos + 8, keyEnd - pos - 8).toByteArray().toLower();
+            const qsizetype valuePos = keyEnd + 1;
+            if (valueSize < 0 || !b.has(valuePos, valueSize))
+                return;
+
+            const int which = key == "title" ? 0 : key == "artist" ? 1 : key == "album" ? 2 : -1;
+            if (which >= 0) {
+                QString& field = which == 0 ? info.title : which == 1 ? info.author : info.album;
+                if (field.isEmpty())
+                    field = utf8Text(b.view(valuePos, std::min<qsizetype>(valueSize, kMaxTextBytes)));
+            }
+            pos = valuePos + valueSize;
+        }
+        return;
+    }
+}
+
+} // namespace
+
+// ===================================================================
+// AAC (ADTS)
+// ===================================================================
+
+bool readAACHeaders(const QString& filePath, MediaInfo& info)
+{
+    QFile f(filePath);
+    if (!f.open(QIODevice::ReadOnly))
+        return false;
+
+    static constexpr uint32 kRates[13] = {96000, 88200, 64000, 48000, 44100, 32000, 24000,
+                                          22050, 16000, 12000, 11025, 8000, 7350};
+    struct Adts {
+        uint32 rateIdx = 0;
+        uint16 channels = 0;
+        uint32 frameBytes = 0;
+    };
+    const auto parse = [](const Bytes& b, qsizetype at, Adts& out) {
+        // 12 sync bits, layer 0.
+        if (!b.has(at, 7) || b.u8(at) != 0xFF || (b.u8(at + 1) & 0xF6) != 0xF0)
+            return false;
+        out.rateIdx = (b.u8(at + 2) >> 2) & 0x0F;
+        out.channels = static_cast<uint16>(((b.u8(at + 2) & 1) << 2) | (b.u8(at + 3) >> 6));
+        out.frameBytes = (static_cast<uint32>(b.u8(at + 3) & 3) << 11)
+                       | (static_cast<uint32>(b.u8(at + 4)) << 3) | (b.u8(at + 5) >> 5);
+        return out.rateIdx < 13 && out.frameBytes >= 7;
+    };
+
+    const qint64 audioStart = id3v2Size(f);
+    const QByteArray window = readAt(f, audioStart, 64 * 1024);
+    const Bytes b(window);
+
+    // The first header a second one follows where it says its frame ends.
+    Adts first;
+    qsizetype at = -1;
+    for (qsizetype i = 0; i < 4096 && b.has(i, 7); ++i) {
+        Adts next;
+        if (parse(b, i, first) && parse(b, i + first.frameBytes, next)
+            && next.rateIdx == first.rateIdx) {
+            at = i;
+            break;
+        }
+    }
+    if (at < 0)
+        return false;
+
+    // No length in the stream: the average frame over the window gives the rate.
+    uint64 bytes = 0;
+    uint32 frames = 0;
+    Adts frame;
+    for (qsizetype pos = at; frames < 400 && parse(b, pos, frame) && frame.rateIdx == first.rateIdx;
+         pos += frame.frameBytes) {
+        bytes += frame.frameBytes;
+        ++frames;
+    }
+    const uint32 sampleRate = kRates[first.rateIdx];
+    const auto bitrate = static_cast<uint32>(bytes * 8 * sampleRate / (uint64{frames} * 1024));
+    const qint64 audioBytes = f.size() - audioStart - at;
+    const double lengthSec = bitrate > 0 ? static_cast<double>(audioBytes) * 8.0 / bitrate : 0.0;
+
+    setAudioOnly(info, QStringLiteral("AAC"), QStringLiteral("aac"), sampleRate,
+                 first.channels, lengthSec, bitrate);
+    info.lengthEstimated = true;
+    readId3v2(f, info);
+    readId3v1(f, info);
+    return true;
+}
+
+// ===================================================================
+// Monkey's Audio
+// ===================================================================
+
+bool readAPEHeaders(const QString& filePath, MediaInfo& info)
+{
+    QFile f(filePath);
+    if (!f.open(QIODevice::ReadOnly))
+        return false;
+
+    const QByteArray head = readAt(f, 0, 128);
+    const Bytes b(head);
+    if (!b.startsWith(0, "MAC ") || !b.has(0, 32))
+        return false;
+
+    const auto version = static_cast<uint32>(b.le(4, 2));
+    uint32 sampleRate = 0, blocksPerFrame = 0, finalFrameBlocks = 0, totalFrames = 0;
+    uint16 channels = 0;
+    if (version >= 3980) {
+        // A descriptor, then the header it points at.
+        const auto header = static_cast<qsizetype>(b.le(8, 4));
+        if (header < 52 || !b.has(header, 24))
+            return false;
+        blocksPerFrame = static_cast<uint32>(b.le(header + 4, 4));
+        finalFrameBlocks = static_cast<uint32>(b.le(header + 8, 4));
+        totalFrames = static_cast<uint32>(b.le(header + 12, 4));
+        channels = static_cast<uint16>(b.le(header + 18, 2));
+        sampleRate = static_cast<uint32>(b.le(header + 20, 4));
+    } else {
+        const auto compression = static_cast<uint32>(b.le(6, 2));
+        channels = static_cast<uint16>(b.le(10, 2));
+        sampleRate = static_cast<uint32>(b.le(12, 4));
+        totalFrames = static_cast<uint32>(b.le(24, 4));
+        finalFrameBlocks = static_cast<uint32>(b.le(28, 4));
+        blocksPerFrame = version >= 3950 ? 73728 * 4
+                       : (version >= 3900 || (version >= 3800 && compression == 4000)) ? 73728
+                       : 9216;
+    }
+    if (sampleRate == 0 || sampleRate > 768000 || channels == 0 || channels > 32
+        || totalFrames == 0)
+        return false;
+
+    const uint64 blocks = uint64{totalFrames - 1} * blocksPerFrame + finalFrameBlocks;
+    const double lengthSec = static_cast<double>(blocks) / sampleRate;
+    setAudioOnly(info, QStringLiteral("Monkey's Audio"), QStringLiteral("ape"), sampleRate,
+                 channels, lengthSec, overallBitsPerSec(static_cast<uint64>(f.size()), lengthSec));
+    readApeV2(f, info);
+    return true;
+}
+
+// ===================================================================
+// WavPack
+// ===================================================================
+
+bool readWavPackHeaders(const QString& filePath, MediaInfo& info)
+{
+    QFile f(filePath);
+    if (!f.open(QIODevice::ReadOnly))
+        return false;
+
+    const QByteArray head = readAt(f, 0, 32);
+    const Bytes b(head);
+    if (head.size() < 32 || !b.startsWith(0, "wvpk"))
+        return false;
+
+    static constexpr uint32 kRates[15] = {6000, 8000, 9600, 11025, 12000, 16000, 22050, 24000,
+                                          32000, 44100, 48000, 64000, 88200, 96000, 192000};
+    const auto totalSamples = static_cast<uint32>(b.le(12, 4));
+    const auto flags = static_cast<uint32>(b.le(24, 4));
+    const uint32 rateIdx = (flags >> 23) & 0x0F;
+    if (rateIdx >= 15)
+        return false;   // a custom rate lives in a sub-block we do not read
+    const uint32 sampleRate = kRates[rateIdx];
+
+    // All ones: the encoder did not know the length when it wrote the header.
+    const double lengthSec = totalSamples == 0xFFFFFFFFu
+        ? 0.0 : static_cast<double>(totalSamples) / sampleRate;
+    setAudioOnly(info, QStringLiteral("WavPack"), QStringLiteral("wavpack"), sampleRate,
+                 (flags & 0x4) ? 1 : 2, lengthSec,
+                 overallBitsPerSec(static_cast<uint64>(f.size()), lengthSec));
+    readApeV2(f, info);
     return true;
 }
 

@@ -138,6 +138,8 @@ void CoreNotifierBridge::connectAll()
                 this, &CoreNotifierBridge::onSearchResultAdded);
         connect(theApp.searchList, &SearchList::resultUpdated,
                 this, &CoreNotifierBridge::onSearchResultAdded);
+        connect(theApp.searchList, &SearchList::searchStateChanged,
+                this, &CoreNotifierBridge::onSearchStateChanged);
     }
 
     // Global (UDP) search sweep — one progress event per server queried.
@@ -391,6 +393,23 @@ void CoreNotifierBridge::onSearchResultAdded(SearchFile* file)
             msg.append(static_cast<qint64>(searchID));
         return msg;
     }, kPushWindowMs, searchID);
+}
+
+void CoreNotifierBridge::onSearchStateChanged(const SearchStatus& status)
+{
+    // Keyed by search: when two changes fall into one window the newer is the one
+    // sent, and that is the one that still holds.
+    m_pushes->post(IpcMsgType::PushSearchState, [status] {
+        IpcMessage msg(IpcMsgType::PushSearchState, 0);
+        msg.append(static_cast<qint64>(status.searchID));
+        msg.append(static_cast<qint64>(status.state));
+        msg.append(status.reason);
+        msg.append(status.error);
+        msg.append(static_cast<qint64>(status.type));
+        msg.append(status.keyword);
+        msg.append(status.primaryKeyword);
+        return msg;
+    }, kPushWindowMs, status.searchID);
 }
 
 void CoreNotifierBridge::onGlobalSearchProgress(uint32 searchID, uint32 asked,

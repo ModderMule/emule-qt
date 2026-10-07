@@ -120,12 +120,53 @@ struct MediaInfo {
 /// header object.
 [[nodiscard]] bool readASFHeaders(const QString& filePath, MediaInfo& info);
 
+/// Raw AAC (ADTS): rate and channels from the frame headers, length from the
+/// average frame; ID3 texts.
+[[nodiscard]] bool readAACHeaders(const QString& filePath, MediaInfo& info);
+
+/// Monkey's Audio: header, APEv2 texts.
+[[nodiscard]] bool readAPEHeaders(const QString& filePath, MediaInfo& info);
+
+/// WavPack: first block header, APEv2 texts.
+[[nodiscard]] bool readWavPackHeaders(const QString& filePath, MediaInfo& info);
+
 // ---------------------------------------------------------------------------
 // High-level API
 // ---------------------------------------------------------------------------
 
-/// Extract media metadata from any supported file.
+/// Extract media metadata from any supported file. Tries every reader and falls
+/// back to a MIME label: for one file the user is looking at.
 [[nodiscard]] bool extractMediaInfo(const QString& filePath, MediaInfo& info);
+
+/// The container a media file's first bytes belong to.
+enum class MediaKind {
+    None, Riff, RealMedia, Mp4, Matroska, Asf, Flac, Ogg, Mp3, Aac, Ape, WavPack
+};
+
+/// What the gate reads before it decides: this much of a file with a media
+/// extension, kMediaSniffBytes of any other.
+inline constexpr qint64 kMediaGateBytes = 4096;
+inline constexpr qint64 kMediaSniffBytes = 12;
+/// All a shared file may cost the extractor, whatever it claims to contain.
+inline constexpr qint64 kMediaReadBudget = 2 * 1024 * 1024;
+/// Bumped whenever the extractor learns something: files stamped with an older
+/// value are read again.
+inline constexpr uint32 kMediaExtractVersion = 1;
+
+/// True for an extension the gate holds to a container signature.
+[[nodiscard]] bool isGatedMediaExtension(const QString& fileName);
+
+/// Which reader, if any, is worth running: a media extension must come with its
+/// own container's signature, any other name with a signature in the first
+/// kMediaSniffBytes.
+[[nodiscard]] MediaKind mediaGate(QByteArrayView head, const QString& fileName);
+
+/// Metadata for a file in the share: gate first, then exactly one reader, all
+/// within kMediaReadBudget. A whole library goes through here, so a file that is
+/// not what its name says costs one small read and nothing more.
+/// @param bytesRead  If set, how many bytes were read from the file.
+[[nodiscard]] bool extractSharedMediaInfo(const QString& filePath, MediaInfo& info,
+                                          qint64* bytesRead = nullptr);
 
 /// Detect MIME type using QMimeDatabase.
 [[nodiscard]] QString detectMimeType(const QString& filePath);

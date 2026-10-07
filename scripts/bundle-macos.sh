@@ -137,6 +137,11 @@ if [ -n "$MACDEPLOYQT" ]; then
     "$MACDEPLOYQT" "$APP_BUNDLE" -always-overwrite \
         -executable="$MACOS_DIR/emulecored" 2>&1 | tail -5 || true
     echo "  macdeployqt complete."
+    # QtSql is linked for the seen-files index, which uses SQLite only. The other
+    # drivers macdeployqt copies want client libraries (libpq, ODBC...) we do not ship.
+    if [ -d "$APP_BUNDLE/Contents/PlugIns/sqldrivers" ]; then
+        find "$APP_BUNDLE/Contents/PlugIns/sqldrivers" -type f ! -name 'libqsqlite*' -delete
+    fi
 else
     echo "Warning: macdeployqt not found — skipping Qt framework bundling."
     echo "  The app will only work on machines with Qt installed."

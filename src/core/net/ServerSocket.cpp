@@ -217,7 +217,8 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
 
         if (clientID == 0) {
             // Server is full
-            setConnectionState(ServerConnState::ServerFull);
+            failWith(ServerConnState::ServerFull,
+                     {ServerFailure::Phase::Handshake, ServerFailure::Reason::ProtocolRejection});
             return false;
         }
 
@@ -511,6 +512,13 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
 // Connection state management
 // ---------------------------------------------------------------------------
 
+void ServerSocket::failWith(ServerConnState newState, ServerFailure failure)
+{
+    if (m_connectionState != newState)
+        m_lastFailure = failure;
+    setConnectionState(newState);
+}
+
 void ServerSocket::setConnectionState(ServerConnState newState)
 {
     if (m_connectionState == newState)
@@ -568,17 +576,63 @@ void ServerSocket::onError(int errorCode)
     // A Qt socket error: the code decides. EMSocket hands it over because the int
     // above is shared with the protocol error codes (wrong header, encryption).
     if (const auto socketError = std::exchange(m_socketErrorInFlight, std::nullopt)) {
-        setConnectionState(stateForSocketError(m_connectionState, *socketError));
+        failWith(stateForSocketError(m_connectionState, *socketError),
+                 failureFor(m_connectionState, m_tcpConnected, socketError));
         return;
     }
 
+    const ServerFailure failure = failureFor(m_connectionState, m_tcpConnected, std::nullopt);
     if (m_connectionState == ServerConnState::Connected) {
-        setConnectionState(ServerConnState::Disconnected);
+        failWith(ServerConnState::Disconnected, failure);
     } else if (m_connectionState == ServerConnState::Connecting ||
                m_connectionState == ServerConnState::WaitForLogin) {
-        setConnectionState(ServerConnState::ServerDead);   // the server sent garbage
+        failWith(ServerConnState::ServerDead, failure);   // the server sent garbage
     } else {
-        setConnectionState(ServerConnState::FatalError);
+        failWith(ServerConnState::FatalError, failure);
+    }
+}
+
+ServerFailure ServerSocket::failureFor(ServerConnState current, bool tcpConnected,
+                                       std::optional<QAbstractSocket::SocketError> socketError)
+{
+    using Phase = ServerFailure::Phase;
+    using Reason = ServerFailure::Reason;
+
+    if (current == ServerConnState::Connected)
+        return {Phase::Established, Reason::EstablishedDisconnect};
+
+    const Phase phase = tcpConnected ? Phase::Handshake : Phase::Connect;
+    if (!socketError)
+        return {phase, Reason::ProtocolRejection};
+
+    switch (*socketError) {
+    case QAbstractSocket::ConnectionRefusedError:
+        return {phase, Reason::ConnectionRefused};
+    case QAbstractSocket::SocketTimeoutError:
+        return {phase, Reason::TimeoutUnreachable};
+    case QAbstractSocket::RemoteHostClosedError:
+        return {phase, Reason::ProtocolRejection};
+    case QAbstractSocket::HostNotFoundError:
+        return {Phase::Resolve, Reason::DnsResolution};
+
+    case QAbstractSocket::NetworkError:
+    case QAbstractSocket::SocketAccessError:
+    case QAbstractSocket::SocketResourceError:
+    case QAbstractSocket::AddressInUseError:
+    case QAbstractSocket::SocketAddressNotAvailableError:
+    case QAbstractSocket::UnsupportedSocketOperationError:
+    case QAbstractSocket::ProxyAuthenticationRequiredError:
+    case QAbstractSocket::ProxyConnectionRefusedError:
+    case QAbstractSocket::ProxyConnectionClosedError:
+    case QAbstractSocket::ProxyConnectionTimeoutError:
+    case QAbstractSocket::ProxyNotFoundError:
+    case QAbstractSocket::ProxyProtocolError:
+    case QAbstractSocket::OperationError:
+    case QAbstractSocket::TemporaryError:
+        return {tcpConnected ? phase : Phase::SocketSetup, Reason::LocalBindInterface};
+
+    default:
+        return {phase, Reason::TransportOther};
     }
 }
 
@@ -667,13 +721,14 @@ void ServerSocket::onSocketDisconnected()
     if (m_isDeleting)
         return;
 
+    const ServerFailure failure = failureFor(m_connectionState, m_tcpConnected, std::nullopt);
     if (m_connectionState == ServerConnState::Connected) {
-        setConnectionState(ServerConnState::Disconnected);
+        failWith(ServerConnState::Disconnected, failure);
     } else if (m_connectionState == ServerConnState::WaitForLogin) {
         // MFC CServerSocket::OnClose, srchybrid/ServerSocket.cpp:713-724.
-        setConnectionState(ServerConnState::ServerFull);
+        failWith(ServerConnState::ServerFull, failure);
     } else if (m_connectionState == ServerConnState::Connecting) {
-        setConnectionState(ServerConnState::ServerDead);
+        failWith(ServerConnState::ServerDead, failure);
     }
     // Any other state is already terminal: onSocketError() normally runs first (Qt
     // reports the peer's FIN as an error before disconnected()) and has set it.
@@ -704,7 +759,8 @@ void ServerSocket::onSocketError(QAbstractSocket::SocketError error)
         return;
     }
     m_socketErrorInFlight.reset();
-    setConnectionState(stateForSocketError(m_connectionState, error));
+    failWith(stateForSocketError(m_connectionState, error),
+             failureFor(m_connectionState, m_tcpConnected, error));
 }
 
 void ServerSocket::startDnsLookup(QDnsLookup::Type type)
@@ -749,7 +805,8 @@ void ServerSocket::onDnsLookupFinished()
                        .arg(m_curServer->dynIP())
                        .arg(m_dnsLookup->errorString()));
         // Not the server's failure (it may be our resolver): move on, count nothing.
-        setConnectionState(ServerConnState::Error);
+        failWith(ServerConnState::Error,
+                 {ServerFailure::Phase::Resolve, ServerFailure::Reason::DnsResolution});
         return;
     }
 
@@ -760,7 +817,9 @@ void ServerSocket::onDnsLookupFinished()
     // the list entry deleted. MFC: CServerSocket::OnHostnameResolved() — ServerSocket.cpp:91.
     if (ServerList::isFilteredServerIP(resolved, u"TCP/DNSResolve", m_curServer->dynIP())) {
         emit dynIPFiltered(resolved);
-        setConnectionState(ServerConnState::Error);   // CS_ERROR: no failed-count bump
+        // CS_ERROR: no failed-count bump; our own filter, not the server's doing
+        failWith(ServerConnState::Error,
+                 {ServerFailure::Phase::Resolve, ServerFailure::Reason::TransportOther});
         return;
     }
 

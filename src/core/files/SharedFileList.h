@@ -6,6 +6,8 @@
 /// Manages shared files, directory scanning, and background hashing.
 /// Uses HashingThread for async file hashing.
 
+#include "files/HashFailureStore.h"
+#include "files/KadPublishStore.h"
 #include "files/KnownFileList.h"
 #include "files/PublishKeywordList.h"
 #include "protocol/Tag.h"
@@ -49,6 +51,9 @@ public:
         QString filename;
         QString sharedDirectory;
         uint64_t generation = 0;
+        /// Size and date the scan saw; mtime 0 = not known, hash whatever is there.
+        uint64 scannedSize = 0;
+        time_t scannedMtime = 0;
 
         // -- Part-file rehash (MFC's CAddFileThread carrying an m_partfile) --------
         // Set to re-verify an existing .part against a known hashset instead of
@@ -77,6 +82,8 @@ public:
 signals:
     void hashingFinished(eMule::KnownFile* file, uint64 generation);
     void hashingFailed(const QString& directory, const QString& filename, uint64 generation);
+    /// The file is not what the scan saw any more; nothing was read.
+    void hashingDeferred(const QString& directory, const QString& filename, uint64 generation);
     void hashingProgress(int percent);
     /// One byte per part: 1 if it verified against the hashset, 0 if it did not.
     /// partOk holds one PartFile::PartVerdict value per part.
@@ -105,6 +112,9 @@ struct UnknownFileEntry {
     QString filename;
     QString sharedDirectory;
     QString key;   // SharedFileList::pathKey of the file
+    uint64 size = 0;     // as scanned
+    time_t mtime = 0;    // as scanned; 0 = not known
+    QString volume;      // which disk it is on; filled when queued
 };
 
 // ---------------------------------------------------------------------------
@@ -128,6 +138,8 @@ public:
     void reload();
     /// The same for one shared directory.
     void rescanDirectory(const QString& dir);
+    /// Several changed directories as one diff, so a move between them is a move.
+    void rescanDirectories(const QStringList& dirs);
     /// Follow the shared directories on disk from now on (the daemon; a unit test
     /// reloads by hand). Also holds back files that were written a moment ago.
     void setWatchingEnabled(bool enabled);
@@ -246,6 +258,14 @@ public:
     void sendListToServer();
     void publish();
 
+    /// Keep keyword publish times in @p path: loads now, saves while running and on
+    /// destruction. Without it every start publishes every keyword again.
+    void setKadPublishStorePath(const QString& path);
+    void saveKadPublishStore();
+
+    /// Remember given-up hash failures in @p path (loads now, saves as they change).
+    void setHashFailureStorePath(const QString& path);
+
     // Server connect integration
     void setServerConnect(ServerConnect* sc);
 
@@ -274,6 +294,13 @@ private:
     /// (MFC CSharedFileList::CreateOfferedFilePacket).
     static std::vector<Tag> offeredTags(KnownFile& file, const Server* srv);
 
+    /// Whether @p kw should be published now; takes over a stored due time first.
+    [[nodiscard]] bool keywordIsDue(PublishKeyword& kw, time_t now);
+    /// Schedule the next round and, when something was @p sent, remember it on disk.
+    void noteKeywordPublished(PublishKeyword& kw, time_t now, bool sent);
+    /// What a keyword's publish covers: the shared, complete files behind it.
+    [[nodiscard]] KadPublishStore::Fingerprint keywordFingerprint(const PublishKeyword& kw);
+
     /// One file found on disk by a scan.
     struct DiskEntry {
         QString directory;
@@ -283,8 +310,13 @@ private:
         time_t mtime = 0;
     };
 
-    /// The diff behind reload() (@p onlyDir empty) and rescanDirectory().
-    void rescan(const QString& onlyDir);
+    /// The diff behind reload() (@p onlyDirs empty) and rescanDirectories().
+    void rescan(const QStringList& onlyDirs);
+    /// Add to @p scope every root that now holds a file gone from a directory in it.
+    void widenScopeForMoves(QSet<QString>& scope) const;
+    /// What the watcher looks at: the scan roots plus the directories of files
+    /// shared one by one.
+    [[nodiscard]] QStringList watchRoots() const;
     /// The shareable files of one directory, by path key.
     void listDirectory(const QString& dir, QHash<QString, DiskEntry>& out) const;
     /// Every directory a scan walks: incoming directories first, then shared ones.
@@ -296,13 +328,27 @@ private:
     /// Queue one explicitly-shared file for hashing (or re-add it if already known).
     /// Port of srchybrid/SharedFileList.cpp:1468.
     void checkAndAddSingleFile(const QString& filePath);
+    /// Give every idle worker the next waiting file of its volume. m_hashMutex held.
     void hashNextFile();
+    /// Append to the hash queue. m_hashMutex held.
+    void queueForHash(UnknownFileEntry entry);
+    /// The file a worker reported on is off it. m_hashMutex held.
+    [[nodiscard]] UnknownFileEntry takeHashing(const QString& key);
+    /// The disk a directory is on (QStorageInfo::rootPath), cached. Main thread.
+    [[nodiscard]] QString volumeKeyFor(const QString& directory);
+    /// The worker for a volume: one per disk up to kMaxHashWorkers, shared beyond.
+    [[nodiscard]] HashingThread* workerFor(const QString& volume);
+    /// Smallest files first for a share nobody has hashed yet, the rest in path order.
+    static void orderForHashing(std::vector<UnknownFileEntry>& entries, bool coldStart);
+    void loadHashFailures();
+    void saveHashFailures();
 
     [[nodiscard]] QString sharedFilesConfigPath() const;
 
     void onHashingFinished(KnownFile* file, uint64 generation);
     void onPartFileRehashed(const QByteArray& fileHash, const QByteArray& partOk, uint64 token);
     void onHashingFailed(const QString& directory, const QString& filename, uint64 generation);
+    void onHashingDeferred(const QString& directory, const QString& filename, uint64 generation);
 
     /// First file at or after @p cursor (wrapping) for which @p due says yes; the
     /// cursor moves past it. One walk of the map, not one per probe.
@@ -350,8 +396,23 @@ private:
     QHash<QString, QString> m_singleExcludedFiles;
 
     PublishKeywordList m_keywords;
+    KadPublishStore m_publishStore;        // keyword due times across restarts
+    QString m_publishStorePath;            // empty = not persisted
+    QString m_hashFailureStorePath;        // empty = not persisted
+    time_t m_publishStoreSavedAt = 0;
     KnownFileList* m_knownFiles = nullptr;
-    HashingThread* m_hashingThread = nullptr;
+
+    /// One sequential worker per physical disk, disks in parallel: two files on the
+    /// same spindle only make each other slower. Created on first use.
+    static constexpr int kMaxHashWorkers = 4;
+    /// A share nobody has hashed yet offers its smallest files first.
+    static constexpr int kColdStartFiles = 200;
+    static constexpr uint64 kColdStartBytes = 256ull * 1024 * 1024;
+    std::vector<HashingThread*> m_hashWorkers;
+    QHash<QString, HashingThread*> m_workerOfVolume;
+    QHash<QString, QString> m_volumeOfDir;
+    /// Test seam: which volume a directory counts as (default: its mount point).
+    std::function<QString(const QString&)> m_volumeKeyFn;
     ServerConnect* m_serverConnect = nullptr;
 
     /// Guards the hashing pipeline below — and nothing else. Deliberately separate
@@ -361,8 +422,14 @@ private:
     mutable QMutex m_hashMutex;
     std::list<UnknownFileEntry> m_waitingForHash;
     uint64 m_generation = 0;
-    bool m_hashingInProgress = false;
-    QString m_hashingKey;   // path key of the file on the worker
+    /// The files on the workers, by path key.
+    struct Hashing {
+        HashingThread* worker = nullptr;
+        UnknownFileEntry entry;
+    };
+    QHash<QString, Hashing> m_hashing;
+    /// Workers found with nothing waiting; cleared when the queue grows.
+    QSet<HashingThread*> m_drainedWorkers;
 
     /// A file that could not be hashed: tried again after a growing wait, then left
     /// alone until its size or date changes. By path key. Main thread only.
@@ -376,6 +443,8 @@ private:
         bool givenUp = false;
     };
     QHash<QString, HashFailure> m_hashFailures;
+    size_t m_hashFailuresSaved = 0;     // signature of the given-up set on disk
+    time_t m_hashFailuresCheckedAt = 0;
     std::array<int, 3> m_hashRetrySecs{5, 30, 120};
 
     /// Directories with a file too fresh to hash, and when to look again.

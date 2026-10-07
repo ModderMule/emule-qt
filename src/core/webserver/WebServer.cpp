@@ -2294,19 +2294,24 @@ QHttpServerResponse WebServer::handlePostSearch(const QJsonObject& body)
     const SearchStartResult outcome = startSearch(*m_searchList, params);
     if (!outcome.ok)
         return jsonError(409, outcome.error);
-    if (!outcome.started) {
-        // An id nobody asked anything for would only ever be empty.
-        m_searchList->removeResults(outcome.searchID);
-        return jsonError(409, QStringLiteral("Search not started: not connected, or the expression is empty"));
-    }
 
+    // "automatic" is resolved once the search is sent; until then it is what was asked.
     const QString typeName = outcome.type == SearchType::Kademlia ? QStringLiteral("kad")
                            : outcome.type == SearchType::Ed2kGlobal ? QStringLiteral("ed2kGlobal")
-                                                                    : QStringLiteral("ed2kServer");
-    const QJsonObject result{
+                           : outcome.type == SearchType::Automatic ? QStringLiteral("automatic")
+                                                                   : QStringLiteral("ed2kServer");
+    QJsonObject result{
         {QStringLiteral("searchID"), static_cast<qint64>(outcome.searchID)},
-        {QStringLiteral("type"), typeName},   // "automatic" resolved
+        {QStringLiteral("type"), typeName},
+        {QStringLiteral("state"), searchRunStateName(outcome.state)},
     };
+    if (!outcome.started) {
+        // Not sent yet: it goes out by itself once the network is there and the
+        // search before it is done. 202 — taken, not done. The state is on the
+        // results route.
+        result.insert(QStringLiteral("reason"), outcome.reason);
+        return QHttpServerResponse(result, QHttpServerResponse::StatusCode::Accepted);
+    }
     return jsonSuccess(result);
 }
 
@@ -2340,6 +2345,14 @@ QHttpServerResponse WebServer::handleGetSearchResults(uint32 searchID)
         {QStringLiteral("foundSources"), static_cast<qint64>(m_searchList->foundSources(searchID))},
         {QStringLiteral("results"),      files},
     };
+    // Whether there is more to wait for: queued / running / finished / failed.
+    if (const auto status = m_searchList->queue().status(searchID)) {
+        result.insert(QStringLiteral("state"), searchRunStateName(status->state));
+        if (!status->reason.isEmpty())
+            result.insert(QStringLiteral("reason"), status->reason);
+        if (!status->error.isEmpty())
+            result.insert(QStringLiteral("error"), status->error);
+    }
 
     return jsonSuccess(result);
 }
@@ -2878,13 +2891,15 @@ void WebServer::webSearchAction(const QUrlQuery& form)
         m_webSearchNotice = outcome.error;
         return;
     }
-    if (!outcome.started) {
-        m_searchList->removeResults(outcome.searchID);
-        m_webSearchNotice = tr("Not connected — the search could not be sent.");
-        return;
-    }
     m_webSearchID = outcome.searchID;
     m_webSearchTitle = expression;
+    if (!outcome.started) {
+        // Kept: it is sent as soon as it can be, and this page then fills by itself.
+        m_webSearchFailed = false;
+        m_webSearchNotice = tr("Not sent yet — the search is waiting (%1) and starts by itself.")
+                                .arg(outcome.reason);
+        return;
+    }
 }
 
 void WebServer::webOptionsAction(const QUrlQuery& form)

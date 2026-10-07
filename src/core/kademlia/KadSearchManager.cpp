@@ -119,7 +119,8 @@ KeywordSelection SearchManager::selectKeyword(const QString& expression)
 Search* SearchManager::prepareFindKeywords(const QString& expression,
                                             uint32 searchTermsSize,
                                             const uint8* searchTermsData,
-                                            const QString& targetKeyword)
+                                            const QString& targetKeyword,
+                                            uint32 searchID)
 {
     // Split keywords first, then hash only a single word (MFC behavior).
     // The Kad DHT indexes keywords individually, so the target for "test file"
@@ -149,6 +150,8 @@ Search* SearchManager::prepareFindKeywords(const QString& expression,
         return nullptr;
 
     auto* search = new Search();
+    if (searchID != 0)
+        search->m_searchID = searchID;
     search->setTargetID(target);
     search->setSearchType(SearchType::Keyword);
     search->setGUIName(expression);

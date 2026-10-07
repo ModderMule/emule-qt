@@ -2,16 +2,22 @@
 /// @brief Tests for search/SearchList — session management, dedup, spam, persistence, signals.
 
 #include "TestHelpers.h"
+#include "app/AppContext.h"
 #include "client/UpDownClient.h"
 #include "crypto/AICHData.h"
 #include "search/SearchList.h"
 #include "search/SearchFile.h"
 #include "search/SearchParams.h"
+#include "search/SearchQueue.h"
+#include "search/SearchStarter.h"
+#include "search/SeenFileIndex.h"
 #include "protocol/Tag.h"
 #include "utils/OtherFunctions.h"
 #include "utils/SafeFile.h"
 
 #include <QSignalSpy>
+#include <QSqlDatabase>
+#include <QSqlQuery>
 #include <QTest>
 #include <cstring>
 
@@ -87,6 +93,29 @@ private slots:
     void addToList_fileTypeFilter();
     void removeResults_clearsSearch();
     void processSearchAnswer_tcp();
+    void lateServerAnswer_afterTheSearchEndedIsDropped();
+    void startSearch_offlineIsQueuedNotDropped();
+
+    // SearchQueue, against a network of our own
+    void queue_waitsForTheServerThenSends();
+    void queue_oneServerSearchAtATimeNextGoesAtOnce();
+    void queue_kadSearchesDoNotHoldEachOtherUp();
+    void queue_capAndDuplicates();
+    void queue_givesUpAfterTheMaxWait();
+    void queue_retriesASendThatFailedThenFails();
+    void queue_aLostSessionAsksAgainOnTheNext();
+    void queue_answerTimeoutAndSweepEndFinishASearch();
+    void queue_refusalsLeaveNothingBehind();
+    void queue_automaticIsResolvedWhenSent();
+    void queue_stopAndRemove();
+
+    // SeenFileIndex
+    void seenIndex_remembersAcrossAReopen();
+    void seenIndex_keepsTheMostSeenNames();
+    void seenIndex_dropsWhatIsOldAndWhatIsOverTheCap();
+    void seenIndex_switchedOffRecordsNothing();
+    void seenIndex_leavesANewerFileAlone();
+    void seenMarker_isSetForAFileMetBeforeThisSearch();
     void processUDPSearchAnswer_ipv6OnlyFromAskedServer();
     void spamRating_hashHit();
     void spamRating_nameHit();
@@ -531,6 +560,764 @@ void tst_SearchList::processSearchAnswer_tcp()
     QCOMPARE(addedSpy.count(), 2);
     QVERIFY(headerSpy.count() > 0);
     QCOMPARE(list.resultCount(id), uint32{2});
+}
+
+// The answer of a finished or closed server search used to land in whichever search
+// was started next.
+void tst_SearchList::lateServerAnswer_afterTheSearchEndedIsDropped()
+{
+    SearchList list;
+    const Endpoint server(Address::fromString(QStringLiteral("192.168.0.1")), 4661);
+    const QByteArray packet = buildTCPSearchPacket(2);
+    const auto answer = [&] {
+        list.processSearchAnswer(reinterpret_cast<const uint8*>(packet.constData()),
+                                 static_cast<uint32>(packet.size()), true, server);
+    };
+
+    const uint32 first = list.reserveSearch();
+    list.beginSearch(first, {}, /*ed2k*/ true);
+    QCOMPARE(list.ed2kSearchInFlight(), first);
+    answer();
+    QCOMPARE(list.resultCount(first), uint32{2});
+
+    // Over: the next search exists but has not been sent yet.
+    list.releaseEd2kRouting(first);
+    const uint32 second = list.reserveSearch();
+    QCOMPARE(list.ed2kSearchInFlight(), uint32{0});
+    answer();
+    QCOMPARE(list.resultCount(first), uint32{2});
+    QCOMPARE(list.resultCount(second), uint32{0});
+
+    // Releasing a search that is not the one in flight changes nothing.
+    list.beginSearch(second, {}, true);
+    list.releaseEd2kRouting(first);
+    QCOMPARE(list.ed2kSearchInFlight(), second);
+    answer();
+    QCOMPARE(list.resultCount(second), uint32{2});
+}
+
+// With no network at all a search used to come back as "started: false" and stay an
+// empty tab for good.
+void tst_SearchList::startSearch_offlineIsQueuedNotDropped()
+{
+    SearchList list;
+    SearchParams params;
+    params.expression = QStringLiteral("holiday");
+    params.type = SearchType::Ed2kServer;
+
+    const SearchStartResult server = startSearch(list, params);
+    QVERIFY(server.ok);
+    QVERIFY(!server.started);
+    QCOMPARE(server.state, SearchRunState::Queued);
+    QCOMPARE(server.reason, QString::fromLatin1(SearchWait::ServerConnection));
+    QVERIFY(list.hasSearch(server.searchID));
+
+    params.type = SearchType::Kademlia;
+    const SearchStartResult kad = startSearch(list, params);
+    QVERIFY(kad.ok);
+    QCOMPARE(kad.reason, QString::fromLatin1(SearchWait::Kad));
+    QVERIFY(kad.searchID != server.searchID);
+
+    params.type = SearchType::Automatic;
+    const SearchStartResult automatic = startSearch(list, params);
+    QVERIFY(automatic.ok);
+    QCOMPARE(automatic.reason, QString::fromLatin1(SearchWait::Connection));
+
+    // What can never be sent is still refused on the spot.
+    params.type = SearchType::Kademlia;
+    params.expression = QStringLiteral("ab");
+    QVERIFY(!startSearch(list, params).ok);
+    params.type = SearchType::UsenetIndexer;
+    QVERIFY(!startSearch(list, params).ok);
+
+    QVERIFY(removeSearch(list, server.searchID));
+    QVERIFY(!list.hasSearch(server.searchID));
+    QVERIFY(!list.queue().status(server.searchID));
+    clearAllSearches(list);
+    QCOMPARE(list.queue().queuedCount(), 0);
+}
+
+namespace {
+
+/// The world as the queue sees it, under the test's control.
+struct FakeNet {
+    bool server = false;
+    bool kad = false;
+    qint64 now = 1000;
+    uint32 nextId = 1;
+    SearchDispatch::Outcome outcome = SearchDispatch::Outcome::Sent;
+    bool sweep = false;
+    QString refusal = QStringLiteral("no");
+    std::vector<uint32> sent;
+    std::vector<uint32> ended;
+    std::vector<uint32> discarded;
+    QSet<uint32> kadAlive;
+
+    [[nodiscard]] SearchQueueBackend backend()
+    {
+        SearchQueueBackend b;
+        b.validate = [](const SearchParams& p) {
+            return p.expression.isEmpty() ? QStringLiteral("empty") : QString();
+        };
+        b.resolve = [this](const SearchParams& p) -> std::optional<SearchType> {
+            if (p.type != SearchType::Automatic)
+                return p.type;
+            if (server)
+                return SearchType::Ed2kServer;
+            if (kad)
+                return SearchType::Kademlia;
+            return std::nullopt;
+        };
+        b.waitReason = [this](SearchType type) {
+            if (type == SearchType::Kademlia)
+                return kad ? QString() : QString::fromLatin1(SearchWait::Kad);
+            return server ? QString() : QString::fromLatin1(SearchWait::ServerConnection);
+        };
+        b.create = [this](const SearchParams&) { return nextId++; };
+        b.discard = [this](uint32 id) { discarded.push_back(id); };
+        b.dispatch = [this](uint32 id, SearchType type, const SearchParams&) {
+            SearchDispatch out;
+            out.outcome = outcome;
+            out.error = refusal;
+            out.awaitsSweep = sweep;
+            if (outcome == SearchDispatch::Outcome::Sent) {
+                sent.push_back(id);
+                if (type == SearchType::Kademlia)
+                    kadAlive.insert(id);
+            }
+            return out;
+        };
+        b.endServerSearch = [this](uint32 id) { ended.push_back(id); };
+        b.kadSearchAlive = [this](uint32 id) { return kadAlive.contains(id); };
+        b.nowMs = [this] { return now; };
+        return b;
+    }
+};
+
+SearchParams query(const QString& words, SearchType type = SearchType::Ed2kServer)
+{
+    SearchParams params;
+    params.expression = words;
+    params.type = type;
+    return params;
+}
+
+SearchRunState stateOf(const SearchQueue& queue, uint32 id)
+{
+    const auto status = queue.status(id);
+    return status ? status->state : SearchRunState::Failed;
+}
+
+QString reasonOf(const SearchQueue& queue, uint32 id)
+{
+    const auto status = queue.status(id);
+    return status ? status->reason : QString();
+}
+
+} // namespace
+
+void tst_SearchList::queue_waitsForTheServerThenSends()
+{
+    FakeNet net;
+    SearchQueue queue(net.backend());
+    QSignalSpy states(&queue, &SearchQueue::stateChanged);
+
+    const auto queued = queue.enqueue(query(QStringLiteral("holiday")));
+    QVERIFY(queued.ok);
+    const uint32 id = queued.status.searchID;
+    QCOMPARE(queued.status.state, SearchRunState::Queued);
+    QCOMPARE(queued.status.reason, QString::fromLatin1(SearchWait::ServerConnection));
+    QVERIFY(net.sent.empty());
+    QCOMPARE(states.count(), 1);
+
+    // Still nothing: no change, no second report.
+    queue.tick();
+    QCOMPARE(states.count(), 1);
+
+    net.server = true;
+    queue.onServerConnected();
+    QCOMPARE(net.sent, std::vector<uint32>{id});
+    QCOMPARE(stateOf(queue, id), SearchRunState::Running);
+    QCOMPARE(queue.serverSearchInFlight(), id);
+    QCOMPARE(states.count(), 2);
+    QCOMPARE(states.last().first().value<SearchStatus>().state, SearchRunState::Running);
+}
+
+void tst_SearchList::queue_oneServerSearchAtATimeNextGoesAtOnce()
+{
+    FakeNet net;
+    net.server = true;
+    SearchQueue queue(net.backend());
+
+    const uint32 a = queue.enqueue(query(QStringLiteral("a one"))).status.searchID;
+    const uint32 b = queue.enqueue(query(QStringLiteral("b two"))).status.searchID;
+    const uint32 c = queue.enqueue(query(QStringLiteral("c three"))).status.searchID;
+    QCOMPARE(net.sent, std::vector<uint32>{a});
+    QCOMPARE(reasonOf(queue, b), QString::fromLatin1(SearchWait::PreviousSearch));
+    QCOMPARE(reasonOf(queue, c), QString::fromLatin1(SearchWait::PreviousSearch));
+
+    // The answer ends a, frees the lane, and b leaves in the same breath — the clock
+    // has not moved and nobody ticked.
+    queue.onServerAnswer();
+    QCOMPARE(stateOf(queue, a), SearchRunState::Finished);
+    QCOMPARE(net.ended, std::vector<uint32>{a});
+    QCOMPARE(net.sent, (std::vector<uint32>{a, b}));
+    QCOMPARE(stateOf(queue, c), SearchRunState::Queued);
+
+    queue.onServerAnswer();
+    QCOMPARE(net.sent, (std::vector<uint32>{a, b, c}));
+    queue.onServerAnswer();
+    QCOMPARE(queue.serverSearchInFlight(), uint32{0});
+    QCOMPARE(net.ended, (std::vector<uint32>{a, b, c}));
+
+    // An answer nobody waits for changes nothing.
+    queue.onServerAnswer();
+    QCOMPARE(net.ended.size(), size_t{3});
+}
+
+void tst_SearchList::queue_kadSearchesDoNotHoldEachOtherUp()
+{
+    FakeNet net;
+    net.kad = true;
+    SearchQueue queue(net.backend());
+
+    const uint32 waiting = queue.enqueue(query(QStringLiteral("server"))).status.searchID;
+    const uint32 k1 = queue.enqueue(query(QStringLiteral("first"), SearchType::Kademlia)).status.searchID;
+    const uint32 k2 = queue.enqueue(query(QStringLiteral("second"), SearchType::Kademlia)).status.searchID;
+    QCOMPARE(net.sent, (std::vector<uint32>{k1, k2}));
+    QCOMPARE(stateOf(queue, waiting), SearchRunState::Queued);
+    QCOMPARE(queue.serverSearchInFlight(), uint32{0});
+
+    // A keyword still being searched: waits, then goes when it is free.
+    net.outcome = SearchDispatch::Outcome::Busy;
+    const uint32 k3 = queue.enqueue(query(QStringLiteral("third"), SearchType::Kademlia)).status.searchID;
+    QCOMPARE(reasonOf(queue, k3), QString::fromLatin1(SearchWait::PreviousSearch));
+    net.outcome = SearchDispatch::Outcome::Sent;
+    queue.tick();
+    QCOMPARE(stateOf(queue, k3), SearchRunState::Running);
+
+    // A Kad search that has run its course is finished.
+    net.kadAlive.remove(k1);
+    queue.tick();
+    QCOMPARE(stateOf(queue, k1), SearchRunState::Finished);
+    QCOMPARE(stateOf(queue, k2), SearchRunState::Running);
+}
+
+void tst_SearchList::queue_capAndDuplicates()
+{
+    FakeNet net;
+    SearchQueue queue(net.backend());
+
+    std::vector<uint32> ids;
+    for (int i = 0; i < SearchQueue::kMaxQueued; ++i) {
+        const auto r = queue.enqueue(query(QStringLiteral("word%1").arg(i)));
+        QVERIFY(r.ok);
+        ids.push_back(r.status.searchID);
+    }
+    QCOMPARE(queue.queuedCount(), 20);
+
+    // Full.
+    const auto over = queue.enqueue(query(QStringLiteral("one too many")));
+    QVERIFY(!over.ok);
+    QVERIFY(!over.error.isEmpty());
+    QCOMPARE(queue.queuedCount(), 20);
+
+    // The same question again is the search that already waits — full or not.
+    const auto again = queue.enqueue(query(QStringLiteral("  WORD3 ")));
+    QVERIFY(again.ok);
+    QVERIFY(again.duplicate);
+    QCOMPARE(again.status.searchID, ids[3]);
+    QCOMPARE(queue.queuedCount(), 20);
+
+    // Another network, or another filter, is another question.
+    queue.remove(ids[0]);
+    SearchParams filtered = query(QStringLiteral("word3"));
+    filtered.fileType = QStringLiteral("Audio");
+    const auto different = queue.enqueue(filtered);
+    QVERIFY(different.ok);
+    QVERIFY(!different.duplicate);
+    QVERIFY(different.status.searchID != ids[3]);
+
+    // Once a search is finished the same words start a new one.
+    queue.stop(ids[5]);
+    queue.remove(ids[6]);
+    const auto fresh = queue.enqueue(query(QStringLiteral("word5")));
+    QVERIFY(fresh.ok);
+    QVERIFY(!fresh.duplicate);
+}
+
+void tst_SearchList::queue_givesUpAfterTheMaxWait()
+{
+    FakeNet net;
+    SearchQueue queue(net.backend());
+    const uint32 id = queue.enqueue(query(QStringLiteral("holiday"))).status.searchID;
+
+    net.now += SearchQueue::kMaxWaitMs - 1;
+    queue.tick();
+    QCOMPARE(stateOf(queue, id), SearchRunState::Queued);
+
+    net.now += 1;
+    queue.tick();
+    QCOMPARE(stateOf(queue, id), SearchRunState::Failed);
+    QVERIFY(!queue.status(id)->error.isEmpty());
+
+    // Too late now.
+    net.server = true;
+    queue.onServerConnected();
+    QVERIFY(net.sent.empty());
+}
+
+void tst_SearchList::queue_retriesASendThatFailedThenFails()
+{
+    FakeNet net;
+    net.server = true;
+    net.outcome = SearchDispatch::Outcome::SendFailed;
+    SearchQueue queue(net.backend());
+
+    const auto first = queue.enqueue(query(QStringLiteral("holiday")));
+    QVERIFY(first.ok);
+    const uint32 id = first.status.searchID;
+    QCOMPARE(first.status.reason, QString::fromLatin1(SearchWait::ServerConnection));
+
+    for (int i = 1; i < SearchQueue::kMaxSendRetries; ++i) {
+        queue.pump();
+        QCOMPARE(stateOf(queue, id), SearchRunState::Queued);
+    }
+    queue.pump();   // the try after the last retry
+    QCOMPARE(stateOf(queue, id), SearchRunState::Failed);
+    QCOMPARE(queue.serverSearchInFlight(), uint32{0});
+
+    // One that gets through on a retry is just a search.
+    net.outcome = SearchDispatch::Outcome::SendFailed;
+    const uint32 lucky = queue.enqueue(query(QStringLiteral("other"))).status.searchID;
+    net.outcome = SearchDispatch::Outcome::Sent;
+    queue.pump();
+    QCOMPARE(stateOf(queue, lucky), SearchRunState::Running);
+}
+
+void tst_SearchList::queue_aLostSessionAsksAgainOnTheNext()
+{
+    FakeNet net;
+    net.server = true;
+    SearchQueue queue(net.backend());
+    const uint32 id = queue.enqueue(query(QStringLiteral("holiday"))).status.searchID;
+    QCOMPARE(stateOf(queue, id), SearchRunState::Running);
+
+    // The server went before it answered.
+    net.server = false;
+    queue.onServerDisconnected();
+    QCOMPARE(stateOf(queue, id), SearchRunState::Queued);
+    QCOMPARE(reasonOf(queue, id), QString::fromLatin1(SearchWait::ServerConnection));
+    QCOMPARE(net.ended, std::vector<uint32>{id});
+    QCOMPARE(queue.serverSearchInFlight(), uint32{0});
+
+    net.server = true;
+    queue.onServerConnected();
+    QCOMPARE(net.sent, (std::vector<uint32>{id, id}));
+    QCOMPARE(stateOf(queue, id), SearchRunState::Running);
+
+    // A global search walks the other servers over UDP and is left alone.
+    queue.onServerAnswer();
+    net.sweep = true;
+    const uint32 global = queue.enqueue(query(QStringLiteral("wide"), SearchType::Ed2kGlobal)).status.searchID;
+    queue.onServerDisconnected();
+    QCOMPARE(stateOf(queue, global), SearchRunState::Running);
+}
+
+void tst_SearchList::queue_answerTimeoutAndSweepEndFinishASearch()
+{
+    FakeNet net;
+    net.server = true;
+    SearchQueue queue(net.backend());
+
+    // A server that says nothing.
+    const uint32 silent = queue.enqueue(query(QStringLiteral("silent"))).status.searchID;
+    net.now += SearchQueue::kAnswerTimeoutMs - 1;
+    queue.tick();
+    QCOMPARE(stateOf(queue, silent), SearchRunState::Running);
+    net.now += 1;
+    queue.tick();
+    QCOMPARE(stateOf(queue, silent), SearchRunState::Finished);
+    QCOMPARE(net.ended, std::vector<uint32>{silent});
+
+    // A global search: the TCP answer is only its first part.
+    net.sweep = true;
+    const uint32 global = queue.enqueue(query(QStringLiteral("wide"), SearchType::Ed2kGlobal)).status.searchID;
+    const uint32 behind = queue.enqueue(query(QStringLiteral("behind"))).status.searchID;
+    queue.onServerAnswer();
+    QCOMPARE(stateOf(queue, global), SearchRunState::Running);
+    net.now += SearchQueue::kAnswerTimeoutMs + 1;
+    queue.tick();
+    QCOMPARE(stateOf(queue, global), SearchRunState::Running);
+    QCOMPARE(stateOf(queue, behind), SearchRunState::Queued);
+
+    queue.onSweepFinished(silent);          // somebody else's sweep
+    QCOMPARE(stateOf(queue, global), SearchRunState::Running);
+    queue.onSweepFinished(global);
+    QCOMPARE(stateOf(queue, global), SearchRunState::Finished);
+    QCOMPARE(stateOf(queue, behind), SearchRunState::Running);
+}
+
+void tst_SearchList::queue_refusalsLeaveNothingBehind()
+{
+    FakeNet net;
+    net.server = true;
+    SearchQueue queue(net.backend());
+
+    // Not acceptable at all: nothing is created.
+    const auto invalid = queue.enqueue(query(QString()));
+    QVERIFY(!invalid.ok);
+    QCOMPARE(invalid.error, QStringLiteral("empty"));
+    QCOMPARE(net.nextId, uint32{1});
+
+    // Refused when sent on the spot: created, then taken back.
+    net.outcome = SearchDispatch::Outcome::Refused;
+    net.refusal = QStringLiteral("nothing to search for");
+    const auto refused = queue.enqueue(query(QStringLiteral("holiday")));
+    QVERIFY(!refused.ok);
+    QCOMPARE(refused.error, QStringLiteral("nothing to search for"));
+    QCOMPARE(net.discarded, std::vector<uint32>{1});
+    QVERIFY(!queue.status(1));
+    QCOMPARE(queue.serverSearchInFlight(), uint32{0});
+
+    // Refused later, after waiting: the caller has the id, so it stays and says why.
+    net.server = false;
+    const uint32 waited = queue.enqueue(query(QStringLiteral("later"))).status.searchID;
+    net.server = true;
+    queue.onServerConnected();
+    QCOMPARE(stateOf(queue, waited), SearchRunState::Failed);
+    QCOMPARE(queue.status(waited)->error, QStringLiteral("nothing to search for"));
+    QCOMPARE(net.discarded.size(), size_t{1});
+}
+
+void tst_SearchList::queue_automaticIsResolvedWhenSent()
+{
+    FakeNet net;
+    SearchQueue queue(net.backend());
+
+    const auto queued = queue.enqueue(query(QStringLiteral("holiday"), SearchType::Automatic));
+    QVERIFY(queued.ok);
+    const uint32 id = queued.status.searchID;
+    QCOMPARE(queued.status.reason, QString::fromLatin1(SearchWait::Connection));
+    QCOMPARE(queued.status.type, SearchType::Automatic);
+
+    // Kad is what comes up, so Kad it is.
+    net.kad = true;
+    queue.onKadConnected();
+    QCOMPARE(stateOf(queue, id), SearchRunState::Running);
+    QCOMPARE(queue.status(id)->type, SearchType::Kademlia);
+    QCOMPARE(queue.serverSearchInFlight(), uint32{0});
+}
+
+void tst_SearchList::queue_stopAndRemove()
+{
+    FakeNet net;
+    net.server = true;
+    SearchQueue queue(net.backend());
+
+    const uint32 a = queue.enqueue(query(QStringLiteral("a one"))).status.searchID;
+    const uint32 b = queue.enqueue(query(QStringLiteral("b two"))).status.searchID;
+    const uint32 c = queue.enqueue(query(QStringLiteral("c three"))).status.searchID;
+
+    // Cancelled while waiting: never sent.
+    queue.stop(b);
+    QCOMPARE(stateOf(queue, b), SearchRunState::Finished);
+
+    // Closing the one in flight frees the lane for the next that still wants it.
+    queue.remove(a);
+    QVERIFY(!queue.status(a));
+    QCOMPARE(net.ended, std::vector<uint32>{a});
+    QCOMPARE(net.sent, (std::vector<uint32>{a, c}));
+
+    // Stopping the one in flight ends it.
+    queue.stop(c);
+    QCOMPARE(stateOf(queue, c), SearchRunState::Finished);
+    QCOMPARE(queue.serverSearchInFlight(), uint32{0});
+
+    queue.clear();
+    QVERIFY(!queue.status(b));
+}
+
+namespace {
+
+std::array<uint8, 16> seenHash(uint8 n)
+{
+    std::array<uint8, 16> hash{};
+    hash[0] = n;
+    hash[15] = static_cast<uint8>(n ^ 0x5A);
+    return hash;
+}
+
+} // namespace
+
+void tst_SearchList::seenIndex_remembersAcrossAReopen()
+{
+    eMule::testing::TempDir tmp;
+    const QString path = tmp.filePath(QStringLiteral("seenfiles.db"));
+    const auto film = seenHash(1);
+    const auto other = seenHash(2);
+    // Recent: opening the store drops what has not been seen for half a year.
+    const qint64 t0 = QDateTime::currentSecsSinceEpoch() - 5000;
+
+    {
+        SeenFileIndex index;
+        QVERIFY(index.open(path));
+        QVERIFY(!index.lookup(film.data()).known);
+
+        // Known at once, from memory, before anything is written.
+        index.note(film.data(), QStringLiteral("Film.2020.mkv"), 700, t0);
+        SeenFileIndex::Info info = index.lookup(film.data());
+        QVERIFY(info.known);
+        QCOMPARE(info.firstSeen, t0);
+        QCOMPARE(info.names, 1);
+        QVERIFY(!info.seenBefore(t0));         // this very sighting does not count
+        QVERIFY(info.seenBefore(t0 + 1));
+
+        index.flush();
+        QCOMPARE(index.pendingCount(), 0);
+        info = index.lookup(film.data());
+        QVERIFY(info.known);
+        QCOMPARE(info.firstSeen, t0);
+
+        // Again under another name, and once more under the first: written and
+        // waiting sightings add up.
+        index.note(film.data(), QStringLiteral("film (2020) HD.mkv"), 700, t0 + 50);
+        index.note(film.data(), QStringLiteral("Film.2020.mkv"), 700, t0 + 60);
+        info = index.lookup(film.data());
+        QCOMPARE(info.firstSeen, t0);
+        QCOMPARE(info.lastSeen, t0 + 60);
+        QCOMPARE(info.names, 2);
+        QCOMPARE(info.seenCount, uint32{3});
+        QVERIFY(!index.lookup(other.data()).known);
+    }   // written on the way out
+
+    SeenFileIndex index;
+    QVERIFY(index.open(path));
+    const SeenFileIndex::Info info = index.lookup(film.data());
+    QVERIFY(info.known);
+    QCOMPARE(info.firstSeen, t0);
+    QCOMPARE(info.lastSeen, t0 + 60);
+    QCOMPARE(info.names, 2);
+    QCOMPARE(info.seenCount, uint32{3});
+    QVERIFY(!index.lookup(other.data()).known);
+}
+
+void tst_SearchList::seenIndex_keepsTheMostSeenNames()
+{
+    eMule::testing::TempDir tmp;
+    SeenFileIndex index;
+    SeenFileIndex::Limits limits;
+    limits.maxNamesPerFile = 3;
+    index.setLimits(limits);
+    QVERIFY(index.open(tmp.filePath(QStringLiteral("seenfiles.db"))));
+
+    // Six names; "name4" and "name5" are seen most, then "name3".
+    const auto file = seenHash(7);
+    for (int n = 0; n < 6; ++n)
+        for (int times = 0; times <= n; ++times)
+            index.note(file.data(), QStringLiteral("name%1").arg(n), 10, 1000 + n);
+    index.flush();
+    QCOMPARE(index.lookup(file.data()).names, 3);
+
+    // A seventh, seen once, does not push a well-known name out.
+    index.note(file.data(), QStringLiteral("newcomer"), 10, 2000);
+    index.flush();
+    QCOMPARE(index.lookup(file.data()).names, 3);
+
+    QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), QStringLiteral("check"));
+    db.setDatabaseName(tmp.filePath(QStringLiteral("seenfiles.db")));
+    QVERIFY(db.open());
+    QStringList kept;
+    {
+        QSqlQuery query(db);
+        QVERIFY(query.exec(QStringLiteral("SELECT name FROM names ORDER BY name")));
+        while (query.next())
+            kept << query.value(0).toString();
+    }
+    db.close();
+    db = QSqlDatabase();
+    QSqlDatabase::removeDatabase(QStringLiteral("check"));
+    QCOMPARE(kept, (QStringList{QStringLiteral("name3"), QStringLiteral("name4"),
+                                QStringLiteral("name5")}));
+}
+
+void tst_SearchList::seenIndex_dropsWhatIsOldAndWhatIsOverTheCap()
+{
+    eMule::testing::TempDir tmp;
+    SeenFileIndex index;
+    SeenFileIndex::Limits limits;
+    limits.maxFiles = 5;
+    limits.maxAgeSecs = 1000;
+    index.setLimits(limits);
+    QVERIFY(index.open(tmp.filePath(QStringLiteral("seenfiles.db"))));
+
+    // Recent: opening the store drops what has not been seen for half a year.
+    const qint64 t0 = QDateTime::currentSecsSinceEpoch() - 5000;
+    for (uint8 n = 0; n < 8; ++n)
+        index.note(seenHash(n).data(), QStringLiteral("file%1").arg(n), 10, t0 + n);
+    index.flush();
+
+    // Over the cap: the three not seen for longest go.
+    index.prune(t0 + 10);
+    for (uint8 n = 0; n < 8; ++n)
+        QCOMPARE(index.lookup(seenHash(n).data()).known, n >= 3);
+
+    // Seen again: young once more.
+    index.note(seenHash(3).data(), QStringLiteral("file3"), 10, t0 + 900);
+    index.flush();
+    index.prune(t0 + 1005);          // 4 (t0+4) is now older than the limit, 5 is not
+    QVERIFY(index.lookup(seenHash(3).data()).known);
+    QVERIFY(!index.lookup(seenHash(4).data()).known);
+    QVERIFY(index.lookup(seenHash(5).data()).known);
+    QCOMPARE(index.lookup(seenHash(4).data()).names, 0);   // its names went with it
+}
+
+void tst_SearchList::seenIndex_switchedOffRecordsNothing()
+{
+    eMule::testing::TempDir tmp;
+    SeenFileIndex index;
+    QVERIFY(index.open(tmp.filePath(QStringLiteral("seenfiles.db"))));
+    const auto file = seenHash(9);
+    index.note(file.data(), QStringLiteral("kept.bin"), 10, 1000);
+    index.flush();
+
+    index.setEnabled(false);
+    QVERIFY(!index.isActive());
+    index.note(seenHash(10).data(), QStringLiteral("ignored.bin"), 10, 2000);
+    QCOMPARE(index.pendingCount(), 0);
+    QVERIFY(!index.lookup(file.data()).known);          // not looked up either
+
+    // What was there stays, for when it is switched on again.
+    index.setEnabled(true);
+    QVERIFY(index.lookup(file.data()).known);
+    QVERIFY(!index.lookup(seenHash(10).data()).known);
+
+    // Never opened: inert, whatever is asked of it.
+    SeenFileIndex closed;
+    closed.note(file.data(), QStringLiteral("x"), 1, 1);
+    QVERIFY(!closed.lookup(file.data()).known);
+    closed.flush();
+}
+
+void tst_SearchList::seenIndex_leavesANewerFileAlone()
+{
+    eMule::testing::TempDir tmp;
+    const QString path = tmp.filePath(QStringLiteral("seenfiles.db"));
+    {
+        QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), QStringLiteral("future"));
+        db.setDatabaseName(path);
+        QVERIFY(db.open());
+        QSqlQuery query(db);
+        QVERIFY(query.exec(QStringLiteral("CREATE TABLE tomorrow (x INTEGER)")));
+        QVERIFY(query.exec(QStringLiteral("PRAGMA user_version=99")));
+        query.finish();
+        db.close();
+    }
+    QSqlDatabase::removeDatabase(QStringLiteral("future"));
+
+    SeenFileIndex index;
+    QVERIFY(!index.open(path));
+    QVERIFY(!index.isActive());
+    index.note(seenHash(1).data(), QStringLiteral("x"), 1, 1);
+    QVERIFY(!index.lookup(seenHash(1).data()).known);
+
+    QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), QStringLiteral("future"));
+    db.setDatabaseName(path);
+    QVERIFY(db.open());
+    {
+        QSqlQuery query(db);
+        QVERIFY(query.exec(QStringLiteral("SELECT count(*) FROM sqlite_master WHERE name = 'files'")));
+        QVERIFY(query.next());
+        QCOMPARE(query.value(0).toInt(), 0);
+    }
+    db.close();
+    db = QSqlDatabase();
+    QSqlDatabase::removeDatabase(QStringLiteral("future"));
+}
+
+void tst_SearchList::seenMarker_isSetForAFileMetBeforeThisSearch()
+{
+    eMule::testing::TempDir tmp;
+    SeenFileIndex index;
+    QVERIFY(index.open(tmp.filePath(QStringLiteral("seenfiles.db"))));
+    theApp.seenFileIndex = &index;
+    const auto restore = qScopeGuard([] { theApp.seenFileIndex = nullptr; });
+
+    uint8 base[16];
+    std::memset(base, 0x40, 16);
+    const QByteArray packet = buildTCPSearchPacket(2, base);
+    const Endpoint server(Address::fromString(QStringLiteral("192.168.0.1")), 4661);
+    const auto answer = [&](SearchList& list) {
+        list.processSearchAnswer(reinterpret_cast<const uint8*>(packet.constData()),
+                                 static_cast<uint32>(packet.size()), true, server);
+    };
+    const auto rows = [](SearchList& list, uint32 id) {
+        std::vector<const SearchFile*> out;
+        list.forEachResult(id, [&](const SearchFile* f) { out.push_back(f); });
+        return out;
+    };
+
+    // First time these two files turn up: nothing to say about them, and getting
+    // the same answer twice within one search does not change that.
+    SearchList first;
+    const uint32 one = first.reserveSearch();
+    first.beginSearch(one, {}, true);
+    answer(first);
+    answer(first);
+    const auto fresh = rows(first, one);
+    QVERIFY(fresh.size() >= 2);
+    QByteArray knownHash;
+    for (const SearchFile* f : fresh) {
+        QVERIFY(!f->seenBefore());
+        if (f->listParent() == nullptr && knownHash.isEmpty())
+            knownHash = QByteArray(reinterpret_cast<const char*>(f->fileHash()), 16);
+    }
+    QCOMPARE(index.pendingCount(), 2);
+
+    // As if that had been a while ago, and under another name as well.
+    index.flush();
+    const auto* hash = reinterpret_cast<const uint8*>(knownHash.constData());
+    const qint64 then = QDateTime::currentSecsSinceEpoch() - 3600;
+    {
+        QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), QStringLiteral("age"));
+        db.setDatabaseName(tmp.filePath(QStringLiteral("seenfiles.db")));
+        QVERIFY(db.open());
+        QSqlQuery query(db);
+        query.prepare(QStringLiteral("UPDATE files SET first_seen = ?"));
+        query.addBindValue(then);
+        QVERIFY(query.exec());
+        query.finish();
+        db.close();
+    }
+    QSqlDatabase::removeDatabase(QStringLiteral("age"));
+    index.note(hash, QStringLiteral("the same thing renamed.avi"), 1, then + 10);
+
+    SearchList second;
+    const uint32 two = second.reserveSearch();
+    second.beginSearch(two, {}, true);
+    answer(second);
+    int marked = 0;
+    for (const SearchFile* f : rows(second, two)) {
+        QVERIFY(f->seenBefore());
+        QCOMPARE(f->firstSeen(), then);
+        if (QByteArray(reinterpret_cast<const char*>(f->fileHash()), 16) == knownHash)
+            QCOMPARE(f->seenNames(), 2);
+        else
+            QCOMPARE(f->seenNames(), 1);
+        ++marked;
+    }
+    QCOMPARE(marked, 2);
+
+    // Switched off: no marker, and nothing more recorded.
+    index.flush();
+    index.setEnabled(false);
+    SearchList third;
+    const uint32 three = third.reserveSearch();
+    third.beginSearch(three, {}, true);
+    answer(third);
+    for (const SearchFile* f : rows(third, three))
+        QVERIFY(!f->seenBefore());
+    QCOMPARE(index.pendingCount(), 0);
 }
 
 void tst_SearchList::spamRating_hashHit()
