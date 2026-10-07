@@ -976,10 +976,15 @@ void tst_KadLiveNetwork::firewalledCheck_runsToCompletion()
 
     std::atomic<int> incomingTcpConnections{0};
     std::atomic<int> tcpFwAcksReceived{0};
-    connect(m_listenSocket, &ListenSocket::newClientConnection, this,
-            [&incomingTcpConnections, &tcpFwAcksReceived, prefs](ClientReqSocket* socket) {
+    // Context for the lambdas below: they capture locals by reference, so they
+    // must be gone when this function returns — a later test's FW check would
+    // otherwise count into a dead stack slot.
+    QObject tcpScope;
+    QObject* tcpCtx = &tcpScope;
+    connect(m_listenSocket, &ListenSocket::newClientConnection, tcpCtx,
+            [&incomingTcpConnections, &tcpFwAcksReceived, prefs, tcpCtx](ClientReqSocket* socket) {
                 incomingTcpConnections.fetch_add(1, std::memory_order_relaxed);
-                QObject::connect(socket, &ClientReqSocket::extPacketReceived,
+                QObject::connect(socket, &ClientReqSocket::extPacketReceived, tcpCtx,
                     [&tcpFwAcksReceived, prefs](const uint8* /*data*/, uint32 /*size*/, uint8 opcode) {
                         if (opcode == OP_KAD_FWTCPCHECK_ACK) {
                             tcpFwAcksReceived.fetch_add(1, std::memory_order_relaxed);
@@ -1067,7 +1072,8 @@ void tst_KadLiveNetwork::firewalledCheck_runsToCompletion()
     UDPFirewallTester::reset();
 
     std::atomic<int> fwCheckClientsCreated{0};
-    connect(m_clientList, &ClientList::clientAdded, this,
+    QObject udpScope;   // same reason as tcpScope
+    connect(m_clientList, &ClientList::clientAdded, &udpScope,
             [&fwCheckClientsCreated](const UpDownClient* client) {
                 if (client->kadState() == KadState::QueuedFwCheckUDP)
                     fwCheckClientsCreated.fetch_add(1, std::memory_order_relaxed);

@@ -47,6 +47,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QProcess>
+#include <QScopeGuard>
 #include <QRandomGenerator>
 #include <QSignalSpy>
 #include <QTcpServer>
@@ -299,8 +300,11 @@ public:
         // SIGTERM, and it must be gone before the temporary directory holding its
         // storage is removed out from under it.
         m_process->terminate();
-        if (!m_process->waitForFinished(10'000))
+        // Windows: terminate() only posts WM_CLOSE, which a console server never sees
+        if (!m_process->waitForFinished(10'000)) {
             m_process->kill();
+            m_process->waitForFinished(5'000);
+        }
 
         delete m_process;
         m_process = nullptr;
@@ -641,6 +645,12 @@ void tst_HttpCacheLive::clientFetchesWholePart()
     // No live peer behind this fetch. A loopback address, because the self-started
     // server is on loopback and a local URL is only fetched for a local sender; it
     // makes no difference against a public server.
+    // LAN filter off for the same reason: URLClient vets the resolved host, and
+    // with the default filter 127.0.0.1 is refused before a byte is fetched.
+    const bool savedFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([savedFilter] { thePrefs.setFilterLANIPs(savedFilter); });
+
     QVERIFY(client->beginFetch(offer, &file, peerHash, Address::fromHostOrder(0x7F000002)));
     QVERIFY2(spy.wait(180'000), "fetch never finished");
 
