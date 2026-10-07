@@ -297,6 +297,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::GetKadSearches:       handleGetKadSearches(msg); break;
     case IpcMsgType::GetKadLookupHistory:  handleGetKadLookupHistory(msg); break;
     case IpcMsgType::GetNetworkInfo:       handleGetNetworkInfo(msg); break;
+    case IpcMsgType::GetNetworkInterfaces: handleGetNetworkInterfaces(msg); break;
     case IpcMsgType::RecheckFirewall:      handleRecheckFirewall(msg); break;
     case IpcMsgType::SyncLogs:             handleSyncLogs(msg); break;
     case IpcMsgType::Shutdown:             handleShutdown(msg); break;
@@ -897,6 +898,7 @@ void IpcClientHandler::handleGetConnection(const IpcMessage& msg)
                 theApp.serverConnect && theApp.serverConnect->isConnected()
                     && theApp.serverConnect->isLowID());
     info.insert(QStringLiteral("clientID"),   static_cast<qint64>(theApp.getID()));
+    insertBindState(info);
 
     if (theApp.serverConnect) {
         const auto* srv = theApp.serverConnect->currentServer();
@@ -921,6 +923,7 @@ void IpcClientHandler::handleGetServerState(const IpcMessage& msg)
                 theApp.serverConnect && theApp.serverConnect->isConnected()
                     && theApp.serverConnect->isLowID());
     info.insert(QStringLiteral("clientID"),   static_cast<qint64>(theApp.getID()));
+    insertBindState(info);
     if (connected && theApp.serverConnect) {
         info.insert(QStringLiteral("publicIP"),
                     static_cast<qint64>(theApp.publicIP()));
@@ -1049,6 +1052,11 @@ void IpcClientHandler::handleConnectToServer(const IpcMessage& msg)
 {
     if (!theApp.serverConnect) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("ServerConnect unavailable")));
+        return;
+    }
+
+    if (!BindAddress::outboundAllowed()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 409, BindAddress::current().reason));
         return;
     }
 
@@ -1844,6 +1852,11 @@ void IpcClientHandler::handleBootstrapKad(const IpcMessage& msg)
         return;
     }
 
+    if (!BindAddress::outboundAllowed()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 409, BindAddress::current().reason));
+        return;
+    }
+
     const QString ip = msg.fieldString(0);
     const auto port = static_cast<uint16>(msg.fieldInt(1));
 
@@ -1969,6 +1982,23 @@ void IpcClientHandler::handleGetKadLookupHistory(const IpcMessage& msg)
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(entries)));
 }
 
+void IpcClientHandler::handleGetNetworkInterfaces(const IpcMessage& msg)
+{
+    QCborArray list;
+    for (const BindAddress::LocalInterface& nif : BindAddress::localInterfaces()) {
+        QCborMap m;
+        m.insert(QStringLiteral("name"), nif.name);
+        m.insert(QStringLiteral("friendlyName"), nif.friendlyName);
+        m.insert(QStringLiteral("index"), nif.index);
+        QCborArray addresses;
+        for (const QHostAddress& a : nif.addresses)
+            addresses.append(a.toString());
+        m.insert(QStringLiteral("addresses"), addresses);
+        list.append(m);
+    }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(list)));
+}
+
 void IpcClientHandler::handleGetNetworkInfo(const IpcMessage& msg)
 {
     QCborMap info;
@@ -1980,6 +2010,7 @@ void IpcClientHandler::handleGetNetworkInfo(const IpcMessage& msg)
     client.insert(QStringLiteral("hash"), md4str(hash.data()));
     client.insert(QStringLiteral("tcpPort"), theApp.advertisedTcpPort());
     client.insert(QStringLiteral("udpPort"), theApp.advertisedUdpPort());
+    insertBindState(client);
     info.insert(QStringLiteral("client"), client);
 
     // -- eD2K section ---------------------------------------------------------
@@ -3467,6 +3498,15 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setPort(static_cast<uint16>(val.toInteger()));
     else if (key == QStringLiteral("udpPort"))
         thePrefs.setUdpPort(static_cast<uint16>(val.toInteger()));
+    else if (key == QStringLiteral("bindAddress")) {
+        const QString selection = val.toString().trimmed();
+        if (selection != thePrefs.bindAddress().trimmed()) {
+            thePrefs.setBindAddress(selection);
+            // Live: every socket is closed and reopened on the new selection.
+            if (theApp.onBindSelectionChanged)
+                theApp.onBindSelectionChanged();
+        }
+    }
     else if (key == QStringLiteral("maxUpload"))
         thePrefs.setMaxUpload(static_cast<uint32>(val.toInteger()));
     else if (key == QStringLiteral("maxDownload"))
@@ -3500,7 +3540,7 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         if (on != thePrefs.ipv6UsePrivacyAddress()) {
             thePrefs.setIpv6UsePrivacyAddress(on);
             // Re-pick the advertised address so it matches the new source choice.
-            updatePublicIPv6(scanLocalIPv6());
+            updatePublicIPv6(scanBoundIPv6());
             logInfo(on ? QStringLiteral("IPv6: using the temporary privacy address as source")
                        : QStringLiteral("IPv6: sending from the stable address %1")
                              .arg(IPv6SourcePin::pinAddress().toString()));

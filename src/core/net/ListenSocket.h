@@ -59,6 +59,8 @@ public:
 
     /// Close and delete all sockets.
     void killAllSockets();
+    /// Disconnect every peer socket the normal way (clients are told).
+    void disconnectAll(const QString& reason);
 
     /// Whether too many connections are open (for rate limiting).
     [[nodiscard]] bool tooManySockets(bool ignoreInterval = false) const;

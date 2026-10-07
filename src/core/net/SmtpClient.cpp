@@ -3,6 +3,7 @@
 /// @brief Simple async SMTP client — implementation.
 
 #include "net/SmtpClient.h"
+#include "net/InterfacePin.h"
 #include "utils/Log.h"
 
 #include <QSslConfiguration>
@@ -53,6 +54,13 @@ void SmtpClient::sendMail(const QString& server, int port, bool useTls,
     }
 
     logInfo(QStringLiteral("SMTP: connecting to %1:%2...").arg(server).arg(port));
+
+    if (!InterfacePin::prepareOutgoing(*m_socket, false)) {
+        logWarning(QStringLiteral("SMTP: not sent — the selected network interface is not available"));
+        m_state = State::Disconnected;
+        emit finished(false, QStringLiteral("The selected network interface is not available"));
+        return;
+    }
 
     // Port 465 = implicit SSL (connect encrypted from the start)
     // Other ports with TLS = STARTTLS (upgrade after plaintext greeting)

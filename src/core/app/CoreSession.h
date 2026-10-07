@@ -7,6 +7,7 @@
 /// SharedFileList, and Statistics at the correct intervals.
 /// Creates and owns core upload pipeline components.
 
+#include "net/BindAddress.h"
 #include "utils/Types.h"
 
 #include <QObject>
@@ -70,6 +71,12 @@ public:
     /// which ports need forwarding — notably the web server starting or
     /// stopping, which is what finally gives the webServerUPnP pref an effect.
     void updatePortMappings();
+
+    /// The bound-interface selection changed (preference edit) or may have (watchdog):
+    /// re-resolve it, and when it differs close every socket and reopen on the new one.
+    /// While it does not resolve the networks stay down; the daemon keeps running.
+    void applyBindSelection();
+    [[nodiscard]] bool isNetworkSuspended() const { return m_netSuspended; }
 
     // -- Protocol handlers installed on the shared sockets ---------------------
     // Static and state-free, so the wiring below stays a one-liner and the
@@ -142,6 +149,13 @@ private:
     /// a port nothing is listening on.
     [[nodiscard]] std::vector<PortMapRequest> buildPortMapRequests() const;
     void stopWorkerThreads();
+    void suspendNetworking();
+    void resumeNetworking();
+
+    BindAddress::Resolution m_appliedBind;   ///< what the open sockets were bound on
+    bool m_netSuspended = false;
+    bool m_resumeEd2k = false;   ///< reconnect to a server on resume
+    bool m_resumeKad = false;    ///< restart Kad on resume
 
     // Owned components
     std::unique_ptr<DownloadQueue> m_downloadQueue;

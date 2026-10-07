@@ -3,6 +3,7 @@
 /// @brief Client for an eNode server's Meta API (MetaApi + AccountApi).
 
 #include "enodemeta/MetaApiClient.h"
+#include "net/GuardedNetworkAccessManager.h"
 
 #include "enodemeta/GrpcWeb.h"
 #include "enodemeta/MetaIdentity.h"
@@ -67,7 +68,7 @@ QString MetaEndpoint::origin() const
 
 MetaApiClient::MetaApiClient(QObject* parent)
     : QObject(parent)
-    , m_nam(new QNetworkAccessManager(this))
+    , m_nam(new GuardedNetworkAccessManager(this))
 {
 }
 

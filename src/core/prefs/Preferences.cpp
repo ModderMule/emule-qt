@@ -2899,6 +2899,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("nick"), nick());
     prefs.insert(QStringLiteral("port"), port());
     prefs.insert(QStringLiteral("udpPort"), udpPort());
+    prefs.insert(QStringLiteral("bindAddress"), bindAddress());
     prefs.insert(QStringLiteral("maxUpload"), static_cast<qint64>(maxUpload()));
     prefs.insert(QStringLiteral("maxDownload"), static_cast<qint64>(maxDownload()));
     prefs.insert(QStringLiteral("maxGraphDownloadRate"), static_cast<qint64>(maxGraphDownloadRate()));
@@ -3134,6 +3135,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->nick             = p.value(QStringLiteral("nick")).toString();
     m_data->port             = static_cast<uint16>(p.value(QStringLiteral("port")).toInteger());
     m_data->udpPort          = static_cast<uint16>(p.value(QStringLiteral("udpPort")).toInteger());
+    m_data->bindAddress      = p.value(QStringLiteral("bindAddress")).toString();
     m_data->maxUpload        = static_cast<uint32>(p.value(QStringLiteral("maxUpload")).toInteger());
     m_data->maxDownload      = static_cast<uint32>(p.value(QStringLiteral("maxDownload")).toInteger());
     m_data->maxGraphDownloadRate = static_cast<uint32>(p.value(QStringLiteral("maxGraphDownloadRate")).toInteger());

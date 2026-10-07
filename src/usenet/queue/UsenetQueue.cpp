@@ -252,6 +252,12 @@ void UsenetQueue::stop()
     m_usage.flush();
 }
 
+void UsenetQueue::rebuildForRouteChange()
+{
+    m_routeChanged = true;
+    applyServers(QList<NewsServer>(m_servers), m_retryIntervalSec);
+}
+
 void UsenetQueue::applyServers(const QList<NewsServer>& servers, int retryIntervalSec)
 {
     // A row configured with no connections can never be leased, so keeping it
@@ -298,9 +304,10 @@ void UsenetQueue::applyServers(const QList<NewsServer>& servers, int retryInterv
     // live probes with them. A proxy stall still takes the rebuild as its retry.
     if (m_running && !m_workers.isEmpty() && m_servers == m_workerServersBuilt
         && m_retryIntervalSec == m_workerRetryBuilt && m_proxy == m_workerProxyBuilt
-        && m_proxyBlockedUntilMs == 0 && m_proxyStallReason.isEmpty()) {
+        && m_proxyBlockedUntilMs == 0 && m_proxyStallReason.isEmpty() && !m_routeChanged) {
         return;
     }
+    m_routeChanged = false;
 
     // Abandon any probe in flight. Its answer was about the old account list, and
     // the workers holding its requests are about to be torn down — without this

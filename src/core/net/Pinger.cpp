@@ -3,6 +3,8 @@
 /// @brief Cross-platform ICMP/UDP ping — replaces Windows ICMP.DLL Pinger.
 
 #include "net/Pinger.h"
+#include "net/BindAddress.h"
+#include "net/InterfacePin.h"
 #include "utils/Log.h"
 
 #include <QElapsedTimer>
@@ -69,6 +71,12 @@ Pinger::~Pinger()
 
 PingStatus Pinger::ping(uint32 addr, uint8 ttl, bool useUdp)
 {
+    if (!applyInterfacePin()) {
+        PingStatus blocked;
+        blocked.delay = static_cast<float>(kPingTimeoutMs);
+        blocked.error = static_cast<uint32>(ENETDOWN);
+        return blocked;
+    }
     if (useUdp && m_udpStarted)
         return pingUDP(addr, ttl);
     return pingICMP(addr, ttl);
@@ -320,6 +328,34 @@ uint16 Pinger::icmpChecksum(const void* data, int len)
     return static_cast<uint16>(~sum);
 }
 
+// Probes follow the bound interface; false = blocked, send nothing.
+bool Pinger::applyInterfacePin()
+{
+    const BindAddress::Resolution r = BindAddress::current();
+    if (r.state == BindAddress::State::Blocked)
+        return false;
+    const int wanted = r.state == BindAddress::State::Bound ? r.index : 0;
+    if (wanted == m_pinnedIndex)
+        return true;
+    for (const int fd : {m_icmpSocket, m_rawSocket, m_udpSocket}) {
+        if (fd < 0)
+            continue;
+        if (wanted == 0) {
+            // Back to "any": index 0 clears the option.
+#ifdef Q_OS_DARWIN
+            const unsigned none = 0;
+            ::setsockopt(fd, IPPROTO_IP, IP_BOUND_IF, &none, sizeof(none));
+#elif defined(SO_BINDTODEVICE)
+            ::setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, "", 0);
+#endif
+        } else if (!InterfacePin::pinToInterface(fd, wanted, r.name)) {
+            return false;
+        }
+    }
+    m_pinnedIndex = wanted;
+    return true;
+}
+
 } // namespace eMule
 
 #else // Q_OS_WIN
@@ -356,6 +392,13 @@ Pinger::~Pinger()
 
 PingStatus Pinger::ping(uint32 addr, uint8 ttl, bool /*useUdp*/)
 {
+    // IcmpSendEcho cannot be pinned to an interface: at least send nothing while the
+    // selected one is missing.
+    if (!BindAddress::outboundAllowed()) {
+        PingStatus blocked;
+        blocked.error = static_cast<uint32>(ERROR_NETWORK_UNREACHABLE);
+        return blocked;
+    }
     // Windows always uses ICMP via IcmpSendEcho (UDP traceroute not implemented)
     return pingICMP(addr, ttl);
 }

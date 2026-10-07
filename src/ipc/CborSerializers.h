@@ -14,6 +14,7 @@
 #include "files/PartFile.h"
 #include "friends/Friend.h"
 #include "geo/IP2Country.h"
+#include "net/BindAddress.h"
 #include "search/SearchFile.h"
 #include "server/Server.h"
 #include "server/ServerList.h"
@@ -227,6 +228,17 @@ inline constexpr qsizetype kMaxBarRanges = 1024;
         {QStringLiteral("containerExpected"),   cc.expected},
         {QStringLiteral("containerActual"),     cc.actual},
     };
+}
+
+/// The bound-interface state every connection snapshot carries: `netBlocked` while the
+/// selected interface is missing (nothing connects), with the reason and the interface.
+inline void insertBindState(QCborMap& info)
+{
+    const BindAddress::Resolution r = BindAddress::current();
+    info.insert(QStringLiteral("netBlocked"), r.state == BindAddress::State::Blocked);
+    info.insert(QStringLiteral("netBlockReason"), r.reason);
+    info.insert(QStringLiteral("boundInterface"),
+                r.state == BindAddress::State::Bound ? r.name : QString());
 }
 
 [[nodiscard]] inline QCborMap toCbor(const Server& s)

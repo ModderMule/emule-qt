@@ -2,6 +2,7 @@
 /// @brief Orchestrator for the headless core daemon — implementation.
 
 #include "DaemonApp.h"
+#include "net/GuardedNetworkAccessManager.h"
 #include "CoreNotifierBridge.h"
 #include "DaemonUsenetWebBackend.h"
 #include "IpcServer.h"
@@ -95,7 +96,7 @@ bool DaemonApp::start()
 
     // Resolve and log public IP (non-blocking, opt-in)
     if (thePrefs.logPublicIP()) {
-        auto* nam = new QNetworkAccessManager(this);
+        auto* nam = new GuardedNetworkAccessManager(this);
         // curl -6 ifconfig.me <- for v6 detection later
         QNetworkRequest req = Http::makeRequest(QUrl(QStringLiteral("https://api.ipify.org")));
         req.setTransferTimeout(5000);
@@ -131,6 +132,15 @@ bool DaemonApp::start()
     // Connect core signals to IPC push events
     m_notifierBridge = std::make_unique<CoreNotifierBridge>(m_ipcServer.get(), this);
     m_notifierBridge->connectAll();
+
+    // The bound interface went away, came back or was changed: the session has closed
+    // the P2P sockets; the parts it does not own follow here.
+    theApp.onNetworkSuspended = [this](bool) {
+        if (m_usenetSession)
+            m_usenetSession->onNetworkRouteChanged();
+        if (m_notifierBridge)
+            m_notifierBridge->pushNetworkState();
+    };
 
     // Connect web server config changes from any IPC client
     connect(m_ipcServer.get(), &IpcServer::webServerConfigChanged,
@@ -243,6 +253,7 @@ void DaemonApp::stop()
     if (theApp.statistics)
         flushCumulativeStats(thePrefs);
 
+    theApp.onNetworkSuspended = nullptr;
     m_notifierBridge.reset();
 
     if (m_ipcServer)

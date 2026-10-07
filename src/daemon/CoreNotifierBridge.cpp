@@ -2,6 +2,7 @@
 /// @brief Core signal to IPC push event bridge — implementation.
 
 #include "CoreNotifierBridge.h"
+#include "ipc/CborSerializers.h"
 #include "SharedFileRows.h"
 #include "IpcServer.h"
 
@@ -272,7 +273,25 @@ void CoreNotifierBridge::onDownloadCompleted(PartFile* file)
     }
 }
 
+void CoreNotifierBridge::pushNetworkState()
+{
+    broadcastServerState();
+}
+
 void CoreNotifierBridge::onServerStateChanged()
+{
+    const bool connected = broadcastServerState();
+
+    // Email notification for urgent: server connection lost
+    if (!connected && thePrefs.notifyOnUrgent() && thePrefs.notifyEmailEnabled()) {
+        sendEmailNotification(
+            QStringLiteral("eMule: Server connection lost"),
+            QStringLiteral("Warning: Server connection has been lost."));
+    }
+}
+
+// One snapshot to every client; true when connected to a server.
+bool CoreNotifierBridge::broadcastServerState()
 {
     // Not coalesced, unlike every other state snapshot. It is low-rate, and it is
     // the one push whose *transitions* matter rather than just its latest value —
@@ -293,6 +312,7 @@ void CoreNotifierBridge::onServerStateChanged()
                 theApp.serverConnect && theApp.serverConnect->isConnected()
                     && theApp.serverConnect->isLowID());
     info.insert(QStringLiteral("clientID"),   static_cast<qint64>(theApp.getID()));
+    insertBindState(info);
     if (connected && theApp.serverConnect) {
         info.insert(QStringLiteral("publicIP"),
                     static_cast<qint64>(theApp.publicIP()));
@@ -317,13 +337,7 @@ void CoreNotifierBridge::onServerStateChanged()
     }
     msg.append(info);
     m_ipcServer->broadcast(msg);
-
-    // Email notification for urgent: server connection lost
-    if (!connected && thePrefs.notifyOnUrgent() && thePrefs.notifyEmailEnabled()) {
-        sendEmailNotification(
-            QStringLiteral("eMule: Server connection lost"),
-            QStringLiteral("Warning: Server connection has been lost."));
-    }
+    return connected;
 }
 
 void CoreNotifierBridge::onServerMessage(ServerMsgType type, const QString& text)

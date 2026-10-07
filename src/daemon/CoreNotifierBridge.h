@@ -63,6 +63,10 @@ public:
     /// history has to live on this side of the IPC boundary.
     [[nodiscard]] static const std::deque<ServerMessage>& serverMessageHistory();
 
+    /// The bound interface went away or came back: push the connection snapshot
+    /// (it carries the blocked state) without the "connection lost" mail.
+    void pushNetworkState();
+
 private slots:
     // DownloadQueue signals
     void onDownloadAdded();
@@ -71,6 +75,7 @@ private slots:
 
     // ServerConnect signals
     void onServerStateChanged();
+    bool broadcastServerState();
     void onServerMessage(eMule::ServerMsgType type, const QString& text);
 
     // Statistics signals

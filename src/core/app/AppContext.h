@@ -200,6 +200,12 @@ struct AppContext {
     /// rather than a Qt signal keeps AppContext a plain struct with no moc dependency.
     std::function<void(const Address& effective)> onPublicIPv6Changed;
 
+    /// The bind selection preference was edited: re-resolve and reopen. Set by CoreSession.
+    std::function<void()> onBindSelectionChanged;
+    /// Networks went down (true) / came back (false) with the bound interface; for the
+    /// parts outside the session (Usenet, IRC, state pushes).
+    std::function<void(bool suspended)> onNetworkSuspended;
+
     /// Tier 1: the egress IPv6 a server observed us on (CT_MOD_YOUR_IP in OP_SERVERIDENT).
     /// Callers must only pass this for a session that actually connected over IPv6; the
     /// address is rejected unless it is global-unicast *and* held on a local interface.

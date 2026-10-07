@@ -3,6 +3,7 @@
 /// @brief IRC protocol client implementation — replaces MFC CIrcMain + CIrcSocket.
 
 #include "chat/IrcClient.h"
+#include "net/InterfacePin.h"
 #include "utils/Log.h"
 
 #include <QTcpSocket>
@@ -68,6 +69,12 @@ void IrcClient::connectToServer(const QString& serverAddress, const QString& nic
     QObject::connect(m_socket, &QTcpSocket::errorOccurred,
                      this, &IrcClient::onSocketError);
 
+    if (!InterfacePin::prepareOutgoing(*m_socket, false)) {
+        logWarning(QStringLiteral("IRC: not connecting — the selected network interface is not available"));
+        m_socket->deleteLater();
+        m_socket = nullptr;
+        return;
+    }
     m_socket->connectToHost(host, static_cast<quint16>(port));
 }
 

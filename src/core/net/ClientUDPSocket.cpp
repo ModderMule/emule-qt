@@ -4,6 +4,7 @@
 
 #include "net/ClientUDPSocket.h"
 #include "net/BindAddress.h"
+#include "net/InterfacePin.h"
 #include "net/EncryptedDatagramSocket.h"
 #include "net/IPv6SourcePin.h"
 #include "app/AppContext.h"
@@ -67,6 +68,10 @@ bool ClientUDPSocket::create()
         logError(QStringLiteral("ClientUDPSocket: Failed to bind: %1").arg(m_socket.errorString()));
         return false;
     }
+    if (!InterfacePin::pin(m_socket.socketDescriptor())) {
+        m_socket.close();
+        return false;
+    }
     m_port = m_socket.localPort();
     growReceiveBuffer();
     return true;
@@ -81,6 +86,10 @@ bool ClientUDPSocket::rebind(uint16 port)
     if (!m_socket.bind(*bindTo, port)) {
         logError(QStringLiteral("ClientUDPSocket: Failed to rebind to port %1: %2")
                      .arg(port).arg(m_socket.errorString()));
+        return false;
+    }
+    if (!InterfacePin::pin(m_socket.socketDescriptor())) {
+        m_socket.close();
         return false;
     }
     m_port = m_socket.localPort();

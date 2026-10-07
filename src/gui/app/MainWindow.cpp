@@ -389,12 +389,23 @@ void MainWindow::setEd2kStatus(bool connected, bool connecting, bool firewalled,
         m_statusEd2k->setText(tr("eD2K: Connecting..."));
         m_statusEd2k->setStyleSheet(QStringLiteral("color: orange;"));
         m_connStatus->setEd2kState(ConnectionStatusWidget::Firewalled);
+    } else if (m_netBlocked) {
+        m_statusEd2k->setText(tr("Blocked: network interface not available"));
+        m_statusEd2k->setStyleSheet(QStringLiteral("color: red;"));
+        m_connStatus->setEd2kState(ConnectionStatusWidget::Disconnected);
     } else {
         m_statusEd2k->setText(tr("eD2K: Disconnected"));
         m_statusEd2k->setStyleSheet(QString{});
         m_connStatus->setEd2kState(ConnectionStatusWidget::Disconnected);
     }
+    m_statusEd2k->setToolTip(m_netBlocked ? m_netBlockReason : QString());
     updateConnectButton();
+}
+
+void MainWindow::setNetworkBlocked(bool blocked, const QString& reason)
+{
+    m_netBlocked = blocked;
+    m_netBlockReason = reason;
 }
 
 void MainWindow::setKadStatus(bool running, bool kadConnected, bool firewalled)

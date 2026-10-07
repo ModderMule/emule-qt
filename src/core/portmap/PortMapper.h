@@ -56,6 +56,9 @@ public:
 
     void start();
     void stop(bool releaseMappings);
+    /// stop() and forget the backends, so the next start() builds them for the
+    /// interface bound by then.
+    void stopForInterfaceChange();
 
     /// Re-run the backend race — on a network change, or from the GUI's
     /// "recheck firewall" action.

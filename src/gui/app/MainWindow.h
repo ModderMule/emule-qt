@@ -141,6 +141,11 @@ public:
     /// ed2k+kad state (tray icon), \p lowID the per-network eD2K LowID (label colour).
     void setEd2kStatus(bool connected, bool connecting, bool firewalled, bool lowID);
 
+    /// The daemon's selected network interface is missing: nothing can connect.
+    /// Shown in place of "Disconnected", with @p reason as the tooltip. Call before
+    /// setEd2kStatus(), which redraws the label.
+    void setNetworkBlocked(bool blocked, const QString& reason);
+
     /// Update the Kad status label in the footer.
     void setKadStatus(bool running, bool kadConnected, bool firewalled);
 
@@ -292,6 +297,8 @@ private:
     bool m_ed2kConnected = false;
     bool m_ed2kFirewalled = false;   ///< combined ed2k+kad firewall state (tray icon)
     bool m_ed2kLowID = false;        ///< eD2K-only LowID
+    bool m_netBlocked = false;       ///< daemon's bound interface is missing
+    QString m_netBlockReason;
     bool m_kadRunning = false;
     bool m_kadConnected = false;
     bool m_kadFirewalled = false;

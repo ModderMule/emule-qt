@@ -3,6 +3,7 @@
 /// @brief `/v1/info` handshake — implementation.
 
 #include "httpcache/HttpCacheServerProbe.h"
+#include "net/GuardedNetworkAccessManager.h"
 
 #include "net/HttpDefaults.h"
 #include "utils/Log.h"
@@ -138,7 +139,7 @@ void probe(const QString& baseUrl, QObject* context,
 
     // Owns itself. The reply's finished() always arrives — abort() included — so
     // the cleanup is safe to hang off it even when the caller is long gone.
-    auto* nam = new QNetworkAccessManager();
+    auto* nam = new GuardedNetworkAccessManager();
     QNetworkReply* reply = nam->get(req);
 
     auto tooBig = std::make_shared<bool>(false);

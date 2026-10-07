@@ -4,6 +4,7 @@
 
 #include "net/UDPSocket.h"
 #include "net/BindAddress.h"
+#include "net/InterfacePin.h"
 #include "net/EncryptedDatagramSocket.h"
 #include "net/HostResolver.h"
 #include "net/IPv6SourcePin.h"
@@ -72,6 +73,10 @@ bool UDPSocket::create()
     if (!m_socket.bind(*bindTo, bindPort)) {
         logError(QStringLiteral("UDPSocket: Failed to bind server UDP port %1: %2")
                      .arg(bindPort).arg(m_socket.errorString()));
+        return false;
+    }
+    if (!InterfacePin::pin(m_socket.socketDescriptor())) {
+        m_socket.close();
         return false;
     }
     return true;

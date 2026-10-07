@@ -166,6 +166,10 @@ public:
     /// rebuild, so call it before applyServers(), which does one.
     void setProxy(const QNetworkProxy& proxy) { m_proxy = proxy; }
 
+    /// The bound network interface changed: every connection is on the old route.
+    /// Drop them and rebuild the workers.
+    void rebuildForRouteChange();
+
     // -- Queue operations ---------------------------------------------------
 
     /// Parse @p data and queue it. Returns the new item id, or an empty string
@@ -1185,6 +1189,7 @@ private:
     QList<NewsServer> m_workerServersBuilt;
     int m_workerRetryBuilt = 0;
     QNetworkProxy m_workerProxyBuilt{QNetworkProxy::NoProxy};
+    bool m_routeChanged = false;   ///< forces the next applyServers() to rebuild
 
     /// Distinct configured levels, ascending — the failover ladder. A level's
     /// index here is its rung. Built by nntpLevelLadder() from the same list and

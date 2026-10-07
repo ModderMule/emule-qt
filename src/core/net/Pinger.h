@@ -158,6 +158,9 @@ private:
     bool m_udpStarted = false;
 
     uint16 m_icmpSeq = 0;    ///< Incrementing ICMP sequence number.
+    int m_pinnedIndex = 0;   ///< Interface the sockets are pinned to, 0 = none.
+
+    bool applyInterfacePin();
 #endif
 };
 
