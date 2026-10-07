@@ -662,6 +662,16 @@ void SearchList::setNotesSearchStatus(const uint8* fileHash, bool running)
     }
 }
 
+std::vector<uint32> SearchList::searchIDs() const
+{
+    std::vector<uint32> ids;
+    for (const SearchListEntry& entry : m_fileLists) {
+        if (!entry.clientSharedFiles)
+            ids.push_back(entry.searchID);
+    }
+    return ids;
+}
+
 uint32 SearchList::resultCount(uint32 searchID) const
 {
     const auto* entry = findEntry(searchID);

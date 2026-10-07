@@ -4,7 +4,7 @@
 
 #include "webserver/WebServer.h"
 #include "net/BindAddress.h"
-#include "webserver/JsonSerializers.h"
+#include "webserver/ApiEventHub.h"
 #include "webserver/WebSessionManager.h"
 #include "webserver/WebTemplateEngine.h"
 
@@ -76,10 +76,6 @@ namespace eMule {
 // Auth check result
 // ---------------------------------------------------------------------------
 
-struct WebServer::AuthResult {
-    bool ok = false;
-    QHttpServerResponse response{QHttpServerResponse::StatusCode::Ok};
-};
 
 // ---------------------------------------------------------------------------
 // JSON error / success helpers
@@ -269,6 +265,7 @@ WebServer::WebServer(QObject* parent)
     : QObject(parent)
     , m_streamToken(QUuid::createUuid().toString(QUuid::WithoutBraces).remove(QLatin1Char('-')))
 {
+    buildApiTable();
 }
 
 WebServer::~WebServer()
@@ -355,6 +352,7 @@ bool WebServer::start(const WebServerConfig& config)
             m_config.httpsEnabled   = false;
             m_config.webUiEnabled   = false;
             m_config.restApiEnabled = false;
+            m_config.mcpEnabled     = false;
             m_config.guestEnabled   = false;
             m_config.listenAddress  = QStringLiteral("127.0.0.1");
         }
@@ -464,7 +462,25 @@ bool WebServer::start(const WebServerConfig& config)
                 .arg(addr == QHostAddress::Any ? QStringLiteral("all interfaces") : addr.toString())
                 .arg(actualPort)
                 .arg(m_config.httpsEnabled ? QStringLiteral(" (HTTPS)") : QString()));
-    if (!addr.isLoopback() && (m_config.webUiEnabled || m_config.restApiEnabled))
+    // Where the API explains itself. A wildcard bind is shown as localhost.
+    const QString base = QStringLiteral("%1://%2:%3")
+        .arg(m_config.httpsEnabled ? QStringLiteral("https") : QStringLiteral("http"),
+             addr == QHostAddress::Any || addr == QHostAddress::AnyIPv4 || addr == QHostAddress::AnyIPv6
+                 ? QStringLiteral("localhost")
+                 : addr.protocol() == QAbstractSocket::IPv6Protocol
+                       ? QStringLiteral("[%1]").arg(addr.toString()) : addr.toString())
+        .arg(actualPort);
+    if (m_config.restApiEnabled) {
+        logInfo(QStringLiteral("WebServer: REST API playground at %1/api/v1/docs").arg(base));
+        logInfo(QStringLiteral("WebServer: OpenAPI document at %1/api/v1/openapi.json").arg(base));
+    }
+    if (m_config.mcpEnabled) {
+        logInfo(QStringLiteral("WebServer: MCP endpoint at %1/mcp%2")
+                    .arg(base, m_config.mcpReadOnly ? QStringLiteral(" (read-only tools)")
+                                                    : QString()));
+    }
+    if (!addr.isLoopback()
+        && (m_config.webUiEnabled || m_config.restApiEnabled || m_config.mcpEnabled))
         logInfo(QStringLiteral("WebServer: reachable from other hosts; set a listen address "
                                "of 127.0.0.1 to keep it local"));
 
@@ -481,8 +497,10 @@ WebServerConfig WebServerConfig::fromPreferences(const Preferences& prefs)
     config.port           = prefs.webServerPort();
     config.webUiEnabled   = prefs.webServerEnabled();
     config.restApiEnabled = prefs.webServerRestApiEnabled();
+    config.mcpEnabled     = prefs.webServerMcpEnabled();
+    config.mcpReadOnly    = prefs.webServerMcpReadOnly();
 
-    if (config.webUiEnabled || config.restApiEnabled) {
+    if (config.webUiEnabled || config.restApiEnabled || config.mcpEnabled) {
         // Either surface needs the shared server + auth settings: REST authenticates
         // with apiKey, the web UI with a session login.
         config.listenAddress       = prefs.webServerListenAddress();
@@ -516,6 +534,15 @@ void WebServer::stop()
 {
     if (!m_server)
         return;
+
+    // Event streams go with the server: their sockets are about to close.
+    for (qsizetype i = 0; i < static_cast<qsizetype>(m_eventClients.size()); ++i) {
+        if (m_eventHub)
+            m_eventHub->removeListener();
+    }
+    m_eventClients.clear();
+    delete m_eventHeartbeat;
+    m_eventHeartbeat = nullptr;
 
     m_server.reset();   // Destroys QHttpServer + owned QTcpServer
     m_tcpServer = nullptr;
@@ -678,216 +705,16 @@ void WebServer::registerRoutes()
             return handleUsenetPreviewStream(itemId, fileIndex, req);
         });
 
-    // --- REST API routes (only if REST API is enabled) ---
-    if (!m_config.restApiEnabled)
-        return;
+    // --- REST API (/api/v1/*), from the operation table ---
+    if (m_config.restApiEnabled) {
+        registerApiRoutes();
+        registerEventRoute();
+        registerDocsRoutes();
+    }
 
-    // --- Downloads ---
-    m_server->route(QStringLiteral("/api/v1/downloads"), QHttpServerRequest::Method::Get,
-        [this](const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleGetDownloads();
-        });
-
-    m_server->route(QStringLiteral("/api/v1/downloads/<arg>"), QHttpServerRequest::Method::Get,
-        [this](const QString& hash, const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleGetDownload(hash);
-        });
-
-    m_server->route(QStringLiteral("/api/v1/downloads/<arg>/pause"), QHttpServerRequest::Method::Post,
-        [this](const QString& hash, const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handlePauseDownload(hash);
-        });
-
-    m_server->route(QStringLiteral("/api/v1/downloads/<arg>/resume"), QHttpServerRequest::Method::Post,
-        [this](const QString& hash, const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleResumeDownload(hash);
-        });
-
-    m_server->route(QStringLiteral("/api/v1/downloads/<arg>/cancel"), QHttpServerRequest::Method::Post,
-        [this](const QString& hash, const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleCancelDownload(hash);
-        });
-
-    // --- Usenet queue ---
-    // Literal paths before the <arg> ones, so "stats" is never taken for an item id.
-    m_server->route(QStringLiteral("/api/v1/usenet/stats"), QHttpServerRequest::Method::Get,
-        [this](const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleRestUsenetStats();
-        });
-
-    m_server->route(QStringLiteral("/api/v1/usenet/pause"), QHttpServerRequest::Method::Post,
-        [this](const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleUsenetEngineOp(true);
-        });
-
-    m_server->route(QStringLiteral("/api/v1/usenet/resume"), QHttpServerRequest::Method::Post,
-        [this](const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleUsenetEngineOp(false);
-        });
-
-    m_server->route(QStringLiteral("/api/v1/usenet/categories/<arg>/<arg>"), QHttpServerRequest::Method::Post,
-        [this](const QString& category, const QString& op, const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleRestUsenetCategoryOp(category, op);
-        });
-
-    m_server->route(QStringLiteral("/api/v1/usenet"), QHttpServerRequest::Method::Get,
-        [this](const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleRestUsenetList(req);
-        });
-
-    m_server->route(QStringLiteral("/api/v1/usenet"), QHttpServerRequest::Method::Post,
-        [this](const QHttpServerRequest& req) -> QFuture<QHttpServerResponse> {
-            if (auto r = checkAuth(req.headers()); !r.ok)
-                return finishedResponse(std::move(r.response));
-            return handleUsenetAdd(req, /*restApi*/ true);
-        });
-
-    m_server->route(QStringLiteral("/api/v1/usenet/<arg>"), QHttpServerRequest::Method::Get,
-        [this](const QString& id, const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleRestUsenetItem(id);
-        });
-
-    m_server->route(QStringLiteral("/api/v1/usenet/<arg>"), QHttpServerRequest::Method::Patch,
-        [this](const QString& id, const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleRestUsenetPatch(id, req);
-        });
-
-    m_server->route(QStringLiteral("/api/v1/usenet/<arg>"), QHttpServerRequest::Method::Delete,
-        [this](const QString& id, const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleRestUsenetDelete(id, req);
-        });
-
-    m_server->route(QStringLiteral("/api/v1/usenet/<arg>/<arg>/entries"), QHttpServerRequest::Method::Get,
-        [this](const QString& id, const QString& fileIndex, const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleRestUsenetEntries(id, fileIndex);
-        });
-
-    m_server->route(QStringLiteral("/api/v1/usenet/<arg>/<arg>"), QHttpServerRequest::Method::Post,
-        [this](const QString& id, const QString& op, const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleRestUsenetItemOp(id, op);
-        });
-
-    // --- Uploads ---
-    m_server->route(QStringLiteral("/api/v1/uploads"), QHttpServerRequest::Method::Get,
-        [this](const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleGetUploads();
-        });
-
-    // --- Servers ---
-    m_server->route(QStringLiteral("/api/v1/servers"), QHttpServerRequest::Method::Get,
-        [this](const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleGetServers();
-        });
-
-    // --- Connection ---
-    m_server->route(QStringLiteral("/api/v1/connection"), QHttpServerRequest::Method::Get,
-        [this](const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleGetConnection();
-        });
-
-    m_server->route(QStringLiteral("/api/v1/connection/connect"), QHttpServerRequest::Method::Post,
-        [this](const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handlePostConnect();
-        });
-
-    m_server->route(QStringLiteral("/api/v1/connection/disconnect"), QHttpServerRequest::Method::Post,
-        [this](const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handlePostDisconnect();
-        });
-
-    // --- Search ---
-    m_server->route(QStringLiteral("/api/v1/search"), QHttpServerRequest::Method::Post,
-        [this](const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            auto doc = QJsonDocument::fromJson(req.body());
-            if (!doc.isObject())
-                return jsonError(400, QStringLiteral("Invalid JSON body"));
-            return handlePostSearch(doc.object());
-        });
-
-    m_server->route(QStringLiteral("/api/v1/search/<arg>/results"), QHttpServerRequest::Method::Get,
-        [this](uint32 searchID, const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleGetSearchResults(searchID);
-        });
-
-    m_server->route(QStringLiteral("/api/v1/search/<arg>"), QHttpServerRequest::Method::Delete,
-        [this](uint32 searchID, const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleDeleteSearch(searchID);
-        });
-
-    // --- Shared files ---
-    m_server->route(QStringLiteral("/api/v1/shared"), QHttpServerRequest::Method::Get,
-        [this](const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleGetSharedFiles();
-        });
-
-    // --- Friends ---
-    m_server->route(QStringLiteral("/api/v1/friends"), QHttpServerRequest::Method::Get,
-        [this](const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleGetFriends();
-        });
-
-    m_server->route(QStringLiteral("/api/v1/friends"), QHttpServerRequest::Method::Post,
-        [this](const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            auto doc = QJsonDocument::fromJson(req.body());
-            if (!doc.isObject())
-                return jsonError(400, QStringLiteral("Invalid JSON body"));
-            return handlePostFriend(doc.object());
-        });
-
-    m_server->route(QStringLiteral("/api/v1/friends/<arg>"), QHttpServerRequest::Method::Delete,
-        [this](const QString& hash, const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleDeleteFriend(hash);
-        });
-
-    // --- Statistics ---
-    m_server->route(QStringLiteral("/api/v1/stats"), QHttpServerRequest::Method::Get,
-        [this](const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleGetStats();
-        });
-
-    // --- Preferences ---
-    m_server->route(QStringLiteral("/api/v1/preferences"), QHttpServerRequest::Method::Get,
-        [this](const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            return handleGetPreferences();
-        });
-
-    m_server->route(QStringLiteral("/api/v1/preferences"), QHttpServerRequest::Method::Patch,
-        [this](const QHttpServerRequest& req) {
-            if (auto r = checkAuth(req.headers()); !r.ok) return std::move(r.response);
-            auto doc = QJsonDocument::fromJson(req.body());
-            if (!doc.isObject())
-                return jsonError(400, QStringLiteral("Invalid JSON body"));
-            return handlePatchPreferences(doc.object());
-        });
+    // --- MCP endpoint: its own switch, with or without the REST API ---
+    if (m_config.mcpEnabled)
+        registerMcpRoute();
 }
 
 // ---------------------------------------------------------------------------
@@ -900,94 +727,17 @@ WebServer::AuthResult WebServer::checkAuth(const QHttpHeaders& headers) const
     if (m_config.apiKey.isEmpty())
         return {false, jsonError(401, QStringLiteral("Unauthorized: no API key is configured"))};
 
-    const auto key = headers.combinedValue(QByteArrayLiteral("X-Api-Key"));
+    // X-Api-Key, or the Bearer form MCP clients send
+    QByteArray key = headers.combinedValue(QByteArrayLiteral("X-Api-Key"));
+    if (key.isEmpty()) {
+        const QByteArray bearer = headers.combinedValue(QByteArrayLiteral("Authorization"));
+        if (bearer.left(7).toLower() == "bearer ")
+            key = bearer.mid(7).trimmed();
+    }
     if (key.isEmpty() || QString::fromUtf8(key) != m_config.apiKey)
         return {false, jsonError(401, QStringLiteral("Unauthorized: invalid or missing API key"))};
 
     return {true, QHttpServerResponse(QHttpServerResponse::StatusCode::Ok)};
-}
-
-// ---------------------------------------------------------------------------
-// Download handlers
-// ---------------------------------------------------------------------------
-
-QHttpServerResponse WebServer::handleGetDownloads()
-{
-    if (!m_downloadQueue)
-        return jsonError(500, QStringLiteral("Download queue not available"));
-
-    QJsonArray arr;
-    for (const auto* file : m_downloadQueue->files())
-        arr.append(toJson(*file));
-
-    return jsonSuccess(arr);
-}
-
-QHttpServerResponse WebServer::handleGetDownload(const QString& hash)
-{
-    if (!m_downloadQueue)
-        return jsonError(500, QStringLiteral("Download queue not available"));
-
-    std::array<uint8, 16> hashBytes{};
-    if (hash.size() != 32 || decodeBase16(hash, hashBytes.data(), 16) != 16)
-        return jsonError(400, QStringLiteral("Invalid hash format"));
-
-    auto* file = m_downloadQueue->fileByID(hashBytes.data());
-    if (!file)
-        return jsonError(404, QStringLiteral("Download not found"));
-
-    return jsonSuccess(toJson(*file));
-}
-
-QHttpServerResponse WebServer::handlePauseDownload(const QString& hash)
-{
-    if (!m_downloadQueue)
-        return jsonError(500, QStringLiteral("Download queue not available"));
-
-    std::array<uint8, 16> hashBytes{};
-    if (hash.size() != 32 || decodeBase16(hash, hashBytes.data(), 16) != 16)
-        return jsonError(400, QStringLiteral("Invalid hash format"));
-
-    auto* file = m_downloadQueue->fileByID(hashBytes.data());
-    if (!file)
-        return jsonError(404, QStringLiteral("Download not found"));
-
-    file->pauseFile();
-    return jsonSuccess(toJson(*file));
-}
-
-QHttpServerResponse WebServer::handleResumeDownload(const QString& hash)
-{
-    if (!m_downloadQueue)
-        return jsonError(500, QStringLiteral("Download queue not available"));
-
-    std::array<uint8, 16> hashBytes{};
-    if (hash.size() != 32 || decodeBase16(hash, hashBytes.data(), 16) != 16)
-        return jsonError(400, QStringLiteral("Invalid hash format"));
-
-    auto* file = m_downloadQueue->fileByID(hashBytes.data());
-    if (!file)
-        return jsonError(404, QStringLiteral("Download not found"));
-
-    file->resumeFile();
-    return jsonSuccess(toJson(*file));
-}
-
-QHttpServerResponse WebServer::handleCancelDownload(const QString& hash)
-{
-    if (!m_downloadQueue)
-        return jsonError(500, QStringLiteral("Download queue not available"));
-
-    std::array<uint8, 16> hashBytes{};
-    if (hash.size() != 32 || decodeBase16(hash, hashBytes.data(), 16) != 16)
-        return jsonError(400, QStringLiteral("Invalid hash format"));
-
-    auto* file = m_downloadQueue->fileByID(hashBytes.data());
-    if (!file)
-        return jsonError(404, QStringLiteral("Download not found"));
-
-    file->stopFile(/*cancel=*/true);
-    return jsonSuccess(QJsonObject{{QStringLiteral("cancelled"), true}});
 }
 
 // ---------------------------------------------------------------------------
@@ -2160,396 +1910,6 @@ QByteArray WebServer::renderIncomingPlayer(const QString& relPath, const QString
                      htmlText(tr("Download this file")));
     html += QStringLiteral("</body></html>");
     return html.toUtf8();
-}
-
-// ---------------------------------------------------------------------------
-// Upload handlers
-// ---------------------------------------------------------------------------
-
-QHttpServerResponse WebServer::handleGetUploads()
-{
-    if (!m_uploadQueue)
-        return jsonError(500, QStringLiteral("Upload queue not available"));
-
-    QJsonObject obj{
-        {QStringLiteral("datarate"),           static_cast<qint64>(m_uploadQueue->datarate())},
-        {QStringLiteral("uploadQueueLength"),  m_uploadQueue->uploadQueueLength()},
-        {QStringLiteral("waitingUserCount"),   m_uploadQueue->waitingUserCount()},
-        {QStringLiteral("successfulUploads"),  static_cast<qint64>(m_uploadQueue->successfulUploadCount())},
-        {QStringLiteral("failedUploads"),      static_cast<qint64>(m_uploadQueue->failedUploadCount())},
-    };
-    return jsonSuccess(obj);
-}
-
-// ---------------------------------------------------------------------------
-// Server handlers
-// ---------------------------------------------------------------------------
-
-QHttpServerResponse WebServer::handleGetServers()
-{
-    if (!m_serverList)
-        return jsonError(500, QStringLiteral("Server list not available"));
-
-    QJsonArray arr;
-    for (const auto& srv : m_serverList->servers())
-        arr.append(toJson(*srv));
-
-    return jsonSuccess(arr);
-}
-
-// ---------------------------------------------------------------------------
-// Connection handlers
-// ---------------------------------------------------------------------------
-
-QHttpServerResponse WebServer::handleGetConnection()
-{
-    if (!m_serverConnect)
-        return jsonError(500, QStringLiteral("Server connection not available"));
-
-    const auto* current = m_serverConnect->currentServer();
-    QJsonObject obj{
-        {QStringLiteral("isConnected"),  m_serverConnect->isConnected()},
-        {QStringLiteral("isConnecting"), m_serverConnect->isConnecting()},
-        {QStringLiteral("isLowID"),      m_serverConnect->isLowID()},
-        {QStringLiteral("clientID"),     static_cast<qint64>(m_serverConnect->clientID())},
-        {QStringLiteral("netBlocked"),   !BindAddress::outboundAllowed()},
-        {QStringLiteral("netBlockReason"), BindAddress::current().reason},
-    };
-
-    if (current) {
-        obj[QStringLiteral("currentServer")] = QJsonObject{
-            {QStringLiteral("name"),    current->name()},
-            {QStringLiteral("address"), current->address()},
-            {QStringLiteral("port"),    current->port()},
-        };
-    }
-
-    return jsonSuccess(obj);
-}
-
-QHttpServerResponse WebServer::handlePostConnect()
-{
-    if (!m_serverConnect)
-        return jsonError(500, QStringLiteral("Server connection not available"));
-    if (!BindAddress::outboundAllowed())
-        return jsonError(409, BindAddress::current().reason);
-
-    m_serverConnect->connectToAnyServer();
-    return jsonSuccess(QJsonObject{{QStringLiteral("connecting"), true}});
-}
-
-QHttpServerResponse WebServer::handlePostDisconnect()
-{
-    if (!m_serverConnect)
-        return jsonError(500, QStringLiteral("Server connection not available"));
-
-    m_serverConnect->disconnect();
-    return jsonSuccess(QJsonObject{{QStringLiteral("disconnected"), true}});
-}
-
-// ---------------------------------------------------------------------------
-// Search handlers
-// ---------------------------------------------------------------------------
-
-QHttpServerResponse WebServer::handlePostSearch(const QJsonObject& body)
-{
-    if (!m_searchList)
-        return jsonError(500, QStringLiteral("Search list not available"));
-
-    const auto expression = body[QStringLiteral("expression")].toString();
-    if (expression.isEmpty())
-        return jsonError(400, QStringLiteral("Missing 'expression' field"));
-
-    SearchParams params;
-    params.expression = expression;
-    params.keyword = expression;
-    params.searchTitle = expression;
-
-    const auto text = [&body](QLatin1StringView key) { return body[key].toString(); };
-    const auto number = [&body](QLatin1StringView key) {
-        const double v = body[key].toDouble();
-        return v > 0 ? static_cast<uint64>(v) : uint64{0};
-    };
-    params.fileType        = text(QLatin1StringView("fileType"));
-    params.extension       = text(QLatin1StringView("extension"));
-    params.codec           = text(QLatin1StringView("codec"));
-    params.title           = text(QLatin1StringView("title"));
-    params.album           = text(QLatin1StringView("album"));
-    params.artist          = text(QLatin1StringView("artist"));
-    params.minSize         = number(QLatin1StringView("minSize"));
-    params.maxSize         = number(QLatin1StringView("maxSize"));
-    params.availability    = static_cast<uint32>(number(QLatin1StringView("availability")));
-    params.completeSources = static_cast<uint32>(number(QLatin1StringView("completeSources")));
-    params.minBitrate      = static_cast<uint32>(number(QLatin1StringView("minBitrate")));
-    params.minLength       = static_cast<uint32>(number(QLatin1StringView("minLength")));
-
-    const auto typeStr = body[QStringLiteral("type")].toString(QStringLiteral("ed2kServer"));
-    if (typeStr == QStringLiteral("kad"))
-        params.type = SearchType::Kademlia;
-    else if (typeStr == QStringLiteral("ed2kGlobal"))
-        params.type = SearchType::Ed2kGlobal;
-    else if (typeStr == QStringLiteral("automatic"))
-        params.type = SearchType::Automatic;
-    else if (typeStr == QStringLiteral("ed2kServer"))
-        params.type = SearchType::Ed2kServer;
-    else
-        return jsonError(400, QStringLiteral("Unknown search type"));
-
-    // The same entry point the GUI uses, so a search here really goes out.
-    const SearchStartResult outcome = startSearch(*m_searchList, params);
-    if (!outcome.ok)
-        return jsonError(409, outcome.error);
-
-    // "automatic" is resolved once the search is sent; until then it is what was asked.
-    const QString typeName = outcome.type == SearchType::Kademlia ? QStringLiteral("kad")
-                           : outcome.type == SearchType::Ed2kGlobal ? QStringLiteral("ed2kGlobal")
-                           : outcome.type == SearchType::Automatic ? QStringLiteral("automatic")
-                                                                   : QStringLiteral("ed2kServer");
-    QJsonObject result{
-        {QStringLiteral("searchID"), static_cast<qint64>(outcome.searchID)},
-        {QStringLiteral("type"), typeName},
-        {QStringLiteral("state"), searchRunStateName(outcome.state)},
-    };
-    if (!outcome.started) {
-        // Not sent yet: it goes out by itself once the network is there and the
-        // search before it is done. 202 — taken, not done. The state is on the
-        // results route.
-        result.insert(QStringLiteral("reason"), outcome.reason);
-        return QHttpServerResponse(result, QHttpServerResponse::StatusCode::Accepted);
-    }
-    return jsonSuccess(result);
-}
-
-QHttpServerResponse WebServer::handleDeleteSearch(uint32 searchID)
-{
-    if (!m_searchList)
-        return jsonError(500, QStringLiteral("Search list not available"));
-    if (!removeSearch(*m_searchList, searchID))
-        return jsonError(404, QStringLiteral("Search not found"));
-    return jsonSuccess(QJsonObject{{QStringLiteral("removed"), true}});
-}
-
-QHttpServerResponse WebServer::handleGetSearchResults(uint32 searchID)
-{
-    if (!m_searchList)
-        return jsonError(500, QStringLiteral("Search list not available"));
-
-    QJsonArray files;
-    const bool found = m_searchList->forEachResult(searchID,
-        [&files](const SearchFile* file) {
-            files.append(toJson(*file));
-        });
-
-    if (!found)
-        return jsonError(404, QStringLiteral("Search not found"));
-
-    QJsonObject result{
-        {QStringLiteral("searchID"),     static_cast<qint64>(searchID)},
-        {QStringLiteral("resultCount"),  static_cast<qint64>(m_searchList->resultCount(searchID))},
-        {QStringLiteral("foundFiles"),   static_cast<qint64>(m_searchList->foundFiles(searchID))},
-        {QStringLiteral("foundSources"), static_cast<qint64>(m_searchList->foundSources(searchID))},
-        {QStringLiteral("results"),      files},
-    };
-    // Whether there is more to wait for: queued / running / finished / failed.
-    if (const auto status = m_searchList->queue().status(searchID)) {
-        result.insert(QStringLiteral("state"), searchRunStateName(status->state));
-        if (!status->reason.isEmpty())
-            result.insert(QStringLiteral("reason"), status->reason);
-        if (!status->error.isEmpty())
-            result.insert(QStringLiteral("error"), status->error);
-    }
-
-    return jsonSuccess(result);
-}
-
-// ---------------------------------------------------------------------------
-// Shared file handlers
-// ---------------------------------------------------------------------------
-
-QHttpServerResponse WebServer::handleGetSharedFiles()
-{
-    if (!m_sharedFiles)
-        return jsonError(500, QStringLiteral("Shared file list not available"));
-
-    QJsonArray arr;
-    m_sharedFiles->forEachFile([&arr](KnownFile* file) {
-        arr.append(QJsonObject{
-            {QStringLiteral("hash"),     md4str(file->fileHash())},
-            {QStringLiteral("fileName"), file->fileName()},
-            {QStringLiteral("fileSize"), static_cast<qint64>(file->fileSize())},
-        });
-    });
-
-    return jsonSuccess(arr);
-}
-
-// ---------------------------------------------------------------------------
-// Friend handlers
-// ---------------------------------------------------------------------------
-
-QHttpServerResponse WebServer::handleGetFriends()
-{
-    if (!m_friendList)
-        return jsonError(500, QStringLiteral("Friend list not available"));
-
-    QJsonArray arr;
-    for (const auto& f : m_friendList->friends())
-        arr.append(toJson(*f));
-
-    return jsonSuccess(arr);
-}
-
-QHttpServerResponse WebServer::handlePostFriend(const QJsonObject& body)
-{
-    if (!m_friendList)
-        return jsonError(500, QStringLiteral("Friend list not available"));
-
-    const auto hashStr = body[QStringLiteral("hash")].toString();
-    const auto name = body[QStringLiteral("name")].toString();
-    const auto ip = static_cast<uint32>(body[QStringLiteral("ip")].toDouble());
-    const auto friendPort = static_cast<uint16>(body[QStringLiteral("port")].toInt());
-
-    // "addr" is the IPv6-capable form the GET side emits; "ip" remains accepted for
-    // IPv4-only callers, which is all the numeric field can express.
-    Address friendAddr = Address::fromString(body[QStringLiteral("addr")].toString());
-    if (friendAddr.isNull())
-        friendAddr = Address::fromNetworkOrder(ip);
-
-    bool hasHash = !hashStr.isEmpty() && hashStr.size() == 32;
-    std::array<uint8, 16> hashBytes{};
-
-    if (hasHash)
-        hasHash = decodeBase16(hashStr, hashBytes.data(), 16) > 0;
-
-    auto* f = m_friendList->addFriend(hasHash ? hashBytes.data() : nullptr,
-                                       friendAddr, friendPort, name, hasHash);
-    if (!f)
-        return jsonError(400, QStringLiteral("Failed to add friend"));
-
-    return jsonSuccess(toJson(*f));
-}
-
-QHttpServerResponse WebServer::handleDeleteFriend(const QString& hash)
-{
-    if (!m_friendList)
-        return jsonError(500, QStringLiteral("Friend list not available"));
-
-    std::array<uint8, 16> hashBytes{};
-    if (hash.size() != 32 || decodeBase16(hash, hashBytes.data(), 16) != 16)
-        return jsonError(400, QStringLiteral("Invalid hash format"));
-
-    auto* f = m_friendList->searchFriend(hashBytes.data());
-    if (!f)
-        return jsonError(404, QStringLiteral("Friend not found"));
-
-    m_friendList->removeFriend(f);
-    return jsonSuccess(QJsonObject{{QStringLiteral("deleted"), true}});
-}
-
-// ---------------------------------------------------------------------------
-// Statistics handlers
-// ---------------------------------------------------------------------------
-
-QHttpServerResponse WebServer::handleGetStats()
-{
-    if (!m_statistics)
-        return jsonError(500, QStringLiteral("Statistics not available"));
-
-    QJsonObject obj{
-        {QStringLiteral("rateDown"),             static_cast<double>(m_statistics->rateDown())},
-        {QStringLiteral("rateUp"),               static_cast<double>(m_statistics->rateUp())},
-        {QStringLiteral("maxDown"),              static_cast<double>(m_statistics->maxDown())},
-        {QStringLiteral("maxUp"),                static_cast<double>(m_statistics->maxUp())},
-        {QStringLiteral("sessionReceivedBytes"), static_cast<qint64>(m_statistics->sessionReceivedBytes())},
-        {QStringLiteral("sessionSentBytes"),     static_cast<qint64>(m_statistics->sessionSentBytes())},
-        {QStringLiteral("reconnects"),           m_statistics->reconnects()},
-        {QStringLiteral("uptimeSeconds"),        static_cast<qint64>(m_statistics->uptimeSecs())},
-    };
-
-    return jsonSuccess(obj);
-}
-
-// ---------------------------------------------------------------------------
-// Preferences handlers
-// ---------------------------------------------------------------------------
-
-QHttpServerResponse WebServer::handleGetPreferences()
-{
-    if (!m_preferences)
-        return jsonError(500, QStringLiteral("Preferences not available"));
-
-    QJsonObject obj{
-        {QStringLiteral("nick"),         m_preferences->nick()},
-        {QStringLiteral("maxUpload"),    static_cast<qint64>(m_preferences->maxUpload())},
-        {QStringLiteral("maxDownload"),  static_cast<qint64>(m_preferences->maxDownload())},
-        {QStringLiteral("port"),         m_preferences->port()},
-        {QStringLiteral("udpPort"),      m_preferences->udpPort()},
-        {QStringLiteral("bindAddress"),  m_preferences->bindAddress()},
-        {QStringLiteral("autoConnect"),  m_preferences->autoConnect()},
-        {QStringLiteral("kadEnabled"),   m_preferences->kadEnabled()},
-        {QStringLiteral("incomingDir"),  m_preferences->incomingDir()},
-    };
-
-    return jsonSuccess(obj);
-}
-
-QHttpServerResponse WebServer::handlePatchPreferences(const QJsonObject& body)
-{
-    if (!m_preferences)
-        return jsonError(500, QStringLiteral("Preferences not available"));
-
-    // Validate everything first: one bad field and nothing is changed.
-    const auto limit = [](const QJsonValue& v) -> std::optional<uint32> {
-        const double d = v.toDouble(-1);
-        if (!v.isDouble() || d < 0 || d > double(UINT32_MAX) || d != std::floor(d))
-            return std::nullopt;
-        return static_cast<uint32>(d);
-    };
-
-    std::optional<QString> nick;
-    std::optional<uint32> maxUpload, maxDownload;
-    std::optional<bool> autoConnect, kadEnabled;
-    for (auto it = body.begin(); it != body.end(); ++it) {
-        const QString key = it.key();
-        const QJsonValue value = it.value();
-        bool ok = true;
-        if (key == QLatin1StringView("nick")) {
-            const QString text = value.toString().trimmed();
-            ok = value.isString() && !text.isEmpty() && text.size() <= 50;
-            nick = text;
-        } else if (key == QLatin1StringView("maxUpload")) {
-            maxUpload = limit(value);
-            ok = maxUpload.has_value();
-        } else if (key == QLatin1StringView("maxDownload")) {
-            maxDownload = limit(value);
-            ok = maxDownload.has_value();
-        } else if (key == QLatin1StringView("autoConnect")) {
-            ok = value.isBool();
-            autoConnect = value.toBool();
-        } else if (key == QLatin1StringView("kadEnabled")) {
-            ok = value.isBool();
-            kadEnabled = value.toBool();
-        } else {
-            return jsonError(400, QStringLiteral("Unknown or read-only preference: %1").arg(key));
-        }
-        if (!ok)
-            return jsonError(400, QStringLiteral("Invalid value for %1").arg(key));
-    }
-
-    if (nick)
-        m_preferences->setNick(*nick);
-    if (maxUpload)
-        m_preferences->setMaxUpload(*maxUpload);
-    if (maxDownload)
-        m_preferences->setMaxDownload(*maxDownload);
-    if (autoConnect)
-        m_preferences->setAutoConnect(*autoConnect);
-    if (kadEnabled)
-        m_preferences->setKadEnabled(*kadEnabled);
-    if (!body.isEmpty())
-        m_preferences->save();
-
-    return handleGetPreferences();
 }
 
 // ---------------------------------------------------------------------------
@@ -4243,13 +3603,11 @@ WebServer::UsenetOpResult WebServer::applyUsenetItemOp(const QString& op, const 
 
 // --- REST ------------------------------------------------------------------
 
-QHttpServerResponse WebServer::handleRestUsenetList(const QHttpServerRequest& req)
+QHttpServerResponse WebServer::handleRestUsenetList(int category)
 {
     if (!usenetAvailable())
         return jsonError(503, usenetUnavailableText());
 
-    const int category =
-        QUrlQuery(req.query()).queryItemValue(QStringLiteral("category")).toInt();
     QJsonArray arr;
     for (const QCborMap& row : usenetRows(category))
         arr.append(row.toJsonObject());
@@ -4305,20 +3663,15 @@ QHttpServerResponse WebServer::handleRestUsenetItemOp(const QString& id, const Q
 }
 
 QHttpServerResponse WebServer::handleRestUsenetPatch(const QString& id,
-                                                     const QHttpServerRequest& req)
+                                                     const QJsonObject& body)
 {
     if (!usenetAvailable())
         return jsonError(503, usenetUnavailableText());
-
-    const QJsonDocument doc = QJsonDocument::fromJson(req.body());
-    if (!doc.isObject())
-        return jsonError(400, QStringLiteral("Invalid JSON body"));
     if (!m_usenetBackend->contains(id))
         return jsonError(404, usenetNotFoundText());
 
     // Validate every field before changing any, so a bad one leaves the release
     // exactly as it was.
-    const QJsonObject body = doc.object();
     QList<std::pair<QString, QString>> ops;
     if (body.contains(QStringLiteral("priority"))) {
         const QJsonValue v = body.value(QStringLiteral("priority"));
@@ -4371,11 +3724,8 @@ QHttpServerResponse WebServer::handleRestUsenetPatch(const QString& id,
     return jsonSuccess(rowJsonById(usenetRows(), id));
 }
 
-QHttpServerResponse WebServer::handleRestUsenetDelete(const QString& id,
-                                                      const QHttpServerRequest& req)
+QHttpServerResponse WebServer::handleRestUsenetDelete(const QString& id, bool deleteFiles)
 {
-    const bool deleteFiles =
-        queryFlag(QUrlQuery(req.query()).queryItemValue(QStringLiteral("deleteFiles")));
     const UsenetOpResult r = applyUsenetItemOp(
         deleteFiles ? QStringLiteral("removedelete") : QStringLiteral("remove"), id, {});
     if (r.code != 200)
@@ -4477,6 +3827,18 @@ QFuture<QHttpServerResponse> WebServer::handleUsenetAdd(const QHttpServerRequest
                 jsonError(400, tr("Post the .nzb as the request body, or give a url")));
         }
     }
+
+    return usenetAddResolved(url, name, options, categoryText, priorityText, body);
+}
+
+QFuture<QHttpServerResponse> WebServer::usenetAddResolved(const QString& url, const QString& name,
+                                                          UsenetWebAddOptions options,
+                                                          const QString& categoryText,
+                                                          const QString& priorityText,
+                                                          const QByteArray& body)
+{
+    if (!usenetAvailable())
+        return finishedResponse(jsonError(503, usenetUnavailableText()));
 
     if (!categoryText.isEmpty()) {
         bool ok = false;

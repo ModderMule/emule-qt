@@ -12,6 +12,7 @@
 #include <QObject>
 #include <QTcpServer>
 
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -41,6 +42,13 @@ public:
     /// Number of currently connected clients.
     [[nodiscard]] int clientCount() const;
 
+    /// Sees every broadcast before the clients do, connected or not. For the REST
+    /// event stream, which carries the same news.
+    void setPushTap(std::function<void(const Ipc::IpcMessage&)> tap) { m_pushTap = std::move(tap); }
+
+    /// Tells every GUI the category list changed.
+    void notifyCategoriesChanged();
+
 signals:
     /// Forwarded from any client's IpcClientHandler::webServerConfigChanged.
     void webServerConfigChanged();
@@ -64,6 +72,7 @@ private slots:
 private:
     QTcpServer m_tcpServer;
     std::vector<std::unique_ptr<IpcClientHandler>> m_clients;
+    std::function<void(const Ipc::IpcMessage&)> m_pushTap;
 };
 
 } // namespace eMule

@@ -337,6 +337,14 @@
     <ClCompile Include="transfer\UploadQueue.cpp" />
     <ClCompile Include="transfer\UploadQueueStore.cpp" />
     <ClCompile Include="webserver\WebServer.cpp" />
+    <ClCompile Include="app\CoreInfo.cpp" />
+    <ClCompile Include="app\CoreOps.cpp" />
+    <ClCompile Include="prefs\PreferenceSchema.cpp" />
+    <ClCompile Include="webserver\ApiEventHub.cpp" />
+    <ClCompile Include="webserver\ApiRegistry.cpp" />
+    <ClCompile Include="webserver\OpenApiWriter.cpp" />
+    <ClCompile Include="webserver\WebServerApi.cpp" />
+    <ClCompile Include="webserver\WebServerMcp.cpp" />
     <ClCompile Include="webserver\WebSessionManager.cpp" />
     <ClCompile Include="webserver\WebTemplateEngine.cpp" />
   </ItemGroup>
@@ -412,6 +420,13 @@
     <QtMoc Include="chat\IrcClient.h" />
     <ClInclude Include="chat\IrcMessage.h" />
     <ClInclude Include="webserver\JsonSerializers.h" />
+    <ClInclude Include="app\CoreInfo.h" />
+    <ClInclude Include="app\CoreOps.h" />
+    <ClInclude Include="prefs\PreferenceSchema.h" />
+    <ClInclude Include="webserver\ApiBackend.h" />
+    <ClInclude Include="webserver\ApiRegistry.h" />
+    <ClInclude Include="webserver\ApiTypes.h" />
+    <ClInclude Include="webserver\OpenApiWriter.h" />
     <ClInclude Include="webserver\UsenetWebBackend.h" />
     <ClInclude Include="webserver\WebTemplateStrings.h" />
     <ClInclude Include="kademlia\KadClientSearcher.h" />
@@ -531,6 +546,7 @@
     <QtMoc Include="transfer\UploadBandwidthThrottler.h" />
     <QtMoc Include="transfer\UploadDiskIOThread.h" />
     <QtMoc Include="transfer\UploadQueue.h" />
+    <QtMoc Include="webserver\ApiEventHub.h" />
     <QtMoc Include="webserver\WebServer.h" />
     <ClInclude Include="webserver\WebSessionManager.h" />
     <ClInclude Include="webserver\WebTemplateEngine.h" />

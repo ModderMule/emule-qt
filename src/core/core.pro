@@ -193,6 +193,14 @@ SOURCES += \
     utils/SettingsUtils.cpp \
     utils/StringUtils.cpp \
     webserver/WebServer.cpp \
+    app/CoreInfo.cpp \
+    app/CoreOps.cpp \
+    prefs/PreferenceSchema.cpp \
+    webserver/ApiEventHub.cpp \
+    webserver/ApiRegistry.cpp \
+    webserver/OpenApiWriter.cpp \
+    webserver/WebServerApi.cpp \
+    webserver/WebServerMcp.cpp \
     webserver/WebSessionManager.cpp \
     webserver/WebTemplateEngine.cpp
 
@@ -349,6 +357,14 @@ HEADERS += \
     utils/Types.h \
     utils/WinCompat.h \
     webserver/JsonSerializers.h \
+    app/CoreInfo.h \
+    app/CoreOps.h \
+    prefs/PreferenceSchema.h \
+    webserver/ApiBackend.h \
+    webserver/ApiRegistry.h \
+    webserver/ApiTypes.h \
+    webserver/OpenApiWriter.h \
+    webserver/ApiEventHub.h \
     webserver/UsenetWebBackend.h \
     webserver/WebTemplateStrings.h \
     webserver/WebServer.h \

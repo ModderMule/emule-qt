@@ -6,7 +6,9 @@
 /// Inline free functions converting eMule entity objects to QJsonObject
 /// for use by the REST API web server.
 
+#include "client/UpDownClient.h"
 #include "files/AbstractFile.h"
+#include "files/KnownFile.h"
 #include "files/PartFile.h"
 #include "friends/Friend.h"
 #include "search/SearchFile.h"
@@ -124,6 +126,40 @@ namespace eMule {
         {QStringLiteral("seenNames"),           f.seenNames()},
         {QStringLiteral("firstSeen"),           f.firstSeen()},   // unix seconds, 0 = never
     };
+}
+
+/// A peer, as the upload, queue and source lists show it. Kept small on purpose:
+/// the GUI's rows carry per-part bar data a REST or MCP client has no use for.
+[[nodiscard]] inline QJsonObject toJson(const UpDownClient& c)
+{
+    QJsonObject o{
+        {QStringLiteral("userName"),        c.userName()},
+        {QStringLiteral("userHash"),        md4str(c.userHash())},
+        {QStringLiteral("software"),        c.dbgGetFullClientSoftVer()},
+        {QStringLiteral("addr"),            c.connectAddress().isNull() ? c.userAddress().toString()
+                                                                        : c.connectAddress().toString()},
+        {QStringLiteral("port"),            static_cast<qint64>(c.userPort())},
+        {QStringLiteral("uploadState"),     c.uploadStateDisplayString()},
+        {QStringLiteral("downloadState"),   c.downloadStateDisplayString()},
+        {QStringLiteral("upDatarate"),      static_cast<qint64>(c.upDatarate())},
+        {QStringLiteral("downDatarate"),    static_cast<qint64>(c.downDatarate())},
+        {QStringLiteral("sessionUp"),       static_cast<qint64>(c.sessionUp())},
+        {QStringLiteral("sessionDown"),     static_cast<qint64>(c.sessionDown())},
+        {QStringLiteral("transferredUp"),   static_cast<qint64>(c.transferredUp())},
+        {QStringLiteral("transferredDown"), static_cast<qint64>(c.transferredDown())},
+        {QStringLiteral("queueScore"),      static_cast<qint64>(c.score(false) / 1000)},
+        {QStringLiteral("queueRating"),     static_cast<qint64>(c.score(false, false, true) / 1000)},
+        {QStringLiteral("waitTimeMs"),      static_cast<qint64>(c.getWaitTimeDelay())},
+        {QStringLiteral("remoteQueueRank"), static_cast<qint64>(c.remoteQueueRank())},
+        {QStringLiteral("isBanned"),        c.isBanned()},
+        {QStringLiteral("isFriend"),        c.friendPtr() != nullptr},
+        {QStringLiteral("hasLowID"),        c.hasLowID()},
+    };
+    if (const auto* uf = c.uploadFile())
+        o.insert(QStringLiteral("uploadFileName"), uf->fileName());
+    if (c.reqFile())
+        o.insert(QStringLiteral("reqFileName"), c.reqFile()->fileName());
+    return o;
 }
 
 } // namespace eMule

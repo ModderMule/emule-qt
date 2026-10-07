@@ -70,6 +70,8 @@ SOURCES += \
     CommandLineExec.cpp \
     CoreNotifierBridge.cpp \
     DaemonApp.cpp \
+    ApiEventFeeder.cpp \
+    DaemonApiBackend.cpp \
     DaemonUsenetWebBackend.cpp \
     IpcClientHandler.cpp \
     IpcClientHandlerMeta.cpp \
@@ -84,6 +86,8 @@ HEADERS += \
     CommandLineExec.h \
     CoreNotifierBridge.h \
     DaemonApp.h \
+    ApiEventFeeder.h \
+    DaemonApiBackend.h \
     DaemonUsenetWebBackend.h \
     IpcClientHandler.h \
     IpcServer.h \

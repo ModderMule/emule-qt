@@ -291,6 +291,10 @@ emule_add_test(tst_StatsHistory    FOLDER "Stats")
 
 # Module 19: Web Server
 emule_add_test(tst_WebServer FOLDER "WebServer")
+# The stdio bridge is driven as a real process against the test server.
+add_dependencies(tst_WebServer emuleqt-mcp)
+target_compile_definitions(tst_WebServer PRIVATE
+    "EMULE_MCP_BRIDGE_PATH=\"$<TARGET_FILE:emuleqt-mcp>\"")
 
 # IPC Protocol
 emule_add_test(tst_IpcProtocol   FOLDER "Ipc" LIBRARIES eMule::Ipc)

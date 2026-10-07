@@ -2572,7 +2572,21 @@ QWidget* OptionsDialog::createWebInterfacePage()
     generalLayout->addWidget(m_webEnabledCheck);
 
     m_webRestApiCheck = new QCheckBox(tr("Enable REST API"));
+    m_webRestApiCheck->setToolTip(tr("Serves /api/v1 with its description and a playground "
+                                     "at /api/v1/docs. Calls need the API key."));
     generalLayout->addWidget(m_webRestApiCheck);
+
+    // Its own switch: an AI assistant can be let in without opening the REST API.
+    auto* mcpLayout = new QHBoxLayout;
+    m_webMcpCheck = new QCheckBox(tr("Enable MCP server for AI assistants"));
+    m_webMcpCheck->setToolTip(tr("Serves the Model Context Protocol at /mcp on the same port, "
+                                 "with the same API key. Independent of the REST API."));
+    mcpLayout->addWidget(m_webMcpCheck);
+    m_webMcpReadOnlyCheck = new QCheckBox(tr("Read-only"));
+    m_webMcpReadOnlyCheck->setToolTip(tr("Assistants can look at everything but change nothing."));
+    mcpLayout->addWidget(m_webMcpReadOnlyCheck);
+    mcpLayout->addStretch(1);
+    generalLayout->addLayout(mcpLayout);
 
     m_webGzipCheck = new QCheckBox(tr("Gzip compression"));
     generalLayout->addWidget(m_webGzipCheck);
@@ -2708,6 +2722,11 @@ QWidget* OptionsDialog::createWebInterfacePage()
         updateWebEnabledStates();
         markDirty();
     });
+    connect(m_webMcpCheck, &QCheckBox::toggled, this, [this] {
+        updateWebEnabledStates();
+        markDirty();
+    });
+    connect(m_webMcpReadOnlyCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_webHttpsCheck, &QCheckBox::toggled, this, [this] {
         updateWebEnabledStates();
         markDirty();
@@ -6408,6 +6427,10 @@ void OptionsDialog::saveSettings()
         req.append(m_webEnabledCheck->isChecked());
         req.append(QStringLiteral("webServerRestApiEnabled"));
         req.append(m_webRestApiCheck->isChecked());
+        req.append(QStringLiteral("webServerMcpEnabled"));
+        req.append(m_webMcpCheck->isChecked());
+        req.append(QStringLiteral("webServerMcpReadOnly"));
+        req.append(m_webMcpReadOnlyCheck->isChecked());
         req.append(QStringLiteral("webServerGzipEnabled"));
         req.append(m_webGzipCheck->isChecked());
         req.append(QStringLiteral("webServerUPnP"));
@@ -7149,6 +7172,8 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     // Web Interface page
     m_webEnabledCheck->setChecked(prefs.value(QStringLiteral("webServerEnabled")).toBool());
     m_webRestApiCheck->setChecked(prefs.value(QStringLiteral("webServerRestApiEnabled")).toBool());
+    m_webMcpCheck->setChecked(prefs.value(QStringLiteral("webServerMcpEnabled")).toBool());
+    m_webMcpReadOnlyCheck->setChecked(prefs.value(QStringLiteral("webServerMcpReadOnly")).toBool());
     m_webGzipCheck->setChecked(prefs.value(QStringLiteral("webServerGzipEnabled")).toBool(true));
     m_webUPnPCheck->setChecked(prefs.value(QStringLiteral("webServerUPnP")).toBool());
     m_webPortSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("webServerPort")).toInteger(4711)));
@@ -7329,7 +7354,9 @@ void OptionsDialog::updateWebEnabledStates()
 {
     const bool webOn  = m_webEnabledCheck->isChecked();    // template web UI
     const bool restOn = m_webRestApiCheck->isChecked();    // JSON REST API
-    const bool anyOn  = webOn || restOn;
+    const bool mcpOn  = m_webMcpCheck->isChecked();        // MCP endpoint
+    const bool anyOn  = webOn || restOn || mcpOn;
+    m_webMcpReadOnlyCheck->setEnabled(mcpOn);
 
     // Shared server-level controls — relevant whenever either surface is served.
     m_webPortSpin->setEnabled(anyOn);
@@ -7345,7 +7372,7 @@ void OptionsDialog::updateWebEnabledStates()
     m_webKeyBrowseBtn->setEnabled(httpsOn);
 
     // REST-only: the API key authenticates /api/v1/* (X-Api-Key).
-    m_webApiKeyEdit->setEnabled(restOn);
+    m_webApiKeyEdit->setEnabled(restOn || mcpOn);
 
     // Web-UI-only: template, session login and admin/guest accounts.
     m_webTemplateEdit->setEnabled(webOn);

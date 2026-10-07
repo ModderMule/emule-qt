@@ -90,6 +90,12 @@
     <ClCompile Include="files\CollectionFile.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="app\CoreInfo.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="app\CoreOps.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="app\CoreSession.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -318,6 +324,9 @@
     <ClCompile Include="prefs\IndexerConfig.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="prefs\PreferenceSchema.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="prefs\DownloadCategory.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -465,6 +474,21 @@
     <ClCompile Include="webserver\WebServer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="webserver\ApiEventHub.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="webserver\ApiRegistry.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="webserver\OpenApiWriter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="webserver\WebServerApi.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="webserver\WebServerMcp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="webserver\WebSessionManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -572,6 +596,12 @@
     <ClInclude Include="media\MediaReadBudget.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="app\CoreInfo.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="app\CoreOps.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="net\InterfacePin.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -648,6 +678,18 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="webserver\JsonSerializers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="webserver\ApiBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="webserver\ApiRegistry.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="webserver\ApiTypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="webserver\OpenApiWriter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="webserver\UsenetWebBackend.h">
@@ -819,6 +861,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="prefs\IndexerFeed.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="prefs\PreferenceSchema.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="prefs\DownloadCategory.h">
@@ -1005,6 +1050,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="transfer\UploadQueue.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="webserver\ApiEventHub.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="webserver\WebServer.h">

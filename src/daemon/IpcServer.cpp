@@ -47,6 +47,9 @@ bool IpcServer::isListening() const
 
 void IpcServer::broadcast(const Ipc::IpcMessage& msg)
 {
+    if (m_pushTap)
+        m_pushTap(msg);
+
     // A failed write drops its client synchronously (errorOccurred ->
     // onClientDisconnected), which erases it from m_clients mid-loop. Walk a
     // snapshot: the dropped handler lives until its deleteLater() and reads as
@@ -65,6 +68,11 @@ void IpcServer::broadcast(const Ipc::IpcMessage& msg)
 int IpcServer::clientCount() const
 {
     return static_cast<int>(m_clients.size());
+}
+
+void IpcServer::notifyCategoriesChanged()
+{
+    broadcast(Ipc::IpcMessage(Ipc::IpcMsgType::PushCategoriesChanged));
 }
 
 // ---------------------------------------------------------------------------
@@ -101,9 +109,8 @@ void IpcServer::onNewConnection()
         // Broadcast rather than forward to the daemon: nothing outside the GUIs
         // cares that the category list changed, and this is the object that
         // knows every connected client.
-        connect(handler.get(), &IpcClientHandler::categoriesChanged, this, [this] {
-            broadcast(Ipc::IpcMessage(Ipc::IpcMsgType::PushCategoriesChanged));
-        });
+        connect(handler.get(), &IpcClientHandler::categoriesChanged,
+                this, &IpcServer::notifyCategoriesChanged);
 
         m_clients.push_back(std::move(handler));
     }

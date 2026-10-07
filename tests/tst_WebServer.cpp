@@ -3,7 +3,13 @@
 
 #include "net/BindAddress.h"
 #include "TestHelpers.h"
+#include "webserver/ApiBackend.h"
+#include "webserver/ApiEventHub.h"
+#include "webserver/JsonSerializers.h"
+#include "webserver/OpenApiWriter.h"
 #include "webserver/WebServer.h"
+#include "app/AppContext.h"
+#include "prefs/PreferenceSchema.h"
 #include "webserver/WebSessionManager.h"
 #include "webserver/WebTemplateEngine.h"
 #include "webserver/WebTemplateStrings.h"
@@ -48,6 +54,7 @@
 #include <QTemporaryDir>
 #include <QProcess>
 #include <QSslError>
+#include <QTcpSocket>
 #include <QTest>
 #include <QTranslator>
 
@@ -134,6 +141,67 @@ QCborArray fakeUsenetRows()
     };
     return QCborArray{a, b};
 }
+
+/// The daemon half of the REST API, in memory. Preferences land in the test's
+/// own object through the same keys the daemon's setter chain knows.
+class FakeApiBackend final : public ApiBackend {
+public:
+    Preferences* prefs = nullptr;
+    QList<LogRecord> records;
+    QJsonArray categoryRows{QJsonObject{{QStringLiteral("index"), 0},
+                                        {QStringLiteral("title"), QString()}}};
+    QStringList calls;
+    bool shutdownRequested = false;
+
+    [[nodiscard]] QList<LogRecord> logs(qint64 sinceId) const override
+    {
+        QList<LogRecord> out;
+        for (const LogRecord& r : records) {
+            if (r.id > sinceId)
+                out.append(r);
+        }
+        return out;
+    }
+
+    [[nodiscard]] QJsonArray categories() const override { return categoryRows; }
+
+    ops::Status setCategories(const QJsonArray& list) override
+    {
+        QJsonArray stored;
+        for (qsizetype i = 0; i < list.size(); ++i) {
+            QJsonObject row = list.at(i).toObject();
+            if (i > 0 && row.value(QStringLiteral("title")).toString().isEmpty())
+                return ops::Status::fail(400, QStringLiteral("A category needs a title"));
+            calls.append(QStringLiteral("cat:%1<-%2").arg(i).arg(
+                row.value(QStringLiteral("oldIndex")).toInt(-1)));
+            row.remove(QStringLiteral("oldIndex"));
+            row.insert(QStringLiteral("index"), i);
+            stored.append(row);
+        }
+        categoryRows = stored;
+        return {};
+    }
+
+    ops::Status applyPreferences(const PrefChanges& changes) override
+    {
+        for (const auto& [key, value] : changes) {
+            calls.append(QStringLiteral("pref:%1").arg(key));
+            if (!prefs)
+                continue;
+            if (key == QLatin1StringView("nick"))
+                prefs->setNick(value.toString());
+            else if (key == QLatin1StringView("maxUpload"))
+                prefs->setMaxUpload(static_cast<uint32>(value.toInteger()));
+            else if (key == QLatin1StringView("maxDownload"))
+                prefs->setMaxDownload(static_cast<uint32>(value.toInteger()));
+            else if (key == QLatin1StringView("autoConnect"))
+                prefs->setAutoConnect(value.toBool());
+        }
+        return {};
+    }
+
+    void requestShutdown() override { shutdownRequested = true; }
+};
 
 /// Records what the web server asked for. Categories 0-2 exist.
 class FakeUsenetBackend final : public UsenetWebBackend {
@@ -421,6 +489,28 @@ private slots:
     void https_servesRsaAndEcKeys();
     void configFromPreferences_differsOnlyOnWhatTheServerUses();
     void webSearchForm_offlineSaysItWaits();
+    // Operation table: new routes, validation, OpenAPI, events, MCP
+    void api_healthNeedsNoKeyAndRepliesCarryTheContractVersion();
+    void api_unknownRouteIsAJsonError();
+    void api_validationRejectsWhatTheTableDoesNotDeclare();
+    void api_destructiveCallsNeedConfirm();
+    void api_downloadsAddEditAndClear();
+    void api_serversLifecycle();
+    void api_categoriesThroughTheBackend();
+    void api_preferenceSchemaHoldsNoSecrets();
+    void api_logsFilterAndResume();
+    void api_overviewRoutesAnswer();
+    void api_openApiDescribesEveryRoute();
+    void api_checkedInOpenApiIsCurrent();
+    void api_playgroundIsLocalAndFollowsTheRestSwitch();
+    void api_eventsStreamResumeAndReset();
+    void mcp_isItsOwnSwitch();
+    void mcp_initializeListAndCall();
+    void mcp_refusesStrangers();
+    void mcp_readOnlyMode();
+    void mcp_perRequestRevision();
+    void mcp_stdioBridgeRoundTrip();
+
     void restUsenetListNeedsKeyAndReturnsRows();
     void restUsenetStatsIsNotShadowedByItemRoute();
     void restUsenetItemActionsAndErrors();
@@ -499,6 +589,9 @@ private:
     QString incomingUrl(const QString& path, const QString& key = {},
                         const QString& value = {}) const;
 
+    FakeApiBackend m_apiBackend;
+    ApiEventHub m_eventHub;
+
     QNetworkAccessManager m_nam;
     QString m_apiKey = QStringLiteral("test-secret-key-12345");
     uint16 m_port = 0;
@@ -538,6 +631,19 @@ void tst_WebServer::initTestCase()
     m_webServer->setSearchList(m_searchList.get());
     m_webServer->setPreferences(m_preferences.get());
 
+    // The actions go through the shared core operations, which work on theApp.
+    theApp.downloadQueue = m_downloadQueue.get();
+    theApp.uploadQueue = m_uploadQueue.get();
+    theApp.serverList = m_serverList.get();
+    theApp.serverConnect = m_serverConnect.get();
+    theApp.sharedFileList = m_sharedFiles.get();
+    theApp.searchList = m_searchList.get();
+    theApp.friendList = m_friendList.get();
+
+    m_apiBackend.prefs = m_preferences.get();
+    m_webServer->setApiBackend(&m_apiBackend);
+    m_webServer->setEventHub(&m_eventHub);
+
     buildIncomingTree();
 
     WebServerConfig config;
@@ -558,6 +664,14 @@ void tst_WebServer::cleanupTestCase()
 {
     m_webServer->stop();
     QVERIFY(!m_webServer->isRunning());
+
+    theApp.downloadQueue = nullptr;
+    theApp.uploadQueue = nullptr;
+    theApp.serverList = nullptr;
+    theApp.serverConnect = nullptr;
+    theApp.sharedFileList = nullptr;
+    theApp.searchList = nullptr;
+    theApp.friendList = nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -702,8 +816,11 @@ void tst_WebServer::getDownloadsEmpty()
     auto resp = sendRequest(QByteArrayLiteral("GET"),
                             QStringLiteral("/api/v1/downloads"));
     QCOMPARE(resp.statusCode, 200);
-    QVERIFY(resp.json.isArray());
-    QCOMPARE(resp.json.array().size(), 0);
+    const QJsonObject page = resp.json.object();
+    QCOMPARE(page.value(QStringLiteral("items")).toArray().size(), 0);
+    QCOMPARE(page.value(QStringLiteral("total")).toInt(-1), 0);
+    QCOMPARE(page.value(QStringLiteral("offset")).toInt(-1), 0);
+    QCOMPARE(page.value(QStringLiteral("limit")).toInt(), 100);
 }
 
 void tst_WebServer::getDownloadBadHash()
@@ -722,7 +839,7 @@ void tst_WebServer::getServers()
     auto resp = sendRequest(QByteArrayLiteral("GET"),
                             QStringLiteral("/api/v1/servers"));
     QCOMPARE(resp.statusCode, 200);
-    QVERIFY(resp.json.isArray());
+    QVERIFY(resp.json.object().value(QStringLiteral("items")).isArray());
 }
 
 // ---------------------------------------------------------------------------
@@ -765,8 +882,8 @@ void tst_WebServer::friendsLifecycle()
     auto resp = sendRequest(QByteArrayLiteral("GET"),
                             QStringLiteral("/api/v1/friends"));
     QCOMPARE(resp.statusCode, 200);
-    QVERIFY(resp.json.isArray());
-    const auto initialCount = resp.json.array().size();
+    QVERIFY(resp.json.object().value(QStringLiteral("items")).isArray());
+    const auto initialCount = resp.json.object().value(QStringLiteral("total")).toInt();
 
     // POST — add a friend
     QJsonObject friendObj{
@@ -787,7 +904,7 @@ void tst_WebServer::friendsLifecycle()
         resp = sendRequest(QByteArrayLiteral("GET"),
                            QStringLiteral("/api/v1/friends"));
         QCOMPARE(resp.statusCode, 200);
-        QCOMPARE(resp.json.array().size(), initialCount + 1);
+        QCOMPARE(resp.json.object().value(QStringLiteral("items")).toArray().size(), initialCount + 1);
     }
 }
 
@@ -800,7 +917,7 @@ void tst_WebServer::getSharedFiles()
     auto resp = sendRequest(QByteArrayLiteral("GET"),
                             QStringLiteral("/api/v1/shared"));
     QCOMPARE(resp.statusCode, 200);
-    QVERIFY(resp.json.isArray());
+    QVERIFY(resp.json.object().value(QStringLiteral("items")).isArray());
 }
 
 // ---------------------------------------------------------------------------
@@ -3031,15 +3148,16 @@ void tst_WebServer::restUsenetListNeedsKeyAndReturnsRows()
 
     Response r = sendRequest("GET", QStringLiteral("/api/v1/usenet"));
     QCOMPARE(r.statusCode, 200);
-    const QJsonArray rows = r.json.array();
+    const QJsonArray rows = r.json.object().value(QStringLiteral("items")).toArray();
     QCOMPARE(rows.size(), 2);
+    QCOMPARE(r.json.object().value(QStringLiteral("total")).toInt(), 2);
     const QJsonObject a = rows.at(0).toObject();
     QCOMPARE(a.value(QStringLiteral("id")).toString(), QStringLiteral("item-a"));
     QVERIFY(a.contains(QStringLiteral("speed")));
     QCOMPARE(a.value(QStringLiteral("files")).toArray().size(), 2);
 
     r = sendRequest("GET", QStringLiteral("/api/v1/usenet?category=2"));
-    QCOMPARE(r.json.array().size(), 1);
+    QCOMPARE(r.json.object().value(QStringLiteral("items")).toArray().size(), 1);
 }
 
 void tst_WebServer::restUsenetStatsIsNotShadowedByItemRoute()
@@ -3084,13 +3202,13 @@ void tst_WebServer::restUsenetItemActionsAndErrors()
     QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet/item-a/pause")).statusCode, 409);
 
     QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet/nope/resume")).statusCode, 404);
-    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet/item-a/explode")).statusCode, 404);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet/item-a/explode")).statusCode, 400);
 
     r = sendRequest("POST", QStringLiteral("/api/v1/usenet/categories/1/pause"));
     QCOMPARE(r.statusCode, 200);
     QCOMPARE(r.json.object().value(QStringLiteral("affected")).toInt(), 1);
     QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet/categories/9/resume")).statusCode, 400);
-    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet/categories/1/explode")).statusCode, 404);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/usenet/categories/1/explode")).statusCode, 400);
 
     // The whole engine, on literal routes an item id can never shadow.
     r = sendRequest("POST", QStringLiteral("/api/v1/usenet/pause"));
@@ -3138,10 +3256,13 @@ void tst_WebServer::restUsenetPatchAndDelete()
     QCOMPARE(sendRequest("PATCH", QStringLiteral("/api/v1/usenet/item-a"),
                          QByteArrayLiteral("{\"skipFiles\":[\"x\"]}")).statusCode, 400);
 
-    r = sendRequest("DELETE", QStringLiteral("/api/v1/usenet/item-a?deleteFiles=true"));
+    // Destructive: nothing happens without the confirmation.
+    QCOMPARE(sendRequest("DELETE", QStringLiteral("/api/v1/usenet/item-a?deleteFiles=true")).statusCode, 400);
+    QVERIFY(!fake.calls.contains(QStringLiteral("remove:item-a:true")));
+    r = sendRequest("DELETE", QStringLiteral("/api/v1/usenet/item-a?deleteFiles=true&confirm=true"));
     QCOMPARE(r.statusCode, 200);
     QVERIFY(fake.calls.contains(QStringLiteral("remove:item-a:true")));
-    QCOMPARE(sendRequest("DELETE", QStringLiteral("/api/v1/usenet/nope")).statusCode, 404);
+    QCOMPARE(sendRequest("DELETE", QStringLiteral("/api/v1/usenet/nope?confirm=true")).statusCode, 404);
 }
 
 void tst_WebServer::restUsenetAddRawAndUrl()
@@ -3449,4 +3570,962 @@ void tst_WebServer::shippedGermanTranslatesTheWebContext()
 }
 
 QTEST_MAIN(tst_WebServer)
+// ---------------------------------------------------------------------------
+// Operation table
+// ---------------------------------------------------------------------------
+
+namespace {
+
+[[nodiscard]] QString headerValue(const QMap<QString, QString>& headers, const char* name)
+{
+    for (auto it = headers.begin(); it != headers.end(); ++it) {
+        if (it.key().compare(QLatin1StringView(name), Qt::CaseInsensitive) == 0)
+            return it.value();
+    }
+    return {};
+}
+
+[[nodiscard]] QByteArray json(const QJsonObject& o)
+{
+    return QJsonDocument(o).toJson(QJsonDocument::Compact);
+}
+
+/// Every "$ref" below @p value.
+void collectRefs(const QJsonValue& value, QStringList& refs)
+{
+    if (value.isArray()) {
+        for (const QJsonValue& v : value.toArray())
+            collectRefs(v, refs);
+    } else if (value.isObject()) {
+        const QJsonObject o = value.toObject();
+        for (auto it = o.begin(); it != o.end(); ++it) {
+            if (it.key() == QLatin1StringView("$ref"))
+                refs.append(it.value().toString());
+            else
+                collectRefs(it.value(), refs);
+        }
+    }
+}
+
+} // namespace
+
+void tst_WebServer::api_healthNeedsNoKeyAndRepliesCarryTheContractVersion()
+{
+    Response r = sendRequest("GET", QStringLiteral("/api/v1/health"), {}, /*includeAuth*/ false);
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("status")).toString(), QStringLiteral("ok"));
+    QCOMPARE(r.json.object().size(), 1);   // nothing else leaks without a key
+
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/app"), {}, false).statusCode, 401);
+    r = sendRequest("GET", QStringLiteral("/api/v1/app"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("version")).toString(), QString(kAppVersion));
+    QCOMPARE(headerValue(r.headers, "X-Contract-Version"), QString::number(api::kContractVersion));
+
+    // The Bearer form is the same key.
+    r = sendRaw(m_port, "GET", QStringLiteral("/api/v1/app"), {}, {},
+                {{QByteArrayLiteral("Authorization"), "Bearer " + m_apiKey.toUtf8()}});
+    QCOMPARE(r.statusCode, 200);
+}
+
+void tst_WebServer::api_unknownRouteIsAJsonError()
+{
+    const Response r = sendRequest("GET", QStringLiteral("/api/v1/no-such-thing"));
+    QCOMPARE(r.statusCode, 404);
+    QCOMPARE(r.json.object().value(QStringLiteral("error")).toObject()
+                 .value(QStringLiteral("code")).toInt(), 404);
+}
+
+void tst_WebServer::api_validationRejectsWhatTheTableDoesNotDeclare()
+{
+    const auto get = [this](const char* path) {
+        return sendRequest("GET", QString::fromLatin1(path)).statusCode;
+    };
+    QCOMPARE(get("/api/v1/downloads?limit=5&offset=0"), 200);
+    QCOMPARE(get("/api/v1/downloads?colour=red"), 400);      // unknown parameter
+    QCOMPARE(get("/api/v1/downloads?limit=0"), 400);
+    QCOMPARE(get("/api/v1/downloads?limit=1001"), 400);
+    QCOMPARE(get("/api/v1/downloads?limit=many"), 400);
+    QCOMPARE(get("/api/v1/downloads?offset=-1"), 400);
+    QCOMPARE(get("/api/v1/stats?limit=5"), 400);             // not a list
+    QCOMPARE(get("/api/v1/logs?level=loud"), 400);           // enum
+    QCOMPARE(get("/api/v1/search/abc/results"), 400);        // typed path
+
+    const auto post = [this](const char* path, const char* body) {
+        return sendRequest("POST", QString::fromLatin1(path), QByteArray(body));
+    };
+    QCOMPARE(post("/api/v1/search", "{\"expression\":\"x\",\"colour\":\"red\"}").statusCode, 400);
+    QCOMPARE(post("/api/v1/search", "{\"expression\":\"x\",\"type\":\"bogus\"}").statusCode, 400);
+    QCOMPARE(post("/api/v1/search", "{\"type\":\"kad\"}").statusCode, 400);          // missing
+    QCOMPARE(post("/api/v1/search", "{\"expression\":7}").statusCode, 400);        // type
+    QCOMPARE(post("/api/v1/search", "not json").statusCode, 400);
+    QCOMPARE(post("/api/v1/servers", "{\"address\":\"80.1.2.7\",\"port\":70000}").statusCode, 400);
+    // A route that takes no body takes no fields either.
+    QCOMPARE(post("/api/v1/kad/stop", "{\"x\":1}").statusCode, 400);
+
+    // The message names the field, so a caller can fix it.
+    const Response r = post("/api/v1/search", "{\"expression\":\"x\",\"colour\":\"red\"}");
+    QVERIFY(r.json.object().value(QStringLiteral("error")).toObject()
+                .value(QStringLiteral("message")).toString().contains(QStringLiteral("colour")));
+}
+
+void tst_WebServer::api_destructiveCallsNeedConfirm()
+{
+    const QString hash = QStringLiteral("00112233445566778899AABBCCDDEEFF");
+    const QString path = QStringLiteral("/api/v1/downloads/%1/cancel").arg(hash);
+    QCOMPARE(sendRequest("POST", path).statusCode, 400);
+    QCOMPARE(sendRequest("POST", path, QByteArrayLiteral("{\"confirm\":false}")).statusCode, 400);
+    // Confirmed: now it gets as far as looking for the download.
+    QCOMPARE(sendRequest("POST", path, QByteArrayLiteral("{\"confirm\":true}")).statusCode, 404);
+
+    QVERIFY(!m_apiBackend.shutdownRequested);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/app/shutdown")).statusCode, 400);
+    QVERIFY(!m_apiBackend.shutdownRequested);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/app/shutdown"),
+                         QByteArrayLiteral("{\"confirm\":true}")).statusCode, 200);
+    QVERIFY(m_apiBackend.shutdownRequested);
+    m_apiBackend.shutdownRequested = false;
+}
+
+void tst_WebServer::api_downloadsAddEditAndClear()
+{
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    const QStringList savedTemp = thePrefs.tempDirs();
+    const auto restore = qScopeGuard([&] {
+        m_downloadQueue->deleteAll();
+        thePrefs.setTempDirs(savedTemp);
+    });
+    thePrefs.setTempDirs({temp.path()});
+    QCOMPARE(m_downloadQueue->fileCount(), 0);
+
+    const uint8 md4[16] = {0x61, 9, 8, 7, 6, 5, 4, 3, 2, 1, 10, 11, 12, 13, 14, 15};
+    const QString hash = md4str(md4);
+    const QString link = QStringLiteral("ed2k://|file|rest.bin|20000000|%1|/").arg(hash);
+
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/downloads"), "{}").statusCode, 400);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/downloads"),
+                         json({{QStringLiteral("link"), QStringLiteral("http://x.test/a")}})).statusCode, 400);
+    QCOMPARE(m_downloadQueue->fileCount(), 0);
+
+    Response r = sendRequest("POST", QStringLiteral("/api/v1/downloads"),
+                             json({{QStringLiteral("link"), link}, {QStringLiteral("paused"), true}}));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("added")).toInt(), 1);
+    QCOMPARE(m_downloadQueue->fileCount(), 1);
+
+    // Again: not an error, and said so.
+    r = sendRequest("POST", QStringLiteral("/api/v1/downloads"), json({{QStringLiteral("link"), link}}));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("added")).toInt(), 0);
+    QVERIFY(r.json.object().value(QStringLiteral("items")).toArray().at(0).toObject()
+                .value(QStringLiteral("alreadyQueued")).toBool());
+
+    r = sendRequest("GET", QStringLiteral("/api/v1/downloads"));
+    QCOMPARE(r.json.object().value(QStringLiteral("total")).toInt(), 1);
+    QCOMPARE(r.json.object().value(QStringLiteral("items")).toArray().at(0).toObject()
+                 .value(QStringLiteral("fileName")).toString(), QStringLiteral("rest.bin"));
+
+    const QString item = QStringLiteral("/api/v1/downloads/") + hash;
+    r = sendRequest("PATCH", item, "{\"name\":\"renamed.bin\",\"priority\":\"high\"}");
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("fileName")).toString(), QStringLiteral("renamed.bin"));
+    QCOMPARE(r.json.object().value(QStringLiteral("downPriority")).toString(), QStringLiteral("high"));
+    QCOMPARE(r.json.object().value(QStringLiteral("isAutoDownPriority")).toBool(), false);
+
+    // One bad field: nothing of the request is applied.
+    QCOMPARE(sendRequest("PATCH", item, "{\"name\":\"again.bin\",\"category\":99}").statusCode, 400);
+    QCOMPARE(sendRequest("PATCH", item, "{\"name\":\"a|b\"}").statusCode, 400);
+    QCOMPARE(sendRequest("PATCH", item, "{\"priority\":\"urgent\"}").statusCode, 400);
+    QCOMPARE(sendRequest("PATCH", item, "{}").statusCode, 400);
+    QCOMPARE(sendRequest("GET", item).json.object().value(QStringLiteral("fileName")).toString(),
+             QStringLiteral("renamed.bin"));
+
+    QCOMPARE(sendRequest("POST", item + QStringLiteral("/resume")).statusCode, 200);
+    r = sendRequest("POST", item + QStringLiteral("/pause"));
+    QCOMPARE(r.statusCode, 200);
+    QVERIFY(r.json.object().value(QStringLiteral("isPaused")).toBool());
+    QCOMPARE(sendRequest("POST", item + QStringLiteral("/stop")).statusCode, 200);
+    r = sendRequest("GET", item + QStringLiteral("/sources"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("total")).toInt(), 0);
+
+    // Nothing is complete, so nothing is cleared.
+    r = sendRequest("POST", QStringLiteral("/api/v1/downloads/clear-completed"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("removed")).toInt(), 0);
+
+    QCOMPARE(sendRequest("POST", item + QStringLiteral("/cancel"), "{\"confirm\":true}").statusCode, 200);
+    QCOMPARE(m_downloadQueue->fileCount(), 0);
+    QCOMPARE(sendRequest("GET", item).statusCode, 404);
+}
+
+void tst_WebServer::api_serversLifecycle()
+{
+    const auto count = [this] {
+        return sendRequest("GET", QStringLiteral("/api/v1/servers")).json.object()
+            .value(QStringLiteral("total")).toInt();
+    };
+    const int before = count();
+    const QByteArray body = "{\"address\":\"80.1.2.77\",\"port\":4661,\"name\":\"Table test\"}";
+
+    Response r = sendRequest("POST", QStringLiteral("/api/v1/servers"), body);
+    QCOMPARE(r.statusCode, 200);
+    QVERIFY(r.json.object().value(QStringLiteral("added")).toBool());
+    QCOMPARE(count(), before + 1);
+
+    r = sendRequest("POST", QStringLiteral("/api/v1/servers"), body);
+    QCOMPARE(r.statusCode, 200);
+    QVERIFY(r.json.object().value(QStringLiteral("alreadyListed")).toBool());
+    QCOMPARE(count(), before + 1);
+
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/servers/80.1.2.99/4661/connect")).statusCode, 404);
+    QCOMPARE(sendRequest("DELETE", QStringLiteral("/api/v1/servers/80.1.2.77/0")).statusCode, 400);
+    QCOMPARE(sendRequest("DELETE", QStringLiteral("/api/v1/servers/80.1.2.77/4661")).statusCode, 200);
+    QCOMPARE(count(), before);
+    QCOMPARE(sendRequest("DELETE", QStringLiteral("/api/v1/servers/80.1.2.77/4661")).statusCode, 404);
+
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/servers/import"),
+                         "{\"url\":\"ftp://x.test/server.met\"}").statusCode, 400);
+}
+
+void tst_WebServer::api_categoriesThroughTheBackend()
+{
+    const QJsonArray saved = m_apiBackend.categoryRows;
+    const auto restore = qScopeGuard([&] { m_apiBackend.categoryRows = saved; });
+    m_apiBackend.calls.clear();
+
+    Response r = sendRequest("POST", QStringLiteral("/api/v1/categories"), "{\"title\":\"Films\"}");
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("items")).toArray().size(), 2);
+    // The default entry is carried by its old index, the new one has none.
+    QVERIFY(m_apiBackend.calls.contains(QStringLiteral("cat:0<-0")));
+    QVERIFY(m_apiBackend.calls.contains(QStringLiteral("cat:1<--1")));
+
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/categories"), "{}").statusCode, 400);
+    QCOMPARE(sendRequest("POST", QStringLiteral("/api/v1/categories"), "{\"title\":\"B\"}").statusCode, 200);
+
+    r = sendRequest("PATCH", QStringLiteral("/api/v1/categories/1"), "{\"comment\":\"hd\"}");
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(m_apiBackend.categoryRows.at(1).toObject().value(QStringLiteral("comment")).toString(),
+             QStringLiteral("hd"));
+    QCOMPARE(sendRequest("PATCH", QStringLiteral("/api/v1/categories/1"), "{}").statusCode, 400);
+    QCOMPARE(sendRequest("PATCH", QStringLiteral("/api/v1/categories/9"), "{\"comment\":\"x\"}").statusCode, 404);
+    QCOMPARE(sendRequest("PATCH", QStringLiteral("/api/v1/categories/0"), "{\"comment\":\"x\"}").statusCode, 400);
+
+    // Removing the first of two: the second moves down and says where it came from.
+    m_apiBackend.calls.clear();
+    QCOMPARE(sendRequest("DELETE", QStringLiteral("/api/v1/categories/1")).statusCode, 400);
+    QCOMPARE(sendRequest("DELETE", QStringLiteral("/api/v1/categories/1?confirm=true")).statusCode, 200);
+    QVERIFY(m_apiBackend.calls.contains(QStringLiteral("cat:1<-2")));
+    QCOMPARE(m_apiBackend.categoryRows.at(1).toObject().value(QStringLiteral("title")).toString(),
+             QStringLiteral("B"));
+
+    r = sendRequest("GET", QStringLiteral("/api/v1/categories"));
+    QCOMPARE(r.json.object().value(QStringLiteral("total")).toInt(), 2);
+}
+
+void tst_WebServer::api_preferenceSchemaHoldsNoSecrets()
+{
+    const Response r = sendRequest("GET", QStringLiteral("/api/v1/preferences/schema"));
+    QCOMPARE(r.statusCode, 200);
+    const QJsonArray rows = r.json.object().value(QStringLiteral("items")).toArray();
+    QVERIFY(rows.size() > 40);
+
+    const QCborMap all = m_preferences->toIpcMap();
+    const QJsonObject values = sendRequest("GET", QStringLiteral("/api/v1/preferences")).json.object();
+    QCOMPARE(values.size(), rows.size());
+
+    static const QRegularExpression secret(
+        QStringLiteral("password|apikey|token|license|accountid|unpacker|certpath|keypath|templatepath"),
+        QRegularExpression::CaseInsensitiveOption);
+    for (const QJsonValue& v : rows) {
+        const QJsonObject row = v.toObject();
+        const QString key = row.value(QStringLiteral("key")).toString();
+        // Read through the IPC map: a key that is not there has no value to show.
+        QVERIFY2(all.contains(key), qPrintable(key));
+        QVERIFY2(values.contains(key), qPrintable(key));
+        QVERIFY2(!secret.match(key).hasMatch(), qPrintable(key));
+        QVERIFY2(!row.value(QStringLiteral("description")).toString().isEmpty(), qPrintable(key));
+        QCOMPARE(values.value(key), all.value(key).toJsonValue());
+    }
+
+    // The API cannot switch its own access on or off, or reach a credential.
+    const auto patch = [this](const char* body) {
+        return sendRequest("PATCH", QStringLiteral("/api/v1/preferences"), QByteArray(body)).statusCode;
+    };
+    QCOMPARE(patch("{\"webServerMcpEnabled\":true}"), 400);
+    QCOMPARE(patch("{\"webServerApiKey\":\"x\"}"), 400);
+    QCOMPARE(patch("{\"proxyPassword\":\"x\"}"), 400);
+    QCOMPARE(patch("{\"usenetExternalUnpacker\":\"/bin/sh\"}"), 400);
+    QCOMPARE(patch("{\"maxSourcesPerFile\":5001}"), 400);
+
+    // The same table holds the IPC setter to its ranges.
+    const PrefSpec* spec = findPreferenceSpec(u"maxSourcesPerFile");
+    QVERIFY(spec);
+    QVERIFY(preferenceProblem(*spec, QCborValue(400)).isEmpty());
+    QVERIFY(!preferenceProblem(*spec, QCborValue(0)).isEmpty());
+    QVERIFY(!preferenceProblem(*spec, QCborValue(QStringLiteral("400"))).isEmpty());
+}
+
+void tst_WebServer::api_logsFilterAndResume()
+{
+    m_apiBackend.records = {
+        {1, QStringLiteral("core"), QtDebugMsg, QStringLiteral("d"), 100},
+        {2, QStringLiteral("core"), QtInfoMsg, QStringLiteral("i"), 101},
+        {3, QStringLiteral("core"), QtWarningMsg, QStringLiteral("w"), 102},
+        {4, QStringLiteral("core"), QtCriticalMsg, QStringLiteral("e"), 103},
+    };
+    const auto reset = qScopeGuard([this] { m_apiBackend.records.clear(); });
+    const auto messages = [this](const char* query, qint64* lastId = nullptr) {
+        const QJsonObject o = sendRequest("GET", QStringLiteral("/api/v1/logs") + QLatin1StringView(query))
+                                  .json.object();
+        if (lastId)
+            *lastId = o.value(QStringLiteral("lastId")).toInteger();
+        QString out;
+        for (const QJsonValue& v : o.value(QStringLiteral("items")).toArray())
+            out += v.toObject().value(QStringLiteral("message")).toString();
+        return out;
+    };
+
+    qint64 lastId = 0;
+    QCOMPARE(messages("", &lastId), QStringLiteral("diwe"));
+    QCOMPARE(lastId, 4);
+    QCOMPARE(messages("?level=warning"), QStringLiteral("we"));   // info is below warning
+    QCOMPARE(messages("?level=info"), QStringLiteral("iwe"));
+    QCOMPARE(messages("?limit=2"), QStringLiteral("we"));         // the newest, oldest first
+    QCOMPARE(messages("?since=3"), QStringLiteral("e"));
+    QCOMPARE(messages("?since=4", &lastId), QString());
+    QCOMPARE(lastId, 4);
+
+    const QJsonObject first = sendRequest("GET", QStringLiteral("/api/v1/logs?limit=1&level=error"))
+                                  .json.object().value(QStringLiteral("items")).toArray().at(0).toObject();
+    QCOMPARE(first.value(QStringLiteral("severity")).toString(), QStringLiteral("error"));
+    QCOMPARE(first.value(QStringLiteral("timestamp")).toInteger(), 103);
+}
+
+void tst_WebServer::api_overviewRoutesAnswer()
+{
+    Response r = sendRequest("GET", QStringLiteral("/api/v1/snapshot"));
+    QCOMPARE(r.statusCode, 200);
+    for (const char* key : {"version", "ed2k", "kad", "downloads", "uploads", "netBlocked"})
+        QVERIFY2(r.json.object().contains(QLatin1StringView(key)), key);
+
+    r = sendRequest("GET", QStringLiteral("/api/v1/capabilities"));
+    QCOMPARE(r.statusCode, 200);
+    QVERIFY(r.json.object().value(QStringLiteral("features")).toObject()
+                .value(QStringLiteral("restApi")).toBool());
+    QVERIFY(r.json.object().value(QStringLiteral("operations")).toArray()
+                .contains(QStringLiteral("downloads.add")));
+
+    r = sendRequest("GET", QStringLiteral("/api/v1/network"));
+    QCOMPARE(r.statusCode, 200);
+    QVERIFY(r.json.object().contains(QStringLiteral("client")));
+    QCOMPARE(r.json.object().value(QStringLiteral("web")).toObject()
+                 .value(QStringLiteral("port")).toInt(), int(m_port));
+
+    r = sendRequest("GET", QStringLiteral("/api/v1/kad"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("running")).toBool(), false);
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/kad/nodes")).json.object()
+                 .value(QStringLiteral("total")).toInt(-1), 0);
+
+    for (const char* path : {"/api/v1/uploads", "/api/v1/upload-queue"}) {
+        r = sendRequest("GET", QString::fromLatin1(path));
+        QCOMPARE(r.statusCode, 200);
+        QVERIFY(r.json.object().value(QStringLiteral("items")).isArray());
+        QVERIFY(r.json.object().value(QStringLiteral("summary")).toObject()
+                    .contains(QStringLiteral("waitingUserCount")));
+    }
+
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/search")).statusCode, 200);
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/nat")).statusCode, 200);
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/diagnostics")).statusCode, 200);
+    r = sendRequest("GET", QStringLiteral("/api/v1/shared/directories"));
+    QCOMPARE(r.statusCode, 200);
+    QVERIFY(r.json.object().value(QStringLiteral("directories")).isArray());
+    // A path that is not a directory changes nothing.
+    QCOMPARE(sendRaw(m_port, "PUT", QStringLiteral("/api/v1/shared/directories"),
+                     "{\"directories\":[\"/no/such/dir/anywhere\"]}", "application/json",
+                     {{QByteArrayLiteral("X-Api-Key"), m_apiKey.toUtf8()}}).statusCode, 400);
+}
+
+void tst_WebServer::api_openApiDescribesEveryRoute()
+{
+    // Readable without a key: a browser fetches it for the playground.
+    const Response r = sendRequest("GET", QStringLiteral("/api/v1/openapi.json"), {}, false);
+    QCOMPARE(r.statusCode, 200);
+    const QJsonObject doc = r.json.object();
+    QCOMPARE(doc.value(QStringLiteral("openapi")).toString(), QStringLiteral("3.1.0"));
+    const QJsonObject paths = doc.value(QStringLiteral("paths")).toObject();
+
+    QSet<QString> ids;
+    QSet<QString> tools;
+    for (const api::Operation& op : m_webServer->api().operations()) {
+        QVERIFY2(!ids.contains(op.id), qPrintable(op.id));
+        ids.insert(op.id);
+        QVERIFY2(!op.summary.isEmpty(), qPrintable(op.id));
+        if (!op.mcpTool.isEmpty()) {
+            QVERIFY2(!tools.contains(op.mcpTool), qPrintable(op.mcpTool));
+            tools.insert(op.mcpTool);
+        }
+
+        const QJsonObject entry = paths.value(op.path).toObject()
+                                      .value(api::methodName(op.method)).toObject();
+        QVERIFY2(!entry.isEmpty(), qPrintable(op.path));
+        QCOMPARE(entry.value(QStringLiteral("operationId")).toString(), op.id);
+
+        // Every path placeholder is a declared, required parameter.
+        for (const QString& name : api::Registry::pathParamNames(op.path)) {
+            bool found = false;
+            for (const QJsonValue& p : entry.value(QStringLiteral("parameters")).toArray()) {
+                const QJsonObject o = p.toObject();
+                found = found || (o.value(QStringLiteral("name")).toString() == name
+                                  && o.value(QStringLiteral("in")).toString() == QLatin1StringView("path")
+                                  && o.value(QStringLiteral("required")).toBool());
+            }
+            QVERIFY2(found, qPrintable(op.id + u'/' + name));
+        }
+
+        // The tool schema lists the same parameters.
+        const QJsonObject properties = api::inputSchema(op).value(QStringLiteral("properties")).toObject();
+        QCOMPARE(properties.size(), op.params.size());
+    }
+    QVERIFY(ids.size() > 60);
+
+    QStringList refs;
+    collectRefs(doc, refs);
+    QVERIFY(!refs.isEmpty());
+    const QJsonObject schemas = doc.value(QStringLiteral("components")).toObject()
+                                    .value(QStringLiteral("schemas")).toObject();
+    for (const QString& ref : std::as_const(refs)) {
+        QVERIFY2(ref.startsWith(QStringLiteral("#/components/schemas/")), qPrintable(ref));
+        QVERIFY2(schemas.contains(ref.section(u'/', -1)), qPrintable(ref));
+    }
+
+    // The documented rows are the rows: same fields as the serializers write.
+    const auto fields = [&schemas](const char* name) {
+        QStringList keys = schemas.value(QLatin1StringView(name)).toObject()
+                               .value(QStringLiteral("properties")).toObject().keys();
+        keys.sort();
+        return keys;
+    };
+    PartFile partFile;
+    QStringList actual = toJson(partFile).keys();
+    actual.sort();
+    QCOMPARE(fields("Download"), actual);
+
+    const auto server = Server::fromAddressString(QStringLiteral("203.0.113.5"), 4661);
+    QVERIFY(server);
+    actual = toJson(*server).keys();
+    actual.sort();
+    QCOMPARE(fields("Server"), actual);
+}
+
+void tst_WebServer::api_playgroundIsLocalAndFollowsTheRestSwitch()
+{
+    QTemporaryDir config;
+    QVERIFY(config.isValid());
+    QVERIFY(QDir(config.path()).mkpath(QStringLiteral("webserver")));
+    {
+        QFile script(config.filePath(QStringLiteral("webserver/swagger-ui-bundle.js")));
+        QVERIFY(script.open(QIODevice::WriteOnly));
+        script.write("/* bundle */");
+        QFile secret(config.filePath(QStringLiteral("webserver/other.js")));
+        QVERIFY(secret.open(QIODevice::WriteOnly));
+        secret.write("/* not for the docs route */");
+    }
+    Preferences prefs;
+    prefs.setConfigDir(config.path());
+
+    auto server = startServer(false, true, {}, [&prefs](WebServer& ws, WebServerConfig&) {
+        ws.setPreferences(&prefs);
+    });
+    const uint16 port = server->port();
+
+    // No key: it is a page.
+    Response r = sendRaw(port, "GET", QStringLiteral("/api/v1/docs"));
+    QCOMPARE(r.statusCode, 200);
+    const QString page = QString::fromUtf8(r.rawBody);
+    QVERIFY(page.contains(QStringLiteral("swagger-ui")));
+    QVERIFY(page.contains(QStringLiteral("openapi.json")));
+    // Nothing is fetched from anywhere else.
+    QVERIFY(!page.contains(QStringLiteral("http://")));
+    QVERIFY(!page.contains(QStringLiteral("https://")));
+    QVERIFY(!page.contains(QStringLiteral("src=\"//")));
+
+    r = sendRaw(port, "GET", QStringLiteral("/api/v1/docs/swagger-ui-bundle.js"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.rawBody, QByteArrayLiteral("/* bundle */"));
+    QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v1/docs/swagger-ui.css")).statusCode, 404);   // not installed
+    QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v1/docs/other.js")).statusCode, 404);         // not on the list
+    server->stop();
+
+    // REST off: no page, no document.
+    auto off = startServer(true, false);
+    QCOMPARE(sendRaw(off->port(), "GET", QStringLiteral("/api/v1/docs")).statusCode, 404);
+    QCOMPARE(sendRaw(off->port(), "GET", QStringLiteral("/api/v1/openapi.json")).statusCode, 404);
+    QCOMPARE(sendRaw(off->port(), "GET", QStringLiteral("/api/v1/health")).statusCode, 404);
+}
+
+void tst_WebServer::api_eventsStreamResumeAndReset()
+{
+    // A raw socket: the stream never ends, so a reply object would never finish.
+    const auto open = [this](const QByteArray& extraHeaders, const QByteArray& query = {}) {
+        auto socket = std::make_unique<QTcpSocket>();
+        socket->connectToHost(QHostAddress::LocalHost, m_port);
+        if (!socket->waitForConnected(3000))
+            return socket;
+        socket->write("GET /api/v1/events" + query + " HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Api-Key: "
+                      + m_apiKey.toUtf8() + "\r\n" + extraHeaders + "\r\n");
+        socket->flush();
+        return socket;
+    };
+    const auto readUntil = [](QTcpSocket& socket, QByteArray& buffer, const QByteArray& marker) {
+        QElapsedTimer timer;
+        timer.start();
+        while (!buffer.contains(marker) && timer.elapsed() < 5000) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+            buffer += socket.readAll();
+        }
+        return buffer.contains(marker);
+    };
+
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/events"), {}, false).statusCode, 401);
+    QCOMPARE(m_webServer->eventStreamCount(), 0);
+
+    auto live = open({});
+    QByteArray got;
+    QVERIFY2(readUntil(*live, got, "retry: 3000"), got.constData());
+    QVERIFY(got.contains("200"));
+    QVERIFY(got.toLower().contains("text/event-stream"));
+    QCOMPARE(m_webServer->eventStreamCount(), 1);
+    QCOMPARE(m_eventHub.listenerCount(), 1);
+
+    m_eventHub.publish(QStringLiteral("downloads.changed"));
+    QVERIFY(readUntil(*live, got, "event: downloads.changed"));
+    const qint64 first = m_eventHub.lastId();
+    const QByteArray idLine = QByteArray("id: ") + QByteArray::number(first);
+    QVERIFY(got.contains(idLine));
+
+    // Only the topics asked for.
+    auto filtered = open({}, "?topics=search");
+    QByteArray filteredGot;
+    QVERIFY(readUntil(*filtered, filteredGot, "retry: 3000"));
+    m_eventHub.publish(QStringLiteral("uploads.changed"));
+    m_eventHub.publish(QStringLiteral("search.state"), QJsonObject{{QStringLiteral("searchID"), 7}});
+    QVERIFY(readUntil(*filtered, filteredGot, "event: search.state"));
+    QVERIFY(filteredGot.contains("\"searchID\":7"));
+    QVERIFY(!filteredGot.contains("uploads.changed"));
+    QVERIFY(readUntil(*live, got, "event: search.state"));
+    QVERIFY(got.contains("uploads.changed"));
+
+    // Resume: what came after the id is replayed, nothing before it.
+    auto resumed = open("Last-Event-ID: " + QByteArray::number(first) + "\r\n");
+    QByteArray resumedGot;
+    QVERIFY(readUntil(*resumed, resumedGot, "event: search.state"));
+    QVERIFY(resumedGot.contains("uploads.changed"));
+    QVERIFY(!resumedGot.contains("downloads.changed"));
+    QVERIFY(!resumedGot.contains("sync.reset"));
+
+    // An id this ring never gave out: start over.
+    auto stale = open("Last-Event-ID: 99999999\r\n");
+    QByteArray staleGot;
+    QVERIFY(readUntil(*stale, staleGot, "event: sync.reset"));
+
+    QCOMPARE(m_webServer->eventStreamCount(), 4);
+    live->disconnectFromHost();
+    filtered->abort();
+    resumed->abort();
+    stale->abort();
+    QTRY_COMPARE(m_webServer->eventStreamCount(), 0);
+    QCOMPARE(m_eventHub.listenerCount(), 0);
+    // Publishing to nobody is harmless.
+    m_eventHub.publish(QStringLiteral("downloads.changed"));
+
+    // The ring itself: a gap that fell out of it cannot be replayed.
+    ApiEventHub hub;
+    for (int i = 0; i < ApiEventHub::kCapacity + 10; ++i)
+        hub.publish(QStringLiteral("x.y"));
+    bool resetNeeded = false;
+    QVERIFY(hub.since(5, resetNeeded).isEmpty());
+    QVERIFY(resetNeeded);
+    QCOMPARE(hub.since(hub.lastId() - 3, resetNeeded).size(), 3);
+    QVERIFY(!resetNeeded);
+}
+
+// ---------------------------------------------------------------------------
+// MCP
+// ---------------------------------------------------------------------------
+
+void tst_WebServer::mcp_isItsOwnSwitch()
+{
+    const QList<std::pair<QByteArray, QByteArray>> key{{QByteArrayLiteral("X-Api-Key"), m_apiKey.toUtf8()}};
+    const QByteArray ping = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}";
+
+    // Off by default, REST on or not.
+    QCOMPARE(WebServerConfig().mcpEnabled, false);
+    QCOMPARE(Preferences().webServerMcpEnabled(), false);
+    QCOMPARE(sendRaw(m_port, "POST", QStringLiteral("/mcp"), ping, "application/json", key).statusCode, 404);
+
+    // On with REST off: the tools work, the REST routes do not exist.
+    auto server = startServer(false, false, {}, [](WebServer&, WebServerConfig& config) {
+        config.mcpEnabled = true;
+    });
+    const uint16 port = server->port();
+    const Response r = sendRaw(port, "POST", QStringLiteral("/mcp"), ping, "application/json", key);
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("id")).toInt(), 1);
+    QVERIFY(r.json.object().contains(QStringLiteral("result")));
+    QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v1/stats"), {}, {}, key).statusCode, 404);
+    QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v1/docs")).statusCode, 404);
+    QCOMPARE(sendRaw(port, "GET", QStringLiteral("/mcp"), {}, {}, key).statusCode, 405);
+
+    // The preference reaches the config, and a change of it is a restart.
+    Preferences prefs;
+    WebServerConfig before = WebServerConfig::fromPreferences(prefs);
+    prefs.setWebServerMcpEnabled(true);
+    prefs.setWebServerMcpReadOnly(true);
+    const WebServerConfig after = WebServerConfig::fromPreferences(prefs);
+    QVERIFY(after.mcpEnabled && after.mcpReadOnly && !after.restApiEnabled);
+    QVERIFY(!(before == after));
+}
+
+void tst_WebServer::mcp_initializeListAndCall()
+{
+    auto server = startServer(false, false, {}, [this](WebServer& ws, WebServerConfig& config) {
+        config.mcpEnabled = true;
+        ws.setApiBackend(&m_apiBackend);
+    });
+    const QList<std::pair<QByteArray, QByteArray>> key{
+        {QByteArrayLiteral("Authorization"), "Bearer " + m_apiKey.toUtf8()}};
+    const auto rpc = [&](const QByteArray& body) {
+        return sendRaw(server->port(), "POST", QStringLiteral("/mcp"), body, "application/json", key);
+    };
+
+    Response r = rpc("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"t\",\"version\":\"1\"}}}");
+    QCOMPARE(r.statusCode, 200);
+    QJsonObject result = r.json.object().value(QStringLiteral("result")).toObject();
+    QCOMPARE(result.value(QStringLiteral("protocolVersion")).toString(), QStringLiteral("2025-03-26"));
+    QVERIFY(result.value(QStringLiteral("capabilities")).toObject().contains(QStringLiteral("tools")));
+    QCOMPARE(result.value(QStringLiteral("serverInfo")).toObject().value(QStringLiteral("name")).toString(),
+             QStringLiteral("emuleqt"));
+    QVERIFY(!result.value(QStringLiteral("instructions")).toString().isEmpty());
+    // A revision we do not know: ours is offered instead.
+    r = rpc("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"1999-01-01\"}}");
+    QVERIFY(!r.json.object().value(QStringLiteral("result")).toObject()
+                 .value(QStringLiteral("protocolVersion")).toString().startsWith(QStringLiteral("1999")));
+
+    // A notification gets no body.
+    r = rpc("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}");
+    QCOMPARE(r.statusCode, 202);
+    QVERIFY(r.rawBody.isEmpty());
+
+    r = rpc("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}");
+    const QJsonArray tools = r.json.object().value(QStringLiteral("result")).toObject()
+                                 .value(QStringLiteral("tools")).toArray();
+    QVERIFY(tools.size() >= 30);
+    QSet<QString> names;
+    for (const QJsonValue& v : tools) {
+        const QJsonObject tool = v.toObject();
+        const QString name = tool.value(QStringLiteral("name")).toString();
+        names.insert(name);
+        // Each tool is one operation of the table, schema and all.
+        const api::Operation* op = m_webServer->api().findTool(name);
+        QVERIFY2(op, qPrintable(name));
+        QCOMPARE(tool.value(QStringLiteral("inputSchema")).toObject(), api::inputSchema(*op));
+        QVERIFY2(tool.value(QStringLiteral("description")).toString().size() > 10, qPrintable(name));
+        QCOMPARE(tool.value(QStringLiteral("annotations")).toObject()
+                     .value(QStringLiteral("readOnlyHint")).toBool(), op->is(api::ReadOnly));
+    }
+    QVERIFY(names.contains(QStringLiteral("get_status")));
+    QVERIFY(names.contains(QStringLiteral("search_start")));
+    QVERIFY(names.contains(QStringLiteral("download_from_search")));
+    // Stopping the daemon is not something a model gets to do.
+    for (const QString& name : std::as_const(names))
+        QVERIFY2(!name.contains(QStringLiteral("shutdown")), qPrintable(name));
+
+    r = rpc("{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"get_status\",\"arguments\":{}}}");
+    result = r.json.object().value(QStringLiteral("result")).toObject();
+    QCOMPARE(result.value(QStringLiteral("isError")).toBool(), false);
+    QVERIFY(result.value(QStringLiteral("structuredContent")).toObject().contains(QStringLiteral("ed2k")));
+    const QJsonObject text = result.value(QStringLiteral("content")).toArray().at(0).toObject();
+    QCOMPARE(text.value(QStringLiteral("type")).toString(), QStringLiteral("text"));
+    QVERIFY(QJsonDocument::fromJson(text.value(QStringLiteral("text")).toString().toUtf8()).isObject());
+
+    // A list comes back a model-sized page unless it asks for more.
+    r = rpc("{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"downloads_list\"}}");
+    QCOMPARE(r.json.object().value(QStringLiteral("result")).toObject()
+                 .value(QStringLiteral("structuredContent")).toObject()
+                 .value(QStringLiteral("limit")).toInt(), 50);
+
+    // A bad argument is the tool's error, readable by the model — not a protocol error.
+    r = rpc("{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"downloads_list\",\"arguments\":{\"colour\":\"red\"}}}");
+    result = r.json.object().value(QStringLiteral("result")).toObject();
+    QVERIFY(result.value(QStringLiteral("isError")).toBool());
+    QVERIFY(result.value(QStringLiteral("content")).toArray().at(0).toObject()
+                .value(QStringLiteral("text")).toString().contains(QStringLiteral("colour")));
+    r = rpc("{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"download_cancel\",\"arguments\":{\"hash\":\"00112233445566778899AABBCCDDEEFF\"}}}");
+    QVERIFY(r.json.object().value(QStringLiteral("result")).toObject().value(QStringLiteral("isError")).toBool());
+
+    r = rpc("{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools/call\",\"params\":{\"name\":\"no_such_tool\"}}");
+    QCOMPARE(r.json.object().value(QStringLiteral("error")).toObject().value(QStringLiteral("code")).toInt(), -32602);
+    r = rpc("{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"resources/list\"}");
+    QCOMPARE(r.json.object().value(QStringLiteral("error")).toObject().value(QStringLiteral("code")).toInt(), -32601);
+    r = rpc("{not json");
+    QCOMPARE(r.statusCode, 400);
+    QCOMPARE(r.json.object().value(QStringLiteral("error")).toObject().value(QStringLiteral("code")).toInt(), -32700);
+
+    // A write tool does what the REST route does.
+    m_apiBackend.calls.clear();
+    r = rpc("{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"tools/call\",\"params\":{\"name\":\"preferences_set\",\"arguments\":{\"maxDownload\":123}}}");
+    QCOMPARE(r.json.object().value(QStringLiteral("result")).toObject().value(QStringLiteral("isError")).toBool(), false);
+    QVERIFY(m_apiBackend.calls.contains(QStringLiteral("pref:maxDownload")));
+}
+
+void tst_WebServer::mcp_refusesStrangers()
+{
+    auto server = startServer(false, false, {}, [](WebServer&, WebServerConfig& config) {
+        config.mcpEnabled = true;
+        config.corsAllowedOrigins = {QStringLiteral("https://trusted.example")};
+    });
+    const QByteArray ping = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}";
+    const QByteArray key = m_apiKey.toUtf8();
+    const auto post = [&](const QList<std::pair<QByteArray, QByteArray>>& headers) {
+        return sendRaw(server->port(), "POST", QStringLiteral("/mcp"), ping, "application/json", headers)
+            .statusCode;
+    };
+
+    QCOMPARE(post({}), 401);
+    QCOMPARE(post({{"X-Api-Key", "wrong"}}), 401);
+    QCOMPARE(post({{"X-Api-Key", key}}), 200);
+    // A page of another site, even with the key in hand.
+    QCOMPARE(post({{"X-Api-Key", key}, {"Origin", "https://evil.example"}}), 403);
+    QCOMPARE(post({{"X-Api-Key", key}, {"Origin", "https://trusted.example"}}), 200);
+}
+
+void tst_WebServer::mcp_readOnlyMode()
+{
+    auto server = startServer(false, false, {}, [](WebServer&, WebServerConfig& config) {
+        config.mcpEnabled = true;
+        config.mcpReadOnly = true;
+    });
+    const QList<std::pair<QByteArray, QByteArray>> key{{QByteArrayLiteral("X-Api-Key"), m_apiKey.toUtf8()}};
+    const auto rpc = [&](const QByteArray& body) {
+        return sendRaw(server->port(), "POST", QStringLiteral("/mcp"), body, "application/json", key)
+            .json.object();
+    };
+
+    QSet<QString> names;
+    for (const QJsonValue& v : rpc("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}")
+                                   .value(QStringLiteral("result")).toObject()
+                                   .value(QStringLiteral("tools")).toArray()) {
+        QVERIFY(v.toObject().value(QStringLiteral("annotations")).toObject()
+                    .value(QStringLiteral("readOnlyHint")).toBool());
+        names.insert(v.toObject().value(QStringLiteral("name")).toString());
+    }
+    QVERIFY(names.contains(QStringLiteral("downloads_list")));
+    QVERIFY(!names.contains(QStringLiteral("download_add")));
+    QVERIFY(!names.contains(QStringLiteral("search_start")));
+
+    // Not listed, and not callable by name either.
+    const QJsonObject result = rpc("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"kad_stop\"}}")
+                                   .value(QStringLiteral("result")).toObject();
+    QVERIFY(result.value(QStringLiteral("isError")).toBool());
+}
+
+void tst_WebServer::mcp_stdioBridgeRoundTrip()
+{
+#ifndef EMULE_MCP_BRIDGE_PATH
+    QSKIP("built without the path of emuleqt-mcp");
+#else
+    auto server = startServer(false, false, {}, [](WebServer&, WebServerConfig& config) {
+        config.mcpEnabled = true;
+    });
+    const QString url = QStringLiteral("http://127.0.0.1:%1/mcp").arg(server->port());
+
+    // The server lives in this event loop, so nothing here may block it.
+    const auto run = [&](const QStringList& args, const QList<QByteArray>& lines, int expectReplies) {
+        QProcess bridge;
+        bridge.start(QStringLiteral(EMULE_MCP_BRIDGE_PATH), args);
+        QList<QByteArray> replies;
+        if (!QTest::qWaitFor([&] { return bridge.state() == QProcess::Running; }, 5000))
+            return replies;
+        for (const QByteArray& line : lines)
+            bridge.write(line + '\n');
+        QByteArray out;
+        QTest::qWaitFor([&] {
+            out += bridge.readAllStandardOutput();
+            return out.count('\n') >= expectReplies;
+        }, 10000);
+        bridge.closeWriteChannel();
+        QTest::qWaitFor([&] { return bridge.state() == QProcess::NotRunning; }, 5000);
+        out += bridge.readAllStandardOutput();
+        for (const QByteArray& line : out.split('\n')) {
+            if (!line.trimmed().isEmpty())
+                replies.append(line);
+        }
+        if (bridge.state() != QProcess::NotRunning)
+            bridge.kill();
+        bridge.waitForFinished(2000);
+        return replies;
+    };
+
+    const QList<QByteArray> conversation{
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}",
+        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}",
+        "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}",
+    };
+    QList<QByteArray> replies = run({QStringLiteral("--url"), url, QStringLiteral("--api-key"), m_apiKey},
+                                    conversation, 2);
+    // Two requests, two answers; the notification gets none. stdout holds nothing else.
+    QCOMPARE(replies.size(), 2);
+    QSet<int> ids;
+    bool sawTools = false;
+    for (const QByteArray& line : std::as_const(replies)) {
+        const QJsonObject o = QJsonDocument::fromJson(line).object();
+        QCOMPARE(o.value(QStringLiteral("jsonrpc")).toString(), QStringLiteral("2.0"));
+        ids.insert(o.value(QStringLiteral("id")).toInt());
+        sawTools = sawTools || o.value(QStringLiteral("result")).toObject().contains(QStringLiteral("tools"));
+    }
+    QCOMPARE(ids, (QSet<int>{1, 2}));
+    QVERIFY(sawTools);
+
+    // A wrong key is told to the client as an error it can show, with the request's id.
+    replies = run({QStringLiteral("--url"), url, QStringLiteral("--api-key"), QStringLiteral("wrong")},
+                  {conversation.at(0)}, 1);
+    QCOMPARE(replies.size(), 1);
+    QJsonObject o = QJsonDocument::fromJson(replies.at(0)).object();
+    QCOMPARE(o.value(QStringLiteral("id")).toInt(), 1);
+    QVERIFY(o.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()
+                .contains(QStringLiteral("API key")));
+
+    // Nobody listening: the same.
+    server->stop();
+    replies = run({QStringLiteral("--url"), url, QStringLiteral("--api-key"), m_apiKey},
+                  {conversation.at(0)}, 1);
+    QCOMPARE(replies.size(), 1);
+    o = QJsonDocument::fromJson(replies.at(0)).object();
+    QVERIFY(o.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()
+                .contains(QStringLiteral("not reachable")));
+#endif
+}
+
+// docs/openapi.json is what people and tools read without a daemon at hand; it
+// must be the document the server generates. Regenerate with
+// EMULE_WRITE_OPENAPI=1 ./tst_WebServer api_checkedInOpenApiIsCurrent
+void tst_WebServer::api_checkedInOpenApiIsCurrent()
+{
+#define EMULE_STR2(x) #x
+#define EMULE_STR(x) EMULE_STR2(x)
+    const QString path = QDir(QStringLiteral(EMULE_STR(EMULE_PROJECT_DATA_DIR)))
+                             .absoluteFilePath(QStringLiteral("../docs/openapi.json"));
+#undef EMULE_STR
+#undef EMULE_STR2
+
+    // The version line changes with every release; the contract does not.
+    const auto withoutVersion = [](QJsonObject doc) {
+        QJsonObject info = doc.value(QStringLiteral("info")).toObject();
+        info.remove(QStringLiteral("version"));
+        doc.insert(QStringLiteral("info"), info);
+        return doc;
+    };
+    const QJsonObject generated = m_webServer->openApiDocument();
+
+    if (qEnvironmentVariableIsSet("EMULE_WRITE_OPENAPI")) {
+        QFile out(path);
+        QVERIFY2(out.open(QIODevice::WriteOnly | QIODevice::Truncate), qPrintable(path));
+        out.write(QJsonDocument(generated).toJson(QJsonDocument::Indented));
+    }
+
+    QFile file(path);
+    QVERIFY2(file.open(QIODevice::ReadOnly), qPrintable(path));
+    const QJsonObject stored = QJsonDocument::fromJson(file.readAll()).object();
+    QVERIFY2(withoutVersion(stored) == withoutVersion(generated),
+             "docs/openapi.json is stale: rerun this test with EMULE_WRITE_OPENAPI=1");
+}
+
+// From 2026-07-28 on there is no handshake: each request names its revision and
+// mirrors it, the method and the tool name into headers.
+void tst_WebServer::mcp_perRequestRevision()
+{
+    auto server = startServer(false, false, {}, [](WebServer&, WebServerConfig& config) {
+        config.mcpEnabled = true;
+    });
+    const auto call = [&](const QByteArray& method, const QByteArray& extraParams,
+                          QList<std::pair<QByteArray, QByteArray>> headers,
+                          const QByteArray& version = "2026-07-28") {
+        const QByteArray body = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" + method
+            + "\",\"params\":{" + extraParams
+            + "\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"" + version + "\"}}}";
+        headers.append({QByteArrayLiteral("X-Api-Key"), m_apiKey.toUtf8()});
+        return sendRaw(server->port(), "POST", QStringLiteral("/mcp"), body, "application/json", headers);
+    };
+    const QList<std::pair<QByteArray, QByteArray>> good{{"MCP-Protocol-Version", "2026-07-28"}};
+    const auto with = [&good](const char* method, const char* name = nullptr) {
+        auto h = good;
+        h.append({QByteArrayLiteral("Mcp-Method"), QByteArray(method)});
+        if (name)
+            h.append({QByteArrayLiteral("Mcp-Name"), QByteArray(name)});
+        return h;
+    };
+
+    Response r = call("server/discover", {}, with("server/discover"));
+    QCOMPARE(r.statusCode, 200);
+    QJsonObject result = r.json.object().value(QStringLiteral("result")).toObject();
+    QCOMPARE(result.value(QStringLiteral("resultType")).toString(), QStringLiteral("complete"));
+    const QJsonArray versions = result.value(QStringLiteral("supportedVersions")).toArray();
+    QVERIFY(versions.contains(QStringLiteral("2026-07-28")));
+    QVERIFY(versions.contains(QStringLiteral("2025-06-18")));
+    QVERIFY(result.value(QStringLiteral("capabilities")).toObject().contains(QStringLiteral("tools")));
+    QCOMPARE(result.value(QStringLiteral("_meta")).toObject()
+                 .value(QStringLiteral("io.modelcontextprotocol/serverInfo")).toObject()
+                 .value(QStringLiteral("name")).toString(), QStringLiteral("emuleqt"));
+
+    r = call("tools/list", {}, with("tools/list"));
+    QCOMPARE(r.statusCode, 200);
+    result = r.json.object().value(QStringLiteral("result")).toObject();
+    QCOMPARE(result.value(QStringLiteral("resultType")).toString(), QStringLiteral("complete"));
+    QVERIFY(result.value(QStringLiteral("tools")).toArray().size() >= 30);
+
+    r = call("tools/call", "\"name\":\"get_status\",\"arguments\":{},", with("tools/call", "get_status"));
+    QCOMPARE(r.statusCode, 200);
+    result = r.json.object().value(QStringLiteral("result")).toObject();
+    QCOMPARE(result.value(QStringLiteral("resultType")).toString(), QStringLiteral("complete"));
+    QCOMPARE(result.value(QStringLiteral("isError")).toBool(), false);
+
+    // A revision we do not speak: said so, with the ones we do.
+    r = call("tools/list", {}, {{"MCP-Protocol-Version", "2031-01-01"}, {"Mcp-Method", "tools/list"}},
+             "2031-01-01");
+    QCOMPARE(r.statusCode, 400);
+    QJsonObject failure = r.json.object().value(QStringLiteral("error")).toObject();
+    QCOMPARE(failure.value(QStringLiteral("code")).toInt(), -32022);
+    QCOMPARE(failure.value(QStringLiteral("data")).toObject().value(QStringLiteral("requested")).toString(),
+             QStringLiteral("2031-01-01"));
+    QVERIFY(failure.value(QStringLiteral("data")).toObject().value(QStringLiteral("supported")).toArray()
+                .contains(QStringLiteral("2026-07-28")));
+
+    // Headers that disagree with the body, or are not there: refused before anything runs.
+    const auto mismatch = [&](const Response& response) {
+        return response.statusCode == 400
+            && response.json.object().value(QStringLiteral("error")).toObject()
+                   .value(QStringLiteral("code")).toInt() == -32020;
+    };
+    QVERIFY(mismatch(call("tools/list", {}, {})));
+    QVERIFY(mismatch(call("tools/list", {}, good)));
+    QVERIFY(mismatch(call("tools/list", {}, with("tools/call"))));
+    QVERIFY(mismatch(call("tools/call", "\"name\":\"get_status\",", with("tools/call", "kad_stop"))));
+    QVERIFY(mismatch(call("tools/call", "\"name\":\"get_status\",", with("tools/call"))));
+    // The encoded form of a header value is the same name.
+    r = call("tools/call", "\"name\":\"get_status\",",
+             with("tools/call", QByteArray("=?base64?" + QByteArray("get_status").toBase64() + "?=").constData()));
+    QCOMPARE(r.statusCode, 200);
+
+    // A method we do not have is a 404 here, with the JSON-RPC error a client looks for.
+    r = call("resources/list", {}, with("resources/list"));
+    QCOMPARE(r.statusCode, 404);
+    QCOMPARE(r.json.object().value(QStringLiteral("error")).toObject().value(QStringLiteral("code")).toInt(),
+             -32601);
+}
+
 #include "tst_WebServer.moc"

@@ -1,46 +1,57 @@
 {
-  "Blocked: network interface not available": {
-    "_context": "eMule::WebServer",
-    "de_DE": "Blockiert: Netzwerkschnittstelle nicht verfügbar",
-    "es_ES": "Bloqueado: interfaz de red no disponible",
-    "fr_FR": "Bloqué : interface réseau indisponible",
-    "it_IT": "Bloccato: interfaccia di rete non disponibile",
-    "ja_JP": "ブロック中: ネットワークインターフェースが利用できません",
-    "ko_KR": "차단됨: 네트워크 인터페이스를 사용할 수 없음",
-    "pt_BR": "Bloqueado: interface de rede indisponível",
-    "zh_CN": "已阻止：网络接口不可用"
-  },
-  "Network interface": {
+  "Serves /api/v1 with its description and a playground at /api/v1/docs. Calls need the API key.": {
     "_context": "eMule::OptionsDialog",
-    "de_DE": "Netzwerkschnittstelle",
-    "es_ES": "Interfaz de red",
-    "fr_FR": "Interface réseau",
-    "it_IT": "Interfaccia di rete",
-    "ja_JP": "ネットワークインターフェース",
-    "ko_KR": "네트워크 인터페이스",
-    "pt_BR": "Interface de rede",
-    "zh_CN": "网络接口"
+    "de_DE": "Stellt /api/v1 mit Beschreibung und einer Testseite unter /api/v1/docs bereit. Aufrufe benötigen den API-Schlüssel.",
+    "es_ES": "Sirve /api/v1 con su descripción y una página de pruebas en /api/v1/docs. Las llamadas necesitan la clave de API.",
+    "fr_FR": "Sert /api/v1 avec sa description et une page d'essai à /api/v1/docs. Les appels nécessitent la clé d'API.",
+    "it_IT": "Fornisce /api/v1 con la sua descrizione e una pagina di prova in /api/v1/docs. Le chiamate richiedono la chiave API.",
+    "ja_JP": "/api/v1 とその説明、および /api/v1/docs の試用ページを提供します。呼び出しには API キーが必要です。",
+    "ko_KR": "/api/v1과 그 설명, /api/v1/docs의 테스트 페이지를 제공합니다. 호출에는 API 키가 필요합니다.",
+    "pt_BR": "Serve /api/v1 com sua descrição e uma página de testes em /api/v1/docs. As chamadas precisam da chave de API.",
+    "zh_CN": "提供 /api/v1 及其说明，并在 /api/v1/docs 提供测试页面。调用需要 API 密钥。"
   },
-  "Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.": {
+  "Enable MCP server for AI assistants": {
     "_context": "eMule::OptionsDialog",
-    "de_DE": "Nur diese Netzwerkschnittstelle verwenden, zum Beispiel einen VPN-Tunnel. Wählen Sie eine aus der Liste oder geben Sie eine IP-Adresse oder ein Subnetz wie 10.64.0.0/10 ein (die Schnittstelle, die eine Adresse daraus besitzt). Verbindungen über einen Proxy werden nicht gebunden.",
-    "es_ES": "Usar solo esta interfaz de red, por ejemplo un túnel VPN. Elija una de la lista o escriba una dirección IP o una subred como 10.64.0.0/10 (la interfaz que tenga una dirección en ella). Las conexiones a través de un proxy no se vinculan.",
-    "fr_FR": "Utiliser uniquement cette interface réseau, par exemple un tunnel VPN. Choisissez-en une dans la liste, ou saisissez une adresse IP ou un sous-réseau tel que 10.64.0.0/10 (l'interface qui y possède une adresse). Les connexions passant par un proxy ne sont pas liées.",
-    "it_IT": "Usa solo questa interfaccia di rete, ad esempio un tunnel VPN. Scegline una dall'elenco oppure digita un indirizzo IP o una sottorete come 10.64.0.0/10 (l'interfaccia che ha un indirizzo al suo interno). Le connessioni tramite proxy non vengono vincolate.",
-    "ja_JP": "このネットワークインターフェース（VPN トンネルなど）のみを使用します。一覧から選ぶか、IP アドレスまたは 10.64.0.0/10 のようなサブネット（その範囲のアドレスを持つインターフェース）を入力してください。プロキシ経由の接続はバインドされません。",
-    "ko_KR": "이 네트워크 인터페이스(예: VPN 터널)만 사용합니다. 목록에서 선택하거나 IP 주소 또는 10.64.0.0/10 같은 서브넷(해당 범위의 주소를 가진 인터페이스)을 입력하십시오. 프록시를 통한 연결은 바인딩되지 않습니다.",
-    "pt_BR": "Usar somente esta interface de rede, por exemplo um túnel VPN. Escolha uma na lista ou digite um endereço IP ou uma sub-rede como 10.64.0.0/10 (a interface que possui um endereço nela). Conexões por meio de um proxy não são vinculadas.",
-    "zh_CN": "仅使用此网络接口，例如 VPN 隧道。可从列表中选择，或输入 IP 地址或子网（如 10.64.0.0/10，即拥有该范围内地址的接口）。通过代理的连接不会被绑定。"
+    "de_DE": "MCP-Server für KI-Assistenten aktivieren",
+    "es_ES": "Activar servidor MCP para asistentes de IA",
+    "fr_FR": "Activer le serveur MCP pour les assistants IA",
+    "it_IT": "Abilita server MCP per assistenti IA",
+    "ja_JP": "AI アシスタント用 MCP サーバーを有効にする",
+    "ko_KR": "AI 어시스턴트용 MCP 서버 사용",
+    "pt_BR": "Ativar servidor MCP para assistentes de IA",
+    "zh_CN": "为 AI 助手启用 MCP 服务器"
   },
-  "While the selected interface is not available, all P2P, Usenet and update connections stay closed.": {
+  "Serves the Model Context Protocol at /mcp on the same port, with the same API key. Independent of the REST API.": {
     "_context": "eMule::OptionsDialog",
-    "de_DE": "Solange die gewählte Schnittstelle nicht verfügbar ist, bleiben alle P2P-, Usenet- und Update-Verbindungen geschlossen.",
-    "es_ES": "Mientras la interfaz seleccionada no esté disponible, todas las conexiones P2P, Usenet y de actualización permanecen cerradas.",
-    "fr_FR": "Tant que l'interface sélectionnée n'est pas disponible, toutes les connexions P2P, Usenet et de mise à jour restent fermées.",
-    "it_IT": "Finché l'interfaccia selezionata non è disponibile, tutte le connessioni P2P, Usenet e di aggiornamento restano chiuse.",
-    "ja_JP": "選択したインターフェースが利用できない間、P2P、Usenet、更新のすべての接続は閉じたままになります。",
-    "ko_KR": "선택한 인터페이스를 사용할 수 없는 동안에는 모든 P2P, Usenet 및 업데이트 연결이 닫힌 상태로 유지됩니다.",
-    "pt_BR": "Enquanto a interface selecionada não estiver disponível, todas as conexões P2P, Usenet e de atualização permanecem fechadas.",
-    "zh_CN": "所选接口不可用期间，所有 P2P、Usenet 和更新连接都保持关闭。"
+    "de_DE": "Stellt das Model Context Protocol unter /mcp auf demselben Port mit demselben API-Schlüssel bereit. Unabhängig von der REST-API.",
+    "es_ES": "Sirve el Model Context Protocol en /mcp en el mismo puerto y con la misma clave de API. Independiente de la API REST.",
+    "fr_FR": "Sert le Model Context Protocol à /mcp sur le même port, avec la même clé d'API. Indépendant de l'API REST.",
+    "it_IT": "Fornisce il Model Context Protocol in /mcp sulla stessa porta, con la stessa chiave API. Indipendente dall'API REST.",
+    "ja_JP": "同じポートの /mcp で、同じ API キーを使って Model Context Protocol を提供します。REST API とは独立しています。",
+    "ko_KR": "같은 포트의 /mcp에서 같은 API 키로 Model Context Protocol을 제공합니다. REST API와는 별개입니다.",
+    "pt_BR": "Serve o Model Context Protocol em /mcp na mesma porta, com a mesma chave de API. Independente da API REST.",
+    "zh_CN": "在同一端口的 /mcp 上以相同的 API 密钥提供 Model Context Protocol。与 REST API 相互独立。"
+  },
+  "Read-only": {
+    "_context": "eMule::OptionsDialog",
+    "de_DE": "Nur lesen",
+    "es_ES": "Solo lectura",
+    "fr_FR": "Lecture seule",
+    "it_IT": "Sola lettura",
+    "ja_JP": "読み取り専用",
+    "ko_KR": "읽기 전용",
+    "pt_BR": "Somente leitura",
+    "zh_CN": "只读"
+  },
+  "Assistants can look at everything but change nothing.": {
+    "_context": "eMule::OptionsDialog",
+    "de_DE": "Assistenten können alles ansehen, aber nichts ändern.",
+    "es_ES": "Los asistentes pueden verlo todo, pero no cambiar nada.",
+    "fr_FR": "Les assistants peuvent tout consulter mais ne rien modifier.",
+    "it_IT": "Gli assistenti possono vedere tutto ma non modificare nulla.",
+    "ja_JP": "アシスタントはすべてを参照できますが、何も変更できません。",
+    "ko_KR": "어시스턴트는 모든 것을 볼 수 있지만 아무것도 변경할 수 없습니다.",
+    "pt_BR": "Os assistentes podem ver tudo, mas não alterar nada.",
+    "zh_CN": "助手可以查看所有内容，但不能更改任何内容。"
   }
 }

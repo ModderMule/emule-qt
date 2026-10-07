@@ -30,6 +30,12 @@
     <ClCompile Include="SharedFileRows.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ApiEventFeeder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DaemonApiBackend.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="DaemonUsenetWebBackend.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -56,6 +62,9 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <QtMoc Include="ApiEventFeeder.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="CliIpcClient.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -80,6 +89,9 @@
     <QtMoc Include="MetaSearchService.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <ClInclude Include="DaemonApiBackend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="DaemonUsenetWebBackend.h">
       <Filter>Header Files</Filter>
     </ClInclude>

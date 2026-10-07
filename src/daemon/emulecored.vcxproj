@@ -181,6 +181,8 @@
     <ClCompile Include="CoreNotifierBridge.cpp" />
     <ClCompile Include="SharedFileRows.cpp" />
     <ClCompile Include="DaemonApp.cpp" />
+    <ClCompile Include="ApiEventFeeder.cpp" />
+    <ClCompile Include="DaemonApiBackend.cpp" />
     <ClCompile Include="DaemonUsenetWebBackend.cpp" />
     <ClCompile Include="IpcClientHandler.cpp" />
     <ClCompile Include="IpcClientHandlerMeta.cpp" />
@@ -191,6 +193,7 @@
     <ClCompile Include="UsenetBridge.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <QtMoc Include="ApiEventFeeder.h" />
     <QtMoc Include="CliIpcClient.h" />
     <ClInclude Include="CommandLineExec.h" />
     <QtMoc Include="CoreNotifierBridge.h" />
@@ -199,6 +202,7 @@
     <QtMoc Include="IpcServer.h" />
     <QtMoc Include="MetaSearchService.h" />
     <QtMoc Include="PowerManager.h" />
+    <ClInclude Include="DaemonApiBackend.h" />
     <ClInclude Include="DaemonUsenetWebBackend.h" />
     <ClInclude Include="SharedFileRows.h" />
     <ClInclude Include="UsenetBridge.h" />

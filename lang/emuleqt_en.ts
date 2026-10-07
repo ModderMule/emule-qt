@@ -578,7 +578,7 @@ Has comments</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2859"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2878"/>
         <source>Test</source>
         <translation type="unfinished"></translation>
     </message>
@@ -660,7 +660,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4625"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+3987"/>
         <source>Bytes</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4181,7 +4181,7 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2763"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2782"/>
         <source>Options</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4199,12 +4199,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="-1814"/>
-        <location line="+5376"/>
+        <location line="+5395"/>
         <source>Apply</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5375"/>
+        <location line="-5394"/>
         <source>Help</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4250,12 +4250,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5272"/>
+        <location line="+5291"/>
         <source>Language</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5269"/>
+        <location line="-5288"/>
         <source>System Default</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4355,25 +4355,25 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5198"/>
+        <location line="+5217"/>
         <source>Core</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5193"/>
+        <location line="-5212"/>
         <source>Address:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+4"/>
         <location line="+1080"/>
-        <location line="+633"/>
-        <location line="+416"/>
+        <location line="+647"/>
+        <location line="+421"/>
         <source>Port:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2126"/>
+        <location line="-2145"/>
         <source>authentication token</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4518,8 +4518,8 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+2"/>
         <location line="+1509"/>
-        <location line="+114"/>
-        <location line="+290"/>
+        <location line="+128"/>
+        <location line="+295"/>
         <location line="+1016"/>
         <location line="+152"/>
         <location line="+1036"/>
@@ -4529,7 +4529,7 @@ Are you sure you want to continue?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4417"/>
+        <location line="-4436"/>
         <source>Reset</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4737,23 +4737,23 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1628"/>
+        <location line="+1647"/>
         <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2795"/>
+        <location line="-2814"/>
         <location line="+613"/>
-        <location line="+701"/>
+        <location line="+715"/>
         <location line="+19"/>
-        <location line="+319"/>
+        <location line="+324"/>
         <source>Password:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1618"/>
+        <location line="-1637"/>
         <source>Update</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5100,12 +5100,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1096"/>
+        <location line="+1115"/>
         <source>None</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1095"/>
+        <location line="-1114"/>
         <source>Plain</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5146,14 +5146,14 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+908"/>
+        <location line="+927"/>
         <location line="+1027"/>
         <location line="+154"/>
         <source>Name</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2087"/>
+        <location line="-2106"/>
         <source>Users</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5264,12 +5264,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+395"/>
+        <location line="+409"/>
         <source>Reload</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-372"/>
+        <location line="-386"/>
         <source>http://example.com/ipfilter.dat</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5528,12 +5528,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6257"/>
+        <location line="+6284"/>
         <source>Any</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-6255"/>
+        <location line="-6282"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5630,7 +5630,32 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location line="+1"/>
+        <source>Serves /api/v1 with its description and a playground at /api/v1/docs. Calls need the API key.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Enable MCP server for AI assistants</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Serves the Model Context Protocol at /mcp on the same port, with the same API key. Independent of the REST API.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location line="+3"/>
+        <source>Read-only</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Assistants can look at everything but change nothing.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+5"/>
         <source>Gzip compression</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5717,7 +5742,7 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+50"/>
+        <location line="+55"/>
         <source>Web template reloaded</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7109,7 +7134,7 @@ News server connections switch over immediately.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+414"/>
+        <location line="+418"/>
         <source>Web Interface</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7129,7 +7154,7 @@ News server connections switch over immediately.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+581"/>
+        <location line="+585"/>
         <source>Database: not connected to the core</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7179,17 +7204,17 @@ News server connections switch over immediately.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-4655"/>
+        <location line="-4663"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1327"/>
         <location line="+281"/>
-        <location line="+1872"/>
+        <location line="+1880"/>
         <source>Remove</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-5732"/>
+        <location line="-5759"/>
         <source>New eMule Qt version detected</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7199,7 +7224,7 @@ News server connections switch over immediately.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+2932"/>
+        <location line="+2951"/>
         <source>Write eMule core logs to disk</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7385,12 +7410,12 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1581"/>
-        <location line="+1894"/>
+        <location line="+1902"/>
         <source>Add</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1886"/>
+        <location line="-1894"/>
         <source>Action Value</source>
         <translation type="unfinished"></translation>
     </message>
@@ -11626,19 +11651,19 @@ A password is set for this release.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-4002"/>
-        <location line="+3891"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3337"/>
+        <location line="+3226"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-3936"/>
+        <location line="-3271"/>
         <source>Guests cannot add downloads</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+867"/>
+        <location line="+590"/>
         <source>Looking for comments on Kad</source>
         <translation type="unfinished"></translation>
     </message>
@@ -11720,7 +11745,7 @@ A password is set for this release.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+452"/>
+        <location line="+62"/>
         <source>Access denied — no password configured. Set a password in Options → Web Interface.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -11767,12 +11792,12 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1955"/>
+        <location line="+1957"/>
         <source>Web Control Panel</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1947"/>
+        <location line="-1949"/>
         <source>Not connected</source>
         <translation type="unfinished"></translation>
     </message>
@@ -11867,30 +11892,30 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+149"/>
-        <location line="+1126"/>
+        <location line="+1128"/>
         <source>Queued</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1125"/>
-        <location line="+1124"/>
+        <location line="-1127"/>
+        <location line="+1126"/>
         <source>Downloading</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1123"/>
+        <location line="-1125"/>
         <source>Paused</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+958"/>
+        <location line="+960"/>
         <location line="+163"/>
         <source>Complete</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1120"/>
+        <location line="-1122"/>
         <source>Failed</source>
         <translation type="unfinished"></translation>
     </message>
@@ -12013,21 +12038,21 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+117"/>
-        <location line="+165"/>
+        <location line="+110"/>
+        <location line="+174"/>
         <source>priority must be a number from -2 to 2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-276"/>
-        <location line="+117"/>
-        <location line="+74"/>
-        <location line="+78"/>
+        <location line="-278"/>
+        <location line="+110"/>
+        <location line="+71"/>
+        <location line="+90"/>
         <source>Unknown category</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-257"/>
+        <location line="-259"/>
         <location line="+4"/>
         <source>files must be a list of file numbers</source>
         <translation type="unfinished"></translation>
@@ -12038,12 +12063,12 @@ A password is set for this release.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+238"/>
+        <location line="+228"/>
         <source>Post the .nzb as the request body, or give a url</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+45"/>
+        <location line="+57"/>
         <source>Guests cannot change downloads</source>
         <translation type="unfinished"></translation>
     </message>
@@ -12288,7 +12313,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1451"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1453"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Downloads</source>
         <translation type="unfinished"></translation>
@@ -12440,7 +12465,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1545"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1155"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation type="unfinished"></translation>
@@ -12827,7 +12852,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1542"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1152"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation type="unfinished"></translation>

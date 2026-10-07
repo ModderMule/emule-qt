@@ -625,6 +625,8 @@ private:
     // Web Interface page controls
     QCheckBox*    m_webEnabledCheck = nullptr;
     QCheckBox*    m_webRestApiCheck = nullptr;
+    QCheckBox*    m_webMcpCheck = nullptr;
+    QCheckBox*    m_webMcpReadOnlyCheck = nullptr;
     QCheckBox*    m_webGzipCheck = nullptr;
     QCheckBox*    m_webUPnPCheck = nullptr;
     QSpinBox*     m_webPortSpin = nullptr;

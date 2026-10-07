@@ -18,6 +18,9 @@
 namespace eMule {
 
 class CoreSession;
+class ApiEventFeeder;
+class ApiEventHub;
+class DaemonApiBackend;
 class DaemonUsenetWebBackend;
 class TranslationRouter;
 class WebServer;
@@ -137,6 +140,10 @@ private:
     std::unique_ptr<CoreNotifierBridge> m_notifierBridge;
     /// Declared before m_webServer so the server that points at it dies first.
     std::unique_ptr<DaemonUsenetWebBackend> m_usenetWebBackend;
+    std::unique_ptr<DaemonApiBackend> m_apiBackend;
+    /// Events for GET /api/v1/events; outlive a web-server restart.
+    ApiEventHub* m_eventHub = nullptr;
+    ApiEventFeeder* m_eventFeeder = nullptr;
     std::unique_ptr<WebServer> m_webServer;
     std::unique_ptr<usenet::UsenetSession> m_usenetSession;
     std::unique_ptr<indexer::IndexerSearchList> m_indexerSearches;

@@ -606,7 +606,7 @@ Contient des commentaires</translation>
         <translation type="vanished">%1 octets</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2859"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2878"/>
         <source>Test</source>
         <translation>Test</translation>
     </message>
@@ -690,7 +690,7 @@ Le télécharger à nouveau ?</translation>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4625"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+3987"/>
         <source>Bytes</source>
         <translation>octets</translation>
     </message>
@@ -4298,7 +4298,7 @@ Le télécharger à nouveau ?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2763"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2782"/>
         <source>Options</source>
         <translation>Options</translation>
     </message>
@@ -4316,12 +4316,12 @@ Le télécharger à nouveau ?</translation>
     </message>
     <message>
         <location line="-1814"/>
-        <location line="+5376"/>
+        <location line="+5395"/>
         <source>Apply</source>
         <translation>Appliquer</translation>
     </message>
     <message>
-        <location line="-5375"/>
+        <location line="-5394"/>
         <source>Help</source>
         <translation>Aide</translation>
     </message>
@@ -4367,12 +4367,12 @@ Le télécharger à nouveau ?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5272"/>
+        <location line="+5291"/>
         <source>Language</source>
         <translation>Langue</translation>
     </message>
     <message>
-        <location line="-5269"/>
+        <location line="-5288"/>
         <source>System Default</source>
         <translation>Par défaut du système</translation>
     </message>
@@ -4472,25 +4472,25 @@ Le télécharger à nouveau ?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5198"/>
+        <location line="+5217"/>
         <source>Core</source>
         <translation>Noyau</translation>
     </message>
     <message>
-        <location line="-5193"/>
+        <location line="-5212"/>
         <source>Address:</source>
         <translation>Adresse :</translation>
     </message>
     <message>
         <location line="+4"/>
         <location line="+1080"/>
-        <location line="+633"/>
-        <location line="+416"/>
+        <location line="+647"/>
+        <location line="+421"/>
         <source>Port:</source>
         <translation>Port :</translation>
     </message>
     <message>
-        <location line="-2126"/>
+        <location line="-2145"/>
         <source>authentication token</source>
         <translation>jeton d&apos;authentification</translation>
     </message>
@@ -4647,8 +4647,8 @@ Voulez-vous vraiment continuer ?</translation>
     <message>
         <location line="+2"/>
         <location line="+1509"/>
-        <location line="+114"/>
-        <location line="+290"/>
+        <location line="+128"/>
+        <location line="+295"/>
         <location line="+1016"/>
         <location line="+152"/>
         <location line="+1036"/>
@@ -4658,7 +4658,7 @@ Voulez-vous vraiment continuer ?</translation>
         <translation>Activé</translation>
     </message>
     <message>
-        <location line="-4417"/>
+        <location line="-4436"/>
         <source>Reset</source>
         <translation>Réinitialiser</translation>
     </message>
@@ -4740,12 +4740,12 @@ Voulez-vous vraiment continuer ?</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6257"/>
+        <location line="+6284"/>
         <source>Any</source>
         <translation>Tous</translation>
     </message>
     <message>
-        <location line="-6255"/>
+        <location line="-6282"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Utiliser uniquement cette interface réseau, par exemple un tunnel VPN. Choisissez-en une dans la liste, ou saisissez une adresse IP ou un sous-réseau tel que 10.64.0.0/10 (l&apos;interface qui y possède une adresse). Les connexions passant par un proxy ne sont pas liées.</translation>
     </message>
@@ -4897,23 +4897,23 @@ Voulez-vous vraiment continuer ?</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1628"/>
+        <location line="+1647"/>
         <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>Nom :</translation>
     </message>
     <message>
-        <location line="-2795"/>
+        <location line="-2814"/>
         <location line="+613"/>
-        <location line="+701"/>
+        <location line="+715"/>
         <location line="+19"/>
-        <location line="+319"/>
+        <location line="+324"/>
         <source>Password:</source>
         <translation>Mot de passe :</translation>
     </message>
     <message>
-        <location line="-1618"/>
+        <location line="-1637"/>
         <source>Update</source>
         <translation>Mettre à jour</translation>
     </message>
@@ -5278,12 +5278,12 @@ Chaque règle remplace un modèle regex par une chaîne de remplacement.</transl
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1096"/>
+        <location line="+1115"/>
         <source>None</source>
         <translation>Aucun</translation>
     </message>
     <message>
-        <location line="-1095"/>
+        <location line="-1114"/>
         <source>Plain</source>
         <translation>Non chiffré</translation>
     </message>
@@ -5324,14 +5324,14 @@ Chaque règle remplace un modèle regex par une chaîne de remplacement.</transl
     </message>
     <message>
         <location line="+4"/>
-        <location line="+908"/>
+        <location line="+927"/>
         <location line="+1027"/>
         <location line="+154"/>
         <source>Name</source>
         <translation>Nom</translation>
     </message>
     <message>
-        <location line="-2087"/>
+        <location line="-2106"/>
         <source>Users</source>
         <translation>Utilisateurs</translation>
     </message>
@@ -5442,12 +5442,12 @@ Chaque règle remplace un modèle regex par une chaîne de remplacement.</transl
     </message>
     <message>
         <location line="+7"/>
-        <location line="+395"/>
+        <location line="+409"/>
         <source>Reload</source>
         <translation>Recharger</translation>
     </message>
     <message>
-        <location line="-372"/>
+        <location line="-386"/>
         <source>http://example.com/ipfilter.dat</source>
         <translation>http://example.com/ipfilter.dat</translation>
     </message>
@@ -5789,7 +5789,32 @@ Chaque connexion Usenet transite alors par le proxy : sa vitesse limite donc le 
         <translation>Activer l&apos;API REST</translation>
     </message>
     <message>
+        <location line="+1"/>
+        <source>Serves /api/v1 with its description and a playground at /api/v1/docs. Calls need the API key.</source>
+        <translation>Sert /api/v1 avec sa description et une page d&apos;essai à /api/v1/docs. Les appels nécessitent la clé d&apos;API.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Enable MCP server for AI assistants</source>
+        <translation>Activer le serveur MCP pour les assistants IA</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Serves the Model Context Protocol at /mcp on the same port, with the same API key. Independent of the REST API.</source>
+        <translation>Sert le Model Context Protocol à /mcp sur le même port, avec la même clé d&apos;API. Indépendant de l&apos;API REST.</translation>
+    </message>
+    <message>
         <location line="+3"/>
+        <source>Read-only</source>
+        <translation>Lecture seule</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Assistants can look at everything but change nothing.</source>
+        <translation>Les assistants peuvent tout consulter mais ne rien modifier.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
         <source>Gzip compression</source>
         <translation>Compression Gzip</translation>
     </message>
@@ -5876,7 +5901,7 @@ Chaque connexion Usenet transite alors par le proxy : sa vitesse limite donc le 
         <translation>Invité</translation>
     </message>
     <message>
-        <location line="+50"/>
+        <location line="+55"/>
         <source>Web template reloaded</source>
         <translation>Modèle web rechargé</translation>
     </message>
@@ -7301,7 +7326,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
 Les connexions aux serveurs de news basculent immédiatement.</translation>
     </message>
     <message>
-        <location line="+414"/>
+        <location line="+418"/>
         <source>Web Interface</source>
         <translation>Interface web</translation>
     </message>
@@ -7321,7 +7346,7 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Impossible de mettre à jour l&apos;association des fichiers .nzb : %1</translation>
     </message>
     <message>
-        <location line="+581"/>
+        <location line="+585"/>
         <source>Database: not connected to the core</source>
         <translation>Base de données : non connecté au noyau</translation>
     </message>
@@ -7371,17 +7396,17 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Rétablir les valeurs par défaut</translation>
     </message>
     <message>
-        <location line="-4655"/>
+        <location line="-4663"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1327"/>
         <location line="+281"/>
-        <location line="+1872"/>
+        <location line="+1880"/>
         <source>Remove</source>
         <translation>Supprimer</translation>
     </message>
     <message>
-        <location line="-5732"/>
+        <location line="-5759"/>
         <source>New eMule Qt version detected</source>
         <translation>Nouvelle version d&apos;eMule Qt détectée</translation>
     </message>
@@ -7391,7 +7416,7 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Mettre à jour depuis une URL : (format filter.dat ou PeerGuardian, .gz/.zip acceptés)</translation>
     </message>
     <message>
-        <location line="+2932"/>
+        <location line="+2951"/>
         <source>Write eMule core logs to disk</source>
         <translation>Écrire les journaux du noyau eMule sur le disque</translation>
     </message>
@@ -7579,12 +7604,12 @@ Réglez-le légèrement en dessous de votre forfait. Le volume est mesuré ici, 
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1581"/>
-        <location line="+1894"/>
+        <location line="+1902"/>
         <source>Add</source>
         <translation>Ajouter</translation>
     </message>
     <message>
-        <location line="-1886"/>
+        <location line="-1894"/>
         <source>Action Value</source>
         <translation>Valeur d&apos;action</translation>
     </message>
@@ -11965,19 +11990,19 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Adresse</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-4002"/>
-        <location line="+3891"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3337"/>
+        <location line="+3226"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Session expirée — reconnectez-vous</translation>
     </message>
     <message>
-        <location line="-3936"/>
+        <location line="-3271"/>
         <source>Guests cannot add downloads</source>
         <translation>Les invités ne peuvent pas ajouter de téléchargements</translation>
     </message>
     <message>
-        <location line="+867"/>
+        <location line="+590"/>
         <source>Looking for comments on Kad</source>
         <translation>Recherche de commentaires sur Kad</translation>
     </message>
@@ -12059,7 +12084,7 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Télécharger ce fichier</translation>
     </message>
     <message>
-        <location line="+452"/>
+        <location line="+62"/>
         <source>Access denied — no password configured. Set a password in Options → Web Interface.</source>
         <translation>Accès refusé — aucun mot de passe configuré. Définissez-en un dans Options → Interface Web.</translation>
     </message>
@@ -12110,12 +12135,12 @@ Un mot de passe est défini pour cette release.</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1955"/>
+        <location line="+1957"/>
         <source>Web Control Panel</source>
         <translation>Panneau de contrôle Web</translation>
     </message>
     <message>
-        <location line="-1947"/>
+        <location line="-1949"/>
         <source>Not connected</source>
         <translation>Non connecté</translation>
     </message>
@@ -12210,30 +12235,30 @@ Un mot de passe est défini pour cette release.</translation>
     </message>
     <message>
         <location line="+149"/>
-        <location line="+1126"/>
+        <location line="+1128"/>
         <source>Queued</source>
         <translation>En file d&apos;attente</translation>
     </message>
     <message>
-        <location line="-1125"/>
-        <location line="+1124"/>
+        <location line="-1127"/>
+        <location line="+1126"/>
         <source>Downloading</source>
         <translation>En téléchargement</translation>
     </message>
     <message>
-        <location line="-1123"/>
+        <location line="-1125"/>
         <source>Paused</source>
         <translation>En pause</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+958"/>
+        <location line="+960"/>
         <location line="+163"/>
         <source>Complete</source>
         <translation>Terminé</translation>
     </message>
     <message>
-        <location line="-1120"/>
+        <location line="-1122"/>
         <source>Failed</source>
         <translation>Échoué</translation>
     </message>
@@ -12361,21 +12386,21 @@ Un mot de passe est défini pour cette release.</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+117"/>
-        <location line="+165"/>
+        <location line="+110"/>
+        <location line="+174"/>
         <source>priority must be a number from -2 to 2</source>
         <translation>la priorité doit être un nombre de -2 à 2</translation>
     </message>
     <message>
-        <location line="-276"/>
-        <location line="+117"/>
-        <location line="+74"/>
-        <location line="+78"/>
+        <location line="-278"/>
+        <location line="+110"/>
+        <location line="+71"/>
+        <location line="+90"/>
         <source>Unknown category</source>
         <translation>Catégorie inconnue</translation>
     </message>
     <message>
-        <location line="-257"/>
+        <location line="-259"/>
         <location line="+4"/>
         <source>files must be a list of file numbers</source>
         <translation>files doit être une liste de numéros de fichiers</translation>
@@ -12386,12 +12411,12 @@ Un mot de passe est défini pour cette release.</translation>
         <translation>Action inconnue</translation>
     </message>
     <message>
-        <location line="+238"/>
+        <location line="+228"/>
         <source>Post the .nzb as the request body, or give a url</source>
         <translation>Envoyez le .nzb comme corps de la requête, ou indiquez une URL</translation>
     </message>
     <message>
-        <location line="+45"/>
+        <location line="+57"/>
         <source>Guests cannot change downloads</source>
         <translation>Les invités ne peuvent pas modifier les téléchargements</translation>
     </message>
@@ -12637,7 +12662,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Vitesse de téléchargement</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1451"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1453"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Downloads</source>
         <translation>Téléchargements</translation>
@@ -12789,7 +12814,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Fichiers NZB :</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1545"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1155"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>Nom</translation>
@@ -13176,7 +13201,7 @@ Le réseau inactif prête sa part à l&apos;autre.</translation>
         <translation>Vitesse d&apos;envoi</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1542"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1152"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation>Envois</translation>

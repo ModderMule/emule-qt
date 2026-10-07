@@ -17,6 +17,7 @@
 #       MacOS/
 #         emuleqt          <- GUI executable
 #         emulecored       <- daemon executable
+#         emuleqt-mcp      <- MCP stdio bridge (optional)
 #       Frameworks/        <- Qt frameworks (if macdeployqt runs)
 #       Resources/
 #         config/          <- default config files (nodes.dat, eMule.tmpl, …)
@@ -67,6 +68,17 @@ rm -f "$MACOS_DIR/emulecored"   # dev builds may have a symlink into the build t
 cp "$DAEMON_BIN" "$MACOS_DIR/emulecored"
 chmod +x "$MACOS_DIR/emulecored"
 echo "  -> $MACOS_DIR/emulecored"
+
+# MCP stdio bridge: optional, for AI clients that launch a local program
+MCP_BIN="$BUILD_DIR/src/mcpbridge/emuleqt-mcp"
+HELPERS=("$MACOS_DIR/emulecored")
+if [ -f "$MCP_BIN" ]; then
+    rm -f "$MACOS_DIR/emuleqt-mcp"
+    cp "$MCP_BIN" "$MACOS_DIR/emuleqt-mcp"
+    chmod +x "$MACOS_DIR/emuleqt-mcp"
+    HELPERS+=("$MACOS_DIR/emuleqt-mcp")
+    echo "  -> $MACOS_DIR/emuleqt-mcp"
+fi
 
 # -- Copy default config data into bundle ------------------------------------
 
@@ -134,8 +146,11 @@ if [ -n "$MACDEPLOYQT" ]; then
     echo "Running macdeployqt..."
     # -executable: the copied-in daemon needs its rpath + deps fixed too, else
     # it keeps the build machine's Qt rpath and dies in dyld
-    "$MACDEPLOYQT" "$APP_BUNDLE" -always-overwrite \
-        -executable="$MACOS_DIR/emulecored" 2>&1 | tail -5 || true
+    DEPLOY_ARGS=()
+    for helper in "${HELPERS[@]}"; do
+        DEPLOY_ARGS+=("-executable=$helper")
+    done
+    "$MACDEPLOYQT" "$APP_BUNDLE" -always-overwrite "${DEPLOY_ARGS[@]}" 2>&1 | tail -5 || true
     echo "  macdeployqt complete."
     # QtSql is linked for the seen-files index, which uses SQLite only. The other
     # drivers macdeployqt copies want client libraries (libpq, ODBC...) we do not ship.
@@ -166,7 +181,7 @@ if [ -n "$OPENSSL_DYLIB" ] && [ -f "$OPENSSL_DYLIB" ]; then
     cp "$OPENSSL_DYLIB" "$FRAMEWORKS_DIR/$DYLIB_NAME"
 
     # Rewrite load path in both binaries
-    for bin in "$MACOS_DIR/emuleqt" "$MACOS_DIR/emulecored"; do
+    for bin in "$MACOS_DIR/emuleqt" "${HELPERS[@]}"; do
         install_name_tool -change "$OPENSSL_DYLIB" "@executable_path/../Frameworks/$DYLIB_NAME" "$bin"
     done
 
@@ -203,15 +218,17 @@ bundle_deps() {
     done
 }
 
-for bin in "$MACOS_DIR/emuleqt" "$MACOS_DIR/emulecored" "$FRAMEWORKS_DIR"/*.dylib; do
+for bin in "$MACOS_DIR/emuleqt" "${HELPERS[@]}" "$FRAMEWORKS_DIR"/*.dylib; do
     [ -f "$bin" ] && bundle_deps "$bin"
 done
 
 # Fallback when macdeployqt didn't run or skipped the daemon
-if ! otool -l "$MACOS_DIR/emulecored" | grep -A2 LC_RPATH \
-        | grep -qE ' path @(executable|loader)_path/\.\./Frameworks'; then
-    install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/emulecored"
-fi
+for helper in "${HELPERS[@]}"; do
+    if ! otool -l "$helper" | grep -A2 LC_RPATH \
+            | grep -qE ' path @(executable|loader)_path/\.\./Frameworks'; then
+        install_name_tool -add_rpath "@executable_path/../Frameworks" "$helper"
+    fi
+done
 
 # -- Audit: nothing may still point outside the bundle -----------------------
 # v0.5.2 shipped a daemon with the CI runner's Qt rpath and a libssl linking
@@ -249,7 +266,9 @@ for fw in "$FRAMEWORKS_DIR"/*.framework; do
     [ -d "$fw" ] && adhoc_sign "$fw"
 done
 
-adhoc_sign "$MACOS_DIR/emulecored"
+for helper in "${HELPERS[@]}"; do
+    adhoc_sign "$helper"
+done
 adhoc_sign "$APP_BUNDLE"
 
 # Fail the build rather than ship a bundle that dies in dyld

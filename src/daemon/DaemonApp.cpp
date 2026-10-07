@@ -4,6 +4,8 @@
 #include "DaemonApp.h"
 #include "net/GuardedNetworkAccessManager.h"
 #include "CoreNotifierBridge.h"
+#include "ApiEventFeeder.h"
+#include "DaemonApiBackend.h"
 #include "DaemonUsenetWebBackend.h"
 #include "IpcServer.h"
 #include "PowerManager.h"
@@ -30,7 +32,11 @@
 #include "queue/UsenetQueue.h"
 #include "queue/UsenetQueueItem.h"
 #include "ipc/PushCoalescer.h"
+#include "webserver/ApiEventHub.h"
 #include "webserver/WebServer.h"
+#include "files/PartFile.h"
+#include "files/SharedFileList.h"
+#include "utils/OtherFunctions.h"
 #include "utils/Log.h"
 
 #include <QDateTime>
@@ -141,6 +147,27 @@ bool DaemonApp::start()
         if (m_notifierBridge)
             m_notifierBridge->pushNetworkState();
     };
+
+    // Events for the REST stream: the pushes the GUIs get, plus two the GUIs have
+    // no use for as events (they refetch rows) but an API client waits on.
+    m_eventHub = new ApiEventHub(this);
+    m_eventFeeder = new ApiEventFeeder(m_eventHub, this);
+    m_ipcServer->setPushTap([this](const Ipc::IpcMessage& msg) { m_eventFeeder->onPush(msg); });
+    if (theApp.downloadQueue) {
+        connect(theApp.downloadQueue, &DownloadQueue::fileCompleted, this, [this](PartFile* file) {
+            if (!file)
+                return;
+            m_eventFeeder->event(QStringLiteral("downloads.completed"), QJsonObject{
+                {QStringLiteral("hash"), md4str(file->fileHash())},
+                {QStringLiteral("fileName"), file->fileName()},
+            });
+        });
+    }
+    if (theApp.sharedFileList) {
+        const auto sharedChanged = [this] { m_eventFeeder->hint(QStringLiteral("shared.changed")); };
+        connect(theApp.sharedFileList, &SharedFileList::fileAdded, this, sharedChanged);
+        connect(theApp.sharedFileList, &SharedFileList::fileRemoved, this, sharedChanged);
+    }
 
     // Connect web server config changes from any IPC client
     connect(m_ipcServer.get(), &IpcServer::webServerConfigChanged,
@@ -335,6 +362,12 @@ void DaemonApp::startWebServer()
     if (!m_usenetWebBackend)
         m_usenetWebBackend = std::make_unique<DaemonUsenetWebBackend>();
     m_webServer->setUsenetBackend(m_usenetWebBackend.get());
+
+    // The REST API's daemon half and its event source, kept the same way.
+    if (!m_apiBackend)
+        m_apiBackend = std::make_unique<DaemonApiBackend>(m_ipcServer.get());
+    m_webServer->setApiBackend(m_apiBackend.get());
+    m_webServer->setEventHub(m_eventHub);
 
     m_webServer->setLogProvider([] {
         auto entries = DaemonApp::logsSince(0);

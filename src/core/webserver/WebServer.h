@@ -8,15 +8,18 @@
 /// friends, statistics, and preferences.
 
 #include "utils/Types.h"
+#include "webserver/ApiRegistry.h"
 #include "webserver/UsenetWebBackend.h"
 
 #include <QFuture>
 #include <QHash>
 #include <QHttpHeaders>
+#include <QHttpServerResponder>
 #include <QHttpServerResponse>
 #include <QJsonObject>
 #include <QList>
 #include <QObject>
+#include <QSet>
 
 #include <functional>
 #include <memory>
@@ -24,6 +27,7 @@
 #include <vector>
 
 class QHttpServer;
+class QTimer;
 class QHttpServerRequest;
 class QHttpServerResponder;
 class QSslServer;
@@ -32,6 +36,8 @@ class QUrlQuery;
 
 namespace eMule {
 
+class ApiBackend;
+class ApiEventHub;
 class DownloadQueue;
 class FriendList;
 class Preferences;
@@ -56,6 +62,8 @@ struct WebServerConfig {
     bool enabled = false;         ///< Run the HTTP server at all (also serves the GUI preview stream).
     bool webUiEnabled = false;    ///< Serve the template web UI (/, login, static assets). Independent of restApiEnabled.
     bool restApiEnabled = false;  ///< Serve the JSON REST API (/api/v1/*). Independent of webUiEnabled.
+    bool mcpEnabled = false;      ///< Serve the MCP endpoint (/mcp). Independent of restApiEnabled.
+    bool mcpReadOnly = false;     ///< MCP: only tools that change nothing.
     bool gzipEnabled = true;
     QStringList corsAllowedOrigins;  ///< Origins that may call /api/v1/* from a browser. Empty = no CORS headers; "*" = any.
     QString templatePath;
@@ -180,6 +188,26 @@ public:
     /// without it both answer "Usenet engine unavailable".
     void setUsenetBackend(UsenetWebBackend* backend) { m_usenetBackend = backend; }
 
+    /// The daemon-side half of the REST API (logs, categories, preferences,
+    /// shutdown). Optional and not owned: without it those routes answer 503.
+    void setApiBackend(ApiBackend* backend) { m_apiBackend = backend; }
+
+    /// Source of GET /api/v1/events. Optional and not owned; outlives this server.
+    void setEventHub(ApiEventHub* hub) { m_eventHub = hub; }
+
+    /// Every REST operation: the table behind routing, OpenAPI and the MCP tools.
+    [[nodiscard]] const api::Registry& api() const { return m_api; }
+
+    /// The OpenAPI 3.1 document, generated from api().
+    [[nodiscard]] QJsonObject openApiDocument() const;
+
+    /// One MCP JSON-RPC message in, its reply out. An undefined value means
+    /// "no reply" (a notification).
+    [[nodiscard]] QFuture<QJsonValue> handleMcpMessage(const QJsonValue& message);
+
+    /// Open GET /api/v1/events streams.
+    [[nodiscard]] int eventStreamCount() const;
+
     /// The web UI's languages. Optional and not owned, and it must be the one
     /// installed with QCoreApplication::installTranslator(): without it every
     /// page is English. The REST API stays English either way.
@@ -227,16 +255,44 @@ signals:
 private:
     void registerRoutes();
 
+    // REST API, from the operation table (WebServerApi.cpp)
+    void buildApiTable();
+    void addUsenetOperations();
+    void registerApiRoutes();
+    void registerEventRoute();
+    void registerDocsRoutes();
+    void registerMcpRoute();
+    [[nodiscard]] QFuture<QHttpServerResponse> runOperation(const api::Operation& op,
+                                                            const QStringList& pathValues,
+                                                            const QHttpServerRequest& req);
+    [[nodiscard]] static QHttpServerResponse toResponse(const api::Result& result);
+    [[nodiscard]] static api::Result toResult(const QHttpServerResponse& response);
+    [[nodiscard]] QFuture<api::Result> toResult(QFuture<QHttpServerResponse> response);
+
+    [[nodiscard]] api::Result apiSnapshot();
+    [[nodiscard]] api::Result apiDiagnostics();
+    [[nodiscard]] api::Result apiNetwork() const;
+    [[nodiscard]] api::Result apiLogs(const api::Call& call) const;
+    [[nodiscard]] api::Result apiSearchStart(const api::Call& call);
+    [[nodiscard]] api::Result apiSearchResults(const api::Call& call) const;
+    [[nodiscard]] api::Result apiSearchList(const api::Call& call) const;
+    [[nodiscard]] api::Result apiCategoryEdit(const api::Call& call, int mode);
+
+    void handleEventStream(const QHttpServerRequest& req, QHttpServerResponder& responder);
+    void sendEvent(const QString& type, qint64 id, const QByteArray& data, const QString& topic);
+    void dropEventClient(quintptr key);
+    [[nodiscard]] bool originAllowed(const QHttpServerRequest& req) const;
+    [[nodiscard]] QJsonObject mcpToolList() const;
+    [[nodiscard]] QFuture<QJsonValue> mcpToolCall(const QJsonValue& id, const QJsonObject& params);
+
     // Auth & helpers
-    struct AuthResult;
+    struct AuthResult {
+        bool ok = false;
+        QHttpServerResponse response{QHttpServerResponse::StatusCode::Ok};
+    };
     [[nodiscard]] AuthResult checkAuth(const QHttpHeaders& headers) const;
 
-    // Endpoint handlers — Downloads
-    QHttpServerResponse handleGetDownloads();
-    QHttpServerResponse handleGetDownload(const QString& hash);
-    QHttpServerResponse handlePauseDownload(const QString& hash);
-    QHttpServerResponse handleResumeDownload(const QString& hash);
-    QHttpServerResponse handleCancelDownload(const QString& hash);
+    // Endpoint handlers — preview
     QHttpServerResponse handlePreviewStream(const QString& hash, const QHttpServerRequest& req);
 
     // Endpoint handlers — Usenet preview
@@ -347,13 +403,13 @@ private:
                                                   const QString& token, const QString& lang) const;
 
     // Endpoint handlers — Usenet queue (REST API)
-    QHttpServerResponse handleRestUsenetList(const QHttpServerRequest& req);
+    QHttpServerResponse handleRestUsenetList(int category);
     QHttpServerResponse handleRestUsenetStats();
     QHttpServerResponse handleRestUsenetItem(const QString& id);
     QHttpServerResponse handleRestUsenetEntries(const QString& id, const QString& fileIndex);
     QHttpServerResponse handleRestUsenetItemOp(const QString& id, const QString& op);
-    QHttpServerResponse handleRestUsenetPatch(const QString& id, const QHttpServerRequest& req);
-    QHttpServerResponse handleRestUsenetDelete(const QString& id, const QHttpServerRequest& req);
+    QHttpServerResponse handleRestUsenetPatch(const QString& id, const QJsonObject& body);
+    QHttpServerResponse handleRestUsenetDelete(const QString& id, bool deleteFiles);
     QHttpServerResponse handleRestUsenetCategoryOp(const QString& category, const QString& op);
     /// Pause or resume the whole engine — REST and the web UI's action route.
     QHttpServerResponse handleUsenetEngineOp(bool paused);
@@ -366,6 +422,12 @@ private:
     /// gates — REST's API key and the web UI's admin session — that differ only
     /// in how the options arrive (@p restApi: JSON body for a URL).
     QFuture<QHttpServerResponse> handleUsenetAdd(const QHttpServerRequest& req, bool restApi);
+    /// The part after the request is taken apart; also what the MCP tool calls.
+    QFuture<QHttpServerResponse> usenetAddResolved(const QString& url, const QString& name,
+                                                   UsenetWebAddOptions options,
+                                                   const QString& categoryText,
+                                                   const QString& priorityText,
+                                                   const QByteArray& body);
 
     /// One per-item action, shared by REST and the web UI's action route.
     /// `code` is the HTTP status the REST route answers with.
@@ -399,37 +461,6 @@ private:
     static void addCorsHeaders(const QStringList& allowed, const QHttpServerRequest& request,
                                QHttpServerResponse& response);
     [[nodiscard]] static QHttpServerResponse redirectTo(const QString& location);
-
-    // Endpoint handlers — Uploads
-    QHttpServerResponse handleGetUploads();
-
-    // Endpoint handlers — Servers
-    QHttpServerResponse handleGetServers();
-
-    // Endpoint handlers — Connection
-    QHttpServerResponse handleGetConnection();
-    QHttpServerResponse handlePostConnect();
-    QHttpServerResponse handlePostDisconnect();
-
-    // Endpoint handlers — Search
-    QHttpServerResponse handlePostSearch(const QJsonObject& body);
-    QHttpServerResponse handleDeleteSearch(uint32 searchID);
-    QHttpServerResponse handleGetSearchResults(uint32 searchID);
-
-    // Endpoint handlers — Shared files
-    QHttpServerResponse handleGetSharedFiles();
-
-    // Endpoint handlers — Friends
-    QHttpServerResponse handleGetFriends();
-    QHttpServerResponse handlePostFriend(const QJsonObject& body);
-    QHttpServerResponse handleDeleteFriend(const QString& hash);
-
-    // Endpoint handlers — Statistics
-    QHttpServerResponse handleGetStats();
-
-    // Endpoint handlers — Preferences
-    QHttpServerResponse handleGetPreferences();
-    QHttpServerResponse handlePatchPreferences(const QJsonObject& body);
 
     // Template web interface handlers
     /// POST /: the login form, or an action of a logged-in session.
@@ -525,6 +556,20 @@ private:
 
     // Usenet queue (injected by DaemonApp; not owned)
     UsenetWebBackend* m_usenetBackend = nullptr;
+
+    // REST operation table, and its daemon-side half (not owned)
+    api::Registry m_api;
+    ApiBackend* m_apiBackend = nullptr;
+    ApiEventHub* m_eventHub = nullptr;
+
+    // Open event streams; gone with the server
+    struct EventClient {
+        quintptr key = 0;                               ///< the connection's socket
+        std::unique_ptr<QHttpServerResponder> responder;
+        QSet<QString> topics;                           ///< empty = all
+    };
+    std::vector<EventClient> m_eventClients;
+    QTimer* m_eventHeartbeat = nullptr;
 
     // Web UI languages (injected by DaemonApp; not owned)
     TranslationRouter* m_translations = nullptr;

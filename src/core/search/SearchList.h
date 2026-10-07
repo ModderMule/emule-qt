@@ -161,6 +161,10 @@ public:
     /// Number of found sources for a search session.
     [[nodiscard]] uint32 foundSources(uint32 searchID) const;
 
+    /// Our own searches that still hold a result list, oldest first. Not the lists
+    /// of a peer's shared files.
+    [[nodiscard]] std::vector<uint32> searchIDs() const;
+
     /// Get the current search ID.
     [[nodiscard]] uint32 currentSearchID() const { return m_currentSearchID; }
 

@@ -1261,6 +1261,15 @@ public:
     [[nodiscard]] bool webServerRestApiEnabled() const;
     void setWebServerRestApiEnabled(bool val);
 
+    /// The MCP endpoint (/mcp) for LLM clients. Its own switch: on or off whatever
+    /// the REST API is set to. Same port and API key.
+    [[nodiscard]] bool webServerMcpEnabled() const;
+    void setWebServerMcpEnabled(bool val);
+
+    /// MCP offers only tools that change nothing.
+    [[nodiscard]] bool webServerMcpReadOnly() const;
+    void setWebServerMcpReadOnly(bool val);
+
     [[nodiscard]] bool webServerGzipEnabled() const;
     void setWebServerGzipEnabled(bool val);
 

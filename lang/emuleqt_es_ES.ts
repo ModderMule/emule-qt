@@ -606,7 +606,7 @@ Tiene comentarios</translation>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2859"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2878"/>
         <source>Test</source>
         <translation>Probar</translation>
     </message>
@@ -690,7 +690,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4625"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+3987"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -4298,7 +4298,7 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2763"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2782"/>
         <source>Options</source>
         <translation>Opciones</translation>
     </message>
@@ -4316,12 +4316,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="-1814"/>
-        <location line="+5376"/>
+        <location line="+5395"/>
         <source>Apply</source>
         <translation>Aplicar</translation>
     </message>
     <message>
-        <location line="-5375"/>
+        <location line="-5394"/>
         <source>Help</source>
         <translation>Ayuda</translation>
     </message>
@@ -4367,12 +4367,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5272"/>
+        <location line="+5291"/>
         <source>Language</source>
         <translation>Idioma</translation>
     </message>
     <message>
-        <location line="-5269"/>
+        <location line="-5288"/>
         <source>System Default</source>
         <translation>Predeterminado del sistema</translation>
     </message>
@@ -4472,25 +4472,25 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5198"/>
+        <location line="+5217"/>
         <source>Core</source>
         <translation>Núcleo</translation>
     </message>
     <message>
-        <location line="-5193"/>
+        <location line="-5212"/>
         <source>Address:</source>
         <translation>Dirección:</translation>
     </message>
     <message>
         <location line="+4"/>
         <location line="+1080"/>
-        <location line="+633"/>
-        <location line="+416"/>
+        <location line="+647"/>
+        <location line="+421"/>
         <source>Port:</source>
         <translation>Puerto:</translation>
     </message>
     <message>
-        <location line="-2126"/>
+        <location line="-2145"/>
         <source>authentication token</source>
         <translation>token de autenticación</translation>
     </message>
@@ -4647,8 +4647,8 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+2"/>
         <location line="+1509"/>
-        <location line="+114"/>
-        <location line="+290"/>
+        <location line="+128"/>
+        <location line="+295"/>
         <location line="+1016"/>
         <location line="+152"/>
         <location line="+1036"/>
@@ -4658,7 +4658,7 @@ Are you sure you want to continue?</source>
         <translation>Activado</translation>
     </message>
     <message>
-        <location line="-4417"/>
+        <location line="-4436"/>
         <source>Reset</source>
         <translation>Restablecer</translation>
     </message>
@@ -4740,12 +4740,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6257"/>
+        <location line="+6284"/>
         <source>Any</source>
         <translation>Cualquiera</translation>
     </message>
     <message>
-        <location line="-6255"/>
+        <location line="-6282"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Usar solo esta interfaz de red, por ejemplo un túnel VPN. Elija una de la lista o escriba una dirección IP o una subred como 10.64.0.0/10 (la interfaz que tenga una dirección en ella). Las conexiones a través de un proxy no se vinculan.</translation>
     </message>
@@ -4897,23 +4897,23 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1628"/>
+        <location line="+1647"/>
         <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>Nombre:</translation>
     </message>
     <message>
-        <location line="-2795"/>
+        <location line="-2814"/>
         <location line="+613"/>
-        <location line="+701"/>
+        <location line="+715"/>
         <location line="+19"/>
-        <location line="+319"/>
+        <location line="+324"/>
         <source>Password:</source>
         <translation>Contraseña:</translation>
     </message>
     <message>
-        <location line="-1618"/>
+        <location line="-1637"/>
         <source>Update</source>
         <translation>Actualizar</translation>
     </message>
@@ -5278,12 +5278,12 @@ Cada regla reemplaza un patrón regex con una cadena de reemplazo.</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1096"/>
+        <location line="+1115"/>
         <source>None</source>
         <translation>Ninguno</translation>
     </message>
     <message>
-        <location line="-1095"/>
+        <location line="-1114"/>
         <source>Plain</source>
         <translation>Sin cifrar</translation>
     </message>
@@ -5324,14 +5324,14 @@ Cada regla reemplaza un patrón regex con una cadena de reemplazo.</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+908"/>
+        <location line="+927"/>
         <location line="+1027"/>
         <location line="+154"/>
         <source>Name</source>
         <translation>Nombre</translation>
     </message>
     <message>
-        <location line="-2087"/>
+        <location line="-2106"/>
         <source>Users</source>
         <translation>Usuarios</translation>
     </message>
@@ -5442,12 +5442,12 @@ Cada regla reemplaza un patrón regex con una cadena de reemplazo.</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+395"/>
+        <location line="+409"/>
         <source>Reload</source>
         <translation>Recargar</translation>
     </message>
     <message>
-        <location line="-372"/>
+        <location line="-386"/>
         <source>http://example.com/ipfilter.dat</source>
         <translation>http://example.com/ipfilter.dat</translation>
     </message>
@@ -5789,7 +5789,32 @@ A partir de entonces, todas las conexiones de Usenet pasan por el proxy, por lo 
         <translation>Activar API REST</translation>
     </message>
     <message>
+        <location line="+1"/>
+        <source>Serves /api/v1 with its description and a playground at /api/v1/docs. Calls need the API key.</source>
+        <translation>Sirve /api/v1 con su descripción y una página de pruebas en /api/v1/docs. Las llamadas necesitan la clave de API.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Enable MCP server for AI assistants</source>
+        <translation>Activar servidor MCP para asistentes de IA</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Serves the Model Context Protocol at /mcp on the same port, with the same API key. Independent of the REST API.</source>
+        <translation>Sirve el Model Context Protocol en /mcp en el mismo puerto y con la misma clave de API. Independiente de la API REST.</translation>
+    </message>
+    <message>
         <location line="+3"/>
+        <source>Read-only</source>
+        <translation>Solo lectura</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Assistants can look at everything but change nothing.</source>
+        <translation>Los asistentes pueden verlo todo, pero no cambiar nada.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
         <source>Gzip compression</source>
         <translation>Compresión Gzip</translation>
     </message>
@@ -5876,7 +5901,7 @@ A partir de entonces, todas las conexiones de Usenet pasan por el proxy, por lo 
         <translation>Invitado</translation>
     </message>
     <message>
-        <location line="+50"/>
+        <location line="+55"/>
         <source>Web template reloaded</source>
         <translation>Plantilla web recargada</translation>
     </message>
@@ -7301,7 +7326,7 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
 Las conexiones a los servidores de noticias cambian de inmediato.</translation>
     </message>
     <message>
-        <location line="+414"/>
+        <location line="+418"/>
         <source>Web Interface</source>
         <translation>Interfaz web</translation>
     </message>
@@ -7321,7 +7346,7 @@ Las conexiones a los servidores de noticias cambian de inmediato.</translation>
         <translation>No se pudo actualizar la asociación de archivos .nzb: %1</translation>
     </message>
     <message>
-        <location line="+581"/>
+        <location line="+585"/>
         <source>Database: not connected to the core</source>
         <translation>Base de datos: sin conexión con el núcleo</translation>
     </message>
@@ -7371,17 +7396,17 @@ Las conexiones a los servidores de noticias cambian de inmediato.</translation>
         <translation>Restablecer valores predeterminados</translation>
     </message>
     <message>
-        <location line="-4655"/>
+        <location line="-4663"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1327"/>
         <location line="+281"/>
-        <location line="+1872"/>
+        <location line="+1880"/>
         <source>Remove</source>
         <translation>Eliminar</translation>
     </message>
     <message>
-        <location line="-5732"/>
+        <location line="-5759"/>
         <source>New eMule Qt version detected</source>
         <translation>Se ha detectado una nueva versión de eMule Qt</translation>
     </message>
@@ -7391,7 +7416,7 @@ Las conexiones a los servidores de noticias cambian de inmediato.</translation>
         <translation>Actualizar desde URL: (formato filter.dat o PeerGuardian, se aceptan .gz/.zip)</translation>
     </message>
     <message>
-        <location line="+2932"/>
+        <location line="+2951"/>
         <source>Write eMule core logs to disk</source>
         <translation>Escribir los registros del núcleo de eMule en disco</translation>
     </message>
@@ -7579,12 +7604,12 @@ Ajústelo algo por debajo de su plan. La cifra se mide aquí, por lo que queda u
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1581"/>
-        <location line="+1894"/>
+        <location line="+1902"/>
         <source>Add</source>
         <translation>Añadir</translation>
     </message>
     <message>
-        <location line="-1886"/>
+        <location line="-1894"/>
         <source>Action Value</source>
         <translation>Valor de acción</translation>
     </message>
@@ -11965,19 +11990,19 @@ Esta publicación tiene una contraseña establecida.</translation>
         <translation>Dirección</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-4002"/>
-        <location line="+3891"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3337"/>
+        <location line="+3226"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Sesión caducada — vuelva a iniciar sesión</translation>
     </message>
     <message>
-        <location line="-3936"/>
+        <location line="-3271"/>
         <source>Guests cannot add downloads</source>
         <translation>Los invitados no pueden añadir descargas</translation>
     </message>
     <message>
-        <location line="+867"/>
+        <location line="+590"/>
         <source>Looking for comments on Kad</source>
         <translation>Buscando comentarios en Kad</translation>
     </message>
@@ -12059,7 +12084,7 @@ Esta publicación tiene una contraseña establecida.</translation>
         <translation>Descargar este archivo</translation>
     </message>
     <message>
-        <location line="+452"/>
+        <location line="+62"/>
         <source>Access denied — no password configured. Set a password in Options → Web Interface.</source>
         <translation>Acceso denegado — no hay contraseña configurada. Establezca una en Opciones → Interfaz web.</translation>
     </message>
@@ -12110,12 +12135,12 @@ Esta publicación tiene una contraseña establecida.</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1955"/>
+        <location line="+1957"/>
         <source>Web Control Panel</source>
         <translation>Panel de control web</translation>
     </message>
     <message>
-        <location line="-1947"/>
+        <location line="-1949"/>
         <source>Not connected</source>
         <translation>No conectado</translation>
     </message>
@@ -12210,30 +12235,30 @@ Esta publicación tiene una contraseña establecida.</translation>
     </message>
     <message>
         <location line="+149"/>
-        <location line="+1126"/>
+        <location line="+1128"/>
         <source>Queued</source>
         <translation>En cola</translation>
     </message>
     <message>
-        <location line="-1125"/>
-        <location line="+1124"/>
+        <location line="-1127"/>
+        <location line="+1126"/>
         <source>Downloading</source>
         <translation>Descargando</translation>
     </message>
     <message>
-        <location line="-1123"/>
+        <location line="-1125"/>
         <source>Paused</source>
         <translation>En pausa</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+958"/>
+        <location line="+960"/>
         <location line="+163"/>
         <source>Complete</source>
         <translation>Completo</translation>
     </message>
     <message>
-        <location line="-1120"/>
+        <location line="-1122"/>
         <source>Failed</source>
         <translation>Fallido</translation>
     </message>
@@ -12361,21 +12386,21 @@ Esta publicación tiene una contraseña establecida.</translation>
     </message>
     <message>
         <location line="+11"/>
-        <location line="+117"/>
-        <location line="+165"/>
+        <location line="+110"/>
+        <location line="+174"/>
         <source>priority must be a number from -2 to 2</source>
         <translation>la prioridad debe ser un número de -2 a 2</translation>
     </message>
     <message>
-        <location line="-276"/>
-        <location line="+117"/>
-        <location line="+74"/>
-        <location line="+78"/>
+        <location line="-278"/>
+        <location line="+110"/>
+        <location line="+71"/>
+        <location line="+90"/>
         <source>Unknown category</source>
         <translation>Categoría desconocida</translation>
     </message>
     <message>
-        <location line="-257"/>
+        <location line="-259"/>
         <location line="+4"/>
         <source>files must be a list of file numbers</source>
         <translation>files debe ser una lista de números de archivo</translation>
@@ -12386,12 +12411,12 @@ Esta publicación tiene una contraseña establecida.</translation>
         <translation>Acción desconocida</translation>
     </message>
     <message>
-        <location line="+238"/>
+        <location line="+228"/>
         <source>Post the .nzb as the request body, or give a url</source>
         <translation>Envíe el .nzb como cuerpo de la solicitud o indique una URL</translation>
     </message>
     <message>
-        <location line="+45"/>
+        <location line="+57"/>
         <source>Guests cannot change downloads</source>
         <translation>Los invitados no pueden modificar descargas</translation>
     </message>
@@ -12637,7 +12662,7 @@ La red que esté inactiva cede su parte a la otra.</translation>
         <translation>Velocidad de descarga</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1451"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1453"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Downloads</source>
         <translation>Descargas</translation>
@@ -12789,7 +12814,7 @@ La red que esté inactiva cede su parte a la otra.</translation>
         <translation>Archivos NZB:</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1545"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1155"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>Nombre</translation>
@@ -13176,7 +13201,7 @@ La red que esté inactiva cede su parte a la otra.</translation>
         <translation>Velocidad de subida</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1542"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1152"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation>Subidas</translation>

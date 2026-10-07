@@ -26,6 +26,8 @@
 #include <QHostInfo>
 
 #include "app/AppContext.h"
+#include "app/CoreInfo.h"
+#include "app/CoreOps.h"
 #include "app/CoreSession.h"
 #include "files/Collection.h"
 #include "files/CollectionFile.h"
@@ -62,6 +64,7 @@
 #include "net/LocalIPv6.h"
 #include "net/ProxySettings.h"
 #include "net/BindAddress.h"
+#include "prefs/PreferenceSchema.h"
 #include "prefs/Preferences.h"
 #include "net/Packet.h"
 #include "protocol/ED2KLink.h"
@@ -464,68 +467,17 @@ void IpcClientHandler::handleGetDownload(const IpcMessage& msg)
 
 void IpcClientHandler::handlePauseDownload(const IpcMessage& msg)
 {
-    const QString hash = msg.fieldString(0);
-    if (!theApp.downloadQueue) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Download queue unavailable")));
-        return;
-    }
-
-    uint8 hashBuf[16]{};
-    if (!hexToHash(hash, hashBuf)) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
-        return;
-    }
-    auto* pf = theApp.downloadQueue->fileByID(hashBuf);
-    if (!pf) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
-        return;
-    }
-    pf->pauseFile();
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    sendStatus(msg, ops::pauseDownload(msg.fieldString(0)));
 }
 
 void IpcClientHandler::handleResumeDownload(const IpcMessage& msg)
 {
-    const QString hash = msg.fieldString(0);
-    if (!theApp.downloadQueue) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Download queue unavailable")));
-        return;
-    }
-
-    uint8 hashBuf[16]{};
-    if (!hexToHash(hash, hashBuf)) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
-        return;
-    }
-    auto* pf = theApp.downloadQueue->fileByID(hashBuf);
-    if (!pf) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
-        return;
-    }
-    pf->resumeFile();
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    sendStatus(msg, ops::resumeDownload(msg.fieldString(0)));
 }
 
 void IpcClientHandler::handleCancelDownload(const IpcMessage& msg)
 {
-    const QString hash = msg.fieldString(0);
-    if (!theApp.downloadQueue) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Download queue unavailable")));
-        return;
-    }
-
-    uint8 hashBuf[16]{};
-    if (!hexToHash(hash, hashBuf)) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
-        return;
-    }
-    auto* pf = theApp.downloadQueue->fileByID(hashBuf);
-    if (!pf) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
-        return;
-    }
-    cancelDownloadFile(pf);
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    sendStatus(msg, ops::cancelDownload(msg.fieldString(0)));
 }
 
 void IpcClientHandler::handleGetUploads(const IpcMessage& msg)
@@ -604,99 +556,28 @@ void IpcClientHandler::handleGetKnownClients(const IpcMessage& msg)
 
 void IpcClientHandler::handleSetDownloadPriority(const IpcMessage& msg)
 {
-    if (!theApp.downloadQueue) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Download queue unavailable")));
-        return;
-    }
-
-    const QString hash = msg.fieldString(0);
-    const auto priority = static_cast<uint8>(msg.fieldInt(1));
-    const bool isAuto = msg.fieldBool(2);
-
-    uint8 hashBuf[16]{};
-    if (!hexToHash(hash, hashBuf)) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
-        return;
-    }
-    auto* pf = theApp.downloadQueue->fileByID(hashBuf);
-    if (!pf) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
-        return;
-    }
-    pf->setAutoDownPriority(isAuto);
-    if (!isAuto)
-        pf->setDownPriority(priority);
-    else
-        pf->updateAutoDownPriority();
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    sendStatus(msg, ops::setDownloadPriority(msg.fieldString(0),
+                                             static_cast<uint8>(msg.fieldInt(1)), msg.fieldBool(2)));
 }
 
 void IpcClientHandler::handleClearCompleted(const IpcMessage& msg)
 {
-    if (!theApp.downloadQueue) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Download queue unavailable")));
-        return;
-    }
-
     // Optional hash list: the download list's Del removes just the selected completed
     // rows (MFC MPG_DELETE, DownloadListCtrl.cpp:1262); no list = Clear Completed.
     QSet<QString> only;
     for (const QCborValue& v : msg.fieldArray(0))
-        only.insert(v.toString().toUpper());
+        only.insert(v.toString());
 
-    // Collect completed files first, then remove (avoid modifying during iteration)
-    std::vector<PartFile*> completed;
-    for (auto* pf : theApp.downloadQueue->files()) {
-        if (pf->status() != PartFileStatus::Complete)
-            continue;
-        if (!only.isEmpty() && !only.contains(md4str(pf->fileHash()).toUpper()))
-            continue;
-        completed.push_back(pf);
+    if (ops::clearCompletedDownloads(only) < 0) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Download queue unavailable")));
+        return;
     }
-    for (auto* pf : completed)
-        theApp.downloadQueue->removeFile(pf);
-
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
 void IpcClientHandler::handleRenameDownload(const IpcMessage& msg)
 {
-    const QString hash = msg.fieldString(0);
-    const QString newName = msg.fieldString(1).trimmed();
-    if (!theApp.downloadQueue) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Download queue unavailable")));
-        return;
-    }
-    uint8 hashBuf[16]{};
-    if (!hexToHash(hash, hashBuf)) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
-        return;
-    }
-    auto* pf = theApp.downloadQueue->fileByID(hashBuf);
-    if (!pf) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
-        return;
-    }
-    // MFC MPG_F2 (DownloadListCtrl.cpp:1405): not once completing/complete, and the
-    // name must survive the ed2k link format (IsValidEd2kString: no '|').
-    if (newName.isEmpty() || newName.contains(u'|')) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid file name")));
-        return;
-    }
-    const PartFileStatus st = pf->status();
-    if (st == PartFileStatus::Complete || st == PartFileStatus::Completing) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 409, QStringLiteral("Download already completed")));
-        return;
-    }
-    // Only the display/target name; the .part files keep their numbered names.
-    const bool shared = theApp.sharedFileList && theApp.sharedFileList->isFilePtrInList(pf);
-    if (shared)
-        theApp.sharedFileList->removeKeywords(pf);
-    pf->setFileName(newName, true);
-    if (shared)
-        theApp.sharedFileList->addKeywords(pf);
-    pf->savePartFile();
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    sendStatus(msg, ops::renameDownload(msg.fieldString(0), msg.fieldString(1)));
 }
 
 void IpcClientHandler::handleGetServers(const IpcMessage& msg)
@@ -792,65 +673,18 @@ void IpcClientHandler::handleSetServerEnabled(const IpcMessage& msg)
 
 void IpcClientHandler::handleAddServer(const IpcMessage& msg)
 {
-    if (!theApp.serverList) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("ServerList unavailable")));
+    // Optional 4th field: the other-family address of a dual-stack server.
+    const ops::AddServerOutcome out = ops::addServer(
+        msg.fieldString(0), static_cast<uint16>(msg.fieldInt(1)), msg.fieldString(2),
+        msg.fieldString(3));
+    if (!out.status.ok()) {
+        sendMessage(IpcMessage::makeError(
+            msg.seqId(), out.lanFiltered ? ErrServerLanFiltered : out.status.code,
+            out.status.message));
         return;
     }
-    const QString address = msg.fieldString(0);
-    const auto port = static_cast<uint16>(msg.fieldInt(1));
-    const QString name = msg.fieldString(2);
-
-    if (port == 0 || address.trimmed().isEmpty() || address.contains(u'|')) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid address or port")));
-        return;
-    }
-
-    // No DNS here. fromAddressString() keeps a hostname as a dynIP, which ServerSocket
-    // re-resolves on every connect (A then AAAA) — the old blocking QHostInfo::fromName
-    // ran on the daemon thread, accepted IPv4 answers only, and pinned the server to a
-    // one-shot address that never refreshed.
-    auto server = Server::fromAddressString(address, port);
-    if (!server) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid address or port")));
-        return;
-    }
-    if (!name.isEmpty())
-        server->setName(name);
-    if (thePrefs.manualServerHighPriority())
-        server->setPreference(ServerPriority::High);
-
-    // Optional 4th field: the other-family address of a dual-stack server (server.met
-    // import of an entry with an IPv4 header plus ST_IPV6).
-    if (const Address addr6 = Address::fromString(msg.fieldString(3));
-        !addr6.isNull() && !server->hasDynIP() && addr6.isIPv4() != server->ipAddress().isIPv4()
-        && ServerList::isGoodServerIP(addr6))
-        server->addAddress(addr6);
-
-    // addServer() drops a LAN/loopback literal under filterLANIPs with the same null a
-    // duplicate gets, so a pasted 127.0.0.1 link vanished without a word. Say why, once,
-    // here on the user path — not inside addServer, which server.met loads hit in bulk.
-    if (!server->hasDynIP() && !ServerList::isGoodServerIP(*server)) {
-        const QString text = tr("Server %1:%2 not added — LAN address filtered "
-                                "(\"Filter server and client LAN IPs\" is on)")
-                                 .arg(server->bracketedAddress())
-                                 .arg(port);
-        logWarning(text);
-        sendMessage(IpcMessage::makeError(msg.seqId(), ErrServerLanFiltered, text));
-        return;
-    }
-
-    const QString key = server->address();
-    Server* added = theApp.serverList->addServer(std::move(server), ServerOrigin::Manual);
-    if (added) {
-        sendMessage(IpcMessage::makeResult(msg.seqId(), true));
-    } else {
-        // MFC parity: update name on existing duplicate if name is meaningful
-        if (!name.isEmpty() && !name.startsWith(QStringLiteral("Server"))) {
-            if (auto* existing = theApp.serverList->findByAddress(key, port))
-                existing->setName(name);
-        }
-        sendMessage(IpcMessage::makeResult(msg.seqId(), false));
-    }
+    // false: it was already listed
+    sendMessage(IpcMessage::makeResult(msg.seqId(), out.added));
 }
 
 void IpcClientHandler::handleSetServerOrder(const IpcMessage& msg)
@@ -1050,65 +884,26 @@ void IpcClientHandler::handleSetFileComment(const IpcMessage& msg)
 
 void IpcClientHandler::handleConnectToServer(const IpcMessage& msg)
 {
-    if (!theApp.serverConnect) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("ServerConnect unavailable")));
-        return;
-    }
-
-    if (!BindAddress::outboundAllowed()) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 409, BindAddress::current().reason));
-        return;
-    }
-
-    // A ConnectToServer request is an explicit user action (toolbar Connect, or
-    // double-click / "connect" on a specific server), so it proceeds regardless of
-    // the "eD2K network" pref. That pref gates *auto*-connect at startup only
-    // (CoreSession::start: networkED2K() && autoConnect()), not manual connects.
-
     // If IP and port fields are provided, connect to a specific server
-    if (msg.fieldCount() >= 2) {
+    Server* srv = nullptr;
+    if (msg.fieldCount() >= 2 && theApp.serverConnect && BindAddress::outboundAllowed()) {
         if (!theApp.serverList) {
             sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("ServerList unavailable")));
             return;
         }
-
-        auto* srv = resolveServerFromMsg(msg, 0, 2);
+        srv = resolveServerFromMsg(msg, 0, 2);
         if (!srv) {
             sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Server not found")));
             return;
         }
-
-        // Already connected to this exact server — no-op
-        if (theApp.serverConnect->isConnected()) {
-            const auto* cur = theApp.serverConnect->currentServer();
-            if (cur && cur->serverId() == srv->serverId()) {
-                sendMessage(IpcMessage::makeResult(msg.seqId(), true));
-                return;
-            }
-            // Connected to a different server — disconnect first
-            theApp.serverConnect->disconnect();
-        }
-
-        theApp.serverConnect->connectToServer(srv);
-        sendMessage(IpcMessage::makeResult(msg.seqId(), true));
-        return;
     }
-
     // No fields — connect to any server
-    theApp.serverConnect->connectToAnyServer();
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    sendStatus(msg, ops::connectToServer(srv));
 }
 
 void IpcClientHandler::handleDisconnectFromServer(const IpcMessage& msg)
 {
-    if (!theApp.serverConnect) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("ServerConnect unavailable")));
-        return;
-    }
-    if (theApp.serverConnect->isConnecting())
-        theApp.serverConnect->stopConnectionTry();
-    theApp.serverConnect->disconnect();
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    sendStatus(msg, ops::disconnectFromServer());
 }
 
 void IpcClientHandler::handleStartSearch(const IpcMessage& msg)
@@ -1205,52 +1000,16 @@ void IpcClientHandler::handleClearAllSearches(const IpcMessage& msg)
 
 void IpcClientHandler::handleDownloadSearchFile(const IpcMessage& msg)
 {
-    if (!theApp.downloadQueue) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("DownloadQueue unavailable")));
+    // Field 4: the search window's "->" category (MFC SearchResultsWnd.cpp:542); field 5:
+    // the search the row belongs to, 0 from link senders and restored tabs.
+    const ops::AddOutcome out = ops::addDownloadFromSearch(
+        msg.fieldString(0), msg.fieldString(1), static_cast<uint64>(msg.fieldInt(2)),
+        msg.fieldString(3), msg.fieldInt(4), static_cast<uint32>(msg.fieldInt(5)));
+    if (!out.status.ok()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), out.status.code, out.status.message));
         return;
     }
-
-    const QString hash     = msg.fieldString(0);
-    const QString fileName = msg.fieldString(1);
-    const auto fileSize    = static_cast<uint64>(msg.fieldInt(2));
-    const QString rawLink  = msg.fieldString(3);
-
-    // a meta hash is not an eD2K file — never queue it (enodemeta "four nevers")
-    uint8 hashBuf[16]{};
-    const bool hashOk = hexToHash(hash, hashBuf);
-    if (hashOk && enodemeta::isMetaHash(hashBuf)) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400,
-                                          QStringLiteral("Torrent/Usenet results are not eD2K downloads")));
-        return;
-    }
-    // The search window's "->" category (MFC SearchResultsWnd.cpp:542); older senders omit it.
-    const qint64 category  = msg.fieldInt(4);
-    // The search the row belongs to; 0 from link senders and restored tabs.
-    const auto searchID    = static_cast<uint32>(msg.fieldInt(5));
-
-    // Prefer the original link text when the GUI has one: it carries the AICH hash,
-    // part hashes and source hints, none of which survive a hash/name/size round-trip.
-    // Rebuilding is only for search results, which never had a link — and it has to
-    // re-encode the name, since a '%' or '|' in it would otherwise corrupt the link.
-    const QString ed2kLink = rawLink.startsWith(QStringLiteral("ed2k://"), Qt::CaseInsensitive)
-        ? rawLink
-        : ed2kFileLink(fileName, fileSize, hash);
-
-    const uint32 cat = category > 0 && category < static_cast<qint64>(thePrefs.categoryCount())
-        ? static_cast<uint32>(category) : 0;
-    const bool ok = theApp.downloadQueue->addDownloadFromED2KLink(
-        ed2kLink, DownloadQueue::defaultTempDir(), cat);
-
-    // A rebuilt link carries nothing but hash, name and size: hand over what the search
-    // result knows (MFC DownloadQueue.cpp:175-200). An already queued download gains from
-    // it too, hence not gated on ok.
-    if (hashOk && searchID != 0 && theApp.searchList) {
-        const SearchFile* result = theApp.searchList->searchFileByHash(hashBuf, searchID);
-        PartFile* file = theApp.downloadQueue->fileByID(hashBuf);
-        if (result && file)
-            theApp.downloadQueue->seedFromSearchResult(file, *result);
-    }
-    sendMessage(IpcMessage::makeResult(msg.seqId(), ok));
+    sendMessage(IpcMessage::makeResult(msg.seqId(), out.added));
 }
 
 void IpcClientHandler::handleGetKnownTypes(const IpcMessage& msg)
@@ -1685,43 +1444,71 @@ void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
 
 void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
 {
+    // Fields come in key-value pairs: [key1, val1, key2, val2, ...]
+    PrefChanges changes;
+    for (int i = 0; i + 1 < msg.fieldCount(); i += 2)
+        changes.append({msg.fieldString(i), msg.field(i + 1)});
+
+    const PrefApplyOutcome outcome = applyPreferenceChanges(changes);
+    if (outcome.categoriesChanged)
+        emit categoriesChanged();
+
+    // Notify web server config changes
+    emit webServerConfigChanged();
+    if (outcome.standbyChanged)
+        emit standbyConfigChanged();
+
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(const PrefChanges& changes)
+{
+    PrefApplyOutcome outcome;
+
     // Captured before the apply loop: moving the incoming directory has to move
     // the category folders that lived inside it (see below).
     const QString oldIncomingDir = thePrefs.incomingDir();
 
-    // Fields come in key-value pairs: [key1, val1, key2, val2, ...]
-    for (int i = 0; i + 1 < msg.fieldCount(); i += 2) {
-        const QString key = msg.fieldString(i);
-        const QCborValue val = msg.field(i + 1);
+    // Detect whether shared directory / standby settings changed before saving
+    bool sharedDirsChanged = false;
+    for (const auto& [key, rawValue] : changes) {
+        QCborValue val = rawValue;
+        // A key the schema knows is held to it: a wrong type is dropped, a number
+        // out of range is pulled back in. The setters themselves check nothing.
+        if (const PrefSpec* spec = findPreferenceSpec(key)) {
+            if (spec->kind == PrefSpec::Kind::Int && (val.isInteger() || val.isDouble())) {
+                const double asked = val.isInteger() ? double(val.toInteger()) : val.toDouble();
+                const double held = std::clamp(asked, spec->min.value_or(asked),
+                                               spec->max.value_or(asked));
+                if (held != asked) {
+                    logWarning(QStringLiteral("Preference %1: %2 is out of range, using %3")
+                                   .arg(key).arg(asked, 0, 'f', 0).arg(held, 0, 'f', 0));
+                    val = static_cast<qint64>(held);
+                }
+            } else if (const QString problem = preferenceProblem(*spec, val); !problem.isEmpty()) {
+                logWarning(QStringLiteral("Preference not stored: %1").arg(problem));
+                continue;
+            }
+        }
 
         if (!applyPreferenceA(key, val) && !applyPreferenceB(key, val))
             applyPreferenceC(key, val);
-    }
-    // Detect whether shared directory / standby settings changed before saving
-    bool sharedDirsChanged = false;
-    bool standbyChanged = false;
-    for (int i = 0; i + 1 < msg.fieldCount(); i += 2) {
-        const QString k = msg.fieldString(i);
-        if (k == QStringLiteral("incomingDir")
-            || k == QStringLiteral("sharedDirs")
-            || k == QStringLiteral("tempDirs"))
+
+        if (key == QStringLiteral("incomingDir")
+            || key == QStringLiteral("sharedDirs")
+            || key == QStringLiteral("tempDirs"))
             sharedDirsChanged = true;
-        else if (k == QStringLiteral("preventStandby"))
-            standbyChanged = true;
+        else if (key == QStringLiteral("preventStandby"))
+            outcome.standbyChanged = true;
     }
 
-    rebaseCategoryDirs(oldIncomingDir);
+    outcome.categoriesChanged = rebaseCategoryDirs(oldIncomingDir);
 
-    thePrefs.save();
+    outcome.saved = thePrefs.save();
 
     // Update scheduler baselines so restoreOriginals() doesn't revert these changes
     if (theApp.scheduler)
         theApp.scheduler->saveOriginals();
-
-    // Notify web server config changes
-    emit webServerConfigChanged();
-    if (standbyChanged)
-        emit standbyConfigChanged();
 
     // Propagate config changes to running ServerConnect
     if (theApp.serverConnect) {
@@ -1746,7 +1533,7 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
     if (sharedDirsChanged && theApp.sharedFileList)
         theApp.sharedFileList->reload();
 
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    return outcome;
 }
 
 void IpcClientHandler::handleSubscribe(const IpcMessage& msg)
@@ -1761,119 +1548,24 @@ void IpcClientHandler::handleSubscribe(const IpcMessage& msg)
 
 void IpcClientHandler::handleGetKadContacts(const IpcMessage& msg)
 {
-    QCborArray contacts;
-    auto* kad = kad::Kademlia::instance();
-    if (kad && kad->isRunning()) {
-        auto* zone = kad->getRoutingZone();
-        if (zone) {
-            kad::ContactArray allContacts;
-            zone->getAllEntries(allContacts);
-            for (const auto* c : allContacts) {
-                QCborMap m;
-                m.insert(QStringLiteral("clientId"), c->getClientID().toHexString());
-                m.insert(QStringLiteral("distance"), c->getDistance().toBinaryString());
-                m.insert(QStringLiteral("ip"), static_cast<qint64>(c->address().toUint32()));
-                m.insert(QStringLiteral("addr"), c->address().toString());   // IPv6-capable form
-                m.insert(QStringLiteral("cc"), countryCodeOf(c->address()));
-                m.insert(QStringLiteral("udpPort"), c->getUDPPort());
-                m.insert(QStringLiteral("tcpPort"), c->getTCPPort());
-                m.insert(QStringLiteral("version"), c->getVersion());
-                m.insert(QStringLiteral("type"), c->getType());
-                // The contact icon (MFC KadContactListCtrl.cpp:117-124)
-                m.insert(QStringLiteral("ipVerified"), c->isIpVerified());
-                m.insert(QStringLiteral("bootstrap"), c->isBootstrapContact());
-                contacts.append(m);
-            }
-        }
-    }
+    const QCborArray contacts = ops::kadContacts();
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(contacts)));
 }
 
 void IpcClientHandler::handleGetKadStatus(const IpcMessage& msg)
 {
-    QCborMap status;
-    auto* kad = kad::Kademlia::instance();
-    status.insert(QStringLiteral("running"), kad && kad->isRunning());
-    status.insert(QStringLiteral("connected"), kad && kad->isConnected());
-    status.insert(QStringLiteral("firewalled"), kad && kad->isFirewalled());
-
-    if (kad && kad->isRunning()) {
-        auto* zone = kad->getRoutingZone();
-        if (zone) {
-            kad::ContactArray allContacts;
-            zone->getAllEntries(allContacts);
-            status.insert(QStringLiteral("contactCount"),
-                          static_cast<qint64>(allContacts.size()));
-        }
-        auto* udp = kad->getUDPListener();
-        if (udp) {
-            status.insert(QStringLiteral("hellosSent"),
-                          static_cast<qint64>(udp->totalHellosSent()));
-            status.insert(QStringLiteral("hellosReceived"),
-                          static_cast<qint64>(udp->totalHellosReceived()));
-        }
-        status.insert(QStringLiteral("users"),
-                      static_cast<qint64>(kad->getKademliaUsers()));
-        status.insert(QStringLiteral("usersExperimental"),
-                      static_cast<qint64>(kad->getKademliaUsers(true)));
-        status.insert(QStringLiteral("files"),
-                      static_cast<qint64>(kad->getKademliaFiles()));
-    }
-    if (kad && kad->isConnected()) {
-        status.insert(QStringLiteral("udpFirewalled"),
-                      kad::UDPFirewallTester::isFirewalledUDP(true));
-        status.insert(QStringLiteral("udpVerified"),
-                      kad::UDPFirewallTester::isVerified());
-        auto* prefs = kad->getPrefs();
-        if (prefs) {
-            status.insert(QStringLiteral("ip"),
-                          static_cast<qint64>(prefs->ipAddress()));
-            // ID is the IP in eD2K byte order (first octet in LSB)
-            const uint32_t kadIp = prefs->ipAddress();
-            const uint32_t ed2kId = ((kadIp & 0xFF) << 24) | ((kadIp & 0xFF00) << 8)
-                                  | ((kadIp >> 8) & 0xFF00) | ((kadIp >> 24) & 0xFF);
-            status.insert(QStringLiteral("id"),
-                          static_cast<qint64>(ed2kId));
-            status.insert(QStringLiteral("internPort"), prefs->internKadPort());
-            status.insert(QStringLiteral("externPort"),
-                          prefs->useExternKadPort()
-                              ? prefs->externalKadPort() : 0);
-        }
-    }
+    const QCborMap status = ops::kadStatus();
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(status)));
 }
 
 void IpcClientHandler::handleBootstrapKad(const IpcMessage& msg)
 {
-    auto* kad = kad::Kademlia::instance();
-    if (!kad) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 503,
-            QStringLiteral("Kademlia unavailable")));
-        return;
-    }
-
-    if (!BindAddress::outboundAllowed()) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 409, BindAddress::current().reason));
-        return;
-    }
-
-    const QString ip = msg.fieldString(0);
-    const auto port = static_cast<uint16>(msg.fieldInt(1));
-
-    if (!ip.isEmpty() && port > 0) {
-        kad->bootstrap(ip, port);
-    } else if (!kad->isRunning()) {
-        kad->start();
-    }
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    sendStatus(msg, ops::startKad(msg.fieldString(0), static_cast<uint16>(msg.fieldInt(1))));
 }
 
 void IpcClientHandler::handleDisconnectKad(const IpcMessage& msg)
 {
-    auto* kad = kad::Kademlia::instance();
-    if (kad && kad->isRunning())
-        kad->stop();
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    sendStatus(msg, ops::stopKad());
 }
 
 void IpcClientHandler::handleRecheckFirewall(const IpcMessage& msg)
@@ -2001,154 +1693,7 @@ void IpcClientHandler::handleGetNetworkInterfaces(const IpcMessage& msg)
 
 void IpcClientHandler::handleGetNetworkInfo(const IpcMessage& msg)
 {
-    QCborMap info;
-
-    // -- Client section -------------------------------------------------------
-    QCborMap client;
-    client.insert(QStringLiteral("nick"), thePrefs.nick());
-    const auto hash = thePrefs.userHash();
-    client.insert(QStringLiteral("hash"), md4str(hash.data()));
-    client.insert(QStringLiteral("tcpPort"), theApp.advertisedTcpPort());
-    client.insert(QStringLiteral("udpPort"), theApp.advertisedUdpPort());
-    insertBindState(client);
-    info.insert(QStringLiteral("client"), client);
-
-    // -- eD2K section ---------------------------------------------------------
-    QCborMap ed2k;
-    // ED2K-only: this feeds the "ed2k" section, reported separately from "kad" below.
-    const bool ed2kConnected = theApp.serverConnect && theApp.serverConnect->isConnected();
-    const bool ed2kConnecting = theApp.serverConnect && theApp.serverConnect->isConnecting();
-    const bool ed2kFirewalled = theApp.isFirewalled();
-    ed2k.insert(QStringLiteral("connected"), ed2kConnected);
-    ed2k.insert(QStringLiteral("connecting"), ed2kConnecting);
-    ed2k.insert(QStringLiteral("firewalled"), ed2kFirewalled);
-
-    // Reported whether or not a server session exists: this comes from LocalIPv6 scanning the
-    // local interfaces at startup, not from the server handshake. Gating it on ed2kConnected
-    // would withhold it exactly when someone is diagnosing why they cannot connect. Empty when
-    // the host has no usable public IPv6.
-    ed2k.insert(QStringLiteral("publicIPv6"), theApp.publicIPv6().toString());
-    // Server's ST_IPV6_STATUS verdict on that address (IPV6ST_* bits; 0 = no verdict).
-    ed2k.insert(QStringLiteral("ipv6Status"), static_cast<qint64>(theApp.publicIPv6Status()));
-    // Dotted-quad form of publicIP, so callers that just need a literal (the port test URL) do
-    // not each reimplement the ED2K byte order. Empty until a server tells us our IPv4.
-    ed2k.insert(QStringLiteral("publicIPv4"),
-                theApp.publicIP() != 0 ? ipstr(theApp.publicIP()) : QString());
-
-    if (ed2kConnected && theApp.serverConnect) {
-        ed2k.insert(QStringLiteral("clientID"),
-                     static_cast<qint64>(theApp.serverConnect->clientID()));
-        ed2k.insert(QStringLiteral("lowID"), theApp.serverConnect->isLowID());
-        ed2k.insert(QStringLiteral("publicIP"),
-                     static_cast<qint64>(theApp.publicIP()));
-
-        // Total users/files across all servers
-        if (theApp.serverList) {
-            uint32 totalUsers = 0, totalFiles = 0;
-            for (const auto& srv : theApp.serverList->servers()) {
-                totalUsers += srv->users();
-                totalFiles += srv->files();
-            }
-            ed2k.insert(QStringLiteral("totalUsers"), static_cast<qint64>(totalUsers));
-            ed2k.insert(QStringLiteral("totalFiles"), static_cast<qint64>(totalFiles));
-        }
-
-        // Current server details
-        const auto* srv = theApp.serverConnect->currentServer();
-        if (srv) {
-            QCborMap server;
-            server.insert(QStringLiteral("name"), srv->name());
-            server.insert(QStringLiteral("description"), srv->description());
-            server.insert(QStringLiteral("address"), srv->address());
-            server.insert(QStringLiteral("addr"), srv->ipAddress().toString());   // IPv6-capable
-            server.insert(QStringLiteral("port"), srv->port());
-            server.insert(QStringLiteral("version"), srv->version());
-            server.insert(QStringLiteral("users"), static_cast<qint64>(srv->users()));
-            server.insert(QStringLiteral("files"), static_cast<qint64>(srv->files()));
-            server.insert(QStringLiteral("obfuscated"),
-                          theApp.serverConnect->isConnectedObfuscated());
-            server.insert(QStringLiteral("lowIDUsers"),
-                          static_cast<qint64>(srv->lowIDUsers()));
-            server.insert(QStringLiteral("ping"), static_cast<qint64>(srv->ping()));
-            server.insert(QStringLiteral("softFiles"),
-                          static_cast<qint64>(srv->softFiles()));
-            server.insert(QStringLiteral("hardFiles"),
-                          static_cast<qint64>(srv->hardFiles()));
-            server.insert(QStringLiteral("tcpFlags"),
-                          static_cast<qint64>(srv->tcpFlags()));
-            server.insert(QStringLiteral("udpFlags"),
-                          static_cast<qint64>(srv->udpFlags()));
-            ed2k.insert(QStringLiteral("server"), server);
-        }
-    }
-    info.insert(QStringLiteral("ed2k"), ed2k);
-
-    // -- Kad section ----------------------------------------------------------
-    QCborMap kadInfo;
-    auto* kad = kad::Kademlia::instance();
-    const bool kadRunning = kad && kad->isRunning();
-    const bool kadConnected = kad && kad->isConnected();
-    const bool kadFirewalled = kad && kad->isFirewalled();
-
-    kadInfo.insert(QStringLiteral("running"), kadRunning);
-    kadInfo.insert(QStringLiteral("connected"), kadConnected);
-    kadInfo.insert(QStringLiteral("firewalled"), kadFirewalled);
-
-    if (kadConnected && kad) {
-        kadInfo.insert(QStringLiteral("udpFirewalled"),
-                       kad::UDPFirewallTester::isFirewalledUDP(true));
-        kadInfo.insert(QStringLiteral("udpVerified"),
-                       kad::UDPFirewallTester::isVerified());
-
-        // Buddy (firewall traversal): 0 none, 1 connecting, 2 connected (BuddyStatus)
-        if (theApp.clientList) {
-            const BuddyStatus bs = theApp.clientList->buddyStatus();
-            kadInfo.insert(QStringLiteral("buddyStatus"), static_cast<int>(bs));
-            const UpDownClient* buddy = theApp.clientList->getBuddy();
-            if (bs == BuddyStatus::Connected && buddy) {
-                kadInfo.insert(QStringLiteral("buddyName"), buddy->userName());
-                if (!buddy->userAddress().isNull())
-                    kadInfo.insert(QStringLiteral("buddyAddress"), buddy->userAddress().toString());
-                kadInfo.insert(QStringLiteral("buddyPort"), buddy->userPort());
-            }
-        }
-
-        auto* prefs = kad->getPrefs();
-        if (prefs) {
-            kadInfo.insert(QStringLiteral("ip"),
-                           static_cast<qint64>(prefs->ipAddress()));
-            kadInfo.insert(QStringLiteral("id"),
-                           static_cast<qint64>(prefs->ipAddress()));
-            kadInfo.insert(QStringLiteral("hash"),
-                           prefs->kadId().toHexString());
-            kadInfo.insert(QStringLiteral("internPort"), prefs->internKadPort());
-            kadInfo.insert(QStringLiteral("externPort"),
-                           prefs->useExternKadPort()
-                               ? prefs->externalKadPort() : 0);
-        }
-
-        kadInfo.insert(QStringLiteral("users"),
-                       static_cast<qint64>(kad->getKademliaUsers()));
-        kadInfo.insert(QStringLiteral("usersExperimental"),
-                       static_cast<qint64>(kad->getKademliaUsers(true)));
-        kadInfo.insert(QStringLiteral("files"),
-                       static_cast<qint64>(kad->getKademliaFiles()));
-
-        auto* indexed = kad->getIndexed();
-        if (indexed) {
-            QCborMap idx;
-            idx.insert(QStringLiteral("source"),
-                       static_cast<qint64>(indexed->m_totalIndexSource));
-            idx.insert(QStringLiteral("keyword"),
-                       static_cast<qint64>(indexed->m_totalIndexKeyword));
-            idx.insert(QStringLiteral("notes"),
-                       static_cast<qint64>(indexed->m_totalIndexNotes));
-            idx.insert(QStringLiteral("load"),
-                       static_cast<qint64>(indexed->m_totalIndexLoad));
-            kadInfo.insert(QStringLiteral("indexed"), idx);
-        }
-    }
-    info.insert(QStringLiteral("kad"), kadInfo);
+    QCborMap info = ops::networkInfo();
 
     // -- Web interface (MFC NetworkInfoDlg "Web Interface") ------------------
     QCborMap webInfo;
@@ -2163,46 +1708,6 @@ void IpcClientHandler::handleGetNetworkInfo(const IpcMessage& msg)
         webInfo.insert(QStringLiteral("host"), webInterfaceHost());
     }
     info.insert(QStringLiteral("web"), webInfo);
-
-    // Port mapping — reported alongside the firewall state because they answer
-    // the same user question, and because a Degraded mapping is precisely the
-    // case where "port forwarded" and "still firewalled" are both true.
-    QCborMap portMapInfo;
-    if (theApp.portMapper != nullptr) {
-        const PortMapper* mapper = theApp.portMapper;
-        portMapInfo.insert(QStringLiteral("status"), static_cast<int>(mapper->status()));
-        portMapInfo.insert(QStringLiteral("statusText"), portMapStatusName(mapper->status()));
-        portMapInfo.insert(QStringLiteral("method"), static_cast<int>(mapper->activeMethod()));
-        portMapInfo.insert(QStringLiteral("methodText"),
-                           portMapMethodName(mapper->activeMethod()));
-        portMapInfo.insert(QStringLiteral("externalAddress"),
-                           mapper->externalAddress().toString());
-
-        QCborArray mappings;
-        for (const PortMapping& mapping : mapper->mappings()) {
-            QCborMap entry;
-            entry.insert(QStringLiteral("purpose"),
-                         portMapPurposeName(mapping.request.purpose));
-            entry.insert(QStringLiteral("protocol"),
-                         mapping.request.protocol == PortMapProtocol::Udp
-                             ? QStringLiteral("UDP") : QStringLiteral("TCP"));
-            entry.insert(QStringLiteral("family"),
-                         mapping.request.family == PortMapFamily::IPv6 ? 6 : 4);
-            entry.insert(QStringLiteral("internalPort"), mapping.request.internalPort);
-            entry.insert(QStringLiteral("externalPort"), mapping.externalPort);
-            entry.insert(QStringLiteral("lifetime"),
-                         static_cast<qint64>(mapping.lifetimeSecs));
-            entry.insert(QStringLiteral("usable"), mapping.isUsable());
-            mappings.append(entry);
-        }
-        portMapInfo.insert(QStringLiteral("mappings"), mappings);
-    } else {
-        portMapInfo.insert(QStringLiteral("status"),
-                           static_cast<int>(PortMapStatus::Disabled));
-        portMapInfo.insert(QStringLiteral("statusText"),
-                           portMapStatusName(PortMapStatus::Disabled));
-    }
-    info.insert(QStringLiteral("portmap"), portMapInfo);
 
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(info)));
 }
@@ -2417,24 +1922,7 @@ void IpcClientHandler::handleRetryConvertJob(const IpcMessage& msg)
 
 void IpcClientHandler::handleStopDownload(const IpcMessage& msg)
 {
-    const QString hash = msg.fieldString(0);
-    if (!theApp.downloadQueue) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Download queue unavailable")));
-        return;
-    }
-
-    uint8 hashBuf[16]{};
-    if (!hexToHash(hash, hashBuf)) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
-        return;
-    }
-    auto* pf = theApp.downloadQueue->fileByID(hashBuf);
-    if (!pf) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
-        return;
-    }
-    pf->stopFile(false);
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    sendStatus(msg, ops::stopDownload(msg.fieldString(0)));
 }
 
 // ---------------------------------------------------------------------------
@@ -3018,33 +2506,8 @@ void IpcClientHandler::handleBrowseDirectory(const IpcMessage& msg)
 
 void IpcClientHandler::handleSetDownloadCategory(const IpcMessage& msg)
 {
-    const QString hash = msg.fieldString(0);
-    const auto cat = static_cast<uint32>(msg.fieldInt(1));
-
-    if (!theApp.downloadQueue) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("Download queue unavailable")));
-        return;
-    }
-
-    uint8 hashBuf[16]{};
-    if (!hexToHash(hash, hashBuf)) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
-        return;
-    }
-    auto* pf = theApp.downloadQueue->fileByID(hashBuf);
-    if (!pf) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
-        return;
-    }
-    // The category is an index, and it decides where the file lands when it
-    // completes. An out-of-range one would silently resolve back to the global
-    // incoming dir, which looks like the assignment worked.
-    if (cat >= static_cast<uint32>(thePrefs.categoryCount())) {
-        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Unknown category")));
-        return;
-    }
-    pf->setCategory(cat);
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    sendStatus(msg, ops::setDownloadCategory(msg.fieldString(0),
+                                             static_cast<uint32>(msg.fieldInt(1))));
 }
 
 // ---------------------------------------------------------------------------
@@ -3917,6 +3380,10 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
     }
     else if (key == QStringLiteral("webServerRestApiEnabled"))
         thePrefs.setWebServerRestApiEnabled(val.toBool());
+    else if (key == QStringLiteral("webServerMcpEnabled"))
+        thePrefs.setWebServerMcpEnabled(val.toBool());
+    else if (key == QStringLiteral("webServerMcpReadOnly"))
+        thePrefs.setWebServerMcpReadOnly(val.toBool());
     else if (key == QStringLiteral("webServerGzipEnabled"))
         thePrefs.setWebServerGzipEnabled(val.toBool());
     else if (key == QStringLiteral("webServerUPnP"))
@@ -5110,26 +4577,38 @@ DownloadCategory categoryFromCbor(const QCborMap& m)
 
 } // namespace
 
-void IpcClientHandler::handleGetCategories(const IpcMessage& msg)
+QCborArray IpcClientHandler::categoryList()
 {
     const auto categories = thePrefs.categories();
 
     QCborArray out;
     for (int i = 0; i < categories.size(); ++i)
         out.append(categoryToCbor(categories.at(i), thePrefs.incomingDirForCategory(i), i));
+    return out;
+}
 
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(out)));
+void IpcClientHandler::handleGetCategories(const IpcMessage& msg)
+{
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(categoryList())));
 }
 
 void IpcClientHandler::handleSetCategories(const IpcMessage& msg)
 {
-    const QCborArray incoming = msg.fieldArray(0);
-    if (incoming.size() > kMaxCategories) {
-        sendMessage(IpcMessage::makeResult(
-            msg.seqId(), false,
-            QCborValue(tr("At most %1 categories can be configured.").arg(kMaxCategories))));
+    const ops::Status st = storeCategories(msg.fieldArray(0));
+    if (!st.ok()) {
+        // The GUI shows the text of a `false` result.
+        sendMessage(IpcMessage::makeResult(msg.seqId(), false, QCborValue(st.message)));
         return;
     }
+    emit categoriesChanged();
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+ops::Status IpcClientHandler::storeCategories(const QCborArray& incoming)
+{
+    if (incoming.size() > kMaxCategories)
+        return ops::Status::fail(
+            400, tr("At most %1 categories can be configured.").arg(kMaxCategories));
 
     const auto stored = thePrefs.categories();
     const QStringList oldDirs = thePrefs.allIncomingDirs();
@@ -5185,11 +4664,8 @@ void IpcClientHandler::handleSetCategories(const IpcMessage& msg)
 
     thePrefs.setCategories(categories);
 
-    if (!thePrefs.save()) {
-        sendMessage(IpcMessage::makeResult(
-            msg.seqId(), false, QCborValue(tr("Could not write preferences.yml."))));
-        return;
-    }
+    if (!thePrefs.save())
+        return ops::Status::fail(500, tr("Could not write preferences.yml."));
 
     // A category folder is a shared folder, so gaining or losing one changes
     // what we advertise. MFC reloads the share on exactly the same events
@@ -5197,9 +4673,7 @@ void IpcClientHandler::handleSetCategories(const IpcMessage& msg)
     if (theApp.sharedFileList && thePrefs.allIncomingDirs() != oldDirs)
         theApp.sharedFileList->reload();
 
-    emit categoriesChanged();
-
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    return {};
 }
 
 void IpcClientHandler::handleSetCategoryStatus(const IpcMessage& msg)
@@ -5792,13 +5266,13 @@ void IpcClientHandler::remapFeedCategories(const QHash<uint32, uint32>& oldToNew
     thePrefs.setIndexerFeeds(feeds);
 }
 
-void IpcClientHandler::rebaseCategoryDirs(const QString& oldIncomingDir)
+bool IpcClientHandler::rebaseCategoryDirs(const QString& oldIncomingDir)
 {
     const QString newIncomingDir = thePrefs.incomingDir();
     if (oldIncomingDir.isEmpty() || newIncomingDir.isEmpty()
         || oldIncomingDir == newIncomingDir)
     {
-        return;
+        return false;
     }
 
     // Only the categories that lived *inside* the old incoming directory move
@@ -5827,16 +5301,20 @@ void IpcClientHandler::rebaseCategoryDirs(const QString& oldIncomingDir)
                     .arg(cat.displayName(), cat.incomingPath));
     }
 
-    if (changed) {
+    if (changed)
         thePrefs.setCategories(categories);
-        emit categoriesChanged();
-    }
+    return changed;
 }
 
 void IpcClientHandler::cancelDownloadFile(PartFile* pf)
 {
-    if (pf && theApp.downloadQueue)
-        theApp.downloadQueue->cancelFile(pf);
+    ops::cancelDownload(pf);
+}
+
+void IpcClientHandler::sendStatus(const IpcMessage& msg, const ops::Status& st)
+{
+    sendMessage(st.ok() ? IpcMessage::makeResult(msg.seqId(), true)
+                        : IpcMessage::makeError(msg.seqId(), st.code, st.message));
 }
 
 bool IpcClientHandler::rejectIfKadUnavailable(const IpcMessage& msg, bool requireConnected)

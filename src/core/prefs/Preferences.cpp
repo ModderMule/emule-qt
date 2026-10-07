@@ -439,6 +439,8 @@ struct Preferences::Data {
     QString webServerApiKey;
     QString webServerListenAddress;     // Empty = any
     bool webServerRestApiEnabled = false;
+    bool webServerMcpEnabled = false;     // MCP endpoint (/mcp), own switch
+    bool webServerMcpReadOnly = false;    // MCP: read-only tools only
     bool webServerGzipEnabled = true;
     QStringList webServerCorsAllowedOrigins;  // Empty = no CORS; "*" = any origin. YAML only
     bool webServerUPnP = false;
@@ -2357,6 +2359,12 @@ bool Preferences::webServerRestApiEnabled() const { return get(&Data::webServerR
 
 void Preferences::setWebServerRestApiEnabled(bool val) { set(&Data::webServerRestApiEnabled, val); }
 
+bool Preferences::webServerMcpEnabled() const { return get(&Data::webServerMcpEnabled); }
+void Preferences::setWebServerMcpEnabled(bool val) { set(&Data::webServerMcpEnabled, val); }
+
+bool Preferences::webServerMcpReadOnly() const { return get(&Data::webServerMcpReadOnly); }
+void Preferences::setWebServerMcpReadOnly(bool val) { set(&Data::webServerMcpReadOnly, val); }
+
 bool Preferences::webServerGzipEnabled() const { return get(&Data::webServerGzipEnabled); }
 
 void Preferences::setWebServerGzipEnabled(bool val) { set(&Data::webServerGzipEnabled, val); }
@@ -3114,6 +3122,8 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("webServerApiKey"), webServerApiKey());
     prefs.insert(QStringLiteral("webServerListenAddress"), webServerListenAddress());
     prefs.insert(QStringLiteral("webServerRestApiEnabled"), webServerRestApiEnabled());
+    prefs.insert(QStringLiteral("webServerMcpEnabled"), webServerMcpEnabled());
+    prefs.insert(QStringLiteral("webServerMcpReadOnly"), webServerMcpReadOnly());
     prefs.insert(QStringLiteral("webServerGzipEnabled"), webServerGzipEnabled());
     prefs.insert(QStringLiteral("webServerUPnP"), webServerUPnP());
     prefs.insert(QStringLiteral("webServerTemplatePath"), webServerTemplatePath());
@@ -3328,6 +3338,8 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->webServerApiKey               = p.value(QStringLiteral("webServerApiKey")).toString();
     m_data->webServerListenAddress        = p.value(QStringLiteral("webServerListenAddress")).toString();
     m_data->webServerRestApiEnabled       = p.value(QStringLiteral("webServerRestApiEnabled")).toBool();
+    m_data->webServerMcpEnabled = p.value(QStringLiteral("webServerMcpEnabled")).toBool();
+    m_data->webServerMcpReadOnly = p.value(QStringLiteral("webServerMcpReadOnly")).toBool();
     m_data->webServerGzipEnabled          = p.value(QStringLiteral("webServerGzipEnabled")).toBool();
     m_data->webServerUPnP                 = p.value(QStringLiteral("webServerUPnP")).toBool();
     m_data->webServerTemplatePath         = p.value(QStringLiteral("webServerTemplatePath")).toString();
@@ -3956,6 +3968,8 @@ bool Preferences::load(const QString& filePath)
             m_data->webServerApiKey = QString::fromStdString(ws["apiKey"].as<std::string>(m_data->webServerApiKey.toStdString()));
             m_data->webServerListenAddress = QString::fromStdString(ws["listenAddress"].as<std::string>(m_data->webServerListenAddress.toStdString()));
             m_data->webServerRestApiEnabled = ws["restApiEnabled"].as<bool>(m_data->webServerRestApiEnabled);
+            m_data->webServerMcpEnabled = ws["mcpEnabled"].as<bool>(m_data->webServerMcpEnabled);
+            m_data->webServerMcpReadOnly = ws["mcpReadOnly"].as<bool>(m_data->webServerMcpReadOnly);
             m_data->webServerGzipEnabled = ws["gzipEnabled"].as<bool>(m_data->webServerGzipEnabled);
             if (auto cors = ws["corsAllowedOrigins"]; cors && cors.IsSequence()) {
                 m_data->webServerCorsAllowedOrigins.clear();
@@ -5020,6 +5034,8 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "apiKey" << YAML::Value << m_data->webServerApiKey.toStdString();
     out << YAML::Key << "listenAddress" << YAML::Value << m_data->webServerListenAddress.toStdString();
     out << YAML::Key << "restApiEnabled" << YAML::Value << m_data->webServerRestApiEnabled;
+    out << YAML::Key << "mcpEnabled" << YAML::Value << m_data->webServerMcpEnabled;
+    out << YAML::Key << "mcpReadOnly" << YAML::Value << m_data->webServerMcpReadOnly;
     out << YAML::Key << "gzipEnabled" << YAML::Value << m_data->webServerGzipEnabled;
     out << YAML::Key << "corsAllowedOrigins" << YAML::Value << YAML::BeginSeq;
     for (const auto& o : m_data->webServerCorsAllowedOrigins)

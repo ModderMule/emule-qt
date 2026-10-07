@@ -2948,9 +2948,12 @@ stays that name. Escaping and translation rules: `docs/web-interface.md`.
 All under the REST API's `X-Api-Key`. Rows are the `GetUsenetQueue` maps plus
 `speed`; details are the `GetUsenetItemDetails` map.
 
+These routes are part of the operation table described in `docs/rest-api.md`: an unknown
+field, query parameter or action name is a `400`.
+
 | Method & path | Does | Answers |
 |---|---|---|
-| `GET /api/v1/usenet[?category=N]` | the queue | `200 [row…]` |
+| `GET /api/v1/usenet[?category=N&limit=&offset=]` | the queue, paged like every list | `200 {items, total, offset, limit}` |
 | `GET /api/v1/usenet/stats` | `count`, `active`, `percent`, `totalBytes`, `decodedBytes`, `stalledReason`, `rate`, `maxDownloadKb`, `usenetLimitKb`, `ed2kBudgetKb`, `paused` | `200 {…}` |
 | `POST /api/v1/usenet/pause` · `resume` | the whole engine; persisted, no item status changes | `200 {paused}` |
 | `GET /api/v1/usenet/<id>` | one release in full | `200` · `404` |
@@ -2958,7 +2961,7 @@ All under the REST API's `X-Api-Key`. Rows are the `GetUsenetQueue` maps plus
 | `POST /api/v1/usenet` | add — see below | `200 {id, outcome}` · `400` · `409` · `429` · `500` |
 | `POST /api/v1/usenet/<id>/pause` · `resume` · `check` | per-release action; resume overrules a check-stop (`ResumeIntent::User`) | `200 row` · `404` · `409 {error}` when the queue refuses |
 | `PATCH /api/v1/usenet/<id>` | any of `{priority, category, password, skipFiles, unskipFiles}` (the last two are NZB file-index arrays, widened to archive sets); all validated before any applies | `200 row` · `400` · `404` · `409` when the queue refuses a skip |
-| `DELETE /api/v1/usenet/<id>[?deleteFiles=true]` | remove | `200 {removed, deletedFiles}` · `404` |
+| `DELETE /api/v1/usenet/<id>?confirm=true[&deleteFiles=true]` | remove; refused without `confirm=true` | `200 {removed, deletedFiles}` · `400` · `404` |
 | `POST /api/v1/usenet/categories/<n>/pause` · `resume` · `cancel` | the category, 0 being all; resume is `Bulk` | `200 {affected}` · `400` |
 
 An add takes one of three shapes:

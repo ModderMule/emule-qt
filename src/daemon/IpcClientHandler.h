@@ -8,6 +8,8 @@
 
 #include "IpcConnection.h"
 #include "IpcMessage.h"
+#include "app/CoreOps.h"
+#include "prefs/PreferenceSchema.h"
 #include "utils/Types.h"
 
 #include <QHash>
@@ -38,6 +40,19 @@ public:
 
     /// Returns true if handshake has completed.
     [[nodiscard]] bool isHandshaked() const;
+
+    // What a preference or category save does, without a client to answer: the
+    // REST API stores through the same code. What only the caller can do — tell
+    // the other clients, restart the web server — comes back in the outcome.
+    struct PrefApplyOutcome {
+        bool saved = true;
+        bool standbyChanged = false;
+        bool categoriesChanged = false;
+    };
+    static PrefApplyOutcome applyPreferenceChanges(const PrefChanges& changes);
+    [[nodiscard]] static QCborArray categoryList();
+    /// Replaces the category list. An entry with `oldIndex` is an existing one.
+    static ops::Status storeCategories(const QCborArray& incoming);
 
 signals:
     /// Emitted when this client disconnects.
@@ -242,9 +257,10 @@ private:
     /// user who relocates their downloads finds their categories still writing
     /// into the old tree.
     /// Renumber every feed's download category after the list changed.
-    void remapFeedCategories(const QHash<uint32, uint32>& oldToNew);
+    static void remapFeedCategories(const QHash<uint32, uint32>& oldToNew);
 
-    void rebaseCategoryDirs(const QString& oldIncomingDir);
+    /// @return true when a category folder was moved.
+    static bool rebaseCategoryDirs(const QString& oldIncomingDir);
 
     /// Cancel one download: remember the hash if asked to, stop it, take it out
     /// of the queue and out of the two lists that hold non-owning references to
@@ -252,11 +268,13 @@ private:
     /// category, because getting this teardown order wrong dangles a pointer in
     /// KnownFileList and crashes the next known.met save.
     void cancelDownloadFile(PartFile* pf);
+    /// Result(true) or Error(code, message).
+    void sendStatus(const Ipc::IpcMessage& msg, const ops::Status& st);
 
     // Preference application helpers (split to avoid MSVC C1061 nesting limit)
-    bool applyPreferenceA(const QString& key, const QCborValue& val);
-    bool applyPreferenceB(const QString& key, const QCborValue& val);
-    bool applyPreferenceC(const QString& key, const QCborValue& val);
+    static bool applyPreferenceA(const QString& key, const QCborValue& val);
+    static bool applyPreferenceB(const QString& key, const QCborValue& val);
+    static bool applyPreferenceC(const QString& key, const QCborValue& val);
 
     std::unique_ptr<Ipc::IpcConnection> m_connection;
     bool m_isLocal = true;
