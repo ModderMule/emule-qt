@@ -179,7 +179,14 @@ void tst_PublishKeywordList::manyFiles_addAndRemoveStayLinear()
     QCOMPARE(list.keywordCount(), 0);
 
     qInfo("add %lld ms, remove %lld ms", static_cast<long long>(addMs), static_cast<long long>(removeMs));
-    QVERIFY2(addMs < 5000 && removeMs < 5000, "keyword bookkeeping is no longer linear");
+    // MSVC debug (checked iterators, debug heap) is several times slower; the scan this
+    // guards against took minutes, so the wider budget still catches it.
+#if defined(_MSC_VER) && defined(_DEBUG)
+    constexpr qint64 kBudgetMs = 30000;
+#else
+    constexpr qint64 kBudgetMs = 5000;
+#endif
+    QVERIFY2(addMs < kBudgetMs && removeMs < kBudgetMs, "keyword bookkeeping is no longer linear");
 }
 
 QTEST_GUILESS_MAIN(tst_PublishKeywordList)

@@ -14,8 +14,10 @@
 #include <QString>
 #include <QByteArray>
 
+#include <filesystem>
 #include <memory>
 #include <random>
+#include <system_error>
 
 #ifdef Q_OS_UNIX
 #include <arpa/inet.h>
@@ -59,6 +61,18 @@ inline QString testDataDir()
 inline QString projectDataDir()
 {
     return QStringLiteral(EMULE_STRINGIFY(EMULE_PROJECT_DATA_DIR));
+}
+
+/// Create a real symlink at @p linkPath pointing to @p target.
+/// Not QFile::link: on Windows that writes a .lnk shortcut, i.e. a plain file.
+/// False (and nothing created) where the OS refuses — Windows without
+/// Developer Mode or elevation.
+inline bool makeSymlink(const QString& target, const QString& linkPath)
+{
+    std::error_code ec;
+    std::filesystem::create_symlink(std::filesystem::path(target.toStdU16String()),
+                                    std::filesystem::path(linkPath.toStdU16String()), ec);
+    return !ec;
 }
 
 /// Generate a QByteArray filled with random bytes.

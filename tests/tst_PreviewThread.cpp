@@ -11,6 +11,15 @@
 using namespace eMule;
 using namespace Qt::StringLiterals;
 
+// A command that exits 0 whatever is appended to its arguments
+#ifdef Q_OS_WIN
+static const QString kEchoCommand = u"cmd.exe"_s;
+static const QString kEchoArgs = u"/c echo preview"_s;
+#else
+static const QString kEchoCommand = u"/bin/echo"_s;
+static const QString kEchoArgs = u"preview"_s;
+#endif
+
 class tst_PreviewThread : public QObject {
     Q_OBJECT
 
@@ -42,8 +51,8 @@ void tst_PreviewThread::copyAndLaunch_success()
     req.destFilePath = dstPath;
     req.bytesToCopy = 2048;
     req.app.title = u"echo"_s;
-    req.app.command = u"/bin/echo"_s;
-    req.app.commandArgs = u"preview"_s;
+    req.app.command = kEchoCommand;
+    req.app.commandArgs = kEchoArgs;
 
     PreviewThread thread(std::move(req));
     QSignalSpy startedSpy(&thread, &PreviewThread::previewStarted);
@@ -60,7 +69,7 @@ void tst_PreviewThread::copyAndLaunch_success()
     // Check the app title was passed
     QCOMPARE(startedSpy[0][0].toString(), u"echo"_s);
 
-    // The exit code for /bin/echo should be 0
+    // The exit code for echo should be 0
     QCOMPARE(finishedSpy[0][1].toInt(), 0);
 
     // Temp file should be cleaned up
@@ -76,7 +85,7 @@ void tst_PreviewThread::errorOnMissingSource()
     req.destFilePath = tmpDir.filePath(u"preview.avi"_s);
     req.bytesToCopy = 1024;
     req.app.title = u"test"_s;
-    req.app.command = u"/bin/echo"_s;
+    req.app.command = kEchoCommand;
 
     PreviewThread thread(std::move(req));
     QSignalSpy errorSpy(&thread, &PreviewThread::previewError);
@@ -139,7 +148,8 @@ void tst_PreviewThread::tempFileCleanup()
     req.destFilePath = dstPath;
     req.bytesToCopy = 1024;
     req.app.title = u"true"_s;
-    req.app.command = u"/usr/bin/true"_s;
+    req.app.command = kEchoCommand;
+    req.app.commandArgs = kEchoArgs;
 
     PreviewThread thread(std::move(req));
     thread.start();

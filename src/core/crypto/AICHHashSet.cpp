@@ -341,6 +341,7 @@ bool AICHRecoveryHashSet::compactKnown2(const std::function<bool(const AICHHash&
             const QByteArray bytes = in.seek(rec.pos) ? in.read(rec.length) : QByteArray();
             ok = bytes.size() == rec.length && out.write(bytes) == rec.length;
         }
+        in.close();   // Windows cannot replace a file that is still open
         if (!ok || !out.commit()) {
             out.cancelWriting();
             droppedSets = 0;

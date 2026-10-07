@@ -4261,6 +4261,11 @@ void tst_UsenetQueue::theDiskFloorOffMeansTodaysBehaviourExactly()
 // ProtocolError used to do with it.
 void tst_UsenetQueue::aWriteFailureFailsLocallyAndNeverBlamesTheServer()
 {
+#ifdef Q_OS_WIN
+    // setPermissions() cannot make a directory unwritable here: the read-only
+    // attribute is ignored for directories and the rest would take an ACL.
+    QSKIP("no chmod-style read-only directory on Windows");
+#endif
     ScopedStatistics stats;
     const QByteArray whole = payload(kPartSize * 4);
 

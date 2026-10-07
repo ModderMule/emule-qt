@@ -916,6 +916,8 @@ void tst_CallbackAndQueueRank::directCallback_setsCorrectState()
     QCOMPARE(client->connectingState(), ConnectingState::DirectCallback);
 
     m_clientList->removeClient(client);
+    // Never added as a source, so ~PartFile cannot clear this for us
+    client->setReqFile(nullptr);
     delete partFile;
     delete client;
 }

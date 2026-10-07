@@ -312,6 +312,10 @@ void tst_PartFileWriteThread::deletedFile_stillGetsItsWrite()
 
 void tst_PartFileWriteThread::writeFailure_keepsTheBuffer()
 {
+#ifdef Q_OS_WIN
+    // An open .part cannot be deleted from under its handle here
+    QSKIP("Windows does not let an open file vanish");
+#endif
     const QString dir = m_tmp.filePath(QStringLiteral("t5"));
     QDir().mkpath(dir);
     const std::vector<uint8> content = pattern(1000, 13);

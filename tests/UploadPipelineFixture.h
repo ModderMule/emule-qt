@@ -145,6 +145,11 @@ public:
         delete theApp.clientCredits;
         theApp.clientCredits = nullptr;
 
+        // Clients outlive the files (they die with the test object) — let go first
+        if (clientList) {
+            clientList->forEach([](UpDownClient* client) { client->setUploadFileID(nullptr); });
+        }
+
         delete knownFiles;
         knownFiles = nullptr;
 
