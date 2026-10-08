@@ -324,6 +324,8 @@ bool CoreNotifierBridge::broadcastServerState()
             info.insert(QStringLiteral("serverId"), static_cast<qint64>(srv->serverId()));
             info.insert(QStringLiteral("serverName"), srv->name());
             info.insert(QStringLiteral("serverDescription"), srv->description());
+            // "Search Related Files" is offered only on a server that answers it
+            info.insert(QStringLiteral("serverRelatedSearch"), srv->supportsRelatedSearch());
             // The address this session dialed: a dual-stack server may be on its IPv6
             info.insert(QStringLiteral("serverAddress"),
                         srv->hasDynIP() ? srv->address()

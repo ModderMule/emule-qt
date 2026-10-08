@@ -76,6 +76,11 @@ struct ClientRow {
     int64_t lastUpRequestDelay = 0;  // ms since the last upload request
     bool hasLowID = false;
     bool addNextConnect = false;   // LowID peer owed the next free slot
+    bool remoteQueueFull = false;
+    int kadPort = 0;
+    int kadVersion = 0;
+    int64_t reqFileSize = 0;       // size of the file we ask this peer for
+    QByteArray partMap;            // as SourceRow::partMap, for the Available Parts bar
     UpStatusBar upStatus;
 };
 
@@ -86,6 +91,9 @@ class ClientListModel : public AbstractTableModel<ClientRow> {
 public:
     /// The row's UpStatusBar, for UploadStatusDelegate.
     static constexpr int UpStatusRole = Qt::UserRole + 1;
+    /// Per-part source map and file size, for SourcePartsDelegate.
+    static constexpr int PartMapRole  = Qt::UserRole + 2;
+    static constexpr int FileSizeRole = Qt::UserRole + 3;
 
     explicit ClientListModel(ClientListMode mode, QObject* parent = nullptr);
 

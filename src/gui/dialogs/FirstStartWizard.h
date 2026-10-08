@@ -51,6 +51,7 @@ private slots:
     void onUPnPTimeout();
     void onHelp();
     void onSpeedSelectionChanged();
+    void onCustomRateEdited();
 
 private:
     void setupHeader();

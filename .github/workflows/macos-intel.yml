@@ -1,7 +1,15 @@
-name: macOS CI
+name: macOS Intel CI
 
-# Apple silicon (arm64). Intel Macs are built by macos-intel.yml, a copy of this
-# file that goes away when Intel support does -- keep the two in step until then.
+# TEMPORARY: Intel (x86_64) build of the macOS app, a copy of macos.yml on an
+# Intel runner.  Apple and GitHub are both retiring Intel; when support is
+# dropped, delete this file together with the macos-intel job, the x86_64 asset
+# and the notes row in release.yml.  Until then keep it in step with macos.yml:
+# the only intended differences are the runner, BUILD_ARCH and the ccache key.
+#
+# If GitHub's Intel runners go first: Qt's macOS binaries are universal and
+# scripts/build-macos-deps.sh cross-builds, so this job also works on an Apple
+# silicon runner with BUILD_ARCH left at x86_64 (the smoke test then needs
+# Rosetta).
 #
 # Tag pushes are handled by release.yml, which calls this workflow -- do not add a
 # push/tags trigger here or a tag would build twice.
@@ -24,13 +32,13 @@ env:
   # scripts/bundle-macos.sh.  Unset, everything is built for the runner's own
   # macOS -- v0.5.6 needed macOS 26 that way.
   MACOSX_DEPLOYMENT_TARGET: "13.0"
-  BUILD_ARCH: arm64
+  BUILD_ARCH: x86_64
   PROTOC_VERSION: "36.2"
   PROTOC_SHA256: 83d0dc80672f53486f54299bca6177159f9cad1fd54d4d3143eeea53c4423e1b
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-15-intel
 
     steps:
       - name: Checkout
@@ -78,7 +86,7 @@ jobs:
       - name: Set up ccache
         uses: hendrikmuhs/ccache-action@v1
         with:
-          key: macos
+          key: macos-intel
 
       - name: Configure
         run: >

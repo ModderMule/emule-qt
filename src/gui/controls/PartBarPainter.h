@@ -47,6 +47,19 @@ void paintPartBar(QPainter& painter, const QRect& rect, const QByteArray& parts,
     shader.draw(painter, rect);
 }
 
+/// Colour of one part in a source's bar (MFC DownloadClient.cpp:51-122).
+/// 0 peer lacks it, 1 both have it, 2 peer has it and we need it, 3 pending, 4 receiving.
+[[nodiscard]] inline QColor sourcePartColor(uint8_t status, bool flat)
+{
+    switch (status) {
+    case 1:  return flat ? QColor(0, 0, 0) : QColor(104, 104, 104);
+    case 2:  return {0, 100, 255};
+    case 3:  return {255, 208, 0};
+    case 4:  return {0, 150, 0};
+    default: return flat ? QColor(224, 224, 224) : QColor(240, 240, 240);
+    }
+}
+
 /// MFC's 3 px completion strip along the top of a file bar. Flat: green on a
 /// light grey track. Round: shaded green only, no track (PartFile.cpp DrawStatusBar).
 /// Skipped when the bar is too short to hold it.

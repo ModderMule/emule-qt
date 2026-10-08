@@ -107,7 +107,7 @@ void MediaInfoPanel::setFile(const QString& filePath, int64_t /*fileSize*/)
                     // Bitrate
                     if (mi.video.bitRate > 0) {
                         uint32_t kbps = (mi.video.bitRate + 500) / 1000;
-                        m_vBitrateValue->setText(QStringLiteral("%1 kbit/s").arg(kbps));
+                        m_vBitrateValue->setText(QStringLiteral("%1 Kbit/s").arg(kbps));
                     } else {
                         m_vBitrateValue->setText(QStringLiteral("-"));
                     }
@@ -153,7 +153,7 @@ void MediaInfoPanel::setFile(const QString& filePath, int64_t /*fileSize*/)
                     // Bitrate
                     if (mi.audio.avgBytesPerSec > 0) {
                         uint32_t kbps = static_cast<uint32_t>((static_cast<uint64_t>(mi.audio.avgBytesPerSec) * 16 + 1000) / 2000);
-                        m_aBitrateValue->setText(QStringLiteral("%1 kbit/s").arg(kbps));
+                        m_aBitrateValue->setText(QStringLiteral("%1 Kbit/s").arg(kbps));
                     } else {
                         m_aBitrateValue->setText(QStringLiteral("-"));
                     }

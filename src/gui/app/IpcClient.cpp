@@ -314,6 +314,23 @@ void IpcClient::sendShutdown()
     disconnectFromDaemon();
 }
 
+void IpcClient::sendRestart()
+{
+    if (!isConnected())
+        return;
+    // Time for a graceful stop (saving part files) plus the start
+    constexpr int kRestartGraceMs = 60'000;
+    m_restartDeadline = QDeadlineTimer(kRestartGraceMs);
+    IpcMessage msg(IpcMsgType::Shutdown);
+    msg.append(true);
+    sendRequest(std::move(msg));
+}
+
+bool IpcClient::daemonRestarting() const
+{
+    return !m_restartDeadline.hasExpired();
+}
+
 int IpcClient::sendRequest(IpcMessage msg, ResponseCallback callback)
 {
     if (!m_connection || !m_handshaked)
@@ -467,6 +484,7 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
             }
         });
 
+        m_restartDeadline = QDeadlineTimer();
         emit connected();
         return;
     }

@@ -223,7 +223,7 @@ emule_add_test(tst_PartFile          FOLDER "Files")
 emule_add_test(tst_SourceExchange       FOLDER "Files")
 emule_add_test(tst_SourceExchangeCompat FOLDER "Files")
 emule_add_test(tst_SourceSaver          FOLDER "Files")
-emule_add_test(tst_DownloadQueue     FOLDER "Transfer")
+emule_add_test(tst_DownloadQueue     FOLDER "Transfer" LIBRARIES eMule::Ipc)
 
 # Module 11 Phase 3: Complete File Management
 emule_add_test(tst_KnownFileList       FOLDER "Files")
@@ -262,7 +262,7 @@ emule_add_test(tst_ImportParts              FOLDER "Transfer")
 emule_add_test(tst_SearchExpr    FOLDER "Search")
 emule_add_test(tst_SearchParams  FOLDER "Search")
 emule_add_test(tst_SearchFile    FOLDER "Search")
-emule_add_test(tst_SearchList    FOLDER "Search")
+emule_add_test(tst_SearchList    FOLDER "Search" LIBRARIES eMule::Ipc)
 emule_add_test(tst_FakeFileDetector FOLDER "Search")
 emule_add_test(tst_EnodeMeta     FOLDER "Search")
 target_compile_definitions(tst_EnodeMeta PRIVATE
@@ -573,6 +573,7 @@ emule_add_test(tst_MetaSearchGui FOLDER "Gui"
     SOURCES tst_MetaSearchGui.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/controls/SearchResultsModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/SearchResultsProxy.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/FilterEdit.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MetaAccountDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"

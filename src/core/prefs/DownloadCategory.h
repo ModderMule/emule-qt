@@ -8,11 +8,9 @@
 /// format, the path validation and the "which index is which" rules are all
 /// Preferences' business, and the download queue only ever asks it questions.
 ///
-/// Ported from `srchybrid/Preferences.h:114-128`. Field-for-field, including
-/// the four members this port persists but does not yet consult (`filter`,
-/// `filterNeg`, `care4all`, `downloadInAlphabeticalOrder`) — writing them from
-/// the start means the per-category *view filter* can land later without a
-/// preferences.yml migration.
+/// Ported from `srchybrid/Preferences.h:114-128`, field for field. The view
+/// filter (`filter`, `filterNeg`, `care4all`, `regexp`) is applied by the GUI's
+/// CategoryFilterProxy; the core only stores it.
 ///
 /// **Identity is the list index**, as in MFC. `part.met` stores `FT_CATEGORY`
 /// as an index (`PartFile.cpp` load/save), so removing or reordering a category
@@ -61,8 +59,8 @@ struct DownloadCategory {
     /// Applied to new downloads only — see `DownloadQueue::applyAutoCategory()`.
     QString autocat;
 
-    /// The view filter's regular expression (MFC filter mode 18). Persisted so
-    /// the format is stable; nothing consults it yet.
+    /// The view filter's regular expression (MFC filter mode 18), matched against
+    /// the whole file name.
     QString regexp;
 
     quint32 color = kCategoryColorAuto;
@@ -73,12 +71,14 @@ struct DownloadCategory {
     /// literal avoids dragging that header into Preferences.h.
     quint8 prio = 1; ///< kPrNormal
 
-    // -- Persisted, not yet consulted -----------------------------------------
     // MFC's per-category view filter (0 = none, 1 = uncategorised, 2..16 status
-    // and file-type modes, 18 = regexp) and its two modifiers.
+    // and file-type modes, 18 = regexp, 20 = collections) and its two modifiers.
+    // What the category's tab shows — the GUI applies it (CategoryFilterProxy).
     int  filter = 0;
     bool filterNeg = false;
-    bool care4all = false;
+    bool care4all = false;   ///< the filter looks at every download, not only this category's
+    /// Resume and source the category's files in name order
+    /// (PartFile::rightFileHasHigherPrio).
     bool downloadInAlphabeticalOrder = false;
 
     bool autocatIsRegexp = false;

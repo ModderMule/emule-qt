@@ -5,6 +5,7 @@
 #include "media/PreviewApps.h"
 #include "files/PartFile.h"
 
+#include <QTemporaryFile>
 #include <QFile>
 #include <QSignalSpy>
 #include <QTest>
@@ -72,6 +73,8 @@ private slots:
     void parseLine_hexParsing();
     void parseLine_multipleExtensions();
     void parseLine_noArgs();
+    void parseLine_mfcFormat();
+    void appForFileName_takesTheLastMatch();
 
     // loadFromFile tests
     void loadFromFile_validFile();
@@ -166,6 +169,44 @@ void tst_PreviewApps::parseLine_noArgs()
 // ===========================================================================
 // loadFromFile tests
 // ===========================================================================
+
+void tst_PreviewApps::parseLine_mfcFormat()
+{
+    // srchybrid/Preview.cpp:147-222
+    auto app = PreviewApps::parseLine(
+        u"Media Player=\"C:\\Program Files\\mp\\mp.exe\" /play;ext=avi;ext=.MKV;minsize=1048576;minstart=4096"_s);
+    QVERIFY(app.has_value());
+    QCOMPARE(app->title, u"Media Player"_s);
+    QCOMPARE(app->command, u"C:\\Program Files\\mp\\mp.exe"_s);
+    QCOMPARE(app->commandArgs, u"/play"_s);
+    QCOMPARE(app->extensions, QStringList({u"avi"_s, u"mkv"_s}));
+    QCOMPARE(app->minCompletedSize, 1048576ULL);
+    QCOMPARE(app->minStartOfFile, 4096ULL);
+
+    // An entry without extensions is still a "Preview with" choice
+    auto bare = PreviewApps::parseLine(u"Hex=/usr/bin/hexview"_s);
+    QVERIFY(bare.has_value());
+    QVERIFY(bare->extensions.isEmpty());
+    QVERIFY(bare->commandArgs.isEmpty());
+
+    QVERIFY(!PreviewApps::parseLine(u"// comment"_s).has_value());
+    QVERIFY(!PreviewApps::parseLine(u"NoCommand="_s).has_value());
+}
+
+void tst_PreviewApps::appForFileName_takesTheLastMatch()
+{
+    QTemporaryFile config;
+    QVERIFY(config.open());
+    config.write("First=/bin/a;ext=avi\nSecond=/bin/b;ext=avi;ext=mkv\nThird=/bin/c;ext=zip\n");
+    config.close();
+
+    PreviewApps apps;
+    QCOMPARE(apps.loadFromFile(config.fileName()), 3);
+    QCOMPARE(apps.appForFileName(u"film.AVI"_s), 1);   // MFC searches from the end
+    QCOMPARE(apps.appForFileName(u"pack.zip"_s), 2);
+    QCOMPARE(apps.appForFileName(u"notes.txt"_s), -1);
+    QCOMPARE(apps.appForFileName(u"noextension"_s), -1);
+}
 
 void tst_PreviewApps::loadFromFile_validFile()
 {

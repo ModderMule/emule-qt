@@ -603,6 +603,12 @@ void PartFile::applyFlushResult(PartFileWriteResult& result, bool forceICH, bool
     if (!m_gapList.empty() && !m_destroying)
         resumeIdleSources();
 
+    // "Pause when preview is possible", once (MFC PartFile.cpp:4243-4246)
+    if (!m_gapList.empty() && !m_destroying && isPausingOnPreview() && isPreviewPossible()) {
+        m_pauseOnPreview = false;
+        pauseFile();
+    }
+
     if (m_gapList.empty() && !m_destroying) {
         // Blocks that arrived while this one was out still have to land first.
         if (m_bufferedData.empty())
@@ -700,6 +706,10 @@ void PartFile::flushBuffer(bool forceICH, bool noAICH)
     if (m_gapList.empty() && !m_destroying) {
         completeIfVerified();
         return;
+    }
+    if (!m_destroying && isPausingOnPreview() && isPreviewPossible()) {
+        m_pauseOnPreview = false;
+        pauseFile();
     }
 
     // Periodic save of .part.met (separate timer from buffer flush — matches MFC m_nNextMetFlushTime)
@@ -864,11 +874,11 @@ bool PartFile::getNextRequestedBlock(UpDownClient* sender,
     const uint16 almostRareBound = static_cast<uint16>(4 * veryRareBound);
     const bool a4afHeavy = srcCount <= static_cast<int>(m_a4afSrcList.size());
 
-    // Preview chunks: first + last (MFC IsPreviewableFileType: movie or archive)
-    const ED2KFileType type = getED2KFileTypeID(fileName());
-    const bool isPreviewEnable = thePrefs.previewPrio() && fs > 2 * PARTSIZE
-        && (type == ED2KFileType::Video || type == ED2KFileType::Archive
-            || fileName().endsWith(QStringLiteral(".iso"), Qt::CaseInsensitive));
+    // Preview chunks: first + last — for every file, or for this one in advanced mode
+    // (MFC PartFile.cpp:4680-4682)
+    const bool isPreviewEnable =
+        (thePrefs.previewPrio() || (m_previewPrio && thePrefs.showExtControls()))
+        && fs > 2 * PARTSIZE && isPreviewableFileType();
 
     static thread_local std::mt19937 rng(std::random_device{}());
 
@@ -1300,6 +1310,29 @@ uint32 PartFile::dlActiveTime() const
     return active;
 }
 
+int64 PartFile::timeRemaining() const
+{
+    const uint64 done = completedSize();
+    return estimateTimeRemaining(fileSize() > done ? fileSize() - done : 0, done, datarate(),
+                                 dlActiveTime(), thePrefs.useAdvancedCalcRemainingTime());
+}
+
+int64 PartFile::estimateTimeRemaining(uint64 left, uint64 done, uint32 rate, uint32 activeSecs,
+                                      bool advanced)
+{
+    const int64 simple = rate ? static_cast<int64>(left / rate) : -1;
+    if (!advanced)
+        return simple;
+
+    // Average over the whole active time, once there is enough to average
+    const int64 estimate = (activeSecs && done >= 512000)
+        ? static_cast<int64>(static_cast<double>(left) / (static_cast<double>(done) / activeSecs))
+        : -1;
+    if (estimate == -1 || (simple > 0 && simple < estimate))
+        return simple;
+    return estimate < DAY2S(15) ? estimate : -1;
+}
+
 void PartFile::setActive(bool active)
 {
     const time_t now = std::time(nullptr);
@@ -1615,16 +1648,45 @@ int PartFile::validSourcesCount() const
     }));
 }
 
+uint32 PartFile::maxSources() const
+{
+    // A limit set in advanced mode is not applied outside it: it could be neither
+    // seen nor changed there (MFC PartFile.cpp:5342-5347).
+    if (!thePrefs.showExtControls() || m_privateMaxSources == 0)
+        return thePrefs.maxSourcesPerFile();
+    return m_privateMaxSources;
+}
+
 uint32 PartFile::maxSourcePerFileSoft() const
 {
-    return std::min<uint32>((static_cast<uint32>(thePrefs.maxSourcesPerFile()) * 9) / 10,
-                            MAX_SOURCES_FILE_SOFT);
+    return std::min<uint32>((maxSources() * 9) / 10, MAX_SOURCES_FILE_SOFT);
 }
 
 uint32 PartFile::maxSourcePerFileUDP() const
 {
-    return std::min<uint32>((static_cast<uint32>(thePrefs.maxSourcesPerFile()) * 3) / 4,
-                            MAX_SOURCES_FILE_UDP);
+    return std::min<uint32>((maxSources() * 3) / 4, MAX_SOURCES_FILE_UDP);
+}
+
+bool PartFile::isPreviewableFileType() const
+{
+    const ED2KFileType type = getED2KFileTypeID(fileName());
+    return type == ED2KFileType::Video || type == ED2KFileType::Archive
+        || fileName().endsWith(QStringLiteral(".iso"), Qt::CaseInsensitive);
+}
+
+bool PartFile::isPausingOnPreview() const
+{
+    if (!m_pauseOnPreview || !isPreviewableFileType())
+        return false;
+    switch (status()) {   // MFC CanPauseFile
+    case PartFileStatus::Paused:
+    case PartFileStatus::Error:
+    case PartFileStatus::Complete:
+    case PartFileStatus::Completing:
+        return false;
+    default:
+        return true;
+    }
 }
 
 void PartFile::updatePartsInfo()
@@ -1947,6 +2009,16 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
             case FT_LASTSEENCOMPLETE:
                 if (tag.isInt())
                     m_lastSeenComplete = static_cast<time_t>(tag.intValue());
+                break;
+            case FT_MAXSOURCES:
+                if (tag.isInt())
+                    m_privateMaxSources = static_cast<uint32>(tag.intValue());
+                break;
+            case FT_DL_PREVIEW:
+                if (tag.isInt()) {
+                    m_previewPrio = (tag.intValue() & 0x01) != 0;
+                    m_pauseOnPreview = (tag.intValue() & 0x02) != 0;
+                }
                 break;
             case FT_TRANSFERRED:
                 if (tag.isInt())
@@ -2321,6 +2393,18 @@ bool PartFile::savePartFile()
             tagCount++;
         }
 
+        if (m_privateMaxSources > 0) {
+            Tag(FT_MAXSOURCES, m_privateMaxSources).writeNewEd2kTag(file);
+            tagCount++;
+        }
+
+        // Bit 0 preview priority, bit 1 pause on preview (MFC PartFile.cpp:1284-1289)
+        if (m_previewPrio || m_pauseOnPreview) {
+            Tag(FT_DL_PREVIEW, static_cast<uint32>((m_pauseOnPreview ? 2 : 0) | (m_previewPrio ? 1 : 0)))
+                .writeNewEd2kTag(file);
+            tagCount++;
+        }
+
         // Corrupted parts list
         if (!m_corruptedParts.empty()) {
             QString partList;
@@ -2547,7 +2631,7 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
         // PartFile.cpp:2330-2336.
         if (ds == DownloadState::OnQueue && client->remoteQueueFull()
             && curTick >= m_lastPurgeTime + MIN2MS(1)
-            && sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()) * 4 / 5)
+            && sourceCount() >= static_cast<int>(maxSources()) * 4 / 5)
         {
             m_lastPurgeTime = curTick;
             if (theApp.downloadQueue) {
@@ -2629,7 +2713,7 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
         if (ds == DownloadState::LowToLowIP) {
             if (client->hasLowID() && !theApp.canDoCallback(client)) {
                 if (curTick >= m_lastPurgeTime + SEC2MS(30)
-                    && sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()) * 4 / 5)
+                    && sourceCount() >= static_cast<int>(maxSources()) * 4 / 5)
                 {
                     m_lastPurgeTime = curTick;
                     if (theApp.downloadQueue)
@@ -2647,7 +2731,7 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
             // Purge NNP sources when at 80% capacity (40s interval)
             if (curTick >= m_lastPurgeTime + SEC2MS(40)) {
                 m_lastPurgeTime = curTick;
-                if (sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()) * 4 / 5) {
+                if (sourceCount() >= static_cast<int>(maxSources()) * 4 / 5) {
                     if (theApp.downloadQueue)
                         theApp.downloadQueue->removeSource(client);
                     continue; // client removed, don't increment i
@@ -3795,7 +3879,7 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
             continue;
 
         // Max sources check
-        if (sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
+        if (sourceCount() >= static_cast<int>(maxSources()))
             break;
 
         // A source reachable only over IPv6 is constructed as a LowID client: its v4

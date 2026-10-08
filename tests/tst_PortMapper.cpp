@@ -12,8 +12,10 @@
 #include "TestHelpers.h"
 #include "portmap/PortMapBackend.h"
 #include "portmap/PortMapper.h"
+#include "kademlia/KadPrefs.h"
 
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
 
@@ -166,6 +168,7 @@ private slots:
 
     void status_portMismatchIsMappedAndAdvertised();
     void advertisedPort_ignoresAnUnreachableMapping();
+    void advertisedPort_followsTheBoundPortNotThePreference();
     void status_cgnatExternalAddressIsDegraded();
 
     void desired_diffReleasesRemovedAndAddsNew();
@@ -718,6 +721,52 @@ void tst_PortMapper::disabled_maskReportsDisabled()
 
     QCOMPARE(mapper.status(), PortMapStatus::Disabled);
     QVERIFY(mapper.mappings().empty());
+}
+
+// A port change waiting for a restart: the sockets, and so we, are still on the old port.
+void tst_PortMapper::advertisedPort_followsTheBoundPortNotThePreference()
+{
+    const uint16 oldTcp = thePrefs.port();
+    const uint16 oldUdp = thePrefs.udpPort();
+    thePrefs.setPort(5663);
+    thePrefs.setUdpPort(5673);
+    theApp.setListeningPorts(5600, 5610);
+    const auto restore = qScopeGuard([oldTcp, oldUdp] {
+        theApp.portMapper = nullptr;
+        theApp.clearListeningPorts();
+        thePrefs.setPort(oldTcp);
+        thePrefs.setUdpPort(oldUdp);
+    });
+    QCOMPARE(theApp.advertisedTcpPort(), uint16(5600));
+    QCOMPARE(theApp.advertisedUdpPort(), uint16(5610));
+    QVERIFY(theApp.isOwnTcpPort(5600));
+    QVERIFY(!theApp.isOwnTcpPort(5663));
+    QTemporaryDir dir;
+    kad::KadPrefs kadPrefs(dir.path());
+    QCOMPARE(kadPrefs.internKadPort(), uint16(5610));
+
+    // A router mapping still wins
+    PortMapper mapper;
+    auto backend = std::make_unique<FakeBackend>(PortMapMethod::Pcp);
+    backend->setPortOffset(1000);
+    backend->setExternalAddress(Address::fromString(QString::fromLatin1(kPublicIp)));
+    mapper.addBackendForTest(std::move(backend));
+    mapper.setDesiredMappings(defaultDesired());
+    mapper.start();
+    settle(mapper);
+    theApp.portMapper = &mapper;
+    QCOMPARE(theApp.advertisedTcpPort(), uint16(5662));   // 4662 + 1000
+    QVERIFY(theApp.isOwnTcpPort(5600));   // the port we listen on stays ours
+    theApp.portMapper = nullptr;
+
+    // Client UDP off advertises none, whatever the preference says by now
+    theApp.setListeningPorts(5600, 0);
+    QCOMPARE(theApp.advertisedUdpPort(), uint16(0));
+
+    // Nothing published: the preference
+    theApp.clearListeningPorts();
+    QCOMPARE(theApp.advertisedTcpPort(), uint16(5663));
+    QCOMPARE(theApp.advertisedUdpPort(), uint16(5673));
 }
 
 QTEST_MAIN(tst_PortMapper)

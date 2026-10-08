@@ -269,11 +269,6 @@ bool HttpCacheClient::processHttpDownResponseBody(const uint8* data, uint32 size
     return true;
 }
 
-QString HttpCacheClient::downloadStateDisplayString() const
-{
-    return URLClient::downloadStateDisplayString() + QStringLiteral(" (HTTP Cache)");
-}
-
 bool HttpCacheClient::disconnected(const QString& reason, bool fromSocket)
 {
     // Whatever was outstanding died with the socket; a resumed attempt issues its

@@ -11,6 +11,7 @@
 class QButtonGroup;
 class QHBoxLayout;
 class QLabel;
+class QMouseEvent;
 class QToolButton;
 
 namespace eMule {
@@ -33,6 +34,11 @@ public:
     /// out here, matching the MFC toolbar's `fsState = 0` for unavailable lists.
     void setButtonEnabled(int id, bool on);
 
+    /// Show or hide the row of buttons ("Show additional toolbar on Transfers
+    /// window"). Without them a click on the icon or the label asks for the next
+    /// list, as MFC's header does (srchybrid/TransferWnd.cpp:1345-1360).
+    void setButtonsVisible(bool on);
+
     /// Update the bold text label (e.g. "Downloads (5)").
     void setLabelText(const QString& text);
 
@@ -42,6 +48,11 @@ public:
 signals:
     /// Emitted when a toolbar button is toggled on.
     void buttonClicked(int id);
+    /// The header was clicked while its buttons are hidden.
+    void cycleRequested();
+
+protected:
+    void mouseReleaseEvent(QMouseEvent* event) override;
 
 private:
     QHBoxLayout* m_layout = nullptr;
@@ -49,6 +60,7 @@ private:
     QLabel* m_label = nullptr;
     QButtonGroup* m_group = nullptr;
     int m_nextId = 0;
+    bool m_buttonsVisible = true;
 };
 
 } // namespace eMule

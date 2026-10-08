@@ -10,9 +10,19 @@ namespace eMule {
 
 class IpcClient;
 
+class PreviewApps;
+
 /// Launch the configured video player with the given streaming URL.
 /// If VLC is detected, reuses an existing instance instead of spawning a new one.
 void launchPreview(const QString& url);
+
+/// Launch @p command on @p target — a stream URL, or a part file's path. @p args may
+/// hold a "%1" for the target; otherwise it is appended. False when nothing started.
+bool launchPlayer(const QString& command, const QString& args, const QString& target);
+
+/// The preview applications of PreviewApps.dat in the configuration folder (MFC
+/// thePreviewApps). Read again whenever the file has changed; empty without one.
+[[nodiscard]] const PreviewApps& previewApps();
 
 /// Build the daemon's HTTP URL for @p fileHash — the channel that backs both live
 /// preview and, against a remote core, opening a finished file. @p streamToken is

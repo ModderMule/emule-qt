@@ -1519,7 +1519,7 @@ void UpDownClient::maybeAddAsPassiveSource(KnownFile* file)
         return;
 
     auto* partFile = static_cast<PartFile*>(file);
-    if (partFile->sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
+    if (partFile->sourceCount() >= static_cast<int>(partFile->maxSources()))
         return;
 
     if (theApp.downloadQueue)

@@ -2,6 +2,8 @@
 /// @brief Tests for transfer/DownloadQueue — file management, lookup,
 ///        priority sorting, source management.
 
+#include "CborSerializers.h"
+#include "app/CoreOps.h"
 #include "TestFixtures.h"
 #include "TestHelpers.h"
 #include "utils/TimeUtils.h"
@@ -87,6 +89,9 @@ private slots:
     void addDownload_paused();
     void addDownloadFromED2KLink_refusesMetaHash();
     void addDownloadFromED2KLink_emptyTempDirUsesDefault();
+    void addDownloadFromSearch_followsThePausedOption();
+    void addUserSource_vetsWhatTheUserTyped();
+    void removeAutoPrioInCat_onlyThatCategory();
     void removeFile_basic();
     void deleteAll_keepsCompletedFileOwnedByKnownList();
     void autoClear_removesACompletedFileWhenEnabled();
@@ -116,6 +121,7 @@ private slots:
     void checkAndAddSource_dedupsAfterHelloAgainstHashlessServerSource();
     void checkAndAddSource_a4afForSourceOfAnotherFile();
     void a4af_destroyedClientLeavesNoDanglingEntry();
+    void a4af_sourceRowsFollowTheAvailableOnes();
     void a4af_removeSourceUnlinksBothSides();
     void disconnect_failedSourceLeavesTheFile_data();
     void disconnect_failedSourceLeavesTheFile();
@@ -360,6 +366,90 @@ void tst_DownloadQueue::addDownloadFromED2KLink_emptyTempDirUsesDefault()
     QVERIFY(dq.addDownloadFromED2KLink(fileLinkFor(md4, QStringLiteral("default.bin")), QString()));
     QCOMPARE(dq.fileCount(), 1);
     QCOMPARE(partMetCount(temp.path()), 1);
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::addDownloadFromSearch_followsThePausedOption()
+{
+    // MFC AddSearchToDownload: "add new files paused" decides unless the caller says
+    // (srchybrid/DownloadQueue.cpp:172). Nothing read the option.
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    const QStringList savedDirs = thePrefs.tempDirs();
+    const bool savedPaused = thePrefs.addNewFilesPaused();
+    const auto restore = qScopeGuard([&] {
+        thePrefs.setTempDirs(savedDirs);
+        thePrefs.setAddNewFilesPaused(savedPaused);
+        theApp.downloadQueue = nullptr;
+    });
+    thePrefs.setTempDirs({temp.path()});
+
+    DownloadQueue dq;
+    theApp.downloadQueue = &dq;
+    const auto add = [&dq](uint8 seed, std::optional<bool> paused) {
+        uint8 md4[16] = {0x4F, seed, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+        const auto out = ops::addDownloadFromSearch(md4str(md4), QStringLiteral("f%1.bin").arg(seed),
+                                                    5000, {}, 0, 0, paused);
+        const PartFile* file = out.added ? dq.fileByID(md4) : nullptr;
+        return file ? std::optional<bool>(file->isPaused()) : std::nullopt;
+    };
+
+    thePrefs.setAddNewFilesPaused(true);
+    QCOMPARE(add(1, std::nullopt), std::optional<bool>(true));
+    QCOMPARE(add(2, false), std::optional<bool>(false));     // "Download" in advanced mode
+    thePrefs.setAddNewFilesPaused(false);
+    QCOMPARE(add(3, std::nullopt), std::optional<bool>(false));
+    QCOMPARE(add(4, true), std::optional<bool>(true));       // "Download (Paused)"
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::addUserSource_vetsWhatTheUserTyped()
+{
+    // MFC CAddSourceDlg (srchybrid/AddSourceDlg.cpp:112-170): a typed address is a
+    // source like any other, and no more trusted.
+    DownloadQueue dq;
+    uint8 hash[16] = {52, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    auto* file = createTestPartFile(hash, QStringLiteral("usersrc.bin"));
+    dq.addDownload(file);
+
+    QVERIFY(!dq.addUserSource(file, QStringLiteral("not an address"), 4662));
+    QVERIFY(!dq.addUserSource(file, QStringLiteral("81.2.69.170"), 0));        // no port
+    QVERIFY(!dq.addUserSource(file, QStringLiteral("192.168.1.20"), 4662));    // LAN
+    QCOMPARE(file->sourceCount(), 0);
+
+    QVERIFY(dq.addUserSource(file, QStringLiteral(" 81.2.69.170 "), 4662));
+    QCOMPARE(file->sourceCount(), 1);
+
+    // Only HTTP can be a URL source
+    QVERIFY(!dq.addUserUrlSource(file, QStringLiteral("ftp://example.org/file.bin")));
+    QVERIFY(!dq.addUserUrlSource(file, QStringLiteral("no url")));
+    QCOMPARE(file->sourceCount(), 1);
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::removeAutoPrioInCat_onlyThatCategory()
+{
+    // MFC RemoveAutoPrioInCat (srchybrid/DownloadQueue.cpp:1136-1148), run when a
+    // category is switched to downloading in alphabetical order.
+    DownloadQueue dq;
+    uint8 hashA[16] = {53, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    uint8 hashB[16] = {53, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2};
+    auto* inCat = createTestPartFile(hashA, QStringLiteral("incat.bin"));
+    auto* other = createTestPartFile(hashB, QStringLiteral("other.bin"));
+    dq.addDownload(inCat);
+    dq.addDownload(other);
+    inCat->setCategory(2);
+    other->setCategory(1);
+    inCat->setAutoDownPriority(true);
+    other->setAutoDownPriority(true);
+
+    dq.removeAutoPrioInCat(2, kPrNormal);
+    QVERIFY(!inCat->isAutoDownPriority());
+    QCOMPARE(inCat->downPriority(), uint8{kPrNormal});
+    QVERIFY(other->isAutoDownPriority());
 
     dq.deleteAll();
 }
@@ -2971,6 +3061,41 @@ void tst_DownloadQueue::checkAndAddSource_a4afForSourceOfAnotherFile()
 
 // A client freed while it is an A4AF candidate used to stay in the other file's list,
 // and deleteAll() then walked a freed pointer.
+void tst_DownloadQueue::a4af_sourceRowsFollowTheAvailableOnes()
+{
+    // MFC lists a source that asks another file under this one too
+    // (UNAVAILABLE_SOURCE, srchybrid/DownloadListCtrl.cpp:263). Only the count was sent.
+    DownloadQueue dq;
+    uint8 hashA[16] = {51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7};
+    uint8 hashB[16] = {51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8};
+    auto* fileA = createTestPartFile(hashA, QStringLiteral("a4af_rows_a.bin"));
+    auto* fileB = createTestPartFile(hashB, QStringLiteral("a4af_rows_b.bin"));
+    dq.addDownload(fileA);
+    dq.addDownload(fileB);
+
+    {
+        auto client = makePreHelloSource(fileA, "81.2.69.165", 4662);
+        QCOMPARE(dq.checkAndAddSource(fileA, client.get()), client.get());
+        QVERIFY(client->addRequestForAnotherFile(fileB));
+
+        const QCborArray own = Ipc::downloadSourcesToCbor(*fileA);
+        QCOMPARE(own.size(), 1);
+        QVERIFY(!own.at(0).toMap().contains(QStringLiteral("a4af")));
+        QVERIFY(own.at(0).toMap().value(QStringLiteral("hasOtherRequests")).toBool());
+
+        const QCborArray other = Ipc::downloadSourcesToCbor(*fileB);
+        QCOMPARE(other.size(), 1);
+        const QCborMap row = other.at(0).toMap();
+        QVERIFY(row.value(QStringLiteral("a4af")).toBool());
+        QCOMPARE(row.value(QStringLiteral("reqFileName")).toString(),
+                 QStringLiteral("a4af_rows_a.bin"));
+        QVERIFY(!row.value(QStringLiteral("noNeededHere")).toBool());
+
+        fileA->removeSource(client.get());
+    }
+    dq.deleteAll();
+}
+
 void tst_DownloadQueue::a4af_destroyedClientLeavesNoDanglingEntry()
 {
     DownloadQueue dq;

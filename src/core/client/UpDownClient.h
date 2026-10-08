@@ -892,6 +892,8 @@ public:
     /// Drop every A4AF link, on this side and on each file's.
     void removeFromAllOtherLists();
     [[nodiscard]] std::size_t otherRequestCount() const { return m_otherRequests.size(); }
+    /// This file is one we asked the peer for and it had nothing we need (A4AF row text).
+    [[nodiscard]] bool isInNoNeededList(const PartFile* file) const;
     [[nodiscard]] bool isSwapSuspended(const PartFile* file,
                                        bool allowShortReaskTime = false,
                                        bool fileIsNNP = false) const;
@@ -1050,7 +1052,6 @@ private:
                          bool swapToIsNNP, bool curFileIsNNP,
                          bool& wasSkippedDueToSrcExch,
                          bool aggressiveSwapping = false);
-    bool isInNoNeededList(const PartFile* file) const;
     bool recentlySwappedForSourceExchange() const;
     void setSwapForSourceExchangeTick();
 

@@ -21,6 +21,7 @@
 #include <QPointer>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QTimer>
@@ -323,9 +324,9 @@ QWidget* FirstStartWizard::setupSpeedPage()
     connect(m_speedList, &QTreeWidget::currentItemChanged,
             this, &FirstStartWizard::onSpeedSelectionChanged);
     connect(m_customDownSpin, &QDoubleSpinBox::valueChanged,
-            this, &FirstStartWizard::onSpeedSelectionChanged);
+            this, &FirstStartWizard::onCustomRateEdited);
     connect(m_customUpSpin, &QDoubleSpinBox::valueChanged,
-            this, &FirstStartWizard::onSpeedSelectionChanged);
+            this, &FirstStartWizard::onCustomRateEdited);
     connect(m_speedList, &QTreeWidget::itemDoubleClicked, this, &FirstStartWizard::onNext);
     return page;
 }
@@ -422,9 +423,6 @@ void FirstStartWizard::fillFromSettings(const QCborMap& prefs)
     m_recommendedItem->setText(1, limitText(recommended.maxDown));
     m_recommendedItem->setText(2, limitText(recommended.maxUp));
 
-    m_customDownSpin->setValue(kiBToMbit(m_current.capDown));
-    m_customUpSpin->setValue(kiBToMbit(m_current.capUp));
-
     // An install still on the old shipped limits never tuned them: offer the new defaults.
     m_speedList->setCurrentItem(m_current == legacyDefaultBandwidth() ? m_recommendedItem
                                                                       : m_keepItem);
@@ -453,14 +451,27 @@ void FirstStartWizard::onNext()
 
 void FirstStartWizard::onSpeedSelectionChanged()
 {
-    const auto* item = m_speedList->currentItem();
-    const bool custom = item == m_customItem;
-    m_customDownSpin->setEnabled(custom);
-    m_customUpSpin->setEnabled(custom);
-
     const BandwidthSettings result = selectedBandwidth().value_or(m_current);
+
+    // The fields follow the selected line; Custom keeps what they show.
+    if (m_speedList->currentItem() != m_customItem) {
+        const QSignalBlocker blockDown(m_customDownSpin);
+        const QSignalBlocker blockUp(m_customUpSpin);
+        m_customDownSpin->setValue(kiBToMbit(result.capDown));
+        m_customUpSpin->setValue(kiBToMbit(result.capUp));
+    }
+
     m_speedResult->setText(tr("Download limit: %1    Upload limit: %2")
                                .arg(limitText(result.maxDown), limitText(result.maxUp)));
+}
+
+/// Typing a rate means the line is none of the listed ones.
+void FirstStartWizard::onCustomRateEdited()
+{
+    if (m_speedList->currentItem() != m_customItem)
+        m_speedList->setCurrentItem(m_customItem); // -> onSpeedSelectionChanged
+    else
+        onSpeedSelectionChanged();
 }
 
 // ---------------------------------------------------------------------------
@@ -619,9 +630,13 @@ void FirstStartWizard::finish()
             send("maxUpload", bandwidth->maxUp);
         }
         // The wizard is gone by the time this answers: the notice goes to its parent
-        m_ipc->sendRequest(std::move(req), [parent = QPointer<QWidget>(parentWidget())](
+        m_ipc->sendRequest(std::move(req), [parent = QPointer<QWidget>(parentWidget()),
+                                            ipc = QPointer<IpcClient>(m_ipc)](
                                                const Ipc::IpcMessage& resp) {
-            showPortChangeResult(parent, resp);
+            showPortChangeResult(parent, resp, [ipc] {
+                if (ipc)
+                    ipc->sendRestart();
+            });
         });
     } else {
         thePrefs.save();

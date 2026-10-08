@@ -80,6 +80,7 @@ CoreSession::~CoreSession()
     theApp.onBindSelectionChanged = nullptr;
     theApp.applyListenPorts = nullptr;
     theApp.releaseConnectHold = nullptr;
+    theApp.clearListeningPorts();
     theApp.closing = true;   // the saves below are the last ones: commit them
     stop();
     // Before every shutdownXxx(): shutdownClientInfra() destroys ClientCredits, and the
@@ -1557,10 +1558,11 @@ void CoreSession::initPortMapper()
                 // Peers pick a changed port up with the next hello; a server keeps the
                 // one from its login until we reconnect.
                 const uint16 mapped = theApp.mappedTcpPort();
-                if (status == PortMapStatus::Mapped && mapped != 0 && mapped != thePrefs.port())
+                const uint16 listening = theApp.listeningTcpPort();
+                if (status == PortMapStatus::Mapped && mapped != 0 && mapped != listening)
                     logInfo(QStringLiteral("Router mapped TCP port %1 to external port %2: "
                                            "advertising %2%3")
-                                .arg(thePrefs.port()).arg(mapped)
+                                .arg(listening).arg(mapped)
                                 .arg(theApp.serverConnect && theApp.serverConnect->isConnected()
                                          ? QStringLiteral(" (the server learns it at the next connect)")
                                          : QString()));
@@ -1709,6 +1711,7 @@ PortApplyResult CoreSession::applyListenPorts()
     updatePortMappings();
 
     if (!ok) {
+        publishListenPorts();
         logError(QStringLiteral("Port change failed (TCP %1, UDP %2) — port in use? Still "
                                 "listening on TCP %3, UDP %4.")
                      .arg(tcp).arg(udp).arg(boundTcpPort()).arg(boundUdpPort()));
@@ -1946,6 +1949,17 @@ void CoreSession::rememberAppliedPorts()
     m_appliedTcpPort = static_cast<uint16>(thePrefs.port());
     m_appliedUdpPort = static_cast<uint16>(thePrefs.udpPort());
     m_appliedServerUdpPort = thePrefs.serverUDPPort();
+    publishListenPorts();
+}
+
+void CoreSession::publishListenPorts()
+{
+    // Closed sockets (suspended, never bound) stand for the port they will get
+    const uint16 tcp = m_netSuspended ? uint16{0} : boundTcpPort();
+    const uint16 udp = m_netSuspended ? uint16{0} : boundUdpPort();
+    theApp.setListeningPorts(tcp != 0 ? tcp : m_appliedTcpPort,
+                             m_appliedUdpPort == 0 ? uint16{0}
+                                                   : udp != 0 ? udp : m_appliedUdpPort);
 }
 
 } // namespace eMule

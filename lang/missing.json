@@ -1,35 +1,222 @@
 {
- "Now listening on TCP port %1 and UDP port %2.": {
-  "_context": "PortChange",
-  "de_DE": "Lauscht jetzt auf TCP-Port %1 und UDP-Port %2.",
-  "es_ES": "Ahora escucha en el puerto TCP %1 y el puerto UDP %2.",
-  "fr_FR": "Écoute désormais sur le port TCP %1 et le port UDP %2.",
-  "it_IT": "Ora in ascolto sulla porta TCP %1 e sulla porta UDP %2.",
-  "ja_JP": "TCP ポート %1 と UDP ポート %2 で待ち受けています。",
-  "ko_KR": "이제 TCP 포트 %1 및 UDP 포트 %2에서 수신 대기합니다.",
-  "pt_BR": "Agora escutando na porta TCP %1 e na porta UDP %2.",
-  "zh_CN": "现在监听 TCP 端口 %1 和 UDP 端口 %2。"
- },
- "The new ports take effect after restarting eMule, because the core is connected to a network or to other clients.\n\nUntil then it keeps listening on TCP port %1 and UDP port %2.": {
-  "_context": "PortChange",
-  "de_DE": "Die neuen Ports werden erst nach einem Neustart von eMule wirksam, da der Kern mit einem Netzwerk oder mit anderen Clients verbunden ist.\n\nBis dahin lauscht er weiter auf TCP-Port %1 und UDP-Port %2.",
-  "es_ES": "Los nuevos puertos se aplicarán tras reiniciar eMule, porque el núcleo está conectado a una red o a otros clientes.\n\nHasta entonces sigue escuchando en el puerto TCP %1 y el puerto UDP %2.",
-  "fr_FR": "Les nouveaux ports prendront effet après le redémarrage d'eMule, car le noyau est connecté à un réseau ou à d'autres clients.\n\nD'ici là, il continue d'écouter sur le port TCP %1 et le port UDP %2.",
-  "it_IT": "Le nuove porte avranno effetto dopo il riavvio di eMule, perché il core è connesso a una rete o ad altri client.\n\nFino ad allora resta in ascolto sulla porta TCP %1 e sulla porta UDP %2.",
-  "ja_JP": "コアがネットワークまたは他のクライアントに接続しているため、新しいポートは eMule の再起動後に有効になります。\n\nそれまでは TCP ポート %1 と UDP ポート %2 で待ち受けを続けます。",
-  "ko_KR": "코어가 네트워크 또는 다른 클라이언트에 연결되어 있으므로 새 포트는 eMule을 다시 시작한 후에 적용됩니다.\n\n그때까지는 TCP 포트 %1 및 UDP 포트 %2에서 계속 수신 대기합니다.",
-  "pt_BR": "As novas portas entram em vigor após reiniciar o eMule, porque o núcleo está conectado a uma rede ou a outros clientes.\n\nAté lá ele continua escutando na porta TCP %1 e na porta UDP %2.",
-  "zh_CN": "由于核心已连接到网络或其他客户端，新端口将在重新启动 eMule 后生效。\n\n在此之前，它继续监听 TCP 端口 %1 和 UDP 端口 %2。"
- },
- "The new port could not be opened. It may be in use by another program.\n\nThe core keeps listening on TCP port %1 and UDP port %2.": {
-  "_context": "PortChange",
-  "de_DE": "Der neue Port konnte nicht geöffnet werden. Möglicherweise wird er von einem anderen Programm verwendet.\n\nDer Kern lauscht weiter auf TCP-Port %1 und UDP-Port %2.",
-  "es_ES": "No se pudo abrir el nuevo puerto. Puede que lo esté usando otro programa.\n\nEl núcleo sigue escuchando en el puerto TCP %1 y el puerto UDP %2.",
-  "fr_FR": "Le nouveau port n'a pas pu être ouvert. Il est peut-être utilisé par un autre programme.\n\nLe noyau continue d'écouter sur le port TCP %1 et le port UDP %2.",
-  "it_IT": "Impossibile aprire la nuova porta. Potrebbe essere in uso da un altro programma.\n\nIl core resta in ascolto sulla porta TCP %1 e sulla porta UDP %2.",
-  "ja_JP": "新しいポートを開けませんでした。他のプログラムが使用している可能性があります。\n\nコアは TCP ポート %1 と UDP ポート %2 で待ち受けを続けます。",
-  "ko_KR": "새 포트를 열 수 없습니다. 다른 프로그램에서 사용 중일 수 있습니다.\n\n코어는 TCP 포트 %1 및 UDP 포트 %2에서 계속 수신 대기합니다.",
-  "pt_BR": "Não foi possível abrir a nova porta. Ela pode estar em uso por outro programa.\n\nO núcleo continua escutando na porta TCP %1 e na porta UDP %2.",
-  "zh_CN": "无法打开新端口。它可能正被其他程序使用。\n\n核心继续监听 TCP 端口 %1 和 UDP 端口 %2。"
- }
+  "Restart Now": {
+    "_context": "PortChange",
+    "de_DE": "Jetzt neu starten",
+    "es_ES": "Reiniciar ahora",
+    "fr_FR": "Redémarrer maintenant",
+    "it_IT": "Riavvia ora",
+    "ja_JP": "今すぐ再起動",
+    "ko_KR": "지금 다시 시작",
+    "pt_BR": "Reiniciar agora",
+    "zh_CN": "立即重启"
+  },
+  "Later": {
+    "_context": "PortChange",
+    "de_DE": "Später",
+    "es_ES": "Más tarde",
+    "fr_FR": "Plus tard",
+    "it_IT": "Più tardi",
+    "ja_JP": "後で",
+    "ko_KR": "나중에",
+    "pt_BR": "Mais tarde",
+    "zh_CN": "稍后"
+  },
+  "Used when the tab's view filter is set to \"Regular Expression\"; it must match the whole file name.": {
+    "_context": "eMule::CategoryDialog",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Uncategorized": {
+    "_context": "eMule::CategoryTabBar",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Incomplete": {
+    "_context": "eMule::CategoryTabBar",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Erroneous": {
+    "_context": "eMule::CategoryTabBar",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Ever Seen Complete": {
+    "_context": "eMule::CategoryTabBar",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Picture": {
+    "_context": "eMule::CategoryTabBar",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Regular Expression": {
+    "_context": "eMule::CategoryTabBar",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Select View Filter": {
+    "_context": "eMule::CategoryTabBar",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Evaluate All Files": {
+    "_context": "eMule::CategoryTabBar",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Negate Filter": {
+    "_context": "eMule::CategoryTabBar",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Asked for another file": {
+    "_context": "eMule::DownloadListModel",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Swap blocked": {
+    "_context": "eMule::DownloadListModel",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Min. Bitrate [Kbit/s]:": {
+    "_context": "eMule::SearchPanel",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Restore Search Parameters": {
+    "_context": "eMule::SearchPanel",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "%1 (%2)": {
+    "_context": "eMule::SearchPanel",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "File ID": {
+    "_context": "eMule::SearchResultsModel",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Download In Alphabetical Order": {
+    "_context": "eMule::TransferPanel",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Unban": {
+    "_context": "eMule::TransferPanel",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  }
 }

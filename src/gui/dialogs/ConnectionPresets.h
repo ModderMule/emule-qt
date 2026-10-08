@@ -21,7 +21,7 @@ struct ConnectionPreset {
     double upMbit;
 };
 
-inline constexpr std::array<ConnectionPreset, 12> kConnectionPresets{{
+inline constexpr std::array<ConnectionPreset, 14> kConnectionPresets{{
     {"ADSL2+",             16,   1},
     {"VDSL 50",            50,   10},
     {"VDSL 100",           100,  40},
@@ -33,7 +33,9 @@ inline constexpr std::array<ConnectionPreset, 12> kConnectionPresets{{
     {"Fiber symmetric",    1000, 1000},
     {"LTE",                50,   10},
     {"5G",                 300,  50},
-    {"Satellite (LEO)",    150,  20},
+    {"Starlink 100",       100,  10},
+    {"Starlink 200",       200,  20},
+    {"Starlink Max",       400,  30},
 }};
 
 /// Capacity and limits, all KiB/s. A limit of 0 means unlimited.

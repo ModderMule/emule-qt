@@ -6,6 +6,9 @@
 
 #include "app/IpcClient.h"
 #include "app/UiState.h"
+#include "media/PreviewApps.h"
+#include "dialogs/AddSourceDialog.h"
+#include "utils/Opcodes.h"
 #include "controls/AbstractListView.h"
 #include "controls/ClientListModel.h"
 #include "controls/CategoryFilterProxy.h"
@@ -47,6 +50,7 @@
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QItemSelectionModel>
+#include <QFileDialog>
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
@@ -110,6 +114,15 @@ ClientRow parseClient(const QCborMap& m)
     row.uploadFilePriority = static_cast<int>(m.value(QStringLiteral("uploadFilePriority")).toInteger(-1));
     row.uploadFileAutoPriority = m.value(QStringLiteral("uploadFileAutoPriority")).toBool();
     row.isConnected      = m.value(QStringLiteral("isConnected")).toBool();
+    row.remoteQueueFull  = m.value(QStringLiteral("remoteQueueFull")).toBool();
+    row.kadPort          = static_cast<int>(m.value(QStringLiteral("kadPort")).toInteger());
+    row.kadVersion       = static_cast<int>(m.value(QStringLiteral("kadVersion")).toInteger());
+    row.reqFileSize      = m.value(QStringLiteral("reqFileSize")).toInteger();
+    if (const QCborArray spm = m.value(QStringLiteral("sourcePartMap")).toArray(); !spm.isEmpty()) {
+        row.partMap.resize(spm.size());
+        for (qsizetype j = 0; j < spm.size(); ++j)
+            row.partMap[j] = static_cast<char>(spm[j].toInteger(0));
+    }
 
     // On Queue columns and the Obtained Parts bar
     row.queueRating        = m.value(QStringLiteral("queueRating")).toInteger();
@@ -417,33 +430,85 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
 
     m_downloadMenu->addSeparator();
 
-    // -- 4. Open File / Preview / Details / Comments (single-item only) --
+    // -- 4. Open File / Preview / Details / Comments --
+    const bool ext = thePrefs.showExtControls();
+    const bool anyUnfinished = std::any_of(selectedDls.begin(), selectedDls.end(),
+        [](const DownloadRow* d) { return !d->isComplete(); });
+    const bool allUnfinished = hasSel && std::all_of(selectedDls.begin(), selectedDls.end(),
+        [](const DownloadRow* d) { return !d->isComplete(); });
+    // Details and Comments open on the row the menu was asked for (or the first selected)
+    const QString focusHash = singleSel ? singleHash : (hasSel ? allHashes.first() : QString{});
+
+    QAction* openAct = m_downloadMenu->addAction(menuIcon("FileOpen.ico"), tr("Open File"), this,
+                                                 [this, singleHash]() { openDownload(singleHash); });
+    openAct->setEnabled(singleSel && dl && dl->isComplete());
+
+    // Advanced mode: a Preview submenu with the per-file preview settings
+    // (MFC DownloadListCtrl.cpp:1903-1913)
+    const bool canPreview = singleSel && dl && dl->isPreviewPossible;
+    QMenu* previewHost = m_downloadMenu;
+    if (ext)
+        previewHost = m_downloadMenu->addMenu(menuIcon("Preview.ico"), tr("Preview"));
     {
-        auto* act = m_downloadMenu->addAction(menuIcon("FileOpen.ico"), tr("Open File"), this, [this, singleHash]() {
-            openDownload(singleHash);
-        });
-        const bool isComplete = singleSel && dl && dl->isComplete();
-        act->setEnabled(isComplete);
-        // Completed download: Open File becomes the default action (rendered bold).
-        setMenuDefaultAction(m_downloadMenu, isComplete ? act : nullptr);
+        auto* act = previewHost->addAction(menuIcon("Preview.ico"), tr("Preview"), this,
+                                           [this, singleHash]() { sendPreview(singleHash); });
+        act->setEnabled(canPreview);
     }
-    {
-        auto* act = m_downloadMenu->addAction(menuIcon("Preview.ico"), tr("Preview"), this, [this, singleHash]() {
-            sendPreview(singleHash);
-        });
-        act->setEnabled(singleSel && dl && dl->isPreviewPossible);
+    // "Preview with": every application of PreviewApps.dat (MFC GetAllMenuEntries)
+    if (const PreviewApps& apps = previewApps(); apps.count() > 0) {
+        auto* withMenu = previewHost->addMenu(tr("Preview with"));
+        const bool enough = singleSel && dl && !dl->isComplete() && dl->completedSize >= 16 * 1024;
+        for (int i = 0; i < apps.count(); ++i) {
+            auto* act = withMenu->addAction(apps.apps().at(static_cast<size_t>(i)).title, this,
+                [this, singleHash, i]() { previewWith(singleHash, i); });
+            act->setEnabled(enough);
+        }
+        withMenu->setEnabled(singleSel);
     }
-    {
-        auto* act = m_downloadMenu->addAction(menuIcon("FileInfo.ico"), tr("Details..."), this, [this, singleHash]() {
-            showDownloadDetails(singleHash);
-        });
-        act->setEnabled(singleSel);
+    if (ext) {
+        const bool allPausing = hasSel && std::all_of(selectedDls.begin(), selectedDls.end(),
+            [](const DownloadRow* d) { return d->pauseOnPreview; });
+        auto* pauseAct = previewHost->addAction(tr("Pause when preview is possible"), this,
+            [this, allHashes, allPausing]() { sendPreviewFlags(allHashes, -1, allPausing ? 0 : 1); });
+        pauseAct->setCheckable(true);
+        pauseAct->setChecked(allPausing);
+        pauseAct->setEnabled(anyUnfinished);
+
+        // Pointless while the option does it for every file
+        if (!thePrefs.previewPrio()) {
+            const bool allPrio = hasSel && std::all_of(selectedDls.begin(), selectedDls.end(),
+                [](const DownloadRow* d) { return d->previewPrio; });
+            auto* prioAct = previewHost->addAction(tr("Increase priority for preview parts"), this,
+                [this, allHashes, allPrio]() { sendPreviewFlags(allHashes, allPrio ? 0 : 1, -1); });
+            prioAct->setCheckable(true);
+            prioAct->setChecked(allPrio);
+            prioAct->setEnabled(anyUnfinished);
+        }
     }
+
+    QAction* detailsAct = m_downloadMenu->addAction(menuIcon("FileInfo.ico"), tr("Details..."), this,
+        [this, focusHash]() { showDownloadDetails(focusHash); });
+    detailsAct->setEnabled(hasSel);
     {
-        auto* act = m_downloadMenu->addAction(menuIcon("FileComments.ico"), tr("Comments..."), this, [this, singleHash]() {
-            showComments(singleHash);
-        });
-        act->setEnabled(singleSel);
+        auto* act = m_downloadMenu->addAction(menuIcon("FileComments.ico"), tr("Comments..."), this,
+            [this, focusHash]() { showComments(focusHash); });
+        act->setEnabled(hasSel);
+    }
+
+    // The bold entry is what a double click does (MFC DownloadListCtrl.cpp:997-1002)
+    if (thePrefs.transferDoubleClick())
+        setMenuDefaultAction(m_downloadMenu, openAct->isEnabled() ? openAct : nullptr);
+    else
+        setMenuDefaultAction(m_downloadMenu, detailsAct->isEnabled() ? detailsAct : nullptr);
+
+    // Import parts from a file that has some of this download's data. MFC hides the
+    // entry behind a Tweaks option; here it is an advanced-mode entry.
+    if (ext) {
+        const bool importing = singleSel && dl && dl->fileOp == 4;   // PartFileOp::ImportParts
+        auto* act = m_downloadMenu->addAction(
+            importing ? tr("Stop Import parts to file") : tr("Import parts to file..."), this,
+            [this, singleHash, importing]() { importParts(singleHash, importing); });
+        act->setEnabled(singleSel && dl && !dl->isComplete() && (importing || !dl->hashsetNeeded));
     }
 
     m_downloadMenu->addSeparator();
@@ -461,6 +526,18 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
             sendClearCompleted();
         });
         clearAct->setEnabled(hasCompleted);
+    }
+
+    // "Source Handling", advanced mode (MFC DownloadListCtrl.cpp:1925-1929, :1011-1015)
+    if (ext) {
+        auto* sourcesMenu = m_downloadMenu->addMenu(tr("Source Handling"));
+        auto* addAct = sourcesMenu->addAction(tr("Add Sources..."), this,
+            [this, singleHash]() { showAddSources(singleHash); });
+        addAct->setEnabled(singleSel && dl && !dl->isComplete() && !dl->isStopped);
+        auto* limitAct = sourcesMenu->addAction(tr("Source Limit..."), this,
+            [this, allHashes]() { askSourceLimit(allHashes); });
+        limitAct->setEnabled(allUnfinished);
+        sourcesMenu->setEnabled(hasSel);
     }
 
     m_downloadMenu->addSeparator();
@@ -490,20 +567,25 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
     // -- 7. Find / Search Related --
     connect(m_downloadMenu->addAction(menuIcon("Search.ico"), tr("Find...")),
             &QAction::triggered, this, &TransferPanel::showFindDialog);
-    if (singleSel && dl) {
-        const QString fname = dl->fileName;
-        auto* act = m_downloadMenu->addAction(menuIcon("KadFileSearch.ico"), tr("Search Related Files"), this, [this, fname]() {
-            searchRelated(fname);
-        });
-        act->setEnabled(true);
+    // Always there, for the whole selection; greyed unless the server answers it
+    // (MFC DownloadListCtrl.cpp:1020, SearchResultsWnd.cpp:1658-1692).
+    {
+        QStringList names;
+        for (const DownloadRow* d : selectedDls)
+            names << d->fileName;
+        auto* act = m_downloadMenu->addAction(menuIcon("KadFileSearch.ico"), tr("Search Related Files"),
+            this, [this, allHashes, names]() { searchRelated(allHashes, names); });
+        // Without a server that answers it, one file can still be searched by name
+        act->setEnabled(hasSel && (m_relatedSearchSupported || singleSel));
     }
-    // Web Services submenu — external file lookup links from webservices.dat
-    if (singleSel && dl) {
+    // Web Services submenu — external file lookup links from webservices.dat. Shown
+    // greyed without exactly one file: less confusing than an entry that comes and goes.
+    {
         auto* webMenu = m_downloadMenu->addMenu(menuIcon("Web.ico"), tr("Web Services"));
-        WebServices::instance().populateFileMenu(webMenu, dl->hash, dl->fileName,
-                                                  static_cast<uint64_t>(dl->fileSize));
-        if (webMenu->isEmpty())
-            webMenu->setEnabled(false);
+        if (singleSel && dl)
+            WebServices::instance().populateFileMenu(webMenu, dl->hash, dl->fileName,
+                                                      static_cast<uint64_t>(dl->fileSize));
+        webMenu->setEnabled(!webMenu->isEmpty());
     }
 
     m_downloadMenu->addSeparator();
@@ -514,16 +596,24 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         // Index 0 is not a category to assign *to* — picking it takes the file
         // out of whatever category it is in, which is why MFC labels it
         // "(Unassign)" rather than "All" (srchybrid/DownloadListCtrl.cpp:1170).
+        // "New..." first: make a category and file the selection in it (MFC MP_NEWCAT)
+        catMenu->addAction(tr("New..."), this, [this, allHashes]() {
+            m_categoryTabBar->addCategory(
+                [this, allHashes](int index) { sendSetCategoryBatch(allHashes, index); });
+        });
         auto* allAct = catMenu->addAction(tr("(Unassign)"), this, [this, allHashes]() {
             sendSetCategoryBatch(allHashes, 0);
         });
-        allAct->setEnabled(hasSel);
+        // Nothing to take out when no selected file is in a category
+        allAct->setEnabled(std::any_of(selectedDls.begin(), selectedDls.end(),
+            [](const DownloadRow* d) { return d->category > 0; }));
+        if (m_categoryTabBar->categories().size() > 1)
+            catMenu->addSeparator();
         for (int i = 1; i < m_categoryTabBar->categories().size(); ++i) {
-            auto* catAct = catMenu->addAction(m_categoryTabBar->categoryTitle(i), this,
+            catMenu->addAction(m_categoryTabBar->categoryTitle(i), this,
                 [this, allHashes, i]() { sendSetCategoryBatch(allHashes, i); });
-            catAct->setEnabled(hasSel);
         }
-        catMenu->setEnabled(hasSel && m_categoryTabBar->categories().size() > 1);
+        catMenu->setEnabled(hasSel);
     }
 
     m_downloadMenu->popup(m_downloadView->viewport()->mapToGlobal(pos));
@@ -580,6 +670,10 @@ void TransferPanel::setupUi()
     const int savedBottom =
         settings.value(QStringLiteral("transfer/bottomView"), ClientView::Uploading).toInt();
     applyViews(savedTop, savedBottom, Pane::Top);
+
+    // "Show additional toolbar on Transfers window"
+    m_toolbar1->setButtonsVisible(thePrefs.showTransToolbar());
+    m_toolbar2->setButtonsVisible(thePrefs.showTransToolbar());
 }
 
 QWidget* TransferPanel::createDownloadsSection()
@@ -604,6 +698,17 @@ QWidget* TransferPanel::createDownloadsSection()
     connect(m_toolbar1, &TransferToolbar::buttonClicked, this, [this](int id) {
         setTopView(id);
     });
+    connect(m_toolbar1, &TransferToolbar::cycleRequested, this, [this] {
+        // Next list the top pane may show; applyViews() skips what is not available
+        for (int step = 1; step <= ClientViewCount; ++step) {
+            const int next = (m_topView + step) % (ClientViewCount + 1);
+            const int client = next - TopView::TopClientFirst;
+            if (next == TopView::Downloads || (client != m_bottomView && !isListDisabled(client))) {
+                setTopView(next);
+                break;
+            }
+        }
+    });
 
     headerRow->addWidget(m_toolbar1, 1);
 
@@ -617,6 +722,9 @@ QWidget* TransferPanel::createDownloadsSection()
     });
     connect(m_categoryTabBar, &CategoryTabBar::categoriesReloaded, this, [this] {
         m_downloadModel->setCategoryNames(m_categoryTabBar->categoryNames());
+        static_cast<CategoryFilterProxy*>(m_categoryProxy)
+            ->setCategories(m_categoryTabBar->categories());
+        updateCategoryTabInfo();
     });
     connect(m_categoryTabBar, &CategoryTabBar::menuRequested, this,
             &TransferPanel::populateCategoryMenu);
@@ -625,7 +733,7 @@ QWidget* TransferPanel::createDownloadsSection()
     layout->addLayout(headerRow);
 
     // --- Download view (mounted while the top switcher is on Downloads) ---
-    m_downloadProxy = new QSortFilterProxyModel(this);
+    m_downloadProxy = new DownloadSortProxy(this);
     m_downloadProxy->setSourceModel(m_downloadModel);
     m_downloadProxy->setSortRole(Qt::UserRole);
 
@@ -691,14 +799,27 @@ QWidget* TransferPanel::createDownloadsSection()
             return;
         }
 
-        if (m_downloadView->isExpanded(proxyIdx)) {
-            m_downloadView->collapse(proxyIdx);
-            m_expandedDownloads.remove(hash);
-        } else {
-            m_expandedDownloads.insert(hash);
-            requestDownloadSources(hash);
-            m_downloadView->expand(proxyIdx);
+        // "Download list double-click to expand" off: the sources open on a single
+        // click (below) and a double click on the name opens the file's details
+        // (MFC srchybrid/DownloadListCtrl.cpp:1830-1855).
+        if (!thePrefs.transferDoubleClick()) {
+            if (proxyIdx.column() == DownloadListModel::ColFileName)
+                showDownloadDetails(hash);
+            return;
         }
+        toggleDownloadExpanded(proxyIdx, hash);
+    });
+
+    // MFC's one-click-activate style while that option is off
+    connect(m_downloadView, &QTreeView::clicked, this, [this](const QModelIndex& proxyIdx) {
+        if (thePrefs.transferDoubleClick() || !proxyIdx.isValid() || proxyIdx.parent().isValid()
+            || proxyIdx.column() == DownloadListModel::ColFileName
+            || QGuiApplication::keyboardModifiers() != Qt::NoModifier)
+            return;
+        const QModelIndex srcIdx = m_downloadProxy->mapToSource(m_categoryProxy->mapToSource(proxyIdx));
+        const auto* dl = m_downloadModel->downloadAt(srcIdx.row());
+        if (dl && !dl->isComplete())
+            toggleDownloadExpanded(proxyIdx, dl->hash);
     });
 
     // MFC CDownloadListCtrl (srchybrid/DownloadListCtrl.cpp:1443 IDA_ENTER, :1420 and
@@ -760,11 +881,16 @@ QWidget* TransferPanel::createDownloadsSection()
     header->setDefaultSectionSize(90);
     // Name, Size, Completed, Speed, Progress, Sources, Priority, Status,
     // Remaining, Last Seen Complete, Last Reception, Category, Added On, Country,
-    // Confidence. Hidden by default as in MFC: Last Seen Complete, Last Reception, Category.
+    // Fresh layout: Transferred sits after Size, where MFC has it
+    if (!theUiState.hasHeaderState(QStringLiteral("downloads")))
+        header->moveSection(DownloadListModel::ColTransferred, DownloadListModel::ColSize + 1);
+    // Confidence, Transferred. Hidden by default as in MFC: Transferred, Last Seen
+    // Complete, Last Reception, Category.
     downloadView->bindColumns(QStringLiteral("downloads"),
-        {220, 65, 65, 65, 90, 65, 70, 65, 80, 80, 80, 60, 120, 100, 100},
+        {220, 65, 65, 65, 90, 65, 70, 65, 80, 80, 80, 60, 120, 100, 100, 65},
         {DownloadListModel::ColSeenComplete, DownloadListModel::ColLastReception,
-         DownloadListModel::ColCategory, DownloadListModel::ColCountry});
+         DownloadListModel::ColCategory, DownloadListModel::ColCountry,
+         DownloadListModel::ColTransferred});
     CountryFlags::bindFlagColumn(downloadView);
 
     // Hidden until mounted, for the reason given in createClientView().
@@ -795,6 +921,17 @@ QWidget* TransferPanel::createBottomPane()
     connect(m_toolbar2, &TransferToolbar::buttonClicked, this, [this](int id) {
         setBottomView(id);
     });
+    connect(m_toolbar2, &TransferToolbar::cycleRequested, this, [this] {
+        const int topClient = (m_topView == TopView::Downloads)
+                            ? -1 : m_topView - TopView::TopClientFirst;
+        for (int step = 1; step < ClientViewCount; ++step) {
+            const int next = (m_bottomView + step) % ClientViewCount;
+            if (next != topClient && !isListDisabled(next)) {
+                setBottomView(next);
+                break;
+            }
+        }
+    });
 
     layout->addWidget(m_toolbar2);
 
@@ -820,6 +957,10 @@ QWidget* TransferPanel::createBottomPane()
         7, new UploadStatusDelegate(false, clientSlot(Uploading).view));
     clientSlot(OnQueue).view->setItemDelegateForColumn(
         9, new UploadStatusDelegate(true, clientSlot(OnQueue).view));
+    // Available Parts is the source's part bar (MFC DownloadClientsCtrl.cpp:150-155)
+    clientSlot(Downloading).view->setItemDelegateForColumn(
+        4, new SourcePartsDelegate(ClientListModel::PartMapRole, ClientListModel::FileSizeRole,
+                                   clientSlot(Downloading).view));
     clientSlot(Known).view = createClientView(
         clientSlot(Known).model, QStringLiteral("clientsKnown3"),
         // User Name, Upload Status, Transferred, Download Status, Transferred Down,
@@ -985,14 +1126,14 @@ QToolBar* TransferPanel::createActionToolbar()
     auto* actSearchRelated = toolbar->addAction(
         QIcon(QStringLiteral(":/icons/KadFileSearch.ico")), tr("Search Related"));
     connect(actSearchRelated, &QAction::triggered, this, [this]() {
-        const QString hash = saveDownloadSelection();
-        for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
-            const auto* dl = m_downloadModel->downloadAt(i);
-            if (dl && dl->hash == hash) {
-                searchRelated(dl->fileName);
-                return;
-            }
+        QStringList names;
+        const QStringList hashes = saveDownloadSelectionMulti();
+        for (const QString& hash : hashes) {
+            if (const auto* dl = m_downloadModel->findByHash(hash))
+                names << dl->fileName;
         }
+        if (hashes.size() == names.size())
+            searchRelated(hashes, names);
     });
     m_selectionActions.append(actSearchRelated);
 
@@ -1092,6 +1233,14 @@ void TransferPanel::requestDownloads()
             row.completionError   = m.value(QStringLiteral("completionError")).toBool();
             row.category          = m.value(QStringLiteral("category")).toInteger();
             row.lastSeenComplete  = m.value(QStringLiteral("lastSeenComplete")).toInteger();
+            row.completeSourcesLo = static_cast<int>(m.value(QStringLiteral("completeSourcesLo")).toInteger());
+            row.completeSourcesHi = static_cast<int>(m.value(QStringLiteral("completeSourcesHi")).toInteger());
+            row.timeRemaining     = m.value(QStringLiteral("timeRemaining")).toInteger(-1);
+            row.downTransferred   = m.value(QStringLiteral("downTransferred")).toInteger();
+            row.privateMaxSources = static_cast<int>(m.value(QStringLiteral("privateMaxSources")).toInteger());
+            row.previewPrio       = m.value(QStringLiteral("previewPrio")).toBool();
+            row.pauseOnPreview    = m.value(QStringLiteral("pauseOnPreview")).toBool();
+            row.hashsetNeeded     = m.value(QStringLiteral("hashsetNeeded")).toBool();
             row.lastReception     = m.value(QStringLiteral("lastReception")).toInteger();
             row.addedOn           = m.value(QStringLiteral("addedOn")).toInteger();
             row.fileType          = m.value(QStringLiteral("fileType")).toString();
@@ -1129,6 +1278,7 @@ void TransferPanel::requestDownloads()
 
         // Incremental update preserves selection, expansion, and scroll natively
         m_downloadModel->setDownloads(std::move(rows));
+        updateCategoryTabInfo();
         updateToolbarLabels();
         // No category rebuild here: the tabs only ever change when the list
         // itself does, and CategoryTabBar rebuilds on its own reload. Asking the
@@ -1169,6 +1319,16 @@ void TransferPanel::requestDownloadSources(const QString& hash)
         for (const auto& val : arr) {
             const QCborMap m = val.toMap();
             SourceRow src;
+            // A4AF sources are an advanced-mode row
+            src.a4af = m.value(QStringLiteral("a4af")).toBool();
+            if (src.a4af && !thePrefs.showExtControls())
+                continue;
+            src.noNeededHere     = m.value(QStringLiteral("noNeededHere")).toBool();
+            src.swapSuspended    = m.value(QStringLiteral("swapSuspended")).toBool();
+            src.hasOtherRequests = m.value(QStringLiteral("hasOtherRequests")).toBool();
+            src.otherFileName    = m.value(QStringLiteral("reqFileName")).toString();
+            src.kadPort          = static_cast<int>(m.value(QStringLiteral("kadPort")).toInteger());
+            src.kadVersion       = static_cast<int>(m.value(QStringLiteral("kadVersion")).toInteger());
             src.userName        = m.value(QStringLiteral("userName")).toString();
             src.software        = m.value(QStringLiteral("software")).toString();
             src.downloadState   = m.value(QStringLiteral("downloadState")).toString();
@@ -1455,12 +1615,140 @@ void TransferPanel::sendOpenFolder(const QString& hash)
 
 void TransferPanel::sendPreview(const QString& hash)
 {
+    // An application of PreviewApps.dat that lists the extension comes first
+    // (MFC CPartFile::PreviewFile, srchybrid/PartFile.cpp:3497).
+    if (const DownloadRow* dl = m_downloadModel->findByHash(hash)) {
+        if (const int app = previewApps().appForFileName(dl->fileName); app >= 0) {
+            previewWith(hash, app);
+            return;
+        }
+    }
+
     const QString url = streamUrl(hash);
     if (url.isEmpty()) {
         logWarning(tr("Preview not available — web server is not running or stream token not received."));
         return;
     }
     launchPreview(url);
+}
+
+void TransferPanel::previewWith(const QString& hash, int appIndex)
+{
+    const PreviewApps& apps = previewApps();
+    if (appIndex < 0 || appIndex >= apps.count() || !m_ipc || !m_ipc->isConnected())
+        return;
+    const PreviewApp app = apps.apps().at(static_cast<size_t>(appIndex));
+
+    const auto failed = [this, app] {
+        QMessageBox::warning(this, tr("Preview"),
+                             tr("Failed to execute: %1 %2").arg(app.command, app.commandArgs));
+    };
+
+    // A core on another machine: its part file is not ours to open, so the
+    // application gets the stream instead. Not every program opens a URL.
+    if (!m_ipc->isLocalConnection()) {
+        const QString url = streamUrl(hash);
+        if (url.isEmpty())
+            logWarning(tr("Preview not available — web server is not running or stream token not received."));
+        else if (!launchPlayer(app.command, app.commandArgs, url))
+            failed();
+        return;
+    }
+
+    // Local core: the part file itself, with what is still buffered written out
+    // first (MFC ExecutePartFile).
+    IpcMessage msg(IpcMsgType::FlushDownload);
+    msg.append(hash);
+    m_ipc->sendRequest(std::move(msg), [app, failed](const IpcMessage& resp) {
+        if (!resp.isValid() || !resp.fieldBool(0))
+            return;
+        if (!launchPlayer(app.command, app.commandArgs, resp.fieldString(1)))
+            QTimer::singleShot(0, qApp, failed);   // no modal dialog inside an IPC reply
+    });
+}
+
+void TransferPanel::sendPreviewFlags(const QStringList& hashes, int previewPrio, int pauseOnPreview)
+{
+    if (!m_ipc || !m_ipc->isConnected() || hashes.isEmpty())
+        return;
+    IpcMessage msg(IpcMsgType::SetDownloadPreviewFlags);
+    msg.append(QCborArray::fromStringList(hashes));
+    msg.append(qint64(previewPrio));
+    msg.append(qint64(pauseOnPreview));
+    m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) { requestDownloads(); });
+}
+
+void TransferPanel::askSourceLimit(const QStringList& hashes)
+{
+    if (!m_ipc || !m_ipc->isConnected() || hashes.isEmpty())
+        return;
+    const DownloadRow* first = m_downloadModel->findByHash(hashes.first());
+    bool ok = false;
+    // MFC IDS_SETPFSLIMIT / IDS_SETPFSLIMITEXPLAINED
+    const int limit = QInputDialog::getInt(
+        this, tr("Source Limit..."),
+        tr("Please enter the new source limit for the selected file(s)!\n"
+           "(set to 0 to use global setting)"),
+        first ? first->privateMaxSources : 0, 0, 65535, 1, &ok);
+    if (!ok)
+        return;
+    IpcMessage msg(IpcMsgType::SetDownloadSourceLimit);
+    msg.append(QCborArray::fromStringList(hashes));
+    msg.append(qint64(limit));
+    m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) { requestDownloads(); });
+}
+
+void TransferPanel::showAddSources(const QString& hash)
+{
+    const DownloadRow* dl = m_downloadModel->findByHash(hash);
+    if (!dl || !m_ipc)
+        return;
+
+    auto* dialog = new AddSourceDialog(dl->fileName, this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    connect(dialog, &AddSourceDialog::sourceEntered, this,
+            [this, hash](bool url, const QString& text, int port) {
+        if (!IpcFeedback::requireConnection(m_ipc, tr("cannot add the source.")))
+            return;
+        IpcMessage msg(IpcMsgType::AddDownloadSource);
+        msg.append(hash);
+        msg.append(url);
+        msg.append(text);
+        msg.append(qint64(port));
+        m_ipc->sendRequest(std::move(msg), [this, hash, text](const IpcMessage& resp) {
+            if (resp.isValid() && !resp.fieldBool(0))
+                logWarning(tr("The source %1 was not accepted.").arg(text));
+            else if (m_expandedDownloads.contains(hash))
+                requestDownloadSources(hash);
+        });
+    });
+    dialog->open();
+}
+
+void TransferPanel::importParts(const QString& hash, bool stop)
+{
+    if (!IpcFeedback::requireConnection(m_ipc, tr("cannot import parts.")))
+        return;
+
+    // The file is read by the core, so it has to be on the core's machine: picked
+    // when that is this one, typed otherwise.
+    QString path;
+    if (!stop) {
+        path = m_ipc->isLocalConnection()
+            ? QFileDialog::getOpenFileName(this, tr("Import parts to file..."))
+            : QInputDialog::getText(this, tr("Import parts to file..."),
+                                    tr("Path of the file on the core's machine:"));
+        if (path.isEmpty())
+            return;
+    }
+
+    IpcMessage msg(IpcMsgType::ImportDownloadParts);
+    msg.append(hash);
+    msg.append(path);
+    m_ipc->sendRequest(std::move(msg), [this](const IpcMessage& resp) {
+        IpcFeedback::checkOrWarn(resp, this, tr("Import parts to file..."));
+        requestDownloads();
+    });
 }
 
 QString TransferPanel::streamUrl(const QString& hash) const
@@ -1573,12 +1861,23 @@ void TransferPanel::fetchAndShowClientDetails(const QString& clientHash, DetailW
     showClientDetails(this, m_ipc, clientHash, std::move(walker));
 }
 
-void TransferPanel::searchRelated(const QString& fileName)
+void TransferPanel::searchRelated(const QStringList& hashes, const QStringList& names)
 {
-    // Strip extension and emit search request
+    if (hashes.isEmpty())
+        return;
+
+    // MFC asks the server what else the sharers of these files have, and offers
+    // nothing where the server cannot answer. There the port falls back to what it
+    // always did for one file: a search for its name without the extension.
+    if (m_relatedSearchSupported) {
+        emit relatedSearchRequested(hashes, names);
+        return;
+    }
+    if (names.size() != 1)
+        return;
+    const QString& fileName = names.first();
     const qsizetype dotIdx = fileName.lastIndexOf(QLatin1Char('.'));
-    const QString term = (dotIdx > 0) ? fileName.left(dotIdx) : fileName;
-    emit searchRequested(term);
+    emit searchRequested((dotIdx > 0) ? fileName.left(dotIdx) : fileName);
 }
 
 // ---------------------------------------------------------------------------
@@ -1713,6 +2012,19 @@ void TransferPanel::applyViews(int topId, int clientView, Pane priority)
     topId      = std::clamp(topId, 0, static_cast<int>(ClientViewCount));
     clientView = std::clamp(clientView, 0, static_cast<int>(ClientViewCount) - 1);
 
+    // "Disable Known Clients list" / "Disable Queue list": a pane showing one moves
+    // off it (MFC srchybrid/TransferWnd.cpp:1566-1586).
+    if (topId != TopView::Downloads && isListDisabled(topId - TopView::TopClientFirst))
+        topId = TopView::Downloads;
+    if (isListDisabled(clientView)) {
+        for (int v = 0; v < ClientViewCount; ++v) {
+            if (!isListDisabled(v) && v != topId - TopView::TopClientFirst) {
+                clientView = v;
+                break;
+            }
+        }
+    }
+
     // There is one view per list, so the two panes cannot both show it. Whichever
     // pane asked last keeps what it asked for and the other one moves: the bottom
     // pane falls to the first list still free, the top pane falls back to Downloads,
@@ -1755,8 +2067,10 @@ void TransferPanel::applyViews(int topId, int clientView, Pane priority)
     // Grey out the list the top pane is holding, as the MFC toolbar does for a list
     // that is not available. The clash was resolved above, so this never disables the
     // bottom pane's own checked button.
-    for (int v = 0; v < ClientViewCount; ++v)
-        m_toolbar2->setButtonEnabled(v, v != topClient);
+    for (int v = 0; v < ClientViewCount; ++v) {
+        m_toolbar2->setButtonEnabled(v, v != topClient && !isListDisabled(v));
+        m_toolbar1->setButtonEnabled(TopView::TopClientFirst + v, !isListDisabled(v));
+    }
 
     // Both belong to the download list and mean nothing while it is off screen.
     const bool showingDownloads = (topId == TopView::Downloads);
@@ -1863,6 +2177,9 @@ void TransferPanel::populateCategoryMenu(QMenu* menu, int index)
     const bool isAll = index == 0;
     const auto& categories = m_categoryTabBar->categories();
 
+    m_categoryTabBar->addViewFilterMenu(menu, index);
+    menu->addSeparator();
+
     // Priority for the category — MFC's own submenu, and the value it edits is
     // the a4af priority that decides which paused file resumes first, not the
     // download priority of the files in it. ED2K only: Usenet has no a4af.
@@ -1904,6 +2221,70 @@ void TransferPanel::populateCategoryMenu(QMenu* menu, int index)
     menu->addAction(tr("Resume next file"), this, [this, index] {
         sendCategoryStatus(index, Ipc::CategoryAction::ResumeNext);
     });
+
+    // MFC MP_DOWNLOAD_ALPHABETICAL: advanced mode, never for "All"
+    if (!isAll && index < categories.size() && thePrefs.showExtControls()) {
+        auto* act = menu->addAction(tr("Download In Alphabetical Order"), this, [this, index] {
+            auto edited = m_categoryTabBar->categories();
+            edited[index].downloadInAlphabeticalOrder = !edited[index].downloadInAlphabeticalOrder;
+            m_categoryTabBar->applyCategories(edited);
+        });
+        act->setCheckable(true);
+        act->setChecked(categories.at(index).downloadInAlphabeticalOrder);
+    }
+}
+
+bool TransferPanel::isListDisabled(int clientView)
+{
+    return (clientView == Known && thePrefs.disableKnownClientList())
+        || (clientView == OnQueue && thePrefs.disableQueueList());
+}
+
+void TransferPanel::applyDisplayOptions()
+{
+    const bool buttons = thePrefs.showTransToolbar();
+    m_toolbar1->setButtonsVisible(buttons);
+    m_toolbar2->setButtonsVisible(buttons);
+    applyViews(m_topView, m_bottomView, Pane::Top);   // a list may have been disabled
+    updateCategoryTabInfo();
+
+    // A4AF source rows follow advanced mode
+    for (const QString& hash : std::as_const(m_expandedDownloads))
+        requestDownloadSources(hash);
+    m_downloadView->viewport()->update();
+}
+
+void TransferPanel::toggleDownloadExpanded(const QModelIndex& proxyIdx, const QString& hash)
+{
+    const QModelIndex row = proxyIdx.siblingAtColumn(0);
+    if (m_downloadView->isExpanded(row)) {
+        m_downloadView->collapse(row);
+        m_expandedDownloads.remove(hash);
+    } else {
+        m_expandedDownloads.insert(hash);
+        requestDownloadSources(hash);
+        m_downloadView->expand(row);
+    }
+}
+
+void TransferPanel::updateCategoryTabInfo()
+{
+    // MFC UpdateCatTabTitles (srchybrid/TransferWnd.cpp:1072-1083): the files of the
+    // tab that are receiving, of all it shows.
+    if (!thePrefs.showCatTabInfos()) {
+        m_categoryTabBar->setTabInfo({});
+        return;
+    }
+    const auto* proxy = static_cast<const CategoryFilterProxy*>(m_categoryProxy);
+    QStringList info;
+    const int count = static_cast<int>(m_categoryTabBar->categories().size());
+    for (int cat = 0; cat < count; ++cat) {
+        const int transferring = proxy->rowsShownIn(cat, [](const CategoryRowFacts& row) {
+            return row.state == CategoryRowFacts::Transferring;
+        });
+        info << QStringLiteral("%1/%2").arg(transferring).arg(proxy->rowsShownIn(cat));
+    }
+    m_categoryTabBar->setTabInfo(info);
 }
 
 void TransferPanel::sendCategoryStatus(int index, Ipc::CategoryAction action)
@@ -2047,16 +2428,9 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
     sendMsgAct->setEnabled(client != nullptr);
     if (client) {
         const QString clientHash = client->userHash;
-        connect(sendMsgAct, &QAction::triggered, this, [this, clientHash]() {
-            bool ok = false;
-            const QString text = QInputDialog::getText(
-                this, tr("Send Message"), tr("Message:"), QLineEdit::Normal, {}, &ok);
-            if (!ok || text.isEmpty() || !m_ipc || !m_ipc->isConnected())
-                return;
-            IpcMessage msg(IpcMsgType::SendChatMessage);
-            msg.append(clientHash);
-            msg.append(text);
-            m_ipc->sendRequest(std::move(msg));
+        const QString clientName = client->userName;
+        connect(sendMsgAct, &QAction::triggered, this, [this, clientHash, clientName]() {
+            emit chatRequested(clientHash, clientName);
         });
     }
 
@@ -2074,6 +2448,28 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
             m_ipc->sendRequest(std::move(msg));
         });
     }
+
+    // Unban: queue list, advanced mode (MFC QueueListCtrl.cpp:412-413)
+    if (model->mode() == ClientListMode::OnQueue && thePrefs.showExtControls()) {
+        auto* unbanAct = menu.addAction(tr("Unban"));
+        unbanAct->setEnabled(client && client->isBanned);
+        if (client) {
+            const QString clientHash = client->userHash;
+            connect(unbanAct, &QAction::triggered, this, [this, clientHash]() {
+                if (!m_ipc || !m_ipc->isConnected())
+                    return;
+                IpcMessage msg(IpcMsgType::UnbanClient);
+                msg.append(clientHash);
+                m_ipc->sendRequest(std::move(msg));
+                requestUploads();
+            });
+        }
+    }
+
+    if (client)
+        addBootstrapAction(menu, client->addr, client->kadPort, client->kadVersion);
+    else
+        addBootstrapAction(menu, {}, 0, 0);
 
     menu.addSeparator();
 
@@ -2127,17 +2523,9 @@ void TransferPanel::showSourceContextMenu(const SourceRow& src, const QString& p
     // 3. Send Message
     {
         const QString clientHash = src.userHash;
-        menu.addAction(menuIcon("UserMessage.ico"), tr("Send Message"), this, [this, clientHash]() {
-            bool ok = false;
-            const QString text = QInputDialog::getText(
-                this, tr("Send Message"), tr("Message:"), QLineEdit::Normal, {}, &ok);
-            if (!ok || text.isEmpty() || !m_ipc || !m_ipc->isConnected())
-                return;
-            IpcMessage msg(IpcMsgType::SendChatMessage);
-            msg.append(clientHash);
-            msg.append(text);
-            m_ipc->sendRequest(std::move(msg));
-        });
+        const QString clientName = src.userName;
+        menu.addAction(menuIcon("UserMessage.ico"), tr("Send Message"), this,
+                       [this, clientHash, clientName]() { emit chatRequested(clientHash, clientName); });
     }
 
     // 4. View Shared Files
@@ -2152,6 +2540,8 @@ void TransferPanel::showSourceContextMenu(const SourceRow& src, const QString& p
         });
     }
 
+    addBootstrapAction(menu, src.addr, src.kadPort, src.kadVersion);
+
     menu.addSeparator();
 
     // 5. Find...
@@ -2160,6 +2550,30 @@ void TransferPanel::showSourceContextMenu(const SourceRow& src, const QString& p
     });
 
     menu.exec(globalPos);
+}
+
+void TransferPanel::setKadStatus(bool running, bool connected)
+{
+    m_kadRunning = running;
+    m_kadConnected = connected;
+}
+
+void TransferPanel::addBootstrapAction(QMenu& menu, const QString& addr, int kadPort, int kadVersion)
+{
+    // MFC offers it only while Kad runs without a connection, for a client that speaks
+    // a Kad we can bootstrap from (srchybrid/UploadListCtrl.cpp:390-391).
+    if (!m_kadRunning || m_kadConnected)
+        return;
+    auto* act = menu.addAction(tr("Bootstrap"));
+    act->setEnabled(!addr.isEmpty() && kadPort != 0 && kadVersion >= KADEMLIA_VERSION2_47a);
+    connect(act, &QAction::triggered, this, [this, addr, kadPort]() {
+        if (!m_ipc || !m_ipc->isConnected())
+            return;
+        IpcMessage msg(IpcMsgType::BootstrapKad);
+        msg.append(addr);
+        msg.append(qint64(kadPort));
+        m_ipc->sendRequest(std::move(msg));
+    });
 }
 
 void TransferPanel::showClientFindDialog(QTreeView* view)

@@ -4,6 +4,10 @@
 
 #include "controls/CategoryFilterProxy.h"
 
+#include "utils/OtherFunctions.h"
+
+#include <QRegularExpression>
+
 namespace eMule {
 
 void CategoryFilterProxy::setCategoryFilter(int category)
@@ -21,26 +25,109 @@ void CategoryFilterProxy::setCategoryFilter(int category)
 #endif
 }
 
+void CategoryFilterProxy::setCategories(const QList<DownloadCategory>& categories)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    beginFilterChange();
+    m_categories = categories;
+    endFilterChange();
+#else
+    m_categories = categories;
+    invalidateFilter();
+#endif
+}
+
+int CategoryFilterProxy::rowsShownIn(int category,
+                                     const std::function<bool(const CategoryRowFacts&)>& also) const
+{
+    const QAbstractItemModel* src = sourceModel();
+    if (!src)
+        return 0;
+    int shown = 0;
+    for (int row = 0; row < src->rowCount(); ++row) {
+        const CategoryRowFacts facts = factsOf(row);
+        if (categoryShowsRow(m_categories, category, facts) && (!also || also(facts)))
+            ++shown;
+    }
+    return shown;
+}
+
 bool CategoryFilterProxy::filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const
 {
     // Child rows -- ED2K sources, the files inside an NZB -- are never filtered:
     // they belong to whichever parent survived.
     if (sourceParent.isValid())
         return true;
-    if (m_category == 0)
+    if (!sourceModel())
         return true;
+    return categoryShowsRow(m_categories, m_category, factsOf(sourceRow));
+}
 
+CategoryRowFacts CategoryFilterProxy::factsOf(int sourceRow) const
+{
+    // Whatever proxies sit in between forward the roles for us, so the arrangement
+    // of the stack cannot change the answer.
     const QAbstractItemModel* src = sourceModel();
-    if (!src)
-        return true;
+    const QModelIndex idx = src->index(sourceRow, 0);
+    if (const QVariant facts = src->data(idx, kCategoryFactsRole); facts.canConvert<CategoryRowFacts>())
+        return facts.value<CategoryRowFacts>();
 
-    // Whatever proxies sit in between forward this for us, so the arrangement of
-    // the stack cannot change the answer. A model that does not answer the role
-    // yields an invalid variant, and toInt() then gives 0 -- uncategorised, which
-    // is refused by every tab but "All". That is the safe direction: a row is
-    // hidden, not silently shown under a category it is not in.
-    return src->data(src->index(sourceRow, 0, sourceParent), kCategoryRole).toInt()
-           == m_category;
+    // A model that only names the category: an invalid variant reads 0 --
+    // uncategorised, refused by every tab but "All". The safe direction.
+    CategoryRowFacts facts;
+    facts.category = src->data(idx, kCategoryRole).toInt();
+    return facts;
+}
+
+bool categoryShowsRow(const QList<DownloadCategory>& categories, int inCategory,
+                      const CategoryRowFacts& row)
+{
+    using namespace CategoryViewFilter;
+
+    // No list yet (or a tab past its end): membership alone
+    if (inCategory < 0 || inCategory >= categories.size())
+        return inCategory == 0 || row.category == inCategory;
+
+    const DownloadCategory& cat = categories.at(inCategory);
+    const int filter = cat.filter;
+    if (row.category == inCategory && filter == All)
+        return true;
+    if (inCategory > 0 && row.category != inCategory && !cat.care4all)
+        return false;
+
+    bool shown = filter <= All;
+    // The status modes say nothing about a finished file
+    if (!shown && (filter < Waiting || filter > SeenComplete || row.unfinished)) {
+        const auto typeIs = [&row](ED2KFileType type) {
+            return getED2KFileTypeID(row.fileName) == type;
+        };
+        switch (filter) {
+        case Uncategorized: shown = row.category == 0; break;
+        case Incomplete:    shown = row.unfinished; break;
+        case Completed:     shown = !row.unfinished; break;
+        case Waiting:       shown = row.state == CategoryRowFacts::Waiting; break;
+        case Downloading:   shown = row.state == CategoryRowFacts::Transferring; break;
+        case Erroneous:     shown = row.state == CategoryRowFacts::Erroneous; break;
+        case Paused:        shown = row.state == CategoryRowFacts::Paused; break;
+        case SeenComplete:  shown = row.seenComplete; break;
+        case Video:         shown = typeIs(ED2KFileType::Video); break;
+        case Audio:         shown = typeIs(ED2KFileType::Audio); break;
+        case Archive:       shown = typeIs(ED2KFileType::Archive); break;
+        case CDImage:       shown = typeIs(ED2KFileType::CDImage); break;
+        case Document:      shown = typeIs(ED2KFileType::Document); break;
+        case Picture:       shown = typeIs(ED2KFileType::Image); break;
+        case Program:       shown = typeIs(ED2KFileType::Program); break;
+        case Collection:    shown = typeIs(ED2KFileType::EmuleCollection); break;
+        case RegExp: {
+            // The whole name, case as written (MFC RegularExpressionMatch: regex_match)
+            const QRegularExpression re(QRegularExpression::anchoredPattern(cat.regexp));
+            shown = re.isValid() && re.match(row.fileName).hasMatch();
+            break;
+        }
+        default: break;
+        }
+    }
+    return cat.filterNeg ? !shown : shown;
 }
 
 } // namespace eMule

@@ -16,113 +16,82 @@
 
 namespace eMule {
 
+bool canImportParts(const PartFile* partFile, const QString& sourceFilePath)
+{
+    if (!partFile || sourceFilePath.isEmpty() || partFile->partCount() == 0)
+        return false;
+    const QFileInfo fi(sourceFilePath);
+    // Parts are matched by offset, so the source has to be the same size
+    return fi.exists() && fi.isFile() && fi.size() > 0
+        && static_cast<uint64>(fi.size()) == partFile->fileSize();
+}
+
+bool importPart(PartFile* partFile, const QString& sourceFilePath, uint32 part)
+{
+    if (!partFile || part >= partFile->partCount() || partFile->isComplete(part))
+        return false;
+
+    // The expected hash; a single-part file is hashed as a whole
+    const uint8* expectedHash = partFile->fileIdentifier().getMD4PartHash(part);
+    if (!expectedHash && partFile->partCount() == 1)
+        expectedHash = partFile->fileHash();
+    if (!expectedHash)
+        return false;
+
+    const uint64 partStart = static_cast<uint64>(part) * PARTSIZE;
+    const uint64 partEnd = std::min<uint64>(partStart + PARTSIZE, partFile->fileSize());
+    const uint64 partLen = partEnd - partStart;
+
+    // Only a part that is missing entirely: nothing downloaded is overwritten
+    if (!partFile->isPureGap(partStart, partEnd - 1))
+        return false;
+
+    QFile sourceFile(sourceFilePath);
+    if (!sourceFile.open(QIODevice::ReadOnly) || !sourceFile.seek(static_cast<qint64>(partStart)))
+        return false;
+    const QByteArray data = sourceFile.read(static_cast<qint64>(partLen));
+    if (static_cast<uint64>(data.size()) != partLen)
+        return false;
+
+    MD4Hasher hasher;
+    hasher.add(reinterpret_cast<const uint8*>(data.constData()), static_cast<size_t>(data.size()));
+    hasher.finish();
+    if (!md4equ(hasher.getHash(), expectedHash))
+        return false;
+
+    // The .part data file is fullName without its .met suffix
+    QString partDataPath = partFile->fullName();
+    if (partDataPath.endsWith(QStringLiteral(".met")))
+        partDataPath.chop(4);
+    QFile partDataFile(partDataPath);
+    if (!partDataFile.open(QIODevice::ReadWrite) || !partDataFile.seek(static_cast<qint64>(partStart)))
+        return false;
+    if (static_cast<uint64>(partDataFile.write(data)) != partLen)
+        return false;
+    partDataFile.close();
+
+    partFile->fillGap(partStart, partEnd - 1);
+    return true;
+}
+
 int importParts(PartFile* partFile, const QString& sourceFilePath,
                 std::function<void(int percent)> progressCallback)
 {
-    if (!partFile)
-        return 0;
-
-    if (sourceFilePath.isEmpty())
-        return 0;
-
-    QFileInfo fi(sourceFilePath);
-    if (!fi.exists() || !fi.isFile())
-        return 0;
-
-    // Verify source file size is compatible with the part file
-    uint64 sourceSize = static_cast<uint64>(fi.size());
-    if (sourceSize == 0)
-        return 0;
-
-    if (sourceSize != partFile->fileSize())
+    if (!canImportParts(partFile, sourceFilePath))
         return 0;
 
     if (progressCallback)
         progressCallback(0);
 
-    QFile sourceFile(sourceFilePath);
-    if (!sourceFile.open(QIODevice::ReadOnly))
-        return 0;
-
-    // Determine the part file's data path (fullName without .met suffix)
-    QString partDataPath = partFile->fullName();
-    if (partDataPath.endsWith(QStringLiteral(".met")))
-        partDataPath.chop(4); // remove .met suffix to get .part data file
-
     const uint16 totalParts = partFile->partCount();
-    if (totalParts == 0)
-        return 0;
-
     int importedCount = 0;
-
     for (uint32 part = 0; part < totalParts; ++part) {
-        // Skip already-complete parts
-        if (partFile->isComplete(part))
+        if (!importPart(partFile, sourceFilePath, part))
             continue;
-
-        // Get the expected hash for this part from the hashset
-        const uint8* expectedHash = partFile->fileIdentifier().getMD4PartHash(part);
-        // For single-part files the part hash may be the file hash itself
-        if (!expectedHash && totalParts == 1)
-            expectedHash = partFile->fileHash();
-        if (!expectedHash)
-            continue;
-
-        // Calculate part boundaries
-        uint64 partStart = static_cast<uint64>(part) * PARTSIZE;
-        uint64 partEnd = std::min(partStart + PARTSIZE, sourceSize);
-        uint64 partLen = partEnd - partStart;
-
-        // Check that the entire part is a gap (incomplete)
-        // We import parts only when the full part is missing to avoid partial overwrites
-        if (!partFile->isPureGap(partStart, partEnd - 1))
-            continue;
-
-        // Read data from source file
-        if (!sourceFile.seek(static_cast<qint64>(partStart)))
-            continue;
-
-        QByteArray data = sourceFile.read(static_cast<qint64>(partLen));
-        if (static_cast<uint64>(data.size()) != partLen)
-            continue;
-
-        // Compute MD4 hash of the read data
-        MD4Hasher hasher;
-        hasher.add(reinterpret_cast<const uint8*>(data.constData()), static_cast<size_t>(data.size()));
-        hasher.finish();
-
-        // Compare with expected hash
-        if (!md4equ(hasher.getHash(), expectedHash))
-            continue;
-
-        // Hash matches — write the data to the part file
-        QFile partDataFile(partDataPath);
-        if (!partDataFile.open(QIODevice::ReadWrite))
-            continue;
-
-        if (!partDataFile.seek(static_cast<qint64>(partStart))) {
-            partDataFile.close();
-            continue;
-        }
-
-        qint64 written = partDataFile.write(data);
-        partDataFile.close();
-
-        if (static_cast<uint64>(written) != partLen)
-            continue;
-
-        // Fill the gap in the part file's gap list
-        partFile->fillGap(partStart, partEnd - 1);
         ++importedCount;
-
-        // Report progress
-        if (progressCallback) {
-            int percent = static_cast<int>((static_cast<uint64>(part + 1) * 100) / totalParts);
-            progressCallback(percent);
-        }
+        if (progressCallback)
+            progressCallback(static_cast<int>((static_cast<uint64>(part + 1) * 100) / totalParts));
     }
-
-    sourceFile.close();
 
     // Update completed info after importing
     if (importedCount > 0)

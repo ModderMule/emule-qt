@@ -44,6 +44,10 @@ public:
     /// Start without auto-connecting (--hold-connect). Before start().
     void setConnectHold(bool hold) { m_connectHold = hold; }
 
+    /// Quit, then have main() start the daemon again (new ports, same arguments).
+    static void requestRestart();
+    [[nodiscard]] static bool restartRequested() { return s_restartRequested; }
+
     /// Stop the IPC server and core session.
     void stop();
 
@@ -156,6 +160,7 @@ private:
     bool m_running = false;
 
     static DaemonApp* s_instance;
+    static inline bool s_restartRequested = false;
     static QtMessageHandler s_previousHandler;
     static QString s_sessionToken;  ///< Random UUID for this daemon process lifetime.
 };

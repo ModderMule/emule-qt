@@ -101,10 +101,6 @@ public:
     /// an offer from a local peer — the same test a literal host gets up front.
     bool acceptResolvedAddress(const Address& addr) override;
 
-    /// "Downloading (HTTP Cache)" and friends, so the transfer list shows at a
-    /// glance that these bytes are not costing the uploader anything.
-    [[nodiscard]] QString downloadStateDisplayString() const override;
-
 signals:
     /// Emitted exactly once per client, whatever the outcome. The manager sends
     /// the peer an HCOP_RESULT and drops this object on it.

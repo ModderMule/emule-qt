@@ -320,7 +320,7 @@ bool KadPrefs::findExternKadPort(bool reset)
 
 uint16 KadPrefs::internKadPort() const
 {
-    return thePrefs.udpPort();
+    return theApp.listeningUdpPort();
 }
 
 // ---------------------------------------------------------------------------

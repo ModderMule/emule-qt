@@ -301,7 +301,6 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_seenFileIndexCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_videoPlayerCmdEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_videoPlayerArgsEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
-    connect(m_createBackupToPreviewCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
 
     // Notifications page
     connect(m_noSoundRadio, &QRadioButton::toggled, this, &OptionsDialog::markDirty);
@@ -1765,9 +1764,6 @@ QWidget* OptionsDialog::createFilesPage()
     videoLayout->addWidget(new QLabel(tr("Arguments"), videoGroup));
     m_videoPlayerArgsEdit = new QLineEdit(videoGroup);
     videoLayout->addWidget(m_videoPlayerArgsEdit);
-
-    m_createBackupToPreviewCheck = new QCheckBox(tr("Create backup to preview"), videoGroup);
-    videoLayout->addWidget(m_createBackupToPreviewCheck);
 
     layout->addWidget(videoGroup);
 
@@ -5930,7 +5926,6 @@ void OptionsDialog::loadSettings()
     m_advancedCalcRemainingCheck->setChecked(thePrefs.useAdvancedCalcRemainingTime());
     m_videoPlayerCmdEdit->setText(thePrefs.videoPlayerCommand());
     m_videoPlayerArgsEdit->setText(thePrefs.videoPlayerArgs());
-    m_createBackupToPreviewCheck->setChecked(thePrefs.createBackupToPreview());
     m_autoCleanupFilenamesCheck->setChecked(thePrefs.autoCleanupFilenames());
     m_filenameCleanups = thePrefs.filenameCleanups();
 
@@ -6138,7 +6133,6 @@ void OptionsDialog::saveSettings()
     thePrefs.setUseAdvancedCalcRemainingTime(m_advancedCalcRemainingCheck->isChecked());
     thePrefs.setVideoPlayerCommand(m_videoPlayerCmdEdit->text());
     thePrefs.setVideoPlayerArgs(m_videoPlayerArgsEdit->text());
-    thePrefs.setCreateBackupToPreview(m_createBackupToPreviewCheck->isChecked());
     thePrefs.setAutoCleanupFilenames(m_autoCleanupFilenamesCheck->isChecked());
     thePrefs.setFilenameCleanups(m_filenameCleanups);
 
@@ -6692,8 +6686,6 @@ void OptionsDialog::saveSettings()
         req.append(m_videoPlayerCmdEdit->text());
         req.append(QStringLiteral("videoPlayerArgs"));
         req.append(m_videoPlayerArgsEdit->text());
-        req.append(QStringLiteral("createBackupToPreview"));
-        req.append(m_createBackupToPreviewCheck->isChecked());
         req.append(QStringLiteral("autoCleanupFilenames"));
         req.append(m_autoCleanupFilenamesCheck->isChecked());
         req.append(QStringLiteral("filenameCleanups"));
@@ -6742,9 +6734,14 @@ void OptionsDialog::saveSettings()
 
         // After OK the dialog is hidden: the port notice then goes to its parent
         m_ipc->sendRequest(std::move(req), [self = QPointer<OptionsDialog>(this),
-                                            owner = QPointer<QWidget>(parentWidget())](
+                                            owner = QPointer<QWidget>(parentWidget()),
+                                            ipc = QPointer<IpcClient>(m_ipc)](
                                                const Ipc::IpcMessage& resp) {
-            showPortChangeResult(self && self->isVisible() ? self.data() : owner.data(), resp);
+            showPortChangeResult(self && self->isVisible() ? self.data() : owner.data(), resp,
+                                 [ipc] {
+                                     if (ipc)
+                                         ipc->sendRestart();
+                                 });
         });
     } else {
         // Fallback: save locally

@@ -180,6 +180,7 @@ private:
     /// No server, no Kad, no peer socket.
     [[nodiscard]] bool isNetworkIdle() const;
     void rememberAppliedPorts();
+    void publishListenPorts();
 
     BindAddress::Resolution m_appliedBind;   ///< what the open sockets were bound on
     bool m_netSuspended = false;

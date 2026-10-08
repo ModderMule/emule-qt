@@ -555,7 +555,6 @@ struct Preferences::Data {
     bool useAdvancedCalcRemainingTime = true;
     QString videoPlayerCommand;
     QString videoPlayerArgs;
-    bool createBackupToPreview = true;
     bool autoCleanupFilenames = false;
     QString filenameCleanups = QString::fromUtf16(kDefaultFilenameCleanups);
 
@@ -2809,10 +2808,6 @@ QString Preferences::videoPlayerArgs() const { return get(&Data::videoPlayerArgs
 
 void Preferences::setVideoPlayerArgs(const QString& val) { set(&Data::videoPlayerArgs, val); }
 
-bool Preferences::createBackupToPreview() const { return get(&Data::createBackupToPreview); }
-
-void Preferences::setCreateBackupToPreview(bool val) { set(&Data::createBackupToPreview, val); }
-
 bool Preferences::autoCleanupFilenames() const { return get(&Data::autoCleanupFilenames); }
 
 void Preferences::setAutoCleanupFilenames(bool val) { set(&Data::autoCleanupFilenames, val); }
@@ -4037,7 +4032,6 @@ bool Preferences::load(const QString& filePath)
             m_data->useAdvancedCalcRemainingTime = d["useAdvancedCalcRemainingTime"].as<bool>(m_data->useAdvancedCalcRemainingTime);
             m_data->videoPlayerCommand = QString::fromStdString(d["videoPlayerCommand"].as<std::string>(m_data->videoPlayerCommand.toStdString()));
             m_data->videoPlayerArgs = QString::fromStdString(d["videoPlayerArgs"].as<std::string>(m_data->videoPlayerArgs.toStdString()));
-            m_data->createBackupToPreview = d["createBackupToPreview"].as<bool>(m_data->createBackupToPreview);
             m_data->autoCleanupFilenames = d["autoCleanupFilenames"].as<bool>(m_data->autoCleanupFilenames);
             m_data->filenameCleanups = QString::fromStdString(d["filenameCleanups"].as<std::string>(m_data->filenameCleanups.toStdString()));
         }
@@ -5102,7 +5096,6 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "useAdvancedCalcRemainingTime" << YAML::Value << m_data->useAdvancedCalcRemainingTime;
     out << YAML::Key << "videoPlayerCommand" << YAML::Value << m_data->videoPlayerCommand.toStdString();
     out << YAML::Key << "videoPlayerArgs" << YAML::Value << m_data->videoPlayerArgs.toStdString();
-    out << YAML::Key << "createBackupToPreview" << YAML::Value << m_data->createBackupToPreview;
     out << YAML::Key << "autoCleanupFilenames" << YAML::Value << m_data->autoCleanupFilenames;
     out << YAML::Key << "filenameCleanups" << YAML::Value << m_data->filenameCleanups.toStdString();
     out << YAML::EndMap;

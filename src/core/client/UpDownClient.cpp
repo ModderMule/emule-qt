@@ -1862,7 +1862,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
     // it cannot use.
     if (!dialDirectly) {
         // The three routes, in the order the branches below try them.
-        const bool directUdp = supportsDirectUDPCallback() && thePrefs.udpPort() != 0
+        const bool directUdp = supportsDirectUDPCallback() && theApp.listeningUdpPort() != 0
                             && !m_connectAddress.isNull();
         const bool kadCallback = hasValidBuddyID() && kad::Kademlia::instance()
                               && kad::Kademlia::instance()->isConnected()
@@ -1939,7 +1939,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
 
     // ---- Path 4: Direct Callback via UDP (firewalled but UDP open) ----
     // MFC BaseClient.cpp:1399-1413
-    if (supportsDirectUDPCallback() && thePrefs.udpPort() != 0 && !m_connectAddress.isNull()) {
+    if (supportsDirectUDPCallback() && theApp.listeningUdpPort() != 0 && !m_connectAddress.isNull()) {
         m_connectingState = ConnectingState::DirectCallback;
 
         // Build connect options byte: MFC GetMyConnectOptions(true, false)

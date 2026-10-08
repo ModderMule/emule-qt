@@ -8,6 +8,7 @@
 #include "DaemonApp.h"
 
 #include "ipc/CborSerializers.h"
+#include "transfer/ImportParts.h"
 #include "nntp/NntpSocket.h"
 #include "UsenetSession.h"
 #include "IndexerCapsStore.h"
@@ -296,6 +297,12 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::SendChatMessage:      handleSendChatMessage(msg); break;
     case IpcMsgType::SetFriendSlot:        handleSetFriendSlot(msg); break;
     case IpcMsgType::EndChatSession:       handleEndChatSession(msg); break;
+    case IpcMsgType::UnbanClient:          handleUnbanClient(msg); break;
+    case IpcMsgType::AddDownloadSource:    handleAddDownloadSource(msg); break;
+    case IpcMsgType::SetDownloadSourceLimit: handleSetDownloadSourceLimit(msg); break;
+    case IpcMsgType::SetDownloadPreviewFlags: handleSetDownloadPreviewFlags(msg); break;
+    case IpcMsgType::ImportDownloadParts:  handleImportDownloadParts(msg); break;
+    case IpcMsgType::FlushDownload:        handleFlushDownload(msg); break;
     case IpcMsgType::GetStats:             handleGetStats(msg); break;
     case IpcMsgType::GetSpeedHistory:      handleGetSpeedHistory(msg); break;
     case IpcMsgType::GetStatsHistory:      handleGetStatsHistory(msg); break;
@@ -548,9 +555,7 @@ void IpcClientHandler::handleGetDownloadSources(const IpcMessage& msg)
         return;
     }
 
-    QCborArray clients;
-    for (const auto* c : pf->srcList())
-        clients.append(toCbor(*c));
+    const QCborArray clients = downloadSourcesToCbor(*pf);
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(clients)));
 }
 
@@ -782,6 +787,8 @@ void IpcClientHandler::handleGetServerState(const IpcMessage& msg)
             info.insert(QStringLiteral("serverId"), static_cast<qint64>(srv->serverId()));
             info.insert(QStringLiteral("serverName"), srv->name());
             info.insert(QStringLiteral("serverDescription"), srv->description());
+            // "Search Related Files" is offered only on a server that answers it
+            info.insert(QStringLiteral("serverRelatedSearch"), srv->supportsRelatedSearch());
             // The address this session dialed: a dual-stack server may be on its IPv6
             info.insert(QStringLiteral("serverAddress"),
                         srv->hasDynIP() ? srv->address()
@@ -1019,10 +1026,13 @@ void IpcClientHandler::handleClearAllSearches(const IpcMessage& msg)
 void IpcClientHandler::handleDownloadSearchFile(const IpcMessage& msg)
 {
     // Field 4: the search window's "->" category (MFC SearchResultsWnd.cpp:542); field 5:
-    // the search the row belongs to, 0 from link senders and restored tabs.
+    // the search the row belongs to, 0 from link senders and restored tabs; field 6:
+    // start paused, absent = the "add new files paused" option decides.
+    const std::optional<bool> paused = msg.fieldCount() > 6
+        ? std::optional<bool>(msg.fieldBool(6)) : std::nullopt;
     const ops::AddOutcome out = ops::addDownloadFromSearch(
         msg.fieldString(0), msg.fieldString(1), static_cast<uint64>(msg.fieldInt(2)),
-        msg.fieldString(3), msg.fieldInt(4), static_cast<uint32>(msg.fieldInt(5)));
+        msg.fieldString(3), msg.fieldInt(4), static_cast<uint32>(msg.fieldInt(5)), paused);
     if (!out.status.ok()) {
         sendMessage(IpcMessage::makeError(msg.seqId(), out.status.code, out.status.message));
         return;
@@ -1299,8 +1309,211 @@ void IpcClientHandler::handleSendChatMessage(const IpcMessage& msg)
         }
     }
 
+    // A known client that is not connected: park the text and dial, as MFC's
+    // CChatSelector::SendText does (srchybrid/ChatSelector.cpp:314-322).
+    if (client) {
+        client->setPendingChatMessage(message);
+        if (client->tryToConnect(true)) {
+            sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+            return;
+        }
+        (void)client->takePendingChatMessage();
+    }
+
     sendMessage(IpcMessage::makeError(msg.seqId(), 404,
         QStringLiteral("Client not found or not connected")));
+}
+
+// ---------------------------------------------------------------------------
+// Download menu, advanced entries
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The unfinished download a hex hash names, or nullptr.
+PartFile* partFileFor(const QString& hashHex)
+{
+    uint8 hash[16]{};
+    if (!theApp.downloadQueue || !hexToHash(hashHex, hash))
+        return nullptr;
+    PartFile* file = theApp.downloadQueue->fileByID(hash);
+    return file && file->status() != PartFileStatus::Complete ? file : nullptr;
+}
+
+/// Imports running in the background: download hash → source path and next part.
+struct PartImport {
+    QString path;
+    uint32 nextPart = 0;
+    int imported = 0;
+};
+QHash<QString, PartImport>& partImports()
+{
+    static QHash<QString, PartImport> imports;
+    return imports;
+}
+
+/// One part per turn of the event loop: a part is 9.28 MB to read, hash and write.
+void stepPartImport(const QString& hashHex)
+{
+    auto it = partImports().find(hashHex);
+    if (it == partImports().end())
+        return;   // stopped
+
+    PartFile* file = partFileFor(hashHex);
+    const bool done = !file || it->nextPart >= file->partCount();
+    if (done) {
+        if (file) {
+            file->setFileOp(PartFileOp::None);
+            if (it->imported > 0) {
+                file->updateCompletedInfos();
+                file->savePartFile();
+            }
+            logInfo(QStringLiteral("Imported %1 part(s) into %2").arg(it->imported).arg(file->fileName()));
+        }
+        partImports().erase(it);
+        return;
+    }
+
+    if (importPart(file, it->path, it->nextPart))
+        ++it->imported;
+    ++it->nextPart;
+    QTimer::singleShot(0, qApp, [hashHex] { stepPartImport(hashHex); });
+}
+
+} // namespace
+
+void IpcClientHandler::handleAddDownloadSource(const IpcMessage& msg)
+{
+    PartFile* file = partFileFor(msg.fieldString(0));
+    if (!file || file->isStopped()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found or stopped")));
+        return;
+    }
+
+    bool added = false;
+    if (msg.fieldBool(1)) {
+        added = theApp.downloadQueue->addUserUrlSource(file, msg.fieldString(2));
+    } else {
+        // "address:port" in the address field wins over the port field (MFC AddSourceDlg);
+        // a bare IPv6 literal has more than one colon and no port in it.
+        QString host = msg.fieldString(2).trimmed();
+        auto port = static_cast<uint16>(msg.fieldInt(3));
+        if (host.count(u':') == 1) {
+            port = host.section(u':', 1).toUShort();
+            host = host.section(u':', 0, 0);
+        } else if (host.startsWith(u'[') && host.contains(QStringLiteral("]:"))) {
+            port = host.mid(host.lastIndexOf(u':') + 1).toUShort();
+            host = host.mid(1, host.indexOf(u']') - 1);
+        }
+        added = theApp.downloadQueue->addUserSource(file, host, port);
+    }
+
+    if (added)
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    else
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("The source was not accepted")));
+}
+
+void IpcClientHandler::handleSetDownloadSourceLimit(const IpcMessage& msg)
+{
+    const auto limit = static_cast<uint32>(std::max<qint64>(msg.fieldInt(1), 0));
+    for (const auto& hash : msg.fieldArray(0)) {
+        if (PartFile* file = partFileFor(hash.toString())) {
+            file->setPrivateMaxSources(limit);
+            file->savePartFile();
+        }
+    }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+void IpcClientHandler::handleSetDownloadPreviewFlags(const IpcMessage& msg)
+{
+    const qint64 previewPrio = msg.fieldInt(1);
+    const qint64 pauseOnPreview = msg.fieldInt(2);
+    for (const auto& hash : msg.fieldArray(0)) {
+        PartFile* file = partFileFor(hash.toString());
+        if (!file)
+            continue;
+        if (previewPrio >= 0)
+            file->setPreviewPrio(previewPrio != 0);
+        if (pauseOnPreview >= 0)
+            file->setPauseOnPreview(pauseOnPreview != 0);
+        file->savePartFile();
+    }
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+void IpcClientHandler::handleImportDownloadParts(const IpcMessage& msg)
+{
+    const QString hashHex = msg.fieldString(0).toUpper();
+    const QString path = msg.fieldString(1);
+    PartFile* file = partFileFor(hashHex);
+    if (!file) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
+        return;
+    }
+
+    // An empty path stops a running import; the parts already taken stay
+    if (path.isEmpty()) {
+        if (partImports().remove(hashHex) > 0) {
+            file->setFileOp(PartFileOp::None);
+            file->updateCompletedInfos();
+            file->savePartFile();
+        }
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+        return;
+    }
+
+    if (partImports().contains(hashHex)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 409, QStringLiteral("An import is already running")));
+        return;
+    }
+    // Parts are checked against the hash set, so without one nothing can be taken
+    if (file->partCount() > 1 && file->isMD4HashsetNeeded()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 409,
+            QStringLiteral("The download has no hash set yet")));
+        return;
+    }
+    if (!canImportParts(file, path)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400,
+            QStringLiteral("Not a file of this download's size on the core's machine")));
+        return;
+    }
+
+    file->flushBuffer();
+    file->setFileOp(PartFileOp::ImportParts);
+    partImports().insert(hashHex, PartImport{path, 0, 0});
+    QTimer::singleShot(0, qApp, [hashHex] { stepPartImport(hashHex); });
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+void IpcClientHandler::handleFlushDownload(const IpcMessage& msg)
+{
+    PartFile* file = partFileFor(msg.fieldString(0));
+    if (!file) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
+        return;
+    }
+    file->flushBuffer(true);
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(file->dataFilePath())));
+}
+
+void IpcClientHandler::handleUnbanClient(const IpcMessage& msg)
+{
+    uint8 hashBuf[16]{};
+    if (!hexToHash(msg.fieldString(0), hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+
+    auto* client = theApp.clientList ? theApp.clientList->findByUserHash(hashBuf, 0, 0) : nullptr;
+    if (!client) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Client not found")));
+        return;
+    }
+    if (client->isBanned())
+        client->unBan();
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
 void IpcClientHandler::handleEndChatSession(const IpcMessage& msg)
@@ -1553,8 +1766,7 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
         cfg.addServersFromServer   = thePrefs.addServersFromServer();
         cfg.serverKeepAliveTimeout = thePrefs.serverKeepAliveTimeout();
         // Bound port, not the pref: a pending restart must not advertise the new one
-        cfg.listenPort             = theApp.listenSocket && theApp.listenSocket->isListening()
-            ? theApp.listenSocket->connectedPort() : thePrefs.port();
+        cfg.listenPort             = theApp.listeningTcpPort();
         cfg.smartLowIdCheck        = thePrefs.smartLowIdCheck();
         cfg.bindAddress            = BindAddress::ipv4Literal();
         theApp.serverConnect->setConfig(cfg);
@@ -1773,8 +1985,14 @@ void IpcClientHandler::handleSyncLogs(const IpcMessage& msg)
 
 void IpcClientHandler::handleShutdown(const IpcMessage& msg)
 {
-    logInfo(QStringLiteral("Shutdown requested by IPC client"));
+    const bool restart = msg.fieldBool(0);
+    logInfo(restart ? QStringLiteral("Restart requested by IPC client")
+                    : QStringLiteral("Shutdown requested by IPC client"));
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    if (restart) {
+        DaemonApp::requestRestart();
+        return;
+    }
 
     // Schedule graceful quit on the next event loop iteration so the
     // response frame is flushed to the socket before we tear down.
@@ -3532,8 +3750,6 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
         thePrefs.setVideoPlayerCommand(val.toString());
     else if (key == QStringLiteral("videoPlayerArgs"))
         thePrefs.setVideoPlayerArgs(val.toString());
-    else if (key == QStringLiteral("createBackupToPreview"))
-        thePrefs.setCreateBackupToPreview(val.toBool());
     else if (key == QStringLiteral("autoCleanupFilenames"))
         thePrefs.setAutoCleanupFilenames(val.toBool());
     else if (key == QStringLiteral("filenameCleanups"))
@@ -4607,6 +4823,11 @@ QCborMap categoryToCbor(const DownloadCategory& cat, const QString& resolvedInco
         {QStringLiteral("regexp"),           cat.regexp},
         {QStringLiteral("color"),            static_cast<qint64>(cat.color)},
         {QStringLiteral("prio"),             static_cast<int>(cat.prio)},
+        // The view filter of the category's tab, and its download order
+        {QStringLiteral("filter"),           cat.filter},
+        {QStringLiteral("filterNeg"),        cat.filterNeg},
+        {QStringLiteral("care4all"),         cat.care4all},
+        {QStringLiteral("alphabetical"),     cat.downloadInAlphabeticalOrder},
     };
 }
 
@@ -4622,9 +4843,12 @@ DownloadCategory categoryFromCbor(const QCborMap& m)
     cat.color = static_cast<quint32>(
         m.value(QStringLiteral("color")).toInteger(kCategoryColorAuto));
     cat.prio = static_cast<quint8>(m.value(QStringLiteral("prio")).toInteger(cat.prio));
-    // The view-filter quartet is not on the wire: nothing reads it yet, and a
-    // GUI that never saw it would blank it on every round trip. Carried over
-    // from the stored entry by handleSetCategories instead.
+    // Absent for a client that does not know them; storeCategories() then keeps
+    // what the stored entry has.
+    cat.filter = static_cast<int>(m.value(QStringLiteral("filter")).toInteger(0));
+    cat.filterNeg = m.value(QStringLiteral("filterNeg")).toBool(false);
+    cat.care4all = m.value(QStringLiteral("care4all")).toBool(false);
+    cat.downloadInAlphabeticalOrder = m.value(QStringLiteral("alphabetical")).toBool(false);
     return cat;
 }
 
@@ -4673,6 +4897,8 @@ ops::Status IpcClientHandler::storeCategories(const QCborArray& incoming)
     // moved with it. An entry without `oldIndex` is new and nothing points at
     // it yet; an old index that never turns up here was deleted.
     QHash<uint32, uint32> oldToNew;
+    // Categories just switched to downloading in alphabetical order (new index)
+    QList<uint32> nowAlphabetical;
 
     for (int i = 0; i < incoming.size(); ++i) {
         if (!incoming.at(i).isMap())
@@ -4683,16 +4909,28 @@ ops::Status IpcClientHandler::storeCategories(const QCborArray& incoming)
 
         const int oldIndex =
             static_cast<int>(map.value(QStringLiteral("oldIndex")).toInteger(-1));
-        if (oldIndex > 0 && oldIndex < stored.size()) {
-            // Carry the fields the GUI is never given, from wherever the entry
-            // used to be — not from the slot it now occupies.
-            cat.filter = stored.at(oldIndex).filter;
-            cat.filterNeg = stored.at(oldIndex).filterNeg;
-            cat.care4all = stored.at(oldIndex).care4all;
-            cat.downloadInAlphabeticalOrder = stored.at(oldIndex).downloadInAlphabeticalOrder;
+        // Index 0 too: the "All" tab has a view filter of its own
+        if (oldIndex >= 0 && oldIndex < stored.size()) {
+            // A client that does not send the view filter must not blank it: keep
+            // it from wherever the entry used to be — not from the slot it now occupies.
+            if (!map.contains(QStringLiteral("filter"))) {
+                cat.filter = stored.at(oldIndex).filter;
+                cat.filterNeg = stored.at(oldIndex).filterNeg;
+                cat.care4all = stored.at(oldIndex).care4all;
+            }
+            if (!map.contains(QStringLiteral("alphabetical")))
+                cat.downloadInAlphabeticalOrder = stored.at(oldIndex).downloadInAlphabeticalOrder;
+            else if (cat.downloadInAlphabeticalOrder && !stored.at(oldIndex).downloadInAlphabeticalOrder)
+                nowAlphabetical.append(static_cast<uint32>(categories.size()));
 
-            oldToNew.insert(static_cast<uint32>(oldIndex),
-                            static_cast<uint32>(categories.size()));
+            if (oldIndex > 0)
+                oldToNew.insert(static_cast<uint32>(oldIndex),
+                                static_cast<uint32>(categories.size()));
+        }
+        if (categories.isEmpty()) {
+            // "All" downloads nothing in its own order and files nothing by itself
+            cat.care4all = false;
+            cat.downloadInAlphabeticalOrder = false;
         }
 
         categories.append(cat);
@@ -4716,6 +4954,15 @@ ops::Status IpcClientHandler::storeCategories(const QCborArray& incoming)
     remapFeedCategories(oldToNew);
 
     thePrefs.setCategories(categories);
+
+    // Alphabetical order replaces automatic priorities in that category
+    // (MFC MP_DOWNLOAD_ALPHABETICAL, srchybrid/TransferWnd.cpp:969-977).
+    if (theApp.downloadQueue) {
+        for (const uint32 cat : std::as_const(nowAlphabetical)) {
+            if (cat != 0)
+                theApp.downloadQueue->removeAutoPrioInCat(cat, kPrNormal);
+        }
+    }
 
     if (!thePrefs.save())
         return ops::Status::fail(500, tr("Could not write preferences.yml."));

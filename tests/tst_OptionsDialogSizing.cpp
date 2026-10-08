@@ -29,6 +29,7 @@
 #include <QComboBox>
 #include <QCborMap>
 #include <QLabel>
+#include <QMessageBox>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
@@ -38,6 +39,7 @@
 #include <QTabWidget>
 #include <QTest>
 #include <QTimer>
+#include <QDoubleSpinBox>
 #include <QTreeWidget>
 
 using namespace eMule;
@@ -95,10 +97,12 @@ private slots:
     void theWizardOffersTheNewDefaultsToAnUntunedInstall();
     void theWizardLeavesTunedLimitsAndADisabledUdpPortAlone();
     void aWizardLineTypeBecomesCapacityAndLimits();
+    void theWizardRateFieldsFollowTheLineAndSwitchToCustom();
     void theWizardNeedsANetwork();
     void theWizardReportsTheRealPortMappingResult();
     void theWizardDoesNotWaitWithoutACore();
     void aPortChangeIsReportedAsItWasApplied();
+    void onlyAPendingPortChangeOffersARestart();
 };
 
 /// The regression this file exists for. Named per page, because "the dialog is too tall"
@@ -525,6 +529,30 @@ void TestOptionsDialogSizing::aWizardLineTypeBecomesCapacityAndLimits()
     QCOMPARE(thePrefs.maxGraphUploadRate(), 4883u);
 }
 
+void TestOptionsDialogSizing::theWizardRateFieldsFollowTheLineAndSwitchToCustom()
+{
+    const WizardPrefsGuard guard;
+    FirstStartWizard wizard(nullptr, nullptr, FirstStartWizard::StartPage::Speed);
+
+    const auto spins = wizard.findChildren<QDoubleSpinBox*>();
+    QCOMPARE(spins.size(), 2);
+    QVERIFY(selectLine(wizard, QStringLiteral("Starlink 200")));
+    // Never greyed out: they show the line and take an edit at once.
+    QVERIFY(spins[0]->isEnabled() && spins[1]->isEnabled());
+    QCOMPARE(spins[0]->value(), 200.0);
+    QCOMPARE(spins[1]->value(), 20.0);
+    QCOMPARE(selectedLine(wizard), QStringLiteral("Starlink 200"));
+
+    spins[1]->setValue(25.0);
+    QCOMPARE(selectedLine(wizard), QStringLiteral("Custom"));
+    QCOMPARE(spins[0]->value(), 200.0);   // the other rate carries over
+
+    wizardButton(wizard, QStringLiteral("Finish"))->click();
+    const QCborMap applied = wizard.appliedSettings();
+    QCOMPARE(applied.value(QStringLiteral("maxGraphDownloadRate")).toInteger(), 24414);
+    QCOMPARE(applied.value(QStringLiteral("maxGraphUploadRate")).toInteger(), 3052);
+}
+
 void TestOptionsDialogSizing::theWizardNeedsANetwork()
 {
     const WizardPrefsGuard guard;
@@ -634,6 +662,34 @@ void TestOptionsDialogSizing::aPortChangeIsReportedAsItWasApplied()
     }
     QVERIFY(portChangeSummary(reply(PortApplyResult::RestartRequired))
                 .text.contains(QStringLiteral("restarting")));
+}
+
+/// The button restarts the core, so it belongs on the one notice a restart resolves.
+void TestOptionsDialogSizing::onlyAPendingPortChangeOffersARestart()
+{
+    const auto show = [](PortApplyResult result, std::function<void()> restart) {
+        const QCborMap map{{QStringLiteral("ports"), int(result)},
+                           {QStringLiteral("tcpPort"), 5662},
+                           {QStringLiteral("udpPort"), 5672}};
+        QWidget owner;
+        showPortChangeResult(&owner, Ipc::IpcMessage::makeResult(1, true, QCborValue(map)),
+                             std::move(restart));
+        auto* box = owner.findChild<QMessageBox*>();
+        int buttons = -1;
+        if (box) {
+            buttons = int(box->buttons().size());
+            box->buttons().constFirst()->click();
+        }
+        return buttons;
+    };
+
+    int restarts = 0;
+    QCOMPARE(show(PortApplyResult::RestartRequired, [&restarts] { ++restarts; }), 2);
+    QCOMPARE(restarts, 1);   // first button is Restart Now
+
+    QCOMPARE(show(PortApplyResult::BindFailed, [&restarts] { ++restarts; }), 1);
+    QCOMPARE(show(PortApplyResult::RestartRequired, {}), 1);   // nothing to restart with
+    QCOMPARE(restarts, 1);
 }
 
 QTEST_MAIN(TestOptionsDialogSizing)

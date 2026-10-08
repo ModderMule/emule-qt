@@ -10,6 +10,7 @@
 #include "IpcConnection.h"
 #include "IpcMessage.h"
 
+#include <QDeadlineTimer>
 #include <QHostAddress>
 #include <QObject>
 #include <QStringList>
@@ -101,6 +102,12 @@ public:
     /// Send a Shutdown request to the daemon, then disconnect.
     /// Use this when the GUI launched the daemon and is about to close.
     void sendShutdown();
+
+    /// Ask the daemon to restart itself. The connection drops and auto-reconnect
+    /// picks the new one up.
+    void sendRestart();
+    /// A requested restart is under way; gives up after kRestartGraceMs.
+    [[nodiscard]] bool daemonRestarting() const;
 
     /// The daemon's engine-wide Usenet pause, as last reported: seeded from the
     /// connect-time GetPreferences, then kept by PushUsenetEngineState.
@@ -221,6 +228,7 @@ private:
     bool m_handshaked = false;
     bool m_usenetEnginePaused = false;
     bool m_autoReconnect = false;
+    QDeadlineTimer m_restartDeadline;   // expired = no restart pending
     int64_t m_lastKadId     = 0;
     int64_t m_lastUsenetId  = 0;
     int64_t m_lastServerId  = 0;

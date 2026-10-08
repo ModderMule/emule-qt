@@ -37,18 +37,6 @@ QColor partColor(uint8_t status, bool paused, const QColor& have)
     }
 }
 
-/// Map a source part status byte to a color — source (client) rows, MFC DownloadClient.cpp.
-QColor sourcePartColor(uint8_t status, bool flat)
-{
-    switch (status) {
-    case 1:  return flat ? QColor(0, 0, 0) : QColor(104, 104, 104);  // both have
-    case 2:  return {0, 100, 255};    // client has, we need
-    case 3:  return {255, 208, 0};    // pending block queued
-    case 4:  return {0, 150, 0};      // currently receiving
-    default: return flat ? QColor(224, 224, 224) : QColor(240, 240, 240);  // client lacks
-    }
-}
-
 } // anonymous namespace
 
 void paintDownloadBar(QPainter& painter, const QRect& rect, const DownloadBarData& bar,
@@ -167,6 +155,31 @@ void DownloadProgressDelegate::paint(QPainter* painter, const QStyleOptionViewIt
     if (!isSourceRow && thePrefs.showDwlPercentage())
         paintPercentText(*painter, barRect, opt.font, index.data(Qt::DisplayRole).toString());
 
+    painter->restore();
+}
+
+void SourcePartsDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option,
+                                const QModelIndex& index) const
+{
+    QStyleOptionViewItem opt = option;
+    initStyleOption(&opt, index);
+
+    painter->save();
+    painter->fillRect(opt.rect, (opt.state & QStyle::State_Selected) ? opt.palette.highlight()
+                                                                     : opt.palette.base());
+
+    const QRect barRect = opt.rect.adjusted(2, 2, -2, -2);
+    if (barRect.width() > 0 && barRect.height() > 0) {
+        const bool flat = useFlatBar();
+        const QByteArray partMap = index.data(m_partMapRole).toByteArray();
+        if (partMap.isEmpty()) {
+            BarShader::fillBarRect(*painter, barRect, sourcePartColor(0, flat), flat, barDepth3D());
+        } else {
+            paintPartBar(*painter, barRect, partMap,
+                         [flat](uint8_t status) { return sourcePartColor(status, flat); },
+                         static_cast<uint64_t>(std::max<qint64>(index.data(m_fileSizeRole).toLongLong(), 0)));
+        }
+    }
     painter->restore();
 }
 

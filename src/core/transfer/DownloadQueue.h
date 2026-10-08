@@ -257,6 +257,15 @@ public:
 
     void setCatStatus(uint32 category, bool paused);
 
+    /// A source the user typed in — MFC CAddSourceDlg. The address is vetted like
+    /// any untrusted one; false when it is not usable or the file takes no more.
+    bool addUserSource(PartFile* file, const QString& host, uint16 port);
+    /// An HTTP source the user typed in.
+    bool addUserUrlSource(PartFile* file, const QString& url);
+    /// Take the category's files off automatic priority and give them @p newPrio
+    /// (MFC RemoveAutoPrioInCat). Category 0 means every file.
+    void removeAutoPrioInCat(uint32 category, uint8 newPrio);
+
     /// Point every download at where its category has moved to.
     ///
     /// @param oldToNew  old index -> new index. An index the map does not

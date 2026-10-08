@@ -364,7 +364,6 @@ private:
     QCheckBox* m_seenFileIndexCheck = nullptr;
     QLineEdit* m_videoPlayerCmdEdit = nullptr;
     QLineEdit* m_videoPlayerArgsEdit = nullptr;
-    QCheckBox* m_createBackupToPreviewCheck = nullptr;
 
     // Notifications page controls
     QRadioButton* m_noSoundRadio = nullptr;

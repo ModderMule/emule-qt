@@ -3,9 +3,12 @@
 /// @file PreviewApps.h
 /// @brief Preview application configuration — port of MFC CPreviewApps.
 ///
-/// Parses PreviewApps.dat (tab-separated config) and determines whether
-/// a PartFile can be previewed based on extension, completed bytes, and
-/// start-of-file availability.
+/// Parses PreviewApps.dat and determines whether a PartFile can be previewed
+/// based on extension, completed bytes, and start-of-file availability.
+///
+/// A line is MFC's `Title=command args;ext=avi;ext=mkv;minsize=N;minstart=N`
+/// (srchybrid/Preview.cpp:147-222, sizes decimal); the tab-separated form this
+/// port started with is still read.
 
 #include "utils/Types.h"
 
@@ -59,12 +62,17 @@ public:
     /// Suitable for populating a context menu.
     [[nodiscard]] std::vector<std::pair<QString, int>> menuEntries(const PartFile* file) const;
 
+    /// The app MFC's plain Preview hands a file to: the last entry listing the file's
+    /// extension, or -1 (MFC GetPreviewApp).
+    [[nodiscard]] int appForFileName(const QString& fileName) const;
+
     /// Parse a single config line into a PreviewApp.
     /// Returns std::nullopt for comments, blank lines, or malformed entries.
     [[nodiscard]] static std::optional<PreviewApp> parseLine(const QString& line);
 
 private:
     bool matchesFile(const PreviewApp& app, const PartFile* file) const;
+    [[nodiscard]] static std::optional<PreviewApp> parseMfcLine(const QString& line);
 
     std::vector<PreviewApp> m_apps;
 };

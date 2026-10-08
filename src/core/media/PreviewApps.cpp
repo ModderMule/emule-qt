@@ -10,6 +10,7 @@
 #include "utils/DebugUtils.h"
 
 #include <QFile>
+#include <QProcess>
 #include <QTextStream>
 
 namespace eMule {
@@ -83,6 +84,13 @@ std::optional<PreviewApp> PreviewApps::parseLine(const QString& line)
     if (trimmed.isEmpty() || trimmed.startsWith(u'#'))
         return std::nullopt;
 
+    // MFC also skips "//" comments and anything too short to be an entry
+    if (trimmed.startsWith(u'/'))
+        return std::nullopt;
+
+    if (!trimmed.contains(u'\t'))
+        return parseMfcLine(trimmed);
+
     // Tab-separated: Title<TAB>ext1,ext2<TAB>minStartHex<TAB>minCompletedHex<TAB>command<TAB>args
     const QStringList fields = trimmed.split(u'\t');
     if (fields.size() < 5) {
@@ -126,9 +134,57 @@ std::optional<PreviewApp> PreviewApps::parseLine(const QString& line)
     return app;
 }
 
+int PreviewApps::appForFileName(const QString& fileName) const
+{
+    const auto dotPos = fileName.lastIndexOf(u'.');
+    if (dotPos < 0)
+        return -1;
+    const QString ext = fileName.mid(dotPos + 1).toLower();
+    for (int i = count() - 1; i >= 0; --i) {
+        if (m_apps[static_cast<size_t>(i)].extensions.contains(ext))
+            return i;
+    }
+    return -1;
+}
+
 // ===================================================================
 // Private helpers
 // ===================================================================
+
+std::optional<PreviewApp> PreviewApps::parseMfcLine(const QString& line)
+{
+    // Title=command args;ext=avi;minsize=N;minstart=N (srchybrid/Preview.cpp:147-222)
+    const auto eq = line.indexOf(u'=');
+    if (eq <= 0)
+        return std::nullopt;
+
+    PreviewApp app;
+    app.title = line.left(eq).trimmed();
+    const QStringList fields = line.mid(eq + 1).split(u';', Qt::SkipEmptyParts);
+    if (app.title.isEmpty() || fields.isEmpty())
+        return std::nullopt;
+
+    // The first word is the program (quotes keep a path with spaces together)
+    QStringList command = QProcess::splitCommand(fields.first().trimmed());
+    if (command.isEmpty())
+        return std::nullopt;
+    app.command = command.takeFirst();
+    app.commandArgs = command.join(u' ');
+
+    for (qsizetype i = 1; i < fields.size(); ++i) {
+        const QString id = fields.at(i).section(u'=', 0, 0).trimmed().toLower();
+        const QString value = fields.at(i).section(u'=', 1).trimmed();
+        if (value.isEmpty())
+            continue;
+        if (id == QLatin1String("ext"))
+            app.extensions.append((value.startsWith(u'.') ? value.mid(1) : value).toLower());
+        else if (id == QLatin1String("minsize"))
+            app.minCompletedSize = value.toULongLong();
+        else if (id == QLatin1String("minstart"))
+            app.minStartOfFile = value.toULongLong();
+    }
+    return app;
+}
 
 bool PreviewApps::matchesFile(const PreviewApp& app, const PartFile* file) const
 {

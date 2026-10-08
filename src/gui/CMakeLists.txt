@@ -76,6 +76,12 @@ if(APPLE)
 endif()
 
 # macOS bundle settings
+# LSMinimumSystemVersion in Info.plist.in: the release workflows set the
+# deployment target; a dev build has none and gets Qt's own floor.
+set(EMULE_MACOS_MIN_VERSION "13.0")
+if(CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(EMULE_MACOS_MIN_VERSION "${CMAKE_OSX_DEPLOYMENT_TARGET}")
+endif()
 set_target_properties(emuleqt PROPERTIES
     MACOSX_BUNDLE TRUE
     MACOSX_BUNDLE_BUNDLE_NAME "eMule Qt"

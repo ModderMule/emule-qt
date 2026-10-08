@@ -40,6 +40,7 @@
 #include "utils/OtherFunctions.h"
 #include "utils/Log.h"
 
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QLoggingCategory>
 #include <QNetworkAccessManager>
@@ -74,6 +75,14 @@ DaemonApp::DaemonApp(QObject* parent)
 DaemonApp::~DaemonApp()
 {
     stop();
+}
+
+void DaemonApp::requestRestart()
+{
+    s_restartRequested = true;
+    // Queued: the caller's reply frame is flushed before teardown
+    QMetaObject::invokeMethod(QCoreApplication::instance(), &QCoreApplication::quit,
+                              Qt::QueuedConnection);
 }
 
 bool DaemonApp::start()

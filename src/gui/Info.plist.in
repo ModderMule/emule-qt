@@ -26,6 +26,8 @@
 	<string>${MACOSX_BUNDLE_COPYRIGHT}</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>LSMinimumSystemVersion</key>
+	<string>${EMULE_MACOS_MIN_VERSION}</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

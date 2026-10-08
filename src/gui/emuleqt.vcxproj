@@ -203,6 +203,7 @@
     </ClCompile>
     <ClCompile Include="dialogs\AddFriendDialog.cpp" />
     <ClCompile Include="dialogs\CategoryDialog.cpp" />
+    <ClCompile Include="dialogs\AddSourceDialog.cpp" />
     <ClCompile Include="dialogs\ArchivePreviewPanel.cpp" />
     <ClCompile Include="dialogs\MediaInfoPanel.cpp" />
     <ClCompile Include="dialogs\BugReportDialog.cpp" />
@@ -274,6 +275,7 @@
     <ClCompile Include="controls\IndexerResultsModel.cpp" />
     <ClCompile Include="controls\SearchResultsModel.cpp" />
     <ClCompile Include="controls\SearchResultsProxy.cpp" />
+    <ClCompile Include="controls\FilterEdit.cpp" />
     <ClCompile Include="controls\ServerListModel.cpp" />
     <ClCompile Include="panels\ServerPanel.cpp" />
     <ClCompile Include="controls\SharedFilesModel.cpp" />
@@ -326,6 +328,9 @@
     <QtMoc Include="utils\MetaResultActions.h" />
     <ClInclude Include="utils\NzbDrop.h" />
     <ClInclude Include="utils\PriorityText.h" />
+    <ClInclude Include="utils\ClientStateText.h" />
+    <ClInclude Include="utils\FileTypeText.h" />
+    <ClInclude Include="utils\TooltipDelayStyle.h" />
     <ClInclude Include="utils\SharedFilesFetch.h" />
     <ClInclude Include="utils\Smileys.h" />
     <ClInclude Include="utils\RatingIcons.h" />
@@ -351,6 +356,7 @@
     <ClInclude Include="app\SkinEngine.h" />
     <QtMoc Include="dialogs\AddFriendDialog.h" />
     <QtMoc Include="dialogs\CategoryDialog.h" />
+    <QtMoc Include="dialogs\AddSourceDialog.h" />
     <QtMoc Include="dialogs\ArchivePreviewPanel.h" />
     <QtMoc Include="dialogs\MediaInfoPanel.h" />
     <QtMoc Include="dialogs\BugReportDialog.h" />
@@ -409,6 +415,7 @@
     <QtMoc Include="controls\IndexerResultsModel.h" />
     <QtMoc Include="controls\SearchResultsModel.h" />
     <QtMoc Include="controls\SearchResultsProxy.h" />
+    <QtMoc Include="controls\FilterEdit.h" />
     <QtMoc Include="controls\ServerListModel.h" />
     <QtMoc Include="panels\ServerPanel.h" />
     <QtMoc Include="controls\SharedFilesModel.h" />

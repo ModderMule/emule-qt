@@ -59,6 +59,12 @@ public:
 
     void setIpcClient(IpcClient* client);
 
+    /// Open (or raise) the chat tab for a client — MFC CChatWnd::StartSession.
+    void startSession(const QString& userHash, const QString& userName);
+
+    /// Re-read the options this panel acts on ("Show smileys").
+    void applyDisplayOptions() { updateChatDisplay(); }
+
     /// Set a custom font on the chat browser.
     void setCustomFont(const QFont& font);
 

@@ -62,10 +62,12 @@ struct AddOutcome {
 [[nodiscard]] AddOutcome addDownloadFromLink(const QString& link, qint64 category, bool paused);
 
 /// Queues a search result, carrying over what the result knows (sources, AICH).
-/// @p link wins over hash/name/size when it is an ed2k link.
+/// @p link wins over hash/name/size when it is an ed2k link. Without @p paused the
+/// "add new files paused" option decides (MFC AddSearchToDownload).
 [[nodiscard]] AddOutcome addDownloadFromSearch(const QString& hashHex, const QString& fileName,
                                                uint64 fileSize, const QString& link,
-                                               qint64 category, uint32 searchID);
+                                               qint64 category, uint32 searchID,
+                                               std::optional<bool> paused = std::nullopt);
 
 // --- Servers -----------------------------------------------------------------
 

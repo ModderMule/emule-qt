@@ -33,7 +33,7 @@ set -euo pipefail
 #
 # Pushing the tag triggers .github/workflows/release.yml, which verifies the tag
 # matches CMakeLists.txt, builds Linux/macOS/Windows (by calling the per-OS
-# workflows) and publishes the GitHub Release -- with the three archives and a
+# workflows) and publishes the GitHub Release -- with the platform archives and a
 # SHA256SUMS.txt attached -- that the releaseNotes URL below points at.
 # Nothing needs to be started by hand.
 #

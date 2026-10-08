@@ -29,6 +29,7 @@
 #include "utils/ColorUtils.h"
 #include "utils/Opcodes.h"
 #include "utils/PriorityText.h"
+#include "utils/StringUtils.h"
 
 #include <QCborArray>
 #include <QCborMap>
@@ -44,6 +45,7 @@
 #include <functional>
 
 using namespace eMule;
+using namespace Qt::StringLiterals;
 
 namespace {
 
@@ -114,6 +116,11 @@ private slots:
     // --- MFC column text ----------------------------------------------------
     void downloadSourcesReadAvailableOfTotal();
     void sourceRowsFollowMfcColumns();
+    void sourceStatusFollowsMfc();
+    void a4afSourcesStayBelowAvailableOnes();
+    void remainingAndSeenCompleteFollowMfc();
+    void knownClientsFollowMfc();
+    void downloadingClientsCarryThePartBar();
     void aSourceIndexSurvivesAnEarlierDownloadLeaving();
     void completeSourcesShowPercentOrUnknown();
     void uploadPriorityLabelsMatchMfc();
@@ -694,6 +701,192 @@ void tst_ListSorting::sourceRowsFollowMfcColumns()
     QCOMPARE(text(2, DownloadListModel::ColPriority), QString());   // only on queue
     QCOMPARE(text(0, DownloadListModel::ColLastReception), QString());
     QCOMPARE(text(0, DownloadListModel::ColSeenComplete), QString());
+}
+
+void tst_ListSorting::sourceStatusFollowsMfc()
+{
+    // MFC GetDownloadStateDisplayString (BaseClient.cpp:2434-2478); the cells showed the
+    // wire tokens "OnQueue", "NoNeededParts", "LowToLowIp".
+    DownloadRow file;
+    file.hash = QStringLiteral("file");
+    file.status = QStringLiteral("ready");
+
+    const auto source = [](const char* hash, const char* state) {
+        SourceRow s;
+        s.userHash = QString::fromLatin1(hash);
+        s.downloadState = QString::fromLatin1(state);
+        return s;
+    };
+    SourceRow full = source("b", "OnQueue");
+    full.remoteQueueFull = true;
+    SourceRow cache = source("g", "Downloading");
+    cache.sourceFrom = 8;   // SourceFrom::HttpCache
+    SourceRow other = source("h", "OnQueue");
+    other.a4af = true;
+    other.noNeededHere = true;
+    other.hasOtherRequests = true;
+    other.otherFileName = QStringLiteral("other.avi");
+    other.transferredDown = 5000;
+    other.datarate = 100;
+    other.partMap = QByteArray(3, '\2');
+
+    DownloadListModel model;
+    model.setDownloads({file});
+    model.setSources(QStringLiteral("file"),
+                     {source("a", "OnQueue"), full, source("c", "Downloading"),
+                      source("d", "NoNeededParts"), source("e", "LowToLowIp"),
+                      source("f", "None"), cache, other});
+    const QModelIndex parent = model.index(0, 0);
+    const auto text = [&](int row, int column = DownloadListModel::ColStatus) {
+        return model.index(row, column, parent).data().toString();
+    };
+
+    thePrefs.setShowExtControls(false);
+    QCOMPARE(text(0), QStringLiteral("On Queue"));
+    QCOMPARE(text(1), QStringLiteral("Queue Full"));
+    QCOMPARE(text(2), QStringLiteral("Transferring"));
+    QCOMPARE(text(3), QStringLiteral("No needed parts"));
+    QCOMPARE(text(4), QStringLiteral("Cannot connect LowID to LowID"));
+    QCOMPARE(text(5), QString());
+    QCOMPARE(text(6), QStringLiteral("Transferring (HTTP Cache)"));
+    QCOMPARE(text(7), QStringLiteral("Asked for another file"));
+    QCOMPARE(text(0, DownloadListModel::ColFileName), QStringLiteral("(Unknown)"));
+
+    // The A4AF row: no figures, and the bare grey bar
+    QCOMPARE(text(7, DownloadListModel::ColCompleted), QString());
+    QCOMPARE(text(7, DownloadListModel::ColSpeed), QString());
+    QVERIFY(model.index(7, DownloadListModel::ColProgress, parent)
+                .data(DownloadListModel::PartMapRole).toByteArray().isEmpty());
+
+    thePrefs.setShowExtControls(true);
+    QCOMPARE(text(7), QStringLiteral("Asked for another file (No needed parts): \"other.avi\"*"));
+}
+
+void tst_ListSorting::a4afSourcesStayBelowAvailableOnes()
+{
+    // MFC SortProc returns on the item type before the direction is applied
+    // (DownloadListCtrl.cpp:1636-1637).
+    DownloadRow file;
+    file.hash = QStringLiteral("file");
+    file.status = QStringLiteral("ready");
+
+    SourceRow a4af;
+    a4af.userHash = QStringLiteral("x");
+    a4af.userName = QStringLiteral("aaa");
+    a4af.a4af = true;
+    SourceRow early;
+    early.userHash = QStringLiteral("y");
+    early.userName = QStringLiteral("bbb");
+    SourceRow late;
+    late.userHash = QStringLiteral("z");
+    late.userName = QStringLiteral("ccc");
+
+    DownloadListModel model;
+    model.setDownloads({file});
+    model.setSources(QStringLiteral("file"), {a4af, late, early});
+
+    DownloadSortProxy proxy;
+    proxy.setSourceModel(&model);
+    proxy.setSortRole(Qt::UserRole);
+    const auto names = [&proxy] {
+        const QModelIndex parent = proxy.index(0, 0);
+        QStringList out;
+        for (int row = 0; row < proxy.rowCount(parent); ++row)
+            out << proxy.index(row, 0, parent).data().toString();
+        return out;
+    };
+
+    proxy.sort(DownloadListModel::ColFileName, Qt::AscendingOrder);
+    QCOMPARE(names(), (QStringList{u"bbb"_s, u"ccc"_s, u"aaa"_s}));
+    proxy.sort(DownloadListModel::ColFileName, Qt::DescendingOrder);
+    QCOMPARE(names(), (QStringList{u"ccc"_s, u"bbb"_s, u"aaa"_s}));
+}
+
+void tst_ListSorting::remainingAndSeenCompleteFollowMfc()
+{
+    // MFC DownloadListCtrl.cpp:2062-2100
+    DownloadRow known;
+    known.hash = QStringLiteral("known");
+    known.status = QStringLiteral("ready");
+    known.fileSize = 3 * 1024 * 1024;
+    known.completedSize = 1024 * 1024;
+    known.timeRemaining = 303;
+    known.completeSourcesLo = 2;
+    known.completeSourcesHi = 5;
+    known.downTransferred = 2048;
+    DownloadRow unknown = known;
+    unknown.hash = QStringLiteral("unknown");
+    unknown.timeRemaining = -1;
+    unknown.completeSourcesLo = 0;
+    DownloadRow done = known;
+    done.hash = QStringLiteral("done");
+    done.status = QStringLiteral("complete");
+    done.completeSourcesLo = 5;
+
+    DownloadListModel model;
+    model.setDownloads({known, unknown, done});
+    const auto text = [&model](int row, int column) {
+        return model.index(row, column).data().toString();
+    };
+
+    QCOMPARE(text(0, DownloadListModel::ColRemaining),
+             QStringLiteral("5:03 mins (%1)").arg(formatByteSize(2 * 1024 * 1024)));
+    QVERIFY(text(1, DownloadListModel::ColRemaining).startsWith(QStringLiteral("? (")));
+    QCOMPARE(text(2, DownloadListModel::ColRemaining), QString());
+
+    QCOMPARE(text(0, DownloadListModel::ColSeenComplete), QStringLiteral("Never (2 - 5)"));
+    QCOMPARE(text(1, DownloadListModel::ColSeenComplete), QStringLiteral("Never (< 5)"));
+    QCOMPARE(text(2, DownloadListModel::ColSeenComplete), QStringLiteral("Never (5)"));
+    QCOMPARE(text(0, DownloadListModel::ColLastReception), QStringLiteral("Never"));
+    QCOMPARE(text(0, DownloadListModel::ColAddedOn), QStringLiteral("?"));
+    QCOMPARE(text(0, DownloadListModel::ColTransferred), formatByteSize(2048));
+
+    // An unknown time sorts as the longest
+    const auto key = [&model](int row) {
+        return model.index(row, DownloadListModel::ColRemaining).data(Qt::UserRole).toLongLong();
+    };
+    QVERIFY(key(1) > key(0));
+}
+
+void tst_ListSorting::knownClientsFollowMfc()
+{
+    // MFC ClientListCtrl.cpp:166-200
+    ClientRow c;
+    c.userHash = QStringLiteral("a");
+    c.downloadState = QStringLiteral("OnQueue");
+    c.transferredUp = 111;       // this session's counters are not what the list shows
+    c.transferredDown = 222;
+    c.uploadedTotal = 4096;
+
+    ClientListModel model(ClientListMode::KnownClients);
+    model.setClients({c});
+    const auto text = [&model](int column) { return model.index(0, column).data().toString(); };
+
+    QCOMPARE(model.headerData(2, Qt::Horizontal).toString(), QStringLiteral("Transferred Up"));
+    QCOMPARE(text(0), QStringLiteral("(Unknown)"));
+    QCOMPARE(text(2), formatByteSize(4096));
+    QCOMPARE(text(3), QStringLiteral("On Queue"));
+    QCOMPARE(text(4), QString());                 // no credits: blank
+    QCOMPARE(text(5), QStringLiteral("Unknown"));
+    QCOMPARE(text(6), QStringLiteral("No"));
+}
+
+void tst_ListSorting::downloadingClientsCarryThePartBar()
+{
+    // MFC DownloadClientsCtrl.cpp:150-155 draws the bar; the cell held a number
+    ClientRow c;
+    c.userHash = QStringLiteral("a");
+    c.availPartCount = 2;
+    c.partMap = QByteArray::fromHex("010200");
+    c.reqFileSize = 30'000'000;
+
+    ClientListModel model(ClientListMode::Downloading);
+    model.setClients({c});
+    const QModelIndex cell = model.index(0, 4);
+    QCOMPARE(cell.data().toString(), QString());
+    QCOMPARE(cell.data(ClientListModel::PartMapRole).toByteArray(), c.partMap);
+    QCOMPARE(cell.data(ClientListModel::FileSizeRole).toLongLong(), qint64(30'000'000));
+    QCOMPARE(cell.data(Qt::UserRole).toInt(), 2);   // still sorts by part count
 }
 
 void tst_ListSorting::aSourceIndexSurvivesAnEarlierDownloadLeaving()

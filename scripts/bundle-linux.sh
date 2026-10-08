@@ -349,8 +349,7 @@ fi
 
 DOC_DST="$STAGE_DIR/doc"
 mkdir -p "$DOC_DST"
-cp "$REPO_ROOT/docs/openapi.json" "$REPO_ROOT/docs/rest-api.md" \
-   "$REPO_ROOT/docs/fake-file-detector.md" "$DOC_DST/"
+cp "$REPO_ROOT/docs/openapi.json" "$REPO_ROOT/docs/rest-api.md" "$DOC_DST/"
 
 # -- Audit direct dependencies -----------------------------------------------
 # Our executables may only need bundled libs or libs every desktop has. v0.5.2
@@ -383,7 +382,7 @@ MISSING=0
 for rel in emuleqt emulecored emuleqt-mcp \
            config/eMule.tmpl config/FakeFileFilter.dat config/webserver/swagger-ui-bundle.js \
            config/webserver/swagger-ui.css config/webserver/swagger-ui.LICENSE.txt \
-           doc/openapi.json doc/rest-api.md doc/fake-file-detector.md; do
+           doc/openapi.json doc/rest-api.md; do
     if [ ! -s "$STAGE_DIR/$rel" ]; then
         echo "Error: $rel is missing from the package" >&2
         MISSING=1

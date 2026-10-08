@@ -23,6 +23,8 @@
 #include <QStringList>
 #include <QTabBar>
 
+#include <functional>
+
 class QMenu;
 
 namespace eMule {
@@ -74,6 +76,21 @@ public:
     /// any category exists).
     void showCategoryMenu(int tabIndex, const QPoint& globalPos);
 
+    /// Ask for a new category; @p onCreated gets its index once the daemon has it
+    /// (the download menu's "New..." assigns the selection to it).
+    void addCategory(std::function<void(int index)> onCreated);
+
+    /// MFC's "Select View Filter" submenu for the tab of category @p index
+    /// (srchybrid/TransferWnd.cpp:706-748), for a panel to put in its menu.
+    void addViewFilterMenu(QMenu* menu, int index);
+
+    /// A per-tab suffix — MFC's "transferring/total" with "Show download info on
+    /// category tabs". One entry per category; an empty list removes them.
+    void setTabInfo(const QStringList& info);
+
+    /// The name a view filter mode goes by in the menu and on the tab.
+    [[nodiscard]] static QString viewFilterTitle(int filter);
+
 signals:
     /// The selected tab changed. Carries the *category* index, not the tab's.
     void currentCategoryChanged(int category);
@@ -87,6 +104,9 @@ signals:
 
 private:
     void rebuildTabs();
+    /// Title, view filter and info of one tab, as MFC labels it (EditCatTabLabel).
+    [[nodiscard]] QString tabLabel(int index) const;
+    void setViewFilter(int index, int filter);
     void sendCategories(const QList<DownloadCategory>& categories, const QList<int>& oldIndex);
     void addCategoryInteractive();
     void editCategory(int index);
@@ -107,6 +127,7 @@ private:
     QList<int> m_categoryOldIndex;
 
     QString m_defaultIncomingDir;
+    QStringList m_tabInfo;
 };
 
 } // namespace eMule

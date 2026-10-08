@@ -11,6 +11,7 @@
 ///   - Results tree view with sortable columns
 ///   - Download button at bottom
 
+#include <optional>
 #include <QWidget>
 
 #include "controls/AbstractListView.h"
@@ -40,10 +41,12 @@ class QTreeView;
 namespace eMule {
 
 class DownloadListModel;
+class FilterEdit;
 class IndexerResultsModel;
 class IpcClient;
 class MetaResultActions;
 class SearchResultsModel;
+struct SearchResultRef;
 
 /// One StartSearch request. Mirrors the daemon's SearchParams field order.
 struct SearchRequest {
@@ -131,6 +134,13 @@ public:
                                  int method = -1,
                                  const QString& tabTitle = {});
 
+    /// "Search Related Files": ask the connected server what else the sharers of these
+    /// files have — MFC CSearchResultsWnd::SearchRelatedFiles.
+    void startRelatedSearch(const QStringList& hashes, const QStringList& names);
+
+    /// The connected server answers that search (MFC CanSearchRelatedFiles).
+    void setRelatedSearchSupported(bool supported) { m_relatedSearchSupported = supported; }
+
     /// Show a peer's shared file list in its own tab, creating it on first use and
     /// selecting it. MFC CSearchList::ProcessSearchAnswer(…, sender, …).
     void showClientSharedFiles(uint32_t searchID, const QString& userName);
@@ -153,6 +163,7 @@ private slots:
     void onTabChanged(int index);
     void onTabCloseRequested(int index);
     void onTabDoubleClicked(int index);
+    void onTabContextMenu(const QPoint& pos);
     void onResultContextMenu(const QPoint& pos);
     void onResultDoubleClicked(const QModelIndex& index);
     void onSearchResultPush(const Ipc::IpcMessage& msg);
@@ -162,6 +173,7 @@ private slots:
 
 protected:
     void showEvent(QShowEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     [[nodiscard]] SearchRequest requestFromUi() const;
@@ -209,14 +221,21 @@ private:
     /// @p category files the download into that category; -1 takes the "->" strip's
     /// selection (MFC GetSelectedCat). For an indexer grab 0 is "nobody chose", which
     /// lets the daemon auto-categorise.
-    void downloadResults(const QModelIndexList& proxyRows, int category = -1);
+    /// @p paused starts eD2K downloads paused or not; unset leaves it to the
+    /// "add new files paused" option (MFC DownloadSelected).
+    void downloadResults(const QModelIndexList& proxyRows, int category = -1,
+                         std::optional<bool> paused = std::nullopt);
 
-    /// Send one ED2K download request for a proxy row.
-    void sendDownloadRequest(int proxyRow, int category);
-    [[nodiscard]] QString buildEd2kLink(int proxyRow);
+    /// The eD2K result behind a row of the view; on a name row also that name.
+    [[nodiscard]] SearchResultRef refAt(const QModelIndex& proxyIndex) const;
+
+    /// Send one ED2K download request for a row of the view. A name row downloads
+    /// the file under that name (MFC SearchResultsWnd.cpp:516-548).
+    void sendDownloadRequest(const QModelIndex& proxyIndex, int category, std::optional<bool> paused);
+    [[nodiscard]] QString buildEd2kLink(const QModelIndex& proxyIndex);
     /// magnet:?xt=urn:ed2k for eD2K rows, the server's magnet for torrents, empty for Usenet.
-    [[nodiscard]] QString buildMagnetLink(int proxyRow);
-    void copyEd2kLink(int row);
+    [[nodiscard]] QString buildMagnetLink(const QModelIndex& proxyIndex);
+    void copyEd2kLink(const QModelIndex& proxyIndex);
     /// Save the selected eNode rows' .nzb (@p nzb) or .torrent files.
     void saveMetaFiles(bool nzb);
     [[nodiscard]] MetaResultActions* metaActions();
@@ -289,6 +308,10 @@ private:
     void updateMoreButton();
     /// Hide the rows of unticked networks. A tab that asked for one network shows all.
     void applyNetworkFilter(SearchTab& tab);
+    /// Push the filter box's text to every tab and refresh the tab counts.
+    void applyTextFilter();
+    /// "title (count)", or "title (shown/total)" while the filter box hides rows.
+    [[nodiscard]] QString tabLabel(const SearchTab& tab) const;
 
     // Search controls
     QLineEdit* m_nameEdit = nullptr;
@@ -325,6 +348,10 @@ private:
 
     // Tab bar + results
     QTabBar* m_tabBar = nullptr;
+    FilterEdit* m_filterEdit = nullptr;
+    QStringList m_filterTokens;
+    int m_filterColumn = 0;
+    bool m_relatedSearchSupported = false;
     ListTreeView* m_resultView = nullptr;
     QLabel* m_statusLabel = nullptr;
     QPushButton* m_downloadBtn = nullptr;

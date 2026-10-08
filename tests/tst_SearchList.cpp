@@ -2,6 +2,7 @@
 /// @brief Tests for search/SearchList — session management, dedup, spam, persistence, signals.
 
 #include "TestHelpers.h"
+#include "CborSerializers.h"
 #include "app/AppContext.h"
 #include "client/UpDownClient.h"
 #include "crypto/AICHData.h"
@@ -92,6 +93,7 @@ private slots:
     void addToList_aichRoots_data();
     void addToList_aichRoots();
     void addToList_newNameChildCountsItsSources();
+    void resultRow_carriesTheNamesAFileGoesBy();
     void addToList_ownFilesDontCountTowardsTheLimit();
     void addToList_kadOrigin_serverResultWins_data();
     void addToList_kadOrigin_serverResultWins();
@@ -345,6 +347,49 @@ void tst_SearchList::addToList_newNameChildCountsItsSources()
     }
 
     QCOMPARE(list.foundSources(id), uint32{8});
+}
+
+void tst_SearchList::resultRow_carriesTheNamesAFileGoesBy()
+{
+    // MFC shows each name as a child row (SearchListCtrl.cpp:1151-1210). The row sent to
+    // the GUI had the best name only.
+    SearchList list;
+    SearchParams params;
+    const uint32 id = list.newSearch({}, params);
+
+    uint8 hash[16];
+    std::memset(hash, 0xAB, 16);
+    uint8 single[16];
+    std::memset(single, 0xAC, 16);
+
+    const auto add = [&](const uint8* h, const QString& name, uint32 sources) {
+        const QByteArray packet = buildSingleResultPacket(h, name, 10000, sources);
+        SafeMemFile data(packet);
+        auto* file = new SearchFile(data, true, 0xC0A80001, 4661);
+        file->setSearchID(id);
+        list.addToList(file);
+    };
+    add(hash, QStringLiteral("a.avi"), 5);
+    add(hash, QStringLiteral("b.avi"), 3);
+    add(single, QStringLiteral("only.avi"), 2);
+
+    QHash<QString, QCborMap> rows;
+    list.forEachResult(id, [&rows](const SearchFile* sf) {
+        const QCborMap m = Ipc::toCbor(*sf);
+        rows.insert(m.value(QStringLiteral("fileName")).toString(), m);
+    });
+    QCOMPARE(rows.size(), 2);   // files, not names
+
+    const QCborArray names = rows.value(QStringLiteral("a.avi")).value(QStringLiteral("children")).toArray();
+    QCOMPARE(names.size(), 2);
+    QCOMPARE(names.at(0).toMap().value(QStringLiteral("fileName")).toString(), QStringLiteral("a.avi"));
+    QCOMPARE(names.at(0).toMap().value(QStringLiteral("sourceCount")).toInteger(), qint64{5});
+    QCOMPARE(names.at(1).toMap().value(QStringLiteral("fileName")).toString(), QStringLiteral("b.avi"));
+    QCOMPARE(names.at(1).toMap().value(QStringLiteral("sourceCount")).toInteger(), qint64{3});
+
+    // One name: nothing to expand
+    QVERIFY(!rows.value(QStringLiteral("only.avi")).contains(QStringLiteral("children")));
+    QVERIFY(rows.value(QStringLiteral("only.avi")).contains(QStringLiteral("clientCount")));
 }
 
 // The parent is recomputed from its children on every merge: eD2K sums them. Adding

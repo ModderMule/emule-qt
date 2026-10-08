@@ -1451,7 +1451,7 @@ void UpDownClient::udpReaskForDownload()
     // link to is pure overhead, and it drags the A4AF swap below along with it — that
     // swap fires on every pass (nothing stamps the re-ask clock on the swap path), so an
     // actively downloading source was bounced between two files once a second.
-    if (thePrefs.udpPort() == 0 || theApp.isFirewalled()
+    if (theApp.listeningUdpPort() == 0 || theApp.isFirewalled()
         || (m_socket && m_socket->isConnected())
         || thePrefs.proxySettings().useProxy)
         return;
@@ -1616,7 +1616,7 @@ bool UpDownClient::swapToAnotherFile(const QString& reason, bool ignoreNoNeeded,
             const PartFileStatus st = other->status();
             return !other->isStopped()
                 && (st == PartFileStatus::Ready || st == PartFileStatus::Empty)
-                && other->sourceCount() < static_cast<int>(thePrefs.maxSourcesPerFile());
+                && other->sourceCount() < static_cast<int>(other->maxSources());
         }
         return swapToRightFile(other, bestFile ? bestFile : m_reqFile, ignoreSuspensions,
                                otherIsNNP, m_downloadState == DownloadState::NoNeededParts,
@@ -1739,7 +1739,7 @@ bool UpDownClient::swapToRightFile(PartFile* swapTo, PartFile* curFile, bool ign
     // Source count check — prefer files needing more sources
     const int swapToSrcCount = swapTo->sourceCount();
     const int curFileSrcCount = curFile->sourceCount();
-    const int maxSources = static_cast<int>(thePrefs.maxSourcesPerFile());
+    const int maxSources = static_cast<int>(swapTo->maxSources());
 
     // If swapTo already has max sources, don't swap
     if (swapToSrcCount >= maxSources)

@@ -6,11 +6,14 @@
 #include "utils/PreviewLauncher.h"
 
 #include "app/IpcClient.h"
+#include "media/PreviewApps.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDesktopServices>
+#include <QDir>
 #include <QFileInfo>
 #include <QProcess>
 #include <QUrl>
@@ -42,34 +45,63 @@ void launchPreview(const QString& url)
         logWarning(QStringLiteral("No video player configured. Set it in Options → Files."));
         return;
     }
+    launchPlayer(playerCmd, thePrefs.videoPlayerArgs(), url);
+}
 
-    QString args = thePrefs.videoPlayerArgs();
+bool launchPlayer(const QString& command, const QString& playerArgs, const QString& target)
+{
+    if (command.isEmpty() || target.isEmpty())
+        return false;
+
+    QString args = playerArgs;
     QStringList argList;
     if (args.contains(QStringLiteral("%1"))) {
-        args.replace(QStringLiteral("%1"), url);
+        // Split first: a path with spaces must stay one argument
         argList = QProcess::splitCommand(args);
+        for (QString& arg : argList)
+            arg.replace(QStringLiteral("%1"), target);
     } else {
         if (!args.isEmpty())
             argList = QProcess::splitCommand(args);
-        argList.append(url);
+        argList.append(target);
     }
 
     // Reuse existing VLC instance (matches original eMule ShellExecute behavior).
     // macOS VLC doesn't support --one-instance; use `open -a` which sends the URL
     // to the running app. Linux/Windows VLC supports --one-instance --playlist-replace.
-    const QString playerName = QFileInfo(playerCmd).completeBaseName().toLower();
+    const QString playerName = QFileInfo(command).completeBaseName().toLower();
     if (playerName == QStringLiteral("vlc")) {
 #ifdef Q_OS_MACOS
-        QProcess::startDetached(QStringLiteral("open"),
-            QStringList{QStringLiteral("-a"), playerCmd} + argList);
+        return QProcess::startDetached(QStringLiteral("open"),
+            QStringList{QStringLiteral("-a"), command} + argList);
 #else
         argList.prepend(QStringLiteral("--playlist-replace"));
         argList.prepend(QStringLiteral("--one-instance"));
-        QProcess::startDetached(playerCmd, argList);
+        return QProcess::startDetached(command, argList);
 #endif
-    } else {
-        QProcess::startDetached(playerCmd, argList);
     }
+    return QProcess::startDetached(command, argList);
+}
+
+const PreviewApps& previewApps()
+{
+    static PreviewApps apps;
+    static QDateTime loadedStamp;
+
+    const QFileInfo file(QDir(thePrefs.configDir()).filePath(QStringLiteral("PreviewApps.dat")));
+    if (!file.exists()) {
+        if (apps.count() > 0 || loadedStamp.isValid()) {
+            apps = PreviewApps{};
+            loadedStamp = {};
+        }
+        return apps;
+    }
+    if (file.lastModified() != loadedStamp) {
+        apps = PreviewApps{};
+        (void)apps.loadFromFile(file.absoluteFilePath());
+        loadedStamp = file.lastModified();
+    }
+    return apps;
 }
 
 QString daemonStreamUrl(const IpcClient* ipc, const QString& fileHash,
