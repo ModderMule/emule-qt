@@ -136,7 +136,7 @@ QJsonObject componentSchemas()
                                          "executable_masquerade, archive_masquerade, claimed_type_mismatch, "
                                          "spam_score, spam_status, bad_rating, fake_rating, multiple_aich, "
                                          "implausible_media_length, implausible_media_bitrate, "
-                                         "media_size_mismatch, name_media_tag_mismatch, abuse_content_name."))},
+                                         "media_size_mismatch, name_media_tag_mismatch, abuse_content_name, password_protected."))},
     }));
     c.insert(s("Server"), schemaObject({
         {s("name"), schemaString()},
@@ -180,7 +180,7 @@ QJsonObject componentSchemas()
                                          "executable_masquerade, archive_masquerade, claimed_type_mismatch, "
                                          "spam_score, spam_status, bad_rating, fake_rating, multiple_aich, "
                                          "implausible_media_length, implausible_media_bitrate, "
-                                         "media_size_mismatch, name_media_tag_mismatch, abuse_content_name."))},
+                                         "media_size_mismatch, name_media_tag_mismatch, abuse_content_name, password_protected."))},
     }));
     c.insert(s("Client"), schemaObject({
         {s("userName"), schemaString()},

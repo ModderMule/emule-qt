@@ -2452,6 +2452,16 @@ Its downloads keep their files and move to All.</source>
         <translation>艺术家、专辑和标题均未出现在任何名称中</translation>
     </message>
     <message>
+        <location line="+1"/>
+        <source>A name uses words that advertise child abuse material</source>
+        <translation>名称中含有宣传儿童虐待内容的词语</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The release is password protected</source>
+        <translation>该发布受密码保护</translation>
+    </message>
+    <message>
         <location line="+9"/>
         <source>%1 (fake score %2 of 100)</source>
         <translation>%1（假文件评分 %2 / 100）</translation>
@@ -3012,7 +3022,7 @@ ED2K 哈希：	%2
 <context>
     <name>eMule::FindInListDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/FindInListDialog.cpp" line="+71"/>
+        <location filename="../src/gui/dialogs/FindInListDialog.cpp" line="+90"/>
         <source>Search</source>
         <translation>搜索</translation>
     </message>
@@ -3387,7 +3397,7 @@ ED2K 哈希：	%2
 <context>
     <name>eMule::IndexerResultsModel</name>
     <message>
-        <location filename="../src/gui/controls/IndexerResultsModel.cpp" line="+25"/>
+        <location filename="../src/gui/controls/IndexerResultsModel.cpp" line="+26"/>
         <source>today</source>
         <translation>今天</translation>
     </message>
@@ -3412,7 +3422,7 @@ ED2K 哈希：	%2
         <translation>%1 年</translation>
     </message>
     <message>
-        <location line="+102"/>
+        <location line="+109"/>
         <source>Posted: %1</source>
         <translation>发布于：%1</translation>
     </message>
@@ -3427,7 +3437,7 @@ ED2K 哈希：	%2
         <translation>受密码保护</translation>
     </message>
     <message>
-        <location line="+27"/>
+        <location line="+31"/>
         <source>Name</source>
         <translation>名称</translation>
     </message>
@@ -3470,6 +3480,11 @@ ED2K 哈希：	%2
         <location line="+1"/>
         <source>Known</source>
         <translation>已知</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Confidence</source>
+        <translation>可信度</translation>
     </message>
 </context>
 <context>
@@ -8714,14 +8729,14 @@ Restart eMule for all connections to use the new proxy settings.</source>
     <name>eMule::SearchPanel</name>
     <message>
         <location filename="../src/gui/panels/SearchPanel.cpp" line="+302"/>
-        <location line="+938"/>
+        <location line="+942"/>
         <location line="+13"/>
         <location line="+415"/>
         <source>Download</source>
         <translation>下载</translation>
     </message>
     <message>
-        <location line="-1346"/>
+        <location line="-1350"/>
         <source>Close All Searches</source>
         <translation>关闭所有搜索</translation>
     </message>
@@ -9003,7 +9018,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+75"/>
-        <location line="+178"/>
+        <location line="+182"/>
         <source>Usenet search</source>
         <translation>Usenet 搜索</translation>
     </message>
@@ -9018,8 +9033,8 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>Usenet 搜索：%1</translation>
     </message>
     <message>
-        <location line="-213"/>
-        <location line="+217"/>
+        <location line="-217"/>
+        <location line="+221"/>
         <source>No results</source>
         <translation>无结果</translation>
     </message>
@@ -9111,13 +9126,13 @@ Restart eMule for all connections to use the new proxy settings.</source>
     <message>
         <location line="+50"/>
         <location line="+7"/>
-        <location line="+899"/>
+        <location line="+906"/>
         <location line="+43"/>
         <source>Preview</source>
         <translation>预览</translation>
     </message>
     <message>
-        <location line="-671"/>
+        <location line="-678"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -9126,7 +9141,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 %1</translation>
     </message>
     <message>
-        <location line="+629"/>
+        <location line="+636"/>
         <source>Preview requested - please wait</source>
         <translation>已请求预览 - 请稍候</translation>
     </message>
@@ -9136,7 +9151,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>%1 未发送预览</translation>
     </message>
     <message>
-        <location line="+313"/>
+        <location line="+319"/>
         <source>Asking servers: %1 / %2</source>
         <translation>正在询问服务器：%1 / %2</translation>
     </message>
@@ -9146,7 +9161,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>全部</translation>
     </message>
     <message>
-        <location line="-1325"/>
+        <location line="-1338"/>
         <location line="+14"/>
         <source>Mark as Spam</source>
         <translation>标记为垃圾</translation>
@@ -9182,7 +9197,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>Web 服务</translation>
     </message>
     <message>
-        <location line="+905"/>
+        <location line="+912"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>预览不可用 — Web 服务器未运行或未收到流令牌。</translation>
     </message>

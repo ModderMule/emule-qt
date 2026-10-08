@@ -287,8 +287,10 @@ SearchQueueBackend defaultSearchQueueBackend(SearchList& list)
     backend.dispatch = [&list](uint32 searchID, SearchType type, const SearchParams& params) {
         if (type == SearchType::Kademlia)
             return dispatchKadSearch(list, searchID, params);
-        if (isMetaSearchType(type))
+        if (isMetaSearchType(type)) {
+            list.setSearchExpression(searchID, params.expression);
             return dispatchMetaSearch(searchID, type, params);
+        }
         return dispatchEd2kSearch(list, searchID, type, params);
     };
 

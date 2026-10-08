@@ -474,6 +474,13 @@ void tst_IndexerParse::search_classifiesThePasswordAttr()
         QVERIFY2(row.password.isEmpty(), qPrintable(flag));
     }
 
+    // Only a plain "locked" counts for the fake-file verdict; unknowns do not
+    QVERIFY(rowFor(QStringLiteral("1")).passwordStated);
+    QVERIFY(rowFor(QStringLiteral("10")).passwordStated);
+    for (const QString& flag : {QStringLiteral("0"), QStringLiteral("2"), QStringLiteral("-1"),
+                               QStringLiteral("255"), QStringLiteral("n/a"), QStringLiteral("s3cretpw")})
+        QVERIFY2(!rowFor(flag).passwordStated, qPrintable(flag));
+
     // Too short to be anything but a placeholder: protected, but nothing usable.
     for (const QString& junk : {QStringLiteral("ab"), QStringLiteral("?"),
                                QStringLiteral("n/a")}) {

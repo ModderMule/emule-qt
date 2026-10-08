@@ -92,6 +92,7 @@ void applyAttr(IndexerResult& row, QStringView key, QStringView value)
         const int flag = value.toInt(&numeric);
         if (numeric) {
             row.passwordProtected = flag != 0;
+            row.passwordStated = flag == 1 || flag == 10;
         } else {
             row.passwordProtected = true;
             if (value.size() >= 4)

@@ -24,6 +24,7 @@ private slots:
     void nameGroups_unrelatedNames();
     void nameGroups_keywordAloneDoesNotJoin();
     void abuseNames_lowerTheScore();
+    void listing_passwordProtected();
     void namesSpanKinds();
     void badSignalName_tokensAndRegex();
     void badSignalComment();
@@ -448,11 +449,44 @@ void tst_FakeFileDetector::kadTrust_decode()
     QCOMPARE(kadTrustFromPublishInfo((2u << 24) | (40u << 16) | 300), KadTrust::High);
 }
 
+void tst_FakeFileDetector::listing_passwordProtected()
+{
+    const FakeFileRules rules = FakeFileRules::defaults();
+
+    // A listing is a name, a size and what the source says about it
+    FakeFileInput in = listingInput(QStringLiteral("Some.Release.2024.1080p"), 4'000'000'000ULL, {}, false,
+                                    QStringLiteral("some release"));
+    QCOMPARE(in.name, QStringLiteral("Some.Release.2024.1080p"));
+    QCOMPARE(in.size, uint64{4'000'000'000ULL});
+    QCOMPARE(in.ignoredNameWords, searchKeywordTokens(QStringLiteral("some release")));
+    FakeFileVerdict v = assessFile(in, rules);
+    QCOMPARE(v.score, 0);
+    QCOMPARE(v.band, Confidence::LooksGood);   // nothing here can make a listing genuine
+
+    // Locked and no password with it: a caution, never hidden
+    in.passwordProtected = true;
+    v = assessFile(in, rules);
+    QVERIFY(v.reasons.contains({FakeReason::PasswordProtected, 25}));
+    QCOMPARE(v.band, Confidence::Caution);
+
+    // The name rule says the same thing: counted once
+    in.name = QStringLiteral("Some Release (password protected)");
+    v = assessFile(in, rules);
+    QVERIFY(v.has(FakeReason::BadSignalName));
+    QVERIFY(!v.has(FakeReason::PasswordProtected));
+    QCOMPARE(v.score, 25);
+
+    // The name signals work on a listing as on a file
+    v = assessFile(listingInput(QStringLiteral("pthc some name"), 1000, {}, false), rules);
+    QCOMPARE(v.band, Confidence::Suspect);
+}
+
 void tst_FakeFileDetector::ids_areStable()
 {
     QCOMPARE(fakeReasonId(FakeReason::MultipleNames), QStringLiteral("multiple_names"));
     QCOMPARE(fakeReasonId(FakeReason::NameMediaTagMismatch), QStringLiteral("name_media_tag_mismatch"));
     QCOMPARE(fakeReasonId(FakeReason::AbuseContentName), QStringLiteral("abuse_content_name"));
+    QCOMPARE(fakeReasonId(FakeReason::PasswordProtected), QStringLiteral("password_protected"));
     QCOMPARE(confidenceId(Confidence::LikelyFake), QStringLiteral("likely_fake"));
     QCOMPARE(confidenceId(Confidence::Genuine), QStringLiteral("genuine"));
     QVERIFY(Confidence::Spam < Confidence::Genuine);

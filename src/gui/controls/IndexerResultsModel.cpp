@@ -3,6 +3,7 @@
 /// @brief Table model for newznab/torznab search results — implementation.
 
 #include "controls/IndexerResultsModel.h"
+#include "controls/ConfidenceStyle.h"
 #include "controls/KnownTypeStyle.h"
 
 #include "utils/StringUtils.h"
@@ -96,6 +97,7 @@ QVariant IndexerResultsModel::data(const QModelIndex& index, int role) const
         case ColSeeders:  return row->seeders >= 0 ? QString::number(row->seeders) : QString{};
         case ColPeers:    return row->peers >= 0 ? QString::number(row->peers) : QString{};
         case ColKnown:    return knownTypeString(row->knownType);
+        case ColConfidence: return confidenceText(row->confidence, row->fakeScore);
         default:          return {};
         }
     }
@@ -110,6 +112,7 @@ QVariant IndexerResultsModel::data(const QModelIndex& index, int role) const
         case ColSeeders: return row->seeders;
         case ColPeers:   return row->peers;
         case ColKnown:   return row->knownType;
+        case ColConfidence: return confidenceSortKey(row->confidence, row->fakeScore);
         default:         return data(index, Qt::DisplayRole);
         }
     }
@@ -128,6 +131,11 @@ QVariant IndexerResultsModel::data(const QModelIndex& index, int role) const
     }
 
     if (role == Qt::ToolTipRole) {
+        if (index.column() == ColConfidence) {
+            const QString tip = confidenceTooltip(row->confidence, row->fakeScore, row->fakeReasons);
+            if (!tip.isEmpty())
+                return tip;
+        }
         QStringList parts;
         parts.append(row->title);
         if (row->published > 0) {
@@ -146,6 +154,10 @@ QVariant IndexerResultsModel::data(const QModelIndex& index, int role) const
     }
 
     if (role == Qt::ForegroundRole) {
+        if (index.column() == ColConfidence) {
+            if (const QColor c = confidenceColor(row->confidence); c.isValid())
+                return c;
+        }
         // A password-protected release still needs the archive password to unpack,
         // which we have no way to supply — flagging it in the list is cheaper than
         // discovering it after the download. It outranks the known-type colour:
@@ -175,6 +187,7 @@ QVariant IndexerResultsModel::headerData(int section, Qt::Orientation orientatio
     case ColSeeders:  return tr("Seeders");
     case ColPeers:    return tr("Peers");
     case ColKnown:    return tr("Known");
+    case ColConfidence: return tr("Confidence");
     default:          return {};
     }
 }

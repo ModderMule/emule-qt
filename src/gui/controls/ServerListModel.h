@@ -90,6 +90,10 @@ public:
     /// Rebuild model from CBOR array received via IPC.
     void refreshFromCborArray(const QCborArray& servers);
 
+    /// Row listing @p address (IPv4/IPv6 literal, bracketed or not, or a dynIP
+    /// hostname) on @p port, -1 if none. Either address of a dual-stack row matches.
+    [[nodiscard]] int rowForAddress(const QString& address, uint16_t port) const;
+
     /// Set the currently connected server (0 to clear).
     void setConnectedServer(uint32_t serverId);
 

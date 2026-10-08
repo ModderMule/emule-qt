@@ -126,6 +126,12 @@ void SearchList::beginSearch(uint32 searchID, const QString& resultFileType, boo
     }
 }
 
+void SearchList::setSearchExpression(uint32 searchID, const QString& expression)
+{
+    if (SearchListEntry* entry = findEntry(searchID))
+        entry->keywords = searchKeywordTokens(expression);
+}
+
 void SearchList::releaseEd2kRouting(uint32 searchID)
 {
     if (searchID != 0 && m_currentEd2kSearchID == searchID)
@@ -1182,8 +1188,7 @@ void SearchList::resetUdpRequestTracking()
 
 bool SearchList::assess(SearchFile* file)
 {
-    // A torrent / Usenet row is not an eD2K file: no hash to collect names under.
-    if (!file || file->listParent() || file->isMetaResult())
+    if (!file || file->listParent())
         return false;
 
     FakeFileInput in;
@@ -1202,6 +1207,9 @@ bool SearchList::assess(SearchFile* file)
     in.kadTrust = kadTrustFromPublishInfo(file->kadPublishInfo());
     if (const SearchListEntry* entry = findEntry(file->searchID()))
         in.ignoredNameWords = entry->keywords;
+    // A torrent / Usenet row: judged on its names, the spam filter and what the catalogue says
+    in.passwordProtected = file->isMetaResult()
+        && (file->meta().flags & META_FLAG_PASSWORD_PROTECTED) != 0;
 
     for (const auto& [publisher, note] : file->kadNotesCache()) {
         in.kadNoteRatedFake = in.kadNoteRatedFake || note.rating == 1;

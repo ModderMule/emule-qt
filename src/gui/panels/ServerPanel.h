@@ -13,6 +13,7 @@
 #include <QWidget>
 
 #include <functional>
+#include <utility>
 #include <vector>
 
 class QLabel;
@@ -73,6 +74,11 @@ private:
     [[nodiscard]] QStringList saveSelection() const;
     void restoreSelection(const QStringList& keys);
 
+    using ServerAddr = std::pair<QString, uint16_t>;   ///< address as typed/pasted, port
+    /// Select the rows of the servers just added (or already listed) and scroll to
+    /// the first. Addresses the list doesn't hold are skipped.
+    void selectServers(const std::vector<ServerAddr>& servers);
+
     void showFindDialog();
     void requestKadStatus();
     void requestServerState();
@@ -103,6 +109,9 @@ private:
 
     // Models
     ServerListModel* m_serverListModel = nullptr;
+
+    /// Typed/pasted servers awaiting the refresh that brings their rows.
+    std::vector<ServerAddr> m_selectAfterRefresh;
 
     // Context menu
     QMenu* m_serverMenu = nullptr;

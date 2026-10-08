@@ -16,6 +16,7 @@
 
 #include <QHash>
 #include <QString>
+#include <QStringList>
 
 #include <cstdint>
 #include <vector>
@@ -47,6 +48,11 @@ struct IndexerResultRow {
     /// *name* match — an indexer row carries no message-ids — so it marks the row
     /// and raises a question, and never decides what an add does.
     int knownType = 0;
+
+    // Fake-file verdict (ConfidenceText.h); empty id = a stored row from before it existed
+    QString confidence;
+    int fakeScore = 0;
+    QStringList fakeReasons;
 };
 
 class IndexerResultsModel : public AbstractTableModel<IndexerResultRow> {
@@ -65,6 +71,7 @@ public:
         /// Last, as SearchResultsModel::ColKnown is — appended rather than
         /// inserted so a stored header layout in uistate.yml is not reindexed.
         ColKnown,
+        ColConfidence,   ///< Appended for the same reason.
         ColCount
     };
 

@@ -60,6 +60,7 @@ private slots:
     void unboundKeysTravelOn();
     void openEditorOwnsTheKeys();
     void findNextWrapsAndRepeats();
+    void findIgnoresDisplayPadding();
     void windowCycleKeysExist();
 };
 
@@ -188,6 +189,24 @@ void tst_ListKeys::findNextWrapsAndRepeats()
     QCOMPARE(view.currentIndex().row(), 0);
     findNextInList(&view, &view, true);   // Shift+F3 wraps backwards
     QCOMPARE(view.currentIndex().row(), 2);
+}
+
+void tst_ListKeys::findIgnoresDisplayPadding()
+{
+    // The server list shows "ip : port"; a typed "ip:port" must still hit it.
+    QTreeView view;
+    view.setModel(makeModel(&view, {QStringLiteral("91.208.162.55 : 4232"),
+                                    QStringLiteral("91.208.162.182 : 4232")}));
+    view.show();
+
+    QTimer::singleShot(0, this, [] {
+        auto* dlg = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+        QVERIFY(dlg);
+        dlg->findChild<QLineEdit*>()->setText(QStringLiteral(" 91.208.162.182:4232 "));
+        dlg->accept();
+    });
+    showFindInListDialog(&view, &view);
+    QCOMPARE(view.currentIndex().row(), 1);
 }
 
 void tst_ListKeys::windowCycleKeysExist()

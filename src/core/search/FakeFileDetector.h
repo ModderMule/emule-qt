@@ -40,6 +40,7 @@ enum class FakeReason : uint8 {
     MediaSizeMismatch,
     NameMediaTagMismatch,
     AbuseContentName,
+    PasswordProtected,
 };
 
 /// Worst first, so the numeric value sorts a column.
@@ -100,6 +101,7 @@ struct FakeFileInput {
     ContainerCheck container;       ///< downloads only
     KadTrust kadTrust = KadTrust::Unknown;
     QSet<QString> ignoredNameWords; ///< the search's own keywords: in every name, so no link
+    bool passwordProtected = false; ///< listed as locked, and no password came with the listing
 };
 
 struct FakeFileVerdict {
@@ -119,6 +121,11 @@ struct FakeFileVerdict {
 };
 
 [[nodiscard]] FakeFileVerdict assessFile(const FakeFileInput& input, const FakeFileRules& rules);
+
+/// Input for a row that is only a listing (indexer, catalogue, any later source):
+/// a name, a size and what the source says about it. @p expression is the search text.
+[[nodiscard]] FakeFileInput listingInput(const QString& name, uint64 size, const QString& claimedType,
+                                         bool passwordProtected, const QString& expression = {});
 
 /// The words of a name that say what the content is: release, codec, language and
 /// container words, stopwords, bare numbers and hex runs are dropped. Year and

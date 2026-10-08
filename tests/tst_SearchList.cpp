@@ -155,6 +155,7 @@ private slots:
     void spamRating_smallArchiveWithOneSourceIsClean();
     void spamRating_udpHeuristicAsInMfc();
     void fakeVerdict_searchKeywordDoesNotJoinNames();
+    void fakeVerdict_coversCatalogueRows();
     void kadKeywordResult_adoptsTheOneAgreedAICHHash();
     void kadKeywordResult_ignoresRareOrCompetingAICHHashes();
 };
@@ -2551,4 +2552,55 @@ void tst_SearchList::newSearch_withoutARequestLeavesTheRunningOneItsAnswers()
 }
 
 QTEST_MAIN(tst_SearchList)
+void tst_SearchList::fakeVerdict_coversCatalogueRows()
+{
+    // A whole-release torrent row, as a server's catalogue hands it out
+    const auto metaRow = [](uint8 n, const QString& name, uint32 flags) {
+        uint8 hash[16] = {0xED, 0x2B, 0x01, 0x10, 0xFF, 0xFF, 0x1E, 0x1B, 0x36, 0x20, 0xAD, 0xE2, 0xAF, 0x9D, 0x6E, n};
+        SafeMemFile mem;
+        mem.write(hash, 16);
+        mem.writeUInt32(0);
+        mem.writeUInt16(0);
+        mem.writeUInt32(6);
+        Tag(FT_FILENAME, name).writeNewEd2kTag(mem, UTF8Mode::Raw);
+        Tag(FT_FILESIZE, uint32{700000000}).writeNewEd2kTag(mem);
+        Tag(FT_META_KIND, uint32{1}).writeNewEd2kTag(mem);
+        Tag(FT_META_VERSION, uint32{1}).writeNewEd2kTag(mem);
+        Tag(FT_META_FILEINDEX, uint32{0xFFFFFFFF}).writeNewEd2kTag(mem);
+        Tag(FT_META_FLAGS, flags).writeNewEd2kTag(mem);
+        const QByteArray data = mem.takeBuffer();
+        SafeMemFile in(data);
+        return new SearchFile(in, true);
+    };
+
+    SearchList list;
+    const uint32 id = list.reserveSearch();
+    list.setSearchExpression(id, QStringLiteral("holiday"));
+
+    SearchFile* clean = metaRow(1, QStringLiteral("Holiday in Rome 2024"), 0);
+    SearchFile* locked = metaRow(2, QStringLiteral("Holiday Cooking"), META_FLAG_PASSWORD_PROTECTED);
+    SearchFile* abuse = metaRow(3, QStringLiteral("holiday pthc"), 0);
+    for (SearchFile* file : {clean, locked, abuse}) {
+        QVERIFY(file->isMetaResult() && !file->isInvalidMetaResult());
+        list.addMetaSearchResult(id, file);
+    }
+    QCOMPARE(list.resultCount(id), uint32{3});
+
+    QVERIFY(clean->hasFakeVerdict());
+    QCOMPARE(clean->fakeVerdict().band, Confidence::LooksGood);
+    QCOMPARE(clean->fakeVerdict().score, 0);
+
+    QVERIFY(locked->fakeVerdict().reasons.contains({FakeReason::PasswordProtected, 25}));
+    QCOMPARE(locked->fakeVerdict().band, Confidence::Caution);
+
+    QVERIFY(abuse->fakeVerdict().has(FakeReason::AbuseContentName));
+    QCOMPARE(abuse->fakeVerdict().band, Confidence::Suspect);
+
+    // The row goes out with the verdict, like an eD2K one
+    const QCborMap row = Ipc::toCbor(*locked);
+    QCOMPARE(row.value(QStringLiteral("confidence")).toString(), QStringLiteral("caution"));
+    QCOMPARE(row.value(QStringLiteral("fakeReasons")).toArray().first().toString(),
+             QStringLiteral("password_protected"));
+}
+
 #include "tst_SearchList.moc"

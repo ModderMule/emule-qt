@@ -17,6 +17,7 @@
 #include "controls/ClientListModel.h"
 #include "controls/DownloadListModel.h"
 #include "controls/DownloadProgressDelegate.h"
+#include "controls/IndexerResultsModel.h"
 #include "controls/KadContactsModel.h"
 #include "controls/KadSearchesModel.h"
 #include "controls/KnownTypeStyle.h"
@@ -107,12 +108,14 @@ private slots:
     void usenetFileRowsKeepNzbOrderUnderAnItemColumn();
     void serverPreferenceSortsByStrengthNotByName();
     void serverAddressesSortByOctetValue();
+    void aServerRowIsFoundByAddressAndPort();
     void downloadPrioritySortsByRankNotByName();
     void downloadingClientsShowRateAndSessionTotals();
 
     // --- colour cues --------------------------------------------------------
     void searchResultsShadeByAvailability();
     void searchResultsSortByConfidence();
+    void indexerResultsShowConfidence();
     void failingServersAreDimmed();
 
     // --- MFC column text ----------------------------------------------------
@@ -441,6 +444,27 @@ void tst_ListSorting::serverAddressesSortByOctetValue()
              QStringLiteral("192.168.1.10 : 4661"));
 }
 
+void tst_ListSorting::aServerRowIsFoundByAddressAndPort()
+{
+    QCborMap dual = server(QStringLiteral("dual"), QStringLiteral("91.208.162.182"), 4232, 0);
+    dual.insert(QStringLiteral("addr6"), QStringLiteral("2a00:c98:400f:112::c77"));
+
+    ServerListModel model;
+    model.refreshFromCborArray({
+        server(QStringLiteral("other-port"), QStringLiteral("91.208.162.182"), 4661, 0),
+        dual,
+        server(QStringLiteral("dyn"), QStringLiteral("Srv.Example.org"), 4661, 0),
+    });
+
+    QCOMPARE(model.rowForAddress(QStringLiteral(" 91.208.162.182 "), 4232), 1);
+    QCOMPARE(model.rowForAddress(QStringLiteral("91.208.162.182"), 4661), 0);
+    // Another spelling of the same IPv6, bracketed
+    QCOMPARE(model.rowForAddress(QStringLiteral("[2A00:C98:400F:112:0:0:0:C77]"), 4232), 1);
+    QCOMPARE(model.rowForAddress(QStringLiteral("srv.example.org"), 4661), 2);
+    QCOMPARE(model.rowForAddress(QStringLiteral("91.208.162.182"), 1), -1);
+    QCOMPARE(model.rowForAddress(QString(), 4661), -1);
+}
+
 void tst_ListSorting::downloadPrioritySortsByRankNotByName()
 {
     // The daemon sends a name (JsonSerializers.h priorityToString), and by name
@@ -550,6 +574,48 @@ void tst_ListSorting::searchResultsSortByConfidence()
     QVERIFY(!model.index(0, SearchResultsModel::ColConfidence).data(Qt::ForegroundRole).isValid());
     QCOMPARE(model.headerData(SearchResultsModel::ColConfidence, Qt::Horizontal).toString(),
              QStringLiteral("Confidence"));
+}
+
+void tst_ListSorting::indexerResultsShowConfidence()
+{
+    IndexerResultsModel model;
+    std::vector<IndexerResultRow> rows(4);
+    const auto set = [&rows](size_t i, const char* band, int score) {
+        rows[i].title = QString::fromLatin1(band);
+        rows[i].confidence = QString::fromLatin1(band);
+        rows[i].fakeScore = score;
+    };
+    set(0, "looks_good", 0);
+    set(1, "caution", 25);
+    set(2, "suspect", 50);
+    set(3, "", 0);            // a stored row from before the column existed
+    rows[1].fakeReasons = {QStringLiteral("password_protected")};
+    model.addResults(rows);
+
+    // Appended, so a stored header layout keeps its indexes
+    QCOMPARE(int(IndexerResultsModel::ColConfidence), int(IndexerResultsModel::ColKnown) + 1);
+    QCOMPARE(model.headerData(IndexerResultsModel::ColConfidence, Qt::Horizontal).toString(),
+             QStringLiteral("Confidence"));
+
+    QSortFilterProxyModel proxy;
+    proxy.setSourceModel(&model);
+    proxy.setSortRole(Qt::UserRole);
+    proxy.sort(IndexerResultsModel::ColConfidence, Qt::AscendingOrder);
+    QStringList order;
+    for (int row = 0; row < proxy.rowCount(); ++row)
+        order.push_back(proxy.index(row, IndexerResultsModel::ColConfidence).data().toString());
+    QCOMPARE(order, (QStringList{QString(), QStringLiteral("Suspect"), QStringLiteral("Caution: 25%"),
+                                 QStringLiteral("Looks good")}));
+
+    // The cell says why and takes the colour; the other cells keep the row tooltip
+    const QModelIndex caution = model.index(1, IndexerResultsModel::ColConfidence);
+    QVERIFY(caution.data(Qt::ToolTipRole).toString().contains(QStringLiteral("password protected")));
+    QVERIFY(caution.data(Qt::ForegroundRole).value<QColor>().isValid());
+    QVERIFY(!model.index(0, IndexerResultsModel::ColConfidence).data(Qt::ForegroundRole).isValid());
+    QCOMPARE(model.index(1, IndexerResultsModel::ColTitle).data(Qt::ToolTipRole).toString(),
+             QStringLiteral("caution"));
+    QCOMPARE(model.index(3, IndexerResultsModel::ColConfidence).data(Qt::ToolTipRole).toString(),
+             QString());
 }
 
 void tst_ListSorting::searchResultsShadeByAvailability()

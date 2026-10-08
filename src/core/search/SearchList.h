@@ -94,6 +94,9 @@ public:
     void beginSearch(uint32 searchID, const QString& resultFileType, bool ed2k,
                      const QString& expression = {});
 
+    /// The search text of a search that never goes through beginSearch() (catalogue searches).
+    void setSearchExpression(uint32 searchID, const QString& expression);
+
     /// The ED2K search @p searchID is over. A server answer arriving after this is
     /// nobody's and is dropped — it used to land in whichever search came next.
     void releaseEd2kRouting(uint32 searchID);

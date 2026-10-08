@@ -2464,6 +2464,16 @@ Ihre Downloads behalten ihre Dateien und wechseln zu Alle.</translation>
         <translation>Interpret, Album und Titel kommen in keinem der Namen vor</translation>
     </message>
     <message>
+        <location line="+1"/>
+        <source>A name uses words that advertise child abuse material</source>
+        <translation>Ein Name enthält Wörter, mit denen Kindesmissbrauchsmaterial beworben wird</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The release is password protected</source>
+        <translation>Das Release ist passwortgeschützt</translation>
+    </message>
+    <message>
         <location line="+9"/>
         <source>%1 (fake score %2 of 100)</source>
         <translation>%1 (Fälschungswert %2 von 100)</translation>
@@ -3025,7 +3035,7 @@ Hochgeladen:	%12</translation>
 <context>
     <name>eMule::FindInListDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/FindInListDialog.cpp" line="+71"/>
+        <location filename="../src/gui/dialogs/FindInListDialog.cpp" line="+90"/>
         <source>Search</source>
         <translation>Suche</translation>
     </message>
@@ -3400,7 +3410,7 @@ Hochgeladen:	%12</translation>
 <context>
     <name>eMule::IndexerResultsModel</name>
     <message>
-        <location filename="../src/gui/controls/IndexerResultsModel.cpp" line="+25"/>
+        <location filename="../src/gui/controls/IndexerResultsModel.cpp" line="+26"/>
         <source>today</source>
         <translation>heute</translation>
     </message>
@@ -3425,7 +3435,7 @@ Hochgeladen:	%12</translation>
         <translation>%1 Jahre</translation>
     </message>
     <message>
-        <location line="+102"/>
+        <location line="+109"/>
         <source>Posted: %1</source>
         <translation>Gepostet: %1</translation>
     </message>
@@ -3440,7 +3450,7 @@ Hochgeladen:	%12</translation>
         <translation>Passwortgeschützt</translation>
     </message>
     <message>
-        <location line="+27"/>
+        <location line="+31"/>
         <source>Name</source>
         <translation>Name</translation>
     </message>
@@ -3483,6 +3493,11 @@ Hochgeladen:	%12</translation>
         <location line="+1"/>
         <source>Known</source>
         <translation>Bekannt</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Confidence</source>
+        <translation>Vertrauen</translation>
     </message>
 </context>
 <context>
@@ -8728,14 +8743,14 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
     <name>eMule::SearchPanel</name>
     <message>
         <location filename="../src/gui/panels/SearchPanel.cpp" line="+302"/>
-        <location line="+938"/>
+        <location line="+942"/>
         <location line="+13"/>
         <location line="+415"/>
         <source>Download</source>
         <translation>Download</translation>
     </message>
     <message>
-        <location line="-1346"/>
+        <location line="-1350"/>
         <source>Close All Searches</source>
         <translation>Alle Suchen schließen</translation>
     </message>
@@ -9017,7 +9032,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
     </message>
     <message>
         <location line="+75"/>
-        <location line="+178"/>
+        <location line="+182"/>
         <source>Usenet search</source>
         <translation>Usenet-Suche</translation>
     </message>
@@ -9032,8 +9047,8 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>Usenet-Suche: %1</translation>
     </message>
     <message>
-        <location line="-213"/>
-        <location line="+217"/>
+        <location line="-217"/>
+        <location line="+221"/>
         <source>No results</source>
         <translation>Keine Ergebnisse</translation>
     </message>
@@ -9125,13 +9140,13 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
     <message>
         <location line="+50"/>
         <location line="+7"/>
-        <location line="+899"/>
+        <location line="+906"/>
         <location line="+43"/>
         <source>Preview</source>
         <translation>Vorschau</translation>
     </message>
     <message>
-        <location line="-671"/>
+        <location line="-678"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -9140,7 +9155,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
 %1</translation>
     </message>
     <message>
-        <location line="+629"/>
+        <location line="+636"/>
         <source>Preview requested - please wait</source>
         <translation>Vorschau angefordert - bitte warten</translation>
     </message>
@@ -9150,7 +9165,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>%1 hat keine Vorschau gesendet</translation>
     </message>
     <message>
-        <location line="+313"/>
+        <location line="+319"/>
         <source>Asking servers: %1 / %2</source>
         <translation>Server werden abgefragt: %1 / %2</translation>
     </message>
@@ -9160,7 +9175,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>Alle</translation>
     </message>
     <message>
-        <location line="-1325"/>
+        <location line="-1338"/>
         <location line="+14"/>
         <source>Mark as Spam</source>
         <translation>Als Spam markieren</translation>
@@ -9196,7 +9211,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>Webdienste</translation>
     </message>
     <message>
-        <location line="+905"/>
+        <location line="+912"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Vorschau nicht verfügbar — der Webserver läuft nicht oder es wurde kein Stream-Token empfangen.</translation>
     </message>

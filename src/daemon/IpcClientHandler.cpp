@@ -4205,11 +4205,11 @@ QCborMap indexerCapsToCbor(const indexer::IndexerCaps& caps)
 /// One result row. Defined outside the anonymous namespace because DaemonApp's
 /// push path must produce exactly the same shape — two spellings of a row is how
 /// a column ends up empty in one code path and populated in the other.
-QCborMap indexerResultToCbor(const indexer::IndexerResult& result)
+QCborMap indexerResultToCbor(const indexer::IndexerResult& result, const QString& expression)
 {
     // Deliberately no downloadUrl and no magnet: the URL carries the API key.
     // The GUI asks for a row by id and the daemon does the fetching.
-    return QCborMap{
+    QCborMap row{
         {QStringLiteral("id"),        result.id},
         {QStringLiteral("indexer"),   result.indexerName},
         {QStringLiteral("title"),     result.title},
@@ -4225,6 +4225,12 @@ QCborMap indexerResultToCbor(const indexer::IndexerResult& result)
         {QStringLiteral("peers"),     result.peers},
         {QStringLiteral("isUsenet"),  result.isUsenet()},
     };
+    // A password the indexer hands over is no obstacle, and an unknown flag no finding.
+    insertFakeVerdict(row, assessFile(
+        listingInput(result.title, static_cast<uint64>(std::max<qint64>(result.size, 0)), {},
+                     result.passwordStated && result.password.isEmpty(), expression),
+        activeFakeFileRules()));
+    return row;
 }
 
 void IpcClientHandler::handleGetIndexers(const IpcMessage& msg)

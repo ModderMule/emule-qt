@@ -840,6 +840,10 @@ void SearchPanel::onIndexerResultsPush(const IpcMessage& msg)
         row.seeders     = static_cast<int>(map.value(QStringLiteral("seeders")).toInteger(-1));
         row.peers       = static_cast<int>(map.value(QStringLiteral("peers")).toInteger(-1));
         row.isUsenet    = map.value(QStringLiteral("isUsenet")).toBool(true);
+        row.confidence  = map.value(QStringLiteral("confidence")).toString();
+        row.fakeScore   = static_cast<int>(map.value(QStringLiteral("fakeScore")).toInteger());
+        for (const auto& reason : map.value(QStringLiteral("fakeReasons")).toArray())
+            row.fakeReasons.push_back(reason.toString());
         rows.push_back(row);
     }
 
@@ -2131,6 +2135,9 @@ QJsonObject indexerRowToJson(const IndexerResultRow& row)
     o[QStringLiteral("peers")]             = row.peers;
     o[QStringLiteral("isUsenet")]          = row.isUsenet;
     o[QStringLiteral("knownType")]         = row.knownType;
+    o[QStringLiteral("confidence")]        = row.confidence;
+    o[QStringLiteral("fakeScore")]         = row.fakeScore;
+    o[QStringLiteral("fakeReasons")]       = QJsonArray::fromStringList(row.fakeReasons);
     return o;
 }
 
@@ -2150,6 +2157,10 @@ IndexerResultRow indexerRowFromJson(const QJsonObject& r)
     row.peers             = r[QStringLiteral("peers")].toInt(-1);
     row.isUsenet          = r[QStringLiteral("isUsenet")].toBool(true);
     row.knownType         = r[QStringLiteral("knownType")].toInt();
+    row.confidence        = r[QStringLiteral("confidence")].toString();
+    row.fakeScore         = r[QStringLiteral("fakeScore")].toInt();
+    for (const auto& reason : r[QStringLiteral("fakeReasons")].toArray())
+        row.fakeReasons.push_back(reason.toString());
     // age moves on while the tab sits on disk
     if (row.published > 0)
         row.ageDays = static_cast<int>((QDateTime::currentSecsSinceEpoch() - row.published) / 86400);
@@ -2528,11 +2539,17 @@ void SearchPanel::setupResultHeader(bool forIndexer)
 
     if (forIndexer) {
         // Name, Size, Age, Category, Grabs, Indexer, the two torznab columns hidden
-        // below until a BitTorrent module can populate them, then Known. A layout
-        // saved before Known existed has a different column count, so Qt rejects it
-        // and these defaults apply — the indexer header resets once, then sticks.
+        // below until a BitTorrent module can populate them, then Known and Confidence.
+        // A layout saved before a column existed has a different column count, so Qt
+        // rejects it and these defaults apply — the indexer header resets once, then sticks.
         m_resultView->setDescendingFirst({});   // other columns than the eD2K model's
-        m_resultView->bindColumns(kIndexerHeaderKey, {380, 80, 70, 120, 60, 110, 60, 60, 80});
+        if (!theUiState.hasHeaderState(kIndexerHeaderKey)) {
+            // Fresh layout: Confidence next to Size, where the eD2K list has it
+            auto* header = m_resultView->header();
+            header->moveSection(header->visualIndex(IndexerResultsModel::ColConfidence),
+                                header->visualIndex(IndexerResultsModel::ColSize) + 1);
+        }
+        m_resultView->bindColumns(kIndexerHeaderKey, {380, 80, 70, 120, 60, 110, 60, 60, 80, 100});
         m_resultView->setColumnHidden(IndexerResultsModel::ColSeeders, true);
         m_resultView->setColumnHidden(IndexerResultsModel::ColPeers, true);
         m_resultView->setLockedColumns({IndexerResultsModel::ColSeeders, IndexerResultsModel::ColPeers});

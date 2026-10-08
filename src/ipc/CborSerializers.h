@@ -373,7 +373,7 @@ inline void insertBindState(QCborMap& info)
         }
         m.insert(QStringLiteral("children"), children);
     }
-    // Absent for a row nothing was judged on (torrent / Usenet rows)
+    // Absent for a row nothing was judged on (a child row)
     if (f.hasFakeVerdict())
         insertFakeVerdict(m, f.fakeVerdict());
     // eNode meta row: the network comes from the hash (0 = plain eD2K)

@@ -8,6 +8,7 @@
 
 #include <QCborMap>
 #include <QColor>
+#include <QHostAddress>
 #include <QIcon>
 
 namespace eMule {
@@ -225,6 +226,34 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
     // server row reliably shows blue through the sort proxy model.
     if (m_connectedServerId != 0 && !m_rows.empty())
         emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1), {Qt::ForegroundRole});
+}
+
+int ServerListModel::rowForAddress(const QString& address, uint16_t port) const
+{
+    QString host = address.trimmed();
+    if (host.startsWith(QLatin1Char('[')) && host.endsWith(QLatin1Char(']')))
+        host = host.mid(1, host.size() - 2);
+    if (host.isEmpty())
+        return -1;
+
+    // Compare literals as addresses: IPv6 has more than one spelling.
+    const QHostAddress wanted(host);
+    const auto matches = [&](const QString& candidate) {
+        if (candidate.isEmpty())
+            return false;
+        if (!wanted.isNull()) {
+            const QHostAddress have(candidate);
+            return !have.isNull() && have == wanted;
+        }
+        return candidate.compare(host, Qt::CaseInsensitive) == 0;
+    };
+
+    for (size_t i = 0; i < m_rows.size(); ++i) {
+        const ServerRow& r = m_rows[i];
+        if (r.port == port && (matches(r.ip) || matches(r.addr) || matches(r.addr6)))
+            return static_cast<int>(i);
+    }
+    return -1;
 }
 
 void ServerListModel::setConnectedServer(uint32_t serverId)

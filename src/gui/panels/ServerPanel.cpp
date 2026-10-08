@@ -172,15 +172,22 @@ void ServerPanel::onAddServerClicked()
     // The daemon classifies without resolving: a hostname is stored as a dynIP and
     // re-resolved on every connect (A then AAAA), so an AAAA-only host works and
     // nothing blocks the GUI thread. Accepts an IPv6 literal, bracketed or bare.
-    sendAddServer(ip, port, name, [this](bool added, const QString& rejected) {
+    sendAddServer(ip, port, name, [this, ip, port](bool added, const QString& rejected) {
+        if (!rejected.isEmpty()) {
+            // Inputs stay so the address can be fixed; the daemon already logged it.
+            StatusBarNotifier::post(rejected);
+            return;
+        }
         if (added) {
             m_newServerIp->clear();
             m_newServerPort->setText(QStringLiteral("4661")); // default port, not translatable
             m_newServerName->clear();
+            // Row arrives with the refresh
+            m_selectAfterRefresh = {{ip, port}};
             requestServerList();
-        } else if (!rejected.isEmpty()) {
-            // Inputs stay so the address can be fixed; the daemon already logged it.
-            StatusBarNotifier::post(rejected);
+        } else {
+            // Duplicate: show the row that is already there
+            selectServers({{ip, port}});
         }
     });
 }
@@ -944,6 +951,9 @@ void ServerPanel::requestServerList()
         applyServerSortMode();   // #24: honor manual-order display mode
         restoreSelection(keys);
         m_serverListView->verticalScrollBar()->setValue(srvScroll);
+        // Replies come in request order, so this refresh already holds the rows.
+        if (!m_selectAfterRefresh.empty())
+            selectServers(std::exchange(m_selectAfterRefresh, {}));
     });
 }
 
@@ -1019,6 +1029,36 @@ void ServerPanel::restoreSelection(const QStringList& keys)
     if (current.isValid())
         sel->setCurrentIndex(current, QItemSelectionModel::NoUpdate);
     sel->select(selection, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+}
+
+void ServerPanel::selectServers(const std::vector<ServerAddr>& servers)
+{
+    auto* proxy = qobject_cast<QSortFilterProxyModel*>(m_serverListView->model());
+    auto* sel = m_serverListView->selectionModel();
+    if (!proxy || !sel)
+        return;
+
+    // setCurrentIndex(NoUpdate) + one select(), as in restoreSelection().
+    QItemSelection selection;
+    QModelIndex first;
+    const int lastCol = proxy->columnCount() - 1;
+    for (const auto& [address, port] : servers) {
+        const int row = m_serverListModel->rowForAddress(address, port);
+        if (row < 0)
+            continue;
+        const QModelIndex idx = proxy->mapFromSource(
+            m_serverListModel->index(row, ServerListModel::ColName));
+        if (!idx.isValid())
+            continue;
+        selection.select(idx, proxy->index(idx.row(), lastCol));
+        if (!first.isValid())
+            first = idx;
+    }
+    if (!first.isValid())
+        return;
+    sel->setCurrentIndex(first, QItemSelectionModel::NoUpdate);
+    sel->select(selection, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    m_serverListView->scrollTo(first);
 }
 
 void ServerPanel::showFindDialog()
@@ -1443,18 +1483,23 @@ void ServerPanel::pasteServerLinks()
 
     // One status-bar line and one refresh per paste, after the last reply.
     struct Batch {
-        size_t      pending = 0;
-        QStringList rejected;
+        size_t                  pending = 0;
+        QStringList             rejected;
+        std::vector<ServerAddr> listed;   // added or already there, in paste order
     };
     auto batch = std::make_shared<Batch>();
     batch->pending = links.size();
     for (const ED2KServerLink& link : links) {
         sendAddServer(link.address, link.port, QString(),
-                      [this, batch](bool, const QString& rejected) {
+                      [this, batch, addr = ServerAddr{link.address, link.port}]
+                      (bool, const QString& rejected) {
             if (!rejected.isEmpty())
                 batch->rejected << rejected;
+            else
+                batch->listed.push_back(addr);
             if (--batch->pending != 0)
                 return;
+            m_selectAfterRefresh = std::move(batch->listed);
             if (batch->rejected.size() == 1)
                 StatusBarNotifier::post(batch->rejected.constFirst());
             else if (batch->rejected.size() > 1)

@@ -258,6 +258,7 @@ QString fakeReasonId(FakeReason reason)
     case FakeReason::MediaSizeMismatch:       return QStringLiteral("media_size_mismatch");
     case FakeReason::NameMediaTagMismatch:    return QStringLiteral("name_media_tag_mismatch");
     case FakeReason::AbuseContentName:        return QStringLiteral("abuse_content_name");
+    case FakeReason::PasswordProtected:       return QStringLiteral("password_protected");
     }
     return {};
 }
@@ -451,6 +452,10 @@ FakeFileVerdict assessFile(const FakeFileInput& in, const FakeFileRules& rules)
 
     assessMedia(in, names, verdict);
 
+    // A name rule usually says the same ("password protected"): count it once.
+    if (in.passwordProtected && !verdict.has(FakeReason::BadSignalName))
+        add(verdict, FakeReason::PasswordProtected, 25);
+
     verdict.score = std::min(kMaxScore,
         std::accumulate(verdict.reasons.cbegin(), verdict.reasons.cend(), 0,
                         [](int sum, const FakeFileVerdict::Reason& r) { return sum + r.points; }));
@@ -472,6 +477,18 @@ FakeFileVerdict assessFile(const FakeFileInput& in, const FakeFileRules& rules)
     else
         verdict.band = Confidence::LooksGood;
     return verdict;
+}
+
+FakeFileInput listingInput(const QString& name, uint64 size, const QString& claimedType,
+                           bool passwordProtected, const QString& expression)
+{
+    FakeFileInput in;
+    in.name = name;
+    in.size = size;
+    in.claimedType = claimedType;
+    in.passwordProtected = passwordProtected;
+    in.ignoredNameWords = searchKeywordTokens(expression);
+    return in;
 }
 
 // ---------------------------------------------------------------------------

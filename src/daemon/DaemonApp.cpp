@@ -28,6 +28,7 @@
 #include "transfer/UploadQueue.h"
 #include "UsenetSession.h"
 #include "IndexerFeedList.h"
+#include "IndexerSearch.h"
 #include "IndexerSearchList.h"
 #include "IndexerResult.h"
 #include "queue/UsenetQueue.h"
@@ -432,7 +433,7 @@ constexpr int kFeedPushWindowMs = 250;
 } // namespace
 
 /// Likewise: the push and the StartIndexerSearch reply must carry the same row.
-QCborMap indexerResultToCbor(const indexer::IndexerResult& result);
+QCborMap indexerResultToCbor(const indexer::IndexerResult& result, const QString& expression);
 
 void DaemonApp::connectUsenetPushes()
 {
@@ -604,9 +605,11 @@ void DaemonApp::connectIndexerPushes()
         // them, it would throw all but the last away.
         IpcMessage msg(IpcMsgType::PushIndexerResults, 0);
         msg.append(static_cast<qint64>(searchId));
+        const indexer::IndexerSearch* search = m_indexerSearches->search(searchId);
+        const QString expression = search ? search->query().text : QString();
         QCborArray out;
         for (const auto& row : rows)
-            out.append(indexerResultToCbor(row));
+            out.append(indexerResultToCbor(row, expression));
         msg.append(out);
         m_ipcServer->broadcast(msg);
     });

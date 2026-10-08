@@ -2452,6 +2452,16 @@ Its downloads keep their files and move to All.</source>
         <translation>아티스트, 앨범, 제목이 어느 이름에도 없음</translation>
     </message>
     <message>
+        <location line="+1"/>
+        <source>A name uses words that advertise child abuse material</source>
+        <translation>이름에 아동 학대물을 광고하는 단어가 있습니다</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The release is password protected</source>
+        <translation>릴리스가 암호로 보호되어 있습니다</translation>
+    </message>
+    <message>
         <location line="+9"/>
         <source>%1 (fake score %2 of 100)</source>
         <translation>%1 (가짜 점수 %2 / 100)</translation>
@@ -3012,7 +3022,7 @@ ED2K 해시:	%2
 <context>
     <name>eMule::FindInListDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/FindInListDialog.cpp" line="+71"/>
+        <location filename="../src/gui/dialogs/FindInListDialog.cpp" line="+90"/>
         <source>Search</source>
         <translation>검색</translation>
     </message>
@@ -3387,7 +3397,7 @@ ED2K 해시:	%2
 <context>
     <name>eMule::IndexerResultsModel</name>
     <message>
-        <location filename="../src/gui/controls/IndexerResultsModel.cpp" line="+25"/>
+        <location filename="../src/gui/controls/IndexerResultsModel.cpp" line="+26"/>
         <source>today</source>
         <translation>오늘</translation>
     </message>
@@ -3412,7 +3422,7 @@ ED2K 해시:	%2
         <translation>%1년</translation>
     </message>
     <message>
-        <location line="+102"/>
+        <location line="+109"/>
         <source>Posted: %1</source>
         <translation>게시일: %1</translation>
     </message>
@@ -3427,7 +3437,7 @@ ED2K 해시:	%2
         <translation>비밀번호 보호됨</translation>
     </message>
     <message>
-        <location line="+27"/>
+        <location line="+31"/>
         <source>Name</source>
         <translation>이름</translation>
     </message>
@@ -3470,6 +3480,11 @@ ED2K 해시:	%2
         <location line="+1"/>
         <source>Known</source>
         <translation>알려진</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Confidence</source>
+        <translation>신뢰도</translation>
     </message>
 </context>
 <context>
@@ -8714,14 +8729,14 @@ Restart eMule for all connections to use the new proxy settings.</source>
     <name>eMule::SearchPanel</name>
     <message>
         <location filename="../src/gui/panels/SearchPanel.cpp" line="+302"/>
-        <location line="+938"/>
+        <location line="+942"/>
         <location line="+13"/>
         <location line="+415"/>
         <source>Download</source>
         <translation>다운로드</translation>
     </message>
     <message>
-        <location line="-1346"/>
+        <location line="-1350"/>
         <source>Close All Searches</source>
         <translation>모든 검색 닫기</translation>
     </message>
@@ -9003,7 +9018,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+75"/>
-        <location line="+178"/>
+        <location line="+182"/>
         <source>Usenet search</source>
         <translation>Usenet 검색</translation>
     </message>
@@ -9018,8 +9033,8 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>Usenet 검색: %1</translation>
     </message>
     <message>
-        <location line="-213"/>
-        <location line="+217"/>
+        <location line="-217"/>
+        <location line="+221"/>
         <source>No results</source>
         <translation>결과 없음</translation>
     </message>
@@ -9111,13 +9126,13 @@ Restart eMule for all connections to use the new proxy settings.</source>
     <message>
         <location line="+50"/>
         <location line="+7"/>
-        <location line="+899"/>
+        <location line="+906"/>
         <location line="+43"/>
         <source>Preview</source>
         <translation>미리보기</translation>
     </message>
     <message>
-        <location line="-671"/>
+        <location line="-678"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -9126,7 +9141,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 %1</translation>
     </message>
     <message>
-        <location line="+629"/>
+        <location line="+636"/>
         <source>Preview requested - please wait</source>
         <translation>미리 보기를 요청했습니다 - 잠시 기다려 주세요</translation>
     </message>
@@ -9136,7 +9151,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>%1 님이 미리 보기를 보내지 않았습니다</translation>
     </message>
     <message>
-        <location line="+313"/>
+        <location line="+319"/>
         <source>Asking servers: %1 / %2</source>
         <translation>서버 조회 중: %1 / %2</translation>
     </message>
@@ -9146,7 +9161,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>전체</translation>
     </message>
     <message>
-        <location line="-1325"/>
+        <location line="-1338"/>
         <location line="+14"/>
         <source>Mark as Spam</source>
         <translation>스팸으로 표시</translation>
@@ -9182,7 +9197,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>웹 서비스</translation>
     </message>
     <message>
-        <location line="+905"/>
+        <location line="+912"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>미리보기를 사용할 수 없습니다 — 웹 서버가 실행 중이 아니거나 스트림 토큰을 받지 못했습니다.</translation>
     </message>

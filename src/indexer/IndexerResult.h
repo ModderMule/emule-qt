@@ -52,6 +52,9 @@ struct IndexerResult {
     QString poster;
     QString group;
     bool passwordProtected = false;
+    /// The indexer says it is locked (flag 1, or nZEDb's 10) -- not "inner archive" (2)
+    /// and not the unknowns (-1, 255, "n/a"). What the fake-file verdict goes by.
+    bool passwordStated = false;
 
     /// The passphrase itself, when the feed gave one.
     ///

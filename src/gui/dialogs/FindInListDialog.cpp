@@ -5,6 +5,7 @@
 #include "FindInListDialog.h"
 
 #include <QAbstractItemView>
+#include <QApplication>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -39,23 +40,41 @@ FindState* findState(QAbstractItemView* view, bool create)
     return state;
 }
 
+/// Drop all whitespace: cells pad for display ("1.2.3.4 : 4661"), a typed or
+/// pasted term doesn't ("1.2.3.4:4661").
+QString compact(const QString& text)
+{
+    QString out;
+    out.reserve(text.size());
+    for (const QChar ch : text) {
+        if (!ch.isSpace())
+            out += ch;
+    }
+    return out;
+}
+
 /// Select the first row after @p startRow (stepping by @p step, wrapping) whose
-/// @p column text contains @p term. startRow == -1 with step 1 starts at the top.
-bool selectMatch(QAbstractItemView* view, const QString& term, int column, int startRow, int step)
+/// @p column text contains @p term, ignoring whitespace. startRow == -1 with
+/// step 1 starts at the top. Beeps on no match, as MFC DoFind does.
+bool selectMatch(QAbstractItemView* view, const QString& rawTerm, int column, int startRow, int step)
 {
     auto* model = view->model();
     const int rows = model ? model->rowCount() : 0;
-    if (rows <= 0 || column >= model->columnCount())
+    const QString term = compact(rawTerm);
+    if (rows <= 0 || column >= model->columnCount() || term.isEmpty()) {
+        QApplication::beep();
         return false;
+    }
     for (int i = 1; i <= rows; ++i) {
         const int row = ((startRow + step * i) % rows + rows) % rows;
         const QModelIndex idx = model->index(row, column);
-        if (idx.data(Qt::DisplayRole).toString().contains(term, Qt::CaseInsensitive)) {
+        if (compact(idx.data(Qt::DisplayRole).toString()).contains(term, Qt::CaseInsensitive)) {
             view->setCurrentIndex(idx);
             view->scrollTo(idx);
             return true;
         }
     }
+    QApplication::beep();
     return false;
 }
 
