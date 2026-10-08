@@ -314,6 +314,11 @@ void tst_KadLiveNetwork::initTestCase()
     Kademlia::setClientList(m_clientList);
     Kademlia::setIPFilter(nullptr);
 
+    // Same wiring as CoreSession: an FW-check peer says OP_HELLO first and only
+    // ACKs after our OP_HELLOANSWER, so inbound sockets need a real client.
+    connect(m_listenSocket, &ListenSocket::newClientConnection,
+            m_clientList, &ClientList::handleIncomingConnection);
+
     // 6. Start Kademlia (loads nodes.dat into routing zone)
     RoutingBin::resetGlobalTracking();
     m_kad = new Kademlia(this);
@@ -970,9 +975,7 @@ void tst_KadLiveNetwork::firewalledCheck_runsToCompletion()
     //   - incomingTcpConnections: counts TCP connections accepted by ListenSocket
     //   - tcpFwAcksReceived: counts OP_KAD_FWTCPCHECK_ACK packets received via
     //     ClientReqSocket::extPacketReceived (the signal UpDownClient connects to).
-    //     We also call prefs->incFirewalled() to complete the path that
-    //     UpDownClient::processKadFwTcpCheckAck() normally handles, since no full
-    //     UpDownClient is wired for unsolicited incoming TCP in this test.
+    //     Counting only: the client wired in initTestCase does incFirewalled().
 
     std::atomic<int> incomingTcpConnections{0};
     std::atomic<int> tcpFwAcksReceived{0};
@@ -982,15 +985,12 @@ void tst_KadLiveNetwork::firewalledCheck_runsToCompletion()
     QObject tcpScope;
     QObject* tcpCtx = &tcpScope;
     connect(m_listenSocket, &ListenSocket::newClientConnection, tcpCtx,
-            [&incomingTcpConnections, &tcpFwAcksReceived, prefs, tcpCtx](ClientReqSocket* socket) {
+            [&incomingTcpConnections, &tcpFwAcksReceived, tcpCtx](ClientReqSocket* socket) {
                 incomingTcpConnections.fetch_add(1, std::memory_order_relaxed);
                 QObject::connect(socket, &ClientReqSocket::extPacketReceived, tcpCtx,
-                    [&tcpFwAcksReceived, prefs](const uint8* /*data*/, uint32 /*size*/, uint8 opcode) {
-                        if (opcode == OP_KAD_FWTCPCHECK_ACK) {
+                    [&tcpFwAcksReceived](const uint8* /*data*/, uint32 /*size*/, uint8 opcode) {
+                        if (opcode == OP_KAD_FWTCPCHECK_ACK)
                             tcpFwAcksReceived.fetch_add(1, std::memory_order_relaxed);
-                            // UpDownClient::processKadFwTcpCheckAck() calls this:
-                            prefs->incFirewalled();
-                        }
                     });
             });
 
@@ -1015,6 +1015,11 @@ void tst_KadLiveNetwork::firewalledCheck_runsToCompletion()
     const bool tcpDone = QTest::qWaitFor([prefs] {
         return !prefs->recheckIP();
     }, 30'000);
+
+    // The ACK trails the FIREWALLED_RES by a TCP connect plus a hello round-trip;
+    // two of them clear the firewalled state.
+    if (m_portsOpen)
+        (void)QTest::qWaitFor([this] { return !m_kad->isFirewalled(); }, 30'000);
 
     const bool tcpFirewalled = m_kad->isFirewalled();
     qDebug() << "TCP firewall check — done:" << tcpDone
