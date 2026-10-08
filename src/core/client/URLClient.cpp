@@ -89,6 +89,9 @@ bool URLClient::setUrl(const QString& url, const Address& fromAddr)
 void URLClient::setRequestFile(PartFile* reqFile)
 {
     setReqFile(reqFile);
+    // Without a part status no block is ever reserved, and so no GET sent
+    // (MFC CUrlClient::SetRequestFile).
+    markAsCompleteHttpSource(reqFile);
 }
 
 // ===========================================================================
@@ -157,7 +160,7 @@ bool URLClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
 void URLClient::connectionEstablished()
 {
     setConnectingState(ConnectingState::None);
-    sendFileRequest();
+    sendHttpBlockRequests();
 }
 
 // ===========================================================================
@@ -170,6 +173,7 @@ bool URLClient::disconnected(const QString& reason, bool fromSocket)
 
     // Clean up HTTP state
     setConnectingState(ConnectingState::None);
+    m_rangeStart = kNoRange;
 
     // Call base class disconnect
     return UpDownClient::disconnected(reason, fromSocket);
@@ -181,7 +185,8 @@ bool URLClient::disconnected(const QString& reason, bool fromSocket)
 
 void URLClient::sendFileRequest()
 {
-    sendHttpBlockRequests();
+    // MFC ignores it: the GET goes out from connectionEstablished(), and a second one
+    // on a busy connection would interleave two bodies.
 }
 
 // ===========================================================================
@@ -190,7 +195,9 @@ void URLClient::sendFileRequest()
 
 void URLClient::sendBlockRequests()
 {
-    sendHttpBlockRequests();
+    // only when nothing is outstanding — one request per connection at a time
+    if (pendingBlocks().empty())
+        sendHttpBlockRequests();
 }
 
 // ===========================================================================
@@ -199,42 +206,31 @@ void URLClient::sendBlockRequests()
 
 bool URLClient::sendHttpBlockRequests()
 {
-    if (!socket())
+    if (!socket() || !reqFile())
         return false;
 
-    const auto& pending = pendingBlocks();
-    if (pending.empty()) {
-        // Create block requests
-        createBlockRequests(1);
-        if (pendingBlocks().empty())
-            return false;
+    // MFC URLClient.cpp:138-162: a part's worth of blocks, merged into one range
+    if (!reserveHttpRange(m_reqStart, m_reqEnd)) {
+        setDownloadState(DownloadState::NoNeededParts);
+        swapToAnotherFile(QStringLiteral("A4AF for NNP file. URLClient::sendHttpBlockRequests()"),
+                          true, false, false, nullptr, true, true);
+        return false;
     }
-
-    // Get first pending block's range
-    uint64 startPos = 0;
-    uint64 endPos = 0;
-
-    for (const auto* pb : pendingBlocks()) {
-        if (pb->block) {
-            startPos = pb->block->startOffset;
-            endPos = pb->block->endOffset;
-            break;
-        }
-    }
+    m_rangeStart = m_reqStart;
 
     QByteArray request = buildGetHeader();
+    // both ends inclusive, as the blocks are
+    request += "Range: bytes=";
+    request += QByteArray::number(static_cast<qulonglong>(m_reqStart));
+    request += '-';
+    request += QByteArray::number(static_cast<qulonglong>(m_reqEnd));
+    request += "\r\n\r\n";
 
-    // Add Range header
-    if (endPos > 0) {
-        request += "Range: bytes=";
-        request += QByteArray::number(static_cast<qint64>(startPos));
-        request += '-';
-        request += QByteArray::number(static_cast<qint64>(endPos - 1));
-        request += "\r\n";
+    // the answer starts with headers again (keep-alive)
+    if (auto* http = dynamic_cast<HttpClientReqSocket*>(socket())) {
+        http->clearHttpHeaders();
+        http->setHttpState(HttpSocketState::RecvExpected);
     }
-
-    request += "\r\n";
-
     return sendRawRequest(request);
 }
 
@@ -244,36 +240,60 @@ bool URLClient::sendHttpBlockRequests()
 
 bool URLClient::processHttpDownResponse(const QList<QByteArray>& headers)
 {
-    if (headers.isEmpty())
+    // MFC URLClient.cpp:237-327. False disconnects.
+    PartFile* file = reqFile();
+    if (!file || headers.isEmpty())
         return false;
 
-    // Parse status line: "HTTP/1.1 200 OK" or "HTTP/1.1 206 Partial Content"
     const int code = parseStatusCode(headers.first());
-    if (code < 0)
-        return false;
-
-    if (code != 200 && code != 206) {
-        logDebug(QStringLiteral("URLClient: HTTP error %1 from %2").arg(code).arg(m_urlHost));
+    const bool expectData = code == 200 || code == 206;
+    const bool redirection = code == 301 || code == 302;
+    if (!expectData && !redirection) {
+        logDebug(QStringLiteral("URLClient: unexpected HTTP status %1 from %2").arg(code).arg(m_urlHost));
         return false;
     }
 
-    // Parse Content-Range header if present
-    for (qsizetype i = 1; i < headers.size(); ++i) {
-        if (headers[i].toLower().startsWith("content-range:")) {
-            // Format: "Content-Range: bytes START-END/TOTAL"
-            const QByteArray value = headers[i].mid(headers[i].indexOf(':') + 1).trimmed();
-            if (value.startsWith("bytes ")) {
-                const QByteArray range = value.mid(6); // skip "bytes "
-                const auto dashIdx = range.indexOf('-');
-                const auto slashIdx = range.indexOf('/');
-                if (dashIdx > 0 && slashIdx > dashIdx) {
-                    m_rangeStart = range.left(dashIdx).trimmed().toULongLong();
-                    m_rangeEnd = range.mid(dashIdx + 1, slashIdx - dashIdx - 1).trimmed().toULongLong() + 1;
-                }
-            }
+    if (redirection) {
+        const QString location = QString::fromUtf8(headerValue(headers, "location"));
+        if (location.isEmpty())
+            return false;
+        if (++m_redirected >= kMaxRedirects) {
+            logDebug(QStringLiteral("URLClient: too many redirections from %1").arg(m_urlHost));
+            return false;
+        }
+        // the new host is resolved afresh; the reserved blocks go with the old request
+        setUserAddress({});
+        if (!setUrl(location, Address{})) {
+            logDebug(QStringLiteral("URLClient: bad redirection URL \"%1\"").arg(location));
+            return false;
+        }
+        clearDownloadBlockRequests();
+        releaseSocket(/*destroy*/ true);
+        if (!tryToConnect(true))
+            disconnected(QStringLiteral("Failed to connect to redirected URL"));
+        return false;   // the old socket, no longer ours, closes
+    }
+
+    const uint64 fileSize = static_cast<uint64>(file->fileSize());
+    if (const QByteArray length = headerValue(headers, "content-length"); !length.isEmpty()) {
+        const uint64 contentLength = length.toULongLong();
+        // the whole file is tolerated here; the range check below still has to pass
+        if (contentLength != m_reqEnd - m_reqStart + 1 && contentLength != fileSize) {
+            logDebug(QStringLiteral("URLClient: unexpected Content-Length %1 from %2")
+                         .arg(contentLength).arg(m_urlHost));
+            return false;
         }
     }
 
+    uint64 first = 0, last = 0, total = 0;
+    if (!parseContentRange(headerValue(headers, "content-range"), first, last, total)
+        || first != m_reqStart || last != m_reqEnd || total != fileSize) {
+        logDebug(QStringLiteral("URLClient: no valid Content-Range from %1").arg(m_urlHost));
+        return false;
+    }
+
+    m_rangeStart = first;
+    setDownloadState(DownloadState::Downloading);
     return true;
 }
 
@@ -286,37 +306,39 @@ bool URLClient::processHttpDownResponseBody(const uint8* data, uint32 size)
     if (!data || size == 0)
         return false;
 
-    processHttpBlockPacket(data, size);
-    return true;
+    return processHttpBlockPacket(data, size);
 }
 
 // ===========================================================================
 // processHttpBlockPacket — process HTTP data as file block
 // ===========================================================================
 
-void URLClient::processHttpBlockPacket(const uint8* data, uint32 size)
+bool URLClient::processHttpBlockPacket(const uint8* data, uint32 size)
 {
+    // MFC URLClient.cpp:341-414. False disconnects.
+    PartFile* file = reqFile();
+    if (!file || file->isStopped()
+        || (file->status() != PartFileStatus::Ready && file->status() != PartFileStatus::Empty))
+        return false;
+    if (m_rangeStart == kNoRange)
+        return false;   // data nobody asked for
+    if (downloadState() != DownloadState::Downloading
+        && downloadState() != DownloadState::NoNeededParts)
+        return false;
+
     // Accumulate for rate averaging (drained in calculateDownloadRate)
     accumulateDownBytes(size);
-
     bookHttpDownload(size);
 
-    // Write data to PartFile
-    PartFile* file = reqFile();
-    if (file && data && size > 0) {
-        // writeToBuffer's `end` is INCLUSIVE — it copies end-start+1 bytes. Passing
-        // the exclusive end read one byte past `data` and filled one gap byte too
-        // many. MFC converts the same way (`--nEndPos` in URLClient.cpp:374 and
-        // DownloadClient.cpp:1005); this port does it on the ed2k path
-        // (DownloadClient.cpp:807) but used to miss it here.
-        const uint64 startOffset = m_rangeStart;
-        const uint64 endOffset = m_rangeStart + size - 1;
-        // No sender: an eD2K URL source is a web server, not a peer. Corruption
-        // attribution exists to ban peers, and there is nobody here to ban — banning
-        // the host would only take the URL out of our own reach.
-        file->writeToBuffer(size, data, startOffset, endOffset, nullptr);
-        m_rangeStart += size;
+    writeHttpData(m_rangeStart, data, size);
+    m_rangeStart += size;
+
+    // range done: ask for the next one over the same connection
+    if (pendingBlocks().empty()) {
+        m_rangeStart = kNoRange;
+        sendHttpBlockRequests();
     }
+    return true;
 }
 
 // ===========================================================================
@@ -436,6 +458,31 @@ QByteArray URLClient::headerValue(const QList<QByteArray>& headers, const char* 
 // ===========================================================================
 // connectToHost — private: create socket and initiate TCP connection
 // ===========================================================================
+
+bool URLClient::parseContentRange(const QByteArray& value, uint64& first, uint64& last,
+                                        uint64& total)
+{
+    // "bytes <first>-<last>/<total>" — RFC 9110 §14.4. Anything else, including
+    // the unsatisfied "bytes */<total>" form, is not something we can follow.
+    if (!value.startsWith("bytes "))
+        return false;
+
+    const QByteArray spec = value.mid(6).trimmed();
+    const auto dash = spec.indexOf('-');
+    const auto slash = spec.indexOf('/');
+    if (dash <= 0 || slash <= dash)
+        return false;
+
+    bool okFirst = false;
+    bool okLast = false;
+    bool okTotal = false;
+
+    first = spec.left(dash).trimmed().toULongLong(&okFirst);
+    last = spec.mid(dash + 1, slash - dash - 1).trimmed().toULongLong(&okLast);
+    total = spec.mid(slash + 1).trimmed().toULongLong(&okTotal);
+
+    return okFirst && okLast && okTotal;
+}
 
 void URLClient::connectToHost()
 {

@@ -4,10 +4,16 @@
 #include "TestHelpers.h"
 #include "app/AppConfig.h"
 #include "client/URLClient.h"
+#include "files/PartFile.h"
 #include "net/Address.h"
 #include "prefs/Preferences.h"
+#include "utils/Opcodes.h"
 
+#include <QCryptographicHash>
+#include <QDir>
 #include <QScopeGuard>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTest>
 
 using namespace eMule;
@@ -20,6 +26,57 @@ namespace {
 class ExposedURLClient : public URLClient {
 public:
     using URLClient::buildGetHeader;
+};
+
+/// Minimal range-serving web server. "/moved" answers 302 to "/file".
+class RangeServer : public QObject {
+public:
+    explicit RangeServer(QByteArray content) : m_content(std::move(content))
+    {
+        m_server.listen(QHostAddress::LocalHost, 0);
+        connect(&m_server, &QTcpServer::newConnection, this, [this] {
+            while (QTcpSocket* sock = m_server.nextPendingConnection()) {
+                connect(sock, &QTcpSocket::readyRead, this, [this, sock] { serve(sock); });
+                connect(sock, &QTcpSocket::disconnected, sock, &QObject::deleteLater);
+            }
+        });
+    }
+
+    [[nodiscard]] uint16 port() const { return m_server.serverPort(); }
+    QList<QByteArray> ranges;   ///< every Range value asked for, in order
+    int redirects = 0;
+
+private:
+    void serve(QTcpSocket* sock)
+    {
+        QByteArray& in = m_pending[sock];
+        in += sock->readAll();
+        for (qsizetype end; (end = in.indexOf("\r\n\r\n")) >= 0;) {
+            const QByteArray head = in.left(end);
+            in.remove(0, end + 4);
+
+            if (head.startsWith("GET /moved ")) {
+                ++redirects;
+                sock->write("HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:"
+                            + QByteArray::number(port()) + "/file\r\nContent-Length: 0\r\n\r\n");
+                continue;
+            }
+            const qsizetype at = head.indexOf("Range: bytes=");
+            const QByteArray range = head.mid(at + 13, head.indexOf("\r\n", at) - at - 13);
+            ranges.append(range);
+            const qsizetype dash = range.indexOf('-');
+            const qint64 first = range.left(dash).toLongLong();
+            const qint64 last = range.mid(dash + 1).toLongLong();
+            sock->write("HTTP/1.1 206 Partial Content\r\nContent-Length: "
+                        + QByteArray::number(last - first + 1) + "\r\nContent-Range: bytes "
+                        + range + '/' + QByteArray::number(m_content.size()) + "\r\n\r\n");
+            sock->write(m_content.mid(first, last - first + 1));
+        }
+    }
+
+    QTcpServer m_server;
+    QByteArray m_content;
+    QHash<QTcpSocket*, QByteArray> m_pending;
 };
 
 } // namespace
@@ -36,6 +93,8 @@ private slots:
     void httpBlockRequest_format();
     void buildGetHeader_carriesUserAgent();
     void tryToConnect_rejectsAnUnusableAddress();
+    void fetch_downloadsTheFileOverHttp_data();
+    void fetch_downloadsTheFileOverHttp();
 };
 
 // ---------------------------------------------------------------------------
@@ -146,6 +205,64 @@ void tst_URLClient::tryToConnect_rejectsAnUnusableAddress()
     QVERIFY(allowed.setUrl(QStringLiteral("http://127.0.0.1:8080/chunk.bin"),
                            Address::fromString(QStringLiteral("127.0.0.1"))));
     QVERIFY(allowed.tryToConnect());
+}
+
+// A plain URL source (an http source of an ed2k link) used to send no request at all:
+// it had no part status, so no block was ever reserved. MFC srchybrid/URLClient.cpp.
+void tst_URLClient::fetch_downloadsTheFileOverHttp_data()
+{
+    QTest::addColumn<QString>("path");
+    QTest::newRow("direct") << QStringLiteral("/file");
+    QTest::newRow("redirected") << QStringLiteral("/moved");
+}
+
+void tst_URLClient::fetch_downloadsTheFileOverHttp()
+{
+    QFETCH(QString, path);
+
+    const bool savedFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restore = qScopeGuard([savedFilter] { thePrefs.setFilterLANIPs(savedFilter); });
+
+    // three blocks, the last one short
+    QByteArray content(static_cast<qsizetype>(EMBLOCKSIZE * 2 + 31360), '\0');
+    for (qsizetype i = 0; i < content.size(); ++i)
+        content[i] = static_cast<char>((i * 7 + (i >> 9)) & 0xFF);
+    RangeServer server(content);
+    QVERIFY(server.port() != 0);
+
+    eMule::testing::TempDir tmp;
+    PartFile pf;
+    pf.setFileName(QStringLiteral("from_the_web.bin"));
+    pf.setFileSize(static_cast<uint64>(content.size()));
+    const QByteArray md4 = QCryptographicHash::hash(content, QCryptographicHash::Md4);
+    pf.setFileHash(reinterpret_cast<const uint8*>(md4.constData()));
+    QVERIFY(pf.createPartFile(tmp.path()));
+
+    URLClient client;
+    const Address loopback = Address::fromString(QStringLiteral("127.0.0.1"));
+    QVERIFY(client.setUrl(QStringLiteral("http://127.0.0.1:%1%2").arg(server.port()).arg(path),
+                          loopback));
+    client.setRequestFile(&pf);
+    pf.addSource(&client);
+    QVERIFY(client.tryToConnect(true));
+
+    QTRY_COMPARE_WITH_TIMEOUT(client.transferredDown(), static_cast<uint64>(content.size()), 10000);
+
+    // one request for the whole contiguous run, both ends inclusive
+    QCOMPARE(server.ranges, QList<QByteArray>{"0-" + QByteArray::number(content.size() - 1)});
+    QCOMPARE(server.redirects, path == QStringLiteral("/moved") ? 1 : 0);
+    QCOMPARE(pf.transferred(), static_cast<uint64>(content.size()));
+    QCOMPARE(static_cast<uint64>(pf.completedSize()), static_cast<uint64>(content.size()));
+
+    // what landed in the part file is what the server has
+    pf.flushBuffer();
+    QFile part(QDir(tmp.path()).filePath(pf.partMetFileName().chopped(4)));
+    QVERIFY(part.open(QIODevice::ReadOnly));
+    QCOMPARE(part.readAll(), content);
+
+    pf.removeSource(&client);
+    client.setReqFile(nullptr);
 }
 
 #include "tst_URLClient.moc"

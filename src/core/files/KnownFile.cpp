@@ -44,6 +44,9 @@ KnownFile::KnownFile()
     m_completeSourcesCount = 1;
     m_completeSourcesCountLo = 1;
     m_completeSourcesCountHi = 1;
+    // MFC CKnownFile ctor: auto starts at High
+    m_autoUpPriority = thePrefs.autoSharedFilesPriority();
+    m_upPriority = m_autoUpPriority ? kPrHigh : kPrNormal;
 }
 
 KnownFile::~KnownFile() = default;
@@ -739,7 +742,7 @@ void KnownFile::setUpPriorityFromTag(uint32 value)
 {
     if (value == kPrAuto) {
         m_autoUpPriority = true;
-        m_upPriority = kPrNormal;
+        m_upPriority = kPrHigh;
         return;
     }
     m_autoUpPriority = false;

@@ -33,6 +33,7 @@ private slots:
     void signalConnections();
     void receivesReservedProt_dispatchesInsteadOfDropping_data();
     void receivesReservedProt_dispatchesInsteadOfDropping();
+    void reaskPackets_areFileRequestOverhead();
     void throwingHandler_doesNotEscapeReceiveLoop();
     void kadDatagram_fromNativeIPv6IsDropped();
 };
@@ -182,6 +183,34 @@ void tst_ClientUDPSocket::receivesReservedProt_dispatchesInsteadOfDropping_data(
     QTest::newRow("prot2 (0xB2)") << static_cast<int>(OP_UDPRESERVEDPROT2);
 }
 
+void tst_ClientUDPSocket::reaskPackets_areFileRequestOverhead()
+{
+    // MFC books the reask family as file-request overhead, both ways.
+    Statistics stats;
+    theApp.statistics = &stats;
+
+    ClientUDPSocket sock;
+    QVERIFY(sock.create());
+    QUdpSocket peer;
+    QVERIFY(peer.bind(QHostAddress::LocalHost, 0));
+
+    QByteArray dgram;
+    dgram.append(static_cast<char>(OP_EMULEPROT));
+    dgram.append(static_cast<char>(OP_QUEUEFULL));
+    peer.writeDatagram(dgram, QHostAddress::LocalHost, sock.connectedPort());
+    QTRY_COMPARE(stats.downDataOverheadFileRequestPackets(), uint64{1});
+    QCOMPARE(stats.downDataOverheadOtherPackets(), uint64{0});
+
+    auto ping = std::make_unique<Packet>(OP_REASKFILEPING, 16, OP_EMULEPROT);
+    sock.sendPacket(std::move(ping),
+                    Endpoint(Address::fromString(QStringLiteral("127.0.0.1")), peer.localPort()),
+                    false, nullptr, false, 0);
+    QCOMPARE(stats.upDataOverheadFileRequestPackets(), uint64{1});
+    QCOMPARE(stats.upDataOverheadOtherPackets(), uint64{0});
+
+    theApp.statistics = nullptr;
+}
+
 void tst_ClientUDPSocket::receivesReservedProt_dispatchesInsteadOfDropping()
 {
     QFETCH(int, protoByte);
@@ -261,8 +290,10 @@ void tst_ClientUDPSocket::throwingHandler_doesNotEscapeReceiveLoop()
     QCOMPARE(sender.writeDatagram(reserved, QHostAddress::LocalHost, port),
              static_cast<qint64>(reserved.size()));
 
-    // Both datagrams are metered as they are dispatched, the throwing one included.
-    QTRY_COMPARE(stats.downDataOverheadOtherPackets(), static_cast<uint64>(2));
+    // Both datagrams are metered as they are dispatched, the throwing one included
+    // (the reask ack as file-request overhead).
+    QTRY_COMPARE(stats.downDataOverheadOtherPackets(), static_cast<uint64>(1));
+    QCOMPARE(stats.downDataOverheadFileRequestPackets(), static_cast<uint64>(1));
     QCOMPARE(thrown, 1);
 }
 

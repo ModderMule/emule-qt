@@ -121,8 +121,12 @@ bool ClientUDPSocket::sendPacket(std::unique_ptr<Packet> packet, const Endpoint&
     if (!packet)
         return false;
 
+    // MFC books per call site; the reask family is file-request overhead, also the
+    // callback relayed through a Kad buddy (DownloadClient.cpp:1374, :1396).
     if (auto* stats = theApp.statistics) {
-        if (isKad)
+        if (packet->prot == OP_EMULEPROT && isReaskOpcode(packet->opcode))
+            stats->addUpDataOverheadFileRequest(packet->size);
+        else if (isKad)
             stats->addUpDataOverheadKad(packet->size);
         else
             stats->addUpDataOverheadOther(packet->size);
@@ -412,7 +416,7 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
                 return;
             } else if (innerProto == OP_KADEMLIAHEADER) {
                 if (auto* stats = theApp.statistics)
-                    stats->addDownDataOverheadKad(static_cast<uint32>(bufLen));
+                    stats->addDownDataOverheadKad(static_cast<uint32>(dr.length)); // decrypted, as MFC
                 // The two keys are not interchangeable. The *receiver* key is the
                 // one we minted for this peer's IP and handed to it earlier; seeing
                 // it echoed back proves the peer really lives at that address. The
@@ -426,7 +430,7 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
                                        validKey, dr.senderVerifyKey);
             } else if (innerProto == OP_KADEMLIAPACKEDPROT) {
                 if (auto* stats = theApp.statistics)
-                    stats->addDownDataOverheadKad(static_cast<uint32>(bufLen));
+                    stats->addDownDataOverheadKad(static_cast<uint32>(dr.length)); // decrypted, as MFC
                 const bool validKey = (dr.receiverVerifyKey != 0) &&
                     (dr.receiverVerifyKey == kad::KadPrefs::getUDPVerifyKey(senderIPv4Host));
                 QByteArray decompressed = decompressKadPayload(dr.data + 2, dr.length - 2);
@@ -449,8 +453,13 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
 bool ClientUDPSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode,
                                     const Endpoint& senderEP)
 {
-    if (auto* stats = theApp.statistics)
-        stats->addDownDataOverheadOther(size);
+    // MFC ClientUDPSocket.cpp:205-400 — the relayed callback request counts as Other
+    if (auto* stats = theApp.statistics) {
+        if (isReaskOpcode(opcode) && opcode != OP_REASKCALLBACKUDP)
+            stats->addDownDataOverheadFileRequest(size);
+        else
+            stats->addDownDataOverheadOther(size);
+    }
 
     switch (opcode) {
     case OP_REASKCALLBACKUDP:
@@ -490,6 +499,20 @@ bool ClientUDPSocket::processPacket(const uint8* packet, uint32 size, uint8 opco
     }
 
     return true;
+}
+
+bool ClientUDPSocket::isReaskOpcode(uint8 opcode)
+{
+    switch (opcode) {
+    case OP_REASKFILEPING:
+    case OP_REASKACK:
+    case OP_QUEUEFULL:
+    case OP_FILENOTFOUND:
+    case OP_REASKCALLBACKUDP:
+        return true;
+    default:
+        return false;
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -41,6 +41,8 @@ public:
 
     /// Start the core session and IPC server. Returns true on success.
     bool start();
+    /// Start without auto-connecting (--hold-connect). Before start().
+    void setConnectHold(bool hold) { m_connectHold = hold; }
 
     /// Stop the IPC server and core session.
     void stop();
@@ -136,6 +138,7 @@ private:
                                   const QString& msg);
 
     std::unique_ptr<CoreSession> m_coreSession;
+    bool m_connectHold = false;
     std::unique_ptr<IpcServer> m_ipcServer;
     std::unique_ptr<CoreNotifierBridge> m_notifierBridge;
     /// Declared before m_webServer so the server that points at it dies first.

@@ -78,6 +78,8 @@ CoreSession::CoreSession(QObject* parent)
 CoreSession::~CoreSession()
 {
     theApp.onBindSelectionChanged = nullptr;
+    theApp.applyListenPorts = nullptr;
+    theApp.releaseConnectHold = nullptr;
     theApp.closing = true;   // the saves below are the last ones: commit them
     stop();
     // Before every shutdownXxx(): shutdownClientInfra() destroys ClientCredits, and the
@@ -123,7 +125,10 @@ void CoreSession::start()
         m_resumeKad = thePrefs.kadEnabled() && thePrefs.autoConnect();
     }
     m_appliedBind = BindAddress::current();
+    rememberAppliedPorts();
     theApp.onBindSelectionChanged = [this] { applyBindSelection(); };
+    theApp.applyListenPorts = [this] { return applyListenPorts(); };
+    theApp.releaseConnectHold = [this] { releaseConnectHold(); };
     m_tickCounter = 0;
     m_timer.start();
 }
@@ -367,6 +372,8 @@ void CoreSession::onTimer()
                 QStringLiteral("clients.met"));
             theApp.clientCredits->process(creditsPath);  // auto-save every 13 min
         }
+        if (theApp.friendList)
+            theApp.friendList->process(thePrefs.configDir());  // auto-save every 19 min
         if (theApp.listenSocket) {
             theApp.listenSocket->process();
             theApp.listenSocket->updateConnectionsStatus();
@@ -707,7 +714,8 @@ void CoreSession::initServerConnect()
     // DoAutoConnect() (EmuleDlg.cpp:742). autoConnect gates *connecting*;
     // networkED2K keeps the default Kad-only profile Kad-only. The Kad arm has
     // the mirror of this in initKademlia().
-    if (thePrefs.networkED2K() && thePrefs.autoConnect() && BindAddress::outboundAllowed())
+    if (thePrefs.networkED2K() && thePrefs.autoConnect() && BindAddress::outboundAllowed()
+        && !m_connectHold)
         m_serverConnect->connectToAnyServer();
 }
 
@@ -1043,10 +1051,10 @@ void CoreSession::initClientUDP()
     // OP_REASKACK — remote source confirms our queue position via UDP.
     connect(m_clientUDP.get(), &ClientUDPSocket::reaskAckReceived,
         this, [](const Endpoint& senderEP, const uint8* data, uint32 size) {
-            if (!theApp.clientList)
+            if (!theApp.downloadQueue)
                 return;
-            auto* sender = theApp.clientList->findByEndpoint_UDP(senderEP.address(),
-                                                                 senderEP.port());
+            auto* sender = theApp.downloadQueue->downloadClientByIP_UDP(
+                senderEP.address(), senderEP.port(), true);
             if (!sender || !sender->udpPacketPending())
                 return;
             SafeMemFile io(data, size);
@@ -1062,10 +1070,10 @@ void CoreSession::initClientUDP()
     // OP_FILENOTFOUND — remote source no longer has the file.
     connect(m_clientUDP.get(), &ClientUDPSocket::fileNotFoundReceived,
         this, [](const Endpoint& senderEP) {
-            if (!theApp.clientList)
+            if (!theApp.downloadQueue)
                 return;
-            auto* sender = theApp.clientList->findByEndpoint_UDP(senderEP.address(),
-                                                                 senderEP.port());
+            auto* sender = theApp.downloadQueue->downloadClientByIP_UDP(
+                senderEP.address(), senderEP.port(), true);
             if (sender && sender->udpPacketPending())
                 sender->udpReaskFNF(); // may delete sender
         });
@@ -1073,10 +1081,10 @@ void CoreSession::initClientUDP()
     // OP_QUEUEFULL — remote source's upload queue is full.
     connect(m_clientUDP.get(), &ClientUDPSocket::queueFullReceived,
         this, [](const Endpoint& senderEP) {
-            if (!theApp.clientList)
+            if (!theApp.downloadQueue)
                 return;
-            auto* sender = theApp.clientList->findByEndpoint_UDP(senderEP.address(),
-                                                                 senderEP.port());
+            auto* sender = theApp.downloadQueue->downloadClientByIP_UDP(
+                senderEP.address(), senderEP.port(), true);
             if (sender && sender->udpPacketPending()) {
                 sender->setRemoteQueueFull(true);
                 sender->udpReaskACK(0);
@@ -1320,7 +1328,8 @@ void CoreSession::initKademlia()
     // Start() the same way (StartConnection, emuleDlg.cpp:1983) while CKademlia
     // stays an always-addressable static. A failed start is left constructed too,
     // so a retry does not hit a null instance.
-    if (thePrefs.kadEnabled() && thePrefs.autoConnect() && BindAddress::outboundAllowed()) {
+    if (thePrefs.kadEnabled() && thePrefs.autoConnect() && BindAddress::outboundAllowed()
+        && !m_connectHold) {
         m_kademlia->start();
         if (m_kademlia->isRunning())
             logInfo(QStringLiteral("Kademlia started."));
@@ -1370,20 +1379,13 @@ void CoreSession::wireKadListener()
         });
 
     // Send bridge: KademliaUDPListener → ClientUDPSocket
-    //    Build a Packet from the raw [opcode][payload] and queue it for sending.
+    //    Build a Packet from the raw [opcode][payload] (packed if large) and queue it.
     connect(listener, &kad::KademliaUDPListener::packetToSend,
         udp, [udp](QByteArray data, uint32 destIP, uint16 destPort,
                     kad::KadUDPKey targetKey, kad::UInt128 cryptTargetID) {
-            if (data.isEmpty())
+            auto pkt = kad::KademliaUDPListener::buildWirePacket(data);
+            if (!pkt)
                 return;
-
-            auto pkt = std::make_unique<Packet>(OP_KADEMLIAHEADER);
-            pkt->opcode = static_cast<uint8>(data[0]);
-            if (data.size() > 1) {
-                pkt->size = static_cast<uint32>(data.size() - 1);
-                pkt->pBuffer = new char[pkt->size];
-                std::memcpy(pkt->pBuffer, data.constData() + 1, pkt->size);
-            }
 
             // Determine encryption parameters
             const bool hasTarget = !(cryptTargetID == kad::UInt128());
@@ -1563,6 +1565,8 @@ void CoreSession::initPortMapper()
                                          ? QStringLiteral(" (the server learns it at the next connect)")
                                          : QString()));
             });
+    connect(m_portMapper.get(), &PortMapper::statusChanged,
+            this, &CoreSession::portMapStatusChanged);
 
     connect(m_portMapper.get(), &PortMapper::mappingChanged, this,
             [](const PortMapping& mapping, bool ok) {
@@ -1624,6 +1628,133 @@ void CoreSession::updatePortMappings()
 {
     if (m_portMapper)
         m_portMapper->setDesiredMappings(buildPortMapRequests());
+}
+
+// ---------------------------------------------------------------------------
+// applyPortMapPreferences — make enableUPnP take effect without a restart
+// ---------------------------------------------------------------------------
+
+void CoreSession::applyPortMapPreferences()
+{
+    if (m_netSuspended)
+        return;   // resumeNetworking() starts the mapper
+
+    if (thePrefs.enableUPnP() && !m_portMapper) {
+        initPortMapper();
+    } else if (!thePrefs.enableUPnP() && m_portMapper) {
+        shutdownPortMapper();
+        logInfo(QStringLiteral("Port mapping: switched off"));
+        emit portMapStatusChanged(PortMapStatus::Disabled);
+    } else {
+        updatePortMappings();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// applyListenPorts — rebind after a port change, when nothing is connected
+// ---------------------------------------------------------------------------
+
+PortApplyResult CoreSession::applyListenPorts()
+{
+    const auto tcp = static_cast<uint16>(thePrefs.port());
+    const auto udp = static_cast<uint16>(thePrefs.udpPort());
+    const uint16 serverUdp = thePrefs.serverUDPPort();
+    const bool tcpChanged = tcp != m_appliedTcpPort;
+    const bool udpChanged = udp != m_appliedUdpPort;
+    const bool serverUdpChanged = serverUdp != m_appliedServerUdpPort;
+    if (!tcpChanged && !udpChanged && !serverUdpChanged)
+        return PortApplyResult::Unchanged;
+
+    if (m_netSuspended) {
+        rememberAppliedPorts();   // resumeNetworking() binds from the prefs
+        return PortApplyResult::Applied;
+    }
+
+    // A socket that never came up has nothing to move.
+    const bool movable = (!tcpChanged || m_listenSocket) && (!udpChanged || m_clientUDP)
+        && (!serverUdpChanged || m_serverUDP);
+    if (!movable || !isNetworkIdle()) {
+        logWarning(QStringLiteral("Port change (TCP %1, UDP %2) needs a restart: the core is "
+                                  "connected. Still listening on TCP %3, UDP %4.")
+                       .arg(tcp).arg(udp).arg(boundTcpPort()).arg(boundUdpPort()));
+        return PortApplyResult::RestartRequired;
+    }
+
+    bool ok = true;
+    if (tcpChanged && !m_listenSocket->rebind(tcp)) {
+        ok = false;
+        if (!m_listenSocket->rebind(m_appliedTcpPort))
+            logError(QStringLiteral("TCP listen socket is closed: port %1 could not be reopened")
+                         .arg(m_appliedTcpPort));
+    }
+    if (ok && udpChanged && !m_clientUDP->rebind(udp)) {
+        ok = false;
+        if (!m_clientUDP->rebind(m_appliedUdpPort))
+            logError(QStringLiteral("Client UDP socket is closed: port %1 could not be reopened")
+                         .arg(m_appliedUdpPort));
+        // Both or neither: put TCP back too
+        if (tcpChanged)
+            m_listenSocket->rebind(m_appliedTcpPort);
+    }
+    if (ok && serverUdpChanged) {
+        m_serverUDP->close();
+        m_serverUDP->create();   // 0 = server UDP off, not a failure
+    }
+
+    if (theApp.serverConnect) {
+        ServerConnectConfig cfg = theApp.serverConnect->config();
+        cfg.listenPort = boundTcpPort();
+        theApp.serverConnect->setConfig(cfg);
+    }
+    updatePortMappings();
+
+    if (!ok) {
+        logError(QStringLiteral("Port change failed (TCP %1, UDP %2) — port in use? Still "
+                                "listening on TCP %3, UDP %4.")
+                     .arg(tcp).arg(udp).arg(boundTcpPort()).arg(boundUdpPort()));
+        return PortApplyResult::BindFailed;
+    }
+    rememberAppliedPorts();
+    logInfo(QStringLiteral("Ports changed: now listening on TCP %1, UDP %2")
+                .arg(boundTcpPort()).arg(boundUdpPort()));
+    return PortApplyResult::Applied;
+}
+
+uint16 CoreSession::boundTcpPort() const
+{
+    return m_listenSocket && m_listenSocket->isListening() ? m_listenSocket->connectedPort()
+                                                           : uint16{0};
+}
+
+uint16 CoreSession::boundUdpPort() const
+{
+    return m_clientUDP ? m_clientUDP->connectedPort() : uint16{0};
+}
+
+// ---------------------------------------------------------------------------
+// releaseConnectHold — the wizard is done: auto-connect now
+// ---------------------------------------------------------------------------
+
+void CoreSession::releaseConnectHold()
+{
+    if (!m_connectHold)
+        return;
+    m_connectHold = false;
+
+    // Current prefs: the wizard may have switched a network off.
+    const bool ed2k = thePrefs.networkED2K() && thePrefs.autoConnect();
+    const bool kad = thePrefs.kadEnabled() && thePrefs.autoConnect();
+    if (m_netSuspended) {
+        m_resumeEd2k = ed2k;
+        m_resumeKad = kad;
+        return;
+    }
+    logInfo(QStringLiteral("First start wizard finished — connecting"));
+    if (ed2k && theApp.serverConnect && !theApp.serverConnect->isConnected()
+        && !theApp.serverConnect->isConnecting())
+        theApp.serverConnect->connectToAnyServer();
+    if (kad && m_kademlia && !m_kademlia->isRunning())
+        m_kademlia->start();
 }
 
 // ---------------------------------------------------------------------------
@@ -1776,6 +1907,7 @@ void CoreSession::resumeNetworking()
         logError(QStringLiteral("Failed to bind client UDP socket on port %1").arg(thePrefs.udpPort()));
     if (m_serverUDP && !m_serverUDP->create())
         logWarning(QStringLiteral("Failed to bind server UDP socket"));
+    rememberAppliedPorts();
 
     if (theApp.serverConnect) {
         ServerConnectConfig cfg = theApp.serverConnect->config();
@@ -1790,10 +1922,30 @@ void CoreSession::resumeNetworking()
     if (theApp.onNetworkSuspended)
         theApp.onNetworkSuspended(false);
 
+    if (m_connectHold)
+        return;   // releaseConnectHold() connects
     if (m_resumeEd2k && theApp.serverConnect)
         theApp.serverConnect->connectToAnyServer();
     if (m_resumeKad && m_kademlia)
         m_kademlia->start();
+}
+
+
+bool CoreSession::isNetworkIdle() const
+{
+    if (theApp.serverConnect
+        && (theApp.serverConnect->isConnected() || theApp.serverConnect->isConnecting()))
+        return false;
+    if (m_kademlia && m_kademlia->isRunning())
+        return false;
+    return !m_listenSocket || m_listenSocket->openSockets() == 0;
+}
+
+void CoreSession::rememberAppliedPorts()
+{
+    m_appliedTcpPort = static_cast<uint16>(thePrefs.port());
+    m_appliedUdpPort = static_cast<uint16>(thePrefs.udpPort());
+    m_appliedServerUdpPort = thePrefs.serverUDPPort();
 }
 
 } // namespace eMule

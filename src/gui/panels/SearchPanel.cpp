@@ -633,7 +633,7 @@ QString SearchPanel::tabStatusText(const SearchTab& tab) const
         return tr("Search failed: %1").arg(tab.failure);
     case 2:   // finished
         if (tab.hasMore)
-            return tr("%1 results — scroll down or press More for more").arg(tab.resultCount());
+            return tr("%1 results — scroll down for more").arg(tab.resultCount());
         if (tab.resultCount() == 0 && tab.searchID != 0)
             return tr("No results");
         break;
@@ -2364,6 +2364,7 @@ void SearchPanel::setupResultHeader(bool forIndexer)
     // File Name, Size, Availability, Complete, Type, Artist, Album, Title,
     // File Name, Size, Availability, Confidence, Complete, Type, Artist, Album, Title,
     // Length, Bitrate, Codec, Known, Seen. A saved layout overrides these.
+    m_resultView->setDefaultSort(SearchResultsModel::ColAvailability, Qt::DescendingOrder);
     m_resultView->bindColumns(kSearchHeaderKey,
         {300, 80, 70, 100, 70, 70, 100, 100, 100, 60, 60, 60, 60, 110});
 }

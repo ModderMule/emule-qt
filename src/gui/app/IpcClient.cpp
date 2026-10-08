@@ -42,6 +42,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::GetConnection:        return QStringLiteral("GetConnection");
     case T::ConnectToServer:      return QStringLiteral("ConnectToServer");
     case T::DisconnectFromServer: return QStringLiteral("DisconnectFromServer");
+    case T::ReleaseConnectHold: return QStringLiteral("ReleaseConnectHold");
     case T::StartSearch:          return QStringLiteral("StartSearch");
     case T::GetSearchResults:     return QStringLiteral("GetSearchResults");
     case T::StopSearch:           return QStringLiteral("StopSearch");

@@ -28,7 +28,9 @@
 #include <QTreeWidget>
 
 #include <initializer_list>
+#include <optional>
 #include <set>
+#include <utility>
 #include <vector>
 
 #include "app/UiState.h"
@@ -70,8 +72,20 @@ public:
                 hdr->setSectionHidden(hidden, true);
         }
 
+        // Fresh install only: a saved layout carries its own sort order
+        if (m_defaultSort && !theUiState.hasHeaderState(stateKey))
+            this->sortByColumn(m_defaultSort->first, m_defaultSort->second);
+        m_defaultSort.reset();
+
         theUiState.bindHeaderView(hdr, stateKey);
         installHeaderMenu();
+    }
+
+    /// Sort order used until the user picks one. Consumed by the next
+    /// bindColumns(), so set it before that call.
+    void setDefaultSort(int column, Qt::SortOrder order)
+    {
+        m_defaultSort = std::pair{column, order};
     }
 
     /// Columns left out of the header menu (no data to show yet). Cleared by
@@ -161,6 +175,7 @@ private:
     QString          m_stateKey;
     std::vector<int> m_defaultWidths;
     std::set<int>    m_lockedColumns;
+    std::optional<std::pair<int, Qt::SortOrder>> m_defaultSort;
     bool             m_restoredOnShow = false;
     bool             m_headerMenuInstalled = false;
 };

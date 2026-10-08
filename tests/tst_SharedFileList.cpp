@@ -56,6 +56,7 @@ private slots:
     void excludeFile_refusedForCategoryIncomingDir();
     void sharedFilesConfig_roundTrips();
     void scan_skipsAFileStillBeingDelivered();
+    void scan_skipsThumbsDbAndOversizedFiles();
     void pathRules_matchOtherSpellingsByKey();
     void directoryIndex_followsAddRemoveAndMove();
     void rescan_addsKeywordsThroughTheFrontDoor();
@@ -85,6 +86,7 @@ private slots:
     void offer_capIsTheServersSoftFilesLimit();
     void offer_skipsLargeFilesForServersThatCannotIndexThem();
     void offer_marksPublishedSoTheNextPassIsEmpty();
+    void republishFile_offersACompletedFileAgain();
     void offer_usesThePublishedFileType();
     void offer_carriesTheMediaTagsServersCanSearch();
 
@@ -594,6 +596,30 @@ void tst_SharedFileList::scan_skipsAFileStillBeingDelivered()
     const QString shareDir = tmp.filePath(QStringLiteral("share"));
     QVERIFY(!writeFile(shareDir, QStringLiteral("movie.bin") + Preferences::kCompletingSuffix,
                        QByteArray(512, 'c')).isEmpty());
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({shareDir});
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    shared.reload();
+
+    QCOMPARE(shared.getCount(), 0);
+    QCOMPARE(shared.getHashingCount(), 0);
+}
+
+void tst_SharedFileList::scan_skipsThumbsDbAndOversizedFiles()
+{
+    // MFC CheckAndAddSingleFile: no file over MAX_EMULE_FILE_SIZE, no thumbs.db.
+    QVERIFY(SharedFileList::isShareableFile(QStringLiteral("a.bin"), MAX_EMULE_FILE_SIZE));
+    QVERIFY(!SharedFileList::isShareableFile(QStringLiteral("a.bin"), MAX_EMULE_FILE_SIZE + 1));
+    QVERIFY(!SharedFileList::isShareableFile(QStringLiteral("a.bin"), 0));
+    QVERIFY(!SharedFileList::isShareableFile(QStringLiteral("Thumbs.db"), 512));
+
+    eMule::testing::TempDir tmp;
+    const QString shareDir = tmp.filePath(QStringLiteral("share"));
+    QVERIFY(!writeFile(shareDir, QStringLiteral("Thumbs.db"), QByteArray(512, 't')).isEmpty());
 
     thePrefs.setConfigDir(tmp.path());
     thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
@@ -1578,6 +1604,30 @@ void tst_SharedFileList::offer_marksPublishedSoTheNextPassIsEmpty()
     // Reconnecting to a server clears the flags — and must re-arm the republish, or
     // the whole share is marked unpublished and then never offered.
     shared.clearED2KPublishFlags();
+    QVERIFY(!file->publishedED2K());
+    QCOMPARE(static_cast<int>(shared.takeFilesToOffer(&srv).size()), 1);
+}
+
+void tst_SharedFileList::republishFile_offersACompletedFileAgain()
+{
+    // MFC RepublishFile: a file that completed is offered again so the server
+    // swaps its partial marker for the complete one.
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    KnownFile* file = makeFile(knownFiles, 0xC4, QStringLiteral("done.bin"));
+    QVERIFY(shared.safeAddKFile(file));
+
+    Server srv(0x01020304u, 4661);
+    srv.setTCPFlags(SrvTcpFlag::Compression);
+    QCOMPARE(static_cast<int>(shared.takeFilesToOffer(&srv).size()), 1);
+    QVERIFY(shared.takeFilesToOffer(&srv).empty());
+
+    // an old server has no marker to update
+    Server old(0x01020305u, 4661);
+    shared.republishFile(file, &old);
+    QVERIFY(file->publishedED2K());
+
+    shared.republishFile(file, &srv);
     QVERIFY(!file->publishedED2K());
     QCOMPARE(static_cast<int>(shared.takeFilesToOffer(&srv).size()), 1);
 }

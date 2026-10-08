@@ -404,7 +404,12 @@ public:
     /// The long-running operation in progress, if any. Relabels the displayed status —
     /// "Completing (Hashing)" and so on, as MFC's getPartfileStatus does.
     [[nodiscard]] PartFileOp fileOp() const { return m_fileOp; }
-    [[nodiscard]] uint32 dlActiveTime() const { return m_dlActiveTime; }
+    /// Seconds this download has been running while connected (MFC GetDlActiveTime).
+    [[nodiscard]] uint32 dlActiveTime() const;
+    /// Start or stop the active-time clock (MFC SetActive). Starts only while connected.
+    void setActive(bool active);
+    /// When every part last had a source at the same time; 0 = never.
+    [[nodiscard]] time_t lastSeenComplete() const { return m_lastSeenComplete; }
 
     // -- Priority -------------------------------------------------------------
 
@@ -520,7 +525,12 @@ public:
 
     // -- Misc -----------------------------------------------------------------
 
-    [[nodiscard]] time_t lastReceptionDate() const { return m_tLastModified; }
+    /// 0 while nothing was ever received (MFC GetLastReceptionDate). completedSize()
+    /// covers part files written before m_transferred was kept.
+    [[nodiscard]] time_t lastReceptionDate() const
+    {
+        return (m_transferred > 0 || completedSize() > 0) ? m_tLastModified : 0;
+    }
     [[nodiscard]] time_t createdDate() const { return m_tCreated; }
     [[nodiscard]] const std::vector<uint16>& srcPartFrequency() const { return m_srcPartFrequency; }
     std::vector<uint16>& srcPartFrequency() { return m_srcPartFrequency; }
@@ -700,6 +710,8 @@ private:
     uint64 m_nextMetSaveTime = 0;    // Next scheduled .part.met save (matches MFC m_nNextMetFlushTime)
     uint64 m_lastPurgeTime = 0;
     uint32 m_dlActiveTime = 0;
+    time_t m_activated = 0;          // MFC m_tActivated: 0 = clock stopped
+    time_t m_lastSeenComplete = 0;
     uint64 m_clientSrcAnswered = 0;  // MFC: m_ClientSrcAnswered
 
     // Save/Load Sources (MorphXT CPartFile::m_sourcesaver)

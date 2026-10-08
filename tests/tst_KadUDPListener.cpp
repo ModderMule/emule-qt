@@ -18,6 +18,7 @@
 #include "kademlia/KadUDPListener.h"
 #include "kademlia/KadUDPKey.h"
 #include "kademlia/KadUInt128.h"
+#include "net/Packet.h"
 #include "protocol/Tag.h"
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
@@ -35,6 +36,7 @@ private slots:
     void construct_basic();
     void processPacket_unknownOpcode();
     void sendPacket_emitsSignal();
+    void buildWirePacket_packsLargePayloads();
     void sendNullPacket_basic();
     void findNodeIDByIP_queued();
     void expireClientSearch_noRequester();
@@ -86,6 +88,32 @@ void tst_KadUDPListener::sendPacket_emitsSignal()
     listener.sendPacket(file, KADEMLIA2_BOOTSTRAP_REQ, 0x0A000001, 4672,
                         targetKey, nullptr);
     QVERIFY(true);
+}
+
+void tst_KadUDPListener::buildWirePacket_packsLargePayloads()
+{
+    // MFC SendPacket: a payload over 200 bytes goes out zlib-packed when that is smaller.
+    QByteArray small(1 + 100, 'a');
+    small[0] = char(KADEMLIA2_RES);
+    auto plain = KademliaUDPListener::buildWirePacket(small);
+    QVERIFY(plain);
+    QCOMPARE(plain->prot, uint8{OP_KADEMLIAHEADER});
+    QCOMPARE(plain->size, uint32{100});
+
+    QByteArray large(1 + 400, 'a');
+    large[0] = char(KADEMLIA2_RES);
+    auto packed = KademliaUDPListener::buildWirePacket(large);
+    QVERIFY(packed);
+    QCOMPARE(packed->prot, uint8{OP_KADEMLIAPACKEDPROT});
+    QCOMPARE(packed->opcode, uint8{KADEMLIA2_RES});
+    QVERIFY(packed->size < 400);
+
+    // what the receive path does with it
+    QVERIFY(packed->unPackPacket());
+    QCOMPARE(packed->prot, uint8{OP_KADEMLIAHEADER});
+    QCOMPARE(QByteArray(packed->pBuffer, packed->size), large.mid(1));
+
+    QVERIFY(!KademliaUDPListener::buildWirePacket({}));
 }
 
 void tst_KadUDPListener::sendNullPacket_basic()

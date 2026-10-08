@@ -214,6 +214,7 @@ public:
     // --- Spam detection ---
 
     /// Calculate spam rating for a search file.
+    void addResultCount(uint32 searchID, const uint8* hash, uint32 count, bool spam);
     void doSpamRating(SearchFile* file,
                       bool countAsHit = true,
                       bool updateParent = false,

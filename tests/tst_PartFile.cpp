@@ -81,6 +81,7 @@ private slots:
     void writePartStatus_basic();
     void validSourcesCount_countsMfcStates();
     void updatePartsInfo_rebuildsFrequencyAndCompleteCount();
+    void lastSeenComplete_setWhenEveryPartHasASource();
     void getFilledArray_basic();
     void writeToBuffer_countsCompressionGain();
     void createPartFile_cleansTheNameWhenAsked();
@@ -303,8 +304,13 @@ void tst_PartFile::writeToBuffer_fillsGap()
     // Ensure tmp path is set for flushBuffer
     pf.setTmpPath(m_tempDir.path() + QStringLiteral("/temp"));
 
+    // nothing received yet (MFC GetLastReceptionDate)
+    QCOMPARE(pf.transferred(), 0ULL);
+    QCOMPARE(pf.lastReceptionDate(), time_t{0});
+
     std::vector<uint8> data(100, 0xAA);
     pf.writeToBuffer(100, data.data(), 0, 99, nullptr);
+    QCOMPARE(pf.transferred(), 100ULL);
 
     // Gap should be filled for [0, 99]
     QVERIFY(pf.isComplete(0, 99));
@@ -1224,6 +1230,46 @@ void tst_PartFile::validSourcesCount_countsMfcStates()
 
     for (auto& c : clients)
         pf.removeSource(c.get());
+}
+
+void tst_PartFile::lastSeenComplete_setWhenEveryPartHasASource()
+{
+    // MFC UpdateAvailablePartsCount / FT_LASTSEENCOMPLETE. The column used to show the
+    // complete-sources refresh deadline instead.
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/seencomplete");
+    QDir().mkpath(tempDir);
+
+    PartFile pf;
+    pf.setFileName(QStringLiteral("seen.bin"));
+    pf.setFileSize(PARTSIZE * 2 + 100);   // 3 parts
+    uint8 hash[16];
+    std::memset(hash, 0x5C, sizeof(hash));
+    pf.setFileHash(hash);
+    QVERIFY(pf.createPartFile(tempDir));
+
+    UpDownClient src;
+    pf.addSource(&src);
+    auto report = [&pf, &src](uint8 bitmap) {
+        SafeMemFile data;
+        data.writeUInt16(pf.ed2kPartCount());
+        data.writeUInt8(bitmap);
+        data.seek(0, SEEK_SET);
+        src.processFileStatus(false, data, &pf);
+    };
+
+    report(0x03);   // part 2 has no source
+    QCOMPARE(pf.lastSeenComplete(), time_t{0});
+
+    const time_t before = std::time(nullptr);
+    report(0x07);
+    QVERIFY(pf.lastSeenComplete() >= before);
+
+    pf.savePartFile();
+    PartFile loaded;
+    QCOMPARE(loaded.loadPartFile(tempDir, pf.partMetFileName()), PartFileLoadResult::LoadSuccess);
+    QCOMPARE(loaded.lastSeenComplete(), pf.lastSeenComplete());
+
+    pf.removeSource(&src);
 }
 
 void tst_PartFile::updatePartsInfo_rebuildsFrequencyAndCompleteCount()

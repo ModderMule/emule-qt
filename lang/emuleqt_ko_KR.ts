@@ -204,6 +204,80 @@ HTTP 캐시가 활성화되고 이 키가 업로드용으로 저장됩니다.</t
     </message>
 </context>
 <context>
+    <name>PortChange</name>
+    <message>
+        <location filename="../src/gui/dialogs/PortChangeNotice.h" line="+38"/>
+        <source>Now listening on TCP port %1 and UDP port %2.</source>
+        <translation>이제 TCP 포트 %1 및 UDP 포트 %2에서 수신 대기합니다.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>The new ports take effect after restarting eMule, because the core is connected to a network or to other clients.
+
+Until then it keeps listening on TCP port %1 and UDP port %2.</source>
+        <translation>코어가 네트워크 또는 다른 클라이언트에 연결되어 있으므로 새 포트는 eMule을 다시 시작한 후에 적용됩니다.
+
+그때까지는 TCP 포트 %1 및 UDP 포트 %2에서 계속 수신 대기합니다.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>The new port could not be opened. It may be in use by another program.
+
+The core keeps listening on TCP port %1 and UDP port %2.</source>
+        <translation>새 포트를 열 수 없습니다. 다른 프로그램에서 사용 중일 수 있습니다.
+
+코어는 TCP 포트 %1 및 UDP 포트 %2에서 계속 수신 대기합니다.</translation>
+    </message>
+    <message>
+        <location line="+23"/>
+        <source>Ports</source>
+        <translation>포트</translation>
+    </message>
+</context>
+<context>
+    <name>PortMapStatus</name>
+    <message>
+        <location filename="../src/gui/dialogs/PortMapStatusText.h" line="+37"/>
+        <source>Ports forwarded via %1.</source>
+        <translation>%1(으)로 포트를 전달했습니다.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Ports forwarded via %1 (external address %2).</source>
+        <translation>%1(으)로 포트를 전달했습니다 (외부 주소 %2).</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>The router granted the ports, but they are not reachable from the Internet.</source>
+        <translation>라우터가 포트를 허용했지만 인터넷에서 접근할 수 없습니다.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>The router granted the ports, but its address %1 is not public, so they stay unreachable over IPv4.</source>
+        <translation>라우터가 포트를 허용했지만 주소 %1이(가) 공인 주소가 아니어서 IPv4로는 접근할 수 없습니다.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>No router answered PCP, NAT-PMP or UPnP. Forward the ports manually.</source>
+        <translation>PCP, NAT-PMP, UPnP에 응답한 라우터가 없습니다. 포트를 수동으로 전달하세요.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>The router refused the port forwarding.</source>
+        <translation>라우터가 포트 전달을 거부했습니다.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Automatic port forwarding is switched off.</source>
+        <translation>자동 포트 전달이 꺼져 있습니다.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Asking the router...</source>
+        <translation>라우터에 문의하는 중...</translation>
+    </message>
+</context>
+<context>
     <name>PreviewLauncher</name>
     <message>
         <location filename="../src/gui/utils/PreviewLauncher.cpp" line="+195"/>
@@ -300,7 +374,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+568"/>
+        <location filename="../src/gui/app/main.cpp" line="+582"/>
         <source>Download Added</source>
         <translation>다운로드 추가됨</translation>
     </message>
@@ -601,7 +675,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2878"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2889"/>
         <source>Test</source>
         <translation>테스트</translation>
     </message>
@@ -2613,27 +2687,32 @@ ED2K 해시:	%2
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+29"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+55"/>
         <source>eMule First Runtime Wizard</source>
         <translation>eMule 첫 실행 마법사</translation>
     </message>
     <message>
-        <location line="+36"/>
+        <location line="+319"/>
         <source>Ports and Connection</source>
         <translation>포트 및 연결</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+1"/>
         <source>Connection</source>
         <translation>연결</translation>
     </message>
     <message>
-        <location line="+40"/>
+        <location line="-228"/>
         <source>eMule uses two ports for communication with servers and clients. These ports must be free and available for remote clients. The TCP port must be available to ensure the main functionality of eMule. The UDP port is used for Kad (serverless network) and to reduce network usage (Overhead).</source>
         <translation>eMule은 서버 및 클라이언트와의 통신에 두 개의 포트를 사용합니다. 이 포트는 원격 클라이언트에서 사용할 수 있어야 합니다. TCP 포트는 eMule의 주요 기능을 보장하기 위해 필요합니다. UDP 포트는 Kad(서버리스 네트워크) 및 네트워크 사용량 절감(오버헤드)에 사용됩니다.</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="-101"/>
+        <source>Unlimited</source>
+        <translation>무제한</translation>
+    </message>
+    <message>
+        <location line="+114"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>네트워크 활동이 시작되지 않은 동안 여기에서 포트를 변경할 수 있습니다.</translation>
     </message>
@@ -2643,17 +2722,22 @@ ED2K 해시:	%2
         <translation>TCP:</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+4"/>
         <source>UDP:</source>
         <translation>UDP:</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+3"/>
+        <source>Disable</source>
+        <translation>비활성화</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>UPnP로 포트 설정</translation>
     </message>
     <message>
-        <location line="+35"/>
+        <location line="+50"/>
         <source>Choose which Network(s) you want to use</source>
         <translation>사용할 네트워크 선택</translation>
     </message>
@@ -2663,22 +2747,99 @@ ED2K 해시:	%2
         <translation>Kad</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+1"/>
         <source>eD2K</source>
         <translation>eD2K</translation>
     </message>
     <message>
-        <location line="+30"/>
+        <location line="+29"/>
+        <source>Select your internet connection. eMule derives its download and upload limits from it, leaving room for your other applications. You can change the limits at any time in the Options.</source>
+        <translation>인터넷 연결을 선택하세요. eMule은 이를 바탕으로 다운로드 및 업로드 제한을 정하고 다른 프로그램을 위한 여유를 남겨 둡니다. 제한은 옵션에서 언제든지 변경할 수 있습니다.</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>Type</source>
+        <translation>유형</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Down</source>
+        <translation>다운로드</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Up</source>
+        <translation>업로드</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Keep current settings</source>
+        <translation>현재 설정 유지</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Unknown (recommended defaults)</source>
+        <translation>알 수 없음 (권장 기본값)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Custom</source>
+        <translation>사용자 지정</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+1"/>
+        <source>(enter below)</source>
+        <translation>(아래에 입력)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>%1 Mbit/s</source>
+        <translation>%1 Mbit/s</translation>
+    </message>
+    <message>
+        <location line="+15"/>
+        <source> Mbit/s</source>
+        <translation> Mbit/s</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Download:</source>
+        <translation>다운로드:</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Upload:</source>
+        <translation>업로드:</translation>
+    </message>
+    <message>
+        <location line="+32"/>
         <source>&lt; Back</source>
         <translation>&lt; 뒤로</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+2"/>
+        <location line="+28"/>
+        <source>Next &gt;</source>
+        <translation>다음 &gt;</translation>
+    </message>
+    <message>
+        <location line="-3"/>
+        <source>Connection Speed</source>
+        <translation>연결 속도</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Bandwidth</source>
+        <translation>대역폭</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Finish</source>
         <translation>완료</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-25"/>
         <source>Cancel</source>
         <translation>취소</translation>
     </message>
@@ -2688,7 +2849,27 @@ ED2K 해시:	%2
         <translation>도움말</translation>
     </message>
     <message>
-        <location line="+28"/>
+        <location line="+109"/>
+        <source>Download limit: %1    Upload limit: %2</source>
+        <translation>다운로드 제한: %1    업로드 제한: %2</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>The ports are forwarded when the core starts.</source>
+        <translation>포트는 코어가 시작될 때 전달됩니다.</translation>
+    </message>
+    <message>
+        <location line="+25"/>
+        <source>The core did not accept the port settings.</source>
+        <translation>코어가 포트 설정을 받아들이지 않았습니다.</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>No answer from the core about port forwarding.</source>
+        <translation>포트 전달에 대해 코어의 응답이 없습니다.</translation>
+    </message>
+    <message>
+        <location line="+33"/>
         <source>Network</source>
         <translation>네트워크</translation>
     </message>
@@ -2698,14 +2879,12 @@ ED2K 해시:	%2
         <translation>최소 하나의 네트워크(Kad 또는 eD2K)를 활성화해야 합니다.</translation>
     </message>
     <message>
-        <location line="+62"/>
         <source>UPnP</source>
-        <translation>UPnP</translation>
+        <translation type="vanished">UPnP</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>UPnP port mapping timed out. Your router may not support UPnP, or it may be disabled. You can set up port forwarding manually.</source>
-        <translation>UPnP 포트 매핑 시간이 초과되었습니다. 라우터가 UPnP를 지원하지 않거나 비활성화되어 있을 수 있습니다. 포트 포워딩을 수동으로 설정할 수 있습니다.</translation>
+        <translation type="vanished">UPnP 포트 매핑 시간이 초과되었습니다. 라우터가 UPnP를 지원하지 않거나 비활성화되어 있을 수 있습니다. 포트 포워딩을 수동으로 설정할 수 있습니다.</translation>
     </message>
 </context>
 <context>
@@ -3121,21 +3300,21 @@ Please choose another:</source>
         <location line="+192"/>
         <location line="+2"/>
         <location line="+37"/>
-        <location line="+199"/>
+        <location line="+200"/>
         <source>▸ Contacts (0)</source>
         <translation>▸ 연락처 (0)</translation>
     </message>
     <message>
-        <location line="-441"/>
+        <location line="-442"/>
         <location line="+12"/>
-        <location line="+378"/>
+        <location line="+379"/>
         <location line="+97"/>
         <source>▸ Current Searches (0)</source>
         <translation>▸ 현재 검색 (0)</translation>
     </message>
     <message>
-        <location line="-277"/>
-        <location line="+341"/>
+        <location line="-278"/>
+        <location line="+342"/>
         <source>▸ Search Details</source>
         <translation>▸ 검색 상세</translation>
     </message>
@@ -3151,14 +3330,14 @@ Please choose another:</source>
         <translation>연결</translation>
     </message>
     <message>
-        <location line="-461"/>
-        <location line="+231"/>
+        <location line="-462"/>
+        <location line="+232"/>
         <location line="+31"/>
         <source>Bootstrap</source>
         <translation>부트스트랩</translation>
     </message>
     <message>
-        <location line="-273"/>
+        <location line="-274"/>
         <source>Downloading...</source>
         <translation>다운로드 중...</translation>
     </message>
@@ -3186,7 +3365,7 @@ Please choose another:</source>
         <translation>nodes.dat 저장 실패: %1</translation>
     </message>
     <message>
-        <location line="+218"/>
+        <location line="+219"/>
         <source>IP Address:</source>
         <translation>IP 주소:</translation>
     </message>
@@ -3320,7 +3499,7 @@ Please choose another:</source>
 <context>
     <name>eMule::MainWindow</name>
     <message>
-        <location filename="../src/gui/app/MainWindow.cpp" line="+81"/>
+        <location filename="../src/gui/app/MainWindow.cpp" line="+82"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
@@ -3331,7 +3510,7 @@ Please choose another:</source>
         <translation>새 버전 사용 가능</translation>
     </message>
     <message>
-        <location line="+185"/>
+        <location line="+191"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K: 연결됨 (LowID)</translation>
     </message>
@@ -3347,12 +3526,12 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1059"/>
+        <location line="+1091"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: 연결 해제됨</translation>
     </message>
     <message>
-        <location line="-1038"/>
+        <location line="-1070"/>
         <source>Kad: Connected</source>
         <translation>Kad: 연결됨</translation>
     </message>
@@ -3368,12 +3547,12 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1030"/>
+        <location line="+1062"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: 연결 해제됨</translation>
     </message>
     <message>
-        <location line="-1021"/>
+        <location line="-1053"/>
         <source>Users: %1 | Files: %2</source>
         <translation>사용자: %1 | 파일: %2</translation>
     </message>
@@ -3414,18 +3593,18 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+3"/>
-        <source>FAQ</source>
-        <translation>자주 묻는 질문</translation>
+        <source>Features</source>
+        <translation>기능</translation>
     </message>
     <message>
-        <location line="-562"/>
+        <location line="-568"/>
         <location line="+7"/>
-        <location line="+558"/>
+        <location line="+564"/>
         <source>Version Check</source>
         <translation>버전 확인</translation>
     </message>
     <message>
-        <location line="-620"/>
+        <location line="-626"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt 종료</translation>
     </message>
@@ -3482,7 +3661,7 @@ Enable at least one under Options → Connection to connect.</source>
 연결하려면 옵션 → 연결에서 최소한 하나를 활성화하세요.</translation>
     </message>
     <message>
-        <location line="+115"/>
+        <location line="+121"/>
         <source>Blocked: network interface not available</source>
         <translation>차단됨: 네트워크 인터페이스를 사용할 수 없음</translation>
     </message>
@@ -3578,7 +3757,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>옵션 열기</translation>
     </message>
     <message>
-        <location line="+141"/>
+        <location line="+173"/>
         <source>Main</source>
         <translation>메인</translation>
     </message>
@@ -4413,36 +4592,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2782"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2791"/>
         <source>Options</source>
         <translation>옵션</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1815"/>
+        <location line="+1824"/>
         <source>OK</source>
         <translation>확인</translation>
     </message>
     <message>
-        <location line="-1814"/>
-        <location line="+1815"/>
+        <location line="-1823"/>
+        <location line="+1824"/>
         <source>Cancel</source>
         <translation>취소</translation>
     </message>
     <message>
-        <location line="-1814"/>
-        <location line="+5395"/>
+        <location line="-1823"/>
+        <location line="+5404"/>
         <source>Apply</source>
         <translation>적용</translation>
     </message>
     <message>
-        <location line="-5394"/>
+        <location line="-5403"/>
         <source>Help</source>
         <translation>도움말</translation>
     </message>
     <message>
         <location line="+254"/>
-        <location line="+1787"/>
+        <location line="+1796"/>
         <location line="+63"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -4451,7 +4630,7 @@ Download it again?</source>
         <translation>IP 필터</translation>
     </message>
     <message>
-        <location line="-1874"/>
+        <location line="-1883"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 필터 다시 로드됨: %1개 항목.</translation>
     </message>
@@ -4482,18 +4661,18 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5291"/>
+        <location line="+5300"/>
         <source>Language</source>
         <translation>언어</translation>
     </message>
     <message>
-        <location line="-5288"/>
+        <location line="-5297"/>
         <source>System Default</source>
         <translation>시스템 기본값</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+664"/>
+        <location line="+673"/>
         <location line="+243"/>
         <location line="+378"/>
         <location line="+276"/>
@@ -4501,7 +4680,7 @@ Download it again?</source>
         <translation>기타</translation>
     </message>
     <message>
-        <location line="-1558"/>
+        <location line="-1567"/>
         <source>Bring to front on link click</source>
         <translation>링크 클릭 시 앞으로 가져오기</translation>
     </message>
@@ -4587,25 +4766,25 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5217"/>
+        <location line="+5226"/>
         <source>Core</source>
         <translation>코어</translation>
     </message>
     <message>
-        <location line="-5212"/>
+        <location line="-5221"/>
         <source>Address:</source>
         <translation>주소:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1080"/>
+        <location line="+1089"/>
         <location line="+647"/>
         <location line="+421"/>
         <source>Port:</source>
         <translation>포트:</translation>
     </message>
     <message>
-        <location line="-2145"/>
+        <location line="-2154"/>
         <source>authentication token</source>
         <translation>인증 토큰</translation>
     </message>
@@ -4761,7 +4940,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1509"/>
+        <location line="+1518"/>
         <location line="+128"/>
         <location line="+295"/>
         <location line="+1016"/>
@@ -4773,7 +4952,7 @@ Are you sure you want to continue?</source>
         <translation>활성화됨</translation>
     </message>
     <message>
-        <location line="-4436"/>
+        <location line="-4445"/>
         <source>Reset</source>
         <translation>초기화</translation>
     </message>
@@ -4849,18 +5028,18 @@ Are you sure you want to continue?</source>
         <translation>포트 포워딩: 알 수 없음</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+11"/>
         <source>Network interface</source>
         <translation>네트워크 인터페이스</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6284"/>
+        <location line="+6367"/>
         <source>Any</source>
         <translation>모든</translation>
     </message>
     <message>
-        <location line="-6282"/>
+        <location line="-6365"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>이 네트워크 인터페이스(예: VPN 터널)만 사용합니다. 목록에서 선택하거나 IP 주소 또는 10.64.0.0/10 같은 서브넷(해당 범위의 주소를 가진 인터페이스)을 입력하십시오. 프록시를 통한 연결은 바인딩되지 않습니다.</translation>
     </message>
@@ -4910,7 +5089,7 @@ Are you sure you want to continue?</source>
         <translation>마법사...</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+15"/>
         <source>Network</source>
         <translation>네트워크</translation>
     </message>
@@ -5775,7 +5954,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>업로드 슬롯(오버헤드 없음)</translation>
     </message>
     <message>
-        <location line="-1437"/>
+        <location line="-1446"/>
         <source>Country flags (IP2Country)</source>
         <translation>국기 (IP2Country)</translation>
     </message>
@@ -5825,7 +6004,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation type="vanished">무료 &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; 계정이 필요합니다. 이 제품에는 MaxMind가 만든 GeoLite2 데이터가 포함되어 있습니다.</translation>
     </message>
     <message>
-        <location line="+325"/>
+        <location line="+334"/>
         <source>Use for news servers</source>
         <translation>뉴스 서버에도 사용</translation>
     </message>
@@ -7451,7 +7630,7 @@ News server connections switch over immediately.</source>
         <translation>&quot;%1&quot;은(는) IP 주소가 아닙니다. 수신 주소는 변경되지 않았습니다.</translation>
     </message>
     <message>
-        <location line="+474"/>
+        <location line="+479"/>
         <source>File types</source>
         <translation>파일 유형</translation>
     </message>
@@ -7461,7 +7640,12 @@ News server connections switch over immediately.</source>
         <translation>.nzb 파일 연결을 업데이트하지 못했습니다: %1</translation>
     </message>
     <message>
-        <location line="+585"/>
+        <location line="+592"/>
+        <source>Port forwarding: %1</source>
+        <translation>포트 전달: %1</translation>
+    </message>
+    <message>
+        <location line="+67"/>
         <source>Database: not connected to the core</source>
         <translation>데이터베이스: 코어에 연결되지 않음</translation>
     </message>
@@ -7511,17 +7695,17 @@ News server connections switch over immediately.</source>
         <translation>기본값으로 재설정</translation>
     </message>
     <message>
-        <location line="-4663"/>
+        <location line="-4742"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1327"/>
         <location line="+281"/>
-        <location line="+1880"/>
+        <location line="+1959"/>
         <source>Remove</source>
         <translation>제거</translation>
     </message>
     <message>
-        <location line="-5759"/>
+        <location line="-5838"/>
         <source>New eMule Qt version detected</source>
         <translation>새 eMule Qt 버전이 감지되었습니다</translation>
     </message>
@@ -7719,12 +7903,12 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1581"/>
-        <location line="+1902"/>
+        <location line="+1981"/>
         <source>Add</source>
         <translation>추가</translation>
     </message>
     <message>
-        <location line="-1894"/>
+        <location line="-1973"/>
         <source>Action Value</source>
         <translation>동작 값</translation>
     </message>
@@ -7918,13 +8102,13 @@ Restart eMule for all connections to use the new proxy settings.</source>
     <name>eMule::SearchPanel</name>
     <message>
         <location filename="../src/gui/panels/SearchPanel.cpp" line="+264"/>
-        <location line="+859"/>
+        <location line="+878"/>
         <location line="+384"/>
         <source>Download</source>
         <translation>다운로드</translation>
     </message>
     <message>
-        <location line="-1223"/>
+        <location line="-1242"/>
         <source>Close All Searches</source>
         <translation>모든 검색 닫기</translation>
     </message>
@@ -8034,7 +8218,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>초기화</translation>
     </message>
     <message>
-        <location line="+19"/>
+        <location line="+39"/>
         <source>Min. Size [MB]:</source>
         <translation>최소 크기 [MB]:</translation>
     </message>
@@ -8089,12 +8273,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>아티스트:</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="-78"/>
         <source>Show results the server found on this network</source>
         <translation>서버가 이 네트워크에서 찾은 결과 표시</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+6"/>
         <source>Usenet results</source>
         <translation>Usenet 결과</translation>
     </message>
@@ -8109,24 +8293,34 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>토렌트 결과</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+81"/>
         <source>Start</source>
         <translation>시작</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+7"/>
+        <source>More</source>
+        <translation>더 보기</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Ask the server for further results of this search</source>
+        <translation>이 검색의 추가 결과를 서버에 요청</translation>
+    </message>
+    <message>
+        <location line="+7"/>
         <source>Cancel</source>
         <translation>취소</translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location line="+34"/>
         <location line="+24"/>
-        <location line="+193"/>
+        <location line="+194"/>
         <source>Not connected to daemon — search cannot be started.</source>
         <translation>데몬에 연결되어 있지 않습니다 — 검색을 시작할 수 없습니다.</translation>
     </message>
     <message>
-        <location line="-160"/>
+        <location line="-161"/>
         <source>Search</source>
         <translation>검색</translation>
     </message>
@@ -8186,7 +8380,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>검색 &quot;%1&quot; 실패: %2</translation>
     </message>
     <message>
-        <location line="+74"/>
+        <location line="+75"/>
         <location line="+180"/>
         <source>Usenet search</source>
         <translation>Usenet 검색</translation>
@@ -8202,8 +8396,8 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>Usenet 검색: %1</translation>
     </message>
     <message>
-        <location line="-214"/>
-        <location line="+218"/>
+        <location line="-215"/>
+        <location line="+219"/>
         <source>No results</source>
         <translation>결과 없음</translation>
     </message>
@@ -8275,13 +8469,13 @@ Restart eMule for all connections to use the new proxy settings.</source>
     <message>
         <location line="+50"/>
         <location line="+7"/>
-        <location line="+829"/>
+        <location line="+833"/>
         <location line="+43"/>
         <source>Preview</source>
         <translation>미리보기</translation>
     </message>
     <message>
-        <location line="-634"/>
+        <location line="-638"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -8290,7 +8484,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 %1</translation>
     </message>
     <message>
-        <location line="+592"/>
+        <location line="+596"/>
         <source>Preview requested - please wait</source>
         <translation>미리 보기를 요청했습니다 - 잠시 기다려 주세요</translation>
     </message>
@@ -8300,7 +8494,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>%1 님이 미리 보기를 보내지 않았습니다</translation>
     </message>
     <message>
-        <location line="+294"/>
+        <location line="+295"/>
         <source>Asking servers: %1 / %2</source>
         <translation>서버 조회 중: %1 / %2</translation>
     </message>
@@ -8310,7 +8504,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>전체</translation>
     </message>
     <message>
-        <location line="-1236"/>
+        <location line="-1241"/>
         <location line="+14"/>
         <source>Mark as Spam</source>
         <translation>스팸으로 표시</translation>
@@ -8346,7 +8540,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>웹 서비스</translation>
     </message>
     <message>
-        <location line="+851"/>
+        <location line="+855"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>미리보기를 사용할 수 없습니다 — 웹 서버가 실행 중이 아니거나 스트림 토큰을 받지 못했습니다.</translation>
     </message>
@@ -8566,12 +8760,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="-75"/>
-        <location line="+437"/>
+        <location line="+438"/>
         <source>Connect</source>
         <translation>연결</translation>
     </message>
     <message>
-        <location line="-493"/>
+        <location line="-494"/>
         <source>Invalid URL: %1</source>
         <translation>잘못된 URL: %1</translation>
     </message>
@@ -8601,7 +8795,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>server.met을 다운로드하고 &quot;%1&quot;의 압축을 풀었습니다(%2바이트). 분석 중...</translation>
     </message>
     <message>
-        <location line="+599"/>
+        <location line="+600"/>
         <location line="+2"/>
         <location line="+24"/>
         <location line="+39"/>
@@ -8699,7 +8893,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>▸ 서버 (%1)</translation>
     </message>
     <message>
-        <location line="-626"/>
+        <location line="-627"/>
         <source>Connect To</source>
         <translation>연결 대상</translation>
     </message>
@@ -8715,12 +8909,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+515"/>
+        <location line="+516"/>
         <source>Normal</source>
         <translation>보통</translation>
     </message>
     <message>
-        <location line="-514"/>
+        <location line="-515"/>
         <source>High</source>
         <translation>높음</translation>
     </message>
@@ -8785,7 +8979,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>▸ 서버 (0)</translation>
     </message>
     <message>
-        <location line="+72"/>
+        <location line="+73"/>
         <source>New Server</source>
         <translation>새 서버</translation>
     </message>

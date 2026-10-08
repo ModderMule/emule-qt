@@ -1017,6 +1017,8 @@ void WebServer::buildApiTable()
             auto* f = m_friendList->addFriend(hasHash ? hashBytes.data() : nullptr, friendAddr,
                                               static_cast<uint16>(c.integer(L("port"))),
                                               c.str(L("name")), hasHash);
+            if (f)
+                saveFriends();
             return f ? ok(toJson(*f)) : error(400, s("Failed to add friend"));
         };
         add(op);
@@ -1035,6 +1037,7 @@ void WebServer::buildApiTable()
             if (!f)
                 return error(404, s("Friend not found"));
             m_friendList->removeFriend(f);
+            saveFriends();
             return ok(QJsonObject{{s("deleted"), true}});
         };
         add(op);
@@ -1790,6 +1793,14 @@ Result WebServer::apiCategoryEdit(const Call& call, int mode)
     if (const ops::Status st = m_apiBackend->setCategories(list); !st.ok())
         return error(st.code, st.message);
     return ok(QJsonObject{{s("items"), m_apiBackend->categories()}});
+}
+
+void WebServer::saveFriends() const
+{
+    if (!m_friendList || !m_preferences)
+        return;
+    if (const QString dir = m_preferences->configDir(); !dir.isEmpty())
+        m_friendList->save(dir);
 }
 
 } // namespace eMule

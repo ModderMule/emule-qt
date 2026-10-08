@@ -57,8 +57,9 @@ public:
     /// Process HTTP response body data.
     virtual bool processHttpDownResponseBody(const uint8* data, uint32 size);
 
-    /// Process received HTTP data as file block.
-    void processHttpBlockPacket(const uint8* data, uint32 size);
+    /// Write received body bytes into the reserved blocks; asks for the next range
+    /// when this one is done. False when the data cannot be taken (disconnects).
+    bool processHttpBlockPacket(const uint8* data, uint32 size);
 
     [[nodiscard]] bool isEd2kClient() const override { return false; }
 
@@ -85,6 +86,10 @@ protected:
     /// advanced by processHttpBlockPacket.
     [[nodiscard]] uint64 rangeStart() const { return m_rangeStart; }
     void setRangeStart(uint64 pos) { m_rangeStart = pos; }
+
+    /// Parse "bytes FIRST-LAST/TOTAL". False for anything else, "bytes */N" included.
+    [[nodiscard]] static bool parseContentRange(const QByteArray& value, uint64& first,
+                                                uint64& last, uint64& total);
 
     /// Book file data that arrived over HTTP into the Transfer statistics.
     ///
@@ -113,8 +118,13 @@ private:
     QString m_urlHost;
     uint16 m_urlPort = 80;
     QByteArray m_urlPathLocal;
-    uint64 m_rangeStart = 0;
-    uint64 m_rangeEnd = 0;
+    static constexpr uint64 kNoRange = UINT64_MAX;
+    static constexpr int kMaxRedirects = 3;
+
+    uint64 m_rangeStart = kNoRange;   // MFC m_nUrlStartPos
+    uint64 m_reqStart = 0;            // the range of the request in flight, inclusive
+    uint64 m_reqEnd = 0;
+    int m_redirected = 0;
 };
 
 } // namespace eMule

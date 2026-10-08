@@ -85,26 +85,37 @@ QString resolveDaemonPath()
 }
 
 /// Try to start the daemon process. Returns true if launched.
-bool launchDaemon(const QString& daemonPath)
+/// @param holdConnect the first start wizard is about to run: the core must not
+///        auto-connect before the ports are chosen.
+bool launchDaemon(const QString& daemonPath, bool holdConnect)
 {
     if (daemonPath.isEmpty())
         return false;
 
     eMule::logInfo(QStringLiteral("Launching daemon: %1").arg(daemonPath));
 
+    const QString holdArg = QStringLiteral("--hold-connect");
     if (eMule::thePrefs.startCoreWithConsole()) {
+        const QString command = holdConnect ? daemonPath + QLatin1Char(' ') + holdArg : daemonPath;
 #if defined(Q_OS_MACOS)
         const QString script = QStringLiteral("tell application \"Terminal\" to do script \"%1\"")
-                                   .arg(daemonPath);
+                                   .arg(command);
         return QProcess::startDetached(QStringLiteral("osascript"), {QStringLiteral("-e"), script});
 #elif defined(Q_OS_WIN)
-        return QProcess::startDetached(QStringLiteral("cmd"), {QStringLiteral("/k"), daemonPath});
+        QStringList args{QStringLiteral("/k"), daemonPath};
+        if (holdConnect)
+            args << holdArg;
+        return QProcess::startDetached(QStringLiteral("cmd"), args);
 #else
-        return QProcess::startDetached(QStringLiteral("xterm"), {QStringLiteral("-e"), daemonPath});
+        Q_UNUSED(command)
+        QStringList args{QStringLiteral("-e"), daemonPath};
+        if (holdConnect)
+            args << holdArg;
+        return QProcess::startDetached(QStringLiteral("xterm"), args);
 #endif
     }
 
-    return QProcess::startDetached(daemonPath, {});
+    return QProcess::startDetached(daemonPath, holdConnect ? QStringList{holdArg} : QStringList{});
 }
 
 } // anonymous namespace
@@ -515,9 +526,11 @@ int main(int argc, char* argv[])
             });
         } else if (!isRemote && !daemonPath.isEmpty()) {
             QObject::connect(&ipcClient, &eMule::IpcClient::connectionFailed,
-                             &app, [daemonPath, weOwnDaemon](const QString& error) {
+                             &app, [daemonPath, weOwnDaemon, wizardAllowed = !cli.screenshotMode()](const QString& error) {
                 eMule::logWarning(QStringLiteral("Daemon not reachable (%1)").arg(error));
-                if (!*weOwnDaemon && launchDaemon(daemonPath))
+                // Read at launch time: a relaunch after the wizard must connect
+                const bool hold = wizardAllowed && !eMule::theUiState.firstStartWizardDone();
+                if (!*weOwnDaemon && launchDaemon(daemonPath, hold))
                     *weOwnDaemon = true;
             });
             // When the daemon we launched crashes, reset the flag so the

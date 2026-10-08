@@ -6,6 +6,7 @@
 /// Mirrors the WebServer handler pattern: receives IPC requests,
 /// dispatches to the appropriate core manager via theApp, and sends responses.
 
+#include "portmap/PortMapTypes.h"
 #include "IpcConnection.h"
 #include "IpcMessage.h"
 #include "app/CoreOps.h"
@@ -48,6 +49,7 @@ public:
         bool saved = true;
         bool standbyChanged = false;
         bool categoriesChanged = false;
+        PortApplyResult ports = PortApplyResult::Unchanged;
     };
     static PrefApplyOutcome applyPreferenceChanges(const PrefChanges& changes);
     [[nodiscard]] static QCborArray categoryList();

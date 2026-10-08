@@ -442,6 +442,8 @@ uint32 PartFile::writeToBuffer(uint64 transize, const uint8* data,
     if (!data || start > end || end >= static_cast<uint64>(fileSize()))
         return 0;
 
+    m_transferred += transize;   // MFC PartFile.cpp:3953; every caller here is a network one
+
     // The rehash worker is reading the .part right now; a write would race it.
     if (m_status == PartFileStatus::Hashing || m_status == PartFileStatus::WaitingForHash)
         return 0;
@@ -1290,6 +1292,26 @@ void PartFile::setStatus(PartFileStatus s)
     emit m_partNotifier.statusChanged(status());
 }
 
+uint32 PartFile::dlActiveTime() const
+{
+    uint32 active = m_dlActiveTime;
+    if (m_activated != 0)
+        active += static_cast<uint32>(std::time(nullptr) - m_activated);
+    return active;
+}
+
+void PartFile::setActive(bool active)
+{
+    const time_t now = std::time(nullptr);
+    if (active) {
+        if (theApp.isConnected() && m_activated == 0)
+            m_activated = now;
+    } else if (m_activated != 0) {
+        m_dlActiveTime += static_cast<uint32>(now - m_activated);
+        m_activated = 0;
+    }
+}
+
 void PartFile::pauseFile(bool insufficient)
 {
     const bool wasPaused = m_paused;
@@ -1305,6 +1327,7 @@ void PartFile::pauseFile(bool insufficient)
     if (!insufficient)
         m_paused = true;
     m_insufficient = insufficient;
+    setActive(false);
 
     // The stored status is left alone — status() now reports Paused/Insufficient on
     // top of it, and the file keeps whatever shareability it had latched.
@@ -1351,6 +1374,7 @@ void PartFile::resumeFile()
     m_paused = false;
     m_stopped = false;
     m_insufficient = false;
+    setActive(theApp.isConnected());
 
     // Nothing to re-derive: dropping the flags is what un-pauses it, and the stored
     // status has been carrying the real state all along.
@@ -1642,6 +1666,11 @@ void PartFile::updatePartsInfo()
         updateCompleteSourceCounts(peerCounts, seen, /*blend*/ true);
     }
 
+    // Every part has a source right now (MFC UpdateAvailablePartsCount)
+    if (partCount() > 0
+        && std::ranges::none_of(m_srcPartFrequency, [](uint16 n) { return n == 0; }))
+        m_lastSeenComplete = now;
+
     emit notifier()->fileUpdated();
     noteChanged();
 }
@@ -1815,6 +1844,7 @@ bool PartFile::createPartFile(const QString& tempDir)
 
     m_tCreated = std::time(nullptr);
     m_status = PartFileStatus::Empty;
+    setActive(theApp.isConnected());   // MFC CreatePartFile
 
     // "Auto cleanup file names of new downloads" — MFC CreatePartFile,
     // srchybrid/PartFile.cpp:449. Here, so every intake route gets it.
@@ -1913,6 +1943,10 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
                     auto hi = static_cast<uint64>(tag.intValue());
                     setFileSize((hi << 32) | static_cast<uint64>(fileSize()));
                 }
+                break;
+            case FT_LASTSEENCOMPLETE:
+                if (tag.isInt())
+                    m_lastSeenComplete = static_cast<time_t>(tag.intValue());
                 break;
             case FT_TRANSFERRED:
                 if (tag.isInt())
@@ -2277,8 +2311,13 @@ bool PartFile::savePartFile()
         }
 
         // Active download time
-        if (m_dlActiveTime > 0) {
-            Tag(FT_DL_ACTIVE_TIME, m_dlActiveTime).writeNewEd2kTag(file);
+        if (const uint32 activeTime = dlActiveTime(); activeTime > 0) {
+            Tag(FT_DL_ACTIVE_TIME, activeTime).writeNewEd2kTag(file);
+            tagCount++;
+        }
+
+        if (m_lastSeenComplete > 0) {
+            Tag(FT_LASTSEENCOMPLETE, static_cast<uint32>(m_lastSeenComplete)).writeNewEd2kTag(file);
             tagCount++;
         }
 
@@ -3099,6 +3138,7 @@ void PartFile::performFileMove(const QString& srcPath, const QString& destPath, 
             // (MorphXT CPartFile::PerformFileComplete, PartFile.cpp:4659).
             SourceSaver::removeFile(m_tmpPath, m_partMetFilename);
 
+            setActive(false);   // done: stop the active-time clock
             setStatus(PartFileStatus::Complete);
             setFilePath(finalPath);
             setPath(QFileInfo(finalPath).absolutePath());

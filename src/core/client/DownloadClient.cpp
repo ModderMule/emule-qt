@@ -488,6 +488,7 @@ void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdent
         FileIdentifierSA headerIdent;
         if (!headerIdent.readIdentifier(file) || !ident.compareRelaxed(headerIdent)) {
             logDebug(QStringLiteral("processHashSet: bad or wrong FileIdentifier from %1").arg(userName()));
+            checkFailedFileIdReqs(data);   // MFC DownloadClient.cpp:727
             return;
         }
 
@@ -520,6 +521,7 @@ void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdent
             m_reqFile->hashsetReceived();
     } else if (!md4equ(data, m_reqFile->fileHash())) {
         logDebug(QStringLiteral("processHashSet: wrong file id from %1").arg(userName()));
+        checkFailedFileIdReqs(data);   // MFC DownloadClient.cpp:758
         return;
     } else if (!ident.loadMD4HashsetFromFile(file, true)) {
         // Verifies count and root hash against ours
@@ -1088,6 +1090,89 @@ void UpDownClient::processBlockPacket(const uint8* data, uint32 size,
             sendBlockRequests();
         }
     }
+}
+
+// ===========================================================================
+// HTTP sources (protected) — MFC URLClient.cpp:49-59, :138-160, :377-411
+// ===========================================================================
+
+void UpDownClient::markAsCompleteHttpSource(const PartFile* file)
+{
+    if (!file)
+        return;
+    m_partCount = file->partCount();
+    m_partStatus.assign(m_partCount, 1);
+    m_completeSource = true;
+}
+
+bool UpDownClient::reserveHttpRange(uint64& start, uint64& end)
+{
+    m_lastBlockReceived = getTickCount();
+    if (!m_reqFile)
+        return false;
+
+    createBlockRequests(static_cast<int>(PARTSIZE / EMBLOCKSIZE));
+    if (m_pendingBlocks.empty())
+        return false;
+
+    auto it = m_pendingBlocks.begin();
+    start = (*it)->block->startOffset;
+    end = (*it)->block->endOffset;
+    bool merge = true;
+    for (++it; it != m_pendingBlocks.end();) {
+        Pending_Block_Struct* pending = *it;
+        if (merge && pending->block->startOffset == end + 1) {
+            end = pending->block->endOffset;
+            ++it;
+        } else {
+            // one request, one range: give the rest back
+            merge = false;
+            it = m_pendingBlocks.erase(it);
+            m_reqFile->removeBlockFromList(pending->block);
+            clearPendingBlockRequest(pending);
+            delete pending;
+        }
+    }
+    return true;
+}
+
+uint32 UpDownClient::writeHttpData(uint64 pos, const uint8* data, uint32 size)
+{
+    m_lastBlockReceived = getTickCount();
+
+    uint32 done = 0;
+    while (done < size && m_reqFile) {
+        const uint64 at = pos + done;
+        const auto it = std::ranges::find_if(m_pendingBlocks, [at](const Pending_Block_Struct* p) {
+            return p->block && p->block->startOffset <= at && at <= p->block->endOffset;
+        });
+        if (it == m_pendingBlocks.end())
+            break;
+
+        Pending_Block_Struct* pending = *it;
+        // a read may run over a block boundary of the merged range
+        const auto chunk = static_cast<uint32>(
+            std::min<uint64>(size - done, pending->block->endOffset - at + 1));
+        m_lastBlockOffset = at;
+
+        // No sender: a web server is not a peer, there is nobody to blame or ban.
+        const uint32 written = m_reqFile->writeToBuffer(chunk, data + done, at, at + chunk - 1,
+                                                        pending->block);
+        if (written > 0) {
+            addPayloadDown(chunk);
+            pending->block->transferredByClient += written;
+            pending->block->lastProgressTick = getTickCount();
+        }
+
+        if (at + chunk - 1 >= pending->block->endOffset) {
+            m_pendingBlocks.erase(it);
+            m_reqFile->removeBlockFromList(pending->block);
+            clearPendingBlockRequest(pending);
+            delete pending;
+        }
+        done += chunk;
+    }
+    return done;
 }
 
 // ===========================================================================

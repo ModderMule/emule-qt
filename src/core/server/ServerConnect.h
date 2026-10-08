@@ -149,7 +149,6 @@ public:
     /// Every server was tried; waiting out the pause before the next pass.
     [[nodiscard]] bool isRetryPending() const  { return m_retryTimer.isActive(); }
     [[nodiscard]] uint32 clientID() const      { return m_clientID; }
-    [[nodiscard]] uint32 curUser() const       { return m_curUser; }
 
     [[nodiscard]] bool isLowID() const;
     void setClientID(uint32 newid);
@@ -270,7 +269,6 @@ private:
 
     size_t m_startAutoConnectPos = 0;
     uint32 m_clientID = 0;
-    uint32 m_curUser = 0;
     uint32 m_localIP = 0;
     uint8 m_maxSimCons = 2;
 

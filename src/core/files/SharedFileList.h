@@ -151,6 +151,10 @@ public:
     ///        (a startup scan, addPartFilesToShare) that would otherwise set it once
     ///        per file. MFC srchybrid/SharedFileList.cpp:658-669.
     bool safeAddKFile(KnownFile* file, bool onlyAdd = false);
+    /// Offer @p file to the server again, e.g. once complete (MFC RepublishFile).
+    void republishFile(KnownFile* file);
+    /// As above against @p server (the connected one in production).
+    void republishFile(KnownFile* file, const Server* server);
     /// Drop a file from the shared list, and remember the hash as unshared so
     /// isUnsharedFile() can answer a peer that asks for it. The mark is *not* a
     /// re-add gate — safeAddKFile() clears it (MFC AddFile, srchybrid/SharedFileList.cpp:695).
@@ -195,6 +199,9 @@ public:
     /// Cleaned and case-folded: two spellings of one path give one key (MFC compares
     /// with CompareNoCase).
     [[nodiscard]] static QString pathKey(const QString& path);
+    /// Scan rule shared by the directory walk and the single-file add: not empty, not
+    /// over MAX_EMULE_FILE_SIZE, not a thumbs.db (MFC CheckAndAddSingleFile).
+    [[nodiscard]] static bool isShareableFile(const QString& fileName, uint64 size);
 
     /// Stop sharing one file, durably: drops it from the list and records the path so
     /// no later scan picks it up again. Returns false if the file is not actually

@@ -10,6 +10,7 @@
 #include "utils/Types.h"
 #include "utils/CorroborationTally.h"
 #include "net/Address.h"
+#include "portmap/PortMapTypes.h"
 
 #include <QByteArray>
 #include <QString>
@@ -217,6 +218,11 @@ struct AppContext {
     /// Networks went down (true) / came back (false) with the bound interface; for the
     /// parts outside the session (Usenet, IRC, state pushes).
     std::function<void(bool suspended)> onNetworkSuspended;
+    /// A port preference was saved: rebind when idle. Set by CoreSession.
+    std::function<PortApplyResult()> applyListenPorts;
+    /// The GUI's first start wizard closed (or its GUI went away): do the deferred
+    /// auto-connect. No-op without a hold. Set by CoreSession.
+    std::function<void()> releaseConnectHold;
 
     /// Tier 1: the egress IPv6 a server observed us on (CT_MOD_YOUR_IP in OP_SERVERIDENT).
     /// Callers must only pass this for a session that actually connected over IPv6; the

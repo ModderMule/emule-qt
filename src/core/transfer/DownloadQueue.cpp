@@ -286,6 +286,34 @@ PartFile* DownloadQueue::fileByID(const uint8* hash) const
     return nullptr;
 }
 
+UpDownClient* DownloadQueue::downloadClientByIP_UDP(const Address& addr, uint16 udpPort,
+                                                    bool ignorePortOnUniqueIP,
+                                                    bool* multipleIPs) const
+{
+    UpDownClient* sameIP = nullptr;
+    uint32 matches = 0;
+
+    if (!addr.isNull()) {
+        for (auto* file : m_items) {
+            for (auto* client : file->srcList()) {
+                // the reask goes to the dialled address, or the advertised IPv6
+                if (client->userAddress() != addr && client->connectAddress() != addr
+                    && client->userIPv6() != addr)
+                    continue;
+                if (client->udpPort() == udpPort)
+                    return client;
+                sameIP = client;
+                ++matches;
+            }
+        }
+    }
+
+    if (multipleIPs)
+        *multipleIPs = matches > 1;
+
+    return (ignorePortOnUniqueIP && matches == 1) ? sameIP : nullptr;
+}
+
 PartFile* DownloadQueue::fileByIndex(int index) const
 {
     if (index < 0 || index >= static_cast<int>(m_items.size()))
@@ -1423,6 +1451,15 @@ void DownloadQueue::process()
 
     processLocalRequests();
 
+    // MFC CDownloadQueue::OnConnectionState: the active-time clock follows the network
+    if (const bool connected = theApp.isConnected(); connected != m_wasConnected) {
+        m_wasConnected = connected;
+        for (auto* file : m_items) {
+            if (file->status() == PartFileStatus::Ready || file->status() == PartFileStatus::Empty)
+                file->setActive(connected);
+        }
+    }
+
     const uint64 curTick = getTickCount();
 
     // Prune samples older than 10 seconds
@@ -2074,8 +2111,11 @@ void DownloadQueue::onDownloadCompleted(PartFile* file)
         m_knownFileList->safeAddKFile(file);
 
     // Add to SharedFileList
-    if (m_sharedFileList)
+    if (m_sharedFileList) {
         m_sharedFileList->safeAddKFile(file);
+        // already shared as a part file: update the server's complete-sources count
+        m_sharedFileList->republishFile(file);
+    }
 
     // Keep completed file in the queue so it remains visible in the UI.
     // It will be skipped by process() loops (status != Ready/Empty).

@@ -126,6 +126,7 @@ int main(int argc, char* argv[])
     // Create and start daemon
     eMule::DaemonApp daemon;
     daemon.setTranslationRouter(&translations);
+    daemon.setConnectHold(cli.holdConnect());
     if (!daemon.start()) {
         eMule::logError(QStringLiteral("Failed to start daemon"));
         return 1;

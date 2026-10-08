@@ -10,6 +10,7 @@
 #include "kademlia/KadRoutingZone.h"
 #include "kademlia/KadSearchManager.h"
 #include "kademlia/KadUDPListener.h"
+#include "utils/Opcodes.h"
 
 #include <QSignalSpy>
 #include <QTest>
@@ -35,6 +36,7 @@ private slots:
     void bootstrap_delegatesToListener();
     void processPacket_dispatches();
     void process_refreshesTheStoreCountersEveryTick();
+    void process_reportsALostConnection();
 };
 
 void tst_Kademlia::cleanup()
@@ -310,6 +312,26 @@ void tst_Kademlia::process_refreshesTheStoreCountersEveryTick()
     QTRY_COMPARE_WITH_TIMEOUT(kad.getTotalStoreSrc(), uint32{1}, 3000);
 
     SearchManager::stopAllSearches();
+    kad.stop();
+}
+
+// MFC stops Kad after 20 silent minutes; the port keeps it running and reports the loss.
+void tst_Kademlia::process_reportsALostConnection()
+{
+    Kademlia kad;
+    kad.start();
+    QSignalSpy up(&kad, &Kademlia::connected);
+    QSignalSpy down(&kad, &Kademlia::disconnected);
+
+    kad.getPrefs()->setLastContact();
+    QTRY_COMPARE_WITH_TIMEOUT(up.count(), 1, 3000);
+    QCOMPARE(down.count(), 0);
+
+    kad.getPrefs()->setLastContact(time(nullptr) - KADEMLIADISCONNECTDELAY - 1);
+    QTRY_COMPARE_WITH_TIMEOUT(down.count(), 1, 3000);
+    QVERIFY(kad.isRunning());
+    QVERIFY(!kad.isConnected());
+
     kad.stop();
 }
 

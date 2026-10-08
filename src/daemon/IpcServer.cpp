@@ -2,6 +2,7 @@
 /// @brief TCP server for IPC — implementation.
 
 #include "IpcServer.h"
+#include "app/AppContext.h"
 #include "IpcClientHandler.h"
 
 #include "net/ListenConflict.h"
@@ -129,6 +130,9 @@ void IpcServer::onClientDisconnected(IpcClientHandler* handler)
 {
     logInfo(QStringLiteral("IPC client disconnected"));
 
+    // A port scan or a refused login is not the GUI leaving
+    const bool wasClient = handler && handler->isHandshaked();
+
     // Release ownership and defer destruction — the handler's socket is still
     // inside Qt's signal delivery chain, so deleting it now would crash.
     auto it = std::find_if(m_clients.begin(), m_clients.end(),
@@ -137,6 +141,9 @@ void IpcServer::onClientDisconnected(IpcClientHandler* handler)
         (*it).release()->deleteLater();
         m_clients.erase(it);
     }
+    // A GUI that quit mid-wizard must not leave the core held offline
+    if (wasClient && m_clients.empty() && theApp.releaseConnectHold)
+        theApp.releaseConnectHold();
 }
 
 } // namespace eMule

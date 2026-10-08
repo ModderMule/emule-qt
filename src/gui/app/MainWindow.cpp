@@ -770,10 +770,10 @@ void MainWindow::buildToolsMenu()
     auto* linksMenu = m_toolsMenu->addMenu(
         QIcon(QStringLiteral(":/icons/Web.ico")), tr("Links"));
     linksMenu->addAction(tr("eMule Homepage"), this, [] {
-        QDesktopServices::openUrl(QUrl(QStringLiteral("https://www.emule-project.com")));
+        QDesktopServices::openUrl(QUrl(QString(kWebsiteUrl)));
     });
-    linksMenu->addAction(tr("FAQ"), this, [] {
-        QDesktopServices::openUrl(QUrl(QStringLiteral("https://www.emule-project.com/home/perl/help.cgi")));
+    linksMenu->addAction(tr("Features"), this, [] {
+        QDesktopServices::openUrl(QUrl(QString(kWebsiteUrl) + QStringLiteral("/features/")));
     });
     linksMenu->addAction(tr("Version Check"), this, [this] {
         checkForUpdates(true);
@@ -876,8 +876,13 @@ void MainWindow::onFirstTimeWizard()
     m_firstStartWizard = new FirstStartWizard(m_ipc, this);
     m_firstStartWizard->setAttribute(Qt::WA_DeleteOnClose);
     // Once is once: cancelling counts, as in MFC. Tools > wizard reopens it.
-    connect(m_firstStartWizard, &QDialog::finished, this,
-            [] { theUiState.setFirstStartWizardDone(true); });
+    connect(m_firstStartWizard, &QDialog::finished, this, [this] {
+        theUiState.setFirstStartWizardDone(true);
+        // A core launched for the wizard waits with its auto-connect. Sent after the
+        // wizard's SetPreferences, so the ports are rebound first. No-op otherwise.
+        if (m_ipc && m_ipc->isConnected())
+            m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::ReleaseConnectHold));
+    });
     // Modal show(), not exec(): no nested event loop for a quit to unwind through.
     // Not open() either — that makes it a sheet on macOS.
     m_firstStartWizard->setModal(true);

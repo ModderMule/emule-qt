@@ -349,6 +349,23 @@ void KademliaUDPListener::processPacket(const uint8* data, uint32 len, uint32 ip
     }
 }
 
+std::unique_ptr<Packet> KademliaUDPListener::buildWirePacket(const QByteArray& data)
+{
+    if (data.isEmpty())
+        return nullptr;
+
+    auto pkt = std::make_unique<Packet>(OP_KADEMLIAHEADER);
+    pkt->opcode = static_cast<uint8>(data[0]);
+    if (data.size() > 1) {
+        pkt->size = static_cast<uint32>(data.size() - 1);
+        pkt->pBuffer = new char[pkt->size];
+        std::memcpy(pkt->pBuffer, data.constData() + 1, pkt->size);
+    }
+    if (pkt->size > 200)
+        pkt->packPacket();
+    return pkt;
+}
+
 void KademliaUDPListener::sendPacket(const uint8* data, uint32 len, uint32 destIP,
                                       uint16 destPort, const KadUDPKey& targetKey,
                                       const UInt128* cryptTargetID)

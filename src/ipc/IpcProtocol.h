@@ -52,6 +52,7 @@ enum class IpcMsgType : int {
     GetConnection        = 140,
     ConnectToServer      = 141,  ///< [] or [ip: int64, port: int64, addr: string]
     DisconnectFromServer = 142,
+    ReleaseConnectHold   = 143,  ///< [] — first start wizard closed: do the auto-connect a `--hold-connect` daemon deferred
     StartSearch          = 150,  ///< [expression, fileType, method, minSize, maxSize, avail, ext, completeSrc]
     GetSearchResults     = 151,  ///< [searchID]
     StopSearch           = 152,  ///< [searchID: int]

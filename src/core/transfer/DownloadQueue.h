@@ -104,6 +104,12 @@ public:
     // -- Lookup ---------------------------------------------------------------
 
     [[nodiscard]] PartFile* fileByID(const uint8* hash) const;
+    /// The source a UDP answer came from. Exact address + UDP port first; with
+    /// @p ignorePortOnUniqueIP the only source on that address (a NAT may remap the
+    /// port). MFC CDownloadQueue::GetDownloadClientByIP_UDP (DownloadQueue.cpp:1072).
+    [[nodiscard]] UpDownClient* downloadClientByIP_UDP(const Address& addr, uint16 udpPort,
+                                                       bool ignorePortOnUniqueIP,
+                                                       bool* multipleIPs = nullptr) const;
     [[nodiscard]] PartFile* fileByIndex(int index) const;
     /// The file that owns the Kad source search @p id, if any.
     /// MFC CDownloadQueue::GetFileByKadFileSearchID (DownloadQueue.cpp:439).
@@ -431,6 +437,7 @@ private:
 
     std::vector<PartFile*> m_localServerReqQueue;   // non-owning
     bool m_prioritySortPending = false;
+    bool m_wasConnected = false;     // edge detector for PartFile::setActive
     uint64 m_nextTcpSrcReq = 0;                     // m_dwNextTCPSrcReq
 
     // Global-UDP-source rotation cursors (port of CDownloadQueue members).

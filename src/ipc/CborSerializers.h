@@ -208,7 +208,7 @@ inline void insertFakeVerdict(QCborMap& m, const FakeFileVerdict& verdict)
         {QStringLiteral("fileOp"),               static_cast<int>(f.fileOp())},
         {QStringLiteral("completionError"),      f.completionError()},
         {QStringLiteral("category"),             static_cast<qint64>(f.category())},
-        {QStringLiteral("lastSeenComplete"),    static_cast<qint64>(f.completeSourcesTime())},
+        {QStringLiteral("lastSeenComplete"),    static_cast<qint64>(f.lastSeenComplete())},
         {QStringLiteral("lastReception"),       static_cast<qint64>(f.lastReceptionDate())},
         {QStringLiteral("addedOn"),             static_cast<qint64>(f.createdDate())},
         {QStringLiteral("fileType"),            f.fileType()},

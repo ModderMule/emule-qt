@@ -178,6 +178,8 @@ private slots:
     void process_flushesPendingIPChangeForSources();
     void process_reasksAQueuedSourceOverItsOpenConnection_data();
     void process_reasksAQueuedSourceOverItsOpenConnection();
+    void downloadClientByIP_UDP_ignoresThePortOnAUniqueAddress();
+    void activeTime_runsOnlyWhileConnectedAndNotPaused();
     void pauseFile_cancelsARunningTransfer();
     void stopFile_letsTheSourcesGo();
     void stopPausedFile_firesAfterAnIdleHour();
@@ -2150,6 +2152,75 @@ void tst_DownloadQueue::process_flushesPendingIPChangeForSources()
 
 // A queued source we hold a connection to (a peer we upload to, say) can be re-asked by
 // neither UDP nor a dial. Left alone, the remote drops us from its queue after an hour.
+// MFC SetActive / OnConnectionState: the download-time clock (FT_DL_ACTIVE_TIME) runs
+// while the file is running and we are on a network. It had no writer at all.
+void tst_DownloadQueue::activeTime_runsOnlyWhileConnectedAndNotPaused()
+{
+    UdpSourceEnv env;
+    ServerConnect* const savedSC = theApp.serverConnect;
+    theApp.serverConnect = &env.sc;
+    const auto restore = qScopeGuard([&] { theApp.serverConnect = savedSC; });
+
+    DownloadQueue dq;
+    uint8 hash[16];
+    std::memset(hash, 0x54, sizeof(hash));
+    auto* pf = createTestPartFile(hash, QStringLiteral("active_time.bin"));
+    dq.addDownload(pf);
+
+    // offline: the clock does not start
+    pf->setActive(true);
+    dq.process();
+    QTest::qWait(1100);
+    QCOMPARE(pf->dlActiveTime(), uint32{0});
+
+    env.sc.m_connected = true;
+    dq.process();                       // the connect edge starts it
+    QTest::qWait(2100);
+    QVERIFY(pf->dlActiveTime() >= 1);
+
+    pf->pauseFile();
+    const uint32 atPause = pf->dlActiveTime();
+    QTest::qWait(1100);
+    QCOMPARE(pf->dlActiveTime(), atPause);
+
+    env.sc.m_connected = false;
+}
+
+// A NAT may answer a UDP reask from another port than the one advertised; MFC then
+// takes the only source on that address (DownloadQueue.cpp:1072-1095).
+void tst_DownloadQueue::downloadClientByIP_UDP_ignoresThePortOnAUniqueAddress()
+{
+    DownloadQueue dq;
+    uint8 hash[16];
+    std::memset(hash, 0x53, sizeof(hash));
+    auto* pf = createTestPartFile(hash, QStringLiteral("udp_lookup.bin"));
+    dq.addDownload(pf);
+
+    const Address addrA = Address::fromString(QStringLiteral("10.9.8.7"));
+    const Address addrB = Address::fromString(QStringLiteral("10.9.8.6"));
+    UpDownClient a, b1, b2;
+    a.setUserAddress(addrA);
+    a.setUDPPort(5000);
+    b1.setUserAddress(addrB);
+    b1.setUDPPort(6000);
+    b2.setUserAddress(addrB);
+    b2.setUDPPort(6001);
+    for (UpDownClient* c : {&a, &b1, &b2})
+        pf->addSource(c);
+
+    QCOMPARE(dq.downloadClientByIP_UDP(addrA, 5000, false), &a);
+    QCOMPARE(dq.downloadClientByIP_UDP(addrA, 5999, true), &a);        // remapped port
+    QVERIFY(dq.downloadClientByIP_UDP(addrA, 5999, false) == nullptr);
+
+    bool multiple = false;
+    QCOMPARE(dq.downloadClientByIP_UDP(addrB, 6001, true, &multiple), &b2);
+    QVERIFY(dq.downloadClientByIP_UDP(addrB, 6999, true, &multiple) == nullptr);
+    QVERIFY(multiple);                                                 // ambiguous
+
+    for (UpDownClient* c : {&a, &b1, &b2})
+        pf->removeSource(c);
+}
+
 void tst_DownloadQueue::process_reasksAQueuedSourceOverItsOpenConnection()
 {
     QFETCH(bool, due);

@@ -1,57 +1,35 @@
 {
- "Show results the server found on this network": {
-  "_context": "eMule::SearchPanel",
-  "de_DE": "Ergebnisse anzeigen, die der Server in diesem Netzwerk gefunden hat",
-  "es_ES": "Mostrar los resultados que el servidor encontró en esta red",
-  "fr_FR": "Afficher les résultats que le serveur a trouvés sur ce réseau",
-  "it_IT": "Mostra i risultati che il server ha trovato su questa rete",
-  "ja_JP": "サーバーがこのネットワークで見つけた結果を表示",
-  "ko_KR": "서버가 이 네트워크에서 찾은 결과 표시",
-  "pt_BR": "Mostrar os resultados que o servidor encontrou nesta rede",
-  "zh_CN": "显示服务器在此网络上找到的结果"
+ "Now listening on TCP port %1 and UDP port %2.": {
+  "_context": "PortChange",
+  "de_DE": "Lauscht jetzt auf TCP-Port %1 und UDP-Port %2.",
+  "es_ES": "Ahora escucha en el puerto TCP %1 y el puerto UDP %2.",
+  "fr_FR": "Écoute désormais sur le port TCP %1 et le port UDP %2.",
+  "it_IT": "Ora in ascolto sulla porta TCP %1 e sulla porta UDP %2.",
+  "ja_JP": "TCP ポート %1 と UDP ポート %2 で待ち受けています。",
+  "ko_KR": "이제 TCP 포트 %1 및 UDP 포트 %2에서 수신 대기합니다.",
+  "pt_BR": "Agora escutando na porta TCP %1 e na porta UDP %2.",
+  "zh_CN": "现在监听 TCP 端口 %1 和 UDP 端口 %2。"
  },
- "Usenet results": {
-  "_context": "eMule::SearchPanel",
-  "de_DE": "Usenet-Ergebnisse",
-  "es_ES": "Resultados de Usenet",
-  "fr_FR": "Résultats Usenet",
-  "it_IT": "Risultati Usenet",
-  "ja_JP": "Usenet の結果",
-  "ko_KR": "Usenet 결과",
-  "pt_BR": "Resultados do Usenet",
-  "zh_CN": "Usenet 结果"
+ "The new ports take effect after restarting eMule, because the core is connected to a network or to other clients.\n\nUntil then it keeps listening on TCP port %1 and UDP port %2.": {
+  "_context": "PortChange",
+  "de_DE": "Die neuen Ports werden erst nach einem Neustart von eMule wirksam, da der Kern mit einem Netzwerk oder mit anderen Clients verbunden ist.\n\nBis dahin lauscht er weiter auf TCP-Port %1 und UDP-Port %2.",
+  "es_ES": "Los nuevos puertos se aplicarán tras reiniciar eMule, porque el núcleo está conectado a una red o a otros clientes.\n\nHasta entonces sigue escuchando en el puerto TCP %1 y el puerto UDP %2.",
+  "fr_FR": "Les nouveaux ports prendront effet après le redémarrage d'eMule, car le noyau est connecté à un réseau ou à d'autres clients.\n\nD'ici là, il continue d'écouter sur le port TCP %1 et le port UDP %2.",
+  "it_IT": "Le nuove porte avranno effetto dopo il riavvio di eMule, perché il core è connesso a una rete o ad altri client.\n\nFino ad allora resta in ascolto sulla porta TCP %1 e sulla porta UDP %2.",
+  "ja_JP": "コアがネットワークまたは他のクライアントに接続しているため、新しいポートは eMule の再起動後に有効になります。\n\nそれまでは TCP ポート %1 と UDP ポート %2 で待ち受けを続けます。",
+  "ko_KR": "코어가 네트워크 또는 다른 클라이언트에 연결되어 있으므로 새 포트는 eMule을 다시 시작한 후에 적용됩니다.\n\n그때까지는 TCP 포트 %1 및 UDP 포트 %2에서 계속 수신 대기합니다.",
+  "pt_BR": "As novas portas entram em vigor após reiniciar o eMule, porque o núcleo está conectado a uma rede ou a outros clientes.\n\nAté lá ele continua escutando na porta TCP %1 e na porta UDP %2.",
+  "zh_CN": "由于核心已连接到网络或其他客户端，新端口将在重新启动 eMule 后生效。\n\n在此之前，它继续监听 TCP 端口 %1 和 UDP 端口 %2。"
  },
- "Kad results": {
-  "_context": "eMule::SearchPanel",
-  "de_DE": "Kad-Ergebnisse",
-  "es_ES": "Resultados de Kad",
-  "fr_FR": "Résultats Kad",
-  "it_IT": "Risultati Kad",
-  "ja_JP": "Kad の結果",
-  "ko_KR": "Kad 결과",
-  "pt_BR": "Resultados do Kad",
-  "zh_CN": "Kad 结果"
- },
- "Torrent results": {
-  "_context": "eMule::SearchPanel",
-  "de_DE": "Torrent-Ergebnisse",
-  "es_ES": "Resultados de torrent",
-  "fr_FR": "Résultats torrent",
-  "it_IT": "Risultati torrent",
-  "ja_JP": "トレントの結果",
-  "ko_KR": "토렌트 결과",
-  "pt_BR": "Resultados de torrent",
-  "zh_CN": "种子结果"
- },
- "%1 of %2 results": {
-  "_context": "eMule::SearchPanel",
-  "de_DE": "%1 von %2 Ergebnissen",
-  "es_ES": "%1 de %2 resultados",
-  "fr_FR": "%1 résultats sur %2",
-  "it_IT": "%1 di %2 risultati",
-  "ja_JP": "%2 件中 %1 件の結果",
-  "ko_KR": "결과 %2개 중 %1개",
-  "pt_BR": "%1 de %2 resultados",
-  "zh_CN": "%1 / %2 条结果"
+ "The new port could not be opened. It may be in use by another program.\n\nThe core keeps listening on TCP port %1 and UDP port %2.": {
+  "_context": "PortChange",
+  "de_DE": "Der neue Port konnte nicht geöffnet werden. Möglicherweise wird er von einem anderen Programm verwendet.\n\nDer Kern lauscht weiter auf TCP-Port %1 und UDP-Port %2.",
+  "es_ES": "No se pudo abrir el nuevo puerto. Puede que lo esté usando otro programa.\n\nEl núcleo sigue escuchando en el puerto TCP %1 y el puerto UDP %2.",
+  "fr_FR": "Le nouveau port n'a pas pu être ouvert. Il est peut-être utilisé par un autre programme.\n\nLe noyau continue d'écouter sur le port TCP %1 et le port UDP %2.",
+  "it_IT": "Impossibile aprire la nuova porta. Potrebbe essere in uso da un altro programma.\n\nIl core resta in ascolto sulla porta TCP %1 e sulla porta UDP %2.",
+  "ja_JP": "新しいポートを開けませんでした。他のプログラムが使用している可能性があります。\n\nコアは TCP ポート %1 と UDP ポート %2 で待ち受けを続けます。",
+  "ko_KR": "새 포트를 열 수 없습니다. 다른 프로그램에서 사용 중일 수 있습니다.\n\n코어는 TCP 포트 %1 및 UDP 포트 %2에서 계속 수신 대기합니다.",
+  "pt_BR": "Não foi possível abrir a nova porta. Ela pode estar em uso por outro programa.\n\nO núcleo continua escutando na porta TCP %1 e na porta UDP %2.",
+  "zh_CN": "无法打开新端口。它可能正被其他程序使用。\n\n核心继续监听 TCP 端口 %1 和 UDP 端口 %2。"
  }
 }

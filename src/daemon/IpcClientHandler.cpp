@@ -62,6 +62,7 @@
 #include "portmap/PortMapper.h"
 #include "kademlia/KadPrefs.h"
 #include "net/IPv6SourcePin.h"
+#include "net/ClientUDPSocket.h"
 #include "net/ListenSocket.h"
 #include "net/LocalIPv6.h"
 #include "net/ProxySettings.h"
@@ -272,6 +273,11 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::GetConnection:        handleGetConnection(msg); break;
     case IpcMsgType::ConnectToServer:      handleConnectToServer(msg); break;
     case IpcMsgType::DisconnectFromServer: handleDisconnectFromServer(msg); break;
+    case IpcMsgType::ReleaseConnectHold:
+        if (theApp.releaseConnectHold)
+            theApp.releaseConnectHold();
+        sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+        break;
     case IpcMsgType::StartSearch:          handleStartSearch(msg); break;
     case IpcMsgType::GetSearchResults:     handleGetSearchResults(msg); break;
     case IpcMsgType::StopSearch:           handleStopSearch(msg); break;
@@ -1470,7 +1476,14 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
     if (outcome.standbyChanged)
         emit standbyConfigChanged();
 
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    // What became of a port change, and where the sockets are now
+    QCborMap result;
+    result.insert(QStringLiteral("ports"), static_cast<int>(outcome.ports));
+    result.insert(QStringLiteral("tcpPort"),
+                  theApp.listenSocket ? theApp.listenSocket->connectedPort() : 0);
+    result.insert(QStringLiteral("udpPort"),
+                  theApp.clientUDP ? theApp.clientUDP->connectedPort() : 0);
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, result));
 }
 
 IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(const PrefChanges& changes)
@@ -1518,6 +1531,10 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
 
     outcome.saved = thePrefs.save();
 
+    // Before the ServerConnect config below reads the bound port
+    if (theApp.applyListenPorts)
+        outcome.ports = theApp.applyListenPorts();
+
     // Update scheduler baselines so restoreOriginals() doesn't revert these changes
     if (theApp.scheduler)
         theApp.scheduler->saveOriginals();
@@ -1535,7 +1552,9 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
         cfg.useServerPriorities    = thePrefs.useServerPriorities();
         cfg.addServersFromServer   = thePrefs.addServersFromServer();
         cfg.serverKeepAliveTimeout = thePrefs.serverKeepAliveTimeout();
-        cfg.listenPort             = thePrefs.port();
+        // Bound port, not the pref: a pending restart must not advertise the new one
+        cfg.listenPort             = theApp.listenSocket && theApp.listenSocket->isListening()
+            ? theApp.listenSocket->connectedPort() : thePrefs.port();
         cfg.smartLowIdCheck        = thePrefs.smartLowIdCheck();
         cfg.bindAddress            = BindAddress::ipv4Literal();
         theApp.serverConnect->setConfig(cfg);

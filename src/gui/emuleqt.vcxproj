@@ -315,6 +315,8 @@
     <ClInclude Include="controls\AbstractTableModel.h" />
     <ClInclude Include="controls\TrayMeterIcon.h" />
     <ClInclude Include="dialogs\ConnectionPresets.h" />
+    <ClInclude Include="dialogs\PortChangeNotice.h" />
+    <ClInclude Include="dialogs\PortMapStatusText.h" />
     <ClInclude Include="utils\DialogSizing.h" />
     <ClInclude Include="utils\FileAssociation.h" />
     <ClInclude Include="utils\FileTypeIcons.h" />

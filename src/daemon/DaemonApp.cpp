@@ -87,6 +87,17 @@ bool DaemonApp::start()
 
     // Start core session
     m_coreSession = std::make_unique<CoreSession>(this);
+    if (m_connectHold) {
+        logInfo(QStringLiteral("Auto-connect held until the first start wizard is done"));
+        m_coreSession->setConnectHold(true);
+        // No GUI ever showed up: don't sit offline for good. A GUI that leaves
+        // releases it in IpcServer::onClientDisconnected().
+        QTimer::singleShot(std::chrono::minutes(2), this, [this] {
+            if (m_coreSession && m_coreSession->isConnectHeld()
+                && (!m_ipcServer || m_ipcServer->clientCount() == 0))
+                m_coreSession->releaseConnectHold();
+        });
+    }
     m_coreSession->start();
     MetaSearchService::instance();   // registers itself as theApp.metaSearch
 
@@ -140,6 +151,9 @@ bool DaemonApp::start()
     // Connect core signals to IPC push events
     m_notifierBridge = std::make_unique<CoreNotifierBridge>(m_ipcServer.get(), this);
     m_notifierBridge->connectAll();
+    // Via the session, not the mapper: enableUPnP creates and drops mappers at runtime
+    connect(m_coreSession.get(), &CoreSession::portMapStatusChanged,
+            m_notifierBridge.get(), &CoreNotifierBridge::onPortMapStatusChanged);
 
     // The bound interface went away, came back or was changed: the session has closed
     // the P2P sockets; the parts it does not own follow here.
@@ -623,9 +637,11 @@ void DaemonApp::onWebServerConfigChanged()
     if (m_webServer && m_webServer->isRunning()
         && m_webServer->config() == WebServerConfig::fromPreferences(thePrefs)) {
         if (m_coreSession)
-            m_coreSession->updatePortMappings();   // webServerUPnP may have flipped
+            m_coreSession->applyPortMapPreferences();   // enableUPnP / webServerUPnP may have flipped
         return;
     }
+    if (m_coreSession)
+        m_coreSession->applyPortMapPreferences();
     restartWebServer();
 }
 

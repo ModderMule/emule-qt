@@ -151,12 +151,18 @@ bool ServerSocket::packetReceived(Packet* packet)
     // MFC: CServerSocket::ProcessPacket() calls UnPackPacket(250000) — the server
     // cap is 250 KB, not the 50 KB Packet default, so large OP_SEARCHRESULT /
     // OP_FOUNDSOURCES / OP_SERVERLIST sets inflate instead of hitting Z_BUF_ERROR.
+    //
+    // A bad packet never returns false unless the socket was failed first: false makes
+    // EMSocket drop the rest of the read buffer and desyncs the stream (MFC
+    // CServerSocket::PacketReceived returns true and either continues or disconnects).
     if (packet->prot == OP_PACKEDPROT) {
         if (!packet->unPackPacket(250000)) {
             logWarning(QStringLiteral("ServerSocket: Failed to decompress packed packet (opcode 0x%1)")
                            .arg(packet->opcode, 2, 16, QLatin1Char('0')));
-            return false;
+            return true;
         }
+    } else if (packet->prot != OP_EDONKEYPROT) {
+        return true; // MFC ServerSocket.cpp:697 — only eDonkey packets are processed
     }
 
     const auto* data = reinterpret_cast<const uint8*>(packet->pBuffer);
@@ -169,11 +175,11 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
     case OP_SERVERMESSAGE: {
         // Format: uint16 msgLen, char[msgLen] message
         if (size < 2)
-            return false;
+            return failMalformed();
 
         uint16 msgLen = peekUInt16(packet);
         if (size < 2u + msgLen)
-            return false;
+            return failMalformed();
 
         // Charset follows the server's advertised Unicode support, as the reference does
         // (CSafeMemFile::ReadString(pServer && pServer->GetUnicodeSupport())). Sniffing
@@ -198,7 +204,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         //         [uint32 serverReportedIP]. There is NO obfuscation-TCP-port
         //         field here — the reference derives that from the flags.
         if (size < 4)
-            return false;
+            return failMalformed();
 
         uint32 clientID = peekUInt32(packet);
         uint32 tcpFlags = 0;
@@ -256,7 +262,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
     case OP_SEARCHRESULT: {
         // Raw search result data — forward to search engine
         if (size < 4)
-            return false;
+            break;
 
         // The "more results available" flag is a trailing byte the search parser
         // reads authoritatively (SearchList::processSearchAnswer), which also
@@ -270,8 +276,12 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
     case OP_FOUNDSOURCES:
     case OP_FOUNDSOURCES_OBFU: {
         // Format: hash16[16], uint8 sourceCount, sources...
-        if (size < 17)
-            return false;
+        // short: MFC swallows the read error for the plain opcode only
+        if (size < 17) {
+            if (opcode == OP_FOUNDSOURCES_OBFU)
+                return failMalformed();
+            break;
+        }
 
         bool obfuscated = (opcode == OP_FOUNDSOURCES_OBFU);
         logServerVerbose(QStringLiteral("<<< OP_FOUNDSOURCES%1 received (%2 bytes)")
@@ -295,7 +305,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         // cannot derive, silently breaking global search against that server.
         // See ServerList::processStatusResponse() for the real parser.
         if (size < 8)
-            return false;
+            break;
 
         uint32 users = peekUInt32(packet);
         uint32 files = peekUInt32(packet + 4);
@@ -319,7 +329,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
     case OP_SERVERIDENT: {
         // Format: hash16[16], ip[4], port[2], tagCount[4], tags...
         if (size < 26)
-            return false;
+            break;
 
         const uint8* serverHash = packet;
         uint32 serverIP = peekUInt32(packet + 16);
@@ -394,17 +404,13 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         if (m_curServer) {
             m_curServer->setServerHash(serverHash);
             // The ident body has a 4-byte IP field, so a dual-stack server always reports
-            // its IPv4 there. Over an IPv4 session it updates the reported IP, as MFC
-            // does. Over an IPv6 session it must not replace the address we are
-            // connected to — that broke the CT_MOD_YOUR_IP family guard on the second
-            // ident (sent after OP_GETSERVERLIST) — it is the server's other address.
+            // its IPv4 there. It never replaces the address we are connected to (MFC
+            // only logs it): over an IPv6 session it is the server's other address.
             const Address identIP = Address::fromNetworkOrder(serverIP);
             if (m_sessionAddress.isIPv6()) {
                 if (identIP.isIPv4() && !m_curServer->hasAddress(identIP))
                     learned = identIP;
             } else {
-                if (identIP.isIPv4())
-                    m_curServer->setIpAddress(identIP);
                 if (serverIPv6.isIPv6() && !m_curServer->hasAddress(serverIPv6))
                     learned = serverIPv6;
             }
@@ -440,7 +446,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
     case OP_SERVERLIST: {
         // Format: uint8 count, [ip4 port2]* count
         if (size < 1)
-            return false;
+            break;
 
         logServerVerbose(QStringLiteral("<<< OP_SERVERLIST received (%1 bytes, %2 entries advertised)")
                              .arg(size).arg(static_cast<uint>(packet[0])));
@@ -451,7 +457,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
     case OP_CALLBACKREQUESTED: {
         // Format: ip[4], port[2] [, cryptFlags[1], userHash[16]]
         if (size < 6)
-            return false;
+            break;
 
         uint32 clientIP = peekUInt32(packet);
         uint16 clientPort = peekUInt16(packet + 4);
@@ -484,7 +490,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         // BE path). The server sends this to a v6-capable LowID target when the requester
         // is reachable only over IPv6; we call the requester back over IPv6.
         if (size < 18)
-            return false;
+            break;
 
         const Endpoint requester(Address::fromIPv6Bytes(packet), peekUInt16(packet + 16));
         logServerVerbose(QStringLiteral("<<< OP_CALLBACKREQUESTED_IPV6 from %1")
@@ -515,6 +521,14 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
 // ---------------------------------------------------------------------------
 // Connection state management
 // ---------------------------------------------------------------------------
+
+bool ServerSocket::failMalformed()
+{
+    // MFC: the read throws and ProcessPacket ends in SetConnectionState(CS_DISCONNECTED)
+    failWith(ServerConnState::Disconnected,
+             failureFor(m_connectionState, m_tcpConnected, std::nullopt));
+    return false;
+}
 
 void ServerSocket::failWith(ServerConnState newState, ServerFailure failure)
 {

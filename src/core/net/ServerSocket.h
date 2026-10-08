@@ -194,6 +194,8 @@ private:
     void setConnectionState(ServerConnState newState);
     /// Record the failure, then move to @p newState (which reports it).
     void failWith(ServerConnState newState, ServerFailure failure);
+    /// A packet MFC disconnects on: fail as Disconnected. Returns false (stop reading).
+    bool failMalformed();
 
     // --- Slots ---
     void onSocketConnected();

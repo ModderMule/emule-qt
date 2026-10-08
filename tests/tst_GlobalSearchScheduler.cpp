@@ -10,14 +10,20 @@
 #include "app/AppContext.h"
 #include "prefs/Preferences.h"
 #include "search/GlobalSearchScheduler.h"
+#include "protocol/Tag.h"
+#include "search/SearchFile.h"
 #include "search/SearchList.h"
+#include "search/SearchParams.h"
+#include "utils/Opcodes.h"
 #include "server/Server.h"
 #include "server/ServerList.h"
+#include "utils/SafeFile.h"
 
 #include <QElapsedTimer>
 #include <QSignalSpy>
 #include <QTest>
 
+#include <cstring>
 #include <memory>
 
 using namespace eMule;
@@ -69,6 +75,7 @@ private slots:
     // GlobalSearchScheduler — the pacing
     void sweep_asksOneServerPerInterval();
     void sweep_cancelStopsTheTicks();
+    void sweep_stopsOnSourcesNotFiles();
     void sweep_cancelSearchIgnoresOtherSearches();
     void sweep_startFromTheEndSignalSurvives();
     void sweep_emptyServerListEndsImmediately();
@@ -236,6 +243,53 @@ void tst_GlobalSearchScheduler::sweep_cancelStopsTheTicks()
     spy.clear();
     QTest::qWait(1700);
     QCOMPARE(spy.count(), 0);
+}
+
+void tst_GlobalSearchScheduler::sweep_stopsOnSourcesNotFiles()
+{
+    // MFC stops once the summed availability passes MAX_RESULTS (100), however few
+    // files that is — SearchResultsWnd.cpp:473.
+    ServerList servers;
+    fillServers(servers, 20);
+    ScopedServerList scoped(&servers);
+
+    SearchList list;
+    SearchList* const savedList = theApp.searchList;
+    theApp.searchList = &list;
+    const uint32 id = list.newSearch({}, SearchParams{});
+
+    const auto add = [&](uint8 hashByte, uint32 sources) {
+        uint8 hash[16];
+        std::memset(hash, hashByte, 16);
+        SafeMemFile mem;
+        mem.write(hash, 16);
+        mem.writeUInt32(0x0A000001);
+        mem.writeUInt16(4662);
+        mem.writeUInt32(3);
+        Tag(FT_FILENAME, QStringLiteral("f%1.avi").arg(hashByte)).writeNewEd2kTag(mem, UTF8Mode::Raw);
+        Tag(FT_FILESIZE, uint32{10000}).writeNewEd2kTag(mem);
+        Tag(FT_SOURCES, sources).writeNewEd2kTag(mem);
+        const QByteArray packet = mem.takeBuffer();
+        SafeMemFile data(packet);
+        auto* file = new SearchFile(data, true, 0xC0A80001, 4661);
+        file->setSearchID(id);
+        list.addToList(file);
+    };
+
+    GlobalSearchScheduler sched;
+    sched.start(id, QByteArrayLiteral("payload"), false, false);
+    QVERIFY(sched.isRunning());
+
+    add(1, 40);
+    add(2, 40);
+    sched.onResultCountChanged(id);
+    QVERIFY(sched.isRunning());   // 80 sources
+
+    add(3, 40);
+    sched.onResultCountChanged(id);
+    QVERIFY(!sched.isRunning());  // 120 sources in three files
+
+    theApp.searchList = savedList;
 }
 
 void tst_GlobalSearchScheduler::sweep_cancelSearchIgnoresOtherSearches()

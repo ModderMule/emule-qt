@@ -462,7 +462,6 @@ bool ClientReqSocket::processExtPacket(const uint8* packet, uint32 size, uint8 o
     case OP_PUBLICIP_ANSWER:
     case OP_CHANGE_CLIENT_IP:
     case OP_CALLBACK:
-    case OP_REASKCALLBACKTCP:
     case OP_BUDDYPING:
     case OP_BUDDYPONG:
     case OP_CHATCAPTCHAREQ:
@@ -471,6 +470,11 @@ bool ClientReqSocket::processExtPacket(const uint8* packet, uint32 size, uint8 o
     case OP_KAD_FWTCPCHECK_ACK:
     case OP_HTTPCACHE:
         if (stats) stats->addDownDataOverheadOther(rawSize);
+        emit extPacketReceived(packet, size, opcode);
+        break;
+
+    case OP_REASKCALLBACKTCP:   // MFC ListenSocket.cpp:1435
+        if (stats) stats->addDownDataOverheadFileRequest(rawSize);
         emit extPacketReceived(packet, size, opcode);
         break;
 

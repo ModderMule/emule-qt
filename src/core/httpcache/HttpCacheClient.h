@@ -138,11 +138,6 @@ private:
     /// Final SHA-256, PKCS#7 and length checks once the last block is in.
     void verifyComplete();
 
-    /// Parse "bytes <first>-<last>/<total>" (RFC 9110 §14.4). False when the
-    /// header is absent, malformed, or the unsatisfied "bytes */<total>" form.
-    [[nodiscard]] static bool parseContentRange(const QByteArray& value, uint64& first,
-                                                uint64& last, uint64& total);
-
     /// Byte offset of this part within the file.
     [[nodiscard]] uint64 partStart() const;
 

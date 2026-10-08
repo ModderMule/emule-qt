@@ -151,10 +151,11 @@ void GlobalSearchScheduler::onResultCountChanged(uint32 searchID)
     if (m_searchID == 0 || searchID != m_searchID || !theApp.searchList)
         return;
 
-    if (theApp.searchList->resultCount(searchID) > MAX_RESULTS) {
+    // MFC counts availability (sources), not files: SearchResultsWnd.cpp:473
+    if (theApp.searchList->foundSources(searchID) > MAX_RESULTS) {
         logServerVerbose(QStringLiteral("Global search: stopping the UDP sweep after %1 "
-                                        "results — the query is too broad")
-                             .arg(theApp.searchList->resultCount(searchID)));
+                                        "sources — the query is too broad")
+                             .arg(theApp.searchList->foundSources(searchID)));
         cancel();
     }
 }

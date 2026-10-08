@@ -601,61 +601,55 @@ bool UpDownClient::markBlockDone(const uint8* fileId, uint64 startOffset, uint64
 
 void UpDownClient::sendHashsetPacket(const uint8* data, uint32 size, bool fileIdentifiers)
 {
-    if (!m_socket || !data || size < 16)
+    if (!data || size < 16)
         return;
 
     // OP_HASHSETREQUEST2 uses a FileIdentifier (descriptor + MD4 + optional
     // size/AICH) whereas OP_HASHSETREQUEST is just a raw 16-byte MD4 hash.
-    uint8 fileHash[16]{};
-    uint8 requestedOptions = 0;
+    // A request for a file we don't share is a strike and ends the connection —
+    // MFC sends no answer for it (UploadClient.cpp:522-525, :547-550).
+    SafeMemFile response;
+
     if (fileIdentifiers) {
         SafeMemFile io(data, size);
         FileIdentifierSA ident;
         if (!ident.readIdentifier(io))
+            throw FileException("OP_HASHSETREQUEST2: bad file identifier");
+        KnownFile* file = theApp.sharedFileList
+            ? theApp.sharedFileList->getFileByID(ident.getMD4Hash()) : nullptr;
+        if (!file || !file->fileIdentifier().compareRelaxed(ident)) {
+            checkFailedFileIdReqs(ident.getMD4Hash());
+            throw FileException("OP_HASHSETREQUEST2: file not found");
+        }
+        const uint8 requestedOptions = io.readUInt8();
+        const bool sendMD4  = (requestedOptions & 0x01) != 0;
+        const bool sendAICH = (requestedOptions & 0x02) != 0;
+        if (!sendMD4 && !sendAICH)
+            return; // nothing we know was asked for
+
+        // OP_HASHSETANSWER2: FileIdentifier + hashset blob
+        file->fileIdentifier().writeIdentifier(response);
+        file->fileIdentifier().writeHashSetsToPacket(response, sendMD4, sendAICH);
+        sendPacket(std::make_unique<Packet>(response, OP_EMULEPROT, OP_HASHSETANSWER2));
+    } else {
+        if (size != 16)
             return;
-        md4cpy(fileHash, ident.getMD4Hash());
-        if (io.length() - io.position() >= 1)
-            requestedOptions = io.readUInt8();
-    } else {
-        md4cpy(fileHash, data);
-    }
-
-    // Look up file in shared files by hash
-    KnownFile* file = nullptr;
-    if (theApp.sharedFileList)
-        file = theApp.sharedFileList->getFileByID(fileHash);
-
-    SafeMemFile response;
-
-    if (fileIdentifiers) {
-        // OP_HASHSETANSWER2: FileIdentifier + hashset blob via writeHashSetsToPacket
-        if (file) {
-            file->fileIdentifier().writeIdentifier(response);
-            const bool sendMD4  = (requestedOptions & 0x01) != 0;
-            const bool sendAICH = (requestedOptions & 0x02) != 0;
-            file->fileIdentifier().writeHashSetsToPacket(response, sendMD4, sendAICH);
-        } else {
-            // File not found — write a minimal identifier so the client can match it
-            response.writeHash16(fileHash);
+        KnownFile* file = theApp.sharedFileList
+            ? theApp.sharedFileList->getFileByID(data) : nullptr;
+        if (!file) {
+            checkFailedFileIdReqs(data);
+            throw FileException("OP_HASHSETREQUEST: file not found");
         }
-        auto packet = std::make_unique<Packet>(response, OP_EMULEPROT, OP_HASHSETANSWER2);
-        sendPacket(std::move(packet));
-    } else {
         // OP_HASHSETANSWER: hash(16) + count(2) + N×hash(16)
-        response.writeHash16(fileHash);
-        if (file) {
-            const uint16 hashCount = file->fileIdentifier().getAvailableMD4PartHashCount();
-            response.writeUInt16(hashCount);
-            for (uint16 i = 0; i < hashCount; ++i) {
-                const uint8* partHash = file->fileIdentifier().getMD4PartHash(i);
-                if (partHash)
-                    response.writeHash16(partHash);
-            }
-        } else {
-            response.writeUInt16(0);
+        response.writeHash16(data);
+        const uint16 hashCount = file->fileIdentifier().getAvailableMD4PartHashCount();
+        response.writeUInt16(hashCount);
+        for (uint16 i = 0; i < hashCount; ++i) {
+            const uint8* partHash = file->fileIdentifier().getMD4PartHash(i);
+            if (partHash)
+                response.writeHash16(partHash);
         }
-        auto packet = std::make_unique<Packet>(response, OP_EDONKEYPROT, OP_HASHSETANSWER);
-        sendPacket(std::move(packet));
+        sendPacket(std::make_unique<Packet>(response, OP_EDONKEYPROT, OP_HASHSETANSWER));
     }
 }
 
@@ -1132,6 +1126,7 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
     // Look up the file
     KnownFile* reqFile = findUploadFile(fileIdent.getMD4Hash());
     if (!reqFile || !reqFile->fileIdentifier().compareRelaxed(fileIdent)) {
+        checkFailedFileIdReqs(fileIdent.getMD4Hash());
         sendFileNotFound(fileIdent.getMD4Hash());
         return;
     }
@@ -1266,6 +1261,7 @@ void UpDownClient::processMultiPacketLegacy(const uint8* data, uint32 size, bool
     // Look up the file
     KnownFile* reqFile = findUploadFile(fileHash);
     if (!reqFile) {
+        checkFailedFileIdReqs(fileHash);
         sendFileNotFound(fileHash);
         return;
     }
@@ -1386,6 +1382,13 @@ void UpDownClient::processMultiPacketAnswerLegacy(const uint8* data, uint32 size
     uint8 fileHash[16];
     dataIn.readHash16(fileHash);
 
+    // An answer about a file we don't download at all is a strike and a disconnect
+    // (MFC ListenSocket.cpp:1080-1083)
+    if (!theApp.downloadQueue || !theApp.downloadQueue->fileByID(fileHash)) {
+        checkFailedFileIdReqs(fileHash);
+        throw FileException("OP_MULTIPACKETANSWER: unknown file");
+    }
+
     // Find the file we requested
     if (!m_reqFile || !md4equ(fileHash, m_reqFile->fileHash()))
         return;
@@ -1442,6 +1445,12 @@ void UpDownClient::processMultiPacketAnswer(const uint8* data, uint32 size)
     FileIdentifierSA fileIdent;
     if (!fileIdent.readIdentifier(dataIn))
         return;
+
+    // MFC ListenSocket.cpp:1067-1070
+    if (!theApp.downloadQueue || !theApp.downloadQueue->fileByID(fileIdent.getMD4Hash())) {
+        checkFailedFileIdReqs(fileIdent.getMD4Hash());
+        throw FileException("OP_MULTIPACKETANSWER_EXT2: unknown file");
+    }
 
     // Find the file we requested
     if (!m_reqFile || !md4equ(fileIdent.getMD4Hash(), m_reqFile->fileHash())) {

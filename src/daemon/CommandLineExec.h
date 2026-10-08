@@ -30,6 +30,10 @@ public:
     /// Config directory override from --config, or empty if not set.
     [[nodiscard]] QString configOverride() const;
 
+    /// --hold-connect: start without auto-connecting; the GUI's first start wizard
+    /// is about to ask for the ports.
+    [[nodiscard]] bool holdConnect() const;
+
 private:
     QCommandLineParser m_parser;
 
@@ -69,6 +73,10 @@ private:
         QStringLiteral("config"),
         QStringLiteral("Override config directory (default: platform-specific)."),
         QStringLiteral("path")};
+
+    QCommandLineOption m_holdConnectOption{
+        QStringLiteral("hold-connect"),
+        QStringLiteral("Do not auto-connect until the GUI's first start wizard is done.")};
 };
 
 } // namespace eMule

@@ -2,6 +2,8 @@
 #include "utils/FileAssociation.h"
 #include "dialogs/OptionsDialog.h"
 #include "dialogs/FirstStartWizard.h"
+#include "dialogs/PortChangeNotice.h"
+#include "dialogs/PortMapStatusText.h"
 
 #include "app/AppConfig.h"
 #include "app/AutoStart.h"
@@ -1156,11 +1158,16 @@ QWidget* OptionsDialog::createConnectionPage()
     m_upnpCheck = new QCheckBox(tr("Use UPnP to Setup Ports"), portGroup);
     portLayout->addWidget(m_upnpCheck, 2, 0, 1, 2);
 
-    // Real forwarding status, rather than the first-start wizard's 30-second
-    // guess. Populated from GetNetworkInfo's portmap section.
+    // Real forwarding status: GetNetworkInfo's portmap section on load, then the
+    // daemon's pushes. Full sentence in the tooltip.
     m_portMapStatusLabel = new QLabel(tr("Port forwarding: unknown"), portGroup);
     m_portMapStatusLabel->setEnabled(false);
     portLayout->addWidget(m_portMapStatusLabel, 2, 2, 1, 2);
+    if (m_ipc) {
+        connect(m_ipc, &IpcClient::portMapStatusChanged, this, [this](const Ipc::IpcMessage& msg) {
+            showPortMapStatus(msg.fieldMap(0));
+        });
+    }
 
     // Bind selection: an interface of the daemon's host, or free text for an
     // address or a subnet. Filled from GetNetworkInterfaces.
@@ -6733,7 +6740,12 @@ void OptionsDialog::saveSettings()
         req.append(QStringLiteral("indicateRatings"));
         req.append(m_indicateRatingsCheck->isChecked());
 
-        m_ipc->sendRequest(std::move(req));
+        // After OK the dialog is hidden: the port notice then goes to its parent
+        m_ipc->sendRequest(std::move(req), [self = QPointer<OptionsDialog>(this),
+                                            owner = QPointer<QWidget>(parentWidget())](
+                                               const Ipc::IpcMessage& resp) {
+            showPortChangeResult(self && self->isVisible() ? self.data() : owner.data(), resp);
+        });
     } else {
         // Fallback: save locally
         thePrefs.setNick(m_nickEdit->text());
@@ -6973,6 +6985,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
 
     showBindSelection(prefs.value(QStringLiteral("bindAddress")).toString());
     requestNetworkInterfaces();
+    requestPortMapStatus();
 
     auto tcpPort = static_cast<int>(prefs.value(QStringLiteral("port")).toInteger(5662));
     auto udpPort = static_cast<int>(prefs.value(QStringLiteral("udpPort")).toInteger(5672));
@@ -7493,6 +7506,29 @@ void OptionsDialog::showBindSelection(const QString& selection)
         m_bindInterfaceCombo->setCurrentIndex(index);
     else
         m_bindInterfaceCombo->setEditText(selection);   // address, subnet or an absent interface
+}
+
+void OptionsDialog::requestPortMapStatus()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    Ipc::IpcMessage req(Ipc::IpcMsgType::GetNetworkInfo);
+    m_ipc->sendRequest(std::move(req), [self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
+        if (self && resp.isValid())
+            self->showPortMapStatus(resp.fieldMap(1).value(QLatin1StringView("portmap")).toMap());
+    });
+}
+
+void OptionsDialog::showPortMapStatus(const QCborMap& info)
+{
+    QString state = info.value(QLatin1StringView("statusText")).toString();
+    if (state.isEmpty())
+        return;
+    const auto status = static_cast<PortMapStatus>(info.value(QLatin1StringView("status")).toInteger());
+    if (status == PortMapStatus::Mapped || status == PortMapStatus::Degraded)
+        state += QStringLiteral(" (%1)").arg(info.value(QLatin1StringView("methodText")).toString());
+    m_portMapStatusLabel->setText(tr("Port forwarding: %1").arg(state));
+    m_portMapStatusLabel->setToolTip(portMapStatusSummary(info).text);
 }
 
 void OptionsDialog::requestNetworkInterfaces()

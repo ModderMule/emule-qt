@@ -5,6 +5,9 @@
 #include "app/AppContext.h"
 #include "client/UpDownClient.h"
 #include "crypto/AICHData.h"
+#include "files/KnownFile.h"
+#include "files/KnownFileList.h"
+#include "files/SharedFileList.h"
 #include "search/SearchList.h"
 #include "search/SearchFile.h"
 #include "search/SearchParams.h"
@@ -89,6 +92,7 @@ private slots:
     void addToList_aichRoots_data();
     void addToList_aichRoots();
     void addToList_newNameChildCountsItsSources();
+    void addToList_ownFilesDontCountTowardsTheLimit();
     void addToList_kadOrigin_serverResultWins_data();
     void addToList_kadOrigin_serverResultWins();
     void addToList_kadOrigin_keptWhenAllAnswersAreKad();
@@ -286,6 +290,40 @@ void tst_SearchList::addToList_aichRoots()
     QCOMPARE(parent->fileIdentifier().hasAICHHash(), parentRoot != 0);
     if (parentRoot != 0)
         QCOMPARE(parent->fileIdentifier().getAICHHash(), root(parentRoot));
+}
+
+void tst_SearchList::addToList_ownFilesDontCountTowardsTheLimit()
+{
+    // MFC AddResultCount: a file we share or download is not counted.
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    SharedFileList* const savedShared = theApp.sharedFileList;
+    theApp.sharedFileList = &shared;
+
+    uint8 hash[16];
+    std::memset(hash, 0xA9, 16);
+    auto* own = new KnownFile();
+    own->setFileHash(hash);
+    own->setFileName(QStringLiteral("own.avi"));
+    own->setFileSize(10000);
+    knownFiles.safeAddKFile(own);
+    QVERIFY(shared.safeAddKFile(own));
+
+    SearchList list;
+    SearchParams params;
+    const uint32 id = list.newSearch({}, params);
+    for (const uint8 b : {uint8{0xA9}, uint8{0xAB}}) {
+        std::memset(hash, b, 16);
+        const QByteArray packet = buildSingleResultPacket(hash, QStringLiteral("x.avi"), 10000, 7);
+        SafeMemFile data(packet);
+        auto* file = new SearchFile(data, true, 0xC0A80001, 4661);
+        file->setSearchID(id);
+        list.addToList(file);
+    }
+    theApp.sharedFileList = savedShared;
+
+    QCOMPARE(list.foundFiles(id), uint32{2});
+    QCOMPARE(list.foundSources(id), uint32{7});
 }
 
 void tst_SearchList::addToList_newNameChildCountsItsSources()

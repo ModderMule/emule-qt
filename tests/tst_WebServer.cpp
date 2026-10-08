@@ -889,6 +889,14 @@ void tst_WebServer::getConnection()
 
 void tst_WebServer::friendsLifecycle()
 {
+    // An API change is saved at once, like the IPC path (emfriends.met).
+    QTemporaryDir friendsDir;
+    QVERIFY(friendsDir.isValid());
+    const QString savedConfigDir = m_preferences->configDir();
+    m_preferences->setConfigDir(friendsDir.path());
+    const auto restoreConfigDir = qScopeGuard([&] { m_preferences->setConfigDir(savedConfigDir); });
+    const QString friendsMet = friendsDir.filePath(QStringLiteral("emfriends.met"));
+
     // GET — initially empty
     auto resp = sendRequest(QByteArrayLiteral("GET"),
                             QStringLiteral("/api/v1/friends"));
@@ -911,6 +919,7 @@ void tst_WebServer::friendsLifecycle()
     if (resp.statusCode == 200) {
         auto addedFriend = resp.json.object();
         QVERIFY(addedFriend.contains(QStringLiteral("name")));
+        QVERIFY(QFile::exists(friendsMet));
 
         resp = sendRequest(QByteArrayLiteral("GET"),
                            QStringLiteral("/api/v1/friends"));

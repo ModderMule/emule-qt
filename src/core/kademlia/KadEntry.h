@@ -83,7 +83,8 @@ public:
 
     bool startSearchTermsMatch(const SearchTerm& term);
     void mergeIPsAndFilenames(KeyEntry* from);
-    void cleanUpTrackedPublishers();
+    /// @param now overridable for tests
+    void cleanUpTrackedPublishers(time_t now = time(nullptr));
     float getTrustValue();
     void writePublishTrackingDataToFile(FileDataIO& data);
     void readPublishTrackingDataFromFile(FileDataIO& data, bool includesAICH);

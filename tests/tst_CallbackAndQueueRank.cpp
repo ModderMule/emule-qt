@@ -519,10 +519,10 @@ void tst_CallbackAndQueueRank::initTestCase()
     // Wire the receiver's reaskAckReceived signal (same as CoreSession)
     connect(m_receiverUDP, &ClientUDPSocket::reaskAckReceived,
         this, [](const Endpoint& senderEP, const uint8* data, uint32 size) {
-            if (!theApp.clientList)
+            if (!theApp.downloadQueue)
                 return;
-            auto* sender = theApp.clientList->findByEndpoint_UDP(senderEP.address(),
-                                                                 senderEP.port());
+            auto* sender = theApp.downloadQueue->downloadClientByIP_UDP(
+                senderEP.address(), senderEP.port(), true);
             if (!sender || !sender->udpPacketPending())
                 return;
             SafeMemFile io(data, size);

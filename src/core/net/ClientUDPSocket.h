@@ -157,6 +157,9 @@ private:
     bool processReservedProtPacket(uint8 protByte, const uint8* packet, uint32 size,
                                    uint8 opcode, uint32 senderIP, uint16 senderPort);
 
+    /// The source-reask family: booked as file-request overhead.
+    static bool isReaskOpcode(uint8 opcode);
+
     void purgeExpiredPackets();
 
     struct PreparedDatagram {

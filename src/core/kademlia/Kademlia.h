@@ -174,6 +174,8 @@ signals:
     void started();
     void stopped();
     void connected();
+    /// No contact for KADEMLIADISCONNECTDELAY. Kad keeps running and reconnects by itself.
+    void disconnected();
     void firewallStatusChanged(bool firewalled);
     void statsUpdated(uint32 users, uint32 files);
     void searchesChanged();
