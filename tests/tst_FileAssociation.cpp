@@ -24,6 +24,9 @@ private slots:
     void theRegistryValuesStayUnderHkeyCurrentUser();
     void theOpenCommandPassesTheDroppedFile();
     void macOsNeedsNoRuntimeRegistration();
+    void theIconsLandWhereTheDesktopEntryLooks();
+    void theLauncherEntryClaimsNothing();
+    void everyDesktopEntryNamesTheWindowClass();
 };
 
 namespace {
@@ -142,6 +145,56 @@ void tst_FileAssociation::macOsNeedsNoRuntimeRegistration()
 #else
     QVERIFY(FileAssociation::isRuntimeRegistration());
 #endif
+}
+
+void tst_FileAssociation::theIconsLandWhereTheDesktopEntryLooks()
+{
+    const auto icons = FileAssociation::hicolorIconFiles(QStringLiteral("/home/u/.local/share"));
+    QVERIFY(!icons.isEmpty());
+
+    // `Icon=emuleqt` is a theme lookup: hicolor/<N>x<N>/apps/emuleqt.png, and
+    // the directory has to name the size the file really is.
+    bool saw48 = false;
+    for (const auto& icon : icons) {
+        QVERIFY2(icon.path.startsWith(QStringLiteral("/home/u/.local/share/icons/hicolor/")),
+                 qPrintable(icon.path));
+        QVERIFY2(icon.path.endsWith(QStringLiteral("/apps/emuleqt.png")), qPrintable(icon.path));
+        QVERIFY(icon.resource.startsWith(QStringLiteral(":/icons/app/emuleqt-")));
+        if (icon.path.contains(QStringLiteral("/48x48/"))) {
+            saw48 = true;
+            QVERIFY(icon.resource.endsWith(QStringLiteral("-48.png")));
+        }
+    }
+    // The size the spec requires every application to provide.
+    QVERIFY(saw48);
+}
+
+void tst_FileAssociation::theLauncherEntryClaimsNothing()
+{
+    const auto launcher = FileAssociation::launcherDesktopFile(
+        QStringLiteral("/home/u/My Apps/emuleqt"), QStringLiteral("/home/u/.local/share"));
+
+    QCOMPARE(launcher.path,
+             QStringLiteral("/home/u/.local/share/applications/emuleqt.desktop"));
+    QVERIFY(launcher.contents.contains(QStringLiteral("Exec=\"/home/u/My Apps/emuleqt\"\n")));
+    QVERIFY(launcher.contents.contains(QStringLiteral("Icon=emuleqt\n")));
+
+    // Written at every first start without asking, so it must not take a file
+    // type or a URL scheme away from whatever has it.
+    QVERIFY(!launcher.contents.contains(QStringLiteral("MimeType")));
+}
+
+void tst_FileAssociation::everyDesktopEntryNamesTheWindowClass()
+{
+    // The desktop ties a window to its launcher, and so to its icon, by this.
+    const QString wmClass =
+        QStringLiteral("StartupWMClass=%1\n").arg(QLatin1String(FileAssociation::kDesktopId));
+
+    const QString dataHome = QStringLiteral("/home/u/.local/share");
+    const auto files = FileAssociation::nzbDesktopFiles(QStringLiteral("/opt/emuleqt"), dataHome);
+    QVERIFY(contentsOf(files, QStringLiteral("emuleqt.desktop")).contains(wmClass));
+    QVERIFY(FileAssociation::launcherDesktopFile(QStringLiteral("/opt/emuleqt"), dataHome)
+                .contents.contains(wmClass));
 }
 
 QTEST_MAIN(tst_FileAssociation)

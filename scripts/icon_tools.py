@@ -24,16 +24,41 @@ def scaled(final_px):
     return max(1, round(final_px * SS))
 
 
-def write_ico(path, frames):
+def dib_frame(frame):
+    """One frame as a 32-bit DIB plus its AND mask, the pre-Vista ICO layout."""
+    w, h = frame.size
+    rgba = frame.convert("RGBA")
+    rows = [rgba.crop((0, y, w, y + 1)).tobytes("raw", "BGRA") for y in range(h)]
+    mask_stride = ((w + 31) // 32) * 4
+    alpha = rgba.getchannel("A").load()
+    mask_rows = []
+    for y in range(h):
+        row = bytearray(mask_stride)
+        for x in range(w):
+            if alpha[x, y] == 0:
+                row[x // 8] |= 0x80 >> (x % 8)
+        mask_rows.append(bytes(row))
+    # Height counts the colour and the mask bitmap; both are stored bottom-up.
+    header = struct.pack("<IiiHHIIiiII", 40, w, h * 2, 1, 32, 0, 0, 0, 0, 0, 0)
+    return header + b"".join(reversed(rows)) + b"".join(reversed(mask_rows))
+
+
+def write_ico(path, frames, png_from=0):
     """Write the ICONDIR by hand.
 
     Pillow's ICO writer resizes one image to every requested size; it has no way
     to take per-size art, which is the whole point of these generators. The
     container is six bytes of header plus a sixteen-byte entry each, so this is
     simpler than fighting it.
+
+    Frames narrower than @p png_from are stored as DIBs. An icon that goes
+    through rc.exe into an executable wants that for everything below 256.
     """
     blobs = []
     for frame in frames:
+        if frame.width < png_from:
+            blobs.append(dib_frame(frame))
+            continue
         buf = BytesIO()
         frame.save(buf, format="PNG")   # Qt and Windows Vista+ both read PNG frames
         blobs.append(buf.getvalue())

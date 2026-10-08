@@ -107,6 +107,16 @@ bool launchDaemon(const QString& daemonPath)
     return QProcess::startDetached(daemonPath, {});
 }
 
+/// The donkey at every size we have art for. One file per size rather than
+/// Mule.ico: the taskbar and Alt-Tab ask for 48 and up, which that one lacks.
+QIcon appIcon()
+{
+    QIcon icon;
+    for (const int size : {16, 32, 48, 64, 128, 256})
+        icon.addFile(QStringLiteral(":/icons/app/emuleqt-%1.png").arg(size), QSize(size, size));
+    return icon;
+}
+
 } // anonymous namespace
 
 int main(int argc, char* argv[])
@@ -128,7 +138,11 @@ int main(int argc, char* argv[])
 #endif
     QApplication::setApplicationVersion(eMule::kAppVersion);
     QApplication::setOrganizationName(QStringLiteral("eMule"));
-    app.setWindowIcon(QIcon(QStringLiteral(":/icons/Mule.ico")));
+    app.setWindowIcon(appIcon());
+#ifdef Q_OS_LINUX
+    // Wayland has no per-window icon: the compositor looks up <app id>.desktop.
+    QGuiApplication::setDesktopFileName(QLatin1String(eMule::gui::FileAssociation::kDesktopId));
+#endif
 
     // Before anything spins the event loop. On macOS a browser click on an ed2k:// link
     // launches us and the Apple Event follows within moments, so it can land during the
@@ -158,6 +172,11 @@ int main(int argc, char* argv[])
 
     eMule::CommandLineExec cli;
     cli.parse(app);
+
+    // Icons into the hicolor theme, and a launcher entry if there is none: the
+    // only things a Linux desktop takes a taskbar icon from.
+    if (!cli.screenshotMode())
+        eMule::gui::FileAssociation::installLauncher();
 
     // Load preferences early so language setting is available for translators
     if (!cli.configOverride().isEmpty())

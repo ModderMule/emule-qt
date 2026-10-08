@@ -65,6 +65,12 @@ elseif(WIN32)
     # SHChangeNotify in FileAssociation.cpp -- Qt happens to drag shell32 in, but
     # not by contract.
     target_link_libraries(emuleqt PRIVATE shell32)
+
+    # Explorer / taskbar icon. Without it the exe has no icon of its own.
+    set(APP_ICON_RC "${CMAKE_SOURCE_DIR}/resources/appicon.rc")
+    target_sources(emuleqt PRIVATE "${APP_ICON_RC}")
+    set_source_files_properties("${APP_ICON_RC}" PROPERTIES
+        OBJECT_DEPENDS "${CMAKE_SOURCE_DIR}/resources/icons/MuleApp.ico")
 endif()
 
 # macOS bundle icon

@@ -662,6 +662,7 @@
     <None Include="..\..\resources\icons\emuleCollectionFileType.ico" />
     <QtRcc Include="..\..\resources\emuleqt.qrc" />
     <QtRcc Include="..\..\resources\flags.qrc" />
+    <ResourceCompile Include="..\..\resources\appicon.rc" />
     <None Include="..\..\resources\icons\italic.ico" />
     <None Include="..\..\resources\images\mule_wiz_hdr.gif" />
     <None Include="..\..\resources\icons\resetformat.ico" />
