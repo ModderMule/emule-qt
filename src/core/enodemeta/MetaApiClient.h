@@ -7,9 +7,8 @@
 /// meta.proto); calls go out as unary gRPC-Web POSTs (see GrpcWeb.h).
 /// The base URL comes from OP_SERVERIDENT tag ST_META_API.
 ///
-/// Implemented RPCs: MetaApi.GetCaps, MetaApi.GetMetaFile,
+/// Implemented RPCs: MetaApi.GetCaps, MetaApi.GetMetaFile, MetaApi.Search,
 /// AccountApi.GetAuthStatus, AccountApi.Login, AccountApi.Logout.
-/// MetaApi.Search is reserved server-side (phase 7).
 
 #include "api.qpb.h"
 
@@ -67,6 +66,11 @@ public:
     void getMetaFile(const MetaEndpoint& ep, const QByteArray& hash16, const QString& catalogId,
                      const QString& token, quint32 maxBytes, Callback<pb::MetaFile> cb);
 
+    /// One page of the server's catalogues. @p token may be empty where the
+    /// server lets anyone search (Caps.search_requires_account).
+    void search(const MetaEndpoint& ep, const pb::SearchRequest& request, const QString& token,
+                Callback<pb::SearchResponse> cb);
+
     void getAuthStatus(const MetaEndpoint& ep, const QString& token, Callback<pb::AuthStatus> cb);
     void login(const MetaEndpoint& ep, const QString& username, const QString& password,
                Callback<pb::LoginResponse> cb);
@@ -80,6 +84,11 @@ public:
 
     /// LoginRequest.client, e.g. "eMuleQt 0.5.3".
     [[nodiscard]] static QString clientName();
+
+    /// Make the generated message types known to QtProtobuf. Without it a
+    /// repeated enum (Caps.kinds, Caps.networks) silently reads as empty. Done by
+    /// the constructor; for code that decodes a message without a client.
+    static void registerProtobufTypes();
 
     /// "sha256/<base64>" of a DER SubjectPublicKeyInfo.
     [[nodiscard]] static QString spkiPin(const QByteArray& spkiDer);

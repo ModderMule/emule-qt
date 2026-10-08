@@ -18,6 +18,7 @@
 #include "prefs/Preferences.h"
 #include "kademlia/KadSearchManager.h"
 #include "app/AppContext.h"
+#include "kademlia/KadStats.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "ipfilter/IPFilter.h"
@@ -179,6 +180,7 @@ void KademliaUDPListener::sendMyDetails(uint8 opcode, uint32 ip, uint16 udpPort,
 
     if (opcode == KADEMLIA2_HELLO_REQ) {
         m_hellosSent.fetch_add(1, std::memory_order_relaxed);
+        countKad(&KadCounters::hellosSent);
         logKad(QStringLiteral("Kad: [diag] sending HELLO_REQ to %1:%2")
                    .arg(ipToString(ip)).arg(udpPort));
     }
@@ -492,12 +494,19 @@ bool KademliaUDPListener::addContact_KADEMLIA2(const uint8* data, uint32 len, ui
     if (outRequestsACK)
         *outRequestsACK = reqACK;
 
+    // A HELLO is the one packet that carries an ID together with a real source
+    // address. Counted before the firewalled return: seen is not the same as added.
+    if (version > KADEMLIA_VERSION1_46c && theApp.kadNodeCensus)
+        theApp.kadNodeCensus->noteContacted(contactID, Address::fromHostOrder(ip));
+
     // Firewall statistics from HELLO_REQ (MFC: lines 470-476)
     if (fromHelloReq && version >= KADEMLIA_VERSION8_49b) {
         if (auto* prefs = Kademlia::getInstancePrefs()) {
             prefs->statsIncUDPFirewalledNodes(bUDPFirewalled);
             prefs->statsIncTCPFirewalledNodes(bTCPFirewalled);
         }
+        countKad(bUDPFirewalled ? &KadCounters::udpFirewalledNodes : &KadCounters::udpOpenNodes);
+        countKad(bTCPFirewalled ? &KadCounters::tcpFirewalledNodes : &KadCounters::tcpOpenNodes);
     }
 
     // Do not add UDP-firewalled contacts to routing table (MFC: line 485)
@@ -721,6 +730,7 @@ void KademliaUDPListener::process_KADEMLIA2_BOOTSTRAP_RES(const uint8* data, uin
 
     logKad(QStringLiteral("Kad: BOOTSTRAP_RES from %1:%2, %3 bytes")
                .arg(ipToString(ip)).arg(udpPort).arg(len));
+    countKad(&KadCounters::bootstraps);
 
     if (len < 23) // minimum: 16 (ID) + 2 (TCP) + 1 (version) + 2 (count) + 2
         return;
@@ -761,6 +771,9 @@ void KademliaUDPListener::process_KADEMLIA2_BOOTSTRAP_RES(const uint8* data, uin
             uint16 contactUDP = io.readUInt16();
             uint16 contactTCP = io.readUInt16();
             uint8 contactVersion = io.readUInt8();
+
+            if (contactVersion > KADEMLIA_VERSION1_46c && theApp.kadNodeCensus)
+                theApp.kadNodeCensus->noteListed(contactID);
 
             rz->add(contactID, contactIP, contactUDP, contactTCP,
                     contactVersion, KadUDPKey(0), assumeVerified,
@@ -864,6 +877,7 @@ void KademliaUDPListener::process_KADEMLIA2_HELLO_RES(const uint8* data, uint32 
                                                        bool validReceiverKey)
 {
     m_hellosReceived.fetch_add(1, std::memory_order_relaxed);
+    countKad(&KadCounters::hellosReceived);
 
     if (!isOnOutTrackList(ip, KADEMLIA2_HELLO_REQ))
         return;
@@ -1087,6 +1101,7 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
     }
     logKad(QStringLiteral("Kad: KADEMLIA2_RES from %1:%2, %3 bytes")
                .arg(ipToString(ip)).arg(udpPort).arg(len));
+    countKad(&KadCounters::lookupResponses);
 
     if (len < 17) // 16 (target) + 1 (count)
         return;
@@ -1188,6 +1203,9 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
             ++ignoredCount; // no DNS port without encryption
             continue;
         }
+
+        if (theApp.kadNodeCensus)
+            theApp.kadNodeCensus->noteListed(contactID);
 
         // Outside LAN mode a FW check contact stops here: straight to the tester,
         // no routing-zone entry, no Contact object, nothing for the search manager

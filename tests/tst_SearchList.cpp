@@ -108,6 +108,11 @@ private slots:
     void queue_refusalsLeaveNothingBehind();
     void queue_automaticIsResolvedWhenSent();
     void queue_stopAndRemove();
+    void queue_metaSearchHoldsNoLaneAndEndsWhenToldTo();
+    void queue_metaSearchWaitsForServerInfoAndIsCancelled();
+    void queue_metaSearchFetchesTheNextPageOnlyWhenAsked();
+    void startSearch_metaWithoutAServerIsRefused();
+    void addMetaSearchResult_skipsTheTypeFilterAndAClosedTab();
 
     // SeenFileIndex
     void seenIndex_remembersAcrossAReopen();
@@ -132,6 +137,11 @@ private slots:
     void clientSharedFiles_reusesTabThenReopensAfterClose();
     void clientSharedFiles_emptyListStillOpensTab();
     void kadKeywordResult_setsKadFlagAndMaxesSources();
+    void kadKeywordResult_keepsTheBestPublishTrust();
+    void fakeVerdict_followsTheNamesOfAHash();
+    void fakeVerdict_followsSpamMarkAndNotes();
+    void fakeVerdict_usesNamesOnRecord();
+    void recalculateSpamRatings_signalsAChange();
     void kadKeywordResult_adoptsTheOneAgreedAICHHash();
     void kadKeywordResult_ignoresRareOrCompetingAICHHashes();
     void storeAndLoadSearches_keepsKadFlag();
@@ -343,7 +353,7 @@ static SearchFile* makeAnswer(const uint8* hash, const QString& name, uint32 sou
     Tag(FT_FILESIZE, uint32{8000}).writeNewEd2kTag(mem);
     Tag(FT_SOURCES, sources).writeNewEd2kTag(mem);
     if (kad)
-        Tag(FT_META_NETWORK, uint32{META_NETWORK_KAD}).writeNewEd2kTag(mem);
+        Tag(FT_META_NETWORK, uint32{FT_META_NETWORK_KAD}).writeNewEd2kTag(mem);
     QByteArray packet = mem.takeBuffer();
     SafeMemFile data(packet);
     auto* file = new SearchFile(data, true, serverIP, 4661);
@@ -651,6 +661,9 @@ struct FakeNet {
     std::vector<uint32> sent;
     std::vector<uint32> ended;
     std::vector<uint32> discarded;
+    std::vector<uint32> metaCancelled;
+    std::vector<uint32> metaContinued;
+    bool metaServerKnown = true;
     QSet<uint32> kadAlive;
 
     [[nodiscard]] SearchQueueBackend backend()
@@ -671,6 +684,8 @@ struct FakeNet {
         b.waitReason = [this](SearchType type) {
             if (type == SearchType::Kademlia)
                 return kad ? QString() : QString::fromLatin1(SearchWait::Kad);
+            if (isMetaSearchType(type))
+                return metaServerKnown ? QString() : QString::fromLatin1(SearchWait::ServerInfo);
             return server ? QString() : QString::fromLatin1(SearchWait::ServerConnection);
         };
         b.create = [this](const SearchParams&) { return nextId++; };
@@ -680,6 +695,7 @@ struct FakeNet {
             out.outcome = outcome;
             out.error = refusal;
             out.awaitsSweep = sweep;
+            out.awaitsMeta = isMetaSearchType(type);
             if (outcome == SearchDispatch::Outcome::Sent) {
                 sent.push_back(id);
                 if (type == SearchType::Kademlia)
@@ -689,6 +705,8 @@ struct FakeNet {
         };
         b.endServerSearch = [this](uint32 id) { ended.push_back(id); };
         b.kadSearchAlive = [this](uint32 id) { return kadAlive.contains(id); };
+        b.cancelMetaSearch = [this](uint32 id) { metaCancelled.push_back(id); };
+        b.continueMetaSearch = [this](uint32 id) { metaContinued.push_back(id); };
         b.nowMs = [this] { return now; };
         return b;
     }
@@ -1036,6 +1054,184 @@ void tst_SearchList::queue_stopAndRemove()
 
     queue.clear();
     QVERIFY(!queue.status(b));
+}
+
+// A Usenet / torrent search is an HTTP call to a server's Meta API: it neither waits
+// for the server lane nor takes it, needs no server connection, and ends when its
+// runner says so — not with a TCP answer and not on Kad's clock.
+void tst_SearchList::queue_metaSearchHoldsNoLaneAndEndsWhenToldTo()
+{
+    FakeNet net;   // no server, no Kad
+    SearchQueue queue(net.backend());
+
+    const uint32 usenet = queue.enqueue(query(QStringLiteral("a one"), SearchType::MetaUsenet)).status.searchID;
+    QCOMPARE(stateOf(queue, usenet), SearchRunState::Running);
+    QCOMPARE(queue.status(usenet)->type, SearchType::MetaUsenet);
+    QCOMPARE(queue.serverSearchInFlight(), uint32{0});
+
+    net.server = true;
+    const uint32 server = queue.enqueue(query(QStringLiteral("b two"))).status.searchID;
+    const uint32 torrent = queue.enqueue(query(QStringLiteral("a one"), SearchType::MetaTorrent)).status.searchID;
+    QCOMPARE(stateOf(queue, server), SearchRunState::Running);
+    QCOMPARE(stateOf(queue, torrent), SearchRunState::Running);   // another network: another search
+    QVERIFY(torrent != usenet);
+
+    // neither the server's answer nor a dead Kad lookup ends it
+    queue.onServerAnswer();
+    queue.onServerDisconnected();
+    net.now += 60 * 1000;
+    queue.tick();
+    QCOMPARE(stateOf(queue, usenet), SearchRunState::Running);
+
+    queue.onMetaSearchFinished(usenet);
+    QCOMPARE(stateOf(queue, usenet), SearchRunState::Finished);
+    queue.onMetaSearchFinished(torrent, QStringLiteral("srv needs an account"));
+    QCOMPARE(stateOf(queue, torrent), SearchRunState::Failed);
+    QCOMPARE(queue.status(torrent)->error, QStringLiteral("srv needs an account"));
+    QVERIFY(net.metaCancelled.empty());
+
+    // a runner that never reports is not waited for for ever
+    const uint32 stuck = queue.enqueue(query(QStringLiteral("c three"), SearchType::MetaUsenet)).status.searchID;
+    net.now += SearchQueue::kMetaTimeoutMs;
+    queue.tick();
+    QCOMPARE(stateOf(queue, stuck), SearchRunState::Finished);
+    QCOMPARE(net.metaCancelled, std::vector<uint32>{stuck});
+    queue.onMetaSearchFinished(stuck, QStringLiteral("late"));   // ignored
+    QCOMPARE(stateOf(queue, stuck), SearchRunState::Finished);
+}
+
+void tst_SearchList::queue_metaSearchWaitsForServerInfoAndIsCancelled()
+{
+    FakeNet net;
+    net.metaServerKnown = false;   // logging in; the ident is not here yet
+    SearchQueue queue(net.backend());
+
+    const uint32 waiting = queue.enqueue(query(QStringLiteral("a one"), SearchType::MetaUsenet)).status.searchID;
+    QCOMPARE(stateOf(queue, waiting), SearchRunState::Queued);
+    QCOMPARE(reasonOf(queue, waiting), QString::fromLatin1(SearchWait::ServerInfo));
+    // it does not hold up a server search behind it
+    net.server = true;
+    const uint32 server = queue.enqueue(query(QStringLiteral("b two"))).status.searchID;
+    QCOMPARE(stateOf(queue, server), SearchRunState::Running);
+
+    net.metaServerKnown = true;
+    queue.tick();
+    QCOMPARE(stateOf(queue, waiting), SearchRunState::Running);
+
+    // stopping or closing a running one tells the runner, once
+    queue.stop(waiting);
+    QCOMPARE(stateOf(queue, waiting), SearchRunState::Finished);
+    QCOMPARE(net.metaCancelled, std::vector<uint32>{waiting});
+    queue.remove(waiting);
+    QCOMPARE(net.metaCancelled, std::vector<uint32>{waiting});
+
+    const uint32 closed = queue.enqueue(query(QStringLiteral("c three"), SearchType::MetaTorrent)).status.searchID;
+    queue.remove(closed);
+    QCOMPARE(net.metaCancelled, (std::vector<uint32>{waiting, closed}));
+
+    // no server offers it: refused on the spot, nothing left behind
+    net.outcome = SearchDispatch::Outcome::Refused;
+    const SearchQueue::Result refused = queue.enqueue(query(QStringLiteral("d four"), SearchType::MetaUsenet));
+    QVERIFY(!refused.ok);
+    QCOMPARE(refused.error, QStringLiteral("no"));
+}
+
+// The real backend, with nothing registered to run the search and no server list:
+// an answer the user can read, never an eD2K search sent in its place.
+// One page a request: the search finishes with the next page on offer, and only
+// more() fetches it.
+void tst_SearchList::queue_metaSearchFetchesTheNextPageOnlyWhenAsked()
+{
+    FakeNet net;
+    SearchQueue queue(net.backend());
+
+    const uint32 id = queue.enqueue(query(QStringLiteral("a one"), SearchType::MetaUsenet)).status.searchID;
+    QVERIFY(!queue.more(id));   // running: nothing to fetch yet
+    queue.onMetaSearchFinished(id, {}, true);
+    QCOMPARE(queue.status(id)->state, SearchRunState::Finished);
+    QVERIFY(queue.status(id)->hasMore);
+    QVERIFY(net.metaContinued.empty());
+
+    QVERIFY(queue.more(id));
+    QCOMPARE(queue.status(id)->state, SearchRunState::Running);
+    QVERIFY(!queue.status(id)->hasMore);
+    QCOMPARE(net.metaContinued, std::vector<uint32>{id});
+    QVERIFY(!queue.more(id));   // one page at a time
+
+    // the last page: nothing more to ask for
+    queue.onMetaSearchFinished(id);
+    QCOMPARE(queue.status(id)->state, SearchRunState::Finished);
+    QVERIFY(!queue.status(id)->hasMore);
+    QVERIFY(!queue.more(id));
+    queue.remove(id);
+    QVERIFY(net.metaCancelled.empty());
+
+    // a page that fails leaves no further one
+    const uint32 failing = queue.enqueue(query(QStringLiteral("b two"), SearchType::MetaTorrent)).status.searchID;
+    queue.onMetaSearchFinished(failing, QStringLiteral("gone"), true);
+    QVERIFY(!queue.status(failing)->hasMore);
+
+    // stopping keeps the page on offer; closing the tab drops it at the runner
+    const uint32 parked = queue.enqueue(query(QStringLiteral("c three"), SearchType::MetaUsenet)).status.searchID;
+    queue.onMetaSearchFinished(parked, {}, true);
+    queue.stop(parked);
+    QVERIFY(queue.status(parked)->hasMore);
+    QVERIFY(net.metaCancelled.empty());
+    queue.remove(parked);
+    QCOMPARE(net.metaCancelled, std::vector<uint32>{parked});
+
+    // an eD2K search never has a further page
+    net.server = true;
+    const uint32 ed2k = queue.enqueue(query(QStringLiteral("d four"))).status.searchID;
+    queue.onServerAnswer();
+    QVERIFY(!queue.more(ed2k));
+}
+
+void tst_SearchList::startSearch_metaWithoutAServerIsRefused()
+{
+    SearchList list;
+    SearchParams params;
+    params.expression = QStringLiteral("holiday");
+    for (const SearchType type : {SearchType::MetaUsenet, SearchType::MetaTorrent}) {
+        params.type = type;
+        const SearchStartResult result = startSearch(list, params);
+        QVERIFY(!result.ok);
+        QVERIFY(!result.error.isEmpty());
+    }
+    params.expression = QStringLiteral("a OR b");
+    const SearchStartResult result = startSearch(list, params);
+    QVERIFY(!result.ok);
+    QVERIFY(result.error.contains(QStringLiteral("OR")));
+    QCOMPARE(list.queue().queuedCount(), 0);
+}
+
+void tst_SearchList::addMetaSearchResult_skipsTheTypeFilterAndAClosedTab()
+{
+    SearchList list;
+    const uint32 metaSearch = list.reserveSearch();
+    // a later eD2K search set the list's type filter; it is not this search's
+    const uint32 audioSearch = list.reserveSearch();
+    list.beginSearch(audioSearch, QStringLiteral("Audio"), true);
+
+    auto row = [](uint8 n) {
+        auto* file = new SearchFile;
+        uint8 hash[16]{};
+        hash[0] = n;
+        file->setFileHash(hash);
+        file->setFileName(QStringLiteral("release %1").arg(n), true);
+        file->setFileType(QStringLiteral("Video"));
+        file->setFileSize(1000);
+        return file;
+    };
+    list.addMetaSearchResult(metaSearch, row(1));
+    list.addMetaSearchResult(metaSearch, row(2));
+    QCOMPARE(list.resultCount(metaSearch), uint32{2});
+    QCOMPARE(list.resultCount(audioSearch), uint32{0});
+
+    // the tab was closed while the page was on its way: dropped, not resurrected
+    list.removeResults(metaSearch);
+    list.addMetaSearchResult(metaSearch, row(3));
+    QVERIFY(!list.hasSearch(metaSearch));
 }
 
 namespace {
@@ -1754,6 +1950,168 @@ void tst_SearchList::kadKeywordResult_setsKadFlagAndMaxesSources()
         QVERIFY(child->isKadResult());
         QCOMPARE(child->sourceCount(), uint32{5});
     }
+}
+
+void tst_SearchList::kadKeywordResult_keepsTheBestPublishTrust()
+{
+    SearchList list;
+    const uint32 id = list.newSearch({}, SearchParams{});
+    uint8 hash[16];
+    std::memset(hash, 0x5B, 16);
+    // names << 24 | publishers << 16 | trust x100
+    const auto info = [](uint32 trust) {
+        return std::vector<Tag>{Tag(QByteArrayLiteral(TAG_PUBLISHINFO), (1u << 24) | (5u << 16) | trust)};
+    };
+
+    list.addKadKeywordResult(id, hash, QStringLiteral("Some Film 2024.mkv"), 4242,
+                             QStringLiteral("Video"), 5, 2, info(80));
+    SearchFile* found = list.searchFileByHash(hash, id);
+    QVERIFY(found != nullptr);
+    QCOMPARE(found->fakeVerdict().band, Confidence::LooksGood);
+
+    // A later node knows it better; an earlier low figure must not stick
+    list.addKadKeywordResult(id, hash, QStringLiteral("Some Film 2024.mkv"), 4242,
+                             QStringLiteral("Video"), 5, 2, info(450));
+    list.addKadKeywordResult(id, hash, QStringLiteral("Some Film 2024.mkv"), 4242,
+                             QStringLiteral("Video"), 5, 2, info(120));
+    QCOMPARE(found->kadPublishInfo() & 0xFFFF, uint32{450});
+    // One name: many publishers alone do not make it genuine
+    QCOMPARE(found->fakeVerdict().band, Confidence::LooksGood);
+
+    list.addKadKeywordResult(id, hash, QStringLiteral("Some.Film.(2024).BluRay.x264.mkv"), 4242,
+                             QStringLiteral("Video"), 5, 2, info(100));
+    QCOMPARE(found->kadPublishInfo() & 0xFFFF, uint32{450});
+    QCOMPARE(found->fakeVerdict().band, Confidence::Genuine);
+}
+
+void tst_SearchList::fakeVerdict_followsTheNamesOfAHash()
+{
+    SearchList list;
+    const uint32 id = list.newSearch({}, SearchParams{});
+    uint8 hash[16];
+    std::memset(hash, 0x5C, 16);
+    const auto add = [&](const QString& name) {
+        const QByteArray data = buildSingleResultPacket(hash, name, 700u << 20);
+        SafeMemFile mem(data);
+        auto* file = new SearchFile(mem, true);
+        file->setSearchID(id);
+        list.addToList(file);
+    };
+
+    add(QStringLiteral("Il Diavolo Veste Prada (2006 - David Frankel).avi"));
+    SearchFile* row = list.searchFileByHash(hash, id);
+    QVERIFY(row != nullptr);
+    QVERIFY(row->hasFakeVerdict());
+    QCOMPARE(row->fakeVerdict().score, 0);
+
+    // The same film under another name changes nothing
+    add(QStringLiteral("Il.Diavolo.Veste.Prada.2006.iTA.DVDRip.XviD.avi"));
+    QCOMPARE(row->fakeVerdict().score, 0);
+
+    // Unrelated names, and of another kind of file: the mark of a fake
+    add(QStringLiteral("Microsoft Office 2010 Pro.zip"));
+    add(QStringLiteral("Iron Maiden Discography.rar"));
+    const FakeFileVerdict& verdict = row->fakeVerdict();
+    QVERIFY(verdict.has(FakeReason::MultipleNames));
+    QVERIFY(verdict.has(FakeReason::NamesSpanKinds));
+    QCOMPARE(verdict.band, Confidence::Suspect);
+
+    // Children carry no verdict of their own
+    for (const SearchFile* child : row->listChildren())
+        QVERIFY(!child->hasFakeVerdict());
+}
+
+void tst_SearchList::fakeVerdict_followsSpamMarkAndNotes()
+{
+    SearchList list;
+    const uint32 id = list.newSearch({}, SearchParams{});
+    uint8 hash[16];
+    std::memset(hash, 0x5D, 16);
+    const QByteArray data = buildSingleResultPacket(hash, QStringLiteral("Some Film 2024.mkv"), 700u << 20);
+    SafeMemFile mem(data);
+    auto* file = new SearchFile(mem, true);
+    file->setSearchID(id);
+    list.addToList(file);
+    SearchFile* row = list.searchFileByHash(hash, id);
+    QVERIFY(row != nullptr);
+    QCOMPARE(row->fakeVerdict().band, Confidence::LooksGood);
+
+    list.markFileAsSpam(row, true);
+    QCOMPARE(row->fakeVerdict().band, Confidence::Spam);
+    list.markFileAsNotSpam(row, true);
+    QCOMPARE(row->fakeVerdict().band, Confidence::LooksGood);
+
+    // A Kad note calling it a fake, with a telling comment
+    QVERIFY(list.addNotes(hash, QByteArray(16, 'p'), 1, QStringLiteral("FAKE - wrong file")));
+    const FakeFileVerdict& verdict = row->fakeVerdict();
+    QVERIFY(verdict.has(FakeReason::BadSignalComment));
+    QVERIFY(verdict.has(FakeReason::BadRating));
+    QVERIFY(verdict.score >= 35);
+}
+
+void tst_SearchList::fakeVerdict_usesNamesOnRecord()
+{
+    eMule::testing::TempDir tmp;
+    SeenFileIndex index;
+    QVERIFY(index.open(tmp.filePath(QStringLiteral("seenfiles.db"))));
+    theApp.seenFileIndex = &index;
+    const auto restore = qScopeGuard([] { theApp.seenFileIndex = nullptr; });
+
+    uint8 hash[16];
+    std::memset(hash, 0x5E, 16);
+    // Earlier searches met the hash under these
+    index.note(hash, QStringLiteral("Microsoft Office 2010 Pro.zip"), 700u << 20, 1000);
+    index.note(hash, QStringLiteral("Iron Maiden Discography.rar"), 700u << 20, 1001);
+    index.flush();
+    const SeenFileIndex::Info info = index.lookup(hash);
+    QCOMPARE(info.names, 2);
+    QCOMPARE(info.nameList, (QStringList{QStringLiteral("Iron Maiden Discography.rar"),
+                                         QStringLiteral("Microsoft Office 2010 Pro.zip")}));
+
+    SearchList list;
+    const uint32 id = list.newSearch({}, SearchParams{});
+    const QByteArray data = buildSingleResultPacket(
+        hash, QStringLiteral("Il Diavolo Veste Prada (2006).avi"), 700u << 20);
+    SafeMemFile mem(data);
+    auto* file = new SearchFile(mem, true);
+    file->setSearchID(id);
+    list.addToList(file);
+
+    // One name in this search, but the record says otherwise
+    const SearchFile* row = list.searchFileByHash(hash, id);
+    QVERIFY(row != nullptr);
+    QVERIFY(row->fakeVerdict().has(FakeReason::MultipleNames));
+    QVERIFY(row->fakeVerdict().has(FakeReason::NamesSpanKinds));
+}
+
+void tst_SearchList::recalculateSpamRatings_signalsAChange()
+{
+    SearchList list;
+    const uint32 id = list.newSearch({}, SearchParams{});
+    uint8 hashA[16];
+    uint8 hashB[16];
+    std::memset(hashA, 0x61, 16);
+    std::memset(hashB, 0x62, 16);
+    for (const uint8* hash : {hashA, hashB}) {
+        // Same name: marking one teaches the filter the other
+        const QByteArray data = buildSingleResultPacket(hash, QStringLiteral("Same Spam Name.avi"), 1000);
+        SafeMemFile mem(data);
+        auto* file = new SearchFile(mem, true);
+        file->setSearchID(id);
+        list.addToList(file);
+    }
+    SearchFile* a = list.searchFileByHash(hashA, id);
+    SearchFile* b = list.searchFileByHash(hashB, id);
+    QVERIFY(a && b);
+    list.markFileAsSpam(a, true);
+    QVERIFY(!b->isConsideredSpam());
+
+    QSignalSpy changed(&list, &SearchList::spamStatusChanged);
+    list.recalculateSpamRatings(id);
+    QVERIFY(b->isConsideredSpam());
+    QCOMPARE(b->fakeVerdict().band, Confidence::Spam);
+    QCOMPARE(changed.count(), 1);
+    QCOMPARE(changed.first().first().value<SearchFile*>(), b);
 }
 
 void tst_SearchList::kadKeywordResult_adoptsTheOneAgreedAICHHash()

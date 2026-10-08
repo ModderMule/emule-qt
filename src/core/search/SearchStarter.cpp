@@ -11,6 +11,8 @@
 #include "kademlia/KadSearchManager.h"
 #include "net/Packet.h"
 #include "search/GlobalSearchScheduler.h"
+#include "search/MetaSearchRequest.h"
+#include "search/MetaSearchRunner.h"
 #include "search/SearchExprParser.h"
 #include "search/SearchList.h"
 #include "server/Server.h"
@@ -22,6 +24,7 @@
 #include "utils/TimeUtils.h"
 
 #include <QCoreApplication>
+#include <QTimer>
 
 #include <cstring>
 
@@ -176,6 +179,31 @@ SearchDispatch dispatchEd2kSearch(SearchList& list, uint32 searchID, SearchType 
     return out;
 }
 
+SearchDispatch dispatchMetaSearch(uint32 searchID, SearchType type, const SearchParams& params)
+{
+    if (!theApp.metaSearch) {
+        return refusedDispatch(QCoreApplication::translate(
+            "eMule::IpcClientHandler", "Searching through a server's catalogue is not available here."));
+    }
+    auto request = buildMetaSearchRequest(params, type);
+    if (!request)
+        return refusedDispatch(request.error());
+
+    auto candidates = metaSearchCandidates(type);
+    if (candidates.empty()) {
+        return refusedDispatch(QCoreApplication::translate(
+            "eMule::IpcClientHandler",
+            "No known server offers a %1 search. Connect once to a server that does, "
+            "and it is remembered.").arg(metaNetworkName(type)));
+    }
+
+    theApp.metaSearch->startMetaSearch(searchID, type, params, *request, std::move(candidates));
+    SearchDispatch out;
+    out.outcome = SearchDispatch::Outcome::Sent;
+    out.awaitsMeta = true;
+    return out;
+}
+
 } // anonymous namespace
 
 AutoSearchState gatherAutoSearchState()
@@ -213,6 +241,10 @@ SearchQueueBackend defaultSearchQueueBackend(SearchList& list)
             && kad::SearchManager::selectKeyword(params.expression).status
                    == kad::KeywordStatus::TooShort)
             return keywordTooShort();
+        if (isMetaSearchType(params.type)) {
+            if (const auto request = buildMetaSearchRequest(params, params.type); !request)
+                return request.error();
+        }
         return {};
     };
 
@@ -231,6 +263,13 @@ SearchQueueBackend defaultSearchQueueBackend(SearchList& list)
         if (type == SearchType::Kademlia)
             return kadUp ? QString() : QString::fromLatin1(SearchWait::Kad);
 
+        // Asked over HTTP of a server we know, connected or not. With none known it
+        // waits only while a login may still bring one; else the dispatch refuses.
+        if (isMetaSearchType(type)) {
+            return metaSearchCandidates(type).empty() && metaServerInfoPending()
+                ? QString::fromLatin1(SearchWait::ServerInfo) : QString();
+        }
+
         const bool serverUp = theApp.serverConnect && theApp.serverConnect->isConnected();
         // A global search can sweep the list without a server of our own, as long as
         // the line is up at all (the UDP send asks for either network).
@@ -248,6 +287,8 @@ SearchQueueBackend defaultSearchQueueBackend(SearchList& list)
     backend.dispatch = [&list](uint32 searchID, SearchType type, const SearchParams& params) {
         if (type == SearchType::Kademlia)
             return dispatchKadSearch(list, searchID, params);
+        if (isMetaSearchType(type))
+            return dispatchMetaSearch(searchID, type, params);
         return dispatchEd2kSearch(list, searchID, type, params);
     };
 
@@ -255,6 +296,18 @@ SearchQueueBackend defaultSearchQueueBackend(SearchList& list)
 
     backend.kadSearchAlive = [](uint32 searchID) {
         return kad::SearchManager::isSearching(searchID);
+    };
+
+    backend.cancelMetaSearch = [](uint32 searchID) {
+        if (theApp.metaSearch)
+            theApp.metaSearch->cancelMetaSearch(searchID);
+    };
+
+    backend.continueMetaSearch = [&list](uint32 searchID) {
+        if (theApp.metaSearch)
+            theApp.metaSearch->continueMetaSearch(searchID);
+        else
+            QTimer::singleShot(0, &list, [&list, searchID] { list.queue().onMetaSearchFinished(searchID); });
     };
 
     backend.nowMs = [] { return static_cast<qint64>(getTickCount()); };
@@ -285,6 +338,11 @@ void stopSearch(SearchList& list, uint32 searchID)
     if (theApp.globalSearch)
         theApp.globalSearch->cancelSearch(searchID);
     list.queue().stop(searchID);
+}
+
+bool searchMore(SearchList& list, uint32 searchID)
+{
+    return list.queue().more(searchID);
 }
 
 bool removeSearch(SearchList& list, uint32 searchID)

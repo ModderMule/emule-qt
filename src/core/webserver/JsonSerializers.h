@@ -56,9 +56,18 @@ namespace eMule {
 // Entity serializers
 // ---------------------------------------------------------------------------
 
+/// Fake-file verdict: the three fields a download and a search result share.
+inline void insertFakeVerdict(QJsonObject& o, const FakeFileVerdict& verdict, bool judged = true)
+{
+    o.insert(QStringLiteral("fakeScore"),   judged ? verdict.score : 0);
+    o.insert(QStringLiteral("confidence"),  judged ? confidenceId(verdict.band) : QString());
+    o.insert(QStringLiteral("fakeReasons"), judged ? QJsonArray::fromStringList(verdict.reasonIds())
+                                                   : QJsonArray());
+}
+
 [[nodiscard]] inline QJsonObject toJson(const PartFile& f)
 {
-    return QJsonObject{
+    QJsonObject o{
         {QStringLiteral("hash"),                 md4str(f.fileHash())},
         {QStringLiteral("fileName"),             f.fileName()},
         {QStringLiteral("fileSize"),             static_cast<qint64>(f.fileSize())},
@@ -74,6 +83,8 @@ namespace eMule {
         {QStringLiteral("isStopped"),            f.isStopped()},
         {QStringLiteral("category"),             static_cast<qint64>(f.category())},
     };
+    insertFakeVerdict(o, f.fakeVerdict());
+    return o;
 }
 
 [[nodiscard]] inline QJsonObject toJson(const Server& s)
@@ -113,7 +124,7 @@ namespace eMule {
 
 [[nodiscard]] inline QJsonObject toJson(const SearchFile& f)
 {
-    return QJsonObject{
+    QJsonObject o{
         {QStringLiteral("hash"),                md4str(f.fileHash())},
         {QStringLiteral("fileName"),            f.fileName()},
         {QStringLiteral("fileSize"),            static_cast<qint64>(f.fileSize())},
@@ -126,6 +137,13 @@ namespace eMule {
         {QStringLiteral("seenNames"),           f.seenNames()},
         {QStringLiteral("firstSeen"),           f.firstSeen()},   // unix seconds, 0 = never
     };
+    // a torrent / Usenet release an eNode server listed is not an eD2K download;
+    // both empty for an eD2K file
+    o.insert(QStringLiteral("metaKind"), !f.isMetaResult() ? QString()
+                                         : f.meta().isNzb() ? QStringLiteral("nzb") : QStringLiteral("torrent"));
+    o.insert(QStringLiteral("magnet"), f.meta().magnet);
+    insertFakeVerdict(o, f.fakeVerdict(), f.hasFakeVerdict());
+    return o;
 }
 
 /// A peer, as the upload, queue and source lists show it. Kept small on purpose:

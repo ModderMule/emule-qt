@@ -115,12 +115,15 @@ void GlobalSearchScheduler::cancel()
     m_localTimeout->stop();
     m_sweepTimer->stop();
 
-    emitProgress(false);
-
-    m_searchID = 0;
+    // Reset first: the signal frees the queue's lane, and the next search may
+    // start() from inside it. Resetting afterwards wiped that search.
+    const uint32 searchID = std::exchange(m_searchID, 0);
+    const uint32 examined = std::exchange(m_examined, 0);
     m_searchTerms.clear();
     m_is64BitSearch = false;
-    m_examined = 0;
+
+    const auto total = static_cast<uint32>(theApp.serverList ? theApp.serverList->serverCount() : 0);
+    emit progress(searchID, examined, total, false);
 }
 
 void GlobalSearchScheduler::cancelSearch(uint32 searchID)

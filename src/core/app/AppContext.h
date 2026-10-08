@@ -30,6 +30,7 @@ class GeoIpUpdater;
 class KnownFileList;
 class ListenSocket;
 class GlobalSearchScheduler;
+class MetaSearchRunner;
 class HttpCacheManager;
 class SearchList;
 class SeenFileIndex;
@@ -45,6 +46,9 @@ class PortMapper;
 class UploadBandwidthThrottler;
 class UpDownClient;
 class UploadQueue;
+
+class ClientCensus;
+namespace kad { class KadNodeCensus; }
 
 struct AppContext {
     ClientList*      clientList     = nullptr;
@@ -64,7 +68,11 @@ struct AppContext {
     ServerList*      serverList     = nullptr;
     SearchList*      searchList     = nullptr;
     SeenFileIndex*   seenFileIndex  = nullptr;
+    kad::KadNodeCensus* kadNodeCensus = nullptr;
+    ClientCensus*    clientCensus   = nullptr;
     GlobalSearchScheduler* globalSearch = nullptr;
+    /// Runs Usenet / torrent searches on a server's Meta API. Null: not offered.
+    MetaSearchRunner* metaSearch = nullptr;
     Statistics*      statistics     = nullptr;
     StatsHistory*    statsHistory   = nullptr;
     UploadBandwidthThrottler* uploadBandwidthThrottler = nullptr;

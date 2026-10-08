@@ -7,6 +7,7 @@
 #include "TestHelpers.h"
 #include "app/AppContext.h"
 #include "client/UpDownClient.h"
+#include "client/ClientCensus.h"
 #include "net/Address.h"
 #include "client/ClientCredits.h"
 #include "client/ClientList.h"
@@ -99,6 +100,7 @@ private slots:
     void processHello_trailing_hybrid();
     void processHello_clearsPrevious();
     void processHelloAnswer_clearsPending();
+    void hello_countsTheClientOnceInTheCensus();
     void processHello_trailerNotFourBytesIsIgnored_data();
     void processHello_trailerNotFourBytesIsIgnored();
     void processHello_changedUserhashBans();
@@ -1102,6 +1104,41 @@ void tst_UpDownClient::processHelloAnswer_clearsPending()
         reinterpret_cast<const uint8*>(buf.constData()), static_cast<uint32>(buf.size()));
 
     QVERIFY(!client.helloAnswerPending());
+}
+
+// Every hello feeds the distinct-client census, by user hash.
+void tst_UpDownClient::hello_countsTheClientOnceInTheCensus()
+{
+    using Scope = CountryCensus::Scope;
+    ClientCensus census;
+    theApp.clientCensus = &census;
+    const auto restore = qScopeGuard([] { theApp.clientCensus = nullptr; });
+
+    std::vector<Tag> tags;
+    tags.emplace_back(CT_NAME, QStringLiteral("Peer"));
+    tags.emplace_back(CT_VERSION, static_cast<uint32>(60));
+
+    const auto hello = [&tags](uint8 fill, bool answer) {
+        uint8 hash[16];
+        fillHash(hash, fill);
+        const QByteArray buf = answer ? buildHelloAnswer(hash, 0x0A0B0C0D, 4662, tags)
+                                      : buildHelloPacket(hash, 0x0A0B0C0D, 4662, tags);
+        UpDownClient client;
+        const auto* data = reinterpret_cast<const uint8*>(buf.constData());
+        if (answer)
+            client.processHelloAnswer(data, static_cast<uint32>(buf.size()));
+        else
+            client.processHelloPacket(data, static_cast<uint32>(buf.size()));
+    };
+
+    hello(0xC1, false);
+    QCOMPARE(census.seen(Scope::Session), uint64{1});
+    hello(0xC1, true);                       // the same client again, the other way round
+    QCOMPARE(census.seen(Scope::Session), uint64{1});
+    hello(0xC2, true);
+    QCOMPARE(census.seen(Scope::Session), uint64{2});
+    // A hello proves nothing about the hash.
+    QCOMPARE(census.identified(Scope::Session), uint64{0});
 }
 
 // ---------------------------------------------------------------------------

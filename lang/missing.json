@@ -1,57 +1,57 @@
 {
-  "Serves /api/v1 with its description and a playground at /api/v1/docs. Calls need the API key.": {
-    "_context": "eMule::OptionsDialog",
-    "de_DE": "Stellt /api/v1 mit Beschreibung und einer Testseite unter /api/v1/docs bereit. Aufrufe benötigen den API-Schlüssel.",
-    "es_ES": "Sirve /api/v1 con su descripción y una página de pruebas en /api/v1/docs. Las llamadas necesitan la clave de API.",
-    "fr_FR": "Sert /api/v1 avec sa description et une page d'essai à /api/v1/docs. Les appels nécessitent la clé d'API.",
-    "it_IT": "Fornisce /api/v1 con la sua descrizione e una pagina di prova in /api/v1/docs. Le chiamate richiedono la chiave API.",
-    "ja_JP": "/api/v1 とその説明、および /api/v1/docs の試用ページを提供します。呼び出しには API キーが必要です。",
-    "ko_KR": "/api/v1과 그 설명, /api/v1/docs의 테스트 페이지를 제공합니다. 호출에는 API 키가 필요합니다.",
-    "pt_BR": "Serve /api/v1 com sua descrição e uma página de testes em /api/v1/docs. As chamadas precisam da chave de API.",
-    "zh_CN": "提供 /api/v1 及其说明，并在 /api/v1/docs 提供测试页面。调用需要 API 密钥。"
-  },
-  "Enable MCP server for AI assistants": {
-    "_context": "eMule::OptionsDialog",
-    "de_DE": "MCP-Server für KI-Assistenten aktivieren",
-    "es_ES": "Activar servidor MCP para asistentes de IA",
-    "fr_FR": "Activer le serveur MCP pour les assistants IA",
-    "it_IT": "Abilita server MCP per assistenti IA",
-    "ja_JP": "AI アシスタント用 MCP サーバーを有効にする",
-    "ko_KR": "AI 어시스턴트용 MCP 서버 사용",
-    "pt_BR": "Ativar servidor MCP para assistentes de IA",
-    "zh_CN": "为 AI 助手启用 MCP 服务器"
-  },
-  "Serves the Model Context Protocol at /mcp on the same port, with the same API key. Independent of the REST API.": {
-    "_context": "eMule::OptionsDialog",
-    "de_DE": "Stellt das Model Context Protocol unter /mcp auf demselben Port mit demselben API-Schlüssel bereit. Unabhängig von der REST-API.",
-    "es_ES": "Sirve el Model Context Protocol en /mcp en el mismo puerto y con la misma clave de API. Independiente de la API REST.",
-    "fr_FR": "Sert le Model Context Protocol à /mcp sur le même port, avec la même clé d'API. Indépendant de l'API REST.",
-    "it_IT": "Fornisce il Model Context Protocol in /mcp sulla stessa porta, con la stessa chiave API. Indipendente dall'API REST.",
-    "ja_JP": "同じポートの /mcp で、同じ API キーを使って Model Context Protocol を提供します。REST API とは独立しています。",
-    "ko_KR": "같은 포트의 /mcp에서 같은 API 키로 Model Context Protocol을 제공합니다. REST API와는 별개입니다.",
-    "pt_BR": "Serve o Model Context Protocol em /mcp na mesma porta, com a mesma chave de API. Independente da API REST.",
-    "zh_CN": "在同一端口的 /mcp 上以相同的 API 密钥提供 Model Context Protocol。与 REST API 相互独立。"
-  },
-  "Read-only": {
-    "_context": "eMule::OptionsDialog",
-    "de_DE": "Nur lesen",
-    "es_ES": "Solo lectura",
-    "fr_FR": "Lecture seule",
-    "it_IT": "Sola lettura",
-    "ja_JP": "読み取り専用",
-    "ko_KR": "읽기 전용",
-    "pt_BR": "Somente leitura",
-    "zh_CN": "只读"
-  },
-  "Assistants can look at everything but change nothing.": {
-    "_context": "eMule::OptionsDialog",
-    "de_DE": "Assistenten können alles ansehen, aber nichts ändern.",
-    "es_ES": "Los asistentes pueden verlo todo, pero no cambiar nada.",
-    "fr_FR": "Les assistants peuvent tout consulter mais ne rien modifier.",
-    "it_IT": "Gli assistenti possono vedere tutto ma non modificare nulla.",
-    "ja_JP": "アシスタントはすべてを参照できますが、何も変更できません。",
-    "ko_KR": "어시스턴트는 모든 것을 볼 수 있지만 아무것도 변경할 수 없습니다.",
-    "pt_BR": "Os assistentes podem ver tudo, mas não alterar nada.",
-    "zh_CN": "助手可以查看所有内容，但不能更改任何内容。"
-  }
+ "Show results the server found on this network": {
+  "_context": "eMule::SearchPanel",
+  "de_DE": "Ergebnisse anzeigen, die der Server in diesem Netzwerk gefunden hat",
+  "es_ES": "Mostrar los resultados que el servidor encontró en esta red",
+  "fr_FR": "Afficher les résultats que le serveur a trouvés sur ce réseau",
+  "it_IT": "Mostra i risultati che il server ha trovato su questa rete",
+  "ja_JP": "サーバーがこのネットワークで見つけた結果を表示",
+  "ko_KR": "서버가 이 네트워크에서 찾은 결과 표시",
+  "pt_BR": "Mostrar os resultados que o servidor encontrou nesta rede",
+  "zh_CN": "显示服务器在此网络上找到的结果"
+ },
+ "Usenet results": {
+  "_context": "eMule::SearchPanel",
+  "de_DE": "Usenet-Ergebnisse",
+  "es_ES": "Resultados de Usenet",
+  "fr_FR": "Résultats Usenet",
+  "it_IT": "Risultati Usenet",
+  "ja_JP": "Usenet の結果",
+  "ko_KR": "Usenet 결과",
+  "pt_BR": "Resultados do Usenet",
+  "zh_CN": "Usenet 结果"
+ },
+ "Kad results": {
+  "_context": "eMule::SearchPanel",
+  "de_DE": "Kad-Ergebnisse",
+  "es_ES": "Resultados de Kad",
+  "fr_FR": "Résultats Kad",
+  "it_IT": "Risultati Kad",
+  "ja_JP": "Kad の結果",
+  "ko_KR": "Kad 결과",
+  "pt_BR": "Resultados do Kad",
+  "zh_CN": "Kad 结果"
+ },
+ "Torrent results": {
+  "_context": "eMule::SearchPanel",
+  "de_DE": "Torrent-Ergebnisse",
+  "es_ES": "Resultados de torrent",
+  "fr_FR": "Résultats torrent",
+  "it_IT": "Risultati torrent",
+  "ja_JP": "トレントの結果",
+  "ko_KR": "토렌트 결과",
+  "pt_BR": "Resultados de torrent",
+  "zh_CN": "种子结果"
+ },
+ "%1 of %2 results": {
+  "_context": "eMule::SearchPanel",
+  "de_DE": "%1 von %2 Ergebnissen",
+  "es_ES": "%1 de %2 resultados",
+  "fr_FR": "%1 résultats sur %2",
+  "it_IT": "%1 di %2 risultati",
+  "ja_JP": "%2 件中 %1 件の結果",
+  "ko_KR": "결과 %2개 중 %1개",
+  "pt_BR": "%1 de %2 resultados",
+  "zh_CN": "%1 / %2 条结果"
+ }
 }

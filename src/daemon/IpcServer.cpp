@@ -4,6 +4,7 @@
 #include "IpcServer.h"
 #include "IpcClientHandler.h"
 
+#include "net/ListenConflict.h"
 #include "utils/Log.h"
 
 
@@ -25,6 +26,14 @@ bool IpcServer::start(const QHostAddress& address, uint16_t port)
 {
     if (m_tcpServer.isListening())
         stop();
+
+    // A wildcard listen succeeds even if another program holds the port on one
+    // local address; a local GUI would then talk to that program.
+    if (const auto held = heldLocalAddresses(address, port); !held.isEmpty()) {
+        logError(QStringLiteral("IPC server: port %1 is already used by another program on %2")
+                     .arg(port).arg(addressListText(held)));
+        return false;
+    }
 
     if (!m_tcpServer.listen(address, port)) {
         logError(QStringLiteral("IPC server failed to listen: %1")

@@ -357,6 +357,12 @@ IndexerCounters& Statistics::indexerSession()
     return m_indexerSession;
 }
 
+KadCounters& Statistics::kadSession()
+{
+    Q_ASSERT(QThread::currentThread() == thread());
+    return m_kadSession;
+}
+
 UsenetCounters Statistics::cumulativeUsenet() const
 {
     return combineCounters(m_cumBase.usenet, m_usenetSession);
@@ -365,6 +371,11 @@ UsenetCounters Statistics::cumulativeUsenet() const
 IndexerCounters Statistics::cumulativeIndexer() const
 {
     return combineCounters(m_cumBase.indexer, m_indexerSession);
+}
+
+KadCounters Statistics::cumulativeKad() const
+{
+    return combineCounters(m_cumBase.kad, m_kadSession);
 }
 
 // ---------------------------------------------------------------------------
@@ -679,6 +690,7 @@ void Statistics::rebaseCumulative(const Preferences& prefs)
     b.httpCache = prefs.cumHttpCache();
     b.usenet = prefs.cumUsenet();
     b.indexer = prefs.cumIndexer();
+    b.kad = prefs.cumKad();
 
     m_connAvgDownBase = prefs.connAvgDownRate();
     m_connAvgUpBase = prefs.connAvgUpRate();
@@ -785,6 +797,7 @@ Statistics::cumulativeTotals(const ExternalSessionCounters& ext) const
 
     t.usenet = combineCounters(m_cumBase.usenet, m_usenetSession);
     t.indexer = combineCounters(m_cumBase.indexer, m_indexerSession);
+    t.kad = combineCounters(m_cumBase.kad, m_kadSession);
 
     return t;
 }
@@ -871,6 +884,7 @@ void Statistics::flushCumulativeToPrefs(Preferences& prefs,
 
     prefs.setCumUsenet(t.usenet);
     prefs.setCumIndexer(t.indexer);
+    prefs.setCumKad(t.kad);
 
     // MFC writes the blended Total into ConnAvgDown/UpRate at save
     // (srchybrid/Preferences.cpp:824), so the next session blends with it. The

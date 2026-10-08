@@ -36,6 +36,8 @@ class ListenSocket;
 class GlobalSearchScheduler;
 class SearchList;
 class SeenFileIndex;
+class ClientCensus;
+namespace kad { class KadNodeCensus; }
 class ServerConnect;
 class ServerList;
 class SharedFileList;
@@ -178,6 +180,8 @@ private:
     std::unique_ptr<ListenSocket> m_listenSocket;
     std::unique_ptr<SearchList> m_searchList;
     std::unique_ptr<SeenFileIndex> m_seenFileIndex;
+    std::unique_ptr<kad::KadNodeCensus> m_kadNodeCensus;
+    std::unique_ptr<ClientCensus> m_clientCensus;
     std::unique_ptr<GlobalSearchScheduler> m_globalSearch;
     std::unique_ptr<ServerList> m_serverList;
     std::unique_ptr<ServerConnect> m_serverConnect;

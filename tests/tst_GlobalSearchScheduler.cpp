@@ -70,6 +70,7 @@ private slots:
     void sweep_asksOneServerPerInterval();
     void sweep_cancelStopsTheTicks();
     void sweep_cancelSearchIgnoresOtherSearches();
+    void sweep_startFromTheEndSignalSurvives();
     void sweep_emptyServerListEndsImmediately();
 };
 
@@ -251,6 +252,39 @@ void tst_GlobalSearchScheduler::sweep_cancelSearchIgnoresOtherSearches()
     QVERIFY(sched.isRunning());
 
     sched.cancelSearch(11);
+    QVERIFY(!sched.isRunning());
+}
+
+void tst_GlobalSearchScheduler::sweep_startFromTheEndSignalSurvives()
+{
+    ServerList list;
+    fillServers(list, 10);
+    ScopedServerList scoped(&list);
+
+    // The search queue sends the next search from inside the end signal of the one
+    // before. cancel() used to wipe it on the way out: its timer ran on, the sweep
+    // never started and the server lane stayed taken.
+    GlobalSearchScheduler sched;
+    bool chained = false;
+    connect(&sched, &GlobalSearchScheduler::progress, &sched,
+            [&](uint32 searchID, uint32, uint32, bool running) {
+                if (!running && searchID == 21 && !std::exchange(chained, true))
+                    sched.start(22, QByteArrayLiteral("next"), false, /*awaitLocalAnswer*/ true);
+            });
+
+    sched.start(21, QByteArrayLiteral("payload"), false, false);
+    sched.cancelSearch(21);
+    QVERIFY(chained);
+    QVERIFY(sched.isRunning());
+
+    // the local answer starts its sweep, and it reports under its own id
+    QSignalSpy spy(&sched, &GlobalSearchScheduler::progress);
+    sched.onLocalAnswerReceived();
+    QVERIFY(spy.count() >= 1);
+    QCOMPARE(spy.last().at(0).toUInt(), 22u);
+    QVERIFY(spy.last().at(3).toBool());
+
+    sched.cancelSearch(22);
     QVERIFY(!sched.isRunning());
 }
 

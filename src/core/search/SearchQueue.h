@@ -8,7 +8,7 @@
 /// row shared one answer slot, so the first one's late answer landed in the
 /// second. Here every search gets its id at once and a state; a server search
 /// goes out only when the one before it is done, a Kad search as soon as Kad
-/// is connected. Nothing is paced: the next search leaves the moment its lane
+/// is connected, a Usenet / torrent search as soon as a server offering it is known. Nothing is paced: the next search leaves the moment its lane
 /// is free.
 
 #include "search/SearchParams.h"
@@ -48,6 +48,9 @@ inline constexpr auto ServerConnection = "waiting-for-server-connection";
 inline constexpr auto Kad              = "waiting-for-kad";
 inline constexpr auto Connection       = "waiting-for-connection";      ///< Automatic, neither network up
 inline constexpr auto PreviousSearch   = "waiting-for-previous-search";
+/// A Usenet / torrent search: no server is known to offer it, but one we are
+/// logging in to may still say it does.
+inline constexpr auto ServerInfo       = "waiting-for-server-info";
 } // namespace SearchWait
 
 struct SearchStatus {
@@ -58,6 +61,8 @@ struct SearchStatus {
     SearchType type = SearchType::Ed2kServer;   ///< as asked until sent, then the network used
     QString keyword;            ///< Kad: the keyword searched when it is not the first one
     QString primaryKeyword;
+    /// Finished, but the server has a further page: more() fetches it.
+    bool hasMore = false;
 };
 
 /// What sending one search came to.
@@ -71,6 +76,7 @@ struct SearchDispatch {
     Outcome outcome = Outcome::Refused;
     QString error;
     bool awaitsSweep = false;   ///< a global search: ends with its sweep, not with the TCP answer
+    bool awaitsMeta = false;    ///< a Meta API search: ends with onMetaSearchFinished()
     QString keyword;
     QString primaryKeyword;
 };
@@ -92,6 +98,10 @@ struct SearchQueueBackend {
     /// The server search is over: later answers are not its any more.
     std::function<void(uint32 searchID)> endServerSearch;
     std::function<bool(uint32 searchID)> kadSearchAlive;
+    /// A Meta API search was stopped or removed while running. May be empty.
+    std::function<void(uint32 searchID)> cancelMetaSearch;
+    /// Fetch the next page of a Meta API search that ended with more to come.
+    std::function<void(uint32 searchID)> continueMetaSearch;
     std::function<qint64()> nowMs;
 };
 
@@ -106,6 +116,8 @@ public:
     static constexpr qint64 kAnswerTimeoutMs = 30 * 1000;
     /// A sweep reports its own end; this only catches one that never does.
     static constexpr qint64 kSweepTimeoutMs = 15 * 60 * 1000;
+    /// Same for a Meta API search (a few servers, one page, 30 s a call).
+    static constexpr qint64 kMetaTimeoutMs = 90 * 1000;
 
     explicit SearchQueue(SearchQueueBackend backend, QObject* parent = nullptr);
 
@@ -131,6 +143,11 @@ public:
     /// The connected server answered the search in flight.
     void onServerAnswer();
     void onSweepFinished(uint32 searchID);
+    /// A Meta API search has its page, or gave up (@p error says why).
+    /// @p hasMore: the server has a further page, kept for more().
+    void onMetaSearchFinished(uint32 searchID, const QString& error = {}, bool hasMore = false);
+    /// Fetch the next page of a finished Meta API search. False when it has none.
+    bool more(uint32 searchID);
 
     /// Stop asking; a queued search is not sent any more. Results stay.
     void stop(uint32 searchID);
@@ -155,6 +172,8 @@ private:
         int sendRetries = 0;
         bool kad = false;           ///< running in Kad (no lane to hold)
         bool awaitsSweep = false;
+        bool meta = false;          ///< running on a Meta API (no lane to hold)
+        qint64 sentAtMs = 0;
     };
 
     [[nodiscard]] Entry* find(uint32 searchID);
@@ -167,6 +186,9 @@ private:
     /// The server search in flight is over; the lane is free.
     void finishServerSearch(SearchRunState state, const QString& error = {});
     void sendFailed(Entry& entry);
+    /// Tell the backend a running Meta API search is not wanted any more;
+    /// with @p parkedToo also one that only keeps its next page.
+    void cancelMeta(Entry& entry, bool parkedToo = false);
 
     SearchQueueBackend m_backend;
     std::vector<Entry> m_entries;   // arrival order

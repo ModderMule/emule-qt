@@ -194,6 +194,11 @@ void logStatusWarning(const QString& msg)
     qCWarning(lcEmuleStatus).noquote() << msg;
 }
 
+void logStatusError(const QString& msg)
+{
+    qCCritical(lcEmuleStatus).noquote() << msg;
+}
+
 // ---------------------------------------------------------------------------
 // Console message pattern
 // ---------------------------------------------------------------------------

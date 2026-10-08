@@ -106,6 +106,7 @@ SOURCES += \
     tst_KadIO.cpp \
     tst_KadLookupHistory.cpp \
     tst_KadMiscUtils.cpp \
+    tst_KadNodeCensus.cpp \
     tst_KadNodesData.cpp \
     tst_KadPacketTracking.cpp \
     tst_KadPrefs.cpp \
@@ -138,6 +139,7 @@ SOURCES += \
     tst_Scheduler.cpp \
     tst_SearchExpr.cpp \
     tst_SearchExprParser.cpp \
+    tst_FakeFileDetector.cpp \
     tst_SearchFile.cpp \
     tst_EnodeMeta.cpp \
     tst_SearchList.cpp \
@@ -152,6 +154,7 @@ SOURCES += \
     tst_SharedFileList.cpp \
     tst_Smoke.cpp \
     tst_StatisticFile.cpp \
+    tst_CardinalitySketch.cpp \
     tst_Statistics.cpp \
     tst_StatisticsReset.cpp \
     tst_StringConversion.cpp \

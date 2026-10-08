@@ -2,6 +2,7 @@
 /// @brief Unit tests for the JSON REST API WebServer (Module 19).
 
 #include "net/BindAddress.h"
+#include "net/ListenConflict.h"
 #include "TestHelpers.h"
 #include "webserver/ApiBackend.h"
 #include "webserver/ApiEventHub.h"
@@ -54,6 +55,7 @@
 #include <QTemporaryDir>
 #include <QProcess>
 #include <QSslError>
+#include <QTcpServer>
 #include <QTcpSocket>
 #include <QTest>
 #include <QTranslator>
@@ -504,8 +506,9 @@ private slots:
     void api_checkedInOpenApiIsCurrent();
     void api_playgroundIsLocalAndFollowsTheRestSwitch();
     void api_eventsStreamResumeAndReset();
+    void listen_refusesPortHeldOnLoopback();
     void mcp_isItsOwnSwitch();
-    void mcp_initializeListAndCall();
+    void mcp_discoverListAndCall();
     void mcp_refusesStrangers();
     void mcp_readOnlyMode();
     void mcp_perRequestRevision();
@@ -569,6 +572,11 @@ private:
     Response sendRaw(uint16 port, const QByteArray& method, const QString& path,
                      const QByteArray& body = {}, const QByteArray& contentType = {},
                      const QList<std::pair<QByteArray, QByteArray>>& headers = {});
+
+    /// One MCP request the way a client sends it: the revision added to
+    /// params._meta and mirrored, with method and tool name, into headers.
+    Response mcpPost(uint16 port, const QByteArray& body,
+                     QList<std::pair<QByteArray, QByteArray>> headers);
 
     std::unique_ptr<WebServer>     m_webServer;
     std::unique_ptr<Statistics>    m_stats;
@@ -650,6 +658,9 @@ void tst_WebServer::initTestCase()
     config.enabled = true;
     config.restApiEnabled = true;
     config.port = 0;
+    // Loopback, not all interfaces: on macOS port 0 on the wildcard can hand out a
+    // port another program already listens on at 127.0.0.1, which then gets our requests.
+    config.listenAddress = QStringLiteral("127.0.0.1");
     config.apiKey = m_apiKey;
 
     QSignalSpy spy(m_webServer.get(), &WebServer::started);
@@ -1223,6 +1234,7 @@ std::unique_ptr<WebServer> tst_WebServer::startServer(
     config.webUiEnabled = webUiEnabled;
     config.restApiEnabled = restApiEnabled;
     config.port = 0;
+    config.listenAddress = QStringLiteral("127.0.0.1");  // see initTestCase
     config.apiKey = m_apiKey;
     config.templatePath = templatePath;  // empty by default — page render is not under test here
     if (tweak)
@@ -3930,6 +3942,13 @@ void tst_WebServer::api_overviewRoutesAnswer()
     QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/kad/nodes")).json.object()
                  .value(QStringLiteral("total")).toInt(-1), 0);
 
+    // Answers while Kad is stopped too: the counters outlive a Kad stop.
+    r = sendRequest("GET", QStringLiteral("/api/v1/kad/stats"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(r.json.object().value(QStringLiteral("current")).toObject()
+                 .value(QStringLiteral("running")).toBool(true), false);
+    QCOMPARE(sendRequest("GET", QStringLiteral("/api/v1/clients/stats")).statusCode, 200);
+
     for (const char* path : {"/api/v1/uploads", "/api/v1/upload-queue"}) {
         r = sendRequest("GET", QString::fromLatin1(path));
         QCOMPARE(r.statusCode, 200);
@@ -4014,6 +4033,24 @@ void tst_WebServer::api_openApiDescribesEveryRoute()
     QStringList actual = toJson(partFile).keys();
     actual.sort();
     QCOMPARE(fields("Download"), actual);
+    QCOMPARE(toJson(partFile).value(QStringLiteral("confidence")).toString(), QStringLiteral("looks_good"));
+
+    // A search row nothing was judged on says so with an empty band
+    SearchFile searchFile;
+    actual = toJson(searchFile).keys();
+    actual.sort();
+    QCOMPARE(fields("SearchResult"), actual);
+    QCOMPARE(toJson(searchFile).value(QStringLiteral("confidence")).toString(), QString());
+    FakeFileVerdict verdict;
+    verdict.score = 35;
+    verdict.band = Confidence::Caution;
+    verdict.reasons = {{FakeReason::MultipleAich, 35}};
+    searchFile.setFakeVerdict(verdict);
+    const QJsonObject judged = toJson(searchFile);
+    QCOMPARE(judged.value(QStringLiteral("fakeScore")).toInt(), 35);
+    QCOMPARE(judged.value(QStringLiteral("confidence")).toString(), QStringLiteral("caution"));
+    QCOMPARE(judged.value(QStringLiteral("fakeReasons")).toArray(),
+             QJsonArray{QStringLiteral("multiple_aich")});
 
     const auto server = Server::fromAddressString(QStringLiteral("203.0.113.5"), 4661);
     QVERIFY(server);
@@ -4158,6 +4195,27 @@ void tst_WebServer::api_eventsStreamResumeAndReset()
 // MCP
 // ---------------------------------------------------------------------------
 
+tst_WebServer::Response tst_WebServer::mcpPost(uint16 port, const QByteArray& body,
+                                QList<std::pair<QByteArray, QByteArray>> headers)
+{
+    QJsonObject message = QJsonDocument::fromJson(body).object();
+    QByteArray out = body;
+    if (message.contains(QStringLiteral("id"))) {
+        QJsonObject params = message.value(QStringLiteral("params")).toObject();
+        params.insert(QStringLiteral("_meta"), QJsonObject{
+            {QStringLiteral("io.modelcontextprotocol/protocolVersion"), QStringLiteral("2026-07-28")}});
+        message.insert(QStringLiteral("params"), params);
+        out = QJsonDocument(message).toJson(QJsonDocument::Compact);
+        const QString method = message.value(QStringLiteral("method")).toString();
+        headers.append({QByteArrayLiteral("MCP-Protocol-Version"), QByteArrayLiteral("2026-07-28")});
+        headers.append({QByteArrayLiteral("Mcp-Method"), method.toUtf8()});
+        if (method == QLatin1StringView("tools/call"))
+            headers.append({QByteArrayLiteral("Mcp-Name"),
+                            params.value(QStringLiteral("name")).toString().toUtf8()});
+    }
+    return sendRaw(port, "POST", QStringLiteral("/mcp"), out, "application/json", headers);
+}
+
 void tst_WebServer::mcp_isItsOwnSwitch()
 {
     const QList<std::pair<QByteArray, QByteArray>> key{{QByteArrayLiteral("X-Api-Key"), m_apiKey.toUtf8()}};
@@ -4166,20 +4224,21 @@ void tst_WebServer::mcp_isItsOwnSwitch()
     // Off by default, REST on or not.
     QCOMPARE(WebServerConfig().mcpEnabled, false);
     QCOMPARE(Preferences().webServerMcpEnabled(), false);
-    QCOMPARE(sendRaw(m_port, "POST", QStringLiteral("/mcp"), ping, "application/json", key).statusCode, 404);
+    QCOMPARE(mcpPost(m_port, ping, key).statusCode, 404);
 
     // On with REST off: the tools work, the REST routes do not exist.
     auto server = startServer(false, false, {}, [](WebServer&, WebServerConfig& config) {
         config.mcpEnabled = true;
     });
     const uint16 port = server->port();
-    const Response r = sendRaw(port, "POST", QStringLiteral("/mcp"), ping, "application/json", key);
+    const Response r = mcpPost(port, ping, key);
     QCOMPARE(r.statusCode, 200);
     QCOMPARE(r.json.object().value(QStringLiteral("id")).toInt(), 1);
     QVERIFY(r.json.object().contains(QStringLiteral("result")));
     QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v1/stats"), {}, {}, key).statusCode, 404);
     QCOMPARE(sendRaw(port, "GET", QStringLiteral("/api/v1/docs")).statusCode, 404);
     QCOMPARE(sendRaw(port, "GET", QStringLiteral("/mcp"), {}, {}, key).statusCode, 405);
+    QCOMPARE(sendRaw(port, "DELETE", QStringLiteral("/mcp"), {}, {}, key).statusCode, 405);
 
     // The preference reaches the config, and a change of it is a restart.
     Preferences prefs;
@@ -4191,7 +4250,7 @@ void tst_WebServer::mcp_isItsOwnSwitch()
     QVERIFY(!(before == after));
 }
 
-void tst_WebServer::mcp_initializeListAndCall()
+void tst_WebServer::mcp_discoverListAndCall()
 {
     auto server = startServer(false, false, {}, [this](WebServer& ws, WebServerConfig& config) {
         config.mcpEnabled = true;
@@ -4200,24 +4259,19 @@ void tst_WebServer::mcp_initializeListAndCall()
     const QList<std::pair<QByteArray, QByteArray>> key{
         {QByteArrayLiteral("Authorization"), "Bearer " + m_apiKey.toUtf8()}};
     const auto rpc = [&](const QByteArray& body) {
-        return sendRaw(server->port(), "POST", QStringLiteral("/mcp"), body, "application/json", key);
+        return mcpPost(server->port(), body, key);
     };
 
-    Response r = rpc("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"t\",\"version\":\"1\"}}}");
+    Response r = rpc("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"server/discover\"}");
     QCOMPARE(r.statusCode, 200);
     QJsonObject result = r.json.object().value(QStringLiteral("result")).toObject();
-    QCOMPARE(result.value(QStringLiteral("protocolVersion")).toString(), QStringLiteral("2025-03-26"));
+    QCOMPARE(result.value(QStringLiteral("supportedVersions")).toArray(),
+             QJsonArray{QStringLiteral("2026-07-28")});
     QVERIFY(result.value(QStringLiteral("capabilities")).toObject().contains(QStringLiteral("tools")));
-    QCOMPARE(result.value(QStringLiteral("serverInfo")).toObject().value(QStringLiteral("name")).toString(),
-             QStringLiteral("emuleqt"));
     QVERIFY(!result.value(QStringLiteral("instructions")).toString().isEmpty());
-    // A revision we do not know: ours is offered instead.
-    r = rpc("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"1999-01-01\"}}");
-    QVERIFY(!r.json.object().value(QStringLiteral("result")).toObject()
-                 .value(QStringLiteral("protocolVersion")).toString().startsWith(QStringLiteral("1999")));
 
     // A notification gets no body.
-    r = rpc("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}");
+    r = rpc("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\"}");
     QCOMPARE(r.statusCode, 202);
     QVERIFY(r.rawBody.isEmpty());
 
@@ -4233,7 +4287,16 @@ void tst_WebServer::mcp_initializeListAndCall()
         // Each tool is one operation of the table, schema and all.
         const api::Operation* op = m_webServer->api().findTool(name);
         QVERIFY2(op, qPrintable(name));
-        QCOMPARE(tool.value(QStringLiteral("inputSchema")).toObject(), api::inputSchema(*op));
+        // ...except the page size, which is smaller here than over REST.
+        QJsonObject expected = api::inputSchema(*op);
+        if (op->is(api::Paged)) {
+            QJsonObject props = expected.value(QStringLiteral("properties")).toObject();
+            QJsonObject limit = props.value(QStringLiteral("limit")).toObject();
+            limit.insert(QStringLiteral("default"), 50);
+            props.insert(QStringLiteral("limit"), limit);
+            expected.insert(QStringLiteral("properties"), props);
+        }
+        QCOMPARE(tool.value(QStringLiteral("inputSchema")).toObject(), expected);
         QVERIFY2(tool.value(QStringLiteral("description")).toString().size() > 10, qPrintable(name));
         QCOMPARE(tool.value(QStringLiteral("annotations")).toObject()
                      .value(QStringLiteral("readOnlyHint")).toBool(), op->is(api::ReadOnly));
@@ -4275,6 +4338,10 @@ void tst_WebServer::mcp_initializeListAndCall()
     r = rpc("{not json");
     QCOMPARE(r.statusCode, 400);
     QCOMPARE(r.json.object().value(QStringLiteral("error")).toObject().value(QStringLiteral("code")).toInt(), -32700);
+    // One message per POST.
+    r = rpc("[{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}]");
+    QCOMPARE(r.statusCode, 400);
+    QCOMPARE(r.json.object().value(QStringLiteral("error")).toObject().value(QStringLiteral("code")).toInt(), -32600);
 
     // A write tool does what the REST route does.
     m_apiBackend.calls.clear();
@@ -4292,7 +4359,7 @@ void tst_WebServer::mcp_refusesStrangers()
     const QByteArray ping = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}";
     const QByteArray key = m_apiKey.toUtf8();
     const auto post = [&](const QList<std::pair<QByteArray, QByteArray>>& headers) {
-        return sendRaw(server->port(), "POST", QStringLiteral("/mcp"), ping, "application/json", headers)
+        return mcpPost(server->port(), ping, headers)
             .statusCode;
     };
 
@@ -4312,7 +4379,7 @@ void tst_WebServer::mcp_readOnlyMode()
     });
     const QList<std::pair<QByteArray, QByteArray>> key{{QByteArrayLiteral("X-Api-Key"), m_apiKey.toUtf8()}};
     const auto rpc = [&](const QByteArray& body) {
-        return sendRaw(server->port(), "POST", QStringLiteral("/mcp"), body, "application/json", key)
+        return mcpPost(server->port(), body, key)
             .json.object();
     };
 
@@ -4372,9 +4439,9 @@ void tst_WebServer::mcp_stdioBridgeRoundTrip()
     };
 
     const QList<QByteArray> conversation{
-        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}",
-        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}",
-        "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}",
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"server/discover\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\"}}}",
+        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\"}",
+        "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\"}}}",
     };
     QList<QByteArray> replies = run({QStringLiteral("--url"), url, QStringLiteral("--api-key"), m_apiKey},
                                     conversation, 2);
@@ -4390,6 +4457,16 @@ void tst_WebServer::mcp_stdioBridgeRoundTrip()
     }
     QCOMPARE(ids, (QSet<int>{1, 2}));
     QVERIFY(sawTools);
+
+    // A client of the handshake revisions is told which revision would work.
+    replies = run({QStringLiteral("--url"), url, QStringLiteral("--api-key"), m_apiKey},
+                  {"{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}"}, 1);
+    QCOMPARE(replies.size(), 1);
+    QJsonObject old = QJsonDocument::fromJson(replies.at(0)).object();
+    QCOMPARE(old.value(QStringLiteral("id")).toInt(), 7);
+    QCOMPARE(old.value(QStringLiteral("error")).toObject().value(QStringLiteral("code")).toInt(), -32022);
+    QVERIFY(old.value(QStringLiteral("error")).toObject().value(QStringLiteral("message")).toString()
+                .contains(QStringLiteral("2026-07-28")));
 
     // A wrong key is told to the client as an error it can show, with the request's id.
     replies = run({QStringLiteral("--url"), url, QStringLiteral("--api-key"), QStringLiteral("wrong")},
@@ -4445,8 +4522,54 @@ void tst_WebServer::api_checkedInOpenApiIsCurrent()
              "docs/openapi.json is stale: rerun this test with EMULE_WRITE_OPENAPI=1");
 }
 
-// From 2026-07-28 on there is no handshake: each request names its revision and
-// mirrors it, the method and the tool name into headers.
+// There is no handshake: each request names its revision and mirrors it, the
+// method and the tool name into headers.
+void tst_WebServer::listen_refusesPortHeldOnLoopback()
+{
+    const QHostAddress loopback(QStringLiteral("127.0.0.1"));
+
+    // Another program on 127.0.0.1:P. Retry until nothing else holds P elsewhere,
+    // so the "holder gone" half cannot trip over a stranger.
+    QTcpServer holder;
+    quint16 port = 0;
+    for (int attempt = 0; attempt < 10; ++attempt) {
+        holder.close();
+        QVERIFY(holder.listen(loopback, 0));
+        port = holder.serverPort();
+        if (heldLocalAddresses(QHostAddress(QHostAddress::Any), port) == QList<QHostAddress>{loopback})
+            break;
+    }
+    QCOMPARE(heldLocalAddresses(QHostAddress(QHostAddress::Any), port), QList<QHostAddress>{loopback});
+    QCOMPARE(heldLocalAddresses(QHostAddress(QHostAddress::AnyIPv4), port), QList<QHostAddress>{loopback});
+    QVERIFY(heldLocalAddresses(QHostAddress(QHostAddress::AnyIPv6), port).isEmpty());
+    // A specific address needs no probe, and port 0 has nothing to probe.
+    QVERIFY(heldLocalAddresses(loopback, port).isEmpty());
+    QVERIFY(heldLocalAddresses(QHostAddress(QHostAddress::Any), 0).isEmpty());
+
+    const auto onAllInterfaces = [port](WebServer&, WebServerConfig& config) {
+        config.listenAddress.clear();
+        config.port = port;
+    };
+    {
+        auto refused = startServer(false, true, {}, onAllInterfaces);
+        QVERIFY(!refused->isRunning());
+    }
+
+    holder.close();
+    QVERIFY(heldLocalAddresses(QHostAddress(QHostAddress::Any), port).isEmpty());
+    auto server = startServer(false, true, {}, onAllInterfaces);
+    QVERIFY(server->isRunning());
+    QCOMPARE(server->port(), port);
+
+    // A restart must not see its own old listener or connections as a stranger.
+    QTcpSocket client;
+    client.connectToHost(loopback, port);
+    QVERIFY(client.waitForConnected(3000));
+    WebServerConfig again = server->config();
+    QVERIFY(server->start(again));
+    QVERIFY(server->isRunning());
+}
+
 void tst_WebServer::mcp_perRequestRevision()
 {
     auto server = startServer(false, false, {}, [](WebServer&, WebServerConfig& config) {
@@ -4475,8 +4598,7 @@ void tst_WebServer::mcp_perRequestRevision()
     QJsonObject result = r.json.object().value(QStringLiteral("result")).toObject();
     QCOMPARE(result.value(QStringLiteral("resultType")).toString(), QStringLiteral("complete"));
     const QJsonArray versions = result.value(QStringLiteral("supportedVersions")).toArray();
-    QVERIFY(versions.contains(QStringLiteral("2026-07-28")));
-    QVERIFY(versions.contains(QStringLiteral("2025-06-18")));
+    QCOMPARE(versions, QJsonArray{QStringLiteral("2026-07-28")});
     QVERIFY(result.value(QStringLiteral("capabilities")).toObject().contains(QStringLiteral("tools")));
     QCOMPARE(result.value(QStringLiteral("_meta")).toObject()
                  .value(QStringLiteral("io.modelcontextprotocol/serverInfo")).toObject()
@@ -4487,6 +4609,17 @@ void tst_WebServer::mcp_perRequestRevision()
     result = r.json.object().value(QStringLiteral("result")).toObject();
     QCOMPARE(result.value(QStringLiteral("resultType")).toString(), QStringLiteral("complete"));
     QVERIFY(result.value(QStringLiteral("tools")).toArray().size() >= 30);
+    QVERIFY(result.value(QStringLiteral("ttlMs")).isDouble());   // required on list results
+    QCOMPARE(result.value(QStringLiteral("cacheScope")).toString(), QStringLiteral("private"));
+    // the schema states the page size a call without limit really gets
+    for (const QJsonValue& t : result.value(QStringLiteral("tools")).toArray()) {
+        if (t.toObject().value(QStringLiteral("name")).toString() != QStringLiteral("downloads_list"))
+            continue;
+        QCOMPARE(t.toObject().value(QStringLiteral("inputSchema")).toObject()
+                     .value(QStringLiteral("properties")).toObject()
+                     .value(QStringLiteral("limit")).toObject()
+                     .value(QStringLiteral("default")).toInt(), 50);
+    }
 
     r = call("tools/call", "\"name\":\"get_status\",\"arguments\":{},", with("tools/call", "get_status"));
     QCOMPARE(r.statusCode, 200);
@@ -4504,6 +4637,24 @@ void tst_WebServer::mcp_perRequestRevision()
              QStringLiteral("2031-01-01"));
     QVERIFY(failure.value(QStringLiteral("data")).toObject().value(QStringLiteral("supported")).toArray()
                 .contains(QStringLiteral("2026-07-28")));
+
+    // A handshake-era client: no revision in the request at all. Same answer,
+    // naming what it asked for.
+    r = sendRaw(server->port(), "POST", QStringLiteral("/mcp"),
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}",
+                "application/json", {{QByteArrayLiteral("X-Api-Key"), m_apiKey.toUtf8()}});
+    QCOMPARE(r.statusCode, 400);
+    failure = r.json.object().value(QStringLiteral("error")).toObject();
+    QCOMPARE(failure.value(QStringLiteral("code")).toInt(), -32022);
+    QCOMPARE(failure.value(QStringLiteral("data")).toObject().value(QStringLiteral("requested")).toString(),
+             QStringLiteral("2025-06-18"));
+    QVERIFY(failure.value(QStringLiteral("message")).toString().contains(QStringLiteral("2026-07-28")));
+    r = sendRaw(server->port(), "POST", QStringLiteral("/mcp"),
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}",
+                "application/json", {{QByteArrayLiteral("X-Api-Key"), m_apiKey.toUtf8()}});
+    QCOMPARE(r.statusCode, 400);
+    QCOMPARE(r.json.object().value(QStringLiteral("error")).toObject().value(QStringLiteral("code")).toInt(),
+             -32022);
 
     // Headers that disagree with the body, or are not there: refused before anything runs.
     const auto mismatch = [&](const Response& response) {

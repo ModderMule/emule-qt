@@ -10,6 +10,7 @@
 #include "kademlia/KadUDPListener.h"
 #include "kademlia/KadDefines.h"
 #include "kademlia/KadLookupHistory.h"
+#include "kademlia/KadNodeCensus.h"
 #include "kademlia/KadSearch.h"
 #include "kademlia/KadSearchDefs.h"
 #include "kademlia/KadSearchManager.h"
@@ -49,6 +50,7 @@ private slots:
     void nodeCompleteSearch_stillWalks();
     void results_onlyFromNodesTheSearchAsked();
     void results_ignoredByStoreSearches();
+    void responder_isSeenByTheCensus();
 
     // Contact ownership (audit item #2)
     void processResponse_freesAllResultContacts();
@@ -242,6 +244,29 @@ void tst_KadSearch::respond(uint32 rank)
 {
     ContactArray none;
     SearchManager::processResponse(walkTarget(), walkIP(rank), walkPort(rank), none);
+}
+
+// A firewalled client gets no HELLO answers; the nodes that answer its lookups are
+// the only ones it ever sees.
+void tst_KadSearch::responder_isSeenByTheCensus()
+{
+    eMule::testing::KadFixture kadFixture;
+    kad::KadNodeCensus census;
+    theApp.kadNodeCensus = &census;
+    const auto restore = qScopeGuard([] { theApp.kadNodeCensus = nullptr; });
+    using Scope = kad::KadNodeCensus::Scope;
+
+    QVERIFY(startWalk(SearchType::Keyword, 16) != nullptr);
+    respond(1);
+    respond(1);     // the same node again
+    respond(2);
+    QCOMPARE(census.contacted(Scope::Session), uint64{2});
+
+    // An answer from an address the search never asked names nobody.
+    ContactArray none;
+    SearchManager::processResponse(walkTarget(), walkIP(99), walkPort(99), none);
+    QCOMPARE(census.contacted(Scope::Session), uint64{2});
+    QCOMPARE(census.listed(Scope::Session), uint64{0});
 }
 
 // Ten nodes answered, but one of the ten closest was never asked. The walk used to stop

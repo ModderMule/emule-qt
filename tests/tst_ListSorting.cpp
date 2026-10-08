@@ -108,6 +108,7 @@ private slots:
 
     // --- colour cues --------------------------------------------------------
     void searchResultsShadeByAvailability();
+    void searchResultsSortByConfidence();
     void failingServersAreDimmed();
 
     // --- MFC column text ----------------------------------------------------
@@ -492,6 +493,50 @@ void tst_ListSorting::downloadingClientsShowRateAndSessionTotals()
 // ---------------------------------------------------------------------------
 // Colour cues
 // ---------------------------------------------------------------------------
+
+void tst_ListSorting::searchResultsSortByConfidence()
+{
+    SearchResultsModel model;
+    std::vector<SearchResultRow> rows(6);
+    const auto set = [&rows](size_t i, const char* band, int score) {
+        rows[i].fileName = QString::fromLatin1(band);
+        rows[i].confidence = QString::fromLatin1(band);
+        rows[i].fakeScore = score;
+    };
+    set(0, "looks_good", 0);
+    set(1, "caution", 30);
+    set(2, "genuine", 0);
+    set(3, "likely_fake", 90);
+    set(4, "caution", 45);
+    set(5, "", 0);            // a torrent row: nothing judged
+    rows[1].fakeReasons = {QStringLiteral("multiple_names")};
+    model.setResults(std::move(rows));
+
+    QSortFilterProxyModel proxy;
+    proxy.setSourceModel(&model);
+    proxy.setSortRole(Qt::UserRole);
+    proxy.sort(SearchResultsModel::ColConfidence, Qt::AscendingOrder);
+    QStringList order;
+    for (int row = 0; row < proxy.rowCount(); ++row) {
+        order.push_back(QStringLiteral("%1:%2").arg(
+            proxy.index(row, SearchResultsModel::ColFileName).data().toString(),
+            proxy.index(row, SearchResultsModel::ColConfidence).data().toString()));
+    }
+    // Worst first; inside a band the higher score is worse
+    QCOMPARE(order, (QStringList{QStringLiteral(":"), QStringLiteral("likely_fake:Likely fake"),
+                                 QStringLiteral("caution:Caution: 45%"),
+                                 QStringLiteral("caution:Caution: 30%"),
+                                 QStringLiteral("looks_good:Looks good"),
+                                 QStringLiteral("genuine:Genuine")}));
+
+    // The cell says why, and only that cell takes the colour
+    const QModelIndex caution = model.index(1, SearchResultsModel::ColConfidence);
+    QVERIFY(caution.data(Qt::ToolTipRole).toString().contains(QStringLiteral("different content")));
+    QVERIFY(caution.data(Qt::ForegroundRole).value<QColor>().isValid());
+    QVERIFY(!model.index(0, SearchResultsModel::ColConfidence).data(Qt::ForegroundRole).isValid());
+    QCOMPARE(model.headerData(SearchResultsModel::ColConfidence, Qt::Horizontal).toString(),
+             QStringLiteral("Confidence"));
+}
 
 void tst_ListSorting::searchResultsShadeByAvailability()
 {

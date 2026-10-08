@@ -489,7 +489,7 @@
 // A real eD2K file (its own MD4 in the hash slot) the server's catalogue found on
 // another network. The row's only meta tag: FT_META_KIND never comes with it.
 #define FT_META_NETWORK             0x6D  // uint8: META_NETWORK_*
-#define META_NETWORK_KAD            3     // found on the Kad network
+#define FT_META_NETWORK_KAD            3     // found on the Kad network
 
 // FT_META_FLAGS bits
 #define META_FLAG_PASSWORD_PROTECTED 0x01

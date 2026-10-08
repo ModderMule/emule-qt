@@ -279,6 +279,10 @@ jobs:
           }
 
           Write-Host "OK: $($present.Count) DLL(s) in bundle, $($images.Count) images checked."
+
+          # 3. The MCP bridge starts from the unpacked zip.
+          & (Join-Path $app 'emuleqt-mcp.exe') --version
+          if ($LASTEXITCODE -ne 0) { throw "emuleqt-mcp.exe --version exited with $LASTEXITCODE" }
           Write-Host "Resolved from the OS at runtime ($($external.Count)): $((($external.Keys | Sort-Object) -join ', '))"
 
       - name: Upload artifact

@@ -155,6 +155,18 @@ public:
         scheduleSave();
     }
 
+    /// Search list: show what a server found on other networks.
+    [[nodiscard]] bool searchShowUsenet() const { return m_searchShowUsenet; }
+    [[nodiscard]] bool searchShowKad() const { return m_searchShowKad; }
+    [[nodiscard]] bool searchShowTorrent() const { return m_searchShowTorrent; }
+    void setSearchShowNetworks(bool usenet, bool kad, bool torrent)
+    {
+        m_searchShowUsenet = usenet;
+        m_searchShowKad = kad;
+        m_searchShowTorrent = torrent;
+        scheduleSave();
+    }
+
     /// Number of statistics colours, in MFC's index order
     /// (srchybrid/Preferences.h:198 — m_adwStatsColors[15]), plus our own slots
     /// appended after MFC's: 15 is the Download graph's Usenet line.
@@ -204,6 +216,9 @@ private:
     QString m_toolbarSkinPath;
     QString m_skinProfilePath;
     QString m_metaFileSaveDir;
+    bool m_searchShowUsenet = true;
+    bool m_searchShowKad = true;
+    bool m_searchShowTorrent = true;
     std::array<QColor, kStatsColorCount> m_statsColors = defaultStatsColors();
     QMap<QString, QByteArray> m_headerStates;
     QSet<QString> m_statsTreeExpanded;

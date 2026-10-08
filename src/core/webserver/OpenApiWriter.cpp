@@ -74,6 +74,11 @@ QJsonObject schemaInteger(const QString& d) { return typed("integer", d); }
 QJsonObject schemaNumber(const QString& d)  { return typed("number", d); }
 QJsonObject schemaBoolean(const QString& d) { return typed("boolean", d); }
 
+static QJsonObject schemaStringList(const QString& d)
+{
+    return QJsonObject{{s("type"), s("array")}, {s("items"), schemaString()}, {s("description"), d}};
+}
+
 QJsonObject schemaObject(std::initializer_list<std::pair<QString, QJsonObject>> properties)
 {
     QJsonObject props;
@@ -122,6 +127,16 @@ QJsonObject componentSchemas()
         {s("isPaused"), schemaBoolean()},
         {s("isStopped"), schemaBoolean()},
         {s("category"), schemaInteger(s("Category index; 0 = none."))},
+        {s("fakeScore"), schemaInteger(s("0 to 100: how strongly the signals say the file is not "
+                                         "what its name claims."))},
+        {s("confidence"), schemaString(s("spam, likely_fake, suspect, caution, looks_good or genuine; "
+                                         "empty when nothing was judged."))},
+        {s("fakeReasons"), schemaStringList(s("Why: multiple_names, names_span_kinds, "
+                                         "bad_signal_name, bad_signal_comment, header_extension_mismatch, "
+                                         "executable_masquerade, archive_masquerade, claimed_type_mismatch, "
+                                         "spam_score, spam_status, bad_rating, fake_rating, multiple_aich, "
+                                         "implausible_media_length, implausible_media_bitrate, "
+                                         "media_size_mismatch, name_media_tag_mismatch."))},
     }));
     c.insert(s("Server"), schemaObject({
         {s("name"), schemaString()},
@@ -148,10 +163,24 @@ QJsonObject componentSchemas()
         {s("completeSourceCount"), schemaInteger(s("Of those, peers with the whole file."))},
         {s("isKadResult"), schemaBoolean()},
         {s("kadOrigin"), schemaBoolean()},
-        {s("spamRating"), schemaInteger(s("0 = clean; higher = more likely a fake."))},
+        {s("metaKind"), schemaString(s("\"torrent\" or \"nzb\": a release an eD2K server listed from "
+                                       "its catalogue. Empty for an eD2K file. Not downloadable "
+                                       "through POST /search/{id}/download."))},
+        {s("magnet"), schemaString(s("Magnet link of a torrent result, when the server sent one; else empty."))},
+        {s("spamRating"), schemaInteger(s("Spam filter score; 60 and above counts as spam."))},
         {s("seenBefore"), schemaBoolean(s("This file turned up in an earlier search."))},
         {s("seenNames"), schemaInteger(s("Different names seen for this hash."))},
         {s("firstSeen"), schemaInteger(s("Unix seconds; 0 = never."))},
+        {s("fakeScore"), schemaInteger(s("0 to 100: how strongly the signals say the file is not "
+                                         "what its name claims."))},
+        {s("confidence"), schemaString(s("spam, likely_fake, suspect, caution, looks_good or genuine; "
+                                         "empty when nothing was judged."))},
+        {s("fakeReasons"), schemaStringList(s("Why: multiple_names, names_span_kinds, "
+                                         "bad_signal_name, bad_signal_comment, header_extension_mismatch, "
+                                         "executable_masquerade, archive_masquerade, claimed_type_mismatch, "
+                                         "spam_score, spam_status, bad_rating, fake_rating, multiple_aich, "
+                                         "implausible_media_length, implausible_media_bitrate, "
+                                         "media_size_mismatch, name_media_tag_mismatch."))},
     }));
     c.insert(s("Client"), schemaObject({
         {s("userName"), schemaString()},

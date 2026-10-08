@@ -301,6 +301,9 @@ SeenFileIndex::Info SeenFileIndex::lookup(const uint8* fileHash)
                 pendingNames.insert(query.value(0).toString());
     }
     info.names = std::min(static_cast<int>(pendingNames.size()), m_limits.maxNamesPerFile);
+    info.nameList = QStringList(pendingNames.cbegin(), pendingNames.cend());
+    info.nameList.sort();
+    info.nameList.resize(info.names);
     return info;
 }
 

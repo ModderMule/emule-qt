@@ -17,11 +17,13 @@
 #     eMuleQt/
 #       emuleqt          GUI executable
 #       emulecored       daemon executable
+#       emuleqt-mcp      MCP stdio bridge for AI clients
 #       lib/             Qt libraries (only with deploy-qt)
 #       plugins/         Qt plugins  (only with deploy-qt)
 #       config/          default config data (nodes.dat, eMule.tmpl, …)
-#         webserver/     web server assets
+#         webserver/     web server assets, REST playground
 #       lang/            compiled translation files (.qm)
+#       doc/             REST API guide and OpenAPI document
 # ---------------------------------------------------------------------------
 
 set -euo pipefail
@@ -43,6 +45,7 @@ VERSION=$(grep -m1 '^ *VERSION [0-9]' "$REPO_ROOT/CMakeLists.txt" | grep -oE '[0
 
 GUI_BIN="$BUILD_DIR/src/gui/emuleqt"
 DAEMON_BIN="$BUILD_DIR/src/daemon/emulecored"
+MCP_BIN="$BUILD_DIR/src/mcpbridge/emuleqt-mcp"
 
 # -- Sanity checks -----------------------------------------------------------
 
@@ -58,6 +61,12 @@ if [ ! -f "$DAEMON_BIN" ]; then
     exit 1
 fi
 
+if [ ! -f "$MCP_BIN" ]; then
+    echo "Error: MCP bridge binary not found at $MCP_BIN"
+    echo "Build it first:  cmake --build $BUILD_DIR --target emuleqt-mcp"
+    exit 1
+fi
+
 # -- Assemble staging directory ----------------------------------------------
 
 STAGE_DIR="$BUILD_DIR/stage/eMuleQt"
@@ -68,9 +77,25 @@ mkdir -p "$STAGE_DIR"
 echo "=== Staging binaries ==="
 cp "$GUI_BIN" "$STAGE_DIR/emuleqt"
 cp "$DAEMON_BIN" "$STAGE_DIR/emulecored"
-chmod +x "$STAGE_DIR/emuleqt" "$STAGE_DIR/emulecored"
+cp "$MCP_BIN" "$STAGE_DIR/emuleqt-mcp"
+chmod +x "$STAGE_DIR/emuleqt" "$STAGE_DIR/emulecored" "$STAGE_DIR/emuleqt-mcp"
 echo "  emuleqt"
 echo "  emulecored"
+echo "  emuleqt-mcp"
+
+# Replace a staged binary by a launcher that points it at the bundled libs.
+# exec, and nothing printed: emuleqt-mcp speaks JSON-RPC on stdout.
+wrap_launcher() {
+    local name="$1"
+    mv "$STAGE_DIR/$name" "$STAGE_DIR/$name.bin"
+    cat > "$STAGE_DIR/$name" <<LAUNCHER
+#!/usr/bin/env bash
+SCRIPT_DIR="\$(cd "\$(dirname "\$0")" && pwd)"
+export LD_LIBRARY_PATH="\$SCRIPT_DIR/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
+exec "\$SCRIPT_DIR/$name.bin" "\$@"
+LAUNCHER
+    chmod +x "$STAGE_DIR/$name"
+}
 
 # -- Deploy Qt libraries via linuxdeploy (optional) --------------------------
 
@@ -227,25 +252,10 @@ Libraries = lib
 Plugins = plugins
 QTCONF
 
-    # Create launcher script that sets LD_LIBRARY_PATH
-    mv "$STAGE_DIR/emuleqt" "$STAGE_DIR/emuleqt.bin"
-    cat > "$STAGE_DIR/emuleqt" <<'LAUNCHER'
-#!/usr/bin/env bash
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-export LD_LIBRARY_PATH="$SCRIPT_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-exec "$SCRIPT_DIR/emuleqt.bin" "$@"
-LAUNCHER
-    chmod +x "$STAGE_DIR/emuleqt"
-
-    # Same for daemon
-    mv "$STAGE_DIR/emulecored" "$STAGE_DIR/emulecored.bin"
-    cat > "$STAGE_DIR/emulecored" <<'LAUNCHER'
-#!/usr/bin/env bash
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-export LD_LIBRARY_PATH="$SCRIPT_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-exec "$SCRIPT_DIR/emulecored.bin" "$@"
-LAUNCHER
-    chmod +x "$STAGE_DIR/emulecored"
+    # Launcher scripts that set LD_LIBRARY_PATH
+    for name in emuleqt emulecored emuleqt-mcp; do
+        wrap_launcher "$name"
+    done
 
     # Clean up AppDir
     rm -rf "$APPDIR"
@@ -290,23 +300,9 @@ echo "  $BUNDLED_SYSLIBS system libraries bundled"
 
 # If deploy-qt was not used, create launcher scripts for LD_LIBRARY_PATH
 if [ "$DEPLOY_QT" = false ] && [ ! -f "$STAGE_DIR/emuleqt.bin" ]; then
-    mv "$STAGE_DIR/emuleqt" "$STAGE_DIR/emuleqt.bin"
-    cat > "$STAGE_DIR/emuleqt" <<'LAUNCHER'
-#!/usr/bin/env bash
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-export LD_LIBRARY_PATH="$SCRIPT_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-exec "$SCRIPT_DIR/emuleqt.bin" "$@"
-LAUNCHER
-    chmod +x "$STAGE_DIR/emuleqt"
-
-    mv "$STAGE_DIR/emulecored" "$STAGE_DIR/emulecored.bin"
-    cat > "$STAGE_DIR/emulecored" <<'LAUNCHER'
-#!/usr/bin/env bash
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-export LD_LIBRARY_PATH="$SCRIPT_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-exec "$SCRIPT_DIR/emulecored.bin" "$@"
-LAUNCHER
-    chmod +x "$STAGE_DIR/emulecored"
+    for name in emuleqt emulecored emuleqt-mcp; do
+        wrap_launcher "$name"
+    done
 fi
 
 # -- Copy config data --------------------------------------------------------
@@ -349,6 +345,13 @@ else
     echo "Warning: No .qm translation files found — skipping lang bundling."
 fi
 
+# -- Copy API documents -------------------------------------------------------
+
+DOC_DST="$STAGE_DIR/doc"
+mkdir -p "$DOC_DST"
+cp "$REPO_ROOT/docs/openapi.json" "$REPO_ROOT/docs/rest-api.md" \
+   "$REPO_ROOT/docs/fake-file-detector.md" "$DOC_DST/"
+
 # -- Audit direct dependencies -----------------------------------------------
 # Our executables may only need bundled libs or libs every desktop has. v0.5.2
 # linked libOpenGL.so.0/libGLX.so.0 (GLVND) and died where libopengl0 is absent.
@@ -358,7 +361,7 @@ echo "=== Auditing direct dependencies ==="
 BASE_SONAMES=" libc.so.6 libm.so.6 libstdc++.so.6 libgcc_s.so.1 ld-linux-x86-64.so.2 \
 libpthread.so.0 libdl.so.2 librt.so.1 libGL.so.1 libEGL.so.1 "
 UNBUNDLED=0
-for bin in "$STAGE_DIR/emuleqt.bin" "$STAGE_DIR/emulecored.bin"; do
+for bin in "$STAGE_DIR/emuleqt.bin" "$STAGE_DIR/emulecored.bin" "$STAGE_DIR/emuleqt-mcp.bin"; do
     [ -f "$bin" ] || continue
     for soname in $(readelf -d "$bin" | awk '/\(NEEDED\)/ { gsub(/[][]/, "", $NF); print $NF }'); do
         [ -f "$STAGE_DIR/lib/$soname" ] && continue
@@ -372,6 +375,21 @@ if [ "$UNBUNDLED" -ne 0 ]; then
     exit 1
 fi
 echo "  All direct dependencies bundled or base system libs."
+
+# -- Check the package is complete --------------------------------------------
+# A file that fails to reach the tarball is otherwise found by a user.
+
+MISSING=0
+for rel in emuleqt emulecored emuleqt-mcp \
+           config/eMule.tmpl config/FakeFileFilter.dat config/webserver/swagger-ui-bundle.js \
+           config/webserver/swagger-ui.css config/webserver/swagger-ui.LICENSE.txt \
+           doc/openapi.json doc/rest-api.md doc/fake-file-detector.md; do
+    if [ ! -s "$STAGE_DIR/$rel" ]; then
+        echo "Error: $rel is missing from the package" >&2
+        MISSING=1
+    fi
+done
+[ "$MISSING" -eq 0 ] || exit 1
 
 # -- Create tarball ----------------------------------------------------------
 

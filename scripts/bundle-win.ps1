@@ -11,9 +11,11 @@
       eMule\
         emuleqt.exe          GUI executable
         emulecored.exe       daemon executable
+        emuleqt-mcp.exe      MCP stdio bridge for AI clients
         config\              default config data (nodes.dat, eMule.tmpl,
-                             server.met, webserver\...)
+                             server.met, webserver\... incl. REST playground)
         lang\                compiled translation files (.qm)
+        doc\                 REST API guide and OpenAPI document
         [Qt DLLs, platforms\, styles\, tls\, etc.]
 
 .EXAMPLE
@@ -76,7 +78,9 @@ else {
 $guiResult = Find-EMuleBinary -Name 'emuleqt.exe' -Config $Config -BuildDir $BuildDir -PreferVsOutput:$NoBuild
 $daemonResult = Find-EMuleBinary -Name 'emulecored.exe' -Config $Config -BuildDir $BuildDir -PreferVsOutput:$NoBuild
 
-foreach ($result in @($guiResult, $daemonResult)) {
+$mcpResult = Find-EMuleBinary -Name 'emuleqt-mcp.exe' -Config $Config -BuildDir $BuildDir -PreferVsOutput:$NoBuild
+
+foreach ($result in @($guiResult, $daemonResult, $mcpResult)) {
     if (-not $result.Path) {
         Write-Host 'Error: binary not found.' -ForegroundColor Red
         foreach ($probe in $result.Probed) { Write-Host "  Checked: $probe" }
@@ -87,6 +91,7 @@ foreach ($result in @($guiResult, $daemonResult)) {
 Write-Host ''
 Write-Host "GUI binary:    $($guiResult.Path)"
 Write-Host "Daemon binary: $($daemonResult.Path)"
+Write-Host "MCP bridge:    $($mcpResult.Path)"
 
 # -- Assemble staging directory ----------------------------------------------
 
@@ -99,8 +104,10 @@ Write-Host ''
 Write-Host '=== Staging binaries ==='
 Copy-Item $guiResult.Path (Join-Path $stageDir 'emuleqt.exe') -Force
 Copy-Item $daemonResult.Path (Join-Path $stageDir 'emulecored.exe') -Force
+Copy-Item $mcpResult.Path (Join-Path $stageDir 'emuleqt-mcp.exe') -Force
 Write-Host '  emuleqt.exe'
 Write-Host '  emulecored.exe'
+Write-Host '  emuleqt-mcp.exe'
 
 # -- Copy config data --------------------------------------------------------
 
@@ -114,6 +121,14 @@ if (Test-Path $configSrc) {
 else {
     Write-Warning "$configSrc not found -- skipping config data."
 }
+
+# -- Copy API documents -------------------------------------------------------
+
+$docDst = Join-Path $stageDir 'doc'
+New-Item -ItemType Directory -Force -Path $docDst | Out-Null
+Copy-Item (Join-Path $projectDir 'docs\openapi.json') $docDst -Force
+Copy-Item (Join-Path $projectDir 'docs\rest-api.md') $docDst -Force
+Copy-Item (Join-Path $projectDir 'docs\fake-file-detector.md') $docDst -Force
 
 # -- Copy translation files --------------------------------------------------
 
@@ -151,7 +166,7 @@ Write-Host ''
 Write-Host '=== Running windeployqt ==='
 $deployMode = if ($Config -eq 'Debug') { '--debug' } else { '--release' }
 # The daemon too: it links Qt modules the GUI may not import (Qt6Protobuf)
-& $windeployqt $deployMode --no-translations --no-system-d3d-compiler --no-opengl-sw (Join-Path $stageDir 'emuleqt.exe') (Join-Path $stageDir 'emulecored.exe')
+& $windeployqt $deployMode --no-translations --no-system-d3d-compiler --no-opengl-sw (Join-Path $stageDir 'emuleqt.exe') (Join-Path $stageDir 'emulecored.exe') (Join-Path $stageDir 'emuleqt-mcp.exe')
 if ($LASTEXITCODE -ne 0) {
     Write-Warning 'windeployqt reported errors (continuing).'
 }
@@ -233,6 +248,21 @@ else {
     $vcpkgDlls | Copy-Item -Destination $stageDir -Force
     Write-Host "  $($vcpkgDlls.Count) vcpkg DLL(s) copied"
 }
+
+# -- Check the package is complete --------------------------------------------
+
+# A file that fails to reach the zip is otherwise found by a user.
+$required = @(
+    'emuleqt.exe', 'emulecored.exe', 'emuleqt-mcp.exe',
+    'config\eMule.tmpl', 'config\FakeFileFilter.dat', 'config\webserver\swagger-ui-bundle.js',
+    'config\webserver\swagger-ui.css', 'config\webserver\swagger-ui.LICENSE.txt',
+    'doc\openapi.json', 'doc\rest-api.md', 'doc\fake-file-detector.md'
+)
+$missing = @($required | Where-Object {
+    $item = Get-Item (Join-Path $stageDir $_) -ErrorAction SilentlyContinue
+    -not $item -or $item.Length -eq 0
+})
+if ($missing) { throw "Missing from the package: $($missing -join ', ')" }
 
 # -- Create zip --------------------------------------------------------------
 

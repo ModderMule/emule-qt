@@ -131,11 +131,11 @@ void tst_IrcClient::loginSequence_sendsUserAndNick()
     if (connectedSpy.isEmpty())
         connectedSpy.wait(3000);
 
-    // Read what the client sent — QTRY_VERIFY ensures the event loop flushes
-    QTRY_VERIFY(sock->bytesAvailable() > 0);
-    const QString sent = QString::fromUtf8(sock->readAll());
-    QVERIFY(sent.contains(QStringLiteral("USER myIdent")));
-    QVERIFY(sent.contains(QStringLiteral("NICK myNick")));
+    // The two lines can arrive in separate reads: collect until both are there.
+    QString sent;
+    QTRY_VERIFY((sent += QString::fromUtf8(sock->readAll()),
+                 sent.contains(QStringLiteral("USER myIdent"))
+                     && sent.contains(QStringLiteral("NICK myNick"))));
 
     client.disconnect();
 }

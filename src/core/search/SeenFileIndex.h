@@ -50,6 +50,7 @@ public:
         qint64 lastSeen = 0;
         uint32 seenCount = 0;
         int names = 0;           ///< distinct names on record
+        QStringList nameList;    ///< those names, at most maxNamesPerFile
 
         /// True when the file was on record before @p since.
         [[nodiscard]] bool seenBefore(qint64 since) const { return known && firstSeen < since; }

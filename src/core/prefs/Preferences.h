@@ -745,6 +745,8 @@ public:
     void setCumUsenet(const UsenetCounters& val);
     [[nodiscard]] IndexerCounters cumIndexer() const;
     void setCumIndexer(const IndexerCounters& val);
+    [[nodiscard]] KadCounters cumKad() const;
+    void setCumKad(const KadCounters& val);
 
     // Records
     [[nodiscard]] uint32 recMaxWorkingServers() const;

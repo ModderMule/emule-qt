@@ -50,6 +50,7 @@ private slots:
     void combineCounters_sumsAndKeepsPeaks();
     void countersCbor_roundTripsAndMissingKeysReadZero();
     void cumulativeUsenet_isBasePlusSession();
+    void cumulativeKad_isBasePlusSessionAndFlushIsIdempotent();
     void overheadStatsUpdated_signal();
     void uptimeSecs_countsFromTheStartTick();
     void init_stampsStartTickOnceOnly();
@@ -546,6 +547,32 @@ void tst_Statistics::cumulativeUsenet_isBasePlusSession()
     stats.flushCumulativeToPrefs(prefs, {});
     QCOMPARE(prefs.cumUsenet(), total);
     QCOMPARE(prefs.cumIndexer().searches, uint64{8});
+}
+
+void tst_Statistics::cumulativeKad_isBasePlusSessionAndFlushIsIdempotent()
+{
+    Preferences prefs;
+    KadCounters banked;
+    banked.contactsAdded = 4000;
+    banked.peakContacts = 900;
+    banked.connectedMs = 3'600'000;
+    prefs.setCumKad(banked);
+
+    Statistics stats;
+    stats.init(prefs);
+    stats.kadSession().contactsAdded += 250;
+    raiseCounter(stats.kadSession().peakContacts, 700);
+    stats.kadSession().connectedMs += 60'000;
+
+    const KadCounters total = stats.cumulativeKad();
+    QCOMPARE(total.contactsAdded, uint64{4250});
+    QCOMPARE(total.peakContacts, uint64{900});   // a peak, not an amount
+    QCOMPARE(total.connectedMs, uint64{3'660'000});
+
+    stats.flushCumulativeToPrefs(prefs, {});
+    stats.flushCumulativeToPrefs(prefs, {});
+    QCOMPARE(prefs.cumKad(), total);
+    QCOMPARE(stats.cumulativeKad(), total);
 }
 
 void tst_Statistics::overheadStatsUpdated_signal()

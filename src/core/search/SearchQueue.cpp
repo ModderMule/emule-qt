@@ -117,8 +117,10 @@ void SearchQueue::pump()
             entry.status.type = *type;
             entry.status.keyword = sent.keyword;
             entry.status.primaryKeyword = sent.primaryKeyword;
-            entry.kad = !server;
+            entry.meta = sent.awaitsMeta;
+            entry.kad = !server && !entry.meta;
             entry.awaitsSweep = sent.awaitsSweep;
+            entry.sentAtMs = m_backend.nowMs();
             if (server) {
                 m_inFlight = searchID;
                 m_inFlightDeadlineMs = m_backend.nowMs()
@@ -153,6 +155,10 @@ void SearchQueue::tick()
     for (Entry& entry : m_entries) {
         if (entry.status.state == SearchRunState::Running && entry.kad
             && !m_backend.kadSearchAlive(entry.status.searchID)) {
+            setState(entry, SearchRunState::Finished);
+        } else if (entry.status.state == SearchRunState::Running && entry.meta
+                   && now - entry.sentAtMs >= kMetaTimeoutMs) {
+            cancelMeta(entry);
             setState(entry, SearchRunState::Finished);
         } else if (entry.status.state == SearchRunState::Queued
                    && now - entry.queuedAtMs >= kMaxWaitMs) {
@@ -193,11 +199,41 @@ void SearchQueue::onSweepFinished(uint32 searchID)
         finishServerSearch(SearchRunState::Finished);
 }
 
+void SearchQueue::onMetaSearchFinished(uint32 searchID, const QString& error, bool hasMore)
+{
+    Entry* entry = find(searchID);
+    if (!entry || !entry->meta || entry->status.state != SearchRunState::Running) {
+        // stopped meanwhile: the runner must not keep a page for it
+        if (hasMore && m_backend.cancelMetaSearch)
+            m_backend.cancelMetaSearch(searchID);
+        return;
+    }
+    entry->meta = false;
+    entry->status.hasMore = hasMore && error.isEmpty();
+    // what it found before the error stays, and so does the tab
+    setState(*entry, error.isEmpty() ? SearchRunState::Finished : SearchRunState::Failed, error);
+}
+
+bool SearchQueue::more(uint32 searchID)
+{
+    Entry* entry = find(searchID);
+    if (!entry || entry->status.state != SearchRunState::Finished || !entry->status.hasMore
+        || !m_backend.continueMetaSearch)
+        return false;
+    entry->status.hasMore = false;
+    entry->meta = true;
+    entry->sentAtMs = m_backend.nowMs();
+    setState(*entry, SearchRunState::Running);
+    m_backend.continueMetaSearch(searchID);
+    return true;
+}
+
 void SearchQueue::stop(uint32 searchID)
 {
     Entry* entry = find(searchID);
     if (!entry)
         return;
+    cancelMeta(*entry);
     if (searchID == m_inFlight) {
         finishServerSearch(SearchRunState::Finished);
         return;
@@ -217,6 +253,7 @@ void SearchQueue::remove(uint32 searchID)
     if (it == m_entries.end())
         return;
     const bool wasInFlight = searchID == m_inFlight;
+    cancelMeta(*it, true);
     m_entries.erase(it);
     if (wasInFlight) {
         m_backend.endServerSearch(searchID);
@@ -230,6 +267,8 @@ void SearchQueue::clear()
     if (m_inFlight != 0)
         m_backend.endServerSearch(m_inFlight);
     m_inFlight = 0;
+    for (Entry& entry : m_entries)
+        cancelMeta(entry, true);
     m_entries.clear();
 }
 
@@ -282,6 +321,17 @@ QString SearchQueue::dedupKeyFor(const SearchParams& p)
 bool SearchQueue::isServerType(SearchType type)
 {
     return type == SearchType::Ed2kServer || type == SearchType::Ed2kGlobal;
+}
+
+void SearchQueue::cancelMeta(Entry& entry, bool parkedToo)
+{
+    const bool running = std::exchange(entry.meta, false)
+                      && entry.status.state == SearchRunState::Running;
+    const bool parked = parkedToo && std::exchange(entry.status.hasMore, false);
+    if (!running && !parked)
+        return;
+    if (m_backend.cancelMetaSearch)
+        m_backend.cancelMetaSearch(entry.status.searchID);
 }
 
 void SearchQueue::setWaiting(Entry& entry, const char* reason)

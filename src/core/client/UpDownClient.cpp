@@ -7,6 +7,7 @@
 
 #include "client/UpDownClient.h"
 #include "media/FrameGrabThread.h"
+#include "client/ClientCensus.h"
 #include "client/ClientCredits.h"
 #include "client/ClientList.h"
 #include "client/DeadSourceList.h"
@@ -1244,6 +1245,10 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
         m_isHybrid = true;
 
     initClientSoftwareVersion();
+
+    // A hello on a TCP connection: the hash goes with a real address.
+    if (theApp.clientCensus)
+        theApp.clientCensus->noteSeen(m_userHash.data(), m_userAddress);
 
     if (m_isHybrid)
         m_sharedDirectories = true;
@@ -3192,6 +3197,8 @@ void UpDownClient::processSignaturePacket(const uint8* data, uint32 size)
     m_lastSignatureAddress = m_userAddress;
 
     bool verified = theApp.clientCredits->verifyIdent(m_credits, data + 1, data[0], m_userAddress, chaIPKind);
+    if (verified && theApp.clientCensus)
+        theApp.clientCensus->noteIdentified(m_userHash.data());
     if (thePrefs.logSecureIdent())
         logDebug(QStringLiteral("processSignaturePacket: sigLen=%1 chaIPKind=%2 verified=%3 for %4")
                      .arg(data[0]).arg(chaIPKind).arg(verified).arg(userName()));

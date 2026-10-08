@@ -6,6 +6,8 @@
 
 #include "app/AppContext.h"
 #include "httpcache/HttpCacheManager.h"
+#include "client/ClientCensus.h"
+#include "kademlia/KadNodeCensus.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "files/PartFile.h"
@@ -235,6 +237,11 @@ void flushCumulativeStats(Preferences& prefs)
 {
     if (auto* s = theApp.statistics)
         s->flushCumulativeToPrefs(prefs, collectExternalSessionCounters());
+    // Not in preferences.yml (binary, large), but banked on the same clock.
+    if (auto* census = theApp.kadNodeCensus)
+        census->save();
+    if (auto* census = theApp.clientCensus)
+        census->save();
 }
 
 StatsSnapshot collectStatsSnapshot()

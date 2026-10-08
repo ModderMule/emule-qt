@@ -151,15 +151,30 @@ public:
     [[nodiscard]] bool isStaticMember() const           { return m_staticMember; }
     void setStaticMember(bool s)                        { m_staticMember = s; }
 
-    // -- eNode Meta API (OP_SERVERIDENT, runtime only, not in server.met) --
+    // -- eNode Meta API (OP_SERVERIDENT; kept in server.met as string-named tags) --
 
     [[nodiscard]] const QString& metaApiUrl() const     { return m_metaApiUrl; }
     [[nodiscard]] const QString& metaApiPin() const     { return m_metaApiPin; }
     [[nodiscard]] bool hasMetaApi() const               { return !m_metaApiUrl.isEmpty(); }
     void setMetaApi(const QString& url, const QString& pin)
     {
+        if (url != m_metaApiUrl)
+            m_metaNetworks = 0;   // another service: what it searches is unknown again
         m_metaApiUrl = url;
         m_metaApiPin = pin;
+    }
+    void clearMetaApi()                                 { setMetaApi({}, {}); }
+    /// An http(s) URL with a host: the only shape a Meta API base URL may have.
+    [[nodiscard]] static bool isMetaApiUrl(const QString& url);
+
+    /// Networks MetaApi.Search answers there, one bit per MetaNetwork value
+    /// (Caps.networks). 0 = not asked yet; bit 0 alone = asked, searches nothing.
+    [[nodiscard]] uint32 metaNetworks() const           { return m_metaNetworks; }
+    void setMetaNetworks(uint32 mask)                   { m_metaNetworks = mask; }
+    /// Known to search @p network, or not asked yet.
+    [[nodiscard]] bool mayServeMetaNetwork(uint32 network) const
+    {
+        return hasMetaApi() && (m_metaNetworks == 0 || (m_metaNetworks & (1u << network)) != 0);
     }
 
     // -- Stats ------------------------------------------------------------
@@ -379,6 +394,7 @@ private:
     // eNode Meta API
     QString m_metaApiUrl;
     QString m_metaApiPin;
+    uint32  m_metaNetworks = 0;
 };
 
 } // namespace eMule

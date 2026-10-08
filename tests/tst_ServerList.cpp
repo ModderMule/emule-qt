@@ -103,6 +103,7 @@ private slots:
 
     // Round-robin
     void nextServer_wraps();
+    void autoConnectOrder_followsPriorityWithoutSorting();
     void nextSearchServer_wraps();
     void nextStatServer_wraps();
 
@@ -352,6 +353,43 @@ void tst_ServerList::nextServer_wraps()
     QCOMPARE(s1->name(), QStringLiteral("A"));
     QCOMPARE(s2->name(), QStringLiteral("B"));
     QCOMPARE(s3->name(), QStringLiteral("A"));  // wrapped
+}
+
+void tst_ServerList::autoConnectOrder_followsPriorityWithoutSorting()
+{
+    ServerList list;
+    auto add = [&list](uint32 ip, const QString& name, ServerPriority prio) {
+        auto srv = makeServer(ip, 4661, name);
+        srv->setPreference(prio);
+        Server* raw = srv.get();
+        list.addServer(std::move(srv));
+        return raw;
+    };
+    add(0x08080801, QStringLiteral("low"), ServerPriority::Low);
+    Server* normal1 = add(0x08080802, QStringLiteral("normal1"), ServerPriority::Normal);
+    add(0x08080803, QStringLiteral("high"), ServerPriority::High);
+    Server* dead = add(0x08080804, QStringLiteral("dead"), ServerPriority::High);
+    add(0x08080805, QStringLiteral("normal2"), ServerPriority::Normal);
+    dead->setDisabled(true);
+    normal1->setStaticMember(true);
+
+    auto names = [](const std::vector<Server*>& order) {
+        QStringList out;
+        for (const Server* s : order)
+            out << s->name();
+        return out;
+    };
+    QCOMPARE(names(list.autoConnectOrder(true, false)),
+             (QStringList{QStringLiteral("high"), QStringLiteral("normal1"), QStringLiteral("normal2"),
+                          QStringLiteral("low")}));
+    QCOMPARE(names(list.autoConnectOrder(false, false)),
+             (QStringList{QStringLiteral("low"), QStringLiteral("normal1"), QStringLiteral("high"),
+                          QStringLiteral("normal2")}));
+    QCOMPARE(names(list.autoConnectOrder(true, true)), QStringList{QStringLiteral("normal1")});
+
+    // asking is not sorting: the list (and server.met's order) is as it was
+    QCOMPARE(list.serverAt(0)->name(), QStringLiteral("low"));
+    QCOMPARE(list.serverAt(2)->name(), QStringLiteral("high"));
 }
 
 void tst_ServerList::nextSearchServer_wraps()

@@ -135,6 +135,11 @@ public:
     void addToList(SearchFile* file, bool clientResponse = false,
                    uint32 fromUDPServerIP = 0);
 
+    /// Add a row a server's Meta API returned for @p searchID. The server applied
+    /// the type filter itself (a release row stays when one of its files matches),
+    /// so the list's own is not run. Takes ownership.
+    void addMetaSearchResult(uint32 searchID, SearchFile* file);
+
     // --- Kad result processing ---
 
     /// Add a Kademlia keyword search result. Builds a SearchFile internally.
@@ -268,6 +273,10 @@ private:
     /// Find the SearchListEntry for a given search ID.
     [[nodiscard]] SearchListEntry* findEntry(uint32 searchID);
     [[nodiscard]] const SearchListEntry* findEntry(uint32 searchID) const;
+
+    /// Fake-file verdict of a top-level row, from its children, notes and tags.
+    /// True when the verdict changed.
+    static bool assess(SearchFile* file);
 
     /// Compute the name-without-keywords for spam detection.
     static QString computeNameWithoutKeywords(const QString& name, const QString& fileType);

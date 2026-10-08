@@ -6,6 +6,7 @@
 
 #include "app/IpcClient.h"
 #include "app/UiState.h"
+#include "controls/SearchResultsProxy.h"
 #include "controls/AbstractListView.h"
 #include "controls/DownloadListModel.h"
 #include "controls/FitTextTabBar.h"
@@ -55,10 +56,12 @@
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QSortFilterProxyModel>
+#include <QCheckBox>
 #include <QSpinBox>
 #include <QStringList>
 #include <QStringListModel>
 #include <QTabBar>
+#include <QScrollBar>
 #include <QTreeView>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -203,6 +206,7 @@ void SearchPanel::setupUi()
     m_tabBar->setVisible(false);
     connect(m_tabBar, &QTabBar::currentChanged, this, &SearchPanel::onTabChanged);
     connect(m_tabBar, &QTabBar::tabCloseRequested, this, &SearchPanel::onTabCloseRequested);
+    connect(m_tabBar, &QTabBar::tabBarDoubleClicked, this, &SearchPanel::onTabDoubleClicked);
     mainLayout->addWidget(m_tabBar, 0, Qt::AlignLeft);
 
     // Results tree view
@@ -218,6 +222,16 @@ void SearchPanel::setupUi()
                                            new FlagDecorationDelegate(m_resultView));
     connect(m_resultView, &QTreeView::customContextMenuRequested, this, &SearchPanel::onResultContextMenu);
     connect(m_resultView, &QTreeView::doubleClicked, this, &SearchPanel::onResultDoubleClicked);
+    connect(m_resultView->verticalScrollBar(), &QScrollBar::valueChanged, this,
+            &SearchPanel::loadMoreIfAtEnd);
+    // A list short enough to need no scrollbar is at its end too; looked at once
+    // the view has laid the rows out.
+    m_loadMoreTimer = new QTimer(this);
+    m_loadMoreTimer->setSingleShot(true);
+    m_loadMoreTimer->setInterval(100);
+    connect(m_loadMoreTimer, &QTimer::timeout, this, &SearchPanel::loadMoreIfAtEnd);
+    connect(m_resultView->verticalScrollBar(), &QScrollBar::rangeChanged, m_loadMoreTimer,
+            qOverload<>(&QTimer::start));
 
     // MFC CSearchListCtrl (srchybrid/SearchListCtrl.cpp:800, :817): Enter downloads the
     // selection, exactly as a double click does, and Alt+Enter opens the result sheet.
@@ -323,10 +337,42 @@ QWidget* SearchPanel::createSearchBar()
     // on resolveAutomaticSearchType().
     m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/UsenetSearch.ico")),
                            tr("Usenet (Indexer)"), 5);  // SearchType::UsenetIndexer
+    // Asked of an eD2K server's catalogue (eNode Meta API): the connected server
+    // if it has one, else the best known one. Not in "Automatic" either.
+    m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Usenet.ico")),
+                           tr("Usenet (Server)"), 6);   // SearchType::MetaUsenet
+    m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Torrent.ico")),
+                           tr("Torrent (Server)"), 7);  // SearchType::MetaTorrent
     typeRow->addWidget(m_methodCombo);
     m_resetBtn = new QPushButton(tr("Reset"), container);
-    connect(m_resetBtn, &QPushButton::clicked, this, &SearchPanel::onResetFilters);
+    connect(m_resetBtn, &QPushButton::clicked, this, [this] {
+        onResetFilters();
+        // not in onResetFilters(): a tab double click wipes the form, not the view
+        m_showUsenetCheck->setChecked(true);
+        m_showKadCheck->setChecked(true);
+        m_showTorrentCheck->setChecked(true);
+    });
     typeRow->addWidget(m_resetBtn);
+
+    // What the server found on other networks. The protocol cannot leave them
+    // out of an answer, so these hide rows. Beside Reset, not in the filter
+    // area: that one scrolls and would bury them.
+    const auto addNetworkCheck = [&](const QString& text, const QString& icon, bool on) {
+        auto* check = new QCheckBox(text, container);
+        check->setIcon(QIcon(icon));
+        check->setChecked(on);
+        check->setToolTip(tr("Show results the server found on this network"));
+        typeRow->addSpacing(8);
+        typeRow->addWidget(check);
+        connect(check, &QCheckBox::toggled, this, &SearchPanel::onNetworkFilterChanged);
+        return check;
+    };
+    m_showUsenetCheck = addNetworkCheck(tr("Usenet results"), QStringLiteral(":/icons/Usenet.ico"),
+                                        theUiState.searchShowUsenet());
+    m_showKadCheck = addNetworkCheck(tr("Kad results"), QStringLiteral(":/icons/Kad.ico"),
+                                     theUiState.searchShowKad());
+    m_showTorrentCheck = addNetworkCheck(tr("Torrent results"), QStringLiteral(":/icons/Torrent.ico"),
+                                         theUiState.searchShowTorrent());
     typeRow->addStretch();
     grid->addLayout(typeRow, 1, 0);
 
@@ -494,7 +540,7 @@ void SearchPanel::sendSearchRequest(const SearchRequest& req)
     const QString tabTitle = req.tabTitle.isEmpty() ? req.expression : req.tabTitle;
 
     m_ipc->sendRequest(std::move(msg),
-                       [this, expression, method, tabTitle](const IpcMessage& resp) {
+                       [this, req, expression, method, tabTitle](const IpcMessage& resp) {
         if (!resp.fieldBool(0)) {
             const QString error = resp.fieldString(1);
             if (!error.isEmpty())
@@ -525,6 +571,7 @@ void SearchPanel::sendSearchRequest(const SearchRequest& req)
         tab.searchID = searchID;
         tab.title = tabTitle;
         tab.method = resolvedMethod;
+        tab.request = req;
         tab.model = new SearchResultsModel(this);
         // Not connected yet, or another server search is still out: it is queued and
         // sent by the daemon when it can be.
@@ -563,16 +610,23 @@ QString SearchPanel::tabStatusText(const SearchTab& tab) const
             return tr("Queued — waiting for a server or Kad connection");
         if (tab.waitReason == QLatin1String("waiting-for-previous-search"))
             return tr("Queued — waiting for the previous search to finish");
+        if (tab.waitReason == QLatin1String("waiting-for-server-info"))
+            return tr("Queued — waiting for the server to say what it offers");
         return tr("Queued");
     case 3:   // failed
         return tr("Search failed: %1").arg(tab.failure);
     case 2:   // finished
+        if (tab.hasMore)
+            return tr("%1 results — scroll down for more").arg(tab.resultCount());
         if (tab.resultCount() == 0 && tab.searchID != 0)
             return tr("No results");
         break;
     default:
         break;
     }
+    if (const auto* proxy = qobject_cast<const SearchResultsProxy*>(tab.proxy);
+        proxy && proxy->hiddenCount() > 0)
+        return tr("%1 of %2 results").arg(proxy->rowCount()).arg(tab.resultCount());
     return QStringLiteral("%1 results").arg(tab.resultCount());
 }
 
@@ -589,9 +643,12 @@ void SearchPanel::onSearchStatePush(const IpcMessage& msg)
         tab.runState = static_cast<int>(msg.fieldInt(1));
         tab.waitReason = msg.fieldString(2);
         tab.failure = msg.fieldString(3);
+        tab.hasMore = tab.runState == 2 && msg.fieldBool(7);
         // "Automatic" is resolved when the search is sent, which may be now.
-        if (tab.runState == 1)
+        if (tab.runState == 1) {
             tab.method = static_cast<int>(msg.fieldInt(4));
+            applyNetworkFilter(tab);
+        }
 
         if (tab.runState == 3 && before != 3)
             StatusBarNotifier::post(tr("Search \"%1\" failed: %2").arg(tab.title, tab.failure), 8000);
@@ -599,6 +656,8 @@ void SearchPanel::onSearchStatePush(const IpcMessage& msg)
         if (m_tabBar->currentIndex() == static_cast<int>(i)) {
             m_statusLabel->setText(tabStatusText(tab));
             m_cancelBtn->setEnabled(tab.runState == 0 || tab.runState == 1);
+            if (tab.hasMore)
+                m_loadMoreTimer->start();   // a page that added no row moves no scrollbar
         }
         return;
     }
@@ -659,7 +718,7 @@ void SearchPanel::sendIndexerSearchRequest(const SearchRequest& req)
 
     const QString tabTitle = req.tabTitle.isEmpty() ? req.expression : req.tabTitle;
 
-    m_ipc->sendRequest(std::move(msg), [this, tabTitle](const IpcMessage& resp) {
+    m_ipc->sendRequest(std::move(msg), [this, req, tabTitle](const IpcMessage& resp) {
         if (!resp.fieldBool(0)) {
             // "No search indexer is configured" is the common case here, and it
             // has to be said out loud — an empty result list reads as "nothing
@@ -676,6 +735,7 @@ void SearchPanel::sendIndexerSearchRequest(const SearchRequest& req)
         tab.searchID = searchID;
         tab.title = tabTitle;
         tab.method = static_cast<int>(SearchType::UsenetIndexer);
+        tab.request = req;
         tab.indexerModel = new IndexerResultsModel(this);
         m_tabBar->setCurrentIndex(addResultTab(std::move(tab)));
         m_cancelBtn->setEnabled(true);
@@ -895,6 +955,18 @@ void SearchPanel::onResetFilters()
     m_artistEdit->clear();
 }
 
+void SearchPanel::onNetworkFilterChanged()
+{
+    theUiState.setSearchShowNetworks(m_showUsenetCheck->isChecked(), m_showKadCheck->isChecked(),
+                                     m_showTorrentCheck->isChecked());
+    for (SearchTab& tab : m_tabs)
+        applyNetworkFilter(tab);
+    if (const auto* tab = currentTab()) {
+        m_statusLabel->setText(tabStatusText(*tab));
+        updateDownloadButton();
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Slot: Tab changed
 // ---------------------------------------------------------------------------
@@ -913,6 +985,19 @@ void SearchPanel::onTabChanged(int index)
 void SearchPanel::onTabCloseRequested(int index)
 {
     closeSearch(index);
+}
+
+// ---------------------------------------------------------------------------
+// Slot: Tab double-clicked (MFC OnDblClickTab)
+// ---------------------------------------------------------------------------
+
+void SearchPanel::onTabDoubleClicked(int index)
+{
+    if (index < 0 || index >= static_cast<int>(m_tabs.size()))
+        return;
+    const SearchTab& tab = m_tabs[static_cast<size_t>(index)];
+    // a peer's file list was not a search: MFC leaves the form wiped
+    applyRequestToUi(tab.clientSharedFiles ? SearchRequest{} : tab.request);
 }
 
 // ---------------------------------------------------------------------------
@@ -1260,7 +1345,9 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
     IpcMessage msg(IpcMsgType::GetSearchResults);
     msg.append(static_cast<qint64>(searchID));
 
+    m_fetchingSearchIDs.insert(searchID);
     m_ipc->sendRequest(std::move(msg), [this, searchID](const IpcMessage& resp) {
+        m_fetchingSearchIDs.remove(searchID);
         if (!resp.fieldBool(0))
             return;
 
@@ -1288,6 +1375,10 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
             row.hasComment         = m.value(QStringLiteral("hasComment")).toBool();
             row.previewPossible    = m.value(QStringLiteral("previewPossible")).toBool();
             row.userRating         = static_cast<int>(m.value(QStringLiteral("userRating")).toInteger());
+            row.confidence         = m.value(QStringLiteral("confidence")).toString();
+            row.fakeScore          = static_cast<int>(m.value(QStringLiteral("fakeScore")).toInteger());
+            for (const auto& reason : m.value(QStringLiteral("fakeReasons")).toArray())
+                row.fakeReasons.push_back(reason.toString());
             row.artist             = m.value(QStringLiteral("artist")).toString();
             row.album              = m.value(QStringLiteral("album")).toString();
             row.title              = m.value(QStringLiteral("title")).toString();
@@ -1317,8 +1408,10 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
                     QStringLiteral("%1 (%2)").arg(m_tabs[i].title)
                         .arg(m_tabs[i].model->resultCount()));
                 // The footer only refreshed on tab switch, so it lagged behind the rows
-                if (m_tabBar->currentIndex() == static_cast<int>(i))
+                if (m_tabBar->currentIndex() == static_cast<int>(i)) {
                     m_statusLabel->setText(tabStatusText(m_tabs[i]));
+                    m_loadMoreTimer->start();
+                }
 
                 if (!selection.isEmpty())
                     restoreSelection(selection);
@@ -1619,6 +1712,7 @@ void SearchPanel::switchToTab(int index)
             this, &SearchPanel::updateDownloadButton);
     updateDownloadButton();
     m_statusLabel->setText(tabStatusText(tab));
+    m_loadMoreTimer->start();
 }
 
 // ---------------------------------------------------------------------------
@@ -1735,6 +1829,9 @@ QJsonObject ed2kRowToJson(const SearchResultRow& row)
     o[QStringLiteral("seenNames")]           = row.seenNames;
     o[QStringLiteral("firstSeen")]           = static_cast<qint64>(row.firstSeen);
     o[QStringLiteral("isSpam")]              = row.isSpam;
+    o[QStringLiteral("confidence")]          = row.confidence;
+    o[QStringLiteral("fakeScore")]           = row.fakeScore;
+    o[QStringLiteral("fakeReasons")]         = QJsonArray::fromStringList(row.fakeReasons);
     if (row.isMeta()) {
         // torrent/Usenet rows: the daemon refetches their metafile by this
         o[QStringLiteral("metaKind")]      = row.metaKind;
@@ -1770,6 +1867,10 @@ SearchResultRow ed2kRowFromJson(const QJsonObject& r)
     row.seenNames           = r[QStringLiteral("seenNames")].toInt();
     row.firstSeen           = static_cast<qint64>(r[QStringLiteral("firstSeen")].toDouble());
     row.isSpam              = r[QStringLiteral("isSpam")].toBool();
+    row.confidence          = r[QStringLiteral("confidence")].toString();
+    row.fakeScore           = r[QStringLiteral("fakeScore")].toInt();
+    for (const auto& reason : r[QStringLiteral("fakeReasons")].toArray())
+        row.fakeReasons.push_back(reason.toString());
     row.metaKind            = r[QStringLiteral("metaKind")].toInt();
     row.magnet              = r[QStringLiteral("magnet")].toString();
     row.metaAgeDays         = static_cast<qint64>(r[QStringLiteral("metaAge")].toDouble());
@@ -1780,6 +1881,44 @@ SearchResultRow ed2kRowFromJson(const QJsonObject& r)
 }
 
 // No download URL here: the daemon keeps it and grabs a restored row by `id`.
+QJsonObject requestToJson(const SearchRequest& req)
+{
+    QJsonObject o;
+    o[QStringLiteral("expression")] = req.expression;
+    o[QStringLiteral("fileType")] = req.fileType;
+    o[QStringLiteral("minSize")] = req.minSize;
+    o[QStringLiteral("maxSize")] = req.maxSize;
+    o[QStringLiteral("avail")] = req.avail;
+    o[QStringLiteral("extension")] = req.extension;
+    o[QStringLiteral("completeSources")] = req.completeSources;
+    o[QStringLiteral("codec")] = req.codec;
+    o[QStringLiteral("minBitrate")] = req.minBitrate;
+    o[QStringLiteral("minLength")] = req.minLength;
+    o[QStringLiteral("title")] = req.title;
+    o[QStringLiteral("album")] = req.album;
+    o[QStringLiteral("artist")] = req.artist;
+    return o;
+}
+
+SearchRequest requestFromJson(const QJsonObject& o)
+{
+    SearchRequest req;
+    req.expression = o[QStringLiteral("expression")].toString();
+    req.fileType = o[QStringLiteral("fileType")].toString();
+    req.minSize = o[QStringLiteral("minSize")].toInteger();
+    req.maxSize = o[QStringLiteral("maxSize")].toInteger();
+    req.avail = o[QStringLiteral("avail")].toInt();
+    req.extension = o[QStringLiteral("extension")].toString();
+    req.completeSources = o[QStringLiteral("completeSources")].toInt();
+    req.codec = o[QStringLiteral("codec")].toString();
+    req.minBitrate = o[QStringLiteral("minBitrate")].toInt();
+    req.minLength = o[QStringLiteral("minLength")].toInt();
+    req.title = o[QStringLiteral("title")].toString();
+    req.album = o[QStringLiteral("album")].toString();
+    req.artist = o[QStringLiteral("artist")].toString();
+    return req;
+}
+
 QJsonObject indexerRowToJson(const IndexerResultRow& row)
 {
     QJsonObject o;
@@ -1845,6 +1984,7 @@ void SearchPanel::saveSearches()
         searchObj[QStringLiteral("method")] = tab.method;
         searchObj[QStringLiteral("clientSharedFiles")] = tab.clientSharedFiles;
         searchObj[QStringLiteral("indexer")] = tab.isIndexer();
+        searchObj[QStringLiteral("request")] = requestToJson(tab.request);
 
         QJsonArray resultsArr;
         if (tab.isIndexer()) {
@@ -1904,6 +2044,10 @@ void SearchPanel::loadSearches()
         tab.method = searchObj[QStringLiteral("method")].toInt();
         tab.clientSharedFiles = searchObj[QStringLiteral("clientSharedFiles")].toBool();
         tab.finished = true;
+        tab.request = requestFromJson(searchObj[QStringLiteral("request")].toObject());
+        // stored before the request was kept: the title is the expression
+        if (tab.request.expression.isEmpty() && !tab.clientSharedFiles)
+            tab.request.expression = title;
 
         if (searchObj[QStringLiteral("indexer")].toBool()) {
             std::vector<IndexerResultRow> rows;
@@ -2197,12 +2341,13 @@ void SearchPanel::setupResultHeader(bool forIndexer)
     }
 
     // File Name, Size, Availability, Complete, Type, Artist, Album, Title,
-    // Length, Bitrate, Codec, Known. A saved layout overrides these defaults.
+    // File Name, Size, Availability, Confidence, Complete, Type, Artist, Album, Title,
+    // Length, Bitrate, Codec, Known, Seen. A saved layout overrides these.
     m_resultView->bindColumns(kSearchHeaderKey,
-        {300, 80, 70, 70, 70, 100, 100, 100, 60, 60, 60, 60});
+        {300, 80, 70, 100, 70, 70, 100, 100, 100, 60, 60, 60, 60, 110});
 }
 
-SearchPanel::SearchRequest SearchPanel::requestFromUi() const
+SearchRequest SearchPanel::requestFromUi() const
 {
     SearchRequest req;
     req.expression = m_nameEdit->text().trimmed();
@@ -2224,6 +2369,25 @@ SearchPanel::SearchRequest SearchPanel::requestFromUi() const
     return req;
 }
 
+void SearchPanel::applyRequestToUi(const SearchRequest& req)
+{
+    constexpr qint64 kMiB = 1024 * 1024;
+    onResetFilters();
+    m_nameEdit->setText(req.expression);
+    m_typeCombo->setCurrentIndex(std::max(0, m_typeCombo->findData(req.fileType)));
+    m_minSizeSpin->setValue(static_cast<int>(req.minSize / kMiB));
+    m_maxSizeSpin->setValue(static_cast<int>(req.maxSize / kMiB));
+    m_availSpin->setValue(req.avail);
+    m_extensionEdit->setText(req.extension);
+    m_completeSpin->setValue(req.completeSources);
+    m_codecEdit->setText(req.codec);
+    m_minBitrateSpin->setValue(req.minBitrate);
+    m_minLengthSpin->setValue(req.minLength);
+    m_titleEdit->setText(req.title);
+    m_albumEdit->setText(req.album);
+    m_artistEdit->setText(req.artist);
+}
+
 void SearchPanel::showEvent(QShowEvent* event)
 {
     QWidget::showEvent(event);
@@ -2231,6 +2395,7 @@ void SearchPanel::showEvent(QShowEvent* event)
     // Results that arrived while this tab was hidden are still marked dirty; fetch
     // them now so the list is current the moment it comes back on screen.
     drainDirtySearches();
+    m_loadMoreTimer->start();
 }
 
 void SearchPanel::updateSweepProgress()
@@ -2336,12 +2501,13 @@ void SearchPanel::copySelectedEd2kLinks()
 
 int SearchPanel::addResultTab(SearchTab tab)
 {
-    tab.proxy = new QSortFilterProxyModel(this);
+    tab.proxy = new SearchResultsProxy(this);
     if (tab.isIndexer())
         tab.proxy->setSourceModel(tab.indexerModel);
     else
         tab.proxy->setSourceModel(tab.model);
     tab.proxy->setSortRole(Qt::UserRole);
+    applyNetworkFilter(tab);
 
     const QString label = QStringLiteral("%1 (%2)").arg(tab.title).arg(tab.resultCount());
     const QIcon icon = tabIcon(tab);
@@ -2362,14 +2528,47 @@ QIcon SearchPanel::tabIcon(const SearchTab& tab)
     if (tab.clientSharedFiles)
         return QIcon(QStringLiteral(":/icons/User.ico"));
 
-    static constexpr const char* methodIcons[] = {
-        ":/icons/KadServer.ico",   // 0 = Automatic
-        ":/icons/Server.ico",      // 1 = Ed2k Server
-        ":/icons/Global.ico",      // 2 = Ed2k Global
-        ":/icons/SearchKad.ico",   // 3 = Kademlia
-    };
-    const int mi = (tab.method >= 0 && tab.method <= 3) ? tab.method : 0;
-    return QIcon(QString::fromLatin1(methodIcons[mi]));
+    switch (tab.method) {
+    case 1:  return QIcon(QStringLiteral(":/icons/Server.ico"));      // Ed2k Server
+    case 2:  return QIcon(QStringLiteral(":/icons/Global.ico"));      // Ed2k Global
+    case 3:  return QIcon(QStringLiteral(":/icons/SearchKad.ico"));   // Kademlia
+    case 6:  return QIcon(QStringLiteral(":/icons/Usenet.ico"));      // Usenet (Server)
+    case 7:  return QIcon(QStringLiteral(":/icons/Torrent.ico"));     // Torrent (Server)
+    default: return QIcon(QStringLiteral(":/icons/KadServer.ico"));   // Automatic
+    }
+}
+
+void SearchPanel::loadMoreIfAtEnd()
+{
+    auto* tab = currentTab();
+    const QScrollBar* bar = m_resultView->verticalScrollBar();
+    if (!tab || !m_ipc || !tab->hasMore || tab->isIndexer() || tab->searchID == 0
+        || !isVisible() || bar->value() < bar->maximum())
+        return;
+    // rows of the last page are still on their way: the list is not at its end yet
+    if (m_dirtySearchIDs.contains(tab->searchID) || m_fetchingSearchIDs.contains(tab->searchID))
+        return;
+    tab->hasMore = false;   // once a page; the next state push says whether another follows
+    IpcMessage msg(IpcMsgType::SearchMore);
+    msg.append(static_cast<qint64>(tab->searchID));
+    m_ipc->sendRequest(std::move(msg));
+    m_statusLabel->setText(tabStatusText(*tab));
+}
+
+void SearchPanel::applyNetworkFilter(SearchTab& tab)
+{
+    auto* proxy = qobject_cast<SearchResultsProxy*>(tab.proxy);
+    if (!proxy)
+        return;
+    SearchResultsProxy::NetworkFilter filter;
+    // Usenet / torrent via server: that network was asked for, and an emptied
+    // list would have loadMoreIfAtEnd() pull every page
+    if (tab.method != 6 && tab.method != 7 && m_showUsenetCheck) {
+        filter.usenet = m_showUsenetCheck->isChecked();
+        filter.kad = m_showKadCheck->isChecked();
+        filter.torrent = m_showTorrentCheck->isChecked();
+    }
+    proxy->setNetworkFilter(filter);
 }
 
 } // namespace eMule

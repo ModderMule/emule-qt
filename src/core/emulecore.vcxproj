@@ -197,6 +197,8 @@
     <ClCompile Include="client\FruitlessSessionLedger.cpp" />
     <ClCompile Include="net\GuardedNetworkAccessManager.cpp" />
     <ClCompile Include="net\InterfacePin.cpp" />
+    <ClCompile Include="net\ListenConflict.cpp" />
+    <ClCompile Include="search\FakeFileDetector.cpp" />
     <ClCompile Include="search\SeenFileIndex.cpp" />
     <ClCompile Include="search\SearchQueue.cpp" />
     <ClCompile Include="files\HashFailureStore.cpp" />
@@ -235,6 +237,7 @@
     <ClCompile Include="kademlia\KadPrefs.cpp" />
     <ClCompile Include="kademlia\KadRoutingBin.cpp" />
     <ClCompile Include="kademlia\KadRoutingZone.cpp" />
+    <ClCompile Include="kademlia\KadNodeCensus.cpp" />
     <ClCompile Include="kademlia\KadSafeKad.cpp" />
     <ClCompile Include="kademlia\KadSearch.cpp" />
     <ClCompile Include="kademlia\KadSearchManager.cpp" />
@@ -290,6 +293,7 @@
     <ClCompile Include="search\SearchFile.cpp" />
     <ClCompile Include="search\SearchList.cpp" />
     <ClCompile Include="search\SearchParams.cpp" />
+    <ClCompile Include="search\MetaSearchRequest.cpp" />
     <ClCompile Include="search\SearchStarter.cpp" />
     <ClCompile Include="enodemeta\GrpcWeb.cpp" />
     <ClCompile Include="enodemeta\MetaAccountStore.cpp" />
@@ -324,6 +328,9 @@
     <ClCompile Include="files\SourceSaver.cpp" />
     <ClCompile Include="files\StatisticFile.cpp" />
     <ClCompile Include="stats\Statistics.cpp" />
+    <ClCompile Include="stats\CardinalitySketch.cpp" />
+    <ClCompile Include="stats\CountryCensus.cpp" />
+    <ClCompile Include="client\ClientCensus.cpp" />
     <ClCompile Include="stats\StatsHistory.cpp" />
     <ClCompile Include="stats\StatsSnapshot.cpp" />
     <ClCompile Include="utils\StringUtils.cpp" />
@@ -385,6 +392,7 @@
     <ClInclude Include="client\DeadSourceList.h" />
     <ClInclude Include="client\FruitlessSessionLedger.h" />
     <ClInclude Include="net\InterfacePin.h" />
+    <ClInclude Include="net\ListenConflict.h" />
     <ClInclude Include="media\MediaReadBudget.h" />
     <ClInclude Include="files\HashFailureStore.h" />
     <ClInclude Include="files\KadPublishStore.h" />
@@ -445,7 +453,9 @@
     <ClInclude Include="kademlia\KadResultPacketWriter.h" />
     <ClInclude Include="kademlia\KadRoutingBin.h" />
     <QtMoc Include="kademlia\KadRoutingZone.h" />
+    <ClInclude Include="kademlia\KadNodeCensus.h" />
     <ClInclude Include="kademlia\KadSafeKad.h" />
+    <ClInclude Include="kademlia\KadStats.h" />
     <ClInclude Include="kademlia\KadSearch.h" />
     <ClInclude Include="kademlia\KadSearchDefs.h" />
     <ClInclude Include="kademlia\KadSearchManager.h" />
@@ -500,9 +510,13 @@
     <QtMoc Include="search\GlobalSearchScheduler.h" />
     <ClInclude Include="search\SearchExpr.h" />
     <ClInclude Include="search\SearchExprParser.h" />
+    <ClInclude Include="search\ConfidenceText.h" />
+    <ClInclude Include="search\FakeFileDetector.h" />
     <ClInclude Include="search\SearchFile.h" />
     <QtMoc Include="search\SearchList.h" />
     <ClInclude Include="search\SearchParams.h" />
+    <ClInclude Include="search\MetaSearchRequest.h" />
+    <ClInclude Include="search\MetaSearchRunner.h" />
     <ClInclude Include="search\SearchStarter.h" />
     <ClInclude Include="enodemeta\GrpcWeb.h" />
     <ClInclude Include="enodemeta\MetaAccountStore.h" />
@@ -526,6 +540,9 @@
     <QtMoc Include="files\SharedFileList.h" />
     <QtMoc Include="net\SmtpClient.h" />
     <ClInclude Include="files\StatisticFile.h" />
+    <ClInclude Include="stats\CardinalitySketch.h" />
+    <ClInclude Include="stats\CountryCensus.h" />
+    <ClInclude Include="client\ClientCensus.h" />
     <ClInclude Include="stats\NetworkCounters.h" />
     <QtMoc Include="stats\Statistics.h" />
     <QtMoc Include="stats\StatsHistory.h" />

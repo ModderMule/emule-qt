@@ -36,7 +36,7 @@ TRANSLATIONS_DIR="$PROJECT_DIR/lang"
 #
 # The GUI tree, plus the core files that hold strings the GUI shows. They live
 # in core because the web UI names the same values (the six rating labels, the
-# "not what it claims" sentence, the KB/MB unit labels), and scanning all of
+# "not what it claims" sentence, the KB/MB unit labels, the fake-file verdict), and scanning all of
 # src/core to reach them would drag in every daemon-side log line. Named
 # individually on purpose — lupdate takes files as happily as directories.
 #
@@ -49,6 +49,7 @@ SOURCE_DIRS=(
     "$PROJECT_DIR/src/core/utils/OtherFunctions.cpp"
     "$PROJECT_DIR/src/core/utils/StringUtils.cpp"
     "$PROJECT_DIR/src/core/media/ContainerSniffer.cpp"
+    "$PROJECT_DIR/src/core/search/ConfidenceText.h"
     "$PROJECT_DIR/src/core/webserver/WebServer.h"
     "$PROJECT_DIR/src/core/webserver/WebServer.cpp"
     "$PROJECT_DIR/src/core/webserver/WebTemplateStrings.h"

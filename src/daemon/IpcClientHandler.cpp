@@ -45,6 +45,8 @@
 #include "files/SharedFileList.h"
 #include "friends/Friend.h"
 #include "friends/FriendList.h"
+#include "client/ClientCensus.h"
+#include "kademlia/KadNodeCensus.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadContact.h"
 #include "kademlia/KadUDPListener.h"
@@ -273,6 +275,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::StartSearch:          handleStartSearch(msg); break;
     case IpcMsgType::GetSearchResults:     handleGetSearchResults(msg); break;
     case IpcMsgType::StopSearch:           handleStopSearch(msg); break;
+    case IpcMsgType::SearchMore:           handleSearchMore(msg); break;
     case IpcMsgType::RemoveSearch:         handleRemoveSearch(msg); break;
     case IpcMsgType::ClearAllSearches:     handleClearAllSearches(msg); break;
     case IpcMsgType::DownloadSearchFile:   handleDownloadSearchFile(msg); break;
@@ -295,6 +298,8 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::Subscribe:            handleSubscribe(msg); break;
     case IpcMsgType::GetKadContacts:       handleGetKadContacts(msg); break;
     case IpcMsgType::GetKadStatus:         handleGetKadStatus(msg); break;
+    case IpcMsgType::GetKadStats:          handleGetKadStats(msg); break;
+    case IpcMsgType::GetClientStats:       handleGetClientStats(msg); break;
     case IpcMsgType::BootstrapKad:         handleBootstrapKad(msg); break;
     case IpcMsgType::DisconnectKad:        handleDisconnectKad(msg); break;
     case IpcMsgType::GetKadSearches:       handleGetKadSearches(msg); break;
@@ -971,6 +976,13 @@ void IpcClientHandler::handleGetSearchResults(const IpcMessage& msg)
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(results)));
 }
 
+void IpcClientHandler::handleSearchMore(const IpcMessage& msg)
+{
+    const bool asked = theApp.searchList
+        && searchMore(*theApp.searchList, static_cast<uint32>(msg.fieldInt(0)));
+    sendMessage(IpcMessage::makeResult(msg.seqId(), asked));
+}
+
 void IpcClientHandler::handleStopSearch(const IpcMessage& msg)
 {
     if (theApp.searchList)
@@ -1558,6 +1570,16 @@ void IpcClientHandler::handleGetKadStatus(const IpcMessage& msg)
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(status)));
 }
 
+void IpcClientHandler::handleGetKadStats(const IpcMessage& msg)
+{
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(ops::kadStats())));
+}
+
+void IpcClientHandler::handleGetClientStats(const IpcMessage& msg)
+{
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(ops::clientStats())));
+}
+
 void IpcClientHandler::handleBootstrapKad(const IpcMessage& msg)
 {
     sendStatus(msg, ops::startKad(msg.fieldString(0), static_cast<uint16>(msg.fieldInt(1))));
@@ -2123,6 +2145,10 @@ void IpcClientHandler::handleResetStats(const IpcMessage& msg)
     // The session counters are deliberately left running, as they are there too.
     thePrefs.resetCumulativeStats(static_cast<uint64>(QDateTime::currentSecsSinceEpoch()));
     thePrefs.save();
+    if (theApp.kadNodeCensus)
+        theApp.kadNodeCensus->reset();
+    if (theApp.clientCensus)
+        theApp.clientCensus->reset();
 
     if (theApp.statistics) {
         theApp.statistics->resetDownDatarateOverhead();
@@ -2157,6 +2183,11 @@ void IpcClientHandler::handleRestoreStats(const IpcMessage& msg)
         return;
     }
     thePrefs.save();
+    // No backup of its own (one from before the census existed) is not an error.
+    if (theApp.kadNodeCensus)
+        theApp.kadNodeCensus->restore();
+    if (theApp.clientCensus)
+        theApp.clientCensus->restore();
 
     // Rebase onto the restored totals, or the next flush writes the pre-restore
     // ones straight back — the same trap handleResetStats documents. The graphs

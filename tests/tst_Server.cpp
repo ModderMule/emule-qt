@@ -31,6 +31,7 @@ private slots:
     void addTag_ipv6_dynIPWins();
     void writeTags_ipv6RoundTrip();
     void writeTags_noIPv6TagForIPv4();
+    void writeTags_metaApiRoundTrip();
 
     // Dual-stack (one row per server)
     void dualStack_addAddressKeepsBothFamilies();
@@ -299,6 +300,50 @@ void tst_Server::writeTags_ipv6RoundTrip()
     QCOMPARE(restored.ipAddress(), v6);
     QCOMPARE(restored.name(), original.name());
     QVERIFY(!restored.hasDynIP());
+}
+
+// The Meta API a server announced in its ident survives a restart, so a Usenet /
+// torrent search can ask it without logging in again. String-named tags: MFC and
+// older builds skip what they do not know.
+void tst_Server::writeTags_metaApiRoundTrip()
+{
+    auto reload = [](const Server& original) {
+        SafeMemFile f;
+        const uint32 tagCount = original.writeTags(f);
+        f.seek(0, 0);
+        Server restored(0x01020304, 4661);
+        for (uint32 i = 0; i < tagCount; ++i) {
+            Tag tag(f, true);
+            restored.addTagFromFile(tag);
+        }
+        return restored;
+    };
+
+    Server original(0x01020304, 4661);
+    QVERIFY(!reload(original).hasMetaApi());
+
+    original.setMetaApi(QStringLiteral("https://meta.example.org:4671/api"), QStringLiteral("sha256/AAAA"));
+    original.setMetaNetworks(0b0111);
+    const Server restored = reload(original);
+    QCOMPARE(restored.metaApiUrl(), original.metaApiUrl());
+    QCOMPARE(restored.metaApiPin(), original.metaApiPin());
+    QCOMPARE(restored.metaNetworks(), uint32{0b0111});
+    QVERIFY(restored.mayServeMetaNetwork(1) && restored.mayServeMetaNetwork(2));
+    QVERIFY(!restored.mayServeMetaNetwork(3));
+
+    // not asked yet: may serve anything; another service: unknown again
+    original.setMetaNetworks(0);
+    QVERIFY(original.mayServeMetaNetwork(3));
+    original.setMetaNetworks(0b0011);
+    original.setMetaApi(QStringLiteral("https://other.example.org"), {});
+    QCOMPARE(original.metaNetworks(), uint32{0});
+    original.clearMetaApi();
+    QVERIFY(!original.mayServeMetaNetwork(1));
+
+    // a file edited by hand cannot point the client at a non-http address
+    Server tampered(0x01020304, 4661);
+    tampered.addTagFromFile(Tag(QByteArray("metaapi"), QStringLiteral("file:///etc/passwd")));
+    QVERIFY(!tampered.hasMetaApi());
 }
 
 void tst_Server::writeTags_noIPv6TagForIPv4()

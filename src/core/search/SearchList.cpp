@@ -78,6 +78,7 @@ void SearchList::noteSeen(SearchFile& file, const SearchListEntry& entry, bool n
         // search cannot make it so either.
         const SeenFileIndex::Info known = index->lookup(file.fileHash());
         file.setSeen(known.seenBefore(entry.startedAt), known.names, known.firstSeen);
+        file.setSeenNameList(known.nameList);
     }
     index->note(file.fileHash(), file.fileName(), static_cast<uint64>(file.fileSize()),
                 QDateTime::currentSecsSinceEpoch());
@@ -425,6 +426,18 @@ void SearchList::processUDPSearchAnswer(const uint8* packet, uint32 size,
     emit tabHeaderUpdated(m_currentEd2kSearchID);
 }
 
+void SearchList::addMetaSearchResult(uint32 searchID, SearchFile* file)
+{
+    if (!findEntry(searchID)) {
+        delete file;   // the tab was closed while the answer was on its way
+        return;
+    }
+    file->setSearchID(searchID);
+    const QString filter = std::exchange(m_resultFileType, {});
+    addToList(file, false, 0);
+    m_resultFileType = filter;
+}
+
 // ---------------------------------------------------------------------------
 // Core: addToList — deduplication, parent/child grouping
 // ---------------------------------------------------------------------------
@@ -502,6 +515,13 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
         }
 
         const uint32 addedSources = fileOwner->sourceCount();
+
+        // Kad publish trust: the best any answer reported, not the first one's
+        const auto trust = [](const SearchFile* f) { return f->kadPublishInfo() & 0xFFFF; };
+        if (trust(fileOwner.get()) > trust(parent))
+            parent->setKadPublishInfo(fileOwner->kadPublishInfo());
+        if (matchingChild && trust(fileOwner.get()) > trust(matchingChild))
+            matchingChild->setKadPublishInfo(fileOwner->kadPublishInfo());
 
         if (matchingChild) {
             // Two answers for one name disagreeing on the AICH root: trust neither, and
@@ -582,6 +602,7 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
         // Update found sources count
         m_foundSourcesCount[searchID] += addedSources;
 
+        assess(parent);
         emit resultUpdated(parent);
 
     } else {
@@ -601,6 +622,7 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
                          fromUDPServerIP != 0, fromUDPServerIP);
         }
 
+        assess(newFile);
         emit resultAdded(newFile);
     }
 }
@@ -641,6 +663,8 @@ bool SearchList::addNotes(const uint8* fileHash, const QByteArray& publisherId,
                 continue;
             file->addKadNote(publisherId, rating, comment);
             added = true;
+            if (!file->listParent())
+                assess(file.get());
             emit resultUpdated(file.get());
         }
     }
@@ -888,6 +912,7 @@ void SearchList::markFileAsSpam(SearchFile* file, bool addToFilter)
             m_knownSpamSourcesIPs[client.ip] = true;
     }
 
+    assess(file->listParent() ? file->listParent() : file);
     emit spamStatusChanged(file);
 }
 
@@ -916,6 +941,7 @@ void SearchList::markFileAsNotSpam(SearchFile* file, bool removeFromFilter)
             m_knownSpamSourcesIPs.erase(client.ip);
     }
 
+    assess(file->listParent() ? file->listParent() : file);
     emit spamStatusChanged(file);
 }
 
@@ -927,9 +953,9 @@ void SearchList::recalculateSpamRatings(uint32 searchID)
 
     for (auto& file : entry->files) {
         if (file->listParent() == nullptr) {
+            const bool wasSpam = file->isConsideredSpam();
             doSpamRating(file.get(), false, false, false, 0);
-
-            bool wasSpam = file->isConsideredSpam();
+            assess(file.get());
             if (wasSpam != file->isConsideredSpam())
                 emit spamStatusChanged(file.get());
         }
@@ -1159,6 +1185,54 @@ const SearchListEntry* SearchList::findEntry(uint32 searchID) const
             return &entry;
     }
     return nullptr;
+}
+
+bool SearchList::assess(SearchFile* file)
+{
+    // A torrent / Usenet row is not an eD2K file: no hash to collect names under.
+    if (!file || file->listParent() || file->isMetaResult())
+        return false;
+
+    FakeFileInput in;
+    in.name = file->fileName();
+    in.size = static_cast<uint64>(file->fileSize());
+    in.claimedType = file->fileType();
+    in.observedNames = file->seenNameList();
+    in.spamRating = file->spamRating();
+    in.consideredSpam = file->isConsideredSpam();
+    in.userRating = file->userRating();
+    in.mediaLengthSec = file->getIntTagValue(FT_MEDIA_LENGTH);
+    in.mediaBitrateKbps = file->getIntTagValue(FT_MEDIA_BITRATE);
+    in.artist = file->getStrTagValue(FT_MEDIA_ARTIST);
+    in.album = file->getStrTagValue(FT_MEDIA_ALBUM);
+    in.title = file->getStrTagValue(FT_MEDIA_TITLE);
+    in.kadTrust = kadTrustFromPublishInfo(file->kadPublishInfo());
+
+    for (const auto& [publisher, note] : file->kadNotesCache()) {
+        in.kadNoteRatedFake = in.kadNoteRatedFake || note.rating == 1;
+        if (!note.comment.isEmpty())
+            in.comments.push_back(note.comment);
+    }
+
+    // The names of this search, and whether its answers disagree on the AICH root
+    in.multipleAICH = file->hasFoundMultipleAICH();
+    const AICHHash* root = nullptr;
+    for (const SearchFile* child : file->listChildren()) {
+        in.observedNames.push_back(child->fileName());
+        const FileIdentifier& id = child->fileIdentifier();
+        if (child->hasFoundMultipleAICH())
+            in.multipleAICH = true;
+        else if (id.hasAICHHash()) {
+            if (root && *root != id.getAICHHash())
+                in.multipleAICH = true;
+            root = &id.getAICHHash();
+        }
+    }
+
+    const FakeFileVerdict verdict = assessFile(in, activeFakeFileRules());
+    const bool changed = !file->hasFakeVerdict() || file->fakeVerdict() != verdict;
+    file->setFakeVerdict(verdict);
+    return changed;
 }
 
 QString SearchList::computeNameWithoutKeywords(const QString& name, const QString& /*fileType*/)

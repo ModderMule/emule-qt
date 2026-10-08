@@ -263,6 +263,7 @@ emule_add_test(tst_SearchExpr    FOLDER "Search")
 emule_add_test(tst_SearchParams  FOLDER "Search")
 emule_add_test(tst_SearchFile    FOLDER "Search")
 emule_add_test(tst_SearchList    FOLDER "Search")
+emule_add_test(tst_FakeFileDetector FOLDER "Search")
 emule_add_test(tst_EnodeMeta     FOLDER "Search")
 target_compile_definitions(tst_EnodeMeta PRIVATE
     ENODEMETA_TESTDATA="${CMAKE_SOURCE_DIR}/external/enodemeta/testdata")
@@ -288,6 +289,9 @@ emule_add_test(tst_ChatCaptcha   FOLDER "Friends")
 emule_add_test(tst_Statistics      FOLDER "Stats")
 emule_add_test(tst_StatisticsReset FOLDER "Stats")
 emule_add_test(tst_StatsHistory    FOLDER "Stats")
+emule_add_test(tst_CardinalitySketch FOLDER "Stats")
+emule_add_test(tst_KadNodeCensus   FOLDER "Stats")
+emule_add_test(tst_ClientCensus    FOLDER "Stats")
 
 # Module 19: Web Server
 emule_add_test(tst_WebServer FOLDER "WebServer")
@@ -560,6 +564,7 @@ target_link_libraries(tst_ListHeaderMenu PRIVATE
 emule_add_test(tst_MetaSearchGui FOLDER "Gui"
     SOURCES tst_MetaSearchGui.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/controls/SearchResultsModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/SearchResultsProxy.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MetaAccountDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
@@ -626,6 +631,7 @@ endif()
 emule_add_test(tst_StatisticsPanel FOLDER "Gui"
     SOURCES tst_StatisticsPanel.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/panels/StatisticsPanel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/StatsGraph.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/PanelPoller.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"

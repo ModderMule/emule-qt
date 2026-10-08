@@ -8,6 +8,7 @@
 /// Right side: 3 stacked StatsGraph widgets (Download, Upload, Connections).
 
 #include <QHash>
+#include <QIcon>
 #include <QList>
 #include <QWidget>
 
@@ -47,6 +48,12 @@ public:
 
     /// Apply one GetUsenetStats reply to the Usenet branch. Public for tests.
     void applyUsenetStats(const class QCborMap& data);
+
+    /// Apply one GetKadStats reply to the Kademlia branch. Public for tests.
+    void applyKadStats(const class QCborMap& data);
+
+    /// Apply one GetClientStats reply to Clients > Session / Cumulative. Public for tests.
+    void applyClientStats(const class QCborMap& data);
 
     /// Apply one GetStats reply to the tree. Public for tests.
     void updateTree(const class QCborMap& stats);
@@ -223,6 +230,14 @@ private:
     QTreeWidgetItem* m_itemLowIDClients = nullptr;
     QTreeWidgetItem* m_itemBannedClients = nullptr;
     QTreeWidgetItem* m_itemFilteredClients = nullptr;
+    // Distinct clients by user hash (GetClientStats): [0] session, [1] cumulative.
+    struct ClientSeenItems {
+        QTreeWidgetItem* scope = nullptr;
+        QTreeWidgetItem* seen = nullptr;
+        QTreeWidgetItem* identified = nullptr;
+        QTreeWidgetItem* countries = nullptr;
+    };
+    ClientSeenItems m_clientSeen[2];
 
     // Servers
     QTreeWidgetItem* m_itemSrvWorking = nullptr;
@@ -300,6 +315,37 @@ private:
     QList<CounterItem> m_hcUpCumulativeRows;
     QList<CounterItem> m_hcDownSessionRows;
     QList<CounterItem> m_hcDownCumulativeRows;
+
+    // --- Kademlia ---
+    //
+    // The same tables under Session and Cumulative; the routing table as it
+    // stands (liveOnly rows) is Session only. Versions and countries are
+    // dynamic children, updated in place by key.
+
+    [[nodiscard]] static std::span<const CounterRow> kadTableRows();
+    [[nodiscard]] static std::span<const CounterRow> kadNodeRows();
+    [[nodiscard]] static std::span<const CounterRow> kadNetworkRows();
+    [[nodiscard]] static std::span<const CounterRow> kadActivityRows();
+    void buildKademliaBranch(const QIcon& detailIcon, const QIcon& cumulativeIcon);
+    void updateKadVersions(const QCborArray& versions, qint64 contacts);
+    static void updateCountryRows(QTreeWidgetItem* parent, const QCborArray& countries);
+
+    struct KeyedRow {
+        QString key;
+        QString text;
+        QIcon icon;
+    };
+    /// Make @p parent's children exactly @p rows, in order, reusing items by key
+    /// so expansion and selection survive the poll.
+    static void syncKeyedChildren(QTreeWidgetItem* parent, const QList<KeyedRow>& rows);
+
+    QTreeWidgetItem* m_itemKad = nullptr;
+    QTreeWidgetItem* m_itemKadStatus = nullptr;
+    QTreeWidgetItem* m_itemKadVersions = nullptr;
+    QTreeWidgetItem* m_itemKadSesCountries = nullptr;
+    QTreeWidgetItem* m_itemKadCumCountries = nullptr;
+    QList<CounterItem> m_kadSessionRows;
+    QList<CounterItem> m_kadCumulativeRows;
 
     // From the last GetStats: what Usenet's download time is a share of.
     qint64 m_sessionUptime = 0;

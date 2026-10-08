@@ -193,7 +193,7 @@ SearchFile::SearchFile(FileDataIO& data, bool optUTF8,
 
         // The server found this file on Kad. Kept, so a stored search restores it.
         case FT_META_NETWORK:
-            if (tag.isInt() && tag.intValue() == META_NETWORK_KAD)
+            if (tag.isInt() && tag.intValue() == FT_META_NETWORK_KAD)
                 m_kadOrigin = true;
             addTagUnique(std::move(tag));
             break;

@@ -759,10 +759,10 @@ QWidget* TransferPanel::createDownloadsSection()
     header->setStretchLastSection(true);
     header->setDefaultSectionSize(90);
     // Name, Size, Completed, Speed, Progress, Sources, Priority, Status,
-    // Remaining, Last Seen Complete, Last Reception, Category, Added On, Country.
-    // Hidden by default as in MFC: Last Seen Complete, Last Reception, Category.
+    // Remaining, Last Seen Complete, Last Reception, Category, Added On, Country,
+    // Confidence. Hidden by default as in MFC: Last Seen Complete, Last Reception, Category.
     downloadView->bindColumns(QStringLiteral("downloads"),
-        {220, 65, 65, 65, 90, 65, 70, 65, 80, 80, 80, 60, 120, 100},
+        {220, 65, 65, 65, 90, 65, 70, 65, 80, 80, 80, 60, 120, 100, 100},
         {DownloadListModel::ColSeenComplete, DownloadListModel::ColLastReception,
          DownloadListModel::ColCategory, DownloadListModel::ColCountry});
     CountryFlags::bindFlagColumn(downloadView);
@@ -1104,6 +1104,10 @@ void TransferPanel::requestDownloads()
             row.containerSuspect  = m.value(QStringLiteral("containerSuspect")).toBool();
             row.containerExpected = m.value(QStringLiteral("containerExpected")).toString();
             row.containerActual   = m.value(QStringLiteral("containerActual")).toString();
+            row.confidence        = m.value(QStringLiteral("confidence")).toString();
+            row.fakeScore         = static_cast<int>(m.value(QStringLiteral("fakeScore")).toInteger());
+            for (const auto& reason : m.value(QStringLiteral("fakeReasons")).toArray())
+                row.fakeReasons.push_back(reason.toString());
             if (auto partArr = m.value(QStringLiteral("partMap")).toArray(); !partArr.isEmpty()) {
                 row.partMap.resize(static_cast<qsizetype>(partArr.size()));
                 for (qsizetype i = 0; i < partArr.size(); ++i)

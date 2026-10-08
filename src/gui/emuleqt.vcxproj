@@ -273,6 +273,7 @@
     <ClCompile Include="panels\SearchPanel.cpp" />
     <ClCompile Include="controls\IndexerResultsModel.cpp" />
     <ClCompile Include="controls\SearchResultsModel.cpp" />
+    <ClCompile Include="controls\SearchResultsProxy.cpp" />
     <ClCompile Include="controls\ServerListModel.cpp" />
     <ClCompile Include="panels\ServerPanel.cpp" />
     <ClCompile Include="controls\SharedFilesModel.cpp" />
@@ -316,6 +317,7 @@
     <ClInclude Include="utils\DialogSizing.h" />
     <ClInclude Include="utils\FileAssociation.h" />
     <ClInclude Include="utils\FileTypeIcons.h" />
+    <ClInclude Include="controls\ConfidenceStyle.h" />
     <ClInclude Include="controls\KnownTypeStyle.h" />
     <ClInclude Include="utils\NzbAdd.h" />
     <QtMoc Include="utils\MetaResultActions.h" />
@@ -403,6 +405,7 @@
     <QtMoc Include="panels\SearchPanel.h" />
     <QtMoc Include="controls\IndexerResultsModel.h" />
     <QtMoc Include="controls\SearchResultsModel.h" />
+    <QtMoc Include="controls\SearchResultsProxy.h" />
     <QtMoc Include="controls\ServerListModel.h" />
     <QtMoc Include="panels\ServerPanel.h" />
     <QtMoc Include="controls\SharedFilesModel.h" />

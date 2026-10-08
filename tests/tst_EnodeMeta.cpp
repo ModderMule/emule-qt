@@ -10,6 +10,10 @@
 #include "enodemeta/MetaApiClient.h"
 #include "enodemeta/MetaHash.h"
 #include "enodemeta/MetaIdentity.h"
+#include "search/MetaSearchRequest.h"
+#include "search/SearchFile.h"
+#include "server/Server.h"
+#include "server/ServerList.h"
 
 #include <QCryptographicHash>
 #include <QFile>
@@ -100,6 +104,12 @@ private slots:
     void grpcweb_errorInfoDetail();
     void accountStore_roundTrip();
     void credentials_onlyOverTls();
+    void search_capsNetworksSurviveTheWire();
+    void search_candidatesConnectedFirstThenAutoConnectOrder();
+    void search_requestFromParams();
+    void search_requestRefusesWhatTheApiCannotTake();
+    void search_entryBecomesAResultRow();
+    void search_entryOfAnotherNetworkOrABadHashIsDropped();
 };
 
 void tst_EnodeMeta::fold_vectors()
@@ -404,6 +414,240 @@ void tst_EnodeMeta::credentials_onlyOverTls()
 
     MetaEndpoint ep{QStringLiteral("HTTPS://Srv.Example/api"), {}, {}};
     QCOMPARE(ep.origin(), QStringLiteral("https://srv.example:443"));
+}
+
+// ---------------------------------------------------------------------------
+// Usenet / torrent search through a server's Meta API
+// ---------------------------------------------------------------------------
+
+namespace {
+
+constexpr uint32 kTorrent = 1;   // MetaNetwork values
+constexpr uint32 kUsenet = 2;
+
+Server* addMetaServer(ServerList& list, uint32 ip, const QString& name, ServerPriority prio, bool metaApi = true)
+{
+    auto srv = std::make_unique<Server>(ip, 4661);
+    srv->setName(name);
+    srv->setPreference(prio);
+    if (metaApi)
+        srv->setMetaApi(QStringLiteral("https://%1.example.org").arg(name), {});
+    Server* raw = srv.get();
+    list.addServer(std::move(srv));
+    return raw;
+}
+
+QStringList namesOf(const std::vector<MetaSearchCandidate>& candidates)
+{
+    QStringList out;
+    for (const auto& c : candidates)
+        out << c.endpoint.serverName;
+    return out;
+}
+
+pb::MetaEntry entryOf(Kind kind, uint32 fileIndex, const QString& name)
+{
+    const QByteArray identity(identityLength(kind), '\x5A');
+    const auto hash = build(kind, 0, fileIndex, identity);
+    pb::MetaEntry e;
+    if (hash)
+        e.setMetaHash(QByteArray(reinterpret_cast<const char*>(hash->data()), kMetaHashSize));
+    e.setKind(static_cast<pb::MetaKindGadget::MetaKind>(kind));
+    e.setFileIndex(fileIndex);
+    e.setName(name);
+    e.setSize(123456789012ULL);
+    e.setTotalSize(223456789012ULL);
+    e.setCatalogId(QStringLiteral("cat-1"));
+    return e;
+}
+
+} // namespace
+
+// Caps.networks is what decides whether a server is asked at all. Bytes as a
+// server sends them (packed repeated enum), not a round trip through our own
+// serializer, which would agree with itself either way.
+void tst_EnodeMeta::search_capsNetworksSurviveTheWire()
+{
+    // contract_version=1, kinds=[1,2,3], search_available=true, networks=[1,2]
+    const QByteArray wire = QByteArray::fromHex("0801" "1203010203" "3001" "52020102");
+    MetaApiClient::registerProtobufTypes();
+    QProtobufSerializer ser;
+    pb::Caps caps;
+    QVERIFY(caps.deserialize(&ser, wire));
+    QVERIFY(caps.searchAvailable());
+    QCOMPARE(caps.kinds().size(), 3);
+    QCOMPARE(caps.networks().size(), 2);
+    QCOMPARE(static_cast<uint32>(caps.networks().at(0)), kTorrent);
+    QCOMPARE(static_cast<uint32>(caps.networks().at(1)), kUsenet);
+}
+
+void tst_EnodeMeta::search_candidatesConnectedFirstThenAutoConnectOrder()
+{
+    ServerList list;
+    addMetaServer(list, 0x08080801, QStringLiteral("low"), ServerPriority::Low);
+    addMetaServer(list, 0x08080802, QStringLiteral("plain"), ServerPriority::High, /*metaApi*/ false);
+    Server* normal = addMetaServer(list, 0x08080803, QStringLiteral("normal"), ServerPriority::Normal);
+    addMetaServer(list, 0x08080804, QStringLiteral("high"), ServerPriority::High);
+    Server* dead = addMetaServer(list, 0x08080805, QStringLiteral("dead"), ServerPriority::High);
+    Server* torrentOnly = addMetaServer(list, 0x08080806, QStringLiteral("torrentonly"), ServerPriority::High);
+    dead->setDisabled(true);
+    torrentOnly->setMetaNetworks(1u | (1u << kTorrent));
+
+    // nobody connected: auto-connect order; the one that said no to Usenet goes last
+    MetaCandidateOrder order;
+    QCOMPARE(namesOf(metaSearchCandidates(list, kUsenet, order)),
+             (QStringList{QStringLiteral("high"), QStringLiteral("normal"), QStringLiteral("low"),
+                          QStringLiteral("torrentonly")}));
+    QCOMPARE(namesOf(metaSearchCandidates(list, kTorrent, order)),
+             (QStringList{QStringLiteral("high"), QStringLiteral("torrentonly"), QStringLiteral("normal"),
+                          QStringLiteral("low")}));
+
+    // the connected server is asked first, whatever its priority
+    order.connectedServerId = normal->serverId();
+    QCOMPARE(namesOf(metaSearchCandidates(list, kUsenet, order)).first(), QStringLiteral("normal"));
+    QCOMPARE(metaSearchCandidates(list, kUsenet, order).size(), size_t{4});
+
+    // ... unless it has no Meta API: then the list decides
+    order.connectedServerId = list.serverAt(1)->serverId();   // "plain"
+    QCOMPARE(namesOf(metaSearchCandidates(list, kUsenet, order)).first(), QStringLiteral("high"));
+
+    // priorities off: list order
+    order = {};
+    order.usePriorities = false;
+    QCOMPARE(namesOf(metaSearchCandidates(list, kUsenet, order)).first(), QStringLiteral("low"));
+
+    // the copy carries what a later answer needs
+    const auto first = metaSearchCandidates(list, kUsenet, {}).front();
+    QCOMPARE(first.endpoint.baseUrl, QStringLiteral("https://high.example.org"));
+    QCOMPARE(first.port, uint16{4661});
+    QVERIFY(first.ip != 0 && first.serverId != 0);
+
+    ServerList none;
+    addMetaServer(none, 0x08080801, QStringLiteral("plain"), ServerPriority::High, false);
+    QVERIFY(metaSearchCandidates(none, kUsenet, {}).empty());
+}
+
+void tst_EnodeMeta::search_requestFromParams()
+{
+    SearchParams p;
+    p.expression = QStringLiteral("ubuntu AND \"long term\" NOT beta -alpha");
+    p.fileType = QStringLiteral("Iso");
+    p.minSize = 1000;
+    p.maxSize = 5000;
+    p.availability = 7;
+
+    const auto torrent = buildMetaSearchRequest(p, SearchType::MetaTorrent);
+    QVERIFY(torrent.has_value());
+    QCOMPARE(torrent->query(), QStringLiteral("ubuntu long term"));
+    QCOMPARE(torrent->exclude(), (QStringList{QStringLiteral("beta"), QStringLiteral("alpha")}));
+    QCOMPARE(static_cast<uint32>(torrent->network()), kTorrent);
+    QCOMPARE(torrent->type(), QStringLiteral("Iso"));
+    QCOMPARE(torrent->minSize(), quint64{1000});
+    QCOMPARE(torrent->maxSize(), quint64{5000});
+    QCOMPARE(torrent->minSeeders(), quint32{7});
+    QCOMPARE(torrent->limit(), 200u);   // a release is many rows
+
+    const auto usenet = buildMetaSearchRequest(p, SearchType::MetaUsenet);
+    QVERIFY(usenet.has_value());
+    QCOMPARE(usenet->limit(), 500u);
+    QVERIFY(usenet.has_value());
+    QCOMPARE(static_cast<uint32>(usenet->network()), kUsenet);
+    QCOMPARE(usenet->minSeeders(), quint32{0});   // a Usenet release has no sources
+
+    QCOMPARE(metaNetworkFor(SearchType::Ed2kServer), uint32{0});
+}
+
+void tst_EnodeMeta::search_requestRefusesWhatTheApiCannotTake()
+{
+    SearchParams p;
+    for (const QString& expr : {QStringLiteral("a OR b"), QStringLiteral("(a b)"), QStringLiteral("NOT a"),
+                                QStringLiteral("   "), QStringLiteral("-a")}) {
+        p.expression = expr;
+        const auto req = buildMetaSearchRequest(p, SearchType::MetaUsenet);
+        QVERIFY2(!req.has_value(), qPrintable(expr));
+        QVERIFY(!req.error().isEmpty());
+    }
+    p.expression = QStringLiteral("\"a OR b\"");   // quoted: words like any other
+    QVERIFY(buildMetaSearchRequest(p, SearchType::MetaUsenet).has_value());
+}
+
+void tst_EnodeMeta::search_entryBecomesAResultRow()
+{
+    SearchParams p;
+    pb::MetaEntry e = entryOf(Kind::BtV1, kFileIndexWholeSet32, QStringLiteral("Some.Release"));
+    e.setSeeders(42);
+    e.setPeers(9);
+    e.setAgeDays(3);
+    e.setIndexer(QStringLiteral("idx"));
+    e.setMagnet(QStringLiteral("magnet:?xt=urn:btih:abc"));
+    e.setFlags(META_FLAG_MAGNET_ONLY);
+    e.setType(QStringLiteral("Video"));
+
+    const auto file = searchFileFromMetaEntry(e, SearchType::MetaTorrent, p, 0x0A000001, 4661);
+    QVERIFY(file);
+    QVERIFY(file->isMetaResult() && file->meta().isTorrent());
+    QCOMPARE(file->fileName(), QStringLiteral("Some.Release"));
+    QCOMPARE(static_cast<quint64>(file->fileSize()), quint64{123456789012ULL});
+    QCOMPARE(file->fileType(), QStringLiteral("Video"));
+    QCOMPARE(file->meta().totalSize, uint64{223456789012ULL});
+    QCOMPARE(file->meta().catalogId, QStringLiteral("cat-1"));
+    QCOMPARE(file->meta().seeders, uint32{42});
+    QCOMPARE(file->meta().peers, uint32{9});
+    QCOMPARE(file->meta().ageDays, uint32{3});
+    QCOMPARE(file->meta().indexer, QStringLiteral("idx"));
+    QCOMPARE(file->meta().magnet, QStringLiteral("magnet:?xt=urn:btih:abc"));
+    QCOMPARE(file->meta().flags, uint32{META_FLAG_MAGNET_ONLY});
+    QCOMPARE(file->meta().fileIndex, kFileIndexWholeSet32);
+    QCOMPARE(file->sourceCount(), uint32{42});
+    // the answering server is on the row: that is where its metafile is fetched
+    QCOMPARE(file->servers().size(), size_t{1});
+    QCOMPARE(file->servers().front().ip, uint32{0x0A000001});
+    QCOMPARE(file->servers().front().port, uint16{4661});
+
+    const auto nzb = searchFileFromMetaEntry(entryOf(Kind::Nzb, kFileIndexWholeSet32, QStringLiteral("Post")),
+                                             SearchType::MetaUsenet, p, 0, 0);
+    QVERIFY(nzb);
+    QVERIFY(nzb->meta().isNzb());
+    QVERIFY(nzb->servers().empty());   // an IPv6-only server has no ed2k form
+
+    // extension filter: a file row has to match, a release row stays
+    p.extension = QStringLiteral("mkv");
+    QVERIFY(!searchFileFromMetaEntry(entryOf(Kind::BtV1, 2, QStringLiteral("a.avi")), SearchType::MetaTorrent, p, 0, 0));
+    QVERIFY(searchFileFromMetaEntry(entryOf(Kind::BtV1, 2, QStringLiteral("a.MKV")), SearchType::MetaTorrent, p, 0, 0));
+    QVERIFY(searchFileFromMetaEntry(e, SearchType::MetaTorrent, p, 0, 0));
+}
+
+void tst_EnodeMeta::search_entryOfAnotherNetworkOrABadHashIsDropped()
+{
+    const SearchParams p;
+    const pb::MetaEntry bt = entryOf(Kind::BtV1, kFileIndexWholeSet32, QStringLiteral("x"));
+    const pb::MetaEntry nzb = entryOf(Kind::Nzb, kFileIndexWholeSet32, QStringLiteral("x"));
+    QVERIFY(!searchFileFromMetaEntry(bt, SearchType::MetaUsenet, p, 0, 0));
+    QVERIFY(!searchFileFromMetaEntry(nzb, SearchType::MetaTorrent, p, 0, 0));
+    QVERIFY(searchFileFromMetaEntry(entryOf(Kind::BtV2, kFileIndexWholeSet32, QStringLiteral("x")),
+                                    SearchType::MetaTorrent, p, 0, 0));
+
+    // an eD2K row of the servers / Kad networks is not what was asked for
+    pb::MetaEntry ed2k = bt;
+    ed2k.setKind(pb::MetaKindGadget::MetaKind::META_KIND_ED2K);
+    QVERIFY(!searchFileFromMetaEntry(ed2k, SearchType::MetaTorrent, p, 0, 0));
+
+    // the entry says torrent, its hash says NZB
+    pb::MetaEntry lying = bt;
+    lying.setMetaHash(nzb.metaHash());
+    QVERIFY(!searchFileFromMetaEntry(lying, SearchType::MetaTorrent, p, 0, 0));
+
+    pb::MetaEntry shortHash = bt;
+    shortHash.setMetaHash(QByteArray(8, '\x01'));
+    QVERIFY(!searchFileFromMetaEntry(shortHash, SearchType::MetaTorrent, p, 0, 0));
+
+    pb::MetaEntry noHash = bt;
+    noHash.setMetaHash(QByteArray(16, '\x01'));   // a real MD4, not a meta hash
+    QVERIFY(!searchFileFromMetaEntry(noHash, SearchType::MetaTorrent, p, 0, 0));
+
+    pb::MetaEntry unnamed = bt;
+    unnamed.setName({});
+    QVERIFY(!searchFileFromMetaEntry(unnamed, SearchType::MetaTorrent, p, 0, 0));
 }
 
 QTEST_GUILESS_MAIN(tst_EnodeMeta)

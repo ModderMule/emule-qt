@@ -17,7 +17,7 @@
 #       MacOS/
 #         emuleqt          <- GUI executable
 #         emulecored       <- daemon executable
-#         emuleqt-mcp      <- MCP stdio bridge (optional)
+#         emuleqt-mcp      <- MCP stdio bridge for AI clients
 #       Frameworks/        <- Qt frameworks (if macdeployqt runs)
 #       Resources/
 #         config/          <- default config files (nodes.dat, eMule.tmpl, …)
@@ -69,16 +69,18 @@ cp "$DAEMON_BIN" "$MACOS_DIR/emulecored"
 chmod +x "$MACOS_DIR/emulecored"
 echo "  -> $MACOS_DIR/emulecored"
 
-# MCP stdio bridge: optional, for AI clients that launch a local program
+# MCP stdio bridge, for AI clients that launch a local program
 MCP_BIN="$BUILD_DIR/src/mcpbridge/emuleqt-mcp"
-HELPERS=("$MACOS_DIR/emulecored")
-if [ -f "$MCP_BIN" ]; then
-    rm -f "$MACOS_DIR/emuleqt-mcp"
-    cp "$MCP_BIN" "$MACOS_DIR/emuleqt-mcp"
-    chmod +x "$MACOS_DIR/emuleqt-mcp"
-    HELPERS+=("$MACOS_DIR/emuleqt-mcp")
-    echo "  -> $MACOS_DIR/emuleqt-mcp"
+if [ ! -f "$MCP_BIN" ]; then
+    echo "Error: MCP bridge binary not found at $MCP_BIN"
+    echo "Build it first:  cmake --build $BUILD_DIR --target emuleqt-mcp"
+    exit 1
 fi
+rm -f "$MACOS_DIR/emuleqt-mcp"
+cp "$MCP_BIN" "$MACOS_DIR/emuleqt-mcp"
+chmod +x "$MACOS_DIR/emuleqt-mcp"
+HELPERS=("$MACOS_DIR/emulecored" "$MACOS_DIR/emuleqt-mcp")
+echo "  -> $MACOS_DIR/emuleqt-mcp"
 
 # -- Copy default config data into bundle ------------------------------------
 
@@ -97,6 +99,14 @@ if [ -d "$CONFIG_SRC" ]; then
 else
     echo "Warning: $CONFIG_SRC not found — skipping config data bundling."
 fi
+
+# -- Copy API documents into bundle ------------------------------------------
+
+DOC_DST="$RESOURCES_DIR/doc"
+rm -rf "$DOC_DST"
+mkdir -p "$DOC_DST"
+cp "$REPO_ROOT/docs/openapi.json" "$REPO_ROOT/docs/rest-api.md" \
+   "$REPO_ROOT/docs/fake-file-detector.md" "$DOC_DST/"
 
 # -- Copy translation files into bundle --------------------------------------
 
@@ -229,6 +239,23 @@ for helper in "${HELPERS[@]}"; do
         install_name_tool -add_rpath "@executable_path/../Frameworks" "$helper"
     fi
 done
+
+# -- Check the bundle is complete --------------------------------------------
+
+MISSING=0
+for rel in MacOS/emuleqt MacOS/emulecored MacOS/emuleqt-mcp \
+           Resources/config/eMule.tmpl Resources/config/FakeFileFilter.dat \
+           Resources/config/webserver/swagger-ui-bundle.js \
+           Resources/config/webserver/swagger-ui.css \
+           Resources/config/webserver/swagger-ui.LICENSE.txt \
+           Resources/doc/openapi.json Resources/doc/rest-api.md \
+           Resources/doc/fake-file-detector.md; do
+    if [ ! -s "$APP_BUNDLE/Contents/$rel" ]; then
+        echo "Error: Contents/$rel is missing from the bundle"
+        MISSING=1
+    fi
+done
+[ "$MISSING" -eq 0 ] || exit 1
 
 # -- Audit: nothing may still point outside the bundle -----------------------
 # v0.5.2 shipped a daemon with the CI runner's Qt rpath and a libssl linking

@@ -6,6 +6,8 @@
 #include "app/AppContext.h"
 #include "enodemeta/GrpcWeb.h"
 #include "search/SearchFile.h"
+#include "search/SearchList.h"
+#include "search/SearchQueue.h"
 #include "server/Server.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
@@ -14,6 +16,7 @@
 #include <QCborArray>
 #include <QCoreApplication>
 #include <QPointer>
+#include <QTimer>
 #include <QUrl>
 
 namespace eMule {
@@ -48,11 +51,22 @@ MetaSearchService& MetaSearchService::instance()
 MetaSearchService::MetaSearchService(QObject* parent)
     : QObject(parent)
 {
+    theApp.metaSearch = this;
+}
+
+MetaSearchService::~MetaSearchService()
+{
+    if (theApp.metaSearch == this)
+        theApp.metaSearch = nullptr;
 }
 
 std::optional<MetaSearchService::Target> MetaSearchService::targetForResult(const SearchFile& file) const
 {
-    return targetForServers(file.servers());
+    if (auto target = targetForServers(file.servers()))
+        return target;
+    if (const auto it = m_searchTargets.constFind(file.searchID()); it != m_searchTargets.cend())
+        return *it;
+    return std::nullopt;
 }
 
 std::optional<MetaSearchService::Target>
@@ -212,9 +226,198 @@ QCborMap MetaSearchService::statusMap(MetaStatus status, const QString& serverAd
     };
 }
 
+void MetaSearchService::startMetaSearch(uint32 searchID, SearchType type, const SearchParams& params,
+                                        const pb::SearchRequest& request,
+                                        std::vector<MetaSearchCandidate> candidates)
+{
+    SearchRun run;
+    run.type = type;
+    run.params = params;
+    run.request = request;
+    run.candidates = std::move(candidates);
+    m_searches.insert(searchID, std::move(run));
+    // cached caps answer on the spot; the queue is still sending this search
+    QTimer::singleShot(0, this, [this, searchID] { askNextServer(searchID); });
+}
+
+void MetaSearchService::continueMetaSearch(uint32 searchID)
+{
+    // the queue is still switching the search to running
+    QTimer::singleShot(0, this, [this, searchID] {
+        const auto it = m_searches.find(searchID);
+        if (it == m_searches.end() || !it->parked) {
+            if (it == m_searches.end() && theApp.searchList)
+                theApp.searchList->queue().onMetaSearchFinished(searchID, {});
+            return;
+        }
+        it->parked = false;
+        const MetaSearchCandidate server = it->server;
+        const QString token = it->token;
+        askPage(searchID, server, token, it->nextOffset);
+    });
+}
+
+void MetaSearchService::cancelMetaSearch(uint32 searchID)
+{
+    m_searches.remove(searchID);
+}
+
 // ---------------------------------------------------------------------------
 // private
 // ---------------------------------------------------------------------------
+
+void MetaSearchService::askNextServer(uint32 searchID)
+{
+    const auto it = m_searches.find(searchID);
+    if (it == m_searches.end())
+        return;   // stopped
+    SearchRun& run = *it;
+    if (run.next >= run.candidates.size()) {
+        // an account is what the user can do something about: say that first
+        QString error = !run.authError.isEmpty() ? run.authError : run.lastError;
+        if (error.isEmpty())
+            error = tr("No server answered the %1 search.").arg(metaNetworkName(run.type));
+        finishSearch(searchID, error);
+        return;
+    }
+
+    const MetaSearchCandidate server = run.candidates[run.next++];
+    const uint32 network = metaNetworkFor(run.type);
+    m_client.getCaps(server.endpoint, [this, searchID, server, network](const CallResult& r, const pb::Caps& caps) {
+        const auto it = m_searches.find(searchID);
+        if (it == m_searches.end())
+            return;
+        SearchRun& run = *it;
+        if (!r.ok()) {
+            run.lastError = errorText(r, statusFor(r));
+            logServerVerbose(QStringLiteral("Meta search %1: %2 — %3")
+                                 .arg(searchID).arg(server.endpoint.serverName, r.message));
+            askNextServer(searchID);
+            return;
+        }
+        noteNetworks(server, caps);
+        const bool offered = caps.searchAvailable() && std::ranges::any_of(caps.networks(), [network](auto n) {
+            return static_cast<uint32>(n) == network;
+        });
+        if (!offered) {
+            run.lastError = tr("%1 offers no %2 search.").arg(server.endpoint.serverName,
+                                                              metaNetworkName(run.type));
+            askNextServer(searchID);
+            return;
+        }
+        const QString token = store().account(server.endpoint.origin()).token;
+        if (caps.searchRequiresAccount() && token.isEmpty()) {
+            run.authError = tr("%1 needs an account to search: log in under Servers, eNode Account.")
+                                .arg(server.endpoint.serverName);
+            askNextServer(searchID);
+            return;
+        }
+        logServerVerbose(QStringLiteral(">>> Meta search %1: \"%2\" (%3) -> %4")
+                             .arg(searchID).arg(run.request.query(), metaNetworkName(run.type),
+                                                server.endpoint.serverName));
+        askPage(searchID, server, token, 0);
+    });
+}
+
+void MetaSearchService::askPage(uint32 searchID, const MetaSearchCandidate& server, const QString& token,
+                                quint32 offset)
+{
+    const auto it = m_searches.find(searchID);
+    if (it == m_searches.end())
+        return;
+    pb::SearchRequest request = it->request;
+    request.setOffset(offset);
+
+    m_client.search(server.endpoint, request, token,
+                    [this, searchID, server, token, offset](const CallResult& r, const pb::SearchResponse& resp) {
+        const auto it = m_searches.find(searchID);
+        if (it == m_searches.end())
+            return;
+        SearchRun& run = *it;
+        if (!r.ok()) {
+            if (offset != 0) {
+                finishSearch(searchID, {});   // the pages before it stand
+                return;
+            }
+            const MetaStatus st = statusFor(r);
+            if (st == MetaStatus::AuthRequired || st == MetaStatus::AccountInactive) {
+                if (st == MetaStatus::AuthRequired)
+                    store().clearToken(server.endpoint.origin());   // expired or revoked session
+                run.authError = QStringLiteral("%1: %2").arg(server.endpoint.serverName, errorText(r, st));
+            } else {
+                run.lastError = QStringLiteral("%1: %2").arg(server.endpoint.serverName, errorText(r, st));
+            }
+            logServerVerbose(QStringLiteral("Meta search %1: %2 — %3 (grpc %4)")
+                                 .arg(searchID).arg(server.endpoint.serverName, r.message).arg(r.grpcCode));
+            askNextServer(searchID);
+            return;
+        }
+
+        if (server.ip == 0)
+            m_searchTargets.insert(searchID, targetOf(server));
+        int added = 0;
+        if (theApp.searchList) {
+            for (const pb::MetaEntry& entry : resp.entries()) {
+                auto file = searchFileFromMetaEntry(entry, run.type, run.params, server.ip, server.port);
+                if (!file)
+                    continue;
+                theApp.searchList->addMetaSearchResult(searchID, file.release());
+                ++added;
+            }
+            emit theApp.searchList->tabHeaderUpdated(searchID);
+        }
+        logServerVerbose(QStringLiteral("<<< Meta search %1: %2 row(s) from %3, %4 kept")
+                             .arg(searchID).arg(resp.entries().size())
+                             .arg(server.endpoint.serverName).arg(added));
+
+        // One page a request: the next is fetched when the user asks for more.
+        run.rows += added;
+        if (resp.nextOffset() == 0 || run.rows >= kMaxMetaRows) {
+            finishSearch(searchID, {});
+            return;
+        }
+        run.parked = true;
+        run.server = server;
+        run.token = token;
+        run.nextOffset = resp.nextOffset();
+        if (theApp.searchList)
+            theApp.searchList->queue().onMetaSearchFinished(searchID, {}, true);   // may drop the run
+    });
+}
+
+void MetaSearchService::finishSearch(uint32 searchID, const QString& error)
+{
+    m_searches.remove(searchID);
+    if (theApp.searchList)
+        theApp.searchList->queue().onMetaSearchFinished(searchID, error);
+}
+
+void MetaSearchService::noteNetworks(const MetaSearchCandidate& server, const pb::Caps& caps)
+{
+    Server* entry = theApp.serverList ? theApp.serverList->findById(server.serverId) : nullptr;
+    // the entry may have moved on to another Meta API since the candidate was copied
+    if (!entry || entry->metaApiUrl() != server.endpoint.baseUrl)
+        return;
+    uint32 mask = 1;   // bit 0: asked
+    if (caps.searchAvailable()) {
+        for (const auto n : caps.networks()) {
+            if (const auto bit = static_cast<uint32>(n); bit > 0 && bit < 32)
+                mask |= 1u << bit;
+        }
+    }
+    if (entry->metaNetworks() == mask)
+        return;
+    entry->setMetaNetworks(mask);
+    theApp.serverList->notifyServerUpdated(entry);
+}
+
+MetaSearchService::Target MetaSearchService::targetOf(const MetaSearchCandidate& server)
+{
+    Target t;
+    t.endpoint = server.endpoint;
+    t.serverAddr = server.serverAddr;
+    return t;
+}
 
 enodemeta::MetaAccountStore& MetaSearchService::store()
 {

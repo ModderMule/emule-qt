@@ -35,24 +35,16 @@ constexpr int kMaxEventStreams = 16;
 /// model can read without spending its context on it.
 constexpr int kMcpDefaultPageSize = 50;
 
-// Two eras of the protocol on one endpoint. The handshake revisions open with
-// "initialize"; from 2026-07-28 on there is no handshake and every request names
-// its revision in params._meta. Newest first.
-const QStringList kMcpHandshakeVersions{QStringLiteral("2025-11-25"), QStringLiteral("2025-06-18"),
-                                        QStringLiteral("2025-03-26"), QStringLiteral("2024-11-05")};
-const QStringList kMcpPerRequestVersions{QStringLiteral("2026-07-28")};
+// The one revision spoken: no handshake, every request names its revision in
+// params._meta and mirrors it into headers.
+const QStringList kMcpVersions{QStringLiteral("2026-07-28")};
 
 constexpr L kMetaVersionKey{"io.modelcontextprotocol/protocolVersion"};
 constexpr int kRpcHeaderMismatch = -32020;
 constexpr int kRpcUnsupportedVersion = -32022;
 constexpr int kRpcMethodNotFound = -32601;
 
-[[nodiscard]] QStringList allMcpVersions()
-{
-    return kMcpPerRequestVersions + kMcpHandshakeVersions;
-}
-
-/// The revision a request names for itself; empty for a handshake-era request.
+/// The revision a request names for itself; empty when it names none.
 [[nodiscard]] QString requestedVersion(const QJsonObject& request)
 {
     return request.value(L("params")).toObject().value(L("_meta")).toObject()
@@ -73,7 +65,7 @@ const char* const kMcpInstructions =
     "connection_connect and kad_start bring them up. To fetch a file: search_start, then "
     "search_results until state is \"finished\" (results arrive over several seconds), then "
     "download_from_search with the hash of the result. Prefer results with many sources and "
-    "spamRating 0. A file is identified by its 32-digit hex hash; sizes are bytes. Lists are "
+    "confidence looks_good or genuine; fakeReasons says why a result is doubted. A file is identified by its 32-digit hex hash; sizes are bytes. Lists are "
     "paged: pass limit and offset. Calls that delete data need confirm: true — ask the user "
     "before using them.";
 
@@ -384,23 +376,28 @@ void WebServer::registerMcpRoute()
 
             QJsonParseError parseError;
             const QJsonDocument doc = QJsonDocument::fromJson(req.body(), &parseError);
-            if (parseError.error != QJsonParseError::NoError || (!doc.isObject() && !doc.isArray())) {
+            if (parseError.error != QJsonParseError::NoError) {
                 return finished(QHttpServerResponse(
                     rpcError(QJsonValue(), -32700, QStringLiteral("Parse error")),
                     QHttpServerResponse::StatusCode::BadRequest));
             }
 
-            const QJsonValue message = doc.isArray() ? QJsonValue(doc.array())
-                                                     : QJsonValue(doc.object());
-
-            // A per-request-era call mirrors version, method and tool name into
-            // headers; a proxy may route on them, so they have to say what the body says.
+            // One message per POST; batches went with the handshake revisions.
+            if (!doc.isObject()) {
+                return finished(QHttpServerResponse(
+                    rpcError(QJsonValue(), -32600, QStringLiteral("Invalid request: send one "
+                                                                  "JSON-RPC message per POST")),
+                    QHttpServerResponse::StatusCode::BadRequest));
+            }
             const QJsonObject request = doc.object();
             const QString version = requestedVersion(request);
-            const bool perRequestEra = doc.isObject() && !version.isEmpty();
-            if (perRequestEra) {
+            const QString method = request.value(L("method")).toString();
+
+            // A request mirrors version, method and tool name into headers; a proxy
+            // may route on them, so they have to say what the body says. A revision
+            // we do not speak is answered first: it is the more useful complaint.
+            if (request.contains(L("id")) && kMcpVersions.contains(version)) {
                 const QHttpHeaders headers = req.headers();
-                const QString method = request.value(L("method")).toString();
                 QString problem;
                 const auto check = [&](const char* name, const QString& expected) {
                     if (!problem.isEmpty())
@@ -425,25 +422,24 @@ void WebServer::registerMcpRoute()
                 }
             }
 
-            return handleMcpMessage(message).then(this, [perRequestEra](const QJsonValue& reply) {
-                // Nothing to answer (notifications only): 202, no body.
+            return handleMcpMessage(request).then(this, [](const QJsonValue& reply) {
+                // Nothing to answer (a notification): 202, no body.
                 if (reply.isUndefined())
                     return QHttpServerResponse(QHttpServerResponse::StatusCode::Accepted);
-                if (reply.isArray())
-                    return QHttpServerResponse(reply.toArray());
-                // The newer revisions put these two failures in the HTTP status too.
+                // These failures are in the HTTP status too.
                 auto status = QHttpServerResponse::StatusCode::Ok;
                 const int code = reply.toObject().value(L("error")).toObject().value(L("code")).toInt();
-                if (code == kRpcUnsupportedVersion)
+                if (code == kRpcUnsupportedVersion || code == -32600)
                     status = QHttpServerResponse::StatusCode::BadRequest;
-                else if (perRequestEra && code == kRpcMethodNotFound)
+                else if (code == kRpcMethodNotFound)
                     status = QHttpServerResponse::StatusCode::NotFound;
                 return QHttpServerResponse(reply.toObject(), status);
             });
         });
 
-    // No server-initiated stream: the spec lets a server refuse the GET.
-    m_server->route(QStringLiteral("/mcp"), QHttpServerRequest::Method::Get, [] {
+    // No stream and no session to end: older clients that try are told so.
+    m_server->route(QStringLiteral("/mcp"),
+                    QHttpServerRequest::Method::Get | QHttpServerRequest::Method::Delete, [] {
         QHttpServerResponse response(QHttpServerResponse::StatusCode::MethodNotAllowed);
         QHttpHeaders headers = response.headers();
         headers.append(QHttpHeaders::WellKnownHeader::Allow, QByteArrayLiteral("POST"));
@@ -471,33 +467,6 @@ bool WebServer::originAllowed(const QHttpServerRequest& req) const
 
 QFuture<QJsonValue> WebServer::handleMcpMessage(const QJsonValue& message)
 {
-    // A batch (older protocol revisions): answer each in turn.
-    if (message.isArray()) {
-        const QJsonArray batch = message.toArray();
-        auto replies = std::make_shared<QJsonArray>();
-        auto promise = std::make_shared<QPromise<QJsonValue>>();
-        promise->start();
-        QFuture<QJsonValue> future = promise->future();
-        auto remaining = std::make_shared<qsizetype>(batch.size());
-        if (batch.isEmpty()) {
-            promise->addResult(rpcError(QJsonValue(), -32600, QStringLiteral("Empty batch")));
-            promise->finish();
-            return future;
-        }
-        for (const QJsonValue& one : batch) {
-            handleMcpMessage(one).then(this, [replies, promise, remaining](const QJsonValue& reply) {
-                if (!reply.isUndefined())
-                    replies->append(reply);
-                if (--*remaining == 0) {
-                    promise->addResult(replies->isEmpty() ? QJsonValue(QJsonValue::Undefined)
-                                                          : QJsonValue(*replies));
-                    promise->finish();
-                }
-            });
-        }
-        return future;
-    }
-
     const QJsonObject request = message.toObject();
     const QJsonValue id = request.value(L("id"));
     const QString method = request.value(L("method")).toString();
@@ -510,7 +479,7 @@ QFuture<QJsonValue> WebServer::handleMcpMessage(const QJsonValue& message)
         return ready(rpcError(id, -32600, QStringLiteral("Invalid request")));
     }
     if (isNotification)
-        return ready(QJsonValue(QJsonValue::Undefined));   // notifications/initialized etc.
+        return ready(QJsonValue(QJsonValue::Undefined));   // notifications/cancelled etc.
 
     const QJsonObject params = request.value(L("params")).toObject();
     const QJsonObject capabilities{
@@ -519,45 +488,37 @@ QFuture<QJsonValue> WebServer::handleMcpMessage(const QJsonValue& message)
                                  {QStringLiteral("title"), QStringLiteral("eMuleQt")},
                                  {QStringLiteral("version"), QString(kAppVersion)}};
 
-    // Per-request era: the request names its revision; no handshake came before it.
+    // Every request names its revision; there is no handshake to fall back on.
+    // An "initialize" from an older client lands here too and reads which
+    // revisions would work.
     const QString version = requestedVersion(request);
-    const bool perRequestEra = !version.isEmpty();
-    if (perRequestEra && !kMcpPerRequestVersions.contains(version)) {
+    if (!kMcpVersions.contains(version)) {
+        const QString requested = version.isEmpty() ? params.value(L("protocolVersion")).toString()
+                                                    : version;
         QJsonObject failure = rpcError(id, kRpcUnsupportedVersion,
-                                       QStringLiteral("Unsupported protocol version"));
+            QStringLiteral("Unsupported protocol version: this server speaks MCP %1 only")
+                .arg(kMcpVersions.join(QStringLiteral(", "))));
         QJsonObject detail = failure.value(L("error")).toObject();
         detail.insert(QStringLiteral("data"), QJsonObject{
-            {QStringLiteral("supported"), QJsonArray::fromStringList(allMcpVersions())},
-            {QStringLiteral("requested"), version}});
+            {QStringLiteral("supported"), QJsonArray::fromStringList(kMcpVersions)},
+            {QStringLiteral("requested"), requested}});
         failure.insert(QStringLiteral("error"), detail);
         return ready(failure);
     }
-    // Results of that era say whether they are final; ours always are.
-    const auto complete = [perRequestEra](QJsonObject result) {
-        if (perRequestEra)
-            result.insert(QStringLiteral("resultType"), QStringLiteral("complete"));
+    // Results say whether they are final; ours always are.
+    const auto complete = [](QJsonObject result) {
+        result.insert(QStringLiteral("resultType"), QStringLiteral("complete"));
         return result;
     };
 
     if (method == L("server/discover")) {
-        return ready(rpcResult(id, QJsonObject{
-            {QStringLiteral("resultType"), QStringLiteral("complete")},
-            {QStringLiteral("supportedVersions"), QJsonArray::fromStringList(allMcpVersions())},
+        return ready(rpcResult(id, complete(QJsonObject{
+            {QStringLiteral("supportedVersions"), QJsonArray::fromStringList(kMcpVersions)},
             {QStringLiteral("capabilities"), capabilities},
             {QStringLiteral("_meta"), QJsonObject{
                 {QStringLiteral("io.modelcontextprotocol/serverInfo"), serverInfo}}},
             {QStringLiteral("instructions"), QString::fromUtf8(kMcpInstructions)},
-        }));
-    }
-    if (method == L("initialize") && !perRequestEra) {
-        const QString asked = params.value(L("protocolVersion")).toString();
-        return ready(rpcResult(id, QJsonObject{
-            {QStringLiteral("protocolVersion"),
-             kMcpHandshakeVersions.contains(asked) ? asked : kMcpHandshakeVersions.first()},
-            {QStringLiteral("capabilities"), capabilities},
-            {QStringLiteral("serverInfo"), serverInfo},
-            {QStringLiteral("instructions"), QString::fromUtf8(kMcpInstructions)},
-        }));
+        })));
     }
     if (method == L("ping"))
         return ready(rpcResult(id, complete({})));
@@ -591,11 +552,21 @@ QJsonObject WebServer::mcpToolList() const
         if (op.is(Destructive))
             description += QStringLiteral(" Destructive: needs confirm=true; ask the user first.");
 
+        // lists default to a smaller page here than over REST: say so in the schema
+        QJsonObject schema = inputSchema(op);
+        if (op.is(Paged)) {
+            QJsonObject props = schema.value(L("properties")).toObject();
+            QJsonObject limit = props.value(L("limit")).toObject();
+            limit.insert(QStringLiteral("default"), kMcpDefaultPageSize);
+            props.insert(QStringLiteral("limit"), limit);
+            schema.insert(QStringLiteral("properties"), props);
+        }
+
         tools.append(QJsonObject{
             {QStringLiteral("name"), op.mcpTool},
             {QStringLiteral("title"), op.summary},
             {QStringLiteral("description"), description},
-            {QStringLiteral("inputSchema"), inputSchema(op)},
+            {QStringLiteral("inputSchema"), schema},
             {QStringLiteral("annotations"), QJsonObject{
                 {QStringLiteral("readOnlyHint"), op.is(ReadOnly)},
                 {QStringLiteral("destructiveHint"), op.is(Destructive)},
@@ -603,7 +574,11 @@ QJsonObject WebServer::mcpToolList() const
             }},
         });
     }
-    return QJsonObject{{QStringLiteral("tools"), tools}};
+    // list results are cacheable in this revision: both fields are required.
+    // private: behind the API key; the list only changes with a server restart
+    return QJsonObject{{QStringLiteral("tools"), tools},
+                       {QStringLiteral("ttlMs"), 300000},
+                       {QStringLiteral("cacheScope"), QStringLiteral("private")}};
 }
 
 QFuture<QJsonValue> WebServer::mcpToolCall(const QJsonValue& id, const QJsonObject& params)

@@ -9,6 +9,8 @@
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 
+#include <QUrl>
+
 namespace eMule {
 
 static std::atomic<uint32> s_nextServerId{1};
@@ -83,6 +85,7 @@ Server::Server(const Server& other)
     , m_hasServerHash(other.m_hasServerHash)
     , m_metaApiUrl(other.m_metaApiUrl)
     , m_metaApiPin(other.m_metaApiPin)
+    , m_metaNetworks(other.m_metaNetworks)
 {
 }
 
@@ -207,6 +210,12 @@ void Server::setServerKeyUDP(uint32 key)
     m_serverKeyUDPIP = theApp.publicIP();
 }
 
+bool Server::isMetaApiUrl(const QString& url)
+{
+    const QUrl u(url);
+    return u.isValid() && !u.host().isEmpty() && (u.scheme() == u"https" || u.scheme() == u"http");
+}
+
 // ---------------------------------------------------------------------------
 // addTagFromFile() — apply a deserialized tag to server properties
 // ---------------------------------------------------------------------------
@@ -325,6 +334,17 @@ void Server::addTagFromFile(const Tag& tag)
             // Local extension, string-named so it cannot collide with an ST_ id.
             if (tag.isInt())
                 m_disabled = tag.intValue() != 0;
+        } else if (tag.nameId() == 0 && tag.name() == QByteArray("metaapi")) {
+            // eNode Meta API, learned from the ident: kept so a server can be asked
+            // without logging in to it first
+            if (tag.isStr() && isMetaApiUrl(tag.strValue()))
+                m_metaApiUrl = tag.strValue();
+        } else if (tag.nameId() == 0 && tag.name() == QByteArray("metaapipin")) {
+            if (tag.isStr())
+                m_metaApiPin = tag.strValue();
+        } else if (tag.nameId() == 0 && tag.name() == QByteArray("metanetworks")) {
+            if (tag.isInt())
+                m_metaNetworks = static_cast<uint32>(tag.intValue());
         } else {
             logWarning(QStringLiteral("Unknown server.met tag: nameId=0x%1")
                 .arg(tag.nameId(), 2, 16, QChar(u'0')));
@@ -371,6 +391,19 @@ uint32 Server::writeTags(FileDataIO& file) const
     if (m_disabled) {
         Tag(QByteArray("disabled"), uint32{1}).writeTagToFile(file);
         ++count;
+    }
+
+    if (hasMetaApi()) {
+        Tag(QByteArray("metaapi"), m_metaApiUrl).writeTagToFile(file, UTF8Mode::OptBOM);
+        ++count;
+        if (!m_metaApiPin.isEmpty()) {
+            Tag(QByteArray("metaapipin"), m_metaApiPin).writeTagToFile(file, UTF8Mode::OptBOM);
+            ++count;
+        }
+        if (m_metaNetworks != 0) {
+            Tag(QByteArray("metanetworks"), m_metaNetworks).writeTagToFile(file);
+            ++count;
+        }
     }
 
     if (m_preference != ServerPriority::Normal) {

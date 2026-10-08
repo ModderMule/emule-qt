@@ -10,6 +10,7 @@
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingBin.h"
 #include "app/AppContext.h"
+#include "kademlia/KadStats.h"
 #include "kademlia/KadSearchManager.h"
 #include "kademlia/KadUDPListener.h"
 #include "ipfilter/IPFilter.h"
@@ -164,9 +165,13 @@ bool RoutingZone::addUnfiltered(const UInt128& id, uint32 ip, uint16 udpPort,
     if (fromHello)
         contact->setReceivedHelloPacket();
 
+    // Counted here, not in the tree walk: readFile() inserts below this, and a
+    // contact reloaded from nodes.dat is not a contact learned.
     bool verifiedOut = ipVerified;
-    if (add(contact, update, verifiedOut))
+    if (add(contact, update, verifiedOut)) {
+        countKad(&KadCounters::contactsAdded);
         return true;
+    }
 
     // Not newly added — add() cleared `update` unless an existing entry was updated.
     // MFC CRoutingZone::AddUnfiltered.
@@ -282,6 +287,7 @@ bool RoutingZone::add(Contact* contact, bool& update, bool& ipVerified)
     if (Contact* gone = m_bin->replaceWeakest(contact)) {
         emit contactRemoved(gone);
         delete gone;
+        countKad(&KadCounters::contactsReplaced);
         emit contactAdded(contact);
         return true;
     }
@@ -532,6 +538,7 @@ void RoutingZone::onSmallTimer()
         const bool banned = sk && sk->isBanned(c->address().toUint32());
         if (banned) {
             if (!c->inUse()) {
+                countKad(&KadCounters::contactsBanned);
                 m_bin->removeContact(c);
                 emit contactRemoved(c);
                 delete c;
@@ -540,6 +547,7 @@ void RoutingZone::onSmallTimer()
         }
         if (c->getType() == 4 && c->getExpireTime() > 0 && c->getExpireTime() <= now) {
             if (!c->inUse()) {
+                countKad(&KadCounters::contactsExpired);
                 m_bin->removeContact(c);
                 emit contactRemoved(c);
                 delete c;
@@ -646,6 +654,8 @@ bool RoutingZone::verifyContact(const UInt128& id, uint32 ip)
 {
     Contact* contact = getContact(id);
     if (contact && contact->address().toUint32() == ip) {
+        if (!contact->isIpVerified())
+            countKad(&KadCounters::contactsVerified);
         contact->setIpVerified(true);
         return true;
     }

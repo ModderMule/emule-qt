@@ -43,6 +43,7 @@ inline constexpr const char* kWebTemplateStrings[] = {
     QT_TRANSLATE_NOOP("eMule::WebServer", "Comment"),
     QT_TRANSLATE_NOOP("eMule::WebServer", "Comments"),
     QT_TRANSLATE_NOOP("eMule::WebServer", "Completed"),
+    QT_TRANSLATE_NOOP("eMule::WebServer", "Confidence"),
     QT_TRANSLATE_NOOP("eMule::WebServer", "Connect"),
     QT_TRANSLATE_NOOP("eMule::WebServer", "Copy ED2K Link"),
     QT_TRANSLATE_NOOP("eMule::WebServer", "Could not apply that to the category: %1"),

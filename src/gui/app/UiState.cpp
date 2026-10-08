@@ -94,6 +94,9 @@ void UiState::load(const QString& configDir)
             root["skinProfilePath"].as<std::string>(std::string{}));
         m_metaFileSaveDir = QString::fromStdString(
             root["metaFileSaveDir"].as<std::string>(std::string{}));
+        m_searchShowUsenet = root["searchShowUsenet"].as<bool>(m_searchShowUsenet);
+        m_searchShowKad = root["searchShowKad"].as<bool>(m_searchShowKad);
+        m_searchShowTorrent = root["searchShowTorrent"].as<bool>(m_searchShowTorrent);
 
         m_toolbarButtonOrder = readIntList(root, "toolbarButtonOrder");
 
@@ -181,6 +184,9 @@ void UiState::save(const QString& configDir)
         out << YAML::Key << "skinProfilePath" << YAML::Value << m_skinProfilePath.toStdString();
     if (!m_metaFileSaveDir.isEmpty())
         out << YAML::Key << "metaFileSaveDir" << YAML::Value << m_metaFileSaveDir.toStdString();
+    out << YAML::Key << "searchShowUsenet" << YAML::Value << m_searchShowUsenet;
+    out << YAML::Key << "searchShowKad" << YAML::Value << m_searchShowKad;
+    out << YAML::Key << "searchShowTorrent" << YAML::Value << m_searchShowTorrent;
 
     if (!m_toolbarButtonOrder.isEmpty())
         writeIntList(out, "toolbarButtonOrder", m_toolbarButtonOrder);

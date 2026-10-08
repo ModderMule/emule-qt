@@ -77,6 +77,15 @@ QString sniffContainer(const QByteArray& head)
     return {};
 }
 
+ForeignHead sniffForeignHead(const QByteArray& head)
+{
+    if (head.startsWith("MZ") || head.startsWith("\x7F" "ELF"))
+        return ForeignHead::Executable;
+    if (head.startsWith("PK\x03\x04") || head.startsWith("Rar!") || head.startsWith("7z\xBC\xAF"))
+        return ForeignHead::Archive;
+    return ForeignHead::None;
+}
+
 /// The container an extension promises; empty when we promise nothing for it.
 QString expectedContainer(const QString& ext)
 {
@@ -134,6 +143,8 @@ ContainerCheck checkHead(const QByteArray& head, const QString& fileName)
     result.mimeType = containerMimeType(actual);
     result.verdict = actual.isEmpty() ? ContainerVerdict::NoKnownContainer
                                       : ContainerVerdict::WrongContainer;
+    if (actual.isEmpty())
+        result.foreign = sniffForeignHead(head);
     return result;
 }
 

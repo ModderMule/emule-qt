@@ -8,6 +8,7 @@
 
 #include "enodemeta/MetaHash.h"
 #include "files/AbstractFile.h"
+#include "search/FakeFileDetector.h"
 #include "net/Address.h"
 #include "search/SearchParams.h"
 #include "utils/Types.h"
@@ -176,6 +177,20 @@ public:
         m_firstSeen = firstSeen;
     }
 
+    /// The names the index had on record for the hash (fake-file check).
+    [[nodiscard]] const QStringList& seenNameList() const { return m_seenNameList; }
+    void setSeenNameList(const QStringList& names) { m_seenNameList = names; }
+
+    // --- Fake-file verdict (SearchList::assess; top-level rows only) ---
+
+    [[nodiscard]] bool hasFakeVerdict() const { return m_hasFakeVerdict; }
+    [[nodiscard]] const FakeFileVerdict& fakeVerdict() const { return m_fakeVerdict; }
+    void setFakeVerdict(const FakeFileVerdict& verdict)
+    {
+        m_fakeVerdict = verdict;
+        m_hasFakeVerdict = true;
+    }
+
     // --- Search identity ---
 
     [[nodiscard]] uint32 searchID() const { return m_searchID; }
@@ -256,6 +271,9 @@ private:
     bool m_seenBefore = false;
     int m_seenNames = 0;
     qint64 m_firstSeen = 0;
+    QStringList m_seenNameList;
+    FakeFileVerdict m_fakeVerdict;
+    bool m_hasFakeVerdict = false;
     bool m_kadResult = false;
     bool m_listExpanded = false;
     MetaInfo m_meta;

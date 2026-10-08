@@ -635,6 +635,7 @@ void tst_StatisticsReset::statisticsYaml_everyCumulativeStatRoundTrips()
     QVERIFY(planted.contains(QStringLiteral("cumHttpCache.bytesSaved")));
     QVERIFY(planted.contains(QStringLiteral("cumUsenet.wireBytes")));
     QVERIFY(planted.contains(QStringLiteral("cumIndexer.feedMatches")));
+    QVERIFY(planted.contains(QStringLiteral("cumKad.contactsAdded")));
 
     QVERIFY(prefs.restoreCumulativeStats());
     QVERIFY(prefs.saveTo(prefsPath));

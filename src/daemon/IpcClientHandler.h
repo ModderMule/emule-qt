@@ -113,6 +113,7 @@ private:
     void handleStartSearch(const Ipc::IpcMessage& msg);
     void handleGetSearchResults(const Ipc::IpcMessage& msg);
     void handleStopSearch(const Ipc::IpcMessage& msg);
+    void handleSearchMore(const Ipc::IpcMessage& msg);
     void handleRemoveSearch(const Ipc::IpcMessage& msg);
     void handleClearAllSearches(const Ipc::IpcMessage& msg);
     void handleDownloadSearchFile(const Ipc::IpcMessage& msg);
@@ -135,6 +136,8 @@ private:
     void handleSubscribe(const Ipc::IpcMessage& msg);
     void handleGetKadContacts(const Ipc::IpcMessage& msg);
     void handleGetKadStatus(const Ipc::IpcMessage& msg);
+    void handleGetKadStats(const Ipc::IpcMessage& msg);
+    void handleGetClientStats(const Ipc::IpcMessage& msg);
     void handleBootstrapKad(const Ipc::IpcMessage& msg);
     void handleDisconnectKad(const Ipc::IpcMessage& msg);
     void handleGetKadSearches(const Ipc::IpcMessage& msg);

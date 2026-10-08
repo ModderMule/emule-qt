@@ -14,6 +14,7 @@
 #include "kademlia/KadSearchManager.h"
 #include "kademlia/KadUDPListener.h"
 #include "app/AppContext.h"
+#include "kademlia/KadStats.h"
 #include "client/ClientList.h"
 #include "prefs/Preferences.h"
 #include "ipfilter/IPFilter.h"
@@ -166,6 +167,8 @@ void Kademlia::stop()
         delete m_processTimer;
         m_processTimer = nullptr;
     }
+
+    m_statsTick = {};
 
     // Stop all searches
     SearchManager::stopAllSearches();
@@ -458,6 +461,8 @@ void Kademlia::process()
 
     time_t now = time(nullptr);
 
+    countSessionStats();
+
     // Expire index entries on a clock, not only when somebody searches the index.
     if (m_indexed)
         m_indexed->clean();
@@ -680,6 +685,28 @@ uint32 Kademlia::calculateKadUsersNew() const
         fwModify = m_prefs->statsFirewalledModifyTotal();
 
     return static_cast<uint32>(static_cast<double>(median) * fwModify);
+}
+
+void Kademlia::countSessionStats()
+{
+    using namespace std::chrono;
+
+    // Connected time is the sum of the ticks spent connected. A tick that took
+    // far longer than the timer (system sleep) is not time on the network.
+    const auto tick = steady_clock::now();
+    if (!isConnected()) {
+        m_statsTick = {};
+    } else {
+        if (m_statsTick != steady_clock::time_point{}) {
+            const auto elapsed = duration_cast<milliseconds>(tick - m_statsTick);
+            if (elapsed < seconds(10))
+                countKad(&KadCounters::connectedMs, static_cast<uint64>(elapsed.count()));
+        }
+        m_statsTick = tick;
+    }
+
+    if (m_routingZone)
+        raiseKad(&KadCounters::peakContacts, m_routingZone->getNumContacts());
 }
 
 } // namespace eMule::kad

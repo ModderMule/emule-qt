@@ -774,6 +774,12 @@ void DownloadQueue::seedFromSearchResult(PartFile* file, const SearchFile& resul
     for (const SearchFile* child : result.listChildren())
         rows.push_back(child);
 
+    // The names the file went by: what the fake-file check judges a download on
+    QStringList names = result.seenNameList();
+    for (const SearchFile* row : rows)
+        names.push_back(row->fileName());
+    file->addObservedNames(names);
+
     // AICH: one hash the answers agree on is as good as a link's (MFC PartFile.cpp:95-98).
     // Two different ones and none is taken: a wrong hash breaks recovery.
     if (!file->fileIdentifier().hasAICHHash()) {

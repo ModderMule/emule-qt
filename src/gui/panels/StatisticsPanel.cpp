@@ -10,6 +10,7 @@
 #include "prefs/NewsServer.h"
 #include "prefs/Preferences.h"
 #include "stats/NetworkCounters.h"
+#include "utils/CountryFlags.h"
 #include "utils/PanelPoller.h"
 #include "utils/StringUtils.h"
 
@@ -530,6 +531,27 @@ void StatisticsPanel::buildTree()
     m_itemLowIDClients = new QTreeWidgetItem(clients, {tr("Low ID: 0 (0.0%)")});
     m_itemBannedClients = new QTreeWidgetItem(clients, {tr("Banned Clients: 0")});
     m_itemFilteredClients = new QTreeWidgetItem(clients, {tr("Filtered Clients: 0")});
+    {
+        const QString estimate =
+            tr("Different clients, counted by user hash. An estimate, accurate to about 2%.");
+        const QIcon icons[] = {detailIcon, cumulativeIcon};
+        const QString labels[] = {tr("Session"), tr("Cumulative")};
+        for (int i = 0; i < 2; ++i) {
+            ClientSeenItems& items = m_clientSeen[i];
+            items.scope = new QTreeWidgetItem(clients, {labels[i]});
+            items.scope->setIcon(0, icons[i]);
+            items.seen = new QTreeWidgetItem(items.scope);
+            items.seen->setToolTip(0, tr("Clients that said hello on a connection.")
+                                          + QLatin1Char(' ') + estimate);
+            items.identified = new QTreeWidgetItem(items.scope);
+            items.identified->setToolTip(0, tr("Clients that proved their user hash with "
+                                               "Secure Identification."));
+            items.countries = new QTreeWidgetItem(items.scope, {tr("By Country")});
+            items.countries->setToolTip(0, tr("Clients by the country of the address they "
+                                              "connected from."));
+        }
+        applyClientStats({});
+    }
 
     // ===== Servers =====
     auto* servers = new QTreeWidgetItem(m_tree, {tr("Servers")});
@@ -569,6 +591,9 @@ void StatisticsPanel::buildTree()
     m_itemTotalDownLeft = new QTreeWidgetItem(totalDown, {tr("Total Size Left to Download: 0 Bytes")});
     m_itemTotalDownFreeSpace = new QTreeWidgetItem(totalDown, {tr("Free Space on Drive: 0 Bytes")});
 
+    // ===== Kademlia ===== (not in MFC, which shows Kad only as overhead lines)
+    buildKademliaBranch(detailIcon, cumulativeIcon);
+
     // ===== Usenet ===== (not in MFC; last, so MFC's own order stays intact)
     buildUsenetBranch(detailIcon, cumulativeIcon);
 
@@ -604,6 +629,29 @@ void StatisticsPanel::requestStats()
             return;
         }
         applyUsenetStats(resp.fieldMap(1));
+    });
+
+    IpcMessage kadReq(IpcMsgType::GetKadStats);
+    m_ipc->sendRequest(std::move(kadReq), [this](const IpcMessage& resp) {
+        if (!resp.isValid())
+            return;
+        if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
+            m_itemKad->setHidden(true);   // a daemon from before the branch
+            return;
+        }
+        applyKadStats(resp.fieldMap(1));
+    });
+
+    IpcMessage clientReq(IpcMsgType::GetClientStats);
+    m_ipc->sendRequest(std::move(clientReq), [this](const IpcMessage& resp) {
+        if (!resp.isValid())
+            return;
+        if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
+            for (const ClientSeenItems& items : m_clientSeen)
+                items.scope->setHidden(true);   // a daemon from before the census
+            return;
+        }
+        applyClientStats(resp.fieldMap(1));
     });
 }
 
@@ -1236,6 +1284,91 @@ void StatisticsPanel::applyUsenetStats(const QCborMap& data)
                       session.value(QStringLiteral("wireBytes")));
 }
 
+void StatisticsPanel::applyClientStats(const QCborMap& data)
+{
+    const QCborMap seen = data.value(QStringLiteral("seen")).toMap();
+    const QLatin1StringView scopes[] = {QLatin1StringView("session"),
+                                        QLatin1StringView("cumulative")};
+    for (int i = 0; i < 2; ++i) {
+        const ClientSeenItems& items = m_clientSeen[i];
+        const QCborMap scope = seen.value(scopes[i]).toMap();
+        const qint64 clients = scope.value(QLatin1StringView("seen")).toInteger();
+        const qint64 identified = scope.value(QLatin1StringView("identified")).toInteger();
+        items.scope->setHidden(false);
+        items.seen->setText(0, tr("Clients Seen: ≈%1").arg(clients));
+        // Two estimates: the share can come out a little over 100%.
+        items.identified->setText(0, tr("Identified: ≈%1 %2")
+                                         .arg(identified)
+                                         .arg(formatPercent(std::min(identified, clients), clients)));
+        updateCountryRows(items.countries, scope.value(QLatin1StringView("countries")).toArray());
+    }
+}
+
+void StatisticsPanel::applyKadStats(const QCborMap& data)
+{
+    m_itemKad->setHidden(false);
+
+    const QCborMap current = data.value(QStringLiteral("current")).toMap();
+    const QCborMap seen = data.value(QStringLiteral("seen")).toMap();
+
+    const auto scopeValues = [&](const QString& scope, qint64 runtimeSecs) {
+        QHash<QString, qint64> v = counterValues(data.value(scope).toMap());
+        const QCborMap seenScope = seen.value(scope).toMap();
+        v.insert(QStringLiteral("seenContacted"),
+                 seenScope.value(QStringLiteral("contacted")).toInteger());
+        v.insert(QStringLiteral("seenListed"),
+                 seenScope.value(QStringLiteral("listed")).toInteger());
+        v.insert(QStringLiteral("udpNodes"), v.value(QStringLiteral("udpFirewalledNodes"))
+                                                 + v.value(QStringLiteral("udpOpenNodes")));
+        v.insert(QStringLiteral("tcpNodes"), v.value(QStringLiteral("tcpFirewalledNodes"))
+                                                 + v.value(QStringLiteral("tcpOpenNodes")));
+        v.insert(QStringLiteral("searchesTotal"), v.value(QStringLiteral("searchesNode"))
+                                                      + v.value(QStringLiteral("searchesKeyword"))
+                                                      + v.value(QStringLiteral("searchesSource"))
+                                                      + v.value(QStringLiteral("searchesNotes")));
+        v.insert(QStringLiteral("runtimeMs"), runtimeSecs * 1000);
+        return v;
+    };
+
+    QHash<QString, qint64> session = scopeValues(QStringLiteral("session"), m_sessionUptime);
+    for (auto it = current.cbegin(); it != current.cend(); ++it) {
+        if (it.value().isInteger())
+            session.insert(it.key().toString(), it.value().toInteger());
+    }
+    const QCborArray byType = current.value(QStringLiteral("byType")).toArray();
+    for (qsizetype i = 0; i < byType.size(); ++i)
+        session.insert(QStringLiteral("type%1").arg(i), byType.at(i).toInteger());
+
+    fillCounterRows(m_kadSessionRows, session);
+    fillCounterRows(m_kadCumulativeRows, scopeValues(QStringLiteral("cumulative"), m_cumRunTime));
+
+    QString status;
+    if (!current.value(QStringLiteral("running")).toBool())
+        status = tr("Not running");
+    else if (!current.value(QStringLiteral("connected")).toBool())
+        status = tr("Connecting");
+    else if (current.value(QStringLiteral("lanMode")).toBool())
+        status = tr("Connected (LAN mode)");
+    else {
+        const bool tcp = current.value(QStringLiteral("firewalled")).toBool();
+        const bool udp = current.value(QStringLiteral("udpFirewalled")).toBool();
+        status = tcp && udp ? tr("Connected, TCP and UDP firewalled")
+                 : tcp      ? tr("Connected, TCP firewalled")
+                 : udp      ? tr("Connected, UDP firewalled")
+                            : tr("Connected, open");
+    }
+    m_itemKadStatus->setText(0, tr("Status: %1").arg(status));
+
+    updateKadVersions(current.value(QStringLiteral("byVersion")).toArray(),
+                      session.value(QStringLiteral("contacts")));
+    updateCountryRows(m_itemKadSesCountries,
+                       seen.value(QStringLiteral("session")).toMap()
+                           .value(QStringLiteral("countries")).toArray());
+    updateCountryRows(m_itemKadCumCountries,
+                       seen.value(QStringLiteral("cumulative")).toMap()
+                           .value(QStringLiteral("countries")).toArray());
+}
+
 // ---------------------------------------------------------------------------
 // Context menu
 // ---------------------------------------------------------------------------
@@ -1553,6 +1686,210 @@ void StatisticsPanel::buildUsenetBranch(const QIcon& detailIcon, const QIcon& cu
     fillCounterRows(m_usenetSessionRows, zeros);
     fillCounterRows(m_usenetCumulativeRows, zeros);
     fillCounterRows(m_usenetQueueRows, zeros);
+}
+
+// ---------------------------------------------------------------------------
+// Private — Kademlia branch
+// ---------------------------------------------------------------------------
+
+std::span<const StatisticsPanel::CounterRow> StatisticsPanel::kadTableRows()
+{
+    using F = RowFormat;
+    // Contact types as the Kad window's icons show them (kad::Contact::updateType).
+    static constexpr CounterRow kRows[] = {
+        {QT_TR_NOOP("Contacts: %1"), "contacts", F::Count, nullptr, 0, true},
+        {QT_TR_NOOP("IP Verified: %1 %2"), "verified", F::Count, "contacts", 1, true},
+        {QT_TR_NOOP("Type 0, Alive over 2 Hours: %1 %2"), "type0", F::Count, "contacts", 1, true},
+        {QT_TR_NOOP("Type 1, Alive 1 to 2 Hours: %1 %2"), "type1", F::Count, "contacts", 1, true},
+        {QT_TR_NOOP("Type 2, Alive under 1 Hour: %1 %2"), "type2", F::Count, "contacts", 1, true},
+        {QT_TR_NOOP("Type 3, New or Not Answering: %1 %2"), "type3", F::Count, "contacts", 1, true},
+        {QT_TR_NOOP("Type 4, Dead: %1 %2"), "type4", F::Count, "contacts", 1, true},
+        {QT_TR_NOOP("Most Contacts: %1"), "peakContacts"},
+        {QT_TR_NOOP("Contacts Added: %1"), "contactsAdded"},
+        {QT_TR_NOOP("IP Verified: %1 %2"), "contactsVerified", F::Count, "contactsAdded", 1},
+        {QT_TR_NOOP("Replaced a Weaker Contact: %1 %2"), "contactsReplaced", F::Count,
+         "contactsAdded", 1},
+        {QT_TR_NOOP("Contacts Expired: %1"), "contactsExpired"},
+        {QT_TR_NOOP("Contacts Banned: %1"), "contactsBanned"},
+    };
+    return kRows;
+}
+
+std::span<const StatisticsPanel::CounterRow> StatisticsPanel::kadNodeRows()
+{
+    using F = RowFormat;
+    static constexpr CounterRow kRows[] = {
+        {QT_TR_NOOP("Nodes Seen: ≈%1"), "seenContacted"},
+        {QT_TR_NOOP("Nodes Heard Of: ≈%1"), "seenListed"},
+        // MFC's Clients > Firewalled (Kad), srchybrid/StatisticsDlg.cpp:2286.
+        {QT_TR_NOOP("Firewalled (Kad)"), nullptr},
+        {QT_TR_NOOP("UDP: %1 %2"), "udpFirewalledNodes", F::Count, "udpNodes", 1},
+        {QT_TR_NOOP("TCP: %1 %2"), "tcpFirewalledNodes", F::Count, "tcpNodes", 1},
+    };
+    return kRows;
+}
+
+std::span<const StatisticsPanel::CounterRow> StatisticsPanel::kadNetworkRows()
+{
+    using F = RowFormat;
+    static constexpr CounterRow kRows[] = {
+        {QT_TR_NOOP("Estimated Users: %1"), "users", F::Count, nullptr, 0, true},
+        {QT_TR_NOOP("Estimated Files: %1"), "files", F::Count, nullptr, 0, true},
+        {QT_TR_NOOP("Indexed Keywords: %1"), "indexedKeywords", F::Count, nullptr, 0, true},
+        {QT_TR_NOOP("Indexed Sources: %1"), "indexedSources", F::Count, nullptr, 0, true},
+        {QT_TR_NOOP("Indexed Notes: %1"), "indexedNotes", F::Count, nullptr, 0, true},
+        {QT_TR_NOOP("Active Searches: %1"), "activeSearches", F::Count, nullptr, 0, true},
+        {QT_TR_NOOP("Banned Addresses: %1"), "safeKadBanned", F::Count, nullptr, 0, true},
+    };
+    return kRows;
+}
+
+std::span<const StatisticsPanel::CounterRow> StatisticsPanel::kadActivityRows()
+{
+    using F = RowFormat;
+    static constexpr CounterRow kRows[] = {
+        {QT_TR_NOOP("Time Connected: %1 %2"), "connectedMs", F::DurationMs, "runtimeMs"},
+        {QT_TR_NOOP("Hellos Sent: %1"), "hellosSent"},
+        {QT_TR_NOOP("Hellos Answered: %1 %2"), "hellosReceived", F::Count, "hellosSent"},
+        {QT_TR_NOOP("Lookup Answers: %1"), "lookupResponses"},
+        {QT_TR_NOOP("Bootstrap Answers: %1"), "bootstraps"},
+        {QT_TR_NOOP("Searches: %1"), "searchesTotal"},
+        {QT_TR_NOOP("Node Lookups: %1 %2"), "searchesNode", F::Count, "searchesTotal", 1},
+        {QT_TR_NOOP("Keyword Searches: %1 %2"), "searchesKeyword", F::Count, "searchesTotal", 1},
+        {QT_TR_NOOP("Source Searches: %1 %2"), "searchesSource", F::Count, "searchesTotal", 1},
+        {QT_TR_NOOP("Notes Searches: %1 %2"), "searchesNotes", F::Count, "searchesTotal", 1},
+        {QT_TR_NOOP("Publishes: %1"), "publishes"},
+    };
+    return kRows;
+}
+
+void StatisticsPanel::buildKademliaBranch(const QIcon& detailIcon, const QIcon& cumulativeIcon)
+{
+    // Fixed text down to depth 1, as in the Usenet branch.
+    m_itemKad = new QTreeWidgetItem(m_tree, {tr("Kademlia")});
+    m_itemKad->setIcon(0, QIcon(QStringLiteral(":/icons/Kad.ico")));
+
+    const QString estimate =
+        tr("Different nodes, counted by node ID. An estimate, accurate to about 2%.");
+
+    const auto buildScope = [&](const QString& label, const QIcon& icon, bool live,
+                                QList<CounterItem>& rows, QTreeWidgetItem*& countries) {
+        auto* scope = new QTreeWidgetItem(m_itemKad, {label});
+        scope->setIcon(0, icon);
+        rows.clear();
+
+        if (live)
+            m_itemKadStatus = new QTreeWidgetItem(scope);
+
+        auto* table = new QTreeWidgetItem(scope, {tr("Routing Table")});
+        table->setIcon(0, QIcon(QStringLiteral(":/icons/KadContactList.ico")));
+        buildCounterRows(table, kadTableRows(), live, rows);
+        if (live)
+            m_itemKadVersions = new QTreeWidgetItem(table, {tr("By Version")});
+
+        auto* nodes = new QTreeWidgetItem(scope, {tr("Nodes")});
+        nodes->setIcon(0, QIcon(QStringLiteral(":/icons/Contact0.ico")));
+        buildCounterRows(nodes, kadNodeRows(), live, rows);
+        countries = new QTreeWidgetItem(nodes, {tr("By Country")});
+        countries->setToolTip(0, tr("Nodes that sent us a packet, by the country of the "
+                                    "address it came from."));
+
+        if (live) {
+            auto* network = new QTreeWidgetItem(scope, {tr("Network")});
+            network->setIcon(0, QIcon(QStringLiteral(":/icons/KadServer.ico")));
+            buildCounterRows(network, kadNetworkRows(), live, rows);
+        }
+
+        auto* activity = new QTreeWidgetItem(scope, {tr("Activity")});
+        activity->setIcon(0, QIcon(QStringLiteral(":/icons/KadCurrentSearches.ico")));
+        buildCounterRows(activity, kadActivityRows(), live, rows);
+
+        for (const auto& [row, item] : rows) {
+            const QLatin1StringView key(row->key);
+            if (key == QLatin1StringView("seenContacted")) {
+                item->setToolTip(0, tr("Nodes that sent us a packet themselves.") + QLatin1Char(' ')
+                                        + estimate);
+            } else if (key == QLatin1StringView("seenListed")) {
+                item->setToolTip(0, tr("Nodes that other nodes named in their answers; most "
+                                       "are never contacted.") + QLatin1Char(' ') + estimate);
+            }
+        }
+    };
+
+    buildScope(tr("Session"), detailIcon, true, m_kadSessionRows, m_itemKadSesCountries);
+    buildScope(tr("Cumulative"), cumulativeIcon, false, m_kadCumulativeRows, m_itemKadCumCountries);
+
+    applyKadStats({});
+}
+
+void StatisticsPanel::updateKadVersions(const QCborArray& versions, qint64 contacts)
+{
+    // Kad protocol versions and the eMule release that introduced each
+    // (KADEMLIA_VERSION*, core/utils/Opcodes.h).
+    static constexpr const char* kReleases[] = {
+        nullptr, "0.46c", "0.47a", "0.47b", "0.47c", "0.48a", "0.49a beta", "0.49a", "0.49b", "0.50a",
+    };
+
+    QList<KeyedRow> rows;
+    // Newest first: the tail of old versions is what one scrolls past.
+    for (qsizetype i = versions.size() - 1; i >= 0; --i) {
+        const QCborArray entry = versions.at(i).toArray();
+        const qint64 version = entry.at(0).toInteger();
+        const qint64 count = entry.at(1).toInteger();
+        const char* release = version >= 0 && version < qint64{std::size(kReleases)}
+                                  ? kReleases[version] : nullptr;
+        const QString name = release ? tr("Version %1 (eMule %2)").arg(version)
+                                           .arg(QLatin1StringView(release))
+                                     : tr("Version %1").arg(version);
+        rows.append({QString::number(version),
+                     tr("%1: %2 %3").arg(name).arg(count).arg(formatPercent(count, contacts)), {}});
+    }
+    syncKeyedChildren(m_itemKadVersions, rows);
+}
+
+void StatisticsPanel::updateCountryRows(QTreeWidgetItem* parent, const QCborArray& countries)
+{
+    // Shares of the sum, not of the "seen" total: a peer that moved is in two
+    // countries, and the rows should still add up to 100%.
+    qint64 total = 0;
+    for (const auto& value : countries)
+        total += value.toArray().at(1).toInteger();
+
+    QList<KeyedRow> rows;
+    rows.reserve(countries.size());
+    for (const auto& value : countries) {
+        const QCborArray entry = value.toArray();
+        const QString cc = entry.at(0).toString();
+        const qint64 nodes = entry.at(1).toInteger();
+        const QString name = cc.isEmpty() ? tr("Unknown") : CountryFlags::tooltip(cc);
+        rows.append({cc.isEmpty() ? QStringLiteral("-") : cc,
+                     tr("%1: ≈%2 %3").arg(name).arg(nodes).arg(formatPercent(nodes, total)),
+                     CountryFlags::showFlags() ? CountryFlags::flag(cc) : QIcon()});
+    }
+    syncKeyedChildren(parent, rows);
+}
+
+void StatisticsPanel::syncKeyedChildren(QTreeWidgetItem* parent, const QList<KeyedRow>& rows)
+{
+    QHash<QString, QTreeWidgetItem*> existing;
+    for (int i = 0; i < parent->childCount(); ++i)
+        existing.insert(parent->child(i)->data(0, Qt::UserRole).toString(), parent->child(i));
+
+    for (int i = 0; i < rows.size(); ++i) {
+        const KeyedRow& row = rows.at(i);
+        QTreeWidgetItem* item = existing.take(row.key);
+        if (!item) {
+            item = new QTreeWidgetItem;
+            item->setData(0, Qt::UserRole, row.key);
+            parent->insertChild(i, item);
+        } else if (parent->indexOfChild(item) != i) {
+            parent->takeChild(parent->indexOfChild(item));
+            parent->insertChild(i, item);
+        }
+        item->setText(0, row.text);
+        item->setIcon(0, row.icon);
+    }
+    qDeleteAll(existing);
 }
 
 // ---------------------------------------------------------------------------

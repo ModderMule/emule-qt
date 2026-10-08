@@ -34,7 +34,19 @@ enum class SearchType : uint8 {
     /// search system alongside it — and a future TorrentIndexer slots in here
     /// the same way.
     UsenetIndexer = 5,
+
+    /// Usenet / torrent releases asked of an eD2K server's Meta API (eNode,
+    /// MetaApi.Search) — the server answers from its catalogues, no indexer and
+    /// no crawler is asked by us. Which server: see metaSearchCandidates().
+    MetaUsenet  = 6,
+    MetaTorrent = 7,
 };
+
+/// A search an eD2K server's Meta API answers.
+[[nodiscard]] constexpr bool isMetaSearchType(SearchType type)
+{
+    return type == SearchType::MetaUsenet || type == SearchType::MetaTorrent;
+}
 
 // ---------------------------------------------------------------------------
 // Automatic search-method resolution
@@ -56,7 +68,7 @@ struct AutoSearchState {
 ///
 /// Returns std::nullopt when neither network is available — the caller reports
 /// that to the user and starts nothing (MFC shows IDS_NOTCONNECTEDANY).
-/// The result is never Automatic, Ed2kGlobal or ContentDB.
+/// The result is never Automatic, Ed2kGlobal, ContentDB or a Meta type.
 ///
 /// **It is never UsenetIndexer either, and that is deliberate.** This function
 /// picks between networks that cost nothing to ask; an indexer search spends a

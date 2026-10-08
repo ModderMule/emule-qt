@@ -9,8 +9,10 @@ own switch in Options → Web Interface:
 | MCP endpoint for AI assistants | `/mcp` | `mcpEnabled` (+ `mcpReadOnly`) | off |
 | Template web UI | `/` | `enabled` | off |
 
-They share the port, the listen address, HTTPS and the API key (`apiKey`). When a surface is
-on, the daemon logs its address at start:
+They share the port, the listen address, HTTPS and the API key (`apiKey`). Listening on all
+interfaces, the server does not start when another program already uses the port on one local
+address (`127.0.0.1`, for instance): requests to that address would reach that program. The log
+names the address. When a surface is on, the daemon logs its address at start:
 
 ```
 WebServer: REST API playground at http://localhost:4711/api/v1/docs
@@ -55,7 +57,7 @@ fetch it again:
 | `connection.changed` | `connected`, `connecting`, `lowID`, `firewalled`, `netBlocked`, server |
 | `kad.changed` | `running`, `connected`, `firewalled` |
 | `nat.changed` | `statusText`, `methodText`, `externalAddress` |
-| `search.state` | `searchID`, `state` |
+| `search.state` | `searchID`, `state`, `hasMore` |
 | `usenet.finished` | `id`, `success`, `message` |
 | `sync.reset` | the gap could not be replayed: fetch everything again |
 
@@ -74,10 +76,17 @@ cannot be read or set here; the web server's own switches are shown but read-onl
 
 ## MCP
 
-`POST /mcp` speaks the Model Context Protocol over streamable HTTP, stateless, tools only. Both
-protocol eras are answered on the one endpoint: the handshake revisions (`initialize`,
-2024-11-05 to 2025-11-25) and the per-request revision 2026-07-28 (`server/discover`, version
-in `params._meta`, mirrored `MCP-Protocol-Version` / `Mcp-Method` / `Mcp-Name` headers).
+`POST /mcp` speaks the Model Context Protocol over streamable HTTP, stateless, tools only, in
+protocol revision **2026-07-28** and no other. There is no `initialize` handshake: every request
+names the revision in `params._meta["io.modelcontextprotocol/protocolVersion"]` and mirrors it,
+the method and the tool name into the `MCP-Protocol-Version` / `Mcp-Method` / `Mcp-Name`
+headers. `server/discover` describes the server. One message per POST; `GET` and `DELETE`
+answer 405.
+
+A client of an older revision (one that opens with `initialize`, or names no revision) gets
+HTTP 400 with the JSON-RPC error `-32022` listing the supported revision, so it can say what is
+wrong instead of failing silently. Headers that are missing or disagree with the body are
+`-32020` (400); an unknown method is `-32601` (404).
 
 The tools are operations of the same table as the REST routes — same validation, same code —
 chosen for what an assistant needs (status, search, downloads, servers, Kad, shared files,
@@ -93,7 +102,9 @@ claude mcp add --transport http emuleqt http://localhost:4711/mcp --header "Auth
 ```
 
 **A client that only starts a local program** uses the bridge `emuleqt-mcp`, which reads the
-port and key from the local configuration:
+port and key from the local configuration and adds the headers the HTTP transport needs. It
+ships next to the daemon: in the folder of the Linux tarball and the Windows zip, and in
+`Contents/MacOS/` of the app bundle on macOS. The client itself has to speak 2026-07-28.
 
 ```json
 { "mcpServers": { "emuleqt": { "command": "/path/to/emuleqt-mcp" } } }

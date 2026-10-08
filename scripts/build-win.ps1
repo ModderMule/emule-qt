@@ -324,15 +324,15 @@ function Resolve-VsGenerator {
 
 <#
 .SYNOPSIS
-    Locate emuleqt.exe / emulecored.exe across every layout we produce.
+    Locate emuleqt.exe / emulecored.exe / emuleqt-mcp.exe across every layout we produce.
 
 .DESCRIPTION
     Returns an object with .Path (or $null) and .Probed, the list of paths
     checked, so callers can print an actionable error.
 
     Layouts, in order:
-      build\src\{gui,daemon}\           CMake single-config (Ninja)
-      build\src\{gui,daemon}\<Config>\  CMake multi-config (Visual Studio)
+      build\src\{gui,daemon,mcpbridge}\           CMake single-config (Ninja)
+      build\src\{gui,daemon,mcpbridge}\<Config>\  CMake multi-config (Visual Studio)
       build\                            Ninja, alternate layout
       bin\<Config>\                     Visual Studio projects
       bin\<other config>\               last resort
@@ -342,14 +342,18 @@ function Resolve-VsGenerator {
 #>
 function Find-EMuleBinary {
     param(
-        [Parameter(Mandatory)][ValidateSet('emuleqt.exe', 'emulecored.exe')][string]$Name,
+        [Parameter(Mandatory)][ValidateSet('emuleqt.exe', 'emulecored.exe', 'emuleqt-mcp.exe')][string]$Name,
         [ValidateSet('Release', 'Debug')][string]$Config = 'Release',
         [string]$BuildDir = (Get-DefaultBuildDir),
         [string]$ProjectDir = (Get-ProjectDir),
         [switch]$PreferVsOutput
     )
 
-    $subDir = if ($Name -eq 'emuleqt.exe') { 'gui' } else { 'daemon' }
+    $subDir = switch ($Name) {
+        'emuleqt.exe'     { 'gui' }
+        'emuleqt-mcp.exe' { 'mcpbridge' }
+        default           { 'daemon' }
+    }
     $altConfig = if ($Config -eq 'Debug') { 'Release' } else { 'Debug' }
 
     $cmakePaths = @(

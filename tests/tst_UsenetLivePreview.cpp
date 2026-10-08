@@ -396,6 +396,8 @@ void tst_UsenetLivePreview::previewsAReleaseWhileItIsStillDownloading()
     WebServerConfig config;
     config.enabled = true;
     config.port = 0;
+    // loopback: port 0 on the wildcard can collide with another program's 127.0.0.1 port (macOS)
+    config.listenAddress = QStringLiteral("127.0.0.1");
     QVERIFY(web.start(config));
     QVERIFY(web.port() > 0);
 

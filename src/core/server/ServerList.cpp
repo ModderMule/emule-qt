@@ -784,21 +784,44 @@ ServerListStats ServerList::stats() const
 // Sorting
 // ---------------------------------------------------------------------------
 
+namespace {
+
+// High < Normal < Low  (High=1, Normal=0, Low=2 → sort order: High, Normal, Low)
+int preferenceRank(ServerPriority p)
+{
+    switch (p) {
+    case ServerPriority::High:   return 0;
+    case ServerPriority::Normal: return 1;
+    case ServerPriority::Low:    return 2;
+    }
+    return 1;
+}
+
+} // namespace
+
 void ServerList::sortByPreference()
 {
     std::stable_sort(m_servers.begin(), m_servers.end(),
         [](const std::unique_ptr<Server>& a, const std::unique_ptr<Server>& b) {
-            // High < Normal < Low  (High=1, Normal=0, Low=2 → sort order: High, Normal, Low)
-            auto rank = [](ServerPriority p) -> int {
-                switch (p) {
-                case ServerPriority::High:   return 0;
-                case ServerPriority::Normal: return 1;
-                case ServerPriority::Low:    return 2;
-                }
-                return 1;
-            };
-            return rank(a->preference()) < rank(b->preference());
+            return preferenceRank(a->preference()) < preferenceRank(b->preference());
         });
+}
+
+std::vector<Server*> ServerList::autoConnectOrder(bool usePriorities, bool staticOnly) const
+{
+    std::vector<Server*> order;
+    order.reserve(m_servers.size());
+    for (const auto& srv : m_servers) {
+        if (srv->isDisabled() || (staticOnly && !srv->isStaticMember()))
+            continue;
+        order.push_back(srv.get());
+    }
+    if (usePriorities) {
+        std::stable_sort(order.begin(), order.end(), [](const Server* a, const Server* b) {
+            return preferenceRank(a->preference()) < preferenceRank(b->preference());
+        });
+    }
+    return order;
 }
 
 // ---------------------------------------------------------------------------

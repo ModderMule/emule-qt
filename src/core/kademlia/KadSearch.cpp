@@ -11,6 +11,7 @@
 #include "kademlia/KadIO.h"
 #include "kademlia/KadLog.h"
 #include "kademlia/KadLookupHistory.h"
+#include "kademlia/KadNodeCensus.h"
 #include "kademlia/KadMiscUtils.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
@@ -509,6 +510,9 @@ void Search::processResponse(uint32 fromIP, uint16 fromPort, const ContactArray&
                 return;
             }
         }
+        // It answered a request we addressed to this ID: seen, with a real address.
+        if (theApp.kadNodeCensus)
+            theApp.kadNodeCensus->noteContacted(pFromContact->getClientID(), pFromContact->address());
     }
 
     logKad(QStringLiteral("Kad search %1: response from %2:%3 — sender %4, +%5 contacts, best=%6 responded=%7 possible=%8")

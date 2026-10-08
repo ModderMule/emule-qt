@@ -87,6 +87,15 @@ jobs:
       - name: Bundle
         run: scripts/bundle-linux.sh deploy-qt build
 
+      # The bundle script checks that the files are there; this checks that the
+      # shipped bridge starts from the unpacked tarball with its bundled libs.
+      - name: Smoke-test the bundled MCP bridge
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/verify"
+          tar xzf build/eMuleQt-v*-linux-x86_64.tar.gz -C "$RUNNER_TEMP/verify"
+          "$RUNNER_TEMP/verify/eMuleQt/emuleqt-mcp" --version
+
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:

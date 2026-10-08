@@ -75,6 +75,8 @@ private slots:
     void ratingAveragesSourcesAndKadNotesTogether();
     void aDepartedSourceStopsCounting();
     void containerCheckWaitsForTheFirstBytes();
+    void containerCheckReadsTheDataFile();
+    void fakeVerdictFollowsTheFirstBytesAndNames();
     void rightFileHasHigherPrio_ordering();
     void writePartStatus_basic();
     void validSourcesCount_countsMfcStates();
@@ -1045,6 +1047,61 @@ void tst_PartFile::containerCheckWaitsForTheFirstBytes()
     QVERIFY(pf.containerCheck().isSuspect());
     QCOMPARE(pf.containerCheck().expected, QStringLiteral("ASF"));
     QVERIFY(pf.containerCheck().actual.isEmpty());
+}
+
+void tst_PartFile::containerCheckReadsTheDataFile()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/containerok");
+    QDir().mkpath(tempDir);
+
+    PartFile pf;
+    pf.setFileName(QStringLiteral("Some Movie.avi"));
+    pf.setFileSize(PARTSIZE);
+    pf.setTmpPath(tempDir);
+    QVERIFY(pf.createPartFile(tempDir));
+
+    // A real AVI head. Read from the .part.met instead, this came back as a fake.
+    static const char kAvi[] = "RIFF\x00\x10\x00\x00" "AVI ";
+    std::vector<uint8> head(kAvi, kAvi + 12);
+    pf.writeToBuffer(12, head.data(), 0, 11, nullptr);
+    pf.flushBuffer();
+
+    QCOMPARE(pf.containerCheck().verdict, ContainerVerdict::Matches);
+    QVERIFY(!pf.containerCheck().isSuspect());
+    QCOMPARE(pf.fakeVerdict().score, 0);
+}
+
+void tst_PartFile::fakeVerdictFollowsTheFirstBytesAndNames()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/verdict");
+    QDir().mkpath(tempDir);
+
+    PartFile pf;
+    pf.setFileName(QStringLiteral("Some Movie 2024.avi"));
+    pf.setFileSize(PARTSIZE);
+    pf.setTmpPath(tempDir);
+    QVERIFY(pf.createPartFile(tempDir));
+
+    // Nothing to go on yet
+    QCOMPARE(pf.fakeVerdict().score, 0);
+    QCOMPARE(pf.fakeVerdict().band, Confidence::LooksGood);
+
+    // The names the search result went by arrive with the download
+    pf.addObservedNames({QStringLiteral("Microsoft Office 2010 Pro.zip"),
+                         QStringLiteral("Iron Maiden Discography.rar")});
+    QVERIFY(pf.fakeVerdict().has(FakeReason::NamesSpanKinds));
+    QCOMPARE(pf.fakeVerdict().band, Confidence::Suspect);
+
+    // The first bytes land and are a Windows program: no waiting for the cache to age
+    static const char kExe[] = "MZ\x90\x00\x03\x00\x00\x00\x04\x00\x00\x00";
+    std::vector<uint8> head(kExe, kExe + 12);
+    pf.writeToBuffer(12, head.data(), 0, 11, nullptr);
+    pf.flushBuffer();
+    const FakeFileVerdict& verdict = pf.fakeVerdict();
+    QVERIFY(verdict.has(FakeReason::HeaderExtensionMismatch));
+    QVERIFY(verdict.has(FakeReason::ExecutableMasquerade));
+    QCOMPARE(verdict.score, 100);
+    QCOMPARE(verdict.band, Confidence::LikelyFake);
 }
 
 void tst_PartFile::sourceTracking()

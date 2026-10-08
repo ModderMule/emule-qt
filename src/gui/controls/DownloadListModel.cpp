@@ -3,6 +3,7 @@
 /// @brief Tree model for the downloads list — implementation.
 
 #include "controls/DownloadListModel.h"
+#include "controls/ConfidenceStyle.h"
 
 #include "client/ClientStateDefs.h"
 #include "prefs/Preferences.h"
@@ -363,8 +364,15 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
                        : QString::number(d.category);
         case ColAddedOn:
             return formatTimestamp(d.addedOn);
+        case ColConfidence:
+            return confidenceText(d.confidence, d.fakeScore);
         default: break;
         }
+    }
+
+    if (role == Qt::ForegroundRole && index.column() == ColConfidence) {
+        if (const QColor c = confidenceColor(d.confidence); c.isValid())
+            return c;
     }
 
     if (role == Qt::ToolTipRole) {
@@ -397,6 +405,9 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             .arg(d.requests).arg(d.acceptedRequests)
             .arg(formatByteSize(d.transferredData));
         tip += extra;
+        // Only when there is something to say: a clean file needs no extra lines
+        if (!d.fakeReasons.isEmpty())
+            tip += QStringLiteral("\n\n") + confidenceTooltip(d.confidence, d.fakeScore, d.fakeReasons);
         return tip;
     }
 
@@ -420,6 +431,7 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         case ColLastReception: return QVariant::fromValue(d.lastReception);
         case ColCategory:   return QVariant::fromValue(d.category);
         case ColAddedOn:    return QVariant::fromValue(d.addedOn);
+        case ColConfidence: return confidenceSortKey(d.confidence, d.fakeScore);
         default: break;
         }
     }
@@ -465,6 +477,7 @@ QVariant DownloadListModel::headerData(int section, Qt::Orientation orientation,
     case ColLastReception:  return tr("Last reception");
     case ColCategory:       return tr("Category");
     case ColAddedOn:        return tr("Added On");
+    case ColConfidence:     return tr("Confidence");
     default:                return {};
     }
 }

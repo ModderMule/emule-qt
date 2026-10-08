@@ -5,14 +5,17 @@
 #include "app/CoreInfo.h"
 
 #include "app/AppContext.h"
+#include "client/ClientCensus.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "geo/IP2Country.h"
 #include "kademlia/KadContact.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadIndexed.h"
+#include "kademlia/KadNodeCensus.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
+#include "kademlia/KadSearchManager.h"
 #include "kademlia/KadUDPListener.h"
 #include "kademlia/Kademlia.h"
 #include "net/BindAddress.h"
@@ -21,6 +24,7 @@
 #include "server/Server.h"
 #include "server/ServerConnect.h"
 #include "server/ServerList.h"
+#include "stats/Statistics.h"
 #include "utils/OtherFunctions.h"
 
 namespace eMule::ops {
@@ -310,6 +314,127 @@ QCborMap kadStatus()
         }
     }
     return status;
+}
+
+namespace {
+
+// [[cc, count]], most first; cc "" = unknown.
+QCborArray countriesToCbor(const CountryCensus& census, CountryCensus::Scope scope)
+{
+    QCborArray out;
+    for (const auto& country : census.countries(scope))
+        out.append(QCborArray{country.cc, static_cast<qint64>(country.count)});
+    return out;
+}
+
+} // namespace
+
+QCborMap kadStats()
+{
+    QCborMap out;
+
+    if (const auto* stats = theApp.statistics) {
+        out.insert(QStringLiteral("session"), countersToCbor(stats->kadSession()));
+        out.insert(QStringLiteral("cumulative"), countersToCbor(stats->cumulativeKad()));
+    }
+
+    QCborMap current;
+    auto* kad = kad::Kademlia::instance();
+    const bool running = kad && kad->isRunning();
+    current.insert(QStringLiteral("running"), running);
+    current.insert(QStringLiteral("connected"), kad && kad->isConnected());
+    current.insert(QStringLiteral("firewalled"), kad && kad->isFirewalled());
+    current.insert(QStringLiteral("udpFirewalled"),
+                   kad && kad->isConnected() && kad::UDPFirewallTester::isFirewalledUDP(true));
+    current.insert(QStringLiteral("lanMode"), running && kad->isRunningInLANMode());
+
+    if (running) {
+        qint64 verified = 0;
+        qint64 bootstrap = 0;
+        std::array<qint64, 5> byType{};
+        QMap<int, qint64> byVersion;
+        kad::ContactArray contacts;
+        if (auto* zone = kad->getRoutingZone())
+            zone->getAllEntries(contacts);
+        for (const auto* c : contacts) {
+            verified += c->isIpVerified() ? 1 : 0;
+            bootstrap += c->isBootstrapContact() ? 1 : 0;
+            ++byType[std::min<std::size_t>(c->getType(), byType.size() - 1)];
+            ++byVersion[c->getVersion()];
+        }
+        current.insert(QStringLiteral("contacts"), static_cast<qint64>(contacts.size()));
+        current.insert(QStringLiteral("verified"), verified);
+        current.insert(QStringLiteral("bootstrap"), bootstrap);
+
+        QCborArray types;
+        for (const qint64 n : byType)
+            types.append(n);
+        current.insert(QStringLiteral("byType"), types);
+
+        QCborArray versions;
+        for (auto it = byVersion.cbegin(); it != byVersion.cend(); ++it)
+            versions.append(QCborArray{it.key(), it.value()});
+        current.insert(QStringLiteral("byVersion"), versions);
+
+        current.insert(QStringLiteral("users"), static_cast<qint64>(kad->getKademliaUsers()));
+        current.insert(QStringLiteral("files"), static_cast<qint64>(kad->getKademliaFiles()));
+        if (const auto* indexed = kad->getIndexed()) {
+            current.insert(QStringLiteral("indexedKeywords"),
+                           static_cast<qint64>(indexed->m_totalIndexKeyword));
+            current.insert(QStringLiteral("indexedSources"),
+                           static_cast<qint64>(indexed->m_totalIndexSource));
+            current.insert(QStringLiteral("indexedNotes"),
+                           static_cast<qint64>(indexed->m_totalIndexNotes));
+            current.insert(QStringLiteral("indexedLoad"),
+                           static_cast<qint64>(indexed->m_totalIndexLoad));
+        }
+        current.insert(QStringLiteral("activeSearches"),
+                       static_cast<qint64>(kad::SearchManager::getSearches().size()));
+        if (const auto* safeKad = kad::Kademlia::getInstanceSafeKad()) {
+            current.insert(QStringLiteral("safeKadTracked"),
+                           static_cast<qint64>(safeKad->trackedCount()));
+            current.insert(QStringLiteral("safeKadBanned"),
+                           static_cast<qint64>(safeKad->bannedCount()));
+        }
+    }
+    out.insert(QStringLiteral("current"), current);
+
+    if (const auto* census = theApp.kadNodeCensus) {
+        using Scope = CountryCensus::Scope;
+        const auto scopeMap = [census](Scope scope) {
+            QCborMap m;
+            m.insert(QStringLiteral("contacted"), static_cast<qint64>(census->contacted(scope)));
+            m.insert(QStringLiteral("listed"), static_cast<qint64>(census->listed(scope)));
+            m.insert(QStringLiteral("countries"), countriesToCbor(*census, scope));
+            return m;
+        };
+        QCborMap seen;
+        seen.insert(QStringLiteral("session"), scopeMap(Scope::Session));
+        seen.insert(QStringLiteral("cumulative"), scopeMap(Scope::Cumulative));
+        out.insert(QStringLiteral("seen"), seen);
+    }
+
+    return out;
+}
+
+QCborMap clientStats()
+{
+    QCborMap out;
+    if (const auto* census = theApp.clientCensus) {
+        using Scope = CountryCensus::Scope;
+        const auto scopeMap = [census](Scope scope) {
+            QCborMap m;
+            m.insert(QStringLiteral("seen"), static_cast<qint64>(census->seen(scope)));
+            m.insert(QStringLiteral("identified"), static_cast<qint64>(census->identified(scope)));
+            m.insert(QStringLiteral("countries"), countriesToCbor(*census, scope));
+            return m;
+        };
+        QCborMap seen;
+        seen.insert(QStringLiteral("session"), scopeMap(Scope::Session));
+        seen.insert(QStringLiteral("cumulative"), scopeMap(Scope::Cumulative));
+        out.insert(QStringLiteral("seen"), seen);
+    }
+    return out;
 }
 
 } // namespace eMule::ops

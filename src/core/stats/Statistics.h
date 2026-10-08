@@ -165,10 +165,13 @@ public:
     [[nodiscard]] const UsenetCounters& usenetSession() const { return m_usenetSession; }
     [[nodiscard]] IndexerCounters& indexerSession();
     [[nodiscard]] const IndexerCounters& indexerSession() const { return m_indexerSession; }
+    [[nodiscard]] KadCounters& kadSession();
+    [[nodiscard]] const KadCounters& kadSession() const { return m_kadSession; }
 
     /// Banked base + this session — what the tree shows and the flush writes.
     [[nodiscard]] UsenetCounters cumulativeUsenet() const;
     [[nodiscard]] IndexerCounters cumulativeIndexer() const;
+    [[nodiscard]] KadCounters cumulativeKad() const;
 
     // --- Download quality counters ---
     //
@@ -343,6 +346,7 @@ public:
         HttpCacheCounters httpCache;
         UsenetCounters usenet;
         IndexerCounters indexer;
+        KadCounters kad;
     };
 
     /// Cumulative totals as of right now — what both the Statistics tree and the
@@ -443,6 +447,7 @@ private:
 
     UsenetCounters m_usenetSession;
     IndexerCounters m_indexerSession;
+    KadCounters m_kadSession;
 
     // Global progress
     float m_globalDone = 0.0f;

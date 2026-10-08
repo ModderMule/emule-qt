@@ -1,7 +1,7 @@
 #pragma once
 
 /// @file NetworkCounters.h
-/// @brief Statistics counter blocks: Usenet, indexers, HTTP Cache.
+/// @brief Statistics counter blocks: Usenet, indexers, HTTP Cache, Kademlia.
 ///
 /// Core owns the storage and the modules do the counting: Statistics holds the
 /// session half, Preferences the banked cumulative half, and the usenet/indexer
@@ -201,6 +201,71 @@ struct HttpCacheCounters {
     bool operator==(const HttpCacheCounters&) const = default;
 };
 
+/// Kademlia activity. Distinct-node counts are not here: they are sketches,
+/// kept by kad::KadNodeCensus. Kad stops and restarts within one session and
+/// takes its own prefs with it, so the session half lives in Statistics.
+struct KadCounters {
+    // Routing table
+    uint64 contactsAdded = 0;      ///< learned on the wire; nodes.dat loads don't count
+    uint64 contactsVerified = 0;   ///< passed the IP verification round trip
+    uint64 contactsExpired = 0;    ///< dead (type 4) and dropped
+    uint64 contactsReplaced = 0;   ///< pushed out of a full bin by a better one
+    uint64 contactsBanned = 0;     ///< dropped by SafeKad
+    uint64 peakContacts = 0;       ///< Max
+
+    // Traffic
+    uint64 hellosSent = 0;
+    uint64 hellosReceived = 0;     ///< HELLO_RES
+    uint64 lookupResponses = 0;    ///< KADEMLIA2_RES
+    uint64 bootstraps = 0;         ///< BOOTSTRAP_RES
+
+    // Searches started
+    uint64 searchesNode = 0;       ///< routing lookups, incl. self-lookup and firewall checks
+    uint64 searchesKeyword = 0;
+    uint64 searchesSource = 0;
+    uint64 searchesNotes = 0;
+    uint64 publishes = 0;          ///< store keyword / file / notes
+
+    // What HELLOs told us about other nodes
+    uint64 udpFirewalledNodes = 0;
+    uint64 udpOpenNodes = 0;
+    uint64 tcpFirewalledNodes = 0;
+    uint64 tcpOpenNodes = 0;
+
+    uint64 connectedMs = 0;        ///< time Kad was connected
+
+    template<class F> static constexpr void forEachField(F&& f)
+    {
+        using C = KadCounters;
+        f("contactsAdded", &C::contactsAdded, CounterAgg::Sum);
+        f("contactsVerified", &C::contactsVerified, CounterAgg::Sum);
+        f("contactsExpired", &C::contactsExpired, CounterAgg::Sum);
+        f("contactsReplaced", &C::contactsReplaced, CounterAgg::Sum);
+        f("contactsBanned", &C::contactsBanned, CounterAgg::Sum);
+        f("peakContacts", &C::peakContacts, CounterAgg::Max);
+
+        f("hellosSent", &C::hellosSent, CounterAgg::Sum);
+        f("hellosReceived", &C::hellosReceived, CounterAgg::Sum);
+        f("lookupResponses", &C::lookupResponses, CounterAgg::Sum);
+        f("bootstraps", &C::bootstraps, CounterAgg::Sum);
+
+        f("searchesNode", &C::searchesNode, CounterAgg::Sum);
+        f("searchesKeyword", &C::searchesKeyword, CounterAgg::Sum);
+        f("searchesSource", &C::searchesSource, CounterAgg::Sum);
+        f("searchesNotes", &C::searchesNotes, CounterAgg::Sum);
+        f("publishes", &C::publishes, CounterAgg::Sum);
+
+        f("udpFirewalledNodes", &C::udpFirewalledNodes, CounterAgg::Sum);
+        f("udpOpenNodes", &C::udpOpenNodes, CounterAgg::Sum);
+        f("tcpFirewalledNodes", &C::tcpFirewalledNodes, CounterAgg::Sum);
+        f("tcpOpenNodes", &C::tcpOpenNodes, CounterAgg::Sum);
+
+        f("connectedMs", &C::connectedMs, CounterAgg::Sum);
+    }
+
+    bool operator==(const KadCounters&) const = default;
+};
+
 /// One news server account, this session only. Its all-time bytes are the
 /// billing meter's (usage.yml), which a statistics reset must never touch.
 struct UsenetServerCounters {
@@ -243,6 +308,7 @@ template<CounterBlock C>
 static_assert(sizeof(UsenetCounters) == counterFieldCount<UsenetCounters>() * sizeof(uint64));
 static_assert(sizeof(IndexerCounters) == counterFieldCount<IndexerCounters>() * sizeof(uint64));
 static_assert(sizeof(HttpCacheCounters) == counterFieldCount<HttpCacheCounters>() * sizeof(uint64));
+static_assert(sizeof(KadCounters) == counterFieldCount<KadCounters>() * sizeof(uint64));
 static_assert(sizeof(UsenetServerCounters)
               == counterFieldCount<UsenetServerCounters>() * sizeof(uint64));
 

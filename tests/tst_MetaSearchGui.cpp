@@ -4,6 +4,7 @@
 /// Set EMULE_TEST_SHOTS=<dir> to also write PNGs of the rendered list and dialog.
 
 #include "controls/SearchResultsModel.h"
+#include "controls/SearchResultsProxy.h"
 #include "dialogs/MetaAccountDialog.h"
 #include "utils/ViewSelection.h"
 #include "IpcProtocol.h"
@@ -80,6 +81,7 @@ private slots:
     void ed2kLinkRefusedForMetaRows();
     void magnetLinkForMetaRows();
     void multiSelectionSurvivesReset();
+    void networkFilterHidesForeignRows();
     void loginDialog_authRequired();
     void loginDialog_inactiveShowsSteps();
     void loginDialog_rejectsNonWebLinks();
@@ -319,6 +321,67 @@ void tst_MetaSearchGui::loginDialog_acceptsWhenActive()
     ok.insert(QStringLiteral("state"), 2);
     dlg.updateMeta(ok);
     QCOMPARE(accepted.count(), 1);
+}
+
+void tst_MetaSearchGui::networkFilterHidesForeignRows()
+{
+    const auto named = [](const QString& name, int metaKind, int n) {
+        SearchResultRow r = row(name, metaKind);
+        r.hash = QStringLiteral("%1").arg(n, 32, 16, QLatin1Char('A'));
+        return r;
+    };
+    std::vector<SearchResultRow> rows;
+    rows.push_back(named(QStringLiteral("ed2k"), 0, 0));
+    rows.push_back(named(QStringLiteral("kadOrigin"), 0, 1));
+    rows.back().kadOrigin = true;
+    rows.push_back(named(QStringLiteral("ownKad"), 0, 2));
+    rows.back().isKad = true;   // our own Kad search, not the server's
+    rows.push_back(named(QStringLiteral("btv1"), 1, 3));
+    rows.push_back(named(QStringLiteral("btv2"), 2, 4));
+    rows.push_back(named(QStringLiteral("nzb"), 3, 5));
+
+    SearchResultsModel model;
+    model.setResults(rows);
+    SearchResultsProxy proxy;
+    proxy.setSourceModel(&model);
+
+    const auto shown = [&] {
+        QStringList names;
+        for (int r = 0; r < proxy.rowCount(); ++r)
+            names.append(model.resultAt(proxy.mapToSource(proxy.index(r, 0)).row())->fileName);
+        names.sort();
+        return names;
+    };
+    using Filter = SearchResultsProxy::NetworkFilter;
+    using namespace Qt::StringLiterals;
+
+    QCOMPARE(proxy.rowCount(), 6);
+    QCOMPARE(proxy.hiddenCount(), 0);
+
+    proxy.setNetworkFilter(Filter{.usenet = false});
+    QCOMPARE(shown(), QStringList({u"btv1"_s, u"btv2"_s, u"ed2k"_s, u"kadOrigin"_s, u"ownKad"_s}));
+    QCOMPARE(proxy.hiddenCount(), 1);
+
+    proxy.setNetworkFilter(Filter{.kad = false});
+    QCOMPARE(shown(), QStringList({u"btv1"_s, u"btv2"_s, u"ed2k"_s, u"nzb"_s, u"ownKad"_s}));
+
+    proxy.setNetworkFilter(Filter{.torrent = false});
+    QCOMPARE(shown(), QStringList({u"ed2k"_s, u"kadOrigin"_s, u"nzb"_s, u"ownKad"_s}));
+    QCOMPARE(proxy.hiddenCount(), 2);
+
+    proxy.setNetworkFilter(Filter{.usenet = false, .kad = false, .torrent = false});
+    QCOMPARE(shown(), QStringList({u"ed2k"_s, u"ownKad"_s}));
+
+    // a refresh while filtered: new foreign rows stay hidden
+    rows.push_back(named(QStringLiteral("nzb2"), 3, 6));
+    rows.push_back(named(QStringLiteral("ed2k2"), 0, 7));
+    model.setResults(rows);
+    QCOMPARE(shown(), QStringList({u"ed2k"_s, u"ed2k2"_s, u"ownKad"_s}));
+    QCOMPARE(proxy.hiddenCount(), 5);
+
+    proxy.setNetworkFilter(Filter{});
+    QCOMPARE(proxy.rowCount(), 8);
+    QCOMPARE(proxy.hiddenCount(), 0);
 }
 
 QTEST_MAIN(tst_MetaSearchGui)

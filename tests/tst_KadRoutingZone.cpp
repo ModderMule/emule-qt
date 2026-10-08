@@ -1,6 +1,7 @@
 /// @file tst_KadRoutingZone.cpp
 /// @brief Tests for KadRoutingZone — Kademlia routing table tree.
 
+#include "TestFixtures.h"
 #include "TestHelpers.h"
 
 #include "kademlia/KadRoutingZone.h"
@@ -98,6 +99,8 @@ private slots:
     void readFile_keepsUnverifiedWhenFileDeclaresAVerifiedContact();
     void readFile_verifiesAllForVersion1File();
     void randomLookupTarget_isInOwnZone();
+    void counters_nodesDatLoadIsNotAContactLearned();
+    void counters_verifyCountsTheTransitionOnce();
 
 private:
     UInt128 m_localId;
@@ -863,6 +866,47 @@ void tst_KadRoutingZone::randomLookupTarget_isInOwnZone()
     for (int i = 0; i < 16 && !differs; ++i)
         differs = (RoutingZone::makeRandomLookupTarget(zoneIndex, 4, m_localId) != first);
     QVERIFY2(differs, "randomLookupTarget must not return a constant");
+}
+
+// A restart reloads up to 200 contacts; counting those would make "Contacts
+// Added" grow by that much on every start without one new node.
+void tst_KadRoutingZone::counters_nodesDatLoadIsNotAContactLearned()
+{
+    ScopedStatistics stats;
+    const QString nodesFile = m_tmpDir->filePath(QStringLiteral("nodes.dat"));
+    {
+        RoutingZone zone(m_localId, nodesFile);
+        for (uint32 i = 1; i <= 5; ++i) {
+            zone.add(makeId(i), makePublicIP(i), 4672, 4662, KADEMLIA_VERSION, KadUDPKey(),
+                     false, false, false, false);
+        }
+        QCOMPARE(stats->kadSession().contactsAdded, uint64{5});
+
+        // Known already: an update, not an addition.
+        zone.add(makeId(1), makePublicIP(1), 4672, 4662, KADEMLIA_VERSION, KadUDPKey(),
+                 false, true, false, false);
+        QCOMPARE(stats->kadSession().contactsAdded, uint64{5});
+    }   // writes nodes.dat
+
+    RoutingBin::resetGlobalTracking();
+    RoutingZone reloaded(m_localId, nodesFile);
+    QCOMPARE(reloaded.getNumContacts(), uint32{5});
+    QCOMPARE(stats->kadSession().contactsAdded, uint64{5});
+}
+
+void tst_KadRoutingZone::counters_verifyCountsTheTransitionOnce()
+{
+    ScopedStatistics stats;
+    RoutingZone zone(m_localId, m_tmpDir->filePath(QStringLiteral("nodes.dat")));
+    const UInt128 id = makeId(42);
+    const uint32 ip = makePublicIP(1);
+    zone.add(id, ip, 4672, 4662, KADEMLIA_VERSION, KadUDPKey(), false, false, false, false);
+
+    QVERIFY(!zone.verifyContact(id, makePublicIP(2)));   // wrong address
+    QCOMPARE(stats->kadSession().contactsVerified, uint64{0});
+    QVERIFY(zone.verifyContact(id, ip));
+    QVERIFY(zone.verifyContact(id, ip));                 // every later HELLO verifies again
+    QCOMPARE(stats->kadSession().contactsVerified, uint64{1});
 }
 
 QTEST_MAIN(tst_KadRoutingZone)

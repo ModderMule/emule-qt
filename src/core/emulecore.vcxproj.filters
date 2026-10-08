@@ -114,10 +114,16 @@
     <ClCompile Include="search\SearchQueue.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="search\FakeFileDetector.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="search\SeenFileIndex.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="net\InterfacePin.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\ListenConflict.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="net\GuardedNetworkAccessManager.cpp">
@@ -396,6 +402,9 @@
     <ClCompile Include="GeneratedFiles\enodemeta_proto\api_qtprotoreg.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
+    <ClCompile Include="search\MetaSearchRequest.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="search\SearchParams.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -433,6 +442,18 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="stats\Statistics.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="stats\CardinalitySketch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="stats\CountryCensus.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="client\ClientCensus.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="kademlia\KadNodeCensus.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="stats\StatsHistory.cpp">
@@ -603,6 +624,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="net\InterfacePin.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="net\ListenConflict.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="client\FruitlessSessionLedger.h">
@@ -905,6 +929,12 @@
     <ClInclude Include="search\SearchExprParser.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="search\ConfidenceText.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="search\FakeFileDetector.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="search\SearchFile.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -932,6 +962,12 @@
     <QtMoc Include="GeneratedFiles\enodemeta_proto\api.qpb.h">
       <Filter>Generated Files</Filter>
     </QtMoc>
+    <ClInclude Include="search\MetaSearchRequest.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="search\MetaSearchRunner.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="search\SearchParams.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -975,6 +1011,21 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="files\StatisticFile.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="stats\CardinalitySketch.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="stats\CountryCensus.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="client\ClientCensus.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="kademlia\KadNodeCensus.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="kademlia\KadStats.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="stats\NetworkCounters.h">

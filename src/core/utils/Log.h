@@ -121,6 +121,9 @@ void logStatusInfo(const QString& msg);
 /// Warning variant of logStatusInfo().
 void logStatusWarning(const QString& msg);
 
+/// Error variant of logStatusInfo().
+void logStatusError(const QString& msg);
+
 // ---------------------------------------------------------------------------
 // Console output format
 // ---------------------------------------------------------------------------

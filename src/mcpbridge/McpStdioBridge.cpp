@@ -82,19 +82,21 @@ void McpStdioBridge::handleLine(const QByteArray& lineIn)
     // Only to know whether an answer is owed should the daemon not give one.
     const QJsonDocument doc = QJsonDocument::fromJson(line);
     const QJsonObject message = doc.object();
-    const bool expectsReply = doc.isArray() || message.contains(QLatin1StringView("id"));
+    const bool expectsReply = message.contains(QLatin1StringView("id"));
     const QJsonValue id = message.value(QLatin1StringView("id"));
 
     QNetworkRequest request(m_target.url);
     request.setHeader(QNetworkRequest::ContentTypeHeader, QByteArrayLiteral("application/json"));
-    request.setRawHeader(QByteArrayLiteral("Accept"), QByteArrayLiteral("application/json"));
+    request.setRawHeader(QByteArrayLiteral("Accept"),
+                         QByteArrayLiteral("application/json, text/event-stream"));
     request.setRawHeader(QByteArrayLiteral("Authorization"), "Bearer " + m_target.apiKey);
     request.setHeader(QNetworkRequest::UserAgentHeader,
                       QString(kUserAgent + QStringLiteral(" mcp-bridge")));
     request.setTransferTimeout(kTimeoutMs);
 
-    // The newer protocol revisions mirror version, method and tool name into
-    // headers on HTTP; over stdio the client had no reason to send them.
+    // On HTTP version, method and tool name are mirrored into headers; over
+    // stdio the client had no reason to send them. A message naming no revision
+    // (an older client) goes as it is and the daemon says what it speaks.
     const QJsonObject params = message.value(QLatin1StringView("params")).toObject();
     const QString version = params.value(QLatin1StringView("_meta")).toObject()
         .value(QLatin1StringView("io.modelcontextprotocol/protocolVersion")).toString();

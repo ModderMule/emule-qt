@@ -24,8 +24,12 @@ enum class ContainerVerdict : quint8 {
     NoKnownContainer,   ///< the promised signature is absent and nothing else matches
 };
 
+/// What a head that is no media container turned out to be instead.
+enum class ForeignHead : quint8 { None, Executable, Archive };
+
 struct ContainerCheck {
     ContainerVerdict verdict = ContainerVerdict::Unchecked;
+    ForeignHead foreign = ForeignHead::None;   ///< set with NoKnownContainer only
     QString expected;   ///< container the extension promises, e.g. "ASF"
     QString actual;     ///< container the bytes are; empty for NoKnownContainer
     QString mimeType;   ///< MIME for `actual`; empty when we cannot name it
@@ -41,6 +45,9 @@ struct ContainerCheck {
 
 /// The container a file's first bytes actually are; empty when unrecognised.
 [[nodiscard]] QString sniffContainer(const QByteArray& head);
+
+/// A program or an archive, by its mandatory signature (MZ, ELF, ZIP, RAR, 7z).
+[[nodiscard]] ForeignHead sniffForeignHead(const QByteArray& head);
 
 /// The container an extension promises; empty when we promise nothing for it.
 [[nodiscard]] QString expectedContainer(const QString& ext);

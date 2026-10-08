@@ -11,6 +11,7 @@
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
 #include "kademlia/KadSearch.h"
+#include "kademlia/KadStats.h"
 
 
 namespace eMule::kad {
@@ -200,6 +201,17 @@ bool SearchManager::startSearch(Search* search)
 
     s_searches[search->getTarget()] = search;
     search->go();
+
+    switch (search->getSearchType()) {
+    case SearchType::Keyword:      countKad(&KadCounters::searchesKeyword); break;
+    case SearchType::File:
+    case SearchType::FindSource:   countKad(&KadCounters::searchesSource); break;
+    case SearchType::Notes:        countKad(&KadCounters::searchesNotes); break;
+    case SearchType::StoreFile:
+    case SearchType::StoreKeyword:
+    case SearchType::StoreNotes:   countKad(&KadCounters::publishes); break;
+    default:                       countKad(&KadCounters::searchesNode); break;
+    }
 
     logKad(QStringLiteral("Kad: Started %1 search %2 for %3")
                .arg(Search::getTypeName(search->getSearchType()))

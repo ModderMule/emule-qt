@@ -18,6 +18,7 @@
 #include <QString>
 #include <QTimer>
 
+#include <chrono>
 #include <cstdint>
 #include <ctime>
 #include <functional>
@@ -179,6 +180,7 @@ signals:
 
 private:
     void process();
+    void countSessionStats();
     uint32 calculateKadUsersNew() const;
 
     KadPrefs* m_prefs = nullptr;
@@ -198,6 +200,7 @@ private:
     time_t m_externPortLookup = 0;
     time_t m_bootstrap = 0;
     time_t m_lanModeCheck = 0;
+    std::chrono::steady_clock::time_point m_statsTick{};  ///< last connected tick, {} = not connected
     bool m_running = false;
     bool m_lanMode = false;
     bool m_bootstrapping = false;

@@ -37,6 +37,10 @@ struct SearchStartResult {
 /// Stop asking; results stay. A queued search is not sent any more.
 void stopSearch(SearchList& list, uint32 searchID);
 
+/// Fetch the next page of a finished Usenet / torrent (Server) search. False
+/// when the search has no further page (SearchStatus::hasMore).
+bool searchMore(SearchList& list, uint32 searchID);
+
 /// The queue's view of the running client: connectivity, id allocation, sending.
 [[nodiscard]] SearchQueueBackend defaultSearchQueueBackend(SearchList& list);
 

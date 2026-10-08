@@ -45,6 +45,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::StartSearch:          return QStringLiteral("StartSearch");
     case T::GetSearchResults:     return QStringLiteral("GetSearchResults");
     case T::StopSearch:           return QStringLiteral("StopSearch");
+    case T::SearchMore:           return QStringLiteral("SearchMore");
     case T::RemoveSearch:         return QStringLiteral("RemoveSearch");
     case T::ClearAllSearches:     return QStringLiteral("ClearAllSearches");
     case T::DownloadSearchFile:   return QStringLiteral("DownloadSearchFile");
@@ -64,6 +65,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::Subscribe:            return QStringLiteral("Subscribe");
     case T::GetKadContacts:       return QStringLiteral("GetKadContacts");
     case T::GetKadStatus:         return QStringLiteral("GetKadStatus");
+    case T::GetKadStats:          return QStringLiteral("GetKadStats");
     case T::BootstrapKad:         return QStringLiteral("BootstrapKad");
     case T::DisconnectKad:        return QStringLiteral("DisconnectKad");
     case T::SyncLogs:             return QStringLiteral("SyncLogs");

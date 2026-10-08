@@ -101,6 +101,11 @@ struct DownloadRow {
     QString containerExpected;   // container the extension promises, e.g. "ASF"
     QString containerActual;     // what it really is; empty when unrecognised
 
+    // Fake-file verdict (ids from the daemon)
+    QString confidence;
+    int fakeScore = 0;
+    QStringList fakeReasons;
+
     std::vector<SourceRow> sources;  // child rows (populated when expanded)
 
     /// Model-assigned identity, never 0. Source indexes carry it as internalId.
@@ -141,6 +146,7 @@ public:
         ColCategory,
         ColAddedOn,
         ColCountry,          ///< source rows only (MorphXT IP2Country)
+        ColConfidence,       ///< file rows only: fake-file verdict
         ColCount
     };
 

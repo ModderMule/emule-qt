@@ -19,4 +19,13 @@ void insertBindState(QCborMap& info);
 
 [[nodiscard]] QCborMap kadStatus();
 
+/// The Statistics window's Kademlia branch: `session` and `cumulative` are
+/// KadCounters blocks, `current` the routing table as it stands, `seen` the
+/// distinct-node census (estimates) with its per-country split.
+[[nodiscard]] QCborMap kadStats();
+
+/// The Statistics window's Clients > Session / Cumulative: `seen` is the
+/// distinct-client census by user hash (estimates) with its per-country split.
+[[nodiscard]] QCborMap clientStats();
+
 } // namespace eMule::ops

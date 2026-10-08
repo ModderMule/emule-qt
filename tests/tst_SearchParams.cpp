@@ -77,6 +77,12 @@ void tst_SearchParams::searchType_values()
     QCOMPARE(static_cast<uint8>(SearchType::Ed2kGlobal), uint8{2});
     QCOMPARE(static_cast<uint8>(SearchType::Kademlia), uint8{3});
     QCOMPARE(static_cast<uint8>(SearchType::ContentDB), uint8{4});
+    // stored in searches.met and the GUI's tabs, sent over IPC
+    QCOMPARE(static_cast<uint8>(SearchType::UsenetIndexer), uint8{5});
+    QCOMPARE(static_cast<uint8>(SearchType::MetaUsenet), uint8{6});
+    QCOMPARE(static_cast<uint8>(SearchType::MetaTorrent), uint8{7});
+    QVERIFY(isMetaSearchType(SearchType::MetaUsenet) && isMetaSearchType(SearchType::MetaTorrent));
+    QVERIFY(!isMetaSearchType(SearchType::UsenetIndexer) && !isMetaSearchType(SearchType::Automatic));
 }
 
 void tst_SearchParams::fields_initialValues()

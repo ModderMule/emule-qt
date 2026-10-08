@@ -339,6 +339,10 @@ img { border: 0; }
   vertical-align: middle;
   position: relative;
 }
+.confidence-likely_fake { color:#D00000; font-weight:bold; }
+.confidence-suspect { color:#D06000; }
+.confidence-caution { color:#A08000; }
+.confidence-genuine { color:#008000; }
 .progress-fill {
   background: #00AA00;
   height: 100%;
@@ -614,6 +618,7 @@ img { border: 0; }
    <th>{{Speed}}</th>
    <th>{{Sources}}</th>
    <th>{{Priority}}</th>
+   <th>{{Confidence}}</th>
   </tr>
  </thead>
  <tbody>
@@ -648,6 +653,7 @@ img { border: 0; }
  <td class="right">[DownloadSpeed]</td>
  <td class="center">[DownloadSources]</td>
  <td class="center">[DownloadPriority]</td>
+ <td class="center confidence-[DownloadConfidenceKey]" title="[DownloadConfidenceTitle]">[DownloadConfidence]</td>
 </tr>
 <--TMPL_TRANSFER_DOWN_LINE_END-->
 
@@ -1263,6 +1269,7 @@ unRestore();
  <th>{{Size}}</th>
  <th>{{Hash}}</th>
  <th>{{Sources}}</th>
+ <th>{{Confidence}}</th>
  <th>&nbsp;</th>
 </tr>
 <--TMPL_SEARCH_RESULT_HEADER_END-->
@@ -1274,6 +1281,7 @@ unRestore();
  <td class="right">[ResultSize]</td>
  <td class="center" style="font-size:7pt">[ResultHash]</td>
  <td class="center">[ResultSources]</td>
+ <td class="center confidence-[ResultConfidenceKey]" title="[ResultConfidenceTitle]">[ResultConfidence]</td>
  <td class="center"><input type="checkbox" name="downloads" value="[ResultHash]"></td>
 </tr>
 <--TMPL_SEARCH_RESULT_LINE_END-->

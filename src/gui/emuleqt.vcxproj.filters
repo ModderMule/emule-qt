@@ -217,6 +217,9 @@
     <ClCompile Include="controls\SearchResultsModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="controls\SearchResultsProxy.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="controls\ServerListModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -378,6 +381,9 @@
     <ClInclude Include="utils\FileAssociation.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="controls\ConfidenceStyle.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="controls\KnownTypeStyle.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -535,6 +541,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\SearchResultsModel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\SearchResultsProxy.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\ServerListModel.h">

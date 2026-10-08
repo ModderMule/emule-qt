@@ -1,0 +1,18 @@
+# Fake-file rules for the Confidence column.
+# A match adds to a file's fake score; nothing is hidden or blocked.
+# Read when the program starts. Lines starting with # are ignored.
+
+[tokens]
+# Whole words or phrases, any case, matched in file names and comments.
+fake
+corrupt
+wrong file
+password protected
+virus
+trojan
+malware
+
+[regex]
+# Regular expressions, any case, matched on the whole file name or comment.
+\.mp4\.exe$
+\.avi\.scr$

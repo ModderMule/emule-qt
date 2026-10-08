@@ -58,6 +58,9 @@ enum class IpcMsgType : int {
     RemoveSearch         = 153,  ///< [searchID: int]
     ClearAllSearches     = 154,  ///< []
     DownloadSearchFile   = 155,  ///< [hash: string, fileName: string, fileSize: int64, link: string, category: int] — link wins if set; category optional
+    /// [searchID: int] → bool. Next page of a finished Usenet / torrent (Server)
+    /// search whose PushSearchState said hasMore; false when it has none.
+    SearchMore           = 157,
     GetKnownTypes        = 156,  ///< [hashes: QCborArray of strings] → [types: QCborArray of ints]
     /// [afterHash?, limit?] -> {files: [row], more, total}. Rows in hash order behind
     /// afterHash; no fields = all rows in one reply (may not fit a frame for a large share).
@@ -135,6 +138,25 @@ enum class IpcMsgType : int {
     /// [searchID: int, hash: string] — ask the peer behind a browsed file for preview
     /// frames. The frames arrive later as PushSearchPreview.
     RequestSearchPreview    = 276,
+
+    /// [] -> [ok, map]. The Kademlia branch of the Statistics window; its own
+    /// request for the same reason GetUsenetStats is.
+    /// { session: KadCounters, cumulative: KadCounters,
+    ///   current: { running, connected, firewalled, udpFirewalled, lanMode,
+    ///              contacts, verified, bootstrap, byType: [5 counts],
+    ///              byVersion: [[kadVersion, count]], users, files,
+    ///              indexedKeywords, indexedSources, indexedNotes, indexedLoad,
+    ///              activeSearches, safeKadTracked, safeKadBanned },
+    ///   seen: { session | cumulative: { contacted, listed (distinct node IDs,
+    ///           estimated), countries: [[cc, nodes]] most first, cc "" = unknown } } }
+    GetKadStats             = 277,
+
+    /// [] -> [ok, map]. Distinct eD2K clients by user hash, for the Clients
+    /// branch of the Statistics window.
+    /// { seen: { session | cumulative: { seen, identified (SecureIdent passed;
+    ///           both estimated), countries: [[cc, clients]] most first,
+    ///           cc "" = unknown } } }
+    GetClientStats          = 278,
 
     /// [] → re-read the web server template from disk. For "same path, edited
     /// content"; a changed templatePath is a config change and already goes
@@ -613,7 +635,8 @@ enum class IpcMsgType : int {
     /// [searchID, state: SearchRunState (0 queued, 1 running, 2 finished, 3 failed),
     ///  reason: string (queued: "waiting-for-server-connection" / "waiting-for-kad" /
     ///  "waiting-for-connection" / "waiting-for-previous-search"), error: string (failed),
-    ///  type: SearchType (the network used once sent), keyword, primaryKeyword].
+    ///  type: SearchType (the network used once sent), keyword, primaryKeyword,
+    ///  hasMore: bool — finished with a further page, see SearchMore].
     /// The StartSearch reply carries the same `state` and `reason`.
     PushSearchState      = 432,
     PushLogMessage       = 450,  ///< [logId, category, severity: QtMsgType, message, timestamp: unix s]

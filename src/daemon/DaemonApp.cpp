@@ -8,6 +8,7 @@
 #include "DaemonApiBackend.h"
 #include "DaemonUsenetWebBackend.h"
 #include "IpcServer.h"
+#include "MetaSearchService.h"
 #include "PowerManager.h"
 #include "UsenetBridge.h"
 
@@ -87,6 +88,7 @@ bool DaemonApp::start()
     // Start core session
     m_coreSession = std::make_unique<CoreSession>(this);
     m_coreSession->start();
+    MetaSearchService::instance();   // registers itself as theApp.metaSearch
 
     // Generate IPC auth token on first run
     auto tokens = thePrefs.ipcTokens();

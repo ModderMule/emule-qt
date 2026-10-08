@@ -9,7 +9,9 @@
 #include "client/UpDownClient.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadIO.h"
+#include "kademlia/KadNodeCensus.h"
 #include "kademlia/KadPrefs.h"
+#include "kademlia/KadRoutingZone.h"
 #include "kademlia/KadSearchDefs.h"
 #include "kademlia/KadUDPListener.h"
 #include "kademlia/KadUDPKey.h"
@@ -39,6 +41,9 @@ private slots:
     void findBuddyRes_unrequestedIsIgnored();
     void firewalledAckRes_countsOnlyAskedNodesOnce();
     void firewalledReq_repeatedMakesOneClient();
+
+    // Statistics
+    void helloReq_firewalledNodeIsSeenButNotAdded();
 
     // createSearchExpressionTree
     void searchExprTree_tokenizesStringTerm();
@@ -183,6 +188,44 @@ void tst_KadUDPListener::firewalledReq_repeatedMakesOneClient()
     clients.deleteAll();
     Kademlia::setClientList(nullptr);
     theApp.clientList = nullptr;
+}
+
+// A UDP-firewalled node never enters the routing table, but it did talk to us:
+// it belongs in the census and in the firewalled ratio.
+void tst_KadUDPListener::helloReq_firewalledNodeIsSeenButNotAdded()
+{
+    eMule::testing::ScopedStatistics stats;
+    KadNodeCensus census;
+    theApp.kadNodeCensus = &census;
+    {
+        eMule::testing::KadFixture kadFixture;
+
+        const auto hello = [](uint32 idSeed, uint32 miscOptions) {
+            SafeMemFile io;
+            io.writeUInt8(KADEMLIA2_HELLO_REQ);
+            io::writeUInt128(io, UInt128(idSeed));
+            io.writeUInt16(kNodeTcp);
+            io.writeUInt8(KADEMLIA_VERSION);
+            io.writeUInt8(1);   // tag count
+            io::writeKadTag(io, Tag(FT_KADMISCOPTIONS, miscOptions));
+            return io.buffer();
+        };
+
+        deliver(hello(0xF1FE, 0x01), kNodeIP);          // UDP firewalled
+        deliver(hello(0xF1FE, 0x01), kNodeIP);          // the same node again
+        deliver(hello(0x0BE4, 0x00), kNodeIP + 0x100);  // open, another /24
+
+        QCOMPARE(census.contacted(KadNodeCensus::Scope::Session), uint64{2});
+        QCOMPARE(stats->kadSession().udpFirewalledNodes, uint64{2});   // per HELLO, as MFC counts
+        QCOMPARE(stats->kadSession().udpOpenNodes, uint64{1});
+        QCOMPARE(stats->kadSession().tcpOpenNodes, uint64{3});
+
+        auto* zone = Kademlia::getInstanceRoutingZone();
+        QVERIFY(zone->getContact(UInt128(uint32{0xF1FE})) == nullptr);
+        QVERIFY(zone->getContact(UInt128(uint32{0x0BE4})) != nullptr);
+        QCOMPARE(stats->kadSession().contactsAdded, uint64{1});
+    }
+    theApp.kadNodeCensus = nullptr;
 }
 
 void tst_KadUDPListener::firewalledAckRes_countsOnlyAskedNodesOnce()

@@ -80,6 +80,11 @@ jobs:
       - name: Bundle
         run: scripts/bundle-macos.sh --dmg build
 
+      # The bundle scripts check that the files are there; this checks that the
+      # shipped bridge starts, i.e. finds its libraries inside the bundle.
+      - name: Smoke-test the bundled MCP bridge
+        run: build/src/gui/emuleqt.app/Contents/MacOS/emuleqt-mcp --version
+
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
@@ -107,7 +112,7 @@ jobs:
           APP="build/src/gui/emuleqt.app/Contents/MacOS"
           mkdir -p build/symbols
 
-          for name in emuleqt emulecored; do
+          for name in emuleqt emulecored emuleqt-mcp; do
             dsymutil "$APP/$name" -o "build/symbols/$name.dSYM"
           done
 
@@ -115,7 +120,7 @@ jobs:
           # files, so assert the result instead of assuming it: a dSYM whose UUID
           # does not match the shipped binary can never symbolicate a crash from
           # it.  Format is "UUID: <uuid> (<arch>) <path>".
-          for name in emuleqt emulecored; do
+          for name in emuleqt emulecored emuleqt-mcp; do
             bin_uuid=$(dwarfdump --uuid "$APP/$name" | awk '{print $2}')
             sym_uuid=$(dwarfdump --uuid "build/symbols/$name.dSYM" | awk '{print $2}')
             if [ "$bin_uuid" != "$sym_uuid" ]; then

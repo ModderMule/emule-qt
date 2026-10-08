@@ -38,6 +38,9 @@ public:
 
     void shutdownCleanup() noexcept;
 
+    [[nodiscard]] std::size_t trackedCount() const noexcept { return m_trackedNodes.size(); }
+    [[nodiscard]] std::size_t bannedCount() const noexcept { return m_bannedIPs.size(); }
+
 private:
     struct NodeAddress
     {

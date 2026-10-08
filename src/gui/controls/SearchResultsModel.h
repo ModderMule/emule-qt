@@ -41,6 +41,11 @@ struct SearchResultRow {
     bool previewPossible = false;   ///< a browsed peer can send preview frames
     int userRating = 0;   // wire value: 6 means a Kad note lookup is running
 
+    // Fake-file verdict (ids from the daemon; empty confidence = not judged)
+    QString confidence;
+    int fakeScore = 0;
+    QStringList fakeReasons;
+
     // eNode meta row — network from the meta hash (enodemeta::Kind), 0 = eD2K
     int metaKind = 0;
     QString magnet;       ///< torrents only, may be empty
@@ -70,6 +75,7 @@ public:
         ColFileName = 0,
         ColSize,
         ColAvailability,
+        ColConfidence,   ///< fake-file verdict, beside the count it qualifies
         ColComplete,
         ColType,
         ColArtist,

@@ -109,6 +109,8 @@ using L = QLatin1StringView;
 [[nodiscard]] QString searchTypeName(SearchType type)
 {
     return type == SearchType::Kademlia ? QStringLiteral("kad")
+         : type == SearchType::MetaUsenet ? QStringLiteral("usenetServer")
+         : type == SearchType::MetaTorrent ? QStringLiteral("torrentServer")
          : type == SearchType::Ed2kGlobal ? QStringLiteral("ed2kGlobal")
          : type == SearchType::Automatic ? QStringLiteral("automatic")
                                          : QStringLiteral("ed2kServer");
@@ -507,13 +509,17 @@ void WebServer::buildApiTable()
                             "fetch them with GET /search/{id}/results until state is "
                             "\"finished\". 202 means the search is queued and goes out by itself "
                             "once a network is connected. \"automatic\" picks the best network "
-                            "available and is the right choice unless one is wanted.");
+                            "available and is the right choice unless one is wanted. "
+                            "\"usenetServer\" and \"torrentServer\" ask an eD2K server's own "
+                            "catalogue for Usenet or torrent releases (keywords and NOT only); "
+                            "their results have metaKind set and are not eD2K downloads.");
         op.mcpTool = s("search_start");
         op.params = {
             bodyStr(s("expression"), s("Keywords. AND, OR and NOT are understood.")).req().range(1, 512),
             bodyStr(s("type"), s("Network to search."))
-                .oneOf({s("automatic"), s("ed2kServer"), s("ed2kGlobal"), s("kad")})
-                .def(s("ed2kServer")),
+                .oneOf({s("automatic"), s("ed2kServer"), s("ed2kGlobal"), s("kad"),
+                        s("usenetServer"), s("torrentServer")})
+                .def(s("automatic")),
             bodyStr(s("fileType"), s("Restrict to a type: Audio, Video, Image, Pro (programs), "
                                      "Doc, Arc (archives), Iso (CD images)."))
                 .range(0, 32),
@@ -537,8 +543,8 @@ void WebServer::buildApiTable()
                             "Search", "Results of a search",
                             "Sorted by source count, best first. state says whether more may "
                             "come: queued, running, finished or failed. A result with many "
-                            "sources and a plausible size is the safer pick; spamRating above 0 "
-                            "marks a likely fake.");
+                            "sources and a plausible size is the safer pick; confidence and "
+                            "fakeReasons say how far a result can be trusted.");
         op.flags = ReadOnly | Paged;
         op.mcpTool = s("search_results");
         op.params = {pathInt(s("searchID"), s("Id returned by POST /search.")).atLeast(1)};
@@ -576,6 +582,28 @@ void WebServer::buildApiTable()
             return ok(QJsonObject{{s("hash"), hash},
                                   {s("added"), out.added},
                                   {s("alreadyQueued"), !out.added}});
+        };
+        add(op);
+    }
+    {
+        Operation op = make("search.more", Method::Post, "/api/v1/search/{searchID}/more",
+                            "Search", "Fetch the next page of a search",
+                            "A usenetServer / torrentServer search asks its server for one page "
+                            "and finishes with hasMore true while the server has a further one. "
+                            "This fetches it: the search runs again and its new results join the "
+                            "old ones. 409 when the search has no further page.");
+        op.mcpTool = s("search_more");
+        op.params = {pathInt(s("searchID"), s("Id returned by POST /search.")).atLeast(1)};
+        op.handler = [this](const Call& c) {
+            if (!m_searchList)
+                return unavailable("Search list");
+            const auto searchID = static_cast<uint32>(c.integer(L("searchID")));
+            if (!m_searchList->hasSearch(searchID))
+                return error(404, s("Search not found"));
+            if (!searchMore(*m_searchList, searchID))
+                return error(409, s("The search has no further page"));
+            return ok(QJsonObject{{s("searchID"), static_cast<qint64>(searchID)},
+                                  {s("state"), searchRunStateName(SearchRunState::Running)}});
         };
         add(op);
     }
@@ -702,6 +730,29 @@ void WebServer::buildApiTable()
                             "Kad routing table contacts");
         op.flags = ReadOnly | Paged;
         op.handler = [](const Call& c) { return pageOf(c, ops::kadContacts().toJsonArray()); };
+        add(op);
+    }
+    {
+        Operation op = make("kad.stats", Method::Get, "/api/v1/kad/stats", "Kad", "Kad statistics",
+                            "session and cumulative activity counters, the routing table by "
+                            "contact type and version, and how many distinct nodes were seen, "
+                            "by country. The seen counts are estimates (about 2 %): contacted "
+                            "nodes sent us a HELLO or answered our lookup, listed ones were "
+                            "only named by other nodes.");
+        op.flags = ReadOnly;
+        op.mcpTool = s("kad_stats");
+        op.handler = [](const Call&) { return ok(ops::kadStats().toJsonObject()); };
+        add(op);
+    }
+    {
+        Operation op = make("clients.stats", Method::Get, "/api/v1/clients/stats", "Diagnostics",
+                            "Distinct clients seen",
+                            "How many different eD2K clients said hello, by user hash, this "
+                            "session and in total, split by country. identified is the part "
+                            "that proved its hash with SecureIdent. Estimates (about 2 %).");
+        op.flags = ReadOnly;
+        op.mcpTool = s("client_stats");
+        op.handler = [](const Call&) { return ok(ops::clientStats().toJsonObject()); };
         add(op);
     }
     {
@@ -1606,9 +1657,11 @@ Result WebServer::apiSearchStart(const Call& call)
 
     const QString type = call.str(L("type"));
     params.type = type == L("kad") ? SearchType::Kademlia
+                : type == L("usenetServer") ? SearchType::MetaUsenet
+                : type == L("torrentServer") ? SearchType::MetaTorrent
                 : type == L("ed2kGlobal") ? SearchType::Ed2kGlobal
-                : type == L("automatic") ? SearchType::Automatic
-                                         : SearchType::Ed2kServer;
+                : type == L("ed2kServer") ? SearchType::Ed2kServer
+                                          : SearchType::Automatic;
 
     // The same entry point the GUI uses, so a search here really goes out.
     const SearchStartResult outcome = startSearch(*m_searchList, params);
@@ -1660,6 +1713,8 @@ Result WebServer::apiSearchResults(const Call& call) const
             body.insert(s("reason"), status->reason);
         if (!status->error.isEmpty())
             body.insert(s("error"), status->error);
+        // a further page the server holds: POST /search/{id}/more
+        body.insert(s("hasMore"), status->hasMore);
     }
     result.body = body;
     return result;
@@ -1680,6 +1735,7 @@ Result WebServer::apiSearchList(const Call& call) const
         if (const auto status = m_searchList->queue().status(id)) {
             row.insert(s("state"), searchRunStateName(status->state));
             row.insert(s("type"), searchTypeName(status->type));
+            row.insert(s("hasMore"), status->hasMore);
             if (!status->primaryKeyword.isEmpty())
                 row.insert(s("keyword"), status->primaryKeyword);
         }

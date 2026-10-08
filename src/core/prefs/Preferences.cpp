@@ -385,6 +385,7 @@ struct Preferences::Data {
     HttpCacheCounters cumHttpCache;
     UsenetCounters cumUsenet;
     IndexerCounters cumIndexer;
+    KadCounters cumKad;
 
     // Records
     uint32 recMaxWorkingServers = 0;
@@ -1402,6 +1403,8 @@ UsenetCounters Preferences::cumUsenet() const { return get(&Data::cumUsenet); }
 void Preferences::setCumUsenet(const UsenetCounters& val) { set(&Data::cumUsenet, val); }
 IndexerCounters Preferences::cumIndexer() const { return get(&Data::cumIndexer); }
 void Preferences::setCumIndexer(const IndexerCounters& val) { set(&Data::cumIndexer, val); }
+KadCounters Preferences::cumKad() const { return get(&Data::cumKad); }
+void Preferences::setCumKad(const KadCounters& val) { set(&Data::cumKad, val); }
 
 PREF_GS(uint32, recMaxWorkingServers, RecMaxWorkingServers)
 PREF_GS(uint32, recMaxUsersOnline, RecMaxUsersOnline)
@@ -1535,6 +1538,7 @@ void Preferences::forEachCumulativeStat(D& d, F&& f)
     f("cumHttpCache", d.cumHttpCache);
     f("cumUsenet", d.cumUsenet);
     f("cumIndexer", d.cumIndexer);
+    f("cumKad", d.cumKad);
 
     // The cumulative rates are records rather than sums, but MFC clears them
     // with the rest (srchybrid/Preferences.cpp:1140-1163), so they travel with
@@ -3875,6 +3879,7 @@ bool Preferences::load(const QString& filePath)
             m_data->cumHttpCache = readStatValue(st["cumHttpCache"], m_data->cumHttpCache);
             m_data->cumUsenet = readStatValue(st["cumUsenet"], m_data->cumUsenet);
             m_data->cumIndexer = readStatValue(st["cumIndexer"], m_data->cumIndexer);
+            m_data->cumKad = readStatValue(st["cumKad"], m_data->cumKad);
 
             // Records
             m_data->recMaxWorkingServers = st["recMaxWorkingServers"].as<uint32>(m_data->recMaxWorkingServers);
@@ -4944,6 +4949,8 @@ bool Preferences::saveImpl(const QString& filePath) const
     emitStatValue(out, m_data->cumUsenet);
     out << YAML::Key << "cumIndexer" << YAML::Value;
     emitStatValue(out, m_data->cumIndexer);
+    out << YAML::Key << "cumKad" << YAML::Value;
+    emitStatValue(out, m_data->cumKad);
 
     // Records
     out << YAML::Key << "recMaxWorkingServers" << YAML::Value << m_data->recMaxWorkingServers;

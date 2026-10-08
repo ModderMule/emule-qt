@@ -1,9 +1,10 @@
 /// @file tst_StatisticsPanel.cpp
-/// @brief The Statistics window's Usenet branch, fed a GetUsenetStats reply.
+/// @brief The Statistics window's Usenet and Kademlia branches, fed wire-shaped replies.
 ///
 /// No daemon: the reply is built here in the wire shape IpcClientHandler sends,
-/// which is what the panel actually consumes. Set EMULE_STATS_PANEL_SHOT to a
-/// .png path to also save the fully expanded tree for a visual check.
+/// which is what the panel actually consumes. Set EMULE_STATS_PANEL_SHOT (Usenet)
+/// or EMULE_KAD_STATS_SHOT (Kademlia) to a .png path to also save the fully
+/// expanded branch for a visual check.
 
 #include "panels/StatisticsPanel.h"
 
@@ -156,6 +157,80 @@ QTreeWidgetItem* childNamed(QTreeWidgetItem* parent, const QString& prefix)
     return nullptr;
 }
 
+/// A GetKadStats reply in the shape ops::kadStats() builds.
+QCborMap kadReply(const QCborArray& sessionCountries)
+{
+    KadCounters s;
+    s.contactsAdded = 400;
+    s.contactsVerified = 300;
+    s.contactsReplaced = 20;
+    s.contactsExpired = 35;
+    s.peakContacts = 820;
+    s.hellosSent = 1000;
+    s.hellosReceived = 750;
+    s.lookupResponses = 2100;
+    s.searchesNode = 60;
+    s.searchesKeyword = 10;
+    s.searchesSource = 25;
+    s.searchesNotes = 5;
+    s.publishes = 44;
+    s.udpFirewalledNodes = 30;
+    s.udpOpenNodes = 90;
+    s.tcpFirewalledNodes = 60;
+    s.tcpOpenNodes = 60;
+    s.connectedMs = 1'800'000;
+
+    KadCounters cum = s;
+    cum.contactsAdded = 90'000;
+    cum.peakContacts = 1500;
+
+    const QCborMap current{
+        {QStringLiteral("running"), true},
+        {QStringLiteral("connected"), true},
+        {QStringLiteral("firewalled"), false},
+        {QStringLiteral("udpFirewalled"), true},
+        {QStringLiteral("lanMode"), false},
+        {QStringLiteral("contacts"), 800},
+        {QStringLiteral("verified"), 600},
+        {QStringLiteral("byType"), QCborArray{400, 200, 100, 90, 10}},
+        {QStringLiteral("byVersion"), QCborArray{QCborArray{8, 100}, QCborArray{9, 600},
+                                                 QCborArray{10, 100}}},
+        {QStringLiteral("users"), 250'000},
+        {QStringLiteral("files"), 27'000'000},
+        {QStringLiteral("indexedKeywords"), 1200},
+        {QStringLiteral("activeSearches"), 7},
+    };
+
+    const QCborMap seen{
+        {QStringLiteral("session"),
+         QCborMap{{QStringLiteral("contacted"), 5000},
+                  {QStringLiteral("listed"), 42'000},
+                  {QStringLiteral("countries"), sessionCountries}}},
+        {QStringLiteral("cumulative"),
+         QCborMap{{QStringLiteral("contacted"), 310'000},
+                  {QStringLiteral("listed"), 2'400'000},
+                  {QStringLiteral("countries"),
+                   QCborArray{QCborArray{QStringLiteral("CN"), 200'000},
+                              QCborArray{QStringLiteral("IT"), 110'000}}}}},
+    };
+
+    return QCborMap{
+        {QStringLiteral("session"), countersToCbor(s)},
+        {QStringLiteral("cumulative"), countersToCbor(cum)},
+        {QStringLiteral("current"), current},
+        {QStringLiteral("seen"), seen},
+    };
+}
+
+QTreeWidgetItem* topLevelNamed(QTreeWidget* tree, const QString& name)
+{
+    for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+        if (tree->topLevelItem(i)->text(0) == name)
+            return tree->topLevelItem(i);
+    }
+    return nullptr;
+}
+
 QTreeWidgetItem* usenetRoot(QTreeWidget* tree)
 {
     const int last = tree->topLevelItemCount() - 1;
@@ -176,6 +251,10 @@ private slots:
     void httpCacheSplitsUploadsFromDownloads();
     void timeShowsCurrentAndTotalServerDuration();
     void rateScopesArePinnedToTheGraphMaxima();
+    void kademliaBranchShowsLiveTableOnlyInSession();
+    void kademliaCountersCarrySharesInBothScopes();
+    void kademliaCountriesUpdateInPlace();
+    void clientsSeenByCountryInBothScopes();
 };
 
 void tst_StatisticsPanel::usenetIsTheLastBranchAndMfcsOrderStays()
@@ -424,6 +503,235 @@ void tst_StatisticsPanel::rateScopesArePinnedToTheGraphMaxima()
         uppers << graph->yUpper();
     QVERIFY(uppers.contains(777.0));
     QVERIFY(uppers.contains(333.0));
+}
+
+void tst_StatisticsPanel::kademliaBranchShowsLiveTableOnlyInSession()
+{
+    StatisticsPanel panel;
+    auto* tree = panel.findChild<QTreeWidget*>();
+    panel.applyKadStats(kadReply({}));
+
+    QTreeWidgetItem* kad = topLevelNamed(tree, QStringLiteral("Kademlia"));
+    QVERIFY(kad);
+    // Not in MFC, so after MFC's branches — and Usenet stays the last one.
+    QCOMPARE(tree->indexOfTopLevelItem(kad), tree->topLevelItemCount() - 2);
+
+    QTreeWidgetItem* session = childNamed(kad, QStringLiteral("Session"));
+    QTreeWidgetItem* cumulative = childNamed(kad, QStringLiteral("Cumulative"));
+    QVERIFY(session && cumulative);
+    QCOMPARE(childNamed(session, QStringLiteral("Status"))->text(0),
+             QStringLiteral("Status: Connected, UDP firewalled"));
+
+    QTreeWidgetItem* table = childNamed(session, QStringLiteral("Routing Table"));
+    QTreeWidgetItem* contacts = childNamed(table, QStringLiteral("Contacts:"));
+    QCOMPARE(contacts->text(0), QStringLiteral("Contacts: 800"));
+    QCOMPARE(childNamed(contacts, QStringLiteral("IP Verified"))->text(0),
+             QStringLiteral("IP Verified: 600 (75.0%)"));
+    QCOMPARE(childNamed(contacts, QStringLiteral("Type 0"))->text(0),
+             QStringLiteral("Type 0, Alive over 2 Hours: 400 (50.0%)"));
+    QCOMPARE(childNamed(contacts, QStringLiteral("Type 4"))->text(0),
+             QStringLiteral("Type 4, Dead: 10 (1.3%)"));
+
+    QTreeWidgetItem* versions = childNamed(table, QStringLiteral("By Version"));
+    QCOMPARE(versions->childCount(), 3);
+    QCOMPARE(versions->child(0)->text(0), QStringLiteral("Version 10: 100 (12.5%)"));
+    QCOMPARE(versions->child(1)->text(0), QStringLiteral("Version 9 (eMule 0.50a): 600 (75.0%)"));
+
+    QCOMPARE(childNamed(childNamed(session, QStringLiteral("Network")),
+                        QStringLiteral("Estimated Users"))->text(0),
+             QStringLiteral("Estimated Users: 250000"));
+
+    // The routing table as it stands has no cumulative form.
+    QTreeWidgetItem* cumTable = childNamed(cumulative, QStringLiteral("Routing Table"));
+    QVERIFY(!childNamed(cumulative, QStringLiteral("Status")));
+    QVERIFY(!childNamed(cumulative, QStringLiteral("Network")));
+    QVERIFY(!childNamed(cumTable, QStringLiteral("Contacts:")));
+    QVERIFY(!childNamed(cumTable, QStringLiteral("By Version")));
+    QCOMPARE(childNamed(cumTable, QStringLiteral("Most Contacts"))->text(0),
+             QStringLiteral("Most Contacts: 1500"));
+    QCOMPARE(childNamed(cumTable, QStringLiteral("Contacts Added"))->text(0),
+             QStringLiteral("Contacts Added: 90000"));
+}
+
+void tst_StatisticsPanel::kademliaCountersCarrySharesInBothScopes()
+{
+    StatisticsPanel panel;
+    auto* tree = panel.findChild<QTreeWidget*>();
+    panel.applyKadStats(kadReply({}));
+    QTreeWidgetItem* kad = topLevelNamed(tree, QStringLiteral("Kademlia"));
+
+    for (const QString& scopeName : {QStringLiteral("Session"), QStringLiteral("Cumulative")}) {
+        QTreeWidgetItem* scope = childNamed(kad, scopeName);
+        QTreeWidgetItem* nodes = childNamed(scope, QStringLiteral("Nodes"));
+        QTreeWidgetItem* firewalled = childNamed(nodes, QStringLiteral("Firewalled (Kad)"));
+        QCOMPARE(childNamed(firewalled, QStringLiteral("UDP"))->text(0),
+                 QStringLiteral("UDP: 30 (25.0%)"));
+        QCOMPARE(childNamed(firewalled, QStringLiteral("TCP"))->text(0),
+                 QStringLiteral("TCP: 60 (50.0%)"));
+
+        QTreeWidgetItem* activity = childNamed(scope, QStringLiteral("Activity"));
+        QCOMPARE(childNamed(activity, QStringLiteral("Hellos Answered"))->text(0),
+                 QStringLiteral("Hellos Answered: 750 (75.0%)"));
+        QTreeWidgetItem* searches = childNamed(activity, QStringLiteral("Searches"));
+        QCOMPARE(searches->text(0), QStringLiteral("Searches: 100"));
+        QCOMPARE(childNamed(searches, QStringLiteral("Source Searches"))->text(0),
+                 QStringLiteral("Source Searches: 25 (25.0%)"));
+        // No GetStats yet, so no runtime to take a share of.
+        QCOMPARE(childNamed(activity, QStringLiteral("Time Connected"))->text(0),
+                 QStringLiteral("Time Connected: %1 %2")
+                     .arg(StatisticsPanel::formatDuration(1800),
+                          StatisticsPanel::formatPercent(1'800'000, 0)));
+    }
+
+    QTreeWidgetItem* sesNodes = childNamed(childNamed(kad, QStringLiteral("Session")),
+                                           QStringLiteral("Nodes"));
+    QCOMPARE(childNamed(sesNodes, QStringLiteral("Nodes Seen"))->text(0),
+             QStringLiteral("Nodes Seen: \u22485000"));
+    QCOMPARE(childNamed(sesNodes, QStringLiteral("Nodes Heard Of"))->text(0),
+             QStringLiteral("Nodes Heard Of: \u224842000"));
+    QTreeWidgetItem* cumNodes = childNamed(childNamed(kad, QStringLiteral("Cumulative")),
+                                           QStringLiteral("Nodes"));
+    QCOMPARE(childNamed(cumNodes, QStringLiteral("Nodes Seen"))->text(0),
+             QStringLiteral("Nodes Seen: \u2248310000"));
+}
+
+// Clients > Session / Cumulative: distinct clients by user hash, with countries.
+void tst_StatisticsPanel::clientsSeenByCountryInBothScopes()
+{
+    StatisticsPanel panel;
+    auto* tree = panel.findChild<QTreeWidget*>();
+    QTreeWidgetItem* clients = topLevelNamed(tree, QStringLiteral("Clients"));
+    QVERIFY(clients);
+
+    // MFC's rows stay first; the two scopes follow them.
+    QCOMPARE(clients->child(0)->text(0), QStringLiteral("Known Clients: 0"));
+    QCOMPARE(clients->child(clients->childCount() - 2)->text(0), QStringLiteral("Session"));
+    QCOMPARE(clients->child(clients->childCount() - 1)->text(0), QStringLiteral("Cumulative"));
+
+    const auto scopeMap = [](qint64 seen, qint64 identified, const QCborArray& countries) {
+        return QCborMap{{QStringLiteral("seen"), seen},
+                        {QStringLiteral("identified"), identified},
+                        {QStringLiteral("countries"), countries}};
+    };
+    const auto reply = [&](const QCborArray& sessionCountries) {
+        const QCborMap seen{
+            {QStringLiteral("session"), scopeMap(200, 150, sessionCountries)},
+            {QStringLiteral("cumulative"),
+             scopeMap(90000, 81000, {QCborArray{QStringLiteral("ES"), 50000},
+                                     QCborArray{QStringLiteral("IT"), 40000}})},
+        };
+        return QCborMap{{QStringLiteral("seen"), seen}};
+    };
+
+    panel.applyClientStats(reply({QCborArray{QStringLiteral("ES"), 120},
+                                  QCborArray{QStringLiteral("FR"), 60},
+                                  QCborArray{QString(), 20}}));
+
+    QTreeWidgetItem* session = childNamed(clients, QStringLiteral("Session"));
+    QCOMPARE(childNamed(session, QStringLiteral("Clients Seen"))->text(0),
+             QStringLiteral("Clients Seen: \u2248200"));
+    QCOMPARE(childNamed(session, QStringLiteral("Identified"))->text(0),
+             QStringLiteral("Identified: \u2248150 (75.0%)"));
+    QTreeWidgetItem* countries = childNamed(session, QStringLiteral("By Country"));
+    QCOMPARE(countries->childCount(), 3);
+    QCOMPARE(countries->child(0)->text(0), QStringLiteral("Spain (ES): \u2248120 (60.0%)"));
+    QCOMPARE(countries->child(2)->text(0), QStringLiteral("Unknown: \u224820 (10.0%)"));
+
+    QTreeWidgetItem* cumulative = childNamed(clients, QStringLiteral("Cumulative"));
+    QCOMPARE(childNamed(cumulative, QStringLiteral("Identified"))->text(0),
+             QStringLiteral("Identified: \u224881000 (90.0%)"));
+    QCOMPARE(childNamed(cumulative, QStringLiteral("By Country"))->childCount(), 2);
+
+    // The next poll reuses the rows, and an empty list leaves "By Country" in place.
+    QTreeWidgetItem* spain = countries->child(0);
+    panel.applyClientStats(reply({QCborArray{QStringLiteral("FR"), 300},
+                                  QCborArray{QStringLiteral("ES"), 120}}));
+    QCOMPARE(countries->childCount(), 2);
+    QCOMPARE(countries->child(1), spain);
+    panel.applyClientStats(reply({}));
+    QVERIFY(!countries->isHidden());
+    QCOMPARE(countries->childCount(), 0);
+
+    // EMULE_CLIENT_STATS_SHOT=<png>: the branch fully expanded, for a visual check.
+    if (const QByteArray shot = qgetenv("EMULE_CLIENT_STATS_SHOT"); !shot.isEmpty()) {
+        panel.applyClientStats(reply({QCborArray{QStringLiteral("ES"), 120},
+                                      QCborArray{QStringLiteral("FR"), 60},
+                                      QCborArray{QString(), 20}}));
+        panel.resize(1000, 700);
+        tree->collapseAll();
+        const auto expandAll = [](auto&& self, QTreeWidgetItem* item) -> void {
+            item->setExpanded(true);
+            for (int i = 0; i < item->childCount(); ++i)
+                self(self, item->child(i));
+        };
+        expandAll(expandAll, clients);
+        panel.show();
+        QApplication::processEvents();
+        tree->scrollToItem(clients, QAbstractItemView::PositionAtTop);
+        QApplication::processEvents();
+        QVERIFY(panel.grab().save(QString::fromLocal8Bit(shot)));
+    }
+}
+
+// Rebuilding the list every poll would collapse it and drop the selection.
+void tst_StatisticsPanel::kademliaCountriesUpdateInPlace()
+{
+    StatisticsPanel panel;
+    auto* tree = panel.findChild<QTreeWidget*>();
+    panel.applyKadStats(kadReply({QCborArray{QStringLiteral("IT"), 3000},
+                                  QCborArray{QStringLiteral("DE"), 1500},
+                                  QCborArray{QString(), 500}}));
+
+    QTreeWidgetItem* kad = topLevelNamed(tree, QStringLiteral("Kademlia"));
+    QTreeWidgetItem* countries = childNamed(
+        childNamed(childNamed(kad, QStringLiteral("Session")), QStringLiteral("Nodes")),
+        QStringLiteral("By Country"));
+    QVERIFY(countries);
+    QCOMPARE(countries->childCount(), 3);
+    QCOMPARE(countries->child(0)->text(0), QStringLiteral("Italy (IT): \u22483000 (60.0%)"));
+    QCOMPARE(countries->child(2)->text(0), QStringLiteral("Unknown: \u2248500 (10.0%)"));
+
+    QTreeWidgetItem* italy = countries->child(0);
+    QTreeWidgetItem* germany = countries->child(1);
+
+    // Germany overtakes, France appears, the unknown bucket goes.
+    panel.applyKadStats(kadReply({QCborArray{QStringLiteral("DE"), 4000},
+                                  QCborArray{QStringLiteral("IT"), 3000},
+                                  QCborArray{QStringLiteral("FR"), 1000}}));
+    QCOMPARE(countries->childCount(), 3);
+    QCOMPARE(countries->child(0), germany);
+    QCOMPARE(countries->child(1), italy);
+    QCOMPARE(germany->text(0), QStringLiteral("Germany (DE): \u22484000 (50.0%)"));
+    QCOMPARE(countries->child(2)->text(0), QStringLiteral("France (FR): \u22481000 (12.5%)"));
+
+    // The cumulative list is its own.
+    QTreeWidgetItem* cumCountries = childNamed(
+        childNamed(childNamed(kad, QStringLiteral("Cumulative")), QStringLiteral("Nodes")),
+        QStringLiteral("By Country"));
+    QCOMPARE(cumCountries->childCount(), 2);
+    QVERIFY(cumCountries->child(0)->text(0).startsWith(QStringLiteral("China (CN)")));
+
+    // Nothing seen yet: the row stays, just without children.
+    panel.applyKadStats(kadReply({}));
+    QVERIFY(!countries->isHidden());
+    QCOMPARE(countries->childCount(), 0);
+
+    // EMULE_KAD_STATS_SHOT=<png>: the branch fully expanded, for a visual check.
+    if (const QByteArray shot = qgetenv("EMULE_KAD_STATS_SHOT"); !shot.isEmpty()) {
+        panel.resize(1200, 1500);
+        tree->collapseAll();
+        const auto expandAll = [](auto&& self, QTreeWidgetItem* item) -> void {
+            item->setExpanded(true);
+            for (int i = 0; i < item->childCount(); ++i)
+                self(self, item->child(i));
+        };
+        expandAll(expandAll, kad);
+        panel.show();
+        QApplication::processEvents();
+        tree->scrollToItem(kad, QAbstractItemView::PositionAtTop);
+        QApplication::processEvents();
+        QVERIFY(panel.grab().save(QString::fromLocal8Bit(shot)));
+    }
 }
 
 QTEST_MAIN(tst_StatisticsPanel)

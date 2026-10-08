@@ -189,6 +189,11 @@ public:
 
     void sortByPreference();
 
+    /// The servers in the order auto-connect dials them, without touching the list:
+    /// High, Normal, Low when @p usePriorities, list order within a tier; disabled
+    /// ones left out, and non-static ones when @p staticOnly.
+    [[nodiscard]] std::vector<Server*> autoConnectOrder(bool usePriorities, bool staticOnly) const;
+
     // -- Crypto key management --------------------------------------------
 
     void checkForExpiredUDPKeys(uint32 currentClientIP);

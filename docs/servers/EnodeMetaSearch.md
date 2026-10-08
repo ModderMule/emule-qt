@@ -71,6 +71,27 @@ other search result.
 
 IPC: `toCbor(SearchFile)` adds `kadOrigin`; the web JSON has it too.
 
+## Hiding networks
+
+The search form has three checkboxes beside Reset: **Usenet results**, **Kad results** and
+**Torrent results**. Unticking one hides those rows in the result list.
+
+- **Client-side.** The protocol has no per-search switch: the client announces
+  `SRVCAP_META_SEARCH` once at login and the server then mixes the rows into every
+  answer. The filter is a view filter in the GUI (`SearchResultsProxy`), so
+  nothing is discarded. Ticking the box again brings the rows back without a new
+  search, and a stored tab keeps all its rows.
+- **All tabs, at once.** The setting is not part of a search. It applies to every
+  open tab and is kept in `uistate.yml` (`searchShowUsenet`, `searchShowKad`,
+  `searchShowTorrent`). Reset ticks all three again.
+- **Kad** means Kad-origin rows, the ones the server found on Kad. Results of our
+  own Kad search are never hidden. The server's own eD2K files are always shown.
+- **Exempt.** A Usenet (Server) or Torrent (Server) tab shows everything: that
+  network is what was asked for, and an emptied list would make the scroll-to-load
+  fetch every page. Usenet indexer tabs are not affected either.
+- **Counts.** The tab label keeps the total. The status line reads
+  "12 of 120 results" while rows are hidden.
+
 ## Discovery
 
 `OP_SERVERIDENT` carries these tags:
@@ -81,7 +102,9 @@ IPC: `toCbor(SearchFile)` adds `kadOrigin`; the web JSON has it too.
 | `ST_META_API_VER` (0x9F) | contract version; only 1 is accepted |
 | `ST_META_API_FP` (0x9C) | optional SPKI pin, `sha256/<base64>`, for self-signed TLS |
 
-These are runtime `Server` fields and are not persisted in `server.met`.
+URL and pin are kept in `server.met` (string-named tags `metaapi`, `metaapipin`),
+so a server's API is known after a restart without logging in again. An ident
+that no longer carries them clears the entry.
 
 A row's API is the one of the server that answered it. When that server is
 unknown, the daemon falls back to the server it is connected to.
@@ -102,11 +125,59 @@ unknown, the daemon falls back to the server it is connected to.
   - `grpc-status-details-bin` holds a `google.rpc.Status`. It is read by hand, and
     the `enode.meta.v1.ErrorInfo` inside it (msg code, registration/account URLs,
     pending steps) is decoded with the generated class.
-- **RPCs in use:** `GetCaps` (cached 10 min), `GetMetaFile`, `GetAuthStatus`,
-  `Login`, `Logout`. `Search` is phase 7 on the server.
+- **RPCs in use:** `GetCaps` (cached 10 min), `GetMetaFile`, `Search`,
+  `GetAuthStatus`, `Login`, `Logout`.
+- **Type registration.** `MetaApiClient` calls `qRegisterProtobufTypes()`. Without
+  it a repeated enum (`Caps.kinds`, `Caps.networks`) decodes as an empty list and
+  nothing reports an error.
 - **Verification.** Every metafile is checked before use with
   `fold10(identity) == hash[6..16)`. The identity is the torrent's infohash
   (v1, or v2-only) or the canonical NZB digest.
+
+## Usenet (Server) / Torrent (Server) search
+
+Two search methods ask a server's catalogue for one network only
+(`SearchType::MetaUsenet = 6`, `MetaTorrent = 7`). The request is
+`MetaApi.Search` with `SearchRequest.network`, sent to the server's Meta API. The
+crawler daemons behind the server are never asked by the client.
+
+- **Which server** (`metaSearchCandidates()`, `search/MetaSearchRequest.cpp`):
+  1. the connected server, if it has a Meta API;
+  2. the other servers with a known Meta API, in the order auto-connect dials
+     them (`ServerList::autoConnectOrder()`: High, Normal, Low when priorities are
+     on, list order inside a tier, no disabled servers, static ones only when that
+     option is set);
+  3. last, servers that said they do not search that network when last asked.
+- **No connection is needed or changed.** The call is HTTP to the server's Meta API
+  URL. A search works while connected to another server, or to none.
+- **The walk** (`MetaSearchService::askNextServer`): `GetCaps`, then `Search`. A
+  server that does not offer the network, is unreachable or answers `unavailable`
+  is skipped and the next one is asked. A server that wants an account we are not
+  logged in to is skipped too; its message is shown if no other server answers.
+- **Paging.** One request a search: it asks for 500 releases, 200 for torrents where a
+  release is a row a file (the server cuts that to its own cap, 100 on a stock eNode)
+  and finishes. While the server reports a
+  `next_offset` and the tab holds fewer than 2500 rows, the search is finished with
+  `hasMore`; scrolling the result list to its end fetches the next page from the same
+  server (IPC `SearchMore`, REST `POST /search/{id}/more`). A list short enough to
+  need no scrollbar counts as at its end, so pages follow until one appears. A later page that fails
+  ends it; the rows stay.
+- **Rows.** A `MetaEntry` is written as an eD2K result record and read by the
+  `SearchFile` parser, so the hash checks and the stored-search format are the same
+  as for a blended row. Entries of another kind than asked are dropped.
+- **Expression.** Keywords, quoted phrases, `NOT word` and `-word`. `OR` and
+  brackets are refused when the search is started. File type, min/max size and
+  (torrent) availability go into the request; the extension filter runs on the
+  rows.
+- **Queue.** The search takes no server lane and ends with
+  `SearchQueue::onMetaSearchFinished()`. With no server known it is refused, or
+  waits (`waiting-for-server-info`) while a login is under way.
+- **What is remembered.** The Meta API URL, its pin and the networks from
+  `Caps.networks` are kept in `server.met` as the string-named tags `metaapi`,
+  `metaapipin` and `metanetworks`. MFC and older builds skip tags they do not
+  know. An ident without a Meta API clears them.
+- **REST / MCP.** `POST /api/v1/search` takes `type` `usenetServer` and
+  `torrentServer`; result rows carry `metaKind` and `magnet`.
 
 ## Actions
 
@@ -173,6 +244,8 @@ for the field layouts.
   `[kad …]` prefix is stripped only with the tag, the flag survives store and
   load, and a meta row ignores the tag.
 - **`tst_SearchList`:** a file one server has itself is a plain result even when another server found it on Kad, in either order and after a stored search is loaded; two Kad-origin answers keep the flag.
+- **`tst_MetaSearchGui` (filter):** each checkbox hides exactly its rows, own Kad
+  results and eD2K files stay, rows arriving while filtered stay hidden.
 - **`tst_MetaSearchGui`:** network icons, the Kad badge and its `?` for unknown
   completeness, and the dialog's login, pending and accept states. Set
   `EMULE_TEST_SHOTS=<dir>` to get PNGs.
@@ -190,4 +263,7 @@ for the field layouts.
 
 - BitTorrent downloads. Then **Download** replaces **Download Torrent** as the
   torrent default, and the toolbar gets a `Torrent.ico` button.
-- The web UI and the REST API don't show meta rows yet.
+- The web UI doesn't show meta rows yet. The REST API marks them (`metaKind`,
+  `magnet`) but cannot download them.
+- Usenet (Server) / Torrent (Server): no login prompt from the search tab when the
+  only server wants an account.

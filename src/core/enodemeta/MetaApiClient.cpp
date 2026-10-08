@@ -20,6 +20,7 @@
 #include <QSslCertificate>
 #include <QSslKey>
 #include <QtProtobuf/QProtobufSerializer>
+#include <QtProtobuf/qprotobufregistration.h>
 
 namespace eMule::enodemeta {
 
@@ -30,6 +31,7 @@ constexpr int kTransferTimeoutMs = 30'000;
 constexpr qint64 kSmallReplyMax = 1 << 20;          // caps / auth replies
 constexpr qint64 kDefaultMetafileMax = 64LL << 20;  // when caps says nothing
 constexpr qint64 kFrameSlack = 64 * 1024;
+constexpr qint64 kSearchReplyMax = 8LL << 20;       // one page of rows
 
 constexpr QByteArrayView kMetaApi = "enode.meta.v1.MetaApi";
 constexpr QByteArrayView kAccountApi = "enode.meta.v1.AccountApi";
@@ -70,6 +72,7 @@ MetaApiClient::MetaApiClient(QObject* parent)
     : QObject(parent)
     , m_nam(new GuardedNetworkAccessManager(this))
 {
+    registerProtobufTypes();
 }
 
 MetaApiClient::~MetaApiClient() = default;
@@ -122,6 +125,19 @@ void MetaApiClient::getMetaFile(const MetaEndpoint& ep, const QByteArray& hash16
                  }
              }
              cb(r, file);
+         });
+}
+
+void MetaApiClient::search(const MetaEndpoint& ep, const pb::SearchRequest& request, const QString& token,
+                           Callback<pb::SearchResponse> cb)
+{
+    QProtobufSerializer ser;
+    call(ep, kMetaApi, "Search", request.serialize(&ser), token, kSearchReplyMax,
+         [cb = std::move(cb)](CallResult r, const QByteArray& payload) {
+             pb::SearchResponse resp;
+             if (r.ok() && !decode(payload, resp))
+                 r = protocolError(QStringLiteral("unreadable SearchResponse reply"));
+             cb(r, resp);
          });
 }
 
@@ -190,6 +206,12 @@ bool MetaApiClient::credentialsAllowed(const QUrl& baseUrl)
         return true;
     const QHostAddress addr(baseUrl.host());
     return !addr.isNull() && addr.isLoopback();
+}
+
+void MetaApiClient::registerProtobufTypes()
+{
+    // runs the registrars the generated code only queued
+    qRegisterProtobufTypes();
 }
 
 QString MetaApiClient::clientName()

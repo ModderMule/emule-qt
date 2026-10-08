@@ -410,9 +410,11 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
             }
 
             // eNode Meta API: contract v1 over http(s) only
-            const QUrl apiUrl(metaApiUrl);
-            const bool apiOk = metaApiVersion == 1 && apiUrl.isValid() && !apiUrl.host().isEmpty()
-                && (apiUrl.scheme() == u"https" || apiUrl.scheme() == u"http");
+            const bool apiOk = metaApiVersion == 1 && Server::isMetaApiUrl(metaApiUrl);
+            // the copy starts out with what server.met remembered: an ident without
+            // the tags takes it back
+            if (!apiOk)
+                m_curServer->clearMetaApi();
             if (apiOk) {
                 m_curServer->setMetaApi(metaApiUrl, metaApiPin);
                 logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: Meta API %1%2")

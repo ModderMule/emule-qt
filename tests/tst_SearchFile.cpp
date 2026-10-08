@@ -74,7 +74,7 @@ static QByteArray buildMetaPacket(const uint8* hash, const QString& name, uint32
 /// Helper: a file eNode found on Kad — a real MD4, the classic tags and
 /// FT_META_NETWORK as the only meta tag. network 0 leaves the tag out.
 static QByteArray buildKadOriginPacket(const uint8* hash, const QString& name, uint32 size,
-                                       uint32 sources, uint32 network = META_NETWORK_KAD)
+                                       uint32 sources, uint32 network = FT_META_NETWORK_KAD)
 {
     SafeMemFile mem;
     mem.write(hash, 16);
@@ -523,7 +523,7 @@ void tst_SearchFile::kadOrigin_ignoredOnMetaRow()
     mem.writeUInt32(3);
     Tag(FT_FILENAME, QStringLiteral("[torrent] Some.Release")).writeNewEd2kTag(mem, UTF8Mode::Raw);
     Tag(FT_FILESIZE, uint32{5000}).writeNewEd2kTag(mem);
-    Tag(FT_META_NETWORK, uint32{META_NETWORK_KAD}).writeNewEd2kTag(mem);
+    Tag(FT_META_NETWORK, uint32{FT_META_NETWORK_KAD}).writeNewEd2kTag(mem);
     QByteArray packet = mem.takeBuffer();
     SafeMemFile data(packet);
     SearchFile file(data, true);

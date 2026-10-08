@@ -97,6 +97,10 @@
                         "description": "Bytes downloaded and verified.",
                         "type": "integer"
                     },
+                    "confidence": {
+                        "description": "spam, likely_fake, suspect, caution, looks_good or genuine; empty when nothing was judged.",
+                        "type": "string"
+                    },
                     "datarate": {
                         "description": "Current download speed in bytes per second.",
                         "type": "integer"
@@ -104,6 +108,17 @@
                     "downPriority": {
                         "description": "veryLow, low, normal, high, veryHigh or auto.",
                         "type": "string"
+                    },
+                    "fakeReasons": {
+                        "description": "Why: multiple_names, names_span_kinds, bad_signal_name, bad_signal_comment, header_extension_mismatch, executable_masquerade, archive_masquerade, claimed_type_mismatch, spam_score, spam_status, bad_rating, fake_rating, multiple_aich, implausible_media_length, implausible_media_bitrate, media_size_mismatch, name_media_tag_mismatch.",
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "fakeScore": {
+                        "description": "0 to 100: how strongly the signals say the file is not what its name claims.",
+                        "type": "integer"
                     },
                     "fileName": {
                         "type": "string"
@@ -198,6 +213,21 @@
                         "description": "Of those, peers with the whole file.",
                         "type": "integer"
                     },
+                    "confidence": {
+                        "description": "spam, likely_fake, suspect, caution, looks_good or genuine; empty when nothing was judged.",
+                        "type": "string"
+                    },
+                    "fakeReasons": {
+                        "description": "Why: multiple_names, names_span_kinds, bad_signal_name, bad_signal_comment, header_extension_mismatch, executable_masquerade, archive_masquerade, claimed_type_mismatch, spam_score, spam_status, bad_rating, fake_rating, multiple_aich, implausible_media_length, implausible_media_bitrate, media_size_mismatch, name_media_tag_mismatch.",
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array"
+                    },
+                    "fakeScore": {
+                        "description": "0 to 100: how strongly the signals say the file is not what its name claims.",
+                        "type": "integer"
+                    },
                     "fileName": {
                         "type": "string"
                     },
@@ -219,6 +249,14 @@
                     "kadOrigin": {
                         "type": "boolean"
                     },
+                    "magnet": {
+                        "description": "Magnet link of a torrent result, when the server sent one; else empty.",
+                        "type": "string"
+                    },
+                    "metaKind": {
+                        "description": "\"torrent\" or \"nzb\": a release an eD2K server listed from its catalogue. Empty for an eD2K file. Not downloadable through POST /search/{id}/download.",
+                        "type": "string"
+                    },
                     "seenBefore": {
                         "description": "This file turned up in an earlier search.",
                         "type": "boolean"
@@ -232,7 +270,7 @@
                         "type": "integer"
                     },
                     "spamRating": {
-                        "description": "0 = clean; higher = more likely a fake.",
+                        "description": "Spam filter score; 60 and above counts as spam.",
                         "type": "integer"
                     }
                 },
@@ -794,6 +832,49 @@
                 "tags": [
                     "Categories"
                 ]
+            }
+        },
+        "/api/v1/clients/stats": {
+            "get": {
+                "description": "How many different eD2K clients said hello, by user hash, this session and in total, split by country. identified is the part that proved its hash with SecureIdent. Estimates (about 2 %).",
+                "operationId": "clients.stats",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    }
+                },
+                "summary": "Distinct clients seen",
+                "tags": [
+                    "Diagnostics"
+                ],
+                "x-mcp-tool": "client_stats"
             }
         },
         "/api/v1/connection": {
@@ -2436,6 +2517,49 @@
                 "x-mcp-tool": "kad_start"
             }
         },
+        "/api/v1/kad/stats": {
+            "get": {
+                "description": "session and cumulative activity counters, the routing table by contact type and version, and how many distinct nodes were seen, by country. The seen counts are estimates (about 2 %): contacted nodes sent us a HELLO or answered our lookup, listed ones were only named by other nodes.",
+                "operationId": "kad.stats",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    }
+                },
+                "summary": "Kad statistics",
+                "tags": [
+                    "Kad"
+                ],
+                "x-mcp-tool": "kad_stats"
+            }
+        },
         "/api/v1/kad/stop": {
             "post": {
                 "description": "The contacts are saved; searches and source lookups over Kad end.",
@@ -2937,7 +3061,7 @@
                 "x-mcp-tool": "search_list"
             },
             "post": {
-                "description": "Returns a searchID at once; results arrive over the next seconds — fetch them with GET /search/{id}/results until state is \"finished\". 202 means the search is queued and goes out by itself once a network is connected. \"automatic\" picks the best network available and is the right choice unless one is wanted.",
+                "description": "Returns a searchID at once; results arrive over the next seconds — fetch them with GET /search/{id}/results until state is \"finished\". 202 means the search is queued and goes out by itself once a network is connected. \"automatic\" picks the best network available and is the right choice unless one is wanted. \"usenetServer\" and \"torrentServer\" ask an eD2K server's own catalogue for Usenet or torrent releases (keywords and NOT only); their results have metaKind set and are not eD2K downloads.",
                 "operationId": "search.start",
                 "requestBody": {
                     "content": {
@@ -3018,13 +3142,15 @@
                                         "type": "string"
                                     },
                                     "type": {
-                                        "default": "ed2kServer",
+                                        "default": "automatic",
                                         "description": "Network to search.",
                                         "enum": [
                                             "automatic",
                                             "ed2kServer",
                                             "ed2kGlobal",
-                                            "kad"
+                                            "kad",
+                                            "usenetServer",
+                                            "torrentServer"
                                         ],
                                         "type": "string"
                                     }
@@ -3236,9 +3362,75 @@
                 "x-mcp-tool": "download_from_search"
             }
         },
+        "/api/v1/search/{searchID}/more": {
+            "post": {
+                "description": "A usenetServer / torrentServer search asks its server for one page and finishes with hasMore true while the server has a further one. This fetches it: the search runs again and its new results join the old ones. 409 when the search has no further page.",
+                "operationId": "search.more",
+                "parameters": [
+                    {
+                        "description": "Id returned by POST /search.",
+                        "in": "path",
+                        "name": "searchID",
+                        "required": true,
+                        "schema": {
+                            "description": "Id returned by POST /search.",
+                            "minimum": 1,
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Success"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "A parameter is missing, unknown or out of range."
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "Missing or wrong API key."
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "description": "No such item."
+                    }
+                },
+                "summary": "Fetch the next page of a search",
+                "tags": [
+                    "Search"
+                ],
+                "x-mcp-tool": "search_more"
+            }
+        },
         "/api/v1/search/{searchID}/results": {
             "get": {
-                "description": "Sorted by source count, best first. state says whether more may come: queued, running, finished or failed. A result with many sources and a plausible size is the safer pick; spamRating above 0 marks a likely fake.",
+                "description": "Sorted by source count, best first. state says whether more may come: queued, running, finished or failed. A result with many sources and a plausible size is the safer pick; confidence and fakeReasons say how far a result can be trusted.",
                 "operationId": "search.results",
                 "parameters": [
                     {
@@ -5090,6 +5282,9 @@
             "name": "Kad"
         },
         {
+            "name": "Diagnostics"
+        },
+        {
             "name": "Uploads"
         },
         {
@@ -5100,9 +5295,6 @@
         },
         {
             "name": "Friends"
-        },
-        {
-            "name": "Diagnostics"
         },
         {
             "name": "Preferences"

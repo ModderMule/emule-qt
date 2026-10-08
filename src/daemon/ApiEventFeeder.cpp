@@ -63,6 +63,7 @@ void ApiEventFeeder::onPush(const Ipc::IpcMessage& msg)
             {QStringLiteral("searchID"), static_cast<qint64>(msg.fieldInt(0))},
             {QStringLiteral("state"),
              searchRunStateName(static_cast<SearchRunState>(msg.fieldInt(1)))},
+            {QStringLiteral("hasMore"), msg.fieldBool(7)},
         });
         break;
     case IpcMsgType::PushUploadUpdate:

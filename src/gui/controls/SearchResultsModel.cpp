@@ -3,6 +3,7 @@
 /// @brief Table model for search results — implementation.
 
 #include "controls/SearchResultsModel.h"
+#include "controls/ConfidenceStyle.h"
 #include "controls/KnownTypeStyle.h"
 
 #include "prefs/Preferences.h"
@@ -163,9 +164,13 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
         case ColCodec:        return r.codec;
         case ColKnown:        return knownTypeString(r.knownType);
         case ColSeen:         return seenText(r);
+        case ColConfidence:   return confidenceText(r.confidence, r.fakeScore);
         default: break;
         }
     }
+
+    if (role == Qt::ToolTipRole && index.column() == ColConfidence)
+        return confidenceTooltip(r.confidence, r.fakeScore, r.fakeReasons);
 
     if (role == Qt::DecorationRole && index.column() == ColFileName) {
         // Spam takes the rating mark's place rather than sitting beside it --
@@ -210,6 +215,7 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
         // Oldest acquaintance first; what was never seen sorts last.
         case ColSeen:         return r.seenBefore ? QVariant::fromValue<qint64>(r.firstSeen)
                                                   : QVariant::fromValue<qint64>(std::numeric_limits<qint64>::max());
+        case ColConfidence:   return confidenceSortKey(r.confidence, r.fakeScore);
         default: break;
         }
     }
@@ -221,6 +227,11 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
         // complete, over whatever colour the row has. Unknown (-1) stays uncoloured.
         if (index.column() == ColComplete && completeness(r) == 0)
             return QColor(255, 0, 0);
+        // The verdict colours its own cell only; the row keeps its meaning.
+        if (index.column() == ColConfidence) {
+            if (const QColor c = confidenceColor(r.confidence); c.isValid())
+                return c;
+        }
         if (const QColor c = knownTypeColor(r.knownType); c.isValid())
             return c;
         if (r.isSpam && thePrefs.enableSearchResultFilter())
@@ -261,6 +272,7 @@ QVariant SearchResultsModel::headerData(int section, Qt::Orientation orientation
     case ColCodec:        return tr("Codec");
     case ColKnown:        return tr("Known");
     case ColSeen:         return tr("Seen");
+    case ColConfidence:   return tr("Confidence");
     default:              return {};
     }
 }

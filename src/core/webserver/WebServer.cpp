@@ -4,6 +4,7 @@
 
 #include "webserver/WebServer.h"
 #include "net/BindAddress.h"
+#include "net/ListenConflict.h"
 #include "webserver/ApiEventHub.h"
 #include "webserver/WebSessionManager.h"
 #include "webserver/WebTemplateEngine.h"
@@ -19,6 +20,7 @@
 #include "media/ContainerSniffer.h"
 #include "prefs/Preferences.h"
 #include "protocol/ED2KLink.h"
+#include "search/ConfidenceText.h"
 #include "search/SearchFile.h"
 #include "search/SearchList.h"
 #include "search/SearchStarter.h"
@@ -438,6 +440,16 @@ bool WebServer::start(const WebServerConfig& config)
     const QHostAddress addr = m_config.listenAddress.isEmpty()
         ? QHostAddress::Any
         : QHostAddress(m_config.listenAddress);
+
+    // A wildcard listen succeeds even if another program holds the port on one
+    // local address; requests to that address would then go to it, key included.
+    if (const auto held = heldLocalAddresses(addr, m_config.port); !held.isEmpty()) {
+        // Status bar too: the server staying off is otherwise only a log line.
+        logStatusError(QStringLiteral("WebServer: port %1 is already used by another program on %2 "
+                                "— not started").arg(m_config.port).arg(addressListText(held)));
+        m_server.reset();
+        return false;
+    }
 
     if (m_config.httpsEnabled) {
         auto* sslServer = new QSslServer(m_server.get());
@@ -2472,6 +2484,12 @@ QString WebServer::buildTransferPage(bool isAdmin, const QString& /*sessionId*/)
                 cc.isSuspect() ? QStringLiteral("fake") : QStringLiteral("none");
             lineVars[QStringLiteral("DownloadFakeTitle")] =
                 htmlText(containerWarningText(cc, file->fileName()));
+            const FakeFileVerdict& verdict = file->fakeVerdict();
+            const QString band = confidenceId(verdict.band);
+            lineVars[QStringLiteral("DownloadConfidence")] = htmlText(confidenceText(band, verdict.score));
+            lineVars[QStringLiteral("DownloadConfidenceKey")] = band;
+            lineVars[QStringLiteral("DownloadConfidenceTitle")] =
+                htmlText(confidenceTooltip(band, verdict.score, verdict.reasonIds()));
             lineVars[QStringLiteral("DownloadFileSize")] = formatByteSize(file->fileSize());
             lineVars[QStringLiteral("DownloadFileHash")] = md4str(file->fileHash());
             lineVars[QStringLiteral("DownloadCompleted")] = formatByteSize(file->completedSize());
@@ -2666,6 +2684,12 @@ QString WebServer::buildSearchPage(bool isAdmin)
             line[QStringLiteral("ResultSize")] = formatByteSize(f->fileSize());
             line[QStringLiteral("ResultHash")] = md4str(f->fileHash());
             line[QStringLiteral("ResultSources")] = QString::number(f->sourceCount());
+            const FakeFileVerdict& verdict = f->fakeVerdict();
+            const QString band = f->hasFakeVerdict() ? confidenceId(verdict.band) : QString();
+            line[QStringLiteral("ResultConfidence")] = htmlText(confidenceText(band, verdict.score));
+            line[QStringLiteral("ResultConfidenceKey")] = band.isEmpty() ? QStringLiteral("none") : band;
+            line[QStringLiteral("ResultConfidenceTitle")] =
+                htmlText(confidenceTooltip(band, verdict.score, verdict.reasonIds()));
             lines += WebTemplateEngine::substitute(lineTmpl, line);
         }
 

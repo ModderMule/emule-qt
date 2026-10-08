@@ -8,6 +8,7 @@
 #include "files/PartFile.h"
 #include "files/PartFileWriteThread.h"
 #include "app/AppContext.h"
+#include "search/SeenFileIndex.h"
 #include "utils/OtherFunctions.h"
 #include "files/SharedFileList.h"
 #include "client/ClientList.h"
@@ -2729,6 +2730,60 @@ void PartFile::updateFileRatingCommentAvail(bool /*forceUpdate*/)
         emit m_partNotifier.progressUpdated(m_percentCompleted);
 }
 
+const FakeFileVerdict& PartFile::fakeVerdict() const
+{
+    constexpr qint64 kRefreshSecs = 20;
+    const qint64 now = QDateTime::currentSecsSinceEpoch();
+    // The head check is the strongest signal: do not sit on a verdict made without it.
+    const ContainerCheck& container = containerCheck();
+    const bool hasHead = containerCheckResolved();
+    if (m_fakeVerdictAt != 0 && now - m_fakeVerdictAt < kRefreshSecs && hasHead == m_fakeVerdictHadHead)
+        return m_fakeVerdict;
+
+    FakeFileInput in;
+    in.name = fileName();
+    in.size = static_cast<uint64>(fileSize());
+    in.observedNames = m_observedNames;
+    in.userRating = userRating();
+    in.mediaLengthSec = getIntTagValue(FT_MEDIA_LENGTH);
+    in.mediaBitrateKbps = getIntTagValue(FT_MEDIA_BITRATE);
+    in.artist = getStrTagValue(FT_MEDIA_ARTIST);
+    in.album = getStrTagValue(FT_MEDIA_ALBUM);
+    in.title = getStrTagValue(FT_MEDIA_TITLE);
+    in.container = container;
+
+    if (theApp.seenFileIndex)
+        in.observedNames += theApp.seenFileIndex->lookup(fileHash()).nameList;
+    for (const UpDownClient* source : m_srcList) {
+        if (!source)
+            continue;
+        if (!source->clientFilename().isEmpty())
+            in.observedNames.push_back(source->clientFilename());
+        if (!source->fileComment().isEmpty())
+            in.comments.push_back(source->fileComment());
+    }
+    in.observedNames.removeDuplicates();
+    for (const auto& [publisher, note] : kadNotesCache()) {
+        in.kadNoteRatedFake = in.kadNoteRatedFake || note.rating == 1;
+        if (!note.comment.isEmpty())
+            in.comments.push_back(note.comment);
+    }
+
+    m_fakeVerdict = assessFile(in, activeFakeFileRules());
+    m_fakeVerdictAt = now;
+    m_fakeVerdictHadHead = hasHead;
+    return m_fakeVerdict;
+}
+
+void PartFile::addObservedNames(const QStringList& names)
+{
+    for (const QString& name : names) {
+        if (!name.isEmpty() && !m_observedNames.contains(name) && m_observedNames.size() < 32)
+            m_observedNames.push_back(name);
+    }
+    m_fakeVerdictAt = 0;
+}
+
 bool PartFile::readContainerHead(QByteArray& head) const
 {
     // Finished: the bytes sit in the destination file like any other known file.
@@ -2742,7 +2797,8 @@ bool PartFile::readContainerHead(QByteArray& head) const
     if (!isComplete(0, static_cast<uint64>(kContainerHeadBytes) - 1))
         return false;
 
-    QFile file(m_fullName);
+    // The data file: m_fullName is the .part.met, whose first bytes are never a container
+    QFile file(partFilePath());
     if (!file.open(QIODevice::ReadOnly))
         return false;
     head = file.read(kContainerHeadBytes);

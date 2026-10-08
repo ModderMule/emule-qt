@@ -422,6 +422,7 @@ void CoreNotifierBridge::onSearchStateChanged(const SearchStatus& status)
         msg.append(static_cast<qint64>(status.type));
         msg.append(status.keyword);
         msg.append(status.primaryKeyword);
+        msg.append(status.hasMore);
         return msg;
     }, kPushWindowMs, status.searchID);
 }

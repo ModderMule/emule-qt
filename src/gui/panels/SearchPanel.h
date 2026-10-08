@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <vector>
 
+class QCheckBox;
 class QComboBox;
 class QCompleter;
 class QLabel;
@@ -44,6 +45,25 @@ class IpcClient;
 class MetaResultActions;
 class SearchResultsModel;
 
+/// One StartSearch request. Mirrors the daemon's SearchParams field order.
+struct SearchRequest {
+    QString expression;
+    QString fileType;
+    int method = 0;          ///< SearchType value, not the combo index
+    qint64 minSize = 0;
+    qint64 maxSize = 0;
+    int avail = 0;
+    QString extension;
+    int completeSources = 0;
+    QString codec;
+    int minBitrate = 0;
+    int minLength = 0;
+    QString title;
+    QString album;
+    QString artist;
+    QString tabTitle;        ///< empty → use expression (MFC's strSpecialTitle)
+};
+
 /// Per-search tab state.
 ///
 /// A tab holds **one** of the two models, never both. An indexer result has no
@@ -54,7 +74,7 @@ class SearchResultsModel;
 struct SearchTab {
     uint32_t searchID = 0;
     QString title;
-    int method = 0;  ///< SearchType value: 0=auto, 1=server, 2=global, 3=kad, 5=indexer
+    int method = 0;  ///< SearchType value: 0=auto, 1=server, 2=global, 3=kad, 5=indexer, 6/7=Usenet/torrent via server
 
     SearchResultsModel* model = nullptr;          ///< ED2K/Kad tabs only.
     IndexerResultsModel* indexerModel = nullptr;  ///< Usenet indexer tabs only.
@@ -72,6 +92,12 @@ struct SearchTab {
     int runState = 2;
     QString waitReason;   ///< queued: what it waits for
     QString failure;      ///< failed: why
+    /// Finished, and the server holds a further page (Usenet / torrent via server):
+    /// scrolling to the end fetches it.
+    bool hasMore = false;
+
+    /// What was asked; a double click on the tab puts it back into the form.
+    SearchRequest request;
 
     [[nodiscard]] bool isIndexer() const { return indexerModel != nullptr; }
     [[nodiscard]] int resultCount() const;
@@ -123,8 +149,10 @@ private slots:
     void onStartSearch();
     void onCancelSearch();
     void onResetFilters();
+    void onNetworkFilterChanged();
     void onTabChanged(int index);
     void onTabCloseRequested(int index);
+    void onTabDoubleClicked(int index);
     void onResultContextMenu(const QPoint& pos);
     void onResultDoubleClicked(const QModelIndex& index);
     void onSearchResultPush(const Ipc::IpcMessage& msg);
@@ -136,26 +164,9 @@ protected:
     void showEvent(QShowEvent* event) override;
 
 private:
-    /// One StartSearch request. Mirrors the daemon's SearchParams field order.
-    struct SearchRequest {
-        QString expression;
-        QString fileType;
-        int method = 0;          ///< SearchType value, not the combo index
-        qint64 minSize = 0;
-        qint64 maxSize = 0;
-        int avail = 0;
-        QString extension;
-        int completeSources = 0;
-        QString codec;
-        int minBitrate = 0;
-        int minLength = 0;
-        QString title;
-        QString album;
-        QString artist;
-        QString tabTitle;        ///< empty → use expression (MFC's strSpecialTitle)
-    };
-
     [[nodiscard]] SearchRequest requestFromUi() const;
+    /// MFC SetParameters: wipe the form, then fill it from @p req. The method stays.
+    void applyRequestToUi(const SearchRequest& req);
     void sendSearchRequest(const SearchRequest& req);
 
     /// StartIndexerSearch instead of StartSearch. A separate path because the two
@@ -270,6 +281,11 @@ private:
     /// The footer line for a tab: its result count, or why there are none yet.
     [[nodiscard]] QString tabStatusText(const SearchTab& tab) const;
     void onSearchStatePush(const Ipc::IpcMessage& msg);
+    /// Ask for the next page when the current tab has one and its list is at the
+    /// end; a list that needs no scrollbar is.
+    void loadMoreIfAtEnd();
+    /// Hide the rows of unticked networks. A tab that asked for one network shows all.
+    void applyNetworkFilter(SearchTab& tab);
 
     // Search controls
     QLineEdit* m_nameEdit = nullptr;
@@ -298,6 +314,10 @@ private:
     QLineEdit* m_titleEdit = nullptr;
     QLineEdit* m_albumEdit = nullptr;
     QLineEdit* m_artistEdit = nullptr;
+    // view filters, not part of a request: what a server found on other networks
+    QCheckBox* m_showUsenetCheck = nullptr;
+    QCheckBox* m_showKadCheck = nullptr;
+    QCheckBox* m_showTorrentCheck = nullptr;
 
     // Tab bar + results
     QTabBar* m_tabBar = nullptr;
@@ -334,12 +354,15 @@ private:
     /// starved every other reply on the socket for over a second at a time.
     QTimer* m_resultRefreshTimer = nullptr;
     QTimer* m_saveTimer = nullptr;
+    QTimer* m_loadMoreTimer = nullptr;   ///< loadMoreIfAtEnd() after the view's layout
     /// saveSearches() is a no-op until loadSearches() ran, or an early quit would
     /// overwrite the stored tabs with an empty list.
     bool m_searchesLoaded = false;
 
     /// Search IDs that have pending pushes, drained by m_resultRefreshTimer.
     QSet<uint32_t> m_dirtySearchIDs;
+    /// Searches whose result list is being fetched right now.
+    QSet<uint32_t> m_fetchingSearchIDs;
 
     // Preview support
     QString m_streamToken;

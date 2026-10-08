@@ -10,6 +10,7 @@
 #include "files/KnownFile.h"
 #include "files/SourceIndex.h"
 #include "files/SourceSaver.h"
+#include "search/FakeFileDetector.h"
 #include "crypto/AICHHashSet.h"
 #include "client/ClientStructs.h"
 #include "client/CorruptionBlackBox.h"
@@ -542,6 +543,13 @@ public:
     // Preview
     [[nodiscard]] bool isPreviewPossible() const;
 
+    /// Fake-file verdict from the first bytes, the names the sources and earlier
+    /// searches gave the file, comments and ratings. Cached for a few seconds: the
+    /// download list asks on every poll.
+    [[nodiscard]] const FakeFileVerdict& fakeVerdict() const;
+    /// Names the search result this download came from was seen under.
+    void addObservedNames(const QStringList& names);
+
     // Archive recovery state
     [[nodiscard]] bool isRecoveringArchive() const { return m_recoveringArchive; }
     void setRecoveringArchive(bool val) { m_recoveringArchive = val; }
@@ -662,6 +670,12 @@ private:
     QPointer<FileMoveThread> m_moveThread;
     QByteArray m_completedAICHMaster;   // root of the set the move thread stored
     bool m_recoveringArchive = false;
+
+    // Fake-file verdict cache
+    QStringList m_observedNames;
+    mutable FakeFileVerdict m_fakeVerdict;
+    mutable qint64 m_fakeVerdictAt = 0;          // unix secs; 0 = never
+    mutable bool m_fakeVerdictHadHead = false;
 
     // Timestamps
     time_t m_tLastModified = 0;

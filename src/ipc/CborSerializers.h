@@ -175,10 +175,18 @@ inline constexpr qsizetype kMaxBarRanges = 1024;
     return arr;
 }
 
+/// Fake-file verdict as the three keys every row carries it under.
+inline void insertFakeVerdict(QCborMap& m, const FakeFileVerdict& verdict)
+{
+    m.insert(QStringLiteral("fakeScore"),   verdict.score);
+    m.insert(QStringLiteral("confidence"),  confidenceId(verdict.band));
+    m.insert(QStringLiteral("fakeReasons"), QCborArray::fromStringList(verdict.reasonIds()));
+}
+
 [[nodiscard]] inline QCborMap toCbor(const PartFile& f)
 {
     const ContainerCheck& cc = f.containerCheck();
-    return QCborMap{
+    QCborMap m{
         {QStringLiteral("hash"),                 md4str(f.fileHash())},
         {QStringLiteral("fileName"),             f.fileName()},
         {QStringLiteral("fileSize"),             static_cast<qint64>(f.fileSize())},
@@ -228,6 +236,8 @@ inline constexpr qsizetype kMaxBarRanges = 1024;
         {QStringLiteral("containerExpected"),   cc.expected},
         {QStringLiteral("containerActual"),     cc.actual},
     };
+    insertFakeVerdict(m, f.fakeVerdict());
+    return m;
 }
 
 /// The bound-interface state every connection snapshot carries: `netBlocked` while the
@@ -322,6 +332,9 @@ inline void insertBindState(QCborMap& info)
     m.insert(QStringLiteral("length"),  static_cast<qint64>(f.getIntTagValue(FT_MEDIA_LENGTH)));
     m.insert(QStringLiteral("bitrate"), static_cast<qint64>(f.getIntTagValue(FT_MEDIA_BITRATE)));
     m.insert(QStringLiteral("codec"),   f.getStrTagValue(FT_MEDIA_CODEC));
+    // Absent for a row nothing was judged on (torrent / Usenet rows)
+    if (f.hasFakeVerdict())
+        insertFakeVerdict(m, f.fakeVerdict());
     // eNode meta row: the network comes from the hash (0 = plain eD2K)
     const auto& meta = f.meta();
     m.insert(QStringLiteral("metaKind"), static_cast<int>(meta.kind));

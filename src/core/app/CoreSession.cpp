@@ -13,6 +13,7 @@
 #include "ipfilter/IPFilter.h"
 #include "geo/GeoIpUpdater.h"
 #include "geo/IP2Country.h"
+#include "client/ClientCensus.h"
 #include "client/ClientCredits.h"
 #include "client/ClientList.h"
 #include "files/CollectionKeys.h"
@@ -22,6 +23,7 @@
 #include "friends/FriendList.h"
 #include "files/SharedFileList.h"
 #include "kademlia/Kademlia.h"
+#include "search/FakeFileDetector.h"
 #include "search/GlobalSearchScheduler.h"
 #include "search/SearchList.h"
 #include "kademlia/KadPrefs.h"
@@ -52,6 +54,7 @@
 #include "httpcache/HttpCacheManager.h"
 #include "transfer/UploadQueue.h"
 #include "search/SeenFileIndex.h"
+#include "kademlia/KadNodeCensus.h"
 #include "transfer/UploadQueueStore.h"
 #include "portmap/PortMapper.h"
 #include "utils/Log.h"
@@ -802,6 +805,18 @@ void CoreSession::initClientInfra()
         m_geoIpUpdater->start();
     }
 
+    // Node and client census: next to the statistics backup it is reset and restored with
+    if (!theApp.kadNodeCensus) {
+        m_kadNodeCensus = std::make_unique<kad::KadNodeCensus>(
+            QFileInfo(thePrefs.cumulativeStatsBackupPath()).absolutePath());
+        theApp.kadNodeCensus = m_kadNodeCensus.get();
+    }
+    if (!theApp.clientCensus) {
+        m_clientCensus = std::make_unique<ClientCensus>(
+            QFileInfo(thePrefs.cumulativeStatsBackupPath()).absolutePath());
+        theApp.clientCensus = m_clientCensus.get();
+    }
+
     if (!theApp.clientList) {
         m_clientList = std::make_unique<ClientList>(this);
         theApp.clientList = m_clientList.get();
@@ -883,6 +898,17 @@ void CoreSession::shutdownClientInfra()
     if (m_ipFilter) {
         theApp.ipFilter = nullptr;
         m_ipFilter.reset();
+    }
+
+    if (m_kadNodeCensus) {
+        m_kadNodeCensus->save();
+        theApp.kadNodeCensus = nullptr;
+        m_kadNodeCensus.reset();
+    }
+    if (m_clientCensus) {
+        m_clientCensus->save();
+        theApp.clientCensus = nullptr;
+        m_clientCensus.reset();
     }
 
     if (m_geoIpUpdater) {
@@ -1401,6 +1427,11 @@ void CoreSession::ensureSeenFileIndex()
 void CoreSession::initSearch()
 {
     ensureSeenFileIndex();
+
+    // The user's bad-word rules; the built-in ones when the file was never seeded.
+    const QString rulesPath = QDir(thePrefs.configDir()).filePath(QString::fromLatin1(kFakeFileFilterName));
+    if (QFile::exists(rulesPath))
+        setActiveFakeFileRules(FakeFileRules::load(rulesPath));
 
     if (!theApp.searchList) {
         m_searchList = std::make_unique<SearchList>(this);
