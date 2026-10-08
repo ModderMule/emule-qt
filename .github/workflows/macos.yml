@@ -83,7 +83,9 @@ jobs:
       - name: Set up ccache
         uses: hendrikmuhs/ccache-action@v1
         with:
-          key: macos
+          # Not plain "macos": restore matches by prefix, and that picked up the
+          # newer macos-intel cache (v0.6.2: 26% hits).
+          key: macos-arm64
 
       - name: Configure
         run: >

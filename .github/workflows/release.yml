@@ -38,6 +38,8 @@ concurrency:
 
 jobs:
   # Tag push: re-dispatch this workflow onto main, to keep the build caches warm.
+  # In this run every other job shows as skipped -- not a failure; the build is
+  # the second "Release vX.Y.Z" run, on main.
   dispatch:
     name: Start the release build on main
     if: github.event_name == 'push'
