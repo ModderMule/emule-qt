@@ -83,6 +83,7 @@ ClientRow parseClient(const QCborMap& m)
     row.software        = m.value(QStringLiteral("software")).toString();
     row.userHash        = m.value(QStringLiteral("userHash")).toString();
     row.uploadState     = m.value(QStringLiteral("uploadState")).toString();
+    row.uploadStalled   = m.value(QStringLiteral("uploadStalled")).toBool();
     row.downloadState   = m.value(QStringLiteral("downloadState")).toString();
     row.transferredUp   = m.value(QStringLiteral("transferredUp")).toInteger();
     row.transferredDown = m.value(QStringLiteral("transferredDown")).toInteger();
@@ -486,12 +487,23 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         }
     }
 
+    // Several files open one combined sheet (MFC DownloadListCtrl.cpp:2383-2400)
     QAction* detailsAct = m_downloadMenu->addAction(menuIcon("FileInfo.ico"), tr("Details..."), this,
-        [this, focusHash]() { showDownloadDetails(focusHash); });
+        [this, focusHash, allHashes]() {
+            if (allHashes.size() > 1)
+                fetchAndShowFileDetails(allHashes, FileDetailDialog::General);
+            else
+                showDownloadDetails(focusHash);
+        });
     detailsAct->setEnabled(hasSel);
     {
         auto* act = m_downloadMenu->addAction(menuIcon("FileComments.ico"), tr("Comments..."), this,
-            [this, focusHash]() { showComments(focusHash); });
+            [this, focusHash, allHashes]() {
+                if (allHashes.size() > 1)
+                    fetchAndShowFileDetails(allHashes, FileDetailDialog::Comments);
+                else
+                    showComments(focusHash);
+            });
         act->setEnabled(hasSel);
     }
 
@@ -614,6 +626,13 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
                 [this, allHashes, i]() { sendSetCategoryBatch(allHashes, i); });
         }
         catMenu->setEnabled(hasSel);
+    }
+
+    // Only while the bar is closed (MFC DownloadListCtrl.cpp:1035-1039)
+    if (!theUiState.showDownloadToolbar()) {
+        m_downloadMenu->addSeparator();
+        m_downloadMenu->addAction(tr("Show Toolbar"), this,
+                                  [this] { setDownloadToolbarShown(true); });
     }
 
     m_downloadMenu->popup(m_downloadView->viewport()->mapToGlobal(pos));
@@ -891,6 +910,14 @@ QWidget* TransferPanel::createDownloadsSection()
         {DownloadListModel::ColSeenComplete, DownloadListModel::ColLastReception,
          DownloadListModel::ColCategory, DownloadListModel::ColCountry,
          DownloadListModel::ColTransferred});
+    // MFC DownloadListCtrl.cpp:1581-1613. Remaining has two values: time, then size.
+    downloadView->setDescendingFirst({DownloadListModel::ColTransferred,
+                                      DownloadListModel::ColCompleted, DownloadListModel::ColSpeed,
+                                      DownloadListModel::ColProgress, DownloadListModel::ColSources});
+    downloadView->setSortValueColumn(DownloadListModel::ColRemaining, [this](bool bySize) {
+        m_downloadModel->setRemainingSortBySize(bySize);
+        m_downloadProxy->invalidate();
+    });
     CountryFlags::bindFlagColumn(downloadView);
 
     // Hidden until mounted, for the reason given in createClientView().
@@ -941,17 +968,20 @@ QWidget* TransferPanel::createBottomPane()
     clientSlot(Uploading).view = createClientView(
         clientSlot(Uploading).model, QStringLiteral("clientsUploading3"),
         // User Name, File, Speed, Transferred, Waited, Upload Time, Status, Obtained Parts, Country
-        {150, 220, 70, 90, 80, 80, 90, 120, 100});
+        {150, 220, 70, 90, 80, 80, 90, 120, 100},
+        {2, 3, 4, 7});       // first click descending, MFC UploadListCtrl.cpp:286-292
     clientSlot(Downloading).view = createClientView(
         clientSlot(Downloading).model, QStringLiteral("clientsDownloading3"),
         // User Name, Software, File, Speed, Available Parts, Transferred, Transferred, Source Type,
         // Country
-        {150, 90, 220, 70, 100, 90, 90, 100, 100});
+        {150, 90, 220, 70, 100, 90, 90, 100, 100},
+        {1, 3, 4, 5, 6});    // DownloadClientsCtrl.cpp:257-264
     clientSlot(OnQueue).view = createClientView(
         clientSlot(OnQueue).model, QStringLiteral("clientsOnQueue3"),
         // User Name, File, File Priority, Rating, Score, Asked, Last Seen,
         // Entered Queue, Banned, Obtained Parts, Country
-        {150, 220, 80, 70, 60, 60, 100, 110, 60, 120, 100});
+        {150, 220, 80, 70, 60, 60, 100, 110, 60, 120, 100},
+        {2, 3, 4, 5, 8, 9}); // QueueListCtrl.cpp:292-300
     // Obtained Parts is MFC's upload status bar (UploadListCtrl.cpp:165, QueueListCtrl.cpp:168)
     clientSlot(Uploading).view->setItemDelegateForColumn(
         7, new UploadStatusDelegate(false, clientSlot(Uploading).view));
@@ -965,7 +995,8 @@ QWidget* TransferPanel::createBottomPane()
         clientSlot(Known).model, QStringLiteral("clientsKnown3"),
         // User Name, Upload Status, Transferred, Download Status, Transferred Down,
         // Software, Connected, Hash, Country
-        {150, 100, 90, 100, 110, 90, 80, 240, 100});
+        {150, 100, 90, 100, 110, 90, 80, 240, 100},
+        {1, 2, 4, 5, 6});    // ClientListCtrl.cpp:233-240
 
     // Context menu and double-click are wired per view, and a view keeps them when it
     // moves to the other pane.
@@ -1011,6 +1042,12 @@ QWidget* TransferPanel::createBottomPane()
     return widget;
 }
 
+void TransferPanel::setDownloadToolbarShown(bool shown)
+{
+    theUiState.setShowDownloadToolbar(shown);
+    m_actionToolbar->setVisible(shown && m_categoryTabBar->isVisibleTo(this));
+}
+
 QToolBar* TransferPanel::createActionToolbar()
 {
     auto* toolbar = new QToolBar;
@@ -1019,6 +1056,14 @@ QToolBar* TransferPanel::createActionToolbar()
     toolbar->setToolButtonStyle(Qt::ToolButtonIconOnly);
     toolbar->setMovable(false);
     toolbar->setFixedWidth(24);
+
+    // MFC CToolbarWnd: right-click, "Close Toolbar"; the download menu brings it back
+    toolbar->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(toolbar, &QWidget::customContextMenuRequested, this, [this, toolbar](const QPoint& pos) {
+        QMenu menu(this);
+        menu.addAction(tr("Close Toolbar"), this, [this] { setDownloadToolbarShown(false); });
+        menu.exec(toolbar->mapToGlobal(pos));
+    });
 
     // Remove frame styling to match MFC narrow strip
     toolbar->setStyleSheet(QStringLiteral(
@@ -1157,7 +1202,8 @@ QToolBar* TransferPanel::createActionToolbar()
 
 QTreeView* TransferPanel::createClientView(ClientListModel* model,
                                             const QString& headerKey,
-                                            std::initializer_list<int> columnWidths)
+                                            std::initializer_list<int> columnWidths,
+                                            std::initializer_list<int> descendingFirst)
 {
     auto* proxy = new QSortFilterProxyModel(this);
     proxy->setSourceModel(model);
@@ -1179,6 +1225,7 @@ QTreeView* TransferPanel::createClientView(ClientListModel* model,
     hdr->setStretchLastSection(true);
     hdr->setDefaultSectionSize(100);
     view->bindColumns(headerKey, columnWidths, {model->countryColumn()});
+    view->setDescendingFirst(descendingFirst);
     CountryFlags::bindFlagColumn(view);
 
     // A child widget that is in no layout is still shown with its parent, at its
@@ -1246,7 +1293,7 @@ void TransferPanel::requestDownloads()
             row.fileType          = m.value(QStringLiteral("fileType")).toString();
             row.requests          = m.value(QStringLiteral("requests")).toInteger();
             row.acceptedRequests  = m.value(QStringLiteral("acceptedReqs")).toInteger();
-            row.transferredData   = m.value(QStringLiteral("transferredData")).toInteger();
+            row.upTransferred     = m.value(QStringLiteral("upTransferred")).toInteger();
             row.isPreviewPossible = m.value(QStringLiteral("isPreviewPossible")).toBool();
             row.hasComment        = m.value(QStringLiteral("hasComment")).toBool();
             row.userRating        = static_cast<int>(m.value(QStringLiteral("userRating")).toInteger());
@@ -1834,6 +1881,35 @@ void TransferPanel::showComments(const QString& hash)
     fetchAndShowFileDetails(hash, FileDetailDialog::Comments);
 }
 
+void TransferPanel::fetchAndShowFileDetails(const QStringList& hashes,
+                                             FileDetailDialog::Tab tab)
+{
+    if (!m_ipc || !m_ipc->isConnected() || hashes.isEmpty())
+        return;
+
+    // One request per file; the sheet opens when the last answer is in. A file that
+    // went away meanwhile is left out.
+    struct Pending {
+        QList<QCborMap> files;
+        qsizetype outstanding = 0;
+    };
+    auto pending = std::make_shared<Pending>();
+    pending->outstanding = hashes.size();
+    for (const QString& hash : hashes) {
+        IpcMessage msg(IpcMsgType::GetDownloadDetails);
+        msg.append(hash);
+        m_ipc->sendRequest(std::move(msg), [this, tab, pending](const IpcMessage& resp) {
+            if (resp.isValid() && resp.fieldBool(0))
+                pending->files.append(resp.field(1).toMap());
+            if (--pending->outstanding > 0 || pending->files.isEmpty())
+                return;
+            auto* dlg = new FileDetailDialog(pending->files, tab, this);
+            connectCommentFilter(dlg, m_ipc);
+            dlg->show();
+        });
+    }
+}
+
 void TransferPanel::fetchAndShowFileDetails(const QString& hash,
                                              FileDetailDialog::Tab tab)
 {
@@ -2075,7 +2151,8 @@ void TransferPanel::applyViews(int topId, int clientView, Pane priority)
     // Both belong to the download list and mean nothing while it is off screen.
     const bool showingDownloads = (topId == TopView::Downloads);
     m_categoryTabBar->setVisible(showingDownloads);
-    m_actionToolbar->setEnabled(showingDownloads);
+    // hidden, as MFC does (TransferWnd.cpp:1408), and only shown when not closed
+    m_actionToolbar->setVisible(showingDownloads && theUiState.showDownloadToolbar());
 
     QSettings settings;
     settings.setValue(QStringLiteral("transfer/topView"), topId);

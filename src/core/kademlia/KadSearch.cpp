@@ -252,9 +252,7 @@ std::vector<Tag> Search::buildSourcePublishTags(const SourcePublishParams& p, bo
         // wire that separates a usable type-6 record from a dead one: a receiver drops
         // the source outright without it (DownloadQueue.cpp case 6; MFC
         // srchybrid/DownloadQueue.cpp:1590). Setting it here rather than trusting the
-        // caller's byte means the tag can never contradict the type — which matters,
-        // because the caller derives the byte from theApp.isFirewalled() while this
-        // branch is chosen on the Kad-only firewall state, and the two can disagree.
+        // caller's byte means the tag can never contradict the type.
         cryptOptions = static_cast<uint8>(cryptOptions | 0x08);
         addCommonPortAndSize();
     } else if (p.firewalled && p.hasBuddy) {
@@ -1490,10 +1488,12 @@ void Search::storePacket(bool flushRemaining)
                     QByteArray(reinterpret_cast<const char*>(ourIPv6.ipv6Bytes().data()), 16).toHex());
             }
 
+            // The app-wide state, as MFC (Search.cpp:646): an eD2K HighID is reachable
+            // even while Kad still reports firewalled.
             auto* kadInst = Kademlia::instance();
-            sp.firewalled = kadInst && kadInst->isFirewalled();
+            sp.firewalled = theApp.isFirewalled();
             if (sp.firewalled) {
-                sp.directUDPCallback = kadInst->isRunning()
+                sp.directUDPCallback = kadInst && kadInst->isRunning()
                     && !UDPFirewallTester::isFirewalledUDP(true)
                     && UDPFirewallTester::isVerified();
                 if (!sp.directUDPCallback) {
@@ -1538,10 +1538,8 @@ void Search::storePacket(bool flushRemaining)
             // The three crypt bits were open-coded here and the callback bit simply
             // omitted, which left every type-6 record we published unusable.
             //
-            // myConnectOptions() gates bit 3 on theApp.isFirewalled(), which is false
-            // for an ED2K High ID even while Kad believes it is firewalled; the type-6
-            // branch keys off the Kad state alone. buildSourcePublishTags() forces the
-            // bit for that type, so the disagreement cannot produce a broken record.
+            // myConnectOptions() gates bit 3 on theApp.isFirewalled(), as the type-6
+            // branch now does; buildSourcePublishTags() sets the bit for that type anyway.
             sp.cryptOptions = prefs ? prefs->myConnectOptions(true, true) : uint8{0};
 
             bool canPublish = false;

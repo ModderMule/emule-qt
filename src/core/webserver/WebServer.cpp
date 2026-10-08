@@ -2681,6 +2681,7 @@ QString WebServer::buildSearchPage(bool isAdmin)
         for (const SearchFile* f : std::as_const(files)) {
             QHash<QString, QString> line;
             line[QStringLiteral("ResultName")] = htmlText(f->fileName());
+            line[QStringLiteral("ResultFileType")] = webFileTypeToken(f->fileName());
             line[QStringLiteral("ResultSize")] = formatByteSize(f->fileSize());
             line[QStringLiteral("ResultHash")] = md4str(f->fileHash());
             line[QStringLiteral("ResultSources")] = QString::number(f->sourceCount());

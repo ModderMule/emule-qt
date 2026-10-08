@@ -430,15 +430,20 @@ void MainWindow::setEd2kServer(const QString& name, qint64 users)
     m_ed2kServerUsers = users;
 }
 
-void MainWindow::setUssStatus(bool enabled, bool active, qint64 limitBytes, qint64 latencyMs,
+void MainWindow::setUssStatus(bool enabled, int state, qint64 limitBytes, qint64 latencyMs,
                               qint64 lowestMs, bool msTolerance)
 {
     m_statusUss->setVisible(enabled);
     if (!enabled)
         return;
     // MFC CemuleDlg::ShowPing (EmuleDlg.cpp:1156-1169): limit | ping [| % of the lowest]
+    // The states are MFC's IDS_USS_STATE_* texts; while it steers, the figures show.
     QString text = tr("Preparing...");
-    if (active) {
+    if (state == 2)
+        text = tr("Waiting...");
+    else if (state == 3)
+        text = tr("Error!");
+    if (state == 4) {
         const QString limit = QString::number(static_cast<double>(limitBytes) / 1024.0, 'f', 1);
         text = lowestMs > 0 && !msTolerance
             ? QStringLiteral("%1 | %2ms | %3%").arg(limit).arg(latencyMs).arg(latencyMs * 100 / lowestMs)

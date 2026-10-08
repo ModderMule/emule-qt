@@ -2,6 +2,7 @@
 /// @brief The shared-files model takes a new list and single rows without a reset.
 
 #include "controls/SharedFilesModel.h"
+#include "dialogs/FileDetailsMerge.h"
 #include "utils/SharedDirState.h"
 
 #include <QAbstractItemModelTester>
@@ -16,6 +17,8 @@ class tst_SharedFilesModel : public QObject {
     Q_OBJECT
 
 private slots:
+    void mergeFileDetails_sumsAgreesAndLists();
+    void altSort_sessionFiguresAndKadFirst();
     void sharedDirState_matchesWholeFoldersOnly();
     void sharedDirState_unshareWithSubdirs();
     void sharedDirState_nestsUnderNearestSharedParent();
@@ -424,6 +427,77 @@ void tst_SharedFilesModel::sharedDirState_nestsUnderNearestSharedParent()
     QCOMPARE(parents.value(videos), QString());
     QCOMPARE(parents.value(live), music);       // "albums" between them is not shared
     QCOMPARE(parents.value(bootleg), live);     // the nearest one, not the topmost
+}
+
+// MFC SharedFilesCtrl SortProc: cases 5-7 against 105-107, 11 against 111.
+void tst_SharedFilesModel::altSort_sessionFiguresAndKadFirst()
+{
+    SharedFilesModel model;
+    SharedFileRow a, b;
+    a.hash = QStringLiteral("aa");
+    a.fileName = QStringLiteral("a");
+    a.requests = 1;            // little today,
+    a.allTimeRequests = 900;   // a lot over time
+    a.publishedED2K = true;
+    b.hash = QStringLiteral("bb");
+    b.fileName = QStringLiteral("b");
+    b.requests = 5;
+    b.allTimeRequests = 10;
+    b.kadPublished = true;
+    model.setFiles({a, b});
+
+    SharedFilesSortProxy proxy;
+    proxy.setSourceModel(&model);
+    proxy.setSortRole(Qt::UserRole);
+    const auto top = [&] { return proxy.index(0, 0).data().toString(); };
+
+    proxy.sort(SharedFilesModel::ColRequests, Qt::DescendingOrder);
+    QCOMPARE(top(), QStringLiteral("a"));     // all-time
+    proxy.setAltSort(SharedFilesModel::ColRequests, true);
+    QCOMPARE(top(), QStringLiteral("b"));     // this session
+
+    proxy.sort(SharedFilesModel::ColSharedNetworks, Qt::DescendingOrder);
+    QCOMPARE(top(), QStringLiteral("a"));     // on eD2K
+    proxy.setAltSort(SharedFilesModel::ColSharedNetworks, true);
+    QCOMPARE(top(), QStringLiteral("b"));     // on Kad
+}
+
+// The combined detail sheet of a multi-selection (MFC CFileDetailDialog with several files).
+void tst_SharedFilesModel::mergeFileDetails_sumsAgreesAndLists()
+{
+    const auto file = [](qint64 size, qint64 done, const QString& artist, qint64 bitrate,
+                         const QString& link, const QString& comment) {
+        QCborArray comments;
+        if (!comment.isEmpty())
+            comments.append(QCborMap{{QStringLiteral("comment"), comment}});
+        return QCborMap{
+            {QStringLiteral("fileSize"), size}, {QStringLiteral("completedSize"), done},
+            {QStringLiteral("sourceCount"), 3}, {QStringLiteral("mediaArtist"), artist},
+            {QStringLiteral("mediaAlbum"), QStringLiteral("Same Album")},
+            {QStringLiteral("mediaBitrate"), bitrate}, {QStringLiteral("mediaLength"), 60},
+            {QStringLiteral("ed2kLink"), link}, {QStringLiteral("comments"), comments},
+            {QStringLiteral("canComment"), true}, {QStringLiteral("hash"), QStringLiteral("ab")}};
+    };
+    const QCborMap merged = mergeFileDetails({
+        file(1000, 250, QStringLiteral("A"), 128, QStringLiteral("ed2k://1"), QStringLiteral("good")),
+        file(3000, 750, QStringLiteral("B"), 128, QStringLiteral("ed2k://2"), QString()),
+        file(0, 0, QStringLiteral("A"), 128, QString(), QStringLiteral("fake")),
+    });
+    const auto value = [&merged](const char* key) { return merged.value(QLatin1StringView(key)); };
+
+    QCOMPARE(value("multiCount").toInteger(), 3);
+    QCOMPARE(value("fileSize").toInteger(), 4000);
+    QCOMPARE(value("completedSize").toInteger(), 1000);
+    QCOMPARE(value("percentCompleted").toDouble(), 25.0);
+    QCOMPARE(value("sourceCount").toInteger(), 9);
+    QCOMPARE(value("mediaLength").toInteger(), 180);
+    QCOMPARE(value("mediaArtist").toString(), QString());                    // they differ
+    QCOMPARE(value("mediaAlbum").toString(), QStringLiteral("Same Album"));
+    QCOMPARE(value("mediaBitrate").toInteger(), 128);
+    QCOMPARE(value("comments").toArray().size(), 2);
+    QCOMPARE(value("ed2kLink").toString(), QStringLiteral("ed2k://1\ned2k://2"));
+    QVERIFY(!value("canComment").toBool());
+    QVERIFY(!merged.contains(QLatin1StringView("hash")));
 }
 
 QTEST_MAIN(tst_SharedFilesModel)

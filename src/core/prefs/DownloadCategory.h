@@ -9,8 +9,8 @@
 /// Preferences' business, and the download queue only ever asks it questions.
 ///
 /// Ported from `srchybrid/Preferences.h:114-128`, field for field. The view
-/// filter (`filter`, `filterNeg`, `care4all`, `regexp`) is applied by the GUI's
-/// CategoryFilterProxy; the core only stores it.
+/// filter (`filter`, `filterNeg`, `care4all`, `regexp`) is evaluated by
+/// categoryShowsRow() (prefs/CategoryView.h): the GUI's list, and the bulk actions.
 ///
 /// **Identity is the list index**, as in MFC. `part.met` stores `FT_CATEGORY`
 /// as an index (`PartFile.cpp` load/save), so removing or reordering a category

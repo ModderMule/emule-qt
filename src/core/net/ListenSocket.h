@@ -86,6 +86,7 @@ public:
 
     [[nodiscard]] uint32 openSockets() const { return static_cast<uint32>(m_socketList.size()); }
     [[nodiscard]] uint32 maxConnectionReached() const { return m_maxConnectionReached; }
+    [[nodiscard]] bool isAcceptPaused() const { return m_acceptPaused; }
     [[nodiscard]] uint32 peakConnections() const { return m_peakConnections; }
     [[nodiscard]] uint32 totalConnectionChecks() const { return m_totalConnectionChecks; }
     [[nodiscard]] float  averageConnections() const { return m_averageConnections; }
@@ -114,6 +115,8 @@ private:
     uint16 m_openSocketsInterval = 0;
     uint16 m_processTickCount = 0;
     uint32 m_maxConnectionReached = 0;
+    bool m_acceptPaused = false;   ///< at the hard limit; process() resumes
+    [[nodiscard]] bool serverIsConnecting() const;
 
     // Statistics
     uint32 m_peakConnections = 0;

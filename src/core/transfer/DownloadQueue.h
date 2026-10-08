@@ -255,7 +255,13 @@ public:
     // MFC keeps the same pair (ResetCatParts / MoveCat,
     // srchybrid/DownloadQueue.cpp:1105-1115, 1202-1220).
 
-    void setCatStatus(uint32 category, bool paused);
+    /// The downloads a bulk action on category tab @p category covers, MFC
+    /// SetCatStatus: its members; for tab 0 what that tab shows (everything, or its
+    /// view filter's choice); -1 everything; -2 the uncategorised ones.
+    [[nodiscard]] std::vector<PartFile*> filesInCategoryScope(int category) const;
+    void setCatStatus(int category, bool paused);
+    /// Stop (not pause) them — the scheduler's action, MFC MP_STOP.
+    void stopCategory(int category);
 
     /// A source the user typed in — MFC CAddSourceDlg. The address is vetted like
     /// any untrusted one; false when it is not usable or the file takes no more.
@@ -325,6 +331,18 @@ public:
     /// UpDownClient::askForDownload(), i.e. when we fall back to TCP while the datagram
     /// is still outstanding. Session counters, like their neighbours above — the
     /// statistics reset deliberately leaves them running.
+    /// Sources of all downloads by state, origin and network (MFC SDownloadStats).
+    struct SourceStats {
+        uint32 total = 0, transferring = 0;
+        uint32 onQueue = 0, queueFull = 0, noNeededParts = 0, asking = 0, recvHashset = 0;
+        uint32 connecting = 0, viaServerCallback = 0, tooManyConns = 0, lowToLow = 0;
+        uint32 unknown = 0, problematic = 0, banned = 0, a4af = 0;
+        uint32 fromServer = 0, fromKad = 0, fromSourceExchange = 0, fromPassive = 0;
+        uint32 netEd2k = 0, netKad = 0, netBoth = 0;
+        uint32 deadPerFile = 0;
+    };
+    [[nodiscard]] SourceStats sourceStats() const;
+
     void addUDPFileReasks() { ++m_udpFileReasks; }
     [[nodiscard]] uint32 udpFileReasks() const { return m_udpFileReasks; }
     void addFailedUDPFileReasks() { ++m_failedUDPFileReasks; }
@@ -420,7 +438,7 @@ private:
     void processLocalRequests();
     /// The next frame: up to 15 OP_GETSOURCES packets back to back, longest-waiting
     /// file first. Takes those files off the queue. Empty when nothing is due.
-    [[nodiscard]] QByteArray buildLocalRequestFrame(uint64 curTick);
+    [[nodiscard]] QByteArray buildLocalRequestFrame(uint64 curTick, const Server* server);
 
     // EntityList hooks — emit the queue's signals + run side-effects on add/remove.
     void onEntityAdded(PartFile* file) override;
@@ -442,6 +460,7 @@ private:
     std::deque<TransferredData> m_averageDRList;  // 10-second averaging window
     uint32 m_udCounter = 0;
     uint64 m_lastKademliaFileRequest = 0;
+    uint64 m_lastA4AFTime = 0;          // m_dwLastA4AFtime
     const PartFile* m_kadSearchTurn = nullptr;   // chosen per process() pass
 
     std::vector<PartFile*> m_localServerReqQueue;   // non-owning

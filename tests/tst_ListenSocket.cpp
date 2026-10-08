@@ -145,7 +145,7 @@ private slots:
     void clientReqSocketTimeout_notExtendedWhileDownloadingFromPeer();
     void tooManySockets();
     void statisticsUpdate();
-    void maxConnectionReached_countsRefusals();
+    void maxConnectionReached_pausesAccepting();
     void halfOpenSocketsLimitDialling();
     void dialsCountAgainstThePerFiveSecondLimit();
 
@@ -393,9 +393,10 @@ void tst_ListenSocket::tooManySockets()
 // Test: statistics update
 // ---------------------------------------------------------------------------
 
-void tst_ListenSocket::maxConnectionReached_countsRefusals()
+void tst_ListenSocket::maxConnectionReached_pausesAccepting()
 {
-    // An event counter (MFC maxconnectionreached), not the connection peak.
+    // MFC StopListening / ReStartListening: at the hard limit nothing more is accepted,
+    // callers wait in the backlog, and the counter counts the stops.
     const uint16 savedMax = thePrefs.maxConnections();
     ListenSocket listener;
     QVERIFY(listener.startListening(0));
@@ -407,9 +408,31 @@ void tst_ListenSocket::maxConnectionReached_countsRefusals()
     QCOMPARE(listener.maxConnectionReached(), 0u);
 
     thePrefs.setMaxConnections(1);
-    QTcpSocket peer;
-    peer.connectToHost(QHostAddress::LocalHost, listener.serverPort());
+    QTcpSocket first;
+    first.connectToHost(QHostAddress::LocalHost, listener.serverPort());
     QTRY_COMPARE_WITH_TIMEOUT(listener.maxConnectionReached(), 1u, 3000);
+    QVERIFY(listener.isAcceptPaused());
+    QCOMPARE(listener.openSockets(), 3u);   // the one that hit the limit is kept
+
+    // The next caller connects (backlog) but is not accepted, and is not counted again.
+    QTcpSocket second;
+    second.connectToHost(QHostAddress::LocalHost, listener.serverPort());
+    QVERIFY(second.waitForConnected(3000));
+    QTest::qWait(200);
+    QCOMPARE(listener.openSockets(), 3u);
+    QCOMPARE(listener.maxConnectionReached(), 1u);
+    QCOMPARE(second.state(), QAbstractSocket::ConnectedState);
+
+    // Still at the limit: process() does not resume.
+    listener.process();
+    QVERIFY(listener.isAcceptPaused());
+
+    // Room again (five to spare): the waiting caller is taken.
+    thePrefs.setMaxConnections(20);
+    listener.process();
+    QVERIFY(!listener.isAcceptPaused());
+    QTRY_COMPARE_WITH_TIMEOUT(listener.openSockets(), 4u, 3000);
+    QCOMPARE(listener.maxConnectionReached(), 1u);
 
     thePrefs.setMaxConnections(savedMax);
     listener.removeSocket(&a);

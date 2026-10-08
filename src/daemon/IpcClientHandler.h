@@ -117,6 +117,7 @@ private:
     void handleStopSearch(const Ipc::IpcMessage& msg);
     void handleSearchMore(const Ipc::IpcMessage& msg);
     void handleRemoveSearch(const Ipc::IpcMessage& msg);
+    void handleRemoveSearchResult(const Ipc::IpcMessage& msg);
     void handleClearAllSearches(const Ipc::IpcMessage& msg);
     void handleDownloadSearchFile(const Ipc::IpcMessage& msg);
     void handleGetKnownTypes(const Ipc::IpcMessage& msg);

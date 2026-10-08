@@ -470,6 +470,18 @@ StatsSnapshot collectStatsSnapshot()
             totalSize += size;
             totalDone += done;
         }
+        const DownloadQueue::SourceStats src = dq->sourceStats();
+        out.downSources = {src.onQueue, src.queueFull, src.noNeededParts, src.asking,
+                           src.recvHashset, src.connecting, src.viaServerCallback,
+                           src.tooManyConns, src.lowToLow, src.problematic, src.banned,
+                           src.a4af, src.unknown, src.fromServer, src.fromKad,
+                           src.fromSourceExchange, src.fromPassive, src.netEd2k, src.netKad,
+                           src.netBoth};
+        out.downDeadSourcesPerFile = src.deadPerFile;
+        if (theApp.clientList)
+            out.downDeadSourcesGlobal =
+                static_cast<qint64>(theApp.clientList->globalDeadSourceList.count());
+
         out.completedDownloads = completedCount;
         out.downFoundSources = totalSources;
         out.totalDownCount = totalCount;
@@ -629,6 +641,14 @@ QCborMap toCborMap(const StatsSnapshot& s)
     put(QStringLiteral("downFoundSources"), s.downFoundSources);
     put(QStringLiteral("downUdpReasks"), s.downUdpReasks);
     put(QStringLiteral("downUdpReasksFailed"), s.downUdpReasksFailed);
+    {
+        QCborArray sources;
+        for (const qint64 n : s.downSources)
+            sources.append(n);
+        m.insert(QStringLiteral("downSources"), sources);
+    }
+    put(QStringLiteral("downDeadSourcesGlobal"), s.downDeadSourcesGlobal);
+    put(QStringLiteral("downDeadSourcesPerFile"), s.downDeadSourcesPerFile);
     if (s.freeTempSpace)
         put(QStringLiteral("freeTempSpace"), *s.freeTempSpace);
 

@@ -155,6 +155,9 @@ HEADERS += \
     controls/AccordionSidebar.h \
     controls/AbstractListView.h \
     controls/SortableItems.h \
+    controls/ListSortClick.h \
+    dialogs/FileDetailsMerge.h \
+    controls/SortArrowStyle.h \
     controls/ClientListModel.h \
     controls/ContactsGraph.h \
     controls/ContentScrollArea.h \

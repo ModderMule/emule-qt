@@ -416,9 +416,12 @@ void StatisticsPanel::buildTree()
     m_itemDownActiveDownloads = new QTreeWidgetItem(downSession, {tr("Active Downloads: 0")});
     m_itemDownFoundSources = new QTreeWidgetItem(downSession, {tr("Found Sources: 0")});
     // MFC hangs the per-source breakdown off "Found Sources" (down_sources[] under
-    // down_S[3], StatisticsDlg.cpp:2643); this is the UDP re-ask line of that group.
+    // down_S[3], StatisticsDlg.cpp:2643): by state, by origin, by network, re-asks, dead.
+    for (auto*& item : m_itemDownSources)
+        item = new QTreeWidgetItem(m_itemDownFoundSources);
     m_itemDownUdpReasks = new QTreeWidgetItem(m_itemDownFoundSources,
                                               {tr("UDP File Re-asks: 0, Failed: 0 (0.0%)")});
+    m_itemDownDeadSources = new QTreeWidgetItem(m_itemDownFoundSources);
     m_itemDownCompletedSes = new QTreeWidgetItem(downSession, {tr("Completed Downloads: 0")});
 
     auto* downSesSessions = new QTreeWidgetItem(downSession, {tr("Download Sessions")});
@@ -483,6 +486,7 @@ void StatisticsPanel::buildTree()
     connSession->setIcon(0, detailIcon);
 
     auto* connSesGen = new QTreeWidgetItem(connSession, {tr("General")});
+    connSesGen->setIcon(0, QIcon(QStringLiteral(":/icons/TransferUpDown.ico")));
     m_itemConnActive = new QTreeWidgetItem(connSesGen, {tr("Active Connections: 0")});
     m_itemConnPeak = new QTreeWidgetItem(connSesGen, {tr("Peak Connections: 0")});
     m_itemConnMaxReached = new QTreeWidgetItem(connSesGen, {tr("Max Connections Limit Reached: 0")});
@@ -490,11 +494,13 @@ void StatisticsPanel::buildTree()
     m_itemConnAverage = new QTreeWidgetItem(connSesGen, {tr("Average Connections: 0.0")});
 
     auto* connSesUp = new QTreeWidgetItem(connSession, {tr("Uploads")});
+    connSesUp->setIcon(0, QIcon(QStringLiteral(":/icons/Upload.ico")));
     m_itemConnSesUpSpeed = new QTreeWidgetItem(connSesUp, {tr("Upload Speed: 0 KB/s")});
     m_itemConnSesMaxUp = new QTreeWidgetItem(connSesUp, {tr("Max Upload Rate: 0 KB/s")});
     m_itemConnSesMaxAvgUp = new QTreeWidgetItem(connSesUp, {tr("Max Average Upload Rate: 0 KB/s")});
 
     auto* connSesDown = new QTreeWidgetItem(connSession, {tr("Downloads")});
+    connSesDown->setIcon(0, QIcon(QStringLiteral(":/icons/Download.ico")));
     m_itemConnSesDownSpeed = new QTreeWidgetItem(connSesDown, {tr("Download Speed: 0 KB/s")});
     m_itemConnSesMaxDown = new QTreeWidgetItem(connSesDown, {tr("Max Download Rate: 0 KB/s")});
     m_itemConnSesMaxAvgDown = new QTreeWidgetItem(connSesDown, {tr("Max Average Download Rate: 0 KB/s")});
@@ -504,16 +510,19 @@ void StatisticsPanel::buildTree()
     connCum->setIcon(0, cumulativeIcon);
 
     auto* connCumGen = new QTreeWidgetItem(connCum, {tr("General")});
+    connCumGen->setIcon(0, QIcon(QStringLiteral(":/icons/TransferUpDown.ico")));
     m_itemConnCumReconnects = new QTreeWidgetItem(connCumGen, {tr("Server Reconnects: 0")});
     m_itemConnCumPeak = new QTreeWidgetItem(connCumGen, {tr("Peak Connections: 0")});
     m_itemConnCumMaxReached = new QTreeWidgetItem(connCumGen, {tr("Connection Limit Reached: 0")});
 
     auto* connCumUp = new QTreeWidgetItem(connCum, {tr("Uploads")});
+    connCumUp->setIcon(0, QIcon(QStringLiteral(":/icons/Upload.ico")));
     m_itemConnCumAvgUp = new QTreeWidgetItem(connCumUp, {tr("Average Upload Rate: 0 KB/s")});
     m_itemConnCumMaxUp = new QTreeWidgetItem(connCumUp, {tr("Max Upload Rate: 0 KB/s")});
     m_itemConnCumMaxAvgUp = new QTreeWidgetItem(connCumUp, {tr("Max Average Upload Rate: 0 KB/s")});
 
     auto* connCumDown = new QTreeWidgetItem(connCum, {tr("Downloads")});
+    connCumDown->setIcon(0, QIcon(QStringLiteral(":/icons/Download.ico")));
     m_itemConnCumAvgDown = new QTreeWidgetItem(connCumDown, {tr("Average Download Rate: 0 KB/s")});
     m_itemConnCumMaxDown = new QTreeWidgetItem(connCumDown, {tr("Max Download Rate: 0 KB/s")});
     m_itemConnCumMaxAvgDown = new QTreeWidgetItem(connCumDown, {tr("Max Average Download Rate: 0 KB/s")});
@@ -544,6 +553,8 @@ void StatisticsPanel::buildTree()
     m_itemCumUploadTime = new QTreeWidgetItem(m_itemCumTransferTime, {tr("Upload Time: 0:00:00")});
     m_itemCumDownloadTime = new QTreeWidgetItem(m_itemCumTransferTime, {tr("Download Time: 0:00:00")});
     m_itemCumServerDuration = new QTreeWidgetItem(timeCum, {tr("Total Server Duration: 0:00:00")});
+
+    buildProjectedAverages();
 
     // ===== Clients =====
     auto* clients = new QTreeWidgetItem(m_tree, {tr("Clients")});
@@ -588,6 +599,7 @@ void StatisticsPanel::buildTree()
     m_itemSrvLowID = new QTreeWidgetItem(servers, {tr("Low ID Users: 0")});
 
     auto* srvRecords = new QTreeWidgetItem(servers, {tr("Records")});
+    srvRecords->setIcon(0, QIcon(QStringLiteral(":/icons/StatsCumulative.ico")));
     m_itemSrvRecWorking = new QTreeWidgetItem(srvRecords, {tr("Most Working Servers: 0")});
     m_itemSrvRecUsers = new QTreeWidgetItem(srvRecords, {tr("Most Users Online: 0")});
     m_itemSrvRecFiles = new QTreeWidgetItem(srvRecords, {tr("Most Files Available: 0")});
@@ -601,6 +613,7 @@ void StatisticsPanel::buildTree()
     m_itemSharedLargest = new QTreeWidgetItem(shared, {tr("Largest Shared File: 0 Bytes")});
 
     auto* sharedRecords = new QTreeWidgetItem(shared, {tr("Records")});
+    sharedRecords->setIcon(0, QIcon(QStringLiteral(":/icons/StatsCumulative.ico")));
     m_itemSharedRecCount = new QTreeWidgetItem(sharedRecords, {tr("Most Files Shared: 0")});
     m_itemSharedRecSize = new QTreeWidgetItem(sharedRecords, {tr("Largest Share Size: 0 Bytes")});
     m_itemSharedRecAvg = new QTreeWidgetItem(sharedRecords, {tr("Largest Average File Size: 0 Bytes")});
@@ -608,7 +621,7 @@ void StatisticsPanel::buildTree()
 
     // ===== Total Downloads =====
     auto* totalDown = new QTreeWidgetItem(m_tree, {tr("Total Downloads")});
-    totalDown->setIcon(0, QIcon(QStringLiteral(":/icons/Download.ico")));
+    totalDown->setIcon(0, QIcon(QStringLiteral(":/icons/HardDisk.ico")));   // as MFC
     m_itemTotalDownCount = new QTreeWidgetItem(totalDown, {tr("Number of Downloads: 0")});
     m_itemTotalDownSize = new QTreeWidgetItem(totalDown, {tr("Total Size of Downloads: 0 Bytes")});
     m_itemTotalDownDone = new QTreeWidgetItem(totalDown, {tr("Total Size Downloaded: 0 Bytes")});
@@ -760,6 +773,138 @@ static void setClientBreakdown(QTreeWidgetItem* item, const char* label,
     } else {
         item->setText(0, QStringLiteral("%1: %2")
             .arg(QString::fromLatin1(label), formatByteSize(bytes)));
+    }
+}
+
+double StatisticsPanel::projected(qint64 value, qint64 period, qint64 sinceReset)
+{
+    return sinceReset > 0 ? static_cast<double>(value) * static_cast<double>(period)
+                                / static_cast<double>(sinceReset)
+                          : 0.0;
+}
+
+void StatisticsPanel::buildProjectedAverages()
+{
+    auto* root = new QTreeWidgetItem(m_itemTimeHeader, {tr("Projected Averages")});
+    root->setIcon(0, QIcon(QStringLiteral(":/icons/StatsProjected.ico")));
+
+    const std::array<QString, 3> periodNames = {tr("Daily"), tr("Monthly"), tr("Yearly")};
+    const std::array<const char*, 3> periodIcons = {"StatsDay.ico", "StatsMonth.ico", "StatsYear.ico"};
+    using Row = ProjectedRow;
+
+    for (std::size_t p = 0; p < m_projectedRows.size(); ++p) {
+        auto& rows = m_projectedRows[p];
+        auto* period = new QTreeWidgetItem(root, {periodNames[p]});
+        period->setIcon(0, QIcon(QStringLiteral(":/icons/") + QLatin1StringView(periodIcons[p])));
+
+        const auto add = [&rows](QTreeWidgetItem* parent, Row::Kind kind, const QString& label,
+                                 const QStringList& keys, const QString& second = {}) {
+            auto* item = new QTreeWidgetItem(parent, {label});
+            rows.push_back({item, kind, label, keys, second});
+            return item;
+        };
+        const auto group = [](QTreeWidgetItem* parent, const QString& label) {
+            return new QTreeWidgetItem(parent, {label});
+        };
+        const auto addOverhead = [&](QTreeWidgetItem* parent, const QString& prefix) {
+            const struct { QString label; const char* key; } parts[] = {
+                {tr("Total Overhead (Packets)"), "Total"},
+                {tr("File Request Overhead (Packets)"), "FileReq"},
+                {tr("Source Exchange Overhead (Packets)"), "SrcExch"},
+                {tr("Server Overhead (Packets)"), "Server"},
+                {tr("Kad Overhead (Packets)"), "Kad"}};
+            QTreeWidgetItem* total = nullptr;
+            for (const auto& part : parts) {
+                const QString key = prefix + QLatin1StringView(part.key);
+                auto* item = add(total ? total : parent, Row::Overhead, part.label, {key},
+                                 key + QStringLiteral("Pkt"));
+                if (!total)
+                    total = item;
+            }
+        };
+        const auto addClients = [&](QTreeWidgetItem* data, const QString& prefix,
+                                    std::span<const char* const> labels, const QString& total) {
+            static const char* const keys[] = {"Emule", "EDHybrid", "EDonkey", "AMule",
+                                               "MLdonkey", "Shareaza", "EMCompat", "URL"};
+            auto* clients = group(data, tr("Clients"));
+            for (std::size_t i = 0; i < labels.size(); ++i)
+                add(clients, Row::BytesShare, QString::fromLatin1(labels[i]),
+                    {prefix + QLatin1StringView(keys[i])}, total);
+            auto* ports = group(data, tr("Port"));
+            add(ports, Row::BytesShare, tr("Default Port 4662"), {prefix + QStringLiteral("Port4662")}, total);
+            add(ports, Row::BytesShare, tr("Other Ports"), {prefix + QStringLiteral("PortOther")}, total);
+        };
+
+        // Uploads
+        auto* up = new QTreeWidgetItem(period, {tr("Uploads")});
+        up->setIcon(0, QIcon(QStringLiteral(":/icons/Upload.ico")));
+        const QString totalUp = QStringLiteral("cumTotalUp");
+        auto* upData = add(up, Row::Bytes, tr("Uploaded Data"), {totalUp});
+        addClients(upData, QStringLiteral("cumUp"), kUpClientLabels, totalUp);
+        auto* upSource = group(upData, tr("Data Source"));
+        add(upSource, Row::BytesShare, tr("Complete File"), {QStringLiteral("cumUpFromFile")}, totalUp);
+        add(upSource, Row::BytesShare, tr("Part File"), {QStringLiteral("cumUpFromPartfile")}, totalUp);
+        auto* upSessions = add(up, Row::Count, tr("Upload Sessions"),
+                               {QStringLiteral("cumUpSuccessful"), QStringLiteral("cumUpFailed")});
+        add(upSessions, Row::Count, tr("Successful"), {QStringLiteral("cumUpSuccessful")});
+        add(upSessions, Row::Count, tr("Failed"), {QStringLiteral("cumUpFailed")});
+        addOverhead(up, QStringLiteral("cumUpOh"));
+
+        // Downloads
+        auto* down = new QTreeWidgetItem(period, {tr("Downloads")});
+        down->setIcon(0, QIcon(QStringLiteral(":/icons/Download.ico")));
+        const QString totalDown = QStringLiteral("cumTotalDown");
+        auto* downData = add(down, Row::Bytes, tr("Downloaded Data"), {totalDown});
+        addClients(downData, QStringLiteral("cumDown"), kDownClientLabels, totalDown);
+        add(down, Row::Count, tr("Completed Downloads"), {QStringLiteral("cumDownCompletedFiles")});
+        auto* downSessions = add(down, Row::Count, tr("Download Sessions"),
+                                 {QStringLiteral("cumDownSuccessful"), QStringLiteral("cumDownFailed")});
+        add(downSessions, Row::Count, tr("Successful"), {QStringLiteral("cumDownSuccessful")});
+        add(downSessions, Row::Count, tr("Failed"), {QStringLiteral("cumDownFailed")});
+        add(down, Row::Bytes, tr("Gained Due To Compression"), {QStringLiteral("cumCompressionGain")});
+        add(down, Row::Bytes, tr("Lost Due To Corruption"), {QStringLiteral("cumCorruptionLoss")});
+        add(down, Row::Count, tr("Parts Saved Due To ICH"), {QStringLiteral("cumIchPartsSaved")});
+        addOverhead(down, QStringLiteral("cumDownOh"));
+    }
+    updateProjectedAverages({});
+}
+
+void StatisticsPanel::updateProjectedAverages(const QCborMap& stats)
+{
+    const qint64 sinceReset = stats.value(QLatin1StringView("timeSinceReset")).toInteger();
+    const auto sum = [&stats](const QStringList& keys) {
+        qint64 total = 0;
+        for (const QString& key : keys)
+            total += stats.value(key).toInteger();
+        return total;
+    };
+    for (std::size_t p = 0; p < m_projectedRows.size(); ++p) {
+        const qint64 period = kProjectionPeriods[p];
+        const auto scale = [&](qint64 value) {
+            return static_cast<qint64>(projected(value, period, sinceReset));
+        };
+        for (const ProjectedRow& row : m_projectedRows[p]) {
+            const qint64 value = sum(row.keys);
+            QString text;
+            switch (row.kind) {
+            case ProjectedRow::Bytes:
+                text = formatByteSize(scale(value));
+                break;
+            case ProjectedRow::BytesShare:
+                // the share is the cumulative one: scaling changes neither side
+                text = QStringLiteral("%1 %2").arg(formatByteSize(scale(value)),
+                                                   formatPercent(value, stats.value(row.second).toInteger()));
+                break;
+            case ProjectedRow::Count:
+                text = QString::number(scale(value));
+                break;
+            case ProjectedRow::Overhead:
+                text = QStringLiteral("%1 (%2)").arg(formatByteSize(scale(value)))
+                           .arg(scale(stats.value(row.second).toInteger()));
+                break;
+            }
+            row.item->setText(0, QStringLiteral("%1: %2").arg(row.label, text));
+        }
     }
 }
 
@@ -924,6 +1069,30 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     m_itemDownFoundSources->setText(0,
         tr("Found Sources: %1").arg(cborInt(stats, QLatin1StringView("downFoundSources"))));
     {
+        // Row order of StatsSnapshot::downSources (MFC StatisticsDlg.cpp:768-826)
+        const std::array<QString, 17> labels = {
+            tr("On Queue"), tr("Queue Full"), tr("No needed parts"), tr("Asking"),
+            tr("Receiving hashset"), tr("Connecting"), tr("Connecting via server"),
+            tr("Too many connections"), tr("Cannot connect LowID to LowID"),
+            tr("Problematic"), tr("Banned"), tr("Asked for another file"), tr("Unknown"),
+            tr("via eD2K Server"), tr("via Kad"), tr("via Source Exchange"), tr("via Passive")};
+        const std::array<QString, 3> networks = {
+            QStringLiteral("eD2K"), QStringLiteral("Kad"), QStringLiteral("eD2K/Kad")};
+        const QCborArray sources = stats.value(QLatin1StringView("downSources")).toArray();
+        const qint64 found = cborInt(stats, QLatin1StringView("downFoundSources"));
+        for (std::size_t i = 0; i < m_itemDownSources.size(); ++i) {
+            const qint64 n = sources.at(static_cast<qsizetype>(i)).toInteger();
+            m_itemDownSources[i]->setText(0, i < labels.size()
+                ? QStringLiteral("%1: %2").arg(labels[i]).arg(n)
+                : QStringLiteral("%1: %2 %3").arg(networks[i - labels.size()]).arg(n)
+                      .arg(formatPercent(n, found)));
+        }
+        const qint64 deadGlobal = cborInt(stats, QLatin1StringView("downDeadSourcesGlobal"));
+        const qint64 deadFiles = cborInt(stats, QLatin1StringView("downDeadSourcesPerFile"));
+        m_itemDownDeadSources->setText(0, tr("Dead Sources: %1 (%2 + %3)")
+            .arg(deadGlobal + deadFiles).arg(deadGlobal).arg(deadFiles));
+    }
+    {
         const qint64 reasks = cborInt(stats, QLatin1StringView("downUdpReasks"));
         const qint64 failed = cborInt(stats, QLatin1StringView("downUdpReasksFailed"));
         m_itemDownUdpReasks->setText(0,
@@ -1058,6 +1227,7 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
         m_itemStatsLastReset->setText(0, tr("Statistics Last Reset: %1").arg(lastResetText));
         m_itemTimeSinceReset->setText(0, tr("Time Since Last Reset: %1")
             .arg(formatDuration(cborInt(stats, QLatin1StringView("timeSinceReset")))));
+        updateProjectedAverages(stats);
     } else {
         m_itemStatsLastReset->setText(0, tr("Statistics Last Reset: %1").arg(lastResetText));
         m_itemTimeSinceReset->setText(0, tr("Time Since Last Reset: %1").arg(tr("Unknown")));

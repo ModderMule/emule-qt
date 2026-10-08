@@ -203,6 +203,42 @@ bool KnownFileList::safeAddKFile(KnownFile* file)
     return true;
 }
 
+bool KnownFileList::dropSupersededRecord(KnownFile* fresh)
+{
+    if (!fresh)
+        return false;
+    const auto size = static_cast<uint64>(fresh->fileSize());
+    if (size == 0 || size % PARTSIZE != 0)
+        return false;
+
+    const auto [first, last] = m_bySize.equal_range(size);
+    for (auto it = first; it != last; ++it) {
+        KnownFile* old = it->second;
+        if (old == fresh || old->fileIdentifier().hasExpectedMD4HashCount()
+            || md4equ(old->fileHash(), fresh->fileHash())
+            || old->fileName().compare(fresh->fileName(), Qt::CaseInsensitive) != 0
+            || !sameFileDate(old->utcFileDate(), fresh->utcFileDate(), true))
+            continue;
+        // The scan refused to match it, so it cannot be shared; stay safe anyway.
+        if (theApp.sharedFileList && theApp.sharedFileList->isFilePtrInList(old))
+            continue;
+
+        // safeAddKFile(fresh) adds the merged figures to the totals again
+        totalTransferred -= old->statistic.allTimeTransferred();
+        totalRequested -= old->statistic.allTimeRequests();
+        totalAccepted -= old->statistic.allTimeAccepts();
+        fresh->statistic.mergeFileStats(old->statistic);
+
+        old->detachUploadingClients();
+        m_filesMap.erase(MD4Key(old->fileHash()));
+        m_bySize.erase(it);
+        delete old;
+        markDirty();
+        return true;
+    }
+    return false;
+}
+
 void KnownFileList::remove(const KnownFile* file)
 {
     if (!file)

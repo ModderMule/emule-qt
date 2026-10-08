@@ -14,6 +14,7 @@
 /// QSortFilterProxyModel forwards data() down whatever stack it is sitting on,
 /// so one role lookup works however the proxies are arranged.
 
+#include "prefs/CategoryView.h"
 #include "prefs/DownloadCategory.h"
 
 #include <QList>
@@ -34,35 +35,9 @@ namespace eMule {
 /// SharedFilesModel's SharePartMapRole.
 inline constexpr int kCategoryRole = Qt::UserRole + 8;
 
-/// What a category's view filter needs to know about a top-level row
-/// (kCategoryFactsRole). A model that does not answer it is filtered by its
-/// category alone.
-struct CategoryRowFacts {
-    enum State { Other, Waiting, Transferring, Erroneous, Paused };
-
-    int category = 0;
-    QString fileName;
-    bool unfinished = true;      ///< MFC IsPartFile: not completed yet
-    State state = Other;
-    bool seenComplete = false;   ///< every part had a source at some time
-};
-
+/// A model answers CategoryRowFacts under this role; one that does not is filtered by
+/// its category alone.
 inline constexpr int kCategoryFactsRole = Qt::UserRole + 9;
-
-/// MFC's view filter modes (srchybrid/TransferWnd.cpp:706-748).
-namespace CategoryViewFilter {
-enum : int {
-    All = 0, Uncategorized = 1, Incomplete = 2, Completed = 3, Waiting = 4, Downloading = 5,
-    Erroneous = 6, Paused = 7, SeenComplete = 8,
-    Video = 10, Audio = 11, Archive = 12, CDImage = 13, Document = 14, Picture = 15,
-    Program = 16, RegExp = 18, Collection = 20
-};
-}
-
-/// Whether a row belongs on the tab of category @p inCategory — port of MFC
-/// CPartFile::CheckShowItemInGivenCat (srchybrid/PartFile.cpp:5055-5122).
-[[nodiscard]] bool categoryShowsRow(const QList<DownloadCategory>& categories, int inCategory,
-                                    const CategoryRowFacts& row);
 
 class CategoryFilterProxy : public QSortFilterProxyModel {
     Q_OBJECT

@@ -1222,9 +1222,10 @@ unRestore();
       <option value="">{{Any}}</option>
       <option value="Arc">{{Archive (.zip .rar ...)}}</option>
       <option value="Audio">{{Audio (.mp3 .ogg ...)}}</option>
-      <option value="Iso">{{CD Image (.iso .bin ...)}}</option>
+      <option value="Iso">{{CD-Image (.iso .bin ...)}}</option>
+      <option value="EmuleCollection">{{Collection}}</option>
       <option value="Doc">{{Document (.doc .pdf ...)}}</option>
-      <option value="Image">{{Image (.jpg .png ...)}}</option>
+      <option value="Image">{{Picture (.jpg .png ...)}}</option>
       <option value="Pro">{{Program (.exe ...)}}</option>
       <option value="Video">{{Video (.avi .mkv ...)}}</option>
      </select>
@@ -1277,7 +1278,7 @@ unRestore();
 
 <--TMPL_SEARCH_RESULT_LINE-->
 <tr>
- <td class="left"><span class="icon icon-file" style="vertical-align:middle"></span>&nbsp;[ResultName]</td>
+ <td class="left"><span class="icon icon-filetype_[ResultFileType]" style="vertical-align:middle"></span>&nbsp;[ResultName]</td>
  <td class="right">[ResultSize]</td>
  <td class="center" style="font-size:7pt">[ResultHash]</td>
  <td class="center">[ResultSources]</td>

@@ -9,11 +9,13 @@
 
 #include "client/UpDownClient.h"
 
+#include <QUrl>
 #include <QList>
 
 namespace eMule {
 
 class HostResolver;
+class TlsRelay;
 
 class URLClient : public UpDownClient {
     Q_OBJECT
@@ -65,6 +67,7 @@ public:
 
     [[nodiscard]] const QString& urlHost() const { return m_urlHost; }
     [[nodiscard]] uint16 urlPort() const { return m_urlPort; }
+    [[nodiscard]] bool urlIsTls() const { return m_urlTls; }
     [[nodiscard]] const QByteArray& urlPath() const { return m_urlPathLocal; }
 
 protected:
@@ -115,7 +118,10 @@ private:
     void connectToHost(); // create socket and initiate TCP connection
 
     HostResolver* m_hostResolver = nullptr;   // created on first hostname connect
+    QUrl m_url;                 ///< as last set; a relative redirect resolves against it
     QString m_urlHost;
+    bool m_urlTls = false;      ///< https: dialled through m_tlsRelay
+    TlsRelay* m_tlsRelay = nullptr;
     uint16 m_urlPort = 80;
     QByteArray m_urlPathLocal;
     static constexpr uint64 kNoRange = UINT64_MAX;

@@ -128,7 +128,9 @@ private slots:
 
     // OP_CHANGE_CLIENT_IP send path — flushPendingIPChange()
     void flushPendingIPChange_sendsExactWireBytes();
-    void flushPendingIPChange_accountsOverheadTwice();
+    void flushPendingIPChange_accountsOverheadOnce();
+    void sendPacket_booksOverheadByKind();
+    void processHashSet_refusalsThrow();
     void flushPendingIPChange_notPending_sendsNothing();
     void flushPendingIPChange_peerWithoutIPv6Support_sendsNothing();
     void flushPendingIPChange_noSocket_sendsNothing();
@@ -190,6 +192,7 @@ private slots:
     void markBlockDone_movesToDoneHead();
     void ban_setsState();
     void unBan_clearsState();
+    void setSpammer_bansAndUnbans();
     void unBan_clearsTheWaitTime();
 
     // Phase 3 tests — download
@@ -2173,6 +2176,27 @@ void tst_UpDownClient::unBan_clearsState()
     QVERIFY(!client.isBanned());
 }
 
+// MFC CUpDownClient::SetSpammer: the mark is a ban, and answering the peer lifts it.
+void tst_UpDownClient::setSpammer_bansAndUnbans()
+{
+    UpDownClient client;
+    client.setChatState(ChatState::Chatting);
+
+    client.setSpammer(true);
+    QVERIFY(client.isSpammer());
+    QVERIFY(client.isBanned());
+    QCOMPARE(client.chatState(), ChatState::None);
+
+    client.setSpammer(false);
+    QVERIFY(!client.isSpammer());
+    QVERIFY(!client.isBanned());
+
+    // A ban for another reason is not lifted by clearing a mark that was never set.
+    client.ban(QStringLiteral("aggressive"));
+    client.setSpammer(false);
+    QVERIFY(client.isBanned());
+}
+
 // L6: a ban ends with a fresh queue wait, not the one from before it.
 void tst_UpDownClient::unBan_clearsTheWaitTime()
 {
@@ -2639,12 +2663,10 @@ void tst_UpDownClient::flushPendingIPChange_sendsExactWireBytes()
     QCoreApplication::processEvents();
 }
 
-void tst_UpDownClient::flushPendingIPChange_accountsOverheadTwice()
+void tst_UpDownClient::flushPendingIPChange_accountsOverheadOnce()
 {
-    // Pins current behaviour: flushPendingIPChange() accounts the packet
-    // (UpDownClient.cpp:4492) and then UpDownClient::sendPacket() accounts it again
-    // (UpDownClient.cpp:1467), so one 16-byte notice shows up as 32 bytes of overhead.
-    // De-duplicating that later should be a deliberate change, not a silent one.
+    // The notice used to be booked at its call site and again in sendPacket(): 32
+    // bytes of overhead for a 16-byte packet.
     IPv6AdvertiseGuard guard;
     Statistics stats;
     theApp.statistics = &stats;
@@ -2659,11 +2681,86 @@ void tst_UpDownClient::flushPendingIPChange_accountsOverheadTwice()
     client.flushPendingIPChange();
     QVERIFY(waitForBytes(peer, 22));
 
-    QCOMPARE(stats.upDataOverheadOther(), static_cast<uint64>(32));
+    QCOMPARE(stats.upDataOverheadOther(), static_cast<uint64>(16));
 
     client.setSocket(nullptr);
     peer->close();
     theApp.statistics = nullptr;    // before `stats` leaves scope
+    QCoreApplication::processEvents();
+}
+
+// MFC books up overhead per call site; the port booked every client TCP packet as Other.
+void tst_UpDownClient::sendPacket_booksOverheadByKind()
+{
+    Statistics stats;
+    theApp.statistics = &stats;
+
+    QTcpServer server;
+    UpDownClient client;
+    QTcpSocket* peer = wireLoopbackSocket(server, client);
+    QVERIFY(peer != nullptr);
+
+    client.sendPacket(std::make_unique<Packet>(OP_REQUESTFILENAME, 16, OP_EDONKEYPROT));
+    QCOMPARE(stats.upDataOverheadFileRequest(), uint64{16});
+    client.sendPacket(std::make_unique<Packet>(OP_REASKCALLBACKTCP, 30, OP_EMULEPROT));
+    QCOMPARE(stats.upDataOverheadFileRequest(), uint64{46});
+    client.sendPacket(std::make_unique<Packet>(OP_ANSWERSOURCES2, 40, OP_EMULEPROT));
+    QCOMPARE(stats.upDataOverheadSourceExchange(), uint64{40});
+    client.sendPacket(std::make_unique<Packet>(OP_MESSAGE, 8, OP_EDONKEYPROT));
+    QCOMPARE(stats.upDataOverheadOther(), uint64{8});
+    QCOMPARE(stats.upDataOverheadFileRequestPackets(), uint64{2});
+
+    client.setSocket(nullptr);
+    peer->close();
+    theApp.statistics = nullptr;
+    QCoreApplication::processEvents();
+}
+
+// MFC ProcessHashSet throws on every refusal, so the peer is disconnected; the port
+// counted the strike and let the source idle in ReqHashSet.
+void tst_UpDownClient::processHashSet_refusalsThrow()
+{
+    ClientList clientList;
+    theApp.clientList = &clientList;
+
+    uint8 hash[16], other[16];
+    std::memset(hash, 0x41, 16);
+    std::memset(other, 0x42, 16);
+    PartFile file;
+    file.setFileHash(hash);
+    file.setFileSize(3 * PARTSIZE);
+    file.setFileName(QStringLiteral("hashset.bin"));
+
+    QTcpServer server;
+    UpDownClient client;
+    QTcpSocket* peer = wireLoopbackSocket(server, client);
+    QVERIFY(peer != nullptr);
+    client.setUserAddress(Address::fromString(QStringLiteral("10.20.30.50")));
+    client.setReqFile(&file);
+
+    QByteArray answer(reinterpret_cast<const char*>(other), 16);
+    answer.append(2, '\0');   // no part hashes
+    const auto feed = [&] {
+        client.processHashSet(reinterpret_cast<const uint8*>(answer.constData()),
+                              static_cast<uint32>(answer.size()), false);
+    };
+
+    // Not asked for
+    QVERIFY_THROWS_EXCEPTION(FileException, feed());
+    QCOMPARE(clientList.badRequests(&client), 0u);
+
+    // Asked, answered for another file: a strike and a throw
+    client.sendHashSetRequest();
+    QCOMPARE(client.downloadState(), DownloadState::ReqHashSet);
+    QVERIFY_THROWS_EXCEPTION(FileException, feed());
+
+    // The same answer again is unrequested now: the flag was cleared
+    QVERIFY_THROWS_EXCEPTION(FileException, feed());
+
+    client.setReqFile(nullptr);
+    client.setSocket(nullptr);
+    peer->close();
+    theApp.clientList = nullptr;
     QCoreApplication::processEvents();
 }
 

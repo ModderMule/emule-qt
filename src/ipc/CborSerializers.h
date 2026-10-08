@@ -213,7 +213,7 @@ inline void insertFakeVerdict(QCborMap& m, const FakeFileVerdict& verdict)
         {QStringLiteral("completeSourcesLo"),   static_cast<int>(f.completeSourcesCountLo())},
         {QStringLiteral("completeSourcesHi"),   static_cast<int>(f.completeSourcesCountHi())},
         {QStringLiteral("timeRemaining"),       static_cast<qint64>(f.timeRemaining())},
-        // Bytes received for this file; "transferredData" below is the upload statistic
+        // Bytes received for this file; "upTransferred" below is the upload statistic
         {QStringLiteral("downTransferred"),     static_cast<qint64>(f.transferred())},
         // Advanced-mode per-file settings (MFC Source Handling / Preview submenus)
         {QStringLiteral("privateMaxSources"),   static_cast<qint64>(f.privateMaxSources())},
@@ -225,7 +225,7 @@ inline void insertFakeVerdict(QCborMap& m, const FakeFileVerdict& verdict)
         {QStringLiteral("fileType"),            f.fileType()},
         {QStringLiteral("requests"),            static_cast<qint64>(f.statistic.allTimeRequests())},
         {QStringLiteral("acceptedReqs"),        static_cast<qint64>(f.statistic.allTimeAccepts())},
-        {QStringLiteral("transferredData"),     static_cast<qint64>(f.statistic.allTimeTransferred())},
+        {QStringLiteral("upTransferred"),       static_cast<qint64>(f.statistic.allTimeTransferred())},
         {QStringLiteral("partMap"),             buildPartMap(f)},
         // Byte-exact bar data: the progress bar draws gaps and pending blocks where they sit
         {QStringLiteral("gaps"),                buildGapRanges(f)},
@@ -349,6 +349,9 @@ inline void insertBindState(QCborMap& info)
         m.insert(QStringLiteral("aichHash"), f.fileIdentifier().getAICHHash().getString());
     // The advanced-mode detail behind Availability (MFC SearchListCtrl.cpp:1555-1567)
     m.insert(QStringLiteral("kadPublishers"), static_cast<int>((f.kadPublishInfo() >> 16) & 0xFF));
+    // ... and the rest of the publish info: different names, trust x100 (ibid. :1569-1575)
+    m.insert(QStringLiteral("kadNames"),      static_cast<int>((f.kadPublishInfo() >> 24) & 0xFF));
+    m.insert(QStringLiteral("kadTrust"),      static_cast<int>(f.kadPublishInfo() & 0xFFFF));
     m.insert(QStringLiteral("clientCount"),   static_cast<int>(f.clientsCount()));
     // The names this file was found under, once there is more than one (MFC's child rows)
     if (f.listChildCount() > 1) {
@@ -456,7 +459,8 @@ inline void insertBindState(QCborMap& info)
     m.insert(QStringLiteral("userName"),        c.userName());
     m.insert(QStringLiteral("userHash"),        md4str(c.userHash()));
     m.insert(QStringLiteral("software"),        c.dbgGetFullClientSoftVer());
-    m.insert(QStringLiteral("uploadState"),     c.uploadStateDisplayString());
+    m.insert(QStringLiteral("uploadState"),     c.uploadStateToken());
+    m.insert(QStringLiteral("uploadStalled"),   c.uploadStalled());
     m.insert(QStringLiteral("downloadState"),   c.downloadStateDisplayString());
     m.insert(QStringLiteral("sourceFrom"),      static_cast<int>(c.sourceFrom()));
     // Upload fields

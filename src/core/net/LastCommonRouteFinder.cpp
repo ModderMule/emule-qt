@@ -18,15 +18,13 @@ namespace eMule {
 // Constants
 // ---------------------------------------------------------------------------
 
-static constexpr int kMinHostsForTraceroute = 5;
 static constexpr int kMaxTTL = 64;
 static constexpr int kBaselinePingCount = 10;
-static constexpr uint32 kPingInterval = 1000;       // 1 second
-static constexpr uint32 kHostCollectTimeoutMs = 180'000; // 3 minutes
-static constexpr uint32 kPrefsTimeoutMs = 180'000;  // 3 minutes
-static constexpr uint32 kMaxPingMs = 5000;
-
-static constexpr int kMaxPingTries = 60;            // then look for a new host
+static constexpr uint32 kBaselinePingInterval = 200;
+static constexpr uint32 kHostAskIntervalMs = 30'000;  // ask the lists again
+static constexpr uint32 kPrefsTimeoutMs = 180'000;    // 3 minutes
+static constexpr int kMaxPingTries = 60;              // then trace the route anew
+static constexpr uint32 kTraceUpload = 2 * 1024;      // upload held down while tracing
 
 // ---------------------------------------------------------------------------
 // Construction / destruction
@@ -69,7 +67,7 @@ bool LastCommonRouteFinder::addHostsToCheck(const std::vector<uint32>& ips)
             m_hostsToTraceRoute[ip] = 0;
     }
 
-    if (static_cast<int>(m_hostsToTraceRoute.size()) >= kMinHostsForTraceroute) {
+    if (m_hostsToTraceRoute.size() >= kHostsToTrace) {
         m_needMoreHosts = false;
         m_hostsCV.notify_all();
     }
@@ -79,13 +77,46 @@ bool LastCommonRouteFinder::addHostsToCheck(const std::vector<uint32>& ips)
 USSStatus LastCommonRouteFinder::currentStatus() const
 {
     std::lock_guard lock(m_pingMutex);
-    return USSStatus{
-        m_stateString,
-        m_pingAverage,
-        m_lowestPing,
-        m_upload.load(),
-        m_controlling
-    };
+    USSStatus status;
+    status.phase = m_state;
+    switch (m_state) {
+    case UssState::Off:       status.state = QStringLiteral("USS disabled"); break;
+    case UssState::Preparing: status.state = QStringLiteral("Preparing..."); break;
+    case UssState::Waiting:   status.state = QStringLiteral("Waiting..."); break;
+    case UssState::Error:     status.state = QStringLiteral("Error!"); break;
+    case UssState::Active:    status.state = QStringLiteral("Active"); break;
+    }
+    status.latency = m_pingAverage;
+    status.lowest = m_lowestPing;
+    status.currentLimit = m_upload.load();
+    status.active = m_state == UssState::Active;
+    return status;
+}
+
+void LastCommonRouteFinder::setState(UssState state)
+{
+    std::lock_guard lock(m_pingMutex);
+    m_state = state;
+}
+
+bool LastCommonRouteFinder::enabledNow() const
+{
+    std::lock_guard lock(m_prefsMutex);
+    return m_enabled;
+}
+
+bool LastCommonRouteFinder::hasGivenUp() const
+{
+    std::lock_guard lock(m_prefsMutex);
+    return m_gaveUp;
+}
+
+bool LastCommonRouteFinder::waitWhileEnabled(uint32 ms)
+{
+    std::unique_lock lock(m_prefsMutex);
+    m_prefsCV.wait_for(lock, std::chrono::milliseconds(ms),
+                       [this] { return !m_run.load() || !m_enabled; });
+    return m_run.load() && m_enabled;
 }
 
 bool LastCommonRouteFinder::acceptNewClient() const
@@ -109,7 +140,10 @@ bool LastCommonRouteFinder::setPrefs(const USSParams& params)
         m_numberOfPingsForAverage = params.numberOfPingsForAverage;
         m_lowestInitialPingAllowed = params.lowestInitialPingAllowed;
         m_useMillisecondPingTolerance = params.useMillisecondPingTolerance;
-        m_enabled = params.enabled;
+        // After giving up the option has to go off once before it counts again
+        if (!params.enabled)
+            m_gaveUp = false;
+        m_enabled = params.enabled && !m_gaveUp;
         m_prefsReceived = true;
 
         // A changed limit counts at once, not when run() next wakes. MFC :211-212.
@@ -214,6 +248,105 @@ uint32 LastCommonRouteFinder::median(std::vector<uint32>& values)
 }
 
 // ---------------------------------------------------------------------------
+// Hop search
+// ---------------------------------------------------------------------------
+
+RouteProbe LastCommonRouteFinder::traceLastCommonHost(std::vector<uint32>& hosts,
+                                                      const PingFn& ping,
+                                                      const std::function<bool()>& keepGoing,
+                                                      const std::function<void(uint32)>& pause)
+{
+    RouteProbe probe;
+    bool failed = false;
+    uint32 curHost = 0;   // router answering at this TTL
+
+    // No router within the first four hops: there is nothing to trace
+    for (int ttl = 1; keepGoing() && !probe.found && !failed
+                      && ((curHost != 0 && ttl <= kMaxTTL) || (curHost == 0 && ttl < 5)); ++ttl)
+    {
+        probe.useUdp = false;
+        curHost = 0;
+        uint32 lastSuccessfulPingAddress = 0;
+        uint32 lastDestinationAddress = 0;
+        uint32 hostCounter = 0;
+        bool failedThisTtl = false;
+
+        // Stops at the first host answering from another router than the one before
+        for (std::size_t i = 0; keepGoing() && !failed && !failedThisTtl && i < hosts.size()
+                                && (lastDestinationAddress == 0 || lastDestinationAddress == curHost);)
+        {
+            ++hostCounter;
+            const uint32 address = hosts[i];
+
+            PingStatus status;
+            for (int cnt = 0; keepGoing() && cnt < 2; ++cnt) {
+                status = ping(address, static_cast<uint8>(ttl), probe.useUdp);
+                if (status.success
+                    && (status.status == kPingSuccess || status.status == kPingTTLExpired))
+                    break;
+                if (cnt == 0)
+                    pause(1000);
+                probe.useUdp = !probe.useUdp;
+            }
+
+            bool removed = false;
+            if (status.success) {
+                switch (status.status) {
+                case kPingTTLExpired:
+                    if (curHost == 0)
+                        curHost = status.destinationAddress;
+                    lastSuccessfulPingAddress = address;
+                    lastDestinationAddress = status.destinationAddress;
+                    break;
+                case kPingSuccess:           // answered itself: closer than the hop
+                case kPingDestUnreachable:
+                    hosts.erase(hosts.begin() + static_cast<std::ptrdiff_t>(i));
+                    removed = true;
+                    break;
+                default:
+                    probe.useUdp = !probe.useUdp;
+                }
+            } else {
+                if (status.error == kPingTimedOut) {
+                    // A silent host stays; three silent ones in a row end this TTL
+                    if (hostCounter > 2 && lastSuccessfulPingAddress == 0)
+                        failedThisTtl = true;
+                } else {
+                    probe.useUdp = !probe.useUdp;
+                }
+                if (hosts.size() <= kTooFewHosts)
+                    failed = true;
+            }
+            if (!removed)
+                ++i;
+        }
+
+        if (failed)
+            break;
+        if (curHost != 0 && lastDestinationAddress != 0) {
+            if (lastDestinationAddress == curHost) {
+                probe.lastCommonHost = curHost;
+                probe.lastCommonTTL = static_cast<uint8>(ttl);
+            } else {
+                // The routes part here: ping a host behind the last shared router
+                probe.found = true;
+                probe.hostToPing = lastSuccessfulPingAddress;
+                if (probe.lastCommonHost == 0) {
+                    // The hop before could not be pinged; take this one on trust
+                    probe.lastCommonHost = lastDestinationAddress;
+                    probe.lastCommonTTL = static_cast<uint8>(ttl);
+                }
+            }
+        } else {
+            probe.lastCommonHost = 0;
+        }
+    }
+    if (!probe.found)
+        probe.lastCommonHost = 0;
+    return probe;
+}
+
+// ---------------------------------------------------------------------------
 // Thread entry
 // ---------------------------------------------------------------------------
 
@@ -233,25 +366,23 @@ void LastCommonRouteFinder::run()
                            [this] { return !m_run.load() || m_enabled || m_prefsReceived; });
     }
 
-    while (m_run.load()) {
-        bool enabled;
-        {
-            std::lock_guard lock(m_prefsMutex);
-            enabled = m_enabled;
-        }
+    // A route that was found once is searched for without limit; a first search gives
+    // up after five tries (MFC hasSucceededAtLeastOnce).
+    bool hasSucceededAtLeastOnce = false;
 
-        if (!enabled) {
+    while (m_run.load()) {
+        if (!enabledNow()) {
             // USS disabled — pass through the prefs upload limit
             {
                 std::lock_guard lock(m_prefsMutex);
                 m_upload.store(m_maxUpload);
             }
             m_acceptNewClient.store(true);
-
             {
+                // "Error!" stays up: the option went off because tracing failed
                 std::lock_guard lock(m_pingMutex);
-                m_stateString = QStringLiteral("USS disabled");
-                m_controlling = false;
+                if (m_state != UssState::Error)
+                    m_state = UssState::Off;
             }
 
             // Wait for prefs change or stop
@@ -261,194 +392,160 @@ void LastCommonRouteFinder::run()
             continue;
         }
 
-        // --- Phase 1: Collect hosts for traceroute ---
+        // --- Phase 1 + 2: collect hosts, trace the route (MFC :273-500) ---
         {
             std::lock_guard lock(m_pingMutex);
-            m_stateString = QStringLiteral("Collecting hosts for traceroute...");
-            m_controlling = false;
+            m_state = UssState::Preparing;
+            m_pingDelays.clear();
+            m_pingDelaysTotal = 0;
+            m_pingAverage = 0;
+            m_lowestPing = 0;
         }
-
         {
             std::lock_guard lock(m_hostsMutex);
             m_hostsToTraceRoute.clear();
-            m_needMoreHosts = true;
         }
 
-        emit needMoreHosts();
-
-        // Wait for hosts
+        uint32 startUpload;
         {
-            std::unique_lock lock(m_hostsMutex);
-            m_hostsCV.wait_for(lock, std::chrono::milliseconds(kHostCollectTimeoutMs),
-                               [this] {
-                                   return !m_run.load() || !m_needMoreHosts;
-                               });
+            std::lock_guard lock(m_prefsMutex);
+            startUpload = m_maxUpload != UINT32_MAX ? m_maxUpload
+                                                    : std::max<uint32>(m_curUpload, 10 * 1024);
         }
 
-        if (!m_run.load())
-            break;
+        const auto keepGoing = [this] { return m_run.load() && enabledNow(); };
+        const PingFn pingFn = [&pinger](uint32 addr, uint8 ttl, bool useUdp) {
+            return pinger.ping(addr, ttl, useUdp);
+        };
 
-        // Snapshot hosts
-        std::vector<uint32> hostIPs;
+        RouteProbe probe;
+        std::vector<uint32> hosts;
+        for (uint32 tries = 0; keepGoing() && !probe.found
+                               && (tries < 5 || hasSucceededAtLeastOnce);)
         {
-            std::lock_guard lock(m_hostsMutex);
-            hostIPs.reserve(m_hostsToTraceRoute.size());
-            for (auto& [ip, _] : m_hostsToTraceRoute)
-                hostIPs.push_back(ip);
-        }
+            ++tries;
 
-        if (hostIPs.empty()) {
-            logWarning(QStringLiteral("USS: No hosts available for traceroute, retrying..."));
-            QThread::msleep(5000);
-            continue;
-        }
-
-        // --- Phase 2: Traceroute to find last common hop ---
-        {
-            std::lock_guard lock(m_pingMutex);
-            m_stateString = QStringLiteral("Finding last common router hop...");
-        }
-
-        uint32 lastCommonHost = 0;
-        uint8 lastCommonTTL = 0;
-
-        if (!pinger.isIcmpAvailable()) {
-            logWarning(QStringLiteral("USS: ICMP not available, using first host directly"));
-            lastCommonHost = hostIPs.front();
-            lastCommonTTL = kDefaultTTL;
-        } else {
-            // For each TTL, ping all hosts and check if responses come from same IP
-            for (uint8 ttl = 1; ttl <= kMaxTTL && m_run.load(); ++ttl) {
-                std::unordered_map<uint32, int> responseIPs;
-                int validResponses = 0;
-
-                for (uint32 hostIP : hostIPs) {
-                    if (!m_run.load())
+            // Hosts dropped by an earlier try are made up for
+            {
+                std::lock_guard lock(m_hostsMutex);
+                m_needMoreHosts = m_hostsToTraceRoute.size() < kHostsToTrace;
+            }
+            for (;;) {
+                {
+                    std::lock_guard lock(m_hostsMutex);
+                    if (!m_needMoreHosts)
                         break;
-
-                    PingStatus ps = pinger.ping(hostIP, ttl);
-                    if (ps.success) {
-                        ++validResponses;
-                        responseIPs[ps.destinationAddress]++;
-                    }
                 }
-
-                if (!m_run.load())
+                emit needMoreHosts();
+                {
+                    std::unique_lock lock(m_hostsMutex);
+                    m_hostsCV.wait_for(lock, std::chrono::milliseconds(kHostAskIntervalMs),
+                                       [this] { return !m_run.load() || !m_needMoreHosts; });
+                }
+                if (!keepGoing())
                     break;
+            }
+            if (!keepGoing())
+                break;
+            {
+                std::lock_guard lock(m_hostsMutex);
+                hosts.clear();
+                for (const auto& [ip, _] : m_hostsToTraceRoute)
+                    hosts.push_back(ip);
+            }
 
-                if (validResponses == 0)
-                    continue;
+            // Our own upload would distort the pings
+            m_upload.store(kTraceUpload);
+            emit uploadLimitChanged(kTraceUpload);
+            if (!waitWhileEnabled(1000))
+                break;
 
-                // Check if all responses came from same IP
-                if (responseIPs.size() == 1) {
-                    lastCommonHost = responseIPs.begin()->first;
-                    lastCommonTTL = ttl;
-                } else if (responseIPs.size() > 1) {
-                    // Responses diverged — we found it
-                    if (lastCommonHost != 0)
-                        break; // Use the previous TTL's common host
+            logDebug(QStringLiteral("USS: Try #%1, tracing %2 hosts").arg(tries).arg(hosts.size()));
+            probe = traceLastCommonHost(hosts, pingFn, keepGoing,
+                                        [this](uint32 ms) { waitWhileEnabled(ms); });
 
-                    // No common hop found before divergence; use the most frequent
-                    uint32 bestIP = 0;
-                    int bestCount = 0;
-                    for (auto& [ip, count] : responseIPs) {
-                        if (count > bestCount) {
-                            bestCount = count;
-                            bestIP = ip;
-                        }
-                    }
-                    lastCommonHost = bestIP;
-                    lastCommonTTL = ttl;
-                    break;
+            // What the try dropped (too close, unreachable) stays dropped
+            {
+                std::lock_guard lock(m_hostsMutex);
+                std::erase_if(m_hostsToTraceRoute, [&hosts](const auto& entry) {
+                    return std::ranges::find(hosts, entry.first) == hosts.end();
+                });
+            }
+
+            if (!probe.found && tries >= 3 && keepGoing()) {
+                logDebug(QStringLiteral("USS: Tracing failed several times, resting 3 minutes"));
+                {
+                    std::lock_guard lock(m_prefsMutex);
+                    m_upload.store(m_maxUpload);
                 }
-
-                // Check if any host responded with its own IP (reached destination)
-                bool reachedDest = false;
-                for (uint32 hip : hostIPs) {
-                    if (responseIPs.contains(hip)) {
-                        reachedDest = true;
-                        break;
-                    }
-                }
-                if (reachedDest) {
-                    // All hosts are on same subnet; use previous hop if available
-                    if (lastCommonHost != 0)
-                        break;
-                    // Otherwise use the destination itself
-                    lastCommonHost = responseIPs.begin()->first;
-                    lastCommonTTL = ttl;
-                    break;
-                }
+                emit uploadLimitChanged(m_upload.load());
+                setState(UssState::Waiting);
+                waitWhileEnabled(3 * 60 * 1000);
+                setState(UssState::Preparing);
             }
         }
 
         if (!m_run.load())
             break;
-
-        if (lastCommonHost == 0) {
-            logWarning(QStringLiteral("USS: Could not find common route, retrying..."));
-            QThread::msleep(10'000);
+        if (!enabledNow())
             continue;
-        }
 
-        logInfo(QStringLiteral("USS: Found last common hop at TTL %1: %2")
-                    .arg(lastCommonTTL)
-                    .arg(ipstr(lastCommonHost)));
-
-        // --- Phase 3: Establish baseline ping ---
-        {
-            std::lock_guard lock(m_pingMutex);
-            m_stateString = QStringLiteral("Establishing baseline ping...");
-        }
-
-        std::vector<uint32> baselinePings;
-        baselinePings.reserve(kBaselinePingCount);
-
-        for (int i = 0; i < kBaselinePingCount && m_run.load(); ++i) {
-            PingStatus ps = pinger.ping(lastCommonHost, lastCommonTTL);
-            if (ps.success && ps.delay < kMaxPingMs) {
-                baselinePings.push_back(static_cast<uint32>(ps.delay));
+        if (!probe.found) {
+            logWarning(QStringLiteral("UploadSpeedSense: Tracing the route failed too often. "
+                                      "Disabling UploadSpeedSense."));
+            {
+                std::lock_guard lock(m_prefsMutex);
+                m_gaveUp = true;
+                m_enabled = false;
+                m_upload.store(m_maxUpload);
             }
-            QThread::msleep(kPingInterval);
-        }
-
-        if (!m_run.load())
-            break;
-
-        if (baselinePings.empty()) {
-            logWarning(QStringLiteral("USS: Could not establish baseline ping, retrying..."));
-            QThread::msleep(10'000);
+            setState(UssState::Error);
+            emit tracerouteGaveUp();
             continue;
         }
 
-        uint32 initialPing = median(baselinePings);
+        const uint32 lastCommonHost = probe.lastCommonHost;
+        const uint8 lastCommonTTL = probe.lastCommonTTL;
+        const uint32 hostToPing = probe.hostToPing;
+        bool useUdp = probe.useUdp;
+        logInfo(QStringLiteral("USS: Last common hop at TTL %1: %2, pinging through it to %3")
+                    .arg(lastCommonTTL).arg(ipstr(lastCommonHost), ipstr(hostToPing)));
 
+        // --- Phase 3: lowest ping, the smallest of ten (MFC :502-549) ---
         uint32 lowestInitAllowed;
         {
             std::lock_guard lock(m_prefsMutex);
             lowestInitAllowed = m_lowestInitialPingAllowed;
         }
-
-        if (initialPing < lowestInitAllowed) {
-            logInfo(QStringLiteral("USS: Baseline ping %1ms below minimum %2ms, using minimum")
-                        .arg(initialPing).arg(lowestInitAllowed));
+        uint32 initialPing = UINT32_MAX;
+        bool foundWorkingPingMethod = false;
+        for (int i = 0; i < kBaselinePingCount && keepGoing(); ++i) {
+            QThread::msleep(kBaselinePingInterval);
+            const PingStatus ps = pinger.ping(hostToPing, lastCommonTTL, useUdp);
+            if (ps.success && ps.status == kPingTTLExpired) {
+                foundWorkingPingMethod = true;
+                if (ps.delay > 0 && ps.delay < static_cast<float>(initialPing))
+                    initialPing = std::max(static_cast<uint32>(ps.delay), lowestInitAllowed);
+            } else if (!ps.success && !foundWorkingPingMethod) {
+                useUdp = !useUdp;
+            }
+        }
+        if (initialPing == UINT32_MAX)
             initialPing = lowestInitAllowed;
-        }
 
-        {
-            std::lock_guard lock(m_pingMutex);
-            m_lowestPing = initialPing;
-            m_pingDelays.clear();
-            m_pingDelaysTotal = 0;
-        }
+        m_upload.store(startUpload);
+        emit uploadLimitChanged(startUpload);
+        if (!waitWhileEnabled(1000))
+            continue;
+        hasSucceededAtLeastOnce = true;
 
-        logInfo(QStringLiteral("USS: Baseline ping: %1ms").arg(initialPing));
+        logInfo(QStringLiteral("USS: Lowest ping: %1 ms").arg(initialPing));
 
         // --- Phase 4: Dynamic adjustment loop ---
         {
             std::lock_guard lock(m_pingMutex);
-            m_stateString = QStringLiteral("Active — monitoring latency");
-            m_controlling = true;
+            m_lowestPing = initialPing;
+            m_state = UssState::Active;
         }
 
         // The staged ramp runs from here, and again from every manual limit change.
@@ -457,13 +554,10 @@ void LastCommonRouteFinder::run()
         QElapsedTimer loopTimer;
         loopTimer.start();
 
-        // Published limit starts at the maximum (unlimited: at what we upload now);
-        // the controller itself starts from the measured rate. MFC :294, :539, :558-559.
+        // The controller itself starts from the measured rate. MFC :558-559.
         uint32 upload;
         {
             std::lock_guard lock(m_prefsMutex);
-            m_upload.store(m_maxUpload != UINT32_MAX ? m_maxUpload
-                                                     : std::max<uint32>(m_curUpload, 10 * 1024));
             upload = std::min(std::max(m_curUpload, m_minUpload), m_maxUpload);
         }
 
@@ -501,38 +595,31 @@ void LastCommonRouteFinder::run()
                 rampTimer.restart();
             rampDividers(rampTimer.elapsed(), goingUpDiv, goingDownDiv);
 
-            // Ping the common hop; a silent hop is retried before the route is given up.
+            // Ping through the common hop: the answer is its "TTL exceeded". A silent
+            // hop is retried for a while before the route is traced anew (MFC :640-668).
             bool pinged = false;
             uint32 pingMs = 0;
-            for (int tries = 0; m_run.load() && !pinged && tries < kMaxPingTries; ++tries) {
-                {
-                    std::lock_guard lock(m_prefsMutex);
-                    if (!m_enabled)
-                        break;
-                }
-                const PingStatus ps = pinger.ping(lastCommonHost, lastCommonTTL);
-                if (ps.success && ps.delay < kMaxPingMs) {
+            for (int tries = 0; keepGoing() && !pinged && tries < kMaxPingTries; ++tries) {
+                const PingStatus ps = pinger.ping(hostToPing, lastCommonTTL, useUdp);
+                if (ps.success && ps.status == kPingTTLExpired) {
+                    if (ps.destinationAddress != lastCommonHost) {
+                        logInfo(QStringLiteral("USS: Network topology has changed at TTL %1 "
+                                               "(expected %2, got %3), tracing again")
+                                    .arg(lastCommonTTL)
+                                    .arg(ipstr(lastCommonHost), ipstr(ps.destinationAddress)));
+                        restart = true;
+                    }
                     pingMs = static_cast<uint32>(ps.delay);
                     pinged = true;
-                } else if (ps.success && ps.destinationAddress != lastCommonHost
-                           && ps.destinationAddress != 0 && ps.status != kPingTTLExpired) {
-                    logInfo(QStringLiteral("USS: Topology change detected, restarting traceroute"));
-                    restart = true;
-                    break;
                 } else if (tries > 3) {
-                    QThread::msleep(1000);
+                    waitWhileEnabled(1000);
                 }
             }
-            if (restart || !m_run.load())
+            if (!m_run.load())
                 break;
             if (!pinged) {
-                bool stillEnabled;
-                {
-                    std::lock_guard lock(m_prefsMutex);
-                    stillEnabled = m_enabled;
-                }
-                if (stillEnabled)
-                    logInfo(QStringLiteral("USS: No answer from the pinged hop, restarting traceroute"));
+                if (enabledNow())
+                    logInfo(QStringLiteral("USS: No answer to pings for a long time, tracing again"));
                 break;
             }
 
@@ -569,12 +656,7 @@ void LastCommonRouteFinder::run()
         }
     }
 
-    // Clean up
-    {
-        std::lock_guard lock(m_pingMutex);
-        m_stateString = QStringLiteral("Stopped");
-        m_controlling = false;
-    }
+    setState(UssState::Off);
 }
 
 } // namespace eMule

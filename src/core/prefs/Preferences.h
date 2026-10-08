@@ -509,6 +509,9 @@ public:
 
     // Upload SpeedSense (USS)
     [[nodiscard]] bool dynUpEnabled() const;
+    /// The option, or implied by an unknown upload capacity (0). What the core acts on;
+    /// dynUpEnabled() is the checkbox.
+    [[nodiscard]] bool isDynUpEnabled() const;
     void setDynUpEnabled(bool val);
 
     [[nodiscard]] int dynUpPingTolerance() const;

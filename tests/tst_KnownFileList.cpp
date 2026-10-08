@@ -28,6 +28,7 @@ private slots:
     void findKnownFile_notFound();
     void findKnownFile_followsAddReplaceRemove();
     void findKnownFile_skipsARecordShortOfTheBoundaryHash();
+    void dropSupersededRecord_replacesTheShortBoundaryRecord();
     void findKnownFileByID();
     void findKnownFileByPath();
     void isKnownFile_check();
@@ -164,6 +165,53 @@ void tst_KnownFileList::findKnownFile_skipsARecordShortOfTheBoundaryHash()
     QVERIFY(!list.findKnownFile(QStringLiteral("tiny.bin"), 100, PARTSIZE));
     // Off the boundary nothing changes, whatever the record holds.
     QCOMPARE(list.findKnownFile(QStringLiteral("odd.bin"), 100, 2 * PARTSIZE + 1), odd);
+}
+
+// The short record used to stay in known.met for good, under a hash nobody computes.
+void tst_KnownFileList::dropSupersededRecord_replacesTheShortBoundaryRecord()
+{
+    KnownFileList list;
+    const auto make = [](uint8 hashByte, const QString& name, uint64 size, int partHashes) {
+        auto* f = new KnownFile();
+        uint8 hash[16];
+        std::memset(hash, hashByte, 16);
+        f->setFileHash(hash);
+        f->setFileName(name);
+        f->setUtcFileDate(100);
+        f->setFileSize(size);
+        auto& set = f->fileIdentifier().getRawMD4HashSet();
+        for (int i = 0; i < partHashes; ++i)
+            set.push_back({});
+        return f;
+    };
+
+    auto* stale = make(1, QStringLiteral("movie.bin"), 2 * PARTSIZE, 2);
+    stale->statistic.setAllTimeTransferred(5000);
+    stale->statistic.setAllTimeRequests(7);
+    auto* other = make(2, QStringLiteral("other.bin"), 2 * PARTSIZE, 2);   // another name
+    auto* whole = make(3, QStringLiteral("MOVIE.bin"), 2 * PARTSIZE, 3);   // already right
+    for (auto* f : {stale, other, whole})
+        QVERIFY(list.safeAddKFile(f));
+    QCOMPARE(list.totalTransferred, uint64{5000});
+
+    auto* fresh = make(9, QStringLiteral("Movie.bin"), 2 * PARTSIZE, 3);
+    QVERIFY(list.dropSupersededRecord(fresh));
+    QVERIFY(list.safeAddKFile(fresh));
+
+    uint8 hash[16];
+    std::memset(hash, 1, 16);
+    QVERIFY(!list.findKnownFileByID(hash));
+    QVERIFY(list.isKnownFile(other));
+    QVERIFY(list.isKnownFile(whole));
+    QCOMPARE(fresh->statistic.allTimeTransferred(), uint64{5000});
+    QCOMPARE(fresh->statistic.allTimeRequests(), uint32{7});
+    QCOMPARE(list.totalTransferred, uint64{5000});
+    QCOMPARE(list.totalRequested, uint32{7});
+
+    // Off a part boundary there is no such record to look for.
+    auto* odd = make(10, QStringLiteral("other.bin"), 2 * PARTSIZE + 1, 3);
+    QVERIFY(!list.dropSupersededRecord(odd));
+    delete odd;
 }
 
 void tst_KnownFileList::findKnownFileByID()

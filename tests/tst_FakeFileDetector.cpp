@@ -22,6 +22,8 @@ private slots:
     void nameGroups_sameContent_data();
     void nameGroups_sameContent();
     void nameGroups_unrelatedNames();
+    void nameGroups_keywordAloneDoesNotJoin();
+    void abuseNames_lowerTheScore();
     void namesSpanKinds();
     void badSignalName_tokensAndRegex();
     void badSignalComment();
@@ -146,6 +148,71 @@ void tst_FakeFileDetector::nameGroups_unrelatedNames()
     QCOMPARE(countNameGroups({QStringLiteral("1080p.x264.mkv"), QStringLiteral("12345.avi")}), 0);
 }
 
+void tst_FakeFileDetector::nameGroups_keywordAloneDoesNotJoin()
+{
+    // Seen in the index: two unrelated long names with one word in common
+    const QStringList names{
+        QStringLiteral("Casual Summer - Irina and the old lighthouse keeper.avi"),
+        QStringLiteral("Russian Summer school documentary part one.avi")};
+    QCOMPARE(countNameGroups(names), 2);
+
+    // Two shared words, or one that is most of a short name, still join
+    QCOMPARE(countNameGroups({QStringLiteral("Summer Lighthouse Irina Casual.avi"),
+                              QStringLiteral("irina - lighthouse (director's cut).avi")}), 1);
+    QCOMPARE(countNameGroups({QStringLiteral("Matrix.avi"),
+                              QStringLiteral("The Matrix 1999 german dubbed by somebody.avi")}), 1);
+
+    // The search's own words are no link at all
+    const QStringList pair{QStringLiteral("Matrix Cooking.avi"), QStringLiteral("Matrix Gardening.avi")};
+    QCOMPARE(countNameGroups(pair), 1);
+    QCOMPARE(countNameGroups(pair, searchKeywordTokens(QStringLiteral("MATRIX avi"))), 2);
+    FakeFileInput in = video(pair.first());
+    in.observedNames = pair;
+    in.kadTrust = KadTrust::High;
+    QCOMPARE(assess(in).band, Confidence::Genuine);
+    in.ignoredNameWords = searchKeywordTokens(QStringLiteral("matrix"));
+    QVERIFY(assess(in).has(FakeReason::MultipleNames));
+    QCOMPARE(assess(in).band, Confidence::LooksGood);
+
+    // A name that is nothing but the keyword says nothing
+    QCOMPARE(countNameGroups({QStringLiteral("matrix.avi")}, searchKeywordTokens(QStringLiteral("matrix"))), 0);
+}
+
+void tst_FakeFileDetector::abuseNames_lowerTheScore()
+{
+    // A trade word: suspect, never hidden
+    FakeFileVerdict v = assess(video(QStringLiteral("(PTHC) some name.avi")));
+    QVERIFY(v.reasons.contains({FakeReason::AbuseContentName, 50}));
+    QCOMPARE(v.band, Confidence::Suspect);
+    QCOMPARE(abuseNameTier(QStringLiteral("x r@ygold y.mpg"), FakeFileRules::defaults()), 2);
+
+    // A word with an innocent use: caution
+    v = assess(video(QStringLiteral("Lolita (1962) Stanley Kubrick.mkv")));
+    QVERIFY(v.reasons.contains({FakeReason::AbuseContentName, 25}));
+    QCOMPARE(v.band, Confidence::Caution);
+    QCOMPARE(abuseNameTier(QStringLiteral("some 12yo thing.avi"), FakeFileRules::defaults()), 1);
+
+    // Whole words; adult names and ages from 16 up are not it
+    for (const QString& name : {QStringLiteral("Teen Titans S01E02.mkv"),
+                                QStringLiteral("Torpedo boats 1943.avi"),
+                                QStringLiteral("Hot 18yo teens xxx.avi"),
+                                QStringLiteral("Tu y yo 2.avi"),
+                                QStringLiteral("English for kids 5 years old.pdf")})
+        QCOMPARE(abuseNameTier(name, FakeFileRules::defaults()), 0);
+
+    // Another name of the hash counts, and High trust cannot make it genuine
+    FakeFileInput in = video();
+    in.observedNames = {QStringLiteral("Some Film 2024 hussyfan.mkv")};
+    in.kadTrust = KadTrust::High;
+    QCOMPARE(assess(in).band, Confidence::Suspect);
+
+    // [abuse] adds words; the built-in fake rules stay when it is the only section
+    FakeFileRules rules = FakeFileRules::parse(QStringLiteral("[abuse]\nSome Bad-Word\n"));
+    QCOMPARE(rules.abuseTokens, QStringList{QStringLiteral("some bad word")});
+    QVERIFY(rules.tokens.isEmpty());
+    QCOMPARE(abuseNameTier(QStringLiteral("x_some.bad.word_y.avi"), rules), 2);
+}
+
 void tst_FakeFileDetector::namesSpanKinds()
 {
     FakeFileInput in = video(QStringLiteral("Il Diavolo Veste Prada (2006).avi"));
@@ -261,6 +328,20 @@ void tst_FakeFileDetector::media_plausibility()
     QVERIFY(v.has(FakeReason::ImplausibleMediaBitrate));
     QVERIFY(v.has(FakeReason::MediaSizeMismatch));
 
+    // A 26.7 h audiobook at 64 kbit/s: long, and the size pays for it
+    FakeFileInput book;
+    book.name = QStringLiteral("Some Novel (Full-Cast Edition).mp3");
+    book.size = 768874252;
+    book.mediaLengthSec = 96004;
+    book.mediaBitrateKbps = 64;
+    QCOMPARE(assess(book).score, 0);
+    // 30 h of video in 60 MiB is not a film
+    in = video();
+    in.size = 60ull << 20;
+    in.mediaLengthSec = 30 * 3600;
+    in.mediaBitrateKbps = 0;
+    QVERIFY(assess(in).has(FakeReason::ImplausibleMediaLength));
+
     // Not media: tags say nothing
     FakeFileInput arc;
     arc.name = QStringLiteral("thing.rar");
@@ -371,6 +452,7 @@ void tst_FakeFileDetector::ids_areStable()
 {
     QCOMPARE(fakeReasonId(FakeReason::MultipleNames), QStringLiteral("multiple_names"));
     QCOMPARE(fakeReasonId(FakeReason::NameMediaTagMismatch), QStringLiteral("name_media_tag_mismatch"));
+    QCOMPARE(fakeReasonId(FakeReason::AbuseContentName), QStringLiteral("abuse_content_name"));
     QCOMPARE(confidenceId(Confidence::LikelyFake), QStringLiteral("likely_fake"));
     QCOMPARE(confidenceId(Confidence::Genuine), QStringLiteral("genuine"));
     QVERIFY(Confidence::Spam < Confidence::Genuine);

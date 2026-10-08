@@ -6,6 +6,7 @@
 #include "net/BindAddress.h"
 #include "net/InterfacePin.h"
 #include "app/AppContext.h"
+#include "server/ServerConnect.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "ipfilter/IPFilter.h"
@@ -67,10 +68,16 @@ bool ListenSocket::startListening(uint16 port)
 
 void ListenSocket::stopListening()
 {
+    m_acceptPaused = false;
     if (m_listening) {
         close();
         m_listening = false;
     }
+}
+
+bool ListenSocket::serverIsConnecting() const
+{
+    return theApp.serverConnect && theApp.serverConnect->isConnecting();
 }
 
 bool ListenSocket::rebind(uint16 port)
@@ -85,15 +92,22 @@ bool ListenSocket::rebind(uint16 port)
 
 void ListenSocket::incomingConnection(qintptr socketDescriptor)
 {
-    // Only the hard limit: our own dialling must not lock inbound peers out
-    // (MFC srchybrid/ListenSocket.cpp:2068).
-    if (tooManySockets(true)) {
+    // Only the hard limit: our own dialling must not lock inbound peers out. At the
+    // limit MFC stops accepting and leaves callers in the backlog until there is room
+    // (srchybrid/ListenSocket.cpp:2060-2073) — except during a server login, whose
+    // callback test would otherwise fail and earn a LowID.
+    if (tooManySockets(true) && !serverIsConnecting()) {
+        if (m_acceptPaused) {
+            // Already accepted by Qt in the same burst as the one that paused us
+            QTcpSocket temp;
+            temp.setSocketDescriptor(socketDescriptor);
+            temp.close();
+            return;
+        }
+        m_acceptPaused = true;
         ++m_maxConnectionReached; // MFC counts in StopListening()
-        // Reject — close immediately
-        QTcpSocket temp;
-        temp.setSocketDescriptor(socketDescriptor);
-        temp.close();
-        return;
+        pauseAccepting();
+        // This one is accepted already and cannot go back to the backlog: keep it.
     }
 
     // Wrap the descriptor first so the peer can be read through the Qt socket, then apply
@@ -198,6 +212,13 @@ void ListenSocket::process()
     if (++m_processTickCount >= 5) {
         m_processTickCount = 0;
         m_openSocketsInterval = 0;
+    }
+
+    // MFC ReStartListening (srchybrid/ListenSocket.cpp:2191): with five to spare
+    if (m_acceptPaused
+        && (openSockets() + 5 < thePrefs.maxConnections() || serverIsConnecting())) {
+        m_acceptPaused = false;
+        resumeAccepting();
     }
 
     // Check for timed-out sockets

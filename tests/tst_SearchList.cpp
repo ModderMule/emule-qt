@@ -137,11 +137,12 @@ private slots:
     void markFileAsSpam_addsToFilter();
     void markFileAsNotSpam_removesFromFilter();
     void saveAndLoadSpamFilter_roundTrip();
-    void storeAndLoadSearches_roundTrip();
     void processSearchAnswer_truncatedKeepsWhatWasRead();
     void signal_resultAdded();
     void signal_resultUpdated();
     void clientSharedFiles_opensOwnTab();
+    void clientSharedFiles_countAtLeastOneSource();
+    void spamRating_offWhenTheFilterIsDisabled();
     void clientSharedFiles_marksWhatThePeerCanPreview();
     void clientSharedFiles_reusesTabThenReopensAfterClose();
     void clientSharedFiles_emptyListStillOpensTab();
@@ -151,9 +152,11 @@ private slots:
     void fakeVerdict_followsSpamMarkAndNotes();
     void fakeVerdict_usesNamesOnRecord();
     void recalculateSpamRatings_signalsAChange();
+    void spamRating_smallArchiveWithOneSourceIsClean();
+    void spamRating_udpHeuristicAsInMfc();
+    void fakeVerdict_searchKeywordDoesNotJoinNames();
     void kadKeywordResult_adoptsTheOneAgreedAICHHash();
     void kadKeywordResult_ignoresRareOrCompetingAICHHashes();
-    void storeAndLoadSearches_keepsKadFlag();
 };
 
 void tst_SearchList::construct()
@@ -514,7 +517,6 @@ void tst_SearchList::addToList_kadOrigin_serverResultWins()
     QFETCH(bool, kadFirst);
     QFETCH(QString, kadName);
 
-    eMule::testing::TempDir tempDir;
     SearchList list;
     SearchParams params;
     uint32 id = list.newSearch({}, params);
@@ -547,14 +549,6 @@ void tst_SearchList::addToList_kadOrigin_serverResultWins()
         QVERIFY(!hasNetworkTag(child));
     }
 
-    // A stored search must not bring the flag back
-    list.storeSearches(tempDir.path());
-    SearchList loaded;
-    loaded.loadSearches(tempDir.path());
-    SearchFile* restored = loaded.searchFileByHash(hash, id);
-    QVERIFY(restored != nullptr);
-    qInfo() << "output: restored kadOrigin =" << restored->isKadOrigin();
-    QVERIFY(!restored->isKadOrigin());
 }
 
 void tst_SearchList::addToList_kadOrigin_keptWhenAllAnswersAreKad()
@@ -1935,41 +1929,6 @@ void tst_SearchList::saveAndLoadSpamFilter_roundTrip()
     QVERIFY(again.m_knownSpamServerIPs.contains(0x01020304));
 }
 
-void tst_SearchList::storeAndLoadSearches_roundTrip()
-{
-    eMule::testing::TempDir tempDir;
-
-    // Create list with some results
-    SearchList original;
-    SearchParams params;
-    uint32 id = original.newSearch({}, params);
-
-    uint8 hash[16];
-    std::memset(hash, 0x77, 16);
-
-    QByteArray packet = buildSingleResultPacket(hash, QStringLiteral("saved.mp3"), 77777, 10);
-    SafeMemFile data(packet);
-    auto* file = new SearchFile(data, true, 0xC0A80001, 4661);
-    file->setSearchID(id);
-    original.addToList(file);
-
-    QCOMPARE(original.resultCount(id), uint32{1});
-
-    // Store
-    original.storeSearches(tempDir.path());
-
-    // Load into new list
-    SearchList loaded;
-    loaded.loadSearches(tempDir.path());
-
-    // Verify loaded data
-    QCOMPARE(loaded.resultCount(id), uint32{1});
-
-    SearchFile* found = loaded.searchFileByHash(hash, id);
-    QVERIFY(found != nullptr);
-    QCOMPARE(found->fileName(), QStringLiteral("saved.mp3"));
-}
-
 void tst_SearchList::signal_resultAdded()
 {
     SearchList list;
@@ -2060,6 +2019,66 @@ void tst_SearchList::clientSharedFiles_opensOwnTab()
     });
     QCOMPARE(headerSpy.count(), 1);
     QCOMPARE(headerSpy.at(0).at(0).toUInt(), id);
+}
+
+// MFC SearchList.cpp:457 — a peer's own list entry is available at least once.
+void tst_SearchList::clientSharedFiles_countAtLeastOneSource()
+{
+    SearchList list;
+    UpDownClient alice;
+    alice.setUserName(QStringLiteral("Alice"));
+
+    const QByteArray packet = buildTCPSearchPacket(2, nullptr, QStringLiteral("file"), 1000, 0);
+    const uint32 id = list.processClientSharedFiles(
+        alice, reinterpret_cast<const uint8*>(packet.constData()),
+        static_cast<uint32>(packet.size()), QStringLiteral("Music"));
+    QVERIFY(id != 0);
+
+    int rows = 0;
+    list.forEachResult(id, [&rows](const SearchFile* f) {
+        ++rows;
+        QCOMPARE(f->sourceCount(), uint32{1});
+    });
+    QCOMPARE(rows, 2);
+    QCOMPARE(list.foundSources(id), uint32{2});
+}
+
+// MFC SearchList.cpp:869, :702 — with the filter off nothing is rated or capped.
+void tst_SearchList::spamRating_offWhenTheFilterIsDisabled()
+{
+    const bool saved = thePrefs.enableSearchResultFilter();
+    const auto restore = qScopeGuard([saved] { thePrefs.setEnableSearchResultFilter(saved); });
+    thePrefs.setEnableSearchResultFilter(true);
+
+    SearchList list;
+    SearchParams params;
+    const uint32 id = list.newSearch({}, params);
+
+    uint8 hash[16];
+    std::memset(hash, 0xE7, 16);
+    const auto add = [&](const QString& name, uint32 sources) {
+        const QByteArray packet = buildSingleResultPacket(hash, name, 500000, sources);
+        SafeMemFile data(packet);
+        auto* file = new SearchFile(data, true, 0xC0A80001, 4661);
+        file->setSearchID(id);
+        list.addToList(file);
+    };
+    add(QStringLiteral("spam.exe"), 3);
+    SearchFile* found = list.searchFileByHash(hash, id);
+    QVERIFY(found != nullptr);
+    list.markFileAsSpam(found);
+    QVERIFY(found->isConsideredSpam());
+
+    thePrefs.setEnableSearchResultFilter(false);
+    list.recalculateSpamRatings(id);
+    QVERIFY(!found->isConsideredSpam());
+    QCOMPARE(found->spamRating(), uint32{0});
+
+    // a new answer for the marked hash stays unrated and counts in full
+    const uint32 before = list.foundSources(id);
+    add(QStringLiteral("spam again.exe"), 40);
+    QVERIFY(!found->isConsideredSpam());
+    QCOMPARE(list.foundSources(id) - before, uint32{40});
 }
 
 // MFC SearchList.cpp:218 — only a browsed file of a peer that advertises preview.
@@ -2358,6 +2377,83 @@ void tst_SearchList::recalculateSpamRatings_signalsAChange()
     QCOMPARE(changed.first().first().value<SearchFile*>(), b);
 }
 
+// The port rated every 100 KB - 10 MB archive with one named source at 45.
+void tst_SearchList::spamRating_smallArchiveWithOneSourceIsClean()
+{
+    SearchList list;
+    const uint32 id = list.newSearch({}, SearchParams{});
+    uint8 hash[16];
+    std::memset(hash, 0x71, 16);
+    const QByteArray data = buildSingleResultPacket(hash, QStringLiteral("Some Book.zip"), 500000, 1);
+    SafeMemFile mem(data);
+    auto* file = new SearchFile(mem, true);
+    file->setSearchID(id);
+    list.addToList(file);
+
+    const SearchFile* found = list.searchFileByHash(hash, id);
+    QVERIFY(found);
+    QCOMPARE(found->spamRating(), uint32{0});
+    QVERIFY(!found->fakeVerdict().has(FakeReason::SpamScore));
+}
+
+// srchybrid/SearchList.cpp:998-1040: many sources, known to the answering UDP server only.
+void tst_SearchList::spamRating_udpHeuristicAsInMfc()
+{
+    SearchList list;
+    const uint32 id = list.newSearch({}, SearchParams{});
+    const Address server = Address::fromString(QStringLiteral("88.191.81.111"));
+    const auto answer = [&](uint8 fill, const QString& name, uint32 size, uint32 sources) {
+        uint8 hash[16];
+        std::memset(hash, fill, 16);
+        const QByteArray packet = buildSingleResultPacket(hash, name, size, sources);
+        list.processUDPSearchAnswer(reinterpret_cast<const uint8*>(packet.constData()),
+                                    static_cast<uint32>(packet.size()), true, Endpoint(server, 4665));
+        const SearchFile* file = list.searchFileByHash(hash, id);
+        return file ? static_cast<int>(file->spamRating()) : -1;
+    };
+
+    // One server asked: too little to judge by
+    list.addSentUDPRequestIP(id, server);
+    QCOMPARE(answer(0x81, QStringLiteral("Popular Film.avi"), 700000000, 150), 0);
+
+    for (const char* other : {"88.191.81.112", "91.200.42.46", "91.200.42.47", "176.103.48.36"})
+        list.addSentUDPRequestIP(id, Address::fromString(QString::fromLatin1(other)));
+    QCOMPARE(answer(0x82, QStringLiteral("Another Film.avi"), 700000000, 150), 39);
+    QCOMPARE(answer(0x83, QStringLiteral("Some Tool.zip"), 500000, 150), 60);
+    QCOMPARE(answer(0x84, QStringLiteral("Rare Tool.zip"), 500000, 3), 0);
+
+    const SearchFile* file = list.searchFileByHash(std::array<uint8, 16>{
+        0x83, 0x83, 0x83, 0x83, 0x83, 0x83, 0x83, 0x83, 0x83, 0x83, 0x83, 0x83, 0x83, 0x83, 0x83, 0x83}.data(), id);
+    QVERIFY(file && file->isConsideredSpam());
+    QCOMPARE(file->servers().size(), size_t{1});
+    QVERIFY(file->servers().front().udpAnswer);
+}
+
+// Every name a search for "teen" returns holds "teen": that is no sign of one content.
+void tst_SearchList::fakeVerdict_searchKeywordDoesNotJoinNames()
+{
+    SearchList list;
+    SearchParams params;
+    params.expression = QStringLiteral("Holiday");
+    const uint32 id = list.newSearch({}, params);
+    uint8 hash[16];
+    std::memset(hash, 0x91, 16);
+    for (const QString& name : {QStringLiteral("Holiday in Rome.avi"),
+                                QStringLiteral("Holiday Cooking.avi")}) {
+        const QByteArray data = buildSingleResultPacket(hash, name, 700000000);
+        SafeMemFile mem(data);
+        auto* file = new SearchFile(mem, true);
+        file->setSearchID(id);
+        list.addToList(file);
+    }
+    const SearchFile* found = list.searchFileByHash(hash, id);
+    QVERIFY(found);
+    QVERIFY(found->fakeVerdict().reasons.contains({FakeReason::MultipleNames, 10}));
+
+    // The same two names under another search word are one short title each: joined
+    QCOMPARE(countNameGroups({QStringLiteral("Holiday in Rome.avi"), QStringLiteral("Holiday Cooking.avi")}), 1);
+}
+
 void tst_SearchList::kadKeywordResult_adoptsTheOneAgreedAICHHash()
 {
     SearchList list;
@@ -2432,44 +2528,6 @@ void tst_SearchList::kadKeywordResult_ignoresRareOrCompetingAICHHashes()
         QVERIFY(found != nullptr);
         QVERIFY(!found->fileIdentifier().hasAICHHash());
     }
-}
-
-// The stored file has no search type of its own: without the Kad byte a reloaded Kad
-// result came back as an eD2K one.
-void tst_SearchList::storeAndLoadSearches_keepsKadFlag()
-{
-    eMule::testing::TempDir tempDir;
-
-    SearchList original;
-    SearchParams params;
-    const uint32 kadID = original.newSearch({}, params);
-    const uint32 ed2kID = original.newSearch({}, params);
-
-    uint8 kadHash[16], ed2kHash[16];
-    std::memset(kadHash, 0x61, 16);
-    std::memset(ed2kHash, 0x62, 16);
-
-    original.addKadKeywordResult(kadID, kadHash, QStringLiteral("kad.mp3"), 4242, {}, 5, 0);
-
-    QByteArray packet = buildSingleResultPacket(ed2kHash, QStringLiteral("ed2k.mp3"), 77777, 10);
-    SafeMemFile data(packet);
-    auto* file = new SearchFile(data, true, 0xC0A80001, 4661);
-    file->setSearchID(ed2kID);
-    original.addToList(file);
-
-    original.storeSearches(tempDir.path());
-
-    SearchList loaded;
-    loaded.loadSearches(tempDir.path());
-
-    SearchFile* kadFound = loaded.searchFileByHash(kadHash, kadID);
-    QVERIFY(kadFound != nullptr);
-    QVERIFY(kadFound->isKadResult());
-    QCOMPARE(kadFound->fileName(), QStringLiteral("kad.mp3"));
-
-    SearchFile* ed2kFound = loaded.searchFileByHash(ed2kHash, ed2kID);
-    QVERIFY(ed2kFound != nullptr);
-    QVERIFY(!ed2kFound->isKadResult());
 }
 
 // A search that could send nothing (REST or web while offline) must not take the

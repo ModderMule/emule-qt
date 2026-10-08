@@ -311,6 +311,9 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="controls\AbstractListView.h" />
     <ClInclude Include="controls\SortableItems.h" />
+    <ClInclude Include="controls\ListSortClick.h" />
+    <ClInclude Include="dialogs\FileDetailsMerge.h" />
+    <ClInclude Include="controls\SortArrowStyle.h" />
     <ClInclude Include="controls\FitTextTabBar.h" />
     <ClInclude Include="controls\BarShader.h" />
     <ClInclude Include="controls\PartBarPainter.h" />

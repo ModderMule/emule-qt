@@ -12,6 +12,11 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QScopeGuard>
+#include <QSslCertificate>
+#include <QSslConfiguration>
+#include <QSslKey>
+#include <QSslServer>
+#include <QSslSocket>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTest>
@@ -31,20 +36,42 @@ public:
 /// Minimal range-serving web server. "/moved" answers 302 to "/file".
 class RangeServer : public QObject {
 public:
-    explicit RangeServer(QByteArray content) : m_content(std::move(content))
+    /// @p tls: serve https with the self-signed certificate in tests/data/tls.
+    explicit RangeServer(QByteArray content, bool tls = false) : m_content(std::move(content))
     {
-        m_server.listen(QHostAddress::LocalHost, 0);
-        connect(&m_server, &QTcpServer::newConnection, this, [this] {
-            while (QTcpSocket* sock = m_server.nextPendingConnection()) {
+        if (tls) {
+            auto* sslServer = new QSslServer(this);
+            m_server = sslServer;
+            QSslConfiguration config = QSslConfiguration::defaultConfiguration();
+            config.setLocalCertificate(testCertificate());
+            QFile keyFile(eMule::testing::testDataDir() + QStringLiteral("/tls/localhost-key.pem"));
+            if (keyFile.open(QIODevice::ReadOnly))
+                config.setPrivateKey(QSslKey(&keyFile, QSsl::Rsa));
+            config.setPeerVerifyMode(QSslSocket::VerifyNone);
+            sslServer->setSslConfiguration(config);
+        } else {
+            m_server = new QTcpServer(this);
+        }
+        m_server->listen(QHostAddress::LocalHost, 0);
+        // pendingConnectionAvailable: after the handshake, where there is one
+        connect(m_server, &QTcpServer::pendingConnectionAvailable, this, [this] {
+            while (QTcpSocket* sock = m_server->nextPendingConnection()) {
                 connect(sock, &QTcpSocket::readyRead, this, [this, sock] { serve(sock); });
                 connect(sock, &QTcpSocket::disconnected, sock, &QObject::deleteLater);
             }
         });
     }
 
-    [[nodiscard]] uint16 port() const { return m_server.serverPort(); }
+    [[nodiscard]] uint16 port() const { return m_server->serverPort(); }
+
+    [[nodiscard]] static QSslCertificate testCertificate()
+    {
+        QFile file(eMule::testing::testDataDir() + QStringLiteral("/tls/localhost-cert.pem"));
+        return file.open(QIODevice::ReadOnly) ? QSslCertificate(&file) : QSslCertificate();
+    }
     QList<QByteArray> ranges;   ///< every Range value asked for, in order
     int redirects = 0;
+    QByteArray redirectTarget;  ///< where "/elsewhere" sends the client
 
 private:
     void serve(QTcpSocket* sock)
@@ -61,6 +88,17 @@ private:
                             + QByteArray::number(port()) + "/file\r\nContent-Length: 0\r\n\r\n");
                 continue;
             }
+            if (head.startsWith("GET /elsewhere ")) {
+                ++redirects;
+                sock->write("HTTP/1.1 302 Found\r\nLocation: " + redirectTarget
+                            + "\r\nContent-Length: 0\r\n\r\n");
+                continue;
+            }
+            if (head.startsWith("GET /relmoved ")) {
+                ++redirects;
+                sock->write("HTTP/1.1 302 Found\r\nLocation: /file\r\nContent-Length: 0\r\n\r\n");
+                continue;
+            }
             const qsizetype at = head.indexOf("Range: bytes=");
             const QByteArray range = head.mid(at + 13, head.indexOf("\r\n", at) - at - 13);
             ranges.append(range);
@@ -74,7 +112,7 @@ private:
         }
     }
 
-    QTcpServer m_server;
+    QTcpServer* m_server = nullptr;
     QByteArray m_content;
     QHash<QTcpSocket*, QByteArray> m_pending;
 };
@@ -95,6 +133,9 @@ private slots:
     void tryToConnect_rejectsAnUnusableAddress();
     void fetch_downloadsTheFileOverHttp_data();
     void fetch_downloadsTheFileOverHttp();
+    void setUrl_schemesAndUserInfo();
+    void fetch_overHttps_data();
+    void fetch_overHttps();
 };
 
 // ---------------------------------------------------------------------------
@@ -214,6 +255,7 @@ void tst_URLClient::fetch_downloadsTheFileOverHttp_data()
     QTest::addColumn<QString>("path");
     QTest::newRow("direct") << QStringLiteral("/file");
     QTest::newRow("redirected") << QStringLiteral("/moved");
+    QTest::newRow("redirected, relative Location") << QStringLiteral("/relmoved");
 }
 
 void tst_URLClient::fetch_downloadsTheFileOverHttp()
@@ -251,7 +293,7 @@ void tst_URLClient::fetch_downloadsTheFileOverHttp()
 
     // one request for the whole contiguous run, both ends inclusive
     QCOMPARE(server.ranges, QList<QByteArray>{"0-" + QByteArray::number(content.size() - 1)});
-    QCOMPARE(server.redirects, path == QStringLiteral("/moved") ? 1 : 0);
+    QCOMPARE(server.redirects, path == QStringLiteral("/file") ? 0 : 1);
     QCOMPARE(pf.transferred(), static_cast<uint64>(content.size()));
     QCOMPARE(static_cast<uint64>(pf.completedSize()), static_cast<uint64>(content.size()));
 
@@ -260,6 +302,108 @@ void tst_URLClient::fetch_downloadsTheFileOverHttp()
     QFile part(QDir(tmp.path()).filePath(pf.partMetFileName().chopped(4)));
     QVERIFY(part.open(QIODevice::ReadOnly));
     QCOMPARE(part.readAll(), content);
+
+    pf.removeSource(&client);
+    client.setReqFile(nullptr);
+}
+
+// MFC takes http only (srchybrid/URLClient.cpp:96-104); the port took anything and
+// sent a plain GET to port 80, https included.
+void tst_URLClient::setUrl_schemesAndUserInfo()
+{
+    URLClient client;
+    QVERIFY(client.setUrl(QStringLiteral("https://example.com/a.bin")));
+    QVERIFY(client.urlIsTls());
+    QCOMPARE(client.urlPort(), uint16{443});
+    QVERIFY(client.setUrl(QStringLiteral("HTTP://example.com/a.bin")));
+    QVERIFY(!client.urlIsTls());
+    QCOMPARE(client.urlPort(), uint16{80});
+
+    QVERIFY(!client.setUrl(QStringLiteral("ftp://example.com/a.bin")));
+    QVERIFY(!client.setUrl(QStringLiteral("http://user:secret@example.com/a.bin")));
+    QVERIFY(!client.setUrl(QStringLiteral("//example.com/a.bin")));
+
+    ExposedURLClient exposed;
+    QVERIFY(exposed.setUrl(QStringLiteral("https://example.com/a.bin")));
+    QVERIFY(exposed.buildGetHeader().contains("Host: example.com\r\n"));
+    QVERIFY(exposed.setUrl(QStringLiteral("https://example.com:8443/a.bin")));
+    QVERIFY(exposed.buildGetHeader().contains("Host: example.com:8443\r\n"));
+}
+
+void tst_URLClient::fetch_overHttps_data()
+{
+    QTest::addColumn<bool>("trusted");
+    QTest::addColumn<QString>("host");
+    QTest::newRow("trusted certificate, via an http redirect") << true << QStringLiteral("localhost");
+    QTest::newRow("unknown certificate") << false << QStringLiteral("localhost");
+    // trusted, but issued for another name than the one in the URL
+    QTest::newRow("wrong host name") << true << QStringLiteral("other.invalid");
+}
+
+void tst_URLClient::fetch_overHttps()
+{
+    QFETCH(bool, trusted);
+    QFETCH(QString, host);
+    if (!QSslSocket::supportsSsl())
+        QSKIP("no TLS backend");
+
+    const bool savedFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const QSslConfiguration savedTls = QSslConfiguration::defaultConfiguration();
+    const auto restore = qScopeGuard([savedFilter, savedTls] {
+        thePrefs.setFilterLANIPs(savedFilter);
+        QSslConfiguration::setDefaultConfiguration(savedTls);
+    });
+    if (trusted) {
+        // this process only: the test certificate is its own authority
+        QSslConfiguration config = savedTls;
+        config.addCaCertificate(RangeServer::testCertificate());
+        QSslConfiguration::setDefaultConfiguration(config);
+    }
+
+    QByteArray content(static_cast<qsizetype>(EMBLOCKSIZE + 4321), '\0');
+    for (qsizetype i = 0; i < content.size(); ++i)
+        content[i] = static_cast<char>((i * 11 + (i >> 7)) & 0xFF);
+    RangeServer server(content, /*tls*/ true);
+    QVERIFY(server.port() != 0);
+
+    eMule::testing::TempDir tmp;
+    PartFile pf;
+    pf.setFileName(QStringLiteral("from_the_web_tls.bin"));
+    pf.setFileSize(static_cast<uint64>(content.size()));
+    const QByteArray md4 = QCryptographicHash::hash(content, QCryptographicHash::Md4);
+    pf.setFileHash(reinterpret_cast<const uint8*>(md4.constData()));
+    QVERIFY(pf.createPartFile(tmp.path()));
+
+    // The trusted row starts on plain http and is sent on to https.
+    const bool expectData = trusted && host == QStringLiteral("localhost");
+    RangeServer plain(content);
+    plain.redirectTarget = "https://127.0.0.1:" + QByteArray::number(server.port()) + "/file";
+
+    URLClient client;
+    const QString url = expectData
+        ? QStringLiteral("http://127.0.0.1:%1/elsewhere").arg(plain.port())
+        : QStringLiteral("https://%1:%2/file").arg(host).arg(server.port());
+    QVERIFY(client.setUrl(url, Address::fromString(QStringLiteral("127.0.0.1"))));
+    client.setRequestFile(&pf);
+    pf.addSource(&client);
+    QVERIFY(client.tryToConnect(true));
+
+    if (expectData) {
+        QTRY_COMPARE_WITH_TIMEOUT(client.transferredDown(), static_cast<uint64>(content.size()), 10000);
+        QCOMPARE(plain.redirects, 1);
+        QVERIFY(client.urlIsTls());
+        QCOMPARE(server.ranges, QList<QByteArray>{"0-" + QByteArray::number(content.size() - 1)});
+        pf.flushBuffer();
+        QFile part(QDir(tmp.path()).filePath(pf.partMetFileName().chopped(4)));
+        QVERIFY(part.open(QIODevice::ReadOnly));
+        QCOMPARE(part.readAll(), content);
+    } else {
+        // The handshake fails; no request ever reaches the server, nothing is written.
+        QTRY_VERIFY_WITH_TIMEOUT(client.socket() == nullptr, 10000);
+        QVERIFY(server.ranges.isEmpty());
+        QCOMPARE(client.transferredDown(), uint64{0});
+    }
 
     pf.removeSource(&client);
     client.setReqFile(nullptr);

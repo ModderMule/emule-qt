@@ -17,6 +17,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QSet>
 #include <QStringList>
 
 #include <list>
@@ -53,6 +54,8 @@ struct SearchListEntry {
     bool kad = false;               ///< our own Kad keyword search (MFC SearchTypeKademlia)
     /// When the search was asked for: a file on record before this is "seen before".
     qint64 startedAt = QDateTime::currentSecsSinceEpoch();
+    /// The words searched for: in every name the search returns (see countNameGroups).
+    QSet<QString> keywords;
     std::list<std::unique_ptr<SearchFile>> files;
 
     SearchListEntry() = default;
@@ -87,7 +90,9 @@ public:
 
     /// The search is going out now: results are filtered by its file type, and for an
     /// ED2K search the server answers (TCP and UDP) are filed under it from here on.
-    void beginSearch(uint32 searchID, const QString& resultFileType, bool ed2k);
+    /// @p expression is what was searched for; empty leaves the entry's keywords alone.
+    void beginSearch(uint32 searchID, const QString& resultFileType, bool ed2k,
+                     const QString& expression = {});
 
     /// The ED2K search @p searchID is over. A server answer arriving after this is
     /// nobody's and is dropped — it used to land in whichever search came next.
@@ -238,17 +243,13 @@ public:
     /// MFC: CSearchList::SentUDPRequestNotification — srchybrid/SearchList.cpp:1183-1187.
     void addSentUDPRequestIP(uint32 searchID, const Address& ip)
     {
-        if (searchID == m_currentEd2kSearchID && !ip.isNull())
+        if (searchID == m_currentEd2kSearchID && !ip.isNull()) {
             m_curED2KSentRequestsIPs.insert(ip);
+            m_requestedUdpAnswers[searchID] = static_cast<uint32>(m_curED2KSentRequestsIPs.size());
+        }
     }
 
     // --- Persistence ---
-
-    /// Save active searches to disk.
-    void storeSearches(const QString& configDir) const;
-
-    /// Load saved searches from disk.
-    void loadSearches(const QString& configDir);
 
     /// Save the spam filter database (SearchSpam.met, MFC layout). No-op until it was
     /// loaded, so a list that never read the file cannot overwrite it with nothing.
@@ -283,7 +284,10 @@ private:
 
     /// Fake-file verdict of a top-level row, from its children, notes and tags.
     /// True when the verdict changed.
-    static bool assess(SearchFile* file);
+    bool assess(SearchFile* file);
+
+    /// A new ED2K search took the server answers: forget who was asked and who answered.
+    void resetUdpRequestTracking();
 
     /// Compute the name-without-keywords for spam detection.
     static QString computeNameWithoutKeywords(const QString& name, const QString& fileType);
@@ -305,6 +309,11 @@ private:
 
     // UDP server tracking
     std::unordered_set<Address> m_curED2KSentRequestsIPs;   // Address: v6 servers are 0 as uint32
+    std::unordered_set<Address> m_curED2KAnsweredIPs;       // servers that answered this sweep
+    // Per search: UDP servers asked / that answered (MFC m_RequestedUDPAnswersCount,
+    // m_ReceivedUDPAnswersCount)
+    std::unordered_map<uint32, uint32> m_requestedUdpAnswers;
+    std::unordered_map<uint32, uint32> m_receivedUdpAnswers;
     std::unordered_map<uint32, UDPServerRecord> m_udpServerRecords;
 
     // Spam filter databases

@@ -1264,6 +1264,71 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
 // sendHelloPacket — MFC BaseClient.cpp:890-910
 // ===========================================================================
 
+
+namespace {
+
+// Up overhead by packet kind — the mirror of the receive side in ClientReqSocket.cpp.
+// MFC books at each call site; one table keeps the two directions in step.
+void bookUpOverhead(const Packet& packet)
+{
+    auto* stats = theApp.statistics;
+    if (!stats)
+        return;
+
+    if (packet.prot == OP_EDONKEYPROT) {
+        switch (packet.opcode) {
+        case OP_REQUESTFILENAME:
+        case OP_SETREQFILEID:
+        case OP_FILEREQANSNOFIL:
+        case OP_REQFILENAMEANSWER:
+        case OP_FILESTATUS:
+        case OP_HASHSETREQUEST:
+        case OP_HASHSETANSWER:
+        case OP_STARTUPLOADREQ:
+        case OP_ACCEPTUPLOADREQ:
+        case OP_CANCELTRANSFER:
+        case OP_OUTOFPARTREQS:
+        case OP_REQUESTPARTS:
+        case OP_QUEUERANK:
+            stats->addUpDataOverheadFileRequest(packet.size);
+            return;
+        default:
+            break;
+        }
+    } else if (packet.prot == OP_EMULEPROT) {
+        switch (packet.opcode) {
+        case OP_REQUESTSOURCES:
+        case OP_ANSWERSOURCES:
+        case OP_REQUESTSOURCES2:
+        case OP_ANSWERSOURCES2:
+            stats->addUpDataOverheadSourceExchange(packet.size);
+            return;
+        case OP_REQUESTPARTS_I64:
+        case OP_QUEUERANKING:
+        case OP_FILEDESC:
+        case OP_AICHREQUEST:
+        case OP_AICHANSWER:
+        case OP_AICHFILEHASHREQ:
+        case OP_AICHFILEHASHANS:
+        case OP_HASHSETREQUEST2:
+        case OP_HASHSETANSWER2:
+        case OP_MULTIPACKET:
+        case OP_MULTIPACKETANSWER:
+        case OP_MULTIPACKET_EXT:
+        case OP_MULTIPACKET_EXT2:
+        case OP_MULTIPACKETANSWER_EXT2:
+        case OP_REASKCALLBACKTCP:   // buddy relay, MFC ClientUDPSocket.cpp:220
+            stats->addUpDataOverheadFileRequest(packet.size);
+            return;
+        default:
+            break;
+        }
+    }
+    stats->addUpDataOverheadOther(packet.size);
+}
+
+} // namespace
+
 void UpDownClient::sendHelloPacket()
 {
     if (!m_socket) {
@@ -1278,6 +1343,7 @@ void UpDownClient::sendHelloPacket()
     auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_HELLO);
     logDebug(QStringLiteral("sendHelloPacket: sending OP_HELLO size=%1 to %2:%3")
                  .arg(packet->size).arg(m_socket->peerAddress().toString()).arg(m_socket->peerPort()));
+    bookUpOverhead(*packet);
     m_socket->sendPacket(std::move(packet));
     m_helloAnswerPending = true;
 }
@@ -1513,6 +1579,7 @@ void UpDownClient::sendMuleInfoPacket(bool answer)
 
     const uint8 opcode = answer ? OP_EMULEINFOANSWER : OP_EMULEINFO;
     auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, opcode);
+    bookUpOverhead(*packet);
     m_socket->sendPacket(std::move(packet));
 }
 
@@ -1693,9 +1760,7 @@ bool UpDownClient::sendPacket(std::unique_ptr<Packet> packet, bool /*verifyConne
     if (!m_socket)
         return false;
 
-    if (auto* stats = theApp.statistics)
-        stats->addUpDataOverheadOther(packet->size);
-
+    bookUpOverhead(*packet);
     m_socket->sendPacket(std::move(packet));
     return true;
 }
@@ -2331,8 +2396,10 @@ void UpDownClient::onHandshakeCompleted()
     // TCP connect, and a peer drops whoever asks for something before saying hello.
     // MFC BaseClient.cpp:1575-1579 (its ConnectionEstablished runs after the hello).
     for (auto& packet : std::exchange(m_waitingPackets, {})) {
-        if (m_socket)
+        if (m_socket) {
+            bookUpOverhead(*packet);
             m_socket->sendPacket(std::move(packet));
+        }
     }
 
     // (a) We owed this peer a file re-ask that askForDownload() delayed on one of its
@@ -2623,6 +2690,7 @@ void UpDownClient::resetFileStatusInfo()
     m_hashsetRequestingMD4 = false;
     m_hashsetRequestingAICH = false;
     m_reqFileAICHHash.reset();   // MFC BaseClient.cpp:2050
+    m_remoteQueueRank = 0;       // the rank was the old file's (MFC :2044)
 }
 
 // ===========================================================================
@@ -2988,6 +3056,28 @@ QString UpDownClient::downloadStateDisplayString() const
 // ===========================================================================
 // uploadStateDisplayString
 // ===========================================================================
+
+// What the GUI maps to text (ClientStateText.h): the state, an upload slot split into
+// Transferring / Standby by its position. "Stalled" is uploadStalled() on top of that.
+QString UpDownClient::uploadStateToken() const
+{
+    switch (m_uploadState) {
+    case UploadState::OnUploadQueue: return QStringLiteral("OnQueue");
+    case UploadState::Banned:        return QStringLiteral("Banned");
+    case UploadState::Connecting:    return QStringLiteral("Connecting");
+    case UploadState::Uploading:
+        return theApp.uploadQueue
+                   && m_slotNumber <= static_cast<uint32>(theApp.uploadQueue->maxActiveClientsShortTime())
+            ? QStringLiteral("Transferring") : QStringLiteral("Standby");
+    default:
+        return {};
+    }
+}
+
+bool UpDownClient::uploadStalled() const
+{
+    return m_uploadState == UploadState::Uploading && payloadInBuffer() == 0;
+}
 
 QString UpDownClient::uploadStateDisplayString() const
 {
@@ -3361,7 +3451,7 @@ void UpDownClient::processChatMessage(SafeMemFile& data, uint32 length)
         if (trimmed.isEmpty() || !message.contains(trimmed, Qt::CaseInsensitive))
             continue;
         if (advSpamFilter && !isFriend && m_messagesSent == 0) {
-            m_isSpammer = true;
+            setSpammer(true);
             endChatSession();
         }
         logDebug(QStringLiteral("Message from '%1' matched filter '%2'")
@@ -3397,8 +3487,6 @@ void UpDownClient::processChatMessage(SafeMemFile& data, uint32 length)
             m_captchasSent = 0;
             result->pBuffer[0] = 0;
         }
-        if (theApp.statistics)
-            theApp.statistics->addUpDataOverheadOther(result->size);
         if (!safeConnectAndSendPacket(std::move(result)) || !solved)
             return;
     }
@@ -3417,7 +3505,7 @@ void UpDownClient::processChatMessage(SafeMemFile& data, uint32 length)
         }
         if (isSpam) {
             logDebug(QStringLiteral("'%1' has been marked as spammer").arg(statusName()));
-            m_isSpammer = true;
+            setSpammer(true);
             endChatSession();
             return;
         }
@@ -3439,6 +3527,15 @@ void UpDownClient::sendPendingChatMessage()
     sendChatMessage(takePendingChatMessage());
 }
 
+void UpDownClient::setSpammer(bool v)
+{
+    if (v)
+        ban(QStringLiteral("Identified as Spammer"));
+    else if (m_isSpammer && isBanned())
+        unBan();
+    m_isSpammer = v;
+}
+
 void UpDownClient::endChatSession()
 {
     m_chatState = ChatState::None;
@@ -3454,7 +3551,7 @@ void UpDownClient::sendChatMessage(const QString& message)
 
     // MFC CChatSelector::SendText (srchybrid/ChatSelector.cpp:285-296)
     incMessagesSent();
-    m_isSpammer = false;
+    setSpammer(false);
     if (m_chatCaptchaState == ChatCaptchaState::CaptchaRecv)
         m_chatCaptchaState = ChatCaptchaState::SolutionSent;   // this message is the answer
     else if (m_chatCaptchaState != ChatCaptchaState::SolutionSent)
@@ -4222,8 +4319,6 @@ void UpDownClient::onExtPacketReceived(const uint8* data, uint32 size, uint8 opc
             break;
         auto packet = std::make_unique<Packet>(OP_PUBLICIP_ANSWER, 4, OP_EMULEPROT);
         pokeUInt32(packet->pBuffer, seen.toNetworkUint32());
-        if (theApp.statistics)
-            theApp.statistics->addUpDataOverheadOther(packet->size);
         sendPacket(std::move(packet));
         break;
     }
@@ -4675,8 +4770,6 @@ void UpDownClient::sendChatPacket(const QString& message)
     data.write(utf8.constData(), utf8.size());
 
     auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_MESSAGE);
-    if (theApp.statistics)
-        theApp.statistics->addUpDataOverheadOther(packet->size);
     safeConnectAndSendPacket(std::move(packet));
 }
 
@@ -4723,8 +4816,6 @@ void UpDownClient::sendCaptchaChallenge(const QString& message)
     ++m_captchasSent;
 
     auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_CHATCAPTCHAREQ);
-    if (theApp.statistics)
-        theApp.statistics->addUpDataOverheadOther(packet->size);
     safeConnectAndSendPacket(std::move(packet));
 }
 
@@ -5286,8 +5377,6 @@ void UpDownClient::flushPendingIPChange()
 
     auto packet = std::make_unique<Packet>(OP_CHANGE_CLIENT_IP, 16, OP_EDONKEYPROT);
     std::memcpy(packet->pBuffer, ourIPv6.ipv6Bytes().data(), 16);
-    if (theApp.statistics)
-        theApp.statistics->addUpDataOverheadOther(packet->size);
     sendPacket(std::move(packet));
 
     logDebug(QStringLiteral("OP_CHANGE_CLIENT_IP to %1: our IPv6 is now %2")

@@ -145,7 +145,6 @@ void PartFile::initPartFile()
     m_md4HashsetNeeded = true;
     m_aichPartHashsetNeeded = true;
     m_corruptionBlackBox.free();
-    m_anStates.fill(0);
 }
 
 // ===========================================================================
@@ -1578,6 +1577,11 @@ void PartFile::updateAutoDownPriority()
         theApp.downloadQueue->requestPrioritySort();
 }
 
+void PartFile::setSwapForSourceExchangeTick()
+{
+    m_lastSwapForSourceExchangeTick = getTickCount();
+}
+
 bool PartFile::rightFileHasHigherPrio(const PartFile* left, const PartFile* right)
 {
     if (!right)
@@ -1594,16 +1598,17 @@ bool PartFile::rightFileHasHigherPrio(const PartFile* left, const PartFile* righ
     if (leftCat.prio != rightCat.prio)
         return rightCat.prio > leftCat.prio;
 
-    // Higher download priority first (kPrVeryHigh=3 > kPrHigh=2 > etc.)
+    // Higher download priority first; by ordinal, Very Low is 4 as a constant
     if (left->downPriority() != right->downPriority())
-        return left->downPriority() < right->downPriority();
+        return realPriority(left->downPriority()) < realPriority(right->downPriority());
 
     // Within one non-default category the user may ask for alphabetical order,
     // which is the point of the setting: a series downloads in episode order
     // instead of whichever part happened to find sources first
     // (srchybrid/PartFile.cpp:5167-5173).
     if (left->category() != 0 && left->category() == right->category()
-        && leftCat.downloadInAlphabeticalOrder && !left->fileName().isEmpty()
+        && leftCat.downloadInAlphabeticalOrder && thePrefs.showExtControls()
+        && !left->fileName().isEmpty()
         && !right->fileName().isEmpty())
     {
         const int cmp = right->fileName().compare(left->fileName(), Qt::CaseInsensitive);
@@ -1621,7 +1626,7 @@ bool PartFile::rightFileHasHigherPrio(const PartFile* left, const PartFile* righ
 
 int PartFile::availableSourceCount() const
 {
-    // MFC keeps a cached m_anStates[] histogram; walking the list is cheap enough here
+    // MFC keeps a cached per-state histogram; walking the list is cheap enough here
     // because the only caller is the Save/Load Sources tick, once per file per 10 minutes.
     return static_cast<int>(std::ranges::count_if(m_srcList, [](const UpDownClient* client) {
         const DownloadState state = client->downloadState();
@@ -3626,7 +3631,7 @@ std::unique_ptr<Packet> PartFile::createServerSourceRequestPacket(bool obfuscate
     // standard server read the low 32 bits as the whole size, so the (hash,size)
     // lookup misses and no sources come back.
     const uint64 fsize     = static_cast<uint64>(fileSize());
-    const bool   largeFile = (fsize > UINT32_MAX);
+    const bool   largeFile = isLargeFile();   // same test as the queue's server guard
     const uint32 pktSize   = largeFile ? 28u : 20u;
 
     auto pkt = std::make_unique<Packet>(

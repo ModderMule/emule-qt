@@ -63,6 +63,19 @@ inline constexpr uint8 kPrHigh     = 2;
 inline constexpr uint8 kPrVeryHigh = 3;
 inline constexpr uint8 kPrAuto     = 5;
 
+/// Priority as an ordinal (Very Low 0 … Very High 4); the constants are not ordered.
+[[nodiscard]] constexpr int realPriority(uint8 prio)
+{
+    switch (prio) {
+    case kPrVeryHigh: return 4;
+    case kPrHigh:     return 3;
+    case kPrNormal:   return 2;
+    case kPrLow:      return 1;
+    case kPrVeryLow:  return 0;
+    default:          return 2;
+    }
+}
+
 class KnownFile : public ShareableFile {
 public:
     KnownFile();

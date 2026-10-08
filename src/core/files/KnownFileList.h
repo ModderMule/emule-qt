@@ -71,6 +71,10 @@ public:
     void process();
 
     bool safeAddKFile(KnownFile* file);
+    /// @p fresh was just rehashed because its record was one part hash short (a file
+    /// of whole parts hashed before the boundary fix). Folds that record's statistics
+    /// into @p fresh and deletes it; call before safeAddKFile(fresh).
+    bool dropSupersededRecord(KnownFile* fresh);
     /// @p localTimeVolume: the file lies on FAT/exFAT, where a date may be off by a
     /// rounding step or a DST hour (sameFileDate()). An exact match still wins.
     KnownFile* findKnownFile(const QString& filename, time_t date, uint64 size,

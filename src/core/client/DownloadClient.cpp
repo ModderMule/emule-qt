@@ -471,14 +471,16 @@ void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdent
 {
     // MFC DownloadClient.cpp:712-768. OP_HASHSETANSWER2 is FileIdentifier + options +
     // hashsets; OP_HASHSETANSWER is hash(16) + count(2) + N×hash(16).
-    if (!m_hashsetRequestingMD4 && (!fileIdentifiers || !m_hashsetRequestingAICH)) {
-        logDebug(QStringLiteral("processHashSet: unrequested hashset from %1").arg(userName()));
-        return;
-    }
-    if (!data || size < 16 || !m_reqFile) {
+    // Every refusal below throws, as MFC: the socket's handler disconnects the peer.
+    if (!m_hashsetRequestingMD4 && (!fileIdentifiers || !m_hashsetRequestingAICH))
+        throw FileException("unrequested hashset");
+    if (!data || size < 16)
+        throw FileException("hashset answer too short");
+    if (!m_reqFile) {
         m_hashsetRequestingMD4 = false;
         m_hashsetRequestingAICH = false;
-        return;
+        checkFailedFileIdReqs(data);
+        throw FileException("hashset answer without a requested file");
     }
 
     SafeMemFile file(data, size);
@@ -487,9 +489,10 @@ void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdent
     if (fileIdentifiers) {
         FileIdentifierSA headerIdent;
         if (!headerIdent.readIdentifier(file) || !ident.compareRelaxed(headerIdent)) {
-            logDebug(QStringLiteral("processHashSet: bad or wrong FileIdentifier from %1").arg(userName()));
+            m_hashsetRequestingMD4 = false;
+            m_hashsetRequestingAICH = false;
             checkFailedFileIdReqs(data);   // MFC DownloadClient.cpp:727
-            return;
+            throw FileException("hashset answer for another file (ProcessHashSet2)");
         }
 
         // In/out: what we asked for goes in, what was actually delivered comes out.
@@ -497,14 +500,13 @@ void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdent
         bool md4 = m_hashsetRequestingMD4;
         bool aich = m_hashsetRequestingAICH;
         if (!ident.readHashSetsFromPacket(file, md4, aich)) {
-            logDebug(QStringLiteral("processHashSet: corrupt hashset from %1").arg(userName()));
             if (m_hashsetRequestingMD4)
                 m_reqFile->setMD4HashsetNeeded(true);
             if (m_hashsetRequestingAICH)
                 m_reqFile->setAICHPartHashsetNeeded(true);
             m_hashsetRequestingMD4 = false;
             m_hashsetRequestingAICH = false;
-            return;
+            throw FileException("corrupt hashset");   // MFC :739
         }
 
         if (m_hashsetRequestingMD4 && !md4) {
@@ -520,15 +522,14 @@ void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdent
         if (md4 || aich)
             m_reqFile->hashsetReceived();
     } else if (!md4equ(data, m_reqFile->fileHash())) {
-        logDebug(QStringLiteral("processHashSet: wrong file id from %1").arg(userName()));
+        m_hashsetRequestingMD4 = false;
         checkFailedFileIdReqs(data);   // MFC DownloadClient.cpp:758
-        return;
+        throw FileException("hashset answer for another file (ProcessHashSet)");
     } else if (!ident.loadMD4HashsetFromFile(file, true)) {
         // Verifies count and root hash against ours
-        logDebug(QStringLiteral("processHashSet: bad MD4 hashset from %1").arg(userName()));
         m_reqFile->setMD4HashsetNeeded(true);
         m_hashsetRequestingMD4 = false;
-        return;
+        throw FileException("bad MD4 hashset");   // MFC :763
     } else {
         m_reqFile->hashsetReceived();
     }
@@ -1552,27 +1553,34 @@ bool UpDownClient::isValidSource() const
 // Source swapping
 // ===========================================================================
 
-bool UpDownClient::swapToAnotherFile(const QString& reason, bool ignoreNoNeeded,
+// MFC CUpDownClient::SwapToAnotherFile (srchybrid/DownloadClient.cpp:1534-1784).
+// @p ignoreNoNeeded is unused there too: the NNP list is always walked.
+bool UpDownClient::swapToAnotherFile(const QString& reason, bool /*ignoreNoNeeded*/,
                                       bool ignoreSuspensions, bool removeCompletely,
                                       PartFile* toFile, bool allowSame, bool isAboutToAsk)
 {
     if (!m_reqFile)
         return false;
 
-    // MFC srchybrid/DownloadClient.cpp:1548
+    // Only swap when the source cannot be kept
+    if (!removeCompletely && allowSame && thePrefs.a4afSaveCpu())
+        return false;
+
     const bool aggressiveSwapping = (removeCompletely || !allowSame || isAboutToAsk);
 
     // Not before the current file is due for a re-ask: until then the source is
     // doing its job where it is. An NNP source with somewhere to go is exempt.
-    // MFC srchybrid/DownloadClient.cpp:1552.
     if (!removeCompletely && !ignoreSuspensions && allowSame
-        && timeUntilReask(m_reqFile, aggressiveSwapping) > 0
+        && timeUntilReask(m_reqFile, aggressiveSwapping, true, false) > 0
         && (m_downloadState != DownloadState::NoNeededParts || m_otherRequests.empty()))
         return false;
 
-    // Only an idle source may be moved — never one that is transferring, connecting
-    // or mid-handshake. MFC srchybrid/DownloadClient.cpp:1559-1578.
     if (!removeCompletely) {
+        // Nowhere to go, and staying is fine
+        if (allowSame && m_otherRequests.empty() && m_otherNoNeeded.empty())
+            return false;
+        // Only an idle source may be moved — never one that is transferring,
+        // connecting or mid-handshake.
         switch (m_downloadState) {
         case DownloadState::OnQueue:
         case DownloadState::NoNeededParts:
@@ -1585,77 +1593,91 @@ bool UpDownClient::swapToAnotherFile(const QString& reason, bool ignoreNoNeeded,
         }
     }
 
-    // If specific target file given, try to swap directly
-    if (toFile) {
-        if (toFile == m_reqFile && !allowSame)
+    const auto isNNPNow = [this](const PartFile* file) {
+        return file == m_reqFile && m_downloadState == DownloadState::NoNeededParts;
+    };
+    const auto usable = [this](const PartFile* file) {
+        if (file == m_reqFile || file->isStopped())
             return false;
-        if (toFile != m_reqFile) {
-            bool skipped = false;
-            if (swapToRightFile(toFile, m_reqFile, ignoreSuspensions,
-                                isInNoNeededList(toFile),
-                                m_downloadState == DownloadState::NoNeededParts,
-                                skipped, aggressiveSwapping))
-            {
-                return doSwap(toFile, removeCompletely, reason);
+        if (theApp.downloadQueue && !theApp.downloadQueue->contains(file))
+            return false;
+        const PartFileStatus st = file->status();
+        return st == PartFileStatus::Ready || st == PartFileStatus::Empty;
+    };
+
+    // The current file is in the comparison only when staying is an option; a source
+    // that has to leave starts from nothing and takes the first usable candidate.
+    PartFile* swapTo = (allowSame && !removeCompletely) ? m_reqFile : nullptr;
+    bool swapToIsNNP = swapTo && isNNPNow(swapTo);
+
+    // The best file passed over only because another one may be asked for sources
+    PartFile* skipped = nullptr;
+    bool skippedIsNNP = false;
+
+    // Copies: a list is edited by doSwap() only, after the walk, but a candidate's
+    // suspension test may not see a half-walked list either.
+    const auto walk = [&](const std::list<PartFile*>& files, bool listIsNNP) {
+        for (PartFile* cur : files) {
+            if (!removeCompletely && !ignoreSuspensions && allowSame
+                && isSwapSuspended(cur, aggressiveSwapping, listIsNNP))
+                continue;
+            if (!usable(cur))
+                continue;
+
+            if (toFile) {
+                if (cur == toFile) {
+                    swapTo = cur;
+                    swapToIsNNP = listIsNNP;
+                    return true;   // found the one asked for
+                }
+                continue;
+            }
+
+            bool skippedForSX = false;
+            if (swapToRightFile(swapTo, cur, ignoreSuspensions, swapToIsNNP, listIsNNP,
+                                skippedForSX, aggressiveSwapping)) {
+                if (swapTo && skippedForSX) {
+                    bool discard = false;
+                    if (swapToRightFile(skipped, swapTo, ignoreSuspensions, skippedIsNNP,
+                                        swapToIsNNP, discard, aggressiveSwapping)) {
+                        skippedIsNNP = skippedIsNNP || isNNPNow(swapTo);
+                        skipped = swapTo;
+                    }
+                }
+                swapTo = cur;
+                swapToIsNNP = listIsNNP;
+            } else if (skippedForSX) {
+                bool discard = false;
+                if (swapToRightFile(skipped, cur, ignoreSuspensions, skippedIsNNP, listIsNNP,
+                                    discard, aggressiveSwapping)) {
+                    skipped = cur;
+                    skippedIsNNP = listIsNNP;
+                }
             }
         }
         return false;
-    }
-
-    // Find best file to swap to from our other-requests lists
-    PartFile* bestFile = nullptr;
-    bool bestSkippedSrcExch = false;
-
-    // The current file is in the comparison only when staying is an option. A source
-    // that has to leave takes the first live candidate (MFC starts with SwapTo == NULL,
-    // srchybrid/DownloadClient.cpp:1584-1586).
-    const bool mustLeave = !allowSame || removeCompletely;
-    const auto beatsBest = [&](PartFile* other, bool otherIsNNP, bool& skipped) {
-        if (mustLeave && !bestFile) {
-            skipped = false;
-            const PartFileStatus st = other->status();
-            return !other->isStopped()
-                && (st == PartFileStatus::Ready || st == PartFileStatus::Empty)
-                && other->sourceCount() < static_cast<int>(other->maxSources());
-        }
-        return swapToRightFile(other, bestFile ? bestFile : m_reqFile, ignoreSuspensions,
-                               otherIsNNP, m_downloadState == DownloadState::NoNeededParts,
-                               skipped, aggressiveSwapping);
     };
 
-    // Check m_otherRequests list
-    for (auto* otherFile : m_otherRequests) {
-        if (otherFile == m_reqFile)
-            continue;
-        bool skipped = false;
-        if (beatsBest(otherFile, false, skipped))
-        {
-            bestFile = otherFile;
-            bestSkippedSrcExch = skipped;
-        }
-    }
+    if (!walk(std::list<PartFile*>(m_otherRequests), false))
+        walk(std::list<PartFile*>(m_otherNoNeeded), true);
 
-    // Check m_otherNoNeeded list if ignoring no-needed
-    if (ignoreNoNeeded) {
-        for (auto* otherFile : m_otherNoNeeded) {
-            if (otherFile == m_reqFile)
-                continue;
-            bool skipped = false;
-            if (beatsBest(otherFile, true, skipped))
-            {
-                bestFile = otherFile;
-                bestSkippedSrcExch = skipped;
-            }
-        }
-    }
+    if (!swapTo)
+        return false;
 
-    if (bestFile) {
-        if (bestSkippedSrcExch)
+    QString info = reason;
+    if (skipped) {
+        bool skippedForSX = false;
+        const bool skippedIsBetter = swapToRightFile(swapTo, skipped, ignoreSuspensions,
+                                                     swapToIsNNP, skippedIsNNP, skippedForSX,
+                                                     aggressiveSwapping);
+        if (skippedIsBetter || skippedForSX) {
+            swapTo->setSwapForSourceExchangeTick();
             setSwapForSourceExchangeTick();
-        return doSwap(bestFile, removeCompletely, reason);
+            info.prepend(QStringLiteral("SourceExchange-Swap: "));
+        }
     }
 
-    return false;
+    return swapTo != m_reqFile && doSwap(swapTo, removeCompletely, info);
 }
 
 bool UpDownClient::doSwap(PartFile* swapTo, bool removeCompletely, const QString& reason)
@@ -1686,6 +1708,8 @@ bool UpDownClient::doSwap(PartFile* swapTo, bool removeCompletely, const QString
         } else {
             m_otherRequests.push_back(oldFile);
         }
+    } else {
+        m_fileReaskTimes.erase(oldFile);   // MFC :1825
     }
 
     // Remove old file from our other-requests/no-needed lists
@@ -1722,55 +1746,75 @@ bool UpDownClient::doSwap(PartFile* swapTo, bool removeCompletely, const QString
     return true;
 }
 
+// MFC CUpDownClient::SwapToRightFile (srchybrid/DownloadClient.cpp:1425-1532): is
+// @p curFile a better file for this source than @p swapTo, the best one so far?
 bool UpDownClient::swapToRightFile(PartFile* swapTo, PartFile* curFile, bool ignoreSuspensions,
                                     bool swapToIsNNP, bool curFileIsNNP,
                                     bool& wasSkippedDueToSrcExch,
                                     bool aggressiveSwapping)
 {
-    wasSkippedDueToSrcExch = false;
-
-    if (!swapTo || !curFile)
+    if (!curFile)
         return false;
-
-    // Don't swap if suspended (unless ignoring suspensions)
-    if (!ignoreSuspensions && isSwapSuspended(swapTo))
-        return false;
-
-    // Source count check — prefer files needing more sources
-    const int swapToSrcCount = swapTo->sourceCount();
-    const int curFileSrcCount = curFile->sourceCount();
-    const int maxSources = static_cast<int>(swapTo->maxSources());
-
-    // If swapTo already has max sources, don't swap
-    if (swapToSrcCount >= maxSources)
-        return false;
-
-    // NNP (No Needed Parts) handling:
-    // Prefer swapping away from NNP files to non-NNP files
-    if (curFileIsNNP && !swapToIsNNP)
-        return true;  // Current is NNP, target is not — swap
-
-    if (!curFileIsNNP && swapToIsNNP) {
-        if (!aggressiveSwapping)
-            return false;  // Current is not NNP, target is — don't swap unless aggressive
-    }
-
-    // Source exchange: avoid swapping too frequently for source exchange
-    if (!aggressiveSwapping && recentlySwappedForSourceExchange()) {
-        wasSkippedDueToSrcExch = true;
-        return false;
-    }
-
-    // Prefer the file with fewer sources (needs us more)
-    if (swapToSrcCount < curFileSrcCount)
+    if (!swapTo)
         return true;
 
-    // Equal source count: prefer higher priority file
-    if (swapToSrcCount == curFileSrcCount) {
-        if (swapTo->upPriority() > curFile->upPriority())
+    const auto sources = [](const PartFile* f) { return static_cast<uint32>(f->sourceCount()); };
+
+    // A file with (nearly) too many sources takes no more
+    const bool curHasRoom = curFileIsNNP ? sources(curFile) < curFile->maxSources() * 4 / 5
+                                         : sources(curFile) < curFile->maxSources();
+    if (!curHasRoom)
+        return false;
+
+    // swapTo is about to purge this source anyway, so it may as well go
+    if (sources(swapTo) > swapTo->maxSources()
+        || (sources(swapTo) >= swapTo->maxSources() * 4 / 5 && swapTo == m_reqFile
+            && (m_downloadState == DownloadState::LowToLowIP
+                || m_downloadState == DownloadState::RemoteQueueFull)))
+        return true;
+
+    if (!ignoreSuspensions && isSwapSuspended(curFile, aggressiveSwapping, curFileIsNNP))
+        return false;
+
+    const uint64 curTick = getTickCount();
+    const uint64 curAsked = lastAskedTime(curFile);
+    const uint64 swapAsked = lastAskedTime(swapTo);
+    const bool higherPrio = PartFile::rightFileHasHigherPrio(swapTo, curFile);
+    // two re-ask intervals for each NNP file before an NNP file is asked again
+    const uint64 allNnpReaskTime = uint64{FILEREASKTIME} * 2
+        * (m_otherNoNeeded.size() + (m_downloadState == DownloadState::NoNeededParts ? 1 : 0));
+    const uint64 curReask = curAsked + allNnpReaskTime;
+
+    // May a file be asked for sources right now — the reason to keep a source on it
+    const auto sxWorthIt = [&](PartFile* file, bool sourceExchangeCheck) {
+        return isSourceRequestAllowed(file, sourceExchangeCheck)
+            && (file->allowSwapForSourceExchange(curTick)
+                || (file == m_reqFile && recentlySwappedForSourceExchange()));
+    };
+    const bool queuedNearTheTop =
+        m_downloadState == DownloadState::OnQueue && m_remoteQueueRank <= 50;
+
+    const bool better =
+        (!swapToIsNNP && (!curFileIsNNP || curAsked == 0 || curTick >= curReask) && higherPrio)
+        || (swapToIsNNP && curFileIsNNP
+            && ((swapAsked != 0
+                 && (curAsked == 0
+                     || (swapAsked > curAsked
+                         && (curTick >= curReask
+                             || (higherPrio && curTick < swapAsked + allNnpReaskTime)))))
+                || (higherPrio && swapAsked == 0 && curAsked == 0)))
+        || (swapToIsNNP && !curFileIsNNP);
+
+    if (better) {
+        if (sxWorthIt(curFile, false) || !sxWorthIt(swapTo, false) || queuedNearTheTop)
             return true;
+        wasSkippedDueToSrcExch = true;
     }
 
+    if (sxWorthIt(curFile, true) && !sxWorthIt(swapTo, true) && !queuedNearTheTop) {
+        wasSkippedDueToSrcExch = true;
+        return true;
+    }
     return false;
 }
 
@@ -1779,29 +1823,31 @@ void UpDownClient::dontSwapTo(PartFile* file)
     if (!file)
         return;
 
-    FileStamp stamp;
-    stamp.file = file;
-    stamp.timestamp = getTickCount();
-    m_dontSwap.push_back(stamp);
+    const uint64 curTick = getTickCount();
+    for (auto& stamp : m_dontSwap) {
+        if (stamp.file == file) {
+            stamp.timestamp = curTick;
+            return;
+        }
+    }
+    m_dontSwap.push_front({file, curTick});
 }
 
 bool UpDownClient::isSwapSuspended(const PartFile* file, bool allowShortReaskTime,
                                     bool fileIsNNP) const
 {
-    Q_UNUSED(allowShortReaskTime);
-    Q_UNUSED(fileIsNNP);
-
-    if (!file)
+    if (!file || file == m_reqFile)
         return false;
 
+    // Not a file we asked this source about a moment ago
+    if (timeUntilReask(file, allowShortReaskTime, true, fileIsNNP) > 0)
+        return true;
+
     const uint64 curTick = getTickCount();
-
     for (const auto& stamp : m_dontSwap) {
-        if (stamp.file == file) {
-            return (curTick - stamp.timestamp) < PURGESOURCESWAPSTOP;
-        }
+        if (stamp.file == file)
+            return curTick < stamp.timestamp + PURGESOURCESWAPSTOP;
     }
-
     return false;
 }
 
@@ -1856,7 +1902,8 @@ uint32 UpDownClient::timeUntilReask() const
     return timeUntilReask(m_reqFile);
 }
 
-uint32 UpDownClient::timeUntilReask(const PartFile* file, bool allowShortReaskTime) const
+uint32 UpDownClient::timeUntilReask(const PartFile* file, bool allowShortReaskTime,
+                                    bool useGivenNNP, bool givenNNP) const
 {
     // Not before the pause after fruitless sessions is over.
     const uint64 curTick = getTickCount();
@@ -1872,7 +1919,8 @@ uint32 UpDownClient::timeUntilReask(const PartFile* file, bool allowShortReaskTi
         // A source we are not talking to at all may be re-asked far sooner than one that
         // answered and parked us. MFC srchybrid/DownloadClient.cpp:1885-1887.
         reaskTime = MIN_REQUESTTIME;
-    } else if ((file == m_reqFile && m_downloadState == DownloadState::NoNeededParts)
+    } else if ((useGivenNNP && givenNNP)
+               || (file == m_reqFile && m_downloadState == DownloadState::NoNeededParts)
                || (file != m_reqFile && isInNoNeededList(file)))
     {
         // MFC: NNP sources get doubled reask time to save connections and traffic

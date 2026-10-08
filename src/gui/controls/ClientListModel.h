@@ -40,7 +40,8 @@ struct ClientRow {
     QString userName;
     QString software;
     QString fileName;
-    QString uploadState;
+    QString uploadState;        ///< token, see uploadStateText()
+    bool uploadStalled = false;
     QString downloadState;
     QString userHash;
     int64_t transferredUp = 0;

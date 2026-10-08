@@ -4,6 +4,7 @@
 /// @brief Table model for the Shared Files list.
 
 #include <QHash>
+#include <QSet>
 #include <QSortFilterProxyModel>
 #include <QString>
 
@@ -84,6 +85,9 @@ public:
     static constexpr int SharePartMapRole = Qt::UserRole + 1;
     /// A sort key that means "no value": such rows go last in either direction.
     static constexpr int UndefinedRole = Qt::UserRole + 2;
+    /// A column's other sort value (MFC "4-way sorting"): this session's figure for
+    /// Requests / Accepted / Transferred, Kad before eD2K for Shared eD2K|Kad.
+    static constexpr int AltSortRole = Qt::UserRole + 3;
 
     enum Column {
         ColFileName = 0,
@@ -199,6 +203,9 @@ public:
     /// @p column, a "-token" must not. Applied on top of the folder filter.
     void setTextFilter(const QStringList& tokens, int column);
 
+    /// Sort @p column by its other value (SharedFilesModel::AltSortRole).
+    void setAltSort(int column, bool alt);
+
 protected:
     [[nodiscard]] bool filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const override;
     [[nodiscard]] bool lessThan(const QModelIndex& left, const QModelIndex& right) const override;
@@ -208,6 +215,7 @@ private:
     QString m_filterPath;
     QStringList m_tokens;
     int m_tokenColumn = 0;
+    QSet<int> m_altSortColumns;
 };
 
 } // namespace eMule

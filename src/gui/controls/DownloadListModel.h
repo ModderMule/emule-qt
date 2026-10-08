@@ -99,7 +99,7 @@ struct DownloadRow {
     QString fileType;
     int64_t requests = 0;
     int64_t acceptedRequests = 0;
-    int64_t transferredData = 0;
+    int64_t upTransferred = 0;      // uploaded of this file, all time
     QByteArray partMap;  // per-part status: 0=done, 1=no-src, 2-254=src-freq, 255=downloading
     QList<qint64> gaps;       ///< flat [start, end] pairs, inclusive
     QList<qint64> pending;    ///< requested blocks not yet received, same shape
@@ -172,6 +172,9 @@ public:
 
     explicit DownloadListModel(QObject* parent = nullptr);
 
+    /// Sort Remaining by the bytes left instead of the time (MFC m_bRemainSort).
+    void setRemainingSortBySize(bool bySize) { m_remainingSortBySize = bySize; }
+
     // QAbstractItemModel interface
     [[nodiscard]] QModelIndex index(int row, int column,
                                      const QModelIndex& parent = {}) const override;
@@ -218,6 +221,7 @@ public:
     [[nodiscard]] const DownloadRow* findByHash(const QString& hexHash) const;
 
 private:
+    bool m_remainingSortBySize = false;
     /// The Status column's text, reproducing MFC CPartFile::getPartfileStatus
     /// (srchybrid/PartFile.cpp:3412-3453). The daemon sends the raw enum token —
     /// "ready", "empty" — which is the right wire format and the wrong thing to show

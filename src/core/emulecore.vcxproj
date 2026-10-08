@@ -328,6 +328,7 @@
     <ClCompile Include="files\SharedDirWatcher.cpp" />
     <ClCompile Include="files\SharedFileList.cpp" />
     <ClCompile Include="net\SmtpClient.cpp" />
+    <ClCompile Include="net\TlsRelay.cpp" />
     <ClCompile Include="files\SourceSaver.cpp" />
     <ClCompile Include="files\StatisticFile.cpp" />
     <ClCompile Include="stats\Statistics.cpp" />
@@ -503,6 +504,7 @@
     <ClInclude Include="utils\PlatformUtils.h" />
     <ClInclude Include="prefs\IndexerConfig.h" />
     <ClInclude Include="prefs\DownloadCategory.h" />
+    <ClInclude Include="prefs\CategoryView.h" />
     <ClInclude Include="prefs\IndexerFeed.h" />
     <ClInclude Include="prefs\NewsServer.h" />
     <ClInclude Include="prefs\UsenetSubjectPattern.h" />
@@ -545,6 +547,7 @@
     <QtMoc Include="files\SharedDirWatcher.h" />
     <QtMoc Include="files\SharedFileList.h" />
     <QtMoc Include="net\SmtpClient.h" />
+    <QtMoc Include="net\TlsRelay.h" />
     <ClInclude Include="files\StatisticFile.h" />
     <ClInclude Include="stats\CardinalitySketch.h" />
     <ClInclude Include="stats\CountryCensus.h" />

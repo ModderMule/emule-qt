@@ -444,6 +444,9 @@
     <ClCompile Include="net\SmtpClient.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="net\TlsRelay.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="files\SourceSaver.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1026,6 +1029,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="net\SmtpClient.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="net\TlsRelay.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="files\StatisticFile.h">

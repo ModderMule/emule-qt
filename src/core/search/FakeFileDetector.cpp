@@ -144,9 +144,10 @@ void add(FakeFileVerdict& verdict, FakeReason reason, int points)
 }
 
 /// @return how many unrelated contents the names describe.
-int assessNames(const QStringList& names, const FakeFileRules& rules, FakeFileVerdict& verdict)
+int assessNames(const QStringList& names, const FakeFileInput& in, const FakeFileRules& rules,
+                FakeFileVerdict& verdict)
 {
-    const int groups = countNameGroups(names);
+    const int groups = countNameGroups(names, in.ignoredNameWords);
     if (groups >= 3)
         add(verdict, FakeReason::MultipleNames, 25);
     else if (groups == 2)
@@ -161,6 +162,13 @@ int assessNames(const QStringList& names, const FakeFileRules& rules, FakeFileVe
     }
     if (kinds.size() >= 2)
         add(verdict, FakeReason::NamesSpanKinds, 25);
+
+    // Score only: an ambiguous word is a caution, a trade word makes the file suspect.
+    int abuse = 0;
+    for (const QString& name : names)
+        abuse = std::max(abuse, abuseNameTier(name, rules));
+    if (abuse > 0)
+        add(verdict, FakeReason::AbuseContentName, abuse >= 2 ? 50 : 25);
     return groups;
 }
 
@@ -176,8 +184,10 @@ void assessMedia(const FakeFileInput& in, const QStringList& names, FakeFileVerd
 
     if (in.mediaLengthSec > 0) {
         const uint32 len = in.mediaLengthSec;
-        if ((video && ((in.size >= 50ull << 20 && len < 60) || len > 12 * 3600))
-            || (audio && ((in.size >= 1ull << 20 && len < 2) || len > 24 * 3600)))
+        // Very long is fine while the size still pays for it: a 27 h audiobook at 64 kbit/s.
+        const double impliedKbps = static_cast<double>(in.size) * 8.0 / len / 1000.0;
+        if ((video && ((in.size >= 50ull << 20 && len < 60) || (len > 12 * 3600 && impliedKbps < 40)))
+            || (audio && ((in.size >= 1ull << 20 && len < 2) || (len > 24 * 3600 && impliedKbps < 16))))
             add(verdict, FakeReason::ImplausibleMediaLength, 10);
     }
     if (in.mediaBitrateKbps > 0) {
@@ -247,6 +257,7 @@ QString fakeReasonId(FakeReason reason)
     case FakeReason::ImplausibleMediaBitrate: return QStringLiteral("implausible_media_bitrate");
     case FakeReason::MediaSizeMismatch:       return QStringLiteral("media_size_mismatch");
     case FakeReason::NameMediaTagMismatch:    return QStringLiteral("name_media_tag_mismatch");
+    case FakeReason::AbuseContentName:        return QStringLiteral("abuse_content_name");
     }
     return {};
 }
@@ -284,7 +295,7 @@ FakeFileRules FakeFileRules::defaults()
 
 FakeFileRules FakeFileRules::parse(const QString& text, QStringList* errors)
 {
-    enum class Section { None, Tokens, Regex } section = Section::None;
+    enum class Section { None, Tokens, Regex, Abuse } section = Section::None;
     FakeFileRules rules;
 
     const QStringList lines = text.split(QLatin1Char('\n'));
@@ -296,13 +307,15 @@ FakeFileRules FakeFileRules::parse(const QString& text, QStringList* errors)
             const QString name = line.mid(1, line.size() - 2).trimmed().toLower();
             section = name == QLatin1StringView("tokens") ? Section::Tokens
                     : name == QLatin1StringView("regex")  ? Section::Regex
+                    : name == QLatin1StringView("abuse")  ? Section::Abuse
                                                           : Section::None;
             continue;
         }
-        if (section == Section::Tokens) {
+        if (section == Section::Tokens || section == Section::Abuse) {
+            QStringList& list = section == Section::Tokens ? rules.tokens : rules.abuseTokens;
             const QString token = paddedWords(line).trimmed();
-            if (!token.isEmpty() && !rules.tokens.contains(token))
-                rules.tokens.push_back(token);
+            if (!token.isEmpty() && !list.contains(token))
+                list.push_back(token);
         } else if (section == Section::Regex) {
             QRegularExpression re(line, QRegularExpression::CaseInsensitiveOption);
             if (re.isValid())
@@ -325,8 +338,12 @@ FakeFileRules FakeFileRules::load(const QString& path)
     FakeFileRules rules = parse(QString::fromUtf8(file.readAll()), &errors);
     for (const QString& error : std::as_const(errors))
         logWarning(QStringLiteral("Fake-file rules: skipped regex %1").arg(error));
-    if (rules.tokens.isEmpty() && rules.regexes.isEmpty())
-        return defaults();
+    if (rules.tokens.isEmpty() && rules.regexes.isEmpty()) {
+        // Only an [abuse] section: the built-in fake rules stay
+        FakeFileRules merged = defaults();
+        merged.abuseTokens = rules.abuseTokens;
+        return merged;
+    }
     return rules;
 }
 
@@ -396,7 +413,7 @@ FakeFileVerdict assessFile(const FakeFileInput& in, const FakeFileRules& rules)
             names.push_back(name);
     }
 
-    const int nameGroups = assessNames(names, rules, verdict);
+    const int nameGroups = assessNames(names, in, rules, verdict);
 
     if (std::any_of(in.comments.cbegin(), in.comments.cend(),
                     [&rules](const QString& c) { return rules.matches(c); }))
@@ -498,37 +515,111 @@ QSet<QString> significantNameTokens(const QString& name)
     return tokens;
 }
 
-int countNameGroups(const QStringList& names)
+QSet<QString> searchKeywordTokens(const QString& expression)
 {
-    std::vector<QSet<QString>> tokens;
+    QSet<QString> words;
+    const QStringList parts = paddedWords(expression).split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    for (const QString& word : parts) {
+        if (word.size() >= 3)
+            words.insert(word);
+    }
+    return words;
+}
+
+int countNameGroups(const QStringList& names, const QSet<QString>& ignoredWords)
+{
+    static const QRegularExpression episodeToken(QStringLiteral("^s\\d+e\\d+$"));
+    static const QRegularExpression yearToken(QStringLiteral("^y\\d{4}$"));
+
+    struct Name {
+        QSet<QString> words;      // what the content is called
+        QSet<QString> episodes;
+        QSet<QString> years;
+    };
+    std::vector<Name> list;
     for (const QString& name : names) {
-        QSet<QString> set = significantNameTokens(name);
-        if (!set.isEmpty())
-            tokens.push_back(std::move(set));
+        Name entry;
+        const QSet<QString> tokens = significantNameTokens(name);
+        for (const QString& token : tokens) {
+            if (ignoredWords.contains(token))
+                continue;
+            if (episodeToken.match(token).hasMatch())
+                entry.episodes.insert(token);
+            else if (yearToken.match(token).hasMatch())
+                entry.years.insert(token);
+            else
+                entry.words.insert(token);
+        }
+        if (!entry.words.isEmpty() || !entry.episodes.isEmpty() || !entry.years.isEmpty())
+            list.push_back(std::move(entry));
     }
 
-    std::vector<int> parent(tokens.size());
+    // One shared word is not enough between long names: a search keyword is in every
+    // name it returned, and that glued unrelated names into one group.
+    const auto linked = [](const Name& a, const Name& b) {
+        if (a.episodes.intersects(b.episodes))
+            return true;
+        const qsizetype shorter = std::min(a.words.size(), b.words.size());
+        qsizetype shared = 0;
+        for (const QString& word : a.words)
+            shared += b.words.contains(word) ? 1 : 0;
+        if (shared >= 2 || (shared == 1 && shorter <= 2))
+            return true;
+        // "TheFlash(2023)" against "The Flash 2023 ...": a year and next to nothing else
+        return shared == 0 && shorter <= 1 && a.years.intersects(b.years);
+    };
+
+    std::vector<int> parent(list.size());
     std::iota(parent.begin(), parent.end(), 0);
     const auto find = [&parent](int i) {
         while (parent[static_cast<size_t>(i)] != i)
             i = parent[static_cast<size_t>(i)];
         return i;
     };
-    // One token -> first name carrying it: linear in the number of tokens.
-    QHash<QString, int> owner;
-    for (int i = 0; i < static_cast<int>(tokens.size()); ++i) {
-        for (const QString& token : std::as_const(tokens[static_cast<size_t>(i)])) {
-            const auto it = owner.constFind(token);
-            if (it == owner.cend())
-                owner.insert(token, i);
-            else
-                parent[static_cast<size_t>(find(i))] = find(*it);
+    const int count = static_cast<int>(list.size());
+    for (int i = 0; i < count; ++i) {
+        for (int j = i + 1; j < count; ++j) {
+            if (find(i) != find(j) && linked(list[static_cast<size_t>(i)], list[static_cast<size_t>(j)]))
+                parent[static_cast<size_t>(find(j))] = find(i);
         }
     }
     int groups = 0;
-    for (int i = 0; i < static_cast<int>(tokens.size()); ++i)
+    for (int i = 0; i < count; ++i)
         groups += find(i) == i ? 1 : 0;
     return groups;
+}
+
+// ---------------------------------------------------------------------------
+// Abuse words
+// ---------------------------------------------------------------------------
+
+int abuseNameTier(const QString& name, const FakeFileRules& rules)
+{
+    // Words that only advertise child abuse material.
+    static const QStringList strong{
+        QStringLiteral("pthc"), QStringLiteral("ptsc"), QStringLiteral("hussyfan"),
+        QStringLiteral("raygold"), QStringLiteral("r ygold"), QStringLiteral("babyshivid"),
+        QStringLiteral("kingpass"), QStringLiteral("kdquality"), QStringLiteral("childporn"),
+        QStringLiteral("child porn"), QStringLiteral("kinderporno")};
+    // Words with an innocent use too: a novel, a band, Spanish slang, a parenting book.
+    static const QStringList weak{
+        QStringLiteral("preteen"), QStringLiteral("pre teen"), QStringLiteral("underage"),
+        QStringLiteral("pedo"), QStringLiteral("jailbait"), QStringLiteral("lolita"),
+        QStringLiteral("lolitas")};
+    // An age under 16 written the way these names do: "12yo"
+    static const QRegularExpression age(QStringLiteral(" (?:[1-9]|1[0-5])yo "));
+
+    if (name.isEmpty())
+        return 0;
+    const QString words = paddedWords(name);
+    const auto has = [&words](const QStringList& tokens) {
+        return std::any_of(tokens.cbegin(), tokens.cend(), [&words](const QString& token) {
+            return words.contains(QLatin1Char(' ') + token + QLatin1Char(' '));
+        });
+    };
+    if (has(strong) || has(rules.abuseTokens))
+        return 2;
+    return has(weak) || age.match(words).hasMatch() ? 1 : 0;
 }
 
 } // namespace eMule

@@ -164,6 +164,9 @@ public:
     /// Iterate over all known clients.
     void forEachClient(const std::function<void(UpDownClient*)>& callback) const;
 
+    /// Offer every idle source with other files its best one (MFC ProcessA4AFClients).
+    void processA4AFClients() const;
+
     /// Periodic cleanup — removes idle clients that serve no purpose.
     /// Called every ~1s from CoreSession::onTimer().
     /// Matches MFC CClientList::Process() (srchybrid/ClientList.cpp).

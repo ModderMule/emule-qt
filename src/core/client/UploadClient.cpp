@@ -764,6 +764,10 @@ void UpDownClient::registerBadRequest(const QString& reason)
 
 void UpDownClient::ban(const QString& reason)
 {
+    if (m_chatState != ChatState::None) {
+        m_chatState = ChatState::None;
+        emit chatStateChanged();
+    }
     if (theApp.clientList)
         theApp.clientList->addTrackClient(this);
 

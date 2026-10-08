@@ -423,7 +423,9 @@ public:
     void incMessagesSent() { if (m_messagesSent < 255) ++m_messagesSent; }
 
     [[nodiscard]] bool isSpammer() const { return m_isSpammer; }
-    void setSpammer(bool v) { m_isSpammer = v; }
+    /// Marking bans the peer; clearing lifts a ban that came from the mark
+    /// (MFC CUpDownClient::SetSpammer).
+    void setSpammer(bool v);
 
     [[nodiscard]] bool messageFiltered() const { return m_messageFiltered; }
     void setMessageFiltered(bool v) { m_messageFiltered = v; }
@@ -673,6 +675,10 @@ public:
     /// appends its own marker, the way MFC's PeerCache appended " Cache".
     [[nodiscard]] virtual QString downloadStateDisplayString() const;
     [[nodiscard]] QString uploadStateDisplayString() const;
+    /// The same as a token for the GUI, which owns the wording; see uploadStalled().
+    [[nodiscard]] QString uploadStateToken() const;
+    /// Holding a slot with nothing left to send: the peer stopped asking for blocks.
+    [[nodiscard]] bool uploadStalled() const;
 
     // -- Phase 3 — secure identity ------------------------------------------
 
@@ -894,6 +900,8 @@ public:
     /// Drop every A4AF link, on this side and on each file's.
     void removeFromAllOtherLists();
     [[nodiscard]] std::size_t otherRequestCount() const { return m_otherRequests.size(); }
+    /// Asked for another file too, wanted or not (either A4AF list).
+    [[nodiscard]] bool hasOtherFiles() const { return !m_otherRequests.empty() || !m_otherNoNeeded.empty(); }
     /// This file is one we asked the peer for and it had nothing we need (A4AF row text).
     [[nodiscard]] bool isInNoNeededList(const PartFile* file) const;
     [[nodiscard]] bool isSwapSuspended(const PartFile* file,
@@ -902,7 +910,10 @@ public:
     [[nodiscard]] uint32 timeUntilReask() const;
     /// @param allowShortReaskTime use MIN_REQUESTTIME instead of FILEREASKTIME, as MFC
     ///        does for a source we hold no conversation with.
-    [[nodiscard]] uint32 timeUntilReask(const PartFile* file, bool allowShortReaskTime = false) const;
+    /// @param useGivenNNP, givenNNP the caller knows whether @p file is a no-needed-parts
+    ///        file for this source (it is being judged before it is in either list)
+    [[nodiscard]] uint32 timeUntilReask(const PartFile* file, bool allowShortReaskTime = false,
+                                        bool useGivenNNP = false, bool givenNNP = false) const;
     /// Tick of the last connect attempt — MFC's GetLastTriedToConnectTime(). Seeded to
     /// 20 minutes in the past by the constructor, so a brand-new source is dialable.
     [[nodiscard]] uint64 lastTriedToConnect() const { return m_lastTriedToConnect; }

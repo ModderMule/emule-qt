@@ -569,6 +569,18 @@ void SearchResultsModel::removeRow(int row)
     updateHasMeta();
 }
 
+void SearchResultsModel::removeChild(int row, int childRow)
+{
+    if (row < 0 || row >= static_cast<int>(m_rows.size()))
+        return;
+    auto& children = m_rows[static_cast<size_t>(row)].children;
+    if (childRow < 0 || childRow >= static_cast<int>(children.size()))
+        return;
+    beginRemoveRows(index(row, 0), childRow, childRow);
+    children.erase(children.begin() + childRow);
+    endRemoveRows();
+}
+
 void SearchResultsModel::reindexRows()
 {
     m_rowByUid.clear();

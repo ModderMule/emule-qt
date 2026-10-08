@@ -7,6 +7,7 @@
 /// time, clients, servers, shared files, total downloads, Usenet).
 /// Right side: 3 stacked StatsGraph widgets (Download, Upload, Connections).
 
+#include <array>
 #include <QHash>
 #include <QIcon>
 #include <QList>
@@ -170,7 +171,9 @@ private:
     QTreeWidgetItem* m_itemDownSesPort[2]{};
     QTreeWidgetItem* m_itemDownActiveDownloads = nullptr;
     QTreeWidgetItem* m_itemDownFoundSources = nullptr;
+    std::array<QTreeWidgetItem*, 20> m_itemDownSources{};   ///< states, origins, networks
     QTreeWidgetItem* m_itemDownUdpReasks = nullptr;
+    QTreeWidgetItem* m_itemDownDeadSources = nullptr;
     QTreeWidgetItem* m_itemDownCompletedSes = nullptr;
     QTreeWidgetItem* m_itemDownSesSuccessful = nullptr;
     QTreeWidgetItem* m_itemDownSesFailed = nullptr;
@@ -231,6 +234,28 @@ private:
     QTreeWidgetItem* m_itemTimeHeader = nullptr;
     QTreeWidgetItem* m_itemStatsLastReset = nullptr;
     QTreeWidgetItem* m_itemTimeSinceReset = nullptr;
+
+    // Time Statistics > Projected Averages (MFC StatisticsDlg.cpp:1616-1958): the
+    // cumulative transfer figures scaled to a day, a month and a year.
+    struct ProjectedRow {
+        enum Kind { Bytes, BytesShare, Count, Overhead };
+        QTreeWidgetItem* item = nullptr;
+        Kind kind = Bytes;
+        QString label;
+        QStringList keys;       ///< summed
+        QString second;         ///< share-of key, or the packet count's
+    };
+    std::array<std::vector<ProjectedRow>, 3> m_projectedRows;
+    void buildProjectedAverages();
+    void updateProjectedAverages(const QCborMap& stats);
+
+public:
+    /// Seconds a projection covers: a day, 1/12 of a Gregorian year, a Gregorian year.
+    static constexpr std::array<qint64, 3> kProjectionPeriods = {86400, 2629746, 31556952};
+    /// @p value as it would be after @p period at the pace of @p sinceReset seconds.
+    [[nodiscard]] static double projected(qint64 value, qint64 period, qint64 sinceReset);
+
+private:
     // Session
     QTreeWidgetItem* m_itemRuntime = nullptr;
     QTreeWidgetItem* m_itemTransferTime = nullptr;

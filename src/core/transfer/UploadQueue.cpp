@@ -44,7 +44,8 @@ namespace {
 /// to prefs rather than crashing.
 uint32 uploadCapKB()
 {
-    if (thePrefs.dynUpEnabled() && theApp.lastCommonRouteFinder)
+    if (thePrefs.isDynUpEnabled() && theApp.lastCommonRouteFinder
+        && !theApp.lastCommonRouteFinder->hasGivenUp())
         return theApp.lastCommonRouteFinder->getUpload() / 1024;
     return thePrefs.maxUploadLimit();
 }
@@ -407,7 +408,7 @@ bool UploadQueue::acceptNewClient(int curUploadSlots, uint32 datarate) const
         // Unreachable when USS is on: the cap is then getUpload()/1024, which cannot reach
         // UINT32_MAX, so the disjunct above has already returned. Kept for MFC fidelity —
         // srchybrid/UploadQueue.cpp:414 carries the same redundant test.
-        || thePrefs.dynUpEnabled()
+        || thePrefs.isDynUpEnabled()
         || thePrefs.maxGraphUploadRate() == 0
         || static_cast<uint32>(curUploadSlots) < thePrefs.maxGraphUploadRate() * 1024 / tgtRate;
 }
@@ -422,7 +423,8 @@ bool UploadQueue::forceNewClient(bool allowEmptyWaitingQueue)
         return false;
 
     // USS veto check
-    if (theApp.lastCommonRouteFinder && thePrefs.dynUpEnabled()
+    if (theApp.lastCommonRouteFinder && thePrefs.isDynUpEnabled()
+        && !theApp.lastCommonRouteFinder->hasGivenUp()
         && !theApp.lastCommonRouteFinder->acceptNewClient())
         return false;
 

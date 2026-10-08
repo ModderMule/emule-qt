@@ -168,6 +168,16 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
                                              f.containerActual, f.hasComment, f.userRating));
     }
 
+    if (role == AltSortRole) {
+        switch (index.column()) {
+        case ColRequests:       return QVariant::fromValue(f.requests);
+        case ColAccepted:       return QVariant::fromValue(f.acceptedUploads);
+        case ColTransferred:    return QVariant::fromValue(f.transferred);
+        case ColSharedNetworks: return (f.kadPublished ? 2 : 0) + (f.publishedED2K ? 1 : 0);
+        default:                return {};
+        }
+    }
+
     // Raw data for sorting
     if (role == Qt::UserRole) {
         switch (index.column()) {
@@ -522,6 +532,17 @@ bool SharedFilesSortProxy::filterAcceptsRow(int sourceRow, const QModelIndex& /*
     return true;
 }
 
+void SharedFilesSortProxy::setAltSort(int column, bool alt)
+{
+    if (alt == m_altSortColumns.contains(column))
+        return;
+    if (alt)
+        m_altSortColumns.insert(column);
+    else
+        m_altSortColumns.remove(column);
+    invalidate();
+}
+
 bool SharedFilesSortProxy::lessThan(const QModelIndex& left, const QModelIndex& right) const
 {
     // Rows without a value stay last whichever way the column is sorted
@@ -530,8 +551,10 @@ bool SharedFilesSortProxy::lessThan(const QModelIndex& left, const QModelIndex& 
     if (lu != ru)
         return (sortOrder() == Qt::AscendingOrder) == ru;
 
-    const QVariant lv = sourceModel()->data(left, Qt::UserRole);
-    const QVariant rv = sourceModel()->data(right, Qt::UserRole);
+    const int role = m_altSortColumns.contains(left.column()) ? SharedFilesModel::AltSortRole
+                                                              : static_cast<int>(Qt::UserRole);
+    const QVariant lv = sourceModel()->data(left, role);
+    const QVariant rv = sourceModel()->data(right, role);
 
     // Compare by type: int64, double, then string
     if (lv.typeId() == QMetaType::LongLong || lv.typeId() == QMetaType::Int)

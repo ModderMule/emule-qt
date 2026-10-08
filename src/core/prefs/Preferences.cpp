@@ -1204,6 +1204,10 @@ void Preferences::setQueueSize(uint32 val) { set(&Data::queueSize, val); }
 
 bool Preferences::dynUpEnabled() const { return get(&Data::dynUpEnabled); }
 
+// MFC CPreferences::IsDynUpEnabled: with no line capacity given there is nothing else
+// to size the upload by.
+bool Preferences::isDynUpEnabled() const { return dynUpEnabled() || maxGraphUploadRate() == 0; }
+
 void Preferences::setDynUpEnabled(bool val) { set(&Data::dynUpEnabled, val); }
 
 int Preferences::dynUpPingTolerance() const { return get(&Data::dynUpPingTolerance); }

@@ -437,6 +437,11 @@ public:
     void updateAutoDownPriority();
 
     static bool rightFileHasHigherPrio(const PartFile* left, const PartFile* right);
+    /// A source was moved here to ask for sources; not again within 30 s (MFC).
+    [[nodiscard]] bool allowSwapForSourceExchange(uint64 tick) const
+    { return m_lastSwapForSourceExchangeTick == 0
+          || tick >= m_lastSwapForSourceExchangeTick + SEC2MS(30); }
+    void setSwapForSourceExchangeTick();
 
     // -- Source tracking ------------------------------------------------------
 
@@ -571,6 +576,7 @@ public:
     // AICH recovery
     /// Sources that said they do not have this file (MFC m_DeadSourceList).
     [[nodiscard]] DeadSourceList& deadSourceList() { return m_deadSourceList; }
+    [[nodiscard]] const DeadSourceList& deadSourceList() const { return m_deadSourceList; }
 
     [[nodiscard]] AICHRecoveryHashSet& aichRecoveryHashSet() { return m_aichRecoveryHashSet; }
     [[nodiscard]] const AICHRecoveryHashSet& aichRecoveryHashSet() const { return m_aichRecoveryHashSet; }
@@ -758,9 +764,7 @@ private:
     uint64 m_lastSearchTimeKad = 0;
     uint8  m_totalSearchesKad = 0;
     uint64 m_lastKadSkipLogTime = 0;   // throttle for logKadSourceSearchSkipped()
-
-    // Per-download-state source counts
-    std::array<uint32, 17> m_anStates{};
+    uint64 m_lastSwapForSourceExchangeTick = 0;
 };
 
 } // namespace eMule

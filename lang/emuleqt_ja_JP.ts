@@ -384,7 +384,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+619"/>
+        <location filename="../src/gui/app/main.cpp" line="+638"/>
         <source>Download Added</source>
         <translation>ダウンロード追加</translation>
     </message>
@@ -672,7 +672,7 @@ Has comments</source>
         <translation>テスト</translation>
     </message>
     <message>
-        <location filename="../src/gui/utils/FileAssociation.cpp" line="+158"/>
+        <location filename="../src/gui/utils/FileAssociation.cpp" line="+258"/>
         <source>Could not write the file association to the registry.</source>
         <translation>ファイルの関連付けをレジストリに書き込めませんでした。</translation>
     </message>
@@ -683,7 +683,7 @@ Has comments</source>
     </message>
     <message>
         <location line="+15"/>
-        <location line="+29"/>
+        <location line="+31"/>
         <source>No writable data directory.</source>
         <translation>書き込み可能なデータディレクトリがありません。</translation>
     </message>
@@ -751,7 +751,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4011"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4012"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -2047,7 +2047,7 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::ClientState</name>
     <message>
-        <location filename="../src/gui/utils/ClientStateText.h" line="+40"/>
+        <location filename="../src/gui/utils/ClientStateText.h" line="+68"/>
         <source>Unknown</source>
         <translation>不明</translation>
     </message>
@@ -2551,7 +2551,7 @@ Enter the address and authentication token of a remote core.</source>
 <context>
     <name>eMule::DownloadListModel</name>
     <message>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+680"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+685"/>
         <source>Downloading</source>
         <translation>ダウンロード中</translation>
     </message>
@@ -2560,12 +2560,12 @@ Enter the address and authentication token of a remote core.</source>
         <translation type="vanished">自動 [%1]</translation>
     </message>
     <message>
-        <location line="-500"/>
+        <location line="-505"/>
         <source>Queue Full</source>
         <translation>キューが満杯</translation>
     </message>
     <message>
-        <location line="+44"/>
+        <location line="+47"/>
         <source>Available parts: %1 / %2</source>
         <translation>利用可能なパート: %1 / %2</translation>
     </message>
@@ -2581,7 +2581,6 @@ Enter the address and authentication token of a remote core.</source>
         <translation>なし</translation>
     </message>
     <message>
-        <location line="+35"/>
         <source>File Name:	%1
 ED2K Hash:	%2
 Size:	%3
@@ -2593,7 +2592,7 @@ Sources:	%9
 Requests:	%10
 Accepted Requests:	%11
 Transferred Data:	%12</source>
-        <translation>ファイル名:	%1
+        <translation type="vanished">ファイル名:	%1
 ED2K ハッシュ:	%2
 サイズ:	%3
 完了:	%4 (%5%)
@@ -2606,7 +2605,32 @@ ED2K ハッシュ:	%2
 転送データ:	%12</translation>
     </message>
     <message>
-        <location line="+98"/>
+        <location line="+35"/>
+        <source>File Name:	%1
+ED2K Hash:	%2
+Size:	%3
+Completed:	%4 (%5%)
+Type:	%6
+Status:	%7
+Priority:	%8
+Sources:	%9
+Requests:	%10
+Accepted Requests:	%11
+Uploaded:	%12</source>
+        <translation>ファイル名:	%1
+ED2K ハッシュ:	%2
+サイズ:	%3
+完了:	%4 (%5%)
+種類:	%6
+ステータス:	%7
+優先度:	%8
+ソース:	%9
+要求:	%10
+受理された要求:	%11
+アップロード済み:	%12</translation>
+    </message>
+    <message>
+        <location line="+100"/>
         <source>File Name</source>
         <translation>ファイル名</translation>
     </message>
@@ -2768,12 +2792,13 @@ ED2K ハッシュ:	%2
 <context>
     <name>eMule::FileDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/FileDetailDialog.cpp" line="+101"/>
+        <location filename="../src/gui/dialogs/FileDetailDialog.cpp" line="+146"/>
         <source>File Details: %1</source>
         <translation>ファイル詳細: %1</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="-37"/>
+        <location line="+48"/>
         <location line="+7"/>
         <source>General</source>
         <translation>全般</translation>
@@ -2785,13 +2810,15 @@ ED2K ハッシュ:	%2
         <translation>ファイル名</translation>
     </message>
     <message>
-        <location line="-6"/>
+        <location line="-55"/>
+        <location line="+49"/>
         <location line="+7"/>
         <source>Comments</source>
         <translation>コメント</translation>
     </message>
     <message>
-        <location line="-6"/>
+        <location line="-55"/>
+        <location line="+49"/>
         <location line="+7"/>
         <source>Media Info</source>
         <translation>メディア情報</translation>
@@ -2803,7 +2830,8 @@ ED2K ハッシュ:	%2
         <translation>メタデータ</translation>
     </message>
     <message>
-        <location line="-6"/>
+        <location line="-56"/>
+        <location line="+50"/>
         <location line="+7"/>
         <source>ED2K Link</source>
         <translation>ED2K リンク</translation>
@@ -2815,13 +2843,15 @@ ED2K ハッシュ:	%2
         <translation>アーカイブのプレビュー</translation>
     </message>
     <message>
-        <location line="+24"/>
-        <location line="+47"/>
+        <location line="+29"/>
+        <location line="+20"/>
+        <location line="+50"/>
         <source>File Name</source>
         <translation>ファイル名</translation>
     </message>
     <message>
-        <location line="-46"/>
+        <location line="-69"/>
+        <location line="+20"/>
         <source>Hash (MD4)</source>
         <translation>ハッシュ (MD4)</translation>
     </message>
@@ -2831,32 +2861,38 @@ ED2K ハッシュ:	%2
         <translation>AICH ハッシュ</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="-23"/>
+        <location line="+27"/>
         <source>File Size</source>
         <translation>ファイルサイズ</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="-27"/>
+        <location line="+27"/>
         <source>%1 (%2 Bytes)</source>
         <translation>%1 (%2 Bytes)</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="-26"/>
+        <location line="+31"/>
         <source>Completed</source>
         <translation>完了</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-27"/>
+        <location line="+33"/>
         <source>Status</source>
         <translation>ステータス</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-32"/>
+        <location line="+33"/>
         <source>Priority</source>
         <translation>優先度</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="-32"/>
+        <location line="+37"/>
         <location line="+24"/>
         <source>Sources</source>
         <translation>ソース</translation>
@@ -2867,17 +2903,33 @@ ED2K ハッシュ:	%2
         <translation>ファイルパス</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-38"/>
+        <location line="+40"/>
         <source>Created</source>
         <translation>作成日時</translation>
     </message>
+    <message numerus="yes">
+        <location line="-168"/>
+        <source>File Details: %n files</source>
+        <translation>
+            <numerusform>ファイルの詳細: %n 個のファイル</numerusform>
+        </translation>
+    </message>
     <message>
-        <location line="+1"/>
+        <location line="+121"/>
+        <location line="+33"/>
+        <source>Transferred</source>
+        <translation>転送済み</translation>
+    </message>
+    <message>
+        <location line="-25"/>
+        <location line="+40"/>
         <source>Last Seen Complete</source>
         <translation>最後に完全な状態で確認</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-39"/>
+        <location line="+40"/>
         <source>Last Reception</source>
         <translation>最終受信</translation>
     </message>
@@ -2952,7 +3004,7 @@ ED2K ハッシュ:	%2
         <translation>HTML 形式</translation>
     </message>
     <message>
-        <location line="+21"/>
+        <location line="+23"/>
         <source>Copy to Clipboard</source>
         <translation>クリップボードにコピー</translation>
     </message>
@@ -2978,12 +3030,12 @@ ED2K ハッシュ:	%2
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+56"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+57"/>
         <source>eMule First Runtime Wizard</source>
         <translation>eMule 初回実行ウィザード</translation>
     </message>
     <message>
-        <location line="+339"/>
+        <location line="+337"/>
         <source>Ports and Connection</source>
         <translation>ポートと接続</translation>
     </message>
@@ -2993,18 +3045,18 @@ ED2K ハッシュ:	%2
         <translation>接続</translation>
     </message>
     <message>
-        <location line="-248"/>
+        <location line="-246"/>
         <source>eMule uses two ports for communication with servers and clients. These ports must be free and available for remote clients. The TCP port must be available to ensure the main functionality of eMule. The UDP port is used for Kad (serverless network) and to reduce network usage (Overhead).</source>
         <translation>eMule はサーバーおよびクライアントとの通信に2つのポートを使用します。これらのポートはリモートクライアントに対して空いている必要があります。TCP ポートは eMule の主要機能を確保するために必要です。UDP ポートは Kad（サーバーレスネットワーク）およびネットワーク使用量の削減（オーバーヘッド）に使用されます。</translation>
     </message>
     <message>
         <location line="-101"/>
-        <location line="+279"/>
+        <location line="+281"/>
         <source>Unlimited</source>
         <translation>無制限</translation>
     </message>
     <message>
-        <location line="-165"/>
+        <location line="-167"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>ネットワーク活動が開始されていない間に、ここでポートを変更できます。</translation>
     </message>
@@ -3090,7 +3142,7 @@ ED2K ハッシュ:	%2
         <translation>%1 Mbit/s</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+23"/>
         <source> Mbit/s</source>
         <translation> Mbit/s</translation>
     </message>
@@ -3100,12 +3152,12 @@ ED2K ハッシュ:	%2
         <translation>ダウンロード:</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+1"/>
         <source>Upload:</source>
         <translation>アップロード:</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+7"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
@@ -3115,12 +3167,12 @@ ED2K ハッシュ:	%2
         <translation>ダウンロード制限:</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+1"/>
         <source>Upload limit:</source>
         <translation>アップロード制限:</translation>
     </message>
     <message>
-        <location line="+31"/>
+        <location line="+29"/>
         <source>&lt; Back</source>
         <translation>&lt; 戻る</translation>
     </message>
@@ -3633,7 +3685,7 @@ Please choose another:</source>
         <translation type="vanished">クライアント ID</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+77"/>
+        <location filename="../src/gui/controls/KadContactsModel.cpp" line="+78"/>
         <source>Type</source>
         <translation>種類</translation>
     </message>
@@ -3957,12 +4009,12 @@ Please choose another:</source>
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+83"/>
-        <location line="+459"/>
+        <location line="+464"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-355"/>
+        <location line="-360"/>
         <location line="+9"/>
         <source>New Version Available</source>
         <translation>新しいバージョンが利用可能</translation>
@@ -3984,7 +4036,7 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1176"/>
+        <location line="+1181"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K：未接続</translation>
     </message>
@@ -4055,14 +4107,14 @@ Please choose another:</source>
         <translation>機能</translation>
     </message>
     <message>
-        <location line="-651"/>
+        <location line="-656"/>
         <location line="+7"/>
-        <location line="+647"/>
+        <location line="+652"/>
         <source>Version Check</source>
         <translation>バージョン確認</translation>
     </message>
     <message>
-        <location line="-709"/>
+        <location line="-714"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt を終了</translation>
     </message>
@@ -4129,9 +4181,19 @@ Enable at least one under Options → Connection to connect.</source>
         <translation>eD2K サーバー: %1  (%2 ユーザー)</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+21"/>
         <source>Preparing...</source>
         <translation>準備中...</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Waiting...</source>
+        <translation>待機中...</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Error!</source>
+        <translation>エラー！</translation>
     </message>
     <message>
         <location line="+119"/>
@@ -9074,7 +9136,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>%1 からプレビューは送られませんでした</translation>
     </message>
     <message>
-        <location line="+309"/>
+        <location line="+313"/>
         <source>Asking servers: %1 / %2</source>
         <translation>サーバーに問い合わせ中：%1 / %2</translation>
     </message>
@@ -9084,7 +9146,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>すべて</translation>
     </message>
     <message>
-        <location line="-1321"/>
+        <location line="-1325"/>
         <location line="+14"/>
         <source>Mark as Spam</source>
         <translation>スパムとしてマーク</translation>
@@ -9355,12 +9417,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="-75"/>
-        <location line="+438"/>
+        <location line="+443"/>
         <source>Connect</source>
         <translation>接続</translation>
     </message>
     <message>
-        <location line="-494"/>
+        <location line="-499"/>
         <source>Invalid URL: %1</source>
         <translation>無効なURL: %1</translation>
     </message>
@@ -9390,7 +9452,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>server.met をダウンロードし、&quot;%1&quot; を展開しました (%2 バイト)。解析中...</translation>
     </message>
     <message>
-        <location line="+600"/>
+        <location line="+605"/>
         <location line="+2"/>
         <location line="+24"/>
         <location line="+39"/>
@@ -9488,7 +9550,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>▸ サーバー (%1)</translation>
     </message>
     <message>
-        <location line="-627"/>
+        <location line="-632"/>
         <source>Connect To</source>
         <translation>接続先</translation>
     </message>
@@ -9504,12 +9566,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+516"/>
+        <location line="+521"/>
         <source>Normal</source>
         <translation>通常</translation>
     </message>
     <message>
-        <location line="-515"/>
+        <location line="-520"/>
         <source>High</source>
         <translation>高い</translation>
     </message>
@@ -9574,7 +9636,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>▸ サーバー (0)</translation>
     </message>
     <message>
-        <location line="+73"/>
+        <location line="+78"/>
         <source>New Server</source>
         <translation>新しいサーバー</translation>
     </message>
@@ -9735,7 +9797,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>%1 Kbit/s</translation>
     </message>
     <message>
-        <location line="+131"/>
+        <location line="+141"/>
         <source>File Name</source>
         <translation>ファイル名</translation>
     </message>
@@ -9834,30 +9896,30 @@ Restart eMule for all connections to use the new proxy settings.</source>
     <message>
         <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+173"/>
         <location line="+14"/>
-        <location line="+376"/>
-        <location line="+570"/>
+        <location line="+372"/>
+        <location line="+587"/>
         <source>Shared Files (0)</source>
         <translation>共有ファイル (0)</translation>
     </message>
     <message>
-        <location line="-855"/>
+        <location line="-868"/>
         <source>Open File</source>
         <translation>ファイルを開く</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1379"/>
-        <location line="+475"/>
+        <location line="+1392"/>
+        <location line="+506"/>
         <source>Open Folder</source>
         <translation>フォルダを開く</translation>
     </message>
     <message>
-        <location line="-1842"/>
+        <location line="-1886"/>
         <source>Rename...</source>
         <translation>名前変更...</translation>
     </message>
     <message>
-        <location line="+1901"/>
+        <location line="+1945"/>
         <source>Rename File</source>
         <translation>ファイル名を変更</translation>
     </message>
@@ -9867,12 +9929,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>新しいファイル名:</translation>
     </message>
     <message>
-        <location line="-1893"/>
+        <location line="-1937"/>
         <source>Delete From Disk</source>
         <translation>ディスクから削除</translation>
     </message>
     <message>
-        <location line="+918"/>
+        <location line="+931"/>
         <source>Delete File</source>
         <translation>ファイルを削除</translation>
     </message>
@@ -9882,12 +9944,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>&quot;%1&quot;をディスクから完全に削除しますか？</translation>
     </message>
     <message>
-        <location line="-897"/>
+        <location line="-910"/>
         <source>Unshare</source>
         <translation>共有解除</translation>
     </message>
     <message>
-        <location line="+930"/>
+        <location line="+943"/>
         <source>Unshare File</source>
         <translation>ファイルの共有を解除</translation>
     </message>
@@ -9901,7 +9963,7 @@ The file will remain on disk.</source>
 ファイルはディスクに残ります。</translation>
     </message>
     <message>
-        <location line="-913"/>
+        <location line="-926"/>
         <source>Priority (Upload)</source>
         <translation>優先度（アップロード）</translation>
     </message>
@@ -9971,12 +10033,12 @@ The file will remain on disk.</source>
         <translation>このコレクションには作成者キーが含まれていないため、同じ作成者の他のコレクションを検索できません。</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+19"/>
         <source>Details...</source>
         <translation>詳細...</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="+7"/>
         <source>Comments...</source>
         <translation>コメント...</translation>
     </message>
@@ -10030,7 +10092,7 @@ The file will remain on disk.</source>
         <translation>すべてのディレクトリ</translation>
     </message>
     <message>
-        <location line="+173"/>
+        <location line="+190"/>
         <source>Current Session</source>
         <translation>現在のセッション</translation>
     </message>
@@ -10105,13 +10167,13 @@ The file will remain on disk.</source>
     </message>
     <message>
         <location line="+12"/>
-        <location line="+445"/>
+        <location line="+476"/>
         <source>Unshare Directory</source>
         <translation>ディレクトリの共有を解除</translation>
     </message>
     <message>
-        <location line="-436"/>
-        <location line="+445"/>
+        <location line="-467"/>
+        <location line="+476"/>
         <source>Unshare with Subdirectories</source>
         <translation>サブディレクトリごと共有を解除</translation>
     </message>
@@ -10121,7 +10183,7 @@ The file will remain on disk.</source>
         <translation>ファイルを開く操作は利用できません — Web サーバーが実行されていないか、ストリームトークンを受信していません。</translation>
     </message>
     <message>
-        <location line="-892"/>
+        <location line="-923"/>
         <source>Content</source>
         <translation>コンテンツ</translation>
     </message>
@@ -10136,12 +10198,12 @@ The file will remain on disk.</source>
         <translation>コピー</translation>
     </message>
     <message>
-        <location line="-573"/>
+        <location line="-586"/>
         <source>Release</source>
         <translation>リリース</translation>
     </message>
     <message>
-        <location line="+129"/>
+        <location line="+125"/>
         <source>Add To IRC Clipboard</source>
         <translation>IRC クリップボードに追加</translation>
     </message>
@@ -10151,7 +10213,7 @@ The file will remain on disk.</source>
         <translation>共有ディレクトリを再スキャンします。%1 を押しながらクリックすると、代わりにすべての共有ファイルのメディア情報を読み直します。</translation>
     </message>
     <message>
-        <location line="+324"/>
+        <location line="+341"/>
         <source>Basic Options</source>
         <translation>基本オプション</translation>
     </message>
@@ -10317,26 +10379,27 @@ The files will remain on disk.</source>
     </message>
     <message>
         <location line="+10"/>
-        <location line="+155"/>
-        <location line="+19"/>
-        <location line="+1666"/>
+        <location line="+159"/>
+        <location line="+22"/>
+        <location line="+321"/>
+        <location line="+1508"/>
         <source>Uploads</source>
         <translation>アップロード</translation>
     </message>
     <message>
-        <location line="-1836"/>
+        <location line="-2006"/>
         <location line="+63"/>
-        <location line="+78"/>
-        <location line="+47"/>
-        <location line="+33"/>
-        <location line="+1330"/>
+        <location line="+81"/>
+        <location line="+53"/>
+        <location line="+35"/>
+        <location line="+1489"/>
         <location line="+153"/>
         <location line="+121"/>
         <source>Session</source>
         <translation>セッション</translation>
     </message>
     <message>
-        <location line="-1822"/>
+        <location line="-1992"/>
         <location line="+32"/>
         <source>Uploaded Data: 0 Bytes</source>
         <translation>アップロードデータ：0 Bytes</translation>
@@ -10359,27 +10422,28 @@ The files will remain on disk.</source>
     <message>
         <location line="+2"/>
         <location line="+27"/>
+        <location line="+459"/>
         <source>Upload Sessions</source>
         <translation>アップロードセッション</translation>
     </message>
     <message>
-        <location line="-26"/>
+        <location line="-485"/>
         <location line="+27"/>
-        <location line="+36"/>
+        <location line="+39"/>
         <location line="+33"/>
         <source>Successful: 0</source>
         <translation>成功：0</translation>
     </message>
     <message>
-        <location line="-95"/>
+        <location line="-98"/>
         <location line="+27"/>
-        <location line="+36"/>
+        <location line="+39"/>
         <location line="+33"/>
         <source>Failed: 0</source>
         <translation>失敗：0</translation>
     </message>
     <message>
-        <location line="-94"/>
+        <location line="-97"/>
         <location line="+27"/>
         <source>Average Upload Per Session: 0 Bytes</source>
         <translation>セッションあたりの平均アップロード：0 Bytes</translation>
@@ -10392,21 +10456,22 @@ The files will remain on disk.</source>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+97"/>
-        <location line="+19"/>
-        <location line="+1298"/>
+        <location line="+102"/>
+        <location line="+22"/>
+        <location line="+330"/>
+        <location line="+1130"/>
         <location line="+367"/>
         <source>Downloads</source>
         <translation>ダウンロード</translation>
     </message>
     <message>
-        <location line="-1774"/>
-        <location line="+39"/>
+        <location line="-1944"/>
+        <location line="+42"/>
         <source>Downloaded Data: 0 Bytes</source>
         <translation>ダウンロードデータ：0 Bytes</translation>
     </message>
     <message>
-        <location line="-30"/>
+        <location line="-33"/>
         <source>Active Downloads: 0</source>
         <translation>アクティブダウンロード：0</translation>
     </message>
@@ -10416,23 +10481,23 @@ The files will remain on disk.</source>
         <translation>検出ソース：0</translation>
     </message>
     <message>
-        <location line="+61"/>
+        <location line="+64"/>
         <source>Connection</source>
         <translation>接続</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="+9"/>
         <source>Active Connections: 0</source>
         <translation>アクティブ接続：0</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+21"/>
+        <location line="+24"/>
         <source>Peak Connections: 0</source>
         <translation>ピーク接続：0</translation>
     </message>
     <message>
-        <location line="-20"/>
+        <location line="-23"/>
         <source>Max Connections Limit Reached: 0</source>
         <translation>最大接続制限到達：0</translation>
     </message>
@@ -10442,7 +10507,7 @@ The files will remain on disk.</source>
         <translation>再接続：0</translation>
     </message>
     <message>
-        <location line="+33"/>
+        <location line="+38"/>
         <source>Time Statistics</source>
         <translation>時間統計</translation>
     </message>
@@ -10479,54 +10544,57 @@ The files will remain on disk.</source>
         <translation type="vanished">サーバー接続時間：0:00:00</translation>
     </message>
     <message>
-        <location line="-200"/>
+        <location line="-209"/>
         <location line="+32"/>
         <location line="+31"/>
-        <location line="+39"/>
-        <location line="+102"/>
+        <location line="+42"/>
+        <location line="+110"/>
+        <location line="+269"/>
         <source>Clients</source>
         <translation>クライアント</translation>
     </message>
     <message>
-        <location line="-201"/>
+        <location line="-481"/>
         <location line="+32"/>
         <location line="+31"/>
-        <location line="+39"/>
+        <location line="+42"/>
         <source>%1: 0 Bytes</source>
         <translation>%1: 0 Bytes</translation>
     </message>
     <message>
-        <location line="-101"/>
+        <location line="-104"/>
         <location line="+32"/>
         <location line="+31"/>
-        <location line="+39"/>
+        <location line="+42"/>
+        <location line="+379"/>
         <source>Port</source>
         <translation>ポート</translation>
     </message>
     <message>
-        <location line="-101"/>
+        <location line="-483"/>
         <location line="+32"/>
         <location line="+31"/>
-        <location line="+39"/>
+        <location line="+42"/>
         <source>Default Port 4662: 0 Bytes</source>
         <translation>既定ポート 4662: 0 Bytes</translation>
     </message>
     <message>
-        <location line="-101"/>
+        <location line="-104"/>
         <location line="+32"/>
         <location line="+31"/>
-        <location line="+39"/>
+        <location line="+42"/>
         <source>Other Ports: 0 Bytes</source>
         <translation>その他のポート: 0 Bytes</translation>
     </message>
     <message>
-        <location line="-101"/>
+        <location line="-104"/>
         <location line="+32"/>
+        <location line="+460"/>
         <source>Data Source</source>
         <translation>データソース</translation>
     </message>
     <message>
-        <location line="-31"/>
+        <location line="-491"/>
         <location line="+32"/>
         <source>Complete File: 0 Bytes</source>
         <translation>完全なファイル: 0 Bytes</translation>
@@ -10539,18 +10607,18 @@ The files will remain on disk.</source>
     </message>
     <message>
         <location line="-13"/>
-        <location line="+70"/>
-        <location line="+60"/>
-        <location line="+37"/>
-        <location line="+22"/>
-        <location line="+1335"/>
+        <location line="+73"/>
+        <location line="+63"/>
+        <location line="+40"/>
+        <location line="+24"/>
+        <location line="+1494"/>
         <location line="+149"/>
         <location line="+125"/>
         <source>Cumulative</source>
         <translation>累計</translation>
     </message>
     <message>
-        <location line="-1749"/>
+        <location line="-1916"/>
         <location line="+33"/>
         <source>Completed Downloads: 0</source>
         <translation>完了したダウンロード: 0</translation>
@@ -10558,11 +10626,12 @@ The files will remain on disk.</source>
     <message>
         <location line="-31"/>
         <location line="+33"/>
+        <location line="+400"/>
         <source>Download Sessions</source>
         <translation>ダウンロードセッション</translation>
     </message>
     <message>
-        <location line="-29"/>
+        <location line="-429"/>
         <location line="+33"/>
         <source>Average Download Per Session: 0 Bytes</source>
         <translation>セッションあたりの平均ダウンロード: 0 Bytes</translation>
@@ -10593,52 +10662,52 @@ The files will remain on disk.</source>
     </message>
     <message>
         <location line="+15"/>
-        <location line="+21"/>
-        <location line="+1287"/>
+        <location line="+24"/>
+        <location line="+1451"/>
         <source>General</source>
         <translation>全般</translation>
     </message>
     <message>
-        <location line="-1303"/>
+        <location line="-1469"/>
         <source>Average Connections: 0.0</source>
         <translation>平均接続数: 0.0</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+4"/>
         <source>Upload Speed: 0 KB/s</source>
         <translation>アップロード速度: 0 KB/s</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+19"/>
+        <location line="+22"/>
         <source>Max Upload Rate: 0 KB/s</source>
         <translation>最大アップロードレート: 0 KB/s</translation>
     </message>
     <message>
-        <location line="-18"/>
-        <location line="+19"/>
+        <location line="-21"/>
+        <location line="+22"/>
         <source>Max Average Upload Rate: 0 KB/s</source>
         <translation>最大平均アップロードレート: 0 KB/s</translation>
     </message>
     <message>
-        <location line="-16"/>
+        <location line="-18"/>
         <source>Download Speed: 0 KB/s</source>
         <translation>ダウンロード速度: 0 KB/s</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+19"/>
+        <location line="+22"/>
         <source>Max Download Rate: 0 KB/s</source>
         <translation>最大ダウンロードレート: 0 KB/s</translation>
     </message>
     <message>
-        <location line="-18"/>
-        <location line="+19"/>
+        <location line="-21"/>
+        <location line="+22"/>
         <source>Max Average Download Rate: 0 KB/s</source>
         <translation>最大平均ダウンロードレート: 0 KB/s</translation>
     </message>
     <message>
-        <location line="-12"/>
+        <location line="-14"/>
         <source>Server Reconnects: 0</source>
         <translation>サーバー再接続: 0</translation>
     </message>
@@ -10648,67 +10717,68 @@ The files will remain on disk.</source>
         <translation>接続制限に到達: 0</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+4"/>
         <source>Average Upload Rate: 0 KB/s</source>
         <translation>平均アップロードレート: 0 KB/s</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+6"/>
         <source>Average Download Rate: 0 KB/s</source>
         <translation>平均ダウンロードレート: 0 KB/s</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+533"/>
-        <location line="+4"/>
+        <location line="+693"/>
+        <location line="+5"/>
         <source>Statistics Last Reset: %1</source>
         <translation>統計の最終リセット: %1</translation>
     </message>
     <message>
-        <location line="-825"/>
-        <location line="+288"/>
-        <location line="+531"/>
-        <location line="+7"/>
+        <location line="-995"/>
+        <location line="+297"/>
+        <location line="+543"/>
+        <location line="+148"/>
+        <location line="+8"/>
         <location line="+1027"/>
         <source>Unknown</source>
         <translation>不明</translation>
     </message>
     <message>
-        <location line="-1860"/>
+        <location line="-2030"/>
         <source>Statistics Tree</source>
         <translation>統計ツリー</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+829"/>
+        <location line="+999"/>
         <source>Statistics last reset: %1</source>
         <translation>統計の最終リセット: %1</translation>
     </message>
     <message>
-        <location line="-801"/>
-        <location line="+1624"/>
+        <location line="-971"/>
+        <location line="+1794"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="-1559"/>
-        <location line="+1436"/>
+        <location line="-1729"/>
+        <location line="+1606"/>
         <source>Waiting...</source>
         <translation>待機中...</translation>
     </message>
     <message>
-        <location line="-1433"/>
-        <location line="+451"/>
+        <location line="-1603"/>
+        <location line="+596"/>
         <source>Session UL:DL Ratio (Friends UL excluded): %1</source>
         <translation>セッション UL:DL 比率 (友達へのULを除く)：%1</translation>
     </message>
     <message>
-        <location line="-363"/>
+        <location line="-506"/>
         <source>UDP File Re-asks: 0, Failed: 0 (0.0%)</source>
         <translation>UDP ファイル再問い合わせ：0、失敗：0 (0.0%)</translation>
     </message>
     <message>
-        <location line="+1390"/>
+        <location line="+1558"/>
         <source>Corrupt (Failed yEnc Check): %1</source>
         <translation>破損 (yEnc チェック失敗): %1</translation>
     </message>
@@ -10738,7 +10808,7 @@ The files will remain on disk.</source>
         <translation type="vanished">取得チャンク数: 0</translation>
     </message>
     <message>
-        <location line="-1619"/>
+        <location line="-1780"/>
         <source>Run Time: 0:00:00</source>
         <translation>実行時間: 0:00:00</translation>
     </message>
@@ -10749,7 +10819,7 @@ The files will remain on disk.</source>
         <translation>サーバー合計時間: 0:00:00</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+7"/>
         <source>Known Clients: 0</source>
         <translation>既知のクライアント：0</translation>
     </message>
@@ -10810,7 +10880,7 @@ The files will remain on disk.</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+13"/>
+        <location line="+14"/>
         <source>Records</source>
         <translation>記録</translation>
     </message>
@@ -10855,7 +10925,7 @@ The files will remain on disk.</source>
         <translation>最大共有ファイル：0 Bytes</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+4"/>
         <source>Most Files Shared: 0</source>
         <translation>最多の共有ファイル: 0</translation>
     </message>
@@ -10905,8 +10975,8 @@ The files will remain on disk.</source>
         <translation>ドライブの空き容量: 0 Bytes</translation>
     </message>
     <message>
-        <location line="-285"/>
-        <location line="+451"/>
+        <location line="-298"/>
+        <location line="+596"/>
         <source>Session UL:DL Ratio: %1</source>
         <translation>セッション UL:DL 比率：%1</translation>
     </message>
@@ -10915,8 +10985,8 @@ The files will remain on disk.</source>
         <translation type="vanished">フレンドセッション UL:DL 比率：%1</translation>
     </message>
     <message>
-        <location line="-448"/>
-        <location line="+452"/>
+        <location line="-593"/>
+        <location line="+597"/>
         <source>Cumulative UL:DL Ratio: %1</source>
         <translation>累積 UL:DL 比率：%1</translation>
     </message>
@@ -10930,20 +11000,20 @@ The files will remain on disk.</source>
         <location line="-45"/>
         <location line="+55"/>
         <location line="+60"/>
-        <location line="+76"/>
+        <location line="+100"/>
         <source>Default Port 4662: %1 %2</source>
         <translation>既定ポート 4662: %1 %2</translation>
     </message>
     <message>
-        <location line="-188"/>
+        <location line="-212"/>
         <location line="+55"/>
         <location line="+60"/>
-        <location line="+76"/>
+        <location line="+100"/>
         <source>Other Ports: %1 %2</source>
         <translation>その他のポート: %1 %2</translation>
     </message>
     <message>
-        <location line="-188"/>
+        <location line="-212"/>
         <location line="+55"/>
         <source>Complete File: %1 %2</source>
         <translation>完全なファイル: %1 %2</translation>
@@ -10972,23 +11042,23 @@ The files will remain on disk.</source>
     <message>
         <location line="+5"/>
         <location line="+48"/>
-        <location line="+72"/>
+        <location line="+96"/>
         <location line="+12"/>
         <source>Successful: %1%2</source>
         <translation>成功：%1%2</translation>
     </message>
     <message>
-        <location line="-130"/>
+        <location line="-154"/>
         <location line="+48"/>
-        <location line="+72"/>
+        <location line="+96"/>
         <location line="+12"/>
-        <location line="+870"/>
+        <location line="+871"/>
         <location line="+49"/>
         <source>Failed: %1</source>
         <translation>失敗：%1</translation>
     </message>
     <message>
-        <location line="-1048"/>
+        <location line="-1073"/>
         <location line="+48"/>
         <source>Average Upload Per Session: %1</source>
         <translation>セッションあたりの平均アップロード：%1</translation>
@@ -11005,41 +11075,46 @@ The files will remain on disk.</source>
         <translation>%1: %2</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="-168"/>
+        <location line="+172"/>
         <location line="+60"/>
-        <location line="+76"/>
+        <location line="+100"/>
         <location line="+36"/>
         <source>Total Overhead (Packets)</source>
         <translation>総オーバーヘッド (パケット)</translation>
     </message>
     <message>
-        <location line="-171"/>
+        <location line="-367"/>
+        <location line="+172"/>
         <location line="+60"/>
-        <location line="+76"/>
+        <location line="+100"/>
         <location line="+36"/>
         <source>File Request Overhead (Packets)</source>
         <translation>ファイル要求オーバーヘッド (パケット)</translation>
     </message>
     <message>
-        <location line="-171"/>
+        <location line="-367"/>
+        <location line="+172"/>
         <location line="+60"/>
-        <location line="+76"/>
+        <location line="+100"/>
         <location line="+36"/>
         <source>Source Exchange Overhead (Packets)</source>
         <translation>ソース交換オーバーヘッド (パケット)</translation>
     </message>
     <message>
-        <location line="-171"/>
+        <location line="-367"/>
+        <location line="+172"/>
         <location line="+60"/>
-        <location line="+76"/>
+        <location line="+100"/>
         <location line="+36"/>
         <source>Server Overhead (Packets)</source>
         <translation>サーバーオーバーヘッド (パケット)</translation>
     </message>
     <message>
-        <location line="-171"/>
+        <location line="-367"/>
+        <location line="+172"/>
         <location line="+60"/>
-        <location line="+76"/>
+        <location line="+100"/>
         <location line="+36"/>
         <source>Kad Overhead (Packets)</source>
         <translation>Kad オーバーヘッド (パケット)</translation>
@@ -11065,14 +11140,14 @@ The files will remain on disk.</source>
         <translation type="vanished">取得チャンク数</translation>
     </message>
     <message>
-        <location line="-109"/>
-        <location line="+76"/>
-        <location line="+820"/>
+        <location line="-133"/>
+        <location line="+100"/>
+        <location line="+821"/>
         <source>Downloaded Data: %1</source>
         <translation>ダウンロードデータ：%1</translation>
     </message>
     <message>
-        <location line="-878"/>
+        <location line="-903"/>
         <source>Active Downloads: %1</source>
         <translation>アクティブダウンロード：%1</translation>
     </message>
@@ -11082,7 +11157,7 @@ The files will remain on disk.</source>
         <translation>見つかったソース: %1</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+29"/>
         <source>UDP File Re-asks: %1, Failed: %2 %3</source>
         <translation>UDP ファイル再問い合わせ：%1、失敗：%2 %3</translation>
     </message>
@@ -11112,19 +11187,19 @@ The files will remain on disk.</source>
     </message>
     <message>
         <location line="+10"/>
-        <location line="+781"/>
+        <location line="+782"/>
         <source>Active Connections: %1</source>
         <translation>アクティブ接続：%1</translation>
     </message>
     <message>
-        <location line="-779"/>
+        <location line="-780"/>
         <location line="+19"/>
-        <location line="+761"/>
+        <location line="+762"/>
         <source>Peak Connections: %1</source>
         <translation>ピーク接続：%1</translation>
     </message>
     <message>
-        <location line="-778"/>
+        <location line="-779"/>
         <source>Max Connections Limit Reached: %1</source>
         <translation>最大接続制限到達：%1</translation>
     </message>
@@ -11157,19 +11232,19 @@ The files will remain on disk.</source>
     </message>
     <message>
         <location line="-14"/>
-        <location line="+763"/>
+        <location line="+764"/>
         <source>Download Speed: %1</source>
         <translation>ダウンロード速度: %1</translation>
     </message>
     <message>
-        <location line="-762"/>
+        <location line="-763"/>
         <location line="+15"/>
-        <location line="+749"/>
+        <location line="+750"/>
         <source>Max Download Rate: %1</source>
         <translation>最大ダウンロードレート: %1</translation>
     </message>
     <message>
-        <location line="-763"/>
+        <location line="-764"/>
         <location line="+15"/>
         <source>Max Average Download Rate: %1</source>
         <translation>最大平均ダウンロードレート: %1</translation>
@@ -11191,13 +11266,13 @@ The files will remain on disk.</source>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+749"/>
+        <location line="+750"/>
         <source>Average Download Rate: %1</source>
         <translation>平均ダウンロードレート: %1</translation>
     </message>
     <message>
-        <location line="-736"/>
-        <location line="+4"/>
+        <location line="-737"/>
+        <location line="+5"/>
         <source>Time Since Last Reset: %1</source>
         <translation>最後のリセットからの時間：%1</translation>
     </message>
@@ -11241,12 +11316,12 @@ The files will remain on disk.</source>
         <translation>サーバー合計時間: %1 %2</translation>
     </message>
     <message>
-        <location line="-570"/>
+        <location line="-731"/>
         <source>Current Server Duration: 0:00:00</source>
         <translation>現在のサーバー接続時間: 0:00:00</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+25"/>
         <source>Different clients, counted by user hash. An estimate, accurate to about 2%.</source>
         <translation>ユーザーハッシュで数えた異なるクライアント。誤差約 2% の推定値です。</translation>
     </message>
@@ -11266,7 +11341,7 @@ The files will remain on disk.</source>
         <translation>接続元アドレスの国別のクライアント。</translation>
     </message>
     <message>
-        <location line="+373"/>
+        <location line="+531"/>
         <location line="+12"/>
         <source>Average Download Per Session: %1</source>
         <translation>セッションあたりの平均ダウンロード: %1</translation>
@@ -11278,7 +11353,7 @@ The files will remain on disk.</source>
         <translation>平均ダウンロード時間: %1</translation>
     </message>
     <message>
-        <location line="+126"/>
+        <location line="+127"/>
         <source>Current Server Duration: %1 %2</source>
         <translation>現在のサーバー接続時間: %1 %2</translation>
     </message>
@@ -11432,12 +11507,175 @@ The files will remain on disk.</source>
         <translation>停止中</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-466"/>
+        <location line="+468"/>
         <source>Connecting</source>
         <translation>接続中</translation>
     </message>
     <message>
+        <location line="-755"/>
+        <source>Projected Averages</source>
+        <translation>予測平均</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Daily</source>
+        <translation>毎日</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Monthly</source>
+        <translation>月次</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Yearly</source>
+        <translation>年次</translation>
+    </message>
+    <message>
+        <location line="+43"/>
+        <source>Default Port 4662</source>
+        <translation>既定ポート 4662</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Other Ports</source>
+        <translation>その他のポート</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Uploaded Data</source>
+        <translation>アップロードしたデータ</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Complete File</source>
+        <translation>完全なファイル</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Part File</source>
+        <translation>部分ファイル</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <location line="+13"/>
+        <source>Successful</source>
+        <translation>成功</translation>
+    </message>
+    <message>
+        <location line="-12"/>
+        <location line="+13"/>
+        <source>Failed</source>
+        <translation>失敗</translation>
+    </message>
+    <message>
+        <location line="-6"/>
+        <source>Downloaded Data</source>
+        <translation>ダウンロードしたデータ</translation>
+    </message>
+    <message>
         <location line="+2"/>
+        <source>Completed Downloads</source>
+        <translation>完了したダウンロード</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Gained Due To Compression</source>
+        <translation>圧縮による節約</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Lost Due To Corruption</source>
+        <translation>破損による損失</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Parts Saved Due To ICH</source>
+        <translation>ICH で救済したパート</translation>
+    </message>
+    <message>
+        <location line="+208"/>
+        <source>On Queue</source>
+        <translation>キュー待ち</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Queue Full</source>
+        <translation>キューが満杯</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>No needed parts</source>
+        <translation>必要なパートなし</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Asking</source>
+        <translation>問い合わせ中</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Receiving hashset</source>
+        <translation>ハッシュセット受信中</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Connecting via server</source>
+        <translation>サーバー経由で接続中</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Too many connections</source>
+        <translation>接続数超過</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Cannot connect LowID to LowID</source>
+        <translation>LowID 同士は接続できません</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Problematic</source>
+        <translation>問題あり</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Banned</source>
+        <translation>BAN済み</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Asked for another file</source>
+        <translation>別のファイルを要求</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>via eD2K Server</source>
+        <translation>eD2K サーバー経由</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>via Kad</source>
+        <translation>Kad 経由</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>via Source Exchange</source>
+        <translation>ソース交換経由</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>via Passive</source>
+        <translation>パッシブ経由</translation>
+    </message>
+    <message>
+        <location line="+14"/>
+        <source>Dead Sources: %1 (%2 + %3)</source>
+        <translation>無効なソース: %1 (%2 + %3)</translation>
+    </message>
+    <message>
+        <location line="+453"/>
         <source>Connected (LAN mode)</source>
         <translation>接続済み (LAN モード)</translation>
     </message>
@@ -12048,8 +12286,8 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>ノード</translation>
     </message>
     <message>
-        <location line="-1443"/>
-        <location line="+1446"/>
+        <location line="-1602"/>
+        <location line="+1605"/>
         <source>By Country</source>
         <translation>国別</translation>
     </message>
@@ -12260,85 +12498,85 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+694"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+713"/>
         <source>Downloads</source>
         <translation>ダウンロード</translation>
     </message>
     <message>
-        <location line="-346"/>
+        <location line="-364"/>
         <source>Priority (Download)</source>
         <translation>優先度（ダウンロード）</translation>
     </message>
     <message>
         <location line="+29"/>
-        <location line="+1812"/>
+        <location line="+1888"/>
         <location line="+162"/>
         <source>Low</source>
         <translation>低い</translation>
     </message>
     <message>
-        <location line="-1973"/>
-        <location line="+1811"/>
+        <location line="-2049"/>
+        <location line="+1887"/>
         <location line="+163"/>
         <source>Normal</source>
         <translation>通常</translation>
     </message>
     <message>
-        <location line="-1973"/>
-        <location line="+1810"/>
+        <location line="-2049"/>
+        <location line="+1886"/>
         <location line="+164"/>
         <source>High</source>
         <translation>高い</translation>
     </message>
     <message>
-        <location line="-1972"/>
-        <location line="+1974"/>
+        <location line="-2048"/>
+        <location line="+2050"/>
         <source>Very Low</source>
         <translation>非常に低い</translation>
     </message>
     <message>
-        <location line="-1973"/>
-        <location line="+1974"/>
+        <location line="-2049"/>
+        <location line="+2050"/>
         <source>Very High</source>
         <translation>非常に高い</translation>
     </message>
     <message>
-        <location line="-1972"/>
-        <location line="+1975"/>
+        <location line="-2048"/>
+        <location line="+2051"/>
         <source>Auto</source>
         <translation>自動</translation>
     </message>
     <message>
-        <location line="-1964"/>
-        <location line="+640"/>
-        <location line="+1168"/>
+        <location line="-2040"/>
+        <location line="+684"/>
+        <location line="+1200"/>
         <source>Pause</source>
         <translation>一時停止</translation>
     </message>
     <message>
-        <location line="-1799"/>
-        <location line="+637"/>
-        <location line="+1164"/>
+        <location line="-1875"/>
+        <location line="+681"/>
+        <location line="+1196"/>
         <source>Stop</source>
         <translation>停止</translation>
     </message>
     <message>
-        <location line="-1792"/>
-        <location line="+634"/>
-        <location line="+1160"/>
+        <location line="-1868"/>
+        <location line="+678"/>
+        <location line="+1192"/>
         <source>Resume</source>
         <translation>再開</translation>
     </message>
     <message>
-        <location line="-1781"/>
-        <location line="+627"/>
-        <location line="+1156"/>
+        <location line="-1857"/>
+        <location line="+671"/>
+        <location line="+1188"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>キャンセル</translation>
     </message>
     <message>
-        <location line="-1754"/>
+        <location line="-1830"/>
         <source>Preview with</source>
         <translation>プレビューに使用</translation>
     </message>
@@ -12353,20 +12591,20 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>プレビュー用パートの優先度を上げる</translation>
     </message>
     <message>
-        <location line="+28"/>
+        <location line="+39"/>
         <source>Stop Import parts to file</source>
         <translation>ファイルへのパートのインポートを停止</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1229"/>
+        <location line="+1264"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation>ファイルにパートをインポート...</translation>
     </message>
     <message>
-        <location line="-1216"/>
+        <location line="-1251"/>
         <source>Source Handling</source>
         <translation>ソース処理</translation>
     </message>
@@ -12377,17 +12615,27 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1152"/>
+        <location line="+1187"/>
         <source>Source Limit...</source>
         <translation>ソース上限...</translation>
     </message>
     <message>
-        <location line="-1089"/>
+        <location line="-1124"/>
         <source>New...</source>
         <translation>新規...</translation>
     </message>
     <message>
-        <location line="+1044"/>
+        <location line="+22"/>
+        <source>Show Toolbar</source>
+        <translation>ツールバーを表示</translation>
+    </message>
+    <message>
+        <location line="+430"/>
+        <source>Close Toolbar</source>
+        <translation>ツールバーを閉じる</translation>
+    </message>
+    <message>
+        <location line="+627"/>
         <source>Failed to execute: %1 %2</source>
         <translation>実行に失敗しました: %1 %2</translation>
     </message>
@@ -12419,7 +12667,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>コアのマシン上のファイルパス:</translation>
     </message>
     <message>
-        <location line="+487"/>
+        <location line="+517"/>
         <source>Download In Alphabetical Order</source>
         <translation>アルファベット順にダウンロード</translation>
     </message>
@@ -12474,39 +12722,39 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>ファイル名:</translation>
     </message>
     <message>
-        <location line="-2351"/>
-        <location line="+618"/>
+        <location line="-2427"/>
+        <location line="+662"/>
         <source>Open File</source>
         <translation>ファイルを開く</translation>
     </message>
     <message>
-        <location line="-609"/>
+        <location line="-653"/>
         <location line="+2"/>
-        <location line="+621"/>
-        <location line="+569"/>
+        <location line="+665"/>
+        <location line="+571"/>
         <source>Preview</source>
         <translation>プレビュー</translation>
     </message>
     <message>
-        <location line="-1154"/>
-        <location line="+1906"/>
+        <location line="-1199"/>
+        <location line="+1981"/>
         <location line="+98"/>
         <source>Details...</source>
         <translation>詳細...</translation>
     </message>
     <message>
-        <location line="-2000"/>
+        <location line="-2070"/>
         <source>Comments...</source>
         <translation>コメント...</translation>
     </message>
     <message>
-        <location line="+32"/>
-        <location line="+597"/>
+        <location line="+37"/>
+        <location line="+630"/>
         <source>Clear Completed</source>
         <translation>完了済みをクリア</translation>
     </message>
     <message>
-        <location line="-575"/>
+        <location line="-608"/>
         <source>eD2K Links...</source>
         <translation>eD2K リンク...</translation>
     </message>
@@ -12517,13 +12765,13 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+15"/>
-        <location line="+1909"/>
+        <location line="+1974"/>
         <location line="+71"/>
         <source>Find...</source>
         <translation>検索...</translation>
     </message>
     <message>
-        <location line="-1972"/>
+        <location line="-2037"/>
         <source>Search Related Files</source>
         <translation>関連ファイルを検索</translation>
     </message>
@@ -12534,7 +12782,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+11"/>
-        <location line="+508"/>
+        <location line="+541"/>
         <source>Assign To Category</source>
         <translation>カテゴリに割り当て</translation>
     </message>
@@ -12547,7 +12795,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="vanished">すべて</translation>
     </message>
     <message>
-        <location line="+1030"/>
+        <location line="+1062"/>
         <source>Uploading</source>
         <translation>アップロード中</translation>
     </message>
@@ -12567,24 +12815,24 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>既知のクライアント</translation>
     </message>
     <message>
-        <location line="-1129"/>
+        <location line="-1175"/>
         <source>Clients on queue:   0</source>
         <translation>キュー内のクライアント：   0</translation>
     </message>
     <message>
-        <location line="-403"/>
-        <location line="+506"/>
+        <location line="-422"/>
+        <location line="+539"/>
         <source>(Unassign)</source>
         <translation>(割り当て解除)</translation>
     </message>
     <message>
         <location line="-80"/>
-        <location line="+1157"/>
+        <location line="+1189"/>
         <source>Priority</source>
         <translation>優先度</translation>
     </message>
     <message>
-        <location line="-1120"/>
+        <location line="-1152"/>
         <source>Open Folder</source>
         <translation>フォルダを開く</translation>
     </message>
@@ -12614,7 +12862,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>検索</translation>
     </message>
     <message>
-        <location line="+485"/>
+        <location line="+487"/>
         <location line="+23"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>プレビューは利用できません — Web サーバーが実行されていないか、ストリームトークンを受信していません。</translation>
@@ -12625,7 +12873,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>ファイルを開く操作は利用できません — Web サーバーが実行されていないか、ストリームトークンを受信していません。</translation>
     </message>
     <message>
-        <location line="+377"/>
+        <location line="+407"/>
         <source>Downloads (%1)</source>
         <translation>ダウンロード (%1)</translation>
     </message>
@@ -13448,14 +13696,14 @@ A password is set for this release.</source>
         <translation>アドレス</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3349"/>
-        <location line="+3238"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3350"/>
+        <location line="+3239"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>セッションの有効期限が切れました — 再度ログインしてください</translation>
     </message>
     <message>
-        <location line="-3283"/>
+        <location line="-3284"/>
         <source>Guests cannot add downloads</source>
         <translation>ゲストはダウンロードを追加できません</translation>
     </message>
@@ -13492,7 +13740,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+40"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+35"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+36"/>
         <source>Download</source>
         <translation>ダウンロード</translation>
     </message>
@@ -13591,12 +13839,12 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1969"/>
+        <location line="+1970"/>
         <source>Web Control Panel</source>
         <translation>Web コントロールパネル</translation>
     </message>
     <message>
-        <location line="-1961"/>
+        <location line="-1962"/>
         <source>Not connected</source>
         <translation>未接続</translation>
     </message>
@@ -13612,7 +13860,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+331"/>
+        <location line="+332"/>
         <source>Disconnected</source>
         <translation>未接続</translation>
     </message>
@@ -13880,7 +14128,7 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+49"/>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-34"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-35"/>
         <source>All</source>
         <translation>すべて</translation>
     </message>
@@ -13988,12 +14236,11 @@ Whichever network is idle lends its share to the other.</source>
         <translation>キューに戻る</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>CD Image (.iso .bin ...)</source>
-        <translation>CD イメージ (.iso .bin ...)</translation>
+        <translation type="vanished">CD イメージ (.iso .bin ...)</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Cancel</source>
         <translation>キャンセル</translation>
     </message>
@@ -14038,7 +14285,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>クライアント</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Comment</source>
         <translation>コメント</translation>
     </message>
@@ -14174,9 +14421,8 @@ Whichever network is idle lends its share to the other.</source>
         <translation>健全性:</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Image (.jpg .png ...)</source>
-        <translation>画像 (.jpg .png ...)</translation>
+        <translation type="vanished">画像 (.jpg .png ...)</translation>
     </message>
     <message>
         <location filename="../src/core/webserver/WebServer.cpp" line="+4"/>
@@ -14270,13 +14516,23 @@ Whichever network is idle lends its share to the other.</source>
         <translation>NZB ファイル:</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1167"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1168"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>名前</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
+        <location filename="../src/core/webserver/WebTemplateStrings.h" line="-57"/>
+        <source>CD-Image (.iso .bin ...)</source>
+        <translation>CD イメージ (.iso .bin ...)</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Collection</source>
+        <translation>コレクション</translation>
+    </message>
+    <message>
+        <location line="+48"/>
         <source>Newsgroups:</source>
         <translation>ニュースグループ:</translation>
     </message>
@@ -14334,6 +14590,11 @@ Whichever network is idle lends its share to the other.</source>
         <location line="+1"/>
         <source>Pause All</source>
         <translation>すべて一時停止</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Picture (.jpg .png ...)</source>
+        <translation>画像 (.jpg .png ...)</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -14657,7 +14918,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>アップロード速度</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1164"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1165"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation>アップロード</translation>

@@ -9,6 +9,7 @@
 #include "transfer/UploadQueue.h"
 #include "app/AppContext.h"
 #include "client/ClientList.h"
+#include "prefs/CategoryView.h"
 #include "kademlia/Kademlia.h"
 #include "client/DeadSourceList.h"
 #include "client/UpDownClient.h"
@@ -1300,7 +1301,10 @@ bool DownloadQueue::startNextFile(int category)
         if (!file->isPaused() && !file->isStopped())
             continue;
 
-        if (category >= 0 && file->category() != static_cast<uint32>(category))
+        // Tab 0 with no view filter stands for every category (MFC StartNextFile,
+        // srchybrid/DownloadQueue.cpp:228-262)
+        const bool anyOnAllTab = category == 0 && thePrefs.category(0).filter == 0;
+        if (category >= 0 && file->category() != static_cast<uint32>(category) && !anyOnAllTab)
             continue;
 
         if (!bestFile || PartFile::rightFileHasHigherPrio(bestFile, file))
@@ -1525,7 +1529,7 @@ void DownloadQueue::process()
     // CPreferences::GetMaxDownloadInBytesPerSec(true)): the measured rate while USS is
     // steering it and somebody is waiting, else the configured limit.
     uint64 maxUpBytes = 0;   // 0 = unlimited
-    if (thePrefs.dynUpEnabled() && theApp.uploadQueue
+    if (thePrefs.isDynUpEnabled() && theApp.uploadQueue
         && theApp.uploadQueue->waitingUserCount() > 0 && theApp.uploadQueue->datarate() > 0)
         maxUpBytes = theApp.uploadQueue->datarate();
     else if (thePrefs.maxUploadLimit() != UNLIMITED)
@@ -1543,6 +1547,13 @@ void DownloadQueue::process()
     // The one search a second goes to the file that needs sources most, not to
     // whichever comes first in the list.
     m_kadSearchTurn = doKademliaFileRequest() ? pickKadSearchFile(curTick) : nullptr;
+
+    // Every 8 minutes each idle multi-file source is offered its best file
+    // (MFC DownloadQueue.cpp:415-418).
+    if (theApp.clientList && (m_lastA4AFTime == 0 || curTick >= m_lastA4AFTime + MIN2MS(8))) {
+        theApp.clientList->processA4AFClients();
+        m_lastA4AFTime = curTick;
+    }
 
     for (auto* file : m_items) {
         if (file->status() != PartFileStatus::Ready &&
@@ -1908,7 +1919,7 @@ void DownloadQueue::processLocalRequests()
     if (curTick < m_nextTcpSrcReq)
         return;
 
-    const QByteArray frame = buildLocalRequestFrame(curTick);
+    const QByteArray frame = buildLocalRequestFrame(curTick, m_serverConnect->currentServer());
     if (!frame.isEmpty()) {
         // One TCP frame for all of them; ServerSocket counts the overhead.
         m_serverConnect->sendPacket(std::make_unique<RawPacket>(
@@ -1919,9 +1930,8 @@ void DownloadQueue::processLocalRequests()
     m_nextTcpSrcReq = curTick + SEC2MS(kMaxFilesPerTcpFrame * (16 + 4));
 }
 
-QByteArray DownloadQueue::buildLocalRequestFrame(uint64 curTick)
+QByteArray DownloadQueue::buildLocalRequestFrame(uint64 curTick, const Server* server)
 {
-    const Server* server = m_serverConnect ? m_serverConnect->currentServer() : nullptr;
     const bool obfuscated = thePrefs.cryptLayerSupported() && server
                             && server->supportsGetSourcesObfuscation();
 
@@ -1939,8 +1949,9 @@ QByteArray DownloadQueue::buildLocalRequestFrame(uint64 curTick)
                 it = m_localServerReqQueue.erase(it);
                 continue;
             }
-            const uint8 priority = std::min(cur->downPriority(), kPrHigh);
-            const uint64 waitTime = cur->lastSearchTimeServer() + (kPrHigh - priority);
+            const int priority = realPriority(cur->downPriority());
+            const uint64 waitTime = cur->lastSearchTimeServer()
+                                    + static_cast<uint64>(realPriority(kPrVeryHigh) - priority);
             if (waitTime < bestWaitTime) {
                 bestWaitTime = waitTime;
                 next = cur;
@@ -1965,6 +1976,64 @@ QByteArray DownloadQueue::buildLocalRequestFrame(uint64 curTick)
         frame.append(packet->getPacket(), static_cast<qsizetype>(packet->getRealPacketSize()));
     }
     return frame;
+}
+
+// MFC CDownloadQueue::GetDownloadSourcesStats over CPartFile::Process's per-state
+// counts (srchybrid/PartFile.cpp:2243-2266), without the per-file cache.
+DownloadQueue::SourceStats DownloadQueue::sourceStats() const
+{
+    SourceStats st;
+    for (const PartFile* file : m_items) {
+        st.total += static_cast<uint32>(file->sourceCount());
+        st.transferring += static_cast<uint32>(file->transferringSrcCount());
+        st.a4af += static_cast<uint32>(file->a4afSourceCount());
+        st.deadPerFile += static_cast<uint32>(file->deadSourceList().count());
+
+        for (const UpDownClient* src : file->srcList()) {
+            DownloadState state = src->downloadState();
+            // Not download states of their own; recoded for the statistics only
+            if (state == DownloadState::OnQueue && src->remoteQueueFull())
+                state = DownloadState::RemoteQueueFull;
+            if (src->uploadState() == UploadState::Banned)
+                state = DownloadState::Banned;
+
+            switch (state) {
+            case DownloadState::OnQueue:         ++st.onQueue; break;
+            case DownloadState::RemoteQueueFull: ++st.queueFull; break;
+            case DownloadState::NoNeededParts:   ++st.noNeededParts; break;
+            case DownloadState::Connected:       ++st.asking; break;
+            case DownloadState::ReqHashSet:      ++st.recvHashset; break;
+            case DownloadState::Connecting:      ++st.connecting; break;
+            case DownloadState::WaitCallback:
+            case DownloadState::WaitCallbackKad: ++st.viaServerCallback; break;
+            case DownloadState::TooManyConns:
+            case DownloadState::TooManyConnsKad: ++st.tooManyConns; break;
+            case DownloadState::LowToLowIP:      ++st.lowToLow; break;
+            case DownloadState::None:            ++st.unknown; break;
+            case DownloadState::Error:           ++st.problematic; break;
+            case DownloadState::Banned:          ++st.banned; break;
+            case DownloadState::Downloading:     break;   // counted as transferring
+            }
+
+            switch (src->sourceFrom()) {
+            case SourceFrom::Server:         ++st.fromServer; break;
+            case SourceFrom::Kademlia:       ++st.fromKad; break;
+            case SourceFrom::SourceExchange: ++st.fromSourceExchange; break;
+            case SourceFrom::Passive:        ++st.fromPassive; break;
+            default: break;
+            }
+
+            const bool onServer = !src->serverAddress().isNull() && src->serverPort() != 0;
+            if (onServer) {
+                ++st.netEd2k;
+                if (src->kadPort() != 0)
+                    ++st.netBoth;
+            }
+            if (src->kadPort() != 0)
+                ++st.netKad;
+        }
+    }
+    return st;
 }
 
 void DownloadQueue::onEntityRemoved(PartFile* file)
@@ -2001,16 +2070,56 @@ void DownloadQueue::removeAutoPrioInCat(uint32 category, uint8 newPrio)
     sortByPriority();
 }
 
-void DownloadQueue::setCatStatus(uint32 category, bool paused)
+std::vector<PartFile*> DownloadQueue::filesInCategoryScope(int category) const
 {
-    for (auto* file : m_items) {
-        if (file->category() == category) {
-            if (paused)
-                file->pauseFile();
-            else
-                file->resumeFile();
+    const QList<DownloadCategory> categories = thePrefs.categories();
+    std::vector<PartFile*> scope;
+    for (PartFile* file : m_items) {
+        const int fileCat = static_cast<int>(file->category());
+        bool in = false;
+        if (category == -1) {
+            in = true;
+        } else if (category == -2) {
+            in = fileCat == 0;
+        } else if (category == 0) {
+            // What the "All" tab shows (MFC CheckShowItemInGivenCat)
+            CategoryRowFacts facts;
+            facts.category = fileCat;
+            facts.fileName = file->fileName();
+            const PartFileStatus status = file->status();
+            facts.unfinished = status != PartFileStatus::Complete;
+            facts.seenComplete = file->lastSeenComplete() != 0;
+            if (status == PartFileStatus::Error)
+                facts.state = CategoryRowFacts::Erroneous;
+            else if (status == PartFileStatus::Paused || file->isStopped())
+                facts.state = CategoryRowFacts::Paused;
+            else if (status == PartFileStatus::Ready || status == PartFileStatus::Empty)
+                facts.state = file->transferringSrcCount() > 0 ? CategoryRowFacts::Transferring
+                                                               : CategoryRowFacts::Waiting;
+            in = categoryShowsRow(categories, 0, facts);
+        } else {
+            in = fileCat == category;
         }
+        if (in)
+            scope.push_back(file);
     }
+    return scope;
+}
+
+void DownloadQueue::setCatStatus(int category, bool paused)
+{
+    for (PartFile* file : filesInCategoryScope(category)) {
+        if (paused)
+            file->pauseFile();
+        else
+            file->resumeFile();
+    }
+}
+
+void DownloadQueue::stopCategory(int category)
+{
+    for (PartFile* file : filesInCategoryScope(category))
+        file->stopFile();
 }
 
 void DownloadQueue::remapCategories(const QHash<uint32, uint32>& oldToNew)

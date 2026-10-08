@@ -313,11 +313,11 @@ void Scheduler::activateSchedule(int index, bool makeDefault)
             break;
         case ScheduleAction::CatStop:
             if (m_downloadQueue)
-                m_downloadQueue->setCatStatus(static_cast<uint32>(intVal), true);
+                m_downloadQueue->stopCategory(intVal);   // MFC MP_STOP, incl. -1 / -2
             break;
         case ScheduleAction::CatResume:
             if (m_downloadQueue)
-                m_downloadQueue->setCatStatus(static_cast<uint32>(intVal), false);
+                m_downloadQueue->setCatStatus(intVal, false);
             break;
         default:
             break;

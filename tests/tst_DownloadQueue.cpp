@@ -21,6 +21,7 @@
 #include "net/ClientReqSocket.h"
 #include "net/ClientUDPSocket.h"
 #include "net/ListenSocket.h"
+#include "prefs/CategoryView.h"
 #include "prefs/Preferences.h"
 #include "protocol/ED2KLink.h"
 #include "search/SearchFile.h"
@@ -124,6 +125,9 @@ private slots:
     void a4af_destroyedClientLeavesNoDanglingEntry();
     void a4af_sourceRowsFollowTheAvailableOnes();
     void a4af_removeSourceUnlinksBothSides();
+    void a4af_swapFollowsMfcsRules();
+    void a4af_periodicPassMovesIdleSources();
+    void categoryScope_allTabCoversWhatItShows();
     void disconnect_failedSourceLeavesTheFile_data();
     void disconnect_failedSourceLeavesTheFile();
     void disconnect_removedSourceIsReaped();
@@ -145,6 +149,9 @@ private slots:
     void checkAndAddKnownSource_swapsOnlyAnIdleDueSource();
     void localSrcRequests_goOutFifteenToAFrame();
     void localSrcRequests_orderAndDropouts();
+    void localSrcRequests_serverCapabilities();
+    void sourceStats_countsByStateOriginAndNetwork();
+    void rightFileHasHigherPrio_veryLowIsLowest();
     void ratioLimitedDownload_followsTheUploadLimit();
     void remoteQueueFull_survivesTheRankAndEndsWithASlot();
     void remoteQueueFull_sourceIsPurgedNearTheCap();
@@ -2717,14 +2724,14 @@ void tst_DownloadQueue::localSrcRequests_goOutFifteenToAFrame()
     }
     QCOMPARE(dq.m_localServerReqQueue.size(), std::size_t{20});
 
-    const QByteArray first = dq.buildLocalRequestFrame(1000);
+    const QByteArray first = dq.buildLocalRequestFrame(1000, nullptr);
     QCOMPARE(hashesInSourceRequestFrame(first).size(), std::size_t{15});
     QCOMPARE(dq.m_localServerReqQueue.size(), std::size_t{5});
 
-    const QByteArray second = dq.buildLocalRequestFrame(2000);
+    const QByteArray second = dq.buildLocalRequestFrame(2000, nullptr);
     QCOMPARE(hashesInSourceRequestFrame(second).size(), std::size_t{5});
     QVERIFY(dq.m_localServerReqQueue.empty());
-    QVERIFY(dq.buildLocalRequestFrame(3000).isEmpty());
+    QVERIFY(dq.buildLocalRequestFrame(3000, nullptr).isEmpty());
 
     // Every file was asked for exactly once, and knows when.
     int stampedFirst = 0;
@@ -2852,7 +2859,7 @@ void tst_DownloadQueue::localSrcRequests_orderAndDropouts()
     QVERIFY(!removed->isLocalSrcReqQueued());
     QCOMPARE(dq.m_localServerReqQueue.size(), std::size_t{4});
 
-    const auto hashes = hashesInSourceRequestFrame(dq.buildLocalRequestFrame(9000));
+    const auto hashes = hashesInSourceRequestFrame(dq.buildLocalRequestFrame(9000, nullptr));
     QCOMPARE(hashes.size(), std::size_t{4});
     const auto hashOf = [](const PartFile* pf) {
         return QByteArray(reinterpret_cast<const char*>(pf->fileHash()), 16);
@@ -2866,13 +2873,164 @@ void tst_DownloadQueue::localSrcRequests_orderAndDropouts()
     recent->setLocalSrcReqQueued(true);
     dq.sendLocalSrcRequest(recent);
     recent->setStatus(PartFileStatus::Completing);
-    QVERIFY(dq.buildLocalRequestFrame(9500).isEmpty());
+    QVERIFY(dq.buildLocalRequestFrame(9500, nullptr).isEmpty());
     QVERIFY(!recent->isLocalSrcReqQueued());
     QCOMPARE(recent->lastSearchTimeServer(), uint64{9000});
     recent->setStatus(PartFileStatus::Empty);
 
     dq.deleteAll();
 }
+
+// MFC DownloadQueue.cpp:1343-1365: the obfuscated opcode needs the server's flag and
+// our crypt layer; a large file is only asked of a server that takes 64-bit sizes.
+void tst_DownloadQueue::localSrcRequests_serverCapabilities()
+{
+    DownloadQueue dq;
+    const bool savedCrypt = thePrefs.cryptLayerSupported();
+    const auto restore = qScopeGuard([savedCrypt] { thePrefs.setCryptLayerSupported(savedCrypt); });
+    thePrefs.setCryptLayerSupported(true);
+
+    uint8 next = 0;
+    const auto queue = [&](uint64 size) {
+        const uint8 hash[16] = {72, ++next, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+        auto* pf = createTestPartFile(hash, QStringLiteral("src-cap-%1.bin").arg(next));
+        pf->setFileSize(size);
+        pf->setStatus(PartFileStatus::Empty);
+        dq.addDownload(pf);
+        pf->setLocalSrcReqQueued(true);
+        dq.sendLocalSrcRequest(pf);
+        return pf;
+    };
+    const auto opcodeOf = [](const QByteArray& frame) { return frame.size() > 5 ? uint8(frame[5]) : uint8{0}; };
+
+    Server plain(0x01020304, 4661);
+    Server capable(0x01020305, 4661);
+    capable.setTCPFlags(SrvTcpFlag::LargeFiles | SrvTcpFlag::TcpObfuscation);
+
+    queue(PARTSIZE);
+    QByteArray frame = dq.buildLocalRequestFrame(1000, &plain);
+    QCOMPARE(opcodeOf(frame), uint8{OP_GETSOURCES});
+
+    queue(PARTSIZE);
+    frame = dq.buildLocalRequestFrame(2000, &capable);
+    QCOMPARE(opcodeOf(frame), uint8{OP_GETSOURCES_OBFU});
+    QCOMPARE(frame.size(), qsizetype{6 + 20});
+
+    thePrefs.setCryptLayerSupported(false);
+    queue(PARTSIZE);
+    frame = dq.buildLocalRequestFrame(3000, &capable);
+    QCOMPARE(opcodeOf(frame), uint8{OP_GETSOURCES});
+    thePrefs.setCryptLayerSupported(true);
+
+    // Just over the old limit, still under 4 GiB: MFC already sends the 64-bit layout.
+    const uint64 largeSize = OLD_MAX_EMULE_FILE_SIZE + 1;
+    PartFile* large = queue(largeSize);
+    QVERIFY(dq.buildLocalRequestFrame(4000, &plain).isEmpty());
+    QVERIFY(dq.buildLocalRequestFrame(4500, nullptr).isEmpty());
+    QVERIFY(!large->isLocalSrcReqQueued());
+    QVERIFY(dq.m_localServerReqQueue.empty());
+
+    large->setLocalSrcReqQueued(true);
+    dq.sendLocalSrcRequest(large);
+    frame = dq.buildLocalRequestFrame(5000, &capable);
+    QCOMPARE(frame.size(), qsizetype{6 + 28});
+    uint32 marker = 1;
+    uint64 size = 0;
+    std::memcpy(&marker, frame.constData() + 6 + 16, 4);
+    std::memcpy(&size, frame.constData() + 6 + 20, 8);
+    QCOMPARE(marker, uint32{0});
+    QCOMPARE(size, largeSize);
+
+    dq.deleteAll();
+}
+
+// MFC GetDownloadSourcesStats: a queue-full or banned source is counted as such
+// although neither is a download state of its own.
+void tst_DownloadQueue::sourceStats_countsByStateOriginAndNetwork()
+{
+    DownloadQueue dq;
+    const uint8 hash[16] = {74, 1};
+    auto* pf = createTestPartFile(hash, QStringLiteral("stats.bin"));
+    dq.addDownload(pf);
+
+    UpDownClient queued, full, banned, asking, kadOnly;
+    uint8 n = 0;
+    for (UpDownClient* c : {&queued, &full, &banned, &asking, &kadOnly}) {
+        c->setUserAddress(Address::fromString(QStringLiteral("10.7.7.%1").arg(++n)));
+        c->setUserPort(4662);
+        pf->addSource(c);
+    }
+    const Address server = Address::fromString(QStringLiteral("1.2.3.4"));
+
+    queued.setDownloadState(DownloadState::OnQueue);
+    queued.setSourceFrom(SourceFrom::Server);
+    queued.setServerAddress(server);
+    queued.setServerPort(4661);
+
+    full.setDownloadState(DownloadState::OnQueue);
+    full.setRemoteQueueFull(true);
+    full.setSourceFrom(SourceFrom::SourceExchange);
+    full.setServerAddress(server);
+    full.setServerPort(4661);
+    full.setKadPort(4672);
+
+    banned.setDownloadState(DownloadState::OnQueue);
+    banned.setUploadState(UploadState::Banned);
+    banned.setSourceFrom(SourceFrom::Passive);
+
+    asking.setDownloadState(DownloadState::Connected);
+    asking.setSourceFrom(SourceFrom::Kademlia);
+
+    kadOnly.setDownloadState(DownloadState::NoNeededParts);
+    kadOnly.setSourceFrom(SourceFrom::Kademlia);
+    kadOnly.setKadPort(4672);
+
+    const DownloadQueue::SourceStats st = dq.sourceStats();
+    QCOMPARE(st.total, 5u);
+    QCOMPARE(st.onQueue, 1u);
+    QCOMPARE(st.queueFull, 1u);
+    QCOMPARE(st.banned, 1u);
+    QCOMPARE(st.asking, 1u);
+    QCOMPARE(st.noNeededParts, 1u);
+    QCOMPARE(st.unknown, 0u);
+    QCOMPARE(st.fromServer, 1u);
+    QCOMPARE(st.fromSourceExchange, 1u);
+    QCOMPARE(st.fromPassive, 1u);
+    QCOMPARE(st.fromKad, 2u);
+    QCOMPARE(st.netEd2k, 2u);
+    QCOMPARE(st.netKad, 2u);
+    QCOMPARE(st.netBoth, 1u);
+
+    for (UpDownClient* c : {&queued, &full, &banned, &asking, &kadOnly})
+        dq.removeSource(c);
+    dq.deleteAll();
+}
+
+// The priority constants are not ordered: Very Low is 4, above Very High (3).
+void tst_DownloadQueue::rightFileHasHigherPrio_veryLowIsLowest()
+{
+    const uint8 hashA[16] = {73, 1}, hashB[16] = {73, 2};
+    std::unique_ptr<PartFile> veryLow(createTestPartFile(hashA, QStringLiteral("a.bin"), kPrVeryLow));
+    std::unique_ptr<PartFile> high(createTestPartFile(hashB, QStringLiteral("b.bin"), kPrHigh));
+    QVERIFY(PartFile::rightFileHasHigherPrio(veryLow.get(), high.get()));
+    QVERIFY(!PartFile::rightFileHasHigherPrio(high.get(), veryLow.get()));
+
+    // …and in the source-request order: equal wait, the higher priority goes first
+    DownloadQueue dq;
+    PartFile* low = veryLow.release();
+    PartFile* hi = high.release();
+    for (PartFile* pf : {low, hi}) {
+        pf->setStatus(PartFileStatus::Empty);
+        dq.addDownload(pf);
+        pf->setLastSearchTimeServer(100);
+        pf->setLocalSrcReqQueued(true);
+        dq.sendLocalSrcRequest(pf);
+    }
+    const QByteArray frame = dq.buildLocalRequestFrame(9000, nullptr);
+    QCOMPARE(frame.mid(6, 16), QByteArray(reinterpret_cast<const char*>(hi->fileHash()), 16));
+    dq.deleteAll();
+}
+
 
 // A new server session starts from scratch: whatever was queued for the old server is
 // forgotten and every running download may ask at once — the old server's 15 minutes
@@ -2915,7 +3073,8 @@ void tst_DownloadQueue::checkAndAddKnownSource_swapsOnlyAnIdleDueSource()
     uint8 hashA[16] = {40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
     uint8 hashB[16] = {41, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
     auto* fileA = createTestPartFile(hashA, QStringLiteral("swap-a.bin"));
-    auto* fileB = createTestPartFile(hashB, QStringLiteral("swap-b.bin"));
+    // The better file by MFC's rule (RightFileHasHigherPrio): a higher download priority
+    auto* fileB = createTestPartFile(hashB, QStringLiteral("swap-b.bin"), kPrHigh);
     dq.addDownload(fileA);
     dq.addDownload(fileB);
 
@@ -2954,6 +3113,206 @@ void tst_DownloadQueue::checkAndAddKnownSource_swapsOnlyAnIdleDueSource()
         client->removeFileFromOtherLists(fileA);
         client->removeFileFromOtherLists(fileB);
         dq.removeSource(client);
+    }
+    dq.deleteAll();
+}
+
+// MFC SwapToRightFile / SwapToAnotherFile (DownloadClient.cpp:1425-1784). The port chose
+// by "fewer sources, then upload priority" and knew no suspension, no CPU-saver option
+// and no candidate filter.
+void tst_DownloadQueue::a4af_swapFollowsMfcsRules()
+{
+    DownloadQueue dq;
+    DownloadQueue* const savedQueue = theApp.downloadQueue;
+    theApp.downloadQueue = &dq;
+    const bool savedSaveCpu = thePrefs.a4afSaveCpu();
+    const auto restore = qScopeGuard([=] {
+        theApp.downloadQueue = savedQueue;
+        thePrefs.setA4afSaveCpu(savedSaveCpu);
+    });
+    thePrefs.setA4afSaveCpu(false);
+
+    uint8 hash[16] = {75, 0};
+    const auto makeFile = [&](uint8 id, uint8 priority) {
+        hash[1] = id;
+        auto* pf = createTestPartFile(hash, QStringLiteral("a4af-%1.bin").arg(id), priority);
+        pf->setStatus(PartFileStatus::Empty);
+        dq.addDownload(pf);
+        return pf;
+    };
+    PartFile* normal = makeFile(1, kPrNormal);
+    PartFile* high = makeFile(2, kPrHigh);
+    PartFile* low = makeFile(3, kPrLow);
+    PartFile* stopped = makeFile(4, kPrVeryHigh);
+    stopped->stopFile();
+
+    uint8 n = 0;
+    const auto place = [&](UpDownClient& c, PartFile* on, std::initializer_list<PartFile*> others) {
+        const Address addr = Address::fromString(QStringLiteral("81.2.70.%1").arg(++n));
+        c.setUserAddress(addr);
+        c.setUserIDHybrid(addr.toUint32());
+        c.setUserPort(4662);
+        c.setReqFile(on);
+        on->addSource(&c);
+        for (PartFile* other : others)
+            QVERIFY(c.addRequestForAnotherFile(other));
+        c.setDownloadState(DownloadState::OnQueue);
+    };
+    const auto swap = [](UpDownClient& c, bool ignoreSuspensions = false, bool allowSame = true) {
+        return c.swapToAnotherFile(QStringLiteral("test"), false, ignoreSuspensions, false,
+                                   nullptr, allowSame);
+    };
+
+    // The higher download priority wins, whatever the source counts are.
+    UpDownClient toHigh, staysOnHigh;
+    place(toHigh, normal, {high, low});
+    QVERIFY(swap(toHigh));
+    QCOMPARE(toHigh.reqFile(), high);
+    QCOMPARE(toHigh.remoteQueueRank(), 0u);
+    place(staysOnHigh, high, {normal, low});
+    QVERIFY(!swap(staysOnHigh));
+    QCOMPARE(staysOnHigh.reqFile(), high);
+
+    // A stopped file is no candidate, not even for a source that has to leave.
+    UpDownClient mustLeave;
+    place(mustLeave, normal, {stopped, low});
+    QVERIFY(swap(mustLeave, false, /*allowSame*/ false));
+    QCOMPARE(mustLeave.reqFile(), low);
+
+    // "Don't swap to" suspends a file for a while; a caller may override that.
+    UpDownClient suspended;
+    place(suspended, normal, {high});
+    suspended.dontSwapTo(high);
+    QVERIFY(!swap(suspended));
+    QCOMPARE(suspended.reqFile(), normal);
+    QVERIFY(swap(suspended, /*ignoreSuspensions*/ true));
+    QCOMPARE(suspended.reqFile(), high);
+
+    // "Disable A4AF checks to save CPU": only a source that cannot stay is moved.
+    thePrefs.setA4afSaveCpu(true);
+    UpDownClient saver;
+    place(saver, normal, {high});
+    QVERIFY(!swap(saver));
+    QCOMPARE(saver.reqFile(), normal);
+    QVERIFY(swap(saver, false, /*allowSame*/ false));
+    QCOMPARE(saver.reqFile(), high);
+    thePrefs.setA4afSaveCpu(false);
+
+    // Leaving for good forgets when the old file was asked.
+    UpDownClient leaver;
+    place(leaver, normal, {high});
+    leaver.setLastAskedTime();
+    QVERIFY(leaver.lastAskedTime(normal) != 0);
+    QVERIFY(leaver.swapToAnotherFile(QStringLiteral("gone"), false, true, /*remove*/ true));
+    QCOMPARE(leaver.reqFile(), high);
+    QCOMPARE(leaver.lastAskedTime(normal), uint64{0});
+    QVERIFY(!leaver.hasOtherFiles());
+
+    for (UpDownClient* c : {&toHigh, &staysOnHigh, &mustLeave, &suspended, &saver, &leaver}) {
+        c->setDownloadState(DownloadState::None);
+        c->removeFromAllOtherLists();
+        dq.removeSource(c);
+    }
+    dq.deleteAll();
+}
+
+// MFC SetCatStatus / StartNextFile: an action on the "All" tab covers what the tab shows.
+// It used to cover the uncategorised downloads only.
+void tst_DownloadQueue::categoryScope_allTabCoversWhatItShows()
+{
+    const QList<DownloadCategory> savedCats = thePrefs.categories();
+    const auto restore = qScopeGuard([savedCats] { thePrefs.setCategories(savedCats); });
+    DownloadCategory all, movies;
+    movies.title = QStringLiteral("Movies");
+    thePrefs.setCategories({all, movies});
+
+    DownloadQueue dq;
+    const uint8 hashA[16] = {77, 1}, hashB[16] = {77, 2};
+    auto* plain = createTestPartFile(hashA, QStringLiteral("plain.bin"));
+    auto* movie = createTestPartFile(hashB, QStringLiteral("movie.avi"));
+    for (auto* pf : {plain, movie}) {
+        pf->setStatus(PartFileStatus::Empty);
+        dq.addDownload(pf);
+    }
+    movie->setCategory(1);
+    using Files = std::vector<PartFile*>;
+
+    QCOMPARE(dq.filesInCategoryScope(0), (Files{plain, movie}));
+    QCOMPARE(dq.filesInCategoryScope(1), (Files{movie}));
+    QCOMPARE(dq.filesInCategoryScope(-1), (Files{plain, movie}));
+    QCOMPARE(dq.filesInCategoryScope(-2), (Files{plain}));
+
+    dq.setCatStatus(0, true);
+    QVERIFY(plain->isPaused());
+    QVERIFY(movie->isPaused());
+
+    // "Resume next" on the All tab may pick a file of any category
+    plain->resumeFile();
+    QVERIFY(dq.startNextFile(0));
+    QVERIFY(!movie->isPaused());
+
+    // With a view filter the tab shows less, and so does the action
+    all.filter = CategoryViewFilter::Uncategorized;
+    thePrefs.setCategories({all, movies});
+    QCOMPARE(dq.filesInCategoryScope(0), (Files{plain}));
+    dq.stopCategory(0);
+    QVERIFY(plain->isStopped());
+    QVERIFY(!movie->isStopped());
+    movie->pauseFile();
+    QVERIFY(!dq.startNextFile(0) || movie->isPaused());   // not the categorised one
+
+    dq.deleteAll();
+}
+
+// MFC CClientList::ProcessA4AFClients, every 8 minutes from the queue tick.
+void tst_DownloadQueue::a4af_periodicPassMovesIdleSources()
+{
+    DownloadQueue dq;
+    ClientList clients;
+    DownloadQueue* const savedQueue = theApp.downloadQueue;
+    ClientList* const savedClients = theApp.clientList;
+    theApp.downloadQueue = &dq;
+    theApp.clientList = &clients;
+    const auto restore = qScopeGuard([=] {
+        theApp.downloadQueue = savedQueue;
+        theApp.clientList = savedClients;
+    });
+
+    const uint8 hashA[16] = {76, 1}, hashB[16] = {76, 2};
+    auto* normal = createTestPartFile(hashA, QStringLiteral("tick-a.bin"), kPrNormal);
+    auto* high = createTestPartFile(hashB, QStringLiteral("tick-b.bin"), kPrHigh);
+    for (auto* pf : {normal, high}) {
+        pf->setStatus(PartFileStatus::Empty);
+        dq.addDownload(pf);
+    }
+
+    auto* idle = new UpDownClient();
+    auto* busy = new UpDownClient();
+    uint8 n = 0;
+    for (UpDownClient* c : {idle, busy}) {
+        const Address addr = Address::fromString(QStringLiteral("81.2.71.%1").arg(++n));
+        c->setUserAddress(addr);
+        c->setUserIDHybrid(addr.toUint32());
+        c->setUserPort(4662);
+        c->setReqFile(normal);
+        normal->addSource(c);
+        QVERIFY(c->addRequestForAnotherFile(high));
+        clients.addClient(c);
+    }
+    idle->setDownloadState(DownloadState::OnQueue);
+    busy->setDownloadState(DownloadState::Downloading);
+
+    clients.processA4AFClients();
+    QCOMPARE(idle->reqFile(), high);
+    QCOMPARE(busy->reqFile(), normal);
+    QCOMPARE(busy->downloadState(), DownloadState::Downloading);
+
+    for (UpDownClient* c : {idle, busy}) {
+        c->setDownloadState(DownloadState::None);
+        c->removeFromAllOtherLists();
+        dq.removeSource(c);
+        clients.removeClient(c);
+        delete c;
     }
     dq.deleteAll();
 }

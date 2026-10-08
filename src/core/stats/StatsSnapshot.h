@@ -135,6 +135,10 @@ struct StatsSnapshot {
     qint64 downFoundSources = 0;
     qint64 downUdpReasks = 0;         ///< MFC CDownloadQueue::GetUDPFileReasks()
     qint64 downUdpReasksFailed = 0;   ///< MFC CDownloadQueue::GetFailedUDPFileReasks()
+    /// Found Sources breakdown in MFC's row order: 13 states, 4 origins, 3 networks.
+    std::array<qint64, 20> downSources{};
+    qint64 downDeadSourcesGlobal = 0;
+    qint64 downDeadSourcesPerFile = 0;
 
     /// Free space on the incoming directory; absent when the path is unreadable.
     std::optional<qint64> freeTempSpace;

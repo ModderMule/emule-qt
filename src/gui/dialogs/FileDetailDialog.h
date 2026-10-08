@@ -45,6 +45,13 @@ public:
                               Tab initialTab = General,
                               QWidget* parent = nullptr);
 
+    /// Several files in one sheet, as MFC's CFileDetailDialog for a multi-selection:
+    /// General with sums and "-" for what differs, all comments, merged media info and
+    /// one link per file. No File Names / Metadata / Archive pages, no walker.
+    /// One file gives the ordinary dialog.
+    explicit FileDetailDialog(const QList<QCborMap>& files, Tab initialTab = General,
+                              QWidget* parent = nullptr);
+
     /// Clear the Comments page's pending-changes state once the daemon has answered.
     /// A no-op on a file the user cannot comment, where the page is the read-only one.
     void commentApplied(bool ok) override;
@@ -73,6 +80,7 @@ public slots:
 
 private:
     void buildTabs(const QCborMap& details, int tabToSelect);
+    void buildMultiTabs(const QCborMap& merged, Tab tabToSelect);
 
     QWidget* createGeneralTab(const QCborMap& details);
     QWidget* createFileNamesTab(const QCborMap& details);

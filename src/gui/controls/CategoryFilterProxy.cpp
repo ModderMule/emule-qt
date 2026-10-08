@@ -4,9 +4,6 @@
 
 #include "controls/CategoryFilterProxy.h"
 
-#include "utils/OtherFunctions.h"
-
-#include <QRegularExpression>
 
 namespace eMule {
 
@@ -87,57 +84,6 @@ CategoryRowFacts CategoryFilterProxy::factsOf(int sourceRow) const
     CategoryRowFacts facts;
     facts.category = src->data(idx, kCategoryRole).toInt();
     return facts;
-}
-
-bool categoryShowsRow(const QList<DownloadCategory>& categories, int inCategory,
-                      const CategoryRowFacts& row)
-{
-    using namespace CategoryViewFilter;
-
-    // No list yet (or a tab past its end): membership alone
-    if (inCategory < 0 || inCategory >= categories.size())
-        return inCategory == 0 || row.category == inCategory;
-
-    const DownloadCategory& cat = categories.at(inCategory);
-    const int filter = cat.filter;
-    if (row.category == inCategory && filter == All)
-        return true;
-    if (inCategory > 0 && row.category != inCategory && !cat.care4all)
-        return false;
-
-    bool shown = filter <= All;
-    // The status modes say nothing about a finished file
-    if (!shown && (filter < Waiting || filter > SeenComplete || row.unfinished)) {
-        const auto typeIs = [&row](ED2KFileType type) {
-            return getED2KFileTypeID(row.fileName) == type;
-        };
-        switch (filter) {
-        case Uncategorized: shown = row.category == 0; break;
-        case Incomplete:    shown = row.unfinished; break;
-        case Completed:     shown = !row.unfinished; break;
-        case Waiting:       shown = row.state == CategoryRowFacts::Waiting; break;
-        case Downloading:   shown = row.state == CategoryRowFacts::Transferring; break;
-        case Erroneous:     shown = row.state == CategoryRowFacts::Erroneous; break;
-        case Paused:        shown = row.state == CategoryRowFacts::Paused; break;
-        case SeenComplete:  shown = row.seenComplete; break;
-        case Video:         shown = typeIs(ED2KFileType::Video); break;
-        case Audio:         shown = typeIs(ED2KFileType::Audio); break;
-        case Archive:       shown = typeIs(ED2KFileType::Archive); break;
-        case CDImage:       shown = typeIs(ED2KFileType::CDImage); break;
-        case Document:      shown = typeIs(ED2KFileType::Document); break;
-        case Picture:       shown = typeIs(ED2KFileType::Image); break;
-        case Program:       shown = typeIs(ED2KFileType::Program); break;
-        case Collection:    shown = typeIs(ED2KFileType::EmuleCollection); break;
-        case RegExp: {
-            // The whole name, case as written (MFC RegularExpressionMatch: regex_match)
-            const QRegularExpression re(QRegularExpression::anchoredPattern(cat.regexp));
-            shown = re.isValid() && re.match(row.fileName).hasMatch();
-            break;
-        }
-        default: break;
-        }
-    }
-    return cat.filterNeg ? !shown : shown;
 }
 
 } // namespace eMule

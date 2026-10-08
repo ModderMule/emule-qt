@@ -75,6 +75,19 @@ public:
     void applyHeaderState(QHeaderView* header, const QString& key);
 
     /// True once a layout is saved under @p key — false on a fresh install.
+    /// Which of a column's two sort values is in use (AbstractListView::setSortValueColumn);
+    /// the header blob carries only the column and the direction.
+    [[nodiscard]] bool sortValue(const QString& key, int column, bool fallback) const
+    {
+        const auto it = m_sortValues.constFind(QStringLiteral("%1/%2").arg(key).arg(column));
+        return it != m_sortValues.constEnd() ? *it : fallback;
+    }
+    void setSortValue(const QString& key, int column, bool second)
+    {
+        m_sortValues[QStringLiteral("%1/%2").arg(key).arg(column)] = second;
+        scheduleSave();
+    }
+
     [[nodiscard]] bool hasHeaderState(const QString& key) const
     {
         return !m_headerStates.value(key).isEmpty();
@@ -150,6 +163,14 @@ public:
     void setShowCountryFlags(bool on)
     {
         m_showCountryFlags = on;
+        scheduleSave();
+    }
+
+    /// The command bar beside the download list (MFC ShowDownloadToolbar).
+    [[nodiscard]] bool showDownloadToolbar() const { return m_showDownloadToolbar; }
+    void setShowDownloadToolbar(bool on)
+    {
+        m_showDownloadToolbar = on;
         scheduleSave();
     }
 
@@ -236,6 +257,7 @@ private:
     bool m_associateNzbFiles = true;
     bool m_firstStartWizardDone = false;
     bool m_showCountryFlags = true;
+    bool m_showDownloadToolbar = true;
     QList<int> m_toolbarButtonOrder;
     int  m_toolbarButtonStyle = 3;
     QString m_toolbarSkinPath;
@@ -246,6 +268,7 @@ private:
     bool m_searchShowTorrent = true;
     std::array<QColor, kStatsColorCount> m_statsColors = defaultStatsColors();
     QMap<QString, QByteArray> m_headerStates;
+    QMap<QString, bool> m_sortValues;
     QSet<QString> m_statsTreeExpanded;
     QString m_configDir;   ///< Remembered by load() so save() can run without it.
     std::unique_ptr<QTimer> m_saveTimer;   ///< Debounce for scheduleSave().

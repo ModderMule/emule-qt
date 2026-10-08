@@ -53,6 +53,7 @@ namespace eMule {
     if (reason == QLatin1StringView("implausible_media_bitrate")) return QCoreApplication::translate("eMule::ConfidenceText", "The bitrate is not plausible");
     if (reason == QLatin1StringView("media_size_mismatch"))       return QCoreApplication::translate("eMule::ConfidenceText", "Length and bitrate do not add up to the size");
     if (reason == QLatin1StringView("name_media_tag_mismatch"))   return QCoreApplication::translate("eMule::ConfidenceText", "Artist, album and title appear in none of the names");
+    if (reason == QLatin1StringView("abuse_content_name"))        return QCoreApplication::translate("eMule::ConfidenceText", "A name uses words that advertise child abuse material");
     return reason;
 }
 

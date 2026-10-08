@@ -19,6 +19,9 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#ifdef Q_OS_LINUX
+#include <linux/errqueue.h>
+#endif
 
 namespace eMule {
 
@@ -32,6 +35,14 @@ Pinger::Pinger()
     m_icmpSocket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
     if (m_icmpSocket < 0)
         logWarning(QStringLiteral("Pinger: could not create ICMP socket (errno %1)").arg(errno));
+#ifdef Q_OS_LINUX
+    // A ping socket hands out ICMP errors (TTL exceeded, unreachable) only on its
+    // error queue; without them a traceroute hop is a timeout.
+    if (m_icmpSocket >= 0) {
+        int on = 1;
+        ::setsockopt(m_icmpSocket, SOL_IP, IP_RECVERR, &on, sizeof(on));
+    }
+#endif
 
     // Raw ICMP socket for reading TTL_EXPIRED responses (requires root/admin).
     m_rawSocket = ::socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
@@ -152,6 +163,46 @@ PingStatus Pinger::pingICMP(uint32 addr, uint8 ttl)
         if (ready <= 0)
             break;
 
+#ifdef Q_OS_LINUX
+        if (pfd.revents & POLLERR) {
+            // The offending packet comes back as payload, the router as a control message
+            uint8 echoed[64];
+            char control[512];
+            sockaddr_in target{};
+            iovec iov{echoed, sizeof(echoed)};
+            msghdr msg{};
+            msg.msg_name = &target;
+            msg.msg_namelen = sizeof(target);
+            msg.msg_iov = &iov;
+            msg.msg_iovlen = 1;
+            msg.msg_control = control;
+            msg.msg_controllen = sizeof(control);
+            const auto got = ::recvmsg(m_icmpSocket, &msg, MSG_ERRQUEUE);
+            if (got < 0)
+                break;
+            const float errRtt = static_cast<float>(timer.nsecsElapsed()) / 1'000'000.0f;
+            const bool ours = got >= static_cast<ssize_t>(sizeof(ICMPHeader))
+                && ntohs(reinterpret_cast<const ICMPHeader*>(echoed)->sequence) == seq;
+            for (cmsghdr* c = CMSG_FIRSTHDR(&msg); ours && c; c = CMSG_NXTHDR(&msg, c)) {
+                if (c->cmsg_level != SOL_IP || c->cmsg_type != IP_RECVERR)
+                    continue;
+                const auto* ee = reinterpret_cast<const sock_extended_err*>(CMSG_DATA(c));
+                if (ee->ee_origin != SO_EE_ORIGIN_ICMP)
+                    continue;
+                const auto* offender = reinterpret_cast<const sockaddr_in*>(SO_EE_OFFENDER(ee));
+                result.delay = errRtt;
+                result.destinationAddress = offender->sin_addr.s_addr;
+                result.status = ee->ee_type == kIcmpTTLExpired ? kPingTTLExpired
+                                                               : kPingDestUnreachable;
+                result.error = 0;
+                result.ttl = ttl;
+                result.success = true;
+                return result;
+            }
+            continue;
+        }
+#endif
+
         sockaddr_in from{};
         socklen_t fromLen = sizeof(from);
         auto n = ::recvfrom(m_icmpSocket, recvBuf, sizeof(recvBuf), 0,
@@ -191,6 +242,25 @@ PingStatus Pinger::pingICMP(uint32 addr, uint8 ttl)
             result.ttl = responseTTL > 0 ? responseTTL : ttl;
             result.success = true;
             return result;
+        }
+
+        // A router or the target refusing our echo (macOS delivers these in-band):
+        // the error quotes our IP header and the first 8 bytes, i.e. the echo header.
+        if ((icmp->type == kIcmpTTLExpired || icmp->type == kIcmpDestUnreachable)
+            && n - icmpOffset >= static_cast<ssize_t>(sizeof(ICMPErrorBody))) {
+            const auto* err = reinterpret_cast<const ICMPErrorBody*>(recvBuf + icmpOffset);
+            const auto* quoted = reinterpret_cast<const ICMPHeader*>(err->data);
+            if (err->originalIP.proto == IPPROTO_ICMP && quoted->type == kIcmpEchoRequest
+                && ntohs(quoted->sequence) == seq) {
+                result.delay = rtt;
+                result.destinationAddress = from.sin_addr.s_addr;
+                result.status = icmp->type == kIcmpTTLExpired ? kPingTTLExpired
+                                                              : kPingDestUnreachable;
+                result.error = 0;
+                result.ttl = responseTTL > 0 ? responseTTL : ttl;
+                result.success = true;
+                return result;
+            }
         }
         // Not our reply; loop and try again
     }

@@ -10,6 +10,7 @@
 /// Decoupled from theApp — emits needMoreHosts() signal when traceroute
 /// hosts are needed; callers provide them via addHostsToCheck().
 
+#include "net/Pinger.h"
 #include "utils/Types.h"
 
 #include <QThread>
@@ -17,9 +18,12 @@
 
 #include <condition_variable>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
+
+class tst_LastCommonRouteFinder;
 
 namespace eMule {
 
@@ -42,9 +46,28 @@ struct USSParams {
     bool enabled = false;
 };
 
+/// What the controller is doing (MFC's status-pane states; Off and Active show none).
+enum class UssState : uint8 {
+    Off,        ///< option off
+    Preparing,  ///< collecting hosts, tracing the route, measuring the baseline
+    Waiting,    ///< tracing failed three times; resting before the next try
+    Error,      ///< gave up and switched the option off
+    Active      ///< limit under control
+};
+
+/// Result of the hop search: where the routes to our peers part.
+struct RouteProbe {
+    uint32 lastCommonHost = 0;  ///< router all traced routes share (network order)
+    uint32 hostToPing = 0;      ///< a peer behind it; pinged with lastCommonTTL
+    uint8  lastCommonTTL = 0;
+    bool   found = false;
+    bool   useUdp = false;      ///< ping method that worked last
+};
+
 /// Current ping/upload status snapshot.
 struct USSStatus {
     QString state;         ///< Human-readable status string.
+    UssState phase = UssState::Off;
     uint32  latency = 0;  ///< Current average ping (ms).
     uint32  lowest  = 0;  ///< Baseline ping (ms).
     uint32  currentLimit = 0; ///< Current calculated upload limit (bytes/sec).
@@ -63,6 +86,7 @@ struct USSStatus {
 /// Runs as a QThread. Thread-safe methods can be called from any thread.
 class LastCommonRouteFinder : public QThread {
     Q_OBJECT
+    friend class ::tst_LastCommonRouteFinder;
 
 public:
     explicit LastCommonRouteFinder(QObject* parent = nullptr);
@@ -81,6 +105,11 @@ public:
 
     /// Get a snapshot of the current ping/upload status. Thread-safe.
     [[nodiscard]] USSStatus currentStatus() const;
+
+    /// Switched on and not given up: getUpload() is the controller's limit. Thread-safe.
+    [[nodiscard]] bool isEnabled() const { return enabledNow(); }
+    /// Tracing failed for good: the limit is the configured one again. Thread-safe.
+    [[nodiscard]] bool hasGivenUp() const;
 
     /// Whether the controller will accept a new upload client. Thread-safe.
     [[nodiscard]] bool acceptNewClient() const;
@@ -113,6 +142,21 @@ public:
     /// Current calculated upload limit (bytes/sec). Thread-safe.
     [[nodiscard]] uint32 getUpload() const;
 
+    /// Hosts wanted before a route is traced, and the count below which a try is over.
+    static constexpr std::size_t kHostsToTrace = 10;
+    static constexpr std::size_t kTooFewHosts = 8;
+
+    using PingFn = std::function<PingStatus(uint32 addr, uint8 ttl, bool useUdp)>;
+
+    /// One traceroute try, MFC LastCommonRouteFinder.cpp:327-449: every host is pinged
+    /// with a rising TTL until two of them answer from different routers. Hosts that
+    /// answer themselves (too close) or are unreachable leave @p hosts.
+    /// @p pause sleeps between a failed ping and its retry; @p keepGoing ends the try.
+    [[nodiscard]] static RouteProbe traceLastCommonHost(std::vector<uint32>& hosts,
+                                                        const PingFn& ping,
+                                                        const std::function<bool()>& keepGoing,
+                                                        const std::function<void(uint32)>& pause);
+
 signals:
     /// Emitted when the finder needs more hosts for traceroute.
     /// Connect to server/client list providers.
@@ -121,12 +165,20 @@ signals:
     /// Emitted when the upload limit changes.
     void uploadLimitChanged(uint32 newLimit);
 
+    /// Tracing the route failed for good. The finder stays off until it is switched
+    /// off and on again; the receiver turns the option off (MFC SetDynUpEnabled(false)).
+    void tracerouteGaveUp();
+
 protected:
     void run() override;
 
 private:
     /// Compute median of a vector.
     [[nodiscard]] static uint32 median(std::vector<uint32>& values);
+    void setState(UssState state);
+    [[nodiscard]] bool enabledNow() const;
+    /// Sleep up to @p ms; false as soon as the thread is stopped or the option goes off.
+    bool waitWhileEnabled(uint32 ms);
 
     // --- Synchronization ---
     mutable std::mutex m_hostsMutex;
@@ -155,14 +207,15 @@ private:
     /// Set once the first setPrefs() lands. Lets run()'s startup wait finish as soon as
     /// real preferences exist, instead of blocking for the full timeout when USS is off.
     bool m_prefsReceived = false;
+    /// Gave up tracing: stays off until a setPrefs() with the option off.
+    bool m_gaveUp = false;
 
     // --- Ping data (guarded by m_pingMutex) ---
     std::deque<uint32> m_pingDelays;
     uint64 m_pingDelaysTotal = 0;
     uint32 m_pingAverage = 0;
     uint32 m_lowestPing = 0;
-    QString m_stateString;
-    bool m_controlling = false;   ///< baseline found, limit under control (under m_pingMutex)
+    UssState m_state = UssState::Off;
 
     // --- Upload limit (atomic, no lock needed) ---
     std::atomic<uint32> m_upload{0};

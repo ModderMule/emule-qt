@@ -258,6 +258,9 @@ private slots:
     void copiesFollowTheExpansionState();
     void htmlMarksSectionsAndExportsAPage();
     void expandMainSectionsOpensOnlySections();
+    void foundSourcesListsStatesOriginsAndNetworks();
+    void mfcsSectionNodesAreSections();
+    void projectedAveragesScaleTheCumulativeFigures();
 };
 
 void tst_StatisticsPanel::usenetIsTheLastBranchAndMfcsOrderStays()
@@ -823,6 +826,148 @@ void tst_StatisticsPanel::expandMainSectionsOpensOnlySections()
                              grand->isExpanded() && StatisticsPanel::isSection(grand->child(k)));
         }
     }
+}
+
+// MFC StatisticsDlg.cpp:768-830: the breakdown under "Found Sources".
+void tst_StatisticsPanel::foundSourcesListsStatesOriginsAndNetworks()
+{
+    StatisticsPanel panel;
+    QCborArray sources;
+    for (int i = 1; i <= 20; ++i)
+        sources.append(i);
+    panel.updateTree(QCborMap{
+        {QStringLiteral("downFoundSources"), 200},
+        {QStringLiteral("downSources"), sources},
+        {QStringLiteral("downDeadSourcesGlobal"), 4},
+        {QStringLiteral("downDeadSourcesPerFile"), 3},
+    });
+
+    auto* tree = panel.findChild<QTreeWidget*>();
+    const QList<QTreeWidgetItem*> hits =
+        tree->findItems(QStringLiteral("Found Sources: 200"), Qt::MatchExactly | Qt::MatchRecursive);
+    QCOMPARE(hits.size(), 1);
+    QStringList rows;
+    for (int i = 0; i < hits.first()->childCount(); ++i)
+        rows << hits.first()->child(i)->text(0);
+
+    QCOMPARE(rows.size(), 22);
+    QCOMPARE(rows.at(0), QStringLiteral("On Queue: 1"));
+    QCOMPARE(rows.at(1), QStringLiteral("Queue Full: 2"));
+    QCOMPARE(rows.at(11), QStringLiteral("Asked for another file: 12"));
+    QCOMPARE(rows.at(12), QStringLiteral("Unknown: 13"));
+    QCOMPARE(rows.at(13), QStringLiteral("via eD2K Server: 14"));
+    QCOMPARE(rows.at(16), QStringLiteral("via Passive: 17"));
+    QVERIFY2(rows.at(17).startsWith(QStringLiteral("eD2K: 18 (9")), qPrintable(rows.at(17)));
+    QVERIFY2(rows.at(19).startsWith(QStringLiteral("eD2K/Kad: 20 (10")), qPrintable(rows.at(19)));
+    QVERIFY(rows.at(20).startsWith(QStringLiteral("UDP File Re-asks:")));
+    QCOMPARE(rows.at(21), QStringLiteral("Dead Sources: 7 (4 + 3)"));
+}
+
+// MFC StatisticsDlg.cpp:2804-2834: the bold nodes, which "Expand Main Sections" opens.
+void tst_StatisticsPanel::mfcsSectionNodesAreSections()
+{
+    StatisticsPanel panel;
+    auto* tree = panel.findChild<QTreeWidget*>();
+    const auto childNamed = [](QTreeWidgetItem* parent, const QString& name) -> QTreeWidgetItem* {
+        for (int i = 0; parent && i < parent->childCount(); ++i) {
+            if (parent->child(i)->text(0) == name)
+                return parent->child(i);
+        }
+        return nullptr;
+    };
+
+    QTreeWidgetItem* connection = topLevelNamed(tree, QStringLiteral("Connection"));
+    QVERIFY(connection);
+    for (const char* scope : {"Session", "Cumulative"}) {
+        QTreeWidgetItem* scopeItem = childNamed(connection, QString::fromLatin1(scope));
+        QVERIFY(scopeItem);
+        for (const char* name : {"General", "Uploads", "Downloads"}) {
+            QTreeWidgetItem* node = childNamed(scopeItem, QString::fromLatin1(name));
+            QVERIFY2(node, name);
+            QVERIFY2(StatisticsPanel::isSection(node), name);
+        }
+    }
+    for (const char* top : {"Servers", "Shared Files"}) {
+        QTreeWidgetItem* records = childNamed(topLevelNamed(tree, QString::fromLatin1(top)),
+                                              QStringLiteral("Records"));
+        QVERIFY2(records, top);
+        QVERIFY2(StatisticsPanel::isSection(records), top);
+    }
+}
+
+// MFC StatisticsDlg.cpp:1616-1958: the port had no "Projected Averages" at all.
+void tst_StatisticsPanel::projectedAveragesScaleTheCumulativeFigures()
+{
+    QCOMPARE(StatisticsPanel::projected(100, 86400, 43200), 200.0);   // half a day so far
+    QCOMPARE(StatisticsPanel::projected(100, 86400, 0), 0.0);         // never reset: nothing
+    QCOMPARE(StatisticsPanel::kProjectionPeriods[2], qint64{31556952});
+
+    StatisticsPanel panel;
+    auto* tree = panel.findChild<QTreeWidget*>();
+    const auto childStartingWith = [](QTreeWidgetItem* parent, const QString& prefix) -> QTreeWidgetItem* {
+        for (int i = 0; parent && i < parent->childCount(); ++i) {
+            if (parent->child(i)->text(0).startsWith(prefix))
+                return parent->child(i);
+        }
+        return nullptr;
+    };
+
+    QTreeWidgetItem* time = topLevelNamed(tree, QStringLiteral("Time Statistics"));
+    QTreeWidgetItem* projected = childStartingWith(time, QStringLiteral("Projected Averages"));
+    QVERIFY(projected);
+    QVERIFY(StatisticsPanel::isSection(projected));
+    QCOMPARE(projected->childCount(), 3);
+
+    // One day of statistics: the daily projection is the cumulative figure itself.
+    panel.updateTree(QCborMap{
+        {QStringLiteral("statsLastReset"), 1'700'000'000},
+        {QStringLiteral("timeSinceReset"), 86400},
+        {QStringLiteral("cumTotalUp"), 4096},
+        {QStringLiteral("cumUpEmule"), 1024},
+        {QStringLiteral("cumUpSuccessful"), 6},
+        {QStringLiteral("cumUpFailed"), 4},
+        {QStringLiteral("cumUpOhTotal"), 2048},
+        {QStringLiteral("cumUpOhTotalPkt"), 50},
+        {QStringLiteral("cumDownCompletedFiles"), 3},
+    });
+
+    QTreeWidgetItem* daily = childStartingWith(projected, QStringLiteral("Daily"));
+    QTreeWidgetItem* yearly = childStartingWith(projected, QStringLiteral("Yearly"));
+    QVERIFY(daily && yearly);
+    QVERIFY(StatisticsPanel::isSection(daily));
+    QTreeWidgetItem* up = childStartingWith(daily, QStringLiteral("Uploads"));
+    QTreeWidgetItem* down = childStartingWith(daily, QStringLiteral("Downloads"));
+    QVERIFY(up && down);
+    QVERIFY(StatisticsPanel::isSection(up));
+
+    QTreeWidgetItem* data = childStartingWith(up, QStringLiteral("Uploaded Data"));
+    QVERIFY(data);
+    QCOMPARE(data->text(0), QStringLiteral("Uploaded Data: %1").arg(formatByteSize(4096)));
+    QTreeWidgetItem* emule = childStartingWith(childStartingWith(data, QStringLiteral("Clients")),
+                                               QStringLiteral("eMule"));
+    QVERIFY(emule);
+    QVERIFY2(emule->text(0).startsWith(QStringLiteral("eMule: %1 (25").arg(formatByteSize(1024))),
+             qPrintable(emule->text(0)));
+    QCOMPARE(childStartingWith(up, QStringLiteral("Upload Sessions"))->text(0),
+             QStringLiteral("Upload Sessions: 10"));
+    QCOMPARE(childStartingWith(up, QStringLiteral("Total Overhead"))->text(0),
+             QStringLiteral("Total Overhead (Packets): %1 (50)").arg(formatByteSize(2048)));
+    QCOMPARE(childStartingWith(down, QStringLiteral("Completed Downloads"))->text(0),
+             QStringLiteral("Completed Downloads: 3"));
+
+    // A year at that pace
+    QTreeWidgetItem* yearUp = childStartingWith(yearly, QStringLiteral("Uploads"));
+    QCOMPARE(childStartingWith(yearUp, QStringLiteral("Upload Sessions"))->text(0),
+             QStringLiteral("Upload Sessions: %1").arg(10 * 31556952LL / 86400));
+
+    // The same rows under every period
+    const std::function<int(QTreeWidgetItem*)> count = [&count](QTreeWidgetItem* item) {
+        int n = 1;
+        for (int i = 0; i < item->childCount(); ++i)
+            n += count(item->child(i));
+        return n;
+    };
+    QCOMPARE(count(daily), count(yearly));
 }
 
 QTEST_MAIN(tst_StatisticsPanel)

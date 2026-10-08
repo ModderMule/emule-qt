@@ -27,13 +27,17 @@
 #include <QTreeView>
 #include <QTreeWidget>
 
+#include <functional>
 #include <initializer_list>
+#include <map>
 #include <optional>
 #include <set>
 #include <utility>
 #include <vector>
 
 #include "app/UiState.h"
+#include "controls/ListSortClick.h"
+#include "controls/SortArrowStyle.h"
 
 namespace eMule {
 
@@ -79,6 +83,28 @@ public:
 
         theUiState.bindHeaderView(hdr, stateKey);
         installHeaderMenu();
+        m_sortColumn = hdr->sortIndicatorSection();
+        restoreSortValues();
+    }
+
+    /// Columns whose first click sorts descending, as MFC's numeric columns do.
+    /// Survives bindColumns(); a view that swaps models sets it again per model.
+    void setDescendingFirst(std::initializer_list<int> columns)
+    {
+        m_descendingFirst = columns;
+        installSortHook();
+    }
+
+    /// A column with a second value to sort by (MFC "4-way sorting"): clicking through
+    /// both directions switches between the two, shown by a double sort arrow.
+    /// @p apply tells the model or proxy which value counts; it is called at once
+    /// with the stored choice (@p secondByDefault on a fresh install).
+    void setSortValueColumn(int column, std::function<void(bool second)> apply,
+                            bool secondByDefault = false)
+    {
+        m_sortValues[column] = {std::move(apply), secondByDefault};
+        installSortHook();
+        restoreSortValues();
     }
 
     /// Sort order used until the user picks one. Consumed by the next
@@ -112,6 +138,76 @@ protected:
     }
 
 private:
+    struct SortValue {
+        std::function<void(bool)> apply;
+        bool second = false;
+    };
+
+    /// Once per view. Qt has picked the order by the time this runs; a click on a new
+    /// column is detected by the press that came before it, so a restored or
+    /// programmatic sort is never rewritten.
+    void installSortHook()
+    {
+        if (m_sortHookInstalled)
+            return;
+        m_sortHookInstalled = true;
+
+        auto* hdr = this->header();
+        hdr->setStyle(new SortArrowStyle(hdr));
+        QObject::connect(hdr, &QHeaderView::sectionPressed, this,
+                         [this](int section) { m_pressedColumn = section; });
+        QObject::connect(hdr, &QHeaderView::sortIndicatorChanged, this,
+                         [this](int column, Qt::SortOrder order) { onSortIndicatorChanged(column, order); });
+    }
+
+    void onSortIndicatorChanged(int column, Qt::SortOrder order)
+    {
+        if (m_fixingSort)
+            return;
+        const bool clicked = m_pressedColumn == column;
+        m_pressedColumn = -1;
+        const bool sameColumn = column == m_sortColumn;
+        m_sortColumn = column;
+        if (clicked) {
+            const SortClickResult click =
+                resolveSortClick(sameColumn, order, m_descendingFirst.contains(column));
+            const auto value = m_sortValues.find(column);
+            const bool switchValue = click.switchValue && value != m_sortValues.end();
+            if (switchValue) {
+                value->second.second = !value->second.second;
+                if (!m_stateKey.isEmpty())
+                    theUiState.setSortValue(m_stateKey, column, value->second.second);
+                value->second.apply(value->second.second);
+            }
+            if (click.order != order || switchValue) {
+                m_fixingSort = true;
+                this->sortByColumn(column, click.order);
+                m_fixingSort = false;
+            }
+        }
+        updateSortArrow();
+    }
+
+    void restoreSortValues()
+    {
+        for (auto& [column, value] : m_sortValues) {
+            if (!m_stateKey.isEmpty())
+                value.second = theUiState.sortValue(m_stateKey, column, value.second);
+            value.apply(value.second);
+        }
+        updateSortArrow();
+    }
+
+    /// Double arrow while the sort column is sorted by its second value.
+    void updateSortArrow()
+    {
+        const auto value = m_sortValues.find(m_sortColumn);
+        auto* hdr = this->header();
+        hdr->setProperty(SortArrowStyle::kDoubleArrowProperty,
+                         value != m_sortValues.end() && value->second.second);
+        hdr->viewport()->update();
+    }
+
     /// Once per view: SearchPanel re-binds on every model switch.
     void installHeaderMenu()
     {
@@ -178,6 +274,13 @@ private:
     std::optional<std::pair<int, Qt::SortOrder>> m_defaultSort;
     bool             m_restoredOnShow = false;
     bool             m_headerMenuInstalled = false;
+
+    std::set<int>            m_descendingFirst;
+    std::map<int, SortValue> m_sortValues;
+    int                      m_sortColumn = -1;
+    int                      m_pressedColumn = -1;
+    bool                     m_sortHookInstalled = false;
+    bool                     m_fixingSort = false;
 };
 
 /// Model-backed list with persistent column layout.

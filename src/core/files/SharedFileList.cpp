@@ -32,6 +32,10 @@
 #include <QStorageInfo>
 #include <QTextStream>
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
 #include <map>
 #include <numeric>
 #include <tuple>
@@ -749,17 +753,6 @@ void SharedFileList::removeKeywords(KnownFile* file)
 // ---------------------------------------------------------------------------
 
 /// Map internal priority to a sortable integer (higher = published first).
-static int realPriority(uint8 prio)
-{
-    switch (prio) {
-    case kPrVeryHigh: return 4;
-    case kPrHigh:     return 3;
-    case kPrNormal:   return 2;
-    case kPrLow:      return 1;
-    case kPrVeryLow:  return 0;
-    default:          return 2;
-    }
-}
 
 std::vector<KnownFile*> SharedFileList::takeFilesToOffer(const Server* srv)
 {
@@ -1018,6 +1011,21 @@ bool SharedFileList::isShareableFile(const QString& fileName, uint64 size)
     return fileName.compare(QLatin1String("thumbs.db"), Qt::CaseInsensitive) != 0;
 }
 
+bool SharedFileList::isShareableFile(const QFileInfo& fi)
+{
+    if (!fi.isFile() || !isShareableFile(fi.fileName(), static_cast<uint64>(fi.size())))
+        return false;
+#ifdef Q_OS_WIN
+    // MFC skips system and temporary files, shares hidden ones (SharedFileList.cpp:1474)
+    const DWORD attrs = GetFileAttributesW(
+        reinterpret_cast<LPCWSTR>(QDir::toNativeSeparators(fi.absoluteFilePath()).utf16()));
+    if (attrs != INVALID_FILE_ATTRIBUTES
+        && (attrs & (FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_TEMPORARY)) != 0)
+        return false;
+#endif
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // checkAndAddSingleFile — one explicitly-shared file
 // ---------------------------------------------------------------------------
@@ -1025,7 +1033,8 @@ bool SharedFileList::isShareableFile(const QString& fileName, uint64 size)
 void SharedFileList::checkAndAddSingleFile(const QString& filePath)
 {
     const QFileInfo fi(filePath);
-    if (!fi.isFile() || !isShareableFile(fi.fileName(), static_cast<uint64>(fi.size())))
+    // A shortcut is only ever shared through its directory (listDirectory)
+    if (fi.isShortcut() || !isShareableFile(fi))
         return;
 
     if (m_knownFiles) {
@@ -1230,8 +1239,10 @@ void SharedFileList::onHashingFinished(KnownFile* file, uint64 generation)
     m_hashFailures.remove(pathKey(file->filePath()));
 
     // Add to known files
-    if (m_knownFiles)
+    if (m_knownFiles) {
+        m_knownFiles->dropSupersededRecord(file);
         m_knownFiles->safeAddKFile(file);
+    }
 
     // The user may have unshared it while it hashed — MFC re-checks at the same point
     // (FileHashingFinished, srchybrid/SharedFileList.cpp:743).
@@ -1429,11 +1440,31 @@ void SharedFileList::listDirectory(const QString& dir, QHash<QString, DiskEntry>
     if (!QDir(dir).exists())
         return;
 
-    QDirIterator it(dir, QDir::Files | QDir::NoDotAndDotDot);
+#ifdef Q_OS_WIN
+    // Hidden files are shared as in MFC; system ones are dropped by isShareableFile()
+    const QDir::Filters filters = QDir::Files | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System;
+#else
+    const QDir::Filters filters = QDir::Files | QDir::NoDotAndDotDot;
+#endif
+    QDirIterator it(dir, filters);
     while (it.hasNext()) {
         it.next();
-        const QFileInfo fi = it.fileInfo();
-        if (!fi.isFile() || !isShareableFile(fi.fileName(), static_cast<uint64>(fi.size())))
+        QFileInfo fi = it.fileInfo();
+
+        QString sharedDirectory;
+#ifdef Q_OS_WIN
+        // Shell link: not shared itself; with the option on, its target is, shown under
+        // the link's directory (MFC :1488-1524).
+        if (fi.isShortcut()) {
+            if (!thePrefs.resolveShellLinks())
+                continue;
+            sharedDirectory = fi.absolutePath();
+            fi = QFileInfo(fi.symLinkTarget());
+            if (fi.isShortcut())
+                continue;
+        }
+#endif
+        if (!isShareableFile(fi))
             continue;
 
         const QString filename = fi.fileName();
@@ -1461,7 +1492,8 @@ void SharedFileList::listDirectory(const QString& dir, QHash<QString, DiskEntry>
         if (m_singleExcludedFiles.contains(key) || out.contains(key))
             continue;
 
-        out.insert(key, {fi.absolutePath(), filename, {}, static_cast<uint64>(fi.size()),
+        out.insert(key, {fi.absolutePath(), filename, sharedDirectory,
+                         static_cast<uint64>(fi.size()),
                          static_cast<time_t>(fi.lastModified().toSecsSinceEpoch())});
     }
 }
@@ -1493,7 +1525,7 @@ void SharedFileList::rescan(const QStringList& onlyDirs)
         const QString key = pathKey(fi.absoluteFilePath());
         if ((!full && !scope.contains(pathKey(fi.absolutePath()))) || onDisk.contains(key))
             continue;
-        if (fi.isFile() && fi.size() > 0)
+        if (!fi.isShortcut() && isShareableFile(fi))
             onDisk.insert(key, {fi.absolutePath(), fi.fileName(), {}, static_cast<uint64>(fi.size()),
                                 static_cast<time_t>(fi.lastModified().toSecsSinceEpoch())});
     }

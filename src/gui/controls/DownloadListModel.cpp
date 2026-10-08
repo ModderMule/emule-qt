@@ -405,7 +405,7 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             "Sources:\t%9\n"
             "Requests:\t%10\n"
             "Accepted Requests:\t%11\n"
-            "Transferred Data:\t%12")
+            "Uploaded:\t%12")
             .arg(d.fileName, d.hash,
                  formatByteSize(d.fileSize),
                  formatByteSize(d.completedSize),
@@ -414,7 +414,7 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
                  statusText(d), downloadPriorityText(d.priority, d.isAutoDownPriority),
                  sourcesText(d))
             .arg(d.requests).arg(d.acceptedRequests)
-            .arg(formatByteSize(d.transferredData));
+            .arg(formatByteSize(d.upTransferred));
         tip += extra;
         // Only when there is something to say: a clean file needs no extra lines
         if (!d.fakeReasons.isEmpty())
@@ -435,6 +435,8 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         case ColStatus:     return statusRank(d);
         // Unknown sorts as the longest (MFC DownloadListCtrl.cpp:1729-1752)
         case ColRemaining:
+            if (m_remainingSortBySize)   // MFC's second value for this column
+                return QVariant::fromValue(d.fileSize - d.completedSize);
             return QVariant::fromValue(d.timeRemaining >= 0 ? d.timeRemaining
                                                             : std::numeric_limits<int64_t>::max());
         case ColSeenComplete: return QVariant::fromValue(d.lastSeenComplete);

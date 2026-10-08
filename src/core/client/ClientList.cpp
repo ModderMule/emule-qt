@@ -515,6 +515,18 @@ void ClientList::forEachClient(const std::function<void(UpDownClient*)>& callbac
         callback(client);
 }
 
+void ClientList::processA4AFClients() const
+{
+    // A copy: a swap never deletes a client, but leave nothing to chance here
+    for (UpDownClient* client : std::vector<UpDownClient*>(m_items)) {
+        const DownloadState state = client->downloadState();
+        if (state != DownloadState::Downloading && state != DownloadState::Connected
+            && client->hasOtherFiles())
+            client->swapToAnotherFile(QStringLiteral("Periodic A4AF check"),
+                                      false, false, false, nullptr, true, false);
+    }
+}
+
 // ===========================================================================
 // Periodic cleanup — matches MFC CClientList::Process()
 // ===========================================================================

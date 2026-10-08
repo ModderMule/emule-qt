@@ -1152,8 +1152,8 @@ void tst_CallbackAndQueueRank::swapToAnotherFile_swapsSourceAndTracksA4AF()
     QCOMPARE(fileA->a4afSrcList()[0], client);
     // fileB no longer has client as A4AF
     QCOMPARE(fileB->a4afSourceCount(), 0);
-    // Queue rank preserved across swap
-    QCOMPARE(client->remoteQueueRank(), 42u);
+    // The rank was fileA's queue position (MFC ResetFileStatusInfo, BaseClient.cpp:2044)
+    QCOMPARE(client->remoteQueueRank(), 0u);
     // The state belonged to fileA (MFC DoSwap: SetDownloadState(DS_NONE))
     QCOMPARE(client->downloadState(), DownloadState::None);
 
@@ -1174,7 +1174,7 @@ void tst_CallbackAndQueueRank::swapToAnotherFile_swapsSourceAndTracksA4AF()
     QCOMPARE(fileB->a4afSourceCount(), 1);
     QCOMPARE(fileB->a4afSrcList()[0], client);
     QCOMPARE(fileA->a4afSourceCount(), 0);
-    QCOMPARE(client->remoteQueueRank(), 42u);
+    QCOMPARE(client->remoteQueueRank(), 0u);
 
     // Cleanup
     m_downloadQueue->removeSource(client);

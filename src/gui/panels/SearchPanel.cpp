@@ -2531,6 +2531,7 @@ void SearchPanel::setupResultHeader(bool forIndexer)
         // below until a BitTorrent module can populate them, then Known. A layout
         // saved before Known existed has a different column count, so Qt rejects it
         // and these defaults apply — the indexer header resets once, then sticks.
+        m_resultView->setDescendingFirst({});   // other columns than the eD2K model's
         m_resultView->bindColumns(kIndexerHeaderKey, {380, 80, 70, 120, 60, 110, 60, 60, 80});
         m_resultView->setColumnHidden(IndexerResultsModel::ColSeeders, true);
         m_resultView->setColumnHidden(IndexerResultsModel::ColPeers, true);
@@ -2551,6 +2552,9 @@ void SearchPanel::setupResultHeader(bool forIndexer)
         placeAfter(SearchResultsModel::ColFolder, SearchResultsModel::ColCodec);
         placeAfter(SearchResultsModel::ColAichHash, SearchResultsModel::ColKnown);
     }
+    // MFC SearchListCtrl.cpp:543-547
+    m_resultView->setDescendingFirst({SearchResultsModel::ColAvailability,
+                                      SearchResultsModel::ColComplete});
     m_resultView->setDefaultSort(SearchResultsModel::ColAvailability, Qt::DescendingOrder);
     m_resultView->bindColumns(kSearchHeaderKey,
         {300, 80, 70, 100, 70, 70, 100, 100, 100, 60, 60, 60, 60, 110, 230, 150, 240},
@@ -2674,20 +2678,47 @@ void SearchPanel::updateCategoryTabs()
 
 void SearchPanel::removeSelectedResults()
 {
-    // Local list only (MFC searchlist->RemoveResult); the daemon's copy stays.
+    // MFC searchlist->RemoveResult: a file row goes with its names, a name row alone.
+    // The daemon drops it as well, or its next snapshot would bring the row back; a
+    // restored tab (no daemon search behind it) is local only.
     auto* tab = currentTab();
     if (!tab || !m_resultView->selectionModel())
         return;
-    // A name row stands for its file; each file once, last row first
-    std::set<int, std::greater<>> sourceRows;
+    // Last row first, so the indexes still to go stay valid
+    std::set<int, std::greater<>> fileRows;
+    std::set<std::pair<int, int>, std::greater<>> nameRows;
     for (const auto& i : m_resultView->selectionModel()->selectedRows()) {
         const QModelIndex src = tab->proxy->mapToSource(i);
-        sourceRows.insert(src.parent().isValid() ? src.parent().row() : src.row());
+        if (src.parent().isValid())
+            nameRows.insert({src.parent().row(), src.row()});
+        else
+            fileRows.insert(src.row());
     }
-    if (sourceRows.empty())
+    if (fileRows.empty() && nameRows.empty())
         return;
-    for (int r : sourceRows)
+
+    const auto tellDaemon = [this, tab](const QString& hash, const QString& name) {
+        if (!m_ipc || tab->searchID == 0 || hash.isEmpty())
+            return;
+        IpcMessage msg(IpcMsgType::RemoveSearchResult);
+        msg.append(static_cast<qint64>(tab->searchID));
+        msg.append(hash);
+        msg.append(name);
+        m_ipc->sendRequest(std::move(msg));
+    };
+    for (const auto& [row, childRow] : nameRows) {
+        if (fileRows.contains(row))
+            continue;   // goes with its file
+        const SearchResultRow* file = tab->model->resultAt(row);
+        if (!file || childRow >= static_cast<int>(file->children.size()))
+            continue;
+        tellDaemon(file->hash, file->children[static_cast<size_t>(childRow)].fileName);
+        tab->model->removeChild(row, childRow);
+    }
+    for (int r : fileRows) {
+        tellDaemon(tab->model->hashAt(r), {});
         tab->model->removeRow(r);
+    }
     m_tabBar->setTabText(m_tabBar->currentIndex(), tabLabel(*tab));
     scheduleSaveSearches();
 }

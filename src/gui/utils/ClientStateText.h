@@ -32,6 +32,34 @@ namespace eMule {
     return {};
 }
 
+/// Upload side: the token of UpDownClient::uploadStateToken(). @p stalled is the slot
+/// with nothing to send, shown in advanced mode only (MFC BaseClient.cpp:2480-2510).
+[[nodiscard]] inline QString uploadStateText(const QString& token, bool stalled)
+{
+    const auto text = [](const char* s) {
+        return QCoreApplication::translate("eMule::ClientState", s);
+    };
+    if (token == QLatin1String("OnQueue"))    return text("On Queue");
+    if (token == QLatin1String("Banned"))     return text("Banned");
+    if (token == QLatin1String("Connecting")) return text("Connecting");
+    if (token == QLatin1String("Transferring") || token == QLatin1String("Standby")) {
+        if (stalled)
+            return text("Stalled! Waiting for block request.");
+        return token == QLatin1String("Standby") ? text("Standby") : text("Transferring");
+    }
+    return {};
+}
+
+/// Sort key of that column: MFC sorts by the state, not by its text.
+[[nodiscard]] inline int uploadStateRank(const QString& token)
+{
+    if (token == QLatin1String("Transferring") || token == QLatin1String("Standby")) return 0;
+    if (token == QLatin1String("OnQueue"))    return 1;
+    if (token == QLatin1String("Connecting")) return 2;
+    if (token == QLatin1String("Banned"))     return 3;
+    return 4;
+}
+
 /// MFC shows "(Unknown)" for a peer that has not sent a name yet.
 [[nodiscard]] inline QString clientNameText(const QString& userName)
 {

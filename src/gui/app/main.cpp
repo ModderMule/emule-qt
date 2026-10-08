@@ -710,13 +710,13 @@ int main(int argc, char* argv[])
                 const QCborValue uss = stats.value(QStringLiteral("uss"));
                 if (uss.isMap()) {
                     const QCborMap u = uss.toMap();
-                    mainWindow.setUssStatus(true, u.value(QStringLiteral("active")).toBool(),
+                    mainWindow.setUssStatus(true, static_cast<int>(u.value(QStringLiteral("state")).toInteger()),
                         u.value(QStringLiteral("limit")).toInteger(),
                         u.value(QStringLiteral("latency")).toInteger(),
                         u.value(QStringLiteral("lowest")).toInteger(),
                         u.value(QStringLiteral("msTolerance")).toBool());
                 } else {
-                    mainWindow.setUssStatus(false, false, 0, 0, 0, false);
+                    mainWindow.setUssStatus(false, 0, 0, 0, 0, false);
                 }
 
                 // Update stream token for preview streaming

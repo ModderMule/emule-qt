@@ -51,7 +51,6 @@ public:
     // -- Connection -----------------------------------------------------------
 
     [[nodiscard]] bool hasHadContact() const;
-    [[nodiscard]] bool hasLostConnection() const;
     /// @param when overridable for tests
     void setLastContact(time_t when = time(nullptr));
     [[nodiscard]] time_t lastContact() const;

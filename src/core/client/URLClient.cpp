@@ -12,6 +12,7 @@
 #include "net/ClientReqSocket.h"
 #include "net/HostResolver.h"
 #include "net/HttpClientReqSocket.h"
+#include "net/TlsRelay.h"
 #include "net/HttpDefaults.h"
 #include "net/ListenSocket.h"
 #include "net/Packet.h"
@@ -20,6 +21,7 @@
 
 #include "utils/Log.h"
 
+#include <QNetworkProxy>
 #include <QUrl>
 
 
@@ -55,9 +57,16 @@ bool URLClient::setUrl(const QString& url, const Address& fromAddr)
     QUrl parsed(url);
     if (!parsed.isValid() || parsed.host().isEmpty())
         return false;
+    // http as MFC (srchybrid/URLClient.cpp:96-104), https on top; no user:password@
+    const QString scheme = parsed.scheme().toLower();
+    const bool tls = scheme == QLatin1String("https");
+    if ((!tls && scheme != QLatin1String("http")) || !parsed.userInfo().isEmpty())
+        return false;
 
+    m_url = parsed;
+    m_urlTls = tls;
     m_urlHost = parsed.host();
-    m_urlPort = static_cast<uint16>(parsed.port(80));
+    m_urlPort = static_cast<uint16>(parsed.port(tls ? 443 : 80));
     m_urlPathLocal = parsed.path().toUtf8();
 
     if (m_urlPathLocal.isEmpty())
@@ -254,9 +263,12 @@ bool URLClient::processHttpDownResponse(const QList<QByteArray>& headers)
     }
 
     if (redirection) {
-        const QString location = QString::fromUtf8(headerValue(headers, "location"));
+        QString location = QString::fromUtf8(headerValue(headers, "location"));
         if (location.isEmpty())
             return false;
+        // "/other/path" or "next.bin": relative to the URL just asked for
+        if (const QUrl target(location); target.isRelative())
+            location = m_url.resolved(target).toString();
         if (++m_redirected >= kMaxRedirects) {
             logDebug(QStringLiteral("URLClient: too many redirections from %1").arg(m_urlHost));
             return false;
@@ -389,7 +401,7 @@ QByteArray URLClient::buildGetHeader() const
     request += " HTTP/1.1\r\n";
     request += "Host: ";
     request += m_urlHost.toUtf8();
-    if (m_urlPort != 80) {
+    if (m_urlPort != (m_urlTls ? 443 : 80)) {
         request += ':';
         request += QByteArray::number(m_urlPort);
     }
@@ -492,6 +504,28 @@ void URLClient::connectToHost()
     // OP_EMULEPROT and the connection dies with kErrWrongHeader before a single
     // body byte reaches processHttpDownResponseBody(). MFC picks the same class
     // here (srchybrid/URLClient.cpp:186 passes RUNTIME_CLASS(CHttpClientDownSocket)).
+    // https: the socket talks plain HTTP to a relay on loopback, which carries it to
+    // the server over TLS (see TlsRelay.h for why the socket cannot do TLS itself).
+    uint16 relayPort = 0;
+    if (m_tlsRelay) {
+        m_tlsRelay->deleteLater();
+        m_tlsRelay = nullptr;
+    }
+    if (m_urlTls) {
+        m_tlsRelay = new TlsRelay(this);
+        relayPort = m_tlsRelay->start(connectAddress(), m_urlPort, m_urlHost,
+                                      thePrefs.proxySettings());
+        if (relayPort == 0) {
+            logDebug(QStringLiteral("URLClient: no TLS relay for %1: %2")
+                         .arg(m_urlHost, m_tlsRelay->failure()));
+            // queued: callers treat tryToConnect() as started
+            QMetaObject::invokeMethod(this, [this] {
+                disconnected(QStringLiteral("TLS relay failed"));
+            }, Qt::QueuedConnection);
+            return;
+        }
+    }
+
     auto* reqSocket = new HttpClientDownSocket(this);
     reqSocket->createSocket();
     setSocket(reqSocket);
@@ -512,16 +546,30 @@ void URLClient::connectToHost()
     // Without this the TCP connection completes and then nothing happens: the
     // request is only built from connectionEstablished(). UpDownClient::connectToHost()
     // makes the same connection for ed2k peers (UpDownClient.cpp:1787).
-    QObject::connect(reqSocket, &ClientReqSocket::socketConnected,
-                     this, &URLClient::connectionEstablished);
-
-    // Configure proxy
-    reqSocket->initProxySupport(thePrefs.proxySettings());
-
-    // Initiate TCP connection
     const auto connAddr = connectAddress();
     const QHostAddress addr = connAddr.toQHostAddress();
-    reqSocket->connectToPeer(connAddr, m_urlPort);
+    if (relayPort != 0) {
+        // The relay takes only the connection coming from this socket's port
+        QObject::connect(reqSocket, &ClientReqSocket::socketConnected,
+                         this, [this, reqSocket, relay = m_tlsRelay] {
+            if (socket() != reqSocket || m_tlsRelay != relay)
+                return;
+            relay->expectClientPort(reqSocket->localPort());
+            connectionEstablished();
+        });
+        // Proxy, bind address and interface pin belong to the TLS leg
+        reqSocket->setProxy(QNetworkProxy::NoProxy);
+        reqSocket->connectToHost(QHostAddress(QHostAddress::LocalHost), relayPort);
+    } else {
+        QObject::connect(reqSocket, &ClientReqSocket::socketConnected,
+                         this, &URLClient::connectionEstablished);
+
+        // Configure proxy
+        reqSocket->initProxySupport(thePrefs.proxySettings());
+
+        // Initiate TCP connection
+        reqSocket->connectToPeer(connAddr, m_urlPort);
+    }
     reqSocket->waitForOnConnect();
 
     logDebug(QStringLiteral("URLClient::connectToHost: connecting to %1:%2").arg(addr.toString()).arg(m_urlPort));

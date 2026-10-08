@@ -89,6 +89,7 @@ void UiState::load(const QString& configDir)
         m_associateNzbFiles = root["associateNzbFiles"].as<bool>(m_associateNzbFiles);
         m_firstStartWizardDone = root["firstStartWizardDone"].as<bool>(m_firstStartWizardDone);
         m_showCountryFlags = root["showCountryFlags"].as<bool>(m_showCountryFlags);
+        m_showDownloadToolbar = root["showDownloadToolbar"].as<bool>(m_showDownloadToolbar);
         m_toolbarButtonStyle = root["toolbarButtonStyle"].as<int>(m_toolbarButtonStyle);
 
         m_toolbarSkinPath = QString::fromStdString(
@@ -118,6 +119,12 @@ void UiState::load(const QString& configDir)
                     QByteArray::fromStdString(pair.second.as<std::string>()));
                 m_headerStates[key] = val;
             }
+        }
+
+        if (auto sv = root["sortValues"]; sv && sv.IsMap()) {
+            for (const auto& pair : sv)
+                m_sortValues[QString::fromStdString(pair.first.as<std::string>())] =
+                    pair.second.as<bool>(false);
         }
 
         if (auto ste = root["statsTreeExpanded"]; ste && ste.IsSequence()) {
@@ -182,6 +189,7 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "associateNzbFiles" << YAML::Value << m_associateNzbFiles;
     out << YAML::Key << "firstStartWizardDone" << YAML::Value << m_firstStartWizardDone;
     out << YAML::Key << "showCountryFlags" << YAML::Value << m_showCountryFlags;
+    out << YAML::Key << "showDownloadToolbar" << YAML::Value << m_showDownloadToolbar;
     out << YAML::Key << "toolbarButtonStyle" << YAML::Value << m_toolbarButtonStyle;
 
     if (!m_toolbarSkinPath.isEmpty())
@@ -211,6 +219,13 @@ void UiState::save(const QString& configDir)
         for (auto it = m_headerStates.cbegin(); it != m_headerStates.cend(); ++it)
             out << YAML::Key << it.key().toStdString()
                 << YAML::Value << it.value().toBase64().toStdString();
+        out << YAML::EndMap;
+    }
+
+    if (!m_sortValues.isEmpty()) {
+        out << YAML::Key << "sortValues" << YAML::Value << YAML::BeginMap;
+        for (auto it = m_sortValues.cbegin(); it != m_sortValues.cend(); ++it)
+            out << YAML::Key << it.key().toStdString() << YAML::Value << it.value();
         out << YAML::EndMap;
     }
 

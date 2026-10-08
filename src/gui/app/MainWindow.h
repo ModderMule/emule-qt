@@ -148,7 +148,8 @@ public:
     /// The connected server, for the eD2K pane's tooltip. Call before setEd2kStatus().
     void setEd2kServer(const QString& name, qint64 users);
     /// Upload SpeedSense pane (MFC SBarUSS): hidden while the option is off.
-    void setUssStatus(bool enabled, bool active, qint64 limitBytes, qint64 latencyMs,
+    /// @p state as eMule::UssState: 1 preparing, 2 waiting, 3 error, 4 active.
+    void setUssStatus(bool enabled, int state, qint64 limitBytes, qint64 latencyMs,
                       qint64 lowestMs, bool msTolerance);
 
     /// The daemon's selected network interface is missing: nothing can connect.

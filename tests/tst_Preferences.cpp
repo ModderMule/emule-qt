@@ -21,6 +21,7 @@ class tst_Preferences : public QObject {
     Q_OBJECT
 
 private slots:
+    void isDynUpEnabled_impliedByUnknownCapacity();
     // -- Defaults -------------------------------------------------------------
 
     void defaults_general()
@@ -1051,6 +1052,22 @@ private slots:
         QCOMPARE(prefs.maxConsPerFive(), static_cast<uint16>(1));
     }
 };
+
+// MFC CPreferences::IsDynUpEnabled (Preferences.cpp:2742).
+void tst_Preferences::isDynUpEnabled_impliedByUnknownCapacity()
+{
+    Preferences prefs;
+    QVERIFY(!prefs.dynUpEnabled());
+    QVERIFY(!prefs.isDynUpEnabled());      // default capacity is a figure
+
+    prefs.setMaxGraphUploadRate(0);
+    QVERIFY(!prefs.dynUpEnabled());        // the checkbox is not touched
+    QVERIFY(prefs.isDynUpEnabled());
+
+    prefs.setMaxGraphUploadRate(500);
+    prefs.setDynUpEnabled(true);
+    QVERIFY(prefs.isDynUpEnabled());
+}
 
 QTEST_MAIN(tst_Preferences)
 #include "tst_Preferences.moc"

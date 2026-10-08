@@ -162,7 +162,7 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
         case 4: return c.hasLowID ? QStringLiteral("%1 (%2)").arg(hmCell(c.waitStartTime), tr("Low ID"))
                                   : hmCell(c.waitStartTime);
         case 5: return hmCell(c.uploadStartDelay);
-        case 6: return c.uploadState;
+        case 6: return uploadStateText(c.uploadState, c.uploadStalled && thePrefs.showExtControls());
         case 7: return {};   // UploadStatusDelegate draws the bar
         default: return {};
         }
@@ -209,7 +209,7 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
         // (ClientListCtrl.cpp:166-200); the two byte columns are the credit totals.
         switch (column) {
         case 0: return clientNameText(c.userName);
-        case 1: return c.uploadState;
+        case 1: return uploadStateText(c.uploadState, c.uploadStalled && thePrefs.showExtControls());
         case 2: return sizeCell(c.uploadedTotal);
         case 3: return downloadStateText(c.downloadState, c.remoteQueueFull);
         case 4: return sizeCell(c.downloadedTotal);
@@ -234,7 +234,7 @@ QVariant ClientListModel::sortData(const ClientRow& c, int column) const
         case 3: return QVariant::fromValue(c.sessionUp);
         case 4: return QVariant::fromValue(c.waitStartTime);
         case 5: return QVariant::fromValue(c.uploadStartDelay);
-        case 6: return c.uploadState;
+        case 6: return uploadStateRank(c.uploadState);   // by state, as MFC
         case 7: return c.upPartCount;
         default: return {};
         }
@@ -272,7 +272,7 @@ QVariant ClientListModel::sortData(const ClientRow& c, int column) const
     case ClientListMode::KnownClients:
         switch (column) {
         case 0: return c.userName;
-        case 1: return c.uploadState;
+        case 1: return uploadStateRank(c.uploadState);
         case 2: return QVariant::fromValue(c.uploadedTotal);
         case 3: return c.downloadState;
         case 4: return QVariant::fromValue(c.downloadedTotal);

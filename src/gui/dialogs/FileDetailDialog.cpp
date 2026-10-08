@@ -5,6 +5,7 @@
 #include "FileDetailDialog.h"
 
 #include "CommentEditPanel.h"
+#include "FileDetailsMerge.h"
 #include "ArchivePreviewPanel.h"
 #include "MetadataPage.h"
 #include "app/IpcClient.h"
@@ -77,6 +78,50 @@ FileDetailDialog::FileDetailDialog(const QCborMap& details, Tab initialTab,
     // Explicitly qualified: a constructor must not dispatch virtually.
     m_pendingTab = initialTab;
     FileDetailDialog::setDetails(details);
+}
+
+FileDetailDialog::FileDetailDialog(const QList<QCborMap>& files, Tab initialTab, QWidget* parent)
+    : DetailDialog(parent)
+{
+    setAttribute(Qt::WA_DeleteOnClose);
+    setDesignedSize(QSize(680, 420), QSize(720, 480));
+
+    m_pendingTab = initialTab;
+    if (files.size() == 1) {
+        FileDetailDialog::setDetails(files.first());
+        return;
+    }
+    setSubjectKey({});   // no single file a refresh could be meant for
+    setWindowTitle(tr("File Details: %n files", nullptr, static_cast<int>(files.size())));
+    buildMultiTabs(mergeFileDetails(files), initialTab);
+}
+
+void FileDetailDialog::buildMultiTabs(const QCborMap& merged, Tab tabToSelect)
+{
+    m_tabs = new QTabWidget;
+    const bool icons = thePrefs.useOriginalIcons();
+    const auto add = [&](QWidget* page, const char* icon, const QString& title) {
+        if (icons)
+            m_tabs->addTab(page, QIcon(QStringLiteral(":/icons/") + QLatin1StringView(icon)), title);
+        else
+            m_tabs->addTab(page, title);
+    };
+    add(createGeneralTab(merged), "FileInfo.ico", tr("General"));
+    add(createCommentsTab(merged), "FileComments.ico", tr("Comments"));
+    add(createMediaInfoTab(merged), "MediaInfo.ico", tr("Media Info"));
+    add(createEd2kLinkTab(merged), "eD2kLink.ico", tr("ED2K Link"));
+
+    // The pages a single file has in between are missing here
+    int index = 0;
+    switch (tabToSelect) {
+    case Comments:  index = 1; break;
+    case MediaInfo: index = 2; break;
+    case Ed2kLink:  index = 3; break;
+    default:        break;
+    }
+    m_tabs->setCurrentIndex(index);
+    contentLayout()->addWidget(m_tabs);
+    fitToContent();
 }
 
 // ── re-target ──────────────────────────────────────────────────────────
@@ -157,6 +202,31 @@ QWidget* FileDetailDialog::createGeneralTab(const QCborMap& d)
         addDetailRow(form, label, value);
     };
 
+    // Several files: what adds up is summed, the rest reads "-"
+    // (MFC FileDetailDialogInfo.cpp:228-327)
+    if (d.contains(QLatin1StringView("multiCount"))) {
+        const QString na = QStringLiteral("-");
+        const qint64 size = num(d, QLatin1StringView("fileSize"));
+        addRow(tr("File Name"), na);
+        addRow(tr("Hash (MD4)"), na);
+        addRow(tr("File Size"), tr("%1 (%2 Bytes)").arg(formatByteSize(size), QLocale().toString(size)));
+        addRow(tr("Completed"), QStringLiteral("%1 (%2%)")
+            .arg(formatByteSize(num(d, QLatin1StringView("completedSize"))),
+                 QString::number(d.value(QLatin1StringView("percentCompleted")).toDouble(), 'f', 1)));
+        addRow(tr("Transferred"), formatByteSize(num(d, QLatin1StringView("downTransferred"))));
+        addRow(tr("Status"), na);
+        addRow(tr("Priority"), na);
+        addRow(tr("Sources"), QStringLiteral("%1 (%2 transferring, %3 A4AF)")
+            .arg(num(d, QLatin1StringView("sourceCount")))
+            .arg(num(d, QLatin1StringView("transferringSrcCount")))
+            .arg(num(d, QLatin1StringView("a4afSourceCount"))));
+        addRow(tr("Created"), na);
+        addRow(tr("Last Seen Complete"), na);
+        addRow(tr("Last Reception"), na);
+        form->addItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
+        return page;
+    }
+
     addRow(tr("File Name"), str(d, QLatin1StringView("fileName")));
     addRow(tr("Hash (MD4)"), str(d, QLatin1StringView("hash")));
 
@@ -174,6 +244,9 @@ QWidget* FileDetailDialog::createGeneralTab(const QCborMap& d)
     addRow(tr("Completed"), QStringLiteral("%1 (%2%)")
         .arg(formatByteSize(completed), QString::number(pct, 'f', 1)));
 
+    // Downloads only: bytes received, which repeats exceed "Completed" (MFC GetTransferred)
+    if (d.contains(QLatin1StringView("downTransferred")))
+        addRow(tr("Transferred"), formatByteSize(num(d, QLatin1StringView("downTransferred"))));
     addRow(tr("Status"),   str(d, QLatin1StringView("status")));
     addRow(tr("Priority"), str(d, QLatin1StringView("downPriority")));
 
@@ -385,6 +458,8 @@ QWidget* FileDetailDialog::createEd2kLinkTab(const QCborMap& d)
     groupLayout->addWidget(m_chkHostname);
     groupLayout->addWidget(m_chkHtml);
     layout->addWidget(group);
+    // One link per file is listed as it came; the options ask for a single file's link
+    group->setEnabled(!m_fileHash.isEmpty());
 
     // Connect checkboxes
     auto updateLink = [this](Qt::CheckState) { updateEd2kLinkDisplay(); };

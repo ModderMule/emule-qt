@@ -39,6 +39,7 @@ enum class FakeReason : uint8 {
     ImplausibleMediaBitrate,
     MediaSizeMismatch,
     NameMediaTagMismatch,
+    AbuseContentName,
 };
 
 /// Worst first, so the numeric value sorts a column.
@@ -64,9 +65,10 @@ enum class KadTrust : uint8 { Unknown, Low, Normal, High };
 struct FakeFileRules {
     QStringList tokens;                    ///< lower-case, matched as whole words
     QList<QRegularExpression> regexes;     ///< case-insensitive, matched on the full name
+    QStringList abuseTokens;               ///< `[abuse]`: added to the built-in abuse words
 
     [[nodiscard]] static FakeFileRules defaults();
-    /// `[tokens]` / `[regex]` sections, `#` comments. A bad regex is skipped and named
+    /// `[tokens]` / `[regex]` / `[abuse]` sections, `#` comments. A bad regex is skipped and named
     /// in @p errors.
     [[nodiscard]] static FakeFileRules parse(const QString& text, QStringList* errors = nullptr);
     /// Reads the file; the defaults when it is missing, unreadable or empty.
@@ -97,6 +99,7 @@ struct FakeFileInput {
     QString title;
     ContainerCheck container;       ///< downloads only
     KadTrust kadTrust = KadTrust::Unknown;
+    QSet<QString> ignoredNameWords; ///< the search's own keywords: in every name, so no link
 };
 
 struct FakeFileVerdict {
@@ -122,8 +125,15 @@ struct FakeFileVerdict {
 /// episode markers come back as "y2024" / "s1e8".
 [[nodiscard]] QSet<QString> significantNameTokens(const QString& name);
 
+/// The words of a search expression, folded like name tokens (FakeFileInput::ignoredNameWords).
+[[nodiscard]] QSet<QString> searchKeywordTokens(const QString& expression);
+
 /// How many unrelated contents the names describe. Two names belong together when
-/// they share one token; names with nothing significant in them are not counted.
-[[nodiscard]] int countNameGroups(const QStringList& names);
+/// they share an episode, two words, or one word that is most of the shorter name.
+/// @p ignoredWords are dropped first; names with nothing significant left are not counted.
+[[nodiscard]] int countNameGroups(const QStringList& names, const QSet<QString>& ignoredWords = {});
+
+/// 0 = nothing, 1 = an ambiguous word, 2 = a word used to advertise child abuse material.
+[[nodiscard]] int abuseNameTier(const QString& name, const FakeFileRules& rules);
 
 } // namespace eMule

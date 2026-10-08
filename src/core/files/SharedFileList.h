@@ -28,6 +28,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+class QFileInfo;
 class tst_SharedFileList;
 
 namespace eMule {
@@ -202,6 +203,9 @@ public:
     /// Scan rule shared by the directory walk and the single-file add: not empty, not
     /// over MAX_EMULE_FILE_SIZE, not a thumbs.db (MFC CheckAndAddSingleFile).
     [[nodiscard]] static bool isShareableFile(const QString& fileName, uint64 size);
+    /// The same plus what needs the file itself: a regular file, and on Windows
+    /// neither system nor temporary.
+    [[nodiscard]] static bool isShareableFile(const QFileInfo& fi);
 
     /// Stop sharing one file, durably: drops it from the list and records the path so
     /// no later scan picks it up again. Returns false if the file is not actually

@@ -40,6 +40,7 @@
 #include <QPainter>
 #include <QSortFilterProxyModel>
 #include <QStandardItemModel>
+#include <QSignalSpy>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -122,6 +123,8 @@ private slots:
     void sourcesSortByQueueRankWithDownloadingFirst();
     void remainingAndSeenCompleteFollowMfc();
     void knownClientsFollowMfc();
+    void uploadStateIsWordedAndSortedByState();
+    void removingASearchNameKeepsTheFile();
     void downloadingClientsCarryThePartBar();
     void aSourceIndexSurvivesAnEarlierDownloadLeaving();
     void completeSourcesShowPercentOrUnknown();
@@ -920,6 +923,71 @@ void tst_ListSorting::knownClientsFollowMfc()
     QCOMPARE(text(4), QString());                 // no credits: blank
     QCOMPARE(text(5), QStringLiteral("Unknown"));
     QCOMPARE(text(6), QStringLiteral("No"));
+}
+
+// MFC GetUploadStateDisplayString (BaseClient.cpp:2480-2510): the daemon sent English
+// text, which no translation could reach, and the column sorted by that text.
+void tst_ListSorting::uploadStateIsWordedAndSortedByState()
+{
+    const bool ext = thePrefs.showExtControls();
+    const auto restore = qScopeGuard([ext] { thePrefs.setShowExtControls(ext); });
+
+    std::vector<ClientRow> rows(5);
+    const char* tokens[] = {"OnQueue", "Transferring", "Standby", "Banned", "Connecting"};
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        rows[i].userHash = QString::number(i);
+        rows[i].uploadState = QString::fromLatin1(tokens[i]);
+    }
+    rows[1].uploadStalled = true;
+
+    ClientListModel model(ClientListMode::KnownClients);
+    model.setClients(rows);
+    const auto text = [&model](int row) { return model.index(row, 1).data().toString(); };
+
+    thePrefs.setShowExtControls(false);
+    QCOMPARE(text(0), QStringLiteral("On Queue"));
+    QCOMPARE(text(1), QStringLiteral("Transferring"));   // stalled shows in advanced mode only
+    QCOMPARE(text(2), QStringLiteral("Standby"));
+    QCOMPARE(text(3), QStringLiteral("Banned"));
+    QCOMPARE(text(4), QStringLiteral("Connecting"));
+    thePrefs.setShowExtControls(true);
+    QCOMPARE(text(1), QStringLiteral("Stalled! Waiting for block request."));
+
+    // uploading, queued, connecting, banned — not alphabetical
+    const auto rank = [&model](int row) { return model.index(row, 1).data(Qt::UserRole).toInt(); };
+    QVERIFY(rank(1) < rank(0));
+    QVERIFY(rank(0) < rank(4));
+    QVERIFY(rank(4) < rank(3));
+    QCOMPARE(rank(1), rank(2));
+}
+
+// MFC CSearchList::RemoveResult takes one list entry: a name row goes alone.
+void tst_ListSorting::removingASearchNameKeepsTheFile()
+{
+    SearchResultRow file;
+    file.hash = QStringLiteral("aa");
+    file.fileName = QStringLiteral("best name.avi");
+    for (const char* name : {"best name.avi", "other name.avi", "third.avi"}) {
+        SearchChildRow child;
+        child.fileName = QString::fromLatin1(name);
+        file.children.push_back(child);
+    }
+    SearchResultsModel model;
+    model.setResults({file});
+    const QModelIndex parent = model.index(0, 0);
+    QCOMPARE(model.rowCount(parent), 3);
+
+    QSignalSpy removed(&model, &QAbstractItemModel::rowsRemoved);
+    model.removeChild(0, 1);
+    QCOMPARE(model.rowCount(), 1);
+    QCOMPARE(model.rowCount(parent), 2);
+    QCOMPARE(model.resultAt(0)->children[1].fileName, QStringLiteral("third.avi"));
+    QCOMPARE(removed.count(), 1);
+    QCOMPARE(removed.at(0).at(0).toModelIndex(), parent);
+
+    model.removeChild(0, 7);   // out of range: nothing happens
+    model.removeChild(3, 0);
+    QCOMPARE(model.rowCount(parent), 2);
 }
 
 void tst_ListSorting::downloadingClientsCarryThePartBar()

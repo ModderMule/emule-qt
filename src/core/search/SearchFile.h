@@ -151,6 +151,8 @@ public:
 
     void addClient(const SClient& client);
     void addServer(const SServer& server);
+    /// The answer came over UDP (MFC bServerUDPAnswer): what the spam rating looks at.
+    void markServersUdpAnswer();
 
     // --- Directory ---
 

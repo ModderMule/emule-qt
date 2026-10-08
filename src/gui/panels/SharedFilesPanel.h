@@ -131,6 +131,8 @@ private:
     void restoreSelection(const ViewSelection& state);
     [[nodiscard]] QString hashAtViewRow(int viewRow) const;
     void fetchAndShowSharedFileDetails(const QString& hash, int tab);
+    /// Several files in one sheet.
+    void fetchAndShowSharedFileDetails(const QStringList& hashes, int tab);
 
     /// The list's primary action, MFC's CSharedFilesCtrl::OpenFile()
     /// (srchybrid/SharedFilesCtrl.cpp:1259): show a collection in the collection

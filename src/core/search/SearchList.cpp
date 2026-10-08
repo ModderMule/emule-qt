@@ -8,6 +8,7 @@
 #include "files/SharedFileList.h"
 #include "transfer/DownloadQueue.h"
 #include "kademlia/KadSearch.h"
+#include "prefs/Preferences.h"
 #include "search/SeenFileIndex.h"
 #include "client/UpDownClient.h"
 #include "crypto/AICHData.h"
@@ -53,11 +54,12 @@ uint32 SearchList::newSearch(const QString& resultFileType, const SearchParams& 
     // MFC: CSearchList::NewSearch — srchybrid/SearchList.cpp:152-156.
     if (ed2k && takeEd2kRouting) {
         m_currentEd2kSearchID = m_currentSearchID;
-        m_curED2KSentRequestsIPs.clear();
+        resetUdpRequestTracking();
     }
 
     SearchListEntry entry;
     entry.searchID = m_currentSearchID;
+    entry.keywords = searchKeywordTokens(params.expression);
     m_fileLists.push_back(std::move(entry));
 
     m_foundFilesCount[m_currentSearchID] = 0;
@@ -108,14 +110,19 @@ uint32 SearchList::reserveSearch(uint32 forcedID)
     return searchID;
 }
 
-void SearchList::beginSearch(uint32 searchID, const QString& resultFileType, bool ed2k)
+void SearchList::beginSearch(uint32 searchID, const QString& resultFileType, bool ed2k,
+                             const QString& expression)
 {
     m_resultFileType = resultFileType;
     m_currentSearchID = searchID;
     if (ed2k) {
         // As in newSearch(): a new ED2K search owns the server answers from here on.
         m_currentEd2kSearchID = searchID;
-        m_curED2KSentRequestsIPs.clear();
+        resetUdpRequestTracking();
+    }
+    if (!expression.isEmpty()) {
+        if (SearchListEntry* entry = findEntry(searchID))
+            entry->keywords = searchKeywordTokens(expression);
     }
 }
 
@@ -134,7 +141,9 @@ void SearchList::clear()
     m_fileLists.clear();
     m_foundFilesCount.clear();
     m_foundSourcesCount.clear();
-    m_curED2KSentRequestsIPs.clear();
+    m_requestedUdpAnswers.clear();
+    m_receivedUdpAnswers.clear();
+    resetUdpRequestTracking();
 }
 
 void SearchList::removeResults(uint32 searchID)
@@ -387,6 +396,10 @@ void SearchList::processUDPSearchAnswer(const uint8* packet, uint32 size,
     const uint32 serverIP = server.address().toNetworkUint32();
     const uint16 serverPort = server.port();
 
+    // MFC SearchList.cpp:303-319: one count per server that answers
+    if (m_curED2KAnsweredIPs.insert(server.address()).second)
+        ++m_receivedUdpAnswers[m_currentEd2kSearchID];
+
     SafeMemFile data(packet, size);
     uint32 parsedResults = 0;
 
@@ -396,6 +409,8 @@ void SearchList::processUDPSearchAnswer(const uint8* packet, uint32 size,
     do {
         auto* file = new SearchFile(data, optUTF8, serverIP, serverPort);
         file->setSearchID(m_currentEd2kSearchID);
+        // Nobody set this: the UDP-server spam criteria never saw a UDP answer
+        file->markServersUdpAnswer();
 
         auto& record = m_udpServerRecords[serverIP];
         record.totalResults++;
@@ -455,6 +470,10 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
         if (fileOwner->fileType() != m_resultFileType)
             return; // filtered out, unique_ptr will delete
     }
+
+    // A peer's own list entry has at least that peer as source (MFC SearchList.cpp:457)
+    if (clientResponse && fileOwner->sourceCount() == 0)
+        fileOwner->setSourceCount(1);
 
     // Compute name-without-keywords for spam detection
     if (fileOwner->nameWithoutKeywords().isEmpty()) {
@@ -521,6 +540,10 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
             parent->setKadPublishInfo(fileOwner->kadPublishInfo());
         if (matchingChild && trust(fileOwner.get()) > trust(matchingChild))
             matchingChild->setKadPublishInfo(fileOwner->kadPublishInfo());
+
+        // The parent knows every server that has the file (MFC SearchList.cpp:529-538)
+        for (const auto& server : fileOwner->servers())
+            parent->addServer(server);
 
         if (matchingChild) {
             // Two answers for one name disagreeing on the AICH root: trust neither, and
@@ -750,6 +773,12 @@ void SearchList::doSpamRating(SearchFile* file,
     if (!file)
         return;
 
+    // Filter off: nothing is rated (MFC SearchList.cpp:869); a rating from before goes
+    if (!thePrefs.enableSearchResultFilter()) {
+        file->setSpamRating(0);
+        return;
+    }
+
     uint32 rating = 0;
 
     // --- Criterion 1: Hash hit (100 pts) ---
@@ -819,25 +848,58 @@ void SearchList::doSpamRating(SearchFile* file,
         break;
     }
 
-    // --- Criterion 5: All-spam-servers (30 pts) ---
-    if (!file->servers().empty()) {
-        bool allSpam = true;
-        for (const auto& server : file->servers()) {
-            auto udpIt = m_udpServerRecords.find(server.ip);
-            if (udpIt == m_udpServerRecords.end()) {
-                allSpam = false;
-                break;
-            }
-            const auto& rec = udpIt->second;
-            if (rec.totalResults == 0 ||
-                static_cast<double>(rec.spamResults) / rec.totalResults <= 0.6)
-            {
-                allSpam = false;
-                break;
-            }
+    // --- Criterion 5: only UDP servers known for spam have it (30 pts) ---
+    // MFC srchybrid/SearchList.cpp:964-994. A "normal" server is a TCP answer, or a
+    // UDP server with under half its results marked.
+    bool normalServerWithoutCurrent = file->servers().empty();
+    bool normalServer = normalServerWithoutCurrent;
+    for (const auto& server : file->servers()) {
+        if (!server.udpAnswer) {
+            normalServerWithoutCurrent = true;
+            normalServer = true;
+            break;
         }
-        if (allSpam && file->servers().size() > 1)
-            rating += 30;
+        const auto udpIt = m_udpServerRecords.find(server.ip);
+        if (udpIt == m_udpServerRecords.end())
+            continue;
+        const UDPServerRecord& rec = udpIt->second;
+        if (rec.totalResults > 0 && rec.totalResults >= rec.spamResults
+            && rec.spamResults * 100 / rec.totalResults < 50) {
+            normalServerWithoutCurrent = normalServerWithoutCurrent || fromUDPServerIP != server.ip;
+            normalServer = true;
+        }
+    }
+    if (!normalServer)
+        rating += 30;
+
+    // --- Criterion 7: Heuristic on UDP results (60/39 pts) ---
+    // MFC srchybrid/SearchList.cpp:998-1040: a file with many sources that no normal
+    // server but the answering one knows, once enough servers were heard.
+    {
+        const auto count = [searchID = file->searchID()](const std::unordered_map<uint32, uint32>& map) {
+            const auto it = map.find(searchID);
+            return it != map.end() ? it->second : 0u;
+        };
+        if (!normalServerWithoutCurrent
+            && (count(m_receivedUdpAnswers) >= 3 || count(m_requestedUdpAnswers) >= 5)
+            && file->sourceCount() > 100) {
+            // A source in a UDP server's own /24: the server advertises its own files
+            bool sourceServer = false;
+            for (const auto& server : file->servers()) {
+                if (server.ip == 0)
+                    continue;
+                sourceServer = std::any_of(file->clients().cbegin(), file->clients().cend(),
+                    [&server](const SearchFile::SClient& client) {
+                        return (client.ip & 0x00FFFFFFu) == (server.ip & 0x00FFFFFFu);
+                    });
+                if (sourceServer)
+                    break;
+            }
+            const ED2KFileType type = getED2KFileTypeID(file->fileName());
+            const bool smallProgram = (type == ED2KFileType::Program || type == ED2KFileType::Archive)
+                && fSize > 102'400 && fSize < 10'485'760;
+            rating += (smallProgram || sourceServer) ? 60 : 39;
+        }
     }
 
     // --- Criterion 6: Source IP hit (39 pts) ---
@@ -845,33 +907,6 @@ void SearchList::doSpamRating(SearchFile* file,
         if (m_knownSpamSourcesIPs.contains(client.ip)) {
             rating += 39;
             break;
-        }
-    }
-
-    // --- Criterion 7: Heuristic — program/archive 100KB-10MB (39-60 pts) ---
-    {
-        const QString& ft = file->fileType();
-        bool suspectType = (ft == QLatin1String(ED2KFTSTR_PROGRAM) ||
-                            ft == QLatin1String(ED2KFTSTR_ARCHIVE));
-        if (suspectType && fSize >= 100 * 1024 && fSize <= 10 * 1024 * 1024) {
-            // Check for suspicious subnet patterns in source IPs
-            std::unordered_map<uint32, int> subnetCounts;
-            for (const auto& client : file->clients()) {
-                // Use /24 subnet
-                uint32 subnet = client.ip & 0xFFFFFF00u;
-                subnetCounts[subnet]++;
-            }
-            bool suspicious = false;
-            for (const auto& [subnet, count] : subnetCounts) {
-                if (count >= 3) {
-                    suspicious = true;
-                    break;
-                }
-            }
-            if (suspicious)
-                rating += 39;
-            else if (file->clients().size() == 1)
-                rating += 45;
         }
     }
 
@@ -980,92 +1015,6 @@ void SearchList::recalculateSpamRatings(uint32 searchID)
             if (wasSpam != file->isConsideredSpam())
                 emit spamStatusChanged(file.get());
         }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Persistence — search sessions
-// ---------------------------------------------------------------------------
-
-void SearchList::storeSearches(const QString& configDir) const
-{
-    const QString filePath = configDir + QStringLiteral("/searches.met");
-    SafeFile file;
-    if (!file.open(filePath, QIODevice::WriteOnly))
-        return;
-
-    file.writeUInt8(MET_HEADER_I64TAGS);
-    file.writeUInt8(2); // version; 2 adds the per-search Kad byte
-
-    // Count non-empty search entries
-    uint32 count = 0;
-    for (const auto& entry : m_fileLists) {
-        if (!entry.files.empty())
-            ++count;
-    }
-    file.writeUInt32(count);
-
-    for (const auto& entry : m_fileLists) {
-        if (entry.files.empty())
-            continue;
-
-        // Write search params placeholder (we store searchID + file count)
-        file.writeUInt32(entry.searchID);
-        file.writeUInt8(entry.kad ? 1 : 0);
-
-        // Count top-level files (non-children)
-        uint32 fileCount = 0;
-        for (const auto& f : entry.files) {
-            if (f->listParent() == nullptr)
-                ++fileCount;
-        }
-        file.writeUInt32(fileCount);
-
-        // Write each top-level file
-        for (const auto& f : entry.files) {
-            if (f->listParent() == nullptr)
-                f->storeToFile(file);
-        }
-    }
-}
-
-void SearchList::loadSearches(const QString& configDir)
-{
-    const QString filePath = configDir + QStringLiteral("/searches.met");
-    SafeFile file;
-    if (!file.open(filePath, QIODevice::ReadOnly))
-        return;
-
-    const uint8 header = file.readUInt8();
-    if (header != MET_HEADER_I64TAGS)
-        return;
-
-    const uint8 version = file.readUInt8();
-    if (version != 1 && version != 2)
-        return;
-
-    const uint32 searchCount = file.readUInt32();
-    for (uint32 s = 0; s < searchCount; ++s) {
-        const uint32 searchID = file.readUInt32();
-        // v1 had no search type: its Kad results come back as eD2K ones
-        const bool kad = version >= 2 && file.readUInt8() != 0;
-        const uint32 fileCount = file.readUInt32();
-
-        SearchListEntry entry;
-        entry.searchID = searchID;
-        entry.kad = kad;
-
-        for (uint32 i = 0; i < fileCount; ++i) {
-            auto searchFile = std::make_unique<SearchFile>(file, true, 0, 0, QString(), kad);
-            searchFile->setSearchID(searchID);
-            entry.files.push_back(std::move(searchFile));
-        }
-
-        m_fileLists.push_back(std::move(entry));
-        m_foundFilesCount[searchID] = fileCount;
-
-        // Update next search ID to be beyond any loaded
-        kad::Search::noteSearchIDUsed(searchID);
     }
 }
 
@@ -1225,6 +1174,12 @@ const SearchListEntry* SearchList::findEntry(uint32 searchID) const
     return nullptr;
 }
 
+void SearchList::resetUdpRequestTracking()
+{
+    m_curED2KSentRequestsIPs.clear();
+    m_curED2KAnsweredIPs.clear();
+}
+
 bool SearchList::assess(SearchFile* file)
 {
     // A torrent / Usenet row is not an eD2K file: no hash to collect names under.
@@ -1245,6 +1200,8 @@ bool SearchList::assess(SearchFile* file)
     in.album = file->getStrTagValue(FT_MEDIA_ALBUM);
     in.title = file->getStrTagValue(FT_MEDIA_TITLE);
     in.kadTrust = kadTrustFromPublishInfo(file->kadPublishInfo());
+    if (const SearchListEntry* entry = findEntry(file->searchID()))
+        in.ignoredNameWords = entry->keywords;
 
     for (const auto& [publisher, note] : file->kadNotesCache()) {
         in.kadNoteRatedFake = in.kadNoteRatedFake || note.rating == 1;
@@ -1352,7 +1309,8 @@ void SearchList::addResultCount(uint32 searchID, const uint8* hash, uint32 count
         return;
 
     // a spam file counts as at most 5
-    m_foundSourcesCount[searchID] += spam ? std::min(count, uint32{5}) : count;
+    const bool capped = spam && thePrefs.enableSearchResultFilter();
+    m_foundSourcesCount[searchID] += capped ? std::min(count, uint32{5}) : count;
 }
 
 } // namespace eMule

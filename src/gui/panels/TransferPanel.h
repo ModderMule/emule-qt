@@ -118,8 +118,10 @@ private:
     QWidget* createDownloadsSection();
     QWidget* createBottomPane();
     QToolBar* createActionToolbar();
+    void setDownloadToolbarShown(bool shown);
     QTreeView* createClientView(ClientListModel* model, const QString& headerKey,
-                                std::initializer_list<int> columnWidths);
+                                std::initializer_list<int> columnWidths,
+                                std::initializer_list<int> descendingFirst);
     void requestDownloads();
     void requestDownloadSources(const QString& hash);
     void requestUploads();
@@ -154,6 +156,8 @@ private:
     void showDownloadDetails(const QString& hash);
     void showComments(const QString& hash);
     void fetchAndShowFileDetails(const QString& hash, FileDetailDialog::Tab tab);
+    /// Several downloads in one sheet.
+    void fetchAndShowFileDetails(const QStringList& hashes, FileDetailDialog::Tab tab);
     void fetchAndShowClientDetails(const QString& clientHash, DetailWalker walker = {});
     void searchRelated(const QStringList& hashes, const QStringList& names);
     [[nodiscard]] QString saveDownloadSelection() const;

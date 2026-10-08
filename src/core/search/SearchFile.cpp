@@ -345,6 +345,12 @@ void SearchFile::addServer(const SServer& server)
     }
 }
 
+void SearchFile::markServersUdpAnswer()
+{
+    for (SServer& server : m_servers)
+        server.udpAnswer = true;
+}
+
 // ---------------------------------------------------------------------------
 // Persistence
 // ---------------------------------------------------------------------------

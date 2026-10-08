@@ -151,6 +151,7 @@ SOURCES += \
     net/Pinger.cpp \
     net/ServerSocket.cpp \
     net/SmtpClient.cpp \
+    net/TlsRelay.cpp \
     net/UDPSocket.cpp \
     prefs/IndexerConfig.cpp \
     prefs/DownloadCategory.cpp \
@@ -303,9 +304,11 @@ HEADERS += \
     net/Pinger.h \
     net/ServerSocket.h \
     net/SmtpClient.h \
+    net/TlsRelay.h \
     net/ThrottledSocket.h \
     net/UDPSocket.h \
     prefs/DownloadCategory.h \
+    prefs/CategoryView.h \
     prefs/IndexerConfig.h \
     prefs/IndexerFeed.h \
     prefs/Preferences.h \

@@ -98,7 +98,7 @@ SearchDispatch dispatchKadSearch(SearchList& list, uint32 searchID, const Search
         return out;
     }
 
-    list.beginSearch(searchID, resultTypeFilter(params.fileType), /*ed2k*/ false);
+    list.beginSearch(searchID, resultTypeFilter(params.fileType), /*ed2k*/ false, params.expression);
     if (!kad::SearchManager::startSearch(kadSearch)) {
         // Target was taken between selection and start — drop the half-built search.
         delete kadSearch;
@@ -140,7 +140,7 @@ SearchDispatch dispatchEd2kSearch(SearchList& list, uint32 searchID, SearchType 
     if (theApp.globalSearch)
         theApp.globalSearch->cancel();
 
-    list.beginSearch(searchID, resultTypeFilter(params.fileType), /*ed2k*/ true);
+    list.beginSearch(searchID, resultTypeFilter(params.fileType), /*ed2k*/ true, params.expression);
 
     // Both ED2K methods start by asking the connected server over TCP; "global"
     // then walks the rest of the list over UDP once that answer is in.
@@ -314,7 +314,7 @@ SearchQueueBackend defaultSearchQueueBackend(SearchList& list)
     backend.continueServerSearch = [&list](uint32 searchID, const SearchParams& params) {
         if (!theApp.serverConnect || !theApp.serverConnect->isConnected())
             return false;
-        list.beginSearch(searchID, resultTypeFilter(params.fileType), /*ed2k*/ true);
+        list.beginSearch(searchID, resultTypeFilter(params.fileType), /*ed2k*/ true, params.expression);
         auto pkt = std::make_unique<Packet>(OP_QUERY_MORE_RESULT, 0);
         pkt->prot = OP_EDONKEYPROT;
         logServerVerbose(QStringLiteral(">>> OP_QUERY_MORE_RESULT for search %1").arg(searchID));

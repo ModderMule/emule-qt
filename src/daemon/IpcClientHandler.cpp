@@ -285,6 +285,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::StopSearch:           handleStopSearch(msg); break;
     case IpcMsgType::SearchMore:           handleSearchMore(msg); break;
     case IpcMsgType::RemoveSearch:         handleRemoveSearch(msg); break;
+    case IpcMsgType::RemoveSearchResult:   handleRemoveSearchResult(msg); break;
     case IpcMsgType::ClearAllSearches:     handleClearAllSearches(msg); break;
     case IpcMsgType::DownloadSearchFile:   handleDownloadSearchFile(msg); break;
     case IpcMsgType::GetKnownTypes:        handleGetKnownTypes(msg); break;
@@ -1017,6 +1018,37 @@ void IpcClientHandler::handleRemoveSearch(const IpcMessage& msg)
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
+// MFC CSearchList::RemoveResult: one list entry — a file, or one of its names.
+void IpcClientHandler::handleRemoveSearchResult(const IpcMessage& msg)
+{
+    if (!theApp.searchList) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 503, QStringLiteral("SearchList unavailable")));
+        return;
+    }
+    uint8 hashBuf[16]{};
+    if (!hexToHash(msg.fieldString(1), hashBuf)) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
+        return;
+    }
+    SearchFile* file = theApp.searchList->searchFileByHash(hashBuf,
+                                                           static_cast<uint32>(msg.fieldInt(0)));
+    const QString name = msg.fieldString(2);
+    if (file && !name.isEmpty()) {
+        SearchFile* named = nullptr;
+        for (SearchFile* child : file->listChildren()) {
+            if (child->fileName() == name) {
+                named = child;
+                break;
+            }
+        }
+        file = named;
+    }
+    // Already gone is fine: the GUI's row is what the user removed
+    if (file)
+        theApp.searchList->removeResult(file);
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
 void IpcClientHandler::handleClearAllSearches(const IpcMessage& msg)
 {
     if (!theApp.searchList) {
@@ -1608,10 +1640,13 @@ void IpcClientHandler::handleGetStats(const IpcMessage& msg)
     QCborMap stats = toCborMap(collectStatsSnapshot());
 
     // Upload SpeedSense, for the status bar pane (MFC CemuleDlg::ShowPing)
-    if (thePrefs.dynUpEnabled() && theApp.lastCommonRouteFinder) {
-        const USSStatus uss = theApp.lastCommonRouteFinder->currentStatus();
+    // Also after it gave up and switched the option off: the pane then says why.
+    const USSStatus uss = theApp.lastCommonRouteFinder
+        ? theApp.lastCommonRouteFinder->currentStatus() : USSStatus{};
+    if (theApp.lastCommonRouteFinder
+        && (thePrefs.isDynUpEnabled() || uss.phase == UssState::Error)) {
         QCborMap m;
-        m.insert(QStringLiteral("active"), uss.active);
+        m.insert(QStringLiteral("state"), static_cast<int>(uss.phase));
         m.insert(QStringLiteral("limit"), static_cast<qint64>(uss.currentLimit));
         m.insert(QStringLiteral("latency"), static_cast<qint64>(uss.latency));
         m.insert(QStringLiteral("lowest"), static_cast<qint64>(uss.lowest));
@@ -5069,29 +5104,23 @@ void IpcClientHandler::handleSetCategoryStatus(const IpcMessage& msg)
         return;
     }
 
-    const auto cat = static_cast<uint32>(category);
-
+    // Tab 0 covers what it shows — everything, unless it has a view filter (MFC
+    // SetCatStatus); it used to cover the uncategorised downloads only.
     switch (action) {
     case Ipc::CategoryAction::Pause:
-        theApp.downloadQueue->setCatStatus(cat, true);
+        theApp.downloadQueue->setCatStatus(category, true);
         break;
     case Ipc::CategoryAction::Resume:
-        theApp.downloadQueue->setCatStatus(cat, false);
+        theApp.downloadQueue->setCatStatus(category, false);
         break;
     case Ipc::CategoryAction::Stop:
-        for (auto* file : theApp.downloadQueue->files())
-            if (file->category() == cat)
-                file->stopFile();
+        theApp.downloadQueue->stopCategory(category);
         break;
-    case Ipc::CategoryAction::Cancel: {
-        // Copy first: cancelling frees the PartFile and removes it from the
-        // queue, which would invalidate the range underneath the loop.
-        const auto files = theApp.downloadQueue->files();
-        for (auto* file : files)
-            if (file->category() == cat)
-                cancelDownloadFile(file);
+    case Ipc::CategoryAction::Cancel:
+        // A copy: cancelling frees the PartFile and takes it off the queue.
+        for (PartFile* file : theApp.downloadQueue->filesInCategoryScope(category))
+            cancelDownloadFile(file);
         break;
-    }
     case Ipc::CategoryAction::ResumeNext:
         theApp.downloadQueue->startNextFile(category);
         break;

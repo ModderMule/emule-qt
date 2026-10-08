@@ -134,13 +134,6 @@ bool KadPrefs::hasHadContact() const
     return false;
 }
 
-bool KadPrefs::hasLostConnection() const
-{
-    if (m_lastContact != 0)
-        return !hasHadContact();
-    return false;
-}
-
 void KadPrefs::setLastContact(time_t when)
 {
     m_lastContact = when;

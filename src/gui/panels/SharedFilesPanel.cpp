@@ -451,24 +451,20 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
 
     m_contextMenu->addSeparator();
 
-    // Details... — the dialog shows one file, so single selection only (as in Transfers)
+    // Details... / Comments... — several files open one combined sheet, as in MFC
     {
-        const QString hash = hasSel ? hashes.constFirst() : QString{};
         auto* act = m_contextMenu->addAction(menuIcon("FileInfo.ico"), tr("Details..."), this,
-                                             [this, hash]() {
-            fetchAndShowSharedFileDetails(hash, FileDetailDialog::General);
+                                             [this, hashes]() {
+            fetchAndShowSharedFileDetails(hashes, FileDetailDialog::General);
         });
-        act->setEnabled(singleSel);
+        act->setEnabled(hasSel);
     }
-
-    // Comments...
     {
-        const QString hash = hasSel ? hashes.constFirst() : QString{};
         auto* act = m_contextMenu->addAction(menuIcon("FileComments.ico"), tr("Comments..."), this,
-                                             [this, hash]() {
-            fetchAndShowSharedFileDetails(hash, FileDetailDialog::Comments);
+                                             [this, hashes]() {
+            fetchAndShowSharedFileDetails(hashes, FileDetailDialog::Comments);
         });
-        act->setEnabled(singleSel);
+        act->setEnabled(hasSel);
     }
 
     // eD2K Links — one link per selected file, as MFC's MP_GETED2KLINK does
@@ -731,6 +727,23 @@ QWidget* SharedFilesPanel::createTopSection()
         {SharedFilesModel::ColFolder, SharedFilesModel::ColFileId, SharedFilesModel::ColAccepted,
          SharedFilesModel::ColArtist, SharedFilesModel::ColAlbum, SharedFilesModel::ColTitle,
          SharedFilesModel::ColLength, SharedFilesModel::ColBitrate, SharedFilesModel::ColCodec});
+
+    // MFC SharedFilesCtrl.cpp:1093-1134: the numeric columns start descending, and four
+    // of them sort by a second value after both directions of the first — all-time
+    // figures (the default) or this session's, published on Kad or on eD2K.
+    fileView->setDescendingFirst({SharedFilesModel::ColPriority, SharedFilesModel::ColRequests,
+                                  SharedFilesModel::ColAccepted, SharedFilesModel::ColTransferred,
+                                  SharedFilesModel::ColCompleteSources,
+                                  SharedFilesModel::ColSharedNetworks});
+    for (const int column : {SharedFilesModel::ColRequests, SharedFilesModel::ColAccepted,
+                             SharedFilesModel::ColTransferred}) {
+        fileView->setSortValueColumn(column, [this, column](bool allTime) {
+            m_proxy->setAltSort(column, !allTime);
+        }, /*secondByDefault*/ true);
+    }
+    fileView->setSortValueColumn(SharedFilesModel::ColSharedNetworks, [this](bool kad) {
+        m_proxy->setAltSort(SharedFilesModel::ColSharedNetworks, kad);
+    });
 
     // The cell text of one column; Shared parts and Shared eD2K|Kad have none
     // (MFC SharedFilesWnd.cpp:95-98)
@@ -1726,6 +1739,37 @@ void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
 // ---------------------------------------------------------------------------
 // Shared file details (IPC fetch + dialog)
 // ---------------------------------------------------------------------------
+
+void SharedFilesPanel::fetchAndShowSharedFileDetails(const QStringList& hashes, int tab)
+{
+    if (hashes.size() == 1) {
+        fetchAndShowSharedFileDetails(hashes.constFirst(), tab);
+        return;
+    }
+    if (!m_ipc || !m_ipc->isConnected() || hashes.isEmpty())
+        return;
+
+    struct Pending {
+        QList<QCborMap> files;
+        qsizetype outstanding = 0;
+    };
+    auto pending = std::make_shared<Pending>();
+    pending->outstanding = hashes.size();
+    for (const QString& hash : hashes) {
+        IpcMessage msg(IpcMsgType::GetSharedFileDetails);
+        msg.append(hash);
+        m_ipc->sendRequest(std::move(msg), [this, tab, pending](const IpcMessage& resp) {
+            if (resp.isValid() && resp.fieldBool(0))
+                pending->files.append(resp.field(1).toMap());
+            if (--pending->outstanding > 0 || pending->files.isEmpty())
+                return;
+            auto* dlg = new FileDetailDialog(pending->files,
+                                             static_cast<FileDetailDialog::Tab>(tab), this);
+            connectCommentFilter(dlg, m_ipc);
+            dlg->show();
+        });
+    }
+}
 
 void SharedFilesPanel::fetchAndShowSharedFileDetails(const QString& hash, int tab)
 {

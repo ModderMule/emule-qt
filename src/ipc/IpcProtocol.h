@@ -287,6 +287,9 @@ enum class IpcMsgType : int {
     /// tree marks shared folders from: the shared directories, and the folders that
     /// hold an individually shared file (each once, however many files).
     GetSharedDirState       = 286,
+    /// [searchID: int, hash: string, name: string] — drop a result from the daemon's
+    /// list too; an empty name is the file with all its names, else that one name row.
+    RemoveSearchResult      = 287,
 
     // -- Indexers (700-719) --------------------------------------------------
     //

@@ -12,6 +12,10 @@ virus
 trojan
 malware
 
+[abuse]
+# Extra words that advertise child abuse material, added to the built-in list.
+# A match makes the file "Suspect".
+
 [regex]
 # Regular expressions, any case, matched on the whole file name or comment.
 \.mp4\.exe$

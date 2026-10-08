@@ -499,6 +499,11 @@ void CoreSession::initUSS()
             m_lastCommonRouteFinder->addHostsToCheck(ips);
     });
 
+    // MFC switches the option off when the route cannot be traced
+    // (LastCommonRouteFinder.cpp:497). The finder is on its own thread: queued.
+    connect(m_lastCommonRouteFinder.get(), &LastCommonRouteFinder::tracerouteGaveUp,
+            this, [] { thePrefs.setDynUpEnabled(false); }, Qt::QueuedConnection);
+
     m_lastCommonRouteFinder->start();
     logInfo(QStringLiteral("Upload SpeedSense (USS) thread started"));
 }
@@ -530,7 +535,7 @@ void CoreSession::updateUSSParams()
         return;
 
     USSParams p;
-    p.enabled = thePrefs.dynUpEnabled();
+    p.enabled = thePrefs.isDynUpEnabled();
     // The pref is "percent of the lowest ping"; the controller wants the rise over it.
     const int tolerance = thePrefs.dynUpPingTolerance();
     p.pingTolerance = tolerance > 100 ? (tolerance - 100) / 100.0 : 0.0;

@@ -154,6 +154,8 @@ public:
 
     /// Remove a single file by top-level row.
     void removeRow(int row);
+    /// One name row of a file; the file and its other names stay.
+    void removeChild(int row, int childRow);
 
     /// Number of files (child rows not counted).
     [[nodiscard]] int resultCount() const { return static_cast<int>(m_rows.size()); }
