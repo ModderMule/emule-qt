@@ -351,6 +351,9 @@ private slots:
     void anSfvMismatchFailsAReleaseWithNoPar2();
     void aCleanSfvPublishesThePayloadButNotTheSfv();
     void anSfvListingAnUnpostedSampleStillPublishes();
+    void anSfvListingNoneOfThePayloadIsNotPublished();
+    void aLeftoverHeadlessRarSetDoesNotFailAnUnpackedRelease();
+    void aHeadlessRarSetAloneIsAFailure();
     void anExecutableInAMovieReleaseIsHeldBack();
     void anExecutableInASoftwareReleaseIsPublished();
     void anArchiveHidingADisguisedProgramIsNeverExtracted();
@@ -1357,6 +1360,83 @@ void tst_UsenetPostPipeline::anSfvListingAnUnpostedSampleStillPublishes()
     const UsenetPostResult result =
         runJob(sfvJob(work, dest, {QStringLiteral("movie.bin"), QStringLiteral("rel.sfv")}));
     QVERIFY2(result.success, qPrintable(result.message));
+}
+
+// Seen live: the .sfv of a rar set nobody posted, published beside the iso.
+void tst_UsenetPostPipeline::anSfvListingNoneOfThePayloadIsNotPublished()
+{
+    eMule::testing::TempDir tmp;
+    const QString work = tmp.filePath(QStringLiteral("work"));
+    const QString dest = tmp.filePath(QStringLiteral("dest"));
+    QVERIFY(QDir().mkpath(work) && QDir().mkpath(dest));
+
+    const QByteArray volume = payload(5000, 39);
+    QVERIFY(writeFile(QDir(work).filePath(QStringLiteral("Rel.iso")), payload(20000, 40)));
+    QVERIFY(writeFile(QDir(work).filePath(QStringLiteral("Rel.sfv")),
+                      sfvLineFor(QStringLiteral("rzr-rel.rar"), volume)
+                          + sfvLineFor(QStringLiteral("rzr-rel.r00"), volume)));
+
+    const UsenetPostResult result = runJob(sfvJob(work, dest, {QStringLiteral("Rel.iso")}));
+    QVERIFY2(result.success, qPrintable(result.message));
+    QCOMPARE(result.staged.size(), 1);
+    QCOMPARE(QFileInfo(result.staged.first().finalPath).fileName(), QStringLiteral("Rel.iso"));
+    QVERIFY2(result.consumed.contains(QDir(work).filePath(QStringLiteral("Rel.sfv"))),
+             qPrintable(result.consumed.join(u',')));
+
+    // Cleanup off publishes everything, this included.
+    const QString work2 = tmp.filePath(QStringLiteral("work2"));
+    const QString dest2 = tmp.filePath(QStringLiteral("dest2"));
+    QVERIFY(QDir().mkpath(work2) && QDir().mkpath(dest2));
+    QVERIFY(writeFile(QDir(work2).filePath(QStringLiteral("Rel.iso")), payload(20000, 40)));
+    QVERIFY(writeFile(QDir(work2).filePath(QStringLiteral("Rel.sfv")),
+                      sfvLineFor(QStringLiteral("rzr-rel.rar"), volume)));
+    UsenetPostJob keep = sfvJob(work2, dest2, {QStringLiteral("Rel.iso")});
+    keep.cleanupEnabled = false;
+    const UsenetPostResult kept = runJob(keep);
+    QVERIFY2(kept.success, qPrintable(kept.message));
+    QCOMPARE(kept.staged.size(), 2);
+}
+
+// Seen live: the iso posted as it is, with .r10-.r38 of its rar set beside it and
+// the first eleven volumes never posted. Opening .r10 failed the whole release.
+void tst_UsenetPostPipeline::aLeftoverHeadlessRarSetDoesNotFailAnUnpackedRelease()
+{
+    eMule::testing::TempDir tmp;
+    const QString work = tmp.filePath(QStringLiteral("work"));
+    const QString dest = tmp.filePath(QStringLiteral("dest"));
+    QVERIFY(QDir().mkpath(work) && QDir().mkpath(dest));
+
+    QVERIFY(writeFile(QDir(work).filePath(QStringLiteral("Rel.iso")), payload(20000, 34)));
+    QVERIFY(writeFile(QDir(work).filePath(QStringLiteral("Rel.r10")), payload(5000, 35)));
+    QVERIFY(writeFile(QDir(work).filePath(QStringLiteral("Rel.r11")), payload(5000, 36)));
+
+    const UsenetPostResult result = runJob(sfvJob(work, dest, {}));
+    QVERIFY2(result.success, qPrintable(result.message));
+    QCOMPARE(result.staged.size(), 1);
+    QCOMPARE(QFileInfo(result.staged.first().finalPath).fileName(), QStringLiteral("Rel.iso"));
+    QVERIFY2(result.consumed.contains(QDir(work).filePath(QStringLiteral("Rel.r10")))
+                 && result.consumed.contains(QDir(work).filePath(QStringLiteral("Rel.r11"))),
+             qPrintable(result.consumed.join(u',')));
+}
+
+// With nothing else to publish the missing volume is the story, and the
+// volumes stay for a retry.
+void tst_UsenetPostPipeline::aHeadlessRarSetAloneIsAFailure()
+{
+    eMule::testing::TempDir tmp;
+    const QString work = tmp.filePath(QStringLiteral("work"));
+    const QString dest = tmp.filePath(QStringLiteral("dest"));
+    QVERIFY(QDir().mkpath(work) && QDir().mkpath(dest));
+
+    QVERIFY(writeFile(QDir(work).filePath(QStringLiteral("Rel.r10")), payload(5000, 37)));
+    QVERIFY(writeFile(QDir(work).filePath(QStringLiteral("Rel.nfo")), payload(200, 38)));
+
+    const UsenetPostResult result = runJob(sfvJob(work, dest, {}));
+    QVERIFY2(!result.success, "a rar set with no first volume was published as complete");
+    QVERIFY2(result.message.contains(QLatin1String("first volume")), qPrintable(result.message));
+    QVERIFY(result.consumed.isEmpty());
+    QVERIFY(namesIn(dest).isEmpty());
+    QVERIFY(QFile::exists(QDir(work).filePath(QStringLiteral("Rel.r10"))));
 }
 
 namespace {

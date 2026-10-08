@@ -58,6 +58,7 @@ const QRegularExpression& reSingle()
 struct Volume {
     QString path;
     int index = 0;      ///< position within the set; lowest opens it
+    int first = 0;      ///< index the scheme's opening volume carries
 };
 
 } // namespace
@@ -99,7 +100,7 @@ QList<ArchiveSet> UsenetUnpacker::findArchiveSets(const QString& dir)
     for (const QFileInfo& fi : entries) {
         const VolumePosition pos = volumePositionOf(fi.fileName());
         if (pos.index >= 0)
-            sets[pos.baseName].append({fi.absoluteFilePath(), pos.index});
+            sets[pos.baseName].append({fi.absoluteFilePath(), pos.index, pos.first});
     }
 
     QList<ArchiveSet> result;
@@ -111,6 +112,8 @@ QList<ArchiveSet> UsenetUnpacker::findArchiveSets(const QString& dir)
         ArchiveSet set;
         set.baseName = it.key();
         set.firstVolume = volumes.first().path;
+        // Above the opening index, never below: some posters count from .000.
+        set.headless = volumes.first().index > volumes.first().first;
         for (const Volume& v : volumes)
             set.volumes.append(v.path);
         result.append(std::move(set));
@@ -129,7 +132,21 @@ UsenetUnpacker::Result UsenetUnpacker::unpack(const QString& sourceDir, const QS
 {
     Result result;
 
-    const QList<ArchiveSet> sets = findArchiveSets(sourceDir);
+    QList<ArchiveSet> sets;
+    for (const ArchiveSet& set : findArchiveSets(sourceDir)) {
+        if (!set.headless) {
+            sets.append(set);
+            continue;
+        }
+        // Opening it mid-set only yields "file split across volumes", which
+        // used to fail a release whose real payload sat right beside it.
+        logUsenetWarning(QStringLiteral("Usenet: \"%1\" has no first volume; not unpacking "
+                                        "its %2 volume(s)")
+                             .arg(QFileInfo(set.firstVolume).fileName())
+                             .arg(set.volumes.size()));
+        result.headlessVolumes += set.volumes;
+    }
+
     if (sets.isEmpty()) {
         result.ok = true;
         result.nothingToDo = true;

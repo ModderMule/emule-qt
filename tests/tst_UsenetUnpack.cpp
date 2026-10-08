@@ -21,6 +21,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -90,6 +91,8 @@ private slots:
     void detectsTheOldRarSchemeWhereRarIsVolumeOne();
     void detectsNumberedContainerVolumes();
     void ignoresNonArchives();
+    void flagsASetWithoutItsFirstVolume();
+    void leavesAHeadlessSetAlone();
     void unpacksAZipAndListsWhatItProduced();
     void reportsNothingToDoForAPlainDirectory();
     void refusesMembersThatEscapeTheDestination();
@@ -171,6 +174,60 @@ void TestUsenetUnpack::ignoresNonArchives()
     QVERIFY(!UsenetUnpacker::isArchiveVolume(QStringLiteral("Rel.vol000+01.par2")));
     QVERIFY(!UsenetUnpacker::isArchiveVolume(QStringLiteral("Movie.mkv")));
     QVERIFY(UsenetUnpacker::isArchiveVolume(QStringLiteral("Rel.part01.rar")));
+}
+
+void TestUsenetUnpack::flagsASetWithoutItsFirstVolume()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QDir d(dir.path());
+
+    // Each scheme with its opening volume gone, plus two that are whole.
+    QVERIFY(touch(d.filePath(QStringLiteral("Old.r10"))));
+    QVERIFY(touch(d.filePath(QStringLiteral("Old.r11"))));
+    QVERIFY(touch(d.filePath(QStringLiteral("Part.part02.rar"))));
+    QVERIFY(touch(d.filePath(QStringLiteral("Num.7z.002"))));
+    QVERIFY(touch(d.filePath(QStringLiteral("Whole.rar"))));
+    QVERIFY(touch(d.filePath(QStringLiteral("Whole.r00"))));
+    QVERIFY(touch(d.filePath(QStringLiteral("Zero.7z.000"))));
+    QVERIFY(touch(d.filePath(QStringLiteral("Zero.7z.001"))));
+
+    QHash<QString, bool> headless;
+    for (const ArchiveSet& set : UsenetUnpacker::findArchiveSets(dir.path()))
+        headless.insert(set.baseName, set.headless);
+
+    QCOMPARE(headless.size(), 5);
+    QVERIFY(headless.value(QStringLiteral("old")));
+    QVERIFY(headless.value(QStringLiteral("part")));
+    QVERIFY(headless.value(QStringLiteral("num.7z")));
+    QVERIFY(!headless.value(QStringLiteral("whole")));
+    QVERIFY(!headless.value(QStringLiteral("zero.7z")));
+}
+
+void TestUsenetUnpack::leavesAHeadlessSetAlone()
+{
+    QTemporaryDir src;
+    QTemporaryDir dst;
+    QVERIFY(src.isValid() && dst.isValid());
+    const QDir d(src.path());
+
+    // A release posted unpacked, with the tail of its rar set left in the post.
+    // Opening .r10 fails, and that used to fail the release over the intact iso.
+    QVERIFY(touch(d.filePath(QStringLiteral("Rel.iso"))));
+    QVERIFY(touch(d.filePath(QStringLiteral("Rel.r10"))));
+    QVERIFY(touch(d.filePath(QStringLiteral("Rel.r11"))));
+
+    UsenetUnpacker unpacker;
+    const auto r = unpacker.unpack(src.path(), dst.path());
+
+    QVERIFY(r.ok);
+    QVERIFY(r.nothingToDo);
+    QVERIFY(r.error.isEmpty());
+    QVERIFY(r.extractedFiles.isEmpty());
+    // Not consumed: the caller decides, and consumed is a delete list.
+    QVERIFY(r.consumedArchives.isEmpty());
+    QCOMPARE(r.headlessVolumes.size(), 2);
+    QCOMPARE(QFileInfo(r.headlessVolumes.first()).fileName(), QStringLiteral("Rel.r10"));
 }
 
 void TestUsenetUnpack::unpacksAZipAndListsWhatItProduced()
