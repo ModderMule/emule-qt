@@ -31,6 +31,7 @@ env:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 90   # cold build is ~30 min; the default is 6 h
 
     steps:
       - name: Checkout
@@ -211,6 +212,11 @@ jobs:
       # only checks that a zip exists, not that it is loadable.
       - name: Verify bundle is self-contained
         shell: pwsh
+        # v0.6.1 sat here for 6 h: with no console window Qt showed --version in a
+        # message box.  main.cpp sets this itself now; kept for tags built before.
+        timeout-minutes: 10
+        env:
+          QT_COMMAND_LINE_PARSER_NO_GUI_MESSAGE_BOXES: '1'
         run: |
           $ErrorActionPreference = 'Stop'
           $zip = Get-ChildItem build\eMuleQt-v*-win64.zip | Select-Object -First 1

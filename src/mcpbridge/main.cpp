@@ -38,6 +38,9 @@ int main(int argc, char* argv[])
     const QCommandLineOption insecureOption(QStringLiteral("insecure"),
         QStringLiteral("Accept a self-signed HTTPS certificate."));
     parser.addOptions({urlOption, keyOption, configOption, insecureOption});
+    // Windows, no console window (MCP client, CI): Qt would show --version, --help
+    // and option errors in a message box and block on it forever.
+    qputenv("QT_COMMAND_LINE_PARSER_NO_GUI_MESSAGE_BOXES", "1");
     parser.process(app);
 
     using eMule::McpStdioBridge;
