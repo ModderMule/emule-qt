@@ -125,6 +125,14 @@ private:
     /// the entries that edit the category itself.
     void populateCategoryMenu(QMenu* menu, int index);
     void sendCategoryStatus(int index, Ipc::CategoryAction action);
+    /// "downloading/total" on the category tabs, when that option is on.
+    void updateCategoryTabInfo();
+
+public:
+    /// Re-read the options this panel acts on (category tab info).
+    void applyDisplayOptions() { updateCategoryTabInfo(); }
+
+private:
     void sendSetCategory(const QStringList& ids, int category);
 
     void onContextMenu(const QPoint& pos);

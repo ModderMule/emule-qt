@@ -106,6 +106,8 @@ private slots:
     void aCategoryFilterStackedOnASortProxyStillFilters();
     void childRowsAreNeverFiltered();
     void aModelThatDoesNotAnswerTheRoleIsHiddenNotShown();
+    void viewFilterFollowsMfc();
+    void viewFilterModifiersFollowMfc();
 };
 
 void tst_CategoryFilterProxy::theAllTabShowsEverything()
@@ -204,6 +206,107 @@ void tst_CategoryFilterProxy::aModelThatDoesNotAnswerTheRoleIsHiddenNotShown()
     // "All" still shows them, so the list is never unreachable.
     proxy.setCategoryFilter(0);
     QCOMPARE(proxy.rowCount(), 2);
+}
+
+namespace {
+
+CategoryRowFacts fact(const char* name, int category, CategoryRowFacts::State state,
+                      bool unfinished = true)
+{
+    CategoryRowFacts f;
+    f.fileName = QString::fromLatin1(name);
+    f.category = category;
+    f.state = state;
+    f.unfinished = unfinished;
+    return f;
+}
+
+} // namespace
+
+void tst_CategoryFilterProxy::viewFilterFollowsMfc()
+{
+    // MFC CPartFile::CheckShowItemInGivenCat (srchybrid/PartFile.cpp:5055-5122). The
+    // fields were stored and round-tripped, and nothing looked at them.
+    using namespace CategoryViewFilter;
+    QList<DownloadCategory> cats(2);
+    cats[1].title = QStringLiteral("Films");
+
+    const auto waiting = fact("a.avi", 1, CategoryRowFacts::Waiting);
+    const auto sending = fact("b.mp3", 1, CategoryRowFacts::Transferring);
+    const auto paused = fact("c.zip", 1, CategoryRowFacts::Paused);
+    const auto broken = fact("d.iso", 0, CategoryRowFacts::Erroneous);
+    auto done = fact("e.avi", 1, CategoryRowFacts::Other, /*unfinished*/ false);
+    done.seenComplete = true;
+
+    const auto shown = [&cats](int cat, const CategoryRowFacts& row) {
+        return categoryShowsRow(cats, cat, row);
+    };
+
+    // No filter: the category's own files; "All" shows every file
+    QVERIFY(shown(1, waiting));
+    QVERIFY(!shown(1, broken));
+    QVERIFY(shown(0, waiting) && shown(0, broken));
+
+    cats[1].filter = Waiting;
+    QVERIFY(shown(1, waiting) && !shown(1, sending) && !shown(1, paused));
+    cats[1].filter = Downloading;
+    QVERIFY(shown(1, sending) && !shown(1, waiting));
+    cats[1].filter = Paused;
+    QVERIFY(shown(1, paused) && !shown(1, sending));
+    // A status mode says nothing about a finished file
+    cats[1].filter = SeenComplete;
+    QVERIFY(!shown(1, done) && !shown(1, waiting));
+    cats[1].filter = Completed;
+    QVERIFY(shown(1, done) && !shown(1, waiting));
+    cats[1].filter = Incomplete;
+    QVERIFY(shown(1, waiting) && !shown(1, done));
+
+    // File types go by the name
+    cats[1].filter = Video;
+    QVERIFY(shown(1, waiting) && !shown(1, sending));
+    cats[1].filter = Audio;
+    QVERIFY(shown(1, sending) && !shown(1, waiting));
+    cats[1].filter = Archive;
+    QVERIFY(shown(1, paused));
+
+    // The "All" tab has a filter of its own
+    cats[0].filter = Erroneous;
+    QVERIFY(shown(0, broken) && !shown(0, waiting));
+    cats[0].filter = Uncategorized;
+    QVERIFY(shown(0, broken) && !shown(0, waiting));
+}
+
+void tst_CategoryFilterProxy::viewFilterModifiersFollowMfc()
+{
+    using namespace CategoryViewFilter;
+    QList<DownloadCategory> cats(2);
+    const auto inCat = fact("Some.Film.avi", 1, CategoryRowFacts::Waiting);
+    const auto unfiled = fact("Other.Film.avi", 0, CategoryRowFacts::Waiting);
+    const auto shown = [&cats](const CategoryRowFacts& row) { return categoryShowsRow(cats, 1, row); };
+
+    // Negate turns the filter round
+    cats[1].filter = Paused;
+    QVERIFY(!shown(inCat));
+    cats[1].filterNeg = true;
+    QVERIFY(shown(inCat));
+    cats[1].filterNeg = false;
+
+    // Evaluate All Files: the filter looks beyond the category
+    cats[1].filter = Video;
+    QVERIFY(!shown(unfiled));
+    cats[1].care4all = true;
+    QVERIFY(shown(unfiled));
+
+    // A regular expression matches the whole name, case as written
+    cats[1].filter = RegExp;
+    cats[1].regexp = QStringLiteral("Some\\..*");
+    QVERIFY(shown(inCat) && !shown(unfiled));
+    cats[1].regexp = QStringLiteral("Film");
+    QVERIFY(!shown(inCat));
+    cats[1].regexp = QStringLiteral("some\\..*");
+    QVERIFY(!shown(inCat));
+    cats[1].regexp = QStringLiteral("(");   // not an expression: shows nothing
+    QVERIFY(!shown(inCat));
 }
 
 QTEST_MAIN(tst_CategoryFilterProxy)

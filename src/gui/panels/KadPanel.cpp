@@ -382,6 +382,7 @@ QWidget* KadPanel::createContactsPanel()
     header->setStretchLastSection(true);
     header->setDefaultSectionSize(200);
     // Status, Client ID, Distance, Country.
+    contactsView->setDefaultSort(KadContactsModel::ColStatus, Qt::AscendingOrder);
     contactsView->bindColumns(QStringLiteral("kadContacts"), {110, 200, 200, 100},
                               {KadContactsModel::ColCountry});
     CountryFlags::bindFlagColumn(contactsView);

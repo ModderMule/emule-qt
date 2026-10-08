@@ -100,6 +100,14 @@ struct PortMapping {
     }
 };
 
+/// What a changed listen-port preference led to (CoreSession::applyListenPorts).
+enum class PortApplyResult : uint8 {
+    Unchanged = 0,        ///< sockets already on the configured ports
+    Applied = 1,          ///< rebound at once
+    RestartRequired = 2,  ///< connected to a network or a peer: old ports stay
+    BindFailed = 3,       ///< new port could not be opened: old ports stay
+};
+
 } // namespace eMule
 
 // Needed so these cross a thread boundary in queued signals (UPnPWorker runs on

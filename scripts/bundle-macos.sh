@@ -11,6 +11,9 @@
 #   --dmg       Create a .dmg disk image after bundling
 #   build-dir   Path to the CMake build directory (default: ./build)
 #
+#   MACOSX_DEPLOYMENT_TARGET, when set, is enforced: the script fails if any
+#   bundled binary needs a newer macOS.  The release workflows set it.
+#
 # Layout after bundling:
 #   emuleqt.app/
 #     Contents/
@@ -105,8 +108,7 @@ fi
 DOC_DST="$RESOURCES_DIR/doc"
 rm -rf "$DOC_DST"
 mkdir -p "$DOC_DST"
-cp "$REPO_ROOT/docs/openapi.json" "$REPO_ROOT/docs/rest-api.md" \
-   "$REPO_ROOT/docs/fake-file-detector.md" "$DOC_DST/"
+cp "$REPO_ROOT/docs/openapi.json" "$REPO_ROOT/docs/rest-api.md" "$DOC_DST/"
 
 # -- Copy translation files into bundle --------------------------------------
 
@@ -201,6 +203,8 @@ if [ -n "$OPENSSL_DYLIB" ] && [ -f "$OPENSSL_DYLIB" ]; then
     echo "  Bundled and relinked $DYLIB_NAME"
 elif compgen -G "$FRAMEWORKS_DIR/libcrypto*.dylib" >/dev/null; then
     echo "OpenSSL already bundled by macdeployqt."
+elif ! otool -L "$MACOS_DIR/emulecored" | grep -q 'libcrypto'; then
+    echo "OpenSSL is linked statically — nothing to bundle."
 else
     echo "Warning: OpenSSL dylib not found — skipping OpenSSL bundling."
     echo "  The app will only work on machines with OpenSSL installed."
@@ -248,8 +252,7 @@ for rel in MacOS/emuleqt MacOS/emulecored MacOS/emuleqt-mcp \
            Resources/config/webserver/swagger-ui-bundle.js \
            Resources/config/webserver/swagger-ui.css \
            Resources/config/webserver/swagger-ui.LICENSE.txt \
-           Resources/doc/openapi.json Resources/doc/rest-api.md \
-           Resources/doc/fake-file-detector.md; do
+           Resources/doc/openapi.json Resources/doc/rest-api.md; do
     if [ ! -s "$APP_BUNDLE/Contents/$rel" ]; then
         echo "Error: Contents/$rel is missing from the bundle"
         MISSING=1
@@ -273,6 +276,46 @@ while IFS= read -r -d '' f; do
     fi
 done < <(find "$APP_BUNDLE/Contents" -type f \( -name '*.dylib' -o -perm -u+x \) -print0)
 [ "$LEAKS" -eq 0 ] || exit 1
+
+# -- Audit: CPU architecture and minimum macOS -------------------------------
+# v0.5.6 was advertised as Universal but shipped arm64-only binaries that
+# needed macOS 26: both came from the build machine (its CPU, its Homebrew
+# libraries) and neither shows up when the app is tried on that machine.
+
+APP_ARCHS="$(lipo -archs "$MACOS_DIR/emuleqt")"
+MAX_MINOS="${MACOSX_DEPLOYMENT_TARGET:-}"
+
+# minos_of <file> <arch> — LC_BUILD_VERSION "minos", or the older
+# LC_VERSION_MIN_MACOSX "version"
+minos_of() {
+    otool -arch "$2" -l "$1" | awk '
+        $1 == "cmd"                                { cmd = $2 }
+        cmd == "LC_BUILD_VERSION" && $1 == "minos" { print $2 }
+        cmd == "LC_VERSION_MIN_MACOSX" && $1 == "version" { print $2 }' \
+        | sort -uV | tail -1
+}
+
+BAD=0
+while IFS= read -r -d '' f; do
+    file "$f" | grep -q 'Mach-O' || continue
+    have="$(lipo -archs "$f")"
+    for arch in $APP_ARCHS; do
+        case " $have " in
+            *" $arch "*) ;;
+            *)  echo "Error: ${f#"$APP_BUNDLE"/} is [$have], the app needs $arch"
+                BAD=1
+                continue ;;
+        esac
+        [ -n "$MAX_MINOS" ] || continue
+        minos="$(minos_of "$f" "$arch")"
+        if [ -n "$minos" ] && [ "$(printf '%s\n%s\n' "$minos" "$MAX_MINOS" | sort -V | tail -1)" != "$MAX_MINOS" ]; then
+            echo "Error: ${f#"$APP_BUNDLE"/} ($arch) needs macOS $minos, above the target $MAX_MINOS"
+            BAD=1
+        fi
+    done
+done < <(find "$APP_BUNDLE/Contents" -type f \( -name '*.dylib' -o -perm -u+x \) -print0)
+[ "$BAD" -eq 0 ] || exit 1
+echo "Architecture: $APP_ARCHS${MAX_MINOS:+, runs on macOS $MAX_MINOS or later}"
 
 # -- Ad-hoc sign the whole bundle --------------------------------------------
 # Must run after every install_name_tool edit above AND macdeployqt's: those
@@ -313,7 +356,12 @@ echo "Done. App bundle: $APP_BUNDLE"
 # -- Create DMG (optional, --dmg flag) -----------------------------------------
 
 if [ "$CREATE_DMG" = true ]; then
-    DMG_OUTPUT="$BUILD_DIR/eMuleQt-v${VERSION}-macOS.dmg"
+    # One DMG per CPU; a universal build would carry both
+    case "$APP_ARCHS" in
+        arm64|x86_64) DMG_ARCH="$APP_ARCHS" ;;
+        *)            DMG_ARCH="universal" ;;
+    esac
+    DMG_OUTPUT="$BUILD_DIR/eMuleQt-v${VERSION}-macOS-${DMG_ARCH}.dmg"
     APP_NAME="$(basename "$APP_BUNDLE")"
 
     if command -v create-dmg &>/dev/null; then

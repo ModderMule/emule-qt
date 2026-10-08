@@ -272,6 +272,8 @@ private:
     [[nodiscard]] api::Result apiSnapshot();
     [[nodiscard]] api::Result apiDiagnostics();
     [[nodiscard]] api::Result apiNetwork() const;
+    /// Persist the friend list after an API change, as the IPC handlers do.
+    void saveFriends() const;
     [[nodiscard]] api::Result apiLogs(const api::Call& call) const;
     [[nodiscard]] api::Result apiSearchStart(const api::Call& call);
     [[nodiscard]] api::Result apiSearchResults(const api::Call& call) const;

@@ -32,6 +32,7 @@ void CommandLineExec::parse(QCoreApplication& app)
     m_parser.addOption(m_connectKadOption);
     m_parser.addOption(m_disconnectKadOption);
     m_parser.addOption(m_configOption);
+    m_parser.addOption(m_holdConnectOption);
 
     m_parser.process(app);
 }
@@ -159,6 +160,11 @@ QString CommandLineExec::configOverride() const
     if (m_parser.isSet(m_configOption))
         return m_parser.value(m_configOption);
     return {};
+}
+
+bool CommandLineExec::holdConnect() const
+{
+    return m_parser.isSet(m_holdConnectOption);
 }
 
 } // namespace eMule

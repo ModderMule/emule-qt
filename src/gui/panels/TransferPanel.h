@@ -67,12 +67,26 @@ public:
     /// Access the download list model (e.g. for checking known hashes).
     [[nodiscard]] DownloadListModel* downloadModel() const { return m_downloadModel; }
 
+    /// Re-read the Display options this panel acts on: the additional toolbar, the
+    /// disabled lists, the category tab info, advanced-mode rows.
+    void applyDisplayOptions();
+
+    /// Whether "Search Related Files" can be offered (the server answers it).
+    void setRelatedSearchSupported(bool supported) { m_relatedSearchSupported = supported; }
+
+    /// Kad state, for the client menus' Bootstrap entry.
+    void setKadStatus(bool running, bool connected);
+
     /// Set the stream token for preview streaming (received from daemon GetStats).
     void setStreamToken(const QString& token);
 
 signals:
     /// Emitted when user requests to search for files related to a download.
     void searchRequested(const QString& expression);
+    /// "Search Related Files": ask the server what else the sharers of these files have.
+    void relatedSearchRequested(const QStringList& hashes, const QStringList& names);
+    /// "Send Message" on a client: open a chat session with it.
+    void chatRequested(const QString& userHash, const QString& userName);
 
 private slots:
     void onRefreshTimer();
@@ -141,7 +155,7 @@ private:
     void showComments(const QString& hash);
     void fetchAndShowFileDetails(const QString& hash, FileDetailDialog::Tab tab);
     void fetchAndShowClientDetails(const QString& clientHash, DetailWalker walker = {});
-    void searchRelated(const QString& fileName);
+    void searchRelated(const QStringList& hashes, const QStringList& names);
     [[nodiscard]] QString saveDownloadSelection() const;
     [[nodiscard]] QStringList saveDownloadSelectionMulti() const;
     [[nodiscard]] QString saveClientSelection(QTreeView* view, ClientListModel* model) const;
@@ -184,6 +198,20 @@ private:
     void showSourceContextMenu(const SourceRow& src, const QString& parentHash,
                                const QPoint& globalPos);
     void showClientFindDialog(QTreeView* view);
+    /// "Bootstrap" for a client menu; adds nothing unless Kad runs unconnected.
+    void addBootstrapAction(QMenu& menu, const QString& addr, int kadPort, int kadVersion);
+    /// "transferring/total" on the category tabs, when that option is on.
+    void updateCategoryTabInfo();
+    /// "Disable Known Clients list" / "Disable Queue list" for one client list.
+    [[nodiscard]] static bool isListDisabled(int clientView);
+    void toggleDownloadExpanded(const QModelIndex& proxyIdx, const QString& hash);
+    /// Run application @p appIndex of PreviewApps.dat on a download (MFC "Preview with").
+    void previewWith(const QString& hash, int appIndex);
+    /// Per-file preview settings; -1 leaves a flag as it is.
+    void sendPreviewFlags(const QStringList& hashes, int previewPrio, int pauseOnPreview);
+    void askSourceLimit(const QStringList& hashes);
+    void showAddSources(const QString& hash);
+    void importParts(const QString& hash, bool stop);
     void updateClearCompletedState();
 
     // -- Detail-dialog Prev/Next walkers (MFC CListCtrlItemWalk) --------------
@@ -280,6 +308,9 @@ private:
 
     // Stream token for preview HTTP streaming (from daemon web server)
     QString m_streamToken;
+    bool m_relatedSearchSupported = false;
+    bool m_kadRunning = false;
+    bool m_kadConnected = false;
 };
 
 } // namespace eMule

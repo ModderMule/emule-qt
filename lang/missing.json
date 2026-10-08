@@ -1,57 +1,222 @@
 {
- "Show results the server found on this network": {
-  "_context": "eMule::SearchPanel",
-  "de_DE": "Ergebnisse anzeigen, die der Server in diesem Netzwerk gefunden hat",
-  "es_ES": "Mostrar los resultados que el servidor encontró en esta red",
-  "fr_FR": "Afficher les résultats que le serveur a trouvés sur ce réseau",
-  "it_IT": "Mostra i risultati che il server ha trovato su questa rete",
-  "ja_JP": "サーバーがこのネットワークで見つけた結果を表示",
-  "ko_KR": "서버가 이 네트워크에서 찾은 결과 표시",
-  "pt_BR": "Mostrar os resultados que o servidor encontrou nesta rede",
-  "zh_CN": "显示服务器在此网络上找到的结果"
- },
- "Usenet results": {
-  "_context": "eMule::SearchPanel",
-  "de_DE": "Usenet-Ergebnisse",
-  "es_ES": "Resultados de Usenet",
-  "fr_FR": "Résultats Usenet",
-  "it_IT": "Risultati Usenet",
-  "ja_JP": "Usenet の結果",
-  "ko_KR": "Usenet 결과",
-  "pt_BR": "Resultados do Usenet",
-  "zh_CN": "Usenet 结果"
- },
- "Kad results": {
-  "_context": "eMule::SearchPanel",
-  "de_DE": "Kad-Ergebnisse",
-  "es_ES": "Resultados de Kad",
-  "fr_FR": "Résultats Kad",
-  "it_IT": "Risultati Kad",
-  "ja_JP": "Kad の結果",
-  "ko_KR": "Kad 결과",
-  "pt_BR": "Resultados do Kad",
-  "zh_CN": "Kad 结果"
- },
- "Torrent results": {
-  "_context": "eMule::SearchPanel",
-  "de_DE": "Torrent-Ergebnisse",
-  "es_ES": "Resultados de torrent",
-  "fr_FR": "Résultats torrent",
-  "it_IT": "Risultati torrent",
-  "ja_JP": "トレントの結果",
-  "ko_KR": "토렌트 결과",
-  "pt_BR": "Resultados de torrent",
-  "zh_CN": "种子结果"
- },
- "%1 of %2 results": {
-  "_context": "eMule::SearchPanel",
-  "de_DE": "%1 von %2 Ergebnissen",
-  "es_ES": "%1 de %2 resultados",
-  "fr_FR": "%1 résultats sur %2",
-  "it_IT": "%1 di %2 risultati",
-  "ja_JP": "%2 件中 %1 件の結果",
-  "ko_KR": "결과 %2개 중 %1개",
-  "pt_BR": "%1 de %2 resultados",
-  "zh_CN": "%1 / %2 条结果"
- }
+  "Restart Now": {
+    "_context": "PortChange",
+    "de_DE": "Jetzt neu starten",
+    "es_ES": "Reiniciar ahora",
+    "fr_FR": "Redémarrer maintenant",
+    "it_IT": "Riavvia ora",
+    "ja_JP": "今すぐ再起動",
+    "ko_KR": "지금 다시 시작",
+    "pt_BR": "Reiniciar agora",
+    "zh_CN": "立即重启"
+  },
+  "Later": {
+    "_context": "PortChange",
+    "de_DE": "Später",
+    "es_ES": "Más tarde",
+    "fr_FR": "Plus tard",
+    "it_IT": "Più tardi",
+    "ja_JP": "後で",
+    "ko_KR": "나중에",
+    "pt_BR": "Mais tarde",
+    "zh_CN": "稍后"
+  },
+  "Used when the tab's view filter is set to \"Regular Expression\"; it must match the whole file name.": {
+    "_context": "eMule::CategoryDialog",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Uncategorized": {
+    "_context": "eMule::CategoryTabBar",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Incomplete": {
+    "_context": "eMule::CategoryTabBar",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Erroneous": {
+    "_context": "eMule::CategoryTabBar",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Ever Seen Complete": {
+    "_context": "eMule::CategoryTabBar",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Picture": {
+    "_context": "eMule::CategoryTabBar",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Regular Expression": {
+    "_context": "eMule::CategoryTabBar",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Select View Filter": {
+    "_context": "eMule::CategoryTabBar",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Evaluate All Files": {
+    "_context": "eMule::CategoryTabBar",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Negate Filter": {
+    "_context": "eMule::CategoryTabBar",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Asked for another file": {
+    "_context": "eMule::DownloadListModel",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Swap blocked": {
+    "_context": "eMule::DownloadListModel",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Min. Bitrate [Kbit/s]:": {
+    "_context": "eMule::SearchPanel",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Restore Search Parameters": {
+    "_context": "eMule::SearchPanel",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "%1 (%2)": {
+    "_context": "eMule::SearchPanel",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "File ID": {
+    "_context": "eMule::SearchResultsModel",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Download In Alphabetical Order": {
+    "_context": "eMule::TransferPanel",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  },
+  "Unban": {
+    "_context": "eMule::TransferPanel",
+    "de_DE": "",
+    "es_ES": "",
+    "fr_FR": "",
+    "it_IT": "",
+    "ja_JP": "",
+    "ko_KR": "",
+    "pt_BR": "",
+    "zh_CN": ""
+  }
 }

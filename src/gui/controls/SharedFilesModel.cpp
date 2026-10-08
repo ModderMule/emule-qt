@@ -4,6 +4,7 @@
 
 #include "controls/SharedFilesModel.h"
 
+#include "utils/FileTypeText.h"
 #include "utils/OtherFunctions.h"
 #include "utils/PriorityText.h"
 #include "utils/RatingIcons.h"
@@ -12,21 +13,6 @@
 namespace eMule {
 
 namespace {
-
-/// Map ED2K file type codes to display names matching MFC.
-QString fileTypeDisplay(const QString& type)
-{
-    if (type == QLatin1String("Arc"))      return QObject::tr("Archive");
-    if (type == QLatin1String("Audio"))    return QObject::tr("Audio");
-    if (type == QLatin1String("Video"))    return QObject::tr("Video");
-    if (type == QLatin1String("Image"))    return QObject::tr("Image");
-    if (type == QLatin1String("Pro"))      return QObject::tr("Program");
-    if (type == QLatin1String("Doc"))      return QObject::tr("Document");
-    if (type == QLatin1String("Iso"))      return QObject::tr("CD-Image");
-    if (type == QLatin1String("EmuleCollection")) return QObject::tr("eMule Collection");
-    if (!type.isEmpty())                   return type;
-    return {};
-}
 
 /// Priority ordinal for sorting (higher priority = higher ordinal).
 int priorityOrdinal(int prio)
@@ -88,7 +74,7 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
         case ColSize:
             return formatByteSize(f.fileSize);
         case ColType:
-            return fileTypeDisplay(f.fileType);
+            return fileTypeText(f.fileType, f.fileName);
         case ColPriority:
             return uploadPriorityText(f.upPriority, f.isAutoUpPriority);
         case ColRequests:
@@ -122,7 +108,7 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
             "Transferred:\t%9 (%10)\n"
             "Complete Sources:\t%11\n"
             "Folder:\t%12")
-            .arg(f.fileName, f.hash, fileTypeDisplay(f.fileType),
+            .arg(f.fileName, f.hash, fileTypeText(f.fileType, f.fileName),
                  uploadPriorityText(f.upPriority, f.isAutoUpPriority))
             .arg(f.requests).arg(f.allTimeRequests)
             .arg(f.acceptedUploads).arg(f.allTimeAccepted)
@@ -140,7 +126,7 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
         switch (index.column()) {
         case ColFileName:        return f.fileName.toLower();
         case ColSize:            return QVariant::fromValue(f.fileSize);
-        case ColType:            return fileTypeDisplay(f.fileType);
+        case ColType:            return fileTypeText(f.fileType, f.fileName);
         case ColPriority:        return priorityOrdinal(f.upPriority);
         case ColRequests:        return QVariant::fromValue(f.allTimeRequests);
         case ColTransferred:     return QVariant::fromValue(f.allTimeTransferred);

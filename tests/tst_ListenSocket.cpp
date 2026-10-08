@@ -145,6 +145,7 @@ private slots:
     void clientReqSocketTimeout_notExtendedWhileDownloadingFromPeer();
     void tooManySockets();
     void statisticsUpdate();
+    void maxConnectionReached_countsRefusals();
     void halfOpenSocketsLimitDialling();
     void dialsCountAgainstThePerFiveSecondLimit();
 
@@ -391,6 +392,29 @@ void tst_ListenSocket::tooManySockets()
 // ---------------------------------------------------------------------------
 // Test: statistics update
 // ---------------------------------------------------------------------------
+
+void tst_ListenSocket::maxConnectionReached_countsRefusals()
+{
+    // An event counter (MFC maxconnectionreached), not the connection peak.
+    const uint16 savedMax = thePrefs.maxConnections();
+    ListenSocket listener;
+    QVERIFY(listener.startListening(0));
+    ClientReqSocket a, b;
+    listener.addSocket(&a);
+    listener.addSocket(&b);
+    listener.updateConnectionsStatus();
+    QCOMPARE(listener.peakConnections(), 2u);
+    QCOMPARE(listener.maxConnectionReached(), 0u);
+
+    thePrefs.setMaxConnections(1);
+    QTcpSocket peer;
+    peer.connectToHost(QHostAddress::LocalHost, listener.serverPort());
+    QTRY_COMPARE_WITH_TIMEOUT(listener.maxConnectionReached(), 1u, 3000);
+
+    thePrefs.setMaxConnections(savedMax);
+    listener.removeSocket(&a);
+    listener.removeSocket(&b);
+}
 
 void tst_ListenSocket::statisticsUpdate()
 {

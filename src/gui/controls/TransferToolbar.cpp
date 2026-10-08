@@ -9,6 +9,7 @@
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
+#include <QMouseEvent>
 #include <QToolButton>
 
 namespace eMule {
@@ -53,6 +54,8 @@ int TransferToolbar::addButton(const QIcon& icon, const QString& tooltip)
     btn->setFixedSize(20, 20);
     btn->setIconSize(QSize(16, 16));
 
+    btn->setVisible(m_buttonsVisible);
+
     const int id = m_nextId++;
     m_group->addButton(btn, id);
     // Insert before the trailing stretch so buttons stay left-aligned
@@ -70,6 +73,21 @@ void TransferToolbar::setButtonEnabled(int id, bool on)
 {
     if (auto* btn = m_group->button(id))
         btn->setEnabled(on);
+}
+
+void TransferToolbar::setButtonsVisible(bool on)
+{
+    m_buttonsVisible = on;
+    for (auto* btn : m_group->buttons())
+        btn->setVisible(on);
+    setCursor(on ? Qt::ArrowCursor : Qt::PointingHandCursor);
+}
+
+void TransferToolbar::mouseReleaseEvent(QMouseEvent* event)
+{
+    if (!m_buttonsVisible && event->button() == Qt::LeftButton)
+        emit cycleRequested();
+    QWidget::mouseReleaseEvent(event);
 }
 
 void TransferToolbar::setLabelText(const QString& text)

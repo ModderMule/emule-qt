@@ -13,6 +13,7 @@
 #include <QHash>
 #include <QList>
 #include <QMetaType>
+#include <QSortFilterProxyModel>
 #include <QString>
 #include <QStringList>
 
@@ -25,7 +26,7 @@ namespace eMule {
 struct SourceRow {
     QString userName;
     QString software;
-    QString downloadState;   // "On Queue", "Downloading", etc.
+    QString downloadState;   // state token, see downloadStateText()
     int64_t remoteQueueRank = 0;
     bool remoteQueueFull = false;
     int64_t transferredDown = 0;
@@ -43,6 +44,14 @@ struct SourceRow {
     bool hasCredit = false;
     bool isFriend = false;
     QByteArray partMap;  // per-part: 0=no, 1=both, 2=client-only, 3=pending, 4=receiving
+    int kadPort = 0;
+    int kadVersion = 0;
+    bool hasOtherRequests = false;  ///< also wanted for other files
+    // A4AF row: a source of this file that is currently asking another one
+    bool a4af = false;
+    bool noNeededHere = false;      ///< nothing we need of this file
+    bool swapSuspended = false;
+    QString otherFileName;          ///< the file it is asking for
 };
 
 /// Byte-exact inputs of MFC's CPartFile::DrawStatusBar, as the bar delegate reads them.
@@ -77,6 +86,14 @@ struct DownloadRow {
     bool isAutoDownPriority = false;
     int64_t category = 0;
     int64_t lastSeenComplete = 0;
+    int completeSourcesLo = 0;
+    int completeSourcesHi = 0;
+    int64_t timeRemaining = -1;   ///< seconds, -1 unknown
+    int64_t downTransferred = 0;  ///< bytes received for this file
+    int privateMaxSources = 0;    ///< the file's own source limit, 0 = global
+    bool previewPrio = false;     ///< first and last part early, for this file
+    bool pauseOnPreview = false;  ///< pause once a preview is possible
+    bool hashsetNeeded = false;   ///< no part hashes yet
     int64_t lastReception = 0;
     int64_t addedOn = 0;
     QString fileType;
@@ -130,6 +147,8 @@ public:
     static constexpr int PausedRole  = Qt::UserRole + 2;
     /// DownloadBarData for a file row's progress cell; invalid on source rows.
     static constexpr int BarDataRole = Qt::UserRole + 3;
+    /// True on a source row that asked for another file.
+    static constexpr int A4afRole    = Qt::UserRole + 4;
 
     enum Column {
         ColFileName = 0,
@@ -147,6 +166,7 @@ public:
         ColAddedOn,
         ColCountry,          ///< source rows only (MorphXT IP2Country)
         ColConfidence,       ///< file rows only: fake-file verdict
+        ColTransferred,      ///< MFC column 2; appended so saved layouts keep their indexes
         ColCount
     };
 
@@ -205,6 +225,9 @@ private:
     /// actually sending.
     [[nodiscard]] QString statusText(const DownloadRow& d) const;
 
+    /// The Status cell of a source row.
+    [[nodiscard]] QString sourceStatusText(const SourceRow& s) const;
+
     /// Sort order for the same column, so it groups the way MFC's does rather than
     /// alphabetically by token. srchybrid/PartFile.cpp:3456-3476.
     [[nodiscard]] static int statusRank(const DownloadRow& d);
@@ -217,6 +240,16 @@ private:
     QHash<quintptr, int> m_rowByUid;
     quintptr m_nextUid = 1;
     QStringList m_categoryNames;
+};
+
+/// Sort proxy of the downloads list: plain column sort, except that A4AF sources
+/// stay below a file's available ones.
+class DownloadSortProxy : public QSortFilterProxyModel {
+public:
+    using QSortFilterProxyModel::QSortFilterProxyModel;
+
+protected:
+    [[nodiscard]] bool lessThan(const QModelIndex& left, const QModelIndex& right) const override;
 };
 
 } // namespace eMule

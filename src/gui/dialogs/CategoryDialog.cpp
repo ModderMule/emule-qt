@@ -84,12 +84,9 @@ CategoryDialog::CategoryDialog(const DownloadCategory& category,
     form->addRow(QString(), m_autocatRegexpCheck);
 
     m_regexpEdit = new QLineEdit(m_category.regexp, this);
-    // Stored and validated, but nothing consults it yet: the per-category view
-    // filter this belongs to (MFC's filter mode 18) is not ported. Left enabled
-    // so a configuration imported from eMule survives a round trip through this
-    // dialog instead of being silently blanked.
-    m_regexpEdit->setToolTip(tr("Stored for compatibility — the per-category view "
-                                "filter is not implemented yet."));
+    // MFC's filter mode 18: the tab shows the files whose whole name matches
+    m_regexpEdit->setToolTip(tr("Used when the tab's view filter is set to "
+                                "\"Regular Expression\"; it must match the whole file name."));
     form->addRow(tr("Regular expression for view filter:"), m_regexpEdit);
 
     mainLayout->addLayout(form);

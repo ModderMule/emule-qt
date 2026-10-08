@@ -165,6 +165,7 @@ private slots:
     void processEdonkeyQueueRank_setsRank();
     void checkFailedFileIdReqs_bansAfterMax();
     void checkFailedFileIdReqs_ignoresKnownMisses();
+    void unknownFileRequests_countAsStrikes();
     void publicIPAnswer_unsolicitedIsIgnored();
     void publicIPAnswer_shortPacketIsIgnored();
 
@@ -1647,6 +1648,43 @@ void tst_UpDownClient::checkFailedFileIdReqs_bansAfterMax()
     other.setUserPort(4662);
     QCOMPARE(clientList.badRequests(&other), 0u);
 
+    theApp.clientList = nullptr;
+}
+
+// MFC counts a strike for every request naming a file we know nothing about; a
+// hashset request for one is not answered at all (UploadClient.cpp:522, :547).
+void tst_UpDownClient::unknownFileRequests_countAsStrikes()
+{
+    ClientList clientList;
+    theApp.clientList = &clientList;
+    KnownFileList knownFiles;
+    SharedFileList sharedFiles(&knownFiles);
+    theApp.sharedFileList = &sharedFiles;
+
+    std::array<uint8, 16> hash{};
+    std::memset(hash.data(), 0x6B, hash.size());
+
+    UpDownClient asker;
+    asker.setUserAddress(Address::fromString(QStringLiteral("10.20.30.50")));
+    asker.setUserPort(4662);
+    for (int i = 0; i < 6; ++i)
+        QVERIFY_THROWS_EXCEPTION(FileException, asker.sendHashsetPacket(hash.data(), 16, false));
+    QCOMPARE(clientList.badRequests(&asker), 1u);
+
+    UpDownClient starter;
+    starter.setUserAddress(Address::fromString(QStringLiteral("10.20.30.51")));
+    starter.setUserPort(4662);
+    {
+        ClientReqSocket sock;
+        starter.wireIncomingSocket(&sock);
+        for (int i = 0; i < 6; ++i)
+            emit sock.uploadRequestReceived(hash.data(), 16);
+        QCOMPARE(clientList.badRequests(&starter), 1u);
+        starter.setSocket(nullptr);
+        sock.setClient(nullptr);
+    }
+
+    theApp.sharedFileList = nullptr;
     theApp.clientList = nullptr;
 }
 

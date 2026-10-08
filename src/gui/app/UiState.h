@@ -73,6 +73,12 @@ public:
     /// pushed back once the new model's columns exist.
     void applyHeaderState(QHeaderView* header, const QString& key);
 
+    /// True once a layout is saved under @p key — false on a fresh install.
+    [[nodiscard]] bool hasHeaderState(const QString& key) const
+    {
+        return !m_headerStates.value(key).isEmpty();
+    }
+
     /// Cache @p header's current state under @p key and schedule a save. For
     /// changes no header signal reports (show/hide a column).
     void captureHeaderState(QHeaderView* header, const QString& key);

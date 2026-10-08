@@ -118,25 +118,47 @@ uint16 AppContext::mappedTcpPort() const
     return mappedPort(portMapper, PortMapPurpose::Ed2kTcp, PortMapProtocol::Tcp);
 }
 
+uint16 AppContext::listeningTcpPort() const
+{
+    return m_listenTcpPort.value_or(thePrefs.port());
+}
+
+uint16 AppContext::listeningUdpPort() const
+{
+    return m_listenUdpPort.value_or(thePrefs.udpPort());
+}
+
+void AppContext::setListeningPorts(uint16 tcp, uint16 udp)
+{
+    m_listenTcpPort = tcp;
+    m_listenUdpPort = udp;
+}
+
+void AppContext::clearListeningPorts()
+{
+    m_listenTcpPort.reset();
+    m_listenUdpPort.reset();
+}
+
 uint16 AppContext::advertisedTcpPort() const
 {
     const uint16 mapped = mappedTcpPort();
-    return mapped != 0 ? mapped : thePrefs.port();
+    return mapped != 0 ? mapped : listeningTcpPort();
 }
 
 uint16 AppContext::advertisedUdpPort() const
 {
     // No UDP socket, nothing to advertise — whatever the router still maps
-    if (thePrefs.udpPort() == 0)
+    if (listeningUdpPort() == 0)
         return 0;
     const uint16 mapped = mappedPort(portMapper, PortMapPurpose::Ed2kClientUdp,
                                      PortMapProtocol::Udp);
-    return mapped != 0 ? mapped : thePrefs.udpPort();
+    return mapped != 0 ? mapped : listeningUdpPort();
 }
 
 bool AppContext::isOwnTcpPort(uint16 port) const
 {
-    return port == thePrefs.port() || port == advertisedTcpPort();
+    return port == listeningTcpPort() || port == advertisedTcpPort();
 }
 
 uint32 AppContext::publicIP(bool ignoreKadIP) const
@@ -496,7 +518,7 @@ void AppContext::setPublicIPv6Status(uint8 status)
 
     const Address ours = publicIPv6();
     const QString endpoint = ours.isNull() ? QStringLiteral("our IPv6")
-                                           : Endpoint(ours, thePrefs.port()).toString();
+                                           : Endpoint(ours, listeningTcpPort()).toString();
     if (publicIPv6ProbedUnreachable()) {
         logWarning(QStringLiteral("IPv6: server could not reach %1 inbound — firewalled, not "
                                   "advertising our IPv6 to peers")

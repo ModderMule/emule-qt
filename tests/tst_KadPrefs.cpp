@@ -32,6 +32,7 @@ private slots:
     void setIPAddress_twoStepVerification();
     void firewalled_counterBehavior();
     void firewalled_recheckPreservesLastState();
+    void firewalled_recheckAfterAFailedCycleStaysFirewalled();
     void findBuddy_oneShotFlag();
     void setKademliaFiles_minimumAverage();
     void setExternKadPort_consensusCheck();
@@ -143,6 +144,27 @@ void tst_KadPrefs::firewalled_counterBehavior()
     QVERIFY(prefs.firewalled()); // counter = 1, still < 2
     prefs.incFirewalled();
     QVERIFY(!prefs.firewalled()); // counter = 2, >= 2 → not firewalled
+}
+
+void tst_KadPrefs::firewalled_recheckAfterAFailedCycleStaysFirewalled()
+{
+    TempDir tmp;
+    KadPrefs prefs(tmp.path());
+
+    // cycle 1 ends open
+    prefs.incFirewalled();
+    prefs.incFirewalled();
+    prefs.setRecheckIP();
+    QVERIFY(!prefs.firewalled());
+
+    // cycle 2 ends with no confirmation: firewalled
+    for (uint32 i = 0; i < KADEMLIAFIREWALLCHECKS; ++i)
+        prefs.incRecheckIP();
+    QVERIFY(prefs.firewalled());
+
+    // the next recheck must not report open again while it runs
+    prefs.setRecheckIP();
+    QVERIFY(prefs.firewalled());
 }
 
 void tst_KadPrefs::firewalled_recheckPreservesLastState()

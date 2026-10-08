@@ -351,6 +351,13 @@ void MainWindow::showOptionsDialog(int page)
         m_speedGraph->setTimeRangeMinutes(
             static_cast<int>(thePrefs.speedGraphTimeRangeMin()));
 
+    // Options the panels act on by themselves
+    m_transferPanel->applyDisplayOptions();
+    m_messagesPanel->applyDisplayOptions();
+    if (m_usenetPanel)
+        m_usenetPanel->applyDisplayOptions();
+    updateWindowTitle();
+
     m_serverPanel->logWidget()->setIpcTabVisible(thePrefs.enableIpcLog());
     m_serverPanel->logWidget()->setUsenetTabVisible(thePrefs.showUsenetLog());
     m_serverPanel->refreshUpdateUrl();   // Options "List..." edits the same URL
@@ -420,6 +427,8 @@ void MainWindow::setKadStatus(bool running, bool kadConnected, bool firewalled)
     m_kadRunning = running;
     m_kadConnected = kadConnected;
     m_kadFirewalled = firewalled;
+    if (m_transferPanel)
+        m_transferPanel->setKadStatus(running, kadConnected);
 
     if (kadConnected && !firewalled) {
         m_statusKad->setText(tr("Kad: Connected"));
@@ -482,6 +491,8 @@ void MainWindow::updateTransferRates(double upKBs, double downKBs,
         m_statusDownLabel->setText(QStringLiteral("Down: %1").arg(downKBs, 0, 'f', 1));
     }
 
+    updateWindowTitle();
+
     // The graph is not fed from here: its samples come from the daemon's
     // StatsHistory via pollSpeedHistory(), so they survive a GUI restart and read
     // the same for every GUI attached to this core.
@@ -491,6 +502,21 @@ void MainWindow::updateTransferRates(double upKBs, double downKBs,
     // from the same rates.
     updateTrayIcon();
     updateTrayToolTip();
+}
+
+void MainWindow::updateWindowTitle()
+{
+    // MFC ShowTransferRate (srchybrid/EmuleDlg.cpp:1147-1151). Unlike MFC the plain
+    // title comes back when the option is switched off.
+    const QString plainTitle = tr("eMule Qt v%1").arg(QApplication::applicationVersion());
+    if (thePrefs.showRatesInTitle()) {
+        if (isVisible())
+            setWindowTitle(QStringLiteral("(U:%1 D:%2) %3")
+                               .arg(m_cachedUpKBs, 0, 'f', 1).arg(m_cachedDownKBs, 0, 'f', 1)
+                               .arg(plainTitle));
+    } else if (windowTitle() != plainTitle) {
+        setWindowTitle(plainTitle);
+    }
 }
 
 void MainWindow::updateTrayToolTip()
@@ -597,6 +623,24 @@ void MainWindow::closeEvent(QCloseEvent* event)
 void MainWindow::forceQuit()
 {
     close();
+}
+
+void MainWindow::setRelatedSearchSupported(bool supported)
+{
+    if (m_transferPanel)
+        m_transferPanel->setRelatedSearchSupported(supported);
+    if (m_searchPanel)
+        m_searchPanel->setRelatedSearchSupported(supported);
+}
+
+void MainWindow::startMinimized(bool maximized)
+{
+    // The window state survives being hidden, so a later restore lands maximized
+    if (maximized)
+        setWindowState(windowState() | Qt::WindowMaximized);
+    if (m_trayIcon && thePrefs.minimizeToTray())
+        return;   // stays hidden; the tray icon is the way in
+    showMinimized();
 }
 
 void MainWindow::changeEvent(QEvent* event)
@@ -770,10 +814,10 @@ void MainWindow::buildToolsMenu()
     auto* linksMenu = m_toolsMenu->addMenu(
         QIcon(QStringLiteral(":/icons/Web.ico")), tr("Links"));
     linksMenu->addAction(tr("eMule Homepage"), this, [] {
-        QDesktopServices::openUrl(QUrl(QStringLiteral("https://www.emule-project.com")));
+        QDesktopServices::openUrl(QUrl(QString(kWebsiteUrl)));
     });
-    linksMenu->addAction(tr("FAQ"), this, [] {
-        QDesktopServices::openUrl(QUrl(QStringLiteral("https://www.emule-project.com/home/perl/help.cgi")));
+    linksMenu->addAction(tr("Features"), this, [] {
+        QDesktopServices::openUrl(QUrl(QString(kWebsiteUrl) + QStringLiteral("/features/")));
     });
     linksMenu->addAction(tr("Version Check"), this, [this] {
         checkForUpdates(true);
@@ -876,8 +920,13 @@ void MainWindow::onFirstTimeWizard()
     m_firstStartWizard = new FirstStartWizard(m_ipc, this);
     m_firstStartWizard->setAttribute(Qt::WA_DeleteOnClose);
     // Once is once: cancelling counts, as in MFC. Tools > wizard reopens it.
-    connect(m_firstStartWizard, &QDialog::finished, this,
-            [] { theUiState.setFirstStartWizardDone(true); });
+    connect(m_firstStartWizard, &QDialog::finished, this, [this] {
+        theUiState.setFirstStartWizardDone(true);
+        // A core launched for the wizard waits with its auto-connect. Sent after the
+        // wizard's SetPreferences, so the ports are rebound first. No-op otherwise.
+        if (m_ipc && m_ipc->isConnected())
+            m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::ReleaseConnectHold));
+    });
     // Modal show(), not exec(): no nested event loop for a quit to unwind through.
     // Not open() either — that makes it a sheet on macOS.
     m_firstStartWizard->setModal(true);
@@ -1538,6 +1587,11 @@ void MainWindow::setupPages()
         m_searchPanel->startSearchFromExternal(expression);
         switchToTab(TabSearch);
     });
+    connect(m_transferPanel, &TransferPanel::relatedSearchRequested,
+            this, [this](const QStringList& hashes, const QStringList& names) {
+        m_searchPanel->startRelatedSearch(hashes, names);
+        switchToTab(TabSearch);
+    });
 
     // Tab 4: Shared Files
     m_sharedFilesPanel = new SharedFilesPanel(this);
@@ -1554,6 +1608,13 @@ void MainWindow::setupPages()
     // Tab 5: Messages
     m_messagesPanel = new MessagesPanel(this);
     m_pages->addWidget(m_messagesPanel);
+
+    // "Send Message" in the client lists opens a chat session (MFC StartSession)
+    connect(m_transferPanel, &TransferPanel::chatRequested,
+            this, [this](const QString& userHash, const QString& userName) {
+        m_messagesPanel->startSession(userHash, userName);
+        switchToTab(TabMessages);
+    });
 
     // Tab 6: IRC
     m_ircPanel = new IrcPanel(this);

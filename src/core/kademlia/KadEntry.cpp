@@ -396,17 +396,14 @@ void KeyEntry::mergeIPsAndFilenames(KeyEntry* from)
     recalculateTrustValue();
 }
 
-void KeyEntry::cleanUpTrackedPublishers()
+void KeyEntry::cleanUpTrackedPublishers(time_t now)
 {
     if (!m_publishingIPs)
         return;
 
-    time_t now = time(nullptr);
-    constexpr time_t kExpireTime = 60 * 60 * 48; // 48 hours
-
     auto it = m_publishingIPs->begin();
     while (it != m_publishingIPs->end()) {
-        if ((now - it->lastPublish) > kExpireTime) {
+        if (now >= it->lastPublish + KADEMLIAREPUBLISHTIMEK) {
             adjustGlobalPublishTracking(it->ip, false);
             it = m_publishingIPs->erase(it);
         } else {

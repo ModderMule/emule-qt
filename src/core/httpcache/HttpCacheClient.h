@@ -101,10 +101,6 @@ public:
     /// an offer from a local peer — the same test a literal host gets up front.
     bool acceptResolvedAddress(const Address& addr) override;
 
-    /// "Downloading (HTTP Cache)" and friends, so the transfer list shows at a
-    /// glance that these bytes are not costing the uploader anything.
-    [[nodiscard]] QString downloadStateDisplayString() const override;
-
 signals:
     /// Emitted exactly once per client, whatever the outcome. The manager sends
     /// the peer an HCOP_RESULT and drops this object on it.
@@ -137,11 +133,6 @@ private:
 
     /// Final SHA-256, PKCS#7 and length checks once the last block is in.
     void verifyComplete();
-
-    /// Parse "bytes <first>-<last>/<total>" (RFC 9110 §14.4). False when the
-    /// header is absent, malformed, or the unsatisfied "bytes */<total>" form.
-    [[nodiscard]] static bool parseContentRange(const QByteArray& value, uint64& first,
-                                                uint64& last, uint64& total);
 
     /// Byte offset of this part within the file.
     [[nodiscard]] uint64 partStart() const;

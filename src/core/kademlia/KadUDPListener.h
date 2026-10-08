@@ -25,6 +25,7 @@
 
 namespace eMule {
 class HostResolver;
+class Packet;
 class UpDownClient;
 }
 
@@ -59,6 +60,10 @@ public:
                     uint16 destPort, const KadUDPKey& targetKey, const UInt128* cryptTargetID);
     void sendPacket(SafeMemFile& data, uint8 opcode, uint32 destIP, uint16 destPort,
                     const KadUDPKey& targetKey, const UInt128* cryptTargetID);
+
+    /// The wire packet for a packetToSend() payload ([opcode][payload]): zlib-packed
+    /// when the payload exceeds 200 bytes and shrinks (MFC SendPacket).
+    [[nodiscard]] static std::unique_ptr<Packet> buildWirePacket(const QByteArray& data);
 
     bool findNodeIDByIP(KadClientSearcher* requester, uint32 ip, uint16 tcpPort, uint16 udpPort);
     void expireClientSearch(const KadClientSearcher* expireImmediately = nullptr);

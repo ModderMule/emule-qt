@@ -269,11 +269,6 @@ bool HttpCacheClient::processHttpDownResponseBody(const uint8* data, uint32 size
     return true;
 }
 
-QString HttpCacheClient::downloadStateDisplayString() const
-{
-    return URLClient::downloadStateDisplayString() + QStringLiteral(" (HTTP Cache)");
-}
-
 bool HttpCacheClient::disconnected(const QString& reason, bool fromSocket)
 {
     // Whatever was outstanding died with the socket; a resumed attempt issues its
@@ -590,31 +585,6 @@ void HttpCacheClient::verifyComplete()
                 .arg(m_totalAttempts));
 
     finish(HttpCacheResult::Ok);
-}
-
-bool HttpCacheClient::parseContentRange(const QByteArray& value, uint64& first, uint64& last,
-                                        uint64& total)
-{
-    // "bytes <first>-<last>/<total>" — RFC 9110 §14.4. Anything else, including
-    // the unsatisfied "bytes */<total>" form, is not something we can follow.
-    if (!value.startsWith("bytes "))
-        return false;
-
-    const QByteArray spec = value.mid(6).trimmed();
-    const auto dash = spec.indexOf('-');
-    const auto slash = spec.indexOf('/');
-    if (dash <= 0 || slash <= dash)
-        return false;
-
-    bool okFirst = false;
-    bool okLast = false;
-    bool okTotal = false;
-
-    first = spec.left(dash).trimmed().toULongLong(&okFirst);
-    last = spec.mid(dash + 1, slash - dash - 1).trimmed().toULongLong(&okLast);
-    total = spec.mid(slash + 1).trimmed().toULongLong(&okTotal);
-
-    return okFirst && okLast && okTotal;
 }
 
 uint64 HttpCacheClient::partStart() const

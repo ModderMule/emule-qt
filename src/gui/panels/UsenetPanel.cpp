@@ -35,6 +35,7 @@
 #include <QInputDialog>
 #include "controls/CategoryFilterProxy.h"
 #include "controls/CategoryTabBar.h"
+#include "prefs/Preferences.h"
 
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -349,6 +350,9 @@ void UsenetPanel::setupUi()
     });
     connect(m_categoryTabBar, &CategoryTabBar::categoriesReloaded, this, [this] {
         m_model->setCategoryNames(m_categoryTabBar->categoryNames());
+        // The categories are the Transfers tab's, and so is each one's view filter
+        m_categoryProxy->setCategories(m_categoryTabBar->categories());
+        updateCategoryTabInfo();
     });
     connect(m_categoryTabBar, &CategoryTabBar::menuRequested, this,
             &UsenetPanel::populateCategoryMenu);
@@ -475,6 +479,7 @@ void UsenetPanel::applyQueue(const QCborArray& rows)
     // sort on a changing column reorders them under the user.
     const SelectionState state = saveSelection();
     m_model->setItems(items);
+    updateCategoryTabInfo();
     restoreSelection(state);
 
     updateSummary();
@@ -1256,6 +1261,9 @@ void UsenetPanel::populateCategoryMenu(QMenu* menu, int index)
     if (!menu)
         return;
 
+    m_categoryTabBar->addViewFilterMenu(menu, index);
+    menu->addSeparator();
+
     menu->addAction(menuIcon("Pause.ico"), tr("Pause"), this, [this, index] {
         sendCategoryStatus(index, Ipc::CategoryAction::Pause);
     });
@@ -1277,6 +1285,24 @@ void UsenetPanel::populateCategoryMenu(QMenu* menu, int index)
             sendCategoryStatus(index, Ipc::CategoryAction::Cancel);
         }
     });
+}
+
+void UsenetPanel::updateCategoryTabInfo()
+{
+    // As on the Transfers tab ("Show download info on category tabs")
+    if (!thePrefs.showCatTabInfos()) {
+        m_categoryTabBar->setTabInfo({});
+        return;
+    }
+    QStringList info;
+    const int count = static_cast<int>(m_categoryTabBar->categories().size());
+    for (int cat = 0; cat < count; ++cat) {
+        const int downloading = m_categoryProxy->rowsShownIn(cat, [](const CategoryRowFacts& row) {
+            return row.state == CategoryRowFacts::Transferring;
+        });
+        info << QStringLiteral("%1/%2").arg(downloading).arg(m_categoryProxy->rowsShownIn(cat));
+    }
+    m_categoryTabBar->setTabInfo(info);
 }
 
 void UsenetPanel::sendCategoryStatus(int index, Ipc::CategoryAction action)

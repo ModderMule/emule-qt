@@ -539,6 +539,22 @@ QVariant UsenetQueueModel::data(const QModelIndex& index, int role) const
         // any of them.
         if (role == kCategoryRole)
             return it.category;
+        // The same view filter the Transfers tab has, read off a release
+        if (role == kCategoryFactsRole) {
+            CategoryRowFacts facts;
+            facts.category = it.category;
+            facts.fileName = it.name;
+            facts.unfinished = it.status != UsenetRowStatus::Complete;
+            switch (it.status) {
+            case UsenetRowStatus::Queued:
+            case UsenetRowStatus::Checking:    facts.state = CategoryRowFacts::Waiting; break;
+            case UsenetRowStatus::Downloading: facts.state = CategoryRowFacts::Transferring; break;
+            case UsenetRowStatus::Paused:      facts.state = CategoryRowFacts::Paused; break;
+            case UsenetRowStatus::Failed:      facts.state = CategoryRowFacts::Erroneous; break;
+            default: break;
+            }
+            return QVariant::fromValue(facts);
+        }
         return {};
     }
 }

@@ -6,6 +6,7 @@
 /// Mirrors the WebServer handler pattern: receives IPC requests,
 /// dispatches to the appropriate core manager via theApp, and sends responses.
 
+#include "portmap/PortMapTypes.h"
 #include "IpcConnection.h"
 #include "IpcMessage.h"
 #include "app/CoreOps.h"
@@ -48,6 +49,7 @@ public:
         bool saved = true;
         bool standbyChanged = false;
         bool categoriesChanged = false;
+        PortApplyResult ports = PortApplyResult::Unchanged;
     };
     static PrefApplyOutcome applyPreferenceChanges(const PrefChanges& changes);
     [[nodiscard]] static QCborArray categoryList();
@@ -128,6 +130,12 @@ private:
     void handleSendChatMessage(const Ipc::IpcMessage& msg);
     void handleSetFriendSlot(const Ipc::IpcMessage& msg);
     void handleEndChatSession(const Ipc::IpcMessage& msg);
+    void handleUnbanClient(const Ipc::IpcMessage& msg);
+    void handleAddDownloadSource(const Ipc::IpcMessage& msg);
+    void handleSetDownloadSourceLimit(const Ipc::IpcMessage& msg);
+    void handleSetDownloadPreviewFlags(const Ipc::IpcMessage& msg);
+    void handleImportDownloadParts(const Ipc::IpcMessage& msg);
+    void handleFlushDownload(const Ipc::IpcMessage& msg);
     void handleGetStats(const Ipc::IpcMessage& msg);
     void handleGetSpeedHistory(const Ipc::IpcMessage& msg);
     void handleGetStatsHistory(const Ipc::IpcMessage& msg);

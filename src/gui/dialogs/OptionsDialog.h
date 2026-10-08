@@ -216,6 +216,8 @@ private:
     [[nodiscard]] QString bindSelection() const;
     void showBindSelection(const QString& selection);
     void requestNetworkInterfaces();
+    void requestPortMapStatus();
+    void showPortMapStatus(const QCborMap& info);
 
     /// Country flags group: ask the daemon for the GeoLite2 state / download it now.
     void requestGeoIpStatus();
@@ -362,7 +364,6 @@ private:
     QCheckBox* m_seenFileIndexCheck = nullptr;
     QLineEdit* m_videoPlayerCmdEdit = nullptr;
     QLineEdit* m_videoPlayerArgsEdit = nullptr;
-    QCheckBox* m_createBackupToPreviewCheck = nullptr;
 
     // Notifications page controls
     QRadioButton* m_noSoundRadio = nullptr;

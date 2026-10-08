@@ -648,6 +648,12 @@ void Kademlia::process()
             if (isRunningInLANMode())
                 m_nextSelfLookup = now + SEC(30);
             emit connected();
+        } else {
+            // MFC stops Kad here for good (UploadQueue.cpp:916); a daemon has nobody
+            // to restart it, so keep running and only report the loss.
+            logKad(QStringLiteral("Kad: no contact for %1 minutes — connection lost")
+                       .arg(KADEMLIADISCONNECTDELAY / 60));
+            emit disconnected();
         }
     }
 

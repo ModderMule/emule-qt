@@ -154,6 +154,13 @@ public:
     /// Update the Kad status label in the footer.
     void setKadStatus(bool running, bool kadConnected, bool firewalled);
 
+    /// The connected server answers "related::" searches (MFC CanSearchRelatedFiles).
+    void setRelatedSearchSupported(bool supported);
+
+    /// First show with "Start minimized": in the tray when minimizing goes there,
+    /// otherwise minimized. @p maximized is the state the first restore returns to.
+    void startMinimized(bool maximized);
+
     /// Update the Users/Files label in the footer with Kad network estimates.
     void setNetworkStats(quint32 users, quint32 files);
 
@@ -241,6 +248,8 @@ private:
 
     /// Version, connection state and both rates, as MFC's tray tooltip carries.
     void updateTrayToolTip();
+    /// "Show transfer rates on title".
+    void updateWindowTitle();
 
     /// Ask the daemon for toolbar-graph samples newer than m_speedSeq.
     void pollSpeedHistory();

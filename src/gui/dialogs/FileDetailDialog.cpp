@@ -126,7 +126,8 @@ void FileDetailDialog::buildTabs(const QCborMap& details, int tabToSelect)
 
     // Archive Preview tab — only for archive/ISO file types
     const QString fileType = str(details, QLatin1StringView("fileType"));
-    if (fileType.compare(QLatin1StringView("Archive"), Qt::CaseInsensitive) == 0
+    if (fileType.compare(QLatin1StringView("Arc"), Qt::CaseInsensitive) == 0   // the eD2K token
+        || fileType.compare(QLatin1StringView("Archive"), Qt::CaseInsensitive) == 0
         || fileType.compare(QLatin1StringView("Iso"), Qt::CaseInsensitive) == 0
         || fileType.compare(QLatin1StringView("CDImage"), Qt::CaseInsensitive) == 0) {
         if (thePrefs.useOriginalIcons())
@@ -334,7 +335,7 @@ QWidget* FileDetailDialog::createMediaInfoTab(const QCborMap& d)
     if (!codec.isEmpty())   addRow(tr("Codec"), codec);
 
     if (bitrate > 0)
-        addRow(tr("Bitrate"), QStringLiteral("%1 kbps").arg(bitrate));
+        addRow(tr("Bitrate"), QStringLiteral("%1 Kbit/s").arg(bitrate));
 
     if (length > 0) {
         const int mins = static_cast<int>(length / 60);

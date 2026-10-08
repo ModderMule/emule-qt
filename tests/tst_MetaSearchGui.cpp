@@ -3,6 +3,8 @@
 ///
 /// Set EMULE_TEST_SHOTS=<dir> to also write PNGs of the rendered list and dialog.
 
+#include "controls/FilterEdit.h"
+#include "prefs/Preferences.h"
 #include "controls/SearchResultsModel.h"
 #include "controls/SearchResultsProxy.h"
 #include "dialogs/MetaAccountDialog.h"
@@ -82,6 +84,11 @@ private slots:
     void magnetLinkForMetaRows();
     void multiSelectionSurvivesReset();
     void networkFilterHidesForeignRows();
+    void alternativeNamesAreChildRows();
+    void refreshKeepsExpansionAndSelection();
+    void namesStayUnderTheirFileAndSpamStaysLast();
+    void filterBoxFollowsMfc();
+    void searchCellsFollowMfc();
     void loginDialog_authRequired();
     void loginDialog_inactiveShowsSteps();
     void loginDialog_rejectsNonWebLinks();
@@ -156,7 +163,7 @@ void tst_MetaSearchGui::kadOriginGetsKadBadge()
     QVERIFY(kadImg.copy(34, 0, 34, 32) != ed2kImg.copy(34, 0, 34, 32));
 
     // still an eD2K file: a link, and "?" where Kad reported no complete sources
-    QVERIFY(model.rowAt(1)->ed2kLink().startsWith(QStringLiteral("ed2k://|file|")));
+    QVERIFY(model.resultAt(1)->ed2kLink().startsWith(QStringLiteral("ed2k://|file|")));
     QCOMPARE(complete(1), QStringLiteral("?"));
     QVERIFY(complete(3) != QStringLiteral("?"));
     QVERIFY(!model.data(model.index(1, SearchResultsModel::ColComplete), Qt::ForegroundRole).isValid()
@@ -382,6 +389,254 @@ void tst_MetaSearchGui::networkFilterHidesForeignRows()
     proxy.setNetworkFilter(Filter{});
     QCOMPARE(proxy.rowCount(), 8);
     QCOMPARE(proxy.hiddenCount(), 0);
+}
+
+namespace {
+
+/// An eD2K file found under two names.
+SearchResultRow twoNames(const QString& hash, const QString& best, const QString& other)
+{
+    SearchResultRow r;
+    r.hash = hash;
+    r.fileName = best;
+    r.fileSize = 1000;
+    r.sourceCount = 12;
+    SearchChildRow a;
+    a.fileName = best;
+    a.sourceCount = 9;
+    a.aichHash = QStringLiteral("AICHA");
+    SearchChildRow b;
+    b.fileName = other;
+    b.sourceCount = 3;
+    b.directory = QStringLiteral("dir");
+    r.children = {a, b};
+    return r;
+}
+
+} // namespace
+
+void tst_MetaSearchGui::alternativeNamesAreChildRows()
+{
+    // MFC SearchListCtrl.cpp:1151-1210, 1541-1654. The list used to be flat: the
+    // other names a file goes by were dropped on the way to the GUI.
+    SearchResultsModel model;
+    model.setResults({twoNames(QStringLiteral("AAAA"), QStringLiteral("good.avi"),
+                               QStringLiteral("other name.avi"))});
+
+    const QModelIndex file = model.index(0, 0);
+    QCOMPARE(model.rowCount(), 1);
+    QCOMPARE(model.rowCount(file), 2);
+    QCOMPARE(model.resultCount(), 1);   // names are not results
+
+    const auto cell = [&](int row, int column) {
+        return model.index(row, column, file).data().toString();
+    };
+    QCOMPARE(cell(1, SearchResultsModel::ColFileName), QStringLiteral("other name.avi"));
+    QCOMPARE(cell(1, SearchResultsModel::ColAvailability), QStringLiteral("3"));
+    QCOMPARE(cell(1, SearchResultsModel::ColFolder), QStringLiteral("dir"));
+    QCOMPARE(cell(0, SearchResultsModel::ColAichHash), QStringLiteral("AICHA"));
+    // MFC leaves these blank on a name row
+    QCOMPARE(cell(1, SearchResultsModel::ColSize), QString());
+    QCOMPARE(cell(1, SearchResultsModel::ColComplete), QString());
+    QCOMPARE(cell(1, SearchResultsModel::ColType), QString());
+    QCOMPARE(cell(1, SearchResultsModel::ColFileID), QString());
+
+    // A name row acts on its file, under that name
+    const SearchResultRef ref = model.resultAt(model.index(1, 0, file));
+    QVERIFY(ref);
+    QCOMPARE(ref.row->hash, QStringLiteral("AAAA"));
+    QCOMPARE(ref.fileName(), QStringLiteral("other name.avi"));
+    QVERIFY(ref.row->ed2kLink(ref.fileName()).contains(QStringLiteral("other%20name.avi")));
+    QVERIFY(model.index(1, 0, file).data(SearchResultsModel::ChildRole).toBool());
+    QVERIFY(!file.data(SearchResultsModel::ChildRole).toBool());
+    QCOMPARE(model.parent(model.index(1, 0, file)), file);
+}
+
+void tst_MetaSearchGui::refreshKeepsExpansionAndSelection()
+{
+    // The list is refetched while a search runs. A reset per refetch would collapse
+    // every expanded file and drop the selection under the user's hand.
+    const auto snapshot = [](int extraSources) {
+        std::vector<SearchResultRow> v;
+        v.push_back(twoNames(QStringLiteral("AAAA"), QStringLiteral("a.avi"), QStringLiteral("a2.avi")));
+        v.push_back(twoNames(QStringLiteral("BBBB"), QStringLiteral("b.avi"), QStringLiteral("b2.avi")));
+        v[1].sourceCount += extraSources;
+        return v;
+    };
+
+    SearchResultsModel model;
+    model.setResults(snapshot(0));
+    SearchResultsProxy proxy;
+    proxy.setSourceModel(&model);
+    QTreeView view;
+    view.setModel(&proxy);
+    view.setSelectionBehavior(QAbstractItemView::SelectRows);
+
+    const QModelIndex fileB = proxy.mapFromSource(model.index(1, 0));
+    view.expand(fileB);
+    const QModelIndex name = proxy.index(1, 0, fileB);
+    view.selectionModel()->select(name, QItemSelectionModel::Select | QItemSelectionModel::Rows);
+
+    QSignalSpy resets(&model, &QAbstractItemModel::modelReset);
+    auto next = snapshot(5);
+    SearchResultRow added;
+    added.hash = QStringLiteral("CCCC");
+    added.fileName = QStringLiteral("c.avi");
+    next.insert(next.begin(), added);   // arrives ahead of the others
+    model.setResults(std::move(next));
+
+    QCOMPARE(resets.count(), 0);
+    QCOMPARE(model.rowCount(), 3);
+    const QModelIndex fileBNow = proxy.mapFromSource(model.index(1, 0));
+    QCOMPARE(model.resultAt(1)->sourceCount, qint64(17));   // updated in place
+    QVERIFY(view.isExpanded(fileBNow));
+    const QModelIndexList selected = view.selectionModel()->selectedRows();
+    QCOMPARE(selected.size(), 1);
+    QCOMPARE(selected.first().data().toString(), QStringLiteral("b2.avi"));
+
+    // A name that is gone leaves; the file stays
+    auto fewer = snapshot(0);
+    fewer[1].children.pop_back();
+    model.setResults(std::move(fewer));
+    QCOMPARE(model.rowCount(), 2);
+    QCOMPARE(model.rowCount(model.index(1, 0)), 1);
+}
+
+void tst_MetaSearchGui::namesStayUnderTheirFileAndSpamStaysLast()
+{
+    // MFC CompareChild / Compare (SearchListCtrl.cpp:604-629)
+    std::vector<SearchResultRow> rows;
+    rows.push_back(twoNames(QStringLiteral("AAAA"), QStringLiteral("mmm.avi"), QStringLiteral("zzz.avi")));
+    SearchResultRow spam;
+    spam.hash = QStringLiteral("BBBB");
+    spam.fileName = QStringLiteral("aaa spam.avi");
+    spam.sourceCount = 500;
+    spam.isSpam = true;
+    rows.push_back(spam);
+    SearchResultRow plain;
+    plain.hash = QStringLiteral("CCCC");
+    plain.fileName = QStringLiteral("bbb.avi");
+    plain.sourceCount = 1;
+    rows.push_back(plain);
+
+    const bool hadFilter = thePrefs.enableSearchResultFilter();
+    thePrefs.setEnableSearchResultFilter(true);
+
+    SearchResultsModel model;
+    model.setResults(rows);
+    SearchResultsProxy proxy;
+    proxy.setSourceModel(&model);
+    proxy.setSortRole(Qt::UserRole);
+    const auto top = [&proxy] {
+        QStringList out;
+        for (int r = 0; r < proxy.rowCount(); ++r)
+            out << proxy.index(r, 0).data().toString();
+        return out;
+    };
+    using namespace Qt::StringLiterals;
+
+    proxy.sort(SearchResultsModel::ColFileName, Qt::AscendingOrder);
+    QCOMPARE(top(), QStringList({u"bbb.avi"_s, u"mmm.avi"_s, u"aaa spam.avi"_s}));
+    proxy.sort(SearchResultsModel::ColFileName, Qt::DescendingOrder);
+    QCOMPARE(top(), QStringList({u"mmm.avi"_s, u"bbb.avi"_s, u"aaa spam.avi"_s}));
+
+    // Names: most available first unless the column is the name
+    proxy.sort(SearchResultsModel::ColSize, Qt::AscendingOrder);
+    const QModelIndex file = proxy.mapFromSource(model.index(0, 0));
+    QCOMPARE(proxy.rowCount(file), 2);
+    QCOMPARE(proxy.index(0, 0, file).data().toString(), QStringLiteral("mmm.avi"));   // 9 sources
+    proxy.sort(SearchResultsModel::ColFileName, Qt::DescendingOrder);
+    QCOMPARE(proxy.index(0, 0, proxy.mapFromSource(model.index(0, 0))).data().toString(),
+             QStringLiteral("zzz.avi"));
+
+    thePrefs.setEnableSearchResultFilter(hadFilter);
+}
+
+void tst_MetaSearchGui::filterBoxFollowsMfc()
+{
+    // MFC CSearchListCtrl::IsFilteredOut (SearchListCtrl.cpp:1721-1744)
+    using namespace Qt::StringLiterals;
+    QCOMPARE(FilterEdit::tokens(u"  linux  -  -beta iso "_s), QStringList({u"linux"_s, u"-beta"_s, u"iso"_s}));
+    QVERIFY(FilterEdit::matches({u"LINUX"_s, u"iso"_s}, u"Some.Linux.ISO"_s));
+    QVERIFY(!FilterEdit::matches({u"linux"_s, u"-iso"_s}, u"Some.Linux.ISO"_s));
+    QVERIFY(FilterEdit::matches({u"-beta"_s}, u"Some.Linux.ISO"_s));
+    QVERIFY(FilterEdit::matches({}, u"anything"_s));
+
+    std::vector<SearchResultRow> rows;
+    rows.push_back(twoNames(QStringLiteral("AAAA"), QStringLiteral("linux.iso"), QStringLiteral("holiday.iso")));
+    SearchResultRow other;
+    other.hash = QStringLiteral("BBBB");
+    other.fileName = QStringLiteral("holiday.avi");
+    other.fileType = QStringLiteral("Video");
+    rows.push_back(other);
+
+    SearchResultsModel model;
+    model.setResults(rows);
+    SearchResultsProxy proxy;
+    proxy.setSourceModel(&model);
+
+    proxy.setTextFilter({u"linux"_s}, SearchResultsModel::ColFileName);
+    QCOMPARE(proxy.rowCount(), 1);
+    // Files only: the one that stays keeps every name, also the one not matching
+    QCOMPARE(proxy.rowCount(proxy.index(0, 0)), 2);
+
+    // The column's text as shown, so "Video" and not a token
+    proxy.setTextFilter({u"video"_s}, SearchResultsModel::ColType);
+    QCOMPARE(proxy.rowCount(), 1);
+    QCOMPARE(proxy.index(0, 0).data().toString(), QStringLiteral("holiday.avi"));
+
+    proxy.setTextFilter({}, 0);
+    QCOMPARE(proxy.rowCount(), 2);
+}
+
+void tst_MetaSearchGui::searchCellsFollowMfc()
+{
+    SearchResultRow archive;
+    archive.hash = QStringLiteral("0123456789ABCDEF0123456789ABCDEF");
+    archive.fileName = QStringLiteral("stuff.zip");
+    archive.fileType = QStringLiteral("Pro");     // archives are published as programs
+    archive.sourceCount = 7;
+    archive.clientCount = 2;
+    archive.bitrate = 128;
+    archive.directory = QStringLiteral("Shared/Stuff");
+    archive.aichHash = QStringLiteral("AICHROOT");
+    SearchResultRow picture;
+    picture.hash = QStringLiteral("1123456789ABCDEF0123456789ABCDEF");
+    picture.fileName = QStringLiteral("photo.jpg");
+    picture.fileType = QStringLiteral("Image");
+    picture.isKad = true;
+    picture.kadPublishers = 4;
+    SearchResultRow program;
+    program.hash = QStringLiteral("2123456789ABCDEF0123456789ABCDEF");
+    program.fileName = QStringLiteral("setup.exe");
+    program.fileType = QStringLiteral("Pro");
+
+    SearchResultsModel model;
+    model.setResults({archive, picture, program});
+    const auto cell = [&model](int row, int column) { return model.index(row, column).data().toString(); };
+
+    // MFC GetFileTypeDisplayStrFromED2KFileType; the cells showed "Pro" and "Image"
+    QCOMPARE(cell(0, SearchResultsModel::ColType), QStringLiteral("Archive"));
+    QCOMPARE(cell(1, SearchResultsModel::ColType), QStringLiteral("Picture"));
+    QCOMPARE(cell(2, SearchResultsModel::ColType), QStringLiteral("Program"));
+    QCOMPARE(cell(0, SearchResultsModel::ColBitrate), QStringLiteral("128 Kbit/s"));
+
+    // The three columns MFC keeps hidden by default
+    QCOMPARE(cell(0, SearchResultsModel::ColFileID), archive.hash);
+    QCOMPARE(cell(0, SearchResultsModel::ColFolder), QStringLiteral("Shared/Stuff"));
+    QCOMPARE(cell(0, SearchResultsModel::ColAichHash), QStringLiteral("AICHROOT"));
+    QCOMPARE(model.headerData(SearchResultsModel::ColFileID, Qt::Horizontal).toString(),
+             QStringLiteral("File ID"));
+
+    // Availability: the bare count, and what stands behind it in advanced mode
+    const bool ext = thePrefs.showExtControls();
+    thePrefs.setShowExtControls(false);
+    QCOMPARE(cell(0, SearchResultsModel::ColAvailability), QStringLiteral("7"));
+    QCOMPARE(cell(2, SearchResultsModel::ColAvailability), QStringLiteral("0"));
+    thePrefs.setShowExtControls(true);
+    QCOMPARE(cell(0, SearchResultsModel::ColAvailability), QStringLiteral("7 (2)"));   // clients
+    QCOMPARE(cell(1, SearchResultsModel::ColAvailability), QStringLiteral("0 (4)"));   // publishers
+    thePrefs.setShowExtControls(ext);
 }
 
 QTEST_MAIN(tst_MetaSearchGui)

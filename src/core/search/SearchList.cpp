@@ -5,6 +5,8 @@
 #include "search/SearchList.h"
 #include "search/SearchStarter.h"
 #include "app/AppContext.h"
+#include "files/SharedFileList.h"
+#include "transfer/DownloadQueue.h"
 #include "kademlia/KadSearch.h"
 #include "search/SeenFileIndex.h"
 #include "client/UpDownClient.h"
@@ -612,8 +614,7 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
                          fromUDPServerIP != 0, fromUDPServerIP);
         }
 
-        // Update found sources count
-        m_foundSourcesCount[searchID] += addedSources;
+        addResultCount(searchID, parent->fileHash(), addedSources, parent->isConsideredSpam());
 
         assess(parent);
         emit resultUpdated(parent);
@@ -627,13 +628,14 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
 
         // Update counters
         m_foundFilesCount[searchID]++;
-        m_foundSourcesCount[searchID] += newFile->sourceCount();
 
         // Calculate spam rating
         if (!clientResponse) {
             doSpamRating(newFile, true, false,
                          fromUDPServerIP != 0, fromUDPServerIP);
         }
+        addResultCount(searchID, newFile->fileHash(), newFile->sourceCount(),
+                       newFile->isConsideredSpam());
 
         assess(newFile);
         emit resultAdded(newFile);
@@ -1339,6 +1341,18 @@ bool SearchList::acceptedKadAICHHash(const QByteArray& votes, uint32 publishInfo
     // and MD4 alone still downloads the file (MFC SearchList.cpp:784-803).
     const uint8 publishers = static_cast<uint8>((publishInfo >> 16) & 0xFF);
     return found == 1 && publishers > 0 && publishers / popularity <= 3;
+}
+
+// MFC CSearchList::AddResultCount — the availability total the result limit runs on
+void SearchList::addResultCount(uint32 searchID, const uint8* hash, uint32 count, bool spam)
+{
+    // files we already have or are downloading don't count towards the limit
+    if ((theApp.sharedFileList && theApp.sharedFileList->getFileByID(hash))
+        || (theApp.downloadQueue && theApp.downloadQueue->fileByID(hash)))
+        return;
+
+    // a spam file counts as at most 5
+    m_foundSourcesCount[searchID] += spam ? std::min(count, uint32{5}) : count;
 }
 
 } // namespace eMule

@@ -33,4 +33,21 @@ public:
                                   const QModelIndex& index) const override;
 };
 
+/// A client's part bar for the file we ask it for (MFC CUpDownClient::DrawStatusBar),
+/// as the Downloading list's Available Parts column draws it.
+class SourcePartsDelegate : public QStyledItemDelegate {
+    Q_OBJECT
+
+public:
+    SourcePartsDelegate(int partMapRole, int fileSizeRole, QObject* parent = nullptr)
+        : QStyledItemDelegate(parent), m_partMapRole(partMapRole), m_fileSizeRole(fileSizeRole) {}
+
+    void paint(QPainter* painter, const QStyleOptionViewItem& option,
+               const QModelIndex& index) const override;
+
+private:
+    int m_partMapRole;
+    int m_fileSizeRole;
+};
+
 } // namespace eMule

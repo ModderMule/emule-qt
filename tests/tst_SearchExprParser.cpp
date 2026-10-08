@@ -22,6 +22,7 @@ private slots:
     // --- Basic keywords ---
     void empty_input();
     void single_keyword();
+    void related_search_is_one_keyword();
     void two_keywords_implicitAnd();
     void three_keywords_implicitAnd();
     void explicit_and();
@@ -153,6 +154,18 @@ void tst_SearchExprParser::empty_input()
     auto r = parseSearchExpression(QStringLiteral(""));
     QVERIFY(r.success());
     QVERIFY(r.expr.m_expr.empty());
+}
+
+void tst_SearchExprParser::related_search_is_one_keyword()
+{
+    // "Search Related Files" is an ordinary search for related::<hash>[::<hash>…]
+    // (srchybrid/SearchResultsWnd.cpp:1665-1692); the colons must not split it.
+    const QString expr = QStringLiteral(
+        "related::0123456789ABCDEF0123456789ABCDEF::FEDCBA9876543210FEDCBA9876543210");
+    auto r = parseSearchExpression(expr);
+    QVERIFY(r.success());
+    QCOMPARE(r.expr.m_expr.size(), std::size_t{1});
+    verifyAttr(r.expr, 0, expr.toUtf8().constData());
 }
 
 void tst_SearchExprParser::single_keyword()

@@ -52,7 +52,8 @@ public:
 
     [[nodiscard]] bool hasHadContact() const;
     [[nodiscard]] bool hasLostConnection() const;
-    void setLastContact();
+    /// @param when overridable for tests
+    void setLastContact(time_t when = time(nullptr));
     [[nodiscard]] time_t lastContact() const;
 
     // -- Firewall -------------------------------------------------------------

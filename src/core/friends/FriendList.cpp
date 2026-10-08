@@ -108,6 +108,14 @@ void FriendList::save(const QString& configDir) const
     }
 }
 
+void FriendList::process(const QString& configDir, time_t now)
+{
+    if (now < m_lastSaved + MIN2S(19))
+        return;
+    m_lastSaved = now;
+    save(configDir);
+}
+
 // ---------------------------------------------------------------------------
 // Friend management
 // ---------------------------------------------------------------------------

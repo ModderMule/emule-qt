@@ -6,6 +6,7 @@
 
 #include "app/IpcClient.h"
 #include "app/UiState.h"
+#include "controls/FilterEdit.h"
 #include "controls/SearchResultsProxy.h"
 #include "controls/AbstractListView.h"
 #include "controls/DownloadListModel.h"
@@ -29,6 +30,8 @@
 
 #include "IpcMessage.h"
 
+#include <set>
+#include <QMouseEvent>
 #include <QApplication>
 #include <QShortcut>
 #include <QPointer>
@@ -187,6 +190,20 @@ void SearchPanel::startSearchFromExternal(const QString& expression,
     sendSearchRequest(req);
 }
 
+void SearchPanel::startRelatedSearch(const QStringList& hashes, const QStringList& names)
+{
+    if (hashes.isEmpty())
+        return;
+
+    // Syntax: related::<file hash>[::<file hash>…] — an ordinary server search
+    // (srchybrid/SearchResultsWnd.cpp:1665-1692).
+    QString title = tr("Related") + QStringLiteral(": ") + names.join(QStringLiteral(", "));
+    if (title.size() > 50)
+        title = title.left(47) + QStringLiteral("...");
+    startSearchFromExternal(QStringLiteral("related::") + hashes.join(QStringLiteral("::")),
+                            {}, /*Ed2k Server*/ 1, title);
+}
+
 // ---------------------------------------------------------------------------
 // UI setup
 // ---------------------------------------------------------------------------
@@ -207,10 +224,31 @@ void SearchPanel::setupUi()
     connect(m_tabBar, &QTabBar::currentChanged, this, &SearchPanel::onTabChanged);
     connect(m_tabBar, &QTabBar::tabCloseRequested, this, &SearchPanel::onTabCloseRequested);
     connect(m_tabBar, &QTabBar::tabBarDoubleClicked, this, &SearchPanel::onTabDoubleClicked);
-    mainLayout->addWidget(m_tabBar, 0, Qt::AlignLeft);
+    m_tabBar->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_tabBar, &QTabBar::customContextMenuRequested, this, &SearchPanel::onTabContextMenu);
+    m_tabBar->installEventFilter(this);   // middle click closes; show/hide carries the filter box
+
+    // Filter box to the right of the tabs (MFC IDC_FILTER); one filter for every tab
+    m_filterEdit = new FilterEdit(this);
+    m_filterEdit->setFixedWidth(200);
+    m_filterEdit->setVisible(false);
+    connect(m_filterEdit, &FilterEdit::filterChanged, this,
+            [this](const QStringList& tokens, int column) {
+        m_filterTokens = tokens;
+        m_filterColumn = column;
+        applyTextFilter();
+    });
+
+    auto* tabRow = new QHBoxLayout;
+    tabRow->setContentsMargins(0, 0, 0, 0);
+    tabRow->addWidget(m_tabBar, 0, Qt::AlignLeft);
+    tabRow->addStretch(1);
+    tabRow->addWidget(m_filterEdit);
+    mainLayout->addLayout(tabRow);
 
     // Results tree view
     m_resultView = new ListTreeView(this);
+    // Decorated per tab in setupResultHeader(): eD2K lists expand to a file's names
     m_resultView->setRootIsDecorated(false);
     m_resultView->setAlternatingRowColors(true);
     m_resultView->setSortingEnabled(true);
@@ -417,7 +455,7 @@ QWidget* SearchPanel::createSearchBar()
     m_codecEdit->setMaximumWidth(80);
     filterLayout->addWidget(m_codecEdit, 5, 1);
 
-    filterLayout->addWidget(new QLabel(tr("Min. Bitrate [kbps]:"), m_filterWidget), 6, 0);
+    filterLayout->addWidget(new QLabel(tr("Min. Bitrate [Kbit/s]:"), m_filterWidget), 6, 0);
     m_minBitrateSpin = new QSpinBox(m_filterWidget);
     m_minBitrateSpin->setRange(0, 99999);
     m_minBitrateSpin->setSpecialValueText(QStringLiteral(" "));
@@ -633,7 +671,7 @@ QString SearchPanel::tabStatusText(const SearchTab& tab) const
         return tr("Search failed: %1").arg(tab.failure);
     case 2:   // finished
         if (tab.hasMore)
-            return tr("%1 results — scroll down or press More for more").arg(tab.resultCount());
+            return tr("%1 results — scroll down for more").arg(tab.resultCount());
         if (tab.resultCount() == 0 && tab.searchID != 0)
             return tr("No results");
         break;
@@ -811,9 +849,7 @@ void SearchPanel::onIndexerResultsPush(const IpcMessage& msg)
     scheduleSaveSearches();
 
     const int tabIndex = int(tab - m_tabs.data());
-    m_tabBar->setTabText(tabIndex, QStringLiteral("%1 (%2)")
-                                       .arg(tab->title)
-                                       .arg(tab->indexerModel->resultCount()));
+    m_tabBar->setTabText(tabIndex, tabLabel(*tab));
     if (tabIndex == m_tabBar->currentIndex()) {
         m_statusLabel->setText(QStringLiteral("%1 results")
                                    .arg(tab->indexerModel->resultCount()));
@@ -1017,6 +1053,68 @@ void SearchPanel::onTabDoubleClicked(int index)
     applyRequestToUi(tab.clientSharedFiles ? SearchRequest{} : tab.request);
 }
 
+void SearchPanel::onTabContextMenu(const QPoint& pos)
+{
+    // MFC CSearchResultsWnd::OnContextMenu (SearchResultsWnd.cpp:1719-1736)
+    const int index = m_tabBar->tabAt(pos);
+    if (index < 0)
+        return;
+
+    QMenu menu(this);
+    auto* restoreAct = menu.addAction(tr("Restore Search Parameters"), this,
+                                      [this, index] { onTabDoubleClicked(index); });
+    setMenuDefaultAction(&menu, restoreAct);
+    menu.addAction(tr("Close"), this, [this, index] { closeSearch(index); });
+    menu.exec(m_tabBar->mapToGlobal(pos));
+}
+
+bool SearchPanel::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == m_tabBar) {
+        // MFC CClosableTabCtrl: a middle click closes the tab under it
+        if (event->type() == QEvent::MouseButtonRelease) {
+            const auto* mouse = static_cast<QMouseEvent*>(event);
+            if (mouse->button() == Qt::MiddleButton) {
+                if (const int index = m_tabBar->tabAt(mouse->position().toPoint()); index >= 0) {
+                    closeSearch(index);
+                    return true;
+                }
+            }
+        } else if (event->type() == QEvent::ShowToParent || event->type() == QEvent::HideToParent) {
+            m_filterEdit->setVisible(event->type() == QEvent::ShowToParent);
+        }
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+QString SearchPanel::tabLabel(const SearchTab& tab) const
+{
+    // MFC shows "title (shown/total)" while the filter box hides rows
+    // (SearchListCtrl.cpp:421-424).
+    const int total = tab.resultCount();
+    if (!m_filterTokens.isEmpty() && tab.proxy && tab.proxy->rowCount() != total)
+        return QStringLiteral("%1 (%2/%3)").arg(tab.title).arg(tab.proxy->rowCount()).arg(total);
+    return QStringLiteral("%1 (%2)").arg(tab.title).arg(total);
+}
+
+void SearchPanel::applyTextFilter()
+{
+    for (size_t i = 0; i < m_tabs.size(); ++i) {
+        auto& tab = m_tabs[i];
+        auto* proxy = qobject_cast<SearchResultsProxy*>(tab.proxy);
+        if (!proxy || !proxy->sourceModel())
+            continue;
+        // The column is one of the list on screen; another kind of list filters its first
+        const bool sameKind = currentTab() && currentTab()->isIndexer() == tab.isIndexer();
+        const int column = sameKind && m_filterColumn < proxy->sourceModel()->columnCount()
+            ? m_filterColumn : 0;
+        proxy->setTextFilter(m_filterTokens, column);
+        m_tabBar->setTabText(static_cast<int>(i), tabLabel(tab));
+    }
+    if (auto* tab = currentTab())
+        m_statusLabel->setText(tabStatusText(*tab));
+}
+
 // ---------------------------------------------------------------------------
 // Slot: Push event — search result arrived
 // ---------------------------------------------------------------------------
@@ -1112,7 +1210,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     for (const auto& idx : selection) {
         if (!tab)
             break;
-        const auto* result = tab->model->resultAt(tab->proxy->mapToSource(idx).row());
+        const auto* result = refAt(idx).row;
         if (!result)
             continue;
         if (!result->isSpam)
@@ -1141,10 +1239,25 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // Queues eD2K rows and Usenet rows (eMuleQt's Usenet downloader).
     auto* downloadAction = m_contextMenu->addAction(menuIcon("Download.ico"), tr("Download"));
     downloadAction->setEnabled(hasSelection && anyDownloadable);
-    connect(downloadAction, &QAction::triggered, this, [this] {
-        downloadResults(m_resultView->selectionModel()->selectedRows());
+    // Advanced mode: Download starts it running, "Download (Paused)" paused, and the
+    // bold one is what the option says. Otherwise the option decides alone
+    // (MFC SearchListCtrl.cpp:727, :791-796, :907-911).
+    const bool ext = thePrefs.showExtControls();
+    connect(downloadAction, &QAction::triggered, this, [this, ext] {
+        downloadResults(m_resultView->selectionModel()->selectedRows(), -1,
+                        ext ? std::optional<bool>(false) : std::nullopt);
     });
     QAction* defaultAction = downloadAction->isEnabled() ? downloadAction : nullptr;
+    if (ext && anyEd2k) {
+        auto* pausedAction = m_contextMenu->addAction(
+            menuIcon("Download.ico"), tr("%1 (%2)").arg(tr("Download"), tr("Paused")));
+        pausedAction->setEnabled(downloadAction->isEnabled());
+        connect(pausedAction, &QAction::triggered, this, [this] {
+            downloadResults(m_resultView->selectionModel()->selectedRows(), -1, true);
+        });
+        if (pausedAction->isEnabled() && thePrefs.addNewFilesPaused())
+            defaultAction = pausedAction;
+    }
 
     // eNode Usenet rows: the .nzb itself
     if (anyUsenet) {
@@ -1198,14 +1311,10 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     connect(copyHtmlAction, &QAction::triggered, this, [this] {
         QStringList links;
         for (const auto& i : m_resultView->selectionModel()->selectedRows()) {
-            const QString link = buildEd2kLink(i.row());
-            auto* tab = currentTab();
-            if (!tab || link.isEmpty()) continue;
-            const auto proxyIdx = tab->proxy->index(i.row(), 0);
-            const auto srcIdx = tab->proxy->mapToSource(proxyIdx);
-            const auto* result = tab->model->resultAt(srcIdx.row());
-            if (result)
-                links << QStringLiteral("<a href=\"%1\">%2</a>").arg(link, result->fileName.toHtmlEscaped());
+            const QString link = buildEd2kLink(i);
+            if (link.isEmpty()) continue;
+            if (const SearchResultRef ref = refAt(i))
+                links << QStringLiteral("<a href=\"%1\">%2</a>").arg(link, ref.fileName().toHtmlEscaped());
         }
         if (!links.isEmpty())
             QApplication::clipboard()->setText(links.join(QStringLiteral("<br>\n")));
@@ -1217,7 +1326,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     connect(copyMagnetAction, &QAction::triggered, this, [this] {
         QStringList links;
         for (const auto& i : m_resultView->selectionModel()->selectedRows())
-            if (const QString link = buildMagnetLink(i.row()); !link.isEmpty())
+            if (const QString link = buildMagnetLink(i); !link.isEmpty())
                 links << link;
         if (!links.isEmpty())
             QApplication::clipboard()->setText(links.join(QLatin1Char('\n')));
@@ -1236,7 +1345,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
             if (!tab || !m_ipc) return;
             for (const auto& i : m_resultView->selectionModel()->selectedRows()) {
                 const auto srcIdx = tab->proxy->mapToSource(i);
-                const auto* result = tab->model->resultAt(srcIdx.row());
+                const auto* result = tab->model->resultAt(srcIdx).row;
                 if (!result) continue;
                 IpcMessage msg(IpcMsgType::MarkSearchSpam);
                 msg.append(static_cast<qint64>(tab->searchID));
@@ -1297,13 +1406,29 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     connect(findAction, &QAction::triggered, this,
             [this] { showFindInListDialog(this, m_resultView); });
 
-    // Search Related Files — MFC turns the file name into a fresh search.
+    // Search Related Files — the whole selection, when the server answers it
+    // (MFC SearchListCtrl / CanSearchRelatedFiles).
     auto* relatedAction = m_contextMenu->addAction(menuIcon("KadFileSearch.ico"),
                                                    tr("Search Related Files"));
-    relatedAction->setEnabled(singleSel && !singleName.isEmpty() && !singleMeta);
+    // Without a server that answers it, one file can still be searched by name
+    relatedAction->setEnabled(hasSelection && anyEd2k
+                              && (m_relatedSearchSupported || (singleSel && !singleMeta)));
     connect(relatedAction, &QAction::triggered, this, [this, singleName] {
-        const qsizetype dotIdx = singleName.lastIndexOf(QLatin1Char('.'));
-        startSearchFromExternal(dotIdx > 0 ? singleName.left(dotIdx) : singleName);
+        if (!m_relatedSearchSupported) {
+            const qsizetype dotIdx = singleName.lastIndexOf(QLatin1Char('.'));
+            startSearchFromExternal(dotIdx > 0 ? singleName.left(dotIdx) : singleName);
+            return;
+        }
+        QStringList hashes;
+        QStringList names;
+        for (const auto& i : m_resultView->selectionModel()->selectedRows()) {
+            const SearchResultRef ref = refAt(i);
+            if (ref && !ref.row->isMeta() && !hashes.contains(ref.row->hash)) {
+                hashes << ref.row->hash;
+                names << ref.row->fileName;
+            }
+        }
+        startRelatedSearch(hashes, names);
     });
 
     // Web Services — greyed when webservices.dat is empty or the selection is not
@@ -1337,7 +1462,7 @@ void SearchPanel::showResultDetails(const QModelIndex& index)
     if (tab->isIndexer())
         return;
 
-    const auto* result = tab->model->resultAt(tab->proxy->mapToSource(index).row());
+    const auto* result = refAt(index).row;
     if (!result)
         return;
 
@@ -1408,6 +1533,25 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
             row.metaIndexer        = m.value(QStringLiteral("metaIndexer")).toString();
             row.metaCatalogId      = m.value(QStringLiteral("metaCatalogId")).toString();
             row.metaServers        = m.value(QStringLiteral("metaServers")).toArray();
+            row.directory          = m.value(QStringLiteral("directory")).toString();
+            row.aichHash           = m.value(QStringLiteral("aichHash")).toString();
+            row.kadPublishers      = static_cast<int>(m.value(QStringLiteral("kadPublishers")).toInteger());
+            row.clientCount        = static_cast<int>(m.value(QStringLiteral("clientCount")).toInteger());
+            for (const auto& childVal : m.value(QStringLiteral("children")).toArray()) {
+                const auto c = childVal.toMap();
+                SearchChildRow child;
+                child.fileName    = c.value(QStringLiteral("fileName")).toString();
+                child.sourceCount = c.value(QStringLiteral("sourceCount")).toInteger();
+                child.directory   = c.value(QStringLiteral("directory")).toString();
+                child.aichHash    = c.value(QStringLiteral("aichHash")).toString();
+                child.artist      = c.value(QStringLiteral("artist")).toString();
+                child.album       = c.value(QStringLiteral("album")).toString();
+                child.title       = c.value(QStringLiteral("title")).toString();
+                child.length      = c.value(QStringLiteral("length")).toInteger();
+                child.bitrate     = c.value(QStringLiteral("bitrate")).toInteger();
+                child.codec       = c.value(QStringLiteral("codec")).toString();
+                row.children.push_back(std::move(child));
+            }
             rows.push_back(std::move(row));
         }
 
@@ -1415,23 +1559,17 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
         for (size_t i = 0; i < m_tabs.size(); ++i) {
             // ED2K and indexer searches number their ids independently
             if (m_tabs[i].searchID == searchID && !m_tabs[i].isIndexer()) {
-                const ViewSelection selection = (m_tabBar->currentIndex() == static_cast<int>(i))
-                    ? saveSelection() : ViewSelection{};
-
+                // Matched by hash inside the model: selection and expanded files stay
                 m_tabs[i].model->setResults(std::move(rows));
 
                 // Update tab text with result count
-                m_tabBar->setTabText(static_cast<int>(i),
-                    QStringLiteral("%1 (%2)").arg(m_tabs[i].title)
-                        .arg(m_tabs[i].model->resultCount()));
+                m_tabBar->setTabText(static_cast<int>(i), tabLabel(m_tabs[i]));
                 // The footer only refreshed on tab switch, so it lagged behind the rows
                 if (m_tabBar->currentIndex() == static_cast<int>(i)) {
                     m_statusLabel->setText(tabStatusText(m_tabs[i]));
                     m_loadMoreTimer->start();
                 }
 
-                if (!selection.isEmpty())
-                    restoreSelection(selection);
                 scheduleSaveSearches();
                 break;
             }
@@ -1443,7 +1581,16 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
 // Download a result
 // ---------------------------------------------------------------------------
 
-void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category)
+SearchResultRef SearchPanel::refAt(const QModelIndex& proxyIndex) const
+{
+    auto* tab = const_cast<SearchPanel*>(this)->currentTab();
+    if (!tab || tab->isIndexer() || !tab->model || !proxyIndex.isValid())
+        return {};
+    return tab->model->resultAt(tab->proxy->mapToSource(proxyIndex.siblingAtColumn(0)));
+}
+
+void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category,
+                                  std::optional<bool> paused)
 {
     if (!m_ipc || !m_ipc->isConnected() || proxyRows.isEmpty())
         return;
@@ -1463,8 +1610,7 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
         QList<MetaResultActions::Row> usenet;
         QList<MetaResultActions::Row> torrents;
         for (const auto& idx : proxyRows) {
-            const int srcRow = tab->proxy->mapToSource(tab->proxy->index(idx.row(), 0)).row();
-            const auto* r = tab->model->resultAt(srcRow);
+            const auto* r = refAt(idx).row;
             if (r && r->isUsenet())
                 usenet.append({r->hash, r->fileName, true, r->metaRef()});
             else if (r && r->isTorrent())
@@ -1484,35 +1630,31 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
 
     // Triaged once for the whole action, not once per row: selecting twenty rows
     // of which three are already downloaded must raise one question, not three.
-    QList<int> plain;
-    QList<int> known;
+    QModelIndexList plain;
+    QModelIndexList known;
     QStringList knownNames;
     for (const auto& idx : std::as_const(ed2kRows)) {
-        const int proxyRow = idx.row();
-        const int srcRow = tab->proxy->mapToSource(tab->proxy->index(proxyRow, 0)).row();
-
         int knownType = 0;
         QString name;
         if (tab->isIndexer()) {
+            const int srcRow = tab->proxy->mapToSource(tab->proxy->index(idx.row(), 0)).row();
             if (const auto* r = tab->indexerModel->resultAt(srcRow)) {
                 knownType = r->knownType;
                 name = r->title;
             }
-        } else if (tab->model) {
-            if (const auto* r = tab->model->resultAt(srcRow)) {
-                knownType = r->knownType;
-                name = r->fileName;
-            }
+        } else if (const SearchResultRef ref = refAt(idx)) {
+            knownType = ref.row->knownType;
+            name = ref.fileName();
         }
 
         // 3 downloaded, 4 cancelled — both mean it is gone from the transfer list
         // and asking again is a legitimate thing to want. Shared and downloading
         // are not asked about: re-adding those can never do anything useful.
         if (knownType == 3 || knownType == 4) {
-            known.append(proxyRow);
+            known.append(idx);
             knownNames.append(name);
         } else {
-            plain.append(proxyRow);
+            plain.append(idx);
         }
     }
 
@@ -1530,48 +1672,46 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
                 QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes;
     }
 
-    for (const int proxyRow : std::as_const(plain)) {
+    for (const QModelIndex& idx : std::as_const(plain)) {
         if (tab->isIndexer())
-            sendIndexerGrab(proxyRow, /*force*/ false, category);
+            sendIndexerGrab(idx.row(), /*force*/ false, category);
         else
-            sendDownloadRequest(proxyRow, category);
+            sendDownloadRequest(idx, category, paused);
     }
     if (!downloadKnown)
         return;
-    for (const int proxyRow : std::as_const(known)) {
+    for (const QModelIndex& idx : std::as_const(known)) {
         if (tab->isIndexer())
-            sendIndexerGrab(proxyRow, /*force*/ true, category);
+            sendIndexerGrab(idx.row(), /*force*/ true, category);
         else
-            sendDownloadRequest(proxyRow, category);
+            sendDownloadRequest(idx, category, paused);
     }
 }
 
-void SearchPanel::sendDownloadRequest(int row, int category)
+void SearchPanel::sendDownloadRequest(const QModelIndex& proxyIndex, int category,
+                                      std::optional<bool> paused)
 {
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
     auto* tab = currentTab();
-    if (!tab || tab->isIndexer() || !tab->model)
+    const SearchResultRef ref = refAt(proxyIndex);
+    if (!tab || !ref)
         return;
-
-    // Map from proxy row to source row
-    const auto proxyIdx = tab->proxy->index(row, 0);
-    const auto srcIdx = tab->proxy->mapToSource(proxyIdx);
-    const auto* result = tab->model->resultAt(srcIdx.row());
-    if (!result)
-        return;
+    const SearchResultRow* result = ref.row;
 
     IpcMessage msg(IpcMsgType::DownloadSearchFile);
     msg.append(result->hash);
-    msg.append(result->fileName);
+    msg.append(ref.fileName());   // a name row: that name, the file's data
     msg.append(static_cast<qint64>(result->fileSize));
     msg.append(QString());   // no link: the daemon builds one
     msg.append(static_cast<qint64>(category));
     msg.append(static_cast<qint64>(tab->searchID));   // daemon seeds sources + AICH from the result
+    if (paused)
+        msg.append(*paused);
     // Model and hash, not tab index and row: the tab at that index can be another
     // search by the time the reply lands (an indexer one has no model at all), and
-    // every result push resets the rows.
+    // the rows move with every result push.
     const QPointer<SearchResultsModel> model(tab->model);
     m_ipc->sendRequest(std::move(msg), [model, hash = result->hash](const IpcMessage& resp) {
         if (resp.fieldBool(0) && model)
@@ -1583,21 +1723,15 @@ void SearchPanel::sendDownloadRequest(int row, int category)
 // Copy eD2k link to clipboard
 // ---------------------------------------------------------------------------
 
-QString SearchPanel::buildEd2kLink(int proxyRow)
+QString SearchPanel::buildEd2kLink(const QModelIndex& proxyIndex)
 {
-    auto* tab = currentTab();
-    if (!tab)
-        return {};
-
-    const auto proxyIdx = tab->proxy->index(proxyRow, 0);
-    const auto srcIdx = tab->proxy->mapToSource(proxyIdx);
-    const auto* result = tab->model->resultAt(srcIdx.row());
-    return result ? result->ed2kLink() : QString();
+    const SearchResultRef ref = refAt(proxyIndex);
+    return ref ? ref.row->ed2kLink(ref.fileName()) : QString();
 }
 
-void SearchPanel::copyEd2kLink(int row)
+void SearchPanel::copyEd2kLink(const QModelIndex& proxyIndex)
 {
-    const QString link = buildEd2kLink(row);
+    const QString link = buildEd2kLink(proxyIndex);
     if (!link.isEmpty())
         QApplication::clipboard()->setText(link);
 }
@@ -1609,7 +1743,7 @@ void SearchPanel::saveMetaFiles(bool nzb)
         return;
     QList<MetaResultActions::Row> rows;
     for (const auto& idx : m_resultView->selectionModel()->selectedRows()) {
-        const auto* r = tab->model->resultAt(tab->proxy->mapToSource(idx).row());
+        const auto* r = refAt(idx).row;
         if (r && (nzb ? r->isUsenet() : r->isTorrent()))
             rows.append({r->hash, r->fileName, nzb, r->metaRef()});
     }
@@ -1623,14 +1757,10 @@ MetaResultActions* SearchPanel::metaActions()
     return m_metaActions;
 }
 
-QString SearchPanel::buildMagnetLink(int proxyRow)
+QString SearchPanel::buildMagnetLink(const QModelIndex& proxyIndex)
 {
-    auto* tab = currentTab();
-    if (!tab || tab->isIndexer() || !tab->model)
-        return {};
-    const auto srcIdx = tab->proxy->mapToSource(tab->proxy->index(proxyRow, 0));
-    const auto* result = tab->model->resultAt(srcIdx.row());
-    return result ? result->magnetLink() : QString();
+    const SearchResultRef ref = refAt(proxyIndex);
+    return ref ? ref.row->magnetLink(ref.fileName()) : QString();
 }
 
 // ---------------------------------------------------------------------------
@@ -1731,6 +1861,9 @@ void SearchPanel::switchToTab(int index)
     connect(m_resultView->selectionModel(), &QItemSelectionModel::selectionChanged,
             this, &SearchPanel::updateDownloadButton);
     updateDownloadButton();
+    m_filterEdit->setHeader(m_resultView->header());
+    m_filterColumn = m_filterEdit->filterColumn();
+    applyTextFilter();
     m_statusLabel->setText(tabStatusText(tab));
     updateMoreButton();
     m_loadMoreTimer->start();
@@ -1853,6 +1986,29 @@ QJsonObject ed2kRowToJson(const SearchResultRow& row)
     o[QStringLiteral("confidence")]          = row.confidence;
     o[QStringLiteral("fakeScore")]           = row.fakeScore;
     o[QStringLiteral("fakeReasons")]         = QJsonArray::fromStringList(row.fakeReasons);
+    if (!row.directory.isEmpty())
+        o[QStringLiteral("directory")]       = row.directory;
+    if (!row.aichHash.isEmpty())
+        o[QStringLiteral("aichHash")]        = row.aichHash;
+    o[QStringLiteral("kadPublishers")]       = row.kadPublishers;
+    o[QStringLiteral("clientCount")]         = row.clientCount;
+    if (!row.children.empty()) {
+        QJsonArray children;
+        for (const SearchChildRow& c : row.children) {
+            children.append(QJsonObject{
+                {QStringLiteral("fileName"), c.fileName},
+                {QStringLiteral("sourceCount"), static_cast<qint64>(c.sourceCount)},
+                {QStringLiteral("directory"), c.directory},
+                {QStringLiteral("aichHash"), c.aichHash},
+                {QStringLiteral("artist"), c.artist},
+                {QStringLiteral("album"), c.album},
+                {QStringLiteral("title"), c.title},
+                {QStringLiteral("codec"), c.codec},
+                {QStringLiteral("length"), static_cast<qint64>(c.length)},
+                {QStringLiteral("bitrate"), static_cast<qint64>(c.bitrate)}});
+        }
+        o[QStringLiteral("children")] = children;
+    }
     if (row.isMeta()) {
         // torrent/Usenet rows: the daemon refetches their metafile by this
         o[QStringLiteral("metaKind")]      = row.metaKind;
@@ -1890,6 +2046,25 @@ SearchResultRow ed2kRowFromJson(const QJsonObject& r)
     row.isSpam              = r[QStringLiteral("isSpam")].toBool();
     row.confidence          = r[QStringLiteral("confidence")].toString();
     row.fakeScore           = r[QStringLiteral("fakeScore")].toInt();
+    row.directory           = r[QStringLiteral("directory")].toString();
+    row.aichHash            = r[QStringLiteral("aichHash")].toString();
+    row.kadPublishers       = r[QStringLiteral("kadPublishers")].toInt();
+    row.clientCount         = r[QStringLiteral("clientCount")].toInt();
+    for (const auto& childVal : r[QStringLiteral("children")].toArray()) {
+        const QJsonObject c = childVal.toObject();
+        SearchChildRow child;
+        child.fileName    = c[QStringLiteral("fileName")].toString();
+        child.sourceCount = static_cast<qint64>(c[QStringLiteral("sourceCount")].toDouble());
+        child.directory   = c[QStringLiteral("directory")].toString();
+        child.aichHash    = c[QStringLiteral("aichHash")].toString();
+        child.artist      = c[QStringLiteral("artist")].toString();
+        child.album       = c[QStringLiteral("album")].toString();
+        child.title       = c[QStringLiteral("title")].toString();
+        child.codec       = c[QStringLiteral("codec")].toString();
+        child.length      = static_cast<qint64>(c[QStringLiteral("length")].toDouble());
+        child.bitrate     = static_cast<qint64>(c[QStringLiteral("bitrate")].toDouble());
+        row.children.push_back(std::move(child));
+    }
     for (const auto& reason : r[QStringLiteral("fakeReasons")].toArray())
         row.fakeReasons.push_back(reason.toString());
     row.metaKind            = r[QStringLiteral("metaKind")].toInt();
@@ -2236,7 +2411,7 @@ DetailWalker SearchPanel::makeSearchWalker(uint32_t searchID, const QString& has
             ViewNav::step(m_resultView, resultIndexFor(searchID, *anchor), delta);
         if (!to.isValid())
             return {};
-        const auto* result = tab->model->resultAt(ViewNav::toSource(to).row());
+        const auto* result = tab->model->resultAt(ViewNav::toSource(to)).row;
         if (!result)
             return {};
         *anchor = result->hash;
@@ -2344,6 +2519,8 @@ void SearchPanel::refreshUsenetKnownTypes()
 
 void SearchPanel::setupResultHeader(bool forIndexer)
 {
+    m_resultView->setRootIsDecorated(!forIndexer);
+
     const QString& key = forIndexer ? kIndexerHeaderKey : kSearchHeaderKey;
     if (m_boundHeaderKey == key)
         return;
@@ -2361,11 +2538,24 @@ void SearchPanel::setupResultHeader(bool forIndexer)
         return;
     }
 
-    // File Name, Size, Availability, Complete, Type, Artist, Album, Title,
     // File Name, Size, Availability, Confidence, Complete, Type, Artist, Album, Title,
-    // Length, Bitrate, Codec, Known, Seen. A saved layout overrides these.
+    // Length, Bitrate, Codec, Known, Seen, File ID, Folder, AICH Hash — the last three
+    // hidden by default as in MFC. A saved layout overrides these.
+    if (!theUiState.hasHeaderState(kSearchHeaderKey)) {
+        // Fresh layout: where MFC has them (SearchListCtrl.cpp:267-276)
+        auto* header = m_resultView->header();
+        const auto placeAfter = [header](int column, int after) {
+            header->moveSection(header->visualIndex(column), header->visualIndex(after) + 1);
+        };
+        placeAfter(SearchResultsModel::ColFileID, SearchResultsModel::ColType);
+        placeAfter(SearchResultsModel::ColFolder, SearchResultsModel::ColCodec);
+        placeAfter(SearchResultsModel::ColAichHash, SearchResultsModel::ColKnown);
+    }
+    m_resultView->setDefaultSort(SearchResultsModel::ColAvailability, Qt::DescendingOrder);
     m_resultView->bindColumns(kSearchHeaderKey,
-        {300, 80, 70, 100, 70, 70, 100, 100, 100, 60, 60, 60, 60, 110});
+        {300, 80, 70, 100, 70, 70, 100, 100, 100, 60, 60, 60, 60, 110, 230, 150, 240},
+        {SearchResultsModel::ColFileID, SearchResultsModel::ColFolder,
+         SearchResultsModel::ColAichHash});
 }
 
 SearchRequest SearchPanel::requestFromUi() const
@@ -2488,16 +2678,17 @@ void SearchPanel::removeSelectedResults()
     auto* tab = currentTab();
     if (!tab || !m_resultView->selectionModel())
         return;
-    std::vector<int> sourceRows;
-    for (const auto& i : m_resultView->selectionModel()->selectedRows())
-        sourceRows.push_back(tab->proxy->mapToSource(i).row());
+    // A name row stands for its file; each file once, last row first
+    std::set<int, std::greater<>> sourceRows;
+    for (const auto& i : m_resultView->selectionModel()->selectedRows()) {
+        const QModelIndex src = tab->proxy->mapToSource(i);
+        sourceRows.insert(src.parent().isValid() ? src.parent().row() : src.row());
+    }
     if (sourceRows.empty())
         return;
-    std::sort(sourceRows.rbegin(), sourceRows.rend());
     for (int r : sourceRows)
         tab->model->removeRow(r);
-    m_tabBar->setTabText(m_tabBar->currentIndex(),
-        QStringLiteral("%1 (%2)").arg(tab->title).arg(tab->model->resultCount()));
+    m_tabBar->setTabText(m_tabBar->currentIndex(), tabLabel(*tab));
     scheduleSaveSearches();
 }
 
@@ -2510,7 +2701,7 @@ void SearchPanel::copySelectedEd2kLinks()
     std::ranges::sort(rows, {}, &QModelIndex::row);
     QStringList links;
     for (const auto& i : rows)
-        if (const QString link = buildEd2kLink(i.row()); !link.isEmpty())
+        if (const QString link = buildEd2kLink(i); !link.isEmpty())
             links << link;
     if (!links.isEmpty())
         QApplication::clipboard()->setText(links.join(QLatin1Char('\n')));
@@ -2530,7 +2721,10 @@ int SearchPanel::addResultTab(SearchTab tab)
     tab.proxy->setSortRole(Qt::UserRole);
     applyNetworkFilter(tab);
 
-    const QString label = QStringLiteral("%1 (%2)").arg(tab.title).arg(tab.resultCount());
+    if (auto* proxy = qobject_cast<SearchResultsProxy*>(tab.proxy))
+        proxy->setTextFilter(m_filterTokens, tab.isIndexer() ? 0 : m_filterColumn);
+
+    const QString label = tabLabel(tab);
     const QIcon icon = tabIcon(tab);
     m_tabs.push_back(std::move(tab));
 

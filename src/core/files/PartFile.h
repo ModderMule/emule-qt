@@ -404,7 +404,29 @@ public:
     /// The long-running operation in progress, if any. Relabels the displayed status —
     /// "Completing (Hashing)" and so on, as MFC's getPartfileStatus does.
     [[nodiscard]] PartFileOp fileOp() const { return m_fileOp; }
-    [[nodiscard]] uint32 dlActiveTime() const { return m_dlActiveTime; }
+    /// Mark or clear an operation that runs outside this class (importing parts).
+    void setFileOp(PartFileOp op) { m_fileOp = op; }
+    /// Seconds this download has been running while connected (MFC GetDlActiveTime).
+    [[nodiscard]] uint32 dlActiveTime() const;
+    /// Seconds until done, -1 = unknown (MFC getTimeRemaining).
+    [[nodiscard]] int64 timeRemaining() const;
+    /// The rule behind timeRemaining(): size/rate, or with @p advanced the smaller of
+    /// that and the average over @p activeSecs; -1 past 15 days or without data.
+    [[nodiscard]] static int64 estimateTimeRemaining(uint64 left, uint64 done, uint32 rate,
+                                                     uint32 activeSecs, bool advanced);
+    /// Start or stop the active-time clock (MFC SetActive). Starts only while connected.
+    void setActive(bool active);
+    /// Fetch the first and last part early for this file (MFC GetPreviewPrio).
+    [[nodiscard]] bool previewPrio() const { return m_previewPrio; }
+    void setPreviewPrio(bool on) { m_previewPrio = on; }
+    /// Pause once a preview is possible; cleared when it fires (MFC
+    /// IsPausingOnPreview: only for a previewable file that can be paused).
+    [[nodiscard]] bool isPausingOnPreview() const;
+    void setPauseOnPreview(bool on) { m_pauseOnPreview = on; }
+    /// A movie or an archive (MFC IsPreviewableFileType).
+    [[nodiscard]] bool isPreviewableFileType() const;
+    /// When every part last had a source at the same time; 0 = never.
+    [[nodiscard]] time_t lastSeenComplete() const { return m_lastSeenComplete; }
 
     // -- Priority -------------------------------------------------------------
 
@@ -461,7 +483,13 @@ public:
     /// Would start a Kad source search now, were it this file's turn.
     [[nodiscard]] bool wantsKadSourceSearch(uint64 curTick) const;
 
-    /// Source caps derived from the max-sources pref (this port has no per-file max).
+    /// The file's own source limit, 0 = the global one (MFC m_uMaxSources).
+    [[nodiscard]] uint32 privateMaxSources() const { return m_privateMaxSources; }
+    void setPrivateMaxSources(uint32 limit) { m_privateMaxSources = limit; }
+    /// The limit in force: the file's own in advanced mode, else the pref
+    /// (MFC CPartFile::GetMaxSources).
+    [[nodiscard]] uint32 maxSources() const;
+    /// Source caps derived from maxSources().
     /// MFC CPartFile::GetMaxSourcePerFileSoft/UDP (PartFile.cpp:5349-5359).
     [[nodiscard]] uint32 maxSourcePerFileSoft() const;
     [[nodiscard]] uint32 maxSourcePerFileUDP() const;
@@ -520,7 +548,12 @@ public:
 
     // -- Misc -----------------------------------------------------------------
 
-    [[nodiscard]] time_t lastReceptionDate() const { return m_tLastModified; }
+    /// 0 while nothing was ever received (MFC GetLastReceptionDate). completedSize()
+    /// covers part files written before m_transferred was kept.
+    [[nodiscard]] time_t lastReceptionDate() const
+    {
+        return (m_transferred > 0 || completedSize() > 0) ? m_tLastModified : 0;
+    }
     [[nodiscard]] time_t createdDate() const { return m_tCreated; }
     [[nodiscard]] const std::vector<uint16>& srcPartFrequency() const { return m_srcPartFrequency; }
     std::vector<uint16>& srcPartFrequency() { return m_srcPartFrequency; }
@@ -700,6 +733,11 @@ private:
     uint64 m_nextMetSaveTime = 0;    // Next scheduled .part.met save (matches MFC m_nNextMetFlushTime)
     uint64 m_lastPurgeTime = 0;
     uint32 m_dlActiveTime = 0;
+    time_t m_activated = 0;          // MFC m_tActivated: 0 = clock stopped
+    time_t m_lastSeenComplete = 0;
+    uint32 m_privateMaxSources = 0;
+    bool m_previewPrio = false;
+    bool m_pauseOnPreview = false;
     uint64 m_clientSrcAnswered = 0;  // MFC: m_ClientSrcAnswered
 
     // Save/Load Sources (MorphXT CPartFile::m_sourcesaver)

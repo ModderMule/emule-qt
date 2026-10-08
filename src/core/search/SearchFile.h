@@ -145,6 +145,8 @@ public:
     // --- Client/server lists ---
 
     [[nodiscard]] const std::list<SClient>& clients() const { return m_clients; }
+    /// MFC GetClientsCount; the reporting client is already in the list here.
+    [[nodiscard]] int clientsCount() const { return static_cast<int>(m_clients.size()); }
     [[nodiscard]] const std::list<SServer>& servers() const { return m_servers; }
 
     void addClient(const SClient& client);

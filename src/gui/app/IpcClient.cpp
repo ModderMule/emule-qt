@@ -42,6 +42,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::GetConnection:        return QStringLiteral("GetConnection");
     case T::ConnectToServer:      return QStringLiteral("ConnectToServer");
     case T::DisconnectFromServer: return QStringLiteral("DisconnectFromServer");
+    case T::ReleaseConnectHold: return QStringLiteral("ReleaseConnectHold");
     case T::StartSearch:          return QStringLiteral("StartSearch");
     case T::GetSearchResults:     return QStringLiteral("GetSearchResults");
     case T::StopSearch:           return QStringLiteral("StopSearch");
@@ -313,6 +314,23 @@ void IpcClient::sendShutdown()
     disconnectFromDaemon();
 }
 
+void IpcClient::sendRestart()
+{
+    if (!isConnected())
+        return;
+    // Time for a graceful stop (saving part files) plus the start
+    constexpr int kRestartGraceMs = 60'000;
+    m_restartDeadline = QDeadlineTimer(kRestartGraceMs);
+    IpcMessage msg(IpcMsgType::Shutdown);
+    msg.append(true);
+    sendRequest(std::move(msg));
+}
+
+bool IpcClient::daemonRestarting() const
+{
+    return !m_restartDeadline.hasExpired();
+}
+
 int IpcClient::sendRequest(IpcMessage msg, ResponseCallback callback)
 {
     if (!m_connection || !m_handshaked)
@@ -466,6 +484,7 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
             }
         });
 
+        m_restartDeadline = QDeadlineTimer();
         emit connected();
         return;
     }

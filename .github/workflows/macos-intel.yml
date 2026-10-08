@@ -1,0 +1,205 @@
+name: macOS Intel CI
+
+# TEMPORARY: Intel (x86_64) build of the macOS app, a copy of macos.yml on an
+# Intel runner.  Apple and GitHub are both retiring Intel; when support is
+# dropped, delete this file together with the macos-intel job, the x86_64 asset
+# and the notes row in release.yml.  Until then keep it in step with macos.yml:
+# the only intended differences are the runner, BUILD_ARCH and the ccache key.
+#
+# If GitHub's Intel runners go first: Qt's macOS binaries are universal and
+# scripts/build-macos-deps.sh cross-builds, so this job also works on an Apple
+# silicon runner with BUILD_ARCH left at x86_64 (the smoke test then needs
+# Rosetta).
+#
+# Tag pushes are handled by release.yml, which calls this workflow -- do not add a
+# push/tags trigger here or a tag would build twice.
+on:
+  workflow_call:
+    inputs:
+      geoip:
+        description: Ship the GeoLite2-Country database from release.yml's geoip-db artifact
+        type: boolean
+        default: false
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Oldest macOS the app runs on; 13.0 is the floor of the Qt 6.10 binaries.
+  # Read by CMake, clang, scripts/build-macos-deps.sh and, as a hard check, by
+  # scripts/bundle-macos.sh.  Unset, everything is built for the runner's own
+  # macOS -- v0.5.6 needed macOS 26 that way.
+  MACOSX_DEPLOYMENT_TARGET: "13.0"
+  BUILD_ARCH: x86_64
+  PROTOC_VERSION: "36.2"
+  PROTOC_SHA256: 83d0dc80672f53486f54299bca6177159f9cad1fd54d4d3143eeea53c4423e1b
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: true   # external/enodemeta: .proto + test vectors
+
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.10.3"
+          arch: clang_64
+          modules: qthttpserver qtwebsockets qtmultimedia qtgrpc   # qtgrpc ships QtProtobuf
+          cache: true
+
+      - name: Install build tools
+        run: command -v ninja || brew install ninja
+
+      # protoc for qt_add_protobuf.  The official binary rather than Homebrew's:
+      # the configure step below hides Homebrew from CMake.
+      - name: Install protoc
+        run: |
+          set -euo pipefail
+          zip="protoc-${PROTOC_VERSION}-osx-universal_binary.zip"
+          curl -fsSL --retry 3 --retry-delay 5 -o "$RUNNER_TEMP/$zip" \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/$zip"
+          echo "${PROTOC_SHA256}  $RUNNER_TEMP/$zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/$zip" -d "$RUNNER_TEMP/protoc"
+          echo "$RUNNER_TEMP/protoc/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/protoc/bin/protoc" --version
+
+      # Static OpenSSL, zstd and lz4 built for MACOSX_DEPLOYMENT_TARGET.  Homebrew's
+      # copies are built for the runner's macOS and must not reach the bundle.
+      - name: Restore static dependencies
+        id: deps-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/macos-deps
+          key: macos-deps-${{ env.BUILD_ARCH }}-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ hashFiles('scripts/build-macos-deps.sh') }}
+
+      - name: Build static dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: scripts/build-macos-deps.sh "$BUILD_ARCH" "$RUNNER_TEMP/macos-deps"
+
+      - name: Set up ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: macos-intel
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_ARCHITECTURES="$BUILD_ARCH"
+          -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR;$RUNNER_TEMP/macos-deps"
+          -DCMAKE_IGNORE_PREFIX_PATH="/opt/homebrew;/usr/local"
+          -DOPENSSL_ROOT_DIR="$RUNNER_TEMP/macos-deps"
+          -DOPENSSL_USE_STATIC_LIBS=ON
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DEMULE_BUILD_TESTS=OFF
+          -DEMULE_SEED_FROM_SOURCE_TREE=OFF
+
+      - name: Build
+        run: cmake --build build --parallel 2
+
+#      - name: Run tests
+#        continue-on-error: true
+#        env:
+#          QT_QPA_PLATFORM: offscreen
+#        run: ctest --test-dir build --output-on-failure --parallel
+
+      - name: Get version
+        run: |
+          VERSION=$(grep -m1 '^ *VERSION [0-9]' CMakeLists.txt | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      # Release builds only: release.yml downloads the database once and hands it
+      # to all three platforms; the bundlers copy data/config wholesale.
+      - name: Fetch GeoLite2-Country database
+        if: ${{ inputs.geoip }}
+        uses: actions/download-artifact@v8
+        with:
+          name: geoip-db
+          path: data/config
+
+      - name: Bundle
+        run: scripts/bundle-macos.sh --dmg build
+
+      # The bundle scripts check that the files are there; this checks that the
+      # shipped bridge starts, i.e. finds its libraries inside the bundle.
+      - name: Smoke-test the bundled MCP bridge
+        run: build/src/gui/emuleqt.app/Contents/MacOS/emuleqt-mcp --version
+
+      # bundle-macos.sh checks every file against the app's own CPU; this checks
+      # the app's CPU is the one this workflow is meant to ship.
+      - name: Check architecture
+        run: |
+          set -euo pipefail
+          for name in emuleqt emulecored emuleqt-mcp; do
+            archs="$(lipo -archs "build/src/gui/emuleqt.app/Contents/MacOS/$name")"
+            echo "$name: $archs"
+            if [ "$archs" != "$BUILD_ARCH" ]; then
+              echo "::error::$name is [$archs], expected $BUILD_ARCH"
+              exit 1
+            fi
+          done
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: eMuleQt-v${{ env.APP_VERSION }}-macOS-${{ env.BUILD_ARCH }}
+          path: build/eMuleQt-v*-macOS-${{ env.BUILD_ARCH }}.dmg
+          # Default is 'warn', which would leave the job green with no artifact
+          # if the bundle script produced nothing.
+          if-no-files-found: error
+
+      # A dSYM binds to its binary by LC_UUID, and on Mach-O the -g debug info
+      # lives in the .o files, not the linked binary -- the binary only carries a
+      # debug map of N_OSO stubs pointing at object files that die with the
+      # runner.  Without this step a crash report from a released .dmg
+      # symbolicates to function names only, with no line numbers, which made
+      # EMULE_RELEASE_DEBUG_INFO pointless for released macOS builds.
+      #
+      # Runs AFTER Bundle on purpose: bundle-macos.sh copies emulecored into the
+      # .app and then rewrites both in-bundle binaries with install_name_tool and
+      # re-signs them.  Only those copies ship, so they -- not the build outputs
+      # -- are what the dSYMs must be generated from.
+      - name: Generate dSYMs
+        run: |
+          set -euo pipefail
+
+          APP="build/src/gui/emuleqt.app/Contents/MacOS"
+          mkdir -p build/symbols
+
+          for name in emuleqt emulecored emuleqt-mcp; do
+            dsymutil "$APP/$name" -o "build/symbols/$name.dSYM"
+          done
+
+          # dsymutil exits 0 even when it silently fails to find its object
+          # files, so assert the result instead of assuming it: a dSYM whose UUID
+          # does not match the shipped binary can never symbolicate a crash from
+          # it.  Format is "UUID: <uuid> (<arch>) <path>".
+          for name in emuleqt emulecored emuleqt-mcp; do
+            bin_uuid=$(dwarfdump --uuid "$APP/$name" | awk '{print $2}')
+            sym_uuid=$(dwarfdump --uuid "build/symbols/$name.dSYM" | awk '{print $2}')
+            if [ "$bin_uuid" != "$sym_uuid" ]; then
+              echo "::error::dSYM UUID mismatch for $name: binary $bin_uuid, dSYM $sym_uuid"
+              exit 1
+            fi
+            # Logged so a future crash report can be matched to this build
+            # without downloading the artifact.
+            echo "OK: $name $bin_uuid"
+          done
+
+      # Deliberately NOT named eMuleQt-v*: release.yml downloads that pattern and
+      # publishes everything it finds, and the symbols do not belong in the public
+      # release assets.
+      - name: Upload debug symbols
+        uses: actions/upload-artifact@v6
+        with:
+          name: debug-symbols-macos-${{ env.BUILD_ARCH }}-v${{ env.APP_VERSION }}
+          path: build/symbols/**
+          if-no-files-found: error

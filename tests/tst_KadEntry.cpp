@@ -38,6 +38,7 @@ private slots:
     void trust_sameSubnetSharesPoints();
     void trust_spammerDilutesItself();
     void trust_publisherCapEvictsOldest();
+    void cleanUp_publishersExpireAfterADay();
     void addTag_filtersResultOnlyTags();
     void aich_refcountsAndKeepsIndicesStable();
     void merge_fastRefreshDoesNotBumpPopularity();
@@ -272,6 +273,30 @@ void tst_KadEntry::trust_publisherCapEvictsOldest()
 
     // Capped, not unbounded: 100 publishers each contributing a full share.
     QCOMPARE(current->getTrustValue(), 100 * 10.0f);
+}
+
+void tst_KadEntry::cleanUp_publishersExpireAfterADay()
+{
+    // MFC CKeyEntry::CleanUpTrackedPublishers: KADEMLIAREPUBLISHTIMEK (24 h).
+    // A tracked publisher halves what a second one from its /24 contributes.
+    const time_t now = time(nullptr);
+    {
+        KeyEntry kept;
+        publishFrom(kept, 0x0B000001);
+        kept.cleanUpTrackedPublishers(now + HR2S(23));
+        KeyEntry other;
+        publishFrom(other, 0x0B000002);
+        QCOMPARE(other.getTrustValue(), 5.0f);
+    }
+    KeyEntry::resetGlobalTrackingMap();
+    {
+        KeyEntry expired;
+        publishFrom(expired, 0x0B000001);
+        expired.cleanUpTrackedPublishers(now + HR2S(25));
+        KeyEntry other;
+        publishFrom(other, 0x0B000002);
+        QCOMPARE(other.getTrustValue(), 10.0f);
+    }
 }
 
 void tst_KadEntry::addTag_filtersResultOnlyTags()

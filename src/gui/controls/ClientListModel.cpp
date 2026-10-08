@@ -7,6 +7,7 @@
 #include "client/ClientStateDefs.h"
 #include "prefs/Preferences.h"
 #include "utils/ClientIcons.h"
+#include "utils/ClientStateText.h"
 #include "utils/CountryFlags.h"
 #include "utils/PriorityText.h"
 #include "utils/StringUtils.h"
@@ -106,6 +107,12 @@ QVariant ClientListModel::data(const QModelIndex& index, int role) const
     if (role == UpStatusRole)
         return QVariant::fromValue(c.upStatus);
 
+    if (role == PartMapRole)
+        return c.partMap;
+
+    if (role == FileSizeRole)
+        return QVariant::fromValue(c.reqFileSize);
+
     if (role == Qt::DecorationRole && index.column() == 0)
         return CountryFlags::withFlag(clientSoftwareIcon(c.softwareId, c.hasCredit, c.isFriend), c.cc);
 
@@ -141,7 +148,7 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
     case ClientListMode::Uploading:
         // MFC: User Name, File, Speed, Transferred, Waited, Upload Time, Status, Obtained Parts
         switch (column) {
-        case 0: return c.userName;
+        case 0: return clientNameText(c.userName);
         case 1: return c.fileName;
         case 2: return rateCell(c.upDatarate);
         // Session, not lifetime: MFC's UploadListCtrl.cpp:200-203 shows GetSessionUp(), and
@@ -163,11 +170,11 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
     case ClientListMode::Downloading:
         // MFC: User Name, Software, File, Speed, Available Parts, Transferred Down, Transferred Up, Source Type
         switch (column) {
-        case 0: return c.userName;
+        case 0: return clientNameText(c.userName);
         case 1: return c.software;
         case 2: return c.fileName;
         case 3: return rateCell(c.downDatarate);
-        case 4: return c.availPartCount > 0 ? QString::number(c.availPartCount) : QString{};
+        case 4: return {};   // SourcePartsDelegate draws the bar
         case 5: return sessionWithTotal(c.sessionDown, c.downloadedTotal);
         case 6: return sessionWithTotal(c.sessionUp, c.uploadedTotal);
         case 7: return sourceFromStr(c.sourceFrom);
@@ -178,7 +185,7 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
         // MFC: User Name, File, File Priority, Rating, Score, Asked, Last Seen, Entered Queue, Banned, Obtained Parts
         // (QueueListCtrl.cpp:185-260)
         switch (column) {
-        case 0: return c.userName;
+        case 0: return clientNameText(c.userName);
         case 1: return c.fileName;
         case 2: return c.uploadFilePriority >= 0
                      ? uploadPriorityText(c.uploadFilePriority, c.uploadFileAutoPriority) : QString{};
@@ -198,15 +205,16 @@ QVariant ClientListModel::displayData(const ClientRow& c, int column) const
         }
 
     case ClientListMode::KnownClients:
-        // MFC: User Name, Upload Status, Transferred, Download Status, Transferred Down, Software, Connected, Hash
+        // MFC: User Name, Upload Status, Transferred Up, Download Status, Transferred Down, Software, Connected, Hash
+        // (ClientListCtrl.cpp:166-200); the two byte columns are the credit totals.
         switch (column) {
-        case 0: return c.userName;
+        case 0: return clientNameText(c.userName);
         case 1: return c.uploadState;
-        case 2: return sizeCell(c.transferredUp);
-        case 3: return c.downloadState;
-        case 4: return sizeCell(c.transferredDown);
-        case 5: return c.software;
-        case 6: return c.isConnected ? QObject::tr("Yes") : QString{};
+        case 2: return sizeCell(c.uploadedTotal);
+        case 3: return downloadStateText(c.downloadState, c.remoteQueueFull);
+        case 4: return sizeCell(c.downloadedTotal);
+        case 5: return c.software.isEmpty() ? tr("Unknown") : c.software;
+        case 6: return c.isConnected ? tr("Yes") : tr("No");
         case 7: return c.userHash;
         default: return {};
         }
@@ -265,9 +273,9 @@ QVariant ClientListModel::sortData(const ClientRow& c, int column) const
         switch (column) {
         case 0: return c.userName;
         case 1: return c.uploadState;
-        case 2: return QVariant::fromValue(c.transferredUp);
+        case 2: return QVariant::fromValue(c.uploadedTotal);
         case 3: return c.downloadState;
-        case 4: return QVariant::fromValue(c.transferredDown);
+        case 4: return QVariant::fromValue(c.downloadedTotal);
         case 5: return c.software;
         case 6: return c.isConnected ? 1 : 0;
         case 7: return c.userHash;
@@ -326,7 +334,7 @@ QVariant ClientListModel::headerLabel(int column) const
         switch (column) {
         case 0: return tr("User Name");
         case 1: return tr("Upload Status");
-        case 2: return tr("Transferred");
+        case 2: return tr("Transferred Up");
         case 3: return tr("Download Status");
         case 4: return tr("Transferred Down");
         case 5: return tr("Software");

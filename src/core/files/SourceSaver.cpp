@@ -695,7 +695,7 @@ int SourceSaver::injectRecords(PartFile* file, const std::vector<SavedSource>& r
     int added = 0;
 
     for (const SavedSource& rec : records) {
-        if (file->sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
+        if (file->sourceCount() >= static_cast<int>(file->maxSources()))
             break;
 
         // The list is untrusted input — it may have been written by another client, or by us

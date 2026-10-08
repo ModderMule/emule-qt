@@ -228,8 +228,16 @@ void tst_KnownFile::construct_default()
     KnownFile f;
     QCOMPARE(f.partCount(), uint16{0});
     QCOMPARE(f.ed2kPartCount(), uint16{0});
-    QCOMPARE(f.upPriority(), kPrNormal);
+    // auto starts at High (MFC CKnownFile ctor)
+    QCOMPARE(f.upPriority(), kPrHigh);
     QVERIFY(f.isAutoUpPriority());
+
+    thePrefs.setAutoSharedFilesPriority(false);
+    KnownFile manual;
+    thePrefs.setAutoSharedFilesPriority(true);
+    QCOMPARE(manual.upPriority(), kPrNormal);
+    QVERIFY(!manual.isAutoUpPriority());
+
     QVERIFY(!f.publishedED2K());
     QCOMPARE(f.kadFileSearchID(), uint32{0});
     QCOMPARE(f.lastPublishTimeKadSrc(), time_t{0});

@@ -20,12 +20,17 @@
 #include "controls/AccordionSidebar.h"
 #include "dialogs/FirstStartWizard.h"
 #include "dialogs/OptionsDialog.h"
+#include "dialogs/PortChangeNotice.h"
+#include "dialogs/PortMapStatusText.h"
 #include "prefs/Preferences.h"
 
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QCborMap>
 #include <QLabel>
+#include <QMessageBox>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSlider>
@@ -34,6 +39,7 @@
 #include <QTabWidget>
 #include <QTest>
 #include <QTimer>
+#include <QDoubleSpinBox>
 #include <QTreeWidget>
 
 using namespace eMule;
@@ -91,7 +97,12 @@ private slots:
     void theWizardOffersTheNewDefaultsToAnUntunedInstall();
     void theWizardLeavesTunedLimitsAndADisabledUdpPortAlone();
     void aWizardLineTypeBecomesCapacityAndLimits();
+    void theWizardRateFieldsFollowTheLineAndSwitchToCustom();
     void theWizardNeedsANetwork();
+    void theWizardReportsTheRealPortMappingResult();
+    void theWizardDoesNotWaitWithoutACore();
+    void aPortChangeIsReportedAsItWasApplied();
+    void onlyAPendingPortChangeOffersARestart();
 };
 
 /// The regression this file exists for. Named per page, because "the dialog is too tall"
@@ -518,6 +529,30 @@ void TestOptionsDialogSizing::aWizardLineTypeBecomesCapacityAndLimits()
     QCOMPARE(thePrefs.maxGraphUploadRate(), 4883u);
 }
 
+void TestOptionsDialogSizing::theWizardRateFieldsFollowTheLineAndSwitchToCustom()
+{
+    const WizardPrefsGuard guard;
+    FirstStartWizard wizard(nullptr, nullptr, FirstStartWizard::StartPage::Speed);
+
+    const auto spins = wizard.findChildren<QDoubleSpinBox*>();
+    QCOMPARE(spins.size(), 2);
+    QVERIFY(selectLine(wizard, QStringLiteral("Starlink 200")));
+    // Never greyed out: they show the line and take an edit at once.
+    QVERIFY(spins[0]->isEnabled() && spins[1]->isEnabled());
+    QCOMPARE(spins[0]->value(), 200.0);
+    QCOMPARE(spins[1]->value(), 20.0);
+    QCOMPARE(selectedLine(wizard), QStringLiteral("Starlink 200"));
+
+    spins[1]->setValue(25.0);
+    QCOMPARE(selectedLine(wizard), QStringLiteral("Custom"));
+    QCOMPARE(spins[0]->value(), 200.0);   // the other rate carries over
+
+    wizardButton(wizard, QStringLiteral("Finish"))->click();
+    const QCborMap applied = wizard.appliedSettings();
+    QCOMPARE(applied.value(QStringLiteral("maxGraphDownloadRate")).toInteger(), 24414);
+    QCOMPARE(applied.value(QStringLiteral("maxGraphUploadRate")).toInteger(), 3052);
+}
+
 void TestOptionsDialogSizing::theWizardNeedsANetwork()
 {
     const WizardPrefsGuard guard;
@@ -541,6 +576,120 @@ void TestOptionsDialogSizing::theWizardNeedsANetwork()
     QVERIFY(wizard.appliedSettings().isEmpty());
     // ...and it is back on the page where that can be fixed.
     QVERIFY(wizardButton(wizard, QStringLiteral("Next >")));
+}
+
+void TestOptionsDialogSizing::theWizardReportsTheRealPortMappingResult()
+{
+    const WizardPrefsGuard guard;
+    FirstStartWizard wizard(nullptr);
+    wizard.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&wizard));
+    auto* status = wizard.findChild<QLabel*>(QStringLiteral("upnpStatus"));
+    auto* progress = wizard.findChild<QProgressBar*>();
+    QVERIFY(status && progress);
+    const QSize before = wizard.size();
+
+    const auto info = [](PortMapStatus s, const QString& method = {}, const QString& address = {}) {
+        QCborMap map;
+        map.insert(QStringLiteral("status"), static_cast<int>(s));
+        map.insert(QStringLiteral("methodText"), method);
+        map.insert(QStringLiteral("externalAddress"), address);
+        return map;
+    };
+
+    // Still probing: no verdict yet.
+    wizard.showPortMapStatus(info(PortMapStatus::Probing));
+    QCOMPARE(portMapStatusSummary(info(PortMapStatus::Probing)).outcome, PortMapOutcome::Pending);
+    QVERIFY(!status->text().isEmpty());
+
+    wizard.showPortMapStatus(info(PortMapStatus::Mapped, QStringLiteral("PCP"), QStringLiteral("203.0.113.7")));
+    QVERIFY(status->text().contains(QStringLiteral("PCP")));
+    QVERIFY(status->text().contains(QStringLiteral("203.0.113.7")));
+    QVERIFY(!progress->isVisible());
+    QCOMPARE(portMapStatusSummary(info(PortMapStatus::Mapped)).outcome, PortMapOutcome::Ok);
+
+    // Granted behind carrier-grade NAT is not a success; the longest text must fit.
+    wizard.showPortMapStatus(info(PortMapStatus::Degraded, QStringLiteral("UPnP"), QStringLiteral("100.83.250.167")));
+    QCOMPARE(portMapStatusSummary(info(PortMapStatus::Degraded)).outcome, PortMapOutcome::Warning);
+    QVERIFY(status->text().contains(QStringLiteral("100.83.250.167")));
+    QCoreApplication::processEvents();
+    QVERIFY2(status->height() >= status->heightForWidth(status->width()),
+             qPrintable(QStringLiteral("status label is %1 px high, text needs %2")
+                            .arg(status->height()).arg(status->heightForWidth(status->width()))));
+    QCOMPARE(wizard.size(), before);
+
+    for (const PortMapStatus failed : {PortMapStatus::NotMapped, PortMapStatus::Failed, PortMapStatus::Disabled})
+        QCOMPARE(portMapStatusSummary(info(failed)).outcome, PortMapOutcome::Failed);
+}
+
+void TestOptionsDialogSizing::theWizardDoesNotWaitWithoutACore()
+{
+    const WizardPrefsGuard guard;
+    FirstStartWizard wizard(nullptr);
+    wizard.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&wizard));
+
+    wizardButton(wizard, QStringLiteral("Use UPnP to Setup Ports"))->click();
+
+    QVERIFY(!wizard.findChild<QProgressBar*>()->isVisible());
+    QVERIFY(wizardButton(wizard, QStringLiteral("Use UPnP to Setup Ports"))->isEnabled());
+    QVERIFY(!wizard.findChild<QLabel*>(QStringLiteral("upnpStatus"))->text().isEmpty());
+}
+
+/// A live rebind is a status bar line; anything that leaves the old ports up needs a box
+/// naming the ports still in use.
+void TestOptionsDialogSizing::aPortChangeIsReportedAsItWasApplied()
+{
+    const auto reply = [](PortApplyResult result) {
+        return QCborMap{{QStringLiteral("ports"), int(result)},
+                        {QStringLiteral("tcpPort"), 5662},
+                        {QStringLiteral("udpPort"), 5672}};
+    };
+
+    QVERIFY(portChangeSummary(reply(PortApplyResult::Unchanged)).text.isEmpty());
+    QVERIFY(portChangeSummary(QCborMap{}).text.isEmpty());   // older core: no field
+
+    const PortChangeSummary applied = portChangeSummary(reply(PortApplyResult::Applied));
+    QVERIFY(!applied.needsAttention);
+    QVERIFY(applied.text.contains(QStringLiteral("5662")));
+    QVERIFY(applied.text.contains(QStringLiteral("5672")));
+
+    for (const PortApplyResult kept : {PortApplyResult::RestartRequired, PortApplyResult::BindFailed}) {
+        const PortChangeSummary summary = portChangeSummary(reply(kept));
+        QVERIFY(summary.needsAttention);
+        QVERIFY(summary.text.contains(QStringLiteral("5662")));
+        QVERIFY(summary.text.contains(QStringLiteral("5672")));
+    }
+    QVERIFY(portChangeSummary(reply(PortApplyResult::RestartRequired))
+                .text.contains(QStringLiteral("restarting")));
+}
+
+/// The button restarts the core, so it belongs on the one notice a restart resolves.
+void TestOptionsDialogSizing::onlyAPendingPortChangeOffersARestart()
+{
+    const auto show = [](PortApplyResult result, std::function<void()> restart) {
+        const QCborMap map{{QStringLiteral("ports"), int(result)},
+                           {QStringLiteral("tcpPort"), 5662},
+                           {QStringLiteral("udpPort"), 5672}};
+        QWidget owner;
+        showPortChangeResult(&owner, Ipc::IpcMessage::makeResult(1, true, QCborValue(map)),
+                             std::move(restart));
+        auto* box = owner.findChild<QMessageBox*>();
+        int buttons = -1;
+        if (box) {
+            buttons = int(box->buttons().size());
+            box->buttons().constFirst()->click();
+        }
+        return buttons;
+    };
+
+    int restarts = 0;
+    QCOMPARE(show(PortApplyResult::RestartRequired, [&restarts] { ++restarts; }), 2);
+    QCOMPARE(restarts, 1);   // first button is Restart Now
+
+    QCOMPARE(show(PortApplyResult::BindFailed, [&restarts] { ++restarts; }), 1);
+    QCOMPARE(show(PortApplyResult::RestartRequired, {}), 1);   // nothing to restart with
+    QCOMPARE(restarts, 1);
 }
 
 QTEST_MAIN(TestOptionsDialogSizing)

@@ -123,7 +123,8 @@ private slots:
     void onPreviewAnswerReceived(const std::array<uint8, 16>& fileHash,
                                  const std::vector<QImage>& images);
 
-    // Port-mapping signals
+public slots:
+    /// Fed by CoreSession::portMapStatusChanged (wired in DaemonApp).
     void onPortMapStatusChanged(eMule::PortMapStatus status);
 
 private:

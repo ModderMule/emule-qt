@@ -10,6 +10,8 @@
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
 
+#include <QDir>
+#include <QFile>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -39,6 +41,7 @@ private slots:
     void isValid_false();
     void removeAllFriendSlots();
     void saveAndLoad_roundTrip();
+    void process_savesEveryNineteenMinutes();
     void load_emptyFile();
     void load_badHeader();
     void load_nonexistent();
@@ -212,6 +215,27 @@ void tst_FriendList::removeAllFriendSlots()
     list.removeAllFriendSlots();
     QVERIFY(!f1->friendSlot());
     QVERIFY(!f2->friendSlot());
+}
+
+void tst_FriendList::process_savesEveryNineteenMinutes()
+{
+    // MFC CFriendList::Process — last-seen data must not wait for a clean shutdown.
+    eMule::testing::TempDir tmp;
+    const QString met = QDir(tmp.path()).filePath(QStringLiteral("emfriends.met"));
+    FriendList list;
+    auto h = makeHash(0xA1);
+    QVERIFY(list.addFriend(h.data(), 0x0A000001, 4662, QStringLiteral("Alice"), true));
+
+    const time_t now = std::time(nullptr);
+    list.process(tmp.path(), now + MIN2S(18));
+    QVERIFY(!QFile::exists(met));
+    list.process(tmp.path(), now + MIN2S(20));
+    QVERIFY(QFile::exists(met));
+
+    // the interval restarts from the save
+    QVERIFY(QFile::remove(met));
+    list.process(tmp.path(), now + MIN2S(30));
+    QVERIFY(!QFile::exists(met));
 }
 
 void tst_FriendList::saveAndLoad_roundTrip()

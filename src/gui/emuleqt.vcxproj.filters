@@ -31,6 +31,9 @@
     <ClCompile Include="dialogs\CategoryDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="dialogs\AddSourceDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="dialogs\ArchivePreviewPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -220,6 +223,9 @@
     <ClCompile Include="controls\SearchResultsProxy.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="controls\FilterEdit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="controls\ServerListModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -306,6 +312,9 @@
     <QtMoc Include="dialogs\CategoryDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="dialogs\AddSourceDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="dialogs\UsenetArchiveEntryDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -355,6 +364,15 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\PriorityText.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\ClientStateText.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\FileTypeText.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\TooltipDelayStyle.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\Smileys.h">
@@ -544,6 +562,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\SearchResultsProxy.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="controls\FilterEdit.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="controls\ServerListModel.h">

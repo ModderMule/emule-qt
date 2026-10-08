@@ -141,9 +141,9 @@ bool KadPrefs::hasLostConnection() const
     return false;
 }
 
-void KadPrefs::setLastContact()
+void KadPrefs::setLastContact(time_t when)
 {
-    m_lastContact = time(nullptr);
+    m_lastContact = when;
 }
 
 time_t KadPrefs::lastContact() const
@@ -169,8 +169,9 @@ bool KadPrefs::firewalled() const
 
 void KadPrefs::setFirewalled()
 {
-    // Snapshot current state and reset counter
-    m_lastFirewallState = firewalled();
+    // Snapshot the raw result of the cycle that just ended, reset the counter
+    // (MFC CPrefs::SetFirewalled)
+    m_lastFirewallState = (m_firewallCounter < 2);
     m_firewallCounter = 0;
 }
 
@@ -319,7 +320,7 @@ bool KadPrefs::findExternKadPort(bool reset)
 
 uint16 KadPrefs::internKadPort() const
 {
-    return thePrefs.udpPort();
+    return theApp.listeningUdpPort();
 }
 
 // ---------------------------------------------------------------------------

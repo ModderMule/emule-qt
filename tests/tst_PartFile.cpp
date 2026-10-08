@@ -81,6 +81,9 @@ private slots:
     void writePartStatus_basic();
     void validSourcesCount_countsMfcStates();
     void updatePartsInfo_rebuildsFrequencyAndCompleteCount();
+    void lastSeenComplete_setWhenEveryPartHasASource();
+    void timeRemaining_followsMfc();
+    void perFileSettings_sourceLimitAndPreviewFlags();
     void getFilledArray_basic();
     void writeToBuffer_countsCompressionGain();
     void createPartFile_cleansTheNameWhenAsked();
@@ -303,8 +306,13 @@ void tst_PartFile::writeToBuffer_fillsGap()
     // Ensure tmp path is set for flushBuffer
     pf.setTmpPath(m_tempDir.path() + QStringLiteral("/temp"));
 
+    // nothing received yet (MFC GetLastReceptionDate)
+    QCOMPARE(pf.transferred(), 0ULL);
+    QCOMPARE(pf.lastReceptionDate(), time_t{0});
+
     std::vector<uint8> data(100, 0xAA);
     pf.writeToBuffer(100, data.data(), 0, 99, nullptr);
+    QCOMPARE(pf.transferred(), 100ULL);
 
     // Gap should be filled for [0, 99]
     QVERIFY(pf.isComplete(0, 99));
@@ -1224,6 +1232,116 @@ void tst_PartFile::validSourcesCount_countsMfcStates()
 
     for (auto& c : clients)
         pf.removeSource(c.get());
+}
+
+void tst_PartFile::timeRemaining_followsMfc()
+{
+    // MFC CPartFile::getTimeRemaining (srchybrid/PartFile.cpp:3478-3492)
+    const uint64 mb = 1024 * 1024;
+
+    // Simple: size over rate, unknown without a rate
+    QCOMPARE(PartFile::estimateTimeRemaining(10 * mb, 5 * mb, 1024, 100, false), int64{10240});
+    QCOMPARE(PartFile::estimateTimeRemaining(10 * mb, 5 * mb, 0, 100, false), int64{-1});
+
+    // Advanced: 5 MB in 100 s leaves 200 s for 10 MB, also while nothing arrives
+    QCOMPARE(PartFile::estimateTimeRemaining(10 * mb, 5 * mb, 0, 100, true), int64{200});
+    // ... the current rate wins when it promises less
+    QCOMPARE(PartFile::estimateTimeRemaining(10 * mb, 5 * mb, 1024 * 1024, 100, true), int64{10});
+    // ... too little data to average: back to the simple figure
+    QCOMPARE(PartFile::estimateTimeRemaining(10 * mb, 1000, 1024, 100, true), int64{10240});
+    // ... and 15 days or more reads as unknown
+    QCOMPARE(PartFile::estimateTimeRemaining(1000 * mb, mb, 0, 86400, true), int64{-1});
+}
+
+void tst_PartFile::lastSeenComplete_setWhenEveryPartHasASource()
+{
+    // MFC UpdateAvailablePartsCount / FT_LASTSEENCOMPLETE. The column used to show the
+    // complete-sources refresh deadline instead.
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/seencomplete");
+    QDir().mkpath(tempDir);
+
+    PartFile pf;
+    pf.setFileName(QStringLiteral("seen.bin"));
+    pf.setFileSize(PARTSIZE * 2 + 100);   // 3 parts
+    uint8 hash[16];
+    std::memset(hash, 0x5C, sizeof(hash));
+    pf.setFileHash(hash);
+    QVERIFY(pf.createPartFile(tempDir));
+
+    UpDownClient src;
+    pf.addSource(&src);
+    auto report = [&pf, &src](uint8 bitmap) {
+        SafeMemFile data;
+        data.writeUInt16(pf.ed2kPartCount());
+        data.writeUInt8(bitmap);
+        data.seek(0, SEEK_SET);
+        src.processFileStatus(false, data, &pf);
+    };
+
+    report(0x03);   // part 2 has no source
+    QCOMPARE(pf.lastSeenComplete(), time_t{0});
+
+    const time_t before = std::time(nullptr);
+    report(0x07);
+    QVERIFY(pf.lastSeenComplete() >= before);
+
+    pf.savePartFile();
+    PartFile loaded;
+    QCOMPARE(loaded.loadPartFile(tempDir, pf.partMetFileName()), PartFileLoadResult::LoadSuccess);
+    QCOMPARE(loaded.lastSeenComplete(), pf.lastSeenComplete());
+
+    pf.removeSource(&src);
+}
+
+void tst_PartFile::perFileSettings_sourceLimitAndPreviewFlags()
+{
+    // MFC m_uMaxSources / FT_MAXSOURCES and the FT_DL_PREVIEW bits
+    // (srchybrid/PartFile.cpp:822-825, :881-885, :1284-1289, :5342-5347). The port had
+    // neither: every file took the global limit and the global preview option.
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/perfile");
+    QDir().mkpath(tempDir);
+    const bool ext = thePrefs.showExtControls();
+    const auto globalLimit = thePrefs.maxSourcesPerFile();
+    const auto restore = qScopeGuard([&] {
+        thePrefs.setShowExtControls(ext);
+        thePrefs.setMaxSourcesPerFile(globalLimit);
+    });
+    thePrefs.setMaxSourcesPerFile(400);
+
+    PartFile pf;
+    pf.setFileName(QStringLiteral("film.avi"));
+    pf.setFileSize(PARTSIZE * 3);
+    uint8 hash[16];
+    std::memset(hash, 0x5D, sizeof(hash));
+    pf.setFileHash(hash);
+    QVERIFY(pf.createPartFile(tempDir));
+
+    thePrefs.setShowExtControls(true);
+    QCOMPARE(pf.maxSources(), uint32{400});
+    pf.setPrivateMaxSources(40);
+    QCOMPARE(pf.maxSources(), uint32{40});
+    QCOMPARE(pf.maxSourcePerFileSoft(), uint32{36});   // 9/10
+    QCOMPARE(pf.maxSourcePerFileUDP(), uint32{30});    // 3/4
+    // Outside advanced mode a limit that can be neither seen nor changed does not apply
+    thePrefs.setShowExtControls(false);
+    QCOMPARE(pf.maxSources(), uint32{400});
+
+    pf.setPreviewPrio(true);
+    pf.setPauseOnPreview(true);
+    QVERIFY(pf.isPausingOnPreview());   // a movie that can be paused
+
+    pf.savePartFile();
+    PartFile loaded;
+    QCOMPARE(loaded.loadPartFile(tempDir, pf.partMetFileName()), PartFileLoadResult::LoadSuccess);
+    QCOMPARE(loaded.privateMaxSources(), uint32{40});
+    QVERIFY(loaded.previewPrio());
+    QVERIFY(loaded.isPausingOnPreview());
+
+    // Not a previewable type: the flag does nothing
+    PartFile text;
+    text.setFileName(QStringLiteral("notes.txt"));
+    text.setPauseOnPreview(true);
+    QVERIFY(!text.isPausingOnPreview());
 }
 
 void tst_PartFile::updatePartsInfo_rebuildsFrequencyAndCompleteCount()

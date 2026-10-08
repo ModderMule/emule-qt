@@ -1862,7 +1862,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
     // it cannot use.
     if (!dialDirectly) {
         // The three routes, in the order the branches below try them.
-        const bool directUdp = supportsDirectUDPCallback() && thePrefs.udpPort() != 0
+        const bool directUdp = supportsDirectUDPCallback() && theApp.listeningUdpPort() != 0
                             && !m_connectAddress.isNull();
         const bool kadCallback = hasValidBuddyID() && kad::Kademlia::instance()
                               && kad::Kademlia::instance()->isConnected()
@@ -1939,7 +1939,7 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
 
     // ---- Path 4: Direct Callback via UDP (firewalled but UDP open) ----
     // MFC BaseClient.cpp:1399-1413
-    if (supportsDirectUDPCallback() && thePrefs.udpPort() != 0 && !m_connectAddress.isNull()) {
+    if (supportsDirectUDPCallback() && theApp.listeningUdpPort() != 0 && !m_connectAddress.isNull()) {
         m_connectingState = ConnectingState::DirectCallback;
 
         // Build connect options byte: MFC GetMyConnectOptions(true, false)
@@ -4566,6 +4566,8 @@ void UpDownClient::onFileRequestReceived(const uint8* data, uint32 size, uint8 o
         SafeMemFile io(data, size);
         uint8 fileHash[16];
         io.readHash16(fileHash);
+        if (!theApp.downloadQueue || !theApp.downloadQueue->fileByID(fileHash))
+            checkFailedFileIdReqs(fileHash);   // MFC ListenSocket.cpp:455
         if (m_reqFile && md4equ(fileHash, m_reqFile->fileHash()))
             processFileInfo(io, m_reqFile);
         break;
@@ -4602,6 +4604,8 @@ void UpDownClient::onFileRequestReceived(const uint8* data, uint32 size, uint8 o
         SafeMemFile io(data, size);
         uint8 fileHash[16];
         io.readHash16(fileHash);
+        if (!theApp.downloadQueue || !theApp.downloadQueue->fileByID(fileHash))
+            checkFailedFileIdReqs(fileHash);   // MFC ListenSocket.cpp:470
         // Verify this is for the file we requested
         if (m_reqFile && md4equ(fileHash, m_reqFile->fileHash())) {
             processFileStatus(false, io, m_reqFile);
@@ -4631,7 +4635,8 @@ void UpDownClient::onFileRequestReceived(const uint8* data, uint32 size, uint8 o
 
 void UpDownClient::onUploadRequestReceived(const uint8* data, uint32 size)
 {
-    if (size < 16)
+    // MFC ListenSocket.cpp:480-493: exactly a file hash
+    if (size != 16)
         return;
 
     // MFC's one hard handshake gate in the TCP dispatch (srchybrid/ListenSocket.cpp:480):
@@ -4647,9 +4652,10 @@ void UpDownClient::onUploadRequestReceived(const uint8* data, uint32 size)
         if (theApp.uploadQueue)
             theApp.uploadQueue->addClientToQueue(this);
     } else {
+        // MFC answers nothing here, it only counts the miss
         logDebug(QStringLiteral("onUploadRequestReceived: file not found for %1")
                      .arg(userName()));
-        sendFileNotFound(data);
+        checkFailedFileIdReqs(data);
     }
 }
 

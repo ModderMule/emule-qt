@@ -52,12 +52,13 @@ enum class IpcMsgType : int {
     GetConnection        = 140,
     ConnectToServer      = 141,  ///< [] or [ip: int64, port: int64, addr: string]
     DisconnectFromServer = 142,
+    ReleaseConnectHold   = 143,  ///< [] — first start wizard closed: do the auto-connect a `--hold-connect` daemon deferred
     StartSearch          = 150,  ///< [expression, fileType, method, minSize, maxSize, avail, ext, completeSrc]
     GetSearchResults     = 151,  ///< [searchID]
     StopSearch           = 152,  ///< [searchID: int]
     RemoveSearch         = 153,  ///< [searchID: int]
     ClearAllSearches     = 154,  ///< []
-    DownloadSearchFile   = 155,  ///< [hash: string, fileName: string, fileSize: int64, link: string, category: int] — link wins if set; category optional
+    DownloadSearchFile   = 155,  ///< [hash: string, fileName: string, fileSize: int64, link: string, category: int, searchID: int, paused: bool] — link wins if set; category on are optional, paused absent = the option decides
     /// [searchID: int] → bool. Next page of a finished Usenet / torrent (Server)
     /// search whose PushSearchState said hasMore; false when it has none.
     SearchMore           = 157,
@@ -95,7 +96,7 @@ enum class IpcMsgType : int {
     BootstrapKad         = 212,  ///< [ip: string, port: int]  (empty = from nodes.dat)
     DisconnectKad        = 213,
     SyncLogs             = 214,  ///< [lastLogId: int64]  — request buffered logs since ID
-    Shutdown             = 215,  ///< [] — request graceful daemon shutdown
+    Shutdown             = 215,  ///< [restart?: bool] — graceful daemon shutdown; restart = start again with the same arguments
     GetKadSearches       = 216,
     GetKadLookupHistory  = 217,  ///< [searchId: int] — lookup history for a search
     GetNetworkInfo       = 218,  ///< [] — all network info for the Network Information dialog
@@ -257,6 +258,28 @@ enum class IpcMsgType : int {
     /// next OP_FILEDESC does too. Nothing comes back but `ok`: your own comment never
     /// appears in the `comments[]` of a details reply, which is other people's.
     SetFileComment          = 271,
+
+    /// [userHash: string] → lift a ban on that client (MFC MP_UNBAN).
+    UnbanClient             = 279,
+
+    // -- Download menu, advanced entries (MFC DownloadListCtrl) ---------------
+    /// [hash: string, url: bool, text: string, port: int] → ok when the source was
+    /// taken. A peer is `text` = address (or "address:port") + `port`; a URL source
+    /// is `text` alone.
+    AddDownloadSource       = 280,
+    /// [hashes: string[], limit: int] — the file's own source limit, 0 = global.
+    SetDownloadSourceLimit  = 281,
+    /// [hashes: string[], previewPrio: int, pauseOnPreview: int] — each -1 leave,
+    /// 0 off, 1 on (MFC "Increase priority for preview parts" / "Pause when
+    /// preview is possible").
+    SetDownloadPreviewFlags = 282,
+    /// [hash: string, path: string] — import the parts of a file on the daemon's
+    /// host that match this download's hashes. Runs in the background; the row's
+    /// fileOp reads "importing" meanwhile. An empty path stops a running import.
+    ImportDownloadParts     = 283,
+    /// [hash: string] → [ok, partFilePath: string]. Writes buffered data out, for a
+    /// preview application that reads the part file itself (MFC ExecutePartFile).
+    FlushDownload           = 284,
 
     // -- Indexers (700-719) --------------------------------------------------
     //

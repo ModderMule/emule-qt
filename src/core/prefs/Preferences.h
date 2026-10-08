@@ -1583,9 +1583,6 @@ public:
     [[nodiscard]] QString videoPlayerArgs() const;
     void setVideoPlayerArgs(const QString& val);
 
-    [[nodiscard]] bool createBackupToPreview() const;
-    void setCreateBackupToPreview(bool val);
-
     [[nodiscard]] bool autoCleanupFilenames() const;
     void setAutoCleanupFilenames(bool val);
     /// '|'-separated substrings the auto cleanup strips from a new download's name.

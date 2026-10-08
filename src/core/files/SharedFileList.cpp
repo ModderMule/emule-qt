@@ -243,6 +243,20 @@ void SharedFileList::setWatchingEnabled(bool enabled)
     m_watcher->setRoots(watchRoots());
 }
 
+void SharedFileList::republishFile(KnownFile* file)
+{
+    republishFile(file, m_serverConnect ? m_serverConnect->currentServer() : nullptr);
+}
+
+void SharedFileList::republishFile(KnownFile* file, const Server* srv)
+{
+    // only servers that tell complete from partial files need the second offer
+    if (file && srv && srv->supportsZlib()) {
+        m_republishED2K = true;
+        file->setPublishedED2K(false);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // safeAddKFile — add a file to the shared list
 // ---------------------------------------------------------------------------
@@ -981,6 +995,14 @@ KadPublishStore::Fingerprint SharedFileList::keywordFingerprint(const PublishKey
     return fingerprint;
 }
 
+bool SharedFileList::isShareableFile(const QString& fileName, uint64 size)
+{
+    if (size == 0 || size > MAX_EMULE_FILE_SIZE)
+        return false;
+    // MFC also checks for an OLE storage; the name is the portable part of that
+    return fileName.compare(QLatin1String("thumbs.db"), Qt::CaseInsensitive) != 0;
+}
+
 // ---------------------------------------------------------------------------
 // checkAndAddSingleFile — one explicitly-shared file
 // ---------------------------------------------------------------------------
@@ -988,7 +1010,7 @@ KadPublishStore::Fingerprint SharedFileList::keywordFingerprint(const PublishKey
 void SharedFileList::checkAndAddSingleFile(const QString& filePath)
 {
     const QFileInfo fi(filePath);
-    if (!fi.isFile() || fi.size() == 0)
+    if (!fi.isFile() || !isShareableFile(fi.fileName(), static_cast<uint64>(fi.size())))
         return;
 
     if (m_knownFiles) {
@@ -1395,7 +1417,7 @@ void SharedFileList::listDirectory(const QString& dir, QHash<QString, DiskEntry>
     while (it.hasNext()) {
         it.next();
         const QFileInfo fi = it.fileInfo();
-        if (!fi.isFile() || fi.size() == 0)
+        if (!fi.isFile() || !isShareableFile(fi.fileName(), static_cast<uint64>(fi.size())))
             continue;
 
         const QString filename = fi.fileName();

@@ -136,6 +136,16 @@ jobs:
     with:
       geoip: true
 
+  # Temporary, see macos-intel.yml
+  macos-intel:
+    name: macOS Intel
+    needs: [guard, geoip]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/macos-intel.yml
+    with:
+      geoip: true
+
   windows:
     name: Windows
     needs: [guard, geoip]
@@ -147,7 +157,7 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    needs: [guard, linux, macos, windows]
+    needs: [guard, linux, macos, macos-intel, windows]
     runs-on: ubuntu-latest
     permissions:
       # Only job that can write. The Releases API lives under `contents`.
@@ -169,7 +179,7 @@ jobs:
         with:
           path: dist
           pattern: eMuleQt-v*
-          merge-multiple: true    # load-bearing: flattens all three into dist/
+          merge-multiple: true    # load-bearing: flattens every platform into dist/
 
       - name: Verify assets and generate SHA256SUMS.txt
         working-directory: dist
@@ -178,7 +188,8 @@ jobs:
 
           assets=(
             "eMuleQt-v${VERSION}-linux-x86_64.tar.gz"
-            "eMuleQt-v${VERSION}-macOS.dmg"
+            "eMuleQt-v${VERSION}-macOS-arm64.dmg"
+            "eMuleQt-v${VERSION}-macOS-x86_64.dmg"
             "eMuleQt-v${VERSION}-win64.zip"
           )
 
@@ -214,7 +225,8 @@ jobs:
             echo "| Platform | Download |"
             echo "| --- | --- |"
             echo "| Linux x86_64 | \`eMuleQt-v${VERSION}-linux-x86_64.tar.gz\` |"
-            echo "| macOS (Apple silicon) | \`eMuleQt-v${VERSION}-macOS.dmg\` |"
+            echo "| macOS 13+ (Apple silicon) | \`eMuleQt-v${VERSION}-macOS-arm64.dmg\` |"
+            echo "| macOS 13+ (Intel) | \`eMuleQt-v${VERSION}-macOS-x86_64.dmg\` |"
             echo "| Windows x64 | \`eMuleQt-v${VERSION}-win64.zip\` |"
             echo
             echo "**Full changelog:** ${compare}"

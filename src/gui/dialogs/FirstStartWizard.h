@@ -41,6 +41,9 @@ public:
     /// The preference keys Finish wrote (IPC names). Empty until accepted.
     [[nodiscard]] const QCborMap& appliedSettings() const { return m_applied; }
 
+    /// Show a port-mapping status (PushPortMapStatus map); a final one ends the wait.
+    void showPortMapStatus(const QCborMap& info);
+
 private slots:
     void onBack();
     void onNext();
@@ -48,6 +51,7 @@ private slots:
     void onUPnPTimeout();
     void onHelp();
     void onSpeedSelectionChanged();
+    void onCustomRateEdited();
 
 private:
     void setupHeader();
@@ -59,6 +63,8 @@ private:
     void fillFromSettings(const QCborMap& prefs);
     [[nodiscard]] bool networksValid();
     [[nodiscard]] std::optional<BandwidthSettings> selectedBandwidth() const;
+    void requestPortMapStatus();
+    void endUPnPWait(const QString& text, bool failed);
     void finish();
 
     IpcClient* m_ipc = nullptr;
@@ -74,6 +80,7 @@ private:
     QCheckBox* m_udpDisableCheck = nullptr;
     QPushButton* m_upnpBtn = nullptr;
     QProgressBar* m_upnpProgress = nullptr;
+    QLabel* m_upnpStatus = nullptr;
     QTimer* m_upnpTimer = nullptr;
     bool m_upnpRequested = false;
 

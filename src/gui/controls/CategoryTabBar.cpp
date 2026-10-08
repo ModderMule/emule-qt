@@ -5,6 +5,9 @@
 #include "controls/CategoryTabBar.h"
 
 #include "app/IpcClient.h"
+#include "controls/CategoryFilterProxy.h"
+#include "prefs/Preferences.h"
+#include "utils/MenuUtils.h"
 #include "utils/StatusBarNotifier.h"
 #include "dialogs/CategoryDialog.h"
 #include "utils/PreviewLauncher.h"
@@ -116,6 +119,10 @@ void CategoryTabBar::requestCategories()
             cat.color = static_cast<quint32>(
                 map.value(QStringLiteral("color")).toInteger(kCategoryColorAuto));
             cat.prio = static_cast<quint8>(map.value(QStringLiteral("prio")).toInteger(cat.prio));
+            cat.filter = static_cast<int>(map.value(QStringLiteral("filter")).toInteger(0));
+            cat.filterNeg = map.value(QStringLiteral("filterNeg")).toBool(false);
+            cat.care4all = map.value(QStringLiteral("care4all")).toBool(false);
+            cat.downloadInAlphabeticalOrder = map.value(QStringLiteral("alphabetical")).toBool(false);
             // Index 0's resolved path is the global incoming dir — the folder an
             // unset category falls back to, and the sensible starting point for
             // the browse button.
@@ -144,6 +151,139 @@ void CategoryTabBar::applyCategories(const QList<DownloadCategory>& categories)
     if (categories.size() != m_categories.size())
         return;   // a structural change is not this function's job
     sendCategories(categories, m_categoryOldIndex);
+}
+
+QString CategoryTabBar::viewFilterTitle(int filter)
+{
+    using namespace CategoryViewFilter;
+    switch (filter) {
+    case All:           return tr("All");
+    case Uncategorized: return tr("Uncategorized");
+    case Incomplete:    return tr("Incomplete");
+    case Completed:     return tr("Completed");
+    case Waiting:       return tr("Waiting");
+    case Downloading:   return tr("Downloading");
+    case Erroneous:     return tr("Erroneous");
+    case Paused:        return tr("Paused");
+    case SeenComplete:  return tr("Ever Seen Complete");
+    case Video:         return tr("Video");
+    case Audio:         return tr("Audio");
+    case Archive:       return tr("Archive");
+    case CDImage:       return tr("CD-Image");
+    case Document:      return tr("Document");
+    case Picture:       return tr("Picture");
+    case Program:       return tr("Program");
+    case RegExp:        return tr("Regular Expression");
+    case Collection:    return tr("Collection");
+    default:            return {};
+    }
+}
+
+QString CategoryTabBar::tabLabel(int index) const
+{
+    // MFC EditCatTabLabel (srchybrid/TransferWnd.cpp:1044-1086): "All" reads as its
+    // filter, a category as "title (filter)", a negated filter with a leading "!"
+    // and a regular expression as itself in quotes.
+    QString label = index == 0 ? QString{} : categoryTitle(index);
+    if (index < m_categories.size()) {
+        const DownloadCategory& cat = m_categories.at(index);
+        if (index == 0 || cat.filter > 0) {
+            QString filter = cat.filterNeg ? QStringLiteral("!") : QString{};
+            filter += cat.filter == CategoryViewFilter::RegExp
+                ? QStringLiteral("\"%1\"").arg(cat.regexp) : viewFilterTitle(cat.filter);
+            label += index == 0 ? filter : QStringLiteral(" (%1)").arg(filter);
+        }
+    } else if (index == 0) {
+        label = tr("All");
+    }
+    if (index < m_tabInfo.size() && !m_tabInfo.at(index).isEmpty())
+        label += u' ' + m_tabInfo.at(index);
+    return label;
+}
+
+void CategoryTabBar::setTabInfo(const QStringList& info)
+{
+    if (info == m_tabInfo)
+        return;
+    m_tabInfo = info;
+    for (int i = 0; i < count(); ++i)
+        setTabText(i, tabLabel(static_cast<int>(tabData(i).toLongLong())));
+}
+
+void CategoryTabBar::setViewFilter(int index, int filter)
+{
+    if (index < 0 || index >= m_categories.size())
+        return;
+
+    auto categories = m_categories;
+    DownloadCategory& cat = categories[index];
+    if (filter == CategoryViewFilter::All)
+        cat.filterNeg = false;   // nothing to negate
+    cat.filter = filter;
+
+    // A regular expression filter with no expression: ask for one, as MFC does
+    if (filter == CategoryViewFilter::RegExp && cat.regexp.isEmpty()) {
+        CategoryDialog dialog(cat, m_defaultIncomingDir, this);
+        if (dialog.exec() == QDialog::Accepted) {
+            const int chosen = cat.filter;
+            cat = dialog.category();
+            cat.filter = chosen;
+        }
+        if (cat.regexp.isEmpty())
+            cat.filter = CategoryViewFilter::All;
+    }
+    sendCategories(categories, m_categoryOldIndex);
+}
+
+void CategoryTabBar::addViewFilterMenu(QMenu* menu, int index)
+{
+    if (!menu || index < 0 || index >= m_categories.size())
+        return;
+
+    using namespace CategoryViewFilter;
+    const DownloadCategory& cat = m_categories.at(index);
+    const bool ext = thePrefs.showExtControls();
+    auto* filterMenu = menu->addMenu(menuIcon("SearchParams.ico"), tr("Select View Filter"));
+
+    const auto addMode = [this, filterMenu, index, &cat](int mode) {
+        auto* act = filterMenu->addAction(viewFilterTitle(mode), this,
+                                          [this, index, mode] { setViewFilter(index, mode); });
+        act->setCheckable(true);
+        act->setChecked(cat.filter == mode);
+        return act;
+    };
+
+    addMode(All);
+    // Only a tab that looks at every download can ask for the unfiled ones
+    addMode(Uncategorized)->setEnabled(index == 0 || cat.care4all);
+    if (index != 0 && ext) {
+        addMode(RegExp);
+        auto* everyFile = filterMenu->addAction(tr("Evaluate All Files"), this, [this, index] {
+            auto categories = m_categories;
+            categories[index].care4all = !categories[index].care4all;
+            sendCategories(categories, m_categoryOldIndex);
+        });
+        everyFile->setCheckable(true);
+        everyFile->setChecked(cat.care4all);
+    }
+    filterMenu->addSeparator();
+    for (const int mode : {Incomplete, Completed, Waiting, Downloading, Erroneous, Paused, SeenComplete})
+        addMode(mode);
+    filterMenu->addSeparator();
+    for (const int mode : {Video, Audio, Archive, CDImage, Document, Picture, Program, Collection})
+        addMode(mode);
+
+    if (ext) {
+        filterMenu->addSeparator();
+        auto* negate = filterMenu->addAction(tr("Negate Filter"), this, [this, index] {
+            auto categories = m_categories;
+            categories[index].filterNeg = !categories[index].filterNeg;
+            sendCategories(categories, m_categoryOldIndex);
+        });
+        negate->setCheckable(true);
+        negate->setChecked(cat.filterNeg);
+        negate->setEnabled(cat.filter > 0);
+    }
 }
 
 void CategoryTabBar::showCategoryMenu(int tabIndex, const QPoint& globalPos)
@@ -215,7 +355,7 @@ void CategoryTabBar::rebuildTabs()
         // since that index is what part.met and .nzbstate store. Index 0 is the
         // "All" tab.
         for (int i = 0; i < m_categories.size(); ++i) {
-            const int idx = addTab(categoryTitle(i));
+            const int idx = addTab(tabLabel(i));
             setTabData(idx, QVariant::fromValue(static_cast<int64_t>(i)));
 
             if (!m_categories.at(i).comment.isEmpty())
@@ -264,6 +404,10 @@ void CategoryTabBar::sendCategories(const QList<DownloadCategory>& categories,
             {QStringLiteral("regexp"),        cat.regexp},
             {QStringLiteral("color"),         static_cast<qint64>(cat.color)},
             {QStringLiteral("prio"),          static_cast<int>(cat.prio)},
+            {QStringLiteral("filter"),        cat.filter},
+            {QStringLiteral("filterNeg"),     cat.filterNeg},
+            {QStringLiteral("care4all"),      cat.care4all},
+            {QStringLiteral("alphabetical"),  cat.downloadInAlphabeticalOrder},
         });
     }
 
@@ -285,6 +429,11 @@ void CategoryTabBar::sendCategories(const QList<DownloadCategory>& categories,
 
 void CategoryTabBar::addCategoryInteractive()
 {
+    addCategory({});
+}
+
+void CategoryTabBar::addCategory(std::function<void(int index)> onCreated)
+{
     CategoryDialog dialog(DownloadCategory{}, m_defaultIncomingDir, this);
     if (dialog.exec() != QDialog::Accepted)
         return;
@@ -293,6 +442,18 @@ void CategoryTabBar::addCategoryInteractive()
     auto oldIndex = m_categoryOldIndex;
     categories.append(dialog.category());
     oldIndex.append(-1); // brand new — no downloads point at it yet
+
+    if (onCreated) {
+        // The new entry goes last; it exists once the daemon's list comes back
+        const int newIndex = static_cast<int>(categories.size()) - 1;
+        auto* once = new QObject(this);
+        connect(this, &CategoryTabBar::categoriesReloaded, once,
+                [this, once, newIndex, onCreated = std::move(onCreated)] {
+            once->deleteLater();
+            if (newIndex < m_categories.size())
+                onCreated(newIndex);
+        });
+    }
     sendCategories(categories, oldIndex);
 }
 

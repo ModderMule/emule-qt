@@ -9,7 +9,9 @@
 #include "prefs/Preferences.h"
 
 #include "utils/ClientIcons.h"
+#include "utils/ClientStateText.h"
 #include "utils/CountryFlags.h"
+#include "utils/FileTypeText.h"
 #include "utils/OtherFunctions.h"
 #include "utils/PriorityText.h"
 #include "utils/RatingIcons.h"
@@ -18,47 +20,41 @@
 #include <QColor>
 #include <QFileInfo>
 #include <QDateTime>
+#include <QLocale>
+
+#include <limits>
 
 namespace eMule {
 
 namespace {
 
-/// Estimate remaining time from size and speed.
-QString formatRemaining(int64_t remaining, int64_t speed)
+/// MFC's Remaining cell, "<time> (<bytes left>)" for every unfinished file
+/// (srchybrid/DownloadListCtrl.cpp:2062-2066); "?" stands for an unknown time.
+QString remainingText(const DownloadRow& d)
 {
-    if (speed <= 0 || remaining <= 0)
+    if (d.isComplete() || d.status == QLatin1String("completing"))
         return {};
-    const int64_t secs = remaining / speed;
-    if (secs < 60)
-        return QStringLiteral("%1s").arg(secs);
-    if (secs < 3600)
-        return QStringLiteral("%1m %2s").arg(secs / 60).arg(secs % 60);
-    if (secs < 86400)
-        return QStringLiteral("%1h %2m").arg(secs / 3600).arg((secs % 3600) / 60);
-    return QStringLiteral("%1d %2h").arg(secs / 86400).arg((secs % 86400) / 3600);
+    return QStringLiteral("%1 (%2)").arg(formatSecondsHM(d.timeRemaining),
+                                         formatByteSize(std::max<int64_t>(d.fileSize - d.completedSize, 0)));
 }
 
-/// Format a timestamp as date-time string, or "Never" if 0.
-QString formatTimestamp(int64_t epoch)
+/// A list date, or @p unknown when there is none.
+QString formatTimestamp(int64_t epoch, const QString& unknown)
 {
     if (epoch <= 0)
-        return QObject::tr("Never");
-    return QDateTime::fromSecsSinceEpoch(epoch).toString(QStringLiteral("dd/MM/yyyy HH:mm:ss"));
+        return unknown;
+    return QLocale().toString(QDateTime::fromSecsSinceEpoch(epoch), QLocale::ShortFormat);
 }
 
-/// Map ED2K file type codes to display names matching MFC.
-QString fileTypeDisplay(const QString& type)
+/// MFC appends the complete-source range to Seen Complete, also after "Never"
+/// (srchybrid/DownloadListCtrl.cpp:2068-2079).
+QString completeSourcesSuffix(const DownloadRow& d)
 {
-    if (type == QLatin1String("Arc"))      return QObject::tr("Archive");
-    if (type == QLatin1String("Audio"))    return QObject::tr("Audio");
-    if (type == QLatin1String("Video"))    return QObject::tr("Video");
-    if (type == QLatin1String("Image"))    return QObject::tr("Image");
-    if (type == QLatin1String("Pro"))      return QObject::tr("Program");
-    if (type == QLatin1String("Doc"))      return QObject::tr("Document");
-    if (type == QLatin1String("Iso"))      return QObject::tr("CD-Image");
-    if (type == QLatin1String("EmuleCollection")) return QObject::tr("eMule Collection");
-    if (!type.isEmpty())                   return type;
-    return {};
+    if (d.completeSourcesLo == 0)
+        return QStringLiteral(" (< %1)").arg(d.completeSourcesHi);
+    if (d.completeSourcesLo == d.completeSourcesHi)
+        return QStringLiteral(" (%1)").arg(d.completeSourcesLo);
+    return QStringLiteral(" (%1 - %2)").arg(d.completeSourcesLo).arg(d.completeSourcesHi);
 }
 
 /// Map SourceFrom enum to display string.
@@ -110,6 +106,9 @@ QString sourcesText(const DownloadRow& d)
         text += QStringLiteral("+%1").arg(d.a4afSrcCount);
     if (d.transferringSrcCount > 0)
         text += QStringLiteral(" (%1)").arg(d.transferringSrcCount);
+    // The file's own source limit (MFC DownloadListCtrl.cpp:2034-2035)
+    if (thePrefs.showExtControls() && d.privateMaxSources > 0)
+        text += QStringLiteral(" [%1]").arg(d.privateMaxSources);
     return text;
 }
 
@@ -238,10 +237,14 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
 
         if (role == Qt::DisplayRole) {
             switch (index.column()) {
-            case ColFileName:      return s.userName;
+            case ColFileName:      return clientNameText(s.userName);
             case ColSize:          return sourceFromDisplay(s.sourceFrom);
-            case ColCompleted:     return s.sessionDown > 0 ? formatByteSize(s.sessionDown) : QString{};
-            case ColSpeed:         return s.datarate > 0 ? formatByteRate(s.datarate) : QString{};
+            // MFC shows the bytes received from this source in both columns; an
+            // A4AF source shows neither that nor a speed (DownloadListCtrl.cpp:493-507).
+            case ColCompleted:
+            case ColTransferred:
+                return !s.a4af && s.transferredDown > 0 ? formatByteSize(s.transferredDown) : QString{};
+            case ColSpeed:         return !s.a4af && s.datarate > 0 ? formatByteRate(s.datarate) : QString{};
             case ColProgress:      return {};
             // MFC GetSourceItemDisplayText (DownloadListCtrl.cpp:510-519): software
             // under Sources, the queue rank under Priority.
@@ -254,7 +257,7 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
                 return s.remoteQueueRank > 0
                     ? QStringLiteral("QR: %1").arg(s.remoteQueueRank)
                     : QString{};
-            case ColStatus:        return s.downloadState;
+            case ColStatus:        return sourceStatusText(s);
             case ColRemaining:     return {};
             case ColSeenComplete:  return {};
             case ColLastReception: return {};
@@ -273,7 +276,8 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             switch (index.column()) {
             case ColFileName:      return s.userName;
             case ColSize:          return s.sourceFrom;
-            case ColCompleted:     return QVariant::fromValue(s.sessionDown);
+            case ColCompleted:
+            case ColTransferred:   return QVariant::fromValue(s.transferredDown);
             case ColSpeed:         return QVariant::fromValue(s.datarate);
             case ColProgress:      return 0.0;
             case ColSources:       return s.software;
@@ -308,11 +312,15 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             && s.sourceFrom == static_cast<int>(SourceFrom::HttpCache))
             return QColor(0x00, 0x99, 0x99);
 
+        // An A4AF source draws the bare grey bar (MFC DrawStatusBar, onlygreyrect)
         if (role == PartMapRole && index.column() == ColProgress)
-            return s.partMap;
+            return s.a4af ? QByteArray{} : s.partMap;
 
         if (role == PausedRole && index.column() == ColProgress)
             return false;
+
+        if (role == A4afRole)
+            return s.a4af;
 
         return {};
     }
@@ -346,11 +354,11 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         case ColPriority:   return downloadPriorityText(d.priority, d.isAutoDownPriority);
         case ColStatus:     return statusText(d);
         case ColRemaining:
-            return formatRemaining(d.fileSize - d.completedSize, d.datarate);
+            return remainingText(d);
         case ColSeenComplete:
-            return formatTimestamp(d.lastSeenComplete);
+            return QString(formatTimestamp(d.lastSeenComplete, tr("Never")) + completeSourcesSuffix(d));
         case ColLastReception:
-            return formatTimestamp(d.lastReception);
+            return formatTimestamp(d.lastReception, tr("Never"));
         case ColCategory:
             // Uncategorised downloads show nothing, as in MFC — "All" is not a
             // category a file is *in*, it is the absence of one.
@@ -363,9 +371,11 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
                        ? m_categoryNames.at(static_cast<int>(d.category))
                        : QString::number(d.category);
         case ColAddedOn:
-            return formatTimestamp(d.addedOn);
+            return formatTimestamp(d.addedOn, QStringLiteral("?"));
         case ColConfidence:
             return confidenceText(d.confidence, d.fakeScore);
+        case ColTransferred:
+            return formatByteSize(d.downTransferred);
         default: break;
         }
     }
@@ -399,7 +409,7 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
                  formatByteSize(d.fileSize),
                  formatByteSize(d.completedSize),
                  QString::number(d.percentCompleted, 'f', 1))
-            .arg(fileTypeDisplay(d.fileType),
+            .arg(fileTypeText(d.fileType, d.fileName),
                  statusText(d), downloadPriorityText(d.priority, d.isAutoDownPriority),
                  sourcesText(d))
             .arg(d.requests).arg(d.acceptedRequests)
@@ -422,16 +432,16 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         case ColSources:    return d.sourceCount;
         case ColPriority:   return downPriorityOrdinal(d.priority);
         case ColStatus:     return statusRank(d);
-        case ColRemaining: {
-            if (d.datarate > 0)
-                return QVariant::fromValue((d.fileSize - d.completedSize) / d.datarate);
-            return QVariant::fromValue(int64_t{-1});
-        }
+        // Unknown sorts as the longest (MFC DownloadListCtrl.cpp:1729-1752)
+        case ColRemaining:
+            return QVariant::fromValue(d.timeRemaining >= 0 ? d.timeRemaining
+                                                            : std::numeric_limits<int64_t>::max());
         case ColSeenComplete: return QVariant::fromValue(d.lastSeenComplete);
         case ColLastReception: return QVariant::fromValue(d.lastReception);
         case ColCategory:   return QVariant::fromValue(d.category);
         case ColAddedOn:    return QVariant::fromValue(d.addedOn);
         case ColConfidence: return confidenceSortKey(d.confidence, d.fakeScore);
+        case ColTransferred: return QVariant::fromValue(d.downTransferred);
         default: break;
         }
     }
@@ -440,6 +450,24 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
     // caller inspecting a selected cell may be on any of them.
     if (role == kCategoryRole)
         return static_cast<int>(d.category);
+
+    // What a category's view filter asks about the file (MFC CheckShowItemInGivenCat)
+    if (role == kCategoryFactsRole) {
+        CategoryRowFacts facts;
+        facts.category = static_cast<int>(d.category);
+        facts.fileName = d.fileName;
+        facts.unfinished = !d.isComplete();
+        facts.seenComplete = d.lastSeenComplete != 0;
+        const bool running = d.status == QLatin1String("ready") || d.status == QLatin1String("empty");
+        if (d.status == QLatin1String("error"))
+            facts.state = CategoryRowFacts::Erroneous;
+        else if (d.status == QLatin1String("paused") || d.isStopped)
+            facts.state = CategoryRowFacts::Paused;
+        else if (running)
+            facts.state = d.transferringSrcCount > 0 ? CategoryRowFacts::Transferring
+                                                     : CategoryRowFacts::Waiting;
+        return QVariant::fromValue(facts);
+    }
 
     if (role == PartMapRole && index.column() == ColProgress)
         return d.partMap;
@@ -478,6 +506,7 @@ QVariant DownloadListModel::headerData(int section, Qt::Orientation orientation,
     case ColCategory:       return tr("Category");
     case ColAddedOn:        return tr("Added On");
     case ColConfidence:     return tr("Confidence");
+    case ColTransferred:    return tr("Transferred");
     default:                return {};
     }
 }
@@ -744,6 +773,36 @@ int DownloadListModel::statusRank(const DownloadRow& d)
     return d.transferringSrcCount > 0 ? 2 : 3;
 }
 
+QString DownloadListModel::sourceStatusText(const SourceRow& s) const
+{
+    // MFC GetSourceItemDisplayText, case 8 (srchybrid/DownloadListCtrl.cpp:520-547)
+    const bool ext = thePrefs.showExtControls();
+    QString text;
+    if (!s.a4af) {
+        text = downloadStateText(s.downloadState, s.remoteQueueFull);
+        if (!text.isEmpty() && s.sourceFrom == static_cast<int>(SourceFrom::HttpCache))
+            text += QStringLiteral(" (%1)").arg(tr("HTTP Cache"));
+    } else {
+        text = tr("Asked for another file");
+        if (ext) {
+            QString detail;
+            if (s.noNeededHere)
+                detail = downloadStateText(QStringLiteral("NoNeededParts"), false);
+            else if (s.downloadState == QLatin1String("Downloading"))
+                detail = downloadStateText(s.downloadState, false);
+            else if (s.swapSuspended)
+                detail = tr("Swap blocked");
+            if (!detail.isEmpty())
+                text += QStringLiteral(" (%1)").arg(detail);
+            if (!s.otherFileName.isEmpty())
+                text += QStringLiteral(": \"%1\"").arg(s.otherFileName);
+        }
+    }
+    if (ext && s.hasOtherRequests)
+        text += u'*';
+    return text;
+}
+
 int DownloadListModel::rowOfUid(quintptr uid) const
 {
     return m_rowByUid.value(uid, -1);
@@ -754,6 +813,23 @@ void DownloadListModel::reindexRows()
     m_rowByUid.clear();
     for (size_t i = 0; i < m_downloads.size(); ++i)
         m_rowByUid.insert(m_downloads[i].uid, static_cast<int>(i));
+}
+
+// ---------------------------------------------------------------------------
+// DownloadSortProxy
+// ---------------------------------------------------------------------------
+
+bool DownloadSortProxy::lessThan(const QModelIndex& left, const QModelIndex& right) const
+{
+    // Sources asking another file stay below the available ones, whatever the order
+    // (MFC SortProc, srchybrid/DownloadListCtrl.cpp:1636-1637).
+    if (left.parent().isValid() && right.parent().isValid()) {
+        const bool leftA4af = left.data(DownloadListModel::A4afRole).toBool();
+        const bool rightA4af = right.data(DownloadListModel::A4afRole).toBool();
+        if (leftA4af != rightA4af)
+            return (sortOrder() == Qt::AscendingOrder) ? rightA4af : leftA4af;
+    }
+    return QSortFilterProxyModel::lessThan(left, right);
 }
 
 } // namespace eMule

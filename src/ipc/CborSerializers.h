@@ -208,7 +208,18 @@ inline void insertFakeVerdict(QCborMap& m, const FakeFileVerdict& verdict)
         {QStringLiteral("fileOp"),               static_cast<int>(f.fileOp())},
         {QStringLiteral("completionError"),      f.completionError()},
         {QStringLiteral("category"),             static_cast<qint64>(f.category())},
-        {QStringLiteral("lastSeenComplete"),    static_cast<qint64>(f.completeSourcesTime())},
+        {QStringLiteral("lastSeenComplete"),    static_cast<qint64>(f.lastSeenComplete())},
+        // MFC appends the complete-source range to Seen Complete
+        {QStringLiteral("completeSourcesLo"),   static_cast<int>(f.completeSourcesCountLo())},
+        {QStringLiteral("completeSourcesHi"),   static_cast<int>(f.completeSourcesCountHi())},
+        {QStringLiteral("timeRemaining"),       static_cast<qint64>(f.timeRemaining())},
+        // Bytes received for this file; "transferredData" below is the upload statistic
+        {QStringLiteral("downTransferred"),     static_cast<qint64>(f.transferred())},
+        // Advanced-mode per-file settings (MFC Source Handling / Preview submenus)
+        {QStringLiteral("privateMaxSources"),   static_cast<qint64>(f.privateMaxSources())},
+        {QStringLiteral("previewPrio"),         f.previewPrio()},
+        {QStringLiteral("pauseOnPreview"),      f.isPausingOnPreview()},
+        {QStringLiteral("hashsetNeeded"),       f.partCount() > 1 && f.isMD4HashsetNeeded()},
         {QStringLiteral("lastReception"),       static_cast<qint64>(f.lastReceptionDate())},
         {QStringLiteral("addedOn"),             static_cast<qint64>(f.createdDate())},
         {QStringLiteral("fileType"),            f.fileType()},
@@ -332,6 +343,33 @@ inline void insertBindState(QCborMap& info)
     m.insert(QStringLiteral("length"),  static_cast<qint64>(f.getIntTagValue(FT_MEDIA_LENGTH)));
     m.insert(QStringLiteral("bitrate"), static_cast<qint64>(f.getIntTagValue(FT_MEDIA_BITRATE)));
     m.insert(QStringLiteral("codec"),   f.getStrTagValue(FT_MEDIA_CODEC));
+    // Hidden-by-default columns of MFC's list: Folder and AICH Hash
+    m.insert(QStringLiteral("directory"), f.directory());
+    if (f.fileIdentifier().hasAICHHash())
+        m.insert(QStringLiteral("aichHash"), f.fileIdentifier().getAICHHash().getString());
+    // The advanced-mode detail behind Availability (MFC SearchListCtrl.cpp:1555-1567)
+    m.insert(QStringLiteral("kadPublishers"), static_cast<int>((f.kadPublishInfo() >> 16) & 0xFF));
+    m.insert(QStringLiteral("clientCount"),   static_cast<int>(f.clientsCount()));
+    // The names this file was found under, once there is more than one (MFC's child rows)
+    if (f.listChildCount() > 1) {
+        QCborArray children;
+        for (const SearchFile* child : f.listChildren()) {
+            QCborMap c;
+            c.insert(QStringLiteral("fileName"),    child->fileName());
+            c.insert(QStringLiteral("sourceCount"), static_cast<qint64>(child->sourceCount()));
+            c.insert(QStringLiteral("directory"),   child->directory());
+            if (child->fileIdentifier().hasAICHHash())
+                c.insert(QStringLiteral("aichHash"), child->fileIdentifier().getAICHHash().getString());
+            c.insert(QStringLiteral("artist"),  child->getStrTagValue(FT_MEDIA_ARTIST));
+            c.insert(QStringLiteral("album"),   child->getStrTagValue(FT_MEDIA_ALBUM));
+            c.insert(QStringLiteral("title"),   child->getStrTagValue(FT_MEDIA_TITLE));
+            c.insert(QStringLiteral("length"),  static_cast<qint64>(child->getIntTagValue(FT_MEDIA_LENGTH)));
+            c.insert(QStringLiteral("bitrate"), static_cast<qint64>(child->getIntTagValue(FT_MEDIA_BITRATE)));
+            c.insert(QStringLiteral("codec"),   child->getStrTagValue(FT_MEDIA_CODEC));
+            children.append(c);
+        }
+        m.insert(QStringLiteral("children"), children);
+    }
     // Absent for a row nothing was judged on (torrent / Usenet rows)
     if (f.hasFakeVerdict())
         insertFakeVerdict(m, f.fakeVerdict());
@@ -467,8 +505,14 @@ inline void insertBindState(QCborMap& info)
     m.insert(QStringLiteral("isConnected"), c.socket() != nullptr);
     // File info. File Priority on the queue list is the *upload* file's up priority
     // (MFC QueueListCtrl.cpp:204-226), not the requested download's.
-    if (c.reqFile())
+    if (c.reqFile()) {
         m.insert(QStringLiteral("reqFileName"), c.reqFile()->fileName());
+        m.insert(QStringLiteral("reqFileSize"), static_cast<qint64>(c.reqFile()->fileSize()));
+    }
+    m.insert(QStringLiteral("kadPort"),    static_cast<int>(c.kadPort()));
+    m.insert(QStringLiteral("kadVersion"), static_cast<int>(c.kadVersion()));
+    // A4AF mark: a source of this file that is asking another one
+    m.insert(QStringLiteral("hasOtherRequests"), c.otherRequestCount() > 0);
     if (const auto* uf = c.uploadFile()) {
         m.insert(QStringLiteral("uploadFileName"), uf->fileName());
         m.insert(QStringLiteral("uploadFilePriority"), static_cast<int>(uf->upPriority()));
@@ -525,6 +569,23 @@ inline void insertBindState(QCborMap& info)
         m.insert(QStringLiteral("upStatus"), bar);
     }
     return m;
+}
+
+/// The child rows of one download: its sources, then the ones currently asking
+/// another file (MFC's UNAVAILABLE_SOURCE rows), marked "a4af".
+[[nodiscard]] inline QCborArray downloadSourcesToCbor(const PartFile& file)
+{
+    QCborArray clients;
+    for (const auto* c : file.srcList())
+        clients.append(toCbor(*c));
+    for (const auto* c : file.a4afSrcList()) {
+        QCborMap m = toCbor(*c);
+        m.insert(QStringLiteral("a4af"), true);
+        m.insert(QStringLiteral("noNeededHere"), c->isInNoNeededList(&file));
+        m.insert(QStringLiteral("swapSuspended"), c->reqFile() && c->isSwapSuspended(c->reqFile()));
+        clients.append(m);
+    }
+    return clients;
 }
 
 // ---------------------------------------------------------------------------

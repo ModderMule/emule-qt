@@ -28,6 +28,9 @@ private slots:
     void processIdChangeExtended();
     void processIdChangeExtendedRejectsLowIDReport();
     void processServerStatus();
+    void processServerIdent_keepsTheSessionAddress();
+    void shortPacket_doesNotDesyncTheStream();
+    void shortIdChange_disconnects();
     void processReject();
     void connectTo_literalInDynIPSkipsDns();
     void socketError_classification_data();
@@ -291,6 +294,104 @@ void tst_ServerSocket::processServerStatus()
     QTRY_COMPARE_WITH_TIMEOUT(statusSpy.count(), 1, 3000);
     QCOMPARE(statusSpy.first().at(0).toUInt(), users);
     QCOMPARE(statusSpy.first().at(1).toUInt(), files);
+
+    serverSide->close();
+    clientSocket.close();
+}
+
+void tst_ServerSocket::processServerIdent_keepsTheSessionAddress()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    ServerSocket clientSocket;
+    QSignalSpy identSpy(&clientSocket, &ServerSocket::serverIdentReceived);
+    QVERIFY(identSpy.isValid());
+
+    Server srv(htonl(0x7F000001), server.serverPort());
+    clientSocket.connectTo(srv);
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* serverSide = server.nextPendingConnection();
+    QVERIFY(serverSide != nullptr);
+    QVERIFY(clientSocket.waitForConnected(5000));
+
+    // hash16, ip, port, tagCount 0 — the ident claims 10.1.2.3
+    char payload[26] = {};
+    const uint32 claimed = htonl(0x0A010203);
+    std::memcpy(payload + 16, &claimed, 4);
+    writeRawPacket(serverSide, OP_EDONKEYPROT, OP_SERVERIDENT, payload, 26);
+
+    QTRY_COMPARE_WITH_TIMEOUT(identSpy.count(), 1, 3000);
+    QVERIFY(clientSocket.currentServer());
+    QCOMPARE(clientSocket.currentServer()->ipAddress().toString(), QStringLiteral("127.0.0.1"));
+
+    serverSide->close();
+    clientSocket.close();
+}
+
+void tst_ServerSocket::shortPacket_doesNotDesyncTheStream()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    ServerSocket clientSocket;
+    QSignalSpy statusSpy(&clientSocket, &ServerSocket::serverStatusReceived);
+    QSignalSpy failSpy(&clientSocket, &ServerSocket::connectionFailed);
+
+    Server srv(htonl(0x7F000001), server.serverPort());
+    clientSocket.connectTo(srv);
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* serverSide = server.nextPendingConnection();
+    QVERIFY(serverSide != nullptr);
+    QVERIFY(clientSocket.waitForConnected(5000));
+
+    // a 4-byte status packet (MFC ignores it), then a valid one, in one write
+    char payload[8];
+    const uint32 users = 7, files = 9;
+    std::memcpy(payload, &users, 4);
+    std::memcpy(payload + 4, &files, 4);
+    QByteArray both;
+    const auto append = [&](uint32 len) {
+        const uint32 packetLen = len + 1;
+        both.append(char(OP_EDONKEYPROT));
+        both.append(reinterpret_cast<const char*>(&packetLen), 4);
+        both.append(char(OP_SERVERSTATUS));
+        both.append(payload, len);
+    };
+    append(4);
+    append(8);
+    serverSide->write(both);
+    serverSide->flush();
+
+    QTRY_COMPARE_WITH_TIMEOUT(statusSpy.count(), 1, 3000);
+    QCOMPARE(statusSpy.first().at(0).toUInt(), users);
+    QCOMPARE(failSpy.count(), 0);
+
+    serverSide->close();
+    clientSocket.close();
+}
+
+void tst_ServerSocket::shortIdChange_disconnects()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    ServerSocket clientSocket;
+    QSignalSpy failSpy(&clientSocket, &ServerSocket::connectionFailed);
+
+    Server srv(htonl(0x7F000001), server.serverPort());
+    clientSocket.connectTo(srv);
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* serverSide = server.nextPendingConnection();
+    QVERIFY(serverSide != nullptr);
+    QVERIFY(clientSocket.waitForConnected(5000));
+
+    // MFC throws IDS_ERR_BADSERVERREPLY and ends in CS_DISCONNECTED
+    const char payload[2] = {};
+    writeRawPacket(serverSide, OP_EDONKEYPROT, OP_IDCHANGE, payload, 2);
+
+    QTRY_COMPARE_WITH_TIMEOUT(failSpy.count(), 1, 3000);
+    QCOMPARE(clientSocket.connectionState(), ServerConnState::Disconnected);
 
     serverSide->close();
     clientSocket.close();

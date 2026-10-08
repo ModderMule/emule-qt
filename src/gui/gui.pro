@@ -192,6 +192,8 @@ HEADERS += \
     dialogs/FileDetailDialog.h \
     dialogs/FindInListDialog.h \
     dialogs/ConnectionPresets.h \
+    dialogs/PortChangeNotice.h \
+    dialogs/PortMapStatusText.h \
     dialogs/FirstStartWizard.h \
     dialogs/ImportDownloadsDialog.h \
     dialogs/MetadataPage.h \

@@ -1,6 +1,9 @@
 #include "pch.h"
 #include "dialogs/FirstStartWizard.h"
 
+#include "dialogs/PortChangeNotice.h"
+#include "dialogs/PortMapStatusText.h"
+
 #include "app/IpcClient.h"
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
@@ -18,6 +21,7 @@
 #include <QPointer>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QTimer>
@@ -195,6 +199,27 @@ QWidget* FirstStartWizard::setupPortPage()
     m_upnpProgress->setVisible(false);
     vbox->addWidget(m_upnpProgress);
 
+    // Result of the mapping; two lines reserved so the fixed-size dialog never clips it
+    m_upnpStatus = new QLabel(container);
+    m_upnpStatus->setObjectName(QStringLiteral("upnpStatus"));
+    m_upnpStatus->setWordWrap(true);
+    m_upnpStatus->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    m_upnpStatus->setMinimumHeight(2 * m_upnpStatus->fontMetrics().lineSpacing());
+    vbox->addWidget(m_upnpStatus);
+
+    // Safety net only: the daemon reports the outcome, see showPortMapStatus()
+    m_upnpTimer = new QTimer(this);
+    m_upnpTimer->setSingleShot(true);
+    m_upnpTimer->setInterval(30000);
+    connect(m_upnpTimer, &QTimer::timeout, this, &FirstStartWizard::onUPnPTimeout);
+    if (m_ipc) {
+        // Only while the button's request is open; later changes are not this dialog's news
+        connect(m_ipc, &IpcClient::portMapStatusChanged, this, [this](const Ipc::IpcMessage& msg) {
+            if (m_upnpTimer->isActive())
+                showPortMapStatus(msg.fieldMap(0));
+        });
+    }
+
     connect(m_upnpBtn, &QPushButton::clicked, this, &FirstStartWizard::onUPnPSetup);
 
     pageLayout->addWidget(container);
@@ -299,9 +324,9 @@ QWidget* FirstStartWizard::setupSpeedPage()
     connect(m_speedList, &QTreeWidget::currentItemChanged,
             this, &FirstStartWizard::onSpeedSelectionChanged);
     connect(m_customDownSpin, &QDoubleSpinBox::valueChanged,
-            this, &FirstStartWizard::onSpeedSelectionChanged);
+            this, &FirstStartWizard::onCustomRateEdited);
     connect(m_customUpSpin, &QDoubleSpinBox::valueChanged,
-            this, &FirstStartWizard::onSpeedSelectionChanged);
+            this, &FirstStartWizard::onCustomRateEdited);
     connect(m_speedList, &QTreeWidget::itemDoubleClicked, this, &FirstStartWizard::onNext);
     return page;
 }
@@ -398,9 +423,6 @@ void FirstStartWizard::fillFromSettings(const QCborMap& prefs)
     m_recommendedItem->setText(1, limitText(recommended.maxDown));
     m_recommendedItem->setText(2, limitText(recommended.maxUp));
 
-    m_customDownSpin->setValue(kiBToMbit(m_current.capDown));
-    m_customUpSpin->setValue(kiBToMbit(m_current.capUp));
-
     // An install still on the old shipped limits never tuned them: offer the new defaults.
     m_speedList->setCurrentItem(m_current == legacyDefaultBandwidth() ? m_recommendedItem
                                                                       : m_keepItem);
@@ -429,14 +451,27 @@ void FirstStartWizard::onNext()
 
 void FirstStartWizard::onSpeedSelectionChanged()
 {
-    const auto* item = m_speedList->currentItem();
-    const bool custom = item == m_customItem;
-    m_customDownSpin->setEnabled(custom);
-    m_customUpSpin->setEnabled(custom);
-
     const BandwidthSettings result = selectedBandwidth().value_or(m_current);
+
+    // The fields follow the selected line; Custom keeps what they show.
+    if (m_speedList->currentItem() != m_customItem) {
+        const QSignalBlocker blockDown(m_customDownSpin);
+        const QSignalBlocker blockUp(m_customUpSpin);
+        m_customDownSpin->setValue(kiBToMbit(result.capDown));
+        m_customUpSpin->setValue(kiBToMbit(result.capUp));
+    }
+
     m_speedResult->setText(tr("Download limit: %1    Upload limit: %2")
                                .arg(limitText(result.maxDown), limitText(result.maxUp)));
+}
+
+/// Typing a rate means the line is none of the listed ones.
+void FirstStartWizard::onCustomRateEdited()
+{
+    if (m_speedList->currentItem() != m_customItem)
+        m_speedList->setCurrentItem(m_customItem); // -> onSpeedSelectionChanged
+    else
+        onSpeedSelectionChanged();
 }
 
 // ---------------------------------------------------------------------------
@@ -445,40 +480,55 @@ void FirstStartWizard::onSpeedSelectionChanged()
 
 void FirstStartWizard::onUPnPSetup()
 {
-    m_upnpBtn->setEnabled(false);
-    m_upnpProgress->setVisible(true);
     m_upnpRequested = true;
-
     thePrefs.setEnableUPnP(true);
 
-    if (m_ipc && m_ipc->isConnected()) {
-        Ipc::IpcMessage req(Ipc::IpcMsgType::SetPreferences);
-        req.append(QStringLiteral("enableUPnP"));
-        req.append(true);
-        req.append(QStringLiteral("port"));
-        req.append(static_cast<qint64>(m_tcpPortSpin->value()));
-        req.append(QStringLiteral("udpPort"));
-        req.append(static_cast<qint64>(m_udpDisableCheck->isChecked() ? 0 : m_udpPortSpin->value()));
-        m_ipc->sendRequest(std::move(req));
-    } else {
-        // No daemon to write preferences.yml for us
+    if (!m_ipc || !m_ipc->isConnected()) {
+        // No daemon to write preferences.yml for us, and nobody to ask the router
         thePrefs.save();
+        endUPnPWait(tr("The ports are forwarded when the core starts."), false);
+        return;
     }
 
-    // Timeout after 30 seconds — treat as failure
-    m_upnpTimer = new QTimer(this);
-    m_upnpTimer->setSingleShot(true);
-    connect(m_upnpTimer, &QTimer::timeout, this, &FirstStartWizard::onUPnPTimeout);
-    m_upnpTimer->start(30000);
+    m_upnpBtn->setEnabled(false);
+    m_upnpProgress->setVisible(true);
+    showPortMapStatus({});   // pending
+    m_upnpTimer->start();
+
+    Ipc::IpcMessage req(Ipc::IpcMsgType::SetPreferences);
+    req.append(QStringLiteral("enableUPnP"));
+    req.append(true);
+    req.append(QStringLiteral("port"));
+    req.append(static_cast<qint64>(m_tcpPortSpin->value()));
+    req.append(QStringLiteral("udpPort"));
+    req.append(static_cast<qint64>(m_udpDisableCheck->isChecked() ? 0 : m_udpPortSpin->value()));
+    // The daemon has started its mapper by the time it answers; a mapper that was
+    // already running pushes nothing new, so ask for its state.
+    m_ipc->sendRequest(std::move(req), [self = QPointer<FirstStartWizard>(this)](
+                                           const Ipc::IpcMessage& resp) {
+        if (!self)
+            return;
+        if (resp.isValid() && resp.fieldBool(0))
+            self->requestPortMapStatus();
+        else
+            self->endUPnPWait(tr("The core did not accept the port settings."), true);
+    });
 }
 
 void FirstStartWizard::onUPnPTimeout()
 {
-    m_upnpProgress->setVisible(false);
-    m_upnpBtn->setEnabled(true);
-    QMessageBox::warning(this, tr("UPnP"),
-        tr("UPnP port mapping timed out. Your router may not support UPnP, "
-           "or it may be disabled. You can set up port forwarding manually."));
+    endUPnPWait(tr("No answer from the core about port forwarding."), true);
+}
+
+void FirstStartWizard::showPortMapStatus(const QCborMap& info)
+{
+    const PortMapSummary summary = portMapStatusSummary(info);
+    if (summary.outcome == PortMapOutcome::Pending) {
+        m_upnpStatus->setPalette(QPalette());
+        m_upnpStatus->setText(summary.text);
+        return;
+    }
+    endUPnPWait(summary.text, summary.outcome == PortMapOutcome::Failed);
 }
 
 // ---------------------------------------------------------------------------
@@ -579,12 +629,44 @@ void FirstStartWizard::finish()
             send("maxDownload", bandwidth->maxDown);
             send("maxUpload", bandwidth->maxUp);
         }
-        m_ipc->sendRequest(std::move(req));
+        // The wizard is gone by the time this answers: the notice goes to its parent
+        m_ipc->sendRequest(std::move(req), [parent = QPointer<QWidget>(parentWidget()),
+                                            ipc = QPointer<IpcClient>(m_ipc)](
+                                               const Ipc::IpcMessage& resp) {
+            showPortChangeResult(parent, resp, [ipc] {
+                if (ipc)
+                    ipc->sendRestart();
+            });
+        });
     } else {
         thePrefs.save();
     }
 
     accept();
+}
+
+void FirstStartWizard::requestPortMapStatus()
+{
+    Ipc::IpcMessage req(Ipc::IpcMsgType::GetNetworkInfo);
+    m_ipc->sendRequest(std::move(req), [self = QPointer<FirstStartWizard>(this)](
+                                           const Ipc::IpcMessage& resp) {
+        // Invalid = connection dropped; the timer reports that
+        if (self && resp.isValid() && self->m_upnpTimer->isActive())
+            self->showPortMapStatus(resp.fieldMap(1).value(QLatin1StringView("portmap")).toMap());
+    });
+}
+
+void FirstStartWizard::endUPnPWait(const QString& text, bool failed)
+{
+    m_upnpTimer->stop();
+    m_upnpProgress->setVisible(false);
+    m_upnpBtn->setEnabled(true);
+
+    QPalette pal;
+    if (failed)
+        pal.setColor(QPalette::WindowText, QColor(200, 40, 40));
+    m_upnpStatus->setPalette(pal);
+    m_upnpStatus->setText(text);
 }
 
 } // namespace eMule

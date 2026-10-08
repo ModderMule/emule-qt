@@ -8,6 +8,7 @@
 /// Creates and owns core upload pipeline components.
 
 #include "net/BindAddress.h"
+#include "portmap/PortMapTypes.h"
 #include "utils/Types.h"
 
 #include <QObject>
@@ -74,6 +75,24 @@ public:
     /// stopping, which is what finally gives the webServerUPnP pref an effect.
     void updatePortMappings();
 
+    /// Follow the enableUPnP pref on a running session: start or drop the mapper,
+    /// else re-declare the mappings. Call after a preference save.
+    void applyPortMapPreferences();
+
+    /// Move the listen sockets to the configured ports — only while no server, Kad
+    /// or peer is connected. Call after a preference save.
+    PortApplyResult applyListenPorts();
+    /// Ports the sockets are bound to (0 = closed).
+    [[nodiscard]] uint16 boundTcpPort() const;
+    [[nodiscard]] uint16 boundUdpPort() const;
+
+    /// Skip the auto-connect at start(): the GUI's first start wizard is about to
+    /// ask for the ports. Set before start().
+    void setConnectHold(bool hold) { m_connectHold = hold; }
+    [[nodiscard]] bool isConnectHeld() const { return m_connectHold; }
+    /// End the hold and do the auto-connect that start() skipped.
+    void releaseConnectHold();
+
     /// The bound-interface selection changed (preference edit) or may have (watchdog):
     /// re-resolve it, and when it differs close every socket and reopen on the new one.
     /// While it does not resolve the networks stay down; the daemon keeps running.
@@ -97,6 +116,11 @@ public:
     /// never fans a write out to every socket at once. Installed as
     /// AppContext::onPublicIPv6Changed.
     static void markPeersForIPChange(const Address& effective);
+
+signals:
+    /// Port-mapping status, whichever mapper instance is alive. Disabled when the
+    /// pref switches it off.
+    void portMapStatusChanged(eMule::PortMapStatus status);
 
 private slots:
     void onTimer();
@@ -153,11 +177,21 @@ private:
     void stopWorkerThreads();
     void suspendNetworking();
     void resumeNetworking();
+    /// No server, no Kad, no peer socket.
+    [[nodiscard]] bool isNetworkIdle() const;
+    void rememberAppliedPorts();
+    void publishListenPorts();
 
     BindAddress::Resolution m_appliedBind;   ///< what the open sockets were bound on
     bool m_netSuspended = false;
     bool m_resumeEd2k = false;   ///< reconnect to a server on resume
     bool m_resumeKad = false;    ///< restart Kad on resume
+    bool m_connectHold = false;  ///< auto-connect deferred until releaseConnectHold()
+    // Preference values the sockets were last bound with (not the socket ports:
+    // a configured 0 gets an OS-assigned one).
+    uint16 m_appliedTcpPort = 0;
+    uint16 m_appliedUdpPort = 0;
+    uint16 m_appliedServerUdpPort = 0;
 
     // Owned components
     std::unique_ptr<DownloadQueue> m_downloadQueue;

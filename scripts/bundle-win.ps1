@@ -128,7 +128,6 @@ $docDst = Join-Path $stageDir 'doc'
 New-Item -ItemType Directory -Force -Path $docDst | Out-Null
 Copy-Item (Join-Path $projectDir 'docs\openapi.json') $docDst -Force
 Copy-Item (Join-Path $projectDir 'docs\rest-api.md') $docDst -Force
-Copy-Item (Join-Path $projectDir 'docs\fake-file-detector.md') $docDst -Force
 
 # -- Copy translation files --------------------------------------------------
 
@@ -256,7 +255,7 @@ $required = @(
     'emuleqt.exe', 'emulecored.exe', 'emuleqt-mcp.exe',
     'config\eMule.tmpl', 'config\FakeFileFilter.dat', 'config\webserver\swagger-ui-bundle.js',
     'config\webserver\swagger-ui.css', 'config\webserver\swagger-ui.LICENSE.txt',
-    'doc\openapi.json', 'doc\rest-api.md', 'doc\fake-file-detector.md'
+    'doc\openapi.json', 'doc\rest-api.md'
 )
 $missing = @($required | Where-Object {
     $item = Get-Item (Join-Path $stageDir $_) -ErrorAction SilentlyContinue

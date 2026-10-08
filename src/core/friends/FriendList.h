@@ -13,6 +13,7 @@
 #include <QObject>
 #include <QString>
 
+#include <ctime>
 #include <memory>
 #include <vector>
 
@@ -36,6 +37,9 @@ public:
 
     /// Save the friend list to configDir/emfriends.met.
     void save(const QString& configDir) const;
+    /// Periodic save, every 19 minutes (MFC CFriendList::Process). Last-seen data
+    /// changes without an add/remove. @param now overridable for tests
+    void process(const QString& configDir, time_t now = std::time(nullptr));
 
     // -- Friend management ----------------------------------------------------
 
@@ -100,6 +104,7 @@ private:
     void emitConnectingResult(Friend* f, bool success);
 
     std::vector<std::unique_ptr<Friend>> m_friends;
+    time_t m_lastSaved = std::time(nullptr);
 };
 
 } // namespace eMule

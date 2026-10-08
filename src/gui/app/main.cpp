@@ -1,3 +1,4 @@
+#include "utils/TooltipDelayStyle.h"
 #include "pch.h"
 #include <QApplication>
 #include <QFile>
@@ -85,26 +86,37 @@ QString resolveDaemonPath()
 }
 
 /// Try to start the daemon process. Returns true if launched.
-bool launchDaemon(const QString& daemonPath)
+/// @param holdConnect the first start wizard is about to run: the core must not
+///        auto-connect before the ports are chosen.
+bool launchDaemon(const QString& daemonPath, bool holdConnect)
 {
     if (daemonPath.isEmpty())
         return false;
 
     eMule::logInfo(QStringLiteral("Launching daemon: %1").arg(daemonPath));
 
+    const QString holdArg = QStringLiteral("--hold-connect");
     if (eMule::thePrefs.startCoreWithConsole()) {
+        const QString command = holdConnect ? daemonPath + QLatin1Char(' ') + holdArg : daemonPath;
 #if defined(Q_OS_MACOS)
         const QString script = QStringLiteral("tell application \"Terminal\" to do script \"%1\"")
-                                   .arg(daemonPath);
+                                   .arg(command);
         return QProcess::startDetached(QStringLiteral("osascript"), {QStringLiteral("-e"), script});
 #elif defined(Q_OS_WIN)
-        return QProcess::startDetached(QStringLiteral("cmd"), {QStringLiteral("/k"), daemonPath});
+        QStringList args{QStringLiteral("/k"), daemonPath};
+        if (holdConnect)
+            args << holdArg;
+        return QProcess::startDetached(QStringLiteral("cmd"), args);
 #else
-        return QProcess::startDetached(QStringLiteral("xterm"), {QStringLiteral("-e"), daemonPath});
+        Q_UNUSED(command)
+        QStringList args{QStringLiteral("-e"), daemonPath};
+        if (holdConnect)
+            args << holdArg;
+        return QProcess::startDetached(QStringLiteral("xterm"), args);
 #endif
     }
 
-    return QProcess::startDetached(daemonPath, {});
+    return QProcess::startDetached(daemonPath, holdConnect ? QStringList{holdArg} : QStringList{});
 }
 
 /// The donkey at every size we have art for. One file per size rather than
@@ -245,9 +257,18 @@ int main(int argc, char* argv[])
         }
     }
 
+    // "Tooltip delay" (Options > Display)
+    app.setStyle(new eMule::TooltipDelayStyle);
+
+    // MFC CemuleDlg::OnInitDialog (srchybrid/EmuleDlg.cpp:395-398): no splash and no
+    // window when starting minimized — but never on the very first start, where the
+    // wizard has to be seen.
+    const bool startMinimized = eMule::thePrefs.startMinimized() && !cli.screenshotMode()
+                                && eMule::theUiState.firstStartWizardDone();
+
     // Splash screen
     QSplashScreen* splash = nullptr;
-    if (eMule::thePrefs.showSplashScreen()) {
+    if (eMule::thePrefs.showSplashScreen() && !startMinimized) {
         splash = new QSplashScreen(QPixmap(QStringLiteral(":/images/Logo.jpg")));
         splash->show();
         QApplication::processEvents();
@@ -257,7 +278,9 @@ int main(int argc, char* argv[])
     eMule::MainWindow mainWindow;
     mainWindow.setFirstStartWizardAllowed(!cli.screenshotMode());
     linkHandler.setMainWindow(&mainWindow);
-    if (eMule::theUiState.isWindowMaximized())
+    if (startMinimized)
+        mainWindow.startMinimized(eMule::theUiState.isWindowMaximized());
+    else if (eMule::theUiState.isWindowMaximized())
         mainWindow.showMaximized();
     else
         mainWindow.show();
@@ -456,6 +479,9 @@ int main(int argc, char* argv[])
                     info.value(QStringLiteral("connecting")).toBool(),
                     info.value(QStringLiteral("firewalled")).toBool(),
                     info.value(QStringLiteral("lowID")).toBool());
+                mainWindow.setRelatedSearchSupported(
+                    info.value(QStringLiteral("connected")).toBool()
+                    && info.value(QStringLiteral("serverRelatedSearch")).toBool());
             });
 
             // Request initial Kad state
@@ -534,17 +560,22 @@ int main(int argc, char* argv[])
             });
         } else if (!isRemote && !daemonPath.isEmpty()) {
             QObject::connect(&ipcClient, &eMule::IpcClient::connectionFailed,
-                             &app, [daemonPath, weOwnDaemon](const QString& error) {
+                             &app, [&ipcClient, daemonPath, weOwnDaemon, wizardAllowed = !cli.screenshotMode()](const QString& error) {
                 eMule::logWarning(QStringLiteral("Daemon not reachable (%1)").arg(error));
-                if (!*weOwnDaemon && launchDaemon(daemonPath))
+                if (ipcClient.daemonRestarting())
+                    return;   // it starts itself again
+                // Read at launch time: a relaunch after the wizard must connect
+                const bool hold = wizardAllowed && !eMule::theUiState.firstStartWizardDone();
+                if (!*weOwnDaemon && launchDaemon(daemonPath, hold))
                     *weOwnDaemon = true;
             });
             // When the daemon we launched crashes, reset the flag so the
             // connectionFailed handler above will relaunch it on the next
             // failed reconnect attempt.
             QObject::connect(&ipcClient, &eMule::IpcClient::disconnected,
-                             &app, [weOwnDaemon]() {
-                if (*weOwnDaemon)
+                             &app, [&ipcClient, weOwnDaemon]() {
+                // A requested restart brings back the daemon we own
+                if (*weOwnDaemon && !ipcClient.daemonRestarting())
                     *weOwnDaemon = false;
             });
         } else {
@@ -565,6 +596,9 @@ int main(int argc, char* argv[])
                 info.value(QStringLiteral("connecting")).toBool(),
                 info.value(QStringLiteral("firewalled")).toBool(),
                 info.value(QStringLiteral("lowID")).toBool());
+            mainWindow.setRelatedSearchSupported(
+                info.value(QStringLiteral("connected")).toBool()
+                && info.value(QStringLiteral("serverRelatedSearch")).toBool());
         });
 
         // Wire Kad push events to the status bar
@@ -626,6 +660,7 @@ int main(int argc, char* argv[])
         QObject::connect(&ipcClient, &eMule::IpcClient::disconnected,
                          &mainWindow, [&mainWindow]() {
             mainWindow.setEd2kStatus(false, false, false, false);
+            mainWindow.setRelatedSearchSupported(false);
             mainWindow.setKadStatus(false, false, false);
             mainWindow.setNetworkStats(0, 0);
             mainWindow.updateTransferRates(0.0, 0.0, 0.0, 0.0);

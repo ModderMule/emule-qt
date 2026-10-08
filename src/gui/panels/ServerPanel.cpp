@@ -645,6 +645,7 @@ QWidget* ServerPanel::createServerListPanel()
     header->setDefaultSectionSize(80);
     // Name, IP, Description, Ping, Users, Max Users, Files, Preference, Failed,
     // Static, Soft File Limit, LowID, Obfuscation, Country, IPv6.
+    serverView->setDefaultSort(ServerListModel::ColUsers, Qt::DescendingOrder);
     serverView->bindColumns(QStringLiteral("serverList"),
         {140, 140, 160, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 100, 220},
         {ServerListModel::ColCountry, ServerListModel::ColIPv6});

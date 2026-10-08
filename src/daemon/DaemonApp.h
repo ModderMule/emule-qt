@@ -41,6 +41,12 @@ public:
 
     /// Start the core session and IPC server. Returns true on success.
     bool start();
+    /// Start without auto-connecting (--hold-connect). Before start().
+    void setConnectHold(bool hold) { m_connectHold = hold; }
+
+    /// Quit, then have main() start the daemon again (new ports, same arguments).
+    static void requestRestart();
+    [[nodiscard]] static bool restartRequested() { return s_restartRequested; }
 
     /// Stop the IPC server and core session.
     void stop();
@@ -136,6 +142,7 @@ private:
                                   const QString& msg);
 
     std::unique_ptr<CoreSession> m_coreSession;
+    bool m_connectHold = false;
     std::unique_ptr<IpcServer> m_ipcServer;
     std::unique_ptr<CoreNotifierBridge> m_notifierBridge;
     /// Declared before m_webServer so the server that points at it dies first.
@@ -153,6 +160,7 @@ private:
     bool m_running = false;
 
     static DaemonApp* s_instance;
+    static inline bool s_restartRequested = false;
     static QtMessageHandler s_previousHandler;
     static QString s_sessionToken;  ///< Random UUID for this daemon process lifetime.
 };

@@ -15,8 +15,12 @@
 #include "utils/Log.h"
 
 #include <QCoreApplication>
+#include <QFile>
+#include <QProcess>
 #include <QLoggingCategory>
 #include <QSocketNotifier>
+
+#include <vector>
 
 #ifndef Q_OS_WIN
 #include <csignal>
@@ -126,6 +130,7 @@ int main(int argc, char* argv[])
     // Create and start daemon
     eMule::DaemonApp daemon;
     daemon.setTranslationRouter(&translations);
+    daemon.setConnectHold(cli.holdConnect());
     if (!daemon.start()) {
         eMule::logError(QStringLiteral("Failed to start daemon"));
         return 1;
@@ -139,6 +144,33 @@ int main(int argc, char* argv[])
 
     daemon.stop();
     eMule::thePrefs.save();
+
+    if (eMule::DaemonApp::restartRequested()) {
+        // The first-start hold belongs to the first start only
+        QStringList args = QCoreApplication::arguments().mid(1);
+        args.removeAll(QStringLiteral("--hold-connect"));
+        const QString program = QCoreApplication::applicationFilePath();
+        eMule::logInfo(QStringLiteral("Restarting daemon..."));
+#ifdef Q_OS_WIN
+        if (!QProcess::startDetached(program, args))
+            eMule::logError(QStringLiteral("Restart failed: could not start %1").arg(program));
+#else
+        // Same process: keeps the PID, the terminal and a container's PID 1
+        ::close(s_sigFd[0]);
+        ::close(s_sigFd[1]);
+        const QByteArray programBytes = QFile::encodeName(program);
+        QList<QByteArray> argBytes{programBytes};
+        for (const QString& arg : args)
+            argBytes.append(arg.toLocal8Bit());
+        std::vector<char*> argvNew;
+        for (QByteArray& arg : argBytes)
+            argvNew.push_back(arg.data());
+        argvNew.push_back(nullptr);
+        ::execv(programBytes.constData(), argvNew.data());
+        eMule::logError(QStringLiteral("Restart failed: could not start %1").arg(program));
+        return 1;
+#endif
+    }
 
     return result;
 }

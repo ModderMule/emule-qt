@@ -222,6 +222,7 @@ void CoreNotifierBridge::connectAll()
         connect(kad, &kad::Kademlia::started,  this, &CoreNotifierBridge::onKadStateChanged);
         connect(kad, &kad::Kademlia::stopped,  this, &CoreNotifierBridge::onKadStateChanged);
         connect(kad, &kad::Kademlia::connected, this, &CoreNotifierBridge::onKadStateChanged);
+        connect(kad, &kad::Kademlia::disconnected, this, &CoreNotifierBridge::onKadStateChanged);
         connect(kad, &kad::Kademlia::firewallStatusChanged,
                 this, [this](bool) { onKadStateChanged(); });
         connect(kad, &kad::Kademlia::searchesChanged,
@@ -230,11 +231,8 @@ void CoreNotifierBridge::connectAll()
                 this, [this](uint32_t, uint32_t) { onKadStateChanged(); });
     }
 
-    // Port mapping
-    if (theApp.portMapper) {
-        connect(theApp.portMapper, &PortMapper::statusChanged,
-                this, &CoreNotifierBridge::onPortMapStatusChanged);
-    }
+    // Port mapping: DaemonApp wires CoreSession::portMapStatusChanged to
+    // onPortMapStatusChanged — mappers come and go with the enableUPnP pref.
 }
 
 // ---------------------------------------------------------------------------
@@ -326,6 +324,8 @@ bool CoreNotifierBridge::broadcastServerState()
             info.insert(QStringLiteral("serverId"), static_cast<qint64>(srv->serverId()));
             info.insert(QStringLiteral("serverName"), srv->name());
             info.insert(QStringLiteral("serverDescription"), srv->description());
+            // "Search Related Files" is offered only on a server that answers it
+            info.insert(QStringLiteral("serverRelatedSearch"), srv->supportsRelatedSearch());
             // The address this session dialed: a dual-stack server may be on its IPv6
             info.insert(QStringLiteral("serverAddress"),
                         srv->hasDynIP() ? srv->address()

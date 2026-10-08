@@ -1,5 +1,8 @@
 name: macOS CI
 
+# Apple silicon (arm64). Intel Macs are built by macos-intel.yml, a copy of this
+# file that goes away when Intel support does -- keep the two in step until then.
+#
 # Tag pushes are handled by release.yml, which calls this workflow -- do not add a
 # push/tags trigger here or a tag would build twice.
 on:
@@ -16,6 +19,14 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Oldest macOS the app runs on; 13.0 is the floor of the Qt 6.10 binaries.
+  # Read by CMake, clang, scripts/build-macos-deps.sh and, as a hard check, by
+  # scripts/bundle-macos.sh.  Unset, everything is built for the runner's own
+  # macOS -- v0.5.6 needed macOS 26 that way.
+  MACOSX_DEPLOYMENT_TARGET: "13.0"
+  BUILD_ARCH: arm64
+  PROTOC_VERSION: "36.2"
+  PROTOC_SHA256: 83d0dc80672f53486f54299bca6177159f9cad1fd54d4d3143eeea53c4423e1b
 
 jobs:
   build:
@@ -36,7 +47,33 @@ jobs:
           cache: true
 
       - name: Install build tools
-        run: brew install ninja openssl@3 protobuf   # protobuf: protoc for qt_add_protobuf
+        run: command -v ninja || brew install ninja
+
+      # protoc for qt_add_protobuf.  The official binary rather than Homebrew's:
+      # the configure step below hides Homebrew from CMake.
+      - name: Install protoc
+        run: |
+          set -euo pipefail
+          zip="protoc-${PROTOC_VERSION}-osx-universal_binary.zip"
+          curl -fsSL --retry 3 --retry-delay 5 -o "$RUNNER_TEMP/$zip" \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/$zip"
+          echo "${PROTOC_SHA256}  $RUNNER_TEMP/$zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/$zip" -d "$RUNNER_TEMP/protoc"
+          echo "$RUNNER_TEMP/protoc/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/protoc/bin/protoc" --version
+
+      # Static OpenSSL, zstd and lz4 built for MACOSX_DEPLOYMENT_TARGET.  Homebrew's
+      # copies are built for the runner's macOS and must not reach the bundle.
+      - name: Restore static dependencies
+        id: deps-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/macos-deps
+          key: macos-deps-${{ env.BUILD_ARCH }}-${{ env.MACOSX_DEPLOYMENT_TARGET }}-${{ hashFiles('scripts/build-macos-deps.sh') }}
+
+      - name: Build static dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: scripts/build-macos-deps.sh "$BUILD_ARCH" "$RUNNER_TEMP/macos-deps"
 
       - name: Set up ccache
         uses: hendrikmuhs/ccache-action@v1
@@ -47,8 +84,11 @@ jobs:
         run: >
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
-          -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
+          -DCMAKE_OSX_ARCHITECTURES="$BUILD_ARCH"
+          -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR;$RUNNER_TEMP/macos-deps"
+          -DCMAKE_IGNORE_PREFIX_PATH="/opt/homebrew;/usr/local"
+          -DOPENSSL_ROOT_DIR="$RUNNER_TEMP/macos-deps"
+          -DOPENSSL_USE_STATIC_LIBS=ON
           -DCMAKE_C_COMPILER_LAUNCHER=ccache
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           -DEMULE_BUILD_TESTS=OFF
@@ -85,11 +125,25 @@ jobs:
       - name: Smoke-test the bundled MCP bridge
         run: build/src/gui/emuleqt.app/Contents/MacOS/emuleqt-mcp --version
 
+      # bundle-macos.sh checks every file against the app's own CPU; this checks
+      # the app's CPU is the one this workflow is meant to ship.
+      - name: Check architecture
+        run: |
+          set -euo pipefail
+          for name in emuleqt emulecored emuleqt-mcp; do
+            archs="$(lipo -archs "build/src/gui/emuleqt.app/Contents/MacOS/$name")"
+            echo "$name: $archs"
+            if [ "$archs" != "$BUILD_ARCH" ]; then
+              echo "::error::$name is [$archs], expected $BUILD_ARCH"
+              exit 1
+            fi
+          done
+
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
-          name: eMuleQt-v${{ env.APP_VERSION }}-macOS
-          path: build/eMuleQt-v*-macOS.dmg
+          name: eMuleQt-v${{ env.APP_VERSION }}-macOS-${{ env.BUILD_ARCH }}
+          path: build/eMuleQt-v*-macOS-${{ env.BUILD_ARCH }}.dmg
           # Default is 'warn', which would leave the job green with no artifact
           # if the bundle script produced nothing.
           if-no-files-found: error
@@ -138,6 +192,6 @@ jobs:
       - name: Upload debug symbols
         uses: actions/upload-artifact@v6
         with:
-          name: debug-symbols-macos-v${{ env.APP_VERSION }}
+          name: debug-symbols-macos-${{ env.BUILD_ARCH }}-v${{ env.APP_VERSION }}
           path: build/symbols/**
           if-no-files-found: error

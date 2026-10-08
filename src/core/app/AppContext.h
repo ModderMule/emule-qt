@@ -10,10 +10,12 @@
 #include "utils/Types.h"
 #include "utils/CorroborationTally.h"
 #include "net/Address.h"
+#include "portmap/PortMapTypes.h"
 
 #include <QByteArray>
 #include <QString>
 #include <functional>
+#include <optional>
 #include <vector>
 
 namespace eMule {
@@ -132,6 +134,14 @@ struct AppContext {
     /// The port others must dial to reach us: the external port of an active router
     /// mapping when it differs from the one we listen on, else the listening port.
     /// Hello, server login, Kad and links all take it from here.
+    /// The ports our sockets are bound to, as published by CoreSession; the preference
+    /// until then. They differ while a port change waits for a restart, and for port 0.
+    /// UDP is 0 when client UDP is off.
+    [[nodiscard]] uint16 listeningTcpPort() const;
+    [[nodiscard]] uint16 listeningUdpPort() const;
+    void setListeningPorts(uint16 tcp, uint16 udp);
+    void clearListeningPorts();
+
     [[nodiscard]] uint16 advertisedTcpPort() const;
     [[nodiscard]] uint16 advertisedUdpPort() const;
     /// The router-mapped external TCP port, 0 without a usable mapping.
@@ -217,6 +227,11 @@ struct AppContext {
     /// Networks went down (true) / came back (false) with the bound interface; for the
     /// parts outside the session (Usenet, IRC, state pushes).
     std::function<void(bool suspended)> onNetworkSuspended;
+    /// A port preference was saved: rebind when idle. Set by CoreSession.
+    std::function<PortApplyResult()> applyListenPorts;
+    /// The GUI's first start wizard closed (or its GUI went away): do the deferred
+    /// auto-connect. No-op without a hold. Set by CoreSession.
+    std::function<void()> releaseConnectHold;
 
     /// Tier 1: the egress IPv6 a server observed us on (CT_MOD_YOUR_IP in OP_SERVERIDENT).
     /// Callers must only pass this for a session that actually connected over IPv6; the
@@ -283,6 +298,8 @@ private:
     Address m_publicIPv6Server;
     /// Server's ST_IPV6_STATUS bits for our advertised v6 (0 = unknown).
     uint8 m_publicIPv6Status = 0;
+    std::optional<uint16> m_listenTcpPort;
+    std::optional<uint16> m_listenUdpPort;
     /// Last effective address reported by noteEffectiveIPv6Change().
     Address m_publicIPv6Announced;
 

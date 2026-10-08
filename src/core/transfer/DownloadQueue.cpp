@@ -286,6 +286,34 @@ PartFile* DownloadQueue::fileByID(const uint8* hash) const
     return nullptr;
 }
 
+UpDownClient* DownloadQueue::downloadClientByIP_UDP(const Address& addr, uint16 udpPort,
+                                                    bool ignorePortOnUniqueIP,
+                                                    bool* multipleIPs) const
+{
+    UpDownClient* sameIP = nullptr;
+    uint32 matches = 0;
+
+    if (!addr.isNull()) {
+        for (auto* file : m_items) {
+            for (auto* client : file->srcList()) {
+                // the reask goes to the dialled address, or the advertised IPv6
+                if (client->userAddress() != addr && client->connectAddress() != addr
+                    && client->userIPv6() != addr)
+                    continue;
+                if (client->udpPort() == udpPort)
+                    return client;
+                sameIP = client;
+                ++matches;
+            }
+        }
+    }
+
+    if (multipleIPs)
+        *multipleIPs = matches > 1;
+
+    return (ignorePortOnUniqueIP && matches == 1) ? sameIP : nullptr;
+}
+
 PartFile* DownloadQueue::fileByIndex(int index) const
 {
     if (index < 0 || index >= static_cast<int>(m_items.size()))
@@ -420,9 +448,9 @@ UpDownClient* DownloadQueue::checkAndAddSource(PartFile* file, UpDownClient* sou
     }
 
     // Check max sources per file
-    if (file->sourceCount() >= thePrefs.maxSourcesPerFile()) {
+    if (file->sourceCount() >= static_cast<int>(file->maxSources())) {
         logDebug(QStringLiteral("Source rejected — max sources reached (%1/%2) for %3")
-                     .arg(file->sourceCount()).arg(thePrefs.maxSourcesPerFile()).arg(file->fileName()));
+                     .arg(file->sourceCount()).arg(file->maxSources()).arg(file->fileName()));
         return nullptr;
     }
 
@@ -531,7 +559,7 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
         return;
 
     // Don't add sources to stopped files or beyond max (MFC:1516)
-    if (file->isStopped() || file->sourceCount() >= thePrefs.maxSourcesPerFile())
+    if (file->isStopped() || file->sourceCount() >= static_cast<int>(file->maxSources()))
         return;
 
     // IP filter on source IP (MFC:1519-1524)
@@ -1014,7 +1042,7 @@ void DownloadQueue::addServerSourceClient(PartFile* file, uint32 userId, uint16 
             return;
     }
 
-    if (file->sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
+    if (file->sourceCount() >= static_cast<int>(file->maxSources()))
         return;
 
     auto* client = makeSourceClient(file, userId, Address(), port,
@@ -1045,7 +1073,7 @@ void DownloadQueue::addServerSourceClientIPv6(PartFile* file, const uint8* ipv6,
 
     // Unlike an IPv4 LowID source, an IPv6 source is NOT dropped when we are
     // IPv4-firewalled: it is directly reachable over IPv6 regardless of our ED2K ID.
-    if (file->sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
+    if (file->sourceCount() >= static_cast<int>(file->maxSources()))
         return;
 
     auto* client = makeSourceClient(file, kNoIPv4SourceId, v6, port, SourceFrom::Server);
@@ -1096,7 +1124,7 @@ void DownloadQueue::addLinkSources(PartFile* file, const std::vector<ED2KLinkSou
     int skippedForDns = 0;
 
     for (const auto& src : sources) {
-        if (file->sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
+        if (file->sourceCount() >= static_cast<int>(file->maxSources()))
             break;
         if (src.port == 0)
             continue;
@@ -1183,7 +1211,7 @@ bool DownloadQueue::addVettedSource(PartFile* file, uint32 ed2kUserId, const Add
     if (v6.isNull() && theApp.isFirewalled() && isLowID(ed2kUserId))
         return false;
 
-    if (file->sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
+    if (file->sourceCount() >= static_cast<int>(file->maxSources()))
         return false;
 
     auto* client = makeSourceClient(file, ed2kUserId, v6, port, from,
@@ -1214,7 +1242,7 @@ void DownloadQueue::addLinkUrlSource(PartFile* file, const ED2KLinkSource& sourc
             return;
     }
 
-    if (file->sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()))
+    if (file->sourceCount() >= static_cast<int>(file->maxSources()))
         return;
 
     auto* client = new URLClient();
@@ -1227,6 +1255,37 @@ void DownloadQueue::addLinkUrlSource(PartFile* file, const ED2KLinkSource& sourc
 
     if (addSourceAndConnect(file, client))
         file->updatePartsInfo();   // MFC PartFile.cpp:2555
+}
+
+bool DownloadQueue::addUserSource(PartFile* file, const QString& host, uint16 port)
+{
+    const Address addr = Address::fromString(host.trimmed());
+    if (!file || addr.isNull() || port == 0 || vetPeerAddress(addr).isNull())
+        return false;
+
+    const int before = file->sourceCount();
+    addLinkPeerSource(file, addr.isIPv4() ? addr : Address{}, addr.isIPv6() ? addr : Address{}, port);
+    return file->sourceCount() > before;
+}
+
+bool DownloadQueue::addUserUrlSource(PartFile* file, const QString& urlText)
+{
+    const QUrl url(urlText.trimmed());
+    const QString scheme = url.scheme().toLower();
+    // URLClient only speaks HTTP
+    if (!file || !url.isValid() || url.host().isEmpty()
+        || (scheme != QStringLiteral("http") && scheme != QStringLiteral("https")))
+        return false;
+
+    ED2KLinkSource source;
+    source.hostname = url.host();
+    source.port = static_cast<uint16>(url.port(80));
+    source.address = Address::fromString(source.hostname);
+    source.url = url.toString();
+
+    const int before = file->sourceCount();
+    addLinkUrlSource(file, source);
+    return file->sourceCount() > before;
 }
 
 // ===========================================================================
@@ -1422,6 +1481,15 @@ void DownloadQueue::process()
     }
 
     processLocalRequests();
+
+    // MFC CDownloadQueue::OnConnectionState: the active-time clock follows the network
+    if (const bool connected = theApp.isConnected(); connected != m_wasConnected) {
+        m_wasConnected = connected;
+        for (auto* file : m_items) {
+            if (file->status() == PartFileStatus::Ready || file->status() == PartFileStatus::Empty)
+                file->setActive(connected);
+        }
+    }
 
     const uint64 curTick = getTickCount();
 
@@ -1921,6 +1989,17 @@ void DownloadQueue::onEntityRemoved(PartFile* file)
     emit fileRemoved(file);
 }
 
+void DownloadQueue::removeAutoPrioInCat(uint32 category, uint8 newPrio)
+{
+    for (auto* file : m_items) {
+        if (file->isAutoDownPriority() && (category == 0 || file->category() == category)) {
+            file->setAutoDownPriority(false);
+            file->setDownPriority(newPrio);
+        }
+    }
+    sortByPriority();
+}
+
 void DownloadQueue::setCatStatus(uint32 category, bool paused)
 {
     for (auto* file : m_items) {
@@ -2074,8 +2153,11 @@ void DownloadQueue::onDownloadCompleted(PartFile* file)
         m_knownFileList->safeAddKFile(file);
 
     // Add to SharedFileList
-    if (m_sharedFileList)
+    if (m_sharedFileList) {
         m_sharedFileList->safeAddKFile(file);
+        // already shared as a part file: update the server's complete-sources count
+        m_sharedFileList->republishFile(file);
+    }
 
     // Keep completed file in the queue so it remains visible in the UI.
     // It will be skipped by process() loops (status != Ready/Empty).

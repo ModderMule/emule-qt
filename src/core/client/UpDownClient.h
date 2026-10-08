@@ -892,6 +892,8 @@ public:
     /// Drop every A4AF link, on this side and on each file's.
     void removeFromAllOtherLists();
     [[nodiscard]] std::size_t otherRequestCount() const { return m_otherRequests.size(); }
+    /// This file is one we asked the peer for and it had nothing we need (A4AF row text).
+    [[nodiscard]] bool isInNoNeededList(const PartFile* file) const;
     [[nodiscard]] bool isSwapSuspended(const PartFile* file,
                                        bool allowShortReaskTime = false,
                                        bool fileIsNNP = false) const;
@@ -975,6 +977,16 @@ protected:
     /// accounting never runs for them.
     void addPayloadDown(uint64 bytes);
 
+    // -- HTTP sources (MFC CUrlClient, CUpDownClient::ProcessHttpBlockPacket) ---
+    /// A web server holds the whole file: mark every part available.
+    void markAsCompleteHttpSource(const PartFile* file);
+    /// Reserve up to a part's worth of blocks and merge the contiguous run into one
+    /// inclusive byte range; the rest is given back. False when nothing is needed.
+    bool reserveHttpRange(uint64& start, uint64& end);
+    /// Write body bytes that belong at file offset @p pos into the reserved blocks.
+    /// Returns the bytes consumed; fewer than @p size means no block wanted the rest.
+    uint32 writeHttpData(uint64 pos, const uint8* data, uint32 size);
+
 private:
     /// Hash, address, ID or a port changed: the download we are a source of files us
     /// under them, so it has to hear. Every writer of those members ends here.
@@ -1040,7 +1052,6 @@ private:
                          bool swapToIsNNP, bool curFileIsNNP,
                          bool& wasSkippedDueToSrcExch,
                          bool aggressiveSwapping = false);
-    bool isInNoNeededList(const PartFile* file) const;
     bool recentlySwappedForSourceExchange() const;
     void setSwapForSourceExchangeTick();
 

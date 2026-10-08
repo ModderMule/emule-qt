@@ -237,7 +237,7 @@ AddOutcome addDownloadFromLink(const QString& linkIn, qint64 category, bool paus
 
 AddOutcome addDownloadFromSearch(const QString& hashHex, const QString& fileName,
                                  uint64 fileSize, const QString& rawLink, qint64 category,
-                                 uint32 searchID)
+                                 uint32 searchID, std::optional<bool> paused)
 {
     AddOutcome out;
     if (!theApp.downloadQueue) {
@@ -262,7 +262,8 @@ AddOutcome addDownloadFromSearch(const QString& hashHex, const QString& fileName
         : ed2kFileLink(fileName, fileSize, hashHex);
 
     out.added = theApp.downloadQueue->addDownloadFromED2KLink(
-        link, DownloadQueue::defaultTempDir(), validCategory(category));
+        link, DownloadQueue::defaultTempDir(), validCategory(category),
+        paused.value_or(thePrefs.addNewFilesPaused()));
 
     // A rebuilt link carries nothing but hash, name and size: hand over what the search
     // result knows (MFC DownloadQueue.cpp:175-200). An already queued download gains from

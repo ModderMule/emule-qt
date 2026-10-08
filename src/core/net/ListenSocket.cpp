@@ -88,6 +88,7 @@ void ListenSocket::incomingConnection(qintptr socketDescriptor)
     // Only the hard limit: our own dialling must not lock inbound peers out
     // (MFC srchybrid/ListenSocket.cpp:2068).
     if (tooManySockets(true)) {
+        ++m_maxConnectionReached; // MFC counts in StopListening()
         // Reject — close immediately
         QTcpSocket temp;
         temp.setSocketDescriptor(socketDescriptor);
@@ -290,8 +291,6 @@ void ListenSocket::updateConnectionsStatus()
     m_activeConnections = static_cast<uint32>(m_socketList.size());
     if (m_activeConnections > m_peakConnections)
         m_peakConnections = m_activeConnections;
-    if (m_activeConnections > m_maxConnectionReached)
-        m_maxConnectionReached = m_activeConnections;
 
     if (!theApp.isConnected())
         return;

@@ -4,6 +4,8 @@
 
 #include "panels/MessagesPanel.h"
 
+#include "prefs/Preferences.h"
+
 #include "app/IpcClient.h"
 #include "app/UiState.h"
 #include "controls/FitTextTabBar.h"
@@ -538,8 +540,11 @@ void MessagesPanel::updateChatDisplay()
                                             : QStringLiteral("#CC0000");
         // Linkify the raw message; smileys are rendered into the gaps between links
         // only, so a ':/' inside a URL cannot turn into an image (TextLinks.h).
-        const QString escapedText = TextLinks::linkify(
-            msg.text, [](const QString& text) { return Smileys::render(text); });
+        // "Show smileys" off: the text as typed (MFC ChatSelector.cpp:155)
+        const bool smileys = thePrefs.showSmileys();
+        const QString escapedText = TextLinks::linkify(msg.text, [smileys](const QString& text) {
+            return smileys ? Smileys::render(text) : text.toHtmlEscaped();
+        });
         m_chatBrowser->append(
             QStringLiteral("<font color='gray'>[%1]</font> "
                            "<font color='%2'><b>%3:</b></font> %4")
@@ -719,6 +724,14 @@ int MessagesPanel::findTabByHash(const QString& friendHash) const
             return i;
     }
     return -1;
+}
+
+void MessagesPanel::startSession(const QString& userHash, const QString& userName)
+{
+    if (userHash.isEmpty())
+        return;
+    openChatTab(userHash, userName.isEmpty() ? userHash.left(8) : userName, true);
+    m_messageInput->setFocus();
 }
 
 void MessagesPanel::openChatTab(const QString& friendHash, const QString& friendName,
