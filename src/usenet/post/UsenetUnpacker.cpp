@@ -70,7 +70,7 @@ bool UsenetUnpacker::isArchiveVolume(const QString& fileName)
 UsenetUnpacker::VolumePosition UsenetUnpacker::volumePositionOf(const QString& fileName)
 {
     if (auto m = rePartRar().match(fileName); m.hasMatch())
-        return {m.captured(1).toLower(), m.captured(2).toInt()};
+        return {m.captured(1).toLower(), m.captured(2).toInt(), 1};
 
     if (auto m = reOldRar().match(fileName); m.hasMatch()) {
         // Offset by one so this can never tie with the bare .rar below, which is
@@ -79,7 +79,7 @@ UsenetUnpacker::VolumePosition UsenetUnpacker::volumePositionOf(const QString& f
     }
 
     if (auto m = reNumbered().match(fileName); m.hasMatch())
-        return {m.captured(1).toLower(), m.captured(2).toInt()};
+        return {m.captured(1).toLower(), m.captured(2).toInt(), 1};
 
     if (auto m = reSingle().match(fileName); m.hasMatch()) {
         // Volume zero: for the .r00 scheme this is the real first volume, and

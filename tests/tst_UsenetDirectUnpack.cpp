@@ -18,6 +18,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QRegularExpression>
 #include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTest>
@@ -76,7 +77,13 @@ QByteArray postStoredSet(FakeNntpServer& server, QByteArray& innerOut)
 /// Real posts do this — `vina.nzb` lists part03, part04, part01, part05 — and
 /// the queue downloads in the order the NZB gives, so volume one is not the
 /// first to seal.
-QByteArray postStoredSetOutOfOrder(FakeNntpServer& server, QByteArray& innerOut)
+///
+/// With @p bareSubjects the volumes are named with spaces and indexed by the
+/// bare filename, unquoted — `vina.nzb` again. The NZB name of such a file is
+/// only its last word, so until its first article lands it does not group with
+/// the volumes already known by their yEnc name.
+QByteArray postStoredSetOutOfOrder(FakeNntpServer& server, QByteArray& innerOut,
+                                   bool bareSubjects = false)
 {
     innerOut = patterned(kVolumePayload * kVolumeCount);
     const QList<QByteArray> volumes =
@@ -84,11 +91,18 @@ QByteArray postStoredSetOutOfOrder(FakeNntpServer& server, QByteArray& innerOut)
 
     QList<PostedFile> files;
     for (int i : {2, 3, 0, 4, 1}) {
-        files.append({QStringLiteral("Some.Release.part%1.rar")
+        files.append({QStringLiteral("%1.part%2.rar")
+                          .arg(bareSubjects ? QStringLiteral("Some Release Of Ours")
+                                            : QStringLiteral("Some.Release"))
                           .arg(i + 1, 2, 10, QLatin1Char('0')),
                       volumes.at(i)});
     }
-    return postFiles(server, files, kArticleSize);
+    const QByteArray nzb = postFiles(server, files, kArticleSize);
+    if (!bareSubjects)
+        return nzb;
+
+    static const QRegularExpression quoted(QStringLiteral("subject=\"&quot;(.*?)&quot;[^\"]*\""));
+    return QString::fromUtf8(nzb).replace(quoted, QStringLiteral("subject=\"\\1\"")).toUtf8();
 }
 
 /// Drop the NZB line naming @p messageId: an article the poster's indexer
@@ -223,6 +237,7 @@ private slots:
     void cancelMidSetLeavesNoPartialOutput();
     void aSetThatEndsShortFailsRatherThanHanging();
     void aDownloadedSetIsAlreadyUnpackedWhenPostProcessingStarts();
+    void aSetWhoseNzbScramblesItsVolumesIsStillUnpackedWhileDownloading_data();
     void aSetWhoseNzbScramblesItsVolumesIsStillUnpackedWhileDownloading();
     void withTheOptionOffTheSetIsUnpackedAtTheEndAsBefore();
     void aSetWithAnUnlistedArticleIsNotUnpackedWhileDownloading();
@@ -457,8 +472,20 @@ void tst_UsenetDirectUnpack::aDownloadedSetIsAlreadyUnpackedWhenPostProcessingSt
 // Everything that sealed before it therefore has to be replayed, or the run
 // parks on an index nobody will offer and the set quietly falls back to being
 // unpacked at the end — the feature switched off by the order of an NZB.
+void tst_UsenetDirectUnpack::aSetWhoseNzbScramblesItsVolumesIsStillUnpackedWhileDownloading_data()
+{
+    QTest::addColumn<bool>("bareSubjects");
+
+    QTest::newRow("quoted subjects") << false;
+    // The volume's slot must come from its own number: ranked among the
+    // siblings known so far, part03 takes part02's while that is still unnamed.
+    QTest::newRow("bare subjects with spaces") << true;
+}
+
 void tst_UsenetDirectUnpack::aSetWhoseNzbScramblesItsVolumesIsStillUnpackedWhileDownloading()
 {
+    QFETCH(bool, bareSubjects);
+
     eMule::testing::TempDir tmp;
     useTempPrefs(tmp);
 
@@ -467,7 +494,7 @@ void tst_UsenetDirectUnpack::aSetWhoseNzbScramblesItsVolumesIsStillUnpackedWhile
     server.addGroup(QStringLiteral("alt.binaries.test"), 1, 1, 1);
 
     QByteArray inner;
-    const QByteArray nzb = postStoredSetOutOfOrder(server, inner);
+    const QByteArray nzb = postStoredSetOutOfOrder(server, inner, bareSubjects);
 
     UsenetQueue queue;
     queue.applyServers({serverConfig(server.serverPort(), 2)}, 60);

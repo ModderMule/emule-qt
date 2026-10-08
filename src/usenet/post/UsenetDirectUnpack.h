@@ -98,7 +98,7 @@ public:
     /// killing the thread mid-write.
     void cancel();
 
-    [[nodiscard]] bool cancelled() const { return m_cancelled.load(); }
+    [[nodiscard]] bool cancelled() const override { return m_cancelled.load(); }
 
     /// The volume the run is parked on, or -1 when it is not waiting.
     ///

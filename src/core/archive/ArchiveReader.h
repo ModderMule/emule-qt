@@ -45,6 +45,10 @@ public:
     /// Path of volume @p index, blocking until it exists. False ends the set —
     /// either genuinely, or because the caller cancelled.
     [[nodiscard]] virtual bool volumePath(int index, QString& out) = 0;
+
+    /// True once the caller gave up. The stream is then cut mid-member, and
+    /// whatever the format reader makes of that is not worth a warning.
+    [[nodiscard]] virtual bool cancelled() const { return false; }
 };
 
 class ArchiveReader {

@@ -133,6 +133,7 @@ public:
     struct VolumePosition {
         QString baseName;   ///< lowercased, the key that groups a set
         int index = -1;
+        int first = 0;      ///< index the scheme's opening volume carries
     };
     [[nodiscard]] static VolumePosition volumePositionOf(const QString& fileName);
 
