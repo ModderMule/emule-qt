@@ -18,9 +18,11 @@
 
 #include "app/UiState.h"
 #include "controls/AccordionSidebar.h"
+#include "dialogs/FirstStartWizard.h"
 #include "dialogs/OptionsDialog.h"
 #include "prefs/Preferences.h"
 
+#include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QLabel>
@@ -31,6 +33,8 @@
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QTest>
+#include <QTimer>
+#include <QTreeWidget>
 
 using namespace eMule;
 
@@ -81,6 +85,13 @@ private slots:
     void aLargeConnectionLimitSurvivesTheSpin();
     void extendedValuesComeFromThePrefsNotFallbacks();
     void generalPageControlsEnableApply();
+
+    // First start wizard: compiled into this binary anyway, and just as daemon-less.
+    void theWizardShowsAllOfItsText();
+    void theWizardOffersTheNewDefaultsToAnUntunedInstall();
+    void theWizardLeavesTunedLimitsAndADisabledUdpPortAlone();
+    void aWizardLineTypeBecomesCapacityAndLimits();
+    void theWizardNeedsANetwork();
 };
 
 /// The regression this file exists for. Named per page, because "the dialog is too tall"
@@ -343,6 +354,193 @@ void TestOptionsDialogSizing::generalPageControlsEnableApply()
     QVERIFY(!apply->isEnabled());
     lang->setCurrentIndex(lang->currentIndex() == 0 ? 1 : 0);
     QVERIFY(apply->isEnabled());
+}
+
+// ---------------------------------------------------------------------------
+// First start wizard
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The settings the wizard reads and writes, put back when a test is done.
+struct WizardPrefsGuard {
+    uint32 capDown = thePrefs.maxGraphDownloadRate();
+    uint32 capUp = thePrefs.maxGraphUploadRate();
+    uint32 maxDown = thePrefs.maxDownload();
+    uint32 maxUp = thePrefs.maxUpload();
+    uint16 port = thePrefs.port();
+    uint16 udpPort = thePrefs.udpPort();
+    bool kad = thePrefs.kadEnabled();
+    bool ed2k = thePrefs.networkED2K();
+
+    ~WizardPrefsGuard()
+    {
+        thePrefs.setMaxGraphDownloadRate(capDown);
+        thePrefs.setMaxGraphUploadRate(capUp);
+        thePrefs.setMaxDownload(maxDown);
+        thePrefs.setMaxUpload(maxUp);
+        thePrefs.setPort(port);
+        thePrefs.setUdpPort(udpPort);
+        thePrefs.setKadEnabled(kad);
+        thePrefs.setNetworkED2K(ed2k);
+    }
+};
+
+void setBandwidth(uint32 capDown, uint32 capUp, uint32 maxDown, uint32 maxUp)
+{
+    // capacity first: the upload limit is clamped to it
+    thePrefs.setMaxGraphDownloadRate(capDown);
+    thePrefs.setMaxGraphUploadRate(capUp);
+    thePrefs.setMaxDownload(maxDown);
+    thePrefs.setMaxUpload(maxUp);
+}
+
+QPushButton* wizardButton(const FirstStartWizard& wizard, const QString& text)
+{
+    for (QPushButton* b : wizard.findChildren<QPushButton*>())
+        if (b->text() == text)
+            return b;
+    return nullptr;
+}
+
+QString selectedLine(const FirstStartWizard& wizard)
+{
+    const auto* list = wizard.findChild<QTreeWidget*>();
+    return list && list->currentItem() ? list->currentItem()->text(0) : QString();
+}
+
+bool selectLine(const FirstStartWizard& wizard, const QString& name)
+{
+    auto* list = wizard.findChild<QTreeWidget*>();
+    const auto found = list->findItems(name, Qt::MatchExactly);
+    if (found.size() != 1)
+        return false;
+    list->setCurrentItem(found.front());
+    return true;
+}
+
+} // namespace
+
+/// A fixed-size dialog clips rather than grows, so a wrapped paragraph that does not fit
+/// is simply cut — on either page, and the stack is as tall as its taller one.
+void TestOptionsDialogSizing::theWizardShowsAllOfItsText()
+{
+    for (const auto start : {FirstStartWizard::StartPage::Ports, FirstStartWizard::StartPage::Speed}) {
+        FirstStartWizard wizard(nullptr, nullptr, start);
+        wizard.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&wizard));
+
+        for (const QLabel* label : wizard.findChildren<QLabel*>()) {
+            if (!label->isVisible() || !label->wordWrap())
+                continue;
+            QVERIFY2(label->height() >= label->heightForWidth(label->width()),
+                     qPrintable(label->text().left(40)));
+        }
+        const auto* list = wizard.findChild<QTreeWidget*>();
+        QCOMPARE(list->isVisible(), start == FirstStartWizard::StartPage::Speed);
+    }
+}
+
+/// 250/500 were the shipped limits before the speed page existed. An install still on
+/// exactly those gets the new defaults by clicking through.
+void TestOptionsDialogSizing::theWizardOffersTheNewDefaultsToAnUntunedInstall()
+{
+    const WizardPrefsGuard guard;
+    setBandwidth(500, 250, 500, 250);
+
+    FirstStartWizard wizard(nullptr);
+    QCOMPARE(selectedLine(wizard), QStringLiteral("Unknown (recommended defaults)"));
+
+    // Page one: nothing to go back to, and no Finish yet.
+    QVERIFY(!wizardButton(wizard, QStringLiteral("< Back"))->isEnabled());
+    QVERIFY(!wizardButton(wizard, QStringLiteral("Finish")));
+    wizardButton(wizard, QStringLiteral("Next >"))->click();
+    QVERIFY(wizardButton(wizard, QStringLiteral("< Back"))->isEnabled());
+    QCOMPARE(wizard.result(), int(QDialog::Rejected));   // still open
+
+    wizardButton(wizard, QStringLiteral("Finish"))->click();
+    QCOMPARE(wizard.result(), int(QDialog::Accepted));
+
+    const QCborMap applied = wizard.appliedSettings();
+    QCOMPARE(applied.value(QStringLiteral("maxDownload")).toInteger(-1), 0);   // unlimited
+    QCOMPARE(applied.value(QStringLiteral("maxUpload")).toInteger(), 500);
+    QCOMPARE(applied.value(QStringLiteral("maxGraphDownloadRate")).toInteger(), 12500);
+    QCOMPARE(applied.value(QStringLiteral("maxGraphUploadRate")).toInteger(), 1250);
+    QCOMPARE(thePrefs.maxDownload(), 0u);
+    QCOMPARE(thePrefs.maxUpload(), 500u);
+}
+
+/// The wizard also runs once after an upgrade, on installs that were set up years ago.
+/// Clicking through must not move their limits, nor switch a disabled UDP port back on.
+void TestOptionsDialogSizing::theWizardLeavesTunedLimitsAndADisabledUdpPortAlone()
+{
+    const WizardPrefsGuard guard;
+    setBandwidth(9000, 900, 8000, 700);
+    thePrefs.setPort(4662);
+    thePrefs.setUdpPort(0);
+
+    FirstStartWizard wizard(nullptr);
+    QCOMPARE(selectedLine(wizard), QStringLiteral("Keep current settings"));
+
+    wizardButton(wizard, QStringLiteral("Next >"))->click();
+    wizardButton(wizard, QStringLiteral("Finish"))->click();
+    QCOMPARE(wizard.result(), int(QDialog::Accepted));
+
+    const QCborMap applied = wizard.appliedSettings();
+    QVERIFY(!applied.contains(QStringLiteral("maxDownload")));
+    QVERIFY(!applied.contains(QStringLiteral("maxGraphUploadRate")));
+    QCOMPARE(applied.value(QStringLiteral("port")).toInteger(), 4662);
+    QCOMPARE(applied.value(QStringLiteral("udpPort")).toInteger(-1), 0);
+    QCOMPARE(thePrefs.maxDownload(), 8000u);
+    QCOMPARE(thePrefs.maxUpload(), 700u);
+    QCOMPARE(thePrefs.udpPort(), uint16(0));
+}
+
+void TestOptionsDialogSizing::aWizardLineTypeBecomesCapacityAndLimits()
+{
+    const WizardPrefsGuard guard;
+    setBandwidth(9000, 900, 8000, 700);
+
+    // Opened the way Options > Connection > Wizard does: straight on the speed page.
+    FirstStartWizard wizard(nullptr, nullptr, FirstStartWizard::StartPage::Speed);
+    QVERIFY(selectLine(wizard, QStringLiteral("VDSL 100")));
+    wizardButton(wizard, QStringLiteral("Finish"))->click();
+    QCOMPARE(wizard.result(), int(QDialog::Accepted));
+
+    const QCborMap applied = wizard.appliedSettings();
+    QCOMPARE(applied.value(QStringLiteral("maxGraphDownloadRate")).toInteger(), 12207);
+    QCOMPARE(applied.value(QStringLiteral("maxGraphUploadRate")).toInteger(), 4883);
+    QCOMPARE(applied.value(QStringLiteral("maxDownload")).toInteger(), 10986);
+    QCOMPARE(applied.value(QStringLiteral("maxUpload")).toInteger(), 3906);
+    // The core clamps the upload limit to the capacity; set in the wrong order it would
+    // have been cut to the old 900.
+    QCOMPARE(thePrefs.maxUpload(), 3906u);
+    QCOMPARE(thePrefs.maxGraphUploadRate(), 4883u);
+}
+
+void TestOptionsDialogSizing::theWizardNeedsANetwork()
+{
+    const WizardPrefsGuard guard;
+    thePrefs.setKadEnabled(false);
+    thePrefs.setNetworkED2K(false);
+
+    FirstStartWizard wizard(nullptr, nullptr, FirstStartWizard::StartPage::Speed);
+
+    // The refusal is a modal box; answer it or the click never returns.
+    bool warned = false;
+    QTimer::singleShot(0, &wizard, [&warned] {
+        if (QWidget* box = QApplication::activeModalWidget()) {
+            warned = true;
+            box->close();
+        }
+    });
+    wizardButton(wizard, QStringLiteral("Finish"))->click();
+
+    QVERIFY(warned);
+    QCOMPARE(wizard.result(), int(QDialog::Rejected));
+    QVERIFY(wizard.appliedSettings().isEmpty());
+    // ...and it is back on the page where that can be fixed.
+    QVERIFY(wizardButton(wizard, QStringLiteral("Next >")));
 }
 
 QTEST_MAIN(TestOptionsDialogSizing)

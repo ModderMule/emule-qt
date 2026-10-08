@@ -29,6 +29,19 @@ AppContext theApp;
 
 uint32 AppContext::getID() const
 {
+    // MFC CemuleApp::GetID() — Emule.cpp:1132-1139. Kad's IP is first-octet-in-MSB.
+    auto* kadInst = kad::Kademlia::instance();
+    const bool kadConnected = kadInst && kadInst->isConnected();
+    if (kadConnected && !kadInst->isFirewalled())
+        return htonl(kadInst->getIPAddress());
+    if (serverConnect && serverConnect->isConnected())
+        return serverConnect->clientID();
+    // 1 reads as LowID on the far side; 0 would read as HighID.
+    return kadConnected ? 1 : 0;
+}
+
+uint32 AppContext::ed2kClientID() const
+{
     if (serverConnect && serverConnect->isConnected())
         return serverConnect->clientID();
     return 0;

@@ -773,12 +773,12 @@ void UpDownClient::ban(const QString& reason)
     if (theApp.clientList)
         theApp.clientList->addTrackClient(this);
 
-    if (m_uploadState != UploadState::Banned) {
+    if (!isBanned())
         logDebug(QStringLiteral("Banning client: %1 reason: %2").arg(userName(), reason));
-        setUploadState(UploadState::Banned);
-        if (theApp.clientList)
-            theApp.clientList->addBannedClient(m_connectAddress);
-    }
+    // Every offence restarts the 2 h — MFC UploadClient.cpp:649.
+    if (theApp.clientList)
+        theApp.clientList->addBannedClient(m_connectAddress);
+    setUploadState(UploadState::Banned);
 }
 
 void UpDownClient::unBan()
@@ -786,16 +786,15 @@ void UpDownClient::unBan()
     if (theApp.clientList)
         theApp.clientList->addTrackClient(this);
 
-    if (m_uploadState == UploadState::Banned) {
-        setUploadState(UploadState::None);
-        if (theApp.clientList)
-            theApp.clientList->removeBannedClient(m_connectAddress);
-        // A clean slate, as MFC (srchybrid/UploadClient.cpp:628-634)
-        clearWaitStartTime();
-        for (auto* req : m_requestedFiles) {
-            req->badRequests = 0;
-            req->lastAsked = 0;
-        }
+    // Unconditional: the IP may be banned without this object being in the state.
+    if (theApp.clientList)
+        theApp.clientList->removeBannedClient(m_connectAddress);
+    setUploadState(UploadState::None);
+    // A clean slate, as MFC (srchybrid/UploadClient.cpp:628-634)
+    clearWaitStartTime();
+    for (auto* req : m_requestedFiles) {
+        req->badRequests = 0;
+        req->lastAsked = 0;
     }
 }
 

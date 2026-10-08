@@ -90,8 +90,12 @@ struct AppContext {
     /// to disk when commitFiles is 2, or 1 while shutting down.
     [[nodiscard]] bool commitFilesNow() const;
 
-    /// Returns our server-assigned client ID (0 if not connected).
+    /// The ID we announce in a hello: our Kad IP when Kad is open, else the server ID,
+    /// else 1 when Kad is connected but firewalled, else 0.
     [[nodiscard]] uint32 getID() const;
+
+    /// Returns our server-assigned client ID (0 if not connected).
+    [[nodiscard]] uint32 ed2kClientID() const;
 
     /// Returns true when connected to any network — an ED2K server *or* Kad.
     /// Mirrors MFC CemuleApp::IsConnected() (emule.cpp:1122).

@@ -671,6 +671,8 @@ bool ClientCreditsList::verifyIdent(ClientCredits* target, const uint8* signatur
         ERR_clear_error();
         logWarning(QStringLiteral("verifyIdent: d2i_PUBKEY failed for %1-byte key")
                        .arg(target->secIDKeyLen()));
+        if (target->m_identState == IdentState::IdNeeded)
+            target->m_identState = IdentState::IdFailed;
         return false;
     }
 
@@ -742,7 +744,9 @@ bool ClientCreditsList::verifyIdent(ClientCredits* target, const uint8* signatur
 
     if (ok) {
         target->verified(forIP);
-    } else {
+    } else if (target->m_identState == IdentState::IdNeeded) {
+        // Only an open check can fail. A record already identified for another IP stays
+        // so, or anyone could void it with a junk signature (MFC ClientCredits.cpp:508).
         target->m_identState = IdentState::IdFailed;
     }
 

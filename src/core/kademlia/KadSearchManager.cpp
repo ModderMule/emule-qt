@@ -273,8 +273,6 @@ void SearchManager::processPublishResult(const UInt128& target, uint8 load, bool
             it->second->updateNodeLoad(load);
 
         // Immediately complete store searches that reached the answer threshold.
-        // updateStats() only runs every 60s; without this, a search with 140s
-        // lifetime might not be removed until ~200s (worst-case alignment).
         uint32 maxAnswers = 0;
         switch (it->second->getSearchType()) {
         case SearchType::StoreFile:    maxAnswers = kSearchStoreFileTotal; break;

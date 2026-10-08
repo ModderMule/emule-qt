@@ -604,7 +604,8 @@ bool UploadQueue::lowIdAbuseGateRejects(const UpDownClient* client) const
 }
 
 UploadQueue::QueueAdmission UploadQueue::checkWaitingListAdmission(UpDownClient* client,
-                                                                   const char* context)
+                                                                   const char* context,
+                                                                   bool evictDuplicates)
 {
     if (client->isBanned()) {
         logDebug(QStringLiteral("%1: rejected banned client %2")
@@ -614,8 +615,8 @@ UploadQueue::QueueAdmission UploadQueue::checkWaitingListAdmission(UpDownClient*
 
     // Check for duplicates and IP limits
     uint16 sameIPCount = 0;
-    for (auto it = m_waitingList.begin(); it != m_waitingList.end(); ++it) {
-        UpDownClient* cur = *it;
+    for (size_t i = 0; i < m_waitingList.size(); ) {
+        UpDownClient* cur = m_waitingList[i];
         if (cur == client)
             return QueueAdmission::AlreadyQueued;
         if (client->compare(cur)) {
@@ -623,12 +624,29 @@ UploadQueue::QueueAdmission UploadQueue::checkWaitingListAdmission(UpDownClient*
             // keeps a record of every client that reaches this branch.
             if (theApp.clientList)
                 theApp.clientList->addTrackClient(client);
-            logDebug(QStringLiteral("%1: rejected duplicate client %2")
-                         .arg(QLatin1String(context), client->userName()));
-            return QueueAdmission::Rejected;
+
+            // Who keeps the place — MFC UploadQueue.cpp:577-602. The queued one if it
+            // proved its identity; the newcomer if only it did; neither if nobody did,
+            // since we cannot tell which is the squatter.
+            if (!evictDuplicates || cur->hasPassedSecureIdent(false)) {
+                logDebug(QStringLiteral("%1: rejected duplicate client %2")
+                             .arg(QLatin1String(context), client->userName()));
+                return QueueAdmission::Rejected;
+            }
+            const bool newcomerIdentified = client->hasPassedSecureIdent(false);
+            logDebug(QStringLiteral("%1: duplicate client %2 — dropped the queued one%3")
+                         .arg(QLatin1String(context), client->userName(),
+                              newcomerIdentified ? QString() : QStringLiteral(" and the new one")));
+            removeFromWaitingQueue(cur);
+            if (!cur->socket())
+                cur->disconnected(QStringLiteral("AddClientToQueue - same userhash"));
+            if (!newcomerIdentified)
+                return QueueAdmission::Rejected;
+            continue;   // list shifted down; same index is the next client
         }
         if (client->userAddress() == cur->userAddress())
             ++sameIPCount;
+        ++i;
     }
 
     if (sameIPCount >= 3) {
@@ -744,7 +762,7 @@ bool UploadQueue::addClientToQueue(UpDownClient* client, bool ignoreTimeLimit)
     if (!ignoreTimeLimit)
         client->addRequestCount(client->reqUpFileId());
 
-    switch (checkWaitingListAdmission(client, "addClientToQueue")) {
+    switch (checkWaitingListAdmission(client, "addClientToQueue", true)) {
     case QueueAdmission::Rejected:
         return false;
     case QueueAdmission::AlreadyQueued:
@@ -859,7 +877,8 @@ bool UploadQueue::addRestoredClient(UpDownClient* client)
     // happen for a freshly constructed object, so it counts as a rejection here.
     if (lowIdAbuseGateRejects(client))
         return false;
-    if (checkWaitingListAdmission(client, "addRestoredClient") != QueueAdmission::Ok)
+    // A restored entry has not identified itself yet, so it never evicts anybody.
+    if (checkWaitingListAdmission(client, "addRestoredClient", false) != QueueAdmission::Ok)
         return false;
     // uploadqueue.met is untrusted input like any other; a restore must not push us past
     // the hard limit. In practice the queue is near-empty when the one-shot load fires.

@@ -3,6 +3,10 @@
 ///        purge, upload client tracking, auto-priority, metadata, signals.
 
 #include "TestHelpers.h"
+#include "TestFixtures.h"
+#include "client/ClientList.h"
+#include "kademlia/Kademlia.h"
+#include "kademlia/KadPrefs.h"
 #include "crypto/MD4Hash.h"
 #include "client/UpDownClient.h"
 #include "files/KnownFile.h"
@@ -197,6 +201,8 @@ private slots:
     void createHash_shortDataIsAFailure();
     void createFromFile_smallFile();
     void createFromFile_zeroFile();
+    void createFromFile_partBoundaryAddsTheEmptyPartHash_data();
+    void createFromFile_partBoundaryAddsTheEmptyPartHash();
     void createFromFile_nonExistent();
     void createFromFile_setsDate();
     void createFromFile_refusesAFileThatChangedSinceTheScan();
@@ -205,6 +211,9 @@ private slots:
     void updatePartsInfo_noClients();
     void updatePartsInfo_usesUploaderStatusAndCompleteCounts();
     void publishSrc_timing();
+    void publishSrc_firewalledNeedsABuddy();
+    void publishSrc_newBuddyRepublishes();
+    void publishSrc_openNodeNeedsNoBuddy();
     void publishNotes_timing();
     void createHashFromMemory_basic();
     void createHashFromFile_basic();
@@ -839,6 +848,54 @@ void tst_KnownFile::createFromFile_zeroFile()
     QCOMPARE(static_cast<uint64>(kf.fileSize()), uint64{0});
 }
 
+void tst_KnownFile::createFromFile_partBoundaryAddsTheEmptyPartHash_data()
+{
+    QTest::addColumn<int>("parts");
+    QTest::newRow("one part") << 1;
+    QTest::newRow("two parts") << 2;
+}
+
+void tst_KnownFile::createFromFile_partBoundaryAddsTheEmptyPartHash()
+{
+    // eD2K: a file ending exactly on a part boundary has one more part hash, the MD4 of
+    // nothing, and its file hash covers it. Without it the hash matches no other client's.
+    QFETCH(int, parts);
+
+    eMule::testing::TempDir tmpDir;
+    const QString filename = QStringLiteral("boundary.bin");
+    const QByteArray part(static_cast<qsizetype>(PARTSIZE), 'X');
+    {
+        QFile f(tmpDir.filePath(filename));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        for (int i = 0; i < parts; ++i)
+            QCOMPARE(f.write(part), part.size());
+    }
+
+    KnownFile kf;
+    QVERIFY(kf.createFromFile(tmpDir.path(), filename));
+    QCOMPARE(kf.partCount(), static_cast<uint16>(parts));
+
+    const auto& id = kf.fileIdentifier();
+    QCOMPARE(id.getAvailableMD4PartHashCount(), static_cast<uint16>(parts + 1));
+    QVERIFY(id.hasExpectedMD4HashCount());
+
+    const auto md4 = [](const QByteArray& in) {
+        MD4Hasher hasher;
+        hasher.add(reinterpret_cast<const uint8*>(in.constData()),
+                   static_cast<std::size_t>(in.size()));
+        hasher.finish();
+        return QByteArray(reinterpret_cast<const char*>(hasher.getHash()), 16);
+    };
+    QByteArray hashes;
+    for (int i = 0; i < parts; ++i)
+        hashes += md4(part);
+    hashes += md4(QByteArray());
+    QCOMPARE(QByteArray(reinterpret_cast<const char*>(kf.fileHash()), 16), md4(hashes));
+    QCOMPARE(QByteArray(reinterpret_cast<const char*>(id.getMD4PartHash(
+                            static_cast<uint32>(parts))), 16),
+             md4(QByteArray()));
+}
+
 void tst_KnownFile::createFromFile_nonExistent()
 {
     KnownFile kf;
@@ -1042,6 +1099,63 @@ void tst_KnownFile::publishSrc_timing()
     // Simulate time passing beyond the republish interval
     kf.setLastPublishTimeKadSrc(std::time(nullptr) - 1);
     QVERIFY(kf.publishSrc());
+}
+
+// Firewalled and UDP state unproven: a record without a buddy leads nowhere. The file
+// must not be stamped either, or it rests 5 h with nothing published.
+void tst_KnownFile::publishSrc_firewalledNeedsABuddy()
+{
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Firewalled);
+    kadFixture.kadPrefs().setLastContact();
+    ClientList list;
+    kad::Kademlia::setClientList(&list);
+    const auto restore = qScopeGuard([] { kad::Kademlia::setClientList(nullptr); });
+
+    KnownFile kf;
+    QVERIFY(!kf.publishSrc());
+    QCOMPARE(kf.lastPublishTimeKadSrc(), time_t{0});
+
+    auto* buddy = new UpDownClient();
+    buddy->setUserAddress(Address::fromString(QStringLiteral("78.4.5.6")));
+    list.setBuddy(buddy, BuddyStatus::Connected);
+    QVERIFY(kf.publishSrc());
+    QCOMPARE(kf.lastBuddyIP(), buddy->userAddress().toNetworkUint32());
+    QVERIFY(!kf.publishSrc());
+
+    list.setBuddy(nullptr, BuddyStatus::None);
+    delete buddy;
+}
+
+// Published before the buddy existed: the record on the network does not name it.
+void tst_KnownFile::publishSrc_newBuddyRepublishes()
+{
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Firewalled);
+    kadFixture.kadPrefs().setLastContact();
+    ClientList list;
+    kad::Kademlia::setClientList(&list);
+    const auto restore = qScopeGuard([] { kad::Kademlia::setClientList(nullptr); });
+
+    KnownFile kf;
+    kf.setLastPublishTimeKadSrc(std::time(nullptr) + 1000, 0);
+
+    auto* buddy = new UpDownClient();
+    buddy->setUserAddress(Address::fromString(QStringLiteral("78.4.5.6")));
+    list.setBuddy(buddy, BuddyStatus::Connected);
+    QVERIFY(kf.publishSrc());
+    QVERIFY(kf.lastBuddyIP() != 0);
+
+    list.setBuddy(nullptr, BuddyStatus::None);
+    delete buddy;
+}
+
+void tst_KnownFile::publishSrc_openNodeNeedsNoBuddy()
+{
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Open);
+    kadFixture.kadPrefs().setLastContact();
+
+    KnownFile kf;
+    QVERIFY(kf.publishSrc());
+    QCOMPARE(kf.lastBuddyIP(), uint32{0});
 }
 
 void tst_KnownFile::publishNotes_timing()

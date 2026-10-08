@@ -2,6 +2,11 @@
 /// @brief Tests for files/SharedFileList — shared file management, hashing thread.
 
 #include "TestHelpers.h"
+#include "TestFixtures.h"
+#include "client/ClientList.h"
+#include "kademlia/Kademlia.h"
+#include "kademlia/KadPrefs.h"
+#include "kademlia/KadSearchManager.h"
 #include "files/KnownFile.h"
 #include "files/KnownFileList.h"
 #include "app/AppContext.h"
@@ -89,6 +94,8 @@ private slots:
 
     // Kad publish probe
     void nextDueFile_isOneWalkAndRoundRobin();
+    void publishDueNotes_probesAreSpacedTwoSeconds();
+    void canPublishToKad_firewalledNeedsABuddy();
 
     // Rebuild of the media tags on request
     void rebuildMetaData_rereadsSharedFilesOnly();
@@ -1794,6 +1801,61 @@ void tst_SharedFileList::rebuildMetaData_rereadsSharedFilesOnly()
         QCOMPARE(f->metaDataVer(), KnownFile::kMetaDataVer);
         QVERIFY(f->getStrTagValue(FT_MEDIA_CODEC) != QStringLiteral("PCM (Old Display Name)"));
     }
+}
+
+// One store search per KADEMLIAPUBLISHTIME, not one per tick for as long as files are due.
+void tst_SharedFileList::publishDueNotes_probesAreSpacedTwoSeconds()
+{
+    eMule::testing::KadFixture kadFixture;
+    const auto stop = qScopeGuard([] { kad::SearchManager::stopAllSearches(); });
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    std::vector<kad::UInt128> targets;
+    for (uint8 i = 1; i <= 3; ++i) {
+        KnownFile* f = makeFile(knownFiles, i, QStringLiteral("rated%1.bin").arg(i));
+        f->setFileRating(4);
+        shared.safeAddKFile(f);
+        kad::UInt128 target;
+        target.setValueBE(f->fileHash());
+        targets.push_back(target);
+    }
+    const auto running = [&] {
+        return std::count_if(targets.begin(), targets.end(), [](const kad::UInt128& t) {
+            return kad::SearchManager::alreadySearchingFor(t);
+        });
+    };
+
+    const time_t t0 = std::time(nullptr);
+    shared.publishDueNotes(t0);
+    QCOMPARE(running(), 1);
+    shared.publishDueNotes(t0 + 1);
+    QCOMPARE(running(), 1);
+    shared.publishDueNotes(t0 + KADEMLIAPUBLISHTIME);
+    QCOMPARE(running(), 2);
+}
+
+void tst_SharedFileList::canPublishToKad_firewalledNeedsABuddy()
+{
+    {
+        eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Open);
+        kadFixture.kadPrefs().setLastContact();
+        QVERIFY(SharedFileList::canPublishToKad());
+    }
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Firewalled);
+    kadFixture.kadPrefs().setLastContact();
+    QVERIFY(!SharedFileList::canPublishToKad());
+
+    ClientList list;
+    ClientList* const saved = theApp.clientList;
+    theApp.clientList = &list;
+    const auto restore = qScopeGuard([saved] { theApp.clientList = saved; });
+    UpDownClient buddy;
+    list.setBuddy(&buddy, BuddyStatus::Connecting);
+    QVERIFY(!SharedFileList::canPublishToKad());
+    list.setBuddy(&buddy, BuddyStatus::Connected);
+    QVERIFY(SharedFileList::canPublishToKad());
+    list.setBuddy(nullptr, BuddyStatus::None);
 }
 
 QTEST_MAIN(tst_SharedFileList)

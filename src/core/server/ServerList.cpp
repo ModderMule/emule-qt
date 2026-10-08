@@ -1017,6 +1017,10 @@ void ServerList::processStatusResponse(const uint8* data, uint32 size, const End
 
     server->setChallenge(0);
     server->setCryptPingReplyPending(false);
+    // The obfuscated ping left the server due again in 20 s, for the plain fallback.
+    // It answered, so put it on the normal schedule (MFC UDPSocket.cpp:331).
+    server->setLastPingedTime(static_cast<uint32>(QDateTime::currentSecsSinceEpoch())
+                              - static_cast<uint32>(QRandomGenerator::global()->bounded(HR2S(1))));
     server->resetFailedCount();
 
     const auto nowMs = static_cast<uint32>(QDateTime::currentMSecsSinceEpoch());

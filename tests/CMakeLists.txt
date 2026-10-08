@@ -549,6 +549,14 @@ target_include_directories(tst_CountryFlags PRIVATE
 target_link_libraries(tst_CountryFlags PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
+# First start wizard: line type presets and the limits derived from them.
+emule_add_test(tst_ConnectionPresets FOLDER "Gui"
+    SOURCES tst_ConnectionPresets.cpp)
+target_include_directories(tst_ConnectionPresets PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_SOURCE_DIR}/src/core")
+target_link_libraries(tst_ConnectionPresets PRIVATE eMule::Core)
+
 # List header column menu (MFC CMuleListCtrl): hide/show, default-hidden, persistence.
 emule_add_test(tst_ListHeaderMenu FOLDER "Gui"
     SOURCES tst_ListHeaderMenu.cpp

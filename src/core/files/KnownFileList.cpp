@@ -220,6 +220,11 @@ KnownFile* KnownFileList::findKnownFile(const QString& filename, time_t date, ui
         if (file->utcFileDate() == date
             && file->fileName().compare(filename, Qt::CaseInsensitive) == 0)
         {
+            // Hashed before the boundary-part fix: the record is one part hash short and
+            // its file hash is one nobody else computes. Not a match, so it is rehashed.
+            if (size > 0 && size % PARTSIZE == 0
+                && !file->fileIdentifier().hasExpectedMD4HashCount())
+                continue;
             return file;
         }
     }

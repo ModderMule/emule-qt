@@ -24,6 +24,7 @@ private slots:
     void serverMet_hasExpectedServers();
     void serverMet_serverProperties();
     void serverMet_eNodeGoConnectsFirst();
+    void serverMet_eNodeGoMetaApiKnown();
 };
 
 // ---------------------------------------------------------------------------
@@ -151,6 +152,32 @@ void tst_ServerMetData::serverMet_eNodeGoConnectsFirst()
 
     list.sortByPreference();
     QVERIFY(isENodeGo(list.serverAt(0)));
+}
+
+// ---------------------------------------------------------------------------
+// Test: eNode-go's Meta API is known before the first login
+// ---------------------------------------------------------------------------
+
+void tst_ServerMetData::serverMet_eNodeGoMetaApiKnown()
+{
+    const QString srcPath = projectDataDir() + QStringLiteral("/config/server.met");
+    TempDir configDir;
+    const QString dstPath = configDir.filePath(QStringLiteral("server.met"));
+    QVERIFY(QFile::copy(srcPath, dstPath));
+
+    ServerList list;
+    QVERIFY(list.loadServerMet(dstPath));
+
+    // seeded tags, else a fresh install can't search torrent/Usenet until the ident
+    const Server* srv = list.serverAt(0);
+    QCOMPARE(srv->name(), QStringLiteral("eNode-go"));
+    QVERIFY(srv->hasMetaApi());
+    QVERIFY(Server::isMetaApiUrl(srv->metaApiUrl()));
+    for (uint32 network = 0; network < 4; ++network) {
+        if (srv->metaNetworks() & (1u << network))
+            QVERIFY(srv->mayServeMetaNetwork(network));
+    }
+    QVERIFY(srv->metaNetworks() != 0);
 }
 
 QTEST_GUILESS_MAIN(tst_ServerMetData)

@@ -25,6 +25,8 @@
 #include <unordered_set>
 #include <vector>
 
+class tst_SearchList;
+
 namespace eMule {
 
 class AICHHash;
@@ -247,10 +249,11 @@ public:
     /// Load saved searches from disk.
     void loadSearches(const QString& configDir);
 
-    /// Save the spam filter database.
+    /// Save the spam filter database (SearchSpam.met, MFC layout). No-op until it was
+    /// loaded, so a list that never read the file cannot overwrite it with nothing.
     void saveSpamFilter(const QString& configDir) const;
 
-    /// Load the spam filter database.
+    /// Load the spam filter database, replacing what is in memory.
     void loadSpamFilter(const QString& configDir);
 
 signals:
@@ -263,6 +266,9 @@ signals:
     void spamStatusChanged(eMule::SearchFile* file);
 
 private:
+    // The spam filter lists have no accessors; the persistence test compares them.
+    friend class ::tst_SearchList;
+
     /// @p forcedID if given (and marked as taken), else a fresh id.
     static uint32 takeSearchID(uint32 forcedID);
 
@@ -303,6 +309,8 @@ private:
     // Spam filter databases
     std::unordered_map<MD4Key, bool> m_knownSpamHashes;
     std::unordered_map<uint32, bool> m_knownSpamSourcesIPs;
+    std::unordered_set<uint32> m_knownSpamServerIPs;   // servers whose UDP answers were marked
+    bool m_spamFilterLoaded = false;
     QStringList m_knownSpamNames;
     QStringList m_knownSimilarSpamNames;
     std::vector<uint64> m_knownSpamSizes;

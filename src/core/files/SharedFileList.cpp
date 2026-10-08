@@ -8,7 +8,9 @@
 #include "files/Collection.h"
 #include "files/KnownFile.h"
 #include "files/KnownFileList.h"
+#include "client/ClientList.h"
 #include "kademlia/Kademlia.h"
+#include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadSearch.h"
 #include "kademlia/KadSearchManager.h"
 #include "net/Packet.h"
@@ -877,52 +879,30 @@ void SharedFileList::publish()
     if (!kad->getPublish())
         return;
 
+    // Firewalled with no buddy and no direct callback: nobody could fetch from us.
+    // MFC SharedFileList.cpp:1240-1249.
+    if (!canPublishToKad())
+        return;
+
     const time_t tProbe = std::time(nullptr);
-
-    // --- Source publishing (round-robin) ---
-    if (kad->getTotalStoreSrc() < KADEMLIATOTALSTORESRC && tProbe >= m_srcProbeRestUntil) {
-        if (KnownFile* file = nextDueFile(m_currFileSrc, [](KnownFile* f) { return f->publishSrc(); })) {
-            kad::UInt128 target;
-            target.setValueBE(file->fileHash());
-            auto* search = kad::SearchManager::prepareLookup(
-                    kad::SearchType::StoreFile, true, target);
-            if (!search)
-                file->setLastPublishTimeKadSrc(0, 0);
-            else
-                search->setGUIName(file->fileName());
-        } else {
-            m_srcProbeRestUntil = tProbe + kPublishProbeRestSecs;
-        }
-    }
-
-    // --- Notes publishing (round-robin) ---
-    if (kad->getTotalStoreNotes() < KADEMLIATOTALSTORENOTES && tProbe >= m_notesProbeRestUntil) {
-        if (KnownFile* file = nextDueFile(m_currFileNotes, [](KnownFile* f) { return f->publishNotes(); })) {
-            kad::UInt128 target;
-            target.setValueBE(file->fileHash());
-            auto* search = kad::SearchManager::prepareLookup(
-                    kad::SearchType::StoreNotes, true, target);
-            if (!search)
-                file->setLastPublishTimeKadNotes(0);
-            else
-                search->setGUIName(file->fileName());
-        } else {
-            m_notesProbeRestUntil = tProbe + kPublishProbeRestSecs;
-        }
-    }
+    publishDueSource(tProbe);
+    publishDueNotes(tProbe);
 
     // --- Keyword publishing ---
     if (kad->getTotalStoreKey() < KADEMLIATOTALSTOREKEY) {
         time_t tNow = std::time(nullptr);
 
         if (tNow >= m_keywords.nextPublishTime()) {
+            // The walk never rests: each keyword carries its own 24 h, and a file added
+            // after a lap must not wait one out (MFC SharedFileList.cpp:179-187, :1310).
             PublishKeyword* kw = m_keywords.getNextKeyword();
             if (!kw) {
-                // Cycled through all keywords — reset and schedule next round
                 m_keywords.resetNextKeyword();
-                m_keywords.setNextPublishTime(tNow + KADEMLIAREPUBLISHTIMEK);
-                return;
+                kw = m_keywords.getNextKeyword();
             }
+            m_keywords.setNextPublishTime(tNow + KADEMLIAPUBLISHTIME);
+            if (!kw)
+                return;
 
             if (keywordIsDue(*kw, tNow)) {
                 // Prepare StoreKeyword search
@@ -1919,6 +1899,61 @@ std::vector<Tag> SharedFileList::offeredTags(KnownFile& file, const Server* srv)
         }
     }
     return tags;
+}
+
+bool SharedFileList::canPublishToKad()
+{
+    if (!theApp.isFirewalled())
+        return true;
+    if (theApp.clientList && theApp.clientList->buddyStatus() == BuddyStatus::Connected)
+        return true;
+    return !kad::UDPFirewallTester::isFirewalledUDP(true) && kad::UDPFirewallTester::isVerified();
+}
+
+// One probe per KADEMLIAPUBLISHTIME, as MFC SharedFileList.cpp:1314-1329.
+void SharedFileList::publishDueSource(time_t tProbe)
+{
+    auto* kad = kad::Kademlia::instance();
+    if (!kad || kad->getTotalStoreSrc() >= KADEMLIATOTALSTORESRC
+        || tProbe < m_lastPublishKadSrc || tProbe < m_srcProbeRestUntil)
+        return;
+
+    m_lastPublishKadSrc = tProbe + KADEMLIAPUBLISHTIME;
+    if (KnownFile* file = nextDueFile(m_currFileSrc, [](KnownFile* f) { return f->publishSrc(); })) {
+        kad::UInt128 target;
+        target.setValueBE(file->fileHash());
+        auto* search = kad::SearchManager::prepareLookup(
+                kad::SearchType::StoreFile, true, target);
+        if (!search)
+            file->setLastPublishTimeKadSrc(0, 0);
+        else
+            search->setGUIName(file->fileName());
+    } else {
+        m_srcProbeRestUntil = tProbe + kPublishProbeRestSecs;
+    }
+}
+
+// MFC SharedFileList.cpp:1331-1346.
+void SharedFileList::publishDueNotes(time_t tProbe)
+{
+    auto* kad = kad::Kademlia::instance();
+    if (!kad || kad->getTotalStoreNotes() >= KADEMLIATOTALSTORENOTES
+        || tProbe < m_lastPublishKadNotes || tProbe < m_notesProbeRestUntil)
+        return;
+
+    m_lastPublishKadNotes = tProbe + KADEMLIAPUBLISHTIME;
+    if (KnownFile* file = nextDueFile(m_currFileNotes, [](KnownFile* f) { return f->publishNotes(); })) {
+        kad::UInt128 target;
+        target.setValueBE(file->fileHash());
+        auto* search = kad::SearchManager::prepareLookup(
+                kad::SearchType::StoreNotes, true, target);
+        if (!search)
+            file->setLastPublishTimeKadNotes(0);
+        else
+            search->setGUIName(file->fileName());
+    } else {
+        m_notesProbeRestUntil = tProbe + kPublishProbeRestSecs;
+    }
 }
 
 } // namespace eMule

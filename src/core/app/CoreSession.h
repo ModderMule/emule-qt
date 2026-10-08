@@ -187,6 +187,7 @@ private:
     std::unique_ptr<ServerConnect> m_serverConnect;
     std::unique_ptr<UDPSocket> m_serverUDP;
     std::unique_ptr<LastCommonRouteFinder> m_lastCommonRouteFinder;
+    uint32 m_lastUSSMaxUpload = UINT32_MAX;   ///< last limit handed to it; a rise restarts its ramp
     std::unique_ptr<Scheduler> m_scheduler;
     std::unique_ptr<Statistics> m_statistics;
     std::unique_ptr<StatsHistory> m_statsHistory;

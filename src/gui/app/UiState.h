@@ -123,6 +123,17 @@ public:
         scheduleSave();
     }
 
+    /// First start wizard was shown once. Missing key = false, so an upgraded
+    /// install gets it once too. Tools > wizard still opens it any time.
+    [[nodiscard]] bool firstStartWizardDone() const { return m_firstStartWizardDone; }
+    void setFirstStartWizardDone(bool done)
+    {
+        if (m_firstStartWizardDone == done)
+            return;
+        m_firstStartWizardDone = done;
+        scheduleSave();
+    }
+
     /// Country flag next to the client/server icon (IP2Country). Display-only.
     [[nodiscard]] bool showCountryFlags() const { return m_showCountryFlags; }
     void setShowCountryFlags(bool on)
@@ -210,6 +221,7 @@ private:
     int  m_optionsLastPage = 0;
     int64_t m_lastVersionCheck = 0;
     bool m_associateNzbFiles = true;
+    bool m_firstStartWizardDone = false;
     bool m_showCountryFlags = true;
     QList<int> m_toolbarButtonOrder;
     int  m_toolbarButtonStyle = 3;

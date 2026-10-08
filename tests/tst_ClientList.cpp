@@ -93,6 +93,8 @@ private slots:
     // Kad state machine — MFC srchybrid/ClientList.cpp:470-620
     void processKadList_clearsEveryStateWhenKadIsNotRunning();
     void processKadList_adoptsConnectedBuddyAndDropsOthers();
+    void helloID_followsKadWithoutAServer();
+    void process_reapsABannedClientOnceTheBanIsOver();
     void processKadList_dropsAnOpenBuddy();
     void processKadList_firewalledKeepsItsOpenBuddy();
     void processKadList_dropsTheBuddyWhenKadLosesContact();
@@ -860,6 +862,27 @@ void tst_ClientList::processKadList_adoptsConnectedBuddyAndDropsOthers()
     QCOMPARE(alsoWants->kadState(), KadState::None);
 }
 
+void tst_ClientList::helloID_followsKadWithoutAServer()
+{
+    // No server: the hello ID comes from Kad. 0 would read as HighID on the far side.
+    QCOMPARE(theApp.getID(), 0u);
+    {
+        eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Firewalled);
+        QCOMPARE(theApp.getID(), 0u);                 // running, not yet connected
+        kadFixture.kadPrefs().setLastContact();
+        QCOMPARE(theApp.getID(), 1u);
+    }
+    {
+        eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Open);
+        kadFixture.kadPrefs().setLastContact();
+        kadFixture.kadPrefs().setIPAddress(0x01020304u);
+        kadFixture.kadPrefs().setIPAddress(0x01020304u);
+        QCOMPARE(kadFixture.kad().getIPAddress(), 0x01020304u);
+        // eD2K ID form: first octet in the low byte.
+        QCOMPARE(theApp.getID(), htonl(0x01020304u));
+    }
+}
+
 void tst_ClientList::processKadList_dropsAnOpenBuddy()
 {
     // We are reachable, so we are the relay: the buddy is the firewalled side, and one
@@ -974,6 +997,26 @@ void tst_ClientList::process_reapsAChatterOnceTheSessionEnds()
     QCOMPARE(list.clientCount(), 1);     // mid-conversation: kept, as MFC keeps it
 
     client->endChatSession();
+    list.process();
+    QCOMPARE(list.clientCount(), 0);
+}
+
+void tst_ClientList::process_reapsABannedClientOnceTheBanIsOver()
+{
+    ClientList list;
+    auto* prev = theApp.clientList;
+    theApp.clientList = &list;
+    const auto restore = qScopeGuard([prev] { theApp.clientList = prev; });
+
+    auto* client = new UpDownClient();   // reaped clients are deleteLater()d
+    client->setConnectAddress(Address::fromString(QStringLiteral("10.9.0.7")));
+    list.addClient(client);
+    client->ban(QStringLiteral("test"));
+
+    list.process();
+    QCOMPARE(list.clientCount(), 1);     // banned: the object carries the state
+
+    list.removeBannedClient(client->connectAddress());
     list.process();
     QCOMPARE(list.clientCount(), 0);
 }

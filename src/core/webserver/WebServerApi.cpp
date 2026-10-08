@@ -589,7 +589,9 @@ void WebServer::buildApiTable()
         Operation op = make("search.more", Method::Post, "/api/v1/search/{searchID}/more",
                             "Search", "Fetch the next page of a search",
                             "A usenetServer / torrentServer search asks its server for one page "
-                            "and finishes with hasMore true while the server has a further one. "
+                            "and finishes with hasMore true while the server has a further one; "
+                            "so does an eD2K server search whose server holds back matches (up "
+                            "to 5 further pages, and only until the next server search). "
                             "This fetches it: the search runs again and its new results join the "
                             "old ones. 409 when the search has no further page.");
         op.mcpTool = s("search_more");

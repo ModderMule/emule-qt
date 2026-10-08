@@ -85,6 +85,7 @@ void UiState::load(const QString& configDir)
         m_optionsLastPage  = root["optionsLastPage"].as<int>(m_optionsLastPage);
         m_lastVersionCheck = root["lastVersionCheck"].as<int64_t>(m_lastVersionCheck);
         m_associateNzbFiles = root["associateNzbFiles"].as<bool>(m_associateNzbFiles);
+        m_firstStartWizardDone = root["firstStartWizardDone"].as<bool>(m_firstStartWizardDone);
         m_showCountryFlags = root["showCountryFlags"].as<bool>(m_showCountryFlags);
         m_toolbarButtonStyle = root["toolbarButtonStyle"].as<int>(m_toolbarButtonStyle);
 
@@ -175,6 +176,7 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "optionsLastPage"  << YAML::Value << m_optionsLastPage;
     out << YAML::Key << "lastVersionCheck" << YAML::Value << m_lastVersionCheck;
     out << YAML::Key << "associateNzbFiles" << YAML::Value << m_associateNzbFiles;
+    out << YAML::Key << "firstStartWizardDone" << YAML::Value << m_firstStartWizardDone;
     out << YAML::Key << "showCountryFlags" << YAML::Value << m_showCountryFlags;
     out << YAML::Key << "toolbarButtonStyle" << YAML::Value << m_toolbarButtonStyle;
 

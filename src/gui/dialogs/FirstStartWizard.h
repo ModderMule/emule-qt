@@ -3,17 +3,27 @@
 /// @file FirstStartWizard.h
 /// @brief First Runtime Wizard dialog matching the MFC eMule wizard.
 ///
-/// Single-page wizard combining the connection ports section and network
-/// selection section. Accessible via Tools > "eMule First Runtime Wizard...".
+/// Two pages: ports + network selection, then connection speed (MFC's separate
+/// connection wizard, with 2026 line types). Shown once on first start and
+/// accessible via Tools > "eMule First Runtime Wizard...".
 
+#include "dialogs/ConnectionPresets.h"
+
+#include <QCborMap>
 #include <QDialog>
 
+#include <optional>
+
 class QCheckBox;
+class QDoubleSpinBox;
 class QLabel;
 class QProgressBar;
 class QPushButton;
 class QSpinBox;
+class QStackedWidget;
 class QTimer;
+class QTreeWidget;
+class QTreeWidgetItem;
 
 namespace eMule {
 
@@ -23,36 +33,69 @@ class FirstStartWizard : public QDialog {
     Q_OBJECT
 
 public:
-    explicit FirstStartWizard(IpcClient* ipc, QWidget* parent = nullptr);
+    enum class StartPage { Ports, Speed };
+
+    explicit FirstStartWizard(IpcClient* ipc, QWidget* parent = nullptr,
+                              StartPage startPage = StartPage::Ports);
+
+    /// The preference keys Finish wrote (IPC names). Empty until accepted.
+    [[nodiscard]] const QCborMap& appliedSettings() const { return m_applied; }
 
 private slots:
-    void onFinish();
+    void onBack();
+    void onNext();
     void onUPnPSetup();
     void onUPnPTimeout();
     void onHelp();
+    void onSpeedSelectionChanged();
 
 private:
     void setupHeader();
-    void setupPortSection();
-    void setupNetworkSection();
+    QWidget* setupPortPage();
+    QWidget* setupSpeedPage();
     void setupButtons();
+    void showPage(int page);
+    void requestDaemonSettings();
+    void fillFromSettings(const QCborMap& prefs);
+    [[nodiscard]] bool networksValid();
+    [[nodiscard]] std::optional<BandwidthSettings> selectedBandwidth() const;
+    void finish();
 
     IpcClient* m_ipc = nullptr;
+
+    // Header
+    QLabel* m_titleLabel = nullptr;
+    QLabel* m_subtitleLabel = nullptr;
+    QStackedWidget* m_pages = nullptr;
 
     // Port controls
     QSpinBox* m_tcpPortSpin = nullptr;
     QSpinBox* m_udpPortSpin = nullptr;
+    QCheckBox* m_udpDisableCheck = nullptr;
     QPushButton* m_upnpBtn = nullptr;
     QProgressBar* m_upnpProgress = nullptr;
     QTimer* m_upnpTimer = nullptr;
+    bool m_upnpRequested = false;
 
     // Network controls
     QCheckBox* m_kadCheck = nullptr;
     QCheckBox* m_ed2kCheck = nullptr;
 
+    // Speed controls
+    QTreeWidget* m_speedList = nullptr;
+    QTreeWidgetItem* m_keepItem = nullptr;
+    QTreeWidgetItem* m_recommendedItem = nullptr;
+    QTreeWidgetItem* m_customItem = nullptr;
+    QDoubleSpinBox* m_customDownSpin = nullptr;
+    QDoubleSpinBox* m_customUpSpin = nullptr;
+    QLabel* m_speedResult = nullptr;
+    BandwidthSettings m_current;   ///< what the daemon runs with now
+
     // Button row
     QPushButton* m_backBtn = nullptr;
-    QPushButton* m_finishBtn = nullptr;
+    QPushButton* m_nextBtn = nullptr;
+
+    QCborMap m_applied;
 };
 
 } // namespace eMule

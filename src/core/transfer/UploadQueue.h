@@ -250,7 +250,9 @@ private:
 
     /// Ban / duplicate / per-IP / IPv6 gates, shared by addClientToQueue() and
     /// addRestoredClient() so the two cannot drift. @p context only labels the log lines.
-    QueueAdmission checkWaitingListAdmission(UpDownClient* client, const char* context);
+    /// @p evictDuplicates: a queued twin of @p client may lose its place (live requests).
+    QueueAdmission checkWaitingListAdmission(UpDownClient* client, const char* context,
+                                             bool evictDuplicates);
 
     /// Bump the per-file request counter on the file this client is asking for — MFC
     /// srchybrid/UploadQueue.cpp:625. Feeds the "Requests" figures in the Shared Files panel,

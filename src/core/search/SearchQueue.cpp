@@ -5,6 +5,7 @@
 #include "search/SearchQueue.h"
 
 #include "utils/Log.h"
+#include "utils/Opcodes.h"
 
 #include <QCoreApplication>
 
@@ -122,6 +123,11 @@ void SearchQueue::pump()
             entry.awaitsSweep = sent.awaitsSweep;
             entry.sentAtMs = m_backend.nowMs();
             if (server) {
+                // MFC: "sending a new search request invalidates any previously
+                // received 'More'" (srchybrid/SearchResultsWnd.cpp:1240-1245)
+                dropServerPages(searchID);
+                entry.serverPage = false;
+                entry.moreRequests = 0;
                 m_inFlight = searchID;
                 m_inFlightDeadlineMs = m_backend.nowMs()
                                      + (sent.awaitsSweep ? kSweepTimeoutMs : kAnswerTimeoutMs);
@@ -174,6 +180,7 @@ void SearchQueue::tick()
 
 void SearchQueue::onServerDisconnected()
 {
+    dropServerPages();   // the next session knows nothing of the last answer
     Entry* entry = find(m_inFlight);
     if (!entry || entry->awaitsSweep)
         return;   // a sweep goes on without the server, and ends by itself
@@ -185,10 +192,14 @@ void SearchQueue::onServerDisconnected()
     pump();
 }
 
-void SearchQueue::onServerAnswer()
+void SearchQueue::onServerAnswer(bool moreResults)
 {
-    const Entry* entry = find(m_inFlight);
-    if (!entry || entry->awaitsSweep)
+    Entry* entry = find(m_inFlight);
+    if (!entry)
+        return;
+    // MFC CSearchResultsWnd::LocalEd2kSearchEnd (srchybrid/SearchResultsWnd.cpp:470)
+    entry->serverPage = moreResults && entry->moreRequests < MAX_MORE_SEARCH_REQ;
+    if (entry->awaitsSweep)
         return;   // a global search carries on over UDP
     finishServerSearch(SearchRunState::Finished);
 }
@@ -217,8 +228,24 @@ void SearchQueue::onMetaSearchFinished(uint32 searchID, const QString& error, bo
 bool SearchQueue::more(uint32 searchID)
 {
     Entry* entry = find(searchID);
-    if (!entry || entry->status.state != SearchRunState::Finished || !entry->status.hasMore
-        || !m_backend.continueMetaSearch)
+    if (!entry || entry->status.state != SearchRunState::Finished || !entry->status.hasMore)
+        return false;
+    if (entry->serverPage) {
+        // MFC CSearchResultsWnd::SearchMore (srchybrid/SearchResultsWnd.cpp:1273-1289)
+        if (m_inFlight != 0 || !m_backend.continueServerSearch
+            || !m_backend.continueServerSearch(searchID, entry->params))
+            return false;
+        entry->status.hasMore = false;
+        entry->serverPage = false;
+        entry->awaitsSweep = false;   // the sweep is over; this page ends with the TCP answer
+        ++entry->moreRequests;
+        entry->sentAtMs = m_backend.nowMs();
+        m_inFlight = searchID;
+        m_inFlightDeadlineMs = entry->sentAtMs + kAnswerTimeoutMs;
+        setState(*entry, SearchRunState::Running);
+        return true;
+    }
+    if (!m_backend.continueMetaSearch)
         return false;
     entry->status.hasMore = false;
     entry->meta = true;
@@ -327,11 +354,23 @@ void SearchQueue::cancelMeta(Entry& entry, bool parkedToo)
 {
     const bool running = std::exchange(entry.meta, false)
                       && entry.status.state == SearchRunState::Running;
-    const bool parked = parkedToo && std::exchange(entry.status.hasMore, false);
+    // a server's page is not the runner's to drop
+    const bool parked = parkedToo && !entry.serverPage
+                     && std::exchange(entry.status.hasMore, false);
     if (!running && !parked)
         return;
     if (m_backend.cancelMetaSearch)
         m_backend.cancelMetaSearch(entry.status.searchID);
+}
+
+void SearchQueue::dropServerPages(uint32 keep)
+{
+    for (Entry& entry : m_entries) {
+        if (entry.status.searchID == keep || !std::exchange(entry.serverPage, false))
+            continue;
+        if (std::exchange(entry.status.hasMore, false))
+            emit stateChanged(entry.status);
+    }
 }
 
 void SearchQueue::setWaiting(Entry& entry, const char* reason)
@@ -366,8 +405,11 @@ void SearchQueue::finishServerSearch(SearchRunState state, const QString& error)
     if (searchID == 0)
         return;
     m_backend.endServerSearch(searchID);
-    if (Entry* entry = find(searchID))
+    if (Entry* entry = find(searchID)) {
+        entry->serverPage = entry->serverPage && state == SearchRunState::Finished;
+        entry->status.hasMore = entry->serverPage;
         setState(*entry, state, error);
+    }
     pump();
 }
 

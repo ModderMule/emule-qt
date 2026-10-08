@@ -198,7 +198,13 @@ public:
     /// the same category but fall back; only the same category.
     void startNextFileIfPrefs(int category);
 
+    /// The download limit an upload of @p maxUpBytes allows: below 4 / 10 / 20 KB/s up,
+    /// at most 3x / 4x / 5x comes down. Bytes per second, 0 = unlimited on both sides.
+    [[nodiscard]] static uint64 ratioLimitedDownload(uint64 maxDownBytes, uint64 maxUpBytes);
+
     void sortByPriority();
+    /// Sort at the start of the next process() pass; safe while the list is being walked.
+    void requestPrioritySort() { m_prioritySortPending = true; }
     void process();
 
     // Source requests to the connected server — MFC srchybrid/DownloadQueue.cpp:1279-1395.
@@ -424,6 +430,7 @@ private:
     const PartFile* m_kadSearchTurn = nullptr;   // chosen per process() pass
 
     std::vector<PartFile*> m_localServerReqQueue;   // non-owning
+    bool m_prioritySortPending = false;
     uint64 m_nextTcpSrcReq = 0;                     // m_dwNextTCPSrcReq
 
     // Global-UDP-source rotation cursors (port of CDownloadQueue members).

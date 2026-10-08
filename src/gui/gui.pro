@@ -191,6 +191,7 @@ HEADERS += \
     dialogs/DetailDialog.h \
     dialogs/FileDetailDialog.h \
     dialogs/FindInListDialog.h \
+    dialogs/ConnectionPresets.h \
     dialogs/FirstStartWizard.h \
     dialogs/ImportDownloadsDialog.h \
     dialogs/MetadataPage.h \

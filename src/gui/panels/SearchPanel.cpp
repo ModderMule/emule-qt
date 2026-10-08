@@ -449,17 +449,33 @@ QWidget* SearchPanel::createSearchBar()
     filterScroll->setWidgetResizable(true);
     filterScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     filterScroll->setFrameShape(QFrame::NoFrame);
-    // Column 1: Start + Cancel buttons aligned with rows
+    // Column 1: Start, More, Cancel stacked as in MFC (srchybrid/emule.rc:1144-1146)
+    auto* buttonCol = new QVBoxLayout;
+    buttonCol->setSpacing(2);
     m_startBtn = new QPushButton(tr("Start"), container);
     m_startBtn->setFixedWidth(80);
     connect(m_startBtn, &QPushButton::clicked, this, &SearchPanel::onStartSearch);
-    grid->addWidget(m_startBtn, 0, 1, Qt::AlignTop);
+    buttonCol->addWidget(m_startBtn);
+
+    // The next page of the tab on screen; scrolling to the end of the list asks
+    // for it too (loadMoreIfAtEnd()). MFC: CSearchParamsWnd::OnBnClickedMore.
+    m_moreBtn = new QPushButton(tr("More"), container);
+    m_moreBtn->setFixedWidth(80);
+    m_moreBtn->setEnabled(false);
+    m_moreBtn->setToolTip(tr("Ask the server for further results of this search"));
+    connect(m_moreBtn, &QPushButton::clicked, this, [this] {
+        if (auto* tab = currentTab())
+            requestMore(*tab);
+    });
+    buttonCol->addWidget(m_moreBtn);
 
     m_cancelBtn = new QPushButton(tr("Cancel"), container);
     m_cancelBtn->setFixedWidth(80);
     m_cancelBtn->setEnabled(false);
     connect(m_cancelBtn, &QPushButton::clicked, this, &SearchPanel::onCancelSearch);
-    grid->addWidget(m_cancelBtn, 1, 1, Qt::AlignTop);
+    buttonCol->addWidget(m_cancelBtn);
+    buttonCol->addStretch();
+    grid->addLayout(buttonCol, 0, 1, 2, 1);
 
     // Column 2: Scrollable filter area spanning both rows
     grid->addWidget(filterScroll, 0, 2, 2, 1);
@@ -617,7 +633,7 @@ QString SearchPanel::tabStatusText(const SearchTab& tab) const
         return tr("Search failed: %1").arg(tab.failure);
     case 2:   // finished
         if (tab.hasMore)
-            return tr("%1 results — scroll down for more").arg(tab.resultCount());
+            return tr("%1 results — scroll down or press More for more").arg(tab.resultCount());
         if (tab.resultCount() == 0 && tab.searchID != 0)
             return tr("No results");
         break;
@@ -656,6 +672,7 @@ void SearchPanel::onSearchStatePush(const IpcMessage& msg)
         if (m_tabBar->currentIndex() == static_cast<int>(i)) {
             m_statusLabel->setText(tabStatusText(tab));
             m_cancelBtn->setEnabled(tab.runState == 0 || tab.runState == 1);
+            updateMoreButton();
             if (tab.hasMore)
                 m_loadMoreTimer->start();   // a page that added no row moves no scrollbar
         }
@@ -1649,6 +1666,7 @@ void SearchPanel::closeSearch(int tabIndex)
         m_resultView->setModel(nullptr);
         m_statusLabel->clear();
         m_cancelBtn->setEnabled(false);
+        m_moreBtn->setEnabled(false);
     }
     scheduleSaveSearches();
 }
@@ -1684,6 +1702,7 @@ void SearchPanel::closeAllSearches()
     m_resultView->setModel(nullptr);
     m_statusLabel->clear();
     m_cancelBtn->setEnabled(false);
+    m_moreBtn->setEnabled(false);
     scheduleSaveSearches();
 }
 
@@ -1696,6 +1715,7 @@ void SearchPanel::switchToTab(int index)
     if (index < 0 || index >= static_cast<int>(m_tabs.size())) {
         m_resultView->setModel(nullptr);
         m_downloadBtn->setEnabled(false);
+        m_moreBtn->setEnabled(false);
         return;
     }
 
@@ -1712,6 +1732,7 @@ void SearchPanel::switchToTab(int index)
             this, &SearchPanel::updateDownloadButton);
     updateDownloadButton();
     m_statusLabel->setText(tabStatusText(tab));
+    updateMoreButton();
     m_loadMoreTimer->start();
 }
 
@@ -2542,17 +2563,36 @@ void SearchPanel::loadMoreIfAtEnd()
 {
     auto* tab = currentTab();
     const QScrollBar* bar = m_resultView->verticalScrollBar();
-    if (!tab || !m_ipc || !tab->hasMore || tab->isIndexer() || tab->searchID == 0
-        || !isVisible() || bar->value() < bar->maximum())
+    if (!tab || !tab->hasMore || !isVisible() || bar->value() < bar->maximum())
         return;
     // rows of the last page are still on their way: the list is not at its end yet
     if (m_dirtySearchIDs.contains(tab->searchID) || m_fetchingSearchIDs.contains(tab->searchID))
         return;
-    tab->hasMore = false;   // once a page; the next state push says whether another follows
+    requestMore(*tab);
+}
+
+void SearchPanel::requestMore(SearchTab& tab)
+{
+    if (!m_ipc || !tab.hasMore || tab.isIndexer() || tab.searchID == 0)
+        return;
+    tab.hasMore = false;   // once a page; the next state push says whether another follows
     IpcMessage msg(IpcMsgType::SearchMore);
-    msg.append(static_cast<qint64>(tab->searchID));
+    msg.append(static_cast<qint64>(tab.searchID));
     m_ipc->sendRequest(std::move(msg));
-    m_statusLabel->setText(tabStatusText(*tab));
+    if (&tab == currentTab()) {
+        m_statusLabel->setText(tabStatusText(tab));
+        updateMoreButton();
+    }
+}
+
+void SearchPanel::updateMoreButton()
+{
+    const auto* tab = currentTab();
+    const bool on = tab && tab->hasMore && !tab->isIndexer() && tab->searchID != 0;
+    // a button that goes grey must not keep the focus (MFC OnBnClickedMore)
+    if (!on && m_moreBtn->hasFocus())
+        m_nameEdit->setFocus();
+    m_moreBtn->setEnabled(on);
 }
 
 void SearchPanel::applyNetworkFilter(SearchTab& tab)

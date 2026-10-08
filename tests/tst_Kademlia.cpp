@@ -34,6 +34,7 @@ private slots:
     void publicIP_kadIgnoredUntilConnected();
     void bootstrap_delegatesToListener();
     void processPacket_dispatches();
+    void process_refreshesTheStoreCountersEveryTick();
 };
 
 void tst_Kademlia::cleanup()
@@ -292,6 +293,23 @@ void tst_Kademlia::processPacket_dispatches()
 
     QVERIFY(true); // no crash
 
+    kad.stop();
+}
+
+// SharedFileList::publish() caps concurrent stores on these counters; a 60 s refresh let
+// one start per second through.
+void tst_Kademlia::process_refreshesTheStoreCountersEveryTick()
+{
+    Kademlia kad;
+    kad.start();
+    QTest::qWait(1500);                  // first tick spends the 60 s status slot
+    QCOMPARE(kad.getTotalStoreSrc(), uint32{0});
+
+    const uint8 bytes[16] = {0x42};
+    QVERIFY(SearchManager::prepareLookup(SearchType::StoreFile, true, UInt128(bytes)) != nullptr);
+    QTRY_COMPARE_WITH_TIMEOUT(kad.getTotalStoreSrc(), uint32{1}, 3000);
+
+    SearchManager::stopAllSearches();
     kad.stop();
 }
 

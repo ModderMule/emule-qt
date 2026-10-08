@@ -188,6 +188,7 @@ private slots:
 
     // Obfuscated stat crypt-ping (port+12) — serverStats() two-branch state machine
     void serverStats_sendsObfuscatedCryptPingFirst();
+    void serverStats_answeredCryptPingIsRescheduled();
     void serverStats_cryptPingSentWithoutAKnownPublicIP();
     void serverStats_fallsBackToPlaintextWhenPending();
 };
@@ -2389,6 +2390,35 @@ void tst_ServerList::serverStats_sendsObfuscatedCryptPingFirst()
     QVERIFY(dueAt >= before + 19 && dueAt <= before + 22);
     // The free obfuscated probe must NOT bump the failure counter.
     QCOMPARE(srv->failedCount(), 0u);
+}
+
+void tst_ServerList::serverStats_answeredCryptPingIsRescheduled()
+{
+    ServerList list;
+    CryptPingFixture fx(list, /*publicIP*/ 0x04030201u, /*crypt*/ true);
+
+    auto* srv = list.addServer(makeServer(0x08080808, 5555, QStringLiteral("cryptsrv")));
+    QVERIFY(srv != nullptr);
+
+    list.serverStats();
+    QVERIFY(srv->cryptPingReplyPending());
+    const uint32 challenge = srv->challenge();
+
+    const QByteArray body = makeStatusBody(challenge, 1000, 2000, 3000, 4000, 5000,
+                                           SrvUdpFlag::UdpObfuscation, 42, 4670, 5555,
+                                           0xDEADBEEF);
+    const auto before = static_cast<uint32>(QDateTime::currentSecsSinceEpoch());
+    list.processStatusResponse(reinterpret_cast<const uint8*>(body.constData()),
+                               static_cast<uint32>(body.size()),
+                               udpSenderFor(0x08080808, 5555));
+    QVERIFY(!srv->cryptPingReplyPending());
+    QCOMPARE(srv->users(), 1000u);
+
+    // The send left it due in 20 s for the plain fallback. Answered, it is next due
+    // 3.5 - 4.5 h out, like a plain ping.
+    QVERIFY(srv->lastPingedTime() + HR2S(1) >= before);
+    QVERIFY(srv->lastPingedTime() + static_cast<uint32>(UDPSERVSTATREASKTIME)
+            > before + HR2S(3));
 }
 
 void tst_ServerList::serverStats_cryptPingSentWithoutAKnownPublicIP()

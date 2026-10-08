@@ -523,7 +523,9 @@ void CoreSession::updateUSSParams()
 
     USSParams p;
     p.enabled = thePrefs.dynUpEnabled();
-    p.pingTolerance = thePrefs.dynUpPingTolerance() / 100.0;
+    // The pref is "percent of the lowest ping"; the controller wants the rise over it.
+    const int tolerance = thePrefs.dynUpPingTolerance();
+    p.pingTolerance = tolerance > 100 ? (tolerance - 100) / 100.0 : 0.0;
     p.pingToleranceMilliseconds = static_cast<uint32>(thePrefs.dynUpPingToleranceMs());
     p.useMillisecondPingTolerance = thePrefs.dynUpUseMillisecondPingTolerance();
     p.goingUpDivider = static_cast<uint32>(thePrefs.dynUpGoingUpDivider());
@@ -532,7 +534,13 @@ void CoreSession::updateUSSParams()
     p.minUpload = thePrefs.minUpload();  // KB/s — setPrefs() converts to bytes/s
     // maxUploadLimit() already maps "no limit" (0) onto the UNLIMITED sentinel USSParams uses.
     p.maxUpload = thePrefs.maxUploadLimit();
-    p.curUpload = (p.maxUpload == UNLIMITED) ? UNLIMITED : p.maxUpload * 1024;
+    p.curUpload = theApp.uploadQueue ? theApp.uploadQueue->datarate() : 0;
+
+    // A raised limit is reached faster. MFC PPgConnection.cpp:244-246.
+    if (p.enabled && p.maxUpload > m_lastUSSMaxUpload)
+        m_lastCommonRouteFinder->initiateFastReactionPeriod();
+    m_lastUSSMaxUpload = p.maxUpload;
+
     m_lastCommonRouteFinder->setPrefs(p);
 }
 
@@ -621,7 +629,7 @@ void CoreSession::initServerConnect()
                 if (!theApp.searchList)
                     return;
                 auto* srv = theApp.serverConnect ? theApp.serverConnect->currentServer() : nullptr;
-                theApp.searchList->processSearchAnswer(data, size, true,
+                const bool more = theApp.searchList->processSearchAnswer(data, size, true,
                     srv ? Endpoint(theApp.serverConnect->sessionAddress(), srv->port()) : Endpoint());
 
                 // The local server has answered — a global search may now start
@@ -630,7 +638,7 @@ void CoreSession::initServerConnect()
                 if (theApp.globalSearch)
                     theApp.globalSearch->onLocalAnswerReceived();
                 // ... and a plain server search is done: the next one may go.
-                theApp.searchList->queue().onServerAnswer();
+                theApp.searchList->queue().onServerAnswer(more);
             });
 
     // A search asked for before the server was there goes out now.
@@ -1440,6 +1448,9 @@ void CoreSession::initSearch()
     if (!theApp.searchList) {
         m_searchList = std::make_unique<SearchList>(this);
         theApp.searchList = m_searchList.get();
+        // What the user marked as spam in earlier sessions. MFC loads it on the first
+        // rated result; here it is small enough to read up front.
+        m_searchList->loadSpamFilter(thePrefs.configDir());
     }
 
     if (!theApp.globalSearch) {
@@ -1473,6 +1484,8 @@ void CoreSession::shutdownSearch()
         theApp.globalSearch = nullptr;
     m_globalSearch.reset();
 
+    if (m_searchList)
+        m_searchList->saveSpamFilter(thePrefs.configDir());   // MFC EmuleDlg.cpp:1707
     if (m_searchList && theApp.searchList == m_searchList.get())
         theApp.searchList = nullptr;
     m_searchList.reset();

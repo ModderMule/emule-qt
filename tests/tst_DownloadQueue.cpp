@@ -138,6 +138,9 @@ private slots:
     void checkAndAddKnownSource_swapsOnlyAnIdleDueSource();
     void localSrcRequests_goOutFifteenToAFrame();
     void localSrcRequests_orderAndDropouts();
+    void ratioLimitedDownload_followsTheUploadLimit();
+    void remoteQueueFull_survivesTheRankAndEndsWithASlot();
+    void remoteQueueFull_sourceIsPurgedNearTheCap();
     void localSrcRequests_resetOnNewServerSession();
     void addServerSources_dropsLowIdWhenFirewalled();
     void addServerSources_dropsIpFilteredHighId();
@@ -173,6 +176,11 @@ private slots:
 
     // Per-source walk in process(): the OP_CHANGE_CLIENT_IP flush and the re-ask clock.
     void process_flushesPendingIPChangeForSources();
+    void process_reasksAQueuedSourceOverItsOpenConnection_data();
+    void process_reasksAQueuedSourceOverItsOpenConnection();
+    void pauseFile_cancelsARunningTransfer();
+    void stopFile_letsTheSourcesGo();
+    void stopPausedFile_firesAfterAnIdleHour();
     void process_udpReaskWindowIsDisjointFromTheTcpReask();
 
 private:
@@ -2113,10 +2121,12 @@ void tst_DownloadQueue::process_flushesPendingIPChangeForSources()
     // Deliberately UDP-incapable: the flush sits *above* the supportsUDP() gate, so a
     // refactor that folded it inside would fail here.
     QVERIFY(!source.supportsUDP());
-    // OnQueue with a live socket, so PartFile::process() does not also try to dial it and
-    // put unrelated frames on the wire.
+    // OnQueue and just asked, so PartFile::process() neither dials nor re-asks it and
+    // puts no unrelated frames on the wire.
     source.setDownloadState(DownloadState::OnQueue);
     pf->addSource(&source);
+    source.setReqFile(pf);
+    source.setLastAskedTime();
 
     QCoreApplication::processEvents();
     peer->readAll();                          // drain anything the setup produced
@@ -2135,6 +2145,209 @@ void tst_DownloadQueue::process_flushesPendingIPChangeForSources()
     source.setSocket(nullptr);
     peer->close();
     QCoreApplication::processEvents();
+    dq.deleteAll();
+}
+
+// A queued source we hold a connection to (a peer we upload to, say) can be re-asked by
+// neither UDP nor a dial. Left alone, the remote drops us from its queue after an hour.
+void tst_DownloadQueue::process_reasksAQueuedSourceOverItsOpenConnection()
+{
+    QFETCH(bool, due);
+    IPv6AdvertiseGuard guard;
+
+    DownloadQueue dq;
+    uint8 hash[16];
+    std::memset(hash, 0x52, sizeof(hash));
+    auto* pf = createTestPartFile(hash, QStringLiteral("reask_in_place.bin"));
+    dq.addDownload(pf);
+
+    QTcpServer server;
+    UpDownClient source;
+    QTcpSocket* peer = wireLoopbackSocket(server, source);
+    QVERIFY(peer != nullptr);
+    feedIPv6CapableHello(source, 0x32);
+    source.setDownloadState(DownloadState::OnQueue);
+    pf->addSource(&source);
+    source.setReqFile(pf);
+    if (!due)
+        source.setLastAskedTime();
+
+    QCoreApplication::processEvents();
+    peer->readAll();
+
+    runOneSecondOfTicks(dq);
+
+    if (due) {
+        QCOMPARE(source.downloadState(), DownloadState::Connected);
+        QVERIFY2(waitForBytes(peer, 22), "the file request goes out on the open socket");
+    } else {
+        QCOMPARE(source.downloadState(), DownloadState::OnQueue);
+        QVERIFY(!waitForBytes(peer, 1));
+    }
+
+    source.setDownloadState(DownloadState::None);
+    pf->forgetAllSources();
+    source.setReqFile(nullptr);   // outlives pf
+    source.setSocket(nullptr);
+    peer->close();
+    QCoreApplication::processEvents();
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::process_reasksAQueuedSourceOverItsOpenConnection_data()
+{
+    QTest::addColumn<bool>("due");
+    QTest::newRow("reask due") << true;
+    QTest::newRow("just asked") << false;
+}
+
+// Without OP_CANCELTRANSFER the peer keeps sending into a file that no longer flushes.
+void tst_DownloadQueue::pauseFile_cancelsARunningTransfer()
+{
+    DownloadQueue dq;
+    theApp.downloadQueue = &dq;
+    const auto unhook = qScopeGuard([] { theApp.downloadQueue = nullptr; });
+
+    uint8 hash[16];
+    std::memset(hash, 0x53, sizeof(hash));
+    auto* pf = createTestPartFile(hash, QStringLiteral("pause_cancel.bin"));
+    dq.addDownload(pf);
+
+    QTcpServer server;
+    UpDownClient source;
+    QTcpSocket* peer = wireLoopbackSocket(server, source);
+    QVERIFY(peer != nullptr);
+    feedIPv6CapableHello(source, 0x33);
+    pf->addSource(&source);
+    source.setReqFile(pf);
+    source.setDownloadState(DownloadState::Downloading);
+    QCoreApplication::processEvents();
+    peer->readAll();
+
+    pf->pauseFile();
+
+    QCOMPARE(source.downloadState(), DownloadState::OnQueue);
+    QVERIFY(pf->hasSource(&source));
+    QVERIFY2(waitForBytes(peer, 6), "the peer is told to stop");
+    const QByteArray raw = peer->readAll();
+    QCOMPARE(static_cast<uint8>(raw[5]), static_cast<uint8>(OP_CANCELTRANSFER));
+
+    source.setDownloadState(DownloadState::None);
+    pf->forgetAllSources();
+    source.setReqFile(nullptr);
+    source.setSocket(nullptr);
+    peer->close();
+    QCoreApplication::processEvents();
+    dq.deleteAll();
+}
+
+// A stopped file accepts no new sources; keeping the old ones strands them — never
+// re-asked, never offered to the other files they are wanted for, never reaped.
+void tst_DownloadQueue::stopFile_letsTheSourcesGo()
+{
+    DownloadQueue dq;
+    theApp.downloadQueue = &dq;
+    const auto unhook = qScopeGuard([] { theApp.downloadQueue = nullptr; });
+
+    uint8 hashA[16] = {60, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    uint8 hashB[16] = {61, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    auto* fileA = createTestPartFile(hashA, QStringLiteral("stop-a.bin"));
+    auto* fileB = createTestPartFile(hashB, QStringLiteral("stop-b.bin"));
+    dq.addDownload(fileA);
+    dq.addDownload(fileB);
+
+    const auto makeSource = [&](UpDownClient& client, const char* ip, PartFile* file) {
+        const Address addr = Address::fromString(QString::fromLatin1(ip));
+        client.setUserAddress(addr);
+        client.setUserIDHybrid(addr.toUint32());
+        client.setUserPort(4662);
+        QVERIFY(dq.checkAndAddKnownSource(file, &client, true));
+    };
+
+    UpDownClient onlyA;                      // nowhere else to go
+    makeSource(onlyA, "81.2.69.180", fileA);
+    onlyA.setDownloadState(DownloadState::OnQueue);
+
+    UpDownClient alsoB;                      // source of A, wanted for B too
+    makeSource(alsoB, "81.2.69.181", fileA);
+    alsoB.setDownloadState(DownloadState::Downloading);
+    QVERIFY(!dq.checkAndAddKnownSource(fileB, &alsoB, true));
+    alsoB.setDownloadState(DownloadState::OnQueue);
+    QCOMPARE(fileB->a4afSourceCount(), 1);
+
+    UpDownClient ofB;                        // source of B, A is its alternative
+    makeSource(ofB, "81.2.69.182", fileB);
+    ofB.setDownloadState(DownloadState::Downloading);
+    QVERIFY(!dq.checkAndAddKnownSource(fileA, &ofB, true));
+    QCOMPARE(fileA->a4afSourceCount(), 1);
+
+    fileA->stopFile();
+
+    QVERIFY(fileA->isStopped());
+    QCOMPARE(fileA->sourceCount(), 0);
+    QCOMPARE(fileA->a4afSourceCount(), 0);
+    QVERIFY(onlyA.reqFile() == nullptr);
+    QCOMPARE(onlyA.downloadState(), DownloadState::None);
+    QCOMPARE(alsoB.reqFile(), fileB);        // swapped, not dropped
+    QVERIFY(fileB->hasSource(&alsoB));
+    QCOMPARE(ofB.reqFile(), fileB);
+    QCOMPARE(ofB.otherRequestCount(), std::size_t{0});
+
+    for (UpDownClient* client : {&onlyA, &alsoB, &ofB}) {
+        client->setDownloadState(DownloadState::None);
+        client->removeFileFromOtherLists(fileA);
+        client->removeFileFromOtherLists(fileB);
+        dq.removeSource(client);
+    }
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::stopPausedFile_firesAfterAnIdleHour()
+{
+    DownloadQueue dq;
+    theApp.downloadQueue = &dq;
+    const auto unhook = qScopeGuard([] { theApp.downloadQueue = nullptr; });
+
+    uint8 hashA[16] = {62, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    uint8 hashB[16] = {63, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    auto* paused = createTestPartFile(hashA, QStringLiteral("idle-paused.bin"));
+    auto* noSpace = createTestPartFile(hashB, QStringLiteral("idle-nospace.bin"));
+    dq.addDownload(paused);
+    dq.addDownload(noSpace);
+
+    UpDownClient a, b;
+    a.setDownloadState(DownloadState::OnQueue);
+    b.setDownloadState(DownloadState::OnQueue);
+    paused->addSource(&a);
+    a.setReqFile(paused);
+    noSpace->addSource(&b);
+    b.setReqFile(noSpace);
+
+    paused->pauseFile();
+    noSpace->pauseFile(true);
+    const time_t now = std::time(nullptr);
+
+    // Not yet an hour.
+    paused->setLastPausePurge(now - HR2S(1) + 60);
+    noSpace->setLastPausePurge(now - HR2S(1) + 60);
+    paused->stopPausedFile();
+    noSpace->stopPausedFile();
+    QVERIFY(paused->hasSource(&a));
+    QVERIFY(noSpace->hasSource(&b));
+    QVERIFY(!paused->isStopped());
+
+    paused->setLastPausePurge(now - HR2S(1) - 1);
+    noSpace->setLastPausePurge(now - HR2S(1) - 1);
+    paused->stopPausedFile();
+    noSpace->stopPausedFile();
+    QVERIFY(paused->isStopped());
+    QCOMPARE(paused->sourceCount(), 0);
+    QVERIFY(a.reqFile() == nullptr);
+    // Out of space: sources go, the state the auto-resume waits on stays.
+    QCOMPARE(noSpace->sourceCount(), 0);
+    QVERIFY(noSpace->isInsufficient());
+    QVERIFY(!noSpace->isStopped());
+
     dq.deleteAll();
 }
 
@@ -2360,6 +2573,87 @@ void tst_DownloadQueue::localSrcRequests_goOutFifteenToAFrame()
 
 // Longest-waiting first; among equals the higher download priority. A file that is no
 // longer downloadable drops out without being asked for.
+void tst_DownloadQueue::ratioLimitedDownload_followsTheUploadLimit()
+{
+    const auto kb = [](uint64 v) { return v * 1024; };
+    const auto limit = [&](uint64 downKB, uint64 upKB) {
+        return DownloadQueue::ratioLimitedDownload(kb(downKB), kb(upKB));
+    };
+
+    // 20 KB/s up or more, or no upload limit: the download limit stands.
+    QCOMPARE(limit(500, 20), kb(500));
+    QCOMPARE(limit(500, 0), kb(500));
+    QCOMPARE(limit(0, 20), uint64{0});
+    QCOMPARE(limit(0, 0), uint64{0});
+
+    // Below that: 3x under 4, 4x under 10, 5x under 20.
+    QCOMPARE(limit(500, 3), kb(9));
+    QCOMPARE(limit(500, 4), kb(16));
+    QCOMPARE(limit(500, 9), kb(36));
+    QCOMPARE(limit(500, 10), kb(50));
+    QCOMPARE(limit(500, 19), kb(95));
+
+    // Never above what the user set, and "unlimited" down is capped all the same.
+    QCOMPARE(limit(10, 9), kb(10));
+    QCOMPARE(limit(0, 9), kb(36));
+}
+
+void tst_DownloadQueue::remoteQueueFull_survivesTheRankAndEndsWithASlot()
+{
+    // A full queue is reported as "full, rank 0" — the rank must not wipe the flag.
+    UpDownClient client;
+    client.setRemoteQueueFull(true);
+    client.setRemoteQueueRank(0);
+    QVERIFY(client.remoteQueueFull());
+    client.udpReaskACK(0);
+    QVERIFY(client.remoteQueueFull());
+
+    // A slot ends it, for an eMule peer.
+    client.setEmuleProtocol(true);
+    client.setRemoteQueueFull(true);
+    client.setRemoteQueueRank(7);
+    client.setDownloadState(DownloadState::Downloading);
+    QVERIFY(!client.remoteQueueFull());
+    QCOMPARE(client.remoteQueueRank(), 0u);
+    client.setDownloadState(DownloadState::None);
+}
+
+void tst_DownloadQueue::remoteQueueFull_sourceIsPurgedNearTheCap()
+{
+    DownloadQueue dq;
+    theApp.downloadQueue = &dq;
+    const uint16 oldMax = thePrefs.maxSourcesPerFile();
+    const auto restore = qScopeGuard([oldMax] {
+        thePrefs.setMaxSourcesPerFile(oldMax);
+        theApp.downloadQueue = nullptr;
+    });
+
+    uint8 hash[16];
+    std::memset(hash, 0x52, sizeof(hash));
+    auto* pf = createTestPartFile(hash, QStringLiteral("queue_full_purge.bin"));
+    dq.addDownload(pf);
+
+    UpDownClient full;
+    full.setDownloadState(DownloadState::OnQueue);
+    full.setRemoteQueueFull(true);
+    pf->addSource(&full);
+
+    // Far from the cap: kept.
+    thePrefs.setMaxSourcesPerFile(100);
+    pf->process(0, 0);
+    QVERIFY(pf->hasSource(&full));
+
+    // At 4/5 of the cap: dropped.
+    thePrefs.setMaxSourcesPerFile(1);
+    full.setDownloadState(DownloadState::OnQueue);
+    pf->process(0, 0);
+    QVERIFY(!pf->hasSource(&full));
+
+    pf->forgetAllSources();
+    full.setReqFile(nullptr);
+    dq.deleteAll();
+}
+
 void tst_DownloadQueue::localSrcRequests_orderAndDropouts()
 {
     DownloadQueue dq;

@@ -236,6 +236,7 @@ int main(int argc, char* argv[])
 
     // Create and show main window
     eMule::MainWindow mainWindow;
+    mainWindow.setFirstStartWizardAllowed(!cli.screenshotMode());
     linkHandler.setMainWindow(&mainWindow);
     if (eMule::theUiState.isWindowMaximized())
         mainWindow.showMaximized();

@@ -393,6 +393,13 @@ public:
     void pauseFile(bool insufficient = false);
     void resumeFile();
     void stopFile(bool cancel = false);
+    /// Paused, out of space or errored for an hour: let the sources go. A paused
+    /// file becomes stopped; the other two keep their state.
+    void stopPausedFile();
+    /// Drop every source, offering each to another file it is wanted for first.
+    void removeAllSources(bool tryToSwap);
+    /// Start of the idle hour stopPausedFile() measures. Tests.
+    void setLastPausePurge(time_t t) { m_lastPausePurge = t; }
     [[nodiscard]] bool completionError() const { return m_completionError; }
     /// The long-running operation in progress, if any. Relabels the displayed status —
     /// "Completing (Hashing)" and so on, as MFC's getPartfileStatus does.
@@ -569,6 +576,7 @@ protected:
 
 private:
     void initPartFile();
+    void unlinkA4AFSources();
     /// @p alreadyVerified skips the re-read of the data (a rehash has just done it).
     void completeFile(bool alreadyVerified = false);
     /// Take over the AICH recovery set the move thread stored in known2.

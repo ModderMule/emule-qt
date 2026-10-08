@@ -26,6 +26,7 @@ private slots:
     void findKnownFile_byMetadata();
     void findKnownFile_notFound();
     void findKnownFile_followsAddReplaceRemove();
+    void findKnownFile_skipsARecordShortOfTheBoundaryHash();
     void findKnownFileByID();
     void findKnownFileByPath();
     void isKnownFile_check();
@@ -127,6 +128,39 @@ void tst_KnownFileList::findKnownFile_notFound()
     KnownFileList list;
     auto* result = list.findKnownFile(QStringLiteral("nofile.txt"), 0, 0);
     QVERIFY(result == nullptr);
+}
+
+void tst_KnownFileList::findKnownFile_skipsARecordShortOfTheBoundaryHash()
+{
+    // Records hashed before the boundary-part fix: the scan must not take them for the
+    // file on disk, or the wrong hash would be shared for good.
+    KnownFileList list;
+    const auto make = [](uint8 hashByte, const QString& name, uint64 size, int partHashes) {
+        auto* f = new KnownFile();
+        uint8 hash[16];
+        std::memset(hash, hashByte, 16);
+        f->setFileHash(hash);
+        f->setFileName(name);
+        f->setUtcFileDate(100);
+        f->setFileSize(size);
+        auto& set = f->fileIdentifier().getRawMD4HashSet();
+        for (int i = 0; i < partHashes; ++i)
+            set.push_back({});
+        return f;
+    };
+
+    auto* stale = make(1, QStringLiteral("stale.bin"), 2 * PARTSIZE, 2);
+    auto* good  = make(2, QStringLiteral("good.bin"),  2 * PARTSIZE, 3);
+    auto* tiny  = make(3, QStringLiteral("tiny.bin"),  PARTSIZE, 0);
+    auto* odd   = make(4, QStringLiteral("odd.bin"),   2 * PARTSIZE + 1, 0);
+    for (auto* f : {stale, good, tiny, odd})
+        QVERIFY(list.safeAddKFile(f));
+
+    QVERIFY(!list.findKnownFile(QStringLiteral("stale.bin"), 100, 2 * PARTSIZE));
+    QCOMPARE(list.findKnownFile(QStringLiteral("good.bin"), 100, 2 * PARTSIZE), good);
+    QVERIFY(!list.findKnownFile(QStringLiteral("tiny.bin"), 100, PARTSIZE));
+    // Off the boundary nothing changes, whatever the record holds.
+    QCOMPARE(list.findKnownFile(QStringLiteral("odd.bin"), 100, 2 * PARTSIZE + 1), odd);
 }
 
 void tst_KnownFileList::findKnownFileByID()

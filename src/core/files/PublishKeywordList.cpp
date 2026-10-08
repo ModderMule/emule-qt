@@ -20,13 +20,14 @@ PublishKeyword::PublishKeyword(const QString& keyword)
     kad::getKeywordHash(lower, m_kadID);
 }
 
-void PublishKeyword::addRef(KnownFile* file)
+bool PublishKeyword::addRef(KnownFile* file)
 {
     if (!file)
-        return;
+        return false;
     if (!m_fileSet.insert(file).second)
-        return;
+        return false;
     m_files.push_back(file);
+    return true;
 }
 
 void PublishKeyword::removeRef(KnownFile* file)
@@ -75,15 +76,18 @@ void PublishKeywordList::addKeywords(KnownFile* file)
         if (it == m_index.constEnd()) {
             m_keywords.emplace_back(word);
             it = m_index.insert(lower, std::prev(m_keywords.end()));
+            m_nextPublishTime = 0;
         }
-        (*it)->addRef(file);
+        // A published keyword that gains a file is due again on the next lap. MIN2S(30)
+        // is MFC's absolute "long ago", not a delay (SharedFileList.cpp:220-227).
+        if ((*it)->addRef(file) && (*it)->nextPublishTime() > MIN2S(30))
+            (*it)->setNextPublishTime(MIN2S(30));
         if (!std::ranges::contains(registered, lower))
             registered.push_back(lower);
     }
 
     // Initialize the round-robin iterator when first keywords are added.
-    // Without this, m_nextKeywordIter is singular and getNextKeyword()
-    // returns nullptr, causing publish() to set a 24h delay.
+    // Without this, m_nextKeywordIter is singular.
     if (wasEmpty && !m_keywords.empty())
         m_nextKeywordIter = m_keywords.begin();
 }
@@ -157,6 +161,7 @@ PublishKeywordList::KeywordIter PublishKeywordList::eraseKeyword(KeywordIter it)
     if (m_nextKeywordIter == it)
         ++m_nextKeywordIter;
     m_index.remove(kad::kadTagStrToLower(it->keyword()));
+    m_nextPublishTime = 0;
     return m_keywords.erase(it);
 }
 

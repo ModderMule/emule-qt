@@ -103,6 +103,21 @@ UpDownClient* makeLowIdClient(uint32 lowId)
 
 /// The peer asking us for sources. Reports no chunk status, which is the
 /// "send anything you have" case, and speaks SX2 unless a test says otherwise.
+/// Make @p c a source of @p pf that answered: on its queue, with the part bitmap @p bits
+/// (one byte per 8 parts, as on the wire; empty = it reported the whole file).
+void markReached(UpDownClient* c, PartFile& pf, const QByteArray& bits)
+{
+    QByteArray body;
+    const uint16 count = bits.isEmpty() ? 0 : pf.ed2kPartCount();
+    body.append(char(count & 0xFF));
+    body.append(char(count >> 8));
+    body.append(bits);
+    SafeMemFile io(reinterpret_cast<const uint8*>(body.constData()),
+                   static_cast<uint32>(body.size()));
+    c->processFileStatus(false, io, &pf);
+    c->setDownloadState(DownloadState::OnQueue);
+}
+
 UpDownClient* makeRequester(bool supportsSX2 = true, uint8 sx1Version = 4)
 {
     auto* c = makeHighIdClient(QStringLiteral("99.98.97.96"), 4665);
@@ -187,6 +202,7 @@ private slots:
     void knownFile_userIdIsHybridAtV3Plus_data();
     void knownFile_userIdIsHybridAtV3Plus();
     void partFile_userIdIsHybridAtV3Plus();
+    void partFile_handsOutOnlyReachedSourcesWithAPart();
     void serverIpIsAlwaysNetworkOrder();
 
     // Bug 3 — parse-side byte order rule
@@ -378,7 +394,10 @@ void tst_SourceExchange::partFile_userIdIsHybridAtV3Plus()
     uint8 hash[16];
     std::memset(hash, 0x22, sizeof(hash));
     pf.setFileHash(hash);
-    pf.addSource(track(makeHighIdClient(QStringLiteral("10.20.30.40"), 4662)));
+    pf.setFileSize(3 * PARTSIZE + 1);
+    auto* src = track(makeHighIdClient(QStringLiteral("10.20.30.40"), 4662));
+    pf.addSource(src);
+    markReached(src, pf, {});
 
     auto v4 = srcInfoFor(pf, requester(), 4);
     QVERIFY(v4 != nullptr);
@@ -387,6 +406,53 @@ void tst_SourceExchange::partFile_userIdIsHybridAtV3Plus()
     auto v2 = srcInfoFor(pf, requester(), 2);
     QVERIFY(v2 != nullptr);
     QCOMPARE(readU32(v2->pBuffer, kHeaderSize + 2), addr.toNetworkUint32());
+}
+
+void tst_SourceExchange::partFile_handsOutOnlyReachedSourcesWithAPart()
+{
+    // A source goes out only once we reached it and it told us what it holds, and only
+    // if that is something. Anything else would spread addresses nobody verified.
+    PartFile pf;
+    uint8 hash[16];
+    std::memset(hash, 0x23, sizeof(hash));
+    pf.setFileHash(hash);
+    pf.setFileSize(3 * PARTSIZE + 1);                 // 4 parts
+
+    const auto add = [&](const QString& ip) {
+        auto* c = track(makeHighIdClient(ip, 4662));
+        uint8 userHash[16];
+        std::memset(userHash, static_cast<int>(m_clients.size()) + 1, sizeof(userHash));
+        c->setUserHash(userHash);
+        pf.addSource(c);
+        return c;
+    };
+    const auto count = [&]() -> int {
+        auto packet = srcInfoFor(pf, requester(), 4);
+        return packet ? readU16(packet->pBuffer, kHeaderSize) : 0;
+    };
+
+    // Never reached: no state, no bitmap.
+    add(QStringLiteral("10.20.30.41"));
+    QCOMPARE(count(), 0);
+
+    // Answered, but has no part at all.
+    auto* empty = add(QStringLiteral("10.20.30.42"));
+    markReached(empty, pf, QByteArray(1, char(0x00)));
+    QCOMPARE(count(), 0);
+
+    // Has a part, but we lost it again before it was reached a second time.
+    auto* gone = add(QStringLiteral("10.20.30.43"));
+    markReached(gone, pf, QByteArray(1, char(0x02)));
+    gone->setDownloadState(DownloadState::Connecting);
+    QCOMPARE(count(), 0);
+
+    auto* partial = add(QStringLiteral("10.20.30.44"));
+    markReached(partial, pf, QByteArray(1, char(0x02)));
+    QCOMPARE(count(), 1);
+
+    auto* complete = add(QStringLiteral("10.20.30.45"));
+    markReached(complete, pf, {});
+    QCOMPARE(count(), 2);
 }
 
 void tst_SourceExchange::serverIpIsAlwaysNetworkOrder()

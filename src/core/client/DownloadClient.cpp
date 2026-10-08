@@ -554,7 +554,6 @@ void UpDownClient::processHashSet(const uint8* data, uint32 size, bool fileIdent
 
 void UpDownClient::processAcceptUpload()
 {
-    m_remoteQueueFull = false;
     // An accept is normally followed by a rank update — expect one (MFC
     // DownloadClient.cpp:1964).
     m_queueRankPending = true;
@@ -1305,7 +1304,6 @@ void UpDownClient::setRemoteQueueRank(uint32 rank, bool updateDisplay)
 {
     Q_UNUSED(updateDisplay);
     m_remoteQueueRank = rank;
-    m_remoteQueueFull = false;
 }
 
 // ===========================================================================
@@ -1451,8 +1449,18 @@ void UpDownClient::udpReaskForDownload()
 
 bool UpDownClient::isValidSource() const
 {
-    return m_downloadState != DownloadState::None &&
-           m_downloadState != DownloadState::Error;
+    // A source we actually reached — MFC DownloadClient.cpp:1914-1926.
+    switch (m_downloadState) {
+    case DownloadState::Downloading:
+    case DownloadState::OnQueue:
+    case DownloadState::Connected:
+    case DownloadState::NoNeededParts:
+    case DownloadState::RemoteQueueFull:
+    case DownloadState::ReqHashSet:
+        return isEd2kClient();
+    default:
+        return false;
+    }
 }
 
 // ===========================================================================
@@ -1513,15 +1521,29 @@ bool UpDownClient::swapToAnotherFile(const QString& reason, bool ignoreNoNeeded,
     PartFile* bestFile = nullptr;
     bool bestSkippedSrcExch = false;
 
+    // The current file is in the comparison only when staying is an option. A source
+    // that has to leave takes the first live candidate (MFC starts with SwapTo == NULL,
+    // srchybrid/DownloadClient.cpp:1584-1586).
+    const bool mustLeave = !allowSame || removeCompletely;
+    const auto beatsBest = [&](PartFile* other, bool otherIsNNP, bool& skipped) {
+        if (mustLeave && !bestFile) {
+            skipped = false;
+            const PartFileStatus st = other->status();
+            return !other->isStopped()
+                && (st == PartFileStatus::Ready || st == PartFileStatus::Empty)
+                && other->sourceCount() < static_cast<int>(thePrefs.maxSourcesPerFile());
+        }
+        return swapToRightFile(other, bestFile ? bestFile : m_reqFile, ignoreSuspensions,
+                               otherIsNNP, m_downloadState == DownloadState::NoNeededParts,
+                               skipped, aggressiveSwapping);
+    };
+
     // Check m_otherRequests list
     for (auto* otherFile : m_otherRequests) {
         if (otherFile == m_reqFile)
             continue;
         bool skipped = false;
-        if (swapToRightFile(otherFile, bestFile ? bestFile : m_reqFile,
-                            ignoreSuspensions, false,
-                            (m_downloadState == DownloadState::NoNeededParts),
-                            skipped, aggressiveSwapping))
+        if (beatsBest(otherFile, false, skipped))
         {
             bestFile = otherFile;
             bestSkippedSrcExch = skipped;
@@ -1534,10 +1556,7 @@ bool UpDownClient::swapToAnotherFile(const QString& reason, bool ignoreNoNeeded,
             if (otherFile == m_reqFile)
                 continue;
             bool skipped = false;
-            if (swapToRightFile(otherFile, bestFile ? bestFile : m_reqFile,
-                                ignoreSuspensions, true,
-                                (m_downloadState == DownloadState::NoNeededParts),
-                                skipped, aggressiveSwapping))
+            if (beatsBest(otherFile, true, skipped))
             {
                 bestFile = otherFile;
                 bestSkippedSrcExch = skipped;

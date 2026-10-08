@@ -55,6 +55,13 @@ enum class HttpCacheServerAction : uint8 {
     Full,        ///< the list is at kMaxHttpCacheServers and this is not in it
 };
 
+// Bandwidth defaults (KiB/s) for a fresh install; also the first start wizard's
+// "recommended defaults". Download unlimited, upload under half a 10 Mbit uplink.
+inline constexpr uint32 kDefaultMaxUpload = 500;
+inline constexpr uint32 kDefaultMaxDownload = 0;           // 0 = unlimited
+inline constexpr uint32 kDefaultMaxGraphUploadRate = 1250;    // 10 Mbit/s
+inline constexpr uint32 kDefaultMaxGraphDownloadRate = 12500; // 100 Mbit/s
+
 class Preferences {
 public:
     Preferences();

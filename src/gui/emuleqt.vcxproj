@@ -314,6 +314,7 @@
     <ClInclude Include="controls\PartBarPainter.h" />
     <ClInclude Include="controls\AbstractTableModel.h" />
     <ClInclude Include="controls\TrayMeterIcon.h" />
+    <ClInclude Include="dialogs\ConnectionPresets.h" />
     <ClInclude Include="utils\DialogSizing.h" />
     <ClInclude Include="utils\FileAssociation.h" />
     <ClInclude Include="utils\FileTypeIcons.h" />

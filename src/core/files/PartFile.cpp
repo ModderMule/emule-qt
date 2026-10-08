@@ -82,12 +82,11 @@ PartFile::~PartFile()
         if (client->reqFile() == this)
             client->setReqFile(nullptr);
     }
-    // Copy: removeFileFromOtherLists() edits m_a4afSrcList. Leaves no client pointing here.
-    for (auto* client : std::vector(m_a4afSrcList)) {
+    for (auto* client : m_a4afSrcList) {
         if (client->reqFile() == this)
             client->setReqFile(nullptr);
-        client->removeFileFromOtherLists(this);
     }
+    unlinkA4AFSources();
 
     // Clear requested blocks list — blocks are owned by clients'
     // Pending_Block_Struct and freed by clearPendingBlockRequest.
@@ -140,7 +139,7 @@ void PartFile::initPartFile()
     m_dlActiveTime = 0;
     m_tLastModified = 0;
     m_tCreated = std::time(nullptr);
-    m_lastPausePurge = 0;
+    m_lastPausePurge = std::time(nullptr);
     m_md4HashsetNeeded = true;
     m_aichPartHashsetNeeded = true;
     m_corruptionBlackBox.free();
@@ -1295,6 +1294,10 @@ void PartFile::pauseFile(bool insufficient)
 {
     const bool wasPaused = m_paused;
 
+    // Start of the idle hour after which stopPausedFile() lets the sources go.
+    if (!m_paused && !m_insufficient)
+        m_lastPausePurge = std::time(nullptr);
+
     // Only a real pause sets m_paused. Running out of disk space is a different
     // condition — the user did not pause anything — and conflating the two makes
     // status() report Paused for it, since m_paused wins the overlay.
@@ -1315,6 +1318,15 @@ void PartFile::pauseFile(bool insufficient)
     m_lastSearchTimeServer = 0;
     if (theApp.downloadQueue)
         theApp.downloadQueue->removeLocalServerRequest(this);
+
+    // Tell uploading sources to stop, or they keep sending into a paused file.
+    // MFC srchybrid/PartFile.cpp:3343-3349.
+    for (auto* client : std::vector(m_srcList)) {
+        if (client->downloadState() == DownloadState::Downloading) {
+            client->sendCancelTransfer();
+            client->setDownloadState(DownloadState::OnQueue);
+        }
+    }
 
     m_datarate = 0;
 
@@ -1370,6 +1382,7 @@ void PartFile::stopFile(bool cancel)
     // did not recover a file whose search ID had gone stale (Pause/Resume did).
     m_stopped = true;
     pauseFile(false);
+    removeAllSources(true);
 
     logInfo(QStringLiteral("Download %1: %2")
                 .arg(cancel ? QStringLiteral("cancelled") : QStringLiteral("stopped"))
@@ -1414,6 +1427,51 @@ void PartFile::stopFile(bool cancel)
     }
 }
 
+// MFC CPartFile::StopPausedFile (srchybrid/PartFile.cpp:3299-3307): a file idle for an
+// hour does not keep its old sources.
+void PartFile::stopPausedFile()
+{
+    if (m_stopped)
+        return;
+    const PartFileStatus st = status();
+    if (st != PartFileStatus::Paused && st != PartFileStatus::Insufficient
+        && st != PartFileStatus::Error)
+        return;
+    const time_t now = std::time(nullptr);
+    if (now < m_lastPausePurge + static_cast<time_t>(HR2S(1)))
+        return;
+
+    if (st == PartFileStatus::Paused) {
+        stopFile();
+    } else {
+        // Not stopFile(): it would drop the insufficient flag the auto-resume waits
+        // on, and an errored file must keep its state for the retry.
+        m_lastPausePurge = now;
+        removeAllSources(true);
+    }
+}
+
+// MFC CPartFile::RemoveAllSources (srchybrid/PartFile.cpp:3040-3066).
+void PartFile::removeAllSources(bool tryToSwap)
+{
+    for (auto* client : std::vector(m_srcList)) {
+        if (tryToSwap
+            && client->swapToAnotherFile(QStringLiteral("Removing source. removeAllSources()"),
+                                         true, true, true, nullptr, false, false))
+            continue;
+        if (theApp.downloadQueue) {
+            theApp.downloadQueue->removeSource(client);
+        } else {
+            removeSource(client);
+            client->setDownloadState(DownloadState::None);
+            client->setReqFile(nullptr);
+        }
+    }
+    updatePartsInfo();
+    unlinkA4AFSources();
+    updateFileRatingCommentAvail();
+}
+
 // ===========================================================================
 // Priority
 // ===========================================================================
@@ -1439,16 +1497,21 @@ void PartFile::updateAutoDownPriority()
     if (!m_autoDownPriority)
         return;
 
+    // MFC PartFile.cpp:4417-4430
     const auto srcCount = m_srcList.size();
     uint8 newPriority;
-    if (srcCount <= 3)
-        newPriority = kPrHigh;
-    else if (srcCount <= 20)
+    if (srcCount > 100)
+        newPriority = kPrLow;
+    else if (srcCount > 20)
         newPriority = kPrNormal;
     else
-        newPriority = kPrLow;
+        newPriority = kPrHigh;
 
+    if (newPriority == m_downPriority)
+        return;
     m_downPriority = newPriority;
+    if (theApp.downloadQueue)
+        theApp.downloadQueue->requestPrioritySort();
 }
 
 bool PartFile::rightFileHasHigherPrio(const PartFile* left, const PartFile* right)
@@ -1828,6 +1891,8 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
         // Temporary gap storage (pairs of start/end)
         std::vector<std::pair<uint64, uint64>> gapPairs;
         uint64 pendingGapStart = UINT64_MAX;
+        struct NamedGap { uint64 first = UINT64_MAX; uint64 second = UINT64_MAX; };
+        std::map<uint32, NamedGap> namedGaps;   // by index; second = exclusive end
 
         for (uint32 i = 0; i < tagCount; ++i) {
             Tag tag(file, true);
@@ -1940,32 +2005,31 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
                     deserializeKadNotes(tag.blobValue());
                 break;
             default: {
-                // Handle gap tags — either by numeric nameId (new format)
-                // or by string name starting with FT_GAPSTART/FT_GAPEND byte
-                // followed by gap index digits (original eMule format).
-                const bool isGapStart =
-                    tag.nameId() == FT_GAPSTART ||
-                    (!tag.name().isEmpty() &&
-                     static_cast<uint8>(tag.name().at(0)) == FT_GAPSTART);
-                const bool isGapEnd =
-                    tag.nameId() == FT_GAPEND ||
-                    (!tag.name().isEmpty() &&
-                     static_cast<uint8>(tag.name().at(0)) == FT_GAPEND);
-
-                if (isGapStart) {
+                // Gap tags. eMule names them with a string: the FT_GAPSTART/FT_GAPEND
+                // byte, then the gap's index in decimal; the end is the first byte
+                // *after* the gap (MFC PartFile.cpp:960-979). Older builds of this
+                // port wrote bare numeric IDs with an inclusive end instead.
+                const auto gapValue = [&tag]() -> uint64 {
                     if (tag.isInt())
-                        pendingGapStart = tag.intValue();
-                    else if (tag.isInt64(false))
-                        pendingGapStart = tag.int64Value();
-                } else if (isGapEnd) {
-                    uint64 gapEnd = 0;
-                    if (tag.isInt())
-                        gapEnd = tag.intValue();
-                    else if (tag.isInt64(false))
-                        gapEnd = tag.int64Value();
-
+                        return tag.intValue();
+                    return tag.isInt64(false) ? tag.int64Value() : 0;
+                };
+                const uint8 nameByte = tag.name().isEmpty()
+                    ? uint8{0} : static_cast<uint8>(tag.name().at(0));
+                if (tag.nameId() == 0
+                    && (nameByte == FT_GAPSTART || nameByte == FT_GAPEND)) {
+                    if (tag.isInt() || tag.isInt64(false)) {
+                        auto& gap = namedGaps[tag.name().mid(1).toUInt()];
+                        if (nameByte == FT_GAPSTART)
+                            gap.first = gapValue();
+                        else
+                            gap.second = gapValue();   // exclusive
+                    }
+                } else if (tag.nameId() == FT_GAPSTART) {
+                    pendingGapStart = gapValue();
+                } else if (tag.nameId() == FT_GAPEND) {
                     if (pendingGapStart != UINT64_MAX) {
-                        gapPairs.push_back({pendingGapStart, gapEnd});
+                        gapPairs.push_back({pendingGapStart, gapValue()});
                         pendingGapStart = UINT64_MAX;
                     }
                 } else {
@@ -1976,24 +2040,33 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
             }
         }
 
-        // Replace auto-generated gap with actual gaps from file.
-        // Clamp end to fileSize-1 (inclusive range) — some clients
-        // store gap end == fileSize for the trailing gap.
+        // eMule re-saving one of our old files keeps the numeric tags as unknown ones
+        // next to its own fresh gaps, so named gaps always win.
+        if (!namedGaps.empty()) {
+            gapPairs.clear();
+            for (const auto& [index, gap] : namedGaps) {
+                if (gap.first != UINT64_MAX && gap.second != UINT64_MAX && gap.second > 0)
+                    gapPairs.push_back({gap.first, gap.second - 1});
+            }
+        }
+
+        // Replace auto-generated gap with actual gaps from file, clamped to the file and
+        // merged: overlapping entries would count the same missing bytes twice.
         m_gapList.clear();
         const uint64 fs = static_cast<uint64>(fileSize());
+        std::ranges::sort(gapPairs);
         for (auto [gStart, gEnd] : gapPairs) {
             if (fs == 0 || gStart >= fs)
                 continue;
             if (gEnd >= fs)
                 gEnd = fs - 1;
-            if (gStart <= gEnd)
+            if (gStart > gEnd)
+                continue;
+            if (!m_gapList.empty() && gStart <= m_gapList.back().end + 1)
+                m_gapList.back().end = std::max(m_gapList.back().end, gEnd);
+            else
                 m_gapList.push_back({gStart, gEnd});
         }
-
-        // Sort gaps
-        m_gapList.sort([](const Gap& a, const Gap& b) {
-            return a.start < b.start;
-        });
 
     } catch (const FileException& ex) {
         logError(QStringLiteral("PartFile::loadPartFile: error reading %1: %2")
@@ -2241,17 +2314,25 @@ bool PartFile::savePartFile()
             tagCount++;
         }
 
-        // Gap pairs as FT_GAPSTART/FT_GAPEND tags
-        for (const auto& gap : m_gapList) {
+        // Gaps, the way eMule and aMule read them: a string name made of the
+        // FT_GAPSTART/FT_GAPEND byte and the gap's index, and an end that is the first
+        // byte after the gap (MFC PartFile.cpp:1371-1391).
+        uint32 gapIndex = 0;
+        const auto writeGap = [&](uint64 start, uint64 end) {
+            const QByteArray index = QByteArray::number(gapIndex++);
+            const QByteArray startName = QByteArray(1, static_cast<char>(FT_GAPSTART)) + index;
+            const QByteArray endName = QByteArray(1, static_cast<char>(FT_GAPEND)) + index;
             if (largeFile) {
-                Tag(FT_GAPSTART, static_cast<uint64>(gap.start)).writeNewEd2kTag(file);
-                Tag(FT_GAPEND, static_cast<uint64>(gap.end)).writeNewEd2kTag(file);
+                Tag(startName, start).writeTagToFile(file);
+                Tag(endName, end + 1).writeTagToFile(file);
             } else {
-                Tag(FT_GAPSTART, static_cast<uint32>(gap.start)).writeNewEd2kTag(file);
-                Tag(FT_GAPEND, static_cast<uint32>(gap.end)).writeNewEd2kTag(file);
+                Tag(startName, static_cast<uint32>(start)).writeTagToFile(file);
+                Tag(endName, static_cast<uint32>(end + 1)).writeTagToFile(file);
             }
             tagCount += 2;
-        }
+        };
+        for (const auto& gap : m_gapList)
+            writeGap(gap.start, gap.end);
 
         // Write buffered (not-yet-flushed) data ranges as gaps too.
         // This data exists only in RAM — if we crash before flushing,
@@ -2268,14 +2349,7 @@ bool PartFile::savePartFile()
                     bEnd = it->end;
                     ++it;
                 }
-                if (largeFile) {
-                    Tag(FT_GAPSTART, bStart).writeNewEd2kTag(file);
-                    Tag(FT_GAPEND, bEnd).writeNewEd2kTag(file);
-                } else {
-                    Tag(FT_GAPSTART, static_cast<uint32>(bStart)).writeNewEd2kTag(file);
-                    Tag(FT_GAPEND, static_cast<uint32>(bEnd)).writeNewEd2kTag(file);
-                }
-                tagCount += 2;
+                writeGap(bStart, bEnd);
             }
         }
 
@@ -2430,12 +2504,27 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
         auto* client = m_srcList[i];
         const auto ds = client->downloadState();
 
+        // A source whose queue is full is the first to go near the cap — MFC
+        // PartFile.cpp:2330-2336.
+        if (ds == DownloadState::OnQueue && client->remoteQueueFull()
+            && curTick >= m_lastPurgeTime + MIN2MS(1)
+            && sourceCount() >= static_cast<int>(thePrefs.maxSourcesPerFile()) * 4 / 5)
+        {
+            m_lastPurgeTime = curTick;
+            if (theApp.downloadQueue) {
+                theApp.downloadQueue->removeSource(client);
+                continue; // client removed, don't increment i
+            }
+        }
+
         if (connectAttempts < kMaxConnectAttemptsPerCycle) {
-            const bool disconnectedOnQueue =
-                (ds == DownloadState::OnQueue) && !client->socket();
+            // OnQueue with or without a socket: a held connection gets the in-place
+            // re-ask below, else the remote purges us after an hour. MFC falls through
+            // from DS_ONQUEUE (srchybrid/PartFile.cpp:2327-2356).
+            const bool onQueue = (ds == DownloadState::OnQueue);
 
             if ((ds == DownloadState::None || ds == DownloadState::TooManyConns
-                 || disconnectedOnQueue)
+                 || onQueue)
                 && client->connectingState() == ConnectingState::None)
             {
                 // MFC's re-ask window applies to every candidate, not just a source
@@ -2469,9 +2558,9 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
                 }
 
                 // Reset OnQueue → None: askForDownload() returns early on OnQueue (the
-                // peer is expected to re-ask us), which is not what a source that has
-                // lost its socket needs.
-                if (disconnectedOnQueue)
+                // peer is expected to re-ask us), which is not what a source due for
+                // a dial needs.
+                if (onQueue)
                     client->setDownloadState(DownloadState::None);
 
                 // askForDownload(), not tryToConnect(): MFC calls it from exactly here
@@ -3459,18 +3548,24 @@ std::unique_ptr<Packet> PartFile::createSrcInfoPacket(
     // part status (what they hold of the file we want) — the upload side reads
     // upPartStatus() instead, which is the only reason the two sides need separate
     // predicates. Everything about the packet format itself lives in the base.
+    //
+    // Only sources we reached and that told us what they hold go out, and only when they
+    // have a part the requester lacks — MFC srchybrid/PartFile.cpp:3692-3706. A source
+    // that reported the whole file keeps no bitmap here (completeSource()).
     const auto& clientParts = forClient->upPartStatus();
+    const size_t parts = partCount();
     return buildSrcInfoPacket(
         forClient, version, m_srcList,
-        [&clientParts](const UpDownClient* src) {
+        [&clientParts, parts](const UpDownClient* src) {
+            if (!src->isValidSource() || src->partCount() != parts)
+                return false;
             const auto& srcParts = src->partStatus();
-            // Only diffable when both sides reported a bitmap of the same shape;
-            // otherwise send it and let the requester find out.
-            if (srcParts.empty() || clientParts.empty()
-                || srcParts.size() != clientParts.size())
-                return true;
-            for (size_t p = 0; p < srcParts.size(); ++p) {
-                if (srcParts[p] != 0 && clientParts[p] == 0)
+            const bool complete = srcParts.empty() && src->completeSource();
+            if (!complete && srcParts.size() != parts)
+                return false;
+            for (size_t p = 0; p < parts; ++p) {
+                if ((complete || srcParts[p] != 0)
+                    && (clientParts.empty() || clientParts[p] == 0))
                     return true;
             }
             return false;
@@ -4089,6 +4184,14 @@ void PartFile::adoptCompletedAICHHashSet()
     if (!stored.loadHashSet() || !fileIdentifier().setAICHHashSet(stored))
         logDebug(QStringLiteral("Failed to create AICH part hashset for %1").arg(fileName()));
     setAICHRecoverHashSetAvailable(true);
+}
+
+// Leaves no client holding this file as an A4AF alternative.
+void PartFile::unlinkA4AFSources()
+{
+    // Copy: removeFileFromOtherLists() edits m_a4afSrcList.
+    for (auto* client : std::vector(m_a4afSrcList))
+        client->removeFileFromOtherLists(this);
 }
 
 } // namespace eMule

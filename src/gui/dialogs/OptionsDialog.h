@@ -136,6 +136,7 @@ private:
     void saveSettings();
     void fillDaemonSettings(const QCborMap& prefs);
     void fillDaemonSettingsFromPrefs();
+    void applyWizardResult(const QCborMap& applied);
     void loadSchedulerData();
     void saveSchedulerData();
 

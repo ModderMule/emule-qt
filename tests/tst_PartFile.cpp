@@ -833,6 +833,27 @@ void tst_PartFile::autoDownPriority()
     // With no sources, should be high priority
     pf.updateAutoDownPriority();
     QCOMPARE(pf.downPriority(), kPrHigh);
+
+    // MFC: over 100 sources LOW, over 20 NORMAL, else HIGH. addSource() re-rates.
+    std::vector<std::unique_ptr<UpDownClient>> clients;
+    const auto growTo = [&](int count) {
+        while (pf.sourceCount() < count) {
+            clients.push_back(std::make_unique<UpDownClient>());
+            pf.addSource(clients.back().get());
+        }
+    };
+    growTo(20);
+    QCOMPARE(pf.downPriority(), kPrHigh);
+    growTo(21);
+    QCOMPARE(pf.downPriority(), kPrNormal);
+    growTo(100);
+    QCOMPARE(pf.downPriority(), kPrNormal);
+    growTo(101);
+    QCOMPARE(pf.downPriority(), kPrLow);
+
+    for (auto& c : clients)
+        pf.removeSource(c.get());
+    QCOMPARE(pf.downPriority(), kPrHigh);
 }
 
 void tst_PartFile::createPartFile_createsFiles()
@@ -936,6 +957,47 @@ void tst_PartFile::writeReadRoundTrip_withGaps()
     ++it;
     QCOMPARE(it->start, 8000ULL);
     QCOMPARE(it->end, 9999ULL);
+
+    // On disk it is eMule's form: old-style uint32 tag, 2-byte name = FT_GAPSTART or
+    // FT_GAPEND + the gap index, and the end one past the gap.
+    QFile met(tempDir + QLatin1Char('/') + pf1.partMetFileName());
+    QVERIFY(met.open(QIODevice::ReadOnly));
+    QByteArray raw = met.readAll();
+    met.close();
+    const auto gapTag = [](uint8 id, char index, uint32 value) {
+        QByteArray tag = QByteArray::fromHex("030200");
+        tag.append(static_cast<char>(id));
+        tag.append(index);
+        tag.append(reinterpret_cast<const char*>(&value), 4);
+        return tag;
+    };
+    QVERIFY(raw.contains(gapTag(FT_GAPSTART, '0', 3000)));
+    QVERIFY(raw.contains(gapTag(FT_GAPEND, '0', 5000)));
+    QVERIFY(raw.contains(gapTag(FT_GAPSTART, '1', 8000)));
+    QVERIFY(raw.contains(gapTag(FT_GAPEND, '1', 10000)));
+
+    // A file from before that: bare numeric IDs, inclusive end. Still loads.
+    const auto legacyTag = [](uint8 id, uint32 value) {
+        QByteArray tag = QByteArray::fromHex("030100");
+        tag.append(static_cast<char>(id));
+        tag.append(reinterpret_cast<const char*>(&value), 4);
+        return tag;
+    };
+    raw.replace(gapTag(FT_GAPSTART, '0', 3000), legacyTag(FT_GAPSTART, 3000));
+    raw.replace(gapTag(FT_GAPEND, '0', 5000), legacyTag(FT_GAPEND, 4999));
+    raw.replace(gapTag(FT_GAPSTART, '1', 8000), legacyTag(FT_GAPSTART, 8000));
+    raw.replace(gapTag(FT_GAPEND, '1', 10000), legacyTag(FT_GAPEND, 9999));
+    QVERIFY(met.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    met.write(raw);
+    met.close();
+
+    PartFile pf3;
+    QCOMPARE(pf3.loadPartFile(tempDir, pf1.partMetFileName()), PartFileLoadResult::LoadSuccess);
+    QCOMPARE(pf3.gapList().size(), 2U);
+    QCOMPARE(pf3.gapList().front().start, 3000ULL);
+    QCOMPARE(pf3.gapList().front().end, 4999ULL);
+    QCOMPARE(pf3.gapList().back().start, 8000ULL);
+    QCOMPARE(pf3.gapList().back().end, 9999ULL);
 }
 
 void tst_PartFile::percentCompleted_accuracy()

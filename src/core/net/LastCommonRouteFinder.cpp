@@ -26,9 +26,7 @@ static constexpr uint32 kHostCollectTimeoutMs = 180'000; // 3 minutes
 static constexpr uint32 kPrefsTimeoutMs = 180'000;  // 3 minutes
 static constexpr uint32 kMaxPingMs = 5000;
 
-// Multiplier ramp: fast for first 60s, then slower
-static constexpr double kFastReactionMultiplier = 2.0;
-static constexpr int kFastReactionDurationMs = 60'000;
+static constexpr int kMaxPingTries = 60;            // then look for a new host
 
 // ---------------------------------------------------------------------------
 // Construction / destruction
@@ -100,8 +98,10 @@ bool LastCommonRouteFinder::setPrefs(const USSParams& params)
         std::lock_guard lock(m_prefsMutex);
         m_pingTolerance = params.pingTolerance;
         m_curUpload = params.curUpload;
-        m_minUpload = params.minUpload * 1024; // KB/s → bytes/s
+        // KB/s → bytes/s; a minimum above the maximum gives way. MFC :181-189.
+        m_minUpload = params.minUpload ? params.minUpload * 1024 : 1024;
         m_maxUpload = (params.maxUpload != UINT32_MAX) ? params.maxUpload * 1024 : UINT32_MAX;
+        m_minUpload = std::min(m_minUpload, m_maxUpload);
         m_pingToleranceMilliseconds = params.pingToleranceMilliseconds;
         m_goingUpDivider = params.goingUpDivider;
         m_goingDownDivider = params.goingDownDivider;
@@ -110,6 +110,10 @@ bool LastCommonRouteFinder::setPrefs(const USSParams& params)
         m_useMillisecondPingTolerance = params.useMillisecondPingTolerance;
         m_enabled = params.enabled;
         m_prefsReceived = true;
+
+        // A changed limit counts at once, not when run() next wakes. MFC :211-212.
+        if (!m_enabled || m_upload.load() > m_maxUpload)
+            m_upload.store(m_maxUpload);
     }
     m_prefsCV.notify_all();
     return true;
@@ -123,6 +127,70 @@ void LastCommonRouteFinder::initiateFastReactionPeriod()
 uint32 LastCommonRouteFinder::getUpload() const
 {
     return m_upload.load();
+}
+
+// ---------------------------------------------------------------------------
+// Control step
+// ---------------------------------------------------------------------------
+
+uint32 LastCommonRouteFinder::adjustUpload(uint32 upload, uint32 curUpload,
+                                           int32 normalizedPing, uint32 targetPing,
+                                           uint32 lowestPing, uint32 goingUpDivider,
+                                           uint32 goingDownDivider, uint32 minUpload,
+                                           uint32 maxUpload, bool& acceptNewClient)
+{
+    const int64 upDiv = std::max<uint32>(goingUpDivider, 1);
+    const int64 downDiv = std::max<uint32>(goingDownDivider, 1);
+    const int64 lowest = std::max<uint32>(lowestPing, 1);
+    const int64 headroom = static_cast<int64>(targetPing) - normalizedPing;
+
+    if (headroom < 0) {
+        acceptNewClient = false;
+        const int64 diff = headroom * 1024 * 10 / downDiv / lowest;
+        upload = (static_cast<int64>(upload) > -diff) ? static_cast<uint32>(upload + diff) : 0;
+    } else if (headroom > 0) {
+        acceptNewClient = true;
+        // No point raising a limit the upload is not even close to.
+        if (static_cast<uint64>(curUpload) + 30 * 1024 > upload) {
+            const int64 diff = headroom * 1024 * 10 / (upDiv * lowest);
+            upload = (INT32_MAX - static_cast<int64>(upload) > diff)
+                         ? static_cast<uint32>(upload + diff) : static_cast<uint32>(INT32_MAX);
+        }
+    }
+
+    if (upload < minUpload) {
+        upload = minUpload;
+        acceptNewClient = true;
+    }
+    return std::min(upload, maxUpload);
+}
+
+void LastCommonRouteFinder::rampDividers(qint64 msSinceStart, uint32& goingUpDivider,
+                                         uint32& goingDownDivider)
+{
+    uint32 mul = 0;
+    if (msSinceStart < 20'000)
+        mul = 4;
+    else if (msSinceStart < 30'000)
+        mul = 1;
+    else if (msSinceStart < 40'000)
+        mul = 2;
+    else if (msSinceStart < 60'000)
+        mul = 3;
+
+    if (mul) {
+        goingUpDivider = goingUpDivider * mul / 4;
+        goingDownDivider = goingDownDivider * mul / 4;
+    }
+    goingUpDivider = std::max<uint32>(goingUpDivider, 1);
+    goingDownDivider = std::max<uint32>(goingDownDivider, 1);
+}
+
+uint32 LastCommonRouteFinder::pingIntervalMs(uint32 upload)
+{
+    if (upload == 0)
+        return 1000;
+    return std::clamp<uint32>(64u * 100u * 1000u / upload, 125, 1000);
 }
 
 // ---------------------------------------------------------------------------
@@ -379,142 +447,121 @@ void LastCommonRouteFinder::run()
             m_stateString = QStringLiteral("Active — monitoring latency");
         }
 
-        QElapsedTimer phaseTimer;
-        phaseTimer.start();
-        bool fastReactionActive = false;
-        qint64 fastReactionStart = 0;
+        // The staged ramp runs from here, and again from every manual limit change.
+        QElapsedTimer rampTimer;
+        rampTimer.start();
+        QElapsedTimer loopTimer;
+        loopTimer.start();
 
-        // Initialize upload to current prefs
+        // Published limit starts at the maximum (unlimited: at what we upload now);
+        // the controller itself starts from the measured rate. MFC :294, :539, :558-559.
+        uint32 upload;
         {
             std::lock_guard lock(m_prefsMutex);
-            if (m_curUpload != UINT32_MAX)
-                m_upload.store(m_curUpload);
-            else
-                m_upload.store(m_maxUpload);
+            m_upload.store(m_maxUpload != UINT32_MAX ? m_maxUpload
+                                                     : std::max<uint32>(m_curUpload, 10 * 1024));
+            upload = std::min(std::max(m_curUpload, m_minUpload), m_maxUpload);
         }
 
-        while (m_run.load()) {
-            // Check if still enabled
+        bool restart = false;
+        while (m_run.load() && !restart) {
+            // Ping traffic stays near 1% of the upload.
+            const qint64 sinceLastLoop = loopTimer.restart();
+            const uint32 interval = pingIntervalMs(upload);
+            if (sinceLastLoop < interval) {
+                QThread::msleep(static_cast<unsigned long>(interval - sinceLastLoop));
+                loopTimer.restart();
+            }
+
+            uint32 numPingsForAvg, goingUpDiv, goingDownDiv, minUp, maxUp, curUp;
+            uint32 pingTolMs, lowestInitAllowedNow;
+            double pingTol;
+            bool useMsTol;
             {
                 std::lock_guard lock(m_prefsMutex);
                 if (!m_enabled)
                     break; // Go back to outer loop
+                numPingsForAvg = m_numberOfPingsForAverage;
+                goingUpDiv = m_goingUpDivider;
+                goingDownDiv = m_goingDownDivider;
+                minUp = m_minUpload;
+                maxUp = m_maxUpload;
+                curUp = m_curUpload;
+                pingTolMs = m_pingToleranceMilliseconds;
+                pingTol = m_pingTolerance;
+                useMsTol = m_useMillisecondPingTolerance;
+                lowestInitAllowedNow = m_lowestInitialPingAllowed;
             }
 
-            // Ping the common hop
-            PingStatus ps = pinger.ping(lastCommonHost, lastCommonTTL);
+            if (m_initiateFastReaction.exchange(0) != 0)
+                rampTimer.restart();
+            rampDividers(rampTimer.elapsed(), goingUpDiv, goingDownDiv);
 
-            if (ps.success && ps.delay < kMaxPingMs) {
-                uint32 pingMs = static_cast<uint32>(ps.delay);
-
-                // Read prefs
-                uint32 numPingsForAvg, goingUpDiv, goingDownDiv, minUp, maxUp;
-                uint32 pingTolMs;
-                double pingTol;
-                bool useMsTol;
-
+            // Ping the common hop; a silent hop is retried before the route is given up.
+            bool pinged = false;
+            uint32 pingMs = 0;
+            for (int tries = 0; m_run.load() && !pinged && tries < kMaxPingTries; ++tries) {
                 {
                     std::lock_guard lock(m_prefsMutex);
-                    numPingsForAvg = m_numberOfPingsForAverage;
-                    goingUpDiv = m_goingUpDivider;
-                    goingDownDiv = m_goingDownDivider;
-                    minUp = m_minUpload;
-                    maxUp = m_maxUpload;
-                    pingTolMs = m_pingToleranceMilliseconds;
-                    pingTol = m_pingTolerance;
-                    useMsTol = m_useMillisecondPingTolerance;
+                    if (!m_enabled)
+                        break;
                 }
-
-                // Update ring buffer
-                {
-                    std::lock_guard lock(m_pingMutex);
-                    m_pingDelays.push_back(pingMs);
-                    m_pingDelaysTotal += pingMs;
-
-                    while (m_pingDelays.size() > numPingsForAvg) {
-                        m_pingDelaysTotal -= m_pingDelays.front();
-                        m_pingDelays.pop_front();
-                    }
-
-                    // Compute median
-                    std::vector<uint32> tmp(m_pingDelays.begin(), m_pingDelays.end());
-                    m_pingAverage = median(tmp);
-                }
-
-                // Calculate normalized ping (above baseline)
-                uint32 currentMedian;
-                {
-                    std::lock_guard lock(m_pingMutex);
-                    currentMedian = m_pingAverage;
-                }
-
-                int32 normalizedPing = static_cast<int32>(currentMedian) - static_cast<int32>(initialPing);
-                if (normalizedPing < 0)
-                    normalizedPing = 0;
-
-                // Calculate tolerance threshold
-                uint32 threshold;
-                if (useMsTol)
-                    threshold = pingTolMs;
-                else
-                    threshold = static_cast<uint32>(initialPing * pingTol);
-
-                // Check for fast reaction
-                if (m_initiateFastReaction.exchange(0) != 0) {
-                    fastReactionActive = true;
-                    fastReactionStart = phaseTimer.elapsed();
-                }
-
-                if (fastReactionActive &&
-                    (phaseTimer.elapsed() - fastReactionStart) > kFastReactionDurationMs) {
-                    fastReactionActive = false;
-                }
-
-                double multiplier = fastReactionActive ? kFastReactionMultiplier : 1.0;
-
-                // Adjust upload
-                uint32 currentUpload = m_upload.load();
-
-                if (static_cast<uint32>(normalizedPing) > threshold) {
-                    // Congestion detected — decrease
-                    uint32 decrease = std::max<uint32>(1, static_cast<uint32>(
-                        currentUpload * multiplier / goingDownDiv));
-                    if (currentUpload > decrease + minUp)
-                        currentUpload -= decrease;
-                    else
-                        currentUpload = minUp;
-
-                    m_acceptNewClient.store(false);
-                } else {
-                    // Room available — increase
-                    uint32 increase = std::max<uint32>(1, static_cast<uint32>(
-                        currentUpload * multiplier / goingUpDiv));
-                    if (currentUpload + increase < maxUp)
-                        currentUpload += increase;
-                    else
-                        currentUpload = maxUp;
-
-                    m_acceptNewClient.store(true);
-                }
-
-                // Clamp
-                currentUpload = std::clamp(currentUpload, minUp, maxUp);
-                m_upload.store(currentUpload);
-                emit uploadLimitChanged(currentUpload);
-
-            } else if (ps.success) {
-                // Ping was valid but very high — check for topology change
-                // (response from unexpected host)
-                // If topology changed, restart traceroute
-                if (ps.destinationAddress != lastCommonHost &&
-                    ps.destinationAddress != 0 &&
-                    ps.status != kPingTTLExpired) {
+                const PingStatus ps = pinger.ping(lastCommonHost, lastCommonTTL);
+                if (ps.success && ps.delay < kMaxPingMs) {
+                    pingMs = static_cast<uint32>(ps.delay);
+                    pinged = true;
+                } else if (ps.success && ps.destinationAddress != lastCommonHost
+                           && ps.destinationAddress != 0 && ps.status != kPingTTLExpired) {
                     logInfo(QStringLiteral("USS: Topology change detected, restarting traceroute"));
-                    break; // Restart from phase 1
+                    restart = true;
+                    break;
+                } else if (tries > 3) {
+                    QThread::msleep(1000);
                 }
             }
+            if (restart || !m_run.load())
+                break;
+            if (!pinged) {
+                bool stillEnabled;
+                {
+                    std::lock_guard lock(m_prefsMutex);
+                    stillEnabled = m_enabled;
+                }
+                if (stillEnabled)
+                    logInfo(QStringLiteral("USS: No answer from the pinged hop, restarting traceroute"));
+                break;
+            }
 
-            QThread::msleep(kPingInterval);
+            // A faster answer than the baseline is the new baseline.
+            if (pingMs > 0 && pingMs < initialPing && initialPing > lowestInitAllowedNow)
+                initialPing = std::max(pingMs, lowestInitAllowedNow);
+
+            uint32 currentMedian;
+            {
+                std::lock_guard lock(m_pingMutex);
+                m_pingDelays.push_back(pingMs);
+                m_pingDelaysTotal += pingMs;
+                while (m_pingDelays.size() > numPingsForAvg) {
+                    m_pingDelaysTotal -= m_pingDelays.front();
+                    m_pingDelays.pop_front();
+                }
+                std::vector<uint32> tmp(m_pingDelays.begin(), m_pingDelays.end());
+                m_pingAverage = median(tmp);
+                m_lowestPing = initialPing;
+                currentMedian = m_pingAverage;
+            }
+
+            const int32 normalizedPing =
+                static_cast<int32>(currentMedian) - static_cast<int32>(initialPing);
+            const uint32 targetPing = useMsTol ? pingTolMs
+                                               : static_cast<uint32>(initialPing * pingTol);
+
+            bool accept = m_acceptNewClient.load();
+            upload = adjustUpload(upload, curUp, normalizedPing, targetPing, initialPing,
+                                  goingUpDiv, goingDownDiv, minUp, maxUp, accept);
+            m_acceptNewClient.store(accept);
+            m_upload.store(upload);
+            emit uploadLimitChanged(upload);
         }
     }
 

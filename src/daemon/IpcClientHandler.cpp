@@ -736,7 +736,7 @@ void IpcClientHandler::handleGetConnection(const IpcMessage& msg)
     info.insert(QStringLiteral("lowID"),
                 theApp.serverConnect && theApp.serverConnect->isConnected()
                     && theApp.serverConnect->isLowID());
-    info.insert(QStringLiteral("clientID"),   static_cast<qint64>(theApp.getID()));
+    info.insert(QStringLiteral("clientID"),   static_cast<qint64>(theApp.ed2kClientID()));
     insertBindState(info);
 
     if (theApp.serverConnect) {
@@ -761,7 +761,7 @@ void IpcClientHandler::handleGetServerState(const IpcMessage& msg)
     info.insert(QStringLiteral("lowID"),
                 theApp.serverConnect && theApp.serverConnect->isConnected()
                     && theApp.serverConnect->isLowID());
-    info.insert(QStringLiteral("clientID"),   static_cast<qint64>(theApp.getID()));
+    info.insert(QStringLiteral("clientID"),   static_cast<qint64>(theApp.ed2kClientID()));
     insertBindState(info);
     if (connected && theApp.serverConnect) {
         info.insert(QStringLiteral("publicIP"),
@@ -2054,6 +2054,9 @@ void IpcClientHandler::handleMarkSearchSpam(const IpcMessage& msg)
     // MFC re-scores the whole tab afterwards (SearchListCtrl.cpp:845-866): a file
     // moving in or out of the filter changes the ratings of its neighbours.
     theApp.searchList->recalculateSpamRatings(searchID);
+    // Written now, not only at shutdown: a mark is a deliberate act and the daemon is
+    // as often killed as quit.
+    theApp.searchList->saveSpamFilter(thePrefs.configDir());
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 

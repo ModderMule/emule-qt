@@ -9,6 +9,7 @@
 #include "search/SearchFile.h"
 #include "search/SearchParams.h"
 #include "search/SearchQueue.h"
+#include "utils/Opcodes.h"
 #include "search/SearchStarter.h"
 #include "search/SeenFileIndex.h"
 #include "protocol/Tag.h"
@@ -112,6 +113,7 @@ private slots:
     void queue_metaSearchHoldsNoLaneAndEndsWhenToldTo();
     void queue_metaSearchWaitsForServerInfoAndIsCancelled();
     void queue_metaSearchFetchesTheNextPageOnlyWhenAsked();
+    void queue_serverSearchOffersMoreUntilTheNextSearch();
     void startSearch_metaWithoutAServerIsRefused();
     void addMetaSearchResult_skipsTheTypeFilterAndAClosedTab();
 
@@ -707,6 +709,7 @@ struct FakeNet {
     std::vector<uint32> discarded;
     std::vector<uint32> metaCancelled;
     std::vector<uint32> metaContinued;
+    std::vector<uint32> serverContinued;
     bool metaServerKnown = true;
     QSet<uint32> kadAlive;
 
@@ -751,6 +754,11 @@ struct FakeNet {
         b.kadSearchAlive = [this](uint32 id) { return kadAlive.contains(id); };
         b.cancelMetaSearch = [this](uint32 id) { metaCancelled.push_back(id); };
         b.continueMetaSearch = [this](uint32 id) { metaContinued.push_back(id); };
+        b.continueServerSearch = [this](uint32 id, const SearchParams&) {
+            if (server)
+                serverContinued.push_back(id);
+            return server;
+        };
         b.nowMs = [this] { return now; };
         return b;
     }
@@ -1224,11 +1232,87 @@ void tst_SearchList::queue_metaSearchFetchesTheNextPageOnlyWhenAsked()
     queue.remove(parked);
     QCOMPARE(net.metaCancelled, std::vector<uint32>{parked});
 
-    // an eD2K search never has a further page
+    // an eD2K search has one only when its server says so
     net.server = true;
     const uint32 ed2k = queue.enqueue(query(QStringLiteral("d four"))).status.searchID;
     queue.onServerAnswer();
     QVERIFY(!queue.more(ed2k));
+}
+
+// MFC's More button: OP_QUERY_MORE_RESULT, at most MAX_MORE_SEARCH_REQ times, for
+// the last server search of the session only (srchybrid/SearchResultsWnd.cpp:470,
+// :1240-1245, :1273-1289).
+void tst_SearchList::queue_serverSearchOffersMoreUntilTheNextSearch()
+{
+    FakeNet net;
+    net.server = true;
+    SearchQueue queue(net.backend());
+
+    const uint32 id = queue.enqueue(query(QStringLiteral("a one"))).status.searchID;
+    QVERIFY(!queue.more(id));   // running
+    queue.onServerAnswer(true);
+    QCOMPARE(stateOf(queue, id), SearchRunState::Finished);
+    QVERIFY(queue.status(id)->hasMore);
+    QVERIFY(net.serverContinued.empty());
+
+    // every page holds the lane like the search did; the cap is MFC's
+    for (int i = 1; i <= MAX_MORE_SEARCH_REQ; ++i) {
+        QVERIFY(queue.more(id));
+        QCOMPARE(stateOf(queue, id), SearchRunState::Running);
+        QCOMPARE(queue.serverSearchInFlight(), id);
+        QVERIFY(!queue.status(id)->hasMore);
+        QVERIFY(!queue.more(id));
+        queue.onServerAnswer(true);
+        QCOMPARE(stateOf(queue, id), SearchRunState::Finished);
+        QCOMPARE(queue.status(id)->hasMore, i < MAX_MORE_SEARCH_REQ);
+    }
+    QCOMPARE(static_cast<int>(net.serverContinued.size()), MAX_MORE_SEARCH_REQ);
+    QVERIFY(!queue.more(id));
+    queue.remove(id);
+    QVERIFY(net.metaCancelled.empty());   // not the Meta runner's page
+
+    // a page that never comes ends the search without a further one
+    const uint32 silent = queue.enqueue(query(QStringLiteral("b two"))).status.searchID;
+    queue.onServerAnswer(true);
+    QVERIFY(queue.more(silent));
+    net.now += SearchQueue::kAnswerTimeoutMs + 1;
+    queue.tick();
+    QCOMPARE(stateOf(queue, silent), SearchRunState::Finished);
+    QVERIFY(!queue.status(silent)->hasMore);
+
+    // the server keeps the rest of its last answer only
+    const uint32 first = queue.enqueue(query(QStringLiteral("c three"))).status.searchID;
+    queue.onServerAnswer(true);
+    QVERIFY(queue.status(first)->hasMore);
+    const uint32 second = queue.enqueue(query(QStringLiteral("d four"))).status.searchID;
+    QVERIFY(!queue.status(first)->hasMore);
+    QVERIFY(!queue.more(first));
+    queue.onServerAnswer(true);
+    QVERIFY(queue.status(second)->hasMore);
+
+    // a Kad search asks no server: the page stays on offer
+    net.kad = true;
+    (void)queue.enqueue(query(QStringLiteral("e five"), SearchType::Kademlia));
+    QVERIFY(queue.status(second)->hasMore);
+
+    // ... and a lost session takes it along
+    queue.onServerDisconnected();
+    QVERIFY(!queue.status(second)->hasMore);
+    QVERIFY(!queue.more(second));
+
+    // a global search offers it once its sweep is over, also when stopped
+    net.sweep = true;
+    const uint32 global = queue.enqueue(query(QStringLiteral("f six"), SearchType::Ed2kGlobal)).status.searchID;
+    queue.onServerAnswer(true);
+    QCOMPARE(stateOf(queue, global), SearchRunState::Running);
+    QVERIFY(!queue.status(global)->hasMore);
+    queue.stop(global);
+    QCOMPARE(stateOf(queue, global), SearchRunState::Finished);
+    QVERIFY(queue.status(global)->hasMore);
+    QVERIFY(queue.more(global));
+    queue.onServerAnswer(false);   // the page ends with the TCP answer, no sweep
+    QCOMPARE(stateOf(queue, global), SearchRunState::Finished);
+    QVERIFY(!queue.status(global)->hasMore);
 }
 
 void tst_SearchList::startSearch_metaWithoutAServerIsRefused()
@@ -1702,27 +1786,53 @@ void tst_SearchList::saveAndLoadSpamFilter_roundTrip()
 
     // Create list and add some spam entries
     SearchList original;
+    original.loadSpamFilter(tempDir.path());   // nothing there yet; arms the save
     SearchParams params;
     uint32 id = original.newSearch({}, params);
 
     uint8 hash[16];
     std::memset(hash, 0x66, 16);
 
-    QByteArray packet = buildSingleResultPacket(hash, QStringLiteral("spammy.exe"), 100000);
+    const QString spamName = QString::fromUtf8("sp\xc3\xa4mmy file.exe");
+    QByteArray packet = buildSingleResultPacket(hash, spamName, 100000);
     SafeMemFile data(packet);
     auto* file = new SearchFile(data, true);
     file->setSearchID(id);
+    file->addClient({0x0A0B0C0D, 4662, 0, 0});
+    file->addServer({0x01020304, 4665, 1, true});
     original.addToList(file);
 
     SearchFile* found = original.searchFileByHash(hash, id);
     original.markFileAsSpam(found);
+    original.m_udpServerRecords[0x01020304] = {7, 3};
 
     // Save
     original.saveSpamFilter(tempDir.path());
 
-    // Load into new list
+    // The layout is MFC's: header byte, record count, tags — no version byte.
+    QFile raw(tempDir.filePath(QStringLiteral("SearchSpam.met")));
+    QVERIFY(raw.open(QIODevice::ReadOnly));
+    const QByteArray head = raw.read(5);
+    raw.close();
+    QCOMPARE(static_cast<uint8>(head[0]), static_cast<uint8>(MET_HEADER_I64TAGS));
+    const uint32 records = static_cast<uint32>(original.m_knownSpamNames.size()
+        + original.m_knownSimilarSpamNames.size() + 1 /*size*/ + 1 /*hash*/
+        + 1 /*server*/ + original.m_knownSpamSourcesIPs.size() + 1 /*ratio*/);
+    QCOMPARE(peekUInt32(reinterpret_cast<const uint8*>(head.constData()) + 1), records);
+
+    // Load into new list — twice: a reload replaces, it does not append.
     SearchList loaded;
     loaded.loadSpamFilter(tempDir.path());
+    loaded.loadSpamFilter(tempDir.path());
+
+    QCOMPARE(loaded.m_knownSpamNames, original.m_knownSpamNames);
+    QVERIFY(loaded.m_knownSpamNames.contains(spamName));
+    QCOMPARE(loaded.m_knownSimilarSpamNames, original.m_knownSimilarSpamNames);
+    QCOMPARE(loaded.m_knownSpamSizes, std::vector<uint64>{100000});
+    QVERIFY(loaded.m_knownSpamSourcesIPs.contains(0x0A0B0C0D));
+    QVERIFY(loaded.m_knownSpamServerIPs.contains(0x01020304));
+    QCOMPARE(loaded.m_udpServerRecords.at(0x01020304).totalResults, 7u);
+    QCOMPARE(loaded.m_udpServerRecords.at(0x01020304).spamResults, 3u);
 
     // Verify the loaded list recognizes the spam hash
     QByteArray packet2 = buildSingleResultPacket(hash, QStringLiteral("test.exe"), 100001);
@@ -1733,6 +1843,13 @@ void tst_SearchList::saveAndLoadSpamFilter_roundTrip()
     QVERIFY(file2->spamRating() >= 100); // hash hit
 
     delete file2;
+
+    // A list that never read the file must not replace it with an empty one.
+    SearchList untouched;
+    untouched.saveSpamFilter(tempDir.path());
+    SearchList again;
+    again.loadSpamFilter(tempDir.path());
+    QVERIFY(again.m_knownSpamServerIPs.contains(0x01020304));
 }
 
 void tst_SearchList::storeAndLoadSearches_roundTrip()

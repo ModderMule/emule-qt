@@ -47,8 +47,10 @@ private slots:
     void defaults_bandwidth()
     {
         Preferences prefs;
-        QCOMPARE(prefs.maxUpload(), 250u);
-        QCOMPARE(prefs.maxDownload(), 500u);
+        QCOMPARE(prefs.maxUpload(), 500u);
+        QCOMPARE(prefs.maxDownload(), 0u);   // unlimited
+        QCOMPARE(prefs.maxGraphUploadRate(), 1250u);
+        QCOMPARE(prefs.maxGraphDownloadRate(), 12500u);
         QCOMPARE(prefs.minUpload(), 1u);
     }
 

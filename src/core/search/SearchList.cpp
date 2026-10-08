@@ -52,7 +52,6 @@ uint32 SearchList::newSearch(const QString& resultFileType, const SearchParams& 
     if (ed2k && takeEd2kRouting) {
         m_currentEd2kSearchID = m_currentSearchID;
         m_curED2KSentRequestsIPs.clear();
-        m_udpServerRecords.clear();
     }
 
     SearchListEntry entry;
@@ -115,7 +114,6 @@ void SearchList::beginSearch(uint32 searchID, const QString& resultFileType, boo
         // As in newSearch(): a new ED2K search owns the server answers from here on.
         m_currentEd2kSearchID = searchID;
         m_curED2KSentRequestsIPs.clear();
-        m_udpServerRecords.clear();
     }
 }
 
@@ -134,7 +132,6 @@ void SearchList::clear()
     m_fileLists.clear();
     m_foundFilesCount.clear();
     m_foundSourcesCount.clear();
-    m_udpServerRecords.clear();
     m_curED2KSentRequestsIPs.clear();
 }
 
@@ -287,9 +284,9 @@ bool SearchList::processSearchAnswer(const uint8* packet, uint32 size,
             addToList(file, false, 0);
         }
 
-        // Check for trailing "more results" flag. When set, the server capped the
-        // result set — surface it to the user so they can narrow the query (#19). MFC
-        // routes the same flag to the search window (ServerSocket.cpp:360-363).
+        // Trailing "more results" flag: the server capped the result set. The caller
+        // hands it to the queue, which offers the next page (#19). MFC routes the
+        // same flag to the search window's More button (ServerSocket.cpp:360-363).
         if (data.position() < data.length())
             moreResults = data.readUInt8() != 0;
     } catch (const FileException& ex) {
@@ -299,7 +296,7 @@ bool SearchList::processSearchAnswer(const uint8* packet, uint32 size,
     }
     if (moreResults) {
         logInfo(QStringLiteral("Server returned only part of the matches — more results "
-                               "are available; narrow your search to see them."));
+                               "are available."));
     }
 
     logServerVerbose(QStringLiteral("TCP search answer from %1 — parsed %2 result(s), moreResults=%3")
@@ -806,21 +803,18 @@ void SearchList::doSpamRating(SearchFile* file,
         }
     }
 
-    // --- Criterion 4: UDP server reputation (21/15/10 pts) ---
-    if (fromUDP && fromUDPServerIP != 0) {
-        auto udpIt = m_udpServerRecords.find(fromUDPServerIP);
-        if (udpIt != m_udpServerRecords.end()) {
-            const auto& rec = udpIt->second;
-            if (rec.totalResults > 0) {
-                double spamRatio = static_cast<double>(rec.spamResults) / rec.totalResults;
-                if (rec.totalResults == 1 && rec.spamResults == 1)
-                    rating += 21;
-                else if (spamRatio > 0.6)
-                    rating += 15;
-                else if (spamRatio > 0.4)
-                    rating += 10;
-            }
-        }
+    // --- Criterion 4: answered over UDP by a server marked for spam (21/15/10 pts) ---
+    // MFC srchybrid/SearchList.cpp:939-961.
+    for (const auto& server : file->servers()) {
+        if (server.ip == 0 || !server.udpAnswer || !m_knownSpamServerIPs.contains(server.ip))
+            continue;
+        if (file->servers().size() != 1)
+            rating += 10;   // other servers know the file too
+        else if (m_knownSpamServerIPs.size() <= 10)
+            rating += 21;
+        else
+            rating += 15;   // a long list: the marks were handed out freely
+        break;
     }
 
     // --- Criterion 5: All-spam-servers (30 pts) ---
@@ -926,6 +920,12 @@ void SearchList::markFileAsSpam(SearchFile* file, bool addToFilter)
         // Add source IPs
         for (const auto& client : file->clients())
             m_knownSpamSourcesIPs[client.ip] = true;
+
+        // ...and the servers that pushed it at us over UDP — MFC :1211-1213.
+        for (const auto& server : file->servers()) {
+            if (server.ip != 0 && server.udpAnswer)
+                m_knownSpamServerIPs.insert(server.ip);
+        }
     }
 
     assess(file->listParent() ? file->listParent() : file);
@@ -955,6 +955,9 @@ void SearchList::markFileAsNotSpam(SearchFile* file, bool removeFromFilter)
         // Remove source IPs
         for (const auto& client : file->clients())
             m_knownSpamSourcesIPs.erase(client.ip);
+
+        for (const auto& server : file->servers())
+            m_knownSpamServerIPs.erase(server.ip);
     }
 
     assess(file->listParent() ? file->listParent() : file);
@@ -1068,116 +1071,133 @@ void SearchList::loadSearches(const QString& configDir)
 // Persistence — spam filter
 // ---------------------------------------------------------------------------
 
+/// MFC SPAMFILTER_FILENAME — srchybrid/SearchList.cpp:60. Same layout, so the file can
+/// be carried over in either direction.
+static constexpr QLatin1String kSpamFilterFilename{"SearchSpam.met"};
+
 void SearchList::saveSpamFilter(const QString& configDir) const
 {
-    const QString filePath = configDir + QStringLiteral("/searchspam.met");
-    SafeFile file;
-    if (!file.open(filePath, QIODevice::WriteOnly))
+    // Never loaded: nothing here that the file does not hold already — MFC :1356.
+    if (!m_spamFilterLoaded)
         return;
 
-    file.writeUInt8(MET_HEADER_I64TAGS);
-    file.writeUInt8(1); // version
-
-    // Count total entries
-    uint32 totalEntries = static_cast<uint32>(
-        m_knownSpamHashes.size()
-        + m_knownSpamSourcesIPs.size()
-        + static_cast<std::size_t>(m_knownSpamNames.size())
-        + static_cast<std::size_t>(m_knownSimilarSpamNames.size())
-        + m_knownSpamSizes.size());
-    file.writeUInt32(totalEntries);
-
-    // Write spam hashes
-    for (const auto& [key, isSpam] : m_knownSpamHashes) {
-        Tag tagType(static_cast<uint8>(isSpam ? SP_FILEHASHSPAM : SP_FILEHASHNOSPAM),
-                    key.data.data());
-        tagType.writeNewEd2kTag(file);
+    const QString filePath = QDir(configDir).filePath(kSpamFilterFilename);
+    SafeFile file;
+    if (!file.open(filePath, QIODevice::WriteOnly)) {
+        logWarning(QStringLiteral("Failed to save %1").arg(filePath));
+        return;
     }
 
-    // Write source IPs
-    for (const auto& [ip, _] : m_knownSpamSourcesIPs) {
-        Tag tag(static_cast<uint8>(SP_FILESOURCEIP), ip);
-        tag.writeNewEd2kTag(file);
-    }
+    try {
+        // Record order as MFC CSearchList::SaveSpamFilter — srchybrid/SearchList.cpp:1354.
+        file.writeUInt8(MET_HEADER_I64TAGS);
+        file.writeUInt32(static_cast<uint32>(
+            static_cast<std::size_t>(m_knownSpamNames.size())
+            + static_cast<std::size_t>(m_knownSimilarSpamNames.size())
+            + m_knownSpamSizes.size()
+            + m_knownSpamHashes.size()
+            + m_knownSpamServerIPs.size()
+            + m_knownSpamSourcesIPs.size()
+            + m_udpServerRecords.size()));
 
-    // Write spam names
-    for (const auto& name : m_knownSpamNames) {
-        Tag tag(static_cast<uint8>(SP_FILEFULLNAME), name);
-        tag.writeNewEd2kTag(file, UTF8Mode::Raw);
-    }
-
-    // Write similar spam names
-    for (const auto& name : m_knownSimilarSpamNames) {
-        Tag tag(static_cast<uint8>(SP_FILESIMILARNAME), name);
-        tag.writeNewEd2kTag(file, UTF8Mode::Raw);
-    }
-
-    // Write spam sizes
-    for (uint64 size : m_knownSpamSizes) {
-        Tag tag(static_cast<uint8>(SP_FILESIZE), size);
-        tag.writeNewEd2kTag(file);
+        for (const auto& name : m_knownSpamNames)
+            Tag(static_cast<uint8>(SP_FILEFULLNAME), name).writeNewEd2kTag(file, UTF8Mode::OptBOM);
+        for (const auto& name : m_knownSimilarSpamNames)
+            Tag(static_cast<uint8>(SP_FILESIMILARNAME), name).writeNewEd2kTag(file, UTF8Mode::OptBOM);
+        for (const uint64 size : m_knownSpamSizes)
+            Tag(static_cast<uint8>(SP_FILESIZE), size).writeNewEd2kTag(file);
+        for (const auto& [key, isSpam] : m_knownSpamHashes) {
+            Tag(static_cast<uint8>(isSpam ? SP_FILEHASHSPAM : SP_FILEHASHNOSPAM),
+                key.data.data()).writeNewEd2kTag(file);
+        }
+        for (const uint32 ip : m_knownSpamServerIPs)
+            Tag(static_cast<uint8>(SP_FILESERVERIP), ip).writeNewEd2kTag(file);
+        for (const auto& [ip, _] : m_knownSpamSourcesIPs)
+            Tag(static_cast<uint8>(SP_FILESOURCEIP), ip).writeNewEd2kTag(file);
+        for (const auto& [ip, record] : m_udpServerRecords) {
+            QByteArray blob(12, Qt::Uninitialized);
+            auto* buf = reinterpret_cast<uint8*>(blob.data());
+            pokeUInt32(buf, ip);
+            pokeUInt32(buf + 4, record.totalResults);
+            pokeUInt32(buf + 8, record.spamResults);
+            Tag(static_cast<uint8>(SP_UDPSERVERSPAMRATIO), blob).writeNewEd2kTag(file);
+        }
+    } catch (const FileException& ex) {
+        logWarning(QStringLiteral("Failed to save %1: %2")
+                       .arg(filePath, QString::fromStdString(ex.what())));
     }
 }
 
 void SearchList::loadSpamFilter(const QString& configDir)
 {
-    const QString filePath = configDir + QStringLiteral("/searchspam.met");
+    m_knownSpamNames.clear();
+    m_knownSimilarSpamNames.clear();
+    m_knownSpamServerIPs.clear();
+    m_knownSpamSourcesIPs.clear();
+    m_knownSpamHashes.clear();
+    m_knownSpamSizes.clear();
+    m_spamFilterLoaded = true;
+
+    const QString filePath = QDir(configDir).filePath(kSpamFilterFilename);
     SafeFile file;
     if (!file.open(filePath, QIODevice::ReadOnly))
         return;
 
-    const uint8 header = file.readUInt8();
-    if (header != MET_HEADER_I64TAGS)
-        return;
-
-    const uint8 version = file.readUInt8();
-    if (version != 1)
-        return;
-
-    const uint32 entryCount = file.readUInt32();
-    for (uint32 i = 0; i < entryCount; ++i) {
-        Tag tag(file, false);
-
-        switch (tag.nameId()) {
-        case SP_FILEHASHSPAM:
-            if (tag.isHash()) {
-                MD4Key key(tag.hashValue());
-                m_knownSpamHashes[key] = true;
-            }
-            break;
-
-        case SP_FILEHASHNOSPAM:
-            if (tag.isHash()) {
-                MD4Key key(tag.hashValue());
-                m_knownSpamHashes[key] = false;
-            }
-            break;
-
-        case SP_FILESOURCEIP:
-            if (tag.isInt())
-                m_knownSpamSourcesIPs[tag.intValue()] = true;
-            break;
-
-        case SP_FILEFULLNAME:
-            if (tag.isStr())
-                m_knownSpamNames.append(tag.strValue());
-            break;
-
-        case SP_FILESIMILARNAME:
-            if (tag.isStr())
-                m_knownSimilarSpamNames.append(tag.strValue());
-            break;
-
-        case SP_FILESIZE:
-            if (tag.isInt())
-                m_knownSpamSizes.push_back(tag.intValue());
-            else if (tag.isInt64(false))
-                m_knownSpamSizes.push_back(tag.int64Value());
-            break;
-
-        default:
-            break;
+    try {
+        if (file.readUInt8() != MET_HEADER_I64TAGS) {
+            logWarning(QStringLiteral("Failed to load %1, invalid first byte").arg(filePath));
+            return;
         }
+
+        for (uint32 i = file.readUInt32(); i > 0; --i) {
+            Tag tag(file, false);
+
+            switch (tag.nameId()) {
+            case SP_FILEHASHSPAM:
+                if (tag.isHash())
+                    m_knownSpamHashes[MD4Key(tag.hashValue())] = true;
+                break;
+            case SP_FILEHASHNOSPAM:
+                if (tag.isHash())
+                    m_knownSpamHashes[MD4Key(tag.hashValue())] = false;
+                break;
+            case SP_FILEFULLNAME:
+                if (tag.isStr())
+                    m_knownSpamNames.append(tag.strValue());
+                break;
+            case SP_FILESIMILARNAME:
+                if (tag.isStr())
+                    m_knownSimilarSpamNames.append(tag.strValue());
+                break;
+            case SP_FILESOURCEIP:
+                if (tag.isInt())
+                    m_knownSpamSourcesIPs[tag.intValue()] = true;
+                break;
+            case SP_FILESERVERIP:
+                if (tag.isInt())
+                    m_knownSpamServerIPs.insert(tag.intValue());
+                break;
+            case SP_FILESIZE:
+                if (tag.isInt())
+                    m_knownSpamSizes.push_back(tag.intValue());
+                else if (tag.isInt64(false))
+                    m_knownSpamSizes.push_back(tag.int64Value());
+                break;
+            case SP_UDPSERVERSPAMRATIO:
+                if (tag.isBlob() && tag.blobValue().size() == 12) {
+                    const auto* buf = reinterpret_cast<const uint8*>(tag.blobValue().constData());
+                    UDPServerRecord& record = m_udpServerRecords[peekUInt32(buf)];
+                    record.totalResults = peekUInt32(buf + 4);
+                    record.spamResults = peekUInt32(buf + 8);
+                }
+                break;
+            default:
+                break;
+            }
+        }
+    } catch (const FileException& ex) {
+        logWarning(QStringLiteral("Failed to load %1: %2")
+                       .arg(filePath, QString::fromStdString(ex.what())));
     }
 }
 

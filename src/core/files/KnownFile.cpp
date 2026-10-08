@@ -867,23 +867,20 @@ bool KnownFile::publishSrc()
     time_t tNow = std::time(nullptr);
     uint32 buddyIP = 0;
 
-    auto* kadInst = kad::Kademlia::instance();
-    if (kadInst && kadInst->isFirewalled()) {
-        // TCP firewalled — check UDP firewall too
-        if (kad::UDPFirewallTester::isFirewalledUDP(true)) {
-            // Both TCP and UDP firewalled — need a buddy
-            auto* clientList = kad::Kademlia::getClientList();
-            auto* buddy = clientList ? clientList->getBuddy() : nullptr;
-            if (!buddy)
-                return false;
+    // No direct route in: publish only with a buddy. MFC KnownFile.cpp:1561-1584.
+    if (kad::Kademlia::instance() && theApp.isFirewalled()
+        && (kad::UDPFirewallTester::isFirewalledUDP(true) || !kad::UDPFirewallTester::isVerified())) {
+        auto* clientList = kad::Kademlia::getClientList();
+        auto* buddy = clientList ? clientList->getBuddy() : nullptr;
+        if (!buddy)
+            return false;
 
-            buddyIP = buddy->userAddress().toNetworkUint32();
-            // If buddy IP changed, reset publish time to force re-publish
-            if (m_lastBuddyIP != 0 && m_lastBuddyIP != buddyIP)
-                setLastPublishTimeKadSrc(0, 0);
+        buddyIP = buddy->userAddress().toNetworkUint32();
+        // New buddy: the published record names the old one, republish now
+        if (buddyIP != m_lastBuddyIP) {
+            setLastPublishTimeKadSrc(tNow + KADEMLIAREPUBLISHTIMES, buddyIP);
+            return true;
         }
-    } else {
-        buddyIP = 0;
     }
 
     if (tNow < m_lastPublishTimeKadSrc)
@@ -1214,6 +1211,17 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
         }
     }
 
+    // A file ending on a part boundary carries one more hash, that of no data — MFC
+    // CreateFromFile, srchybrid/KnownFile.cpp:419-430. AICH has no such part.
+    if (length % PARTSIZE == 0) {
+        std::array<uint8, 16> emptyHash{};
+        if (!createHash(file, 0, emptyHash.data(), nullptr)) {
+            logError(QStringLiteral("KnownFile::createFromFile: read error in '%1'").arg(fullPath));
+            return false;
+        }
+        md4HashSet.push_back(emptyHash);
+    }
+
     // Still being written: the hash would be stored under a size and date the file no
     // longer has. The caller tries again later.
     fi.refresh();
@@ -1224,8 +1232,8 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
     }
 
     // Compute final file hash
-    if (parts == 1) {
-        // Single-part file: the whole-file hash IS the single part hash, and eMule
+    if (md4HashSet.size() == 1) {
+        // Smaller than a part: the whole-file hash IS the single part hash, and eMule
         // stores no part hashset in that case. An empty hashset is what satisfies
         // HasExpectedMD4HashCount() here (getTheoreticalMD4PartHashCount() == 0 for
         // a file smaller than PARTSIZE). Keeping the 1-entry hashset would write

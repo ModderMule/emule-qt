@@ -1219,8 +1219,12 @@ QWidget* OptionsDialog::createConnectionPage()
     auto* wizardBtn = new QPushButton(tr("Wizard..."), page);
     wizardBtn->setFixedWidth(100);
     connect(wizardBtn, &QPushButton::clicked, this, [this]() {
-        auto* wizard = new FirstStartWizard(m_ipc, this);
+        // MFC opens its connection wizard here: straight to the speed page
+        auto* wizard = new FirstStartWizard(m_ipc, this, FirstStartWizard::StartPage::Speed);
         wizard->setAttribute(Qt::WA_DeleteOnClose);
+        connect(wizard, &QDialog::accepted, this,
+                [this, wizard] { applyWizardResult(wizard->appliedSettings()); });
+        wizard->setModal(true);   // not open(): a sheet on macOS
         wizard->show();
     });
     checkLayout->addWidget(wizardBtn);
@@ -7304,6 +7308,56 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
 // ---------------------------------------------------------------------------
 // Private: fill daemon-owned widgets from local thePrefs (fallback)
 // ---------------------------------------------------------------------------
+
+/// Mirror what the wizard just wrote, or the next OK would write the page's stale
+/// values back over it.
+void OptionsDialog::applyWizardResult(const QCborMap& applied)
+{
+    const auto has = [&applied](QLatin1StringView key) { return applied.contains(key); };
+    const auto number = [&applied](QLatin1StringView key) {
+        return static_cast<int>(applied.value(key).toInteger());
+    };
+
+    // Not user edits of this dialog: the daemon already has them
+    const bool wasLoading = m_loading;
+    m_loading = true;
+
+    if (has(QLatin1StringView("maxGraphDownloadRate"))) {
+        const int capDown = number(QLatin1StringView("maxGraphDownloadRate"));
+        const int capUp = number(QLatin1StringView("maxGraphUploadRate"));
+        const int maxDown = number(QLatin1StringView("maxDownload"));
+        const int maxUp = number(QLatin1StringView("maxUpload"));
+        // Capacity first: it sets the sliders' range
+        m_capacityDownloadSpin->setValue(capDown);
+        m_capacityUploadSpin->setValue(capUp);
+        m_downloadLimitCheck->setChecked(maxDown > 0);
+        m_downloadLimitSlider->setEnabled(maxDown > 0);
+        m_downloadLimitLabel->setEnabled(maxDown > 0);
+        m_downloadLimitSlider->setValue(maxDown > 0 ? maxDown : capDown);
+        m_uploadLimitCheck->setChecked(maxUp > 0);
+        m_uploadLimitSlider->setEnabled(maxUp > 0);
+        m_uploadLimitLabel->setEnabled(maxUp > 0);
+        m_uploadLimitSlider->setValue(maxUp > 0 ? maxUp : capUp);
+    }
+
+    if (has(QLatin1StringView("port")))
+        m_tcpPortSpin->setValue(number(QLatin1StringView("port")));
+    if (has(QLatin1StringView("udpPort"))) {
+        const int udpPort = number(QLatin1StringView("udpPort"));
+        m_udpDisableCheck->setChecked(udpPort == 0);
+        m_udpPortSpin->setEnabled(udpPort != 0);
+        if (udpPort != 0)
+            m_udpPortSpin->setValue(udpPort);
+    }
+    if (has(QLatin1StringView("enableUPnP")))
+        m_upnpCheck->setChecked(applied.value(QLatin1StringView("enableUPnP")).toBool());
+    if (has(QLatin1StringView("kadEnabled")))
+        m_kadEnabledCheck->setChecked(applied.value(QLatin1StringView("kadEnabled")).toBool());
+    if (has(QLatin1StringView("networkED2K")))
+        m_ed2kEnabledCheck->setChecked(applied.value(QLatin1StringView("networkED2K")).toBool());
+
+    m_loading = wasLoading;
+}
 
 void OptionsDialog::fillDaemonSettingsFromPrefs()
 {

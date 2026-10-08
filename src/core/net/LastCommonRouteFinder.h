@@ -29,10 +29,10 @@ namespace eMule {
 
 /// Parameters passed to the finder from preferences.
 struct USSParams {
-    double pingTolerance = 1.0;           ///< % tolerance above baseline (0.1–2.0).
-    uint32 curUpload = 0;                 ///< Current upload limit (bytes/sec from prefs).
-    uint32 minUpload = 1024;              ///< Minimum upload speed (bytes/sec).
-    uint32 maxUpload = UINT32_MAX;        ///< Maximum upload speed (bytes/sec).
+    double pingTolerance = 1.0;           ///< Allowed rise over the lowest ping, as a factor of it.
+    uint32 curUpload = 0;                 ///< Measured upload rate (bytes/sec).
+    uint32 minUpload = 1;                 ///< Minimum upload speed (KB/s); 0 reads as 1.
+    uint32 maxUpload = UINT32_MAX;        ///< Maximum upload speed (KB/s); UINT32_MAX = none.
     uint32 pingToleranceMilliseconds = 0; ///< Absolute tolerance in ms (if enabled).
     uint32 goingUpDivider = 1000;         ///< Speed increase divisor.
     uint32 goingDownDivider = 1000;       ///< Speed decrease divisor.
@@ -88,8 +88,26 @@ public:
     /// @return true if parameters were accepted.
     bool setPrefs(const USSParams& params);
 
-    /// Trigger a fast-reaction period (e.g. after new upload slot given).
+    /// Restart the staged ramp, so a raised limit is reached sooner.
     void initiateFastReactionPeriod();
+
+    /// One control step, MFC LastCommonRouteFinder.cpp:727-763. @p normalizedPing is the
+    /// ping median minus the lowest ping, @p targetPing the allowed rise. The limit falls
+    /// in proportion to the excess and rises in proportion to the headroom, but rises
+    /// only while the measured rate @p curUpload is within 30 KB/s of it.
+    /// @p acceptNewClient is left alone when the ping is exactly on target.
+    [[nodiscard]] static uint32 adjustUpload(uint32 upload, uint32 curUpload,
+                                             int32 normalizedPing, uint32 targetPing,
+                                             uint32 lowestPing, uint32 goingUpDivider,
+                                             uint32 goingDownDivider, uint32 minUpload,
+                                             uint32 maxUpload, bool& acceptNewClient);
+
+    /// Dividers @p msSinceStart into the ramp: full for 20 s, then a quarter, half,
+    /// three quarters for 10/10/20 s (smaller = faster), full again after a minute.
+    static void rampDividers(qint64 msSinceStart, uint32& goingUpDivider, uint32& goingDownDivider);
+
+    /// Pause between pings: about 1% of @p upload in 64-byte pings, 125 ms to 1 s.
+    [[nodiscard]] static uint32 pingIntervalMs(uint32 upload);
 
     /// Current calculated upload limit (bytes/sec). Thread-safe.
     [[nodiscard]] uint32 getUpload() const;
@@ -126,7 +144,7 @@ private:
     uint32 m_lowestInitialPingAllowed = 20;
     uint32 m_minUpload = 1024;
     uint32 m_maxUpload = UINT32_MAX;
-    uint32 m_curUpload = 0;
+    uint32 m_curUpload = 0;                 ///< measured rate, bytes/sec
     uint32 m_pingToleranceMilliseconds = 0;
     uint32 m_goingUpDivider = 1000;
     uint32 m_goingDownDivider = 1000;

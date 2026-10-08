@@ -353,6 +353,12 @@ private:
     /// First file at or after @p cursor (wrapping) for which @p due says yes; the
     /// cursor moves past it. One walk of the map, not one per probe.
     KnownFile* nextDueFile(uint32& cursor, const std::function<bool(KnownFile*)>& due);
+    /// False while firewalled without a connected buddy or a direct UDP callback.
+    [[nodiscard]] static bool canPublishToKad();
+    /// One source / notes store search for the next due file, at most one probe
+    /// per KADEMLIAPUBLISHTIME and only below the concurrent-store cap.
+    void publishDueSource(time_t tProbe);
+    void publishDueNotes(time_t tProbe);
 
     /// Parse an .emulecollection into the file, if it is one. Does disk I/O, so it
     /// runs outside the map lock — see the hook contract in EntityMap.h.

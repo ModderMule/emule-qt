@@ -23,6 +23,7 @@ private slots:
     void keywordsMatchCaseInsensitively();
     void remove_usesTheWordsTheFileWasAddedUnder();
     void erasingTheCursorKeywordMovesTheCursorOn();
+    void changesMakeThePublishWalkDueAgain();
     void purge_dropsWhatAReloadLeftUnreferenced();
     void manyFiles_addAndRemoveStayLinear();
 };
@@ -126,6 +127,46 @@ void tst_PublishKeywordList::erasingTheCursorKeywordMovesTheCursorOn()
     QVERIFY(next);
     QCOMPARE(next->keyword(), QStringLiteral("third"));
     QVERIFY(!list.getNextKeyword());
+}
+
+void tst_PublishKeywordList::changesMakeThePublishWalkDueAgain()
+{
+    // The publish walk runs on a short list timer and each keyword keeps its own 24 h.
+    // A file added later must not wait a day: a new keyword wakes the walk, and a
+    // published keyword that gains a file is put back to "long ago".
+    PublishKeywordList list;
+    const time_t later = std::time(nullptr) + 24 * 3600;
+    const auto keyword = [&](const QString& word) -> PublishKeyword* {
+        list.resetNextKeyword();
+        while (PublishKeyword* kw = list.getNextKeyword())
+            if (kw->keyword().compare(word, Qt::CaseInsensitive) == 0)
+                return kw;
+        return nullptr;
+    };
+
+    auto a = makeFile(1, QStringLiteral("alpha shared.bin"));
+    list.addKeywords(a.get());
+    keyword(QStringLiteral("alpha"))->setNextPublishTime(later);
+    keyword(QStringLiteral("shared"))->setNextPublishTime(later);
+
+    // Same file again: nothing new behind the keyword, its time stands.
+    list.setNextPublishTime(later);
+    list.addKeywords(a.get());
+    QCOMPARE(keyword(QStringLiteral("shared"))->nextPublishTime(), later);
+    QCOMPARE(list.nextPublishTime(), later);
+
+    // A second file: its own keyword is new, the common one gained a file.
+    auto b = makeFile(2, QStringLiteral("beta shared.bin"));
+    list.addKeywords(b.get());
+    QCOMPARE(list.nextPublishTime(), time_t{0});
+    QCOMPARE(keyword(QStringLiteral("beta"))->nextPublishTime(), time_t{0});
+    QVERIFY(keyword(QStringLiteral("shared"))->nextPublishTime() < std::time(nullptr));
+    QCOMPARE(keyword(QStringLiteral("alpha"))->nextPublishTime(), later);
+
+    // A keyword going away wakes the walk too.
+    list.setNextPublishTime(later);
+    list.removeKeywords(b.get());
+    QCOMPARE(list.nextPublishTime(), time_t{0});
 }
 
 void tst_PublishKeywordList::purge_dropsWhatAReloadLeftUnreferenced()

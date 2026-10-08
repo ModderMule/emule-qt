@@ -533,7 +533,9 @@ void ClientList::process()
         // Keep clients that are still useful
         if (client->socket()
             || client->downloadState() != DownloadState::None
-            || client->uploadState() != UploadState::None
+            // A ban that ran out holds nothing — MFC ClientList.cpp:803.
+            || (client->uploadState() != UploadState::None
+                && !(client->uploadState() == UploadState::Banned && !client->isBanned()))
             || client->reqFile() != nullptr
             || client->kadState() != KadState::None
             || client == m_buddy

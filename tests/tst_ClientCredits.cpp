@@ -55,6 +55,7 @@ private slots:
     void crypto_keyPersistence();
     void crypto_signVerifyRoundTrip();
     void crypto_signVerifyTampered();
+    void crypto_failedVerifyKeepsAnIdentifiedRecord();
     void crypto_signVerifyWithLocalIP();
     void crypto_signVerifyIPMismatch();
     void crypto_signVerifyMixedIPKinds();
@@ -518,6 +519,36 @@ void tst_ClientCredits::crypto_signVerifyTampered()
     bool verified = list.verifyIdent(peer, sig, sigLen, ip(0x01020304), 0);
     QVERIFY(!verified);
     QCOMPARE(peer->currentIdentState(ip(0x01020304)), IdentState::IdFailed);
+}
+
+void tst_ClientCredits::crypto_failedVerifyKeepsAnIdentifiedRecord()
+{
+    // Credits are keyed by user hash, so a stranger presenting someone's hash reaches the
+    // same record. Its junk signature must not void the owner's verified identity.
+    TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+
+    ClientCreditsList list;
+    QVERIFY(list.cryptoAvailable());
+
+    auto* peer = list.getCredit(testHash2);
+    peer->setSecureIdent(list.publicKey(), list.pubKeyLen());
+    peer->cryptRndChallengeFrom = 0xCAFEBABE;
+    peer->cryptRndChallengeFor  = 0xCAFEBABE;
+
+    uint8 sig[200];
+    const uint8 sigLen = list.createSignature(peer, sig, sizeof(sig), 0, 0);
+    QVERIFY(sigLen > 0);
+    QVERIFY(list.verifyIdent(peer, sig, sigLen, ip(0x01020304), 0));
+    QCOMPARE(peer->currentIdentState(ip(0x01020304)), IdentState::Identified);
+
+    // The impostor, from another address, answers a fresh challenge with garbage.
+    peer->cryptRndChallengeFor = 0x11223344;
+    sig[0] ^= 0xFF;
+    QVERIFY(!list.verifyIdent(peer, sig, sigLen, ip(0x05060708), 0));
+
+    QCOMPARE(peer->currentIdentState(ip(0x01020304)), IdentState::Identified);
+    QCOMPARE(peer->currentIdentState(ip(0x05060708)), IdentState::IdBadGuy);
 }
 
 void tst_ClientCredits::crypto_signVerifyWithLocalIP()

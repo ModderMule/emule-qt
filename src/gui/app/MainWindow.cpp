@@ -29,6 +29,7 @@
 
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
+#include "utils/Log.h"
 #include "utils/Ed2kLinkImporter.h"
 #include "utils/PreviewLauncher.h"
 #include "utils/NzbDrop.h"
@@ -303,6 +304,12 @@ void MainWindow::setIpcClient(IpcClient* ipc)
     // unchanged clipboard text short-circuits on m_lastClipboardContents.
     if (ipc)
         connect(ipc, &IpcClient::connected, this, &MainWindow::onClipboardChanged,
+                Qt::UniqueConnection);
+
+    // First start (or first start after an upgrade): the wizard reads the daemon's
+    // settings, so it waits for the handshake like everything else that needs them.
+    if (ipc)
+        connect(ipc, &IpcClient::connected, this, &MainWindow::maybeShowFirstStartWizard,
                 Qt::UniqueConnection);
 
     // "View Shared Files" answer: the peer's list is a Search tab (MFC), and we go there.
@@ -860,8 +867,35 @@ void MainWindow::onImportDownloads()
 
 void MainWindow::onFirstTimeWizard()
 {
-    FirstStartWizard wizard(m_ipc, this);
-    wizard.exec();
+    if (m_firstStartWizard) {
+        m_firstStartWizard->raise();
+        m_firstStartWizard->activateWindow();
+        return;
+    }
+
+    m_firstStartWizard = new FirstStartWizard(m_ipc, this);
+    m_firstStartWizard->setAttribute(Qt::WA_DeleteOnClose);
+    // Once is once: cancelling counts, as in MFC. Tools > wizard reopens it.
+    connect(m_firstStartWizard, &QDialog::finished, this,
+            [] { theUiState.setFirstStartWizardDone(true); });
+    // Modal show(), not exec(): no nested event loop for a quit to unwind through.
+    // Not open() either — that makes it a sheet on macOS.
+    m_firstStartWizard->setModal(true);
+    m_firstStartWizard->show();
+}
+
+void MainWindow::maybeShowFirstStartWizard()
+{
+    if (!m_firstStartWizardAllowed || theUiState.firstStartWizardDone() || m_firstStartWizard)
+        return;
+
+    // Off the socket-read stack that delivered connected()
+    QTimer::singleShot(0, this, [this] {
+        if (theUiState.firstStartWizardDone())
+            return;
+        logInfo(QStringLiteral("First start: opening the First Runtime Wizard."));
+        onFirstTimeWizard();
+    });
 }
 
 void MainWindow::onIPFilter()

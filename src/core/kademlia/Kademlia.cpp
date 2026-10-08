@@ -495,10 +495,13 @@ void Kademlia::process()
         }
     }
 
+    // Every tick: the store caps in SharedFileList::publish() read these counters.
+    // MFC Kademlia.cpp:202.
+    SearchManager::updateStats();
+
     // 2. Status update (every 60 seconds)
     if (now >= m_statusUpdate) {
         m_statusUpdate = now + SEC(60);
-        SearchManager::updateStats();
 
         if (m_prefs && m_routingZone) {
             // Take the MAX estimate over all leaf zones (estimateCount() returns 0

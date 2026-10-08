@@ -39,6 +39,7 @@ private slots:
     void construction_empty();
     void addClientToQueue_basic();
     void addClientToQueue_duplicate();
+    void addClientToQueue_twinKeepsThePlaceOnlyIfIdentified();
     void addClientToQueue_ipLimit();
     void removeFromWaitingQueue_basic();
     void removeFromUploadQueue_basic();
@@ -126,6 +127,7 @@ private slots:
     void score_creditSystemOffDropsTheRatio();
     void score_badIdentScoresZero();
     void score_bannedOrEvildoerScoresZero();
+    void ban_endsWithTheIPEntry();
     void score_oldEmuleHalved();
     void score_underServedFileGetsAFixedBonus();
     void score_unreachableLowIdZeroOnlyForSysValue();
@@ -258,10 +260,6 @@ private:
 /// traceroute, no ICMP, no timing. UploadQueue only ever reads getUpload(), so pass-through
 /// versus actively-measuring is invisible to the gates, and this is the only deterministic
 /// way to hand them a chosen value: the active branch needs a real route to ping.
-///
-/// One finder per value. The published limit cannot be changed afterwards — the
-/// disabled-branch wait at :189 deliberately does not test m_prefsReceived, so a second
-/// setPrefs() would not be picked up for another 180 s.
 ///
 /// This doubles as a regression pin for that m_prefsReceived fix: before it, phase 0 burned
 /// the full 180 s timeout before publishing anything and this would return false.
@@ -498,6 +496,56 @@ void tst_UploadQueue::addClientToQueue_duplicate()
 
     // Should still have exactly 1 entry (not duplicated)
     QVERIFY(queue.waitingUserCount() <= 1);
+}
+
+void tst_UploadQueue::addClientToQueue_twinKeepsThePlaceOnlyIfIdentified()
+{
+    // Two clients under one user hash: the one that proved its identity keeps the place.
+    // With no proof on either side both go — MFC srchybrid/UploadQueue.cpp:577-602.
+    QueueRankEnv env;
+    UploadQueue queue;
+    env.wire(queue);
+    env.fillSlots(queue);
+
+    int index = 140;
+    const auto twins = [&] {
+        auto* queued = env.makeClient(index++, env.veryHigh());
+        auto* newcomer = env.makeClient(index++, env.veryHigh());
+        newcomer->setUserHash(queued->userHash());
+        return std::pair{queued, newcomer};
+    };
+    const auto identify = [](UpDownClient* c) {
+        c->credits()->verified(c->connectAddress());
+        QVERIFY(c->hasPassedSecureIdent(false));
+    };
+
+    {   // the queued one is identified: it stays
+        auto [queued, newcomer] = twins();
+        identify(queued);
+        queue.addClientToQueue(queued);
+        QVERIFY(queue.isOnUploadQueue(queued));
+        queue.addClientToQueue(newcomer);
+        QVERIFY(queue.isOnUploadQueue(queued));
+        QVERIFY(!queue.isOnUploadQueue(newcomer));
+    }
+    {   // nobody is: both go
+        auto [queued, newcomer] = twins();
+        queue.addClientToQueue(queued);
+        QVERIFY(queue.isOnUploadQueue(queued));
+        queue.addClientToQueue(newcomer);
+        QVERIFY(!queue.isOnUploadQueue(queued));
+        QVERIFY(!queue.isOnUploadQueue(newcomer));
+        QCOMPARE(queued->uploadState(), UploadState::None);
+    }
+    {   // only the newcomer is: it takes the place
+        auto [queued, newcomer] = twins();
+        identify(newcomer);
+        queue.addClientToQueue(queued);
+        QVERIFY(queue.isOnUploadQueue(queued));
+        queue.addClientToQueue(newcomer);
+        QVERIFY(!queue.isOnUploadQueue(queued));
+        QVERIFY(queue.isOnUploadQueue(newcomer));
+    }
 }
 
 void tst_UploadQueue::addClientToQueue_ipLimit()
@@ -2442,6 +2490,38 @@ void tst_UploadQueue::score_badIdentScoresZero()
              IdentState::IdBadGuy);
 
     QCOMPARE(client->score(false), uint64{0});
+}
+
+void tst_UploadQueue::ban_endsWithTheIPEntry()
+{
+    // The ban is the 2 h IP entry. The upload state left on the object must not keep the
+    // peer out once the entry is gone — it used to, for as long as the object lived.
+    QueueRankEnv env;
+    ClientList clientList;
+    GlobalClientList clientListGuard(&clientList);
+
+    auto* client = env.makeClient(131, env.veryHigh());
+    client->restoreWaitStartTime(60'000);
+    QVERIFY(!client->connectAddress().isNull());
+
+    client->ban(QStringLiteral("test"));
+    QVERIFY(client->isBanned());
+    QCOMPARE(client->score(false), uint64{0});
+
+    clientList.removeBannedClient(client->connectAddress());      // the entry ran out
+    QCOMPARE(client->uploadState(), UploadState::Banned);
+    QVERIFY(!client->isBanned());
+    QVERIFY(client->score(false) > 0);
+
+    // A repeat offence bans again although the state never left Banned.
+    client->ban(QStringLiteral("again"));
+    QVERIFY(client->isBanned());
+
+    // unBan() lifts an IP ban whatever state the object is in.
+    client->setUploadState(UploadState::None);
+    QVERIFY(client->isBanned());
+    client->unBan();
+    QVERIFY(!client->isBanned());
 }
 
 void tst_UploadQueue::score_bannedOrEvildoerScoresZero()

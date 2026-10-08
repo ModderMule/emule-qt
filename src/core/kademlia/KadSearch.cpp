@@ -1623,9 +1623,12 @@ void Search::storePacket(bool flushRemaining)
             // Write our ED2K TCP port so the remote can TCP-connect to us
             packet.writeUInt16(theApp.advertisedTcpPort());
 
+            // Crypt target as MFC: without it the packet goes out in clear
+            // unless the contact already gave us a UDP key.
+            UInt128 clientID = contact->getClientID();
             udpListener->sendPacket(packet, KADEMLIA_FINDBUDDY_REQ,
                                     contact->address().toUint32(), contact->getUDPPort(),
-                                    contact->getUDPKey(), nullptr);
+                                    contact->getUDPKey(), &clientID);
             sent = true;
             break;
         }
@@ -1643,9 +1646,12 @@ void Search::storePacket(bool flushRemaining)
             // Write our ED2K TCP port so the callback works (MFC: thePrefs.GetPort())
             packet.writeUInt16(theApp.advertisedTcpPort());
 
+            // Crypt target as MFC: without it the packet goes out in clear
+            // unless the contact already gave us a UDP key.
+            UInt128 clientID = contact->getClientID();
             udpListener->sendPacket(packet, KADEMLIA_CALLBACK_REQ,
                                     contact->address().toUint32(), contact->getUDPPort(),
-                                    contact->getUDPKey(), nullptr);
+                                    contact->getUDPKey(), &clientID);
             sent = true;
             break;
         }

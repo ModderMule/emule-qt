@@ -311,7 +311,7 @@ bool CoreNotifierBridge::broadcastServerState()
     info.insert(QStringLiteral("lowID"),
                 theApp.serverConnect && theApp.serverConnect->isConnected()
                     && theApp.serverConnect->isLowID());
-    info.insert(QStringLiteral("clientID"),   static_cast<qint64>(theApp.getID()));
+    info.insert(QStringLiteral("clientID"),   static_cast<qint64>(theApp.ed2kClientID()));
     insertBindState(info);
     if (connected && theApp.serverConnect) {
         info.insert(QStringLiteral("publicIP"),

@@ -310,6 +310,20 @@ SearchQueueBackend defaultSearchQueueBackend(SearchList& list)
             QTimer::singleShot(0, &list, [&list, searchID] { list.queue().onMetaSearchFinished(searchID); });
     };
 
+    // MFC CSearchResultsWnd::SearchMore — srchybrid/SearchResultsWnd.cpp:1273-1289.
+    backend.continueServerSearch = [&list](uint32 searchID, const SearchParams& params) {
+        if (!theApp.serverConnect || !theApp.serverConnect->isConnected())
+            return false;
+        list.beginSearch(searchID, resultTypeFilter(params.fileType), /*ed2k*/ true);
+        auto pkt = std::make_unique<Packet>(OP_QUERY_MORE_RESULT, 0);
+        pkt->prot = OP_EDONKEYPROT;
+        logServerVerbose(QStringLiteral(">>> OP_QUERY_MORE_RESULT for search %1").arg(searchID));
+        if (theApp.serverConnect->sendPacket(std::move(pkt)))
+            return true;
+        list.releaseEd2kRouting(searchID);
+        return false;
+    };
+
     backend.nowMs = [] { return static_cast<qint64>(getTickCount()); };
     return backend;
 }

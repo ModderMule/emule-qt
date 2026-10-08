@@ -92,8 +92,8 @@ struct SearchTab {
     int runState = 2;
     QString waitReason;   ///< queued: what it waits for
     QString failure;      ///< failed: why
-    /// Finished, and the server holds a further page (Usenet / torrent via server):
-    /// scrolling to the end fetches it.
+    /// Finished, and the server holds a further page (eD2K server, Usenet /
+    /// torrent via server): More or scrolling to the end fetches it.
     bool hasMore = false;
 
     /// What was asked; a double click on the tab puts it back into the form.
@@ -284,12 +284,16 @@ private:
     /// Ask for the next page when the current tab has one and its list is at the
     /// end; a list that needs no scrollbar is.
     void loadMoreIfAtEnd();
+    /// Ask for the next page of @p tab, when it has one. The More button's way in.
+    void requestMore(SearchTab& tab);
+    void updateMoreButton();
     /// Hide the rows of unticked networks. A tab that asked for one network shows all.
     void applyNetworkFilter(SearchTab& tab);
 
     // Search controls
     QLineEdit* m_nameEdit = nullptr;
     QPushButton* m_startBtn = nullptr;
+    QPushButton* m_moreBtn = nullptr;     ///< next page of the tab on screen
     QPushButton* m_cancelBtn = nullptr;
     QComboBox* m_typeCombo = nullptr;
     QComboBox* m_methodCombo = nullptr;

@@ -51,6 +51,8 @@ private slots:
     void results_onlyFromNodesTheSearchAsked();
     void results_ignoredByStoreSearches();
     void responder_isSeenByTheCensus();
+    void buddyAndCallbackRequests_carryACryptTarget_data();
+    void buddyAndCallbackRequests_carryACryptTarget();
 
     // Contact ownership (audit item #2)
     void processResponse_freesAllResultContacts();
@@ -936,6 +938,42 @@ void tst_KadSearch::publishTags_carryMediaTagsOnlyForAVersionedFile()
     QCOMPARE(find(tags, FT_MEDIA_CODEC)->strValue(), QStringLiteral("mp3"));
     // The extractor's own stamp never leaves known.met.
     QVERIFY(find(tags, FT_MEDIAEXTRACTVER) == nullptr);
+}
+
+void tst_KadSearch::buddyAndCallbackRequests_carryACryptTarget_data()
+{
+    QTest::addColumn<int>("type");
+    QTest::addColumn<int>("opcode");
+    QTest::newRow("find buddy") << int(SearchType::FindBuddy) << int(KADEMLIA_FINDBUDDY_REQ);
+    QTest::newRow("callback") << int(SearchType::FindSource) << int(KADEMLIA_CALLBACK_REQ);
+}
+
+// Without the contact's ID as crypt target the request leaves in clear whenever the
+// contact has not given us a UDP key yet.
+void tst_KadSearch::buddyAndCallbackRequests_carryACryptTarget()
+{
+    QFETCH(int, type);
+    QFETCH(int, opcode);
+    eMule::testing::KadFixture kadFixture;
+
+    std::vector<UInt128> targets;
+    const auto conn = QObject::connect(
+        Kademlia::getInstanceUDPListener(), &KademliaUDPListener::packetToSend,
+        [&](const QByteArray& data, uint32, uint16, const KadUDPKey&, const UInt128& target) {
+            if (!data.isEmpty() && static_cast<uint8>(data[0]) == static_cast<uint8>(opcode))
+                targets.push_back(target);
+        });
+    const auto disconnect = qScopeGuard([&] { QObject::disconnect(conn); });
+
+    Search* search = startWalk(static_cast<SearchType>(type), 3);
+    QVERIFY(search != nullptr);
+    respond(1);
+    search->storePacket(false);
+
+    QCOMPARE(targets.size(), std::size_t{1});
+    uint8 id[16] = {0x55};
+    id[15] = 1;
+    QCOMPARE(targets.front(), UInt128(id));
 }
 
 QTEST_GUILESS_MAIN(tst_KadSearch)

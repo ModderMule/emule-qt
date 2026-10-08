@@ -15,6 +15,7 @@
 #include <QMap>
 #include <QWidget>
 #include <QPainter>
+#include <QPointer>
 #include <QMouseEvent>
 #include <QSystemTrayIcon>
 
@@ -36,6 +37,7 @@ class MiniMuleWidget;
 
 namespace Ipc { class IpcMessage; }
 
+class FirstStartWizard;
 class IpcClient;
 class IrcPanel;
 class SpeedGraph;
@@ -113,6 +115,9 @@ public:
 
     /// Set the IPC client (needed for Options dialog).
     void setIpcClient(IpcClient* ipc);
+
+    /// Whether the first start wizard may open by itself. Off for --screenshot runs.
+    void setFirstStartWizardAllowed(bool allowed) { m_firstStartWizardAllowed = allowed; }
 
     /// The connected client, or null when IPC is disabled. Exposed so
     /// --screenshot can open the Options dialog against a live daemon; without
@@ -204,6 +209,7 @@ private slots:
     void onOpenWebUi();
     void onImportDownloads();
     void onFirstTimeWizard();
+    void maybeShowFirstStartWizard();
     void onIPFilter();
     void onPasteLinks();
     void onSchedulerToggle();
@@ -280,6 +286,8 @@ private:
 
     // Clipboard monitoring (MFC SearchClipboard equivalent)
     QString m_lastClipboardContents;
+    QPointer<FirstStartWizard> m_firstStartWizard;
+    bool m_firstStartWizardAllowed = true;
 
     // System tray icon for popup notifications
     QSystemTrayIcon* m_trayIcon = nullptr;

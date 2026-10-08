@@ -173,11 +173,11 @@ struct Preferences::Data {
     bool serverPreferIPv6 = false;
 
     // Bandwidth (KB/s)
-    uint32 maxUpload = 250;
-    uint32 maxDownload = 500;
+    uint32 maxUpload = kDefaultMaxUpload;
+    uint32 maxDownload = kDefaultMaxDownload;
     uint32 minUpload = 1;
-    uint32 maxGraphUploadRate = 250;
-    uint32 maxGraphDownloadRate = 500;
+    uint32 maxGraphUploadRate = kDefaultMaxGraphUploadRate;
+    uint32 maxGraphDownloadRate = kDefaultMaxGraphDownloadRate;
 
     // Encryption
     bool cryptLayerSupported = true;

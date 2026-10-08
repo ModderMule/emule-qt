@@ -6,6 +6,7 @@
 /// Includes UDP source re-ask batching and server-based source queries.
 
 #include "transfer/DownloadQueue.h"
+#include "transfer/UploadQueue.h"
 #include "app/AppContext.h"
 #include "client/ClientList.h"
 #include "kademlia/Kademlia.h"
@@ -1255,6 +1256,17 @@ bool DownloadQueue::startNextFile(int category)
     return true;
 }
 
+uint64 DownloadQueue::ratioLimitedDownload(uint64 maxDownBytes, uint64 maxUpBytes)
+{
+    // MFC srchybrid/Preferences.cpp:693-714 ("don't be a Lam3r").
+    if (maxUpBytes == 0 || maxUpBytes >= 20 * 1024)
+        return maxDownBytes;
+
+    const uint64 coef = maxUpBytes < 4 * 1024 ? 3 : maxUpBytes < 10 * 1024 ? 4 : 5;
+    const uint64 cap = coef * maxUpBytes;
+    return maxDownBytes == 0 ? cap : std::min(cap, maxDownBytes);
+}
+
 void DownloadQueue::sortByPriority()
 {
     std::ranges::sort(m_items, [](const PartFile* a, const PartFile* b) {
@@ -1404,6 +1416,11 @@ void DownloadQueue::resetLocalServerRequests()
 
 void DownloadQueue::process()
 {
+    if (m_prioritySortPending) {
+        m_prioritySortPending = false;
+        sortByPriority();
+    }
+
     processLocalRequests();
 
     const uint64 curTick = getTickCount();
@@ -1435,9 +1452,19 @@ void DownloadQueue::process()
     // the full ceiling lands the combined rate at roughly double the cap. With no
     // split active this returns the raw ceiling, so nothing changes for a user
     // who never enables Usenet.
-    const uint32 maxDown = thePrefs.maxDownloadForEd2k(); // KB/s, 0 = unlimited
-    if (maxDown > 0 && m_datarate > 1500) {
-        const uint64 maxDownBytes = static_cast<uint64>(maxDown) * 1024;
+    //
+    // On top of that the upload decides how much may come down (MFC
+    // CPreferences::GetMaxDownloadInBytesPerSec(true)): the measured rate while USS is
+    // steering it and somebody is waiting, else the configured limit.
+    uint64 maxUpBytes = 0;   // 0 = unlimited
+    if (thePrefs.dynUpEnabled() && theApp.uploadQueue
+        && theApp.uploadQueue->waitingUserCount() > 0 && theApp.uploadQueue->datarate() > 0)
+        maxUpBytes = theApp.uploadQueue->datarate();
+    else if (thePrefs.maxUploadLimit() != UNLIMITED)
+        maxUpBytes = static_cast<uint64>(thePrefs.maxUploadLimit()) * 1024;
+    const uint64 maxDownBytes = ratioLimitedDownload(
+        static_cast<uint64>(thePrefs.maxDownloadForEd2k()) * 1024, maxUpBytes);
+    if (maxDownBytes > 0 && m_datarate > 1500) {
         downspeed = static_cast<uint32>(maxDownBytes * 100 / (m_datarate + 1));
         if (downspeed < 50)
             downspeed = 50;
@@ -1451,8 +1478,10 @@ void DownloadQueue::process()
 
     for (auto* file : m_items) {
         if (file->status() != PartFileStatus::Ready &&
-            file->status() != PartFileStatus::Empty)
+            file->status() != PartFileStatus::Empty) {
+            file->stopPausedFile();
             continue;
+        }
 
         const uint32 rate = file->process(downspeed, m_udCounter);
         curTickRate += rate;

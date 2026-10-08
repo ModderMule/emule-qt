@@ -35,7 +35,8 @@ public:
     [[nodiscard]] const std::vector<KnownFile*>& fileRefs() const { return m_files; }
     [[nodiscard]] int refCount() const { return static_cast<int>(m_files.size()); }
 
-    void addRef(KnownFile* file);
+    /// Returns true if @p file was not referenced yet.
+    bool addRef(KnownFile* file);
     void removeRef(KnownFile* file);
     void removeAllReferences() { m_files.clear(); m_fileSet.clear(); }
 

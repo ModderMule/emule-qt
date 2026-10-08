@@ -135,13 +135,10 @@ UpDownClient::~UpDownClient()
     // Clean up waiting packets
     m_waitingPackets.clear();
 
-    // Remove from download file source lists — try to swap the source to
-    // another pending file first so we don't lose it needlessly.
+    // Leave the file's source list. No swap: a client that is going away must not be
+    // filed as a source of another file.
     if (m_reqFile) {
-        if (!swapToAnotherFile(QStringLiteral("client destroyed"),
-                               true, true, true)) {
-            m_reqFile->removeSource(this);
-        }
+        m_reqFile->removeSource(this);
         m_reqFile = nullptr;
     }
     // Never leave this client in another file's A4AF list.
@@ -537,6 +534,13 @@ void UpDownClient::setDownloadState(DownloadState state)
         }
 
         m_downloadState = state;
+
+        // A slot ends the wait: no rank, not full (MFC DownloadClient.cpp:702-706).
+        if (state == DownloadState::Downloading) {
+            if (isEmuleClient())
+                setRemoteQueueFull(false);
+            setRemoteQueueRank(0);
+        }
 
         // MFC: record reask baseline on NNP entry so doubled reask timing works
         if (state == DownloadState::NoNeededParts)
@@ -2655,9 +2659,12 @@ void UpDownClient::onInfoPacketsReceived()
 
 bool UpDownClient::isBanned() const
 {
-    if (theApp.clientList && theApp.clientList->isBannedClient(m_connectAddress))
-        return true;
-    return m_uploadState == UploadState::Banned;
+    // The ban is the 2 h entry in the IP list; the upload state only records that this
+    // object earned one, and must not outlive it (MFC BaseClient.cpp:2054). With no
+    // address there is no entry to expire, so the state is all there is.
+    if (m_connectAddress.isNull() || !theApp.clientList)
+        return m_uploadState == UploadState::Banned;
+    return theApp.clientList->isBannedClient(m_connectAddress);
 }
 
 // ===========================================================================

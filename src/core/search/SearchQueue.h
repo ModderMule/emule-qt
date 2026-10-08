@@ -61,7 +61,8 @@ struct SearchStatus {
     SearchType type = SearchType::Ed2kServer;   ///< as asked until sent, then the network used
     QString keyword;            ///< Kad: the keyword searched when it is not the first one
     QString primaryKeyword;
-    /// Finished, but the server has a further page: more() fetches it.
+    /// Finished, but the server has a further page: more() fetches it. A Meta API
+    /// search, or an eD2K one whose server sent the "more results" byte.
     bool hasMore = false;
 };
 
@@ -102,6 +103,9 @@ struct SearchQueueBackend {
     std::function<void(uint32 searchID)> cancelMetaSearch;
     /// Fetch the next page of a Meta API search that ended with more to come.
     std::function<void(uint32 searchID)> continueMetaSearch;
+    /// Send OP_QUERY_MORE_RESULT for the last eD2K search and route the answer to
+    /// it again. False when it could not go out. May be empty.
+    std::function<bool(uint32 searchID, const SearchParams&)> continueServerSearch;
     std::function<qint64()> nowMs;
 };
 
@@ -140,13 +144,14 @@ public:
     void onKadConnected()       { pump(); }
     /// The session a waiting answer was due on is gone.
     void onServerDisconnected();
-    /// The connected server answered the search in flight.
-    void onServerAnswer();
+    /// The connected server answered the search in flight. @p moreResults: it
+    /// holds back further matches, kept for more().
+    void onServerAnswer(bool moreResults = false);
     void onSweepFinished(uint32 searchID);
     /// A Meta API search has its page, or gave up (@p error says why).
     /// @p hasMore: the server has a further page, kept for more().
     void onMetaSearchFinished(uint32 searchID, const QString& error = {}, bool hasMore = false);
-    /// Fetch the next page of a finished Meta API search. False when it has none.
+    /// Fetch the next page of a finished search. False when it has none.
     bool more(uint32 searchID);
 
     /// Stop asking; a queued search is not sent any more. Results stay.
@@ -173,6 +178,8 @@ private:
         bool kad = false;           ///< running in Kad (no lane to hold)
         bool awaitsSweep = false;
         bool meta = false;          ///< running on a Meta API (no lane to hold)
+        bool serverPage = false;    ///< the connected server holds a further page
+        int moreRequests = 0;       ///< OP_QUERY_MORE_RESULT sent so far
         qint64 sentAtMs = 0;
     };
 
@@ -189,6 +196,9 @@ private:
     /// Tell the backend a running Meta API search is not wanted any more;
     /// with @p parkedToo also one that only keeps its next page.
     void cancelMeta(Entry& entry, bool parkedToo = false);
+    /// The server keeps the rest of its last answer only: a new search or a lost
+    /// session ends every page on offer but @p keep's.
+    void dropServerPages(uint32 keep = 0);
 
     SearchQueueBackend m_backend;
     std::vector<Entry> m_entries;   // arrival order
