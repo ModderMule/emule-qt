@@ -280,10 +280,13 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             case ColProgress:      return 0.0;
             case ColSources:       return s.software;
             case ColPriority: {
+                // MFC Compare case 7 (DownloadListCtrl.cpp:1794-1807): transferring first, then QR
+                if (s.downloadState == QLatin1String("Downloading"))
+                    return qlonglong(0);
                 if (s.downloadState != QLatin1String("OnQueue"))
                     return qlonglong(INT_MAX);
                 if (s.remoteQueueFull)
-                    return qlonglong(INT_MAX - 1);
+                    return qlonglong(INT_MAX - 1);   // after the highest rank
                 return s.remoteQueueRank > 0 ? static_cast<qlonglong>(s.remoteQueueRank) : qlonglong(INT_MAX);
             }
             case ColStatus:        return downloadStateSortOrder(s.downloadState);

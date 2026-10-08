@@ -220,8 +220,28 @@ DESKTOP
 
     # Run linuxdeploy with Qt plugin (deploy only, no AppImage output)
     export QMAKE="${QMAKE:-$(command -v qmake 2>/dev/null || echo "")}"
+    # The Qt plugin deploys every SQL driver and aborts on one whose client
+    # library is missing (Mimer, Oracle, ...).  Only SQLite is used, so park
+    # the others outside the plugin dir while it runs.
+    SQL_DRIVERS="$("$QMAKE" -query QT_INSTALL_PLUGINS 2>/dev/null || true)/sqldrivers"
+    SQL_PARKED=""
+    restore_sql_drivers() {
+        [ -n "$SQL_PARKED" ] || return 0
+        find "$SQL_PARKED" -type f -exec mv {} "$SQL_DRIVERS/" \;
+        rmdir "$SQL_PARKED"
+        SQL_PARKED=""
+    }
+    if [ -d "$SQL_DRIVERS" ] && [ -w "$SQL_DRIVERS" ]; then
+        SQL_PARKED="$(mktemp -d "$(dirname "$SQL_DRIVERS")/.sqldrivers-parked.XXXXXX")"
+        trap restore_sql_drivers EXIT
+        find "$SQL_DRIVERS" -maxdepth 1 -type f ! -name 'libqsqlite*' -exec mv {} "$SQL_PARKED/" \;
+    fi
+
     # Deploy Qt libs into AppDir without producing an AppImage
     "$LINUXDEPLOY" --appdir "$APPDIR" --executable "$APPDIR/usr/bin/emulecored" --plugin qt
+
+    restore_sql_drivers
+    trap - EXIT
 
     # Copy deployed libraries and plugins into our staging directory
     if [ -d "$APPDIR/usr/lib" ]; then

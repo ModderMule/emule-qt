@@ -104,6 +104,7 @@ private slots:
     void theAllTabShowsEverything();
     void aCategoryFilterShowsOnlyItsOwnRows();
     void aCategoryFilterStackedOnASortProxyStillFilters();
+    void sortingIsLeftToTheSortProxyBelow();
     void childRowsAreNeverFiltered();
     void aModelThatDoesNotAnswerTheRoleIsHiddenNotShown();
     void viewFilterFollowsMfc();
@@ -169,6 +170,41 @@ void tst_CategoryFilterProxy::aCategoryFilterStackedOnASortProxyStillFilters()
 
     proxy.setCategoryFilter(2);
     QCOMPARE(namesOf(proxy), QStringList({QStringLiteral("a")}));
+}
+
+namespace {
+
+/// Sort proxy with an order of its own, like DownloadSortProxy's A4AF pin.
+class ReversedSortProxy : public QSortFilterProxyModel {
+protected:
+    bool lessThan(const QModelIndex& left, const QModelIndex& right) const override
+    {
+        return QSortFilterProxyModel::lessThan(right, left);
+    }
+};
+
+} // namespace
+
+void tst_CategoryFilterProxy::sortingIsLeftToTheSortProxyBelow()
+{
+    // The view sorts the proxy it is bound to. Sorting there itself would bypass
+    // the lessThan() of the proxy below.
+    ToyModel model({{QStringLiteral("c"), 1},
+                    {QStringLiteral("a"), 1},
+                    {QStringLiteral("b"), 1}});
+
+    ReversedSortProxy sort;
+    sort.setSourceModel(&model);
+
+    CategoryFilterProxy proxy;
+    proxy.setSourceModel(&sort);
+
+    proxy.sort(0, Qt::AscendingOrder);
+    QCOMPARE(namesOf(proxy), QStringList({QStringLiteral("c"), QStringLiteral("b"), QStringLiteral("a")}));
+    QCOMPARE(sort.sortColumn(), 0);
+
+    proxy.sort(0, Qt::DescendingOrder);
+    QCOMPARE(namesOf(proxy), QStringList({QStringLiteral("a"), QStringLiteral("b"), QStringLiteral("c")}));
 }
 
 void tst_CategoryFilterProxy::childRowsAreNeverFiltered()

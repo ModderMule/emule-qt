@@ -119,6 +119,7 @@ private slots:
     void sourceRowsFollowMfcColumns();
     void sourceStatusFollowsMfc();
     void a4afSourcesStayBelowAvailableOnes();
+    void sourcesSortByQueueRankWithDownloadingFirst();
     void remainingAndSeenCompleteFollowMfc();
     void knownClientsFollowMfc();
     void downloadingClientsCarryThePartBar();
@@ -805,6 +806,53 @@ void tst_ListSorting::a4afSourcesStayBelowAvailableOnes()
     QCOMPARE(names(), (QStringList{u"ccc"_s, u"bbb"_s, u"aaa"_s}));
 }
 
+void tst_ListSorting::sourcesSortByQueueRankWithDownloadingFirst()
+{
+    // MFC Compare case 7 (DownloadListCtrl.cpp:1794-1807): transferring sources
+    // ahead of QR 1, Queue Full after the highest rank, A4AF last either way.
+    DownloadRow file;
+    file.hash = QStringLiteral("file");
+    file.status = QStringLiteral("ready");
+
+    const auto source = [](const QString& name, const QString& state, int64_t rank = 0) {
+        SourceRow s;
+        s.userHash = name;
+        s.userName = name;
+        s.downloadState = state;
+        s.remoteQueueRank = rank;
+        return s;
+    };
+    SourceRow full = source(u"full"_s, u"OnQueue"_s);
+    full.remoteQueueFull = true;
+    SourceRow a4af = source(u"a4af"_s, u"Downloading"_s);
+    a4af.a4af = true;
+
+    DownloadListModel model;
+    model.setDownloads({file});
+    model.setSources(QStringLiteral("file"),
+                     {a4af, source(u"qr7"_s, u"OnQueue"_s, 7), source(u"noparts"_s, u"NoNeededParts"_s),
+                      full, source(u"downloading"_s, u"Downloading"_s),
+                      source(u"qr1"_s, u"OnQueue"_s, 1)});
+
+    DownloadSortProxy proxy;
+    proxy.setSourceModel(&model);
+    proxy.setSortRole(Qt::UserRole);
+    const auto names = [&proxy] {
+        const QModelIndex parent = proxy.index(0, 0);
+        QStringList out;
+        for (int row = 0; row < proxy.rowCount(parent); ++row)
+            out << proxy.index(row, 0, parent).data().toString();
+        return out;
+    };
+
+    proxy.sort(DownloadListModel::ColPriority, Qt::AscendingOrder);
+    QCOMPARE(names(), (QStringList{u"downloading"_s, u"qr1"_s, u"qr7"_s, u"full"_s, u"noparts"_s,
+                                   u"a4af"_s}));
+    proxy.sort(DownloadListModel::ColPriority, Qt::DescendingOrder);
+    QCOMPARE(names(), (QStringList{u"noparts"_s, u"full"_s, u"qr7"_s, u"qr1"_s, u"downloading"_s,
+                                   u"a4af"_s}));
+}
+
 void tst_ListSorting::remainingAndSeenCompleteFollowMfc()
 {
     // MFC DownloadListCtrl.cpp:2062-2100
@@ -1180,9 +1228,9 @@ void tst_ListSorting::kadContactColumnsFollowMfc()
     newer.version = 9;
     model.setContacts({older, newer});
 
-    // the icon is on the ID column, the type text on the other
-    QVERIFY(model.index(0, KadContactsModel::ColClientId).data(Qt::DecorationRole).isValid());
-    QVERIFY(!model.index(0, KadContactsModel::ColStatus).data(Qt::DecorationRole).isValid());
+    // deliberate: the icon stays on Type (MFC: ID), where the flag delegate widens it
+    QVERIFY(model.index(0, KadContactsModel::ColStatus).data(Qt::DecorationRole).isValid());
+    QVERIFY(!model.index(0, KadContactsModel::ColClientId).data(Qt::DecorationRole).isValid());
     QCOMPARE(model.index(0, KadContactsModel::ColStatus).data().toString(), QStringLiteral("2(8)"));
     // same type: the version breaks the tie
     QVERIFY(model.index(0, KadContactsModel::ColStatus).data(Qt::UserRole).toInt()

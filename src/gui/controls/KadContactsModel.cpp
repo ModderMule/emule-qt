@@ -50,11 +50,12 @@ QVariant KadContactsModel::data(const QModelIndex& index, int role) const
         }
     }
 
-    // MFC puts the icon on the ID column (KadContactListCtrl.cpp:117-125)
-    if (role == Qt::DecorationRole && index.column() == ColClientId)
+    // Deliberate: icon on Type, not ID as MFC (KadContactListCtrl.cpp:117-125). The flag
+    // delegate widens logical column 0 only; elsewhere icon + flag get squeezed
+    if (role == Qt::DecorationRole && index.column() == ColStatus)
         return CountryFlags::withFlag(m_icons[static_cast<size_t>(contactImage(c))], c.cc);
 
-    if (role == Qt::ToolTipRole && (index.column() == ColClientId || index.column() == ColCountry)
+    if (role == Qt::ToolTipRole && (index.column() == ColStatus || index.column() == ColCountry)
         && !c.cc.isEmpty())
         return CountryFlags::tooltip(c.cc);
 

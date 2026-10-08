@@ -5,6 +5,7 @@
 ///        Also tests a full loopback file download via the ED2K protocol.
 
 #include "files/PartFileWriteThread.h"
+#include "TestFixtures.h"
 #include "TestHelpers.h"
 
 #include "app/AppContext.h"
@@ -32,6 +33,7 @@
 #include <QTimer>
 
 #include <memory>
+#include <optional>
 
 #ifdef Q_OS_WIN
 #include <winsock2.h>
@@ -90,6 +92,8 @@ private:
     KnownFile* m_sharedZipFile = nullptr;
     KnownFile* m_sharedDmgFile = nullptr;
     QList<UpDownClient*> m_serverClients;
+    // Offline, PartFile::process() dials no source (MFC theApp.IsConnected() gate).
+    std::optional<eMule::testing::KadFixture> m_online;
 };
 
 // ---------------------------------------------------------------------------
@@ -195,6 +199,8 @@ void tst_TcpConnect::initTestCase()
     m_uploadQueue->setDiskIOThread(m_diskIO);
     m_uploadQueue->setSharedFileList(m_sharedFiles);
     theApp.uploadQueue = m_uploadQueue;
+
+    m_online.emplace(eMule::testing::KadMode::Connected);
 
     // 13. DownloadQueue — don't set KnownFileList/SharedFileList to avoid
     //     onDownloadCompleted calling safeAddKFile which takes ownership
@@ -1063,6 +1069,8 @@ void tst_TcpConnect::download_deleteAllWhileActive()
 
 void tst_TcpConnect::cleanupTestCase()
 {
+    m_online.reset();
+
     // Stop throttler
     if (m_throttler) {
         m_throttler->endThread();

@@ -1601,7 +1601,8 @@ void DownloadQueue::process()
                 // re-ask datagram and then charges it as failed at the head of
                 // askForDownload(). That drives m_failedUDPPackets past the 30 % abort and
                 // silently disables UDP re-asks for the peer for good.
-                if (src->downloadState() != DownloadState::OnQueue)
+                // Offline: no re-ask at all (MFC's theApp.IsConnected() on the same line).
+                if (src->downloadState() != DownloadState::OnQueue || !theApp.isConnected())
                     continue;
                 const uint32 untilReask = src->timeUntilReask(file);
                 if (untilReask < MIN2MS(2) && untilReask > SEC2MS(1)

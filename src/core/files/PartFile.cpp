@@ -2668,7 +2668,10 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
                 // MFC's re-ask window applies to every candidate, not just a source
                 // that lost its socket: nothing is asked again before FILEREASKTIME
                 // (~29 min, doubled for NNP) has passed. srchybrid/PartFile.cpp:2345.
-                if (client->timeUntilReask(this) > 0) {
+                //
+                // Same line gates on theApp.IsConnected(): offline, no source is asked or
+                // dialled — else sources restored by SourceSaver download with no network up.
+                if (!theApp.isConnected() || client->timeUntilReask(this) > 0) {
                     ++i;
                     continue;
                 }

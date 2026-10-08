@@ -1,13 +1,27 @@
 name: Release
+run-name: Release ${{ inputs.tag || github.ref_name }}
 
-# Fires when scripts/publish-release.sh pushes a vX.Y.Z tag. Builds all three
+# Fires when scripts/publish-release.sh pushes a vX.Y.Z tag. Builds all
 # platforms by calling the per-OS workflows as reusable workflows, then publishes
 # a GitHub Release with their archives attached -- the page that the update
 # manifest's "releaseNotes" URL points at (see scripts/publish-release.sh).
+#
+# Two runs per release. The tag push only runs the `dispatch` job, which starts
+# this workflow again on main with the tag as input; that second run does the
+# work. Reason: a run reads caches only from its own ref and from the default
+# branch, so a build on the tag ref could never reuse the previous release's
+# ccache / vcpkg / macOS-deps caches. On main each release warms the next.
+#
+# By hand: Actions -> Release -> Run workflow, branch main, enter the tag.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and publish, e.g. v0.6.0
+        type: string
+        required: true
 
 # Floor for the whole run; the release job raises itself to contents: write.
 # A called workflow can only downgrade what the calling job hands it.
@@ -17,34 +31,75 @@ permissions:
 concurrency:
   # Serialise re-runs of the same tag, but never cancel: a v0.2.1 push does not
   # supersede an in-flight v0.2.0, and cancelling mid-publish strands a release
-  # with only some of its assets.
-  group: release-${{ github.ref }}
+  # with only some of its assets. Keyed by tag, not ref (every build run is on
+  # main), and by event, so the dispatch run does not queue with the build.
+  group: release-${{ github.event_name }}-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
-  # Cheap gate: ~10s, so a mismatch never burns three ~30min builds that would
+  # Tag push: re-dispatch this workflow onto main, to keep the build caches warm.
+  dispatch:
+    name: Start the release build on main
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write    # the workflow-dispatch API; one of the two events a GITHUB_TOKEN may trigger
+    steps:
+      - name: Dispatch release.yml on the default branch
+        env:
+          TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 3 --retry-delay 5 -X POST \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/dispatches" \
+            -d "{\"ref\":\"${BRANCH}\",\"inputs\":{\"tag\":\"${TAG}\"}}"
+          echo "Dispatched Release ${TAG} on ${BRANCH}:" \
+               "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/workflows/release.yml" >> "$GITHUB_STEP_SUMMARY"
+
+  # Cheap gate: ~10s, so a mismatch never burns the ~30min builds that would
   # produce artifacts named differently from the tag.
   guard:
     name: Verify tag matches CMakeLists.txt
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
+      tag: ${{ steps.check.outputs.tag }}
       version: ${{ steps.check.outputs.version }}
     steps:
+      - name: Validate the tag name
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          # also keeps anything but a plain version out of later shell and URLs
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'${TAG}' is not a vMAJOR.MINOR.PATCH tag"
+            exit 1
+          fi
+
+      # Fails here if the tag does not exist.
       - name: Checkout (CMakeLists.txt only)
         uses: actions/checkout@v5
         with:
+          ref: refs/tags/${{ inputs.tag }}
           fetch-depth: 1
           sparse-checkout: CMakeLists.txt
           sparse-checkout-cone-mode: false
 
       - name: Compare tag with project version
         id: check
+        env:
+          TAG: ${{ inputs.tag }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
 
-          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
-            echo "::error::Release must run from a tag (ref_type=${GITHUB_REF_TYPE}, ref_name=${GITHUB_REF_NAME})"
-            exit 1
+          if [ "${GITHUB_REF_NAME}" != "${DEFAULT_BRANCH}" ]; then
+            echo "::warning::Running on ${GITHUB_REF_NAME}, not ${DEFAULT_BRANCH}: this run cannot share build caches with other releases."
           fi
 
           # Same grep the build workflows and the bundle scripts use, so there is
@@ -55,15 +110,16 @@ jobs:
             exit 1
           fi
 
-          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
-            echo "::error file=CMakeLists.txt::Tag ${GITHUB_REF_NAME} does not match project version ${version} (expected tag v${version}). Fix CMakeLists.txt or re-tag."
+          if [ "${TAG}" != "v${version}" ]; then
+            echo "::error file=CMakeLists.txt::Tag ${TAG} does not match project version ${version} (expected tag v${version}). Fix CMakeLists.txt or re-tag."
             exit 1
           fi
 
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "OK: tag ${GITHUB_REF_NAME} matches project version ${version}"
+          echo "OK: tag ${TAG} matches project version ${version}"
 
-  # One GeoLite2-Country database per release, shared by all three platforms.
+  # One GeoLite2-Country database per release, shared by all platforms.
   # CI has no MaxMind credentials: scripts/publish-release.sh downloads it
   # locally, rsyncs it to https://emule-qt.org/pub/ before pushing the tag and
   # writes its SHA-256 into the annotated tag message. This job fetches it and
@@ -73,7 +129,7 @@ jobs:
     needs: guard
     runs-on: ubuntu-latest
     env:
-      TAG: ${{ github.ref_name }}
+      TAG: ${{ needs.guard.outputs.tag }}
       GEOIP_URL: https://emule-qt.org/pub/GeoLite2-Country.mmdb
     steps:
       # Direct tag fetch instead of actions/checkout, which rewrites annotated
@@ -126,6 +182,7 @@ jobs:
     uses: ./.github/workflows/linux.yml
     with:
       geoip: true
+      ref: ${{ needs.guard.outputs.tag }}
 
   macos:
     name: macOS
@@ -135,6 +192,7 @@ jobs:
     uses: ./.github/workflows/macos.yml
     with:
       geoip: true
+      ref: ${{ needs.guard.outputs.tag }}
 
   # Temporary, see macos-intel.yml
   macos-intel:
@@ -145,6 +203,7 @@ jobs:
     uses: ./.github/workflows/macos-intel.yml
     with:
       geoip: true
+      ref: ${{ needs.guard.outputs.tag }}
 
   windows:
     name: Windows
@@ -154,6 +213,7 @@ jobs:
     uses: ./.github/workflows/windows.yml
     with:
       geoip: true
+      ref: ${{ needs.guard.outputs.tag }}
 
   release:
     name: Publish GitHub Release
@@ -163,13 +223,14 @@ jobs:
       # Only job that can write. The Releases API lives under `contents`.
       contents: write
     env:
-      TAG: ${{ github.ref_name }}
+      TAG: ${{ needs.guard.outputs.tag }}
       VERSION: ${{ needs.guard.outputs.version }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
+          ref: refs/tags/${{ needs.guard.outputs.tag }}
           fetch-depth: 0    # full history, for the previous-tag compare link
 
       # The called workflows ran inside THIS run, so their artifacts need no

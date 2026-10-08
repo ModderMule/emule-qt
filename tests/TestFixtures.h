@@ -38,6 +38,7 @@ enum class KadMode {
     Stopped,     ///< instance() non-null but isRunning() false — constructed, never started
     Firewalled,  ///< running, isFirewalled() true — the default state of fresh KadPrefs
     Open,        ///< running, isFirewalled() false
+    Connected,   ///< Open + has had contact — theApp.isConnected() true, sources get dialled
 };
 
 /// A Kademlia singleton backed by a throwaway config directory.
@@ -63,13 +64,15 @@ public:
         m_prefs = std::make_unique<kad::KadPrefs>(m_dir.path());
         if (mode != KadMode::Stopped)
             m_kad.start(m_prefs.get());        // borrows the prefs, does not own them
-        if (mode == KadMode::Open) {
+        if (mode == KadMode::Open || mode == KadMode::Connected) {
             // KadPrefs::firewalled() is counter-driven and stays true until two independent
             // confirmations land. setFirewalled() is the *reset* — it snapshots and zeroes
             // the counter — so calling it here would do the opposite of what it reads like.
             m_prefs->incFirewalled();
             m_prefs->incFirewalled();
         }
+        if (mode == KadMode::Connected)
+            m_prefs->setLastContact();
     }
 
     ~KadFixture()

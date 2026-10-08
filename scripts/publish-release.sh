@@ -31,8 +31,9 @@ set -euo pipefail
 #   PUBLISH_LOCAL_JSON   local path of emuleqt-version.json
 # and the sshpass + jq tools (brew install hudochenkov/sshpass/sshpass, brew install jq).
 #
-# Pushing the tag triggers .github/workflows/release.yml, which verifies the tag
-# matches CMakeLists.txt, builds Linux/macOS/Windows (by calling the per-OS
+# Pushing the tag triggers .github/workflows/release.yml, which restarts itself
+# on main (a build there shares its caches with the next release), verifies the
+# tag matches CMakeLists.txt, builds Linux/macOS/Windows (by calling the per-OS
 # workflows) and publishes the GitHub Release -- with the platform archives and a
 # SHA256SUMS.txt attached -- that the releaseNotes URL below points at.
 # Nothing needs to be started by hand.
@@ -282,6 +283,7 @@ if [[ "$PUBLISH_ONLY" -eq 0 ]]; then
     git commit -m "release: ${TAG}"
   fi
   # release.yml's geoip job reads this line to verify the hosted database
+  # the tag push only re-dispatches release.yml onto main, to keep build caches warm
   git tag -a "${TAG}" -m "Release ${TAG}" -m "GeoLite2-Country-SHA256: ${GEOIP_SHA}"
   git push "${REMOTE}" "${BRANCH}"
   git push "${REMOTE}" "${TAG}"
@@ -327,7 +329,8 @@ echo
 echo "Published manifest: latest=${NEW}  ->  ${RELEASE_URL}"
 if [[ "$PUBLISH_ONLY" -eq 0 ]]; then
   echo
-  echo "The tag push started the release build for all three platforms:"
+  echo "The tag push started the release build for all platforms (a short dispatch"
+  echo "run on the tag, then the build as a second 'Release ${TAG}' run on main):"
   echo "  https://github.com/${SLUG}/actions/workflows/release.yml"
   echo "It publishes the release (with assets) at ${RELEASE_URL} when it finishes."
 fi

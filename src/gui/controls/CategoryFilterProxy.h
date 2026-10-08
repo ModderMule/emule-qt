@@ -83,6 +83,9 @@ public:
     [[nodiscard]] int rowsShownIn(int category,
                                   const std::function<bool(const CategoryRowFacts&)>& also = {}) const;
 
+    /// Hands the sort to a sort proxy below, so that proxy's lessThan() decides.
+    void sort(int column, Qt::SortOrder order = Qt::AscendingOrder) override;
+
 protected:
     bool filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const override;
 

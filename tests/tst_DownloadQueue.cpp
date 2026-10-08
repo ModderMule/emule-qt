@@ -2315,7 +2315,10 @@ void tst_DownloadQueue::downloadClientByIP_UDP_ignoresThePortOnAUniqueAddress()
 void tst_DownloadQueue::process_reasksAQueuedSourceOverItsOpenConnection()
 {
     QFETCH(bool, due);
+    QFETCH(bool, online);
     IPv6AdvertiseGuard guard;
+    // MFC gates the ask on theApp.IsConnected() — srchybrid/PartFile.cpp:2347.
+    KadFixture kad(online ? KadMode::Connected : KadMode::Stopped);
 
     DownloadQueue dq;
     uint8 hash[16];
@@ -2339,7 +2342,7 @@ void tst_DownloadQueue::process_reasksAQueuedSourceOverItsOpenConnection()
 
     runOneSecondOfTicks(dq);
 
-    if (due) {
+    if (due && online) {
         QCOMPARE(source.downloadState(), DownloadState::Connected);
         QVERIFY2(waitForBytes(peer, 22), "the file request goes out on the open socket");
     } else {
@@ -2359,8 +2362,10 @@ void tst_DownloadQueue::process_reasksAQueuedSourceOverItsOpenConnection()
 void tst_DownloadQueue::process_reasksAQueuedSourceOverItsOpenConnection_data()
 {
     QTest::addColumn<bool>("due");
-    QTest::newRow("reask due") << true;
-    QTest::newRow("just asked") << false;
+    QTest::addColumn<bool>("online");
+    QTest::newRow("reask due") << true << true;
+    QTest::newRow("just asked") << false << true;
+    QTest::newRow("reask due, no network") << true << false;
 }
 
 // Without OP_CANCELTRANSFER the peer keeps sending into a file that no longer flushes.

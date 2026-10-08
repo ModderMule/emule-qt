@@ -9,6 +9,10 @@ on:
         description: Ship the GeoLite2-Country database from release.yml's geoip-db artifact
         type: boolean
         default: false
+      ref:
+        description: Commit to build; release.yml passes the tag, since its run is on main
+        type: string
+        default: ''
   workflow_dispatch:
 
 permissions:
@@ -25,6 +29,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
+          ref: ${{ inputs.ref }}   # empty = the run's own commit
           submodules: true   # external/enodemeta: .proto + test vectors
 
       - name: Install system dependencies

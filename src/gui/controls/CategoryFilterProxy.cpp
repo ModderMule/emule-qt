@@ -52,6 +52,16 @@ int CategoryFilterProxy::rowsShownIn(int category,
     return shown;
 }
 
+void CategoryFilterProxy::sort(int column, Qt::SortOrder order)
+{
+    // a sort proxy below owns the order; its lessThan would never run otherwise
+    if (auto* below = qobject_cast<QSortFilterProxyModel*>(sourceModel())) {
+        below->sort(column, order);
+        return;
+    }
+    QSortFilterProxyModel::sort(column, order);
+}
+
 bool CategoryFilterProxy::filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const
 {
     // Child rows -- ED2K sources, the files inside an NZB -- are never filtered:
