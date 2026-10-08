@@ -89,6 +89,20 @@ int liveClose(struct archive* a, void* clientData)
     return ARCHIVE_OK;
 }
 
+/// Where a live set's stream stood when a read failed, for the warning.
+///
+/// libarchive's own text ("Unpacker has written too many bytes") names neither
+/// the volume nor the cause, and the usual cause is a wrong or damaged volume.
+/// The reader buffers ahead, so the fault may sit one volume earlier.
+[[nodiscard]] QString liveWhere(const LiveClient* c)
+{
+    if (!c || c->index < 0)
+        return {};
+    return QStringLiteral(" (reading volume %1 '%2'; a volume is damaged or out of order)")
+        .arg(c->index + 1)
+        .arg(QFileInfo(c->file.fileName()).fileName());
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -646,6 +660,10 @@ bool ArchiveReader::extractAllInto(::archive* ar, const QString& destDir)
     static constexpr int kBufSize = 65536;
     char buf[kBufSize];
 
+    // A cancelled live set ends mid-member, which the format readers report as
+    // corruption. It is not, so it is not logged as such.
+    const auto cancelled = [this] { return m_impl->source && m_impl->source->cancelled(); };
+
     int status = ARCHIVE_OK;
     while ((status = archive_read_next_header(ar, &entry)) == ARCHIVE_OK) {
         ++entryIndex;
@@ -709,8 +727,11 @@ bool ArchiveReader::extractAllInto(::archive* ar, const QString& destDir)
                 // member happily — so this branch, not the header loop, is where
                 // an encrypted 7z announces itself.
                 noteReadFailure(ar, int(readSize));
-                logWarning(QStringLiteral("ArchiveReader: read error in '%1': %2")
-                               .arg(rawName, m_impl->lastError));
+                if (!cancelled()) {
+                    logWarning(QStringLiteral("ArchiveReader: read error in '%1': %2%3")
+                                   .arg(rawName, m_impl->lastError,
+                                        liveWhere(m_impl->live.get())));
+                }
                 allOk = false;
                 break;
             }
@@ -743,8 +764,11 @@ bool ArchiveReader::extractAllInto(::archive* ar, const QString& destDir)
     // other — ArchiveVolumeSource returning false is how it says "no more".
     if (status != ARCHIVE_EOF) {
         noteReadFailure(ar, status);
-        logWarning(QStringLiteral("ArchiveReader: extraction of '%1' stopped: %2")
-                       .arg(m_impl->filePath, m_impl->lastError));
+        if (!cancelled()) {
+            logWarning(QStringLiteral("ArchiveReader: extraction of '%1' stopped: %2%3")
+                           .arg(m_impl->filePath, m_impl->lastError,
+                                liveWhere(m_impl->live.get())));
+        }
         allOk = false;
     }
 

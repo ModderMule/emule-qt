@@ -976,7 +976,7 @@ private:
 
     /// 0-based position of @p fileIndex within its volume set, or -1. The
     /// naming schemes number differently — `.partNN.rar` from 1, `.rNN` from 0
-    /// with a bare `.rar` ahead of it — so only the ranking is meaningful.
+    /// with a bare `.rar` ahead of it — so it is the number less the scheme's start.
     [[nodiscard]] static int volumeOrdinal(const ItemRuntime& rt, int fileIndex,
                                            const QString& baseName);
 

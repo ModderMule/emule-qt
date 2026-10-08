@@ -2737,7 +2737,7 @@ void UsenetQueue::pumpDirectUnpack(ItemRuntime& rt, int fileIndex)
 
     // The naming schemes do not agree on where a set starts: `.partNN.rar`
     // counts from 1, while a bare `.rar` is volume 0 of the `.rNN` scheme. So
-    // the position number is not the ordinal — rank the whole set and use that.
+    // the position number is not the ordinal.
     const int ordinal = volumeOrdinal(rt, fileIndex, position.baseName);
     if (ordinal < 0)
         return;
@@ -3089,19 +3089,14 @@ void UsenetQueue::promoteExtractionVolume(ItemRuntime& rt, int fileIndex)
 
 int UsenetQueue::volumeOrdinal(const ItemRuntime& rt, int fileIndex, const QString& baseName)
 {
-    QList<QPair<int, int>> members;   // (volume number, NZB file index)
-    for (int f = 0; f < rt.item->files.size(); ++f) {
-        const auto pos = UsenetUnpacker::volumePositionOf(volumeNameOf(rt, f));
-        if (pos.index >= 0 && pos.baseName == baseName)
-            members.append({pos.index, f});
-    }
-    std::sort(members.begin(), members.end());
-
-    for (int k = 0; k < members.size(); ++k) {
-        if (members.at(k).second == fileIndex)
-            return k;
-    }
-    return -1;
+    // From the volume's own number, never its rank among siblings. A sibling
+    // whose first article has not landed is still known by its NZB subject
+    // name, which can group differently from the yEnc one; it then drops out
+    // of any ranking and every later volume slides down a slot.
+    const auto pos = UsenetUnpacker::volumePositionOf(volumeNameOf(rt, fileIndex));
+    if (pos.index < pos.first || pos.baseName != baseName)
+        return -1;
+    return pos.index - pos.first;
 }
 
 QString UsenetQueue::volumeNameOf(const ItemRuntime& rt, int fileIndex)
