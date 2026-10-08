@@ -662,11 +662,20 @@ void ClientList::processKadList()
     if (seen == BuddyStatus::None && (m_buddyStatus != BuddyStatus::None || m_buddy))
         setBuddy(nullptr, BuddyStatus::None);
 
-    // A buddy relays callbacks for firewalled peers, which only makes sense while it is
-    // itself firewalled — a peer that opened its port no longer needs, or is, a relay.
-    // MFC srchybrid/ClientList.cpp:614-617.
-    if (m_buddy && !m_buddy->hasLowID())
+    if (!m_buddy || !kadRunning)
+        return;
+
+    // MFC srchybrid/ClientList.cpp:594-623. Cleared up on the next pass.
+    if (!kadInst->isConnected()) {
+        // Kad lost its contacts: the buddy link is of no use either way.
         m_buddy->setKadState(KadState::None);
+    } else if (!(kadInst->isFirewalled() && kad::UDPFirewallTester::isFirewalledUDP(true))) {
+        // We are reachable, so we are the relay and the buddy is the firewalled side.
+        // One that opened its port no longer needs us. When we are the firewalled
+        // side the buddy is an open node by design and must be kept.
+        if (!m_buddy->hasLowID())
+            m_buddy->setKadState(KadState::None);
+    }
 }
 
 // ===========================================================================

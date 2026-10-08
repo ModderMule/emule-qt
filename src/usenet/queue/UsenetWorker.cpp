@@ -217,11 +217,12 @@ void UsenetWorker::startJob(Job* job)
     connect(job->fetcher.get(), &ArticleFetcher::nearlyDone, this,
             [this, job] { onNearlyDone(job); });
 
-    const QString group = job->socket->server().joinGroup ? job->request.group : QString();
+    const QStringList groups = job->socket->server().joinGroup ? job->request.groups
+                                                               : QStringList();
     if (job->request.probeOnly)
-        job->fetcher->stat(job->socket, job->request.segment, group);
+        job->fetcher->stat(job->socket, job->request.segment, groups);
     else
-        job->fetcher->fetch(job->socket, job->request.segment, job->writer.get(), group);
+        job->fetcher->fetch(job->socket, job->request.segment, job->writer.get(), groups);
 }
 
 void UsenetWorker::finishJob(Job* job, NntpError error, const QString& text)

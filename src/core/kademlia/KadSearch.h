@@ -112,6 +112,11 @@ public:
     /// case there is nothing worth publishing.
     [[nodiscard]] static std::vector<Tag> buildSourcePublishTags(const SourcePublishParams& params,
                                                                  bool& outCanPublish);
+    /// FT_BUDDYHASH text as stock clients write it: hex of the ID's four 32-bit
+    /// words, each low byte first (MFC md4str() over CUInt128's raw x86 memory).
+    [[nodiscard]] static QString buddyHashToTagString(const UInt128& buddyID);
+    /// Inverse: FT_BUDDYHASH text to the 16 big-endian ID bytes used as buddy ID.
+    [[nodiscard]] static bool buddyHashFromTagString(const QString& str, uint8* outBuddyID);
     [[nodiscard]] bool stopping() const { return m_stopping; }
     /// This search sent its action packet (search / store request) to that node, so a
     /// result from it is one we asked for.

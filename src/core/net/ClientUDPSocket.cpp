@@ -204,7 +204,7 @@ SocketSentBytes ClientUDPSocket::sendControlData(uint32 maxNumberOfBytesToSend, 
         if (pack.encrypt) {
             const Address publicIP = pack.destination.address().isIPv6()
                 ? theApp.publicIPv6()
-                : Address::fromHostOrder(theApp.publicIP());
+                : Address::fromNetworkOrder(theApp.publicIP());
             uint32 cryptOverhead = static_cast<uint32>(
                 EncryptedDatagramSocket::encryptOverheadSize(pack.kad));
 

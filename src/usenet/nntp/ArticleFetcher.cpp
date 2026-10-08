@@ -17,11 +17,11 @@ ArticleFetcher::ArticleFetcher(QObject* parent)
 ArticleFetcher::~ArticleFetcher() = default;
 
 void ArticleFetcher::fetch(NntpSocket* socket, const NzbSegment& segment,
-                           ArticleWriter* writer, const QString& group)
+                           ArticleWriter* writer, const QStringList& groups)
 {
     m_mode = Mode::Body;
     m_writer = writer;
-    if (!beginRun(socket, segment, group))
+    if (!beginRun(socket, segment, groups))
         return;
 
     // Checked after beginRun() cleared state but before anything is sent: a
@@ -36,11 +36,11 @@ void ArticleFetcher::fetch(NntpSocket* socket, const NzbSegment& segment,
 }
 
 void ArticleFetcher::stat(NntpSocket* socket, const NzbSegment& segment,
-                          const QString& group)
+                          const QStringList& groups)
 {
     m_mode = Mode::Stat;
     m_writer = nullptr;   // deliberately: a probe must not be able to write
-    if (!beginRun(socket, segment, group))
+    if (!beginRun(socket, segment, groups))
         return;
     startVerb();
 }
@@ -58,11 +58,12 @@ qint64 ArticleFetcher::pipelineLookahead(qint64 bytesPerSecond, qint64 bufferCap
 // ---------------------------------------------------------------------------
 
 bool ArticleFetcher::beginRun(NntpSocket* socket, const NzbSegment& segment,
-                              const QString& group)
+                              const QStringList& groups)
 {
     m_socket = socket;
     m_segment = segment;
-    m_group = group;
+    m_groups = groups;
+    m_groupIndex = 0;
     m_articleFileName.clear();
     m_declaredFileSize = 0;
     m_decodedBytes = 0;
@@ -91,16 +92,23 @@ void ArticleFetcher::startVerb()
     // GROUP once per connection and group, not per article: the round trip also
     // kept a follower's BODY from being pipelined. BODY by message-id does not
     // depend on the group, so a GROUP still in flight ahead of us is harmless.
-    if (!m_group.isEmpty() && m_socket->selectedGroup() != m_group) {
-        m_groupCommand = std::make_unique<GroupCommand>(m_group);
-        m_socket->setSelectedGroup(m_group);
-        m_socket->sendCommand(m_groupCommand.get());
+    // Any of the file's groups will do, so one already selected is kept.
+    if (!m_groups.isEmpty() && !m_groups.contains(m_socket->selectedGroup())) {
+        startGroup();
         return;
     }
     if (m_mode == Mode::Stat)
         startStat();
     else
         startBody();
+}
+
+void ArticleFetcher::startGroup()
+{
+    const QString& group = m_groups.at(m_groupIndex);
+    m_groupCommand = std::make_unique<GroupCommand>(group);
+    m_socket->setSelectedGroup(group);   // optimistic; undone on failure
+    m_socket->sendCommand(m_groupCommand.get());
 }
 
 void ArticleFetcher::startStat()
@@ -168,9 +176,19 @@ void ArticleFetcher::onCommandFinished(NntpCommand* command)
 {
     if (command == m_groupCommand.get()) {
         if (m_groupCommand->failed()) {
-            if (m_socket && m_socket->selectedGroup() == m_group)
+            if (m_socket && m_socket->selectedGroup() == m_groups.value(m_groupIndex))
                 m_socket->setSelectedGroup({});
-            finish(m_groupCommand->error(), m_groupCommand->errorText());
+            const NntpError error = m_groupCommand->error();
+            // This server does not carry that group; a cross-post has others.
+            if (error == NntpError::GroupNotFound && m_socket
+                && m_groupIndex + 1 < m_groups.size()) {
+                ++m_groupIndex;
+                // Still inside the old command's commandFinished: keep it alive.
+                const auto previous = std::move(m_groupCommand);
+                startGroup();
+                return;
+            }
+            finish(error, m_groupCommand->errorText());
             return;
         }
         if (m_mode == Mode::Stat)

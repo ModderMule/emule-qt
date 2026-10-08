@@ -84,6 +84,29 @@ public:
     void setConnectionLimit(int limit) { m_connectionLimit = limit; }
     [[nodiscard]] int refusedLogins() const { return m_refusedLogins; }
 
+    /// What MODE READER answers. Default "200".
+    void setModeReaderReply(QByteArray line) { m_modeReaderReply = std::move(line); }
+
+    /// What a correct AUTHINFO PASS answers. Default "281"; some servers say 250.
+    void setAuthAcceptedReply(QByteArray line) { m_authAcceptedReply = std::move(line); }
+
+    /// Answer "480" to GROUP/STAT/BODY on a connection that has not
+    /// authenticated — a server that asks lazily, or again.
+    void setRequireAuth(bool require) { m_requireAuth = require; }
+
+    /// Forget every login: with setRequireAuth(), the next command draws a 480.
+    void expireAuth() { m_authed.clear(); }
+
+    /// Accept AUTHINFO and go on answering 480 regardless.
+    void setAuthNeverSticks(bool on) { m_authNeverSticks = on; }
+
+    /// Answer BODY and STAT for @p messageId with @p line instead of 222/223 —
+    /// the refusals that are not 430: "423 ...", "451 removed", "503 ...".
+    void setArticleRefusal(const QString& messageId, QByteArray line)
+    {
+        m_articleRefusals.insert(normalizeId(messageId), std::move(line));
+    }
+
     void setCapabilities(QStringList caps) { m_capabilities = std::move(caps); }
 
     /// Make CAPABILITIES answer "500 command not recognized", as pre-RFC-3977
@@ -285,8 +308,15 @@ private:
         const QString verb = line.section(u' ', 0, 0).toUpper();
         const QString rest = line.section(u' ', 1).trimmed();
 
+        const bool article = verb == QLatin1String("GROUP") || verb == QLatin1String("STAT")
+                          || verb == QLatin1String("BODY");
+        if (article && m_requireAuth && (m_authNeverSticks || !m_authed.contains(sock))) {
+            writeLine(sock, QByteArrayLiteral("480 Authentication required"));
+            return;
+        }
+
         if (verb == QLatin1String("MODE")) {
-            writeLine(sock, QByteArrayLiteral("200 Reader mode, posting permitted"));
+            writeLine(sock, m_modeReaderReply);
         } else if (verb == QLatin1String("AUTHINFO")) {
             handleAuthinfo(sock, rest);
         } else if (verb == QLatin1String("CAPABILITIES")) {
@@ -326,7 +356,7 @@ private:
                 m_authed.insert(sock);
                 connect(sock, &QObject::destroyed, this, [this, sock] { m_authed.remove(sock); });
                 connect(sock, &QTcpSocket::disconnected, this, [this, sock] { m_authed.remove(sock); });
-                writeLine(sock, QByteArrayLiteral("281 Authentication accepted"));
+                writeLine(sock, m_authAcceptedReply);
             } else
                 writeLine(sock, QByteArrayLiteral("481 Authentication failed"));
             return;
@@ -372,6 +402,12 @@ private:
             return;
         }
 
+        if (const auto refusal = m_articleRefusals.constFind(key);
+            refusal != m_articleRefusals.cend()) {
+            writeLine(sock, *refusal);
+            return;
+        }
+
         if (m_statRefusals.contains(key) || !m_articles.contains(key)) {
             writeLine(sock, QByteArrayLiteral("430 No article with that message-id"));
             return;
@@ -387,6 +423,12 @@ private:
             drop != m_dropArticles.end() && drop.value() > 0) {
             drop.value() -= 1;
             sock->abort();
+            return;
+        }
+
+        if (const auto refusal = m_articleRefusals.constFind(key);
+            refusal != m_articleRefusals.cend()) {
+            writeLine(sock, *refusal);
             return;
         }
 
@@ -463,6 +505,11 @@ private:
     bool m_mute = false;
     bool m_tls = false;
     bool m_rejectAuth = false;
+    bool m_requireAuth = false;
+    bool m_authNeverSticks = false;
+    QByteArray m_modeReaderReply = QByteArrayLiteral("200 Reader mode, posting permitted");
+    QByteArray m_authAcceptedReply = QByteArrayLiteral("281 Authentication accepted");
+    QHash<QString, QByteArray> m_articleRefusals;
     int m_connectionLimit = 0;
     int m_refusedLogins = 0;
     QSet<QTcpSocket*> m_authed;

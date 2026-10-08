@@ -1313,6 +1313,8 @@ void PartFile::pauseFile(bool insufficient)
     }
     m_lastSearchTimeKad = 0;
     m_lastSearchTimeServer = 0;
+    if (theApp.downloadQueue)
+        theApp.downloadQueue->removeLocalServerRequest(this);
 
     m_datarate = 0;
 
@@ -2307,6 +2309,9 @@ void PartFile::completeFile(bool alreadyVerified)
         return;
     m_completionRunning = true;
 
+    if (theApp.downloadQueue)
+        theApp.downloadQueue->removeLocalServerRequest(this);
+
     setStatus(PartFileStatus::Completing);
 
     // MFC PartFile.cpp:2975
@@ -2542,17 +2547,19 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
     if (counter == 3 && thePrefs.useSaveLoadSources())
         m_sourceSaver.process(this);
 
-    // -- Server TCP source request (MFC PartFile.cpp:2347-2362) --
-    if (theApp.serverConnect && theApp.serverConnect->isConnected()
+    // -- Server TCP source request (MFC PartFile.cpp:2383-2389) --
+    // Only queued here. DownloadQueue sends up to 15 per TCP frame and then waits,
+    // so a long download list cannot burn through the server's request credits.
+    if (!m_localSrcReqQueued && theApp.downloadQueue
+        && (m_lastSearchTimeServer == 0 || curTick >= m_lastSearchTimeServer + SERVERREASKTIME)
+        && theApp.serverConnect && theApp.serverConnect->isConnected()
+        && static_cast<int>(maxSourcePerFileSoft()) > sourceCount()
         && !m_stopped
-        && sourceCount() < static_cast<int>(thePrefs.maxSourcesPerFile())
-        && curTick >= m_lastSearchTimeServer)
+        && (!isLargeFile() || (theApp.serverConnect->currentServer()
+                               && theApp.serverConnect->currentServer()->supportsLargeFilesTCP())))
     {
-        m_lastSearchTimeServer = curTick + SERVERREASKTIME;
-
-        const bool obfu = theApp.serverConnect->currentServer()
-                          && theApp.serverConnect->currentServer()->supportsGetSourcesObfuscation();
-        theApp.serverConnect->sendPacket(createServerSourceRequestPacket(obfu));
+        m_localSrcReqQueued = true;
+        theApp.downloadQueue->sendLocalSrcRequest(this);
     }
 
     // -- Kad source search (MFC PartFile.cpp:2363-2380) --

@@ -134,11 +134,11 @@ DecryptResult EncryptedDatagramSocket::decryptReceivedClient(
                     md5.calculate(keyData, sizeof keyData);
                 } else {
                     // IPv4: MD5(<UserHash 16><IP 4><Magic 1><RandomKey 2>) = 23 bytes.
-                    // toUint32() reproduces the exact host-order value the old uint32 path
-                    // passed (from QHostAddress::toIPv4Address()), so IPv4 keys are unchanged.
+                    // The IP goes in as on the wire (a.b.c.d): MFC pokes sin_addr.s_addr
+                    // (EncryptedDatagramSocket.cpp:211).
                     uint8 keyData[23];
                     md4cpy(keyData, userHash);
-                    pokeUInt32(&keyData[16], senderIP.toUint32());
+                    pokeUInt32(&keyData[16], senderIP.toNetworkUint32());
                     keyData[20] = kMagicValueUDP;
                     pokeUInt16(&keyData[21], randomKeyPart);
                     md5.calculate(keyData, sizeof keyData);
@@ -245,11 +245,11 @@ uint32 EncryptedDatagramSocket::encryptSendClient(
         pokeUInt16(&keyData[33], randomKeyPart);
         md5.calculate(keyData, sizeof keyData);
     } else {
-        // IPv4: 23-byte key. toUint32() reproduces the exact host-order value the old
-        // uint32 publicIP path passed, so IPv4 obfuscation is byte-for-byte unchanged.
+        // IPv4: 23-byte key, our public IP as on the wire (a.b.c.d) — the same bytes
+        // the receiver takes from the datagram's source address.
         uint8 keyData[23];
         md4cpy(keyData, clientHashOrKadID);
-        pokeUInt32(&keyData[16], publicIP.toUint32());
+        pokeUInt32(&keyData[16], publicIP.toNetworkUint32());
         keyData[20] = kMagicValueUDP;
         pokeUInt16(&keyData[21], randomKeyPart);
         md5.calculate(keyData, sizeof keyData);

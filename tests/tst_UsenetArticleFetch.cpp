@@ -114,6 +114,8 @@ private slots:
     void pipelinedBodiesBackToBackDecode_data();
     void pipelinedBodiesBackToBackDecode();
     void groupIsSentOncePerConnectionAndGroup();
+    void aLaterGroupIsTriedWhenTheFirstIsUnknown();
+    void aBodyRefusalEscalatesAndKeepsTheConnection();
     void writersSharingAHandleKeepTheirOwnOffsets();
     void theCacheRecreatesADeletedDirectory();
 };
@@ -286,7 +288,7 @@ void tst_UsenetArticleFetch::groupIsSentOncePerConnectionAndGroup()
         segment.number = part;
         ArticleFetcher fetcher;
         QSignalSpy done(&fetcher, &ArticleFetcher::finished);
-        fetcher.fetch(&socket, segment, &writer, group);
+        fetcher.fetch(&socket, segment, &writer, QStringList{group});
         return done.wait(5000) && done.first().at(0).value<NntpError>() == NntpError::None;
     };
     const auto groupsSent = [&] {
@@ -298,6 +300,123 @@ void tst_UsenetArticleFetch::groupIsSentOncePerConnectionAndGroup()
     QCOMPARE(groupsSent(), 1);
     QVERIFY(fetch(3, QStringLiteral("alt.binaries.b")));
     QCOMPARE(groupsSent(), 2);
+}
+
+void tst_UsenetArticleFetch::aLaterGroupIsTriedWhenTheFirstIsUnknown()
+{
+    // A cross-post lists several groups and a server need not carry the first.
+    // NZBGet walks them until one is accepted; asking only the first made the
+    // article "missing" on a server that has it.
+    const QByteArray whole = payload(kPartSize * 2);
+    FakeNntpServer server;
+    server.addGroup(QStringLiteral("alt.binaries.carried"), 2, 1, 2);
+    for (int part = 1; part <= 2; ++part)
+        server.addArticle(messageIdFor(part), makeArticle(whole, part, 2, QStringLiteral("x.bin")));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NewsServer config;
+    config.host = QStringLiteral("127.0.0.1");
+    config.port = port;
+    config.tlsMode = TlsMode::None;
+    config.user = QStringLiteral("testuser");
+    config.pass = QStringLiteral("testpass");
+
+    NntpSocket socket;
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+    socket.connectToServer(config);
+    QVERIFY(ready.wait(5000));
+
+    QTemporaryDir dir;
+    ArticleWriter writer;
+    QString error;
+    QVERIFY2(writer.open(dir.filePath(QStringLiteral("x.bin")), error), qPrintable(error));
+
+    const auto fetch = [&](int part, const QStringList& groups) {
+        NzbSegment segment;
+        segment.messageId = messageIdFor(part);
+        segment.number = part;
+        ArticleFetcher fetcher;
+        QSignalSpy done(&fetcher, &ArticleFetcher::finished);
+        fetcher.fetch(&socket, segment, &writer, groups);
+        return done.wait(5000) ? done.first().at(0).value<NntpError>() : NntpError::Timeout;
+    };
+    const auto groupCommands = [&] {
+        return server.receivedCommands().filter(QStringLiteral("GROUP "));
+    };
+
+    const QStringList crossPost{QStringLiteral("alt.binaries.nope"),
+                                QStringLiteral("alt.binaries.carried"),
+                                QStringLiteral("alt.binaries.never-asked")};
+    QCOMPARE(fetch(1, crossPost), NntpError::None);
+    QCOMPARE(groupCommands(), (QStringList{QStringLiteral("GROUP alt.binaries.nope"),
+                                           QStringLiteral("GROUP alt.binaries.carried")}));
+    QCOMPARE(socket.selectedGroup(), QStringLiteral("alt.binaries.carried"));
+
+    // The group now selected is one of the file's: no GROUP at all.
+    QCOMPARE(fetch(2, crossPost), NntpError::None);
+    QCOMPARE(groupCommands().size(), 2);
+
+    // None carried: every one asked, then GroupNotFound on a live connection.
+    QCOMPARE(fetch(1, {QStringLiteral("alt.binaries.a"), QStringLiteral("alt.binaries.b")}),
+             NntpError::GroupNotFound);
+    QCOMPARE(groupCommands().size(), 4);
+    QVERIFY(socket.isReady());
+    QVERIFY(socket.selectedGroup().isEmpty());
+}
+
+void tst_UsenetArticleFetch::aBodyRefusalEscalatesAndKeepsTheConnection()
+{
+    // 451 is how a takedown reads on several providers, 423 how a few say
+    // "expired". Both used to be protocol errors: the connection was dropped
+    // and the account backed off over an article that is simply not there.
+    const QByteArray whole = payload(kPartSize * 3);
+    FakeNntpServer server;
+    for (int part = 1; part <= 3; ++part)
+        server.addArticle(messageIdFor(part), makeArticle(whole, part, 3, QStringLiteral("x.bin")));
+    server.setArticleRefusal(messageIdFor(1), QByteArrayLiteral("451 Article removed (DMCA)"));
+    server.setArticleRefusal(messageIdFor(2), QByteArrayLiteral("423 No such article number"));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NewsServer config;
+    config.host = QStringLiteral("127.0.0.1");
+    config.port = port;
+    config.tlsMode = TlsMode::None;
+    config.user = QStringLiteral("testuser");
+    config.pass = QStringLiteral("testpass");
+
+    NntpSocket socket;
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+    QSignalSpy failed(&socket, &NntpSocket::failed);
+    socket.connectToServer(config);
+    QVERIFY(ready.wait(5000));
+
+    QTemporaryDir dir;
+    ArticleWriter writer;
+    QString error;
+    QVERIFY2(writer.open(dir.filePath(QStringLiteral("x.bin")), error), qPrintable(error));
+
+    for (int part = 1; part <= 3; ++part) {
+        NzbSegment segment;
+        segment.messageId = messageIdFor(part);
+        segment.number = part;
+        ArticleFetcher fetcher;
+        QSignalSpy done(&fetcher, &ArticleFetcher::finished);
+        fetcher.fetch(&socket, segment, &writer);
+        QVERIFY(done.wait(5000));
+        const auto result = done.first().at(0).value<NntpError>();
+        if (part == 3) {
+            QCOMPARE(result, NntpError::None);   // same connection, still in sync
+            continue;
+        }
+        QCOMPARE(result, NntpError::ArticleNotFound);
+        QVERIFY(escalatesToNextLevel(result));
+        QVERIFY(!isFatalToConnection(result));
+        QVERIFY(socket.isReady());
+    }
+    QCOMPARE(failed.count(), 0);
+    QCOMPARE(server.connectionCount(), 1);
 }
 
 void tst_UsenetArticleFetch::writersSharingAHandleKeepTheirOwnOffsets()

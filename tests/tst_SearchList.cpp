@@ -83,6 +83,7 @@ private slots:
     void newSearch_initializesCounters();
     void addToList_newParent();
     void addToList_duplicate_merges();
+    void addToList_parentCountIsSumOfChildren();
     void addToList_duplicate_sameName_merges();
     void addToList_aichRoots_data();
     void addToList_aichRoots();
@@ -304,6 +305,49 @@ void tst_SearchList::addToList_newNameChildCountsItsSources()
     }
 
     QCOMPARE(list.foundSources(id), uint32{8});
+}
+
+// The parent is recomputed from its children on every merge: eD2K sums them. Adding
+// to the parent's running count instead counted earlier answers again each time
+// (5, 3, 4 gave 21). MFC SearchList.cpp:541-592.
+void tst_SearchList::addToList_parentCountIsSumOfChildren()
+{
+    SearchList list;
+    SearchParams params;
+    const uint32 id = list.newSearch({}, params);
+
+    uint8 hash[16];
+    std::memset(hash, 0xA9, 16);
+
+    const auto answer = [&](const QString& name, uint32 sources, uint32 serverIP) {
+        const QByteArray packet = buildSingleResultPacket(hash, name, 10000, sources);
+        SafeMemFile data(packet);
+        auto* file = new SearchFile(data, true, serverIP, 4661);
+        file->setSearchID(id);
+        list.addToList(file);
+    };
+
+    answer(QStringLiteral("a.avi"), 5, 0xC0A80001);
+    SearchFile* parent = list.searchFileByHash(hash, id);
+    QVERIFY(parent != nullptr);
+    QCOMPARE(parent->sourceCount(), uint32{5});
+
+    // Same name from a second server, differing only in case: one child, 5 + 3.
+    answer(QStringLiteral("A.avi"), 3, 0xC0A80002);
+    QCOMPARE(parent->listChildCount(), uint32{1});
+    QCOMPARE(parent->sourceCount(), uint32{8});
+
+    // A second name: 8 + 4, and the parent keeps the better-known name.
+    answer(QStringLiteral("b.avi"), 4, 0xC0A80003);
+    QCOMPARE(parent->listChildCount(), uint32{2});
+    QCOMPARE(parent->sourceCount(), uint32{12});
+    QCOMPARE(parent->fileName(), QStringLiteral("a.avi"));
+
+    // Once the other name is the more available one, the parent takes it.
+    answer(QStringLiteral("b.avi"), 9, 0xC0A80004);
+    QCOMPARE(parent->sourceCount(), uint32{21});
+    QCOMPARE(parent->fileName(), QStringLiteral("b.avi"));
+    QCOMPARE(list.foundSources(id), uint32{21});
 }
 
 void tst_SearchList::addToList_duplicate_sameName_merges()

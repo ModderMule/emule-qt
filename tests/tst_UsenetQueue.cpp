@@ -247,6 +247,7 @@ private slots:
     void theNextArticleIsPipelinedOnTheSameConnection();
     void aPipelinedArticleOnADroppedConnectionIsRequeuedNotBlamed();
     void missingArticlesEscalateToTheNextLevel();
+    void aBodyRefusalOtherThan430IsAlsoJustMissing();
     void everyServerOnALevelIsAskedBeforeEscalating();
     void retentionSkipsAServerThatCannotHoldTheArticle();
     void aRetentionGuessNeverMakesAnArticleMissing();
@@ -815,6 +816,73 @@ void tst_UsenetQueue::aConnectionLimitBelowTheConfiguredOneStillDownloads()
     QFile f(QDir(thePrefs.incomingDir()).filePath(QStringLiteral("limit.bin")));
     QVERIFY(f.open(QIODevice::ReadOnly));
     QCOMPARE(f.readAll(), whole);
+
+    queue.stop();
+}
+
+void tst_UsenetQueue::aBodyRefusalOtherThan430IsAlsoJustMissing()
+{
+    // One article taken down on the main account ("451"), the rest fine. That
+    // reply used to be a protocol error: connection dropped, account backed off
+    // for the retry interval, a transport retry spent — and with no sibling on
+    // the level, the item failed after six. NZBGet asks the next server.
+    ScopedStatistics stats;
+    const QByteArray whole = payload(kPartSize * 4);
+
+    FakeNntpServer level0;          // has it all, but refuses article 2
+    FakeNntpServer level1;          // the fill server
+    for (int p = 1; p <= 4; ++p) {
+        const QByteArray article = makeArticle(whole, p, 4, QStringLiteral("dmca.bin"));
+        level0.addArticle(messageIdFor(p), article);
+        level1.addArticle(messageIdFor(p), article);
+    }
+    level0.setArticleRefusal(messageIdFor(2), QByteArrayLiteral("451 Article removed"));
+    const quint16 port0 = level0.start();
+    const quint16 port1 = level1.start();
+    QVERIFY(port0 != 0 && port1 != 0);
+
+    eMule::testing::TempDir tmp;
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setTempDirs({tmp.filePath(QStringLiteral("temp"))});
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+
+    NewsServer main = serverConfig(port0, 1);
+    main.name = QStringLiteral("main");
+    main.level = 0;
+
+    NewsServer fill = serverConfig(port1, 1);
+    fill.name = QStringLiteral("fill");
+    fill.level = 1;
+
+    UsenetQueue queue;
+    queue.applyServers({main, fill}, 60);   // a backoff would outlast the wait below
+    queue.start();
+
+    QSignalSpy finished(&queue, &UsenetQueue::itemFinished);
+    QString error;
+    QVERIFY(!queue.addNzb(makeNzb(QStringLiteral("dmca.bin"), 4),
+                          QStringLiteral("takedown"), error).isEmpty());
+    QVERIFY2(finished.wait(30000), "a 451 stalled the download");
+    QVERIFY2(finished.at(0).at(1).toBool(), "a 451 on one account failed the item");
+
+    QFile f(QDir(thePrefs.incomingDir()).filePath(QStringLiteral("dmca.bin")));
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    QCOMPARE(f.readAll(), whole);
+    f.close();
+
+    const auto bodies = [](const FakeNntpServer& server) {
+        return server.receivedCommands().filter(QStringLiteral("BODY ")).size();
+    };
+    // Asked once each on the main account, over the one connection it was
+    // allowed — never dropped — and only the refused article went to the fill.
+    QCOMPARE(bodies(level0), 4);
+    QCOMPARE(level0.connectionCount(), 1);
+    QCOMPARE(bodies(level1), 1);
+
+    QCOMPARE(stats->usenetSession().articlesNotFound, uint64(1));
+    QCOMPARE(stats->usenetSession().articlesMissing, uint64(0));
+    QCOMPARE(queue.stats().servers().value(main.accountId).articles, uint64(3));
+    QCOMPARE(queue.stats().servers().value(fill.accountId).articles, uint64(1));
 
     queue.stop();
 }

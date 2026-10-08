@@ -201,6 +201,13 @@ public:
     void sortByPriority();
     void process();
 
+    // Source requests to the connected server — MFC srchybrid/DownloadQueue.cpp:1279-1395.
+    // Files queue up here and go out a frame at a time from process().
+    void sendLocalSrcRequest(PartFile* file);
+    void removeLocalServerRequest(PartFile* file);
+    /// New server session: forget the old queue and let every file ask again.
+    void resetLocalServerRequests();
+
     /// Pause every download that cannot be written, and resume them when the
     /// volume has room again. Mirrors MFC's CDownloadQueue::CheckDiskspace
     /// (srchybrid/DownloadQueue.cpp:964).
@@ -389,6 +396,11 @@ private:
                                                            uint32 nIncludedLargeFiles) const;
     void stopUDPRequests();
 
+    void processLocalRequests();
+    /// The next frame: up to 15 OP_GETSOURCES packets back to back, longest-waiting
+    /// file first. Takes those files off the queue. Empty when nothing is due.
+    [[nodiscard]] QByteArray buildLocalRequestFrame(uint64 curTick);
+
     // EntityList hooks — emit the queue's signals + run side-effects on add/remove.
     void onEntityAdded(PartFile* file) override;
     void onEntityRemoved(PartFile* file) override;
@@ -410,6 +422,9 @@ private:
     uint32 m_udCounter = 0;
     uint64 m_lastKademliaFileRequest = 0;
     const PartFile* m_kadSearchTurn = nullptr;   // chosen per process() pass
+
+    std::vector<PartFile*> m_localServerReqQueue;   // non-owning
+    uint64 m_nextTcpSrcReq = 0;                     // m_dwNextTCPSrcReq
 
     // Global-UDP-source rotation cursors (port of CDownloadQueue members).
     Server*   m_curUdpServer = nullptr;       // cur_udpserver — current pass cursor (non-owning)

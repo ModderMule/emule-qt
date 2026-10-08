@@ -20,7 +20,8 @@
 ///     part places itself with no knowledge of any other part. That is why the
 ///     writer can write sparsely and why articles need no ordering.
 ///   - `pcrc32` verifies that part alone. The whole-file `crc32` on the last
-///     part is optional and often absent.
+///     part is optional and often absent. A single-part post has no `=ypart`
+///     and carries only `crc32`, which is then the article's checksum.
 ///   - Decoder state is per-article. Nothing carries across articles except an
 ///     escape `=` that straddles a socket read, which is why the escape flag
 ///     lives here and not in the caller.

@@ -55,11 +55,13 @@ public:
     /// connection lifetime belongs to the pool. @p writer must be open, and
     /// must outlive the finished() signal.
     ///
-    /// @p group is issued first when non-empty. Almost no provider needs it for
-    /// message-id access and it costs a round trip, so it is driven by
-    /// NewsServer::joinGroup rather than done unconditionally.
+    /// One of @p groups is selected first when non-empty. Almost no provider
+    /// needs it for message-id access and it costs a round trip, so it is driven
+    /// by NewsServer::joinGroup rather than done unconditionally. They are tried
+    /// in order until the server knows one (NZBGet does the same): a cross-post
+    /// is not missing because this server does not carry the first group.
     void fetch(NntpSocket* socket, const NzbSegment& segment,
-               ArticleWriter* writer, const QString& group = {});
+               ArticleWriter* writer, const QStringList& groups = {});
 
     /// Ask whether @p segment exists on @p socket's server, transferring no
     /// payload. Reports through the same finished() signal, so a caller that
@@ -70,9 +72,9 @@ public:
     /// same way for both, meaning *every rung refused it* rather than *the first
     /// one did*.
     ///
-    /// @p group is honoured for the same reason fetch() honours it: a server
+    /// @p groups is honoured for the same reason fetch() honours it: a server
     /// that demands a selected group for BODY will demand one for STAT.
-    void stat(NntpSocket* socket, const NzbSegment& segment, const QString& group = {});
+    void stat(NntpSocket* socket, const NzbSegment& segment, const QStringList& groups = {});
 
     /// Where fetch() publishes the body bytes read so far. Kept across runs.
     void setProgressSink(ArticleProgress sink) { m_progress = std::move(sink); }
@@ -123,8 +125,9 @@ private:
     enum class Mode { Body, Stat };
 
     void onCommandFinished(NntpCommand* command);
-    bool beginRun(NntpSocket* socket, const NzbSegment& segment, const QString& group);
+    bool beginRun(NntpSocket* socket, const NzbSegment& segment, const QStringList& groups);
     void startVerb();
+    void startGroup();
     void startBody();
     void startStat();
     void onBodyProgress();
@@ -134,7 +137,8 @@ private:
     ArticleWriter* m_writer = nullptr;
     NzbSegment m_segment;
     ArticleProgress m_progress;
-    QString m_group;
+    QStringList m_groups;
+    int m_groupIndex = 0;   ///< which of m_groups the GROUP in flight names
     Mode m_mode = Mode::Body;
 
     std::unique_ptr<GroupCommand> m_groupCommand;

@@ -637,6 +637,10 @@ void CoreSession::initServerConnect()
     connect(m_serverConnect.get(), &ServerConnect::connectedToServer, this, [](Server*) {
         if (theApp.searchList)
             theApp.searchList->queue().onServerConnected();
+        // A new server knows other sources: every download asks it, whatever the
+        // old one was asked and when (MFC srchybrid/ServerSocket.cpp:353).
+        if (theApp.downloadQueue)
+            theApp.downloadQueue->resetLocalServerRequests();
     });
 
     // Losing the server connection ends a running global search, as in MFC

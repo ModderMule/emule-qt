@@ -28,6 +28,8 @@
 #include "protocol/Tag.h"
 #include "utils/OtherFunctions.h"
 
+#include <QtEndian>
+
 
 namespace eMule::kad {
 
@@ -261,7 +263,7 @@ std::vector<Tag> Search::buildSourcePublishTags(const SourcePublishParams& p, bo
         tags.emplace_back(FT_SOURCETYPE, static_cast<uint32>(p.largeFile ? 5 : 3));
         tags.emplace_back(FT_SERVERIP, p.buddyIP);
         tags.emplace_back(FT_SERVERPORT, static_cast<uint32>(p.buddyUDPPort));
-        tags.emplace_back(FT_BUDDYHASH, p.buddyHash.toHexString());
+        tags.emplace_back(FT_BUDDYHASH, buddyHashToTagString(p.buddyHash));
         addCommonPortAndSize();
     } else if (p.firewalled) {
         // Firewalled with neither a direct callback nor a buddy — a published
@@ -290,6 +292,25 @@ std::vector<Tag> Search::buildSourcePublishTags(const SourcePublishParams& p, bo
     appendHttpCacheChunkTags(tags, p.httpCacheChunks);
 
     return tags;
+}
+
+QString Search::buddyHashToTagString(const UInt128& buddyID)
+{
+    uint8 raw[16];
+    for (int i = 0; i < 4; ++i)
+        qToLittleEndian<uint32>(buddyID.get32BitChunk(i), raw + i * 4);
+    return md4str(raw);
+}
+
+bool Search::buddyHashFromTagString(const QString& str, uint8* outBuddyID)
+{
+    uint8 raw[16];
+    if (!strmd4(str, raw))
+        return false;
+    // MFC copies the text into CUInt128 memory, then ToByteArray() (DownloadQueue.cpp:1578)
+    for (int i = 0; i < 4; ++i)
+        qToBigEndian<uint32>(qFromLittleEndian<uint32>(raw + i * 4), outBuddyID + i * 4);
+    return true;
 }
 
 void Search::appendHttpCacheChunkTags(std::vector<Tag>& tags,
@@ -716,7 +737,7 @@ void Search::processResultFile(const UInt128& answer, TagList& info)
     bool hasBuddyHash = false;
     for (const auto& tag : info) {
         if (tag.isStr() && tag.nameId() == FT_BUDDYHASH) {
-            if (strmd4(tag.strValue(), parsedBuddyHash))
+            if (buddyHashFromTagString(tag.strValue(), parsedBuddyHash))
                 hasBuddyHash = true;
             break;
         }

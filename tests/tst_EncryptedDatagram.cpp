@@ -8,6 +8,7 @@
 #include "utils/Opcodes.h"
 
 #include <QByteArray>
+#include <QHostAddress>
 #include <QTest>
 
 #include <array>
@@ -21,6 +22,7 @@ class tst_EncryptedDatagram : public QObject {
 
 private slots:
     void clientED2K_encryptDecryptRoundtrip();
+    void clientED2K_keyUsesWireOrderIP();
     void clientED2K_IPv6_encryptDecryptRoundtrip();
     void clientKadNodeID_encryptDecryptRoundtrip();
     void clientKadRecvKey_encryptDecryptRoundtrip();
@@ -34,6 +36,47 @@ private slots:
 // ---------------------------------------------------------------------------
 // Client ED2K encrypt → decrypt roundtrip
 // ---------------------------------------------------------------------------
+
+// ASYMMETRIC: the frame is built here the way MFC builds it
+// (EncryptedDatagramSocket.cpp:316-322, IP = s_addr, so bytes a.b.c.d), and decrypted
+// with the sender address as the socket reports it. A reversed IP in the key — which a
+// roundtrip through the same helper on both sides cannot see — fails the sync check.
+void tst_EncryptedDatagram::clientED2K_keyUsesWireOrderIP()
+{
+    std::array<uint8, 16> userHash{};
+    for (std::size_t i = 0; i < 16; ++i)
+        userHash[i] = static_cast<uint8>(0xA0 + i);
+
+    const char payload[] = "reask";
+    const uint32 payloadLen = 5;
+    const uint16 randomKeyPart = 0x1234;
+
+    uint8 keyData[23];
+    md4cpy(keyData, userHash.data());
+    const uint8 wireIP[4] = {1, 2, 3, 4};   // 1.2.3.4, not a palindrome
+    std::memcpy(&keyData[16], wireIP, 4);
+    keyData[20] = 91;                       // MAGICVALUE_UDP
+    pokeUInt16(&keyData[21], randomKeyPart);
+    MD5Hasher md5(keyData, sizeof keyData);
+    RC4Key key = rc4CreateKey({md5.getRawHash(), 16}, true);
+
+    std::vector<uint8> buf(3 + 4 + 1 + payloadLen);
+    buf[0] = 0x05;                          // eD2K marker bit set, not a protocol header
+    pokeUInt16(&buf[1], randomKeyPart);
+    pokeUInt32(&buf[3], 0x395F2EC1u);       // MAGICVALUE_UDP_SYNC_CLIENT
+    buf[7] = 0;
+    std::memcpy(&buf[8], payload, payloadLen);
+    rc4Crypt(&buf[3], 4 + 1 + payloadLen, key);
+
+    DecryptResult result = EncryptedDatagramSocket::decryptReceivedClient(
+        buf.data(), static_cast<int>(buf.size()),
+        Address::fromQHostAddress(QHostAddress(QStringLiteral("1.2.3.4"))),
+        userHash.data(), nullptr, 0);
+
+    QCOMPARE(result.length, static_cast<int>(payloadLen));
+    QVERIFY(result.data != nullptr);
+    QVERIFY(std::memcmp(result.data, payload, payloadLen) == 0);
+}
 
 void tst_EncryptedDatagram::clientED2K_encryptDecryptRoundtrip()
 {

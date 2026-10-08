@@ -649,8 +649,9 @@ std::unique_ptr<SearchTerm> KademliaUDPListener::createSearchExpressionTree(Safe
         QString str = kadTagStrToLower(io::readStringUTF8(io));
         // Pre-tokenize: a string term carries several words ("aaa bbb ccc") and
         // is matched as "aaa AND bbb AND ccc". Storing it unsplit meant a
-        // multi-word term could never match. MFC KademliaUDPListener.cpp:977-978.
-        getWords(str, term->strings);
+        // multi-word term could never match. Not getWords(): that drops short
+        // words, so a term like "2" matched nothing. MFC KademliaUDPListener.cpp:979.
+        tokenizeOptQuotedSearchTerm(str, term->strings);
         break;
     }
     case 0x02: { // MetaTag (string)
@@ -1311,13 +1312,14 @@ void KademliaUDPListener::process_KADEMLIA2_SEARCH_SOURCE_REQ(const uint8* data,
                                                                 uint32 ip, uint16 udpPort,
                                                                 const KadUDPKey& senderKey)
 {
-    if (len < 32) // 16 (fileID) + 16 (some minimum)
+    // fileID 16 + startPos 2 + size 8 (MFC KademliaUDPListener.cpp:1093-1101)
+    if (len < 26)
         return;
 
     SafeMemFile io(data, len);
     UInt128 target = io::readUInt128(io);
-    uint16 startPos = (io.position() + 2 <= io.length()) ? io.readUInt16() : 0;
-    uint64 fileSize = (io.position() + 8 <= io.length()) ? io.readUInt64() : 0;
+    uint16 startPos = io.readUInt16() & 0x7FFF;
+    uint64 fileSize = io.readUInt64();
 
     // Serve source results from local index
     if (auto* indexed = Kademlia::getInstanceIndexed())
@@ -1604,12 +1606,13 @@ void KademliaUDPListener::process_KADEMLIA2_SEARCH_NOTES_REQ(const uint8* data, 
                                                                uint32 ip, uint16 udpPort,
                                                                const KadUDPKey& senderKey)
 {
-    if (len < 32)
+    // fileID 16 + size 8 (MFC KademliaUDPListener.cpp:1457-1464)
+    if (len < 24)
         return;
 
     SafeMemFile io(data, len);
     UInt128 target = io::readUInt128(io);
-    uint64 fileSize = (io.position() + 8 <= io.length()) ? io.readUInt64() : 0;
+    uint64 fileSize = io.readUInt64();
 
     // Serve note results from local index
     if (auto* indexed = Kademlia::getInstanceIndexed())

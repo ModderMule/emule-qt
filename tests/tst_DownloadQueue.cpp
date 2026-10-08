@@ -135,6 +135,10 @@ private slots:
     void sourceIndex_keepsADuplicateTestOffTheFullScan();
     void checkAndAddKnownSource_addsAPassiveSource();
     void checkAndAddKnownSource_a4afWhenItAlreadySourcesAnotherFile();
+    void checkAndAddKnownSource_swapsOnlyAnIdleDueSource();
+    void localSrcRequests_goOutFifteenToAFrame();
+    void localSrcRequests_orderAndDropouts();
+    void localSrcRequests_resetOnNewServerSession();
     void addServerSources_dropsLowIdWhenFirewalled();
     void addServerSources_dropsIpFilteredHighId();
     void addServerSources_dropsBannedHighId();
@@ -2284,6 +2288,212 @@ void tst_DownloadQueue::checkAndAddKnownSource_a4afWhenItAlreadySourcesAnotherFi
 
     client.removeFileFromOtherLists(fileB);
     dq.removeSource(&client);   // also clears its reqFile, which outlives the file
+    dq.deleteAll();
+}
+
+// ---------------------------------------------------------------------------
+// Source requests to the connected server — MFC DownloadQueue.cpp:1279-1395
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The file hashes of a frame of back-to-back OP_GETSOURCES packets, in order.
+/// Empty if the frame is not exactly that.
+std::vector<QByteArray> hashesInSourceRequestFrame(const QByteArray& frame)
+{
+    std::vector<QByteArray> hashes;
+    qsizetype pos = 0;
+    while (pos + 6 <= frame.size()) {
+        uint32 len = 0;   // opcode + payload
+        std::memcpy(&len, frame.constData() + pos + 1, 4);
+        if (uint8(frame[pos]) != OP_EDONKEYPROT || uint8(frame[pos + 5]) != OP_GETSOURCES
+            || len != 1 + 20 || pos + 5 + len > frame.size())
+            return {};
+        hashes.push_back(frame.mid(pos + 6, 16));
+        pos += 5 + len;
+    }
+    return pos == frame.size() ? hashes : std::vector<QByteArray>{};
+}
+
+} // namespace
+
+// Each download used to send its own OP_GETSOURCES from PartFile::process(): N files,
+// N packets in one tick after login, which is what a server's request credits are
+// there to punish. Now they queue, 15 to a frame, the rest after the frame interval.
+void tst_DownloadQueue::localSrcRequests_goOutFifteenToAFrame()
+{
+    DownloadQueue dq;
+
+    std::vector<PartFile*> files;
+    for (uint8 i = 0; i < 20; ++i) {
+        const uint8 hash[16] = {70, i, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+        auto* pf = createTestPartFile(hash, QStringLiteral("src-req-%1.bin").arg(i));
+        pf->setStatus(PartFileStatus::Empty);
+        dq.addDownload(pf);
+        pf->setLocalSrcReqQueued(true);
+        dq.sendLocalSrcRequest(pf);
+        dq.sendLocalSrcRequest(pf);   // queued once, however often it asks
+        files.push_back(pf);
+    }
+    QCOMPARE(dq.m_localServerReqQueue.size(), std::size_t{20});
+
+    const QByteArray first = dq.buildLocalRequestFrame(1000);
+    QCOMPARE(hashesInSourceRequestFrame(first).size(), std::size_t{15});
+    QCOMPARE(dq.m_localServerReqQueue.size(), std::size_t{5});
+
+    const QByteArray second = dq.buildLocalRequestFrame(2000);
+    QCOMPARE(hashesInSourceRequestFrame(second).size(), std::size_t{5});
+    QVERIFY(dq.m_localServerReqQueue.empty());
+    QVERIFY(dq.buildLocalRequestFrame(3000).isEmpty());
+
+    // Every file was asked for exactly once, and knows when.
+    int stampedFirst = 0;
+    for (const PartFile* pf : files) {
+        QVERIFY(!pf->isLocalSrcReqQueued());
+        QVERIFY(pf->lastSearchTimeServer() == 1000 || pf->lastSearchTimeServer() == 2000);
+        stampedFirst += pf->lastSearchTimeServer() == 1000;
+    }
+    QCOMPARE(stampedFirst, 15);
+
+    dq.deleteAll();
+}
+
+// Longest-waiting first; among equals the higher download priority. A file that is no
+// longer downloadable drops out without being asked for.
+void tst_DownloadQueue::localSrcRequests_orderAndDropouts()
+{
+    DownloadQueue dq;
+    theApp.downloadQueue = &dq;   // pauseFile() unqueues through it
+    const auto unhook = qScopeGuard([] { theApp.downloadQueue = nullptr; });
+
+    const auto add = [&](uint8 id, uint8 priority, uint64 lastAsked) {
+        const uint8 hash[16] = {71, id, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+        auto* pf = createTestPartFile(hash, QStringLiteral("src-order-%1.bin").arg(id), priority);
+        pf->setStatus(PartFileStatus::Empty);
+        dq.addDownload(pf);
+        pf->setLastSearchTimeServer(lastAsked);
+        pf->setLocalSrcReqQueued(true);
+        dq.sendLocalSrcRequest(pf);
+        return pf;
+    };
+
+    PartFile* recent     = add(1, kPrHigh, 5000);
+    PartFile* oldLow     = add(2, kPrLow, 100);
+    PartFile* oldHigh    = add(3, kPrHigh, 100);
+    PartFile* neverAsked = add(4, kPrLow, 0);
+    PartFile* paused     = add(5, kPrHigh, 0);
+    PartFile* removed    = add(6, kPrHigh, 0);
+
+    // Pausing takes the file off the queue; so does removing it (it is freed next).
+    paused->pauseFile();
+    QVERIFY(!paused->isLocalSrcReqQueued());
+    dq.removeLocalServerRequest(removed);
+    QVERIFY(!removed->isLocalSrcReqQueued());
+    QCOMPARE(dq.m_localServerReqQueue.size(), std::size_t{4});
+
+    const auto hashes = hashesInSourceRequestFrame(dq.buildLocalRequestFrame(9000));
+    QCOMPARE(hashes.size(), std::size_t{4});
+    const auto hashOf = [](const PartFile* pf) {
+        return QByteArray(reinterpret_cast<const char*>(pf->fileHash()), 16);
+    };
+    QCOMPARE(hashes[0], hashOf(neverAsked));
+    QCOMPARE(hashes[1], hashOf(oldHigh));
+    QCOMPARE(hashes[2], hashOf(oldLow));
+    QCOMPARE(hashes[3], hashOf(recent));
+
+    // A file that stopped being downloadable while queued is dropped unasked.
+    recent->setLocalSrcReqQueued(true);
+    dq.sendLocalSrcRequest(recent);
+    recent->setStatus(PartFileStatus::Completing);
+    QVERIFY(dq.buildLocalRequestFrame(9500).isEmpty());
+    QVERIFY(!recent->isLocalSrcReqQueued());
+    QCOMPARE(recent->lastSearchTimeServer(), uint64{9000});
+    recent->setStatus(PartFileStatus::Empty);
+
+    dq.deleteAll();
+}
+
+// A new server session starts from scratch: whatever was queued for the old server is
+// forgotten and every running download may ask at once — the old server's 15 minutes
+// say nothing about this one (MFC ServerSocket.cpp:353).
+void tst_DownloadQueue::localSrcRequests_resetOnNewServerSession()
+{
+    DownloadQueue dq;
+
+    const uint8 hashA[16] = {72, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    const uint8 hashB[16] = {72, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    auto* queued = createTestPartFile(hashA, QStringLiteral("src-reset-a.bin"));
+    auto* asked  = createTestPartFile(hashB, QStringLiteral("src-reset-b.bin"));
+    for (auto* pf : {queued, asked}) {
+        pf->setStatus(PartFileStatus::Empty);
+        dq.addDownload(pf);
+    }
+    queued->setLocalSrcReqQueued(true);
+    dq.sendLocalSrcRequest(queued);
+    asked->setLastSearchTimeServer(123456);
+    dq.m_nextTcpSrcReq = UINT64_MAX;
+
+    dq.resetLocalServerRequests();
+
+    QVERIFY(dq.m_localServerReqQueue.empty());
+    QCOMPARE(dq.m_nextTcpSrcReq, uint64{0});
+    QVERIFY(!queued->isLocalSrcReqQueued());
+    QCOMPARE(asked->lastSearchTimeServer(), uint64{0});
+
+    dq.deleteAll();
+}
+
+// A second file naming a source we already have swaps it over only when it is idle
+// and due. The caller excludes Connected alone; the rest is SwapToAnotherFile's own
+// gate (MFC DownloadClient.cpp:1552-1578). Without it a source in the middle of a
+// transfer was moved to the other file, state still Downloading, no cancel sent.
+void tst_DownloadQueue::checkAndAddKnownSource_swapsOnlyAnIdleDueSource()
+{
+    DownloadQueue dq;
+
+    uint8 hashA[16] = {40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    uint8 hashB[16] = {41, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    auto* fileA = createTestPartFile(hashA, QStringLiteral("swap-a.bin"));
+    auto* fileB = createTestPartFile(hashB, QStringLiteral("swap-b.bin"));
+    dq.addDownload(fileA);
+    dq.addDownload(fileB);
+
+    const auto makeSource = [&](UpDownClient& client, const char* ip) {
+        const Address addr = Address::fromString(QString::fromLatin1(ip));
+        client.setUserAddress(addr);
+        client.setUserIDHybrid(addr.toUint32());
+        client.setUserPort(4662);
+        QVERIFY(dq.checkAndAddKnownSource(fileA, &client, true));
+    };
+
+    UpDownClient downloading;
+    makeSource(downloading, "81.2.69.170");
+    downloading.setDownloadState(DownloadState::Downloading);
+    QVERIFY(!dq.checkAndAddKnownSource(fileB, &downloading, true));
+    QCOMPARE(downloading.reqFile(), fileA);
+    QCOMPARE(downloading.downloadState(), DownloadState::Downloading);
+
+    UpDownClient justAsked;
+    makeSource(justAsked, "81.2.69.171");
+    justAsked.setDownloadState(DownloadState::OnQueue);
+    justAsked.setLastAskedTime();
+    QVERIFY(!dq.checkAndAddKnownSource(fileB, &justAsked, true));
+    QCOMPARE(justAsked.reqFile(), fileA);
+
+    // Queued and never asked: free to go, and it arrives stateless.
+    UpDownClient idle;
+    makeSource(idle, "81.2.69.172");
+    idle.setDownloadState(DownloadState::OnQueue);
+    QVERIFY(!dq.checkAndAddKnownSource(fileB, &idle, true));
+    QCOMPARE(idle.reqFile(), fileB);
+    QCOMPARE(idle.downloadState(), DownloadState::None);
+
+    for (UpDownClient* client : {&downloading, &justAsked, &idle}) {
+        client->setDownloadState(DownloadState::None);
+        client->removeFileFromOtherLists(fileA);
+        client->removeFileFromOtherLists(fileB);
+        dq.removeSource(client);
+    }
     dq.deleteAll();
 }
 

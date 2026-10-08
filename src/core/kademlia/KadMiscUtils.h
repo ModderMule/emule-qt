@@ -28,6 +28,11 @@ QByteArray getKeywordBytes(const QString& keyword);
 /// Split a string into words using Kad keyword delimiter characters.
 void getWords(const QString& str, std::vector<QString>& outWords);
 
+/// Split a received search string term. Unlike getWords() every token is kept
+/// (no minimum length, no dedup) and a "quoted run" stays one token.
+/// MFC KademliaUDPListener.cpp TokenizeOptQuotedSearchTerm.
+void tokenizeOptQuotedSearchTerm(const QString& str, std::vector<QString>& outTokens);
+
 /// The keyword a Kad search for @p expression will be indexed under: the first
 /// word of the lowercased expression. Empty when the expression yields no usable
 /// word. Callers building the search-terms blob must use the same keyword the

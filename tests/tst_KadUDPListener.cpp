@@ -8,6 +8,8 @@
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
 #include "kademlia/Kademlia.h"
+#include "kademlia/KadEntry.h"
+#include "kademlia/KadIndexed.h"
 #include "kademlia/KadIO.h"
 #include "kademlia/KadNodeCensus.h"
 #include "kademlia/KadPrefs.h"
@@ -42,11 +44,16 @@ private slots:
     void firewalledAckRes_countsOnlyAskedNodesOnce();
     void firewalledReq_repeatedMakesOneClient();
 
+    // Search requests we serve
+    void searchSourceReq_minimalPacketIsServed();
+    void searchNotesReq_minimalPacketIsServed();
+
     // Statistics
     void helloReq_firewalledNodeIsSeenButNotAdded();
 
     // createSearchExpressionTree
     void searchExprTree_tokenizesStringTerm();
+    void searchExprTree_keepsShortAndQuotedTokens();
     void searchExprTree_metaTagIsLowercasedAndKeyed();
     void searchExprTree_rejectsRunawayNesting();
 };
@@ -190,6 +197,83 @@ void tst_KadUDPListener::firewalledReq_repeatedMakesOneClient()
     theApp.clientList = nullptr;
 }
 
+// A source request is exactly 26 bytes (MFC KademliaUDPListener.cpp:1093-1101). A
+// 32-byte floor dropped every one of them, so stored sources were never handed out.
+void tst_KadUDPListener::searchSourceReq_minimalPacketIsServed()
+{
+    eMule::testing::KadFixture kadFixture;
+    auto* indexed = Kademlia::getInstanceIndexed();
+    QTRY_VERIFY(indexed->isLoaded());
+
+    const UInt128 fileID(uint32{0x51C0FFEE});
+    auto* entry = new Entry();
+    entry->m_address = Address::fromHostOrder(0x4D0A0B0C);
+    entry->m_tcpPort = 4662;
+    entry->m_udpPort = 4672;
+    entry->addTag(Tag(uint8{FT_SOURCETYPE}, uint32{1}));
+    uint8 load = 0;
+    QVERIFY(indexed->addSources(fileID, UInt128(uint32{0x50}), entry, load));
+
+    int answers = 0;
+    QObject::connect(Kademlia::getInstanceUDPListener(), &KademliaUDPListener::packetToSend,
+                     this, [&answers](const QByteArray& data) {
+                         if (!data.isEmpty() && uint8(data[0]) == KADEMLIA2_SEARCH_RES)
+                             ++answers;
+                     });
+
+    SafeMemFile io;
+    io.writeUInt8(KADEMLIA2_SEARCH_SOURCE_REQ);
+    io::writeUInt128(io, fileID);
+    io.writeUInt16(0);
+    io.writeUInt64(0);
+    QCOMPARE(io.buffer().size(), qsizetype{27});   // opcode + 26
+
+    // One byte short: MFC's reader throws, we drop it.
+    deliver(io.buffer().left(26), kNodeIP);
+    QCOMPARE(answers, 0);
+
+    deliver(io.buffer(), kNodeIP);
+    QCOMPARE(answers, 1);
+
+    QObject::disconnect(Kademlia::getInstanceUDPListener(), nullptr, this, nullptr);
+}
+
+// A notes request is 24 bytes (MFC KademliaUDPListener.cpp:1457-1464).
+void tst_KadUDPListener::searchNotesReq_minimalPacketIsServed()
+{
+    eMule::testing::KadFixture kadFixture;
+    auto* indexed = Kademlia::getInstanceIndexed();
+    QTRY_VERIFY(indexed->isLoaded());
+
+    const UInt128 fileID(uint32{0x0707E5});
+    auto* entry = new Entry();
+    entry->m_address = Address::fromHostOrder(0x4D0A0B0C);
+    entry->addTag(Tag(QByteArrayLiteral("comment"), QStringLiteral("Great file!")));
+    uint8 load = 0;
+    QVERIFY(indexed->addNotes(fileID, UInt128(uint32{0x60}), entry, load));
+
+    int answers = 0;
+    QObject::connect(Kademlia::getInstanceUDPListener(), &KademliaUDPListener::packetToSend,
+                     this, [&answers](const QByteArray& data) {
+                         if (!data.isEmpty() && uint8(data[0]) == KADEMLIA2_SEARCH_RES)
+                             ++answers;
+                     });
+
+    SafeMemFile io;
+    io.writeUInt8(KADEMLIA2_SEARCH_NOTES_REQ);
+    io::writeUInt128(io, fileID);
+    io.writeUInt64(0);
+    QCOMPARE(io.buffer().size(), qsizetype{25});   // opcode + 24
+
+    deliver(io.buffer().left(24), kNodeIP);
+    QCOMPARE(answers, 0);
+
+    deliver(io.buffer(), kNodeIP);
+    QCOMPARE(answers, 1);
+
+    QObject::disconnect(Kademlia::getInstanceUDPListener(), nullptr, this, nullptr);
+}
+
 // A UDP-firewalled node never enters the routing table, but it did talk to us:
 // it belongs in the census and in the firewalled ratio.
 void tst_KadUDPListener::helloReq_firewalledNodeIsSeenButNotAdded()
@@ -298,6 +382,38 @@ void tst_KadUDPListener::searchExprTree_tokenizesStringTerm()
     QCOMPARE(term->strings[0], QStringLiteral("ubuntu"));
     QCOMPARE(term->strings[1], QStringLiteral("desktop"));
     QCOMPARE(term->strings[2], QStringLiteral("amd64"));
+}
+
+// MFC keeps every token of a string term (TokenizeOptQuotedSearchTerm). The keyword
+// splitter drops words under three bytes, so the term left over from "terminator 2"
+// tokenized to nothing and an empty term matches no entry at all.
+void tst_KadUDPListener::searchExprTree_keepsShortAndQuotedTokens()
+{
+    auto shortTerm = decode(encodeStringTerm(QByteArray("2")));
+    QVERIFY(shortTerm != nullptr);
+    QCOMPARE(shortTerm->strings.size(), std::size_t{1});
+    QCOMPARE(shortTerm->strings[0], QStringLiteral("2"));
+
+    // A short last word is not an extension to pop, and repeats are kept.
+    auto trailing = decode(encodeStringTerm(QByteArray("mint iso mint")));
+    QVERIFY(trailing != nullptr);
+    QCOMPARE(trailing->strings.size(), std::size_t{3});
+    QCOMPARE(trailing->strings[1], QStringLiteral("iso"));
+
+    // A quoted run is one token, delimiters included.
+    auto quoted = decode(encodeStringTerm(QByteArray("\"foo bar\" baz.x")));
+    QVERIFY(quoted != nullptr);
+    QCOMPARE(quoted->strings.size(), std::size_t{3});
+    QCOMPARE(quoted->strings[0], QStringLiteral("foo bar"));
+    QCOMPARE(quoted->strings[1], QStringLiteral("baz"));
+    QCOMPARE(quoted->strings[2], QStringLiteral("x"));
+
+    // Unterminated quote is skipped, an empty one adds nothing.
+    auto open = decode(encodeStringTerm(QByteArray("\"\" \"foo bar")));
+    QVERIFY(open != nullptr);
+    QCOMPARE(open->strings.size(), std::size_t{2});
+    QCOMPARE(open->strings[0], QStringLiteral("foo"));
+    QCOMPARE(open->strings[1], QStringLiteral("bar"));
 }
 
 void tst_KadUDPListener::searchExprTree_metaTagIsLowercasedAndKeyed()

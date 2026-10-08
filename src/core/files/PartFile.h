@@ -459,6 +459,13 @@ public:
     [[nodiscard]] uint32 maxSourcePerFileSoft() const;
     [[nodiscard]] uint32 maxSourcePerFileUDP() const;
 
+    /// Waiting in DownloadQueue for the next OP_GETSOURCES frame to our server.
+    [[nodiscard]] bool isLocalSrcReqQueued() const { return m_localSrcReqQueued; }
+    void setLocalSrcReqQueued(bool queued) { m_localSrcReqQueued = queued; }
+    /// Tick our server was last asked for sources; 0 = ask as soon as possible.
+    [[nodiscard]] uint64 lastSearchTimeServer() const { return m_lastSearchTimeServer; }
+    void setLastSearchTimeServer(uint64 tick) { m_lastSearchTimeServer = tick; }
+
     /// Save/Load Sources driver for this file. Held per file so its resave/reload timers and
     /// their jitter stay independent — mirrors MorphXT CPartFile::m_sourcesaver.
     [[nodiscard]] SourceSaver& sourceSaver() { return m_sourceSaver; }
@@ -698,7 +705,8 @@ private:
     AICHRecoveryHashSet m_aichRecoveryHashSet;
 
     // Server source search state
-    uint64 m_lastSearchTimeServer = 0;
+    uint64 m_lastSearchTimeServer = 0;   // last asked, not next due
+    bool m_localSrcReqQueued = false;
 
     // Kad source search state
     uint64 m_lastSearchTimeKad = 0;

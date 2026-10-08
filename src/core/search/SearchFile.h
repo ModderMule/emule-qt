@@ -115,6 +115,8 @@ public:
     /// ED2K: additive. Kad: max.
     void addSources(uint32 count);
     void addCompleteSources(uint32 count);
+    void setSourceCount(uint32 count) { m_sourceCount = count; }
+    void setCompleteSourceCount(uint32 count) { m_completeSourceCount = count; }
 
     [[nodiscard]] uint32 sourceCount() const { return m_sourceCount; }
     [[nodiscard]] uint32 completeSourceCount() const { return m_completeSourceCount; }

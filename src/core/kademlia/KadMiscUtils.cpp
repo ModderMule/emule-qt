@@ -47,6 +47,37 @@ QString kadSearchKeyword(const QString& expression)
     return words.empty() ? QString() : words.front();
 }
 
+void tokenizeOptQuotedSearchTerm(const QString& str, std::vector<QString>& outTokens)
+{
+    const QLatin1StringView delimiters(kInvKadKeywordChars);
+    const qsizetype len = str.size();
+    for (qsizetype pos = 0; pos < len;) {
+        if (str[pos] == u'"') {
+            // Unterminated quote: the quote alone is skipped. Empty quote: no token.
+            ++pos;
+            const qsizetype nextQuote = str.indexOf(u'"', pos);
+            if (nextQuote >= 0) {
+                if (nextQuote > pos)
+                    outTokens.push_back(str.mid(pos, nextQuote - pos));
+                pos = nextQuote + 1;
+            }
+        } else {
+            qsizetype end = pos;
+            while (end < len && !delimiters.contains(str[end]))
+                ++end;
+            if (end > pos) {
+                outTokens.push_back(str.mid(pos, end - pos));
+                pos = end;
+                if (pos >= len)
+                    break;
+                if (str[pos] == u'"')
+                    continue;
+            }
+            ++pos;
+        }
+    }
+}
+
 void getWords(const QString& str, std::vector<QString>& outWords)
 {
     // Split on any of the invalid keyword characters

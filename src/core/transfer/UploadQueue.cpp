@@ -543,6 +543,8 @@ bool UploadQueue::addUpNextClient(UpDownClient* directadd)
             newClient->setUploadState(UploadState::None);
             return false;
         }
+        // The dial created (or replaced) the socket — MFC reads it after TryToConnect()
+        sock = newClient->getFileUploadSocket();
     } else {
         auto packet = std::make_unique<Packet>(OP_ACCEPTUPLOADREQ, 0);
         newClient->sendPacket(std::move(packet));

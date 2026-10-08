@@ -2020,7 +2020,7 @@ void UsenetQueue::dispatch()
                     req.segmentIndex = segIndex;
                     req.segment = info.segments.at(segIndex);
                     req.targetPath = st.tempPath;
-                    req.group = info.groups.isEmpty() ? QString() : info.groups.first();
+                    req.groups = info.groups;
                     req.level = payLevel;
                     req.ignoreServers = std::move(ignore);
                     req.received = std::make_shared<std::atomic<qint64>>(0);
@@ -4417,7 +4417,7 @@ void UsenetQueue::dispatchProbes()
                     req.fileIndex = fileIndex;
                     req.segmentIndex = segIndex;
                     req.segment = info.segments.at(segIndex);
-                    req.group = info.groups.isEmpty() ? QString() : info.groups.first();
+                    req.groups = info.groups;
                     req.level = payLevel;
                     req.ignoreServers = std::move(ignore);
                     req.probeOnly = true;

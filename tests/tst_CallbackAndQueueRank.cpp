@@ -470,8 +470,10 @@ void tst_CallbackAndQueueRank::initTestCase()
     thePrefs.setUdpPort(4672);
     // publicIP must match localhost so UDP encryption key derivation works.
     // Sender encrypts with MD5(targetHash + publicIP + ...), receiver decrypts
-    // with MD5(userHash + senderIP + ...).  Both must be 127.0.0.1 (host order).
-    theApp.setPublicIP(0x7F000001);
+    // with MD5(userHash + senderIP + ...).  Both must be 127.0.0.1 as on the wire.
+    // Network order, as every production writer stores it. The host-order constant
+    // this used to be only worked while the UDP receive key had the IP reversed too.
+    theApp.setPublicIP(htonl(0x7F000001));
 
     const QString incomingDir = m_tmpDir->filePath(QStringLiteral("incoming"));
     const QString tempDir = m_tmpDir->filePath(QStringLiteral("temp"));
@@ -1152,8 +1154,16 @@ void tst_CallbackAndQueueRank::swapToAnotherFile_swapsSourceAndTracksA4AF()
     QCOMPARE(fileB->a4afSourceCount(), 0);
     // Queue rank preserved across swap
     QCOMPARE(client->remoteQueueRank(), 42u);
+    // The state belonged to fileA (MFC DoSwap: SetDownloadState(DS_NONE))
+    QCOMPARE(client->downloadState(), DownloadState::None);
+
+    // A source in no state cannot be swapped: nothing says it is idle.
+    QVERIFY(!client->swapToAnotherFile(
+        QStringLiteral("not idle"), false, false, false, fileA));
+    QCOMPARE(client->reqFile(), fileB);
 
     // --- Swap back fileB → fileA ---
+    client->setDownloadState(DownloadState::OnQueue);
     bool swappedBack = client->swapToAnotherFile(
         QStringLiteral("swap back"), false, false, false, fileA);
     QVERIFY(swappedBack);

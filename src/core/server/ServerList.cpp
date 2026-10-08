@@ -702,19 +702,15 @@ Server* ServerList::serverAt(size_t index) const
 }
 
 // ---------------------------------------------------------------------------
-// Round-robin iterators
+// Iterators — the connect cursor stops at the end, the other two go round
 // ---------------------------------------------------------------------------
 
 Server* ServerList::nextServer(bool tryObfuscated)
 {
-    const size_t count = m_servers.size();
-    if (count == 0)
-        return nullptr;
-
-    for (size_t i = 0; i < count; ++i) {
-        if (m_serverPos >= count)
-            m_serverPos = 0;
-
+    // No wrap: nullptr at the end is what tells ServerConnect a pass is over, so it
+    // can fall back to the plain ports and then pause before the next pass
+    // (MFC srchybrid/ServerList.cpp:470-485). setServerPosition() starts a new one.
+    while (m_serverPos < m_servers.size()) {
         Server* srv = m_servers[m_serverPos].get();
         ++m_serverPos;
 
@@ -1319,7 +1315,9 @@ void ServerList::adjustPositionsAfterRemoval(size_t removedIndex)
         else if (pos == removedIndex)
             pos = remaining == 0 ? 0 : pos % remaining;
     };
-    adjust(m_serverPos);
+    // The connect cursor does not wrap: sent back to 0 it would restart the pass.
+    if (m_serverPos > removedIndex)
+        --m_serverPos;
     adjust(m_searchServerPos);
     adjust(m_statServerPos);
 }

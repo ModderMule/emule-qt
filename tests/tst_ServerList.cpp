@@ -102,7 +102,7 @@ private slots:
     void findByAddress_dynIP();
 
     // Round-robin
-    void nextServer_wraps();
+    void nextServer_stopsAtEnd();
     void autoConnectOrder_followsPriorityWithoutSorting();
     void nextSearchServer_wraps();
     void nextStatServer_wraps();
@@ -337,7 +337,11 @@ void tst_ServerList::findByAddress_dynIP()
 // Round-robin
 // ---------------------------------------------------------------------------
 
-void tst_ServerList::nextServer_wraps()
+// The connect cursor ends the pass with nullptr — that is the signal ServerConnect
+// needs to try the plain ports and then pause. A cursor that went round again never
+// gave it, and a list of refusing servers was redialled without a break.
+// MFC srchybrid/ServerList.cpp:470-485.
+void tst_ServerList::nextServer_stopsAtEnd()
 {
     ServerList list;
     list.addServer(makeServer(0x08080808, 4661, QStringLiteral("A")));
@@ -345,14 +349,31 @@ void tst_ServerList::nextServer_wraps()
 
     auto* s1 = list.nextServer();
     auto* s2 = list.nextServer();
-    auto* s3 = list.nextServer();  // should wrap
-
     QVERIFY(s1 != nullptr);
     QVERIFY(s2 != nullptr);
-    QVERIFY(s3 != nullptr);
     QCOMPARE(s1->name(), QStringLiteral("A"));
     QCOMPARE(s2->name(), QStringLiteral("B"));
-    QCOMPARE(s3->name(), QStringLiteral("A"));  // wrapped
+    QVERIFY(list.nextServer() == nullptr);
+    QVERIFY(list.nextServer() == nullptr);   // and stays there
+
+    // A new pass starts only when asked for.
+    list.setServerPosition(1);
+    QCOMPARE(list.nextServer()->name(), QStringLiteral("B"));
+    QVERIFY(list.nextServer() == nullptr);
+
+    // Removing a server mid-pass must not restart it.
+    list.setServerPosition(0);
+    QCOMPARE(list.nextServer()->name(), QStringLiteral("A"));
+    QCOMPARE(list.nextServer()->name(), QStringLiteral("B"));
+    list.removeServer(s2);
+    QVERIFY(list.nextServer() == nullptr);
+
+    // The obfuscated pass skips a server already tried without obfuscation support.
+    list.setServerPosition(0);
+    s1->setTriedCrypt(true);
+    QVERIFY(list.nextServer(true) == nullptr);
+    list.setServerPosition(0);
+    QCOMPARE(list.nextServer(false), s1);
 }
 
 void tst_ServerList::autoConnectOrder_followsPriorityWithoutSorting()
@@ -2216,8 +2237,11 @@ void tst_ServerList::disabledServer_isSkippedAndSurvivesServerMet()
         dead->setDisabled(true);
         dead->setFailedCount(20);
 
-        for (int i = 0; i < 4; ++i)
+        for (int i = 0; i < 4; ++i) {
+            list.setServerPosition(0);
             QCOMPARE(list.nextServer(false), live);
+            QVERIFY(list.nextServer(false) == nullptr);
+        }
 
         // A static server only accumulates, and no limit means no disabling.
         live->setStaticMember(true);

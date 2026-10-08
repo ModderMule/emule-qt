@@ -81,7 +81,8 @@ void ServerConnect::setUDPSocket(UDPSocket* socket)
 void ServerConnect::tryAnotherConnectionRequest()
 {
     if (static_cast<int>(m_connectionAttempts.size()) < m_maxSimCons) {
-        // Try up to serverCount candidates to find one not already being connected to
+        // Skip a candidate that is already being dialled. nextServer() ends the pass
+        // with nullptr; maxTries only bounds the loop.
         Server* next = nullptr;
         const size_t maxTries = m_serverList.serverCount();
         for (size_t attempt = 0; attempt < maxTries; ++attempt) {
@@ -110,7 +111,8 @@ void ServerConnect::tryAnotherConnectionRequest()
                     m_tryObfuscated = false;
                     connectToAnyServer(0, true, true, true);
                 } else if (!m_retryTimer.isActive()) {
-                    logInfo(QStringLiteral("Failed to connect to all servers listed. Making another pass."));
+                    // A short list would be hammered without the pause (MFC ServerConnect.cpp:55-59)
+                    logInfo(QStringLiteral("Failed to connect to all servers listed."));
                     logInfo(QStringLiteral("Automatic connection to server will retry in %1 seconds")
                                .arg(kRetryConnectTimeSec));
                     m_startAutoConnectPos = 0;
@@ -213,9 +215,12 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
         disconnect();
     }
 
-    // Reset triedCrypt so both encrypted and fallback attempts are tried each cycle
+    // An obfuscation-capable server gets the encrypted attempt (and its fallback) every
+    // cycle. One without is dialled on its plain port either way: mark it, so the
+    // obfuscated pass skips it from now on and the plain pass dials it once.
+    // MFC srchybrid/ServerSocket.cpp:642.
     if (!noCrypt)
-        server->setTriedCrypt(false);
+        server->setTriedCrypt(!server->supportsObfuscationTCP());
 
     m_connecting = true;
     m_singleConnecting = !multiconnect;

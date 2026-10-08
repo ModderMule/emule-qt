@@ -73,12 +73,13 @@ constexpr int kBurstTicks = 10;
 
 /// NNTP status codes this class acts on. Everything else is passed to the
 /// running command or reported as a protocol error.
-constexpr int kGreetingPostingOk    = 200;
-constexpr int kGreetingPostingNo    = 201;
+[[maybe_unused]] constexpr int kGreetingPostingOk    = 200;
+[[maybe_unused]] constexpr int kGreetingPostingNo    = 201;
 constexpr int kClosing              = 205;
 constexpr int kTlsProceed           = 382;
 constexpr int kServiceUnavailable   = 400;
-constexpr int kAuthAccepted         = 281;
+[[maybe_unused]] constexpr int kAuthAccepted         = 281;
+constexpr int kAuthRequired         = 480;
 constexpr int kAuthPasswordRequired = 381;
 constexpr int kAuthRejected         = 481;
 constexpr int kAuthOutOfSequence    = 482;
@@ -87,6 +88,13 @@ constexpr int kCommandUnavailable   = 502;
 /// Whether a refusal names the account's connection limit. Providers disagree on
 /// the code (400/502 at the greeting, 502 or 481 at AUTHINFO) but not on the
 /// words, so the text decides, as in SABnzbd. A wrong password says neither.
+/// Any 2xx. NZBGet accepts the whole class at the greeting and for AUTHINFO,
+/// and some servers do answer 250 where the RFC says 281.
+constexpr bool isSuccess(int code)
+{
+    return code >= 200 && code < 300;
+}
+
 bool saysTooManyConnections(const QString& text)
 {
     return text.contains(QLatin1String("connection"), Qt::CaseInsensitive)
@@ -197,6 +205,12 @@ void NntpSocket::sendCommand(NntpCommand* command)
     if (!command)
         return;
 
+    // Re-authenticating after a 480: goes out with the replayed ones, in order.
+    if (!m_replay.isEmpty()) {
+        m_replay.append(command);
+        return;
+    }
+
     // Pipelined (RFC 3977 §3.5): written now, answered in order after the
     // running command. Keeps the wire busy while the current body drains.
     if (m_state == State::CommandStatus || m_state == State::CommandBody) {
@@ -246,6 +260,7 @@ void NntpSocket::abort()
     // No callbacks: the owner is tearing this connection down on purpose.
     m_command = nullptr;
     m_pipeline.clear();
+    m_replay.clear();
     disarmTimers();
     enterDisconnected();
     if (m_socket)
@@ -623,11 +638,12 @@ void NntpSocket::handleStatusLine(QByteArrayView raw)
 
     switch (m_state) {
     case State::Greeting:
-        // 200 posting allowed, 201 posting prohibited — both fine for reading.
+        // 200 posting allowed, 201 posting prohibited — both fine for reading,
+        // as is any other 2xx a server cares to greet with.
         // 400 and 502 at the greeting mean "too many connections" (the pool
         // stops growing) or "account blocked" (the whole server backs off),
         // never a fault of the article.
-        if (code == kGreetingPostingOk || code == kGreetingPostingNo) {
+        if (isSuccess(code)) {
             if (m_server.tlsMode == TlsMode::StartTls) {
                 m_state = State::StartTlsSent;
                 sendLine(QByteArrayLiteral("STARTTLS"));
@@ -659,11 +675,16 @@ void NntpSocket::handleStatusLine(QByteArrayView raw)
 
     case State::ModeReaderSent:
         // 200/201 is the answer; 500 means the server has no reader/transit
-        // distinction, which is fine and not an error.
-        if (code == kGreetingPostingOk || code == kGreetingPostingNo || code >= 500)
+        // distinction, and 480 that it wants AUTHINFO first — all fine, the
+        // command is a courtesy (NZBGet never sends it). Only 400 is a refusal:
+        // the server is closing on us.
+        if (code == kServiceUnavailable) {
+            fail(saysTooManyConnections(text) ? NntpError::TooManyConnections
+                                              : NntpError::ServerUnavailable,
+                 line);
+        } else {
             beginAuthOrReady();
-        else
-            fail(NntpError::ProtocolError, QStringLiteral("MODE READER failed: %1").arg(line));
+        }
         break;
 
     case State::AuthUserSent:
@@ -672,17 +693,17 @@ void NntpSocket::handleStatusLine(QByteArrayView raw)
             const QByteArray line = QByteArrayLiteral("AUTHINFO PASS ") + m_server.pass.toUtf8();
             sendLine(line);
             armResponseTimer();
-        } else if (code == kAuthAccepted) {
+        } else if (isSuccess(code)) {
             // Some providers authenticate on the user name alone.
-            enterReady();
+            authAccepted();
         } else {
             fail(authRefusal(text), line);
         }
         break;
 
     case State::AuthPassSent:
-        if (code == kAuthAccepted)
-            enterReady();
+        if (isSuccess(code))
+            authAccepted();
         else if (code == kAuthRejected || code == kAuthOutOfSequence || code == kCommandUnavailable)
             fail(authRefusal(text), line);
         else
@@ -690,7 +711,41 @@ void NntpSocket::handleStatusLine(QByteArrayView raw)
         break;
 
     case State::CommandStatus: {
+        // Answers to commands pipelined behind one that drew a 480: sent before
+        // we knew, so each gets the same refusal. Anything else and the stream
+        // is no longer what we think it is.
+        if (m_discardReplies > 0) {
+            if (code != kAuthRequired) {
+                fail(NntpError::ProtocolError,
+                     QStringLiteral("Unexpected response while re-authenticating: %1").arg(line));
+            } else if (--m_discardReplies == 0) {
+                beginAuthOrReady();
+            } else {
+                armResponseTimer();
+            }
+            break;
+        }
+
         NntpCommand* cmd = m_command;
+        if (cmd && code == kAuthRequired) {
+            // Authenticate on demand and ask again, as NZBGet's Request() does.
+            // Without credentials, or when the replay is refused too, it is an
+            // account problem and says so.
+            if (m_server.user.isEmpty() || m_replayGuard > 0) {
+                fail(NntpError::AuthFailed, line);
+                break;
+            }
+            m_replay.append(cmd);
+            m_replay += std::exchange(m_pipeline, {});
+            m_discardReplies = int(m_replay.size()) - 1;
+            m_command = nullptr;
+            m_latencyClock.invalidate();
+            if (m_discardReplies == 0)
+                beginAuthOrReady();
+            else
+                armResponseTimer();
+            break;
+        }
         if (!cmd) {
             fail(NntpError::ProtocolError, QStringLiteral("Unsolicited response: %1").arg(line));
             break;
@@ -760,6 +815,31 @@ void NntpSocket::beginAuthOrReady()
     armResponseTimer();
 }
 
+void NntpSocket::authAccepted()
+{
+    if (m_replay.isEmpty())
+        enterReady();
+    else
+        replayCommands();
+}
+
+void NntpSocket::replayCommands()
+{
+    // Not enterReady(): the connection was ready all along as far as its owner
+    // knows, and a second ready() would start whatever waits on the first.
+    QList<NntpCommand*> commands = std::exchange(m_replay, {});
+    m_replayGuard = int(commands.size());
+    m_command = commands.takeFirst();
+    m_pipeline = std::move(commands);
+    m_state = State::CommandStatus;
+    m_bodyBytes = 0;
+
+    sendLine(m_command->requestLine());
+    for (NntpCommand* queued : std::as_const(m_pipeline))
+        sendLine(queued->requestLine());
+    armResponseTimer();
+}
+
 void NntpSocket::enterReady()
 {
     m_state = State::Ready;
@@ -786,6 +866,8 @@ void NntpSocket::finishCommand()
     m_command = nullptr;
     m_bodyBytes = 0;
     m_latencyClock.invalidate();
+    if (m_replayGuard > 0)
+        --m_replayGuard;
     if (!m_pipeline.isEmpty()) {
         // Next answer is already on its way, maybe already buffered: drain()
         // carries on parsing it as this command's status.
@@ -820,6 +902,7 @@ void NntpSocket::fail(NntpError error, const QString& text)
     QList<NntpCommand*> dying = std::exchange(m_pipeline, {});
     if (NntpCommand* cmd = std::exchange(m_command, nullptr))
         dying.prepend(cmd);
+    dying += std::exchange(m_replay, {});   // parked for a re-authentication
     for (NntpCommand* cmd : std::as_const(dying)) {
         cmd->fail(error, text);
         cmd->onComplete();
@@ -857,6 +940,8 @@ void NntpSocket::enterDisconnected()
 {
     m_state = State::Disconnected;
     m_selectedGroup.clear();
+    m_discardReplies = 0;
+    m_replayGuard = 0;
     markClosed();
 }
 

@@ -80,6 +80,14 @@ private slots:
     void group_missing_reportsGroupNotFound();
     void stat_missingArticle_escalates();
     void aStatRefusalDoesNotBackOffTheAccount();
+    void aBodyOrGroupRefusalDoesNotBackOffTheAccount();
+    void greetingAndAuthAcceptAny2xx();
+    void modeReader480_stillAuthenticates();
+    void modeReader400_failsTheServer();
+    void authRequiredMidSession_reauthenticatesAndReplays_data();
+    void authRequiredMidSession_reauthenticatesAndReplays();
+    void authRequiredWithoutCredentials_isAuthFailed();
+    void authRequiredAgainAfterReplay_isAuthFailed();
     void dotStuffedBodyLine_isUnstuffed();
     void dropMidCommand_failsTheCommand();
     void readRateLimit_stillDeliversEverything();
@@ -404,6 +412,228 @@ void tst_NntpSocket::aStatRefusalDoesNotBackOffTheAccount()
     broken.onStatus(500, QStringLiteral("Command not recognized"));
     QCOMPARE(broken.error(), NntpError::ProtocolError);
     QVERIFY(isFatalToConnection(broken.error()));
+}
+
+void tst_NntpSocket::aBodyOrGroupRefusalDoesNotBackOffTheAccount()
+{
+    // The same table for BODY, where it matters most: a 423 or a 451 takedown
+    // used to be a ProtocolError — connection dropped, account backed off, a
+    // transport retry spent, and after six of them the whole item failed.
+    // NZBGet's CheckResponse reads 41x-43x as "not found" and moves on.
+    for (const int code : {430, 423, 420, 412, 411, 451, 403}) {
+        BodyCommand body(QStringLiteral("gone@example"), {});
+        body.onStatus(code, QStringLiteral("no such thing"));
+
+        QCOMPARE(body.error(), NntpError::ArticleNotFound);
+        QVERIFY(!body.hasBodyFor(code));
+        QVERIFY2(!isFatalToConnection(body.error()),
+                 qPrintable(QStringLiteral("code %1 would kill the connection").arg(code)));
+        QVERIFY2(escalatesToNextLevel(body.error()),
+                 qPrintable(QStringLiteral("code %1 would not escalate").arg(code)));
+
+        StatCommand stat(QStringLiteral("gone@example"));
+        stat.onStatus(code, QStringLiteral("no such thing"));
+        QCOMPARE(stat.error(), NntpError::ArticleNotFound);
+    }
+
+    // The server's own words survive for anything rarer than a 430.
+    BodyCommand takedown(QStringLiteral("gone@example"), {});
+    takedown.onStatus(451, QStringLiteral("Article removed"));
+    QVERIFY(takedown.errorText().contains(QStringLiteral("451 Article removed")));
+
+    // Real faults still say so: the server is closing, or does not speak BODY.
+    for (const int code : {400, 499, 500, 503}) {
+        BodyCommand broken(QStringLiteral("whatever@example"), {});
+        broken.onStatus(code, QStringLiteral("broken"));
+        QCOMPARE(broken.error(), NntpError::ProtocolError);
+    }
+
+    // GROUP: any "cannot" is this server not carrying the group.
+    for (const int code : {411, 423, 403}) {
+        GroupCommand group(QStringLiteral("alt.binaries.nope"));
+        group.onStatus(code, QStringLiteral("no"));
+        QCOMPARE(group.error(), NntpError::GroupNotFound);
+        QVERIFY(!isFatalToConnection(group.error()));
+    }
+    GroupCommand broken(QStringLiteral("alt.binaries.nope"));
+    broken.onStatus(500, QStringLiteral("Command not recognized"));
+    QCOMPARE(broken.error(), NntpError::ProtocolError);
+}
+
+void tst_NntpSocket::greetingAndAuthAcceptAny2xx()
+{
+    // NZBGet accepts the whole 2xx class at the greeting and for AUTHINFO; only
+    // 200/201 and 281 used to pass here.
+    FakeNntpServer server;
+    server.setGreeting(QByteArrayLiteral("220 Welcome"));
+    server.setAuthAcceptedReply(QByteArrayLiteral("250 Welcome back"));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NntpSocket socket;
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+    QSignalSpy failed(&socket, &NntpSocket::failed);
+    socket.connectToServer(localServer(port));
+    QVERIFY(ready.wait(5000));
+    QCOMPARE(failed.count(), 0);
+}
+
+void tst_NntpSocket::modeReader480_stillAuthenticates()
+{
+    // MODE READER is a courtesy NZBGet never sends. A server that wants
+    // AUTHINFO first must not be unusable because of it.
+    FakeNntpServer server;
+    server.setModeReaderReply(QByteArrayLiteral("480 Authentication required"));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NntpSocket socket;
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+    QSignalSpy failed(&socket, &NntpSocket::failed);
+    socket.connectToServer(localServer(port));
+    QVERIFY(ready.wait(5000));
+    QCOMPARE(failed.count(), 0);
+    QVERIFY(server.receivedCommands().contains(QStringLiteral("AUTHINFO PASS testpass")));
+}
+
+void tst_NntpSocket::modeReader400_failsTheServer()
+{
+    FakeNntpServer server;
+    server.setModeReaderReply(QByteArrayLiteral("400 Service temporarily unavailable"));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NntpSocket socket;
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+    QSignalSpy failed(&socket, &NntpSocket::failed);
+    socket.connectToServer(localServer(port));
+    QVERIFY(failed.wait(5000));
+    QCOMPARE(ready.count(), 0);
+    QCOMPARE(failed.first().at(0).value<NntpError>(), NntpError::ServerUnavailable);
+    QVERIFY(!server.receivedCommands().join(u' ').contains(QLatin1String("AUTHINFO")));
+}
+
+void tst_NntpSocket::authRequiredMidSession_reauthenticatesAndReplays_data()
+{
+    QTest::addColumn<bool>("pipelined");
+    QTest::newRow("single") << false;
+    QTest::newRow("pipelined") << true;
+}
+
+void tst_NntpSocket::authRequiredMidSession_reauthenticatesAndReplays()
+{
+    QFETCH(bool, pipelined);
+
+    // A 480 to a command means "authenticate, then ask again" (NZBGet's
+    // NntpConnection::Request). Pipelined commands were already sent and each
+    // draws its own 480, so all of them are replayed, in order.
+    FakeNntpServer server;
+    server.setRequireAuth(true);
+    server.addArticle(QStringLiteral("a@x"), QByteArrayLiteral("payload"));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NntpSocket socket;
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+    QSignalSpy failed(&socket, &NntpSocket::failed);
+    socket.connectToServer(localServer(port));
+    QVERIFY(ready.wait(5000));
+
+    server.expireAuth();
+
+    StatCommand first(QStringLiteral("a@x"));
+    StatCommand second(QStringLiteral("gone@x"));
+    StatCommand third(QStringLiteral("a@x"));
+    QList<NntpCommand*> order;
+    connect(&socket, &NntpSocket::commandFinished, this,
+            [&order](NntpCommand* c) { order.append(c); });
+
+    socket.sendCommand(&first);
+    if (pipelined) {
+        socket.sendCommand(&second);
+        socket.sendCommand(&third);
+    }
+    const int expected = pipelined ? 3 : 1;
+    QTRY_COMPARE_WITH_TIMEOUT(int(order.size()), expected, 5000);
+
+    QCOMPARE(failed.count(), 0);
+    QCOMPARE(ready.count(), 1);   // the owner never saw the connection leave
+    QVERIFY(socket.isReady());
+    QVERIFY(first.exists());
+    QCOMPARE(order.value(0), &first);
+    if (pipelined) {
+        QCOMPARE(order.value(1), &second);
+        QCOMPARE(order.value(2), &third);
+        QCOMPARE(second.error(), NntpError::ArticleNotFound);
+        QVERIFY(third.exists());
+    }
+
+    // Logged in twice, and every command asked twice.
+    const QStringList cmds = server.receivedCommands();
+    QCOMPARE(cmds.count(QStringLiteral("AUTHINFO PASS testpass")), 2);
+    QCOMPARE(cmds.filter(QStringLiteral("STAT ")).size(), expected * 2);
+
+    // The guard is spent only by the replayed commands: a later expiry is
+    // handled the same way again.
+    server.expireAuth();
+    StatCommand later(QStringLiteral("a@x"));
+    socket.sendCommand(&later);
+    QTRY_COMPARE_WITH_TIMEOUT(int(order.size()), expected + 1, 5000);
+    QVERIFY(later.exists());
+    QCOMPARE(failed.count(), 0);
+}
+
+void tst_NntpSocket::authRequiredWithoutCredentials_isAuthFailed()
+{
+    FakeNntpServer server;
+    server.setRequireAuth(true);
+    server.addArticle(QStringLiteral("a@x"), QByteArrayLiteral("payload"));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NewsServer s = localServer(port);
+    s.user.clear();
+    s.pass.clear();
+
+    NntpSocket socket;
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+    QSignalSpy failed(&socket, &NntpSocket::failed);
+    socket.connectToServer(s);
+    QVERIFY(ready.wait(5000));
+
+    // Nothing to authenticate with: an account problem, named as one rather
+    // than as a protocol error.
+    StatCommand stat(QStringLiteral("a@x"));
+    QSignalSpy done(&socket, &NntpSocket::commandFinished);
+    socket.sendCommand(&stat);
+    QVERIFY(done.wait(5000));
+    QCOMPARE(stat.error(), NntpError::AuthFailed);
+    QCOMPARE(failed.count(), 1);
+}
+
+void tst_NntpSocket::authRequiredAgainAfterReplay_isAuthFailed()
+{
+    // A server that accepts the login and still says 480 must not be asked
+    // forever.
+    FakeNntpServer server;
+    server.setRequireAuth(true);
+    server.setAuthNeverSticks(true);
+    server.addArticle(QStringLiteral("a@x"), QByteArrayLiteral("payload"));
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    NntpSocket socket;
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+    socket.connectToServer(localServer(port));
+    QVERIFY(ready.wait(5000));
+
+    StatCommand stat(QStringLiteral("a@x"));
+    QSignalSpy done(&socket, &NntpSocket::commandFinished);
+    socket.sendCommand(&stat);
+    QVERIFY(done.wait(5000));
+    QCOMPARE(stat.error(), NntpError::AuthFailed);
+    QCOMPARE(server.receivedCommands().count(QStringLiteral("STAT <a@x>")), 2);
+    QCOMPARE(server.receivedCommands().count(QStringLiteral("AUTHINFO PASS testpass")), 2);
 }
 
 void tst_NntpSocket::dotStuffedBodyLine_isUnstuffed()

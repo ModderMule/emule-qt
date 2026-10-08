@@ -6,6 +6,32 @@
 
 namespace eMule::usenet {
 
+namespace {
+
+/// "The command was fine, I cannot do it for this article/group" — a routing
+/// fact, not a malfunction: 430/423/420/412 no such article, 411 no such group,
+/// 451 taken down, 403 try elsewhere. NZBGet's CheckResponse reads 41x-43x the
+/// same way.
+///
+/// Excluded on purpose: 400 (server is closing), 480-483 (auth/TLS wanted, the
+/// socket's business) and 499. These must not be ProtocolError: that is fatal to
+/// the connection, and UsenetWorker::finishJob() turns it into blockServer() —
+/// one missing article backing the whole account off.
+constexpr bool cannotSupply(int code)
+{
+    return code > 400 && code < 480;
+}
+
+/// "<id>" for the plain 430, with the server's own words for anything rarer.
+QString refusalText(const QString& messageId, int code, const QString& text)
+{
+    if (code == 430)
+        return QStringLiteral("<%1>").arg(messageId);
+    return QStringLiteral("<%1> (%2 %3)").arg(messageId).arg(code).arg(text);
+}
+
+} // namespace
+
 void NntpCommand::fail(NntpError e, QString text)
 {
     // First failure wins. A command that already knows it got 430 must not have
@@ -76,9 +102,12 @@ QByteArray GroupCommand::requestLine() const
 
 void GroupCommand::onStatus(int code, const QString& text)
 {
-    if (code == 411) {
+    // 411 is the answer; any other "cannot" is the same routing fact.
+    if (cannotSupply(code)) {
         fail(NntpError::GroupNotFound,
-             QStringLiteral("No such newsgroup: %1").arg(m_group));
+             code == 411 ? QStringLiteral("No such newsgroup: %1").arg(m_group)
+                         : QStringLiteral("No such newsgroup: %1 (%2 %3)")
+                               .arg(m_group).arg(code).arg(text));
         return;
     }
     if (code != 211) {
@@ -119,24 +148,9 @@ void StatCommand::onStatus(int code, const QString& text)
         m_exists = true;
         return;
     }
-    // Four ways of saying "I cannot answer for this article", and all four are
-    // routing facts rather than malfunctions:
-    //
-    //   430  no article with that message-id — the expected answer, and the
-    //        whole reason STAT exists
-    //   423  no article with that number
-    //   420  no article selected
-    //   412  no newsgroup selected
-    //
-    // Only 430 can arise from the message-id form this class always sends, but
-    // the others must not be ProtocolError: that is fatal to the connection
-    // (NntpError.h), and UsenetWorker::finishJob() turns a fatal non-
-    // ArticleNotFound error into NntpServerPool::blockServer(). A server that
-    // answered 412 would therefore have its whole account backed off on every
-    // probe — a health check making an account unusable, which is precisely the
-    // outcome the feature exists to avoid.
-    if (code == 430 || code == 423 || code == 420 || code == 412) {
-        fail(NntpError::ArticleNotFound, QStringLiteral("<%1>").arg(m_messageId));
+    // Only 430 can arise from the message-id form, but see cannotSupply().
+    if (cannotSupply(code)) {
+        fail(NntpError::ArticleNotFound, refusalText(m_messageId, code, text));
         return;
     }
     fail(NntpError::ProtocolError,
@@ -171,10 +185,11 @@ void BodyCommand::onStatus(int code, const QString& text)
         m_decoder.reset();
         return;
     }
-    if (code == 430) {
+    if (cannotSupply(code)) {
         // The routing signal that sends this article to the next priority
-        // level. A normal outcome, not a malfunction.
-        fail(NntpError::ArticleNotFound, QStringLiteral("<%1>").arg(m_messageId));
+        // level. A normal outcome, not a malfunction — 430 and its rarer
+        // relatives alike (423, 451 takedown, ...).
+        fail(NntpError::ArticleNotFound, refusalText(m_messageId, code, text));
         return;
     }
     fail(NntpError::ProtocolError,

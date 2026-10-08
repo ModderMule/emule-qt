@@ -59,6 +59,7 @@ private slots:
 
     // UploadState::Connecting must not be a dead end — MFC BaseClient.cpp:1558-1565, :1118-1120
     void connectingSlot_activatedByHandshake();
+    void connectingSlot_registersWithThrottler();
     void connectingSlot_notGrantedASlot_staysConnecting();
     void connectingSlot_releasedOnDisconnect();
 
@@ -1097,6 +1098,39 @@ void tst_UploadQueue::connectingSlot_activatedByHandshake()
     QCOMPARE(client.uploadState(), UploadState::Uploading);
 
     queue.removeFromUploadQueue(&client);
+}
+
+void tst_UploadQueue::connectingSlot_registersWithThrottler()
+{
+    // The socket of a dialled slot only exists after tryToConnect(). Reading it before
+    // the dial left it out of the throttler's standard list — the only place file data
+    // is sent from — so the peer got its accept and then nothing.
+    // MFC UploadQueue.cpp:170 reads GetFileUploadSocket() after TryToConnect().
+    qRegisterMetaType<eMule::UpDownClient*>("eMule::UpDownClient*");
+    ClientList clientList;
+    GlobalClientList clientListGuard(&clientList);
+
+    UploadBandwidthThrottler throttler;   // never started: only the list is looked at
+    theApp.uploadBandwidthThrottler = &throttler;   // ~EMSocket deregisters through this
+
+    {
+        UploadQueue queue;
+        GlobalUploadQueue queueGuard(&queue);
+        queue.setThrottler(&throttler);
+
+        UpDownClient client;
+        setupClient(client, QStringLiteral("10.0.0.1"), 0x13);
+
+        QVERIFY(queue.addClientToQueue(&client));
+        QCOMPARE(client.uploadState(), UploadState::Connecting);
+        QVERIFY(client.getFileUploadSocket() != nullptr);
+        QCOMPARE(throttler.standardListSize(), 1);
+
+        queue.removeFromUploadQueue(&client);
+        QCOMPARE(throttler.standardListSize(), 0);
+    }
+
+    theApp.uploadBandwidthThrottler = nullptr;
 }
 
 void tst_UploadQueue::connectingSlot_notGrantedASlot_staysConnecting()

@@ -54,7 +54,7 @@ struct UsenetFetchRequest {
 
     NzbSegment segment;
     QString targetPath;
-    QString group;
+    QStringList groups;   ///< the file's newsgroups; only used with joinGroup
 
     /// Failover rung, already normalized by the pool's level mapping.
     int level = 0;

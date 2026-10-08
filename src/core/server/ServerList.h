@@ -150,9 +150,12 @@ public:
     [[nodiscard]] Server* serverAt(size_t index) const;
     [[nodiscard]] const std::vector<std::unique_ptr<Server>>& servers() const { return m_servers; }
 
-    // -- Round-robin iterators --------------------------------------------
+    // -- Iterators ---------------------------------------------------------
 
+    /// Next server of the current connect pass; nullptr once the list is through.
+    /// Does not wrap — setServerPosition() starts a new pass.
     [[nodiscard]] Server* nextServer(bool tryObfuscated = false);
+    /// The two below are round-robin.
     [[nodiscard]] Server* nextSearchServer();
     [[nodiscard]] Server* nextStatServer();
 

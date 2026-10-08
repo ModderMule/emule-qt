@@ -133,6 +133,8 @@ private slots:
     // Construction & configuration
     void failedConnect_countsOnlyTheServersOwnFailures_data();
     void failedConnect_countsOnlyTheServersOwnFailures();
+    void autoConnect_passEndsInARetryPause();
+    void autoConnect_plainPassFollowsTheObfuscatedOne();
     void failedConnect_disablesAtTheLimitButNeverAStaticServer();
     void failedConnect_countIsClearedByTheLoginNotTheTcpConnect();
     void connectTimeout_countsOnlyWhenTcpNeverCameUp();
@@ -1181,6 +1183,86 @@ void tst_ServerConnect::failedConnect_countsOnlyTheServersOwnFailures()
     QCOMPARE(entry->failedCount(), expectedCount);
 }
 
+/// Refuse every pending dial until none is left or @p maxRefusals is reached.
+static int refuseAllDials(ServerConnect& conn, int maxRefusals)
+{
+    int refused = 0;
+    while (refused < maxRefusals) {
+        ServerSocket* pending = nullptr;
+        for (ServerSocket* socket : conn.findChildren<ServerSocket*>()) {
+            if (socket->connectionState() == ServerConnState::Connecting) {
+                pending = socket;
+                break;
+            }
+        }
+        if (!pending)
+            break;
+        emit pending->errorOccurred(QAbstractSocket::ConnectionRefusedError);
+        ++refused;
+    }
+    return refused;
+}
+
+// One pass dials each server once, then waits. The list cursor used to wrap, so a
+// pass never ended: refusing servers were redialled back to back, with no pause, and
+// hit the dead-server limit within seconds. MFC srchybrid/ServerConnect.cpp:47-63.
+void tst_ServerConnect::autoConnect_passEndsInARetryPause()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    ServerList list;
+    ListedLoopback first(list, QStringLiteral("A"));
+    ListedLoopback second(list, QStringLiteral("B"));
+    QVERIFY(first.entry && second.entry);
+
+    ServerConnect conn(list);
+    conn.setConfig(makeTestConfig());   // obfuscation off: a single, plain pass
+    conn.connectToAnyServer();
+
+    QCOMPARE(refuseAllDials(conn, 12), 2);
+    QCOMPARE(first.entry->failedCount(), uint32{1});
+    QCOMPARE(second.entry->failedCount(), uint32{1});
+    QVERIFY(conn.isRetryPending());
+    QVERIFY(conn.isConnecting());
+
+    // The 1 Hz top-up must not start the next pass early.
+    conn.checkForTimeout();
+    QCOMPARE(refuseAllDials(conn, 12), 0);
+
+    conn.stopConnectionTry();
+    QVERIFY(!conn.isRetryPending());
+}
+
+// With obfuscation preferred the pass over the obfuscated ports is followed by one
+// over the plain ports before the pause — unreachable while the cursor wrapped.
+void tst_ServerConnect::autoConnect_plainPassFollowsTheObfuscatedOne()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    ServerList list;
+    ListedLoopback only(list, QStringLiteral("A"));
+    QVERIFY(only.entry);
+
+    ServerConnectConfig cfg = makeTestConfig();
+    cfg.cryptLayerEnabled = true;
+    cfg.cryptLayerPreferred = true;
+    ServerConnect conn(list);
+    conn.setConfig(cfg);
+    conn.connectToAnyServer();
+
+    // No obfuscation support: dialled on its plain port in the first pass, marked,
+    // and once more in the plain pass. Then the pause.
+    QCOMPARE(refuseAllDials(conn, 12), 2);
+    QVERIFY(only.entry->triedCrypt());
+    QVERIFY(conn.isRetryPending());
+
+    conn.stopConnectionTry();
+}
+
 void tst_ServerConnect::failedConnect_disablesAtTheLimitButNeverAStaticServer()
 {
     const uint32 hadRetries = thePrefs.deadServerRetries();
@@ -1218,8 +1300,11 @@ void tst_ServerConnect::failedConnect_disablesAtTheLimitButNeverAStaticServer()
     QVERIFY(!pinned->isDisabled());
 
     // Nothing dials it by itself any more.
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < 4; ++i) {
+        list.setServerPosition(0);
         QCOMPARE(list.nextServer(false), pinned);
+        QVERIFY(list.nextServer(false) == nullptr);
+    }
 
     // Being listed by another server is no sign of life; the user's own add is.
     auto announced = std::make_unique<Server>(htonl(0x7F000001), plain->port());

@@ -47,11 +47,14 @@ const std::array<quint32, 256>& crcTable()
 }
 
 /// Value of `key=` in a yEnc header line, up to the next space. Returns a view
-/// into @p line, so it must not outlive it.
+/// into @p line, so it must not outlive it. The key must start a word, or
+/// "crc32=" would be found inside "pcrc32=".
 QByteArrayView headerValue(QByteArrayView line, const char* key)
 {
     const QByteArrayView needle(key, qstrlen(key));
-    const qsizetype at = line.indexOf(needle);
+    qsizetype at = line.indexOf(needle);
+    while (at > 0 && line[at - 1] != ' ')
+        at = line.indexOf(needle, at + 1);
     if (at < 0)
         return {};
     const qsizetype from = at + needle.size();
@@ -189,7 +192,12 @@ void YencDecoder::parseEnd(QByteArrayView line)
     m_sawEnd = true;
     m_expectedSize = headerNumber(line, "size=", -1);
 
-    const auto crcText = headerValue(line, "pcrc32=");
+    // pcrc32 covers this part. A single-part post has no =ypart and carries
+    // crc32 instead, which is then the same bytes; on a multi-part post crc32
+    // is the whole file and says nothing about this article.
+    auto crcText = headerValue(line, m_sawPart ? "pcrc32=" : "crc32=");
+    if (crcText.isEmpty() && !m_sawPart)
+        crcText = headerValue(line, "pcrc32=");
     if (!crcText.isEmpty()) {
         bool ok = false;
         m_expectedCrc = QByteArray(crcText.data(), crcText.size()).toUInt(&ok, 16);
@@ -204,7 +212,7 @@ void YencDecoder::parseEnd(QByteArrayView line)
         m_status = Status::SizeMismatch;
         return;
     }
-    // A missing pcrc32 is common on single-part posts; absence is not failure.
+    // No checksum at all happens; absence is not failure.
     if (m_haveExpectedCrc && m_expectedCrc != m_crc) {
         m_status = Status::CrcMismatch;
         return;

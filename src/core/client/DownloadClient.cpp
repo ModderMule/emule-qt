@@ -190,9 +190,14 @@ void UpDownClient::sendFileRequest()
     if (!m_socket || !m_reqFile)
         return;
 
-    // MFC: swap to another file first, in case a better A4AF is available
-    swapToAnotherFile(QStringLiteral("A4AF check before TCP file re-ask. sendFileRequest()"),
-                      true, false, false, nullptr, true, true);
+    // MFC: swap to another file first, in case a better A4AF is available.
+    // doSwap() leaves the source stateless, but the connection it is asking over is
+    // as live for the new file as for the old one — and unlike MFC's, the answer
+    // handlers here act only on a Connected source.
+    const DownloadState stateBeforeSwap = m_downloadState;
+    if (swapToAnotherFile(QStringLiteral("A4AF check before TCP file re-ask. sendFileRequest()"),
+                          true, false, false, nullptr, true, true))
+        setDownloadState(stateBeforeSwap);
     if (!m_reqFile)
         return;
 
@@ -1458,13 +1463,34 @@ bool UpDownClient::swapToAnotherFile(const QString& reason, bool ignoreNoNeeded,
                                       bool ignoreSuspensions, bool removeCompletely,
                                       PartFile* toFile, bool allowSame, bool isAboutToAsk)
 {
-    Q_UNUSED(isAboutToAsk);
-
     if (!m_reqFile)
         return false;
 
-    // Determine aggressive swapping mode
-    const bool aggressiveSwapping = (removeCompletely || ignoreNoNeeded);
+    // MFC srchybrid/DownloadClient.cpp:1548
+    const bool aggressiveSwapping = (removeCompletely || !allowSame || isAboutToAsk);
+
+    // Not before the current file is due for a re-ask: until then the source is
+    // doing its job where it is. An NNP source with somewhere to go is exempt.
+    // MFC srchybrid/DownloadClient.cpp:1552.
+    if (!removeCompletely && !ignoreSuspensions && allowSame
+        && timeUntilReask(m_reqFile, aggressiveSwapping) > 0
+        && (m_downloadState != DownloadState::NoNeededParts || m_otherRequests.empty()))
+        return false;
+
+    // Only an idle source may be moved — never one that is transferring, connecting
+    // or mid-handshake. MFC srchybrid/DownloadClient.cpp:1559-1578.
+    if (!removeCompletely) {
+        switch (m_downloadState) {
+        case DownloadState::OnQueue:
+        case DownloadState::NoNeededParts:
+        case DownloadState::TooManyConns:
+        case DownloadState::RemoteQueueFull:
+        case DownloadState::Connected:
+            break;
+        default:
+            return false;
+        }
+    }
 
     // If specific target file given, try to swap directly
     if (toFile) {
@@ -1561,6 +1587,10 @@ bool UpDownClient::doSwap(PartFile* swapTo, bool removeCompletely, const QString
     // Remove old file from our other-requests/no-needed lists
     m_otherRequests.remove(swapTo);
     m_otherNoNeeded.remove(swapTo);
+
+    // The state belonged to the old file. While m_reqFile is still that file, so the
+    // downloading-source bookkeeping lands on it. MFC srchybrid/DownloadClient.cpp:1827.
+    setDownloadState(DownloadState::None);
 
     // Clear stale pending block requests BEFORE switching m_reqFile —
     // the blocks reference the old file's offsets and removeBlockFromList

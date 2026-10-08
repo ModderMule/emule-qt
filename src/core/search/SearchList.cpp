@@ -508,7 +508,7 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
         // Check if there's an existing child with the same filename
         SearchFile* matchingChild = nullptr;
         for (auto* child : parent->listChildren()) {
-            if (child->fileName() == fileOwner->fileName()) {
+            if (child->fileName().compare(fileOwner->fileName(), Qt::CaseInsensitive) == 0) {
                 matchingChild = child;
                 break;
             }
@@ -563,15 +563,31 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
             entry->files.push_back(std::move(fileOwner));
         }
 
-        // Aggregate parent data: best source counts across all children
-        uint32 bestSources = 0;
-        uint32 bestComplete = 0;
-        for (auto* child : parent->listChildren()) {
-            bestSources = std::max(bestSources, child->sourceCount());
-            bestComplete = std::max(bestComplete, child->completeSourceCount());
+        // Recompute the parent from its children: eD2K sums them, Kad takes the max.
+        // Set, never add — the children already hold every answer so far. Name, size
+        // and type follow the most available child (MFC SearchList.cpp:541-592).
+        uint32 allSources = 0;
+        uint32 allComplete = 0;
+        const SearchFile* bestChild = nullptr;
+        for (const auto* child : parent->listChildren()) {
+            if (parent->isKadResult()) {
+                allSources = std::max(allSources, child->sourceCount());
+                allComplete = std::max(allComplete, child->completeSourceCount());
+            } else {
+                allSources += child->sourceCount();
+                allComplete += child->completeSourceCount();
+            }
+            if (!bestChild || child->sourceCount() > bestChild->sourceCount())
+                bestChild = child;
         }
-        parent->addSources(bestSources);
-        parent->addCompleteSources(bestComplete);
+        if (bestChild) {
+            parent->setFileSize(bestChild->fileSize());
+            if (parent->fileName() != bestChild->fileName())
+                parent->setFileName(bestChild->fileName());
+            parent->setFileType(bestChild->fileType());
+            parent->setSourceCount(allSources);
+            parent->setCompleteSourceCount(allComplete);
+        }
 
         // The parent carries a root only when every child that has one agrees on it
         // (MFC SearchList.cpp:548-600). It is seeded as Verified by a download.

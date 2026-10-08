@@ -138,6 +138,9 @@ private slots:
     void gluedYpartHeaderIsSplit();
     void escapeStraddlingALineIsHonoured();
     void crcMismatchIsReported();
+    void singlePartCrcIsVerified_data();
+    void singlePartCrcIsVerified();
+    void wholeFileCrcOnAMultiPartIsNotThePartsCrc();
     void sizeMismatchIsReported();
     void articleWithoutYbeginIsRejected();
     void headersBeforeYbeginAreIgnored();
@@ -331,6 +334,73 @@ void tst_UsenetYenc::crcMismatchIsReported()
     QCOMPARE(decoder.status(), YencDecoder::Status::CrcMismatch);
     QCOMPARE(decoder.expectedCrc(), 0xdeadbeefu);
     QVERIFY(decoder.calculatedCrc() != decoder.expectedCrc());
+}
+
+void tst_UsenetYenc::singlePartCrcIsVerified_data()
+{
+    rawFeedMatchesAtEverySplit_data();
+}
+
+void tst_UsenetYenc::singlePartCrcIsVerified()
+{
+    QFETCH(bool, lineMode);
+    YencDecoder::setLineModeForTests(lineMode);
+
+    // A single-part post has no =ypart and no pcrc32: its checksum is crc32.
+    // Reading only pcrc32 let every damaged nfo/sfv/small par2 through on the
+    // size check alone (NZBGet: Decoder.cpp, " crc32=" when !m_part).
+    const QByteArray data = patternBytes(300);
+    const QByteArrayList head{QByteArrayLiteral("=ybegin line=128 size=300 name=one.nfo")};
+
+    YencDecoder decoder;
+    QByteArrayList bad = head + encodeYenc(data);
+    bad << QByteArrayLiteral("=yend size=300 crc32=deadbeef");
+    RawResult r = decodeRaw(decoder, toWire(bad), {64});
+    QVERIFY(r.ended);
+    QCOMPARE(decoder.status(), YencDecoder::Status::CrcMismatch);
+    QCOMPARE(decoder.expectedCrc(), 0xdeadbeefu);
+
+    const QByteArray crc = QByteArray::number(yencCrc32(0, data), 16);
+    QByteArrayList good = head + encodeYenc(data);
+    good << QByteArrayLiteral("=yend size=300 crc32=") + crc;
+    r = decodeRaw(decoder, toWire(good), {64});
+    QCOMPARE(r.out, data);
+    QCOMPARE(decoder.status(), YencDecoder::Status::Ok);
+
+    // Some posters write pcrc32 on a single part; it is the same bytes.
+    QByteArrayList pcrc = head + encodeYenc(data);
+    pcrc << QByteArrayLiteral("=yend size=300 pcrc32=deadbeef");
+    decodeRaw(decoder, toWire(pcrc), {64});
+    QCOMPARE(decoder.status(), YencDecoder::Status::CrcMismatch);
+
+    // And no checksum at all is still not a failure.
+    QByteArrayList none = head + encodeYenc(data);
+    none << QByteArrayLiteral("=yend size=300");
+    decodeRaw(decoder, toWire(none), {64});
+    QCOMPARE(decoder.status(), YencDecoder::Status::Ok);
+}
+
+void tst_UsenetYenc::wholeFileCrcOnAMultiPartIsNotThePartsCrc()
+{
+    // On a multi-part post crc32 is the whole file's. It must neither be taken
+    // for this part's checksum nor be found inside the word "pcrc32".
+    const QByteArray data = patternBytes(400);
+    const QByteArray pcrc = QByteArray::number(yencCrc32(0, data), 16);
+    const QByteArrayList head = QByteArrayList{
+        QByteArrayLiteral("=ybegin part=1 total=2 line=128 size=800 name=two.bin"),
+        QByteArrayLiteral("=ypart begin=1 end=400")} + encodeYenc(data);
+
+    YencDecoder decoder;
+    decodeAll(decoder, head + QByteArrayList{QByteArrayLiteral("=yend size=400 part=1 pcrc32=")
+                                             + pcrc + " crc32=deadbeef"});
+    QCOMPARE(decoder.status(), YencDecoder::Status::Ok);
+
+    decodeAll(decoder, head + QByteArrayList{QByteArrayLiteral("=yend size=400 part=1 crc32=deadbeef")});
+    QCOMPARE(decoder.status(), YencDecoder::Status::Ok);
+
+    decodeAll(decoder, head + QByteArrayList{QByteArrayLiteral("=yend size=400 part=1 crc32=")
+                                             + pcrc + " pcrc32=deadbeef"});
+    QCOMPARE(decoder.status(), YencDecoder::Status::CrcMismatch);
 }
 
 void tst_UsenetYenc::sizeMismatchIsReported()

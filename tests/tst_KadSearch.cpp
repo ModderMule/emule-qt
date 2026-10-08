@@ -58,6 +58,7 @@ private slots:
 
     // Source publishing (audit item #4)
     void sourceTags_publishBuddyUdpPort();
+    void sourceTags_buddyHashUsesStockByteOrder();
     void sourceTags_notFirewalledHasNoBuddyTags();
     void sourceTags_firewalledWithoutBuddyCannotPublish();
     void sourceTags_directCallbackSetsTheCallbackBit();
@@ -516,6 +517,39 @@ const Tag* findTag(const std::vector<Tag>& tags, uint8 nameId)
 }
 
 } // namespace
+
+// FT_BUDDYHASH is text, and stock clients write it from CUInt128's raw memory: each
+// 32-bit word low byte first (MFC Search.cpp:669). toHexString() is the other order,
+// which only agrees for an ID whose words are byte palindromes.
+void tst_KadSearch::sourceTags_buddyHashUsesStockByteOrder()
+{
+    const uint8 idBytes[16] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+                               0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF};
+    const QString stock = QStringLiteral("3322110077665544BBAA9988FFEEDDCC");
+
+    Search::SourcePublishParams p;
+    p.firewalled   = true;
+    p.hasBuddy     = true;
+    p.buddyIP      = testIP(5);
+    p.buddyUDPPort = 5555;
+    p.tcpPort      = 4662;
+    p.buddyHash    = UInt128(idBytes);
+
+    bool canPublish = false;
+    const auto tags = Search::buildSourcePublishTags(p, canPublish);
+    QVERIFY(canPublish);
+    const Tag* buddyHash = findTag(tags, FT_BUDDYHASH);
+    QVERIFY(buddyHash != nullptr);
+    QVERIFY(buddyHash->isStr());
+    QCOMPARE(buddyHash->strValue(), stock);
+
+    // ...and read back it is the ID bytes the buddy compares against.
+    uint8 parsed[16]{};
+    QVERIFY(Search::buddyHashFromTagString(stock, parsed));
+    QVERIFY(std::memcmp(parsed, idBytes, 16) == 0);
+
+    QVERIFY(!Search::buddyHashFromTagString(QStringLiteral("nothex"), parsed));
+}
 
 void tst_KadSearch::sourceTags_publishBuddyUdpPort()
 {

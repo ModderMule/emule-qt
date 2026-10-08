@@ -17,9 +17,11 @@
 #include "server/Server.h"
 #include "server/ServerList.h"
 #include "utils/Opcodes.h"
+#include "kademlia/KadFirewallTester.h"
 #include "utils/ByteOrder.h"
 #include "utils/OtherFunctions.h"
 
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTest>
@@ -92,6 +94,8 @@ private slots:
     void processKadList_clearsEveryStateWhenKadIsNotRunning();
     void processKadList_adoptsConnectedBuddyAndDropsOthers();
     void processKadList_dropsAnOpenBuddy();
+    void processKadList_firewalledKeepsItsOpenBuddy();
+    void processKadList_dropsTheBuddyWhenKadLosesContact();
     void processKadList_detectsBuddyLoss();
 
     // The reaper and the chat state — MFC CClientList::Process()
@@ -832,6 +836,7 @@ void tst_ClientList::processKadList_adoptsConnectedBuddyAndDropsOthers()
     // Kad has to be running, or the very first thing processKadList() does is clear every
     // pending Kad interaction — see the test above.
     eMule::testing::KadFixture kadFixture;
+    kadFixture.kadPrefs().setLastContact();   // connected: a buddy is dropped otherwise
 
     ClientList list;
 
@@ -857,13 +862,13 @@ void tst_ClientList::processKadList_adoptsConnectedBuddyAndDropsOthers()
 
 void tst_ClientList::processKadList_dropsAnOpenBuddy()
 {
-    eMule::testing::KadFixture kadFixture;
+    // We are reachable, so we are the relay: the buddy is the firewalled side, and one
+    // that opened its port no longer needs us. MFC srchybrid/ClientList.cpp:611-618.
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Open);
+    kadFixture.kadPrefs().setLastContact();
 
     ClientList list;
 
-    // A buddy relays callbacks for firewalled peers, which only makes sense while it is
-    // itself firewalled. One that opened its port is no longer a relay.
-    // MFC srchybrid/ClientList.cpp:614-617.
     auto* buddy = new UpDownClient();
     buddy->setUserAddress(Address::fromString(QStringLiteral("10.7.0.3")));
     buddy->setUserIDHybrid(0x0A070003u);              // High ID
@@ -875,6 +880,62 @@ void tst_ClientList::processKadList_dropsAnOpenBuddy()
     list.processKadList();
 
     QCOMPARE(buddy->kadState(), KadState::None);
+}
+
+void tst_ClientList::processKadList_firewalledKeepsItsOpenBuddy()
+{
+    // The other direction: we are firewalled (TCP and UDP), and our buddy is an open
+    // node — that is what makes it a relay. Applying the "buddy must be firewalled"
+    // rule here too dropped every buddy in the pass that adopted it, and the buddy
+    // search restarted forever.
+    eMule::testing::KadFixture kadFixture;
+    kadFixture.kadPrefs().setLastContact();
+    kad::UDPFirewallTester::reset();
+    kad::UDPFirewallTester::debugAddUsedTestClient(0x0A000001, 4672);
+    kad::UDPFirewallTester::setUDPFWCheckResult(false, false, 0x0A000001, 4672);
+    kad::UDPFirewallTester::debugAddUsedTestClient(0x0A000002, 4672);
+    kad::UDPFirewallTester::setUDPFWCheckResult(false, false, 0x0A000002, 4672);
+    const auto resetTester = qScopeGuard([] { kad::UDPFirewallTester::reset(); });
+    QVERIFY(kadFixture.kad().isFirewalled());
+    QVERIFY(kad::UDPFirewallTester::isFirewalledUDP(true));
+
+    ClientList list;
+
+    auto* buddy = new UpDownClient();
+    buddy->setUserAddress(Address::fromString(QStringLiteral("10.7.0.5")));
+    buddy->setUserIDHybrid(0x0A070005u);              // High ID
+    buddy->setKadState(KadState::ConnectedBuddy);
+    list.addClient(buddy);
+    list.setBuddy(buddy, BuddyStatus::Connected);
+    QVERIFY(!buddy->hasLowID());
+
+    list.processKadList();
+    list.processKadList();
+
+    QCOMPARE(buddy->kadState(), KadState::ConnectedBuddy);
+    QCOMPARE(list.getBuddy(), buddy);
+    QCOMPARE(list.buddyStatus(), BuddyStatus::Connected);
+}
+
+void tst_ClientList::processKadList_dropsTheBuddyWhenKadLosesContact()
+{
+    // Running but no contact: MFC srchybrid/ClientList.cpp:620-623.
+    eMule::testing::KadFixture kadFixture;
+    QVERIFY(!kadFixture.kad().isConnected());
+
+    ClientList list;
+
+    auto* buddy = new UpDownClient();
+    buddy->setUserAddress(Address::fromString(QStringLiteral("10.7.0.6")));
+    buddy->setKadState(KadState::ConnectedBuddy);
+    list.addClient(buddy);
+    list.setBuddy(buddy, BuddyStatus::Connected);
+
+    list.processKadList();
+    QCOMPARE(buddy->kadState(), KadState::None);
+
+    list.processKadList();
+    QVERIFY(list.getBuddy() == nullptr);
 }
 
 void tst_ClientList::processKadList_detectsBuddyLoss()

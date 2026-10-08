@@ -202,6 +202,8 @@ private:
     void handleStatusLine(QByteArrayView raw);
     void handleBodyLine(QByteArrayView raw);
     void beginAuthOrReady();
+    void authAccepted();
+    void replayCommands();
     void enterReady();
     void finishCommand();
     void fail(NntpError error, const QString& text);
@@ -218,6 +220,9 @@ private:
 
     NntpCommand* m_command = nullptr;
     QList<NntpCommand*> m_pipeline;   ///< sent, answered after m_command
+    QList<NntpCommand*> m_replay;     ///< drew a 480; resent once re-authenticated
+    int m_discardReplies = 0;         ///< 480s still due for the pipelined ones
+    int m_replayGuard = 0;            ///< replayed commands not yet answered
     qint64 m_bodyBytes = 0;
     QElapsedTimer m_latencyClock;     ///< valid while an idle-line command awaits status
     qint64 m_latencyMs = 250;

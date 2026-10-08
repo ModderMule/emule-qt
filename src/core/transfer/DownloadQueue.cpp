@@ -243,6 +243,7 @@ void DownloadQueue::deleteAll()
         delete file;
     }
     m_items.clear();
+    m_localServerReqQueue.clear();
 }
 
 void DownloadQueue::cancelFile(PartFile* file)
@@ -1375,8 +1376,36 @@ void DownloadQueue::setFreeSpaceProbe(FreeSpaceProbe probe)
     m_volumeFree.clear();
 }
 
+void DownloadQueue::sendLocalSrcRequest(PartFile* file)
+{
+    if (file && std::ranges::find(m_localServerReqQueue, file) == m_localServerReqQueue.end())
+        m_localServerReqQueue.push_back(file);
+}
+
+void DownloadQueue::removeLocalServerRequest(PartFile* file)
+{
+    if (std::erase(m_localServerReqQueue, file) > 0)
+        file->setLocalSrcReqQueued(false);
+}
+
+void DownloadQueue::resetLocalServerRequests()
+{
+    m_nextTcpSrcReq = 0;
+    m_localServerReqQueue.clear();
+
+    for (auto* file : m_items) {
+        // MFC resumes the file here, which for a running one only zeroes the timer.
+        const PartFileStatus status = file->status();
+        if (status == PartFileStatus::Ready || status == PartFileStatus::Empty)
+            file->setLastSearchTimeServer(0);
+        file->setLocalSrcReqQueued(false);
+    }
+}
+
 void DownloadQueue::process()
 {
+    processLocalRequests();
+
     const uint64 curTick = getTickCount();
 
     // Prune samples older than 10 seconds
@@ -1768,8 +1797,82 @@ void DownloadQueue::onEntityAdded(PartFile* file)
     emit fileAdded(file);
 }
 
+namespace {
+constexpr int kMaxFilesPerTcpFrame = 15;   // iMaxFilesPerTcpFrame
+} // namespace
+
+void DownloadQueue::processLocalRequests()
+{
+    if (m_localServerReqQueue.empty() || !m_serverConnect || !m_serverConnect->isConnected())
+        return;
+
+    const uint64 curTick = getTickCount();
+    if (curTick < m_nextTcpSrcReq)
+        return;
+
+    const QByteArray frame = buildLocalRequestFrame(curTick);
+    if (!frame.isEmpty()) {
+        // One TCP frame for all of them; ServerSocket counts the overhead.
+        m_serverConnect->sendPacket(std::make_unique<RawPacket>(
+            frame.constData(), static_cast<uint32>(frame.size())));
+    }
+
+    // Server credits: 16 per request plus 4 spare, for a full frame.
+    m_nextTcpSrcReq = curTick + SEC2MS(kMaxFilesPerTcpFrame * (16 + 4));
+}
+
+QByteArray DownloadQueue::buildLocalRequestFrame(uint64 curTick)
+{
+    const Server* server = m_serverConnect ? m_serverConnect->currentServer() : nullptr;
+    const bool obfuscated = thePrefs.cryptLayerSupported() && server
+                            && server->supportsGetSourcesObfuscation();
+
+    QByteArray frame;
+    int files = 0;
+    while (!m_localServerReqQueue.empty() && files < kMaxFilesPerTcpFrame) {
+        // Longest wait first; among equals the higher download priority.
+        uint64 bestWaitTime = UINT64_MAX;
+        PartFile* next = nullptr;
+        for (auto it = m_localServerReqQueue.begin(); it != m_localServerReqQueue.end();) {
+            PartFile* cur = *it;
+            const PartFileStatus status = cur->status();
+            if (status != PartFileStatus::Ready && status != PartFileStatus::Empty) {
+                cur->setLocalSrcReqQueued(false);
+                it = m_localServerReqQueue.erase(it);
+                continue;
+            }
+            const uint8 priority = std::min(cur->downPriority(), kPrHigh);
+            const uint64 waitTime = cur->lastSearchTimeServer() + (kPrHigh - priority);
+            if (waitTime < bestWaitTime) {
+                bestWaitTime = waitTime;
+                next = cur;
+            }
+            ++it;
+        }
+        if (!next)
+            break;
+
+        next->setLocalSrcReqQueued(false);
+        next->setLastSearchTimeServer(curTick);
+        std::erase(m_localServerReqQueue, next);
+
+        if (next->isLargeFile() && (!server || !server->supportsLargeFilesTCP())) {
+            logWarning(QStringLiteral("Large file %1 queued for a server without large file support")
+                           .arg(next->fileName()));
+            continue;
+        }
+
+        ++files;
+        const auto packet = next->createServerSourceRequestPacket(obfuscated);
+        frame.append(packet->getPacket(), static_cast<qsizetype>(packet->getRealPacketSize()));
+    }
+    return frame;
+}
+
 void DownloadQueue::onEntityRemoved(PartFile* file)
 {
+    removeLocalServerRequest(file);
+
     // Keep the global-UDP-source file cursor from dangling on the freed file.
     // (getSuccServer() already tolerates a removed server cursor.)
     if (file == m_lastUdpFile)

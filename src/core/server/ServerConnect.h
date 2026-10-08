@@ -146,6 +146,8 @@ public:
     [[nodiscard]] bool isConnecting() const    { return m_connecting; }
     [[nodiscard]] bool isConnected() const     { return m_connected; }
     [[nodiscard]] bool isSingleConnect() const { return m_singleConnecting; }
+    /// Every server was tried; waiting out the pause before the next pass.
+    [[nodiscard]] bool isRetryPending() const  { return m_retryTimer.isActive(); }
     [[nodiscard]] uint32 clientID() const      { return m_clientID; }
     [[nodiscard]] uint32 curUser() const       { return m_curUser; }
 
