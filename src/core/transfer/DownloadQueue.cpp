@@ -2265,6 +2265,7 @@ void DownloadQueue::onDownloadCompleted(PartFile* file)
     // Add to SharedFileList
     if (m_sharedFileList) {
         m_sharedFileList->safeAddKFile(file);
+        m_sharedFileList->attachCollection(file);
         // already shared as a part file: update the server's complete-sources count
         m_sharedFileList->republishFile(file);
     }

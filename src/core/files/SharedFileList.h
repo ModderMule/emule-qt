@@ -244,6 +244,9 @@ public:
     uint64 getDataSize(uint64& largestOut) const;
 
     void addKeywords(KnownFile* file);
+    /// A download just completed: parse it if it is an .emulecollection
+    /// (MFC PartFile.cpp:3028-3034). safeAddKFile() does not, the file is shared already.
+    void attachCollection(KnownFile* file);
     void removeKeywords(KnownFile* file);
 
     /// The directories shared files sit in, as peers see them (sharedDirectory()),

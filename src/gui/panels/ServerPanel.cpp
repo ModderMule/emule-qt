@@ -194,8 +194,11 @@ void ServerPanel::onAddServerClicked()
 
 void ServerPanel::onUpdateServerMetClicked()
 {
-    const QString urlStr = urlPrefFieldValue(m_updateUrlEdit, Preferences::kDefaultServerListURL);
+    updateServerMetFromUrl(urlPrefFieldValue(m_updateUrlEdit, Preferences::kDefaultServerListURL));
+}
 
+void ServerPanel::updateServerMetFromUrl(const QString& urlStr)
+{
     const QUrl url(urlStr);
     if (!url.isValid() || url.scheme().isEmpty()) {
         m_logWidget->appendServerInfo(tr("Invalid URL: %1").arg(urlStr));
@@ -1478,7 +1481,12 @@ void ServerPanel::pasteServerLinks()
         if (auto* srvLink = std::get_if<ED2KServerLink>(&*parsed); srvLink && srvLink->port != 0)
             links.push_back(*srvLink);
     }
-    if (links.empty())
+    addServerLinks(links);
+}
+
+void ServerPanel::addServerLinks(const std::vector<ED2KServerLink>& links)
+{
+    if (links.empty() || !m_ipc || !m_ipc->isConnected())
         return;
 
     // One status-bar line and one refresh per paste, after the last reply.

@@ -892,6 +892,11 @@ void tst_StatisticsPanel::mfcsSectionNodesAreSections()
                                               QStringLiteral("Records"));
         QVERIFY2(records, top);
         QVERIFY2(StatisticsPanel::isSection(records), top);
+        // MFC "StatsRecords" is res\\Records.ico, not the cumulative icon
+        QCOMPARE(records->icon(0).pixmap(16).toImage(),
+                 QIcon(QStringLiteral(":/icons/Records.ico")).pixmap(16).toImage());
+        QVERIFY(records->icon(0).pixmap(16).toImage()
+                != QIcon(QStringLiteral(":/icons/StatsCumulative.ico")).pixmap(16).toImage());
     }
 }
 

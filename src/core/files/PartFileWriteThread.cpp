@@ -188,6 +188,7 @@ PartFileWriteResult PartFileWriteThread::execute(PartFileWriteJob& job)
         wrote = false;
     if (!wrote) {
         result.error = file.errorString();
+        result.diskFull = file.error() == QFileDevice::ResourceError;
         result.chunks = std::move(job.chunks);
         return result;
     }

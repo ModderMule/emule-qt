@@ -27,6 +27,7 @@
 #include "utils/DiskLoadLimiter.h"
 #include "utils/FileDate.h"
 #include "utils/Log.h"
+#include "utils/PathUtils.h"
 #include "utils/SafeFile.h"
 #include "utils/StringUtils.h"
 #include "utils/TimeUtils.h"
@@ -38,6 +39,8 @@
 #include "server/Server.h"
 
 
+#include <QScopeGuard>
+#include <QtEndian>
 #include <QDir>
 #include <QFileInfo>
 
@@ -504,8 +507,9 @@ uint32 PartFile::writeToBuffer(uint64 transize, const uint8* data,
     // anything else (stopping, completing, erroring) wants it on disk now.
     if (status() != PartFileStatus::Ready && status() != PartFileStatus::Empty)
         flushBuffer();
-    else if (m_gapList.empty())
-        flushBufferAsync();
+    else if (m_gapList.empty()
+             || m_totalBufferData > static_cast<uint64>(thePrefs.fileBufferSize()) * 2)
+        flushBufferAsync();   // twice the limit: not until the next tick (MFC :4033)
 
     return static_cast<uint32>(end - start + 1);
 }
@@ -571,8 +575,6 @@ void PartFile::applyFlushResult(PartFileWriteResult& result, bool forceICH, bool
     m_flushToken = 0;
 
     if (!result.written) {
-        logError(QStringLiteral("PartFile::flushBuffer: could not write %1: %2")
-                     .arg(fileName(), result.error));
         // Held, not discarded: the bytes come back and the next flush tries again.
         auto chunk = result.chunks.begin();
         for (auto& bd : m_flushingData) {
@@ -586,10 +588,9 @@ void PartFile::applyFlushResult(PartFileWriteResult& result, bool forceICH, bool
         });
         m_totalBufferData += m_flushingBytes;
         m_flushingBytes = 0;
-        if (theApp.downloadQueue)
-            theApp.downloadQueue->checkDiskspace();
         if (!m_destroying)
             resumeIdleSources();   // nobody is held on a verdict that is not coming
+        handleWriteFailure(result.error, result.diskFull);
         return;
     }
 
@@ -652,8 +653,7 @@ void PartFile::flushBuffer(bool forceICH, bool noAICH)
 
         m_partFileHandle.setFileName(partPath);
         if (!m_partFileHandle.open(QIODevice::ReadWrite)) {
-            logError(QStringLiteral("PartFile::flushBuffer: failed to open %1")
-                         .arg(partPath));
+            handleWriteFailure(m_partFileHandle.errorString(), false);
             return;
         }
     }
@@ -683,12 +683,9 @@ void PartFile::flushBuffer(bool forceICH, bool noAICH)
         wrote = false;
 
     if (!wrote) {
-        logError(QStringLiteral("PartFile::flushBuffer: could not write %1: %2")
-                     .arg(fileName(), m_partFileHandle.errorString()));
-        // Held, not discarded: the next flush tries again, and if the cause is
-        // the disk filling up, checkDiskspace() pauses the file before then.
-        if (theApp.downloadQueue)
-            theApp.downloadQueue->checkDiskspace();
+        // Held, not discarded: the next flush tries again.
+        handleWriteFailure(m_partFileHandle.errorString(),
+                           m_partFileHandle.error() == QFileDevice::ResourceError);
         return;
     }
 
@@ -1413,6 +1410,12 @@ void PartFile::resumeFile()
     m_paused = false;
     m_stopped = false;
     m_insufficient = false;
+    // A failed write: the buffer is still held, so resuming is the retry. (MFC keeps
+    // PS_ERROR until a restart.)
+    if (m_writeError) {
+        m_writeError = false;
+        setStatus(m_statusBeforeWriteError);
+    }
     setActive(theApp.isConnected());
 
     // Nothing to re-derive: dropping the flags is what un-pauses it, and the stored
@@ -1908,6 +1911,18 @@ bool PartFile::createPartFile(const QString& tempDir)
     if (fs > 0)
         m_partFileHandle.resize(static_cast<qint64>(fs));
 
+    // "Allocate full file size": claim the blocks now (MFC does it with the first
+    // flush, PartFile.cpp:4063-4078; the file has its size from here on). Not below
+    // the free-space floor, and never fatal.
+    if (fs > 0 && thePrefs.allocFullFile()) {
+        const std::optional<uint64> free = tryFreeDiskSpace(tempDir);
+        const uint64 floor = thePrefs.checkDiskspace() ? thePrefs.minFreeDiskSpace() : 0;
+        if (free.has_value() && *free < fs + floor)
+            logWarning(QStringLiteral("Not enough free space to allocate %1 in full").arg(fileName()));
+        else if (!preallocateFile(m_partFileHandle, fs))
+            logWarning(QStringLiteral("Could not allocate %1 in full").arg(fileName()));
+    }
+
     // Init gap covering entire file
     m_gapList.clear();
     if (fs > 0)
@@ -1945,7 +1960,8 @@ bool PartFile::createPartFile(const QString& tempDir)
 // ===========================================================================
 
 PartFileLoadResult PartFile::loadPartFile(const QString& directory,
-                                           const QString& filename)
+                                           const QString& filename,
+                                           PartFileFormat* checkFormat)
 {
     m_tmpPath = directory;
     m_partMetFilename = filename;
@@ -1954,6 +1970,22 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
     const QString metPath = m_fullName;
     SafeFile file(metPath, QIODevice::ReadOnly);
 
+    // The eDonkey layouts an import can meet (MFC PartFile.cpp:739-771): "new style"
+    // files have no priorities worth keeping, carry their hashes at the end, and
+    // their .part date says nothing.
+    bool newStyle = false;
+    PartFileFormat format = PartFileFormat::DefaultOld;
+
+    // The destructor saves the .part.met it knows. A file that was only identified,
+    // or that did not load, must not be written back from this object.
+    bool loaded = false;
+    const auto forgetMet = qScopeGuard([this, &loaded] {
+        if (!loaded) {
+            m_partMetFilename.clear();
+            m_fullName.clear();
+        }
+    });
+
     try {
         // Read version byte
         const uint8 version = file.readUInt8();
@@ -1961,32 +1993,62 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
             version != PARTFILE_VERSION_LARGEFILE &&
             version != PARTFILE_SPLITTEDVERSION)
         {
+            if (version == 'S') {   // "SDL…": a Shareaza download
+                const PartFileLoadResult result =
+                    importShareazaTempFile(directory, filename, checkFormat);
+                loaded = result == PartFileLoadResult::LoadSuccess;
+                return result;
+            }
             logWarning(QStringLiteral("PartFile::loadPartFile: unknown version 0x%1 in %2")
                            .arg(version, 2, 16, QChar(u'0'))
                            .arg(metPath));
             return PartFileLoadResult::FailedCorrupt;
         }
 
-        // Read timestamp
-        m_tLastModified = static_cast<time_t>(file.readUInt32());
-
-        // Read MD4 hash
-        uint8 hash[16];
-        file.readHash16(hash);
-        setFileHash(hash);
-
-        // Read hashset (part hashes) and store in FileIdentifier
-        const uint16 hashCount = file.readUInt16();
-        auto& md4HashSet = fileIdentifier().getRawMD4HashSet();
-        md4HashSet.clear();
-        md4HashSet.reserve(hashCount);
-        for (uint16 i = 0; i < hashCount; ++i) {
-            std::array<uint8, 16> partHash{};
-            file.readHash16(partHash.data());
-            md4HashSet.push_back(partHash);
+        newStyle = version == PARTFILE_SPLITTEDVERSION;
+        if (newStyle) {
+            format = PartFileFormat::Splitted;
+        } else if (file.length() >= 28) {
+            file.seek(24, 0);
+            if (file.readUInt32() == 0x01020000u) {   // eDonkey's "old part style"
+                newStyle = true;
+                format = PartFileFormat::NewOld;
+            }
+            file.seek(1, 0);
         }
-        if (hashCount > 0)
-            m_md4HashsetNeeded = false;
+
+        const auto readHashSet = [this, &file] {
+            uint8 hash[16];
+            file.readHash16(hash);
+            setFileHash(hash);
+
+            const uint16 hashCount = file.readUInt16();
+            auto& md4HashSet = fileIdentifier().getRawMD4HashSet();
+            md4HashSet.clear();
+            md4HashSet.reserve(hashCount);
+            for (uint16 i = 0; i < hashCount; ++i) {
+                std::array<uint8, 16> partHash{};
+                file.readHash16(partHash.data());
+                md4HashSet.push_back(partHash);
+            }
+            if (hashCount > 0)
+                m_md4HashsetNeeded = false;
+        };
+
+        if (!newStyle) {
+            // Timestamp, MD4 hash, part hashes
+            m_tLastModified = static_cast<time_t>(file.readUInt32());
+            readHashSet();
+        } else if (file.readUInt32() == 0) {
+            readHashSet();                            // 0.48 part.met: different again
+        } else {
+            file.seek(2, 0);
+            m_tLastModified = static_cast<time_t>(file.readUInt32());
+            uint8 hash[16];
+            file.readHash16(hash);
+            setFileHash(hash);
+            fileIdentifier().getRawMD4HashSet().clear();
+        }
 
         // Read tag count and iterate
         const uint32 tagCount = readTagCount(file, kMaxFileTags);
@@ -2051,11 +2113,11 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
                     m_compressionGain = tag.int64Value();
                 break;
             case FT_ULPRIORITY:
-                if (tag.isInt())
+                if (tag.isInt() && !newStyle)
                     setUpPriorityFromTag(tag.intValue());
                 break;
             case FT_DLPRIORITY:
-                if (tag.isInt()) {
+                if (tag.isInt() && !newStyle) {
                     auto val = static_cast<uint8>(tag.intValue());
                     if (val == kPrAuto) {
                         m_autoDownPriority = true;
@@ -2186,10 +2248,33 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
                 m_gapList.push_back({gStart, gEnd});
         }
 
+        // The hybrid style keeps its part hashes after the tags (MFC :994-1006)
+        if (newStyle && !checkFormat && file.position() < file.length()) {
+            file.readUInt8();
+            auto& md4HashSet = fileIdentifier().getRawMD4HashSet();
+            for (uint32 i = 0; i < partCount() && file.position() + 16 < file.length(); ++i) {
+                std::array<uint8, 16> partHash{};
+                file.readHash16(partHash.data());
+                md4HashSet.push_back(partHash);
+            }
+            fileIdentifier().calculateMD4HashByHashSet(true, true);
+        }
+
     } catch (const FileException& ex) {
         logError(QStringLiteral("PartFile::loadPartFile: error reading %1: %2")
                      .arg(metPath, QString::fromStdString(ex.what())));
         return PartFileLoadResult::FailedCorrupt;
+    }
+
+    if (static_cast<uint64>(fileSize()) > MAX_EMULE_FILE_SIZE) {
+        logError(QStringLiteral("PartFile::loadPartFile: %1: file size exceeds the supported limit")
+                     .arg(metPath));
+        return PartFileLoadResult::FailedOther;
+    }
+
+    if (checkFormat) {
+        *checkFormat = format;
+        return PartFileLoadResult::CheckSuccess;
     }
 
     // Open .part file and verify size
@@ -2250,7 +2335,7 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
     // writing to it? Then the gap list we just loaded describes bytes that may no
     // longer be there, and the only honest answer is to re-verify every part.
     // MFC srchybrid/PartFile.cpp:1129-1145.
-    if (m_status != PartFileStatus::Completing && !m_md4HashsetNeeded) {
+    if (m_status != PartFileStatus::Completing && !m_md4HashsetNeeded && !newStyle) {
         const QFileInfo partInfo(partPath);
         const qint64 onDisk = partInfo.lastModified().toSecsSinceEpoch();
         if (onDisk > 0
@@ -2270,6 +2355,7 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
         }
     }
 
+    loaded = true;
     return PartFileLoadResult::LoadSuccess;
 }
 
@@ -3105,22 +3191,11 @@ void FileMoveThread::run()
     if (!destDir.exists())
         destDir.mkpath(QStringLiteral("."));
 
-    // Handle duplicate filenames — append (N) suffix
-    QString finalDest = m_destPath;
-    if (QFile::exists(finalDest)) {
-        const QFileInfo fi(m_destPath);
-        const QString baseName = fi.completeBaseName();
-        const QString suffix = fi.suffix();
-        const QString dir = fi.absolutePath();
-        int counter = 1;
-        do {
-            if (suffix.isEmpty())
-                finalDest = QStringLiteral("%1/%2 (%3)").arg(dir, baseName).arg(counter);
-            else
-                finalDest = QStringLiteral("%1/%2 (%3).%4").arg(dir, baseName).arg(counter).arg(suffix);
-            ++counter;
-        } while (QFile::exists(finalDest));
-    }
+    const QString finalDest = uniqueDestination(
+        m_destPath, [](const QString& path) { return QFile::exists(path); });
+    if (finalDest != m_destPath)
+        logInfo(QStringLiteral("A file named %1 exists already: saved as %2")
+                    .arg(QFileInfo(m_destPath).fileName(), QFileInfo(finalDest).fileName()));
 
     // Try rename first (instant on same filesystem)
     if (QFile::rename(m_srcPath, finalDest)) {
@@ -3137,6 +3212,42 @@ void FileMoveThread::run()
     if (ok)
         m_destPath = finalDest;
     emit moveFinished(ok, finalDest);
+}
+
+QString FileMoveThread::uniqueDestination(const QString& path,
+                                          const std::function<bool(const QString&)>& exists)
+{
+    if (!exists(path))
+        return path;
+
+    // MFC PartFile.cpp:2856-2894: "name(N).ext", going on from an (N) the name
+    // already ends in. A name without extension gets no trailing dot here.
+    const qsizetype slash = path.lastIndexOf(u'/');
+    const QString dir = path.left(slash + 1);
+    QString stem = path.mid(slash + 1);
+    QString ext;
+    if (const qsizetype dot = stem.lastIndexOf(u'.'); dot > 0) {
+        ext = stem.mid(dot);
+        stem.truncate(dot);
+    }
+
+    int count = 0;
+    if (stem.endsWith(u')')) {
+        const qsizetype open = stem.lastIndexOf(u'(');
+        const QStringView digits = QStringView(stem).sliced(open + 1, stem.size() - open - 2);
+        const bool numeric = open > 0 && !digits.isEmpty()
+            && std::ranges::all_of(digits, [](QChar c) { return c.isDigit(); });
+        if (numeric) {
+            count = digits.toInt();
+            stem.truncate(open);
+        }
+    }
+
+    QString candidate;
+    do {
+        candidate = QStringLiteral("%1%2(%3)%4").arg(dir, stem).arg(++count).arg(ext);
+    } while (exists(candidate));
+    return candidate;
 }
 
 bool FileMoveThread::copyThenRename(const QString& srcPath, const QString& finalDest,
@@ -3246,6 +3357,7 @@ void PartFile::performFileMove(const QString& srcPath, const QString& destPath, 
             SourceSaver::removeFile(m_tmpPath, m_partMetFilename);
 
             setActive(false);   // done: stop the active-time clock
+            ensureOneCompleteSource();   // ourselves (MFC PartFile.cpp:2990-2992)
             setStatus(PartFileStatus::Complete);
             setFilePath(finalPath);
             setPath(QFileInfo(finalPath).absolutePath());
@@ -4215,7 +4327,7 @@ void PartFile::verifyChangedParts(bool forceICH, bool noAICH,
             // Request AICH recovery data if AICH didn't already agree. noAICH is
             // separate from forceICH because the destructor flushes with noAICH: a part
             // failing MD4 there must not start a request against a file being destroyed.
-            if (!forceICH && !noAICH && !aichAgreed)
+            if (!noAICH && !aichAgreed)
                 requestAICHRecovery(p);
 
             // Track corruption loss
@@ -4339,6 +4451,244 @@ void PartFile::unlinkA4AFSources()
     // Copy: removeFileFromOtherLists() edits m_a4afSrcList.
     for (auto* client : std::vector(m_a4afSrcList))
         client->removeFileFromOtherLists(this);
+}
+
+namespace {
+
+/// The little of MFC's CArchive an .sd file needs.
+class ArchiveReader {
+public:
+    explicit ArchiveReader(QFile& file) : m_file(file) {}
+
+    void read(void* dest, qint64 len)
+    {
+        if (m_file.read(static_cast<char*>(dest), len) != len)
+            throw FileException("unexpected end of file");
+    }
+    template <typename T> T value()
+    {
+        T v{};
+        read(&v, sizeof v);
+        return qFromLittleEndian(v);
+    }
+    bool flag() { return value<qint32>() != 0; }   // BOOL
+
+    /// CString: a length that widens on 0xFF / 0xFFFF, with FF FE FF marking UTF-16.
+    QString string()
+    {
+        bool wide = false;
+        quint32 len = value<quint8>();
+        if (len == 0xFF) {
+            len = value<quint16>();
+            if (len == 0xFFFE) {
+                wide = true;
+                len = value<quint8>();
+                if (len == 0xFF)
+                    len = value<quint16>();
+            }
+            if (len == 0xFFFF)
+                len = value<quint32>();
+        }
+        if (len > 4096)
+            throw FileException("implausible string length");
+        QByteArray raw(static_cast<qsizetype>(len) * (wide ? 2 : 1), '\0');
+        read(raw.data(), raw.size());
+        return wide ? QString::fromUtf16(reinterpret_cast<const char16_t*>(raw.constData()),
+                                         static_cast<qsizetype>(len))
+                    : QString::fromLocal8Bit(raw);
+    }
+
+private:
+    QFile& m_file;
+};
+
+/// Position @p file just behind the next occurrence of @p needle (MFC gotostring).
+bool seekBehind(QFile& file, const QByteArray& needle)
+{
+    const qint64 start = file.pos();
+    const QByteArray rest = file.readAll();
+    const qsizetype at = rest.indexOf(needle);
+    if (at < 0) {
+        file.seek(start);
+        return false;
+    }
+    file.seek(start + at + needle.size());
+    return true;
+}
+
+} // namespace
+
+void PartFile::resetForImportLoad()
+{
+    fileIdentifier().deleteMD4Hashset();
+    m_gapList.clear();
+    m_corruptedParts.clear();
+    clearTags();
+    closeDataFile();
+}
+
+void PartFile::handleWriteFailure(const QString& error, bool diskFull)
+{
+    // MFC FlushBuffersExceptionHandler (PartFile.cpp:4285-4329). The buffer stays as
+    // it is and nobody is blamed; the file stops asking for more until someone acts.
+    if (m_destroying) {
+        logError(QStringLiteral("Could not write %1: %2").arg(fileName(), error));
+        return;
+    }
+    if (diskFull) {
+        logError(QStringLiteral("Out of disk space while writing %1").arg(fileName()));
+        // With the check on the file waits and the free-space sweep brings it back;
+        // with it off that sweep un-parks everything, so it is a plain pause.
+        if (!m_insufficient && !m_paused)
+            pauseFile(/*insufficient*/ thePrefs.checkDiskspace());
+        return;
+    }
+    if (m_writeError)
+        return;
+    logError(QStringLiteral("Could not write %1: %2 — download paused").arg(fileName(), error));
+    m_writeError = true;
+    m_statusBeforeWriteError = m_status;
+    setStatus(PartFileStatus::Error);
+    pauseFile();
+}
+
+// MFC CPartFile::ImportShareazaTempfile (srchybrid/PartFile.cpp:457-702). The head of
+// an .sd is read in order; the fragment list and the eD2K hash set sit behind data
+// this does not parse and are found by searching for the file size and the file hash.
+PartFileLoadResult PartFile::importShareazaTempFile(const QString& directory,
+                                                    const QString& filename,
+                                                    PartFileFormat* checkFormat)
+{
+    const QString sdPath = directory + QDir::separator() + filename;
+    QFile sd(sdPath);
+    if (!sd.open(QIODevice::ReadOnly)) {
+        logError(QStringLiteral("Failed to open %1: %2").arg(sdPath, sd.errorString()));
+        return PartFileLoadResult::FailedNoAccess;
+    }
+
+    try {
+        ArchiveReader ar(sd);
+
+        char id[3];
+        ar.read(id, 3);
+        if (std::memcmp(id, "SDL", 3) != 0) {
+            if (checkFormat)
+                *checkFormat = PartFileFormat::Unknown;
+            return PartFileLoadResult::FailedOther;
+        }
+
+        const qint32 version = ar.value<qint32>();
+        setFileName(ar.string(), true);
+        const quint64 size = ar.value<quint64>();
+        if (size == 0 || size > MAX_EMULE_FILE_SIZE)
+            return PartFileLoadResult::FailedOther;
+        setFileSize(size);
+
+        // SHA1, Tiger, MD5, eD2K — each a BOOL, the hash if set, and from v31 a
+        // "trusted" BOOL
+        const auto skipHash = [&](qint64 len) {
+            char skipped[24];
+            if (ar.flag())
+                ar.read(skipped, len);
+        };
+        skipHash(20);
+        if (version >= 31) ar.flag();
+        skipHash(24);
+        if (version >= 31) ar.flag();
+        if (version >= 22)
+            skipHash(16);
+        if (version >= 31) ar.flag();
+        uint8 ed2k[16];
+        const bool hasEd2k = version >= 13 && ar.flag();
+        if (hasEd2k)
+            ar.read(ed2k, sizeof ed2k);
+        if (version >= 31) ar.flag();
+
+        if (!hasEd2k) {
+            logError(QStringLiteral("%1 has no eD2K hash and cannot be imported").arg(filename));
+            return PartFileLoadResult::FailedOther;
+        }
+        setFileHash(ed2k);
+
+        if (checkFormat) {
+            *checkFormat = PartFileFormat::Shareaza;
+            return PartFileLoadResult::CheckSuccess;
+        }
+
+        const qint64 basePos = sd.pos();
+        m_gapList.clear();
+        fileIdentifier().getRawMD4HashSet().clear();
+
+        // Fragment list: total, remaining, count, then (begin, length) of what is missing
+        const bool wideList = version >= 29;
+        const quint64 sizeLE = qToLittleEndian(size);
+        if (seekBehind(sd, QByteArray(reinterpret_cast<const char*>(&sizeLE), wideList ? 8 : 4))) {
+            sd.seek(sd.pos() - (wideList ? 8 : 4));
+            const auto word = [&]() -> quint64 {
+                return wideList ? ar.value<quint64>() : ar.value<quint32>();
+            };
+            const quint64 total = word();
+            const quint64 remaining = word();
+            quint32 fragments = ar.value<quint32>();
+            bool bad = total < remaining;
+            while (!bad && fragments-- > 0) {
+                const quint64 begin = word();
+                const quint64 length = word();
+                if (length == 0 || begin + length > total || begin >= size)
+                    bad = true;
+                else
+                    addGap(begin, std::min(begin + length - 1, size - 1));
+            }
+            if (bad) {
+                m_gapList.clear();
+                logWarning(QStringLiteral("%1: fragment list is corrupt").arg(filename));
+            }
+        } else {
+            logWarning(QStringLiteral("%1: no fragment list found").arg(filename));
+            sd.seek(basePos);
+        }
+
+        // eD2K hash set: count, the file hash again, then one hash per part
+        if (seekBehind(sd, QByteArray(reinterpret_cast<const char*>(ed2k), 16))) {
+            sd.seek(sd.pos() - 16 - 4);
+            const quint32 count = ar.value<quint32>();
+            uint8 again[16];
+            ar.read(again, sizeof again);
+            auto& hashSet = fileIdentifier().getRawMD4HashSet();
+            if (count <= partCount() + 1u) {
+                for (quint32 i = 0; i < count; ++i) {
+                    std::array<uint8, 16> partHash{};
+                    ar.read(partHash.data(), 16);
+                    hashSet.push_back(partHash);
+                }
+            }
+            const bool ok = hashSet.size() > 1
+                ? fileIdentifier().calculateMD4HashByHashSet(true, true)
+                : fileIdentifier().hasExpectedMD4HashCount();
+            if (!ok) {
+                logWarning(QStringLiteral("%1: hash set is corrupt").arg(filename));
+                fileIdentifier().deleteMD4Hashset();
+            }
+        } else {
+            logWarning(QStringLiteral("%1: no hash set found").arg(filename));
+        }
+    } catch (const FileException&) {
+        logError(QStringLiteral("%1 is corrupt").arg(filename));
+        return PartFileLoadResult::FailedOther;
+    }
+    sd.close();
+
+    // The rest would repeat loadPartFile(): write it in our format and load that.
+    m_tmpPath = directory;
+    m_partMetFilename = filename;
+    m_fullName = sdPath;
+    m_status = PartFileStatus::Empty;
+    if (!savePartFile())
+        return PartFileLoadResult::FailedOther;
+
+    fileIdentifier().deleteMD4Hashset();
+    m_gapList.clear();
+    return loadPartFile(directory, filename);
 }
 
 } // namespace eMule

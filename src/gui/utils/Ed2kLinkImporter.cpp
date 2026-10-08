@@ -44,8 +44,27 @@ struct ParsedLink {
 
 /// Split link text into file links, collecting HTTP Cache configuration links into
 /// @p configs and unparseable candidates into @p invalid.
+Ed2kLinkImporter::OtherLinkHandler s_otherLinkHandler;
+
+/// Files @p link under its kind; false when it is none of the non-download kinds.
+bool collectOther(const ED2KLink& link, Ed2kLinkImporter::OtherLinks& others)
+{
+    if (const auto* list = std::get_if<ED2KServerListLink>(&link))
+        others.serverLists << list->address;
+    else if (const auto* nodes = std::get_if<ED2KNodesListLink>(&link))
+        others.nodesLists << nodes->address;
+    else if (const auto* search = std::get_if<ED2KSearchLink>(&link))
+        others.searches << search->searchTerm;
+    else if (const auto* server = std::get_if<ED2KServerLink>(&link))
+        others.servers.append({server->address, server->port});
+    else
+        return false;
+    return true;
+}
+
 std::vector<ParsedLink> parseLines(const QString& text, QStringList& invalid,
-                                   std::vector<ED2KHttpCacheLink>& configs)
+                                   std::vector<ED2KHttpCacheLink>& configs,
+                                   Ed2kLinkImporter::OtherLinks& others)
 {
     std::vector<ParsedLink> links;
 
@@ -56,6 +75,8 @@ std::vector<ParsedLink> parseLines(const QString& text, QStringList& invalid,
             configs.push_back(*cfg);
             continue;
         }
+        if (parsed && collectOther(*parsed, others))
+            continue;
 
         const auto* fileLink = parsed ? std::get_if<ED2KFileLink>(&*parsed) : nullptr;
         if (!fileLink) {
@@ -253,7 +274,26 @@ Ed2kLinkImporter::LinkKinds Ed2kLinkImporter::linkKindsIn(const QString& text)
     // type with a different handler, and offering to add it as a server adds nothing.
     if (text.contains(QStringLiteral("ed2k://|server|"), Qt::CaseInsensitive))
         kinds |= LinkKind::Server;
+    for (const char* other : {"ed2k://|serverlist|", "ed2k://|nodeslist|", "ed2k://|search|"}) {
+        if (text.contains(QLatin1String(other), Qt::CaseInsensitive))
+            kinds |= LinkKind::Other;
+    }
     return kinds;
+}
+
+void Ed2kLinkImporter::setOtherLinkHandler(OtherLinkHandler handler)
+{
+    s_otherLinkHandler = std::move(handler);
+}
+
+Ed2kLinkImporter::OtherLinks Ed2kLinkImporter::otherLinksIn(const QString& text)
+{
+    OtherLinks others;
+    for (const QString& candidate : splitLinks(text)) {
+        if (const auto parsed = parseED2KLink(candidate))
+            collectOther(*parsed, others);
+    }
+    return others;
 }
 
 QString Ed2kLinkImporter::linkFromFileOpenEvent(const QFileOpenEvent& event)
@@ -277,7 +317,17 @@ void Ed2kLinkImporter::importLinks(const QString& text, IpcClient* ipc, QWidget*
 {
     Result result;
     std::vector<ED2KHttpCacheLink> configs;
-    std::vector<ParsedLink> links = parseLines(text, result.invalid, configs);
+    OtherLinks others;
+    std::vector<ParsedLink> links = parseLines(text, result.invalid, configs, others);
+
+    // Lists, searches and servers: only when a person asked (MFC acts on every such
+    // link it is handed; the clipboard watcher here hands over file links only).
+    if (others.count() > 0 && source == Source::Manual && s_otherLinkHandler) {
+        result.otherLinks = others.count();
+        if (beforePrompt)
+            beforePrompt();
+        s_otherLinkHandler(others, parent);
+    }
 
     // Configuration links take their own route: they start no download, and they
     // always confirm with the user no matter what @p prompt says — pasting a batch

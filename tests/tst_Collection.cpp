@@ -6,6 +6,10 @@
 #include "TestHelpers.h"
 #include "files/Collection.h"
 #include "files/CollectionFile.h"
+#include "files/CollectionKeys.h"
+#include "protocol/Tag.h"
+#include "utils/Opcodes.h"
+#include "utils/SafeFile.h"
 #include "files/KnownFile.h"
 #include "files/PublishKeywordList.h"
 #include "files/ShareableFile.h"
@@ -15,7 +19,10 @@
 #include <QCborArray>
 #include <QCborMap>
 #include <QCryptographicHash>
+#include <QFile>
 #include <QTest>
+
+#include <openssl/evp.h>
 
 #include <algorithm>
 #include <cstring>
@@ -54,6 +61,10 @@ private slots:
     void authorKeyHelpers();
     void authorKeyIsPublishedAsKadKeyword();
     void ipcSerialization_matchesHandlerFormat();
+    void truncatedBinary_neverThrows();
+    void signature_isSha1AndStillReadsSha256();
+    void unsignedCollection_showsNoAuthor();
+    void textCollection_writesRealLinks();
 };
 
 // ---------------------------------------------------------------------------
@@ -337,6 +348,189 @@ void tst_Collection::ipcSerialization_matchesHandlerFormat()
     QVERIFY(names.contains(QStringLiteral("pic.jpg")));
     QVERIFY(names.contains(QStringLiteral("vid.mp4")));
     QVERIFY(names.contains(QStringLiteral("doc.pdf")));
+}
+
+// ---------------------------------------------------------------------------
+// C51: a cut-off collection must not throw (it is parsed inside a slot)
+// ---------------------------------------------------------------------------
+
+static QByteArray readAll(const QString& path)
+{
+    QFile f(path);
+    return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+}
+
+static bool writeAll(const QString& path, const QByteArray& data)
+{
+    QFile f(path);
+    return f.open(QIODevice::WriteOnly | QIODevice::Truncate) && f.write(data) == data.size();
+}
+
+void tst_Collection::truncatedBinary_neverThrows()
+{
+    auto f1 = makeTestFile(0x11, QStringLiteral("file_one.bin"),   100'000);
+    auto f2 = makeTestFile(0x22, QStringLiteral("file_two.dat"), 2'000'000);
+    auto f3 = makeTestFile(0x33, QStringLiteral("file_three.txt"),  50'000);
+
+    Collection original;
+    original.m_name = QStringLiteral("Cut");
+    original.addFile(&f1);
+    original.addFile(&f2);
+    original.addFile(&f3);
+
+    TempDir tmp;
+    const QString path = tmp.filePath(QStringLiteral("cut.emulecollection"));
+    QVERIFY(original.writeToFile(path));
+    const QByteArray whole = readAll(path);
+    QVERIFY(whole.size() > 40);
+
+    int partial = 0;
+    for (qsizetype len = 8; len < whole.size(); ++len) {
+        QVERIFY(writeAll(path, whole.left(len)));
+        Collection loaded;
+        loaded.m_authorName = QStringLiteral("stale");
+        bool ok = false;
+        try {
+            ok = loaded.initFromFile(path, QStringLiteral("cut.emulecollection"));
+        } catch (...) {
+            QFAIL(qPrintable(QStringLiteral("threw at length %1").arg(len)));
+        }
+        QVERIFY(loaded.m_authorName.isEmpty());
+        QVERIFY(loaded.fileCount() < 3);
+        QCOMPARE(ok, loaded.fileCount() > 0);
+        if (ok)
+            ++partial;
+    }
+    QVERIFY(partial > 0);   // entries before the cut are kept, as MFC
+}
+
+// ---------------------------------------------------------------------------
+// C52: MFC signs RSA-SHA1; builds up to 0.6.2 signed SHA-256
+// ---------------------------------------------------------------------------
+
+static QByteArray signWith(const EVP_MD* md, EVP_PKEY* key, const QByteArray& payload)
+{
+    QByteArray sig;
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    size_t len = 0;
+    if (ctx && EVP_DigestSignInit(ctx, nullptr, md, nullptr, key) > 0
+        && EVP_DigestSignUpdate(ctx, payload.constData(), static_cast<size_t>(payload.size())) > 0
+        && EVP_DigestSignFinal(ctx, nullptr, &len) > 0) {
+        sig.resize(static_cast<qsizetype>(len));
+        if (EVP_DigestSignFinal(ctx, reinterpret_cast<unsigned char*>(sig.data()), &len) > 0)
+            sig.resize(static_cast<qsizetype>(len));
+        else
+            sig.clear();
+    }
+    EVP_MD_CTX_free(ctx);
+    return sig;
+}
+
+void tst_Collection::signature_isSha1AndStillReadsSha256()
+{
+    TempDir tmp;
+    CollectionKeys keys(tmp.path());
+    QVERIFY(keys.initialize());
+    QVERIFY(keys.signKey() != nullptr);
+
+    auto f1 = makeTestFile(0x71, QStringLiteral("signed_one.bin"), 1000);
+    auto f2 = makeTestFile(0x72, QStringLiteral("signed_two.bin"), 2000);
+
+    Collection original;
+    original.m_name = QStringLiteral("Signed");
+    original.m_authorName = QStringLiteral("Author");
+    original.m_authorKey = keys.publicKeyDer();
+    original.addFile(&f1);
+    original.addFile(&f2);
+
+    const QString path = tmp.filePath(QStringLiteral("signed.emulecollection"));
+    QVERIFY(original.writeToFile(path, keys.signKey()));
+    const QByteArray whole = readAll(path);
+
+    Collection loaded;
+    QVERIFY(loaded.initFromFile(path, QStringLiteral("signed.emulecollection")));
+    QCOMPARE(loaded.m_authorName, QStringLiteral("Author"));
+    QCOMPARE(loaded.m_authorKey, keys.publicKeyDer());
+
+    // The signature on disk is SHA-1 over everything before it.
+    const qsizetype sigLen = 128;   // 1024-bit key
+    const QByteArray payload = whole.left(whole.size() - sigLen);
+    QCOMPARE(whole.right(sigLen), signWith(EVP_sha1(), keys.signKey(), payload));
+
+    // One changed byte: files stay, the author goes.
+    QByteArray tampered = whole;
+    tampered[payload.size() - 1] = static_cast<char>(tampered[payload.size() - 1] ^ 0x01);
+    QVERIFY(writeAll(path, tampered));
+    Collection bad;
+    bad.initFromFile(path, QStringLiteral("signed.emulecollection"));
+    QVERIFY(bad.m_authorName.isEmpty());
+    QVERIFY(bad.m_authorKey.isEmpty());
+
+    // A collection an older build signed keeps its author.
+    QVERIFY(writeAll(path, payload + signWith(EVP_sha256(), keys.signKey(), payload)));
+    Collection legacy;
+    QVERIFY(legacy.initFromFile(path, QStringLiteral("signed.emulecollection")));
+    QCOMPARE(legacy.m_authorName, QStringLiteral("Author"));
+}
+
+// ---------------------------------------------------------------------------
+// C61: an author without a key is only a claim (MFC Collection.cpp:188-189)
+// ---------------------------------------------------------------------------
+
+void tst_Collection::unsignedCollection_showsNoAuthor()
+{
+    auto f1 = makeTestFile(0x81, QStringLiteral("claimed.bin"), 1000);
+    CollectionFile entry(&f1);
+
+    SafeMemFile mem;
+    mem.writeUInt32(kCollectionFileVersion1);
+    mem.writeUInt32(2);
+    Tag(FT_FILENAME, QStringLiteral("Claimed")).writeNewEd2kTag(mem, UTF8Mode::Raw);
+    Tag(FT_COLLECTIONAUTHOR, QStringLiteral("Somebody Famous")).writeNewEd2kTag(mem, UTF8Mode::Raw);
+    mem.writeUInt32(1);
+    QVERIFY(entry.writeCollectionInfo(mem));
+
+    TempDir tmp;
+    const QString path = tmp.filePath(QStringLiteral("claimed.emulecollection"));
+    QVERIFY(writeAll(path, mem.buffer()));
+
+    Collection loaded;
+    QVERIFY(loaded.initFromFile(path, QStringLiteral("claimed.emulecollection")));
+    QCOMPARE(loaded.m_name, QStringLiteral("Claimed"));
+    QCOMPARE(loaded.fileCount(), 1);
+    QVERIFY(loaded.m_authorName.isEmpty());
+}
+
+// ---------------------------------------------------------------------------
+// C63: text lines are real links (encoded name, AICH), as MFC's GetED2kLink()
+// ---------------------------------------------------------------------------
+
+void tst_Collection::textCollection_writesRealLinks()
+{
+    auto f1 = makeTestFile(0x91, QStringLiteral("a b|c.mp3"), 5'000'000);
+    AICHHash aich;
+    std::memset(aich.getRawHash(), 0x42, kAICHHashSize);
+    f1.fileIdentifier().setAICHHash(aich);
+
+    Collection original;
+    original.m_textFormat = true;
+    original.addFile(&f1);
+
+    TempDir tmp;
+    const QString path = tmp.filePath(QStringLiteral("links.emulecollection"));
+    QVERIFY(original.writeToFile(path));
+
+    const QString line = QString::fromUtf8(readAll(path)).trimmed();
+    QVERIFY2(line.contains(QStringLiteral("|h=")), qPrintable(line));
+    QVERIFY2(!line.contains(u' '), qPrintable(line));
+    QCOMPARE(line.count(u'|'), 6);   // the name's own bar is encoded
+
+    Collection loaded;
+    QVERIFY(loaded.initFromFile(path, QStringLiteral("links.emulecollection")));
+    QCOMPARE(loaded.fileCount(), 1);
+    const auto& cf = loaded.files().begin()->second;
+    QVERIFY(cf->fileIdentifier().hasAICHHash());
+    QCOMPARE(cf->fileIdentifier().getAICHHash(), aich);
 }
 
 QTEST_MAIN(tst_Collection)

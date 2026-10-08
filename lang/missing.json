@@ -1,24 +1,24 @@
 {
-  "A name uses words that advertise child abuse material": {
-    "_context": "eMule::ConfidenceText",
-    "de_DE": "Ein Name enthält Wörter, mit denen Kindesmissbrauchsmaterial beworben wird",
-    "es_ES": "Un nombre usa palabras que anuncian material de abuso infantil",
-    "fr_FR": "Un nom contient des mots qui annoncent du contenu pédocriminel",
-    "it_IT": "Un nome usa parole che pubblicizzano materiale pedopornografico",
-    "ja_JP": "名前に児童虐待コンテンツを宣伝する語が含まれています",
-    "ko_KR": "이름에 아동 학대물을 광고하는 단어가 있습니다",
-    "pt_BR": "Um nome usa palavras que anunciam material de abuso infantil",
-    "zh_CN": "名称中含有宣传儿童虐待内容的词语"
-  },
-  "The release is password protected": {
-    "_context": "eMule::ConfidenceText",
-    "de_DE": "Das Release ist passwortgeschützt",
-    "es_ES": "La publicación está protegida con contraseña",
-    "fr_FR": "La release est protégée par mot de passe",
-    "it_IT": "La release è protetta da password",
-    "ja_JP": "リリースはパスワードで保護されています",
-    "ko_KR": "릴리스가 암호로 보호되어 있습니다",
-    "pt_BR": "O lançamento é protegido por senha",
-    "zh_CN": "该发布受密码保护"
-  }
+ "Do you want to delete the source files after a successful import?": {
+  "_context": "eMule::ImportDownloadsDialog",
+  "de_DE": "Sollen die Quelldateien nach erfolgreichem Import gelöscht werden?",
+  "es_ES": "¿Desea eliminar los archivos de origen tras una importación correcta?",
+  "fr_FR": "Voulez-vous supprimer les fichiers source après une importation réussie ?",
+  "it_IT": "Eliminare i file di origine dopo un'importazione riuscita?",
+  "ja_JP": "インポートが成功したら元のファイルを削除しますか？",
+  "ko_KR": "가져오기가 성공하면 원본 파일을 삭제하시겠습니까?",
+  "pt_BR": "Deseja excluir os arquivos de origem após uma importação bem-sucedida?",
+  "zh_CN": "导入成功后是否删除源文件？"
+ },
+ "Do you want to download and use the Kad nodes file from\n%1 ?": {
+  "_context": "eMule::MainWindow",
+  "de_DE": "Soll die Kad-Knotendatei von\n%1 heruntergeladen und verwendet werden?",
+  "es_ES": "¿Desea descargar y usar el archivo de nodos Kad de\n%1 ?",
+  "fr_FR": "Voulez-vous télécharger et utiliser le fichier de nœuds Kad depuis\n%1 ?",
+  "it_IT": "Scaricare e usare il file dei nodi Kad da\n%1 ?",
+  "ja_JP": "次の場所から Kad ノードファイルをダウンロードして使用しますか？\n%1",
+  "ko_KR": "다음 위치에서 Kad 노드 파일을 내려받아 사용하시겠습니까?\n%1",
+  "pt_BR": "Deseja baixar e usar o arquivo de nós Kad de\n%1 ?",
+  "zh_CN": "是否从以下地址下载并使用 Kad 节点文件？\n%1"
+ }
 }

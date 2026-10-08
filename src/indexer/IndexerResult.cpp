@@ -87,16 +87,21 @@ void applyAttr(IndexerResult& row, QStringView key, QStringView value)
         // IPFilter use for junk lines.
         //
         // Erring toward *protected* costs a colour in the results list; erring
-        // the other way costs a download that cannot be unpacked.
+        // the other way costs a download that cannot be unpacked. A value the
+        // indexer sends on most rows is dropped later, see PasswordFlagTally.
         bool numeric = false;
         const int flag = value.toInt(&numeric);
         if (numeric) {
             row.passwordProtected = flag != 0;
             row.passwordStated = flag == 1 || flag == 10;
+            if (flag != 0)
+                row.passwordFlag = value.trimmed().toString();
         } else {
             row.passwordProtected = true;
             if (value.size() >= 4)
                 row.password = value.toString();
+            else
+                row.passwordFlag = value.trimmed().toString();
         }
     } else if (key == QLatin1String("usenetdate")) {
         if (const QDateTime dt = parseFeedDate(value.toString()); dt.isValid())
@@ -253,6 +258,34 @@ IndexerSearchPage parseIndexerSearch(const QByteArray& xml, const QString& index
         page.error = reader.errorString();
 
     return page;
+}
+
+void PasswordFlagTally::apply(IndexerSearchPage& page)
+{
+    for (const IndexerResult& row : std::as_const(page.results)) {
+        ++m_rows;
+        if (!row.passwordFlag.isEmpty())
+            ++m_counts[row.passwordFlag];
+    }
+
+    for (IndexerResult& row : page.results) {
+        // A passphrase (attribute or title) is a fact about the release, not a flag
+        if (row.passwordFlag.isEmpty() || !row.password.isEmpty())
+            continue;
+        if (isSkipped(row.passwordFlag)) {
+            row.passwordProtected = false;
+            row.passwordStated = false;
+        }
+    }
+}
+
+bool PasswordFlagTally::isSkipped(const QString& flag) const
+{
+    if (m_rows < kFlagMinRows) {
+        return flag != QLatin1String("1") && flag != QLatin1String("2")
+               && flag != QLatin1String("10");
+    }
+    return qint64(m_counts.value(flag)) * 100 > qint64(m_rows) * kFlagSkipPercent;
 }
 
 } // namespace eMule::indexer

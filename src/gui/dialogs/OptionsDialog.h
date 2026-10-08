@@ -615,12 +615,12 @@ private:
     QSpinBox*     m_dynUpGoingDownSpin = nullptr;
     QSpinBox*     m_dynUpNumPingsSpin = nullptr;
 
+    QCheckBox*    m_allocFullFileCheck = nullptr;
 #ifdef Q_OS_WIN
     // Windows-only Extended page controls
     QCheckBox*    m_autotakeEd2kCheck = nullptr;
     QCheckBox*    m_winFirewallCheck = nullptr;
     QCheckBox*    m_sparsePartFilesCheck = nullptr;
-    QCheckBox*    m_allocFullFileCheck = nullptr;
     QCheckBox*    m_resolveShellLinksCheck = nullptr;
     QButtonGroup* m_multiUserSharingGroup = nullptr;
 #endif

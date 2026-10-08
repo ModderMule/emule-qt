@@ -189,6 +189,7 @@ void IndexerClient::searchUrl(const QUrl& url, int timeoutMs, const QString& sou
                 done(false, page, page.error);
                 return;
             }
+            m_flagTallies[slug].apply(page);
             done(true, page, {});
         });
     });

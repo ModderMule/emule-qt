@@ -17,7 +17,7 @@
 <context>
     <name>Ed2kLinkImporter</name>
     <message>
-        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="+187"/>
+        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="+208"/>
         <source>already shared</source>
         <translation>bereits freigegeben</translation>
     </message>
@@ -52,7 +52,7 @@
         <translation>Sie haben den Download von &quot;%1&quot; zuvor abgebrochen.</translation>
     </message>
     <message numerus="yes">
-        <location line="+85"/>
+        <location line="+114"/>
         <source>%n further HTTP Cache link(s) ignored — apply one at a time.</source>
         <translation>
             <numerusform>%n weiterer HTTP-Cache-Link ignoriert — bitte einzeln anwenden.</numerusform>
@@ -364,7 +364,7 @@ Aktivieren Sie unter Optionen → Weboberfläche die Weboberfläche oder die RES
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="-288"/>
+        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="-317"/>
         <location line="+20"/>
         <source>eD2K Link</source>
         <translation>eD2K-Link</translation>
@@ -756,7 +756,7 @@ Erneut herunterladen?</translation>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4012"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4015"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -3271,7 +3271,7 @@ Hochgeladen:	%12</translation>
 <context>
     <name>eMule::ImportDownloadsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ImportDownloadsDialog.cpp" line="+39"/>
+        <location filename="../src/gui/dialogs/ImportDownloadsDialog.cpp" line="+40"/>
         <source>Convert Part Files</source>
         <translation>Part-Dateien konvertieren</translation>
     </message>
@@ -3282,12 +3282,12 @@ Hochgeladen:	%12</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+217"/>
+        <location line="+224"/>
         <source>Idle</source>
         <translation>Leerlauf</translation>
     </message>
     <message>
-        <location line="-206"/>
+        <location line="-213"/>
         <source>Job Queue</source>
         <translation>Auftragswarteschlange</translation>
     </message>
@@ -3333,11 +3333,12 @@ Hochgeladen:	%12</translation>
     </message>
     <message>
         <location line="+57"/>
+        <location line="+13"/>
         <source>Import Downloads</source>
         <translation>Downloads importieren</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-12"/>
         <source>Import Downloads is only available for local connections.</source>
         <translation>Downloads importieren ist nur für lokale Verbindungen verfügbar.</translation>
     </message>
@@ -3347,7 +3348,12 @@ Hochgeladen:	%12</translation>
         <translation>Ordner zum Scannen nach importierbaren Downloads auswählen</translation>
     </message>
     <message>
-        <location line="+119"/>
+        <location line="+8"/>
+        <source>Do you want to delete the source files after a successful import?</source>
+        <translation>Sollen die Quelldateien nach erfolgreichem Import gelöscht werden?</translation>
+    </message>
+    <message>
+        <location line="+118"/>
         <source>Converting...</source>
         <translation>Konvertiere...</translation>
     </message>
@@ -4036,8 +4042,8 @@ Bitte wählen Sie einen anderen:</translation>
 <context>
     <name>eMule::MainWindow</name>
     <message>
-        <location filename="../src/gui/app/MainWindow.cpp" line="+83"/>
-        <location line="+464"/>
+        <location filename="../src/gui/app/MainWindow.cpp" line="+85"/>
+        <location line="+471"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
@@ -4454,6 +4460,23 @@ Aktivieren Sie sie unter Optionen → Weboberfläche und versuchen Sie es erneut
         <location line="+31"/>
         <source>New message — double-click to read</source>
         <translation>Neue Nachricht — zum Lesen doppelklicken</translation>
+    </message>
+    <message>
+        <location line="+297"/>
+        <source>eD2K Link</source>
+        <translation>eD2K-Link</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Do you want to download and use the Kad nodes file from
+%1 ?</source>
+        <translation>Soll die Kad-Knotendatei von
+%1 heruntergeladen und verwendet werden?</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Kademlia</source>
+        <translation>Kademlia</translation>
     </message>
 </context>
 <context>
@@ -8034,12 +8057,12 @@ Einen später hinzuzufügen holt nicht dessen Bestand: ein neuer Indexer bekommt
         <translation>Neue Part-Dateien als &apos;sparse&apos; erstellen (nur NTFS)</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Allocate full file size for non-sparse part files</source>
         <translation>Volle Dateigröße für nicht-sparse Part-Dateien zuweisen</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+4"/>
         <source>Check disk space</source>
         <translation>Speicherplatz prüfen</translation>
     </message>
@@ -9320,7 +9343,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+75"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+76"/>
         <source>%1 (disabled)</source>
         <translation>%1 (deaktiviert)</translation>
     </message>
@@ -9434,7 +9457,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+246"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+256"/>
         <source>Disconnect</source>
         <translation>Trennen</translation>
     </message>
@@ -9762,7 +9785,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>Hinter Firewall</translation>
     </message>
     <message numerus="yes">
-        <location line="+578"/>
+        <location line="+621"/>
         <source>%n server(s) not added — LAN addresses are filtered</source>
         <translation>
             <numerusform>%n Server nicht hinzugefügt — LAN-Adressen werden gefiltert</numerusform>
@@ -9770,12 +9793,12 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         </translation>
     </message>
     <message>
-        <location line="-624"/>
+        <location line="-667"/>
         <source>Low ID</source>
         <translation>Low ID</translation>
     </message>
     <message>
-        <location line="+301"/>
+        <location line="+334"/>
         <source>Invalid server.met header: 0x%1</source>
         <translation>Ungültiger server.met-Header: 0x%1</translation>
     </message>
@@ -12534,85 +12557,85 @@ Ein erneuter Klick auf „Statistiken wiederherstellen“ lädt Ihre aktuellen S
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+713"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+714"/>
         <source>Downloads</source>
         <translation>Downloads</translation>
     </message>
     <message>
-        <location line="-364"/>
+        <location line="-365"/>
         <source>Priority (Download)</source>
         <translation>Priorität (Download)</translation>
     </message>
     <message>
         <location line="+29"/>
-        <location line="+1888"/>
+        <location line="+1889"/>
         <location line="+162"/>
         <source>Low</source>
         <translation>Niedrig</translation>
     </message>
     <message>
-        <location line="-2049"/>
-        <location line="+1887"/>
+        <location line="-2050"/>
+        <location line="+1888"/>
         <location line="+163"/>
         <source>Normal</source>
         <translation>Normal</translation>
     </message>
     <message>
-        <location line="-2049"/>
-        <location line="+1886"/>
+        <location line="-2050"/>
+        <location line="+1887"/>
         <location line="+164"/>
         <source>High</source>
         <translation>Hoch</translation>
     </message>
     <message>
-        <location line="-2048"/>
-        <location line="+2050"/>
+        <location line="-2049"/>
+        <location line="+2051"/>
         <source>Very Low</source>
         <translation>Sehr niedrig</translation>
     </message>
     <message>
-        <location line="-2049"/>
-        <location line="+2050"/>
+        <location line="-2050"/>
+        <location line="+2051"/>
         <source>Very High</source>
         <translation>Sehr hoch</translation>
     </message>
     <message>
-        <location line="-2048"/>
-        <location line="+2051"/>
+        <location line="-2049"/>
+        <location line="+2052"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-2040"/>
-        <location line="+684"/>
+        <location line="-2041"/>
+        <location line="+685"/>
         <location line="+1200"/>
         <source>Pause</source>
         <translation>Pause</translation>
     </message>
     <message>
-        <location line="-1875"/>
-        <location line="+681"/>
+        <location line="-1876"/>
+        <location line="+682"/>
         <location line="+1196"/>
         <source>Stop</source>
         <translation>Stopp</translation>
     </message>
     <message>
-        <location line="-1868"/>
-        <location line="+678"/>
+        <location line="-1869"/>
+        <location line="+679"/>
         <location line="+1192"/>
         <source>Resume</source>
         <translation>Fortsetzen</translation>
     </message>
     <message>
-        <location line="-1857"/>
-        <location line="+671"/>
+        <location line="-1858"/>
+        <location line="+672"/>
         <location line="+1188"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>Abbrechen</translation>
     </message>
     <message>
-        <location line="-1830"/>
+        <location line="-1831"/>
         <source>Preview with</source>
         <translation>Vorschau mit</translation>
     </message>
@@ -12633,14 +12656,14 @@ Ein erneuter Klick auf „Statistiken wiederherstellen“ lädt Ihre aktuellen S
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1264"/>
+        <location line="+1265"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation>Teile in Datei importieren...</translation>
     </message>
     <message>
-        <location line="-1251"/>
+        <location line="-1252"/>
         <source>Source Handling</source>
         <translation>Quellenverwaltung</translation>
     </message>
@@ -12651,7 +12674,7 @@ Ein erneuter Klick auf „Statistiken wiederherstellen“ lädt Ihre aktuellen S
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1187"/>
+        <location line="+1188"/>
         <source>Source Limit...</source>
         <translation>Quellenlimit...</translation>
     </message>
@@ -12758,39 +12781,39 @@ Ein erneuter Klick auf „Statistiken wiederherstellen“ lädt Ihre aktuellen S
         <translation>Dateiname:</translation>
     </message>
     <message>
-        <location line="-2427"/>
-        <location line="+662"/>
+        <location line="-2428"/>
+        <location line="+663"/>
         <source>Open File</source>
         <translation>Datei öffnen</translation>
     </message>
     <message>
-        <location line="-653"/>
+        <location line="-654"/>
         <location line="+2"/>
-        <location line="+665"/>
+        <location line="+666"/>
         <location line="+571"/>
         <source>Preview</source>
         <translation>Vorschau</translation>
     </message>
     <message>
-        <location line="-1199"/>
-        <location line="+1981"/>
+        <location line="-1200"/>
+        <location line="+1982"/>
         <location line="+98"/>
         <source>Details...</source>
         <translation>Details...</translation>
     </message>
     <message>
-        <location line="-2070"/>
+        <location line="-2071"/>
         <source>Comments...</source>
         <translation>Kommentare...</translation>
     </message>
     <message>
         <location line="+37"/>
-        <location line="+630"/>
+        <location line="+631"/>
         <source>Clear Completed</source>
         <translation>Abgeschlossene entfernen</translation>
     </message>
     <message>
-        <location line="-608"/>
+        <location line="-609"/>
         <source>eD2K Links...</source>
         <translation>eD2K-Links...</translation>
     </message>
@@ -12800,7 +12823,7 @@ Ein erneuter Klick auf „Statistiken wiederherstellen“ lädt Ihre aktuellen S
         <translation>eD2K-Links einfügen</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+16"/>
         <location line="+1974"/>
         <location line="+71"/>
         <source>Find...</source>
@@ -13741,14 +13764,14 @@ Für dieses Release ist ein Passwort festgelegt.</translation>
         <translation>Adresse</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3350"/>
-        <location line="+3239"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3353"/>
+        <location line="+3242"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Sitzung abgelaufen — bitte erneut anmelden</translation>
     </message>
     <message>
-        <location line="-3284"/>
+        <location line="-3287"/>
         <source>Guests cannot add downloads</source>
         <translation>Gäste können keine Downloads hinzufügen</translation>
     </message>
@@ -13886,12 +13909,12 @@ Für dieses Release ist ein Passwort festgelegt.</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1970"/>
+        <location line="+1973"/>
         <source>Web Control Panel</source>
         <translation>Web-Steuerung</translation>
     </message>
     <message>
-        <location line="-1962"/>
+        <location line="-1965"/>
         <source>Not connected</source>
         <translation>Nicht verbunden</translation>
     </message>
@@ -13907,12 +13930,12 @@ Für dieses Release ist ein Passwort festgelegt.</translation>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+332"/>
+        <location line="+335"/>
         <source>Disconnected</source>
         <translation>Getrennt</translation>
     </message>
     <message numerus="yes">
-        <location line="-279"/>
+        <location line="-282"/>
         <source>&quot;%1&quot;: %n result(s)</source>
         <translation>
             <numerusform>„%1“: %n Ergebnis</numerusform>
@@ -13920,7 +13943,7 @@ Für dieses Release ist ein Passwort festgelegt.</translation>
         </translation>
     </message>
     <message>
-        <location line="+192"/>
+        <location line="+195"/>
         <source>Active Connections</source>
         <translation>Aktive Verbindungen</translation>
     </message>
@@ -14568,7 +14591,7 @@ Das jeweils untätige Netz überlässt seinen Anteil dem anderen.</translation>
         <translation>NZB-Dateien:</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1168"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1171"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>Name</translation>
@@ -14970,7 +14993,7 @@ Das jeweils untätige Netz überlässt seinen Anteil dem anderen.</translation>
         <translation>Uploadgeschwindigkeit</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1165"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1168"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation>Uploads</translation>

@@ -31,7 +31,9 @@
 #include "prefs/Preferences.h"
 #include "utils/WebServices.h"
 #include "utils/Log.h"
+#include "protocol/ED2KLink.h"
 #include "utils/Ed2kLinkImporter.h"
+#include "utils/IpcFeedback.h"
 #include "utils/PreviewLauncher.h"
 #include "utils/NzbDrop.h"
 #include "utils/StatusBarNotifier.h"
@@ -84,6 +86,13 @@ MainWindow::MainWindow(QWidget* parent)
 
     // A .nzb dropped anywhere on the window is queued, whichever tab is up.
     setAcceptDrops(true);
+
+    Ed2kLinkImporter::setOtherLinkHandler(
+        [self = QPointer<MainWindow>(this)](const Ed2kLinkImporter::OtherLinks& links,
+                                            QWidget* parent) {
+            if (self)
+                self->handleOtherEd2kLinks(links, parent);
+        });
 
     setupPages();
     rebuildToolbar();
@@ -1887,6 +1896,53 @@ void MainWindow::onClientSharedFilesReceived(const Ipc::IpcMessage& msg)
         return;
     m_searchPanel->showClientSharedFiles(searchID, msg.fieldString(1));
     switchToTab(TabSearch);
+}
+
+void MainWindow::handleOtherEd2kLinks(const Ed2kLinkImporter::OtherLinks& links, QWidget* parent)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    // server.met URLs: merged without asking, as MFC
+    for (const QString& url : links.serverLists) {
+        if (m_serverPanel)
+            m_serverPanel->updateServerMetFromUrl(url);
+    }
+
+    if (!links.servers.isEmpty() && m_serverPanel) {
+        std::vector<ED2KServerLink> servers;
+        for (const auto& [address, port] : links.servers) {
+            ED2KServerLink link;
+            link.address = address;
+            link.port = port;
+            servers.push_back(std::move(link));
+        }
+        m_serverPanel->addServerLinks(servers);
+    }
+
+    // nodes.dat: MFC asks, "to avoid accidental / malicious updating"
+    for (const QString& url : links.nodesLists) {
+        if (QMessageBox::question(
+                parent ? parent : this, tr("eD2K Link"),
+                tr("Do you want to download and use the Kad nodes file from\n%1 ?").arg(url),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
+            continue;
+        Ipc::IpcMessage msg(Ipc::IpcMsgType::ImportKadNodes);
+        msg.append(url);
+        m_ipc->sendRequest(std::move(msg), [self = QPointer<MainWindow>(this)](const Ipc::IpcMessage& resp) {
+            if (self)
+                IpcFeedback::checkOrWarn(resp, self, tr("Kademlia"));
+        });
+    }
+
+    // A search starts only while a network is up (MFC ProcessEd2kSearchLinkRequest)
+    if (!links.searches.isEmpty() && m_searchPanel) {
+        switchToTab(TabSearch);
+        if (m_ed2kConnected || m_kadConnected) {
+            for (const QString& term : links.searches)
+                m_searchPanel->startSearchFromExternal(term);
+        }
+    }
 }
 
 } // namespace eMule

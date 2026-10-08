@@ -20,6 +20,9 @@
 #include "net/Address.h"
 #include "httpcache/HttpCacheOffer.h"
 #include "protocol/Tag.h"
+#include "app/AppContext.h"
+#include "server/ServerConnect.h"
+#include "server/ServerList.h"
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
 
@@ -66,6 +69,7 @@ private slots:
     void sourceTags_directCallbackSetsTheCallbackBit();
     void sourceTags_buddyBranchDoesNotClaimDirectCallback();
     void sourceTags_buddyIpTravelsInNetworkOrder();
+    void sourceReachability_followsTheAppWideState();
 
     // HTTP Cache chunk descriptors riding the source record
     void httpCacheTags_absentWithoutChunks();
@@ -588,6 +592,44 @@ void tst_KadSearch::sourceTags_publishBuddyUdpPort()
     const Tag* sourcePort = findTag(tags, FT_SOURCEPORT);
     QVERIFY(sourcePort != nullptr);
     QCOMPARE(static_cast<uint16>(sourcePort->intValue()), uint16{4662});
+}
+
+void tst_KadSearch::sourceReachability_followsTheAppWideState()
+{
+    // C27: the publish asked Kad alone. An eD2K HighID is reachable whatever Kad
+    // says (MFC Search.cpp:646 uses theApp.IsFirewalled()).
+    QVERIFY(Kademlia::instance() == nullptr || !Kademlia::instance()->isConnected());
+
+    ServerList list;
+    ServerConnect sc{list};
+    ServerConnect* const saved = theApp.serverConnect;
+    theApp.serverConnect = &sc;
+    const auto restore = qScopeGuard([&] { theApp.serverConnect = saved; });
+
+    sc.m_connected = true;
+    sc.m_clientID = 0x12345678;   // HighID
+
+    Search::SourcePublishParams high;
+    high.tcpPort = 4662;
+    Search::fillSourceReachability(high);
+    QVERIFY(!high.firewalled);
+    bool canPublish = false;
+    const auto tags = Search::buildSourcePublishTags(high, canPublish);
+    QVERIFY(canPublish);
+    const Tag* sourceType = findTag(tags, FT_SOURCETYPE);
+    QVERIFY(sourceType != nullptr);
+    QCOMPARE(sourceType->intValue(), uint32{1});
+
+    // LowID, no Kad, no buddy: nothing to publish.
+    sc.m_clientID = 100;
+    Search::SourcePublishParams low;
+    Search::fillSourceReachability(low);
+    QVERIFY(low.firewalled);
+    QVERIFY(!low.directUDPCallback);
+    QVERIFY(!low.hasBuddy);
+    canPublish = true;
+    QVERIFY(Search::buildSourcePublishTags(low, canPublish).empty());
+    QVERIFY(!canPublish);
 }
 
 void tst_KadSearch::sourceTags_notFirewalledHasNoBuddyTags()

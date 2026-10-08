@@ -27,6 +27,7 @@ class QTreeView;
 namespace eMule {
 
 class IpcClient;
+struct ED2KServerLink;
 class MetaResultActions;
 class PanelPoller;
 class LogWidget;
@@ -51,6 +52,11 @@ public:
 
     /// Get the log widget so it can be shared with MainWindow if needed.
     [[nodiscard]] LogWidget* logWidget() const { return m_logWidget; }
+
+    /// Download a server.met from @p url and merge it (MFC UpdateServerMetFromURL).
+    void updateServerMetFromUrl(const QString& url);
+    /// Add the servers of eD2K server links; the list selects them when they arrive.
+    void addServerLinks(const std::vector<ED2KServerLink>& links);
 
 private slots:
     void onConnectClicked();

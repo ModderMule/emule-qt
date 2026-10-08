@@ -40,6 +40,8 @@ private slots:
     void configLinkIsRoutedNotInvalid();
     void malformedConfigLinkIsRedacted();
 
+    void otherLinksGoToTheHandlerForManualImportsOnly();
+
     void linkKindsIn_data();
     void linkKindsIn();
 
@@ -287,6 +289,48 @@ void TestEd2kLinkImporter::malformedConfigLinkIsRedacted()
 // in front of a server link greyed that one out too.
 // ---------------------------------------------------------------------------
 
+// C58: MFC EmuleDlg.cpp:1259-1311 acts on these; here they were reported invalid.
+void TestEd2kLinkImporter::otherLinksGoToTheHandlerForManualImportsOnly()
+{
+    const QString text = QStringLiteral(
+        "ed2k://|serverlist|http://example.com/server.met|/\n"
+        "ed2k://|nodeslist|http://example.com/nodes.dat|/\n"
+        "ed2k://|search|some words|/\n"
+        "ed2k://|server|192.0.2.7|4661|/\n");
+
+    const auto parsed = Ed2kLinkImporter::otherLinksIn(text);
+    QCOMPARE(parsed.serverLists, QStringList{QStringLiteral("http://example.com/server.met")});
+    QCOMPARE(parsed.nodesLists, QStringList{QStringLiteral("http://example.com/nodes.dat")});
+    QCOMPARE(parsed.searches, QStringList{QStringLiteral("some words")});
+    QCOMPARE(parsed.servers.size(), 1);
+    QCOMPARE(parsed.servers.first().first, QStringLiteral("192.0.2.7"));
+    QCOMPARE(parsed.servers.first().second, quint16{4661});
+
+    int calls = 0;
+    Ed2kLinkImporter::OtherLinks seen;
+    Ed2kLinkImporter::setOtherLinkHandler(
+        [&](const Ed2kLinkImporter::OtherLinks& links, QWidget*) { ++calls; seen = links; });
+    const auto reset = qScopeGuard([] { Ed2kLinkImporter::setOtherLinkHandler({}); });
+
+    Ed2kLinkImporter::Result result;
+    const auto keep = [&result](const Ed2kLinkImporter::Result& r) { result = r; };
+
+    Ed2kLinkImporter::importLinks(text, nullptr, nullptr, Ed2kLinkImporter::Source::Manual,
+                                  Ed2kLinkImporter::Prompt::Silent, keep);
+    QCOMPARE(calls, 1);
+    QCOMPARE(seen.count(), 4);
+    QCOMPARE(result.otherLinks, 4);
+    QVERIFY2(result.invalid.isEmpty(), qPrintable(result.invalid.join(u' ')));
+
+    // The clipboard watcher: neither acted on nor called invalid.
+    result = {};
+    Ed2kLinkImporter::importLinks(text, nullptr, nullptr, Ed2kLinkImporter::Source::Automatic,
+                                  Ed2kLinkImporter::Prompt::Ask, keep);
+    QCOMPARE(calls, 1);
+    QCOMPARE(result.otherLinks, 0);
+    QVERIFY(result.invalid.isEmpty());
+}
+
 void TestEd2kLinkImporter::linkKindsIn_data()
 {
     QTest::addColumn<QString>("text");
@@ -324,15 +368,14 @@ void TestEd2kLinkImporter::linkKindsIn_data()
         << QStringLiteral("%1\n%2").arg(fileLink, cacheLink) << (file | cache);
 
     // serverlist is a different link with a different handler — the trailing '|'
-    // in the needle is what keeps it out.
+    // in the needle is what keeps it out of Server.
+    const int other = int(Ed2kLinkImporter::LinkKind::Other);
     QTest::newRow("serverlist is not a server")
-        << QStringLiteral("ed2k://|serverlist|http://example.com/server.met|/") << none;
-
-    // Nothing in the GUI imports these, so nothing should light up for them.
+        << QStringLiteral("ed2k://|serverlist|http://example.com/server.met|/") << other;
     QTest::newRow("nodeslist")
-        << QStringLiteral("ed2k://|nodeslist|http://example.com/nodes.dat|/") << none;
+        << QStringLiteral("ed2k://|nodeslist|http://example.com/nodes.dat|/") << other;
     QTest::newRow("search")
-        << QStringLiteral("ed2k://|search|foo|/") << none;
+        << QStringLiteral("ed2k://|search|foo|/") << other;
 }
 
 void TestEd2kLinkImporter::linkKindsIn()

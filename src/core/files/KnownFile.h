@@ -337,6 +337,13 @@ protected:
     /// mixes 80% network with 20% of that, which MFC does for a part file
     /// (PartFile.cpp:2596-2655) but not for a complete one (KnownFile.cpp:255-291).
     void updateCompleteSourceCounts(std::vector<uint16>& peerCounts, uint16 seen, bool blend);
+    /// A file just completed here is a complete source; the count is refreshed next.
+    void ensureOneCompleteSource()
+    {
+        if (m_completeSourcesCount == 0)
+            m_completeSourcesCount = m_completeSourcesCountLo = m_completeSourcesCountHi = 1;
+        m_completeSourcesTime = 0;
+    }
     [[nodiscard]] bool completeSourcesDue(time_t now) const { return now - m_completeSourcesTime > 0; }
 
 private:

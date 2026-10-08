@@ -3,8 +3,9 @@
 /// @file PartFileConvert.h
 /// @brief Legacy format converter — port of MFC CPartFileConvert.
 ///
-/// Converts old eMule (.part.met), Shareaza (.sd), and splitted (.part.001)
-/// download files to current eMule format.
+/// Imports downloads of other clients into the temp directory and the queue:
+/// eMule / eDonkey ".part.met" (also the old eDonkey layouts and split chunk
+/// files "NNN.<n>.part") and Shareaza ".sd".
 
 #include "utils/Types.h"
 
@@ -46,7 +47,7 @@ struct ConvertJob {
     uint64 spaceNeeded = 0;
     int format = 0;
     ConvertStatus state = ConvertStatus::Queued;
-    bool removeSource = true;
+    bool removeSource = false;      ///< delete the source after a successful import
 };
 
 // ---------------------------------------------------------------------------
@@ -80,7 +81,7 @@ public:
     explicit PartFileConvert(QObject* parent = nullptr);
     ~PartFileConvert() override;
 
-    static void scanFolderToAdd(const QString& folder, bool recursive = false, bool removeSource = true);
+    static void scanFolderToAdd(const QString& folder, bool recursive = false, bool removeSource = false);
     static void addJob(ConvertJob job);
     static void removeJob(int index);
     static void removeAllJobs();
@@ -94,6 +95,7 @@ public:
     static void stopThread();
     static void processQueue();
 
+    /// PartFileFormat of a met / .sd file as int, 0 when it is neither.
     static int detectFormat(const QString& filePath);
 
     /// Perform the actual conversion of a single job.

@@ -13,6 +13,8 @@
 #include <cstdint>
 #include <optional>
 
+class QFile;
+
 namespace eMule {
 
 /// Application directory roles (resolved via QStandardPaths).
@@ -62,6 +64,11 @@ enum class AppDir {
 /// is unreadable is a different decision from pausing them because the disk is
 /// full, and only the caller knows which way it wants to be wrong.
 [[nodiscard]] std::optional<std::uint64_t> tryFreeDiskSpace(const QString& path);
+
+/// Reserve the disk blocks for the first @p size bytes of an open file, so later
+/// writes cannot run out of space or fragment. The logical size is not changed.
+/// @return false when the file system cannot or will not.
+[[nodiscard]] bool preallocateFile(QFile& file, std::uint64_t size);
 
 /// Sanitize a file name by removing or replacing invalid characters.
 [[nodiscard]] QString sanitizeFilename(const QString& name);

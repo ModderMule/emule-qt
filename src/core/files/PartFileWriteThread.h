@@ -71,6 +71,7 @@ struct PartFileWriteResult {
     QByteArray fileHash;
     quint64 token = 0;
     bool written = false;
+    bool diskFull = false;                  ///< the failure was "no space left"
     QString error;
     /// The job's chunks again when the write failed: nothing was lost.
     std::vector<PartFileWriteJob::Chunk> chunks;

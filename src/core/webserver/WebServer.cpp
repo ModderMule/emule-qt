@@ -2739,11 +2739,14 @@ QString WebServer::buildSharedFilesPage(bool /*isAdmin*/, const QString& /*sessi
             lineVars[QStringLiteral("SharedPriority")] = QString::number(file->upPriority());
             // For Copy ED2K Link. A data attribute, so the name never lands in a
             // script literal, and the core's own builder encodes it.
+            // With our own IP as source when reachable (MFC WebServer.cpp:2840-2843).
             ED2KFileLink link;
             link.name = file->fileName();
             link.size = file->fileSize();
             std::memcpy(link.hash.data(), file->fileHash(), link.hash.size());
-            lineVars[QStringLiteral("SharedED2kLink")] = htmlText(link.toLink());
+            link.hostnameSources = ownIpLinkSourceHints();
+            lineVars[QStringLiteral("SharedED2kLink")] =
+                htmlText(link.toLink({.sources = !link.hostnameSources.empty()}));
             sharedLines += WebTemplateEngine::substitute(lineTmpl, lineVars);
         });
     }

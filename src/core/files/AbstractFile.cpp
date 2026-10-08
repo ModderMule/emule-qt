@@ -126,7 +126,7 @@ bool AbstractFile::hasNullHash() const
 // ED2K link
 // ---------------------------------------------------------------------------
 
-QString AbstractFile::getED2kLink(bool hashset, bool html, bool hostname) const
+QString AbstractFile::getED2kLink(bool hashset, bool html, bool hostname, bool source) const
 {
     // The link grammar lives in ED2KFileLink::toLink() — including where the '/'
     // terminator goes and how an IPv6 hint is kept out of the legacy `sources,` block.
@@ -153,10 +153,13 @@ QString AbstractFile::getED2kLink(bool hashset, bool html, bool hostname) const
 
     if (hostname)
         link.hostnameSources = ownLinkSourceHints();
+    // MFC AbstractFile.cpp:439-443: the IP only where no hostname was written
+    if (source && link.hostnameSources.empty())
+        link.hostnameSources = ownIpLinkSourceHints();
 
     return link.toLink({.partHashes = emitPartHashes,
                         .aichHash   = true,
-                        .sources    = hostname && !link.hostnameSources.empty(),
+                        .sources    = !link.hostnameSources.empty(),
                         .html       = html});
 }
 

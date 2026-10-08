@@ -6,7 +6,10 @@
 
 #include "app/AppContext.h"
 #include "prefs/Preferences.h"
+#include "utils/Opcodes.h"
 
+#include <QDate>
+#include <QDateTime>
 #include <QHostAddress>
 #include <QRegularExpression>
 #include <QUrl>
@@ -33,9 +36,14 @@ void appendLinkSources(ED2KFileLink& link, QStringView list, bool ipv6Only)
         if (static_cast<int>(link.hostnameSources.size()) >= kMaxLinkSources)
             return;
 
-        const auto hp = parseHostPort(token, 4662);
-        if (!hp)
-            continue;
+        // Only an IPv6 literal may omit the port (a bare one cannot carry it). An IPv4
+        // or named source without one is skipped, as MFC ED2KLink.cpp:280-285.
+        auto hp = parseHostPort(token, 0);
+        if (!hp) {
+            hp = parseHostPort(token, 4662);
+            if (!hp || !Address::fromString(hp->host).isIPv6())
+                continue;
+        }
 
         ED2KLinkSource src;
         src.hostname = hp->host;
@@ -54,6 +62,52 @@ void appendLinkSources(ED2KFileLink& link, QStringView list, bool ipv6Only)
 
         link.hostnameSources.push_back(std::move(src));
     }
+}
+
+/// MFC ED2KLink.cpp:117-121: a file link names a file of 1 byte to 256 GB.
+bool isValidLinkFileSize(uint64 size)
+{
+    return size > 0 && size <= MAX_EMULE_FILE_SIZE;
+}
+
+/// `s=` of a file link, `as=` of a magnet: an http(s) URL source.
+void appendUrlSource(ED2KFileLink& link, const QString& sourceUrl)
+{
+    if (static_cast<int>(link.hostnameSources.size()) >= kMaxLinkSources)
+        return;
+    const QUrl url(sourceUrl);
+    const QString scheme = url.scheme().toLower();
+    // URLClient only speaks HTTP; anything else is not a usable source.
+    if (!url.isValid() || url.host().isEmpty()
+        || (scheme != QStringLiteral("http") && scheme != QStringLiteral("https")))
+        return;
+
+    ED2KLinkSource src;
+    src.hostname = url.host();      // QUrl already strips [] from an IPv6 host
+    src.port = static_cast<uint16>(url.port(4662));
+    src.address = Address::fromString(src.hostname);
+    src.url = sourceUrl;
+    link.hostnameSources.push_back(std::move(src));
+}
+
+/// `sources@YYMMDD`: the block is void from local midnight of that day, and when
+/// the date is not one (MFC ED2KLink.cpp:237-259). Plain `sources` never expires.
+bool sourcesBlockExpired(QStringView head)
+{
+    const qsizetype at = head.indexOf(u'@');
+    if (at < 0)
+        return false;
+    const QStringView digits = head.sliced(at + 1);
+    if (digits.size() != 6)
+        return true;
+    bool ok[3] = {};
+    const int yy = digits.sliced(0, 2).toInt(&ok[0]);
+    const int mm = digits.sliced(2, 2).toInt(&ok[1]);
+    const int dd = digits.sliced(4, 2).toInt(&ok[2]);
+    const QDate date(2000 + yy, mm, dd);
+    if (!ok[0] || !ok[1] || !ok[2] || !date.isValid())
+        return true;
+    return date.startOfDay() <= QDateTime::currentDateTime();
 }
 
 /// Value of one hex digit, or -1. QString::toUInt(&ok, 16) is not usable here:
@@ -290,7 +344,7 @@ static std::optional<ED2KFileLink> parseFileLink(const QStringList& parts)
     // Size
     bool sizeOk = false;
     link.size = parts[2].toULongLong(&sizeOk);
-    if (!sizeOk)
+    if (!sizeOk || !isValidLinkFileSize(link.size))
         return std::nullopt;
 
     // Hash (32 hex chars = 16 bytes MD4)
@@ -341,22 +395,7 @@ static std::optional<ED2KFileLink> parseFileLink(const QStringList& parts)
         }
         // HTTP source: s=url
         else if (param.startsWith(QStringLiteral("s="), Qt::CaseInsensitive)) {
-            if (static_cast<int>(link.hostnameSources.size()) >= kMaxLinkSources)
-                continue;
-            const QString sourceUrl = param.mid(2);
-            const QUrl url(sourceUrl);
-            const QString scheme = url.scheme().toLower();
-            // URLClient only speaks HTTP; anything else is not a usable source.
-            if (url.isValid() && !url.host().isEmpty()
-                && (scheme == QStringLiteral("http") || scheme == QStringLiteral("https")))
-            {
-                ED2KLinkSource src;
-                src.hostname = url.host();      // QUrl already strips [] from an IPv6 host
-                src.port = static_cast<uint16>(url.port(4662));
-                src.address = Address::fromString(src.hostname);
-                src.url = sourceUrl;
-                link.hostnameSources.push_back(std::move(src));
-            }
+            appendUrlSource(link, param.mid(2));
         }
         // IPv6 sources: s6=[v6]:port,[v6]:port,...
         else if (param.startsWith(QStringLiteral("s6="), Qt::CaseInsensitive)) {
@@ -367,7 +406,7 @@ static std::optional<ED2KFileLink> parseFileLink(const QStringList& parts)
             // Format: sources@YYMMDD,ip:port,ip:port,...  or  sources,ip:port,...
             // Find the first comma to skip past the "sources" or "sources@date" part
             const auto commaPos = param.indexOf(QChar(u','));
-            if (commaPos >= 0)
+            if (commaPos >= 0 && !sourcesBlockExpired(QStringView(param).left(commaPos)))
                 appendLinkSources(link, param.mid(commaPos + 1), /*ipv6Only=*/false);
         }
     }
@@ -402,9 +441,10 @@ static std::optional<ED2KServerLink> parseServerLink(const QStringList& parts)
         return std::nullopt;
 
     bool portOk = false;
-    link.port = static_cast<uint16>(parts[2].toUInt(&portOk));
-    if (!portOk || link.port == 0)
+    const uint port = parts[2].toUInt(&portOk);
+    if (!portOk || port == 0 || port > 65535)   // MFC ED2KLink.cpp:66-68
         return std::nullopt;
+    link.port = static_cast<uint16>(port);
 
     return link;
 }
@@ -495,6 +535,8 @@ static std::optional<ED2KLink> parseMagnetLink(const QString& uri)
 
     QString hash;
     QString name;
+    QString aich;
+    QStringList urlSources;
     uint64 size = 0;
 
     for (const auto& param : params) {
@@ -512,6 +554,9 @@ static std::optional<ED2KLink> parseMagnetLink(const QString& uri)
                 hash = val.mid(ed2kPrefix.size());
             else if (val.startsWith(ed2kHashPrefix, Qt::CaseInsensitive))
                 hash = val.mid(ed2kHashPrefix.size());
+            else if (const auto aichPrefix = QStringLiteral("urn:aich:");
+                     val.startsWith(aichPrefix, Qt::CaseInsensitive))
+                aich = val.mid(aichPrefix.size());
         } else if (key == QStringLiteral("dn")) {
             name = urlDecode(val);
         } else if (key == QStringLiteral("xl")) {
@@ -527,6 +572,9 @@ static std::optional<ED2KLink> parseMagnetLink(const QString& uri)
                 auto result = parseED2KLink(decoded);
                 if (result && std::holds_alternative<ED2KFileLink>(*result))
                     return result;
+            } else if (key == QStringLiteral("as")) {
+                // MFC ED2KLink.cpp:421-424: an http alternative source is a URL source
+                urlSources << urlDecode(val);
             }
         }
     }
@@ -539,8 +587,22 @@ static std::optional<ED2KLink> parseMagnetLink(const QString& uri)
     if (!strmd4(hash, link.hash.data()))
         return std::nullopt;
 
+    // MFC also refuses a magnet without dn; a hash and a size are enough to download,
+    // so the name falls back to the hash. Without a usable size there is no file.
+    if (!isValidLinkFileSize(size))
+        return std::nullopt;
     link.name = name.isEmpty() ? hash : name;
     link.size = size;
+
+    if (!aich.isEmpty()) {
+        std::array<uint8, 20> aichRaw{};
+        if (decodeBase32(aich, aichRaw.data(), aichRaw.size()) == kAICHHashSize) {
+            link.aichHash = AICHHash(aichRaw.data());
+            link.hasValidAICHHash = true;
+        }
+    }
+    for (const QString& url : urlSources)
+        appendUrlSource(link, url);
 
     return ED2KLink{std::move(link)};
 }
@@ -638,6 +700,23 @@ QString redactLinkSecret(const QString& uri)
 // ---------------------------------------------------------------------------
 // ownLinkSourceHints
 // ---------------------------------------------------------------------------
+
+std::optional<ED2KLinkSource> ownIPv4LinkSource(uint32 publicIpNetOrder, bool firewalled, uint16 port)
+{
+    if (publicIpNetOrder == 0 || firewalled || port == 0)
+        return std::nullopt;
+    const Address addr = Address::fromNetworkOrder(publicIpNetOrder);
+    return ED2KLinkSource{addr.toString(), port, addr, {}};
+}
+
+std::vector<ED2KLinkSource> ownIpLinkSourceHints()
+{
+    std::vector<ED2KLinkSource> hints;
+    if (auto own = ownIPv4LinkSource(theApp.publicIP(), theApp.isFirewalled(),
+                                     theApp.advertisedTcpPort()))
+        hints.push_back(std::move(*own));
+    return hints;
+}
 
 std::vector<ED2KLinkSource> ownLinkSourceHints()
 {

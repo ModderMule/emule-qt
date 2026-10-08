@@ -107,6 +107,9 @@ public:
         std::vector<eMule::HttpCacheOffer> httpCacheChunks;
     };
 
+    /// Fill firewalled / direct callback / buddy from the app-wide state.
+    static void fillSourceReachability(SourcePublishParams& sp);
+
     /// Build the source-publish tag list. Sets @p outCanPublish to false when we
     /// are firewalled with neither a direct UDP callback nor a buddy, in which
     /// case there is nothing worth publishing.

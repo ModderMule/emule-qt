@@ -15,6 +15,7 @@
 
 #include <QByteArray>
 #include <QDateTime>
+#include <QHash>
 #include <QList>
 #include <QString>
 #include <QUrl>
@@ -51,10 +52,14 @@ struct IndexerResult {
     int files = -1;
     QString poster;
     QString group;
+    /// Shown as a warning colour. Any non-zero flag, until PasswordFlagTally finds
+    /// the indexer puts that value on most of its rows.
     bool passwordProtected = false;
     /// The indexer says it is locked (flag 1, or nZEDb's 10) -- not "inner archive" (2)
     /// and not the unknowns (-1, 255, "n/a"). What the fake-file verdict goes by.
     bool passwordStated = false;
+    /// The flag as sent ("1", "255", "n/a"). Empty when absent, "0", or a real passphrase.
+    QString passwordFlag;
 
     /// The passphrase itself, when the feed gave one.
     ///
@@ -104,5 +109,28 @@ struct IndexerSearchPage {
 [[nodiscard]] IndexerSearchPage parseIndexerSearch(const QByteArray& xml,
                                                    const QString& indexerName,
                                                    const QString& slug);
+
+/// Per-indexer memory of the `password` flag values it sends.
+///
+/// A value an indexer puts on most of its rows says nothing about one release:
+/// an API bug, or a convention whoever configured the indexer knows. Such a value
+/// stops marking rows. A rare value keeps marking them, specified or not.
+class PasswordFlagTally {
+public:
+    /// A value on more than this share of the rows is skipped.
+    static constexpr int kFlagSkipPercent = 50;
+    /// Below this many rows the share means nothing: only 1, 2 and 10 mark a row.
+    static constexpr int kFlagMinRows = 20;
+
+    /// Count @p page, then clear the password marks its skipped values set.
+    /// A row with a real passphrase is left alone.
+    void apply(IndexerSearchPage& page);
+
+private:
+    [[nodiscard]] bool isSkipped(const QString& flag) const;
+
+    int m_rows = 0;
+    QHash<QString, int> m_counts;
+};
 
 } // namespace eMule::indexer

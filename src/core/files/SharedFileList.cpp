@@ -1079,8 +1079,25 @@ void SharedFileList::detectCollection(KnownFile* file)
         return;
 
     auto coll = std::make_unique<Collection>();
-    if (coll->initFromFile(file->filePath(), file->fileName()))
-        file->setCollection(std::move(coll));
+    try {
+        if (coll->initFromFile(file->filePath(), file->fileName()))
+            file->setCollection(std::move(coll));
+    } catch (const std::exception& ex) {
+        // Peer-supplied bytes, parsed inside a slot: nothing may escape.
+        logWarning(QStringLiteral("Collection \"%1\" could not be read: %2")
+                       .arg(file->fileName(), QString::fromUtf8(ex.what())));
+    }
+}
+
+void SharedFileList::attachCollection(KnownFile* file)
+{
+    if (!file || file->collection() || !Collection::hasCollectionExtension(file->fileName())
+        || getFileByID(file->fileHash()) != file)
+        return;
+    // A signed collection changes the Kad keywords (author key)
+    removeKeywords(file);
+    detectCollection(file);
+    addKeywords(file);
 }
 
 // ---------------------------------------------------------------------------

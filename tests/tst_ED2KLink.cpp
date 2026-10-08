@@ -83,6 +83,11 @@ private slots:
     void invalid_fileLink_badHash();
     void invalid_fileLink_badSize();
     void invalid_serverLink_badPort();
+    void fileLink_sizeMustBeAFileSize();
+    void fileLink_sourceNeedsAPortUnlessIPv6();
+    void fileLink_datedSourcesExpire();
+    void magnetLink_aichAndUrlSource();
+    void ownIPv4Source_onlyWhenReachable();
 
     // HTTP Cache configuration links (docs/protocol/http-cache-spec.md §8.1)
     void httpCacheLink_accepted_data();
@@ -996,6 +1001,102 @@ void tst_ED2KLink::linkType_variants()
         QVERIFY(r.has_value());
         QCOMPARE(linkType(*r), ED2KLinkType::HttpCache);
     }
+}
+
+// C59: MFC ED2KLink.cpp:117-121
+void tst_ED2KLink::fileLink_sizeMustBeAFileSize()
+{
+    const auto file = [](const QString& size) {
+        return parseED2KLink(QStringLiteral("ed2k://|file|x.bin|%1|%2|/").arg(size, kTestHash));
+    };
+    QVERIFY(!file(QStringLiteral("0")).has_value());
+    QVERIFY(file(QStringLiteral("1")).has_value());
+    QVERIFY(file(QStringLiteral("274877906944")).has_value());     // 256 GB
+    QVERIFY(!file(QStringLiteral("274877906945")).has_value());
+
+    const auto magnet = [](const QString& tail) {
+        return parseED2KLink(QStringLiteral("magnet:?xt=urn:ed2k:%1%2").arg(kTestHash, tail));
+    };
+    QVERIFY(!magnet(QString()).has_value());                        // no xl: no size
+    QVERIFY(!magnet(QStringLiteral("&xl=0")).has_value());
+    QVERIFY(!magnet(QStringLiteral("&xl=274877906945")).has_value());
+    QVERIFY(magnet(QStringLiteral("&xl=5")).has_value());
+
+    // C67: 70000 used to wrap to 4464
+    QVERIFY(!parseED2KLink(QStringLiteral("ed2k://|server|192.168.1.1|70000|/")).has_value());
+    QVERIFY(!parseED2KLink(QStringLiteral("ed2k://|server|192.168.1.1|65536|/")).has_value());
+    QVERIFY(parseED2KLink(QStringLiteral("ed2k://|server|192.168.1.1|65535|/")).has_value());
+}
+
+// C70: MFC ED2KLink.cpp:280-285 skips a source without a port. The 4662 default is
+// for IPv6 literals only (pinned above).
+void tst_ED2KLink::fileLink_sourceNeedsAPortUnlessIPv6()
+{
+    QCOMPARE(parseFileLinkWith(QStringLiteral("sources,8.8.4.1|")).hostnameSources.size(),
+             std::size_t{0});
+    QCOMPARE(parseFileLinkWith(QStringLiteral("sources,host.example.com|")).hostnameSources.size(),
+             std::size_t{0});
+    const auto mixed = parseFileLinkWith(
+        QStringLiteral("sources,8.8.4.1,8.8.4.2:4662,[2001:db8::1]|"));
+    QCOMPARE(mixed.hostnameSources.size(), std::size_t{2});
+    QCOMPARE(mixed.hostnameSources[0].hostname, QStringLiteral("8.8.4.2"));
+    QVERIFY(mixed.hostnameSources[1].address.isIPv6());
+    QCOMPARE(mixed.hostnameSources[1].port, uint16{4662});
+}
+
+// C62: MFC ED2KLink.cpp:237-259
+void tst_ED2KLink::fileLink_datedSourcesExpire()
+{
+    QCOMPARE(parseFileLinkWith(QStringLiteral("sources@000101,8.8.4.2:4662|")).hostnameSources.size(),
+             std::size_t{0});
+    QCOMPARE(parseFileLinkWith(QStringLiteral("sources@991231,8.8.4.2:4662|")).hostnameSources.size(),
+             std::size_t{1});
+    QCOMPARE(parseFileLinkWith(QStringLiteral("sources@991340,8.8.4.2:4662|")).hostnameSources.size(),
+             std::size_t{0});   // not a date
+    QCOMPARE(parseFileLinkWith(QStringLiteral("sources@99,8.8.4.2:4662|")).hostnameSources.size(),
+             std::size_t{0});
+
+    // Only the dated block goes; the rest of the link stands.
+    const auto link = parseFileLinkWith(
+        QStringLiteral("s=http://example.com/f.bin|sources@000101,8.8.4.2:4662|"));
+    QCOMPARE(link.hostnameSources.size(), std::size_t{1});
+    QVERIFY(!link.hostnameSources[0].url.isEmpty());
+}
+
+// C60: MFC ED2KLink.cpp:409-440
+void tst_ED2KLink::magnetLink_aichAndUrlSource()
+{
+    const QString aich = QStringLiteral("AAAQEAYEAUDAOCAJBIFQYDIOB4IBCEQT");   // 20 bytes, base32
+    // Concatenated: "%2F" would be an arg() placeholder.
+    const QString uri = QStringLiteral("magnet:?xt=urn:ed2k:") + kTestHash
+        + QStringLiteral("&xl=4096&dn=m.bin&xt=urn:aich:") + aich
+        + QStringLiteral("&as=http%3A%2F%2Fexample.com%2Fm.bin&as=ftp%3A%2F%2Fexample.com%2Fm.bin");
+    auto result = parseED2KLink(uri);
+    QVERIFY(result.has_value());
+    const auto& link = std::get<ED2KFileLink>(*result);
+    QVERIFY(link.hasValidAICHHash);
+    QCOMPARE(link.aichHash.getString(), aich);
+    QCOMPARE(link.hostnameSources.size(), std::size_t{1});      // ftp is no URL source
+    QCOMPARE(link.hostnameSources[0].url, QStringLiteral("http://example.com/m.bin"));
+    QCOMPARE(link.hostnameSources[0].hostname, QStringLiteral("example.com"));
+}
+
+// C72: MFC AbstractFile.cpp:441-443, WebServer.cpp:2840-2843
+void tst_ED2KLink::ownIPv4Source_onlyWhenReachable()
+{
+    const uint32 ip = Address::fromString(QStringLiteral("88.77.66.55")).toNetworkUint32();
+    QVERIFY(!ownIPv4LinkSource(0, false, 4662).has_value());
+    QVERIFY(!ownIPv4LinkSource(ip, true, 4662).has_value());
+    QVERIFY(!ownIPv4LinkSource(ip, false, 0).has_value());
+
+    const auto src = ownIPv4LinkSource(ip, false, 5662);
+    QVERIFY(src.has_value());
+
+    ED2KFileLink link;
+    link.name = QStringLiteral("t.bin");
+    link.size = 100;
+    link.hostnameSources.push_back(*src);
+    QVERIFY(link.toLink({.sources = true}).endsWith(QStringLiteral("|/|sources,88.77.66.55:5662|/")));
 }
 
 QTEST_MAIN(tst_ED2KLink)

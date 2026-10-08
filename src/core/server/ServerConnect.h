@@ -25,6 +25,7 @@
 #include <vector>
 
 class tst_DownloadQueue;  // fwd-decl for the white-box unit-test friend below
+class tst_KadSearch;
 
 namespace eMule {
 
@@ -93,6 +94,7 @@ class ServerConnect : public QObject {
     // White-box access for the DownloadQueue unit test — it flips the connected
     // flag to exercise the global-UDP-source rotation without a live handshake.
     friend class ::tst_DownloadQueue;
+    friend class ::tst_KadSearch;
 
 public:
     explicit ServerConnect(ServerList& serverList, QObject* parent = nullptr);

@@ -115,6 +115,12 @@ using ED2KLink = std::variant<ED2KFileLink, ED2KServerLink,
 /// advertise gate allows it. Empty when nothing is publishable.
 [[nodiscard]] std::vector<ED2KLinkSource> ownLinkSourceHints();
 
+/// Our own public IPv4 as a link source: MFC's GetED2kLink(bSource) variant, used by
+/// the web interface. Nothing while firewalled or without a known address.
+[[nodiscard]] std::optional<ED2KLinkSource> ownIPv4LinkSource(uint32 publicIpNetOrder,
+                                                              bool firewalled, uint16 port);
+[[nodiscard]] std::vector<ED2KLinkSource> ownIpLinkSourceHints();
+
 /// Determine the type of an ED2KLink variant.
 [[nodiscard]] ED2KLinkType linkType(const ED2KLink& link);
 

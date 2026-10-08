@@ -76,6 +76,13 @@ CollectionFile::CollectionFile(const AbstractFile* file)
         fileIdentifier().setAICHHash(file->fileIdentifier().getAICHHash());
         m_hasCollectionExtraInfo = true;
     }
+
+    // MFC CollectionFile.cpp:92-96. The getters load lazily, hence non-const.
+    auto* source = const_cast<AbstractFile*>(file);
+    if (const QString& comment = source->getFileComment(); !comment.isEmpty())
+        addTagUnique(Tag(FT_FILECOMMENT, comment));
+    if (const uint32 rating = source->getFileRating(); rating != 0)
+        addTagUnique(Tag(FT_FILERATING, rating));
 }
 
 // ---------------------------------------------------------------------------

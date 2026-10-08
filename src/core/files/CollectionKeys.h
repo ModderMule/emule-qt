@@ -33,7 +33,8 @@ public:
     /// @return DER-encoded RSA public key (for embedding in collection headers).
     [[nodiscard]] const QByteArray& publicKeyDer() const { return m_publicKeyDer; }
 
-    /// Verify an RSA-SHA256 signature against a DER-encoded public key.
+    /// Verify an RSA signature (SHA-1 as MFC, or SHA-256 of older builds) against a
+    /// DER-encoded public key.
     static bool verifySignature(const QByteArray& message,
                                 const QByteArray& signature,
                                 const QByteArray& publicKeyDer);

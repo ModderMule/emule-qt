@@ -17,7 +17,7 @@
 <context>
     <name>Ed2kLinkImporter</name>
     <message>
-        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="+187"/>
+        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="+208"/>
         <source>already shared</source>
         <translation>已共享</translation>
     </message>
@@ -52,7 +52,7 @@
         <translation>您先前取消了 &quot;%1&quot; 的下载。</translation>
     </message>
     <message numerus="yes">
-        <location line="+85"/>
+        <location line="+114"/>
         <source>%n further HTTP Cache link(s) ignored — apply one at a time.</source>
         <translation>
             <numerusform>已忽略另外 %n 个 HTTP 缓存链接 — 请一次应用一个。</numerusform>
@@ -360,7 +360,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="-288"/>
+        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="-317"/>
         <location line="+20"/>
         <source>eD2K Link</source>
         <translation>eD2K 链接</translation>
@@ -751,7 +751,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4012"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4015"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -3258,7 +3258,7 @@ ED2K 哈希：	%2
 <context>
     <name>eMule::ImportDownloadsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ImportDownloadsDialog.cpp" line="+39"/>
+        <location filename="../src/gui/dialogs/ImportDownloadsDialog.cpp" line="+40"/>
         <source>Convert Part Files</source>
         <translation>转换 Part 文件</translation>
     </message>
@@ -3269,12 +3269,12 @@ ED2K 哈希：	%2
     </message>
     <message>
         <location line="+3"/>
-        <location line="+217"/>
+        <location line="+224"/>
         <source>Idle</source>
         <translation>空闲</translation>
     </message>
     <message>
-        <location line="-206"/>
+        <location line="-213"/>
         <source>Job Queue</source>
         <translation>任务队列</translation>
     </message>
@@ -3320,11 +3320,12 @@ ED2K 哈希：	%2
     </message>
     <message>
         <location line="+57"/>
+        <location line="+13"/>
         <source>Import Downloads</source>
         <translation>导入下载</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-12"/>
         <source>Import Downloads is only available for local connections.</source>
         <translation>导入下载仅适用于本地连接。</translation>
     </message>
@@ -3334,7 +3335,12 @@ ED2K 哈希：	%2
         <translation>选择要扫描可导入下载的文件夹</translation>
     </message>
     <message>
-        <location line="+119"/>
+        <location line="+8"/>
+        <source>Do you want to delete the source files after a successful import?</source>
+        <translation>导入成功后是否删除源文件？</translation>
+    </message>
+    <message>
+        <location line="+118"/>
         <source>Converting...</source>
         <translation>正在转换...</translation>
     </message>
@@ -4023,8 +4029,8 @@ Please choose another:</source>
 <context>
     <name>eMule::MainWindow</name>
     <message>
-        <location filename="../src/gui/app/MainWindow.cpp" line="+83"/>
-        <location line="+464"/>
+        <location filename="../src/gui/app/MainWindow.cpp" line="+85"/>
+        <location line="+471"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
@@ -4441,6 +4447,23 @@ Enable it under Options → Web Interface, then try again.</source>
         <location line="+31"/>
         <source>New message — double-click to read</source>
         <translation>新消息 — 双击阅读</translation>
+    </message>
+    <message>
+        <location line="+297"/>
+        <source>eD2K Link</source>
+        <translation>eD2K 链接</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Do you want to download and use the Kad nodes file from
+%1 ?</source>
+        <translation>是否从以下地址下载并使用 Kad 节点文件？
+%1</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Kademlia</source>
+        <translation>Kademlia</translation>
     </message>
 </context>
 <context>
@@ -8020,12 +8043,12 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>将新 part 文件创建为「稀疏」（仅 NTFS）</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Allocate full file size for non-sparse part files</source>
         <translation>为非稀疏 part 文件分配完整文件大小</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+4"/>
         <source>Check disk space</source>
         <translation>检查磁盘空间</translation>
     </message>
@@ -9305,7 +9328,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+75"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+76"/>
         <source>%1 (disabled)</source>
         <translation>%1（已禁用）</translation>
     </message>
@@ -9419,7 +9442,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::ServerPanel</name>
     <message>
-        <location filename="../src/gui/panels/ServerPanel.cpp" line="+246"/>
+        <location filename="../src/gui/panels/ServerPanel.cpp" line="+256"/>
         <source>Disconnect</source>
         <translation>断开连接</translation>
     </message>
@@ -9747,19 +9770,19 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>防火墙内</translation>
     </message>
     <message numerus="yes">
-        <location line="+578"/>
+        <location line="+621"/>
         <source>%n server(s) not added — LAN addresses are filtered</source>
         <translation>
             <numerusform>未添加 %n 个服务器 — 已过滤局域网地址</numerusform>
         </translation>
     </message>
     <message>
-        <location line="-624"/>
+        <location line="-667"/>
         <source>Low ID</source>
         <translation>Low ID</translation>
     </message>
     <message>
-        <location line="+301"/>
+        <location line="+334"/>
         <source>Invalid server.met header: 0x%1</source>
         <translation>无效的server.met头: 0x%1</translation>
     </message>
@@ -12513,85 +12536,85 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+713"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+714"/>
         <source>Downloads</source>
         <translation>下载</translation>
     </message>
     <message>
-        <location line="-364"/>
+        <location line="-365"/>
         <source>Priority (Download)</source>
         <translation>优先级（下载）</translation>
     </message>
     <message>
         <location line="+29"/>
-        <location line="+1888"/>
+        <location line="+1889"/>
         <location line="+162"/>
         <source>Low</source>
         <translation>低</translation>
     </message>
     <message>
-        <location line="-2049"/>
-        <location line="+1887"/>
+        <location line="-2050"/>
+        <location line="+1888"/>
         <location line="+163"/>
         <source>Normal</source>
         <translation>普通</translation>
     </message>
     <message>
-        <location line="-2049"/>
-        <location line="+1886"/>
+        <location line="-2050"/>
+        <location line="+1887"/>
         <location line="+164"/>
         <source>High</source>
         <translation>高</translation>
     </message>
     <message>
-        <location line="-2048"/>
-        <location line="+2050"/>
+        <location line="-2049"/>
+        <location line="+2051"/>
         <source>Very Low</source>
         <translation>非常低</translation>
     </message>
     <message>
-        <location line="-2049"/>
-        <location line="+2050"/>
+        <location line="-2050"/>
+        <location line="+2051"/>
         <source>Very High</source>
         <translation>非常高</translation>
     </message>
     <message>
-        <location line="-2048"/>
-        <location line="+2051"/>
+        <location line="-2049"/>
+        <location line="+2052"/>
         <source>Auto</source>
         <translation>自动</translation>
     </message>
     <message>
-        <location line="-2040"/>
-        <location line="+684"/>
+        <location line="-2041"/>
+        <location line="+685"/>
         <location line="+1200"/>
         <source>Pause</source>
         <translation>暂停</translation>
     </message>
     <message>
-        <location line="-1875"/>
-        <location line="+681"/>
+        <location line="-1876"/>
+        <location line="+682"/>
         <location line="+1196"/>
         <source>Stop</source>
         <translation>停止</translation>
     </message>
     <message>
-        <location line="-1868"/>
-        <location line="+678"/>
+        <location line="-1869"/>
+        <location line="+679"/>
         <location line="+1192"/>
         <source>Resume</source>
         <translation>恢复</translation>
     </message>
     <message>
-        <location line="-1857"/>
-        <location line="+671"/>
+        <location line="-1858"/>
+        <location line="+672"/>
         <location line="+1188"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="-1830"/>
+        <location line="-1831"/>
         <source>Preview with</source>
         <translation>预览方式</translation>
     </message>
@@ -12612,14 +12635,14 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1264"/>
+        <location line="+1265"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation>向文件导入分块...</translation>
     </message>
     <message>
-        <location line="-1251"/>
+        <location line="-1252"/>
         <source>Source Handling</source>
         <translation>来源处理</translation>
     </message>
@@ -12630,7 +12653,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1187"/>
+        <location line="+1188"/>
         <source>Source Limit...</source>
         <translation>来源限制...</translation>
     </message>
@@ -12737,39 +12760,39 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>文件名：</translation>
     </message>
     <message>
-        <location line="-2427"/>
-        <location line="+662"/>
+        <location line="-2428"/>
+        <location line="+663"/>
         <source>Open File</source>
         <translation>打开文件</translation>
     </message>
     <message>
-        <location line="-653"/>
+        <location line="-654"/>
         <location line="+2"/>
-        <location line="+665"/>
+        <location line="+666"/>
         <location line="+571"/>
         <source>Preview</source>
         <translation>预览</translation>
     </message>
     <message>
-        <location line="-1199"/>
-        <location line="+1981"/>
+        <location line="-1200"/>
+        <location line="+1982"/>
         <location line="+98"/>
         <source>Details...</source>
         <translation>详情...</translation>
     </message>
     <message>
-        <location line="-2070"/>
+        <location line="-2071"/>
         <source>Comments...</source>
         <translation>评论...</translation>
     </message>
     <message>
         <location line="+37"/>
-        <location line="+630"/>
+        <location line="+631"/>
         <source>Clear Completed</source>
         <translation>清除已完成</translation>
     </message>
     <message>
-        <location line="-608"/>
+        <location line="-609"/>
         <source>eD2K Links...</source>
         <translation>eD2K 链接...</translation>
     </message>
@@ -12779,7 +12802,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>粘贴 eD2K 链接</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+16"/>
         <location line="+1974"/>
         <location line="+71"/>
         <source>Find...</source>
@@ -13711,14 +13734,14 @@ A password is set for this release.</source>
         <translation>地址</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3350"/>
-        <location line="+3239"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3353"/>
+        <location line="+3242"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>会话已过期 — 请重新登录</translation>
     </message>
     <message>
-        <location line="-3284"/>
+        <location line="-3287"/>
         <source>Guests cannot add downloads</source>
         <translation>访客无法添加下载</translation>
     </message>
@@ -13854,12 +13877,12 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1970"/>
+        <location line="+1973"/>
         <source>Web Control Panel</source>
         <translation>Web 控制面板</translation>
     </message>
     <message>
-        <location line="-1962"/>
+        <location line="-1965"/>
         <source>Not connected</source>
         <translation>未连接</translation>
     </message>
@@ -13875,19 +13898,19 @@ A password is set for this release.</source>
     </message>
     <message>
         <location line="+0"/>
-        <location line="+332"/>
+        <location line="+335"/>
         <source>Disconnected</source>
         <translation>已断开</translation>
     </message>
     <message numerus="yes">
-        <location line="-279"/>
+        <location line="-282"/>
         <source>&quot;%1&quot;: %n result(s)</source>
         <translation>
             <numerusform>“%1”：%n 个结果</numerusform>
         </translation>
     </message>
     <message>
-        <location line="+192"/>
+        <location line="+195"/>
         <source>Active Connections</source>
         <translation>活跃连接</translation>
     </message>
@@ -14531,7 +14554,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>NZB 文件：</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1168"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1171"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>名称</translation>
@@ -14933,7 +14956,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>上传速度</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1165"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1168"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation>上传</translation>

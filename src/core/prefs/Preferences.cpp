@@ -279,12 +279,12 @@ struct Preferences::Data {
     int dynUpGoingDownDivider = 1000;    // speed decrease slowness (min 1)
     int dynUpNumberOfPings = 1;          // ring buffer size (min 1)
 
+    bool allocFullFile = false;          // Pre-allocate disk space
 #ifdef Q_OS_WIN
     // Windows-only Extended (PPgTweaks)
     bool autotakeEd2kLinks = true;      // Register ed2k:// protocol handler
     bool openPortsOnWinFirewall = false; // Windows Firewall API
     bool sparsePartFiles = false;        // NTFS sparse file attribute
-    bool allocFullFile = false;          // Pre-allocate disk space
     bool resolveShellLinks = false;      // Follow .lnk files in shared dirs
     int multiUserSharing = 2;            // 0=per-user, 1=shared, 2=program-dir
 #endif
@@ -1234,6 +1234,10 @@ int Preferences::dynUpNumberOfPings() const { return get(&Data::dynUpNumberOfPin
 
 void Preferences::setDynUpNumberOfPings(int val) { set(&Data::dynUpNumberOfPings, val); }
 
+bool Preferences::allocFullFile() const { return get(&Data::allocFullFile); }
+
+void Preferences::setAllocFullFile(bool val) { set(&Data::allocFullFile, val); }
+
 #ifdef Q_OS_WIN
 
 bool Preferences::autotakeEd2kLinks() const { return get(&Data::autotakeEd2kLinks); }
@@ -1247,10 +1251,6 @@ void Preferences::setOpenPortsOnWinFirewall(bool val) { set(&Data::openPortsOnWi
 bool Preferences::sparsePartFiles() const { return get(&Data::sparsePartFiles); }
 
 void Preferences::setSparsePartFiles(bool val) { set(&Data::sparsePartFiles, val); }
-
-bool Preferences::allocFullFile() const { return get(&Data::allocFullFile); }
-
-void Preferences::setAllocFullFile(bool val) { set(&Data::allocFullFile, val); }
 
 bool Preferences::resolveShellLinks() const { return get(&Data::resolveShellLinks); }
 
@@ -3135,11 +3135,11 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("dynUpGoingUpDivider"), static_cast<qint64>(dynUpGoingUpDivider()));
     prefs.insert(QStringLiteral("dynUpGoingDownDivider"), static_cast<qint64>(dynUpGoingDownDivider()));
     prefs.insert(QStringLiteral("dynUpNumberOfPings"), static_cast<qint64>(dynUpNumberOfPings()));
+    prefs.insert(QStringLiteral("allocFullFile"), allocFullFile());
 #ifdef Q_OS_WIN
     prefs.insert(QStringLiteral("autotakeEd2kLinks"), autotakeEd2kLinks());
     prefs.insert(QStringLiteral("openPortsOnWinFirewall"), openPortsOnWinFirewall());
     prefs.insert(QStringLiteral("sparsePartFiles"), sparsePartFiles());
-    prefs.insert(QStringLiteral("allocFullFile"), allocFullFile());
     prefs.insert(QStringLiteral("resolveShellLinks"), resolveShellLinks());
     prefs.insert(QStringLiteral("multiUserSharing"), multiUserSharing());
 #endif
@@ -3344,11 +3344,11 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->dynUpGoingDownDivider              = static_cast<int>(p.value(QStringLiteral("dynUpGoingDownDivider")).toInteger());
     m_data->dynUpNumberOfPings                 = static_cast<int>(p.value(QStringLiteral("dynUpNumberOfPings")).toInteger());
 
+    m_data->allocFullFile         = p.value(QStringLiteral("allocFullFile")).toBool();
 #ifdef Q_OS_WIN
     m_data->autotakeEd2kLinks     = p.value(QStringLiteral("autotakeEd2kLinks")).toBool();
     m_data->openPortsOnWinFirewall = p.value(QStringLiteral("openPortsOnWinFirewall")).toBool();
     m_data->sparsePartFiles       = p.value(QStringLiteral("sparsePartFiles")).toBool();
-    m_data->allocFullFile         = p.value(QStringLiteral("allocFullFile")).toBool();
     m_data->resolveShellLinks     = p.value(QStringLiteral("resolveShellLinks")).toBool();
     m_data->multiUserSharing      = static_cast<int>(p.value(QStringLiteral("multiUserSharing")).toInteger());
 #endif
@@ -3799,11 +3799,11 @@ bool Preferences::load(const QString& filePath)
             m_data->hashingDiskLoad = std::clamp(t["hashingDiskLoad"].as<int>(m_data->hashingDiskLoad), 10, 100);
             m_data->extractMetaData = t["extractMetaData"].as<int>(m_data->extractMetaData);
             m_data->queueSize = t["queueSize"].as<uint32>(m_data->queueSize);
+            m_data->allocFullFile = t["allocFullFile"].as<bool>(m_data->allocFullFile);
 #ifdef Q_OS_WIN
             m_data->autotakeEd2kLinks = t["autotakeEd2kLinks"].as<bool>(m_data->autotakeEd2kLinks);
             m_data->openPortsOnWinFirewall = t["openPortsOnWinFirewall"].as<bool>(m_data->openPortsOnWinFirewall);
             m_data->sparsePartFiles = t["sparsePartFiles"].as<bool>(m_data->sparsePartFiles);
-            m_data->allocFullFile = t["allocFullFile"].as<bool>(m_data->allocFullFile);
             m_data->resolveShellLinks = t["resolveShellLinks"].as<bool>(m_data->resolveShellLinks);
             m_data->multiUserSharing = t["multiUserSharing"].as<int>(m_data->multiUserSharing);
 #endif
@@ -4876,11 +4876,11 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "hashingDiskLoad" << YAML::Value << m_data->hashingDiskLoad;
     out << YAML::Key << "extractMetaData" << YAML::Value << m_data->extractMetaData;
     out << YAML::Key << "queueSize" << YAML::Value << m_data->queueSize;
+    out << YAML::Key << "allocFullFile" << YAML::Value << m_data->allocFullFile;
 #ifdef Q_OS_WIN
     out << YAML::Key << "autotakeEd2kLinks" << YAML::Value << m_data->autotakeEd2kLinks;
     out << YAML::Key << "openPortsOnWinFirewall" << YAML::Value << m_data->openPortsOnWinFirewall;
     out << YAML::Key << "sparsePartFiles" << YAML::Value << m_data->sparsePartFiles;
-    out << YAML::Key << "allocFullFile" << YAML::Value << m_data->allocFullFile;
     out << YAML::Key << "resolveShellLinks" << YAML::Value << m_data->resolveShellLinks;
     out << YAML::Key << "multiUserSharing" << YAML::Value << m_data->multiUserSharing;
 #endif

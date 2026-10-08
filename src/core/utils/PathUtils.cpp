@@ -6,8 +6,17 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QStandardPaths>
 #include <QStorageInfo>
+
+#if defined(Q_OS_WIN)
+#include <io.h>
+#include <qt_windows.h>
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 namespace eMule {
 
@@ -160,6 +169,30 @@ QString sanitizeFilename(const QString& name)
         result.removeLast();
 
     return result;
+}
+
+bool preallocateFile(QFile& file, std::uint64_t size)
+{
+    if (!file.isOpen() || size == 0)
+        return false;
+#if defined(Q_OS_WIN)
+    const HANDLE h = reinterpret_cast<HANDLE>(_get_osfhandle(file.handle()));
+    if (h == INVALID_HANDLE_VALUE)
+        return false;
+    FILE_ALLOCATION_INFO info{};
+    info.AllocationSize.QuadPart = static_cast<LONGLONG>(size);
+    return SetFileInformationByHandle(h, FileAllocationInfo, &info, sizeof(info)) != 0;
+#elif defined(Q_OS_MACOS)
+    fstore_t store{F_ALLOCATECONTIG | F_ALLOCATEALL, F_PEOFPOSMODE, 0, static_cast<off_t>(size), 0};
+    if (fcntl(file.handle(), F_PREALLOCATE, &store) != -1)
+        return true;
+    store.fst_flags = F_ALLOCATEALL;   // contiguous was too much to ask
+    return fcntl(file.handle(), F_PREALLOCATE, &store) != -1;
+#elif defined(Q_OS_LINUX)
+    return posix_fallocate(file.handle(), 0, static_cast<off_t>(size)) == 0;
+#else
+    return false;
+#endif
 }
 
 } // namespace eMule

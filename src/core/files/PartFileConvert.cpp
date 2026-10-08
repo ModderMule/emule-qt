@@ -4,13 +4,25 @@
 
 #include "files/PartFileConvert.h"
 #include "files/PartFile.h"
+#include "app/AppContext.h"
+#include "files/SharedFileList.h"
+#include "transfer/DownloadQueue.h"
+#include "utils/OtherFunctions.h"
+#include "utils/PathUtils.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QDirIterator>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+
+#include <array>
+#include <map>
+#include <memory>
+#include <optional>
 
 namespace eMule {
 
@@ -107,47 +119,23 @@ void PartFileConvert::scanFolderToAdd(const QString& folder, bool recursive, boo
                      ? QDirIterator::Subdirectories
                      : QDirIterator::NoIteratorFlags;
 
+    // MFC ScanFolderToAdd: every *.part.met and every Shareaza *.sd. What a file
+    // really is shows when it is converted.
     QDirIterator it(folder, QDir::Files | QDir::NoDotAndDotDot, flags);
     while (it.hasNext()) {
         it.next();
         const QFileInfo fi = it.fileInfo();
-
-        // Look for .part.met files (old eMule format)
-        if (fi.fileName().endsWith(QStringLiteral(".part.met"), Qt::CaseInsensitive)) {
-            ConvertJob job;
-            job.folder = fi.absolutePath();
-            job.filename = fi.fileName();
-            job.format = detectFormat(fi.absoluteFilePath());
-            job.removeSource = removeSource;
-            if (job.format > 0) {
-                job.state = ConvertStatus::Queued;
-                addJob(std::move(job));
-            }
+        if (!fi.fileName().endsWith(QStringLiteral(".part.met"), Qt::CaseInsensitive)
+            && fi.suffix().compare(QStringLiteral("sd"), Qt::CaseInsensitive) != 0)
             continue;
-        }
 
-        // Look for Shareaza .sd files
-        if (fi.suffix().compare(QStringLiteral("sd"), Qt::CaseInsensitive) == 0) {
-            ConvertJob job;
-            job.folder = fi.absolutePath();
-            job.filename = fi.fileName();
-            job.format = 4; // Shareaza
-            job.removeSource = removeSource;
-            job.state = ConvertStatus::Queued;
-            addJob(std::move(job));
-            continue;
-        }
-
-        // Look for splitted files .part.001
-        if (fi.fileName().endsWith(QStringLiteral(".part.001"), Qt::CaseInsensitive)) {
-            ConvertJob job;
-            job.folder = fi.absolutePath();
-            job.filename = fi.fileName();
-            job.format = 2; // Splitted
-            job.removeSource = removeSource;
-            job.state = ConvertStatus::Queued;
-            addJob(std::move(job));
-        }
+        ConvertJob job;
+        job.folder = fi.absolutePath();
+        job.filename = fi.fileName();
+        job.format = detectFormat(fi.absoluteFilePath());
+        job.removeSource = removeSource;
+        job.state = ConvertStatus::Queued;
+        addJob(std::move(job));
     }
 }
 
@@ -236,7 +224,13 @@ void PartFileConvert::stopThread()
 
     if (s_thread) {
         s_thread->requestStop();
-        s_thread->wait(5000);
+        // The worker may be waiting for this thread (runOnMain), so keep serving it.
+        QElapsedTimer deadline;
+        deadline.start();
+        while (!s_thread->wait(50) && deadline.elapsed() < 30000)
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        if (s_thread->isRunning())
+            s_thread->terminate();
         delete s_thread;
         s_thread = nullptr;
     }
@@ -275,265 +269,231 @@ void PartFileConvert::processQueue()
 
 int PartFileConvert::detectFormat(const QString& filePath)
 {
-    QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly))
+    const QFileInfo fi(filePath);
+    PartFileFormat format = PartFileFormat::Unknown;
+    PartFile probe;
+    if (probe.loadPartFile(fi.absolutePath(), fi.fileName(), &format)
+        != PartFileLoadResult::CheckSuccess)
         return 0;
-
-    if (file.size() < 4)
-        return 0;
-
-    char header[4]{};
-    file.read(header, 4);
-
-    uint8 version = static_cast<uint8>(header[0]);
-
-    // Check for known .part.met versions
-    if (version == PARTFILE_VERSION || version == PARTFILE_VERSION_LARGEFILE)
-        return 1; // Current format (DefaultOld)
-
-    if (version == PARTFILE_SPLITTEDVERSION)
-        return 2; // Splitted
-
-    // Old format without version header — check for tag pattern
-    if (version == MET_HEADER || version == MET_HEADER_I64TAGS)
-        return 3; // NewOld format
-
-    return 0; // Unknown
+    return format == PartFileFormat::BadFormat ? 0 : static_cast<int>(format);
 }
 
 // ---------------------------------------------------------------------------
-// performConvertToeMule — actual conversion logic per job
+// performConvertToeMule — MFC CPartFileConvert::performConvertToeMule
+// (srchybrid/PartFileConvert.cpp:168-381)
 // ---------------------------------------------------------------------------
+
+namespace {
+
+/// Queue, shared list and PartFile objects belong to the main thread.
+template <typename Fn> void runOnMain(Fn&& fn)
+{
+    QCoreApplication* app = QCoreApplication::instance();
+    if (!app || QThread::currentThread() == app->thread())
+        fn();
+    else
+        QMetaObject::invokeMethod(app, std::forward<Fn>(fn), Qt::BlockingQueuedConnection);
+}
+
+/// Rename, or copy and delete where rename cannot (another volume).
+bool moveFile(const QString& from, const QString& to)
+{
+    if (QFile::rename(from, to))
+        return true;
+    return QFile::copy(from, to) && QFile::remove(from);
+}
+
+/// The chunk files of a split download: "<number>.<index>.part", by index.
+std::map<int, QString> splitChunks(const QString& folder, const QString& partIndex)
+{
+    std::map<int, QString> chunks;
+    const QDir dir(folder);
+    for (const QString& name : dir.entryList({partIndex + QStringLiteral(".*.part")}, QDir::Files)) {
+        const qsizetype first = name.indexOf(u'.');
+        const qsizetype second = name.indexOf(u'.', first + 1);
+        const int index = name.mid(first + 1, second - first - 1).toInt();
+        if (index > 0)
+            chunks.emplace(index, dir.filePath(name));
+    }
+    return chunks;
+}
+
+} // namespace
 
 ConvertStatus PartFileConvert::performConvertToeMule(ConvertJob& job)
 {
     const QString metPath = job.folder + u'/' + job.filename;
+    if (!QFile::exists(metPath))
+        return ConvertStatus::PartMetNotFound;
+    // "001.part.met" -> "001", "Name.ext.sd" -> "Name"
+    const QString partIndex = job.filename.left(job.filename.indexOf(u'.'));
 
-    switch (job.format) {
-    case 1: // DefaultOld (.part.met — standard format)
-    case 3: // NewOld (older .part.met variant)
-    {
-        // Verify .part.met file exists
-        if (!QFile::exists(metPath)) {
-            logWarning(QStringLiteral("PartFileConvert: .part.met not found: %1").arg(metPath));
-            return ConvertStatus::PartMetNotFound;
-        }
-
-        // Derive .part data file name (strip .met suffix)
-        QString partPath = metPath;
-        if (partPath.endsWith(QStringLiteral(".met"), Qt::CaseInsensitive))
-            partPath.chop(4);
-
-        if (!QFile::exists(partPath)) {
-            logWarning(QStringLiteral("PartFileConvert: .part data file not found: %1").arg(partPath));
-            return ConvertStatus::PartMetNotFound;
-        }
-
-        // Load and validate the part file metadata
-        auto partFile = std::make_unique<PartFile>();
-        auto result = partFile->loadPartFile(job.folder, job.filename);
-        if (result != PartFileLoadResult::LoadSuccess) {
-            logWarning(QStringLiteral("PartFileConvert: failed to load .part.met: %1").arg(metPath));
-            return ConvertStatus::Failed;
-        }
-
-        // Get target temp directory
-        const auto tempDirs = thePrefs.tempDirs();
-        const QString destDir = tempDirs.isEmpty() ? job.folder : tempDirs.first();
-
-        // Copy .part data file to temp directory (if not already there)
-        if (job.folder != destDir) {
-            const QString destPartPath = destDir + QDir::separator()
-                                         + QFileInfo(partPath).fileName();
-            const QString destMetPath = destDir + QDir::separator() + job.filename;
-
-            if (!QFile::copy(partPath, destPartPath)) {
-                logWarning(QStringLiteral("PartFileConvert: failed to copy .part file to %1")
-                               .arg(destPartPath));
-                return ConvertStatus::IOError;
-            }
-            if (!QFile::copy(metPath, destMetPath)) {
-                QFile::remove(destPartPath);
-                logWarning(QStringLiteral("PartFileConvert: failed to copy .part.met to %1")
-                               .arg(destMetPath));
-                return ConvertStatus::IOError;
-            }
-
-            // Remove source files if requested
-            if (job.removeSource) {
-                QFile::remove(partPath);
-                QFile::remove(metPath);
-            }
-        }
-
-        logInfo(QStringLiteral("PartFileConvert: converted '%1' (format %2)")
-                    .arg(job.filename).arg(job.format));
-        return ConvertStatus::OK;
-    }
-
-    case 2: // Splitted (.part.001, .part.002, ...)
-    {
-        // Derive base name (strip .001)
-        QString baseName = metPath;
-        if (baseName.endsWith(QStringLiteral(".001"), Qt::CaseInsensitive))
-            baseName.chop(4);
-
-        // Scan for split parts
-        int partNum = 1;
-        QStringList parts;
-        while (true) {
-            QString partPath = QStringLiteral("%1.%2").arg(baseName).arg(partNum, 3, 10, QChar(u'0'));
-            if (!QFile::exists(partPath))
-                break;
-            parts.append(partPath);
-            ++partNum;
-        }
-
-        if (parts.isEmpty()) {
-            logWarning(QStringLiteral("PartFileConvert: no split parts found for '%1'").arg(job.filename));
-            return ConvertStatus::PartMetNotFound;
-        }
-
-        // Get target temp directory
-        const auto tempDirs = thePrefs.tempDirs();
-        const QString destDir = tempDirs.isEmpty() ? job.folder : tempDirs.first();
-
-        // Compute total size from all split parts
-        uint64 totalSize = 0;
-        for (const auto& partPath : parts) {
-            QFileInfo fi(partPath);
-            totalSize += static_cast<uint64>(fi.size());
-        }
-        job.size = totalSize;
-
-        // Derive output .part filename from base name
-        QString outBaseName = QFileInfo(baseName).fileName();
-        if (outBaseName.endsWith(QStringLiteral(".part"), Qt::CaseInsensitive))
-            ; // already has .part extension
-        else
-            outBaseName += QStringLiteral(".part");
-
-        const QString outPartPath = destDir + QDir::separator() + outBaseName;
-
-        // Concatenate all split part files into the output .part file
-        QFile outFile(outPartPath);
-        if (!outFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            logWarning(QStringLiteral("PartFileConvert: cannot create output file: %1").arg(outPartPath));
-            return ConvertStatus::IOError;
-        }
-
-        constexpr qint64 kCopyBufSize = 64 * 1024;
-        char copyBuf[kCopyBufSize];
-        for (const auto& partPath : parts) {
-            QFile inFile(partPath);
-            if (!inFile.open(QIODevice::ReadOnly)) {
-                outFile.close();
-                QFile::remove(outPartPath);
-                logWarning(QStringLiteral("PartFileConvert: cannot read split part: %1").arg(partPath));
-                return ConvertStatus::IOError;
-            }
-
-            while (true) {
-                qint64 got = inFile.read(copyBuf, kCopyBufSize);
-                if (got <= 0)
-                    break;
-                if (outFile.write(copyBuf, got) != got) {
-                    outFile.close();
-                    QFile::remove(outPartPath);
-                    return ConvertStatus::IOError;
-                }
-            }
-        }
-        outFile.close();
-
-        // The concatenated file needs rehashing — create a minimal .part.met
-        // so DownloadQueue can pick it up. The file will be re-hashed when loaded.
-        logInfo(QStringLiteral("PartFileConvert: concatenated %1 split parts (%2 bytes) into '%3'")
-                    .arg(parts.size()).arg(totalSize).arg(outPartPath));
-
-        // Remove source split files if requested
-        if (job.removeSource) {
-            for (const auto& partPath : parts)
-                QFile::remove(partPath);
-        }
-
-        return ConvertStatus::OK;
-    }
-
-    case 4: // Shareaza (.sd)
-    {
-        if (!QFile::exists(metPath)) {
-            logWarning(QStringLiteral("PartFileConvert: Shareaza .sd not found: %1").arg(metPath));
-            return ConvertStatus::PartMetNotFound;
-        }
-
-        // Parse Shareaza .sd binary format
-        // The .sd file contains: [header][metadata][data]
-        // Header: 4 bytes magic "SDL\x0", then metadata with file hash, size, name
-        QFile sdFile(metPath);
-        if (!sdFile.open(QIODevice::ReadOnly)) {
-            logWarning(QStringLiteral("PartFileConvert: cannot open Shareaza .sd: %1").arg(metPath));
-            return ConvertStatus::IOError;
-        }
-
-        // Read and validate magic header
-        char magic[4]{};
-        if (sdFile.read(magic, 4) != 4) {
-            logWarning(QStringLiteral("PartFileConvert: Shareaza .sd too short: %1").arg(metPath));
-            return ConvertStatus::BadFormat;
-        }
-
-        // Shareaza .sd files have varied header formats
-        // Basic approach: try to extract the data portion
-        // The file data typically starts after a metadata header
-        const qint64 sdFileSize = sdFile.size();
-
-        // Get target temp directory
-        const auto tempDirs = thePrefs.tempDirs();
-        const QString destDir = tempDirs.isEmpty() ? job.folder : tempDirs.first();
-
-        // Derive output filename (strip .sd, add .part)
-        QString outName = job.filename;
-        if (outName.endsWith(QStringLiteral(".sd"), Qt::CaseInsensitive))
-            outName.chop(3);
-        outName += QStringLiteral(".part");
-
-        const QString outPath = destDir + QDir::separator() + outName;
-
-        // Copy the data portion to a .part file
-        // Since .sd format varies, copy the entire file and let rehashing handle it
-        QFile outFile(outPath);
-        if (!outFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            logWarning(QStringLiteral("PartFileConvert: cannot create output: %1").arg(outPath));
-            return ConvertStatus::IOError;
-        }
-
-        sdFile.seek(0);
-        constexpr qint64 kCopyBufSize = 64 * 1024;
-        char copyBuf[kCopyBufSize];
-        while (true) {
-            qint64 got = sdFile.read(copyBuf, kCopyBufSize);
-            if (got <= 0)
-                break;
-            outFile.write(copyBuf, got);
-        }
-        outFile.close();
-        sdFile.close();
-
-        logInfo(QStringLiteral("PartFileConvert: copied Shareaza .sd (%1 bytes) to '%2' — needs rehashing")
-                    .arg(sdFileSize).arg(outPath));
-
-        if (job.removeSource)
-            QFile::remove(metPath);
-
-        return ConvertStatus::OK;
-    }
-
-    default:
-        logWarning(QStringLiteral("PartFileConvert: unknown format %1 for '%2'")
-                       .arg(job.format).arg(job.filename));
+    // 1. What is it, and do we have it already?
+    PartFileFormat format = PartFileFormat::Unknown;
+    PartFileLoadResult checked = PartFileLoadResult::FailedOther;
+    std::array<uint8, 16> hash{};
+    QString name;
+    uint64 size = 0;
+    bool duplicate = false;
+    QString tempDir;
+    runOnMain([&] {
+        PartFile probe;
+        checked = probe.loadPartFile(job.folder, job.filename, &format);
+        if (checked != PartFileLoadResult::CheckSuccess)
+            return;
+        md4cpy(hash.data(), probe.fileHash());
+        name = probe.fileName();
+        size = static_cast<uint64>(probe.fileSize());
+        duplicate = theApp.downloadQueue && theApp.downloadQueue->fileByID(hash.data());
+        tempDir = DownloadQueue::defaultTempDir();
+    });
+    if (checked != PartFileLoadResult::CheckSuccess || format == PartFileFormat::Unknown
+        || format == PartFileFormat::BadFormat || size == 0)
         return ConvertStatus::BadFormat;
+
+    {
+        QMutexLocker locker(&s_mutex);
+        job.size = size;
+        job.fileHash = md4str(hash.data());
+        job.format = static_cast<int>(format);
     }
+    if (duplicate)
+        return ConvertStatus::AlreadyExists;
+    if (!theApp.downloadQueue || tempDir.isEmpty())
+        return ConvertStatus::Failed;
+
+    // 2. Space. A split download is rebuilt, so it always needs room; a plain one
+    //    only when the source stays.
+    const bool split = format == PartFileFormat::Splitted;
+    QString oldData = metPath;
+    oldData.chop(format == PartFileFormat::Shareaza ? 3 : 4);     // ".sd" / ".met"
+    const std::map<int, QString> chunks =
+        split ? splitChunks(job.folder, partIndex) : std::map<int, QString>{};
+    uint64 needed = 0;
+    if (split) {
+        if (!chunks.empty())
+            needed = static_cast<uint64>(chunks.rbegin()->first - 1) * PARTSIZE
+                   + static_cast<uint64>(QFileInfo(chunks.rbegin()->second).size());
+    } else if (!job.removeSource) {
+        needed = static_cast<uint64>(QFileInfo(oldData).size());
+    }
+    {
+        QMutexLocker locker(&s_mutex);
+        job.spaceNeeded = needed;
+    }
+    if (needed > 0) {
+        const std::optional<uint64> free = tryFreeDiskSpace(tempDir);
+        if (free.has_value() && *free < needed)
+            return ConvertStatus::OutOfDiskSpace;
+    }
+
+    // 3. A download of our own, under the next free number
+    PartFile* file = nullptr;
+    QString newPart;
+    QString newMet;
+    runOnMain([&] {
+        auto created = std::make_unique<PartFile>();
+        created->setFileHash(hash.data());
+        created->setFileName(name, true);
+        created->setFileSize(size);
+        if (!created->createPartFile(tempDir))
+            return;
+        created->closeDataFile();
+        newMet = created->fullName();
+        newPart = newMet.left(newMet.size() - 4);
+        file = created.release();
+    });
+    if (!file)
+        return ConvertStatus::Failed;
+
+    bool dataMoved = false;     // the source data now lives under newPart
+    const auto abandon = [&](ConvertStatus status) {
+        runOnMain([&] { delete file; });    // first: it may still write its met
+        if (dataMoved)
+            moveFile(newPart, oldData);     // give it back
+        else
+            QFile::remove(newPart);
+        QFile::remove(newMet);
+        QFile::remove(newMet + QStringLiteral(".bak"));
+        QFile::remove(newMet + QStringLiteral(".backup"));
+        return status;
+    };
+
+    // 4. The data
+    if (split) {
+        QFile out(newPart);
+        if (!out.open(QIODevice::ReadWrite))
+            return abandon(ConvertStatus::IOError);
+        for (const auto& [index, path] : chunks) {
+            QFile in(path);
+            if (!in.open(QIODevice::ReadOnly))
+                return abandon(ConvertStatus::IOError);
+            const QByteArray data = in.read(static_cast<qint64>(PARTSIZE));
+            // Chunk n holds part n. (The reference tree's "index * PARTSIZE +
+            // PARTSIZE - 1" at PartFileConvert.cpp:268 lands every chunk two parts on.)
+            if (!out.seek(static_cast<qint64>(static_cast<uint64>(index - 1) * PARTSIZE))
+                || out.write(data) != data.size())
+                return abandon(ConvertStatus::IOError);
+        }
+        if (!out.flush())
+            return abandon(ConvertStatus::IOError);
+    } else {
+        QFile::remove(newPart);
+        bool ok;
+        if (!QFile::exists(oldData)) {
+            QFile empty(newPart);       // metadata without data: all of it is missing
+            ok = empty.open(QIODevice::WriteOnly);
+        } else if (job.removeSource) {
+            ok = dataMoved = moveFile(oldData, newPart);
+        } else {
+            ok = QFile::copy(oldData, newPart);
+        }
+        if (!ok)
+            return abandon(ConvertStatus::Failed);
+    }
+
+    // 5. The metadata: always a copy, so a file that does not load costs nothing
+    QFile::remove(newMet);
+    if (!QFile::copy(metPath, newMet))
+        return abandon(ConvertStatus::Failed);
+    QFile::setPermissions(newMet, QFile::permissions(newMet) | QFile::WriteOwner);
+
+    PartFileLoadResult loaded = PartFileLoadResult::FailedOther;
+    runOnMain([&] {
+        file->resetForImportLoad();
+        loaded = file->loadPartFile(tempDir, QFileInfo(newMet).fileName());
+        if (loaded != PartFileLoadResult::LoadSuccess)
+            return;
+        if (format == PartFileFormat::NewOld || format == PartFileFormat::Splitted)
+            file->resetImportedCounters();
+
+        // 6. Queue it
+        theApp.downloadQueue->addDownload(file, thePrefs.addNewFilesPaused());
+        file->savePartFile();
+        if (theApp.sharedFileList
+            && file->status(/*ignorePause=*/true) == PartFileStatus::Ready)
+            theApp.sharedFileList->safeAddKFile(file);
+        file->finishLoadedDownload();
+    });
+    if (loaded != PartFileLoadResult::LoadSuccess)
+        return abandon(ConvertStatus::BadFormat);
+
+    // 7. Only now, and only what was imported, is removed. (MFC unlinks every
+    //    "<number>.*" in the folder, which for "Name.ext.sd" is every "Name.*".)
+    if (job.removeSource) {
+        QFile::remove(metPath);
+        QFile::remove(metPath + QStringLiteral(".bak"));
+        QFile::remove(metPath + QStringLiteral(".backup"));
+        if (!split)
+            QFile::remove(oldData);     // gone already unless it was copied across volumes
+        for (const auto& [index, path] : chunks)
+            QFile::remove(path);
+        if (split)
+            QDir().rmdir(job.folder);   // only if empty
+    }
+
+    logInfo(QStringLiteral("Imported download: %1").arg(name));
+    return ConvertStatus::OK;
 }
 
 } // namespace eMule

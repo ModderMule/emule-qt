@@ -7,6 +7,7 @@
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadSearchManager.h"
+#include "files/Collection.h"
 #include "files/KnownFile.h"
 #include "files/KnownFileList.h"
 #include "app/AppContext.h"
@@ -113,6 +114,7 @@ private slots:
     // Locking (one mutex, no nesting)
     void concurrentIterationWhileMutating();
     void reloadDoesNotDeadlockAgainstTheScan();
+    void attachCollection_parsesAFileSharedBeforeItWasComplete();
 };
 
 namespace {
@@ -2054,6 +2056,36 @@ void tst_SharedFileList::canPublishToKad_firewalledNeedsABuddy()
     list.setBuddy(&buddy, BuddyStatus::Connected);
     QVERIFY(SharedFileList::canPublishToKad());
     list.setBuddy(nullptr, BuddyStatus::None);
+}
+
+// C56: a downloading .emulecollection is in the shared list long before its bytes
+// are there, so safeAddKFile() at completion returns as a duplicate and never looks.
+void tst_SharedFileList::attachCollection_parsesAFileSharedBeforeItWasComplete()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+
+    const QString name = QStringLiteral("set.emulecollection");
+    auto* file = makeFileOnDisk(knownFiles, shared, 0x51, dir.path(), name, QByteArray(64, '\0'));
+    QVERIFY(file->collection() == nullptr);
+
+    writeFile(dir.path(), name,
+              "ed2k://|file|one.bin|1000|0123456789ABCDEF0123456789ABCDEF|/\n"
+              "ed2k://|file|two.bin|2000|FEDCBA9876543210FEDCBA9876543210|/\n");
+    shared.safeAddKFile(file);              // the completion path's call: a duplicate
+    QVERIFY(file->collection() == nullptr);
+
+    shared.attachCollection(file);
+    QVERIFY(file->collection() != nullptr);
+    QCOMPARE(file->collection()->fileCount(), 2);
+
+    // Not a collection by name: left alone.
+    auto* other = makeFileOnDisk(knownFiles, shared, 0x52, dir.path(), QStringLiteral("x.txt"),
+                                 "ed2k://|file|one.bin|1000|0123456789ABCDEF0123456789ABCDEF|/\n");
+    shared.attachCollection(other);
+    QVERIFY(other->collection() == nullptr);
 }
 
 QTEST_MAIN(tst_SharedFileList)

@@ -3688,6 +3688,8 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setDynUpGoingDownDivider(static_cast<int>(val.toInteger()));
     else if (key == QStringLiteral("dynUpNumberOfPings"))
         thePrefs.setDynUpNumberOfPings(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("allocFullFile"))
+        thePrefs.setAllocFullFile(val.toBool());
 #ifdef Q_OS_WIN
     else if (key == QStringLiteral("autotakeEd2kLinks"))
         thePrefs.setAutotakeEd2kLinks(val.toBool());
@@ -3695,8 +3697,6 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setOpenPortsOnWinFirewall(val.toBool());
     else if (key == QStringLiteral("sparsePartFiles"))
         thePrefs.setSparsePartFiles(val.toBool());
-    else if (key == QStringLiteral("allocFullFile"))
-        thePrefs.setAllocFullFile(val.toBool());
     else if (key == QStringLiteral("resolveShellLinks"))
         thePrefs.setResolveShellLinks(val.toBool());
     else if (key == QStringLiteral("multiUserSharing"))

@@ -22,6 +22,8 @@
 #include <QScopeGuard>
 #include <QTest>
 
+#include <sys/stat.h>
+
 #include <algorithm>
 #include <cstring>
 #include <functional>
@@ -103,6 +105,8 @@ private slots:
     void copyThenRename_interruptedLeavesTheSourceOnly();
     void copyThenRename_missingSourceFails();
     void completion_setsTheKnownFileDate();
+    void uniqueDestination_followsMfcsNaming();
+    void createPartFile_allocatesInFullWhenAsked();
     void completion_storesTheAICHRecoverySet();
     void completion_loadedCompleteFileIsVerifiedAndDelivered_data();
     void completion_loadedCompleteFileIsVerifiedAndDelivered();
@@ -1994,6 +1998,9 @@ void tst_PartFile::completion_setsTheKnownFileDate()
     ScopedStatistics stats;
     TwoPartFixture f(tempDir, QStringLiteral("dated.bin"));
     QCOMPARE(f.pf.utcFileDate(), static_cast<time_t>(-1));
+    // C68: no source held every part, so the count is 0 — until we do.
+    f.pf.updatePartsInfo();
+    QCOMPARE(f.pf.completeSourcesCount(), uint16{0});
 
     f.write(0, PARTSIZE + TwoPartFixture::kTail - 1);
     QTRY_COMPARE_WITH_TIMEOUT(f.pf.status(), PartFileStatus::Complete, 10000);
@@ -2002,6 +2009,68 @@ void tst_PartFile::completion_setsTheKnownFileDate()
     QVERIFY(delivered.exists());
     QCOMPARE(f.pf.utcFileDate(),
              static_cast<time_t>(delivered.lastModified().toSecsSinceEpoch()));
+    QCOMPARE(f.pf.completeSourcesCount(), uint16{1});   // MFC PartFile.cpp:2990-2992
+}
+
+// C71: MFC PartFile.cpp:2856-2894
+void tst_PartFile::uniqueDestination_followsMfcsNaming()
+{
+    const auto with = [](const QString& path, const QStringList& taken) {
+        return FileMoveThread::uniqueDestination(
+            path, [&taken](const QString& p) { return taken.contains(p); });
+    };
+    QCOMPARE(with(QStringLiteral("/in/a.avi"), {}), QStringLiteral("/in/a.avi"));
+    QCOMPARE(with(QStringLiteral("/in/a.avi"), {QStringLiteral("/in/a.avi")}),
+             QStringLiteral("/in/a(1).avi"));
+    QCOMPARE(with(QStringLiteral("/in/a.avi"),
+                  {QStringLiteral("/in/a.avi"), QStringLiteral("/in/a(1).avi")}),
+             QStringLiteral("/in/a(2).avi"));
+    // An (N) the name already carries is continued, not nested.
+    QCOMPARE(with(QStringLiteral("/in/a(3).avi"), {QStringLiteral("/in/a(3).avi")}),
+             QStringLiteral("/in/a(4).avi"));
+    QCOMPARE(with(QStringLiteral("/in/a(x).avi"), {QStringLiteral("/in/a(x).avi")}),
+             QStringLiteral("/in/a(x)(1).avi"));
+    QCOMPARE(with(QStringLiteral("/in.d/a.tar.gz"), {QStringLiteral("/in.d/a.tar.gz")}),
+             QStringLiteral("/in.d/a.tar(1).gz"));
+    QCOMPARE(with(QStringLiteral("/in.d/noext"), {QStringLiteral("/in.d/noext")}),
+             QStringLiteral("/in.d/noext(1)"));
+}
+
+// C65: "Allocate full file size" had no reader.
+void tst_PartFile::createPartFile_allocatesInFullWhenAsked()
+{
+#if !defined(Q_OS_MACOS) && !defined(Q_OS_LINUX)
+    QSKIP("allocated size is read with stat()");
+#else
+    const auto allocated = [](const QString& path) {
+        struct stat st{};
+        return ::stat(QFile::encodeName(path).constData(), &st) == 0
+            ? static_cast<quint64>(st.st_blocks) * 512 : quint64{0};
+    };
+    const quint64 size = 8 * 1024 * 1024;
+    const bool saved = thePrefs.allocFullFile();
+    const auto restore = qScopeGuard([saved] { thePrefs.setAllocFullFile(saved); });
+
+    const auto create = [&](const char* sub, uint8 tag) {
+        const QString dir = m_tempDir.path() + QLatin1Char('/') + QLatin1String(sub);
+        QDir().mkpath(dir);
+        PartFile pf;
+        pf.setFileName(QStringLiteral("alloc.bin"));
+        pf.setFileSize(size);
+        uint8 hash[16] = {0xA1, tag, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+        pf.setFileHash(hash);
+        if (!pf.createPartFile(dir))
+            return quint64{0};
+        QString part = pf.fullName();
+        part.chop(4);
+        return allocated(part) + 1;
+    };
+
+    thePrefs.setAllocFullFile(false);
+    QVERIFY(create("alloc-off", 1) < size);     // sparse
+    thePrefs.setAllocFullFile(true);
+    QVERIFY(create("alloc-on", 2) >= size);
+#endif
 }
 
 // MFC srchybrid/PartFile.cpp:1543-1550: the completion hash also yields the AICH recovery

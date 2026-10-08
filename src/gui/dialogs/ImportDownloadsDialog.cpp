@@ -6,6 +6,7 @@
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
 #include "IpcMessage.h"
+#include "prefs/Preferences.h"
 #include "utils/DialogSizing.h"
 #include "utils/StringUtils.h"
 
@@ -143,9 +144,16 @@ void ImportDownloadsDialog::onAddImports()
     if (folder.isEmpty())
         return;
 
+    // MFC asks, No by default, and only in advanced mode (PartFileConvert.cpp:632-648)
+    const bool removeSource = thePrefs.showExtControls()
+        && QMessageBox::question(
+               this, tr("Import Downloads"),
+               tr("Do you want to delete the source files after a successful import?"),
+               QMessageBox::Yes | QMessageBox::No, QMessageBox::No) == QMessageBox::Yes;
+
     IpcMessage req(IpcMsgType::ScanImportFolder);
     req.append(folder);
-    req.append(true); // removeSource
+    req.append(removeSource);
     m_ipc->sendRequest(std::move(req), [this, guard = QPointer(this)](const IpcMessage& resp) {
         if (!guard || !resp.fieldBool(0))
             return;

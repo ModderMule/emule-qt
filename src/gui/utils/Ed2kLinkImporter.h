@@ -54,7 +54,32 @@ public:
         /// separately from @a added: they start no download, so a caller must not
         /// switch to the Transfers tab over one.
         int httpCacheConfigs = 0;
+        /// serverlist / nodeslist / search / server links handed to the handler.
+        int otherLinks = 0;
     };
+
+    /// The link kinds that start no download (MFC CemuleDlg::ProcessED2KLink,
+    /// srchybrid/EmuleDlg.cpp:1259-1311).
+    struct OtherLinks {
+        QStringList serverLists;                   ///< server.met URLs
+        QStringList nodesLists;                    ///< nodes.dat URLs
+        QStringList searches;                      ///< search terms
+        QList<std::pair<QString, quint16>> servers;
+
+        [[nodiscard]] int count() const
+        {
+            return static_cast<int>(serverLists.size() + nodesLists.size() + searches.size()
+                                    + servers.size());
+        }
+    };
+
+    /// Who acts on OtherLinks — the main window. Called for manual imports only: the
+    /// clipboard watcher never updates a server list or starts a search by itself.
+    using OtherLinkHandler = std::function<void(const OtherLinks&, QWidget* parent)>;
+    static void setOtherLinkHandler(OtherLinkHandler handler);
+
+    /// The non-download links in @p text.
+    [[nodiscard]] static OtherLinks otherLinksIn(const QString& text);
 
     /// Import every eD2K file link found in @p text (one per line).
     ///
@@ -100,13 +125,11 @@ public:
 
     /// The kinds of eD2K link @p text carries.
     ///
-    /// Only the kinds somebody acts on: a link type nothing in the GUI can import — search,
-    /// nodeslist — sets no flag, so an action gated on this stays grey rather than opening
-    /// a dialog that reports "invalid link".
     enum class LinkKind : quint8 {
         File      = 0x1,  ///< ed2k://|file|
         HttpCache = 0x2,  ///< ed2k://|httpcache| — a configuration link, not a download
         Server    = 0x4,  ///< ed2k://|server| (not serverlist)
+        Other     = 0x8,  ///< serverlist, nodeslist, search — acted on for manual imports
     };
     Q_DECLARE_FLAGS(LinkKinds, LinkKind)
 

@@ -393,12 +393,12 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_dynUpGoingUpSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_dynUpGoingDownSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_dynUpNumPingsSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_allocFullFileCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
 #ifdef Q_OS_WIN
     connect(m_enableMiniMuleCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_autotakeEd2kCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_winFirewallCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_sparsePartFilesCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
-    connect(m_allocFullFileCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_resolveShellLinksCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_multiUserSharingGroup, &QButtonGroup::idToggled, this, &OptionsDialog::markDirty);
 #endif
@@ -5165,11 +5165,11 @@ QWidget* OptionsDialog::createExtendedPage()
     m_sparsePartFilesCheck = new QCheckBox(
         tr("Create new part files as 'sparse' (NTFS only)"), scrollWidget);
     scrollLayout->addWidget(m_sparsePartFilesCheck);
+#endif
 
     m_allocFullFileCheck = new QCheckBox(
         tr("Allocate full file size for non-sparse part files"), scrollWidget);
     scrollLayout->addWidget(m_allocFullFileCheck);
-#endif
 
     // --- Check disk space ---
     m_checkDiskspaceCheck = new QCheckBox(tr("Check disk space"), scrollWidget);
@@ -6656,6 +6656,8 @@ void OptionsDialog::saveSettings()
         req.append(QStringLiteral("queueSize"));
         req.append(static_cast<qint64>(m_queueSizeSlider->value()) * 100); // slider to count
 
+        req.append(QStringLiteral("allocFullFile"));
+        req.append(m_allocFullFileCheck->isChecked());
 #ifdef Q_OS_WIN
         req.append(QStringLiteral("autotakeEd2kLinks"));
         req.append(m_autotakeEd2kCheck->isChecked());
@@ -6663,8 +6665,6 @@ void OptionsDialog::saveSettings()
         req.append(m_winFirewallCheck->isChecked());
         req.append(QStringLiteral("sparsePartFiles"));
         req.append(m_sparsePartFilesCheck->isChecked());
-        req.append(QStringLiteral("allocFullFile"));
-        req.append(m_allocFullFileCheck->isChecked());
         req.append(QStringLiteral("resolveShellLinks"));
         req.append(m_resolveShellLinksCheck->isChecked());
         req.append(QStringLiteral("multiUserSharing"));
@@ -6972,11 +6972,11 @@ void OptionsDialog::saveSettings()
         thePrefs.setDynUpNumberOfPings(m_dynUpNumPingsSpin->value());
         thePrefs.setQueueSize(static_cast<uint32>(m_queueSizeSlider->value()) * 100);
 
+        thePrefs.setAllocFullFile(m_allocFullFileCheck->isChecked());
 #ifdef Q_OS_WIN
         thePrefs.setAutotakeEd2kLinks(m_autotakeEd2kCheck->isChecked());
         thePrefs.setOpenPortsOnWinFirewall(m_winFirewallCheck->isChecked());
         thePrefs.setSparsePartFiles(m_sparsePartFilesCheck->isChecked());
-        thePrefs.setAllocFullFile(m_allocFullFileCheck->isChecked());
         thePrefs.setResolveShellLinks(m_resolveShellLinksCheck->isChecked());
         thePrefs.setMultiUserSharing(m_multiUserSharingGroup->checkedId());
 #endif
@@ -7375,11 +7375,11 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_fileBufferSlider->setValue(static_cast<int>(prefs.value(QStringLiteral("fileBufferSize")).toInteger(245760)) / 16384);
     m_queueSizeSlider->setValue(static_cast<int>(prefs.value(QStringLiteral("queueSize")).toInteger(5000)) / 100);
 
+    m_allocFullFileCheck->setChecked(prefs.value(QStringLiteral("allocFullFile")).toBool());
 #ifdef Q_OS_WIN
     m_autotakeEd2kCheck->setChecked(prefs.value(QStringLiteral("autotakeEd2kLinks")).toBool(true));
     m_winFirewallCheck->setChecked(prefs.value(QStringLiteral("openPortsOnWinFirewall")).toBool());
     m_sparsePartFilesCheck->setChecked(prefs.value(QStringLiteral("sparsePartFiles")).toBool());
-    m_allocFullFileCheck->setChecked(prefs.value(QStringLiteral("allocFullFile")).toBool());
     m_resolveShellLinksCheck->setChecked(prefs.value(QStringLiteral("resolveShellLinks")).toBool());
     if (auto* btn = m_multiUserSharingGroup->button(static_cast<int>(prefs.value(QStringLiteral("multiUserSharing")).toInteger(2))))
         btn->setChecked(true);

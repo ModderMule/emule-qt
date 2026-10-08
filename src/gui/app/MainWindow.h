@@ -10,6 +10,8 @@
 #include "app/SkinEngine.h"
 #include "app/ToolbarButtons.h"
 
+#include "utils/Ed2kLinkImporter.h"
+
 #include <QCloseEvent>
 #include <QMainWindow>
 #include <QMap>
@@ -221,6 +223,8 @@ private slots:
     void onOpenDownloadsFolderInBrowser();
     void onOpenWebUi();
     void onImportDownloads();
+    /// serverlist / nodeslist / search / server links (MFC ProcessED2KLink).
+    void handleOtherEd2kLinks(const Ed2kLinkImporter::OtherLinks& links, QWidget* parent);
     void onFirstTimeWizard();
     void maybeShowFirstStartWizard();
     void onIPFilter();

@@ -171,19 +171,22 @@ bool CollectionKeys::verifySignature(const QByteArray& message,
     if (!pubKey)
         return false;
 
-    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    // SHA-1 is the format (MFC RSASSA_PKCS1v15_SHA); SHA-256 is what builds up to
+    // 0.6.2 signed with, so their collections keep their author.
     bool ok = false;
-    if (ctx) {
-        if (EVP_DigestVerifyInit(ctx, nullptr, EVP_sha256(), nullptr, pubKey) > 0
+    for (const EVP_MD* md : {EVP_sha1(), EVP_sha256()}) {
+        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+        if (!ctx)
+            break;
+        ok = EVP_DigestVerifyInit(ctx, nullptr, md, nullptr, pubKey) > 0
             && EVP_DigestVerifyUpdate(ctx, message.constData(),
                                      static_cast<size_t>(message.size())) > 0
             && EVP_DigestVerifyFinal(ctx,
                                     reinterpret_cast<const unsigned char*>(signature.constData()),
-                                    static_cast<size_t>(signature.size())) == 1)
-        {
-            ok = true;
-        }
+                                    static_cast<size_t>(signature.size())) == 1;
         EVP_MD_CTX_free(ctx);
+        if (ok)
+            break;
     }
     EVP_PKEY_free(pubKey);
     return ok;

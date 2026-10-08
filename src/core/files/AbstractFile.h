@@ -50,7 +50,9 @@ public:
     [[nodiscard]] bool hasNullHash() const;
 
     // ED2K link generation
-    [[nodiscard]] QString getED2kLink(bool hashset = false, bool html = false, bool hostname = false) const;
+    /// @param source  append our own public IPv4 when no hostname hint applies (MFC bSource).
+    [[nodiscard]] QString getED2kLink(bool hashset = false, bool html = false, bool hostname = false,
+                                      bool source = false) const;
 
     // File size
     [[nodiscard]] EMFileSize fileSize() const { return m_fileSize; }

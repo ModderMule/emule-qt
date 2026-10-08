@@ -230,6 +230,44 @@ void Search::preparePacketForTags(SafeMemFile& packet, KnownFile* file, uint8 ta
     }
 }
 
+void Search::fillSourceReachability(SourcePublishParams& sp)
+{
+    auto* prefs = Kademlia::getInstancePrefs();
+    // The app-wide state, as MFC (Search.cpp:646): an eD2K HighID is reachable
+    // even while Kad still reports firewalled.
+    auto* kadInst = Kademlia::instance();
+    sp.firewalled = theApp.isFirewalled();
+    if (sp.firewalled) {
+        sp.directUDPCallback = kadInst && kadInst->isRunning()
+            && !UDPFirewallTester::isFirewalledUDP(true)
+            && UDPFirewallTester::isVerified();
+        if (!sp.directUDPCallback) {
+            auto* clientList = Kademlia::getClientList();
+            if (auto* buddy = clientList ? clientList->getBuddy() : nullptr) {
+                sp.hasBuddy = true;
+                // Network order: FT_SERVERIP is the one IP tag in this packet
+                // that is not host order. MFC publishes GetBuddy()->GetIP()
+                // (network) at srchybrid/kademlia/kademlia/Search.cpp:667 and
+                // reads it back without the htonl it applies to the source IP
+                // (srchybrid/DownloadQueue.cpp:1519 vs :1560). Our own storing
+                // node already read it that way, so this side was the odd one
+                // out and buddy callbacks landed on a byte-reversed address.
+                sp.buddyIP = buddy->userAddress().toNetworkUint32();
+                // MFC Search.cpp:668 publishes the buddy's *UDP* port —
+                // the Kad buddy-callback packet is sent there, not to the
+                // ED2K TCP port.
+                sp.buddyUDPPort = buddy->udpPort();
+                // FT_BUDDYHASH: KadID XOR all-ones (MFC: md4str(uBuddyID))
+                sp.buddyHash = UInt128(true);
+                sp.buddyHash.xorWith(prefs ? prefs->kadId() : RoutingZone::localKadId());
+                if (!buddy->userIPv6().isNull())
+                    sp.buddyIPv6Hex = QString::fromLatin1(
+                        QByteArray(reinterpret_cast<const char*>(buddy->userIPv6().ipv6Bytes().data()), 16).toHex());
+            }
+        }
+    }
+}
+
 std::vector<Tag> Search::buildSourcePublishTags(const SourcePublishParams& p, bool& outCanPublish)
 {
     // Mirrors MFC Search.cpp StorePacket() STOREFILE case (:640-690).
@@ -1488,39 +1526,7 @@ void Search::storePacket(bool flushRemaining)
                     QByteArray(reinterpret_cast<const char*>(ourIPv6.ipv6Bytes().data()), 16).toHex());
             }
 
-            // The app-wide state, as MFC (Search.cpp:646): an eD2K HighID is reachable
-            // even while Kad still reports firewalled.
-            auto* kadInst = Kademlia::instance();
-            sp.firewalled = theApp.isFirewalled();
-            if (sp.firewalled) {
-                sp.directUDPCallback = kadInst && kadInst->isRunning()
-                    && !UDPFirewallTester::isFirewalledUDP(true)
-                    && UDPFirewallTester::isVerified();
-                if (!sp.directUDPCallback) {
-                    auto* clientList = Kademlia::getClientList();
-                    if (auto* buddy = clientList ? clientList->getBuddy() : nullptr) {
-                        sp.hasBuddy = true;
-                        // Network order: FT_SERVERIP is the one IP tag in this packet
-                        // that is not host order. MFC publishes GetBuddy()->GetIP()
-                        // (network) at srchybrid/kademlia/kademlia/Search.cpp:667 and
-                        // reads it back without the htonl it applies to the source IP
-                        // (srchybrid/DownloadQueue.cpp:1519 vs :1560). Our own storing
-                        // node already read it that way, so this side was the odd one
-                        // out and buddy callbacks landed on a byte-reversed address.
-                        sp.buddyIP = buddy->userAddress().toNetworkUint32();
-                        // MFC Search.cpp:668 publishes the buddy's *UDP* port —
-                        // the Kad buddy-callback packet is sent there, not to the
-                        // ED2K TCP port.
-                        sp.buddyUDPPort = buddy->udpPort();
-                        // FT_BUDDYHASH: KadID XOR all-ones (MFC: md4str(uBuddyID))
-                        sp.buddyHash = UInt128(true);
-                        sp.buddyHash.xorWith(prefs ? prefs->kadId() : RoutingZone::localKadId());
-                        if (!buddy->userIPv6().isNull())
-                            sp.buddyIPv6Hex = QString::fromLatin1(
-                                QByteArray(reinterpret_cast<const char*>(buddy->userIPv6().ipv6Bytes().data()), 16).toHex());
-                    }
-                }
-            }
+            fillSourceReachability(sp);
 
             // HTTP Cache chunks we currently hold for this file, so a downloader can
             // fetch a whole part over HTTP straight from the lookup, without finding,

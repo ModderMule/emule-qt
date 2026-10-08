@@ -37,6 +37,7 @@ private slots:
     void syncFlush_waitsForTheOneInFlight();
     void deletedFile_stillGetsItsWrite();
     void writeFailure_keepsTheBuffer();
+    void overTwiceTheLimit_flushesAtOnce();
 
 private:
     [[nodiscard]] QString makeFile(const QString& name, qint64 size);
@@ -336,17 +337,52 @@ void tst_PartFileWriteThread::writeFailure_keepsTheBuffer()
     QTRY_VERIFY_WITH_TIMEOUT(!pf.isFlushPending(), 5000);
     QVERIFY2(!pf.isCompleteBDSafe(0, 99), "a failed write was taken for written");
 
+    // C57: it stops there — Error and paused, as MFC — instead of retrying every tick.
+    QCOMPARE(pf.status(), PartFileStatus::Error);
+    QVERIFY(pf.isPaused());
+    for (int i = 0; i < 5; ++i)
+        pf.process(0, 0);
+    QVERIFY(!pf.isFlushPending());
+
     // With the directory back the same bytes go out.
     QDir().mkpath(dir);
     {
         QFile recreated(partPath);
         QVERIFY(recreated.open(QIODevice::WriteOnly) && recreated.resize(1000));
     }
+    // Resuming is the retry: the state comes back and the held bytes go out.
+    pf.resumeFile();
+    QCOMPARE(pf.status(), PartFileStatus::Empty);
+    QVERIFY(!pf.isPaused());
     pf.flushBuffer();
     QVERIFY(pf.isCompleteBDSafe(0, 99));
     QFile f(partPath);
     QVERIFY(f.open(QIODevice::ReadOnly));
     QCOMPARE(f.read(100), QByteArray(reinterpret_cast<const char*>(content.data()), 100));
+}
+
+// C69: MFC PartFile.cpp:4033 — far over the limit does not wait for the next tick.
+void tst_PartFileWriteThread::overTwiceTheLimit_flushesAtOnce()
+{
+    const QString dir = m_tmp.filePath(QStringLiteral("t6"));
+    QDir().mkpath(dir);
+    const uint32 saved = thePrefs.fileBufferSize();
+    const auto restore = qScopeGuard([saved] { thePrefs.setFileBufferSize(saved); });
+    thePrefs.setFileBufferSize(16 * 1024);
+    const uint32 limit = thePrefs.fileBufferSize();     // the setter may clamp
+    const std::vector<uint8> content = pattern(limit * 3 + 10, 21);
+
+    WriterScope scope;
+    PartFile pf;
+    pf.setFileSize(limit * 8);
+    pf.setFileHash(md4Of(content).data());
+    QVERIFY(pf.createPartFile(dir));
+
+    pf.writeToBuffer(limit, content.data(), 0, limit - 1, nullptr);
+    QVERIFY(!pf.isFlushPending());                       // within the limit: waits
+    pf.writeToBuffer(limit * 2 + 10, content.data() + limit, limit, limit * 3 + 9, nullptr);
+    QVERIFY(pf.isFlushPending());
+    QTRY_VERIFY_WITH_TIMEOUT(!pf.isFlushPending(), 5000);
 }
 
 QTEST_GUILESS_MAIN(tst_PartFileWriteThread)

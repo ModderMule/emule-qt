@@ -3,9 +3,14 @@
 
 #include "TestHelpers.h"
 #include "files/CollectionFile.h"
+#include "files/KnownFile.h"
 #include "files/ShareableFile.h"
+#include "prefs/Preferences.h"
+#include "protocol/Tag.h"
+#include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
 
+#include <QDir>
 #include <QTest>
 #include <cstring>
 
@@ -19,6 +24,7 @@ private slots:
     void construct_fromAbstractFile();
     void writeAndRead_roundTrip();
     void initFromLink();
+    void construct_carriesCommentAndRating();
 };
 
 void tst_CollectionFile::construct_default()
@@ -94,6 +100,48 @@ void tst_CollectionFile::initFromLink()
     QCOMPARE(cf.fileName(), QStringLiteral("test_file.txt"));
     QCOMPARE(cf.fileSize(), EMFileSize{12345});
     QVERIFY(md4equ(cf.fileHash(), hash));
+}
+
+// C64: MFC CollectionFile.cpp:92-96 — the user's own comment and rating travel
+// with the entry.
+void tst_CollectionFile::construct_carriesCommentAndRating()
+{
+    eMule::testing::TempDir cfg;
+    const QString savedDir = thePrefs.configDir();
+    thePrefs.setConfigDir(cfg.path());
+    const auto restore = qScopeGuard([&] { thePrefs.setConfigDir(savedDir); });
+
+    KnownFile src;
+    uint8 hash[16];
+    std::memset(hash, 0xD1, 16);
+    src.setFileHash(hash);
+    src.setFileName(QStringLiteral("rated.mkv"));
+    src.setFileSize(1234567);
+    src.setFileComment(QStringLiteral("good copy"));
+    src.setFileRating(4);
+
+    CollectionFile original(&src);
+    SafeMemFile memFile;
+    QVERIFY(original.writeCollectionInfo(memFile));
+    memFile.seek(0, 0);
+    CollectionFile loaded(memFile);
+
+    const Tag* comment = loaded.getTag(FT_FILECOMMENT);
+    QVERIFY(comment != nullptr);
+    QCOMPARE(comment->strValue(), QStringLiteral("good copy"));
+    const Tag* rating = loaded.getTag(FT_FILERATING);
+    QVERIFY(rating != nullptr);
+    QCOMPARE(rating->intValue(), uint32{4});
+
+    // Nothing set, nothing written.
+    KnownFile plain;
+    std::memset(hash, 0xD2, 16);
+    plain.setFileHash(hash);
+    plain.setFileName(QStringLiteral("plain.mkv"));
+    plain.setFileSize(1000);
+    CollectionFile bare(&plain);
+    QVERIFY(bare.getTag(FT_FILECOMMENT) == nullptr);
+    QVERIFY(bare.getTag(FT_FILERATING) == nullptr);
 }
 
 QTEST_MAIN(tst_CollectionFile)

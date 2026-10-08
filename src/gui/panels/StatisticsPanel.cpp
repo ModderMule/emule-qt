@@ -599,7 +599,7 @@ void StatisticsPanel::buildTree()
     m_itemSrvLowID = new QTreeWidgetItem(servers, {tr("Low ID Users: 0")});
 
     auto* srvRecords = new QTreeWidgetItem(servers, {tr("Records")});
-    srvRecords->setIcon(0, QIcon(QStringLiteral(":/icons/StatsCumulative.ico")));
+    srvRecords->setIcon(0, QIcon(QStringLiteral(":/icons/Records.ico")));
     m_itemSrvRecWorking = new QTreeWidgetItem(srvRecords, {tr("Most Working Servers: 0")});
     m_itemSrvRecUsers = new QTreeWidgetItem(srvRecords, {tr("Most Users Online: 0")});
     m_itemSrvRecFiles = new QTreeWidgetItem(srvRecords, {tr("Most Files Available: 0")});
@@ -613,7 +613,7 @@ void StatisticsPanel::buildTree()
     m_itemSharedLargest = new QTreeWidgetItem(shared, {tr("Largest Shared File: 0 Bytes")});
 
     auto* sharedRecords = new QTreeWidgetItem(shared, {tr("Records")});
-    sharedRecords->setIcon(0, QIcon(QStringLiteral(":/icons/StatsCumulative.ico")));
+    sharedRecords->setIcon(0, QIcon(QStringLiteral(":/icons/Records.ico")));
     m_itemSharedRecCount = new QTreeWidgetItem(sharedRecords, {tr("Most Files Shared: 0")});
     m_itemSharedRecSize = new QTreeWidgetItem(sharedRecords, {tr("Largest Share Size: 0 Bytes")});
     m_itemSharedRecAvg = new QTreeWidgetItem(sharedRecords, {tr("Largest Average File Size: 0 Bytes")});

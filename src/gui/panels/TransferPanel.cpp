@@ -569,7 +569,8 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         // legitimate way to apply it, and greying the entry hid that entirely.
         const bool hasImportableLink =
             Ed2kLinkImporter::linkKindsIn(clipText)
-            & (Ed2kLinkImporter::LinkKind::File | Ed2kLinkImporter::LinkKind::HttpCache);
+            & (Ed2kLinkImporter::LinkKind::File | Ed2kLinkImporter::LinkKind::HttpCache
+               | Ed2kLinkImporter::LinkKind::Other);
         pasteAct->setEnabled(hasImportableLink && m_ipc && m_ipc->isConnected());
         connect(pasteAct, &QAction::triggered, this, &TransferPanel::pasteDownloadLinks);
     }

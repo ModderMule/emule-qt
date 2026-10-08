@@ -45,6 +45,7 @@ private slots:
     void search_skipsAnItemWithNoDownloadUrl();
     void search_dedupKeyIgnoresCase();
     void search_classifiesThePasswordAttr();
+    void passwordFlag_skipsAValueOnMostRows();
     void search_takesABracedPasswordOutOfTheTitle();
 
     // -- usenet-crawler -------------------------------------------------------
@@ -493,6 +494,113 @@ void tst_IndexerParse::search_classifiesThePasswordAttr()
     const IndexerResult real = rowFor(QStringLiteral("s3cretpw"));
     QVERIFY(real.passwordProtected);
     QCOMPARE(real.password, QStringLiteral("s3cretpw"));
+}
+
+void tst_IndexerParse::passwordFlag_skipsAValueOnMostRows()
+{
+    // One row per entry; an entry is the flag, or a title carrying {{secret}}.
+    const auto pageOf = [](const QStringList& flags) {
+        IndexerSearchPage page;
+        for (const QString& flag : flags) {
+            const QString xml =
+                QStringLiteral(R"(<?xml version="1.0"?>
+<rss xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">
+ <channel><item>
+  <title>%1</title>
+  <guid>g</guid>
+  <enclosure url="https://x/1.nzb" length="10"/>
+  <newznab:attr name="password" value="%2"/>
+ </item></channel></rss>)")
+                    .arg(flag.contains(u'{') ? flag : QStringLiteral("Release.Name"),
+                         flag.contains(u'{') ? QStringLiteral("255") : flag);
+            page.results += parseIndexerSearch(xml.toUtf8(), QStringLiteral("Test"),
+                                               QStringLiteral("test")).results;
+        }
+        return page;
+    };
+    const auto repeat = [](const QString& flag, int n) { return QStringList(n, flag); };
+    const auto marked = [](const IndexerSearchPage& page) {
+        int n = 0;
+        for (const IndexerResult& row : page.results)
+            n += row.passwordProtected ? 1 : 0;
+        return n;
+    };
+    const QString f255 = QStringLiteral("255");
+    const QString f1 = QStringLiteral("1");
+
+    // The crawler case: one unknown value on every row.
+    {
+        PasswordFlagTally tally;
+        IndexerSearchPage page = pageOf(repeat(f255, 30));
+        tally.apply(page);
+        QCOMPARE(marked(page), 0);
+
+        // What was learnt covers a later short page too.
+        IndexerSearchPage next = pageOf(repeat(f255, 2));
+        tally.apply(next);
+        QCOMPARE(marked(next), 0);
+    }
+
+    // A rare unknown value still means something.
+    {
+        PasswordFlagTally tally;
+        IndexerSearchPage page = pageOf(repeat(QStringLiteral("0"), 97)
+                                        + repeat(QStringLiteral("-1"), 3));
+        tally.apply(page);
+        QCOMPARE(marked(page), 3);
+    }
+
+    // Even "locked" says nothing when every row has it; the verdict follows.
+    {
+        PasswordFlagTally tally;
+        IndexerSearchPage page = pageOf(repeat(f1, 30));
+        tally.apply(page);
+        QCOMPARE(marked(page), 0);
+        QVERIFY(!page.results.at(0).passwordStated);
+    }
+
+    // Too few rows to judge a share: only the specified values mark.
+    {
+        PasswordFlagTally tally;
+        IndexerSearchPage page = pageOf(repeat(f255, 4));
+        tally.apply(page);
+        QCOMPARE(marked(page), 0);
+
+        PasswordFlagTally fresh;
+        IndexerSearchPage one = pageOf({f1});
+        fresh.apply(one);
+        QCOMPARE(marked(one), 1);
+        QVERIFY(one.results.at(0).passwordStated);
+    }
+
+    // A dominant value and a rare one on the same indexer.
+    {
+        PasswordFlagTally tally;
+        IndexerSearchPage page = pageOf(repeat(f255, 60) + repeat(f1, 5)
+                                        + repeat(QStringLiteral("0"), 35));
+        tally.apply(page);
+        QCOMPARE(marked(page), 5);
+        QVERIFY(page.results.at(60).passwordStated);
+    }
+
+    // A real passphrase is not a flag: attribute or title, it stays marked.
+    {
+        PasswordFlagTally tally;
+        IndexerSearchPage page = pageOf(repeat(f255, 30)
+                                        + QStringList{QStringLiteral("s3cretpw"),
+                                                      QStringLiteral("Release{{letmein}}")});
+        tally.apply(page);
+        QCOMPARE(marked(page), 2);
+        QCOMPARE(page.results.at(31).password, QStringLiteral("letmein"));
+    }
+
+    // Exactly half is not "most".
+    {
+        PasswordFlagTally tally;
+        IndexerSearchPage page = pageOf(repeat(f255, 20) + repeat(QStringLiteral("0"), 20));
+        tally.apply(page);
+        QCOMPARE(marked(page), 20);
+    }
 }
 
 void tst_IndexerParse::search_takesABracedPasswordOutOfTheTitle()

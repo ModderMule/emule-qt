@@ -532,6 +532,9 @@ public:
     [[nodiscard]] int dynUpNumberOfPings() const;
     void setDynUpNumberOfPings(int val);
 
+    [[nodiscard]] bool allocFullFile() const;
+    void setAllocFullFile(bool val);
+
 #ifdef Q_OS_WIN
     [[nodiscard]] bool autotakeEd2kLinks() const;
     void setAutotakeEd2kLinks(bool val);
@@ -541,9 +544,6 @@ public:
 
     [[nodiscard]] bool sparsePartFiles() const;
     void setSparsePartFiles(bool val);
-
-    [[nodiscard]] bool allocFullFile() const;
-    void setAllocFullFile(bool val);
 
     [[nodiscard]] bool resolveShellLinks() const;
     void setResolveShellLinks(bool val);

@@ -4,6 +4,7 @@
 
 #include "files/Collection.h"
 #include "files/CollectionFile.h"
+#include "files/CollectionKeys.h"
 #include "protocol/Tag.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
@@ -85,6 +86,8 @@ void Collection::copyFrom(const Collection& other)
 bool Collection::initFromFile(const QString& filePath, const QString& fileName)
 {
     m_files.clear();
+    m_authorName.clear();
+    m_authorKey.clear();
 
     // Try binary format first
     QFile file(filePath);
@@ -103,32 +106,50 @@ bool Collection::initFromFile(const QString& filePath, const QString& fileName)
 
             const uint32 version = mem.readUInt32();
             if (version == kCollectionFileVersion1 || version == kCollectionFileVersion2) {
-                // Read header tags
-                const uint32 headerTagCount = readTagCount(mem, kMaxWireTags);
-                for (uint32 i = 0; i < headerTagCount; ++i) {
-                    Tag tag(mem, true);
-                    switch (tag.nameId()) {
-                    case FT_FILENAME:
-                        if (tag.isStr())
-                            m_name = tag.strValue();
-                        break;
-                    case FT_COLLECTIONAUTHOR:
-                        if (tag.isStr())
-                            m_authorName = tag.strValue();
-                        break;
-                    case FT_COLLECTIONAUTHORKEY:
-                        if (tag.isBlob())
-                            m_authorKey = tag.blobValue();
-                        break;
-                    default:
-                        break;
+                // A damaged header is no collection; a damaged entry ends the list and
+                // voids the signature (MFC Collection.cpp:147-153, :191-197).
+                bool truncated = false;
+                uint32 fileCount = 0;
+                try {
+                    // Read header tags
+                    const uint32 headerTagCount = readTagCount(mem, kMaxWireTags);
+                    for (uint32 i = 0; i < headerTagCount; ++i) {
+                        Tag tag(mem, true);
+                        switch (tag.nameId()) {
+                        case FT_FILENAME:
+                            if (tag.isStr())
+                                m_name = tag.strValue();
+                            break;
+                        case FT_COLLECTIONAUTHOR:
+                            if (tag.isStr())
+                                m_authorName = tag.strValue();
+                            break;
+                        case FT_COLLECTIONAUTHORKEY:
+                            if (tag.isBlob())
+                                m_authorKey = tag.blobValue();
+                            break;
+                        default:
+                            break;
+                        }
                     }
+
+                    fileCount = mem.readUInt32();
+                } catch (const FileException&) {
+                    m_files.clear();
+                    m_authorName.clear();
+                    m_authorKey.clear();
+                    return false;
                 }
 
                 // Read file entries
-                const uint32 fileCount = mem.readUInt32();
                 for (uint32 i = 0; i < fileCount; ++i) {
-                    auto cf = std::make_unique<CollectionFile>(mem);
+                    std::unique_ptr<CollectionFile> cf;
+                    try {
+                        cf = std::make_unique<CollectionFile>(mem);
+                    } catch (const FileException&) {
+                        truncated = true;
+                        break;
+                    }
                     if (cf->fileSize() > 0 && !cf->fileName().isEmpty()) {
                         QByteArray key(reinterpret_cast<const char*>(cf->fileHash()), 16);
                         m_files.emplace(key, std::move(cf));
@@ -136,9 +157,11 @@ bool Collection::initFromFile(const QString& filePath, const QString& fileName)
                 }
 
                 // Verify RSA signature if author key is present
-                if (!m_authorKey.isEmpty()) {
+                if (m_authorKey.isEmpty()) {
+                    m_authorName.clear();   // unsigned: an author is only a claim
+                } else {
                     const qint64 signedLen = mem.position();
-                    if (!verifySignature(data, signedLen)) {
+                    if (truncated || !verifySignature(data, signedLen)) {
                         logWarning(QStringLiteral("Collection \"%1\": RSA signature verification failed — "
                                    "clearing author info").arg(m_name));
                         m_authorKey.clear();
@@ -235,7 +258,7 @@ bool Collection::writeBinary(const QString& filePath, EVP_PKEY* signKey)
 
         bool ok = false;
         do {
-            if (EVP_DigestSignInit(ctx, nullptr, EVP_sha256(), nullptr, signKey) <= 0)
+            if (EVP_DigestSignInit(ctx, nullptr, EVP_sha1(), nullptr, signKey) <= 0)
                 break;
             if (EVP_DigestSignUpdate(ctx, payload.constData(),
                                      static_cast<size_t>(payload.size())) <= 0)
@@ -278,11 +301,7 @@ bool Collection::writeText(const QString& filePath)
 
     QTextStream out(&outFile);
     for (const auto& [key, cf] : m_files) {
-        out << QStringLiteral("ed2k://|file|%1|%2|%3|/")
-                   .arg(cf->fileName())
-                   .arg(static_cast<uint64>(cf->fileSize()))
-                   .arg(md4str(cf->fileHash()))
-            << u'\n';
+        out << cf->getED2kLink() << u'\n';   // encoded name, AICH
     }
     return true;
 }
@@ -301,25 +320,10 @@ bool Collection::verifySignature(const QByteArray& data, qint64 signedLen)
     const auto* sig = reinterpret_cast<const unsigned char*>(data.constData() + signedLen);
     const auto sigLen = static_cast<size_t>(data.size() - signedLen);
 
-    // Load public key from DER
-    const auto* keyData = reinterpret_cast<const unsigned char*>(m_authorKey.constData());
-    EVP_PKEY* pubKey = d2i_PUBKEY(nullptr, &keyData, m_authorKey.size());
-    if (!pubKey)
-        return false;
-
-    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-    bool ok = false;
-    if (ctx) {
-        if (EVP_DigestVerifyInit(ctx, nullptr, EVP_sha256(), nullptr, pubKey) > 0
-            && EVP_DigestVerifyUpdate(ctx, message, msgLen) > 0
-            && EVP_DigestVerifyFinal(ctx, sig, sigLen) == 1)
-        {
-            ok = true;
-        }
-        EVP_MD_CTX_free(ctx);
-    }
-    EVP_PKEY_free(pubKey);
-    return ok;
+    return CollectionKeys::verifySignature(
+        QByteArray::fromRawData(reinterpret_cast<const char*>(message), static_cast<qsizetype>(msgLen)),
+        QByteArray::fromRawData(reinterpret_cast<const char*>(sig), static_cast<qsizetype>(sigLen)),
+        m_authorKey);
 }
 
 // ---------------------------------------------------------------------------

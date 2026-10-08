@@ -96,6 +96,8 @@ private:
 
     QNetworkAccessManager* m_nam = nullptr;
     QSet<QNetworkReply*> m_pending;
+    /// By source slug; session memory only.
+    QHash<QString, PasswordFlagTally> m_flagTallies;
 };
 
 } // namespace eMule::indexer

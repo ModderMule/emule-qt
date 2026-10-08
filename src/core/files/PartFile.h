@@ -157,6 +157,10 @@ public:
     /// @p keepGoing says stop, nothing is left at the destination and the source stays.
     static bool copyThenRename(const QString& srcPath, const QString& finalDest,
                                const std::function<bool()>& keepGoing);
+
+    /// @p path, or the first free "name(N).ext" beside it when @p exists says it is taken.
+    [[nodiscard]] static QString uniqueDestination(
+        const QString& path, const std::function<bool(const QString&)>& exists);
 signals:
     /// The data does not match its hashes, or could not be read. One
     /// PartFile::PartVerdict per part; nothing was moved.
@@ -516,7 +520,19 @@ public:
     // -- Persistence ----------------------------------------------------------
 
     bool createPartFile(const QString& tempDir);
-    PartFileLoadResult loadPartFile(const QString& directory, const QString& filename);
+    /// @param checkFormat  non-null: only identify the file (hash, name, size and
+    ///        format are read; the .part is not touched) and return CheckSuccess.
+    ///        Used by the import of other clients' downloads.
+    PartFileLoadResult loadPartFile(const QString& directory, const QString& filename,
+                                    PartFileFormat* checkFormat = nullptr);
+
+    /// Import: forget what a check-load or createPartFile() left, before the real load
+    /// (MFC PartFileConvert.cpp:346-350).
+    void resetForImportLoad();
+    /// Import of an old eDonkey download: its gain / loss counters mean nothing here.
+    void resetImportedCounters() { m_compressionGain = 0; m_corruptionLoss = 0; }
+    /// Let go of the .part so the importer can replace it.
+    void closeDataFile() { if (m_partFileHandle.isOpen()) m_partFileHandle.close(); }
     bool savePartFile();
 
     // -- Process (periodic tick) ----------------------------------------------
@@ -627,6 +643,11 @@ private:
     [[nodiscard]] PartDigestRequest digestRequest(uint32 partNumber);
     [[nodiscard]] QString partFilePath() const;
     void finishPendingFlush(bool forceICH, bool noAICH);
+    /// A write failed: keep the buffer, pause (out of space) or pause as Error.
+    void handleWriteFailure(const QString& error, bool diskFull);
+    /// A Shareaza ".sd" download description (MFC ImportShareazaTempfile).
+    PartFileLoadResult importShareazaTempFile(const QString& directory, const QString& filename,
+                                              PartFileFormat* checkFormat);
     void resumeIdleSources();
     /// completeFile(), unless a changed part could not be read back for its check.
     void completeIfVerified();
@@ -720,6 +741,8 @@ private:
     bool m_stopped = false;
     bool m_insufficient = false;
     bool m_completionError = false;
+    bool m_writeError = false;              ///< a write failed; Error until resumed
+    PartFileStatus m_statusBeforeWriteError = PartFileStatus::Empty;
     bool m_completionRunning = false;   // verify + move in flight
     QPointer<FileMoveThread> m_moveThread;
     QByteArray m_completedAICHMaster;   // root of the set the move thread stored
