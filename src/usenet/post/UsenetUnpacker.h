@@ -43,6 +43,11 @@ struct ArchiveSet {
 
     /// Display name, without the volume suffix.
     QString baseName;
+
+    /// The opening volume is not there: `.r10`…`.r38` with no `.rar`. Nothing
+    /// can open such a set, so it is never extracted and never a failure of its
+    /// own — the leftovers of a release posted unpacked look exactly like this.
+    bool headless = false;
 };
 
 class UsenetUnpacker {
@@ -81,6 +86,10 @@ public:
         /// nothing it would have written was left behind.
         QStringList vetoed;
 
+        /// Volumes of sets with no opening volume. Not extracted, not consumed:
+        /// the caller decides whether what else is there makes a release.
+        QStringList headlessVolumes;
+
         QString error;
     };
 
@@ -111,6 +120,8 @@ public:
     /// @p skipFirstVolumes names sets already extracted elsewhere, by the path
     /// of their first volume. A skipped set is still *found* — it just is not
     /// unpacked again — so nothingToDo keeps meaning "no archives here at all".
+    /// A headless set is the exception: it cannot be opened, so a directory
+    /// holding nothing else reports nothingToDo with headlessVolumes filled.
     Result unpack(const QString& sourceDir, const QString& destDir,
                   const QString& password = {},
                   const QSet<QString>& skipFirstVolumes = {},

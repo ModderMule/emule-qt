@@ -17,6 +17,8 @@
 #include <QRegularExpression>
 #include <QSet>
 
+#include <algorithm>
+
 namespace eMule::usenet {
 
 namespace {
@@ -282,6 +284,43 @@ struct SkippedJudgement {
             out.needed.append(s.fileIndex);
     }
     return out;
+}
+
+/// The .sfv files in @p payload that list none of the files published beside
+/// them: the checksums of rar volumes nobody posted, say. Empty when dropping
+/// them would leave nothing to publish.
+QStringList orphanedSfvFiles(const QStringList& payload)
+{
+    constexpr qint64 kMaxSfvBytes = 1 << 20;
+
+    QSet<QString> published;
+    QStringList sfvFiles;
+    for (const QString& path : payload) {
+        const QFileInfo fi(path);
+        if (fi.suffix().compare(QLatin1String("sfv"), Qt::CaseInsensitive) == 0)
+            sfvFiles.append(path);
+        else
+            published.insert(fi.fileName().toLower());
+    }
+    if (published.isEmpty())
+        return {};
+
+    QStringList orphaned;
+    for (const QString& path : std::as_const(sfvFiles)) {
+        QFile f(path);
+        if (f.size() > kMaxSfvBytes || !f.open(QIODevice::ReadOnly))
+            continue;
+        const QList<SfvEntry> entries = parseSfv(f.readAll());
+        // Nothing parsed: not an sfv we understand, so not ours to judge.
+        if (entries.isEmpty())
+            continue;
+        const bool listsPublished = std::ranges::any_of(entries, [&](const SfvEntry& e) {
+            return published.contains(e.fileName.toLower());
+        });
+        if (!listsPublished)
+            orphaned.append(path);
+    }
+    return orphaned;
 }
 
 } // namespace
@@ -614,6 +653,27 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
                     consumed.append(path);
             }
         }
+
+        // A set with no first volume: dead weight beside a release posted
+        // unpacked, the whole failure when it is all there is.
+        if (!unpacked.headlessVolumes.isEmpty()) {
+            for (const QString& path : unpacked.headlessVolumes)
+                payload.removeAll(path);
+
+            const bool hasPayload = std::ranges::any_of(payload, [](const QString& path) {
+                const QString suffix = QFileInfo(path).suffix().toLower();
+                return suffix != QLatin1String("sfv") && suffix != QLatin1String("nfo");
+            });
+            if (!hasPayload) {
+                result.unpackOutcome = UsenetUnpackOutcome::Failed;
+                result.message =
+                    QObject::tr("The first volume of %1 is missing")
+                        .arg(QFileInfo(unpacked.headlessVolumes.first()).completeBaseName());
+                emit finished(result);
+                return;
+            }
+            consumed += unpacked.headlessVolumes;
+        }
     } else {
         payload = payloadFilesIn(job.workDir);
     }
@@ -666,6 +726,16 @@ void UsenetPostProcessor::process(const UsenetPostJob& job)
     // A checked .sfv has done its job too: published, it offers ED2K peers a
     // checksum list for files they will mostly never see.
     for (const QString& sfv : std::as_const(verifiedSfvFiles)) {
+        payload.removeAll(sfv);
+        if (!consumed.contains(sfv))
+            consumed.append(sfv);
+    }
+
+    // So has one that describes none of what is published: par2 did the
+    // checking, or the files it lists were never posted.
+    for (const QString& sfv : job.cleanupEnabled ? orphanedSfvFiles(payload) : QStringList{}) {
+        logUsenet(QStringLiteral("Usenet: \"%1\" lists none of the published files; not publishing it")
+                    .arg(QFileInfo(sfv).fileName()));
         payload.removeAll(sfv);
         if (!consumed.contains(sfv))
             consumed.append(sfv);
