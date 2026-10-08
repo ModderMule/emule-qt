@@ -1,6 +1,7 @@
 /// @file tst_WebServer.cpp
 /// @brief Unit tests for the JSON REST API WebServer (Module 19).
 
+#include "net/BindAddress.h"
 #include "TestHelpers.h"
 #include "webserver/WebServer.h"
 #include "webserver/WebSessionManager.h"
@@ -737,6 +738,21 @@ void tst_WebServer::getConnection()
     auto obj = resp.json.object();
     QVERIFY(obj.contains(QStringLiteral("isConnected")));
     QVERIFY(obj.contains(QStringLiteral("isConnecting")));
+    QCOMPARE(obj[QStringLiteral("netBlocked")].toBool(), false);
+
+    // The selected interface is missing: said so, and a connect is refused with the reason.
+    const QString before = thePrefs.bindAddress();
+    thePrefs.setBindAddress(QStringLiteral("vpn-not-there0"));
+    const auto restore = qScopeGuard([&] {
+        thePrefs.setBindAddress(before);
+        BindAddress::refresh();
+    });
+    obj = sendRequest(QByteArrayLiteral("GET"), QStringLiteral("/api/v1/connection")).json.object();
+    QCOMPARE(obj[QStringLiteral("netBlocked")].toBool(), true);
+    QVERIFY(obj[QStringLiteral("netBlockReason")].toString().contains(QStringLiteral("vpn-not-there0")));
+
+    const auto refused = sendRequest(QByteArrayLiteral("POST"), QStringLiteral("/api/v1/connection/connect"));
+    QCOMPARE(refused.statusCode, 409);
 }
 
 // ---------------------------------------------------------------------------

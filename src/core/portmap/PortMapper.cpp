@@ -8,6 +8,7 @@
 #include "portmap/PortMapWire.h"
 #include "portmap/UPnPBackend.h"
 #include "net/BindAddress.h"
+#include "net/DefaultGateway.h"
 #include "utils/Log.h"
 
 #include <QStringList>
@@ -172,6 +173,13 @@ void PortMapper::stop(bool releaseMappings)
     setStatus(PortMapStatus::Unknown);
 }
 
+void PortMapper::stopForInterfaceChange()
+{
+    stop(false);   // the old route may be gone; leases run out
+    if (!m_testBackends)
+        m_backends.clear();
+}
+
 void PortMapper::reprobe()
 {
     if (m_state == State::Stopped || m_backends.empty())
@@ -235,7 +243,20 @@ void PortMapper::buildBackends()
         add(std::make_unique<PcpBackend>(this));
     if ((m_enabledMask & BitNatPmp) != 0)
         add(std::make_unique<NatPmpBackend>(this));
-    if ((m_enabledMask & BitUPnP) != 0) {
+    // UPnP talks to the LAN router. With an interface selected that only makes sense
+    // when the interface has an IPv4 gateway of its own — not on a tunnel.
+    bool upnpUsable = true;
+    if (BindAddress::isConfigured()) {
+        const auto gateways = defaultGateways(Address::Family::IPv4);
+        upnpUsable = !BindAddress::ipv4Literal().isEmpty()
+            && std::ranges::any_of(gateways, [](const GatewayCandidate& g) {
+                   return BindAddress::isBoundInterface(g.interfaceName);
+               });
+        if (!upnpUsable && (m_enabledMask & BitUPnP) != 0)
+            logInfo(QStringLiteral("PortMap: UPnP skipped — the selected interface has no "
+                                   "IPv4 gateway of its own"));
+    }
+    if ((m_enabledMask & BitUPnP) != 0 && upnpUsable) {
         auto upnp = std::make_unique<UPnPBackend>(this);
         upnp->setBindAddress(BindAddress::ipv4Literal());   // MFC UPnPImplMiniLib.cpp:224
         add(std::move(upnp));

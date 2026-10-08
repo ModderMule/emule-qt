@@ -304,7 +304,7 @@ Aktivieren Sie unter Optionen → Weboberfläche die Weboberfläche oder die RES
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+564"/>
+        <location filename="../src/gui/app/main.cpp" line="+568"/>
         <source>Download Added</source>
         <translation>Download hinzugefügt</translation>
     </message>
@@ -606,7 +606,7 @@ Hat Kommentare</translation>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2832"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2859"/>
         <source>Test</source>
         <translation>Test</translation>
     </message>
@@ -690,7 +690,7 @@ Erneut herunterladen?</translation>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4602"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4625"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -3230,8 +3230,8 @@ Bitte wählen Sie einen anderen:</translation>
         <translation>eD2K: Verbinde...</translation>
     </message>
     <message>
-        <location line="+4"/>
-        <location line="+1052"/>
+        <location line="+8"/>
+        <location line="+1059"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Getrennt</translation>
     </message>
@@ -3302,14 +3302,14 @@ Bitte wählen Sie einen anderen:</translation>
         <translation>FAQ</translation>
     </message>
     <message>
-        <location line="-551"/>
+        <location line="-562"/>
         <location line="+7"/>
-        <location line="+547"/>
+        <location line="+558"/>
         <source>Version Check</source>
         <translation>Versionsprüfung</translation>
     </message>
     <message>
-        <location line="-609"/>
+        <location line="-620"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt beenden</translation>
     </message>
@@ -3366,7 +3366,12 @@ Enable at least one under Options → Connection to connect.</source>
 Aktivieren Sie mindestens eines unter Optionen → Verbindung, um sich zu verbinden.</translation>
     </message>
     <message>
-        <location line="+206"/>
+        <location line="+115"/>
+        <source>Blocked: network interface not available</source>
+        <translation>Blockiert: Netzwerkschnittstelle nicht verfügbar</translation>
+    </message>
+    <message>
+        <location line="+102"/>
         <source>Connected</source>
         <translation>Verbunden</translation>
     </message>
@@ -4293,36 +4298,36 @@ Erneut herunterladen?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2736"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2763"/>
         <source>Options</source>
         <translation>Optionen</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1788"/>
+        <location line="+1815"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-1787"/>
-        <location line="+1788"/>
+        <location line="-1814"/>
+        <location line="+1815"/>
         <source>Cancel</source>
         <translation>Abbrechen</translation>
     </message>
     <message>
-        <location line="-1787"/>
-        <location line="+5349"/>
+        <location line="-1814"/>
+        <location line="+5376"/>
         <source>Apply</source>
         <translation>Übernehmen</translation>
     </message>
     <message>
-        <location line="-5348"/>
+        <location line="-5375"/>
         <source>Help</source>
         <translation>Hilfe</translation>
     </message>
     <message>
-        <location line="+252"/>
-        <location line="+1762"/>
+        <location line="+254"/>
+        <location line="+1787"/>
         <location line="+63"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -4331,7 +4336,7 @@ Erneut herunterladen?</translation>
         <translation>IP-Filter</translation>
     </message>
     <message>
-        <location line="-1849"/>
+        <location line="-1874"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP-Filter neu geladen: %1 Einträge.</translation>
     </message>
@@ -4362,26 +4367,26 @@ Erneut herunterladen?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5247"/>
+        <location line="+5272"/>
         <source>Language</source>
         <translation>Sprache</translation>
     </message>
     <message>
-        <location line="-5244"/>
+        <location line="-5269"/>
         <source>System Default</source>
         <translation>Systemstandard</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+645"/>
+        <location line="+664"/>
         <location line="+243"/>
-        <location line="+372"/>
+        <location line="+378"/>
         <location line="+276"/>
         <source>Miscellaneous</source>
         <translation>Verschiedenes</translation>
     </message>
     <message>
-        <location line="-1533"/>
+        <location line="-1558"/>
         <source>Bring to front on link click</source>
         <translation>Bei Linkklick in den Vordergrund</translation>
     </message>
@@ -4467,25 +4472,25 @@ Erneut herunterladen?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5173"/>
+        <location line="+5198"/>
         <source>Core</source>
         <translation>Kern</translation>
     </message>
     <message>
-        <location line="-5168"/>
+        <location line="-5193"/>
         <source>Address:</source>
         <translation>Adresse:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1055"/>
+        <location line="+1080"/>
         <location line="+633"/>
         <location line="+416"/>
         <source>Port:</source>
         <translation>Port:</translation>
     </message>
     <message>
-        <location line="-2101"/>
+        <location line="-2126"/>
         <source>authentication token</source>
         <translation>Authentifizierungstoken</translation>
     </message>
@@ -4641,7 +4646,7 @@ Möchten Sie wirklich fortfahren?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1484"/>
+        <location line="+1509"/>
         <location line="+114"/>
         <location line="+290"/>
         <location line="+1016"/>
@@ -4653,7 +4658,7 @@ Möchten Sie wirklich fortfahren?</translation>
         <translation>Aktiviert</translation>
     </message>
     <message>
-        <location line="-4392"/>
+        <location line="-4417"/>
         <source>Reset</source>
         <translation>Zurücksetzen</translation>
     </message>
@@ -4729,7 +4734,28 @@ Möchten Sie wirklich fortfahren?</translation>
         <translation>Portweiterleitung: unbekannt</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+6"/>
+        <source>Network interface</source>
+        <translation>Netzwerkschnittstelle</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <location line="+6257"/>
+        <source>Any</source>
+        <translation>Alle</translation>
+    </message>
+    <message>
+        <location line="-6255"/>
+        <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
+        <translation>Nur diese Netzwerkschnittstelle verwenden, zum Beispiel einen VPN-Tunnel. Wählen Sie eine aus der Liste oder geben Sie eine IP-Adresse oder ein Subnetz wie 10.64.0.0/10 ein (die Schnittstelle, die eine Adresse daraus besitzt). Verbindungen über einen Proxy werden nicht gebunden.</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>While the selected interface is not available, all P2P, Usenet and update connections stay closed.</source>
+        <translation>Solange die gewählte Schnittstelle nicht verfügbar ist, bleiben alle P2P-, Usenet- und Update-Verbindungen geschlossen.</translation>
+    </message>
+    <message>
+        <location line="+11"/>
         <source>Max. Sources/File</source>
         <translation>Max. Quellen/Datei</translation>
     </message>
@@ -4805,12 +4831,12 @@ Möchten Sie wirklich fortfahren?</translation>
     </message>
     <message>
         <location line="+53"/>
-        <location line="+1265"/>
+        <location line="+1271"/>
         <source>General</source>
         <translation>Allgemein</translation>
     </message>
     <message>
-        <location line="-1262"/>
+        <location line="-1268"/>
         <source>Enable proxy</source>
         <translation>Proxy aktivieren</translation>
     </message>
@@ -4871,15 +4897,15 @@ Möchten Sie wirklich fortfahren?</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1622"/>
+        <location line="+1628"/>
         <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>Name:</translation>
     </message>
     <message>
-        <location line="-2789"/>
-        <location line="+607"/>
+        <location line="-2795"/>
+        <location line="+613"/>
         <location line="+701"/>
         <location line="+19"/>
         <location line="+319"/>
@@ -4887,7 +4913,7 @@ Möchten Sie wirklich fortfahren?</translation>
         <translation>Passwort:</translation>
     </message>
     <message>
-        <location line="-1612"/>
+        <location line="-1618"/>
         <source>Update</source>
         <translation>Aktualisieren</translation>
     </message>
@@ -5053,7 +5079,7 @@ Möchten Sie wirklich fortfahren?</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+537"/>
+        <location line="+543"/>
         <source>Edit...</source>
         <translation>Bearbeiten...</translation>
     </message>
@@ -5076,7 +5102,7 @@ Jede Regel ersetzt ein Regex-Muster durch eine Ersetzungszeichenkette.</translat
         <translation type="vanished">Ersetzung</translation>
     </message>
     <message>
-        <location line="-526"/>
+        <location line="-532"/>
         <source>Try to transfer full chunks to all uploads</source>
         <translation>Versuchen, vollständige Stücke an alle Uploads zu übertragen</translation>
     </message>
@@ -5121,7 +5147,7 @@ Jede Regel ersetzt ein Regex-Muster durch eine Ersetzungszeichenkette.</translat
         <translation>Abgebrochene Dateien merken</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+12"/>
         <source>Video Player</source>
         <translation>Videoplayer</translation>
     </message>
@@ -5634,7 +5660,7 @@ Jede Regel ersetzt ein Regex-Muster durch eine Ersetzungszeichenkette.</translat
         <translation>Upload-Plätze (ohne Overhead)</translation>
     </message>
     <message>
-        <location line="-1412"/>
+        <location line="-1437"/>
         <source>Country flags (IP2Country)</source>
         <translation>Landesflaggen (IP2Country)</translation>
     </message>
@@ -5684,7 +5710,7 @@ Jede Regel ersetzt ein Regex-Muster durch eine Ersetzungszeichenkette.</translat
         <translation type="vanished">Benötigt ein kostenloses &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind-GeoLite2&lt;/a&gt;-Konto. Dieses Produkt enthält GeoLite2-Daten von MaxMind.</translation>
     </message>
     <message>
-        <location line="+306"/>
+        <location line="+325"/>
         <source>Use for news servers</source>
         <translation>Für News-Server verwenden</translation>
     </message>
@@ -5698,7 +5724,17 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
 Jede Usenet-Verbindung läuft dann über den Proxy, seine Geschwindigkeit begrenzt also den Download, und viele HTTP-Proxys lassen nur Verbindungen zu Port 443 zu.</translation>
     </message>
     <message>
-        <location line="+1085"/>
+        <location line="+392"/>
+        <source>Remember files seen in search results</source>
+        <translation>In Suchergebnissen gesehene Dateien merken</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Keeps a local record of the files that turned up in your searches and the names they went by, so later searches can show what you have seen before.</source>
+        <translation>Führt lokal Buch über die Dateien, die in Ihren Suchen aufgetaucht sind, und über ihre Namen, damit spätere Suchen zeigen können, was Sie schon gesehen haben.</translation>
+    </message>
+    <message>
+        <location line="+697"/>
         <source>Download Usenet</source>
         <translation>Download Usenet</translation>
     </message>
@@ -7265,7 +7301,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
 Verbindungen zu News-Servern wechseln sofort.</translation>
     </message>
     <message>
-        <location line="+410"/>
+        <location line="+414"/>
         <source>Web Interface</source>
         <translation>Weboberfläche</translation>
     </message>
@@ -7275,7 +7311,7 @@ Verbindungen zu News-Servern wechseln sofort.</translation>
         <translation>&quot;%1&quot; ist keine IP-Adresse. Die Lauschadresse wurde nicht geändert.</translation>
     </message>
     <message>
-        <location line="+473"/>
+        <location line="+474"/>
         <source>File types</source>
         <translation>Dateitypen</translation>
     </message>
@@ -7285,7 +7321,7 @@ Verbindungen zu News-Servern wechseln sofort.</translation>
         <translation>Die .nzb-Dateizuordnung konnte nicht aktualisiert werden: %1</translation>
     </message>
     <message>
-        <location line="+526"/>
+        <location line="+581"/>
         <source>Database: not connected to the core</source>
         <translation>Datenbank: nicht mit dem Kern verbunden</translation>
     </message>
@@ -7335,17 +7371,17 @@ Verbindungen zu News-Servern wechseln sofort.</translation>
         <translation>Auf Standard zurücksetzen</translation>
     </message>
     <message>
-        <location line="-4595"/>
+        <location line="-4655"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1327"/>
         <location line="+281"/>
-        <location line="+1812"/>
+        <location line="+1872"/>
         <source>Remove</source>
         <translation>Entfernen</translation>
     </message>
     <message>
-        <location line="-5672"/>
+        <location line="-5732"/>
         <source>New eMule Qt version detected</source>
         <translation>Neue eMule-Qt-Version erkannt</translation>
     </message>
@@ -7543,12 +7579,12 @@ Stellen Sie den Wert etwas unter Ihren Tarif. Die Menge wird hier gemessen und l
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1581"/>
-        <location line="+1834"/>
+        <location line="+1894"/>
         <source>Add</source>
         <translation>Hinzufügen</translation>
     </message>
     <message>
-        <location line="-1826"/>
+        <location line="-1886"/>
         <source>Action Value</source>
         <translation>Aktionswert</translation>
     </message>
@@ -7741,14 +7777,14 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+249"/>
-        <location line="+719"/>
-        <location line="+374"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+250"/>
+        <location line="+790"/>
+        <location line="+376"/>
         <source>Download</source>
         <translation>Download</translation>
     </message>
     <message>
-        <location line="-1073"/>
+        <location line="-1146"/>
         <source>Close All Searches</source>
         <translation>Alle Suchen schließen</translation>
     </message>
@@ -7915,22 +7951,57 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
     <message>
         <location line="+32"/>
         <location line="+24"/>
-        <location line="+109"/>
+        <location line="+180"/>
         <source>Not connected to daemon — search cannot be started.</source>
         <translation>Keine Verbindung zum Daemon — die Suche kann nicht gestartet werden.</translation>
     </message>
     <message>
-        <location line="-76"/>
+        <location line="-147"/>
         <source>Search</source>
         <translation>Suche</translation>
     </message>
     <message>
-        <location line="+27"/>
+        <location line="+42"/>
         <source>Kad: &quot;%1&quot; is already being searched — using &quot;%2&quot; as the search target.</source>
         <translation>Kad: Nach &quot;%1&quot; wird bereits gesucht — &quot;%2&quot; wird als Suchziel verwendet.</translation>
     </message>
     <message>
-        <location line="+70"/>
+        <location line="+16"/>
+        <source>Queued — waiting for a server connection</source>
+        <translation>In Warteschlange — wartet auf eine Serververbindung</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Queued — waiting for Kad to connect</source>
+        <translation>In Warteschlange — wartet auf die Kad-Verbindung</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Queued — waiting for a server or Kad connection</source>
+        <translation>In Warteschlange — wartet auf eine Server- oder Kad-Verbindung</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Queued — waiting for the previous search to finish</source>
+        <translation>In Warteschlange — wartet auf das Ende der vorherigen Suche</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Queued</source>
+        <translation>In Warteschlange</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Search failed: %1</source>
+        <translation>Suche fehlgeschlagen: %1</translation>
+    </message>
+    <message>
+        <location line="+29"/>
+        <source>Search &quot;%1&quot; failed: %2</source>
+        <translation>Suche „%1“ fehlgeschlagen: %2</translation>
+    </message>
+    <message>
+        <location line="+72"/>
         <location line="+179"/>
         <source>Usenet search</source>
         <translation>Usenet-Suche</translation>
@@ -7946,7 +8017,8 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>Usenet-Suche: %1</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="-205"/>
+        <location line="+209"/>
         <source>No results</source>
         <translation>Keine Ergebnisse</translation>
     </message>
@@ -8018,13 +8090,13 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
     <message>
         <location line="+50"/>
         <location line="+7"/>
-        <location line="+762"/>
+        <location line="+770"/>
         <location line="+43"/>
         <source>Preview</source>
         <translation>Vorschau</translation>
     </message>
     <message>
-        <location line="-577"/>
+        <location line="-583"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -8033,7 +8105,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
 %1</translation>
     </message>
     <message>
-        <location line="+535"/>
+        <location line="+541"/>
         <source>Preview requested - please wait</source>
         <translation>Vorschau angefordert - bitte warten</translation>
     </message>
@@ -8053,7 +8125,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>Alle</translation>
     </message>
     <message>
-        <location line="-1148"/>
+        <location line="-1156"/>
         <location line="+14"/>
         <source>Mark as Spam</source>
         <translation>Als Spam markieren</translation>
@@ -8089,7 +8161,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>Webdienste</translation>
     </message>
     <message>
-        <location line="+784"/>
+        <location line="+792"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Vorschau nicht verfügbar — der Webserver läuft nicht oder es wurde kein Stream-Token empfangen.</translation>
     </message>
@@ -8097,12 +8169,20 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
 <context>
     <name>eMule::SearchResultsModel</name>
     <message>
-        <location filename="../src/gui/controls/SearchResultsModel.cpp" line="+76"/>
+        <location filename="../src/gui/controls/SearchResultsModel.cpp" line="+79"/>
         <source>Yes</source>
         <translation>Ja</translation>
     </message>
+    <message numerus="yes">
+        <location line="+163"/>
+        <source>%1 · %n name(s)</source>
+        <translation>
+            <numerusform>%1 · %n Name</numerusform>
+            <numerusform>%1 · %n Namen</numerusform>
+        </translation>
+    </message>
     <message>
-        <location line="+158"/>
+        <location line="+9"/>
         <source>File Name</source>
         <translation>Dateiname</translation>
     </message>
@@ -8161,11 +8241,21 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <source>Known</source>
         <translation>Bekannt</translation>
     </message>
+    <message>
+        <location line="+1"/>
+        <source>Seen</source>
+        <translation>Gesehen</translation>
+    </message>
 </context>
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+76"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+75"/>
+        <source>%1 (disabled)</source>
+        <translation>%1 (deaktiviert)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <location line="+3"/>
         <source>Yes</source>
         <translation>Ja</translation>
@@ -8242,7 +8332,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>IPv6</translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location line="+33"/>
         <source>High</source>
         <translation>Hoch</translation>
     </message>
@@ -8261,7 +8351,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation type="vanished">Soft-Dateien</translation>
     </message>
     <message>
-        <location line="-37"/>
+        <location line="-38"/>
         <source>Low ID</source>
         <translation>Low ID</translation>
     </message>
@@ -8287,12 +8377,12 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
     </message>
     <message>
         <location line="-75"/>
-        <location line="+417"/>
+        <location line="+437"/>
         <source>Connect</source>
         <translation>Verbinden</translation>
     </message>
     <message>
-        <location line="-473"/>
+        <location line="-493"/>
         <source>Invalid URL: %1</source>
         <translation>Ungültige URL: %1</translation>
     </message>
@@ -8322,7 +8412,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>server.met heruntergeladen, &quot;%1&quot; entpackt (%2 Bytes). Wird verarbeitet...</translation>
     </message>
     <message>
-        <location line="+579"/>
+        <location line="+599"/>
         <location line="+2"/>
         <location line="+24"/>
         <location line="+39"/>
@@ -8420,7 +8510,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>▸ Server (%1)</translation>
     </message>
     <message>
-        <location line="-606"/>
+        <location line="-626"/>
         <source>Connect To</source>
         <translation>Verbinden mit</translation>
     </message>
@@ -8436,12 +8526,12 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
     </message>
     <message>
         <location line="+1"/>
-        <location line="+495"/>
+        <location line="+515"/>
         <source>Normal</source>
         <translation>Normal</translation>
     </message>
     <message>
-        <location line="-494"/>
+        <location line="-514"/>
         <source>High</source>
         <translation>Hoch</translation>
     </message>
@@ -8466,7 +8556,12 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>Von statischer Liste entfernen</translation>
     </message>
     <message>
-        <location line="+24"/>
+        <location line="+23"/>
+        <source>Enable</source>
+        <translation>Aktivieren</translation>
+    </message>
+    <message>
+        <location line="+21"/>
         <source>Copy eD2K Links</source>
         <translation>eD2K-Links kopieren</translation>
     </message>
@@ -11870,14 +11965,14 @@ Für dieses Release ist ein Passwort festgelegt.</translation>
         <translation>Adresse</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3980"/>
-        <location line="+3869"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-4002"/>
+        <location line="+3891"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Sitzung abgelaufen — bitte erneut anmelden</translation>
     </message>
     <message>
-        <location line="-3914"/>
+        <location line="-3936"/>
         <source>Guests cannot add downloads</source>
         <translation>Gäste können keine Downloads hinzufügen</translation>
     </message>
@@ -11964,7 +12059,7 @@ Für dieses Release ist ein Passwort festgelegt.</translation>
         <translation>Diese Datei herunterladen</translation>
     </message>
     <message>
-        <location line="+434"/>
+        <location line="+452"/>
         <source>Access denied — no password configured. Set a password in Options → Web Interface.</source>
         <translation>Zugriff verweigert — kein Passwort festgelegt. Legen Sie unter Optionen → Webinterface ein Passwort fest.</translation>
     </message>
@@ -11990,12 +12085,16 @@ Für dieses Release ist ein Passwort festgelegt.</translation>
         </translation>
     </message>
     <message>
-        <location line="+32"/>
         <source>Not connected — the search could not be sent.</source>
-        <translation>Nicht verbunden — die Suche konnte nicht gesendet werden.</translation>
+        <translation type="vanished">Nicht verbunden — die Suche konnte nicht gesendet werden.</translation>
     </message>
     <message>
-        <location line="+28"/>
+        <location line="+35"/>
+        <source>Not sent yet — the search is waiting (%1) and starts by itself.</source>
+        <translation>Noch nicht gesendet — die Suche wartet (%1) und startet von selbst.</translation>
+    </message>
+    <message>
+        <location line="+27"/>
         <source>Nothing was saved: a value is missing or out of range.</source>
         <translation>Nichts gespeichert: Ein Wert fehlt oder liegt außerhalb des gültigen Bereichs.</translation>
     </message>
@@ -12011,14 +12110,19 @@ Für dieses Release ist ein Passwort festgelegt.</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1953"/>
+        <location line="+1955"/>
         <source>Web Control Panel</source>
         <translation>Web-Steuerung</translation>
     </message>
     <message>
-        <location line="-1946"/>
+        <location line="-1947"/>
         <source>Not connected</source>
         <translation>Nicht verbunden</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Blocked: network interface not available</source>
+        <translation>Blockiert: Netzwerkschnittstelle nicht verfügbar</translation>
     </message>
     <message>
         <location line="+293"/>
@@ -12685,7 +12789,7 @@ Das jeweils untätige Netz überlässt seinen Anteil dem anderen.</translation>
         <translation>NZB-Dateien:</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1523"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1545"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>Name</translation>
@@ -13072,7 +13176,7 @@ Das jeweils untätige Netz überlässt seinen Anteil dem anderen.</translation>
         <translation>Uploadgeschwindigkeit</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1520"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1542"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation>Uploads</translation>

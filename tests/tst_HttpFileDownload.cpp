@@ -6,8 +6,11 @@
 /// no external dependency and nothing to be flaky about.
 
 #include "TestHelpers.h"
+#include "net/BindAddress.h"
 #include "net/HttpFileDownload.h"
+#include "prefs/Preferences.h"
 
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -106,6 +109,7 @@ private slots:
     void get_passesPlainPayloadThrough();
     void get_reportsHttpError();
     void get_sendsUserAgent();
+    void get_heldWhileBoundInterfaceMissing();
 };
 
 // ---------------------------------------------------------------------------
@@ -186,6 +190,38 @@ void tst_HttpFileDownload::get_sendsUserAgent()
 
     QTRY_VERIFY_WITH_TIMEOUT(cap.called, 10000);
     QVERIFY(server.request().contains("User-Agent: eMuleQt/"));
+}
+
+// HTTP cannot be pinned to an interface, so with the selected one missing nothing is sent.
+void tst_HttpFileDownload::get_heldWhileBoundInterfaceMissing()
+{
+    QTcpServer server;   // would accept the connection if one were made
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    const QUrl url(QStringLiteral("http://127.0.0.1:%1/server.met").arg(server.serverPort()));
+
+    const QString before = thePrefs.bindAddress();
+    thePrefs.setBindAddress(QStringLiteral("vpn-not-there0"));
+    const auto restore = qScopeGuard([&] {
+        thePrefs.setBindAddress(before);
+        BindAddress::refresh();
+    });
+
+    QObject ctx;
+    Capture cap;
+    HttpFileDownload::get(&ctx, url, {},
+        [&cap](bool ok, const QByteArray& d, const QString& name, const QString& err) {
+            cap = {true, ok, d, name, err};
+        });
+    QTRY_VERIFY_WITH_TIMEOUT(cap.called, 3000);
+    QVERIFY(!cap.ok);
+    QVERIFY2(cap.error.contains(QStringLiteral("vpn-not-there0")), qPrintable(cap.error));
+
+    QByteArray out;
+    QString name, error;
+    QVERIFY(!HttpFileDownload::getBlocking(url, {}, out, name, error));
+    QVERIFY(!error.isEmpty());
+
+    QVERIFY(!server.hasPendingConnections());
 }
 
 QTEST_MAIN(tst_HttpFileDownload)

@@ -283,7 +283,7 @@ bool UPnPWorker::addPinhole(const PortMapRequest& request, uint32 lifetimeSecs,
     // accepted by some devices and then never receive anything.
     Address client = request.internalClient;
     if (!client.isIPv6())
-        client = selectPreferredIPv6(scanLocalIPv6());
+        client = selectPreferredIPv6(scanBoundIPv6());
     if (!client.isIPv6()) {
         error = QStringLiteral("no global IPv6 address to pinhole");
         return false;

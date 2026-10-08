@@ -3,6 +3,7 @@
 /// @brief JSON REST API + template web server — implementation.
 
 #include "webserver/WebServer.h"
+#include "net/BindAddress.h"
 #include "webserver/JsonSerializers.h"
 #include "webserver/WebSessionManager.h"
 #include "webserver/WebTemplateEngine.h"
@@ -2211,6 +2212,8 @@ QHttpServerResponse WebServer::handleGetConnection()
         {QStringLiteral("isConnecting"), m_serverConnect->isConnecting()},
         {QStringLiteral("isLowID"),      m_serverConnect->isLowID()},
         {QStringLiteral("clientID"),     static_cast<qint64>(m_serverConnect->clientID())},
+        {QStringLiteral("netBlocked"),   !BindAddress::outboundAllowed()},
+        {QStringLiteral("netBlockReason"), BindAddress::current().reason},
     };
 
     if (current) {
@@ -2228,6 +2231,8 @@ QHttpServerResponse WebServer::handlePostConnect()
 {
     if (!m_serverConnect)
         return jsonError(500, QStringLiteral("Server connection not available"));
+    if (!BindAddress::outboundAllowed())
+        return jsonError(409, BindAddress::current().reason);
 
     m_serverConnect->connectToAnyServer();
     return jsonSuccess(QJsonObject{{QStringLiteral("connecting"), true}});
@@ -2479,6 +2484,7 @@ QHttpServerResponse WebServer::handleGetPreferences()
         {QStringLiteral("maxDownload"),  static_cast<qint64>(m_preferences->maxDownload())},
         {QStringLiteral("port"),         m_preferences->port()},
         {QStringLiteral("udpPort"),      m_preferences->udpPort()},
+        {QStringLiteral("bindAddress"),  m_preferences->bindAddress()},
         {QStringLiteral("autoConnect"),  m_preferences->autoConnect()},
         {QStringLiteral("kadEnabled"),   m_preferences->kadEnabled()},
         {QStringLiteral("incomingDir"),  m_preferences->incomingDir()},
@@ -2965,7 +2971,9 @@ QHttpServerResponse WebServer::renderPage(const QString& page, const QString& se
     // Connection status
     if (m_serverConnect) {
         headerVars[QStringLiteral("ServerName")] = htmlText(m_serverConnect->currentServer()
-            ? m_serverConnect->currentServer()->name() : tr("Not connected"));
+            ? m_serverConnect->currentServer()->name()
+            : BindAddress::outboundAllowed() ? tr("Not connected")
+                                             : tr("Blocked: network interface not available"));
         headerVars[QStringLiteral("Connected")] = m_serverConnect->isConnected()
             ? QStringLiteral("1") : QStringLiteral("0");
     }

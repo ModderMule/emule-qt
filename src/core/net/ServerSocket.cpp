@@ -16,6 +16,8 @@
 #include "utils/TimeUtils.h"
 
 
+#include <cerrno>
+#include <system_error>
 #include <QHostAddress>
 #include <QUrl>
 
@@ -575,8 +577,9 @@ void ServerSocket::onError(int errorCode)
     // first, so they must make the same decision.
     // A Qt socket error: the code decides. EMSocket hands it over because the int
     // above is shared with the protocol error codes (wrong header, encryption).
-    if (const auto socketError = std::exchange(m_socketErrorInFlight, std::nullopt)) {
-        failWith(stateForSocketError(m_connectionState, *socketError),
+    if (const auto reported = std::exchange(m_socketErrorInFlight, std::nullopt)) {
+        const auto socketError = refinedSocketError(*reported, errorString(), m_tcpConnected);
+        failWith(stateForSocketError(m_connectionState, socketError),
                  failureFor(m_connectionState, m_tcpConnected, socketError));
         return;
     }
@@ -590,6 +593,21 @@ void ServerSocket::onError(int errorCode)
     } else {
         failWith(ServerConnState::FatalError, failure);
     }
+}
+
+QAbstractSocket::SocketError ServerSocket::refinedSocketError(QAbstractSocket::SocketError error,
+                                                             const QString& errorText,
+                                                             bool tcpConnected)
+{
+    if (error != QAbstractSocket::NetworkError || tcpConnected)
+        return error;
+    // The text is the system's own for ECONNREFUSED (seen on Darwin, where the
+    // refusal surfaces after a connected() without a peer).
+    const QString refused = QString::fromStdString(std::generic_category().message(ECONNREFUSED));
+    if (errorText.compare(refused, Qt::CaseInsensitive) == 0
+        || errorText.contains(QLatin1String("connection refused"), Qt::CaseInsensitive))
+        return QAbstractSocket::ConnectionRefusedError;
+    return error;
 }
 
 ServerFailure ServerSocket::failureFor(ServerConnState current, bool tcpConnected,
@@ -691,6 +709,14 @@ void ServerSocket::onSocketConnected()
     // Darwin 27 answers a refused connect with EISCONN and Qt emits connected() with
     // no peer (port 0) before the refusal — that is not a TCP connect.
     m_tcpConnected = peerPort() != 0;
+    if (!m_tcpConnected) {
+        // Nothing to log in over: the error for this dial follows (or our own
+        // timeout does). Going on used to send a login into a dead socket and
+        // report the attempt as a handshake rather than a failed connect.
+        logServerVerbose(QStringLiteral("[%1] connected() without a peer — waiting for the error")
+                             .arg(m_curServer ? m_curServer->name() : QStringLiteral("?")));
+        return;
+    }
     logInfo(QStringLiteral("ServerSocket connected to %1 (%2) serverCrypt=%3")
                 .arg(m_curServer ? m_curServer->name() : QStringLiteral("?"))
                 .arg(Endpoint(Address::fromQHostAddress(peerAddress()), peerPort()).toString())
@@ -759,8 +785,9 @@ void ServerSocket::onSocketError(QAbstractSocket::SocketError error)
         return;
     }
     m_socketErrorInFlight.reset();
-    failWith(stateForSocketError(m_connectionState, error),
-             failureFor(m_connectionState, m_tcpConnected, error));
+    const auto socketError = refinedSocketError(error, errorString(), m_tcpConnected);
+    failWith(stateForSocketError(m_connectionState, socketError),
+             failureFor(m_connectionState, m_tcpConnected, socketError));
 }
 
 void ServerSocket::startDnsLookup(QDnsLookup::Type type)

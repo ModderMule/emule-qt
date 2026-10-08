@@ -10,6 +10,7 @@
 
 #include "net/LocalIPv6.h"
 #include "app/AppContext.h"
+#include "net/BindAddress.h"
 #include "net/IPv6SourcePin.h"
 #include "prefs/Preferences.h"
 #include "utils/Log.h"
@@ -626,6 +627,17 @@ void logIPv6PrivacyAdvisory(const IPv6PrivacyReport& report, const Address& effe
                            "temporary address"));
     if (const QString cmd = ipv6PrivacyDisableCommand(); !cmd.isEmpty())
         logInfo(QStringLiteral("IPv6: to disable privacy addresses system-wide run:  %1").arg(cmd));
+}
+
+IPv6PrivacyReport scanBoundIPv6()
+{
+    IPv6PrivacyReport report = scanLocalIPv6();
+    if (BindAddress::isConfigured()) {
+        std::erase_if(report.addresses, [](const LocalIPv6Address& a) {
+            return !BindAddress::isBoundInterface(a.interfaceName);
+        });
+    }
+    return report;
 }
 
 Address updatePublicIPv6(const IPv6PrivacyReport& report)

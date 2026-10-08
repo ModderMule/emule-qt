@@ -64,6 +64,10 @@ struct IPv6PrivacyReport {
 /// with policy == Unknown where no detection path exists.
 [[nodiscard]] IPv6PrivacyReport scanLocalIPv6();
 
+/// scanLocalIPv6() limited to the bound interface (BindAddress.h); everything when
+/// nothing is selected, nothing while the selection is blocked.
+[[nodiscard]] IPv6PrivacyReport scanBoundIPv6();
+
 // -- Selection (pure, unit-testable) -----------------------------------------
 
 /// Pick the address to advertise as our public IPv6.

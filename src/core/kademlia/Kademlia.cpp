@@ -3,6 +3,7 @@
 /// @brief Main Kademlia DHT engine implementation.
 
 #include "kademlia/Kademlia.h"
+#include "net/BindAddress.h"
 #include "kademlia/KadLog.h"
 #include "kademlia/KadClientSearcher.h"
 #include "kademlia/KadDefines.h"
@@ -71,6 +72,10 @@ void Kademlia::start(KadPrefs* prefs)
 {
     if (m_running) {
         logKad(QStringLiteral("Kad: Already running"));
+        return;
+    }
+    if (!BindAddress::outboundAllowed()) {
+        logWarning(QStringLiteral("Kad not started: %1").arg(BindAddress::current().reason));
         return;
     }
 

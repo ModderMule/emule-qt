@@ -3,6 +3,7 @@
 /// @brief Scheduled GeoLite2-Country download.
 
 #include "geo/GeoIpUpdater.h"
+#include "net/GuardedNetworkAccessManager.h"
 #include "geo/IP2Country.h"
 #include "app/AppConfig.h"
 #include "archive/ArchiveUnpack.h"
@@ -192,7 +193,7 @@ void GeoIpUpdater::startRequest(const QUrl& url, bool withCredentials)
     }
 
     if (!m_nam)
-        m_nam = new QNetworkAccessManager(this);
+        m_nam = new GuardedNetworkAccessManager(this);
     m_reply = m_nam->get(request);
     connect(m_reply, &QNetworkReply::finished, this, &GeoIpUpdater::onReplyFinished);
 }

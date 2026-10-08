@@ -1,4 +1,5 @@
 #include "nntp/NntpSocket.h"
+#include "net/InterfacePin.h"
 
 #include "nntp/NntpCommand.h"
 #include "utils/Log.h"
@@ -174,6 +175,14 @@ void NntpSocket::connectToServer(const NewsServer& server)
     // Implicit TLS negotiates before the greeting; STARTTLS and cleartext both
     // start as plain TCP. This is the explicit form of what SmtpClient decides
     // from `port == 465` — NNTP uses 563 and 443, and STARTTLS runs on 119.
+    // Bound to an interface: leave through it or not at all. Reported as the local
+    // route failing, which parks the queue and never blames the provider.
+    if (!InterfacePin::prepareOutgoing(*m_socket, m_proxy.type() != QNetworkProxy::NoProxy)) {
+        fail(NntpError::ProxyFailed,
+             QStringLiteral("the selected network interface is not available"));
+        return;
+    }
+
     if (m_server.tlsMode == TlsMode::Implicit)
         m_socket->connectToHostEncrypted(m_server.host, m_server.port);
     else

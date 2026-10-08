@@ -3,6 +3,7 @@
 /// @brief Uploads one encrypted part to the cache server — implementation.
 
 #include "httpcache/HttpCachePublisher.h"
+#include "net/GuardedNetworkAccessManager.h"
 
 #include "crypto/AesCbc.h"
 #include "net/HttpDefaults.h"
@@ -208,7 +209,7 @@ void HttpCachePublisher::start(const Request& request)
     req.setHeader(QNetworkRequest::ContentLengthHeader, cipher.size());
     req.setRawHeader("X-Chunk-TTL", QByteArray::number(m_request.ttlSeconds));
 
-    m_nam = new QNetworkAccessManager(this);
+    m_nam = new GuardedNetworkAccessManager(this);
 
     auto* body = new ThrottledUploadDevice(cipher, m_request.rateBytesPerSecond, this);
     m_reply = m_nam->post(req, body);
@@ -231,7 +232,7 @@ void HttpCachePublisher::deleteChunk(const QString& url, const QString& apiKey)
         return;
 
     // Owns itself: nothing depends on the outcome, so the reply just tidies up.
-    auto* nam = new QNetworkAccessManager();
+    auto* nam = new GuardedNetworkAccessManager();
     QNetworkReply* reply = nam->deleteResource(makeRequest(target, apiKey));
 
     QObject::connect(reply, &QNetworkReply::finished, reply, [nam, reply]() {

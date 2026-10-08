@@ -23,7 +23,9 @@
 #include "FakeNntpServer.h"
 #include "FakeProxyServer.h"
 
+#include "net/BindAddress.h"
 #include "nntp/NntpCommand.h"
+#include "prefs/Preferences.h"
 #include "nntp/NntpSocket.h"
 
 #include <QElapsedTimer>
@@ -92,6 +94,7 @@ private slots:
     void connectsThroughAnHttpConnectProxyWithAuthentication();
     void withNoProxyOfItsOwnAnApplicationProxyIsIgnored();
     void aProxyFailureNamesTheProxyNotTheServer();
+    void aMissingBoundInterfaceIsNotTheServersFault();
     void pipelinedCommandsFinishInOrder_data();
     void pipelinedCommandsFinishInOrder();
     void aDropFailsEveryPipelinedCommand();
@@ -802,6 +805,38 @@ void tst_NntpSocket::aProxyFailureNamesTheProxyNotTheServer()
     QVERIFY(!escalatesToNextLevel(error));
     QVERIFY(isFatalToConnection(error));
     QVERIFY(server.receivedCommands().isEmpty());
+}
+
+// Bound to an interface that is not there: no connection, and reported as the local
+// route — the queue waits on that, it never backs a provider off or spends a retry.
+void tst_NntpSocket::aMissingBoundInterfaceIsNotTheServersFault()
+{
+    FakeNntpServer server;
+    const quint16 port = server.start();
+    QVERIFY(port != 0);
+
+    const QString before = eMule::thePrefs.bindAddress();
+    eMule::thePrefs.setBindAddress(QStringLiteral("vpn-not-there0"));
+    const auto restore = qScopeGuard([&] {
+        eMule::thePrefs.setBindAddress(before);
+        eMule::BindAddress::refresh();
+    });
+
+    NntpSocket socket;
+    QSignalSpy failed(&socket, &NntpSocket::failed);
+    QSignalSpy ready(&socket, &NntpSocket::ready);
+    socket.connectToServer(localServer(port));
+    QTRY_COMPARE_WITH_TIMEOUT(failed.count(), 1, 3000);
+    QCOMPARE(failed.first().at(0).value<NntpError>(), NntpError::ProxyFailed);
+    QCOMPARE(ready.count(), 0);
+
+    // The interface is there again: the same socket connects.
+    eMule::thePrefs.setBindAddress(before);
+    eMule::BindAddress::refresh();
+    NntpSocket again;
+    QSignalSpy readyAgain(&again, &NntpSocket::ready);
+    again.connectToServer(localServer(port));
+    QVERIFY(readyAgain.wait(5000));
 }
 
 QTEST_MAIN(tst_NntpSocket)

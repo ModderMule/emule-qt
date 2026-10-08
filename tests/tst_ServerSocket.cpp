@@ -32,6 +32,7 @@ private slots:
     void connectTo_literalInDynIPSkipsDns();
     void socketError_classification_data();
     void socketError_classification();
+    void refusedConnect_reportedAsANetworkErrorStillCounts();
     void failure_namesPhaseAndReason_data();
     void failure_namesPhaseAndReason();
     void socketError_reportsOnceThroughBothEntryPoints_data();
@@ -383,6 +384,28 @@ void tst_ServerSocket::socketError_classification()
     QFETCH(QAbstractSocket::SocketError, error);
     QFETCH(ServerConnState, expected);
     QCOMPARE(ServerSocket::stateForSocketError(current, error), expected);
+}
+
+// Seen live on Darwin: a refused dial came back as NetworkError, text "Connection
+// refused" — and was filed as our own network trouble.
+void tst_ServerSocket::refusedConnect_reportedAsANetworkErrorStillCounts()
+{
+    using E = QAbstractSocket;
+    const auto refined = [](E::SocketError error, const char* text, bool tcp) {
+        return ServerSocket::refinedSocketError(error, QString::fromLatin1(text), tcp);
+    };
+    QCOMPARE(refined(E::NetworkError, "Connection refused", false), E::ConnectionRefusedError);
+    QCOMPARE(ServerSocket::stateForSocketError(
+                 ServerConnState::Connecting,
+                 refined(E::NetworkError, "Connection refused", false)),
+             ServerConnState::ServerDead);
+
+    // Real trouble on our side stays what it is, and so does anything after the
+    // TCP connect or under another code.
+    QCOMPARE(refined(E::NetworkError, "No route to host", false), E::NetworkError);
+    QCOMPARE(refined(E::NetworkError, "Network is unreachable", false), E::NetworkError);
+    QCOMPARE(refined(E::NetworkError, "Connection refused", true), E::NetworkError);
+    QCOMPARE(refined(E::SocketTimeoutError, "Connection refused", false), E::SocketTimeoutError);
 }
 
 void tst_ServerSocket::failure_namesPhaseAndReason_data()

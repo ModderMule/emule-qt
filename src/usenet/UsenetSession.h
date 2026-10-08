@@ -52,6 +52,10 @@ public:
     /// pool drops connections whose server changed and keeps the rest.
     void applyPreferences();
 
+    /// The bound network interface changed or went away: drop every connection, they
+    /// are on the old route. New ones bind to the current selection or wait.
+    void onNetworkRouteChanged();
+
     /// Renumber every stored category index after the category list changed.
     ///
     /// Two paths, because the queue only loads its sidecars in `start()`: the

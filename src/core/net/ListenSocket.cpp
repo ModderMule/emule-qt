@@ -4,6 +4,7 @@
 
 #include "net/ListenSocket.h"
 #include "net/BindAddress.h"
+#include "net/InterfacePin.h"
 #include "app/AppContext.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
@@ -48,6 +49,11 @@ bool ListenSocket::startListening(uint16 port)
     if (!listen(*bindTo, port)) {
         logError(QStringLiteral("ListenSocket: Failed to listen on port %1: %2")
                      .arg(port).arg(errorString()));
+        return false;
+    }
+
+    if (!InterfacePin::pin(socketDescriptor())) {
+        close();
         return false;
     }
 
@@ -96,6 +102,12 @@ void ListenSocket::incomingConnection(qintptr socketDescriptor)
     // socket that has already entered m_socketList must never be torn down this way.
     auto* reqSocket = new ClientReqSocket(nullptr, this);
     reqSocket->setSocketDescriptor(socketDescriptor);
+
+    // Answers must leave through the bound interface too.
+    if (!InterfacePin::pin(socketDescriptor)) {
+        reqSocket->safeDelete();
+        return;
+    }
 
     const Address peer = Address::fromQHostAddress(reqSocket->peerAddress());
 
@@ -165,6 +177,14 @@ void ListenSocket::killAllSockets()
         socket->safeDelete();
     }
     m_socketList.clear();
+}
+
+void ListenSocket::disconnectAll(const QString& reason)
+{
+    // disconnect() removes the socket from the list.
+    const auto sockets = m_socketList;
+    for (auto* socket : sockets)
+        socket->disconnect(reason);
 }
 
 // ---------------------------------------------------------------------------

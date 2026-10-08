@@ -429,6 +429,8 @@ int main(int argc, char* argv[])
             ipcClient.sendRequest(std::move(reqConn),
                                   [&mainWindow](const eMule::Ipc::IpcMessage& resp) {
                 const QCborMap info = resp.fieldMap(1);
+                mainWindow.setNetworkBlocked(info.value(QStringLiteral("netBlocked")).toBool(),
+                                             info.value(QStringLiteral("netBlockReason")).toString());
                 mainWindow.setEd2kStatus(
                     info.value(QStringLiteral("connected")).toBool(),
                     info.value(QStringLiteral("connecting")).toBool(),
@@ -536,6 +538,8 @@ int main(int argc, char* argv[])
         QObject::connect(&ipcClient, &eMule::IpcClient::serverStateChanged,
                          &mainWindow, [&mainWindow](const eMule::Ipc::IpcMessage& msg) {
             const QCborMap info = msg.fieldMap(0);
+            mainWindow.setNetworkBlocked(info.value(QStringLiteral("netBlocked")).toBool(),
+                                         info.value(QStringLiteral("netBlockReason")).toString());
             mainWindow.setEd2kStatus(
                 info.value(QStringLiteral("connected")).toBool(),
                 info.value(QStringLiteral("connecting")).toBool(),

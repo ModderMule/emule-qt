@@ -111,6 +111,12 @@
     <ClCompile Include="search\SeenFileIndex.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="net\InterfacePin.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="net\GuardedNetworkAccessManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="client\FruitlessSessionLedger.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -566,6 +572,9 @@
     <ClInclude Include="media\MediaReadBudget.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="net\InterfacePin.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="client\FruitlessSessionLedger.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -891,6 +900,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="search\SeenFileIndex.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="net\GuardedNetworkAccessManager.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="server\ServerList.h">

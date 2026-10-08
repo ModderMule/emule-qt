@@ -773,6 +773,16 @@ private slots:
                               << info.audio.sampleRate << info.audio.channels
                               << info.audio.avgBytesPerSec * 8 << "|" << info.title << "|"
                               << info.author << "|" << info.album;
+
+            // The path a shared file takes: gate, one reader, a read budget.
+            MediaInfo gated;
+            qint64 bytes = -1;
+            const bool gatedOk = extractSharedMediaInfo(fi.filePath(), gated, &bytes);
+            qInfo().noquote() << "   shared:" << (gatedOk ? "ok" : "NO") << gated.fileFormat
+                              << "len" << gated.lengthSec << "codec"
+                              << (gated.videoStreamCount ? gated.video.codecName : gated.audio.codecName)
+                              << "| read" << bytes << "of" << fi.size() << "bytes";
+            QVERIFY2(bytes <= kMediaReadBudget, qPrintable(fi.fileName()));
         }
     }
 

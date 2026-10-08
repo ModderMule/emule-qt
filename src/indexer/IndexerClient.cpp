@@ -1,4 +1,5 @@
 #include "IndexerClient.h"
+#include "net/GuardedNetworkAccessManager.h"
 
 #include "app/AppContext.h"
 #include "net/HttpDefaults.h"
@@ -43,7 +44,7 @@ void countIndexer(uint64 IndexerCounters::* field)
 
 IndexerClient::IndexerClient(QObject* parent)
     : QObject(parent)
-    , m_nam(new QNetworkAccessManager(this))
+    , m_nam(new GuardedNetworkAccessManager(this))
 {
 }
 

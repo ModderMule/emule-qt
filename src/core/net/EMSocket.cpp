@@ -6,6 +6,7 @@
 #include "app/AppContext.h"
 #include "net/Address.h"
 #include "net/BindAddress.h"
+#include "net/InterfacePin.h"
 #include "net/IPv6SourcePin.h"
 #include "prefs/Preferences.h"
 #include "transfer/UploadBandwidthThrottler.h"
@@ -1000,16 +1001,27 @@ void EMSocket::connectToPeer(const Address& addr, uint16 port)
         // A proxied socket connects to the proxy, which the user chose as the route;
         // Qt cannot bind one anyway.
         const bool proxied = thePrefs.proxySettings().useProxy;
-        const auto bindTo = BindAddress::listenAddress();
-        const bool reachable = BindAddress::canReach(addr);
-        if (!reachable || !bindTo
-            || (!proxied && state() == QAbstractSocket::UnconnectedState && !bind(*bindTo, 0)))
-        {
-            // Never dial from another address. Reported like any failed connect, but
+        const auto bindTo = BindAddress::sourceFor(addr);
+        QString why;
+        if (!bindTo) {
+            why = BindAddress::outboundAllowed()
+                ? QStringLiteral("destination is not reachable from the bind address")
+                : QStringLiteral("the selected network interface is not available");
+        } else if (!proxied && state() == QAbstractSocket::UnconnectedState) {
+            // A whole interface still sends IPv6 from the stable address.
+            QHostAddress from = *bindTo;
+            if (from == QHostAddress(QHostAddress::AnyIPv6)) {
+                if (const Address pinned = IPv6SourcePin::sourceFor(addr); !pinned.isNull())
+                    from = pinned.toQHostAddress();
+            }
+            if (!bind(from, 0))
+                why = QStringLiteral("cannot bind to the configured bind address");
+            else if (!InterfacePin::pin(socketDescriptor()))
+                why = QStringLiteral("cannot pin the socket to the selected network interface");
+        }
+        if (!why.isEmpty()) {
+            // Never dial from another interface. Reported like any failed connect, but
             // queued: callers wire their handlers up right after this call.
-            const QString why = reachable
-                ? QStringLiteral("cannot bind to the configured bind address")
-                : QStringLiteral("destination is not reachable from the bind address");
             QMetaObject::invokeMethod(this, [this, why] {
                 setSocketError(QAbstractSocket::NetworkError);
                 setErrorString(why);

@@ -3,6 +3,7 @@
 /// @brief Shared config-file downloader with transparent archive unwrapping.
 
 #include "net/HttpFileDownload.h"
+#include "net/GuardedNetworkAccessManager.h"
 #include "net/HttpDefaults.h"
 #include "utils/Log.h"
 
@@ -71,7 +72,7 @@ void HttpFileDownload::get(QObject* context, const QUrl& url, const Options& opt
 {
     // Parented to context, so a dialog closing mid-flight tears the request down with it
     // and the callback never fires against a dead caller.
-    auto* nam = new QNetworkAccessManager(context);
+    auto* nam = new GuardedNetworkAccessManager(context);
     auto* reply = nam->get(makeRequest(url, opts));
 
     QObject::connect(reply, &QNetworkReply::finished, context,
@@ -95,7 +96,7 @@ void HttpFileDownload::get(QObject* context, const QUrl& url, const Options& opt
 bool HttpFileDownload::getBlocking(const QUrl& url, const Options& opts,
                                    QByteArray& out, QString& entryName, QString& error)
 {
-    QNetworkAccessManager nam;
+    GuardedNetworkAccessManager nam;
     auto* reply = nam.get(makeRequest(url, opts));
 
     // setTransferTimeout covers a stalled transfer; the timer is the backstop for a reply

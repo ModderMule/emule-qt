@@ -3,6 +3,8 @@
 /// @brief Shared machinery for the two UDP/5351 protocols.
 
 #include "portmap/UdpMappingBackend.h"
+#include "net/BindAddress.h"
+#include "net/InterfacePin.h"
 #include "net/LocalIPv6.h"
 #include "portmap/PortMapWire.h"
 #include "utils/Log.h"
@@ -187,13 +189,19 @@ bool UdpMappingBackend::openChannel(Channel& channel, PortMapFamily family)
 
     const auto addressFamily = family == PortMapFamily::IPv6 ? Address::Family::IPv6
                                                              : Address::Family::IPv4;
-    const auto candidates = defaultGateways(addressFamily);
+    // With an interface selected, only its own gateway is asked (a VPN's port
+    // forwarding); the LAN router behind another interface is none of our business.
+    auto candidates = defaultGateways(addressFamily);
+    std::erase_if(candidates, [](const GatewayCandidate& g) {
+        return !BindAddress::isBoundInterface(g.interfaceName);
+    });
     if (candidates.empty())
         return false;
+    const bool bound = BindAddress::isConfigured();
 
     // Only relevant for IPv6, where the source address must be our GUA.
     const Address preferredSource = family == PortMapFamily::IPv6
-                                        ? selectPreferredIPv6(scanLocalIPv6())
+                                        ? selectPreferredIPv6(scanBoundIPv6())
                                         : Address{};
     if (family == PortMapFamily::IPv6 && !preferredSource.isIPv6())
         return false;
@@ -206,6 +214,10 @@ bool UdpMappingBackend::openChannel(Channel& channel, PortMapFamily family)
             && !probe.bind(preferredSource.toQHostAddress(), 0)) {
             continue;
         }
+        if (bound && family != PortMapFamily::IPv6 && !probe.bind(QHostAddress(QHostAddress::AnyIPv4), 0))
+            continue;
+        if (!InterfacePin::pin(probe.socketDescriptor()))
+            continue;
         probe.connectToHost(gateway.toQHostAddress(), kServerPort);
         if (probe.state() != QAbstractSocket::ConnectedState && !probe.waitForConnected(200))
             continue;
@@ -241,7 +253,12 @@ std::unique_ptr<QUdpSocket> UdpMappingBackend::makeSocket(PortMapFamily family)
         // router answers NOT_AUTHORIZED to everything, ANNOUNCE included.
         if (!socket->bind(channel->localAddress.toQHostAddress(), 0))
             return nullptr;
+    } else if (BindAddress::isConfigured()
+               && !socket->bind(channel->localAddress.toQHostAddress(), 0)) {
+        return nullptr;
     }
+    if (!InterfacePin::pin(socket->socketDescriptor()))
+        return nullptr;
     socket->connectToHost(channel->gateway.toQHostAddress(), kServerPort);
     if (socket->state() != QAbstractSocket::ConnectedState && !socket->waitForConnected(200))
         return nullptr;

@@ -99,6 +99,7 @@ enum class IpcMsgType : int {
     RecheckFirewall      = 219,  ///< [] — restart TCP + UDP firewall checks
     ReloadIPFilter       = 220,  ///< [] — reload IP filter from ipfilter.dat
     GetSchedules         = 221,  ///< [] — returns schedulerEnabled + full schedule list
+    GetNetworkInterfaces = 223,  ///< [] → CborArray of {name, friendlyName, index, addresses[]} — the daemon's active interfaces, for the bind selection
     SaveSchedules        = 222,  ///< [enabled: bool, schedules: CborArray] — replace all
     ScanImportFolder     = 230,  ///< [folder: string, removeSource: bool] → scan + queue + return jobs
     GetConvertJobs       = 231,  ///< [] → current job list with statuses

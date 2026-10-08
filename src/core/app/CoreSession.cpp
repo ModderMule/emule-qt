@@ -74,6 +74,7 @@ CoreSession::CoreSession(QObject* parent)
 
 CoreSession::~CoreSession()
 {
+    theApp.onBindSelectionChanged = nullptr;
     theApp.closing = true;   // the saves below are the last ones: commit them
     stop();
     // Before every shutdownXxx(): shutdownClientInfra() destroys ClientCredits, and the
@@ -112,6 +113,14 @@ void CoreSession::start()
     initKademlia();
     initPortMapper();
     initScheduler();
+    if (!BindAddress::outboundAllowed()) {
+        // Nothing was opened or dialled; pick up from here when the interface appears.
+        m_netSuspended = true;
+        m_resumeEd2k = thePrefs.networkED2K() && thePrefs.autoConnect();
+        m_resumeKad = thePrefs.kadEnabled() && thePrefs.autoConnect();
+    }
+    m_appliedBind = BindAddress::current();
+    theApp.onBindSelectionChanged = [this] { applyBindSelection(); };
     m_tickCounter = 0;
     m_timer.start();
 }
@@ -119,6 +128,23 @@ void CoreSession::start()
 void CoreSession::stop()
 {
     m_timer.stop();
+}
+
+void CoreSession::applyBindSelection()
+{
+    // Compared with what the sockets were opened on, not with the resolver's cache:
+    // any socket asking in between has already refreshed that.
+    BindAddress::refresh();
+    const BindAddress::Resolution now = BindAddress::current();
+    const bool allowed = now.state != BindAddress::State::Blocked;
+    if (now == m_appliedBind && m_netSuspended != allowed)
+        return;   // nothing new: still fine, or still waiting
+    m_appliedBind = now;
+    // Sockets pinned to the previous interface are dead or on the wrong one.
+    if (!m_netSuspended)
+        suspendNetworking();
+    if (allowed)
+        resumeNetworking();
 }
 
 void CoreSession::stopWorkerThreads()
@@ -409,7 +435,12 @@ void CoreSession::onTimer()
         // noteEffectiveIPv6Change(), which is a no-op when the effective address is
         // unchanged, so the common case costs one interface scan.
         if (m_tickCounter % 3000 == 0)
-            updatePublicIPv6(scanLocalIPv6());
+            updatePublicIPv6(scanBoundIPv6());
+
+        // Bound-interface watchdog. The pin already stops packets; this notices the
+        // loss (or the return under a new index) and closes / reopens the sockets.
+        if (m_tickCounter % 50 == 0 && (BindAddress::isConfigured() || m_netSuspended))
+            applyBindSelection();
 
         // Bank the cumulative statistics periodically, so an unclean exit costs at
         // most one interval instead of the whole session. MFC does the same from
@@ -576,7 +607,7 @@ void CoreSession::initServerConnect()
     //    Matches MFC CServerConnect (srchybrid/ServerConnect.cpp:466).
     if (thePrefs.serverUDPPort() != 0) {
         m_serverUDP = std::make_unique<UDPSocket>(this);
-        if (!m_serverUDP->create())
+        if (!m_serverUDP->create() && BindAddress::outboundAllowed())
             logWarning(QStringLiteral("Failed to bind server UDP socket"));
         m_serverConnect->setUDPSocket(m_serverUDP.get());
     }
@@ -661,7 +692,7 @@ void CoreSession::initServerConnect()
     // DoAutoConnect() (EmuleDlg.cpp:742). autoConnect gates *connecting*;
     // networkED2K keeps the default Kad-only profile Kad-only. The Kad arm has
     // the mirror of this in initKademlia().
-    if (thePrefs.networkED2K() && thePrefs.autoConnect())
+    if (thePrefs.networkED2K() && thePrefs.autoConnect() && BindAddress::outboundAllowed())
         m_serverConnect->connectToAnyServer();
 }
 
@@ -797,6 +828,9 @@ void CoreSession::initClientInfra()
             theApp.listenSocket = m_listenSocket.get();
             logInfo(QStringLiteral("TCP listen socket bound on port %1")
                         .arg(m_listenSocket->connectedPort()));
+        } else if (!BindAddress::outboundAllowed()) {
+            // Kept closed; resumeNetworking() opens it when the interface is there.
+            theApp.listenSocket = m_listenSocket.get();
         } else {
             logWarning(QStringLiteral("Failed to bind TCP listen socket on port %1")
                            .arg(thePrefs.port()));
@@ -948,14 +982,15 @@ void CoreSession::initClientUDP()
     // Create and bind the shared UDP socket (client + Kad traffic).
     m_clientUDP = std::make_unique<ClientUDPSocket>();
     const uint16 udpPort = static_cast<uint16>(thePrefs.udpPort());
-    if (!m_clientUDP->rebind(udpPort)) {
+    if (m_clientUDP->rebind(udpPort)) {
+        logInfo(QStringLiteral("Client UDP socket bound on port %1").arg(udpPort));
+    } else if (BindAddress::outboundAllowed()) {
         logError(QStringLiteral("Failed to bind client UDP socket on port %1")
                      .arg(udpPort));
         m_clientUDP.reset();
         return;
-    }
+    }   // else: kept closed until the bound interface is there
     theApp.clientUDP = m_clientUDP.get();
-    logInfo(QStringLiteral("Client UDP socket bound on port %1").arg(udpPort));
 
     // Wire client UDP reask signals to upload queue
     if (theApp.uploadQueue) {
@@ -1247,7 +1282,7 @@ void CoreSession::initKademlia()
     // Start() the same way (StartConnection, emuleDlg.cpp:1983) while CKademlia
     // stays an always-addressable static. A failed start is left constructed too,
     // so a retry does not hit a null instance.
-    if (thePrefs.kadEnabled() && thePrefs.autoConnect()) {
+    if (thePrefs.kadEnabled() && thePrefs.autoConnect() && BindAddress::outboundAllowed()) {
         m_kademlia->start();
         if (m_kademlia->isRunning())
             logInfo(QStringLiteral("Kademlia started."));
@@ -1618,7 +1653,7 @@ void CoreSession::initLocalIPv6()
 
     // Publish first, then narrate: the advisory reports the address actually in effect,
     // which may come from publicIPv6Override rather than auto-selection.
-    const IPv6PrivacyReport report = scanLocalIPv6();
+    const IPv6PrivacyReport report = scanBoundIPv6();
     const Address effective = updatePublicIPv6(report);
     logIPv6PrivacyAdvisory(report, effective);   // the one and only call site
 }
@@ -1648,6 +1683,69 @@ void CoreSession::markPeersForIPChange(const Address& effective)
     if (marked > 0)
         logInfo(QStringLiteral("IPv6: queued IP-change notice for %1 connected peer(s)")
                     .arg(marked));
+}
+
+// ---------------------------------------------------------------------------
+// suspendNetworking / resumeNetworking — the bound interface went away or changed
+// ---------------------------------------------------------------------------
+
+void CoreSession::suspendNetworking()
+{
+    m_netSuspended = true;
+    m_resumeEd2k = theApp.serverConnect
+        && (theApp.serverConnect->isConnected() || theApp.serverConnect->isConnecting());
+    m_resumeKad = m_kademlia && m_kademlia->isRunning();
+    logWarning(QStringLiteral("Network interface changed or lost — closing all connections"));
+
+    if (theApp.serverConnect) {
+        theApp.serverConnect->stopConnectionTry();
+        theApp.serverConnect->disconnect();
+    }
+    if (m_kademlia)
+        m_kademlia->stop();
+    if (m_portMapper)
+        m_portMapper->stopForInterfaceChange();
+    if (m_listenSocket) {
+        m_listenSocket->disconnectAll(QStringLiteral("Network interface lost"));
+        m_listenSocket->stopListening();
+    }
+    if (m_clientUDP)
+        m_clientUDP->close();
+    if (m_serverUDP)
+        m_serverUDP->close();
+    if (theApp.onNetworkSuspended)
+        theApp.onNetworkSuspended(true);
+}
+
+void CoreSession::resumeNetworking()
+{
+    m_netSuspended = false;
+    logInfo(QStringLiteral("Network interface available — reopening sockets"));
+
+    if (m_listenSocket && !m_listenSocket->startListening(thePrefs.port()))
+        logWarning(QStringLiteral("Failed to bind TCP listen socket on port %1").arg(thePrefs.port()));
+    if (m_clientUDP && !m_clientUDP->rebind(static_cast<uint16>(thePrefs.udpPort())))
+        logError(QStringLiteral("Failed to bind client UDP socket on port %1").arg(thePrefs.udpPort()));
+    if (m_serverUDP && !m_serverUDP->create())
+        logWarning(QStringLiteral("Failed to bind server UDP socket"));
+
+    if (theApp.serverConnect) {
+        ServerConnectConfig cfg = theApp.serverConnect->config();
+        cfg.bindAddress = BindAddress::ipv4Literal();
+        theApp.serverConnect->setConfig(cfg);
+    }
+    updatePublicIPv6(scanBoundIPv6());
+    if (m_portMapper) {
+        m_portMapper->start();
+        updatePortMappings();
+    }
+    if (theApp.onNetworkSuspended)
+        theApp.onNetworkSuspended(false);
+
+    if (m_resumeEd2k && theApp.serverConnect)
+        theApp.serverConnect->connectToAnyServer();
+    if (m_resumeKad && m_kademlia)
+        m_kademlia->start();
 }
 
 } // namespace eMule

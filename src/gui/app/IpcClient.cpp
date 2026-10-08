@@ -71,6 +71,7 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::GetKadSearches:       return QStringLiteral("GetKadSearches");
     case T::GetKadLookupHistory:  return QStringLiteral("GetKadLookupHistory");
     case T::GetNetworkInfo:       return QStringLiteral("GetNetworkInfo");
+    case T::GetNetworkInterfaces: return QStringLiteral("GetNetworkInterfaces");
     case T::RecheckFirewall:      return QStringLiteral("RecheckFirewall");
     case T::ReloadIPFilter:       return QStringLiteral("ReloadIPFilter");
     case T::GetSchedules:         return QStringLiteral("GetSchedules");

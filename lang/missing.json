@@ -1,24 +1,46 @@
 {
- "Average Download Per Session: %1": {
-  "_context": "eMule::StatisticsPanel",
-  "de_DE": "Durchschnittlicher Download pro Sitzung: %1",
-  "es_ES": "Descarga media por sesión: %1",
-  "fr_FR": "Téléchargement moyen par session : %1",
-  "it_IT": "Download medio per sessione: %1",
-  "ja_JP": "セッションあたりの平均ダウンロード: %1",
-  "ko_KR": "세션당 평균 다운로드: %1",
-  "pt_BR": "Download médio por sessão: %1",
-  "zh_CN": "每次会话平均下载：%1"
- },
- "Average Download Time: %1": {
-  "_context": "eMule::StatisticsPanel",
-  "de_DE": "Durchschnittliche Download-Zeit: %1",
-  "es_ES": "Tiempo medio de descarga: %1",
-  "fr_FR": "Temps de téléchargement moyen : %1",
-  "it_IT": "Tempo medio di download: %1",
-  "ja_JP": "平均ダウンロード時間: %1",
-  "ko_KR": "평균 다운로드 시간: %1",
-  "pt_BR": "Tempo médio de download: %1",
-  "zh_CN": "平均下载时间：%1"
- }
+  "Blocked: network interface not available": {
+    "_context": "eMule::WebServer",
+    "de_DE": "Blockiert: Netzwerkschnittstelle nicht verfügbar",
+    "es_ES": "Bloqueado: interfaz de red no disponible",
+    "fr_FR": "Bloqué : interface réseau indisponible",
+    "it_IT": "Bloccato: interfaccia di rete non disponibile",
+    "ja_JP": "ブロック中: ネットワークインターフェースが利用できません",
+    "ko_KR": "차단됨: 네트워크 인터페이스를 사용할 수 없음",
+    "pt_BR": "Bloqueado: interface de rede indisponível",
+    "zh_CN": "已阻止：网络接口不可用"
+  },
+  "Network interface": {
+    "_context": "eMule::OptionsDialog",
+    "de_DE": "Netzwerkschnittstelle",
+    "es_ES": "Interfaz de red",
+    "fr_FR": "Interface réseau",
+    "it_IT": "Interfaccia di rete",
+    "ja_JP": "ネットワークインターフェース",
+    "ko_KR": "네트워크 인터페이스",
+    "pt_BR": "Interface de rede",
+    "zh_CN": "网络接口"
+  },
+  "Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.": {
+    "_context": "eMule::OptionsDialog",
+    "de_DE": "Nur diese Netzwerkschnittstelle verwenden, zum Beispiel einen VPN-Tunnel. Wählen Sie eine aus der Liste oder geben Sie eine IP-Adresse oder ein Subnetz wie 10.64.0.0/10 ein (die Schnittstelle, die eine Adresse daraus besitzt). Verbindungen über einen Proxy werden nicht gebunden.",
+    "es_ES": "Usar solo esta interfaz de red, por ejemplo un túnel VPN. Elija una de la lista o escriba una dirección IP o una subred como 10.64.0.0/10 (la interfaz que tenga una dirección en ella). Las conexiones a través de un proxy no se vinculan.",
+    "fr_FR": "Utiliser uniquement cette interface réseau, par exemple un tunnel VPN. Choisissez-en une dans la liste, ou saisissez une adresse IP ou un sous-réseau tel que 10.64.0.0/10 (l'interface qui y possède une adresse). Les connexions passant par un proxy ne sont pas liées.",
+    "it_IT": "Usa solo questa interfaccia di rete, ad esempio un tunnel VPN. Scegline una dall'elenco oppure digita un indirizzo IP o una sottorete come 10.64.0.0/10 (l'interfaccia che ha un indirizzo al suo interno). Le connessioni tramite proxy non vengono vincolate.",
+    "ja_JP": "このネットワークインターフェース（VPN トンネルなど）のみを使用します。一覧から選ぶか、IP アドレスまたは 10.64.0.0/10 のようなサブネット（その範囲のアドレスを持つインターフェース）を入力してください。プロキシ経由の接続はバインドされません。",
+    "ko_KR": "이 네트워크 인터페이스(예: VPN 터널)만 사용합니다. 목록에서 선택하거나 IP 주소 또는 10.64.0.0/10 같은 서브넷(해당 범위의 주소를 가진 인터페이스)을 입력하십시오. 프록시를 통한 연결은 바인딩되지 않습니다.",
+    "pt_BR": "Usar somente esta interface de rede, por exemplo um túnel VPN. Escolha uma na lista ou digite um endereço IP ou uma sub-rede como 10.64.0.0/10 (a interface que possui um endereço nela). Conexões por meio de um proxy não são vinculadas.",
+    "zh_CN": "仅使用此网络接口，例如 VPN 隧道。可从列表中选择，或输入 IP 地址或子网（如 10.64.0.0/10，即拥有该范围内地址的接口）。通过代理的连接不会被绑定。"
+  },
+  "While the selected interface is not available, all P2P, Usenet and update connections stay closed.": {
+    "_context": "eMule::OptionsDialog",
+    "de_DE": "Solange die gewählte Schnittstelle nicht verfügbar ist, bleiben alle P2P-, Usenet- und Update-Verbindungen geschlossen.",
+    "es_ES": "Mientras la interfaz seleccionada no esté disponible, todas las conexiones P2P, Usenet y de actualización permanecen cerradas.",
+    "fr_FR": "Tant que l'interface sélectionnée n'est pas disponible, toutes les connexions P2P, Usenet et de mise à jour restent fermées.",
+    "it_IT": "Finché l'interfaccia selezionata non è disponibile, tutte le connessioni P2P, Usenet e di aggiornamento restano chiuse.",
+    "ja_JP": "選択したインターフェースが利用できない間、P2P、Usenet、更新のすべての接続は閉じたままになります。",
+    "ko_KR": "선택한 인터페이스를 사용할 수 없는 동안에는 모든 P2P, Usenet 및 업데이트 연결이 닫힌 상태로 유지됩니다.",
+    "pt_BR": "Enquanto a interface selecionada não estiver disponível, todas as conexões P2P, Usenet e de atualização permanecem fechadas.",
+    "zh_CN": "所选接口不可用期间，所有 P2P、Usenet 和更新连接都保持关闭。"
+  }
 }

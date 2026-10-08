@@ -241,6 +241,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_uploadLimitSlider, &QSlider::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_tcpPortSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_udpPortSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_bindInterfaceCombo, &QComboBox::currentTextChanged, this, &OptionsDialog::markDirty);
     connect(m_udpDisableCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_upnpCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_maxSourcesSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
@@ -1160,6 +1161,25 @@ QWidget* OptionsDialog::createConnectionPage()
     m_portMapStatusLabel = new QLabel(tr("Port forwarding: unknown"), portGroup);
     m_portMapStatusLabel->setEnabled(false);
     portLayout->addWidget(m_portMapStatusLabel, 2, 2, 1, 2);
+
+    // Bind selection: an interface of the daemon's host, or free text for an
+    // address or a subnet. Filled from GetNetworkInterfaces.
+    portLayout->addWidget(new QLabel(tr("Network interface"), portGroup), 3, 0);
+    m_bindInterfaceCombo = new QComboBox(portGroup);
+    m_bindInterfaceCombo->setEditable(true);
+    m_bindInterfaceCombo->setInsertPolicy(QComboBox::NoInsert);
+    m_bindInterfaceCombo->addItem(tr("Any"), QString());
+    m_bindInterfaceCombo->setToolTip(
+        tr("Use only this network interface, for example a VPN tunnel. Pick one from the "
+           "list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface "
+           "holding an address in it). Connections through a proxy are not bound."));
+    portLayout->addWidget(m_bindInterfaceCombo, 3, 1, 1, 3);
+    auto* bindHint = new QLabel(
+        tr("While the selected interface is not available, all P2P, Usenet and update "
+           "connections stay closed."), portGroup);
+    bindHint->setWordWrap(true);
+    bindHint->setEnabled(false);
+    portLayout->addWidget(bindHint, 4, 1, 1, 3);
 
     layout->addWidget(portGroup);
 
@@ -6154,6 +6174,8 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(m_udpDisableCheck->isChecked() ? 0 : m_udpPortSpin->value()));
         req.append(QStringLiteral("enableUPnP"));
         req.append(m_upnpCheck->isChecked());
+        req.append(QStringLiteral("bindAddress"));
+        req.append(bindSelection());
         req.append(QStringLiteral("maxSourcesPerFile"));
         req.append(static_cast<qint64>(m_maxSourcesSpin->value()));
         req.append(QStringLiteral("maxConnections"));
@@ -6922,6 +6944,9 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_downloadLimitLabel->setText(limitText(m_downloadLimitSlider->value()));
     m_uploadLimitLabel->setText(limitText(m_uploadLimitSlider->value()));
 
+    showBindSelection(prefs.value(QStringLiteral("bindAddress")).toString());
+    requestNetworkInterfaces();
+
     auto tcpPort = static_cast<int>(prefs.value(QStringLiteral("port")).toInteger(5662));
     auto udpPort = static_cast<int>(prefs.value(QStringLiteral("udpPort")).toInteger(5672));
     m_tcpPortSpin->setValue(tcpPort);
@@ -7366,6 +7391,57 @@ void OptionsDialog::openPortTest()
         openPortTestUrl(tcp, udp,
                         ed2k.value(QStringLiteral("publicIPv4")).toString(),
                         ed2k.value(QStringLiteral("publicIPv6")).toString());
+    });
+}
+
+// The value to store: the interface name of a list entry, else the typed text.
+QString OptionsDialog::bindSelection() const
+{
+    const int index = m_bindInterfaceCombo->currentIndex();
+    const QString text = m_bindInterfaceCombo->currentText().trimmed();
+    if (index >= 0 && text == m_bindInterfaceCombo->itemText(index))
+        return m_bindInterfaceCombo->itemData(index).toString();
+    return text;
+}
+
+void OptionsDialog::showBindSelection(const QString& selection)
+{
+    const QSignalBlocker blocker(m_bindInterfaceCombo);
+    const int index = m_bindInterfaceCombo->findData(selection, Qt::UserRole, Qt::MatchFixedString);
+    if (index >= 0)
+        m_bindInterfaceCombo->setCurrentIndex(index);
+    else
+        m_bindInterfaceCombo->setEditText(selection);   // address, subnet or an absent interface
+}
+
+void OptionsDialog::requestNetworkInterfaces()
+{
+    if (!m_ipc)
+        return;
+    Ipc::IpcMessage req(Ipc::IpcMsgType::GetNetworkInterfaces);
+    m_ipc->sendRequest(std::move(req), [this, self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
+        if (!self || !resp.isValid())
+            return;
+        const QString selection = bindSelection();
+        const QSignalBlocker blocker(m_bindInterfaceCombo);
+        m_bindInterfaceCombo->clear();
+        m_bindInterfaceCombo->addItem(tr("Any"), QString());
+        const QCborArray list = resp.fieldArray(1);
+        for (const QCborValue& v : list) {
+            const QCborMap nif = v.toMap();
+            const QString name = nif.value(QStringLiteral("name")).toString();
+            const QString friendly = nif.value(QStringLiteral("friendlyName")).toString();
+            QStringList addresses;
+            for (const QCborValue& a : nif.value(QStringLiteral("addresses")).toArray())
+                addresses << a.toString();
+            if (addresses.isEmpty())
+                continue;
+            const QString label = (friendly.isEmpty() || friendly == name)
+                ? name : QStringLiteral("%1 (%2)").arg(friendly, name);
+            m_bindInterfaceCombo->addItem(QStringLiteral("%1 — %2").arg(label, addresses.join(QStringLiteral(", "))),
+                                          name);
+        }
+        showBindSelection(selection);
     });
 }
 

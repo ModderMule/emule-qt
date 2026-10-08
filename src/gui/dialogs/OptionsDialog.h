@@ -212,6 +212,9 @@ private:
 
     /// Launch the port test page. Empty @p ipv4 / @p ipv6 hints are omitted from the URL.
     void openPortTestUrl(int tcpPort, int udpPort, const QString& ipv4, const QString& ipv6);
+    [[nodiscard]] QString bindSelection() const;
+    void showBindSelection(const QString& selection);
+    void requestNetworkInterfaces();
 
     /// Country flags group: ask the daemon for the GeoLite2 state / download it now.
     void requestGeoIpStatus();
@@ -298,6 +301,7 @@ private:
 
     QCheckBox* m_upnpCheck = nullptr;
     QLabel*    m_portMapStatusLabel = nullptr;
+    QComboBox* m_bindInterfaceCombo = nullptr;
     QSpinBox*  m_maxSourcesSpin = nullptr;
     QSpinBox*  m_maxConnectionsSpin = nullptr;
     QCheckBox* m_autoConnectCheck = nullptr;

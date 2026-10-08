@@ -174,6 +174,12 @@ public:
     [[nodiscard]] static ServerConnState stateForSocketError(ServerConnState current,
                                                              QAbstractSocket::SocketError error);
 
+    /// The error to judge a failed dial by. Some systems report a refused connect as a
+    /// plain NetworkError whose text is the OS's "Connection refused"; taken at its
+    /// code that reads as trouble on our side and never counts against the server.
+    [[nodiscard]] static QAbstractSocket::SocketError refinedSocketError(
+        QAbstractSocket::SocketError error, const QString& errorText, bool tcpConnected);
+
     /// Names a failure: @p socketError is empty for a protocol error or a plain close.
     [[nodiscard]] static ServerFailure failureFor(ServerConnState current, bool tcpConnected,
                                                   std::optional<QAbstractSocket::SocketError> socketError);

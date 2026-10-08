@@ -195,6 +195,8 @@
     <ClCompile Include="client\CorruptionBlackBox.cpp" />
     <ClCompile Include="client\DeadSourceList.cpp" />
     <ClCompile Include="client\FruitlessSessionLedger.cpp" />
+    <ClCompile Include="net\GuardedNetworkAccessManager.cpp" />
+    <ClCompile Include="net\InterfacePin.cpp" />
     <ClCompile Include="search\SeenFileIndex.cpp" />
     <ClCompile Include="search\SearchQueue.cpp" />
     <ClCompile Include="files\HashFailureStore.cpp" />
@@ -374,6 +376,7 @@
     <ClInclude Include="client\CorruptionBlackBox.h" />
     <ClInclude Include="client\DeadSourceList.h" />
     <ClInclude Include="client\FruitlessSessionLedger.h" />
+    <ClInclude Include="net\InterfacePin.h" />
     <ClInclude Include="media\MediaReadBudget.h" />
     <ClInclude Include="files\HashFailureStore.h" />
     <ClInclude Include="files\KadPublishStore.h" />
@@ -497,6 +500,7 @@
     <ClInclude Include="server\ServerMsgType.h" />
     <QtMoc Include="server\ServerConnect.h" />
     <QtMoc Include="server\ServerList.h" />
+    <QtMoc Include="net\GuardedNetworkAccessManager.h" />
     <QtMoc Include="search\SeenFileIndex.h" />
     <QtMoc Include="search\SearchQueue.h" />
     <QtMoc Include="net\ServerSocket.h" />

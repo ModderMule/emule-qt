@@ -56,6 +56,9 @@ public:
     /// Create and bind the UDP socket.
     bool create();
 
+    /// Close the socket; create() opens it again.
+    void close() { m_socket.close(); }
+
     /// The OS-assigned local UDP port (0 if unbound).
     [[nodiscard]] quint16 localPort() const { return m_socket.localPort(); }
 

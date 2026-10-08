@@ -123,6 +123,14 @@ void UsenetSession::stop()
     logUsenet(QStringLiteral("Usenet: engine stopped"));
 }
 
+void UsenetSession::onNetworkRouteChanged()
+{
+    if (m_pool)
+        m_pool->closeIdleConnections();
+    if (m_queue)
+        m_queue->rebuildForRouteChange();
+}
+
 void UsenetSession::applyPreferences()
 {
     m_pool->setRetryInterval(thePrefs.usenetRetryIntervalSeconds());

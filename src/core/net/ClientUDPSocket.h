@@ -59,6 +59,9 @@ public:
     /// Create and bind the UDP socket.
     bool create();
 
+    /// Close the socket; rebind() opens it again.
+    void close() { m_socket.close(); }
+
     /// Rebind to configured port.
     bool rebind(uint16 port);
 

@@ -3,6 +3,7 @@
 /// @brief ED2K server connection state machine — replaces MFC CServerConnect.
 
 #include "server/ServerConnect.h"
+#include "net/BindAddress.h"
 #include "server/ServerList.h"
 #include "server/Server.h"
 #include "app/AppContext.h"
@@ -144,6 +145,10 @@ void ServerConnect::connectToAnyServer(size_t startAt, bool prioSort,
 {
     logServerVerbose(QStringLiteral("connectToAnyServer: %1 servers in list, startAt=%2 prioSort=%3 isAuto=%4 noCrypt=%5")
                          .arg(m_serverList.serverCount()).arg(startAt).arg(prioSort).arg(isAuto).arg(noCrypt));
+    if (!BindAddress::outboundAllowed()) {
+        logWarning(QStringLiteral("Not connecting: %1").arg(BindAddress::current().reason));
+        return;
+    }
     stopConnectionTry();
     disconnect();
     m_connecting = true;
@@ -198,6 +203,10 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
 {
     if (!server)
         return;
+    if (!BindAddress::outboundAllowed()) {
+        logWarning(QStringLiteral("Not connecting: %1").arg(BindAddress::current().reason));
+        return;
+    }
 
     if (!multiconnect) {
         stopConnectionTry();
@@ -980,7 +989,7 @@ void ServerConnect::initLocalIP()
     // Running it here (per connect) picks up a prefix renumber without a restart; it is
     // silent unless the selected address actually changed. The startup advisory is
     // emitted once from CoreSession::initLocalIPv6().
-    updatePublicIPv6(scanLocalIPv6());
+    updatePublicIPv6(scanBoundIPv6());
 
     // Use bind address if configured. Deliberately IPv4-only: an IPv6 literal here is
     // skipped so the fallback below still supplies the ED2K IPv4 identity that the
