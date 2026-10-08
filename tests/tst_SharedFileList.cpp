@@ -31,6 +31,10 @@
 #include <cstring>
 #include <thread>
 
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
+
 using namespace eMule;
 
 class tst_SharedFileList : public QObject {
@@ -58,6 +62,8 @@ private slots:
     void sharedFilesConfig_roundTrips();
     void scan_skipsAFileStillBeingDelivered();
     void scan_skipsThumbsDbAndOversizedFiles();
+    void scan_winSkipsSystemAndTemporarySharesHidden();
+    void scan_winShellLinkFollowsTheOption();
     void pathRules_matchOtherSpellingsByKey();
     void directoryIndex_followsAddRemoveAndMove();
     void rescan_addsKeywordsThroughTheFrontDoor();
@@ -642,6 +648,91 @@ void tst_SharedFileList::scan_skipsThumbsDbAndOversizedFiles()
 
     QCOMPARE(shared.getCount(), 0);
     QCOMPARE(shared.getHashingCount(), 0);
+}
+
+// MFC SharedFileList.cpp:1474: system and temporary files stay out, hidden ones are shared.
+void tst_SharedFileList::scan_winSkipsSystemAndTemporarySharesHidden()
+{
+#ifndef Q_OS_WIN
+    QSKIP("file attributes are a Windows thing");
+#else
+    eMule::testing::TempDir tmp;
+    const QString shareDir = tmp.filePath(QStringLiteral("share"));
+    const auto putWithAttr = [&](const QString& name, DWORD attr) {
+        const QString path = writeFile(shareDir, name, QByteArray(512, 'w'));
+        return !path.isEmpty()
+            && SetFileAttributesW(reinterpret_cast<LPCWSTR>(QDir::toNativeSeparators(path).utf16()),
+                                  attr);
+    };
+    QVERIFY(putWithAttr(QStringLiteral("system.bin"), FILE_ATTRIBUTE_SYSTEM));
+    QVERIFY(putWithAttr(QStringLiteral("temporary.bin"), FILE_ATTRIBUTE_TEMPORARY));
+    QVERIFY(putWithAttr(QStringLiteral("hidden.bin"), FILE_ATTRIBUTE_HIDDEN));
+
+    QVERIFY(!SharedFileList::isShareableFile(QFileInfo(QDir(shareDir).filePath(QStringLiteral("system.bin")))));
+    QVERIFY(!SharedFileList::isShareableFile(QFileInfo(QDir(shareDir).filePath(QStringLiteral("temporary.bin")))));
+    QVERIFY(SharedFileList::isShareableFile(QFileInfo(QDir(shareDir).filePath(QStringLiteral("hidden.bin")))));
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({shareDir});
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    shared.reload();
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
+    QCOMPARE(shared.getHashingCount(), 0);
+    bool hiddenShared = false;
+    shared.forEachFile([&](KnownFile* f) { hiddenShared |= f->fileName() == QStringLiteral("hidden.bin"); });
+    QVERIFY(hiddenShared);
+#endif
+}
+
+// MFC SharedFileList.cpp:1488-1524: a .lnk is never shared itself; its target only
+// with the option on.
+void tst_SharedFileList::scan_winShellLinkFollowsTheOption()
+{
+#ifndef Q_OS_WIN
+    QSKIP("shell links are a Windows thing");
+#else
+    eMule::testing::TempDir tmp;
+    const QString shareDir = tmp.filePath(QStringLiteral("share"));
+    QVERIFY(QDir().mkpath(shareDir));
+    const QString target = writeFile(tmp.filePath(QStringLiteral("elsewhere")),
+                                     QStringLiteral("target.bin"), QByteArray(777, 'l'));
+    QVERIFY(!target.isEmpty());
+    const QString link = QDir(shareDir).filePath(QStringLiteral("to target.lnk"));
+    QVERIFY(QFile::link(target, link));
+    QVERIFY(QFileInfo(link).isShortcut());
+
+    thePrefs.setConfigDir(tmp.path());
+    thePrefs.setIncomingDir(tmp.filePath(QStringLiteral("incoming")));
+    thePrefs.setSharedDirs({shareDir});
+    const bool before = thePrefs.resolveShellLinks();
+
+    {
+        thePrefs.setResolveShellLinks(false);
+        KnownFileList knownFiles;
+        SharedFileList shared(&knownFiles);
+        shared.reload();
+        QTest::qWait(300);
+        QCOMPARE(shared.getCount(), 0);
+        QCOMPARE(shared.getHashingCount(), 0);
+    }
+    {
+        thePrefs.setResolveShellLinks(true);
+        KnownFileList knownFiles;
+        SharedFileList shared(&knownFiles);
+        shared.reload();
+        QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
+        KnownFile* found = nullptr;
+        shared.forEachFile([&](KnownFile* f) { found = f; });
+        QVERIFY(found);
+        QCOMPARE(found->fileName(), QStringLiteral("target.bin"));
+        QCOMPARE(found->fileSize(), uint64{777});
+        QCOMPARE(QFileInfo(found->filePath()), QFileInfo(target));
+    }
+    thePrefs.setResolveShellLinks(before);
+#endif
 }
 
 void tst_SharedFileList::rescan_addsKeywordsThroughTheFrontDoor()

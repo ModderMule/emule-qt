@@ -1245,9 +1245,12 @@ void SharedFileList::onHashingFinished(KnownFile* file, uint64 generation)
     }
 
     // The user may have unshared it while it hashed — MFC re-checks at the same point
-    // (FileHashingFinished, srchybrid/SharedFileList.cpp:743).
+    // (FileHashingFinished, srchybrid/SharedFileList.cpp:743). A shell link's target is
+    // judged by the link's directory, as there (GetSharedDirectory).
     if (!file->filePath().isEmpty()
-        && !shouldBeShared(QFileInfo(file->filePath()).absolutePath(), file->filePath(), false))
+        && !shouldBeShared(file->isShellLinked() ? file->sharedDirectory()
+                                                 : QFileInfo(file->filePath()).absolutePath(),
+                           file->filePath(), false))
     {
         QMutexLocker hashLocker(&m_hashMutex);
         hashNextFile();

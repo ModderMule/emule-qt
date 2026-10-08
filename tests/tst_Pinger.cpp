@@ -21,6 +21,7 @@ private slots:
     void icmpSocketAvailability();
     void pingLocalhost();
     void pingInvalidAddress();
+    void shortTtl_reportsTheRouter();
     void pingStatusDefaults();
     void multipleSequentialPings();
 };
@@ -82,6 +83,38 @@ void tst_Pinger::pingInvalidAddress()
     // (On some networks this might succeed if there's a router at hop 1)
     // We just verify the function returns without crashing
     QVERIFY(result.delay >= 0.0f);
+}
+
+// ---------------------------------------------------------------------------
+// TTL 1 to a far host — the hop search lives on this answer (needs a network)
+// ---------------------------------------------------------------------------
+
+void tst_Pinger::shortTtl_reportsTheRouter()
+{
+    Pinger pinger;
+    if (!pinger.isIcmpAvailable())
+        QSKIP("ICMP socket not available");
+
+    const uint32 farHost = htonl(0x01010101); // 1.1.1.1
+    const PingStatus result = pinger.ping(farHost, 1);
+    if (!result.success)
+        QSKIP("no router answered at hop 1 (offline, or it drops TTL-expired)");
+
+    QCOMPARE(result.status, kPingTTLExpired);
+    QCOMPARE(result.error, 0u);
+    QVERIFY(result.destinationAddress != 0);
+    QVERIFY(result.destinationAddress != farHost);
+    QVERIFY(result.delay > 0.0f);
+
+    // Both methods answer on Windows: the UDP one falls back to ICMP there
+    const PingStatus viaUdp = pinger.ping(farHost, 1, true);
+#ifdef Q_OS_WIN
+    QVERIFY(viaUdp.success);
+    QCOMPARE(viaUdp.status, kPingTTLExpired);
+    QCOMPARE(viaUdp.destinationAddress, result.destinationAddress);
+#else
+    Q_UNUSED(viaUdp);
+#endif
 }
 
 // ---------------------------------------------------------------------------

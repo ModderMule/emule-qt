@@ -274,6 +274,12 @@ void tst_URLClient::fetch_downloadsTheFileOverHttp()
     QVERIFY(server.port() != 0);
 
     eMule::testing::TempDir tmp;
+    // Without one the finished file is delivered to the root of the drive
+    const QString incoming = tmp.filePath(QStringLiteral("incoming"));
+    QVERIFY(QDir().mkpath(incoming));
+    const QString savedIncoming = thePrefs.incomingDir();
+    thePrefs.setIncomingDir(incoming);
+    const auto restoreIncoming = qScopeGuard([savedIncoming] { thePrefs.setIncomingDir(savedIncoming); });
     PartFile pf;
     pf.setFileName(QStringLiteral("from_the_web.bin"));
     pf.setFileSize(static_cast<uint64>(content.size()));
@@ -297,11 +303,13 @@ void tst_URLClient::fetch_downloadsTheFileOverHttp()
     QCOMPARE(pf.transferred(), static_cast<uint64>(content.size()));
     QCOMPARE(static_cast<uint64>(pf.completedSize()), static_cast<uint64>(content.size()));
 
-    // what landed in the part file is what the server has
+    // what was delivered is what the server has (the last block completes the file)
     pf.flushBuffer();
-    QFile part(QDir(tmp.path()).filePath(pf.partMetFileName().chopped(4)));
-    QVERIFY(part.open(QIODevice::ReadOnly));
-    QCOMPARE(part.readAll(), content);
+    const QString delivered = QDir(incoming).filePath(pf.fileName());
+    QTRY_VERIFY_WITH_TIMEOUT(QFile::exists(delivered), 10000);
+    QFile done(delivered);
+    QVERIFY(done.open(QIODevice::ReadOnly));
+    QCOMPARE(done.readAll(), content);
 
     pf.removeSource(&client);
     client.setReqFile(nullptr);
@@ -368,6 +376,12 @@ void tst_URLClient::fetch_overHttps()
     QVERIFY(server.port() != 0);
 
     eMule::testing::TempDir tmp;
+    // Without one the finished file is delivered to the root of the drive
+    const QString incoming = tmp.filePath(QStringLiteral("incoming"));
+    QVERIFY(QDir().mkpath(incoming));
+    const QString savedIncoming = thePrefs.incomingDir();
+    thePrefs.setIncomingDir(incoming);
+    const auto restoreIncoming = qScopeGuard([savedIncoming] { thePrefs.setIncomingDir(savedIncoming); });
     PartFile pf;
     pf.setFileName(QStringLiteral("from_the_web_tls.bin"));
     pf.setFileSize(static_cast<uint64>(content.size()));
@@ -395,9 +409,11 @@ void tst_URLClient::fetch_overHttps()
         QVERIFY(client.urlIsTls());
         QCOMPARE(server.ranges, QList<QByteArray>{"0-" + QByteArray::number(content.size() - 1)});
         pf.flushBuffer();
-        QFile part(QDir(tmp.path()).filePath(pf.partMetFileName().chopped(4)));
-        QVERIFY(part.open(QIODevice::ReadOnly));
-        QCOMPARE(part.readAll(), content);
+        const QString delivered = QDir(incoming).filePath(pf.fileName());
+        QTRY_VERIFY_WITH_TIMEOUT(QFile::exists(delivered), 10000);
+        QFile done(delivered);
+        QVERIFY(done.open(QIODevice::ReadOnly));
+        QCOMPARE(done.readAll(), content);
     } else {
         // The handshake fails; no request ever reaches the server, nothing is written.
         QTRY_VERIFY_WITH_TIMEOUT(client.socket() == nullptr, 10000);
