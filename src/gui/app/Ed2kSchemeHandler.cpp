@@ -3,6 +3,7 @@
 /// @brief Platform-specific ed2k:// URL scheme registration.
 
 #include "app/Ed2kSchemeHandler.h"
+#include "utils/FileAssociation.h"
 #include "utils/Log.h"
 
 #include <QCoreApplication>
@@ -92,10 +93,13 @@ void registerEd2kUrlScheme()
         << "Name=eMule Qt\n"
         << "Exec=" << QCoreApplication::applicationFilePath() << " %u\n"
         << "Icon=emuleqt\n"
+        << "StartupWMClass=emuleqt\n"
         << "Terminal=false\n"
         << "MimeType=x-scheme-handler/ed2k;\n"
         << "NoDisplay=true\n";
     f.close();
+
+    gui::FileAssociation::installDesktopIcons();
 
     QProcess::execute(QStringLiteral("xdg-mime"),
                       {QStringLiteral("default"), QStringLiteral("emuleqt.desktop"),

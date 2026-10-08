@@ -42,6 +42,28 @@ struct RegistryValue {
 [[nodiscard]] QList<DesktopFile> nzbDesktopFiles(const QString& exePath,
                                                  const QString& dataHome);
 
+/// One icon the Linux launcher needs in the hicolor theme.
+struct IconFile {
+    QString path;       ///< absolute, under $XDG_DATA_HOME
+    QString resource;   ///< the qrc PNG it is a copy of
+};
+
+/// Where `Icon=emuleqt` is looked up, one file per size we ship.
+[[nodiscard]] QList<IconFile> hicolorIconFiles(const QString& dataHome);
+
+/// A launcher entry that claims nothing: no MIME types, no schemes. It exists
+/// so the desktop can put an icon on our window -- Wayland has no other way
+/// than a .desktop file named after the app id.
+[[nodiscard]] DesktopFile launcherDesktopFile(const QString& exePath,
+                                              const QString& dataHome);
+
+/// Copy the icons into the user's hicolor theme. Linux only, a no-op elsewhere.
+void installDesktopIcons();
+
+/// installDesktopIcons(), plus the launcher entry when there is none yet. An
+/// existing emuleqt.desktop is left alone: it may carry a registration.
+void installLauncher();
+
 /// The per-user registry values for @p exePath, relative to Software\\Classes.
 [[nodiscard]] QList<RegistryValue> nzbRegistryValues(const QString& exePath);
 
@@ -58,5 +80,9 @@ bool unregisterNzbFileType(QString& error);
 
 /// The MIME type. NZB has no IANA registration; this is the de-facto one.
 inline constexpr auto kNzbMimeType = "application/x-nzb";
+
+/// Basename of the .desktop file, the icon, and the Wayland app id / WM class.
+/// They have to agree or the desktop cannot tie the window to its launcher.
+inline constexpr auto kDesktopId = "emuleqt";
 
 } // namespace eMule::gui::FileAssociation

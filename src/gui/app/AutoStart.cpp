@@ -88,6 +88,7 @@ void setAutoStart(bool enabled)
        << "Type=Application\n"
        << "Name=eMule Qt\n"
        << "Exec=" << QCoreApplication::applicationFilePath() << "\n"
+       << "Icon=emuleqt\n"
        << "X-GNOME-Autostart-enabled=true\n";
 }
 

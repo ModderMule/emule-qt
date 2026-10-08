@@ -113,4 +113,7 @@
       <Filter>Generated Files</Filter>
     </CustomBuild>
   </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\..\resources\appicon.rc" />
+  </ItemGroup>
 </Project>

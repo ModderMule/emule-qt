@@ -1293,6 +1293,9 @@
     <QtRcc Include="..\..\resources\flags.qrc">
       <Filter>Resource Files</Filter>
     </QtRcc>
+    <ResourceCompile Include="..\..\resources\appicon.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
     <None Include="..\..\resources\icons\italic.ico">
       <Filter>Resource Files</Filter>
     </None>

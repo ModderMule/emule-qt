@@ -65,6 +65,7 @@ QList<DesktopFile> nzbDesktopFiles(const QString& exePath, const QString& dataHo
         "Comment=Peer-to-peer and Usenet client\n"
         "Exec=%1 %U\n"
         "Icon=emuleqt\n"
+        "StartupWMClass=emuleqt\n"
         "Terminal=false\n"
         "Categories=Network;FileTransfer;P2P;\n"
         // The ed2k scheme comes along for free here. The macOS bundle has
@@ -89,6 +90,105 @@ QList<DesktopFile> nzbDesktopFiles(const QString& exePath, const QString& dataHo
         {QDir(dataHome).filePath(QStringLiteral("mime/packages/%1").arg(kMimeFileName)), mime},
     };
 }
+
+QList<IconFile> hicolorIconFiles(const QString& dataHome)
+{
+    QList<IconFile> files;
+    for (const int size : {16, 32, 48, 64, 128, 256}) {
+        files.append({QDir(dataHome).filePath(
+                          QStringLiteral("icons/hicolor/%1x%1/apps/%2.png")
+                              .arg(size).arg(QLatin1String(kDesktopId))),
+                      QStringLiteral(":/icons/app/emuleqt-%1.png").arg(size)});
+    }
+    return files;
+}
+
+DesktopFile launcherDesktopFile(const QString& exePath, const QString& dataHome)
+{
+    return {QDir(dataHome).filePath(QStringLiteral("applications/%1").arg(kDesktopFileName)),
+            QStringLiteral(
+                "[Desktop Entry]\n"
+                "Type=Application\n"
+                "Name=eMule Qt\n"
+                "Comment=Peer-to-peer and Usenet client\n"
+                "Exec=%1\n"
+                "Icon=emuleqt\n"
+                "StartupWMClass=emuleqt\n"
+                "Terminal=false\n"
+                "Categories=Network;FileTransfer;P2P;\n")
+                .arg(quoteExec(exePath))};
+}
+
+#ifdef Q_OS_LINUX
+
+void installDesktopIcons()
+{
+    const QString dataHome =
+        QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+    if (dataHome.isEmpty())
+        return;
+
+    bool changed = false;
+    for (const auto& icon : hicolorIconFiles(dataHome)) {
+        QFile source(icon.resource);
+        if (!source.open(QIODevice::ReadOnly))
+            continue;
+        const QByteArray png = source.readAll();
+
+        // Runs at every start, so only touch the disk when the art changed.
+        QFile target(icon.path);
+        if (target.open(QIODevice::ReadOnly) && target.readAll() == png)
+            continue;
+        target.close();
+
+        if (!QDir().mkpath(QFileInfo(icon.path).absolutePath())
+            || !target.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            logWarning(QStringLiteral("Cannot write %1").arg(icon.path));
+            continue;
+        }
+        target.write(png);
+        changed = true;
+    }
+
+    if (changed) {
+        refresh(QStringLiteral("gtk-update-icon-cache"),
+                {QStringLiteral("-q"), QStringLiteral("-t"), QStringLiteral("-f"),
+                 QDir(dataHome).filePath(QStringLiteral("icons/hicolor"))});
+    }
+}
+
+void installLauncher()
+{
+    installDesktopIcons();
+
+    const QString dataHome =
+        QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation);
+    if (dataHome.isEmpty())
+        return;
+
+    const DesktopFile launcher = launcherDesktopFile(exePath(), dataHome);
+    if (QFile::exists(launcher.path))
+        return;
+
+    QDir().mkpath(QFileInfo(launcher.path).absolutePath());
+    QFile file(launcher.path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        logWarning(QStringLiteral("Cannot write %1").arg(launcher.path));
+        return;
+    }
+    file.write(launcher.contents.toUtf8());
+    file.close();
+
+    refresh(QStringLiteral("update-desktop-database"),
+            {QDir(dataHome).filePath(QStringLiteral("applications"))});
+}
+
+#else
+
+void installDesktopIcons() {}
+void installLauncher() {}
+
+#endif
 
 QList<RegistryValue> nzbRegistryValues(const QString& exePath)
 {
@@ -196,6 +296,8 @@ bool registerNzbFileType(QString& error)
         error = QObject::tr("No writable data directory.");
         return false;
     }
+
+    installDesktopIcons();
 
     for (const auto& entry : nzbDesktopFiles(exePath(), dataHome)) {
         if (!QDir().mkpath(QFileInfo(entry.path).absolutePath())) {
