@@ -17,6 +17,8 @@
 namespace eMule {
 
 inline constexpr auto kHashFailureFileName = "hashfailures.dat";
+/// Same format, written by AICHSyncThread: files whose AICH hashset could not be built.
+inline constexpr auto kAICHFailureFileName = "aichfailures.dat";
 inline constexpr uint8 kHashFailureFileVersion = 1;
 inline constexpr uint32 kHashFailureMaxRecords = 100'000;
 

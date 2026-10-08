@@ -88,11 +88,11 @@ void connectKadNotesSearch(DetailDialog* dialog, IpcClient* ipc,
 ///                the Prev/Next arrows — MFC likewise omits them for ChatSelector
 ///                and FriendListCtrl.
 ///
-/// Nothing happens when the daemon does not know the client: an offline friend has
-/// no entry in the client list, and the original answers that case with its
-/// CAddFriend sheet rather than a detail dialog.
+/// When the daemon does not know the client — an offline friend has no entry in the
+/// client list — @p onUnknown runs instead; the friend list answers that case with
+/// its CAddFriend-style sheet, as the original does.
 void showClientDetails(QWidget* parent, IpcClient* ipc, const QString& clientHash,
-                       DetailWalker walker = {});
+                       DetailWalker walker = {}, std::function<void()> onUnknown = {});
 
 /// Wire the Comments page's "Edit spam filter..." to a single-key SetPreferences
 /// push, keeping the GUI's own Preferences mirror in step. The daemon applies the

@@ -14,10 +14,22 @@
 #include "utils/Log.h"
 #include "utils/SafeFile.h"
 
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QMutexLocker>
 
 namespace eMule {
+
+namespace {
+
+/// One spelling per file, for the failure records.
+QString failureKey(const QString& path)
+{
+    return QDir::cleanPath(QFileInfo(path).absoluteFilePath());
+}
+
+} // namespace
 
 AICHSyncThread::AICHSyncThread(const QString& configDir, SharedFileList* sharedFiles,
                                QObject* parent)
@@ -86,6 +98,11 @@ void AICHSyncThread::run()
             m_jobs.pop_front();
         }
 
+        // Missing, locked or resized: fails at once and is worth another try next time.
+        const QFileInfo info(job.path);
+        const bool readInFull = info.isFile() && info.isReadable()
+            && static_cast<uint64>(info.size()) == job.size;
+
         AICHRecoveryHashSet hashSet(job.size);
         bool ok = KnownFile::buildAICHHashSet(job.path, job.size, hashSet);
         QByteArray master;
@@ -96,7 +113,7 @@ void AICHSyncThread::run()
         }
         if (!ok)
             logWarning(QStringLiteral("Failed to create AICH hashset for %1").arg(job.path));
-        emit hashSetBuilt(job.fileHash, master, ok);
+        emit hashSetBuilt(job.fileHash, master, ok, readInFull);
     }
 }
 
@@ -172,6 +189,14 @@ void AICHSyncThread::onIndexLoaded()
     std::deque<Job> jobs;
     // Reading a set back is disk I/O; the walk holds the shared-map lock.
     std::vector<KnownFile*> needPartHashes;
+
+    m_failures.clear();
+    const QString failurePath = m_configDir + u'/' + QLatin1String(kAICHFailureFileName);
+    for (const HashFailureRecord& rec : HashFailureFile::read(failurePath))
+        m_failures.insert(failureKey(rec.directory + u'/' + rec.filename), rec);
+    const qsizetype failuresLoaded = m_failures.size();
+    QHash<QString, HashFailureRecord> stillFailing;
+
     if (m_sharedFiles && !isClosing()) {
         m_sharedFiles->forEachFile([&](KnownFile* file) {
             if (file->isPartFile())
@@ -188,10 +213,23 @@ void AICHSyncThread::onIndexLoaded()
             file->setAICHRecoverHashSetAvailable(false);
             if (file->filePath().isEmpty())
                 return;
+            if (failedBefore(file->filePath(), static_cast<uint64>(file->fileSize()))) {
+                const QString key = failureKey(file->filePath());
+                stillFailing.insert(key, m_failures.value(key));
+                return;
+            }
             jobs.push_back({QByteArray(reinterpret_cast<const char*>(file->fileHash()), 16),
                             file->filePath(), static_cast<uint64>(file->fileSize())});
         });
     }
+
+    // Records of files that changed, got their set or left the share are done with.
+    m_failures = std::move(stillFailing);
+    if (m_failures.size() != failuresLoaded)
+        saveFailures();
+    if (!m_failures.isEmpty())
+        logInfo(QStringLiteral("AICH sync: %1 files skipped, their hashset could not be built before")
+                    .arg(m_failures.size()));
 
     // Same thread as every add and remove of the share, so the pointers are still good.
     for (KnownFile* file : needPartHashes)
@@ -215,7 +253,7 @@ void AICHSyncThread::onIndexLoaded()
 }
 
 void AICHSyncThread::onHashSetBuilt(const QByteArray& fileHash, const QByteArray& masterHash,
-                                    bool success)
+                                    bool success, bool readInFull)
 {
     // By hash, not by pointer: the file may have been unshared or replaced meanwhile.
     KnownFile* file = (m_sharedFiles && fileHash.size() == 16)
@@ -226,8 +264,42 @@ void AICHSyncThread::onHashSetBuilt(const QByteArray& fileHash, const QByteArray
             AICHHash(reinterpret_cast<const uint8*>(masterHash.constData())));
         applyStoredHashSet(file);
         file->setAICHRecoverHashSetAvailable(true);
+        // The hash lives in known.met. Left to the save interval, a daemon that is
+        // killed before it comes round reads the same files again at the next start.
+        if (m_knownFiles)
+            m_knownFiles->markDirty();
+    } else if (file && !file->isPartFile() && !success && readInFull) {
+        const QFileInfo info(file->filePath());
+        if (info.isFile()) {
+            m_failures.insert(failureKey(file->filePath()),
+                              {info.absolutePath(), info.fileName(), static_cast<uint64>(info.size()),
+                               static_cast<time_t>(info.lastModified().toSecsSinceEpoch())});
+            saveFailures();
+        }
     }
     emit fileHashed(fileHash, success);
+}
+
+bool AICHSyncThread::failedBefore(const QString& path, uint64 size) const
+{
+    const auto it = m_failures.constFind(failureKey(path));
+    if (it == m_failures.constEnd() || it->size != size)
+        return false;
+    const QFileInfo info(path);
+    return info.isFile() && static_cast<uint64>(info.size()) == it->size
+        && static_cast<time_t>(info.lastModified().toSecsSinceEpoch()) == it->mtime;
+}
+
+void AICHSyncThread::saveFailures() const
+{
+    const QString path = m_configDir + u'/' + QLatin1String(kAICHFailureFileName);
+    if (m_failures.isEmpty()) {
+        QFile::remove(path);   // nothing to say: no empty file
+        return;
+    }
+    const std::vector<HashFailureRecord> records(m_failures.cbegin(), m_failures.cend());
+    if (!HashFailureFile::write(path, records))
+        logWarning(QStringLiteral("AICH sync: could not write %1").arg(path));
 }
 
 bool AICHSyncThread::collectKeepSet(std::unordered_set<AICHHash>& keep) const

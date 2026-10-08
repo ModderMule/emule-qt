@@ -30,6 +30,8 @@ class QTreeWidget;
 
 namespace eMule {
 
+class IpcClient;
+
 class IrcClient;
 
 /// mIRC formatting state, carried across the pieces of one message.
@@ -73,12 +75,26 @@ public:
     /// Set a custom font on all IRC text browsers.
     void setCustomFont(const QFont& font);
 
+    /// The daemon link, for eMule's add-friend / send-link exchange only: our own
+    /// identity for the reply, and the friend list.
+    void setIpcClient(IpcClient* ipc) { m_ipc = ipc; }
+
+    /// The eD2K link "Send this to friend" offers, set from Shared Files' "Add To
+    /// IRC Clipboard" (MFC CIrcWnd::SetSendFileString).
+    void setSendLink(const QString& link) { m_sendLink = link; }
+
+    [[nodiscard]] bool isIrcConnected() const;
+
 signals:
     /// A link in a channel, private or status tab was clicked. Carries the link as
     /// PLAIN TEXT, not a QUrl: an eD2K link is not a representable QUrl, and one
     /// built from it stringifies back to an empty string (see TextLinks.h).
     /// main.cpp routes it, which is why this panel needs no IpcClient of its own.
     void linkActivated(const QString& link);
+    /// A peer sent an eD2K link and the options let it in: start it.
+    void linkReceived(const QString& link);
+    /// Logged in or gone; Shared Files greys "Add To IRC Clipboard" with it.
+    void ircConnectionChanged(bool connected);
 
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;
@@ -120,6 +136,8 @@ private slots:
     void onChannelListStarted();
     void onChannelListFinished();
     void onNickInUse(const QString& nick);
+    void onEmuleProto(const QString& nick, const QString& body);
+    void onNickContextMenu(const QPoint& pos);
 
 private:
     void setupUi();
@@ -142,6 +160,16 @@ private:
 
     // Nick list
     void updateNickList();
+    /// The selected nick without its mode prefix; empty when none.
+    [[nodiscard]] QString selectedNick() const;
+    void openPrivateChannel(const QString& nick);
+    void joinSelectedChannels(QTreeWidget* tree);
+
+    // eMule's CTCP extensions (IrcEmuleProto.h)
+    void requestFriend(const QString& nick);
+    void sendLinkTo(const QString& nick);
+    void answerFriendRequest(const QString& nick, const QString& verify);
+    void protoNotice(const QString& text);
 
     // Input processing
     void processInput(const QString& text);
@@ -157,6 +185,10 @@ private:
 
     // Members
     IrcClient* m_irc = nullptr;
+    IpcClient* m_ipc = nullptr;
+    QString m_sendLink;             ///< link "Send this to friend" offers
+    quint32 m_verify = 0;           ///< nonce of our pending friend request, 0 = none
+    qint64 m_lastProtoRequestMs = 0;   ///< flood guard, as MFC m_dwLastRequest
 
     // Layout widgets
     QSplitter* m_splitter = nullptr;

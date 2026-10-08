@@ -14,6 +14,7 @@
 #include "app/UiState.h"
 #include "utils/IpcFeedback.h"
 #include "utils/PanelPoller.h"
+#include "utils/StatusBarNotifier.h"
 #include "utils/UrlPrefField.h"
 
 #include "IpcMessage.h"
@@ -26,6 +27,7 @@
 #include <QCborArray>
 #include <QCborMap>
 #include <QDir>
+#include <QEvent>
 #include <QFile>
 #include <QFont>
 #include <QFrame>
@@ -169,59 +171,62 @@ void KadPanel::onBootstrapClicked()
         return;
 
     if (m_bootstrapIpRadio->isChecked()) {
-        const QString  ip   = m_ipEdit->text().trimmed();
-        const uint16_t port = static_cast<uint16_t>(m_portEdit->text().trimmed().toUShort());
-        if (ip.isEmpty() || port == 0)
+        // "ip:port" in the address box is split (MFC KademliaWnd.cpp:262-268)
+        QString ip = m_ipEdit->text().trimmed();
+        if (const qsizetype colon = ip.indexOf(u':'); colon >= 0) {
+            m_portEdit->setText(ip.mid(colon + 1));
+            ip.truncate(colon);
+            m_ipEdit->setText(ip);
+        }
+        const uint16_t port = m_portEdit->text().trimmed().toUShort();
+        if (ip.size() < 7 || port == 0) {
+            (port ? m_ipEdit : m_portEdit)->setFocus();
             return;
+        }
         IpcMessage msg(IpcMsgType::BootstrapKad);
         msg.append(ip);
         msg.append(qint64(port));
         m_ipc->sendRequest(std::move(msg));
-    } else {
+    } else if (m_bootstrapUrlRadio->isChecked()) {
         const QString url = urlPrefFieldValue(m_urlEdit, Preferences::kDefaultNodesDatURL);
+        if (!url.contains(QLatin1String("://"))) {
+            StatusBarNotifier::post(tr("The URL is invalid."));
+            return;
+        }
 
+        m_downloadingNodes = true;
         m_bootstrapBtn->setEnabled(false);
         m_bootstrapBtn->setText(tr("Downloading..."));
 
-        // nodes.dat mirrors are commonly gzipped; unwrapping is transparent for a plain one.
-        eMule::HttpFileDownload::Options opts;
-        opts.preferredNames = {QStringLiteral("nodes.dat")};
-
-        eMule::HttpFileDownload::get(this, QUrl(url), opts,
-            [this](bool ok, const QByteArray& data, const QString& entryName,
-                   const QString& error) {
-                Q_UNUSED(entryName);
-                m_bootstrapBtn->setEnabled(true);
-                m_bootstrapBtn->setText(tr("Bootstrap"));
-
-                if (!ok) {
-                    QMessageBox::warning(this, tr("Kademlia"),
-                        tr("Failed to download nodes.dat: %1").arg(error));
-                    return;
-                }
-                if (data.isEmpty()) {
-                    QMessageBox::warning(this, tr("Kademlia"),
-                        tr("Downloaded nodes.dat is empty."));
-                    return;
-                }
-
-                const QString path = QDir(thePrefs.configDir()).filePath(QStringLiteral("nodes.dat"));
-                QFile f(path);
-                if (!f.open(QIODevice::WriteOnly)) {
-                    QMessageBox::warning(this, tr("Kademlia"),
-                        tr("Failed to save nodes.dat: %1").arg(f.errorString()));
-                    return;
-                }
-                f.write(data);
-                f.close();
-
-                // Bootstrap from the downloaded nodes.dat file
-                IpcMessage msg(IpcMsgType::BootstrapKad);
-                msg.append(QString());   // empty IP = bootstrap from nodes.dat file
-                msg.append(qint64(0));  // port 0
-                m_ipc->sendRequest(std::move(msg));
-            });
+        // The daemon fetches and reads it, also while Kad is already running
+        IpcMessage msg(IpcMsgType::ImportKadNodes);
+        msg.append(url);
+        m_ipc->sendRequest(std::move(msg), [self = QPointer<KadPanel>(this)](const IpcMessage& resp) {
+            if (!self)
+                return;
+            self->m_downloadingNodes = false;
+            self->m_bootstrapBtn->setText(tr("Bootstrap"));
+            self->updateBootstrapButton();
+            IpcFeedback::checkOrWarn(resp, self, tr("Kademlia"));
+        });
+    } else if (!m_kadRunning) {
+        // From known clients: just start; hellos from peers do the rest
+        IpcMessage msg(IpcMsgType::BootstrapKad);
+        msg.append(QString{});
+        msg.append(qint64(0));
+        m_ipc->sendRequest(std::move(msg));
     }
+}
+
+bool KadPanel::eventFilter(QObject* watched, QEvent* event)
+{
+    if (event->type() == QEvent::FocusIn) {
+        if (watched == m_ipEdit || watched == m_portEdit)
+            m_bootstrapIpRadio->setChecked(true);
+        else if (watched == m_urlEdit)
+            m_bootstrapUrlRadio->setChecked(true);
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 void KadPanel::refreshNodesUrl()
@@ -231,10 +236,6 @@ void KadPanel::refreshNodesUrl()
 
 void KadPanel::onBootstrapTypeChanged()
 {
-    const bool ipMode = m_bootstrapIpRadio->isChecked();
-    m_ipEdit->setEnabled(ipMode);
-    m_portEdit->setEnabled(ipMode);
-    m_urlEdit->setEnabled(!ipMode);
     updateBootstrapButton();
 }
 
@@ -245,15 +246,16 @@ void KadPanel::onBootstrapInputChanged()
 
 void KadPanel::updateBootstrapButton()
 {
-    bool valid = false;
+    if (m_downloadingNodes)
+        return;
+    // MFC CKademliaWnd::UpdateControlsState (KademliaWnd.cpp:377-390): only while
+    // not connected; an address needs a port, typed apart or as "ip:port"
+    bool valid = true;   // known clients; an empty URL means the default
     if (m_bootstrapIpRadio->isChecked()) {
-        const QString ip   = m_ipEdit->text().trimmed();
-        const int     port = m_portEdit->text().trimmed().toInt();
-        valid = !ip.isEmpty() && port >= 1 && port <= 65535;
-    } else {
-        valid = true;   // an empty URL means the default
+        const QString ip = m_ipEdit->text().trimmed();
+        valid = !ip.isEmpty() && (ip.contains(u':') || !m_portEdit->text().trimmed().isEmpty());
     }
-    m_bootstrapBtn->setEnabled(valid);
+    m_bootstrapBtn->setEnabled(valid && !m_kadConnected);
 }
 
 void KadPanel::onDisconnectClicked()
@@ -261,7 +263,7 @@ void KadPanel::onDisconnectClicked()
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
-    if (m_kadRunning) {
+    if (m_kadRunning) {   // Disconnect, or Cancel while still connecting
         IpcMessage msg(IpcMsgType::DisconnectKad);
         m_ipc->sendRequest(std::move(msg));
     } else {
@@ -381,7 +383,10 @@ QWidget* KadPanel::createContactsPanel()
     auto* header = m_contactsView->header();
     header->setStretchLastSection(true);
     header->setDefaultSectionSize(200);
-    // Status, Client ID, Distance, Country.
+    // Type, ID, Distance, Country. Fresh layout: ID first, as MFC
+    // (srchybrid/KadContactListCtrl.cpp:53-55).
+    if (!theUiState.hasHeaderState(QStringLiteral("kadContacts")))
+        header->moveSection(KadContactsModel::ColClientId, 0);
     contactsView->setDefaultSort(KadContactsModel::ColStatus, Qt::AscendingOrder);
     contactsView->bindColumns(QStringLiteral("kadContacts"), {110, 200, 200, 100},
                               {KadContactsModel::ColCountry});
@@ -418,17 +423,16 @@ QWidget* KadPanel::createControlsPanel()
     connect(m_recheckFwBtn,  &QPushButton::clicked, this, &KadPanel::onRecheckFirewall);
     connect(m_disconnectBtn, &QPushButton::clicked, this, &KadPanel::onDisconnectClicked);
 
-    // Mutual-exclusion group for the two radio buttons
+    // Mutual-exclusion group for the three radio buttons
     m_bootstrapGroup = new QButtonGroup(this);
 
     // Row 1: ○ Bootstrap   IP Address: [______]  Port: [___]
     auto* ipRow = new QHBoxLayout;
     ipRow->setSpacing(4);
     m_bootstrapIpRadio = new QRadioButton(tr("Bootstrap"));
-    m_bootstrapIpRadio->setChecked(true);
     m_bootstrapGroup->addButton(m_bootstrapIpRadio);
     ipRow->addWidget(m_bootstrapIpRadio);
-    ipRow->addWidget(new QLabel(tr("IP Address:")));
+    ipRow->addWidget(new QLabel(tr("IP or Address:")));
     m_ipEdit = new QLineEdit;
     m_ipEdit->setPlaceholderText(QStringLiteral("0.0.0.0"));
     ipRow->addWidget(m_ipEdit, 2);
@@ -450,9 +454,19 @@ QWidget* KadPanel::createControlsPanel()
     bindUrlPrefField(m_urlEdit, QStringLiteral("nodesDatURL"), Preferences::kDefaultNodesDatURL,
                      &Preferences::nodesDatURL, &Preferences::setNodesDatURL,
                      [this] { return m_ipc; });
-    m_urlEdit->setEnabled(false);
     urlRow->addWidget(m_urlEdit, 1);
     layout->addLayout(urlRow);
+
+    // Row 3: ○ From known clients — MFC's default (KademliaWnd.cpp:210)
+    m_bootstrapClientsRadio = new QRadioButton(tr("From known clients"));
+    m_bootstrapClientsRadio->setChecked(true);
+    m_bootstrapGroup->addButton(m_bootstrapClientsRadio);
+    layout->addWidget(m_bootstrapClientsRadio);
+
+    // Focusing an edit picks its radio (MFC OnEnSetfocusBootstrapip / ...Nodesdat)
+    m_ipEdit->installEventFilter(this);
+    m_portEdit->installEventFilter(this);
+    m_urlEdit->installEventFilter(this);
 
     // Bootstrap button — right-aligned, disabled until valid input
     m_bootstrapBtn = new QPushButton(tr("Bootstrap"));
@@ -467,6 +481,7 @@ QWidget* KadPanel::createControlsPanel()
     connect(m_bootstrapBtn,      &QPushButton::clicked,  this, &KadPanel::onBootstrapClicked);
     connect(m_bootstrapIpRadio,  &QRadioButton::toggled, this, &KadPanel::onBootstrapTypeChanged);
     connect(m_bootstrapUrlRadio, &QRadioButton::toggled, this, &KadPanel::onBootstrapTypeChanged);
+    connect(m_bootstrapClientsRadio, &QRadioButton::toggled, this, &KadPanel::onBootstrapTypeChanged);
     connect(m_ipEdit,   &QLineEdit::textChanged, this, &KadPanel::onBootstrapInputChanged);
     connect(m_portEdit, &QLineEdit::textChanged, this, &KadPanel::onBootstrapInputChanged);
     connect(m_urlEdit,  &QLineEdit::textChanged, this, &KadPanel::onBootstrapInputChanged);
@@ -532,7 +547,7 @@ QWidget* KadPanel::createSearchesPanel()
     header->setStretchLastSection(true);
     // Number, Key, Type, Name, Status, Load, Packets Sent, Responses.
     searchesView->bindColumns(QStringLiteral("kadSearches"),
-        {60, 170, 100, 240, 100, 60, 90, 90});
+        {80, 170, 100, 240, 100, 60, 90, 90});
 
     layout->addWidget(m_searchesView);
 
@@ -615,9 +630,9 @@ void KadPanel::requestSearches()
             KadSearchRow row;
             row.searchId = static_cast<uint32_t>(m.value(QStringLiteral("searchId")).toInteger());
             row.key      = m.value(QStringLiteral("key")).toString();
-            row.type     = m.value(QStringLiteral("type")).toString();
+            row.typeId   = static_cast<int>(m.value(QStringLiteral("typeId")).toInteger(-1));
             row.name     = m.value(QStringLiteral("name")).toString();
-            row.status   = m.value(QStringLiteral("status")).toString();
+            row.stopping = m.value(QStringLiteral("stopping")).toBool();
             row.load     = static_cast<uint32_t>(m.value(QStringLiteral("load")).toInteger());
             row.loadResponses = static_cast<uint32_t>(m.value(QStringLiteral("loadResponses")).toInteger());
             row.loadTotal = static_cast<uint32_t>(m.value(QStringLiteral("loadTotal")).toInteger());
@@ -652,9 +667,12 @@ void KadPanel::requestStatus()
 
         const QCborMap status = resp.fieldMap(1);
         m_kadRunning = status.value(QStringLiteral("running")).toBool();
-        m_disconnectBtn->setText(m_kadRunning
-            ? tr("Disconnect")
-            : tr("Connect"));
+        m_kadConnected = status.value(QStringLiteral("connected")).toBool();
+        // MFC CKademliaWnd::UpdateControlsState (KademliaWnd.cpp:364-375)
+        m_disconnectBtn->setText(m_kadConnected ? tr("Disconnect")
+                                 : m_kadRunning ? tr("Cancel") : tr("Connect"));
+        m_recheckFwBtn->setEnabled(m_kadConnected);
+        updateBootstrapButton();
     });
 }
 

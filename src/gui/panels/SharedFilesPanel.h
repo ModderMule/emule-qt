@@ -35,6 +35,7 @@ class QTreeWidgetItem;
 namespace eMule {
 
 class ArchivePreviewPanel;
+class FilterEdit;
 class IpcClient;
 class PanelPoller;
 struct SharedFileRow;
@@ -60,12 +61,23 @@ public:
     /// core. Handed out with the daemon's stats, like the other panels' copies.
     void setStreamToken(const QString& token) { m_streamToken = token; }
 
+    /// Re-mark the folder tree from the shared-directory list: overlay and bold in
+    /// "All Directories", and the entries under "Shared Directories".
+    void refreshSharedDirs();
+
 signals:
     /// Ask MainWindow to run this search in the Search panel and switch to it.
     /// Emitted by "Search Author's Collections…", which needs an explicit method and
     /// file type rather than whatever the search UI happens to hold.
     void searchRequested(const QString& expression, const QString& fileType,
                          int method, const QString& title);
+
+    /// "Add To IRC Clipboard": the link the IRC nick menu then offers to send.
+    void ircSendLinkChosen(const QString& ed2kLink);
+
+public slots:
+    /// IRC logged in or gone; the menu entry above is greyed without it.
+    void setIrcConnected(bool connected) { m_ircConnected = connected; }
 
 private slots:
     void onRefreshTimer();
@@ -151,6 +163,8 @@ private:
     // Views
     QTreeView* m_fileView = nullptr;
     QTreeWidget* m_folderTree = nullptr;
+    FilterEdit* m_filterEdit = nullptr;
+    bool m_ircConnected = false;
 
     // Header
     QLabel* m_headerLabel = nullptr;
@@ -244,6 +258,18 @@ private:
     /// File path the Content tab is currently showing — re-setting the same one would
     /// restart the media/archive scan on every poll.
     QString m_shownContentPath;
+
+    /// Folders holding an individually shared file — bold in the tree like a shared one.
+    QStringList m_singleSharedDirs;
+    int m_dirStateFetchId = 0;   // the newest GetSharedDirState; older replies are dropped
+
+    /// Fetch the shared directories and single-file folders, then re-mark the tree.
+    void syncSharedDirState();
+    /// Shared overlay and bold state of one "All Directories" item.
+    void applyShareState(QTreeWidgetItem* item);
+    /// The shared directories as children of "Shared Directories", nested like MFC.
+    void rebuildSharedDirsNode();
+    void showSharedDirMenu(QTreeWidgetItem* item, const QPoint& globalPos);
 
     // Filesystem tree helpers
     void populateFilesystemChildren(QTreeWidgetItem* parentItem);

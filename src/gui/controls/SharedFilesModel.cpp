@@ -4,11 +4,18 @@
 
 #include "controls/SharedFilesModel.h"
 
+#include "controls/FilterEdit.h"
+#include "utils/CompleteSourcesText.h"
 #include "utils/FileTypeText.h"
 #include "utils/OtherFunctions.h"
 #include "utils/PriorityText.h"
 #include "utils/RatingIcons.h"
 #include "utils/StringUtils.h"
+
+#include <QCoreApplication>
+#include <QIcon>
+#include <QPainter>
+#include <QPixmap>
 
 namespace eMule {
 
@@ -27,21 +34,47 @@ int priorityOrdinal(int prio)
     }
 }
 
-/// Shared network display string.
-QString networkDisplay(bool ed2k, bool kad)
+/// MFC's label-tip text for the "Shared eD2K|Kad" cell (SharedFilesCtrl.cpp:649-651).
+QString networkText(bool ed2k, bool kad)
 {
-    if (ed2k && kad) return QStringLiteral("eD2K|Kad");
-    if (ed2k)        return QStringLiteral("eD2K");
-    if (kad)         return QStringLiteral("Kad");
-    return {};
+    const auto yesNo = [](bool on) {
+        return on ? QCoreApplication::translate("eMule::SharedFilesModel", "Yes")
+                  : QCoreApplication::translate("eMule::SharedFilesModel", "No");
+    };
+    return QStringLiteral("%1|%2").arg(yesNo(ed2k), yesNo(kad));
 }
 
-int networkOrdinal(bool ed2k, bool kad)
+/// The cell itself: the server icon, then the Kad icon at a fixed offset
+/// (MFC CSharedFilesCtrl::DrawItem case 11, SharedFilesCtrl.cpp:585-595).
+QVariant networkIcons(bool ed2k, bool kad)
 {
-    if (ed2k && kad) return 3;
-    if (kad)         return 2;
-    if (ed2k)        return 1;
-    return 0;
+    if (!ed2k && !kad)
+        return {};
+    static QPixmap cache[4];
+    QPixmap& pm = cache[(ed2k ? 1 : 0) | (kad ? 2 : 0)];
+    if (pm.isNull()) {
+        pm = QPixmap(36, 16);
+        pm.fill(Qt::transparent);
+        QPainter p(&pm);
+        if (ed2k)
+            QIcon(QStringLiteral(":/icons/FileSharedServer.ico")).paint(&p, 0, 0, 16, 16);
+        if (kad)
+            QIcon(QStringLiteral(":/icons/FileSharedKad.ico")).paint(&p, 20, 0, 16, 16);
+    }
+    return pm;
+}
+
+/// Media length as MFC SecToTimeLength: m:ss or h:mm:ss.
+QString lengthText(int64_t seconds)
+{
+    if (seconds <= 0)
+        return {};
+    if (seconds < 3600)
+        return QStringLiteral("%1:%2").arg(seconds / 60).arg(seconds % 60, 2, 10, QLatin1Char('0'));
+    return QStringLiteral("%1:%2:%3")
+        .arg(seconds / 3600)
+        .arg((seconds % 3600) / 60, 2, 10, QLatin1Char('0'))
+        .arg(seconds % 60, 2, 10, QLatin1Char('0'));
 }
 
 } // anonymous namespace
@@ -66,6 +99,8 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
         return fileMarksIcon(f.fileType, f.containerSuspect, f.ownComment,
                              ratingMark(f.hasComment, f.userRating));
     }
+    if (role == Qt::DecorationRole && index.column() == ColSharedNetworks)
+        return networkIcons(f.publishedED2K, f.kadPublished);
 
     if (role == Qt::DisplayRole) {
         switch (index.column()) {
@@ -88,11 +123,22 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
             return QStringLiteral("%1%").arg(pct, 0, 'f', 0);
         }
         case ColCompleteSources:
-            return f.completeSources;
+            return completeSourcesText(f.completeSourcesLo, f.completeSourcesHi, false);
         case ColSharedNetworks:
-            return networkDisplay(f.publishedED2K, f.kadPublished);
+            return {};   // icons only
         case ColFolder:
             return f.path;
+        case ColFileId:
+            return f.hash.toUpper();
+        case ColAccepted:
+            return QStringLiteral("%1 (%2)").arg(f.acceptedUploads).arg(f.allTimeAccepted);
+        case ColArtist:  return f.artist;
+        case ColAlbum:   return f.album;
+        case ColTitle:   return f.title;
+        case ColLength:  return lengthText(f.length);
+        case ColBitrate:
+            return f.bitrate > 0 ? tr("%1 Kbit/s").arg(f.bitrate) : QString();
+        case ColCodec:   return f.codec;
         default: break;
         }
     }
@@ -107,14 +153,15 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
             "Accepted:\t%7 (%8)\n"
             "Transferred:\t%9 (%10)\n"
             "Complete Sources:\t%11\n"
-            "Folder:\t%12")
+            "Shared eD2K|Kad:\t%12\n"
+            "Folder:\t%13")
             .arg(f.fileName, f.hash, fileTypeText(f.fileType, f.fileName),
                  uploadPriorityText(f.upPriority, f.isAutoUpPriority))
             .arg(f.requests).arg(f.allTimeRequests)
             .arg(f.acceptedUploads).arg(f.allTimeAccepted)
             .arg(formatByteSize(f.transferred), formatByteSize(f.allTimeTransferred))
-            .arg(f.completeSources)
-            .arg(f.path);
+            .arg(completeSourcesText(f.completeSourcesLo, f.completeSourcesHi, false),
+                 networkText(f.publishedED2K, f.kadPublished), f.path);
         // The marks in column 0 explain themselves here, worded exactly as they are
         // in the download list — same helper, same cell, same sentence.
         return QString(tip + fileMarksTooltip(f.fileName, f.containerSuspect,
@@ -135,9 +182,31 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
             return 100.0 * static_cast<double>(f.completedSize) / static_cast<double>(f.fileSize);
         }
         case ColCompleteSources: return f.completeSources;
-        case ColSharedNetworks:  return networkOrdinal(f.publishedED2K, f.kadPublished);
+        // eD2K first, Kad as the second key (SharedFilesCtrl.cpp:1208-1210, :1239-1245)
+        case ColSharedNetworks:  return (f.publishedED2K ? 2 : 0) + (f.kadPublished ? 1 : 0);
         case ColFolder:          return f.path;
+        case ColFileId:          return f.hash.toLower();
+        case ColAccepted:        return QVariant::fromValue(f.allTimeAccepted);
+        case ColArtist:          return f.artist;
+        case ColAlbum:           return f.album;
+        case ColTitle:           return f.title;
+        case ColLength:          return QVariant::fromValue(f.length);
+        case ColBitrate:         return QVariant::fromValue(f.bitrate);
+        case ColCodec:           return f.codec;
         default: break;
+        }
+    }
+
+    // MFC's "undefined at bottom" comparers (SharedFilesCtrl.cpp:1211-1228)
+    if (role == UndefinedRole) {
+        switch (index.column()) {
+        case ColArtist:  return f.artist.isEmpty();
+        case ColAlbum:   return f.album.isEmpty();
+        case ColTitle:   return f.title.isEmpty();
+        case ColLength:  return f.length <= 0;
+        case ColBitrate: return f.bitrate <= 0;
+        case ColCodec:   return f.codec.isEmpty();
+        default:         return false;
         }
     }
 
@@ -207,8 +276,16 @@ QVariant SharedFilesModel::headerData(int section, Qt::Orientation orientation, 
     case ColTransferred:     return tr("Transferred Data");
     case ColSharedParts:     return tr("Shared parts");
     case ColCompleteSources: return tr("Complete Sources");
-    case ColSharedNetworks:  return tr("Shared eD2K/Kad");
+    case ColSharedNetworks:  return tr("Shared eD2K|Kad");
     case ColFolder:          return tr("Folder");
+    case ColFileId:          return tr("File ID");
+    case ColAccepted:        return tr("Accepted Requests");
+    case ColArtist:          return tr("Artist");
+    case ColAlbum:           return tr("Album");
+    case ColTitle:           return tr("Title");
+    case ColLength:          return tr("Length");
+    case ColBitrate:         return tr("Bitrate");
+    case ColCodec:           return tr("Codec");
     default:                 return {};
     }
 }
@@ -387,6 +464,22 @@ void SharedFilesSortProxy::setFolderFilter(SharedFilterType type, const QString&
 #endif
 }
 
+void SharedFilesSortProxy::setTextFilter(const QStringList& tokens, int column)
+{
+    if (m_tokens == tokens && m_tokenColumn == column)
+        return;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
+    beginFilterChange();
+    m_tokens = tokens;
+    m_tokenColumn = column;
+    endFilterChange();
+#else
+    m_tokens = tokens;
+    m_tokenColumn = column;
+    invalidateFilter();
+#endif
+}
+
 bool SharedFilesSortProxy::filterAcceptsRow(int sourceRow, const QModelIndex& /*sourceParent*/) const
 {
     auto* model = qobject_cast<SharedFilesModel*>(sourceModel());
@@ -394,6 +487,11 @@ bool SharedFilesSortProxy::filterAcceptsRow(int sourceRow, const QModelIndex& /*
         return true;
     const auto* f = model->fileAt(sourceRow);
     if (!f)
+        return false;
+
+    // The cell's text, as MFC matches GetItemDisplayText
+    if (!m_tokens.isEmpty()
+        && !FilterEdit::matches(m_tokens, model->index(sourceRow, m_tokenColumn).data().toString()))
         return false;
 
     switch (m_filterType) {
@@ -426,6 +524,12 @@ bool SharedFilesSortProxy::filterAcceptsRow(int sourceRow, const QModelIndex& /*
 
 bool SharedFilesSortProxy::lessThan(const QModelIndex& left, const QModelIndex& right) const
 {
+    // Rows without a value stay last whichever way the column is sorted
+    const bool lu = sourceModel()->data(left, SharedFilesModel::UndefinedRole).toBool();
+    const bool ru = sourceModel()->data(right, SharedFilesModel::UndefinedRole).toBool();
+    if (lu != ru)
+        return (sortOrder() == Qt::AscendingOrder) == ru;
+
     const QVariant lv = sourceModel()->data(left, Qt::UserRole);
     const QVariant rv = sourceModel()->data(right, Qt::UserRole);
 

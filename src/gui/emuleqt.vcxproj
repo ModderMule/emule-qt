@@ -329,8 +329,10 @@
     <ClInclude Include="utils\NzbDrop.h" />
     <ClInclude Include="utils\PriorityText.h" />
     <ClInclude Include="utils\ClientStateText.h" />
+    <ClInclude Include="utils\CompleteSourcesText.h" />
     <ClInclude Include="utils\FileTypeText.h" />
     <ClInclude Include="utils\TooltipDelayStyle.h" />
+    <ClInclude Include="utils\SharedDirState.h" />
     <ClInclude Include="utils\SharedFilesFetch.h" />
     <ClInclude Include="utils\Smileys.h" />
     <ClInclude Include="utils\RatingIcons.h" />

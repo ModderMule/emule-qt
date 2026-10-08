@@ -145,6 +145,11 @@ public:
     /// Update the eD2K status label in the footer. \p firewalled is the combined
     /// ed2k+kad state (tray icon), \p lowID the per-network eD2K LowID (label colour).
     void setEd2kStatus(bool connected, bool connecting, bool firewalled, bool lowID);
+    /// The connected server, for the eD2K pane's tooltip. Call before setEd2kStatus().
+    void setEd2kServer(const QString& name, qint64 users);
+    /// Upload SpeedSense pane (MFC SBarUSS): hidden while the option is off.
+    void setUssStatus(bool enabled, bool active, qint64 limitBytes, qint64 latencyMs,
+                      qint64 lowestMs, bool msTolerance);
 
     /// The daemon's selected network interface is missing: nothing can connect.
     /// Shown in place of "Disconnected", with @p reason as the tooltip. Call before
@@ -286,6 +291,9 @@ private:
     QLabel* m_statusUpLabel = nullptr;
     QLabel* m_statusDownLabel = nullptr;
     QLabel* m_statusEd2k = nullptr;
+    QLabel* m_statusUss = nullptr;    ///< Upload SpeedSense ping, MFC SBarUSS
+    QString m_ed2kServerName;
+    qint64 m_ed2kServerUsers = 0;
     QLabel* m_statusKad = nullptr;
     QLabel* m_statusChat = nullptr;   ///< unread-message icon, MFC SBarChatMsg
     ConnectionStatusWidget* m_connStatus = nullptr;

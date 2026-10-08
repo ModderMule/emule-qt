@@ -25,6 +25,9 @@ public:
     /// falls back to 0 when its column is no longer there.
     void setHeader(QHeaderView* header);
 
+    /// Columns the menu never offers (MFC CEditDelayed::OnInit's ignore list).
+    void setIgnoredColumns(const QList<int>& columns) { m_ignored = columns; }
+
     [[nodiscard]] int filterColumn() const { return m_column; }
 
     /// Split a filter text into MFC's tokens: space separated, a lone "-" dropped.
@@ -50,6 +53,7 @@ private:
     QPointer<QHeaderView> m_header;
     QTimer* m_timer = nullptr;
     int m_column = 0;
+    QList<int> m_ignored;
     QStringList m_lastTokens;
     int m_lastColumn = 0;
 };

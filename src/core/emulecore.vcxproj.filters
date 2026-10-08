@@ -192,6 +192,9 @@
     <ClCompile Include="chat\IrcClient.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="chat\IrcEmuleProto.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="kademlia\KadContact.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -316,6 +319,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="files\PartFileWriteThread.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\DiskLoadLimiter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\FileDate.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="utils\PathUtils.cpp">
@@ -701,6 +710,9 @@
     <ClInclude Include="chat\IrcMessage.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="chat\IrcEmuleProto.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="webserver\JsonSerializers.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -869,6 +881,12 @@
     <QtMoc Include="files\PartFileWriteThread.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <ClInclude Include="utils\DiskLoadLimiter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\FileDate.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\PathUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>

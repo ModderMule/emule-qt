@@ -255,6 +255,9 @@ private slots:
     void kademliaCountersCarrySharesInBothScopes();
     void kademliaCountriesUpdateInPlace();
     void clientsSeenByCountryInBothScopes();
+    void copiesFollowTheExpansionState();
+    void htmlMarksSectionsAndExportsAPage();
+    void expandMainSectionsOpensOnlySections();
 };
 
 void tst_StatisticsPanel::usenetIsTheLastBranchAndMfcsOrderStays()
@@ -731,6 +734,94 @@ void tst_StatisticsPanel::kademliaCountriesUpdateInPlace()
         tree->scrollToItem(kad, QAbstractItemView::PositionAtTop);
         QApplication::processEvents();
         QVERIFY(panel.grab().save(QString::fromLocal8Bit(shot)));
+    }
+}
+
+// MFC CStatisticsTree::GetText (srchybrid/StatisticsTree.cpp:371-398)
+void tst_StatisticsPanel::copiesFollowTheExpansionState()
+{
+    StatisticsPanel panel;
+    auto* tree = panel.findChild<QTreeWidget*>();
+    QVERIFY(tree);
+    tree->collapseAll();
+    QTreeWidgetItem* transfer = tree->topLevelItem(0);
+    QVERIFY(transfer->childCount() > 0);
+
+    // collapsed: the bare line, no header, no line end
+    QCOMPARE(panel.treeText(true, transfer), transfer->text(0));
+
+    transfer->setExpanded(true);
+    const QString branch = panel.treeText(true, transfer);
+    QVERIFY(branch.startsWith(QStringLiteral("eMule Qt v")));
+    QVERIFY(branch.contains(QStringLiteral("\r\n\r\n") + transfer->text(0) + QStringLiteral("\r\n")));
+    // children three spaces in, grandchildren stay out while their parent is closed
+    QVERIFY(branch.contains(QStringLiteral("\r\n   ") + transfer->child(0)->text(0)));
+    QVERIFY(!branch.contains(QStringLiteral("\r\n      ")));
+    // only this branch
+    QVERIFY(!branch.contains(tree->topLevelItem(1)->text(0)));
+
+    const QString visible = panel.treeText(true);
+    const QString all = panel.treeText(false);
+    QVERIFY(visible.contains(tree->topLevelItem(1)->text(0)));
+    QVERIFY(all.size() > visible.size());
+    QVERIFY(all.contains(QStringLiteral("\r\n      ")));
+}
+
+// MFC CStatisticsTree::GetHTML / ExportHTML
+void tst_StatisticsPanel::htmlMarksSectionsAndExportsAPage()
+{
+    StatisticsPanel panel;
+    auto* tree = panel.findChild<QTreeWidget*>();
+    QVERIFY(tree);
+    tree->collapseAll();
+    QTreeWidgetItem* transfer = tree->topLevelItem(0);
+    transfer->setExpanded(true);
+    QVERIFY(StatisticsPanel::isSection(transfer));
+    QVERIFY(!StatisticsPanel::isSection(transfer->child(0)));   // a ratio line
+
+    const QString html = panel.treeHtml(true, transfer);
+    QVERIFY(html.startsWith(QStringLiteral("<font face=")));
+    QVERIFY(html.endsWith(QStringLiteral("</font>")));
+    QVERIFY(html.contains(QStringLiteral("<b>%1</b><br>").arg(transfer->text(0).toHtmlEscaped())));
+    QVERIFY(html.contains(QStringLiteral("&nbsp;&nbsp;&nbsp;")
+                          + transfer->child(0)->text(0).toHtmlEscaped() + QStringLiteral("<br>")));
+    QVERIFY(!html.contains(tree->topLevelItem(1)->text(0).toHtmlEscaped()));
+
+    const QString page = panel.exportPageHtml();
+    QVERIFY(page.startsWith(QStringLiteral("<!DOCTYPE HTML SYSTEM>")));
+    QVERIFY(page.contains(QStringLiteral("function togglevisible(treepart)")));
+    // every node is in, the open one shown and a closed one hidden
+    QVERIFY(page.contains(QStringLiteral("<div id=\"T1\" style=\"margin-left:18px\">")));
+    QVERIFY(page.contains(QStringLiteral("visibility:hidden; position:absolute")));
+    QVERIFY(page.contains(tree->topLevelItem(1)->text(0).toHtmlEscaped()));
+    // nothing beside the page: the images are embedded
+    QVERIFY(page.contains(QStringLiteral("data:image/gif;base64,R0lG")));
+    QVERIFY(!page.contains(QStringLiteral("stats_visible.gif")));
+}
+
+// MFC CStatisticsTree::ExpandAll(true) (srchybrid/StatisticsTree.cpp:595-615)
+void tst_StatisticsPanel::expandMainSectionsOpensOnlySections()
+{
+    StatisticsPanel panel;
+    auto* tree = panel.findChild<QTreeWidget*>();
+    QVERIFY(tree);
+    tree->expandAll();
+    panel.expandMainSections();
+
+    QTreeWidgetItem* transfer = tree->topLevelItem(0);
+    QVERIFY(transfer->isExpanded());
+    for (int i = 0; i < transfer->childCount(); ++i) {
+        QTreeWidgetItem* child = transfer->child(i);
+        if (child->childCount() == 0)
+            continue;
+        QCOMPARE(child->isExpanded(), StatisticsPanel::isSection(child));
+        for (int j = 0; j < child->childCount(); ++j) {
+            QTreeWidgetItem* grand = child->child(j);
+            for (int k = 0; k < grand->childCount(); ++k)
+                if (grand->child(k)->childCount() > 0)
+                    QCOMPARE(grand->child(k)->isExpanded(),
+                             grand->isExpanded() && StatisticsPanel::isSection(grand->child(k)));
+        }
     }
 }
 

@@ -449,10 +449,11 @@ Status startKad(const QString& host, uint16 port)
     if (!BindAddress::outboundAllowed())
         return Status::fail(409, BindAddress::current().reason);
 
+    // MFC starts Kad before bootstrapping from an address (KademliaWnd.cpp:282-286)
+    if (!kad->isRunning())
+        kad->start();
     if (!host.isEmpty() && port > 0)
         kad->bootstrap(host, port);
-    else if (!kad->isRunning())
-        kad->start();
     return {};
 }
 

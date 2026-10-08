@@ -35,7 +35,16 @@ FilterEdit::FilterEdit(QWidget* parent)
 
 void FilterEdit::setHeader(QHeaderView* header)
 {
+    if (m_header)
+        disconnect(m_header, nullptr, this, nullptr);
     m_header = header;
+    // The filtered column was hidden from the header menu: back to column 0
+    if (m_header) {
+        connect(m_header, &QHeaderView::sectionResized, this, [this](int column, int, int newSize) {
+            if (column == m_column && column != 0 && newSize == 0)
+                setColumn(0);
+        });
+    }
     if (m_header && (m_column >= m_header->count() || m_header->isSectionHidden(m_column)))
         m_column = 0;
     updateHint();
@@ -81,7 +90,7 @@ void FilterEdit::showColumnMenu()
     QMenu menu(this);
     for (int visual = 0; visual < m_header->count(); ++visual) {
         const int column = m_header->logicalIndex(visual);
-        if (m_header->isSectionHidden(column))
+        if (m_header->isSectionHidden(column) || m_ignored.contains(column))
             continue;
         auto* act = menu.addAction(
             m_header->model()->headerData(column, Qt::Horizontal).toString());

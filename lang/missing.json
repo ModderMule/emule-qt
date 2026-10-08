@@ -1,222 +1,24 @@
 {
-  "Restart Now": {
-    "_context": "PortChange",
-    "de_DE": "Jetzt neu starten",
-    "es_ES": "Reiniciar ahora",
-    "fr_FR": "Redémarrer maintenant",
-    "it_IT": "Riavvia ora",
-    "ja_JP": "今すぐ再起動",
-    "ko_KR": "지금 다시 시작",
-    "pt_BR": "Reiniciar agora",
-    "zh_CN": "立即重启"
+  "Download limit:": {
+    "_context": "eMule::FirstStartWizard",
+    "de_DE": "Download-Limit:",
+    "es_ES": "Límite de descarga:",
+    "fr_FR": "Limite de téléchargement :",
+    "it_IT": "Limite di download:",
+    "ja_JP": "ダウンロード制限:",
+    "ko_KR": "다운로드 제한:",
+    "pt_BR": "Limite de download:",
+    "zh_CN": "下载限速："
   },
-  "Later": {
-    "_context": "PortChange",
-    "de_DE": "Später",
-    "es_ES": "Más tarde",
-    "fr_FR": "Plus tard",
-    "it_IT": "Più tardi",
-    "ja_JP": "後で",
-    "ko_KR": "나중에",
-    "pt_BR": "Mais tarde",
-    "zh_CN": "稍后"
-  },
-  "Used when the tab's view filter is set to \"Regular Expression\"; it must match the whole file name.": {
-    "_context": "eMule::CategoryDialog",
-    "de_DE": "",
-    "es_ES": "",
-    "fr_FR": "",
-    "it_IT": "",
-    "ja_JP": "",
-    "ko_KR": "",
-    "pt_BR": "",
-    "zh_CN": ""
-  },
-  "Uncategorized": {
-    "_context": "eMule::CategoryTabBar",
-    "de_DE": "",
-    "es_ES": "",
-    "fr_FR": "",
-    "it_IT": "",
-    "ja_JP": "",
-    "ko_KR": "",
-    "pt_BR": "",
-    "zh_CN": ""
-  },
-  "Incomplete": {
-    "_context": "eMule::CategoryTabBar",
-    "de_DE": "",
-    "es_ES": "",
-    "fr_FR": "",
-    "it_IT": "",
-    "ja_JP": "",
-    "ko_KR": "",
-    "pt_BR": "",
-    "zh_CN": ""
-  },
-  "Erroneous": {
-    "_context": "eMule::CategoryTabBar",
-    "de_DE": "",
-    "es_ES": "",
-    "fr_FR": "",
-    "it_IT": "",
-    "ja_JP": "",
-    "ko_KR": "",
-    "pt_BR": "",
-    "zh_CN": ""
-  },
-  "Ever Seen Complete": {
-    "_context": "eMule::CategoryTabBar",
-    "de_DE": "",
-    "es_ES": "",
-    "fr_FR": "",
-    "it_IT": "",
-    "ja_JP": "",
-    "ko_KR": "",
-    "pt_BR": "",
-    "zh_CN": ""
-  },
-  "Picture": {
-    "_context": "eMule::CategoryTabBar",
-    "de_DE": "",
-    "es_ES": "",
-    "fr_FR": "",
-    "it_IT": "",
-    "ja_JP": "",
-    "ko_KR": "",
-    "pt_BR": "",
-    "zh_CN": ""
-  },
-  "Regular Expression": {
-    "_context": "eMule::CategoryTabBar",
-    "de_DE": "",
-    "es_ES": "",
-    "fr_FR": "",
-    "it_IT": "",
-    "ja_JP": "",
-    "ko_KR": "",
-    "pt_BR": "",
-    "zh_CN": ""
-  },
-  "Select View Filter": {
-    "_context": "eMule::CategoryTabBar",
-    "de_DE": "",
-    "es_ES": "",
-    "fr_FR": "",
-    "it_IT": "",
-    "ja_JP": "",
-    "ko_KR": "",
-    "pt_BR": "",
-    "zh_CN": ""
-  },
-  "Evaluate All Files": {
-    "_context": "eMule::CategoryTabBar",
-    "de_DE": "",
-    "es_ES": "",
-    "fr_FR": "",
-    "it_IT": "",
-    "ja_JP": "",
-    "ko_KR": "",
-    "pt_BR": "",
-    "zh_CN": ""
-  },
-  "Negate Filter": {
-    "_context": "eMule::CategoryTabBar",
-    "de_DE": "",
-    "es_ES": "",
-    "fr_FR": "",
-    "it_IT": "",
-    "ja_JP": "",
-    "ko_KR": "",
-    "pt_BR": "",
-    "zh_CN": ""
-  },
-  "Asked for another file": {
-    "_context": "eMule::DownloadListModel",
-    "de_DE": "",
-    "es_ES": "",
-    "fr_FR": "",
-    "it_IT": "",
-    "ja_JP": "",
-    "ko_KR": "",
-    "pt_BR": "",
-    "zh_CN": ""
-  },
-  "Swap blocked": {
-    "_context": "eMule::DownloadListModel",
-    "de_DE": "",
-    "es_ES": "",
-    "fr_FR": "",
-    "it_IT": "",
-    "ja_JP": "",
-    "ko_KR": "",
-    "pt_BR": "",
-    "zh_CN": ""
-  },
-  "Min. Bitrate [Kbit/s]:": {
-    "_context": "eMule::SearchPanel",
-    "de_DE": "",
-    "es_ES": "",
-    "fr_FR": "",
-    "it_IT": "",
-    "ja_JP": "",
-    "ko_KR": "",
-    "pt_BR": "",
-    "zh_CN": ""
-  },
-  "Restore Search Parameters": {
-    "_context": "eMule::SearchPanel",
-    "de_DE": "",
-    "es_ES": "",
-    "fr_FR": "",
-    "it_IT": "",
-    "ja_JP": "",
-    "ko_KR": "",
-    "pt_BR": "",
-    "zh_CN": ""
-  },
-  "%1 (%2)": {
-    "_context": "eMule::SearchPanel",
-    "de_DE": "",
-    "es_ES": "",
-    "fr_FR": "",
-    "it_IT": "",
-    "ja_JP": "",
-    "ko_KR": "",
-    "pt_BR": "",
-    "zh_CN": ""
-  },
-  "File ID": {
-    "_context": "eMule::SearchResultsModel",
-    "de_DE": "",
-    "es_ES": "",
-    "fr_FR": "",
-    "it_IT": "",
-    "ja_JP": "",
-    "ko_KR": "",
-    "pt_BR": "",
-    "zh_CN": ""
-  },
-  "Download In Alphabetical Order": {
-    "_context": "eMule::TransferPanel",
-    "de_DE": "",
-    "es_ES": "",
-    "fr_FR": "",
-    "it_IT": "",
-    "ja_JP": "",
-    "ko_KR": "",
-    "pt_BR": "",
-    "zh_CN": ""
-  },
-  "Unban": {
-    "_context": "eMule::TransferPanel",
-    "de_DE": "",
-    "es_ES": "",
-    "fr_FR": "",
-    "it_IT": "",
-    "ja_JP": "",
-    "ko_KR": "",
-    "pt_BR": "",
-    "zh_CN": ""
+  "Upload limit:": {
+    "_context": "eMule::FirstStartWizard",
+    "de_DE": "Upload-Limit:",
+    "es_ES": "Límite de subida:",
+    "fr_FR": "Limite d'envoi :",
+    "it_IT": "Limite di upload:",
+    "ja_JP": "アップロード制限:",
+    "ko_KR": "업로드 제한:",
+    "pt_BR": "Limite de upload:",
+    "zh_CN": "上传限速："
   }
 }

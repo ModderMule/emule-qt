@@ -52,6 +52,7 @@ private slots:
     void onHelp();
     void onSpeedSelectionChanged();
     void onCustomRateEdited();
+    void onLimitEdited();
 
 private:
     void setupHeader();
@@ -63,6 +64,7 @@ private:
     void fillFromSettings(const QCborMap& prefs);
     [[nodiscard]] bool networksValid();
     [[nodiscard]] std::optional<BandwidthSettings> selectedBandwidth() const;
+    [[nodiscard]] std::optional<BandwidthSettings> chosenBandwidth() const;
     void requestPortMapStatus();
     void endUPnPWait(const QString& text, bool failed);
     void finish();
@@ -95,7 +97,9 @@ private:
     QTreeWidgetItem* m_customItem = nullptr;
     QDoubleSpinBox* m_customDownSpin = nullptr;
     QDoubleSpinBox* m_customUpSpin = nullptr;
-    QLabel* m_speedResult = nullptr;
+    QSpinBox* m_limitDownSpin = nullptr;
+    QSpinBox* m_limitUpSpin = nullptr;
+    bool m_limitsEdited = false;   ///< typed limits override the line's derived ones
     BandwidthSettings m_current;   ///< what the daemon runs with now
 
     // Button row

@@ -141,6 +141,14 @@ public:
     [[nodiscard]] time_t lastPublishTimeKadSrc() const { return m_lastPublishTimeKadSrc; }
     void setLastPublishTimeKadSrc(time_t t, uint32 buddyIP = 0);
 
+    /// Is the file published as a Kad source right now — MFC
+    /// CSharedFilesCtrl::IsSharedInKad (srchybrid/SharedFilesCtrl.cpp:1479-1487).
+    [[nodiscard]] bool isSharedInKad() const;
+    /// The rule behind isSharedInKad(), without the globals.
+    [[nodiscard]] static bool sharedInKad(time_t now, time_t lastPublish, bool kadConnected,
+                                          bool kadFirewalled, bool buddyMatches,
+                                          bool udpOpenVerified);
+
     /// Kad keywords extracted from filename.
     [[nodiscard]] const std::vector<QString>& kadKeywords() const { return m_kadKeywords; }
 

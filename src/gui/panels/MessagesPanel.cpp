@@ -12,6 +12,7 @@
 #include "controls/FriendListModel.h"
 #include "controls/LogTextView.h"
 #include "dialogs/AddFriendDialog.h"
+#include "utils/StringUtils.h"
 #include "dialogs/DetailDialog.h"
 #include "dialogs/FindInListDialog.h"
 #include "utils/CountryFlags.h"
@@ -36,6 +37,7 @@
 #include <QLineEdit>
 #include <QListView>
 #include <QMenu>
+#include <QPointer>
 #include <QPushButton>
 #include <QSplitter>
 #include <QTabBar>
@@ -119,20 +121,11 @@ void MessagesPanel::showEvent(QShowEvent* event)
 // Private slots
 // ---------------------------------------------------------------------------
 
+// MFC CChatWnd::OnLvnItemActivateFriendList / OnNmClickFriendList (ChatWnd.cpp:95, :388):
+// a click only refreshes the info box. A chat opens through "Send Message".
 void MessagesPanel::onFriendClicked(const QModelIndex& index)
 {
-    if (!index.isValid())
-        return;
-
-    const auto* row = m_friendModel->rowAt(index.row());
-    if (!row)
-        return;
-
-    updateInfoSection(index.row());
-    openChatTab(row->hash, row->name.isEmpty() ? row->hash : row->name);
-    // openChatTab sets the current tab, which fires onChatTabChanged,
-    // which sets m_activeFriendHash and calls updateChatDisplay()
-    m_messageInput->setFocus();
+    updateInfoSection(index.isValid() ? index.row() : -1);
 }
 
 void MessagesPanel::onSendClicked()
@@ -271,22 +264,21 @@ void MessagesPanel::setupUi()
 
     connect(m_friendListView, &QListView::clicked,
             this, &MessagesPanel::onFriendClicked);
+    connect(m_friendListView->selectionModel(), &QItemSelectionModel::currentChanged,
+            this, &MessagesPanel::onFriendClicked);
+    // MFC CFriendListCtrl::OnNmDblClk (FriendListCtrl.cpp:232-238)
+    connect(m_friendListView, &QListView::doubleClicked, this,
+            [this](const QModelIndex& index) { showFriendDetails(index); });
     connect(m_friendListView, &QWidget::customContextMenuRequested,
             this, &MessagesPanel::onFriendContextMenu);
 
     // MFC CFriendListCtrl (srchybrid/FriendListCtrl.cpp:200): Enter and Alt+Enter both
-    // open the friend's client details. Only while the friend is online — an offline
-    // friend has no client record, and the original answers that case with its
-    // CAddFriend sheet, which this panel reaches through "Details..." instead.
-    const auto showFriendDetails = [this](const QModelIndex& index) {
-        if (const FriendRow* row = m_friendModel->rowAt(index.row()))
-            showClientDetails(this, m_ipc, row->hash);
-    };
-    // FriendListCtrl.cpp:253 PreTranslateMessage: Del removes, Insert adds. Its general-
-    // purpose find (Ctrl+F / F3) opens the chat like a click, so the info pane follows.
+    // open the friend's details.
+    // FriendListCtrl.cpp:253 PreTranslateMessage: Del removes, Insert adds. The general-
+    // purpose find (Ctrl+F / F3) selects like a click, so the info pane follows.
     ListKeyHandlers keys;
-    keys.activate = showFriendDetails;
-    keys.details = showFriendDetails;
+    keys.activate = [this](const QModelIndex& index) { showFriendDetails(index); };
+    keys.details = [this](const QModelIndex& index) { showFriendDetails(index); };
     keys.remove = [this] { removeSelectedFriend(); };
     keys.insert = [this] { showAddFriendDialog(); };
     keys.find = true;
@@ -346,6 +338,9 @@ void MessagesPanel::setupUi()
             this, &MessagesPanel::onChatTabChanged);
     connect(m_chatTabBar, &QTabBar::tabCloseRequested,
             this, &MessagesPanel::onChatTabCloseRequested);
+    m_chatTabBar->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_chatTabBar, &QWidget::customContextMenuRequested,
+            this, &MessagesPanel::onChatTabContextMenu);
     rightLayout->addWidget(m_chatTabBar, 0, Qt::AlignLeft);
 
     // Chat browser
@@ -393,6 +388,13 @@ void MessagesPanel::setupUi()
     // --- Context menu ---
     m_contextMenu = new QMenu(this);
 
+    // MFC CFriendListCtrl::OnContextMenu (FriendListCtrl.cpp:143-169): "Details..."
+    // leads, only with a selection; no separators.
+    auto* detailsAction = m_contextMenu->addAction(
+        QIcon(QStringLiteral(":/icons/UserDetails.ico")), tr("&Details..."));
+    connect(detailsAction, &QAction::triggered, this,
+            [this] { showFriendDetails(m_friendListView->currentIndex()); });
+
     auto* addAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/UserAdd.ico")), tr("Add..."));
     connect(addAction, &QAction::triggered, this, &MessagesPanel::showAddFriendDialog);
 
@@ -401,9 +403,8 @@ void MessagesPanel::setupUi()
 
     auto* sendMsgAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/UserMessage.ico")), tr("Send Message"));
     connect(sendMsgAction, &QAction::triggered, this, [this]() {
-        const auto sel = m_friendListView->currentIndex();
-        if (sel.isValid())
-            onFriendClicked(sel);
+        if (const FriendRow* row = m_friendModel->rowAt(m_friendListView->currentIndex().row()))
+            startSession(row->hash, row->name);
     });
 
     auto* viewSharedAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/SharedFilesList.ico")), tr("View Shared Files"));
@@ -442,19 +443,21 @@ void MessagesPanel::setupUi()
         });
     });
 
-    m_contextMenu->addSeparator();
-
     auto* findAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Search.ico")), tr("Find..."));
     connect(findAction, &QAction::triggered, this, &MessagesPanel::showFindDialog);
 
     // Update context menu state before showing
     connect(m_contextMenu, &QMenu::aboutToShow, this,
-            [this, removeAction, sendMsgAction, viewSharedAction, friendSlotAction]() {
+            [this, detailsAction, removeAction, sendMsgAction, viewSharedAction,
+             friendSlotAction, findAction]() {
         const bool hasSel = m_friendListView->currentIndex().isValid();
+        detailsAction->setVisible(hasSel);
         removeAction->setEnabled(hasSel);
         sendMsgAction->setEnabled(hasSel);
-        viewSharedAction->setEnabled(hasSel);
+        // not for a linked client that refuses it (FriendListCtrl.cpp:160)
+        viewSharedAction->setEnabled(hasSel && !m_infoNoViewShared);
         friendSlotAction->setEnabled(hasSel);
+        findAction->setEnabled(m_friendModel->rowCount() > 0);
 
         if (hasSel) {
             const auto* row = m_friendModel->rowAt(m_friendListView->currentIndex().row());
@@ -481,25 +484,140 @@ void MessagesPanel::requestFriendList()
     });
 }
 
+// MFC CChatWnd::ShowFriendMsgDetails (srchybrid/ChatWnd.cpp:107-159)
 void MessagesPanel::updateInfoSection(int row)
 {
     const auto* r = row >= 0 ? m_friendModel->rowAt(row) : nullptr;
+    const QString none = QStringLiteral("-");
+    const QString unknown = QStringLiteral("?");
+    m_infoNoViewShared = false;
     if (!r) {
-        m_infoName->setText(QStringLiteral("-"));
-        m_infoHash->setText(QStringLiteral("-"));
-        m_infoSoftware->setText(QStringLiteral("-"));
-        m_infoIdent->setText(QStringLiteral("-"));
-        m_infoUploaded->setText(QStringLiteral("-"));
-        m_infoDownloaded->setText(QStringLiteral("-"));
+        m_infoShownHash.clear();
+        for (QLabel* label : {m_infoName, m_infoHash, m_infoSoftware, m_infoIdent,
+                              m_infoUploaded, m_infoDownloaded})
+            label->setText(none);
         return;
     }
 
-    m_infoName->setText(r->name.isEmpty() ? QStringLiteral("-") : r->name);
-    m_infoHash->setText(r->hash.isEmpty() ? QStringLiteral("-") : r->hash);
-    m_infoSoftware->setText(QStringLiteral("-"));
-    m_infoIdent->setText(QStringLiteral("-"));
-    m_infoUploaded->setText(QStringLiteral("-"));
-    m_infoDownloaded->setText(QStringLiteral("-"));
+    // What the friend entry knows; the linked client, if there is one, fills the rest
+    const bool sameFriend = m_infoShownHash == r->hash;
+    m_infoShownHash = r->hash;
+    m_infoName->setText(r->name.isEmpty() ? unknown : r->name);
+    m_infoHash->setText(r->hash.isEmpty() ? unknown : r->hash);
+    if (!sameFriend) {
+        for (QLabel* label : {m_infoSoftware, m_infoIdent, m_infoUploaded, m_infoDownloaded})
+            label->setText(unknown);
+    }
+    if (!m_ipc || !m_ipc->isConnected() || r->hash.isEmpty())
+        return;
+
+    IpcMessage msg(IpcMsgType::GetClientDetails);
+    msg.append(r->hash);
+    m_ipc->sendRequest(std::move(msg),
+        [self = QPointer<MessagesPanel>(this), hash = r->hash](const IpcMessage& resp) {
+            if (!self || self->m_infoShownHash != hash || !resp.isValid())
+                return;
+            const QString unknown = QStringLiteral("?");
+            if (!resp.fieldBool(0)) {   // offline: no client behind the friend
+                for (QLabel* label : {self->m_infoSoftware, self->m_infoIdent,
+                                      self->m_infoUploaded, self->m_infoDownloaded})
+                    label->setText(unknown);
+                return;
+            }
+            const QCborMap d = resp.field(1).toMap();
+            const QString name = d.value(QStringLiteral("userName")).toString();
+            if (!name.isEmpty())
+                self->m_infoName->setText(name);
+            const QString software = d.value(QStringLiteral("software")).toString();
+            self->m_infoSoftware->setText(software.isEmpty() ? unknown : software);
+            self->m_infoNoViewShared = d.value(QStringLiteral("noViewSharedFiles")).toBool();
+            if (!d.value(QStringLiteral("creditsKnown")).toBool()) {
+                for (QLabel* label : {self->m_infoIdent, self->m_infoUploaded,
+                                      self->m_infoDownloaded})
+                    label->setText(unknown);
+                return;
+            }
+            const QString ident = d.value(QStringLiteral("identification")).toString();
+            self->m_infoIdent->setText(ident == QLatin1String("ok") ? tr("Successful")
+                                       : ident == QLatin1String("failed") ? tr("Invalid")
+                                       : tr("Not supported or disabled"));
+            self->m_infoUploaded->setText(formatByteSize(
+                static_cast<uint64>(d.value(QStringLiteral("uploadedTotal")).toInteger())));
+            self->m_infoDownloaded->setText(formatByteSize(
+                static_cast<uint64>(d.value(QStringLiteral("downloadedTotal")).toInteger())));
+        });
+}
+
+// MFC CFriendListCtrl::ShowFriendDetails (FriendListCtrl.cpp:240-251): the client
+// sheet while the friend is linked to a client, else the friend's own sheet.
+void MessagesPanel::showFriendDetails(const QModelIndex& index)
+{
+    const FriendRow* row = m_friendModel->rowAt(index.row());
+    if (!row)
+        return;
+    const FriendRow copy = *row;
+    const auto showSheet = [self = QPointer<MessagesPanel>(this), copy] {
+        if (!self)
+            return;
+        auto* dlg = new AddFriendDialog(self);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        dlg->showFriend(copy.name, copy.hash, copy.hasAddress() ? copy.addr : QString(),
+                        copy.port, copy.kadID, copy.lastSeen);
+        dlg->show();   // not exec(): this may run inside an IPC reply
+    };
+    if (row->hash.isEmpty())
+        showSheet();
+    else
+        showClientDetails(this, m_ipc, row->hash, {}, showSheet);
+}
+
+// MFC CChatSelector::OnContextMenu (srchybrid/ChatSelector.cpp:572-610)
+void MessagesPanel::onChatTabContextMenu(const QPoint& pos)
+{
+    const int tab = m_chatTabBar->tabAt(pos);
+    if (tab < 0)
+        return;
+    const QString hash = m_chatTabBar->tabData(tab).toString();
+    const bool isFriend = m_friendModel->findByHash(hash) >= 0;
+
+    QMenu menu(this);
+    menu.addAction(QIcon(QStringLiteral(":/icons/UserDetails.ico")), tr("&Details..."), this,
+                   [this, hash] { showClientDetails(this, m_ipc, hash); });
+    if (!isFriend) {
+        menu.addAction(QIcon(QStringLiteral(":/icons/UserAdd.ico")), tr("Add to friends list"),
+                       this, [this, hash, name = m_chatTabBar->tabText(tab)] {
+            if (!m_ipc || !m_ipc->isConnected())
+                return;
+            // hash and name only: the daemon takes the address from the client
+            IpcMessage msg(IpcMsgType::AddFriend);
+            msg.append(hash);
+            msg.append(name);
+            msg.append(qint64(0));
+            msg.append(qint64(0));
+            msg.append(QString());
+            m_ipc->sendRequest(std::move(msg), [self = QPointer<MessagesPanel>(this)](const IpcMessage&) {
+                if (self)
+                    self->requestFriendList();
+            });
+        });
+    } else {
+        menu.addAction(QIcon(QStringLiteral(":/icons/UserDelete.ico")), tr("Remove"),
+                       this, [this, hash] {
+            if (!m_ipc || !m_ipc->isConnected())
+                return;
+            IpcMessage msg(IpcMsgType::RemoveFriend);
+            msg.append(hash);
+            m_ipc->sendRequest(std::move(msg), [self = QPointer<MessagesPanel>(this)](const IpcMessage&) {
+                if (self)
+                    self->requestFriendList();
+            });
+        });
+    }
+    menu.addAction(tr("Close"), this, [this, hash] {
+        if (const int now = findTabByHash(hash); now >= 0)
+            closeChatTab(now);
+    });
+    menu.exec(m_chatTabBar->mapToGlobal(pos));
 }
 
 void MessagesPanel::updateChatDisplay()
@@ -687,7 +805,7 @@ void MessagesPanel::showAddFriendDialog()
 
 void MessagesPanel::showFindDialog()
 {
-    // The shared list find, so F3 can repeat it; a hit opens the chat like a click.
+    // The shared list find, so F3 can repeat it; a hit selects like a click.
     const QPersistentModelIndex before = m_friendListView->currentIndex();
     showFindInListDialog(this, m_friendListView);
     const QModelIndex after = m_friendListView->currentIndex();

@@ -32,6 +32,7 @@
 #include <QMessageBox>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QScreen>
 #include <QScrollArea>
 #include <QSlider>
 #include <QSpinBox>
@@ -81,6 +82,11 @@ private slots:
     void everyPageAppearsOnceInTheSidebar();
     void storedPageIsRestored();
     void outOfRangeStoredPageFallsBackToGeneral();
+    void defaultSizeFitsTheScreen();
+    void storedSizeIsRestored();
+    void oversizedStoredSizeIsClampedToTheScreen();
+    void undersizedStoredSizeGrowsToTheMinimum();
+    void sizeIsRememberedOnClose();
     void breadcrumbNamesGroupAndPage();
     void usenetPageHasAccountAndAdvancedTabs();
 
@@ -98,6 +104,7 @@ private slots:
     void theWizardLeavesTunedLimitsAndADisabledUdpPortAlone();
     void aWizardLineTypeBecomesCapacityAndLimits();
     void theWizardRateFieldsFollowTheLineAndSwitchToCustom();
+    void theWizardLimitFieldsFollowTheLineAndTakeAnEdit();
     void theWizardNeedsANetwork();
     void theWizardReportsTheRealPortMappingResult();
     void theWizardDoesNotWaitWithoutACore();
@@ -185,6 +192,70 @@ void TestOptionsDialogSizing::outOfRangeStoredPageFallsBackToGeneral()
     OptionsDialog dlg(nullptr, nullptr);
     QCOMPARE(stackOf(dlg)->currentIndex(), int(OptionsDialog::PageGeneral));
     theUiState.setOptionsLastPage(OptionsDialog::PageGeneral);
+}
+
+/// Issue #10: the designed 800x700 was applied whatever the screen, so on a short one the
+/// button row opened under the taskbar. The default has to fit like the minimum does.
+void TestOptionsDialogSizing::defaultSizeFitsTheScreen()
+{
+    theUiState.setOptionsDialogSize({});
+    OptionsDialog dlg(nullptr, nullptr);
+
+    const QSize available = dlg.screen()->availableGeometry().size();
+    QVERIFY2(dlg.width() < available.width() && dlg.height() < available.height(),
+             qPrintable(QStringLiteral("opens at %1x%2 on a %3x%4 screen")
+                            .arg(dlg.width()).arg(dlg.height())
+                            .arg(available.width()).arg(available.height())));
+    QVERIFY(dlg.width() >= dlg.minimumWidth());
+    QVERIFY(dlg.height() >= dlg.minimumHeight());
+}
+
+void TestOptionsDialogSizing::storedSizeIsRestored()
+{
+    OptionsDialog probe(nullptr, nullptr);
+    const QSize wanted = probe.minimumSize() + QSize(8, 12);
+    QVERIFY2(wanted.width() < probe.screen()->availableGeometry().width() - 40
+                 && wanted.height() < probe.screen()->availableGeometry().height() - 60,
+             "test screen too small to tell a restored size from a clamped one");
+
+    theUiState.setOptionsDialogSize(wanted);
+    OptionsDialog dlg(nullptr, nullptr);
+    QCOMPARE(dlg.size(), wanted);
+    theUiState.setOptionsDialogSize({});
+}
+
+/// A size remembered on a big monitor must not follow the user to a small one.
+void TestOptionsDialogSizing::oversizedStoredSizeIsClampedToTheScreen()
+{
+    theUiState.setOptionsDialogSize(QSize(5000, 5000));
+    OptionsDialog dlg(nullptr, nullptr);
+
+    const QSize available = dlg.screen()->availableGeometry().size();
+    QVERIFY2(dlg.width() < available.width() && dlg.height() < available.height(),
+             qPrintable(QStringLiteral("opens at %1x%2").arg(dlg.width()).arg(dlg.height())));
+    theUiState.setOptionsDialogSize({});
+}
+
+void TestOptionsDialogSizing::undersizedStoredSizeGrowsToTheMinimum()
+{
+    theUiState.setOptionsDialogSize(QSize(100, 100));
+    OptionsDialog dlg(nullptr, nullptr);
+    QCOMPARE(dlg.size(), dlg.minimumSize());
+    theUiState.setOptionsDialogSize({});
+}
+
+void TestOptionsDialogSizing::sizeIsRememberedOnClose()
+{
+    theUiState.setOptionsDialogSize({});
+    QVERIFY(!theUiState.optionsDialogSize().isValid());
+
+    OptionsDialog dlg(nullptr, nullptr);
+    const QSize wanted = dlg.minimumSize() + QSize(8, 12);
+    dlg.resize(wanted);
+    dlg.reject();   // Cancel: the size is the user's even if the edits are not
+
+    QCOMPARE(theUiState.optionsDialogSize(), wanted);
+    theUiState.setOptionsDialogSize({});
 }
 
 /// MorphXT's "Options -> Advanced options -> IRC" (PreferencesDlg.cpp:582).
@@ -551,6 +622,46 @@ void TestOptionsDialogSizing::theWizardRateFieldsFollowTheLineAndSwitchToCustom(
     const QCborMap applied = wizard.appliedSettings();
     QCOMPARE(applied.value(QStringLiteral("maxGraphDownloadRate")).toInteger(), 24414);
     QCOMPARE(applied.value(QStringLiteral("maxGraphUploadRate")).toInteger(), 3052);
+}
+
+void TestOptionsDialogSizing::theWizardLimitFieldsFollowTheLineAndTakeAnEdit()
+{
+    const WizardPrefsGuard guard;
+    setBandwidth(9000, 900, 8000, 700);
+    FirstStartWizard wizard(nullptr, nullptr, FirstStartWizard::StartPage::Speed);
+
+    auto* down = wizard.findChild<QSpinBox*>(QStringLiteral("limitDown"));
+    auto* up = wizard.findChild<QSpinBox*>(QStringLiteral("limitUp"));
+    QVERIFY(down && up);
+    QCOMPARE(selectedLine(wizard), QStringLiteral("Keep current settings"));
+    QCOMPARE(down->value(), 8000);
+    QCOMPARE(up->value(), 700);
+
+    QVERIFY(selectLine(wizard, QStringLiteral("VDSL 100")));
+    QCOMPARE(down->value(), 10986);
+    QCOMPARE(up->value(), 3906);
+
+    // A typed limit keeps the line, and 0 is unlimited.
+    down->setValue(0);
+    up->setValue(2000);
+    QCOMPARE(selectedLine(wizard), QStringLiteral("VDSL 100"));
+    QCOMPARE(down->text(), QStringLiteral("Unlimited"));
+
+    wizardButton(wizard, QStringLiteral("Finish"))->click();
+    const QCborMap applied = wizard.appliedSettings();
+    QCOMPARE(applied.value(QStringLiteral("maxGraphDownloadRate")).toInteger(), 12207);
+    QCOMPARE(applied.value(QStringLiteral("maxGraphUploadRate")).toInteger(), 4883);
+    QCOMPARE(applied.value(QStringLiteral("maxDownload")).toInteger(), 0);
+    QCOMPARE(applied.value(QStringLiteral("maxUpload")).toInteger(), 2000);
+
+    // On "Keep current settings" a typed limit is written; above the capacity raises it.
+    FirstStartWizard keep(nullptr, nullptr, FirstStartWizard::StartPage::Speed);
+    QCOMPARE(selectedLine(keep), QStringLiteral("Keep current settings"));
+    keep.findChild<QSpinBox*>(QStringLiteral("limitUp"))->setValue(6000);
+    wizardButton(keep, QStringLiteral("Finish"))->click();
+    QCOMPARE(keep.appliedSettings().value(QStringLiteral("maxUpload")).toInteger(), 6000);
+    QCOMPARE(keep.appliedSettings().value(QStringLiteral("maxGraphUploadRate")).toInteger(), 6000);
+    QCOMPARE(thePrefs.maxUpload(), 6000u);
 }
 
 void TestOptionsDialogSizing::theWizardNeedsANetwork()

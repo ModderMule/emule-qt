@@ -24,6 +24,8 @@
 #include "protocol/Tag.h"
 #include "stats/Statistics.h"
 #include "transfer/DownloadQueue.h"
+#include "utils/DiskLoadLimiter.h"
+#include "utils/FileDate.h"
 #include "utils/Log.h"
 #include "utils/SafeFile.h"
 #include "utils/StringUtils.h"
@@ -1248,6 +1250,7 @@ QByteArray PartFile::verifyPartData(
         return partOk;
     }
 
+    DiskLoadLimiter diskLoad;
     for (uint32 part = 0; part < partCount; ++part) {
         const uint64 start = static_cast<uint64>(part) * PARTSIZE;
         if (start >= fileSize || (!singlePart && part >= partHashes.size()))
@@ -1256,7 +1259,11 @@ QByteArray PartFile::verifyPartData(
 
         if (!file.seek(static_cast<qint64>(start)))
             break;
-        const QByteArray data = file.read(static_cast<qint64>(len));
+        QByteArray data;
+        {
+            const DiskLoadLimiter::Read timed(diskLoad);
+            data = file.read(static_cast<qint64>(len));
+        }
         if (static_cast<uint64>(data.size()) != len) {
             logWarning(QStringLiteral("Rehash: short read in %1 at part %2").arg(partPath).arg(part));
             break;   // the rest stays unread
@@ -2241,7 +2248,9 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
     if (m_status != PartFileStatus::Completing && !m_md4HashsetNeeded) {
         const QFileInfo partInfo(partPath);
         const qint64 onDisk = partInfo.lastModified().toSecsSinceEpoch();
-        if (onDisk > 0 && static_cast<time_t>(onDisk) != m_tLastModified) {
+        if (onDisk > 0
+            && !sameFileDate(m_tLastModified, static_cast<time_t>(onDisk),
+                             isLocalTimeVolume(partInfo.absolutePath()))) {
             logWarning(QStringLiteral("Part file changed since last run, rehashing: %1")
                            .arg(fileName()));
             m_status = PartFileStatus::WaitingForHash;
@@ -2277,6 +2286,12 @@ bool PartFile::savePartFile()
     // compares against to notice the data was changed behind our back; without it the
     // field written below is meaningless (MFC srchybrid/PartFile.cpp:1174-1180).
     {
+        // A file open for writing has no final date yet: NTFS settles the last-write
+        // time when the handle closes, so a stamp taken before that differs from what
+        // the next start finds, and every such file was rehashed in full. Whoever
+        // needs the handle next reopens it.
+        if (m_partFileHandle.isOpen())
+            m_partFileHandle.close();
         const QFileInfo partInfo(partDataPath());
         if (partInfo.exists()) {
             const qint64 mtime = partInfo.lastModified().toSecsSinceEpoch();

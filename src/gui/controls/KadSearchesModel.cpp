@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "controls/KadSearchesModel.h"
 
+#include <QIcon>
+
 namespace eMule {
 
 KadSearchesModel::KadSearchesModel(QObject* parent)
@@ -29,9 +31,9 @@ QVariant KadSearchesModel::data(const QModelIndex& index, int role) const
         switch (index.column()) {
         case ColNumber:      return s.searchId;
         case ColKey:         return s.key;
-        case ColType:        return s.type;
+        case ColType:        return typeText(s.typeId);
         case ColName:        return s.name;
-        case ColStatus:      return s.status;
+        case ColStatus:      return s.stopping ? tr("Stopping") : tr("Active");
         // MFC KadSearchListCtrl.cpp:168-169
         case ColLoad:
             return QStringLiteral("%1 (%2|%3)").arg(s.load).arg(s.loadResponses).arg(s.loadTotal);
@@ -45,9 +47,9 @@ QVariant KadSearchesModel::data(const QModelIndex& index, int role) const
         switch (index.column()) {
         case ColNumber:      return s.searchId;
         case ColKey:         return s.key;
-        case ColType:        return s.type;
+        case ColType:        return s.typeId;   // numeric, as MFC
         case ColName:        return s.name;
-        case ColStatus:      return s.status;
+        case ColStatus:      return s.stopping;
         case ColLoad:        return s.load;
         case ColPacketsSent: return s.packetsSent;  // sort by node-finding count (matching MFC)
         case ColResponses:   return s.responses;
@@ -55,16 +57,14 @@ QVariant KadSearchesModel::data(const QModelIndex& index, int role) const
         }
     }
 
-    if (role == Qt::TextAlignmentRole) {
-        switch (index.column()) {
-        case ColLoad:
-        case ColPacketsSent:
-        case ColResponses:
-            return static_cast<int>(Qt::AlignRight | Qt::AlignVCenter);
-        default:
-            return static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
-        }
+    if (role == Qt::DecorationRole && index.column() == ColNumber) {
+        const QString name = typeIconName(s.typeId);
+        return name.isEmpty() ? QVariant() : QIcon(QStringLiteral(":/icons/") + name);
     }
+
+    // MFC: LVCFMT_LEFT for every column
+    if (role == Qt::TextAlignmentRole)
+        return static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
 
     return {};
 }
@@ -75,7 +75,7 @@ QVariant KadSearchesModel::headerData(int section, Qt::Orientation orientation, 
         return {};
 
     switch (section) {
-    case ColNumber:      return tr("No.");
+    case ColNumber:      return tr("Number");
     case ColKey:         return tr("Key");
     case ColType:        return tr("Type");
     case ColName:        return tr("Name");
@@ -84,6 +84,33 @@ QVariant KadSearchesModel::headerData(int section, Qt::Orientation orientation, 
     case ColPacketsSent: return tr("Packets Sent");
     case ColResponses:   return tr("Responses");
     default:             return {};
+    }
+}
+
+QString KadSearchesModel::typeText(int typeId)
+{
+    switch (typeId) {
+    case 2:                             return tr("Search Sources");
+    case 3:                             return tr("Search Keywords");
+    case 0: case 1: case 10: case 11:   return tr("Node Lookup");
+    case 5:                             return tr("Store File");
+    case 6:                             return tr("Store Keyword");
+    case 8:                             return tr("Find Buddy");
+    case 7:                             return tr("Store Notes");
+    case 4:                             return tr("Notes");
+    default:                            return tr("Unknown");
+    }
+}
+
+QString KadSearchesModel::typeIconName(int typeId)
+{
+    switch (typeId) {
+    case 2:                             return QStringLiteral("KadFileSearch.ico");
+    case 3:                             return QStringLiteral("KadWordSearch.ico");
+    case 0: case 1: case 10: case 11:   return QStringLiteral("KadNodeSearch.ico");
+    case 5:                             return QStringLiteral("KadStoreFile.ico");
+    case 6:                             return QStringLiteral("KadStoreWord.ico");
+    default:                            return {};
     }
 }
 

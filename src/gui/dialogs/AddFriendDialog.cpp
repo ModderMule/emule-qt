@@ -5,12 +5,14 @@
 #include "dialogs/AddFriendDialog.h"
 #include "utils/DialogSizing.h"
 
+#include <QDateTime>
 #include <QDialogButtonBox>
 #include <QGroupBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLocale>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QVBoxLayout>
@@ -67,7 +69,8 @@ AddFriendDialog::AddFriendDialog(QWidget* parent)
     // Buttons
     auto* buttonBox = new QDialogButtonBox(this);
     auto* addBtn = buttonBox->addButton(tr("Add"), QDialogButtonBox::AcceptRole);
-    buttonBox->addButton(QDialogButtonBox::Cancel);
+    m_addButton = addBtn;
+    m_cancelButton = buttonBox->addButton(QDialogButtonBox::Cancel);
     mainLayout->addWidget(buttonBox);
 
     connect(addBtn, &QPushButton::clicked, this, &AddFriendDialog::onAddClicked);
@@ -98,6 +101,28 @@ QString AddFriendDialog::friendName() const
 QString AddFriendDialog::friendHash() const
 {
     return m_hashEdit->text().trimmed();
+}
+
+void AddFriendDialog::showFriend(const QString& name, const QString& hash, const QString& address,
+                                 int port, const QString& kadId, qint64 lastSeen)
+{
+    setWindowTitle(tr("Friend Details"));
+    m_ipEdit->setText(address);
+    m_portEdit->setText(port > 0 ? QString::number(port) : QString());
+    m_nameEdit->setText(name);
+    m_hashEdit->setText(hash);
+    for (QLineEdit* edit : {m_ipEdit, m_portEdit, m_nameEdit, m_hashEdit}) {
+        edit->setReadOnly(true);
+        edit->setPlaceholderText(QString());
+    }
+    if (!kadId.isEmpty())
+        m_kadIdLabel->setText(kadId);
+    m_lastSeenLabel->setText(lastSeen > 0
+        ? QLocale().toString(QDateTime::fromSecsSinceEpoch(lastSeen), QLocale::ShortFormat)
+        : tr("Never"));
+    m_addButton->hide();
+    m_cancelButton->setText(tr("Close"));
+    m_cancelButton->setFocus();
 }
 
 // ---------------------------------------------------------------------------

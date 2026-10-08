@@ -280,6 +280,13 @@ enum class IpcMsgType : int {
     /// [hash: string] → [ok, partFilePath: string]. Writes buffered data out, for a
     /// preview application that reads the part file itself (MFC ExecutePartFile).
     FlushDownload           = 284,
+    /// [url: string] → Result when done. The daemon fetches a nodes.dat and reads it
+    /// in, also while Kad is running (MFC CKademliaWnd::UpdateNodesDatFromURL).
+    ImportKadNodes          = 285,
+    /// [] → [ok, {sharedDirs: [string], singleSharedDirs: [string]}]. What the folder
+    /// tree marks shared folders from: the shared directories, and the folders that
+    /// hold an individually shared file (each once, however many files).
+    GetSharedDirState       = 286,
 
     // -- Indexers (700-719) --------------------------------------------------
     //

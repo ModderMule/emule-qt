@@ -185,6 +185,8 @@ SOURCES += \
     transfer/UploadQueueStore.cpp \
     upnp/UPnPManager.cpp \
     utils/DebugUtils.cpp \
+    utils/DiskLoadLimiter.cpp \
+    utils/FileDate.cpp \
     utils/Log.cpp \
     utils/OtherFunctions.cpp \
     utils/PathUtils.cpp \
@@ -341,6 +343,8 @@ HEADERS += \
     utils/ContainerUtils.h \
     utils/CorroborationTally.h \
     utils/DebugUtils.h \
+    utils/DiskLoadLimiter.h \
+    utils/FileDate.h \
     utils/Exceptions.h \
     utils/Log.h \
     utils/MapKey.h \

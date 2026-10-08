@@ -48,6 +48,7 @@ struct USSStatus {
     uint32  latency = 0;  ///< Current average ping (ms).
     uint32  lowest  = 0;  ///< Baseline ping (ms).
     uint32  currentLimit = 0; ///< Current calculated upload limit (bytes/sec).
+    bool    active = false;   ///< Controlling the limit; before that only `state` says something.
 };
 
 // ---------------------------------------------------------------------------
@@ -161,6 +162,7 @@ private:
     uint32 m_pingAverage = 0;
     uint32 m_lowestPing = 0;
     QString m_stateString;
+    bool m_controlling = false;   ///< baseline found, limit under control (under m_pingMutex)
 
     // --- Upload limit (atomic, no lock needed) ---
     std::atomic<uint32> m_upload{0};

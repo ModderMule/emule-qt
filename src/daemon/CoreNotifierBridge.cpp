@@ -323,6 +323,7 @@ bool CoreNotifierBridge::broadcastServerState()
             info.insert(QStringLiteral("serverPort"), static_cast<qint64>(srv->port()));
             info.insert(QStringLiteral("serverId"), static_cast<qint64>(srv->serverId()));
             info.insert(QStringLiteral("serverName"), srv->name());
+            info.insert(QStringLiteral("serverUsers"), static_cast<qint64>(srv->users()));
             info.insert(QStringLiteral("serverDescription"), srv->description());
             // "Search Related Files" is offered only on a server that answers it
             info.insert(QStringLiteral("serverRelatedSearch"), srv->supportsRelatedSearch());

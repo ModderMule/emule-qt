@@ -13,6 +13,7 @@
 #include "media/MediaInfo.h"
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
+#include "utils/DiskLoadLimiter.h"
 #include "utils/SafeFile.h"
 
 #include <QBuffer>
@@ -150,6 +151,7 @@ class tst_KnownFile : public QObject {
     Q_OBJECT
 
 private slots:
+    void sharedInKad_followsMfc();
     // --- Existing tests ---
     void construct_default();
     void setFileSize_partCounts();
@@ -217,6 +219,8 @@ private slots:
     void publishNotes_timing();
     void createHashFromMemory_basic();
     void createHashFromFile_basic();
+    void diskLoadLimiter_pausesInProportionToReadTime();
+    void diskLoadLimiter_neverPausesTheMainThread();
 };
 
 // ---------------------------------------------------------------------------
@@ -1429,5 +1433,82 @@ void tst_KnownFile::setComment_leavesTheAggregateAlone()
     QCOMPARE(file.getFileComment(), QStringLiteral("mine"));
 }
 
+// MFC CSharedFilesCtrl::IsSharedInKad (srchybrid/SharedFilesCtrl.cpp:1479-1487)
+void tst_KnownFile::sharedInKad_followsMfc()
+{
+    const time_t now = 1000;
+    // (now, lastPublish, connected, firewalled, buddyMatches, udpOpenVerified)
+    QVERIFY(KnownFile::sharedInKad(now, now + 1, true, false, false, false));
+    QVERIFY(!KnownFile::sharedInKad(now, now + 1, false, false, false, false));  // Kad down
+    QVERIFY(!KnownFile::sharedInKad(now, now, true, false, false, false));       // expired
+    QVERIFY(!KnownFile::sharedInKad(now, 0, true, false, false, false));         // never
+    // firewalled: only through the buddy it was published with, or open UDP
+    QVERIFY(!KnownFile::sharedInKad(now, now + 1, true, true, false, false));
+    QVERIFY(KnownFile::sharedInKad(now, now + 1, true, true, true, false));
+    QVERIFY(KnownFile::sharedInKad(now, now + 1, true, true, false, true));
+}
+
 QTEST_MAIN(tst_KnownFile)
+// Issue #9: hashing kept an HDD at 100 %. Read time is measured, and the pause that
+// follows makes it the configured share of the total.
+void tst_KnownFile::diskLoadLimiter_pausesInProportionToReadTime()
+{
+    QCOMPARE(DiskLoadLimiter::pauseNs(80'000'000, 80), qint64{20'000'000});
+    QCOMPARE(DiskLoadLimiter::pauseNs(50'000'000, 50), qint64{50'000'000});
+    QCOMPARE(DiskLoadLimiter::pauseNs(80'000'000, 100), qint64{0});
+    QCOMPARE(DiskLoadLimiter::pauseNs(0, 80), qint64{0});
+    QCOMPARE(DiskLoadLimiter::pauseNs(qint64{3600} * 1'000'000'000, 10), DiskLoadLimiter::kMaxPauseNs);
+
+    qint64 now = 0;
+    qint64 slept = 0;
+    int percent = 80;
+    DiskLoadLimiter::Hooks hooks;
+    hooks.nowNs = [&now] { return now; };
+    hooks.sleepMs = [&slept](qint64 ms) { slept += ms; };
+    hooks.percent = [&percent] { return percent; };
+    hooks.allowMainThread = true;
+    DiskLoadLimiter limiter(hooks);
+
+    const auto read = [&](qint64 ms) {
+        const DiskLoadLimiter::Read timed(limiter);
+        now += ms * 1'000'000;
+    };
+
+    // Short reads add up before anything happens: no sleep per 64 KB block.
+    read(8);
+    read(8);
+    QCOMPARE(slept, qint64{0});
+    read(8);                       // 24 ms busy -> 6 ms idle makes it 80 %
+    QCOMPARE(slept, qint64{6});
+
+    // A cached file reads in no time and is never slowed down.
+    for (int i = 0; i < 1000; ++i)
+        read(0);
+    QCOMPARE(slept, qint64{6});
+
+    // The setting is read at each pause, so a change applies to a running hash.
+    percent = 50;
+    read(40);
+    QCOMPARE(slept, qint64{46});
+    percent = 100;
+    read(400);
+    QCOMPARE(slept, qint64{46});
+}
+
+void tst_KnownFile::diskLoadLimiter_neverPausesTheMainThread()
+{
+    qint64 now = 0;
+    int sleeps = 0;
+    DiskLoadLimiter::Hooks hooks;
+    hooks.nowNs = [&now] { return now; };
+    hooks.sleepMs = [&sleeps](qint64) { ++sleeps; };
+    hooks.percent = [] { return 10; };
+    DiskLoadLimiter limiter(hooks);
+    {
+        const DiskLoadLimiter::Read timed(limiter);
+        now += 500'000'000;
+    }
+    QCOMPARE(sleeps, 0);
+}
+
 #include "tst_KnownFile.moc"

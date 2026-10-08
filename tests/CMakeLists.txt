@@ -512,6 +512,7 @@ emule_add_test(tst_ListSorting FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/ClientListModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/SearchResultsModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/KadContactsModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/KadSearchesModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UploadStatusDelegate.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadProgressDelegate.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/BarShader.cpp"
@@ -716,6 +717,7 @@ target_link_libraries(tst_DownloadStatusText PRIVATE Qt6::Widgets)
 emule_add_test(tst_SharedFilesModel FOLDER "Gui"
     SOURCES tst_SharedFilesModel.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadListModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/FilterEdit.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/SharedFilesModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/ClientIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
@@ -734,6 +736,7 @@ target_link_libraries(tst_SharedFilesModel PRIVATE Qt6::Widgets)
 emule_add_test(tst_FileMarks FOLDER "Gui"
     SOURCES tst_FileMarks.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadListModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/FilterEdit.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/SharedFilesModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/ClientIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"

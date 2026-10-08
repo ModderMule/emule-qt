@@ -147,6 +147,7 @@ private:
     void handleGetKadStats(const Ipc::IpcMessage& msg);
     void handleGetClientStats(const Ipc::IpcMessage& msg);
     void handleBootstrapKad(const Ipc::IpcMessage& msg);
+    void handleImportKadNodes(const Ipc::IpcMessage& msg);
     void handleDisconnectKad(const Ipc::IpcMessage& msg);
     void handleGetKadSearches(const Ipc::IpcMessage& msg);
     void handleGetKadLookupHistory(const Ipc::IpcMessage& msg);
@@ -182,6 +183,7 @@ private:
     void handleUnshareFile(const Ipc::IpcMessage& msg);
     void handleSetFileShared(const Ipc::IpcMessage& msg);
     void handleBrowseDirectory(const Ipc::IpcMessage& msg);
+    void handleGetSharedDirState(const Ipc::IpcMessage& msg);
 
     // Download categories (268-270)
     void handleGetCategories(const Ipc::IpcMessage& msg);

@@ -151,6 +151,43 @@ void WebServices::populateFileMenu(QMenu* menu, const QString& hash,
     }
 }
 
+std::vector<WebServiceEntry> WebServices::generalServices() const
+{
+    std::vector<WebServiceEntry> out;
+    for (const auto& svc : m_services)
+        if (!svc.hasFileMacros)
+            out.push_back(svc);
+    return out;
+}
+
+int WebServices::populateGeneralMenu(QMenu* menu)
+{
+    reload();
+
+    const auto general = generalServices();
+    for (const auto& svc : general) {
+        menu->addAction(svc.label, menu, [url = svc.urlTemplate] {
+            QDesktopServices::openUrl(QUrl(url));
+        });
+    }
+    return static_cast<int>(general.size());
+}
+
+bool WebServices::edit()
+{
+    // webservices.dat, not eMule.tmpl -- that one is the web *server* template.
+    // MFC opens <configdir>webservices.dat (srchybrid/OtherFunctions.cpp:1071).
+    const QString path = userFilePath();
+    if (!QFile::exists(path)) {
+        // Seeding should have placed it; recover from the shipped copy. Never
+        // open the shipped one directly -- edits there are lost on the next sync.
+        const QString shipped = instance().servicesFilePath();
+        if (shipped == path || !QFile::copy(shipped, path))
+            return false;
+    }
+    return QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+}
+
 // ---------------------------------------------------------------------------
 // expandMacros
 // ---------------------------------------------------------------------------

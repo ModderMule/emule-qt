@@ -23,6 +23,11 @@ target_link_libraries(emulecored
         eMule::CommonSettings
 )
 
+# WinShutdownHandler: the hidden window that hears about logoff and shutdown
+if(WIN32)
+    target_link_libraries(emulecored PRIVATE user32)
+endif()
+
 # PowerManager: idle-sleep prevention
 if(APPLE)
     target_link_libraries(emulecored PRIVATE "-framework IOKit" "-framework CoreFoundation")

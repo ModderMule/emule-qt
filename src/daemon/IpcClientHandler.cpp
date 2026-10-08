@@ -62,6 +62,7 @@
 #include "media/ContainerSniffer.h"
 #include "portmap/PortMapper.h"
 #include "kademlia/KadPrefs.h"
+#include "net/LastCommonRouteFinder.h"
 #include "net/IPv6SourcePin.h"
 #include "net/ClientUDPSocket.h"
 #include "net/ListenSocket.h"
@@ -314,6 +315,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::GetKadStats:          handleGetKadStats(msg); break;
     case IpcMsgType::GetClientStats:       handleGetClientStats(msg); break;
     case IpcMsgType::BootstrapKad:         handleBootstrapKad(msg); break;
+    case IpcMsgType::ImportKadNodes:       handleImportKadNodes(msg); break;
     case IpcMsgType::DisconnectKad:        handleDisconnectKad(msg); break;
     case IpcMsgType::GetKadSearches:       handleGetKadSearches(msg); break;
     case IpcMsgType::GetKadLookupHistory:  handleGetKadLookupHistory(msg); break;
@@ -346,6 +348,7 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::UnshareFile:          handleUnshareFile(msg); break;
     case IpcMsgType::SetFileShared:        handleSetFileShared(msg); break;
     case IpcMsgType::BrowseDirectory:      handleBrowseDirectory(msg); break;
+    case IpcMsgType::GetSharedDirState:    handleGetSharedDirState(msg); break;
     case IpcMsgType::GetCategories:        handleGetCategories(msg); break;
     case IpcMsgType::SetCategories:        handleSetCategories(msg); break;
     case IpcMsgType::SetCategoryStatus:    handleSetCategoryStatus(msg); break;
@@ -786,6 +789,7 @@ void IpcClientHandler::handleGetServerState(const IpcMessage& msg)
             info.insert(QStringLiteral("serverPort"), static_cast<qint64>(srv->port()));
             info.insert(QStringLiteral("serverId"), static_cast<qint64>(srv->serverId()));
             info.insert(QStringLiteral("serverName"), srv->name());
+            info.insert(QStringLiteral("serverUsers"), static_cast<qint64>(srv->users()));
             info.insert(QStringLiteral("serverDescription"), srv->description());
             // "Search Related Files" is offered only on a server that answers it
             info.insert(QStringLiteral("serverRelatedSearch"), srv->supportsRelatedSearch());
@@ -1241,7 +1245,20 @@ void IpcClientHandler::handleAddFriend(const IpcMessage& msg)
 
     uint8 hashBuf[16]{};
     const bool hasHash = hexToHash(hashStr, hashBuf);
-    theApp.friendList->addFriend(hashBuf, addr, port, name, hasHash);
+    // Only a hash, as a chat tab gives: the known client supplies the rest
+    // (MFC CFriendList::AddFriend(CUpDownClient*)).
+    Address addr2 = addr;
+    uint16 port2 = port;
+    QString name2 = name;
+    if (hasHash && addr.isNull() && theApp.clientList) {
+        if (const UpDownClient* client = theApp.clientList->findByUserHash(hashBuf)) {
+            addr2 = client->userAddress();
+            port2 = client->userPort();
+            if (name2.isEmpty())
+                name2 = client->userName();
+        }
+    }
+    theApp.friendList->addFriend(hashBuf, addr2, port2, name2, hasHash);
     theApp.friendList->save(thePrefs.configDir());
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
@@ -1590,6 +1607,18 @@ void IpcClientHandler::handleGetStats(const IpcMessage& msg)
 {
     QCborMap stats = toCborMap(collectStatsSnapshot());
 
+    // Upload SpeedSense, for the status bar pane (MFC CemuleDlg::ShowPing)
+    if (thePrefs.dynUpEnabled() && theApp.lastCommonRouteFinder) {
+        const USSStatus uss = theApp.lastCommonRouteFinder->currentStatus();
+        QCborMap m;
+        m.insert(QStringLiteral("active"), uss.active);
+        m.insert(QStringLiteral("limit"), static_cast<qint64>(uss.currentLimit));
+        m.insert(QStringLiteral("latency"), static_cast<qint64>(uss.latency));
+        m.insert(QStringLiteral("lowest"), static_cast<qint64>(uss.lowest));
+        m.insert(QStringLiteral("msTolerance"), thePrefs.dynUpUseMillisecondPingTolerance());
+        stats.insert(QStringLiteral("uss"), m);
+    }
+
     // Not part of the core snapshot: the stream token belongs to the web server this
     // daemon runs, which core has no handle on.
     if (auto* da = DaemonApp::instance()) {
@@ -1816,6 +1845,18 @@ void IpcClientHandler::handleBootstrapKad(const IpcMessage& msg)
     sendStatus(msg, ops::startKad(msg.fieldString(0), static_cast<uint16>(msg.fieldInt(1))));
 }
 
+void IpcClientHandler::handleImportKadNodes(const IpcMessage& msg)
+{
+    const QPointer<IpcClientHandler> self(this);
+    const int seqId = msg.seqId();
+    ops::importKadNodesFromUrl(msg.fieldString(0), [self, seqId](const ops::Status& st) {
+        if (!self)
+            return;
+        self->sendMessage(st.ok() ? IpcMessage::makeResult(seqId, true)
+                                  : IpcMessage::makeError(seqId, st.code, st.message));
+    });
+}
+
 void IpcClientHandler::handleDisconnectKad(const IpcMessage& msg)
 {
     sendStatus(msg, ops::stopKad());
@@ -1863,6 +1904,9 @@ void IpcClientHandler::handleGetKadSearches(const IpcMessage& msg)
             m.insert(QStringLiteral("searchId"), static_cast<qint64>(search->getSearchID()));
             m.insert(QStringLiteral("key"), search->getTarget().toHexString());
             m.insert(QStringLiteral("type"), kad::Search::getTypeName(search->getSearchType()));
+            // What the GUI shows: it maps the id to MFC's name and icon
+            m.insert(QStringLiteral("typeId"), static_cast<qint64>(search->getSearchType()));
+            m.insert(QStringLiteral("stopping"), search->stopping());
             m.insert(QStringLiteral("name"), search->getGUIName());
             m.insert(QStringLiteral("status"),
                      search->stopping() ? QStringLiteral("Stopping") : QStringLiteral("Active"));
@@ -2693,6 +2737,27 @@ void IpcClientHandler::handleSetFileShared(const IpcMessage& msg)
         return;
     }
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+}
+
+// ---------------------------------------------------------------------------
+// handleGetSharedDirState — what the folder tree marks shared folders from
+// ---------------------------------------------------------------------------
+
+void IpcClientHandler::handleGetSharedDirState(const IpcMessage& msg)
+{
+    QCborArray sharedDirs;
+    for (const QString& dir : thePrefs.sharedDirs())
+        sharedDirs.append(dir);
+
+    QCborArray singleDirs;
+    if (theApp.sharedFileList)
+        for (const QString& dir : theApp.sharedFileList->singleSharedDirs())
+            singleDirs.append(dir);
+
+    QCborMap state;
+    state.insert(QStringLiteral("sharedDirs"), sharedDirs);
+    state.insert(QStringLiteral("singleSharedDirs"), singleDirs);
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, state));
 }
 
 // ---------------------------------------------------------------------------
@@ -3537,6 +3602,8 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setShowExtControls(val.toBool());
     else if (key == QStringLiteral("commitFiles"))
         thePrefs.setCommitFiles(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("hashingDiskLoad"))
+        thePrefs.setHashingDiskLoad(static_cast<int>(val.toInteger()));
     else if (key == QStringLiteral("extractMetaData"))
         thePrefs.setExtractMetaData(static_cast<int>(val.toInteger()));
     else if (key == QStringLiteral("logLevel"))
@@ -3788,6 +3855,16 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
         thePrefs.setIrcIgnorePartMessages(val.toBool());
     else if (key == QStringLiteral("ircIgnoreQuitMessages"))
         thePrefs.setIrcIgnoreQuitMessages(val.toBool());
+    else if (key == QStringLiteral("ircAcceptLinks"))
+        thePrefs.setIrcAcceptLinks(val.toBool());
+    else if (key == QStringLiteral("ircAcceptLinksFriendsOnly"))
+        thePrefs.setIrcAcceptLinksFriendsOnly(val.toBool());
+    else if (key == QStringLiteral("ircAllowEmuleAddFriend"))
+        thePrefs.setIrcAllowEmuleAddFriend(val.toBool());
+    else if (key == QStringLiteral("ircIgnoreEmuleAddFriendMsgs"))
+        thePrefs.setIrcIgnoreEmuleAddFriendMsgs(val.toBool());
+    else if (key == QStringLiteral("ircIgnoreEmuleSendLinkMsgs"))
+        thePrefs.setIrcIgnoreEmuleSendLinkMsgs(val.toBool());
 
     // Messages page (GUI-only)
     else if (key == QStringLiteral("showSmileys"))

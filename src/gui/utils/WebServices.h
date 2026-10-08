@@ -42,6 +42,19 @@ public:
     void populateFileMenu(QMenu* menu, const QString& hash,
                           const QString& fileName, uint64_t fileSize);
 
+    /// The entries without file macros — MFC's WEBSVC_GEN_URLS, the ones the
+    /// Tools → Links menu lists (srchybrid/OtherFunctions.cpp:1013-1030).
+    [[nodiscard]] std::vector<WebServiceEntry> generalServices() const;
+
+    /// Add the general entries to @p menu; each opens its URL as it is.
+    /// @return how many were added.
+    int populateGeneralMenu(QMenu* menu);
+
+    /// Open the user's webservices.dat in the system editor, restoring it from the
+    /// shipped copy when it is missing (MFC CWebServices::Edit). False if there is
+    /// no file to open.
+    static bool edit();
+
     [[nodiscard]] const std::vector<WebServiceEntry>& services() const { return m_services; }
 
     /// The file the user owns and edits: <configdir>/webservices.dat.

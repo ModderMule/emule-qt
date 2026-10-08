@@ -3,6 +3,7 @@
 /// @brief IRC protocol client implementation — replaces MFC CIrcMain + CIrcSocket.
 
 #include "chat/IrcClient.h"
+#include "chat/IrcEmuleProto.h"
 #include "net/InterfacePin.h"
 #include "utils/Log.h"
 
@@ -390,6 +391,13 @@ void IrcClient::handlePrivMsg(const IrcMessage& msg)
 
         if (message.startsWith(u"ACTION ", Qt::CaseInsensitive)) {
             emit actionReceived(target, msg.nickname, message.mid(7));
+            return;
+        }
+
+        // eMule's own messages go out whole: their fields are bar separated and
+        // case matters (a link), so the command/params split below would spoil them
+        if (IrcEmuleProto::isEmuleProto(message)) {
+            emit emuleProtoReceived(msg.nickname, message);
             return;
         }
 

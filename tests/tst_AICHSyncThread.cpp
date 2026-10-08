@@ -8,6 +8,7 @@
 #include "crypto/AICHSyncThread.h"
 #include "crypto/FileIdentifier.h"
 #include "files/KnownFile.h"
+#include "files/HashFailureStore.h"
 #include "files/KnownFileList.h"
 #include "files/SharedFileList.h"
 #include "prefs/Preferences.h"
@@ -30,6 +31,7 @@ private slots:
     void syncCutsOffATornRecord();
     void purgeDropsOnlyWhatNothingRefersTo();
     void purgeLeavesACleanFileUntouched();
+    void syncSkipsAFileThatFailedBeforeUntilItChanges();
 
 private:
     [[nodiscard]] QString known2Path() const { return m_dir->filePath(QStringLiteral("known2_64.met")); }
@@ -98,7 +100,13 @@ void tst_AICHSyncThread::syncBuildsTheSetOfAFileThatHasNone()
     QVERIFY(knownFiles.safeAddKFile(file));
     QVERIFY(shared.safeAddKFile(file));
 
+    // Clean, as after the save that follows a start.
+    knownFiles.init(m_dir->path());
+    knownFiles.save();
+    QVERIFY(!knownFiles.isDirty());
+
     AICHSyncThread sync(m_dir->path(), &shared);
+    sync.setPurgeSource(&knownFiles);
     QSignalSpy synced(&sync, &AICHSyncThread::syncComplete);
     QSignalSpy hashed(&sync, &AICHSyncThread::fileHashed);
     sync.start();
@@ -110,6 +118,8 @@ void tst_AICHSyncThread::syncBuildsTheSetOfAFileThatHasNone()
     QVERIFY(AICHRecoveryHashSet::isStored(master));
     QVERIFY(file->isAICHRecoverHashSetAvailable());
     QCOMPARE(file->fileIdentifier().getAICHHash(), master);
+    // Issue #9: left to the 11-minute save, a killed daemon read the file again next start.
+    QVERIFY2(knownFiles.isDirty(), "the new hash has to reach known.met soon");
 
     sync.requestStop();
     QVERIFY(sync.wait(5000));
@@ -256,4 +266,55 @@ void tst_AICHSyncThread::purgeLeavesACleanFileUntouched()
 }
 
 QTEST_MAIN(tst_AICHSyncThread)
+// Issue #9: a file whose set cannot be built was read in full at every start.
+void tst_AICHSyncThread::syncSkipsAFileThatFailedBeforeUntilItChanges()
+{
+    const QString path = writeFile(QStringLiteral("stubborn.bin"), 2 * EMBLOCKSIZE + 7, 's');
+    QVERIFY(!path.isEmpty());
+
+    AICHRecoveryHashSet::setKnown2MetPath(QString());
+    auto* file = new KnownFile();
+    QVERIFY(file->createFromFile(m_dir->path(), QStringLiteral("stubborn.bin")));
+    AICHRecoveryHashSet::setKnown2MetPath(known2Path());
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    QVERIFY(knownFiles.safeAddKFile(file));
+    QVERIFY(shared.safeAddKFile(file));
+
+    const QString failures = m_dir->filePath(QString::fromLatin1(kAICHFailureFileName));
+    const QFileInfo info(path);
+    QVERIFY(HashFailureFile::write(
+        failures, {{info.absolutePath(), info.fileName(), static_cast<uint64>(info.size()),
+                    static_cast<time_t>(info.lastModified().toSecsSinceEpoch())}}));
+
+    {
+        AICHSyncThread sync(m_dir->path(), &shared);
+        QSignalSpy synced(&sync, &AICHSyncThread::syncComplete);
+        QSignalSpy hashed(&sync, &AICHSyncThread::fileHashed);
+        sync.start();
+        QVERIFY(synced.wait(10000));
+        QCOMPARE(synced.first().at(0).toInt(), 0);
+        QVERIFY(sync.wait(5000));   // nothing to do: the worker ends by itself
+        QCOMPARE(hashed.count(), 0);
+        QVERIFY2(QFile::exists(failures), "an unchanged file keeps its record");
+    }
+
+    // The file changed: the record no longer describes it, and it is tried again.
+    {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::ReadWrite));
+        QVERIFY(f.setFileTime(info.lastModified().addSecs(-120), QFileDevice::FileModificationTime));
+    }
+    AICHSyncThread sync(m_dir->path(), &shared);
+    QSignalSpy hashed(&sync, &AICHSyncThread::fileHashed);
+    sync.start();
+    QVERIFY(hashed.wait(10000));
+    QVERIFY(hashed.first().at(1).toBool());
+    QVERIFY2(!QFile::exists(failures), "a record that no longer applies is dropped");
+
+    sync.requestStop();
+    QVERIFY(sync.wait(5000));
+}
+
 #include "tst_AICHSyncThread.moc"

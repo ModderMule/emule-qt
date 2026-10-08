@@ -234,17 +234,25 @@ void connectKadNotesSearch(DetailDialog* dialog, IpcClient* ipc,
 // ── shared client-detail dialog ────────────────────────────────────────
 
 void showClientDetails(QWidget* parent, IpcClient* ipc, const QString& clientHash,
-                       DetailWalker walker)
+                       DetailWalker walker, std::function<void()> onUnknown)
 {
-    if (!ipc || !ipc->isConnected() || clientHash.isEmpty())
+    if (!ipc || !ipc->isConnected() || clientHash.isEmpty()) {
+        if (onUnknown && ipc && ipc->isConnected())
+            onUnknown();
         return;
+    }
 
     Ipc::IpcMessage msg(Ipc::IpcMsgType::GetClientDetails);
     msg.append(clientHash);
     ipc->sendRequest(std::move(msg),
-        [parent, ipc, walker = std::move(walker)](const Ipc::IpcMessage& resp) {
-            if (!resp.fieldBool(0))
+        [parent, ipc, walker = std::move(walker),
+         onUnknown = std::move(onUnknown)](const Ipc::IpcMessage& resp) {
+            if (!resp.fieldBool(0)) {
+                // a refusal, not a dropped connection
+                if (onUnknown && resp.isValid())
+                    onUnknown();
                 return;
+            }
 
             auto* dlg = new ClientDetailDialog(resp.field(1).toMap(), parent);
             if (walker.step) {

@@ -597,6 +597,7 @@ private:
     QCheckBox*    m_portMapUPnPCheck = nullptr;
     QCheckBox*    m_portMapIPv6Check = nullptr;
     QSpinBox*     m_portMapLeaseSpin = nullptr;
+    QSpinBox* m_hashingDiskLoadSpin = nullptr;
     QButtonGroup* m_commitFilesGroup = nullptr;
     QButtonGroup* m_extractMetaDataGroup = nullptr;
     QSlider*      m_fileBufferSlider = nullptr;

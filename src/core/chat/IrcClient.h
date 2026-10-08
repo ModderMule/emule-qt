@@ -128,6 +128,8 @@ signals:
                              const QString& params);
     void ctcpReplyReceived(const QString& nick, const QString& command,
                            const QString& params);
+    /// One of eMule's CTCP extensions (see IrcEmuleProto.h), body unparsed.
+    void emuleProtoReceived(const QString& nick, const QString& body);
 
     // -- Raw (for logging/debugging) ------------------------------------------
     void rawLineReceived(const QString& line);

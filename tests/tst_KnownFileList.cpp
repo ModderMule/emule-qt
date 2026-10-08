@@ -4,6 +4,7 @@
 #include "TestHelpers.h"
 #include "files/KnownFile.h"
 #include "files/KnownFileList.h"
+#include "utils/FileDate.h"
 #include "prefs/Preferences.h"
 
 #include <QFile>
@@ -41,6 +42,8 @@ private slots:
     void knownFilesAreNotWrittenWhenTheUserAsksUsNotToRemember();
     void process_autoSave();
     void clear_deletesAll();
+    void sameFileDate_rules();
+    void findKnownFile_toleratesAShiftedDateOnlyOnALocalTimeVolume();
 };
 
 void tst_KnownFileList::construct_default()
@@ -525,4 +528,47 @@ void tst_KnownFileList::findKnownFile_followsAddReplaceRemove()
 }
 
 QTEST_MAIN(tst_KnownFileList)
+// FAT keeps local time in 2 s steps: a DST switch moves every date by an hour and a
+// remount can round it. Neither is a changed file (issue #9: the whole share was rehashed).
+void tst_KnownFileList::sameFileDate_rules()
+{
+    const time_t t = 1700000000;
+    QVERIFY(sameFileDate(t, t, false));
+    QVERIFY(!sameFileDate(t, t + 1, false));
+    QVERIFY(!sameFileDate(t, t + 3600, false));
+
+    QVERIFY(sameFileDate(t, t + 2, true));
+    QVERIFY(sameFileDate(t, t - 3600, true));
+    QVERIFY(sameFileDate(t, t + 3601, true));
+    QVERIFY(!sameFileDate(t, t + 3, true));
+    QVERIFY(!sameFileDate(t, t + 1800, true));
+    QVERIFY(!sameFileDate(t, t + 7200, true));
+}
+
+void tst_KnownFileList::findKnownFile_toleratesAShiftedDateOnlyOnALocalTimeVolume()
+{
+    KnownFileList list;
+    const auto add = [&list](uint8 hashByte, time_t date) {
+        auto* file = new KnownFile();
+        uint8 hash[16];
+        std::memset(hash, hashByte, 16);
+        file->setFileHash(hash);
+        file->setFileName(QStringLiteral("video.avi"));
+        file->setFileSize(12345);
+        file->setUtcFileDate(date);
+        list.safeAddKFile(file);
+        return file;
+    };
+    KnownFile* const summer = add(0x41, 1700000000);
+
+    QCOMPARE(list.findKnownFile(QStringLiteral("video.avi"), 1700003600, 12345), nullptr);
+    QCOMPARE(list.findKnownFile(QStringLiteral("video.avi"), 1700003600, 12345, true), summer);
+    QCOMPARE(list.findKnownFile(QStringLiteral("video.avi"), 1700001800, 12345, true), nullptr);
+
+    // An exact record wins over a shifted one, whatever the order they are met in.
+    KnownFile* const exact = add(0x42, 1700003600);
+    QCOMPARE(list.findKnownFile(QStringLiteral("video.avi"), 1700003600, 12345, true), exact);
+    QCOMPARE(list.findKnownFile(QStringLiteral("video.avi"), 1700000000, 12345, true), summer);
+}
+
 #include "tst_KnownFileList.moc"

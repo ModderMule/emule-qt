@@ -595,6 +595,8 @@ inline void insertBindState(QCborMap& info)
 } // namespace eMule::Ipc
 
 #include "app/AppContext.h"
+#include "net/EMSocket.h"
+#include "prefs/Preferences.h"
 
 namespace eMule::Ipc {
 
@@ -617,36 +619,41 @@ namespace eMule::Ipc {
     // Kad
     m.insert(QStringLiteral("kadConnected"), c.kadPort() != 0);
 
-    // Obfuscation
-    QString obfuStr;
-    if (c.isObfuscatedConnectionEstablished())
-        obfuStr = QStringLiteral("Enabled");
-    else if (c.supportsCryptLayer())
-        obfuStr = c.requestsCryptLayer() ? QStringLiteral("Supported (preferred)")
-                                          : QStringLiteral("Supported");
-    else
-        obfuStr = QStringLiteral("Not supported");
-    m.insert(QStringLiteral("obfuscation"), obfuStr);
+    // Tokens; the GUI has MFC's texts (srchybrid/ClientDetailDialog.cpp:93-150).
+    // Obfuscation: "none" | "enabled" | "supported"
+    const char* obfuscation = "none";
+    if (c.supportsCryptLayer()) {
+        const bool inUse = thePrefs.cryptLayerSupported()
+            && (c.requestsCryptLayer() || thePrefs.cryptLayerRequested())
+            && (c.isObfuscatedConnectionEstablished() || !c.socket() || !c.socket()->isConnected());
+        obfuscation = inUse ? "enabled" : "supported";
+    }
+    m.insert(QStringLiteral("obfuscation"), QLatin1String(obfuscation));
 
-    // Identification (credits)
+    // Without credits MFC shows "?" for the totals, the modifier and the ident state
+    m.insert(QStringLiteral("creditsKnown"), c.credits() != nullptr);
+    // Identification: "ok" | "failed" | "none". userAddress(), the key scoreRatio() uses.
     if (c.credits()) {
-        const auto identState = c.credits()->currentIdentState(c.connectAddress());
-        QString identStr;
-        switch (identState) {
-        case IdentState::Identified:   identStr = QStringLiteral("Verified (secure)"); break;
-        case IdentState::IdNeeded:     identStr = QStringLiteral("Not yet checked"); break;
-        case IdentState::IdFailed:     identStr = QStringLiteral("Failed"); break;
-        case IdentState::IdBadGuy:     identStr = QStringLiteral("Bad guy / fake"); break;
-        default:                       identStr = QStringLiteral("Not available"); break;
+        const char* ident = "none";
+        if (app.clientCredits && app.clientCredits->cryptoAvailable()) {
+            switch (c.credits()->currentIdentState(c.userAddress())) {
+            case IdentState::Identified: ident = "ok"; break;
+            case IdentState::IdNeeded:
+            case IdentState::IdFailed:
+            case IdentState::IdBadGuy:   ident = "failed"; break;
+            default:                     break;
+            }
         }
-        m.insert(QStringLiteral("identification"), identStr);
-
-        // Credit totals come from toCbor()
+        m.insert(QStringLiteral("identification"), QLatin1String(ident));
         m.insert(QStringLiteral("scoreRatio"),      static_cast<double>(c.credits()->scoreRatio(c.userAddress())));
     } else {
-        m.insert(QStringLiteral("identification"), QStringLiteral("Not available"));
+        m.insert(QStringLiteral("identification"), QStringLiteral("none"));
         m.insert(QStringLiteral("scoreRatio"),      1.0);
     }
+    m.insert(QStringLiteral("hasValidHash"), c.hasValidHash());
+    m.insert(QStringLiteral("noViewSharedFiles"), !c.viewSharedFilesSupport());
+    // MFC shows "-" for the queue score of a client that is not in our upload path
+    m.insert(QStringLiteral("uploadIdle"), c.uploadState() == UploadState::None);
 
     // Queue score — MFC ClientDetailDialog.cpp:159,166 (IDC_DRATING / IDC_DSCORE).
     //

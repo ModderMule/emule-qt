@@ -281,4 +281,10 @@
     <qresource prefix="/fonts">
         <file alias="WineTahoma.ttf">fonts/WineTahoma.ttf</file>
     </qresource>
+    <!-- Tree toggles of the exported statistics page -->
+    <qresource prefix="/stats">
+        <file alias="visible.gif">../data/legacy/webserver/stats_visible.gif</file>
+        <file alias="hidden.gif">../data/legacy/webserver/stats_hidden.gif</file>
+        <file alias="space.gif">../data/legacy/webserver/stats_space.gif</file>
+    </qresource>
 </RCC>

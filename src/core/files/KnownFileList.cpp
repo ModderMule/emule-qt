@@ -12,6 +12,7 @@
 #include "prefs/Preferences.h"
 #include "transfer/DownloadQueue.h"
 #include "protocol/Tag.h"
+#include "utils/FileDate.h"
 #include "utils/Log.h"
 #include "utils/SafeFile.h"
 
@@ -24,6 +25,9 @@
 namespace eMule {
 
 static constexpr uint32 kKnownFileListSaveInterval = MIN2S(11);
+// New records wait at most this long. MFC only has the 11 min pass, which loses every
+// hash of a first session that ends early (crash, kill) and hashes it all again.
+static constexpr uint32 kKnownFileListDirtySaveDelay = MIN2S(1);
 
 // cancelled.met, MFC's layout (srchybrid/KnownFileList.cpp:44-48):
 //   <header 1><version 1><seed 4><count 4>[<keyedHash 16><tagCount 1>[tags] * count]
@@ -110,6 +114,7 @@ void KnownFileList::save()
 
     saveCancelledFiles();
     m_lastSaveTime = static_cast<uint32>(std::time(nullptr));
+    m_dirtySince = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -135,7 +140,8 @@ void KnownFileList::clear()
 void KnownFileList::process()
 {
     const auto now = static_cast<uint32>(std::time(nullptr));
-    if (now - m_lastSaveTime >= kKnownFileListSaveInterval) {
+    if (now - m_lastSaveTime >= kKnownFileListSaveInterval
+        || (m_dirtySince != 0 && now - m_dirtySince >= kKnownFileListDirtySaveDelay)) {
         save();
     }
 }
@@ -185,12 +191,14 @@ bool KnownFileList::safeAddKFile(KnownFile* file)
 
         if (wasShared)
             theApp.sharedFileList->safeAddKFile(file);
+        markDirty();
     } else {
         m_filesMap[key] = file;
         indexBySize(file);
         totalTransferred += file->statistic.allTimeTransferred();
         totalRequested += file->statistic.allTimeRequests();
         totalAccepted += file->statistic.allTimeAccepts();
+        markDirty();
     }
     return true;
 }
@@ -211,24 +219,28 @@ void KnownFileList::remove(const KnownFile* file)
 // Lookup methods
 // ---------------------------------------------------------------------------
 
-KnownFile* KnownFileList::findKnownFile(const QString& filename, time_t date, uint64 size) const
+KnownFile* KnownFileList::findKnownFile(const QString& filename, time_t date, uint64 size,
+                                        bool localTimeVolume) const
 {
     // Only the records of that size; a scan asks this once per file on disk.
     const auto [first, last] = m_bySize.equal_range(size);
+    KnownFile* shifted = nullptr;
     for (auto it = first; it != last; ++it) {
         KnownFile* file = it->second;
-        if (file->utcFileDate() == date
-            && file->fileName().compare(filename, Qt::CaseInsensitive) == 0)
-        {
-            // Hashed before the boundary-part fix: the record is one part hash short and
-            // its file hash is one nobody else computes. Not a match, so it is rehashed.
-            if (size > 0 && size % PARTSIZE == 0
-                && !file->fileIdentifier().hasExpectedMD4HashCount())
-                continue;
+        if (!sameFileDate(file->utcFileDate(), date, localTimeVolume)
+            || file->fileName().compare(filename, Qt::CaseInsensitive) != 0)
+            continue;
+        // Hashed before the boundary-part fix: the record is one part hash short and
+        // its file hash is one nobody else computes. Not a match, so it is rehashed.
+        if (size > 0 && size % PARTSIZE == 0
+            && !file->fileIdentifier().hasExpectedMD4HashCount())
+            continue;
+        if (file->utcFileDate() == date)
             return file;
-        }
+        if (!shifted)
+            shifted = file;
     }
-    return nullptr;
+    return shifted;
 }
 
 KnownFile* KnownFileList::findKnownFileByID(const uint8* hash) const
@@ -520,6 +532,12 @@ void KnownFileList::unindexBySize(const KnownFile* file)
     // Not under its size: it changed after the record was added. Find it the slow way
     // rather than leave a pointer behind.
     std::erase_if(m_bySize, [file](const auto& entry) { return entry.second == file; });
+}
+
+void KnownFileList::markDirty()
+{
+    if (m_dirtySince == 0)
+        m_dirtySince = static_cast<uint32>(std::time(nullptr));
 }
 
 } // namespace eMule

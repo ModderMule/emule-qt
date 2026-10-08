@@ -266,6 +266,7 @@ struct Preferences::Data {
     bool ed2kLinkAdvertiseIPv6 = true; // Add our public IPv6 as an s6= source hint
     bool showExtControls = true;     // Show advanced mode controls in context menus
     int commitFiles = 1;             // 0=never, 1=on shutdown, 2=always
+    int hashingDiskLoad = 80;        // % of the time hashing may keep a disk busy (10-100, 100 = no limit)
     int extractMetaData = 1;         // 0=never, 1=MediaInfo library
     uint32 queueSize = 5000;         // Upload queue size (2000-50000)
 
@@ -423,6 +424,12 @@ struct Preferences::Data {
     bool ircIgnoreJoinMessages = true;
     bool ircIgnorePartMessages = true;
     bool ircIgnoreQuitMessages = true;
+    // eMule's CTCP extensions (MFC IRCAcceptLink, IRCAllowEmuleAddFriend, ...)
+    bool ircAcceptLinks = true;
+    bool ircAcceptLinksFriendsOnly = true;
+    bool ircAllowEmuleAddFriend = true;
+    bool ircIgnoreEmuleAddFriendMsgs = false;
+    bool ircIgnoreEmuleSendLinkMsgs = false;
     bool ircUseChannelFilter = false;
     QString ircChannelFilter;
 
@@ -1178,6 +1185,10 @@ void Preferences::setShowExtControls(bool val) { set(&Data::showExtControls, val
 int Preferences::commitFiles() const { return get(&Data::commitFiles); }
 
 void Preferences::setCommitFiles(int val) { set(&Data::commitFiles, val); }
+
+int Preferences::hashingDiskLoad() const { return get(&Data::hashingDiskLoad); }
+
+void Preferences::setHashingDiskLoad(int val) { set(&Data::hashingDiskLoad, std::clamp(val, 10, 100)); }
 
 int Preferences::extractMetaData() const { return get(&Data::extractMetaData); }
 
@@ -2294,6 +2305,26 @@ bool Preferences::ircIgnoreQuitMessages() const { return get(&Data::ircIgnoreQui
 
 void Preferences::setIrcIgnoreQuitMessages(bool val) { set(&Data::ircIgnoreQuitMessages, val); }
 
+bool Preferences::ircAcceptLinks() const { return get(&Data::ircAcceptLinks); }
+
+void Preferences::setIrcAcceptLinks(bool val) { set(&Data::ircAcceptLinks, val); }
+
+bool Preferences::ircAcceptLinksFriendsOnly() const { return get(&Data::ircAcceptLinksFriendsOnly); }
+
+void Preferences::setIrcAcceptLinksFriendsOnly(bool val) { set(&Data::ircAcceptLinksFriendsOnly, val); }
+
+bool Preferences::ircAllowEmuleAddFriend() const { return get(&Data::ircAllowEmuleAddFriend); }
+
+void Preferences::setIrcAllowEmuleAddFriend(bool val) { set(&Data::ircAllowEmuleAddFriend, val); }
+
+bool Preferences::ircIgnoreEmuleAddFriendMsgs() const { return get(&Data::ircIgnoreEmuleAddFriendMsgs); }
+
+void Preferences::setIrcIgnoreEmuleAddFriendMsgs(bool val) { set(&Data::ircIgnoreEmuleAddFriendMsgs, val); }
+
+bool Preferences::ircIgnoreEmuleSendLinkMsgs() const { return get(&Data::ircIgnoreEmuleSendLinkMsgs); }
+
+void Preferences::setIrcIgnoreEmuleSendLinkMsgs(bool val) { set(&Data::ircIgnoreEmuleSendLinkMsgs, val); }
+
 bool Preferences::ircUseChannelFilter() const { return get(&Data::ircUseChannelFilter); }
 
 void Preferences::setIrcUseChannelFilter(bool val) { set(&Data::ircUseChannelFilter, val); }
@@ -2991,6 +3022,9 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("cryptLayerSupported"), cryptLayerSupported());
     prefs.insert(QStringLiteral("cryptLayerRequested"), cryptLayerRequested());
     prefs.insert(QStringLiteral("cryptLayerRequired"), cryptLayerRequired());
+    prefs.insert(QStringLiteral("cryptLayerRequiredStrict"), cryptLayerRequiredStrict());
+    prefs.insert(QStringLiteral("useSafeKad"), useSafeKad());
+    prefs.insert(QStringLiteral("useFastKad"), useFastKad());
     prefs.insert(QStringLiteral("useSecureIdent"), useSecureIdent());
     prefs.insert(QStringLiteral("enableSearchResultFilter"), enableSearchResultFilter());
     prefs.insert(QStringLiteral("warnUntrustedFiles"), warnUntrustedFiles());
@@ -3053,6 +3087,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("maxHalfConnections"), static_cast<qint64>(maxHalfConnections()));
     prefs.insert(QStringLiteral("serverKeepAliveTimeout"), static_cast<qint64>(serverKeepAliveTimeout()));
     prefs.insert(QStringLiteral("filterLANIPs"), filterLANIPs());
+    prefs.insert(QStringLiteral("skipFirewalledChecksInLanMode"), skipFirewalledChecksInLanMode());
     prefs.insert(QStringLiteral("checkDiskspace"), checkDiskspace());
     prefs.insert(QStringLiteral("minFreeDiskSpace"), static_cast<qint64>(minFreeDiskSpace()));
     prefs.insert(QStringLiteral("logToDiskCore"), logToDiskCore());
@@ -3072,6 +3107,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("ed2kLinkAdvertiseIPv6"), ed2kLinkAdvertiseIPv6());
     prefs.insert(QStringLiteral("showExtControls"), showExtControls());
     prefs.insert(QStringLiteral("commitFiles"), commitFiles());
+    prefs.insert(QStringLiteral("hashingDiskLoad"), hashingDiskLoad());
     prefs.insert(QStringLiteral("extractMetaData"), extractMetaData());
     prefs.insert(QStringLiteral("logLevel"), logLevel());
     prefs.insert(QStringLiteral("logSourceExchange"), logSourceExchange());
@@ -3280,6 +3316,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->ed2kLinkAdvertiseIPv6       = p.value(QStringLiteral("ed2kLinkAdvertiseIPv6")).toBool();
     m_data->showExtControls             = p.value(QStringLiteral("showExtControls")).toBool();
     m_data->commitFiles                 = static_cast<int>(p.value(QStringLiteral("commitFiles")).toInteger());
+    m_data->hashingDiskLoad             = std::clamp(static_cast<int>(p.value(QStringLiteral("hashingDiskLoad")).toInteger(80)), 10, 100);
     m_data->extractMetaData             = static_cast<int>(p.value(QStringLiteral("extractMetaData")).toInteger());
     m_data->logLevel                    = static_cast<int>(p.value(QStringLiteral("logLevel")).toInteger());
     m_data->logSourceExchange           = p.value(QStringLiteral("logSourceExchange")).toBool();
@@ -3755,6 +3792,7 @@ bool Preferences::load(const QString& filePath)
             m_data->ed2kLinkAdvertiseIPv6 = t["ed2kLinkAdvertiseIPv6"].as<bool>(m_data->ed2kLinkAdvertiseIPv6);
             m_data->showExtControls = t["showExtControls"].as<bool>(m_data->showExtControls);
             m_data->commitFiles = t["commitFiles"].as<int>(m_data->commitFiles);
+            m_data->hashingDiskLoad = std::clamp(t["hashingDiskLoad"].as<int>(m_data->hashingDiskLoad), 10, 100);
             m_data->extractMetaData = t["extractMetaData"].as<int>(m_data->extractMetaData);
             m_data->queueSize = t["queueSize"].as<uint32>(m_data->queueSize);
 #ifdef Q_OS_WIN
@@ -3924,6 +3962,11 @@ bool Preferences::load(const QString& filePath)
             m_data->ircIgnoreJoinMessages = irc["ignoreJoinMessages"].as<bool>(m_data->ircIgnoreJoinMessages);
             m_data->ircIgnorePartMessages = irc["ignorePartMessages"].as<bool>(m_data->ircIgnorePartMessages);
             m_data->ircIgnoreQuitMessages = irc["ignoreQuitMessages"].as<bool>(m_data->ircIgnoreQuitMessages);
+            m_data->ircAcceptLinks = irc["acceptLinks"].as<bool>(m_data->ircAcceptLinks);
+            m_data->ircAcceptLinksFriendsOnly = irc["acceptLinksFriendsOnly"].as<bool>(m_data->ircAcceptLinksFriendsOnly);
+            m_data->ircAllowEmuleAddFriend = irc["allowEmuleAddFriend"].as<bool>(m_data->ircAllowEmuleAddFriend);
+            m_data->ircIgnoreEmuleAddFriendMsgs = irc["ignoreEmuleAddFriendMsgs"].as<bool>(m_data->ircIgnoreEmuleAddFriendMsgs);
+            m_data->ircIgnoreEmuleSendLinkMsgs = irc["ignoreEmuleSendLinkMsgs"].as<bool>(m_data->ircIgnoreEmuleSendLinkMsgs);
             m_data->ircUseChannelFilter = irc["useChannelFilter"].as<bool>(m_data->ircUseChannelFilter);
             m_data->ircChannelFilter = QString::fromStdString(irc["channelFilter"].as<std::string>(m_data->ircChannelFilter.toStdString()));
         }
@@ -4446,6 +4489,11 @@ bool Preferences::load(const QString& filePath)
     } catch (const YAML::Exception& ex) {
         logWarning(QStringLiteral("Failed to parse preferences YAML: %1 — using defaults")
                        .arg(QString::fromStdString(ex.what())));
+        // The next save() replaces the file with these defaults; keep what was there.
+        const QString broken = filePath + QStringLiteral(".broken");
+        QFile::remove(broken);
+        if (QFile::copy(filePath, broken))
+            logWarning(QStringLiteral("Unreadable preferences kept as %1").arg(broken));
         m_data = std::make_unique<Data>();
         m_data->userHash = generateUserHash();
         if (m_data->port == 0)
@@ -4821,6 +4869,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "ed2kLinkAdvertiseIPv6" << YAML::Value << m_data->ed2kLinkAdvertiseIPv6;
     out << YAML::Key << "showExtControls" << YAML::Value << m_data->showExtControls;
     out << YAML::Key << "commitFiles" << YAML::Value << m_data->commitFiles;
+    out << YAML::Key << "hashingDiskLoad" << YAML::Value << m_data->hashingDiskLoad;
     out << YAML::Key << "extractMetaData" << YAML::Value << m_data->extractMetaData;
     out << YAML::Key << "queueSize" << YAML::Value << m_data->queueSize;
 #ifdef Q_OS_WIN
@@ -4994,6 +5043,11 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "ignoreJoinMessages" << YAML::Value << m_data->ircIgnoreJoinMessages;
     out << YAML::Key << "ignorePartMessages" << YAML::Value << m_data->ircIgnorePartMessages;
     out << YAML::Key << "ignoreQuitMessages" << YAML::Value << m_data->ircIgnoreQuitMessages;
+    out << YAML::Key << "acceptLinks" << YAML::Value << m_data->ircAcceptLinks;
+    out << YAML::Key << "acceptLinksFriendsOnly" << YAML::Value << m_data->ircAcceptLinksFriendsOnly;
+    out << YAML::Key << "allowEmuleAddFriend" << YAML::Value << m_data->ircAllowEmuleAddFriend;
+    out << YAML::Key << "ignoreEmuleAddFriendMsgs" << YAML::Value << m_data->ircIgnoreEmuleAddFriendMsgs;
+    out << YAML::Key << "ignoreEmuleSendLinkMsgs" << YAML::Value << m_data->ircIgnoreEmuleSendLinkMsgs;
     out << YAML::Key << "useChannelFilter" << YAML::Value << m_data->ircUseChannelFilter;
     out << YAML::Key << "channelFilter" << YAML::Value << m_data->ircChannelFilter.toStdString();
     out << YAML::EndMap;

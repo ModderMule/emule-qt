@@ -497,6 +497,10 @@ public:
     [[nodiscard]] int commitFiles() const;
     void setCommitFiles(int val);
 
+    /// Share of the time hashing may keep a disk busy, in percent; 100 = no limit.
+    [[nodiscard]] int hashingDiskLoad() const;
+    void setHashingDiskLoad(int val);
+
     [[nodiscard]] int extractMetaData() const;
     void setExtractMetaData(int val);
 
@@ -1223,6 +1227,20 @@ public:
 
     [[nodiscard]] bool ircIgnoreQuitMessages() const;
     void setIrcIgnoreQuitMessages(bool val);
+
+    // eMule's CTCP extensions on IRC: a peer may ask to add us as a friend or send an
+    // eD2K link (MFC IRCAcceptLink, IRCAcceptLinkFriends, IRCAllowEmuleAddFriend,
+    // IRCIgnoreEmuleAddFriendMsgs, IRCIgnoreEmuleSendLinkMsgs).
+    [[nodiscard]] bool ircAcceptLinks() const;
+    void setIrcAcceptLinks(bool val);
+    [[nodiscard]] bool ircAcceptLinksFriendsOnly() const;
+    void setIrcAcceptLinksFriendsOnly(bool val);
+    [[nodiscard]] bool ircAllowEmuleAddFriend() const;
+    void setIrcAllowEmuleAddFriend(bool val);
+    [[nodiscard]] bool ircIgnoreEmuleAddFriendMsgs() const;
+    void setIrcIgnoreEmuleAddFriendMsgs(bool val);
+    [[nodiscard]] bool ircIgnoreEmuleSendLinkMsgs() const;
+    void setIrcIgnoreEmuleSendLinkMsgs(bool val);
 
     [[nodiscard]] bool ircUseChannelFilter() const;
     void setIrcUseChannelFilter(bool val);

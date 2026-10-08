@@ -13,6 +13,7 @@
 #include <QCheckBox>
 #include <QDesktopServices>
 #include <QDoubleSpinBox>
+#include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -299,8 +300,16 @@ QWidget* FirstStartWizard::setupSpeedPage()
     }
     vbox->addWidget(m_speedList, 1);
 
+    // Line rates over their limits, one grid so the four fields line up
+    auto* rateGrid = new QGridLayout;
+    rateGrid->setColumnMinimumWidth(2, 12);
+    rateGrid->setColumnStretch(5, 1);
+    const auto addField = [page, rateGrid](int row, int column, const QString& label, QWidget* field) {
+        rateGrid->addWidget(new QLabel(label, page), row, column);
+        rateGrid->addWidget(field, row, column + 1);
+    };
+
     // Custom rates, as on the line's contract
-    auto* customRow = new QHBoxLayout;
     const auto makeSpin = [page] {
         auto* spin = new QDoubleSpinBox(page);
         spin->setRange(0.1, 100000.0);
@@ -310,16 +319,24 @@ QWidget* FirstStartWizard::setupSpeedPage()
     };
     m_customDownSpin = makeSpin();
     m_customUpSpin = makeSpin();
-    customRow->addWidget(new QLabel(tr("Download:"), page));
-    customRow->addWidget(m_customDownSpin);
-    customRow->addSpacing(12);
-    customRow->addWidget(new QLabel(tr("Upload:"), page));
-    customRow->addWidget(m_customUpSpin);
-    customRow->addStretch();
-    vbox->addLayout(customRow);
+    addField(0, 0, tr("Download:"), m_customDownSpin);
+    addField(0, 3, tr("Upload:"), m_customUpSpin);
 
-    m_speedResult = new QLabel(page);
-    vbox->addWidget(m_speedResult);
+    // Limits derived from the line; editable, 0 = unlimited
+    const auto makeLimitSpin = [page] {
+        auto* spin = new QSpinBox(page);
+        spin->setRange(0, 100'000'000);
+        spin->setSpecialValueText(tr("Unlimited"));
+        spin->setSuffix(tr(" KB/s"));
+        return spin;
+    };
+    m_limitDownSpin = makeLimitSpin();
+    m_limitUpSpin = makeLimitSpin();
+    m_limitDownSpin->setObjectName(QStringLiteral("limitDown"));
+    m_limitUpSpin->setObjectName(QStringLiteral("limitUp"));
+    addField(1, 0, tr("Download limit:"), m_limitDownSpin);
+    addField(1, 3, tr("Upload limit:"), m_limitUpSpin);
+    vbox->addLayout(rateGrid);
 
     connect(m_speedList, &QTreeWidget::currentItemChanged,
             this, &FirstStartWizard::onSpeedSelectionChanged);
@@ -327,6 +344,8 @@ QWidget* FirstStartWizard::setupSpeedPage()
             this, &FirstStartWizard::onCustomRateEdited);
     connect(m_customUpSpin, &QDoubleSpinBox::valueChanged,
             this, &FirstStartWizard::onCustomRateEdited);
+    connect(m_limitDownSpin, &QSpinBox::valueChanged, this, &FirstStartWizard::onLimitEdited);
+    connect(m_limitUpSpin, &QSpinBox::valueChanged, this, &FirstStartWizard::onLimitEdited);
     connect(m_speedList, &QTreeWidget::itemDoubleClicked, this, &FirstStartWizard::onNext);
     return page;
 }
@@ -461,8 +480,12 @@ void FirstStartWizard::onSpeedSelectionChanged()
         m_customUpSpin->setValue(kiBToMbit(result.capUp));
     }
 
-    m_speedResult->setText(tr("Download limit: %1    Upload limit: %2")
-                               .arg(limitText(result.maxDown), limitText(result.maxUp)));
+    // A new line means new limits; a typed limit lasts until then.
+    const QSignalBlocker blockDown(m_limitDownSpin);
+    const QSignalBlocker blockUp(m_limitUpSpin);
+    m_limitDownSpin->setValue(static_cast<int>(result.maxDown));
+    m_limitUpSpin->setValue(static_cast<int>(result.maxUp));
+    m_limitsEdited = false;
 }
 
 /// Typing a rate means the line is none of the listed ones.
@@ -472,6 +495,11 @@ void FirstStartWizard::onCustomRateEdited()
         m_speedList->setCurrentItem(m_customItem); // -> onSpeedSelectionChanged
     else
         onSpeedSelectionChanged();
+}
+
+void FirstStartWizard::onLimitEdited()
+{
+    m_limitsEdited = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -574,6 +602,23 @@ std::optional<BandwidthSettings> FirstStartWizard::selectedBandwidth() const
     }
 }
 
+/// The selected line with the typed limits on top; nullopt = leave the bandwidth alone.
+std::optional<BandwidthSettings> FirstStartWizard::chosenBandwidth() const
+{
+    auto bandwidth = selectedBandwidth();
+    if (!m_limitsEdited)
+        return bandwidth;
+
+    // "Keep current settings" with a typed limit keeps the capacity only
+    BandwidthSettings s = bandwidth.value_or(m_current);
+    s.maxDown = static_cast<uint32>(m_limitDownSpin->value());
+    s.maxUp = static_cast<uint32>(m_limitUpSpin->value());
+    // The upload limit is clamped to the capacity: a higher limit raises it
+    s.capDown = std::max(s.capDown, s.maxDown);
+    s.capUp = std::max(s.capUp, s.maxUp);
+    return s;
+}
+
 /// Finish — the daemon writes preferences.yml; save here only when there is none.
 void FirstStartWizard::finish()
 {
@@ -582,7 +627,7 @@ void FirstStartWizard::finish()
         ? uint16(0) : static_cast<uint16>(m_udpPortSpin->value());
     const bool kadEnabled = m_kadCheck->isChecked();
     const bool ed2kEnabled = m_ed2kCheck->isChecked();
-    const auto bandwidth = selectedBandwidth();
+    const auto bandwidth = chosenBandwidth();
 
     m_applied.clear();
     m_applied.insert(QStringLiteral("port"), tcpPort);

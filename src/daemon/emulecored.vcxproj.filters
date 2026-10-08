@@ -45,6 +45,9 @@
     <ClCompile Include="IpcServer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="WinShutdownHandler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="PowerManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -89,6 +92,9 @@
     <QtMoc Include="MetaSearchService.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <ClInclude Include="WinShutdownHandler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="DaemonApiBackend.h">
       <Filter>Header Files</Filter>
     </ClInclude>

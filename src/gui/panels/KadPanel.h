@@ -50,6 +50,9 @@ public:
     /// Switch to a sub-tab by index (0 = Contacts, 1 = Search Details).
     void switchToSubTab(int index);
 
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 private slots:
     void onRefreshTimer();
     void onGraphTimer();
@@ -90,6 +93,7 @@ private:
     QButtonGroup* m_bootstrapGroup   = nullptr;
     QRadioButton* m_bootstrapIpRadio = nullptr;
     QRadioButton* m_bootstrapUrlRadio = nullptr;
+    QRadioButton* m_bootstrapClientsRadio = nullptr;
     QLineEdit*    m_ipEdit           = nullptr;
     QLineEdit*    m_portEdit         = nullptr;
     QLineEdit*    m_urlEdit          = nullptr;
@@ -111,6 +115,8 @@ private:
     // IPC link
     IpcClient* m_ipc       = nullptr;
     bool       m_kadRunning = false;
+    bool       m_kadConnected = false;
+    bool       m_downloadingNodes = false;
 };
 
 } // namespace eMule

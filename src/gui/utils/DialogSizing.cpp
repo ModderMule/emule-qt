@@ -134,8 +134,12 @@ void applySize(QWidget* dialog, QSize designedMin, QSize designedDefault, Fit fi
         // Only the first call places the window. Once it is up the user's own size wins —
         // a detail dialog re-fits itself after every walker step, and snapping back to the
         // default there would undo their resize on every arrow click.
-        dialog->resize(dialog->isVisible() ? dialog->size().expandedTo(needed)
-                                           : designedDefault.expandedTo(needed));
+        // The default is bounded like the minimum: a hand-picked 700 px is taller than a
+        // scaled laptop screen, and a window whose bottom edge is under the taskbar cannot
+        // be dragged smaller.
+        dialog->resize(dialog->isVisible()
+                           ? dialog->size().expandedTo(needed)
+                           : designedDefault.expandedTo(needed).boundedTo(budget));
     }
 }
 

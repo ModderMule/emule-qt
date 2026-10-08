@@ -38,6 +38,15 @@ struct SharedFileRow {
     int64_t allTimeAccepted = 0;
     int64_t allTimeTransferred = 0;
     int     completeSources = 0;
+    int     completeSourcesLo = 0;
+    int     completeSourcesHi = 0;
+    // Media tags; empty / 0 when the file has none
+    QString artist;
+    QString album;
+    QString title;
+    int64_t length = 0;         // seconds
+    int64_t bitrate = 0;        // kbit/s
+    QString codec;              // display name
     bool    publishedED2K = false;
     bool    kadPublished = false;
     QString path;               // directory
@@ -73,6 +82,8 @@ class SharedFilesModel : public AbstractTableModel<SharedFileRow> {
 public:
     /// Custom data role for the per-part availability map.
     static constexpr int SharePartMapRole = Qt::UserRole + 1;
+    /// A sort key that means "no value": such rows go last in either direction.
+    static constexpr int UndefinedRole = Qt::UserRole + 2;
 
     enum Column {
         ColFileName = 0,
@@ -85,6 +96,15 @@ public:
         ColCompleteSources,
         ColSharedNetworks,
         ColFolder,
+        // MFC's default-hidden columns, appended so saved layouts keep their indices
+        ColFileId,
+        ColAccepted,
+        ColArtist,
+        ColAlbum,
+        ColTitle,
+        ColLength,
+        ColBitrate,
+        ColCodec,
         ColCount
     };
 
@@ -175,6 +195,10 @@ public:
 
     void setFolderFilter(SharedFilterType type, const QString& path = {});
 
+    /// MFC CSharedFilesCtrl::IsFilteredOut: every token must be in the text of
+    /// @p column, a "-token" must not. Applied on top of the folder filter.
+    void setTextFilter(const QStringList& tokens, int column);
+
 protected:
     [[nodiscard]] bool filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const override;
     [[nodiscard]] bool lessThan(const QModelIndex& left, const QModelIndex& right) const override;
@@ -182,6 +206,8 @@ protected:
 private:
     SharedFilterType m_filterType = SharedFilterType::AllShared;
     QString m_filterPath;
+    QStringList m_tokens;
+    int m_tokenColumn = 0;
 };
 
 } // namespace eMule

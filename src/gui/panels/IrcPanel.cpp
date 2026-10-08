@@ -8,11 +8,18 @@
 #include "controls/AbstractListView.h"
 #include "controls/LogTextView.h"
 #include "controls/SortableItems.h"
+#include "app/IpcClient.h"
 #include "chat/IrcClient.h"
+#include "chat/IrcEmuleProto.h"
+#include "IpcMessage.h"
+#include "net/Address.h"
 #include "prefs/Preferences.h"
 #include "utils/Smileys.h"
 #include "utils/TextLinks.h"
 
+#include <QApplication>
+#include <QCborArray>
+#include <QCborMap>
 #include <QDateTime>
 #include <QEvent>
 #include <QGridLayout>
@@ -24,7 +31,9 @@
 #include <QLineEdit>
 #include <QListView>
 #include <QMenu>
+#include <QPointer>
 #include <QPushButton>
+#include <QRandomGenerator>
 #include <QRegularExpression>
 #include <QSplitter>
 #include <QStringListModel>
@@ -574,6 +583,12 @@ void IrcPanel::setupUi()
     m_nickListView->setModel(m_nickModel);
     m_nickListView->setSelectionMode(QAbstractItemView::SingleSelection);
     m_nickListView->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    // MFC CIrcNickListCtrl: a menu on the nick, a double click opens a private channel
+    m_nickListView->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_nickListView, &QWidget::customContextMenuRequested,
+            this, &IrcPanel::onNickContextMenu);
+    connect(m_nickListView, &QListView::doubleClicked, this,
+            [this] { openPrivateChannel(selectedNick()); });
     leftLayout->addWidget(m_nickListView, 1);
 
     m_splitter->addWidget(leftWidget);
@@ -780,6 +795,9 @@ void IrcPanel::connectIrcSignals()
     connect(m_irc, &IrcClient::channelListFinished, this, &IrcPanel::onChannelListFinished);
 
     connect(m_irc, &IrcClient::nickInUse, this, &IrcPanel::onNickInUse);
+    connect(m_irc, &IrcClient::emuleProtoReceived, this, &IrcPanel::onEmuleProto);
+    connect(m_irc, &IrcClient::loggedIn, this, [this] { emit ircConnectionChanged(true); });
+    connect(m_irc, &IrcClient::disconnected, this, [this] { emit ircConnectionChanged(false); });
 }
 
 // ---------------------------------------------------------------------------
@@ -822,16 +840,21 @@ int IrcPanel::ensureChannelTab(const QString& name, IrcChannel::Type type)
         auto* tree = new ListTreeWidget(this);
         tree->setHeaderLabels({tr("Channel"), tr("Users"), tr("Topic")});
         tree->setRootIsDecorated(false);
-        tree->setSelectionMode(QAbstractItemView::SingleSelection);
+        // MFC CIrcChannelListCtrl joins every selected channel (IrcChannelListCtrl.cpp:217-225)
+        tree->setSelectionMode(QAbstractItemView::ExtendedSelection);
         tree->setSortingEnabled(true);
         tree->header()->setStretchLastSection(true);
         tree->bindColumns(QStringLiteral("ircChannelList"), {220, 70, 400});
 
         connect(tree, &QTreeWidget::itemDoubleClicked, this,
-                [this](QTreeWidgetItem* item, int /*column*/) {
-            const QString channel = item->data(0, Qt::UserRole).toString();
-            if (!channel.isEmpty() && m_irc->isConnected())
-                m_irc->joinChannel(channel);
+                [this, tree] { joinSelectedChannels(tree); });
+        // "Join", greyed with nothing selected or before the login (:168-180)
+        tree->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(tree, &QWidget::customContextMenuRequested, this, [this, tree](const QPoint& pos) {
+            QMenu menu(this);
+            QAction* join = menu.addAction(tr("Join"), this, [this, tree] { joinSelectedChannels(tree); });
+            join->setEnabled(!tree->selectedItems().isEmpty() && m_irc->isLoggedIn());
+            menu.exec(tree->viewport()->mapToGlobal(pos));
         });
 
         m_channelListWidget = tree;
@@ -1101,6 +1124,228 @@ void IrcPanel::updateNickList()
 
     m_nickLabel->setText(tr("Nick (%1)").arg(it->nicks.size()));
     m_nickModel->setStringList(it->nicks);
+}
+
+QString IrcPanel::selectedNick() const
+{
+    QString nick = m_nickListView->currentIndex().data().toString();
+    while (!nick.isEmpty() && QStringLiteral("@+%&~!").contains(nick.front()))
+        nick.remove(0, 1);
+    return nick;
+}
+
+// MFC CIrcNickListCtrl::OpenPrivateChannel (IrcNickListCtrl.cpp:114-122)
+void IrcPanel::openPrivateChannel(const QString& nick)
+{
+    if (nick.isEmpty())
+        return;
+    const QString key = nick.toLower();
+    const bool isNew = findTab(key) < 0;
+    const int idx = ensureChannelTab(key, IrcChannel::Private);
+    if (isNew) {
+        appendToChannel(key, formatTimestamp() + QStringLiteral(" <font color='#7F7F7F'>%1</font>")
+                                 .arg(tr("* Private chat session started").toHtmlEscaped()));
+    }
+    if (idx >= 0)
+        m_tabWidget->setCurrentIndex(idx);
+    m_input->setFocus();
+}
+
+void IrcPanel::joinSelectedChannels(QTreeWidget* tree)
+{
+    if (!m_irc->isLoggedIn())
+        return;
+    for (const QTreeWidgetItem* item : tree->selectedItems()) {
+        const QString channel = item->data(0, Qt::UserRole).toString();
+        if (!channel.isEmpty())
+            m_irc->joinChannel(channel);
+    }
+}
+
+// MFC CIrcNickListCtrl::OnContextMenu / OnCommand (IrcNickListCtrl.cpp:85-112, :380-425)
+void IrcPanel::onNickContextMenu(const QPoint& pos)
+{
+    const QString nick = selectedNick();
+    const IrcChannel* ch = activeChannel();
+    if (nick.isEmpty() || !ch)
+        return;
+    const QString channel = ch->name;
+
+    QMenu menu(this);
+    QAction* title = menu.addAction(tr("Nick : %1").arg(nick));
+    title->setEnabled(false);
+    menu.addSeparator();
+    QAction* priv = menu.addAction(tr("Private Message"), this,
+                                   [this, nick] { openPrivateChannel(nick); });
+    menu.setDefaultAction(priv);
+    menu.addAction(tr("Add to friends list"), this, [this, nick] { requestFriend(nick); });
+    menu.addAction(tr("Send this to friend: ")
+                       + (m_sendLink.isEmpty() ? tr("No Shared File Selected") : m_sendLink),
+                   this, [this, nick] { sendLinkTo(nick); });
+    menu.addAction(tr("Kick"), this, [this, channel, nick] {
+        m_irc->sendRaw(QStringLiteral("KICK %1 %2").arg(channel, nick));
+    });
+    menu.addAction(tr("Ban"), this, [this, channel, nick] {
+        m_irc->sendRaw(QStringLiteral("MODE %1 +b %2").arg(channel, nick));
+    });
+    menu.addAction(tr("Slap"), this, [this, channel, nick] {
+        // not translated: it goes to the channel
+        const QString action = QStringLiteral("slaps %1 around with a large Babelfish!").arg(nick);
+        m_irc->sendCtcp(channel, QStringLiteral("ACTION"), action);
+        appendToChannel(channel.toLower(), formatTimestamp()
+            + QStringLiteral(" <font color='#9C009C'>* %1 %2</font>")
+                  .arg(m_irc->currentNick().toHtmlEscaped(), action.toHtmlEscaped()));
+    });
+    menu.exec(m_nickListView->viewport()->mapToGlobal(pos));
+}
+
+// ---------------------------------------------------------------------------
+// eMule's CTCP extensions — MFC CIrcMain (srchybrid/IrcMain.cpp:267-342)
+// ---------------------------------------------------------------------------
+
+bool IrcPanel::isIrcConnected() const
+{
+    return m_irc->isLoggedIn();
+}
+
+void IrcPanel::requestFriend(const QString& nick)
+{
+    if (!m_irc->isLoggedIn())
+        return;
+    // A fresh challenge; only a reply that echoes it is taken (MFC SetVerify)
+    do {
+        m_verify = QRandomGenerator::global()->generate();
+    } while (m_verify == 0);
+    m_irc->sendRaw(QStringLiteral("PRIVMSG %1 :\001%2\001")
+                       .arg(nick, IrcEmuleProto::friendRequest(m_verify)));
+}
+
+void IrcPanel::sendLinkTo(const QString& nick)
+{
+    if (m_sendLink.isEmpty() || !m_irc->isLoggedIn() || !m_ipc || !m_ipc->isConnected())
+        return;
+    // Our user hash goes along, so the other side can accept links from friends
+    // only. It is the daemon's hash, not this GUI's.
+    m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::GetNetworkInfo),
+        [self = QPointer<IrcPanel>(this), nick, link = m_sendLink](const Ipc::IpcMessage& resp) {
+            if (!self || !resp.isValid() || !resp.fieldBool(0) || !self->m_irc->isLoggedIn())
+                return;
+            const QString hash = resp.fieldMap(1).value(QStringLiteral("client")).toMap()
+                                     .value(QStringLiteral("hash")).toString();
+            self->m_irc->sendRaw(QStringLiteral("PRIVMSG %1 :\001%2\001")
+                                     .arg(nick, IrcEmuleProto::sendLink(hash, link)));
+        });
+}
+
+void IrcPanel::protoNotice(const QString& text)
+{
+    appendToStatus(formatTimestamp()
+        + QStringLiteral(" <font color='#9C009C'>-*EmuleProto*- %1</font>").arg(text.toHtmlEscaped()));
+}
+
+void IrcPanel::onEmuleProto(const QString& nick, const QString& body)
+{
+    // Someone asks for what it takes to add us as a friend
+    if (const auto verify = IrcEmuleProto::parseFriendRequest(body)) {
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        const bool flood = now < m_lastProtoRequestMs + 1000;   // excess flood protection
+        m_lastProtoRequestMs = now;
+        if (flood || !thePrefs.ircAllowEmuleAddFriend())
+            return;
+        answerFriendRequest(nick, *verify);
+        return;
+    }
+
+    // The answer to our own request
+    if (const auto reply = IrcEmuleProto::parseFriendReply(body)) {
+        if (m_verify == 0 || reply->verify != m_verify)
+            return;   // not asked for
+        m_verify = 0;
+        if (!m_ipc || !m_ipc->isConnected())
+            return;
+        // The client ID as the last known address, 0 for a firewalled peer
+        Ipc::IpcMessage msg(Ipc::IpcMsgType::AddFriend);
+        msg.append(reply->userHashHex);
+        msg.append(nick);
+        msg.append(static_cast<qint64>(reply->clientId));
+        msg.append(static_cast<qint64>(reply->port));
+        msg.append(QString());
+        m_ipc->sendRequest(std::move(msg));
+        return;
+    }
+
+    // An eD2K link
+    const auto link = IrcEmuleProto::parseSendLink(body);
+    if (!link)
+        return;
+    const bool quiet = thePrefs.ircIgnoreEmuleSendLinkMsgs();
+    if (!thePrefs.ircAcceptLinks()) {
+        if (!quiet) {
+            protoNotice(tr("%1 attempted to send you a file. If you wanted to accept the files "
+                           "from this person, enable Receive files in the IRC Preferences.").arg(nick));
+        }
+        return;
+    }
+    const auto accept = [this, nick, quiet, text = link->link] {
+        if (!quiet)
+            protoNotice(tr("%1 sent (%2) to be auto started.").arg(nick, text));
+        emit linkReceived(text);
+    };
+    if (!thePrefs.ircAcceptLinksFriendsOnly()) {
+        accept();
+        return;
+    }
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    // Friends only: is the sender's user hash one of ours?
+    m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::GetFriends),
+        [self = QPointer<IrcPanel>(this), nick, quiet, accept,
+         hash = link->userHashHex](const Ipc::IpcMessage& resp) {
+            if (!self || !resp.isValid() || !resp.fieldBool(0))
+                return;
+            for (const QCborValue& v : resp.fieldArray(1)) {
+                if (v.toMap().value(QStringLiteral("hash")).toString()
+                        .compare(hash, Qt::CaseInsensitive) == 0) {
+                    accept();
+                    return;
+                }
+            }
+            if (!quiet) {
+                self->protoNotice(tr("%1 attempted to send you a file. If you wanted to accept the "
+                                     "files from this person, add him as a friend or change your "
+                                     "IRC Preferences.").arg(nick));
+            }
+        });
+}
+
+void IrcPanel::answerFriendRequest(const QString& nick, const QString& verify)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+    // Who we are comes from the daemon: ID, port and the server we are on
+    m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::GetNetworkInfo),
+        [self = QPointer<IrcPanel>(this), nick, verify](const Ipc::IpcMessage& resp) {
+            if (!self || !resp.isValid() || !resp.fieldBool(0) || !self->m_irc->isLoggedIn())
+                return;
+            const QCborMap info = resp.fieldMap(1);
+            const QCborMap client = info.value(QStringLiteral("client")).toMap();
+            const QCborMap ed2k = info.value(QStringLiteral("ed2k")).toMap();
+            const QCborMap server = ed2k.value(QStringLiteral("server")).toMap();
+
+            const bool firewalled = ed2k.value(QStringLiteral("firewalled")).toBool();
+            const auto clientId = firewalled
+                ? 0u : static_cast<uint32>(ed2k.value(QStringLiteral("clientID")).toInteger());
+            const uint32 serverIp =
+                Address::fromString(server.value(QStringLiteral("addr")).toString()).toNetworkUint32();
+
+            self->m_irc->sendRaw(QStringLiteral("PRIVMSG %1 :\001%2\001").arg(nick,
+                IrcEmuleProto::friendReply(QApplication::applicationVersion(), verify, clientId,
+                    static_cast<uint16>(client.value(QStringLiteral("tcpPort")).toInteger()),
+                    serverIp, static_cast<uint16>(server.value(QStringLiteral("port")).toInteger()),
+                    client.value(QStringLiteral("hash")).toString())));
+            if (!thePrefs.ircIgnoreEmuleAddFriendMsgs())
+                self->protoNotice(tr("%1 added you as friend!").arg(nick));
+        });
 }
 
 // ---------------------------------------------------------------------------

@@ -224,6 +224,7 @@
     <ClCompile Include="geo\IP2Country.cpp" />
     <ClCompile Include="transfer\ImportParts.cpp" />
     <ClCompile Include="chat\IrcClient.cpp" />
+    <ClCompile Include="chat\IrcEmuleProto.cpp" />
     <ClCompile Include="kademlia\KadContact.cpp" />
     <ClCompile Include="kademlia\KadEntry.cpp" />
     <ClCompile Include="kademlia\KadFastKad.cpp" />
@@ -274,6 +275,8 @@
     <ClCompile Include="files\PartFileConvert.cpp" />
     <ClCompile Include="files\PartFileWriteThread.cpp" />
     <ClCompile Include="files\SourceIndex.cpp" />
+    <ClCompile Include="utils\DiskLoadLimiter.cpp" />
+    <ClCompile Include="utils\FileDate.cpp" />
     <ClCompile Include="utils\PathUtils.cpp" />
     <ClCompile Include="utils\PerfLog.cpp" />
     <ClCompile Include="net\Pinger.cpp" />
@@ -426,6 +429,7 @@
     <ClInclude Include="transfer\ImportParts.h" />
     <ClInclude Include="transfer\UploadQueueStore.h" />
     <QtMoc Include="chat\IrcClient.h" />
+    <ClInclude Include="chat\IrcEmuleProto.h" />
     <ClInclude Include="chat\IrcMessage.h" />
     <ClInclude Include="webserver\JsonSerializers.h" />
     <ClInclude Include="app\CoreInfo.h" />
@@ -490,6 +494,8 @@
     <QtMoc Include="files\PartFile.h" />
     <QtMoc Include="files\PartFileConvert.h" />
     <QtMoc Include="files\PartFileWriteThread.h" />
+    <ClInclude Include="utils\DiskLoadLimiter.h" />
+    <ClInclude Include="utils\FileDate.h" />
     <ClInclude Include="utils\PathUtils.h" />
     <ClInclude Include="utils\PerfLog.h" />
     <ClInclude Include="net\Address.h" />

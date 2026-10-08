@@ -1,3 +1,4 @@
+#include "utils/Ed2kLinkImporter.h"
 #include "utils/TooltipDelayStyle.h"
 #include "pch.h"
 #include <QApplication>
@@ -357,6 +358,7 @@ int main(int argc, char* argv[])
         mainWindow.searchPanel()->setDownloadModel(mainWindow.transferPanel()->downloadModel());
         mainWindow.sharedFilesPanel()->setIpcClient(&ipcClient);
         mainWindow.messagesPanel()->setIpcClient(&ipcClient);
+        mainWindow.ircPanel()->setIpcClient(&ipcClient);
         mainWindow.statisticsPanel()->setIpcClient(&ipcClient);
         mainWindow.usenetPanel()->setIpcClient(&ipcClient);
 
@@ -385,6 +387,14 @@ int main(int argc, char* argv[])
                          &mainWindow, onLink);
         QObject::connect(mainWindow.ircPanel(), &eMule::IrcPanel::linkActivated,
                          &mainWindow, onLink);
+        // A link an IRC peer sent and the options accepted: started without asking,
+        // as MFC CIrcMain::ProcessLink
+        QObject::connect(mainWindow.ircPanel(), &eMule::IrcPanel::linkReceived, &mainWindow,
+                         [&ipcClient, &mainWindow](const QString& link) {
+            eMule::Ed2kLinkImporter::importLinks(link, &ipcClient, &mainWindow,
+                eMule::Ed2kLinkImporter::Source::Automatic,
+                eMule::Ed2kLinkImporter::Prompt::Silent);
+        });
 
         QObject::connect(&ipcClient, &eMule::IpcClient::logMessageReceived,
                          logWidget, [logWidget](const eMule::Ipc::IpcMessage& msg) {
@@ -455,6 +465,8 @@ int main(int argc, char* argv[])
                 const QCborMap info = resp.fieldMap(1);
                 mainWindow.setNetworkBlocked(info.value(QStringLiteral("netBlocked")).toBool(),
                                              info.value(QStringLiteral("netBlockReason")).toString());
+                mainWindow.setEd2kServer(info.value(QStringLiteral("serverName")).toString(),
+                                         info.value(QStringLiteral("serverUsers")).toInteger());
                 mainWindow.setEd2kStatus(
                     info.value(QStringLiteral("connected")).toBool(),
                     info.value(QStringLiteral("connecting")).toBool(),
@@ -499,6 +511,8 @@ int main(int argc, char* argv[])
                 // The update-URL fields show daemon-owned prefs.
                 mainWindow.serverPanel()->refreshUpdateUrl();
                 mainWindow.kadPanel()->refreshNodesUrl();
+                // The folder tree marks what sharedDirs just named.
+                mainWindow.sharedFilesPanel()->refreshSharedDirs();
             });
 
             // Automatic version check: one now if the interval has elapsed, then
@@ -572,6 +586,8 @@ int main(int argc, char* argv[])
             const QCborMap info = msg.fieldMap(0);
             mainWindow.setNetworkBlocked(info.value(QStringLiteral("netBlocked")).toBool(),
                                          info.value(QStringLiteral("netBlockReason")).toString());
+            mainWindow.setEd2kServer(info.value(QStringLiteral("serverName")).toString(),
+                                     info.value(QStringLiteral("serverUsers")).toInteger());
             mainWindow.setEd2kStatus(
                 info.value(QStringLiteral("connected")).toBool(),
                 info.value(QStringLiteral("connecting")).toBool(),
@@ -670,6 +686,19 @@ int main(int argc, char* argv[])
                     upRate, downRate,
                     val(QLatin1StringView("upOverheadRate")),
                     val(QLatin1StringView("downOverheadRate")));
+
+                // Upload SpeedSense pane; absent while the option is off
+                const QCborValue uss = stats.value(QStringLiteral("uss"));
+                if (uss.isMap()) {
+                    const QCborMap u = uss.toMap();
+                    mainWindow.setUssStatus(true, u.value(QStringLiteral("active")).toBool(),
+                        u.value(QStringLiteral("limit")).toInteger(),
+                        u.value(QStringLiteral("latency")).toInteger(),
+                        u.value(QStringLiteral("lowest")).toInteger(),
+                        u.value(QStringLiteral("msTolerance")).toBool());
+                } else {
+                    mainWindow.setUssStatus(false, false, 0, 0, 0, false);
+                }
 
                 // Update stream token for preview streaming
                 if (auto st = stats.value(QStringLiteral("streamToken")); st.isString())

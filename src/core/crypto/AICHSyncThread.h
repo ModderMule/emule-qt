@@ -14,9 +14,11 @@
 ///    (MFC AICHSyncThread.cpp:163-247), when told where to look for those files.
 
 #include "AICHData.h"
+#include "files/HashFailureStore.h"
 #include "utils/Types.h"
 
 #include <QByteArray>
+#include <QHash>
 #include <QMutex>
 #include <QString>
 #include <QThread>
@@ -63,14 +65,17 @@ signals:
 
     // Worker -> owner thread.
     void indexLoaded();
-    void hashSetBuilt(const QByteArray& fileHash, const QByteArray& masterHash, bool success);
+    /// @p readInFull: the file was there to be read, so a failure cost a whole pass.
+    void hashSetBuilt(const QByteArray& fileHash, const QByteArray& masterHash, bool success,
+                      bool readInFull);
 
 protected:
     void run() override;
 
 private slots:
     void onIndexLoaded();
-    void onHashSetBuilt(const QByteArray& fileHash, const QByteArray& masterHash, bool success);
+    void onHashSetBuilt(const QByteArray& fileHash, const QByteArray& masterHash, bool success,
+                        bool readInFull);
 
 private:
     struct Job {
@@ -90,6 +95,9 @@ private:
     void applyStoredHashSet(KnownFile* file);
     /// The master hashes still referred to, or false when that cannot be told. Owner thread.
     bool collectKeepSet(std::unordered_set<AICHHash>& keep) const;
+    /// Did building this file's set fail before, with the file unchanged since? Owner thread.
+    [[nodiscard]] bool failedBefore(const QString& path, uint64 size) const;
+    void saveFailures() const;
 
     QString m_configDir;
     SharedFileList* m_sharedFiles;
@@ -105,6 +113,10 @@ private:
     bool m_hasDuplicates = false;                // seen by loadIndex()
     bool m_purgeQueued = false;                  // guarded by m_jobMutex, as m_keep
     std::unordered_set<AICHHash> m_keep;
+
+    /// Files whose set could not be built, by path: not read again until they change.
+    /// Without it such a file was read in full at every start. Owner thread.
+    QHash<QString, HashFailureRecord> m_failures;
 };
 
 } // namespace eMule

@@ -29,6 +29,7 @@
 
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
+#include "utils/WebServices.h"
 #include "utils/Log.h"
 #include "utils/Ed2kLinkImporter.h"
 #include "utils/PreviewLauncher.h"
@@ -356,6 +357,7 @@ void MainWindow::showOptionsDialog(int page)
     m_messagesPanel->applyDisplayOptions();
     if (m_usenetPanel)
         m_usenetPanel->applyDisplayOptions();
+    m_sharedFilesPanel->refreshSharedDirs();   // Directories page edits the share
     updateWindowTitle();
 
     m_serverPanel->logWidget()->setIpcTabVisible(thePrefs.enableIpcLog());
@@ -412,8 +414,37 @@ void MainWindow::setEd2kStatus(bool connected, bool connecting, bool firewalled,
         m_statusEd2k->setStyleSheet(QString{});
         m_connStatus->setEd2kState(ConnectionStatusWidget::Disconnected);
     }
-    m_statusEd2k->setToolTip(m_netBlocked ? m_netBlockReason : QString());
+    // MFC CMuleStatusBarCtrl::GetPaneToolTipText (MuleStatusBarCtrl.cpp:86-105)
+    QString tip = m_netBlocked ? m_netBlockReason : QString();
+    if (tip.isEmpty() && connected && !m_ed2kServerName.isEmpty()) {
+        tip = tr("eD2K Server: %1  (%2 Users)")
+                  .arg(m_ed2kServerName, QLocale().toString(m_ed2kServerUsers));
+    }
+    m_statusEd2k->setToolTip(tip);
     updateConnectButton();
+}
+
+void MainWindow::setEd2kServer(const QString& name, qint64 users)
+{
+    m_ed2kServerName = name;
+    m_ed2kServerUsers = users;
+}
+
+void MainWindow::setUssStatus(bool enabled, bool active, qint64 limitBytes, qint64 latencyMs,
+                              qint64 lowestMs, bool msTolerance)
+{
+    m_statusUss->setVisible(enabled);
+    if (!enabled)
+        return;
+    // MFC CemuleDlg::ShowPing (EmuleDlg.cpp:1156-1169): limit | ping [| % of the lowest]
+    QString text = tr("Preparing...");
+    if (active) {
+        const QString limit = QString::number(static_cast<double>(limitBytes) / 1024.0, 'f', 1);
+        text = lowestMs > 0 && !msTolerance
+            ? QStringLiteral("%1 | %2ms | %3%").arg(limit).arg(latencyMs).arg(latencyMs * 100 / lowestMs)
+            : QStringLiteral("%1 | %2ms").arg(limit).arg(latencyMs);
+    }
+    m_statusUss->setText(text);
 }
 
 void MainWindow::setNetworkBlocked(bool blocked, const QString& reason)
@@ -692,6 +723,15 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* event)
             switchToTab(TabMessages);
             return true;
         }
+        // MFC CMuleStatusBarCtrl::OnLButtonDblClk (MuleStatusBarCtrl.cpp:53-59, :70-71)
+        if (obj == m_statusMsg) {
+            QMessageBox::information(this, tr("eMule Log"), m_statusMsg->text());
+            return true;
+        }
+        if (obj == m_statusUss) {
+            showOptionsDialog(OptionsDialog::PageExtended);
+            return true;
+        }
     }
     return QMainWindow::eventFilter(obj, event);
 }
@@ -821,6 +861,15 @@ void MainWindow::buildToolsMenu()
     });
     linksMenu->addAction(tr("Version Check"), this, [this] {
         checkForUpdates(true);
+    });
+    // The general web services and their editor (MFC EmuleDlg.cpp:2598-2600)
+    linksMenu->addSeparator();
+    WebServices::instance().populateGeneralMenu(linksMenu);
+    linksMenu->addAction(tr("Edit Web Services..."), this, [this] {
+        if (!WebServices::edit()) {
+            QMessageBox::warning(this, tr("Web Services"),
+                                 tr("webservices.dat was not found in the config folder."));
+        }
     });
 
     // Scheduler submenu
@@ -1479,6 +1528,7 @@ void MainWindow::setupStatusBar()
     auto* sb = statusBar();
 
     m_statusMsg = new QLabel(tr("Ready"), this);
+    m_statusMsg->installEventFilter(this);
     sb->addWidget(m_statusMsg, 1);
 
     // Users/Files indicator with green person icon (matching MFC status bar)
@@ -1543,6 +1593,12 @@ void MainWindow::setupStatusBar()
     m_statusKad = new QLabel(tr("Kad: Disconnected"), this);
     m_statusKad->installEventFilter(this);
     sb->addPermanentWidget(m_statusKad);
+
+    // Upload SpeedSense (MFC SBarUSS): shown only while the option is on
+    m_statusUss = new QLabel(this);
+    m_statusUss->installEventFilter(this);
+    m_statusUss->hide();
+    sb->addPermanentWidget(m_statusUss);
 
     // Unread chat (MFC SBarChatMsg): empty until a message waits, then it blinks
     m_statusChat = new QLabel(this);
@@ -1618,6 +1674,10 @@ void MainWindow::setupPages()
 
     // Tab 6: IRC
     m_ircPanel = new IrcPanel(this);
+    connect(m_ircPanel, &IrcPanel::ircConnectionChanged,
+            m_sharedFilesPanel, &SharedFilesPanel::setIrcConnected);
+    connect(m_sharedFilesPanel, &SharedFilesPanel::ircSendLinkChosen,
+            m_ircPanel, &IrcPanel::setSendLink);
     m_pages->addWidget(m_ircPanel);
 
     // Tab 7: Statistics

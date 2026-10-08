@@ -946,6 +946,27 @@ private slots:
         QCOMPARE(p2.enableSearchResultFilter(), false);
     }
 
+    // Issue #9: how much of the time hashing may keep a disk busy
+    void hashingDiskLoad_defaultsClampsAndRoundTrips()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("hashload.yaml"));
+
+        Preferences p1;
+        p1.load(tmp.filePath(QStringLiteral("nonexistent_hashload.yaml")));
+        QCOMPARE(p1.hashingDiskLoad(), 80);
+        p1.setHashingDiskLoad(5);
+        QCOMPARE(p1.hashingDiskLoad(), 10);
+        p1.setHashingDiskLoad(250);
+        QCOMPARE(p1.hashingDiskLoad(), 100);
+        p1.setHashingDiskLoad(55);
+        QVERIFY(p1.saveTo(file));
+
+        Preferences p2;
+        QVERIFY(p2.load(file));
+        QCOMPARE(p2.hashingDiskLoad(), 55);
+    }
+
     // YAML-only: no IPC key, so it has to survive the file on its own
     void webServerCorsAllowedOrigins_roundTrip()
     {
@@ -964,6 +985,36 @@ private slots:
         Preferences p2;
         QVERIFY(p2.load(file));
         QCOMPARE(p2.webServerCorsAllowedOrigins(), origins);
+    }
+
+    // eMule's CTCP extensions on IRC; defaults as MFC (srchybrid/Preferences.cpp:2083-2093)
+    void ircEmuleProto_defaultsAndRoundTrip()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("irc_proto.yaml"));
+        {
+            Preferences p1;
+            p1.load(tmp.filePath(QStringLiteral("nonexistent_irc.yaml")));
+            QVERIFY(p1.ircAcceptLinks());
+            QVERIFY(p1.ircAcceptLinksFriendsOnly());
+            QVERIFY(p1.ircAllowEmuleAddFriend());
+            QVERIFY(!p1.ircIgnoreEmuleAddFriendMsgs());
+            QVERIFY(!p1.ircIgnoreEmuleSendLinkMsgs());
+            p1.setIrcAcceptLinks(false);
+            p1.setIrcAcceptLinksFriendsOnly(false);
+            p1.setIrcAllowEmuleAddFriend(false);
+            p1.setIrcIgnoreEmuleAddFriendMsgs(true);
+            p1.setIrcIgnoreEmuleSendLinkMsgs(true);
+            QVERIFY(p1.saveTo(file));
+        }
+
+        Preferences p2;
+        QVERIFY(p2.load(file));
+        QVERIFY(!p2.ircAcceptLinks());
+        QVERIFY(!p2.ircAcceptLinksFriendsOnly());
+        QVERIFY(!p2.ircAllowEmuleAddFriend());
+        QVERIFY(p2.ircIgnoreEmuleAddFriendMsgs());
+        QVERIFY(p2.ircIgnoreEmuleSendLinkMsgs());
     }
 
     // -- Validation for new settings ------------------------------------------

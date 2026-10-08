@@ -38,7 +38,9 @@ env:
 
 jobs:
   build:
-    runs-on: macos-15-intel
+    # macOS 26 image: its default Xcode 26 matches macos.yml.  macos-15-intel
+    # defaults to Xcode 16.4, whose libc++ has no std::jthread.
+    runs-on: macos-26-intel
 
     steps:
       - name: Checkout

@@ -58,6 +58,20 @@ public:
     /// Apply one GetStats reply to the tree. Public for tests.
     void updateTree(const class QCborMap& stats);
 
+    /// The tree as text — MFC CStatisticsTree::GetText. @p branch null: every top
+    /// level node; @p onlyVisible: collapsed nodes keep their children to themselves.
+    [[nodiscard]] QString treeText(bool onlyVisible, QTreeWidgetItem* branch = nullptr) const;
+    /// The same as an HTML fragment — MFC CStatisticsTree::GetHTML.
+    [[nodiscard]] QString treeHtml(bool onlyVisible, QTreeWidgetItem* branch = nullptr) const;
+    /// A whole page with a collapsible tree — MFC CStatisticsTree::ExportHTML. The
+    /// images are embedded, so the page is the one file.
+    [[nodiscard]] QString exportPageHtml() const;
+    /// A section header: bold in the tree, in the HTML, and what "Expand Main
+    /// Sections" opens (MFC TVIS_BOLD, srchybrid/StatisticsDlg.cpp:2804-2834).
+    [[nodiscard]] static bool isSection(const QTreeWidgetItem* item);
+    /// MFC CStatisticsTree::ExpandAll(true): collapse all, then open the sections.
+    void expandMainSections();
+
 private slots:
     void onContextMenu(const QPoint& pos);
 
@@ -80,7 +94,14 @@ private:
     void copyAllStats();
     void resetStats();
     void restoreStats();
-    QString treeItemText(QTreeWidgetItem* item, int depth) const;
+    void copyHtml(bool onlyVisible, bool branchOnly);
+    void exportHtml();
+    QString itemsText(bool onlyVisible, QTreeWidgetItem* parent, QTreeWidgetItem* only,
+                      int level, bool lineBreaks) const;
+    QString itemsHtml(bool onlyVisible, QTreeWidgetItem* parent, QTreeWidgetItem* only,
+                      int level) const;
+    QString itemsExportHtml(QTreeWidgetItem* parent, int level, int& nextId) const;
+    QString headerLine() const;
 
     IpcClient* m_ipc = nullptr;
     PanelPoller* m_treePoller = nullptr;

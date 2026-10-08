@@ -41,7 +41,8 @@ QVariant KadContactsModel::data(const QModelIndex& index, int role) const
 
     if (role == Qt::UserRole) {
         switch (index.column()) {
-        case ColStatus:   return c.type;
+        // type, then version (MFC KadContactListCtrl.cpp:213-221)
+        case ColStatus:   return c.type * 256 + c.version;
         case ColClientId: return c.clientId;
         case ColDistance:  return c.distance;
         case ColCountry:   return CountryFlags::sortKey(c.cc);
@@ -49,10 +50,11 @@ QVariant KadContactsModel::data(const QModelIndex& index, int role) const
         }
     }
 
-    if (role == Qt::DecorationRole && index.column() == ColStatus)
+    // MFC puts the icon on the ID column (KadContactListCtrl.cpp:117-125)
+    if (role == Qt::DecorationRole && index.column() == ColClientId)
         return CountryFlags::withFlag(m_icons[static_cast<size_t>(contactImage(c))], c.cc);
 
-    if (role == Qt::ToolTipRole && (index.column() == ColStatus || index.column() == ColCountry)
+    if (role == Qt::ToolTipRole && (index.column() == ColClientId || index.column() == ColCountry)
         && !c.cc.isEmpty())
         return CountryFlags::tooltip(c.cc);
 
@@ -72,8 +74,8 @@ QVariant KadContactsModel::headerData(int section, Qt::Orientation orientation, 
         return {};
 
     switch (section) {
-    case ColStatus:   return tr("Status");
-    case ColClientId: return tr("Client ID");
+    case ColStatus:   return tr("Type");
+    case ColClientId: return tr("ID");
     case ColDistance:  return tr("Distance");
     case ColCountry:   return tr("Country");
     default:          return {};

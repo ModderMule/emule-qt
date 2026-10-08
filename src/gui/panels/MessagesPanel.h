@@ -92,6 +92,7 @@ private slots:
     void onCloseClicked();
     void onRefreshTimer();
     void onFriendContextMenu(const QPoint& pos);
+    void onChatTabContextMenu(const QPoint& pos);
     void onChatMessagePush(const Ipc::IpcMessage& msg);
     void onFriendListPush(const Ipc::IpcMessage& msg);
     void showSmileySelector();
@@ -102,6 +103,7 @@ private:
     void setupUi();
     void requestFriendList();
     void updateInfoSection(int row);
+    void showFriendDetails(const QModelIndex& index);
     void updateChatDisplay();
     void appendChatStatus(const QString& friendHash, const QString& text,
                           const QImage& image = {});
@@ -124,6 +126,9 @@ private:
     void setNotify(const QString& friendHash, bool on);
     /// Tab icons, tab text colour and the status-bar state for unread sessions.
     void refreshNotifyCues();
+
+    QString m_infoShownHash;          ///< friend the info box is showing
+    bool m_infoNoViewShared = false;  ///< its linked client refuses "View Shared Files"
 
     // Models
     FriendListModel* m_friendModel = nullptr;

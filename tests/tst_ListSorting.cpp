@@ -18,6 +18,7 @@
 #include "controls/DownloadListModel.h"
 #include "controls/DownloadProgressDelegate.h"
 #include "controls/KadContactsModel.h"
+#include "controls/KadSearchesModel.h"
 #include "controls/KnownTypeStyle.h"
 #include "controls/SearchResultsModel.h"
 #include "controls/ServerListModel.h"
@@ -129,6 +130,8 @@ private slots:
     void onQueueColumnsFollowMfc();
     void uploadStatusBarFollowsMfc();
     void kadContactImageFollowsMfc();
+    void kadContactColumnsFollowMfc();
+    void kadSearchRowsFollowMfc();
 
     // --- progress bars (BarShader, MFC CBarShader) --------------------------
     void barShaderShadesRoundBars();
@@ -1157,6 +1160,67 @@ void tst_ListSorting::kadContactImageFollowsMfc()
     QCOMPARE(KadContactsModel::contactImage(old), 3);
     old.type = 7;
     QCOMPARE(KadContactsModel::contactImage(old), 4);
+}
+
+// MFC KadContactListCtrl.cpp:53-55, :95-125, :203-237
+void tst_ListSorting::kadContactColumnsFollowMfc()
+{
+    KadContactsModel model;
+    QCOMPARE(model.headerData(KadContactsModel::ColClientId, Qt::Horizontal).toString(),
+             QStringLiteral("ID"));
+    QCOMPARE(model.headerData(KadContactsModel::ColStatus, Qt::Horizontal).toString(),
+             QStringLiteral("Type"));
+
+    KadContactRow older, newer;
+    older.clientId = QStringLiteral("AA");
+    older.type = 2;
+    older.version = 8;
+    newer.clientId = QStringLiteral("BB");
+    newer.type = 2;
+    newer.version = 9;
+    model.setContacts({older, newer});
+
+    // the icon is on the ID column, the type text on the other
+    QVERIFY(model.index(0, KadContactsModel::ColClientId).data(Qt::DecorationRole).isValid());
+    QVERIFY(!model.index(0, KadContactsModel::ColStatus).data(Qt::DecorationRole).isValid());
+    QCOMPARE(model.index(0, KadContactsModel::ColStatus).data().toString(), QStringLiteral("2(8)"));
+    // same type: the version breaks the tie
+    QVERIFY(model.index(0, KadContactsModel::ColStatus).data(Qt::UserRole).toInt()
+            < model.index(1, KadContactsModel::ColStatus).data(Qt::UserRole).toInt());
+}
+
+// MFC KadSearchListCtrl.cpp:124-151, CSearch::GetTypeName
+void tst_ListSorting::kadSearchRowsFollowMfc()
+{
+    KadSearchesModel model;
+    QCOMPARE(model.headerData(KadSearchesModel::ColNumber, Qt::Horizontal).toString(),
+             QStringLiteral("Number"));
+
+    QCOMPARE(KadSearchesModel::typeText(0), QStringLiteral("Node Lookup"));
+    QCOMPARE(KadSearchesModel::typeText(11), QStringLiteral("Node Lookup"));
+    QCOMPARE(KadSearchesModel::typeText(2), QStringLiteral("Search Sources"));
+    QCOMPARE(KadSearchesModel::typeText(3), QStringLiteral("Search Keywords"));
+    QCOMPARE(KadSearchesModel::typeText(6), QStringLiteral("Store Keyword"));
+    QCOMPARE(KadSearchesModel::typeText(9), QStringLiteral("Unknown"));
+    QCOMPARE(KadSearchesModel::typeIconName(5), QStringLiteral("KadStoreFile.ico"));
+    QVERIFY(KadSearchesModel::typeIconName(8).isEmpty());   // Find Buddy has none
+
+    KadSearchRow keyword, buddy;
+    keyword.searchId = 1;
+    keyword.typeId = 3;
+    buddy.searchId = 2;
+    buddy.typeId = 8;
+    buddy.stopping = true;
+    model.setSearches({keyword, buddy});
+
+    const auto cell = [&](int row, int col) { return model.index(row, col); };
+    QVERIFY(cell(0, KadSearchesModel::ColNumber).data(Qt::DecorationRole).isValid());
+    QVERIFY(!cell(1, KadSearchesModel::ColNumber).data(Qt::DecorationRole).isValid());
+    QCOMPARE(cell(0, KadSearchesModel::ColStatus).data().toString(), QStringLiteral("Active"));
+    QCOMPARE(cell(1, KadSearchesModel::ColStatus).data().toString(), QStringLiteral("Stopping"));
+    // Type sorts by the id, not by its name ("Find Buddy" < "Search Keywords" as text)
+    QVERIFY(cell(0, KadSearchesModel::ColType).data(Qt::UserRole).toInt()
+            < cell(1, KadSearchesModel::ColType).data(Qt::UserRole).toInt());
 }
 
 // ---------------------------------------------------------------------------

@@ -19,6 +19,7 @@
 #include "prefs/Preferences.h"
 #include "utils/CountryFlags.h"
 #include "utils/DialogSizing.h"
+#include "utils/SharedDirState.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/WebServices.h"
 #include "utils/StringUtils.h"
@@ -41,6 +42,8 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileSystemModel>
+
+#include <algorithm>
 #include <QFontDialog>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -352,6 +355,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_ed2kLinkAdvertiseIPv6Check, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_checkDiskspaceCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_minFreeDiskSpaceSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_hashingDiskLoadSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_commitFilesGroup, &QButtonGroup::idToggled, this, &OptionsDialog::markDirty);
     connect(m_extractMetaDataGroup, &QButtonGroup::idToggled, this, &OptionsDialog::markDirty);
     connect(m_logToDiskCoreCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -457,9 +461,12 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     // 1300 px Usenet column this all exists to stop.
     // 700, not the old 640: measured against every page's preferred height, that is
     // where the scrollbar stops appearing on the ordinary ones (General 665, Web
-    // Interface 674) while still fitting a 768 px screen. The three list pages -- Usenet,
-    // Feeds, Indexers -- scroll, which is what the scroll areas are for.
-    DialogSizing::applySize(this, QSize(720, 520), QSize(800, 700),
+    // Interface 674). The three list pages -- Usenet, Feeds, Indexers -- scroll, which is
+    // what the scroll areas are for. First-run default only: the size the user left the
+    // dialog at wins, and applySize() cuts either one to the screen.
+    const QSize stored = theUiState.optionsDialogSize();
+    DialogSizing::applySize(this, QSize(720, 520),
+                            stored.isValid() ? stored : QSize(800, 700),
                             DialogSizing::Fit::Layout);
 }
 
@@ -473,11 +480,13 @@ void OptionsDialog::selectPage(int page)
 
 void OptionsDialog::done(int result)
 {
-    // Remember the page across every close path — OK, Cancel, Esc and the
+    // Remember the page and size across every close path — OK, Cancel, Esc and the
     // window close button all route through QDialog::done().
     const int page = m_sidebar->currentItemId();
     if (page >= 0 && page < PageCount)
         theUiState.setOptionsLastPage(page);
+    if (!isMaximized() && !isFullScreen())
+        theUiState.setOptionsDialogSize(size());
 
     QDialog::done(result);
 }
@@ -799,20 +808,10 @@ QWidget* OptionsDialog::createGeneralPage()
     auto* miscBtnLayout = new QHBoxLayout;
     auto* webServicesBtn = new QPushButton(tr("Edit Web Services..."), miscGroup);
     connect(webServicesBtn, &QPushButton::clicked, this, [this] {
-        // webservices.dat, not eMule.tmpl -- that one is the web *server* template.
-        // MFC opens <configdir>webservices.dat (srchybrid/OtherFunctions.cpp:1071).
-        const QString path = WebServices::userFilePath();
-        if (!QFile::exists(path)) {
-            // Seeding should have placed it; recover from the shipped copy. Never
-            // open the shipped one directly -- edits there are lost on the next sync.
-            const QString shipped = WebServices::instance().servicesFilePath();
-            if (shipped == path || !QFile::copy(shipped, path)) {
-                QMessageBox::warning(this, tr("Web Services"),
-                                     tr("webservices.dat was not found in the config folder."));
-                return;
-            }
+        if (!WebServices::edit()) {
+            QMessageBox::warning(this, tr("Web Services"),
+                                 tr("webservices.dat was not found in the config folder."));
         }
-        QDesktopServices::openUrl(QUrl::fromLocalFile(path));
     });
     auto* ed2kLinksBtn = new QPushButton(tr("Handle eD2K Links"), miscGroup);
     connect(ed2kLinksBtn, &QPushButton::clicked, this, [] {
@@ -1507,6 +1506,14 @@ public:
             const QString path = filePath(index);
             return m_checked.contains(path) ? Qt::Checked : Qt::Unchecked;
         }
+        // MFC bolds a folder with a shared one somewhere below it
+        // (srchybrid/DirectoryTreeCtrl.cpp:248)
+        if (role == Qt::FontRole && index.column() == 0
+            && hasCheckedBelow(filePath(index))) {
+            QFont font;
+            font.setBold(true);
+            return font;
+        }
         return QFileSystemModel::data(index, role);
     }
 
@@ -1519,6 +1526,9 @@ public:
             else
                 m_checked.remove(path);
             emit dataChanged(index, index, {Qt::CheckStateRole});
+            // The folders above gain or lose their bold (MFC UpdateParentItems, :393)
+            for (QModelIndex up = index.parent(); up.isValid(); up = up.parent())
+                emit dataChanged(up, up, {Qt::FontRole});
             return true;
         }
         return QFileSystemModel::setData(index, value, role);
@@ -1539,6 +1549,14 @@ public:
     }
 
 private:
+    [[nodiscard]] bool hasCheckedBelow(const QString& path) const
+    {
+        const QString key = SharedDirState::dirKey(path);
+        return std::ranges::any_of(m_checked, [&key](const QString& checked) {
+            return SharedDirState::isBelowKey(SharedDirState::dirKey(checked), key);
+        });
+    }
+
     QSet<QString> m_checked;
 };
 
@@ -2115,6 +2133,21 @@ QWidget* OptionsDialog::createIRCPage()
     ignoreQuit->setText(0, tr("Ignore Quit info messages"));
     ignoreQuit->setFlags(ignoreQuit->flags() | Qt::ItemIsUserCheckable);
     ignoreQuit->setCheckState(0, Qt::Checked);
+
+    const auto addCheck = [](QTreeWidgetItem* parent, const QString& text) {
+        auto* item = new QTreeWidgetItem(parent);
+        item->setText(0, text);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(0, Qt::Unchecked);
+        return item;
+    };
+    addCheck(ignoreParent, tr("Ignore eMule add friend protocol messages"));
+    addCheck(ignoreParent, tr("Ignore eMule send link protocol messages"));
+    // eMule's CTCP extensions (MFC PPgIRC)
+    addCheck(m_ircMiscTree->invisibleRootItem(), tr("Allow others to add you as a friend"));
+    auto* acceptLinks = addCheck(m_ircMiscTree->invisibleRootItem(),
+                                 tr("Accept eD2K links in IRC (Use only with caution!)"));
+    addCheck(acceptLinks, tr("From friends only"));
 
     m_ircMiscTree->expandAll();
     giveListRoom(m_ircMiscTree, 8);
@@ -5151,6 +5184,19 @@ QWidget* OptionsDialog::createExtendedPage()
     diskSpaceRow->addStretch();
     scrollLayout->addLayout(diskSpaceRow);
 
+    // --- Disk load of hashing: share of the time a disk may be kept busy ---
+    auto* hashLoadRow = new QHBoxLayout;
+    hashLoadRow->addWidget(new QLabel(tr("Max. disk load while hashing:"), scrollWidget));
+    m_hashingDiskLoadSpin = new QSpinBox(scrollWidget);
+    m_hashingDiskLoadSpin->setRange(10, 100);
+    m_hashingDiskLoadSpin->setSingleStep(5);
+    m_hashingDiskLoadSpin->setSuffix(QStringLiteral(" %"));
+    m_hashingDiskLoadSpin->setToolTip(
+        tr("Hashing pauses between reads so the disk stays responsive. 100 % means no limit."));
+    hashLoadRow->addWidget(m_hashingDiskLoadSpin);
+    hashLoadRow->addStretch();
+    scrollLayout->addLayout(hashLoadRow);
+
     // --- Safe .met/.dat file writing ---
     auto* commitGroup = new QGroupBox(tr("Safe .met/.dat file writing"), scrollWidget);
     auto* commitLayout = new QVBoxLayout(commitGroup);
@@ -5961,6 +6007,12 @@ void OptionsDialog::loadSettings()
     ignoreParent->child(1)->setCheckState(0, thePrefs.ircIgnoreJoinMessages() ? Qt::Checked : Qt::Unchecked);
     ignoreParent->child(2)->setCheckState(0, thePrefs.ircIgnorePartMessages() ? Qt::Checked : Qt::Unchecked);
     ignoreParent->child(3)->setCheckState(0, thePrefs.ircIgnoreQuitMessages() ? Qt::Checked : Qt::Unchecked);
+    // ...4=addFriendMsgs, 5=sendLinkMsgs); 4=allowAddFriend, 5=acceptLinks->(0=friendsOnly)
+    ignoreParent->child(4)->setCheckState(0, thePrefs.ircIgnoreEmuleAddFriendMsgs() ? Qt::Checked : Qt::Unchecked);
+    ignoreParent->child(5)->setCheckState(0, thePrefs.ircIgnoreEmuleSendLinkMsgs() ? Qt::Checked : Qt::Unchecked);
+    root->child(4)->setCheckState(0, thePrefs.ircAllowEmuleAddFriend() ? Qt::Checked : Qt::Unchecked);
+    root->child(5)->setCheckState(0, thePrefs.ircAcceptLinks() ? Qt::Checked : Qt::Unchecked);
+    root->child(5)->child(0)->setCheckState(0, thePrefs.ircAcceptLinksFriendsOnly() ? Qt::Checked : Qt::Unchecked);
 
     // Messages page (GUI-only)
     m_showSmileysCheck->setChecked(thePrefs.showSmileys());
@@ -6159,6 +6211,11 @@ void OptionsDialog::saveSettings()
     thePrefs.setIrcIgnoreJoinMessages(ignoreParent->child(1)->checkState(0) == Qt::Checked);
     thePrefs.setIrcIgnorePartMessages(ignoreParent->child(2)->checkState(0) == Qt::Checked);
     thePrefs.setIrcIgnoreQuitMessages(ignoreParent->child(3)->checkState(0) == Qt::Checked);
+    thePrefs.setIrcIgnoreEmuleAddFriendMsgs(ignoreParent->child(4)->checkState(0) == Qt::Checked);
+    thePrefs.setIrcIgnoreEmuleSendLinkMsgs(ignoreParent->child(5)->checkState(0) == Qt::Checked);
+    thePrefs.setIrcAllowEmuleAddFriend(root->child(4)->checkState(0) == Qt::Checked);
+    thePrefs.setIrcAcceptLinks(root->child(5)->checkState(0) == Qt::Checked);
+    thePrefs.setIrcAcceptLinksFriendsOnly(root->child(5)->child(0)->checkState(0) == Qt::Checked);
 
     // Messages page (GUI-only)
     thePrefs.setShowSmileys(m_showSmileysCheck->isChecked());
@@ -6545,6 +6602,8 @@ void OptionsDialog::saveSettings()
         req.append(m_showExtControlsCheck->isChecked());
         req.append(QStringLiteral("commitFiles"));
         req.append(static_cast<qint64>(m_commitFilesGroup->checkedId()));
+        req.append(QStringLiteral("hashingDiskLoad"));
+        req.append(static_cast<qint64>(m_hashingDiskLoadSpin->value()));
         req.append(QStringLiteral("extractMetaData"));
         req.append(static_cast<qint64>(m_extractMetaDataGroup->checkedId()));
         req.append(QStringLiteral("logLevel"));
@@ -6725,6 +6784,16 @@ void OptionsDialog::saveSettings()
         req.append(ignoreParent->child(2)->checkState(0) == Qt::Checked);
         req.append(QStringLiteral("ircIgnoreQuitMessages"));
         req.append(ignoreParent->child(3)->checkState(0) == Qt::Checked);
+        req.append(QStringLiteral("ircIgnoreEmuleAddFriendMsgs"));
+        req.append(ignoreParent->child(4)->checkState(0) == Qt::Checked);
+        req.append(QStringLiteral("ircIgnoreEmuleSendLinkMsgs"));
+        req.append(ignoreParent->child(5)->checkState(0) == Qt::Checked);
+        req.append(QStringLiteral("ircAllowEmuleAddFriend"));
+        req.append(root->child(4)->checkState(0) == Qt::Checked);
+        req.append(QStringLiteral("ircAcceptLinks"));
+        req.append(root->child(5)->checkState(0) == Qt::Checked);
+        req.append(QStringLiteral("ircAcceptLinksFriendsOnly"));
+        req.append(root->child(5)->child(0)->checkState(0) == Qt::Checked);
 
         // Messages page (GUI-only)
         req.append(QStringLiteral("showSmileys"));
@@ -6878,6 +6947,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setEd2kHostname(m_ed2kHostnameEdit->text());
         thePrefs.setEd2kLinkAdvertiseIPv6(m_ed2kLinkAdvertiseIPv6Check->isChecked());
         thePrefs.setCommitFiles(m_commitFilesGroup->checkedId());
+        thePrefs.setHashingDiskLoad(m_hashingDiskLoadSpin->value());
         thePrefs.setExtractMetaData(m_extractMetaDataGroup->checkedId());
         thePrefs.setLogLevel(m_logLevelSpin->value());
         thePrefs.setLogSourceExchange(m_logSourceExchangeCheck->isChecked());
@@ -7240,6 +7310,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_checkDiskspaceCheck->setChecked(diskCheck);
     m_minFreeDiskSpaceSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("minFreeDiskSpace")).toInteger(20971520)) / (1024 * 1024));
     m_minFreeDiskSpaceSpin->setEnabled(diskCheck);
+    m_hashingDiskLoadSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("hashingDiskLoad")).toInteger(80)));
     if (auto* btn = m_commitFilesGroup->button(static_cast<int>(prefs.value(QStringLiteral("commitFiles")).toInteger(1))))
         btn->setChecked(true);
     if (auto* btn = m_extractMetaDataGroup->button(static_cast<int>(prefs.value(QStringLiteral("extractMetaData")).toInteger(1))))

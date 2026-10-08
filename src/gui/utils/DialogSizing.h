@@ -38,7 +38,8 @@ enum class Fit {
 ///
 /// @param designedMin      the hand-picked floor the call site used to pass to
 ///                         setMinimumSize(); pass 0 for a dimension the content owns.
-/// @param designedDefault  the hand-picked default from resize(); grown to the minimum.
+/// @param designedDefault  the hand-picked default from resize() -- or a size the user
+///                         left the dialog at; grown to the minimum, cut to the screen.
 /// @param fit              which height the content is entitled to; see Fit.
 ///
 /// Call at the *end* of the constructor, once the content widgets exist. Safe to call

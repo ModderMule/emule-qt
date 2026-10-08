@@ -7,6 +7,7 @@
 #include "crypto/AICHHashTree.h"
 #include "files/KnownFile.h"
 #include "files/PartFile.h"
+#include "utils/DiskLoadLimiter.h"
 
 #include <QFile>
 
@@ -19,7 +20,13 @@ PartDigest digestPart(QFile& file, const PartDigestRequest& request)
     PartDigest digest;
     if (!file.seek(static_cast<qint64>(request.start)))
         return digest;
-    const QByteArray data = file.read(static_cast<qint64>(request.length));
+    QByteArray data;
+    {
+        // One limiter per part: what it has not paused for yet is dropped with it.
+        DiskLoadLimiter diskLoad;
+        const DiskLoadLimiter::Read timed(diskLoad);
+        data = file.read(static_cast<qint64>(request.length));
+    }
     if (static_cast<uint64>(data.size()) != request.length)
         return digest;
 

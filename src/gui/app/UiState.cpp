@@ -83,6 +83,8 @@ void UiState::load(const QString& configDir)
         m_windowHeight     = root["windowHeight"].as<int>(m_windowHeight);
         m_windowMaximized  = root["windowMaximized"].as<bool>(m_windowMaximized);
         m_optionsLastPage  = root["optionsLastPage"].as<int>(m_optionsLastPage);
+        m_optionsWidth     = root["optionsWidth"].as<int>(m_optionsWidth);
+        m_optionsHeight    = root["optionsHeight"].as<int>(m_optionsHeight);
         m_lastVersionCheck = root["lastVersionCheck"].as<int64_t>(m_lastVersionCheck);
         m_associateNzbFiles = root["associateNzbFiles"].as<bool>(m_associateNzbFiles);
         m_firstStartWizardDone = root["firstStartWizardDone"].as<bool>(m_firstStartWizardDone);
@@ -174,6 +176,8 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "windowHeight"     << YAML::Value << m_windowHeight;
     out << YAML::Key << "windowMaximized"  << YAML::Value << m_windowMaximized;
     out << YAML::Key << "optionsLastPage"  << YAML::Value << m_optionsLastPage;
+    out << YAML::Key << "optionsWidth"     << YAML::Value << m_optionsWidth;
+    out << YAML::Key << "optionsHeight"    << YAML::Value << m_optionsHeight;
     out << YAML::Key << "lastVersionCheck" << YAML::Value << m_lastVersionCheck;
     out << YAML::Key << "associateNzbFiles" << YAML::Value << m_associateNzbFiles;
     out << YAML::Key << "firstStartWizardDone" << YAML::Value << m_firstStartWizardDone;
@@ -407,6 +411,24 @@ void UiState::captureMainWindow(QMainWindow* window)
         m_windowHeight = window->height();
     }
     // When maximized, keep the last saved normal size so it restores correctly.
+}
+
+QSize UiState::optionsDialogSize() const
+{
+    return (m_optionsWidth > 0 && m_optionsHeight > 0)
+               ? QSize(m_optionsWidth, m_optionsHeight) : QSize();
+}
+
+void UiState::setOptionsDialogSize(QSize size)
+{
+    // An invalid size clears it -- back to the designed default.
+    const QSize wanted = size.isValid() ? size : QSize(0, 0);
+    if (wanted == QSize(m_optionsWidth, m_optionsHeight))
+        return;
+
+    m_optionsWidth  = wanted.width();
+    m_optionsHeight = wanted.height();
+    scheduleSave();   // the dialog closes long before the main window does
 }
 
 void UiState::bindHeaderView(QHeaderView* header, const QString& key)

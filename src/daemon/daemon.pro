@@ -79,7 +79,8 @@ SOURCES += \
     main.cpp \
     MetaSearchService.cpp \
     PowerManager.cpp \
-    UsenetBridge.cpp
+    UsenetBridge.cpp \
+    WinShutdownHandler.cpp
 
 HEADERS += \
     CliIpcClient.h \
@@ -93,7 +94,8 @@ HEADERS += \
     IpcServer.h \
     MetaSearchService.h \
     PowerManager.h \
-    UsenetBridge.h
+    UsenetBridge.h \
+    WinShutdownHandler.h
 
 # generated eNode Meta API messages (core.pro)
 INCLUDEPATH += $$OUT_PWD/../core/enodemeta_proto

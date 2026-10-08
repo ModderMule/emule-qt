@@ -191,6 +191,7 @@
     <ClCompile Include="MetaSearchService.cpp" />
     <ClCompile Include="PowerManager.cpp" />
     <ClCompile Include="UsenetBridge.cpp" />
+    <ClCompile Include="WinShutdownHandler.cpp" />
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="ApiEventFeeder.h" />
@@ -205,6 +206,7 @@
     <ClInclude Include="DaemonApiBackend.h" />
     <ClInclude Include="DaemonUsenetWebBackend.h" />
     <ClInclude Include="SharedFileRows.h" />
+    <ClInclude Include="WinShutdownHandler.h" />
     <ClInclude Include="UsenetBridge.h" />
   </ItemGroup>
   <ItemGroup>

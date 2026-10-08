@@ -85,6 +85,7 @@ private slots:
     void numeric433_nickInUse();
     void names_signal();
     void ctcpVersion_autoResponse();
+    void emuleProto_arrivesWholeAndCaseKept();
     void channelList_signals();
     void executePerform();
     void sendMessage_format();
@@ -401,6 +402,27 @@ void tst_IrcClient::ctcpVersion_autoResponse()
     const QString response = QString::fromUtf8(fix.serverSocket->readAll());
     QVERIFY(response.contains(QStringLiteral("NOTICE Alice")));
     QVERIFY(response.contains(QStringLiteral("VERSION")));
+
+    fix.client.disconnect();
+}
+
+// eMule's own CTCP messages are bar separated and carry a link: the generic
+// command/params split (which upper-cases the first word) must not touch them.
+void tst_IrcClient::emuleProto_arrivesWholeAndCaseKept()
+{
+    LoopbackFixture fix;
+    QVERIFY(fix.setup());
+
+    QSignalSpy proto(&fix.client, &IrcClient::emuleProtoReceived);
+    QSignalSpy generic(&fix.client, &IrcClient::ctcpRequestReceived);
+    const QString body = QStringLiteral(
+        "SENDLINK|0123456789abcdef0123456789abcdef|ed2k://|file|Some.File.avi|1|"
+        "0123456789ABCDEF0123456789ABCDEF|/");
+    fix.sendLine(QStringLiteral(":Alice!a@h PRIVMSG testNick :\001%1\001").arg(body));
+    QTRY_COMPARE(proto.count(), 1);
+    QCOMPARE(proto[0][0].toString(), QStringLiteral("Alice"));
+    QCOMPARE(proto[0][1].toString(), body);
+    QCOMPARE(generic.count(), 0);
 
     fix.client.disconnect();
 }

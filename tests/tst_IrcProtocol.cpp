@@ -3,6 +3,7 @@
 
 #include "TestHelpers.h"
 #include "chat/IrcMessage.h"
+#include "chat/IrcEmuleProto.h"
 
 #include <QTest>
 
@@ -12,6 +13,10 @@ class tst_IrcProtocol : public QObject {
     Q_OBJECT
 
 private slots:
+    void emuleProto_friendRequestRoundTrip();
+    void emuleProto_friendReplyRoundTrip();
+    void emuleProto_friendReplyRejectsGarbage();
+    void emuleProto_sendLinkKeepsTheLinkWhole();
     void parse_empty();
     void parse_pingNoPrefix();
     void parse_prefixServerOnly();
@@ -289,6 +294,67 @@ void tst_IrcProtocol::numericCode_returnsValue()
     QCOMPARE(msg.numericCode(), 353);
     msg.command = QStringLiteral("PRIVMSG");
     QCOMPARE(msg.numericCode(), -1);
+}
+
+// eMule's CTCP extensions — MFC CIrcMain (srchybrid/IrcMain.cpp:267-342)
+void tst_IrcProtocol::emuleProto_friendRequestRoundTrip()
+{
+    const QString body = IrcEmuleProto::friendRequest(123456u);
+    QCOMPARE(body, QStringLiteral("RQSFRIEND|123456|"));
+    QVERIFY(IrcEmuleProto::isEmuleProto(body));
+    QCOMPARE(IrcEmuleProto::parseFriendRequest(body).value_or(QString()), QStringLiteral("123456"));
+    // MFC compares case-insensitively
+    QVERIFY(IrcEmuleProto::parseFriendRequest(QStringLiteral("rqsfriend|7|")).has_value());
+    QVERIFY(!IrcEmuleProto::parseFriendRequest(QStringLiteral("RQSFRIEND")).has_value());
+    QVERIFY(!IrcEmuleProto::isEmuleProto(QStringLiteral("VERSION")));
+}
+
+void tst_IrcProtocol::emuleProto_friendReplyRoundTrip()
+{
+    const QString hash = QStringLiteral("0123456789ABCDEF0123456789ABCDEF");
+    const QString body = IrcEmuleProto::friendReply(QStringLiteral("1.0"), QStringLiteral("42"),
+                                                    0x04030201u, 4662, 0x08070605u, 4661, hash);
+    QCOMPARE(body, QStringLiteral("REPFRIEND eMule1.0|42|67305985:4662|134678021:4661|%1|").arg(hash));
+
+    const auto reply = IrcEmuleProto::parseFriendReply(body);
+    QVERIFY(reply.has_value());
+    QCOMPARE(reply->verify, 42u);
+    QCOMPARE(reply->clientId, 0x04030201u);
+    QCOMPARE(reply->port, uint16(4662));
+    QCOMPARE(reply->userHashHex, hash);
+
+    // on no server: MFC writes the dotted zero address and port 0
+    QVERIFY(IrcEmuleProto::friendReply(QStringLiteral("1.0"), QStringLiteral("1"), 0, 4662, 0, 4661, hash)
+                .contains(QStringLiteral("|0:4662|0.0.0.0:0|")));
+}
+
+void tst_IrcProtocol::emuleProto_friendReplyRejectsGarbage()
+{
+    QVERIFY(!IrcEmuleProto::parseFriendReply(QStringLiteral("REPFRIEND eMule|x|1:2|3:4|00|")).has_value());
+    // a verify that is no number can never match the one we sent
+    QVERIFY(!IrcEmuleProto::parseFriendReply(
+        QStringLiteral("REPFRIEND eMule|abc|1:2|3:4|0123456789ABCDEF0123456789ABCDEF|")).has_value());
+    // the hash must be a user hash
+    QVERIFY(!IrcEmuleProto::parseFriendReply(
+        QStringLiteral("REPFRIEND eMule|5|1:2|3:4|not-a-hash|")).has_value());
+    QVERIFY(!IrcEmuleProto::parseFriendReply(QStringLiteral("REPFRIEND eMule|5|")).has_value());
+}
+
+void tst_IrcProtocol::emuleProto_sendLinkKeepsTheLinkWhole()
+{
+    const QString hash = QStringLiteral("0123456789abcdef0123456789abcdef");
+    const QString link = QStringLiteral("ed2k://|file|Some.File.avi|1234|0123456789ABCDEF0123456789ABCDEF|/");
+    const QString body = IrcEmuleProto::sendLink(hash, link);
+    QCOMPARE(body, QStringLiteral("SENDLINK|%1|%2").arg(hash, link));
+
+    // the link has bars of its own, and its case is the file name's
+    const auto parsed = IrcEmuleProto::parseSendLink(body);
+    QVERIFY(parsed.has_value());
+    QCOMPARE(parsed->userHashHex, hash);
+    QCOMPARE(parsed->link, link);
+
+    QVERIFY(!IrcEmuleProto::parseSendLink(QStringLiteral("SENDLINK|") + hash + QStringLiteral("|")).has_value());
+    QVERIFY(!IrcEmuleProto::parseSendLink(QStringLiteral("SENDLINK")).has_value());
 }
 
 QTEST_GUILESS_MAIN(tst_IrcProtocol)

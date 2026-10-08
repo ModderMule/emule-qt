@@ -83,7 +83,8 @@ USSStatus LastCommonRouteFinder::currentStatus() const
         m_stateString,
         m_pingAverage,
         m_lowestPing,
-        m_upload.load()
+        m_upload.load(),
+        m_controlling
     };
 }
 
@@ -250,6 +251,7 @@ void LastCommonRouteFinder::run()
             {
                 std::lock_guard lock(m_pingMutex);
                 m_stateString = QStringLiteral("USS disabled");
+                m_controlling = false;
             }
 
             // Wait for prefs change or stop
@@ -263,6 +265,7 @@ void LastCommonRouteFinder::run()
         {
             std::lock_guard lock(m_pingMutex);
             m_stateString = QStringLiteral("Collecting hosts for traceroute...");
+            m_controlling = false;
         }
 
         {
@@ -445,6 +448,7 @@ void LastCommonRouteFinder::run()
         {
             std::lock_guard lock(m_pingMutex);
             m_stateString = QStringLiteral("Active — monitoring latency");
+            m_controlling = true;
         }
 
         // The staged ramp runs from here, and again from every manual limit change.
@@ -569,6 +573,7 @@ void LastCommonRouteFinder::run()
     {
         std::lock_guard lock(m_pingMutex);
         m_stateString = QStringLiteral("Stopped");
+        m_controlling = false;
     }
 }
 

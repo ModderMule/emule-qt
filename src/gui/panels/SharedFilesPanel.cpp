@@ -8,6 +8,7 @@
 #include "app/IpcClient.h"
 #include "app/UiState.h"
 #include "controls/AbstractListView.h"
+#include "controls/FilterEdit.h"
 #include "controls/SharedFilesModel.h"
 #include "controls/SharedPartsDelegate.h"
 #include "dialogs/ArchivePreviewPanel.h"
@@ -22,6 +23,7 @@
 #include "utils/MenuUtils.h"
 #include "utils/PanelPoller.h"
 #include "utils/PreviewLauncher.h"
+#include "utils/SharedDirState.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/StringUtils.h"
 #include "utils/ViewNavigation.h"
@@ -40,6 +42,7 @@
 #include <QApplication>
 #include <QCborArray>
 #include <QGuiApplication>
+#include <QHash>
 #include <QCheckBox>
 #include <QCborMap>
 #include <QClipboard>
@@ -61,9 +64,12 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
+#include <QPainter>
+#include <QPixmap>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScrollBar>
+#include <QSet>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QPointer>
@@ -76,6 +82,7 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <utility>
 
 namespace eMule {
 
@@ -85,6 +92,46 @@ namespace {
 
 /// Custom role marking items that lazy-load filesystem children.
 constexpr int kRoleFsItem = Qt::UserRole + 2;
+/// Custom role marking the entries under "Shared Directories".
+constexpr int kRoleSharedDirItem = Qt::UserRole + 3;
+constexpr int kRolePath = Qt::UserRole + 1;
+
+/// The folder icon with an MFC image-list overlay drawn over it
+/// (srchybrid/SharedDirsTreeCtrl.cpp:169-170). An empty path is the plain folder.
+QIcon folderIcon(const QString& overlayPath = {})
+{
+    static QHash<QString, QIcon> cache;
+    if (const auto it = cache.constFind(overlayPath); it != cache.constEnd())
+        return *it;
+
+    const QIcon base(QStringLiteral(":/icons/FolderOpen.ico"));
+    QIcon icon = base;
+    if (!overlayPath.isEmpty()) {
+        constexpr int kPx = 16;
+        constexpr int kDpr = 2;
+        QPixmap canvas(QSize(kPx, kPx) * kDpr);
+        canvas.setDevicePixelRatio(kDpr);
+        canvas.fill(Qt::transparent);
+        {
+            QPainter painter(&canvas);
+            const QRect cell(0, 0, kPx, kPx);
+            painter.drawPixmap(cell, base.pixmap(kPx, kPx));
+            painter.drawPixmap(cell, QIcon(overlayPath).pixmap(kPx, kPx));
+        }
+        icon = QIcon(canvas);
+    }
+    cache.insert(overlayPath, icon);
+    return icon;
+}
+
+void setItemBold(QTreeWidgetItem* item, bool bold)
+{
+    QFont font = item->font(0);
+    if (font.bold() == bold)
+        return;
+    font.setBold(bold);
+    item->setFont(0, font);
+}
 
 /// MFC upload priority integer constants matching KnownFile.h
 constexpr int PrVeryLow  = 4;
@@ -152,6 +199,7 @@ void SharedFilesPanel::setIpcClient(IpcClient* client)
 void SharedFilesPanel::onRefreshTimer()
 {
     requestSharedFiles();
+    syncSharedDirState();
 }
 
 void SharedFilesPanel::onFolderSelectionChanged()
@@ -430,6 +478,15 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
         act->setEnabled(hasSel);
     }
 
+    // The link the IRC nick menu's "Send this to friend" offers (MFC Irc_SetSendLink,
+    // srchybrid/SharedFilesCtrl.cpp:787, :826-828)
+    {
+        const QString link = single ? single->ed2kLink : QString();
+        auto* act = m_contextMenu->addAction(menuIcon("IRCClipboard.ico"), tr("Add To IRC Clipboard"),
+                                             this, [this, link]() { emit ircSendLinkChosen(link); });
+        act->setEnabled(m_ircConnected && !link.isEmpty());
+    }
+
     // Find — searches the list itself, so it only needs the list to be non-empty
     {
         auto* act = m_contextMenu->addAction(menuIcon("Search.ico"), tr("Find..."));
@@ -540,9 +597,9 @@ QWidget* SharedFilesPanel::createTopSection()
     // --- Folder tree ---
     auto* folderTree = new ListTreeWidget;
     m_folderTree = folderTree;
-    m_folderTree->setHeaderLabel(tr("File Name"));
+    // MFC's tree has no header; the filter box sits above it (emule.rc:417-430)
+    m_folderTree->setHeaderHidden(true);
     m_folderTree->setIndentation(16);
-    folderTree->bindColumns(QStringLiteral("sharedFolders"), {220});
 
     // Build tree structure matching MFC
     m_allSharedItem = new QTreeWidgetItem(m_folderTree, {tr("All Shared Files")});
@@ -580,7 +637,14 @@ QWidget* SharedFilesPanel::createTopSection()
     connect(m_folderTree, &QTreeWidget::itemExpanded,
             this, &SharedFilesPanel::onFolderItemExpanded);
 
-    m_horzSplitter->addWidget(m_folderTree);
+    auto* leftWidget = new QWidget;
+    auto* leftLayout = new QVBoxLayout(leftWidget);
+    leftLayout->setContentsMargins(0, 0, 0, 0);
+    leftLayout->setSpacing(2);
+    m_filterEdit = new FilterEdit;
+    leftLayout->addWidget(m_filterEdit);
+    leftLayout->addWidget(m_folderTree, 1);
+    m_horzSplitter->addWidget(leftWidget);
 
     // --- File list view ---
     auto* rightWidget = new QWidget;
@@ -648,10 +712,32 @@ QWidget* SharedFilesPanel::createTopSection()
     auto* header = m_fileView->header();
     header->setStretchLastSection(true);
     header->setDefaultSectionSize(90);
-    // File Name, Size, Type, Priority, Requests, Transferred, Shared Parts,
-    // Complete Sources, Shared Networks, Folder (hidden by default, like MFC).
+    // Fresh layout: MFC's order (srchybrid/SharedFilesCtrl.cpp:264-281) — File ID
+    // after Priority, Accepted Requests after Requests, Folder before Complete Sources
+    if (!theUiState.hasHeaderState(QStringLiteral("sharedfiles"))) {
+        const auto place = [header](int column, int after) {
+            header->moveSection(header->visualIndex(column), header->visualIndex(after) + 1);
+        };
+        place(SharedFilesModel::ColFileId, SharedFilesModel::ColPriority);
+        place(SharedFilesModel::ColAccepted, SharedFilesModel::ColRequests);
+        header->moveSection(header->visualIndex(SharedFilesModel::ColFolder),
+                            header->visualIndex(SharedFilesModel::ColCompleteSources));
+    }
+    // File Name, Size, Type, Priority, Requests, Transferred, Shared Parts, Complete
+    // Sources, Shared eD2K|Kad, Folder, File ID, Accepted Requests, Artist, Album,
+    // Title, Length, Bitrate, Codec. Hidden by default as in MFC.
     fileView->bindColumns(QStringLiteral("sharedfiles"),
-        {220, 75, 70, 80, 80, 120, 80, 100, 100, 200}, {SharedFilesModel::ColFolder});
+        {260, 65, 60, 60, 100, 120, 170, 60, 100, 260, 220, 100, 100, 100, 100, 50, 65, 50},
+        {SharedFilesModel::ColFolder, SharedFilesModel::ColFileId, SharedFilesModel::ColAccepted,
+         SharedFilesModel::ColArtist, SharedFilesModel::ColAlbum, SharedFilesModel::ColTitle,
+         SharedFilesModel::ColLength, SharedFilesModel::ColBitrate, SharedFilesModel::ColCodec});
+
+    // The cell text of one column; Shared parts and Shared eD2K|Kad have none
+    // (MFC SharedFilesWnd.cpp:95-98)
+    m_filterEdit->setIgnoredColumns({SharedFilesModel::ColSharedParts,
+                                     SharedFilesModel::ColSharedNetworks});
+    m_filterEdit->setHeader(header);
+    connect(m_filterEdit, &FilterEdit::filterChanged, m_proxy, &SharedFilesSortProxy::setTextFilter);
 
     m_fileView->setItemDelegateForColumn(SharedFilesModel::ColSharedParts,
                                           new SharedPartsDelegate(m_fileView));
@@ -898,6 +984,14 @@ SharedFileRow sharedRowFromCbor(const QCborMap& m)
     row.allTimeAccepted   = m.value(QStringLiteral("allTimeAccepted")).toInteger();
     row.allTimeTransferred = m.value(QStringLiteral("allTimeTransferred")).toInteger();
     row.completeSources   = static_cast<int>(m.value(QStringLiteral("completeSources")).toInteger());
+    row.completeSourcesLo = static_cast<int>(m.value(QStringLiteral("completeSourcesLo")).toInteger());
+    row.completeSourcesHi = static_cast<int>(m.value(QStringLiteral("completeSourcesHi")).toInteger());
+    row.artist            = m.value(QStringLiteral("artist")).toString();
+    row.album             = m.value(QStringLiteral("album")).toString();
+    row.title             = m.value(QStringLiteral("title")).toString();
+    row.length            = m.value(QStringLiteral("length")).toInteger();
+    row.bitrate           = m.value(QStringLiteral("bitrate")).toInteger();
+    row.codec             = m.value(QStringLiteral("codec")).toString();
     row.publishedED2K     = m.value(QStringLiteral("publishedED2K")).toBool();
     row.kadPublished      = m.value(QStringLiteral("kadPublished")).toBool();
     row.path              = m.value(QStringLiteral("path")).toString();
@@ -1101,6 +1195,7 @@ void SharedFilesPanel::sendSetFileShared(const QString& filePath, bool shared)
         // Refetch either way: on success to pick the new state up, on failure to put
         // the checkbox back where it was.
         requestSharedFiles();
+        syncSharedDirState();   // a single shared file bolds its folder
     });
 }
 
@@ -1424,6 +1519,7 @@ void SharedFilesPanel::onReloadClicked(bool rebuildMetaData)
         msg.append(true);
     m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
         requestSharedFiles();
+        syncSharedDirState();
     });
 }
 
@@ -1551,10 +1647,19 @@ QString SharedFilesPanel::hashAtViewRow(int viewRow) const
 void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
 {
     auto* item = m_folderTree->itemAt(pos);
-    if (!item || !item->data(0, kRoleFsItem).toBool())
+    if (!item)
         return;
 
-    const QString path = item->data(0, Qt::UserRole + 1).toString();
+    // "Shared Directories" and the folders listed under it
+    if (item == m_sharedDirsItem || item->data(0, kRoleSharedDirItem).toBool()) {
+        showSharedDirMenu(item, m_folderTree->viewport()->mapToGlobal(pos));
+        return;
+    }
+
+    if (!item->data(0, kRoleFsItem).toBool())
+        return;
+
+    const QString path = item->data(0, kRolePath).toString();
     if (path.isEmpty())
         return;
 
@@ -1569,19 +1674,22 @@ void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
 
     menu.addSeparator();
 
+    // Enablement as MFC (srchybrid/SharedDirsTreeCtrl.cpp:525-528)
     const auto dirs = thePrefs.sharedDirs();
-    const bool isShared = dirs.contains(path);
+    const bool isShared = SharedDirState::isSharedDir(dirs, path);
+    const bool hasSharedSub = SharedDirState::hasSharedSubdir(dirs, path);
+    const bool shareable = thePrefs.isShareableDirectory(path);
 
     // Share Directory
     auto* shareAct = menu.addAction(tr("Share Directory"), this, [this, path]() {
         if (!m_ipc || !m_ipc->isConnected())
             return;
         auto dirs = thePrefs.sharedDirs();
-        if (!dirs.contains(path))
+        if (!SharedDirState::isSharedDir(dirs, path))
             dirs.append(path);
         sendShareDirsUpdate(dirs);
     });
-    shareAct->setEnabled(!isShared);
+    shareAct->setEnabled(!isShared && shareable);
 
     // Share with Subdirectories
     auto* shareSubAct = menu.addAction(tr("Share with Subdirectories"), this, [this, path]() {
@@ -1591,7 +1699,7 @@ void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
         collectSubdirectories(path, dirs);
         sendShareDirsUpdate(dirs);
     });
-    shareSubAct->setEnabled(!isShared);
+    shareSubAct->setEnabled(shareable && hasSubdirectories(path));
 
     menu.addSeparator();
 
@@ -1599,24 +1707,18 @@ void SharedFilesPanel::onFolderContextMenu(const QPoint& pos)
     auto* unshareAct = menu.addAction(tr("Unshare Directory"), this, [this, path]() {
         if (!m_ipc || !m_ipc->isConnected())
             return;
-        auto dirs = thePrefs.sharedDirs();
-        dirs.removeAll(path);
-        sendShareDirsUpdate(dirs);
+        sendShareDirsUpdate(SharedDirState::withoutDir(thePrefs.sharedDirs(), path, false));
     });
     unshareAct->setEnabled(isShared);
 
-    // Unshare with Subdirectories
+    // Unshare with Subdirectories — off the list, so a shared folder that is gone
+    // from disk goes too
     auto* unshareSubAct = menu.addAction(tr("Unshare with Subdirectories"), this, [this, path]() {
         if (!m_ipc || !m_ipc->isConnected())
             return;
-        auto dirs = thePrefs.sharedDirs();
-        QStringList toRemove;
-        collectSubdirectories(path, toRemove);
-        for (const auto& d : toRemove)
-            dirs.removeAll(d);
-        sendShareDirsUpdate(dirs);
+        sendShareDirsUpdate(SharedDirState::withoutDir(thePrefs.sharedDirs(), path, true));
     });
-    unshareSubAct->setEnabled(isShared);
+    unshareSubAct->setEnabled(isShared || hasSharedSub);
 
     menu.exec(m_folderTree->viewport()->mapToGlobal(pos));
 }
@@ -1770,14 +1872,17 @@ void SharedFilesPanel::sendShareDirsUpdate(const QStringList& dirs)
     for (const auto& d : dirs)
         arr.append(d);
     req.append(arr);
+    ++m_dirStateFetchId;   // a reply still on its way describes the old list
+    refreshSharedDirs();
     m_ipc->sendRequest(std::move(req), [this](const IpcMessage&) {
         requestSharedFiles();
+        syncSharedDirState();   // what the daemon kept, in case it differs
     });
 }
 
 void SharedFilesPanel::collectSubdirectories(const QString& root, QStringList& list)
 {
-    if (!list.contains(root))
+    if (!SharedDirState::isSharedDir(list, root) && thePrefs.isShareableDirectory(root))
         list.append(root);
     QDir dir(root);
     const auto entries = dir.entryInfoList(
@@ -1860,10 +1965,209 @@ void SharedFilesPanel::addFilesystemChild(QTreeWidgetItem* parent,
     item->setData(0, Qt::UserRole, static_cast<int>(SharedFilterType::SpecificDir));
     item->setData(0, Qt::UserRole + 1, path);
     item->setData(0, kRoleFsItem, true);
-    item->setIcon(0, QIcon(QStringLiteral(":/icons/FolderOpen.ico")));
+    applyShareState(item);
 
     if (hasSubdirectories(path))
         item->setChildIndicatorPolicy(QTreeWidgetItem::ShowIndicator);
+}
+
+// ---------------------------------------------------------------------------
+// Share marks in the folder tree
+// ---------------------------------------------------------------------------
+
+void SharedFilesPanel::refreshSharedDirs()
+{
+    // Only what is loaded: an unexpanded folder gets its marks when it is filled.
+    QList<QTreeWidgetItem*> pending{m_allDirsItem};
+    while (!pending.isEmpty()) {
+        QTreeWidgetItem* item = pending.takeLast();
+        for (int i = 0; i < item->childCount(); ++i) {
+            applyShareState(item->child(i));
+            pending.append(item->child(i));
+        }
+    }
+    rebuildSharedDirsNode();
+}
+
+void SharedFilesPanel::syncSharedDirState()
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    const int fetchId = ++m_dirStateFetchId;
+    m_ipc->sendRequest(IpcMessage(IpcMsgType::GetSharedDirState),
+                       [this, fetchId](const IpcMessage& resp) {
+        // Dropped connection, or overtaken by a newer request or a local change
+        if (fetchId != m_dirStateFetchId || !resp.isValid()
+            || resp.type() != IpcMsgType::Result || !resp.fieldBool(0))
+            return;
+
+        const QCborMap state = resp.fieldMap(1);
+        QStringList shared;
+        for (const auto& v : state.value(QStringLiteral("sharedDirs")).toArray())
+            shared.append(v.toString());
+        QStringList single;
+        for (const auto& v : state.value(QStringLiteral("singleSharedDirs")).toArray())
+            single.append(v.toString());
+
+        if (shared == thePrefs.sharedDirs() && single == m_singleSharedDirs)
+            return;
+        thePrefs.setSharedDirs(shared);
+        m_singleSharedDirs = single;
+        refreshSharedDirs();
+    });
+}
+
+void SharedFilesPanel::applyShareState(QTreeWidgetItem* item)
+{
+    const QString path = item->data(0, kRolePath).toString();
+    if (path.isEmpty())
+        return;
+
+    // MFC: an overlay on the shared folder itself, bold on it and on every folder
+    // above something shared (srchybrid/SharedDirsTreeCtrl.cpp:727, :743).
+    const auto dirs = thePrefs.sharedDirs();
+    const bool shared = SharedDirState::isSharedDir(dirs, path);
+    item->setIcon(0, folderIcon(shared ? QStringLiteral(":/icons/SharedFolderOvl.ico")
+                                       : QString()));
+    setItemBold(item, shared || SharedDirState::hasSharedSubdir(dirs, path)
+                          || SharedDirState::hasDirAtOrBelow(m_singleSharedDirs, path));
+}
+
+void SharedFilesPanel::rebuildSharedDirsNode()
+{
+    QStringList dirs = thePrefs.sharedDirs();
+    dirs.removeAll(QString());
+    std::ranges::sort(dirs, [](const QString& a, const QString& b) {
+        return a.compare(b, Qt::CaseInsensitive) < 0;
+    });
+
+    // Nothing to do on the periodic sync unless the list moved
+    QStringList shown;
+    QList<QTreeWidgetItem*> pending{m_sharedDirsItem};
+    while (!pending.isEmpty()) {
+        QTreeWidgetItem* item = pending.takeLast();
+        for (int i = 0; i < item->childCount(); ++i) {
+            shown.append(item->child(i)->data(0, kRolePath).toString());
+            pending.append(item->child(i));
+        }
+    }
+    std::ranges::sort(shown, [](const QString& a, const QString& b) {
+        return a.compare(b, Qt::CaseInsensitive) < 0;
+    });
+    if (shown == dirs)
+        return;
+
+    // The selection survives by path; a folder that left the share falls back to
+    // the node itself.
+    QTreeWidgetItem* current = m_folderTree->currentItem();
+    const bool hadSelection = current && current->data(0, kRoleSharedDirItem).toBool();
+    const QString selectedKey =
+        hadSelection ? SharedDirState::dirKey(current->data(0, kRolePath).toString())
+                     : QString();
+    QSet<QString> expandedKeys;
+    pending = {m_sharedDirsItem};
+    while (!pending.isEmpty()) {
+        QTreeWidgetItem* item = pending.takeLast();
+        for (int i = 0; i < item->childCount(); ++i) {
+            QTreeWidgetItem* child = item->child(i);
+            if (child->isExpanded())
+                expandedKeys.insert(SharedDirState::dirKey(child->data(0, kRolePath).toString()));
+            pending.append(child);
+        }
+    }
+    const bool wasEmpty = m_sharedDirsItem->childCount() == 0;
+
+    // Silent: deleting the current item would otherwise re-filter the list mid-rebuild
+    const bool wasBlocked = m_folderTree->blockSignals(true);
+    qDeleteAll(m_sharedDirsItem->takeChildren());
+
+    // Nested under the nearest shared folder above, as MFC's FilterTreeAddSubDirectories
+    // (:277). Sorted, so a parent is always created before what goes under it.
+    const bool local = m_ipc && m_ipc->isLocalConnection();
+    const auto parents = SharedDirState::nearestSharedParents(dirs);
+    QHash<QString, QTreeWidgetItem*> items;
+    QSet<QString> seenKeys;
+    QTreeWidgetItem* reselect = nullptr;
+    for (const QString& dir : dirs) {
+        const QString key = SharedDirState::dirKey(dir);
+        if (seenKeys.contains(key))
+            continue;   // the same folder listed twice, e.g. with a trailing separator
+        seenKeys.insert(key);
+        const QString parentDir = parents.value(dir);
+        QTreeWidgetItem* parentItem = items.value(parentDir, m_sharedDirsItem);
+
+        // MFC GetFolderLabel: a top-level entry says where it lives
+        const QString clean = QDir::cleanPath(dir);
+        const QFileInfo info(clean);
+        QString label = info.fileName().isEmpty() ? QDir::toNativeSeparators(clean)
+                                                  : info.fileName();
+        if (parentItem == m_sharedDirsItem && !info.fileName().isEmpty())
+            label += QStringLiteral("  (%1)").arg(QDir::toNativeSeparators(info.path()));
+
+        auto* item = new QTreeWidgetItem(parentItem, {label});
+        item->setData(0, Qt::UserRole, static_cast<int>(SharedFilterType::SpecificDir));
+        item->setData(0, kRolePath, dir);
+        item->setData(0, kRoleSharedDirItem, true);
+        item->setToolTip(0, QDir::toNativeSeparators(clean));
+        // Only this host can tell whether the daemon's folder is there
+        const bool missing = local && !QDir(dir).exists();
+        item->setIcon(0, folderIcon(missing ? QStringLiteral(":/icons/NoAccessFolderOvl.ico")
+                                            : QString()));
+        items.insert(dir, item);
+
+        if (hadSelection && key == selectedKey)
+            reselect = item;
+    }
+    for (QTreeWidgetItem* item : std::as_const(items))
+        if (expandedKeys.contains(SharedDirState::dirKey(item->data(0, kRolePath).toString())))
+            item->setExpanded(true);
+    if (wasEmpty && m_sharedDirsItem->childCount() > 0)
+        m_sharedDirsItem->setExpanded(true);
+
+    if (hadSelection)
+        m_folderTree->setCurrentItem(reselect ? reselect : m_sharedDirsItem);
+    m_folderTree->blockSignals(wasBlocked);
+    // The list was showing a folder that is no longer shared
+    if (hadSelection && !reselect)
+        onFolderSelectionChanged();
+}
+
+void SharedFilesPanel::showSharedDirMenu(QTreeWidgetItem* item, const QPoint& globalPos)
+{
+    const bool isRoot = (item == m_sharedDirsItem);
+    const QString path = isRoot ? QString() : item->data(0, kRolePath).toString();
+    const bool connected = m_ipc && m_ipc->isConnected();
+
+    QMenu menu(this);
+
+    auto* openAct = menu.addAction(QIcon(QStringLiteral(":/icons/FolderOpen.ico")),
+                                   tr("Open Folder"), this, [path]() {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+    });
+    openAct->setEnabled(!isRoot && m_ipc && m_ipc->isLocalConnection());
+
+    menu.addSeparator();
+
+    auto* unshareAct = menu.addAction(tr("Unshare Directory"), this, [this, path]() {
+        if (!m_ipc || !m_ipc->isConnected())
+            return;
+        sendShareDirsUpdate(SharedDirState::withoutDir(thePrefs.sharedDirs(), path, false));
+    });
+    unshareAct->setEnabled(connected && !isRoot);
+
+    // On the node itself this unshares everything (MFC RemoveAllSharedDirectories,
+    // srchybrid/SharedDirsTreeCtrl.cpp:934)
+    auto* unshareSubAct = menu.addAction(tr("Unshare with Subdirectories"), this,
+                                         [this, path, isRoot]() {
+        if (!m_ipc || !m_ipc->isConnected())
+            return;
+        sendShareDirsUpdate(isRoot ? QStringList()
+                                   : SharedDirState::withoutDir(thePrefs.sharedDirs(), path, true));
+    });
+    unshareSubAct->setEnabled(connected && (isRoot ? item->childCount() > 0 : true));
+
+    menu.exec(globalPos);
 }
 
 bool SharedFilesPanel::hasSubdirectories(const QString& path)

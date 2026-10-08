@@ -71,7 +71,10 @@ public:
     void process();
 
     bool safeAddKFile(KnownFile* file);
-    KnownFile* findKnownFile(const QString& filename, time_t date, uint64 size) const;
+    /// @p localTimeVolume: the file lies on FAT/exFAT, where a date may be off by a
+    /// rounding step or a DST hour (sameFileDate()). An exact match still wins.
+    KnownFile* findKnownFile(const QString& filename, time_t date, uint64 size,
+                             bool localTimeVolume = false) const;
     KnownFile* findKnownFileByID(const uint8* hash) const;
     KnownFile* findKnownFileByPath(const QString& path) const;
     bool isKnownFile(const KnownFile* file) const;
@@ -93,6 +96,10 @@ public:
     uint32 totalRequested = 0;
     uint32 totalAccepted = 0;
 
+    /// A record changed outside safeAddKFile(): save soon, not at the next interval.
+    void markDirty();
+    [[nodiscard]] bool isDirty() const { return m_dirtySince != 0; }
+
 private:
     bool loadKnownFiles();
     bool loadCancelledFiles();
@@ -112,6 +119,7 @@ private:
     std::unordered_set<MD4Key> m_cancelledFiles;
     uint32 m_cancelledSeed = 0;
     uint32 m_lastSaveTime = 0;
+    uint32 m_dirtySince = 0;   ///< first unsaved record's time, 0 = clean
     QString m_configDir;
 };
 

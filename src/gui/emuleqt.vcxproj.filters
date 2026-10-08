@@ -369,6 +369,12 @@
     <ClInclude Include="utils\ClientStateText.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="utils\CompleteSourcesText.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\SharedDirState.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\FileTypeText.h">
       <Filter>Header Files</Filter>
     </ClInclude>

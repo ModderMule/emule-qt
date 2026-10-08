@@ -11,6 +11,7 @@
 #include "utils/ClientIcons.h"
 #include "utils/ClientStateText.h"
 #include "utils/CountryFlags.h"
+#include "utils/CompleteSourcesText.h"
 #include "utils/FileTypeText.h"
 #include "utils/OtherFunctions.h"
 #include "utils/PriorityText.h"
@@ -50,11 +51,8 @@ QString formatTimestamp(int64_t epoch, const QString& unknown)
 /// (srchybrid/DownloadListCtrl.cpp:2068-2079).
 QString completeSourcesSuffix(const DownloadRow& d)
 {
-    if (d.completeSourcesLo == 0)
-        return QStringLiteral(" (< %1)").arg(d.completeSourcesHi);
-    if (d.completeSourcesLo == d.completeSourcesHi)
-        return QStringLiteral(" (%1)").arg(d.completeSourcesLo);
-    return QStringLiteral(" (%1 - %2)").arg(d.completeSourcesLo).arg(d.completeSourcesHi);
+    return QStringLiteral(" (%1)")
+        .arg(completeSourcesText(d.completeSourcesLo, d.completeSourcesHi, true));
 }
 
 /// Map SourceFrom enum to display string.

@@ -289,6 +289,8 @@ public:
     [[nodiscard]] bool supportsSharedDirectories() const { return m_sharedDirectories; }
     void setSupportsSharedDirectories(bool v) { m_sharedDirectories = v; }
     [[nodiscard]] bool supportsUDP() const { return m_udpPort != 0 && m_udpVer != 0; }
+    /// False for a peer that told us it does not let others browse its files.
+    [[nodiscard]] bool viewSharedFilesSupport() const { return !m_noViewSharedFiles; }
     [[nodiscard]] bool supportsCryptLayer() const { return m_supportsCryptLayer; }
     [[nodiscard]] bool requestsCryptLayer() const { return m_requestsCryptLayer; }
     [[nodiscard]] bool requiresCryptLayer() const { return m_requiresCryptLayer; }

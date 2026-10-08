@@ -7,6 +7,7 @@
 
 #include "CommandLineExec.h"
 #include "DaemonApp.h"
+#include "WinShutdownHandler.h"
 
 #include "app/AppConfig.h"
 #include "app/TranslationRouter.h"
@@ -140,10 +141,22 @@ int main(int argc, char* argv[])
                        .arg(ipcHost)
                        .arg(ipcPort));
 
+    // Once, whoever gets there first: the event loop ending, or Windows ending the
+    // session from inside it.
+    bool stopped = false;
+    const auto shutdownNow = [&daemon, &stopped] {
+        if (stopped)
+            return;
+        stopped = true;
+        daemon.stop();
+        eMule::thePrefs.save();
+    };
+    eMule::WinShutdownHandler::install(shutdownNow);
+
     const int result = QCoreApplication::exec();
 
-    daemon.stop();
-    eMule::thePrefs.save();
+    shutdownNow();
+    eMule::WinShutdownHandler::finished();
 
     if (eMule::DaemonApp::restartRequested()) {
         // The first-start hold belongs to the first start only

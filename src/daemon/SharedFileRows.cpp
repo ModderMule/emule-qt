@@ -8,7 +8,9 @@
 #include "files/Collection.h"
 #include "files/KnownFile.h"
 #include "files/PartFile.h"
+#include "media/MediaInfo.h"
 #include "transfer/UploadQueue.h"
+#include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
 
 #include <QCborArray>
@@ -90,7 +92,22 @@ QCborMap sharedFileRow(KnownFile* kf, const SharedFileList::ShareRules& rules,
     m.insert(QStringLiteral("allTimeTransferred"), static_cast<qint64>(kf->statistic.allTimeTransferred()));
     m.insert(QStringLiteral("completeSources"), static_cast<int>(kf->completeSourcesCount()));
     m.insert(QStringLiteral("publishedED2K"), kf->publishedED2K());
-    m.insert(QStringLiteral("kadPublished"), kf->kadFileSearchID() != 0);
+    m.insert(QStringLiteral("completeSourcesLo"), static_cast<int>(kf->completeSourcesCountLo()));
+    m.insert(QStringLiteral("completeSourcesHi"), static_cast<int>(kf->completeSourcesCountHi()));
+    m.insert(QStringLiteral("kadPublished"), kf->isSharedInKad());
+    // Media columns; absent keys read as empty / 0 in the GUI
+    if (const QString& v = kf->getStrTagValue(FT_MEDIA_ARTIST); !v.isEmpty())
+        m.insert(QStringLiteral("artist"), v);
+    if (const QString& v = kf->getStrTagValue(FT_MEDIA_ALBUM); !v.isEmpty())
+        m.insert(QStringLiteral("album"), v);
+    if (const QString& v = kf->getStrTagValue(FT_MEDIA_TITLE); !v.isEmpty())
+        m.insert(QStringLiteral("title"), v);
+    if (const uint32 v = kf->getIntTagValue(FT_MEDIA_LENGTH))
+        m.insert(QStringLiteral("length"), static_cast<qint64>(v));
+    if (const uint32 v = kf->getIntTagValue(FT_MEDIA_BITRATE))
+        m.insert(QStringLiteral("bitrate"), static_cast<qint64>(v));
+    if (const QString& v = kf->getStrTagValue(FT_MEDIA_CODEC); !v.isEmpty())
+        m.insert(QStringLiteral("codec"), codecDisplayName(v));
     m.insert(QStringLiteral("filePath"), kf->filePath());
     // Whether the user is allowed to unshare it — the incoming directory is not
     // unshareable by accident, it is unshareable by design (MFC ShouldBeShared with

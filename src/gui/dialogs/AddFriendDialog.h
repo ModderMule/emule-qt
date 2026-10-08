@@ -8,6 +8,7 @@
 
 class QLineEdit;
 class QLabel;
+class QPushButton;
 
 namespace eMule {
 
@@ -16,6 +17,12 @@ class AddFriendDialog : public QDialog {
 
 public:
     explicit AddFriendDialog(QWidget* parent = nullptr);
+
+    /// Turn the dialog into the read-only sheet of an existing friend — MFC
+    /// CAddFriend with m_pShowFriend set (srchybrid/AddFriend.cpp). @p lastSeen is
+    /// seconds since the epoch, 0 for never.
+    void showFriend(const QString& name, const QString& hash, const QString& address,
+                    int port, const QString& kadId, qint64 lastSeen);
 
     [[nodiscard]] QString ipAddress() const;
     [[nodiscard]] int     port() const;
@@ -32,6 +39,8 @@ private:
     QLineEdit* m_hashEdit = nullptr;
     QLabel*    m_kadIdLabel = nullptr;
     QLabel*    m_lastSeenLabel = nullptr;
+    QPushButton* m_addButton = nullptr;
+    QPushButton* m_cancelButton = nullptr;
 };
 
 } // namespace eMule

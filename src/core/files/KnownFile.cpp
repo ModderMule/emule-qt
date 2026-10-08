@@ -22,6 +22,7 @@
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
 #include "protocol/Tag.h"
+#include "utils/DiskLoadLimiter.h"
 #include "utils/Log.h"
 
 #include <QBuffer>
@@ -548,10 +549,7 @@ void KnownFile::noteChanged()
 
 void KnownFile::setKadFileSearchID(uint32 id)
 {
-    const bool flipped = (m_kadFileSearchID != 0) != (id != 0);
     m_kadFileSearchID = id;
-    if (flipped)
-        noteChanged();   // "published to Kad" as the list shows it
 }
 
 // ---------------------------------------------------------------------------
@@ -567,8 +565,35 @@ void KnownFile::setPublishedED2K(bool val)
 
 void KnownFile::setLastPublishTimeKadSrc(time_t t, uint32 buddyIP)
 {
+    const bool changed = m_lastPublishTimeKadSrc != t || m_lastBuddyIP != buddyIP;
     m_lastPublishTimeKadSrc = t;
     m_lastBuddyIP = buddyIP;
+    if (changed)
+        noteChanged();   // the list's "Shared eD2K|Kad" cell follows it
+}
+
+bool KnownFile::sharedInKad(time_t now, time_t lastPublish, bool kadConnected,
+                            bool kadFirewalled, bool buddyMatches, bool udpOpenVerified)
+{
+    if (!kadConnected || now >= lastPublish)
+        return false;
+    if (!kadFirewalled)
+        return true;
+    return buddyMatches || udpOpenVerified;
+}
+
+bool KnownFile::isSharedInKad() const
+{
+    auto* kad = kad::Kademlia::instance();
+    if (!kad)
+        return false;
+    auto* clientList = kad::Kademlia::getClientList();
+    auto* buddy = clientList ? clientList->getBuddy() : nullptr;
+    const bool buddyMatches = buddy && m_lastBuddyIP == buddy->userAddress().toNetworkUint32();
+    const bool udpOpen = kad->isRunning() && !kad::UDPFirewallTester::isFirewalledUDP(true)
+                         && kad::UDPFirewallTester::isVerified();
+    return sharedInKad(std::time(nullptr), m_lastPublishTimeKadSrc, kad->isConnected(),
+                       kad->isFirewalled(), buddyMatches, udpOpen);
 }
 
 // ---------------------------------------------------------------------------
@@ -1349,10 +1374,15 @@ bool KnownFile::createHash(QIODevice& device, uint64 length,
     uint64 read = 0;
     uint64 blockStart = 0;   ///< file offset of the AICH block being hashed
     uint64 blockFilled = 0;  ///< bytes of that block already fed to hashAlg
+    DiskLoadLimiter diskLoad;
 
     while (read < length) {
         const uint64 toRead = std::min(static_cast<uint64>(kReadBlockSize), length - read);
-        const qint64 got = device.read(reinterpret_cast<char*>(buf), static_cast<qint64>(toRead));
+        qint64 got = 0;
+        {
+            const DiskLoadLimiter::Read timed(diskLoad);
+            got = device.read(reinterpret_cast<char*>(buf), static_cast<qint64>(toRead));
+        }
         if (got <= 0)
             break;
 

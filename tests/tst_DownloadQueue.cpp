@@ -90,6 +90,7 @@ private slots:
     void addDownloadFromED2KLink_refusesMetaHash();
     void addDownloadFromED2KLink_emptyTempDirUsesDefault();
     void addDownloadFromSearch_followsThePausedOption();
+    void clientDetails_carryWhatMfcsDialogNeeds();
     void addUserSource_vetsWhatTheUserTyped();
     void removeAutoPrioInCat_onlyThatCategory();
     void removeFile_basic();
@@ -3697,6 +3698,34 @@ void tst_DownloadQueue::sourceIndex_keepsADuplicateTestOffTheFullScan()
         c->setReqFile(nullptr);
     owned.clear();
     dq.deleteAll();
+}
+
+// MFC CClientDetailPage (srchybrid/ClientDetailDialog.cpp:86-175) shows "?" without
+// credits and "-" for the queue score of an idle client; the GUI needs to be told.
+void tst_DownloadQueue::clientDetails_carryWhatMfcsDialogNeeds()
+{
+    UpDownClient client(4662, /*userId=*/0x04030201, 0, 0, nullptr, true);
+    client.setDownDatarate(1234);
+
+    QCborMap m = Ipc::toCborDetailed(client, theApp);
+    QCOMPARE(m.value(QStringLiteral("creditsKnown")).toBool(), false);
+    QCOMPARE(m.value(QStringLiteral("uploadIdle")).toBool(), true);
+    QCOMPARE(m.value(QStringLiteral("identification")).toString(), QStringLiteral("none"));
+    QCOMPARE(m.value(QStringLiteral("obfuscation")).toString(), QStringLiteral("none"));
+    // "datarate" is what the peer sends us — MFC's "Average Upload rate" row
+    QCOMPARE(m.value(QStringLiteral("datarate")).toInteger(), 1234);
+    QCOMPARE(m.value(QStringLiteral("upDatarate")).toInteger(), 0);
+
+    const uint8 userHash[16] = {9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 6};
+    ClientCredits credits(userHash);
+    client.setCredits(&credits);
+    client.setUploadState(UploadState::OnUploadQueue);
+    m = Ipc::toCborDetailed(client, theApp);
+    QCOMPARE(m.value(QStringLiteral("creditsKnown")).toBool(), true);
+    QCOMPARE(m.value(QStringLiteral("uploadIdle")).toBool(), false);
+    // no crypto set up here: MFC reads that as "not supported"
+    QCOMPARE(m.value(QStringLiteral("identification")).toString(), QStringLiteral("none"));
+    client.setCredits(nullptr);
 }
 
 QTEST_GUILESS_MAIN(tst_DownloadQueue)

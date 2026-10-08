@@ -230,6 +230,9 @@ public:
     /// Port of srchybrid/SharedFileList.cpp:1420-1427.
     [[nodiscard]] bool containsSingleSharedFiles(const QString& dirPath) const;
 
+    /// The directories holding an individually-shared file, each once.
+    [[nodiscard]] QStringList singleSharedDirs() const;
+
     /// Persisted single-shared / excluded path lists (Config/sharedfiles.dat).
     void loadSharedFilesConfig();
     void saveSharedFilesConfig() const;
@@ -319,6 +322,8 @@ private:
 
     /// The diff behind reload() (@p onlyDirs empty) and rescanDirectories().
     void rescan(const QStringList& onlyDirs);
+    /// A record matched a file whose date shifted without the file changing.
+    void adoptDiskDate(KnownFile* file, time_t onDisk);
     /// Add to @p scope every root that now holds a file gone from a directory in it.
     void widenScopeForMoves(QSet<QString>& scope) const;
     /// What the watcher looks at: the scan roots plus the directories of files

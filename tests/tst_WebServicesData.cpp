@@ -22,6 +22,7 @@ private slots:
     void parseFileMacros();
     void emptyAndMalformed();
     void servicesFilePathFollowsTheConfigDir();
+    void generalServicesAreTheOnesWithoutFileMacros();
 };
 
 // ---------------------------------------------------------------------------
@@ -185,6 +186,27 @@ void tst_WebServicesData::servicesFilePathFollowsTheConfigDir()
 
     // The override is a process-global static -- restore it or later tests inherit it.
     AppConfig::setConfigDirOverride(prev);
+}
+
+// MFC lists only the macro-free entries under Tools -> Links (WEBSVC_GEN_URLS,
+// srchybrid/OtherFunctions.cpp:1013-1030); the shipped "eMule FAQ" is one.
+void tst_WebServicesData::generalServicesAreTheOnesWithoutFileMacros()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QStringLiteral("webservices.dat"));
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write("Plain,http://example.org/\n"
+            "Lookup,http://example.org/?h=#hashid\n"
+            "Other,http://example.net/faq\n");
+    f.close();
+
+    WebServices ws;
+    QVERIFY(ws.loadFromFile(path));
+    const auto general = ws.generalServices();
+    QCOMPARE(general.size(), size_t(2));
+    QCOMPARE(general[0].label, QStringLiteral("Plain"));
+    QCOMPARE(general[1].urlTemplate, QStringLiteral("http://example.net/faq"));
 }
 
 QTEST_GUILESS_MAIN(tst_WebServicesData)

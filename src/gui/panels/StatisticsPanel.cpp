@@ -17,10 +17,13 @@
 #include "IpcMessage.h"
 
 #include <QApplication>
+#include <QBuffer>
 #include <QCborArray>
 #include <QCborMap>
 #include <QClipboard>
 #include <QDateTime>
+#include <QFile>
+#include <QFileDialog>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
@@ -29,6 +32,7 @@
 #include <QMessageBox>
 #include <QSet>
 #include <QSplitter>
+#include <QStyledItemDelegate>
 #include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
@@ -39,6 +43,25 @@
 #include <tuple>
 
 namespace eMule {
+
+namespace {
+
+/// Draws the section headers bold, as MFC's TVIS_BOLD nodes.
+class SectionDelegate : public QStyledItemDelegate {
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+protected:
+    void initStyleOption(QStyleOptionViewItem* option, const QModelIndex& index) const override
+    {
+        QStyledItemDelegate::initStyleOption(option, index);
+        // same rule as StatisticsPanel::isSection()
+        if (!option->icon.isNull() && !index.data(Qt::UserRole).isValid())
+            option->font.setBold(true);
+    }
+};
+
+} // namespace
 
 using namespace Ipc;
 
@@ -223,6 +246,7 @@ void StatisticsPanel::setupUi()
     m_tree->setColumnCount(1);
     m_tree->setRootIsDecorated(true);
     m_tree->setIndentation(16);
+    m_tree->setItemDelegate(new SectionDelegate(m_tree));
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_tree, &QTreeWidget::customContextMenuRequested,
             this, &StatisticsPanel::onContextMenu);
@@ -1389,10 +1413,7 @@ QMenu* StatisticsPanel::buildStatsMenu()
     restore->setEnabled(m_backupAvailable);
     menu->addSeparator();
 
-    menu->addAction(tr("Expand Main Sections"), this, [this]() {
-        for (int i = 0; i < m_tree->topLevelItemCount(); ++i)
-            m_tree->topLevelItem(i)->setExpanded(true);
-    });
+    menu->addAction(tr("Expand Main Sections"), this, &StatisticsPanel::expandMainSections);
     menu->addAction(tr("Expand All Sections"), this, [this]() {
         m_tree->expandAll();
     });
@@ -1404,6 +1425,15 @@ QMenu* StatisticsPanel::buildStatsMenu()
     menu->addAction(tr("Copy Branch"), this, &StatisticsPanel::copyBranch);
     menu->addAction(tr("Copy All Visible"), this, &StatisticsPanel::copyAllVisible);
     menu->addAction(tr("Copy All Statistics"), this, &StatisticsPanel::copyAllStats);
+    menu->addSeparator();
+
+    // MFC's "HTML Features" submenu (srchybrid/StatisticsTree.cpp:144-151)
+    QMenu* html = menu->addMenu(QIcon(QStringLiteral(":/icons/Web.ico")), tr("HTML Features"));
+    html->addAction(tr("Copy Branch"), this, [this] { copyHtml(true, true); });
+    html->addAction(tr("Copy All Visible"), this, [this] { copyHtml(true, false); });
+    html->addAction(tr("Copy All Statistics"), this, [this] { copyHtml(false, false); });
+    html->addSeparator();
+    html->addAction(tr("Export Statistics..."), this, &StatisticsPanel::exportHtml);
 
     return menu;
 }
@@ -1459,41 +1489,237 @@ void StatisticsPanel::restoreStats()
 
 void StatisticsPanel::copyBranch()
 {
-    auto* item = m_tree->currentItem();
-    if (!item)
-        return;
-    QApplication::clipboard()->setText(treeItemText(item, 0));
+    if (auto* item = m_tree->currentItem())
+        QApplication::clipboard()->setText(treeText(true, item));
 }
 
 void StatisticsPanel::copyAllVisible()
 {
-    QString text;
-    for (int i = 0; i < m_tree->topLevelItemCount(); ++i) {
-        auto* item = m_tree->topLevelItem(i);
-        if (!item->isHidden())
-            text += treeItemText(item, 0);
-    }
-    QApplication::clipboard()->setText(text);
+    QApplication::clipboard()->setText(treeText(true));
 }
 
 void StatisticsPanel::copyAllStats()
 {
-    QString text;
-    for (int i = 0; i < m_tree->topLevelItemCount(); ++i)
-        text += treeItemText(m_tree->topLevelItem(i), 0);
-    QApplication::clipboard()->setText(text);
+    QApplication::clipboard()->setText(treeText(false));
 }
 
-QString StatisticsPanel::treeItemText(QTreeWidgetItem* item, int depth) const
+void StatisticsPanel::copyHtml(bool onlyVisible, bool branchOnly)
 {
-    QString result;
-    const QString indent(depth * 2, QLatin1Char(' '));
-    result += indent + item->text(0) + QLatin1Char('\n');
+    QTreeWidgetItem* branch = branchOnly ? m_tree->currentItem() : nullptr;
+    if (branchOnly && !branch)
+        return;
+    QApplication::clipboard()->setText(treeHtml(onlyVisible, branch));
+}
 
-    for (int i = 0; i < item->childCount(); ++i)
-        result += treeItemText(item->child(i), depth + 1);
+void StatisticsPanel::exportHtml()
+{
+    const QString path = QFileDialog::getSaveFileName(this, tr("Export Statistics..."),
+        QStringLiteral("eMule Statistics.html"),
+        tr("HTML Files (*.html);;All Files (*)"));
+    if (path.isEmpty())
+        return;
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly) || file.write(exportPageHtml().toUtf8()) < 0)
+        QMessageBox::warning(this, tr("Export Statistics..."), file.errorString());
+}
 
-    return result;
+bool StatisticsPanel::isSection(const QTreeWidgetItem* item)
+{
+    // The fixed nodes that carry an icon; fed rows (servers, countries) have a key
+    return item && !item->icon(0).isNull() && !item->data(0, Qt::UserRole).isValid();
+}
+
+void StatisticsPanel::expandMainSections()
+{
+    m_tree->collapseAll();
+    const auto expand = [](auto&& self, QTreeWidgetItem* parent) -> void {
+        for (int i = 0; i < parent->childCount(); ++i) {
+            QTreeWidgetItem* item = parent->child(i);
+            if (item->childCount() > 0 && isSection(item)) {
+                item->setExpanded(true);
+                self(self, item);
+            }
+        }
+    };
+    expand(expand, m_tree->invisibleRootItem());
+}
+
+QString StatisticsPanel::treeText(bool onlyVisible, QTreeWidgetItem* branch) const
+{
+    // A lone leaf or collapsed node is copied bare, without header or line end
+    const bool header = !branch || (branch->childCount() > 0 && branch->isExpanded());
+    return (header ? headerLine() + QStringLiteral("\r\n\r\n") : QString())
+        + itemsText(onlyVisible, branch ? branch->parent() : nullptr, branch, 0, header);
+}
+
+QString StatisticsPanel::treeHtml(bool onlyVisible, QTreeWidgetItem* branch) const
+{
+    return QStringLiteral("<font face=\"Tahoma,Verdana,Courier New,Helvetica\" size=\"2\">\r\n"
+                          "<b>%1</b>\r\n<br><br>\r\n").arg(headerLine().toHtmlEscaped())
+        + itemsHtml(onlyVisible, branch ? branch->parent() : nullptr, branch, 0)
+        + QStringLiteral("</font>");
+}
+
+QString StatisticsPanel::exportPageHtml() const
+{
+    const auto gif = [](const char* name) {
+        QFile f(QStringLiteral(":/stats/%1.gif").arg(QLatin1String(name)));
+        const QByteArray data = f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+        return QString(QStringLiteral("data:image/gif;base64,") + QString::fromLatin1(data.toBase64()));
+    };
+    const QString nick = thePrefs.nick().toHtmlEscaped();
+    const QString stats = tr("Statistics");
+    int nextId = 0;
+
+    // MFC's page (srchybrid/StatisticsTree.cpp:526-571); the toggle images are data
+    // URIs held in two script variables instead of files beside the page
+    return QStringLiteral(
+        "<!DOCTYPE HTML SYSTEM>\r\n"
+        "<html>\r\n<head>\r\n"
+        "<meta http-equiv=\"Content-Type\" content=\"text/html;charset=utf-8\">\r\n"
+        "<title>eMule %1[%2]</title>\r\n"
+        "<style type=\"text/css\">\r\n"
+        "#pghdr { color: #000F80; font: bold 12pt/14pt Verdana, Courier New, Helvetica; }\r\n"
+        "#pghdr2 { color: #000F80; font: bold 10pt/12pt Verdana, Courier New, Helvetica; }\r\n"
+        "img { border: 0px; }\r\n"
+        "a { text-decoration: none; }\r\n"
+        "#sec { color: #000000; font: bold 9pt/11pt Verdana, Courier New, Helvetica; }\r\n"
+        "#item { color: #000000; font: normal 8pt/10pt Verdana, Courier New, Helvetica; }\r\n"
+        "#bdy { color: #000000; font: normal 8pt/10pt Verdana, Courier New, Helvetica; background-color: #FFFFFF; }\r\n</style>\r\n"
+        "<script language=\"JavaScript\" type=\"text/javascript\">\r\n"
+        "var imgVisible = \"%5\";\r\n"
+        "var imgHidden = \"%6\";\r\n"
+        "function togglevisible(treepart)\r\n"
+        "{\r\n"
+        "var part = document.getElementById(\"T\"+treepart);\r\n"
+        "if (part.style.visibility == \"hidden\")\r\n"
+        "{\r\n"
+        "part.style.position=\"\";\r\n"
+        "part.style.visibility=\"\";\r\n"
+        "document.getElementById(\"I\"+treepart).src=imgVisible;\r\n"
+        "}\r\n"
+        "else\r\n"
+        "{\r\n"
+        "part.style.position=\"absolute\";\r\n"
+        "part.style.visibility=\"hidden\";\r\n"
+        "document.getElementById(\"I\"+treepart).src=imgHidden;\r\n"
+        "}\r\n"
+        "}\r\n"
+        "</script>\r\n"
+        "</head>\r\n"
+        "<body id=\"bdy\">\r\n"
+        "<span id=\"pghdr\"><b>eMule %1</b></span><br><span id=\"pghdr2\">%3 %2</span>\r\n<br><br>\r\n"
+        "%4</body></html>")
+        .arg(stats, nick, tr("Name:"), itemsExportHtml(m_tree->invisibleRootItem(), 0, nextId),
+             gif("visible"), gif("hidden"));
+}
+
+QString StatisticsPanel::headerLine() const
+{
+    return tr("eMule Qt v%1 %2 [%3]")
+        .arg(QApplication::applicationVersion(), tr("Statistics"), thePrefs.nick());
+}
+
+// MFC CStatisticsTree::GetText (srchybrid/StatisticsTree.cpp:371-398)
+QString StatisticsPanel::itemsText(bool onlyVisible, QTreeWidgetItem* parent, QTreeWidgetItem* only,
+                                   int level, bool lineBreaks) const
+{
+    QString out;
+    if (!parent)
+        parent = m_tree->invisibleRootItem();
+    for (int i = 0; i < parent->childCount(); ++i) {
+        QTreeWidgetItem* item = parent->child(i);
+        if (only && item != only)
+            continue;
+        out += QString(3 * level, QLatin1Char(' ')) + item->text(0);
+        if (lineBreaks)
+            out += QStringLiteral("\r\n");
+        if (item->childCount() > 0 && (!onlyVisible || item->isExpanded()))
+            out += itemsText(onlyVisible, item, nullptr, level + 1, true);
+    }
+    return out;
+}
+
+// MFC CStatisticsTree::GetHTML (srchybrid/StatisticsTree.cpp:298-333)
+QString StatisticsPanel::itemsHtml(bool onlyVisible, QTreeWidgetItem* parent, QTreeWidgetItem* only,
+                                   int level) const
+{
+    QString out;
+    if (!parent)
+        parent = m_tree->invisibleRootItem();
+    for (int i = 0; i < parent->childCount(); ++i) {
+        QTreeWidgetItem* item = parent->child(i);
+        if (only && item != only)
+            continue;
+        for (int n = 0; n < level; ++n)
+            out += QStringLiteral("&nbsp;&nbsp;&nbsp;");
+        if (level == 0)
+            out += QLatin1Char('\n');
+        const QString text = item->text(0).toHtmlEscaped();
+        out += (isSection(item) ? QStringLiteral("<b>%1</b>").arg(text) : text) + QStringLiteral("<br>");
+        if (item->childCount() > 0 && (!onlyVisible || item->isExpanded()))
+            out += itemsHtml(onlyVisible, item, nullptr, level + 1);
+    }
+    return out;
+}
+
+// MFC CStatisticsTree::GetHTMLForExport (srchybrid/StatisticsTree.cpp:443-509)
+QString StatisticsPanel::itemsExportHtml(QTreeWidgetItem* parent, int level, int& nextId) const
+{
+    static const auto dataUri = [](const QByteArray& bytes, const char* mime) {
+        return QString(QStringLiteral("data:%1;base64,").arg(QLatin1String(mime))
+                       + QString::fromLatin1(bytes.toBase64()));
+    };
+    const auto resource = [](const char* name) {
+        QFile f(QStringLiteral(":/stats/%1.gif").arg(QLatin1String(name)));
+        return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+    };
+    static const QString visible = dataUri(resource("visible"), "image/gif");
+    static const QString hidden = dataUri(resource("hidden"), "image/gif");
+    static const QString space = dataUri(resource("space"), "image/gif");
+
+    QString out;
+    const QString tabs(level, QLatin1Char('\t'));
+    for (int i = 0; i < parent->childCount(); ++i) {
+        QTreeWidgetItem* item = parent->child(i);
+        const bool hasChildren = item->childCount() > 0;
+        const int id = hasChildren ? ++nextId : 0;
+
+        QString line;
+        if (hasChildren) {
+            line += QStringLiteral("<a href=\"javascript:togglevisible('%1')\">"
+                                   "<img id=\"I%1\" src=\"%2\" align=\"middle\">&nbsp;</a>")
+                        .arg(id).arg(item->isExpanded() ? visible : hidden);
+        } else {
+            line += QStringLiteral("<img src=\"%1\" align=\"middle\">&nbsp;").arg(space);
+        }
+        // The node's own icon, where MFC writes stats_<image index>.gif
+        if (const QIcon icon = item->icon(0); !icon.isNull()) {
+            QByteArray png;
+            QBuffer buffer(&png);
+            buffer.open(QIODevice::WriteOnly);
+            icon.pixmap(16, 16).save(&buffer, "PNG");
+            line += QStringLiteral("<img src=\"%1\" width=\"16\" height=\"16\" align=\"middle\">&nbsp;")
+                        .arg(dataUri(png, "image/png"));
+        }
+        const QString text = item->text(0).toHtmlEscaped();
+        line += isSection(item) ? QStringLiteral("<b>%1</b>").arg(text) : text;
+
+        out += QLatin1Char('\n') + tabs;
+        if (level == 0)
+            out += QLatin1Char('\n');
+        out += line + QStringLiteral("<br>");
+        if (hasChildren) {
+            const QString div = item->isExpanded()
+                ? QStringLiteral("<div id=\"T%1\" style=\"margin-left:18px\">").arg(id)
+                : QStringLiteral("<div id=\"T%1\" style=\"margin-left:18px; visibility:hidden; "
+                                 "position:absolute\">").arg(id);
+            out += QLatin1Char('\n') + tabs + div
+                 + QLatin1Char('\n') + tabs + QLatin1Char('\t') + itemsExportHtml(item, level + 1, nextId)
+                 + QLatin1Char('\n') + tabs + QStringLiteral("</div>");
+        }
+    }
+    return out;
 }
 
 // ---------------------------------------------------------------------------

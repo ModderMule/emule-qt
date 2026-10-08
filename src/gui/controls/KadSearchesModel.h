@@ -15,9 +15,9 @@ namespace eMule {
 struct KadSearchRow {
     uint32_t searchId = 0;
     QString key;
-    QString type;
+    int     typeId = -1;          ///< kad::SearchType
     QString name;
-    QString status;
+    bool    stopping = false;
     uint32_t load = 0;            ///< average: loadTotal / loadResponses
     uint32_t loadResponses = 0;
     uint32_t loadTotal = 0;
@@ -50,6 +50,12 @@ public:
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     [[nodiscard]] QVariant headerData(int section, Qt::Orientation orientation,
                                       int role = Qt::DisplayRole) const override;
+
+    /// MFC CSearch::GetTypeName (srchybrid/kademlia/kademlia/Search.cpp:1473-1508).
+    [[nodiscard]] static QString typeText(int typeId);
+    /// Icon of a search type, empty for the ones MFC draws none for
+    /// (KadSearchListCtrl.cpp:124-151).
+    [[nodiscard]] static QString typeIconName(int typeId);
 
     /// Replace all searches with a new snapshot.
     void setSearches(std::vector<KadSearchRow> searches);

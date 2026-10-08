@@ -12,6 +12,7 @@
 #include "app/AppContext.h"
 #include "files/SharedDirWatcher.h"
 #include "files/SharedFileList.h"
+#include "utils/FileDate.h"
 #include "client/UpDownClient.h"
 
 #include "prefs/Preferences.h"
@@ -75,6 +76,7 @@ private slots:
     void singleSharedFile_itsDirectoryIsWatchedAndRescanned();
     void staleMediaStamp_isBroughtUpToDateInTheBackground();
     void reload_leavesUnchangedFilesAlone();
+    void reload_aShiftedDateOnALocalTimeVolumeIsNotAChangedFile();
     void reload_followsDeleteChangeAndRename();
     void reload_doesNotHashAFileTwice();
     void hashFailure_isRetriedThenRememberedUntilTheFileChanges();
@@ -574,6 +576,15 @@ void tst_SharedFileList::sharedFilesConfig_roundTrips()
         QVERIFY(shared.addSingleSharedFile(singlePath));
         QVERIFY(shared.excludeFile(excludedPath));
         QVERIFY(shared.containsSingleSharedFiles(outside));
+
+        // The folder tree's bold marks: one entry per folder, however many files,
+        // and none for a folder that only holds an excluded file.
+        const QString second = writeFile(outside, QStringLiteral("second.bin"),
+                                         QByteArray(256, 't'));
+        QVERIFY(shared.addSingleSharedFile(second));
+        const QStringList singleDirs = shared.singleSharedDirs();
+        QCOMPARE(singleDirs.size(), 1);
+        QCOMPARE(SharedFileList::pathKey(singleDirs.first()), SharedFileList::pathKey(outside));
     }
 
     QVERIFY2(QFile::exists(QDir(tmp.path()).filePath(QStringLiteral("sharedfiles.dat"))),
@@ -849,6 +860,52 @@ void tst_SharedFileList::reload_leavesUnchangedFilesAlone()
     QVERIFY2(fa->publishedED2K(), "an untouched file keeps its publish state");
     QCOMPARE(shared.m_keywords.keywordCount(), keywords);
     QCOMPARE(shared.getHashingCount(), 0);
+}
+
+// Issue #9: on FAT a DST switch moves every file date by an hour, and the whole share
+// was read again. The record keeps its hash and takes the date the disk reports now.
+void tst_SharedFileList::reload_aShiftedDateOnALocalTimeVolumeIsNotAChangedFile()
+{
+    ShareEnv env;
+    const QString a = env.put(QStringLiteral("gamma three.bin"), QByteArray(700, 'g'));
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    shared.reload();
+    QTRY_COMPARE_WITH_TIMEOUT(shared.getCount(), 1, 10000);
+    KnownFile* const file = sharedAt(shared, a);
+    QVERIFY(file);
+    const time_t hashedDate = file->utcFileDate();
+
+    const auto shiftBy = [&a](qint64 secs) {
+        QFile f(a);
+        return f.open(QIODevice::ReadWrite)
+            && f.setFileTime(QFileInfo(a).lastModified().addSecs(secs),
+                             QFileDevice::FileModificationTime);
+    };
+    struct ProbeReset {
+        ~ProbeReset() { setLocalTimeVolumeProbe({}); }
+    } const probeReset;
+
+    setLocalTimeVolumeProbe([](const QString&) { return true; });
+    QVERIFY(shiftBy(3600));
+    QSignalSpy added(&shared, &SharedFileList::fileAdded);
+    QSignalSpy removed(&shared, &SharedFileList::fileRemoved);
+    shared.reload();
+    QTest::qWait(200);
+
+    QCOMPARE(removed.count(), 0);
+    QCOMPARE(added.count(), 0);
+    QCOMPARE(shared.getHashingCount(), 0);
+    QCOMPARE(sharedAt(shared, a), file);
+    QCOMPARE(file->utcFileDate(), hashedDate + 3600);
+    QVERIFY2(knownFiles.isDirty(), "the adopted date has to reach known.met");
+
+    // Anywhere else an hour's difference is a changed file, as before.
+    setLocalTimeVolumeProbe([](const QString&) { return false; });
+    QVERIFY(shiftBy(3600));
+    shared.reload();
+    QTRY_VERIFY_WITH_TIMEOUT(removed.count() == 1, 10000);
 }
 
 void tst_SharedFileList::reload_followsDeleteChangeAndRename()

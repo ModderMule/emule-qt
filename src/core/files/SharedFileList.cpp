@@ -21,6 +21,7 @@
 #include "files/PartFile.h"
 #include "files/SharedDirWatcher.h"
 #include "transfer/DownloadQueue.h"
+#include "utils/FileDate.h"
 #include "utils/Log.h"
 
 #include <QDir>
@@ -657,6 +658,20 @@ bool SharedFileList::containsSingleSharedFiles(const QString& dirPath) const
     return false;
 }
 
+QStringList SharedFileList::singleSharedDirs() const
+{
+    QStringList dirs;
+    QSet<QString> seen;
+    for (const QString& p : m_singleSharedFiles) {
+        const QString dir = QFileInfo(p).absolutePath();
+        if (const QString key = pathKey(dir); !seen.contains(key)) {
+            seen.insert(key);
+            dirs.append(dir);
+        }
+    }
+    return dirs;
+}
+
 // ---------------------------------------------------------------------------
 // sharedfiles.dat — MFC's own format, so a config directory round-trips with eMule:
 // UTF-16LE with a BOM, CRLF lines, a '-' prefix marking an excluded path.
@@ -1014,12 +1029,13 @@ void SharedFileList::checkAndAddSingleFile(const QString& filePath)
         return;
 
     if (m_knownFiles) {
+        const auto onDisk = static_cast<time_t>(fi.lastModified().toSecsSinceEpoch());
         KnownFile* existing = m_knownFiles->findKnownFile(
-            fi.fileName(),
-            static_cast<time_t>(fi.lastModified().toSecsSinceEpoch()),
-            static_cast<uint64>(fi.size()));
+            fi.fileName(), onDisk, static_cast<uint64>(fi.size()),
+            isLocalTimeVolume(fi.absolutePath()));
 
         if (existing) {
+            adoptDiskDate(existing, onDisk);
             existing->setPath(fi.absolutePath());
             existing->setFilePath(fi.absoluteFilePath());
             safeAddKFile(existing, /*onlyAdd=*/true);
@@ -1494,7 +1510,8 @@ void SharedFileList::rescan(const QStringList& onlyDirs)
             return;
         const auto it = onDisk.constFind(key);
         if (it != onDisk.constEnd() && it->size == static_cast<uint64>(file->fileSize())
-            && it->mtime == file->utcFileDate()) {
+            && sameFileDate(file->utcFileDate(), it->mtime, isLocalTimeVolume(it->directory))) {
+            adoptDiskDate(file, it->mtime);
             onDisk.erase(it);
             return;
         }
@@ -1548,11 +1565,13 @@ void SharedFileList::rescan(const QStringList& onlyDirs)
         const QString filePath = entry.directory + u'/' + entry.filename;
 
         if (KnownFile* existing = m_knownFiles
-                ? m_knownFiles->findKnownFile(entry.filename, entry.mtime, entry.size) : nullptr) {
+                ? m_knownFiles->findKnownFile(entry.filename, entry.mtime, entry.size,
+                                              isLocalTimeVolume(entry.directory)) : nullptr) {
             // Another path with the same name, size and date as a shared file is not
             // allowed to pull that file's record over to itself.
             if (isFilePtrInList(existing))
                 continue;
+            adoptDiskDate(existing, entry.mtime);
             existing->setPath(entry.directory);
             existing->setFilePath(filePath);
             if (!entry.sharedDirectory.isEmpty())
@@ -1666,6 +1685,17 @@ void SharedFileList::widenScopeForMoves(QSet<QString>& scope) const
                 scope.insert(pathKey(root));
         }
     }
+}
+
+void SharedFileList::adoptDiskDate(KnownFile* file, time_t onDisk)
+{
+    // Matched across a rounding step or a DST hour (sameFileDate()): take the date
+    // the disk reports now, so the next scan compares exactly.
+    if (file->utcFileDate() == onDisk)
+        return;
+    file->setUtcFileDate(onDisk);
+    if (m_knownFiles)
+        m_knownFiles->markDirty();
 }
 
 void SharedFileList::relocateFile(KnownFile* file, const DiskEntry& entry)
