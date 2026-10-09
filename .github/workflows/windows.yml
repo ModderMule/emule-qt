@@ -57,7 +57,20 @@ jobs:
           aqt list-qt windows desktop --modules 6.10.3 win64_msvc2022_64
 
           Write-Host "=== Installing Qt base + modules ==="
-          aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 -m qthttpserver qtwebsockets qtmultimedia qtgrpc -O $qtDir --base https://ftp.fau.de/qtproject/
+          # py7zr's parallel workers race on the shared sbom/ dir ("Bad7zFile:
+          # Specified path is bad") -> extract with 7z.exe, retry from scratch
+          $aqtArgs = @("install-qt", "windows", "desktop", "6.10.3", "win64_msvc2022_64",
+                       "-m", "qthttpserver", "qtwebsockets", "qtmultimedia", "qtgrpc",
+                       "-O", $qtDir, "--base", "https://ftp.fau.de/qtproject/")
+          if (Get-Command 7z -ErrorAction SilentlyContinue) { $aqtArgs += @("--external", "7z") }
+          for ($try = 1; $try -le 3; $try++) {
+            aqt @aqtArgs
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($try -eq 3) { Write-Host "ERROR: aqt install-qt failed 3 times" -ForegroundColor Red; exit 1 }
+            Write-Host "aqt failed (exit $LASTEXITCODE), retry $try/2"
+            Remove-Item -Recurse -Force $qtDir -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 10
+          }
 
           $root = "$qtDir\6.10.3\msvc2022_64"
           echo "QT_ROOT_DIR=$root" >> $env:GITHUB_ENV
