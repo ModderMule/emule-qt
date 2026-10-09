@@ -84,7 +84,8 @@ void appendUrlSource(ED2KFileLink& link, const QString& sourceUrl)
 
     ED2KLinkSource src;
     src.hostname = url.host();      // QUrl already strips [] from an IPv6 host
-    src.port = static_cast<uint16>(url.port(4662));
+    // only read as "has a port"; URLClient takes its own from the URL
+    src.port = static_cast<uint16>(url.port(scheme == QStringLiteral("https") ? 443 : 80));
     src.address = Address::fromString(src.hostname);
     src.url = sourceUrl;
     link.hostnameSources.push_back(std::move(src));

@@ -3,7 +3,6 @@
 
 #include "dialogs/PortChangeNotice.h"
 #include "dialogs/PortTest.h"
-#include "app/AutoStart.h"
 #include "dialogs/PortMapStatusText.h"
 
 #include "app/IpcClient.h"
@@ -19,7 +18,6 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QLineEdit>
 #include <QMessageBox>
 #include <QMovie>
 #include <QPointer>
@@ -42,15 +40,10 @@ constexpr int kRowKeep = -3;
 constexpr int kRowRecommended = -2;
 constexpr int kRowCustom = -1;
 
-// MFC CPShtWiz1's pages in its order (PShtWiz1.cpp:775-797). Its Server page — the
-// networks and safe connect — sits on the ports page here, and the wizard ends on the
-// connection speed (MFC's separate connection wizard) instead of a text-only last page.
-constexpr int kPageWelcome = 0;
-constexpr int kPageGeneral = 1;
-constexpr int kPagePorts = 2;
-constexpr int kPagePriority = 3;
-constexpr int kPageSecurity = 4;
-constexpr int kPageSpeed = 5;
+// Two pages, on purpose (2026-10): MFC CPShtWiz1 has seven (PShtWiz1.cpp:775-797) —
+// nick, autoconnect, priorities, obfuscation and safe connect are left to Options.
+constexpr int kPagePorts = 0;
+constexpr int kPageSpeed = 1;
 
 // A limit in KiB/s as shown in the list; 0 = unlimited.
 QString limitText(uint32 kib)
@@ -74,11 +67,7 @@ FirstStartWizard::FirstStartWizard(IpcClient* ipc, QWidget* parent, StartPage st
     setupHeader();
 
     m_pages = new QStackedWidget(this);
-    m_pages->addWidget(setupWelcomePage());
-    m_pages->addWidget(setupGeneralPage());
     m_pages->addWidget(setupPortPage());
-    m_pages->addWidget(setupPriorityPage());
-    m_pages->addWidget(setupSecurityPage());
     m_pages->addWidget(setupSpeedPage());
     mainLayout->addWidget(m_pages, 1);
 
@@ -88,8 +77,7 @@ FirstStartWizard::FirstStartWizard(IpcClient* ipc, QWidget* parent, StartPage st
     fillFromSettings(thePrefs.toIpcMap());
     requestDaemonSettings();
 
-    showPage(startPage == StartPage::Speed ? kPageSpeed
-             : startPage == StartPage::Ports ? kPagePorts : kPageWelcome);
+    showPage(startPage == StartPage::Speed ? kPageSpeed : kPagePorts);
 
     // Fixed like the MFC wizard, but never smaller than its own explanatory text.
     DialogSizing::applyFixedSize(this, QSize(530, 460));
@@ -140,99 +128,6 @@ void FirstStartWizard::setupHeader()
     line->setFrameShape(QFrame::HLine);
     line->setFrameShadow(QFrame::Sunken);
     static_cast<QVBoxLayout*>(layout())->addWidget(line);
-}
-
-// ---------------------------------------------------------------------------
-// Text pages — welcome, general, priorities, security (MFC IDD_WIZ1_*)
-// ---------------------------------------------------------------------------
-
-QWidget* FirstStartWizard::textPage(const QList<std::pair<QString, QCheckBox**>>& options)
-{
-    auto* page = new QWidget(this);
-    auto* vbox = new QVBoxLayout(page);
-    vbox->setContentsMargins(16, 12, 16, 4);
-    vbox->setSpacing(10);
-    DialogSizing::enableHeightForWidth(page);
-    for (const auto& [text, slot] : options) {
-        if (!slot) {
-            auto* label = new QLabel(text, page);
-            label->setWordWrap(true);
-            DialogSizing::enableHeightForWidth(label);
-            vbox->addWidget(label);
-            continue;
-        }
-        // MFC puts the explanation into the checkbox itself. A QCheckBox does not
-        // wrap, so the box carries the first sentence and a label the rest.
-        const qsizetype cut = text.indexOf(QStringLiteral("\n\n"));
-        *slot = new QCheckBox(cut < 0 ? text : text.left(cut), page);
-        vbox->addWidget(*slot);
-        if (cut >= 0) {
-            auto* more = new QLabel(text.mid(cut + 2), page);
-            more->setWordWrap(true);
-            more->setContentsMargins(22, 0, 0, 0);
-            DialogSizing::enableHeightForWidth(more);
-            vbox->addWidget(more);
-        }
-    }
-    vbox->addStretch();
-    return page;
-}
-
-QWidget* FirstStartWizard::setupWelcomePage()
-{
-    return textPage({{tr("This wizard will guide you through the first steps in configuring eMule."), nullptr},
-                     {tr("To continue, click Next."), nullptr}});
-}
-
-QWidget* FirstStartWizard::setupGeneralPage()
-{
-    auto* page = new QWidget(this);
-    auto* vbox = new QVBoxLayout(page);
-    vbox->setContentsMargins(16, 12, 16, 4);
-    vbox->setSpacing(10);
-
-    vbox->addWidget(new QLabel(tr("Please enter your user name:"), page));
-    m_nickEdit = new QLineEdit(page);
-    m_nickEdit->setObjectName(QStringLiteral("wizardNick"));
-    m_nickEdit->setMaxLength(50);   // MFC GetMaxUserNickLength
-    vbox->addWidget(m_nickEdit);
-
-    vbox->addSpacing(8);
-    m_autoStartCheck = new QCheckBox(tr("Start eMule when the computer starts."), page);
-    m_autoStartCheck->setObjectName(QStringLiteral("wizardAutoStart"));
-    vbox->addWidget(m_autoStartCheck);
-    m_autoConnectCheck = new QCheckBox(tr("Enable this option if you want eMule to connect at startup."), page);
-    m_autoConnectCheck->setObjectName(QStringLiteral("wizardAutoConnect"));
-    vbox->addWidget(m_autoConnectCheck);
-    vbox->addStretch();
-    return page;
-}
-
-QWidget* FirstStartWizard::setupPriorityPage()
-{
-    QWidget* page = textPage({
-        {tr("Enable this option if you want eMule to manage your download priorities.\n\n"
-            "Turning this on will allow eMule to make sure downloads with a lot of sources do not "
-            "interfere with downloads that have few sources. This option will only affect future "
-            "downloads."), &m_autoDownPrioCheck},
-        {tr("Enable this option if you want eMule to manage your upload priorities.\n\n"
-            "Turning this on will allow eMule to boost rare files meaning popular files will be "
-            "harder for other people to get. Turning this off will allow eMule to upload popular "
-            "files more often meaning rare files will be harder for other people to get. This "
-            "option will only affect future shared files."), &m_autoUpPrioCheck}});
-    m_autoDownPrioCheck->setObjectName(QStringLiteral("wizardAutoDownPrio"));
-    m_autoUpPrioCheck->setObjectName(QStringLiteral("wizardAutoUpPrio"));
-    return page;
-}
-
-QWidget* FirstStartWizard::setupSecurityPage()
-{
-    QWidget* page = textPage({
-        {tr("Enable this option if you want to use protocol obfuscation\n\n"
-            "If your ISP tries throttle or block eMule, enabling obfuscation will help to "
-            "circumvent such restrictions."), &m_obfuscationCheck}});
-    m_obfuscationCheck->setObjectName(QStringLiteral("wizardObfuscation"));
-    return page;
 }
 
 // ---------------------------------------------------------------------------
@@ -364,18 +259,10 @@ QWidget* FirstStartWizard::setupPortPage()
     m_ed2kCheck = new QCheckBox(tr("eD2K"), group);
 
     connect(m_kadCheck, &QCheckBox::clicked, this, [this](bool on) { m_kadWanted = on; });
-    // MFC IDC_SAFESERVERCONNECT, from its Server page
-    m_safeConnectCheck = new QCheckBox(tr("Safe Connect"), group);
-    m_safeConnectCheck->setObjectName(QStringLiteral("wizardSafeConnect"));
-    m_safeConnectCheck->setToolTip(
-        tr("Turning this feature off allows eMule to connect to servers a little faster, "
-           "but can cause you to get more false LowID connects."));
 
     groupLayout->addWidget(m_kadCheck);
     groupLayout->addSpacing(40);
     groupLayout->addWidget(m_ed2kCheck);
-    groupLayout->addSpacing(40);
-    groupLayout->addWidget(m_safeConnectCheck);
     groupLayout->addStretch();
 
     auto* wrapper = new QWidget(page);
@@ -526,35 +413,11 @@ void FirstStartWizard::setupButtons()
 void FirstStartWizard::showPage(int page)
 {
     m_pages->setCurrentIndex(page);
-    // Title and subtitle of MFC's property pages (PShtWiz1.cpp:775-794)
-    switch (page) {
-    case kPageWelcome:
-        m_titleLabel->setText(tr("Welcome to eMule"));
-        m_subtitleLabel->setText(QString());
-        break;
-    case kPageGeneral:
-        m_titleLabel->setText(tr("General"));
-        m_subtitleLabel->setText(tr("User Name"));
-        break;
-    case kPagePorts:
-        m_titleLabel->setText(tr("Ports and Connection"));
-        m_subtitleLabel->setText(tr("Connection"));
-        break;
-    case kPagePriority:
-        m_titleLabel->setText(tr("Download") + QStringLiteral(" / ") + tr("Upload"));
-        m_subtitleLabel->setText(tr("Priority"));
-        break;
-    case kPageSecurity:
-        m_titleLabel->setText(tr("Security"));
-        m_subtitleLabel->setText(tr("Obfuscation"));
-        break;
-    default:
-        m_titleLabel->setText(tr("Connection Speed"));
-        m_subtitleLabel->setText(tr("Bandwidth"));
-        break;
-    }
-    m_backBtn->setEnabled(page > kPageWelcome);
-    m_nextBtn->setText(page == kPageSpeed ? tr("Finish") : tr("Next >"));
+    const bool speed = page == kPageSpeed;
+    m_titleLabel->setText(speed ? tr("Connection Speed") : tr("Ports and Connection"));
+    m_subtitleLabel->setText(speed ? tr("Bandwidth") : tr("Connection"));
+    m_backBtn->setEnabled(speed);
+    m_nextBtn->setText(speed ? tr("Finish") : tr("Next >"));
 }
 
 // ---------------------------------------------------------------------------
@@ -592,19 +455,6 @@ void FirstStartWizard::fillFromSettings(const QCborMap& prefs)
     syncKadToUdp();
     m_ed2kCheck->setChecked(prefs.value(QLatin1StringView("networkED2K")).toBool());
 
-    // The pages show what is set now. MFC forces its own presets here (auto connect
-    // off, both priorities on, safe connect off) even when the wizard is run again —
-    // reading the current values is deliberate, 2026-10.
-    const auto flag = [&prefs](QLatin1StringView key) { return prefs.value(key).toBool(); };
-    m_safeConnectCheck->setChecked(flag(QLatin1StringView("safeServerConnect")));
-    if (!m_nickEdit->isModified())
-        m_nickEdit->setText(prefs.value(QLatin1StringView("nick")).toString());
-    m_autoStartCheck->setChecked(isAutoStartEnabled());
-    m_autoConnectCheck->setChecked(flag(QLatin1StringView("autoConnect")));
-    m_autoDownPrioCheck->setChecked(flag(QLatin1StringView("autoDownloadPriority")));
-    m_autoUpPrioCheck->setChecked(flag(QLatin1StringView("autoSharedFilesPriority")));
-    m_obfuscationCheck->setChecked(flag(QLatin1StringView("cryptLayerRequested")));
-
     m_current = {number(QLatin1StringView("maxGraphDownloadRate")),
                  number(QLatin1StringView("maxGraphUploadRate")),
                  number(QLatin1StringView("maxDownload")),
@@ -628,7 +478,7 @@ void FirstStartWizard::fillFromSettings(const QCborMap& prefs)
 
 void FirstStartWizard::onBack()
 {
-    showPage(std::max(m_pages->currentIndex() - 1, kPageWelcome));
+    showPage(std::max(m_pages->currentIndex() - 1, kPagePorts));
 }
 
 void FirstStartWizard::onNext()
@@ -853,26 +703,7 @@ void FirstStartWizard::finish()
     const bool ed2kEnabled = m_ed2kCheck->isChecked();
     const auto bandwidth = chosenBandwidth();
 
-    // MFC CPShtWiz1 on Finish (PShtWiz1.cpp:836-857)
-    QString nick = m_nickEdit->text().trimmed();
-    if (nick.isEmpty())
-        nick = thePrefs.nick();
-    const bool obfuscation = m_obfuscationCheck->isChecked();
-    const QList<std::pair<QString, bool>> flags = {
-        {QStringLiteral("autoConnect"), m_autoConnectCheck->isChecked()},
-        {QStringLiteral("autoDownloadPriority"), m_autoDownPrioCheck->isChecked()},
-        {QStringLiteral("autoSharedFilesPriority"), m_autoUpPrioCheck->isChecked()},
-        {QStringLiteral("safeServerConnect"), m_safeConnectCheck->isChecked()},
-        {QStringLiteral("cryptLayerRequested"), obfuscation},
-        {QStringLiteral("startWithOS"), m_autoStartCheck->isChecked()}};
-
     m_applied.clear();
-    m_applied.insert(QStringLiteral("nick"), nick);
-    for (const auto& [key, value] : flags)
-        m_applied.insert(key, value);
-    // asking for obfuscation implies supporting it; unticking does not switch support off
-    if (obfuscation)
-        m_applied.insert(QStringLiteral("cryptLayerSupported"), true);
     m_applied.insert(QStringLiteral("port"), tcpPort);
     m_applied.insert(QStringLiteral("udpPort"), udpPort);
     m_applied.insert(QStringLiteral("kadEnabled"), kadEnabled);
@@ -892,16 +723,6 @@ void FirstStartWizard::finish()
     thePrefs.setUdpPort(udpPort);
     thePrefs.setKadEnabled(kadEnabled);
     thePrefs.setNetworkED2K(ed2kEnabled);
-    thePrefs.setNick(nick);
-    thePrefs.setAutoConnect(m_autoConnectCheck->isChecked());
-    thePrefs.setAutoDownloadPriority(m_autoDownPrioCheck->isChecked());
-    thePrefs.setAutoSharedFilesPriority(m_autoUpPrioCheck->isChecked());
-    thePrefs.setSafeServerConnect(m_safeConnectCheck->isChecked());
-    thePrefs.setCryptLayerRequested(obfuscation);
-    if (obfuscation)
-        thePrefs.setCryptLayerSupported(true);
-    if (m_autoStartCheck->isChecked() != isAutoStartEnabled())
-        setAutoStart(m_autoStartCheck->isChecked());
     if (bandwidth) {
         thePrefs.setMaxGraphDownloadRate(bandwidth->capDown);
         thePrefs.setMaxGraphUploadRate(bandwidth->capUp);
@@ -921,16 +742,6 @@ void FirstStartWizard::finish()
         req.append(kadEnabled);
         req.append(QStringLiteral("networkED2K"));
         req.append(ed2kEnabled);
-        req.append(QStringLiteral("nick"));
-        req.append(nick);
-        for (const auto& [key, value] : flags) {
-            req.append(key);
-            req.append(value);
-        }
-        if (obfuscation) {
-            req.append(QStringLiteral("cryptLayerSupported"));
-            req.append(true);
-        }
         if (bandwidth) {
             send("maxGraphDownloadRate", bandwidth->capDown);
             send("maxGraphUploadRate", bandwidth->capUp);

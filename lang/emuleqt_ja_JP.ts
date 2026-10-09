@@ -3351,12 +3351,12 @@ ED2K ハッシュ:	%2
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+67"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+60"/>
         <source>eMule First Runtime Wizard</source>
         <translation>eMule 初回実行ウィザード</translation>
     </message>
     <message>
-        <location line="+473"/>
+        <location line="+357"/>
         <source>Ports and Connection</source>
         <translation>ポートと接続</translation>
     </message>
@@ -3366,70 +3366,62 @@ ED2K ハッシュ:	%2
         <translation>接続</translation>
     </message>
     <message>
-        <location line="-284"/>
+        <location line="-266"/>
         <source>eMule uses two ports for communication with servers and clients. These ports must be free and available for remote clients. The TCP port must be available to ensure the main functionality of eMule. The UDP port is used for Kad (serverless network) and to reduce network usage (Overhead).</source>
         <translation>eMule はサーバーおよびクライアントとの通信に2つのポートを使用します。これらのポートはリモートクライアントに対して空いている必要があります。TCP ポートは eMule の主要機能を確保するために必要です。UDP ポートは Kad（サーバーレスネットワーク）およびネットワーク使用量の削減（オーバーヘッド）に使用されます。</translation>
     </message>
     <message>
-        <location line="-199"/>
-        <location line="+407"/>
+        <location line="-101"/>
+        <location line="+301"/>
         <source>Unlimited</source>
         <translation>無制限</translation>
     </message>
     <message>
-        <location line="-282"/>
         <source>This wizard will guide you through the first steps in configuring eMule.</source>
-        <translation>このウィザードでは、eMule の最初の設定手順をご案内します。</translation>
+        <translation type="vanished">このウィザードでは、eMule の最初の設定手順をご案内します。</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>To continue, click Next.</source>
-        <translation>続けるには [次へ] をクリックしてください。</translation>
+        <translation type="vanished">続けるには [次へ] をクリックしてください。</translation>
     </message>
     <message>
-        <location line="+10"/>
         <source>Please enter your user name:</source>
-        <translation>ユーザー名を入力してください:</translation>
+        <translation type="vanished">ユーザー名を入力してください:</translation>
     </message>
     <message>
-        <location line="+7"/>
         <source>Start eMule when the computer starts.</source>
-        <translation>コンピューターの起動時に eMule を起動する。</translation>
+        <translation type="vanished">コンピューターの起動時に eMule を起動する。</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Enable this option if you want eMule to connect at startup.</source>
-        <translation>起動時に eMule を接続させたい場合は、このオプションを有効にしてください。</translation>
+        <translation type="vanished">起動時に eMule を接続させたい場合は、このオプションを有効にしてください。</translation>
     </message>
     <message>
-        <location line="+10"/>
         <source>Enable this option if you want eMule to manage your download priorities.
 
 Turning this on will allow eMule to make sure downloads with a lot of sources do not interfere with downloads that have few sources. This option will only affect future downloads.</source>
-        <translation>eMule にダウンロードの優先度を管理させたい場合は、このオプションを有効にしてください。
+        <translation type="vanished">eMule にダウンロードの優先度を管理させたい場合は、このオプションを有効にしてください。
 
 有効にすると、ソースの多いダウンロードがソースの少ないダウンロードを妨げないように eMule が調整します。このオプションは今後のダウンロードにのみ適用されます。</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>Enable this option if you want eMule to manage your upload priorities.
 
 Turning this on will allow eMule to boost rare files meaning popular files will be harder for other people to get. Turning this off will allow eMule to upload popular files more often meaning rare files will be harder for other people to get. This option will only affect future shared files.</source>
-        <translation>eMule にアップロードの優先度を管理させたい場合は、このオプションを有効にしてください。
+        <translation type="vanished">eMule にアップロードの優先度を管理させたい場合は、このオプションを有効にしてください。
 
 有効にすると eMule は希少なファイルを優先するため、人気のあるファイルは他の人が入手しにくくなります。無効にすると人気のあるファイルをより頻繁にアップロードするため、希少なファイルは入手しにくくなります。このオプションは今後共有するファイルにのみ適用されます。</translation>
     </message>
     <message>
-        <location line="+13"/>
         <source>Enable this option if you want to use protocol obfuscation
 
 If your ISP tries throttle or block eMule, enabling obfuscation will help to circumvent such restrictions.</source>
-        <translation>プロトコル難読化を使用する場合は、このオプションを有効にしてください
+        <translation type="vanished">プロトコル難読化を使用する場合は、このオプションを有効にしてください
 
 プロバイダーが eMule を制限または遮断しようとする場合、難読化を有効にするとそのような制限を回避しやすくなります。</translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="-187"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>ネットワーク活動が開始されていない間に、ここでポートを変更できます。</translation>
     </message>
@@ -3479,17 +3471,15 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>eD2K</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>Safe Connect</source>
-        <translation>安全な接続</translation>
+        <translation type="vanished">安全な接続</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Turning this feature off allows eMule to connect to servers a little faster, but can cause you to get more false LowID connects.</source>
-        <translation>この機能をオフにすると eMule はサーバーに少し速く接続できますが、誤った LowID 接続が増えることがあります。</translation>
+        <translation type="vanished">この機能をオフにすると eMule はサーバーに少し速く接続できますが、誤った LowID 接続が増えることがあります。</translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location line="+31"/>
         <source>Select your internet connection. eMule derives its download and upload limits from it, leaving room for your other applications. You can change the limits at any time in the Options.</source>
         <translation>インターネット接続を選択してください。eMule はそこからダウンロードとアップロードの制限を決め、他のアプリケーションのための余裕を残します。制限はオプションでいつでも変更できます。</translation>
     </message>
@@ -3571,52 +3561,44 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
     </message>
     <message>
         <location line="+2"/>
-        <location line="+52"/>
+        <location line="+28"/>
         <source>Next &gt;</source>
         <translation>次へ &gt;</translation>
     </message>
     <message>
-        <location line="-25"/>
         <source>Welcome to eMule</source>
-        <translation>eMule へようこそ</translation>
+        <translation type="vanished">eMule へようこそ</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>General</source>
-        <translation>全般</translation>
+        <translation type="vanished">全般</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>User Name</source>
-        <translation>ユーザー名</translation>
+        <translation type="vanished">ユーザー名</translation>
     </message>
     <message>
-        <location line="+7"/>
         <source>Download</source>
-        <translation>ダウンロード</translation>
+        <translation type="vanished">ダウンロード</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Upload</source>
-        <translation>アップロード</translation>
+        <translation type="vanished">アップロード</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Priority</source>
-        <translation>優先度</translation>
+        <translation type="vanished">優先度</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Security</source>
-        <translation>セキュリティ</translation>
+        <translation type="vanished">セキュリティ</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Obfuscation</source>
-        <translation>難読化</translation>
+        <translation type="vanished">難読化</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-3"/>
         <source>Connection Speed</source>
         <translation>接続速度</translation>
     </message>
@@ -3626,12 +3608,12 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>帯域幅</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+2"/>
         <source>Finish</source>
         <translation>完了</translation>
     </message>
     <message>
-        <location line="-49"/>
+        <location line="-25"/>
         <source>Cancel</source>
         <translation>キャンセル</translation>
     </message>
@@ -3645,7 +3627,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation type="vanished">ダウンロード制限: %1    アップロード制限: %2</translation>
     </message>
     <message>
-        <location line="+241"/>
+        <location line="+204"/>
         <source>The ports are forwarded when the core starts.</source>
         <translation>ポートはコアの起動時に転送されます。</translation>
     </message>

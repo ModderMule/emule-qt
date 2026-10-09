@@ -3351,12 +3351,12 @@ ED2K 哈希：	%2
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+67"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+60"/>
         <source>eMule First Runtime Wizard</source>
         <translation>eMule 首次运行向导</translation>
     </message>
     <message>
-        <location line="+473"/>
+        <location line="+357"/>
         <source>Ports and Connection</source>
         <translation>端口和连接</translation>
     </message>
@@ -3366,70 +3366,62 @@ ED2K 哈希：	%2
         <translation>连接</translation>
     </message>
     <message>
-        <location line="-284"/>
+        <location line="-266"/>
         <source>eMule uses two ports for communication with servers and clients. These ports must be free and available for remote clients. The TCP port must be available to ensure the main functionality of eMule. The UDP port is used for Kad (serverless network) and to reduce network usage (Overhead).</source>
         <translation>eMule 使用两个端口与服务器和客户端通信。这些端口必须空闲并对远程客户端可用。TCP 端口必须可用以确保 eMule 的主要功能。UDP 端口用于 Kad（无服务器网络）和减少网络使用（开销）。</translation>
     </message>
     <message>
-        <location line="-199"/>
-        <location line="+407"/>
+        <location line="-101"/>
+        <location line="+301"/>
         <source>Unlimited</source>
         <translation>无限制</translation>
     </message>
     <message>
-        <location line="-282"/>
         <source>This wizard will guide you through the first steps in configuring eMule.</source>
-        <translation>此向导将引导您完成 eMule 的初步配置。</translation>
+        <translation type="vanished">此向导将引导您完成 eMule 的初步配置。</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>To continue, click Next.</source>
-        <translation>要继续,请单击“下一步”。</translation>
+        <translation type="vanished">要继续,请单击“下一步”。</translation>
     </message>
     <message>
-        <location line="+10"/>
         <source>Please enter your user name:</source>
-        <translation>请输入您的用户名:</translation>
+        <translation type="vanished">请输入您的用户名:</translation>
     </message>
     <message>
-        <location line="+7"/>
         <source>Start eMule when the computer starts.</source>
-        <translation>计算机启动时启动 eMule。</translation>
+        <translation type="vanished">计算机启动时启动 eMule。</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Enable this option if you want eMule to connect at startup.</source>
-        <translation>如果希望 eMule 在启动时连接,请启用此选项。</translation>
+        <translation type="vanished">如果希望 eMule 在启动时连接,请启用此选项。</translation>
     </message>
     <message>
-        <location line="+10"/>
         <source>Enable this option if you want eMule to manage your download priorities.
 
 Turning this on will allow eMule to make sure downloads with a lot of sources do not interfere with downloads that have few sources. This option will only affect future downloads.</source>
-        <translation>如果希望 eMule 管理下载优先级,请启用此选项。
+        <translation type="vanished">如果希望 eMule 管理下载优先级,请启用此选项。
 
 启用后,eMule 会确保来源多的下载不会妨碍来源少的下载。此选项只影响以后的下载。</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>Enable this option if you want eMule to manage your upload priorities.
 
 Turning this on will allow eMule to boost rare files meaning popular files will be harder for other people to get. Turning this off will allow eMule to upload popular files more often meaning rare files will be harder for other people to get. This option will only affect future shared files.</source>
-        <translation>如果希望 eMule 管理上传优先级,请启用此选项。
+        <translation type="vanished">如果希望 eMule 管理上传优先级,请启用此选项。
 
 启用后,eMule 会优先稀有文件,这意味着其他人更难获得热门文件。关闭后,eMule 会更频繁地上传热门文件,这意味着其他人更难获得稀有文件。此选项只影响以后共享的文件。</translation>
     </message>
     <message>
-        <location line="+13"/>
         <source>Enable this option if you want to use protocol obfuscation
 
 If your ISP tries throttle or block eMule, enabling obfuscation will help to circumvent such restrictions.</source>
-        <translation>如果要使用协议混淆,请启用此选项
+        <translation type="vanished">如果要使用协议混淆,请启用此选项
 
 如果您的网络服务商试图限速或屏蔽 eMule,启用混淆有助于绕过此类限制。</translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="-187"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>您可以在尚未开始网络活动时在此更改端口。</translation>
     </message>
@@ -3479,17 +3471,15 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>eD2K</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>Safe Connect</source>
-        <translation>安全连接</translation>
+        <translation type="vanished">安全连接</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Turning this feature off allows eMule to connect to servers a little faster, but can cause you to get more false LowID connects.</source>
-        <translation>关闭此功能可让 eMule 稍快地连接服务器,但可能导致更多错误的 LowID 连接。</translation>
+        <translation type="vanished">关闭此功能可让 eMule 稍快地连接服务器,但可能导致更多错误的 LowID 连接。</translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location line="+31"/>
         <source>Select your internet connection. eMule derives its download and upload limits from it, leaving room for your other applications. You can change the limits at any time in the Options.</source>
         <translation>请选择您的互联网连接。eMule 会据此确定下载和上传限速，并为其他应用程序留出余量。您可以随时在选项中更改限速。</translation>
     </message>
@@ -3571,52 +3561,44 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
     </message>
     <message>
         <location line="+2"/>
-        <location line="+52"/>
+        <location line="+28"/>
         <source>Next &gt;</source>
         <translation>下一步 &gt;</translation>
     </message>
     <message>
-        <location line="-25"/>
         <source>Welcome to eMule</source>
-        <translation>欢迎使用 eMule</translation>
+        <translation type="vanished">欢迎使用 eMule</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>General</source>
-        <translation>常规</translation>
+        <translation type="vanished">常规</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>User Name</source>
-        <translation>用户名</translation>
+        <translation type="vanished">用户名</translation>
     </message>
     <message>
-        <location line="+7"/>
         <source>Download</source>
-        <translation>下载</translation>
+        <translation type="vanished">下载</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Upload</source>
-        <translation>上传</translation>
+        <translation type="vanished">上传</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Priority</source>
-        <translation>优先级</translation>
+        <translation type="vanished">优先级</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Security</source>
-        <translation>安全</translation>
+        <translation type="vanished">安全</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Obfuscation</source>
-        <translation>混淆</translation>
+        <translation type="vanished">混淆</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-3"/>
         <source>Connection Speed</source>
         <translation>连接速度</translation>
     </message>
@@ -3626,12 +3608,12 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation>带宽</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+2"/>
         <source>Finish</source>
         <translation>完成</translation>
     </message>
     <message>
-        <location line="-49"/>
+        <location line="-25"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
@@ -3645,7 +3627,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation type="vanished">下载限速：%1    上传限速：%2</translation>
     </message>
     <message>
-        <location line="+241"/>
+        <location line="+204"/>
         <source>The ports are forwarded when the core starts.</source>
         <translation>端口将在核心启动时转发。</translation>
     </message>

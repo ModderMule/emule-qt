@@ -1280,7 +1280,7 @@ bool DownloadQueue::addUserUrlSource(PartFile* file, const QString& urlText)
 
     ED2KLinkSource source;
     source.hostname = url.host();
-    source.port = static_cast<uint16>(url.port(80));
+    source.port = static_cast<uint16>(url.port(scheme == QStringLiteral("https") ? 443 : 80));
     source.address = Address::fromString(source.hostname);
     source.url = url.toString();
 

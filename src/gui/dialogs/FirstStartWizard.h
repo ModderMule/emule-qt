@@ -38,12 +38,11 @@ class FirstStartWizard : public QDialog {
     Q_OBJECT
 
 public:
-    /// Welcome: the whole wizard, as on a first start. Ports and Speed open it on
-    /// that page (the Connection page's wizard button uses Speed).
-    enum class StartPage { Welcome, Ports, Speed };
+    /// The page it opens on (the Connection page's wizard button uses Speed).
+    enum class StartPage { Ports, Speed };
 
     explicit FirstStartWizard(IpcClient* ipc, QWidget* parent = nullptr,
-                              StartPage startPage = StartPage::Welcome);
+                              StartPage startPage = StartPage::Ports);
 
     /// Cancel takes back the ports a UPnP attempt or a port test pushed to the core
     /// (MFC CPShtWiz1 restores them, PShtWiz1.cpp:821-829).
@@ -67,12 +66,6 @@ private slots:
 
 private:
     void setupHeader();
-    QWidget* setupWelcomePage();
-    QWidget* setupGeneralPage();
-    QWidget* setupPriorityPage();
-    QWidget* setupSecurityPage();
-    /// A page that is one paragraph and a checkbox (MFC's priority / security pages).
-    QWidget* textPage(const QList<std::pair<QString, QCheckBox**>>& options);
     /// Hand the ports on the page to the core now; remembers what to restore.
     void pushPorts(bool withUPnP, std::function<void(bool ok)> done);
     void onPortTest();
@@ -110,16 +103,8 @@ private:
     // Network controls
     QCheckBox* m_kadCheck = nullptr;
     QCheckBox* m_ed2kCheck = nullptr;
-    QCheckBox* m_safeConnectCheck = nullptr;
     bool m_kadWanted = true;   ///< the Kad tick while UDP, and with it the box, is off
 
-    // General / priorities / security (MFC pages 2, 4 and 5)
-    QLineEdit* m_nickEdit = nullptr;
-    QCheckBox* m_autoStartCheck = nullptr;
-    QCheckBox* m_autoConnectCheck = nullptr;
-    QCheckBox* m_autoDownPrioCheck = nullptr;
-    QCheckBox* m_autoUpPrioCheck = nullptr;
-    QCheckBox* m_obfuscationCheck = nullptr;
     QPushButton* m_portTestBtn = nullptr;
 
     /// What the core had before this wizard pushed ports to it; empty = nothing pushed.

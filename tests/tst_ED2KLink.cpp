@@ -1079,6 +1079,15 @@ void tst_ED2KLink::magnetLink_aichAndUrlSource()
     QCOMPARE(link.hostnameSources.size(), std::size_t{1});      // ftp is no URL source
     QCOMPARE(link.hostnameSources[0].url, QStringLiteral("http://example.com/m.bin"));
     QCOMPARE(link.hostnameSources[0].hostname, QStringLiteral("example.com"));
+    QCOMPARE(link.hostnameSources[0].port, uint16{80});
+
+    // C107: without a port the scheme decides, as in URLClient
+    const auto ports = parseFileLinkWith(QStringLiteral(
+        "s=https://example.com/a.bin|s=http://example.com:8080/b.bin|s=https://example.com:8443/c.bin|"));
+    QCOMPARE(ports.hostnameSources.size(), std::size_t{3});
+    QCOMPARE(ports.hostnameSources[0].port, uint16{443});
+    QCOMPARE(ports.hostnameSources[1].port, uint16{8080});
+    QCOMPARE(ports.hostnameSources[2].port, uint16{8443});
 }
 
 // C72: MFC AbstractFile.cpp:441-443, WebServer.cpp:2840-2843

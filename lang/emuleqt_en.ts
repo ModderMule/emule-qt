@@ -3038,12 +3038,12 @@ Uploaded:	%12</source>
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+67"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+60"/>
         <source>eMule First Runtime Wizard</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+473"/>
+        <location line="+357"/>
         <source>Ports and Connection</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3053,64 +3053,18 @@ Uploaded:	%12</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-284"/>
+        <location line="-266"/>
         <source>eMule uses two ports for communication with servers and clients. These ports must be free and available for remote clients. The TCP port must be available to ensure the main functionality of eMule. The UDP port is used for Kad (serverless network) and to reduce network usage (Overhead).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-199"/>
-        <location line="+407"/>
+        <location line="-101"/>
+        <location line="+301"/>
         <source>Unlimited</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-282"/>
-        <source>This wizard will guide you through the first steps in configuring eMule.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+1"/>
-        <source>To continue, click Next.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+10"/>
-        <source>Please enter your user name:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+7"/>
-        <source>Start eMule when the computer starts.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+3"/>
-        <source>Enable this option if you want eMule to connect at startup.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+10"/>
-        <source>Enable this option if you want eMule to manage your download priorities.
-
-Turning this on will allow eMule to make sure downloads with a lot of sources do not interfere with downloads that have few sources. This option will only affect future downloads.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+4"/>
-        <source>Enable this option if you want eMule to manage your upload priorities.
-
-Turning this on will allow eMule to boost rare files meaning popular files will be harder for other people to get. Turning this off will allow eMule to upload popular files more often meaning rare files will be harder for other people to get. This option will only affect future shared files.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+13"/>
-        <source>Enable this option if you want to use protocol obfuscation
-
-If your ISP tries throttle or block eMule, enabling obfuscation will help to circumvent such restrictions.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+39"/>
+        <location line="-187"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3160,17 +3114,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+4"/>
-        <source>Safe Connect</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+3"/>
-        <source>Turning this feature off allows eMule to connect to servers a little faster, but can cause you to get more false LowID connects.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+32"/>
+        <location line="+31"/>
         <source>Select your internet connection. eMule derives its download and upload limits from it, leaving room for your other applications. You can change the limits at any time in the Options.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3252,52 +3196,12 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
     </message>
     <message>
         <location line="+2"/>
-        <location line="+52"/>
+        <location line="+28"/>
         <source>Next &gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-25"/>
-        <source>Welcome to eMule</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+4"/>
-        <source>General</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+1"/>
-        <source>User Name</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+7"/>
-        <source>Download</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+0"/>
-        <source>Upload</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+1"/>
-        <source>Priority</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+3"/>
-        <source>Security</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+1"/>
-        <source>Obfuscation</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+3"/>
+        <location line="-3"/>
         <source>Connection Speed</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3307,12 +3211,12 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+2"/>
         <source>Finish</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-49"/>
+        <location line="-25"/>
         <source>Cancel</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3322,7 +3226,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+241"/>
+        <location line="+204"/>
         <source>The ports are forwarded when the core starts.</source>
         <translation type="unfinished"></translation>
     </message>

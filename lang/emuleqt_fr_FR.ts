@@ -3364,12 +3364,12 @@ Envoyé :	%12</translation>
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+67"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+60"/>
         <source>eMule First Runtime Wizard</source>
         <translation>Assistant de premier démarrage eMule</translation>
     </message>
     <message>
-        <location line="+473"/>
+        <location line="+357"/>
         <source>Ports and Connection</source>
         <translation>Ports et connexion</translation>
     </message>
@@ -3379,70 +3379,62 @@ Envoyé :	%12</translation>
         <translation>Connexion</translation>
     </message>
     <message>
-        <location line="-284"/>
+        <location line="-266"/>
         <source>eMule uses two ports for communication with servers and clients. These ports must be free and available for remote clients. The TCP port must be available to ensure the main functionality of eMule. The UDP port is used for Kad (serverless network) and to reduce network usage (Overhead).</source>
         <translation>eMule utilise deux ports pour communiquer avec les serveurs et les clients. Ces ports doivent être libres et disponibles pour les clients distants. Le port TCP doit être disponible pour assurer la fonctionnalité principale d&apos;eMule. Le port UDP est utilisé pour Kad (réseau sans serveur) et pour réduire l&apos;utilisation du réseau (overhead).</translation>
     </message>
     <message>
-        <location line="-199"/>
-        <location line="+407"/>
+        <location line="-101"/>
+        <location line="+301"/>
         <source>Unlimited</source>
         <translation>Illimité</translation>
     </message>
     <message>
-        <location line="-282"/>
         <source>This wizard will guide you through the first steps in configuring eMule.</source>
-        <translation>Cet assistant vous guidera dans les premières étapes de la configuration d&apos;eMule.</translation>
+        <translation type="vanished">Cet assistant vous guidera dans les premières étapes de la configuration d&apos;eMule.</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>To continue, click Next.</source>
-        <translation>Pour continuer, cliquez sur Suivant.</translation>
+        <translation type="vanished">Pour continuer, cliquez sur Suivant.</translation>
     </message>
     <message>
-        <location line="+10"/>
         <source>Please enter your user name:</source>
-        <translation>Veuillez saisir votre nom d&apos;utilisateur :</translation>
+        <translation type="vanished">Veuillez saisir votre nom d&apos;utilisateur :</translation>
     </message>
     <message>
-        <location line="+7"/>
         <source>Start eMule when the computer starts.</source>
-        <translation>Lancer eMule au démarrage de l&apos;ordinateur.</translation>
+        <translation type="vanished">Lancer eMule au démarrage de l&apos;ordinateur.</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Enable this option if you want eMule to connect at startup.</source>
-        <translation>Activez cette option si vous souhaitez qu&apos;eMule se connecte au démarrage.</translation>
+        <translation type="vanished">Activez cette option si vous souhaitez qu&apos;eMule se connecte au démarrage.</translation>
     </message>
     <message>
-        <location line="+10"/>
         <source>Enable this option if you want eMule to manage your download priorities.
 
 Turning this on will allow eMule to make sure downloads with a lot of sources do not interfere with downloads that have few sources. This option will only affect future downloads.</source>
-        <translation>Activez cette option si vous souhaitez qu&apos;eMule gère vos priorités de téléchargement.
+        <translation type="vanished">Activez cette option si vous souhaitez qu&apos;eMule gère vos priorités de téléchargement.
 
 Ainsi, eMule veille à ce que les téléchargements ayant beaucoup de sources ne gênent pas ceux qui en ont peu. Cette option ne concerne que les téléchargements futurs.</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>Enable this option if you want eMule to manage your upload priorities.
 
 Turning this on will allow eMule to boost rare files meaning popular files will be harder for other people to get. Turning this off will allow eMule to upload popular files more often meaning rare files will be harder for other people to get. This option will only affect future shared files.</source>
-        <translation>Activez cette option si vous souhaitez qu&apos;eMule gère vos priorités d&apos;envoi.
+        <translation type="vanished">Activez cette option si vous souhaitez qu&apos;eMule gère vos priorités d&apos;envoi.
 
 Ainsi, eMule favorise les fichiers rares ; les fichiers populaires seront donc plus difficiles à obtenir pour les autres. Désactivée, eMule envoie plus souvent les fichiers populaires ; les fichiers rares seront alors plus difficiles à obtenir. Cette option ne concerne que les fichiers partagés à l&apos;avenir.</translation>
     </message>
     <message>
-        <location line="+13"/>
         <source>Enable this option if you want to use protocol obfuscation
 
 If your ISP tries throttle or block eMule, enabling obfuscation will help to circumvent such restrictions.</source>
-        <translation>Activez cette option si vous souhaitez utiliser l&apos;obfuscation de protocole
+        <translation type="vanished">Activez cette option si vous souhaitez utiliser l&apos;obfuscation de protocole
 
 Si votre FAI tente de brider ou de bloquer eMule, l&apos;obfuscation aide à contourner ces restrictions.</translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="-187"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>Vous pouvez modifier les ports ici tant qu&apos;aucune activité réseau n&apos;a démarré.</translation>
     </message>
@@ -3492,17 +3484,15 @@ Si votre FAI tente de brider ou de bloquer eMule, l&apos;obfuscation aide à con
         <translation>eD2K</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>Safe Connect</source>
-        <translation>Connexion sécurisée</translation>
+        <translation type="vanished">Connexion sécurisée</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Turning this feature off allows eMule to connect to servers a little faster, but can cause you to get more false LowID connects.</source>
-        <translation>Désactiver cette fonction permet à eMule de se connecter un peu plus vite aux serveurs, mais peut provoquer davantage de fausses connexions en LowID.</translation>
+        <translation type="vanished">Désactiver cette fonction permet à eMule de se connecter un peu plus vite aux serveurs, mais peut provoquer davantage de fausses connexions en LowID.</translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location line="+31"/>
         <source>Select your internet connection. eMule derives its download and upload limits from it, leaving room for your other applications. You can change the limits at any time in the Options.</source>
         <translation>Sélectionnez votre connexion Internet. eMule en déduit ses limites de téléchargement et d&apos;envoi, en laissant de la marge à vos autres applications. Vous pouvez modifier ces limites à tout moment dans les Options.</translation>
     </message>
@@ -3584,52 +3574,44 @@ Si votre FAI tente de brider ou de bloquer eMule, l&apos;obfuscation aide à con
     </message>
     <message>
         <location line="+2"/>
-        <location line="+52"/>
+        <location line="+28"/>
         <source>Next &gt;</source>
         <translation>Suivant &gt;</translation>
     </message>
     <message>
-        <location line="-25"/>
         <source>Welcome to eMule</source>
-        <translation>Bienvenue dans eMule</translation>
+        <translation type="vanished">Bienvenue dans eMule</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>General</source>
-        <translation>Général</translation>
+        <translation type="vanished">Général</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>User Name</source>
-        <translation>Nom d&apos;utilisateur</translation>
+        <translation type="vanished">Nom d&apos;utilisateur</translation>
     </message>
     <message>
-        <location line="+7"/>
         <source>Download</source>
-        <translation>Téléchargement</translation>
+        <translation type="vanished">Téléchargement</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Upload</source>
-        <translation>Envoi</translation>
+        <translation type="vanished">Envoi</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Priority</source>
-        <translation>Priorité</translation>
+        <translation type="vanished">Priorité</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Security</source>
-        <translation>Sécurité</translation>
+        <translation type="vanished">Sécurité</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Obfuscation</source>
-        <translation>Obscurcissement</translation>
+        <translation type="vanished">Obscurcissement</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-3"/>
         <source>Connection Speed</source>
         <translation>Vitesse de connexion</translation>
     </message>
@@ -3639,12 +3621,12 @@ Si votre FAI tente de brider ou de bloquer eMule, l&apos;obfuscation aide à con
         <translation>Bande passante</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+2"/>
         <source>Finish</source>
         <translation>Terminer</translation>
     </message>
     <message>
-        <location line="-49"/>
+        <location line="-25"/>
         <source>Cancel</source>
         <translation>Annuler</translation>
     </message>
@@ -3658,7 +3640,7 @@ Si votre FAI tente de brider ou de bloquer eMule, l&apos;obfuscation aide à con
         <translation type="vanished">Limite de téléchargement : %1    Limite d&apos;envoi : %2</translation>
     </message>
     <message>
-        <location line="+241"/>
+        <location line="+204"/>
         <source>The ports are forwarded when the core starts.</source>
         <translation>Les ports seront redirigés au démarrage du noyau.</translation>
     </message>

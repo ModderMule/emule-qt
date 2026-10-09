@@ -3351,12 +3351,12 @@ ED2K 해시:	%2
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+67"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+60"/>
         <source>eMule First Runtime Wizard</source>
         <translation>eMule 첫 실행 마법사</translation>
     </message>
     <message>
-        <location line="+473"/>
+        <location line="+357"/>
         <source>Ports and Connection</source>
         <translation>포트 및 연결</translation>
     </message>
@@ -3366,70 +3366,62 @@ ED2K 해시:	%2
         <translation>연결</translation>
     </message>
     <message>
-        <location line="-284"/>
+        <location line="-266"/>
         <source>eMule uses two ports for communication with servers and clients. These ports must be free and available for remote clients. The TCP port must be available to ensure the main functionality of eMule. The UDP port is used for Kad (serverless network) and to reduce network usage (Overhead).</source>
         <translation>eMule은 서버 및 클라이언트와의 통신에 두 개의 포트를 사용합니다. 이 포트는 원격 클라이언트에서 사용할 수 있어야 합니다. TCP 포트는 eMule의 주요 기능을 보장하기 위해 필요합니다. UDP 포트는 Kad(서버리스 네트워크) 및 네트워크 사용량 절감(오버헤드)에 사용됩니다.</translation>
     </message>
     <message>
-        <location line="-199"/>
-        <location line="+407"/>
+        <location line="-101"/>
+        <location line="+301"/>
         <source>Unlimited</source>
         <translation>무제한</translation>
     </message>
     <message>
-        <location line="-282"/>
         <source>This wizard will guide you through the first steps in configuring eMule.</source>
-        <translation>이 마법사는 eMule 설정의 첫 단계를 안내합니다.</translation>
+        <translation type="vanished">이 마법사는 eMule 설정의 첫 단계를 안내합니다.</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>To continue, click Next.</source>
-        <translation>계속하려면 다음을 클릭하십시오.</translation>
+        <translation type="vanished">계속하려면 다음을 클릭하십시오.</translation>
     </message>
     <message>
-        <location line="+10"/>
         <source>Please enter your user name:</source>
-        <translation>사용자 이름을 입력하십시오:</translation>
+        <translation type="vanished">사용자 이름을 입력하십시오:</translation>
     </message>
     <message>
-        <location line="+7"/>
         <source>Start eMule when the computer starts.</source>
-        <translation>컴퓨터를 시작할 때 eMule을 시작합니다.</translation>
+        <translation type="vanished">컴퓨터를 시작할 때 eMule을 시작합니다.</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Enable this option if you want eMule to connect at startup.</source>
-        <translation>eMule이 시작할 때 연결하도록 하려면 이 옵션을 켜십시오.</translation>
+        <translation type="vanished">eMule이 시작할 때 연결하도록 하려면 이 옵션을 켜십시오.</translation>
     </message>
     <message>
-        <location line="+10"/>
         <source>Enable this option if you want eMule to manage your download priorities.
 
 Turning this on will allow eMule to make sure downloads with a lot of sources do not interfere with downloads that have few sources. This option will only affect future downloads.</source>
-        <translation>eMule이 다운로드 우선순위를 관리하도록 하려면 이 옵션을 켜십시오.
+        <translation type="vanished">eMule이 다운로드 우선순위를 관리하도록 하려면 이 옵션을 켜십시오.
 
 켜면 소스가 많은 다운로드가 소스가 적은 다운로드를 방해하지 않도록 eMule이 조정합니다. 이 옵션은 앞으로의 다운로드에만 적용됩니다.</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>Enable this option if you want eMule to manage your upload priorities.
 
 Turning this on will allow eMule to boost rare files meaning popular files will be harder for other people to get. Turning this off will allow eMule to upload popular files more often meaning rare files will be harder for other people to get. This option will only affect future shared files.</source>
-        <translation>eMule이 업로드 우선순위를 관리하도록 하려면 이 옵션을 켜십시오.
+        <translation type="vanished">eMule이 업로드 우선순위를 관리하도록 하려면 이 옵션을 켜십시오.
 
 켜면 eMule이 희귀한 파일을 우선하므로 인기 있는 파일은 다른 사람이 받기 어려워집니다. 끄면 인기 있는 파일을 더 자주 업로드하므로 희귀한 파일은 받기 어려워집니다. 이 옵션은 앞으로 공유하는 파일에만 적용됩니다.</translation>
     </message>
     <message>
-        <location line="+13"/>
         <source>Enable this option if you want to use protocol obfuscation
 
 If your ISP tries throttle or block eMule, enabling obfuscation will help to circumvent such restrictions.</source>
-        <translation>프로토콜 난독화를 사용하려면 이 옵션을 켜십시오
+        <translation type="vanished">프로토콜 난독화를 사용하려면 이 옵션을 켜십시오
 
 ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그런 제한을 우회하는 데 도움이 됩니다.</translation>
     </message>
     <message>
-        <location line="+39"/>
+        <location line="-187"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>네트워크 활동이 시작되지 않은 동안 여기에서 포트를 변경할 수 있습니다.</translation>
     </message>
@@ -3479,17 +3471,15 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>eD2K</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>Safe Connect</source>
-        <translation>안전 연결</translation>
+        <translation type="vanished">안전 연결</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Turning this feature off allows eMule to connect to servers a little faster, but can cause you to get more false LowID connects.</source>
-        <translation>이 기능을 끄면 eMule이 서버에 조금 더 빨리 연결하지만 잘못된 LowID 연결이 늘어날 수 있습니다.</translation>
+        <translation type="vanished">이 기능을 끄면 eMule이 서버에 조금 더 빨리 연결하지만 잘못된 LowID 연결이 늘어날 수 있습니다.</translation>
     </message>
     <message>
-        <location line="+32"/>
+        <location line="+31"/>
         <source>Select your internet connection. eMule derives its download and upload limits from it, leaving room for your other applications. You can change the limits at any time in the Options.</source>
         <translation>인터넷 연결을 선택하세요. eMule은 이를 바탕으로 다운로드 및 업로드 제한을 정하고 다른 프로그램을 위한 여유를 남겨 둡니다. 제한은 옵션에서 언제든지 변경할 수 있습니다.</translation>
     </message>
@@ -3571,52 +3561,44 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
     </message>
     <message>
         <location line="+2"/>
-        <location line="+52"/>
+        <location line="+28"/>
         <source>Next &gt;</source>
         <translation>다음 &gt;</translation>
     </message>
     <message>
-        <location line="-25"/>
         <source>Welcome to eMule</source>
-        <translation>eMule에 오신 것을 환영합니다</translation>
+        <translation type="vanished">eMule에 오신 것을 환영합니다</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>General</source>
-        <translation>일반</translation>
+        <translation type="vanished">일반</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>User Name</source>
-        <translation>사용자 이름</translation>
+        <translation type="vanished">사용자 이름</translation>
     </message>
     <message>
-        <location line="+7"/>
         <source>Download</source>
-        <translation>다운로드</translation>
+        <translation type="vanished">다운로드</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>Upload</source>
-        <translation>업로드</translation>
+        <translation type="vanished">업로드</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Priority</source>
-        <translation>우선순위</translation>
+        <translation type="vanished">우선순위</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Security</source>
-        <translation>보안</translation>
+        <translation type="vanished">보안</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Obfuscation</source>
-        <translation>난독화</translation>
+        <translation type="vanished">난독화</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-3"/>
         <source>Connection Speed</source>
         <translation>연결 속도</translation>
     </message>
@@ -3626,12 +3608,12 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation>대역폭</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+2"/>
         <source>Finish</source>
         <translation>완료</translation>
     </message>
     <message>
-        <location line="-49"/>
+        <location line="-25"/>
         <source>Cancel</source>
         <translation>취소</translation>
     </message>
@@ -3645,7 +3627,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
         <translation type="vanished">다운로드 제한: %1    업로드 제한: %2</translation>
     </message>
     <message>
-        <location line="+241"/>
+        <location line="+204"/>
         <source>The ports are forwarded when the core starts.</source>
         <translation>포트는 코어가 시작될 때 전달됩니다.</translation>
     </message>

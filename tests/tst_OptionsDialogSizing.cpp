@@ -111,8 +111,7 @@ private slots:
     void theWizardRateFieldsFollowTheLineAndSwitchToCustom();
     void theWizardLimitFieldsFollowTheLineAndTakeAnEdit();
     void theWizardNeedsANetwork();
-    void theWizardWalksMfcsPages();
-    void theWizardWritesNickPrioritiesAndObfuscation();
+    void theWizardHasTwoPages();
     void theWizardBringsKadBackWithUdp();
     void theWizardReportsTheRealPortMappingResult();
     void theWizardDoesNotWaitWithoutACore();
@@ -769,9 +768,9 @@ void TestOptionsDialogSizing::theWizardLimitFieldsFollowTheLineAndTakeAnEdit()
     QCOMPARE(thePrefs.maxUpload(), 6000u);
 }
 
-/// G32. MFC CPShtWiz1 has seven pages (PShtWiz1.cpp:775-797); the port had two. Its
-/// Server page lives on the ports page and the wizard ends on the speed page.
-void TestOptionsDialogSizing::theWizardWalksMfcsPages()
+/// G32, deliberate: two pages. MFC's seven (PShtWiz1.cpp:775-797) were tried and taken
+/// back — nick, autoconnect, priorities and obfuscation stay in Options.
+void TestOptionsDialogSizing::theWizardHasTwoPages()
 {
     const WizardPrefsGuard guard;
     thePrefs.setKadEnabled(true);
@@ -781,83 +780,20 @@ void TestOptionsDialogSizing::theWizardWalksMfcsPages()
     FirstStartWizard wizard(nullptr);
     auto* pages = wizard.findChild<QStackedWidget*>();
     QVERIFY(pages);
-    QCOMPARE(pages->count(), 6);
-    QCOMPARE(pages->currentIndex(), 0);            // Welcome
-    QCOMPARE(walkToLastPage(wizard), 5);           // General, Ports, Priorities, Security, Speed
+    QCOMPARE(pages->count(), 2);
+    QCOMPARE(pages->currentIndex(), 0);
+    QCOMPARE(walkToLastPage(wizard), 1);
     QVERIFY(wizardButton(wizard, QStringLiteral("Finish")));
 
-    // and back, one at a time
-    wizardButton(wizard, QStringLiteral("< Back"))->click();
-    QCOMPARE(pages->currentIndex(), 4);
-
-    // The options button still opens it on the speed page.
-    FirstStartWizard speed(nullptr, nullptr, FirstStartWizard::StartPage::Speed);
-    QCOMPARE(speed.findChild<QStackedWidget*>()->currentIndex(), 5);
-}
-
-/// MFC writes these on Finish (PShtWiz1.cpp:836-857); the port had no page for them.
-void TestOptionsDialogSizing::theWizardWritesNickPrioritiesAndObfuscation()
-{
-    const WizardPrefsGuard guard;
-    const QString savedNick = thePrefs.nick();
-    const bool savedConnect = thePrefs.autoConnect();
-    const bool savedDown = thePrefs.autoDownloadPriority();
-    const bool savedUp = thePrefs.autoSharedFilesPriority();
-    const bool savedSafe = thePrefs.safeServerConnect();
-    const bool savedRequested = thePrefs.cryptLayerRequested();
-    const bool savedSupported = thePrefs.cryptLayerSupported();
-    const auto restore = qScopeGuard([&] {
-        thePrefs.setNick(savedNick);
-        thePrefs.setAutoConnect(savedConnect);
-        thePrefs.setAutoDownloadPriority(savedDown);
-        thePrefs.setAutoSharedFilesPriority(savedUp);
-        thePrefs.setSafeServerConnect(savedSafe);
-        thePrefs.setCryptLayerRequested(savedRequested);
-        thePrefs.setCryptLayerSupported(savedSupported);
-    });
-    thePrefs.setKadEnabled(true);
-    thePrefs.setNetworkED2K(true);
-    thePrefs.setUdpPort(4672);
-    thePrefs.setNick(QStringLiteral("old nick"));
-    thePrefs.setAutoConnect(false);
-    thePrefs.setAutoDownloadPriority(true);
-    thePrefs.setAutoSharedFilesPriority(true);
-    thePrefs.setSafeServerConnect(true);
-    thePrefs.setCryptLayerRequested(false);
-
-    FirstStartWizard wizard(nullptr);
-    const auto box = [&wizard](const char* name) {
-        return wizard.findChild<QCheckBox*>(QString::fromLatin1(name));
-    };
-    auto* nick = wizard.findChild<QLineEdit*>(QStringLiteral("wizardNick"));
-    QVERIFY(nick);
-
-    // The pages show what is set now, not MFC's presets (deliberate): safe connect on.
-    QCOMPARE(nick->text(), QStringLiteral("old nick"));
-    QCOMPARE(nick->maxLength(), 50);
-    QVERIFY(box("wizardSafeConnect")->isChecked());
-    QVERIFY(box("wizardAutoDownPrio")->isChecked());
-    QVERIFY(!box("wizardAutoConnect")->isChecked());
-
-    nick->setText(QStringLiteral("  new nick "));
-    box("wizardAutoConnect")->setChecked(true);
-    box("wizardAutoUpPrio")->setChecked(false);
-    box("wizardObfuscation")->setChecked(true);
-
-    walkToLastPage(wizard);
+    // Finish writes nothing the two pages do not show
     wizardButton(wizard, QStringLiteral("Finish"))->click();
-    QCOMPARE(wizard.result(), int(QDialog::Accepted));
-
     const QCborMap applied = wizard.appliedSettings();
-    QCOMPARE(applied.value(QStringLiteral("nick")).toString(), QStringLiteral("new nick"));
-    QCOMPARE(applied.value(QStringLiteral("autoConnect")).toBool(), true);
-    QCOMPARE(applied.value(QStringLiteral("autoDownloadPriority")).toBool(), true);
-    QCOMPARE(applied.value(QStringLiteral("autoSharedFilesPriority")).toBool(true), false);
-    QCOMPARE(applied.value(QStringLiteral("safeServerConnect")).toBool(), true);
-    QCOMPARE(applied.value(QStringLiteral("cryptLayerRequested")).toBool(), true);
-    QCOMPARE(applied.value(QStringLiteral("cryptLayerSupported")).toBool(), true);   // implied
-    QCOMPARE(thePrefs.nick(), QStringLiteral("new nick"));
-    QVERIFY(thePrefs.cryptLayerRequested());
+    for (const char* key : {"nick", "autoConnect", "autoDownloadPriority", "autoSharedFilesPriority",
+                            "safeServerConnect", "cryptLayerRequested", "startWithOS"})
+        QVERIFY2(!applied.contains(QString::fromLatin1(key)), key);
+
+    FirstStartWizard speed(nullptr, nullptr, FirstStartWizard::StartPage::Speed);
+    QCOMPARE(speed.findChild<QStackedWidget*>()->currentIndex(), 1);
 }
 
 /// G47, the other direction: re-enabling UDP gives Kad its tick back.
