@@ -413,6 +413,8 @@ private slots:
     void swapToAnotherFile_swapsSourceAndTracksA4AF();
     // LowID callback completion — inbound socket attaches to the waiting source
     void lowIdCallback_attachesInboundSocketToWaitingSource();
+    // Kad buddy callback, whole chain: source result -> request to the buddy -> dial back
+    void kadCallback_requestReachesBuddyAndDialBackAttaches();
     void incomingHello_unknownPeer_staysSeparateClient();
     // Inbound OP_EMULEINFO — MFC ListenSocket.cpp:274-275
     void incomingHello_legacyEmulePeer_receivesEmuleInfo();
@@ -1246,6 +1248,101 @@ void tst_CallbackAndQueueRank::lowIdCallback_attachesInboundSocketToWaitingSourc
     m_clientList->removeClient(source);
     delete source;
     delete partFile;
+}
+
+// ===========================================================================
+// Kad buddy callback, end to end (3 nodes: us, the source's buddy on UDP, the source on TCP)
+//
+// A firewalled Kad source is only reachable through its buddy: we send the buddy a
+// KADEMLIA_CALLBACK_REQ, it relays OP_CALLBACK, and the source dials us. Starts at the
+// Kad search result, as the live path does. MFC BaseClient.cpp:1435-1449.
+// ===========================================================================
+
+void tst_CallbackAndQueueRank::kadCallback_requestReachesBuddyAndDialBackAttaches()
+{
+    KadFixture kad{KadMode::Connected};
+
+    QUdpSocket buddyReceiver;
+    QVERIFY(buddyReceiver.bind(QHostAddress::LocalHost, 0));
+
+    std::array<uint8, 16> peerHash{};
+    peerHash.fill(0x5C);
+    constexpr uint16 kPeerPort = 4998;   // unique in this class — see MockCallbackPeer
+
+    // Not byte palindromes: the wire form swaps each 32-bit word (CUInt128 memory).
+    const uint8 fileHash[16] = {0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+                                0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F};
+    const uint8 fileOnWire[16] = {0x13, 0x12, 0x11, 0x10, 0x17, 0x16, 0x15, 0x14,
+                                  0x1B, 0x1A, 0x19, 0x18, 0x1F, 0x1E, 0x1D, 0x1C};
+    // FT_BUDDYHASH "3322110077665544BBAA9988FFEEDDCC" as Search::buddyHashFromTagString
+    // hands it on; the buddy's client compares the text's bytes (MFC ListenSocket.cpp:1375).
+    const uint8 buddyId[16] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+                               0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF};
+    const uint8 buddyOnWire[16] = {0x33, 0x22, 0x11, 0x00, 0x77, 0x66, 0x55, 0x44,
+                                   0xBB, 0xAA, 0x99, 0x88, 0xFF, 0xEE, 0xDD, 0xCC};
+
+    auto* partFile = new PartFile();
+    partFile->setFileName(QStringLiteral("kadcallback.bin"));
+    partFile->setFileSize(EMFileSize(1024 * 1024));
+    partFile->setFileHash(fileHash);
+    QVERIFY(partFile->createPartFile(m_tmpDir->filePath(QStringLiteral("temp"))));
+    m_downloadQueue->addDownload(partFile);
+
+    // Source type 3: firewalled, reachable through its buddy only.
+    kad::Kademlia::KadSourceResult result;
+    result.fileHash   = fileHash;
+    result.ip         = 0x0A000063;                 // 10.0.0.99, never dialled
+    result.tcpPort    = kPeerPort;
+    result.udpPort    = 4997;
+    result.buddyIP    = htonl(0x7F000001);          // network order
+    result.buddyPort  = buddyReceiver.localPort();
+    result.sourceType = 3;
+    result.buddyHash  = buddyId;
+    result.clientHash = peerHash.data();
+    m_downloadQueue->addKadSourceResult(result);
+
+    QCOMPARE(partFile->sourceCount(), 1);
+    UpDownClient* source = partFile->srcList().front();
+    QVERIFY(source->hasLowID());
+    QVERIFY(source->hasValidBuddyID());
+
+    // The request leaves on the first attempt, by UDP, to the buddy.
+    QVERIFY(QTest::qWaitFor([&] {
+        flushUDPSocket(m_receiverUDP);              // theApp.clientUDP in this fixture
+        return buddyReceiver.hasPendingDatagrams();
+    }, 5000));
+    QCOMPARE(source->downloadState(), DownloadState::WaitCallbackKad);
+    QCOMPARE(source->connectingState(), ConnectingState::KadCallback);
+
+    // <buddy id 16><file id 16><our tcp port 2>, unencrypted (MFC BaseClient.cpp:1437-1448)
+    const QByteArray dg = buddyReceiver.receiveDatagram().data();
+    QCOMPARE(dg.size(), 36);
+    const auto* raw = reinterpret_cast<const uint8*>(dg.constData());
+    QCOMPARE(raw[0], static_cast<uint8>(OP_KADEMLIAHEADER));
+    QCOMPARE(raw[1], static_cast<uint8>(KADEMLIA_CALLBACK_REQ));
+    QVERIFY2(std::memcmp(raw + 2, buddyOnWire, 16) == 0, "buddy id not in stock byte order");
+    QVERIFY2(std::memcmp(raw + 18, fileOnWire, 16) == 0, "file id not in stock byte order");
+    QCOMPARE(qFromLittleEndian<quint16>(raw + 34), thePrefs.port());
+
+    // The buddy relayed it; the source dials us and speaks first.
+    auto* peer = new MockCallbackPeer(peerHash, kPeerPort, this);
+    peer->connectToHost(QHostAddress::LocalHost, m_listenSocket->connectedPort());
+    QVERIFY2(peer->waitForConnected(5000), "callback peer could not reach the listen socket");
+    peer->sendOpeningHello();
+
+    QTRY_VERIFY_WITH_TIMEOUT(peer->receivedHelloAnswer(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(source->socket() != nullptr, 5000);
+    QCOMPARE(source->connectingState(), ConnectingState::None);
+    QTRY_VERIFY_WITH_TIMEOUT(peer->receivedFileRequest(), 5000);
+    QVERIFY(partFile->hasSource(source));
+
+    peer->close();
+    peer->deleteLater();
+    QCoreApplication::processEvents();
+
+    m_downloadQueue->removeSource(source);
+    m_clientList->removeClient(source);
+    m_downloadQueue->removeFile(partFile);
 }
 
 // ===========================================================================
