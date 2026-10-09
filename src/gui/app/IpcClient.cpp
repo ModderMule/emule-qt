@@ -263,11 +263,7 @@ void IpcClient::disconnectFromDaemon()
     m_handshaked = false;
     failPendingRequests();
 
-    if (m_connection) {
-        disconnect(m_connection.get(), nullptr, this, nullptr);
-        m_connection->close();
-        m_connection.reset();
-    }
+    dropConnection();
     m_socket = nullptr;
 }
 
@@ -783,20 +779,28 @@ void IpcClient::resetConnection()
     m_handshaked = false;
     failPendingRequests();
 
-    if (m_connection) {
-        // Disconnect all signals before closing so that close() → disconnectFromHost()
-        // does not cascade into onConnectionLost() → scheduleReconnect() while we are
-        // already inside attemptReconnect(), which would queue a second reconnect on
-        // top of the one being set up right now.
-        disconnect(m_connection.get(), nullptr, this, nullptr);
-        m_connection->close();
-        m_connection.reset();
-    }
+    dropConnection();
     if (m_socket) {
         disconnect(m_socket, nullptr, this, nullptr);
         m_socket->deleteLater();
         m_socket = nullptr;
     }
+}
+
+void IpcClient::dropConnection()
+{
+    if (!m_connection)
+        return;
+    // Disconnect all signals before closing so that close() → disconnectFromHost()
+    // does not cascade into onConnectionLost() → scheduleReconnect() while we are
+    // already inside attemptReconnect(), which would queue a second reconnect on
+    // top of the one being set up right now.
+    disconnect(m_connection.get(), nullptr, this, nullptr);
+    m_connection->close();
+    // Not destroyed here: a quit while a prompt opened by a message handler is up
+    // arrives with this socket's readyRead still on the stack below the prompt.
+    // Stays our child, so it goes with us if the loop never turns again.
+    m_connection.release()->deleteLater();
 }
 
 } // namespace eMule

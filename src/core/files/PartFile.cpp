@@ -1906,15 +1906,25 @@ bool PartFile::createPartFile(const QString& tempDir)
         return false;
     }
 
-    // Resize file to target size
+    // Resize file to target size. A hole elsewhere; on Windows a plain file would
+    // take all of it on disk here, so it grows with the writes instead, as MFC.
     const uint64 fs = static_cast<uint64>(fileSize());
-    if (fs > 0)
+#ifdef Q_OS_WIN
+    // "Create new part files as sparse" (MFC CreatePartFile, PartFile.cpp:410). Before
+    // the resize: NTFS claims every cluster with it otherwise.
+    const bool sparse = thePrefs.sparsePartFiles() && markFileSparse(m_partFileHandle);
+    const bool sizeNow = sparse || thePrefs.allocFullFile();
+#else
+    const bool sparse = false;   // the option is Windows only
+    const bool sizeNow = true;
+#endif
+    if (fs > 0 && sizeNow)
         m_partFileHandle.resize(static_cast<qint64>(fs));
 
     // "Allocate full file size": claim the blocks now (MFC does it with the first
     // flush, PartFile.cpp:4063-4078; the file has its size from here on). Not below
     // the free-space floor, and never fatal.
-    if (fs > 0 && thePrefs.allocFullFile()) {
+    if (fs > 0 && thePrefs.allocFullFile() && !sparse) {
         const std::optional<uint64> free = tryFreeDiskSpace(tempDir);
         const uint64 floor = thePrefs.checkDiskspace() ? thePrefs.minFreeDiskSpace() : 0;
         if (free.has_value() && *free < fs + floor)
@@ -1994,6 +2004,7 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
             version != PARTFILE_SPLITTEDVERSION)
         {
             if (version == 'S') {   // "SDL…": a Shareaza download
+                file.close();       // it is rewritten in place; Windows refuses while open
                 const PartFileLoadResult result =
                     importShareazaTempFile(directory, filename, checkFormat);
                 loaded = result == PartFileLoadResult::LoadSuccess;
@@ -2287,11 +2298,12 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
         return PartFileLoadResult::FailedNoAccess;
     }
 
-    // MFC safety: if .part file is shorter than expected, add gap for missing tail
+    // MFC safety: if .part file is shorter than expected, add gap for missing tail.
+    // Normal for a file that grows with its writes (Windows), so only data lost is news.
     {
         const uint64 partFileLen = static_cast<uint64>(QFileInfo(partPath).size());
         const uint64 fs = static_cast<uint64>(fileSize());
-        if (fs > 0 && partFileLen < fs) {
+        if (fs > 0 && partFileLen < fs && !isPureGap(partFileLen, fs - 1)) {
             logWarning(QStringLiteral("PartFile::loadPartFile: .part file truncated (%1 < %2), adding gap for tail")
                            .arg(partFileLen).arg(fs));
             addGap(partFileLen, fs - 1);

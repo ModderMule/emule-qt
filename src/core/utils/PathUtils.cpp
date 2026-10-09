@@ -13,6 +13,7 @@
 #if defined(Q_OS_WIN)
 #include <io.h>
 #include <qt_windows.h>
+#include <winioctl.h>
 #else
 #include <fcntl.h>
 #include <unistd.h>
@@ -191,6 +192,22 @@ bool preallocateFile(QFile& file, std::uint64_t size)
 #elif defined(Q_OS_LINUX)
     return posix_fallocate(file.handle(), 0, static_cast<off_t>(size)) == 0;
 #else
+    return false;
+#endif
+}
+
+bool markFileSparse(QFile& file)
+{
+#if defined(Q_OS_WIN)
+    if (!file.isOpen())
+        return false;
+    const HANDLE h = reinterpret_cast<HANDLE>(_get_osfhandle(file.handle()));
+    if (h == INVALID_HANDLE_VALUE)
+        return false;
+    DWORD returned = 0;   // fails on FAT32 / exFAT
+    return DeviceIoControl(h, FSCTL_SET_SPARSE, nullptr, 0, nullptr, 0, &returned, nullptr) != 0;
+#else
+    Q_UNUSED(file);
     return false;
 #endif
 }

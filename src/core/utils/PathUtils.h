@@ -70,6 +70,11 @@ enum class AppDir {
 /// @return false when the file system cannot or will not.
 [[nodiscard]] bool preallocateFile(QFile& file, std::uint64_t size);
 
+/// Mark an open, still empty file as sparse (NTFS). Only Windows needs asking: there a
+/// resized file claims every cluster at once, elsewhere it has holes by default.
+/// @return false when the file system cannot, and on every other platform.
+[[nodiscard]] bool markFileSparse(QFile& file);
+
 /// Sanitize a file name by removing or replacing invalid characters.
 [[nodiscard]] QString sanitizeFilename(const QString& name);
 

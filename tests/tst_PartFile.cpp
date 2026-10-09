@@ -23,6 +23,11 @@
 #include <QTest>
 
 #include <sys/stat.h>
+#ifdef Q_OS_WIN
+#include "utils/PathUtils.h"
+#include <io.h>
+#include <qt_windows.h>
+#endif
 
 #include <algorithm>
 #include <cstring>
@@ -955,6 +960,12 @@ void tst_PartFile::writeReadRoundTrip_withGaps()
     // Gaps remaining: [3000, 4999] and [8000, 9999]
 
     pf1.savePartFile();
+
+    // Nothing was written, and on Windows the .part grows with its writes: give it
+    // the length the filled ranges stand for, or the load takes them for lost.
+    QString partPath = pf1.fullName();
+    partPath.chop(4);
+    QVERIFY(QFile::resize(partPath, 10000));
 
     // Load
     PartFile pf2;
@@ -2039,18 +2050,27 @@ void tst_PartFile::uniqueDestination_followsMfcsNaming()
 // C65: "Allocate full file size" had no reader.
 void tst_PartFile::createPartFile_allocatesInFullWhenAsked()
 {
-#if !defined(Q_OS_MACOS) && !defined(Q_OS_LINUX)
-    QSKIP("allocated size is read with stat()");
+#if !defined(Q_OS_MACOS) && !defined(Q_OS_LINUX) && !defined(Q_OS_WIN)
+    QSKIP("no way to read the allocated size here");
 #else
     const auto allocated = [](const QString& path) {
+#ifdef Q_OS_WIN
+        DWORD high = 0;
+        const DWORD low = GetCompressedFileSizeW(
+            reinterpret_cast<LPCWSTR>(QDir::toNativeSeparators(path).utf16()), &high);
+        return low == INVALID_FILE_SIZE && GetLastError() != NO_ERROR
+            ? quint64{0} : (quint64{high} << 32) | low;
+#else
         struct stat st{};
         return ::stat(QFile::encodeName(path).constData(), &st) == 0
             ? static_cast<quint64>(st.st_blocks) * 512 : quint64{0};
+#endif
     };
     const quint64 size = 8 * 1024 * 1024;
     const bool saved = thePrefs.allocFullFile();
     const auto restore = qScopeGuard([saved] { thePrefs.setAllocFullFile(saved); });
 
+    qint64 length = -1;   // of the last one created
     const auto create = [&](const char* sub, uint8 tag) {
         const QString dir = m_tempDir.path() + QLatin1Char('/') + QLatin1String(sub);
         QDir().mkpath(dir);
@@ -2063,13 +2083,42 @@ void tst_PartFile::createPartFile_allocatesInFullWhenAsked()
             return quint64{0};
         QString part = pf.fullName();
         part.chop(4);
+        length = QFileInfo(part).size();
         return allocated(part) + 1;
     };
 
+#ifdef Q_OS_WIN
+    // NTFS hands out every cluster with a resize: a plain file starts empty and
+    // grows, a sparse one has its size and no clusters.
+    const bool savedSparse = thePrefs.sparsePartFiles();
+    const auto restoreSparse = qScopeGuard([savedSparse] { thePrefs.setSparsePartFiles(savedSparse); });
+    thePrefs.setAllocFullFile(false);
+    thePrefs.setSparsePartFiles(false);
+    QVERIFY(create("both-off", 4) < size);
+    QCOMPARE(length, qint64{0});
+    thePrefs.setSparsePartFiles(true);
+    QVERIFY(create("sparse-on", 1) < size);
+    QCOMPARE(length, static_cast<qint64>(size));
+    thePrefs.setAllocFullFile(true);
+    QVERIFY(create("sparse-wins", 3) < size);   // "for non-sparse part files"
+    thePrefs.setSparsePartFiles(false);
+    QVERIFY(create("alloc-on", 2) >= size);
+
+    // The call itself: clusters behind the end of a file that is still empty
+    QFile raw(m_tempDir.path() + QStringLiteral("/prealloc.bin"));
+    QVERIFY(raw.open(QIODevice::ReadWrite));
+    QVERIFY(preallocateFile(raw, size));
+    FILE_STANDARD_INFO info{};
+    QVERIFY(GetFileInformationByHandleEx(reinterpret_cast<HANDLE>(_get_osfhandle(raw.handle())),
+                                         FileStandardInfo, &info, sizeof info));
+    QVERIFY(static_cast<quint64>(info.AllocationSize.QuadPart) >= size);
+    QCOMPARE(info.EndOfFile.QuadPart, 0LL);
+#else
     thePrefs.setAllocFullFile(false);
     QVERIFY(create("alloc-off", 1) < size);     // sparse
     thePrefs.setAllocFullFile(true);
     QVERIFY(create("alloc-on", 2) >= size);
+#endif
 #endif
 }
 

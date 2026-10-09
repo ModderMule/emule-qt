@@ -63,6 +63,7 @@ private slots:
     void ipcSerialization_matchesHandlerFormat();
     void truncatedBinary_neverThrows();
     void signature_isSha1AndStillReadsSha256();
+    void signature_matchesCryptoPP();
     void unsignedCollection_showsNoAuthor();
     void textCollection_writesRealLinks();
 };
@@ -471,6 +472,81 @@ void tst_Collection::signature_isSha1AndStillReadsSha256()
     Collection legacy;
     QVERIFY(legacy.initFromFile(path, QStringLiteral("signed.emulecollection")));
     QCOMPARE(legacy.m_authorName, QStringLiteral("Author"));
+}
+
+// ---------------------------------------------------------------------------
+// C52 / C104: the same bytes as MFC. The fixtures come from Crypto++ run through MFC's
+// own calls (CollectionCreateDialog.cpp:258-283, Collection.cpp:302-308): a key file,
+// the public key it yields, and a signature over kMfcMessage.
+// ---------------------------------------------------------------------------
+
+static const char kMfcKeyFile[] =
+    "MIICdAIBADANBgkqhkiG9w0BAQEFAASCAl4wggJaAgEAAoGBAKm8PrPB+1gVwGdPQaJDcUFA\n"
+    "t6KjrgoKY/QoKdZ04kSqV0wudQ4FQmrfQ+WYvnzjh/Y55VYkxzM9KsrM4C32OFF3V6Vmf73I\n"
+    "AJGDvJiZoj4ep4utkeAKthgGxZoH4coygZQzRIUeUNWkhNnGs/Yy9kjxhVMfYofnOZsuUWuW\n"
+    "jwvvAgERAoGABP4B2BxLKDzgAwncSImDVL4jhMiULXjGtFuIwor3mJuZJ+M/rZa+MFHcWZON\n"
+    "Icp08KdZkZergYHMjX5/EGkfxhzfs8HjbGOOpjKmdnioAHujZvff+iWNDc5DhGnEBl1QlZGz\n"
+    "d0lpKTIWiwXuA9d6jhq1Sm5I/0W1NnoSYv2NLwkCQQDEficoycCGo2Z59TuF2YoArP5C8ARP\n"
+    "2M8yiBVNRSf3mIA/g1oS8nAukdI/FQvOjOtupdMrDoZ+yYxfUSeWVXlJAkEA3SOefYGYCGsY\n"
+    "T6uhDXijskbgfuKiviFzb0XurpPJ1jU2metTS2bszvSQvgJnxiJ99sudTqIaJl7SmI8eU3lT\n"
+    "dwJARVmzd868a8EzOhpRPkzHS4hZvUWnKz12ThHpZpDg7fmWrQEu2YK+Lo3Ru+lPdhOeY0mV\n"
+    "0vYRWezIIaQsFvD9oQJAWw6qrCZNqR0KArAVI6olSWh6jpmOTkoCWv6tky3LlHBDqMpPeWad\n"
+    "vqDwTj05yg4z3hebIGDdl1Q4mSvfT4xPiwJBAIFwJs7bz3JJFBzxSnSPB60/FkHOszY+vtDL\n"
+    "szIzjM5pqj7cMmkUrP1bCSb6XS+tmpYrZrjluwBv72G3dEtoY/o=\n";
+static const char kMfcPublicKey[] =
+    "30819d300d06092a864886f70d010101050003818b0030818702818100a9bc3eb3c1fb5815c0674f41"
+    "a243714140b7a2a3ae0a0a63f42829d674e244aa574c2e750e05426adf43e598be7ce387f639e55624"
+    "c7333d2acacce02df638517757a5667fbdc8009183bc9899a23e1ea78bad91e00ab61806c59a07e1ca"
+    "3281943344851e50d5a484d9c6b3f632f648f185531f6287e7399b2e516b968f0bef020111";
+static const char kMfcMessage[] = "eMule collection signature fixture";
+static const char kMfcSignature[] =
+    "07b5ffe9d77cf1632999ac0a1c277fcfba947bce5eb8a0f8d328708050d4e27cd9f7653d91ea217b45"
+    "d5610652fd1d6972b93285b43cb32f2b3eacfd665167e7086d7b7d4c0c440e6c7eecf7a91cc01b6447"
+    "4d933c3381a0a0cd720b0f3a151c13c0307c61dd8cf162c81f9cfefc9679cde2171578ac9a313bf390"
+    "5e94583249";
+
+void tst_Collection::signature_matchesCryptoPP()
+{
+    const QByteArray mfcPublicKey = QByteArray::fromHex(kMfcPublicKey);
+    const QByteArray mfcSignature = QByteArray::fromHex(kMfcSignature);
+    const QByteArray message(kMfcMessage);
+
+    // MFC's key file loads, and gives the public key MFC puts in the header
+    TempDir tmp;
+    QVERIFY(writeAll(tmp.filePath(QStringLiteral("collectioncryptkey.dat")), kMfcKeyFile));
+    CollectionKeys keys(tmp.path());
+    QVERIFY(keys.initialize());
+    QCOMPARE(keys.publicKeyDer(), mfcPublicKey);
+
+    // Its signature verifies here, and ours is the same bytes (PKCS#1 v1.5 has no salt)
+    QVERIFY(CollectionKeys::verifySignature(message, mfcSignature, mfcPublicKey));
+    QCOMPARE(signWith(EVP_sha1(), keys.signKey(), message), mfcSignature);
+    QByteArray other = message;
+    other[0] = 'E';
+    QVERIFY(!CollectionKeys::verifySignature(other, mfcSignature, mfcPublicKey));
+
+    // A collection signed with that key keeps its author
+    auto f1 = makeTestFile(0x91, QStringLiteral("mfc_one.bin"), 1000);
+    Collection original;
+    original.m_name = QStringLiteral("FromMfcKey");
+    original.m_authorName = QStringLiteral("Author");
+    original.m_authorKey = keys.publicKeyDer();
+    original.addFile(&f1);
+    const QString path = tmp.filePath(QStringLiteral("mfc.emulecollection"));
+    QVERIFY(original.writeToFile(path, keys.signKey()));
+    Collection loaded;
+    QVERIFY(loaded.initFromFile(path, QStringLiteral("mfc.emulecollection")));
+    QCOMPARE(loaded.m_authorName, QStringLiteral("Author"));
+
+    // A key file written here is in MFC's layout (PKCS#8): the same key gives the
+    // same bytes, so Crypto++ reads what we write.
+    QCOMPARE(CollectionKeys::encodePrivateKey(keys.signKey()),
+             QByteArray::fromBase64(kMfcKeyFile));
+    TempDir fresh;
+    CollectionKeys own(fresh.path());
+    QVERIFY(own.initialize());
+    const QByteArray ownFile = readAll(fresh.filePath(QStringLiteral("collectioncryptkey.dat")));
+    QCOMPARE(QByteArray::fromBase64(ownFile), CollectionKeys::encodePrivateKey(own.signKey()));
 }
 
 // ---------------------------------------------------------------------------
