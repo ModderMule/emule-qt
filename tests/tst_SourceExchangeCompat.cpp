@@ -548,6 +548,10 @@ private slots:
     void fileRequest_keepsTheQueueWaitTime();
     void multipacket_sourceRequestDoesNotDesyncFollowingSubOpcodes();
     void multipacket_sourceAnswerIsSeparatePacket();
+    void multipacketRequest_sizeZeroAndIdentifierMismatch();
+    void multipacketAnswer_foreignFileAndAichInExt2();
+    void fileRequest_singlePartFileIsNotAskedForItsStatus();
+    void fileStatus_overUdpOnlySetsTheState();
     void secondSourceRequestWithinIntervalIsRefused();
 
     // -- G. AICH file-hash exchange --
@@ -577,6 +581,10 @@ private slots:
     void previewRequest_refusedWhenNobodyMaySeeOurFiles();
     void previewRequest_answeredOnceWithTheFilesHash();
     void previewRequest_unknownFileGetsAnEmptyAnswer();
+    void previewRequest_shortRequestDisconnectsOnlyWhoMayAsk();
+    void browse_sendsNamesNeverPaths();
+    void browse_echoesTheNameInThePeersEncoding();
+    void browse_deniedFlatRequestGetsAnEmptyList();
     void previewAnswer_dropsOversizedFrames();
     void queuedPacket_waitsForTheHelloExchange();
     void previewAnswer_withoutFramesReportsTheRequestedFile();
@@ -1517,7 +1525,7 @@ void tst_SourceExchangeCompat::standaloneRequest_versionByteMatchesPeerCapabilit
     std::memset(hash, 0x33, sizeof(hash));
     pf->setFileHash(hash);
     pf->setFileName(QStringLiteral("sx.bin"));
-    pf->setFileSize(PARTSIZE);
+    pf->setFileSize(2 * PARTSIZE);   // multi-part: the status is asked for too
     queue.addDownload(pf);
 
     auto* peer = track(makeRequester(extSX, /*skipTags*/ extSX, supportsSX2));
@@ -1874,9 +1882,10 @@ void tst_SourceExchangeCompat::multipacket_sourceRequestDoesNotDesyncFollowingSu
     peer->setSocket(nullptr);
 }
 
-// "We still send the source packet separately" — srchybrid/ListenSocket.cpp:987. A
-// multipacket that asks only for sources produces an answer packet and no multipacket
-// answer at all.
+// "We still send the source packet separately" — srchybrid/ListenSocket.cpp:987. The
+// multipacket answer itself goes out when it holds more than 16 bytes (:1038): a
+// legacy one with nothing but the hash does not, an EXT2 one always does, its
+// identifier being longer.
 void tst_SourceExchangeCompat::multipacket_sourceAnswerIsSeparatePacket()
 {
     SharedFileFixture fixture;
@@ -1891,18 +1900,233 @@ void tst_SourceExchangeCompat::multipacket_sourceAnswerIsSeparatePacket()
 
     SafeMemFile mp;
     file->fileIdentifier().writeIdentifier(mp);
+    const QByteArray identifier = mp.buffer();
     mp.writeUInt8(OP_REQUESTSOURCES2);
     mp.writeUInt8(SOURCEEXCHANGE2_VERSION);
     mp.writeUInt16(0);
-    const QByteArray body = mp.buffer();
 
-    sock.deliverExt(body, OP_MULTIPACKET_EXT2);
+    sock.deliverExt(mp.buffer(), OP_MULTIPACKET_EXT2);
 
     QVERIFY(sock.find(OP_ANSWERSOURCES2) != nullptr);
-    QVERIFY2(sock.find(OP_MULTIPACKETANSWER_EXT2) == nullptr,
-             "the source answer must not ride inside the multipacket answer");
+    const auto* answer = sock.find(OP_MULTIPACKETANSWER_EXT2);
+    QVERIFY(answer != nullptr);
+    QVERIFY(identifier.size() > 16);
+    QCOMPARE(answer->payload, identifier);   // the sources are not in it
+
+    // legacy: hash only = 16 bytes = no answer
+    sock.sent.clear();
+    SafeMemFile legacy;
+    legacy.writeHash16(file->fileHash());
+    legacy.writeUInt8(OP_REQUESTSOURCES);
+    sock.deliverExt(legacy.buffer(), OP_MULTIPACKET);
+    QCOMPARE(sock.countOf(OP_MULTIPACKETANSWER), 0);
 
     peer->setSocket(nullptr);
+}
+
+// C85: the request side of a multipacket (MFC ListenSocket.cpp:880-905).
+void tst_SourceExchangeCompat::multipacketRequest_sizeZeroAndIdentifierMismatch()
+{
+    SharedFileFixture fixture;
+    auto* file = fixture.file;
+    auto* peer = track(makeRequester());
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+
+    // OP_MULTIPACKET_EXT with size 0: "not given", not "another file"
+    SafeMemFile ext;
+    ext.writeHash16(file->fileHash());
+    ext.writeUInt64(0);
+    ext.writeUInt8(OP_REQUESTFILENAME);
+    sock.deliverExt(ext.buffer(), OP_MULTIPACKET_EXT);
+    QCOMPARE(sock.countOf(OP_FILEREQANSNOFIL), 0);
+    QCOMPARE(sock.countOf(OP_MULTIPACKETANSWER), 1);
+
+    // a wrong size still is another file
+    sock.sent.clear();
+    SafeMemFile wrong;
+    wrong.writeHash16(file->fileHash());
+    wrong.writeUInt64(static_cast<uint64>(file->fileSize()) + 1);
+    wrong.writeUInt8(OP_REQUESTFILENAME);
+    sock.deliverExt(wrong.buffer(), OP_MULTIPACKET_EXT);
+    QCOMPARE(sock.countOf(OP_FILEREQANSNOFIL), 1);
+
+    // EXT2, our hash with another size: not found, but the peer asked for a file
+    // we do have — no strike (it used to be banned after six of these)
+    EMFileSize otherSize(static_cast<uint64>(file->fileSize()) + 1);
+    const FileIdentifier other(file->fileIdentifier(), otherSize);
+    SafeMemFile mismatch;
+    other.writeIdentifier(mismatch);
+    mismatch.writeUInt8(OP_REQUESTFILENAME);
+    for (int i = 0; i < 7; ++i) {
+        sock.sent.clear();
+        sock.deliverExt(mismatch.buffer(), OP_MULTIPACKET_EXT2);
+        QCOMPARE(sock.countOf(OP_FILEREQANSNOFIL), 1);
+    }
+    QCOMPARE(peer->failedFileIdReqs(), uint8{0});
+
+    peer->setSocket(nullptr);
+}
+
+namespace {
+UpDownClient* makeAichPeer(bool aich, bool fileIdentifiers);   // further down
+}
+
+// C85: the answer side (MFC ListenSocket.cpp:1085-1109).
+void tst_SourceExchangeCompat::multipacketAnswer_foreignFileAndAichInExt2()
+{
+    DownloadQueue queue;
+    theApp.downloadQueue = &queue;
+    const auto addFile = [&](uint8 pattern) {
+        auto* pf = new PartFile;
+        uint8 hash[16];
+        std::memset(hash, pattern, sizeof(hash));
+        pf->setFileHash(hash);
+        pf->setFileName(QStringLiteral("mp-%1.bin").arg(pattern));
+        pf->setFileSize(EMFileSize(2 * PARTSIZE));
+        queue.addDownload(pf);
+        return pf;
+    };
+    PartFile* asked = addFile(0x62);
+    PartFile* other = addFile(0x63);
+
+    auto* peer = track(makeAichPeer(true, true));
+    peer->setReqFile(asked);
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+
+    // an AICH root in an EXT2 answer is read, as in the legacy one
+    SafeMemFile aich;
+    asked->fileIdentifier().writeIdentifier(aich);
+    aich.writeUInt8(OP_AICHFILEHASHANS);
+    aich.write(QByteArray(20, '\x5A').constData(), 20);
+    QVERIFY2(sock.deliverWire(OP_EMULEPROT, OP_MULTIPACKETANSWER_EXT2, aich.buffer()),
+             "OP_AICHFILEHASHANS in an EXT2 answer dropped the connection");
+
+    // an answer for a file we download, but did not ask this client for
+    SafeMemFile foreign;
+    other->fileIdentifier().writeIdentifier(foreign);
+    QVERIFY2(!sock.deliverWire(OP_EMULEPROT, OP_MULTIPACKETANSWER_EXT2, foreign.buffer()),
+             "an answer for another file must drop the connection");
+    SafeMemFile foreignLegacy;
+    foreignLegacy.writeHash16(other->fileHash());
+    QVERIFY(!sock.deliverWire(OP_EMULEPROT, OP_MULTIPACKETANSWER, foreignLegacy.buffer()));
+
+    peer->setSocket(nullptr);
+    peer->setReqFile(nullptr);
+    theApp.downloadQueue = nullptr;
+    queue.deleteAll();
+}
+
+// C80: a single-part file is not asked for its part status; whoever answers the
+// name request has it all (MFC DownloadClient.cpp:303, :370, :467-496).
+void tst_SourceExchangeCompat::fileRequest_singlePartFileIsNotAskedForItsStatus()
+{
+    DownloadQueue queue;
+    theApp.downloadQueue = &queue;
+
+    auto* pf = new PartFile;
+    uint8 hash[16];
+    std::memset(hash, 0x34, sizeof(hash));
+    pf->setFileHash(hash);
+    pf->setFileName(QStringLiteral("small.bin"));
+    pf->setFileSize(PARTSIZE / 2);
+    queue.addDownload(pf);
+    QCOMPARE(pf->partCount(), uint16{1});
+
+    auto* peer = track(makeRequester());
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+    peer->setReqFile(pf);
+    peer->setTestDisableMultiPacket(true);
+
+    peer->sendFileRequest();
+    QCOMPARE(sock.countOf(OP_REQUESTFILENAME), 1);
+    QCOMPARE(sock.countOf(OP_SETREQFILEID), 0);
+
+    // the name answer is all there will be: it must lead to the slot request
+    peer->setDownloadState(DownloadState::Connected);
+    SafeMemFile answer;
+    answer.writeHash16(hash);
+    answer.writeString(QStringLiteral("small.bin"), UTF8Mode::Raw);
+    sock.deliverFileRequest(answer.buffer(), OP_REQFILENAMEANSWER);
+    QVERIFY(peer->completeSource());
+    QCOMPARE(peer->partStatus(), std::vector<uint8>{1});
+    QCOMPARE(sock.countOf(OP_STARTUPLOADREQ) + sock.countOf(OP_HASHSETREQUEST), 1);
+
+    // the multipacket leaves the sub-request out as well
+    sock.sent.clear();
+    peer->setTestDisableMultiPacket(false);
+    peer->sendFileRequest();
+    for (const auto& sent : sock.sent) {
+        if (sent.opcode == OP_MULTIPACKET || sent.opcode == OP_MULTIPACKET_EXT)
+            QVERIFY(!sent.payload.mid(16).contains(char(OP_SETREQFILEID)));
+    }
+
+    peer->setSocket(nullptr);
+    peer->setReqFile(nullptr);
+    theApp.downloadQueue = nullptr;
+    queue.deleteAll();
+}
+
+// C78: a part status that came over UDP changes the state and nothing else
+// (MFC DownloadClient.cpp:565-568).
+void tst_SourceExchangeCompat::fileStatus_overUdpOnlySetsTheState()
+{
+    DownloadQueue queue;
+    theApp.downloadQueue = &queue;
+
+    auto* pf = new PartFile;
+    uint8 hash[16];
+    std::memset(hash, 0x35, sizeof(hash));
+    pf->setFileHash(hash);
+    pf->setFileName(QStringLiteral("udp.bin"));
+    pf->setFileSize(2 * PARTSIZE);
+    queue.addDownload(pf);
+
+    auto* peer = track(makeRequester());
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+    peer->setReqFile(pf);
+
+    const auto status = [&](uint8 bits) {
+        SafeMemFile io;
+        io.writeUInt16(pf->ed2kPartCount());
+        io.writeUInt8(bits);
+        return io.buffer();
+    };
+
+    // it has what we need: on its queue, but no request leaves over TCP
+    peer->setDownloadState(DownloadState::Connected);
+    {
+        const QByteArray wire = status(0x03);
+        SafeMemFile io(reinterpret_cast<const uint8*>(wire.constData()), static_cast<uint32>(wire.size()));
+        peer->processFileStatus(true, io, pf);
+    }
+    QCOMPARE(peer->downloadState(), DownloadState::OnQueue);
+    QCOMPARE(sock.countOf(OP_STARTUPLOADREQ) + sock.countOf(OP_HASHSETREQUEST), 0);
+
+    // it has nothing: no needed parts, and it stays a source of this file
+    {
+        const QByteArray wire = status(0x00);
+        SafeMemFile io(reinterpret_cast<const uint8*>(wire.constData()), static_cast<uint32>(wire.size()));
+        peer->processFileStatus(true, io, pf);
+    }
+    QCOMPARE(peer->downloadState(), DownloadState::NoNeededParts);
+    QCOMPARE(peer->reqFile(), pf);
+
+    // and back when it reports a part
+    {
+        const QByteArray wire = status(0x01);
+        SafeMemFile io(reinterpret_cast<const uint8*>(wire.constData()), static_cast<uint32>(wire.size()));
+        peer->processFileStatus(true, io, pf);
+    }
+    QCOMPARE(peer->downloadState(), DownloadState::OnQueue);
+
+    peer->setSocket(nullptr);
+    peer->setReqFile(nullptr);
+    theApp.downloadQueue = nullptr;
+    queue.deleteAll();
 }
 
 // The rate limit is what stops a peer from using source exchange as an amplifier. The
@@ -2433,6 +2657,150 @@ QByteArray pngOf(int width, int height)
 }
 
 } // namespace
+
+// C86: a request without a hash is a protocol error — but only from someone who
+// may ask at all; the others get no reaction (MFC BaseClient.cpp:2114, ListenSocket.cpp:1306).
+void tst_SourceExchangeCompat::previewRequest_shortRequestDisconnectsOnlyWhoMayAsk()
+{
+    SharedFileFixture fixture;
+    auto* peer = track(makeRequester());
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+    sock.markConnected();
+    const QByteArray shortRequest(4, '\x2C');
+
+    {
+        SharedAccessGuard access(0);
+        QVERIFY(sock.deliverWire(OP_EMULEPROT, OP_REQUESTPREVIEW, shortRequest));
+    }
+    {
+        SharedAccessGuard access(2);
+        QVERIFY(!sock.deliverWire(OP_EMULEPROT, OP_REQUESTPREVIEW, shortRequest));
+    }
+    QVERIFY(sock.sent.empty());
+    peer->setSocket(nullptr);
+}
+
+// C73 / C83: what leaves for a browsing client.
+void tst_SourceExchangeCompat::browse_sendsNamesNeverPaths()
+{
+    QTemporaryDir tmp;
+    const QString dirPath = tmp.path() + QStringLiteral("/secret/films");
+    const QString incoming = tmp.path() + QStringLiteral("/incoming");
+    QVERIFY(QDir().mkpath(dirPath));
+    QVERIFY(QDir().mkpath(incoming));
+    const QStringList savedShared = thePrefs.sharedDirs();
+    const QString savedIncoming = thePrefs.incomingDir();
+    const auto restore = qScopeGuard([&] {
+        thePrefs.setSharedDirs(savedShared);
+        thePrefs.setIncomingDir(savedIncoming);
+    });
+    thePrefs.setIncomingDir(incoming);
+    thePrefs.setSharedDirs({dirPath});
+
+    SharedFileFixture fixture;
+    fixture.file->setPath(dirPath);
+    fixture.shared.refreshDirectoryOf(fixture.file);
+    SharedAccessGuard access(2);
+
+    auto* peer = track(makeRequester());
+    peer->setUnicodeSupport(true);
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+    sock.markConnected();
+
+    QVERIFY(sock.deliverWire(OP_EDONKEYPROT, OP_ASKSHAREDDIRS, {}));
+    const auto* dirs = sock.find(OP_ASKSHAREDDIRSANS);
+    QVERIFY(dirs != nullptr);
+    QVERIFY2(!dirs->payload.contains(tmp.path().toUtf8()), "a local path was sent");
+    QVERIFY(!dirs->payload.contains("secret"));
+    {
+        SafeMemFile in(reinterpret_cast<const uint8*>(dirs->payload.constData()),
+                       static_cast<uint32>(dirs->payload.size()));
+        QCOMPARE(in.readUInt32(), uint32{2});
+        QCOMPARE(in.readString(true), QStringLiteral("films"));
+        QCOMPARE(in.readString(true), QStringLiteral("incoming"));
+    }
+
+    const auto ask = [&](const QString& name) {
+        sock.sent.clear();
+        SafeMemFile request;
+        request.writeString(name, UTF8Mode::Raw);
+        sock.deliverWire(OP_EDONKEYPROT, OP_ASKSHAREDFILESDIR, request.buffer());
+        const auto* answer = sock.find(OP_ASKSHAREDFILESDIRANS);
+        return answer ? answer->payload : QByteArray();
+    };
+
+    const QByteArray films = ask(QStringLiteral("films"));
+    {
+        SafeMemFile in(reinterpret_cast<const uint8*>(films.constData()),
+                       static_cast<uint32>(films.size()));
+        QCOMPARE(in.readString(true), QStringLiteral("films"));
+        QCOMPARE(in.readUInt32(), uint32{1});
+        uint8 hash[16];
+        in.readHash16(hash);
+        QVERIFY(md4equ(hash, fixture.file->fileHash()));
+        // not connected anywhere: no address to offer (MFC SharedFileList.cpp:919-922)
+        QCOMPARE(in.readUInt32(), uint32{0});
+        QCOMPARE(in.readUInt16(), uint16{0});
+    }
+
+    // the path itself is not a name
+    const QByteArray byPath = ask(dirPath);
+    {
+        SafeMemFile in(reinterpret_cast<const uint8*>(byPath.constData()),
+                       static_cast<uint32>(byPath.size()));
+        QCOMPARE(in.readString(true), dirPath);
+        QCOMPARE(in.readUInt32(), uint32{0});
+    }
+    peer->setSocket(nullptr);
+}
+
+// C82: a peer without unicode support gets its string back byte for byte.
+void tst_SourceExchangeCompat::browse_echoesTheNameInThePeersEncoding()
+{
+    SharedFileFixture fixture;
+    SharedAccessGuard access(2);
+
+    auto* peer = track(makeRequester());
+    QVERIFY(!peer->unicodeSupport());
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+    sock.markConnected();
+
+    const QByteArray name("caf\xE9", 4);   // Latin-1
+    QByteArray request;
+    request.append(char(name.size())).append(char(0)).append(name);
+    QVERIFY(sock.deliverWire(OP_EDONKEYPROT, OP_ASKSHAREDFILESDIR, request));
+    const auto* answer = sock.find(OP_ASKSHAREDFILESDIRANS);
+    QVERIFY(answer != nullptr);
+    QCOMPARE(answer->payload.left(request.size()), request);
+    peer->setSocket(nullptr);
+}
+
+// C84: the flat request is answered with an empty list — a client old enough to
+// send it may not know the denial opcode (MFC ListenSocket.cpp:672-694).
+void tst_SourceExchangeCompat::browse_deniedFlatRequestGetsAnEmptyList()
+{
+    SharedFileFixture fixture;
+    SharedAccessGuard access(0);
+
+    auto* peer = track(makeRequester());
+    RecordingSocket sock;
+    peer->wireIncomingSocket(&sock);
+    sock.markConnected();
+
+    QVERIFY(sock.deliverWire(OP_EDONKEYPROT, OP_ASKSHAREDFILES, {}));
+    QCOMPARE(sock.countOf(OP_ASKSHAREDDENIEDANS), 0);
+    const auto* answer = sock.find(OP_ASKSHAREDFILESANSWER);
+    QVERIFY(answer != nullptr);
+    QCOMPARE(answer->payload, QByteArray(4, '\0'));
+
+    // the directory requests keep the denial opcode, as MFC
+    QVERIFY(sock.deliverWire(OP_EDONKEYPROT, OP_ASKSHAREDDIRS, {}));
+    QCOMPARE(sock.countOf(OP_ASKSHAREDDENIEDANS), 1);
+    peer->setSocket(nullptr);
+}
 
 void tst_SourceExchangeCompat::previewRequest_refusedWhenNobodyMaySeeOurFiles()
 {

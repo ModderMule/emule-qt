@@ -20,6 +20,8 @@
 #include <QString>
 #include <QUrl>
 
+#include <functional>
+
 namespace eMule::indexer {
 
 struct IndexerResult {
@@ -121,13 +123,26 @@ public:
     static constexpr int kFlagSkipPercent = 50;
     /// Below this many rows the share means nothing: only 1, 2 and 10 mark a row.
     static constexpr int kFlagMinRows = 20;
+    /// Distinct values counted per indexer; later ones get the small-sample rule.
+    static constexpr int kMaxFlagValues = 32;
+    /// Past this the counts are halved, so the rule follows an indexer that changes.
+    static constexpr int kMaxRows = 10000;
+
+    /// What a flag is counted under. PasswordFlagStore passes a hash, so the
+    /// counts it writes carry no flag text.
+    using KeyFn = std::function<QString(const QString& flag)>;
 
     /// Count @p page, then clear the password marks its skipped values set.
     /// A row with a real passphrase is left alone.
-    void apply(IndexerSearchPage& page);
+    void apply(IndexerSearchPage& page, const KeyFn& keyFor = {});
+
+    [[nodiscard]] int rows() const { return m_rows; }
+    [[nodiscard]] const QHash<QString, int>& counts() const { return m_counts; }
+    /// Take over stored counts; nonsense (negative, more than @p rows) is dropped.
+    void restore(int rows, const QHash<QString, int>& counts);
 
 private:
-    [[nodiscard]] bool isSkipped(const QString& flag) const;
+    [[nodiscard]] bool isSkipped(const QString& flag, const QString& key) const;
 
     int m_rows = 0;
     QHash<QString, int> m_counts;

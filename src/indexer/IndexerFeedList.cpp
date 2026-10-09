@@ -41,6 +41,11 @@ void IndexerFeedList::setNzbSink(NzbSink sink)
     m_sink = std::move(sink);
 }
 
+void IndexerFeedList::setPasswordFlagStore(PasswordFlagStore* store)
+{
+    m_client->setPasswordFlagStore(store);
+}
+
 void IndexerFeedList::applyPreferences()
 {
     m_feeds = thePrefs.indexerFeeds();

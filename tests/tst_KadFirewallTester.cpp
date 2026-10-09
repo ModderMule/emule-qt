@@ -1,10 +1,12 @@
 /// @file tst_KadFirewallTester.cpp
 /// @brief Tests for KadFirewallTester.h — UDP firewall detection.
 
+#include "TestFixtures.h"
 #include "TestHelpers.h"
 
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/Kademlia.h"
+#include "kademlia/KadPrefs.h"
 #include "kademlia/KadSearchManager.h"
 #include "kademlia/KadUDPKey.h"
 #include "kademlia/KadUInt128.h"
@@ -30,16 +32,22 @@ private slots:
     void setUDPFWCheckResult_failureFreesSlot();
     void setUDPFWCheckResult_twoFailuresMeanFirewalled();
     void timeout_reportsFirewalledNotOpen();
+    void usedClients_surviveRecheckAndReset();
+    void candidates_version6IsAccepted();
+    void failedRequest_isNotMarkedUsed();
+    void queryNextClient_waitsForTheExternalPort();
 };
 
 void tst_KadFirewallTester::init()
 {
     UDPFirewallTester::reset();
+    UDPFirewallTester::debugClearUsedTestClients();   // they outlive reset()
 }
 
 void tst_KadFirewallTester::cleanup()
 {
     UDPFirewallTester::reset();
+    UDPFirewallTester::debugClearUsedTestClients();
     SearchManager::stopAllSearches();
 }
 
@@ -104,6 +112,77 @@ void tst_KadFirewallTester::isVerified_afterSuccess()
     // After reset, should no longer be verified
     UDPFirewallTester::reset();
     QVERIFY(!UDPFirewallTester::isVerified());
+}
+
+// C95: an address is asked once per session (MFC keeps the list in Reset() and
+// in ReCheckFirewallUDP()).
+void tst_KadFirewallTester::usedClients_surviveRecheckAndReset()
+{
+    UDPFirewallTester::debugAddUsedTestClient(0x0A000001, 4672);
+
+    UDPFirewallTester::reCheckFirewallUDP(false);
+    QCOMPARE(UDPFirewallTester::debugUsedTestClients(), qsizetype{1});
+
+    UDPFirewallTester::reset();
+    QCOMPARE(UDPFirewallTester::debugUsedTestClients(), qsizetype{1});
+}
+
+// C97: UDP firewall checks exist since Kad version 6.
+void tst_KadFirewallTester::candidates_version6IsAccepted()
+{
+    const UInt128 target(uint32{100});
+    UDPFirewallTester::addPossibleTestContact(UInt128(uint32{1}), 0x4D000001, 4672, 4662,
+                                              target, 6, KadUDPKey(0), true);
+    QCOMPARE(UDPFirewallTester::debugPossibleTestClients(), qsizetype{1});
+    UDPFirewallTester::addPossibleTestContact(UInt128(uint32{2}), 0x4D000002, 4672, 4662,
+                                              target, 5, KadUDPKey(0), true);
+    QCOMPARE(UDPFirewallTester::debugPossibleTestClients(), qsizetype{1});
+}
+
+// C97: a client we could not ask is not "used" — its address must not be able
+// to report a result.
+void tst_KadFirewallTester::failedRequest_isNotMarkedUsed()
+{
+    UDPFirewallTester::addPossibleTestContact(UInt128(uint32{1}), 0x4D000001, 4672, 4662,
+                                              UInt128(uint32{100}), 8, KadUDPKey(0), true);
+    UDPFirewallTester::queryNextClient();   // no client list here: the request fails
+
+    QCOMPARE(UDPFirewallTester::debugPossibleTestClients(), qsizetype{0});
+    QCOMPARE(UDPFirewallTester::debugUsedTestClients(), qsizetype{0});
+    QCOMPARE(UDPFirewallTester::debugChecksRunning(), uint8{0});
+
+    UDPFirewallTester::setUDPFWCheckResult(true, false, 0x4D000001, 4672);
+    QVERIFY(!UDPFirewallTester::isVerified());
+}
+
+// C89: the request carries our external Kad port, so no client is asked before
+// the port is known. C96: reset() goes back to using the external port.
+void tst_KadFirewallTester::queryNextClient_waitsForTheExternalPort()
+{
+    eMule::testing::KadFixture kadFixture;
+    UDPFirewallTester::reset();
+    UDPFirewallTester::debugClearUsedTestClients();
+    auto* prefs = Kademlia::getInstancePrefs();
+    QVERIFY(prefs != nullptr);
+    (void)prefs->findExternKadPort(true);
+    QVERIFY(prefs->findExternKadPort(false));
+
+    UDPFirewallTester::addPossibleTestContact(UInt128(uint32{1}), 0x4D000001, 4672, 4662,
+                                              UInt128(uint32{100}), 8, KadUDPKey(0), true);
+    UDPFirewallTester::queryNextClient();
+    QCOMPARE(UDPFirewallTester::debugPossibleTestClients(), qsizetype{1});   // still waiting
+
+    // two nodes agree: the lookup is over although only two were asked
+    prefs->setExternKadPort(5000, 0x4D000010);
+    prefs->setExternKadPort(5000, 0x4D000011);
+    QVERIFY(!prefs->findExternKadPort(false));
+    UDPFirewallTester::queryNextClient();
+    QCOMPARE(UDPFirewallTester::debugPossibleTestClients(), qsizetype{0});
+
+    prefs->setUseExternKadPort(false);
+    QVERIFY(!prefs->useExternKadPort());
+    UDPFirewallTester::reset();
+    QVERIFY(prefs->useExternKadPort());
 }
 
 // ---------------------------------------------------------------------------

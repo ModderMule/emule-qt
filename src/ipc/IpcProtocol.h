@@ -58,7 +58,7 @@ enum class IpcMsgType : int {
     StopSearch           = 152,  ///< [searchID: int]
     RemoveSearch         = 153,  ///< [searchID: int]
     ClearAllSearches     = 154,  ///< []
-    DownloadSearchFile   = 155,  ///< [hash: string, fileName: string, fileSize: int64, link: string, category: int, searchID: int, paused: bool] — link wins if set; category on are optional, paused absent = the option decides
+    DownloadSearchFile   = 155,  ///< [hash: string, fileName: string, fileSize: int64, link: string, category: int, searchID: int, paused: bool, row: map] — link wins if set; category on are optional, paused absent or null = the option decides, row = SearchResultRow::fileRef() of a restored tab (searchID 0)
     /// [searchID: int] → bool. Next page of a finished Usenet / torrent (Server)
     /// search whose PushSearchState said hasMore; false when it has none.
     SearchMore           = 157,

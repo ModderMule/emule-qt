@@ -145,6 +145,7 @@ void SearchList::clear()
             emit resultAboutToBeRemoved(file.get());
     }
     m_fileLists.clear();
+    m_restoredFiles.clear();
     m_foundFilesCount.clear();
     m_foundSourcesCount.clear();
     m_requestedUdpAnswers.clear();
@@ -688,6 +689,34 @@ SearchFile* SearchList::searchFileByHash(const uint8* hash, uint32 searchID) con
     return nullptr;
 }
 
+SearchFile* SearchList::restoredFile(const uint8* hash) const
+{
+    for (const auto& file : m_restoredFiles) {
+        if (md4equ(file->fileHash(), hash))
+            return file.get();
+    }
+    return nullptr;
+}
+
+SearchFile* SearchList::adoptRestoredFile(std::unique_ptr<SearchFile> file)
+{
+    if (!file)
+        return nullptr;
+    if (SearchFile* held = restoredFile(file->fileHash()))
+        return held;
+
+    // Only rows the user opened end up here; the cap is against a runaway sender
+    static constexpr size_t kMaxRestoredFiles = 1000;
+    if (m_restoredFiles.size() >= kMaxRestoredFiles)
+        m_restoredFiles.pop_front();
+
+    file->setSearchID(0);
+    file->setNameWithoutKeywords(computeNameWithoutKeywords(file->fileName(), file->fileType()));
+    m_restoredFiles.push_back(std::move(file));
+    assess(m_restoredFiles.back().get());
+    return m_restoredFiles.back().get();
+}
+
 // ---------------------------------------------------------------------------
 // Kad notes
 // ---------------------------------------------------------------------------
@@ -712,6 +741,12 @@ bool SearchList::addNotes(const uint8* fileHash, const QByteArray& publisherId,
             emit resultUpdated(file.get());
         }
     }
+    // No resultUpdated: a restored row is in no list, its dialog re-fetches by itself
+    if (SearchFile* restored = restoredFile(fileHash)) {
+        restored->addKadNote(publisherId, rating, comment);
+        assess(restored);
+        added = true;
+    }
     return added;
 }
 
@@ -728,6 +763,8 @@ void SearchList::setNotesSearchStatus(const uint8* fileHash, bool running)
             emit resultUpdated(file.get());
         }
     }
+    if (SearchFile* restored = restoredFile(fileHash))
+        restored->setKadCommentSearchRunning(running);
 }
 
 std::vector<uint32> SearchList::searchIDs() const

@@ -256,6 +256,25 @@ public:
     /// Re-file a shared file whose directory changed (a download that completed).
     void refreshDirectoryOf(KnownFile* file);
 
+    // -- Browsing: a peer sees names, never local paths (MFC GetPseudoDirName) ----
+
+    /// Names every shared directory anew and returns them, shared directories first,
+    /// then the incoming ones. Main thread.
+    [[nodiscard]] std::vector<QString> browseDirectoryNames();
+    /// The name for @p dir: its last component, extended upwards while the parent is
+    /// shared too, made unique. Empty when not shared or named already.
+    [[nodiscard]] QString pseudoDirName(const QString& dir);
+    /// The directory behind a name; empty when the name was never handed out.
+    [[nodiscard]] QString dirNameByPseudo(const QString& pseudoName) const;
+    void resetPseudoDirNames() { m_pseudoDirNames.clear(); }
+    /// Complete files shared one by one, outside every shared directory ("!Other").
+    [[nodiscard]] std::vector<KnownFile*> singleSharedFilesForBrowse() const;
+    [[nodiscard]] bool hasSingleSharedFiles() const { return !m_singleSharedFiles.isEmpty(); }
+
+    /// The tag list of a file record sent to a browsing client
+    /// (MFC CreateOfferedFilePacket with pClient). @p emuleVersion 0 = not an eMule.
+    [[nodiscard]] static std::vector<Tag> offeredTagsForClient(KnownFile& file, uint32 emuleVersion);
+
     /// See fileChanged(). Any thread.
     void noteFileChanged(const uint8* fileHash);
 
@@ -310,6 +329,8 @@ private:
     /// The tag list of one OP_OFFERFILES record for @p srv
     /// (MFC CSharedFileList::CreateOfferedFilePacket).
     static std::vector<Tag> offeredTags(KnownFile& file, const Server* srv);
+    static std::vector<Tag> offeredTagsFor(KnownFile& file, const Server* srv,
+                                           bool forClient, uint32 emuleVersion);
 
     /// Whether @p kw should be published now; takes over a stored due time first.
     [[nodiscard]] bool keywordIsDue(PublishKeyword& kw, time_t now);
@@ -419,6 +440,9 @@ private:
     /// (that is what sharedfiles.dat keeps). Main thread only.
     QHash<QString, QString> m_singleSharedFiles;
     QHash<QString, QString> m_singleExcludedFiles;
+
+    /// Pseudo name -> directory, as last sent to a browsing client. Main thread only.
+    QHash<QString, QString> m_pseudoDirNames;
 
     PublishKeywordList m_keywords;
     KadPublishStore m_publishStore;        // keyword due times across restarts

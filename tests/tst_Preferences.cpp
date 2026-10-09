@@ -11,8 +11,10 @@
 #include "utils/OtherFunctions.h"
 
 #include <QFile>
+#include <QTcpServer>
 #include <QTest>
 #include <QTextStream>
+#include <QUdpSocket>
 
 using namespace eMule;
 using namespace eMule::testing;
@@ -750,6 +752,121 @@ private slots:
     }
 
     // -- Static utilities -----------------------------------------------------
+
+    // C93: a random port is one nothing listens on (MFC Preferences.cpp:2756-2797).
+    void randomPort_skipsBusyPorts()
+    {
+        int asked = 0;
+        uint16 third = 0;
+        const uint16 port = Preferences::randomPort([&](uint16 candidate) {
+            if (++asked < 3)
+                return false;
+            third = candidate;
+            return true;
+        });
+        QCOMPARE(asked, 3);
+        QCOMPARE(port, third);
+        QVERIFY(port >= 4096 && port <= 65095);
+
+        // nothing free: gives up with some port instead of looping
+        asked = 0;
+        (void)Preferences::randomPort([&](uint16) { ++asked; return false; });
+        QCOMPARE(asked, 50);
+
+        // the real probes hand out a port that can be bound
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::Any, Preferences::randomTCPPort()));
+        QUdpSocket socket;
+        QVERIFY(socket.bind(QHostAddress::Any, Preferences::randomUDPPort()));
+    }
+
+    // C92: a saved UDP port of 0 is "UDP off" and survives a load; only a file
+    // without the key gets a random port (MFC Preferences.cpp:1957-1959).
+    void load_udpPortZeroStaysOff()
+    {
+        eMule::testing::TempDir tmp;
+        const auto write = [&](const QString& name, const QByteArray& yaml) {
+            const QString path = tmp.filePath(name);
+            QFile file(path);
+            if (file.open(QIODevice::WriteOnly))
+                file.write(yaml);
+            return path;
+        };
+
+        Preferences off;
+        QVERIFY(off.load(write(QStringLiteral("off.yml"), "network:\n  port: 5000\n  udpPort: 0\n")));
+        QCOMPARE(off.udpPort(), uint16{0});
+        off.setKadEnabled(true);
+        QVERIFY(!off.kadUsable());
+
+        Preferences missing;
+        QVERIFY(missing.load(write(QStringLiteral("missing.yml"), "network:\n  port: 5000\n")));
+        QVERIFY(missing.udpPort() != 0);
+        missing.setKadEnabled(true);
+        QVERIFY(missing.kadUsable());
+
+        // and it is still 0 after a save / load round
+        const QString saved = tmp.filePath(QStringLiteral("saved.yml"));
+        QVERIFY(off.saveTo(saved));
+        Preferences again;
+        QVERIFY(again.load(saved));
+        QCOMPARE(again.udpPort(), uint16{0});
+    }
+
+    // C103: a limit above the line's capacity becomes 4/5 (upload) or 9/10
+    // (download) of it, as MFC Preferences.cpp:1931-1937.
+    void load_limitAboveCapacityIsPulledIn()
+    {
+        eMule::testing::TempDir tmp;
+        const QString path = tmp.filePath(QStringLiteral("limits.yml"));
+        {
+            QFile file(path);
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write("bandwidth:\n  maxUpload: 900\n  maxDownload: 9000\n"
+                       "  maxGraphUploadRate: 500\n  maxGraphDownloadRate: 1000\n");
+        }
+        Preferences prefs;
+        QVERIFY(prefs.load(path));
+        QCOMPARE(prefs.maxUpload(), uint32{400});
+        QCOMPARE(prefs.maxDownload(), uint32{900});
+    }
+
+    // C79 / C87 / C103: defaults that differ from MFC on purpose (decision
+    // 2026-10-09). Changing one is a decision, not a clean-up.
+    void defaults_deliberatelyNotMfc()
+    {
+        Preferences prefs;
+        QCOMPARE(prefs.deadServerRetries(), uint32{20});     // MFC 1
+        QCOMPARE(prefs.addServersFromServer(), true);        // MFC off
+        QCOMPARE(prefs.safeServerConnect(), true);           // MFC off
+        QCOMPARE(prefs.autoConnect(), true);                 // MFC off
+        QCOMPARE(prefs.msgSecure(), false);                  // MFC on, other meaning
+        QCOMPARE(prefs.checkDiskspace(), true);              // MFC off
+        QCOMPARE(prefs.verbose(), true);                     // MFC off
+        QCOMPARE(prefs.showExtControls(), true);             // MFC off
+        QCOMPARE(prefs.versionCheckDays(), 2);               // MFC 5
+        QCOMPARE(prefs.enableUPnP(), true);                  // MFC off
+        QCOMPARE(prefs.notifyEmailSmtpPort(), uint16{25});   // MFC 0
+        QCOMPARE(prefs.viewSharedFilesAccess(), 1);          // friends; MFC nobody
+    }
+
+    // C102: the log options count only with verbose logging on (MFC's getters).
+    void logOptions_needVerbose()
+    {
+        Preferences prefs;
+        prefs.setLogA4AF(true);
+        prefs.setLogFileSaving(true);
+        prefs.setLogSourceExchange(true);
+        prefs.setLogRatingDescReceived(true);
+        prefs.setVerbose(false);
+        QVERIFY(!prefs.wantsA4AFLog() && !prefs.wantsFileSavingLog()
+                && !prefs.wantsSourceExchangeLog() && !prefs.wantsRatingDescLog());
+        prefs.setVerbose(true);
+        QVERIFY(prefs.wantsA4AFLog() && prefs.wantsFileSavingLog()
+                && prefs.wantsSourceExchangeLog() && prefs.wantsRatingDescLog());
+        prefs.setLogA4AF(false);
+        QVERIFY(!prefs.wantsA4AFLog());
+    }
 
     void randomPort_inRange()
     {

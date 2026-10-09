@@ -338,7 +338,6 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_cryptLayerDisableCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_useSecureIdentCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_enableSearchResultFilterCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
-    connect(m_warnUntrustedFilesCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_ipFilterUpdateUrlEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
 
     // Extended page
@@ -361,7 +360,6 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_logToDiskCoreCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logToDiskGuiCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_verboseCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
-    connect(m_logLevelSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_logSourceExchangeCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_serverVerboseCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_logBannedClientsCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -396,8 +394,6 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_allocFullFileCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
 #ifdef Q_OS_WIN
     connect(m_enableMiniMuleCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
-    connect(m_autotakeEd2kCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
-    connect(m_winFirewallCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_sparsePartFilesCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_resolveShellLinksCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_multiUserSharingGroup, &QButtonGroup::idToggled, this, &OptionsDialog::markDirty);
@@ -2148,6 +2144,7 @@ QWidget* OptionsDialog::createIRCPage()
     auto* acceptLinks = addCheck(m_ircMiscTree->invisibleRootItem(),
                                  tr("Accept eD2K links in IRC (Use only with caution!)"));
     addCheck(acceptLinks, tr("From friends only"));
+    addCheck(m_ircMiscTree->invisibleRootItem(), tr("Enable UTF-8"));
 
     m_ircMiscTree->expandAll();
     giveListRoom(m_ircMiscTree, 8);
@@ -2388,10 +2385,6 @@ QWidget* OptionsDialog::createSecurityPage()
     m_enableSearchResultFilterCheck = new QCheckBox(
         tr("Enable spam filter for search results"), miscGroup);
     miscLayout->addWidget(m_enableSearchResultFilterCheck);
-
-    m_warnUntrustedFilesCheck = new QCheckBox(
-        tr("Warn when opening untrusted files"), miscGroup);
-    miscLayout->addWidget(m_warnUntrustedFilesCheck);
 
     layout->addWidget(miscGroup);
     layout->addStretch();
@@ -5111,11 +5104,6 @@ QWidget* OptionsDialog::createExtendedPage()
 
     scrollLayout->addWidget(tcpGroup);
 
-#ifdef Q_OS_WIN
-    m_autotakeEd2kCheck = new QCheckBox(tr("Autotake eD2K links only during runtime"), scrollWidget);
-    scrollLayout->addWidget(m_autotakeEd2kCheck);
-#endif
-
     // --- Ungrouped checkboxes ---
     m_useCreditSystemCheck = new QCheckBox(tr("Use credit system (reward uploaders)"), scrollWidget);
     scrollLayout->addWidget(m_useCreditSystemCheck);
@@ -5127,12 +5115,6 @@ QWidget* OptionsDialog::createExtendedPage()
            "the places they had earned, when eMule starts again. They are not contacted on "
            "startup — they simply wait their turn as usual."));
     scrollLayout->addWidget(m_rememberUploadQueueCheck);
-
-#ifdef Q_OS_WIN
-    m_winFirewallCheck = new QCheckBox(
-        tr("Open/close ports on WinXP firewall when starting/exiting eMule"), scrollWidget);
-    scrollLayout->addWidget(m_winFirewallCheck);
-#endif
 
     m_filterLANIPsCheck = new QCheckBox(tr("Filter server and client LAN IPs"), scrollWidget);
     scrollLayout->addWidget(m_filterLANIPsCheck);
@@ -5251,13 +5233,6 @@ QWidget* OptionsDialog::createExtendedPage()
     m_verboseCheck = new QCheckBox(tr("Enabled"), verboseGroup);
     verboseLayout->addWidget(m_verboseCheck);
 
-    auto* logLevelRow = new QHBoxLayout;
-    logLevelRow->addWidget(new QLabel(tr("Log level:"), verboseGroup));
-    m_logLevelSpin = new QSpinBox(verboseGroup);
-    m_logLevelSpin->setRange(0, 5);
-    logLevelRow->addWidget(m_logLevelSpin);
-    logLevelRow->addStretch();
-    verboseLayout->addLayout(logLevelRow);
 
     m_logSourceExchangeCheck = new QCheckBox(
         tr("Log client source exchange and server source queries/answers"), verboseGroup);
@@ -5490,7 +5465,6 @@ QWidget* OptionsDialog::createExtendedPage()
     // --- Enable/disable logic ---
     // Verbose sub-controls depend on verbose checkbox
     connect(m_verboseCheck, &QCheckBox::toggled, this, [this](bool on) {
-        m_logLevelSpin->setEnabled(on);
         m_logSourceExchangeCheck->setEnabled(on);
         m_logBannedClientsCheck->setEnabled(on);
         m_logRatingDescCheck->setEnabled(on);
@@ -5997,7 +5971,8 @@ void OptionsDialog::loadSettings()
     m_ircPerformEdit->setText(thePrefs.ircPerformString());
     m_ircPerformEdit->setEnabled(thePrefs.ircUsePerform());
 
-    // Misc tree items: 0=help, 1=loadList, 2=timestamp, 3=ignoreParent->(0=misc,1=join,2=part,3=quit)
+    // Misc tree items: 0=help, 1=loadList, 2=timestamp, 3=ignoreParent->(0=misc,1=join,2=part,3=quit),
+    // 4=allowAddFriend, 5=acceptLinks->(0=friendsOnly), 6=UTF-8
     auto* root = m_ircMiscTree->invisibleRootItem();
     root->child(0)->setCheckState(0, thePrefs.ircConnectHelpChannel() ? Qt::Checked : Qt::Unchecked);
     root->child(1)->setCheckState(0, thePrefs.ircLoadChannelList() ? Qt::Checked : Qt::Unchecked);
@@ -6013,6 +5988,7 @@ void OptionsDialog::loadSettings()
     root->child(4)->setCheckState(0, thePrefs.ircAllowEmuleAddFriend() ? Qt::Checked : Qt::Unchecked);
     root->child(5)->setCheckState(0, thePrefs.ircAcceptLinks() ? Qt::Checked : Qt::Unchecked);
     root->child(5)->child(0)->setCheckState(0, thePrefs.ircAcceptLinksFriendsOnly() ? Qt::Checked : Qt::Unchecked);
+    root->child(6)->setCheckState(0, thePrefs.ircEnableUTF8() ? Qt::Checked : Qt::Unchecked);
 
     // Messages page (GUI-only)
     m_showSmileysCheck->setChecked(thePrefs.showSmileys());
@@ -6216,6 +6192,7 @@ void OptionsDialog::saveSettings()
     thePrefs.setIrcAllowEmuleAddFriend(root->child(4)->checkState(0) == Qt::Checked);
     thePrefs.setIrcAcceptLinks(root->child(5)->checkState(0) == Qt::Checked);
     thePrefs.setIrcAcceptLinksFriendsOnly(root->child(5)->child(0)->checkState(0) == Qt::Checked);
+    thePrefs.setIrcEnableUTF8(root->child(6)->checkState(0) == Qt::Checked);
 
     // Messages page (GUI-only)
     thePrefs.setShowSmileys(m_showSmileysCheck->isChecked());
@@ -6421,8 +6398,6 @@ void OptionsDialog::saveSettings()
         req.append(m_useSecureIdentCheck->isChecked());
         req.append(QStringLiteral("enableSearchResultFilter"));
         req.append(m_enableSearchResultFilterCheck->isChecked());
-        req.append(QStringLiteral("warnUntrustedFiles"));
-        req.append(m_warnUntrustedFilesCheck->isChecked());
         req.append(QStringLiteral("ipFilterUpdateUrl"));
         req.append(m_ipFilterUpdateUrlEdit->text().trimmed());
 
@@ -6606,8 +6581,6 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(m_hashingDiskLoadSpin->value()));
         req.append(QStringLiteral("extractMetaData"));
         req.append(static_cast<qint64>(m_extractMetaDataGroup->checkedId()));
-        req.append(QStringLiteral("logLevel"));
-        req.append(static_cast<qint64>(m_logLevelSpin->value()));
         req.append(QStringLiteral("logSourceExchange"));
         req.append(m_logSourceExchangeCheck->isChecked());
         req.append(QStringLiteral("serverVerboseLog"));
@@ -6659,10 +6632,6 @@ void OptionsDialog::saveSettings()
         req.append(QStringLiteral("allocFullFile"));
         req.append(m_allocFullFileCheck->isChecked());
 #ifdef Q_OS_WIN
-        req.append(QStringLiteral("autotakeEd2kLinks"));
-        req.append(m_autotakeEd2kCheck->isChecked());
-        req.append(QStringLiteral("openPortsOnWinFirewall"));
-        req.append(m_winFirewallCheck->isChecked());
         req.append(QStringLiteral("sparsePartFiles"));
         req.append(m_sparsePartFilesCheck->isChecked());
         req.append(QStringLiteral("resolveShellLinks"));
@@ -6794,6 +6763,8 @@ void OptionsDialog::saveSettings()
         req.append(root->child(5)->checkState(0) == Qt::Checked);
         req.append(QStringLiteral("ircAcceptLinksFriendsOnly"));
         req.append(root->child(5)->child(0)->checkState(0) == Qt::Checked);
+        req.append(QStringLiteral("ircEnableUTF8"));
+        req.append(root->child(6)->checkState(0) == Qt::Checked);
 
         // Messages page (GUI-only)
         req.append(QStringLiteral("showSmileys"));
@@ -6907,7 +6878,6 @@ void OptionsDialog::saveSettings()
         thePrefs.setCryptLayerRequired(m_cryptLayerRequiredCheck->isChecked());
         thePrefs.setUseSecureIdent(m_useSecureIdentCheck->isChecked());
         thePrefs.setEnableSearchResultFilter(m_enableSearchResultFilterCheck->isChecked());
-        thePrefs.setWarnUntrustedFiles(m_warnUntrustedFilesCheck->isChecked());
         thePrefs.setIpFilterUpdateUrl(m_ipFilterUpdateUrlEdit->text().trimmed());
         thePrefs.setGeoIpAccountId(m_geoIpAccountEdit->text().trimmed());
         thePrefs.setGeoIpLicenseKey(m_geoIpLicenseEdit->text().trimmed());
@@ -6949,7 +6919,6 @@ void OptionsDialog::saveSettings()
         thePrefs.setCommitFiles(m_commitFilesGroup->checkedId());
         thePrefs.setHashingDiskLoad(m_hashingDiskLoadSpin->value());
         thePrefs.setExtractMetaData(m_extractMetaDataGroup->checkedId());
-        thePrefs.setLogLevel(m_logLevelSpin->value());
         thePrefs.setLogSourceExchange(m_logSourceExchangeCheck->isChecked());
         thePrefs.setServerVerboseLog(m_serverVerboseCheck->isChecked());
         thePrefs.setLogBannedClients(m_logBannedClientsCheck->isChecked());
@@ -6974,8 +6943,6 @@ void OptionsDialog::saveSettings()
 
         thePrefs.setAllocFullFile(m_allocFullFileCheck->isChecked());
 #ifdef Q_OS_WIN
-        thePrefs.setAutotakeEd2kLinks(m_autotakeEd2kCheck->isChecked());
-        thePrefs.setOpenPortsOnWinFirewall(m_winFirewallCheck->isChecked());
         thePrefs.setSparsePartFiles(m_sparsePartFilesCheck->isChecked());
         thePrefs.setResolveShellLinks(m_resolveShellLinksCheck->isChecked());
         thePrefs.setMultiUserSharing(m_multiUserSharingGroup->checkedId());
@@ -7187,7 +7154,6 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_cryptLayerRequiredCheck->setEnabled(cryptSupported && cryptRequested);
     m_useSecureIdentCheck->setChecked(prefs.value(QStringLiteral("useSecureIdent")).toBool(true));
     m_enableSearchResultFilterCheck->setChecked(prefs.value(QStringLiteral("enableSearchResultFilter")).toBool(true));
-    m_warnUntrustedFilesCheck->setChecked(prefs.value(QStringLiteral("warnUntrustedFiles")).toBool(true));
     m_ipFilterUpdateUrlEdit->setText(prefs.value(QStringLiteral("ipFilterUpdateUrl")).toString());
     m_geoIpAccountEdit->setText(prefs.value(QStringLiteral("geoIpAccountId")).toString());
     m_geoIpLicenseEdit->setText(prefs.value(QStringLiteral("geoIpLicenseKey")).toString());
@@ -7319,8 +7285,6 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_logToDiskGuiCheck->setChecked(prefs.value(QStringLiteral("logToDiskGui")).toBool());
     bool verboseOn = prefs.value(QStringLiteral("verbose")).toBool(true);
     m_verboseCheck->setChecked(verboseOn);
-    m_logLevelSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("logLevel")).toInteger(5)));
-    m_logLevelSpin->setEnabled(verboseOn);
     m_logSourceExchangeCheck->setChecked(prefs.value(QStringLiteral("logSourceExchange")).toBool());
     m_logSourceExchangeCheck->setEnabled(verboseOn);
     // Independent channel — stays enabled regardless of the verbose master toggle.
@@ -7377,8 +7341,6 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
 
     m_allocFullFileCheck->setChecked(prefs.value(QStringLiteral("allocFullFile")).toBool());
 #ifdef Q_OS_WIN
-    m_autotakeEd2kCheck->setChecked(prefs.value(QStringLiteral("autotakeEd2kLinks")).toBool(true));
-    m_winFirewallCheck->setChecked(prefs.value(QStringLiteral("openPortsOnWinFirewall")).toBool());
     m_sparsePartFilesCheck->setChecked(prefs.value(QStringLiteral("sparsePartFiles")).toBool());
     m_resolveShellLinksCheck->setChecked(prefs.value(QStringLiteral("resolveShellLinks")).toBool());
     if (auto* btn = m_multiUserSharingGroup->button(static_cast<int>(prefs.value(QStringLiteral("multiUserSharing")).toInteger(2))))

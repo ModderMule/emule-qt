@@ -132,6 +132,10 @@ protected:
     /// ready.  Default implementation does nothing.
     virtual void onEncryptionHandshakeComplete() {}
 
+    /// Negotiation bytes went into Qt's write buffer. A subclass that also writes
+    /// to the descriptor directly must let them leave first.
+    virtual void onNegotiationBytesQueued() {}
+
     /// Get a string representation of the peer IP (for logging).
     [[nodiscard]] QString dbgGetIPString() const;
 

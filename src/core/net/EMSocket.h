@@ -117,6 +117,11 @@ public:
     [[nodiscard]] bool hasQueues(bool onlyStandardPackets = false) const override;
     bool useBigSendBuffer() override;
 
+protected:
+    void onNegotiationBytesQueued() override;
+
+public:
+
     // --- Proxy ---
 
     void initProxySupport(const ProxySettings& settings);
@@ -226,7 +231,12 @@ private:
     bool m_currentPacketIsControl = false;
     bool m_currentPackageIsFromPartFile = false;
     bool m_accelerateUpload = false;
-    bool m_busy = false;
+    /// Qt's write buffer is over kBusyThreshold (owner-thread sends).
+    std::atomic<bool> m_busy{false};
+    /// A send on the throttler thread would have blocked (MFC m_bBusy). Cleared by
+    /// the next successful one, or by the busy checks once the socket is writable.
+    mutable std::atomic<bool> m_rawBusy{false};
+    [[nodiscard]] bool rawBusyNow() const;
     bool m_useBigSendBuffers = false;
     bool m_retryScheduled = false;
 
@@ -249,8 +259,9 @@ private:
     /// pressure as a proxy for socket busyness.
     std::atomic<qint64> m_cachedBytesToWrite{0};
 
-    /// Threshold above which the socket is considered congested (128 KB,
-    /// matching the SO_SNDBUF size set by useBigSendBuffer()).
+    /// Threshold above which the socket is considered congested: the SO_SNDBUF
+    /// size useBigSendBuffer() asks for. 1 MiB is the port's own value (MFC
+    /// 128 KiB) — deliberate, with the 3 s / 5 s pacing in getNeededBytes().
     static constexpr qint64 kBusyThreshold = 1024 * 1024;
 
 };

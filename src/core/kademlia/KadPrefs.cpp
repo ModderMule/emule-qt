@@ -270,32 +270,23 @@ uint16 KadPrefs::externalKadPort() const
 
 void KadPrefs::setExternKadPort(uint16 port, uint32 fromIP)
 {
-    // Consensus check: need 2 of kExternalPortAskIPs (3) agreeing on same port
-    // from different IPs
-    for (size_t i = 0; i < m_externPortIPs.size(); ++i) {
-        if (m_externPortIPs[i] == fromIP) {
-            // Already have a response from this IP — update it
-            m_externPorts[i] = port;
-            return;
-        }
-    }
+    // MFC Prefs.cpp:420-445: two of up to three askers must agree.
+    if (!findExternKadPort(false))
+        return;
+    if (std::ranges::find(m_externPortIPs, fromIP) != m_externPortIPs.end())
+        return;   // one answer per IP
 
     m_externPortIPs.push_back(fromIP);
+    if (std::ranges::find(m_externPorts, port) != m_externPorts.end()) {
+        m_externKadPort = port;
+        // pad: the check is finished even though fewer IPs were asked
+        m_externPortIPs.resize(kExternalPortAskIPs, 0);
+        return;
+    }
     m_externPorts.push_back(port);
-
-    // Check for consensus (2 of 3 agreeing)
-    if (m_externPorts.size() >= 2) {
-        for (size_t i = 0; i < m_externPorts.size(); ++i) {
-            uint32 count = 0;
-            for (size_t j = 0; j < m_externPorts.size(); ++j) {
-                if (m_externPorts[j] == m_externPorts[i])
-                    ++count;
-            }
-            if (count >= 2) {
-                m_externKadPort = m_externPorts[i];
-                return;
-            }
-        }
+    if (!findExternKadPort(false)) {
+        logKad(QStringLiteral("Kad: external port seems unreliable, not using it for firewall checks"));
+        m_externKadPort = 0;
     }
 }
 

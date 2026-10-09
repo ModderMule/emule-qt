@@ -21,6 +21,9 @@
     <ClCompile Include="IndexerCapsStore.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="PasswordFlagStore.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="IndexerClient.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -51,6 +54,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="IndexerCapsStore.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="PasswordFlagStore.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="IndexerConfig.h">

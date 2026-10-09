@@ -56,6 +56,7 @@ private slots:
     void responder_isSeenByTheCensus();
     void buddyAndCallbackRequests_carryACryptTarget_data();
     void buddyAndCallbackRequests_carryACryptTarget();
+    void actionPackets_areNotCappedWhileTheSearchRuns();
 
     // Contact ownership (audit item #2)
     void processResponse_freesAllResultContacts();
@@ -1016,6 +1017,37 @@ void tst_KadSearch::buddyAndCallbackRequests_carryACryptTarget()
     uint8 id[16] = {0x55};
     id[15] = 1;
     QCOMPARE(targets.front(), UInt128(id));
+}
+
+// C91: MFC sends an action packet to every responder it walks past; the port
+// stopped after ten.
+void tst_KadSearch::actionPackets_areNotCappedWhileTheSearchRuns()
+{
+    eMule::testing::KadFixture kadFixture;
+
+    int requests = 0;
+    const auto conn = QObject::connect(
+        Kademlia::getInstanceUDPListener(), &KademliaUDPListener::packetToSend,
+        [&](const QByteArray& data) {
+            if (!data.isEmpty() && static_cast<uint8>(data[0]) == KADEMLIA2_SEARCH_KEY_REQ)
+                ++requests;
+        });
+    const auto disconnect = qScopeGuard([&] { QObject::disconnect(conn); });
+
+    constexpr uint32 kNodes = 14;
+    Search* search = startWalk(SearchType::Keyword, kNodes);
+    QVERIFY(search != nullptr);
+    // every node asked and answered
+    for (const auto& [dist, contact] : search->m_possible)
+        search->m_tried[dist] = contact;
+    for (const auto& [dist, contact] : search->m_tried)
+        search->m_responded[dist] = true;
+    requests = 0;
+    search->m_storeSent.clear();
+
+    for (uint32 i = 0; i < kNodes + 2; ++i)
+        search->storePacket(false);   // one per jump-start
+    QCOMPARE(requests, int(kNodes));
 }
 
 QTEST_GUILESS_MAIN(tst_KadSearch)

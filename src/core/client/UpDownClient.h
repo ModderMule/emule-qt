@@ -45,6 +45,7 @@ class PartFile;
 class AbstractFile;
 class Packet;
 class SafeMemFile;
+enum class UTF8Mode : uint8;
 
 // ---------------------------------------------------------------------------
 // Supporting types
@@ -316,6 +317,7 @@ public:
     /// later dial attempt bounce off a route we know does not exist.
     void setDirectUDPCallbackSupport(bool v) { m_directUDPCallback = v; }
     [[nodiscard]] bool unicodeSupport() const { return m_unicodeSupport; }
+    void setUnicodeSupport(bool v) { m_unicodeSupport = v; }
 
     [[nodiscard]] uint8 dataCompVer() const { return m_dataCompVer; }
     [[nodiscard]] uint8 udpVer() const { return m_udpVer; }
@@ -474,6 +476,7 @@ public:
     void setRemoteQueueFull(bool v) { m_remoteQueueFull = v; }
 
     [[nodiscard]] bool completeSource() const { return m_completeSource; }
+    [[nodiscard]] uint8 failedFileIdReqs() const { return m_failedFileIdReqs; }
     void setCompleteSource(bool v) { m_completeSource = v; }
 
     [[nodiscard]] uint16 partCount() const { return m_partCount; }
@@ -650,7 +653,8 @@ public:
     // -- Phase 3 — protocol utility -----------------------------------------
 
     void requestSharedFileList();
-    void processSharedFileList(const uint8* data, uint32 size, const QString& dir = {});
+    void processSharedFileList(const uint8* data, uint32 size, const QString& dir = {},
+                               bool directoryAnswer = false);
     void processEmuleQueueRank(const uint8* data, uint32 size);
     void processEdonkeyQueueRank(const uint8* data, uint32 size);
     void checkQueueRankFlood();
@@ -1021,6 +1025,10 @@ private:
     void processAskSharedFilesDir(const uint8* data, uint32 size);
     void processSharedDirsAnswer(const uint8* data, uint32 size);
     void processSharedFilesDirAnswer(const uint8* data, uint32 size);
+    void writeOfferedFile(SafeMemFile& out, KnownFile& file) const;
+    void requestHashSetOrUploadSlot(PartFile* file);
+    /// Strings go out in the peer's encoding (MFC GetUnicodeSupport()).
+    [[nodiscard]] UTF8Mode peerStringMode() const;
     void processSharedDenied();
 
     // -- Phase 3 — upload-side packet handlers --------------------------------
@@ -1252,7 +1260,6 @@ private:
     uint8 m_captchasSent = 0;
 
     // -- URL download -------------------------------------------------------
-    QByteArray m_urlPath;
     uint64 m_reqStart = 0;
     uint64 m_reqEnd = 0;
     uint64 m_urlStartPos = UINT64_MAX;
@@ -1276,7 +1283,6 @@ private:
     QString m_clientSoftwareStr;
     QString m_modVersion;
     QString m_helloInfo;
-    QString m_muleInfo;
     QString m_captchaChallenge;
     QString m_captchaPendingMsg;
 

@@ -123,7 +123,7 @@ void CoreSession::start()
         // Nothing was opened or dialled; pick up from here when the interface appears.
         m_netSuspended = true;
         m_resumeEd2k = thePrefs.networkED2K() && thePrefs.autoConnect();
-        m_resumeKad = thePrefs.kadEnabled() && thePrefs.autoConnect();
+        m_resumeKad = thePrefs.kadUsable() && thePrefs.autoConnect();
     }
     m_appliedBind = BindAddress::current();
     rememberAppliedPorts();
@@ -1031,9 +1031,16 @@ void CoreSession::initClientUDP()
     if (m_clientUDP)
         return;
 
+    // Port 0 = UDP disabled: no socket, hence no Kad and no UDP re-asks
+    // (MFC CClientUDPSocket::Create). Binding 0 would open an OS-chosen port.
+    const uint16 udpPort = static_cast<uint16>(thePrefs.udpPort());
+    if (udpPort == 0) {
+        logInfo(QStringLiteral("Client UDP is disabled (UDP port 0)"));
+        return;
+    }
+
     // Create and bind the shared UDP socket (client + Kad traffic).
     m_clientUDP = std::make_unique<ClientUDPSocket>();
-    const uint16 udpPort = static_cast<uint16>(thePrefs.udpPort());
     if (m_clientUDP->rebind(udpPort)) {
         logInfo(QStringLiteral("Client UDP socket bound on port %1").arg(udpPort));
     } else if (BindAddress::outboundAllowed()) {
@@ -1334,7 +1341,7 @@ void CoreSession::initKademlia()
     // Start() the same way (StartConnection, emuleDlg.cpp:1983) while CKademlia
     // stays an always-addressable static. A failed start is left constructed too,
     // so a retry does not hit a null instance.
-    if (thePrefs.kadEnabled() && thePrefs.autoConnect() && BindAddress::outboundAllowed()
+    if (thePrefs.kadUsable() && thePrefs.autoConnect() && BindAddress::outboundAllowed()
         && !m_connectHold) {
         m_kademlia->start();
         if (m_kademlia->isRunning())
@@ -1677,9 +1684,11 @@ PortApplyResult CoreSession::applyListenPorts()
         return PortApplyResult::Applied;
     }
 
-    // A socket that never came up has nothing to move.
+    // A socket that never came up has nothing to move; UDP switched on or off
+    // (port 0) creates or drops one, which only a start does.
+    const bool udpToggled = udpChanged && (udp == 0 || m_appliedUdpPort == 0);
     const bool movable = (!tcpChanged || m_listenSocket) && (!udpChanged || m_clientUDP)
-        && (!serverUdpChanged || m_serverUDP);
+        && (!serverUdpChanged || m_serverUDP) && !udpToggled;
     if (!movable || !isNetworkIdle()) {
         logWarning(QStringLiteral("Port change (TCP %1, UDP %2) needs a restart: the core is "
                                   "connected. Still listening on TCP %3, UDP %4.")
@@ -1751,7 +1760,7 @@ void CoreSession::releaseConnectHold()
 
     // Current prefs: the wizard may have switched a network off.
     const bool ed2k = thePrefs.networkED2K() && thePrefs.autoConnect();
-    const bool kad = thePrefs.kadEnabled() && thePrefs.autoConnect();
+    const bool kad = thePrefs.kadUsable() && thePrefs.autoConnect();
     if (m_netSuspended) {
         m_resumeEd2k = ed2k;
         m_resumeKad = kad;

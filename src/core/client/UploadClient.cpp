@@ -692,7 +692,7 @@ void UpDownClient::sendCommentInfo(const KnownFile* file)
 
     SafeMemFile data;
     data.writeUInt8(rating);
-    data.writeLongString(comment, m_unicodeSupport ? UTF8Mode::Raw : UTF8Mode::None);
+    data.writeLongString(comment, peerStringMode());
 
     auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_FILEDESC);
     sendPacket(std::move(packet));
@@ -1098,7 +1098,7 @@ void UpDownClient::processRequestFileName(const uint8* data, uint32 size)
     // Send OP_REQFILENAMEANSWER: hash + filename
     SafeMemFile response;
     response.writeHash16(fileHash);
-    response.writeString(file->fileName(), UTF8Mode::Raw);
+    response.writeString(file->fileName(), peerStringMode());
 
     auto packet = std::make_unique<Packet>(response, OP_EDONKEYPROT, OP_REQFILENAMEANSWER);
     sendPacket(std::move(packet));
@@ -1129,8 +1129,14 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
 
     // Look up the file
     KnownFile* reqFile = findUploadFile(fileIdent.getMD4Hash());
-    if (!reqFile || !reqFile->fileIdentifier().compareRelaxed(fileIdent)) {
+    if (!reqFile) {
         checkFailedFileIdReqs(fileIdent.getMD4Hash());
+        sendFileNotFound(fileIdent.getMD4Hash());
+        return;
+    }
+    // Known hash, other size or AICH root: not found, but no strike
+    // (MFC ListenSocket.cpp:880-891).
+    if (!reqFile->fileIdentifier().compareRelaxed(fileIdent)) {
         sendFileNotFound(fileIdent.getMD4Hash());
         return;
     }
@@ -1180,7 +1186,7 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
             }
             // Write filename answer
             dataOut.writeUInt8(OP_REQFILENAMEANSWER);
-            dataOut.writeString(reqFile->fileName(), UTF8Mode::Raw);
+            dataOut.writeString(reqFile->fileName(), peerStringMode());
             hasResponse = true;
             break;
         }
@@ -1201,6 +1207,9 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
             // MFC ListenSocket.cpp:988-1029. Only the SX2 form carries version + options,
             // and consuming them is what keeps the rest of the multipacket aligned — the
             // version byte would otherwise be read as the next sub-opcode.
+            if (thePrefs.wantsSourceExchangeLog())
+                logDebug(QStringLiteral("SXRecv: Client source request; %1, File=\"%2\"")
+                             .arg(userName(), reqFile->fileName()));
             uint8 requestedVersion = 0;
             uint16 requestedOptions = 0;
             if (subOpcode == OP_REQUESTSOURCES2) {
@@ -1228,7 +1237,10 @@ void UpDownClient::processMultiPacketExt2(const uint8* data, uint32 size)
         }
     }
 
-    if (hasResponse && !answerFNF) {
+    // An EXT2 answer is never empty — it starts with the identifier — so it goes
+    // out whatever was asked (MFC ListenSocket.cpp:1038: length > 16).
+    Q_UNUSED(hasResponse);
+    if (!answerFNF) {
         if (thePrefs.logRawSocketPackets())
             logDebug(QStringLiteral("processMultiPacketExt2: sending OP_MULTIPACKETANSWER_EXT2 size=%1 for %2")
                          .arg(dataOut.length()).arg(reqFile->fileName()));
@@ -1270,7 +1282,8 @@ void UpDownClient::processMultiPacketLegacy(const uint8* data, uint32 size, bool
         return;
     }
 
-    if (hasFileSize && static_cast<uint64>(reqFile->fileSize()) != fileSize) {
+    // size 0 = not given (MFC ListenSocket.cpp:903)
+    if (hasFileSize && fileSize != 0 && static_cast<uint64>(reqFile->fileSize()) != fileSize) {
         sendFileNotFound(fileHash);
         return;
     }
@@ -1311,7 +1324,7 @@ void UpDownClient::processMultiPacketLegacy(const uint8* data, uint32 size, bool
                 }
             }
             dataOut.writeUInt8(OP_REQFILENAMEANSWER);
-            dataOut.writeString(reqFile->fileName(), UTF8Mode::Raw);
+            dataOut.writeString(reqFile->fileName(), peerStringMode());
             hasResponse = true;
             break;
         }
@@ -1330,6 +1343,9 @@ void UpDownClient::processMultiPacketLegacy(const uint8* data, uint32 size, bool
         case OP_REQUESTSOURCES: {
             // Same case as the EXT2 path: MFC ListenSocket.cpp:852-854 routed all three
             // multipacket opcodes into one handler, so both of our handlers need it.
+            if (thePrefs.wantsSourceExchangeLog())
+                logDebug(QStringLiteral("SXRecv: Client source request; %1, File=\"%2\"")
+                             .arg(userName(), reqFile->fileName()));
             uint8 requestedVersion = 0;
             uint16 requestedOptions = 0;
             if (subOpcode == OP_REQUESTSOURCES2) {
@@ -1393,9 +1409,9 @@ void UpDownClient::processMultiPacketAnswerLegacy(const uint8* data, uint32 size
         throw FileException("OP_MULTIPACKETANSWER: unknown file");
     }
 
-    // Find the file we requested
+    // An answer for a file we never asked this client for (MFC ListenSocket.cpp:1085-1088)
     if (!m_reqFile || !md4equ(fileHash, m_reqFile->fileHash()))
-        return;
+        throw FileException("OP_MULTIPACKETANSWER: not the requested file");
 
     // Process sub-responses (same as EXT2 answer)
     while ((dataIn.length() - dataIn.position()) > 0) {
@@ -1461,7 +1477,8 @@ void UpDownClient::processMultiPacketAnswer(const uint8* data, uint32 size)
         if (thePrefs.logRawSocketPackets())
             logDebug(QStringLiteral("processMultiPacketAnswer: hash mismatch or no reqFile, reqFile=%1")
                          .arg(m_reqFile ? m_reqFile->fileName() : QStringLiteral("null")));
-        return;
+        // MFC ListenSocket.cpp:1085-1088
+        throw FileException("OP_MULTIPACKETANSWER_EXT2: not the requested file");
     }
 
     // Same MD4 but a different identifier means a different file — MFC treats that as a
@@ -1493,6 +1510,11 @@ void UpDownClient::processMultiPacketAnswer(const uint8* data, uint32 size)
             processFileStatus(false, dataIn, m_reqFile);
             break;
 
+        case OP_AICHFILEHASHANS:
+            // accepted in both answer opcodes (MFC ListenSocket.cpp:1104-1109)
+            processAICHFileHash(&dataIn, m_reqFile, nullptr);
+            break;
+
         default:
             // Unknown sub-response, can't continue (unknown length).
             // MFC ListenSocket.cpp:1110-1115 throws, which disconnects.
@@ -1500,10 +1522,7 @@ void UpDownClient::processMultiPacketAnswer(const uint8* data, uint32 size)
         }
     }
 
-    // Initiate download if processFileStatus didn't already handle it.
-    // For single-part files, OP_SETREQFILEID is not sent so the response
-    // contains no OP_FILESTATUS — sendStartupLoadReq() is never reached.
-    // Matches the separate-packet OP_REQFILENAMEANSWER handler in onFileRequestReceived.
+    // Ask for a slot unless processFileStatus() / processFileInfo() already did.
     if (m_reqFile && (m_downloadState == DownloadState::Connected
                       || m_downloadState == DownloadState::Connecting)) {
         sendStartupLoadReq();

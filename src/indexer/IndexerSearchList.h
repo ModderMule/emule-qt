@@ -33,6 +33,7 @@ class QTimer;
 namespace eMule::indexer {
 
 class IndexerClient;
+class PasswordFlagStore;
 class IndexerSearch;
 
 class IndexerSearchList : public QObject {
@@ -47,6 +48,10 @@ public:
     /// at startup and whenever the Options page saves, so a new API key takes
     /// effect without a restart.
     void applyPreferences();
+
+    /// The learnt `password` flag counts. Owned here and lent to the feed list,
+    /// so one object writes the file.
+    [[nodiscard]] PasswordFlagStore* passwordFlags() const { return m_passwordFlags; }
 
     [[nodiscard]] QList<IndexerConfig> accounts() const { return m_accounts; }
 
@@ -116,6 +121,7 @@ private:
                    const QString& password, GrabCallback done);
 
     IndexerClient* m_client = nullptr;
+    PasswordFlagStore* m_passwordFlags = nullptr;
     QList<IndexerConfig> m_accounts;
 
     /// Keyed by IndexerConfig::key().

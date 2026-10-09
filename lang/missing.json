@@ -1,24 +1,24 @@
 {
- "Do you want to delete the source files after a successful import?": {
-  "_context": "eMule::ImportDownloadsDialog",
-  "de_DE": "Sollen die Quelldateien nach erfolgreichem Import gelöscht werden?",
-  "es_ES": "¿Desea eliminar los archivos de origen tras una importación correcta?",
-  "fr_FR": "Voulez-vous supprimer les fichiers source après une importation réussie ?",
-  "it_IT": "Eliminare i file di origine dopo un'importazione riuscita?",
-  "ja_JP": "インポートが成功したら元のファイルを削除しますか？",
-  "ko_KR": "가져오기가 성공하면 원본 파일을 삭제하시겠습니까?",
-  "pt_BR": "Deseja excluir os arquivos de origem após uma importação bem-sucedida?",
-  "zh_CN": "导入成功后是否删除源文件？"
- },
- "Do you want to download and use the Kad nodes file from\n%1 ?": {
-  "_context": "eMule::MainWindow",
-  "de_DE": "Soll die Kad-Knotendatei von\n%1 heruntergeladen und verwendet werden?",
-  "es_ES": "¿Desea descargar y usar el archivo de nodos Kad de\n%1 ?",
-  "fr_FR": "Voulez-vous télécharger et utiliser le fichier de nœuds Kad depuis\n%1 ?",
-  "it_IT": "Scaricare e usare il file dei nodi Kad da\n%1 ?",
-  "ja_JP": "次の場所から Kad ノードファイルをダウンロードして使用しますか？\n%1",
-  "ko_KR": "다음 위치에서 Kad 노드 파일을 내려받아 사용하시겠습니까?\n%1",
-  "pt_BR": "Deseja baixar e usar o arquivo de nós Kad de\n%1 ?",
-  "zh_CN": "是否从以下地址下载并使用 Kad 节点文件？\n%1"
- }
+  "Enable UTF-8": {
+    "_context": "eMule::OptionsDialog",
+    "de_DE": "UTF-8 aktivieren",
+    "es_ES": "Activar UTF-8",
+    "fr_FR": "Activer UTF-8",
+    "it_IT": "Abilita UTF-8",
+    "ja_JP": "UTF-8 を有効にする",
+    "ko_KR": "UTF-8 사용",
+    "pt_BR": "Habilitar UTF-8",
+    "zh_CN": "启用 UTF-8"
+  },
+  "Active connections (1:%1)": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "Aktive Verbindungen (1:%1)",
+    "es_ES": "Conexiones activas (1:%1)",
+    "fr_FR": "Connexions actives (1:%1)",
+    "it_IT": "Connessioni attive (1:%1)",
+    "ja_JP": "アクティブ接続 (1:%1)",
+    "ko_KR": "활성 연결 (1:%1)",
+    "pt_BR": "Conexões ativas (1:%1)",
+    "zh_CN": "活跃连接 (1:%1)"
+  }
 }

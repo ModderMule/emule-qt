@@ -252,6 +252,9 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
 
     connect(socket, &ServerSocket::foundSourcesReceived, this,
             [](const uint8* data, uint32 size, bool obfuscated) {
+                if (thePrefs.wantsSourceExchangeLog() && size >= 17)
+                    logDebug(QStringLiteral("SXRecv: Server source response; Count=%1, File=%2")
+                                 .arg(data[16]).arg(md4str(data)));
                 if (theApp.downloadQueue)
                     theApp.downloadQueue->addServerSourceResult(data, size, obfuscated);
             });

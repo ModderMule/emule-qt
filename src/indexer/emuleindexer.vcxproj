@@ -158,6 +158,7 @@
   <ItemGroup>
     <ClCompile Include="IndexerCaps.cpp" />
     <ClCompile Include="IndexerCapsStore.cpp" />
+    <ClCompile Include="PasswordFlagStore.cpp" />
     <ClCompile Include="IndexerClient.cpp" />
     <ClCompile Include="IndexerFeedList.cpp" />
     <ClCompile Include="IndexerFeedMatch.cpp" />
@@ -170,6 +171,7 @@
   <ItemGroup>
     <ClInclude Include="IndexerCaps.h" />
     <ClInclude Include="IndexerCapsStore.h" />
+    <ClInclude Include="PasswordFlagStore.h" />
     <ClInclude Include="IndexerConfig.h" />
     <ClInclude Include="IndexerFeed.h" />
     <ClInclude Include="IndexerFeedMatch.h" />

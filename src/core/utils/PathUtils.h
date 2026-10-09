@@ -65,6 +65,11 @@ enum class AppDir {
 /// full, and only the caller knows which way it wants to be wrong.
 [[nodiscard]] std::optional<std::uint64_t> tryFreeDiskSpace(const QString& path);
 
+#if defined(Q_OS_WIN)
+/// Mark an open file sparse (NTFS): unwritten ranges take no disk space.
+[[nodiscard]] bool setSparseFile(QFile& file);
+#endif
+
 /// Reserve the disk blocks for the first @p size bytes of an open file, so later
 /// writes cannot run out of space or fragment. The logical size is not changed.
 /// @return false when the file system cannot or will not.

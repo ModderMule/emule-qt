@@ -76,6 +76,12 @@ struct SearchResultRow {
     QString aichHash;        ///< empty when the answers gave none, or disagreed
     int kadPublishers = 0;   ///< Kad results: publishers behind the count
     int clientCount = 0;     ///< server results: clients named as sources
+
+    // What a download takes from the result; kept for a restored tab (see fileRef())
+    QCborArray clients;      ///< sources, [[ip, port, serverIP, serverPort], …]
+    QString aichSeed;        ///< AICH root the row and its names agree on
+    bool aichVouched = false;   ///< a server or client gave it, not Kad nodes alone
+    QCborArray aichVoters;   ///< the Kad nodes behind an unvouched root
     std::vector<SearchChildRow> children;   ///< empty unless found under several names
 
     /// Model-assigned identity, never 0. Child indexes carry it as internalId.
@@ -92,6 +98,10 @@ struct SearchResultRow {
     [[nodiscard]] QString magnetLink(const QString& name = {}) const;
     /// What the daemon needs to fetch a meta row whose search is gone (a restored tab).
     [[nodiscard]] QCborMap metaRef() const;
+    /// The eD2K row itself, for a daemon that no longer has its search (a restored
+    /// tab): details, Kad comments, spam marking, the peer preview and a download's
+    /// sources and AICH root work on a file built from this.
+    [[nodiscard]] QCborMap fileRef() const;
 };
 
 /// A row of the list as the panel acts on it: the file, and the name it was picked
@@ -174,6 +184,9 @@ public:
 
     /// Update the knownType for a specific row (triggers dataChanged).
     void setKnownType(int row, int knownType);
+
+    /// Set the spam flag of the file with @p hash (a restored tab: no daemon snapshot).
+    void setSpam(const QString& hash, bool spam);
 
     /// Batch-update knownType by hash. Map: hash → knownType.
     void updateKnownTypes(const QHash<QString, int>& typesByHash);

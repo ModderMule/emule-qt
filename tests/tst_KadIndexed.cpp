@@ -79,6 +79,7 @@ private slots:
     void clean_dropsExpiredNotes();
     void addNotes_fullIndexStillTakesReplacements();
     void addNotes_acceptEntryWithoutPorts();
+    void addKeyword_hotKeywordStillTakesNewFiles();
     void persistent_roundTripsKeywordsSourcesAndLoad();
     void persistent_ignoresAnExpiredKeyFile();
 };
@@ -539,6 +540,31 @@ void tst_KadIndexed::addNotes_fullIndexStillTakesReplacements()
     delete refused;
 
     indexed.m_totalIndexNotes = real;
+}
+
+// C98: above 45000 files a keyword refuses refreshes of files it holds, so that
+// new files still get in (MFC Indexed.cpp:400-406). The port refused both.
+void tst_KadIndexed::addKeyword_hotKeywordStillTakesNewFiles()
+{
+    Indexed indexed;
+    const UInt128 keyID(uint32{100});
+    uint8 load = 0;
+    constexpr uint32 kHot = KADEMLIAMAXINDEX - 5000 + 1;
+    for (uint32 i = 0; i < kHot; ++i)
+        QVERIFY(indexed.addKeyword(keyID, UInt128(i + 1),
+                                   makeKeyEntry(0x4D000000 + i, QStringLiteral("f%1").arg(i)), load));
+
+    // a new file
+    load = 0;
+    QVERIFY(indexed.addKeyword(keyID, UInt128(kHot + 1),
+                               makeKeyEntry(0x4E000001, QStringLiteral("new")), load));
+    QVERIFY(load < 100);
+
+    // a refresh of one we hold
+    auto* refresh = makeKeyEntry(0x4D000000, QStringLiteral("f0"));
+    QVERIFY(!indexed.addKeyword(keyID, UInt128(uint32{1}), refresh, load));
+    QCOMPARE(load, uint8{100});
+    delete refresh;
 }
 
 void tst_KadIndexed::addNotes_acceptEntryWithoutPorts()

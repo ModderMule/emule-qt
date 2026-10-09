@@ -239,10 +239,11 @@ void UpDownClient::sendFileRequest()
                 m_reqFile->writeCompleteSourcesCount(data);
         }
 
-        // Sub-request: OP_SETREQFILEID — always include so the server sends
-        // back OP_FILESTATUS (needed to set m_completeSource/m_partStatus).
-        // MFC: unconditionally included when PeerCache is not active.
-        data.writeUInt8(OP_SETREQFILEID);
+        // Sub-request: OP_SETREQFILEID, for the part status. Not for a single-part
+        // file: whoever shares that has all of it — processFileInfo() fills the
+        // status in (MFC DownloadClient.cpp:303-304).
+        if (m_reqFile->partCount() > 1)
+            data.writeUInt8(OP_SETREQFILEID);
 
         if (isEmuleClient()) {
             setRemoteQueueFull(true);
@@ -288,9 +289,8 @@ void UpDownClient::sendFileRequest()
             sendPacket(std::move(fnPacket));
         }
 
-        // OP_SETREQFILEID — always send so we receive OP_FILESTATUS back.
-        // MFC: unconditionally included when PeerCache is not active.
-        {
+        // OP_SETREQFILEID, for multi-part files only (MFC DownloadClient.cpp:370).
+        if (m_reqFile->partCount() > 1) {
             SafeMemFile idData;
             idData.writeHash16(m_reqFile->fileHash());
             auto idPacket = std::make_unique<Packet>(idData, OP_EDONKEYPROT, OP_SETREQFILEID);
@@ -362,11 +362,36 @@ void UpDownClient::sendStartupLoadReq()
 void UpDownClient::processFileInfo(SafeMemFile& data, PartFile* file)
 {
     // Read filename from peer response
-    const QString filename = data.readString(true);
+    const QString filename = data.readString(m_unicodeSupport);
     m_clientFilename = filename;
 
     if (file && file->fileName().isEmpty())
         file->setFileName(filename, true);
+
+    // A single-part file is not asked for its status: whoever answers the name
+    // request shares it, so has it all (MFC DownloadClient.cpp:467-496).
+    if (!file || file->partCount() != 1)
+        return;
+    m_partCount = 1;
+    m_partStatus.assign(1, 1);
+    m_completeSource = true;
+    requestHashSetOrUploadSlot(file);
+    file->updatePartsInfo();
+}
+
+void UpDownClient::requestHashSetOrUploadSlot(PartFile* file)
+{
+    // only while this connection is the one asking
+    if (m_downloadState != DownloadState::Connected && m_downloadState != DownloadState::Connecting)
+        return;
+    if (file->isMD4HashsetNeeded()
+        || (file->isAICHPartHashsetNeeded() && supportsFileIdentifiers()
+            && reqFileAICHHash() != nullptr
+            && *reqFileAICHHash() == file->fileIdentifier().getAICHHash())) {
+        sendHashSetRequest();
+    } else {
+        sendStartupLoadReq();
+    }
 }
 
 // ===========================================================================
@@ -375,8 +400,6 @@ void UpDownClient::processFileInfo(SafeMemFile& data, PartFile* file)
 
 void UpDownClient::processFileStatus(bool udpPacket, SafeMemFile& data, PartFile* file)
 {
-    Q_UNUSED(udpPacket);
-
     // The count on the wire is the ED2K one (size/PARTSIZE + 1). Our own part count is
     // one lower for a size that is an exact multiple of PARTSIZE, so the two must not be
     // conflated — MFC DownloadClient.cpp:515-540 checks the ED2K count and then sizes
@@ -439,22 +462,17 @@ void UpDownClient::processFileStatus(bool udpPacket, SafeMemFile& data, PartFile
         }
     }
 
-    if (!partsNeeded) {
+    if (udpPacket) {
+        // A UDP answer changes the state and nothing else: no swap (the caller
+        // goes on with this file), no TCP request. MFC DownloadClient.cpp:565-568.
+        setDownloadState(partsNeeded ? DownloadState::OnQueue : DownloadState::NoNeededParts);
+    } else if (!partsNeeded) {
         setDownloadState(DownloadState::NoNeededParts);
         swapToAnotherFile(
             QStringLiteral("A4AF for NNP file. processFileStatus() TCP"),
             true, false, false, nullptr, true, true);
-    } else if (m_downloadState == DownloadState::Connected
-               || m_downloadState == DownloadState::Connecting) {
-        // Request hashset or upload slot — only when actively connecting via TCP
-        if (file->isMD4HashsetNeeded()
-            || (file->isAICHPartHashsetNeeded() && supportsFileIdentifiers()
-                && reqFileAICHHash() != nullptr
-                && *reqFileAICHHash() == file->fileIdentifier().getAICHHash())) {
-            sendHashSetRequest();
-        } else {
-            sendStartupLoadReq();
-        }
+    } else {
+        requestHashSetOrUploadSlot(file);
     }
 
     // Availability and the complete-source estimate are rebuilt from every source, which
@@ -1741,7 +1759,8 @@ bool UpDownClient::doSwap(PartFile* swapTo, bool removeCompletely, const QString
     resetFileStatusInfo();
     m_sentCancelTransfer = false;
 
-    logDebug(QStringLiteral("Source swap: %1 from %2 to %3 reason: %4").arg(userName(), oldFile->fileName(), swapTo->fileName(), reason));
+    if (thePrefs.wantsA4AFLog())
+        logDebug(QStringLiteral("Source swap: %1 from %2 to %3 reason: %4").arg(userName(), oldFile->fileName(), swapTo->fileName(), reason));
 
     return true;
 }

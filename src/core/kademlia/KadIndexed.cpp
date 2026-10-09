@@ -145,11 +145,6 @@ bool Indexed::addKeywordLocked(const UInt128& keyID, const UInt128& sourceID,
             outLoad = 100;
             return false;
         }
-        // Back-pressure before this keyword saturates. MFC Indexed.cpp:402.
-        if (perKeyCount > KADEMLIAMAXINDEX - 5000) {
-            outLoad = 100;
-            return false;
-        }
     } else {
         keyHash = new KeyHash();
         keyHash->keyID = keyID;
@@ -162,6 +157,14 @@ bool Indexed::addKeywordLocked(const UInt128& keyID, const UInt128& sourceID,
     auto srcIt = keyHash->mapSource.find(srcKey);
     if (srcIt != keyHash->mapSource.end()) {
         source = srcIt->second;
+
+        // Hot keyword: refuse refreshes of files we hold, so new files still get
+        // in up to the hard cap. MFC Indexed.cpp:400-406.
+        if (!source->entryList.empty()
+            && keyHash->mapSource.size() > KADEMLIAMAXINDEX - 5000) {
+            outLoad = 100;
+            return false;
+        }
 
         // Replace the stored entry that describes the same file size, folding
         // its publisher/AICH/filename history into the *new* entry. The merge
@@ -396,14 +399,15 @@ void Indexed::sendValidSourceResult(const UInt128& keyID, uint32 ip, uint16 port
             break;
         if (source->entryList.empty())
             continue;
-        auto* entry = source->entryList.front();
-        // MFC fileSize filter: match exact size or accept if either is 0
-        if (fileSize && entry->m_size && entry->m_size != fileSize)
-            continue;
+        // skipped entries are counted before the size filter (MFC Indexed.cpp:723-728)
         if (count < 0) {
             ++count;
             continue;
         }
+        auto* entry = source->entryList.front();
+        // MFC fileSize filter: match exact size or accept if either is 0
+        if (fileSize && entry->m_size && entry->m_size != fileSize)
+            continue;
         ++count;
 
         SafeMemFile tmpBuf;

@@ -1355,11 +1355,26 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
                 msg.append(static_cast<qint64>(tab->searchID));
                 msg.append(result->hash);
                 msg.append(markAsSpam);
-                m_ipc->sendRequest(std::move(msg), [this](const IpcMessage& resp) {
-                    IpcFeedback::checkOrWarn(resp, this, tr("Mark as Spam"));
-                });
+                if (tab->searchID != 0) {
+                    m_ipc->sendRequest(std::move(msg), [this](const IpcMessage& resp) {
+                        IpcFeedback::checkOrWarn(resp, this, tr("Mark as Spam"));
+                    });
+                    continue;
+                }
+                // A restored tab: no search to re-fetch, so the row goes along and
+                // takes the flag here once the daemon has filed it.
+                msg.append(result->fileRef());
+                m_ipc->sendRequest(std::move(msg),
+                    [this, model = QPointer(tab->model), hash = result->hash,
+                     markAsSpam](const IpcMessage& resp) {
+                        if (IpcFeedback::checkOrWarn(resp, this, tr("Mark as Spam")) && model) {
+                            model->setSpam(hash, markAsSpam);
+                            scheduleSaveSearches();
+                        }
+                    });
             }
-            requestSearchResults(tab->searchID);   // spam re-scoring changed the rows
+            if (tab->searchID != 0)
+                requestSearchResults(tab->searchID);   // spam re-scoring changed the rows
         });
     }
 
@@ -1541,6 +1556,10 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
             row.aichHash           = m.value(QStringLiteral("aichHash")).toString();
             row.kadPublishers      = static_cast<int>(m.value(QStringLiteral("kadPublishers")).toInteger());
             row.clientCount        = static_cast<int>(m.value(QStringLiteral("clientCount")).toInteger());
+            row.clients            = m.value(QStringLiteral("clients")).toArray();
+            row.aichSeed           = m.value(QStringLiteral("aichSeed")).toString();
+            row.aichVouched        = m.value(QStringLiteral("aichVouched")).toBool();
+            row.aichVoters         = m.value(QStringLiteral("aichVoters")).toArray();
             for (const auto& childVal : m.value(QStringLiteral("children")).toArray()) {
                 const auto c = childVal.toMap();
                 SearchChildRow child;
@@ -1711,8 +1730,10 @@ void SearchPanel::sendDownloadRequest(const QModelIndex& proxyIndex, int categor
     msg.append(QString());   // no link: the daemon builds one
     msg.append(static_cast<qint64>(category));
     msg.append(static_cast<qint64>(tab->searchID));   // daemon seeds sources + AICH from the result
-    if (paused)
-        msg.append(*paused);
+    // null: the "add new files paused" option decides
+    msg.append(paused ? QCborValue(*paused) : QCborValue());
+    if (tab->searchID == 0)
+        msg.append(result->fileRef());   // restored tab: the row is all there is to seed from
     // Model and hash, not tab index and row: the tab at that index can be another
     // search by the time the reply lands (an indexer one has no model at all), and
     // the rows move with every result push.
@@ -1996,6 +2017,17 @@ QJsonObject ed2kRowToJson(const SearchResultRow& row)
         o[QStringLiteral("aichHash")]        = row.aichHash;
     o[QStringLiteral("kadPublishers")]       = row.kadPublishers;
     o[QStringLiteral("clientCount")]         = row.clientCount;
+    // a restored row's download and peer preview start from these
+    if (row.previewPossible)
+        o[QStringLiteral("previewPossible")] = true;
+    if (!row.clients.isEmpty())
+        o[QStringLiteral("clients")]         = row.clients.toJsonArray();
+    if (!row.aichSeed.isEmpty()) {
+        o[QStringLiteral("aichSeed")]        = row.aichSeed;
+        o[QStringLiteral("aichVouched")]     = row.aichVouched;
+        if (!row.aichVoters.isEmpty())
+            o[QStringLiteral("aichVoters")]  = row.aichVoters.toJsonArray();
+    }
     if (!row.children.empty()) {
         QJsonArray children;
         for (const SearchChildRow& c : row.children) {
@@ -2054,6 +2086,11 @@ SearchResultRow ed2kRowFromJson(const QJsonObject& r)
     row.aichHash            = r[QStringLiteral("aichHash")].toString();
     row.kadPublishers       = r[QStringLiteral("kadPublishers")].toInt();
     row.clientCount         = r[QStringLiteral("clientCount")].toInt();
+    row.previewPossible     = r[QStringLiteral("previewPossible")].toBool();
+    row.clients             = QCborArray::fromJsonArray(r[QStringLiteral("clients")].toArray());
+    row.aichSeed            = r[QStringLiteral("aichSeed")].toString();
+    row.aichVouched         = r[QStringLiteral("aichVouched")].toBool();
+    row.aichVoters          = QCborArray::fromJsonArray(r[QStringLiteral("aichVoters")].toArray());
     for (const auto& childVal : r[QStringLiteral("children")].toArray()) {
         const QJsonObject c = childVal.toObject();
         SearchChildRow child;
@@ -2301,9 +2338,8 @@ void SearchPanel::requestPeerPreview(uint32_t searchID, const QString& hash)
 {
     if (!m_ipc || !m_ipc->isConnected())
         return;
-    IpcMessage msg(IpcMsgType::RequestSearchPreview);
-    msg.append(static_cast<qint64>(searchID));
-    msg.append(hash);
+    // Same shape as the details request: [searchID, hash, row of a restored tab]
+    IpcMessage msg = searchDetailsRequest(searchID, hash, IpcMsgType::RequestSearchPreview);
     m_ipc->sendRequest(std::move(msg), [this](const IpcMessage& resp) {
         if (IpcFeedback::checkOrWarn(resp, this, tr("Preview")))
             StatusBarNotifier::post(tr("Preview requested - please wait"), 4000);
@@ -2366,21 +2402,16 @@ void SearchPanel::fetchAndShowSearchDetails(uint32_t searchID, const QString& ha
     if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
         return;
 
-    IpcMessage msg(IpcMsgType::GetSearchResultDetails);
-    msg.append(static_cast<qint64>(searchID));
-    msg.append(hash);
-    m_ipc->sendRequest(std::move(msg),
+    m_ipc->sendRequest(searchDetailsRequest(searchID, hash),
         [this, page, searchID, hash](const IpcMessage& resp) {
             if (!resp.fieldBool(0))
                 return;
             auto* dlg = new SearchDetailDialog(resp.field(1).toMap(), page, this);
 
-            // Two-field request, hence the factory overload rather than the opcode one.
-            const auto makeRequest = [searchID](const QString& key) {
-                IpcMessage req(IpcMsgType::GetSearchResultDetails);
-                req.append(static_cast<qint64>(searchID));
-                req.append(key);
-                return req;
+            // Multi-field request, hence the factory overload rather than the opcode
+            // one. The dialog is our child, so `this` outlives every use.
+            const auto makeRequest = [this, searchID](const QString& key) {
+                return searchDetailsRequest(searchID, key);
             };
             connectKadNotesSearch(dlg, m_ipc, makeRequest);
             connectCommentFilter(dlg, m_ipc);
@@ -2391,6 +2422,30 @@ void SearchPanel::fetchAndShowSearchDetails(uint32_t searchID, const QString& ha
             connectDetailNavigation(dlg, m_ipc, makeRequest);
             dlg->show();
         });
+}
+
+IpcMessage SearchPanel::searchDetailsRequest(uint32_t searchID, const QString& hash,
+                                             IpcMsgType type)
+{
+    IpcMessage req(type);
+    req.append(static_cast<qint64>(searchID));
+    req.append(hash);
+    if (searchID != 0)
+        return req;
+
+    // A restored tab: the daemon has no such search, so the row goes along. The hash
+    // may be the daemon's spelling (upper case) when the dialog asks again.
+    const auto* tab = currentTab();
+    if (!tab || tab->isIndexer() || !tab->model)
+        return req;
+    for (int row = 0; row < tab->model->resultCount(); ++row) {
+        const auto* result = tab->model->resultAt(row);
+        if (result && result->hash.compare(hash, Qt::CaseInsensitive) == 0) {
+            req.append(result->fileRef());
+            break;
+        }
+    }
+    return req;
 }
 
 QModelIndex SearchPanel::resultIndexFor(uint32_t searchID, const QString& hash)

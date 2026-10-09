@@ -41,6 +41,11 @@ public:
     /// request in queryNextClient(), so result validation can be exercised.
     static void debugAddUsedTestClient(uint32 ip, uint16 udpPort);
 
+    /// Test seam: the used clients outlive reset(); tests start without them.
+    static void debugClearUsedTestClients();
+    [[nodiscard]] static qsizetype debugPossibleTestClients();
+    [[nodiscard]] static qsizetype debugUsedTestClients();
+
     /// Test seam: how many firewall checks have reported so far.
     [[nodiscard]] static uint8 debugChecksFinished();
     /// Test seam: how many firewall checks are still awaiting a result.

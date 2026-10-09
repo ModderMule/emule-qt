@@ -158,6 +158,8 @@ private slots:
     void fakeVerdict_coversCatalogueRows();
     void kadKeywordResult_adoptsTheOneAgreedAICHHash();
     void kadKeywordResult_ignoresRareOrCompetingAICHHashes();
+    void restoredFile_takesNotesAndSpamMarkWithoutASearch();
+    void rowCarriesItsDownloadSeed();
 };
 
 void tst_SearchList::construct()
@@ -2311,6 +2313,107 @@ void tst_SearchList::fakeVerdict_followsSpamMarkAndNotes()
     QVERIFY(verdict.has(FakeReason::BadSignalComment));
     QVERIFY(verdict.has(FakeReason::BadRating));
     QVERIFY(verdict.score >= 35);
+}
+
+// A row of a tab the GUI restored from disk: no search holds it (searchID 0)
+void tst_SearchList::restoredFile_takesNotesAndSpamMarkWithoutASearch()
+{
+    SearchList list;
+    uint8 hash[16];
+    std::memset(hash, 0x6E, 16);
+    QVERIFY(list.restoredFile(hash) == nullptr);
+    QVERIFY(list.searchFileByHash(hash, 0) == nullptr);
+    // nothing holds the hash: the note is nobody's
+    QVERIFY(!list.addNotes(hash, QByteArray(16, 'p'), 4, QStringLiteral("fine")));
+
+    auto stub = std::make_unique<SearchFile>();
+    stub->setFileHash(hash);
+    stub->setFileName(QStringLiteral("Some Film 2024.mkv"), true);
+    stub->setFileSize(700u << 20);
+    SearchFile* row = list.adoptRestoredFile(std::move(stub));
+    QVERIFY(row != nullptr);
+    QCOMPARE(list.restoredFile(hash), row);
+    QCOMPARE(row->searchID(), 0u);
+    QVERIFY(!row->nameWithoutKeywords().isEmpty());
+
+    // a second adoption of the hash keeps the first, and its notes
+    auto again = std::make_unique<SearchFile>();
+    again->setFileHash(hash);
+    again->setFileName(QStringLiteral("other.mkv"), true);
+    QCOMPARE(list.adoptRestoredFile(std::move(again)), row);
+
+    QSignalSpy updated(&list, &SearchList::resultUpdated);
+    list.setNotesSearchStatus(hash, true);
+    QVERIFY(row->isKadCommentSearchRunning());
+    QVERIFY(list.addNotes(hash, QByteArray(16, 'p'), 4, QStringLiteral("fine")));
+    list.setNotesSearchStatus(hash, false);
+    QVERIFY(!row->isKadCommentSearchRunning());
+    QCOMPARE(row->kadNotesCache().size(), size_t{1});
+    QCOMPARE(updated.count(), 0);   // in no list: never pushed
+
+    list.markFileAsSpam(row, true);
+    QVERIFY(row->isConsideredSpam());
+    QCOMPARE(row->fakeVerdict().band, Confidence::Spam);
+    list.markFileAsNotSpam(row, true);
+    QVERIFY(!row->isConsideredSpam());
+
+    list.clear();
+    QVERIFY(list.restoredFile(hash) == nullptr);
+}
+
+void tst_SearchList::rowCarriesItsDownloadSeed()
+{
+    const uint8 rawA[20] = {0xA1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+    const uint8 rawB[20] = {0xB2, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+    uint8 hash[16];
+    std::memset(hash, 0x7D, 16);
+
+    // nothing to seed from: no keys at all
+    SearchFile bare;
+    bare.setFileHash(hash);
+    QCborMap m = Ipc::toCbor(bare);
+    QVERIFY(!m.contains(QStringLiteral("clients")));
+    QVERIFY(!m.contains(QStringLiteral("aichSeed")));
+
+    // a server row: its clients (no duplicates), its root a fact
+    SearchFile parent;
+    parent.setFileHash(hash);
+    parent.fileIdentifier().setAICHHash(AICHHash(rawA));
+    parent.addClient({0x0A0B0C0D, 4662, 0x01020304, 4661});
+    SearchFile child;
+    child.setFileHash(hash);
+    child.fileIdentifier().setAICHHash(AICHHash(rawA));
+    child.addClient({0x0A0B0C0D, 4662, 0x01020304, 4661});
+    child.addClient({0x0E0F1011, 4672, 0, 0});
+    parent.addListChild(&child);
+    m = Ipc::toCbor(parent);
+    const QCborArray clients = m.value(QStringLiteral("clients")).toArray();
+    QCOMPARE(clients.size(), 2);
+    QCOMPARE(clients.at(0).toArray().at(0).toInteger(), qint64{0x0A0B0C0D});
+    QCOMPARE(clients.at(1).toArray().at(1).toInteger(), qint64{4672});
+    QCOMPARE(m.value(QStringLiteral("aichSeed")).toString(), AICHHash(rawA).getString());
+    QVERIFY(m.value(QStringLiteral("aichVouched")).toBool());
+    QVERIFY(!m.contains(QStringLiteral("aichVoters")));
+
+    // two names, two roots: none is handed on
+    child.fileIdentifier().setAICHHash(AICHHash(rawB));
+    m = Ipc::toCbor(parent);
+    QVERIFY(!m.contains(QStringLiteral("aichSeed")));
+    QCOMPARE(m.value(QStringLiteral("clients")).toArray().size(), 2);
+
+    // known from Kad nodes alone: a claim, with who made it (capped)
+    SearchFile kad;
+    kad.setKadResult(true);
+    kad.setFileHash(hash);
+    kad.fileIdentifier().setAICHHash(AICHHash(rawA));
+    for (int i = 1; i <= 40; ++i)
+        kad.addAICHVoter(Address::fromString(QStringLiteral("88.1.0.%1").arg(i)));
+    m = Ipc::toCbor(kad);
+    QCOMPARE(m.value(QStringLiteral("aichSeed")).toString(), AICHHash(rawA).getString());
+    QVERIFY(!m.value(QStringLiteral("aichVouched")).toBool());
+    QCOMPARE(m.value(QStringLiteral("aichVoters")).toArray().size(), 16);
+    QCOMPARE(m.value(QStringLiteral("aichVoters")).toArray().at(0).toString(),
+             QStringLiteral("88.1.0.1"));
 }
 
 void tst_SearchList::fakeVerdict_usesNamesOnRecord()

@@ -448,6 +448,8 @@ Status startKad(const QString& host, uint16 port)
         return unavailable(QStringLiteral("Kademlia"));
     if (!BindAddress::outboundAllowed())
         return Status::fail(409, BindAddress::current().reason);
+    if (thePrefs.udpPort() == 0)
+        return Status::fail(409, QStringLiteral("Kad needs UDP, which is disabled (UDP port 0)"));
 
     // MFC starts Kad before bootstrapping from an address (KademliaWnd.cpp:282-286)
     if (!kad->isRunning())

@@ -414,7 +414,6 @@ private:
     QCheckBox*    m_cryptLayerDisableCheck = nullptr;
     QCheckBox*    m_useSecureIdentCheck = nullptr;
     QCheckBox*    m_enableSearchResultFilterCheck = nullptr;
-    QCheckBox*    m_warnUntrustedFilesCheck = nullptr;
     QLineEdit*    m_ipFilterUpdateUrlEdit = nullptr;
 
     // Scheduler page controls
@@ -563,7 +562,6 @@ private:
     QSpinBox*     m_maxHalfOpenSpin = nullptr;
     QSpinBox*     m_serverKeepAliveSpin = nullptr;
     QSpinBox*     m_minFreeDiskSpaceSpin = nullptr;
-    QSpinBox*     m_logLevelSpin = nullptr;
     QCheckBox*    m_useCreditSystemCheck = nullptr;
     QCheckBox*    m_rememberUploadQueueCheck = nullptr;
     QCheckBox*    m_filterLANIPsCheck = nullptr;
@@ -618,8 +616,6 @@ private:
     QCheckBox*    m_allocFullFileCheck = nullptr;
 #ifdef Q_OS_WIN
     // Windows-only Extended page controls
-    QCheckBox*    m_autotakeEd2kCheck = nullptr;
-    QCheckBox*    m_winFirewallCheck = nullptr;
     QCheckBox*    m_sparsePartFilesCheck = nullptr;
     QCheckBox*    m_resolveShellLinksCheck = nullptr;
     QButtonGroup* m_multiUserSharingGroup = nullptr;

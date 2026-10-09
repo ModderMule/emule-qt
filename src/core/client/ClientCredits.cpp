@@ -305,6 +305,8 @@ bool ClientCreditsList::loadList(const QString& filePath)
 bool ClientCreditsList::saveList(const QString& filePath) const
 {
     const QString tmpPath = filePath + QStringLiteral(".tmp");
+    if (thePrefs.wantsFileSavingLog())
+        logDebug(QStringLiteral("Saving clients credit list file \"%1\"").arg(filePath));
 
     try {
         QFile::remove(tmpPath);

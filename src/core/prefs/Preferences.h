@@ -16,6 +16,7 @@
 #include "stats/NetworkCounters.h"
 #include "utils/Types.h"
 
+#include <functional>
 #include <QByteArray>
 #include <QCborMap>
 #include <QList>
@@ -387,10 +388,13 @@ public:
     [[nodiscard]] uint32 maxLogLines() const;
     void setMaxLogLines(uint32 val);
 
-    [[nodiscard]] int logLevel() const;
-    void setLogLevel(int val);
 
     [[nodiscard]] bool logSourceExchange() const;
+    /// MFC getters: the option counts only with verbose logging on.
+    [[nodiscard]] bool wantsSourceExchangeLog() const { return verbose() && logSourceExchange(); }
+    [[nodiscard]] bool wantsFileSavingLog() const { return verbose() && logFileSaving(); }
+    [[nodiscard]] bool wantsA4AFLog() const { return verbose() && logA4AF(); }
+    [[nodiscard]] bool wantsRatingDescLog() const { return verbose() && logRatingDescReceived(); }
     void setLogSourceExchange(bool val);
 
     [[nodiscard]] bool logBannedClients() const;
@@ -536,11 +540,7 @@ public:
     void setAllocFullFile(bool val);
 
 #ifdef Q_OS_WIN
-    [[nodiscard]] bool autotakeEd2kLinks() const;
-    void setAutotakeEd2kLinks(bool val);
 
-    [[nodiscard]] bool openPortsOnWinFirewall() const;
-    void setOpenPortsOnWinFirewall(bool val);
 
     [[nodiscard]] bool sparsePartFiles() const;
     void setSparsePartFiles(bool val);
@@ -1175,8 +1175,6 @@ public:
     [[nodiscard]] uint32 ipFilterLevel() const;
     void setIpFilterLevel(uint32 val);
 
-    [[nodiscard]] bool warnUntrustedFiles() const;
-    void setWarnUntrustedFiles(bool val);
 
     [[nodiscard]] QString ipFilterUpdateUrl() const;
     void setIpFilterUpdateUrl(const QString& val);
@@ -1345,6 +1343,9 @@ public:
     // -- Kademlia -------------------------------------------------------------
 
     [[nodiscard]] bool kadEnabled() const;
+    /// Kad runs over the client UDP port: without one it stays off
+    /// (MFC GetNetworkKademlia()).
+    [[nodiscard]] bool kadUsable() const { return kadEnabled() && udpPort() != 0; }
     void setKadEnabled(bool val);
 
     [[nodiscard]] uint32 kadUDPKey() const;
@@ -1679,6 +1680,8 @@ public:
     // -- Static utilities -----------------------------------------------------
 
     /// Generate a random TCP port in [4096, 65095].
+    /// A port in 4096..65095 that @p isFree accepts (some port after 50 refusals).
+    [[nodiscard]] static uint16 randomPort(const std::function<bool(uint16)>& isFree);
     [[nodiscard]] static uint16 randomTCPPort();
 
     /// Generate a random UDP port in [4096, 65095].

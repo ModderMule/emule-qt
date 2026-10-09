@@ -240,9 +240,29 @@ void tst_KadPrefs::setExternKadPort_consensusCheck()
     prefs.setExternKadPort(5000, 0x02020202);
     QCOMPARE(prefs.externalKadPort(), uint16{5000}); // 2 of 2 agree → set
 
+    // Agreement ends the lookup, though only two nodes were asked (MFC pads the list).
+    QVERIFY(!prefs.findExternKadPort(false));
+
     // Different port from a third IP should not change it
     prefs.setExternKadPort(6000, 0x03030303);
     QCOMPARE(prefs.externalKadPort(), uint16{5000}); // still 5000
+
+    // One answer per IP: a node cannot outvote itself.
+    QVERIFY(prefs.findExternKadPort(true));
+    prefs.setExternKadPort(5000, 0x01010101);
+    prefs.setExternKadPort(6000, 0x01010101);   // ignored
+    prefs.setExternKadPort(6000, 0x02020202);
+    QVERIFY(prefs.findExternKadPort(false));    // 5000 vs 6000: no agreement yet
+    prefs.setExternKadPort(5000, 0x03030303);
+    QCOMPARE(prefs.externalKadPort(), uint16{5000});
+
+    // Three different answers: unreliable, no external port.
+    QVERIFY(prefs.findExternKadPort(true));
+    prefs.setExternKadPort(7001, 0x01010101);
+    prefs.setExternKadPort(7002, 0x02020202);
+    prefs.setExternKadPort(7003, 0x03030303);
+    QVERIFY(!prefs.findExternKadPort(false));
+    QCOMPARE(prefs.externalKadPort(), uint16{0});
 }
 
 // ---------------------------------------------------------------------------

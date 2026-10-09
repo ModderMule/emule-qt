@@ -9,6 +9,7 @@
 #include "files/KnownFile.h"
 #include "files/KnownFileList.h"
 #include "client/ClientList.h"
+#include "client/UpDownClient.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadSearch.h"
@@ -409,13 +410,94 @@ std::vector<KnownFile*> SharedFileList::filesInDirectory(const QString& dir) con
 {
     QMutexLocker locker(&m_mutex);
     std::vector<KnownFile*> files;
-    const auto it = m_byDirectory.find(dir);
-    if (it == m_byDirectory.end())
+    const auto collect = [&](const std::unordered_set<MD4Key>& keys) {
+        for (const MD4Key& key : keys)
+            if (const auto fileIt = m_map.find(key); fileIt != m_map.end())
+                files.push_back(fileIt->second);
+    };
+    if (const auto it = m_byDirectory.find(dir); it != m_byDirectory.end()) {
+        collect(it->second);
         return files;
-    files.reserve(it->second.size());
-    for (const MD4Key& key : it->second)
-        if (const auto fileIt = m_map.find(key); fileIt != m_map.end())
-            files.push_back(fileIt->second);
+    }
+    // another spelling of the same path (MFC EqualPaths)
+    const QString wanted = pathKey(dir);
+    for (const auto& [stored, keys] : m_byDirectory)
+        if (pathKey(stored) == wanted)
+            collect(keys);
+    return files;
+}
+
+std::vector<QString> SharedFileList::browseDirectoryNames()
+{
+    resetPseudoDirNames();   // purge stale names
+    std::vector<QString> names;
+    const auto add = [&](const QStringList& dirs) {
+        for (const QString& dir : dirs) {
+            if (dir.isEmpty())
+                continue;
+            if (const QString name = pseudoDirName(dir); !name.isEmpty())
+                names.push_back(name);
+        }
+    };
+    add(thePrefs.sharedDirs());
+    add(thePrefs.allIncomingDirs());
+    return names;
+}
+
+QString SharedFileList::pseudoDirName(const QString& dir)
+{
+    const ShareRules rules = shareRules();
+    if (!shouldBeShared(rules, dir, {}, false))
+        return {};
+    const QString key = pathKey(dir);
+    for (const QString& named : std::as_const(m_pseudoDirNames))
+        if (pathKey(named) == key)
+            return {};   // not sending the same directory again
+
+    // Last component; a shared parent is kept in front, an unshared one is never named.
+    QString rest = QDir::cleanPath(dir);
+    QString name;
+    for (qsizetype pos; (pos = rest.lastIndexOf(QLatin1Char('/'))) >= 0;) {
+        name.prepend(rest.mid(pos));
+        rest.truncate(pos);
+        if (rest.isEmpty() || !shouldBeShared(rules, rest, {}, false))
+            break;
+    }
+    if (name.size() <= 1)
+        name = rest.isEmpty() ? QStringLiteral("/") : rest;   // a root directory
+    else
+        name.remove(0, 1);
+
+    if (m_pseudoDirNames.contains(name)) {
+        QString unique;
+        for (int i = 2;; ++i) {
+            unique = QStringLiteral("%1_%2").arg(name).arg(i);
+            if (!m_pseudoDirNames.contains(unique))
+                break;
+            if (i > 200)
+                return {};
+        }
+        name = unique;
+    }
+    m_pseudoDirNames.insert(name, dir);
+    return name;
+}
+
+QString SharedFileList::dirNameByPseudo(const QString& pseudoName) const
+{
+    return m_pseudoDirNames.value(pseudoName);
+}
+
+std::vector<KnownFile*> SharedFileList::singleSharedFilesForBrowse() const
+{
+    const ShareRules rules = shareRules();
+    std::vector<KnownFile*> files;
+    QMutexLocker locker(&m_mutex);
+    for (const auto& [key, file] : m_map) {
+        // part files are listed as "!Incomplete Files"
+        if (!file->isPartFile() && !shouldBeShared(rules, file->sharedDirectory(), {}, false))
+            files.push_back(file);
+    }
     return files;
 }
 
@@ -1945,6 +2027,17 @@ void SharedFileList::warmContainerChecks()
 
 std::vector<Tag> SharedFileList::offeredTags(KnownFile& file, const Server* srv)
 {
+    return offeredTagsFor(file, srv, false, 0);
+}
+
+std::vector<Tag> SharedFileList::offeredTagsForClient(KnownFile& file, uint32 emuleVersion)
+{
+    return offeredTagsFor(file, nullptr, true, emuleVersion);
+}
+
+std::vector<Tag> SharedFileList::offeredTagsFor(KnownFile& file, const Server* srv,
+                                                bool forClient, uint32 emuleVersion)
+{
     std::vector<Tag> tags;
     tags.emplace_back(FT_FILENAME, file.fileName());
 
@@ -1963,8 +2056,15 @@ std::vector<Tag> SharedFileList::offeredTags(KnownFile& file, const Server* srv)
         tags.emplace_back(FT_FILETYPE, term);
     }
 
+    // A client gets the rating as a server would relay it, 0-255 (MFC :953-965).
     if (file.getFileRating() > 0)
-        tags.emplace_back(FT_FILERATING, file.getFileRating());
+        tags.emplace_back(FT_FILERATING, file.getFileRating() * (forClient ? 255 / 5 : 1));
+
+    // Only clients that are no eMule still want the extension (MFC :989-995).
+    if (forClient && emuleVersion == 0) {
+        if (const QString ext = QFileInfo(file.fileName()).suffix().toLower(); !ext.isEmpty())
+            tags.emplace_back(FT_FILEFORMAT, ext);
+    }
 
     // Media tags, so the server can match the length / bitrate / codec constraints of
     // a search. Artist, album and title go to clients only. MFC SharedFileList.cpp:997-1056.
@@ -1972,12 +2072,17 @@ std::vector<Tag> SharedFileList::offeredTags(KnownFile& file, const Server* srv)
         return tags;
 
     const bool newTags = srv && srv->supportsNewTags();
-    static constexpr struct { uint8 id; const char* name; } kMediaTags[] = {
-        {FT_MEDIA_LENGTH, FT_ED2K_MEDIA_LENGTH},
-        {FT_MEDIA_BITRATE, FT_ED2K_MEDIA_BITRATE},
-        {FT_MEDIA_CODEC, FT_ED2K_MEDIA_CODEC},
+    static constexpr struct { bool toServer; uint8 id; const char* name; } kMediaTags[] = {
+        {false, FT_MEDIA_ARTIST, FT_ED2K_MEDIA_ARTIST},
+        {false, FT_MEDIA_ALBUM, FT_ED2K_MEDIA_ALBUM},
+        {false, FT_MEDIA_TITLE, FT_ED2K_MEDIA_TITLE},
+        {true, FT_MEDIA_LENGTH, FT_ED2K_MEDIA_LENGTH},
+        {true, FT_MEDIA_BITRATE, FT_ED2K_MEDIA_BITRATE},
+        {true, FT_MEDIA_CODEC, FT_ED2K_MEDIA_CODEC},
     };
-    for (const auto& [id, name] : kMediaTags) {
+    for (const auto& [toServer, id, name] : kMediaTags) {
+        if (!forClient && !toServer)
+            continue;
         const Tag* tag = file.getTag(id);
         if (!tag)
             continue;
@@ -1988,8 +2093,9 @@ std::vector<Tag> SharedFileList::offeredTags(KnownFile& file, const Server* srv)
                 tags.emplace_back(QByteArray(name), tag->strValue());
         } else if (tag->isInt() && tag->intValue() != 0) {
             const uint32 value = tag->intValue();
-            if (id == FT_MEDIA_LENGTH && !(srv && srv->supportsZlib())) {
-                // Servers that old take the length as "h:mm:ss" text only.
+            if (id == FT_MEDIA_LENGTH && !(srv && srv->supportsZlib())
+                && emuleVersion < makeClientVersion(0, 42, 4)) {
+                // Servers and clients that old take the length as "h:mm:ss" text only.
                 const QString text = value >= 3600
                     ? QStringLiteral("%1:%2:%3").arg(value / 3600)
                           .arg((value / 60) % 60, 2, 10, QChar(u'0')).arg(value % 60, 2, 10, QChar(u'0'))

@@ -285,6 +285,13 @@ private:
     /// which swaps the view's model out from under an open dialog.
     [[nodiscard]] QModelIndex resultIndexFor(uint32_t searchID, const QString& hash);
 
+    /// GetSearchResultDetails for @p hash; in a restored tab (searchID 0) with the row
+    /// itself, as the daemon has no search to look it up in. @p type: another request
+    /// of the same [searchID, hash, row] shape.
+    [[nodiscard]] Ipc::IpcMessage searchDetailsRequest(
+        uint32_t searchID, const QString& hash,
+        Ipc::IpcMsgType type = Ipc::IpcMsgType::GetSearchResultDetails);
+
     /// The detail dialog's Prev/Next walk over one search tab's results.
     [[nodiscard]] DetailWalker makeSearchWalker(uint32_t searchID, const QString& hash);
 

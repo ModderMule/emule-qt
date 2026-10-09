@@ -52,6 +52,7 @@ class QTimer;
 namespace eMule::indexer {
 
 class IndexerClient;
+class PasswordFlagStore;
 
 /// What the sink did with an .nzb.
 ///
@@ -106,6 +107,9 @@ public:
     /// records what it saw, but never grabs -- which is the right behaviour for
     /// a daemon whose Usenet session failed to start, and is what the tests use.
     void setNzbSink(NzbSink sink);
+
+    /// Count feed rows into the store the search list owns. It must outlive this list.
+    void setPasswordFlagStore(PasswordFlagStore* store);
 
     /// Re-read the feed list and the accounts, load each feed's history, drop
     /// the sidecars of feeds that are gone. Called at startup and on every

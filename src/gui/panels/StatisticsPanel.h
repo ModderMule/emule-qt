@@ -39,6 +39,8 @@ public:
 
     /// Apply interval, color, and fill settings from preferences to live graphs.
     void applySettings();
+    /// "Active connections ratio" from the options: that line is drawn 1:n.
+    [[nodiscard]] static int connectionsRatio();
 
     // Formatting helpers
     static QString formatRate(double kbps);

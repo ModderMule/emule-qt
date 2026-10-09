@@ -1551,6 +1551,12 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data
                     }
                     break;
                 }
+                case FT_FILESIZE:
+                    // kept apart: the size filter on serving reads it (MFC :1322-1330)
+                    if (entry->m_size == 0)
+                        entry->m_size = tag.isInt() ? tag.intValue()
+                                      : tag.isInt64(false) ? tag.int64Value() : 0;
+                    break;
                 default:
                     entry->addTag(std::move(tag));
                     break;
@@ -1659,10 +1665,27 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_NOTES_REQ(const uint8* data,
             entry->m_keyID = keyID;
             entry->m_sourceID = sourceID;
             entry->m_address = Address::fromHostOrder(ip);
-            for (auto& tag : tags)
-                entry->addTag(std::move(tag));
-            if (!indexed->addNotes(keyID, sourceID, entry, load))
+            entry->m_udpPort = udpPort;
+            // Name and size are fields, not tags (MFC :1540-1548).
+            for (auto& tag : tags) {
+                if (tag.nameId() == FT_FILENAME && tag.isStr()) {
+                    if (entry->getCommonFileName().isEmpty())
+                        entry->setFileName(tag.strValue());
+                } else if (tag.nameId() == FT_FILESIZE) {
+                    if (entry->m_size == 0)
+                        entry->m_size = tag.isInt() ? tag.intValue()
+                                      : tag.isInt64(false) ? tag.int64Value() : 0;
+                } else {
+                    entry->addTag(std::move(tag));
+                }
+            }
+            // A rejected note gets no answer (MFC :1564-1574).
+            if (!indexed->addNotes(keyID, sourceID, entry, load)) {
                 delete entry;
+                return;
+            }
+        } else {
+            return;
         }
 
         // Send publish response with load

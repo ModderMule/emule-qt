@@ -5,6 +5,7 @@
 #include "chat/IrcClient.h"
 #include "chat/IrcEmuleProto.h"
 #include "net/InterfacePin.h"
+#include "prefs/Preferences.h"
 #include "utils/Log.h"
 
 #include <QTcpSocket>
@@ -107,7 +108,7 @@ void IrcClient::sendRaw(const QString& line)
         return;
 
     QByteArray data;
-    if (m_enableUTF8)
+    if (thePrefs.ircEnableUTF8())
         data = line.toUtf8();
     else
         data = line.toLatin1();
@@ -239,7 +240,7 @@ void IrcClient::onSocketReadyRead()
             continue;
 
         QString line;
-        if (m_enableUTF8)
+        if (thePrefs.ircEnableUTF8())
             line = QString::fromUtf8(rawLine);
         else
             line = QString::fromLatin1(rawLine);

@@ -61,6 +61,8 @@ bool ServerList::loadServerMet(const QString& filePath)
 bool ServerList::saveServerMet(const QString& filePath)
 {
     const QString tmpPath = filePath + QStringLiteral(".tmp");
+    if (thePrefs.wantsFileSavingLog())
+        logDebug(QStringLiteral("Saving servers list file \"%1\"").arg(filePath));
 
     SafeFile file;
     if (!file.open(tmpPath, QIODevice::WriteOnly)) {

@@ -1906,6 +1906,13 @@ bool PartFile::createPartFile(const QString& tempDir)
         return false;
     }
 
+#ifdef Q_OS_WIN
+    // "Create new part files as sparse" (MFC PartFile.cpp:410-417), before it gets
+    // its size. Pointless together with a full allocation.
+    if (thePrefs.sparsePartFiles() && !thePrefs.allocFullFile() && !setSparseFile(m_partFileHandle))
+        logDebug(QStringLiteral("Could not make %1 a sparse file").arg(partPath));   // FAT etc.
+#endif
+
     // Resize file to target size
     const uint64 fs = static_cast<uint64>(fileSize());
     if (fs > 0)
@@ -3843,6 +3850,10 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
 
     const uint16 srcCount = data.readUInt16();
     const qint64 dataSize = data.length() - data.position();
+    if (thePrefs.wantsSourceExchangeLog())
+        logDebug(QStringLiteral("SXRecv: Client source response; SX2=%1, Ver=%2, Count=%3, File=\"%4\"")
+                     .arg(isSX2 ? QStringLiteral("Yes") : QStringLiteral("No"))
+                     .arg(clientSXVersion).arg(srcCount).arg(fileName()));
 
     // Byte size of one source record for a given SX version.
     const auto recordSize = [](uint8 v) -> qint64 {

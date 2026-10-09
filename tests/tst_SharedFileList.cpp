@@ -67,6 +67,8 @@ private slots:
     void scan_winShellLinkFollowsTheOption();
     void pathRules_matchOtherSpellingsByKey();
     void directoryIndex_followsAddRemoveAndMove();
+    void pseudoDirNames_hideThePathAboveTheShare();
+    void browseRecord_isTheClientVariant();
     void rescan_addsKeywordsThroughTheFrontDoor();
     void reload_dropsKeywordsOfFilesNoLongerShared();
     void knownListReplace_unhooksTheSharedOldObject();
@@ -434,6 +436,83 @@ void tst_SharedFileList::pathRules_matchOtherSpellingsByKey()
     QVERIFY(shared.shouldBeShared(shareDir, path, false));
 }
 
+// C73: a browsing client is given names, not paths (MFC GetPseudoDirName):
+// the last component, a shared parent kept in front, duplicates numbered.
+void tst_SharedFileList::pseudoDirNames_hideThePathAboveTheShare()
+{
+    eMule::testing::TempDir tmp;
+    const QString root = tmp.path();
+    const QString music = root + QStringLiteral("/private/music");
+    const QString live = music + QStringLiteral("/live");
+    const QString other = root + QStringLiteral("/elsewhere/music");
+    const QString incoming = root + QStringLiteral("/incoming");
+    for (const QString& dir : {music, live, other, incoming})
+        QVERIFY(QDir().mkpath(dir));
+
+    const QStringList savedShared = thePrefs.sharedDirs();
+    const QString savedIncoming = thePrefs.incomingDir();
+    const auto restore = qScopeGuard([&] {
+        thePrefs.setSharedDirs(savedShared);
+        thePrefs.setIncomingDir(savedIncoming);
+    });
+    thePrefs.setIncomingDir(incoming);
+    thePrefs.setSharedDirs({music, live, other});
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+
+    const std::vector<QString> names = shared.browseDirectoryNames();
+    QCOMPARE(names, (std::vector<QString>{QStringLiteral("music"), QStringLiteral("music/live"),
+                                          QStringLiteral("music_2"), QStringLiteral("incoming")}));
+    QCOMPARE(shared.dirNameByPseudo(QStringLiteral("music/live")), live);
+    QCOMPARE(shared.dirNameByPseudo(QStringLiteral("music_2")), other);
+    QVERIFY(shared.dirNameByPseudo(live).isEmpty());             // a path is no name
+    QVERIFY(shared.dirNameByPseudo(QStringLiteral("nope")).isEmpty());
+
+    QVERIFY(shared.pseudoDirName(music + QLatin1Char('/')).isEmpty());   // named already
+    QVERIFY(shared.pseudoDirName(root + QStringLiteral("/private")).isEmpty());   // not shared
+
+    // every request names them anew
+    QCOMPARE(shared.browseDirectoryNames().size(), size_t{4});
+}
+
+// C83: the record a browsing client gets is MFC's client variant.
+void tst_SharedFileList::browseRecord_isTheClientVariant()
+{
+    KnownFileList knownFiles;
+    KnownFile* file = makeFile(knownFiles, 0xC6, QStringLiteral("Song.MP3"));
+    file->addTagUnique(Tag(FT_MEDIA_LENGTH, uint32{3725}));
+    file->addTagUnique(Tag(FT_MEDIA_ARTIST, QStringLiteral("Somebody")));
+    file->setMetaDataVer(1);
+    file->setFileRating(4);
+
+    const auto find = [](const std::vector<Tag>& tags, uint8 id, const char* name) -> const Tag* {
+        for (const Tag& t : tags) {
+            if ((id != 0 && t.nameId() == id) || (name && t.name() == name))
+                return &t;
+        }
+        return nullptr;
+    };
+
+    const auto modern = SharedFileList::offeredTagsForClient(*file, makeClientVersion(0, 50, 0));
+    QCOMPARE(find(modern, FT_FILERATING, nullptr)->intValue(), uint32{4 * 51});
+    QCOMPARE(find(modern, 0, FT_ED2K_MEDIA_ARTIST)->strValue(), QStringLiteral("Somebody"));
+    QCOMPARE(find(modern, 0, FT_ED2K_MEDIA_LENGTH)->intValue(), uint32{3725});
+    QVERIFY(find(modern, FT_FILEFORMAT, nullptr) == nullptr);
+
+    const auto old = SharedFileList::offeredTagsForClient(*file, makeClientVersion(0, 30, 0));
+    QCOMPARE(find(old, 0, FT_ED2K_MEDIA_LENGTH)->strValue(), QStringLiteral("1:02:05"));
+
+    const auto foreign = SharedFileList::offeredTagsForClient(*file, 0);
+    QCOMPARE(find(foreign, FT_FILEFORMAT, nullptr)->strValue(), QStringLiteral("mp3"));
+
+    // the server variant is untouched
+    Server srv(0x01020304u, 4661);
+    const auto offered = SharedFileList::offeredTags(*file, &srv);
+    QCOMPARE(find(offered, FT_FILERATING, nullptr)->intValue(), uint32{4});
+    QVERIFY(find(offered, 0, FT_ED2K_MEDIA_ARTIST) == nullptr);
+}
+
 void tst_SharedFileList::directoryIndex_followsAddRemoveAndMove()
 {
     KnownFileList knownFiles;
@@ -455,7 +534,8 @@ void tst_SharedFileList::directoryIndex_followsAddRemoveAndMove()
     QCOMPARE(shared.filesInDirectory(QStringLiteral("/share/one")).size(), size_t{2});
     QCOMPARE(shared.filesInDirectory(QStringLiteral("/linked")), std::vector<KnownFile*>{c});
     QVERIFY(shared.filesInDirectory(QStringLiteral("/somewhere/else")).empty());
-    QVERIFY(shared.filesInDirectory(QStringLiteral("/SHARE/ONE")).empty());   // exact, as before
+    // another spelling of the same path (MFC EqualPaths)
+    QCOMPARE(shared.filesInDirectory(QStringLiteral("/SHARE/ONE/")).size(), size_t{2});
 
     // a completed download moves; nothing else re-files it
     b->setPath(QStringLiteral("/incoming"));

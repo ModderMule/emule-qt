@@ -160,6 +160,45 @@ QCborMap SearchResultRow::metaRef() const
             {QStringLiteral("metaServers"), metaServers}};
 }
 
+QCborMap SearchResultRow::fileRef() const
+{
+    QCborArray names;
+    for (const SearchChildRow& child : children)
+        names.append(child.fileName);
+
+    // A row saved before the seed was kept: a server result's root is as good, as
+    // long as no name it was found under says otherwise.
+    QString seed = aichSeed;
+    bool vouched = aichVouched;
+    if (seed.isEmpty() && !isKad && !aichHash.isEmpty()
+        && std::ranges::none_of(children, [this](const SearchChildRow& child) {
+               return !child.aichHash.isEmpty() && child.aichHash != aichHash;
+           })) {
+        seed = aichHash;
+        vouched = true;
+    }
+    return {{QStringLiteral("name"), fileName},
+            {QStringLiteral("names"), names},
+            {QStringLiteral("directory"), directory},
+            {QStringLiteral("previewPossible"), previewPossible},
+            {QStringLiteral("clients"), clients},
+            {QStringLiteral("aichSeed"), seed},
+            {QStringLiteral("aichVouched"), vouched},
+            {QStringLiteral("aichVoters"), aichVoters},
+            {QStringLiteral("size"), static_cast<qint64>(fileSize)},
+            {QStringLiteral("type"), fileType},
+            {QStringLiteral("sources"), static_cast<qint64>(sourceCount)},
+            {QStringLiteral("completeSources"), static_cast<qint64>(completeSourceCount)},
+            {QStringLiteral("isKad"), isKad},
+            {QStringLiteral("isSpam"), isSpam},
+            {QStringLiteral("artist"), artist},
+            {QStringLiteral("album"), album},
+            {QStringLiteral("title"), title},
+            {QStringLiteral("codec"), codec},
+            {QStringLiteral("length"), static_cast<qint64>(length)},
+            {QStringLiteral("bitrate"), static_cast<qint64>(bitrate)}};
+}
+
 SearchResultsModel::SearchResultsModel(QObject* parent)
     : QAbstractItemModel(parent)
 {
@@ -435,6 +474,17 @@ void SearchResultsModel::setKnownType(int row, int knownType)
         return;
     r.knownType = knownType;
     emit dataChanged(index(row, 0), index(row, ColCount - 1));
+}
+
+void SearchResultsModel::setSpam(const QString& hash, bool spam)
+{
+    for (int row = 0; row < static_cast<int>(m_rows.size()); ++row) {
+        auto& r = m_rows[static_cast<size_t>(row)];
+        if (r.isSpam == spam || r.hash.compare(hash, Qt::CaseInsensitive) != 0)
+            continue;
+        r.isSpam = spam;
+        emit dataChanged(index(row, 0), index(row, ColCount - 1));
+    }
 }
 
 void SearchResultsModel::updateKnownTypes(const QHash<QString, int>& typesByHash)

@@ -21,6 +21,8 @@
 #include <QSaveFile>
 #include <QSet>
 #include <QStandardPaths>
+#include <QTcpServer>
+#include <QUdpSocket>
 #include <QUuid>
 
 #include <algorithm>
@@ -124,22 +126,23 @@ struct Preferences::Data {
     // General
     QString nick = QStringLiteral("https://emule-qt.org");
     std::array<uint8, 16> userHash{};
-    bool autoConnect = true;
+    bool autoConnect = true;            // MFC off; deliberate, 2026-10: a headless daemon has nobody to press Connect
     bool reconnect = true;
     bool filterLANIPs = true;
     bool skipFirewalledChecksInLanMode = false;
 
     // Server connection
-    bool safeServerConnect = true;      // Limit to 1 concurrent connection attempt
+    bool safeServerConnect = true;      // Limit to 1 concurrent connection attempt. MFC off; deliberate, 2026-10: servers blacklist an IP that logs in too often
     bool autoConnectStaticOnly = false; // Only connect to static servers
     bool useServerPriorities = true;    // Sort servers by priority before connecting
-    bool addServersFromServer = true;   // Request server list from connected server
+    bool addServersFromServer = true;   // Request server list from connected server. MFC off; deliberate, 2026-10: a new install knows few servers
     bool useUserSortedServerList = false; // Honor the user's manual server order at auto-connect
     uint32 serverKeepAliveTimeout = 0;  // Keep-alive interval (ms), 0 = disabled
 
     // Network
     uint16 port = 0;              // 0 = random
     uint16 udpPort = 0;
+    bool udpPortFromFile = false;   // not saved: a stored 0 means "UDP off"
     uint16 serverUDPPort = 65535; // 65535 = random, 0 = disabled
     uint16 maxConnections = 500;
     // eMule 2026 bandwidth: modern OS handles hundreds of half-open connections. MFC default: 9
@@ -208,7 +211,7 @@ struct Preferences::Data {
     QList<DownloadCategory> categories{DownloadCategory{.title = QStringLiteral("All")}};
 
     // UPnP
-    bool enableUPnP = true;
+    bool enableUPnP = true;             // MFC off; deliberate, 2026-10: most users sit behind a NAT router
     bool closeUPnPOnExit = true;
     uint32 portMapProtocols = 7;   // PCP | NAT-PMP | UPnP
     uint32 portMapLeaseSecs = 3600;
@@ -220,12 +223,11 @@ struct Preferences::Data {
     bool logToDiskCore = false;    // daemon writes emulecored[_Verbose|_Kad].log
     bool logToDiskGui = false;     // GUI writes emuleqt[_Verbose|_Kad].log
     uint32 maxLogFileSize = 1048576; // 1 MB
-    bool verbose = true;
+    bool verbose = true;                // MFC off; deliberate, 2026-10: the log is how a daemon without a window is diagnosed
     bool logPublicIP = false;
     bool kadVerboseLog = true;
     bool serverVerboseLog = false;  // Gated server TCP/UDP/search handshake logging
     uint32 maxLogLines = 5000;  // Max lines kept per log tab in the GUI
-    int logLevel = 5;               // 0-5, higher = more verbose
     bool logSourceExchange = false;
     bool logBannedClients = true;
     bool logRatingDescReceived = true;
@@ -264,7 +266,7 @@ struct Preferences::Data {
     bool autoArchivePreviewStart = true; // Auto-scan archive contents in file details
     QString ed2kHostname;            // Hostname (or IPv6 literal) for own eD2K links
     bool ed2kLinkAdvertiseIPv6 = true; // Add our public IPv6 as an s6= source hint
-    bool showExtControls = true;     // Show advanced mode controls in context menus
+    bool showExtControls = true;     // Show advanced mode controls in context menus. MFC off; deliberate, 2026-10
     int commitFiles = 1;             // 0=never, 1=on shutdown, 2=always
     int hashingDiskLoad = 80;        // % of the time hashing may keep a disk busy (10-100, 100 = no limit)
     int extractMetaData = 1;         // 0=never, 1=MediaInfo library
@@ -282,8 +284,6 @@ struct Preferences::Data {
     bool allocFullFile = false;          // Pre-allocate disk space
 #ifdef Q_OS_WIN
     // Windows-only Extended (PPgTweaks)
-    bool autotakeEd2kLinks = true;      // Register ed2k:// protocol handler
-    bool openPortsOnWinFirewall = false; // Windows Firewall API
     bool sparsePartFiles = false;        // NTFS sparse file attribute
     bool resolveShellLinks = false;      // Follow .lnk files in shared dirs
     int multiUserSharing = 2;            // 0=per-user, 1=shared, 2=program-dir
@@ -403,7 +403,6 @@ struct Preferences::Data {
     // ships 127 here (srchybrid/Preferences.cpp:2040); at 100 the test `level < 127`
     // would read `100 < 100` for every level-less entry and block nothing.
     uint32 ipFilterLevel = 127;  // lower = more restrictive
-    bool warnUntrustedFiles = true;
     bool useSafeKad = true;
     bool useFastKad = true;
     QString ipFilterUpdateUrl;
@@ -481,7 +480,9 @@ struct Preferences::Data {
     // Server management (extended)
     bool addServersFromClients = false; // Add a connecting peer's server; off in MFC (Preferences.cpp:2017)
     bool filterServerByIP = false;      // Apply IP filter to server addresses
-    uint32 deadServerRetries = 20;      // Remove dead servers after N failed attempts (0 = disabled)
+    // Disable a server after N failed attempts (0 = never). MFC 1; deliberate, 2026-10: one failed
+    // connect says little, and a wrongly disabled server is one the user has to find again.
+    uint32 deadServerRetries = 20;
     bool autoUpdateServerList = false;  // Auto-update server list from URL at startup
     QString serverListURL = Preferences::kDefaultServerListURL;  // URL for server.met download
     bool smartLowIdCheck = true;        // Try another server if we get a LowID
@@ -492,7 +493,9 @@ struct Preferences::Data {
 
     // Chat / Messages
     bool msgOnlyFriends = false;   // Only accept messages from friends
-    bool msgSecure = false;        // Only accept messages from secure-identified clients
+    // Only accept messages from secure-identified clients. Not MFC's option of this
+    // name ("has a user name", on by default): stricter, hence off. Deliberate, 2026-10 (C87).
+    bool msgSecure = false;
     bool useChatCaptchas = true;   // Require captcha for first messages
     bool enableSpamFilter = true;  // Enable keyword-based spam filter
     QString messageFilter = QStringLiteral("fastest download speed|fastest eMule");
@@ -502,7 +505,7 @@ struct Preferences::Data {
 
     // Security (extended)
     bool useSecureIdent = true;  // Enable secure identity (RSA key exchange)
-    int viewSharedFilesAccess = 1;  // 0=nobody, 1=friends only, 2=everybody
+    int viewSharedFilesAccess = 1;  // 0=nobody, 1=friends only, 2=everybody. MFC nobody; deliberate, 2026-10: friends are picked by the user
 
     // Download behavior
     bool autoDownloadPriority = true;  // Auto-adjust download priority by source count
@@ -511,7 +514,7 @@ struct Preferences::Data {
     bool rememberUploadQueue = true;   // Remember the upload queue across restarts (UQS)
 
     // Disk space
-    bool checkDiskspace = true;          // Monitor free disk space
+    bool checkDiskspace = true;          // Monitor free disk space. MFC off; deliberate, 2026-10: a full disk must wait, not fail
     uint64 minFreeDiskSpace = 20971520;  // 20 MB minimum free space
 
     // Search
@@ -528,7 +531,7 @@ struct Preferences::Data {
     bool startWithOS = false;
     uint32 startVersion = 0;  // Migration counter: 0=first run, 1+=migrations applied
     bool versionCheckEnabled = true;
-    int versionCheckDays = 2;          // Check interval in days (1-14)
+    int versionCheckDays = 2;          // Check interval in days (1-14). MFC 5; deliberate, 2026-10: releases are frequent
     bool bringToFrontOnLinkClick = true;
 
     // GUI (Display page)
@@ -579,7 +582,7 @@ struct Preferences::Data {
     bool notifyOnUrgent = false;
     bool notifyEmailEnabled = false;
     QString notifyEmailSmtpServer;
-    uint16 notifyEmailSmtpPort = 25;
+    uint16 notifyEmailSmtpPort = 25;    // MFC 0 (unset); deliberate, 2026-10: the SMTP port
     int notifyEmailSmtpAuth = 0;     // 0=none, 1=plain
     bool notifyEmailSmtpTls = false;
     QString notifyEmailSmtpUser;
@@ -1079,9 +1082,6 @@ uint32 Preferences::maxLogLines() const { return get(&Data::maxLogLines); }
 
 void Preferences::setMaxLogLines(uint32 val) { set(&Data::maxLogLines, val); }
 
-int Preferences::logLevel() const { return get(&Data::logLevel); }
-
-void Preferences::setLogLevel(int val) { set(&Data::logLevel, val); }
 
 bool Preferences::logSourceExchange() const { return get(&Data::logSourceExchange); }
 
@@ -1240,13 +1240,6 @@ void Preferences::setAllocFullFile(bool val) { set(&Data::allocFullFile, val); }
 
 #ifdef Q_OS_WIN
 
-bool Preferences::autotakeEd2kLinks() const { return get(&Data::autotakeEd2kLinks); }
-
-void Preferences::setAutotakeEd2kLinks(bool val) { set(&Data::autotakeEd2kLinks, val); }
-
-bool Preferences::openPortsOnWinFirewall() const { return get(&Data::openPortsOnWinFirewall); }
-
-void Preferences::setOpenPortsOnWinFirewall(bool val) { set(&Data::openPortsOnWinFirewall, val); }
 
 bool Preferences::sparsePartFiles() const { return get(&Data::sparsePartFiles); }
 
@@ -2233,9 +2226,6 @@ uint32 Preferences::ipFilterLevel() const { return get(&Data::ipFilterLevel); }
 
 void Preferences::setIpFilterLevel(uint32 val) { set(&Data::ipFilterLevel, val); }
 
-bool Preferences::warnUntrustedFiles() const { return get(&Data::warnUntrustedFiles); }
-
-void Preferences::setWarnUntrustedFiles(bool val) { set(&Data::warnUntrustedFiles, val); }
 
 bool Preferences::useSafeKad() const { return get(&Data::useSafeKad); }
 
@@ -3031,7 +3021,6 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("useFastKad"), useFastKad());
     prefs.insert(QStringLiteral("useSecureIdent"), useSecureIdent());
     prefs.insert(QStringLiteral("enableSearchResultFilter"), enableSearchResultFilter());
-    prefs.insert(QStringLiteral("warnUntrustedFiles"), warnUntrustedFiles());
     prefs.insert(QStringLiteral("ipFilterUpdateUrl"), ipFilterUpdateUrl());
     prefs.insert(QStringLiteral("geoIpAccountId"), geoIpAccountId());
     prefs.insert(QStringLiteral("geoIpLicenseKey"), geoIpLicenseKey());
@@ -3113,7 +3102,6 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("commitFiles"), commitFiles());
     prefs.insert(QStringLiteral("hashingDiskLoad"), hashingDiskLoad());
     prefs.insert(QStringLiteral("extractMetaData"), extractMetaData());
-    prefs.insert(QStringLiteral("logLevel"), logLevel());
     prefs.insert(QStringLiteral("logSourceExchange"), logSourceExchange());
     prefs.insert(QStringLiteral("logBannedClients"), logBannedClients());
     prefs.insert(QStringLiteral("logRatingDescReceived"), logRatingDescReceived());
@@ -3137,8 +3125,6 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("dynUpNumberOfPings"), static_cast<qint64>(dynUpNumberOfPings()));
     prefs.insert(QStringLiteral("allocFullFile"), allocFullFile());
 #ifdef Q_OS_WIN
-    prefs.insert(QStringLiteral("autotakeEd2kLinks"), autotakeEd2kLinks());
-    prefs.insert(QStringLiteral("openPortsOnWinFirewall"), openPortsOnWinFirewall());
     prefs.insert(QStringLiteral("sparsePartFiles"), sparsePartFiles());
     prefs.insert(QStringLiteral("resolveShellLinks"), resolveShellLinks());
     prefs.insert(QStringLiteral("multiUserSharing"), multiUserSharing());
@@ -3277,7 +3263,6 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->cryptLayerRequiredStrict  = p.value(QStringLiteral("cryptLayerRequiredStrict")).toBool();
     m_data->useSecureIdent            = p.value(QStringLiteral("useSecureIdent")).toBool();
     m_data->enableSearchResultFilter  = p.value(QStringLiteral("enableSearchResultFilter")).toBool();
-    m_data->warnUntrustedFiles        = p.value(QStringLiteral("warnUntrustedFiles")).toBool();
     m_data->useSafeKad                = p.value(QStringLiteral("useSafeKad")).toBool();
     m_data->useFastKad                = p.value(QStringLiteral("useFastKad")).toBool();
     m_data->ipFilterUpdateUrl         = p.value(QStringLiteral("ipFilterUpdateUrl")).toString();
@@ -3322,7 +3307,6 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->commitFiles                 = static_cast<int>(p.value(QStringLiteral("commitFiles")).toInteger());
     m_data->hashingDiskLoad             = std::clamp(static_cast<int>(p.value(QStringLiteral("hashingDiskLoad")).toInteger(80)), 10, 100);
     m_data->extractMetaData             = static_cast<int>(p.value(QStringLiteral("extractMetaData")).toInteger());
-    m_data->logLevel                    = static_cast<int>(p.value(QStringLiteral("logLevel")).toInteger());
     m_data->logSourceExchange           = p.value(QStringLiteral("logSourceExchange")).toBool();
     m_data->logBannedClients            = p.value(QStringLiteral("logBannedClients")).toBool();
     m_data->logRatingDescReceived       = p.value(QStringLiteral("logRatingDescReceived")).toBool();
@@ -3346,8 +3330,6 @@ void Preferences::updateFromCbor(const QCborMap& p)
 
     m_data->allocFullFile         = p.value(QStringLiteral("allocFullFile")).toBool();
 #ifdef Q_OS_WIN
-    m_data->autotakeEd2kLinks     = p.value(QStringLiteral("autotakeEd2kLinks")).toBool();
-    m_data->openPortsOnWinFirewall = p.value(QStringLiteral("openPortsOnWinFirewall")).toBool();
     m_data->sparsePartFiles       = p.value(QStringLiteral("sparsePartFiles")).toBool();
     m_data->resolveShellLinks     = p.value(QStringLiteral("resolveShellLinks")).toBool();
     m_data->multiUserSharing      = static_cast<int>(p.value(QStringLiteral("multiUserSharing")).toInteger());
@@ -3409,10 +3391,14 @@ void Preferences::validate()
     if (m_data->minUpload < 1)
         m_data->minUpload = 1;
 
-    // maxUpload: clamp ≤ maxGraphUploadRate (unless unlimited=0)
+    // A limit above the line's capacity cannot be meant: 4/5 of it for upload, 9/10
+    // for download (MFC Preferences.cpp:1931-1937). 0 = unlimited, left alone.
     if (m_data->maxUpload > 0 && m_data->maxGraphUploadRate > 0
         && m_data->maxUpload > m_data->maxGraphUploadRate)
-        m_data->maxUpload = m_data->maxGraphUploadRate;
+        m_data->maxUpload = std::max<uint32>(1, m_data->maxGraphUploadRate * 4 / 5);
+    if (m_data->maxDownload > 0 && m_data->maxGraphDownloadRate > 0
+        && m_data->maxDownload > m_data->maxGraphDownloadRate)
+        m_data->maxDownload = std::max<uint32>(1, m_data->maxGraphDownloadRate * 9 / 10);
 
     // maxConnections: clamp 1–65535
     if (m_data->maxConnections < 1)
@@ -3623,6 +3609,7 @@ bool Preferences::load(const QString& filePath)
         // Network
         if (auto n = root["network"]) {
             m_data->port = static_cast<uint16>(n["port"].as<int>(m_data->port));
+            m_data->udpPortFromFile = n["udpPort"].IsDefined();
             m_data->udpPort = static_cast<uint16>(n["udpPort"].as<int>(m_data->udpPort));
             m_data->serverUDPPort = static_cast<uint16>(n["serverUDPPort"].as<int>(m_data->serverUDPPort));
             m_data->maxConnections = static_cast<uint16>(n["maxConnections"].as<int>(m_data->maxConnections));
@@ -3751,7 +3738,6 @@ bool Preferences::load(const QString& filePath)
             m_data->kadVerboseLog = l["kadVerboseLog"].as<bool>(m_data->kadVerboseLog);
             m_data->serverVerboseLog = l["serverVerboseLog"].as<bool>(m_data->serverVerboseLog);
             m_data->maxLogLines = l["maxLogLines"].as<uint32>(m_data->maxLogLines);
-            m_data->logLevel = l["logLevel"].as<int>(m_data->logLevel);
             m_data->logSourceExchange = l["logSourceExchange"].as<bool>(m_data->logSourceExchange);
             m_data->logBannedClients = l["logBannedClients"].as<bool>(m_data->logBannedClients);
             m_data->logRatingDescReceived = l["logRatingDescReceived"].as<bool>(m_data->logRatingDescReceived);
@@ -3801,8 +3787,6 @@ bool Preferences::load(const QString& filePath)
             m_data->queueSize = t["queueSize"].as<uint32>(m_data->queueSize);
             m_data->allocFullFile = t["allocFullFile"].as<bool>(m_data->allocFullFile);
 #ifdef Q_OS_WIN
-            m_data->autotakeEd2kLinks = t["autotakeEd2kLinks"].as<bool>(m_data->autotakeEd2kLinks);
-            m_data->openPortsOnWinFirewall = t["openPortsOnWinFirewall"].as<bool>(m_data->openPortsOnWinFirewall);
             m_data->sparsePartFiles = t["sparsePartFiles"].as<bool>(m_data->sparsePartFiles);
             m_data->resolveShellLinks = t["resolveShellLinks"].as<bool>(m_data->resolveShellLinks);
             m_data->multiUserSharing = t["multiUserSharing"].as<int>(m_data->multiUserSharing);
@@ -3933,7 +3917,6 @@ bool Preferences::load(const QString& filePath)
             m_data->ipFilterLevel = sec["ipFilterLevel"].as<uint32>(m_data->ipFilterLevel);
             m_data->useSecureIdent = sec["useSecureIdent"].as<bool>(m_data->useSecureIdent);
             m_data->viewSharedFilesAccess = sec["viewSharedFilesAccess"].as<int>(m_data->viewSharedFilesAccess);
-            m_data->warnUntrustedFiles = sec["warnUntrustedFiles"].as<bool>(m_data->warnUntrustedFiles);
             m_data->useSafeKad = sec["useSafeKad"].as<bool>(m_data->useSafeKad);
             m_data->useFastKad = sec["useFastKad"].as<bool>(m_data->useFastKad);
             if (sec["ipFilterUpdateUrl"])
@@ -4513,10 +4496,11 @@ bool Preferences::load(const QString& filePath)
     if (isnulmd4(m_data->userHash.data()))
         m_data->userHash = generateUserHash();
 
-    // Resolve port=0 → random
+    // Resolve port=0 → random. A stored UDP port of 0 is the user's "disable UDP"
+    // and stays; only a missing key gets a port (MFC Preferences.cpp:1957-1959).
     if (m_data->port == 0)
         m_data->port = randomTCPPort();
-    if (m_data->udpPort == 0)
+    if (m_data->udpPort == 0 && !m_data->udpPortFromFile)
         m_data->udpPort = randomUDPPort();
 
     validate();
@@ -4609,16 +4593,33 @@ ProxySettings Preferences::usenetProxySettings() const
 // Static utilities
 // ---------------------------------------------------------------------------
 
+uint16 Preferences::randomPort(const std::function<bool(uint16)>& isFree)
+{
+    // MFC Preferences.cpp:2756-2797 retries until nothing listens on the port.
+    std::uniform_int_distribution<int> dist(4096, 65095);
+    uint16 port = 0;
+    for (int tries = 0; tries < 50; ++tries) {
+        port = static_cast<uint16>(dist(randomEngine()));
+        if (!isFree || isFree(port))
+            break;
+    }
+    return port;
+}
+
 uint16 Preferences::randomTCPPort()
 {
-    std::uniform_int_distribution<int> dist(4096, 65095);
-    return static_cast<uint16>(dist(randomEngine()));
+    return randomPort([](uint16 port) {
+        QTcpServer probe;
+        return probe.listen(QHostAddress::Any, port);
+    });
 }
 
 uint16 Preferences::randomUDPPort()
 {
-    std::uniform_int_distribution<int> dist(4096, 65095);
-    return static_cast<uint16>(dist(randomEngine()));
+    return randomPort([](uint16 port) {
+        QUdpSocket probe;
+        return probe.bind(QHostAddress::Any, port);
+    });
 }
 
 std::array<uint8, 16> Preferences::generateUserHash()
@@ -4828,7 +4829,6 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "kadVerboseLog" << YAML::Value << m_data->kadVerboseLog;
     out << YAML::Key << "serverVerboseLog" << YAML::Value << m_data->serverVerboseLog;
     out << YAML::Key << "maxLogLines" << YAML::Value << m_data->maxLogLines;
-    out << YAML::Key << "logLevel" << YAML::Value << m_data->logLevel;
     out << YAML::Key << "logSourceExchange" << YAML::Value << m_data->logSourceExchange;
     out << YAML::Key << "logBannedClients" << YAML::Value << m_data->logBannedClients;
     out << YAML::Key << "logRatingDescReceived" << YAML::Value << m_data->logRatingDescReceived;
@@ -4878,8 +4878,6 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "queueSize" << YAML::Value << m_data->queueSize;
     out << YAML::Key << "allocFullFile" << YAML::Value << m_data->allocFullFile;
 #ifdef Q_OS_WIN
-    out << YAML::Key << "autotakeEd2kLinks" << YAML::Value << m_data->autotakeEd2kLinks;
-    out << YAML::Key << "openPortsOnWinFirewall" << YAML::Value << m_data->openPortsOnWinFirewall;
     out << YAML::Key << "sparsePartFiles" << YAML::Value << m_data->sparsePartFiles;
     out << YAML::Key << "resolveShellLinks" << YAML::Value << m_data->resolveShellLinks;
     out << YAML::Key << "multiUserSharing" << YAML::Value << m_data->multiUserSharing;
@@ -5014,7 +5012,6 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "ipFilterLevel" << YAML::Value << m_data->ipFilterLevel;
     out << YAML::Key << "useSecureIdent" << YAML::Value << m_data->useSecureIdent;
     out << YAML::Key << "viewSharedFilesAccess" << YAML::Value << m_data->viewSharedFilesAccess;
-    out << YAML::Key << "warnUntrustedFiles" << YAML::Value << m_data->warnUntrustedFiles;
     out << YAML::Key << "useSafeKad" << YAML::Value << m_data->useSafeKad;
     out << YAML::Key << "useFastKad" << YAML::Value << m_data->useFastKad;
     if (!m_data->ipFilterUpdateUrl.isEmpty())

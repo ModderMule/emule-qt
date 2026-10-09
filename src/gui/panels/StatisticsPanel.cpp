@@ -145,6 +145,11 @@ void StatisticsPanel::setIpcClient(IpcClient* client)
     }
 }
 
+int StatisticsPanel::connectionsRatio()
+{
+    return std::max(1, static_cast<int>(thePrefs.statsConnectionsRatio()));
+}
+
 void StatisticsPanel::applySettings()
 {
     // graphsUpdateSec is the daemon's sampling interval; here it only says how often
@@ -186,6 +191,10 @@ void StatisticsPanel::applySettings()
     m_graphConn->setSeriesColor(1, theUiState.statsColor(10));   // Active uploads
     m_graphConn->setSeriesColor(2, theUiState.statsColor(9));    // Total uploads
     m_graphConn->setSeriesColor(3, theUiState.statsColor(12));   // Active downloads
+
+    // The connections line is drawn 1:n so it fits the scale of the others.
+    m_graphConn->setSeriesInfo(0, tr("Active connections (1:%1)").arg(connectionsRatio()),
+                               theUiState.statsColor(8));
 
     auto connMax = static_cast<double>(thePrefs.statsConnectionsMax());
     if (connMax > 0)
@@ -276,7 +285,8 @@ void StatisticsPanel::setupUi()
     graphSplitter->addWidget(m_graphUp);
 
     m_graphConn = new StatsGraph(4, this);
-    m_graphConn->setSeriesInfo(0, tr("Active connections"), theUiState.statsColor(8));
+    m_graphConn->setSeriesInfo(0, tr("Active connections (1:%1)").arg(connectionsRatio()),
+                               theUiState.statsColor(8));
     m_graphConn->setSeriesInfo(1, tr("Active uploads"), theUiState.statsColor(10));
     m_graphConn->setSeriesInfo(2, tr("Total uploads"), theUiState.statsColor(9));
     m_graphConn->setSeriesInfo(3, tr("Active downloads"), theUiState.statsColor(12));
@@ -749,7 +759,7 @@ void StatisticsPanel::applyGraphHistory(const QCborMap& data)
         m_graphUp->appendPoints({s.at(5).toDouble(), s.at(6).toDouble(),
                                  s.at(7).toDouble(), s.at(8).toDouble(),
                                  s.at(9).toDouble()});
-        m_graphConn->appendPoints({static_cast<double>(s.at(10).toInteger()),
+        m_graphConn->appendPoints({static_cast<double>(s.at(10).toInteger()) / connectionsRatio(),
                                    static_cast<double>(s.at(11).toInteger()),
                                    static_cast<double>(s.at(12).toInteger()),
                                    static_cast<double>(s.at(13).toInteger())});

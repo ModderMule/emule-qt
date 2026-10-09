@@ -240,6 +240,7 @@ bool DaemonApp::start()
     // reaches into that session's queue.
     m_indexerFeeds = std::make_unique<indexer::IndexerFeedList>();
     indexer::theIndexerFeeds = m_indexerFeeds.get();
+    m_indexerFeeds->setPasswordFlagStore(m_indexerSearches->passwordFlags());
     connectIndexerFeedSink();
     m_indexerFeeds->applyPreferences();
 

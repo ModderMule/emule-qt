@@ -493,7 +493,7 @@ QWidget* FileDetailDialog::createArchivePreviewTab(const QCborMap& d)
     const QString fullName = str(d, QLatin1StringView("fullName"));
     const auto fileSize = static_cast<uint64_t>(num(d, QLatin1StringView("fileSize")));
     panel->setFile(fullName, fileSize);
-    panel->setAutoScan(true);
+    panel->setAutoScan(thePrefs.autoArchivePreviewStart());   // else: the Update button
     return panel;
 }
 

@@ -12,6 +12,7 @@ INCLUDEPATH += $$PWD $$PWD/.. $$PWD/../core
 SOURCES += \
     IndexerCaps.cpp \
     IndexerCapsStore.cpp \
+    PasswordFlagStore.cpp \
     IndexerClient.cpp \
     IndexerFeedList.cpp \
     IndexerFeedMatch.cpp \
@@ -24,6 +25,7 @@ SOURCES += \
 HEADERS += \
     IndexerCaps.h \
     IndexerCapsStore.h \
+    PasswordFlagStore.h \
     IndexerClient.h \
     IndexerConfig.h \
     IndexerFeed.h \

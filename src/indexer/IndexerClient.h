@@ -25,9 +25,11 @@
 #include "IndexerConfig.h"
 #include "IndexerQuery.h"
 #include "IndexerResult.h"
+#include "PasswordFlagStore.h"
 
 #include <QByteArray>
 #include <QObject>
+#include <QPointer>
 #include <QSet>
 
 #include <functional>
@@ -36,6 +38,10 @@ class QNetworkAccessManager;
 class QNetworkReply;
 
 namespace eMule::indexer {
+
+/// The slug a source name maps to: the first half of a row id, and what the
+/// password flag counts are kept under.
+[[nodiscard]] QString slugForSource(const QString& name);
 
 class IndexerClient : public QObject {
     Q_OBJECT
@@ -76,6 +82,10 @@ public:
     void searchUrl(const QUrl& url, int timeoutMs, const QString& sourceName,
                    SearchCallback done);
 
+    /// Share one store, so searches and feed polls learn together and one writer
+    /// owns the file. Without it the client keeps its own counts in memory.
+    void setPasswordFlagStore(PasswordFlagStore* store);
+
     /// Abort everything in flight. Called when a search is stopped and at
     /// teardown; a reply outliving its callback's captures is the usual way this
     /// kind of class crashes.
@@ -96,8 +106,7 @@ private:
 
     QNetworkAccessManager* m_nam = nullptr;
     QSet<QNetworkReply*> m_pending;
-    /// By source slug; session memory only.
-    QHash<QString, PasswordFlagTally> m_flagTallies;
+    QPointer<PasswordFlagStore> m_flags;
 };
 
 } // namespace eMule::indexer

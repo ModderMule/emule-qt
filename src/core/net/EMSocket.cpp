@@ -13,6 +13,7 @@
 #include "utils/Log.h"
 #include "utils/TimeUtils.h"
 
+#include <QScopeGuard>
 #include <QTimer>
 
 
@@ -20,6 +21,7 @@
 #include <winsock2.h>
 #else
 #include <sys/socket.h>
+#include <poll.h>
 #include <cerrno>
 #endif
 
@@ -206,13 +208,30 @@ void EMSocket::onSocketError(QAbstractSocket::SocketError socketError)
 
 void EMSocket::onBytesWritten(qint64 /*bytes*/)
 {
-    bool wasBusy = m_busy;
-    m_cachedBytesToWrite.store(bytesToWrite(), std::memory_order_relaxed);
-    m_busy = (m_cachedBytesToWrite.load(std::memory_order_relaxed) >= kBusyThreshold);
+    const bool wasBusy = m_busy.load(std::memory_order_relaxed);
+    const qint64 backlogBefore = m_cachedBytesToWrite.load(std::memory_order_relaxed);
+    const qint64 backlog = bytesToWrite();
+    m_cachedBytesToWrite.store(backlog, std::memory_order_relaxed);
+    const bool busy = backlog >= kBusyThreshold;
+    m_busy.store(busy, std::memory_order_relaxed);
 
-    // Wake the throttler when transitioning from busy to available
-    if (wasBusy && !m_busy && theApp.uploadBandwidthThrottler)
+    // Wake the throttler when the socket turns available: no longer busy, or the
+    // backlog it was holding its direct sends for is gone (only if it has file
+    // data waiting — else every control packet would wake it).
+    bool wake = wasBusy && !busy;
+    if (!wake && backlogBefore > 0 && backlog == 0) {
+        std::lock_guard lock(m_sendLock);
+        wake = !m_standardQueue.empty() || (m_sendBuffer != nullptr && !m_currentPacketIsControl);
+    }
+    if (wake && theApp.uploadBandwidthThrottler)
         theApp.uploadBandwidthThrottler->socketAvailable();
+}
+
+void EMSocket::onNegotiationBytesQueued()
+{
+    // bytesToWrite() is the owner thread's to call
+    if (QThread::currentThread() == thread())
+        m_cachedBytesToWrite.store(bytesToWrite(), std::memory_order_relaxed);
 }
 
 // ---------------------------------------------------------------------------
@@ -549,6 +568,15 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
     if (m_conState.load(std::memory_order_relaxed) != EMSState::Connected || !isEncryptionLayerReady())
         return ret;
 
+    const bool ownerThread = QThread::currentThread() == thread();
+    // What the owner thread sends never passes the throttler: report it, so it is
+    // in the upload rate and off the budget (MFC charges every control packet).
+    const auto report = qScopeGuard([&] {
+        const uint32 total = ret.sentBytesControlPackets + ret.sentBytesStandardPackets;
+        if (ownerThread && total > 0 && theApp.uploadBandwidthThrottler)
+            theApp.uploadBandwidthThrottler->noteBytesSentOutsideTheLoop(total);
+    });
+
     if (minFragSize < 1)
         minFragSize = 1;
 
@@ -652,13 +680,18 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
             // Use Qt's write() when called from the socket's owning thread to
             // preserve Qt's event notification system (readyRead on the peer).
             qint64 result;
-            if (QThread::currentThread() != thread()) {
+            if (!ownerThread) {
                 // Background thread (throttler) — bypass Qt's write buffer
                 auto fd = socketDescriptor();
                 if (fd == -1) {
                     m_busy = true;
                     return ret;
                 }
+                // Bytes the owner thread left in Qt's buffer are earlier in the
+                // stream than these: they must reach the kernel first, or the peer
+                // gets the stream cut up (and an obfuscated one never recovers).
+                if (m_cachedBytesToWrite.load(std::memory_order_relaxed) > 0)
+                    return ret;
 #ifdef Q_OS_WIN
                 result = ::send(static_cast<SOCKET>(fd), m_sendBuffer + m_sent, static_cast<int>(toSend), 0);
 #else
@@ -672,11 +705,13 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
                     int err = errno;
                     if (err == EAGAIN || err == EWOULDBLOCK) {
 #endif
+                        m_rawBusy.store(true, std::memory_order_relaxed);   // MFC :648-655
                         return ret;
                     }
                     ret.success = false;
                     return ret;
                 }
+                m_rawBusy.store(false, std::memory_order_relaxed);
             } else {
                 // Owner thread — use Qt's write() for proper event handling
                 result = write(m_sendBuffer + m_sent, toSend);
@@ -689,7 +724,7 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
             // Only call Qt's bytesToWrite() from the owning thread — it's not
             // thread-safe and accessing it from the throttler thread can corrupt
             // Qt's internal socket state (breaking QSocketNotifier events).
-            if (QThread::currentThread() == thread()) {
+            if (ownerThread) {
                 m_cachedBytesToWrite.store(bytesToWrite(), std::memory_order_relaxed);
                 m_busy = (m_cachedBytesToWrite.load(std::memory_order_relaxed) >= kBusyThreshold);
             }
@@ -900,6 +935,8 @@ uint32 EMSocket::getNeededBytes()
     const uint64 now = getTickCount();
     const auto timeSinceLastFinished = static_cast<uint32>(now - m_lastFinishedStandard);
     const auto timeSinceLastSend = static_cast<uint32>(now - m_lastCalledSend);
+    // MFC paces a packet over 45 s / 90 s. 3 s / 5 s is the port's own value since
+    // the send-loop rework (reason not recorded); kept by decision, 2026-10-09.
     uint32 timeTotal = SEC2MS(m_accelerateUpload ? 3 : 5);
     uint64 sizeLeft, sizeTotal;
 
@@ -934,12 +971,34 @@ uint32 EMSocket::getNeededBytes()
 
 bool EMSocket::isBusyExtensiveCheck()
 {
-    return m_busy;
+    return m_busy.load(std::memory_order_relaxed) || rawBusyNow();
 }
 
 bool EMSocket::isBusyQuickCheck() const
 {
-    return m_busy;
+    return m_busy.load(std::memory_order_relaxed) || rawBusyNow();
+}
+
+// A blocked direct send has no notifier of its own (Qt watches the descriptor for
+// its buffer only), so whoever asks looks: MFC's IsBusyExtensiveCheck does the
+// same with an overlapped send (EMSocket.cpp:1129-1149).
+bool EMSocket::rawBusyNow() const
+{
+    if (!m_rawBusy.load(std::memory_order_relaxed))
+        return false;
+    const auto fd = socketDescriptor();
+    if (fd == -1)
+        return true;
+#ifdef Q_OS_WIN
+    WSAPOLLFD probe{static_cast<SOCKET>(fd), POLLWRNORM, 0};
+    const bool writable = WSAPoll(&probe, 1, 0) > 0 && (probe.revents & POLLWRNORM);
+#else
+    pollfd probe{static_cast<int>(fd), POLLOUT, 0};
+    const bool writable = ::poll(&probe, 1, 0) > 0 && (probe.revents & POLLOUT);
+#endif
+    if (writable)
+        m_rawBusy.store(false, std::memory_order_relaxed);
+    return !writable;
 }
 
 bool EMSocket::hasQueues(bool onlyStandardPackets) const
@@ -973,10 +1032,23 @@ bool EMSocket::useBigSendBuffer()
         // Try to increase the send buffer
         auto fd = socketDescriptor();
         if (fd != -1) {
+            // 1 MiB: the port's value (MFC 128 KiB), see kBusyThreshold.
             constexpr int bigSize = 1024 * 1024;
+            constexpr int mfcBigSize = 128 * 1024;
             int optval = bigSize;
-            if (setsockopt(static_cast<int>(fd), SOL_SOCKET, SO_SNDBUF,
-                           reinterpret_cast<const char*>(&optval), sizeof(optval)) == 0)
+#ifdef Q_OS_WIN
+            using OptLen = int;
+            const auto sock = static_cast<SOCKET>(fd);
+#else
+            using OptLen = socklen_t;
+            const auto sock = static_cast<int>(fd);
+#endif
+            setsockopt(sock, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<const char*>(&optval), sizeof(optval));
+            // The kernel may give less without saying so: read it back (MFC :1112-1116).
+            int got = 0;
+            OptLen len = sizeof(got);
+            if (getsockopt(sock, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<char*>(&got), &len) == 0
+                && got >= mfcBigSize)
                 m_useBigSendBuffers = true;
         }
     }

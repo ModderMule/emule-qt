@@ -12,6 +12,8 @@
 #include "app/AppContext.h"
 #include "client/ClientList.h"
 
+#include <QtEndian>
+
 
 namespace eMule::kad {
 
@@ -186,7 +188,7 @@ void UDPFirewallTester::reCheckFirewallUDP(bool setUnverified)
     s_firewalledLastStateUDP = s_firewalledUDP;
     s_isFWVerifiedUDP = s_isFWVerifiedUDP && !setUnverified;
     s_possibleTestClients.clear();
-    s_usedTestClients.clear();
+    // used clients are kept: an IP is asked once per session (MFC :168-181)
 
     SearchManager::findNodeFWCheckUDP();
     s_nodeSearchStarted = true;
@@ -207,7 +209,8 @@ bool UDPFirewallTester::isFWCheckUDPRunning()
 
 bool UDPFirewallTester::isVerified()
 {
-    return s_isFWVerifiedUDP;
+    // With the checks skipped no test runs; the state counts as verified (MFC :266).
+    return s_isFWVerifiedUDP || Kademlia::shouldSkipFirewallChecks();
 }
 
 bool UDPFirewallTester::needsMoreTestContacts()
@@ -222,8 +225,8 @@ void UDPFirewallTester::addPossibleTestContact(const UInt128& clientID, uint32 i
                                                 uint8 connectOptions,
                                                 const UInt128& clientHash)
 {
-    // Only accept Kad2 contacts with sufficient version
-    if (version < KADEMLIA_VERSION8_49b) {
+    // UDP firewall checks need Kad version 6+ (MFC :237)
+    if (version <= KADEMLIA_VERSION5_48a) {
         logKad(QStringLiteral("Kad: UDP FW test contact rejected — version %1 too low")
                    .arg(version));
         return;
@@ -253,11 +256,14 @@ void UDPFirewallTester::reset()
     s_testStart = 0;
     s_lastSucceededTime = 0;
     s_possibleTestClients.clear();
-    s_usedTestClients.clear();
+    // keep the list of used clients (MFC :212)
 
     // Drop any in-flight lookup too, so a stop/start cycle can't leave a stale
     // NodeFwCheckUDP search behind. MFC UDPFirewallTester.cpp:197-212.
     SearchManager::cancelNodeFWCheckUDPSearch();
+
+    if (auto* prefs = Kademlia::getInstancePrefs())
+        prefs->setUseExternKadPort(true);
 }
 
 void UDPFirewallTester::connected()
@@ -287,6 +293,21 @@ void UDPFirewallTester::debugAddUsedTestClient(uint32 ip, uint16 udpPort)
     ++s_fwChecksRunning;
 }
 
+void UDPFirewallTester::debugClearUsedTestClients()
+{
+    s_usedTestClients.clear();
+}
+
+qsizetype UDPFirewallTester::debugPossibleTestClients()
+{
+    return static_cast<qsizetype>(s_possibleTestClients.size());
+}
+
+qsizetype UDPFirewallTester::debugUsedTestClients()
+{
+    return static_cast<qsizetype>(s_usedTestClients.size());
+}
+
 uint8 UDPFirewallTester::debugChecksFinished()
 {
     return s_fwChecksFinished;
@@ -299,6 +320,12 @@ uint8 UDPFirewallTester::debugChecksRunning()
 
 void UDPFirewallTester::queryNextClient()
 {
+    auto* prefs = Kademlia::getInstancePrefs();
+
+    // The request carries our external port: wait until it is known (MFC :226).
+    if (!isFWCheckUDPRunning() || (prefs && prefs->findExternKadPort(false)))
+        return;
+
     if (!getUDPCheckClientsNeeded() || s_possibleTestClients.empty()) {
         logKad(QStringLiteral("Kad: UDP FW queryNextClient — needed=%1, pool=%2")
                    .arg(QLatin1StringView(getUDPCheckClientsNeeded() ? "yes" : "no"))
@@ -306,16 +333,17 @@ void UDPFirewallTester::queryNextClient()
         return;
     }
 
-    auto* prefs = Kademlia::getInstancePrefs();
     auto* routingZone = Kademlia::getInstanceRoutingZone();
 
     while (!s_possibleTestClients.empty()) {
         Contact testContact = std::move(s_possibleTestClients.front());
         s_possibleTestClients.pop_front();
 
-        // Skip if this is our own ID
-        if (prefs && testContact.getClientID() == prefs->kadId()) {
-            logKad(QStringLiteral("Kad: UDP FW skip contact — own ID"));
+        // Skip ourselves, by ID or by address (MFC :241)
+        if ((prefs && testContact.getClientID() == prefs->kadId())
+            || (theApp.publicIP() != 0
+                && qToBigEndian(testContact.address().toUint32()) == theApp.publicIP())) {
+            logKad(QStringLiteral("Kad: UDP FW skip contact — ourselves"));
             continue;
         }
 
@@ -331,10 +359,10 @@ void UDPFirewallTester::queryNextClient()
             continue;
         }
 
-        // Skip if already tested
+        // Skip an address asked before: results are matched by address (MFC :247)
         bool alreadyTested = false;
         for (const auto& used : s_usedTestClients) {
-            if (used.contact.getClientID() == testContact.getClientID()) {
+            if (used.contact.address() == testContact.address()) {
                 alreadyTested = true;
                 break;
             }
@@ -344,21 +372,19 @@ void UDPFirewallTester::queryNextClient()
             continue;
         }
 
+        // Request the check over TCP; only a client we really asked counts as
+        // used, else an address we never asked could report a result (MFC :255-258).
+        if (!theApp.clientList || !theApp.clientList->doRequestFirewallCheckUDP(testContact)) {
+            logKad(QStringLiteral("Kad: UDP FW check TCP request failed for %1")
+                       .arg(testContact.getClientID().toHexString()));
+            continue;
+        }
+
         UsedClient used;
         used.contact = testContact;
         used.answered = false;
         s_usedTestClients.push_back(std::move(used));
-
         ++s_fwChecksRunning;
-
-        // Request UDP firewall check via TCP connection (matches original
-        // theApp.clientlist->DoRequestFirewallCheckUDP at srchybrid/kademlia/UDPFirewallTester.cpp:255)
-        if (!theApp.clientList || !theApp.clientList->doRequestFirewallCheckUDP(testContact)) {
-            logKad(QStringLiteral("Kad: UDP FW check TCP request failed for %1")
-                       .arg(testContact.getClientID().toHexString()));
-            --s_fwChecksRunning;
-            continue;
-        }
 
         logKad(QStringLiteral("Kad: Initiated UDP FW check via TCP to %1")
                    .arg(testContact.getClientID().toHexString()));

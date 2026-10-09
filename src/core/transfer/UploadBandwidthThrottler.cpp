@@ -33,7 +33,9 @@ UploadBandwidthThrottler::~UploadBandwidthThrottler()
 uint64 UploadBandwidthThrottler::getSentBytesSinceLastCallAndReset()
 {
     std::lock_guard lock(m_sendMutex);
-    uint64 result = m_sentBytesSinceLastCall;
+    const uint64 outside = m_outsideBytesForStats.exchange(0, std::memory_order_relaxed);
+    m_outsideBytesForOverheadStats.fetch_add(outside, std::memory_order_relaxed);   // all of it is overhead
+    uint64 result = m_sentBytesSinceLastCall + outside;
     m_sentBytesSinceLastCall = 0;
     return result;
 }
@@ -41,7 +43,8 @@ uint64 UploadBandwidthThrottler::getSentBytesSinceLastCallAndReset()
 uint64 UploadBandwidthThrottler::getSentBytesOverheadSinceLastCallAndReset()
 {
     std::lock_guard lock(m_sendMutex);
-    uint64 result = m_sentBytesOverheadSinceLastCall;
+    uint64 result = m_sentBytesOverheadSinceLastCall
+                    + m_outsideBytesForOverheadStats.exchange(0, std::memory_order_relaxed);
     m_sentBytesOverheadSinceLastCall = 0;
     return result;
 }
@@ -628,7 +631,9 @@ void UploadBandwidthThrottler::runInternal()
                 }
             }
 
-            realBytesToSpend -= static_cast<int64>(spentBytes) * 1000;
+            // plus what sockets sent on their own threads meanwhile
+            realBytesToSpend -= static_cast<int64>(
+                spentBytes + m_outsideBytesForBudget.exchange(0, std::memory_order_relaxed)) * 1000;
 
             // Limit carry-over
             int64 newRealBytesToSpend = -(static_cast<int64>(listSize) + 1) * minFragSize * 1000;

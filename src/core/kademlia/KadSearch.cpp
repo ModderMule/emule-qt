@@ -1371,7 +1371,9 @@ void Search::storePacket(bool flushRemaining)
     // stop-time flush never send to the same contact twice. MFC's JumpStart drives
     // this one contact at a time via StorePacket (Search.cpp:311-313).
     for (auto& [dist, contact] : m_tried) {
-        if (m_storeSent.size() >= maxStore)
+        // No cap while the search runs (MFC has none). The stop-time flush is
+        // port-only, so it keeps one: it must not burst to every responder.
+        if (flushRemaining && m_storeSent.size() >= maxStore)
             break;
         if (!contact)
             continue;

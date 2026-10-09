@@ -1515,12 +1515,34 @@ void tst_CallbackAndQueueRank::requestSharedFileList_deniedAndAnsweredAreReporte
     QVERIFY2(g_statusLines.join(u'\n').contains(QStringLiteral("denied access")),
              qPrintable(g_statusLines.join(u'\n')));
 
-    // ...and the next click is refused visibly instead of silently
+    // A denial ends that request only (MFC ListenSocket.cpp:833-839): the peer may
+    // allow it later, so the next click asks again.
+    QVERIFY(client->viewSharedFilesSupport());
     g_statusLines.clear();
+    peer->clearSharedFileListFlags();
     client->requestSharedFileList();
-    QCOMPARE(client->fileListRequested(), 0);
-    QVERIFY2(g_statusLines.join(u'\n').contains(QStringLiteral("does not allow")),
-             qPrintable(g_statusLines.join(u'\n')));
+    QCOMPARE(client->fileListRequested(), 1);
+    QTRY_VERIFY_WITH_TIMEOUT(peer->receivedAskSharedDirs() || peer->receivedAskSharedFiles(), 5000);
+
+    // 3. Directories, one of them with an empty name: every answer counts once
+    // (C81 — the empty name used to drive the counter to -1 and block the rest).
+    SafeMemFile dirList;
+    dirList.writeUInt32(2);
+    dirList.writeString(QString(), UTF8Mode::Raw);
+    dirList.writeString(QStringLiteral("films"), UTF8Mode::Raw);
+    peer->sendPacket(std::make_unique<Packet>(dirList, OP_EDONKEYPROT, OP_ASKSHAREDDIRSANS));
+    QTRY_COMPARE_WITH_TIMEOUT(client->fileListRequested(), 2, 5000);
+
+    const auto dirAnswer = [&](const QString& name) {
+        SafeMemFile answer;
+        answer.writeString(name, UTF8Mode::Raw);
+        answer.writeUInt32(0);
+        peer->sendPacket(std::make_unique<Packet>(answer, OP_EDONKEYPROT, OP_ASKSHAREDFILESDIRANS));
+    };
+    dirAnswer(QString());
+    QTRY_COMPARE_WITH_TIMEOUT(client->fileListRequested(), 1, 5000);
+    dirAnswer(QStringLiteral("films"));
+    QTRY_COMPARE_WITH_TIMEOUT(client->fileListRequested(), 0, 5000);
 
     peer->close();
     peer->deleteLater();

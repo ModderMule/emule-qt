@@ -155,7 +155,6 @@ private:
     QString m_version;
     bool m_connected = false;
     bool m_loggedIn = false;
-    bool m_enableUTF8 = true;
 };
 
 } // namespace eMule

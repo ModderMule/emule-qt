@@ -49,6 +49,9 @@ private slots:
     // Search requests we serve
     void searchSourceReq_minimalPacketIsServed();
     void searchNotesReq_minimalPacketIsServed();
+    void publishSource_sizeFeedsTheServingFilter();
+    void searchSourceReq_pagingCountsBeforeTheSizeFilter();
+    void publishNotes_rejectedNoteGetsNoAnswer();
 
     // Statistics
     void helloReq_firewalledNodeIsSeenButNotAdded();
@@ -264,6 +267,137 @@ void tst_KadUDPListener::searchSourceReq_minimalPacketIsServed()
     QCOMPARE(answers, 1);
 
     QObject::disconnect(Kademlia::getInstanceUDPListener(), nullptr, this, nullptr);
+}
+
+namespace {
+
+constexpr uint32 kLanIP = 0xC0A80105;   // 192.168.1.5: publishes pass the distance check
+
+/// Collects what the listener sends: result counts of SEARCH_RES, number of PUBLISH_RES.
+struct SentSpy {
+    int results = 0;
+    int publishAnswers = 0;
+    QMetaObject::Connection conn;
+
+    SentSpy()
+    {
+        conn = QObject::connect(Kademlia::getInstanceUDPListener(),
+                                &KademliaUDPListener::packetToSend,
+                                [this](const QByteArray& data) {
+            if (data.isEmpty())
+                return;
+            if (uint8(data[0]) == KADEMLIA2_PUBLISH_RES)
+                ++publishAnswers;
+            // opcode, sender ID, key ID, count
+            if (uint8(data[0]) == KADEMLIA2_SEARCH_RES && data.size() >= 35)
+                results += qFromLittleEndian<quint16>(data.constData() + 33);
+        });
+    }
+    ~SentSpy() { QObject::disconnect(conn); }
+};
+
+QByteArray publishRequest(uint8 opcode, const UInt128& fileID, const UInt128& sourceID,
+                          const std::vector<Tag>& tags)
+{
+    SafeMemFile io;
+    io.writeUInt8(opcode);
+    io::writeUInt128(io, fileID);
+    io::writeUInt128(io, sourceID);
+    io::writeKadTagList(io, tags);
+    return io.buffer();
+}
+
+QByteArray sourceRequest(const UInt128& fileID, uint16 start, uint64 size)
+{
+    SafeMemFile io;
+    io.writeUInt8(KADEMLIA2_SEARCH_SOURCE_REQ);
+    io::writeUInt128(io, fileID);
+    io.writeUInt16(start);
+    io.writeUInt64(size);
+    return io.buffer();
+}
+
+} // namespace
+
+// C90: the publisher's size went into the tag list, never into the field the
+// serving filter compares (MFC KademliaUDPListener.cpp:1322-1330).
+void tst_KadUDPListener::publishSource_sizeFeedsTheServingFilter()
+{
+    eMule::testing::KadFixture kadFixture;
+    QTRY_VERIFY(Kademlia::getInstanceIndexed()->isLoaded());
+    const UInt128 fileID(uint32{0x51C0FFE1});
+    SentSpy spy;
+
+    deliver(publishRequest(KADEMLIA2_PUBLISH_SOURCE_REQ, fileID, UInt128(uint32{0x50}),
+                           {Tag(uint8{FT_SOURCETYPE}, uint32{1}),
+                            Tag(uint8{FT_SOURCEPORT}, uint32{4662}),
+                            Tag(uint8{FT_FILESIZE}, uint32{1000})}),
+            kLanIP);
+    QCOMPARE(spy.publishAnswers, 1);
+
+    deliver(sourceRequest(fileID, 0, 2000), kNodeIP);   // another file size
+    QCOMPARE(spy.results, 0);
+    deliver(sourceRequest(fileID, 0, 1000), kNodeIP);
+    QCOMPARE(spy.results, 1);
+    deliver(sourceRequest(fileID, 0, 0), kNodeIP);      // size unknown to the asker
+    QCOMPARE(spy.results, 2);
+}
+
+// C99: the start position counts stored sources, whatever their size
+// (MFC Indexed.cpp:723-728) — else pages overlap for a client that pages.
+void tst_KadUDPListener::searchSourceReq_pagingCountsBeforeTheSizeFilter()
+{
+    eMule::testing::KadFixture kadFixture;
+    auto* indexed = Kademlia::getInstanceIndexed();
+    QTRY_VERIFY(indexed->isLoaded());
+    const UInt128 fileID(uint32{0x51C0FFE2});
+
+    const auto add = [&](uint32 ip, uint32 sourceID, uint64 size) {
+        auto* entry = new Entry();
+        entry->m_address = Address::fromHostOrder(ip);
+        entry->m_tcpPort = 4662;
+        entry->m_udpPort = 4672;
+        entry->m_size = size;
+        entry->addTag(Tag(uint8{FT_SOURCETYPE}, uint32{1}));
+        uint8 load = 0;
+        return indexed->addSources(fileID, UInt128(sourceID), entry, load);
+    };
+    // newest first in the list: [2000, 1000]
+    QVERIFY(add(0x4D0A0B01, 0x51, 1000));
+    QVERIFY(add(0x4D0A0B02, 0x52, 2000));
+
+    SentSpy spy;
+    deliver(sourceRequest(fileID, 1, 1000), kNodeIP);
+    QCOMPARE(spy.results, 1);
+}
+
+// C100: a rejected note (here: no tags) gets no PUBLISH_RES. C90: a note's size
+// is a field the serving filter reads (MFC KademliaUDPListener.cpp:1540-1574).
+void tst_KadUDPListener::publishNotes_rejectedNoteGetsNoAnswer()
+{
+    eMule::testing::KadFixture kadFixture;
+    QTRY_VERIFY(Kademlia::getInstanceIndexed()->isLoaded());
+    const UInt128 fileID(uint32{0x0707E6});
+    SentSpy spy;
+
+    deliver(publishRequest(KADEMLIA2_PUBLISH_NOTES_REQ, fileID, UInt128(uint32{0x60}), {}),
+            kLanIP);
+    QCOMPARE(spy.publishAnswers, 0);
+
+    deliver(publishRequest(KADEMLIA2_PUBLISH_NOTES_REQ, fileID, UInt128(uint32{0x60}),
+                           {Tag(uint8{FT_FILENAME}, QStringLiteral("a.avi")),
+                            Tag(uint8{FT_FILESIZE}, uint32{1000}),
+                            Tag(uint8{FT_FILERATING}, uint32{4})}),
+            kLanIP);
+    QCOMPARE(spy.publishAnswers, 1);
+
+    // the size is a field now: a request for another size finds nothing
+    SafeMemFile io;
+    io.writeUInt8(KADEMLIA2_SEARCH_NOTES_REQ);
+    io::writeUInt128(io, fileID);
+    io.writeUInt64(2000);
+    deliver(io.buffer(), kNodeIP);
+    QCOMPARE(spy.results, 0);
 }
 
 // A notes request is 24 bytes (MFC KademliaUDPListener.cpp:1457-1464).

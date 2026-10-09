@@ -3,7 +3,9 @@
 
 #include "TestHelpers.h"
 #include "net/EMSocket.h"
+#include "app/AppContext.h"
 #include "net/Packet.h"
+#include "transfer/UploadBandwidthThrottler.h"
 #include "utils/Opcodes.h"
 
 #include <QEventLoop>
@@ -13,9 +15,14 @@
 #include <QTest>
 #include <QTimer>
 
+#ifndef Q_OS_WIN
+#include <sys/socket.h>
+#endif
+
 #include <array>
 #include <cstring>
 #include <memory>
+#include <thread>
 #include <vector>
 
 using namespace eMule;
@@ -99,6 +106,10 @@ private slots:
     void fullReceive_falseOnShortRead();
     void fullReceive_trueWhenBufferFilled();
     void fullReceive_trueUnderAThrottleThatCapsTheRead();
+    void rawSend_waitsForBytesInTheQtBuffer();
+    void rawSend_wouldBlockMarksTheSocketBusy();
+    void bigSendBuffer_isReadBack();
+    void ownerThreadSend_isReportedToTheThrottler();
 };
 
 /// Helper: write raw ED2K packet bytes to a socket.
@@ -717,6 +728,134 @@ void tst_EMSocket::sendQueue_oneLargePacketIsKept()
     sock.sendPacket(std::make_unique<Packet>(OP_ASKSHAREDFILESANSWER, 9 * 1024 * 1024, OP_EDONKEYPROT), true);
     QTest::qWait(100);
     QCOMPARE(sock.lastErrorCode, 0);
+}
+
+// C75: the throttler thread sends straight to the kernel, the owner thread into
+// Qt's buffer. Bytes the owner queued must leave first, or the stream is cut up —
+// and an obfuscated one never recovers.
+void tst_EMSocket::rawSend_waitsForBytesInTheQtBuffer()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    TestEMSocket sock;
+    sock.connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* peer = server.nextPendingConnection();
+    QVERIFY(peer != nullptr);
+    QVERIFY(sock.waitForConnected(5000));
+
+    constexpr uint32 kPayload = 3000;
+    auto packet = std::make_unique<Packet>(OP_HASHSETANSWER, kPayload, OP_EDONKEYPROT);
+    std::memset(packet->pBuffer, 'A', kPayload);
+    // forced: the owner thread writes the first 1024 bytes at once, into Qt's buffer
+    sock.sendPacket(std::move(packet), true, 0, true);
+    QCOMPARE(sock.bytesToWrite(), qint64{1024});
+
+    // the throttler comes by before the event loop has flushed them
+    std::thread throttler([&sock] { (void)sock.sendFileAndControlData(65536, 1); });
+    throttler.join();
+
+    const qint64 expected = kPayload + qint64{sizeof(HeaderStruct)};
+    QTRY_VERIFY_WITH_TIMEOUT(peer->bytesAvailable() >= expected, 5000);
+    const QByteArray wire = peer->readAll();
+    QCOMPARE(wire.size(), expected);
+    QCOMPARE(uint8(wire.at(0)), uint8{OP_EDONKEYPROT});
+    QCOMPARE(wire.mid(sizeof(HeaderStruct)), QByteArray(kPayload, 'A'));
+}
+
+// C74: a send that would block has to show as "busy" — the throttler's slot logic
+// reads nothing else (MFC EMSocket.cpp:648-655) — and stop showing once it clears.
+void tst_EMSocket::rawSend_wouldBlockMarksTheSocketBusy()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    TestEMSocket sock;
+    sock.connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* peer = server.nextPendingConnection();
+    QVERIFY(peer != nullptr);
+    QVERIFY(sock.waitForConnected(5000));
+    QVERIFY(!sock.isBusyQuickCheck());
+
+    // ~12 MiB of file data; nobody runs the peer's event loop, so nothing is read
+    constexpr int kPackets = 190;
+    constexpr uint32 kPayload = 64 * 1024;
+    for (int i = 0; i < kPackets; ++i)
+        sock.sendPacket(std::make_unique<Packet>(OP_SENDINGPART, kPayload, OP_EDONKEYPROT), false, kPayload);
+
+    // Asked on the spot: the kernel's receive buffer grows by itself after a while,
+    // and the socket then is writable again without anyone reading.
+    bool blocked = false;
+    bool busyWhenBlocked = false;
+    std::thread throttler([&] {
+        for (int i = 0; i < 1000 && !blocked; ++i) {
+            const SocketSentBytes sent = sock.sendFileAndControlData(1 << 20, 1);
+            if (!sent.success)
+                return;
+            blocked = sent.sentBytesStandardPackets == 0;
+            if (blocked)
+                busyWhenBlocked = sock.isBusyQuickCheck();
+        }
+    });
+    throttler.join();
+    QVERIFY2(blocked, "the kernel took everything; the test needs more data");
+    QVERIFY(busyWhenBlocked);
+
+    // the peer reads: writable again, and the check notices by itself
+    QTRY_VERIFY_WITH_TIMEOUT(peer->bytesAvailable() > 0, 5000);
+    peer->readAll();
+    QTRY_VERIFY_WITH_TIMEOUT((peer->readAll(), !sock.isBusyExtensiveCheck()), 5000);
+    QVERIFY(!sock.isBusyQuickCheck());
+}
+
+// C88: the size asked for is not always the size got; MFC reads it back
+// (EMSocket.cpp:1112-1116). The value itself (1 MiB) is the port's own.
+void tst_EMSocket::bigSendBuffer_isReadBack()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    TestEMSocket sock;
+    sock.connectToHost(QHostAddress::LocalHost, server.serverPort());
+    QVERIFY(server.waitForNewConnection(5000));
+    QVERIFY(sock.waitForConnected(5000));
+
+    int before = 0;
+    socklen_t len = sizeof(before);
+    QCOMPARE(getsockopt(static_cast<int>(sock.socketDescriptor()), SOL_SOCKET, SO_SNDBUF, &before, &len), 0);
+
+    const bool big = sock.useBigSendBuffer();
+    int after = 0;
+    len = sizeof(after);
+    QCOMPARE(getsockopt(static_cast<int>(sock.socketDescriptor()), SOL_SOCKET, SO_SNDBUF, &after, &len), 0);
+    QVERIFY(after >= before);
+    // "big" only when the kernel really gave (at least) what MFC asks for
+    QCOMPARE(big, after >= 128 * 1024);
+}
+
+// C77: a control packet sent on the socket's thread is charged like any upload.
+void tst_EMSocket::ownerThreadSend_isReportedToTheThrottler()
+{
+    UploadBandwidthThrottler throttler;
+    theApp.uploadBandwidthThrottler = &throttler;
+    const auto unpublish = qScopeGuard([&] {
+        theApp.uploadBandwidthThrottler = nullptr;
+        throttler.endThread();
+    });
+
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    {
+        TestEMSocket sock;
+        sock.connectToHost(QHostAddress::LocalHost, server.serverPort());
+        QVERIFY(server.waitForNewConnection(5000));
+        QVERIFY(sock.waitForConnected(5000));
+        (void)throttler.getSentBytesSinceLastCallAndReset();
+
+        constexpr uint32 kPayload = 500;
+        sock.sendPacket(std::make_unique<Packet>(OP_HASHSETANSWER, kPayload, OP_EDONKEYPROT), true, 0, true);
+        QCOMPARE(throttler.getSentBytesSinceLastCallAndReset(), uint64{kPayload + sizeof(HeaderStruct)});
+        QCOMPARE(throttler.getSentBytesOverheadSinceLastCallAndReset(), uint64{kPayload + sizeof(HeaderStruct)});
+    }   // the socket goes before the throttler does
 }
 
 QTEST_MAIN(tst_EMSocket)

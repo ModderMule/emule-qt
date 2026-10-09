@@ -8,7 +8,12 @@
 
 #include "IndexerCaps.h"
 #include "IndexerResult.h"
+#include "PasswordFlagStore.h"
 
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QTemporaryDir>
 #include <QTest>
 #include <QTimeZone>
 
@@ -46,6 +51,8 @@ private slots:
     void search_dedupKeyIgnoresCase();
     void search_classifiesThePasswordAttr();
     void passwordFlag_skipsAValueOnMostRows();
+    void passwordFlag_boundsItsCounts();
+    void passwordFlagStore_keepsCountsAndNoText();
     void search_takesABracedPasswordOutOfTheTitle();
 
     // -- usenet-crawler -------------------------------------------------------
@@ -600,6 +607,167 @@ void tst_IndexerParse::passwordFlag_skipsAValueOnMostRows()
         IndexerSearchPage page = pageOf(repeat(f255, 20) + repeat(QStringLiteral("0"), 20));
         tally.apply(page);
         QCOMPARE(marked(page), 20);
+    }
+}
+
+namespace {
+
+/// @p n rows that all carry the flag @p flag ("0" for none).
+IndexerSearchPage flagPage(const QString& flag, int n)
+{
+    IndexerSearchPage page;
+    for (int i = 0; i < n; ++i) {
+        IndexerResult row;
+        row.title = QStringLiteral("Release.Name");
+        if (flag != QLatin1String("0")) {
+            row.passwordProtected = true;
+            row.passwordStated = flag == QLatin1String("1");
+            row.passwordFlag = flag;
+        }
+        page.results.append(row);
+    }
+    return page;
+}
+
+int markedRows(const IndexerSearchPage& page)
+{
+    int n = 0;
+    for (const IndexerResult& row : page.results)
+        n += row.passwordProtected ? 1 : 0;
+    return n;
+}
+
+} // namespace
+
+void tst_IndexerParse::passwordFlag_boundsItsCounts()
+{
+    // A value per row would grow the counts without end: only the first 32 are kept.
+    {
+        PasswordFlagTally tally;
+        IndexerSearchPage page;
+        for (int i = 0; i < 40; ++i)
+            page.results += flagPage(QStringLiteral("v%1").arg(i), 1).results;
+        tally.apply(page);
+        QCOMPARE(tally.counts().size(), qsizetype(PasswordFlagTally::kMaxFlagValues));
+        QCOMPARE(tally.rows(), 40);
+    }
+
+    // Past the ceiling the counts halve and the share, so the verdict, survives.
+    {
+        PasswordFlagTally tally;
+        IndexerSearchPage page = flagPage(QStringLiteral("255"), PasswordFlagTally::kMaxRows + 2);
+        tally.apply(page);
+        QCOMPARE(tally.rows(), PasswordFlagTally::kMaxRows / 2 + 1);
+        QCOMPARE(tally.counts().value(QStringLiteral("255")), tally.rows());
+        IndexerSearchPage next = flagPage(QStringLiteral("255"), 3);
+        tally.apply(next);
+        QCOMPARE(markedRows(next), 0);
+    }
+
+    // Stored nonsense is dropped, not trusted.
+    {
+        PasswordFlagTally tally;
+        tally.restore(100, {{QStringLiteral("a"), 90}, {QStringLiteral("b"), -4},
+                            {QStringLiteral("c"), 500}});
+        QCOMPARE(tally.counts().size(), qsizetype(1));
+        tally.restore(-1, {{QStringLiteral("a"), 1}});
+        QCOMPARE(tally.rows(), 0);
+        QVERIFY(tally.counts().isEmpty());
+    }
+}
+
+void tst_IndexerParse::passwordFlagStore_keepsCountsAndNoText()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("PasswordFlags.json"));
+    const QString crawler = QStringLiteral("my_crawler");
+    const QString other = QStringLiteral("other_indexer");
+    const auto readFile = [&path] {
+        QFile file(path);
+        return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+    };
+
+    {
+        PasswordFlagStore store(path);
+        IndexerSearchPage page = flagPage(QStringLiteral("255"), 30);
+        page.results += flagPage(QStringLiteral("n/a"), 2).results;
+        store.apply(crawler, page);
+        QCOMPARE(markedRows(page), 2);
+
+        // Another indexer starts from nothing: counts are not shared.
+        IndexerSearchPage few = flagPage(QStringLiteral("1"), 3);
+        store.apply(other, few);
+        QCOMPARE(markedRows(few), 3);
+    }   // the destructor writes
+
+    // Counts only: no indexer name and no flag text in the file.
+    const QByteArray stored = readFile();
+    QVERIFY(!stored.isEmpty());
+    QVERIFY(!stored.contains("crawler"));
+    QVERIFY(!stored.contains("other_indexer"));
+    QVERIFY(!stored.contains("255"));
+    QVERIFY(!stored.contains("n/a"));
+    const QJsonObject root = QJsonDocument::fromJson(stored).object();
+    QCOMPARE(root.value(QStringLiteral("salt")).toString().size(), qsizetype(32));
+    const QJsonObject indexers = root.value(QStringLiteral("indexers")).toObject();
+    QCOMPARE(indexers.size(), qsizetype(2));
+    for (auto it = indexers.constBegin(); it != indexers.constEnd(); ++it)
+        QCOMPARE(it.key().size(), qsizetype(16));
+
+    // A restart knows the indexer at once: a short page needs no fallback...
+    {
+        PasswordFlagStore store(path);
+        IndexerSearchPage page = flagPage(QStringLiteral("255"), 2);
+        store.apply(crawler, page);
+        QCOMPARE(markedRows(page), 0);
+
+        // ...and the rare value still marks, which the fallback would not do.
+        IndexerSearchPage rare = flagPage(QStringLiteral("n/a"), 1);
+        store.apply(crawler, rare);
+        QCOMPARE(markedRows(rare), 1);
+
+        store.forget(crawler);
+    }
+    const QJsonObject after = QJsonDocument::fromJson(readFile()).object();
+    QCOMPARE(after.value(QStringLiteral("indexers")).toObject().size(), qsizetype(1));
+    QCOMPARE(after.value(QStringLiteral("salt")), root.value(QStringLiteral("salt")));
+
+    // Forgotten means the fallback again: one row of an unknown value is not marked.
+    {
+        PasswordFlagStore store(path);
+        IndexerSearchPage page = flagPage(QStringLiteral("n/a"), 1);
+        store.apply(crawler, page);
+        QCOMPARE(markedRows(page), 0);
+    }
+
+    // Another installation salts differently, so its ids match nothing here.
+    const QString path2 = dir.filePath(QStringLiteral("Second.json"));
+    {
+        PasswordFlagStore store(path2);
+        IndexerSearchPage page = flagPage(QStringLiteral("1"), 3);
+        store.apply(other, page);
+    }
+    QFile second(path2);
+    QVERIFY(second.open(QIODevice::ReadOnly));
+    const QJsonObject root2 = QJsonDocument::fromJson(second.readAll()).object();
+    QVERIFY(root2.value(QStringLiteral("salt")) != root.value(QStringLiteral("salt")));
+    QVERIFY(!indexers.contains(root2.value(QStringLiteral("indexers")).toObject().keys().value(0)));
+
+    // A broken or foreign file reads as empty and is replaced.
+    for (const QByteArray& junk : {QByteArray("{not json"), QByteArray(R"({"version":9})"),
+                                   QByteArray(R"({"version":1,"salt":"zz","indexers":7})")}) {
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        file.write(junk);
+        file.close();
+        {
+            PasswordFlagStore store(path);
+            IndexerSearchPage page = flagPage(QStringLiteral("255"), 30);
+            store.apply(crawler, page);
+            QCOMPARE(markedRows(page), 0);
+        }
+        QCOMPARE(QJsonDocument::fromJson(readFile()).object().value(QStringLiteral("version")).toInt(), 1);
     }
 }
 

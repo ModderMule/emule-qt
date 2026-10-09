@@ -310,6 +310,53 @@ inline void insertBindState(QCborMap& info)
     };
 }
 
+/// Source clients, and the AICH root the row and its names agree on with who stands
+/// behind it. Capped: a restored row needs a start, not the whole list.
+inline void insertDownloadSeed(QCborMap& m, const SearchFile& f)
+{
+    static constexpr qsizetype kMaxSeedEntries = 16;
+
+    std::vector<const SearchFile*> rows{&f};
+    for (const SearchFile* child : f.listChildren())
+        rows.push_back(child);
+
+    QCborArray clients;
+    std::vector<SearchFile::SClient> seen;
+    const AICHHash* agreed = nullptr;
+    bool conflict = false;
+    bool vouched = false;
+    QCborArray voters;
+    for (const SearchFile* row : rows) {
+        for (const SearchFile::SClient& client : row->clients()) {
+            if (clients.size() >= kMaxSeedEntries || std::ranges::find(seen, client) != seen.end())
+                continue;
+            seen.push_back(client);
+            clients.append(QCborArray{static_cast<qint64>(client.ip), client.port,
+                                      static_cast<qint64>(client.serverIP), client.serverPort});
+        }
+        if (!row->fileIdentifier().hasAICHHash())
+            continue;
+        const AICHHash& hash = row->fileIdentifier().getAICHHash();
+        if (!agreed)
+            agreed = &hash;
+        else if (*agreed != hash)
+            conflict = true;
+        vouched |= !row->isKadResult() || row->isAICHVouchedDirectly();
+        for (const Address& voter : row->aichVoters()) {
+            if (voters.size() < kMaxSeedEntries)
+                voters.append(voter.toString());
+        }
+    }
+    if (!clients.isEmpty())
+        m.insert(QStringLiteral("clients"), clients);
+    if (agreed && !conflict) {
+        m.insert(QStringLiteral("aichSeed"), agreed->getString());
+        m.insert(QStringLiteral("aichVouched"), vouched);
+        if (!vouched && !voters.isEmpty())
+            m.insert(QStringLiteral("aichVoters"), voters);
+    }
+}
+
 [[nodiscard]] inline QCborMap toCbor(const SearchFile& f)
 {
     QCborMap m;
@@ -353,6 +400,9 @@ inline void insertBindState(QCborMap& info)
     m.insert(QStringLiteral("kadNames"),      static_cast<int>((f.kadPublishInfo() >> 24) & 0xFF));
     m.insert(QStringLiteral("kadTrust"),      static_cast<int>(f.kadPublishInfo() & 0xFFFF));
     m.insert(QStringLiteral("clientCount"),   static_cast<int>(f.clientsCount()));
+    // What a download takes from the result (DownloadQueue::seedFromSearchResult): the
+    // GUI keeps it with the row, for a tab restored after the search is gone.
+    insertDownloadSeed(m, f);
     // The names this file was found under, once there is more than one (MFC's child rows)
     if (f.listChildCount() > 1) {
         QCborArray children;

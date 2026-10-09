@@ -260,32 +260,60 @@ IndexerSearchPage parseIndexerSearch(const QByteArray& xml, const QString& index
     return page;
 }
 
-void PasswordFlagTally::apply(IndexerSearchPage& page)
+void PasswordFlagTally::apply(IndexerSearchPage& page, const KeyFn& keyFor)
 {
+    const auto keyOf = [&keyFor](const QString& flag) { return keyFor ? keyFor(flag) : flag; };
+
     for (const IndexerResult& row : std::as_const(page.results)) {
         ++m_rows;
-        if (!row.passwordFlag.isEmpty())
-            ++m_counts[row.passwordFlag];
+        if (row.passwordFlag.isEmpty())
+            continue;
+        const QString key = keyOf(row.passwordFlag);
+        if (auto it = m_counts.find(key); it != m_counts.end())
+            ++*it;
+        else if (m_counts.size() < kMaxFlagValues)
+            m_counts.insert(key, 1);
     }
 
     for (IndexerResult& row : page.results) {
         // A passphrase (attribute or title) is a fact about the release, not a flag
         if (row.passwordFlag.isEmpty() || !row.password.isEmpty())
             continue;
-        if (isSkipped(row.passwordFlag)) {
+        if (isSkipped(row.passwordFlag, keyOf(row.passwordFlag))) {
             row.passwordProtected = false;
             row.passwordStated = false;
         }
     }
+
+    if (m_rows > kMaxRows) {
+        m_rows /= 2;
+        for (int& count : m_counts)
+            count /= 2;
+        m_counts.removeIf([](const auto& it) { return it.value() <= 0; });
+    }
 }
 
-bool PasswordFlagTally::isSkipped(const QString& flag) const
+void PasswordFlagTally::restore(int rows, const QHash<QString, int>& counts)
 {
-    if (m_rows < kFlagMinRows) {
+    m_rows = 0;
+    m_counts.clear();
+    if (rows <= 0 || rows > kMaxRows)
+        return;
+    m_rows = rows;
+    for (auto it = counts.cbegin(); it != counts.cend(); ++it) {
+        if (it.value() > 0 && it.value() <= rows && m_counts.size() < kMaxFlagValues)
+            m_counts.insert(it.key(), it.value());
+    }
+}
+
+bool PasswordFlagTally::isSkipped(const QString& flag, const QString& key) const
+{
+    const auto counted = m_counts.constFind(key);
+    if (m_rows < kFlagMinRows || counted == m_counts.constEnd()) {
         return flag != QLatin1String("1") && flag != QLatin1String("2")
                && flag != QLatin1String("10");
     }
-    return qint64(m_counts.value(flag)) * 100 > qint64(m_rows) * kFlagSkipPercent;
+    return qint64(*counted) * 100 > qint64(m_rows) * kFlagSkipPercent;
 }
 
 } // namespace eMule::indexer

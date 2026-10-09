@@ -643,6 +643,14 @@ int main(int argc, char* argv[])
             if (eMule::thePrefs.notifyOnChat()) {
                 const QString user = msg.fieldString(1);
                 const QString text = msg.fieldString(2);
+                // the first message of a peer, or every one when asked
+                // (MFC ChatSelector.cpp:243)
+                static QSet<QString> seenSenders;
+                const QString sender = msg.fieldString(0).isEmpty() ? user : msg.fieldString(0);
+                const bool newChat = !seenSenders.contains(sender);
+                seenSenders.insert(sender);
+                if (!newChat && !eMule::thePrefs.notifyOnChatMsg())
+                    return;
                 mainWindow.showNotification(
                     QObject::tr("Chat Message from %1").arg(user), text);
             }

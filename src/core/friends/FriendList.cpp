@@ -5,6 +5,7 @@
 #include "friends/FriendList.h"
 #include "app/AppContext.h"
 #include "client/ClientList.h"
+#include "prefs/Preferences.h"
 #include "utils/Log.h"
 #include "utils/OtherFunctions.h"
 #include "utils/Opcodes.h"
@@ -77,6 +78,8 @@ void FriendList::save(const QString& configDir) const
     const QString filePath = QDir(configDir).filePath(
         QString::fromLatin1(kFriendsMetFilename));
     const QString tmpPath = filePath + QStringLiteral(".tmp");
+    if (thePrefs.wantsFileSavingLog())
+        logDebug(QStringLiteral("Saving friends list file \"%1\"").arg(filePath));
 
     try {
         QFile::remove(tmpPath);

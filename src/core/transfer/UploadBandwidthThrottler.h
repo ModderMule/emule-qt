@@ -45,6 +45,14 @@ public:
     void removeFromAllQueues(ThrottledFileSocket* socket);
     void removeFromAllQueues(ThrottledControlSocket* socket);
 
+    /// Bytes a socket sent on its own thread, past this loop (TCP control packets):
+    /// counted in the rate, taken off the budget. Any thread.
+    void noteBytesSentOutsideTheLoop(uint32 bytes)
+    {
+        m_outsideBytesForStats.fetch_add(bytes, std::memory_order_relaxed);
+        m_outsideBytesForBudget.fetch_add(bytes, std::memory_order_relaxed);
+    }
+
     // Wakeup signals
     void newUploadDataAvailable();
     void socketAvailable();
@@ -107,6 +115,9 @@ private:
     // Statistics (guarded by m_sendMutex)
     uint64 m_sentBytesSinceLastCall = 0;
     uint64 m_sentBytesOverheadSinceLastCall = 0;
+    std::atomic<uint64> m_outsideBytesForStats{0};
+    std::atomic<uint64> m_outsideBytesForOverheadStats{0};
+    std::atomic<uint64> m_outsideBytesForBudget{0};
     int m_highestNumberOfFullyActivatedSlots = 0;
 
     // Components (not owned)

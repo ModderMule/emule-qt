@@ -12,6 +12,7 @@
 #include "nntp/NntpSocket.h"
 #include "UsenetSession.h"
 #include "IndexerCapsStore.h"
+#include "IndexerClient.h"
 #include "IndexerFeedList.h"
 #include "IndexerQuery.h"
 #include "IndexerSearch.h"
@@ -1059,12 +1060,109 @@ void IpcClientHandler::handleClearAllSearches(const IpcMessage& msg)
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 
+namespace {
+
+/// The search file behind a GUI row. A tab restored from disk has no search any more
+/// (searchID 0): its rows send themselves along (@p row, SearchResultRow::fileRef())
+/// and are kept by hash, so the row can still be shown, commented on and marked.
+SearchFile* searchFileForRow(const uint8* hash, uint32 searchID, const QCborValue& row)
+{
+    if (SearchFile* file = theApp.searchList->searchFileByHash(hash, searchID))
+        return file;
+    if (searchID != 0)
+        return nullptr;
+    if (SearchFile* file = theApp.searchList->restoredFile(hash))
+        return file;
+
+    const QCborMap ref = row.toMap();
+    const QString name = ref.value(QLatin1StringView("name")).toString();
+    if (name.isEmpty())
+        return nullptr;
+
+    auto file = std::make_unique<SearchFile>();
+    file->setKadResult(ref.value(QLatin1StringView("isKad")).toBool());
+    file->setFileHash(hash);
+    file->setFileName(name, true);
+    file->setFileSize(static_cast<uint64>(ref.value(QLatin1StringView("size")).toInteger()));
+    if (const QString type = ref.value(QLatin1StringView("type")).toString(); !type.isEmpty())
+        file->setFileType(type);
+    file->addSources(static_cast<uint32>(ref.value(QLatin1StringView("sources")).toInteger()));
+    file->addCompleteSources(
+        static_cast<uint32>(ref.value(QLatin1StringView("completeSources")).toInteger()));
+    if (ref.value(QLatin1StringView("isSpam")).toBool())
+        file->setSpamRating(SEARCH_SPAM_THRESHOLD);
+    file->setDirectory(ref.value(QLatin1StringView("directory")).toString());
+    file->setPreviewPossible(ref.value(QLatin1StringView("previewPossible")).toBool());
+
+    // What a download is seeded with (ipc toCbor: insertDownloadSeed)
+    for (const QCborValue& value : ref.value(QLatin1StringView("clients")).toArray()) {
+        const QCborArray c = value.toArray();
+        const SearchFile::SClient client{static_cast<uint32>(c.at(0).toInteger()),
+                                         static_cast<uint16>(c.at(1).toInteger()),
+                                         static_cast<uint32>(c.at(2).toInteger()),
+                                         static_cast<uint16>(c.at(3).toInteger())};
+        if (client.ip != 0 && client.port != 0)
+            file->addClient(client);
+    }
+    std::array<uint8, kAICHHashSize> aich{};
+    if (decodeBase32(ref.value(QLatin1StringView("aichSeed")).toString(), aich.data(), aich.size())
+            == aich.size()) {
+        file->fileIdentifier().setAICHHash(AICHHash(aich.data()));
+        if (ref.value(QLatin1StringView("aichVouched")).toBool())
+            file->setAICHVouchedDirectly();
+        for (const QCborValue& voter : ref.value(QLatin1StringView("aichVoters")).toArray())
+            file->addAICHVoter(Address::fromString(voter.toString()));
+    }
+
+    // The media tags are all a result's tag list holds once name, size, type and the
+    // counts are taken out of it.
+    static constexpr std::pair<QLatin1StringView, uint8> strTags[] = {
+        {QLatin1StringView("artist"), FT_MEDIA_ARTIST},
+        {QLatin1StringView("album"), FT_MEDIA_ALBUM},
+        {QLatin1StringView("title"), FT_MEDIA_TITLE},
+        {QLatin1StringView("codec"), FT_MEDIA_CODEC}};
+    for (const auto& [key, tagId] : strTags) {
+        if (const QString value = ref.value(key).toString(); !value.isEmpty())
+            file->setStrTagValue(tagId, value);
+    }
+    static constexpr std::pair<QLatin1StringView, uint8> intTags[] = {
+        {QLatin1StringView("length"), FT_MEDIA_LENGTH},
+        {QLatin1StringView("bitrate"), FT_MEDIA_BITRATE}};
+    for (const auto& [key, tagId] : intTags) {
+        if (const qint64 value = ref.value(key).toInteger(); value > 0)
+            file->setIntTagValue(tagId, static_cast<uint32>(value));
+    }
+    return theApp.searchList->adoptRestoredFile(std::move(file));
+}
+
+/// A download started from a restored tab's row: the sources and the AICH root the
+/// row kept, as a live search result would hand them over.
+void seedFromRestoredRow(const QString& hashHex, uint32 searchID, const QCborValue& row)
+{
+    uint8 hash[16]{};
+    if (searchID != 0 || !row.isMap() || !theApp.searchList || !hexToHash(hashHex, hash))
+        return;
+    PartFile* file = theApp.downloadQueue->fileByID(hash);
+    const SearchFile* result = searchFileForRow(hash, 0, row);
+    if (!file || !result)
+        return;
+    theApp.downloadQueue->seedFromSearchResult(file, *result);
+    // The names it was found under; the kept file has no child rows to carry them
+    QStringList names;
+    for (const QCborValue& name : row.toMap().value(QLatin1StringView("names")).toArray())
+        names.push_back(name.toString());
+    file->addObservedNames(names);
+}
+
+} // namespace
+
 void IpcClientHandler::handleDownloadSearchFile(const IpcMessage& msg)
 {
     // Field 4: the search window's "->" category (MFC SearchResultsWnd.cpp:542); field 5:
     // the search the row belongs to, 0 from link senders and restored tabs; field 6:
-    // start paused, absent = the "add new files paused" option decides.
-    const std::optional<bool> paused = msg.fieldCount() > 6
+    // start paused, absent or null = the "add new files paused" option decides; field 7:
+    // the row itself, from a restored tab (see searchFileForRow).
+    const std::optional<bool> paused = msg.field(6).isBool()
         ? std::optional<bool>(msg.fieldBool(6)) : std::nullopt;
     const ops::AddOutcome out = ops::addDownloadFromSearch(
         msg.fieldString(0), msg.fieldString(1), static_cast<uint64>(msg.fieldInt(2)),
@@ -1073,6 +1171,7 @@ void IpcClientHandler::handleDownloadSearchFile(const IpcMessage& msg)
         sendMessage(IpcMessage::makeError(msg.seqId(), out.status.code, out.status.message));
         return;
     }
+    seedFromRestoredRow(msg.fieldString(0), static_cast<uint32>(msg.fieldInt(5)), msg.field(7));
     sendMessage(IpcMessage::makeResult(msg.seqId(), out.added));
 }
 
@@ -2353,7 +2452,8 @@ void IpcClientHandler::handleMarkSearchSpam(const IpcMessage& msg)
         sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
         return;
     }
-    auto* file = theApp.searchList->searchFileByHash(hashBuf, searchID);
+    // Field 3: the row itself, from a restored tab (see searchFileForRow).
+    auto* file = searchFileForRow(hashBuf, searchID, msg.field(3));
     if (!file) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Search file not found")));
         return;
@@ -3100,18 +3200,22 @@ void IpcClientHandler::handleRequestSearchPreview(const IpcMessage& msg)
         sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
         return;
     }
-    SearchFile* file = theApp.searchList->searchFileByHash(hashBuf, searchID);
+    // Field 2: the row itself, from a restored tab (see searchFileForRow).
+    SearchFile* file = searchFileForRow(hashBuf, searchID, msg.field(2));
     if (!file || !file->isPreviewPossible()) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("No preview for this file")));
         return;
     }
 
-    // The peer whose list this tab shows, if it is still known.
+    // The peer whose list this tab shows, if it is still known. Not for a restored
+    // tab: 0 is every client that was never browsed.
     UpDownClient* client = nullptr;
-    theApp.clientList->forEachClient([&](UpDownClient* c) {
-        if (!client && c->searchID() == searchID)
-            client = c;
-    });
+    if (searchID != 0) {
+        theApp.clientList->forEachClient([&](UpDownClient* c) {
+            if (!client && c->searchID() == searchID)
+                client = c;
+        });
+    }
     if (!client && !file->clients().empty()) {
         // Gone since: a new client from the address the result recorded.
         const SearchFile::SClient& src = file->clients().front();
@@ -3277,7 +3381,8 @@ void IpcClientHandler::handleGetSearchResultDetails(const IpcMessage& msg)
     }
     // Scoped to the tab: the same hash can appear in several searches, and the
     // lookup skips grouped child results, exactly as MarkSearchSpam does.
-    auto* sf = theApp.searchList->searchFileByHash(hashBuf, searchID);
+    // Field 2: the row itself, from a restored tab (see searchFileForRow).
+    auto* sf = searchFileForRow(hashBuf, searchID, msg.field(2));
     if (!sf) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Search result not found")));
         return;
@@ -3507,8 +3612,6 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setUseSecureIdent(val.toBool());
     else if (key == QStringLiteral("enableSearchResultFilter"))
         thePrefs.setEnableSearchResultFilter(val.toBool());
-    else if (key == QStringLiteral("warnUntrustedFiles"))
-        thePrefs.setWarnUntrustedFiles(val.toBool());
     else if (key == QStringLiteral("ipFilterUpdateUrl"))
         thePrefs.setIpFilterUpdateUrl(val.toString());
     else if (key == QStringLiteral("geoIpAccountId") || key == QStringLiteral("geoIpLicenseKey")
@@ -3641,8 +3744,6 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setHashingDiskLoad(static_cast<int>(val.toInteger()));
     else if (key == QStringLiteral("extractMetaData"))
         thePrefs.setExtractMetaData(static_cast<int>(val.toInteger()));
-    else if (key == QStringLiteral("logLevel"))
-        thePrefs.setLogLevel(static_cast<int>(val.toInteger()));
     else if (key == QStringLiteral("logSourceExchange"))
         thePrefs.setLogSourceExchange(val.toBool());
     else if (key == QStringLiteral("logBannedClients"))
@@ -3691,10 +3792,6 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
     else if (key == QStringLiteral("allocFullFile"))
         thePrefs.setAllocFullFile(val.toBool());
 #ifdef Q_OS_WIN
-    else if (key == QStringLiteral("autotakeEd2kLinks"))
-        thePrefs.setAutotakeEd2kLinks(val.toBool());
-    else if (key == QStringLiteral("openPortsOnWinFirewall"))
-        thePrefs.setOpenPortsOnWinFirewall(val.toBool());
     else if (key == QStringLiteral("sparsePartFiles"))
         thePrefs.setSparsePartFiles(val.toBool());
     else if (key == QStringLiteral("resolveShellLinks"))
@@ -3882,6 +3979,8 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
         thePrefs.setIrcLoadChannelList(val.toBool());
     else if (key == QStringLiteral("ircAddTimestamp"))
         thePrefs.setIrcAddTimestamp(val.toBool());
+    else if (key == QStringLiteral("ircEnableUTF8"))
+        thePrefs.setIrcEnableUTF8(val.toBool());
     else if (key == QStringLiteral("ircIgnoreMiscInfoMessages"))
         thePrefs.setIrcIgnoreMiscInfoMessages(val.toBool());
     else if (key == QStringLiteral("ircIgnoreJoinMessages"))
@@ -4293,8 +4392,13 @@ void IpcClientHandler::handleSetIndexers(const IpcMessage& msg)
                                                     [&existing](const IndexerConfig& kept) {
                                                         return kept.key() == existing.key();
                                                     });
-        if (!stillThere)
+        if (!stillThere) {
             indexer::IndexerCapsStore::remove(existing);
+            if (indexer::theIndexerSearchList) {
+                indexer::theIndexerSearchList->passwordFlags()->forget(
+                    indexer::slugForSource(existing.displayName()));
+            }
+        }
     }
 
     thePrefs.setIndexers(configs);

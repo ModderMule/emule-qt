@@ -1716,6 +1716,13 @@ void UpDownClient::processMuleCommentPacket(const uint8* data, uint32 size)
         if (comment.length() > MAXFILECOMMENTLEN)
             comment.truncate(MAXFILECOMMENTLEN);
     }
+    if (thePrefs.wantsRatingDescLog()) {
+        const QString fileName = m_reqFile ? m_reqFile->fileName() : QString();
+        if (rating > 0)
+            logDebug(QStringLiteral("Rating for file '%1' received: %2").arg(fileName).arg(rating));
+        if (!comment.isEmpty())
+            logDebug(QStringLiteral("Description for file '%1' received: %2").arg(fileName, comment));
+    }
 
     // Spam filter, MFC BaseClient.cpp:1075-1091. The default list is the usual
     // link bait ("http://|www.|ftp." ...); a hit voids the whole submission,
@@ -2828,17 +2835,17 @@ void UpDownClient::requestSharedFileList()
 // processSharedFileList
 // ===========================================================================
 
-void UpDownClient::processSharedFileList(const uint8* data, uint32 size, const QString& dir)
+void UpDownClient::processSharedFileList(const uint8* data, uint32 size, const QString& dir,
+                                         bool directoryAnswer)
 {
-    if (m_fileListRequested == 0) {
+    if (m_fileListRequested <= 0) {
         logDebug(QStringLiteral("processSharedFileList: unrequested response from %1").arg(userName()));
         return;
     }
 
-    // Only reset counter for flat (non-directory) file list responses.
-    // Directory-based responses are counted down by processSharedFilesDirAnswer.
-    if (dir.isEmpty())
-        m_fileListRequested = 0;
+    // One answer, one count — flat list or directory, whatever its name
+    // (MFC BaseClient.cpp:1795-1796).
+    --m_fileListRequested;
 
     if (!data || size < 4 || !theApp.searchList)
         return;
@@ -2856,7 +2863,7 @@ void UpDownClient::processSharedFileList(const uint8* data, uint32 size, const Q
     if (searchID == 0)
         return;
 
-    if (fileCount == 0 && dir.isEmpty())
+    if (fileCount == 0 && !directoryAnswer)
         logStatusInfo(QStringLiteral("User %1 shares no files").arg(statusName()));
 
     emit sharedFileListReceived(
@@ -2944,15 +2951,20 @@ void UpDownClient::sendSharedDirectories()
     if (!m_socket)
         return;
 
-    // Collect unique directory pseudonyms from shared files
+    // Pseudo names, never local paths (MFC BaseClient.cpp:2909-2931).
     std::vector<QString> dirs;
-    if (theApp.sharedFileList)
-        dirs = theApp.sharedFileList->sharedDirectories();
+    if (theApp.sharedFileList) {
+        dirs = theApp.sharedFileList->browseDirectoryNames();
+        if (theApp.downloadQueue && theApp.downloadQueue->fileCount() > 0)
+            dirs.push_back(QStringLiteral(OP_INCOMPLETE_SHARED_FILES));
+        if (theApp.sharedFileList->hasSingleSharedFiles())
+            dirs.push_back(QStringLiteral(OP_OTHER_SHARED_FILES));
+    }
 
     SafeMemFile data;
     data.writeUInt32(static_cast<uint32>(dirs.size()));
     for (const auto& dir : dirs)
-        data.writeString(dir, UTF8Mode::Raw);
+        data.writeString(dir, peerStringMode());
 
     auto packet = std::make_unique<Packet>(data, OP_EDONKEYPROT, OP_ASKSHAREDDIRSANS);
     sendPacket(std::move(packet));
@@ -3426,6 +3438,8 @@ void UpDownClient::processChatMessage(SafeMemFile& data, uint32 length)
     // MFC CUpDownClient::ProcessChatMessage (srchybrid/BaseClient.cpp:2625-2763)
     const bool isFriend = m_friend != nullptr;
 
+    // msgSecure is stricter than MFC's option of that name, which only asks for a
+    // user name (BaseClient.cpp:2628) — deliberate, see the default in Preferences.
     if ((thePrefs.msgOnlyFriends() && !isFriend)
         || (thePrefs.msgSecure() && !hasPassedSecureIdent(false))) {
         if (!m_messageFiltered)
@@ -3686,8 +3700,6 @@ QByteArray renderPreviewFrame(const QString& path)
 void UpDownClient::sendPreviewAnswer(const uint8* fileHash, const std::vector<QByteArray>& pngFrames)
 {
     m_previewAnsPending = false;
-    if (!m_socket)
-        return;
 
     // MFC BaseClient.cpp:2073-2104: the hash of the file asked for, zero when unknown.
     // The requester finds its search entry by it.
@@ -3700,8 +3712,9 @@ void UpDownClient::sendPreviewAnswer(const uint8* fileHash, const std::vector<QB
         data.write(frame.constData(), frame.size());
     }
 
-    auto packet = std::make_unique<Packet>(data, OP_EMULEPROT, OP_PREVIEWANSWER);
-    sendPacket(std::move(packet));
+    // The frames take a while: reconnect if the peer left meanwhile
+    // (MFC BaseClient.cpp:2109).
+    safeConnectAndSendPacket(std::make_unique<Packet>(data, OP_EMULEPROT, OP_PREVIEWANSWER));
 }
 
 // ===========================================================================
@@ -3710,13 +3723,14 @@ void UpDownClient::sendPreviewAnswer(const uint8* fileHash, const std::vector<QB
 
 void UpDownClient::processPreviewReq(const uint8* data, uint32 size)
 {
-    if (!data || size < 16)
-        return;
-
     // MFC BaseClient.cpp:2117-2118: one answer at a time, and only for those who may
-    // see our files at all.
+    // see our files at all. Checked first: who may not ask gets no reaction.
     const int access = thePrefs.viewSharedFilesAccess();
-    if (m_previewAnsPending || access == 0 || (access == 1 && m_friend == nullptr))
+    if (access == 0 || (access == 1 && m_friend == nullptr))
+        return;
+    if (!data || size < 16)
+        throw FileException("OP_REQUESTPREVIEW: wrong packet size");   // MFC :2114
+    if (m_previewAnsPending)
         return;
     m_previewAnsPending = true;
 
@@ -3728,11 +3742,19 @@ void UpDownClient::processPreviewReq(const uint8* data, uint32 size)
 
     std::array<uint8, 16> hash{};
     std::memcpy(hash.data(), file->fileHash(), 16);
-    const QString path = file->filePath();
+    QString path = file->filePath();
     const ED2KFileType type = getED2KFileTypeID(file->fileName());
-    if (path.isEmpty() || file->isPartFile()
-        || (type != ED2KFileType::Image && type != ED2KFileType::Video))
-    {
+    if (file->isPartFile()) {
+        // A download in progress: video only, and only once its head is there
+        // (MFC PartFile.cpp:4991-5001).
+        auto* partFile = static_cast<PartFile*>(file);
+        const PartFileStatus status = partFile->status();
+        const bool grabbable = type == ED2KFileType::Video
+            && (status == PartFileStatus::Ready || status == PartFileStatus::Paused)
+            && partFile->partCount() >= 2 && partFile->isComplete(0);
+        path = grabbable ? partFile->dataFilePath() : QString();
+    }
+    if (path.isEmpty() || (type != ED2KFileType::Image && type != ED2KFileType::Video)) {
         sendPreviewAnswer(hash.data(), {});
         return;
     }
@@ -4276,11 +4298,13 @@ void UpDownClient::onExtPacketReceived(const uint8* data, uint32 size, uint8 opc
         break;
 
     case OP_REQUESTSOURCES:
-        processRequestSources(data, size);
-        break;
-
     case OP_REQUESTSOURCES2:
-        processRequestSources2(data, size);
+        if (thePrefs.wantsSourceExchangeLog())
+            logDebug(QStringLiteral("SXRecv: Client source request; %1").arg(userName()));
+        if (opcode == OP_REQUESTSOURCES)
+            processRequestSources(data, size);
+        else
+            processRequestSources2(data, size);
         break;
 
     case OP_ANSWERSOURCES:
@@ -4655,9 +4679,8 @@ void UpDownClient::onFileRequestReceived(const uint8* data, uint32 size, uint8 o
     case OP_REQFILENAMEANSWER: {
         // Answer to our file name request (download side)
         // Payload: [16-byte fileHash] [filename string...]
-        // MFC: only ProcessFileInfo here — sendStartupLoadReq is called from
-        // processFileStatus when OP_FILESTATUS arrives (avoids race where
-        // remote accepts before we know the part bitmap → NoNeededParts).
+        // processFileInfo() asks for the slot of a single-part file itself; for the
+        // others processFileStatus() does once OP_FILESTATUS arrives.
         SafeMemFile io(data, size);
         uint8 fileHash[16];
         io.readHash16(fileHash);
@@ -5127,10 +5150,12 @@ void UpDownClient::processAskSharedFiles()
     const bool allowed = (access == 2) || (access == 1 && m_friend != nullptr);
 
     if (!allowed) {
+        // An empty list, not the denial opcode: a client old enough to send this
+        // request may not know it (MFC ListenSocket.cpp:672-694).
         logDebug(QStringLiteral("Denied shared file browse request from %1").arg(userName()));
-        auto packet = std::make_unique<Packet>(OP_ASKSHAREDDENIEDANS, 0);
-        packet->prot = OP_EDONKEYPROT;
-        sendPacket(std::move(packet));
+        SafeMemFile empty;
+        empty.writeUInt32(0);
+        sendPacket(std::make_unique<Packet>(empty, OP_EDONKEYPROT, OP_ASKSHAREDFILESANSWER));
         return;
     }
 
@@ -5148,38 +5173,8 @@ void UpDownClient::processAskSharedFiles()
     SafeMemFile response;
     response.writeUInt32(static_cast<uint32>(files.size()));
 
-    const uint32 clientID = theApp.publicIP();
-    const uint16 clientPort = theApp.advertisedTcpPort();
-
-    for (KnownFile* file : files) {
-        response.writeHash16(file->fileHash());
-        response.writeUInt32(clientID);
-        response.writeUInt16(clientPort);
-
-        std::vector<Tag> tags;
-        tags.emplace_back(FT_FILENAME, file->fileName());
-
-        auto sz = static_cast<uint64>(file->fileSize());
-        tags.emplace_back(FT_FILESIZE, static_cast<uint32>(sz & 0xFFFFFFFF));
-        if (file->isLargeFile())
-            tags.emplace_back(FT_FILESIZE_HI, static_cast<uint32>(sz >> 32));
-
-        // Peers get the published type term and the rating on the servers' 0-255
-        // scale. MFC SharedFileList.cpp:953-985.
-        if (const QString term = ed2kFileTypeSearchTerm(getED2KFileTypeID(file->fileName())); !term.isEmpty())
-            tags.emplace_back(FT_FILETYPE, term);
-
-        if (file->getFileRating() > 0)
-            tags.emplace_back(FT_FILERATING, file->getFileRating() * (255 / 5));
-
-        response.writeUInt32(static_cast<uint32>(tags.size()));
-        for (const auto& tag : tags) {
-            if (isEmuleClient())
-                tag.writeNewEd2kTag(response, UTF8Mode::Raw);
-            else
-                tag.writeTagToFile(response, UTF8Mode::None);
-        }
-    }
+    for (KnownFile* file : files)
+        writeOfferedFile(response, *file);
 
     auto packet = std::make_unique<Packet>(response, OP_EDONKEYPROT, OP_ASKSHAREDFILESANSWER);
     sendPacket(std::move(packet));
@@ -5230,51 +5225,73 @@ void UpDownClient::processAskSharedFilesDir(const uint8* data, uint32 size)
     SafeMemFile io(data, size);
     const QString reqDir = io.readString(m_unicodeSupport);
 
-    // Collect files matching the requested directory
+    // The name is one we handed out, or one of the two fixed ones
+    // (MFC ListenSocket.cpp:736-763).
     const bool largePeer = supportsLargeFiles();
-    std::vector<KnownFile*> matchedFiles = theApp.sharedFileList->filesInDirectory(reqDir);
+    std::vector<KnownFile*> matchedFiles;
+    if (reqDir == QLatin1StringView(OP_INCOMPLETE_SHARED_FILES)) {
+        if (theApp.downloadQueue) {
+            for (PartFile* partFile : theApp.downloadQueue->files())
+                if (partFile->status(true) == PartFileStatus::Ready)
+                    matchedFiles.push_back(partFile);
+        }
+    } else if (reqDir == QLatin1StringView(OP_OTHER_SHARED_FILES)) {
+        matchedFiles = theApp.sharedFileList->singleSharedFilesForBrowse();
+    } else if (const QString dir = theApp.sharedFileList->dirNameByPseudo(reqDir); !dir.isEmpty()) {
+        matchedFiles = theApp.sharedFileList->filesInDirectory(dir);
+        std::erase_if(matchedFiles, [](const KnownFile* file) { return file->isPartFile(); });
+    } else {
+        logDebug(QStringLiteral("View shared files: no directory behind \"%1\" — sending an empty list")
+                     .arg(reqDir));
+    }
     if (!largePeer)
         std::erase_if(matchedFiles, [](const KnownFile* file) { return file->isLargeFile(); });
 
+    // the name goes back as it came
     SafeMemFile response;
-    response.writeString(reqDir, UTF8Mode::Raw);
+    response.writeString(reqDir, peerStringMode());
     response.writeUInt32(static_cast<uint32>(matchedFiles.size()));
 
-    const uint32 clientID = theApp.publicIP();
-    const uint16 clientPort = theApp.advertisedTcpPort();
-
-    for (KnownFile* file : matchedFiles) {
-        response.writeHash16(file->fileHash());
-        response.writeUInt32(clientID);
-        response.writeUInt16(clientPort);
-
-        std::vector<Tag> tags;
-        tags.emplace_back(FT_FILENAME, file->fileName());
-
-        auto sz = static_cast<uint64>(file->fileSize());
-        tags.emplace_back(FT_FILESIZE, static_cast<uint32>(sz & 0xFFFFFFFF));
-        if (file->isLargeFile())
-            tags.emplace_back(FT_FILESIZE_HI, static_cast<uint32>(sz >> 32));
-
-        // Peers get the published type term and the rating on the servers' 0-255
-        // scale. MFC SharedFileList.cpp:953-985.
-        if (const QString term = ed2kFileTypeSearchTerm(getED2KFileTypeID(file->fileName())); !term.isEmpty())
-            tags.emplace_back(FT_FILETYPE, term);
-
-        if (file->getFileRating() > 0)
-            tags.emplace_back(FT_FILERATING, file->getFileRating() * (255 / 5));
-
-        response.writeUInt32(static_cast<uint32>(tags.size()));
-        for (const auto& tag : tags) {
-            if (isEmuleClient())
-                tag.writeNewEd2kTag(response, UTF8Mode::Raw);
-            else
-                tag.writeTagToFile(response, UTF8Mode::None);
-        }
-    }
+    for (KnownFile* file : matchedFiles)
+        writeOfferedFile(response, *file);
 
     auto packet = std::make_unique<Packet>(response, OP_EDONKEYPROT, OP_ASKSHAREDFILESDIRANS);
     sendPacket(std::move(packet));
+}
+
+// ===========================================================================
+// writeOfferedFile — one file record for a browsing client
+// ===========================================================================
+
+UTF8Mode UpDownClient::peerStringMode() const
+{
+    return m_unicodeSupport ? UTF8Mode::Raw : UTF8Mode::None;
+}
+
+// MFC CSharedFileList::CreateOfferedFilePacket with pClient (SharedFileList.cpp:919-1071).
+void UpDownClient::writeOfferedFile(SafeMemFile& out, KnownFile& file) const
+{
+    // No address unless we can be reached at it.
+    uint32 clientID = 0;
+    uint16 clientPort = 0;
+    if (theApp.isConnected() && !theApp.isFirewalled()) {
+        clientID = theApp.getID();
+        clientPort = theApp.advertisedTcpPort();
+    }
+    out.writeHash16(file.fileHash());
+    out.writeUInt32(clientID);
+    out.writeUInt16(clientPort);
+
+    const uint32 emuleVersion = isEmuleClient() ? std::max(m_clientVersion, uint32{1}) : 0;
+    const std::vector<Tag> tags = SharedFileList::offeredTagsForClient(file, emuleVersion);
+    out.writeUInt32(static_cast<uint32>(tags.size()));
+    const bool newTags = emuleVersion >= makeClientVersion(0, 42, 7);
+    for (const Tag& tag : tags) {
+        if (newTags)
+            tag.writeNewEd2kTag(out, peerStringMode());
+        else
+            tag.writeTagToFile(out, peerStringMode());
+    }
 }
 
 // ===========================================================================
@@ -5306,7 +5323,7 @@ void UpDownClient::processSharedDirsAnswer(const uint8* data, uint32 size)
         const QString dirName = io.readString(m_unicodeSupport);
 
         SafeMemFile reqData;
-        reqData.writeString(dirName, UTF8Mode::Raw);
+        reqData.writeString(dirName, peerStringMode());
 
         auto packet = std::make_unique<Packet>(reqData, OP_EDONKEYPROT, OP_ASKSHAREDFILESDIR);
         sendPacket(std::move(packet));
@@ -5330,12 +5347,9 @@ void UpDownClient::processSharedFilesDirAnswer(const uint8* data, uint32 size)
     SafeMemFile io(data, size);
     const QString dirName = io.readString(m_unicodeSupport);
 
-    // Remaining data is the file list — pass to processSharedFileList
+    // The rest is the file list; processSharedFileList() counts the answer.
     const auto pos = static_cast<uint32>(io.position());
-    if (pos < size)
-        processSharedFileList(data + pos, size - pos, dirName);
-
-    --m_fileListRequested;
+    processSharedFileList(data + pos, size - pos, dirName, true);
 }
 
 // ===========================================================================
@@ -5344,8 +5358,9 @@ void UpDownClient::processSharedFilesDirAnswer(const uint8* data, uint32 size)
 
 void UpDownClient::processSharedDenied()
 {
+    // Ends this request only (MFC ListenSocket.cpp:833-839): the peer may allow
+    // it later, e.g. once we are its friend.
     m_fileListRequested = 0;
-    m_noViewSharedFiles = true;
     logStatusWarning(QStringLiteral("User %1 (%2) denied access to list of shared directories/files")
                          .arg(statusName()).arg(m_userIDHybrid));
 }

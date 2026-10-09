@@ -15,6 +15,15 @@ namespace eMule::indexer {
 
 namespace {
 
+/// Statistics: load we put on the indexers. A no-op without a daemon.
+void countIndexer(uint64 IndexerCounters::* field)
+{
+    if (theApp.statistics)
+        ++(theApp.statistics->indexerSession().*field);
+}
+
+} // namespace
+
 /// A row's id is `slug + '/' + guid`, so a feed with no account behind it still
 /// needs one. Mirrors IndexerConfig::slug() rather than calling it, because the
 /// input here is a display name and not a configured account.
@@ -33,24 +42,22 @@ QString slugForSource(const QString& name)
     return out.isEmpty() ? QStringLiteral("indexer") : out;
 }
 
-/// Statistics: load we put on the indexers. A no-op without a daemon.
-void countIndexer(uint64 IndexerCounters::* field)
-{
-    if (theApp.statistics)
-        ++(theApp.statistics->indexerSession().*field);
-}
-
-} // namespace
-
 IndexerClient::IndexerClient(QObject* parent)
     : QObject(parent)
     , m_nam(new GuardedNetworkAccessManager(this))
+    , m_flags(new PasswordFlagStore({}, this))
 {
 }
 
 IndexerClient::~IndexerClient()
 {
     abortAll();
+}
+
+void IndexerClient::setPasswordFlagStore(PasswordFlagStore* store)
+{
+    if (store)
+        m_flags = store;
 }
 
 void IndexerClient::abortAll()
@@ -189,7 +196,8 @@ void IndexerClient::searchUrl(const QUrl& url, int timeoutMs, const QString& sou
                 done(false, page, page.error);
                 return;
             }
-            m_flagTallies[slug].apply(page);
+            if (m_flags)
+                m_flags->apply(slug, page);
             done(true, page, {});
         });
     });

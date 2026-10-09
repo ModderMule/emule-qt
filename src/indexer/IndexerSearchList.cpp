@@ -37,7 +37,9 @@ constexpr qsizetype kGrabCacheMaxEntries = 5000;
 IndexerSearchList::IndexerSearchList(QObject* parent)
     : QObject(parent)
     , m_client(new IndexerClient(this))
+    , m_passwordFlags(new PasswordFlagStore(PasswordFlagStore::defaultPath(), this))
 {
+    m_client->setPasswordFlagStore(m_passwordFlags);
     applyPreferences();
     loadGrabCache();
 }
@@ -52,6 +54,7 @@ IndexerSearchList::~IndexerSearchList()
     m_client->abortAll();
     clearSearches();
     flushGrabCache();
+    m_passwordFlags->flush();
 }
 
 void IndexerSearchList::applyPreferences()

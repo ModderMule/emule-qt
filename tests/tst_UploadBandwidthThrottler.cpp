@@ -93,6 +93,7 @@ private slots:
     void construction_defaults();
     void startStop_noCrash();
     void sentByteAccounting();
+    void bytesSentOutsideTheLoopAreCounted();
     void slotLimit_calculation();
     void pause_resume();
     void idleDoesNotSpin();
@@ -145,6 +146,23 @@ void tst_UploadBandwidthThrottler::sentByteAccounting()
     uint64 overhead = throttler.getSentBytesOverheadSinceLastCallAndReset();
     QCOMPARE(overhead, uint64(0));
 
+    throttler.endThread();
+}
+
+// C77: TCP control packets leave on the socket's own thread. They are upload all
+// the same: in the rate, and booked as overhead (MFC sends them through the loop).
+void tst_UploadBandwidthThrottler::bytesSentOutsideTheLoopAreCounted()
+{
+    UploadBandwidthThrottler throttler;
+    (void)throttler.getSentBytesSinceLastCallAndReset();
+    (void)throttler.getSentBytesOverheadSinceLastCallAndReset();
+
+    throttler.noteBytesSentOutsideTheLoop(3000);
+    throttler.noteBytesSentOutsideTheLoop(2000);
+    QCOMPARE(throttler.getSentBytesSinceLastCallAndReset(), uint64{5000});
+    QCOMPARE(throttler.getSentBytesOverheadSinceLastCallAndReset(), uint64{5000});
+    QCOMPARE(throttler.getSentBytesSinceLastCallAndReset(), uint64{0});
+    QCOMPARE(throttler.getSentBytesOverheadSinceLastCallAndReset(), uint64{0});
     throttler.endThread();
 }
 

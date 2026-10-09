@@ -167,6 +167,14 @@ public:
     /// Find a top-level search file by hash within the current search.
     [[nodiscard]] SearchFile* searchFileByHash(const uint8* hash, uint32 searchID) const;
 
+    /// A row of a search tab the GUI restored from disk. Its search is gone, so the
+    /// row is kept here by hash: detail sheet, Kad notes and spam marking need a file.
+    [[nodiscard]] SearchFile* restoredFile(const uint8* hash) const;
+
+    /// Keep @p file as a restored row (see restoredFile). Returns the file already
+    /// held for its hash when there is one.
+    SearchFile* adoptRestoredFile(std::unique_ptr<SearchFile> file);
+
     /// Number of results in a search session.
     [[nodiscard]] uint32 resultCount(uint32 searchID) const;
 
@@ -305,6 +313,8 @@ private:
 
     // --- Data ---
     std::vector<SearchListEntry> m_fileLists;
+    /// Rows of restored tabs, searchID 0, oldest first. In no list: never pushed.
+    std::list<std::unique_ptr<SearchFile>> m_restoredFiles;
 
     // Per-search counters
     std::unordered_map<uint32, uint32> m_foundFilesCount;

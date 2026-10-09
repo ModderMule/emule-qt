@@ -175,6 +175,7 @@ int EncryptedStreamSocket::flushPendingNegotiationData()
                      .arg(pending.size()).arg(peerAddress().toString()).arg(peerPort()));
 
     qint64 result = write(pending.constData(), pending.size());
+    onNegotiationBytesQueued();
     if (result < pending.size() && result >= 0) {
         m_sendBuffer = std::make_unique<SafeMemFile>();
         m_sendBuffer->write(pending.constData() + result, pending.size() - result);
@@ -689,6 +690,7 @@ int EncryptedStreamSocket::sendNegotiatingData(const void* buf, int bufLen, int 
     }
 
     qint64 result = write(encrypted.constData(), encrypted.size());
+    onNegotiationBytesQueued();
     if (result < 0) {
         // Write failed, buffer it
         m_sendBuffer = std::make_unique<SafeMemFile>();
