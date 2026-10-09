@@ -249,6 +249,9 @@ private:
     static void start(UsenetDirectUnpack*& worker, QThread*& thread,
                       const UsenetDirectUnpackJob& job);
     static void stop(UsenetDirectUnpack* worker, QThread* thread);
+    /// The worker may have emitted before the test gets here; wait() alone only
+    /// sees what comes after the call.
+    static bool arrived(QSignalSpy& spy, int ms) { return spy.count() > 0 || spy.wait(ms); }
 };
 
 void tst_UsenetDirectUnpack::volumesOfferedOneAtATimeExtractInFull()
@@ -271,7 +274,7 @@ void tst_UsenetDirectUnpack::volumesOfferedOneAtATimeExtractInFull()
     }
     worker->endOfSet();
 
-    QVERIFY(spy.wait(10000));
+    QVERIFY(arrived(spy, 10000));
     const auto result = spy.first().at(0).value<UsenetDirectUnpackResult>();
     QVERIFY2(result.ok, qPrintable(result.error));
     QCOMPARE(result.extracted.size(), 1);
@@ -316,7 +319,7 @@ void tst_UsenetDirectUnpack::aRunWaitsForAVolumeThatHasNotLanded()
     worker->offerVolume(last, writeVolume(tmp.path(), last, vols.at(last)));
     worker->endOfSet();
 
-    QVERIFY(spy.wait(10000));
+    QVERIFY(arrived(spy, 10000));
     QVERIFY(spy.first().at(0).value<UsenetDirectUnpackResult>().ok);
 
     QFile out(QDir(dest).filePath(QStringLiteral("movie.mkv")));
@@ -355,7 +358,7 @@ void tst_UsenetDirectUnpack::aBlockedRunReportsWhatIsReadableAndWhichVolumeItNee
     for (int i = 0; i < 4; ++i)
         worker->offerVolume(i, writeVolume(tmp.path(), i, vols.at(i)));
 
-    QVERIFY(progress.wait(5000));
+    QVERIFY(arrived(progress, 5000));
     QCOMPARE(done.count(), 0);
 
     // Whichever report is the latest, its byte count must be honest.
@@ -385,7 +388,7 @@ void tst_UsenetDirectUnpack::aBlockedRunReportsWhatIsReadableAndWhichVolumeItNee
         worker->offerVolume(i, writeVolume(tmp.path(), i, vols.at(i)));
     worker->endOfSet();
 
-    QVERIFY(done.wait(10000));
+    QVERIFY(arrived(done, 10000));
     QVERIFY(done.first().at(0).value<UsenetDirectUnpackResult>().ok);
 
     const auto finalState = progress.last().at(0).value<UsenetDirectUnpackProgress>();
@@ -415,7 +418,7 @@ void tst_UsenetDirectUnpack::cancelMidSetLeavesNoPartialOutput()
     QElapsedTimer clock;
     clock.start();
     worker->cancel();
-    QVERIFY(spy.wait(5000));
+    QVERIFY(arrived(spy, 5000));
     QVERIFY2(clock.elapsed() < 3000, "cancel must unwind promptly, not on a timeout");
 
     const auto result = spy.first().at(0).value<UsenetDirectUnpackResult>();
@@ -444,7 +447,7 @@ void tst_UsenetDirectUnpack::aSetThatEndsShortFailsRatherThanHanging()
     worker->offerVolume(1, writeVolume(tmp.path(), 1, vols.at(1)));
     worker->endOfSet();
 
-    QVERIFY(spy.wait(10000));
+    QVERIFY(arrived(spy, 10000));
     const auto result = spy.first().at(0).value<UsenetDirectUnpackResult>();
     QVERIFY(!result.ok);
     QVERIFY(!QFile::exists(QDir(dest).filePath(QStringLiteral("movie.mkv"))));
@@ -602,7 +605,7 @@ void tst_UsenetDirectUnpack::anEmptyExtractionIsAFailure()
     worker->offerVolume(0, writeVolume(tmp.path(), 0, QByteArray(64 * 1024, '\0')));
     worker->endOfSet();
 
-    QVERIFY(spy.wait(10000));
+    QVERIFY(arrived(spy, 10000));
     const auto result = spy.first().at(0).value<UsenetDirectUnpackResult>();
     QVERIFY(!result.ok);
     QVERIFY(result.extracted.isEmpty());
