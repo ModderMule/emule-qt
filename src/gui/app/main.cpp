@@ -2,6 +2,7 @@
 #include "utils/TooltipDelayStyle.h"
 #include "pch.h"
 #include <QApplication>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QFont>
@@ -96,28 +97,37 @@ bool launchDaemon(const QString& daemonPath, bool holdConnect)
 
     eMule::logInfo(QStringLiteral("Launching daemon: %1").arg(daemonPath));
 
-    const QString holdArg = QStringLiteral("--hold-connect");
+    QStringList daemonArgs;
+    // Our --config goes along, or the two would read different preferences.yml
+    // files -- different ipc ports included. Absolute: a terminal starts elsewhere.
+    if (const QString dir = eMule::AppConfig::configDirOverride(); !dir.isEmpty())
+        daemonArgs << QStringLiteral("--config") << QDir(dir).absolutePath();
+    if (holdConnect)
+        daemonArgs << QStringLiteral("--hold-connect");
+
     if (eMule::thePrefs.startCoreWithConsole()) {
-        const QString command = holdConnect ? daemonPath + QLatin1Char(' ') + holdArg : daemonPath;
 #if defined(Q_OS_MACOS)
+        // Quoted for the shell, then escaped for the AppleScript string around it
+        QStringList words;
+        for (const QString& word : QStringList{daemonPath} + daemonArgs)
+            words << QLatin1Char('\'') + QString(word).replace(QLatin1Char('\''), QStringLiteral("'\\''"))
+                         + QLatin1Char('\'');
+        QString command = words.join(QLatin1Char(' '));
+        command.replace(QLatin1Char('\\'), QStringLiteral("\\\\"));
+        command.replace(QLatin1Char('"'), QStringLiteral("\\\""));
         const QString script = QStringLiteral("tell application \"Terminal\" to do script \"%1\"")
                                    .arg(command);
         return QProcess::startDetached(QStringLiteral("osascript"), {QStringLiteral("-e"), script});
 #elif defined(Q_OS_WIN)
-        QStringList args{QStringLiteral("/k"), daemonPath};
-        if (holdConnect)
-            args << holdArg;
-        return QProcess::startDetached(QStringLiteral("cmd"), args);
+        return QProcess::startDetached(QStringLiteral("cmd"),
+                                       QStringList{QStringLiteral("/k"), daemonPath} + daemonArgs);
 #else
-        Q_UNUSED(command)
-        QStringList args{QStringLiteral("-e"), daemonPath};
-        if (holdConnect)
-            args << holdArg;
-        return QProcess::startDetached(QStringLiteral("xterm"), args);
+        return QProcess::startDetached(QStringLiteral("xterm"),
+                                       QStringList{QStringLiteral("-e"), daemonPath} + daemonArgs);
 #endif
     }
 
-    return QProcess::startDetached(daemonPath, holdConnect ? QStringList{holdArg} : QStringList{});
+    return QProcess::startDetached(daemonPath, daemonArgs);
 }
 
 /// The donkey at every size we have art for. One file per size rather than

@@ -211,6 +211,9 @@ private:
     void scheduleReconnect();
     void resetConnection();
 
+    /// Unhook and close m_connection, deleting it one event-loop turn later.
+    void dropConnection();
+
     /// Answer every pending request with a failure, one event-loop turn later.
     void failPendingRequests();
 

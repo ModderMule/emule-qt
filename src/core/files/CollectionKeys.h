@@ -39,6 +39,9 @@ public:
                                 const QByteArray& signature,
                                 const QByteArray& publicKeyDer);
 
+    /// DER of a private key as the key file holds it (PKCS#8, as MFC), before base64.
+    [[nodiscard]] static QByteArray encodePrivateKey(evp_pkey_st* key);
+
 private:
     bool createKeyPair();
     bool loadKeyPair();

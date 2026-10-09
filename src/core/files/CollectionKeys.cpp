@@ -89,17 +89,10 @@ bool CollectionKeys::createKeyPair()
         return false;
     }
 
-    // DER-encode the private key
-    int derLen = i2d_PrivateKey(rawKey, nullptr);
-    if (derLen <= 0) {
-        EVP_PKEY_free(rawKey);
-        return false;
-    }
-
-    QByteArray derBuf(derLen, '\0');
-    auto* derPtr = reinterpret_cast<unsigned char*>(derBuf.data());
-    i2d_PrivateKey(rawKey, &derPtr);
+    const QByteArray derBuf = encodePrivateKey(rawKey);
     EVP_PKEY_free(rawKey);
+    if (derBuf.isEmpty())
+        return false;
 
     // Base64-encode and write to file (matching CryptoPP base64 format)
     QByteArray base64 = derBuf.toBase64();
@@ -133,9 +126,9 @@ bool CollectionKeys::loadKeyPair()
     if (derData.isEmpty())
         return false;
 
-    // Parse the private key from DER
+    // PKCS#8 (MFC, and ours), or the bare RSAPrivateKey builds up to 0.6.2 wrote
     const auto* derPtr = reinterpret_cast<const unsigned char*>(derData.constData());
-    EVP_PKEY* rawKey = d2i_PrivateKey(EVP_PKEY_RSA, nullptr, &derPtr, derData.size());
+    EVP_PKEY* rawKey = d2i_AutoPrivateKey(nullptr, &derPtr, derData.size());
     if (!rawKey)
         return false;
 
@@ -153,6 +146,27 @@ bool CollectionKeys::loadKeyPair()
     i2d_PUBKEY(m_signKey.get(), &pubPtr);
 
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// encodePrivateKey (static)
+// ---------------------------------------------------------------------------
+
+QByteArray CollectionKeys::encodePrivateKey(EVP_PKEY* key)
+{
+    // PKCS#8 PrivateKeyInfo: what Crypto++'s DEREncode writes and its loader insists on
+    // (MFC CollectionCreateDialog.cpp:265, :273)
+    PKCS8_PRIV_KEY_INFO* info = key ? EVP_PKEY2PKCS8(key) : nullptr;
+    if (!info)
+        return {};
+    QByteArray der;
+    if (const int len = i2d_PKCS8_PRIV_KEY_INFO(info, nullptr); len > 0) {
+        der.resize(len);
+        auto* out = reinterpret_cast<unsigned char*>(der.data());
+        i2d_PKCS8_PRIV_KEY_INFO(info, &out);
+    }
+    PKCS8_PRIV_KEY_INFO_free(info);
+    return der;
 }
 
 // ---------------------------------------------------------------------------

@@ -65,15 +65,15 @@ enum class AppDir {
 /// full, and only the caller knows which way it wants to be wrong.
 [[nodiscard]] std::optional<std::uint64_t> tryFreeDiskSpace(const QString& path);
 
-#if defined(Q_OS_WIN)
-/// Mark an open file sparse (NTFS): unwritten ranges take no disk space.
-[[nodiscard]] bool setSparseFile(QFile& file);
-#endif
-
 /// Reserve the disk blocks for the first @p size bytes of an open file, so later
 /// writes cannot run out of space or fragment. The logical size is not changed.
 /// @return false when the file system cannot or will not.
 [[nodiscard]] bool preallocateFile(QFile& file, std::uint64_t size);
+
+/// Mark an open, still empty file as sparse (NTFS). Only Windows needs asking: there a
+/// resized file claims every cluster at once, elsewhere it has holes by default.
+/// @return false when the file system cannot, and on every other platform.
+[[nodiscard]] bool markFileSparse(QFile& file);
 
 /// Sanitize a file name by removing or replacing invalid characters.
 [[nodiscard]] QString sanitizeFilename(const QString& name);
