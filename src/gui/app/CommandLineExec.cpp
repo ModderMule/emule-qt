@@ -10,6 +10,7 @@
 #include "dialogs/OptionsDialog.h"
 #include "panels/KadPanel.h"
 #include "panels/TransferPanel.h"
+#include "utils/CommandLine.h"
 #include "utils/Log.h"
 
 #include <QApplication>
@@ -43,7 +44,7 @@ void CommandLineExec::parse(QApplication& app)
         QStringLiteral("ed2k:// links, and .nzb files to queue."),
         QStringLiteral("[ed2k://... | file.nzb]"));
 
-    m_parser.process(app);
+    processCommandLine(m_parser, app);
 
     // Cache parsed values
     m_screenshotMode = m_parser.isSet(m_screenshotOption);

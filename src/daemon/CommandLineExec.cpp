@@ -9,6 +9,7 @@
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
 #include "protocol/ED2KLink.h"
+#include "utils/CommandLine.h"
 
 #include <QCoreApplication>
 
@@ -34,7 +35,7 @@ void CommandLineExec::parse(QCoreApplication& app)
     m_parser.addOption(m_configOption);
     m_parser.addOption(m_holdConnectOption);
 
-    m_parser.process(app);
+    processCommandLine(m_parser, app);
 }
 
 bool CommandLineExec::hasCommand() const

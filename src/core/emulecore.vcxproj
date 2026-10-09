@@ -277,6 +277,7 @@
     <ClCompile Include="files\SourceIndex.cpp" />
     <ClCompile Include="utils\DiskLoadLimiter.cpp" />
     <ClCompile Include="utils\FileDate.cpp" />
+    <ClCompile Include="utils\CommandLine.cpp" />
     <ClCompile Include="utils\PathUtils.cpp" />
     <ClCompile Include="utils\PerfLog.cpp" />
     <ClCompile Include="net\Pinger.cpp" />
@@ -497,6 +498,7 @@
     <QtMoc Include="files\PartFileWriteThread.h" />
     <ClInclude Include="utils\DiskLoadLimiter.h" />
     <ClInclude Include="utils\FileDate.h" />
+    <ClInclude Include="utils\CommandLine.h" />
     <ClInclude Include="utils\PathUtils.h" />
     <ClInclude Include="utils\PerfLog.h" />
     <ClInclude Include="net\Address.h" />
