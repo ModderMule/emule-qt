@@ -617,14 +617,19 @@ int abuseNameTier(const QString& name, const FakeFileRules& rules)
         QStringLiteral("pthc"), QStringLiteral("ptsc"), QStringLiteral("hussyfan"),
         QStringLiteral("raygold"), QStringLiteral("r ygold"), QStringLiteral("babyshivid"),
         QStringLiteral("kingpass"), QStringLiteral("kdquality"), QStringLiteral("childporn"),
-        QStringLiteral("child porn"), QStringLiteral("kinderporno")};
-    // Words with an innocent use too: a novel, a band, Spanish slang, a parenting book.
+        QStringLiteral("child porn"), QStringLiteral("kinderporno"), QStringLiteral("lolicon"),
+        QStringLiteral("shotacon")};
+    // Words with an innocent use too: a novel, a band, Spanish slang, a parenting book,
+    // a first name, a film title. Other abuse themes (incest, animals, snuff) rank here too.
     static const QStringList weak{
         QStringLiteral("preteen"), QStringLiteral("pre teen"), QStringLiteral("underage"),
         QStringLiteral("pedo"), QStringLiteral("jailbait"), QStringLiteral("lolita"),
-        QStringLiteral("lolitas")};
-    // An age under 16 written the way these names do: "12yo"
-    static const QRegularExpression age(QStringLiteral(" (?:[1-9]|1[0-5])yo "));
+        QStringLiteral("lolitas"), QStringLiteral("loli"), QStringLiteral("shota"),
+        QStringLiteral("incest"), QStringLiteral("incestuous"), QStringLiteral("bestiality"),
+        QStringLiteral("beastiality"), QStringLiteral("zoophilia"), QStringLiteral("necrophilia"),
+        QStringLiteral("snuff")};
+    // An age under 18 written the way these names do: "12yo", "12 yr"
+    static const QRegularExpression age(QStringLiteral(" (?:[1-9]|1[0-7]) ?y[or] "));
 
     if (name.isEmpty())
         return 0;

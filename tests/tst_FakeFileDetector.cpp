@@ -192,11 +192,19 @@ void tst_FakeFileDetector::abuseNames_lowerTheScore()
     QVERIFY(v.reasons.contains({FakeReason::AbuseContentName, 25}));
     QCOMPARE(v.band, Confidence::Caution);
     QCOMPARE(abuseNameTier(QStringLiteral("some 12yo thing.avi"), FakeFileRules::defaults()), 1);
+    for (const QString& name : {QStringLiteral("x 17yo y.avi"), QStringLiteral("x 9 yr y.avi"),
+                                QStringLiteral("x_16.YR_y.avi"), QStringLiteral("x 7 yo y.avi"),
+                                QStringLiteral("Snuff (1976).avi"), QStringLiteral("[Loli] x.zip"),
+                                QStringLiteral("x.Beastiality.y.mpg")})
+        QCOMPARE(abuseNameTier(name, FakeFileRules::defaults()), 1);
+    QCOMPARE(abuseNameTier(QStringLiteral("x [Shotacon] y.zip"), FakeFileRules::defaults()), 2);
 
-    // Whole words; adult names and ages from 16 up are not it
+    // Whole words; adult names and ages from 18 up are not it
     for (const QString& name : {QStringLiteral("Teen Titans S01E02.mkv"),
                                 QStringLiteral("Torpedo boats 1943.avi"),
                                 QStringLiteral("Hot 18yo teens xxx.avi"),
+                                QStringLiteral("Lolipop 20 yr reunion.avi"),
+                                QStringLiteral("Snuffy 2yrs.avi"),
                                 QStringLiteral("Tu y yo 2.avi"),
                                 QStringLiteral("English for kids 5 years old.pdf")})
         QCOMPARE(abuseNameTier(name, FakeFileRules::defaults()), 0);
