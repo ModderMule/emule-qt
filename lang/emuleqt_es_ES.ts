@@ -1297,6 +1297,10 @@ Ya existe un amigo con la misma dirección IP y el mismo puerto.</translation>
         <translation>Protección con contraseña</translation>
     </message>
     <message>
+        <source>bootable</source>
+        <translation>arrancable</translation>
+    </message>
+    <message>
         <location line="-35"/>
         <location line="+36"/>
         <source>Archive scanned.</source>

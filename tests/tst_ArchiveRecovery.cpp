@@ -31,6 +31,9 @@ private slots:
     void isoDetection_stub();
     void aceDetection_stub();
     void recoverFile_neverWritesTheDownload();
+    void recoverToCopy_readsThePartOfADownload();
+    void recoverACE_keepsTheBlocksThatArrived();
+    void recoverZip_stepsOverHolesAndJunk();
 };
 
 void tst_ArchiveRecovery::isFilled_fullRange()
@@ -323,8 +326,8 @@ void tst_ArchiveRecovery::recoverFile_neverWritesTheDownload()
     QCOMPARE(QFileInfo(elsewhere).absolutePath(), QFileInfo(other.path()).absoluteFilePath());
 
     // a name that would land on the source itself is refused
-    QCOMPARE(ArchiveRecovery::copyPath(QStringLiteral("/tmp/x/abcdefgh.zip"), {}, {}, QStringLiteral("zip")),
-             QStringLiteral("/tmp/x/abcde-rec.zip"));
+    QCOMPARE(ArchiveRecovery::copyPath(tmpDir.filePath(QStringLiteral("abcdefgh.zip")), {}, {}, QStringLiteral("zip")),
+             QDir(QFileInfo(tmpDir.path()).absoluteFilePath()).filePath(QStringLiteral("abcde-rec.zip")));
 
     // nothing recoverable: no stray file
     const QString junkPath = tmpDir.filePath(QStringLiteral("002.part"));
@@ -334,6 +337,145 @@ void tst_ArchiveRecovery::recoverFile_neverWritesTheDownload()
     junk.close();
     QVERIFY(ArchiveRecovery::recoverFile(junkPath, {{0, 199}}, 200, QString(), QStringLiteral("002")).isEmpty());
     QVERIFY(QDir(tmpDir.path()).entryList({QStringLiteral("002-rec.*")}).isEmpty());
+}
+
+// A download has no filePath() until it is complete: the copy is built from its
+// .part and named after the download.
+void tst_ArchiveRecovery::recoverToCopy_readsThePartOfADownload()
+{
+    eMule::testing::TempDir tmpDir;
+
+    QByteArray zip;
+    const auto put16 = [&zip](quint16 v) { zip.append(reinterpret_cast<const char*>(&v), 2); };
+    const auto put32 = [&zip](quint32 v) { zip.append(reinterpret_cast<const char*>(&v), 4); };
+    const QByteArray content("RecoveryTest!");
+    const QByteArray name("test.txt");
+    put32(0x04034b50); put16(20); put16(0); put16(0); put16(0); put16(0);
+    put32(0); put32(quint32(content.size())); put32(quint32(content.size()));
+    put16(quint16(name.size())); put16(0);
+    zip.append(name).append(content);
+    const qsizetype have = zip.size();
+    zip.append(QByteArray(64, '\0'));   // not there yet
+
+    PartFile pf;
+    pf.setFileName(QStringLiteral("holiday-pictures.zip"));
+    pf.setFileSize(static_cast<uint64>(zip.size()));
+    uint8 hash[16];
+    std::memset(hash, 0x3E, sizeof(hash));
+    pf.setFileHash(hash);
+    QVERIFY(pf.createPartFile(tmpDir.path()));
+    QVERIFY(pf.filePath().isEmpty());
+
+    QFile part(pf.partDataPath());
+    QVERIFY(part.open(QIODevice::ReadWrite));
+    part.write(zip);
+    part.close();
+    pf.fillGap(0, static_cast<uint64>(have - 1));
+
+    eMule::testing::TempDir outDir;
+    const QString out = ArchiveRecovery::recoverToCopy(&pf, outDir.path());
+    QVERIFY2(!out.isEmpty(), "nothing was recovered");
+    QCOMPARE(QFileInfo(out).fileName(), QStringLiteral("holid-rec.zip"));
+    QVERIFY(QFileInfo(out).size() > have);
+}
+
+// ACE: the packed size (ADDSIZE) is a field of the block header; the data it counts
+// follows the header. A block whose data has not all arrived is left out.
+void tst_ArchiveRecovery::recoverACE_keepsTheBlocksThatArrived()
+{
+    const auto put16 = [](QByteArray& b, quint16 v) { b.append(reinterpret_cast<const char*>(&v), 2); };
+    const auto put32 = [](QByteArray& b, quint32 v) { b.append(reinterpret_cast<const char*>(&v), 4); };
+    const auto block = [&](const QByteArray& body) -> QByteArray {
+        QByteArray b;
+        put16(b, 0);                              // HEAD_CRC, not checked
+        put16(b, quint16(body.size()));           // HEAD_SIZE
+        return b + body;
+    };
+    const auto fileBlock = [&](const QByteArray& name, const QByteArray& data) -> QByteArray {
+        QByteArray body;
+        body.append(char(1));                     // HEAD_TYPE: file
+        put16(body, 0x0001);                      // ADDSIZE
+        put32(body, quint32(data.size()));        // PACK_SIZE
+        put32(body, quint32(data.size()));        // ORIG_SIZE
+        put32(body, 0); put32(body, 0x20); put32(body, 0); put32(body, 0);
+        put16(body, 0x4554);
+        put16(body, quint16(name.size()));
+        body.append(name);
+        return block(body) + data;
+    };
+
+    QByteArray mainBody;
+    mainBody.append(char(0));                     // HEAD_TYPE: main
+    put16(mainBody, 0);
+    mainBody.append("**ACE**", 7);
+    mainBody.append(QByteArray(16, char(0)));
+    const QByteArray head = block(mainBody);
+    const QByteArray first = fileBlock("one.bin", QByteArray(5000, 'a'));
+    const QByteArray second = fileBlock("two.bin", QByteArray(5000, 'b'));
+    const QByteArray ace = head + first + second;
+
+    eMule::testing::TempDir tmpDir;
+    const QString srcPath = tmpDir.filePath(QStringLiteral("003.part"));
+    QFile src(srcPath);
+    QVERIFY(src.open(QIODevice::WriteOnly));
+    src.write(ace);
+    src.close();
+
+    // all of it there: all of it copied
+    const std::vector<Gap> whole = {{0, static_cast<uint64>(ace.size() - 1)}};
+    QString out = ArchiveRecovery::recoverFile(srcPath, whole, static_cast<uint64>(ace.size()),
+                                               QString(), QStringLiteral("whole"));
+    QCOMPARE(QFileInfo(out).fileName(), QStringLiteral("whole-rec.ace"));
+    QFile outFile(out);
+    QVERIFY(outFile.open(QIODevice::ReadOnly));
+    QCOMPARE(outFile.readAll(), ace);
+    outFile.close();
+
+    // the second member cut short: header and first member only
+    const std::vector<Gap> part = {{0, static_cast<uint64>(ace.size() - 1000)}};
+    out = ArchiveRecovery::recoverFile(srcPath, part, static_cast<uint64>(ace.size()),
+                                       QString(), QStringLiteral("part"));
+    outFile.setFileName(out);
+    QVERIFY(outFile.open(QIODevice::ReadOnly));
+    QCOMPARE(outFile.readAll(), QByteArray(head + first));
+}
+
+// A member behind a hole and behind bytes that are no ZIP record is still found.
+void tst_ArchiveRecovery::recoverZip_stepsOverHolesAndJunk()
+{
+    const auto member = [](const QByteArray& name, const QByteArray& content) -> QByteArray {
+        QByteArray zip;
+        const auto put16 = [&zip](quint16 v) { zip.append(reinterpret_cast<const char*>(&v), 2); };
+        const auto put32 = [&zip](quint32 v) { zip.append(reinterpret_cast<const char*>(&v), 4); };
+        put32(0x04034b50); put16(20); put16(0); put16(0); put16(0); put16(0);
+        put32(0); put32(quint32(content.size())); put32(quint32(content.size()));
+        put16(quint16(name.size())); put16(0);
+        return zip + name + content;
+    };
+    const QByteArray first = member("a.txt", QByteArray(300, 'a'));
+    const QByteArray hole(700000, char(0));           // never arrived
+    const QByteArray junk(300000, 'P');               // arrived, and full of false starts
+    const QByteArray second = member("b.txt", QByteArray(300, 'b'));
+    const QByteArray zip = first + hole + junk + second;
+
+    eMule::testing::TempDir tmpDir;
+    const QString srcPath = tmpDir.filePath(QStringLiteral("004.part"));
+    QFile src(srcPath);
+    QVERIFY(src.open(QIODevice::WriteOnly));
+    src.write(zip);
+    src.close();
+
+    const uint64 holeStart = static_cast<uint64>(first.size());
+    const uint64 holeEnd = holeStart + static_cast<uint64>(hole.size()) - 1;
+    const std::vector<Gap> filled = {{0, holeStart - 1}, {holeEnd + 1, static_cast<uint64>(zip.size() - 1)}};
+    const QString out = ArchiveRecovery::recoverFile(srcPath, filled, static_cast<uint64>(zip.size()),
+                                                     QString(), QStringLiteral("holes"));
+    QVERIFY2(!out.isEmpty(), "nothing was recovered");
+    QFile outFile(out);
+    QVERIFY(outFile.open(QIODevice::ReadOnly));
+    const QByteArray rebuilt = outFile.readAll();
+    QVERIFY(rebuilt.startsWith(QByteArray(first + second)));   // both members, then the directory
+    QCOMPARE(rebuilt.count(QByteArray::fromHex("504b0102")), 2);
 }
 
 QTEST_MAIN(tst_ArchiveRecovery)

@@ -1,6 +1,6 @@
 #include "pch.h"
 /// @file ArchiveScan.cpp
-/// @brief ZIP and RAR header listing for (partial) files — see ArchiveScan.h.
+/// @brief ZIP, RAR, ACE and ISO header listing for (partial) files — see ArchiveScan.h.
 
 #include "archive/ArchiveScan.h"
 
@@ -482,6 +482,288 @@ void scanRar5(const Source& src, ArchiveScanResult& result)
 const QByteArray kRar4Mark = QByteArray::fromHex("526172211A0700");
 const QByteArray kRar5Mark = QByteArray::fromHex("526172211A070100");
 
+// ---------------------------------------------------------------------------
+// ACE — libarchive has no reader for it. A chain of blocks:
+// HEAD_CRC(2) HEAD_SIZE(2) HEAD_TYPE(1) HEAD_FLAGS(2) ..., HEAD_SIZE counted from
+// HEAD_TYPE; a block flagged ADDSIZE is followed by that many bytes of data
+// (MFC ArchiveRecovery.cpp recoverAce, ArchivePreviewDlg.cpp).
+// ---------------------------------------------------------------------------
+
+const QByteArray kAceMark = QByteArrayLiteral("**ACE**");
+constexpr qint64 kAceMarkOffset = 7;
+constexpr qint64 kAceBlockFixed = 7;     // up to and including HEAD_FLAGS
+constexpr qint64 kAceFileFixed = 35;     // a file block up to its name
+
+void scanAce(const Source& src, ArchiveScanResult& result)
+{
+    using Status = ArchiveScanResult::Status;
+    result.type = ArchiveScanType::Ace;
+
+    qint64 pos = 0;
+    bool first = true;
+    while (pos < src.size()) {
+        const auto fixed = src.read(pos, kAceBlockFixed);
+        if (!fixed) {
+            result.status = Status::ListIncomplete;
+            return;
+        }
+        const qint64 headSize = qint64{le16(*fixed, 2)} + 4;
+        const quint8 type = static_cast<quint8>((*fixed)[4]);
+        const quint16 flags = le16(*fixed, 5);
+        std::optional<QByteArray> head;
+        if (headSize >= kAceBlockFixed)
+            head = src.read(pos, headSize);
+        if (!head) {
+            // not there yet, or not a block at all
+            result.status = first ? Status::NoTableOfContents : Status::ListIncomplete;
+            return;
+        }
+
+        quint64 addSize = 0;
+        if ((flags & 0x0001) && headSize >= 11)
+            addSize = le32(*head, 7);
+
+        if (first) {
+            if (type != 0 || head->mid(kAceMarkOffset, kAceMark.size()) != kAceMark) {
+                result.status = Status::NoTableOfContents;
+                return;
+            }
+            result.hasComment = (flags & 0x0002) != 0;
+            result.recoveryRecord = (flags & 0x2000) != 0;
+            result.locked = (flags & 0x4000) != 0;
+            result.solid = (flags & 0x8000) != 0;
+            first = false;
+        } else if (type == 1 && headSize >= kAceFileFixed) {
+            const quint16 nameSize = le16(*head, 33);
+            if (kAceFileFixed + nameSize > headSize) {
+                result.status = Status::ListIncomplete;
+                return;
+            }
+            ArchiveScanEntry entry;
+            const QByteArray rawName = head->mid(kAceFileFixed, nameSize);
+            entry.name = QString::fromUtf8(rawName).contains(QChar::ReplacementCharacter)
+                             ? QString::fromLatin1(rawName) : QString::fromUtf8(rawName);
+            entry.name.replace(u'\\', u'/');
+            entry.packedSize = addSize;
+            entry.size = le32(*head, 11);
+            const quint32 ftime = le32(*head, 15);
+            entry.modified = dosDateTime(static_cast<quint16>(ftime >> 16), static_cast<quint16>(ftime));
+            entry.directory = (le32(*head, 19) & 0x10) != 0;
+            entry.crc = le32(*head, 23);
+            entry.hasCrc = true;
+            entry.hasComment = (flags & 0x0002) != 0;
+            entry.fromPrevVolume = (flags & 0x1000) != 0;
+            entry.toNextVolume = (flags & 0x2000) != 0;
+            entry.encrypted = (flags & 0x4000) != 0;
+            entry.complete = src.present(pos + headSize, static_cast<qint64>(addSize));
+            result.passwordProtected = result.passwordProtected || entry.encrypted;
+            result.entries.append(entry);
+        }
+        pos += headSize + static_cast<qint64>(addSize);
+    }
+    // A .part is only as long as what was written: a chain that points past its
+    // end has blocks still to come.
+    result.status = first ? Status::NoTableOfContents
+                  : pos == src.size() ? Status::Ok : Status::ListIncomplete;
+}
+
+// ---------------------------------------------------------------------------
+// ISO 9660 / Joliet — the directory tree, so that each file's extent can be held
+// against the gap list (MFC ArchiveRecovery.cpp recoverISO / ISOReadDirectory).
+// ---------------------------------------------------------------------------
+
+const QByteArray kIsoMark = QByteArrayLiteral("CD001");
+constexpr qint64 kIsoSector = 2048;
+constexpr qint64 kIsoFirstDescriptor = 16;
+constexpr qsizetype kIsoRecordFixed = 33;   // a directory record up to its name
+constexpr qsizetype kIsoRootRecord = 156;   // in a volume descriptor
+constexpr int kIsoMaxDepth = 64;
+constexpr qsizetype kIsoMaxEntries = 200'000;
+
+struct IsoWalk {
+    const Source& src;
+    ArchiveScanResult& result;
+    qint64 block = kIsoSector;
+    bool joliet = false;
+    bool allRead = true;        ///< every directory sector was there
+    QList<quint32> seen;        ///< directory extents, against loops
+};
+
+/// The Rock Ridge name ("NM" entries) of a record's system use area, following a
+/// continuation area; empty when there is none.
+[[nodiscard]] QString rockRidgeName(const IsoWalk& w, QByteArray area)
+{
+    QByteArray name;
+    for (int hops = 0; hops < 4; ++hops) {
+        std::optional<QByteArray> next;
+        for (qsizetype at = 0; at + 4 <= area.size();) {
+            const auto sigOk = [&](qsizetype i) { return area[i] >= 'A' && area[i] <= 'Z'; };
+            const int len = static_cast<uchar>(area[at + 2]);
+            if (!sigOk(at) || !sigOk(at + 1) || len < 4 || at + len > area.size())
+                break;
+            if (area[at] == 'N' && area[at + 1] == 'M' && len >= 5) {
+                if ((static_cast<uchar>(area[at + 4]) & 0x06) == 0)   // not "." / ".."
+                    name += area.mid(at + 5, len - 5);
+            } else if (area[at] == 'C' && area[at + 1] == 'E' && len >= 28) {
+                next = w.src.read(qint64{le32(area, at + 4)} * w.block + le32(area, at + 12),
+                                  le32(area, at + 20));
+            }
+            at += len;
+        }
+        if (!next)
+            break;
+        area = *next;
+    }
+    if (name.isEmpty())
+        return {};
+    const QString utf8 = QString::fromUtf8(name);
+    return utf8.contains(QChar::ReplacementCharacter) ? QString::fromLatin1(name) : utf8;
+}
+
+[[nodiscard]] QString isoName(const IsoWalk& w, const QByteArray& record, qsizetype nameLen)
+{
+    const QByteArray raw = record.mid(kIsoRecordFixed, nameLen);
+    QString name;
+    if (w.joliet) {   // UTF-16BE
+        for (qsizetype i = 0; i + 1 < raw.size(); i += 2)
+            name += QChar(static_cast<char16_t>((static_cast<uchar>(raw[i]) << 8) | static_cast<uchar>(raw[i + 1])));
+    } else {
+        // the system use area starts on an even offset after the name
+        name = rockRidgeName(w, record.mid(kIsoRecordFixed + nameLen + ((nameLen & 1) ? 0 : 1)));
+        if (!name.isEmpty())
+            return name;
+        name = QString::fromLatin1(raw);
+    }
+    // ";1" is the file version, and a name without extension still ends in a dot
+    if (const qsizetype version = name.lastIndexOf(u';'); version >= 0)
+        name.truncate(version);
+    if (!w.joliet && name.endsWith(u'.'))
+        name.chop(1);
+    return name;
+}
+
+void readIsoDirectory(IsoWalk& w, quint32 extent, quint32 length, const QString& path, int depth)
+{
+    if (depth > kIsoMaxDepth || w.seen.contains(extent))
+        return;
+    w.seen.append(extent);
+
+    const qint64 start = qint64{extent} * w.block;
+    bool continued = false;   // the record before had "more extents follow"
+    for (qint64 offset = 0; offset < length; offset += w.block) {
+        const auto sector = w.src.read(start + offset, w.block);
+        if (!sector) {
+            w.allRead = false;
+            continue;
+        }
+        for (qsizetype at = 0; at + kIsoRecordFixed <= sector->size();) {
+            const qsizetype len = static_cast<uchar>((*sector)[at]);
+            if (len == 0)
+                break;   // the rest of the sector is padding
+            const qsizetype nameLen = static_cast<uchar>((*sector)[at + 32]);
+            if (len < kIsoRecordFixed + nameLen || at + len > sector->size()) {
+                w.allRead = false;
+                break;
+            }
+            const QByteArray record = sector->mid(at, len);
+            at += len;
+
+            const quint8 flags = static_cast<quint8>(record[25]);
+            const bool directory = (flags & 0x02) != 0;
+            if (directory && nameLen == 1 && static_cast<uchar>(record[kIsoRecordFixed]) <= 1)
+                continue;   // "." and ".."
+            if (w.result.entries.size() >= kIsoMaxEntries)
+                return;
+
+            const quint32 dataExtent = le32(record, 2);
+            const quint32 dataLength = le32(record, 10);
+            const bool present = w.src.present(qint64{dataExtent} * w.block, dataLength);
+            if (continued && !w.result.entries.isEmpty()) {
+                // a file beyond 4 GiB is a run of records under one name
+                ArchiveScanEntry& whole = w.result.entries.last();
+                whole.size += dataLength;
+                whole.complete = whole.complete && present;
+                continued = (flags & 0x80) != 0;
+                continue;
+            }
+            continued = (flags & 0x80) != 0;
+
+            ArchiveScanEntry entry;
+            entry.name = path + isoName(w, record, nameLen);
+            entry.directory = directory;
+            entry.hidden = (flags & 0x01) != 0;
+            entry.readOnly = (flags & 0x10) != 0;
+            entry.complete = present;
+            if (directory)
+                entry.name += u'/';
+            else
+                entry.size = entry.packedSize = dataLength;
+            // years since 1900, then the offset from GMT in quarter hours
+            const auto byte = [&](qsizetype i) { return static_cast<uchar>(record[i]); };
+            const QDate date(1900 + byte(18), byte(19), byte(20));
+            const QTime time(byte(21), byte(22), byte(23));
+            if (date.isValid() && time.isValid()) {
+                entry.modified = QDateTime(date, time,
+                                           QTimeZone::fromSecondsAheadOfUtc(static_cast<qint8>(record[24]) * 900))
+                                     .toLocalTime();
+            }
+            const QString name = entry.name;
+            w.result.entries.append(entry);
+            if (directory)
+                readIsoDirectory(w, dataExtent, dataLength, name, depth + 1);
+        }
+    }
+}
+
+void scanIso(const Source& src, ArchiveScanResult& result)
+{
+    using Status = ArchiveScanResult::Status;
+    result.type = ArchiveScanType::Iso;
+
+    // The volume descriptors, up to the set terminator
+    std::optional<QByteArray> primary, jolietVolume;
+    qint64 sector = kIsoFirstDescriptor;
+    for (; sector < kIsoFirstDescriptor + 64; ++sector) {
+        const auto descriptor = src.read(sector * kIsoSector, kIsoSector);
+        if (!descriptor || descriptor->mid(1, kIsoMark.size()) != kIsoMark)
+            break;
+        const quint8 type = static_cast<quint8>((*descriptor)[0]);
+        if (type == 0xFF) {
+            ++sector;
+            break;
+        }
+        if (type == 0x01 && !primary) {
+            primary = descriptor;
+            result.iso9660 = true;
+        } else if (type == 0x02 && (*descriptor)[88] == 0x25 && (*descriptor)[89] == 0x2F
+                   && ((*descriptor)[90] == 0x40 || (*descriptor)[90] == 0x43 || (*descriptor)[90] == 0x45)) {
+            jolietVolume = descriptor;
+            result.joliet = true;
+        } else if (type == 0x00 && descriptor->mid(7).startsWith("EL TORITO SPECIFICATION")) {
+            result.bootable = true;
+        }
+    }
+    // UDF: an extended area with an NSR descriptor follows the set
+    for (qint64 end = sector + 4; sector < end; ++sector) {
+        const auto magic = src.read(sector * kIsoSector + 1, 5);
+        if (magic && (*magic == "NSR02" || *magic == "NSR03"))
+            result.udf = true;
+    }
+
+    const std::optional<QByteArray>& volume = jolietVolume ? jolietVolume : primary;
+    if (!volume) {
+        result.type = ArchiveScanType::Unknown;   // UDF only: not ours to list
+        return;
+    }
+    IsoWalk walk{.src = src, .result = result, .joliet = jolietVolume.has_value()};
+    if (const quint16 block = le16(*volume, 128); block != 0)
+        walk.block = block;
+    readIsoDirectory(walk, le32(*volume, kIsoRootRecord + 2), le32(*volume, kIsoRootRecord + 10), {}, 0);
+
+    result.status = walk.allRead ? Status::Ok
+                  : result.entries.isEmpty() ? Status::InsufficientData : Status::ListIncomplete;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -495,6 +777,10 @@ QString ArchiveScanEntry::attributes() const
         parts << QStringLiteral("P");
     if (directory)
         parts << QStringLiteral("D");
+    if (hidden)
+        parts << QStringLiteral("H");
+    if (readOnly)
+        parts << QStringLiteral("R");
     if (fromPrevVolume)
         parts << QStringLiteral("<");
     if (toNextVolume)
@@ -534,6 +820,20 @@ QString ArchiveScanResult::infoLine(const QString& passwordText, const QString& 
     return parts.join(u',');
 }
 
+QString ArchiveScanResult::imageInfoLine(const QString& bootableText) const
+{
+    QStringList parts;
+    if (bootable)
+        parts << bootableText;
+    if (iso9660)
+        parts << QStringLiteral("ISO9660");
+    if (joliet)
+        parts << QStringLiteral("Joliet");
+    if (udf)
+        parts << QStringLiteral("UDF");
+    return parts.join(u',');
+}
+
 ArchiveScanType detectArchiveType(QIODevice& device, const ArchiveGaps& gaps)
 {
     const Source src(device, device.size(), gaps);
@@ -546,6 +846,10 @@ ArchiveScanType detectArchiveType(QIODevice& device, const ArchiveGaps& gaps)
     // a local header, or the end record of an archive without entries
     if (sig == kZipLocal || sig == kZipEnd)
         return ArchiveScanType::Zip;
+    if (const auto mark = src.read(kAceMarkOffset, kAceMark.size()); mark && *mark == kAceMark)
+        return ArchiveScanType::Ace;
+    if (const auto mark = src.read(kIsoFirstDescriptor * kIsoSector + 1, kIsoMark.size()); mark && *mark == kIsoMark)
+        return ArchiveScanType::Iso;
     return ArchiveScanType::Unknown;
 }
 
@@ -570,6 +874,10 @@ ArchiveScanResult scanArchive(QIODevice& device, qint64 fileSize, const ArchiveG
         scanRar4(src, result);
     } else if (const quint32 sig = le32(*head, 0); sig == kZipLocal || sig == kZipEnd) {
         scanZip(src, result);
+    } else if (const auto mark = src.read(kAceMarkOffset, kAceMark.size()); mark && *mark == kAceMark) {
+        scanAce(src, result);
+    } else if (const auto iso = src.read(kIsoFirstDescriptor * kIsoSector + 1, kIsoMark.size()); iso && *iso == kIsoMark) {
+        scanIso(src, result);
     }
     return result;
 }

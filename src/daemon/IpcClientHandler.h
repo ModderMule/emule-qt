@@ -60,6 +60,9 @@ signals:
     /// Emitted when this client disconnects.
     void disconnected(eMule::IpcClientHandler* handler);
 
+    /// The handshake reply is out: pushes reach this client from now on.
+    void handshakeCompleted();
+
     /// Emitted when web server configuration has changed via SetPreferences.
     void webServerConfigChanged();
 

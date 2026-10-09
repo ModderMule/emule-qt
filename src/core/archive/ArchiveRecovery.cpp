@@ -34,6 +34,51 @@ static constexpr char kIsoMagic[] = "CD001";
 static constexpr uint64 kAceMagicOffset = 7;
 static constexpr char kAceMagic[] = "**ACE**";
 
+namespace {
+
+/// The filled region holding @p pos, else the next one after it; nullptr past the last.
+const Gap* regionAtOrAfter(uint64 pos, const std::vector<Gap>& filled)
+{
+    const Gap* next = nullptr;
+    for (const Gap& g : filled) {
+        if (g.end < pos)
+            continue;
+        if (g.start <= pos)
+            return &g;
+        if (!next || g.start < next->start)
+            next = &g;
+    }
+    return next;
+}
+
+/// Where the next ZIP record starts in [from, last]; last + 1 when there is none.
+/// Read in blocks: a seek and a read per byte took minutes on a large download.
+uint64 nextZipRecord(QFile& input, uint64 from, uint64 last)
+{
+    static constexpr uint64 kBlock = 256 * 1024;
+    uint64 pos = from;
+    while (pos + 3 <= last) {
+        if (!input.seek(static_cast<qint64>(pos)))
+            break;
+        const QByteArray block = input.read(static_cast<qint64>(std::min(kBlock, last - pos + 1)));
+        if (block.size() < 4)
+            break;
+        const char* data = block.constData();
+        for (qsizetype i = 0; i + 3 < block.size(); ++i) {
+            if (data[i] != 'P' || data[i + 1] != 'K')
+                continue;
+            uint32 sig = 0;
+            std::memcpy(&sig, data + i, 4);
+            if (sig == kZipLocalFileHeader || sig == kZipCentralDirHeader || sig == kZipEndOfCentralDir)
+                return pos + static_cast<uint64>(i);
+        }
+        pos += static_cast<uint64>(block.size()) - 3;   // a signature may straddle two blocks
+    }
+    return last + 1;
+}
+
+} // namespace
+
 // ---------------------------------------------------------------------------
 // isFilled — check if [start, end] is fully within filled regions
 // ---------------------------------------------------------------------------
@@ -66,9 +111,10 @@ QString ArchiveRecovery::recoverToCopy(PartFile* partFile, const QString& outDir
     // Get filled regions (complement of gap list)
     std::vector<Gap> filled;
     partFile->getFilledArray(filled);
-    const QString srcPath = partFile->filePath();
-    return recoverFile(srcPath, filled, static_cast<uint64>(partFile->fileSize()),
-                       outDir, QFileInfo(srcPath).completeBaseName());
+    // The .part itself: filePath() stays empty until the download is complete. Named
+    // after the download, as MFC (ArchiveRecovery.cpp:111).
+    return recoverFile(partFile->partDataPath(), filled, static_cast<uint64>(partFile->fileSize()),
+                       outDir, QFileInfo(partFile->fileName()).completeBaseName());
 }
 
 QString ArchiveRecovery::copyPath(const QString& srcPath, const QString& outDir,
@@ -156,15 +202,20 @@ bool ArchiveRecovery::recoverZip(QFile& input, QFile& output,
     int entriesRecovered = 0;
 
     while (pos < fileSize) {
-        // Seek to pos
-        if (!input.seek(static_cast<qint64>(pos)))
+        // Over what has not arrived, in one step
+        const Gap* region = regionAtOrAfter(pos, filled);
+        if (!region)
             break;
+        pos = std::max(pos, region->start);
 
         // Check if we have enough data for a local file header (30 bytes minimum)
-        if (!isFilled(pos, pos + 29, filled)) {
-            ++pos;
+        if (region->end < pos + 29) {
+            pos = region->end + 1;
             continue;
         }
+
+        if (!input.seek(static_cast<qint64>(pos)))
+            break;
 
         // Read local file header signature
         char sigBuf[4]{};
@@ -212,7 +263,7 @@ bool ArchiveRecovery::recoverZip(QFile& input, QFile& output,
             // Reached central directory — stop scanning local headers
             break;
         } else {
-            ++pos;
+            pos = nextZipRecord(input, pos + 1, region->end);
         }
     }
 
@@ -356,8 +407,12 @@ bool ArchiveRecovery::recoverRar(QFile& input, QFile& output,
     const uint64 fileSize = static_cast<uint64>(input.size());
 
     while (pos < fileSize) {
-        if (!isFilled(pos, pos + 6, filled)) {
-            ++pos;
+        const Gap* region = regionAtOrAfter(pos, filled);
+        if (!region)
+            break;
+        pos = std::max(pos, region->start);
+        if (region->end < pos + 6) {
+            pos = region->end + 1;
             continue;
         }
 
@@ -537,8 +592,12 @@ bool ArchiveRecovery::recoverACE(QFile& input, QFile& output,
     // Scan for file header blocks
     while (pos < fileSize) {
         // Need at least 7 bytes for a block header
-        if (!isFilled(pos, pos + 6, filled)) {
-            ++pos;
+        const Gap* region = regionAtOrAfter(pos, filled);
+        if (!region)
+            break;
+        pos = std::max(pos, region->start);
+        if (region->end < pos + 6) {
+            pos = region->end + 1;
             continue;
         }
 
@@ -563,16 +622,18 @@ bool ArchiveRecovery::recoverACE(QFile& input, QFile& output,
         std::memcpy(&flags, blockHeader + 5, 2);
 
         if (flags & 0x0001) {
-            // Block has additional packed data size after header
-            uint64 headerEnd = pos + totalBlockSize;
-            if (headerEnd + 4 <= fileSize && isFilled(headerEnd, headerEnd + 3, filled)) {
-                input.seek(static_cast<qint64>(headerEnd));
-                char addSizeBuf[4]{};
-                input.read(addSizeBuf, 4);
-                uint32 addSize = 0;
-                std::memcpy(&addSize, addSizeBuf, 4);
-                totalBlockSize += addSize;
+            // ADDSIZE: the packed size is the header field right after the flags,
+            // and the data it counts follows the header
+            if (blockSize < 7 || !isFilled(pos + 7, pos + 10, filled)) {
+                ++pos;
+                continue;
             }
+            input.seek(static_cast<qint64>(pos + 7));
+            char addSizeBuf[4]{};
+            input.read(addSizeBuf, 4);
+            uint32 addSize = 0;
+            std::memcpy(&addSize, addSizeBuf, 4);
+            totalBlockSize += addSize;
         }
 
         if (blockType == kAceFileHeader || blockType == kAceMainHeader) {

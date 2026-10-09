@@ -103,13 +103,16 @@ bool ExternalLinkHandler::eventFilter(QObject* watched, QEvent* event)
         }
     }
 
-    // macOS: clicking the dock icon when the window is hidden should restore it.
+#ifdef Q_OS_MACOS
+    // Clicking the dock icon when the window is hidden should restore it. Elsewhere
+    // any window of ours taking focus (MiniMule, a tray menu) would do the same.
     if (event->type() == QEvent::ApplicationActivate && m_mainWindow
         && !m_mainWindow->isVisible()) {
         m_mainWindow->showNormal();
         m_mainWindow->raise();
         m_mainWindow->activateWindow();
     }
+#endif
 
     return QObject::eventFilter(watched, event);
 }

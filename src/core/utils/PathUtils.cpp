@@ -138,6 +138,15 @@ std::optional<std::uint64_t> tryFreeDiskSpace(const QString& path)
     QString probe = QDir::cleanPath(QFileInfo(path).absoluteFilePath());
     while (!probe.isEmpty()) {
         if (QFileInfo::exists(probe)) {
+#if defined(Q_OS_WIN)
+            // By directory, not by volume root: a quota or a mount below a share
+            // (\\wsl.localhost\...) has less room than the root QStorageInfo asks about.
+            const QString dir = QFileInfo(probe).isDir() ? probe : QFileInfo(probe).absolutePath();
+            ULARGE_INTEGER avail{};
+            if (GetDiskFreeSpaceExW(reinterpret_cast<LPCWSTR>(QDir::toNativeSeparators(dir).utf16()),
+                                    &avail, nullptr, nullptr))
+                return static_cast<std::uint64_t>(avail.QuadPart);
+#endif
             QStorageInfo info(probe);
             if (info.isValid() && info.isReady())
                 return static_cast<std::uint64_t>(info.bytesAvailable());
@@ -149,6 +158,24 @@ std::optional<std::uint64_t> tryFreeDiskSpace(const QString& path)
         probe = parent;
     }
     return std::nullopt;
+}
+
+bool isDiskFullError(const QFileDevice& file)
+{
+    if (file.error() == QFileDevice::ResourceError)
+        return true;
+#if defined(Q_OS_WIN)
+    // The engine stores qt_error_string() of the failed WriteFile and nothing else.
+    if (file.error() == QFileDevice::WriteError) {
+        const QString text = file.errorString();
+        for (const DWORD code : {DWORD(ERROR_DISK_FULL), DWORD(ERROR_HANDLE_DISK_FULL),
+                                 DWORD(ERROR_DISK_QUOTA_EXCEEDED)}) {
+            if (text == qt_error_string(static_cast<int>(code)))
+                return true;
+        }
+    }
+#endif
+    return false;
 }
 
 QString sanitizeFilename(const QString& name)

@@ -16,6 +16,10 @@ namespace eMule {
 /// is a wildcard and `port` is not 0. Call before the own listen().
 [[nodiscard]] QList<QHostAddress> heldLocalAddresses(const QHostAddress& listenAddr, quint16 port);
 
+/// True when another program holds `port` on the IPv4 wildcard. Windows lets a
+/// dual-stack (::) socket bind next to it; IPv4 then never arrives here.
+[[nodiscard]] bool ipv4WildcardHeld(quint16 port, QAbstractSocket::SocketType type);
+
 /// "127.0.0.1, ::1" for a log line.
 [[nodiscard]] QString addressListText(const QList<QHostAddress>& addresses);
 

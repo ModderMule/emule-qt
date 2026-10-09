@@ -9,6 +9,8 @@
 #include "files/PartFile.h"
 #include "utils/DiskLoadLimiter.h"
 
+#include "utils/PathUtils.h"
+
 #include <QFile>
 
 #include <atomic>
@@ -188,7 +190,7 @@ PartFileWriteResult PartFileWriteThread::execute(PartFileWriteJob& job)
         wrote = false;
     if (!wrote) {
         result.error = file.errorString();
-        result.diskFull = file.error() == QFileDevice::ResourceError;
+        result.diskFull = isDiskFullError(file);
         result.chunks = std::move(job.chunks);
         return result;
     }

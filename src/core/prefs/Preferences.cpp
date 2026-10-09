@@ -9,6 +9,7 @@
 #include "app/AppConfig.h"
 #include "crypto/AesCbc.h"
 #include "net/EMSocket.h"
+#include "net/ListenConflict.h"
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
 
@@ -4638,7 +4639,8 @@ uint16 Preferences::randomTCPPort()
 {
     return randomPort([](uint16 port) {
         QTcpServer probe;
-        return probe.listen(QHostAddress::Any, port);
+        return !ipv4WildcardHeld(port, QAbstractSocket::TcpSocket)
+            && probe.listen(QHostAddress::Any, port);
     });
 }
 
@@ -4646,7 +4648,8 @@ uint16 Preferences::randomUDPPort()
 {
     return randomPort([](uint16 port) {
         QUdpSocket probe;
-        return probe.bind(QHostAddress::Any, port);
+        return !ipv4WildcardHeld(port, QAbstractSocket::UdpSocket)
+            && probe.bind(QHostAddress::Any, port);
     });
 }
 

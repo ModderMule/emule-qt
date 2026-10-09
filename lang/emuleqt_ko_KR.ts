@@ -1285,6 +1285,10 @@ There is already a friend with same IP address and port available.</source>
         <translation>암호 보호</translation>
     </message>
     <message>
+        <source>bootable</source>
+        <translation>부팅 가능</translation>
+    </message>
+    <message>
         <location line="-35"/>
         <location line="+36"/>
         <source>Archive scanned.</source>

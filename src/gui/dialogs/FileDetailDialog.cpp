@@ -560,9 +560,10 @@ QWidget* FileDetailDialog::createEd2kLinkTab(const QCborMap& d)
 QWidget* FileDetailDialog::createArchivePreviewTab(const QCborMap& d)
 {
     auto* panel = new ArchivePreviewPanel;
-    const QString fullName = str(d, QLatin1StringView("fullName"));
+    // dataPath, not fullName: that is the .part.met of a download, and absent for a shared file
+    const QString dataPath = str(d, QLatin1StringView("dataPath"));
     const auto fileSize = static_cast<uint64_t>(num(d, QLatin1StringView("fileSize")));
-    panel->setFile(fullName, fileSize);
+    panel->setFile(dataPath, fileSize);
     // A download in progress: what is still missing, and the preview file
     QList<qint64> gaps;
     for (const auto& value : d.value(QLatin1StringView("archiveGaps")).toArray())

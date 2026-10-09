@@ -25,6 +25,7 @@ class tst_ArchiveReader : public QObject {
 
 private slots:
     void open_nonExistent();
+    void open_unrecognizedFormatFailsCleanly();
     void open_zipFile();
     void entryName_valid();
     void extractEntry_toTempDir();
@@ -79,6 +80,26 @@ void tst_ArchiveReader::open_nonExistent()
     ArchiveReader reader;
     QVERIFY(!reader.open(QStringLiteral("/nonexistent/archive.zip")));
     QVERIFY(!reader.isOpen());
+}
+
+// No reader bids for the file: the open fails, and must not go on to ask the
+// handle about encryption (crashed on Windows).
+void tst_ArchiveReader::open_unrecognizedFormatFailsCleanly()
+{
+    eMule::testing::TempDir tmpDir;
+    const QString path = tmpDir.filePath(QStringLiteral("test.ace"));
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    QByteArray junk(64 * 1024, 'Z');
+    junk.replace(7, 7, "**ACE**");
+    file.write(junk);
+    file.close();
+
+    ArchiveReader reader;
+    QVERIFY(!reader.open(path));
+    QVERIFY(!reader.isOpen());
+    QVERIFY(!reader.encryptionBlocked());
+    QVERIFY(!reader.lastError().isEmpty());
 }
 
 void tst_ArchiveReader::open_zipFile()

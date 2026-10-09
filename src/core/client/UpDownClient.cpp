@@ -2325,10 +2325,12 @@ void UpDownClient::connectionEstablished()
         || m_downloadState == DownloadState::WaitCallbackKad)
     {
         m_reaskPending = false;                         // MFC BaseClient.cpp:1545
-        setDownloadState(DownloadState::Connected);
         if (m_helloAnswerPending) {
             // Outgoing: we sent OP_HELLO and owe the peer's OP_HELLOANSWER before we know
             // its extended-request version, so the request is built there instead.
+            // The state stays as it is until then: MFC runs ConnectionEstablished() from
+            // the hello answer (ListenSocket.cpp:229), so a peer that took the TCP
+            // connection but has not answered still reads "Connecting", not "Asking".
             logDebug(QStringLiteral("connectionEstablished: deferring file request until "
                                     "HELLO_ANSWER (downloadState=%1)")
                          .arg(static_cast<int>(m_downloadState)));
@@ -2340,6 +2342,7 @@ void UpDownClient::connectionEstablished()
             logDebug(QStringLiteral("connectionEstablished: sending file request inline "
                                     "(downloadState=%1)")
                          .arg(static_cast<int>(m_downloadState)));
+            setDownloadState(DownloadState::Connected);
             sendFileRequest();
         }
     }
@@ -4645,6 +4648,12 @@ void UpDownClient::onHelloReceived(const uint8* data, uint32 size, uint8 opcode)
         if (m_pendingFileRequest) {
             m_pendingFileRequest = false;
             logDebug(QStringLiteral("onHelloReceived: sending deferred file request after HELLO_ANSWER"));
+            // Only an attempt still waiting for this answer; a swap or a drop in
+            // between has already moved the state on.
+            if (m_downloadState == DownloadState::Connecting
+                || m_downloadState == DownloadState::WaitCallback
+                || m_downloadState == DownloadState::WaitCallbackKad)
+                setDownloadState(DownloadState::Connected);
             sendFileRequest();
         }
 

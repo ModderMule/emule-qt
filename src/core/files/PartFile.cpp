@@ -685,7 +685,7 @@ void PartFile::flushBuffer(bool forceICH, bool noAICH)
     if (!wrote) {
         // Held, not discarded: the next flush tries again.
         handleWriteFailure(m_partFileHandle.errorString(),
-                           m_partFileHandle.error() == QFileDevice::ResourceError);
+                           isDiskFullError(m_partFileHandle));
         return;
     }
 
@@ -2344,6 +2344,11 @@ PartFileLoadResult PartFile::loadPartFile(const QString& directory,
             }
         }
     }
+
+    // "Added On" is when the .part came to be, not when this run began
+    // (MFC srchybrid/PartFile.cpp LoadPartFile: m_tCreated = st_ctime).
+    if (const QDateTime born = QFileInfo(partPath).birthTime(); born.isValid())
+        m_tCreated = static_cast<time_t>(born.toSecsSinceEpoch());
 
     // Did the .part change behind our back — an unclean shutdown, or something else
     // writing to it? Then the gap list we just loaded describes bytes that may no

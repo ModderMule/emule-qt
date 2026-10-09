@@ -1647,7 +1647,9 @@ void SharedFilesPanel::updateContentTab()
 
     // Both panels restart a background scan on every setFile(), and this runs on every
     // poll — so do nothing at all while the shown file has not changed.
-    const QString path = f ? f->filePath : QString{};
+    // A download has no path of its own in the list; its hash stands in for it.
+    const QString path = !f ? QString{}
+                       : f->isPartFile ? QStringLiteral("part:") + f->hash : f->filePath;
     if (path == m_shownContentPath)
         return;
     m_shownContentPath = path;
@@ -1661,9 +1663,29 @@ void SharedFilesPanel::updateContentTab()
 
     if (isArchiveFile(f->fileType, f->fileName)) {
         m_contentStack->setCurrentIndex(1);
+        m_mediaInfoPanel->clear();
+        if (f->isPartFile && m_ipc) {
+            // The .part and its missing ranges are the daemon's to tell. Asked as a download:
+            // the shared list only knows a part file once it has a complete part.
+            m_archivePreview->setFile({}, static_cast<uint64_t>(f->fileSize));
+            IpcMessage msg(IpcMsgType::GetDownloadDetails);
+            msg.append(f->hash);
+            m_ipc->sendRequest(std::move(msg), [this, path](const IpcMessage& resp) {
+                if (path != m_shownContentPath || !resp.isValid() || !resp.fieldBool(0))
+                    return;
+                const QCborMap details = resp.field(1).toMap();
+                QList<qint64> gaps;
+                for (const auto& value : details.value(QLatin1StringView("archiveGaps")).toArray())
+                    gaps << value.toInteger();
+                m_archivePreview->setFile(details.value(QLatin1StringView("dataPath")).toString(),
+                                          static_cast<uint64_t>(details.value(QLatin1StringView("fileSize")).toInteger()));
+                m_archivePreview->setPartFile(gaps, false);
+                m_archivePreview->setAutoScan(thePrefs.autoArchivePreviewStart());
+            });
+            return;
+        }
         m_archivePreview->setFile(f->filePath, static_cast<uint64_t>(f->fileSize));
         m_archivePreview->setAutoScan(thePrefs.autoArchivePreviewStart());   // else: its Update button
-        m_mediaInfoPanel->clear();
     } else {
         m_contentStack->setCurrentIndex(0);
         m_mediaInfoPanel->setFile(f->filePath, f->fileSize);

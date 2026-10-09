@@ -20,12 +20,14 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+#include <qt_windows.h>
+
 namespace eMule {
 
 namespace {
 
 /// Create a stat row: icon + label name + value label, returns the value label.
-QLabel* makeStatRow(QLayout* layout, const QString& iconPath,
+QLabel* makeStatRow(QBoxLayout* layout, const QString& iconPath,
                     const QString& name)
 {
     auto* row = new QHBoxLayout;
@@ -46,7 +48,7 @@ QLabel* makeStatRow(QLayout* layout, const QString& iconPath,
     row->addWidget(valueLabel);
     row->addStretch();
 
-    layout->addItem(row);
+    layout->addLayout(row);   // addItem() leaves the labels without a parent
     return valueLabel;
 }
 
@@ -61,6 +63,7 @@ MiniMuleWidget::MiniMuleWidget(QSystemTrayIcon* trayIcon, QWidget* parent)
 {
     setWindowTitle(QStringLiteral("eMule Qt"));
     setAttribute(Qt::WA_DeleteOnClose, false);
+    setAttribute(Qt::WA_QuitOnClose, false);
     setAttribute(Qt::WA_ShowWithoutActivating);
     setWindowOpacity(0.95);
     setFixedSize(260, 175);
@@ -144,14 +147,18 @@ void MiniMuleWidget::leaveEvent(QEvent* /*event*/)
         m_autoCloseTimer->start();
 }
 
-bool MiniMuleWidget::event(QEvent* event)
+bool MiniMuleWidget::nativeEvent(const QByteArray& eventType, void* message, qintptr* result)
 {
-    // A double click on the caption brings the main window back (MFC MiniMule.cpp:701-707)
-    if (event->type() == QEvent::NonClientAreaMouseButtonDblClick) {
-        emit restoreRequested();
+    // A double click on the caption brings the main window back (MFC MiniMule.cpp:701-707).
+    // From the message itself: Qt delivers no NonClientAreaMouseButtonDblClick here.
+    const MSG* msg = static_cast<const MSG*>(message);
+    if (msg->message == WM_NCLBUTTONDBLCLK && msg->wParam == HTCAPTION) {
+        // Queued: the window is hidden in answer, not inside its own caption click
+        QMetaObject::invokeMethod(this, &MiniMuleWidget::restoreRequested, Qt::QueuedConnection);
+        *result = 0;
         return true;
     }
-    return QWidget::event(event);
+    return QWidget::nativeEvent(eventType, message, result);
 }
 
 void MiniMuleWidget::paintEvent(QPaintEvent* /*event*/)

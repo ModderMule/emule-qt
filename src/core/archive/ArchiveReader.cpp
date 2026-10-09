@@ -542,7 +542,7 @@ bool ArchiveReader::extractAllFrom(ArchiveVolumeSource& source, const QString& d
     }
 
     if (result != ARCHIVE_OK) {
-        noteReadFailure(ar, result);
+        noteReadFailure(ar, result, /*formatChosen=*/false);
         logWarning(QStringLiteral("ArchiveReader: cannot %1 '%2': %3")
                        .arg(QString::fromLatin1(what), m_impl->filePath, m_impl->lastError));
         archive_read_free(ar);
@@ -562,7 +562,7 @@ bool ArchiveReader::extractAllFrom(ArchiveVolumeSource& source, const QString& d
 // case, because no entry was ever handed out to carry the per-entry flag. It
 // answers ARCHIVE_READ_FORMAT_ENCRYPTION_DONT_KNOW (-1) before the format has
 // looked, so only a literal 1 means yes.
-void ArchiveReader::noteReadFailure(::archive* ar, int status) const
+void ArchiveReader::noteReadFailure(::archive* ar, int status, bool formatChosen) const
 {
     if (status == ARCHIVE_EOF)
         return;
@@ -570,7 +570,9 @@ void ArchiveReader::noteReadFailure(::archive* ar, int status) const
     if (const char* err = archive_error_string(ar))
         m_impl->lastError = QString::fromUtf8(err);
 
-    if (archive_read_has_encrypted_entries(ar) == 1)
+    // Not after a failed open: choose_format() leaves a->format one past its table
+    // when no reader bids, and this call would follow it (crashes on Windows).
+    if (formatChosen && archive_read_has_encrypted_entries(ar) == 1)
         m_impl->encrypted = true;
 
     // The formats say so in words and in no other way — there is no error code

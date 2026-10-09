@@ -5,6 +5,7 @@
 #include "net/ListenSocket.h"
 #include "net/BindAddress.h"
 #include "net/InterfacePin.h"
+#include "net/ListenConflict.h"
 #include "app/AppContext.h"
 #include "server/ServerConnect.h"
 #include "client/ClientList.h"
@@ -47,6 +48,12 @@ bool ListenSocket::startListening(uint16 port)
     const auto bindTo = BindAddress::listenAddress();
     if (!bindTo)
         return false;   // unusable bind address, already reported
+    if (*bindTo == QHostAddress(QHostAddress::Any)
+        && ipv4WildcardHeld(port, QAbstractSocket::TcpSocket)) {
+        logError(QStringLiteral("ListenSocket: port %1 is already used by another program (IPv4)")
+                     .arg(port));
+        return false;
+    }
     if (!listen(*bindTo, port)) {
         logError(QStringLiteral("ListenSocket: Failed to listen on port %1: %2")
                      .arg(port).arg(errorString()));

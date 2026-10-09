@@ -120,6 +120,9 @@ private slots:
     void rar5_listsAndFindsMissingData();
     void start_missingIsInsufficientData();
     void unknown_isNotAnArchive();
+    void ace_listsBlocksAndMarksMissingData();
+    void iso_listsTheTreeAndMarksMissingData();
+    void iso_withoutJolietUsesThePlainNames();
 };
 
 // MFC ArchivePreviewDlg.cpp:853-900: CRC as %08X, the entry comment, P and D.
@@ -323,6 +326,229 @@ void tst_ArchiveScan::unknown_isNotAnArchive()
     QCOMPARE(r.type, ArchiveScanType::Unknown);
     QCOMPARE(r.status, ArchiveScanResult::Status::NoTableOfContents);
     QVERIFY(r.entries.isEmpty());
+}
+
+// ACE has no reader in libarchive: listed from its block headers, as MFC does.
+void tst_ArchiveScan::ace_listsBlocksAndMarksMissingData()
+{
+    const auto block = [](const QByteArray& body) -> QByteArray {
+        QByteArray b;
+        le16(b, 0);                              // HEAD_CRC, not checked
+        le16(b, quint16(body.size()));           // HEAD_SIZE
+        return b + body;
+    };
+    const auto fileBlock = [&](const QByteArray& name, const QByteArray& data, quint16 flags,
+                               quint32 attributes) -> QByteArray {
+        QByteArray body;
+        body.append(char(1));                    // HEAD_TYPE: file
+        le16(body, quint16(flags | 0x0001));     // ADDSIZE
+        le32(body, quint32(data.size()));        // PACK_SIZE
+        le32(body, quint32(data.size()));        // ORIG_SIZE
+        le32(body, (quint32((2026 - 1980) << 9 | 10 << 5 | 9) << 16) | (7 << 11));   // 2026-10-09 07:00
+        le32(body, attributes);
+        le32(body, 0xCAFEF00D);                  // CRC32
+        le32(body, 0);                           // compression
+        le16(body, 0x4554);
+        le16(body, quint16(name.size()));
+        body.append(name);
+        return block(body) + data;
+    };
+
+    QByteArray mainBody;
+    mainBody.append(char(0));                    // HEAD_TYPE: main
+    le16(mainBody, 0x8000);                      // solid
+    mainBody.append("**ACE**", 7);
+    mainBody.append(QByteArray(16, char(0)));
+    const QByteArray head = block(mainBody);
+    const QByteArray one = fileBlock("docs\\one.bin", QByteArray(4000, 'a'), 0, 0x20);
+    const QByteArray dir = fileBlock("docs", {}, 0, 0x10);
+    const QByteArray two = fileBlock("two.bin", QByteArray(4000, 'b'), 0x4000, 0x20);   // password
+    const QByteArray ace = head + one + dir + two;
+
+    const ArchiveScanResult whole = scan(ace);
+    QCOMPARE(whole.type, ArchiveScanType::Ace);
+    QCOMPARE(whole.status, ArchiveScanResult::Status::Ok);
+    QVERIFY(whole.solid);
+    QVERIFY(whole.passwordProtected);
+    QCOMPARE(whole.entries.size(), 3);
+    QCOMPARE(whole.fileCount(), 2);
+    QCOMPARE(whole.entries.at(0).name, QStringLiteral("docs/one.bin"));
+    QCOMPARE(whole.entries.at(0).size, quint64{4000});
+    QCOMPARE(whole.entries.at(0).crc, quint32{0xCAFEF00D});
+    QCOMPARE(whole.entries.at(0).modified, QDateTime(QDate(2026, 10, 9), QTime(7, 0)));
+    QVERIFY(whole.entries.at(0).complete);
+    QVERIFY(whole.entries.at(1).directory);
+    QVERIFY(whole.entries.at(2).encrypted);
+
+    // the data of the last member is not all there: listed, marked
+    const ArchiveScanResult holed = scan(ace, {{ace.size() - 100, ace.size() - 1}});
+    QCOMPARE(holed.status, ArchiveScanResult::Status::Ok);
+    QCOMPARE(holed.entries.size(), 3);
+    QVERIFY(holed.entries.at(0).complete);
+    QVERIFY(!holed.entries.at(2).complete);
+    QCOMPARE(holed.entries.at(2).attributes(), QStringLiteral("P,M"));
+
+    // the download ends inside the second member's header: as far as it goes
+    const qint64 cut = head.size() + one.size() + 10;
+    const ArchiveScanResult shortOne = scan(ace, {{cut, ace.size() - 1}});
+    QCOMPARE(shortOne.type, ArchiveScanType::Ace);
+    QCOMPARE(shortOne.status, ArchiveScanResult::Status::ListIncomplete);
+    QCOMPARE(shortOne.entries.size(), 1);
+
+    // a .part is only as long as what was written: the chain points past its end
+    const ArchiveScanResult truncated = scan(ace.left(ace.size() - 100));
+    QCOMPARE(truncated.status, ArchiveScanResult::Status::ListIncomplete);
+    QCOMPARE(truncated.entries.size(), 3);
+    QVERIFY(!truncated.entries.at(2).complete);
+
+    QBuffer buffer(const_cast<QByteArray*>(&ace));
+    buffer.open(QIODevice::ReadOnly);
+    QCOMPARE(detectArchiveType(buffer, {}), ArchiveScanType::Ace);
+}
+
+namespace {
+
+constexpr qsizetype kSector = 2048;
+
+/// One ISO 9660 directory record; only the little-endian halves are filled in.
+QByteArray isoRecord(const QByteArray& name, quint32 extent, quint32 length, quint8 flags)
+{
+    QByteArray r;
+    r.append(char(0)).append(char(0));
+    le32(r, extent);
+    le32(r, 0);
+    le32(r, length);
+    le32(r, 0);
+    for (const int v : {125, 10, 9, 12, 0, 0, 0})   // 2025-10-09 12:00:00 GMT
+        r.append(char(v));
+    r.append(char(flags)).append(char(0)).append(char(0));
+    le32(r, 1);
+    r.append(char(name.size())).append(name);
+    if (r.size() & 1)
+        r.append(char(0));
+    r[0] = char(r.size());
+    return r;
+}
+
+QByteArray utf16be(const QString& text)
+{
+    QByteArray out;
+    for (const QChar c : text)
+        out.append(char(c.unicode() >> 8)).append(char(c.unicode() & 0xFF));
+    return out;
+}
+
+QByteArray isoSector(const QByteArray& content)
+{
+    return content.leftJustified(kSector, char(0));
+}
+
+QByteArray isoDescriptor(quint8 type, quint32 rootExtent = 0, const QByteArray& escape = {})
+{
+    QByteArray d(kSector, char(0));
+    d[0] = char(type);
+    d.replace(1, 5, "CD001");
+    d[6] = char(1);
+    d.replace(88, escape.size(), escape);
+    d[128] = char(kSector & 0xFF);
+    d[129] = char(kSector >> 8);
+    d.replace(156, 34, isoRecord(QByteArray(1, char(0)), rootExtent, kSector, 0x02));
+    return d;
+}
+
+const QByteArray kSelf(1, char(0));
+const QByteArray kParent(1, char(1));
+
+/// Sectors: 16 primary, 17 boot, 18 Joliet (optional), 19 terminator, 20 plain root,
+/// 21 Joliet root, 22 Joliet "docs", 24-26 big.bin (5000 bytes), 27 readme (100).
+QByteArray makeIso(bool joliet)
+{
+    QByteArray boot(kSector, char(0));
+    boot.replace(1, 5, "CD001");
+    boot.replace(7, 23, "EL TORITO SPECIFICATION");
+
+    QByteArray iso(16 * kSector, char(0));
+    iso += isoDescriptor(1, 20);
+    iso += boot;
+    iso += joliet ? isoDescriptor(2, 21, QByteArray::fromHex("252F45")) : isoSector({});
+    iso += isoDescriptor(0xFF);
+    iso += isoSector(isoRecord(kSelf, 20, kSector, 0x02) + isoRecord(kParent, 20, kSector, 0x02)
+                     + isoRecord("BIG.BIN;1", 24, 5000, 0x01) + isoRecord("NOEXT.;1", 27, 100, 0));
+    iso += isoSector(isoRecord(kSelf, 21, kSector, 0x02) + isoRecord(kParent, 21, kSector, 0x02)
+                     + isoRecord(utf16be(QStringLiteral("docs")), 22, kSector, 0x02)
+                     + isoRecord(utf16be(QStringLiteral("big.bin")), 24, 5000, 0x01));
+    iso += isoSector(isoRecord(kSelf, 22, kSector, 0x02) + isoRecord(kParent, 21, kSector, 0x02)
+                     + isoRecord(utf16be(QStringLiteral("readme.txt")), 27, 100, 0));
+    iso += QByteArray(kSector, char(0));
+    iso += QByteArray(3 * kSector, 'b');
+    iso += isoSector(QByteArray(100, 'r'));
+    return iso;
+}
+
+} // namespace
+
+// MFC ArchivePreviewDlg.cpp:498-617: an image has no signature at its start, the tree
+// hangs off the volume descriptor in sector 16, and an entry is whole when its extent is.
+void tst_ArchiveScan::iso_listsTheTreeAndMarksMissingData()
+{
+    const QByteArray iso = makeIso(true);
+
+    const ArchiveScanResult whole = scan(iso);
+    QCOMPARE(whole.type, ArchiveScanType::Iso);
+    QCOMPARE(whole.status, ArchiveScanResult::Status::Ok);
+    QCOMPARE(whole.entries.size(), 3);
+    QCOMPARE(whole.entries.at(0).name, QStringLiteral("docs/"));
+    QCOMPARE(whole.entries.at(0).attributes(), QStringLiteral("D"));
+    QCOMPARE(whole.entries.at(1).name, QStringLiteral("docs/readme.txt"));
+    QCOMPARE(whole.entries.at(1).size, quint64(100));
+    QCOMPARE(whole.entries.at(1).attributes(), QString());
+    QVERIFY(whole.entries.at(1).modified.isValid());
+    QCOMPARE(whole.entries.at(1).modified.toUTC().time(), QTime(12, 0));
+    QCOMPARE(whole.entries.at(2).name, QStringLiteral("big.bin"));
+    QCOMPARE(whole.entries.at(2).size, quint64(5000));
+    QCOMPARE(whole.entries.at(2).attributes(), QStringLiteral("H"));
+    QCOMPARE(whole.fileCount(), 2);
+    QCOMPARE(whole.imageInfoLine(QStringLiteral("bootable")), QStringLiteral("bootable,ISO9660,Joliet"));
+
+    // a hole in the middle of big.bin: listed, but marked
+    const ArchiveScanResult holed = scan(iso, {{25 * kSector, 25 * kSector + 99}});
+    QCOMPARE(holed.status, ArchiveScanResult::Status::Ok);
+    QCOMPARE(holed.entries.at(2).attributes(), QStringLiteral("H,M"));
+    QVERIFY(holed.entries.at(1).complete);
+
+    // the "docs" directory itself is missing: what is in it cannot be listed
+    const ArchiveScanResult noDocs = scan(iso, {{22 * kSector, 23 * kSector - 1}});
+    QCOMPARE(noDocs.status, ArchiveScanResult::Status::ListIncomplete);
+    QCOMPARE(noDocs.entries.size(), 2);
+    QCOMPARE(noDocs.entries.at(0).attributes(), QStringLiteral("D,M"));
+
+    // a .part that ends before the last file
+    const ArchiveScanResult shortOne = scan(iso.left(27 * kSector));
+    QCOMPARE(shortOne.entries.size(), 3);
+    QVERIFY(!shortOne.entries.at(1).complete);
+    QVERIFY(shortOne.entries.at(2).complete);
+
+    // no root directory at all
+    const ArchiveScanResult noRoot = scan(iso, {{21 * kSector, 22 * kSector - 1}});
+    QCOMPARE(noRoot.type, ArchiveScanType::Iso);
+    QCOMPARE(noRoot.status, ArchiveScanResult::Status::InsufficientData);
+
+    QByteArray copy = iso;
+    QBuffer buffer(&copy);
+    buffer.open(QIODevice::ReadOnly);
+    QCOMPARE(detectArchiveType(buffer, {}), ArchiveScanType::Iso);
+}
+
+void tst_ArchiveScan::iso_withoutJolietUsesThePlainNames()
+{
+    const ArchiveScanResult r = scan(makeIso(false));
+    QCOMPARE(r.type, ArchiveScanType::Iso);
+    QCOMPARE(r.status, ArchiveScanResult::Status::Ok);
+    QCOMPARE(r.entries.size(), 2);
+    // the version suffix goes, and so does the dot of a name without extension
+    QCOMPARE(r.entries.at(0).name, QStringLiteral("BIG.BIN"));
+    QCOMPARE(r.entries.at(1).name, QStringLiteral("NOEXT"));
+    QCOMPARE(r.imageInfoLine(QStringLiteral("bootable")), QStringLiteral("bootable,ISO9660"));
 }
 
 QTEST_GUILESS_MAIN(tst_ArchiveScan)

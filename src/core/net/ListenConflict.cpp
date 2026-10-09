@@ -7,6 +7,7 @@
 #include <QNetworkInterface>
 #include <QStringList>
 #include <QTcpServer>
+#include <QUdpSocket>
 
 namespace eMule {
 
@@ -35,6 +36,19 @@ QList<QHostAddress> heldLocalAddresses(const QHostAddress& listenAddr, quint16 p
             held.append(local);
     }
     return held;
+}
+
+bool ipv4WildcardHeld(quint16 port, QAbstractSocket::SocketType type)
+{
+    if (port == 0)
+        return false;
+    const QHostAddress v4(QHostAddress::AnyIPv4);
+    if (type == QAbstractSocket::UdpSocket) {
+        QUdpSocket probe;
+        return !probe.bind(v4, port) && probe.error() == QAbstractSocket::AddressInUseError;
+    }
+    QTcpServer probe;
+    return !probe.listen(v4, port) && probe.serverError() == QAbstractSocket::AddressInUseError;
 }
 
 QString addressListText(const QList<QHostAddress>& addresses)
