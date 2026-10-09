@@ -422,12 +422,6 @@ bool UploadQueue::forceNewClient(bool allowEmptyWaitingQueue)
     if (!allowEmptyWaitingQueue && m_waitingList.empty())
         return false;
 
-    // USS veto check
-    if (theApp.lastCommonRouteFinder && thePrefs.isDynUpEnabled()
-        && !theApp.lastCommonRouteFinder->hasGivenUp()
-        && !theApp.lastCommonRouteFinder->acceptNewClient())
-        return false;
-
     int curUploadSlots = static_cast<int>(m_uploadingList.size());
     if (curUploadSlots < MIN_UP_CLIENTS_ALLOWED)
         return true;
@@ -437,6 +431,12 @@ bool UploadQueue::forceNewClient(bool allowEmptyWaitingQueue)
         return false;
 
     if (!acceptNewClient())
+        return false;
+
+    // USS veto — after the minimum slots, as MFC
+    if (theApp.lastCommonRouteFinder && thePrefs.isDynUpEnabled()
+        && !theApp.lastCommonRouteFinder->hasGivenUp()
+        && !theApp.lastCommonRouteFinder->acceptNewClient())
         return false;
 
     if (slotLadderAllows(curUploadSlots, m_datarate))

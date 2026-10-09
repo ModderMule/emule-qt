@@ -84,7 +84,7 @@ Every message shares one frame:
 <version 1><sub-opcode 1><tagcount 1>[tags]
 ```
 
-**Why 0xBC.** Stock eMule 0.50a/0.51d/0.70, MorphXT 12.7, Applejuice and eSE-LiveTV all end their
+**Why 0xBC.** Stock eMule 0.50a/0.51d/0.70 and MorphXT 12.7 all end their
 extended C2C TCP opcode space at `OP_HASHSETANSWER2 0xB2`. The compatibility target claims
 **0xB3–0xBB** for its eServer buddy relay. 0xBC is the first value unclaimed in every tree on hand.
 It also exists as a `CT_*` tag id, but tags live inside payloads and opcodes in the header, so the

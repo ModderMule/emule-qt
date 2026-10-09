@@ -23,6 +23,7 @@
 #include "dialogs/PortChangeNotice.h"
 #include "dialogs/PortMapStatusText.h"
 #include "prefs/Preferences.h"
+#include "utils/DialogSizing.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -40,7 +41,9 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QStackedWidget>
+#include <QTabBar>
 #include <QTabWidget>
+#include <QVBoxLayout>
 #include <QTest>
 #include <QTimer>
 #include <QDoubleSpinBox>
@@ -117,6 +120,7 @@ private slots:
     void theWizardDoesNotWaitWithoutACore();
     void aPortChangeIsReportedAsItWasApplied();
     void onlyAPendingPortChangeOffersARestart();
+    void defaultWidthShowsEveryTabTitle();
 };
 
 /// The regression this file exists for. Named per page, because "the dialog is too tall"
@@ -958,6 +962,59 @@ void TestOptionsDialogSizing::onlyAPendingPortChangeOffersARestart()
     QCOMPARE(show(PortApplyResult::BindFailed, [&restarts] { ++restarts; }), 1);
     QCOMPARE(show(PortApplyResult::RestartRequired, {}), 1);   // nothing to restart with
     QCOMPARE(restarts, 1);
+}
+
+// A tab bar without scroll buttons (macOS) elides its titles when squeezed; the default
+// width has to leave them readable, while the minimum stays the designed one.
+void TestOptionsDialogSizing::defaultWidthShowsEveryTabTitle()
+{
+    const auto build = [](QDialog& dialog, bool scrollButtons) {
+        auto* layout = new QVBoxLayout(&dialog);
+        auto* tabs = new QTabWidget;
+        tabs->setUsesScrollButtons(scrollButtons);
+        for (int i = 0; i < 8; ++i)
+            tabs->addTab(new QWidget, QStringLiteral("A rather long tab title %1").arg(i));
+        layout->addWidget(tabs);
+        eMule::DialogSizing::applySize(&dialog, QSize(300, 200), QSize(320, 240));
+        return tabs;
+    };
+
+    QDialog squeezing;
+    const QTabWidget* tabs = build(squeezing, false);
+    const int titles = tabs->tabBar()->sizeHint().width();
+    QVERIFY(titles > 320);
+    if (titles + 80 > squeezing.screen()->availableGeometry().width())
+        QSKIP("screen too narrow for the tab row");
+    QVERIFY2(squeezing.width() >= titles, qPrintable(QStringLiteral("%1 < %2")
+                                              .arg(squeezing.width()).arg(titles)));
+    QVERIFY(squeezing.minimumWidth() < titles);
+    QCOMPARE(squeezing.height(), 240);
+    squeezing.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&squeezing));
+    QVERIFY2(tabs->tabBar()->width() >= titles, qPrintable(QStringLiteral("%1 < %2")
+                                                    .arg(tabs->tabBar()->width()).arg(titles)));
+
+    // One more tab while the window is up (a walker step onto an archive): it follows
+    auto* live = squeezing.findChild<QTabWidget*>();
+    live->addTab(new QWidget, QStringLiteral("One more long tab title"));
+    const int wider = live->tabBar()->sizeHint().width();
+    QVERIFY(wider > titles);
+    if (wider + 80 <= squeezing.screen()->availableGeometry().width()) {
+        eMule::DialogSizing::applySize(&squeezing, QSize(300, 200), QSize(320, 240));
+        QVERIFY2(squeezing.width() >= wider, qPrintable(QStringLiteral("%1 < %2")
+                                                 .arg(squeezing.width()).arg(wider)));
+
+        // ...but a narrower size the user picks afterwards survives the next re-fit
+        const int chosen = squeezing.minimumWidth() + 10;   // the squeezed tabs set the floor
+        QVERIFY(chosen < wider);
+        squeezing.resize(chosen, squeezing.height());
+        eMule::DialogSizing::applySize(&squeezing, QSize(300, 200), QSize(320, 240));
+        QCOMPARE(squeezing.width(), chosen);
+    }
+
+    QDialog scrolling;   // arrows keep the titles whole; nothing to widen
+    build(scrolling, true);
+    QCOMPARE(scrolling.width(), 320);
 }
 
 QTEST_MAIN(TestOptionsDialogSizing)

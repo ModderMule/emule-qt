@@ -35,6 +35,10 @@ enum class Fit {
 
 /// Give @p dialog a minimum size that shows all of its content, and a default size at
 /// least that large. Both are clamped to what the screen can actually display.
+/// The default is also widened until every tab title is readable where the style
+/// elides them (macOS), as far as the screen allows.
+/// A dialog that is already up is widened the same way, but only when its tab row
+/// grew beyond anything it was sized for before.
 ///
 /// @param designedMin      the hand-picked floor the call site used to pass to
 ///                         setMinimumSize(); pass 0 for a dimension the content owns.

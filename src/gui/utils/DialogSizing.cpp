@@ -10,6 +10,8 @@
 #include <QGuiApplication>
 #include <QLayout>
 #include <QScreen>
+#include <QTabBar>
+#include <QTabWidget>
 #include <QWidget>
 
 #include <algorithm>
@@ -65,6 +67,34 @@ QSize contentSize(QWidget* dialog, QSize designedMin, Fit fit)
         height = std::max(height, neededHeight(layout, width));
 
     return {width, std::max(designedMin.height(), height)};
+}
+
+/// Widest tab row a dialog was sized for so far.
+constexpr char kWidestTabTitles[] = "_emule_widestTabTitles";
+
+/// The dialog width at which no tab title of @p dialog is elided, 0 without tabs.
+///
+/// A tab bar without scroll buttons (the macOS style) squeezes its tabs into whatever
+/// width it gets, and its minimum hint is the squeezed one — so the layout never asks
+/// for the room the titles need.
+int tabTitlesWidth(const QWidget* dialog)
+{
+    int width = 0;
+    for (const QTabWidget* tabs : dialog->findChildren<QTabWidget*>()) {
+        if (tabs->tabBar()->usesScrollButtons())
+            continue;
+
+        int needed = tabs->tabBar()->sizeHint().width();
+        for (const QWidget* w = tabs; w && w != dialog; w = w->parentWidget()) {
+            const QWidget* parent = w->parentWidget();
+            if (parent && parent->layout()) {
+                const QMargins m = parent->layout()->contentsMargins();
+                needed += m.left() + m.right();
+            }
+        }
+        width = std::max(width, needed);
+    }
+    return width;
 }
 
 } // anonymous namespace
@@ -137,9 +167,21 @@ void applySize(QWidget* dialog, QSize designedMin, QSize designedDefault, Fit fi
         // The default is bounded like the minimum: a hand-picked 700 px is taller than a
         // scaled laptop screen, and a window whose bottom edge is under the taskbar cannot
         // be dragged smaller.
+        // The default alone is widened for the tab titles: they stay a wish, so the
+        // user can still drag the window narrower.
+        // A window that is up follows only when the tab row got wider than it ever was
+        // (a walker step onto a file with one more page) — not on every re-fit, which
+        // would undo a narrower size the user chose.
+        const int titles = tabTitlesWidth(dialog);
+        const int widest = dialog->property(kWidestTabTitles).toInt();
+        dialog->setProperty(kWidestTabTitles, std::max(titles, widest));
+
+        const QSize wished(std::max(designedDefault.width(), titles), designedDefault.height());
+        const QSize grown(titles > widest ? std::max(dialog->width(), titles) : dialog->width(),
+                          dialog->height());
         dialog->resize(dialog->isVisible()
-                           ? dialog->size().expandedTo(needed)
-                           : designedDefault.expandedTo(needed).boundedTo(budget));
+                           ? grown.expandedTo(needed).boundedTo(budget.expandedTo(dialog->size()))
+                           : wished.expandedTo(needed).boundedTo(budget));
     }
 }
 
