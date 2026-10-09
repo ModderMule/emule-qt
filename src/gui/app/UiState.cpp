@@ -353,12 +353,17 @@ void UiState::bindStatsGraphSplitter(QSplitter* splitter)
 // Stats tree expansion state
 // ---------------------------------------------------------------------------
 
-/// Compute a path key for a tree item (e.g. "Transfer/Uploads/Session").
+/// Deepest level whose expansion is remembered (0 = top-level).
+static constexpr int kStatsTreeMaxDepth = 2;
+
+/// Path key for a tree item (e.g. "Transfer/Uploads/Session"). A row that carries a
+/// value ("Found Sources: 12") is keyed by its label only, or the key would change
+/// with every update.
 static QString itemPath(QTreeWidgetItem* item)
 {
     QStringList parts;
     for (auto* cur = item; cur; cur = cur->parent())
-        parts.prepend(cur->text(0));
+        parts.prepend(cur->text(0).section(QLatin1Char(':'), 0, 0).trimmed());
     return parts.join(QLatin1Char('/'));
 }
 
@@ -369,6 +374,16 @@ static int itemDepth(QTreeWidgetItem* item)
     for (auto* cur = item->parent(); cur; cur = cur->parent())
         ++d;
     return d;
+}
+
+static void restoreStatsExpansion(QTreeWidgetItem* parent, int depth, const QSet<QString>& expanded)
+{
+    for (int i = 0; i < parent->childCount(); ++i) {
+        auto* item = parent->child(i);
+        item->setExpanded(expanded.contains(itemPath(item)));
+        if (depth < kStatsTreeMaxDepth)
+            restoreStatsExpansion(item, depth + 1, expanded);
+    }
 }
 
 void UiState::bindStatsTree(QTreeWidget* tree)
@@ -382,28 +397,17 @@ void UiState::bindStatsTree(QTreeWidget* tree)
         };
     }
 
-    // Restore: walk top-level and first-level items
-    for (int i = 0; i < tree->topLevelItemCount(); ++i) {
-        auto* top = tree->topLevelItem(i);
-        const QString topPath = top->text(0);
-        top->setExpanded(m_statsTreeExpanded.contains(topPath));
+    restoreStatsExpansion(tree->invisibleRootItem(), 0, m_statsTreeExpanded);
 
-        for (int j = 0; j < top->childCount(); ++j) {
-            auto* child = top->child(j);
-            const QString childPath = topPath + QLatin1Char('/') + child->text(0);
-            child->setExpanded(m_statsTreeExpanded.contains(childPath));
-        }
-    }
-
-    // Auto-capture on expand/collapse (depth 0 and 1 only)
+    // Auto-capture on expand/collapse
     QObject::connect(tree, &QTreeWidget::itemExpanded, tree, [this](QTreeWidgetItem* item) {
-        if (itemDepth(item) <= 1) {
+        if (itemDepth(item) <= kStatsTreeMaxDepth) {
             m_statsTreeExpanded.insert(itemPath(item));
             scheduleSave();
         }
     });
     QObject::connect(tree, &QTreeWidget::itemCollapsed, tree, [this](QTreeWidgetItem* item) {
-        if (itemDepth(item) <= 1) {
+        if (itemDepth(item) <= kStatsTreeMaxDepth) {
             m_statsTreeExpanded.remove(itemPath(item));
             scheduleSave();
         }

@@ -788,6 +788,19 @@ Erneut herunterladen?</translation>
     </message>
 </context>
 <context>
+    <name>RenameFileDialog</name>
+    <message>
+        <location filename="../src/gui/dialogs/RenameFileDialog.h" line="+23"/>
+        <source>Rename</source>
+        <translation>Umbenennen</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>File name:</source>
+        <translation>Dateiname:</translation>
+    </message>
+</context>
+<context>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
@@ -10755,17 +10768,15 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>eD2K-Links kopieren</translation>
     </message>
     <message>
-        <location line="+58"/>
         <source>Rename File</source>
-        <translation>Datei umbenennen</translation>
+        <translation type="vanished">Datei umbenennen</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>New file name:</source>
-        <translation>Neuer Dateiname:</translation>
+        <translation type="vanished">Neuer Dateiname:</translation>
     </message>
     <message>
-        <location line="-2051"/>
+        <location line="-1993"/>
         <location line="+1955"/>
         <source>Delete From Disk</source>
         <translation>Von Datenträger löschen</translation>
@@ -11232,24 +11243,24 @@ Die Dateien bleiben auf der Festplatte erhalten.</numerusform>
         <location line="+165"/>
         <location line="+25"/>
         <location line="+336"/>
-        <location line="+1619"/>
+        <location line="+1620"/>
         <source>Uploads</source>
         <translation>Uploads</translation>
     </message>
     <message>
-        <location line="-2141"/>
+        <location line="-2142"/>
         <location line="+67"/>
         <location line="+83"/>
         <location line="+56"/>
         <location line="+43"/>
         <location line="+1607"/>
-        <location line="+153"/>
+        <location line="+154"/>
         <location line="+121"/>
         <source>Session</source>
         <translation>Sitzung</translation>
     </message>
     <message>
-        <location line="-2127"/>
+        <location line="-2128"/>
         <location line="+35"/>
         <source>Uploaded Data: 0 Bytes</source>
         <translation>Hochgeladene Daten: 0 Bytes</translation>
@@ -11302,12 +11313,12 @@ Die Dateien bleiben auf der Festplatte erhalten.</numerusform>
         <location line="+24"/>
         <location line="+345"/>
         <location line="+1241"/>
-        <location line="+367"/>
+        <location line="+368"/>
         <source>Downloads</source>
         <translation>Downloads</translation>
     </message>
     <message>
-        <location line="-2075"/>
+        <location line="-2076"/>
         <location line="+43"/>
         <source>Downloaded Data: 0 Bytes</source>
         <translation>Heruntergeladene Daten: 0 Bytes</translation>
@@ -11449,13 +11460,13 @@ Die Dateien bleiben auf der Festplatte erhalten.</numerusform>
         <location line="+41"/>
         <location line="+32"/>
         <location line="+1612"/>
-        <location line="+149"/>
+        <location line="+150"/>
         <location line="+125"/>
         <source>Cumulative</source>
         <translation>Kumulativ</translation>
     </message>
     <message>
-        <location line="-2056"/>
+        <location line="-2057"/>
         <location line="+43"/>
         <source>Completed Downloads: 0</source>
         <translation>Abgeschlossene Downloads: 0</translation>
@@ -11577,12 +11588,12 @@ Die Dateien bleiben auf der Festplatte erhalten.</numerusform>
         <location line="+8"/>
         <location line="+67"/>
         <location line="+69"/>
-        <location line="+967"/>
+        <location line="+968"/>
         <source>Unknown</source>
         <translation>Unbekannt</translation>
     </message>
     <message>
-        <location line="-2171"/>
+        <location line="-2172"/>
         <source>Statistics Tree</source>
         <translation>Statistikbaum</translation>
     </message>
@@ -11623,7 +11634,7 @@ Die Dateien bleiben auf der Festplatte erhalten.</numerusform>
         <translation>Beschädigt (yEnc-Prüfung fehlgeschlagen): %1</translation>
     </message>
     <message>
-        <location line="+350"/>
+        <location line="+351"/>
         <source>HTTP Cache</source>
         <translation>HTTP-Cache</translation>
     </message>
@@ -11648,7 +11659,7 @@ Die Dateien bleiben auf der Festplatte erhalten.</numerusform>
         <translation type="vanished">Abgerufene Stücke: 0</translation>
     </message>
     <message>
-        <location line="-1906"/>
+        <location line="-1907"/>
         <source>Run Time: 0:00:00</source>
         <translation>Laufzeit: 0:00:00</translation>
     </message>
@@ -12803,12 +12814,12 @@ Ein erneuter Klick auf „Statistiken wiederherstellen“ lädt Ihre aktuellen S
     </message>
     <message>
         <location line="+163"/>
-        <location line="+491"/>
+        <location line="+495"/>
         <source>Open Connections: %1</source>
         <translation>Offene Verbindungen: %1</translation>
     </message>
     <message>
-        <location line="-487"/>
+        <location line="-491"/>
         <source>Network Traffic: %1</source>
         <translation>Netzwerkverkehr: %1</translation>
     </message>
@@ -12839,12 +12850,12 @@ Ein erneuter Klick auf „Statistiken wiederherstellen“ lädt Ihre aktuellen S
     </message>
     <message>
         <location line="+4"/>
-        <location line="+486"/>
+        <location line="+490"/>
         <source>Connection Errors: %1</source>
         <translation>Verbindungsfehler: %1</translation>
     </message>
     <message>
-        <location line="-483"/>
+        <location line="-487"/>
         <source>Completed Downloads: %1 %2</source>
         <translation>Abgeschlossene Downloads: %1 %2</translation>
     </message>
@@ -13015,12 +13026,12 @@ Ein erneuter Klick auf „Statistiken wiederherstellen“ lädt Ihre aktuellen S
     </message>
     <message>
         <location line="+1"/>
-        <location line="+128"/>
+        <location line="+129"/>
         <source>Searches: %1</source>
         <translation>Suchen: %1</translation>
     </message>
     <message>
-        <location line="-127"/>
+        <location line="-128"/>
         <source>API Requests: %1</source>
         <translation>API-Anfragen: %1</translation>
     </message>
@@ -13036,12 +13047,12 @@ Ein erneuter Klick auf „Statistiken wiederherstellen“ lädt Ihre aktuellen S
     </message>
     <message>
         <location line="+1"/>
-        <location line="+285"/>
+        <location line="+286"/>
         <source>Failed: %1 %2</source>
         <translation>Fehlgeschlagen: %1 %2</translation>
     </message>
     <message>
-        <location line="-284"/>
+        <location line="-285"/>
         <source>Feed Polls: %1</source>
         <translation>Feed-Abfragen: %1</translation>
     </message>
@@ -13167,7 +13178,7 @@ Ein erneuter Klick auf „Statistiken wiederherstellen“ lädt Ihre aktuellen S
         <translation>Hinter Firewall (Kad)</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>UDP: %1 %2</source>
         <translation>UDP: %1 %2</translation>
     </message>
@@ -13287,8 +13298,8 @@ Ein erneuter Klick auf „Statistiken wiederherstellen“ lädt Ihre aktuellen S
         <translation>Knoten</translation>
     </message>
     <message>
-        <location line="-1720"/>
-        <location line="+1723"/>
+        <location line="-1721"/>
+        <location line="+1724"/>
         <source>By Country</source>
         <translation>Nach Land</translation>
     </message>
@@ -13298,8 +13309,8 @@ Ein erneuter Klick auf „Statistiken wiederherstellen“ lädt Ihre aktuellen S
         <translation>Knoten, die uns ein Paket gesendet haben, nach dem Land der Absenderadresse.</translation>
     </message>
     <message>
-        <location line="-1750"/>
-        <location line="+1754"/>
+        <location line="-1751"/>
+        <location line="+1755"/>
         <source>Network</source>
         <translation>Netzwerk</translation>
     </message>
@@ -13389,7 +13400,12 @@ Ein erneuter Klick auf „Statistiken wiederherstellen“ lädt Ihre aktuellen S
         <translation>In Kad gefundene Stücke: %1</translation>
     </message>
     <message>
-        <location line="+125"/>
+        <location line="+89"/>
+        <source>n/a</source>
+        <translation>k. A.</translation>
+    </message>
+    <message>
+        <location line="+39"/>
         <source>Measured here, not reported by the provider, in decimal GB as providers bill. Expect a few percent below the provider&apos;s own figure.</source>
         <translation>Hier gemessen, nicht vom Anbieter gemeldet, in dezimalen GB, wie Anbieter abrechnen. Rechnen Sie mit einigen Prozent unter der Angabe des Anbieters.</translation>
     </message>
@@ -13513,7 +13529,7 @@ Ein erneuter Klick auf „Statistiken wiederherstellen“ lädt Ihre aktuellen S
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+714"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+715"/>
         <source>Downloads</source>
         <translation>Downloads</translation>
     </message>
@@ -13728,23 +13744,21 @@ Ein erneuter Klick auf „Statistiken wiederherstellen“ lädt Ihre aktuellen S
     <message>
         <location line="+21"/>
         <location line="+18"/>
-        <location line="+24"/>
-        <location line="+12"/>
+        <location line="+34"/>
         <source>Rename</source>
         <translation>Umbenennen</translation>
     </message>
     <message>
-        <location line="-53"/>
+        <location line="-51"/>
         <source>Do you want to cleanup the file names of the selected files?</source>
         <translation>Sollen die Dateinamen der ausgewählten Dateien bereinigt werden?</translation>
     </message>
     <message>
-        <location line="+41"/>
         <source>File name:</source>
-        <translation>Dateiname:</translation>
+        <translation type="vanished">Dateiname:</translation>
     </message>
     <message>
-        <location line="-2480"/>
+        <location line="-2439"/>
         <location line="+666"/>
         <source>Open File</source>
         <translation>Datei öffnen</translation>

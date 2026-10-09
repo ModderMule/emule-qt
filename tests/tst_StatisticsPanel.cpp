@@ -254,6 +254,7 @@ private slots:
     void rateScopesArePinnedToTheGraphMaxima();
     void kademliaBranchShowsLiveTableOnlyInSession();
     void kademliaCountersCarrySharesInBothScopes();
+    void kademliaFirewalledRowsSayNaWithoutSamples();
     void kademliaCountriesUpdateInPlace();
     void clientsSeenByCountryInBothScopes();
     void copiesFollowTheExpansionState();
@@ -275,6 +276,7 @@ private slots:
     void graphTooltipNamesValueAndTime();
     void graphLegendFollowsTheOptions();
     void graphDoubleClickAsksForTheOptions();
+    void treeRemembersExpansionThreeLevelsDeep();
 };
 
 void tst_StatisticsPanel::usenetIsTheLastBranchAndMfcsOrderStays()
@@ -613,6 +615,33 @@ void tst_StatisticsPanel::kademliaCountersCarrySharesInBothScopes()
                                            QStringLiteral("Nodes"));
     QCOMPARE(childNamed(cumNodes, QStringLiteral("Nodes Seen"))->text(0),
              QStringLiteral("Nodes Seen: \u2248310000"));
+}
+
+void tst_StatisticsPanel::kademliaFirewalledRowsSayNaWithoutSamples()
+{
+    // A firewalled node gets no HELLO_REQs, so all four counters stay 0.
+    QCborMap reply = kadReply({});
+    for (const QString& scopeName : {QStringLiteral("session"), QStringLiteral("cumulative")}) {
+        QCborMap counters = reply.value(scopeName).toMap();
+        for (const char* key : {"udpFirewalledNodes", "udpOpenNodes", "tcpFirewalledNodes"})
+            counters.insert(QString::fromLatin1(key), 0);
+        reply.insert(scopeName, counters);
+    }
+
+    StatisticsPanel panel;
+    auto* tree = panel.findChild<QTreeWidget*>();
+    panel.applyKadStats(reply);
+    QTreeWidgetItem* kad = topLevelNamed(tree, QStringLiteral("Kademlia"));
+
+    for (const QString& scopeName : {QStringLiteral("Session"), QStringLiteral("Cumulative")}) {
+        QTreeWidgetItem* nodes = childNamed(childNamed(kad, scopeName), QStringLiteral("Nodes"));
+        QTreeWidgetItem* firewalled = childNamed(nodes, QStringLiteral("Firewalled (Kad)"));
+        QCOMPARE(childNamed(firewalled, QStringLiteral("UDP"))->text(0),
+                 QStringLiteral("UDP: n/a"));
+        // Samples, none of them firewalled: a real 0, not a missing one.
+        QCOMPARE(childNamed(firewalled, QStringLiteral("TCP"))->text(0),
+                 QStringLiteral("TCP: 0 (0.0%)"));
+    }
 }
 
 // Clients > Session / Cumulative: distinct clients by user hash, with countries.
@@ -1381,6 +1410,39 @@ void tst_StatisticsPanel::graphDoubleClickAsksForTheOptions()
     StatsGraph* graph = panel.findChildren<StatsGraph*>().first();
     QTest::mouseDClick(graph, Qt::LeftButton, {}, QPoint(50, 50));
     QCOMPARE(asked.size(), 1);
+}
+
+void tst_StatisticsPanel::treeRemembersExpansionThreeLevelsDeep()
+{
+    // Walks Transfer > Downloads > Session > Downloaded Data in a panel's tree.
+    const auto path = [](StatisticsPanel& panel) {
+        auto* tree = panel.findChild<QTreeWidget*>();
+        QList<QTreeWidgetItem*> items{topLevelNamed(tree, QStringLiteral("Transfer"))};
+        for (const char* name : {"Downloads", "Session", "Downloaded Data:"})
+            items << childNamed(items.last(), QString::fromLatin1(name));
+        return items;
+    };
+
+    {
+        StatisticsPanel panel;
+        panel.findChild<QTreeWidget*>()->collapseAll();
+        for (QTreeWidgetItem* item : path(panel)) {
+            QVERIFY(item);
+            item->setExpanded(true);
+        }
+    }
+
+    StatisticsPanel panel;
+    const QList<QTreeWidgetItem*> items = path(panel);
+    QVERIFY(items[0]->isExpanded());
+    QVERIFY(items[1]->isExpanded());
+    QVERIFY(items[2]->isExpanded());    // the level that used to be forgotten
+    QVERIFY(!items[3]->isExpanded());   // one deeper is still not kept
+    // Collapsing is remembered as well.
+    items[2]->setExpanded(false);
+    StatisticsPanel again;
+    QVERIFY(!path(again)[2]->isExpanded());
+    QVERIFY(path(again)[1]->isExpanded());
 }
 
 QTEST_MAIN(tst_StatisticsPanel)

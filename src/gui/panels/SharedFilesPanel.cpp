@@ -15,6 +15,7 @@
 #include "dialogs/FileDetailDialog.h"
 #include "dialogs/FindInListDialog.h"
 #include "dialogs/MediaInfoPanel.h"
+#include "dialogs/RenameFileDialog.h"
 #include "prefs/Preferences.h"
 #include "utils/CountryFlags.h"
 #include "utils/IpcFeedback.h"
@@ -56,7 +57,6 @@
 #include <QFont>
 #include <QFormLayout>
 #include <QGroupBox>
-#include <QInputDialog>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QItemSelectionModel>
@@ -2478,15 +2478,12 @@ void SharedFilesPanel::renameSelectedFile()
     }
     const QString hash = f->hash;
     const QString oldName = f->fileName;
-    bool ok = false;
-    const QString newName = QInputDialog::getText(
-        this, tr("Rename File"), tr("New file name:"),
-        QLineEdit::Normal, oldName, &ok);
-    if (!ok || newName.trimmed().isEmpty() || newName.trimmed() == oldName)
+    const auto newName = RenameFileDialog::ask(this, oldName);
+    if (!newName)
         return;
     IpcMessage msg(IpcMsgType::RenameSharedFile);
     msg.append(hash);
-    msg.append(newName.trimmed());
+    msg.append(*newName);
     m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
         requestSharedFiles();
     });

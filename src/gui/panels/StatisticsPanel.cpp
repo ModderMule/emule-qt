@@ -2289,8 +2289,9 @@ std::span<const StatisticsPanel::CounterRow> StatisticsPanel::kadNodeRows()
         {QT_TR_NOOP("Nodes Heard Of: ≈%1"), "seenListed"},
         // MFC's Clients > Firewalled (Kad), srchybrid/StatisticsDlg.cpp:2286.
         {QT_TR_NOOP("Firewalled (Kad)"), nullptr},
-        {QT_TR_NOOP("UDP: %1 %2"), "udpFirewalledNodes", F::Count, "udpNodes", 1},
-        {QT_TR_NOOP("TCP: %1 %2"), "tcpFirewalledNodes", F::Count, "tcpNodes", 1},
+        // Fed by incoming HELLO_REQs only: a firewalled node gets none, so 0 means no samples.
+        {QT_TR_NOOP("UDP: %1 %2"), "udpFirewalledNodes", F::Count, "udpNodes", 1, false, true},
+        {QT_TR_NOOP("TCP: %1 %2"), "tcpFirewalledNodes", F::Count, "tcpNodes", 1, false, true},
     };
     return kRows;
 }
@@ -2572,8 +2573,11 @@ void StatisticsPanel::fillCounterRows(const QList<CounterItem>& items,
         }
 
         if (row->shareOf) {
-            item->setText(0, tr(row->pattern).arg(
-                value, formatPercent(v, values.value(QString::fromLatin1(row->shareOf)))));
+            const qint64 whole = values.value(QString::fromLatin1(row->shareOf));
+            if (row->needsSamples && whole <= 0)
+                item->setText(0, tr(row->pattern).arg(tr("n/a"), QString()).trimmed());
+            else
+                item->setText(0, tr(row->pattern).arg(value, formatPercent(v, whole)));
         } else {
             item->setText(0, tr(row->pattern).arg(value));
         }

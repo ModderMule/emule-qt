@@ -20,6 +20,7 @@
 #include "dialogs/CategoryDialog.h"
 #include "dialogs/ClientDetailDialog.h"
 #include "dialogs/FindInListDialog.h"
+#include "dialogs/RenameFileDialog.h"
 #include "utils/StatusBarNotifier.h"
 #include "utils/CountryFlags.h"
 #include "utils/Ed2kLinkImporter.h"
@@ -2919,15 +2920,13 @@ void TransferPanel::renameSelectedDownload()
         return;
     }
 
-    bool ok = false;
-    const QString name = QInputDialog::getText(this, tr("Rename"), tr("File name:"),
-                                               QLineEdit::Normal, dl->fileName, &ok).trimmed();
-    if (!ok || name.isEmpty() || name == dl->fileName)
+    const auto name = RenameFileDialog::ask(this, dl->fileName);
+    if (!name)
         return;
 
     IpcMessage msg(IpcMsgType::RenameDownload);
     msg.append(hashes.first());
-    msg.append(name);
+    msg.append(*name);
     QPointer<TransferPanel> self(this);
     m_ipc->sendRequest(std::move(msg), [self](const IpcMessage& resp) {
         if (!self)

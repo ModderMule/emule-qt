@@ -702,6 +702,19 @@ Download it again?</source>
     </message>
 </context>
 <context>
+    <name>RenameFileDialog</name>
+    <message>
+        <location filename="../src/gui/dialogs/RenameFileDialog.h" line="+23"/>
+        <source>Rename</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>File name:</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
@@ -10144,17 +10157,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+58"/>
-        <source>Rename File</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="+0"/>
-        <source>New file name:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="-2051"/>
+        <location line="-1993"/>
         <location line="+1955"/>
         <source>Delete From Disk</source>
         <translation type="unfinished"></translation>
@@ -10579,24 +10582,24 @@ The files will remain on disk.</source>
         <location line="+165"/>
         <location line="+25"/>
         <location line="+336"/>
-        <location line="+1619"/>
+        <location line="+1620"/>
         <source>Uploads</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2141"/>
+        <location line="-2142"/>
         <location line="+67"/>
         <location line="+83"/>
         <location line="+56"/>
         <location line="+43"/>
         <location line="+1607"/>
-        <location line="+153"/>
+        <location line="+154"/>
         <location line="+121"/>
         <source>Session</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2127"/>
+        <location line="-2128"/>
         <location line="+35"/>
         <source>Uploaded Data: 0 Bytes</source>
         <translation type="unfinished"></translation>
@@ -10633,12 +10636,12 @@ The files will remain on disk.</source>
         <location line="+24"/>
         <location line="+345"/>
         <location line="+1241"/>
-        <location line="+367"/>
+        <location line="+368"/>
         <source>Downloads</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2075"/>
+        <location line="-2076"/>
         <location line="+43"/>
         <source>Downloaded Data: 0 Bytes</source>
         <translation type="unfinished"></translation>
@@ -10756,13 +10759,13 @@ The files will remain on disk.</source>
         <location line="+41"/>
         <location line="+32"/>
         <location line="+1612"/>
-        <location line="+149"/>
+        <location line="+150"/>
         <location line="+125"/>
         <source>Cumulative</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2056"/>
+        <location line="-2057"/>
         <location line="+43"/>
         <source>Completed Downloads: 0</source>
         <translation type="unfinished"></translation>
@@ -10872,12 +10875,12 @@ The files will remain on disk.</source>
         <location line="+8"/>
         <location line="+67"/>
         <location line="+69"/>
-        <location line="+967"/>
+        <location line="+968"/>
         <source>Unknown</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-2171"/>
+        <location line="-2172"/>
         <source>Statistics Tree</source>
         <translation type="unfinished"></translation>
     </message>
@@ -10918,12 +10921,12 @@ The files will remain on disk.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+350"/>
+        <location line="+351"/>
         <source>HTTP Cache</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1906"/>
+        <location line="-1907"/>
         <source>Run Time: 0:00:00</source>
         <translation type="unfinished"></translation>
     </message>
@@ -11934,12 +11937,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+163"/>
-        <location line="+491"/>
+        <location line="+495"/>
         <source>Open Connections: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-487"/>
+        <location line="-491"/>
         <source>Network Traffic: %1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -11970,12 +11973,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+4"/>
-        <location line="+486"/>
+        <location line="+490"/>
         <source>Connection Errors: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-483"/>
+        <location line="-487"/>
         <source>Completed Downloads: %1 %2</source>
         <translation type="unfinished"></translation>
     </message>
@@ -12146,12 +12149,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+1"/>
-        <location line="+128"/>
+        <location line="+129"/>
         <source>Searches: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-127"/>
+        <location line="-128"/>
         <source>API Requests: %1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -12167,12 +12170,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+1"/>
-        <location line="+285"/>
+        <location line="+286"/>
         <source>Failed: %1 %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-284"/>
+        <location line="-285"/>
         <source>Feed Polls: %1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -12298,7 +12301,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>UDP: %1 %2</source>
         <translation type="unfinished"></translation>
     </message>
@@ -12418,8 +12421,8 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1720"/>
-        <location line="+1723"/>
+        <location line="-1721"/>
+        <location line="+1724"/>
         <source>By Country</source>
         <translation type="unfinished"></translation>
     </message>
@@ -12429,8 +12432,8 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-1750"/>
-        <location line="+1754"/>
+        <location line="-1751"/>
+        <location line="+1755"/>
         <source>Network</source>
         <translation type="unfinished"></translation>
     </message>
@@ -12520,7 +12523,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+125"/>
+        <location line="+89"/>
+        <source>n/a</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location line="+39"/>
         <source>Measured here, not reported by the provider, in decimal GB as providers bill. Expect a few percent below the provider&apos;s own figure.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -12644,7 +12652,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+714"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+715"/>
         <source>Downloads</source>
         <translation></translation>
     </message>
@@ -12863,23 +12871,17 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     <message>
         <location line="+21"/>
         <location line="+18"/>
-        <location line="+24"/>
-        <location line="+12"/>
+        <location line="+34"/>
         <source>Rename</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="-53"/>
+        <location line="-51"/>
         <source>Do you want to cleanup the file names of the selected files?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location line="+41"/>
-        <source>File name:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location line="-2480"/>
+        <location line="-2439"/>
         <location line="+666"/>
         <source>Open File</source>
         <translation type="unfinished"></translation>

@@ -353,6 +353,7 @@ private:
         const char* shareOf = nullptr;   ///< key of the 100% figure
         quint8 depth = 0;                ///< nesting below the scope node
         bool liveOnly = false;           ///< a current figure: Session only
+        bool needsSamples = false;       ///< "n/a" while the shareOf figure is 0
     };
 
     struct CounterItem {
