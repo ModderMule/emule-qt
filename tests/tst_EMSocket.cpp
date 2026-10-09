@@ -15,7 +15,9 @@
 #include <QTest>
 #include <QTimer>
 
-#ifndef Q_OS_WIN
+#ifdef Q_OS_WIN
+#include <winsock2.h>
+#else
 #include <sys/socket.h>
 #endif
 
@@ -819,14 +821,22 @@ void tst_EMSocket::bigSendBuffer_isReadBack()
     QVERIFY(server.waitForNewConnection(5000));
     QVERIFY(sock.waitForConnected(5000));
 
+    // winsock: SOCKET handle, char* value, int length
+#ifdef Q_OS_WIN
+    using OptLen = int;
+    const auto fd = static_cast<SOCKET>(sock.socketDescriptor());
+#else
+    using OptLen = socklen_t;
+    const auto fd = static_cast<int>(sock.socketDescriptor());
+#endif
     int before = 0;
-    socklen_t len = sizeof(before);
-    QCOMPARE(getsockopt(static_cast<int>(sock.socketDescriptor()), SOL_SOCKET, SO_SNDBUF, &before, &len), 0);
+    OptLen len = sizeof(before);
+    QCOMPARE(getsockopt(fd, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<char*>(&before), &len), 0);
 
     const bool big = sock.useBigSendBuffer();
     int after = 0;
     len = sizeof(after);
-    QCOMPARE(getsockopt(static_cast<int>(sock.socketDescriptor()), SOL_SOCKET, SO_SNDBUF, &after, &len), 0);
+    QCOMPARE(getsockopt(fd, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<char*>(&after), &len), 0);
     QVERIFY(after >= before);
     // "big" only when the kernel really gave (at least) what MFC asks for
     QCOMPARE(big, after >= 128 * 1024);
