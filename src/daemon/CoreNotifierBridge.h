@@ -143,6 +143,8 @@ private:
     void watchDiskSpace(PartFile* file);
 
     IpcServer* m_ipcServer;
+    /// Bind failures nobody was connected to see; the first client gets them.
+    QList<Ipc::IpcMessage> m_heldEvents;
     SmtpClient* m_smtp = nullptr;
 
     /// Caps how often each push type is broadcast. Several core signals fire once

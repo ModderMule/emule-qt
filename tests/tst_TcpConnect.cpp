@@ -29,6 +29,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QSignalSpy>
+#include <QTcpServer>
 #include <QTest>
 #include <QTimer>
 
@@ -60,6 +61,7 @@ private slots:
     void connectionEstablished_sendsHelloToListener();
     void tryToConnect_alreadyConnecting_returnsTrue();
     void tryToConnect_noConnectIP_returnsFalse();
+    void tryToConnect_silentPeerStaysConnecting();
     void secureIdent_completesHandshake();
     void download_completesFile();
     void download_askedForAnotherFile();
@@ -362,6 +364,32 @@ void tst_TcpConnect::tryToConnect_noConnectIP_returnsFalse()
 
     QVERIFY(!client->tryToConnect());
     QCOMPARE(client->connectingState(), ConnectingState::None);
+
+    delete client;
+}
+
+// ---------------------------------------------------------------------------
+// A peer that takes the TCP connection but never answers the hello
+// ---------------------------------------------------------------------------
+
+void tst_TcpConnect::tryToConnect_silentPeerStaysConnecting()
+{
+    // MFC runs ConnectionEstablished() from the hello answer (ListenSocket.cpp:229), so
+    // until then the source reads "Connecting". It used to turn "Asking" on TCP connect.
+    auto partFile = makePartFile();
+
+    QTcpServer silent;
+    QVERIFY(silent.listen(QHostAddress::LocalHost, 0));
+
+    auto* client = new UpDownClient(silent.serverPort(), htonl(0x7F000001), 0, 0,
+                                    partFile.get(), true, this);
+    QVERIFY(client->tryToConnect());
+    QCOMPARE(client->downloadState(), DownloadState::Connecting);
+
+    QVERIFY(silent.waitForNewConnection(5000));
+    QTRY_COMPARE_WITH_TIMEOUT(client->connectingState(), ConnectingState::None, 5000);
+    QVERIFY(client->helloAnswerPending());
+    QCOMPARE(client->downloadState(), DownloadState::Connecting);
 
     delete client;
 }

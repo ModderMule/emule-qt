@@ -190,7 +190,9 @@ private:
     /// code archive_read_next_header() returned; ARCHIVE_EOF is the clean end
     /// and records nothing. Everything else is a failure, and the only place
     /// encryption of a *header*-encrypted set can be noticed at all.
-    void noteReadFailure(::archive* ar, int status) const;
+    /// @p formatChosen false after a failed open: libarchive leaves its format
+    /// pointer past the end of its table then, and must not be asked about it.
+    void noteReadFailure(::archive* ar, int status, bool formatChosen = true) const;
 
     /// The extraction loop itself, over an already-opened handle. Shared by the
     /// on-disk and the live path, which differ only in how @p ar was opened.

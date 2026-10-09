@@ -14,6 +14,7 @@
 #include <optional>
 
 class QFile;
+class QFileDevice;
 
 namespace eMule {
 
@@ -64,6 +65,10 @@ enum class AppDir {
 /// is unreadable is a different decision from pausing them because the disk is
 /// full, and only the caller knows which way it wants to be wrong.
 [[nodiscard]] std::optional<std::uint64_t> tryFreeDiskSpace(const QString& path);
+
+/// True when the write that just failed on @p file ran out of room. Qt says so
+/// (ResourceError) on Unix only; on Windows a full disk is a plain WriteError.
+[[nodiscard]] bool isDiskFullError(const QFileDevice& file);
 
 /// Reserve the disk blocks for the first @p size bytes of an open file, so later
 /// writes cannot run out of space or fragment. The logical size is not changed.

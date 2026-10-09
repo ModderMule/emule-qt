@@ -235,6 +235,9 @@ MainWindow::MainWindow(QWidget* parent)
 MainWindow::~MainWindow()
 {
     StatusBarNotifier::setSink({});   // nothing left to post to
+#ifdef Q_OS_WIN
+    delete m_miniMule;   // parentless, see onTrayIconClicked()
+#endif
 }
 
 void MainWindow::switchToTab(Tab tab)
@@ -1080,7 +1083,9 @@ void MainWindow::onTrayIconClicked(QSystemTrayIcon::ActivationReason reason)
 
         // Create MiniMule lazily on first use
         if (!m_miniMule) {
-            m_miniMule = new MiniMuleWidget(m_trayIcon, this);
+            // No parent window: an owned window is hidden by Windows together with a
+            // minimized owner and shown again with it, behind Qt's back.
+            m_miniMule = new MiniMuleWidget(m_trayIcon);
             connect(m_miniMule, &MiniMuleWidget::restoreRequested, this, [this]() {
                 m_miniMule->hide();
                 showNormal();

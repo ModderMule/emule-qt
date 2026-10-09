@@ -99,8 +99,8 @@ ArchivePreviewPanel::ScanOutput ArchivePreviewPanel::scanFile(const QString& fil
     for (qsizetype i = 0; i + 1 < gapPairs.size(); i += 2)
         gaps.append({gapPairs.at(i), gapPairs.at(i + 1)});
 
-    // ZIP and RAR from their own headers: that is where the CRC, the comments and
-    // the position of each entry's data are — and it works on a file with holes.
+    // ZIP, RAR, ACE and ISO from their own headers: that is where the CRC, the comments
+    // and the position of each entry's data are — and it works on a file with holes.
     QFile file(filePath);
     ArchiveScanResult scan;
     if (file.open(QIODevice::ReadOnly))
@@ -109,10 +109,14 @@ ArchivePreviewPanel::ScanOutput ArchivePreviewPanel::scanFile(const QString& fil
 
     using Status = ArchiveScanResult::Status;
     if (scan.type != ArchiveScanType::Unknown) {
-        out.typeName = scan.type == ArchiveScanType::Zip ? QStringLiteral("ZIP") : QStringLiteral("RAR");
-        out.hasCrcAndComment = true;
+        const bool image = scan.type == ArchiveScanType::Iso;
+        out.typeName = scan.type == ArchiveScanType::Zip ? QStringLiteral("ZIP")
+                     : scan.type == ArchiveScanType::Ace ? QStringLiteral("ACE")
+                     : image ? QStringLiteral("ISO") : QStringLiteral("RAR");
+        out.hasCrcAndComment = !image;
         out.fileCount = scan.fileCount();
-        out.info = scan.infoLine(tr("Password protection"), tr("Comment"));
+        out.info = image ? scan.imageInfoLine(tr("bootable"))
+                         : scan.infoLine(tr("Password protection"), tr("Comment"));
         for (const ArchiveScanEntry& e : std::as_const(scan.entries)) {
             Row row;
             row.name = e.name;
@@ -140,7 +144,7 @@ ArchivePreviewPanel::ScanOutput ArchivePreviewPanel::scanFile(const QString& fil
         return out;
     }
 
-    // Everything else (7z, tar, ISO, ...) through libarchive, which needs the whole
+    // Everything else (7z, tar, UDF, ...) through libarchive, which needs the whole
     // file and knows neither CRC nor comments.
     ArchiveReader reader;
     if (!reader.open(filePath)) {
@@ -152,6 +156,8 @@ ArchivePreviewPanel::ScanOutput ArchivePreviewPanel::scanFile(const QString& fil
     }
     out.typeName = reader.formatName();
     for (int i = 0; i < reader.entryCount(); ++i) {
+        if (reader.entryName(i) == QLatin1String("."))
+            continue;   // an ISO's root directory lists itself
         Row row;
         row.name = reader.entryName(i);
         row.directory = reader.entryIsDir(i);

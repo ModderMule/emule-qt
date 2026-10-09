@@ -1,8 +1,8 @@
 #pragma once
 
 /// @file ArchiveScan.h
-/// @brief List a ZIP or RAR archive from its headers alone, knowing which bytes of
-///        the file are there — MFC's archive preview scan (ArchivePreviewDlg.cpp,
+/// @brief List a ZIP, RAR or ACE archive or an ISO image from its headers alone, knowing
+///        which bytes of the file are there — MFC's archive preview scan (ArchivePreviewDlg.cpp,
 ///        ArchiveRecovery.cpp recoverZip / recoverRar used as scanners).
 ///
 /// libarchive lists a complete archive but says nothing about CRCs, entry comments
@@ -20,7 +20,7 @@ class QIODevice;
 
 namespace eMule {
 
-enum class ArchiveScanType { Unknown, Zip, Rar };
+enum class ArchiveScanType { Unknown, Zip, Rar, Ace, Iso };
 
 struct ArchiveScanEntry {
     QString name;
@@ -35,13 +35,15 @@ struct ArchiveScanEntry {
     bool fromPrevVolume = false;   ///< RAR: continued from the previous volume
     bool toNextVolume = false;     ///< RAR: continues in the next volume
     bool hasComment = false;       ///< RAR 4 file comment flag
+    bool hidden = false;           ///< ISO
+    bool readOnly = false;         ///< ISO
     int level = -1;                ///< RAR compression level 0..5, -1 unknown
     /// Every byte of the entry (its header and its packed data) is in the file.
     bool complete = true;
 
-    /// MFC's attribute letters: P password, D directory, <, > volume continuation,
-    /// C comment, M data missing, Lx compression level
-    /// (ArchivePreviewDlg.cpp:695-737, 867-883).
+    /// MFC's attribute letters: P password, D directory, H hidden, R read-only, <, >
+    /// volume continuation, C comment, M data missing, Lx compression level
+    /// (ArchivePreviewDlg.cpp:537-568, 695-737, 867-883).
     [[nodiscard]] QString attributes() const;
 };
 
@@ -63,12 +65,19 @@ struct ArchiveScanResult {
     bool locked = false;
     bool recoveryRecord = false;
     bool hasComment = false;
+    // ISO image marks (MFC isoInfos)
+    bool bootable = false;
+    bool iso9660 = false;
+    bool joliet = false;
+    bool udf = false;
 
     /// Files, without directories (MFC uArchiveFileEntries).
     [[nodiscard]] int fileCount() const;
     /// "Password protection,Solid,Locked,RecoveryRec,Comment" as MFC's info line
     /// (ArchivePreviewDlg.cpp:764-789); the two words that MFC translates are passed in.
     [[nodiscard]] QString infoLine(const QString& passwordText, const QString& commentText) const;
+    /// "Bootable,ISO9660,Joliet" for an image (ArchivePreviewDlg.cpp:591-612).
+    [[nodiscard]] QString imageInfoLine(const QString& bootableText) const;
 };
 
 /// Missing byte ranges of a part file, inclusive ends, as the gap list has them.

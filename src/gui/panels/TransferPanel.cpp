@@ -910,7 +910,7 @@ QWidget* TransferPanel::createDownloadsSection()
     // Confidence, Transferred. Hidden by default as in MFC: Transferred, Last Seen
     // Complete, Last Reception, Category.
     downloadView->bindColumns(QStringLiteral("downloads"),
-        {220, 65, 65, 65, 90, 65, 70, 65, 80, 80, 80, 60, 120, 100, 100, 65},
+        {220, 65, 65, 65, 170 /* MFC DFLT_PARTSTATUS_COL_WIDTH */, 65, 70, 65, 80, 80, 80, 60, 120, 100, 100, 65},
         {DownloadListModel::ColSeenComplete, DownloadListModel::ColLastReception,
          DownloadListModel::ColCategory, DownloadListModel::ColCountry,
          DownloadListModel::ColTransferred});

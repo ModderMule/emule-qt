@@ -458,6 +458,7 @@ void IpcClientHandler::handleHandshake(const IpcMessage& msg)
     // GUI uses this to detect daemon restarts and reset its per-type log checkpoints.
     reply.append(DaemonApp::sessionToken());
     sendMessage(reply);
+    emit handshakeCompleted();
 }
 
 void IpcClientHandler::handleGetDownloads(const IpcMessage& msg)
@@ -3044,17 +3045,27 @@ void IpcClientHandler::handleGetDownloadDetails(const IpcMessage& msg)
         sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
         return;
     }
-    const auto* pf = theApp.downloadQueue->fileByID(hashBuf);
+    auto* pf = theApp.downloadQueue->fileByID(hashBuf);
     if (!pf) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
         return;
     }
+
+    // The archive preview reads the .part: a range counts as there as soon as it is
+    // buffered, so what is buffered goes to disk first.
+    if (const QString type = pf->fileType();
+        type.compare(QLatin1StringView("Arc"), Qt::CaseInsensitive) == 0
+        || type.compare(QLatin1StringView("Iso"), Qt::CaseInsensitive) == 0)
+        pf->flushBuffer();
 
     QCborMap details = toCbor(*pf);
     // Add extended fields
     const QString path = pf->filePath().isEmpty() ? pf->fullName() : pf->filePath();
     details.insert(QLatin1StringView("filePath"), path);
     details.insert(QLatin1StringView("fullName"), pf->fullName());
+    // The bytes themselves, for the archive preview: fullName() is the .part.met
+    details.insert(QLatin1StringView("dataPath"),
+        pf->filePath().isEmpty() ? pf->partDataPath() : pf->filePath());
     details.insert(QLatin1StringView("a4afSourceCount"), static_cast<qint64>(pf->a4afSourceCount()));
     details.insert(QLatin1StringView("isComplete"),
         pf->status() == PartFileStatus::Complete);
@@ -3304,7 +3315,11 @@ void IpcClientHandler::handleGetSharedFileDetails(const IpcMessage& msg)
         sendMessage(IpcMessage::makeError(msg.seqId(), 400, QStringLiteral("Invalid hash")));
         return;
     }
-    auto* kf = theApp.sharedFileList->getFileByID(hashBuf);
+    KnownFile* kf = theApp.sharedFileList->getFileByID(hashBuf);
+    // The Shared Files list also shows downloads that have no complete part yet,
+    // and those are not in the shared list.
+    if (!kf && theApp.downloadQueue)
+        kf = theApp.downloadQueue->fileByID(hashBuf);
     if (!kf) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Shared file not found")));
         return;
@@ -3317,6 +3332,24 @@ void IpcClientHandler::handleGetSharedFileDetails(const IpcMessage& msg)
     details.insert(QLatin1StringView("fileSize"), static_cast<qint64>(kf->fileSize()));
     details.insert(QLatin1StringView("fileType"), kf->fileType());
     details.insert(QLatin1StringView("filePath"), kf->filePath());
+    if (kf->isPartFile()) {
+        // A download shown among the shared files: its .part, and what of it is missing.
+        // Flushed first, as in handleGetDownloadDetails.
+        auto* pf = static_cast<PartFile*>(kf);
+        if (const QString type = pf->fileType();
+            type.compare(QLatin1StringView("Arc"), Qt::CaseInsensitive) == 0
+            || type.compare(QLatin1StringView("Iso"), Qt::CaseInsensitive) == 0)
+            pf->flushBuffer();
+        details.insert(QLatin1StringView("dataPath"), pf->partDataPath());
+        QCborArray exact;
+        for (const Gap& gap : pf->gapList()) {
+            exact.append(static_cast<qint64>(gap.start));
+            exact.append(static_cast<qint64>(gap.end));
+        }
+        details.insert(QLatin1StringView("archiveGaps"), exact);
+    } else {
+        details.insert(QLatin1StringView("dataPath"), kf->filePath());
+    }
     details.insert(QLatin1StringView("path"), QFileInfo(kf->filePath()).absolutePath());
 
     // Statistics (session + all-time)
@@ -4109,6 +4142,8 @@ void IpcClientHandler::handleRecoverArchivePreview(const IpcMessage& msg)
         sendMessage(IpcMessage::makeError(msg.seqId(), 409, tr("A preview file is already being created.")));
         return;
     }
+
+    pf->flushBuffer();   // what is only buffered is not in the .part yet
 
     // Into the temp folder, as MFC ("<name>-rec.<ext>"); the download is only read.
     const QString outDir = thePrefs.tempDirs().value(0);

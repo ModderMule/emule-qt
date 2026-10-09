@@ -1297,6 +1297,10 @@ Esiste già un amico con lo stesso indirizzo IP e la stessa porta.</translation>
         <translation>Protezione con password</translation>
     </message>
     <message>
+        <source>bootable</source>
+        <translation>avviabile</translation>
+    </message>
+    <message>
         <location line="-35"/>
         <location line="+36"/>
         <source>Archive scanned.</source>

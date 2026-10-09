@@ -11,6 +11,7 @@
 #include "portmap/PortMapTypes.h"
 #include "utils/Types.h"
 
+#include <QList>
 #include <QObject>
 #include <QString>
 #include <QTimer>
@@ -99,6 +100,10 @@ public:
     void applyBindSelection();
     [[nodiscard]] bool isNetworkSuspended() const { return m_netSuspended; }
 
+    /// Listen ports that did not open at start(): portBindFailed fires before anyone
+    /// can be connected to it.
+    [[nodiscard]] const QList<int>& failedBindPorts() const { return m_failedBindPorts; }
+
     // -- Protocol handlers installed on the shared sockets ---------------------
     // Static and state-free, so the wiring below stays a one-liner and the
     // behaviour is reachable without standing up a whole session.
@@ -183,6 +188,7 @@ private:
     /// No server, no Kad, no peer socket.
     [[nodiscard]] bool isNetworkIdle() const;
     void rememberAppliedPorts();
+    void reportBindFailure(int port);
     void publishListenPorts();
 
     BindAddress::Resolution m_appliedBind;   ///< what the open sockets were bound on
@@ -192,6 +198,7 @@ private:
     bool m_connectHold = false;  ///< auto-connect deferred until releaseConnectHold()
     // Preference values the sockets were last bound with (not the socket ports:
     // a configured 0 gets an OS-assigned one).
+    QList<int> m_failedBindPorts;
     uint16 m_appliedTcpPort = 0;
     uint16 m_appliedUdpPort = 0;
     uint16 m_appliedServerUdpPort = 0;

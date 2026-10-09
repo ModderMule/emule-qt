@@ -72,6 +72,10 @@ CoreNotifierBridge::CoreNotifierBridge(IpcServer* ipcServer, QObject* parent)
     connect(m_pushes, &Ipc::PushCoalescer::ready, this, [this](const IpcMessage& msg) {
         m_ipcServer->broadcast(msg);
     });
+    connect(m_ipcServer, &IpcServer::clientReady, this, [this] {
+        for (const IpcMessage& msg : std::exchange(m_heldEvents, {}))
+            m_ipcServer->sendToClients(msg);
+    });
 
     m_sharedFlushTimer.setSingleShot(true);
     m_sharedFlushTimer.setInterval(kSharedFlushMs);
@@ -290,8 +294,13 @@ void CoreNotifierBridge::raiseNotifierEvent(Ipc::NotifierEvent kind, const QStri
     IpcMessage msg(IpcMsgType::PushNotifierEvent, 0);
     msg.append(static_cast<qint64>(kind));
     msg.append(text);
-    if (m_ipcServer)
+    if (m_ipcServer) {
+        // A port that did not open is still closed when the GUI arrives; the other
+        // events are news of the moment and are not kept.
+        if (kind == Ipc::NotifierEvent::PortBindFailed && !m_ipcServer->hasReadyClient())
+            m_heldEvents.append(msg);
         m_ipcServer->broadcast(msg);
+    }
 
     // The mail follows the same option as the pop-up (MFC emuleDlg.cpp:2103-2140).
     QString subject;

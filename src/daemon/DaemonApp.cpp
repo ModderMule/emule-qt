@@ -166,6 +166,9 @@ bool DaemonApp::start()
             m_notifierBridge.get(), &CoreNotifierBridge::onPortMapStatusChanged);
     connect(m_coreSession.get(), &CoreSession::portBindFailed,
             m_notifierBridge.get(), &CoreNotifierBridge::onPortBindFailed);
+    // The sockets were opened in start(), before this connection existed
+    for (const int port : m_coreSession->failedBindPorts())
+        m_notifierBridge->onPortBindFailed(port);
 
     // The bound interface went away, came back or was changed: the session has closed
     // the P2P sockets; the parts it does not own follow here.

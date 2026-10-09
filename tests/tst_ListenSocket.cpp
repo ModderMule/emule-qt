@@ -9,6 +9,7 @@
 #include "net/Address.h"
 #include "net/ClientReqSocket.h"
 #include "net/EMSocket.h"
+#include "net/ListenConflict.h"
 #include "net/ListenSocket.h"
 #include "net/Packet.h"
 #include "prefs/Preferences.h"
@@ -17,7 +18,9 @@
 #include "utils/SafeFile.h"
 
 #include <QSignalSpy>
+#include <QTcpServer>
 #include <QTcpSocket>
+#include <QUdpSocket>
 #include <QTest>
 
 #include <cstring>
@@ -132,6 +135,7 @@ private slots:
 
     void constructionDefaults();
     void startAndStopListening();
+    void portHeldOnIPv4WildcardIsRefused();
     void bindAddress_narrowsListenerAndOutgoing();
     void bindAddress_unusableLiteralFailsClosed();
     void acceptIncomingConnection();
@@ -254,6 +258,33 @@ void tst_ListenSocket::startAndStopListening()
 
     listener.stopListening();
     QVERIFY(!listener.isListening());
+}
+
+// Windows binds a dual-stack listener next to another program's 0.0.0.0 socket
+// and then gets no IPv4: the conflict has to be found by asking.
+void tst_ListenSocket::portHeldOnIPv4WildcardIsRefused()
+{
+    QTcpServer holder;
+    QVERIFY(holder.listen(QHostAddress(QHostAddress::AnyIPv4), 0));
+    const quint16 port = holder.serverPort();
+    QVERIFY(ipv4WildcardHeld(port, QAbstractSocket::TcpSocket));
+    QVERIFY(!ipv4WildcardHeld(0, QAbstractSocket::TcpSocket));
+
+    ListenSocket listener;
+    QVERIFY(!listener.startListening(port));
+    QVERIFY(!listener.isListening());
+
+    holder.close();
+    QVERIFY(!ipv4WildcardHeld(port, QAbstractSocket::TcpSocket));
+    QVERIFY(listener.startListening(port));
+    listener.stopListening();
+
+    QUdpSocket udpHolder;
+    QVERIFY(udpHolder.bind(QHostAddress(QHostAddress::AnyIPv4), 0));
+    const quint16 udpPort = udpHolder.localPort();
+    QVERIFY(ipv4WildcardHeld(udpPort, QAbstractSocket::UdpSocket));
+    udpHolder.close();
+    QVERIFY(!ipv4WildcardHeld(udpPort, QAbstractSocket::UdpSocket));
 }
 
 // ---------------------------------------------------------------------------

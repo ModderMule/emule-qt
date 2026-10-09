@@ -1297,6 +1297,10 @@ Es gibt bereits einen Freund mit derselben IP-Adresse und demselben Port.</trans
         <translation>Passwortschutz</translation>
     </message>
     <message>
+        <source>bootable</source>
+        <translation>bootbar</translation>
+    </message>
+    <message>
         <location line="-35"/>
         <location line="+36"/>
         <source>Archive scanned.</source>

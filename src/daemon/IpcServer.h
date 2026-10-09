@@ -39,6 +39,12 @@ public:
     /// Broadcast a push event to all connected (handshaked) clients.
     void broadcast(const Ipc::IpcMessage& msg);
 
+    /// The same without the push tap: for news the tap has already seen.
+    void sendToClients(const Ipc::IpcMessage& msg);
+
+    /// True when a handshaked client is there to receive a push.
+    [[nodiscard]] bool hasReadyClient() const;
+
     /// Number of currently connected clients.
     [[nodiscard]] int clientCount() const;
 
@@ -50,6 +56,9 @@ public:
     void notifyCategoriesChanged();
 
 signals:
+    /// A client finished its handshake.
+    void clientReady();
+
     /// Forwarded from any client's IpcClientHandler::webServerConfigChanged.
     void webServerConfigChanged();
 

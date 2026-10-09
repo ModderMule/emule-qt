@@ -16,7 +16,9 @@
 #include "utils/OtherFunctions.h"
 #include "utils/SafeFile.h"
 
+#include <QDateTime>
 #include <QDir>
+#include <QFile>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QScopeGuard>
@@ -121,6 +123,7 @@ private slots:
     void flushBuffer_verifiesOnlyChangedParts();
     void hashsetReceived_condemnsBadPartCompletedWithoutHashset();
     void hashsetReceived_checksEachWaitingPartOnce();
+    void createdDate_survivesReload();
 
 private:
     QTemporaryDir m_tempDir;
@@ -2453,6 +2456,34 @@ void tst_PartFile::hashsetReceived_checksEachWaitingPartOnce()
 
     QCOMPARE(pf.totalGapSizeInPart(1), uint64{0});
     QVERIFY(pf.totalGapSizeInPart(0) == 0 && !pf.isCorruptedPart(0));
+}
+
+// "Added On": the date of the .part, not of the run that loaded it
+// (MFC LoadPartFile, m_tCreated = st_ctime).
+void tst_PartFile::createdDate_survivesReload()
+{
+    const QString tempDir = m_tempDir.path() + QStringLiteral("/created");
+    QDir().mkpath(tempDir);
+
+    PartFile pf;
+    pf.setFileName(QStringLiteral("created.bin"));
+    pf.setFileSize(PARTSIZE + 100);
+    uint8 hash[16];
+    std::memset(hash, 0x5D, sizeof(hash));
+    pf.setFileHash(hash);
+    QVERIFY(pf.createPartFile(tempDir));
+    pf.savePartFile();
+
+    const QDateTime born = QDateTime::currentDateTimeUtc().addDays(-3);
+    QFile part(pf.partDataPath());
+    QVERIFY(part.open(QIODevice::ReadWrite));
+    if (!part.setFileTime(born, QFileDevice::FileBirthTime))
+        QSKIP("this file system keeps no settable birth time");
+    part.close();
+
+    PartFile loaded;
+    QCOMPARE(loaded.loadPartFile(tempDir, pf.partMetFileName()), PartFileLoadResult::LoadSuccess);
+    QCOMPARE(qint64(loaded.createdDate()), born.toSecsSinceEpoch());
 }
 
 QTEST_GUILESS_MAIN(tst_PartFile)

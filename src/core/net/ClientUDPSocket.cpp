@@ -5,6 +5,7 @@
 #include "net/ClientUDPSocket.h"
 #include "net/BindAddress.h"
 #include "net/InterfacePin.h"
+#include "net/ListenConflict.h"
 #include "net/EncryptedDatagramSocket.h"
 #include "net/IPv6SourcePin.h"
 #include "app/AppContext.h"
@@ -83,6 +84,12 @@ bool ClientUDPSocket::rebind(uint16 port)
     const auto bindTo = BindAddress::listenAddress();   // Any = dual-stack
     if (!bindTo)
         return false;
+    if (*bindTo == QHostAddress(QHostAddress::Any)
+        && ipv4WildcardHeld(port, QAbstractSocket::UdpSocket)) {
+        logError(QStringLiteral("ClientUDPSocket: port %1 is already used by another program (IPv4)")
+                     .arg(port));
+        return false;
+    }
     if (!m_socket.bind(*bindTo, port)) {
         logError(QStringLiteral("ClientUDPSocket: Failed to rebind to port %1: %2")
                      .arg(port).arg(m_socket.errorString()));

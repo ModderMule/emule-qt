@@ -59,7 +59,11 @@ void IpcServer::broadcast(const Ipc::IpcMessage& msg)
 {
     if (m_pushTap)
         m_pushTap(msg);
+    sendToClients(msg);
+}
 
+void IpcServer::sendToClients(const Ipc::IpcMessage& msg)
+{
     // A failed write drops its client synchronously (errorOccurred ->
     // onClientDisconnected), which erases it from m_clients mid-loop. Walk a
     // snapshot: the dropped handler lives until its deleteLater() and reads as
@@ -73,6 +77,11 @@ void IpcServer::broadcast(const Ipc::IpcMessage& msg)
         if (handler->isHandshaked())
             handler->sendMessage(msg);
     }
+}
+
+bool IpcServer::hasReadyClient() const
+{
+    return std::ranges::any_of(m_clients, [](const auto& h) { return h->isHandshaked(); });
 }
 
 int IpcServer::clientCount() const
@@ -106,6 +115,8 @@ void IpcServer::onNewConnection()
 
         connect(handler.get(), &IpcClientHandler::disconnected,
                 this, &IpcServer::onClientDisconnected);
+        connect(handler.get(), &IpcClientHandler::handshakeCompleted,
+                this, &IpcServer::clientReady);
         connect(handler.get(), &IpcClientHandler::webServerConfigChanged,
                 this, &IpcServer::webServerConfigChanged);
         connect(handler.get(), &IpcClientHandler::webTemplateReloadRequested,

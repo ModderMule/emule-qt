@@ -2343,7 +2343,10 @@ QString DownloadQueue::volumeKey(const QString& dir) const
     if (m_freeSpaceProbe)
         return QDir::cleanPath(dir);
     const QStorageInfo info(dir);
-    return info.isValid() ? info.rootPath() : QDir::cleanPath(dir);
+    // A share is not one volume: what is mounted below it has its own room.
+    if (!info.isValid() || info.rootPath().startsWith(QLatin1String("//")))
+        return QDir::cleanPath(dir);
+    return info.rootPath();
 }
 
 std::optional<uint64> DownloadQueue::probeFreeSpace(const QString& dir, bool fresh)
