@@ -62,6 +62,9 @@ private slots:
     void findNextWrapsAndRepeats();
     void findIgnoresDisplayPadding();
     void windowCycleKeysExist();
+    void ctrlF2IsItsOwnCommand();
+    void spaceTogglesOnlyWhenTheListAnswers();
+    void middleClickSelectsTheRowAndActs();
 };
 
 void tst_ListKeys::deleteAndBackspaceRemove()
@@ -220,6 +223,85 @@ void tst_ListKeys::windowCycleKeysExist()
         hasTab = hasTab || seq[0].key() == Qt::Key_Tab;
     QVERIFY2(hasTab, qPrintable(QKeySequence::listToString(
                          QKeySequence::keyBindings(QKeySequence::NextChild))));
+}
+
+// MFC DownloadListCtrl.cpp:1394: F2 with Ctrl held is the file-name cleanup. The
+// filter only knew the bare key, so Ctrl+F2 never arrived anywhere.
+void tst_ListKeys::ctrlF2IsItsOwnCommand()
+{
+    QTreeView view;
+    view.setModel(makeModel(&view, {QStringLiteral("a")}));
+    int renamed = 0;
+    int cleaned = 0;
+    ListKeyHandlers keys;
+    keys.rename = [&] { ++renamed; };
+    keys.renameAll = [&] { ++cleaned; };
+    bindListKeys(&view, std::move(keys));
+
+    QTest::keyClick(&view, Qt::Key_F2);
+    QCOMPARE(renamed, 1);
+    QCOMPARE(cleaned, 0);
+    QTest::keyClick(&view, Qt::Key_F2, Qt::ControlModifier);
+    QCOMPARE(renamed, 1);
+    QCOMPARE(cleaned, 1);
+}
+
+// MFC SharedFilesCtrl.cpp:1390: Space is the list's only while it shows checkboxes.
+void tst_ListKeys::spaceTogglesOnlyWhenTheListAnswers()
+{
+    RecordingView view;
+    view.setModel(makeModel(&view, {QStringLiteral("a")}));
+    bool checkboxes = false;
+    int toggled = 0;
+    ListKeyHandlers keys;
+    keys.toggle = [&] {
+        if (!checkboxes)
+            return false;
+        ++toggled;
+        return true;
+    };
+    bindListKeys(&view, std::move(keys));
+
+    QTest::keyClick(&view, Qt::Key_Space);
+    QCOMPARE(toggled, 0);
+    QVERIFY(view.passed.contains(Qt::Key_Space));   // travelled on to Qt
+
+    view.passed.clear();
+    checkboxes = true;
+    QTest::keyClick(&view, Qt::Key_Space);
+    QCOMPARE(toggled, 1);
+    QVERIFY(!view.passed.contains(Qt::Key_Space));
+}
+
+// MFC SharedFilesWnd.cpp:246-260, SearchResultsWnd.cpp:184-196: the row under the
+// pointer becomes the selection and is acted on. Nothing listened for the button.
+void tst_ListKeys::middleClickSelectsTheRowAndActs()
+{
+    QTreeView view;
+    view.setModel(makeModel(&view, {QStringLiteral("a"), QStringLiteral("b"), QStringLiteral("c")}));
+    view.resize(200, 200);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    view.setCurrentIndex(view.model()->index(0, 0));
+
+    QStringList acted;
+    ListKeyHandlers keys;
+    keys.middleClick = [&](const QModelIndex& index) { acted << index.data().toString(); };
+    bindListKeys(&view, std::move(keys));
+
+    const QModelIndex third = view.model()->index(2, 0);
+    QTest::mouseClick(view.viewport(), Qt::MiddleButton, {}, view.visualRect(third).center());
+    QCOMPARE(acted, QStringList{QStringLiteral("c")});
+    QCOMPARE(view.currentIndex(), third);
+    QCOMPARE(view.selectionModel()->selectedRows().size(), 1);
+
+    // below the last row: nothing to act on
+    QTest::mouseClick(view.viewport(), Qt::MiddleButton, {}, QPoint(10, 190));
+    QCOMPARE(acted.size(), 1);
+
+    // the other buttons are none of its business
+    QTest::mouseClick(view.viewport(), Qt::LeftButton, {}, view.visualRect(view.model()->index(1, 0)).center());
+    QCOMPARE(acted.size(), 1);
 }
 
 QTEST_MAIN(tst_ListKeys)

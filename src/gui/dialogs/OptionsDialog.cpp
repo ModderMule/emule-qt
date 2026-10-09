@@ -17,6 +17,8 @@
 #include "panels/StatisticsPanel.h"
 #include "net/HttpFileDownload.h"
 #include "prefs/Preferences.h"
+#include "net/SmtpClient.h"
+#include "dialogs/PortTest.h"
 #include "utils/CountryFlags.h"
 #include "utils/DialogSizing.h"
 #include "utils/SharedDirState.h"
@@ -384,6 +386,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_fileBufferSlider, &QSlider::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_queueSizeSlider, &QSlider::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_dynUpEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_dynUpMinUploadSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_dynUpPingToleranceSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_dynUpPingToleranceMsSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_dynUpRadioPercent, &QRadioButton::toggled, this, &OptionsDialog::markDirty);
@@ -1857,18 +1860,11 @@ QWidget* OptionsDialog::createNotificationsPage()
             m_soundFileEdit->setText(file);
     });
 
-    // Test button — play selected sound
+    // Test button — the pop-up, with the sound this page selects right now
+    // (MFC PPgNotify.cpp:236-256). MFC also mails it; not here — deliberate, 2026-10.
     connect(m_testSoundBtn, &QPushButton::clicked, this, [this]() {
-        if (m_playSoundRadio->isChecked() && !m_soundFileEdit->text().isEmpty()) {
-            auto* effect = new QSoundEffect(this);
-            effect->setSource(QUrl::fromLocalFile(m_soundFileEdit->text()));
-            effect->setVolume(1.0f);
-            effect->play();
-            connect(effect, &QSoundEffect::playingChanged, effect, [effect]() {
-                if (!effect->isPlaying())
-                    effect->deleteLater();
-            });
-        }
+        emit testNotificationRequested(m_playSoundRadio->isChecked() ? m_soundFileEdit->text()
+                                                                     : QString());
     });
 
     // === Pop-up when group ===
@@ -1962,7 +1958,11 @@ QWidget* OptionsDialog::createNotificationsPage()
     connect(m_smtpServerBtn, &QPushButton::clicked, this, [this]() {
         QDialog dlg(this);
         dlg.setWindowTitle(tr("SMTP Server Settings"));
-        auto* form = new QFormLayout(&dlg);
+        // MFC IDD_SMTPSERVER (emule.rc:464-482): a Connection and an Authentication group.
+        auto* outer = new QVBoxLayout(&dlg);
+        auto* connGroup = new QGroupBox(tr("Connection"), &dlg);
+        auto* form = new QFormLayout(connGroup);
+        outer->addWidget(connGroup);
 
         auto* serverEdit = new QLineEdit(m_smtpServer, &dlg);
         form->addRow(tr("Server:"), serverEdit);
@@ -1972,22 +1972,32 @@ QWidget* OptionsDialog::createNotificationsPage()
         portSpin->setValue(m_smtpPort);
         form->addRow(tr("Port:"), portSpin);
 
-        auto* authCombo = new QComboBox(&dlg);
-        authCombo->addItem(tr("None"));    // 0
-        authCombo->addItem(tr("Plain"));   // 1
-        authCombo->setCurrentIndex(m_smtpAuth);
-        form->addRow(tr("Authentication:"), authCombo);
+        auto* securityCombo = new QComboBox(&dlg);
+        securityCombo->setObjectName(QStringLiteral("smtpSecurity"));
+        securityCombo->addItems({tr("None"), QStringLiteral("SSL/TLS"), QStringLiteral("STARTTLS")});
+        securityCombo->setCurrentIndex(m_smtpSecurity);
+        form->addRow(tr("Security:"), securityCombo);
+        // Choosing a mode sets its usual port, as MFC (SMTPdialog.cpp:98-116).
+        connect(securityCombo, &QComboBox::activated, portSpin, [portSpin](int index) {
+            portSpin->setValue(SmtpClient::defaultPort(static_cast<SmtpSecurity>(index)));
+        });
 
-        auto* tlsCheck = new QCheckBox(tr("Use TLS/STARTTLS"), &dlg);
-        tlsCheck->setChecked(m_smtpTls);
-        form->addRow(tlsCheck);
+        auto* authGroup = new QGroupBox(tr("Authentication"), &dlg);
+        auto* authForm = new QFormLayout(authGroup);
+        outer->addWidget(authGroup);
+
+        auto* authCombo = new QComboBox(&dlg);
+        authCombo->setObjectName(QStringLiteral("smtpAuth"));
+        authCombo->addItems({tr("None"), QStringLiteral("PLAIN"), QStringLiteral("LOGIN")});
+        authCombo->setCurrentIndex(m_smtpAuth);
+        authForm->addRow(tr("Authentication method:"), authCombo);
 
         auto* userEdit = new QLineEdit(m_smtpUser, &dlg);
-        form->addRow(tr("Username:"), userEdit);
+        authForm->addRow(tr("Username:"), userEdit);
 
         auto* passEdit = new QLineEdit(m_smtpPassword, &dlg);
         passEdit->setEchoMode(QLineEdit::Password);
-        form->addRow(tr("Password:"), passEdit);
+        authForm->addRow(tr("Password:"), passEdit);
 
         auto* btnLayout = new QHBoxLayout;
         auto* okBtn = new QPushButton(tr("OK"), &dlg);
@@ -1995,7 +2005,7 @@ QWidget* OptionsDialog::createNotificationsPage()
         btnLayout->addStretch();
         btnLayout->addWidget(okBtn);
         btnLayout->addWidget(cancelBtn);
-        form->addRow(btnLayout);
+        outer->addLayout(btnLayout);
 
         connect(okBtn, &QPushButton::clicked, &dlg, &QDialog::accept);
         connect(cancelBtn, &QPushButton::clicked, &dlg, &QDialog::reject);
@@ -2004,7 +2014,7 @@ QWidget* OptionsDialog::createNotificationsPage()
             m_smtpServer = serverEdit->text();
             m_smtpPort = portSpin->value();
             m_smtpAuth = authCombo->currentIndex();
-            m_smtpTls = tlsCheck->isChecked();
+            m_smtpSecurity = securityCombo->currentIndex();
             m_smtpUser = userEdit->text();
             m_smtpPassword = passEdit->text();
             markDirty();
@@ -2013,6 +2023,74 @@ QWidget* OptionsDialog::createNotificationsPage()
 
     layout->addStretch();
     return page;
+}
+
+namespace {
+
+/// One line of the IRC page's option tree. A group has no accessors.
+struct IrcTreeOption {
+    const char* key;      ///< the preference's IPC key; a made-up one for a group
+    const char* parent;   ///< key of the group it sits under, or nullptr
+    const char* text;
+    bool (Preferences::*get)() const;
+    void (Preferences::*set)(bool);
+};
+
+/// MFC CPPgIRC's tree (PPgIRC.cpp:92-115), in its order.
+constexpr IrcTreeOption kIrcTreeOptions[] = {
+    {"ircConnectHelpChannel", nullptr, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Connect to help channel"),
+     &Preferences::ircConnectHelpChannel, &Preferences::setIrcConnectHelpChannel},
+    {"ircLoadChannelList", nullptr, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Load server channel list on connect"),
+     &Preferences::ircLoadChannelList, &Preferences::setIrcLoadChannelList},
+    {"ircAddTimestamp", nullptr, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Add timestamp to messages"),
+     &Preferences::ircAddTimestamp, &Preferences::setIrcAddTimestamp},
+    {"#ignoreInfo", nullptr, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Ignore info messages"), nullptr, nullptr},
+    {"ircIgnoreMiscInfoMessages", "#ignoreInfo", QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Ignore misc. info messages"),
+     &Preferences::ircIgnoreMiscInfoMessages, &Preferences::setIrcIgnoreMiscInfoMessages},
+    {"ircIgnoreJoinMessages", "#ignoreInfo", QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Ignore Join info messages"),
+     &Preferences::ircIgnoreJoinMessages, &Preferences::setIrcIgnoreJoinMessages},
+    {"ircIgnorePartMessages", "#ignoreInfo", QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Ignore Part info messages"),
+     &Preferences::ircIgnorePartMessages, &Preferences::setIrcIgnorePartMessages},
+    {"ircIgnoreQuitMessages", "#ignoreInfo", QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Ignore Quit info messages"),
+     &Preferences::ircIgnoreQuitMessages, &Preferences::setIrcIgnoreQuitMessages},
+    {"ircIgnorePingPong", "#ignoreInfo", QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Ignore Ping? Pong! messages"),
+     &Preferences::ircIgnorePingPong, &Preferences::setIrcIgnorePingPong},
+    {"#ignoreProto", nullptr, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Ignore eMule protocol messages"), nullptr, nullptr},
+    {"ircIgnoreEmuleAddFriendMsgs", "#ignoreProto",
+     QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Ignore eMule add friend protocol messages"),
+     &Preferences::ircIgnoreEmuleAddFriendMsgs, &Preferences::setIrcIgnoreEmuleAddFriendMsgs},
+    {"ircIgnoreEmuleSendLinkMsgs", "#ignoreProto",
+     QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Ignore eMule send link protocol messages"),
+     &Preferences::ircIgnoreEmuleSendLinkMsgs, &Preferences::setIrcIgnoreEmuleSendLinkMsgs},
+    {"ircAllowEmuleAddFriend", nullptr, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Allow others to add you as a friend"),
+     &Preferences::ircAllowEmuleAddFriend, &Preferences::setIrcAllowEmuleAddFriend},
+    {"ircAcceptLinks", nullptr,
+     QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Accept eD2K links in IRC (Use only with caution!)"),
+     &Preferences::ircAcceptLinks, &Preferences::setIrcAcceptLinks},
+    {"ircAcceptLinksFriendsOnly", "ircAcceptLinks", QT_TRANSLATE_NOOP("eMule::OptionsDialog", "From friends only"),
+     &Preferences::ircAcceptLinksFriendsOnly, &Preferences::setIrcAcceptLinksFriendsOnly},
+    {"ircShowSmileys", nullptr, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Show smileys"),
+     &Preferences::ircShowSmileys, &Preferences::setIrcShowSmileys},
+    {"ircPlaySoundEvents", nullptr, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Play sound events"),
+     &Preferences::ircPlaySoundEvents, &Preferences::setIrcPlaySoundEvents},
+    {"ircEnableUTF8", nullptr, QT_TRANSLATE_NOOP("eMule::OptionsDialog", "Enable UTF-8"),
+     &Preferences::ircEnableUTF8, &Preferences::setIrcEnableUTF8},
+};
+
+} // namespace
+
+QTreeWidgetItem* OptionsDialog::ircTreeItem(const char* key) const
+{
+    const QString wanted = QString::fromLatin1(key);
+    QList<QTreeWidgetItem*> pending{m_ircMiscTree->invisibleRootItem()};
+    while (!pending.isEmpty()) {
+        QTreeWidgetItem* item = pending.takeLast();
+        if (item->data(0, Qt::UserRole).toString() == wanted)
+            return item;
+        for (int i = 0; i < item->childCount(); ++i)
+            pending.append(item->child(i));
+    }
+    return nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -2089,62 +2167,19 @@ QWidget* OptionsDialog::createIRCPage()
     m_ircMiscTree->setRootIsDecorated(true);
     m_ircMiscTree->setIndentation(20);
 
-    // Top-level checkable items
-    auto* helpItem = new QTreeWidgetItem(m_ircMiscTree);
-    helpItem->setText(0, tr("Connect to help channel"));
-    helpItem->setFlags(helpItem->flags() | Qt::ItemIsUserCheckable);
-    helpItem->setCheckState(0, Qt::Checked);
-
-    auto* loadListItem = new QTreeWidgetItem(m_ircMiscTree);
-    loadListItem->setText(0, tr("Load server channel list on connect"));
-    loadListItem->setFlags(loadListItem->flags() | Qt::ItemIsUserCheckable);
-    loadListItem->setCheckState(0, Qt::Checked);
-
-    auto* timestampItem = new QTreeWidgetItem(m_ircMiscTree);
-    timestampItem->setText(0, tr("Add timestamp to messages"));
-    timestampItem->setFlags(timestampItem->flags() | Qt::ItemIsUserCheckable);
-    timestampItem->setCheckState(0, Qt::Checked);
-
-    // "Ignore info messages" parent with auto-tristate
-    auto* ignoreParent = new QTreeWidgetItem(m_ircMiscTree);
-    ignoreParent->setText(0, tr("Ignore info messages"));
-    ignoreParent->setFlags(ignoreParent->flags() | Qt::ItemIsAutoTristate | Qt::ItemIsUserCheckable);
-
-    auto* ignoreMisc = new QTreeWidgetItem(ignoreParent);
-    ignoreMisc->setText(0, tr("Ignore misc. info messages"));
-    ignoreMisc->setFlags(ignoreMisc->flags() | Qt::ItemIsUserCheckable);
-    ignoreMisc->setCheckState(0, Qt::Unchecked);
-
-    auto* ignoreJoin = new QTreeWidgetItem(ignoreParent);
-    ignoreJoin->setText(0, tr("Ignore Join info messages"));
-    ignoreJoin->setFlags(ignoreJoin->flags() | Qt::ItemIsUserCheckable);
-    ignoreJoin->setCheckState(0, Qt::Checked);
-
-    auto* ignorePart = new QTreeWidgetItem(ignoreParent);
-    ignorePart->setText(0, tr("Ignore Part info messages"));
-    ignorePart->setFlags(ignorePart->flags() | Qt::ItemIsUserCheckable);
-    ignorePart->setCheckState(0, Qt::Checked);
-
-    auto* ignoreQuit = new QTreeWidgetItem(ignoreParent);
-    ignoreQuit->setText(0, tr("Ignore Quit info messages"));
-    ignoreQuit->setFlags(ignoreQuit->flags() | Qt::ItemIsUserCheckable);
-    ignoreQuit->setCheckState(0, Qt::Checked);
-
-    const auto addCheck = [](QTreeWidgetItem* parent, const QString& text) {
+    for (const IrcTreeOption& opt : kIrcTreeOptions) {
+        QTreeWidgetItem* parent = opt.parent ? ircTreeItem(opt.parent) : m_ircMiscTree->invisibleRootItem();
         auto* item = new QTreeWidgetItem(parent);
-        item->setText(0, text);
-        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
-        item->setCheckState(0, Qt::Unchecked);
-        return item;
-    };
-    addCheck(ignoreParent, tr("Ignore eMule add friend protocol messages"));
-    addCheck(ignoreParent, tr("Ignore eMule send link protocol messages"));
-    // eMule's CTCP extensions (MFC PPgIRC)
-    addCheck(m_ircMiscTree->invisibleRootItem(), tr("Allow others to add you as a friend"));
-    auto* acceptLinks = addCheck(m_ircMiscTree->invisibleRootItem(),
-                                 tr("Accept eD2K links in IRC (Use only with caution!)"));
-    addCheck(acceptLinks, tr("From friends only"));
-    addCheck(m_ircMiscTree->invisibleRootItem(), tr("Enable UTF-8"));
+        item->setText(0, tr(opt.text));
+        item->setData(0, Qt::UserRole, QString::fromLatin1(opt.key));
+        if (opt.get) {
+            item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+            item->setCheckState(0, Qt::Unchecked);
+        } else {
+            // a group follows its children
+            item->setFlags(item->flags() | Qt::ItemIsAutoTristate | Qt::ItemIsUserCheckable);
+        }
+    }
 
     m_ircMiscTree->expandAll();
     giveListRoom(m_ircMiscTree, 8);
@@ -5295,6 +5330,17 @@ QWidget* OptionsDialog::createExtendedPage()
     m_dynUpEnabledCheck = new QCheckBox(tr("Find best upload limit automatically"), ussGroup);
     ussLayout->addWidget(m_dynUpEnabledCheck);
 
+    // MFC IDS_DYNUP_MINUPLOAD, first under the switch (PPgTweaks.cpp:263)
+    auto* minUploadRow = new QHBoxLayout;
+    minUploadRow->addWidget(new QLabel(tr("Lowest allowed upload speed:"), ussGroup));
+    m_dynUpMinUploadSpin = new QSpinBox(ussGroup);
+    m_dynUpMinUploadSpin->setObjectName(QStringLiteral("dynUpMinUpload"));
+    m_dynUpMinUploadSpin->setRange(1, 1000000);
+    m_dynUpMinUploadSpin->setSuffix(tr(" KB/s"));
+    minUploadRow->addWidget(m_dynUpMinUploadSpin);
+    minUploadRow->addStretch();
+    ussLayout->addLayout(minUploadRow);
+
     auto* pingTolRow = new QHBoxLayout;
     pingTolRow->addWidget(new QLabel(tr("Ping tolerance (% of lowest ping):"), ussGroup));
     m_dynUpPingToleranceSpin = new QSpinBox(ussGroup);
@@ -5348,6 +5394,7 @@ QWidget* OptionsDialog::createExtendedPage()
 
     // Enable/disable child controls based on USS checkbox
     auto updateUssControls = [this](bool on) {
+        m_dynUpMinUploadSpin->setEnabled(on);
         m_dynUpPingToleranceSpin->setEnabled(on);
         m_dynUpPingToleranceMsSpin->setEnabled(on);
         m_dynUpRadioPercent->setEnabled(on);
@@ -5565,6 +5612,7 @@ QWidget* OptionsDialog::createSchedulerPage()
     auto* actionLayout = new QVBoxLayout(actionGroup);
     auto* schedActionsTable = new ListTreeWidget(actionGroup);
     m_schedActionsTable = schedActionsTable;
+    m_schedActionsTable->setObjectName(QStringLiteral("schedActions"));
     m_schedActionsTable->setHeaderLabels({tr("Action"), tr("Value")});
     m_schedActionsTable->setRootIsDecorated(false);
     m_schedActionsTable->setColumnCount(2);
@@ -5749,45 +5797,82 @@ void OptionsDialog::applyScheduleDetails()
     m_schedTable->setCurrentItem(m_schedTable->topLevelItem(m_schedSelectedIndex));
 }
 
+bool OptionsDialog::promptScheduleValue(int action, const QString& label, QString& value)
+{
+    // MFC PPgScheduler.cpp:401-410
+    const bool rate = action == 1 || action == 2;   // upload / download limit
+    const QString prompt = rate
+        ? tr("Enter the datarate limit: (%1, KB/s)").arg(label)
+        : tr("Please enter the new value: (%1)").arg(label);
+    bool ok = false;
+    const QString entered = QInputDialog::getText(this, tr("Configure Action"), prompt,
+                                                  QLineEdit::Normal, value, &ok);
+    if (ok)
+        value = entered;
+    return ok;
+}
+
 void OptionsDialog::showScheduleActionsMenu(const QPoint& pos)
 {
+    // MFC CPPgScheduler::OnNmRClickActionlist / OnCommand (PPgScheduler.cpp:340-415)
+    constexpr int kMaxActions = 16;          // what a schedule entry holds
+    constexpr int kFirstCategoryAction = 6;  // ACTION_CATSTOP
     QMenu menu;
 
     // Add submenu with action types
     auto* addMenu = menu.addMenu(tr("Add"));
+    addMenu->setEnabled(m_schedActionsTable->topLevelItemCount() < kMaxActions);
     static const char* actionNames[] = {
         nullptr, "Upload Limit", "Download Limit", "Source Limit",
         "Con/5sec Limit", "Max Connections", "Stop Category", "Resume Category"
     };
     for (int i = 1; i <= 7; ++i) {
         addMenu->addAction(tr(actionNames[i]), this, [this, i]() {
-            bool ok = false;
-            QString value = QInputDialog::getText(this, tr("Action Value"),
-                tr("Enter value:"), QLineEdit::Normal, QString(), &ok);
-            if (!ok) return;
+            // A category action gets its category from the submenu afterwards.
+            QString value;
+            if (i < kFirstCategoryAction && !promptScheduleValue(i, tr(actionNames[i]), value))
+                return;
 
             auto* item = new QTreeWidgetItem(m_schedActionsTable);
             item->setText(0, tr(actionNames[i]));
             item->setText(1, value);
             item->setData(0, Qt::UserRole, i);
+            m_schedActionsTable->setCurrentItem(item);
         });
     }
 
     auto* current = m_schedActionsTable->currentItem();
-    if (current) {
+    if (current && current->data(0, Qt::UserRole).toInt() >= kFirstCategoryAction) {
+        // -2 "All uncategorized" (only with categories), -1 "All", then each category
+        // by its index; the value column holds that number, as in MFC.
+        auto* catMenu = menu.addMenu(tr("Select category"));
+        const auto choose = [current](int index) { current->setText(1, QString::number(index)); };
+        const int rows = m_feedDownloadCategoryCombo ? m_feedDownloadCategoryCombo->count() : 0;
+        if (rows > 1)
+            catMenu->addAction(tr("All uncategorized"), this, [choose] { choose(-2); });
+        catMenu->addAction(tr("All"), this, [choose] { choose(-1); });
+        for (int row = 1; row < rows; ++row) {
+            const int index = m_feedDownloadCategoryCombo->itemData(row).toInt();
+            catMenu->addAction(m_feedDownloadCategoryCombo->itemText(row), this,
+                               [choose, index] { choose(index); });
+        }
+    } else if (current) {
         menu.addAction(tr("Edit Value"), this, [this, current]() {
-            bool ok = false;
-            QString value = QInputDialog::getText(this, tr("Edit Value"),
-                tr("Enter value:"), QLineEdit::Normal, current->text(1), &ok);
-            if (ok)
+            QString value = current->text(1);
+            if (promptScheduleValue(current->data(0, Qt::UserRole).toInt(), current->text(0), value))
                 current->setText(1, value);
         });
+    }
+    if (current) {
         menu.addAction(tr("Remove"), this, [current]() {
             delete current;
         });
     }
 
-    menu.exec(m_schedActionsTable->viewport()->mapToGlobal(pos));
+    if (m_schedMenuHook)
+        m_schedMenuHook(&menu);
+    else
+        menu.exec(m_schedActionsTable->viewport()->mapToGlobal(pos));
 }
 
 void OptionsDialog::loadSchedulerData()
@@ -5973,22 +6058,10 @@ void OptionsDialog::loadSettings()
 
     // Misc tree items: 0=help, 1=loadList, 2=timestamp, 3=ignoreParent->(0=misc,1=join,2=part,3=quit),
     // 4=allowAddFriend, 5=acceptLinks->(0=friendsOnly), 6=UTF-8
-    auto* root = m_ircMiscTree->invisibleRootItem();
-    root->child(0)->setCheckState(0, thePrefs.ircConnectHelpChannel() ? Qt::Checked : Qt::Unchecked);
-    root->child(1)->setCheckState(0, thePrefs.ircLoadChannelList() ? Qt::Checked : Qt::Unchecked);
-    root->child(2)->setCheckState(0, thePrefs.ircAddTimestamp() ? Qt::Checked : Qt::Unchecked);
-    auto* ignoreParent = root->child(3);
-    ignoreParent->child(0)->setCheckState(0, thePrefs.ircIgnoreMiscInfoMessages() ? Qt::Checked : Qt::Unchecked);
-    ignoreParent->child(1)->setCheckState(0, thePrefs.ircIgnoreJoinMessages() ? Qt::Checked : Qt::Unchecked);
-    ignoreParent->child(2)->setCheckState(0, thePrefs.ircIgnorePartMessages() ? Qt::Checked : Qt::Unchecked);
-    ignoreParent->child(3)->setCheckState(0, thePrefs.ircIgnoreQuitMessages() ? Qt::Checked : Qt::Unchecked);
-    // ...4=addFriendMsgs, 5=sendLinkMsgs); 4=allowAddFriend, 5=acceptLinks->(0=friendsOnly)
-    ignoreParent->child(4)->setCheckState(0, thePrefs.ircIgnoreEmuleAddFriendMsgs() ? Qt::Checked : Qt::Unchecked);
-    ignoreParent->child(5)->setCheckState(0, thePrefs.ircIgnoreEmuleSendLinkMsgs() ? Qt::Checked : Qt::Unchecked);
-    root->child(4)->setCheckState(0, thePrefs.ircAllowEmuleAddFriend() ? Qt::Checked : Qt::Unchecked);
-    root->child(5)->setCheckState(0, thePrefs.ircAcceptLinks() ? Qt::Checked : Qt::Unchecked);
-    root->child(5)->child(0)->setCheckState(0, thePrefs.ircAcceptLinksFriendsOnly() ? Qt::Checked : Qt::Unchecked);
-    root->child(6)->setCheckState(0, thePrefs.ircEnableUTF8() ? Qt::Checked : Qt::Unchecked);
+    for (const IrcTreeOption& opt : kIrcTreeOptions) {
+        if (opt.get)
+            ircTreeItem(opt.key)->setCheckState(0, (thePrefs.*opt.get)() ? Qt::Checked : Qt::Unchecked);
+    }
 
     // Messages page (GUI-only)
     m_showSmileysCheck->setChecked(thePrefs.showSmileys());
@@ -6178,21 +6251,10 @@ void OptionsDialog::saveSettings()
     thePrefs.setIrcUsePerform(m_ircUsePerformCheck->isChecked());
     thePrefs.setIrcPerformString(m_ircPerformEdit->text());
 
-    auto* root = m_ircMiscTree->invisibleRootItem();
-    thePrefs.setIrcConnectHelpChannel(root->child(0)->checkState(0) == Qt::Checked);
-    thePrefs.setIrcLoadChannelList(root->child(1)->checkState(0) == Qt::Checked);
-    thePrefs.setIrcAddTimestamp(root->child(2)->checkState(0) == Qt::Checked);
-    auto* ignoreParent = root->child(3);
-    thePrefs.setIrcIgnoreMiscInfoMessages(ignoreParent->child(0)->checkState(0) == Qt::Checked);
-    thePrefs.setIrcIgnoreJoinMessages(ignoreParent->child(1)->checkState(0) == Qt::Checked);
-    thePrefs.setIrcIgnorePartMessages(ignoreParent->child(2)->checkState(0) == Qt::Checked);
-    thePrefs.setIrcIgnoreQuitMessages(ignoreParent->child(3)->checkState(0) == Qt::Checked);
-    thePrefs.setIrcIgnoreEmuleAddFriendMsgs(ignoreParent->child(4)->checkState(0) == Qt::Checked);
-    thePrefs.setIrcIgnoreEmuleSendLinkMsgs(ignoreParent->child(5)->checkState(0) == Qt::Checked);
-    thePrefs.setIrcAllowEmuleAddFriend(root->child(4)->checkState(0) == Qt::Checked);
-    thePrefs.setIrcAcceptLinks(root->child(5)->checkState(0) == Qt::Checked);
-    thePrefs.setIrcAcceptLinksFriendsOnly(root->child(5)->child(0)->checkState(0) == Qt::Checked);
-    thePrefs.setIrcEnableUTF8(root->child(6)->checkState(0) == Qt::Checked);
+    for (const IrcTreeOption& opt : kIrcTreeOptions) {
+        if (opt.set)
+            (thePrefs.*opt.set)(ircTreeItem(opt.key)->checkState(0) == Qt::Checked);
+    }
 
     // Messages page (GUI-only)
     thePrefs.setShowSmileys(m_showSmileysCheck->isChecked());
@@ -6358,8 +6420,8 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(m_smtpPort));
         req.append(QStringLiteral("notifyEmailSmtpAuth"));
         req.append(static_cast<qint64>(m_smtpAuth));
-        req.append(QStringLiteral("notifyEmailSmtpTls"));
-        req.append(m_smtpTls);
+        req.append(QStringLiteral("notifyEmailSmtpSecurity"));
+        req.append(static_cast<qint64>(m_smtpSecurity));
         req.append(QStringLiteral("notifyEmailSmtpUser"));
         req.append(m_smtpUser);
         req.append(QStringLiteral("notifyEmailSmtpPassword"));
@@ -6614,6 +6676,8 @@ void OptionsDialog::saveSettings()
         // USS
         req.append(QStringLiteral("dynUpEnabled"));
         req.append(m_dynUpEnabledCheck->isChecked());
+        req.append(QStringLiteral("minUpload"));
+        req.append(static_cast<qint64>(m_dynUpMinUploadSpin->value()));
         req.append(QStringLiteral("dynUpPingTolerance"));
         req.append(static_cast<qint64>(m_dynUpPingToleranceSpin->value()));
         req.append(QStringLiteral("dynUpPingToleranceMs"));
@@ -6739,32 +6803,12 @@ void OptionsDialog::saveSettings()
         req.append(m_ircUsePerformCheck->isChecked());
         req.append(QStringLiteral("ircPerformString"));
         req.append(m_ircPerformEdit->text());
-        req.append(QStringLiteral("ircConnectHelpChannel"));
-        req.append(root->child(0)->checkState(0) == Qt::Checked);
-        req.append(QStringLiteral("ircLoadChannelList"));
-        req.append(root->child(1)->checkState(0) == Qt::Checked);
-        req.append(QStringLiteral("ircAddTimestamp"));
-        req.append(root->child(2)->checkState(0) == Qt::Checked);
-        req.append(QStringLiteral("ircIgnoreMiscInfoMessages"));
-        req.append(ignoreParent->child(0)->checkState(0) == Qt::Checked);
-        req.append(QStringLiteral("ircIgnoreJoinMessages"));
-        req.append(ignoreParent->child(1)->checkState(0) == Qt::Checked);
-        req.append(QStringLiteral("ircIgnorePartMessages"));
-        req.append(ignoreParent->child(2)->checkState(0) == Qt::Checked);
-        req.append(QStringLiteral("ircIgnoreQuitMessages"));
-        req.append(ignoreParent->child(3)->checkState(0) == Qt::Checked);
-        req.append(QStringLiteral("ircIgnoreEmuleAddFriendMsgs"));
-        req.append(ignoreParent->child(4)->checkState(0) == Qt::Checked);
-        req.append(QStringLiteral("ircIgnoreEmuleSendLinkMsgs"));
-        req.append(ignoreParent->child(5)->checkState(0) == Qt::Checked);
-        req.append(QStringLiteral("ircAllowEmuleAddFriend"));
-        req.append(root->child(4)->checkState(0) == Qt::Checked);
-        req.append(QStringLiteral("ircAcceptLinks"));
-        req.append(root->child(5)->checkState(0) == Qt::Checked);
-        req.append(QStringLiteral("ircAcceptLinksFriendsOnly"));
-        req.append(root->child(5)->child(0)->checkState(0) == Qt::Checked);
-        req.append(QStringLiteral("ircEnableUTF8"));
-        req.append(root->child(6)->checkState(0) == Qt::Checked);
+        for (const IrcTreeOption& opt : kIrcTreeOptions) {
+            if (!opt.get)
+                continue;
+            req.append(QString::fromLatin1(opt.key));
+            req.append(ircTreeItem(opt.key)->checkState(0) == Qt::Checked);
+        }
 
         // Messages page (GUI-only)
         req.append(QStringLiteral("showSmileys"));
@@ -6856,7 +6900,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setNotifyEmailSmtpServer(m_smtpServer);
         thePrefs.setNotifyEmailSmtpPort(static_cast<uint16>(m_smtpPort));
         thePrefs.setNotifyEmailSmtpAuth(m_smtpAuth);
-        thePrefs.setNotifyEmailSmtpTls(m_smtpTls);
+        thePrefs.setNotifyEmailSmtpSecurity(m_smtpSecurity);
         thePrefs.setNotifyEmailSmtpUser(m_smtpUser);
         thePrefs.setNotifyEmailSmtpPassword(m_smtpPassword);
         thePrefs.setNotifyEmailRecipient(m_emailRecipientEdit->text());
@@ -6933,6 +6977,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setLogPublicIP(m_logPublicIPCheck->isChecked());
         // USS
         thePrefs.setDynUpEnabled(m_dynUpEnabledCheck->isChecked());
+        thePrefs.setMinUpload(static_cast<uint32>(m_dynUpMinUploadSpin->value()));
         thePrefs.setDynUpPingTolerance(m_dynUpPingToleranceSpin->value());
         thePrefs.setDynUpPingToleranceMs(m_dynUpPingToleranceMsSpin->value());
         thePrefs.setDynUpUseMillisecondPingTolerance(m_dynUpRadioMs->isChecked());
@@ -7121,7 +7166,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_smtpServer = prefs.value(QStringLiteral("notifyEmailSmtpServer")).toString();
     m_smtpPort = static_cast<int>(prefs.value(QStringLiteral("notifyEmailSmtpPort")).toInteger(25));
     m_smtpAuth = static_cast<int>(prefs.value(QStringLiteral("notifyEmailSmtpAuth")).toInteger(0));
-    m_smtpTls = prefs.value(QStringLiteral("notifyEmailSmtpTls")).toBool();
+    m_smtpSecurity = static_cast<int>(prefs.value(QStringLiteral("notifyEmailSmtpSecurity")).toInteger(0));
     m_smtpUser = prefs.value(QStringLiteral("notifyEmailSmtpUser")).toString();
     m_smtpPassword = prefs.value(QStringLiteral("notifyEmailSmtpPassword")).toString();
     m_emailRecipientEdit->setText(prefs.value(QStringLiteral("notifyEmailRecipient")).toString());
@@ -7314,6 +7359,8 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_dynUpEnabledCheck->setChecked(ussOn);
     m_dynUpPingToleranceSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("dynUpPingTolerance")).toInteger(500)));
     m_dynUpPingToleranceSpin->setEnabled(ussOn);
+    m_dynUpMinUploadSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("minUpload")).toInteger(1)));
+    m_dynUpMinUploadSpin->setEnabled(ussOn);
     m_dynUpPingToleranceMsSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("dynUpPingToleranceMs")).toInteger(200)));
     m_dynUpPingToleranceMsSpin->setEnabled(ussOn);
     bool useMs = prefs.value(QStringLiteral("dynUpUseMillisecondPingTolerance")).toBool();
@@ -7502,20 +7549,7 @@ void OptionsDialog::openPortTest()
     // own public addresses for the other one — otherwise a v6-preferring browser silently leaves
     // IPv4 untested, and vice versa. The daemon is the authority here: it may run on a different
     // host than this GUI, in which case our own addresses would be the wrong ones to test.
-    if (!m_ipc) {
-        openPortTestUrl(tcp, udp, QString(), QString());
-        return;
-    }
-
-    Ipc::IpcMessage req(Ipc::IpcMsgType::GetNetworkInfo);
-    m_ipc->sendRequest(std::move(req), [this, self = QPointer<OptionsDialog>(this), tcp, udp](const Ipc::IpcMessage& resp) {
-        if (!self)
-            return;
-        const QCborMap ed2k = resp.fieldMap(1).value(QStringLiteral("ed2k")).toMap();
-        openPortTestUrl(tcp, udp,
-                        ed2k.value(QStringLiteral("publicIPv4")).toString(),
-                        ed2k.value(QStringLiteral("publicIPv6")).toString());
-    });
+    PortTest::open(m_ipc, this, tcp, udp);
 }
 
 // The value to store: the interface name of a list entry, else the typed text.
@@ -7590,22 +7624,6 @@ void OptionsDialog::requestNetworkInterfaces()
         }
         showBindSelection(selection);
     });
-}
-
-void OptionsDialog::openPortTestUrl(int tcpPort, int udpPort,
-                                    const QString& ipv4, const QString& ipv6)
-{
-    QUrl url(QLatin1String(kWebsiteUrl) + QLatin1String(kPortTestPath));
-    QUrlQuery query;
-    query.addQueryItem(QStringLiteral("tcpport"), QString::number(tcpPort));
-    query.addQueryItem(QStringLiteral("udpport"), QString::number(udpPort));
-    if (!ipv4.isEmpty())
-        query.addQueryItem(QStringLiteral("ip4"), ipv4);
-    if (!ipv6.isEmpty())
-        query.addQueryItem(QStringLiteral("ip6"), ipv6);
-    url.setQuery(query);
-
-    QDesktopServices::openUrl(url);
 }
 
 quint32 OptionsDialog::portMapProtocolMask() const

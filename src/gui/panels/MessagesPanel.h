@@ -78,6 +78,10 @@ signals:
     /// 0 none, 1 and 2 the two blink phases.
     void messageStateChanged(int state);
 
+    /// A message arrived for a session that is not on screen. @p newSession: it
+    /// opened the session (a closed one counts as new again).
+    void unseenChatMessage(const QString& userName, const QString& text, bool newSession);
+
 protected:
     void showEvent(QShowEvent* event) override;
     /// Up/Down in the message input recall sent lines (ChatWnd.cpp:374).

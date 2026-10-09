@@ -94,7 +94,13 @@ QIcon withFlag(const QIcon& base, const QString& cc)
         return *it;
 
     const qreal dpr = pixelRatio();
-    const int flagX = base.isNull() ? 0 : kIconSize + kGap;
+    // A base that is already two icons wide (source rows) keeps its width.
+    int baseWidth = kIconSize;
+    if (const QList<QSize> sizes = base.availableSizes();
+        !sizes.isEmpty() && sizes.constFirst().height() > 0
+        && sizes.constFirst().width() > sizes.constFirst().height())
+        baseWidth = kIconSize * sizes.constFirst().width() / sizes.constFirst().height();
+    const int flagX = base.isNull() ? 0 : baseWidth + kGap;
     const int width = flagX + kFlagWidth;
     QPixmap pm(qRound(width * dpr), qRound(kIconSize * dpr));
     pm.setDevicePixelRatio(dpr);
@@ -103,7 +109,7 @@ QIcon withFlag(const QIcon& base, const QString& cc)
         QPainter p(&pm);
         p.setRenderHint(QPainter::SmoothPixmapTransform);
         if (!base.isNull())
-            base.paint(&p, QRect(0, 0, kIconSize, kIconSize));
+            base.paint(&p, QRect(0, 0, baseWidth, kIconSize));
         if (const QIcon f = flag(cc); !f.isNull())
             p.drawPixmap(QRect(flagX, 0, kFlagWidth, kIconSize),
                          f.pixmap(QSize(kFlagWidth, kIconSize), dpr));

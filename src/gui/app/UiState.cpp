@@ -87,6 +87,7 @@ void UiState::load(const QString& configDir)
         m_optionsHeight    = root["optionsHeight"].as<int>(m_optionsHeight);
         m_lastVersionCheck = root["lastVersionCheck"].as<int64_t>(m_lastVersionCheck);
         m_associateNzbFiles = root["associateNzbFiles"].as<bool>(m_associateNzbFiles);
+        m_miniMuleAutoClose = root["miniMuleAutoClose"].as<bool>(m_miniMuleAutoClose);
         m_firstStartWizardDone = root["firstStartWizardDone"].as<bool>(m_firstStartWizardDone);
         m_showCountryFlags = root["showCountryFlags"].as<bool>(m_showCountryFlags);
         m_showDownloadToolbar = root["showDownloadToolbar"].as<bool>(m_showDownloadToolbar);
@@ -187,6 +188,7 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "optionsHeight"    << YAML::Value << m_optionsHeight;
     out << YAML::Key << "lastVersionCheck" << YAML::Value << m_lastVersionCheck;
     out << YAML::Key << "associateNzbFiles" << YAML::Value << m_associateNzbFiles;
+    out << YAML::Key << "miniMuleAutoClose" << YAML::Value << m_miniMuleAutoClose;
     out << YAML::Key << "firstStartWizardDone" << YAML::Value << m_firstStartWizardDone;
     out << YAML::Key << "showCountryFlags" << YAML::Value << m_showCountryFlags;
     out << YAML::Key << "showDownloadToolbar" << YAML::Value << m_showDownloadToolbar;

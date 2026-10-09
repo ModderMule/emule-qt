@@ -62,13 +62,18 @@ void CommentsPanel::setDetails(const QCborMap& details)
     }
 
     m_emptyLabel->setVisible(comments.isEmpty());
-    setKadSearchRunning(details.value(QLatin1StringView("notesSearchRunning")).toBool());
+    // A map without the key (an older daemon, a search result) leaves it offered.
+    setKadSearchRunning(details.value(QLatin1StringView("notesSearchRunning")).toBool(),
+                        details.value(QLatin1StringView("kadConnected")).toBool(true));
 }
 
-void CommentsPanel::setKadSearchRunning(bool running)
+void CommentsPanel::setKadSearchRunning(bool running, bool kadConnected)
 {
+    // MFC CCommentDialogLst::RefreshData (CommentDialogLst.cpp:155-161): without Kad
+    // the button reads "Search Kad" and is greyed, whatever is running.
+    running = running && kadConnected;
     m_searchKadBtn->setText(running ? tr("(Kad search in progress...)") : tr("Search Kad"));
-    m_searchKadBtn->setEnabled(!running);
+    m_searchKadBtn->setEnabled(kadConnected && !running);
 
     // MFC moves focus off the button before disabling it, so the dialog does not
     // lose its focus widget mid-refresh (CommentDialogLst.cpp:162-163).

@@ -327,6 +327,16 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
         return {};
     const SearchResultRow& r = *ref.row;
 
+    // MFC's LVCFMT_RIGHT columns (SearchListCtrl.cpp:263-272)
+    if (role == Qt::TextAlignmentRole) {
+        switch (index.column()) {
+        case ColSize: case ColAvailability: case ColComplete: case ColLength: case ColBitrate:
+            return static_cast<int>(Qt::AlignRight | Qt::AlignVCenter);
+        default:
+            return static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
+        }
+    }
+
     if (role == ChildRole)
         return ref.child != nullptr;
     if (role == SpamRole)

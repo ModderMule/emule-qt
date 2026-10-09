@@ -259,11 +259,15 @@ private:
     void handleSetFileComment(const Ipc::IpcMessage& msg);
     void handleGetCollectionInfo(const Ipc::IpcMessage& msg);
     void handleSaveCollection(const Ipc::IpcMessage& msg);
+    void handleGetKnownFiles(const Ipc::IpcMessage& msg);
+    void handleRecoverArchivePreview(const Ipc::IpcMessage& msg);
 
     /// Reject @p msg when Kad cannot serve it, using the same wording as the Kad branch of
     /// handleStartSearch so every rejection reads alike in the GUI.
     /// @param requireConnected  true demands a live Kad connection, false only that Kad runs.
     /// @return true when the caller must return without doing any work.
+    /// For the details maps: "Search Kad" is offered only while Kad is connected.
+    [[nodiscard]] static bool kadIsConnected();
     bool rejectIfKadUnavailable(const Ipc::IpcMessage& msg, bool requireConnected);
 
     /// Move every category folder that lived inside @p oldIncomingDir along

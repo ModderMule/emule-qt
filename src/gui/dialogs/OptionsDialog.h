@@ -79,6 +79,14 @@ public:
         PageCount
     };
 
+    /// Tests: called with the scheduler's action menu instead of showing it.
+    std::function<void(QMenu*)> m_schedMenuHook;
+
+signals:
+    /// "Test" on the Notifications page: show a pop-up the way these settings
+    /// would, saved or not. @p soundFile is empty for "No sound".
+    void testNotificationRequested(const QString& soundFile);
+
 protected:
     /// Capture the active sidebar page on every close path (OK, Cancel, Esc,
     /// window close) so the next open restores it.
@@ -206,13 +214,13 @@ private:
     void populateScheduleDetails(int index);
     void applyScheduleDetails();
     void showScheduleActionsMenu(const QPoint& pos);
+    /// Ask for the value of a non-category action (MFC "Configure Action").
+    bool promptScheduleValue(int action, const QString& label, QString& value);
 
     /// Open the web port test for the ports currently entered in the Connection page.
     /// Asks the daemon for its public addresses first, so both address families get a verdict.
     void openPortTest();
 
-    /// Launch the port test page. Empty @p ipv4 / @p ipv6 hints are omitted from the URL.
-    void openPortTestUrl(int tcpPort, int udpPort, const QString& ipv4, const QString& ipv6);
     [[nodiscard]] QString bindSelection() const;
     void showBindSelection(const QString& selection);
     void requestNetworkInterfaces();
@@ -394,6 +402,8 @@ private:
     QCheckBox* m_ircUsePerformCheck = nullptr;
     QLineEdit* m_ircPerformEdit = nullptr;
     QTreeWidget* m_ircMiscTree = nullptr;
+    /// The line of the IRC option tree that stands for @p key (see kIrcTreeOptions).
+    [[nodiscard]] QTreeWidgetItem* ircTreeItem(const char* key) const;
 
     // Messages and Comments page controls
     QLineEdit* m_messageFilterEdit = nullptr;
@@ -605,6 +615,7 @@ private:
 
     // USS (Upload SpeedSense) controls
     QCheckBox*    m_dynUpEnabledCheck = nullptr;
+    QSpinBox*     m_dynUpMinUploadSpin = nullptr;
     QSpinBox*     m_dynUpPingToleranceSpin = nullptr;
     QSpinBox*     m_dynUpPingToleranceMsSpin = nullptr;
     QRadioButton* m_dynUpRadioPercent = nullptr;
@@ -650,7 +661,7 @@ private:
     QString m_smtpServer;
     int m_smtpPort = 25;
     int m_smtpAuth = 0;
-    bool m_smtpTls = false;
+    int m_smtpSecurity = 0;   ///< SmtpSecurity
     QString m_smtpUser;
     QString m_smtpPassword;
 };

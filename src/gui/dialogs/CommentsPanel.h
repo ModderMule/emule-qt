@@ -38,7 +38,7 @@ public:
 
     /// Show the "(Kad search in progress...)" state, as MFC does while a NOTES
     /// lookup for this file is in flight (CommentDialogLst.cpp:154-163).
-    void setKadSearchRunning(bool running);
+    void setKadSearchRunning(bool running, bool kadConnected = true);
 
 signals:
     /// The user pressed "Search Kad" for the file currently on display.

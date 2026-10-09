@@ -3,6 +3,7 @@
 /// @brief IRC protocol client implementation — replaces MFC CIrcMain + CIrcSocket.
 
 #include "chat/IrcClient.h"
+#include "chat/IrcRouting.h"
 #include "chat/IrcEmuleProto.h"
 #include "net/InterfacePin.h"
 #include "prefs/Preferences.h"
@@ -268,6 +269,7 @@ void IrcClient::processLine(const QString& line)
         QString reply = line;
         reply.replace(0, 4, QStringLiteral("PONG"));
         sendRaw(reply);
+        emit pingPong();
         return;
     }
 
@@ -413,6 +415,11 @@ void IrcClient::handlePrivMsg(const IrcMessage& msg)
             ctcpCmd = message.toUpper();
         }
 
+        if (ctcpCmd == u"SOUND") {
+            emit soundReceived(target, msg.nickname, ctcpParams);
+            return;
+        }
+
         // Auto-respond to VERSION
         if (ctcpCmd == u"VERSION") {
             sendRaw(QStringLiteral("NOTICE %1 :\001VERSION %2\001")
@@ -466,6 +473,7 @@ void IrcClient::handleNumeric(const IrcMessage& msg)
 
     // RPL_ISUPPORT (005) — server capabilities
     case 5:
+        m_modes.applyIsupport(payload);   // PREFIX and CHANMODES (MFC IrcMain.cpp:525-565)
         emit serverNumeric(code, payload);
         emit statusMessage(payload);
         return;
@@ -534,8 +542,8 @@ void IrcClient::handleNumeric(const IrcMessage& msg)
 
     // ERR_NICKNAMEINUSE (433)
     case 433:
+        emit serverNumeric(code, payload);   // the error line
         emit nickInUse(msg.params.value(1));
-        emit statusMessage(payload);
         return;
 
     // RPL_CHANNELMODEIS (324) — "<channel> <mode> <mode params>"
@@ -556,9 +564,11 @@ void IrcClient::handleNumeric(const IrcMessage& msg)
         break;
     }
 
-    // Generic: emit as server numeric + status
+    // Whois replies and errors are placed by the listener (IrcRouting); the rest is
+    // a Status line.
     emit serverNumeric(code, payload);
-    emit statusMessage(payload);
+    if (IrcRouting::numericRoute(code) == IrcRouting::NumericRoute::Status)
+        emit statusMessage(payload);
 }
 
 } // namespace eMule

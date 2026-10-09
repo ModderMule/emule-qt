@@ -35,6 +35,8 @@ struct ServerRow {
     bool isStatic = false;
     bool disabled = false;   // failed too often; kept, but not dialed automatically
     uint32_t softFiles = 0;
+    uint32_t hardFiles = 0;
+    QString version;
     uint32_t lowIdUsers = 0;
     bool obfuscation = false;
     bool hasMetaApi = false;   ///< eNode server announcing a Meta API (torrent/Usenet downloads)
@@ -74,6 +76,10 @@ public:
         ColObfuscation,
         ColCountry,          ///< MorphXT IP2Country
         ColIPv6,             ///< dual-stack server's IPv6 (hidden by default)
+        // MFC columns 11 and 12, hidden by default there too; appended so saved
+        // layouts keep their indexes (ServerListCtrl.cpp:83-84)
+        ColHardFiles,
+        ColVersion,
         ColCount
     };
 

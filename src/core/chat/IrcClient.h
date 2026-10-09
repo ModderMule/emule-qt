@@ -8,6 +8,7 @@
 /// connects to these signals to display messages, nick lists, etc.
 
 #include "chat/IrcMessage.h"
+#include "chat/IrcNickList.h"
 #include "utils/Types.h"
 
 #include <QObject>
@@ -73,6 +74,9 @@ public:
 
     [[nodiscard]] QString currentNick() const { return m_nick; }
     [[nodiscard]] QString serverAddress() const { return m_serverAddress; }
+    /// What RPL_ISUPPORT said about nick prefixes and channel modes; the usual
+    /// "@+" until it has.
+    [[nodiscard]] const IrcServerModes& serverModes() const { return m_modes; }
 
     // -- Perform string -------------------------------------------------------
 
@@ -112,6 +116,10 @@ signals:
     void statusMessage(const QString& message);
     void serverNumeric(int code, const QString& params);
     void nickInUse(const QString& nick);
+    /// The server pinged and was answered.
+    void pingPong();
+    /// CTCP SOUND: @p params is "<file> [text]".
+    void soundReceived(const QString& target, const QString& nick, const QString& params);
 
     // -- Channel list (RPL_LIST) ----------------------------------------------
     void channelListed(const QString& channel, int userCount,
@@ -155,6 +163,7 @@ private:
     QString m_version;
     bool m_connected = false;
     bool m_loggedIn = false;
+    IrcServerModes m_modes;
 };
 
 } // namespace eMule

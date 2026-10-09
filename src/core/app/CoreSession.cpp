@@ -876,6 +876,7 @@ void CoreSession::initClientInfra()
             logWarning(QStringLiteral("Failed to bind TCP listen socket on port %1")
                            .arg(thePrefs.port()));
             m_listenSocket.reset();
+            emit portBindFailed(thePrefs.port());
         }
     }
 
@@ -1047,6 +1048,7 @@ void CoreSession::initClientUDP()
         logError(QStringLiteral("Failed to bind client UDP socket on port %1")
                      .arg(udpPort));
         m_clientUDP.reset();
+        emit portBindFailed(udpPort);
         return;
     }   // else: kept closed until the bound interface is there
     theApp.clientUDP = m_clientUDP.get();

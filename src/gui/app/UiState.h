@@ -147,6 +147,11 @@ public:
         scheduleSave();
     }
 
+    /// MiniMule closes itself three seconds after the pointer left it. Off, as in MFC,
+    /// where it is the hidden "MiniMuleAutoClose" key (MiniMule.cpp:115). No option
+    /// page offers it; set it in uistate.yml.
+    [[nodiscard]] bool miniMuleAutoClose() const { return m_miniMuleAutoClose; }
+
     /// First start wizard was shown once. Missing key = false, so an upgraded
     /// install gets it once too. Tools > wizard still opens it any time.
     [[nodiscard]] bool firstStartWizardDone() const { return m_firstStartWizardDone; }
@@ -255,6 +260,7 @@ private:
     int  m_optionsHeight   = 0;
     int64_t m_lastVersionCheck = 0;
     bool m_associateNzbFiles = true;
+    bool m_miniMuleAutoClose = false;
     bool m_firstStartWizardDone = false;
     bool m_showCountryFlags = true;
     bool m_showDownloadToolbar = true;

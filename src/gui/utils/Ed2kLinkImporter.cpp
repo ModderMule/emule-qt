@@ -92,16 +92,11 @@ std::vector<ParsedLink> parseLines(const QString& text, QStringList& invalid,
 }
 
 /// Queue one download per link. Returns the number of requests sent.
-int queueDownloads(const std::vector<ParsedLink>& links, IpcClient* ipc)
+int queueDownloads(const std::vector<ParsedLink>& links, IpcClient* ipc, int category)
 {
-    for (const ParsedLink& link : links) {
-        IpcMessage msg(IpcMsgType::DownloadSearchFile);
-        msg.append(link.hashHex);
-        msg.append(link.name);
-        msg.append(static_cast<qint64>(link.size));
-        msg.append(link.rawLine);  // the daemon prefers the raw link (hashset, AICH, sources)
-        ipc->sendRequest(std::move(msg));
-    }
+    for (const ParsedLink& link : links)
+        ipc->sendRequest(Ed2kLinkImporter::downloadRequest(link.hashHex, link.name, link.size,
+                                                           link.rawLine, category));
     return static_cast<int>(links.size());
 }
 
@@ -310,10 +305,22 @@ QString Ed2kLinkImporter::linkFromFileOpenEvent(const QFileOpenEvent& event)
     return {};
 }
 
+Ipc::IpcMessage Ed2kLinkImporter::downloadRequest(const QString& hashHex, const QString& name,
+                                                  quint64 size, const QString& rawLink, int category)
+{
+    IpcMessage msg(IpcMsgType::DownloadSearchFile);
+    msg.append(hashHex);
+    msg.append(name);
+    msg.append(static_cast<qint64>(size));
+    msg.append(rawLink);   // the daemon prefers the raw link (hashset, AICH, sources)
+    msg.append(static_cast<qint64>(category));   // MFC CDirectDownloadDlg's category tabs
+    return msg;
+}
+
 void Ed2kLinkImporter::importLinks(const QString& text, IpcClient* ipc, QWidget* parent,
                                    Source source, Prompt prompt,
                                    std::function<void(const Result&)> done,
-                                   std::function<void()> beforePrompt)
+                                   std::function<void()> beforePrompt, int category)
 {
     Result result;
     std::vector<ED2KHttpCacheLink> configs;
@@ -360,7 +367,7 @@ void Ed2kLinkImporter::importLinks(const QString& text, IpcClient* ipc, QWidget*
 
     const QPointer<QWidget> safeParent(parent);
     ipc->sendRequest(std::move(msg),
-        [links = std::move(links), result, ipc, safeParent, source, prompt,
+        [links = std::move(links), result, ipc, safeParent, source, prompt, category,
          done = std::move(done), beforePrompt = std::move(beforePrompt)]
         (const IpcMessage& resp) mutable
     {
@@ -379,7 +386,7 @@ void Ed2kLinkImporter::importLinks(const QString& text, IpcClient* ipc, QWidget*
         const bool verdictOk = resp.fieldBool(0);
 
         QTimer::singleShot(0, qApp,
-            [links = std::move(links), result, ipc, safeParent, source, prompt, types, verdictOk,
+            [links = std::move(links), result, ipc, safeParent, source, prompt, types, verdictOk, category,
              done = std::move(done), beforePrompt = std::move(beforePrompt)]() mutable
     {
         if (!ipc->isConnected())
@@ -487,7 +494,7 @@ void Ed2kLinkImporter::importLinks(const QString& text, IpcClient* ipc, QWidget*
             return;
         }
 
-        result.added = queueDownloads(wanted, ipc);
+        result.added = queueDownloads(wanted, ipc, category);
         if (done)
             done(result);
         });

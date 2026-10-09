@@ -4,6 +4,7 @@
 
 #include "dialogs/CategoryDialog.h"
 #include "files/KnownFile.h" // kPrLow / kPrNormal / kPrHigh
+#include "prefs/CategoryView.h"
 #include "utils/DialogSizing.h"
 
 #include <QCheckBox>
@@ -17,6 +18,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QStyle>
@@ -71,8 +73,16 @@ CategoryDialog::CategoryDialog(const DownloadCategory& category,
     form->addRow(tr("Priority for this category"), m_prioCombo);
 
     m_colorButton = new QPushButton(this);
-    m_colorButton->setFixedSize(60, 24);
-    connect(m_colorButton, &QPushButton::clicked, this, &CategoryDialog::onColorClicked);
+    // MFC's colour button offers "Default" besides the picker (CatDialog.cpp:126-127,
+    // 205-209); without it a chosen colour could never be taken back.
+    auto* colorMenu = new QMenu(m_colorButton);
+    colorMenu->addAction(tr("Default"), this, [this] {
+        m_color = kCategoryColorAuto;
+        updateColorButton();
+    })->setObjectName(QStringLiteral("colorDefault"));
+    colorMenu->addAction(tr("More Colors..."), this, &CategoryDialog::onColorClicked);
+    m_colorButton->setMenu(colorMenu);
+    m_colorButton->setFixedSize(84, 24);
     updateColorButton();
     form->addRow(tr("Color"), m_colorButton);
 
@@ -83,10 +93,13 @@ CategoryDialog::CategoryDialog(const DownloadCategory& category,
     m_autocatRegexpCheck->setChecked(m_category.autocatIsRegexp);
     form->addRow(QString(), m_autocatRegexpCheck);
 
-    m_regexpEdit = new QLineEdit(m_category.regexp, this);
-    // MFC's filter mode 18: the tab shows the files whose whole name matches
-    m_regexpEdit->setToolTip(tr("Used when the tab's view filter is set to "
-                                "\"Regular Expression\"; it must match the whole file name."));
+    // The field is the tab's "Regular Expression" view filter (mode 18) and nothing
+    // else: shown only while that filter is the one in use, and setting it on OK
+    // (MFC CatDialog.cpp:95-96, 186-198).
+    m_regexpEdit = new QLineEdit(
+        m_category.filter == CategoryViewFilter::RegExp ? m_category.regexp : QString(), this);
+    m_regexpEdit->setToolTip(tr("Shows only the files whose whole name matches. Clearing it "
+                                "turns the filter off again."));
     form->addRow(tr("Regular expression for view filter:"), m_regexpEdit);
 
     mainLayout->addLayout(form);
@@ -186,7 +199,14 @@ void CategoryDialog::onAccept()
     m_category.color = m_color;
     m_category.autocat = autocat;
     m_category.autocatIsRegexp = m_autocatRegexpCheck->isChecked();
-    m_category.regexp = regexp;
+    // A valid expression switches the tab's view filter to it; an emptied one
+    // switches that filter off, and leaves any other filter alone.
+    if (!regexp.isEmpty()) {
+        m_category.regexp = regexp;
+        m_category.filter = CategoryViewFilter::RegExp;
+    } else if (m_category.filter == CategoryViewFilter::RegExp) {
+        m_category.filter = 0;
+    }
 
     accept();
 }

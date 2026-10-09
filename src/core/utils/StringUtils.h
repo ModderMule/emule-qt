@@ -76,6 +76,10 @@ template <std::integral T>
 /// "1 d 3 h"; "?" for a negative value. Unit words translate under context "Units".
 [[nodiscard]] QString formatSecondsHM(qint64 seconds);
 
+/// A duration as MFC CastSecondsToLngHM shows it: "12 Seconds", "3:05 Minutes",
+/// "2:10 Hours", "1 Days 2:10 Hours", "1 Days 5 Minutes"; "?" for a negative value.
+[[nodiscard]] QString formatSecondsLongHM(qint64 seconds);
+
 /// A provider allowance in decimal GB, "500.0 GB" — what the plan and the
 /// invoice say. Deliberately not formatByteSize(), which is 1024-based: a 500 GB
 /// plan would read 465.66 GB beside the spin box it was typed into.

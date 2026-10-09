@@ -189,6 +189,10 @@ signals:
     /// Disconnected (either explicit or unexpected).
     void disconnectedFromServer();
 
+    /// The live connection dropped on its own — not disconnect() (MFC CS_DISCONNECTED,
+    /// ServerConnect.cpp:351-352).
+    void connectionLost(const QString& serverName);
+
     /// Client ID was assigned or changed.
     void clientIDChanged(uint32 newID);
 

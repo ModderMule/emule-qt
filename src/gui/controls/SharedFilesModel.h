@@ -54,6 +54,7 @@ struct SharedFileRow {
     QString filePath;           // full path
     QString ed2kLink;
     bool    isPartFile = false;
+    int     category = 0;       ///< part files only
     int     uploadingClients = 0;
     int     queuedClients = 0;
     int     partCount = 0;
@@ -188,8 +189,22 @@ enum class SharedFilterType {
     Incoming,       ///< Only incoming directory
     Incomplete,     ///< Only PartFiles
     SharedDirs,     ///< Non-incoming completed files
-    SpecificDir     ///< Exact directory match
+    SpecificDir,    ///< Exact directory match
+    /// Part files of one category; the filter "path" is the category index
+    /// (MFC SDI_TEMP with m_nCatFilter, SharedDirsTreeCtrl.cpp:356-367).
+    IncompleteCategory
 };
+
+/// The sub-nodes MFC hangs under "Incoming Files" and "Incomplete Files" once there
+/// is more than one category (SharedDirsTreeCtrl.cpp:324-368).
+struct SharedCategoryNodes {
+    QStringList incomingDirs;                    ///< distinct, other than the main one
+    QList<std::pair<int, QString>> incomplete;   ///< category index and title
+};
+
+/// @param categories  (title, incoming dir) per category, index 0 first
+[[nodiscard]] SharedCategoryNodes sharedCategoryNodes(const QList<std::pair<QString, QString>>& categories,
+                                                      const QString& mainIncomingDir);
 
 class SharedFilesSortProxy : public QSortFilterProxyModel {
     Q_OBJECT

@@ -32,6 +32,36 @@ namespace eMule::SharedDirState {
     return parentKey.endsWith(u'/') || childKey.at(parentKey.size()) == u'/';
 }
 
+/// What the menu of a file-set node offers (MFC CSharedDirsTreeCtrl::OnContextMenu,
+/// SharedDirsTreeCtrl.cpp:456-521). The commands act on every file the list shows.
+struct FileSetMenuState {
+    bool openFolder = false;
+    bool remove = false;
+    bool priority = false;
+    bool details = false;
+    bool comment = false;
+    bool link = false;
+};
+
+/// @param fileCount    files the list shows for the node
+/// @param allComplete  none of them is a part file
+/// @param wideNode     "All Shared Files", "Incoming Files", "Incomplete Files" or
+///                     "Shared Directories": MFC offers neither Delete nor Comment
+///                     there, "to avoid that users get bad ideas"
+/// @param hasFolder    the node stands for one folder that can be opened
+[[nodiscard]] inline FileSetMenuState fileSetMenuState(int fileCount, bool allComplete, bool wideNode,
+                                                       bool hasFolder)
+{
+    FileSetMenuState s;
+    s.openFolder = hasFolder;
+    s.remove = fileCount > 0 && allComplete && !wideNode;
+    s.priority = fileCount > 0;
+    s.details = fileCount > 0;
+    s.comment = fileCount > 0 && !wideNode;
+    s.link = fileCount > 0;
+    return s;
+}
+
 /// Is @p path itself in @p dirs?
 [[nodiscard]] inline bool isSharedDir(const QStringList& dirs, const QString& path)
 {

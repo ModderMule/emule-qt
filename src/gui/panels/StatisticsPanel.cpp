@@ -173,8 +173,18 @@ void StatisticsPanel::applySettings()
     for (auto* graph : {m_graphDown, m_graphUp, m_graphConn}) {
         graph->setBackgroundColor(theUiState.statsColor(0));
         graph->setGridColor(theUiState.statsColor(1));
-        graph->setFillAll(thePrefs.fillGraphs());
     }
+    // MFC fills one trend per scope (SetBarsPlot, StatisticsDlg.cpp:527-544): the
+    // current rates and the connection count. Translucent here, solid bars there.
+    const bool fill = thePrefs.fillGraphs();
+    m_graphDown->setSeriesFilled(2, fill);
+    m_graphUp->setSeriesFilled(2, fill);
+    m_graphConn->setSeriesFilled(0, fill);
+
+    // MFC IDS_AVG + " (%u mins)" (StatisticsDlg.cpp:549-556); the core averages over it.
+    const QString average = tr("Average (%1 mins)").arg(thePrefs.statsAverageMinutes());
+    m_graphDown->setSeriesInfo(1, average, theUiState.statsColor(3));
+    m_graphUp->setSeriesInfo(1, average, theUiState.statsColor(6));
 
     m_graphDown->setSeriesColor(0, theUiState.statsColor(4));    // Session average
     m_graphDown->setSeriesColor(1, theUiState.statsColor(3));    // Average
@@ -194,7 +204,17 @@ void StatisticsPanel::applySettings()
 
     // The connections line is drawn 1:n so it fits the scale of the others.
     m_graphConn->setSeriesInfo(0, tr("Active connections (1:%1)").arg(connectionsRatio()),
-                               theUiState.statsColor(8));
+                               theUiState.statsColor(8), fill);
+    // Points already drawn carry the old divisor (MFC SetTrendRatio rescales them):
+    // start over and let the next poll replay the daemon's history.
+    if (m_shownConnRatio != connectionsRatio()) {
+        if (m_shownConnRatio != 0) {
+            for (auto* graph : {m_graphDown, m_graphUp, m_graphConn})
+                graph->reset();
+            m_statsSeq = 0;
+        }
+        m_shownConnRatio = connectionsRatio();
+    }
 
     auto connMax = static_cast<double>(thePrefs.statsConnectionsMax());
     if (connMax > 0)
@@ -269,19 +289,20 @@ void StatisticsPanel::setupUi()
     // Options re-runs, so the two can never disagree.
     m_graphDown = new StatsGraph(4, this);
     m_graphDown->setSeriesInfo(0, tr("Session average"), theUiState.statsColor(4));
-    m_graphDown->setSeriesInfo(1, tr("Average (3 min)"), theUiState.statsColor(3));
+    const QString average = tr("Average (%1 mins)").arg(thePrefs.statsAverageMinutes());
+    m_graphDown->setSeriesInfo(1, average, theUiState.statsColor(3));
     m_graphDown->setSeriesInfo(2, tr("Current"), theUiState.statsColor(2));
     m_graphDown->setSeriesInfo(3, tr("Usenet"), theUiState.statsColor(15));
-    m_graphDown->setYUnits(tr("KB/s"));
+    m_graphDown->setYUnits(tr("Download Speed"));
     graphSplitter->addWidget(m_graphDown);
 
     m_graphUp = new StatsGraph(5, this);
     m_graphUp->setSeriesInfo(0, tr("Session average"), theUiState.statsColor(7));
-    m_graphUp->setSeriesInfo(1, tr("Average (3 min)"), theUiState.statsColor(6));
+    m_graphUp->setSeriesInfo(1, average, theUiState.statsColor(6));
     m_graphUp->setSeriesInfo(2, tr("Current"), theUiState.statsColor(5));
     m_graphUp->setSeriesInfo(3, tr("Current (excl. overhead)"), theUiState.statsColor(14));
-    m_graphUp->setSeriesInfo(4, tr("Friend slots"), theUiState.statsColor(13));
-    m_graphUp->setYUnits(tr("KB/s"));
+    m_graphUp->setSeriesInfo(4, tr("Friend upload"), theUiState.statsColor(13));
+    m_graphUp->setYUnits(tr("Upload Speed"));
     graphSplitter->addWidget(m_graphUp);
 
     m_graphConn = new StatsGraph(4, this);
@@ -290,6 +311,10 @@ void StatisticsPanel::setupUi()
     m_graphConn->setSeriesInfo(1, tr("Active uploads"), theUiState.statsColor(10));
     m_graphConn->setSeriesInfo(2, tr("Total uploads"), theUiState.statsColor(9));
     m_graphConn->setSeriesInfo(3, tr("Active downloads"), theUiState.statsColor(12));
+    m_graphConn->setYUnits(tr("Connections"));
+    // MFC opens the Statistics options from a scope (StatisticsDlg.cpp:2849-2862).
+    for (auto* graph : {m_graphDown, m_graphUp, m_graphConn})
+        connect(graph, &StatsGraph::doubleClicked, this, &StatisticsPanel::graphOptionsRequested);
     graphSplitter->addWidget(m_graphConn);
 
     m_hSplitter->addWidget(graphSplitter);
@@ -365,12 +390,15 @@ void StatisticsPanel::buildTree()
 
     m_itemUpSessionFriendData = new QTreeWidgetItem(upSession,
                                                     {tr("Uploaded Data to Friends: 0 Bytes")});
-    m_itemUpActiveUploads = new QTreeWidgetItem(upSession, {tr("Active Uploads: 0")});
-    m_itemUpWaitingUploads = new QTreeWidgetItem(upSession, {tr("Waiting Uploads: 0")});
+    // MFC up_S[2..4] (StatisticsDlg.cpp:1183-1189)
+    m_itemUpActiveUploads = new QTreeWidgetItem(upSession);
+    m_itemUpTotalUploads = new QTreeWidgetItem(upSession);
+    m_itemUpWaitingUploads = new QTreeWidgetItem(upSession);
 
     auto* upSessions = new QTreeWidgetItem(upSession, {tr("Upload Sessions")});
-    m_itemUpSuccessful = new QTreeWidgetItem(upSessions, {tr("Successful: 0")});
-    m_itemUpFailed = new QTreeWidgetItem(upSessions, {tr("Failed: 0")});
+    m_itemUpSessions = upSessions;
+    m_itemUpSuccessful = new QTreeWidgetItem(upSessions);
+    m_itemUpFailed = new QTreeWidgetItem(upSessions);
     m_itemUpAvgPerSession = new QTreeWidgetItem(upSessions,
                                                 {tr("Average Upload Per Session: 0 Bytes")});
     m_itemUpAvgTime = new QTreeWidgetItem(upSessions,
@@ -396,8 +424,9 @@ void StatisticsPanel::buildTree()
     m_itemUpCumSource[1] = new QTreeWidgetItem(upCumSrc, {tr("Part File: 0 Bytes")});
 
     auto* upCumSessions = new QTreeWidgetItem(upCum, {tr("Upload Sessions")});
-    m_itemUpCumSuccessful = new QTreeWidgetItem(upCumSessions, {tr("Successful: 0")});
-    m_itemUpCumFailed = new QTreeWidgetItem(upCumSessions, {tr("Failed: 0")});
+    m_itemUpCumSessions = upCumSessions;
+    m_itemUpCumSuccessful = new QTreeWidgetItem(upCumSessions);
+    m_itemUpCumFailed = new QTreeWidgetItem(upCumSessions);
     m_itemUpCumAvgPerSession = new QTreeWidgetItem(upCumSessions,
                                                    {tr("Average Upload Per Session: 0 Bytes")});
     m_itemUpCumAvgTime = new QTreeWidgetItem(upCumSessions,
@@ -423,7 +452,8 @@ void StatisticsPanel::buildTree()
     m_itemDownSesPort[0] = new QTreeWidgetItem(downSesPorts, {tr("Default Port 4662: 0 Bytes")});
     m_itemDownSesPort[1] = new QTreeWidgetItem(downSesPorts, {tr("Other Ports: 0 Bytes")});
 
-    m_itemDownActiveDownloads = new QTreeWidgetItem(downSession, {tr("Active Downloads: 0")});
+    m_itemDownCompletedSes = new QTreeWidgetItem(downSession, {tr("Completed Downloads: 0")});
+    m_itemDownActiveDownloads = new QTreeWidgetItem(downSession);
     m_itemDownFoundSources = new QTreeWidgetItem(downSession, {tr("Found Sources: 0")});
     // MFC hangs the per-source breakdown off "Found Sources" (down_sources[] under
     // down_S[3], StatisticsDlg.cpp:2643): by state, by origin, by network, re-asks, dead.
@@ -432,11 +462,11 @@ void StatisticsPanel::buildTree()
     m_itemDownUdpReasks = new QTreeWidgetItem(m_itemDownFoundSources,
                                               {tr("UDP File Re-asks: 0, Failed: 0 (0.0%)")});
     m_itemDownDeadSources = new QTreeWidgetItem(m_itemDownFoundSources);
-    m_itemDownCompletedSes = new QTreeWidgetItem(downSession, {tr("Completed Downloads: 0")});
 
     auto* downSesSessions = new QTreeWidgetItem(downSession, {tr("Download Sessions")});
-    m_itemDownSesSuccessful = new QTreeWidgetItem(downSesSessions, {tr("Successful: 0")});
-    m_itemDownSesFailed = new QTreeWidgetItem(downSesSessions, {tr("Failed: 0")});
+    m_itemDownSessions = downSesSessions;
+    m_itemDownSesSuccessful = new QTreeWidgetItem(downSesSessions);
+    m_itemDownSesFailed = new QTreeWidgetItem(downSesSessions);
     m_itemDownSesAvgPerSession = new QTreeWidgetItem(downSesSessions,
                                                      {tr("Average Download Per Session: 0 Bytes")});
     m_itemDownSesAvgTime = new QTreeWidgetItem(downSesSessions,
@@ -468,8 +498,9 @@ void StatisticsPanel::buildTree()
     m_itemDownCumCompleted = new QTreeWidgetItem(downCum, {tr("Completed Downloads: 0")});
 
     auto* downCumSessions = new QTreeWidgetItem(downCum, {tr("Download Sessions")});
-    m_itemDownCumSuccessful = new QTreeWidgetItem(downCumSessions, {tr("Successful: 0")});
-    m_itemDownCumFailed = new QTreeWidgetItem(downCumSessions, {tr("Failed: 0")});
+    m_itemDownCumSessions = downCumSessions;
+    m_itemDownCumSuccessful = new QTreeWidgetItem(downCumSessions);
+    m_itemDownCumFailed = new QTreeWidgetItem(downCumSessions);
     m_itemDownCumAvgPerSession = new QTreeWidgetItem(downCumSessions,
                                                      {tr("Average Download Per Session: 0 Bytes")});
     m_itemDownCumAvgTime = new QTreeWidgetItem(downCumSessions,
@@ -497,21 +528,23 @@ void StatisticsPanel::buildTree()
 
     auto* connSesGen = new QTreeWidgetItem(connSession, {tr("General")});
     connSesGen->setIcon(0, QIcon(QStringLiteral(":/icons/TransferUpDown.ico")));
-    m_itemConnActive = new QTreeWidgetItem(connSesGen, {tr("Active Connections: 0")});
-    m_itemConnPeak = new QTreeWidgetItem(connSesGen, {tr("Peak Connections: 0")});
-    m_itemConnMaxReached = new QTreeWidgetItem(connSesGen, {tr("Max Connections Limit Reached: 0")});
-    m_itemConnReconnects = new QTreeWidgetItem(connSesGen, {tr("Reconnects: 0")});
-    m_itemConnAverage = new QTreeWidgetItem(connSesGen, {tr("Average Connections: 0.0")});
+    m_itemConnReconnects = new QTreeWidgetItem(connSesGen, {tr("Reconnects: %1").arg(0)});
+    m_itemConnActive = new QTreeWidgetItem(connSesGen);
+    m_itemConnAverage = new QTreeWidgetItem(connSesGen);
+    m_itemConnPeak = new QTreeWidgetItem(connSesGen);
+    m_itemConnMaxReached = new QTreeWidgetItem(connSesGen);
 
     auto* connSesUp = new QTreeWidgetItem(connSession, {tr("Uploads")});
     connSesUp->setIcon(0, QIcon(QStringLiteral(":/icons/Upload.ico")));
     m_itemConnSesUpSpeed = new QTreeWidgetItem(connSesUp, {tr("Upload Speed: 0 KB/s")});
+    m_itemConnSesAvgUp = new QTreeWidgetItem(connSesUp);
     m_itemConnSesMaxUp = new QTreeWidgetItem(connSesUp, {tr("Max Upload Rate: 0 KB/s")});
     m_itemConnSesMaxAvgUp = new QTreeWidgetItem(connSesUp, {tr("Max Average Upload Rate: 0 KB/s")});
 
     auto* connSesDown = new QTreeWidgetItem(connSession, {tr("Downloads")});
     connSesDown->setIcon(0, QIcon(QStringLiteral(":/icons/Download.ico")));
     m_itemConnSesDownSpeed = new QTreeWidgetItem(connSesDown, {tr("Download Speed: 0 KB/s")});
+    m_itemConnSesAvgDown = new QTreeWidgetItem(connSesDown);
     m_itemConnSesMaxDown = new QTreeWidgetItem(connSesDown, {tr("Max Download Rate: 0 KB/s")});
     m_itemConnSesMaxAvgDown = new QTreeWidgetItem(connSesDown, {tr("Max Average Download Rate: 0 KB/s")});
 
@@ -521,9 +554,10 @@ void StatisticsPanel::buildTree()
 
     auto* connCumGen = new QTreeWidgetItem(connCum, {tr("General")});
     connCumGen->setIcon(0, QIcon(QStringLiteral(":/icons/TransferUpDown.ico")));
-    m_itemConnCumReconnects = new QTreeWidgetItem(connCumGen, {tr("Server Reconnects: 0")});
-    m_itemConnCumPeak = new QTreeWidgetItem(connCumGen, {tr("Peak Connections: 0")});
-    m_itemConnCumMaxReached = new QTreeWidgetItem(connCumGen, {tr("Connection Limit Reached: 0")});
+    m_itemConnCumReconnects = new QTreeWidgetItem(connCumGen, {tr("Reconnects: %1").arg(0)});
+    m_itemConnCumAverage = new QTreeWidgetItem(connCumGen);
+    m_itemConnCumPeak = new QTreeWidgetItem(connCumGen);
+    m_itemConnCumMaxReached = new QTreeWidgetItem(connCumGen);
 
     auto* connCumUp = new QTreeWidgetItem(connCum, {tr("Uploads")});
     connCumUp->setIcon(0, QIcon(QStringLiteral(":/icons/Upload.ico")));
@@ -571,9 +605,17 @@ void StatisticsPanel::buildTree()
     clients->setIcon(0, QIcon(QStringLiteral(":/icons/User.ico")));
     m_itemKnownClients = new QTreeWidgetItem(clients, {tr("Known Clients: 0")});
     m_itemClientSoftware = new QTreeWidgetItem(clients, {tr("Client Software")});
-    // MFC's cligen[4] slot — after the Software/Network/Port/Firewalled groups and
-    // before Banned/Filtered (StatisticsDlg.cpp:2748).
+    // MFC order (StatisticsDlg.cpp:2732-2751): Software, Network, Port, [Firewalled —
+    // in the Kademlia branch here], Low ID, Secure Ident, Problematic, Banned, Filtered.
+    auto* cliNetwork = new QTreeWidgetItem(clients, {tr("Network")});
+    for (auto*& item : m_itemCliNetwork)
+        item = new QTreeWidgetItem(cliNetwork);
+    auto* cliPort = new QTreeWidgetItem(clients, {tr("Port")});
+    for (auto*& item : m_itemCliPort)
+        item = new QTreeWidgetItem(cliPort);
     m_itemLowIDClients = new QTreeWidgetItem(clients, {tr("Low ID: 0 (0.0%)")});
+    m_itemSecureIdent = new QTreeWidgetItem(clients);
+    m_itemProblematic = new QTreeWidgetItem(clients);
     m_itemBannedClients = new QTreeWidgetItem(clients, {tr("Banned Clients: 0")});
     m_itemFilteredClients = new QTreeWidgetItem(clients, {tr("Filtered Clients: 0")});
     {
@@ -602,11 +644,14 @@ void StatisticsPanel::buildTree()
     auto* servers = new QTreeWidgetItem(m_tree, {tr("Servers")});
     servers->setIcon(0, QIcon(QStringLiteral(":/icons/Server.ico")));
     m_itemSrvWorking = new QTreeWidgetItem(servers, {tr("Working Servers: 0")});
+    m_itemSrvWorkUsers = new QTreeWidgetItem(m_itemSrvWorking);
+    m_itemSrvWorkFiles = new QTreeWidgetItem(m_itemSrvWorking);
+    m_itemSrvOccupation = new QTreeWidgetItem(m_itemSrvWorking);
     m_itemSrvFailed = new QTreeWidgetItem(servers, {tr("Failed Servers: 0")});
+    m_itemSrvDeleted = new QTreeWidgetItem(servers);
     m_itemSrvTotal = new QTreeWidgetItem(servers, {tr("Total: 0")});
     m_itemSrvUsers = new QTreeWidgetItem(servers, {tr("Total Users: 0")});
     m_itemSrvFiles = new QTreeWidgetItem(servers, {tr("Total Files: 0")});
-    m_itemSrvLowID = new QTreeWidgetItem(servers, {tr("Low ID Users: 0")});
 
     auto* srvRecords = new QTreeWidgetItem(servers, {tr("Records")});
     srvRecords->setIcon(0, QIcon(QStringLiteral(":/icons/Records.ico")));
@@ -617,26 +662,27 @@ void StatisticsPanel::buildTree()
     // ===== Shared Files =====
     auto* shared = new QTreeWidgetItem(m_tree, {tr("Shared Files")});
     shared->setIcon(0, QIcon(QStringLiteral(":/icons/SharedFiles.ico")));
-    m_itemSharedCount = new QTreeWidgetItem(shared, {tr("Number of Shared Files: 0")});
-    m_itemSharedSize = new QTreeWidgetItem(shared, {tr("Total Size: 0 Bytes")});
-    m_itemSharedAvgSize = new QTreeWidgetItem(shared, {tr("Average File Size: 0 Bytes")});
-    m_itemSharedLargest = new QTreeWidgetItem(shared, {tr("Largest Shared File: 0 Bytes")});
+    m_itemSharedCount = new QTreeWidgetItem(shared, {tr("Number of Shared Files: %1").arg(0)});
+    m_itemSharedAvgSize = new QTreeWidgetItem(shared);
+    m_itemSharedLargest = new QTreeWidgetItem(shared);
+    m_itemSharedSize = new QTreeWidgetItem(shared);
 
     auto* sharedRecords = new QTreeWidgetItem(shared, {tr("Records")});
     sharedRecords->setIcon(0, QIcon(QStringLiteral(":/icons/Records.ico")));
-    m_itemSharedRecCount = new QTreeWidgetItem(sharedRecords, {tr("Most Files Shared: 0")});
-    m_itemSharedRecSize = new QTreeWidgetItem(sharedRecords, {tr("Largest Share Size: 0 Bytes")});
-    m_itemSharedRecAvg = new QTreeWidgetItem(sharedRecords, {tr("Largest Average File Size: 0 Bytes")});
-    m_itemSharedRecLargest = new QTreeWidgetItem(sharedRecords, {tr("Largest File Size: 0 Bytes")});
+    m_itemSharedRecCount = new QTreeWidgetItem(sharedRecords);
+    m_itemSharedRecAvg = new QTreeWidgetItem(sharedRecords);
+    m_itemSharedRecLargest = new QTreeWidgetItem(sharedRecords);
+    m_itemSharedRecSize = new QTreeWidgetItem(sharedRecords);
 
-    // ===== Total Downloads =====
-    auto* totalDown = new QTreeWidgetItem(m_tree, {tr("Total Downloads")});
+    // ===== Disk Space ===== (MFC IDS_DWTOT, StatisticsDlg.cpp:2412-2437)
+    auto* totalDown = new QTreeWidgetItem(m_tree, {tr("Disk Space")});
     totalDown->setIcon(0, QIcon(QStringLiteral(":/icons/HardDisk.ico")));   // as MFC
-    m_itemTotalDownCount = new QTreeWidgetItem(totalDown, {tr("Number of Downloads: 0")});
-    m_itemTotalDownSize = new QTreeWidgetItem(totalDown, {tr("Total Size of Downloads: 0 Bytes")});
-    m_itemTotalDownDone = new QTreeWidgetItem(totalDown, {tr("Total Size Downloaded: 0 Bytes")});
-    m_itemTotalDownLeft = new QTreeWidgetItem(totalDown, {tr("Total Size Left to Download: 0 Bytes")});
-    m_itemTotalDownFreeSpace = new QTreeWidgetItem(totalDown, {tr("Free Space on Drive: 0 Bytes")});
+    m_itemTotalDownCount = new QTreeWidgetItem(totalDown);
+    m_itemTotalDownSize = new QTreeWidgetItem(totalDown);
+    m_itemTotalDownDone = new QTreeWidgetItem(totalDown);
+    m_itemTotalDownLeft = new QTreeWidgetItem(totalDown);
+    m_itemTotalDownFreeSpace = new QTreeWidgetItem(totalDown);
+    m_itemTotalDownNeeded = new QTreeWidgetItem(totalDown);
 
     // ===== Kademlia ===== (not in MFC, which shows Kad only as overhead lines)
     buildKademliaBranch(detailIcon, cumulativeIcon);
@@ -645,6 +691,9 @@ void StatisticsPanel::buildTree()
     buildUsenetBranch(detailIcon, cumulativeIcon);
 
     // Restore expansion state from persistent settings (defaults: Transfer, Connection, Time expanded)
+    // Rows created empty get their wording from the one place that formats them.
+    updateTree({});
+
     theUiState.bindStatsTree(m_tree);
 }
 
@@ -967,20 +1016,38 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
 
     m_itemUpSessionFriendData->setText(0,
         tr("Uploaded Data to Friends: %1").arg(formatByteSize(sentFriend)));
-    m_itemUpActiveUploads->setText(0,
-        tr("Active Uploads: %1").arg(cborInt(stats, QLatin1StringView("upWaiting"))));
+    // upQueueLength is the slot count, upWaiting the waiting list (UploadQueue.h).
+    const qint64 upSlots = cborInt(stats, QLatin1StringView("upQueueLength"));
+    m_itemUpActiveUploads->setText(0, tr("Active Uploads/Needed to fill Bandwidth: %1")
+        .arg(cborInt(stats, QLatin1StringView("upActive"))));
+    m_itemUpTotalUploads->setText(0, tr("Total Uploads: %1").arg(upSlots));
     m_itemUpWaitingUploads->setText(0,
-        tr("Waiting Uploads: %1").arg(cborInt(stats, QLatin1StringView("upQueueLength"))));
+        tr("Waiting Uploads: %1").arg(cborInt(stats, QLatin1StringView("upWaiting"))));
 
-    const qint64 upSucc = cborInt(stats, QLatin1StringView("upSuccessful"));
+    // MFC StatisticsDlg.cpp:1192-1215, 840-862: the parent carries the total, both
+    // rows a share, and a session still running counts as a good one.
+    const auto sessionRows = [](QTreeWidgetItem* parent, QTreeWidgetItem* okItem,
+                                QTreeWidgetItem* failItem, const QString& title,
+                                const QString& okText, const QString& failText,
+                                qint64 good, qint64 bad, int decimals) {
+        const qint64 total = good + bad;
+        const double okPct = good > 0 ? 100.0 * static_cast<double>(good) / static_cast<double>(total) : 0.0;
+        const double failPct = bad > 0 ? 100.0 - okPct : 0.0;
+        parent->setText(0, QStringLiteral("%1: %2").arg(title).arg(total));
+        okItem->setText(0, QStringLiteral("%1: %2 (%3%)").arg(okText).arg(good).arg(okPct, 0, 'f', decimals));
+        failItem->setText(0, QStringLiteral("%1: %2 (%3%)").arg(failText).arg(bad).arg(failPct, 0, 'f', decimals));
+    };
+    const QString upOkText = tr("Total successful upload sessions");
+    const QString upFailText = tr("Total failed upload sessions");
+    const QString downOkText = tr("Successful Download Sessions");
+    const QString downFailText = tr("Failed Download Sessions");
+
+    const qint64 upSucc = cborInt(stats, QLatin1StringView("upSuccessful")) + upSlots;
     const qint64 upFail = cborInt(stats, QLatin1StringView("upFailed"));
-    const qint64 upTotal = upSucc + upFail;
-    m_itemUpSuccessful->setText(0, tr("Successful: %1%2").arg(upSucc)
-        .arg(upTotal > 0 ? QStringLiteral(" (%1%)").arg(100 * upSucc / upTotal) : QString()));
-    m_itemUpFailed->setText(0, tr("Failed: %1").arg(upFail));
-    if (upSucc > 0)
-        m_itemUpAvgPerSession->setText(0,
-            tr("Average Upload Per Session: %1").arg(formatByteSize(sent / upSucc)));
+    sessionRows(m_itemUpSessions, m_itemUpSuccessful, m_itemUpFailed, tr("Upload Sessions"),
+                upOkText, upFailText, upSucc, upFail, 2);
+    m_itemUpAvgPerSession->setText(0, tr("Average Upload Per Session: %1")
+        .arg(upSucc > 0 ? formatByteSize(sent / upSucc) : tr("Waiting...")));
     m_itemUpAvgTime->setText(0,
         tr("Average Upload Time: %1").arg(formatDuration(cborInt(stats, QLatin1StringView("upAvgTime")))));
 
@@ -1020,15 +1087,12 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
         .arg(formatByteSize(cborInt(stats, QLatin1StringView("cumUpFromPartfile"))),
              formatPercent(cborInt(stats, QLatin1StringView("cumUpFromPartfile")), cumTotalUp)));
 
-    const qint64 cumUpSucc = cborInt(stats, QLatin1StringView("cumUpSuccessful"));
+    const qint64 cumUpSucc = cborInt(stats, QLatin1StringView("cumUpSuccessful")) + upSlots;
     const qint64 cumUpFail = cborInt(stats, QLatin1StringView("cumUpFailed"));
-    const qint64 cumUpSesTotal = cumUpSucc + cumUpFail;
-    m_itemUpCumSuccessful->setText(0, tr("Successful: %1%2").arg(cumUpSucc)
-        .arg(cumUpSesTotal > 0 ? QStringLiteral(" (%1%)").arg(100 * cumUpSucc / cumUpSesTotal) : QString()));
-    m_itemUpCumFailed->setText(0, tr("Failed: %1").arg(cumUpFail));
-    if (cumUpSucc > 0)
-        m_itemUpCumAvgPerSession->setText(0,
-            tr("Average Upload Per Session: %1").arg(formatByteSize(cumTotalUp / cumUpSucc)));
+    sessionRows(m_itemUpCumSessions, m_itemUpCumSuccessful, m_itemUpCumFailed, tr("Upload Sessions"),
+                upOkText, upFailText, cumUpSucc, cumUpFail, 2);
+    m_itemUpCumAvgPerSession->setText(0, tr("Average Upload Per Session: %1")
+        .arg(cumUpSucc > 0 ? formatByteSize(cumTotalUp / cumUpSucc) : tr("Waiting...")));
     m_itemUpCumAvgTime->setText(0,
         tr("Average Upload Time: %1").arg(formatDuration(cborInt(stats, QLatin1StringView("cumUpAvgTime")))));
 
@@ -1074,8 +1138,9 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
         .arg(formatByteSize(cborInt(stats, QLatin1StringView("sesDownPortOther"))),
              formatPercent(cborInt(stats, QLatin1StringView("sesDownPortOther")), recv)));
 
-    m_itemDownActiveDownloads->setText(0,
-        tr("Active Downloads: %1").arg(cborInt(stats, QLatin1StringView("downFileCount"))));
+    // Transferring sources, not files (MFC myStats.a[1], StatisticsDlg.cpp:761).
+    m_itemDownActiveDownloads->setText(0, tr("Active Downloads (chunks): %1")
+        .arg(cborInt(stats, QLatin1StringView("downTransferring"))));
     m_itemDownFoundSources->setText(0,
         tr("Found Sources: %1").arg(cborInt(stats, QLatin1StringView("downFoundSources"))));
     {
@@ -1100,14 +1165,16 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
         const qint64 deadGlobal = cborInt(stats, QLatin1StringView("downDeadSourcesGlobal"));
         const qint64 deadFiles = cborInt(stats, QLatin1StringView("downDeadSourcesPerFile"));
         m_itemDownDeadSources->setText(0, tr("Dead Sources: %1 (%2 + %3)")
-            .arg(deadGlobal + deadFiles).arg(deadGlobal).arg(deadFiles));
+            .arg(formatShortNumber(deadGlobal + deadFiles), formatShortNumber(deadGlobal),
+                 formatShortNumber(deadFiles)));
     }
     {
         const qint64 reasks = cborInt(stats, QLatin1StringView("downUdpReasks"));
         const qint64 failed = cborInt(stats, QLatin1StringView("downUdpReasksFailed"));
         m_itemDownUdpReasks->setText(0,
             tr("UDP File Re-asks: %1, Failed: %2 %3")
-                .arg(reasks).arg(failed).arg(formatPercent(failed, reasks)));
+                .arg(formatShortNumber(reasks), formatShortNumber(failed),
+                     formatPercent(failed, reasks)));
     }
     m_itemDownCompletedSes->setText(0,
         tr("Completed Downloads: %1").arg(cborInt(stats, QLatin1StringView("completedDownloads"))));
@@ -1118,10 +1185,8 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     {
         const qint64 good = cborInt(stats, QLatin1StringView("downSuccessful")) + downRunning;
         const qint64 bad = cborInt(stats, QLatin1StringView("downFailed"));
-        const qint64 total = good + bad;
-        m_itemDownSesSuccessful->setText(0, tr("Successful: %1%2").arg(good)
-            .arg(total > 0 ? QStringLiteral(" (%1%)").arg(100 * good / total) : QString()));
-        m_itemDownSesFailed->setText(0, tr("Failed: %1").arg(bad));
+        sessionRows(m_itemDownSessions, m_itemDownSesSuccessful, m_itemDownSesFailed,
+                    tr("Download Sessions"), downOkText, downFailText, good, bad, 1);
         m_itemDownSesAvgPerSession->setText(0,
             tr("Average Download Per Session: %1").arg(formatByteSize(good > 0 ? recv / good : 0)));
         m_itemDownSesAvgTime->setText(0,
@@ -1130,10 +1195,8 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     {
         const qint64 good = cborInt(stats, QLatin1StringView("cumDownSuccessful")) + downRunning;
         const qint64 bad = cborInt(stats, QLatin1StringView("cumDownFailed"));
-        const qint64 total = good + bad;
-        m_itemDownCumSuccessful->setText(0, tr("Successful: %1%2").arg(good)
-            .arg(total > 0 ? QStringLiteral(" (%1%)").arg(100 * good / total) : QString()));
-        m_itemDownCumFailed->setText(0, tr("Failed: %1").arg(bad));
+        sessionRows(m_itemDownCumSessions, m_itemDownCumSuccessful, m_itemDownCumFailed,
+                    tr("Download Sessions"), downOkText, downFailText, good, bad, 1);
         m_itemDownCumAvgPerSession->setText(0,
             tr("Average Download Per Session: %1").arg(formatByteSize(good > 0 ? cumTotalDown / good : 0)));
         m_itemDownCumAvgTime->setText(0,
@@ -1193,16 +1256,35 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     setOH(m_itemDownCumOverheadKad, tr("Kad Overhead (Packets)"), "cumDownOhKad", "cumDownOhKadPkt");
 
     // === Connection — Session ===
-    m_itemConnActive->setText(0,
-        tr("Active Connections: %1").arg(cborInt(stats, QLatin1StringView("connActive"))));
-    m_itemConnPeak->setText(0,
-        tr("Peak Connections: %1").arg(cborInt(stats, QLatin1StringView("connPeak"))));
-    m_itemConnMaxReached->setText(0,
-        tr("Max Connections Limit Reached: %1").arg(cborInt(stats, QLatin1StringView("connMaxReached"))));
-    m_itemConnReconnects->setText(0,
-        tr("Reconnects: %1").arg(cborInt(stats, QLatin1StringView("reconnects"))));
-    m_itemConnAverage->setText(0,
-        tr("Average Connections: %1").arg(QString::number(cborDouble(stats, QLatin1StringView("connAverage")), 'f', 1)));
+    // MFC StatisticsDlg.cpp:1413-1439. "reconnects" already leaves out the first login.
+    {
+        const qint64 active = cborInt(stats, QLatin1StringView("connActive"));
+        const qint64 half = cborInt(stats, QLatin1StringView("connHalfOpen"));
+        const qint64 complete = cborInt(stats, QLatin1StringView("connComplete"));
+        m_itemConnReconnects->setText(0,
+            tr("Reconnects: %1").arg(cborInt(stats, QLatin1StringView("reconnects"))));
+        m_itemConnActive->setText(0,
+            tr("Active Connections (estimate): %1 (Half:%2 | Compl:%3 | Other:%4)")
+                .arg(active).arg(half).arg(complete).arg(active - half - complete));
+        m_itemConnAverage->setText(0, tr("Average Connections (estimate): %1")
+            .arg(static_cast<qint64>(cborDouble(stats, QLatin1StringView("connAverage")))));
+        m_itemConnPeak->setText(0, tr("Peak Connections (estimate): %1")
+            .arg(cborInt(stats, QLatin1StringView("connPeak"))));
+
+        // Stamped when the count moves, as MFC does: the tree shows when it last happened.
+        const qint64 reached = cborInt(stats, QLatin1StringView("connMaxReached"));
+        if (reached != m_lastMaxConnReached) {
+            m_itemConnMaxReached->setText(0, tr("Max Connection Limit Reached: %1 : %2").arg(reached)
+                .arg(QLocale().toString(QDateTime::currentDateTime(), QLocale::ShortFormat)));
+            m_lastMaxConnReached = reached;
+        } else if (reached == 0) {
+            m_itemConnMaxReached->setText(0, tr("Max Connection Limit Reached: %1").arg(reached));
+        }
+    }
+    m_itemConnSesAvgUp->setText(0, tr("Average Uploadrate: %1")
+        .arg(formatRate(cborDouble(stats, QLatin1StringView("avgUpSession")))));
+    m_itemConnSesAvgDown->setText(0, tr("Average Downloadrate: %1")
+        .arg(formatRate(cborDouble(stats, QLatin1StringView("avgDownSession")))));
 
     m_itemConnSesUpSpeed->setText(0, tr("Upload Speed: %1").arg(formatRate(cborDouble(stats, QLatin1StringView("rateUp")))));
     m_itemConnSesMaxUp->setText(0, tr("Max Upload Rate: %1").arg(formatRate(cborDouble(stats, QLatin1StringView("maxUp")))));
@@ -1213,11 +1295,13 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
 
     // === Connection — Cumulative ===
     m_itemConnCumReconnects->setText(0,
-        tr("Server Reconnects: %1").arg(cborInt(stats, QLatin1StringView("cumConnReconnects"))));
-    m_itemConnCumPeak->setText(0,
-        tr("Peak Connections: %1").arg(cborInt(stats, QLatin1StringView("cumConnPeak"))));
-    m_itemConnCumMaxReached->setText(0,
-        tr("Connection Limit Reached: %1").arg(cborInt(stats, QLatin1StringView("cumConnMaxLimitReached"))));
+        tr("Reconnects: %1").arg(cborInt(stats, QLatin1StringView("cumConnReconnects"))));
+    m_itemConnCumAverage->setText(0, tr("Average Connections (estimate): %1")
+        .arg(cborInt(stats, QLatin1StringView("cumConnAverage"))));
+    m_itemConnCumPeak->setText(0, tr("Peak Connections (estimate): %1")
+        .arg(cborInt(stats, QLatin1StringView("cumConnPeak"))));
+    m_itemConnCumMaxReached->setText(0, tr("Max Connection Limit Reached: %1")
+        .arg(cborInt(stats, QLatin1StringView("cumConnMaxLimitReached"))));
 
     m_itemConnCumAvgUp->setText(0, tr("Average Upload Rate: %1").arg(formatRate(cborDouble(stats, QLatin1StringView("cumUpAvg")))));
     m_itemConnCumMaxUp->setText(0, tr("Max Upload Rate: %1").arg(formatRate(cborDouble(stats, QLatin1StringView("maxCumUp")))));
@@ -1295,6 +1379,39 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
         m_itemLowIDClients->setText(0,
             tr("Low ID: %1 %2").arg(lowID).arg(formatPercent(lowID, knownClients)));
     }
+    {
+        // MFC StatisticsDlg.cpp:1985-1986, 2266-2283, 2308; counted in ClientList.cpp:112-144
+        const QCborMap census = stats.value(QLatin1StringView("clientCensus")).toMap();
+        const auto n = [&census](QLatin1StringView key) { return cborInt(census, key); };
+        const auto share = [](qint64 part, qint64 whole) {
+            return QString::number(whole > 0 ? 100.0 * static_cast<double>(part) / static_cast<double>(whole) : 0.0,
+                                   'f', 1);
+        };
+        const std::array<std::pair<QString, qint64>, 4> nets = {{
+            {QStringLiteral("eD2K"), n(QLatin1StringView("netEd2k"))},
+            {QStringLiteral("Kad"), n(QLatin1StringView("netKad"))},
+            {QStringLiteral("eD2K/Kad"), n(QLatin1StringView("netBoth"))},
+            {tr("Unknown"), n(QLatin1StringView("netUnknown"))}}};
+        for (std::size_t i = 0; i < nets.size(); ++i)
+            m_itemCliNetwork[i]->setText(0, QStringLiteral("%1: %2 (%3%)")
+                .arg(nets[i].first).arg(nets[i].second).arg(share(nets[i].second, knownClients)));
+
+        const qint64 portDef = n(QLatin1StringView("portDefault"));
+        const qint64 portOther = n(QLatin1StringView("portOther"));
+        m_itemCliPort[0]->setText(0, QStringLiteral("%1: %2 (%3%)")
+            .arg(tr("Default")).arg(portDef).arg(share(portDef, portDef + portOther)));
+        m_itemCliPort[1]->setText(0, QStringLiteral("%1: %2 (%3%)")
+            .arg(tr("Other")).arg(portOther).arg(share(portOther, portDef + portOther)));
+
+        const qint64 ok = n(QLatin1StringView("identOk"));
+        const qint64 failed = n(QLatin1StringView("identFailed"));
+        m_itemSecureIdent->setText(0, QStringLiteral("%1: %2 (%3%) : %4 (%5%)")
+            .arg(tr("Secure Ident (OK : Failed )")).arg(ok).arg(share(ok, ok + failed))
+            .arg(failed).arg(share(failed, ok + failed)));
+        const qint64 problematic = n(QLatin1StringView("problematic"));
+        m_itemProblematic->setText(0, QStringLiteral("%1: %2 (%3%)")
+            .arg(tr("Problematic")).arg(problematic).arg(share(problematic, knownClients)));
+    }
     m_itemBannedClients->setText(0,
         tr("Banned Clients: %1").arg(cborInt(stats, QLatin1StringView("bannedClients"))));
     m_itemFilteredClients->setText(0,
@@ -1321,20 +1438,33 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
         while (m_itemClientSoftware->childCount() > 0)
             delete m_itemClientSoftware->takeChild(0);
 
-        // Parse CBOR array
-        auto it = stats.find(QStringLiteral("clientSoftwareStats"));
-        if (it != stats.end() && it->isArray()) {
-            const QCborArray softArr = it->toArray();
-            for (const auto& softVal : softArr) {
-                if (!softVal.isMap()) continue;
-                const QCborMap softMap = softVal.toMap();
+        // MFC's eight rows, in its order and shown even at zero (StatisticsDlg.cpp:1995-2011).
+        // Anything else the core names (URL sources) follows when it has clients.
+        // Kept beyond MFC: versions under every software, and the mod level.
+        static const QStringList kFixed = {
+            QStringLiteral("eMule"), QStringLiteral("eD Hybrid"), QStringLiteral("eDonkey"),
+            QStringLiteral("aMule"), QStringLiteral("MLdonkey"), QStringLiteral("Shareaza"),
+            QStringLiteral("eM Compat"), QStringLiteral("Unknown")};
+        QList<QCborMap> rows;
+        for (const QString& name : kFixed)
+            rows.append(QCborMap{{QStringLiteral("n"), name}, {QStringLiteral("c"), 0}});
+        for (const auto& softVal : stats.value(QStringLiteral("clientSoftwareStats")).toArray()) {
+            const QCborMap softMap = softVal.toMap();
+            const QString name = softMap.value(QStringLiteral("n")).toString();
+            if (const auto fixed = kFixed.indexOf(name); fixed >= 0)
+                rows[fixed] = softMap;
+            else if (softMap.value(QStringLiteral("c")).toInteger() > 0)
+                rows.append(softMap);
+        }
+        {
+            for (const QCborMap& softMap : std::as_const(rows)) {
                 const QString name = softMap.value(QStringLiteral("n")).toString();
                 const int count = static_cast<int>(softMap.value(QStringLiteral("c")).toInteger());
-                if (count == 0) continue;
+                const QString shown = name == QLatin1StringView("Unknown") ? tr("Unknown") : name;
 
                 const double pct = knownClients > 0 ? 100.0 * count / static_cast<double>(knownClients) : 0.0;
                 auto* softItem = new QTreeWidgetItem(m_itemClientSoftware,
-                    {QStringLiteral("%1: %2 (%3%)").arg(name).arg(count).arg(pct, 0, 'f', 1)});
+                    {QStringLiteral("%1: %2 (%3%)").arg(shown).arg(count).arg(pct, 0, 'f', 1)});
                 softItem->setData(0, Qt::UserRole, name);
 
                 // Restore expansion
@@ -1346,6 +1476,12 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
                 if (verIt == softMap.end() || !verIt->isArray()) continue;
                 const QCborArray verArr = verIt->toArray();
 
+                // The four most used versions directly, the rest under "Minor"
+                // (MFC MAX_SUB_CLIENT_VERSIONS / 2). The array arrives sorted by count.
+                constexpr int kTopVersions = 4;
+                QTreeWidgetItem* minor = nullptr;
+                int minorCount = 0;
+                int shownVersions = 0;
                 for (const auto& verVal : verArr) {
                     if (!verVal.isMap()) continue;
                     const QCborMap verMap = verVal.toMap();
@@ -1353,8 +1489,23 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
                     const int verCount = static_cast<int>(verMap.value(QStringLiteral("c")).toInteger());
                     if (verCount == 0) continue;
 
+                    QTreeWidgetItem* verParent = softItem;
+                    if (shownVersions++ >= kTopVersions) {
+                        if (!minor) {
+                            minor = new QTreeWidgetItem(softItem);
+                            const QString minorKey = name + QStringLiteral("/#minor");
+                            minor->setData(0, Qt::UserRole, minorKey);
+                            if (expandedVersions.contains(minorKey))
+                                minor->setExpanded(true);
+                        }
+                        minorCount += verCount;
+                        minor->setText(0, QStringLiteral("%1: %2 (%3%)").arg(tr("Minor")).arg(minorCount)
+                            .arg(100.0 * minorCount / static_cast<double>(count), 0, 'f', 1));
+                        verParent = minor;
+                    }
+
                     const double verPct = 100.0 * verCount / static_cast<double>(count);
-                    auto* verItem = new QTreeWidgetItem(softItem,
+                    auto* verItem = new QTreeWidgetItem(verParent,
                         {QStringLiteral("%1: %2 (%3%)").arg(label).arg(verCount).arg(verPct, 0, 'f', 1)});
                     const QString verKey = name + QLatin1Char('/') + label;
                     verItem->setData(0, Qt::UserRole, verKey);
@@ -1384,58 +1535,83 @@ void StatisticsPanel::updateTree(const QCborMap& stats)
     }
 
     // === Servers ===
-    m_itemSrvWorking->setText(0,
-        tr("Working Servers: %1").arg(cborInt(stats, QLatin1StringView("srvWorking"))));
-    m_itemSrvFailed->setText(0,
-        tr("Failed Servers: %1").arg(cborInt(stats, QLatin1StringView("srvFailed"))));
-    m_itemSrvTotal->setText(0,
-        tr("Total: %1").arg(cborInt(stats, QLatin1StringView("srvTotal"))));
-    m_itemSrvUsers->setText(0,
-        tr("Total Users: %1").arg(cborInt(stats, QLatin1StringView("srvUsers"))));
-    m_itemSrvFiles->setText(0,
-        tr("Total Files: %1").arg(cborInt(stats, QLatin1StringView("srvFiles"))));
-    m_itemSrvLowID->setText(0,
-        tr("Low ID Users: %1").arg(cborInt(stats, QLatin1StringView("srvLowIDUsers"))));
+    // MFC StatisticsDlg.cpp:2320-2354; every count through CastItoIShort.
+    {
+        const auto shortN = [&stats](QLatin1StringView key) {
+            return formatShortNumber(cborInt(stats, key));
+        };
+        const qint64 workUsers = cborInt(stats, QLatin1StringView("srvUsers"));
+        const qint64 lowID = cborInt(stats, QLatin1StringView("srvLowIDUsers"));
+        m_itemSrvWorking->setText(0, tr("Working Servers: %1").arg(shortN(QLatin1StringView("srvWorking"))));
+        m_itemSrvWorkUsers->setText(0, tr("Users on Working Servers: %1; Low ID: %2 (%3%)")
+            .arg(formatShortNumber(workUsers), formatShortNumber(lowID))
+            .arg(workUsers > 0 ? 100.0 * static_cast<double>(lowID) / static_cast<double>(workUsers) : 0.0,
+                 0, 'f', 1));
+        m_itemSrvWorkFiles->setText(0,
+            tr("Files on Working Servers: %1").arg(shortN(QLatin1StringView("srvFiles"))));
+        m_itemSrvOccupation->setText(0, tr("Server Occupation: %1%")
+            .arg(cborDouble(stats, QLatin1StringView("srvOccupation")), 0, 'f', 2));
+        m_itemSrvFailed->setText(0, tr("Failed Servers: %1").arg(shortN(QLatin1StringView("srvFailed"))));
+        m_itemSrvDeleted->setText(0, tr("Deleted Servers: %1").arg(shortN(QLatin1StringView("srvDeleted"))));
+        m_itemSrvTotal->setText(0, tr("Total: %1").arg(shortN(QLatin1StringView("srvTotal"))));
+        m_itemSrvUsers->setText(0, tr("Total Users: %1").arg(shortN(QLatin1StringView("srvTotalUsers"))));
+        m_itemSrvFiles->setText(0, tr("Total Files: %1").arg(shortN(QLatin1StringView("srvTotalFiles"))));
 
-    m_itemSrvRecWorking->setText(0,
-        tr("Most Working Servers: %1").arg(cborInt(stats, QLatin1StringView("recMaxWorkingServers"))));
-    m_itemSrvRecUsers->setText(0,
-        tr("Most Users Online: %1").arg(cborInt(stats, QLatin1StringView("recMaxUsersOnline"))));
-    m_itemSrvRecFiles->setText(0,
-        tr("Most Files Available: %1").arg(cborInt(stats, QLatin1StringView("recMaxFilesAvail"))));
+        m_itemSrvRecWorking->setText(0,
+            tr("Most Working Servers: %1").arg(shortN(QLatin1StringView("recMaxWorkingServers"))));
+        m_itemSrvRecUsers->setText(0,
+            tr("Most Users Online: %1").arg(shortN(QLatin1StringView("recMaxUsersOnline"))));
+        m_itemSrvRecFiles->setText(0,
+            tr("Most Files Available: %1").arg(shortN(QLatin1StringView("recMaxFilesAvail"))));
+    }
 
     // === Shared Files ===
     const qint64 sharedCount = cborInt(stats, QLatin1StringView("sharedCount"));
     const qint64 sharedSize = cborInt(stats, QLatin1StringView("sharedSize"));
-    m_itemSharedCount->setText(0,
-        tr("Number of Shared Files: %1").arg(sharedCount));
-    m_itemSharedSize->setText(0,
-        tr("Total Size: %1").arg(formatByteSize(sharedSize)));
+    {
+        // MFC StatisticsDlg.cpp:2373-2408 (IDS_HASHINGFILESCOUNT while the hasher is busy)
+        QString countText = tr("Number of Shared Files: %1").arg(sharedCount);
+        if (const qint64 hashing = cborInt(stats, QLatin1StringView("sharedHashing")); hashing > 0)
+            countText += tr(" (%1 hashing)").arg(hashing);
+        m_itemSharedCount->setText(0, countText);
+    }
     m_itemSharedAvgSize->setText(0,
-        tr("Average File Size: %1").arg(sharedCount > 0 ? formatByteSize(sharedSize / sharedCount) : formatByteSize(0)));
+        tr("Average file size: %1").arg(formatByteSize(sharedCount > 0 ? sharedSize / sharedCount : 0)));
     m_itemSharedLargest->setText(0,
         tr("Largest Shared File: %1").arg(formatByteSize(cborInt(stats, QLatin1StringView("sharedLargest")))));
+    m_itemSharedSize->setText(0,
+        tr("Total size of Shared Files: %1").arg(formatByteSize(sharedSize)));
 
     m_itemSharedRecCount->setText(0,
-        tr("Most Files Shared: %1").arg(cborInt(stats, QLatin1StringView("recMaxSharedFiles"))));
-    m_itemSharedRecSize->setText(0,
-        tr("Largest Share Size: %1").arg(formatByteSize(cborInt(stats, QLatin1StringView("recMaxSharedSize")))));
+        tr("Max. Files Ever Shared: %1").arg(cborInt(stats, QLatin1StringView("recMaxSharedFiles"))));
     m_itemSharedRecAvg->setText(0,
         tr("Largest Average File Size: %1").arg(formatByteSize(cborInt(stats, QLatin1StringView("recMaxAvgFileSize")))));
     m_itemSharedRecLargest->setText(0,
-        tr("Largest File Size: %1").arg(formatByteSize(cborInt(stats, QLatin1StringView("recMaxLargestFile")))));
+        tr("Largest Shared File: %1").arg(formatByteSize(cborInt(stats, QLatin1StringView("recMaxLargestFile")))));
+    m_itemSharedRecSize->setText(0,
+        tr("Largest Share Size: %1").arg(formatByteSize(cborInt(stats, QLatin1StringView("recMaxSharedSize")))));
 
-    // === Total Downloads ===
-    m_itemTotalDownCount->setText(0,
-        tr("Number of Downloads: %1").arg(cborInt(stats, QLatin1StringView("totalDownCount"))));
-    m_itemTotalDownSize->setText(0,
-        tr("Total Size of Downloads: %1").arg(formatByteSize(cborInt(stats, QLatin1StringView("totalDownSize")))));
-    m_itemTotalDownDone->setText(0,
-        tr("Total Size Downloaded: %1").arg(formatByteSize(cborInt(stats, QLatin1StringView("totalDownDone")))));
-    m_itemTotalDownLeft->setText(0,
-        tr("Total Size Left to Download: %1").arg(formatByteSize(cborInt(stats, QLatin1StringView("totalDownLeft")))));
-    m_itemTotalDownFreeSpace->setText(0,
-        tr("Free Space on Drive: %1").arg(formatByteSize(cborInt(stats, QLatin1StringView("freeTempSpace")))));
+    // === Disk Space === (MFC StatisticsDlg.cpp:2412-2437). Counts every download in
+    // the list, not only the running ones: deliberate, 2026-10.
+    {
+        const qint64 size = cborInt(stats, QLatin1StringView("totalDownSize"));
+        const qint64 done = cborInt(stats, QLatin1StringView("totalDownDone"));
+        const qint64 needed = cborInt(stats, QLatin1StringView("totalDownNeeded"));
+        const qint64 freeSpace = cborInt(stats, QLatin1StringView("freeTempSpace"));
+        m_itemTotalDownCount->setText(0,
+            tr("Number of Downloads: %1").arg(cborInt(stats, QLatin1StringView("totalDownCount"))));
+        m_itemTotalDownSize->setText(0, tr("Total Size of Downloads: %1").arg(formatByteSize(size)));
+        m_itemTotalDownDone->setText(0, tr("Total Completed Size: %1 (%2%)").arg(formatByteSize(done))
+            .arg(size > 0 ? 100.0 * static_cast<double>(done) / static_cast<double>(size) : 0.0, 0, 'f', 0));
+        m_itemTotalDownLeft->setText(0, tr("Total Size Left to Transfer: %1")
+            .arg(formatByteSize(cborInt(stats, QLatin1StringView("totalDownLeft")))));
+        QString freeText = tr("Free Space on Tempdrive: %1").arg(formatByteSize(freeSpace));
+        if (needed > freeSpace)
+            freeText += tr(" (you need to free %1!)").arg(formatByteSize(needed - freeSpace));
+        m_itemTotalDownFreeSpace->setText(0, freeText);
+        m_itemTotalDownNeeded->setText(0,
+            tr("Additional Space Needed for Downloads: %1").arg(formatByteSize(needed)));
+    }
 }
 
 void StatisticsPanel::applyUsenetStats(const QCborMap& data)
@@ -1914,28 +2090,12 @@ QString StatisticsPanel::formatRate(double kbps)
 
 QString StatisticsPanel::formatDuration(qint64 secs)
 {
-    if (secs < 0) secs = 0;
-    const qint64 days = secs / 86400;
-    const qint64 hours = (secs % 86400) / 3600;
-    const qint64 mins = (secs % 3600) / 60;
-    const qint64 s = secs % 60;
-
-    if (days > 0)
-        return QStringLiteral("%1 D %2:%3:%4")
-            .arg(days)
-            .arg(hours, 2, 10, QLatin1Char('0'))
-            .arg(mins, 2, 10, QLatin1Char('0'))
-            .arg(s, 2, 10, QLatin1Char('0'));
-
-    return QStringLiteral("%1:%2:%3")
-        .arg(hours)
-        .arg(mins, 2, 10, QLatin1Char('0'))
-        .arg(s, 2, 10, QLatin1Char('0'));
+    return formatSecondsLongHM(std::max<qint64>(secs, 0));
 }
 
 QString StatisticsPanel::formatOverhead(qint64 bytes, qint64 packets)
 {
-    return QStringLiteral("%1 (%2)").arg(formatByteSize(bytes)).arg(packets);
+    return QStringLiteral("%1 (%2)").arg(formatByteSize(bytes), formatShortNumber(packets));
 }
 
 /// MFC StatisticsDlg.cpp:623-651: the larger side is the multiple, so "5.00 : 1" is a net

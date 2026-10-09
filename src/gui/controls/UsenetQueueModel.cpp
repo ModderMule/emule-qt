@@ -296,6 +296,12 @@ QVariant UsenetQueueModel::data(const QModelIndex& index, int role) const
     if (!index.isValid())
         return {};
 
+    // Not an MFC list; sizes and rates to the right like the eD2K lists.
+    if (role == Qt::TextAlignmentRole) {
+        return index.column() == ColSize || index.column() == ColSpeed
+            ? static_cast<int>(Qt::AlignRight | Qt::AlignVCenter) : static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
+    }
+
     // -- File row -----------------------------------------------------------
     if (index.internalId() != 0) {
         const int parentRow = int(index.internalId() - 1);

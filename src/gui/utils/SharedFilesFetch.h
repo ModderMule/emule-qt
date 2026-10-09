@@ -20,4 +20,8 @@ class IpcClient;
 void fetchSharedFileRows(IpcClient* ipc, QObject* context,
                          std::function<void(bool ok, const QCborArray& rows)> done);
 
+/// The same for every file known.met remembers (hash, fileName, fileSize only).
+void fetchKnownFileRows(IpcClient* ipc, QObject* context,
+                        std::function<void(bool ok, const QCborArray& rows)> done);
+
 } // namespace eMule

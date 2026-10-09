@@ -5,6 +5,9 @@
 /// Custom binary scanning of partial downloads to extract valid ZIP/RAR entries.
 
 #include "archive/ArchiveRecovery.h"
+
+#include <QDir>
+#include <QFileInfo>
 #include "files/PartFile.h"
 #include "utils/Log.h"
 
@@ -50,24 +53,60 @@ bool ArchiveRecovery::isFilled(uint64 start, uint64 end,
 // ---------------------------------------------------------------------------
 
 bool ArchiveRecovery::recover(PartFile* partFile, bool /*preview*/,
-                              bool createCopy)
+                              bool /*createCopy*/)
+{
+    return !recoverToCopy(partFile, {}).isEmpty();
+}
+
+QString ArchiveRecovery::recoverToCopy(PartFile* partFile, const QString& outDir)
 {
     if (!partFile)
-        return false;
+        return {};
 
     // Get filled regions (complement of gap list)
     std::vector<Gap> filled;
     partFile->getFilledArray(filled);
-
-    if (filled.empty())
-        return false;
-
-    const uint64 fileSize = static_cast<uint64>(partFile->fileSize());
     const QString srcPath = partFile->filePath();
+    return recoverFile(srcPath, filled, static_cast<uint64>(partFile->fileSize()),
+                       outDir, QFileInfo(srcPath).completeBaseName());
+}
 
+QString ArchiveRecovery::copyPath(const QString& srcPath, const QString& outDir,
+                                  const QString& baseName, const QString& extension)
+{
+    // MFC names it "<name>-rec.<ext>" in the temp folder (ArchiveRecovery.cpp:111-208)
+    const QFileInfo src(srcPath);
+    const QString dir = outDir.isEmpty() ? src.absolutePath() : outDir;
+    const QString name = (baseName.isEmpty() ? src.completeBaseName() : baseName).left(5);
+    return QDir(dir).filePath(QStringLiteral("%1-rec.%2").arg(name, extension));
+}
+
+QString ArchiveRecovery::recoverFile(const QString& srcPath, const std::vector<Gap>& filled,
+                                     uint64 fileSize, const QString& outDir, const QString& baseName)
+{
+    if (filled.empty())
+        return {};
+
+    // The download is only ever read. The result goes into a file of its own — MFC
+    // never writes into the part file either; an earlier "in place" mode here opened
+    // the source with Truncate.
     QFile input(srcPath);
     if (!input.open(QIODevice::ReadOnly))
-        return false;
+        return {};
+
+    const auto run = [&](const QString& extension, const auto& recoverInto) -> QString {
+        const QString outPath = copyPath(srcPath, outDir, baseName, extension);
+        if (QFileInfo(outPath) == QFileInfo(srcPath))
+            return {};   // never the source, whatever the names work out to
+        QFile output(outPath);
+        if (!output.open(QIODevice::WriteOnly | QIODevice::Truncate))
+            return {};
+        if (recoverInto(output))
+            return outPath;
+        output.close();
+        QFile::remove(outPath);
+        return {};
+    };
 
     // Determine archive type by scanning first filled region
     if (filled[0].start == 0 && filled[0].end >= 3) {
@@ -78,63 +117,30 @@ bool ArchiveRecovery::recover(PartFile* partFile, bool /*preview*/,
         uint32 sig = 0;
         std::memcpy(&sig, header, 4);
 
-        // Check for ZIP
-        if (sig == kZipLocalFileHeader) {
-            QString outPath;
-            if (createCopy) {
-                outPath = srcPath + QStringLiteral(".recovered.zip");
-            } else {
-                outPath = srcPath;
-            }
-            QFile output(outPath);
-            if (!output.open(QIODevice::WriteOnly | QIODevice::Truncate))
-                return false;
-            return recoverZip(input, output, filled, fileSize);
-        }
-
-        // Check for RAR
-        if (sig == kRarSignature) {
-            QString outPath;
-            if (createCopy) {
-                outPath = srcPath + QStringLiteral(".recovered.rar");
-            } else {
-                outPath = srcPath;
-            }
-            QFile output(outPath);
-            if (!output.open(QIODevice::WriteOnly | QIODevice::Truncate))
-                return false;
-            return recoverRar(input, output, filled);
-        }
+        if (sig == kZipLocalFileHeader)
+            return run(QStringLiteral("zip"), [&](QFile& out) { return recoverZip(input, out, filled, fileSize); });
+        if (sig == kRarSignature)
+            return run(QStringLiteral("rar"), [&](QFile& out) { return recoverRar(input, out, filled); });
     }
 
     // Check for ISO 9660: magic "CD001" at offset 0x8001
     if (fileSize > kIsoMagicOffset + 5 && isFilled(kIsoMagicOffset, kIsoMagicOffset + 4, filled)) {
         input.seek(static_cast<qint64>(kIsoMagicOffset));
         char isoBuf[5]{};
-        if (input.read(isoBuf, 5) == 5 && std::memcmp(isoBuf, kIsoMagic, 5) == 0) {
-            QString outPath = createCopy ? srcPath + QStringLiteral(".recovered.iso") : srcPath;
-            QFile output(outPath);
-            if (!output.open(QIODevice::WriteOnly | QIODevice::Truncate))
-                return false;
-            return recoverISO(input, output, filled, fileSize);
-        }
+        if (input.read(isoBuf, 5) == 5 && std::memcmp(isoBuf, kIsoMagic, 5) == 0)
+            return run(QStringLiteral("iso"), [&](QFile& out) { return recoverISO(input, out, filled, fileSize); });
     }
 
     // Check for ACE: magic "**ACE**" at offset 7
     if (fileSize > kAceMagicOffset + 7 && isFilled(kAceMagicOffset, kAceMagicOffset + 6, filled)) {
         input.seek(static_cast<qint64>(kAceMagicOffset));
         char aceBuf[7]{};
-        if (input.read(aceBuf, 7) == 7 && std::memcmp(aceBuf, kAceMagic, 7) == 0) {
-            QString outPath = createCopy ? srcPath + QStringLiteral(".recovered.ace") : srcPath;
-            QFile output(outPath);
-            if (!output.open(QIODevice::WriteOnly | QIODevice::Truncate))
-                return false;
-            return recoverACE(input, output, filled);
-        }
+        if (input.read(aceBuf, 7) == 7 && std::memcmp(aceBuf, kAceMagic, 7) == 0)
+            return run(QStringLiteral("ace"), [&](QFile& out) { return recoverACE(input, out, filled); });
     }
 
     logWarning(QStringLiteral("ArchiveRecovery: unsupported archive format"));
-    return false;
+    return {};
 }
 
 // ---------------------------------------------------------------------------
@@ -597,6 +603,27 @@ bool ArchiveRecovery::recoverACE(QFile& input, QFile& output,
 // ---------------------------------------------------------------------------
 // recoverAsync — run recovery on a background thread
 // ---------------------------------------------------------------------------
+
+void ArchiveRecovery::recoverToCopyAsync(PartFile* partFile, const QString& outDir,
+                                         std::function<void(const QString&)> callback)
+{
+    if (!partFile || partFile->isRecoveringArchive()) {
+        if (callback)
+            callback({});
+        return;
+    }
+    partFile->setRecoveringArchive(true);
+
+    auto* thread = QThread::create([partFile, outDir, cb = std::move(callback)]() {
+        const QString path = recoverToCopy(partFile, outDir);
+        partFile->setRecoveringArchive(false);
+        if (cb)
+            cb(path);
+    });
+    thread->setObjectName(QStringLiteral("ArchiveRecoveryThread"));
+    QObject::connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    thread->start();
+}
 
 void ArchiveRecovery::recoverAsync(PartFile* partFile, bool preview,
                                     bool createCopy,

@@ -12,6 +12,7 @@ class QCheckBox;
 class QLabel;
 class QLineEdit;
 class QTreeWidget;
+class QPushButton;
 class QTreeWidgetItem;
 
 namespace eMule {
@@ -37,6 +38,8 @@ public:
 private:
     void setupUi();
     void populateSharedFiles();
+    /// One row of either list: name, size, hash (MFC CCollectionListCtrl's columns).
+    [[nodiscard]] static QTreeWidgetItem* makeRow(const QString& name, qint64 size, const QString& hash);
     void addToCollection();
     void removeFromCollection();
     void updateLabels();
@@ -49,7 +52,11 @@ private:
     IpcClient* m_ipc;
     QTreeWidget* m_sharedTree = nullptr;      // left pane
     QTreeWidget* m_collectionTree = nullptr;  // right pane
-    QLabel* m_sharedLabel = nullptr;
+    /// Titles the left list and switches it between the shared and the known files
+    /// (MFC IDC_COLLECTIONVIEWSHAREBUTTON).
+    QPushButton* m_sharedButton = nullptr;
+    bool m_showKnown = false;
+    quint32 m_fillSerial = 0;   ///< drops the answer of a fetch the toggle has overtaken
     QLabel* m_collectionLabel = nullptr;
     QLineEdit* m_nameEdit = nullptr;
     QCheckBox* m_textFormatCheck = nullptr;

@@ -8,6 +8,8 @@
 /// Supports automatic or manual scanning, and preview copy creation for
 /// partial downloads (PartFiles).
 
+#include <QDateTime>
+#include <QList>
 #include <QWidget>
 
 class QLabel;
@@ -26,6 +28,11 @@ public:
     /// Set the file to display. Call before startScan() or setAutoScan().
     void setFile(const QString& filePath, uint64_t fileSize);
 
+    /// For a download in progress: the byte ranges still missing (flat
+    /// [start, end, ...] pairs, inclusive), and whether "Create preview file" is
+    /// offered. Call after setFile(), which resets both.
+    void setPartFile(const QList<qint64>& gapPairs, bool canCreatePreviewFile);
+
     /// If autoScan is true, calls startScan() automatically.
     void setAutoScan(bool autoScan);
 
@@ -37,11 +44,35 @@ public:
 
 signals:
     void scanFinished(int entryCount);
+    /// "Create preview file": rebuild a readable archive from what has arrived
+    /// (MFC CArchiveRecovery::recover, ArchivePreviewDlg.cpp:323-332).
+    void previewFileRequested();
 
-private slots:
-    void onScanComplete(int count);
+public:
+    /// What a scan found, ready for the list. Public for the tests.
+    struct Row {
+        QString name;
+        bool directory = false;
+        quint64 size = 0;
+        QString crc;
+        QString attributes;
+        QDateTime modified;
+        QString comment;
+        bool complete = true;
+    };
+    struct ScanOutput {
+        QList<Row> rows;
+        QString typeName;     ///< "ZIP", "RAR", libarchive's name; empty when unknown
+        QString status;
+        QString info;         ///< "Password protection,Solid,..."
+        int fileCount = 0;    ///< without directories
+        bool hasCrcAndComment = false;   ///< ZIP / RAR; other formats hide the two columns
+    };
+    /// Read @p filePath. Runs off the GUI thread.
+    [[nodiscard]] static ScanOutput scanFile(const QString& filePath, const QList<qint64>& gapPairs);
 
 private:
+    void applyScan(const ScanOutput& output);
     void buildUi();
 
     QLabel*             m_archiveTypeLabel = nullptr;
@@ -52,6 +83,9 @@ private:
     QStandardItemModel* m_model            = nullptr;
     QProgressBar*       m_progressBar      = nullptr;
     QLabel*             m_fileCountLabel   = nullptr;
+    QLabel*             m_infoLabel        = nullptr;
+
+    QList<qint64> m_gapPairs;
 
     QString  m_filePath;
     uint64_t m_fileSize = 0;

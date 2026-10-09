@@ -871,6 +871,8 @@ QWidget* TransferPanel::createDownloadsSection()
     // OnCommand, TransferWnd.cpp:1153 expand keys). No MP_CUT on this list.
     keys.remove = [this] { removeSelectedDownloads(); };
     keys.rename = [this] { renameSelectedDownload(); };
+    keys.renameAll = [this] { cleanupSelectedDownloadNames(); };   // Ctrl+F2
+    keys.middleClick = keys.details;                               // TransferWnd.cpp:323-361
     keys.copy = [this] { copyEd2kLinks(saveDownloadSelectionMulti()); };
     keys.paste = [this] { pasteDownloadLinks(); };
     keys.find = true;
@@ -1026,6 +1028,7 @@ QWidget* TransferPanel::createBottomPane()
         ListKeyHandlers keys;
         keys.activate = showDetails;
         keys.details = showDetails;
+        keys.middleClick = showDetails;
         keys.find = true;
         bindListKeys(view, std::move(keys));
     }
@@ -1396,6 +1399,17 @@ void TransferPanel::requestDownloadSources(const QString& hash)
             src.hasCredit       = m.value(QStringLiteral("hasCredit")).toBool();
             src.port            = m.value(QStringLiteral("port")).toInteger();
             src.isFriend        = m.value(QStringLiteral("isFriend")).toBool();
+            src.clientVersion   = m.value(QStringLiteral("clientVersion")).toInteger();
+            src.askedCountDown  = static_cast<int>(m.value(QStringLiteral("askedCountDown")).toInteger());
+            src.serverAddr      = m.value(QStringLiteral("srcServerAddr")).toString();
+            src.serverPort      = static_cast<int>(m.value(QStringLiteral("srcServerPort")).toInteger());
+            src.nextReaskSecs   = m.value(QStringLiteral("nextReaskSecs")).toInteger(-1);
+            src.clientFileName  = m.value(QStringLiteral("fileName")).toString();
+            src.fileComment     = m.value(QStringLiteral("fileComment")).toString();
+            src.fileRating      = static_cast<int>(m.value(QStringLiteral("fileRating")).toInteger());
+            src.isUrl           = m.value(QStringLiteral("isUrl")).toBool();
+            for (const auto& name : m.value(QStringLiteral("a4afFiles")).toArray())
+                src.a4afFiles << name.toString();
             if (auto spm = m.value(QStringLiteral("sourcePartMap")).toArray(); !spm.isEmpty()) {
                 src.partMap.resize(static_cast<qsizetype>(spm.size()));
                 for (qsizetype j = 0; j < spm.size(); ++j)
@@ -2854,11 +2868,49 @@ void TransferPanel::removeSelectedDownloads()
         sendClearCompleted(completed);
 }
 
+QStringList TransferPanel::categoryNames() const
+{
+    return m_categoryTabBar ? m_categoryTabBar->categoryNames() : QStringList();
+}
+
+void TransferPanel::cleanupSelectedDownloadNames()
+{
+    const QStringList hashes = saveDownloadSelectionMulti();
+    if (hashes.isEmpty() || !m_ipc || !m_ipc->isConnected())
+        return;
+    if (QMessageBox::question(this, tr("Rename"),
+            tr("Do you want to cleanup the file names of the selected files?"),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
+        return;
+
+    std::vector<DownloadRow> files;
+    for (const QString& hash : hashes) {
+        if (const DownloadRow* dl = m_downloadModel->findByHash(hash))
+            files.push_back(*dl);
+    }
+    const auto renames = cleanupRenames(files, thePrefs.filenameCleanups());
+    QPointer<TransferPanel> self(this);
+    for (const auto& [hash, name] : renames) {
+        IpcMessage msg(IpcMsgType::RenameDownload);
+        msg.append(hash);
+        msg.append(name);
+        const bool last = hash == renames.constLast().first;
+        m_ipc->sendRequest(std::move(msg), [self, last](const IpcMessage& resp) {
+            if (self && IpcFeedback::checkOrWarn(resp, self, tr("Rename")) && last)
+                self->requestDownloads();
+        });
+    }
+}
+
 void TransferPanel::renameSelectedDownload()
 {
-    // MFC MPG_F2 (DownloadListCtrl.cpp:1394): one unfinished file. The Ctrl+F2 /
-    // multi-select "filename cleanup" has no Qt counterpart yet.
+    // MFC MPG_F2 (DownloadListCtrl.cpp:1394-1404): one unfinished file is renamed;
+    // several selected (or Ctrl held) is the file-name cleanup.
     const QStringList hashes = saveDownloadSelectionMulti();
+    if (hashes.size() > 1) {
+        cleanupSelectedDownloadNames();
+        return;
+    }
     if (hashes.size() != 1 || !m_ipc || !m_ipc->isConnected())
         return;
     const DownloadRow* dl = m_downloadModel->findByHash(hashes.first());

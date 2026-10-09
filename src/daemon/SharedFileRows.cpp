@@ -119,6 +119,8 @@ QCborMap sharedFileRow(KnownFile* kf, const SharedFileList::ShareRules& rules,
     m.insert(QStringLiteral("path"), QFileInfo(kf->filePath()).absolutePath());
     m.insert(QStringLiteral("ed2kLink"), kf->getED2kLink());
     m.insert(QStringLiteral("isPartFile"), isPartFile);
+    if (isPartFile)   // the Incomplete Files node splits by it
+        m.insert(QStringLiteral("category"), static_cast<qint64>(static_cast<const PartFile*>(kf)->category()));
     m.insert(QStringLiteral("uploadingClients"), kf->uploadingClientCount());
 
     m.insert(QStringLiteral("queuedClients"), load.queuedClients);

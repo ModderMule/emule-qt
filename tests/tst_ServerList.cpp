@@ -1031,6 +1031,7 @@ void tst_ServerList::stats_aggregation()
         srv->setFiles(80000);
         srv->setLowIDUsers(200);
         srv->setFailedCount(1);  // failed server
+        srv->setMaxUsers(8000);
         list.addServer(std::move(srv));
     }
 
@@ -1040,6 +1041,18 @@ void tst_ServerList::stats_aggregation()
     QCOMPARE(s.users, uint32{1000});    // only non-failed
     QCOMPARE(s.files, uint32{50000});   // only non-failed
     QCOMPARE(s.lowIDUsers, uint32{100});
+
+    // MFC CServerList::GetStatus: the totals take every server, the occupation only
+    // the ones that told their user limit.
+    QCOMPARE(s.totalUsers, uint32{3000});
+    QCOMPARE(s.totalFiles, uint32{130000});
+    QCOMPARE(s.occupation, 25.0f);
+    QCOMPARE(s.deleted, uint32{0});
+
+    QVERIFY(list.removeServer(list.serverAt(0)));
+    QCOMPARE(list.stats().deleted, uint32{1});
+    list.removeAllServers();
+    QCOMPARE(list.stats().deleted, uint32{2});
 }
 
 // ---------------------------------------------------------------------------

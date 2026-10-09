@@ -26,6 +26,15 @@ struct ListKeyHandlers {
     ListActivationHandler details;    ///< Alt+Enter    — MPG_ALTENTER
     ListCommandHandler    remove;     ///< Del / ⌫      — MPG_DELETE
     ListCommandHandler    rename;     ///< F2           — MPG_F2
+    /// Ctrl+F2 — the download list's file-name cleanup (DownloadListCtrl.cpp:1394).
+    ListCommandHandler    renameAll;
+    /// Space — tick or untick every selected row (SharedFilesCtrl.cpp:1390-1405).
+    /// Returns false when the list has no checkboxes right now; the key travels on.
+    std::function<bool()> toggle;
+    /// Middle click — acts on the row under the pointer, which becomes the
+    /// selection first (SharedFilesWnd.cpp:246-260, SearchResultsWnd.cpp:184-196;
+    /// the transfer lists use the same rule here — deliberate, 2026-10).
+    ListActivationHandler middleClick;
     ListCommandHandler    copy;       ///< Copy key     — MP_COPYSELECTED
     ListCommandHandler    paste;      ///< Paste key    — MP_PASTE
     ListCommandHandler    cut;        ///< Cut key      — MP_CUT

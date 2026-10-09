@@ -28,6 +28,7 @@
 #include "controls/UsenetQueueModel.h"
 #include "ipc/CborSerializers.h"
 #include "prefs/Preferences.h"
+#include "utils/ClientIcons.h"
 #include "utils/ColorUtils.h"
 #include "utils/Opcodes.h"
 #include "utils/PriorityText.h"
@@ -124,6 +125,12 @@ private slots:
     void sourceStatusFollowsMfc();
     void a4afSourcesStayBelowAvailableOnes();
     void sourcesSortByQueueRankWithDownloadingFirst();
+    void sourcesSortByPartsAndBySoftware();
+    void sourceRowsShowStateAndSoftwareIcons();
+    void sourceTooltipFollowsMfc();
+    void numericColumnsAreRightAligned();
+    void serverListHasHardLimitAndVersion();
+    void filenameCleanupSkipsFinishedAndUnchanged();
     void remainingAndSeenCompleteFollowMfc();
     void knownClientsFollowMfc();
     void uploadStateIsWordedAndSortedByState();
@@ -1529,6 +1536,206 @@ void tst_ListSorting::barRangesAreCappedKeepingTheEnds()
         QVERIFY(packed.at(i - 1).toInteger() <= packed.at(i).toInteger());
 
     QCOMPARE(Ipc::packBarRanges({{5, 9}}).size(), 2);
+}
+
+// MFC Compare cases 5 and 6 (DownloadListCtrl.cpp:1788-1793). Progress returned 0 for
+// every source and Sources compared the software text.
+void tst_ListSorting::sourcesSortByPartsAndBySoftware()
+{
+    DownloadRow file;
+    file.hash = QStringLiteral("file");
+    file.status = QStringLiteral("ready");
+    file.sourceCount = 3;
+
+    const auto source = [](const char* hash, int softwareId, qint64 version, int parts) {
+        SourceRow s;
+        s.userHash = QString::fromLatin1(hash);
+        s.softwareId = softwareId;
+        s.clientVersion = version;
+        s.availPartCount = parts;
+        s.software = QStringLiteral("zzz");   // must not be what sorts
+        return s;
+    };
+    DownloadListModel model;
+    model.setDownloads({file});
+    // eMule (0) old, eMule new, aMule (3)
+    model.setSources(QStringLiteral("file"),
+                     {source("old", 0, 5000, 9), source("new", 0, 7000, 2), source("amule", 3, 9000, 5)});
+    const QModelIndex parent = model.index(0, 0);
+    const auto key = [&](int row, int column) {
+        return model.index(row, column, parent).data(Qt::UserRole).toLongLong();
+    };
+
+    QCOMPARE(key(0, DownloadListModel::ColProgress), 9);
+    QCOMPARE(key(1, DownloadListModel::ColProgress), 2);
+
+    // eMule first whatever the version; inside one software the older version first
+    QVERIFY(key(0, DownloadListModel::ColSources) < key(1, DownloadListModel::ColSources));
+    QVERIFY(key(2, DownloadListModel::ColSources) < key(0, DownloadListModel::ColSources));
+}
+
+// MFC DownloadListCtrl.cpp:563-630: a state icon, then the software icon. The five
+// state icons were in the resources and never drawn.
+void tst_ListSorting::sourceRowsShowStateAndSoftwareIcons()
+{
+    using K = SourceStateIcon;
+    QCOMPARE(sourceStateIconKind(QStringLiteral("Downloading"), false, false), K::Downloading);
+    QCOMPARE(sourceStateIconKind(QStringLiteral("ReqHashSet"), false, false), K::Downloading);
+    QCOMPARE(sourceStateIconKind(QStringLiteral("OnQueue"), false, false), K::OnQueue);
+    QCOMPARE(sourceStateIconKind(QStringLiteral("OnQueue"), true, false), K::NoNeededOrFull);
+    QCOMPARE(sourceStateIconKind(QStringLiteral("Connecting"), false, false), K::Connecting);
+    QCOMPARE(sourceStateIconKind(QStringLiteral("WaitCallbackKad"), false, false), K::Connecting);
+    QCOMPARE(sourceStateIconKind(QStringLiteral("TooManyConns"), false, false), K::Connecting);
+    QCOMPARE(sourceStateIconKind(QStringLiteral("NoNeededParts"), false, false), K::NoNeededOrFull);
+    QCOMPARE(sourceStateIconKind(QStringLiteral("Error"), false, false), K::NoNeededOrFull);
+    QCOMPARE(sourceStateIconKind(QStringLiteral("LowToLowIp"), false, false), K::Unknown);
+    QCOMPARE(sourceStateIconKind(QStringLiteral("Downloading"), false, true), K::NoNeededOrFull);   // A4AF
+
+    for (int kind = 0; kind < 5; ++kind)
+        QVERIFY(!sourceStateIcon(static_cast<K>(kind)).isNull());
+
+    DownloadRow file;
+    file.hash = QStringLiteral("file");
+    file.status = QStringLiteral("ready");
+    file.sourceCount = 1;
+    SourceRow s;
+    s.userHash = QStringLiteral("s");
+    s.downloadState = QStringLiteral("OnQueue");
+    s.softwareId = 0;
+    DownloadListModel model;
+    model.setDownloads({file});
+    model.setSources(QStringLiteral("file"), {s});
+    const QIcon icon = model.index(0, 0, model.index(0, 0)).data(Qt::DecorationRole).value<QIcon>();
+    QVERIFY(!icon.isNull());
+    const QSize size = icon.availableSizes().value(0);
+    QVERIFY2(size.width() >= 2 * size.height(), "one icon wide: the state icon is missing");
+}
+
+// MFC CDownloadListCtrl::OnLvnGetInfoTip (DownloadListCtrl.cpp:2318-2372).
+void tst_ListSorting::sourceTooltipFollowsMfc()
+{
+    SourceRow s;
+    s.userName = QStringLiteral("alice");
+    s.serverAddr = QStringLiteral("203.0.113.9");
+    s.serverPort = 4661;
+    s.downloadState = QStringLiteral("OnQueue");
+    s.nextReaskSecs = 185;
+    s.askedCountDown = 3;
+    s.availPartCount = 12;
+    s.clientFileName = QStringLiteral("their name.avi");
+    s.fileComment = QStringLiteral("good copy");
+    s.a4afFiles = {QStringLiteral("a.iso"), QStringLiteral("b.iso")};
+
+    const QString plain = sourceTooltipText(s, /*extended*/ false);
+    QVERIFY2(plain.startsWith(QStringLiteral("User Name: alice\nServer:203.0.113.9:4661\n\n")), qPrintable(plain));
+    QVERIFY2(plain.contains(QStringLiteral("Next re-ask:3:05 mins\n")), qPrintable(plain));
+    QVERIFY(plain.contains(QStringLiteral("Asked: 3 times; Available parts: 12")));
+    QVERIFY(plain.contains(QStringLiteral("Client's file name: their name.avi")));
+    QVERIFY(plain.contains(QStringLiteral("File comment: good copy")));
+    QVERIFY(!plain.contains(QStringLiteral("A4AF files")));
+
+    const QString extended = sourceTooltipText(s, /*extended*/ true);
+    QVERIFY2(extended.contains(QStringLiteral("A4AF files:a.iso\n:b.iso")), qPrintable(extended));
+
+    // No "next re-ask" for a source that is sending.
+    s.downloadState = QStringLiteral("Downloading");
+    QVERIFY(!sourceTooltipText(s, false).contains(QStringLiteral("Next re-ask")));
+
+    // An A4AF row names the file the source is asking instead.
+    s.a4af = true;
+    s.otherFileName = QStringLiteral("other.mkv");
+    const QString a4af = sourceTooltipText(s, false);
+    QVERIFY2(a4af.contains(QStringLiteral("Asked for another file: other.mkv")), qPrintable(a4af));
+    QVERIFY(!a4af.contains(QStringLiteral("Client's file name")));
+
+    SourceRow url;
+    url.isUrl = true;
+    url.userName = QStringLiteral("http://example.org/f");
+    url.availPartCount = 4;
+    QCOMPARE(sourceTooltipText(url, true), QStringLiteral("URL: http://example.org/f\nAvailable parts: 4"));
+}
+
+// MFC's LVCFMT_RIGHT columns. Only the server list answered the role.
+void tst_ListSorting::numericColumnsAreRightAligned()
+{
+    const auto right = [](const QAbstractItemModel& model, int column, const QModelIndex& parent = {}) {
+        return (model.index(0, column, parent).data(Qt::TextAlignmentRole).toInt() & Qt::AlignRight) != 0;
+    };
+
+    DownloadRow file;
+    file.hash = QStringLiteral("file");
+    file.status = QStringLiteral("ready");
+    file.sourceCount = 1;
+    SourceRow s;
+    s.userHash = QStringLiteral("s");
+    DownloadListModel downloads;
+    downloads.setDownloads({file});
+    downloads.setSources(QStringLiteral("file"), {s});
+    for (const QModelIndex& parent : {QModelIndex(), downloads.index(0, 0)}) {
+        for (int col : {DownloadListModel::ColSize, DownloadListModel::ColTransferred,
+                        DownloadListModel::ColCompleted, DownloadListModel::ColSpeed,
+                        DownloadListModel::ColSources})
+            QVERIFY2(right(downloads, col, parent), qPrintable(QString::number(col)));
+        QVERIFY(!right(downloads, DownloadListModel::ColFileName, parent));
+        QVERIFY(!right(downloads, DownloadListModel::ColStatus, parent));
+    }
+
+    // DownloadClientsCtrl.cpp:66-69, UploadListCtrl.cpp:77-78, ClientListCtrl.cpp:66,68
+    const auto clientColumns = [&](ClientListMode mode) {
+        ClientListModel model(mode);
+        model.setClients({ClientRow{}});
+        QList<int> columns;
+        for (int col = 0; col < 8; ++col)
+            if (right(model, col))
+                columns << col;
+        return columns;
+    };
+    QCOMPARE(clientColumns(ClientListMode::Uploading), (QList<int>{2, 3}));
+    QCOMPARE(clientColumns(ClientListMode::Downloading), (QList<int>{3, 5, 6}));
+    QCOMPARE(clientColumns(ClientListMode::KnownClients), (QList<int>{2, 4}));
+    QCOMPARE(clientColumns(ClientListMode::OnQueue), QList<int>{});
+}
+
+// MFC ServerListCtrl.cpp:83-86: columns 11 and 12, and Obfuscation to the right.
+void tst_ListSorting::serverListHasHardLimitAndVersion()
+{
+    ServerListModel model;
+    model.refreshFromCborArray(QCborArray{QCborMap{
+        {QStringLiteral("name"), QStringLiteral("srv")},
+        {QStringLiteral("hardFiles"), 250000},
+        {QStringLiteral("version"), QStringLiteral("17.15")},
+        {QStringLiteral("obfuscation"), true}}});
+    QCOMPARE(model.headerData(ServerListModel::ColHardFiles, Qt::Horizontal).toString(),
+             QStringLiteral("Hard File Limit"));
+    QCOMPARE(model.index(0, ServerListModel::ColHardFiles).data().toString(), formatShortNumber(250000));
+    QCOMPARE(model.index(0, ServerListModel::ColHardFiles).data(Qt::UserRole).toUInt(), 250000u);
+    QCOMPARE(model.index(0, ServerListModel::ColVersion).data().toString(), QStringLiteral("17.15"));
+    QVERIFY(model.index(0, ServerListModel::ColObfuscation).data(Qt::TextAlignmentRole).toInt() & Qt::AlignRight);
+    QVERIFY(model.index(0, ServerListModel::ColHardFiles).data(Qt::TextAlignmentRole).toInt() & Qt::AlignRight);
+    // appended: the columns saved layouts know keep their numbers
+    QCOMPARE(int(ServerListModel::ColIPv6), 14);
+    QCOMPARE(int(ServerListModel::ColHardFiles), 15);
+}
+
+// MFC DownloadListCtrl.cpp:1394-1404: Ctrl+F2 (or F2 on several files) tidies the names
+// of the part files in the selection.
+void tst_ListSorting::filenameCleanupSkipsFinishedAndUnchanged()
+{
+    const auto file = [](const char* hash, const char* name, const char* status) {
+        DownloadRow d;
+        d.hash = QString::fromLatin1(hash);
+        d.fileName = QString::fromLatin1(name);
+        d.status = QString::fromLatin1(status);
+        return d;
+    };
+    const auto renames = cleanupRenames({file("a", "some_file.name.avi", "ready"),
+                                         file("b", "other_file.avi", "complete"),
+                                         file("c", "Tidy.avi", "ready")},
+                                        QString());
+    QCOMPARE(renames.size(), 1);
+    QCOMPARE(renames.first().first, QStringLiteral("a"));
+    QCOMPARE(renames.first().second, cleanupFilename(QStringLiteral("some_file.name.avi"), QString()));
+    QVERIFY(renames.first().second != QStringLiteral("some_file.name.avi"));
 }
 
 QTEST_MAIN(tst_ListSorting)

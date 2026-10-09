@@ -659,11 +659,13 @@ QWidget* ServerPanel::createServerListPanel()
     serverView->setDescendingFirst({ServerListModel::ColUsers, ServerListModel::ColMaxUsers,
                                     ServerListModel::ColFiles, ServerListModel::ColPreference,
                                     ServerListModel::ColStatic, ServerListModel::ColSoftFiles,
-                                    ServerListModel::ColLowID, ServerListModel::ColObfuscation});
+                                    ServerListModel::ColLowID, ServerListModel::ColObfuscation,
+                                    ServerListModel::ColHardFiles});
     serverView->setDefaultSort(ServerListModel::ColUsers, Qt::DescendingOrder);
     serverView->bindColumns(QStringLiteral("serverList"),
-        {140, 140, 160, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 100, 220},
-        {ServerListModel::ColCountry, ServerListModel::ColIPv6});
+        {140, 140, 160, 80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 100, 220, 80, 60},
+        {ServerListModel::ColCountry, ServerListModel::ColIPv6, ServerListModel::ColHardFiles,
+         ServerListModel::ColVersion});
     CountryFlags::bindFlagColumn(serverView);
 
     m_serverListView->setContextMenuPolicy(Qt::CustomContextMenu);

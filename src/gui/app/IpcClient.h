@@ -136,6 +136,7 @@ signals:
     void downloadUpdated(const Ipc::IpcMessage& msg);
     void downloadAdded(const Ipc::IpcMessage& msg);
     void downloadRemoved(const Ipc::IpcMessage& msg);
+    void notifierEvent(const Ipc::IpcMessage& msg);   ///< [kind: NotifierEvent, text]
     void serverStateChanged(const Ipc::IpcMessage& msg);
     /// One Server Info line: [type: ServerMsgType, text: string].
     void serverMessageReceived(const Ipc::IpcMessage& msg);

@@ -13,6 +13,7 @@
 #include "prefs/Preferences.h"
 #include "utils/DialogSizing.h"
 #include "utils/IpcFeedback.h"
+#include "utils/OtherFunctions.h"
 
 #include <QCborArray>
 #include <QCheckBox>
@@ -24,7 +25,9 @@
 #include <QGuiApplication>
 #include <QHeaderView>
 #include <QLabel>
+#include <QLineEdit>
 #include <QLocale>
+#include <QMenu>
 #include <QPointer>
 #include <QPushButton>
 #include <QTabWidget>
@@ -295,6 +298,73 @@ QWidget* FileDetailDialog::createFileNamesTab(const QCborMap& d)
 
     populateFileNames(d);
 
+    // MFC IDD_FILEDETAILS_NAME (emule.rc:42-52): take a source's name over into the
+    // edit, tidy it, rename. Only while the file can still be renamed
+    // (CFileDetailDialogName::CanRenameFile).
+    const QString subjectHash = d.value(QLatin1StringView("hash")).toString();
+    const QString currentName = str(d, QLatin1StringView("fileName"));
+    const bool canRename = d.value(QLatin1StringView("canRename")).toBool();
+
+    auto* takeOverBtn = new QPushButton(tr("&Take over"));
+    takeOverBtn->setObjectName(QStringLiteral("takeOverName"));
+    m_fileNameEdit = new QLineEdit(currentName);
+    m_fileNameEdit->setObjectName(QStringLiteral("renameEdit"));
+    auto* cleanupBtn = new QPushButton(tr("&Cleanup"));
+    cleanupBtn->setObjectName(QStringLiteral("cleanupName"));
+    auto* renameBtn = new QPushButton(tr("Rename"));
+    renameBtn->setObjectName(QStringLiteral("renameFile"));
+    renameBtn->setEnabled(false);
+
+    const auto takeOver = [this] {
+        if (const auto* item = m_fileNamesTree->currentItem(); item && m_fileNameEdit->isEnabled())
+            m_fileNameEdit->setText(item->text(0));
+    };
+    const auto copyName = [this] {
+        if (const auto* item = m_fileNamesTree->currentItem())
+            QGuiApplication::clipboard()->setText(item->text(0));
+    };
+    connect(takeOverBtn, &QPushButton::clicked, this, takeOver);
+    connect(m_fileNamesTree, &QTreeWidget::itemDoubleClicked, this, takeOver);
+    connect(cleanupBtn, &QPushButton::clicked, this, [this] {
+        m_fileNameEdit->setText(cleanupFilename(m_fileNameEdit->text(), thePrefs.filenameCleanups()));
+    });
+    connect(m_fileNameEdit, &QLineEdit::textChanged, renameBtn, [renameBtn, currentName](const QString& text) {
+        const QString name = text.trimmed();
+        renameBtn->setEnabled(!name.isEmpty() && !name.contains(u'|') && name != currentName);
+    });
+    const auto rename = [this, renameBtn, subjectHash] {
+        if (renameBtn->isEnabled())
+            emit renameFileRequested(subjectHash, m_fileNameEdit->text().trimmed());
+    };
+    connect(renameBtn, &QPushButton::clicked, this, rename);
+    connect(m_fileNameEdit, &QLineEdit::returnPressed, this, rename);
+
+    m_fileNamesTree->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_fileNamesTree, &QTreeWidget::customContextMenuRequested, this,
+            [this, takeOver, copyName, canRename](const QPoint& pos) {
+        const bool have = m_fileNamesTree->currentItem() != nullptr;
+        QMenu menu(this);
+        QAction* take = menu.addAction(tr("Take over"), this, takeOver);
+        take->setEnabled(have && canRename);
+        menu.setDefaultAction(take);
+        menu.addAction(tr("Copy"), this, copyName)->setEnabled(have);
+        menu.exec(m_fileNamesTree->viewport()->mapToGlobal(pos));
+    });
+
+    for (QWidget* w : {static_cast<QWidget*>(takeOverBtn), static_cast<QWidget*>(m_fileNameEdit),
+                       static_cast<QWidget*>(cleanupBtn)})
+        w->setEnabled(canRename);
+
+    auto* takeRow = new QHBoxLayout;
+    takeRow->addWidget(takeOverBtn);
+    takeRow->addStretch();
+    layout->addLayout(takeRow);
+    auto* editRow = new QHBoxLayout;
+    editRow->addWidget(m_fileNameEdit, 1);
+    editRow->addWidget(cleanupBtn);
+    editRow->addWidget(renameBtn);
+    layout->addLayout(editRow);
+
     // "Search Kad" button — same Kad notes lookup as the Comments tab (a notes
     // search is the only Kad lookup that returns filenames for a file hash).
     const QString fileHash = d.value(QLatin1StringView("hash")).toString();
@@ -493,6 +563,14 @@ QWidget* FileDetailDialog::createArchivePreviewTab(const QCborMap& d)
     const QString fullName = str(d, QLatin1StringView("fullName"));
     const auto fileSize = static_cast<uint64_t>(num(d, QLatin1StringView("fileSize")));
     panel->setFile(fullName, fileSize);
+    // A download in progress: what is still missing, and the preview file
+    QList<qint64> gaps;
+    for (const auto& value : d.value(QLatin1StringView("archiveGaps")).toArray())
+        gaps << value.toInteger();
+    panel->setPartFile(gaps, d.value(QLatin1StringView("canRecoverArchive")).toBool());
+    const QString fileHash = d.value(QLatin1StringView("hash")).toString();
+    connect(panel, &ArchivePreviewPanel::previewFileRequested, this,
+            [this, fileHash] { emit archivePreviewFileRequested(fileHash); });
     panel->setAutoScan(thePrefs.autoArchivePreviewStart());   // else: the Update button
     return panel;
 }

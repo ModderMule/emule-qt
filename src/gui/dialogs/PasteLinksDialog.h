@@ -13,7 +13,11 @@ class PasteLinksDialog : public PasteTextDialog {
     Q_OBJECT
 
 public:
-    explicit PasteLinksDialog(IpcClient* ipc, QWidget* parent = nullptr);
+    /// @param categories the download categories, index 0 ("All") first; a category
+    ///                   box is offered when there is more than that one
+    ///                   (MFC CDirectDownloadDlg hides its tabs without categories)
+    explicit PasteLinksDialog(IpcClient* ipc, const QStringList& categories = {},
+                              QWidget* parent = nullptr);
 
 protected:
     void onAccepted() override;

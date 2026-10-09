@@ -35,6 +35,7 @@ private slots:
     void resetClearsBothFields();
     void anUncommentableFileStillReads();
     void arefreshDoesNotOverwriteTyping();
+    void searchKadNeedsKad();
 
 private:
     /// A details map of the shape GetSharedFileDetails answers with.
@@ -241,6 +242,27 @@ void tst_CommentsPanel::arefreshDoesNotOverwriteTyping()
 
     panel.setDetails(detailsFor(QStringLiteral("old"), 2));
     QCOMPARE(edit->text(), QStringLiteral("half a thou"));
+}
+
+// MFC CommentDialogLst.cpp:155-161: no Kad, no button. A click used to go to the daemon
+// and come back as a warning box.
+void tst_CommentsPanel::searchKadNeedsKad()
+{
+    CommentsPanel panel(QStringLiteral("tstCommentsKad"));
+    QCborMap details = detailsFor(QString{}, 0, /*canComment*/ false);
+
+    details.insert(QLatin1StringView("kadConnected"), false);
+    details.insert(QLatin1StringView("notesSearchRunning"), true);
+    panel.setDetails(details);
+    QVERIFY(!buttonNamed(panel, QStringLiteral("Search Kad"))->isEnabled());   // and not "in progress"
+
+    details.insert(QLatin1StringView("kadConnected"), true);
+    panel.setDetails(details);
+    QVERIFY(!buttonNamed(panel, QStringLiteral("(Kad search in progress...)"))->isEnabled());
+
+    details.insert(QLatin1StringView("notesSearchRunning"), false);
+    panel.setDetails(details);
+    QVERIFY(buttonNamed(panel, QStringLiteral("Search Kad"))->isEnabled());
 }
 
 QTEST_MAIN(tst_CommentsPanel)

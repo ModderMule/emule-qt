@@ -159,6 +159,18 @@ private slots:
         QCOMPARE(eMule::formatShortNumber(int64_t{2'500'000'000'000}), QStringLiteral("2.50 T"));
     }
 
+    // ---- formatSecondsLongHM (MFC CastSecondsToLngHM) ----
+
+    void testFormatSecondsLongHM()
+    {
+        QCOMPARE(eMule::formatSecondsLongHM(-1), QStringLiteral("?"));
+        QCOMPARE(eMule::formatSecondsLongHM(12), QStringLiteral("12 Seconds"));
+        QCOMPARE(eMule::formatSecondsLongHM(185), QStringLiteral("3:05 Minutes"));
+        QCOMPARE(eMule::formatSecondsLongHM(2 * 3600 + 10 * 60 + 59), QStringLiteral("2:10 Hours"));
+        QCOMPARE(eMule::formatSecondsLongHM(86400 + 2 * 3600 + 10 * 60), QStringLiteral("1 Days 2:10 Hours"));
+        QCOMPARE(eMule::formatSecondsLongHM(86400 + 5 * 60), QStringLiteral("1 Days 5 Minutes"));
+    }
+
     // ---- formatSecondsHM (MFC CastSecondsToHM) ----
 
     void testFormatSecondsHM()

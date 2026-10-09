@@ -128,6 +128,8 @@ signals:
     void sourceRemoved(eMule::UpDownClient* client);
     void downloadCompleted();
     void fileMoveFinished(bool success);
+    /// A write failed for lack of space and the file was parked for it.
+    void outOfDiskSpace();
 };
 
 // ---------------------------------------------------------------------------

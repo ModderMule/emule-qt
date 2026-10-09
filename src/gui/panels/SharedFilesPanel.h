@@ -79,6 +79,9 @@ public slots:
     /// IRC logged in or gone; the menu entry above is greyed without it.
     void setIrcConnected(bool connected) { m_ircConnected = connected; }
 
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 private slots:
     void onRefreshTimer();
     void onFolderSelectionChanged();
@@ -272,6 +275,14 @@ private:
     /// The shared directories as children of "Shared Directories", nested like MFC.
     void rebuildSharedDirsNode();
     void showSharedDirMenu(QTreeWidgetItem* item, const QPoint& globalPos);
+    /// The folder a tree drag would share when dropped on @p target; empty when the
+    /// drag is not a shareable unshared folder or the target does not take one.
+    [[nodiscard]] QString dropSharePath(const QTreeWidgetItem* dragged, const QTreeWidgetItem* target) const;
+    /// Fetch the categories and rebuild the nodes under Incoming / Incomplete Files.
+    void requestCategoryNodes();
+    void rebuildCategoryNodes(const QList<std::pair<QString, QString>>& categories);
+    /// Hashes of every file the list shows right now, in view order.
+    [[nodiscard]] QStringList listedHashes() const;
 
     // Filesystem tree helpers
     void populateFilesystemChildren(QTreeWidgetItem* parentItem);

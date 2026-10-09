@@ -29,9 +29,12 @@
 #include <QComboBox>
 #include <QCborMap>
 #include <QLabel>
+#include <QLineEdit>
+#include <QMenu>
 #include <QMessageBox>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QScopeGuard>
 #include <QScreen>
 #include <QScrollArea>
 #include <QSlider>
@@ -97,6 +100,8 @@ private slots:
     void aLargeConnectionLimitSurvivesTheSpin();
     void extendedValuesComeFromThePrefsNotFallbacks();
     void generalPageControlsEnableApply();
+    void ussShowsTheLowestAllowedUploadSpeed();
+    void schedulerActionsFollowMfc();
 
     // First start wizard: compiled into this binary anyway, and just as daemon-less.
     void theWizardShowsAllOfItsText();
@@ -106,6 +111,9 @@ private slots:
     void theWizardRateFieldsFollowTheLineAndSwitchToCustom();
     void theWizardLimitFieldsFollowTheLineAndTakeAnEdit();
     void theWizardNeedsANetwork();
+    void theWizardWalksMfcsPages();
+    void theWizardWritesNickPrioritiesAndObfuscation();
+    void theWizardBringsKadBackWithUdp();
     void theWizardReportsTheRealPortMappingResult();
     void theWizardDoesNotWaitWithoutACore();
     void aPortChangeIsReportedAsItWasApplied();
@@ -343,6 +351,76 @@ void TestOptionsDialogSizing::theIpcLogBoxShowsTheStoredValue()
 }
 
 /// The slider stopped at 30 000, so a larger stored queue was cut down by the next OK.
+/// MFC IDS_DYNUP_MINUPLOAD: the core has honoured the value all along, the page had
+/// no control for it.
+void TestOptionsDialogSizing::ussShowsTheLowestAllowedUploadSpeed()
+{
+    const uint32 saved = thePrefs.minUpload();
+    thePrefs.setMinUpload(17);
+    OptionsDialog dlg(nullptr, nullptr);
+    auto* spin = dlg.findChild<QSpinBox*>(QStringLiteral("dynUpMinUpload"));
+    QVERIFY(spin);
+    QCOMPARE(spin->value(), 17);
+    QCOMPARE(spin->minimum(), 1);
+    thePrefs.setMinUpload(saved);
+}
+
+/// MFC PPgScheduler.cpp:340-415: sixteen actions at most, and a category action is
+/// given its category from a submenu instead of a typed number.
+void TestOptionsDialogSizing::schedulerActionsFollowMfc()
+{
+    OptionsDialog dlg(nullptr, nullptr);
+    auto* table = dlg.findChild<QTreeWidget*>(QStringLiteral("schedActions"));
+    QVERIFY(table);
+
+    QStringList entries;
+    bool addEnabled = false;
+    QAction* allCategories = nullptr;
+    dlg.m_schedMenuHook = [&](QMenu* menu) {
+        entries.clear();
+        allCategories = nullptr;
+        for (QAction* a : menu->actions()) {
+            entries << a->text();
+            if (a->text() == QStringLiteral("Add"))
+                addEnabled = a->menu()->isEnabled();
+            if (a->text() == QStringLiteral("Select category")) {
+                for (QAction* c : a->menu()->actions())
+                    if (c->text() == QStringLiteral("All"))
+                        allCategories = c;
+            }
+        }
+        if (allCategories)
+            allCategories->trigger();
+    };
+    const auto openMenu = [&] { emit table->customContextMenuRequested(QPoint(1, 1)); };
+
+    // A rate action: edited through the prompt.
+    auto* limit = new QTreeWidgetItem(table, {QStringLiteral("Upload Limit"), QStringLiteral("10")});
+    limit->setData(0, Qt::UserRole, 1);
+    table->setCurrentItem(limit);
+    openMenu();
+    QVERIFY(addEnabled);
+    QVERIFY(entries.contains(QStringLiteral("Edit Value")));
+    QVERIFY(!entries.contains(QStringLiteral("Select category")));
+
+    // A category action: a submenu, no free-text edit; "All" is -1.
+    auto* stop = new QTreeWidgetItem(table, {QStringLiteral("Stop Category"), QString()});
+    stop->setData(0, Qt::UserRole, 6);
+    table->setCurrentItem(stop);
+    openMenu();
+    QVERIFY(entries.contains(QStringLiteral("Select category")));
+    QVERIFY(!entries.contains(QStringLiteral("Edit Value")));
+    QCOMPARE(stop->text(1), QStringLiteral("-1"));
+
+    // The sixteenth is the last.
+    while (table->topLevelItemCount() < 16) {
+        auto* filler = new QTreeWidgetItem(table, {QStringLiteral("Source Limit"), QStringLiteral("1")});
+        filler->setData(0, Qt::UserRole, 3);
+    }
+    openMenu();
+    QVERIFY(!addEnabled);
+}
+
 void TestOptionsDialogSizing::aLargeQueueSizeSurvivesTheSlider()
 {
     thePrefs.setQueueSize(42'000);
@@ -485,6 +563,18 @@ QPushButton* wizardButton(const FirstStartWizard& wizard, const QString& text)
     return nullptr;
 }
 
+/// Click Next until the last page; returns how many pages that took.
+int walkToLastPage(const FirstStartWizard& wizard)
+{
+    int clicks = 0;
+    while (QPushButton* next = wizardButton(wizard, QStringLiteral("Next >"))) {
+        if (++clicks > 20)
+            break;   // a page refused to let go
+        next->click();
+    }
+    return clicks;
+}
+
 QString selectedLine(const FirstStartWizard& wizard)
 {
     const auto* list = wizard.findChild<QTreeWidget*>();
@@ -539,6 +629,7 @@ void TestOptionsDialogSizing::theWizardOffersTheNewDefaultsToAnUntunedInstall()
     wizardButton(wizard, QStringLiteral("Next >"))->click();
     QVERIFY(wizardButton(wizard, QStringLiteral("< Back"))->isEnabled());
     QCOMPARE(wizard.result(), int(QDialog::Rejected));   // still open
+    walkToLastPage(wizard);
 
     wizardButton(wizard, QStringLiteral("Finish"))->click();
     QCOMPARE(wizard.result(), int(QDialog::Accepted));
@@ -561,14 +652,28 @@ void TestOptionsDialogSizing::theWizardLeavesTunedLimitsAndADisabledUdpPortAlone
     thePrefs.setPort(4662);
     thePrefs.setUdpPort(0);
 
+    thePrefs.setKadEnabled(true);
+    thePrefs.setNetworkED2K(true);
+
     FirstStartWizard wizard(nullptr);
     QCOMPARE(selectedLine(wizard), QStringLiteral("Keep current settings"));
 
-    wizardButton(wizard, QStringLiteral("Next >"))->click();
+    // G47: Kad runs over UDP. With UDP off its box is unticked and greyed
+    // (MFC PShtWiz1.cpp:662-668); it used to stay ticked.
+    QCheckBox* kad = nullptr;
+    for (QCheckBox* box : wizard.findChildren<QCheckBox*>())
+        if (box->text() == QStringLiteral("Kad"))
+            kad = box;
+    QVERIFY(kad);
+    QVERIFY(!kad->isEnabled());
+    QVERIFY(!kad->isChecked());
+
+    walkToLastPage(wizard);
     wizardButton(wizard, QStringLiteral("Finish"))->click();
     QCOMPARE(wizard.result(), int(QDialog::Accepted));
 
     const QCborMap applied = wizard.appliedSettings();
+    QCOMPARE(applied.value(QStringLiteral("kadEnabled")).toBool(true), false);
     QVERIFY(!applied.contains(QStringLiteral("maxDownload")));
     QVERIFY(!applied.contains(QStringLiteral("maxGraphUploadRate")));
     QCOMPARE(applied.value(QStringLiteral("port")).toInteger(), 4662);
@@ -664,6 +769,122 @@ void TestOptionsDialogSizing::theWizardLimitFieldsFollowTheLineAndTakeAnEdit()
     QCOMPARE(thePrefs.maxUpload(), 6000u);
 }
 
+/// G32. MFC CPShtWiz1 has seven pages (PShtWiz1.cpp:775-797); the port had two. Its
+/// Server page lives on the ports page and the wizard ends on the speed page.
+void TestOptionsDialogSizing::theWizardWalksMfcsPages()
+{
+    const WizardPrefsGuard guard;
+    thePrefs.setKadEnabled(true);
+    thePrefs.setNetworkED2K(true);
+    thePrefs.setUdpPort(4672);
+
+    FirstStartWizard wizard(nullptr);
+    auto* pages = wizard.findChild<QStackedWidget*>();
+    QVERIFY(pages);
+    QCOMPARE(pages->count(), 6);
+    QCOMPARE(pages->currentIndex(), 0);            // Welcome
+    QCOMPARE(walkToLastPage(wizard), 5);           // General, Ports, Priorities, Security, Speed
+    QVERIFY(wizardButton(wizard, QStringLiteral("Finish")));
+
+    // and back, one at a time
+    wizardButton(wizard, QStringLiteral("< Back"))->click();
+    QCOMPARE(pages->currentIndex(), 4);
+
+    // The options button still opens it on the speed page.
+    FirstStartWizard speed(nullptr, nullptr, FirstStartWizard::StartPage::Speed);
+    QCOMPARE(speed.findChild<QStackedWidget*>()->currentIndex(), 5);
+}
+
+/// MFC writes these on Finish (PShtWiz1.cpp:836-857); the port had no page for them.
+void TestOptionsDialogSizing::theWizardWritesNickPrioritiesAndObfuscation()
+{
+    const WizardPrefsGuard guard;
+    const QString savedNick = thePrefs.nick();
+    const bool savedConnect = thePrefs.autoConnect();
+    const bool savedDown = thePrefs.autoDownloadPriority();
+    const bool savedUp = thePrefs.autoSharedFilesPriority();
+    const bool savedSafe = thePrefs.safeServerConnect();
+    const bool savedRequested = thePrefs.cryptLayerRequested();
+    const bool savedSupported = thePrefs.cryptLayerSupported();
+    const auto restore = qScopeGuard([&] {
+        thePrefs.setNick(savedNick);
+        thePrefs.setAutoConnect(savedConnect);
+        thePrefs.setAutoDownloadPriority(savedDown);
+        thePrefs.setAutoSharedFilesPriority(savedUp);
+        thePrefs.setSafeServerConnect(savedSafe);
+        thePrefs.setCryptLayerRequested(savedRequested);
+        thePrefs.setCryptLayerSupported(savedSupported);
+    });
+    thePrefs.setKadEnabled(true);
+    thePrefs.setNetworkED2K(true);
+    thePrefs.setUdpPort(4672);
+    thePrefs.setNick(QStringLiteral("old nick"));
+    thePrefs.setAutoConnect(false);
+    thePrefs.setAutoDownloadPriority(true);
+    thePrefs.setAutoSharedFilesPriority(true);
+    thePrefs.setSafeServerConnect(true);
+    thePrefs.setCryptLayerRequested(false);
+
+    FirstStartWizard wizard(nullptr);
+    const auto box = [&wizard](const char* name) {
+        return wizard.findChild<QCheckBox*>(QString::fromLatin1(name));
+    };
+    auto* nick = wizard.findChild<QLineEdit*>(QStringLiteral("wizardNick"));
+    QVERIFY(nick);
+
+    // The pages show what is set now, not MFC's presets (deliberate): safe connect on.
+    QCOMPARE(nick->text(), QStringLiteral("old nick"));
+    QCOMPARE(nick->maxLength(), 50);
+    QVERIFY(box("wizardSafeConnect")->isChecked());
+    QVERIFY(box("wizardAutoDownPrio")->isChecked());
+    QVERIFY(!box("wizardAutoConnect")->isChecked());
+
+    nick->setText(QStringLiteral("  new nick "));
+    box("wizardAutoConnect")->setChecked(true);
+    box("wizardAutoUpPrio")->setChecked(false);
+    box("wizardObfuscation")->setChecked(true);
+
+    walkToLastPage(wizard);
+    wizardButton(wizard, QStringLiteral("Finish"))->click();
+    QCOMPARE(wizard.result(), int(QDialog::Accepted));
+
+    const QCborMap applied = wizard.appliedSettings();
+    QCOMPARE(applied.value(QStringLiteral("nick")).toString(), QStringLiteral("new nick"));
+    QCOMPARE(applied.value(QStringLiteral("autoConnect")).toBool(), true);
+    QCOMPARE(applied.value(QStringLiteral("autoDownloadPriority")).toBool(), true);
+    QCOMPARE(applied.value(QStringLiteral("autoSharedFilesPriority")).toBool(true), false);
+    QCOMPARE(applied.value(QStringLiteral("safeServerConnect")).toBool(), true);
+    QCOMPARE(applied.value(QStringLiteral("cryptLayerRequested")).toBool(), true);
+    QCOMPARE(applied.value(QStringLiteral("cryptLayerSupported")).toBool(), true);   // implied
+    QCOMPARE(thePrefs.nick(), QStringLiteral("new nick"));
+    QVERIFY(thePrefs.cryptLayerRequested());
+}
+
+/// G47, the other direction: re-enabling UDP gives Kad its tick back.
+void TestOptionsDialogSizing::theWizardBringsKadBackWithUdp()
+{
+    const WizardPrefsGuard guard;
+    thePrefs.setKadEnabled(true);
+    thePrefs.setUdpPort(4672);
+
+    FirstStartWizard wizard(nullptr);
+    QCheckBox* kad = nullptr;
+    QCheckBox* udpOff = nullptr;
+    for (QCheckBox* b : wizard.findChildren<QCheckBox*>()) {
+        if (b->text() == QStringLiteral("Kad"))
+            kad = b;
+        if (b->text() == QStringLiteral("Disable"))
+            udpOff = b;
+    }
+    QVERIFY(kad && udpOff);
+    QVERIFY(kad->isChecked() && kad->isEnabled());
+
+    udpOff->setChecked(true);
+    QVERIFY(!kad->isChecked() && !kad->isEnabled());
+    udpOff->setChecked(false);
+    QVERIFY(kad->isChecked() && kad->isEnabled());
+}
+
 void TestOptionsDialogSizing::theWizardNeedsANetwork()
 {
     const WizardPrefsGuard guard;
@@ -692,7 +913,7 @@ void TestOptionsDialogSizing::theWizardNeedsANetwork()
 void TestOptionsDialogSizing::theWizardReportsTheRealPortMappingResult()
 {
     const WizardPrefsGuard guard;
-    FirstStartWizard wizard(nullptr);
+    FirstStartWizard wizard(nullptr, nullptr, FirstStartWizard::StartPage::Ports);   // where the status is shown
     wizard.show();
     QVERIFY(QTest::qWaitForWindowExposed(&wizard));
     auto* status = wizard.findChild<QLabel*>(QStringLiteral("upnpStatus"));

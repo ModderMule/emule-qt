@@ -117,6 +117,21 @@ QCborMap networkInfo()
                           static_cast<qint64>(srv->tcpFlags()));
             server.insert(QStringLiteral("udpFlags"),
                           static_cast<qint64>(srv->udpFlags()));
+            // The extended feature list (MFC NetworkInfoDlg.cpp:182-213), decided here:
+            // TCP obfuscation needs the obfuscation port, which the flags do not carry.
+            const uint32 tcp = srv->tcpFlags();
+            const uint32 udp = srv->udpFlags();
+            server.insert(QStringLiteral("features"), QCborMap{
+                {QStringLiteral("tcpCompression"), (tcp & SrvTcpFlag::Compression) != 0},
+                {QStringLiteral("shortTags"), (tcp & SrvTcpFlag::NewTags) != 0 || (udp & SrvUdpFlag::NewTags) != 0},
+                {QStringLiteral("unicode"), (tcp & SrvTcpFlag::Unicode) != 0 || (udp & SrvUdpFlag::Unicode) != 0},
+                {QStringLiteral("intTypeTags"), (tcp & SrvTcpFlag::TypeTagInteger) != 0},
+                {QStringLiteral("udpSources"), (udp & SrvUdpFlag::ExtGetSources) != 0},
+                {QStringLiteral("udpSources2"), (udp & SrvUdpFlag::ExtGetSources2) != 0},
+                {QStringLiteral("udpFiles"), (udp & SrvUdpFlag::ExtGetFiles) != 0},
+                {QStringLiteral("largeFiles"), srv->supportsLargeFilesTCP() || srv->supportsLargeFilesUDP()},
+                {QStringLiteral("obfuscationUdp"), srv->supportsObfuscationUDP()},
+                {QStringLiteral("obfuscationTcp"), srv->supportsObfuscationTCP()}});
             ed2k.insert(QStringLiteral("server"), server);
         }
     }
@@ -166,6 +181,7 @@ QCborMap networkInfo()
                                ? prefs->externalKadPort() : 0);
         }
 
+        kadInfo.insert(QStringLiteral("lanMode"), kad->isRunningInLANMode());
         kadInfo.insert(QStringLiteral("users"),
                        static_cast<qint64>(kad->getKademliaUsers()));
         kadInfo.insert(QStringLiteral("usersExperimental"),

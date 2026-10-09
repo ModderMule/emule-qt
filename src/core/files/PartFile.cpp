@@ -4557,8 +4557,10 @@ void PartFile::handleWriteFailure(const QString& error, bool diskFull)
         logError(QStringLiteral("Out of disk space while writing %1").arg(fileName()));
         // With the check on the file waits and the free-space sweep brings it back;
         // with it off that sweep un-parks everything, so it is a plain pause.
-        if (!m_insufficient && !m_paused)
+        if (!m_insufficient && !m_paused) {
             pauseFile(/*insufficient*/ thePrefs.checkDiskspace());
+            emit m_partNotifier.outOfDiskSpace();   // once per stop, not per failed flush
+        }
         return;
     }
     if (m_writeError)

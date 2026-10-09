@@ -6,6 +6,8 @@
 #include "app/IpcClient.h"
 #include "utils/SharedFilesFetch.h"
 #include "controls/AbstractListView.h"
+#include "controls/SortableItems.h"
+#include "utils/StringUtils.h"
 
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
@@ -59,10 +61,9 @@ void CollectionCreateDialog::loadExistingCollection(const QString& name,
 
     // Populate right pane with existing collection files
     for (const auto& f : files) {
-        auto* item = new QTreeWidgetItem(m_collectionTree);
-        item->setText(0, f.value(QStringLiteral("fileName")).toString());
-        item->setData(0, Qt::UserRole, f.value(QStringLiteral("hash")).toString());
-        item->setData(0, Qt::UserRole + 1, f.value(QStringLiteral("fileSize")).toLongLong());
+        m_collectionTree->addTopLevelItem(makeRow(f.value(QStringLiteral("fileName")).toString(),
+                                                  f.value(QStringLiteral("fileSize")).toLongLong(),
+                                                  f.value(QStringLiteral("hash")).toString()));
     }
     updateLabels();
 }
@@ -82,18 +83,24 @@ void CollectionCreateDialog::setupUi()
 
     // Left pane: shared files
     auto* leftLayout = new QVBoxLayout;
-    m_sharedLabel = new QLabel(tr("Shared (0)"));
-    leftLayout->addWidget(m_sharedLabel);
+    m_sharedButton = new QPushButton(tr("Shared (%1)").arg(0));
+    m_sharedButton->setObjectName(QStringLiteral("collectionSourceToggle"));
+    m_sharedButton->setToolTip(tr("Switch between the shared files and every file known"));
+    connect(m_sharedButton, &QPushButton::clicked, this, [this] {
+        m_showKnown = !m_showKnown;
+        populateSharedFiles();
+    });
+    leftLayout->addWidget(m_sharedButton, 0, Qt::AlignLeft);
 
     auto* sharedTree = new ListTreeWidget;
     m_sharedTree = sharedTree;
-    m_sharedTree->setHeaderLabels({tr("File Name")});
+    m_sharedTree->setHeaderLabels({tr("File Name"), tr("Size"), tr("Hash")});
     m_sharedTree->setRootIsDecorated(false);
     m_sharedTree->setAlternatingRowColors(true);
     m_sharedTree->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_sharedTree->setSortingEnabled(true);
     m_sharedTree->header()->setStretchLastSection(true);
-    sharedTree->bindColumns(QStringLiteral("collectionCreateShared"), {280});
+    sharedTree->bindColumns(QStringLiteral("collectionCreateShared"), {200, 70, 220});
     leftLayout->addWidget(m_sharedTree, 1);
     paneLayout->addLayout(leftLayout, 1);
 
@@ -123,13 +130,13 @@ void CollectionCreateDialog::setupUi()
 
     auto* collectionTree = new ListTreeWidget;
     m_collectionTree = collectionTree;
-    m_collectionTree->setHeaderLabels({tr("File Name")});
+    m_collectionTree->setHeaderLabels({tr("File Name"), tr("Size"), tr("Hash")});
     m_collectionTree->setRootIsDecorated(false);
     m_collectionTree->setAlternatingRowColors(true);
     m_collectionTree->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_collectionTree->setSortingEnabled(true);
     m_collectionTree->header()->setStretchLastSection(true);
-    collectionTree->bindColumns(QStringLiteral("collectionCreateFiles"), {280});
+    collectionTree->bindColumns(QStringLiteral("collectionCreateFiles"), {200, 70, 220});
     rightLayout->addWidget(m_collectionTree, 1);
     paneLayout->addLayout(rightLayout, 1);
 
@@ -177,25 +184,40 @@ void CollectionCreateDialog::setupUi()
 
     mainLayout->addLayout(btnLayout);
 
-    DialogSizing::applySize(this, {}, QSize(640, 420), DialogSizing::Fit::Layout);
+    DialogSizing::applySize(this, {}, QSize(760, 440), DialogSizing::Fit::Layout);
 }
 
 // ---------------------------------------------------------------------------
 // populateSharedFiles
 // ---------------------------------------------------------------------------
 
+QTreeWidgetItem* CollectionCreateDialog::makeRow(const QString& name, qint64 size, const QString& hash)
+{
+    auto* item = new SortableTreeItem;
+    item->setText(0, name);
+    item->setText(1, formatByteSize(size));
+    item->setData(1, SortRole, size);
+    item->setTextAlignment(1, Qt::AlignRight | Qt::AlignVCenter);
+    item->setText(2, hash);
+    // The payload the save reads back; kept apart from the texts on purpose.
+    item->setData(0, Qt::UserRole, hash);
+    item->setData(0, Qt::UserRole + 1, size);
+    return item;
+}
+
 void CollectionCreateDialog::populateSharedFiles()
 {
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
-    fetchSharedFileRows(m_ipc, this, [this](bool ok, const QCborArray& arr) {
-        if (!ok)
+    // MFC CCollectionCreateDialog::UpdateAvailFiles (CollectionCreateDialog.cpp:312-323)
+    m_sharedTree->clear();
+    updateLabels();
+    const quint32 serial = ++m_fillSerial;
+    const auto fill = [this, serial](bool ok, const QCborArray& arr) {
+        if (!ok || serial != m_fillSerial)
             return;
 
-        // Hashes already in the right pane. The trees have one column; the hash
-        // lives in UserRole (reading text(2) matched nothing, so Modify listed
-        // every file on both sides).
         QSet<QString> rightHashes;
         for (int i = 0; i < m_collectionTree->topLevelItemCount(); ++i)
             rightHashes.insert(m_collectionTree->topLevelItem(i)->data(0, Qt::UserRole).toString());
@@ -203,30 +225,29 @@ void CollectionCreateDialog::populateSharedFiles()
         for (const auto& val : arr) {
             const QCborMap m = val.toMap();
             const QString hash = m.value(QStringLiteral("hash")).toString();
-            const QString name = m.value(QStringLiteral("fileName")).toString();
-            const qint64 size = m.value(QStringLiteral("fileSize")).toInteger();
 
             // Skip files already in collection
             if (rightHashes.contains(hash))
                 continue;
 
-            auto* item = new QTreeWidgetItem(m_sharedTree);
-            item->setText(0, name);
-            item->setData(0, Qt::UserRole, hash);          // store hash
-            // Carried for the collection file it becomes, not for sorting: these
-            // trees have a single Name column and nothing sorts by size. A size
-            // column added here would need a SortRole key (controls/SortableItems.h).
-            item->setData(0, Qt::UserRole + 1, size);
-
-            // If this was pre-selected, move it to collection
+            QTreeWidgetItem* item = makeRow(m.value(QStringLiteral("fileName")).toString(),
+                                            m.value(QStringLiteral("fileSize")).toInteger(), hash);
+            // If this was pre-selected, it starts in the collection
             if (m_preselectedHashes.contains(hash)) {
-                m_sharedTree->takeTopLevelItem(m_sharedTree->indexOfTopLevelItem(item));
                 m_collectionTree->addTopLevelItem(item);
+                rightHashes.insert(hash);
+            } else {
+                m_sharedTree->addTopLevelItem(item);
             }
         }
+        m_preselectedHashes.clear();   // once: a later refill must not move them again
 
         updateLabels();
-    });
+    };
+    if (m_showKnown)
+        fetchKnownFileRows(m_ipc, this, fill);
+    else
+        fetchSharedFileRows(m_ipc, this, fill);
 }
 
 // ---------------------------------------------------------------------------
@@ -259,7 +280,8 @@ void CollectionCreateDialog::removeFromCollection()
 
 void CollectionCreateDialog::updateLabels()
 {
-    m_sharedLabel->setText(tr("Shared (%1)").arg(m_sharedTree->topLevelItemCount()));
+    m_sharedButton->setText((m_showKnown ? tr("Known (%1)") : tr("Shared (%1)"))
+                                .arg(m_sharedTree->topLevelItemCount()));
     m_collectionLabel->setText(tr("Collection List (%1)").arg(m_collectionTree->topLevelItemCount()));
 }
 

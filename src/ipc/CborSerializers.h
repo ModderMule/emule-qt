@@ -286,6 +286,7 @@ inline void insertBindState(QCborMap& info)
         {QStringLiteral("isStatic"),    s.isStaticMember()},
         {QStringLiteral("disabled"),    s.isDisabled()},
         {QStringLiteral("softFiles"),   static_cast<qint64>(s.softFiles())},
+        {QStringLiteral("hardFiles"),   static_cast<qint64>(s.hardFiles())},
         {QStringLiteral("lowIDUsers"),  static_cast<qint64>(s.lowIDUsers())},
         {QStringLiteral("obfuscation"), s.supportsObfuscationTCP()},
         {QStringLiteral("serverId"),    static_cast<qint64>(s.serverId())},
@@ -567,6 +568,23 @@ inline void insertDownloadSeed(QCborMap& m, const SearchFile& f)
     m.insert(QStringLiteral("kadVersion"), static_cast<int>(c.kadVersion()));
     // A4AF mark: a source of this file that is asking another one
     m.insert(QStringLiteral("hasOtherRequests"), c.otherRequestCount() > 0);
+    // Source tooltip and sorting (MFC DownloadListCtrl.cpp:2318-2372, 1790-1793)
+    m.insert(QStringLiteral("clientVersion"), static_cast<qint64>(c.clientVersion()));
+    m.insert(QStringLiteral("askedCountDown"), static_cast<qint64>(c.askedCountDown()));
+    m.insert(QStringLiteral("srcServerAddr"), c.serverAddress().isNull() ? QString() : c.serverAddress().toString());
+    m.insert(QStringLiteral("srcServerPort"), static_cast<qint64>(c.serverPort()));
+    if (c.reqFile())
+        m.insert(QStringLiteral("nextReaskSecs"), static_cast<qint64>(c.timeUntilReask(c.reqFile()) / 1000));
+    if (!c.fileComment().isEmpty())
+        m.insert(QStringLiteral("fileComment"), c.fileComment());
+    if (!c.otherRequests().empty()) {
+        QStringList names;
+        for (const PartFile* other : c.otherRequests())
+            names << other->fileName();
+        names.sort(Qt::CaseInsensitive);
+        m.insert(QStringLiteral("a4afFiles"), QCborArray::fromStringList(names));
+    }
+    m.insert(QStringLiteral("isUrl"), c.isUrlClient());
     if (const auto* uf = c.uploadFile()) {
         m.insert(QStringLiteral("uploadFileName"), uf->fileName());
         m.insert(QStringLiteral("uploadFilePriority"), static_cast<int>(uf->upPriority()));

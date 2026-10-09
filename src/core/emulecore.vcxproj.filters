@@ -45,6 +45,9 @@
     <ClCompile Include="archive\ArchiveRecovery.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="archive\ArchiveScan.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="archive\ExternalUnpacker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -193,6 +196,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="chat\IrcEmuleProto.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="chat\IrcNickList.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="chat\IrcRouting.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="kademlia\KadContact.cpp">
@@ -581,6 +590,9 @@
     <ClInclude Include="archive\ArchiveRecovery.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="archive\ArchiveScan.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\ByteOrder.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -717,6 +729,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="chat\IrcEmuleProto.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="chat\IrcNickList.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="chat\IrcRouting.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="webserver\JsonSerializers.h">

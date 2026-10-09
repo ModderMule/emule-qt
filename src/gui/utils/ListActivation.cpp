@@ -9,7 +9,9 @@
 #include <QAbstractItemView>
 #include <QEvent>
 #include <QKeyEvent>
+#include <QItemSelectionModel>
 #include <QKeySequence>
+#include <QMouseEvent>
 #include <QPersistentModelIndex>
 #include <QTreeView>
 #include <QWidget>
@@ -44,7 +46,21 @@ public:
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override
     {
-        if (event->type() != QEvent::KeyPress)
+        if (event->type() == QEvent::MouseButtonRelease && watched == m_view->viewport()
+            && m_h.middleClick) {
+            const auto* mouse = static_cast<QMouseEvent*>(event);
+            if (mouse->button() != Qt::MiddleButton)
+                return QObject::eventFilter(watched, event);
+            const QModelIndex index = m_view->indexAt(mouse->position().toPoint());
+            if (!index.isValid())
+                return true;
+            if (auto* selection = m_view->selectionModel())
+                selection->setCurrentIndex(index, QItemSelectionModel::ClearAndSelect
+                                                      | QItemSelectionModel::Rows);
+            m_h.middleClick(m_view->currentIndex());
+            return true;
+        }
+        if (event->type() != QEvent::KeyPress || watched != m_view)
             return QObject::eventFilter(watched, event);
 
         // An open cell editor owns the keyboard. Its Return commits the edit, and
@@ -104,9 +120,12 @@ private:
             case Qt::Key_F2:        return run(m_h.rename);
             case Qt::Key_F5:        return run(m_h.refresh);
             case Qt::Key_Insert:    return run(m_h.insert);
+            case Qt::Key_Space:     return m_h.toggle && m_h.toggle();
             default:                break;
             }
         }
+        if (key->key() == Qt::Key_F2 && (key->modifiers() & kModifierMask) == Qt::ControlModifier)
+            return run(m_h.renameAll);
 
         if (key->matches(QKeySequence::Copy))
             return run(m_h.copy);
@@ -177,7 +196,11 @@ void bindListKeys(QAbstractItemView* view, ListKeyHandlers handlers)
 {
     if (!view)
         return;
-    view->installEventFilter(new ListKeyFilter(view, std::move(handlers)));
+    const bool watchMouse = static_cast<bool>(handlers.middleClick);
+    auto* filter = new ListKeyFilter(view, std::move(handlers));
+    view->installEventFilter(filter);
+    if (watchMouse)
+        view->viewport()->installEventFilter(filter);
 }
 
 } // namespace eMule

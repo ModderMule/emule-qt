@@ -122,6 +122,9 @@ signals:
     /// pref switches it off.
     void portMapStatusChanged(eMule::PortMapStatus status);
 
+    /// A listen port could not be opened (MFC IDS_MAIN_SOCKETERROR).
+    void portBindFailed(int port);
+
 private slots:
     void onTimer();
 

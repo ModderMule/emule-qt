@@ -25,19 +25,37 @@ struct Gap;
 
 class ArchiveRecovery {
 public:
-    /// Recover valid data from a partial download.
-    /// @param partFile  The partial download to recover from
-    /// @param preview   If true, open result for preview after recovery
-    /// @param createCopy If true, write to a copy file rather than modifying original
+    /// Recover valid data from a partial download into a copy.
+    /// @param preview, createCopy  kept for the callers; the result is always a
+    ///        copy — the download itself is never written.
     /// @return true if at least some data was recovered
     static bool recover(PartFile* partFile, bool preview = false,
                         bool createCopy = true);
+
+    /// The same, saying where the copy is: "<outDir>/<name>-rec.<ext>", next to the
+    /// download when @p outDir is empty. Empty when nothing could be recovered.
+    static QString recoverToCopy(PartFile* partFile, const QString& outDir);
+
+    /// The work of recoverToCopy() on a plain file, for tests and callers that
+    /// already hold the filled ranges.
+    static QString recoverFile(const QString& srcPath, const std::vector<Gap>& filled,
+                               uint64 fileSize, const QString& outDir, const QString& baseName);
+
+    /// Where the copy of @p srcPath goes.
+    [[nodiscard]] static QString copyPath(const QString& srcPath, const QString& outDir,
+                                          const QString& baseName, const QString& extension);
 
     /// Async recovery — runs recover() on a background thread.
     /// Sets partFile->setRecoveringArchive() flag during operation.
     /// @param callback  Called on completion with success/failure result (on worker thread)
     static void recoverAsync(PartFile* partFile, bool preview, bool createCopy,
                              std::function<void(bool)> callback = {});
+
+    /// recoverToCopy() on a thread of its own. @p callback gets the copy's path, empty
+    /// on failure or when a recovery of this file is already running; it is called
+    /// on the worker thread.
+    static void recoverToCopyAsync(PartFile* partFile, const QString& outDir,
+                                   std::function<void(const QString&)> callback);
 
     /// Recover valid ZIP entries from a partial file.
     static bool recoverZip(QFile& input, QFile& output,

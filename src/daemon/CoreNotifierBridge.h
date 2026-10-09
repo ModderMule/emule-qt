@@ -30,6 +30,7 @@ namespace eMule {
 namespace Ipc {
 class IpcMessage;
 class PushCoalescer;
+enum class NotifierEvent : int;
 }
 
 class IpcServer;
@@ -126,6 +127,8 @@ private slots:
 public slots:
     /// Fed by CoreSession::portMapStatusChanged (wired in DaemonApp).
     void onPortMapStatusChanged(eMule::PortMapStatus status);
+    /// A listen port did not open: an urgent event (CoreSession::portBindFailed).
+    void onPortBindFailed(int port);
 
 private:
     /// Full Kad state snapshot. Built at send time rather than at signal time, so a
@@ -135,6 +138,9 @@ private:
     void connectClientChatSignal(eMule::UpDownClient* client);
     void connectClientSharedFilesSignal(eMule::UpDownClient* client);
     void sendEmailNotification(const QString& subject, const QString& body);
+    /// Tell every GUI, and mail it when the matching option asks for that.
+    void raiseNotifierEvent(Ipc::NotifierEvent kind, const QString& text);
+    void watchDiskSpace(PartFile* file);
 
     IpcServer* m_ipcServer;
     SmtpClient* m_smtp = nullptr;

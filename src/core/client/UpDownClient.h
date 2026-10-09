@@ -437,6 +437,11 @@ public:
     [[nodiscard]] uint32 askedCount() const { return m_askedCount; }
     void setAskedCount(uint32 c) { m_askedCount = c; }
     void incAskedCount() { ++m_askedCount; }
+    /// How often we asked this source for its file since it last gave us a slot
+    /// (MFC GetAskedCountDown). askedCount() above is the other direction.
+    [[nodiscard]] uint32 askedCountDown() const { return m_askedCountDown; }
+    /// The files this source is also listed for (A4AF), for display.
+    [[nodiscard]] const std::list<PartFile*>& otherRequests() const { return m_otherRequests; }
 
     [[nodiscard]] uint64 lastUpRequest() const { return m_lastUpRequest; }
     void setLastUpRequest(uint64 t) { m_lastUpRequest = t; }
@@ -1143,6 +1148,7 @@ private:
     uint64 m_uploadTime = 0;
     uint64 m_lastUpRequest = 0;
     uint32 m_askedCount = 0;
+    uint32 m_askedCountDown = 0;
     uint32 m_slotNumber = 0;
     std::array<uint8, 16> m_reqUpFileId{};   // upload side only; downloads ask with m_reqFile's hash
     std::vector<uint8> m_upPartStatus;

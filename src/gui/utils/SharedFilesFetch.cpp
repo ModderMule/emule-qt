@@ -60,7 +60,48 @@ void requestPage(const std::shared_ptr<Fetch>& fetch, const QString& afterHash)
     });
 }
 
+void requestKnownPage(const std::shared_ptr<Fetch>& fetch, qint64 offset)
+{
+    if (!fetch->ipc || !fetch->context)
+        return;
+    if (!fetch->ipc->isConnected()) {
+        fetch->done(false, {});
+        return;
+    }
+
+    Ipc::IpcMessage req(Ipc::IpcMsgType::GetKnownFiles);
+    req.append(offset);
+    fetch->ipc->sendRequest(std::move(req), [fetch](const Ipc::IpcMessage& resp) {
+        if (!fetch->context)
+            return;
+        if (resp.type() != Ipc::IpcMsgType::Result || !resp.fieldBool(0)) {
+            fetch->done(false, {});
+            return;
+        }
+        const QCborMap result = resp.fieldMap(1);
+        const QCborArray page = result.value(QStringLiteral("files")).toArray();
+        for (const auto& row : page)
+            fetch->rows.append(row);
+
+        if (!page.isEmpty() && result.value(QStringLiteral("more")).toBool()) {
+            requestKnownPage(fetch, result.value(QStringLiteral("next")).toInteger());
+            return;
+        }
+        fetch->done(true, fetch->rows);
+    });
+}
+
 } // namespace
+
+void fetchKnownFileRows(IpcClient* ipc, QObject* context,
+                        std::function<void(bool ok, const QCborArray& rows)> done)
+{
+    auto fetch = std::make_shared<Fetch>();
+    fetch->ipc = ipc;
+    fetch->context = context;
+    fetch->done = std::move(done);
+    requestKnownPage(fetch, 0);
+}
 
 void fetchSharedFileRows(IpcClient* ipc, QObject* context,
                          std::function<void(bool ok, const QCborArray& rows)> done)

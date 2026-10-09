@@ -313,6 +313,8 @@
     <ClInclude Include="controls\SortableItems.h" />
     <ClInclude Include="controls\ListSortClick.h" />
     <ClInclude Include="dialogs\FileDetailsMerge.h" />
+    <ClInclude Include="dialogs\CollectionCategory.h" />
+    <ClInclude Include="dialogs\PortTest.h" />
     <ClInclude Include="controls\SortArrowStyle.h" />
     <ClInclude Include="controls\FitTextTabBar.h" />
     <ClInclude Include="controls\BarShader.h" />
@@ -336,6 +338,7 @@
     <ClInclude Include="utils\FileTypeText.h" />
     <ClInclude Include="utils\TooltipDelayStyle.h" />
     <ClInclude Include="utils\SharedDirState.h" />
+    <ClInclude Include="utils\NotifierText.h" />
     <ClInclude Include="utils\SharedFilesFetch.h" />
     <ClInclude Include="utils\Smileys.h" />
     <ClInclude Include="utils\RatingIcons.h" />

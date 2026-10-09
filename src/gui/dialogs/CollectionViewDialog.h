@@ -30,7 +30,6 @@ public:
 
 private:
     void downloadSelected();
-    void downloadAll();
 
     const Collection& m_collection;
     IpcClient* m_ipc = nullptr;

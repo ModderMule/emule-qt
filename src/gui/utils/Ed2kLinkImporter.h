@@ -13,6 +13,7 @@
 /// handed to HttpCacheLinkImporter, so every one of those callers accepts them
 /// without knowing anything about the format.
 
+#include "IpcMessage.h"
 #include "search/SearchFile.h"
 
 #include <QCoreApplication>
@@ -91,10 +92,17 @@ public:
     /// @param done         invoked with the outcome once the import settles
     /// @param beforePrompt invoked immediately before the confirmation box appears
     ///                     (used to raise the main window on link clicks)
+    /// @param category     download category for the files, 0 for none — which the
+    ///                     daemon reads as "nobody chose", so auto-categories still apply
     static void importLinks(const QString& text, IpcClient* ipc, QWidget* parent,
                             Source source, Prompt prompt,
                             std::function<void(const Result&)> done = {},
-                            std::function<void()> beforePrompt = {});
+                            std::function<void()> beforePrompt = {}, int category = 0);
+
+    /// The DownloadSearchFile request for one link: [hash, name, size, raw link, category].
+    [[nodiscard]] static Ipc::IpcMessage downloadRequest(const QString& hashHex, const QString& name,
+                                                         quint64 size, const QString& rawLink,
+                                                         int category);
 
     /// True when a file in state @p type must not be re-added from @p source.
     /// Shared/downloading files are always skipped; downloaded and cancelled ones only

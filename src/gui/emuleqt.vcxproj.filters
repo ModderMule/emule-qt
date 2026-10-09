@@ -375,6 +375,15 @@
     <ClInclude Include="utils\SharedDirState.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="dialogs\CollectionCategory.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="dialogs\PortTest.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\NotifierText.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\FileTypeText.h">
       <Filter>Header Files</Filter>
     </ClInclude>

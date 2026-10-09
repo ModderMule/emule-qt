@@ -281,6 +281,7 @@ void SearchPanel::setupUi()
         downloadResults(rows.isEmpty() ? QModelIndexList{index} : rows);
     };
     keys.details = [this](const QModelIndex& index) { showResultDetails(index); };
+    keys.middleClick = keys.details;   // SearchResultsWnd.cpp:184-196
     keys.remove = [this] { removeSelectedResults(); };
     keys.copy = [this] { copySelectedEd2kLinks(); };
     keys.find = true;

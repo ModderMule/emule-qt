@@ -80,6 +80,10 @@ private slots:
     void userKicked_signal();
     void topicChanged_signal();
     void modeChanged_signal();
+    void isupport_setsTheServerModes();
+    void ping_isAnnounced();
+    void ctcpSound_signal();
+    void numerics_areSplitBetweenStatusAndListener();
     void notice_signal();
     void numeric001_logsIn();
     void numeric433_nickInUse();
@@ -514,6 +518,82 @@ void tst_IrcClient::partChannel_format()
 
     QTRY_COMPARE(sentSpy.count(), 1);
     QCOMPARE(sentSpy[0][0].toString(), QStringLiteral("PART #emule :Goodbye"));
+
+    fix.client.disconnect();
+}
+
+void tst_IrcClient::isupport_setsTheServerModes()
+{
+    LoopbackFixture fix;
+    QVERIFY(fix.setup());
+
+    QCOMPARE(fix.client.serverModes().userSymbols, QStringLiteral("@+"));
+    QSignalSpy spy(&fix.client, &IrcClient::serverNumeric);
+    fix.sendLine(QStringLiteral(":srv 005 me PREFIX=(qaohv)~&@%+ CHANMODES=b,k,l,imnt :are supported by this server"));
+    QTRY_COMPARE(spy.count(), 1);
+    QCOMPARE(fix.client.serverModes().userSymbols, QStringLiteral("~&@%+"));
+    QCOMPARE(fix.client.serverModes().chanModesC, QStringLiteral("l"));
+
+    fix.client.disconnect();
+}
+
+void tst_IrcClient::ping_isAnnounced()
+{
+    LoopbackFixture fix;
+    QVERIFY(fix.setup());
+
+    QSignalSpy spy(&fix.client, &IrcClient::pingPong);
+    fix.sendLine(QStringLiteral("PING :12345"));
+    QTRY_COMPARE(spy.count(), 1);
+
+    fix.client.disconnect();
+}
+
+void tst_IrcClient::ctcpSound_signal()
+{
+    LoopbackFixture fix;
+    QVERIFY(fix.setup());
+
+    QSignalSpy spy(&fix.client, &IrcClient::soundReceived);
+    fix.sendLine(QStringLiteral(":alice!u@h PRIVMSG #chan :\001SOUND ding.wav listen\001"));
+    QTRY_COMPARE(spy.count(), 1);
+    QCOMPARE(spy[0][0].toString(), QStringLiteral("#chan"));
+    QCOMPARE(spy[0][1].toString(), QStringLiteral("alice"));
+    QCOMPARE(spy[0][2].toString(), QStringLiteral("ding.wav listen"));
+
+    fix.client.disconnect();
+}
+
+// Whois replies and errors are placed by the listener; they must not also arrive as
+// a plain Status line, or they would be shown twice.
+void tst_IrcClient::numerics_areSplitBetweenStatusAndListener()
+{
+    LoopbackFixture fix;
+    QVERIFY(fix.setup());
+
+    QSignalSpy numeric(&fix.client, &IrcClient::serverNumeric);
+    QSignalSpy status(&fix.client, &IrcClient::statusMessage);
+
+    fix.sendLine(QStringLiteral(":srv 311 me alice user host * :Real Name"));
+    QTRY_COMPARE(numeric.count(), 1);
+    QCOMPARE(numeric[0][0].toInt(), 311);
+    QCOMPARE(status.count(), 0);
+
+    fix.sendLine(QStringLiteral(":srv 401 me nobody :No such nick/channel"));
+    QTRY_COMPARE(numeric.count(), 2);
+    QCOMPARE(status.count(), 0);
+
+    fix.sendLine(QStringLiteral(":srv 372 me :- message of the day"));
+    QTRY_COMPARE(numeric.count(), 3);
+    QCOMPARE(status.count(), 1);
+
+    // 433 is an error line too, besides the nick-in-use signal
+    QSignalSpy inUse(&fix.client, &IrcClient::nickInUse);
+    fix.sendLine(QStringLiteral(":srv 433 * me :Nickname is already in use"));
+    QTRY_COMPARE(inUse.count(), 1);
+    QCOMPARE(numeric.count(), 4);
+    QCOMPARE(numeric[3][0].toInt(), 433);
+    QCOMPARE(status.count(), 1);
 
     fix.client.disconnect();
 }

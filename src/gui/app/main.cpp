@@ -45,6 +45,7 @@ static void unixSignalHandler(int)
 #include "panels/IrcPanel.h"
 #include "panels/KadPanel.h"
 #include "panels/MessagesPanel.h"
+#include "utils/NotifierText.h"
 #include "panels/SearchPanel.h"
 #include "panels/ServerPanel.h"
 #include "panels/SharedFilesPanel.h"
@@ -648,22 +649,25 @@ int main(int argc, char* argv[])
                     QObject::tr("Download Added"),
                     QObject::tr("A new download has been added."));
         });
-        QObject::connect(&ipcClient, &eMule::IpcClient::chatMessageReceived,
+        // The chat panel knows whether the message opened a session and whether it is
+        // being read; a session that is closed counts as new again (MFC
+        // ChatSelector.cpp:227-248).
+        QObject::connect(mainWindow.messagesPanel(), &eMule::MessagesPanel::unseenChatMessage,
+                         &mainWindow, [&mainWindow](const QString& user, const QString& text, bool newChat) {
+            if (!eMule::thePrefs.notifyOnChat())
+                return;
+            if (!newChat && !eMule::thePrefs.notifyOnChatMsg())
+                return;
+            mainWindow.showNotification(QObject::tr("Message from %1").arg(user),
+                                        QStringLiteral("'%1'").arg(text));
+        });
+        QObject::connect(&ipcClient, &eMule::IpcClient::notifierEvent,
                          &mainWindow, [&mainWindow](const eMule::Ipc::IpcMessage& msg) {
-            if (eMule::thePrefs.notifyOnChat()) {
-                const QString user = msg.fieldString(1);
-                const QString text = msg.fieldString(2);
-                // the first message of a peer, or every one when asked
-                // (MFC ChatSelector.cpp:243)
-                static QSet<QString> seenSenders;
-                const QString sender = msg.fieldString(0).isEmpty() ? user : msg.fieldString(0);
-                const bool newChat = !seenSenders.contains(sender);
-                seenSenders.insert(sender);
-                if (!newChat && !eMule::thePrefs.notifyOnChatMsg())
-                    return;
-                mainWindow.showNotification(
-                    QObject::tr("Chat Message from %1").arg(user), text);
-            }
+            const eMule::NotifierText note = eMule::notifierEventText(
+                static_cast<eMule::Ipc::NotifierEvent>(msg.fieldInt(0)), msg.fieldString(1));
+            if (note.urgent ? eMule::thePrefs.notifyOnUrgent()
+                            : eMule::thePrefs.notifyOnDownloadFinished())
+                mainWindow.showNotification(note.title, note.text);
         });
         QObject::connect(&ipcClient, &eMule::IpcClient::logMessageReceived,
                          &mainWindow, [&mainWindow](const eMule::Ipc::IpcMessage& msg) {
@@ -674,18 +678,6 @@ int main(int argc, char* argv[])
                     const QString text = msg.fieldString(3);
                     mainWindow.showNotification(
                         QObject::tr("Log Entry"), text);
-                }
-            }
-        });
-        QObject::connect(&ipcClient, &eMule::IpcClient::serverStateChanged,
-                         &mainWindow, [&mainWindow](const eMule::Ipc::IpcMessage& msg) {
-            if (eMule::thePrefs.notifyOnUrgent()) {
-                const QCborMap info = msg.fieldMap(0);
-                if (!info.value(QStringLiteral("connected")).toBool()
-                    && !info.value(QStringLiteral("connecting")).toBool()) {
-                    mainWindow.showNotification(
-                        QObject::tr("Connection Lost"),
-                        QObject::tr("Server connection has been lost."));
                 }
             }
         });

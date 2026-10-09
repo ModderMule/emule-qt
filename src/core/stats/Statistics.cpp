@@ -639,6 +639,7 @@ void Statistics::rebaseCumulative(const Preferences& prefs)
     b.connPeak = prefs.cumConnPeak();
     b.connMaxLimitReached = prefs.cumConnMaxLimitReached();
     b.connReconnects = prefs.cumConnReconnects();
+    b.connAverage = prefs.cumConnAvgConnections();
 
     b.runTime = prefs.cumRunTime();
     b.transferTime = prefs.cumTransferTime();
@@ -725,6 +726,8 @@ Statistics::cumulativeTotals(const ExternalSessionCounters& ext) const
     t.connPeak = std::max(t.connPeak, ext.connPeak);
     t.connMaxLimitReached += ext.connMaxLimitReached;
     t.connReconnects += m_reconnects;
+    // MFC Preferences.cpp:861. From the base, so a second flush writes the same.
+    t.connAverage = (ext.connAverage + m_cumBase.connAverage) / 2;
 
     t.httpCache = combineCounters(t.httpCache, ext.httpCache);
 
@@ -824,6 +827,7 @@ void Statistics::flushCumulativeToPrefs(Preferences& prefs,
     prefs.setCumConnPeak(t.connPeak);
     prefs.setCumConnMaxLimitReached(t.connMaxLimitReached);
     prefs.setCumConnReconnects(t.connReconnects);
+    prefs.setCumConnAvgConnections(t.connAverage);
 
     prefs.setCumRunTime(t.runTime);
     prefs.setCumTransferTime(t.transferTime);

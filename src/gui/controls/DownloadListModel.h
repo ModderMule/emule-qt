@@ -52,7 +52,21 @@ struct SourceRow {
     bool noNeededHere = false;      ///< nothing we need of this file
     bool swapSuspended = false;
     QString otherFileName;          ///< the file it is asking for
+    // Tooltip and sort (MFC DownloadListCtrl.cpp:2318-2372)
+    qint64 clientVersion = 0;
+    int askedCountDown = 0;
+    QString serverAddr;
+    int serverPort = 0;
+    qint64 nextReaskSecs = -1;      ///< -1 unknown
+    QString clientFileName;         ///< what the source calls the file
+    QString fileComment;
+    int fileRating = 0;
+    QStringList a4afFiles;
+    bool isUrl = false;
 };
+
+/// The tooltip of a source row, as MFC builds it. @p extended: advanced controls.
+[[nodiscard]] QString sourceTooltipText(const SourceRow& s, bool extended);
 
 /// Byte-exact inputs of MFC's CPartFile::DrawStatusBar, as the bar delegate reads them.
 /// Ranges are flat [start, end, start, end, ...] pairs with inclusive ends.
@@ -132,6 +146,11 @@ struct DownloadRow {
     /// sources, so they are never expandable in the tree.
     [[nodiscard]] bool isComplete() const { return status == QLatin1String("complete"); }
 };
+
+/// The file-name cleanup of MFC's Ctrl+F2 (DownloadListCtrl.cpp:1394-1404):
+/// (hash, new name) for every unfinished file whose name the cleanup changes.
+[[nodiscard]] QList<std::pair<QString, QString>> cleanupRenames(const std::vector<DownloadRow>& files,
+                                                                const QString& cleanups);
 
 /// Tree model backing the downloads view in the Transfer panel.
 /// Top-level items are downloads; children are source clients.

@@ -147,6 +147,33 @@ QString formatSecondsHM(qint64 seconds)
         .arg(QCoreApplication::translate("Units", kHours));
 }
 
+QString formatSecondsLongHM(qint64 seconds)
+{
+    // MFC CastSecondsToLngHM (OtherFunctions.cpp:252-275), emule.rc:3038-3063, 2172
+    static constexpr const char* kSecs  = QT_TRANSLATE_NOOP("Units", "Seconds");
+    static constexpr const char* kMins  = QT_TRANSLATE_NOOP("Units", "Minutes");
+    static constexpr const char* kHours = QT_TRANSLATE_NOOP("Units", "Hours");
+    static constexpr const char* kDays  = QT_TRANSLATE_NOOP("Units", "Days");
+    const auto unit = [](const char* u) { return QCoreApplication::translate("Units", u); };
+    const auto clock = [](qint64 major, qint64 minor) {
+        return QStringLiteral("%1:%2").arg(major).arg(minor, 2, 10, QLatin1Char('0'));
+    };
+    if (seconds < 0)
+        return QStringLiteral("?");
+    if (seconds < 60)
+        return QStringLiteral("%1 %2").arg(seconds).arg(unit(kSecs));
+    if (seconds < 3600)
+        return QStringLiteral("%1 %2").arg(clock(seconds / 60, seconds % 60), unit(kMins));
+    if (seconds < 86400)
+        return QStringLiteral("%1 %2").arg(clock(seconds / 3600, (seconds % 3600) / 60), unit(kHours));
+    const qint64 days = seconds / 86400;
+    const qint64 hours = (seconds % 86400) / 3600;
+    const qint64 mins = (seconds % 3600) / 60;
+    if (hours != 0)
+        return QStringLiteral("%1 %2 %3 %4").arg(days).arg(unit(kDays), clock(hours, mins), unit(kHours));
+    return QStringLiteral("%1 %2 %3 %4").arg(days).arg(unit(kDays)).arg(mins).arg(unit(kMins));
+}
+
 QString formatQuotaGb(qint64 bytes)
 {
     return QStringLiteral("%1 GB").arg(double(bytes) / 1e9, 0, 'f', 1);

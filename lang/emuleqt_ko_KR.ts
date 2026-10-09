@@ -17,7 +17,7 @@
 <context>
     <name>Ed2kLinkImporter</name>
     <message>
-        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="+208"/>
+        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="+203"/>
         <source>already shared</source>
         <translation>이미 공유됨</translation>
     </message>
@@ -52,7 +52,7 @@
         <translation>이전에 &quot;%1&quot;의 다운로드를 취소했습니다.</translation>
     </message>
     <message numerus="yes">
-        <location line="+114"/>
+        <location line="+126"/>
         <source>%n further HTTP Cache link(s) ignored — apply one at a time.</source>
         <translation>
             <numerusform>추가 HTTP 캐시 링크 %n개를 무시했습니다 — 한 번에 하나씩 적용하세요.</numerusform>
@@ -201,6 +201,39 @@ HTTP 캐시가 활성화되고 이 키가 업로드용으로 저장됩니다.</t
         <location line="+11"/>
         <source>Not connected to daemon — %1</source>
         <translation>데몬에 연결되어 있지 않습니다 — %1</translation>
+    </message>
+</context>
+<context>
+    <name>Notifier</name>
+    <message>
+        <location filename="../src/gui/utils/NotifierText.h" line="+30"/>
+        <source>Downloaded:</source>
+        <translation>다운로드됨:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Connection lost</source>
+        <translation>연결이 끊어졌습니다</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Out of disk space</source>
+        <translation>디스크 공간 부족</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>You have insufficient disk space to download &quot;%1&quot;!</source>
+        <translation>&quot;%1&quot;을(를) 다운로드할 디스크 공간이 부족합니다!</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Port not available</source>
+        <translation>포트를 사용할 수 없음</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Fatal Error: Unable to create socket on port %1</source>
+        <translation>치명적 오류: 포트 %1에 소켓을 만들 수 없습니다</translation>
     </message>
 </context>
 <context>
@@ -360,7 +393,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 <context>
     <name>QObject</name>
     <message>
-        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="-317"/>
+        <location filename="../src/gui/utils/Ed2kLinkImporter.cpp" line="-329"/>
         <location line="+20"/>
         <source>eD2K Link</source>
         <translation>eD2K 링크</translation>
@@ -384,7 +417,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+638"/>
+        <location filename="../src/gui/app/main.cpp" line="+649"/>
         <source>Download Added</source>
         <translation>다운로드 추가됨</translation>
     </message>
@@ -394,24 +427,26 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
         <translation>새 다운로드가 추가되었습니다.</translation>
     </message>
     <message>
-        <location line="+16"/>
-        <source>Chat Message from %1</source>
-        <translation>%1의 채팅 메시지</translation>
+        <location line="+11"/>
+        <source>Message from %1</source>
+        <translation>%1의 메시지</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <source>Chat Message from %1</source>
+        <translation type="vanished">%1의 채팅 메시지</translation>
+    </message>
+    <message>
+        <location line="+19"/>
         <source>Log Entry</source>
         <translation>로그 항목</translation>
     </message>
     <message>
-        <location line="+11"/>
         <source>Connection Lost</source>
-        <translation>연결 끊김</translation>
+        <translation type="vanished">연결 끊김</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Server connection has been lost.</source>
-        <translation>서버 연결이 끊어졌습니다.</translation>
+        <translation type="vanished">서버 연결이 끊어졌습니다.</translation>
     </message>
     <message>
         <source>Very Low</source>
@@ -446,7 +481,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
         <translation>대기 중</translation>
     </message>
     <message>
-        <location line="+424"/>
+        <location line="+430"/>
         <source>Very high</source>
         <translation>매우 높음</translation>
     </message>
@@ -623,7 +658,7 @@ Has comments</source>
     </message>
     <message>
         <location line="+1"/>
-        <location filename="../src/gui/controls/UsenetQueueModel.cpp" line="-427"/>
+        <location filename="../src/gui/controls/UsenetQueueModel.cpp" line="-433"/>
         <source>Downloading</source>
         <translation>다운로드 중</translation>
     </message>
@@ -638,7 +673,7 @@ Has comments</source>
         <translation>취소됨</translation>
     </message>
     <message>
-        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="+317"/>
+        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="+342"/>
         <source>Total Overhead (Packets): 0 Bytes (0)</source>
         <translation>전체 오버헤드 (패킷): 0 Bytes (0)</translation>
     </message>
@@ -667,7 +702,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2911"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2946"/>
         <source>Test</source>
         <translation>테스트</translation>
     </message>
@@ -844,6 +879,26 @@ Download it again?</source>
         <source>d</source>
         <translation>일</translation>
     </message>
+    <message>
+        <location line="+27"/>
+        <source>Seconds</source>
+        <translation>초</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Minutes</source>
+        <translation>분</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Hours</source>
+        <translation>시간</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Days</source>
+        <translation>일</translation>
+    </message>
 </context>
 <context>
     <name>UsenetDetailsDialog</name>
@@ -874,9 +929,36 @@ Download it again?</source>
     </message>
 </context>
 <context>
+    <name>eMule</name>
+    <message>
+        <source>Unknown</source>
+        <translation type="vanished">알 수 없음</translation>
+    </message>
+    <message>
+        <source>Server</source>
+        <translation type="vanished">서버</translation>
+    </message>
+    <message>
+        <source>Rating</source>
+        <translation type="vanished">평가</translation>
+    </message>
+    <message>
+        <source>Asked for another file</source>
+        <translation type="vanished">다른 파일 요청함</translation>
+    </message>
+    <message>
+        <source>Country: %1</source>
+        <translation type="obsolete">국가: %1</translation>
+    </message>
+    <message>
+        <source>Downloaded:</source>
+        <translation type="vanished">다운로드됨:</translation>
+    </message>
+</context>
+<context>
     <name>eMule::AddFriendDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/AddFriendDialog.cpp" line="+25"/>
+        <location filename="../src/gui/dialogs/AddFriendDialog.cpp" line="+28"/>
         <source>Add...</source>
         <translation>추가...</translation>
     </message>
@@ -891,7 +973,7 @@ Download it again?</source>
         <translation>IP 주소:</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+6"/>
         <source>Port:</source>
         <translation>포트:</translation>
     </message>
@@ -901,7 +983,7 @@ Download it again?</source>
         <translation>추가 정보</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Name:</source>
         <translation>이름:</translation>
     </message>
@@ -931,12 +1013,35 @@ Download it again?</source>
         <translation>추가</translation>
     </message>
     <message>
-        <location line="+38"/>
-        <source>Friend Details</source>
-        <translation>친구 상세</translation>
+        <location line="+86"/>
+        <source>Details</source>
+        <translation>상세</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+1"/>
+        <source>User ID:</source>
+        <translation>사용자 ID:</translation>
+    </message>
+    <message>
+        <location line="+29"/>
+        <source>You have to enter a valid IP and port!</source>
+        <translation>올바른 IP와 포트를 입력해야 합니다!</translation>
+    </message>
+    <message>
+        <location line="+25"/>
+        <source>Friend not added.
+
+There is already a friend with same IP address and port available.</source>
+        <translation>친구를 추가하지 못했습니다.
+
+같은 IP 주소와 포트를 가진 친구가 이미 있습니다.</translation>
+    </message>
+    <message>
+        <source>Friend Details</source>
+        <translation type="vanished">친구 상세</translation>
+    </message>
+    <message>
+        <location line="-41"/>
         <source>Never</source>
         <translation>안 함</translation>
     </message>
@@ -946,20 +1051,18 @@ Download it again?</source>
         <translation>닫기</translation>
     </message>
     <message>
-        <location line="+11"/>
-        <location line="+6"/>
+        <location line="+14"/>
+        <location line="+24"/>
         <source>Add Friend</source>
         <translation>친구 추가</translation>
     </message>
     <message>
-        <location line="-5"/>
         <source>Please enter an IP address.</source>
-        <translation>IP 주소를 입력하세요.</translation>
+        <translation type="vanished">IP 주소를 입력하세요.</translation>
     </message>
     <message>
-        <location line="+6"/>
         <source>Please enter a valid port (1-65535).</source>
-        <translation>유효한 포트(1-65535)를 입력하세요.</translation>
+        <translation type="vanished">유효한 포트(1-65535)를 입력하세요.</translation>
     </message>
 </context>
 <context>
@@ -1123,33 +1226,29 @@ Download it again?</source>
 <context>
     <name>eMule::ArchivePreviewPanel</name>
     <message>
-        <location filename="../src/gui/dialogs/ArchivePreviewPanel.cpp" line="+69"/>
         <source>Scanning...</source>
-        <translation>스캔 중...</translation>
+        <translation type="vanished">스캔 중...</translation>
     </message>
     <message>
-        <location line="+92"/>
-        <location line="+37"/>
-        <location line="+18"/>
+        <location filename="../src/gui/dialogs/ArchivePreviewPanel.cpp" line="+173"/>
+        <location line="+76"/>
         <source>Archive type: --</source>
         <translation>압축 유형: --</translation>
     </message>
     <message>
-        <location line="-54"/>
-        <location line="+17"/>
-        <location line="+41"/>
+        <location line="-75"/>
+        <location line="+79"/>
         <source>Ready</source>
         <translation>준비됨</translation>
     </message>
     <message>
-        <location line="-25"/>
+        <location line="-23"/>
         <source>Archive type: %1</source>
         <translation>압축 유형: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>No entries found or unsupported format</source>
-        <translation>항목을 찾을 수 없거나 지원되지 않는 형식</translation>
+        <translation type="vanished">항목을 찾을 수 없거나 지원되지 않는 형식</translation>
     </message>
     <message>
         <location line="+4"/>
@@ -1157,12 +1256,63 @@ Download it again?</source>
         <translation>파일: %1</translation>
     </message>
     <message>
-        <location line="+23"/>
         <source>Create Preview Copy</source>
-        <translation>미리보기 복사본 생성</translation>
+        <translation type="vanished">미리보기 복사본 생성</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="-154"/>
+        <source>Scanning archive...</source>
+        <translation>압축 파일 검사 중...</translation>
+    </message>
+    <message>
+        <location line="+35"/>
+        <location line="+35"/>
+        <location line="+15"/>
+        <source>Password protection</source>
+        <translation>암호 보호</translation>
+    </message>
+    <message>
+        <location line="-35"/>
+        <location line="+36"/>
+        <source>Archive scanned.</source>
+        <translation>압축 파일 검사 완료.</translation>
+    </message>
+    <message>
+        <location line="-35"/>
+        <location line="+35"/>
+        <source>File list may be incomplete.</source>
+        <translation>파일 목록이 불완전할 수 있습니다.</translation>
+    </message>
+    <message>
+        <location line="-34"/>
+        <location line="+15"/>
+        <source>Headers encrypted - unable to read archive.</source>
+        <translation>헤더가 암호화되어 압축 파일을 읽을 수 없습니다.</translation>
+    </message>
+    <message>
+        <location line="-14"/>
+        <location line="+6"/>
+        <source>Insufficient data available.</source>
+        <translation>사용 가능한 데이터가 부족합니다.</translation>
+    </message>
+    <message>
+        <location line="-5"/>
+        <location line="+14"/>
+        <source>Table of contents not found.</source>
+        <translation>목차를 찾을 수 없습니다.</translation>
+    </message>
+    <message>
+        <location line="+83"/>
+        <source>(unknown/unsupported)</source>
+        <translation>(알 수 없음/지원되지 않음)</translation>
+    </message>
+    <message>
+        <location line="+26"/>
+        <source>Create preview file</source>
+        <translation>미리보기 파일 만들기</translation>
+    </message>
+    <message>
+        <location line="+6"/>
         <source>Update</source>
         <translation>업데이트</translation>
     </message>
@@ -1192,7 +1342,41 @@ Download it again?</source>
         <translation>마지막 수정</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="+33"/>
+        <source>Info:</source>
+        <translation>정보:</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Archive Preview</source>
+        <translation>압축 파일 미리보기</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>File attributes can contain:
+
+P	file is password protected
+D	is a directory
+C	Comment
+Lx	Compression level x
+M	compressed data not completely downloaded yet
+&lt;	file continued from previous volume
+&gt;	file continues in next volume
+</source>
+        <translation>파일 속성에는 다음이 포함될 수 있습니다:
+
+P	암호로 보호된 파일
+D	디렉터리
+C	코멘트
+Lx	압축 수준 x
+M	압축된 데이터가 아직 모두 다운로드되지 않음
+&lt;	이전 볼륨에서 이어지는 파일
+&gt;	다음 볼륨으로 이어지는 파일
+</translation>
+    </message>
+    <message>
+        <location line="-200"/>
+        <location line="+159"/>
         <source>Comment</source>
         <translation>댓글</translation>
     </message>
@@ -1354,7 +1538,7 @@ Download it again?</source>
 <context>
     <name>eMule::CategoryDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CategoryDialog.cpp" line="+34"/>
+        <location filename="../src/gui/dialogs/CategoryDialog.cpp" line="+36"/>
         <source>Edit Category-Properties</source>
         <translation>카테고리 속성 편집</translation>
     </message>
@@ -1370,12 +1554,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+68"/>
+        <location line="+79"/>
         <source>Choose a folder for incoming files</source>
         <translation>수신 파일을 저장할 폴더 선택</translation>
     </message>
     <message>
-        <location line="-64"/>
+        <location line="-75"/>
         <source>Incoming Files  (Folder will be shared!)</source>
         <translation>수신 파일  (폴더가 공유됩니다!)</translation>
     </message>
@@ -1400,13 +1584,18 @@ Download it again?</source>
         <translation>이 카테고리의 우선순위</translation>
     </message>
     <message>
-        <location line="+6"/>
-        <location line="+56"/>
+        <location line="+10"/>
+        <source>More Colors...</source>
+        <translation>다른 색...</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <location line="+59"/>
         <source>Color</source>
         <translation>색상</translation>
     </message>
     <message>
-        <location line="-53"/>
+        <location line="-56"/>
         <source>Auto cat. assignment (separate patterns with |)</source>
         <translation>자동 카테고리 할당 (패턴은 |로 구분)</translation>
     </message>
@@ -1416,9 +1605,13 @@ Download it again?</source>
         <translation>정규식으로 처리</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+9"/>
+        <source>Shows only the files whose whole name matches. Clearing it turns the filter off again.</source>
+        <translation>이름 전체가 일치하는 파일만 표시합니다. 비우면 필터가 다시 꺼집니다.</translation>
+    </message>
+    <message>
         <source>Used when the tab&apos;s view filter is set to &quot;Regular Expression&quot;; it must match the whole file name.</source>
-        <translation>탭의 보기 필터가 &quot;정규 표현식&quot;일 때 사용됩니다. 파일 이름 전체와 일치해야 합니다.</translation>
+        <translation type="vanished">탭의 보기 필터가 &quot;정규 표현식&quot;일 때 사용됩니다. 파일 이름 전체와 일치해야 합니다.</translation>
     </message>
     <message>
         <source>Stored for compatibility — the per-category view filter is not implemented yet.</source>
@@ -1446,7 +1639,8 @@ Download it again?</source>
         <translation>잘못된 정규식</translation>
     </message>
     <message>
-        <location line="+34"/>
+        <location line="-110"/>
+        <location line="+151"/>
         <source>Default</source>
         <translation>기본값</translation>
     </message>
@@ -1859,7 +2053,7 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::ClientListModel</name>
     <message>
-        <location filename="../src/gui/controls/ClientListModel.cpp" line="+233"/>
+        <location filename="../src/gui/controls/ClientListModel.cpp" line="+243"/>
         <location line="+13"/>
         <location line="+13"/>
         <location line="+15"/>
@@ -2055,25 +2249,36 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::CollectionCreateDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CollectionCreateDialog.cpp" line="+55"/>
+        <location filename="../src/gui/dialogs/CollectionCreateDialog.cpp" line="+57"/>
         <source>Modify Collection...</source>
         <translation>컬렉션 수정...</translation>
     </message>
     <message>
-        <location line="+21"/>
+        <location line="+20"/>
         <source>Create Collection...</source>
         <translation>컬렉션 만들기...</translation>
     </message>
     <message>
-        <location line="+9"/>
         <source>Shared (0)</source>
-        <translation>공유됨 (0)</translation>
+        <translation type="vanished">공유됨 (0)</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+20"/>
         <location line="+36"/>
         <source>File Name</source>
         <translation>파일 이름</translation>
+    </message>
+    <message>
+        <location line="-36"/>
+        <location line="+36"/>
+        <source>Size</source>
+        <translation>크기</translation>
+    </message>
+    <message>
+        <location line="-36"/>
+        <location line="+36"/>
+        <source>Hash</source>
+        <translation>해시</translation>
     </message>
     <message>
         <location line="-20"/>
@@ -2126,12 +2331,23 @@ Its downloads keep their files and move to All.</source>
         <translation>취소</translation>
     </message>
     <message>
-        <location line="+88"/>
+        <location line="-95"/>
+        <location line="+197"/>
         <source>Shared (%1)</source>
         <translation>공유됨 (%1)</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-195"/>
+        <source>Switch between the shared files and every file known</source>
+        <translation>공유 파일과 알려진 모든 파일 사이를 전환</translation>
+    </message>
+    <message>
+        <location line="+195"/>
+        <source>Known (%1)</source>
+        <translation>알려진 파일 (%1)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Collection List (%1)</source>
         <translation>컬렉션 목록 (%1)</translation>
     </message>
@@ -2167,7 +2383,7 @@ Its downloads keep their files and move to All.</source>
 <context>
     <name>eMule::CollectionViewDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/CollectionViewDialog.cpp" line="+41"/>
+        <location filename="../src/gui/dialogs/CollectionViewDialog.cpp" line="+43"/>
         <source>Collection: %1</source>
         <translation>컬렉션: %1</translation>
     </message>
@@ -2212,9 +2428,13 @@ Its downloads keep their files and move to All.</source>
         <translation>옵션</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+4"/>
+        <source>Add new downloads into the collection category</source>
+        <translation>새 다운로드를 컬렉션 카테고리에 추가</translation>
+    </message>
+    <message>
         <source>Add to new category</source>
-        <translation>새 카테고리에 추가</translation>
+        <translation type="vanished">새 카테고리에 추가</translation>
     </message>
     <message>
         <location line="+7"/>
@@ -2273,7 +2493,7 @@ Its downloads keep their files and move to All.</source>
         <translation>Kad</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+14"/>
         <source>(Kad search in progress...)</source>
         <translation>(Kad 검색 중...)</translation>
     </message>
@@ -2538,7 +2758,23 @@ Enter the address and authentication token of a remote core.</source>
 <context>
     <name>eMule::DetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/DetailDialog.cpp" line="+202"/>
+        <location filename="../src/gui/dialogs/DetailDialog.cpp" line="+201"/>
+        <source>Rename</source>
+        <translation>이름 바꾸기</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <location line="+7"/>
+        <source>Archive Preview</source>
+        <translation>압축 파일 미리보기</translation>
+    </message>
+    <message>
+        <location line="-6"/>
+        <source>A preview file can only be opened when the core runs on this computer.</source>
+        <translation>미리보기 파일은 코어가 이 컴퓨터에서 실행 중일 때만 열 수 있습니다.</translation>
+    </message>
+    <message>
+        <location line="+27"/>
         <source>Search Kad</source>
         <translation>Kad 검색</translation>
     </message>
@@ -2561,7 +2797,7 @@ Enter the address and authentication token of a remote core.</source>
 <context>
     <name>eMule::DownloadListModel</name>
     <message>
-        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+685"/>
+        <location filename="../src/gui/controls/DownloadListModel.cpp" line="+767"/>
         <source>Downloading</source>
         <translation>다운로드 중</translation>
     </message>
@@ -2570,22 +2806,21 @@ Enter the address and authentication token of a remote core.</source>
         <translation type="vanished">자동 [%1]</translation>
     </message>
     <message>
-        <location line="-505"/>
+        <location line="-512"/>
         <source>Queue Full</source>
         <translation>대기열 가득 참</translation>
     </message>
     <message>
-        <location line="+47"/>
         <source>Available parts: %1 / %2</source>
-        <translation>사용 가능한 파트: %1 / %2</translation>
+        <translation type="vanished">사용 가능한 파트: %1 / %2</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-122"/>
         <source>Country: %1</source>
         <translation>국가: %1</translation>
     </message>
     <message>
-        <location line="+57"/>
+        <location line="+235"/>
         <location line="+2"/>
         <source>Never</source>
         <translation>안 함</translation>
@@ -2789,12 +3024,63 @@ ED2K 해시:	%2
         <translation>HTTP 캐시</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-674"/>
+        <location line="+676"/>
         <source>Asked for another file</source>
         <translation>다른 파일 요청함</translation>
     </message>
     <message>
-        <location line="+8"/>
+        <location line="-698"/>
+        <source>Available parts: %1</source>
+        <translation>사용 가능한 파트: %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>User Name: %1</source>
+        <translation>사용자 이름: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Unknown</source>
+        <translation>알 수 없음</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Server</source>
+        <translation>서버</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Next re-ask</source>
+        <translation>다음 재요청</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Asked: %1 times; Available parts: %2</source>
+        <translation>요청: %1회; 사용 가능한 파트: %2</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Client&apos;s file name:</source>
+        <translation>클라이언트의 파일 이름:</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>File comment:</source>
+        <translation>파일 코멘트:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Rating</source>
+        <translation>평가</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>A4AF files</source>
+        <translation>A4AF 파일</translation>
+    </message>
+    <message>
+        <location line="+676"/>
         <source>Swap blocked</source>
         <translation>전환 차단됨</translation>
     </message>
@@ -2802,7 +3088,7 @@ ED2K 해시:	%2
 <context>
     <name>eMule::FileDetailDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/FileDetailDialog.cpp" line="+146"/>
+        <location filename="../src/gui/dialogs/FileDetailDialog.cpp" line="+149"/>
         <source>File Details: %1</source>
         <translation>파일 상세: %1</translation>
     </message>
@@ -2949,7 +3235,32 @@ ED2K 해시:	%2
         <translation>소스에서 보고한 대체 파일 이름이 없습니다. “Kad 검색”을 사용하여 조회하세요.</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+15"/>
+        <source>&amp;Take over</source>
+        <translation>가져오기(&amp;T)</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>&amp;Cleanup</source>
+        <translation>정리(&amp;C)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Rename</source>
+        <translation>이름 바꾸기</translation>
+    </message>
+    <message>
+        <location line="+33"/>
+        <source>Take over</source>
+        <translation>가져오기</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Copy</source>
+        <translation>복사</translation>
+    </message>
+    <message>
+        <location line="+22"/>
         <source>Search Kad</source>
         <translation>Kad 검색</translation>
     </message>
@@ -3040,12 +3351,12 @@ ED2K 해시:	%2
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+57"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+67"/>
         <source>eMule First Runtime Wizard</source>
         <translation>eMule 첫 실행 마법사</translation>
     </message>
     <message>
-        <location line="+337"/>
+        <location line="+473"/>
         <source>Ports and Connection</source>
         <translation>포트 및 연결</translation>
     </message>
@@ -3055,18 +3366,70 @@ ED2K 해시:	%2
         <translation>연결</translation>
     </message>
     <message>
-        <location line="-246"/>
+        <location line="-284"/>
         <source>eMule uses two ports for communication with servers and clients. These ports must be free and available for remote clients. The TCP port must be available to ensure the main functionality of eMule. The UDP port is used for Kad (serverless network) and to reduce network usage (Overhead).</source>
         <translation>eMule은 서버 및 클라이언트와의 통신에 두 개의 포트를 사용합니다. 이 포트는 원격 클라이언트에서 사용할 수 있어야 합니다. TCP 포트는 eMule의 주요 기능을 보장하기 위해 필요합니다. UDP 포트는 Kad(서버리스 네트워크) 및 네트워크 사용량 절감(오버헤드)에 사용됩니다.</translation>
     </message>
     <message>
-        <location line="-101"/>
-        <location line="+281"/>
+        <location line="-199"/>
+        <location line="+407"/>
         <source>Unlimited</source>
         <translation>무제한</translation>
     </message>
     <message>
-        <location line="-167"/>
+        <location line="-282"/>
+        <source>This wizard will guide you through the first steps in configuring eMule.</source>
+        <translation>이 마법사는 eMule 설정의 첫 단계를 안내합니다.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>To continue, click Next.</source>
+        <translation>계속하려면 다음을 클릭하십시오.</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Please enter your user name:</source>
+        <translation>사용자 이름을 입력하십시오:</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Start eMule when the computer starts.</source>
+        <translation>컴퓨터를 시작할 때 eMule을 시작합니다.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Enable this option if you want eMule to connect at startup.</source>
+        <translation>eMule이 시작할 때 연결하도록 하려면 이 옵션을 켜십시오.</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>Enable this option if you want eMule to manage your download priorities.
+
+Turning this on will allow eMule to make sure downloads with a lot of sources do not interfere with downloads that have few sources. This option will only affect future downloads.</source>
+        <translation>eMule이 다운로드 우선순위를 관리하도록 하려면 이 옵션을 켜십시오.
+
+켜면 소스가 많은 다운로드가 소스가 적은 다운로드를 방해하지 않도록 eMule이 조정합니다. 이 옵션은 앞으로의 다운로드에만 적용됩니다.</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Enable this option if you want eMule to manage your upload priorities.
+
+Turning this on will allow eMule to boost rare files meaning popular files will be harder for other people to get. Turning this off will allow eMule to upload popular files more often meaning rare files will be harder for other people to get. This option will only affect future shared files.</source>
+        <translation>eMule이 업로드 우선순위를 관리하도록 하려면 이 옵션을 켜십시오.
+
+켜면 eMule이 희귀한 파일을 우선하므로 인기 있는 파일은 다른 사람이 받기 어려워집니다. 끄면 인기 있는 파일을 더 자주 업로드하므로 희귀한 파일은 받기 어려워집니다. 이 옵션은 앞으로 공유하는 파일에만 적용됩니다.</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>Enable this option if you want to use protocol obfuscation
+
+If your ISP tries throttle or block eMule, enabling obfuscation will help to circumvent such restrictions.</source>
+        <translation>프로토콜 난독화를 사용하려면 이 옵션을 켜십시오
+
+ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그런 제한을 우회하는 데 도움이 됩니다.</translation>
+    </message>
+    <message>
+        <location line="+39"/>
         <source>You can change the ports here while no network activities have started.</source>
         <translation>네트워크 활동이 시작되지 않은 동안 여기에서 포트를 변경할 수 있습니다.</translation>
     </message>
@@ -3086,12 +3449,22 @@ ED2K 해시:	%2
         <translation>비활성화</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+6"/>
         <source>Use UPnP to Setup Ports</source>
         <translation>UPnP로 포트 설정</translation>
     </message>
     <message>
-        <location line="+50"/>
+        <location line="+46"/>
+        <source>Here you can test, if your TCP and UDP port can be connected to from remote. This success of this test is required for servers and clients to connect you. The TCP port have to succeed!</source>
+        <translation>여기서 TCP 포트와 UDP 포트에 외부에서 연결할 수 있는지 테스트할 수 있습니다. 서버와 클라이언트가 연결하려면 이 테스트가 성공해야 합니다. TCP 포트는 반드시 성공해야 합니다!</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Test Ports</source>
+        <translation>포트 테스트</translation>
+    </message>
+    <message>
+        <location line="+14"/>
         <source>Choose which Network(s) you want to use</source>
         <translation>사용할 네트워크 선택</translation>
     </message>
@@ -3106,7 +3479,17 @@ ED2K 해시:	%2
         <translation>eD2K</translation>
     </message>
     <message>
-        <location line="+29"/>
+        <location line="+4"/>
+        <source>Safe Connect</source>
+        <translation>안전 연결</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Turning this feature off allows eMule to connect to servers a little faster, but can cause you to get more false LowID connects.</source>
+        <translation>이 기능을 끄면 eMule이 서버에 조금 더 빨리 연결하지만 잘못된 LowID 연결이 늘어날 수 있습니다.</translation>
+    </message>
+    <message>
+        <location line="+32"/>
         <source>Select your internet connection. eMule derives its download and upload limits from it, leaving room for your other applications. You can change the limits at any time in the Options.</source>
         <translation>인터넷 연결을 선택하세요. eMule은 이를 바탕으로 다운로드 및 업로드 제한을 정하고 다른 프로그램을 위한 여유를 남겨 둡니다. 제한은 옵션에서 언제든지 변경할 수 있습니다.</translation>
     </message>
@@ -3188,12 +3571,52 @@ ED2K 해시:	%2
     </message>
     <message>
         <location line="+2"/>
-        <location line="+28"/>
+        <location line="+52"/>
         <source>Next &gt;</source>
         <translation>다음 &gt;</translation>
     </message>
     <message>
-        <location line="-3"/>
+        <location line="-25"/>
+        <source>Welcome to eMule</source>
+        <translation>eMule에 오신 것을 환영합니다</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>General</source>
+        <translation>일반</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>User Name</source>
+        <translation>사용자 이름</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Download</source>
+        <translation>다운로드</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Upload</source>
+        <translation>업로드</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Priority</source>
+        <translation>우선순위</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Security</source>
+        <translation>보안</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Obfuscation</source>
+        <translation>난독화</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Connection Speed</source>
         <translation>연결 속도</translation>
     </message>
@@ -3203,12 +3626,12 @@ ED2K 해시:	%2
         <translation>대역폭</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+4"/>
         <source>Finish</source>
         <translation>완료</translation>
     </message>
     <message>
-        <location line="-25"/>
+        <location line="-49"/>
         <source>Cancel</source>
         <translation>취소</translation>
     </message>
@@ -3222,12 +3645,12 @@ ED2K 해시:	%2
         <translation type="vanished">다운로드 제한: %1    업로드 제한: %2</translation>
     </message>
     <message>
-        <location line="+144"/>
+        <location line="+241"/>
         <source>The ports are forwarded when the core starts.</source>
         <translation>포트는 코어가 시작될 때 전달됩니다.</translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+16"/>
         <source>The core did not accept the port settings.</source>
         <translation>코어가 포트 설정을 받아들이지 않았습니다.</translation>
     </message>
@@ -3496,7 +3919,7 @@ ED2K 해시:	%2
 <context>
     <name>eMule::IrcPanel</name>
     <message>
-        <location filename="../src/gui/panels/IrcPanel.cpp" line="+129"/>
+        <location filename="../src/gui/panels/IrcPanel.cpp" line="+136"/>
         <source>Select an IRC nick.</source>
         <translation>IRC 닉네임을 선택하세요.</translation>
     </message>
@@ -3508,18 +3931,73 @@ Nick can be changed again in Options-&gt;IRC.</source>
 닉네임은 옵션-&gt;IRC에서 다시 변경할 수 있습니다.</translation>
     </message>
     <message>
-        <location line="+84"/>
+        <location line="+20"/>
+        <source>Connecting</source>
+        <translation>연결 중</translation>
+    </message>
+    <message>
+        <location line="+66"/>
+        <source>Connected</source>
+        <translation>연결됨</translation>
+    </message>
+    <message>
+        <location line="+5"/>
         <source>Disconnect</source>
         <translation>연결 해제</translation>
     </message>
     <message>
         <location line="+27"/>
-        <location line="+403"/>
+        <location line="+480"/>
         <source>Connect</source>
         <translation>연결</translation>
     </message>
     <message>
-        <location line="-109"/>
+        <location line="-469"/>
+        <source>* Disconnected</source>
+        <translation>* 연결 끊김</translation>
+    </message>
+    <message>
+        <location line="+148"/>
+        <source>* %1 has joined %2</source>
+        <translation>* %1 님이 %2에 들어왔습니다</translation>
+    </message>
+    <message>
+        <location line="+20"/>
+        <source>* %1 has parted %2 (%3)</source>
+        <translation>* %1 님이 %2에서 나갔습니다 (%3)</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>* %1 has quit (%2)</source>
+        <translation>* %1 님이 종료했습니다 (%2)</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>* %1 was kicked by %2 (%3)</source>
+        <translation>* %1 님이 %2 님에게 강퇴당했습니다 (%3)</translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>* %1 is now known as %2</source>
+        <translation>* %1 님의 이름이 이제 %2입니다</translation>
+    </message>
+    <message>
+        <location line="+24"/>
+        <source>* %1 sets mode: %2 %3</source>
+        <translation>* %1 님이 모드 설정: %2 %3</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>* Channel Topic: %1</source>
+        <translation>* 채널 주제: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>* %1 changes topic to &apos;%2&apos;</source>
+        <translation>* %1 님이 주제를 &apos;%2&apos;(으)로 바꿨습니다</translation>
+    </message>
+    <message>
+        <location line="+68"/>
         <source>Nick in use</source>
         <translation>닉네임 사용 중</translation>
     </message>
@@ -3531,13 +4009,13 @@ Please choose another:</source>
 다른 닉네임을 선택하세요:</translation>
     </message>
     <message>
-        <location line="+33"/>
-        <location line="+551"/>
+        <location line="+66"/>
+        <location line="+599"/>
         <source>Nick</source>
         <translation>닉네임</translation>
     </message>
     <message>
-        <location line="-486"/>
+        <location line="-533"/>
         <source>Status</source>
         <translation>상태</translation>
     </message>
@@ -3587,7 +4065,7 @@ Please choose another:</source>
         <translation>보내기</translation>
     </message>
     <message>
-        <location line="+82"/>
+        <location line="+76"/>
         <source>Channel</source>
         <translation>채널</translation>
     </message>
@@ -3612,12 +4090,12 @@ Please choose another:</source>
         <translation>채널</translation>
     </message>
     <message>
-        <location line="+261"/>
+        <location line="+314"/>
         <source>Nick (%1)</source>
         <translation>닉네임 (%1)</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+18"/>
         <source>* Private chat session started</source>
         <translation>* 비공개 채팅 세션 시작됨</translation>
     </message>
@@ -4030,18 +4508,18 @@ Please choose another:</source>
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+85"/>
-        <location line="+471"/>
+        <location line="+477"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-360"/>
+        <location line="-366"/>
         <location line="+9"/>
         <source>New Version Available</source>
         <translation>새 버전 사용 가능</translation>
     </message>
     <message>
-        <location line="+199"/>
+        <location line="+205"/>
         <source>eD2K: Connected (LowID)</source>
         <translation>eD2K: 연결됨 (LowID)</translation>
     </message>
@@ -4057,12 +4535,12 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1181"/>
+        <location line="+1184"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: 연결 해제됨</translation>
     </message>
     <message>
-        <location line="-1124"/>
+        <location line="-1127"/>
         <source>Kad: Connected</source>
         <translation>Kad: 연결됨</translation>
     </message>
@@ -4078,17 +4556,17 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1116"/>
+        <location line="+1119"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: 연결 해제됨</translation>
     </message>
     <message>
-        <location line="-1107"/>
+        <location line="-1110"/>
         <source>Users: %1 | Files: %2</source>
         <translation>사용자: %1 | 파일: %2</translation>
     </message>
     <message>
-        <location line="+315"/>
+        <location line="+318"/>
         <source>Open Incoming Folder...</source>
         <translation>수신 폴더 열기...</translation>
     </message>
@@ -4128,14 +4606,14 @@ Please choose another:</source>
         <translation>기능</translation>
     </message>
     <message>
-        <location line="-656"/>
+        <location line="-665"/>
         <location line="+7"/>
-        <location line="+652"/>
+        <location line="+661"/>
         <source>Version Check</source>
         <translation>버전 확인</translation>
     </message>
     <message>
-        <location line="-714"/>
+        <location line="-723"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt 종료</translation>
     </message>
@@ -4192,7 +4670,12 @@ Enable at least one under Options → Connection to connect.</source>
 연결하려면 옵션 → 연결에서 최소한 하나를 활성화하세요.</translation>
     </message>
     <message>
-        <location line="+129"/>
+        <location line="+58"/>
+        <source>eMule Version %1 ready</source>
+        <translation>eMule 버전 %1 준비됨</translation>
+    </message>
+    <message>
+        <location line="+77"/>
         <source>Blocked: network interface not available</source>
         <translation>차단됨: 네트워크 인터페이스를 사용할 수 없음</translation>
     </message>
@@ -4234,7 +4717,7 @@ Up: %3 | Down: %4</source>
 업로드: %3 | 다운로드: %4</translation>
     </message>
     <message>
-        <location line="+72"/>
+        <location line="+75"/>
         <source>Confirm Exit</source>
         <translation>종료 확인</translation>
     </message>
@@ -4449,7 +4932,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>새 메시지 — 두 번 클릭하여 읽기</translation>
     </message>
     <message>
-        <location line="+297"/>
+        <location line="+299"/>
         <source>eD2K Link</source>
         <translation>eD2K 링크</translation>
     </message>
@@ -4556,17 +5039,17 @@ Enable it under Options → Web Interface, then try again.</source>
     <name>eMule::MessagesPanel</name>
     <message>
         <location filename="../src/gui/panels/MessagesPanel.cpp" line="+153"/>
-        <location line="+543"/>
+        <location line="+546"/>
         <source> ...failed</source>
         <translation> ...실패</translation>
     </message>
     <message>
-        <location line="-541"/>
+        <location line="-544"/>
         <source>Me</source>
         <translation>나</translation>
     </message>
     <message>
-        <location line="+93"/>
+        <location line="+96"/>
         <source>Friends (0)</source>
         <translation>친구 (0)</translation>
     </message>
@@ -4989,7 +5472,7 @@ Download it again?</source>
 <context>
     <name>eMule::MiniMuleWidget</name>
     <message>
-        <location filename="../src/gui/app/MiniMuleWidget.cpp" line="+74"/>
+        <location filename="../src/gui/app/MiniMuleWidget.cpp" line="+81"/>
         <source>Yes</source>
         <translation>예</translation>
     </message>
@@ -4999,7 +5482,7 @@ Download it again?</source>
         <translation>아니오</translation>
     </message>
     <message>
-        <location line="+100"/>
+        <location line="+102"/>
         <source>Connected</source>
         <translation>연결됨</translation>
     </message>
@@ -5042,7 +5525,7 @@ Download it again?</source>
 <context>
     <name>eMule::NetworkInfoDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+53"/>
+        <location filename="../src/gui/dialogs/NetworkInfoDialog.cpp" line="+54"/>
         <source>Network Information</source>
         <translation>네트워크 정보</translation>
     </message>
@@ -5058,32 +5541,98 @@ Download it again?</source>
         <translation>&lt;b&gt;데몬에 연결되지 않았습니다.&lt;/b&gt;</translation>
     </message>
     <message>
-        <location line="+52"/>
-        <location line="+151"/>
+        <location line="+32"/>
+        <source>Client</source>
+        <translation>클라이언트</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Nick:</source>
+        <translation>닉네임:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <location line="+209"/>
+        <source>Hash:</source>
+        <translation>해시:</translation>
+    </message>
+    <message>
+        <location line="-207"/>
+        <source>TCP Port:</source>
+        <translation>TCP 포트:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>UDP Port:</source>
+        <translation>UDP 포트:</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>eD2K Network</source>
+        <translation>eD2K 네트워크</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <location line="+172"/>
         <source>Connected</source>
         <translation>연결됨</translation>
     </message>
     <message>
-        <location line="-149"/>
-        <location line="+108"/>
+        <location line="-170"/>
+        <location line="+129"/>
         <location line="+39"/>
         <source>Connecting</source>
         <translation>연결 중</translation>
     </message>
     <message>
-        <location line="-145"/>
-        <location line="+108"/>
+        <location line="-166"/>
+        <location line="+129"/>
         <source>Disconnected</source>
         <translation>연결 해제됨</translation>
     </message>
     <message>
-        <location line="-93"/>
+        <location line="-128"/>
+        <location line="+129"/>
+        <location line="+92"/>
+        <source>Status:</source>
+        <translation>상태:</translation>
+    </message>
+    <message>
+        <location line="-215"/>
+        <location line="+58"/>
+        <location line="+125"/>
+        <source>Users:</source>
+        <translation>사용자:</translation>
+    </message>
+    <message>
+        <location line="-182"/>
+        <location line="+59"/>
+        <location line="+125"/>
+        <source>Files:</source>
+        <translation>파일:</translation>
+    </message>
+    <message>
+        <location line="-177"/>
         <location line="+26"/>
         <source>Unknown</source>
         <translation>알 수 없음</translation>
     </message>
     <message>
-        <location line="-17"/>
+        <location line="-26"/>
+        <location line="+2"/>
+        <location line="+43"/>
+        <location line="+89"/>
+        <source>IP:Port:</source>
+        <translation>IP:포트:</translation>
+    </message>
+    <message>
+        <location line="-127"/>
+        <location line="+131"/>
+        <source>ID:</source>
+        <translation>ID:</translation>
+    </message>
+    <message>
+        <location line="-129"/>
         <source>Low ID</source>
         <translation>Low ID</translation>
     </message>
@@ -5093,7 +5642,42 @@ Download it again?</source>
         <translation>High ID</translation>
     </message>
     <message>
-        <location line="+48"/>
+        <location line="+18"/>
+        <source>IPv6:</source>
+        <translation>IPv6:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>IPv6 Status:</source>
+        <translation>IPv6 상태:</translation>
+    </message>
+    <message>
+        <location line="+10"/>
+        <source>eD2K Server</source>
+        <translation>eD2K 서버</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Name:</source>
+        <translation>이름:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Description:</source>
+        <translation>설명:</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Version:</source>
+        <translation>버전:</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Connections:</source>
+        <translation>연결 수:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Obfuscated</source>
         <translation>난독화됨</translation>
     </message>
@@ -5103,7 +5687,139 @@ Download it again?</source>
         <translation>보통</translation>
     </message>
     <message>
-        <location line="+126"/>
+        <location line="+2"/>
+        <source>Low ID:</source>
+        <translation>Low ID:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Ping:</source>
+        <translation>핑:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>%1 ms</source>
+        <translation>%1 ms</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>eD2K Server Features</source>
+        <translation>eD2K 서버 기능</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Soft/Hard File Limits:</source>
+        <translation>소프트/하드 파일 제한:</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>TCP compression</source>
+        <translation>TCP 압축</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Short tags</source>
+        <translation>짧은 태그</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Integer type tags</source>
+        <translation>정수형 태그</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+1"/>
+        <source>Extended UDP protocol for source requests</source>
+        <translation>소스 요청용 확장 UDP 프로토콜</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Extended UDP protocol for file requests</source>
+        <translation>파일 요청용 확장 UDP 프로토콜</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Support for large files</source>
+        <translation>대용량 파일 지원</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <location line="+1"/>
+        <source>Protocol Obfuscation</source>
+        <translation>프로토콜 난독화</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Yes</source>
+        <translation>예</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>No</source>
+        <translation>아니오</translation>
+    </message>
+    <message>
+        <location line="+14"/>
+        <source>Kad Network</source>
+        <translation>Kad 네트워크</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>LAN Mode</source>
+        <translation>LAN 모드</translation>
+    </message>
+    <message>
+        <location line="+19"/>
+        <source>UDP Status:</source>
+        <translation>UDP 상태:</translation>
+    </message>
+    <message>
+        <location line="+15"/>
+        <source>Extern UDP Port:</source>
+        <translation>외부 UDP 포트:</translation>
+    </message>
+    <message>
+        <location line="+21"/>
+        <source>Buddy:</source>
+        <translation>버디:</translation>
+    </message>
+    <message>
+        <location line="+11"/>
+        <source>%1 (Experimental: %2)</source>
+        <translation>%1 (실험적: %2)</translation>
+    </message>
+    <message>
+        <location line="+7"/>
+        <source>Indexed:</source>
+        <translation>색인됨:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Source:</source>
+        <translation>소스:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Keyword:</source>
+        <translation>키워드:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Notes:</source>
+        <translation>노트:</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Load:</source>
+        <translation>부하:</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Web Interface</source>
+        <translation>웹 인터페이스</translation>
+    </message>
+    <message>
+        <location line="+5"/>
         <source>Enabled</source>
         <translation>활성화됨</translation>
     </message>
@@ -5120,23 +5836,28 @@ Download it again?</source>
         </translation>
     </message>
     <message>
-        <location line="-167"/>
-        <location line="+67"/>
-        <location line="+13"/>
+        <location line="+10"/>
+        <source>URL:</source>
+        <translation>URL:</translation>
+    </message>
+    <message>
+        <location line="-198"/>
+        <location line="+86"/>
+        <location line="+15"/>
         <source>Firewalled</source>
         <translation>방화벽</translation>
     </message>
     <message>
-        <location line="-82"/>
+        <location line="-103"/>
         <location line="+4"/>
-        <location line="+65"/>
-        <location line="+15"/>
+        <location line="+84"/>
+        <location line="+17"/>
         <source>Open</source>
         <translation>개방</translation>
     </message>
     <message>
-        <location line="-80"/>
-        <location line="+82"/>
+        <location line="-101"/>
+        <location line="+103"/>
         <source>unverified</source>
         <translation>미확인</translation>
     </message>
@@ -5208,36 +5929,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2810"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2843"/>
         <source>Options</source>
         <translation>옵션</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1831"/>
+        <location line="+1839"/>
         <source>OK</source>
         <translation>확인</translation>
     </message>
     <message>
-        <location line="-1830"/>
-        <location line="+1831"/>
+        <location line="-1838"/>
+        <location line="+1839"/>
         <source>Cancel</source>
         <translation>취소</translation>
     </message>
     <message>
-        <location line="-1830"/>
-        <location line="+5417"/>
+        <location line="-1838"/>
+        <location line="+5463"/>
         <source>Apply</source>
         <translation>적용</translation>
     </message>
     <message>
-        <location line="-5416"/>
+        <location line="-5462"/>
         <source>Help</source>
         <translation>도움말</translation>
     </message>
     <message>
-        <location line="+250"/>
-        <location line="+1823"/>
+        <location line="+251"/>
+        <location line="+1855"/>
         <location line="+63"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -5246,7 +5967,7 @@ Download it again?</source>
         <translation>IP 필터</translation>
     </message>
     <message>
-        <location line="-1910"/>
+        <location line="-1942"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP 필터 다시 로드됨: %1개 항목.</translation>
     </message>
@@ -5277,12 +5998,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5319"/>
+        <location line="+5389"/>
         <source>Language</source>
         <translation>언어</translation>
     </message>
     <message>
-        <location line="-5316"/>
+        <location line="-5386"/>
         <source>System Default</source>
         <translation>시스템 기본값</translation>
     </message>
@@ -5290,13 +6011,13 @@ Download it again?</source>
         <location line="+14"/>
         <location line="+663"/>
         <location line="+262"/>
-        <location line="+375"/>
-        <location line="+292"/>
+        <location line="+450"/>
+        <location line="+249"/>
         <source>Miscellaneous</source>
         <translation>기타</translation>
     </message>
     <message>
-        <location line="-1589"/>
+        <location line="-1621"/>
         <source>Bring to front on link click</source>
         <translation>링크 클릭 시 앞으로 가져오기</translation>
     </message>
@@ -5382,25 +6103,25 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5255"/>
+        <location line="+5325"/>
         <source>Core</source>
         <translation>코어</translation>
     </message>
     <message>
-        <location line="-5250"/>
+        <location line="-5320"/>
         <source>Address:</source>
         <translation>주소:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1105"/>
-        <location line="+659"/>
+        <location line="+1102"/>
+        <location line="+694"/>
         <location line="+421"/>
         <source>Port:</source>
         <translation>포트:</translation>
     </message>
     <message>
-        <location line="-2182"/>
+        <location line="-2214"/>
         <source>authentication token</source>
         <translation>인증 토큰</translation>
     </message>
@@ -5556,19 +6277,19 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1546"/>
+        <location line="+1578"/>
         <location line="+128"/>
         <location line="+295"/>
         <location line="+1016"/>
         <location line="+152"/>
         <location line="+1038"/>
-        <location line="+265"/>
+        <location line="+277"/>
         <location line="+29"/>
         <source>Enabled</source>
         <translation>활성화됨</translation>
     </message>
     <message>
-        <location line="-4467"/>
+        <location line="-4511"/>
         <source>Reset</source>
         <translation>초기화</translation>
     </message>
@@ -5585,11 +6306,12 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
+        <location line="+4236"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-3"/>
+        <location line="-4239"/>
         <source>Upload</source>
         <translation>업로드</translation>
     </message>
@@ -5650,12 +6372,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6403"/>
+        <location line="+6434"/>
         <source>Any</source>
         <translation>모든</translation>
     </message>
     <message>
-        <location line="-6401"/>
+        <location line="-6432"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>이 네트워크 인터페이스(예: VPN 터널)만 사용합니다. 목록에서 선택하거나 IP 주소 또는 10.64.0.0/10 같은 서브넷(해당 범위의 주소를 가진 인터페이스)을 입력하십시오. 프록시를 통한 연결은 바인딩되지 않습니다.</translation>
     </message>
@@ -5741,12 +6463,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+53"/>
-        <location line="+1299"/>
+        <location line="+1331"/>
         <source>General</source>
         <translation>일반</translation>
     </message>
     <message>
-        <location line="-1296"/>
+        <location line="-1328"/>
         <source>Enable proxy</source>
         <translation>프록시 활성화</translation>
     </message>
@@ -5797,33 +6519,34 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+21"/>
+        <location line="+635"/>
         <source>Authentication</source>
         <translation>인증</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-632"/>
         <source>Enable authentication</source>
         <translation>인증 활성화</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1675"/>
+        <location line="+1707"/>
         <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>이름:</translation>
     </message>
     <message>
-        <location line="-2842"/>
-        <location line="+629"/>
-        <location line="+727"/>
+        <location line="-2874"/>
+        <location line="+636"/>
+        <location line="+752"/>
         <location line="+19"/>
         <location line="+324"/>
         <source>Password:</source>
         <translation>비밀번호:</translation>
     </message>
     <message>
-        <location line="-1665"/>
+        <location line="-1697"/>
         <source>Update</source>
         <translation>업데이트</translation>
     </message>
@@ -5989,7 +6712,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+556"/>
+        <location line="+588"/>
         <source>Edit...</source>
         <translation>편집...</translation>
     </message>
@@ -6012,7 +6735,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation type="vanished">대체</translation>
     </message>
     <message>
-        <location line="-545"/>
+        <location line="-577"/>
         <source>Try to transfer full chunks to all uploads</source>
         <translation>모든 업로드에 전체 청크 전송 시도</translation>
     </message>
@@ -6116,7 +6839,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>소리 파일 (*.wav *.mp3 *.ogg);;모든 파일 (*)</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+13"/>
         <source>Pop-up when</source>
         <translation>팝업 조건</translation>
     </message>
@@ -6181,38 +6904,36 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>SMTP 서버 설정</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+8"/>
         <source>Server:</source>
         <translation>서버:</translation>
     </message>
     <message>
-        <location line="+8"/>
-        <location line="+1127"/>
+        <location line="+9"/>
+        <location line="+14"/>
+        <location line="+1147"/>
         <source>None</source>
         <translation>없음</translation>
     </message>
     <message>
-        <location line="-1126"/>
         <source>Plain</source>
-        <translation>평문</translation>
+        <translation type="vanished">평문</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Authentication:</source>
-        <translation>인증:</translation>
+        <translation type="vanished">인증:</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Use TLS/STARTTLS</source>
-        <translation>TLS/STARTTLS 사용</translation>
+        <translation type="vanished">TLS/STARTTLS 사용</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="-1142"/>
         <source>Username:</source>
         <translation>사용자 이름:</translation>
     </message>
     <message>
-        <location line="+43"/>
+        <location line="+111"/>
         <source>Server</source>
         <translation>서버</translation>
     </message>
@@ -6233,14 +6954,14 @@ Each rule replaces a regex pattern with a replacement string.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+939"/>
+        <location line="+896"/>
         <location line="+1027"/>
         <location line="+154"/>
         <source>Name</source>
         <translation>이름</translation>
     </message>
     <message>
-        <location line="-2118"/>
+        <location line="-2075"/>
         <source>Users</source>
         <translation>사용자</translation>
     </message>
@@ -6255,47 +6976,47 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>연결 시 perform 문자열 사용</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="-111"/>
         <source>Connect to help channel</source>
         <translation>도움말 채널에 연결</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+2"/>
         <source>Load server channel list on connect</source>
         <translation>연결 시 서버 채널 목록 로드</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+2"/>
         <source>Add timestamp to messages</source>
         <translation>메시지에 타임스탬프 추가</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+2"/>
         <source>Ignore info messages</source>
         <translation>정보 메시지 무시</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+1"/>
         <source>Ignore misc. info messages</source>
         <translation>기타 정보 메시지 무시</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+2"/>
         <source>Ignore Join info messages</source>
         <translation>Join 메시지 무시</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+2"/>
         <source>Ignore Part info messages</source>
         <translation>Part 메시지 무시</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+2"/>
         <source>Ignore Quit info messages</source>
         <translation>Quit 메시지 무시</translation>
     </message>
     <message>
-        <location line="+51"/>
+        <location line="+161"/>
         <source>Messages</source>
         <translation>메시지</translation>
     </message>
@@ -6320,7 +7041,8 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>CAPTCHA 인증 요구</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="-159"/>
+        <location line="+164"/>
         <source>Show smileys</source>
         <translation>이모티콘 표시</translation>
     </message>
@@ -6568,7 +7290,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>업로드 슬롯(오버헤드 없음)</translation>
     </message>
     <message>
-        <location line="-1474"/>
+        <location line="-1506"/>
         <source>Country flags (IP2Country)</source>
         <translation>국기 (IP2Country)</translation>
     </message>
@@ -6642,12 +7364,37 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>검색에 나타난 파일과 그때의 이름을 로컬에 기록하여, 이후 검색에서 이전에 본 항목을 표시할 수 있게 합니다.</translation>
     </message>
     <message>
-        <location line="+389"/>
+        <location line="+209"/>
+        <source>Connection</source>
+        <translation>연결</translation>
+    </message>
+    <message>
+        <location line="+16"/>
+        <source>Security:</source>
+        <translation>보안:</translation>
+    </message>
+    <message>
+        <location line="+14"/>
+        <source>Authentication method:</source>
+        <translation>인증 방식:</translation>
+    </message>
+    <message>
+        <location line="+63"/>
+        <source>Ignore Ping? Pong! messages</source>
+        <translation>Ping? Pong! 메시지 무시</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Ignore eMule protocol messages</source>
+        <translation>eMule 프로토콜 메시지 무시</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Ignore eMule add friend protocol messages</source>
         <translation>eMule 친구 추가 프로토콜 메시지 무시</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+3"/>
         <source>Ignore eMule send link protocol messages</source>
         <translation>eMule 링크 전송 프로토콜 메시지 무시</translation>
     </message>
@@ -6657,22 +7404,27 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>다른 사용자가 나를 친구로 추가하도록 허용</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+3"/>
         <source>Accept eD2K links in IRC (Use only with caution!)</source>
         <translation>IRC에서 eD2K 링크 수락 (주의해서 사용하십시오!)</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>From friends only</source>
         <translation>친구에게서만</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+4"/>
+        <source>Play sound events</source>
+        <translation>소리 이벤트 재생</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Enable UTF-8</source>
         <translation>UTF-8 사용</translation>
     </message>
     <message>
-        <location line="+310"/>
+        <location line="+416"/>
         <source>Download Usenet</source>
         <translation>Usenet 다운로드</translation>
     </message>
@@ -8175,7 +8927,12 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>최적의 업로드 제한을 자동으로 찾기</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+5"/>
+        <source>Lowest allowed upload speed:</source>
+        <translation>허용되는 최저 업로드 속도:</translation>
+    </message>
+    <message>
+        <location line="+10"/>
         <source>Ping tolerance (% of lowest ping):</source>
         <translation>Ping 허용 범위(최소 ping의 %):</translation>
     </message>
@@ -8220,7 +8977,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>평균을 위한 최대 ping 수:</translation>
     </message>
     <message>
-        <location line="+22"/>
+        <location line="+23"/>
         <source>UPnP</source>
         <translation>UPnP</translation>
     </message>
@@ -8260,7 +9017,37 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>대기열 크기: %1</translation>
     </message>
     <message>
-        <location line="+600"/>
+        <location line="+296"/>
+        <source>Enter the datarate limit: (%1, KB/s)</source>
+        <translation>데이터 전송률 제한을 입력하십시오: (%1, KB/s)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Please enter the new value: (%1)</source>
+        <translation>새 값을 입력하십시오: (%1)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Configure Action</source>
+        <translation>동작 구성</translation>
+    </message>
+    <message>
+        <location line="+40"/>
+        <source>Select category</source>
+        <translation>카테고리 선택</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>All uncategorized</source>
+        <translation>분류되지 않은 모든 항목</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>All</source>
+        <translation>전체</translation>
+    </message>
+    <message>
+        <location line="+282"/>
         <source>Proxy settings will only apply to new connections.
 Restart eMule for all connections to use the new proxy settings.
 
@@ -8271,7 +9058,7 @@ News server connections switch over immediately.</source>
 뉴스 서버 연결은 즉시 전환됩니다.</translation>
     </message>
     <message>
-        <location line="+421"/>
+        <location line="+410"/>
         <source>Web Interface</source>
         <translation>웹 인터페이스</translation>
     </message>
@@ -8281,7 +9068,7 @@ News server connections switch over immediately.</source>
         <translation>&quot;%1&quot;은(는) IP 주소가 아닙니다. 수신 주소는 변경되지 않았습니다.</translation>
     </message>
     <message>
-        <location line="+487"/>
+        <location line="+470"/>
         <source>File types</source>
         <translation>파일 유형</translation>
     </message>
@@ -8291,12 +9078,12 @@ News server connections switch over immediately.</source>
         <translation>.nzb 파일 연결을 업데이트하지 못했습니다: %1</translation>
     </message>
     <message>
-        <location line="+588"/>
+        <location line="+577"/>
         <source>Port forwarding: %1</source>
         <translation>포트 전달: %1</translation>
     </message>
     <message>
-        <location line="+67"/>
+        <location line="+51"/>
         <source>Database: not connected to the core</source>
         <translation>데이터베이스: 코어에 연결되지 않음</translation>
     </message>
@@ -8346,22 +9133,22 @@ News server connections switch over immediately.</source>
         <translation>기본값으로 재설정</translation>
     </message>
     <message>
-        <location line="-4750"/>
+        <location line="-4733"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1321"/>
-        <location line="+281"/>
-        <location line="+1973"/>
+        <location line="+1333"/>
+        <location line="+316"/>
+        <location line="+1909"/>
         <source>Remove</source>
         <translation>제거</translation>
     </message>
     <message>
-        <location line="-5858"/>
+        <location line="-5880"/>
         <source>New eMule Qt version detected</source>
         <translation>새 eMule Qt 버전이 감지되었습니다</translation>
     </message>
     <message>
-        <location line="+373"/>
+        <location line="+412"/>
         <source>Update from URL: (filter.dat- or PeerGuardian-format, .gz/.zip accepted)</source>
         <translation>URL에서 업데이트: (filter.dat 또는 PeerGuardian 형식, .gz/.zip 허용)</translation>
     </message>
@@ -8401,7 +9188,7 @@ News server connections switch over immediately.</source>
         <translation>콘솔과 함께 코어 시작(디버그)</translation>
     </message>
     <message>
-        <location line="+89"/>
+        <location line="+101"/>
         <source>PCP (RFC 6887) — preferred, supports IPv6</source>
         <translation>PCP (RFC 6887) — 권장, IPv6 지원</translation>
     </message>
@@ -8426,14 +9213,14 @@ News server connections switch over immediately.</source>
         <translation>요청 임대 시간:</translation>
     </message>
     <message>
-        <location line="-2203"/>
+        <location line="-2215"/>
         <location line="+913"/>
-        <location line="+1294"/>
+        <location line="+1306"/>
         <source> s</source>
         <translation> 초</translation>
     </message>
     <message>
-        <location line="-2249"/>
+        <location line="-2261"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
@@ -8442,7 +9229,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
 요금제보다 약간 낮게 설정하세요. 이 값은 여기에서 측정되므로 제공업체의 수치보다 몇 퍼센트 낮게 표시되며, 한도에 도달했을 때 이미 전송 중인 기사는 그대로 완료됩니다.</translation>
     </message>
     <message>
-        <location line="+2363"/>
+        <location line="+2375"/>
         <source>New</source>
         <translation>새로 만들기</translation>
     </message>
@@ -8474,12 +9261,12 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
     </message>
     <message>
         <location line="+3"/>
-        <location line="+112"/>
+        <location line="+113"/>
         <source>Daily</source>
         <translation>매일</translation>
     </message>
     <message>
-        <location line="-112"/>
+        <location line="-113"/>
         <source>Monday</source>
         <translation>월요일</translation>
     </message>
@@ -8535,7 +9322,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
     </message>
     <message>
         <location line="+6"/>
-        <location line="+4"/>
+        <location line="+5"/>
         <source>Action</source>
         <translation>동작</translation>
     </message>
@@ -8550,38 +9337,34 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>새 일정</translation>
     </message>
     <message>
-        <location line="-2587"/>
+        <location line="-2600"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1575"/>
-        <location line="+1995"/>
+        <location line="+1606"/>
+        <location line="+1947"/>
         <source>Add</source>
         <translation>추가</translation>
     </message>
     <message>
-        <location line="-1987"/>
         <source>Action Value</source>
-        <translation>동작 값</translation>
+        <translation type="vanished">동작 값</translation>
     </message>
     <message>
-        <location line="+1"/>
-        <location line="+15"/>
         <source>Enter value:</source>
-        <translation>값 입력:</translation>
+        <translation type="vanished">값 입력:</translation>
     </message>
     <message>
-        <location line="-3"/>
-        <location line="+2"/>
+        <location line="-1910"/>
         <source>Edit Value</source>
         <translation>값 편집</translation>
     </message>
     <message>
-        <location line="+94"/>
+        <location line="+99"/>
         <source>The %1 settings page is not yet implemented.</source>
         <translation>설정 페이지 %1은(는) 아직 구현되지 않았습니다.</translation>
     </message>
     <message>
-        <location line="+187"/>
+        <location line="+175"/>
         <source>Proxy</source>
         <translation>프록시</translation>
     </message>
@@ -8615,7 +9398,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::PasteLinksDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/PasteLinksDialog.cpp" line="+14"/>
+        <location filename="../src/gui/dialogs/PasteLinksDialog.cpp" line="+16"/>
         <source>Paste eD2K Links</source>
         <translation>eD2K 링크 붙여넣기</translation>
     </message>
@@ -8639,7 +9422,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation type="vanished">취소</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+19"/>
         <source>Not Connected</source>
         <translation>연결되지 않음</translation>
     </message>
@@ -8676,7 +9459,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>카테고리:</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+7"/>
         <source>Priority:</source>
         <translation>우선순위:</translation>
     </message>
@@ -8686,7 +9469,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>일시 정지 상태로 시작</translation>
     </message>
     <message>
-        <location line="+17"/>
+        <location line="+18"/>
         <source>Cancel</source>
         <translation>취소</translation>
     </message>
@@ -8752,7 +9535,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+302"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+303"/>
         <location line="+942"/>
         <location line="+13"/>
         <location line="+434"/>
@@ -8929,12 +9712,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>서버가 이 네트워크에서 찾은 결과 표시</translation>
     </message>
     <message>
-        <location line="-202"/>
+        <location line="-203"/>
         <source>Related</source>
         <translation>관련</translation>
     </message>
     <message>
-        <location line="+208"/>
+        <location line="+209"/>
         <source>Usenet results</source>
         <translation>Usenet 결과</translation>
     </message>
@@ -9235,7 +10018,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>예</translation>
     </message>
     <message numerus="yes">
-        <location line="+347"/>
+        <location line="+357"/>
         <source>%1 · %n name(s)</source>
         <translation>
             <numerusform>%1 · 이름 %n개</numerusform>
@@ -9347,7 +10130,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>아니오</translation>
     </message>
     <message>
-        <location line="+82"/>
+        <location line="+88"/>
         <source>Server Name</source>
         <translation>서버 이름</translation>
     </message>
@@ -9412,7 +10195,17 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>IPv6</translation>
     </message>
     <message>
-        <location line="+33"/>
+        <location line="+1"/>
+        <source>Hard File Limit</source>
+        <translation>하드 파일 제한</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Version</source>
+        <translation>버전</translation>
+    </message>
+    <message>
+        <location line="+35"/>
         <source>High</source>
         <translation>높음</translation>
     </message>
@@ -9431,7 +10224,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation type="vanished">소프트 파일</translation>
     </message>
     <message>
-        <location line="-38"/>
+        <location line="-42"/>
         <source>Low ID</source>
         <translation>Low ID</translation>
     </message>
@@ -9457,12 +10250,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="-75"/>
-        <location line="+443"/>
+        <location line="+445"/>
         <source>Connect</source>
         <translation>연결</translation>
     </message>
     <message>
-        <location line="-499"/>
+        <location line="-501"/>
         <source>Invalid URL: %1</source>
         <translation>잘못된 URL: %1</translation>
     </message>
@@ -9492,7 +10285,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>server.met을 다운로드하고 &quot;%1&quot;의 압축을 풀었습니다(%2바이트). 분석 중...</translation>
     </message>
     <message>
-        <location line="+605"/>
+        <location line="+607"/>
         <location line="+2"/>
         <location line="+24"/>
         <location line="+39"/>
@@ -9590,7 +10383,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>▸ 서버 (%1)</translation>
     </message>
     <message>
-        <location line="-632"/>
+        <location line="-634"/>
         <source>Connect To</source>
         <translation>연결 대상</translation>
     </message>
@@ -9606,12 +10399,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+521"/>
+        <location line="+523"/>
         <source>Normal</source>
         <translation>보통</translation>
     </message>
     <message>
-        <location line="-520"/>
+        <location line="-522"/>
         <source>High</source>
         <translation>높음</translation>
     </message>
@@ -9676,7 +10469,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>▸ 서버 (0)</translation>
     </message>
     <message>
-        <location line="+78"/>
+        <location line="+80"/>
         <source>New Server</source>
         <translation>새 서버</translation>
     </message>
@@ -9822,7 +10615,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::SharedFilesModel</name>
     <message>
-        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+41"/>
+        <location filename="../src/gui/controls/SharedFilesModel.cpp" line="+44"/>
         <source>Yes</source>
         <translation>예</translation>
     </message>
@@ -9832,7 +10625,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>아니오</translation>
     </message>
     <message>
-        <location line="+98"/>
+        <location line="+109"/>
         <source>%1 Kbit/s</source>
         <translation>%1 Kbit/s</translation>
     </message>
@@ -9934,32 +10727,37 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::SharedFilesPanel</name>
     <message>
-        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+173"/>
-        <location line="+14"/>
-        <location line="+372"/>
-        <location line="+587"/>
+        <location filename="../src/gui/panels/SharedFilesPanel.cpp" line="+175"/>
+        <location line="+16"/>
+        <location line="+489"/>
+        <location line="+619"/>
         <source>Shared Files (0)</source>
         <translation>공유 파일 (0)</translation>
     </message>
     <message>
-        <location line="-868"/>
+        <location line="-900"/>
         <source>Open File</source>
         <translation>파일 열기</translation>
     </message>
     <message>
         <location line="+13"/>
-        <location line="+1392"/>
-        <location line="+506"/>
+        <location line="+1428"/>
+        <location line="+543"/>
         <source>Open Folder</source>
         <translation>폴더 열기</translation>
     </message>
     <message>
-        <location line="-1886"/>
+        <location line="-1959"/>
         <source>Rename...</source>
         <translation>이름 바꾸기...</translation>
     </message>
     <message>
-        <location line="+1945"/>
+        <location line="+2001"/>
+        <source>Copy eD2K Links</source>
+        <translation>eD2K 링크 복사</translation>
+    </message>
+    <message>
+        <location line="+58"/>
         <source>Rename File</source>
         <translation>파일 이름 변경</translation>
     </message>
@@ -9969,12 +10767,13 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>새 파일 이름:</translation>
     </message>
     <message>
-        <location line="-1937"/>
+        <location line="-2051"/>
+        <location line="+1955"/>
         <source>Delete From Disk</source>
         <translation>디스크에서 삭제</translation>
     </message>
     <message>
-        <location line="+931"/>
+        <location line="-992"/>
         <source>Delete File</source>
         <translation>파일 삭제</translation>
     </message>
@@ -9984,12 +10783,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>&quot;%1&quot;을(를) 디스크에서 영구적으로 삭제하시겠습니까?</translation>
     </message>
     <message>
-        <location line="-910"/>
+        <location line="-942"/>
         <source>Unshare</source>
         <translation>공유 해제</translation>
     </message>
     <message>
-        <location line="+943"/>
+        <location line="+975"/>
         <source>Unshare File</source>
         <translation>파일 공유 해제</translation>
     </message>
@@ -10003,27 +10802,32 @@ The file will remain on disk.</source>
 파일은 디스크에 남아 있습니다.</translation>
     </message>
     <message>
-        <location line="-926"/>
+        <location line="-958"/>
+        <location line="+1935"/>
         <source>Priority (Upload)</source>
         <translation>우선순위(업로드)</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="-1920"/>
+        <location line="+1937"/>
         <source>Very Low</source>
         <translation>매우 낮음</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-1936"/>
+        <location line="+1937"/>
         <source>Low</source>
         <translation>낮음</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-1936"/>
+        <location line="+1937"/>
         <source>Normal</source>
         <translation>보통</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-1936"/>
+        <location line="+1937"/>
         <source>High</source>
         <translation>높음</translation>
     </message>
@@ -10032,12 +10836,13 @@ The file will remain on disk.</source>
         <translation type="vanished">매우 높음</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="-1934"/>
+        <location line="+1936"/>
         <source>Auto</source>
         <translation>자동</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="-1922"/>
         <source>Collection</source>
         <translation>컬렉션</translation>
     </message>
@@ -10074,16 +10879,18 @@ The file will remain on disk.</source>
     </message>
     <message>
         <location line="+19"/>
+        <location line="+1842"/>
         <source>Details...</source>
         <translation>상세...</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="-1835"/>
+        <location line="+1838"/>
         <source>Comments...</source>
         <translation>댓글...</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="-1829"/>
         <source>eD2K Links...</source>
         <translation>eD2K 링크...</translation>
     </message>
@@ -10132,7 +10939,7 @@ The file will remain on disk.</source>
         <translation>모든 디렉터리</translation>
     </message>
     <message>
-        <location line="+190"/>
+        <location line="+221"/>
         <source>Current Session</source>
         <translation>현재 세션</translation>
     </message>
@@ -10181,7 +10988,7 @@ The file will remain on disk.</source>
         <translation>통계</translation>
     </message>
     <message>
-        <location line="+288"/>
+        <location line="+289"/>
         <source>%1 (%2 of %3 shared)</source>
         <translation>%1 (%3개 중 %2개 공유됨)</translation>
     </message>
@@ -10196,7 +11003,7 @@ The file will remain on disk.</source>
         <translation>해당 파일의 공유를 해제할 수 없습니다</translation>
     </message>
     <message>
-        <location line="+491"/>
+        <location line="+495"/>
         <source>Share Directory</source>
         <translation>디렉터리 공유</translation>
     </message>
@@ -10207,23 +11014,23 @@ The file will remain on disk.</source>
     </message>
     <message>
         <location line="+12"/>
-        <location line="+476"/>
+        <location line="+554"/>
         <source>Unshare Directory</source>
         <translation>디렉터리 공유 해제</translation>
     </message>
     <message>
-        <location line="-467"/>
-        <location line="+476"/>
+        <location line="-545"/>
+        <location line="+554"/>
         <source>Unshare with Subdirectories</source>
         <translation>하위 디렉터리 포함 공유 해제</translation>
     </message>
     <message>
-        <location line="-380"/>
+        <location line="-458"/>
         <source>Open File not available — web server is not running or stream token not received.</source>
         <translation>파일 열기를 사용할 수 없습니다 — 웹 서버가 실행 중이 아니거나 스트림 토큰을 받지 못했습니다.</translation>
     </message>
     <message>
-        <location line="-923"/>
+        <location line="-928"/>
         <source>Content</source>
         <translation>콘텐츠</translation>
     </message>
@@ -10238,12 +11045,18 @@ The file will remain on disk.</source>
         <translation>복사</translation>
     </message>
     <message>
-        <location line="-586"/>
+        <location line="-790"/>
+        <source>All</source>
+        <translation>전체</translation>
+    </message>
+    <message>
+        <location line="+173"/>
+        <location line="+1937"/>
         <source>Release</source>
         <translation>릴리스</translation>
     </message>
     <message>
-        <location line="+125"/>
+        <location line="-1812"/>
         <source>Add To IRC Clipboard</source>
         <translation>IRC 클립보드에 추가</translation>
     </message>
@@ -10253,7 +11066,7 @@ The file will remain on disk.</source>
         <translation>공유 디렉터리를 다시 검색합니다. %1 키를 누른 채 클릭하면 대신 모든 공유 파일의 미디어 정보를 다시 읽습니다.</translation>
     </message>
     <message>
-        <location line="+341"/>
+        <location line="+372"/>
         <source>Basic Options</source>
         <translation>기본 옵션</translation>
     </message>
@@ -10289,7 +11102,7 @@ The file will remain on disk.</source>
     </message>
     <message>
         <location line="+24"/>
-        <location line="+469"/>
+        <location line="+470"/>
         <source>Requires a hostname configured in Preferences, or a public IPv6</source>
         <translation>환경 설정에 구성된 호스트 이름 또는 공용 IPv6가 필요합니다</translation>
     </message>
@@ -10347,45 +11160,40 @@ The files will remain on disk.</source>
 <context>
     <name>eMule::StatisticsPanel</name>
     <message>
-        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="-50"/>
-        <location line="+8"/>
+        <location filename="../src/gui/panels/StatisticsPanel.cpp" line="-55"/>
+        <location line="+9"/>
         <source>Session average</source>
         <translation>세션 평균</translation>
     </message>
     <message>
-        <location line="-7"/>
-        <location line="+8"/>
         <source>Average (3 min)</source>
-        <translation>평균 (3분)</translation>
+        <translation type="vanished">평균 (3분)</translation>
     </message>
     <message>
-        <location line="-7"/>
+        <location line="-6"/>
         <location line="+8"/>
         <source>Current</source>
         <translation>현재</translation>
     </message>
     <message>
-        <location line="-6"/>
-        <location line="+9"/>
         <source>KB/s</source>
-        <translation>KB/s</translation>
+        <translation type="vanished">KB/s</translation>
     </message>
     <message>
-        <location line="-2"/>
+        <location line="+1"/>
         <source>Current (excl. overhead)</source>
         <translation>현재(오버헤드 제외)</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Friend slots</source>
-        <translation>친구 슬롯</translation>
+        <translation type="vanished">친구 슬롯</translation>
     </message>
     <message>
         <source>Active connections</source>
         <translation type="vanished">활성 연결</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+8"/>
         <source>Active uploads</source>
         <translation>활성 업로드</translation>
     </message>
@@ -10400,7 +11208,7 @@ The files will remain on disk.</source>
         <translation>활성 다운로드</translation>
     </message>
     <message>
-        <location line="+45"/>
+        <location line="+49"/>
         <source>Transfer</source>
         <translation>전송</translation>
     </message>
@@ -10418,135 +11226,121 @@ The files will remain on disk.</source>
     </message>
     <message>
         <location line="+10"/>
-        <location line="+159"/>
-        <location line="+22"/>
-        <location line="+321"/>
-        <location line="+1508"/>
+        <location line="+165"/>
+        <location line="+25"/>
+        <location line="+336"/>
+        <location line="+1619"/>
         <source>Uploads</source>
         <translation>업로드</translation>
     </message>
     <message>
-        <location line="-2006"/>
-        <location line="+63"/>
-        <location line="+81"/>
-        <location line="+53"/>
-        <location line="+35"/>
-        <location line="+1489"/>
+        <location line="-2141"/>
+        <location line="+67"/>
+        <location line="+83"/>
+        <location line="+56"/>
+        <location line="+43"/>
+        <location line="+1607"/>
         <location line="+153"/>
         <location line="+121"/>
         <source>Session</source>
         <translation>세션</translation>
     </message>
     <message>
-        <location line="-1992"/>
-        <location line="+32"/>
+        <location line="-2127"/>
+        <location line="+35"/>
         <source>Uploaded Data: 0 Bytes</source>
         <translation>업로드된 데이터: 0 Bytes</translation>
     </message>
     <message>
-        <location line="-19"/>
+        <location line="-22"/>
         <source>Uploaded Data to Friends: 0 Bytes</source>
         <translation>친구에게 업로드된 데이터: 0 Bytes</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Active Uploads: 0</source>
-        <translation>활성 업로드: 0</translation>
+        <translation type="vanished">활성 업로드: 0</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Waiting Uploads: 0</source>
-        <translation>대기 중 업로드: 0</translation>
+        <translation type="vanished">대기 중 업로드: 0</translation>
     </message>
     <message>
-        <location line="+2"/>
-        <location line="+27"/>
-        <location line="+459"/>
+        <location line="+6"/>
+        <location line="+28"/>
+        <location line="+480"/>
+        <location line="+141"/>
+        <location line="+45"/>
         <source>Upload Sessions</source>
         <translation>업로드 세션</translation>
     </message>
     <message>
-        <location line="-485"/>
-        <location line="+27"/>
-        <location line="+39"/>
-        <location line="+33"/>
         <source>Successful: 0</source>
-        <translation>성공: 0</translation>
+        <translation type="vanished">성공: 0</translation>
     </message>
     <message>
-        <location line="-98"/>
-        <location line="+27"/>
-        <location line="+39"/>
-        <location line="+33"/>
         <source>Failed: 0</source>
-        <translation>실패: 0</translation>
+        <translation type="vanished">실패: 0</translation>
     </message>
     <message>
-        <location line="-97"/>
-        <location line="+27"/>
+        <location line="-689"/>
+        <location line="+28"/>
         <source>Average Upload Per Session: 0 Bytes</source>
         <translation>세션당 평균 업로드: 0 Bytes</translation>
     </message>
     <message>
-        <location line="-25"/>
-        <location line="+27"/>
+        <location line="-26"/>
+        <location line="+28"/>
         <source>Average Upload Time: 0:00:00</source>
         <translation>평균 업로드 시간: 0:00:00</translation>
     </message>
     <message>
         <location line="+6"/>
-        <location line="+102"/>
-        <location line="+22"/>
-        <location line="+330"/>
-        <location line="+1130"/>
+        <location line="+105"/>
+        <location line="+24"/>
+        <location line="+345"/>
+        <location line="+1241"/>
         <location line="+367"/>
         <source>Downloads</source>
         <translation>다운로드</translation>
     </message>
     <message>
-        <location line="-1944"/>
-        <location line="+42"/>
+        <location line="-2075"/>
+        <location line="+43"/>
         <source>Downloaded Data: 0 Bytes</source>
         <translation>다운로드된 데이터: 0 Bytes</translation>
     </message>
     <message>
-        <location line="-33"/>
         <source>Active Downloads: 0</source>
-        <translation>활성 다운로드: 0</translation>
+        <translation type="vanished">활성 다운로드: 0</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-32"/>
         <source>Found Sources: 0</source>
         <translation>발견된 소스: 0</translation>
     </message>
     <message>
-        <location line="+64"/>
+        <location line="+65"/>
         <source>Connection</source>
         <translation>연결</translation>
     </message>
     <message>
-        <location line="+9"/>
         <source>Active Connections: 0</source>
-        <translation>활성 연결: 0</translation>
+        <translation type="vanished">활성 연결: 0</translation>
     </message>
     <message>
-        <location line="+1"/>
-        <location line="+24"/>
         <source>Peak Connections: 0</source>
-        <translation>최대 연결: 0</translation>
+        <translation type="vanished">최대 연결: 0</translation>
     </message>
     <message>
-        <location line="-23"/>
         <source>Max Connections Limit Reached: 0</source>
-        <translation>최대 연결 제한 도달: 0</translation>
+        <translation type="vanished">최대 연결 제한 도달: 0</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Reconnects: 0</source>
-        <translation>재연결: 0</translation>
+        <translation type="vanished">재연결: 0</translation>
     </message>
     <message>
-        <location line="+38"/>
+        <location line="+53"/>
         <source>Time Statistics</source>
         <translation>시간 통계</translation>
     </message>
@@ -10583,180 +11377,180 @@ The files will remain on disk.</source>
         <translation type="vanished">서버 접속 시간: 0:00:00</translation>
     </message>
     <message>
-        <location line="-209"/>
+        <location line="-218"/>
+        <location line="+35"/>
         <location line="+32"/>
-        <location line="+31"/>
-        <location line="+42"/>
-        <location line="+110"/>
-        <location line="+269"/>
+        <location line="+43"/>
+        <location line="+114"/>
+        <location line="+284"/>
         <source>Clients</source>
         <translation>클라이언트</translation>
     </message>
     <message>
-        <location line="-481"/>
+        <location line="-505"/>
+        <location line="+35"/>
         <location line="+32"/>
-        <location line="+31"/>
-        <location line="+42"/>
+        <location line="+43"/>
         <source>%1: 0 Bytes</source>
         <translation>%1: 0 Bytes</translation>
     </message>
     <message>
-        <location line="-104"/>
+        <location line="-109"/>
+        <location line="+35"/>
         <location line="+32"/>
-        <location line="+31"/>
-        <location line="+42"/>
-        <location line="+379"/>
+        <location line="+43"/>
+        <location line="+119"/>
+        <location line="+279"/>
         <source>Port</source>
         <translation>포트</translation>
     </message>
     <message>
-        <location line="-483"/>
+        <location line="-507"/>
+        <location line="+35"/>
         <location line="+32"/>
-        <location line="+31"/>
-        <location line="+42"/>
+        <location line="+43"/>
         <source>Default Port 4662: 0 Bytes</source>
         <translation>기본 포트 4662: 0 Bytes</translation>
     </message>
     <message>
-        <location line="-104"/>
+        <location line="-109"/>
+        <location line="+35"/>
         <location line="+32"/>
-        <location line="+31"/>
-        <location line="+42"/>
+        <location line="+43"/>
         <source>Other Ports: 0 Bytes</source>
         <translation>기타 포트: 0 Bytes</translation>
     </message>
     <message>
-        <location line="-104"/>
-        <location line="+32"/>
-        <location line="+460"/>
+        <location line="-109"/>
+        <location line="+35"/>
+        <location line="+481"/>
         <source>Data Source</source>
         <translation>데이터 소스</translation>
     </message>
     <message>
-        <location line="-491"/>
-        <location line="+32"/>
+        <location line="-515"/>
+        <location line="+35"/>
         <source>Complete File: 0 Bytes</source>
         <translation>완전한 파일: 0 Bytes</translation>
     </message>
     <message>
-        <location line="-31"/>
-        <location line="+32"/>
+        <location line="-34"/>
+        <location line="+35"/>
         <source>Part File: 0 Bytes</source>
         <translation>부분 파일: 0 Bytes</translation>
     </message>
     <message>
         <location line="-13"/>
-        <location line="+73"/>
-        <location line="+63"/>
-        <location line="+40"/>
-        <location line="+24"/>
-        <location line="+1494"/>
+        <location line="+75"/>
+        <location line="+66"/>
+        <location line="+41"/>
+        <location line="+32"/>
+        <location line="+1612"/>
         <location line="+149"/>
         <location line="+125"/>
         <source>Cumulative</source>
         <translation>누적</translation>
     </message>
     <message>
-        <location line="-1916"/>
-        <location line="+33"/>
+        <location line="-2056"/>
+        <location line="+43"/>
         <source>Completed Downloads: 0</source>
         <translation>완료된 다운로드: 0</translation>
     </message>
     <message>
-        <location line="-31"/>
-        <location line="+33"/>
-        <location line="+400"/>
+        <location line="-32"/>
+        <location line="+34"/>
+        <location line="+419"/>
+        <location line="+270"/>
+        <location line="+10"/>
         <source>Download Sessions</source>
         <translation>다운로드 세션</translation>
     </message>
     <message>
-        <location line="-429"/>
-        <location line="+33"/>
+        <location line="-728"/>
+        <location line="+34"/>
         <source>Average Download Per Session: 0 Bytes</source>
         <translation>세션당 평균 다운로드: 0 Bytes</translation>
     </message>
     <message>
-        <location line="-31"/>
-        <location line="+33"/>
+        <location line="-32"/>
+        <location line="+34"/>
         <source>Average Download Time: 0:00:00</source>
         <translation>평균 다운로드 시간: 0:00:00</translation>
     </message>
     <message>
-        <location line="-30"/>
-        <location line="+33"/>
+        <location line="-31"/>
+        <location line="+34"/>
         <source>Gain Due To Compression: 0 Bytes (0.0%)</source>
         <translation>압축으로 인한 이득: 0 Bytes (0.0%)</translation>
     </message>
     <message>
-        <location line="-31"/>
-        <location line="+33"/>
+        <location line="-32"/>
+        <location line="+34"/>
         <source>Lost Due To Corruption: 0 Bytes (0.0%)</source>
         <translation>손상으로 인한 손실: 0 Bytes (0.0%)</translation>
     </message>
     <message>
-        <location line="-31"/>
-        <location line="+33"/>
+        <location line="-32"/>
+        <location line="+34"/>
         <source>Parts Saved Due To ICH: 0</source>
         <translation>ICH로 복구된 파트: 0</translation>
     </message>
     <message>
         <location line="+15"/>
-        <location line="+24"/>
-        <location line="+1451"/>
+        <location line="+26"/>
+        <location line="+1578"/>
         <source>General</source>
         <translation>일반</translation>
     </message>
     <message>
-        <location line="-1469"/>
         <source>Average Connections: 0.0</source>
-        <translation>평균 연결 수: 0.0</translation>
+        <translation type="vanished">평균 연결 수: 0.0</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="-1594"/>
         <source>Upload Speed: 0 KB/s</source>
         <translation>업로드 속도: 0 KB/s</translation>
     </message>
     <message>
-        <location line="+1"/>
-        <location line="+22"/>
+        <location line="+2"/>
+        <location line="+24"/>
         <source>Max Upload Rate: 0 KB/s</source>
         <translation>최대 업로드 속도: 0 KB/s</translation>
     </message>
     <message>
-        <location line="-21"/>
-        <location line="+22"/>
+        <location line="-23"/>
+        <location line="+24"/>
         <source>Max Average Upload Rate: 0 KB/s</source>
         <translation>최대 평균 업로드 속도: 0 KB/s</translation>
     </message>
     <message>
-        <location line="-18"/>
+        <location line="-20"/>
         <source>Download Speed: 0 KB/s</source>
         <translation>다운로드 속도: 0 KB/s</translation>
     </message>
     <message>
-        <location line="+1"/>
-        <location line="+22"/>
+        <location line="+2"/>
+        <location line="+23"/>
         <source>Max Download Rate: 0 KB/s</source>
         <translation>최대 다운로드 속도: 0 KB/s</translation>
     </message>
     <message>
-        <location line="-21"/>
-        <location line="+22"/>
+        <location line="-22"/>
+        <location line="+23"/>
         <source>Max Average Download Rate: 0 KB/s</source>
         <translation>최대 평균 다운로드 속도: 0 KB/s</translation>
     </message>
     <message>
-        <location line="-14"/>
         <source>Server Reconnects: 0</source>
-        <translation>서버 재연결: 0</translation>
+        <translation type="vanished">서버 재연결: 0</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Connection Limit Reached: 0</source>
-        <translation>연결 한도 도달: 0</translation>
+        <translation type="vanished">연결 한도 도달: 0</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="-8"/>
         <source>Average Upload Rate: 0 KB/s</source>
         <translation>평균 업로드 속도: 0 KB/s</translation>
     </message>
@@ -10767,57 +11561,61 @@ The files will remain on disk.</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+693"/>
+        <location line="+743"/>
         <location line="+5"/>
         <source>Statistics Last Reset: %1</source>
         <translation>통계 마지막 초기화: %1</translation>
     </message>
     <message>
-        <location line="-996"/>
-        <location line="+298"/>
-        <location line="+543"/>
-        <location line="+148"/>
+        <location line="-1060"/>
+        <location line="+312"/>
+        <location line="+574"/>
+        <location line="+167"/>
         <location line="+8"/>
-        <location line="+1027"/>
+        <location line="+67"/>
+        <location line="+69"/>
+        <location line="+967"/>
         <source>Unknown</source>
         <translation>알 수 없음</translation>
     </message>
     <message>
-        <location line="-2031"/>
+        <location line="-2171"/>
         <source>Statistics Tree</source>
         <translation>통계 트리</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1000"/>
+        <location line="+1064"/>
         <source>Statistics last reset: %1</source>
         <translation>통계 마지막 초기화: %1</translation>
     </message>
     <message>
-        <location line="-972"/>
-        <location line="+1795"/>
+        <location line="-1035"/>
+        <location line="+1934"/>
         <source>Usenet</source>
         <translation>Usenet</translation>
     </message>
     <message>
-        <location line="-1729"/>
-        <location line="+1606"/>
+        <location line="-1864"/>
+        <location line="+685"/>
+        <location line="+45"/>
+        <location line="+1011"/>
         <source>Waiting...</source>
         <translation>대기 중...</translation>
     </message>
     <message>
-        <location line="-1603"/>
-        <location line="+596"/>
+        <location line="-1738"/>
+        <location line="+620"/>
         <source>Session UL:DL Ratio (Friends UL excluded): %1</source>
         <translation>세션 UL:DL 비율 (친구 업로드 제외): %1</translation>
     </message>
     <message>
-        <location line="-506"/>
+        <location line="-525"/>
         <source>UDP File Re-asks: 0, Failed: 0 (0.0%)</source>
         <translation>UDP 파일 재요청: 0, 실패: 0 (0.0%)</translation>
     </message>
     <message>
-        <location line="+1558"/>
+        <location line="+1688"/>
         <source>Corrupt (Failed yEnc Check): %1</source>
         <translation>손상됨 (yEnc 검사 실패): %1</translation>
     </message>
@@ -10847,7 +11645,7 @@ The files will remain on disk.</source>
         <translation type="vanished">가져온 청크: 0</translation>
     </message>
     <message>
-        <location line="-1780"/>
+        <location line="-1906"/>
         <source>Run Time: 0:00:00</source>
         <translation>실행 시간: 0:00:00</translation>
     </message>
@@ -10868,12 +11666,12 @@ The files will remain on disk.</source>
         <translation>클라이언트 소프트웨어</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+9"/>
         <source>Low ID: 0 (0.0%)</source>
         <translation>Low ID: 0 (0.0%)</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+3"/>
         <source>Banned Clients: 0</source>
         <translation>차단된 클라이언트: 0</translation>
     </message>
@@ -10893,12 +11691,12 @@ The files will remain on disk.</source>
         <translation>작동 중인 서버: 0</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+4"/>
         <source>Failed Servers: 0</source>
         <translation>실패한 서버: 0</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="+2"/>
         <source>Total: 0</source>
         <translation>합계: 0</translation>
     </message>
@@ -10913,9 +11711,8 @@ The files will remain on disk.</source>
         <translation>총 파일: 0</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Low ID Users: 0</source>
-        <translation>Low ID 사용자: 0</translation>
+        <translation type="vanished">Low ID 사용자: 0</translation>
     </message>
     <message>
         <location line="+2"/>
@@ -10944,78 +11741,64 @@ The files will remain on disk.</source>
         <translation>공유 파일</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Number of Shared Files: 0</source>
-        <translation>공유 파일 수: 0</translation>
+        <translation type="vanished">공유 파일 수: 0</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Total Size: 0 Bytes</source>
-        <translation>총 크기: 0 Bytes</translation>
+        <translation type="vanished">총 크기: 0 Bytes</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Average File Size: 0 Bytes</source>
-        <translation>평균 파일 크기: 0 Bytes</translation>
+        <translation type="vanished">평균 파일 크기: 0 Bytes</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Largest Shared File: 0 Bytes</source>
-        <translation>최대 공유 파일: 0 Bytes</translation>
+        <translation type="vanished">최대 공유 파일: 0 Bytes</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>Most Files Shared: 0</source>
-        <translation>최다 공유 파일: 0</translation>
+        <translation type="vanished">최다 공유 파일: 0</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Largest Share Size: 0 Bytes</source>
-        <translation>최대 공유 크기: 0 Bytes</translation>
+        <translation type="vanished">최대 공유 크기: 0 Bytes</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Largest Average File Size: 0 Bytes</source>
-        <translation>최대 평균 파일 크기: 0 Bytes</translation>
+        <translation type="vanished">최대 평균 파일 크기: 0 Bytes</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Largest File Size: 0 Bytes</source>
-        <translation>최대 파일 크기: 0 Bytes</translation>
+        <translation type="vanished">최대 파일 크기: 0 Bytes</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Total Downloads</source>
-        <translation>전체 다운로드</translation>
+        <translation type="vanished">전체 다운로드</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Number of Downloads: 0</source>
-        <translation>다운로드 수: 0</translation>
+        <translation type="vanished">다운로드 수: 0</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Total Size of Downloads: 0 Bytes</source>
-        <translation>다운로드 총 크기: 0 Bytes</translation>
+        <translation type="vanished">다운로드 총 크기: 0 Bytes</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Total Size Downloaded: 0 Bytes</source>
-        <translation>다운로드된 총 크기: 0 Bytes</translation>
+        <translation type="vanished">다운로드된 총 크기: 0 Bytes</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Total Size Left to Download: 0 Bytes</source>
-        <translation>남은 다운로드 크기: 0 Bytes</translation>
+        <translation type="vanished">남은 다운로드 크기: 0 Bytes</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>Free Space on Drive: 0 Bytes</source>
-        <translation>드라이브 여유 공간: 0 Bytes</translation>
+        <translation type="vanished">드라이브 여유 공간: 0 Bytes</translation>
     </message>
     <message>
-        <location line="-298"/>
-        <location line="+596"/>
+        <location line="-297"/>
+        <location line="+620"/>
         <source>Session UL:DL Ratio: %1</source>
         <translation>세션 UL:DL 비율: %1</translation>
     </message>
@@ -11024,136 +11807,127 @@ The files will remain on disk.</source>
         <translation type="vanished">친구 세션 UL:DL 비율: %1</translation>
     </message>
     <message>
-        <location line="-593"/>
-        <location line="+597"/>
+        <location line="-617"/>
+        <location line="+621"/>
         <source>Cumulative UL:DL Ratio: %1</source>
         <translation>누적 UL:DL 비율: %1</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+56"/>
+        <location line="+74"/>
         <source>Uploaded Data: %1</source>
         <translation>업로드된 데이터: %1</translation>
     </message>
     <message>
-        <location line="-45"/>
-        <location line="+55"/>
-        <location line="+60"/>
-        <location line="+100"/>
+        <location line="-63"/>
+        <location line="+73"/>
+        <location line="+57"/>
+        <location line="+99"/>
         <source>Default Port 4662: %1 %2</source>
         <translation>기본 포트 4662: %1 %2</translation>
     </message>
     <message>
-        <location line="-212"/>
-        <location line="+55"/>
-        <location line="+60"/>
-        <location line="+100"/>
+        <location line="-226"/>
+        <location line="+73"/>
+        <location line="+57"/>
+        <location line="+99"/>
         <source>Other Ports: %1 %2</source>
         <translation>기타 포트: %1 %2</translation>
     </message>
     <message>
-        <location line="-212"/>
-        <location line="+55"/>
+        <location line="-226"/>
+        <location line="+73"/>
         <source>Complete File: %1 %2</source>
         <translation>완전한 파일: %1 %2</translation>
     </message>
     <message>
-        <location line="-52"/>
-        <location line="+55"/>
+        <location line="-70"/>
+        <location line="+73"/>
         <source>Part File: %1 %2</source>
         <translation>부분 파일: %1 %2</translation>
     </message>
     <message>
-        <location line="-50"/>
+        <location line="-68"/>
         <source>Uploaded Data to Friends: %1</source>
         <translation>친구에게 업로드된 데이터: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Active Uploads: %1</source>
-        <translation>활성 업로드: %1</translation>
+        <translation type="vanished">활성 업로드: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+7"/>
         <source>Waiting Uploads: %1</source>
         <translation>대기 중 업로드: %1</translation>
     </message>
     <message>
-        <location line="+5"/>
-        <location line="+48"/>
-        <location line="+96"/>
-        <location line="+12"/>
         <source>Successful: %1%2</source>
-        <translation>성공: %1%2</translation>
+        <translation type="vanished">성공: %1%2</translation>
     </message>
     <message>
-        <location line="-154"/>
-        <location line="+48"/>
-        <location line="+96"/>
-        <location line="+12"/>
-        <location line="+871"/>
+        <location line="+1142"/>
         <location line="+49"/>
         <source>Failed: %1</source>
         <translation>실패: %1</translation>
     </message>
     <message>
-        <location line="-1073"/>
-        <location line="+48"/>
+        <location line="-1167"/>
+        <location line="+45"/>
         <source>Average Upload Per Session: %1</source>
         <translation>세션당 평균 업로드: %1</translation>
     </message>
     <message>
-        <location line="-46"/>
-        <location line="+48"/>
+        <location line="-42"/>
+        <location line="+45"/>
         <source>Average Upload Time: %1</source>
         <translation>평균 업로드 시간: %1</translation>
     </message>
     <message>
-        <location line="-44"/>
+        <location line="-41"/>
         <source>%1: %2</source>
         <translation>%1: %2</translation>
     </message>
     <message>
-        <location line="-168"/>
-        <location line="+172"/>
-        <location line="+60"/>
-        <location line="+100"/>
+        <location line="-186"/>
+        <location line="+190"/>
+        <location line="+57"/>
+        <location line="+99"/>
         <location line="+36"/>
         <source>Total Overhead (Packets)</source>
         <translation>전체 오버헤드 (패킷)</translation>
     </message>
     <message>
-        <location line="-367"/>
-        <location line="+172"/>
-        <location line="+60"/>
-        <location line="+100"/>
+        <location line="-381"/>
+        <location line="+190"/>
+        <location line="+57"/>
+        <location line="+99"/>
         <location line="+36"/>
         <source>File Request Overhead (Packets)</source>
         <translation>파일 요청 오버헤드 (패킷)</translation>
     </message>
     <message>
-        <location line="-367"/>
-        <location line="+172"/>
-        <location line="+60"/>
-        <location line="+100"/>
+        <location line="-381"/>
+        <location line="+190"/>
+        <location line="+57"/>
+        <location line="+99"/>
         <location line="+36"/>
         <source>Source Exchange Overhead (Packets)</source>
         <translation>소스 교환 오버헤드 (패킷)</translation>
     </message>
     <message>
-        <location line="-367"/>
-        <location line="+172"/>
-        <location line="+60"/>
-        <location line="+100"/>
+        <location line="-381"/>
+        <location line="+190"/>
+        <location line="+57"/>
+        <location line="+99"/>
         <location line="+36"/>
         <source>Server Overhead (Packets)</source>
         <translation>서버 오버헤드 (패킷)</translation>
     </message>
     <message>
-        <location line="-367"/>
-        <location line="+172"/>
-        <location line="+60"/>
-        <location line="+100"/>
+        <location line="-381"/>
+        <location line="+190"/>
+        <location line="+57"/>
+        <location line="+99"/>
         <location line="+36"/>
         <source>Kad Overhead (Packets)</source>
         <translation>Kad 오버헤드 (패킷)</translation>
@@ -11179,30 +11953,29 @@ The files will remain on disk.</source>
         <translation type="vanished">가져온 청크</translation>
     </message>
     <message>
-        <location line="-133"/>
-        <location line="+100"/>
-        <location line="+821"/>
+        <location line="-132"/>
+        <location line="+99"/>
+        <location line="+918"/>
         <source>Downloaded Data: %1</source>
         <translation>다운로드된 데이터: %1</translation>
     </message>
     <message>
-        <location line="-903"/>
         <source>Active Downloads: %1</source>
-        <translation>활성 다운로드: %1</translation>
+        <translation type="vanished">활성 다운로드: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-996"/>
         <source>Found Sources: %1</source>
         <translation>발견된 소스: %1</translation>
     </message>
     <message>
-        <location line="+29"/>
+        <location line="+30"/>
         <source>UDP File Re-asks: %1, Failed: %2 %3</source>
         <translation>UDP 파일 재요청: %1, 실패: %2 %3</translation>
     </message>
     <message>
-        <location line="+4"/>
-        <location line="+65"/>
+        <location line="+5"/>
+        <location line="+61"/>
         <source>Completed Downloads: %1</source>
         <translation>완료된 다운로드: %1</translation>
     </message>
@@ -11225,92 +11998,88 @@ The files will remain on disk.</source>
         <translation>ICH로 복구된 파트: %1</translation>
     </message>
     <message>
-        <location line="+10"/>
-        <location line="+782"/>
+        <location line="+889"/>
         <source>Active Connections: %1</source>
         <translation>활성 연결: %1</translation>
     </message>
     <message>
-        <location line="-780"/>
-        <location line="+19"/>
-        <location line="+762"/>
+        <location line="+1"/>
         <source>Peak Connections: %1</source>
         <translation>최대 연결: %1</translation>
     </message>
     <message>
-        <location line="-779"/>
         <source>Max Connections Limit Reached: %1</source>
-        <translation>최대 연결 제한 도달: %1</translation>
+        <translation type="vanished">최대 연결 제한 도달: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-1609"/>
+        <location line="+26"/>
+        <location line="+708"/>
+        <location line="+33"/>
         <source>Reconnects: %1</source>
         <translation>재연결: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Average Connections: %1</source>
-        <translation>평균 연결: %1</translation>
+        <translation type="vanished">평균 연결: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-9"/>
         <source>Upload Speed: %1</source>
         <translation>업로드 속도: %1</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+15"/>
+        <location line="+17"/>
         <source>Max Upload Rate: %1</source>
         <translation>최대 업로드 속도: %1</translation>
     </message>
     <message>
-        <location line="-14"/>
-        <location line="+15"/>
+        <location line="-16"/>
+        <location line="+17"/>
         <source>Max Average Upload Rate: %1</source>
         <translation>최대 평균 업로드 속도: %1</translation>
     </message>
     <message>
-        <location line="-14"/>
-        <location line="+764"/>
+        <location line="-16"/>
+        <location line="+842"/>
         <source>Download Speed: %1</source>
         <translation>다운로드 속도: %1</translation>
     </message>
     <message>
-        <location line="-763"/>
-        <location line="+15"/>
-        <location line="+750"/>
+        <location line="-841"/>
+        <location line="+17"/>
+        <location line="+826"/>
         <source>Max Download Rate: %1</source>
         <translation>최대 다운로드 속도: %1</translation>
     </message>
     <message>
-        <location line="-764"/>
-        <location line="+15"/>
+        <location line="-842"/>
+        <location line="+17"/>
         <source>Max Average Download Rate: %1</source>
         <translation>최대 평균 다운로드 속도: %1</translation>
     </message>
     <message>
-        <location line="-11"/>
         <source>Server Reconnects: %1</source>
-        <translation>서버 재연결: %1</translation>
+        <translation type="vanished">서버 재연결: %1</translation>
     </message>
     <message>
-        <location line="+4"/>
         <source>Connection Limit Reached: %1</source>
-        <translation>연결 한도 도달: %1</translation>
+        <translation type="vanished">연결 한도 도달: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-5"/>
         <source>Average Upload Rate: %1</source>
         <translation>평균 업로드 속도: %1</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+750"/>
+        <location line="+826"/>
         <source>Average Download Rate: %1</source>
         <translation>평균 다운로드 속도: %1</translation>
     </message>
     <message>
-        <location line="-737"/>
+        <location line="-813"/>
         <location line="+5"/>
         <source>Time Since Last Reset: %1</source>
         <translation>마지막 초기화 이후 시간: %1</translation>
@@ -11335,7 +12104,7 @@ The files will remain on disk.</source>
     <message>
         <location line="-18"/>
         <location line="+20"/>
-        <location line="+692"/>
+        <location line="+768"/>
         <source>Download Time: %1 %2</source>
         <translation>다운로드 시간: %1 %2</translation>
     </message>
@@ -11344,7 +12113,7 @@ The files will remain on disk.</source>
         <translation type="vanished">서버 접속 시간: %1 %2</translation>
     </message>
     <message>
-        <location line="-698"/>
+        <location line="-774"/>
         <source>Run Time: %1</source>
         <translation>실행 시간: %1</translation>
     </message>
@@ -11355,12 +12124,12 @@ The files will remain on disk.</source>
         <translation>총 서버 지속 시간: %1 %2</translation>
     </message>
     <message>
-        <location line="-731"/>
+        <location line="-781"/>
         <source>Current Server Duration: 0:00:00</source>
         <translation>현재 서버 접속 시간: 0:00:00</translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+33"/>
         <source>Different clients, counted by user hash. An estimate, accurate to about 2%.</source>
         <translation>사용자 해시로 센 서로 다른 클라이언트. 오차 약 2%의 추정치입니다.</translation>
     </message>
@@ -11380,19 +12149,19 @@ The files will remain on disk.</source>
         <translation>접속한 주소의 국가별 클라이언트.</translation>
     </message>
     <message>
-        <location line="+531"/>
-        <location line="+12"/>
+        <location line="+554"/>
+        <location line="+10"/>
         <source>Average Download Per Session: %1</source>
         <translation>세션당 평균 다운로드: %1</translation>
     </message>
     <message>
-        <location line="-10"/>
-        <location line="+12"/>
+        <location line="-8"/>
+        <location line="+10"/>
         <source>Average Download Time: %1</source>
         <translation>평균 다운로드 시간: %1</translation>
     </message>
     <message>
-        <location line="+127"/>
+        <location line="+148"/>
         <source>Current Server Duration: %1 %2</source>
         <translation>현재 서버 접속 시간: %1 %2</translation>
     </message>
@@ -11407,7 +12176,7 @@ The files will remain on disk.</source>
         <translation>Low ID: %1 %2</translation>
     </message>
     <message>
-        <location line="+3"/>
+        <location line="+36"/>
         <source>Banned Clients: %1</source>
         <translation>차단된 클라이언트: %1</translation>
     </message>
@@ -11417,12 +12186,12 @@ The files will remain on disk.</source>
         <translation>필터된 클라이언트: %1</translation>
     </message>
     <message>
-        <location line="+87"/>
+        <location line="+127"/>
         <source>Working Servers: %1</source>
         <translation>작동 중인 서버: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+9"/>
         <source>Failed Servers: %1</source>
         <translation>실패한 서버: %1</translation>
     </message>
@@ -11432,19 +12201,18 @@ The files will remain on disk.</source>
         <translation>합계: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+1"/>
         <source>Total Users: %1</source>
         <translation>총 사용자: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+1"/>
         <source>Total Files: %1</source>
         <translation>총 파일: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Low ID Users: %1</source>
-        <translation>Low ID 사용자: %1</translation>
+        <translation type="vanished">Low ID 사용자: %1</translation>
     </message>
     <message>
         <location line="+3"/>
@@ -11462,29 +12230,28 @@ The files will remain on disk.</source>
         <translation>최다 이용 가능 파일: %1</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="-900"/>
+        <location line="+908"/>
         <source>Number of Shared Files: %1</source>
         <translation>공유 파일 수: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Total Size: %1</source>
-        <translation>총 크기: %1</translation>
+        <translation type="vanished">총 크기: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Average File Size: %1</source>
-        <translation>평균 파일 크기: %1</translation>
+        <translation type="vanished">평균 파일 크기: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+8"/>
+        <location line="+9"/>
         <source>Largest Shared File: %1</source>
         <translation>최대 공유 파일: %1</translation>
     </message>
     <message>
-        <location line="+3"/>
         <source>Most Files Shared: %1</source>
-        <translation>최다 공유 파일: %1</translation>
+        <translation type="vanished">최다 공유 파일: %1</translation>
     </message>
     <message>
         <location line="+2"/>
@@ -11492,46 +12259,42 @@ The files will remain on disk.</source>
         <translation>최대 공유 크기: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="-4"/>
         <source>Largest Average File Size: %1</source>
         <translation>최대 평균 파일 크기: %1</translation>
     </message>
     <message>
-        <location line="+2"/>
         <source>Largest File Size: %1</source>
-        <translation>최대 파일 크기: %1</translation>
+        <translation type="vanished">최대 파일 크기: %1</translation>
     </message>
     <message>
-        <location line="+4"/>
-        <location line="+620"/>
+        <location line="+14"/>
+        <location line="+608"/>
         <source>Number of Downloads: %1</source>
         <translation>다운로드 수: %1</translation>
     </message>
     <message>
-        <location line="-618"/>
-        <location line="+626"/>
+        <location line="-607"/>
+        <location line="+615"/>
         <source>Total Size of Downloads: %1</source>
         <translation>다운로드 총 크기: %1</translation>
     </message>
     <message>
-        <location line="-624"/>
-        <location line="+625"/>
+        <location line="+1"/>
         <source>Total Size Downloaded: %1</source>
         <translation>다운로드된 총 크기: %1</translation>
     </message>
     <message>
-        <location line="-623"/>
-        <location line="+624"/>
+        <location line="+1"/>
         <source>Total Size Left to Download: %1</source>
         <translation>남은 다운로드 크기: %1</translation>
     </message>
     <message>
-        <location line="-622"/>
         <source>Free Space on Drive: %1</source>
-        <translation>드라이브 여유 공간: %1</translation>
+        <translation type="vanished">드라이브 여유 공간: %1</translation>
     </message>
     <message>
-        <location line="+64"/>
+        <location line="-542"/>
         <source>Clients Seen: ≈%1</source>
         <translation>확인한 클라이언트: ≈%1</translation>
     </message>
@@ -11546,19 +12309,50 @@ The files will remain on disk.</source>
         <translation>실행 중 아님</translation>
     </message>
     <message>
-        <location line="-466"/>
-        <location line="+468"/>
+        <location line="-577"/>
+        <location line="+579"/>
         <source>Connecting</source>
         <translation>연결 중</translation>
     </message>
     <message>
-        <location line="-1357"/>
-        <location line="+92"/>
+        <location line="-1544"/>
+        <location line="+107"/>
+        <source>Average (%1 mins)</source>
+        <translation>평균 (%1분)</translation>
+    </message>
+    <message>
+        <location line="-86"/>
+        <location line="+103"/>
         <source>Active connections (1:%1)</source>
         <translation>활성 연결 (1:%1)</translation>
     </message>
     <message>
-        <location line="+510"/>
+        <location line="-13"/>
+        <source>Download Speed</source>
+        <translation>다운로드 속도</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Friend upload</source>
+        <translation>친구 업로드</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Upload Speed</source>
+        <translation>업로드 속도</translation>
+    </message>
+    <message>
+        <location line="+9"/>
+        <source>Connections</source>
+        <translation>연결 수</translation>
+    </message>
+    <message>
+        <location line="+364"/>
+        <source>Disk Space</source>
+        <translation>디스크 공간</translation>
+    </message>
+    <message>
+        <location line="+169"/>
         <source>Projected Averages</source>
         <translation>예상 평균</translation>
     </message>
@@ -11640,7 +12434,42 @@ The files will remain on disk.</source>
         <translation>ICH로 복구한 파트</translation>
     </message>
     <message>
-        <location line="+208"/>
+        <location line="+96"/>
+        <source>Active Uploads/Needed to fill Bandwidth: %1</source>
+        <translation>활성 업로드/대역폭을 채우는 데 필요한 수: %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Total Uploads: %1</source>
+        <translation>전체 업로드: %1</translation>
+    </message>
+    <message>
+        <location line="+17"/>
+        <source>Total successful upload sessions</source>
+        <translation>성공한 업로드 세션 합계</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Total failed upload sessions</source>
+        <translation>실패한 업로드 세션 합계</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Successful Download Sessions</source>
+        <translation>성공한 다운로드 세션</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Failed Download Sessions</source>
+        <translation>실패한 다운로드 세션</translation>
+    </message>
+    <message>
+        <location line="+99"/>
+        <source>Active Downloads (chunks): %1</source>
+        <translation>활성 다운로드 (청크): %1</translation>
+    </message>
+    <message>
+        <location line="+7"/>
         <source>On Queue</source>
         <translation>대기 중</translation>
     </message>
@@ -11681,11 +12510,12 @@ The files will remain on disk.</source>
     </message>
     <message>
         <location line="+1"/>
+        <location line="+261"/>
         <source>Problematic</source>
         <translation>문제 있음</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="-261"/>
         <source>Banned</source>
         <translation>차단됨</translation>
     </message>
@@ -11720,7 +12550,130 @@ The files will remain on disk.</source>
         <translation>죽은 소스: %1 (%2 + %3)</translation>
     </message>
     <message>
-        <location line="+453"/>
+        <location line="+100"/>
+        <source>Active Connections (estimate): %1 (Half:%2 | Compl:%3 | Other:%4)</source>
+        <translation>활성 연결 (추정): %1 (하프:%2 | 완료:%3 | 기타:%4)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <location line="+30"/>
+        <source>Average Connections (estimate): %1</source>
+        <translation>평균 연결 수 (추정): %1</translation>
+    </message>
+    <message>
+        <location line="-28"/>
+        <location line="+30"/>
+        <source>Peak Connections (estimate): %1</source>
+        <translation>최대 연결 수 (추정): %1</translation>
+    </message>
+    <message>
+        <location line="-24"/>
+        <source>Max Connection Limit Reached: %1 : %2</source>
+        <translation>최대 연결 제한 도달: %1 : %2</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <location line="+22"/>
+        <source>Max Connection Limit Reached: %1</source>
+        <translation>최대 연결 제한 도달: %1</translation>
+    </message>
+    <message>
+        <location line="-19"/>
+        <source>Average Uploadrate: %1</source>
+        <translation>평균 업로드 속도: %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Average Downloadrate: %1</source>
+        <translation>평균 다운로드 속도: %1</translation>
+    </message>
+    <message>
+        <location line="+116"/>
+        <source>Default</source>
+        <translation>기본값</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Other</source>
+        <translation>기타</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Secure Ident (OK : Failed )</source>
+        <translation>보안 식별 (성공 : 실패 )</translation>
+    </message>
+    <message>
+        <location line="+93"/>
+        <source>Minor</source>
+        <translation>기타 버전</translation>
+    </message>
+    <message>
+        <location line="+44"/>
+        <source>Users on Working Servers: %1; Low ID: %2 (%3%)</source>
+        <translation>작동 중인 서버의 사용자: %1; Low ID: %2 (%3%)</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>Files on Working Servers: %1</source>
+        <translation>작동 중인 서버의 파일: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Server Occupation: %1%</source>
+        <translation>서버 점유율: %1%</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Deleted Servers: %1</source>
+        <translation>삭제된 서버: %1</translation>
+    </message>
+    <message>
+        <location line="+20"/>
+        <source> (%1 hashing)</source>
+        <translation> (%1개 해싱 중)</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Average file size: %1</source>
+        <translation>평균 파일 크기: %1</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Total size of Shared Files: %1</source>
+        <translation>공유 파일의 전체 크기: %1</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Max. Files Ever Shared: %1</source>
+        <translation>역대 최대 공유 파일 수: %1</translation>
+    </message>
+    <message>
+        <location line="+18"/>
+        <source>Total Completed Size: %1 (%2%)</source>
+        <translation>완료된 전체 크기: %1 (%2%)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Total Size Left to Transfer: %1</source>
+        <translation>전송할 남은 전체 크기: %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Free Space on Tempdrive: %1</source>
+        <translation>임시 드라이브의 여유 공간: %1</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source> (you need to free %1!)</source>
+        <translation> (%1을(를) 확보해야 합니다!)</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Additional Space Needed for Downloads: %1</source>
+        <translation>다운로드에 필요한 추가 공간: %1</translation>
+    </message>
+    <message>
+        <location line="+118"/>
         <source>Connected (LAN mode)</source>
         <translation>연결됨 (LAN 모드)</translation>
     </message>
@@ -11846,7 +12799,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>eMule Qt v%1 %2 [%3]</translation>
     </message>
     <message>
-        <location line="+179"/>
+        <location line="+163"/>
         <location line="+491"/>
         <source>Open Connections: %1</source>
         <translation>열린 연결: %1</translation>
@@ -12331,8 +13284,8 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>노드</translation>
     </message>
     <message>
-        <location line="-1602"/>
-        <location line="+1605"/>
+        <location line="-1720"/>
+        <location line="+1723"/>
         <source>By Country</source>
         <translation>국가별</translation>
     </message>
@@ -12342,7 +13295,8 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>우리에게 패킷을 보낸 노드를 보낸 주소의 국가별로 표시합니다.</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="-1750"/>
+        <location line="+1754"/>
         <source>Network</source>
         <translation>네트워크</translation>
     </message>
@@ -12493,6 +13447,19 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
 </context>
 <context>
+    <name>eMule::StatsGraph</name>
+    <message>
+        <location filename="../src/gui/controls/StatsGraph.cpp" line="+41"/>
+        <source>Stopped</source>
+        <translation>중지됨</translation>
+    </message>
+    <message>
+        <location line="+36"/>
+        <source>%1: %2 @ %3 (%4 ago)</source>
+        <translation>%1: %2 @ %3 (%4 전)</translation>
+    </message>
+</context>
+<context>
     <name>eMule::ToolbarCustomizeDialog</name>
     <message>
         <location filename="../src/gui/dialogs/ToolbarCustomizeDialog.cpp" line="+38"/>
@@ -12554,74 +13521,74 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+29"/>
-        <location line="+1889"/>
+        <location line="+1903"/>
         <location line="+162"/>
         <source>Low</source>
         <translation>낮음</translation>
     </message>
     <message>
-        <location line="-2050"/>
-        <location line="+1888"/>
+        <location line="-2064"/>
+        <location line="+1902"/>
         <location line="+163"/>
         <source>Normal</source>
         <translation>보통</translation>
     </message>
     <message>
-        <location line="-2050"/>
-        <location line="+1887"/>
+        <location line="-2064"/>
+        <location line="+1901"/>
         <location line="+164"/>
         <source>High</source>
         <translation>높음</translation>
     </message>
     <message>
-        <location line="-2049"/>
-        <location line="+2051"/>
+        <location line="-2063"/>
+        <location line="+2065"/>
         <source>Very Low</source>
         <translation>매우 낮음</translation>
     </message>
     <message>
-        <location line="-2050"/>
-        <location line="+2051"/>
+        <location line="-2064"/>
+        <location line="+2065"/>
         <source>Very High</source>
         <translation>매우 높음</translation>
     </message>
     <message>
-        <location line="-2049"/>
-        <location line="+2052"/>
+        <location line="-2063"/>
+        <location line="+2066"/>
         <source>Auto</source>
         <translation>자동</translation>
     </message>
     <message>
-        <location line="-2041"/>
-        <location line="+685"/>
-        <location line="+1200"/>
+        <location line="-2055"/>
+        <location line="+688"/>
+        <location line="+1211"/>
         <source>Pause</source>
         <translation>일시정지</translation>
     </message>
     <message>
-        <location line="-1876"/>
-        <location line="+682"/>
-        <location line="+1196"/>
+        <location line="-1890"/>
+        <location line="+685"/>
+        <location line="+1207"/>
         <source>Stop</source>
         <translation>중지</translation>
     </message>
     <message>
-        <location line="-1869"/>
-        <location line="+679"/>
-        <location line="+1192"/>
+        <location line="-1883"/>
+        <location line="+682"/>
+        <location line="+1203"/>
         <source>Resume</source>
         <translation>재개</translation>
     </message>
     <message>
-        <location line="-1858"/>
-        <location line="+672"/>
-        <location line="+1188"/>
+        <location line="-1872"/>
+        <location line="+675"/>
+        <location line="+1199"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>취소</translation>
     </message>
     <message>
-        <location line="-1831"/>
+        <location line="-1845"/>
         <source>Preview with</source>
         <translation>다음으로 미리보기</translation>
     </message>
@@ -12642,14 +13609,14 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1265"/>
+        <location line="+1279"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation>파일로 파트 가져오기...</translation>
     </message>
     <message>
-        <location line="-1252"/>
+        <location line="-1266"/>
         <source>Source Handling</source>
         <translation>소스 처리</translation>
     </message>
@@ -12660,12 +13627,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1188"/>
+        <location line="+1202"/>
         <source>Source Limit...</source>
         <translation>소스 제한...</translation>
     </message>
     <message>
-        <location line="-1124"/>
+        <location line="-1138"/>
         <source>New...</source>
         <translation>새로 만들기...</translation>
     </message>
@@ -12675,12 +13642,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>도구 모음 표시</translation>
     </message>
     <message>
-        <location line="+430"/>
+        <location line="+433"/>
         <source>Close Toolbar</source>
         <translation>도구 모음 닫기</translation>
     </message>
     <message>
-        <location line="+627"/>
+        <location line="+638"/>
         <source>Failed to execute: %1 %2</source>
         <translation>실행 실패: %1 %2</translation>
     </message>
@@ -12756,50 +13723,57 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>선택한 다운로드 %1개를 취소하시겠습니까?</translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+21"/>
+        <location line="+18"/>
+        <location line="+24"/>
         <location line="+12"/>
         <source>Rename</source>
         <translation>이름 바꾸기</translation>
     </message>
     <message>
-        <location line="-12"/>
+        <location line="-53"/>
+        <source>Do you want to cleanup the file names of the selected files?</source>
+        <translation>선택한 파일의 이름을 정리하시겠습니까?</translation>
+    </message>
+    <message>
+        <location line="+41"/>
         <source>File name:</source>
         <translation>파일 이름:</translation>
     </message>
     <message>
-        <location line="-2428"/>
-        <location line="+663"/>
+        <location line="-2480"/>
+        <location line="+666"/>
         <source>Open File</source>
         <translation>파일 열기</translation>
     </message>
     <message>
-        <location line="-654"/>
+        <location line="-657"/>
         <location line="+2"/>
-        <location line="+666"/>
-        <location line="+571"/>
+        <location line="+669"/>
+        <location line="+582"/>
         <source>Preview</source>
         <translation>미리보기</translation>
     </message>
     <message>
-        <location line="-1200"/>
-        <location line="+1982"/>
+        <location line="-1214"/>
+        <location line="+1996"/>
         <location line="+98"/>
         <source>Details...</source>
         <translation>상세...</translation>
     </message>
     <message>
-        <location line="-2071"/>
+        <location line="-2085"/>
         <source>Comments...</source>
         <translation>댓글...</translation>
     </message>
     <message>
         <location line="+37"/>
-        <location line="+631"/>
+        <location line="+634"/>
         <source>Clear Completed</source>
         <translation>완료됨 삭제</translation>
     </message>
     <message>
-        <location line="-609"/>
+        <location line="-612"/>
         <source>eD2K Links...</source>
         <translation>eD2K 링크...</translation>
     </message>
@@ -12810,13 +13784,13 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+16"/>
-        <location line="+1974"/>
+        <location line="+1988"/>
         <location line="+71"/>
         <source>Find...</source>
         <translation>찾기...</translation>
     </message>
     <message>
-        <location line="-2037"/>
+        <location line="-2051"/>
         <source>Search Related Files</source>
         <translation>관련 파일 검색</translation>
     </message>
@@ -12827,7 +13801,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
     </message>
     <message>
         <location line="+11"/>
-        <location line="+541"/>
+        <location line="+544"/>
         <source>Assign To Category</source>
         <translation>카테고리에 할당</translation>
     </message>
@@ -12840,7 +13814,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation type="vanished">모두</translation>
     </message>
     <message>
-        <location line="+1062"/>
+        <location line="+1073"/>
         <source>Uploading</source>
         <translation>업로드 중</translation>
     </message>
@@ -12860,24 +13834,24 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>알려진 클라이언트</translation>
     </message>
     <message>
-        <location line="-1175"/>
+        <location line="-1186"/>
         <source>Clients on queue:   0</source>
         <translation>대기열의 클라이언트:   0</translation>
     </message>
     <message>
-        <location line="-422"/>
-        <location line="+539"/>
+        <location line="-425"/>
+        <location line="+542"/>
         <source>(Unassign)</source>
         <translation>(할당 해제)</translation>
     </message>
     <message>
         <location line="-80"/>
-        <location line="+1189"/>
+        <location line="+1200"/>
         <source>Priority</source>
         <translation>우선순위</translation>
     </message>
     <message>
-        <location line="-1152"/>
+        <location line="-1163"/>
         <source>Open Folder</source>
         <translation>폴더 열기</translation>
     </message>
@@ -12907,7 +13881,7 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
         <translation>찾기</translation>
     </message>
     <message>
-        <location line="+487"/>
+        <location line="+498"/>
         <location line="+23"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>미리보기를 사용할 수 없습니다 — 웹 서버가 실행 중이 아니거나 스트림 토큰을 받지 못했습니다.</translation>
@@ -13556,7 +14530,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation type="vanished">완료</translation>
     </message>
     <message numerus="yes">
-        <location filename="../src/gui/controls/UsenetQueueModel.cpp" line="+114"/>
+        <location filename="../src/gui/controls/UsenetQueueModel.cpp" line="+120"/>
         <source>%1% — %n article(s) missing</source>
         <translation>
             <numerusform>%1% — 기사 %n개 누락</numerusform>

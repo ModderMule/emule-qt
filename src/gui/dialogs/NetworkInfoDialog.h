@@ -7,6 +7,7 @@
 /// and web interface status in a rich-text browser. Opens via double-click
 /// on the status bar connection area.
 
+#include <QCborMap>
 #include <QDialog>
 
 class QTextBrowser;
@@ -21,6 +22,10 @@ class NetworkInfoDialog : public QDialog {
 public:
     explicit NetworkInfoDialog(IpcClient* ipc, QWidget* parent = nullptr);
     ~NetworkInfoDialog() override;
+
+    /// The page for a GetNetworkInfo reply. @p extended: advanced controls, which
+    /// add the server's feature list (MFC NetworkInfoDlg.cpp:182).
+    [[nodiscard]] static QString infoHtml(const QCborMap& info, bool extended);
 
 private:
     void requestNetworkInfo();

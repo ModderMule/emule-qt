@@ -341,6 +341,12 @@ void MainWindow::showOptionsDialog(int page)
     OptionsDialog dlg(m_ipc, m_statsPanel, this);
     if (page >= 0 && page < OptionsDialog::PageCount)
         dlg.selectPage(page);
+    connect(&dlg, &OptionsDialog::testNotificationRequested, this, [this](const QString& soundFile) {
+        // MFC IDS_MAIN_READY
+        showNotification(QStringLiteral("eMule Qt"),
+                         tr("eMule Version %1 ready").arg(QCoreApplication::applicationVersion()),
+                         soundFile);
+    });
     const bool hadSpeedGraph = (m_speedGraph != nullptr);
     const bool hadDwlPercentage = thePrefs.showDwlPercentage();
     const bool hadPartDetail = thePrefs.showPartProgressDetail();
@@ -585,20 +591,23 @@ void MainWindow::updateTrayToolTip()
 
 void MainWindow::showNotification(const QString& title, const QString& message)
 {
+    showNotification(title, message,
+                     thePrefs.notifySoundType() == 1 ? thePrefs.notifySoundFile() : QString());
+}
+
+void MainWindow::showNotification(const QString& title, const QString& message,
+                                  const QString& soundFile)
+{
     // System tray popup
     if (m_trayIcon && QSystemTrayIcon::supportsMessages())
         m_trayIcon->showMessage(title, message, QSystemTrayIcon::Information, 5000);
+    m_lastNotification = {title, message, soundFile};
 
-    // Play notification sound (if configured)
-    if (thePrefs.notifySoundType() == 1) {
-        const QString soundFile = thePrefs.notifySoundFile();
-        if (!soundFile.isEmpty() && QFile::exists(soundFile)) {
-            if (!m_notifySound) {
-                m_notifySound = new QSoundEffect(this);
-            }
-            m_notifySound->setSource(QUrl::fromLocalFile(soundFile));
-            m_notifySound->play();
-        }
+    if (!soundFile.isEmpty() && QFile::exists(soundFile)) {
+        if (!m_notifySound)
+            m_notifySound = new QSoundEffect(this);
+        m_notifySound->setSource(QUrl::fromLocalFile(soundFile));
+        m_notifySound->play();
     }
 }
 
@@ -1017,7 +1026,7 @@ void MainWindow::onIPFilter()
 
 void MainWindow::onPasteLinks()
 {
-    PasteLinksDialog dlg(m_ipc, this);
+    PasteLinksDialog dlg(m_ipc, m_transferPanel ? m_transferPanel->categoryNames() : QStringList(), this);
     dlg.exec();
 }
 
@@ -1696,6 +1705,8 @@ void MainWindow::setupPages()
 
     // Tab 7: Statistics
     m_statsPanel = new StatisticsPanel(this);
+    connect(m_statsPanel, &StatisticsPanel::graphOptionsRequested, this,
+            [this] { showOptionsDialog(OptionsDialog::PageStatistics); });
     m_pages->addWidget(m_statsPanel);
 
     // Tab 8: Usenet

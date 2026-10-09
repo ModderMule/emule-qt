@@ -64,9 +64,10 @@ class StatsHistory : public QObject {
 public:
     explicit StatsHistory(QObject* parent = nullptr);
 
-    /// ~51 min at the default 3 s interval — matches MFC's scope width and
-    /// StatsGraph::kMaxPoints.
-    static constexpr size_t kStatsCapacity = 1024;
+    /// One sample is one pixel in the scopes, so this is the widest plot a viewer can
+    /// fill after connecting — StatsGraph::kMaxPoints. MFC starts at 1024 and grows
+    /// with the window.
+    static constexpr size_t kStatsCapacity = 4096;
     /// 60 min at 1 s — the widest range the options spin offers.
     static constexpr size_t kSpeedCapacity = 3600;
 

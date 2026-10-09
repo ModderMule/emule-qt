@@ -21,6 +21,15 @@ namespace eMule::Ipc {
 // Message type enumeration
 // ---------------------------------------------------------------------------
 
+/// What a PushNotifierEvent reports (MFC ShowNotifier's TBN_* cases that the core
+/// raises). The text field carries the one variable part.
+enum class NotifierEvent : int {
+    DownloadFinished = 0,   ///< text: file name (MFC PartFile.cpp:3021)
+    ConnectionLost   = 1,   ///< text: server name; not sent for a manual disconnect
+    OutOfDiskSpace   = 2,   ///< text: file name (MFC PartFile.cpp:4292)
+    PortBindFailed   = 3,   ///< text: port number (MFC emuleDlg.cpp:718-730)
+};
+
 enum class IpcMsgType : int {
     // -- Requests (GUI -> Core) -----------------------------------------------
 
@@ -290,6 +299,16 @@ enum class IpcMsgType : int {
     /// [searchID: int, hash: string, name: string] — drop a result from the daemon's
     /// list too; an empty name is the file with all its names, else that one name row.
     RemoveSearchResult      = 287,
+
+    /// [offset: int] -> [ok, {files: [{hash, fileName, fileSize}], next: int, more: bool}].
+    /// Every file known.met remembers, shared or not, a page at a time — the
+    /// "Known" side of the collection editor (MFC CopyKnownFileMap).
+    GetKnownFiles           = 288,
+
+    /// [hash] -> [ok, path]. Rebuild a readable archive from what a download has so
+    /// far, into a file of its own; the download is only read (MFC "Create preview
+    /// file", CArchiveRecovery::recover).
+    RecoverArchivePreview   = 289,
 
     // -- Indexers (700-719) --------------------------------------------------
     //
@@ -661,6 +680,9 @@ enum class IpcMsgType : int {
     PushDownloadUpdate   = 410,
     PushDownloadAdded    = 411,
     PushDownloadRemoved  = 412,
+    /// [kind: NotifierEvent, text] — something the Notifications page offers a pop-up
+    /// for. Never coalesced: each one is an event, not a state.
+    PushNotifierEvent    = 413,
     PushServerState      = 420,
     PushServerMessage    = 421,  ///< [id, type: ServerMsgType, text: string] — one Server Info line
     PushSearchResult     = 430,

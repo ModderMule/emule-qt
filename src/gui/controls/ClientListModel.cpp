@@ -96,6 +96,16 @@ QVariant ClientListModel::data(const QModelIndex& index, int role) const
 
     const auto& c = m_rows[static_cast<size_t>(index.row())];
 
+    // MFC's LVCFMT_RIGHT columns: UploadListCtrl.cpp:77-78, DownloadClientsCtrl.cpp:66-69,
+    // ClientListCtrl.cpp:66,68. The queue list has none.
+    if (role == Qt::TextAlignmentRole) {
+        const int col = index.column();
+        const bool right = (m_mode == ClientListMode::Uploading && (col == 2 || col == 3))
+                        || (m_mode == ClientListMode::Downloading && (col == 3 || col == 5 || col == 6))
+                        || (m_mode == ClientListMode::KnownClients && (col == 2 || col == 4));
+        return right ? static_cast<int>(Qt::AlignRight | Qt::AlignVCenter) : static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
+    }
+
     const bool isCountry = index.column() == countryColumn();
 
     if (role == Qt::DisplayRole)

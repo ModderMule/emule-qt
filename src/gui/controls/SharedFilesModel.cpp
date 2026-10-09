@@ -4,6 +4,9 @@
 
 #include "controls/SharedFilesModel.h"
 
+#include <QDir>
+#include <QSet>
+
 #include "controls/FilterEdit.h"
 #include "utils/CompleteSourcesText.h"
 #include "utils/FileTypeText.h"
@@ -90,6 +93,17 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
         return {};
 
     const auto& f = m_rows[static_cast<size_t>(index.row())];
+
+    // MFC's LVCFMT_RIGHT columns (SharedFilesCtrl.cpp:265-280)
+    if (role == Qt::TextAlignmentRole) {
+        switch (index.column()) {
+        case ColSize: case ColRequests: case ColAccepted: case ColTransferred:
+        case ColCompleteSources: case ColLength: case ColBitrate:
+            return static_cast<int>(Qt::AlignRight | Qt::AlignVCenter);
+        default:
+            return static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
+        }
+    }
 
     // Type icon plus eMule's comment/rating mark, as MFC's shared list draws them
     // (srchybrid/SharedFilesCtrl.cpp:561-568), plus the port's own fake-file mark,
@@ -528,8 +542,31 @@ bool SharedFilesSortProxy::filterAcceptsRow(int sourceRow, const QModelIndex& /*
         };
         return normalize(f->path).compare(normalize(m_filterPath), Qt::CaseInsensitive) == 0;
     }
+    case SharedFilterType::IncompleteCategory:
+        return f->isPartFile && f->category == m_filterPath.toInt();
     }
     return true;
+}
+
+SharedCategoryNodes sharedCategoryNodes(const QList<std::pair<QString, QString>>& categories,
+                                        const QString& mainIncomingDir)
+{
+    SharedCategoryNodes nodes;
+    if (categories.size() <= 1)
+        return nodes;
+
+    const auto key = [](const QString& dir) { return QDir::cleanPath(dir).toCaseFolded(); };
+    const QString mainKey = key(mainIncomingDir);
+    QSet<QString> seen;
+    for (int i = 0; i < categories.size(); ++i) {
+        nodes.incomplete.append({i, categories.at(i).first});
+        const QString& dir = categories.at(i).second;
+        if (dir.isEmpty() || key(dir) == mainKey || seen.contains(key(dir)))
+            continue;
+        seen.insert(key(dir));
+        nodes.incomingDirs << QDir::cleanPath(dir);
+    }
+    return nodes;
 }
 
 void SharedFilesSortProxy::setAltSort(int column, bool alt)

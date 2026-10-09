@@ -404,6 +404,7 @@ bool ServerList::removeServer(const Server* server)
             emit serverAboutToBeRemoved(server);
             adjustPositionsAfterRemoval(i);
             m_servers.erase(m_servers.begin() + static_cast<ptrdiff_t>(i));
+            ++m_deletedServerCount;
             return true;
         }
     }
@@ -435,6 +436,7 @@ void ServerList::removeAllServers()
 {
     for (const auto& srv : m_servers)
         emit serverAboutToBeRemoved(srv.get());
+    m_deletedServerCount += static_cast<uint32>(m_servers.size());
     m_servers.clear();
     m_serverPos = 0;
     m_searchServerPos = 0;
@@ -766,6 +768,8 @@ ServerListStats ServerList::stats() const
 {
     ServerListStats s;
     s.total = static_cast<uint32>(m_servers.size());
+    uint64 usersKnownMax = 0;
+    uint64 maxKnown = 0;
     for (const auto& srv : m_servers) {
         if (srv->failedCount() != 0) {
             ++s.failed;
@@ -774,7 +778,15 @@ ServerListStats ServerList::stats() const
             s.files += srv->files();
             s.lowIDUsers += srv->lowIDUsers();
         }
+        s.totalUsers += srv->users();
+        s.totalFiles += srv->files();
+        if (srv->maxUsers() != 0) {
+            usersKnownMax += srv->users();
+            maxKnown += srv->maxUsers();
+        }
     }
+    s.occupation = maxKnown ? static_cast<float>(usersKnownMax * 100.0 / maxKnown) : 0.0f;
+    s.deleted = m_deletedServerCount;
     return s;
 }
 

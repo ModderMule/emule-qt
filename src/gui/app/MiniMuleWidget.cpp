@@ -3,9 +3,11 @@
 
 #include "app/MiniMuleWidget.h"
 
+#include "app/UiState.h"
 #include "utils/StringUtils.h"
 
 #include <QApplication>
+#include <QEvent>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QIcon>
@@ -51,9 +53,13 @@ QLabel* makeStatRow(QLayout* layout, const QString& iconPath,
 } // anonymous namespace
 
 MiniMuleWidget::MiniMuleWidget(QSystemTrayIcon* trayIcon, QWidget* parent)
-    : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint)
+    // A captioned tool window that stays until it is closed, as MFC's IDD_MINIMULE
+    // (WS_CAPTION | WS_SYSMENU, WS_EX_TOPMOST | WS_EX_TOOLWINDOW; emule.rc:1195-1198).
+    : QWidget(parent, Qt::Tool | Qt::WindowTitleHint | Qt::WindowCloseButtonHint
+                          | Qt::WindowStaysOnTopHint)
     , m_trayIcon(trayIcon)
 {
+    setWindowTitle(QStringLiteral("eMule Qt"));
     setAttribute(Qt::WA_DeleteOnClose, false);
     setAttribute(Qt::WA_ShowWithoutActivating);
     setWindowOpacity(0.95);
@@ -61,7 +67,8 @@ MiniMuleWidget::MiniMuleWidget(QSystemTrayIcon* trayIcon, QWidget* parent)
 
     setupUi();
 
-    // Auto-close timer: 3 seconds after mouse leaves
+    // Only when asked for (MFC's hidden MiniMuleAutoClose, off by default):
+    // 3 seconds after the pointer left
     m_autoCloseTimer = new QTimer(this);
     m_autoCloseTimer->setSingleShot(true);
     m_autoCloseTimer->setInterval(3000);
@@ -122,8 +129,8 @@ void MiniMuleWidget::showNearTray()
     show();
     raise();
 
-    // Start auto-close timer
-    m_autoCloseTimer->start();
+    if (theUiState.miniMuleAutoClose())
+        m_autoCloseTimer->start();
 }
 
 void MiniMuleWidget::enterEvent(QEnterEvent* /*event*/)
@@ -133,7 +140,18 @@ void MiniMuleWidget::enterEvent(QEnterEvent* /*event*/)
 
 void MiniMuleWidget::leaveEvent(QEvent* /*event*/)
 {
-    m_autoCloseTimer->start();
+    if (theUiState.miniMuleAutoClose())
+        m_autoCloseTimer->start();
+}
+
+bool MiniMuleWidget::event(QEvent* event)
+{
+    // A double click on the caption brings the main window back (MFC MiniMule.cpp:701-707)
+    if (event->type() == QEvent::NonClientAreaMouseButtonDblClick) {
+        emit restoreRequested();
+        return true;
+    }
+    return QWidget::event(event);
 }
 
 void MiniMuleWidget::paintEvent(QPaintEvent* /*event*/)
@@ -141,13 +159,11 @@ void MiniMuleWidget::paintEvent(QPaintEvent* /*event*/)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
 
-    // Orange/brown gradient background matching MFC MiniMule
+    // Orange/brown gradient background matching MFC MiniMule; square, inside the frame
     QLinearGradient grad(0, 0, 0, height());
     grad.setColorAt(0.0, QColor(0xFF, 0xDD, 0xAA));  // light orange top
     grad.setColorAt(1.0, QColor(0xFF, 0xCC, 0x99));   // slightly darker bottom
-    p.setBrush(grad);
-    p.setPen(QPen(QColor(0xCC, 0x99, 0x66), 1.5));
-    p.drawRoundedRect(rect().adjusted(0, 0, -1, -1), 6, 6);
+    p.fillRect(rect(), grad);
 }
 
 // ---------------------------------------------------------------------------
@@ -160,14 +176,7 @@ void MiniMuleWidget::setupUi()
     mainLayout->setContentsMargins(12, 8, 12, 8);
     mainLayout->setSpacing(4);
 
-    // Title
-    auto* title = new QLabel(QStringLiteral("eMule Qt"));
-    title->setStyleSheet(QStringLiteral(
-        "color: #663300; font-weight: bold; font-size: 12px;"));
-    title->setAlignment(Qt::AlignCenter);
-    mainLayout->addWidget(title);
-
-    mainLayout->addSpacing(2);
+    // The name is in the caption now
 
     // Stat rows
     m_connectedLabel = makeStatRow(mainLayout,

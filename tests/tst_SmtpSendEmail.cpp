@@ -62,7 +62,8 @@ void tst_SmtpSendEmail::sendTestEmail()
     qDebug() << "Sending test email from" << from << "to" << to << "via" << server << ":" << port
              << "tls:" << tls << "selfSigned:" << selfSigned;
 
-    smtp.sendMail(server, port, tls, auth, user, password, from, to, subject, body, selfSigned);
+    smtp.sendMail(server, port, SmtpClient::securityFromLegacyTls(tls, port),
+                  static_cast<eMule::SmtpAuth>(auth), user, password, from, to, subject, body, selfSigned);
 
     // Wait up to 30 seconds for the SMTP transaction to complete
     QVERIFY2(finishedSpy.wait(30000), "SMTP transaction timed out after 30 seconds");

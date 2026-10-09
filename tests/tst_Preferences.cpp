@@ -780,6 +780,38 @@ private slots:
         QVERIFY(socket.bind(QHostAddress::Any, Preferences::randomUDPPort()));
     }
 
+    // G79: the one "use TLS" switch became MFC's three modes. An old file keeps
+    // working: implicit SSL on 465, STARTTLS elsewhere.
+    void load_smtpTlsSwitchBecomesAMode()
+    {
+        eMule::testing::TempDir tmp;
+        const auto load = [&](const QString& name, const QByteArray& yaml) {
+            const QString path = tmp.filePath(name);
+            QFile file(path);
+            if (file.open(QIODevice::WriteOnly))
+                file.write(yaml);
+            file.close();
+            auto prefs = std::make_unique<Preferences>();
+            prefs->load(path);
+            return prefs;
+        };
+        QCOMPARE(load(QStringLiteral("a.yml"),
+                      "notifications:\n  emailSmtpPort: 465\n  emailSmtpTls: true\n")->notifyEmailSmtpSecurity(), 1);
+        QCOMPARE(load(QStringLiteral("b.yml"),
+                      "notifications:\n  emailSmtpPort: 587\n  emailSmtpTls: true\n")->notifyEmailSmtpSecurity(), 2);
+        QCOMPARE(load(QStringLiteral("c.yml"),
+                      "notifications:\n  emailSmtpPort: 25\n  emailSmtpTls: false\n")->notifyEmailSmtpSecurity(), 0);
+        // the new key wins, and survives a save
+        const auto modern = load(QStringLiteral("d.yml"),
+                                 "notifications:\n  emailSmtpPort: 2525\n  emailSmtpSecurity: 1\n  emailSmtpTls: false\n");
+        QCOMPARE(modern->notifyEmailSmtpSecurity(), 1);
+        const QString saved = tmp.filePath(QStringLiteral("saved.yml"));
+        QVERIFY(modern->saveTo(saved));
+        Preferences again;
+        QVERIFY(again.load(saved));
+        QCOMPARE(again.notifyEmailSmtpSecurity(), 1);
+    }
+
     // C92: a saved UDP port of 0 is "UDP off" and survives a load; only a file
     // without the key gets a random port (MFC Preferences.cpp:1957-1959).
     void load_udpPortZeroStaysOff()

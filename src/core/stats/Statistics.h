@@ -265,6 +265,7 @@ public:
         uint64 downSessionSeconds = 0;
         uint32 connPeak = 0;
         uint32 connMaxLimitReached = 0;
+        uint32 connAverage = 0;          ///< this session's average connection count
 
         // HTTP Cache. This lives in HttpCacheManager for the same reason the
         // session counters above live in their own subsystems: Statistics does
@@ -295,6 +296,7 @@ public:
         uint32 connPeak = 0;              ///< a maximum, not a sum
         uint32 connMaxLimitReached = 0;
         uint32 connReconnects = 0;
+        uint32 connAverage = 0;           ///< mean of the stored one and this session's
 
         // Times (seconds)
         uint64 runTime = 0;

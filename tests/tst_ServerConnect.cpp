@@ -418,10 +418,13 @@ void tst_ServerConnect::disconnect_whileConnected()
     QTRY_VERIFY_WITH_TIMEOUT(conn.isConnected(), 5000);
 
     QSignalSpy disconnSpy(&conn, &ServerConnect::disconnectedFromServer);
+    QSignalSpy lostSpy(&conn, &ServerConnect::connectionLost);
     bool result = conn.disconnect();
     QVERIFY(result);
     QVERIFY(!conn.isConnected());
     QVERIFY(!disconnSpy.isEmpty());
+    // Asked for, so nothing to warn about: the "Urgent" pop-up and mail key off this.
+    QVERIFY(lostSpy.isEmpty());
 
     serverSide->close();
 }
@@ -570,9 +573,11 @@ void tst_ServerConnect::serverDropsConnection_clearsConnectedSocket()
     QCOMPARE(conn.clientID(), uint32{0x12345678});
 
     QSignalSpy disconnSpy(&conn, &ServerConnect::disconnectedFromServer);
+    QSignalSpy lostSpy(&conn, &ServerConnect::connectionLost);
 
     // The server drops us mid-session.
     serverSide->abort();
+    QTRY_COMPARE_WITH_TIMEOUT(lostSpy.size(), 1, 5000);   // MFC CS_DISCONNECTED notifier
 
     // Before the fix this stayed true forever, because only the Disconnected case
     // cleared it and this path reported ServerDead.

@@ -11,12 +11,17 @@
 
 #include <QCborMap>
 #include <QDialog>
+#include <QList>
+
+#include <functional>
+#include <utility>
 
 #include <optional>
 
 class QCheckBox;
 class QDoubleSpinBox;
 class QLabel;
+class QLineEdit;
 class QProgressBar;
 class QPushButton;
 class QSpinBox;
@@ -33,10 +38,16 @@ class FirstStartWizard : public QDialog {
     Q_OBJECT
 
 public:
-    enum class StartPage { Ports, Speed };
+    /// Welcome: the whole wizard, as on a first start. Ports and Speed open it on
+    /// that page (the Connection page's wizard button uses Speed).
+    enum class StartPage { Welcome, Ports, Speed };
 
     explicit FirstStartWizard(IpcClient* ipc, QWidget* parent = nullptr,
-                              StartPage startPage = StartPage::Ports);
+                              StartPage startPage = StartPage::Welcome);
+
+    /// Cancel takes back the ports a UPnP attempt or a port test pushed to the core
+    /// (MFC CPShtWiz1 restores them, PShtWiz1.cpp:821-829).
+    void reject() override;
 
     /// The preference keys Finish wrote (IPC names). Empty until accepted.
     [[nodiscard]] const QCborMap& appliedSettings() const { return m_applied; }
@@ -56,6 +67,16 @@ private slots:
 
 private:
     void setupHeader();
+    QWidget* setupWelcomePage();
+    QWidget* setupGeneralPage();
+    QWidget* setupPriorityPage();
+    QWidget* setupSecurityPage();
+    /// A page that is one paragraph and a checkbox (MFC's priority / security pages).
+    QWidget* textPage(const QList<std::pair<QString, QCheckBox**>>& options);
+    /// Hand the ports on the page to the core now; remembers what to restore.
+    void pushPorts(bool withUPnP, std::function<void(bool ok)> done);
+    void onPortTest();
+    void syncKadToUdp();
     QWidget* setupPortPage();
     QWidget* setupSpeedPage();
     void setupButtons();
@@ -89,6 +110,20 @@ private:
     // Network controls
     QCheckBox* m_kadCheck = nullptr;
     QCheckBox* m_ed2kCheck = nullptr;
+    QCheckBox* m_safeConnectCheck = nullptr;
+    bool m_kadWanted = true;   ///< the Kad tick while UDP, and with it the box, is off
+
+    // General / priorities / security (MFC pages 2, 4 and 5)
+    QLineEdit* m_nickEdit = nullptr;
+    QCheckBox* m_autoStartCheck = nullptr;
+    QCheckBox* m_autoConnectCheck = nullptr;
+    QCheckBox* m_autoDownPrioCheck = nullptr;
+    QCheckBox* m_autoUpPrioCheck = nullptr;
+    QCheckBox* m_obfuscationCheck = nullptr;
+    QPushButton* m_portTestBtn = nullptr;
+
+    /// What the core had before this wizard pushed ports to it; empty = nothing pushed.
+    QCborMap m_portsBefore;
 
     // Speed controls
     QTreeWidget* m_speedList = nullptr;

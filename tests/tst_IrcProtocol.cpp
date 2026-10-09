@@ -4,6 +4,8 @@
 #include "TestHelpers.h"
 #include "chat/IrcMessage.h"
 #include "chat/IrcEmuleProto.h"
+#include "chat/IrcNickList.h"
+#include "chat/IrcRouting.h"
 
 #include <QTest>
 
@@ -13,6 +15,16 @@ class tst_IrcProtocol : public QObject {
     Q_OBJECT
 
 private slots:
+    void serverModes_fromIsupport();
+    void nickList_keepsSymbolsApartFromNicks();
+    void nickList_ranksByTheServersPrefixOrder();
+    void nickList_modeChangesMoveNicks();
+    void modeChange_consumesParametersByType();
+    void routing_infoLineColours();
+    void routing_numerics();
+    void routing_notices();
+    void input_commandsAndText();
+    void text_stripsMircCodesAndSanitisesSounds();
     void emuleProto_friendRequestRoundTrip();
     void emuleProto_friendReplyRoundTrip();
     void emuleProto_friendReplyRejectsGarbage();
@@ -355,6 +367,276 @@ void tst_IrcProtocol::emuleProto_sendLinkKeepsTheLinkWhole()
 
     QVERIFY(!IrcEmuleProto::parseSendLink(QStringLiteral("SENDLINK|") + hash + QStringLiteral("|")).has_value());
     QVERIFY(!IrcEmuleProto::parseSendLink(QStringLiteral("SENDLINK")).has_value());
+}
+
+// MFC IrcMain.cpp:525-565
+void tst_IrcProtocol::serverModes_fromIsupport()
+{
+    eMule::IrcServerModes modes;
+    QCOMPARE(modes.userSymbols, QStringLiteral("@+"));   // until the server says otherwise
+
+    modes.applyIsupport(QStringLiteral(
+        "CHANTYPES=# PREFIX=(qaohv)~&@%+ CHANMODES=beI,k,l,imnpst NETWORK=Test :are supported"));
+    QCOMPARE(modes.userModes, QStringLiteral("qaohv"));
+    QCOMPARE(modes.userSymbols, QStringLiteral("~&@%+"));
+    QCOMPARE(modes.chanModesA, QStringLiteral("beI"));
+    QCOMPARE(modes.chanModesB, QStringLiteral("k"));
+    QCOMPARE(modes.chanModesC, QStringLiteral("l"));
+    QCOMPARE(modes.chanModesD, QStringLiteral("imnpst"));
+
+    // a malformed PREFIX leaves what was known
+    modes.applyIsupport(QStringLiteral("PREFIX=(ov)@"));
+    QCOMPARE(modes.userModes, QStringLiteral("qaohv"));
+}
+
+// MFC CIrcNickListCtrl::NewNick (IrcNickListCtrl.cpp:149-178). The list used to hold
+// "@alice" as one string, so a part, quit or rename of "alice" never found it.
+void tst_IrcProtocol::nickList_keepsSymbolsApartFromNicks()
+{
+    const eMule::IrcServerModes modes;
+    eMule::IrcNickList list;
+    QVERIFY(list.add(QStringLiteral("@alice"), modes));
+    QVERIFY(list.add(QStringLiteral("bob"), modes));
+    QVERIFY(!list.add(QStringLiteral("alice"), modes));    // the same nick again (NAMES after JOIN)
+    QVERIFY(!list.add(QStringLiteral("+ALICE"), modes));
+    QCOMPARE(list.size(), 2);
+
+    QCOMPARE(list.decorated(QStringLiteral("alice")), QStringLiteral("@alice"));
+    QCOMPARE(list.decorated(QStringLiteral("nobody")), QStringLiteral("nobody"));
+
+    QVERIFY(list.rename(QStringLiteral("alice"), QStringLiteral("alicia")));
+    QCOMPARE(list.display(), (QStringList{QStringLiteral("@alicia"), QStringLiteral("bob")}));   // keeps its rank
+
+    QVERIFY(list.remove(QStringLiteral("ALICIA")));
+    QVERIFY(!list.remove(QStringLiteral("alicia")));
+    QCOMPARE(list.bareNicks(), QStringList{QStringLiteral("bob")});
+
+    QCOMPARE(eMule::IrcNickList::bare(QStringLiteral("@+carol"), modes), QStringLiteral("carol"));
+}
+
+// MFC SortProc (IrcNickListCtrl.cpp:57-73): by the index of the first symbol in the
+// server's list, then by name. Only '@' and '+' were ranked.
+void tst_IrcProtocol::nickList_ranksByTheServersPrefixOrder()
+{
+    eMule::IrcServerModes modes;
+    modes.applyIsupport(QStringLiteral("PREFIX=(qaohv)~&@%+"));
+    eMule::IrcNickList list;
+    for (const char* nick : {"zed", "+voice", "%half", "@op", "~owner", "&admin", "Anna", "@Bert"})
+        list.add(QString::fromLatin1(nick), modes);
+
+    QCOMPARE(list.display(),
+             (QStringList{QStringLiteral("~owner"), QStringLiteral("&admin"), QStringLiteral("@Bert"),
+                          QStringLiteral("@op"), QStringLiteral("%half"), QStringLiteral("+voice"),
+                          QStringLiteral("Anna"), QStringLiteral("zed")}));
+}
+
+// MFC ChangeNickMode (IrcNickListCtrl.cpp:272). MODE was parsed and nothing listened.
+void tst_IrcProtocol::nickList_modeChangesMoveNicks()
+{
+    const eMule::IrcServerModes modes;
+    eMule::IrcNickList list;
+    list.add(QStringLiteral("alice"), modes);
+    list.add(QStringLiteral("bob"), modes);
+
+    QVERIFY(list.changeMode(QStringLiteral("bob"), u'v', true, modes));
+    QCOMPARE(list.display(), (QStringList{QStringLiteral("+bob"), QStringLiteral("alice")}));
+    QVERIFY(list.changeMode(QStringLiteral("bob"), u'o', true, modes));
+    QCOMPARE(list.decorated(QStringLiteral("bob")), QStringLiteral("@+bob"));   // server order, not "+@"
+    QVERIFY(list.changeMode(QStringLiteral("bob"), u'o', false, modes));
+    QCOMPARE(list.decorated(QStringLiteral("bob")), QStringLiteral("+bob"));
+    QVERIFY(list.changeMode(QStringLiteral("bob"), u'v', false, modes));
+    QCOMPARE(list.display(), (QStringList{QStringLiteral("alice"), QStringLiteral("bob")}));
+
+    QVERIFY(!list.changeMode(QStringLiteral("bob"), u'k', true, modes));     // not a user mode
+    QVERIFY(!list.changeMode(QStringLiteral("carol"), u'o', true, modes));   // not here
+}
+
+// MFC CIrcWnd::ParseChangeMode (IrcWnd.cpp:1039-1097)
+void tst_IrcProtocol::modeChange_consumesParametersByType()
+{
+    eMule::IrcServerModes modes;
+    modes.applyIsupport(QStringLiteral("PREFIX=(ov)@+ CHANMODES=b,k,l,imnt"));
+
+    // +o alice, -v bob, +b mask, +l 20, +t (none), -l (none when unsetting), -k key
+    const auto changes = eMule::parseModeChange(
+        QStringLiteral("+o-v+blt-lk"),
+        {QStringLiteral("alice"), QStringLiteral("bob"), QStringLiteral("*!*@x"), QStringLiteral("20"),
+         QStringLiteral("key")},
+        modes);
+    QCOMPARE(changes.size(), 7);
+    QVERIFY(changes[0].userMode && changes[0].on);
+    QCOMPARE(changes[0].param, QStringLiteral("alice"));
+    QVERIFY(changes[1].userMode && !changes[1].on);
+    QCOMPARE(changes[1].param, QStringLiteral("bob"));
+    QVERIFY(!changes[2].userMode);
+    QCOMPARE(changes[2].param, QStringLiteral("*!*@x"));
+    QCOMPARE(changes[3].param, QStringLiteral("20"));
+    QCOMPARE(changes[4].param, QString());            // +t: type D
+    QCOMPARE(changes[5].param, QString());            // -l: type C, unsetting
+    QCOMPARE(changes[6].param, QStringLiteral("key")); // -k: type B, always
+}
+
+// MFC IrcWnd.cpp:599-610
+void tst_IrcProtocol::routing_infoLineColours()
+{
+    using namespace eMule::IrcRouting;
+    QCOMPARE(infoLineColor(QStringLiteral("* alice has joined #x")), LineColor::Info);
+    QCOMPARE(infoLineColor(QStringLiteral("-NickServ- hello")), LineColor::Notice);
+    QCOMPARE(infoLineColor(QStringLiteral("- no closing dash")), LineColor::Default);
+    QCOMPARE(infoLineColor(QStringLiteral("plain")), LineColor::Default);
+    QCOMPARE(colorName(LineColor::Info), QStringLiteral("#009300"));
+    QCOMPARE(colorName(LineColor::Notice), QStringLiteral("#7F0000"));
+    QCOMPARE(colorName(LineColor::Quit), QStringLiteral("#00007F"));
+    QCOMPARE(colorName(LineColor::Default), QString());
+}
+
+// MFC IrcMain.cpp:650-689, IrcWnd.cpp:556-587, 1099
+void tst_IrcProtocol::routing_numerics()
+{
+    using namespace eMule::IrcRouting;
+    for (int code : {311, 312, 313, 317, 318, 319, 314, 369})
+        QCOMPARE(numericRoute(code), NumericRoute::Current);
+    for (int code : {401, 433, 482, 502})
+        QCOMPARE(numericRoute(code), NumericRoute::Error);
+    for (int code : {2, 250, 372, 376})
+        QCOMPARE(numericRoute(code), NumericRoute::Status);
+
+    QCOMPARE(errorLine(QStringLiteral("alice :No such nick")), QStringLiteral("-Error- alice :No such nick"));
+    QCOMPARE(errorLine(QStringLiteral("-x- already marked")), QStringLiteral("-x- already marked"));
+
+    QCOMPARE(whoisIdleText(QStringLiteral("alice 45 0 :seconds idle")), QStringLiteral("alice 45secs idle"));
+    QCOMPARE(whoisIdleText(QStringLiteral("alice 185 0")), QStringLiteral("alice 03mins 05secs idle"));
+    QVERIFY(whoisIdleText(QStringLiteral("alice 3725 0")).startsWith(QStringLiteral("alice 01hrs 02mins 05secs idle")));
+    QVERIFY(whoisIdleText(QStringLiteral("alice 5 1700000000")).contains(QStringLiteral(" idle, signed on ")));
+}
+
+// MFC CIrcWnd::NoticeMessage (IrcWnd.cpp:913-942). Every notice went to Status.
+void tst_IrcProtocol::routing_notices()
+{
+    using eMule::IrcRouting::routeNotice;
+    const QStringList tabs{QStringLiteral("#emule"), QStringLiteral("#other")};
+
+    // to us: where the user is reading
+    auto r = routeNotice(QStringLiteral("NickServ"), QStringLiteral("me"), QStringLiteral("hi"),
+                         QStringLiteral("Me"), QStringLiteral("#emule"), tabs, {});
+    QCOMPARE(r.channels, QStringList{QStringLiteral("#emule")});
+    QVERIFY(!r.status);
+    QCOMPARE(r.text, QStringLiteral("-NickServ- hi"));
+
+    // to us while on the Status tab
+    r = routeNotice(QStringLiteral("NickServ"), QStringLiteral("me"), QStringLiteral("hi"),
+                    QStringLiteral("me"), QString(), tabs, {});
+    QVERIFY(r.status && r.channels.isEmpty());
+
+    // to a channel we have open
+    r = routeNotice(QStringLiteral("op"), QStringLiteral("#OTHER"), QStringLiteral("rules"),
+                    QStringLiteral("me"), QStringLiteral("#emule"), tabs, {});
+    QCOMPARE(r.channels, QStringList{QStringLiteral("#OTHER")});
+    QCOMPARE(r.text, QStringLiteral("-op:#OTHER- rules"));
+
+    // to something else: every channel the sender is in
+    r = routeNotice(QStringLiteral("op"), QStringLiteral("$*"), QStringLiteral("news"),
+                    QStringLiteral("me"), QStringLiteral("#emule"), tabs, tabs);
+    QCOMPARE(r.channels, tabs);
+
+    // and when nobody knows the sender, Status
+    r = routeNotice(QStringLiteral("irc.example.org"), QStringLiteral("*"), QStringLiteral("looking up"),
+                    QStringLiteral("me"), QStringLiteral("#emule"), tabs, {});
+    QVERIFY(r.status && r.channels.isEmpty());
+    QCOMPARE(r.text, QStringLiteral("-irc.example.org- looking up"));
+}
+
+// MFC CIrcChannelTabCtrl::ChatSend (IrcChannelTabCtrl.cpp:531-628)
+void tst_IrcProtocol::input_commandsAndText()
+{
+    using namespace eMule::IrcRouting;
+    InputContext chan;
+    chan.tabName = QStringLiteral("#emule");
+    chan.isChannel = true;
+    chan.live = true;
+    chan.ownNick = QStringLiteral("me");
+    const InputContext status{QString(), false, false, QStringLiteral("me")};
+
+    // text in a channel is a message, echoed as ours
+    auto r = interpretInput(QStringLiteral("hello there"), chan);
+    QCOMPARE(r.raw, QStringList{QStringLiteral("PRIVMSG #emule :hello there")});
+    QVERIFY(r.ownMessage);
+    QCOMPARE(r.echoTo, InputResult::Echo::Tab);
+
+    // text on the Status tab is a raw line; it used to be dropped
+    r = interpretInput(QStringLiteral("WHOIS alice"), status);
+    QCOMPARE(r.raw, QStringList{QStringLiteral("WHOIS alice")});
+    QCOMPARE(r.echoTo, InputResult::Echo::None);
+
+    // the same in a channel we were kicked from
+    InputContext detached = chan;
+    detached.live = false;
+    QCOMPARE(interpretInput(QStringLiteral("JOIN #emule"), detached).raw, QStringList{QStringLiteral("JOIN #emule")});
+
+    // /hop leaves and re-enters; it was sent to the server as "HOP"
+    QCOMPARE(interpretInput(QStringLiteral("/hop"), chan).raw,
+             (QStringList{QStringLiteral("PART #emule"), QStringLiteral("JOIN #emule")}));
+    QVERIFY(interpretInput(QStringLiteral("/hop"), status).raw.isEmpty());
+
+    // /msg echoes where the user is, not always on Status
+    r = interpretInput(QStringLiteral("/msg alice see you"), chan);
+    QCOMPARE(r.raw, QStringList{QStringLiteral("PRIVMSG alice :see you")});
+    QCOMPARE(r.echo, QStringLiteral(" -> *alice* see you"));
+    QCOMPARE(r.echoTo, InputResult::Echo::Tab);
+    QCOMPARE(interpretInput(QStringLiteral("/msg alice see you"), status).echoTo, InputResult::Echo::Status);
+    QCOMPARE(interpretInput(QStringLiteral("/notice alice psst"), chan).raw,
+             QStringList{QStringLiteral("NOTICE alice :psst")});
+
+    QCOMPARE(interpretInput(QStringLiteral("/privmsg nickserv identify pw"), chan).raw,
+             QStringList{QStringLiteral("ns identify pw")});
+    QCOMPARE(interpretInput(QStringLiteral("/privmsg ChanServ op #x"), chan).raw,
+             QStringList{QStringLiteral("cs op #x")});
+    QCOMPARE(interpretInput(QStringLiteral("/privmsg bob two words"), chan).raw,
+             QStringList{QStringLiteral("PRIVMSG bob :two words")});
+
+    // /topic with a channel names that channel; without one, the tab's
+    QCOMPARE(interpretInput(QStringLiteral("/topic #other new topic"), chan).raw,
+             QStringList{QStringLiteral("TOPIC #other :new topic")});
+    QCOMPARE(interpretInput(QStringLiteral("/topic new topic"), chan).raw,
+             QStringList{QStringLiteral("TOPIC #emule :new topic")});
+
+    QCOMPARE(interpretInput(QStringLiteral("/part"), chan).raw, QStringList{QStringLiteral("PART #emule")});
+    QCOMPARE(interpretInput(QStringLiteral("/part #x"), status).raw, QStringList{QStringLiteral("PART #x")});
+
+    r = interpretInput(QStringLiteral("/me waves"), chan);
+    QCOMPARE(r.raw, QStringList{QStringLiteral("PRIVMSG #emule :\001ACTION waves\001")});
+    QCOMPARE(r.echo, QStringLiteral("* me waves"));
+    QCOMPARE(r.echoColor, LineColor::Action);
+
+    r = interpretInput(QStringLiteral("/sound ..\\ding.wav hear this"), chan);
+    QCOMPARE(r.raw, QStringList{QStringLiteral("PRIVMSG #emule :\001SOUND ..\\ding.wav hear this\001")});
+    QCOMPARE(r.sound, QStringLiteral("..ding.wav"));
+    QCOMPARE(r.echo, QStringLiteral("* me hear this"));
+    QCOMPARE(interpretInput(QStringLiteral("/sound ding.wav"), chan).echo, QStringLiteral("* me [SOUND]"));
+
+    // /nick is only asked for here; it is stored when the server confirms
+    r = interpretInput(QStringLiteral("/nick newme"), chan);
+    QCOMPARE(r.raw, QStringList{QStringLiteral("NICK newme")});
+    QCOMPARE(r.newNick, QStringLiteral("newme"));
+
+    // anything else is the server's
+    QCOMPARE(interpretInput(QStringLiteral("/whois alice"), chan).raw, QStringList{QStringLiteral("WHOIS alice")});
+}
+
+// MFC IrcWnd.cpp:944-983 and IrcMain.cpp:214-225
+void tst_IrcProtocol::text_stripsMircCodesAndSanitisesSounds()
+{
+    using namespace eMule::IrcRouting;
+    QCOMPARE(stripMircCodes(QStringLiteral("\x02" "Bold\x02 \x03" "04,12red on blue\x03 \x1Funder\x0F plain")),
+             QStringLiteral("Bold red on blue under plain"));
+    QCOMPARE(stripMircCodes(QStringLiteral("\x03" "5five 12 monkeys")), QStringLiteral("five 12 monkeys"));
+    QCOMPARE(stripMircCodes(QStringLiteral("a,b 1,2")), QStringLiteral("a,b 1,2"));
+
+    QCOMPARE(soundFileName(QStringLiteral("Ding.WAV a message")), QStringLiteral("ding.wav"));
+    QCOMPARE(soundFileName(QStringLiteral("..\\..\\evil.mp3")), QStringLiteral("....evil.mp3"));
+    QCOMPARE(soundFileName(QStringLiteral("/etc/passwd")), QString());
+    QCOMPARE(soundFileName(QStringLiteral("script.exe")), QString());
+    QCOMPARE(soundFileName(QStringLiteral(".wav")), QString());
 }
 
 QTEST_GUILESS_MAIN(tst_IrcProtocol)

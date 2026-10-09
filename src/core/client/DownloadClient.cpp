@@ -200,6 +200,7 @@ void UpDownClient::sendFileRequest()
         setDownloadState(stateBeforeSwap);
     if (!m_reqFile)
         return;
+    ++m_askedCountDown;   // MFC DownloadClient.cpp:271
 
     logDebug(QStringLiteral("sendFileRequest: reqFile=%1")
                  .arg(m_reqFile ? m_reqFile->fileName() : QStringLiteral("null")));
@@ -1418,6 +1419,7 @@ void UpDownClient::udpReaskACK(uint16 newQR)
 {
     m_udpPending = false;
     setRemoteQueueRank(newQR);
+    ++m_askedCountDown;   // MFC ClientUDPSocket.cpp:338
     // An answered UDP re-ask advances this peer's re-ask clock, exactly like a TCP one —
     // MFC DownloadClient.cpp:1310. Without it timeUntilReask() never leaves 0 on the UDP
     // path and the source would be re-asked on every pass.

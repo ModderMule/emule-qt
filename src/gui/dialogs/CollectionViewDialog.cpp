@@ -3,6 +3,7 @@
 /// @brief Dialog for viewing and downloading .emulecollection contents.
 
 #include "dialogs/CollectionViewDialog.h"
+#include "dialogs/CollectionCategory.h"
 
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
@@ -21,6 +22,7 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPointer>
 #include <QPushButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -101,7 +103,9 @@ CollectionViewDialog::CollectionViewDialog(const Collection& collection,
     // Options group: category checkbox
     auto* optionsGroup = new QGroupBox(tr("Options"));
     auto* optionsLayout = new QVBoxLayout(optionsGroup);
-    m_addCategoryCheck = new QCheckBox(tr("Add to new category"));
+    // MFC IDS_COLL_ADDINCAT. A category already named like the collection is used
+    // either way; ticked, one is created when there is none.
+    m_addCategoryCheck = new QCheckBox(tr("Add new downloads into the collection category"));
     optionsLayout->addWidget(m_addCategoryCheck);
     layout->addWidget(optionsGroup);
 
@@ -140,26 +144,53 @@ void CollectionViewDialog::downloadSelected()
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
+    // Collected first: the dialog closes on Download and the answers come later.
+    struct Entry { QString hash; QString name; qint64 size; QString link; };
+    QList<Entry> entries;
     const auto selected = m_tree->selectedItems();
-    for (const auto* item : selected) {
-        const QString hash = item->text(2);
-        const QString name = item->text(0);
-        const qint64 size = item->data(1, Qt::UserRole).toLongLong();
+    for (const auto* item : selected)
+        entries.append({item->text(2), item->text(0), item->data(1, Qt::UserRole).toLongLong(),
+                        item->data(0, Qt::UserRole).toString()});
+    if (entries.isEmpty())
+        return;
 
-        Ipc::IpcMessage msg(Ipc::IpcMsgType::DownloadSearchFile);
-        msg.append(hash);
-        msg.append(name);
-        msg.append(size);
-        msg.append(item->data(0, Qt::UserRole).toString());
-        m_ipc->sendRequest(std::move(msg), [](const Ipc::IpcMessage&) {});
-    }
-}
+    const QPointer<IpcClient> ipc(m_ipc);
+    const QString collectionName = m_collection.m_name;
+    const bool createCategory = m_addCategoryCheck->isChecked();
 
-void CollectionViewDialog::downloadAll()
-{
-    // TODO: category creation when m_addCategoryCheck is checked
-    m_tree->selectAll();
-    downloadSelected();
+    const auto queue = [ipc, entries](int category) {
+        if (!ipc || !ipc->isConnected())
+            return;
+        for (const Entry& e : entries) {
+            Ipc::IpcMessage msg(Ipc::IpcMsgType::DownloadSearchFile);
+            msg.append(e.hash);
+            msg.append(e.name);
+            msg.append(e.size);
+            msg.append(e.link);
+            msg.append(static_cast<qint64>(category));
+            ipc->sendRequest(std::move(msg), [](const Ipc::IpcMessage&) {});
+        }
+    };
+
+    // MFC CCollectionViewDialog::DownloadSelected (CollectionViewDialog.cpp:156-180)
+    m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::GetCategories),
+        [ipc, queue, collectionName, createCategory](const Ipc::IpcMessage& resp) {
+            if (!ipc || !ipc->isConnected())
+                return;
+            const QCborArray categories = resp.fieldBool(0) ? resp.fieldArray(1) : QCborArray();
+            const int existing = CollectionCategory::indexFor(categories, collectionName);
+            if (existing > 0 || !createCategory || categories.isEmpty() || collectionName.isEmpty()) {
+                queue(existing);
+                return;
+            }
+            Ipc::IpcMessage create(Ipc::IpcMsgType::SetCategories);
+            create.append(CollectionCategory::withNewCategory(categories, collectionName));
+            const int newIndex = static_cast<int>(categories.size());
+            ipc->sendRequest(std::move(create), [queue, newIndex](const Ipc::IpcMessage& r) {
+                // without the category the files still download, uncategorised
+                queue(r.fieldBool(0) ? newIndex : 0);
+            });
+        });
 }
 
 } // namespace eMule

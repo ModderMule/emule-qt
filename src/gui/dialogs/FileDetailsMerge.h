@@ -61,16 +61,19 @@ namespace eMule {
     QCborArray comments;
     QStringList links;
     bool searching = false;
+    bool kadConnected = true;
     for (const QCborMap& f : files) {
         for (const QCborValue& c : f.value(QLatin1StringView("comments")).toArray())
             comments.append(c);
         if (const QString link = str(f, "ed2kLink"); !link.isEmpty())
             links << link;
         searching = searching || f.value(QLatin1StringView("notesSearchRunning")).toBool();
+        kadConnected = kadConnected && f.value(QLatin1StringView("kadConnected")).toBool(true);
     }
     merged.insert(QLatin1StringView("comments"), comments);
     merged.insert(QLatin1StringView("ed2kLink"), links.join(QLatin1Char('\n')));
     merged.insert(QLatin1StringView("notesSearchRunning"), searching);
+    merged.insert(QLatin1StringView("kadConnected"), kadConnected);
     merged.insert(QLatin1StringView("canComment"), false);
     return merged;
 }

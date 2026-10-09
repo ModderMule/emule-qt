@@ -13,6 +13,9 @@
 #include "utils/IpcFeedback.h"
 
 #include <QDialogButtonBox>
+#include <QUrl>
+#include <QMessageBox>
+#include <QDesktopServices>
 #include <QEvent>
 #include <QFormLayout>
 #include <QLabel>
@@ -183,6 +186,46 @@ void connectKadNotesSearch(DetailDialog* dialog, IpcClient* ipc,
         return;
 
     QPointer<DetailDialog> dlgPtr(dialog);
+
+    // The File Names page's rename rides on the same wiring: it needs the same
+    // request factory to show the result.
+    QObject::connect(dialog, &DetailDialog::renameFileRequested, dialog,
+        [ipc, dlgPtr, makeRequest](const QString& fileHash, const QString& newName) {
+            if (!ipc->isConnected())
+                return;
+            Ipc::IpcMessage rename(Ipc::IpcMsgType::RenameDownload);
+            rename.append(fileHash);
+            rename.append(newName);
+            ipc->sendRequest(std::move(rename),
+                [ipc, dlgPtr, makeRequest, fileHash](const Ipc::IpcMessage& resp) {
+                    if (!dlgPtr || !IpcFeedback::checkOrWarn(resp, dlgPtr, DetailDialog::tr("Rename")))
+                        return;
+                    ipc->sendRequest(makeRequest(fileHash), [dlgPtr, fileHash](const Ipc::IpcMessage& r) {
+                        if (dlgPtr && dlgPtr->subjectKey() == fileHash && r.fieldBool(0))
+                            dlgPtr->setDetails(r.field(1).toMap());
+                    });
+                });
+        });
+
+    // "Create preview file": the daemon builds it, this side opens it — which only
+    // works when both see the same disk.
+    QObject::connect(dialog, &DetailDialog::archivePreviewFileRequested, dialog,
+        [ipc, dlgPtr](const QString& fileHash) {
+            if (!ipc->isConnected())
+                return;
+            if (!ipc->isLocalConnection()) {
+                QMessageBox::information(dlgPtr, DetailDialog::tr("Archive Preview"),
+                    DetailDialog::tr("A preview file can only be opened when the core runs on this computer."));
+                return;
+            }
+            Ipc::IpcMessage req(Ipc::IpcMsgType::RecoverArchivePreview);
+            req.append(fileHash);
+            ipc->sendRequest(std::move(req), [dlgPtr](const Ipc::IpcMessage& resp) {
+                if (!dlgPtr || !IpcFeedback::checkOrWarn(resp, dlgPtr, DetailDialog::tr("Archive Preview")))
+                    return;
+                QDesktopServices::openUrl(QUrl::fromLocalFile(resp.fieldString(1)));
+            });
+        });
 
     QObject::connect(dialog, &DetailDialog::searchKadNotes, dialog,
         [ipc, dlgPtr, makeRequest = std::move(makeRequest)](const QString& fileHash,

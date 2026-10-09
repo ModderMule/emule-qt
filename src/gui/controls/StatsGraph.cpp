@@ -4,9 +4,14 @@
 
 #include "controls/StatsGraph.h"
 
+#include "utils/StringUtils.h"
+
 #include <QFontMetrics>
+#include <QLocale>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
+#include <QToolTip>
 
 
 namespace eMule {
@@ -19,6 +24,83 @@ StatsGraph::StatsGraph(int seriesCount, QWidget* parent)
 {
     setMinimumSize(200, 80);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    setMouseTracking(true);   // the value tooltip follows the pointer
+}
+
+void StatsGraph::setSeriesFilled(int index, bool filled)
+{
+    if (index < 0 || index >= m_seriesCount)
+        return;
+    m_series[static_cast<size_t>(index)].filled = filled;
+    update();
+}
+
+QString StatsGraph::spanCaption(int plotWidth, double sampleIntervalSec)
+{
+    const auto shown = static_cast<qint64>(plotWidth * sampleIntervalSec);
+    return shown > 0 ? formatSecondsHM(shown) : tr("Stopped");
+}
+
+QRect StatsGraph::plotRect() const
+{
+    QFont labelFont;
+    labelFont.setPointSize(7);
+    const QFontMetrics fm(labelFont);
+    const int legendHeight = fm.height() + 8;
+    const int yLabelWidth = fm.horizontalAdvance(QStringLiteral("0000.0")) + 6;
+    const int topMargin = fm.height() + 4;
+    const QRect r = rect();
+    return {r.left() + yLabelWidth, r.top() + topMargin, r.width() - yLabelWidth - 4,
+            r.height() - topMargin - legendHeight - 2};
+}
+
+double StatsGraph::currentYMax() const
+{
+    if (m_yUpper > 0.0)
+        return m_yUpper;
+    double dataMax = 0.0;
+    for (const auto& series : m_data)
+        for (double v : series)
+            dataMax = std::max(dataMax, v);
+    return niceYMax(dataMax);
+}
+
+QString StatsGraph::tooltipAt(const QPoint& pos, const QDateTime& now) const
+{
+    // MFC COScopeCtrl::OnMouseMove (OScopeCtrl.cpp:842-891): the value is the one the
+    // pointer's height stands for, the time the one its column stands for.
+    const QRect plot = plotRect();
+    if (!plot.contains(pos) || plot.height() <= 0)
+        return {};
+    const double value = m_yLower + (plot.bottom() - pos.y()) * (currentYMax() - m_yLower) / plot.height();
+    const qint64 ago = secondsAgoAt(pos.x(), plot.right(), m_sampleIntervalSec);
+    return tr("%1: %2 @ %3 (%4 ago)")
+        .arg(m_yUnits)
+        .arg(static_cast<qint64>(std::max(value, 0.0)))
+        .arg(QLocale().toString(now.addSecs(-ago), QLocale::ShortFormat), formatSecondsLongHM(ago));
+}
+
+void StatsGraph::mouseMoveEvent(QMouseEvent* event)
+{
+    const QString text = tooltipAt(event->position().toPoint(), QDateTime::currentDateTime());
+    if (text.isEmpty())
+        QToolTip::hideText();
+    else
+        QToolTip::showText(event->globalPosition().toPoint(), text, this);
+    QWidget::mouseMoveEvent(event);
+}
+
+void StatsGraph::mouseDoubleClickEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton)
+        emit doubleClicked();
+    QWidget::mouseDoubleClickEvent(event);
+}
+
+void StatsGraph::leaveEvent(QEvent* event)
+{
+    QToolTip::hideText();
+    QWidget::leaveEvent(event);
 }
 
 void StatsGraph::setSeriesInfo(int index, const QString& label,
@@ -79,12 +161,6 @@ void StatsGraph::setGridColor(const QColor& c)
     update();
 }
 
-void StatsGraph::setFillAll(bool fill)
-{
-    m_fillAll = fill;
-    update();
-}
-
 double StatsGraph::niceYMax(double raw)
 {
     if (raw <= 0.0)
@@ -126,23 +202,13 @@ void StatsGraph::paintEvent(QPaintEvent* /*event*/)
     const int yLabelWidth = fm.horizontalAdvance(QStringLiteral("0000.0")) + 6;
     const int topMargin = fm.height() + 4; // room for Y-units label
 
-    const QRect plotArea(r.left() + yLabelWidth, r.top() + topMargin,
-                         r.width() - yLabelWidth - 4,
-                         r.height() - topMargin - legendHeight - 2);
+    const QRect plotArea = plotRect();
 
     if (plotArea.width() < 20 || plotArea.height() < 20)
         return;
 
     // Determine Y range
-    double yMax = m_yUpper;
-    if (yMax <= 0.0) {
-        // Auto-scale: find max across all visible data
-        double dataMax = 0.0;
-        for (const auto& series : m_data)
-            for (double v : series)
-                dataMax = std::max(dataMax, v);
-        yMax = niceYMax(dataMax);
-    }
+    const double yMax = currentYMax();
 
     // Grid — light blue dotted lines
     const QColor& gridColor = m_gridColor;
@@ -172,21 +238,11 @@ void StatsGraph::paintEvent(QPaintEvent* /*event*/)
         p.setPen(gridPen);
     }
 
-    // Vertical grid lines — time markers every 10 minutes (matching MFC style)
-    const int samplesPerGrid = static_cast<int>(600.0 / m_sampleIntervalSec); // 10 min
-    int sampleCount = 0;
-    for (const auto& series : m_data)
-        sampleCount = std::max(sampleCount, static_cast<int>(series.size()));
-
-    if (sampleCount > 0 && samplesPerGrid > 0) {
-        for (int i = samplesPerGrid; i < sampleCount; i += samplesPerGrid) {
-            const double xFrac = static_cast<double>(sampleCount - i)
-                                 / std::max(1, sampleCount - 1);
-            const int x = plotArea.left()
-                          + static_cast<int>(xFrac * (plotArea.width() - 1));
-            if (x > plotArea.left() && x < plotArea.right())
-                p.drawLine(x, plotArea.top(), x, plotArea.bottom());
-        }
+    // Vertical grid lines — one per hour the plot spans, counted from "now" at the
+    // right edge (MFC m_nXGrids, StatisticsDlg.cpp:2536-2537).
+    if (const int pixelsPerHour = static_cast<int>(3600.0 / m_sampleIntervalSec); pixelsPerHour > 0) {
+        for (int x = plotArea.right() - pixelsPerHour; x > plotArea.left(); x -= pixelsPerHour)
+            p.drawLine(x, plotArea.top(), x, plotArea.bottom());
     }
 
     // Y-units label at top-left
@@ -196,10 +252,9 @@ void StatsGraph::paintEvent(QPaintEvent* /*event*/)
                    Qt::AlignLeft | Qt::AlignVCenter, m_yUnits);
     }
 
-    // Elapsed time label at bottom-right of plot area (matches MFC "XX.XX mins")
-    if (sampleCount > 1) {
-        const double elapsedMin = sampleCount * m_sampleIntervalSec / 60.0;
-        const QString timeLabel = QStringLiteral("%1 mins").arg(elapsedMin, 0, 'f', 2);
+    // The time the plot spans, bottom-right (MFC SetXUnits, StatisticsDlg.cpp:2539-2547)
+    {
+        const QString timeLabel = spanCaption(plotArea.width(), m_sampleIntervalSec);
         p.setPen(gridColor);
         const int timeLabelW = fm.horizontalAdvance(timeLabel) + 4;
         p.drawText(QRect(plotArea.right() - timeLabelW, plotArea.bottom() - fm.height() - 2,
@@ -220,22 +275,20 @@ void StatsGraph::paintEvent(QPaintEvent* /*event*/)
             if (n < 2)
                 continue;
 
-            // Build point array — right-aligned (latest sample at right edge)
-            const double xStep = (n > 1)
-                ? static_cast<double>(plotArea.width()) / (n - 1)
-                : 0.0;
-
+            // One pixel per sample, newest at the right edge; what does not fit has
+            // scrolled out on the left.
+            const int first = std::max(0, n - 1 - plotArea.width());
             QVector<QPointF> points;
-            points.reserve(n);
-            for (int i = 0; i < n; ++i) {
-                const double x = plotArea.left() + i * xStep;
+            points.reserve(n - first);
+            for (int i = first; i < n; ++i) {
+                const double x = sampleX(plotArea.right(), n, i);
                 const double yFrac = std::clamp(series[static_cast<size_t>(i)] / yMax,
                                                 0.0, 1.0);
                 const double y = plotArea.bottom() - yFrac * plotArea.height();
                 points.append(QPointF(x, y));
             }
 
-            if ((info.filled || m_fillAll) && n >= 2) {
+            if (info.filled) {
                 // Filled area under the curve
                 QVector<QPointF> poly = points;
                 poly.append(QPointF(points.last().x(), plotArea.bottom()));

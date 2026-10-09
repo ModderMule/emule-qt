@@ -164,6 +164,8 @@ bool DaemonApp::start()
     // Via the session, not the mapper: enableUPnP creates and drops mappers at runtime
     connect(m_coreSession.get(), &CoreSession::portMapStatusChanged,
             m_notifierBridge.get(), &CoreNotifierBridge::onPortMapStatusChanged);
+    connect(m_coreSession.get(), &CoreSession::portBindFailed,
+            m_notifierBridge.get(), &CoreNotifierBridge::onPortBindFailed);
 
     // The bound interface went away, came back or was changed: the session has closed
     // the P2P sockets; the parts it does not own follow here.

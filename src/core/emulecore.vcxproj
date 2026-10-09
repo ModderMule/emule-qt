@@ -176,6 +176,7 @@
     <ClCompile Include="archive\ArchiveReader.cpp" />
     <ClCompile Include="archive\ExternalUnpacker.cpp" />
     <ClCompile Include="archive\ArchiveRecovery.cpp" />
+    <ClCompile Include="archive\ArchiveScan.cpp" />
     <ClCompile Include="archive\ArchiveUnpack.cpp" />
     <ClCompile Include="net\HttpFileDownload.cpp" />
     <ClCompile Include="httpcache\HttpCacheClient.cpp" />
@@ -225,6 +226,8 @@
     <ClCompile Include="transfer\ImportParts.cpp" />
     <ClCompile Include="chat\IrcClient.cpp" />
     <ClCompile Include="chat\IrcEmuleProto.cpp" />
+    <ClCompile Include="chat\IrcNickList.cpp" />
+    <ClCompile Include="chat\IrcRouting.cpp" />
     <ClCompile Include="kademlia\KadContact.cpp" />
     <ClCompile Include="kademlia\KadEntry.cpp" />
     <ClCompile Include="kademlia\KadFastKad.cpp" />
@@ -373,6 +376,7 @@
     <ClInclude Include="archive\ArchiveReader.h" />
     <ClInclude Include="archive\ExternalUnpacker.h" />
     <ClInclude Include="archive\ArchiveRecovery.h" />
+    <ClInclude Include="archive\ArchiveScan.h" />
     <ClInclude Include="archive\ArchiveUnpack.h" />
     <ClInclude Include="net\HttpDefaults.h" />
     <ClInclude Include="net\HttpFileDownload.h" />
@@ -432,6 +436,8 @@
     <ClInclude Include="transfer\UploadQueueStore.h" />
     <QtMoc Include="chat\IrcClient.h" />
     <ClInclude Include="chat\IrcEmuleProto.h" />
+    <ClInclude Include="chat\IrcNickList.h" />
+    <ClInclude Include="chat\IrcRouting.h" />
     <ClInclude Include="chat\IrcMessage.h" />
     <ClInclude Include="webserver\JsonSerializers.h" />
     <ClInclude Include="app\CoreInfo.h" />

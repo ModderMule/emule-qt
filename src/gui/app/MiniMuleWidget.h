@@ -42,6 +42,7 @@ signals:
 protected:
     void enterEvent(QEnterEvent* event) override;
     void leaveEvent(QEvent* event) override;
+    bool event(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 
 private:

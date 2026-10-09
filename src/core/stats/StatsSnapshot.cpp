@@ -7,6 +7,7 @@
 #include "app/AppContext.h"
 #include "httpcache/HttpCacheManager.h"
 #include "client/ClientCensus.h"
+#include "client/ClientCredits.h"
 #include "kademlia/KadNodeCensus.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
@@ -21,6 +22,7 @@
 #include <QCborArray>
 #include <QCborMap>
 #include <QMap>
+#include <QSet>
 #include <QStorageInfo>
 
 #include <algorithm>
@@ -69,9 +71,11 @@ QString clientSoftName(int sw)
 /// same pass — MFC counts it in the one GetStatistics loop too (ClientList.cpp:78,
 /// stats[14]) rather than walking the list a second time.
 std::vector<ClientSoftStat> collectClientSoftwareStats(const ClientList& clients,
-                                                       qint64& lowIDOut)
+                                                       qint64& lowIDOut,
+                                                       ClientListCensus& census)
 {
     lowIDOut = 0;
+    census = {};
     struct ModInfo {
         QMap<QString, int> mods;          // mod string -> count
         int count = 0;
@@ -85,6 +89,35 @@ std::vector<ClientSoftStat> collectClientSoftwareStats(const ClientList& clients
     clients.forEachClient([&](UpDownClient* c) {
         if (c->hasLowID())
             ++lowIDOut;
+
+        if (const auto* credits = c->credits()) {
+            switch (credits->currentIdentState(c->userAddress())) {
+            case IdentState::Identified:
+                ++census.identOk;
+                break;
+            case IdentState::IdFailed:
+            case IdentState::IdNeeded:
+            case IdentState::IdBadGuy:
+                ++census.identFailed;
+                break;
+            default:
+                break;
+            }
+        }
+        if (c->downloadState() == DownloadState::Error)
+            ++census.problematic;
+        ++(c->userPort() == 4662 ? census.portDefault : census.portOther);
+        if (!c->serverAddress().isNull() && c->serverPort() != 0) {
+            ++census.netEd2k;
+            if (c->kadPort() != 0) {
+                ++census.netBoth;
+                ++census.netKad;
+            }
+        } else if (c->kadPort() != 0) {
+            ++census.netKad;
+        } else {
+            ++census.netUnknown;
+        }
 
         const int sw = static_cast<int>(c->clientSoft());
         auto& si = softMap[sw];
@@ -226,6 +259,7 @@ Statistics::ExternalSessionCounters collectExternalSessionCounters()
     if (const auto* ls = theApp.listenSocket) {
         ext.connPeak = ls->peakConnections();
         ext.connMaxLimitReached = ls->maxConnectionReached();
+        ext.connAverage = static_cast<uint32>(ls->averageConnections());
     }
     if (const auto* hc = theApp.httpCache)
         ext.httpCache = hc->sessionCounters();
@@ -417,6 +451,10 @@ StatsSnapshot collectStatsSnapshot()
         out.cumDownOhKadPkt = static_cast<qint64>(cum.downOverheadKadPackets);
 
         out.cumConnPeak = static_cast<qint64>(cum.connPeak);
+        // MFC StatisticsDlg.cpp:1496: the stored average against what is open now.
+        out.cumConnAverage =
+            (static_cast<qint64>(theApp.listenSocket ? theApp.listenSocket->activeConnections() : 0)
+             + static_cast<qint64>(thePrefs.cumConnAvgConnections())) / 2;
         out.cumConnMaxLimitReached = static_cast<qint64>(cum.connMaxLimitReached);
         out.cumConnReconnects = static_cast<qint64>(cum.connReconnects);
 
@@ -439,6 +477,7 @@ StatsSnapshot collectStatsSnapshot()
         out.upFailed = static_cast<qint64>(uq->failedUploadCount());
         out.upWaiting = static_cast<qint64>(uq->waitingUserCount());
         out.upQueueLength = static_cast<qint64>(uq->uploadQueueLength());
+        out.upActive = static_cast<qint64>(uq->maxActiveClientsShortTime());
         out.upAvgTime = static_cast<qint64>(uq->averageUpTime());
     }
 
@@ -453,14 +492,11 @@ StatsSnapshot collectStatsSnapshot()
         out.downFailed = static_cast<qint64>(dq->failedDownSessions());
         out.downAvgTime = static_cast<qint64>(dq->averageDownTime());
 
-        qint64 completedCount = 0;
         qint64 totalSources = 0;
         qint64 totalCount = 0;
         qint64 totalSize = 0;
         qint64 totalDone = 0;
         for (const auto* f : dq->files()) {
-            if (f->status() == PartFileStatus::Complete)
-                ++completedCount;
             totalSources += f->sourceCount();
             out.downTransferring += f->transferringSrcCount();
 
@@ -469,6 +505,7 @@ StatsSnapshot collectStatsSnapshot()
             const auto done = static_cast<qint64>(f->completedSize());
             totalSize += size;
             totalDone += done;
+            out.totalDownNeeded += static_cast<qint64>(f->neededSpace());
         }
         const DownloadQueue::SourceStats src = dq->sourceStats();
         out.downSources = {src.onQueue, src.queueFull, src.noNeededParts, src.asking,
@@ -482,7 +519,8 @@ StatsSnapshot collectStatsSnapshot()
             out.downDeadSourcesGlobal =
                 static_cast<qint64>(theApp.clientList->globalDeadSourceList.count());
 
-        out.completedDownloads = completedCount;
+        // Finished this session (MFC GetDownSessionCompletedFiles), not "still listed".
+        out.completedDownloads = static_cast<qint64>(dq->completedDownloadCount());
         out.downFoundSources = totalSources;
         out.totalDownCount = totalCount;
         out.totalDownSize = totalSize;
@@ -490,9 +528,17 @@ StatsSnapshot collectStatsSnapshot()
         out.totalDownLeft = totalSize - totalDone;
     }
 
-    // Free space on the incoming directory
-    if (const QStorageInfo storage(thePrefs.incomingDir()); storage.isValid())
-        out.freeTempSpace = storage.bytesAvailable();
+    // Free space, each temp volume once (MFC GetFreeTempSpace(-1))
+    {
+        QSet<QByteArray> seen;
+        for (const QString& dir : thePrefs.tempDirs()) {
+            const QStorageInfo storage(dir);
+            if (!storage.isValid() || seen.contains(storage.device()))
+                continue;
+            seen.insert(storage.device());
+            out.freeTempSpace = out.freeTempSpace.value_or(0) + storage.bytesAvailable();
+        }
+    }
 
     // Connections
     if (const auto* ls = theApp.listenSocket) {
@@ -501,6 +547,8 @@ StatsSnapshot collectStatsSnapshot()
         out.connMaxReached = static_cast<qint64>(ls->maxConnectionReached());
         out.connAverage = ls->averageConnections();
         out.connOpen = static_cast<qint64>(ls->openSockets());
+        out.connHalfOpen = static_cast<qint64>(ls->totalHalfOpen());
+        out.connComplete = static_cast<qint64>(ls->totalComplete());
     }
 
     // Servers
@@ -512,13 +560,17 @@ StatsSnapshot collectStatsSnapshot()
         out.srvUsers = static_cast<qint64>(srvStats.users);
         out.srvFiles = static_cast<qint64>(srvStats.files);
         out.srvLowIDUsers = static_cast<qint64>(srvStats.lowIDUsers);
+        out.srvTotalUsers = static_cast<qint64>(srvStats.totalUsers);
+        out.srvTotalFiles = static_cast<qint64>(srvStats.totalFiles);
+        out.srvDeleted = static_cast<qint64>(srvStats.deleted);
+        out.srvOccupation = static_cast<double>(srvStats.occupation);
     }
 
     // Clients
     if (const auto* cl = theApp.clientList) {
         out.knownClients = static_cast<qint64>(cl->clientCount());
         out.bannedClients = static_cast<qint64>(cl->bannedCount());
-        out.clientSoftwareStats = collectClientSoftwareStats(*cl, out.lowIDClients);
+        out.clientSoftwareStats = collectClientSoftwareStats(*cl, out.lowIDClients, out.clientCensus);
     }
 
     // Shared files
@@ -527,6 +579,7 @@ StatsSnapshot collectStatsSnapshot()
         out.sharedCount = static_cast<qint64>(sf->getCount());
         out.sharedSize = static_cast<qint64>(sf->getDataSize(largest));
         out.sharedLargest = static_cast<qint64>(largest);
+        out.sharedHashing = static_cast<qint64>(sf->getHashingCount());
     }
 
     // Records (already raised above by updateRecords())
@@ -628,6 +681,7 @@ QCborMap toCborMap(const StatsSnapshot& s)
     put(QStringLiteral("upFailed"), s.upFailed);
     put(QStringLiteral("upWaiting"), s.upWaiting);
     put(QStringLiteral("upQueueLength"), s.upQueueLength);
+    put(QStringLiteral("upActive"), s.upActive);
     put(QStringLiteral("upAvgTime"), s.upAvgTime);
     put(QStringLiteral("downSuccessful"), s.downSuccessful);
     put(QStringLiteral("downFailed"), s.downFailed);
@@ -651,6 +705,7 @@ QCborMap toCborMap(const StatsSnapshot& s)
     put(QStringLiteral("downDeadSourcesPerFile"), s.downDeadSourcesPerFile);
     if (s.freeTempSpace)
         put(QStringLiteral("freeTempSpace"), *s.freeTempSpace);
+    put(QStringLiteral("totalDownNeeded"), s.totalDownNeeded);
 
     // Connections
     put(QStringLiteral("connActive"), s.connActive);
@@ -658,6 +713,8 @@ QCborMap toCborMap(const StatsSnapshot& s)
     put(QStringLiteral("connMaxReached"), s.connMaxReached);
     put(QStringLiteral("connAverage"), s.connAverage);
     put(QStringLiteral("connOpen"), s.connOpen);
+    put(QStringLiteral("connHalfOpen"), s.connHalfOpen);
+    put(QStringLiteral("connComplete"), s.connComplete);
 
     // Servers
     put(QStringLiteral("srvWorking"), s.srvWorking);
@@ -666,11 +723,29 @@ QCborMap toCborMap(const StatsSnapshot& s)
     put(QStringLiteral("srvUsers"), s.srvUsers);
     put(QStringLiteral("srvFiles"), s.srvFiles);
     put(QStringLiteral("srvLowIDUsers"), s.srvLowIDUsers);
+    put(QStringLiteral("srvTotalUsers"), s.srvTotalUsers);
+    put(QStringLiteral("srvTotalFiles"), s.srvTotalFiles);
+    put(QStringLiteral("srvDeleted"), s.srvDeleted);
+    put(QStringLiteral("srvOccupation"), s.srvOccupation);
 
     // Clients
     put(QStringLiteral("knownClients"), s.knownClients);
     put(QStringLiteral("bannedClients"), s.bannedClients);
     put(QStringLiteral("lowIDClients"), s.lowIDClients);
+    {
+        const ClientListCensus& c = s.clientCensus;
+        m.insert(QStringLiteral("clientCensus"), QCborMap{
+            {QStringLiteral("identOk"), c.identOk},
+            {QStringLiteral("identFailed"), c.identFailed},
+            {QStringLiteral("problematic"), c.problematic},
+            {QStringLiteral("portDefault"), c.portDefault},
+            {QStringLiteral("portOther"), c.portOther},
+            {QStringLiteral("netEd2k"), c.netEd2k},
+            {QStringLiteral("netKad"), c.netKad},
+            {QStringLiteral("netBoth"), c.netBoth},
+            {QStringLiteral("netUnknown"), c.netUnknown}});
+    }
+    put(QStringLiteral("sharedHashing"), s.sharedHashing);
 
     QCborArray softArr;
     for (const auto& soft : s.clientSoftwareStats) {
@@ -780,6 +855,7 @@ QCborMap toCborMap(const StatsSnapshot& s)
 
     // Cumulative connections
     put(QStringLiteral("cumConnPeak"), s.cumConnPeak);
+    put(QStringLiteral("cumConnAverage"), s.cumConnAverage);
     put(QStringLiteral("cumConnMaxLimitReached"), s.cumConnMaxLimitReached);
     put(QStringLiteral("cumConnReconnects"), s.cumConnReconnects);
 

@@ -17,6 +17,7 @@
 #include <QApplication>
 #include <QCborArray>
 #include <QCborMap>
+#include <QSignalSpy>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -261,6 +262,19 @@ private slots:
     void foundSourcesListsStatesOriginsAndNetworks();
     void mfcsSectionNodesAreSections();
     void projectedAveragesScaleTheCumulativeFigures();
+    void uploadRowsAreNotSwapped();
+    void sessionParentsCarryTotalsAndShares();
+    void downloadSessionOrderAndMeaning();
+    void connectionRowsFollowMfc();
+    void clientsShowNetworkPortAndIdent();
+    void clientSoftwareHasFixedRowsAndMinorVersions();
+    void serversSplitWorkingFromAll();
+    void sharedFilesOrderAndHashing();
+    void diskSpaceShowsShareAndShortfall();
+    void graphScrollsOnePixelPerSample();
+    void graphTooltipNamesValueAndTime();
+    void graphLegendFollowsTheOptions();
+    void graphDoubleClickAsksForTheOptions();
 };
 
 void tst_StatisticsPanel::usenetIsTheLastBranchAndMfcsOrderStays()
@@ -490,9 +504,9 @@ void tst_StatisticsPanel::timeShowsCurrentAndTotalServerDuration()
     QTreeWidgetItem* session = childNamed(time, QStringLiteral("Session"));
     QVERIFY(session);
     QCOMPARE(childNamed(session, QStringLiteral("Current Server Duration:"))->text(0),
-             QStringLiteral("Current Server Duration: 0:15:00 (25.0%)"));
+             QStringLiteral("Current Server Duration: 15:00 Minutes (25.0%)"));
     QCOMPARE(childNamed(session, QStringLiteral("Total Server Duration:"))->text(0),
-             QStringLiteral("Total Server Duration: 0:30:00 (50.0%)"));
+             QStringLiteral("Total Server Duration: 30:00 Minutes (50.0%)"));
 }
 
 // MFC StatisticsDlg.cpp:166,178: the download and upload scopes use the Connection page's
@@ -973,6 +987,400 @@ void tst_StatisticsPanel::projectedAveragesScaleTheCumulativeFigures()
         return n;
     };
     QCOMPARE(count(daily), count(yearly));
+}
+
+namespace {
+
+QTreeWidgetItem* path(QTreeWidget* tree, const QStringList& names)
+{
+    QTreeWidgetItem* item = topLevelNamed(tree, names.first());
+    for (qsizetype i = 1; item && i < names.size(); ++i)
+        item = childNamed(item, names.at(i));
+    return item;
+}
+
+QStringList childTexts(QTreeWidgetItem* parent)
+{
+    QStringList out;
+    for (int i = 0; parent && i < parent->childCount(); ++i)
+        out << parent->child(i)->text(0);
+    return out;
+}
+
+} // namespace
+
+// MFC StatisticsDlg.cpp:1183-1189. upQueueLength is the slot count, upWaiting the
+// waiting list; the two rows used to show each other's number.
+void tst_StatisticsPanel::uploadRowsAreNotSwapped()
+{
+    StatisticsPanel panel;
+    panel.updateTree(QCborMap{
+        {QStringLiteral("upActive"), 3},
+        {QStringLiteral("upQueueLength"), 5},
+        {QStringLiteral("upWaiting"), 70},
+    });
+    auto* session = path(panel.findChild<QTreeWidget*>(),
+                         {QStringLiteral("Transfer"), QStringLiteral("Uploads"), QStringLiteral("Session")});
+    QVERIFY(session);
+    const QStringList rows = childTexts(session);
+    const auto at = rows.indexOf(QStringLiteral("Active Uploads/Needed to fill Bandwidth: 3"));
+    QVERIFY2(at >= 0, qPrintable(rows.join(u'\n')));
+    QCOMPARE(rows.at(at + 1), QStringLiteral("Total Uploads: 5"));
+    QCOMPARE(rows.at(at + 2), QStringLiteral("Waiting Uploads: 70"));
+}
+
+// MFC :1192-1215 and :840-862.
+void tst_StatisticsPanel::sessionParentsCarryTotalsAndShares()
+{
+    StatisticsPanel panel;
+    panel.updateTree(QCborMap{
+        {QStringLiteral("sessionSentBytes"), 4000},
+        {QStringLiteral("upQueueLength"), 1},          // a running upload is a good session
+        {QStringLiteral("upSuccessful"), 2},
+        {QStringLiteral("upFailed"), 1},
+        {QStringLiteral("downSuccessful"), 1},
+        {QStringLiteral("downTransferring"), 2},
+        {QStringLiteral("downFailed"), 1},
+    });
+    auto* tree = panel.findChild<QTreeWidget*>();
+    auto* up = path(tree, {QStringLiteral("Transfer"), QStringLiteral("Uploads"),
+                           QStringLiteral("Session"), QStringLiteral("Upload Sessions")});
+    QVERIFY(up);
+    QCOMPARE(up->text(0), QStringLiteral("Upload Sessions: 4"));
+    QCOMPARE(up->child(0)->text(0), QStringLiteral("Total successful upload sessions: 3 (75.00%)"));
+    QCOMPARE(up->child(1)->text(0), QStringLiteral("Total failed upload sessions: 1 (25.00%)"));
+    QCOMPARE(up->child(2)->text(0), QStringLiteral("Average Upload Per Session: %1").arg(formatByteSize(1333)));
+
+    auto* down = path(tree, {QStringLiteral("Transfer"), QStringLiteral("Downloads"),
+                             QStringLiteral("Session"), QStringLiteral("Download Sessions")});
+    QVERIFY(down);
+    QCOMPARE(down->text(0), QStringLiteral("Download Sessions: 4"));
+    QCOMPARE(down->child(0)->text(0), QStringLiteral("Successful Download Sessions: 3 (75.0%)"));
+    QCOMPARE(down->child(1)->text(0), QStringLiteral("Failed Download Sessions: 1 (25.0%)"));
+
+    // Nothing uploaded yet: no division, and no stale figure from the last poll.
+    panel.updateTree({});
+    QCOMPARE(up->text(0), QStringLiteral("Upload Sessions: 0"));
+    QCOMPARE(up->child(1)->text(0), QStringLiteral("Total failed upload sessions: 0 (0.00%)"));
+    QCOMPARE(up->child(2)->text(0), QStringLiteral("Average Upload Per Session: Waiting..."));
+}
+
+// MFC :757-765: transferring sources, not files; Completed sits second.
+void tst_StatisticsPanel::downloadSessionOrderAndMeaning()
+{
+    StatisticsPanel panel;
+    panel.updateTree(QCborMap{
+        {QStringLiteral("downFileCount"), 40},
+        {QStringLiteral("downTransferring"), 6},
+        {QStringLiteral("completedDownloads"), 2},
+    });
+    auto* session = path(panel.findChild<QTreeWidget*>(),
+                         {QStringLiteral("Transfer"), QStringLiteral("Downloads"), QStringLiteral("Session")});
+    const QStringList rows = childTexts(session);
+    QVERIFY(rows.at(0).startsWith(QStringLiteral("Downloaded Data:")));
+    QCOMPARE(rows.at(1), QStringLiteral("Completed Downloads: 2"));
+    QCOMPARE(rows.at(2), QStringLiteral("Active Downloads (chunks): 6"));
+    QVERIFY(rows.at(3).startsWith(QStringLiteral("Found Sources:")));
+    QVERIFY(rows.at(4).startsWith(QStringLiteral("Download Sessions:")));
+}
+
+// MFC :1413-1439, :1449, :1471, :1488-1500.
+void tst_StatisticsPanel::connectionRowsFollowMfc()
+{
+    StatisticsPanel panel;
+    QCborMap stats{
+        {QStringLiteral("reconnects"), 2},
+        {QStringLiteral("connActive"), 30},
+        {QStringLiteral("connHalfOpen"), 4},
+        {QStringLiteral("connComplete"), 20},
+        {QStringLiteral("connAverage"), 17.8},
+        {QStringLiteral("connPeak"), 55},
+        {QStringLiteral("connMaxReached"), 0},
+        {QStringLiteral("avgUpSession"), 2048.0},
+        {QStringLiteral("cumConnAverage"), 21},
+    };
+    panel.updateTree(stats);
+    auto* tree = panel.findChild<QTreeWidget*>();
+    auto* general = path(tree, {QStringLiteral("Connection"), QStringLiteral("Session"),
+                                QStringLiteral("General")});
+    QCOMPARE(childTexts(general),
+             (QStringList{QStringLiteral("Reconnects: 2"),
+                          QStringLiteral("Active Connections (estimate): 30 (Half:4 | Compl:20 | Other:6)"),
+                          QStringLiteral("Average Connections (estimate): 17"),
+                          QStringLiteral("Peak Connections (estimate): 55"),
+                          QStringLiteral("Max Connection Limit Reached: 0")}));
+
+    // The limit row is stamped when the count moves and keeps that stamp afterwards.
+    stats.insert(QStringLiteral("connMaxReached"), 3);
+    panel.updateTree(stats);
+    const QString stamped = general->child(4)->text(0);
+    QVERIFY2(stamped.startsWith(QStringLiteral("Max Connection Limit Reached: 3 : ")), qPrintable(stamped));
+    QVERIFY(stamped.size() > QStringLiteral("Max Connection Limit Reached: 3 : ").size());
+    panel.updateTree(stats);
+    QCOMPARE(general->child(4)->text(0), stamped);
+
+    auto* uploads = path(tree, {QStringLiteral("Connection"), QStringLiteral("Session"),
+                                QStringLiteral("Uploads")});
+    QVERIFY(uploads->child(0)->text(0).startsWith(QStringLiteral("Upload Speed:")));
+    QVERIFY2(uploads->child(1)->text(0).startsWith(QStringLiteral("Average Uploadrate: 2")),
+             qPrintable(uploads->child(1)->text(0)));
+
+    auto* cumGeneral = path(tree, {QStringLiteral("Connection"), QStringLiteral("Cumulative"),
+                                   QStringLiteral("General")});
+    const QStringList cum = childTexts(cumGeneral);
+    QVERIFY(cum.at(0).startsWith(QStringLiteral("Reconnects:")));
+    QCOMPARE(cum.at(1), QStringLiteral("Average Connections (estimate): 21"));
+    QVERIFY(cum.at(2).startsWith(QStringLiteral("Peak Connections (estimate):")));
+    QVERIFY(cum.at(3).startsWith(QStringLiteral("Max Connection Limit Reached:")));
+}
+
+// MFC :1985-1986, :2266-2283, :2308, order of :2732-2751.
+void tst_StatisticsPanel::clientsShowNetworkPortAndIdent()
+{
+    StatisticsPanel panel;
+    panel.updateTree(QCborMap{
+        {QStringLiteral("knownClients"), 200},
+        {QStringLiteral("clientCensus"),
+         QCborMap{{QStringLiteral("identOk"), 30}, {QStringLiteral("identFailed"), 10},
+                  {QStringLiteral("problematic"), 5}, {QStringLiteral("portDefault"), 50},
+                  {QStringLiteral("portOther"), 150}, {QStringLiteral("netEd2k"), 120},
+                  {QStringLiteral("netKad"), 100}, {QStringLiteral("netBoth"), 60},
+                  {QStringLiteral("netUnknown"), 40}}},
+    });
+    auto* clients = topLevelNamed(panel.findChild<QTreeWidget*>(), QStringLiteral("Clients"));
+    QVERIFY(clients);
+    QStringList heads;
+    for (const QString& row : childTexts(clients))
+        heads << row.section(u':', 0, 0);
+    const QStringList wanted{QStringLiteral("Known Clients"), QStringLiteral("Client Software"),
+                             QStringLiteral("Network"), QStringLiteral("Port"), QStringLiteral("Low ID"),
+                             QStringLiteral("Secure Ident (OK "), QStringLiteral("Problematic"),
+                             QStringLiteral("Banned Clients"), QStringLiteral("Filtered Clients")};
+    QCOMPARE(heads.mid(0, wanted.size()), wanted);
+
+    QCOMPARE(childTexts(childNamed(clients, QStringLiteral("Network"))),
+             (QStringList{QStringLiteral("eD2K: 120 (60.0%)"), QStringLiteral("Kad: 100 (50.0%)"),
+                          QStringLiteral("eD2K/Kad: 60 (30.0%)"), QStringLiteral("Unknown: 40 (20.0%)")}));
+    QCOMPARE(childTexts(childNamed(clients, QStringLiteral("Port"))),
+             (QStringList{QStringLiteral("Default: 50 (25.0%)"), QStringLiteral("Other: 150 (75.0%)")}));
+    QCOMPARE(childNamed(clients, QStringLiteral("Secure Ident"))->text(0),
+             QStringLiteral("Secure Ident (OK : Failed ): 30 (75.0%) : 10 (25.0%)"));
+    QCOMPARE(childNamed(clients, QStringLiteral("Problematic"))->text(0),
+             QStringLiteral("Problematic: 5 (2.5%)"));
+}
+
+// MFC :1995-2077: eight rows always, the four most used versions directly, the rest
+// under "Minor". Versions for every software and the mod level are the port's own.
+void tst_StatisticsPanel::clientSoftwareHasFixedRowsAndMinorVersions()
+{
+    QCborArray versions;
+    for (int i = 0; i < 6; ++i)
+        versions.append(QCborMap{{QStringLiteral("l"), QStringLiteral("v0.%1").arg(60 - i)},
+                                 {QStringLiteral("c"), 10 - i}});       // 10,9,8,7,6,5 = 45
+    StatisticsPanel panel;
+    panel.updateTree(QCborMap{
+        {QStringLiteral("knownClients"), 50},
+        {QStringLiteral("clientSoftwareStats"),
+         QCborArray{QCborMap{{QStringLiteral("n"), QStringLiteral("eMule")}, {QStringLiteral("c"), 45},
+                             {QStringLiteral("v"), versions}},
+                    QCborMap{{QStringLiteral("n"), QStringLiteral("URL")}, {QStringLiteral("c"), 5}}}},
+    });
+    auto* soft = path(panel.findChild<QTreeWidget*>(),
+                      {QStringLiteral("Clients"), QStringLiteral("Client Software")});
+    QVERIFY(soft);
+    QCOMPARE(childTexts(soft),
+             (QStringList{QStringLiteral("eMule: 45 (90.0%)"), QStringLiteral("eD Hybrid: 0 (0.0%)"),
+                          QStringLiteral("eDonkey: 0 (0.0%)"), QStringLiteral("aMule: 0 (0.0%)"),
+                          QStringLiteral("MLdonkey: 0 (0.0%)"), QStringLiteral("Shareaza: 0 (0.0%)"),
+                          QStringLiteral("eM Compat: 0 (0.0%)"), QStringLiteral("Unknown: 0 (0.0%)"),
+                          QStringLiteral("URL: 5 (10.0%)")}));
+
+    QTreeWidgetItem* emule = soft->child(0);
+    QCOMPARE(emule->childCount(), 5);
+    QCOMPARE(emule->child(0)->text(0), QStringLiteral("v0.60: 10 (22.2%)"));
+    QCOMPARE(emule->child(3)->text(0), QStringLiteral("v0.57: 7 (15.6%)"));
+    QCOMPARE(emule->child(4)->text(0), QStringLiteral("Minor: 11 (24.4%)"));
+    QCOMPARE(childTexts(emule->child(4)),
+             (QStringList{QStringLiteral("v0.56: 6 (13.3%)"), QStringLiteral("v0.55: 5 (11.1%)")}));
+}
+
+// MFC :2320-2354, ServerList.cpp:347-381.
+void tst_StatisticsPanel::serversSplitWorkingFromAll()
+{
+    StatisticsPanel panel;
+    panel.updateTree(QCborMap{
+        {QStringLiteral("srvWorking"), 8}, {QStringLiteral("srvFailed"), 2},
+        {QStringLiteral("srvTotal"), 10}, {QStringLiteral("srvDeleted"), 3},
+        {QStringLiteral("srvUsers"), 1'500'000}, {QStringLiteral("srvLowIDUsers"), 300'000},
+        {QStringLiteral("srvFiles"), 90'000'000},
+        {QStringLiteral("srvTotalUsers"), 1'600'000}, {QStringLiteral("srvTotalFiles"), 95'000'000},
+        {QStringLiteral("srvOccupation"), 42.5},
+    });
+    auto* servers = topLevelNamed(panel.findChild<QTreeWidget*>(), QStringLiteral("Servers"));
+    QVERIFY(servers);
+    const QStringList rows = childTexts(servers);
+    QCOMPARE(rows.mid(0, 6),
+             (QStringList{QStringLiteral("Working Servers: 8"), QStringLiteral("Failed Servers: 2"),
+                          QStringLiteral("Deleted Servers: 3"), QStringLiteral("Total: 10"),
+                          QStringLiteral("Total Users: %1").arg(formatShortNumber(1'600'000)),
+                          QStringLiteral("Total Files: %1").arg(formatShortNumber(95'000'000))}));
+    QCOMPARE(childTexts(servers->child(0)),
+             (QStringList{QStringLiteral("Users on Working Servers: %1; Low ID: %2 (20.0%)")
+                              .arg(formatShortNumber(1'500'000), formatShortNumber(300'000)),
+                          QStringLiteral("Files on Working Servers: %1").arg(formatShortNumber(90'000'000)),
+                          QStringLiteral("Server Occupation: 42.50%")}));
+}
+
+// MFC :2373-2408.
+void tst_StatisticsPanel::sharedFilesOrderAndHashing()
+{
+    StatisticsPanel panel;
+    panel.updateTree(QCborMap{
+        {QStringLiteral("sharedCount"), 4}, {QStringLiteral("sharedSize"), 4096},
+        {QStringLiteral("sharedLargest"), 2048}, {QStringLiteral("sharedHashing"), 2},
+    });
+    auto* shared = topLevelNamed(panel.findChild<QTreeWidget*>(), QStringLiteral("Shared Files"));
+    QVERIFY(shared);
+    const QStringList rows = childTexts(shared);
+    QCOMPARE(rows.at(0), QStringLiteral("Number of Shared Files: 4 (2 hashing)"));
+    QCOMPARE(rows.at(1), QStringLiteral("Average file size: %1").arg(formatByteSize(1024)));
+    QCOMPARE(rows.at(2), QStringLiteral("Largest Shared File: %1").arg(formatByteSize(2048)));
+    QCOMPARE(rows.at(3), QStringLiteral("Total size of Shared Files: %1").arg(formatByteSize(4096)));
+
+    QStringList records;
+    for (const QString& row : childTexts(childNamed(shared, QStringLiteral("Records"))))
+        records << row.section(u':', 0, 0);
+    QCOMPARE(records, (QStringList{QStringLiteral("Max. Files Ever Shared"),
+                                   QStringLiteral("Largest Average File Size"),
+                                   QStringLiteral("Largest Shared File"),
+                                   QStringLiteral("Largest Share Size")}));
+
+    panel.updateTree(QCborMap{{QStringLiteral("sharedCount"), 4}});
+    QCOMPARE(shared->child(0)->text(0), QStringLiteral("Number of Shared Files: 4"));
+}
+
+// MFC :2412-2437.
+void tst_StatisticsPanel::diskSpaceShowsShareAndShortfall()
+{
+    StatisticsPanel panel;
+    const qint64 gib = 1024LL * 1024 * 1024;
+    panel.updateTree(QCborMap{
+        {QStringLiteral("totalDownCount"), 3}, {QStringLiteral("totalDownSize"), 8 * gib},
+        {QStringLiteral("totalDownDone"), 2 * gib}, {QStringLiteral("totalDownLeft"), 6 * gib},
+        {QStringLiteral("totalDownNeeded"), 6 * gib}, {QStringLiteral("freeTempSpace"), 4 * gib},
+    });
+    auto* disk = topLevelNamed(panel.findChild<QTreeWidget*>(), QStringLiteral("Disk Space"));
+    QVERIFY(disk);
+    QCOMPARE(childTexts(disk),
+             (QStringList{QStringLiteral("Number of Downloads: 3"),
+                          QStringLiteral("Total Size of Downloads: %1").arg(formatByteSize(8 * gib)),
+                          QStringLiteral("Total Completed Size: %1 (25%)").arg(formatByteSize(2 * gib)),
+                          QStringLiteral("Total Size Left to Transfer: %1").arg(formatByteSize(6 * gib)),
+                          QStringLiteral("Free Space on Tempdrive: %1 (you need to free %2!)")
+                              .arg(formatByteSize(4 * gib), formatByteSize(2 * gib)),
+                          QStringLiteral("Additional Space Needed for Downloads: %1")
+                              .arg(formatByteSize(6 * gib))}));
+}
+
+// MFC OScopeCtrl.cpp:137-139, 598-608: a sample is a pixel and the newest one sits at
+// the right edge. The plot used to stretch whatever it had over the full width.
+void tst_StatisticsPanel::graphScrollsOnePixelPerSample()
+{
+    QCOMPARE(StatsGraph::sampleX(500, 10, 9), 500);
+    QCOMPARE(StatsGraph::sampleX(500, 10, 8), 499);
+    QCOMPARE(StatsGraph::sampleX(500, 10, 0), 491);
+    QCOMPARE(StatsGraph::secondsAgoAt(500, 500, 3.0), 0);
+    QCOMPARE(StatsGraph::secondsAgoAt(400, 500, 3.0), 300);
+    QCOMPARE(StatsGraph::spanCaption(1200, 3.0), formatSecondsHM(3600));
+    QCOMPARE(StatsGraph::spanCaption(1200, 0.0), QStringLiteral("Stopped"));
+
+    // Painted: two samples of a filled series colour two columns at the right edge
+    // and leave the left of the plot empty.
+    StatsGraph graph(1);
+    graph.resize(400, 160);
+    graph.setBackgroundColor(Qt::black);
+    graph.setGridColor(Qt::black);
+    graph.setSeriesInfo(0, QString(), Qt::red, true);
+    graph.setYRange(0, 10);
+    graph.appendPoints({10.0});
+    graph.appendPoints({10.0});
+    const QImage shot = graph.grab().toImage();
+    const QRect plot = graph.plotRect();
+    const int midY = plot.center().y();
+    QVERIFY(shot.pixelColor(plot.right() - 1, midY).red() > 0);
+    QCOMPARE(shot.pixelColor(plot.left() + plot.width() / 2, midY), QColor(Qt::black));
+    QCOMPARE(shot.pixelColor(plot.left() + 5, midY), QColor(Qt::black));
+}
+
+// MFC OScopeCtrl.cpp:869-886.
+void tst_StatisticsPanel::graphTooltipNamesValueAndTime()
+{
+    StatsGraph graph(1);
+    graph.resize(400, 160);
+    graph.setYUnits(QStringLiteral("Download Speed"));
+    graph.setYRange(0, 100);
+    graph.setSampleIntervalSec(3.0);
+    const QRect plot = graph.plotRect();
+    const QDateTime now(QDate(2026, 10, 9), QTime(12, 0, 0));
+
+    const QString text =
+        graph.tooltipAt(QPoint(plot.right() - 100, plot.top() + plot.height() / 2), now);
+    QVERIFY2(text.startsWith(QStringLiteral("Download Speed: ")), qPrintable(text));
+    const int value = text.section(u' ', 2, 2).toInt();
+    QVERIFY2(value >= 48 && value <= 52, qPrintable(text));
+    QVERIFY2(text.contains(QLocale().toString(now.addSecs(-300), QLocale::ShortFormat)), qPrintable(text));
+    QVERIFY2(text.endsWith(QStringLiteral("(5:00 Minutes ago)")), qPrintable(text));
+
+    QVERIFY(graph.tooltipAt(QPoint(1, 1), now).isEmpty());   // axis labels, not the plot
+}
+
+// MFC StatisticsDlg.cpp:549-561: the averaging window is named, and so is each scope.
+void tst_StatisticsPanel::graphLegendFollowsTheOptions()
+{
+    thePrefs.setStatsAverageMinutes(7);
+    StatisticsPanel panel;
+    const QList<StatsGraph*> graphs = panel.findChildren<StatsGraph*>();
+    QCOMPARE(graphs.size(), 3);
+    QStringList units;
+    for (const StatsGraph* graph : graphs) {
+        units << graph->yUnits();
+        if (graph->seriesCount() > 4)
+            QCOMPARE(graph->seriesLabel(4), QStringLiteral("Friend upload"));
+    }
+    units.sort();
+    QCOMPARE(units, (QStringList{QStringLiteral("Connections"), QStringLiteral("Download Speed"),
+                                 QStringLiteral("Upload Speed")}));
+    int named = 0;
+    for (const StatsGraph* graph : graphs)
+        named += graph->seriesLabel(1) == QStringLiteral("Average (7 mins)");
+    QCOMPARE(named, 2);
+
+    thePrefs.setStatsAverageMinutes(3);
+    panel.applySettings();
+    named = 0;
+    for (const StatsGraph* graph : graphs)
+        named += graph->seriesLabel(1) == QStringLiteral("Average (3 mins)");
+    QCOMPARE(named, 2);
+
+    // "Fill graphs" fills one series per scope, as MFC SetBarsPlot.
+    thePrefs.setFillGraphs(true);
+    panel.applySettings();
+    for (const StatsGraph* graph : graphs) {
+        int filled = 0;
+        for (int i = 0; i < graph->seriesCount(); ++i)
+            filled += graph->seriesFilled(i);
+        QCOMPARE(filled, 1);
+    }
+    thePrefs.setFillGraphs(false);
+}
+
+void tst_StatisticsPanel::graphDoubleClickAsksForTheOptions()
+{
+    StatisticsPanel panel;
+    QSignalSpy asked(&panel, &StatisticsPanel::graphOptionsRequested);
+    StatsGraph* graph = panel.findChildren<StatsGraph*>().first();
+    QTest::mouseDClick(graph, Qt::LeftButton, {}, QPoint(50, 50));
+    QCOMPARE(asked.size(), 1);
 }
 
 QTEST_MAIN(tst_StatisticsPanel)

@@ -181,6 +181,9 @@ public:
 
     /// Show a system tray notification popup (with optional sound).
     void showNotification(const QString& title, const QString& message);
+    /// The same with the sound given instead of read from the preferences; an
+    /// empty @p soundFile is silent.
+    void showNotification(const QString& title, const QString& message, const QString& soundFile);
 
     /// Update MiniMule popup stats (called from rate polling timer).
     void updateMiniMule(int completedCount, qint64 freeBytes);
@@ -314,6 +317,7 @@ private:
     // System tray icon for popup notifications
     QSystemTrayIcon* m_trayIcon = nullptr;
     QSoundEffect* m_notifySound = nullptr;
+    QStringList m_lastNotification;   ///< title, text, sound — what was last asked for
 
     // Speed graph in toolbar. The samples are the daemon's, fetched by seq — see
     // pollSpeedHistory(). m_speedSeq/m_speedEpoch say which slice of the daemon's

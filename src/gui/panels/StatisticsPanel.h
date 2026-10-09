@@ -75,6 +75,10 @@ public:
     /// MFC CStatisticsTree::ExpandAll(true): collapse all, then open the sections.
     void expandMainSections();
 
+signals:
+    /// A graph was double-clicked: MFC opens the Statistics options page.
+    void graphOptionsRequested();
+
 private slots:
     void onContextMenu(const QPoint& pos);
 
@@ -113,6 +117,7 @@ private:
     // Which slice of the daemon's sample history the three graphs currently hold.
     quint32 m_statsSeq = 0;
     quint32 m_statsEpoch = 0;
+    int m_shownConnRatio = 0;       ///< divisor the plotted connection points carry; 0 = none yet
 
     /// Set from the last stats poll; gates the Restore Statistics menu item.
     bool m_backupAvailable = false;
@@ -140,7 +145,13 @@ private:
     QTreeWidgetItem* m_itemUpSesSource[2]{};    // File, Partfile
     QTreeWidgetItem* m_itemUpSessionFriendData = nullptr;
     QTreeWidgetItem* m_itemUpActiveUploads = nullptr;
+    QTreeWidgetItem* m_itemUpTotalUploads = nullptr;
     QTreeWidgetItem* m_itemUpWaitingUploads = nullptr;
+    // Session parents carry the total (MFC up_S[5], down_S[4] and their cumulative twins)
+    QTreeWidgetItem* m_itemUpSessions = nullptr;
+    QTreeWidgetItem* m_itemUpCumSessions = nullptr;
+    QTreeWidgetItem* m_itemDownSessions = nullptr;
+    QTreeWidgetItem* m_itemDownCumSessions = nullptr;
     QTreeWidgetItem* m_itemUpSuccessful = nullptr;
     QTreeWidgetItem* m_itemUpFailed = nullptr;
     QTreeWidgetItem* m_itemUpAvgPerSession = nullptr;
@@ -220,6 +231,10 @@ private:
     QTreeWidgetItem* m_itemConnSesDownSpeed = nullptr;
     QTreeWidgetItem* m_itemConnSesMaxDown = nullptr;
     QTreeWidgetItem* m_itemConnSesMaxAvgDown = nullptr;
+    QTreeWidgetItem* m_itemConnSesAvgUp = nullptr;
+    QTreeWidgetItem* m_itemConnSesAvgDown = nullptr;
+    QTreeWidgetItem* m_itemConnCumAverage = nullptr;
+    qint64 m_lastMaxConnReached = 0;    ///< MFC m_ilastMaxConnReached: stamps the row on a change
 
     // Connection — Cumulative
     QTreeWidgetItem* m_itemConnCumReconnects = nullptr;
@@ -276,6 +291,10 @@ private:
     QTreeWidgetItem* m_itemKnownClients = nullptr;
     QTreeWidgetItem* m_itemClientSoftware = nullptr;  // dynamic subtree root
     QTreeWidgetItem* m_itemLowIDClients = nullptr;
+    std::array<QTreeWidgetItem*, 4> m_itemCliNetwork{};    ///< eD2K, Kad, eD2K/Kad, Unknown
+    std::array<QTreeWidgetItem*, 2> m_itemCliPort{};       ///< default, other
+    QTreeWidgetItem* m_itemSecureIdent = nullptr;
+    QTreeWidgetItem* m_itemProblematic = nullptr;
     QTreeWidgetItem* m_itemBannedClients = nullptr;
     QTreeWidgetItem* m_itemFilteredClients = nullptr;
     // Distinct clients by user hash (GetClientStats): [0] session, [1] cumulative.
@@ -293,7 +312,10 @@ private:
     QTreeWidgetItem* m_itemSrvTotal = nullptr;
     QTreeWidgetItem* m_itemSrvUsers = nullptr;
     QTreeWidgetItem* m_itemSrvFiles = nullptr;
-    QTreeWidgetItem* m_itemSrvLowID = nullptr;
+    QTreeWidgetItem* m_itemSrvWorkUsers = nullptr;
+    QTreeWidgetItem* m_itemSrvWorkFiles = nullptr;
+    QTreeWidgetItem* m_itemSrvOccupation = nullptr;
+    QTreeWidgetItem* m_itemSrvDeleted = nullptr;
     QTreeWidgetItem* m_itemSrvRecWorking = nullptr;
     QTreeWidgetItem* m_itemSrvRecUsers = nullptr;
     QTreeWidgetItem* m_itemSrvRecFiles = nullptr;
@@ -314,6 +336,7 @@ private:
     QTreeWidgetItem* m_itemTotalDownDone = nullptr;
     QTreeWidgetItem* m_itemTotalDownLeft = nullptr;
     QTreeWidgetItem* m_itemTotalDownFreeSpace = nullptr;
+    QTreeWidgetItem* m_itemTotalDownNeeded = nullptr;
 
     // --- Usenet ---
     //

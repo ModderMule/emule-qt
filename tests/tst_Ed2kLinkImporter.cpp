@@ -20,6 +20,7 @@ class TestEd2kLinkImporter : public QObject {
     Q_OBJECT
 
 private slots:
+    void downloadRequestCarriesTheCategory();
     void shouldSkip_data();
     void shouldSkip();
 
@@ -457,6 +458,23 @@ void TestEd2kLinkImporter::linkFromFileOpenEvent()
     QVERIFY(magnet.isValid());
     const QFileOpenEvent parsed(magnet);
     QCOMPARE(Ed2kLinkImporter::linkFromFileOpenEvent(parsed), magnet.toString());
+}
+
+// MFC CDirectDownloadDlg passes its category tab to AddFileLinkToDownload
+// (DirectDownloadDlg.cpp:98). The paste dialog had no category at all.
+void TestEd2kLinkImporter::downloadRequestCarriesTheCategory()
+{
+    const eMule::Ipc::IpcMessage msg = Ed2kLinkImporter::downloadRequest(
+        QStringLiteral("00112233445566778899AABBCCDDEEFF"), QStringLiteral("file.avi"), 1234,
+        QStringLiteral("ed2k://|file|file.avi|1234|00112233445566778899AABBCCDDEEFF|/"), 3);
+    QCOMPARE(msg.type(), eMule::Ipc::IpcMsgType::DownloadSearchFile);
+    QCOMPARE(msg.fieldString(1), QStringLiteral("file.avi"));
+    QCOMPARE(msg.fieldInt(2), 1234);
+    QVERIFY(msg.fieldString(3).startsWith(QStringLiteral("ed2k://")));
+    QCOMPARE(msg.fieldInt(4), 3);
+
+    // 0 is "nobody chose": the daemon's auto-categories still decide
+    QCOMPARE(Ed2kLinkImporter::downloadRequest({}, {}, 0, {}, 0).fieldInt(4), 0);
 }
 
 QTEST_MAIN(TestEd2kLinkImporter)

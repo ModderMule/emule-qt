@@ -3,6 +3,7 @@
 /// @brief Central preferences with YAML persistence — implementation.
 
 #include "prefs/Preferences.h"
+#include "net/SmtpClient.h"
 #include "utils/OtherFunctions.h"
 
 #include "app/AppConfig.h"
@@ -344,6 +345,7 @@ struct Preferences::Data {
     uint32 cumConnPeak = 0;
     uint32 cumConnMaxLimitReached = 0;
     uint32 cumConnReconnects = 0;
+    uint32 cumConnAvgConnections = 0;
 
     uint64 cumRunTime = 0;
     uint64 cumTransferTime = 0;
@@ -414,6 +416,9 @@ struct Preferences::Data {
     QString ircServer = QStringLiteral("irc.mindforge.org:6667");
     QString ircNick;
     bool ircEnableUTF8 = true;
+    bool ircIgnorePingPong = false;      // MFC IRCIgnorePingPongMessages
+    bool ircShowSmileys = true;          // MFC IRCEnableSmileys
+    bool ircPlaySoundEvents = false;     // MFC IRCSoundEvents
     bool ircUsePerform = false;
     QString ircPerformString;
     bool ircConnectHelpChannel = true;
@@ -429,7 +434,7 @@ struct Preferences::Data {
     bool ircAllowEmuleAddFriend = true;
     bool ircIgnoreEmuleAddFriendMsgs = false;
     bool ircIgnoreEmuleSendLinkMsgs = false;
-    bool ircUseChannelFilter = false;
+    bool ircUseChannelFilter = true;     // MFC IRCUseChannelFilter
     QString ircChannelFilter;
 
     // IPC Daemon
@@ -583,8 +588,8 @@ struct Preferences::Data {
     bool notifyEmailEnabled = false;
     QString notifyEmailSmtpServer;
     uint16 notifyEmailSmtpPort = 25;    // MFC 0 (unset); deliberate, 2026-10: the SMTP port
-    int notifyEmailSmtpAuth = 0;     // 0=none, 1=plain
-    bool notifyEmailSmtpTls = false;
+    int notifyEmailSmtpAuth = 0;     // SmtpAuth: 0 none, 1 PLAIN, 2 LOGIN
+    int notifyEmailSmtpSecurity = 0; // SmtpSecurity: 0 none, 1 SSL/TLS, 2 STARTTLS
     QString notifyEmailSmtpUser;
     QString notifyEmailSmtpPassword; // plaintext in memory, AES-encrypted in YAML
     QString notifyEmailRecipient;
@@ -1368,6 +1373,7 @@ PREF_GS(uint64, cumDownOverheadKadPackets, CumDownOverheadKadPackets)
 PREF_GS(uint32, cumConnPeak, CumConnPeak)
 PREF_GS(uint32, cumConnMaxLimitReached, CumConnMaxLimitReached)
 PREF_GS(uint32, cumConnReconnects, CumConnReconnects)
+PREF_GS(uint32, cumConnAvgConnections, CumConnAvgConnections)
 
 PREF_GS(uint64, cumRunTime, CumRunTime)
 PREF_GS(uint64, cumTransferTime, CumTransferTime)
@@ -1505,6 +1511,7 @@ void Preferences::forEachCumulativeStat(D& d, F&& f)
     f("cumConnPeak", d.cumConnPeak);
     f("cumConnMaxLimitReached", d.cumConnMaxLimitReached);
     f("cumConnReconnects", d.cumConnReconnects);
+    f("cumConnAvgConnections", d.cumConnAvgConnections);
 
     f("cumRunTime", d.cumRunTime);
     f("cumTransferTime", d.cumTransferTime);
@@ -2263,6 +2270,13 @@ bool Preferences::ircEnableUTF8() const { return get(&Data::ircEnableUTF8); }
 
 void Preferences::setIrcEnableUTF8(bool val) { set(&Data::ircEnableUTF8, val); }
 
+bool Preferences::ircIgnorePingPong() const { return get(&Data::ircIgnorePingPong); }
+void Preferences::setIrcIgnorePingPong(bool val) { set(&Data::ircIgnorePingPong, val); }
+bool Preferences::ircShowSmileys() const { return get(&Data::ircShowSmileys); }
+void Preferences::setIrcShowSmileys(bool val) { set(&Data::ircShowSmileys, val); }
+bool Preferences::ircPlaySoundEvents() const { return get(&Data::ircPlaySoundEvents); }
+void Preferences::setIrcPlaySoundEvents(bool val) { set(&Data::ircPlaySoundEvents, val); }
+
 bool Preferences::ircUsePerform() const { return get(&Data::ircUsePerform); }
 
 void Preferences::setIrcUsePerform(bool val) { set(&Data::ircUsePerform, val); }
@@ -2901,9 +2915,9 @@ int Preferences::notifyEmailSmtpAuth() const { return get(&Data::notifyEmailSmtp
 
 void Preferences::setNotifyEmailSmtpAuth(int val) { set(&Data::notifyEmailSmtpAuth, val); }
 
-bool Preferences::notifyEmailSmtpTls() const { return get(&Data::notifyEmailSmtpTls); }
+int Preferences::notifyEmailSmtpSecurity() const { return get(&Data::notifyEmailSmtpSecurity); }
 
-void Preferences::setNotifyEmailSmtpTls(bool val) { set(&Data::notifyEmailSmtpTls, val); }
+void Preferences::setNotifyEmailSmtpSecurity(int val) { set(&Data::notifyEmailSmtpSecurity, std::clamp(val, 0, 2)); }
 
 QString Preferences::notifyEmailSmtpUser() const { return get(&Data::notifyEmailSmtpUser); }
 
@@ -2996,7 +3010,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("notifyEmailSmtpServer"), notifyEmailSmtpServer());
     prefs.insert(QStringLiteral("notifyEmailSmtpPort"), static_cast<qint64>(notifyEmailSmtpPort()));
     prefs.insert(QStringLiteral("notifyEmailSmtpAuth"), notifyEmailSmtpAuth());
-    prefs.insert(QStringLiteral("notifyEmailSmtpTls"), notifyEmailSmtpTls());
+    prefs.insert(QStringLiteral("notifyEmailSmtpSecurity"), notifyEmailSmtpSecurity());
     prefs.insert(QStringLiteral("notifyEmailSmtpUser"), notifyEmailSmtpUser());
     prefs.insert(QStringLiteral("notifyEmailSmtpPassword"), notifyEmailSmtpPassword());
     prefs.insert(QStringLiteral("notifyEmailRecipient"), notifyEmailRecipient());
@@ -3123,6 +3137,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("dynUpGoingUpDivider"), static_cast<qint64>(dynUpGoingUpDivider()));
     prefs.insert(QStringLiteral("dynUpGoingDownDivider"), static_cast<qint64>(dynUpGoingDownDivider()));
     prefs.insert(QStringLiteral("dynUpNumberOfPings"), static_cast<qint64>(dynUpNumberOfPings()));
+    prefs.insert(QStringLiteral("minUpload"), static_cast<qint64>(minUpload()));
     prefs.insert(QStringLiteral("allocFullFile"), allocFullFile());
 #ifdef Q_OS_WIN
     prefs.insert(QStringLiteral("sparsePartFiles"), sparsePartFiles());
@@ -3240,7 +3255,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->notifyEmailSmtpServer    = p.value(QStringLiteral("notifyEmailSmtpServer")).toString();
     m_data->notifyEmailSmtpPort      = static_cast<uint16>(p.value(QStringLiteral("notifyEmailSmtpPort")).toInteger());
     m_data->notifyEmailSmtpAuth      = static_cast<int>(p.value(QStringLiteral("notifyEmailSmtpAuth")).toInteger());
-    m_data->notifyEmailSmtpTls       = p.value(QStringLiteral("notifyEmailSmtpTls")).toBool();
+    m_data->notifyEmailSmtpSecurity  = std::clamp(static_cast<int>(p.value(QStringLiteral("notifyEmailSmtpSecurity")).toInteger()), 0, 2);
     m_data->notifyEmailSmtpUser      = p.value(QStringLiteral("notifyEmailSmtpUser")).toString();
     m_data->notifyEmailSmtpPassword  = p.value(QStringLiteral("notifyEmailSmtpPassword")).toString();
     m_data->notifyEmailRecipient     = p.value(QStringLiteral("notifyEmailRecipient")).toString();
@@ -3327,6 +3342,8 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->dynUpGoingUpDivider                = static_cast<int>(p.value(QStringLiteral("dynUpGoingUpDivider")).toInteger());
     m_data->dynUpGoingDownDivider              = static_cast<int>(p.value(QStringLiteral("dynUpGoingDownDivider")).toInteger());
     m_data->dynUpNumberOfPings                 = static_cast<int>(p.value(QStringLiteral("dynUpNumberOfPings")).toInteger());
+    if (p.contains(QStringLiteral("minUpload")))
+        m_data->minUpload = static_cast<uint32>(std::max<qint64>(1, p.value(QStringLiteral("minUpload")).toInteger()));
 
     m_data->allocFullFile         = p.value(QStringLiteral("allocFullFile")).toBool();
 #ifdef Q_OS_WIN
@@ -3854,6 +3871,7 @@ bool Preferences::load(const QString& filePath)
             m_data->cumConnPeak = st["cumConnPeak"].as<uint32>(m_data->cumConnPeak);
             m_data->cumConnMaxLimitReached = st["cumConnMaxLimitReached"].as<uint32>(m_data->cumConnMaxLimitReached);
             m_data->cumConnReconnects = st["cumConnReconnects"].as<uint32>(m_data->cumConnReconnects);
+            m_data->cumConnAvgConnections = st["cumConnAvgConnections"].as<uint32>(m_data->cumConnAvgConnections);
 
             // Cumulative times
             m_data->cumRunTime = st["cumRunTime"].as<uint64>(m_data->cumRunTime);
@@ -3940,6 +3958,9 @@ bool Preferences::load(const QString& filePath)
             m_data->ircServer = QString::fromStdString(irc["server"].as<std::string>(m_data->ircServer.toStdString()));
             m_data->ircNick = QString::fromStdString(irc["nick"].as<std::string>(m_data->ircNick.toStdString()));
             m_data->ircEnableUTF8 = irc["enableUTF8"].as<bool>(m_data->ircEnableUTF8);
+            m_data->ircIgnorePingPong = irc["ignorePingPong"].as<bool>(m_data->ircIgnorePingPong);
+            m_data->ircShowSmileys = irc["showSmileys"].as<bool>(m_data->ircShowSmileys);
+            m_data->ircPlaySoundEvents = irc["playSoundEvents"].as<bool>(m_data->ircPlaySoundEvents);
             m_data->ircUsePerform = irc["usePerform"].as<bool>(m_data->ircUsePerform);
             m_data->ircPerformString = QString::fromStdString(irc["performString"].as<std::string>(m_data->ircPerformString.toStdString()));
             m_data->ircConnectHelpChannel = irc["connectHelpChannel"].as<bool>(m_data->ircConnectHelpChannel);
@@ -4081,7 +4102,14 @@ bool Preferences::load(const QString& filePath)
             m_data->notifyEmailSmtpServer = QString::fromStdString(n["emailSmtpServer"].as<std::string>(m_data->notifyEmailSmtpServer.toStdString()));
             m_data->notifyEmailSmtpPort = static_cast<uint16>(n["emailSmtpPort"].as<int>(m_data->notifyEmailSmtpPort));
             m_data->notifyEmailSmtpAuth = n["emailSmtpAuth"].as<int>(m_data->notifyEmailSmtpAuth);
-            m_data->notifyEmailSmtpTls = n["emailSmtpTls"].as<bool>(m_data->notifyEmailSmtpTls);
+            if (n["emailSmtpSecurity"]) {
+                m_data->notifyEmailSmtpSecurity =
+                    std::clamp(n["emailSmtpSecurity"].as<int>(m_data->notifyEmailSmtpSecurity), 0, 2);
+            } else if (n["emailSmtpTls"]) {
+                // Until 2026-10 a single switch: implicit SSL on 465, STARTTLS elsewhere.
+                m_data->notifyEmailSmtpSecurity = static_cast<int>(SmtpClient::securityFromLegacyTls(
+                    n["emailSmtpTls"].as<bool>(false), m_data->notifyEmailSmtpPort));
+            }
             m_data->notifyEmailSmtpUser = QString::fromStdString(n["emailSmtpUser"].as<std::string>(m_data->notifyEmailSmtpUser.toStdString()));
             m_data->notifyEmailRecipient = QString::fromStdString(n["emailRecipient"].as<std::string>(m_data->notifyEmailRecipient.toStdString()));
             m_data->notifyEmailSender = QString::fromStdString(n["emailSender"].as<std::string>(m_data->notifyEmailSender.toStdString()));
@@ -4945,6 +4973,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "cumConnPeak" << YAML::Value << m_data->cumConnPeak;
     out << YAML::Key << "cumConnMaxLimitReached" << YAML::Value << m_data->cumConnMaxLimitReached;
     out << YAML::Key << "cumConnReconnects" << YAML::Value << m_data->cumConnReconnects;
+    out << YAML::Key << "cumConnAvgConnections" << YAML::Value << m_data->cumConnAvgConnections;
 
     // Cumulative times
     out << YAML::Key << "cumRunTime" << YAML::Value << m_data->cumRunTime;
@@ -5035,6 +5064,9 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "server" << YAML::Value << m_data->ircServer.toStdString();
     out << YAML::Key << "nick" << YAML::Value << m_data->ircNick.toStdString();
     out << YAML::Key << "enableUTF8" << YAML::Value << m_data->ircEnableUTF8;
+    out << YAML::Key << "ignorePingPong" << YAML::Value << m_data->ircIgnorePingPong;
+    out << YAML::Key << "showSmileys" << YAML::Value << m_data->ircShowSmileys;
+    out << YAML::Key << "playSoundEvents" << YAML::Value << m_data->ircPlaySoundEvents;
     out << YAML::Key << "usePerform" << YAML::Value << m_data->ircUsePerform;
     out << YAML::Key << "performString" << YAML::Value << m_data->ircPerformString.toStdString();
     out << YAML::Key << "connectHelpChannel" << YAML::Value << m_data->ircConnectHelpChannel;
@@ -5170,7 +5202,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "emailSmtpServer" << YAML::Value << m_data->notifyEmailSmtpServer.toStdString();
     out << YAML::Key << "emailSmtpPort" << YAML::Value << static_cast<int>(m_data->notifyEmailSmtpPort);
     out << YAML::Key << "emailSmtpAuth" << YAML::Value << m_data->notifyEmailSmtpAuth;
-    out << YAML::Key << "emailSmtpTls" << YAML::Value << m_data->notifyEmailSmtpTls;
+    out << YAML::Key << "emailSmtpSecurity" << YAML::Value << m_data->notifyEmailSmtpSecurity;
     out << YAML::Key << "emailSmtpUser" << YAML::Value << m_data->notifyEmailSmtpUser.toStdString();
     out << YAML::Key << "emailRecipient" << YAML::Value << m_data->notifyEmailRecipient.toStdString();
     out << YAML::Key << "emailSender" << YAML::Value << m_data->notifyEmailSender.toStdString();

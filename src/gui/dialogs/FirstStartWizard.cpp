@@ -2,6 +2,8 @@
 #include "dialogs/FirstStartWizard.h"
 
 #include "dialogs/PortChangeNotice.h"
+#include "dialogs/PortTest.h"
+#include "app/AutoStart.h"
 #include "dialogs/PortMapStatusText.h"
 
 #include "app/IpcClient.h"
@@ -17,6 +19,7 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QMovie>
 #include <QPointer>
@@ -39,8 +42,15 @@ constexpr int kRowKeep = -3;
 constexpr int kRowRecommended = -2;
 constexpr int kRowCustom = -1;
 
-constexpr int kPagePorts = 0;
-constexpr int kPageSpeed = 1;
+// MFC CPShtWiz1's pages in its order (PShtWiz1.cpp:775-797). Its Server page — the
+// networks and safe connect — sits on the ports page here, and the wizard ends on the
+// connection speed (MFC's separate connection wizard) instead of a text-only last page.
+constexpr int kPageWelcome = 0;
+constexpr int kPageGeneral = 1;
+constexpr int kPagePorts = 2;
+constexpr int kPagePriority = 3;
+constexpr int kPageSecurity = 4;
+constexpr int kPageSpeed = 5;
 
 // A limit in KiB/s as shown in the list; 0 = unlimited.
 QString limitText(uint32 kib)
@@ -64,7 +74,11 @@ FirstStartWizard::FirstStartWizard(IpcClient* ipc, QWidget* parent, StartPage st
     setupHeader();
 
     m_pages = new QStackedWidget(this);
+    m_pages->addWidget(setupWelcomePage());
+    m_pages->addWidget(setupGeneralPage());
     m_pages->addWidget(setupPortPage());
+    m_pages->addWidget(setupPriorityPage());
+    m_pages->addWidget(setupSecurityPage());
     m_pages->addWidget(setupSpeedPage());
     mainLayout->addWidget(m_pages, 1);
 
@@ -74,7 +88,8 @@ FirstStartWizard::FirstStartWizard(IpcClient* ipc, QWidget* parent, StartPage st
     fillFromSettings(thePrefs.toIpcMap());
     requestDaemonSettings();
 
-    showPage(startPage == StartPage::Speed ? kPageSpeed : kPagePorts);
+    showPage(startPage == StartPage::Speed ? kPageSpeed
+             : startPage == StartPage::Ports ? kPagePorts : kPageWelcome);
 
     // Fixed like the MFC wizard, but never smaller than its own explanatory text.
     DialogSizing::applyFixedSize(this, QSize(530, 460));
@@ -128,7 +143,100 @@ void FirstStartWizard::setupHeader()
 }
 
 // ---------------------------------------------------------------------------
-// Page 1 — TCP/UDP ports + UPnP button, Kad / eD2K checkboxes
+// Text pages — welcome, general, priorities, security (MFC IDD_WIZ1_*)
+// ---------------------------------------------------------------------------
+
+QWidget* FirstStartWizard::textPage(const QList<std::pair<QString, QCheckBox**>>& options)
+{
+    auto* page = new QWidget(this);
+    auto* vbox = new QVBoxLayout(page);
+    vbox->setContentsMargins(16, 12, 16, 4);
+    vbox->setSpacing(10);
+    DialogSizing::enableHeightForWidth(page);
+    for (const auto& [text, slot] : options) {
+        if (!slot) {
+            auto* label = new QLabel(text, page);
+            label->setWordWrap(true);
+            DialogSizing::enableHeightForWidth(label);
+            vbox->addWidget(label);
+            continue;
+        }
+        // MFC puts the explanation into the checkbox itself. A QCheckBox does not
+        // wrap, so the box carries the first sentence and a label the rest.
+        const qsizetype cut = text.indexOf(QStringLiteral("\n\n"));
+        *slot = new QCheckBox(cut < 0 ? text : text.left(cut), page);
+        vbox->addWidget(*slot);
+        if (cut >= 0) {
+            auto* more = new QLabel(text.mid(cut + 2), page);
+            more->setWordWrap(true);
+            more->setContentsMargins(22, 0, 0, 0);
+            DialogSizing::enableHeightForWidth(more);
+            vbox->addWidget(more);
+        }
+    }
+    vbox->addStretch();
+    return page;
+}
+
+QWidget* FirstStartWizard::setupWelcomePage()
+{
+    return textPage({{tr("This wizard will guide you through the first steps in configuring eMule."), nullptr},
+                     {tr("To continue, click Next."), nullptr}});
+}
+
+QWidget* FirstStartWizard::setupGeneralPage()
+{
+    auto* page = new QWidget(this);
+    auto* vbox = new QVBoxLayout(page);
+    vbox->setContentsMargins(16, 12, 16, 4);
+    vbox->setSpacing(10);
+
+    vbox->addWidget(new QLabel(tr("Please enter your user name:"), page));
+    m_nickEdit = new QLineEdit(page);
+    m_nickEdit->setObjectName(QStringLiteral("wizardNick"));
+    m_nickEdit->setMaxLength(50);   // MFC GetMaxUserNickLength
+    vbox->addWidget(m_nickEdit);
+
+    vbox->addSpacing(8);
+    m_autoStartCheck = new QCheckBox(tr("Start eMule when the computer starts."), page);
+    m_autoStartCheck->setObjectName(QStringLiteral("wizardAutoStart"));
+    vbox->addWidget(m_autoStartCheck);
+    m_autoConnectCheck = new QCheckBox(tr("Enable this option if you want eMule to connect at startup."), page);
+    m_autoConnectCheck->setObjectName(QStringLiteral("wizardAutoConnect"));
+    vbox->addWidget(m_autoConnectCheck);
+    vbox->addStretch();
+    return page;
+}
+
+QWidget* FirstStartWizard::setupPriorityPage()
+{
+    QWidget* page = textPage({
+        {tr("Enable this option if you want eMule to manage your download priorities.\n\n"
+            "Turning this on will allow eMule to make sure downloads with a lot of sources do not "
+            "interfere with downloads that have few sources. This option will only affect future "
+            "downloads."), &m_autoDownPrioCheck},
+        {tr("Enable this option if you want eMule to manage your upload priorities.\n\n"
+            "Turning this on will allow eMule to boost rare files meaning popular files will be "
+            "harder for other people to get. Turning this off will allow eMule to upload popular "
+            "files more often meaning rare files will be harder for other people to get. This "
+            "option will only affect future shared files."), &m_autoUpPrioCheck}});
+    m_autoDownPrioCheck->setObjectName(QStringLiteral("wizardAutoDownPrio"));
+    m_autoUpPrioCheck->setObjectName(QStringLiteral("wizardAutoUpPrio"));
+    return page;
+}
+
+QWidget* FirstStartWizard::setupSecurityPage()
+{
+    QWidget* page = textPage({
+        {tr("Enable this option if you want to use protocol obfuscation\n\n"
+            "If your ISP tries throttle or block eMule, enabling obfuscation will help to "
+            "circumvent such restrictions."), &m_obfuscationCheck}});
+    m_obfuscationCheck->setObjectName(QStringLiteral("wizardObfuscation"));
+    return page;
+}
+
+// ---------------------------------------------------------------------------
+// Ports page — TCP/UDP ports + UPnP button + test, Kad / eD2K checkboxes
 // ---------------------------------------------------------------------------
 
 QWidget* FirstStartWizard::setupPortPage()
@@ -179,6 +287,9 @@ QWidget* FirstStartWizard::setupPortPage()
     m_udpPortSpin->setRange(1, 65535);
     m_udpDisableCheck = new QCheckBox(tr("Disable"), container);
     connect(m_udpDisableCheck, &QCheckBox::toggled, m_udpPortSpin, &QWidget::setDisabled);
+    // Kad runs over UDP: without it the box is off and greyed (MFC PShtWiz1.cpp:662-668,
+    // which unticks the wrong control and so only greys it).
+    connect(m_udpDisableCheck, &QCheckBox::toggled, this, [this] { syncKadToUdp(); });
 
     m_upnpBtn = new QPushButton(tr("Use UPnP to Setup Ports"), container);
 
@@ -223,6 +334,21 @@ QWidget* FirstStartWizard::setupPortPage()
 
     connect(m_upnpBtn, &QPushButton::clicked, this, &FirstStartWizard::onUPnPSetup);
 
+    // MFC IDC_STARTTEST / IDS_TESTINFO (PShtWiz1.cpp:417-439)
+    auto* testRow = new QHBoxLayout;
+    auto* testInfo = new QLabel(
+        tr("Here you can test, if your TCP and UDP port can be connected to from remote. "
+           "This success of this test is required for servers and clients to connect you. "
+           "The TCP port have to succeed!"), container);
+    testInfo->setWordWrap(true);
+    DialogSizing::enableHeightForWidth(testInfo);
+    m_portTestBtn = new QPushButton(tr("Test Ports"), container);
+    m_portTestBtn->setObjectName(QStringLiteral("wizardPortTest"));
+    connect(m_portTestBtn, &QPushButton::clicked, this, &FirstStartWizard::onPortTest);
+    testRow->addWidget(testInfo, 1);
+    testRow->addWidget(m_portTestBtn, 0, Qt::AlignTop);
+    vbox->addLayout(testRow);
+
     pageLayout->addWidget(container);
 
     auto* separator = new QFrame(page);
@@ -237,9 +363,19 @@ QWidget* FirstStartWizard::setupPortPage()
     m_kadCheck = new QCheckBox(tr("Kad"), group);
     m_ed2kCheck = new QCheckBox(tr("eD2K"), group);
 
+    connect(m_kadCheck, &QCheckBox::clicked, this, [this](bool on) { m_kadWanted = on; });
+    // MFC IDC_SAFESERVERCONNECT, from its Server page
+    m_safeConnectCheck = new QCheckBox(tr("Safe Connect"), group);
+    m_safeConnectCheck->setObjectName(QStringLiteral("wizardSafeConnect"));
+    m_safeConnectCheck->setToolTip(
+        tr("Turning this feature off allows eMule to connect to servers a little faster, "
+           "but can cause you to get more false LowID connects."));
+
     groupLayout->addWidget(m_kadCheck);
     groupLayout->addSpacing(40);
     groupLayout->addWidget(m_ed2kCheck);
+    groupLayout->addSpacing(40);
+    groupLayout->addWidget(m_safeConnectCheck);
     groupLayout->addStretch();
 
     auto* wrapper = new QWidget(page);
@@ -390,11 +526,35 @@ void FirstStartWizard::setupButtons()
 void FirstStartWizard::showPage(int page)
 {
     m_pages->setCurrentIndex(page);
-    const bool speed = page == kPageSpeed;
-    m_titleLabel->setText(speed ? tr("Connection Speed") : tr("Ports and Connection"));
-    m_subtitleLabel->setText(speed ? tr("Bandwidth") : tr("Connection"));
-    m_backBtn->setEnabled(speed);
-    m_nextBtn->setText(speed ? tr("Finish") : tr("Next >"));
+    // Title and subtitle of MFC's property pages (PShtWiz1.cpp:775-794)
+    switch (page) {
+    case kPageWelcome:
+        m_titleLabel->setText(tr("Welcome to eMule"));
+        m_subtitleLabel->setText(QString());
+        break;
+    case kPageGeneral:
+        m_titleLabel->setText(tr("General"));
+        m_subtitleLabel->setText(tr("User Name"));
+        break;
+    case kPagePorts:
+        m_titleLabel->setText(tr("Ports and Connection"));
+        m_subtitleLabel->setText(tr("Connection"));
+        break;
+    case kPagePriority:
+        m_titleLabel->setText(tr("Download") + QStringLiteral(" / ") + tr("Upload"));
+        m_subtitleLabel->setText(tr("Priority"));
+        break;
+    case kPageSecurity:
+        m_titleLabel->setText(tr("Security"));
+        m_subtitleLabel->setText(tr("Obfuscation"));
+        break;
+    default:
+        m_titleLabel->setText(tr("Connection Speed"));
+        m_subtitleLabel->setText(tr("Bandwidth"));
+        break;
+    }
+    m_backBtn->setEnabled(page > kPageWelcome);
+    m_nextBtn->setText(page == kPageSpeed ? tr("Finish") : tr("Next >"));
 }
 
 // ---------------------------------------------------------------------------
@@ -428,8 +588,22 @@ void FirstStartWizard::fillFromSettings(const QCborMap& prefs)
     m_udpDisableCheck->setChecked(udpPort == 0);
     m_udpPortSpin->setValue(udpPort > 0 ? static_cast<int>(udpPort) : Preferences::randomUDPPort());
 
-    m_kadCheck->setChecked(prefs.value(QLatin1StringView("kadEnabled")).toBool());
+    m_kadWanted = prefs.value(QLatin1StringView("kadEnabled")).toBool();
+    syncKadToUdp();
     m_ed2kCheck->setChecked(prefs.value(QLatin1StringView("networkED2K")).toBool());
+
+    // The pages show what is set now. MFC forces its own presets here (auto connect
+    // off, both priorities on, safe connect off) even when the wizard is run again —
+    // reading the current values is deliberate, 2026-10.
+    const auto flag = [&prefs](QLatin1StringView key) { return prefs.value(key).toBool(); };
+    m_safeConnectCheck->setChecked(flag(QLatin1StringView("safeServerConnect")));
+    if (!m_nickEdit->isModified())
+        m_nickEdit->setText(prefs.value(QLatin1StringView("nick")).toString());
+    m_autoStartCheck->setChecked(isAutoStartEnabled());
+    m_autoConnectCheck->setChecked(flag(QLatin1StringView("autoConnect")));
+    m_autoDownPrioCheck->setChecked(flag(QLatin1StringView("autoDownloadPriority")));
+    m_autoUpPrioCheck->setChecked(flag(QLatin1StringView("autoSharedFilesPriority")));
+    m_obfuscationCheck->setChecked(flag(QLatin1StringView("cryptLayerRequested")));
 
     m_current = {number(QLatin1StringView("maxGraphDownloadRate")),
                  number(QLatin1StringView("maxGraphUploadRate")),
@@ -454,18 +628,27 @@ void FirstStartWizard::fillFromSettings(const QCborMap& prefs)
 
 void FirstStartWizard::onBack()
 {
-    showPage(kPagePorts);
+    showPage(std::max(m_pages->currentIndex() - 1, kPageWelcome));
 }
 
 void FirstStartWizard::onNext()
 {
-    if (!networksValid())
+    const int page = m_pages->currentIndex();
+    // Leaving the ports page, and at the end: at least one network
+    if ((page == kPagePorts || page == kPageSpeed) && !networksValid())
         return;
 
-    if (m_pages->currentIndex() == kPagePorts)
-        showPage(kPageSpeed);
+    if (page < kPageSpeed)
+        showPage(page + 1);
     else
         finish();
+}
+
+void FirstStartWizard::syncKadToUdp()
+{
+    const bool udpOff = m_udpDisableCheck->isChecked();
+    m_kadCheck->setEnabled(!udpOff);
+    m_kadCheck->setChecked(!udpOff && m_kadWanted);
 }
 
 void FirstStartWizard::onSpeedSelectionChanged()
@@ -506,13 +689,63 @@ void FirstStartWizard::onLimitEdited()
 // UPnP — enable UPnP and let the daemon handle port mapping
 // ---------------------------------------------------------------------------
 
+void FirstStartWizard::pushPorts(bool withUPnP, std::function<void(bool ok)> done)
+{
+    // What to put back: remembered once, before the first push
+    if (m_portsBefore.isEmpty()) {
+        m_portsBefore.insert(QStringLiteral("enableUPnP"), thePrefs.enableUPnP());
+        m_portsBefore.insert(QStringLiteral("port"), thePrefs.port());
+        m_portsBefore.insert(QStringLiteral("udpPort"), thePrefs.udpPort());
+    }
+
+    Ipc::IpcMessage req(Ipc::IpcMsgType::SetPreferences);
+    if (withUPnP) {
+        req.append(QStringLiteral("enableUPnP"));
+        req.append(true);
+    }
+    req.append(QStringLiteral("port"));
+    req.append(static_cast<qint64>(m_tcpPortSpin->value()));
+    req.append(QStringLiteral("udpPort"));
+    req.append(static_cast<qint64>(m_udpDisableCheck->isChecked() ? 0 : m_udpPortSpin->value()));
+    m_ipc->sendRequest(std::move(req), [self = QPointer<FirstStartWizard>(this), done = std::move(done)](
+                                           const Ipc::IpcMessage& resp) {
+        if (self)
+            done(resp.isValid() && resp.fieldBool(0));
+    });
+}
+
+void FirstStartWizard::onPortTest()
+{
+    const int tcp = m_tcpPortSpin->value();
+    const int udp = m_udpDisableCheck->isChecked() ? 0 : m_udpPortSpin->value();
+    if (!m_ipc || !m_ipc->isConnected()) {
+        PortTest::open(nullptr, this, tcp, udp);
+        return;
+    }
+    // The core has to listen on the ports being tested (MFC rebinds first)
+    pushPorts(/*withUPnP*/ false, [this, tcp, udp](bool) { PortTest::open(m_ipc, this, tcp, udp); });
+}
+
+void FirstStartWizard::reject()
+{
+    // The ports only: a mapping that worked stays, as in MFC (PShtWiz1.cpp:821-829)
+    if (!m_portsBefore.isEmpty() && m_ipc && m_ipc->isConnected()) {
+        Ipc::IpcMessage req(Ipc::IpcMsgType::SetPreferences);
+        for (const char* key : {"port", "udpPort"}) {
+            req.append(QString::fromLatin1(key));
+            req.append(m_portsBefore.value(QLatin1StringView(key)).toInteger());
+        }
+        m_ipc->sendRequest(std::move(req));
+    }
+    QDialog::reject();
+}
+
 void FirstStartWizard::onUPnPSetup()
 {
-    m_upnpRequested = true;
-    thePrefs.setEnableUPnP(true);
-
     if (!m_ipc || !m_ipc->isConnected()) {
         // No daemon to write preferences.yml for us, and nobody to ask the router
+        m_upnpRequested = true;
+        thePrefs.setEnableUPnP(true);
         thePrefs.save();
         endUPnPWait(tr("The ports are forwarded when the core starts."), false);
         return;
@@ -522,24 +755,15 @@ void FirstStartWizard::onUPnPSetup()
     m_upnpProgress->setVisible(true);
     showPortMapStatus({});   // pending
     m_upnpTimer->start();
+    m_upnpRequested = true;
 
-    Ipc::IpcMessage req(Ipc::IpcMsgType::SetPreferences);
-    req.append(QStringLiteral("enableUPnP"));
-    req.append(true);
-    req.append(QStringLiteral("port"));
-    req.append(static_cast<qint64>(m_tcpPortSpin->value()));
-    req.append(QStringLiteral("udpPort"));
-    req.append(static_cast<qint64>(m_udpDisableCheck->isChecked() ? 0 : m_udpPortSpin->value()));
     // The daemon has started its mapper by the time it answers; a mapper that was
     // already running pushes nothing new, so ask for its state.
-    m_ipc->sendRequest(std::move(req), [self = QPointer<FirstStartWizard>(this)](
-                                           const Ipc::IpcMessage& resp) {
-        if (!self)
-            return;
-        if (resp.isValid() && resp.fieldBool(0))
-            self->requestPortMapStatus();
+    pushPorts(/*withUPnP*/ true, [this](bool ok) {
+        if (ok)
+            requestPortMapStatus();
         else
-            self->endUPnPWait(tr("The core did not accept the port settings."), true);
+            endUPnPWait(tr("The core did not accept the port settings."), true);
     });
 }
 
@@ -629,7 +853,26 @@ void FirstStartWizard::finish()
     const bool ed2kEnabled = m_ed2kCheck->isChecked();
     const auto bandwidth = chosenBandwidth();
 
+    // MFC CPShtWiz1 on Finish (PShtWiz1.cpp:836-857)
+    QString nick = m_nickEdit->text().trimmed();
+    if (nick.isEmpty())
+        nick = thePrefs.nick();
+    const bool obfuscation = m_obfuscationCheck->isChecked();
+    const QList<std::pair<QString, bool>> flags = {
+        {QStringLiteral("autoConnect"), m_autoConnectCheck->isChecked()},
+        {QStringLiteral("autoDownloadPriority"), m_autoDownPrioCheck->isChecked()},
+        {QStringLiteral("autoSharedFilesPriority"), m_autoUpPrioCheck->isChecked()},
+        {QStringLiteral("safeServerConnect"), m_safeConnectCheck->isChecked()},
+        {QStringLiteral("cryptLayerRequested"), obfuscation},
+        {QStringLiteral("startWithOS"), m_autoStartCheck->isChecked()}};
+
     m_applied.clear();
+    m_applied.insert(QStringLiteral("nick"), nick);
+    for (const auto& [key, value] : flags)
+        m_applied.insert(key, value);
+    // asking for obfuscation implies supporting it; unticking does not switch support off
+    if (obfuscation)
+        m_applied.insert(QStringLiteral("cryptLayerSupported"), true);
     m_applied.insert(QStringLiteral("port"), tcpPort);
     m_applied.insert(QStringLiteral("udpPort"), udpPort);
     m_applied.insert(QStringLiteral("kadEnabled"), kadEnabled);
@@ -649,6 +892,16 @@ void FirstStartWizard::finish()
     thePrefs.setUdpPort(udpPort);
     thePrefs.setKadEnabled(kadEnabled);
     thePrefs.setNetworkED2K(ed2kEnabled);
+    thePrefs.setNick(nick);
+    thePrefs.setAutoConnect(m_autoConnectCheck->isChecked());
+    thePrefs.setAutoDownloadPriority(m_autoDownPrioCheck->isChecked());
+    thePrefs.setAutoSharedFilesPriority(m_autoUpPrioCheck->isChecked());
+    thePrefs.setSafeServerConnect(m_safeConnectCheck->isChecked());
+    thePrefs.setCryptLayerRequested(obfuscation);
+    if (obfuscation)
+        thePrefs.setCryptLayerSupported(true);
+    if (m_autoStartCheck->isChecked() != isAutoStartEnabled())
+        setAutoStart(m_autoStartCheck->isChecked());
     if (bandwidth) {
         thePrefs.setMaxGraphDownloadRate(bandwidth->capDown);
         thePrefs.setMaxGraphUploadRate(bandwidth->capUp);
@@ -668,6 +921,16 @@ void FirstStartWizard::finish()
         req.append(kadEnabled);
         req.append(QStringLiteral("networkED2K"));
         req.append(ed2kEnabled);
+        req.append(QStringLiteral("nick"));
+        req.append(nick);
+        for (const auto& [key, value] : flags) {
+            req.append(key);
+            req.append(value);
+        }
+        if (obfuscation) {
+            req.append(QStringLiteral("cryptLayerSupported"));
+            req.append(true);
+        }
         if (bandwidth) {
             send("maxGraphDownloadRate", bandwidth->capDown);
             send("maxGraphUploadRate", bandwidth->capUp);
@@ -687,6 +950,7 @@ void FirstStartWizard::finish()
         thePrefs.save();
     }
 
+    m_portsBefore = {};   // finished: nothing to take back
     accept();
 }
 
@@ -706,6 +970,21 @@ void FirstStartWizard::endUPnPWait(const QString& text, bool failed)
     m_upnpTimer->stop();
     m_upnpProgress->setVisible(false);
     m_upnpBtn->setEnabled(true);
+
+    // MFC switches the option on only when the mapping worked (PShtWiz1.cpp:399). It
+    // was written with the request here, so a failure takes it back.
+    if (failed && m_upnpRequested) {
+        m_upnpRequested = false;
+        const bool before = m_portsBefore.value(QLatin1StringView("enableUPnP")).toBool();
+        if (!before && m_ipc && m_ipc->isConnected()) {
+            Ipc::IpcMessage req(Ipc::IpcMsgType::SetPreferences);
+            req.append(QStringLiteral("enableUPnP"));
+            req.append(false);
+            m_ipc->sendRequest(std::move(req));
+        }
+    } else if (!failed && m_upnpRequested) {
+        thePrefs.setEnableUPnP(true);
+    }
 
     QPalette pal;
     if (failed)

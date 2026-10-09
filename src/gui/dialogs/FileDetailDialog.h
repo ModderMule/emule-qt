@@ -12,6 +12,7 @@
 class QCheckBox;
 class QLabel;
 class QTabWidget;
+class QLineEdit;
 class QTextEdit;
 class QTreeWidget;
 
@@ -101,6 +102,7 @@ private:
     // Dynamic-tab widgets, repopulated by applyDetails().
     QTreeWidget*   m_fileNamesTree      = nullptr;
     QLabel*        m_fileNamesEmptyLabel = nullptr;
+    QLineEdit*     m_fileNameEdit       = nullptr;   ///< the name to rename to
     CommentsPanel* m_commentsPanel      = nullptr;
 
     // ED2K Link tab state

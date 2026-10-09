@@ -57,15 +57,17 @@ PasteTextDialog::PasteTextDialog(const Chrome& chrome, QWidget* parent)
             m_category->addItem(chrome.queueCategories.at(i), i);
         queueRow->addWidget(m_category, 1);
 
-        queueRow->addWidget(new QLabel(tr("Priority:"), this));
-        m_priority = new QComboBox(this);
-        for (const int level : kUsenetPriorityLevels)
-            m_priority->addItem(usenetPriorityName(level), level);
-        m_priority->setCurrentIndex(m_priority->findData(0));
-        queueRow->addWidget(m_priority);
+        if (!chrome.categoryOnly) {
+            queueRow->addWidget(new QLabel(tr("Priority:"), this));
+            m_priority = new QComboBox(this);
+            for (const int level : kUsenetPriorityLevels)
+                m_priority->addItem(usenetPriorityName(level), level);
+            m_priority->setCurrentIndex(m_priority->findData(0));
+            queueRow->addWidget(m_priority);
 
-        m_paused = new QCheckBox(tr("Start paused"), this);
-        queueRow->addWidget(m_paused);
+            m_paused = new QCheckBox(tr("Start paused"), this);
+            queueRow->addWidget(m_paused);
+        }
 
         layout->addLayout(queueRow);
     }

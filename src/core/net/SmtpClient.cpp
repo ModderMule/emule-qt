@@ -19,8 +19,8 @@ SmtpClient::SmtpClient(QObject* parent)
 
 SmtpClient::~SmtpClient() = default;
 
-void SmtpClient::sendMail(const QString& server, int port, bool useTls,
-                           int authType, const QString& user, const QString& password,
+void SmtpClient::sendMail(const QString& server, int port, SmtpSecurity security,
+                           SmtpAuth authType, const QString& user, const QString& password,
                            const QString& from, const QString& to,
                            const QString& subject, const QString& body,
                            bool allowSelfSigned)
@@ -37,7 +37,7 @@ void SmtpClient::sendMail(const QString& server, int port, bool useTls,
     m_authType = authType;
     m_user = user;
     m_password = password;
-    m_useTls = useTls;
+    m_security = security;
     m_state = State::Greeting;
 
     if (!m_socket) {
@@ -62,14 +62,34 @@ void SmtpClient::sendMail(const QString& server, int port, bool useTls,
         return;
     }
 
-    // Port 465 = implicit SSL (connect encrypted from the start)
-    // Other ports with TLS = STARTTLS (upgrade after plaintext greeting)
-    if (useTls && port == 465) {
-        m_implicitSsl = true;
+    // SSL/TLS is encrypted from the first byte; STARTTLS upgrades after the greeting.
+    if (security == SmtpSecurity::SslTls)
         m_socket->connectToHostEncrypted(server, static_cast<quint16>(port));
-    } else {
-        m_implicitSsl = false;
+    else
         m_socket->connectToHost(server, static_cast<quint16>(port));
+}
+
+void SmtpClient::authenticateOrSend()
+{
+    switch (m_authType) {
+    case SmtpAuth::Plain: {
+        m_state = State::AuthSent;
+        QByteArray credentials;
+        credentials.append('\0');
+        credentials.append(m_user.toUtf8());
+        credentials.append('\0');
+        credentials.append(m_password.toUtf8());
+        sendLine(QStringLiteral("AUTH PLAIN %1").arg(QString::fromLatin1(credentials.toBase64())));
+        break;
+    }
+    case SmtpAuth::Login:
+        m_state = State::AuthLoginUser;
+        sendLine(QStringLiteral("AUTH LOGIN"));
+        break;
+    case SmtpAuth::None:
+        m_state = State::MailFromSent;
+        sendLine(QStringLiteral("MAIL FROM:<%1>").arg(m_from));
+        break;
     }
 }
 
@@ -111,21 +131,11 @@ void SmtpClient::processResponse(const QString& response)
 
     case State::EhloSent:
         if (code == 250) {
-            if (m_useTls && !m_implicitSsl) {
-                // STARTTLS upgrade (port 587 etc.) — implicit SSL skips this
+            if (m_security == SmtpSecurity::StartTls) {
                 m_state = State::StartTlsSent;
                 sendLine(QStringLiteral("STARTTLS"));
-            } else if (m_authType > 0) {
-                m_state = State::AuthSent;
-                QByteArray credentials;
-                credentials.append('\0');
-                credentials.append(m_user.toUtf8());
-                credentials.append('\0');
-                credentials.append(m_password.toUtf8());
-                sendLine(QStringLiteral("AUTH PLAIN %1").arg(QString::fromLatin1(credentials.toBase64())));
             } else {
-                m_state = State::MailFromSent;
-                sendLine(QStringLiteral("MAIL FROM:<%1>").arg(m_from));
+                authenticateOrSend();
             }
         } else {
             finish(false, QStringLiteral("SMTP: EHLO failed: %1").arg(response));
@@ -144,20 +154,27 @@ void SmtpClient::processResponse(const QString& response)
 
     case State::EhloAfterTls:
         if (code == 250) {
-            if (m_authType > 0) {
-                m_state = State::AuthSent;
-                QByteArray credentials;
-                credentials.append('\0');
-                credentials.append(m_user.toUtf8());
-                credentials.append('\0');
-                credentials.append(m_password.toUtf8());
-                sendLine(QStringLiteral("AUTH PLAIN %1").arg(QString::fromLatin1(credentials.toBase64())));
-            } else {
-                m_state = State::MailFromSent;
-                sendLine(QStringLiteral("MAIL FROM:<%1>").arg(m_from));
-            }
+            authenticateOrSend();
         } else {
             finish(false, QStringLiteral("SMTP: EHLO after TLS failed: %1").arg(response));
+        }
+        break;
+
+    case State::AuthLoginUser:
+        if (code == 334) {
+            m_state = State::AuthLoginPass;
+            sendLine(QString::fromLatin1(m_user.toUtf8().toBase64()));
+        } else {
+            finish(false, QStringLiteral("SMTP: AUTH LOGIN refused: %1").arg(response));
+        }
+        break;
+
+    case State::AuthLoginPass:
+        if (code == 334) {
+            m_state = State::AuthSent;
+            sendLine(QString::fromLatin1(m_password.toUtf8().toBase64()));
+        } else {
+            finish(false, QStringLiteral("SMTP: AUTH LOGIN refused: %1").arg(response));
         }
         break;
 

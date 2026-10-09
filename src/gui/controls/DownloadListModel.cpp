@@ -110,6 +110,21 @@ QString sourcesText(const DownloadRow& d)
     return text;
 }
 
+/// MFC's LVCFMT_RIGHT columns (DownloadListCtrl.cpp:125-130), for files and sources.
+QVariant columnAlignment(int column)
+{
+    switch (column) {
+    case DownloadListModel::ColSize:
+    case DownloadListModel::ColTransferred:
+    case DownloadListModel::ColCompleted:
+    case DownloadListModel::ColSpeed:
+    case DownloadListModel::ColSources:
+        return static_cast<int>(Qt::AlignRight | Qt::AlignVCenter);
+    default:
+        return static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
+    }
+}
+
 /// Map download state string to sort priority (lower = more important).
 int downloadStateSortOrder(const QString& state)
 {
@@ -132,6 +147,66 @@ int downloadStateSortOrder(const QString& state)
 }
 
 } // anonymous namespace
+
+QList<std::pair<QString, QString>> cleanupRenames(const std::vector<DownloadRow>& files,
+                                                                const QString& cleanups)
+{
+    QList<std::pair<QString, QString>> renames;
+    for (const DownloadRow& dl : files) {
+        // only what is still a part file (MFC: IsPartFile())
+        if (dl.isComplete() || dl.status == QLatin1String("completing"))
+            continue;
+        const QString cleaned = cleanupFilename(dl.fileName, cleanups);
+        if (!cleaned.isEmpty() && cleaned != dl.fileName)
+            renames.append({dl.hash, cleaned});
+    }
+    return renames;
+}
+
+QString sourceTooltipText(const SourceRow& s, bool extended)
+{
+    // MFC CDownloadListCtrl::OnLvnGetInfoTip, sources (DownloadListCtrl.cpp:2318-2372)
+    // DownloadListModel::tr spelled out: lupdate files a call through a local lambda
+    // under the namespace, where the lookup never finds it.
+    if (s.isUrl)
+        return QStringLiteral("URL: %1\n").arg(s.userName)
+               + DownloadListModel::tr("Available parts: %1").arg(s.availPartCount);
+
+    QString info = DownloadListModel::tr("User Name: %1").arg(s.userName.isEmpty()
+                                               ? QStringLiteral("(%1)").arg(DownloadListModel::tr("Unknown")) : s.userName);
+    info += QStringLiteral("\n%1:%2:%3\n\n").arg(DownloadListModel::tr("Server"), s.serverAddr.isEmpty()
+                                                        ? QStringLiteral("0.0.0.0") : s.serverAddr)
+                .arg(s.serverPort);
+    // not while it is being dialled or is sending: there is no next re-ask then
+    if (s.downloadState != QLatin1String("Connecting") && s.downloadState != QLatin1String("Downloading")
+        && s.nextReaskSecs >= 0)
+        info += QStringLiteral("%1:%2\n").arg(DownloadListModel::tr("Next re-ask"), formatSecondsHM(s.nextReaskSecs));
+    info += DownloadListModel::tr("Asked: %1 times; Available parts: %2").arg(s.askedCountDown).arg(s.availPartCount);
+    info += u'\n';
+
+    if (!s.a4af) {
+        info += QStringLiteral("\n%1 %2").arg(DownloadListModel::tr("Client's file name:"),
+                                              s.clientFileName.isEmpty() ? QStringLiteral("-") : s.clientFileName);
+        if (!s.fileComment.isEmpty())
+            info += QStringLiteral("\n%1 %2").arg(DownloadListModel::tr("File comment:"), s.fileComment);
+        if (s.fileRating > 0)
+            info += QStringLiteral("\n%1:%2").arg(DownloadListModel::tr("Rating"), ratingText(s.fileRating));
+    } else {
+        info += u'\n' + DownloadListModel::tr("Asked for another file");
+        if (!s.otherFileName.isEmpty())
+            info += QStringLiteral(": %1").arg(s.otherFileName);
+    }
+
+    if (extended && !s.a4afFiles.isEmpty()) {
+        if (!s.a4af)
+            info += u'\n';
+        info += QStringLiteral("\n%1:").arg(DownloadListModel::tr("A4AF files"));
+        info += s.a4afFiles.join(QStringLiteral("\n:"));
+    }
+    if (const QString country = CountryFlags::tooltip(s.cc); !country.isEmpty())
+        info += u'\n' + DownloadListModel::tr("Country: %1").arg(country);
+    return info;
+}
 
 DownloadListModel::DownloadListModel(QObject* parent)
     : QAbstractItemModel(parent)
@@ -266,9 +341,16 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             }
         }
 
+        // Two icons, as MFC: how the source stands, then its software
+        // (DownloadListCtrl.cpp:563-630).
         if (role == Qt::DecorationRole && index.column() == ColFileName)
-            return CountryFlags::withFlag(clientSoftwareIcon(s.softwareId, s.hasCredit, s.isFriend),
-                                          s.cc);
+            return CountryFlags::withFlag(
+                iconPair(sourceStateIcon(sourceStateIconKind(s.downloadState, s.remoteQueueFull, s.a4af)),
+                         clientSoftwareIcon(s.softwareId, s.hasCredit, s.isFriend)),
+                s.cc);
+
+        if (role == Qt::TextAlignmentRole)
+            return columnAlignment(index.column());
 
         if (role == Qt::UserRole) {
             switch (index.column()) {
@@ -277,8 +359,12 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             case ColCompleted:
             case ColTransferred:   return QVariant::fromValue(s.transferredDown);
             case ColSpeed:         return QVariant::fromValue(s.datarate);
-            case ColProgress:      return 0.0;
-            case ColSources:       return s.software;
+            // MFC Compare cases 5 and 6 (DownloadListCtrl.cpp:1788-1793): by parts on
+            // offer; by software with eMule first, then by version.
+            case ColProgress:      return s.availPartCount;
+            case ColSources:
+                return static_cast<qlonglong>(-qint64(s.softwareId)) * (qlonglong(1) << 32)
+                       + static_cast<qlonglong>(s.clientVersion);
             case ColPriority: {
                 // MFC Compare case 7 (DownloadListCtrl.cpp:1794-1807): transferring first, then QR
                 if (s.downloadState == QLatin1String("Downloading"))
@@ -295,15 +381,8 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
             }
         }
 
-        if (role == Qt::ToolTipRole) {
-            QStringList lines;
-            if (s.partCount > 0)
-                lines << tr("Available parts: %1 / %2").arg(s.availPartCount).arg(s.partCount);
-            if (const QString country = CountryFlags::tooltip(s.cc); !country.isEmpty())
-                lines << tr("Country: %1").arg(country);
-            if (!lines.isEmpty())
-                return lines.join(u'\n');
-        }
+        if (role == Qt::ToolTipRole)
+            return sourceTooltipText(s, thePrefs.showExtControls());
 
         // A source fetching over HTTP Cache is not costing the uploader anything,
         // which is worth seeing at a glance — MFC gave PeerCache its own bar for
@@ -331,6 +410,9 @@ QVariant DownloadListModel::data(const QModelIndex& index, int role) const
         return {};
 
     const auto& d = m_downloads[static_cast<size_t>(index.row())];
+
+    if (role == Qt::TextAlignmentRole)
+        return columnAlignment(index.column());
 
     // Column 0 carries the type icon and, when there is something to say, the
     // marks: a red exclamation for a file whose bytes contradict its name, and

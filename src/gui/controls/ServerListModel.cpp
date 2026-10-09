@@ -82,6 +82,8 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
         case ColCountry:     return CountryFlags::columnText(r.cc);
         case ColIPv6:        return r.addr6.isEmpty() ? QString{}
                                                       : QStringLiteral("[%1] : %2").arg(r.addr6).arg(r.port);
+        case ColHardFiles:   return formatShortNumber(r.hardFiles);
+        case ColVersion:     return r.version;
         default:             break;
         }
     }
@@ -106,6 +108,8 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
         case ColObfuscation: return r.obfuscation ? 1 : 0;
         case ColCountry:     return CountryFlags::sortKey(r.cc);
         case ColIPv6:        return r.addr6;
+        case ColHardFiles:   return r.hardFiles;
+        case ColVersion:     return r.version;
         default:             break;
         }
     }
@@ -144,7 +148,9 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
         case ColFiles:
         case ColFailed:
         case ColSoftFiles:
+        case ColHardFiles:
         case ColLowID:
+        case ColObfuscation:   // right-aligned in MFC as well (ServerListCtrl.cpp:86)
             return static_cast<int>(Qt::AlignRight | Qt::AlignVCenter);
         default:
             return static_cast<int>(Qt::AlignLeft | Qt::AlignVCenter);
@@ -175,6 +181,8 @@ QVariant ServerListModel::headerData(int section, Qt::Orientation orientation, i
     case ColObfuscation: return tr("Obfuscation");
     case ColCountry:     return tr("Country");
     case ColIPv6:        return tr("IPv6");
+    case ColHardFiles:   return tr("Hard File Limit");
+    case ColVersion:     return tr("Version");
     default:             return {};
     }
 }
@@ -199,6 +207,8 @@ void ServerListModel::refreshFromCborArray(const QCborArray& servers)
         row.isStatic    = m.value(QStringLiteral("isStatic")).toBool();
         row.disabled    = m.value(QStringLiteral("disabled")).toBool();
         row.softFiles   = static_cast<uint32_t>(m.value(QStringLiteral("softFiles")).toInteger());
+        row.hardFiles   = static_cast<uint32_t>(m.value(QStringLiteral("hardFiles")).toInteger());
+        row.version     = m.value(QStringLiteral("version")).toString();
         row.lowIdUsers  = static_cast<uint32_t>(m.value(QStringLiteral("lowIDUsers")).toInteger());
         row.obfuscation = m.value(QStringLiteral("obfuscation")).toBool();
         row.hasMetaApi  = m.value(QStringLiteral("hasMetaApi")).toBool();

@@ -105,6 +105,7 @@ void CoreNotifierBridge::connectAll()
 
         // Wire source signals for existing PartFiles (downloading tab)
         for (auto* pf : theApp.downloadQueue->files()) {
+            watchDiskSpace(pf);
             connect(pf->partNotifier(), &PartFileNotifier::sourceAdded,
                     this, &CoreNotifierBridge::onDownloadSourcesChanged);
             connect(pf->partNotifier(), &PartFileNotifier::sourceRemoved,
@@ -112,6 +113,7 @@ void CoreNotifierBridge::connectAll()
         }
         // Wire source signals for newly added PartFiles
         connect(theApp.downloadQueue, &DownloadQueue::fileAdded, this, [this](PartFile* pf) {
+            watchDiskSpace(pf);
             connect(pf->partNotifier(), &PartFileNotifier::sourceAdded,
                     this, &CoreNotifierBridge::onDownloadSourcesChanged);
             connect(pf->partNotifier(), &PartFileNotifier::sourceRemoved,
@@ -125,6 +127,10 @@ void CoreNotifierBridge::connectAll()
                 this, &CoreNotifierBridge::onServerStateChanged);
         connect(theApp.serverConnect, &ServerConnect::serverMessageReceived,
                 this, &CoreNotifierBridge::onServerMessage);
+        connect(theApp.serverConnect, &ServerConnect::connectionLost, this,
+                [this](const QString& serverName) {
+            raiseNotifierEvent(Ipc::NotifierEvent::ConnectionLost, serverName);
+        });
     }
 
     // Statistics
@@ -260,15 +266,59 @@ void CoreNotifierBridge::onDownloadCompleted(PartFile* file)
                    [] { return IpcMessage(IpcMsgType::PushDownloadUpdate, 0); },
                    kPushWindowMs);
 
-    // Email notification for completed downloads. Deliberately outside the
-    // coalescer: a suppressed push costs the GUI nothing, but a suppressed mail
-    // would lose a completion the user asked to be told about.
-    if (thePrefs.notifyOnDownloadFinished() && thePrefs.notifyEmailEnabled()) {
-        QString name = file ? file->fileName() : QStringLiteral("Unknown");
-        sendEmailNotification(
-            QStringLiteral("eMule: Download finished"),
-            QStringLiteral("Download completed: %1").arg(name));
+    // Pop-up and mail (MFC PartFile.cpp:3021). Deliberately outside the coalescer:
+    // a suppressed state push costs the GUI nothing, but a suppressed event would
+    // lose a completion the user asked to be told about.
+    raiseNotifierEvent(Ipc::NotifierEvent::DownloadFinished,
+                       file ? file->fileName() : QStringLiteral("Unknown"));
+}
+
+void CoreNotifierBridge::watchDiskSpace(PartFile* file)
+{
+    connect(file->partNotifier(), &PartFileNotifier::outOfDiskSpace, this, [this, file] {
+        raiseNotifierEvent(Ipc::NotifierEvent::OutOfDiskSpace, file->fileName());
+    });
+}
+
+void CoreNotifierBridge::onPortBindFailed(int port)
+{
+    raiseNotifierEvent(Ipc::NotifierEvent::PortBindFailed, QString::number(port));
+}
+
+void CoreNotifierBridge::raiseNotifierEvent(Ipc::NotifierEvent kind, const QString& text)
+{
+    IpcMessage msg(IpcMsgType::PushNotifierEvent, 0);
+    msg.append(static_cast<qint64>(kind));
+    msg.append(text);
+    if (m_ipcServer)
+        m_ipcServer->broadcast(msg);
+
+    // The mail follows the same option as the pop-up (MFC emuleDlg.cpp:2103-2140).
+    QString subject;
+    QString body;
+    bool wanted = thePrefs.notifyOnUrgent();
+    switch (kind) {
+    case Ipc::NotifierEvent::DownloadFinished:
+        wanted = thePrefs.notifyOnDownloadFinished();
+        subject = QStringLiteral("eMule: Download finished");
+        body = QStringLiteral("Download completed: %1").arg(text);
+        break;
+    case Ipc::NotifierEvent::ConnectionLost:
+        subject = QStringLiteral("eMule: Server connection lost");
+        body = QStringLiteral("Warning: the connection to %1 has been lost.")
+                   .arg(text.isEmpty() ? QStringLiteral("the server") : text);
+        break;
+    case Ipc::NotifierEvent::OutOfDiskSpace:
+        subject = QStringLiteral("eMule: Out of disk space");
+        body = QStringLiteral("You have insufficient disk space to download \"%1\"!").arg(text);
+        break;
+    case Ipc::NotifierEvent::PortBindFailed:
+        subject = QStringLiteral("eMule: Port not available");
+        body = QStringLiteral("Fatal Error: Unable to create socket on port %1").arg(text);
+        break;
     }
+    if (wanted && thePrefs.notifyEmailEnabled())
+        sendEmailNotification(subject, body);
 }
 
 void CoreNotifierBridge::pushNetworkState()
@@ -278,14 +328,9 @@ void CoreNotifierBridge::pushNetworkState()
 
 void CoreNotifierBridge::onServerStateChanged()
 {
-    const bool connected = broadcastServerState();
-
-    // Email notification for urgent: server connection lost
-    if (!connected && thePrefs.notifyOnUrgent() && thePrefs.notifyEmailEnabled()) {
-        sendEmailNotification(
-            QStringLiteral("eMule: Server connection lost"),
-            QStringLiteral("Warning: Server connection has been lost."));
-    }
+    // A lost connection is reported by ServerConnect::connectionLost — this runs for
+    // every state change, connecting and manual disconnects included.
+    broadcastServerState();
 }
 
 // One snapshot to every client; true when connected to a server.
@@ -737,8 +782,8 @@ void CoreNotifierBridge::sendEmailNotification(const QString& subject, const QSt
     m_smtp->sendMail(
         thePrefs.notifyEmailSmtpServer(),
         thePrefs.notifyEmailSmtpPort(),
-        thePrefs.notifyEmailSmtpTls(),
-        thePrefs.notifyEmailSmtpAuth(),
+        static_cast<SmtpSecurity>(thePrefs.notifyEmailSmtpSecurity()),
+        static_cast<SmtpAuth>(thePrefs.notifyEmailSmtpAuth()),
         thePrefs.notifyEmailSmtpUser(),
         thePrefs.notifyEmailSmtpPassword(),
         thePrefs.notifyEmailSender(),

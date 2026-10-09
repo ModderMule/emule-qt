@@ -35,6 +35,10 @@ private slots:
     void sharedNetworksCellIsIconsOnly();
     void rowsWithoutAValueSortLastBothWays();
     void textFilterMatchesTheCellText();
+    void categoryNodesFollowMfc();
+    void incompleteCategoryFilterSplitsPartFiles();
+    void fileSetMenuFollowsMfc();
+    void numericColumnsAreRightAligned();
 };
 
 namespace {
@@ -498,6 +502,84 @@ void tst_SharedFilesModel::mergeFileDetails_sumsAgreesAndLists()
     QCOMPARE(value("ed2kLink").toString(), QStringLiteral("ed2k://1\ned2k://2"));
     QVERIFY(!value("canComment").toBool());
     QVERIFY(!merged.contains(QLatin1StringView("hash")));
+}
+
+// MFC FilterTreeReloadTree (SharedDirsTreeCtrl.cpp:324-368): only with more than one
+// category; each distinct incoming folder other than the main one, and every category
+// under Incomplete Files.
+void tst_SharedFilesModel::categoryNodesFollowMfc()
+{
+    QVERIFY(sharedCategoryNodes({{QString(), QString()}}, QStringLiteral("/in")).incomplete.isEmpty());
+
+    const SharedCategoryNodes nodes = sharedCategoryNodes(
+        {{QString(), QString()},
+         {QStringLiteral("Films"), QStringLiteral("/media/films")},
+         {QStringLiteral("Clips"), QStringLiteral("/media/films/")},   // same folder again
+         {QStringLiteral("Music"), QStringLiteral("/IN")},             // the main one
+         {QStringLiteral("Docs"), QString()}},
+        QStringLiteral("/in"));
+    QCOMPARE(nodes.incomingDirs, QStringList{QStringLiteral("/media/films")});
+    QCOMPARE(nodes.incomplete.size(), 5);
+    QCOMPARE(nodes.incomplete.at(1), (std::pair<int, QString>{1, QStringLiteral("Films")}));
+    QCOMPARE(nodes.incomplete.at(4).first, 4);
+}
+
+void tst_SharedFilesModel::incompleteCategoryFilterSplitsPartFiles()
+{
+    SharedFilesModel model;
+    SharedFileRow done = row(1, "done.avi"), partA = row(2, "a.part"), partB = row(3, "b.part");
+    done.category = 2;          // ignored: not a part file
+    partA.isPartFile = true;
+    partA.category = 2;
+    partB.isPartFile = true;
+    model.setFiles({done, partA, partB});
+
+    SharedFilesSortProxy proxy;
+    proxy.setSourceModel(&model);
+    proxy.setFolderFilter(SharedFilterType::IncompleteCategory, QStringLiteral("2"));
+    QCOMPARE(proxy.rowCount(), 1);
+    QCOMPARE(proxy.index(0, 0).data().toString(), partA.fileName);
+    proxy.setFolderFilter(SharedFilterType::IncompleteCategory, QStringLiteral("0"));
+    QCOMPARE(proxy.rowCount(), 1);
+    QCOMPARE(proxy.index(0, 0).data().toString(), partB.fileName);
+}
+
+// MFC CSharedDirsTreeCtrl::OnContextMenu (SharedDirsTreeCtrl.cpp:506-513). The static
+// nodes had no menu at all.
+void tst_SharedFilesModel::fileSetMenuFollowsMfc()
+{
+    using SharedDirState::fileSetMenuState;
+    // "All Shared Files": everything but Delete and Comment
+    auto wide = fileSetMenuState(12, /*allComplete*/ true, /*wide*/ true, /*hasFolder*/ false);
+    QVERIFY(wide.priority && wide.details && wide.link);
+    QVERIFY(!wide.remove && !wide.comment && !wide.openFolder);
+
+    // a shared folder with only complete files
+    auto dir = fileSetMenuState(3, true, false, true);
+    QVERIFY(dir.remove && dir.comment && dir.openFolder && dir.priority);
+
+    // one part file among them: no Delete
+    QVERIFY(!fileSetMenuState(3, false, false, true).remove);
+
+    // nothing listed: only the folder can be opened
+    auto empty = fileSetMenuState(0, true, false, true);
+    QVERIFY(empty.openFolder);
+    QVERIFY(!empty.remove && !empty.priority && !empty.details && !empty.comment && !empty.link);
+}
+
+// MFC SharedFilesCtrl.cpp:265-280
+void tst_SharedFilesModel::numericColumnsAreRightAligned()
+{
+    SharedFilesModel model;
+    model.setFiles({row(1, "a.avi")});
+    QList<int> right;
+    for (int col = 0; col < SharedFilesModel::ColCount; ++col)
+        if (model.index(0, col).data(Qt::TextAlignmentRole).toInt() & Qt::AlignRight)
+            right << col;
+    QCOMPARE(right, (QList<int>{SharedFilesModel::ColSize, SharedFilesModel::ColRequests,
+                                SharedFilesModel::ColTransferred, SharedFilesModel::ColCompleteSources,
+                                SharedFilesModel::ColAccepted, SharedFilesModel::ColLength,
+                                SharedFilesModel::ColBitrate}));
 }
 
 QTEST_MAIN(tst_SharedFilesModel)

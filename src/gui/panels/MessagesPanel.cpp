@@ -207,15 +207,18 @@ void MessagesPanel::onChatMessagePush(const IpcMessage& msg)
 
     // A new session opens behind the one being read (MFC StartSession(sender, false));
     // the first tab becomes current on its own.
-    if (findTabByHash(senderHash) < 0)
+    const bool newSession = findTabByHash(senderHash) < 0;
+    if (newSession)
         openChatTab(senderHash, senderName, /*activate*/ false);
 
     if (senderHash == m_activeFriendHash)
         updateChatDisplay();
 
     // MFC ChatSelector.cpp:239-248: flag it unless it is the session on screen
-    if (senderHash != m_activeFriendHash || !isVisible())
+    if (senderHash != m_activeFriendHash || !isVisible()) {
         setNotify(senderHash, true);
+        emit unseenChatMessage(senderName, message, newSession);
+    }
 }
 
 void MessagesPanel::onFriendListPush(const IpcMessage& /*msg*/)
@@ -780,27 +783,30 @@ void MessagesPanel::restoreSelection(const QString& key)
 
 void MessagesPanel::showAddFriendDialog()
 {
-    AddFriendDialog dlg(this);
-    if (dlg.exec() != QDialog::Accepted)
-        return;
-
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
-    // Send the literal address and let the daemon parse it. That keeps IPv6 intact (which
-    // has no uint32 form) and avoids the byte-order trap: the numeric field is eD2K network
-    // order, whereas QHostAddress::toIPv4Address() returns host order.
-    const Address addr = Address::fromString(dlg.ipAddress());
+    AddFriendDialog dlg(this);
+    // The dialog waits for the daemon's verdict, so a duplicate can be told where
+    // the user can still correct it.
+    dlg.setSubmitter([this](const AddFriendDialog& d, std::function<void(bool)> done) {
+        // Send the literal address and let the daemon parse it. That keeps IPv6 intact
+        // (which has no uint32 form) and avoids the byte-order trap: the numeric field
+        // is eD2K network order, whereas QHostAddress::toIPv4Address() returns host order.
+        const Address addr = Address::fromString(d.ipAddress());
 
-    IpcMessage msg(IpcMsgType::AddFriend);
-    msg.append(dlg.friendHash());
-    msg.append(dlg.friendName());
-    msg.append(static_cast<qint64>(addr.toNetworkUint32()));
-    msg.append(static_cast<qint64>(dlg.port()));
-    msg.append(addr.toString());
-    m_ipc->sendRequest(std::move(msg), [this](const IpcMessage&) {
-        requestFriendList();
+        IpcMessage msg(IpcMsgType::AddFriend);
+        msg.append(d.friendHash());
+        msg.append(d.friendName());
+        msg.append(static_cast<qint64>(addr.toNetworkUint32()));
+        msg.append(static_cast<qint64>(d.port()));
+        msg.append(addr.toString());
+        m_ipc->sendRequest(std::move(msg), [done = std::move(done)](const IpcMessage& resp) {
+            done(resp.fieldBool(0));
+        });
     });
+    if (dlg.exec() == QDialog::Accepted)
+        requestFriendList();
 }
 
 void MessagesPanel::showFindDialog()

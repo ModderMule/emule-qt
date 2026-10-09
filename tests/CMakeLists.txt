@@ -236,6 +236,7 @@ emule_add_test(tst_PartFileWriteThread FOLDER "Files")
 emule_add_test(tst_PartFileConvert     FOLDER "Files")
 emule_add_test(tst_ArchiveReader       FOLDER "Archive")
 emule_add_test(tst_ArchiveRecovery     FOLDER "Archive")
+emule_add_test(tst_ArchiveScan         FOLDER "Archive")
 emule_add_test(tst_ArchiveUnpack       FOLDER "Archive")
 
 # Module 12: Upload Queue & Transfer Engine
@@ -278,6 +279,7 @@ emule_add_test(tst_IP2Country   FOLDER "IPFilter")
 # Module 17: Chat & IRC
 emule_add_test(tst_IrcProtocol   FOLDER "Chat")
 emule_add_test(tst_IrcClient     FOLDER "Chat")
+emule_add_test(tst_SmtpClient    FOLDER "Chat")
 
 # Module 18: Friend System
 emule_add_test(tst_Friend       FOLDER "Friends")
@@ -523,7 +525,9 @@ emule_add_test(tst_ListSorting FOLDER "Gui"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/MenuUtils.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/PriorityText.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
-            "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp")
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
+            # the source state icons are asserted to exist
+            "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
 target_include_directories(tst_ListSorting PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
     "${CMAKE_SOURCE_DIR}/src/core"
@@ -595,6 +599,10 @@ target_link_libraries(tst_MetaSearchGui PRIVATE
 emule_add_test(tst_CategoryDialog FOLDER "Gui"
     SOURCES tst_CategoryDialog.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CategoryDialog.cpp"
+            # the Add Friend dialog rides along: same shape, same dependencies
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/AddFriendDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/NetworkInfoDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp")

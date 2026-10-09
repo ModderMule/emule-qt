@@ -110,6 +110,9 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushDownloadUpdate:   return QStringLiteral("PushDownloadUpdate");
     case T::PushDownloadAdded:    return QStringLiteral("PushDownloadAdded");
     case T::PushDownloadRemoved:  return QStringLiteral("PushDownloadRemoved");
+    case T::GetKnownFiles:        return QStringLiteral("GetKnownFiles");
+    case T::RecoverArchivePreview: return QStringLiteral("RecoverArchivePreview");
+    case T::PushNotifierEvent:    return QStringLiteral("PushNotifierEvent");
     case T::PushServerState:      return QStringLiteral("PushServerState");
     case T::PushSearchResult:     return QStringLiteral("PushSearchResult");
     case T::PushLogMessage:       return QStringLiteral("PushLogMessage");
@@ -592,6 +595,7 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushDownloadUpdate:   emit downloadUpdated(msg); break;
     case IpcMsgType::PushDownloadAdded:    emit downloadAdded(msg); break;
     case IpcMsgType::PushDownloadRemoved:  emit downloadRemoved(msg); break;
+    case IpcMsgType::PushNotifierEvent:    emit notifierEvent(msg); break;
     case IpcMsgType::PushServerState:      emit serverStateChanged(msg); break;
     case IpcMsgType::PushServerMessage: {
         // Track the checkpoint here so a live push and a replayed backlog entry

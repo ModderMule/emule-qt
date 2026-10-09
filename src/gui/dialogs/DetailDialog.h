@@ -167,6 +167,12 @@ signals:
     /// The user pressed Apply on the editable Comments page.
     void postFileComment(const QString& fileHash, const QString& comment, int rating);
 
+    /// The Archive Preview page asks for a preview file of the download.
+    void archivePreviewFileRequested(const QString& fileHash);
+
+    /// The File Names page asks for the download to be renamed.
+    void renameFileRequested(const QString& fileHash, const QString& newName);
+
 protected:
     /// Where subclasses put their content. The button row sits below it.
     [[nodiscard]] QVBoxLayout* contentLayout() const { return m_contentLayout; }

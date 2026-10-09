@@ -28,6 +28,7 @@
 #include <QHostInfo>
 
 #include "app/AppContext.h"
+#include "archive/ArchiveRecovery.h"
 #include "app/CoreInfo.h"
 #include "app/CoreOps.h"
 #include "app/CoreSession.h"
@@ -309,6 +310,8 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     case IpcMsgType::GetStats:             handleGetStats(msg); break;
     case IpcMsgType::GetSpeedHistory:      handleGetSpeedHistory(msg); break;
     case IpcMsgType::GetStatsHistory:      handleGetStatsHistory(msg); break;
+    case IpcMsgType::GetKnownFiles:        handleGetKnownFiles(msg); break;
+    case IpcMsgType::RecoverArchivePreview: handleRecoverArchivePreview(msg); break;
     case IpcMsgType::GetPreferences:       handleGetPreferences(msg); break;
     case IpcMsgType::SetPreferences:       handleSetPreferences(msg); break;
     case IpcMsgType::Subscribe:            handleSubscribe(msg); break;
@@ -1389,9 +1392,12 @@ void IpcClientHandler::handleAddFriend(const IpcMessage& msg)
                 name2 = client->userName();
         }
     }
-    theApp.friendList->addFriend(hashBuf, addr2, port2, name2, hasHash);
-    theApp.friendList->save(thePrefs.configDir());
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true));
+    // Null for an invalid entry and for a duplicate; the caller is told
+    // (MFC CAddFriend shows IDS_WRN_FRIENDDUPLIPPORT).
+    const bool added = theApp.friendList->addFriend(hashBuf, addr2, port2, name2, hasHash) != nullptr;
+    if (added)
+        theApp.friendList->save(thePrefs.configDir());
+    sendMessage(IpcMessage::makeResult(msg.seqId(), added));
 }
 
 void IpcClientHandler::handleRemoveFriend(const IpcMessage& msg)
@@ -3052,6 +3058,23 @@ void IpcClientHandler::handleGetDownloadDetails(const IpcMessage& msg)
     details.insert(QLatin1StringView("a4afSourceCount"), static_cast<qint64>(pf->a4afSourceCount()));
     details.insert(QLatin1StringView("isComplete"),
         pf->status() == PartFileStatus::Complete);
+    // The archive preview: the exact missing ranges (the bar's "gaps" are merged past
+    // a cap), and whether "Create preview file" has anything to work with
+    // (MFC ArchivePreviewDlg.cpp:1003-1005).
+    {
+        QCborArray exact;
+        for (const Gap& gap : pf->gapList()) {
+            exact.append(static_cast<qint64>(gap.start));
+            exact.append(static_cast<qint64>(gap.end));
+        }
+        details.insert(QLatin1StringView("archiveGaps"), exact);
+        details.insert(QLatin1StringView("canRecoverArchive"),
+            pf->status() != PartFileStatus::Complete && pf->status() != PartFileStatus::Completing
+                && pf->completedSize() > 0 && !pf->isRecoveringArchive());
+    }
+    // What ops::renameDownload accepts (MFC CFileDetailDialogName::CanRenameFile)
+    details.insert(QLatin1StringView("canRename"),
+        pf->status() != PartFileStatus::Complete && pf->status() != PartFileStatus::Completing);
 
     // AICH hash (if available)
     if (pf->aichRecoveryHashSet().hasValidMasterHash())
@@ -3086,6 +3109,7 @@ void IpcClientHandler::handleGetDownloadDetails(const IpcMessage& msg)
     details.insert(QLatin1StringView("sourceNames"), sourceNames);
     details.insert(QLatin1StringView("comments"), comments);
     details.insert(QLatin1StringView("notesSearchRunning"), pf->isKadCommentSearchRunning());
+    details.insert(QLatin1StringView("kadConnected"), kadIsConnected());
 
     // The user's own comment/rating, and whether posting one is allowed. MFC's gate is
     // "is it in the shared list" — it greys its comment page out for anything else,
@@ -3350,6 +3374,7 @@ void IpcClientHandler::handleGetSharedFileDetails(const IpcMessage& msg)
     details.insert(QLatin1StringView("sourceNames"), sourceNames);
     details.insert(QLatin1StringView("comments"), comments);
     details.insert(QLatin1StringView("notesSearchRunning"), kf->isKadCommentSearchRunning());
+    details.insert(QLatin1StringView("kadConnected"), kadIsConnected());
 
     // Reached through the shared list, so MFC's "is it shared" gate is satisfied by
     // construction — see handleGetDownloadDetails for what the flag means.
@@ -3401,6 +3426,7 @@ void IpcClientHandler::handleGetSearchResultDetails(const IpcMessage& msg)
 
     // Drives the "(Kad search in progress...)" state of the Search Kad button.
     details.insert(QLatin1StringView("notesSearchRunning"), sf->isKadCommentSearchRunning());
+    details.insert(QLatin1StringView("kadConnected"), kadIsConnected());
 
     QCborArray tagArr;
     for (const auto& tag : sf->tags()) {
@@ -3574,8 +3600,8 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setNotifyEmailSmtpPort(static_cast<uint16>(val.toInteger()));
     else if (key == QStringLiteral("notifyEmailSmtpAuth"))
         thePrefs.setNotifyEmailSmtpAuth(static_cast<int>(val.toInteger()));
-    else if (key == QStringLiteral("notifyEmailSmtpTls"))
-        thePrefs.setNotifyEmailSmtpTls(val.toBool());
+    else if (key == QStringLiteral("notifyEmailSmtpSecurity"))
+        thePrefs.setNotifyEmailSmtpSecurity(static_cast<int>(val.toInteger()));
     else if (key == QStringLiteral("notifyEmailSmtpUser"))
         thePrefs.setNotifyEmailSmtpUser(val.toString());
     else if (key == QStringLiteral("notifyEmailSmtpPassword"))
@@ -3789,6 +3815,8 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setDynUpGoingDownDivider(static_cast<int>(val.toInteger()));
     else if (key == QStringLiteral("dynUpNumberOfPings"))
         thePrefs.setDynUpNumberOfPings(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("minUpload"))   // KB/s, never below 1 (MFC PPgTweaks.cpp:401)
+        thePrefs.setMinUpload(static_cast<uint32>(std::max<qint64>(1, val.toInteger())));
     else if (key == QStringLiteral("allocFullFile"))
         thePrefs.setAllocFullFile(val.toBool());
 #ifdef Q_OS_WIN
@@ -3981,6 +4009,12 @@ bool IpcClientHandler::applyPreferenceC(const QString& key, const QCborValue& va
         thePrefs.setIrcAddTimestamp(val.toBool());
     else if (key == QStringLiteral("ircEnableUTF8"))
         thePrefs.setIrcEnableUTF8(val.toBool());
+    else if (key == QStringLiteral("ircIgnorePingPong"))
+        thePrefs.setIrcIgnorePingPong(val.toBool());
+    else if (key == QStringLiteral("ircShowSmileys"))
+        thePrefs.setIrcShowSmileys(val.toBool());
+    else if (key == QStringLiteral("ircPlaySoundEvents"))
+        thePrefs.setIrcPlaySoundEvents(val.toBool());
     else if (key == QStringLiteral("ircIgnoreMiscInfoMessages"))
         thePrefs.setIrcIgnoreMiscInfoMessages(val.toBool());
     else if (key == QStringLiteral("ircIgnoreJoinMessages"))
@@ -4061,6 +4095,64 @@ void IpcClientHandler::handleGetCollectionInfo(const IpcMessage& msg)
 // handleSaveCollection
 // ---------------------------------------------------------------------------
 
+void IpcClientHandler::handleRecoverArchivePreview(const IpcMessage& msg)
+{
+    const QByteArray hashBytes = QByteArray::fromHex(msg.fieldString(0).toLatin1());
+    PartFile* pf = hashBytes.size() == 16 && theApp.downloadQueue
+        ? theApp.downloadQueue->fileByID(reinterpret_cast<const uint8*>(hashBytes.constData()))
+        : nullptr;
+    if (!pf) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 404, QStringLiteral("Download not found")));
+        return;
+    }
+    if (pf->isRecoveringArchive()) {
+        sendMessage(IpcMessage::makeError(msg.seqId(), 409, tr("A preview file is already being created.")));
+        return;
+    }
+
+    // Into the temp folder, as MFC ("<name>-rec.<ext>"); the download is only read.
+    const QString outDir = thePrefs.tempDirs().value(0);
+    const int seq = msg.seqId();
+    ArchiveRecovery::recoverToCopyAsync(pf, outDir,
+        [self = QPointer<IpcClientHandler>(this), seq](const QString& path) {
+            // back on the handler's thread: sockets are not touched from a worker
+            QMetaObject::invokeMethod(qApp, [self, seq, path] {
+                if (!self)
+                    return;
+                if (path.isEmpty())
+                    self->sendMessage(IpcMessage::makeError(seq, 422,
+                        tr("No readable archive could be built from what has arrived so far.")));
+                else
+                    self->sendMessage(IpcMessage::makeResult(seq, true, QCborValue(path)));
+            }, Qt::QueuedConnection);
+        });
+}
+
+void IpcClientHandler::handleGetKnownFiles(const IpcMessage& msg)
+{
+    constexpr qint64 kPageRows = 2000;
+    const qint64 offset = std::max<qint64>(0, msg.fieldInt(0));
+
+    QCborArray files;
+    qint64 index = 0;
+    qint64 total = 0;
+    if (theApp.knownFileList) {
+        theApp.knownFileList->forEachFile([&](const KnownFile* kf) {
+            ++total;
+            if (index++ < offset || files.size() >= kPageRows)
+                return;
+            files.append(QCborMap{{QStringLiteral("hash"), md4str(kf->fileHash())},
+                                  {QStringLiteral("fileName"), kf->fileName()},
+                                  {QStringLiteral("fileSize"), static_cast<qint64>(kf->fileSize())}});
+        });
+    }
+    const qint64 next = offset + files.size();
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(QCborMap{
+        {QStringLiteral("files"), files},
+        {QStringLiteral("next"), next},
+        {QStringLiteral("more"), next < total}})));
+}
+
 void IpcClientHandler::handleSaveCollection(const IpcMessage& msg)
 {
     // The name becomes the file name, so it is made valid first — MFC
@@ -4091,8 +4183,11 @@ void IpcClientHandler::handleSaveCollection(const IpcMessage& msg)
         const QByteArray hashBytes = QByteArray::fromHex(fileHash.toLatin1());
         if (hashBytes.size() != 16)
             continue;
-        KnownFile* kf = theApp.sharedFileList->getFileByID(
-            reinterpret_cast<const uint8*>(hashBytes.constData()));
+        const auto* id = reinterpret_cast<const uint8*>(hashBytes.constData());
+        KnownFile* kf = theApp.sharedFileList->getFileByID(id);
+        // A file picked from the "Known" list need not be shared any more
+        if (!kf && theApp.knownFileList)
+            kf = theApp.knownFileList->findKnownFileByID(id);
         if (kf)
             coll.addFile(kf, true);
     }
@@ -5831,6 +5926,12 @@ void IpcClientHandler::sendStatus(const IpcMessage& msg, const ops::Status& st)
 {
     sendMessage(st.ok() ? IpcMessage::makeResult(msg.seqId(), true)
                         : IpcMessage::makeError(msg.seqId(), st.code, st.message));
+}
+
+bool IpcClientHandler::kadIsConnected()
+{
+    const auto* kadInst = kad::Kademlia::instance();
+    return kadInst && kadInst->isConnected();
 }
 
 bool IpcClientHandler::rejectIfKadUnavailable(const IpcMessage& msg, bool requireConnected)

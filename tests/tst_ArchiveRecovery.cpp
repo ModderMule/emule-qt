@@ -6,6 +6,8 @@
 #include "files/PartFile.h"
 
 #include <QFile>
+#include <QDir>
+#include <QFileInfo>
 #include <QTest>
 #include <QTemporaryDir>
 
@@ -28,6 +30,7 @@ private slots:
     void recoverAsync_nullPartFile_returnsFalse();
     void isoDetection_stub();
     void aceDetection_stub();
+    void recoverFile_neverWritesTheDownload();
 };
 
 void tst_ArchiveRecovery::isFilled_fullRange()
@@ -273,6 +276,64 @@ void tst_ArchiveRecovery::aceDetection_stub()
     // Should return false (stub) but not crash
     bool result = ArchiveRecovery::recoverACE(input, output, filled);
     QVERIFY(!result);
+}
+
+// The recovery had an "in place" mode that opened the download itself with Truncate.
+// Nothing called it; the first caller would have emptied a part file. The result is
+// now always a file of its own, named as MFC names it.
+void tst_ArchiveRecovery::recoverFile_neverWritesTheDownload()
+{
+    eMule::testing::TempDir tmpDir;
+    const QString srcPath = tmpDir.filePath(QStringLiteral("001.part"));
+
+    // one stored ZIP member, as recoverZip_validEntries builds it
+    QByteArray zip;
+    const auto put16 = [&zip](quint16 v) { zip.append(reinterpret_cast<const char*>(&v), 2); };
+    const auto put32 = [&zip](quint32 v) { zip.append(reinterpret_cast<const char*>(&v), 4); };
+    const QByteArray content("RecoveryTest!");
+    const QByteArray name("test.txt");
+    put32(0x04034b50); put16(20); put16(0); put16(0); put16(0); put16(0);
+    put32(0); put32(quint32(content.size())); put32(quint32(content.size()));
+    put16(quint16(name.size())); put16(0);
+    zip.append(name).append(content);
+    zip.append(QByteArray(64, '\0'));   // the rest of the download, not there yet
+
+    QFile src(srcPath);
+    QVERIFY(src.open(QIODevice::WriteOnly));
+    src.write(zip);
+    src.close();
+
+    const std::vector<Gap> filled = {{0, static_cast<uint64>(zip.size() - 65)}};
+    const QString out = ArchiveRecovery::recoverFile(srcPath, filled, static_cast<uint64>(zip.size()),
+                                                     QString(), QStringLiteral("001"));
+    QVERIFY2(!out.isEmpty(), "nothing was recovered");
+    QVERIFY(out != srcPath);
+    QCOMPARE(QFileInfo(out).fileName(), QStringLiteral("001-rec.zip"));
+    QVERIFY(QFileInfo(out).size() > 0);
+
+    // the download is byte for byte what it was
+    QVERIFY(src.open(QIODevice::ReadOnly));
+    QCOMPARE(src.readAll(), zip);
+    src.close();
+
+    // into another folder when one is named
+    eMule::testing::TempDir other;
+    const QString elsewhere = ArchiveRecovery::recoverFile(srcPath, filled, static_cast<uint64>(zip.size()),
+                                                           other.path(), QStringLiteral("001"));
+    QCOMPARE(QFileInfo(elsewhere).absolutePath(), QFileInfo(other.path()).absoluteFilePath());
+
+    // a name that would land on the source itself is refused
+    QCOMPARE(ArchiveRecovery::copyPath(QStringLiteral("/tmp/x/abcdefgh.zip"), {}, {}, QStringLiteral("zip")),
+             QStringLiteral("/tmp/x/abcde-rec.zip"));
+
+    // nothing recoverable: no stray file
+    const QString junkPath = tmpDir.filePath(QStringLiteral("002.part"));
+    QFile junk(junkPath);
+    QVERIFY(junk.open(QIODevice::WriteOnly));
+    junk.write(QByteArray(200, 'q'));
+    junk.close();
+    QVERIFY(ArchiveRecovery::recoverFile(junkPath, {{0, 199}}, 200, QString(), QStringLiteral("002")).isEmpty());
+    QVERIFY(QDir(tmpDir.path()).entryList({QStringLiteral("002-rec.*")}).isEmpty());
 }
 
 QTEST_MAIN(tst_ArchiveRecovery)

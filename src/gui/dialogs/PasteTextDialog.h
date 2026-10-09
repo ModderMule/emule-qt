@@ -54,6 +54,10 @@ public:
         /// index 0 first. Empty for no row, which is every dialog but the two
         /// NZB ones — the same call Chrome::passwordLabel makes.
         QStringList queueCategories;
+
+        /// With queueCategories: only the category box, without priority and
+        /// "Start paused" — an eD2K paste has a category and nothing else to choose.
+        bool categoryOnly = false;
     };
 
 protected:

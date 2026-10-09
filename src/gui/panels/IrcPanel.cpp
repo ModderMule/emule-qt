@@ -11,6 +11,7 @@
 #include "app/IpcClient.h"
 #include "chat/IrcClient.h"
 #include "chat/IrcEmuleProto.h"
+#include "chat/IrcRouting.h"
 #include "IpcMessage.h"
 #include "net/Address.h"
 #include "prefs/Preferences.h"
@@ -18,6 +19,10 @@
 #include "utils/TextLinks.h"
 
 #include <QApplication>
+#include <QAudioOutput>
+#include <QDir>
+#include <QFile>
+#include <QMediaPlayer>
 #include <QCborArray>
 #include <QCborMap>
 #include <QDateTime>
@@ -81,8 +86,10 @@ void IrcPanel::setCustomFont(const QFont& font)
     if (m_statusBrowser)
         m_statusBrowser->setFont(font);
     for (auto it = m_channels.begin(); it != m_channels.end(); ++it) {
-        if (auto* browser = qobject_cast<QTextBrowser*>(it->widget))
-            browser->setFont(font);
+        if (it->log)
+            it->log->setFont(font);
+        if (it->topicView)
+            it->topicView->setFont(font);
     }
 }
 
@@ -144,25 +151,34 @@ void IrcPanel::onConnectClicked()
     if (server.isEmpty())
         server = QStringLiteral("irc.mindforge.org:6667");
 
-    appendToStatus(formatTimestamp() +
-        QStringLiteral(" Connecting to <b>%1</b> as <b>%2</b>...")
-            .arg(server.toHtmlEscaped(), nick.toHtmlEscaped()));
+    // A new session starts with the Status tab alone (MFC IrcWnd.cpp:474-479):
+    // what is left from the last one would only look alive.
+    removeAllChannelTabs();
+    appendInfo(m_statusKey, tr("Connecting"));
 
     m_irc->connectToServer(server, nick);
 }
 
-void IrcPanel::onCloseClicked()
+void IrcPanel::closeChannel(const QString& key)
 {
-    const QString name = activeChannelName();
-    if (name.isEmpty() || name == m_statusKey)
+    if (key.isEmpty() || key == m_statusKey)
+        return;
+    auto it = m_channels.find(key);
+    if (it == m_channels.end() || it->type == IrcChannel::ChannelList)
         return;
 
-    // If it's a real channel, part it first
-    auto it = m_channels.find(name);
-    if (it != m_channels.end() && it->type == IrcChannel::Normal && m_irc->isConnected())
+    // A channel we are in is left first; the tab goes when the server confirms
+    // (MFC IrcWnd.cpp:520-523, IrcMain.cpp:381-384).
+    if (it->type == IrcChannel::Normal && !it->detached && m_irc->isConnected()) {
         m_irc->partChannel(it->name);
+        return;
+    }
+    removeChannelTab(key);
+}
 
-    removeChannelTab(name);
+void IrcPanel::onCloseClicked()
+{
+    closeChannel(activeChannelName());
 }
 
 void IrcPanel::onSendClicked()
@@ -188,14 +204,13 @@ void IrcPanel::onTabChanged(int /*index*/)
 
 void IrcPanel::onTabCloseRequested(int index)
 {
-    const QString tabText = m_tabWidget->tabText(index);
-    const QString key = tabText.toLower();
-
-    auto it = m_channels.find(key);
-    if (it != m_channels.end()) {
-        if (it->type == IrcChannel::Normal && m_irc->isConnected())
-            m_irc->partChannel(it->name);
-        removeChannelTab(key);
+    // By widget, not by tab text: a detached channel's tab reads "(#name)".
+    const QWidget* w = m_tabWidget->widget(index);
+    for (auto it = m_channels.cbegin(); it != m_channels.cend(); ++it) {
+        if (it->widget == w) {
+            closeChannel(it.key());
+            return;
+        }
     }
 }
 
@@ -205,17 +220,12 @@ void IrcPanel::onTabCloseRequested(int index)
 
 void IrcPanel::onIrcConnected()
 {
-    appendToStatus(formatTimestamp() +
-        QStringLiteral(" <font color='#009300'>Connected to server.</font>"));
+    appendInfo(m_statusKey, tr("Connected"));
 }
 
 void IrcPanel::onIrcLoggedIn()
 {
     m_connectBtn->setText(tr("Disconnect"));
-
-    appendToStatus(formatTimestamp() +
-        QStringLiteral(" <font color='#009300'>Logged in as <b>%1</b>.</font>")
-            .arg(m_irc->currentNick().toHtmlEscaped()));
 
     // Create Channels tab
     ensureChannelTab(QStringLiteral("__channels__"), IrcChannel::ChannelList);
@@ -231,46 +241,98 @@ void IrcPanel::onIrcLoggedIn()
     if (thePrefs.ircConnectHelpChannel())
         m_irc->joinChannel(QStringLiteral("#emule-english"));
 
-    // Request channel list if enabled
-    if (thePrefs.ircLoadChannelList())
-        m_irc->requestChannelList();
+    // The name part of the filter goes to the server with LIST (MFC IrcMain.cpp:501-502);
+    // only the user minimum is applied here.
+    if (thePrefs.ircLoadChannelList()) {
+        m_irc->requestChannelList(thePrefs.ircUseChannelFilter()
+                                      ? thePrefs.ircChannelFilter().section(QLatin1Char('|'), 0, 0)
+                                      : QString());
+    }
 }
 
 void IrcPanel::onIrcDisconnected()
 {
     m_connectBtn->setText(tr("Connect"));
 
-    appendToStatus(formatTimestamp() +
-        QStringLiteral(" <font color='#FF0000'>Disconnected from server.</font>"));
-
-    // Append disconnect message to all channel tabs
-    for (auto it = m_channels.begin(); it != m_channels.end(); ++it) {
-        if (it->type == IrcChannel::Normal || it->type == IrcChannel::Private) {
-            appendToChannel(it.key(),
-                formatTimestamp() +
-                QStringLiteral(" <font color='#FF0000'>Disconnected.</font>"));
-        }
+    // MFC CIrcWnd::SetConnectStatus(false) (IrcWnd.cpp:894-911): every chat is detached
+    // and says so; the channel list stays as it is.
+    const QStringList keys = m_channels.keys();
+    for (const QString& key : keys) {
+        const IrcChannel::Type type = m_channels.value(key).type;
+        if (type == IrcChannel::ChannelList)
+            continue;
+        if (type == IrcChannel::Normal || type == IrcChannel::Private)
+            detachChannel(key);
+        appendInfo(key, tr("* Disconnected"), IrcRouting::LineColor::Quit);
     }
-
-    // Remove Channels tab, keep channel tabs (they just get disconnect message)
-    removeChannelTab(QStringLiteral("__channels__"));
 
     updateNickList();
 }
 
 void IrcPanel::onIrcSocketError(const QString& error)
 {
-    appendToStatus(formatTimestamp() +
-        QStringLiteral(" <font color='#FF0000'><b>Error:</b> %1</font>")
-            .arg(error.toHtmlEscaped()));
+    appendInfo(m_statusKey, IrcRouting::errorLine(error));
 }
 
 void IrcPanel::onStatusMessage(const QString& message)
 {
-    if (thePrefs.ircIgnoreMiscInfoMessages())
+    // Not behind "Ignore misc. info messages": that option is about kick, mode and
+    // nick lines in a channel (MFC reads it in those three places only).
+    appendToStatus(formatTimestamp() + formatMessage(message));
+}
+
+void IrcPanel::onPingPong()
+{
+    // MFC IrcMain.cpp:155
+    if (!thePrefs.ircIgnorePingPong())
+        appendToStatus(formatTimestamp() + QStringLiteral("Ping? Pong!"));
+}
+
+void IrcPanel::onServerNumeric(int code, const QString& payload)
+{
+    using IrcRouting::NumericRoute;
+    const NumericRoute route = IrcRouting::numericRoute(code);
+    if (route == NumericRoute::Status)
+        return;   // already on the Status tab through statusMessage()
+
+    const IrcChannel* current = activeChannel();
+    const bool chatting = current && (current->type == IrcChannel::Normal || current->type == IrcChannel::Private)
+                       && !current->detached;
+    const QString currentKey = activeChannelName();
+
+    if (route == NumericRoute::Current) {
+        // whois / whowas: where the user asked (MFC AddCurrent)
+        const QString text = code == 317 ? IrcRouting::whoisIdleText(payload) : payload;
+        appendInfo(chatting ? currentKey : m_statusKey, text);
         return;
-    appendToStatus(formatTimestamp() + QStringLiteral(" ") +
-        formatMessage(message));
+    }
+
+    // An error: Status, and once more where the user is reading (MFC AddStatus)
+    const QString line = IrcRouting::errorLine(payload);
+    appendInfo(m_statusKey, line, IrcRouting::LineColor::Notice);
+    if (chatting)
+        appendInfo(currentKey, line, IrcRouting::LineColor::Notice);
+}
+
+QString IrcPanel::messageHtml(const QString& key, const QString& nick, const QString& message) const
+{
+    // MFC CIrcWnd::AddMessage (IrcWnd.cpp:664-682): "<@nick> text", the name in mIRC
+    // colour 10 and bold unless it is our own.
+    const auto it = m_channels.constFind(key);
+    const QString shown = it != m_channels.constEnd() ? it->nicks.decorated(nick) : nick;
+    const bool own = nick.compare(m_irc->currentNick(), Qt::CaseInsensitive) == 0;
+    return formatTimestamp()
+         + QStringLiteral("&lt;<span style=\"color:%1;%2\">%3</span>&gt; %4")
+               .arg(QLatin1StringView(kMircColors[10]),
+                    own ? QString() : QStringLiteral("font-weight:bold;"),
+                    shown.toHtmlEscaped(), formatMessage(message));
+}
+
+void IrcPanel::markActivity(const QString& key)
+{
+    const int idx = findTab(key);
+    if (idx >= 0 && idx != m_tabWidget->currentIndex())
+        m_tabWidget->tabBar()->setTabTextColor(idx, Qt::red);
 }
 
 void IrcPanel::onChannelMessage(const QString& channel, const QString& nick,
@@ -278,70 +340,78 @@ void IrcPanel::onChannelMessage(const QString& channel, const QString& nick,
 {
     const QString key = channel.toLower();
     ensureChannelTab(key);
-
-    const QString html = formatTimestamp() +
-        QStringLiteral(" &lt;<b>%1</b>&gt; %2")
-            .arg(nick.toHtmlEscaped(), formatMessage(message));
-    appendToChannel(key, html);
-
-    // Activity indicator
-    const int idx = findTab(key);
-    if (idx >= 0 && idx != m_tabWidget->currentIndex())
-        m_tabWidget->tabBar()->setTabTextColor(idx, Qt::red);
+    appendToChannel(key, messageHtml(key, nick, message));
+    markActivity(key);
 }
 
 void IrcPanel::onPrivateMessage(const QString& nick, const QString& message)
 {
     const QString key = nick.toLower();
     ensureChannelTab(key, IrcChannel::Private);
-
-    const QString html = formatTimestamp() +
-        QStringLiteral(" &lt;<b>%1</b>&gt; %2")
-            .arg(nick.toHtmlEscaped(), formatMessage(message));
-    appendToChannel(key, html);
-
-    const int idx = findTab(key);
-    if (idx >= 0 && idx != m_tabWidget->currentIndex())
-        m_tabWidget->tabBar()->setTabTextColor(idx, Qt::red);
+    appendToChannel(key, messageHtml(key, nick, message));
+    markActivity(key);
 }
 
 void IrcPanel::onActionReceived(const QString& target, const QString& nick,
                                  const QString& message)
 {
     const QString key = target.toLower();
-    ensureChannelTab(key);
-
-    const QString html = formatTimestamp() +
-        QStringLiteral(" <font color='#9C009C'>* %1 %2</font>")
-            .arg(nick.toHtmlEscaped(), formatMessage(message));
-    appendToChannel(key, html);
+    ensureChannelTab(key, target.startsWith(QLatin1Char('#')) ? IrcChannel::Normal : IrcChannel::Private);
+    appendToChannel(key, formatTimestamp()
+        + QStringLiteral("<span style=\"color:%1;\">* %2 %3</span>")
+              .arg(IrcRouting::colorName(IrcRouting::LineColor::Action), nick.toHtmlEscaped(),
+                   formatMessage(message)));
+    markActivity(key);
 }
 
-void IrcPanel::onNoticeReceived(const QString& source, const QString& /*target*/,
+void IrcPanel::onNoticeReceived(const QString& source, const QString& target,
                                  const QString& message)
 {
-    appendToStatus(formatTimestamp() +
-        QStringLiteral(" <font color='#9C009C'>-%1- %2</font>")
-            .arg(source.toHtmlEscaped(), formatMessage(message)));
+    // MFC CIrcWnd::NoticeMessage (IrcWnd.cpp:913-942)
+    QStringList openTabs;
+    QStringList holdingSource;
+    for (auto it = m_channels.cbegin(); it != m_channels.cend(); ++it) {
+        if (it->type != IrcChannel::Normal && it->type != IrcChannel::Private)
+            continue;
+        openTabs << it->name;
+        if (it->nicks.contains(source))
+            holdingSource << it->name;
+    }
+    const IrcChannel* current = activeChannel();
+    const bool chatting = current && (current->type == IrcChannel::Normal || current->type == IrcChannel::Private)
+                       && !current->detached;
+
+    const IrcRouting::NoticeRoute route = IrcRouting::routeNotice(
+        source, target, message, m_irc->currentNick(), chatting ? current->name : QString(),
+        openTabs, holdingSource);
+    if (route.status)
+        appendInfo(m_statusKey, route.text, IrcRouting::LineColor::Notice);
+    for (const QString& name : route.channels)
+        appendInfo(name.toLower(), route.text, IrcRouting::LineColor::Notice);
 }
 
 void IrcPanel::onUserJoined(const QString& channel, const QString& nick)
 {
     const QString key = channel.toLower();
+    const bool own = nick.compare(m_irc->currentNick(), Qt::CaseInsensitive) == 0;
+
+    if (own) {
+        // Back in a channel we were kicked from or cut off of: start it afresh
+        // (MFC IrcMain.cpp:363-367). NAMES fills the list, ourselves included.
+        if (const auto it = m_channels.constFind(key); it != m_channels.constEnd() && it->detached)
+            removeChannelTab(key);
+        const int idx = ensureChannelTab(key);
+        if (idx >= 0)
+            m_tabWidget->setCurrentIndex(idx);
+        return;
+    }
+
     ensureChannelTab(key);
+    if (auto it = m_channels.find(key); it != m_channels.end())
+        it->nicks.add(nick, m_irc->serverModes());
 
-    auto it = m_channels.find(key);
-    if (it != m_channels.end()) {
-        if (!it->nicks.contains(nick))
-            it->nicks.append(nick);
-    }
-
-    if (!thePrefs.ircIgnoreJoinMessages()) {
-        appendToChannel(key,
-            formatTimestamp() +
-            QStringLiteral(" <font color='#00007F'>* %1 has joined %2</font>")
-                .arg(nick.toHtmlEscaped(), channel.toHtmlEscaped()));
-    }
+    if (!thePrefs.ircIgnoreJoinMessages())
+        appendInfo(key, tr("* %1 has joined %2").arg(nick, channel));
 
     if (activeChannelName() == key)
         updateNickList();
@@ -351,19 +421,17 @@ void IrcPanel::onUserParted(const QString& channel, const QString& nick,
                               const QString& reason)
 {
     const QString key = channel.toLower();
-    auto it = m_channels.find(key);
-    if (it != m_channels.end())
-        it->nicks.removeAll(nick);
-
-    if (!thePrefs.ircIgnorePartMessages()) {
-        QString msg = formatTimestamp() +
-            QStringLiteral(" <font color='#00007F'>* %1 has left %2")
-                .arg(nick.toHtmlEscaped(), channel.toHtmlEscaped());
-        if (!reason.isEmpty())
-            msg += QStringLiteral(" (%1)").arg(reason.toHtmlEscaped());
-        msg += QStringLiteral("</font>");
-        appendToChannel(key, msg);
+    // Our own PART coming back is what closes the tab (MFC IrcMain.cpp:381-384).
+    if (nick.compare(m_irc->currentNick(), Qt::CaseInsensitive) == 0) {
+        removeChannelTab(key);
+        return;
     }
+
+    if (auto it = m_channels.find(key); it != m_channels.end())
+        it->nicks.remove(nick);
+
+    if (!thePrefs.ircIgnorePartMessages())
+        appendInfo(key, tr("* %1 has parted %2 (%3)").arg(nick, channel, reason));
 
     if (activeChannelName() == key)
         updateNickList();
@@ -373,17 +441,8 @@ void IrcPanel::onUserQuit(const QString& nick, const QString& reason)
 {
     // Remove nick from all channels they were in
     for (auto it = m_channels.begin(); it != m_channels.end(); ++it) {
-        if (it->nicks.removeAll(nick) > 0) {
-            if (!thePrefs.ircIgnoreQuitMessages()) {
-                QString msg = formatTimestamp() +
-                    QStringLiteral(" <font color='#00007F'>* %1 has quit")
-                        .arg(nick.toHtmlEscaped());
-                if (!reason.isEmpty())
-                    msg += QStringLiteral(" (%1)").arg(reason.toHtmlEscaped());
-                msg += QStringLiteral("</font>");
-                appendToChannel(it.key(), msg);
-            }
-        }
+        if (it->nicks.remove(nick) && !thePrefs.ircIgnoreQuitMessages())
+            appendInfo(it.key(), tr("* %1 has quit (%2)").arg(nick, reason), IrcRouting::LineColor::Quit);
     }
     updateNickList();
 }
@@ -392,38 +451,62 @@ void IrcPanel::onUserKicked(const QString& channel, const QString& nick,
                               const QString& by, const QString& reason)
 {
     const QString key = channel.toLower();
-    auto it = m_channels.find(key);
-    if (it != m_channels.end())
-        it->nicks.removeAll(nick);
+    const bool own = nick.compare(m_irc->currentNick(), Qt::CaseInsensitive) == 0;
+    const QString line = tr("* %1 was kicked by %2 (%3)").arg(nick, by, reason);
 
-    QString msg = formatTimestamp() +
-        QStringLiteral(" <font color='#00007F'>* %1 was kicked from %2 by %3")
-            .arg(nick.toHtmlEscaped(), channel.toHtmlEscaped(), by.toHtmlEscaped());
-    if (!reason.isEmpty())
-        msg += QStringLiteral(" (%1)").arg(reason.toHtmlEscaped());
-    msg += QStringLiteral("</font>");
-    appendToChannel(key, msg);
+    if (own) {
+        // The tab stays, marked as left, and Status says why (MFC IrcMain.cpp:438-441).
+        appendInfo(key, line);
+        detachChannel(key);
+        appendInfo(m_statusKey, line);
+        updateNickList();
+        return;
+    }
 
-    // If we were kicked, remove the tab
-    if (nick.compare(m_irc->currentNick(), Qt::CaseInsensitive) == 0)
-        removeChannelTab(key);
-    else if (activeChannelName() == key)
+    if (auto it = m_channels.find(key); it != m_channels.end())
+        it->nicks.remove(nick);
+    if (!thePrefs.ircIgnoreMiscInfoMessages())
+        appendInfo(key, line);
+    if (activeChannelName() == key)
         updateNickList();
 }
 
 void IrcPanel::onNickChanged(const QString& oldNick, const QString& newNick)
 {
+    // The server has confirmed our own change: only now is it the nick to keep
+    // (MFC IrcMain.cpp:418-422).
+    if (newNick.compare(m_irc->currentNick(), Qt::CaseInsensitive) == 0)
+        thePrefs.setIrcNick(newNick);
+
     for (auto it = m_channels.begin(); it != m_channels.end(); ++it) {
-        const auto idx = it->nicks.indexOf(oldNick);
-        if (idx >= 0) {
-            it->nicks[idx] = newNick;
-            appendToChannel(it.key(),
-                formatTimestamp() +
-                QStringLiteral(" <font color='#00007F'>* %1 is now known as %2</font>")
-                    .arg(oldNick.toHtmlEscaped(), newNick.toHtmlEscaped()));
-        }
+        if (it->nicks.rename(oldNick, newNick) && !thePrefs.ircIgnoreMiscInfoMessages())
+            appendInfo(it.key(), tr("* %1 is now known as %2").arg(oldNick, newNick));
     }
     updateNickList();
+}
+
+void IrcPanel::onModeChanged(const QString& target, const QString& nick,
+                              const QString& modes, const QString& params)
+{
+    // MFC CIrcWnd::ParseChangeMode (IrcWnd.cpp:1039-1097). A reply to our own MODE
+    // query (324) names nobody and changes nothing.
+    if (nick.isEmpty() || !target.startsWith(QLatin1Char('#')))
+        return;
+    const QString key = target.toLower();
+    auto it = m_channels.find(key);
+    if (it == m_channels.end())
+        return;
+
+    const auto changes = parseModeChange(modes, params.split(QLatin1Char(' '), Qt::SkipEmptyParts),
+                                         m_irc->serverModes());
+    for (const IrcModeChange& change : changes) {
+        if (change.userMode)
+            it->nicks.changeMode(change.param, change.mode, change.on, m_irc->serverModes());
+    }
+    if (!thePrefs.ircIgnoreMiscInfoMessages())
+        appendInfo(key, tr("* %1 sets mode: %2 %3").arg(nick, modes, params));
+    if (activeChannelName() == key)
+        updateNickList();
 }
 
 void IrcPanel::onTopicChanged(const QString& channel, const QString& nick,
@@ -431,49 +514,29 @@ void IrcPanel::onTopicChanged(const QString& channel, const QString& nick,
 {
     const QString key = channel.toLower();
     auto it = m_channels.find(key);
-    if (it != m_channels.end())
+    if (it != m_channels.end()) {
         it->topic = topic;
-
-    QString msg = formatTimestamp();
-    if (nick.isEmpty()) {
-        msg += QStringLiteral(" <font color='#00007F'>* Channel Topic: %1</font>")
-                   .arg(formatMessage(topic));
-    } else {
-        msg += QStringLiteral(" <font color='#00007F'>* %1 changed the topic to: %2</font>")
-                   .arg(nick.toHtmlEscaped(), formatMessage(topic));
+        if (it->topicView)
+            it->topicView->setHtml(formatMessage(topic));
     }
-    appendToChannel(key, msg);
+
+    appendInfo(key, nick.isEmpty() ? tr("* Channel Topic: %1").arg(topic)
+                                   : tr("* %1 changes topic to '%2'").arg(nick, topic));
 }
 
 void IrcPanel::onNamesReceived(const QString& channel, const QStringList& nicks)
 {
     const QString key = channel.toLower();
     auto it = m_channels.find(key);
-    if (it != m_channels.end())
-        it->nicks.append(nicks);
+    if (it == m_channels.end())
+        return;
+    for (const QString& nick : nicks)
+        it->nicks.add(nick, m_irc->serverModes());
 }
 
 void IrcPanel::onNamesFinished(const QString& channel)
 {
-    const QString key = channel.toLower();
-    auto it = m_channels.find(key);
-    if (it == m_channels.end())
-        return;
-
-    // Sort: ops (@) first, voiced (+) second, rest alphabetical
-    std::sort(it->nicks.begin(), it->nicks.end(), [](const QString& a, const QString& b) {
-        const bool aOp = a.startsWith(QLatin1Char('@'));
-        const bool bOp = b.startsWith(QLatin1Char('@'));
-        if (aOp != bOp)
-            return aOp;
-        const bool aVoice = a.startsWith(QLatin1Char('+'));
-        const bool bVoice = b.startsWith(QLatin1Char('+'));
-        if (aVoice != bVoice)
-            return aVoice;
-        return a.compare(b, Qt::CaseInsensitive) < 0;
-    });
-
-    if (activeChannelName() == key)
+    if (activeChannelName() == channel.toLower())
         updateNickList();
 }
 
@@ -483,25 +546,19 @@ void IrcPanel::onChannelListed(const QString& channel, int userCount,
     if (!m_channelListWidget)
         return;
 
-    // Apply channel list filter if enabled
-    if (thePrefs.ircUseChannelFilter()) {
-        const QString filter = thePrefs.ircChannelFilter();
-        const auto parts = filter.split(QLatin1Char('|'));
-        const QString nameFilter = parts.value(0);
-        const int minUsers = parts.value(1).toInt();
-        if (!nameFilter.isEmpty() && !channel.contains(nameFilter, Qt::CaseInsensitive))
-            return;
-        if (userCount < minUsers)
-            return;
-    }
+    // The server was given the name; only the user minimum is checked here
+    // (MFC IrcChannelListCtrl.cpp:196).
+    if (thePrefs.ircUseChannelFilter()
+        && userCount < thePrefs.ircChannelFilter().section(QLatin1Char('|'), 1, 1).toInt())
+        return;
 
     auto* item = new SortableTreeItem(m_channelListWidget);
     item->setText(0, channel);
     item->setText(1, QString::number(userCount));
-    // The whole point of this list is "busiest first" (see the sortByColumn in
-    // onChannelListFinished), and as text 950 outranks 10000.
+    // "busiest first" is the point of this list, and as text 950 outranks 10000.
     item->setData(1, SortRole, userCount);
-    item->setText(2, topic);
+    item->setTextAlignment(1, Qt::AlignRight | Qt::AlignVCenter);
+    item->setText(2, IrcRouting::stripMircCodes(topic));   // IrcChannelListCtrl.cpp:199
     item->setIcon(0, QIcon(QStringLiteral(":/icons/IRC.ico")));
     item->setData(0, Qt::UserRole, channel);
 }
@@ -516,20 +573,20 @@ void IrcPanel::onChannelListStarted()
 void IrcPanel::onChannelListFinished()
 {
     m_channelListPending = false;
-    if (m_channelListWidget) {
+    // The user's own sort and widths win; only a list never arranged starts busiest first.
+    if (m_channelListWidget && !theUiState.hasHeaderState(QStringLiteral("ircChannelList")))
         m_channelListWidget->sortByColumn(1, Qt::DescendingOrder);
-        m_channelListWidget->resizeColumnToContents(0);
-        m_channelListWidget->resizeColumnToContents(1);
-    }
 }
 
 void IrcPanel::onNickInUse(const QString& nick)
 {
-    appendToStatus(formatTimestamp() +
-        QStringLiteral(" <font color='#FF0000'>Nick <b>%1</b> is already in use. "
-                        "Try a different nick.</font>")
-            .arg(nick.toHtmlEscaped()));
+    // A /nick that collided while logged in: the error line (onServerNumeric) says it,
+    // nothing else happens — as MFC (IrcMain.cpp:572-581).
+    if (m_irc->isLoggedIn())
+        return;
 
+    // At login the port asks for another nick right away instead of disconnecting
+    // and asking on the next Connect — deliberate, 2026-10.
     bool ok = false;
     QString newNick = QInputDialog::getText(
         this, tr("Nick in use"),
@@ -542,6 +599,39 @@ void IrcPanel::onNickInUse(const QString& nick)
             thePrefs.setIrcNick(newNick);
             m_irc->changeNick(newNick);
         }
+    }
+}
+
+void IrcPanel::onSoundReceived(const QString& target, const QString& nick, const QString& params)
+{
+    // MFC IrcMain.cpp:214-234
+    if (!thePrefs.ircPlaySoundEvents())
+        return;
+    const QString file = IrcRouting::soundFileName(params);
+    if (file.isEmpty())
+        return;
+    const QString message = params.section(QLatin1Char(' '), 1).remove(QChar(char16_t(1)));
+    const QString key = (target.startsWith(QLatin1Char('#')) ? target : nick).toLower();
+    appendInfo(key, QStringLiteral("* %1 %2").arg(nick, message.isEmpty() ? QStringLiteral("[SOUND]") : message));
+    playIrcSound(file);
+}
+
+void IrcPanel::playIrcSound(const QString& fileName)
+{
+    // MFC plays <exe dir>\Sounds\IRC\<name>; the config dir is looked at as well, so
+    // a user can add sounds without touching the installation.
+    for (const QString& base : {QCoreApplication::applicationDirPath(), thePrefs.configDir()}) {
+        const QString path = QDir(base).filePath(QStringLiteral("Sounds/IRC/") + fileName);
+        if (!QFile::exists(path))
+            continue;
+        if (!m_soundOutput) {
+            m_soundOutput = new QAudioOutput(this);
+            m_soundPlayer = new QMediaPlayer(this);
+            m_soundPlayer->setAudioOutput(m_soundOutput);
+        }
+        m_soundPlayer->setSource(QUrl::fromLocalFile(path));
+        m_soundPlayer->play();
+        return;
     }
 }
 
@@ -628,6 +718,7 @@ void IrcPanel::setupUi()
     statusCh.name = QStringLiteral("Status");
     statusCh.type = IrcChannel::Status;
     statusCh.widget = m_statusBrowser;
+    statusCh.log = m_statusBrowser;
     m_channels[m_statusKey] = statusCh;
 
     m_tabWidget->addTab(m_statusBrowser, QIcon(QStringLiteral(":/icons/IRC.ico")),
@@ -795,6 +886,10 @@ void IrcPanel::connectIrcSignals()
     connect(m_irc, &IrcClient::channelListFinished, this, &IrcPanel::onChannelListFinished);
 
     connect(m_irc, &IrcClient::nickInUse, this, &IrcPanel::onNickInUse);
+    connect(m_irc, &IrcClient::modeChanged, this, &IrcPanel::onModeChanged);
+    connect(m_irc, &IrcClient::serverNumeric, this, &IrcPanel::onServerNumeric);
+    connect(m_irc, &IrcClient::pingPong, this, &IrcPanel::onPingPong);
+    connect(m_irc, &IrcClient::soundReceived, this, &IrcPanel::onSoundReceived);
     connect(m_irc, &IrcClient::emuleProtoReceived, this, &IrcPanel::onEmuleProto);
     connect(m_irc, &IrcClient::loggedIn, this, [this] { emit ircConnectionChanged(true); });
     connect(m_irc, &IrcClient::disconnected, this, [this] { emit ircConnectionChanged(false); });
@@ -806,19 +901,9 @@ void IrcPanel::connectIrcSignals()
 
 int IrcPanel::findTab(const QString& name) const
 {
-    for (int i = 0; i < m_tabWidget->count(); ++i) {
-        const QString tabKey = m_tabWidget->tabText(i).toLower();
-        if (tabKey == name)
-            return i;
-    }
-
-    // Also check by widget pointer
-    auto it = m_channels.constFind(name);
-    if (it != m_channels.constEnd() && it->widget) {
-        return m_tabWidget->indexOf(it->widget);
-    }
-
-    return -1;
+    // By widget, never by tab text: a detached channel's tab reads "(#name)".
+    const auto it = m_channels.constFind(name.toLower());
+    return it != m_channels.constEnd() && it->widget ? m_tabWidget->indexOf(it->widget) : -1;
 }
 
 int IrcPanel::ensureChannelTab(const QString& name, IrcChannel::Type type)
@@ -878,17 +963,56 @@ int IrcPanel::ensureChannelTab(const QString& name, IrcChannel::Type type)
                               [this](const QString& link) { emit linkActivated(link); });
     if (!m_customFont.family().isEmpty())
         browser->setFont(m_customFont);
+    ch.log = browser;
     ch.widget = browser;
 
-    QString tabLabel = name;
-    if (tabLabel.startsWith(QLatin1Char('#')))
-        tabLabel = name; // keep as-is for channels
+    if (type == IrcChannel::Normal) {
+        // A channel has its topic above the log, behind a splitter
+        // (MFC IrcChannelTabCtrl.cpp:186-230; 18 px by default, up to 108).
+        // Theme colours rather than MFC's white on black — deliberate, 2026-10.
+        auto* topic = new LogTextView(this);
+        topic->setReadOnly(true);
+        topic->setObjectName(QStringLiteral("ircTopic"));
+        topic->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        topic->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        topic->setMinimumHeight(18);
+        topic->setMaximumHeight(108);
+        TextLinks::wireLinkClicks(topic, this,
+                                  [this](const QString& link) { emit linkActivated(link); });
+        if (!m_customFont.family().isEmpty())
+            topic->setFont(m_customFont);
 
-    const int idx = m_tabWidget->addTab(browser,
-        QIcon(QStringLiteral(":/icons/IRC.ico")), tabLabel);
+        auto* split = new QSplitter(Qt::Vertical, this);
+        split->addWidget(topic);
+        split->addWidget(browser);
+        split->setStretchFactor(0, 0);
+        split->setStretchFactor(1, 1);
+        split->setSizes({topic->fontMetrics().height() + 8, 400});
+        split->setChildrenCollapsible(false);
+        ch.topicView = topic;
+        ch.widget = split;
+    }
+
+    const int idx = m_tabWidget->addTab(ch.widget,
+        QIcon(QStringLiteral(":/icons/IRC.ico")), name);
 
     m_channels[key] = ch;
     return idx;
+}
+
+void IrcPanel::detachChannel(const QString& key)
+{
+    // MFC CIrcChannelTabCtrl::DetachChannel (IrcChannelTabCtrl.cpp:300-317): the tab
+    // stays to be read, titled "(#name)", with nobody in it.
+    auto it = m_channels.find(key.toLower());
+    if (it == m_channels.end() || it->detached
+        || (it->type != IrcChannel::Normal && it->type != IrcChannel::Private))
+        return;
+    it->detached = true;
+    it->nicks.clear();
+    const int idx = findTab(key);
+    if (idx >= 0)
+        m_tabWidget->setTabText(idx, QStringLiteral("(%1)").arg(it->name));
 }
 
 void IrcPanel::removeChannelTab(const QString& name)
@@ -956,9 +1080,8 @@ void IrcPanel::appendToChannel(const QString& channel, const QString& html)
     if (it == m_channels.end())
         return;
 
-    auto* browser = qobject_cast<QTextBrowser*>(it->widget);
-    if (browser)
-        browser->append(html);
+    if (it->log)
+        it->log->append(html);
 }
 
 void IrcPanel::appendToStatus(const QString& html)
@@ -967,12 +1090,25 @@ void IrcPanel::appendToStatus(const QString& html)
         m_statusBrowser->append(html);
 }
 
+void IrcPanel::appendInfo(const QString& key, const QString& text, IrcRouting::LineColor color)
+{
+    // MFC CIrcWnd::AddInfoMessage (IrcWnd.cpp:596-610): the line's first character
+    // picks the colour unless the caller names one.
+    if (color == IrcRouting::LineColor::Default)
+        color = IrcRouting::infoLineColor(text);
+    const QString name = IrcRouting::colorName(color);
+    const QString body = formatMessage(text);
+    appendToChannel(key, formatTimestamp()
+        + (name.isEmpty() ? body : QStringLiteral("<span style=\"color:%1;\">%2</span>").arg(name, body)));
+    markActivity(key);
+}
+
 QString IrcPanel::formatTimestamp() const
 {
+    // In the text's own colour, as MFC (IrcWnd.cpp:44-52)
     if (!thePrefs.ircAddTimestamp())
         return {};
-    return QStringLiteral("<font color='gray'>[%1]</font>")
-        .arg(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss")));
+    return QStringLiteral("[%1] ").arg(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss")));
 }
 
 QString MircFormat::close()
@@ -1102,6 +1238,8 @@ QString IrcPanel::formatMessage(const QString& text) const
     // placeholders — matched afterwards, ">_>" was already "&gt;_&gt;".
     MircFormat fmt;
     QString html = TextLinks::linkify(text, [this, &fmt](const QString& segment) {
+        if (!thePrefs.ircShowSmileys())
+            return renderMircCodes(segment, fmt);
         return Smileys::expand(renderMircCodes(Smileys::protect(segment), fmt));
     });
     return html + fmt.close();
@@ -1123,15 +1261,12 @@ void IrcPanel::updateNickList()
     }
 
     m_nickLabel->setText(tr("Nick (%1)").arg(it->nicks.size()));
-    m_nickModel->setStringList(it->nicks);
+    m_nickModel->setStringList(it->nicks.display());
 }
 
 QString IrcPanel::selectedNick() const
 {
-    QString nick = m_nickListView->currentIndex().data().toString();
-    while (!nick.isEmpty() && QStringLiteral("@+%&~!").contains(nick.front()))
-        nick.remove(0, 1);
-    return nick;
+    return IrcNickList::bare(m_nickListView->currentIndex().data().toString(), m_irc->serverModes());
 }
 
 // MFC CIrcNickListCtrl::OpenPrivateChannel (IrcNickListCtrl.cpp:114-122)
@@ -1143,8 +1278,7 @@ void IrcPanel::openPrivateChannel(const QString& nick)
     const bool isNew = findTab(key) < 0;
     const int idx = ensureChannelTab(key, IrcChannel::Private);
     if (isNew) {
-        appendToChannel(key, formatTimestamp() + QStringLiteral(" <font color='#7F7F7F'>%1</font>")
-                                 .arg(tr("* Private chat session started").toHtmlEscaped()));
+        appendInfo(key, tr("* Private chat session started"));
     }
     if (idx >= 0)
         m_tabWidget->setCurrentIndex(idx);
@@ -1354,90 +1488,33 @@ void IrcPanel::answerFriendRequest(const QString& nick, const QString& verify)
 
 void IrcPanel::processInput(const QString& text)
 {
-    if (text.startsWith(QLatin1Char('/'))) {
-        const auto spaceIdx = text.indexOf(QLatin1Char(' '));
-        const QString cmd = (spaceIdx >= 0) ? text.mid(1, spaceIdx - 1) : text.mid(1);
-        const QString args = (spaceIdx >= 0) ? text.mid(spaceIdx + 1) : QString();
-        handleSlashCommand(cmd.toLower(), args);
+    // MFC CIrcChannelTabCtrl::ChatSend (IrcChannelTabCtrl.cpp:531-628)
+    if (!m_irc->isConnected())
         return;
+
+    const IrcChannel* ch = activeChannel();
+    IrcRouting::InputContext ctx;
+    ctx.ownNick = m_irc->currentNick();
+    if (ch && (ch->type == IrcChannel::Normal || ch->type == IrcChannel::Private)) {
+        ctx.tabName = ch->name;
+        ctx.isChannel = ch->type == IrcChannel::Normal;
+        ctx.live = !ch->detached;
     }
 
-    // Plain text — send to active channel
-    const QString key = activeChannelName();
-    if (key.isEmpty() || key == m_statusKey || !m_irc->isConnected())
-        return;
+    const IrcRouting::InputResult result = IrcRouting::interpretInput(text, ctx);
+    for (const QString& line : result.raw)
+        m_irc->sendRaw(line);
 
-    auto it = m_channels.find(key);
-    if (it == m_channels.end())
-        return;
-
-    m_irc->sendMessage(it->name, text);
-
-    // Echo locally
-    const QString html = formatTimestamp() +
-        QStringLiteral(" &lt;<b>%1</b>&gt; %2")
-            .arg(m_irc->currentNick().toHtmlEscaped(), formatMessage(text));
-    appendToChannel(key, html);
-}
-
-void IrcPanel::handleSlashCommand(const QString& cmd, const QString& args)
-{
-    if (cmd == QLatin1StringView("join")) {
-        if (!args.isEmpty() && m_irc->isConnected()) {
-            const auto spaceIdx = args.indexOf(QLatin1Char(' '));
-            const QString channel = (spaceIdx >= 0) ? args.left(spaceIdx) : args;
-            const QString key = (spaceIdx >= 0) ? args.mid(spaceIdx + 1) : QString();
-            m_irc->joinChannel(channel, key);
-        }
-    } else if (cmd == QLatin1StringView("part") || cmd == QLatin1StringView("leave")) {
-        if (m_irc->isConnected()) {
-            QString channel = args.trimmed();
-            if (channel.isEmpty()) {
-                auto* ch = activeChannel();
-                if (ch && ch->type == IrcChannel::Normal)
-                    channel = ch->name;
-            }
-            if (!channel.isEmpty())
-                m_irc->partChannel(channel);
-        }
-    } else if (cmd == QLatin1StringView("msg") || cmd == QLatin1StringView("privmsg")) {
-        const auto spaceIdx = args.indexOf(QLatin1Char(' '));
-        if (spaceIdx > 0 && m_irc->isConnected()) {
-            const QString target = args.left(spaceIdx);
-            const QString msg = args.mid(spaceIdx + 1);
-            m_irc->sendMessage(target, msg);
-            // Echo to status
-            appendToStatus(formatTimestamp() +
-                QStringLiteral(" -> <b>%1</b>: %2")
-                    .arg(target.toHtmlEscaped(), formatMessage(msg)));
-        }
-    } else if (cmd == QLatin1StringView("me")) {
-        auto* ch = activeChannel();
-        if (ch && m_irc->isConnected()) {
-            m_irc->sendCtcp(ch->name, QStringLiteral("ACTION"), args);
-            appendToChannel(ch->name.toLower(),
-                formatTimestamp() +
-                QStringLiteral(" <font color='#9C009C'>* %1 %2</font>")
-                    .arg(m_irc->currentNick().toHtmlEscaped(), formatMessage(args)));
-        }
-    } else if (cmd == QLatin1StringView("nick")) {
-        if (!args.isEmpty() && m_irc->isConnected()) {
-            thePrefs.setIrcNick(args.trimmed());
-            m_irc->changeNick(args.trimmed());
-        }
-    } else if (cmd == QLatin1StringView("topic")) {
-        auto* ch = activeChannel();
-        if (ch && m_irc->isConnected())
-            m_irc->sendRaw(QStringLiteral("TOPIC %1 :%2").arg(ch->name, args));
-    } else if (cmd == QLatin1StringView("list")) {
-        if (m_irc->isConnected())
-            m_irc->requestChannelList(args.trimmed());
-    } else {
-        // Unknown command — send as raw
-        if (m_irc->isConnected())
-            m_irc->sendRaw(cmd.toUpper() + (args.isEmpty() ? QString() :
-                QStringLiteral(" %1").arg(args)));
+    const QString key = result.echoTo == IrcRouting::InputResult::Echo::Tab ? activeChannelName()
+                                                                             : m_statusKey;
+    if (result.echoTo != IrcRouting::InputResult::Echo::None) {
+        if (result.ownMessage)
+            appendToChannel(key, messageHtml(key, ctx.ownNick, result.echo));
+        else
+            appendInfo(key, result.echo, result.echoColor);
     }
+    if (!result.sound.isEmpty())
+        playIrcSound(result.sound);
 }
 
 void IrcPanel::addToHistory(const QString& text)
@@ -1473,9 +1550,8 @@ void IrcPanel::autoCompleteNick()
     // Next nick after prev in case-insensitive order, wrapping to the first.
     QString first;
     QString next;
-    for (QString nick : std::as_const(ch->nicks)) {
-        while (!nick.isEmpty() && QStringLiteral("@+%&~").contains(nick.front()))
-            nick.remove(0, 1);   // mode prefix
+    const QStringList nicks = ch->nicks.bareNicks();
+    for (const QString& nick : nicks) {
         if (!nick.startsWith(word, Qt::CaseInsensitive))
             continue;
         if (first.isEmpty() || first.compare(nick, Qt::CaseInsensitive) > 0)

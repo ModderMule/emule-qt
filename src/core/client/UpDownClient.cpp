@@ -540,6 +540,7 @@ void UpDownClient::setDownloadState(DownloadState state)
             if (isEmuleClient())
                 setRemoteQueueFull(false);
             setRemoteQueueRank(0);
+            m_askedCountDown = 0;
         }
 
         // MFC: record reask baseline on NNP entry so doubled reask timing works

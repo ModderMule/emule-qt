@@ -9,14 +9,26 @@
 
 namespace eMule {
 
-PasteLinksDialog::PasteLinksDialog(IpcClient* ipc, QWidget* parent)
-    : PasteTextDialog(
-          Chrome{tr("Paste eD2K Links"),
-                 QStringLiteral(":/icons/eD2kLinkPaste.ico"),
-                 tr("eD2K Links:"),
-                 tr("Paste one or more ed2k:// links here, one per line..."),
-                 tr("Download")},
-          parent)
+namespace {
+
+PasteTextDialog::Chrome pasteLinksChrome(const QStringList& categories)
+{
+    PasteTextDialog::Chrome chrome{PasteLinksDialog::tr("Paste eD2K Links"),
+                                   QStringLiteral(":/icons/eD2kLinkPaste.ico"),
+                                   PasteLinksDialog::tr("eD2K Links:"),
+                                   PasteLinksDialog::tr("Paste one or more ed2k:// links here, one per line..."),
+                                   PasteLinksDialog::tr("Download")};
+    if (categories.size() > 1) {
+        chrome.queueCategories = categories;
+        chrome.categoryOnly = true;
+    }
+    return chrome;
+}
+
+} // namespace
+
+PasteLinksDialog::PasteLinksDialog(IpcClient* ipc, const QStringList& categories, QWidget* parent)
+    : PasteTextDialog(pasteLinksChrome(categories), parent)
     , m_ipc(ipc)
 {
 }
@@ -55,7 +67,8 @@ void PasteLinksDialog::onAccepted()
             // box reads as though the paste failed.
             if (result.added > 0 || result.httpCacheConfigs > 0)
                 self->accept();
-        });
+        },
+        {}, queueCategory());
 }
 
 } // namespace eMule

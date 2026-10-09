@@ -519,6 +519,8 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
     // Was this our live connection? Read up front: destroySocket() at the tail of
     // this function clears m_connectedSocket and m_connected.
     const bool lostLiveConnection = m_connected && sender == m_connectedSocket;
+    const Server* lostServer = lostLiveConnection ? currentServer() : nullptr;
+    const QString lostServerName = lostServer ? lostServer->name() : QString();
 
     const Server* cserver = sender->currentServer();
     Server* listServer = cserver ? listEntryFor(cserver) : nullptr;
@@ -653,6 +655,7 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
     if (lostLiveConnection) {
         clearServerIdentity();
         emit disconnectedFromServer();
+        emit connectionLost(lostServerName);
     }
 
     emit stateChanged();

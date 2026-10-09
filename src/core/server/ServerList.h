@@ -29,6 +29,10 @@ struct ServerListStats {
     uint32 users = 0;
     uint32 files = 0;
     uint32 lowIDUsers = 0;
+    uint32 totalUsers = 0;      ///< all servers, failed ones included
+    uint32 totalFiles = 0;
+    float occupation = 0.0f;    ///< % of the user limit, servers with a known limit only
+    uint32 deleted = 0;         ///< servers removed this session
 };
 
 class ServerList : public QObject {
@@ -228,6 +232,7 @@ private:
     size_t m_serverPos = 0;
     size_t m_searchServerPos = 0;
     size_t m_statServerPos = 0;
+    uint32 m_deletedServerCount = 0;
     uint32 m_lastServerMetSave = 0;   ///< epoch-secs of last periodic save (#28)
 
     [[nodiscard]] bool isDuplicate(const Server& server) const;

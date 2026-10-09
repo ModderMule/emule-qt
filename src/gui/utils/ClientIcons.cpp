@@ -4,6 +4,7 @@
 
 #include "utils/ClientIcons.h"
 
+#include <QGuiApplication>
 #include <QHash>
 #include <QPainter>
 #include <QPixmap>
@@ -93,6 +94,59 @@ QIcon clientSoftwareIcon(int softwareId, bool hasCredit, bool isFriend)
     QIcon composite(pixmap);
     cache.insert(key, composite);
     return composite;
+}
+
+SourceStateIcon sourceStateIconKind(const QString& stateToken, bool remoteQueueFull, bool a4af)
+{
+    if (a4af)
+        return SourceStateIcon::NoNeededOrFull;
+    if (stateToken == QLatin1String("Connected") || stateToken == QLatin1String("Connecting")
+        || stateToken == QLatin1String("WaitCallback") || stateToken == QLatin1String("WaitCallbackKad")
+        || stateToken == QLatin1String("TooManyConns") || stateToken == QLatin1String("TooManyConnsKad"))
+        return SourceStateIcon::Connecting;
+    if (stateToken == QLatin1String("OnQueue"))
+        return remoteQueueFull ? SourceStateIcon::NoNeededOrFull : SourceStateIcon::OnQueue;
+    if (stateToken == QLatin1String("Downloading") || stateToken == QLatin1String("ReqHashSet"))
+        return SourceStateIcon::Downloading;
+    if (stateToken == QLatin1String("NoNeededParts") || stateToken == QLatin1String("Error"))
+        return SourceStateIcon::NoNeededOrFull;
+    return SourceStateIcon::Unknown;
+}
+
+QIcon sourceStateIcon(SourceStateIcon kind)
+{
+    // emule.rc:1409-1413: SrcDownloading Client0, SrcConnecting Client1, SrcOnQueue
+    // Client2, SrcNNPQF Client3, SrcUnknown Client4
+    static const QIcon icons[] = {
+        QIcon(QStringLiteral(":/icons/Client0.ico")), QIcon(QStringLiteral(":/icons/Client2.ico")),
+        QIcon(QStringLiteral(":/icons/Client1.ico")), QIcon(QStringLiteral(":/icons/Client3.ico")),
+        QIcon(QStringLiteral(":/icons/Client4.ico"))};
+    return icons[static_cast<int>(kind)];
+}
+
+QIcon iconPair(const QIcon& first, const QIcon& second)
+{
+    static QHash<QString, QIcon> cache;
+    const QString key = QStringLiteral("%1/%2").arg(first.cacheKey()).arg(second.cacheKey());
+    if (const auto it = cache.constFind(key); it != cache.cend())
+        return *it;
+
+    constexpr int kSize = 16;
+    constexpr int kStep = 20;
+    const qreal dpr = qApp ? qApp->devicePixelRatio() : 1.0;
+    QPixmap pm(qRound((kStep + kSize) * dpr), qRound(kSize * dpr));
+    pm.setDevicePixelRatio(dpr);
+    pm.fill(Qt::transparent);
+    {
+        QPainter p(&pm);
+        first.paint(&p, QRect(0, 0, kSize, kSize));
+        second.paint(&p, QRect(kStep, 0, kSize, kSize));
+    }
+    QIcon icon(pm);
+    if (cache.size() > 500)
+        cache.clear();
+    cache.insert(key, icon);
+    return icon;
 }
 
 } // namespace eMule

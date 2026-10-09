@@ -8,6 +8,8 @@
 ///   - Right: Tabbed area with Status, Channels, and dynamic channel tabs
 ///   - Bottom: Connect/Close buttons, format toolbar, input field, Send button
 
+#include "chat/IrcNickList.h"
+#include "chat/IrcRouting.h"
 #include "utils/InputHistory.h"
 
 #include <QFont>
@@ -17,7 +19,9 @@
 #include <QVector>
 #include <QWidget>
 
+class QAudioOutput;
 class QLabel;
+class QMediaPlayer;
 class QLineEdit;
 class QListView;
 class QPushButton;
@@ -56,9 +60,14 @@ struct IrcChannel {
     enum Type { Status, ChannelList, Normal, Private };
 
     QString name;
-    QStringList nicks;
+    IrcNickList nicks;
     QString topic;
-    QWidget* widget = nullptr;   ///< QTextBrowser or QTreeWidget in the tab
+    QWidget* widget = nullptr;   ///< what the tab holds: the log, a topic/log splitter, or the list
+    QTextBrowser* log = nullptr;        ///< where lines go; null for the channel list
+    QTextBrowser* topicView = nullptr;  ///< the topic pane of a channel
+    /// We are no longer in it — kicked or disconnected. The tab stays to be read,
+    /// titled "(#name)" (MFC m_bDetached).
+    bool detached = false;
     InputHistory history;        ///< Up/Down recall (IrcWnd.cpp:458)
     QString typed;               ///< Tab completion: what the user typed (MFC m_sTyped)
     QString tabbed;              ///< Tab completion: last completed input (MFC m_sTabd)
@@ -136,6 +145,11 @@ private slots:
     void onChannelListStarted();
     void onChannelListFinished();
     void onNickInUse(const QString& nick);
+    void onModeChanged(const QString& target, const QString& nick,
+                       const QString& modes, const QString& params);
+    void onServerNumeric(int code, const QString& payload);
+    void onPingPong();
+    void onSoundReceived(const QString& target, const QString& nick, const QString& params);
     void onEmuleProto(const QString& nick, const QString& body);
     void onNickContextMenu(const QPoint& pos);
 
@@ -147,6 +161,10 @@ private:
     int findTab(const QString& name) const;
     int ensureChannelTab(const QString& name, IrcChannel::Type type = IrcChannel::Normal);
     void removeChannelTab(const QString& name);
+    /// Keep the tab but mark it left: "(#name)", empty nick list.
+    void detachChannel(const QString& key);
+    /// The Close button and a tab's own close box.
+    void closeChannel(const QString& key);
     void removeAllChannelTabs();
     [[nodiscard]] QString activeChannelName() const;
     IrcChannel* activeChannel();
@@ -154,6 +172,14 @@ private:
     // Display helpers
     void appendToChannel(const QString& channel, const QString& html);
     void appendToStatus(const QString& html);
+    /// An event line ("* nick has joined", "-nick- notice"); coloured by its first
+    /// character unless @p color says otherwise.
+    void appendInfo(const QString& key, const QString& text,
+                    IrcRouting::LineColor color = IrcRouting::LineColor::Default);
+    /// "<@nick> text" for a channel or private chat.
+    [[nodiscard]] QString messageHtml(const QString& key, const QString& nick, const QString& message) const;
+    void markActivity(const QString& key);
+    void playIrcSound(const QString& fileName);
     [[nodiscard]] QString formatTimestamp() const;
     [[nodiscard]] QString renderMircCodes(QStringView text, MircFormat& fmt) const;
     [[nodiscard]] QString formatMessage(const QString& text) const;
@@ -173,7 +199,6 @@ private:
 
     // Input processing
     void processInput(const QString& text);
-    void handleSlashCommand(const QString& cmd, const QString& args);
     void addToHistory(const QString& text);
     /// Tab: complete the last word to the next matching nick (IrcChannelTabCtrl.cpp:84).
     void autoCompleteNick();
@@ -218,6 +243,10 @@ private:
     // Channel list accumulator
     QTreeWidget* m_channelListWidget = nullptr;
     bool m_channelListPending = false;
+
+    // CTCP SOUND playback, created on first use
+    QMediaPlayer* m_soundPlayer = nullptr;
+    QAudioOutput* m_soundOutput = nullptr;
 };
 
 } // namespace eMule

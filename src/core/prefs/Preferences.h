@@ -679,6 +679,8 @@ public:
     void setCumConnMaxLimitReached(uint32 val);
     [[nodiscard]] uint32 cumConnReconnects() const;
     void setCumConnReconnects(uint32 val);
+    [[nodiscard]] uint32 cumConnAvgConnections() const;
+    void setCumConnAvgConnections(uint32 val);
 
     // Cumulative times
     [[nodiscard]] uint64 cumRunTime() const;
@@ -1201,6 +1203,15 @@ public:
 
     [[nodiscard]] bool ircEnableUTF8() const;
     void setIrcEnableUTF8(bool val);
+    /// Off: the Status tab shows "Ping? Pong!" for every server ping, as MFC.
+    [[nodiscard]] bool ircIgnorePingPong() const;
+    void setIrcIgnorePingPong(bool val);
+    /// Smileys in IRC text; separate from the Messages page's switch, as in MFC.
+    [[nodiscard]] bool ircShowSmileys() const;
+    void setIrcShowSmileys(bool val);
+    /// CTCP SOUND: play the named file from the sounds folder.
+    [[nodiscard]] bool ircPlaySoundEvents() const;
+    void setIrcPlaySoundEvents(bool val);
 
     [[nodiscard]] bool ircUsePerform() const;
     void setIrcUsePerform(bool val);
@@ -1642,8 +1653,9 @@ public:
     void setNotifyEmailSmtpPort(uint16 val);
     [[nodiscard]] int notifyEmailSmtpAuth() const;
     void setNotifyEmailSmtpAuth(int val);
-    [[nodiscard]] bool notifyEmailSmtpTls() const;
-    void setNotifyEmailSmtpTls(bool val);
+    /// SmtpSecurity: 0 none, 1 SSL/TLS, 2 STARTTLS.
+    [[nodiscard]] int notifyEmailSmtpSecurity() const;
+    void setNotifyEmailSmtpSecurity(int val);
     [[nodiscard]] QString notifyEmailSmtpUser() const;
     void setNotifyEmailSmtpUser(const QString& val);
     [[nodiscard]] QString notifyEmailSmtpPassword() const;

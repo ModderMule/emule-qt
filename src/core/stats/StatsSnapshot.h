@@ -48,6 +48,20 @@ struct ClientSoftStat {
 };
 
 /// Every value the statistics tree displays, read at one instant.
+/// The per-client tallies of MFC CClientList::GetStatistics beyond software and
+/// LowID (ClientList.cpp:112-144).
+struct ClientListCensus {
+    qint64 identOk = 0;         ///< stats[12]
+    qint64 identFailed = 0;     ///< stats[13]: failed, needed or bad guy
+    qint64 problematic = 0;     ///< stats[6]: download state Error
+    qint64 portDefault = 0;     ///< stats[8]: user port 4662
+    qint64 portOther = 0;       ///< stats[9]
+    qint64 netEd2k = 0;         ///< stats[15]
+    qint64 netKad = 0;          ///< stats[16]
+    qint64 netBoth = 0;         ///< stats[17]
+    qint64 netUnknown = 0;      ///< stats[18]
+};
+
 struct StatsSnapshot {
     // --- Session bytes & uptime ---
     qint64 sessionSentBytes = 0;
@@ -120,6 +134,7 @@ struct StatsSnapshot {
     qint64 upFailed = 0;
     qint64 upWaiting = 0;
     qint64 upQueueLength = 0;
+    qint64 upActive = 0;        ///< slots needed to fill the bandwidth (MFC GetActiveUploadsCount)
     qint64 upAvgTime = 0;
 
     // --- Download sessions (one per source that entered Downloading) ---
@@ -140,8 +155,10 @@ struct StatsSnapshot {
     qint64 downDeadSourcesGlobal = 0;
     qint64 downDeadSourcesPerFile = 0;
 
-    /// Free space on the incoming directory; absent when the path is unreadable.
+    /// Free space summed over the distinct temp volumes (MFC GetFreeTempSpace(-1));
+    /// absent when no temp path is readable.
     std::optional<qint64> freeTempSpace;
+    qint64 totalDownNeeded = 0;     ///< disk space the downloads still have to take
 
     // --- Connections ---
     qint64 connActive = 0;
@@ -149,6 +166,8 @@ struct StatsSnapshot {
     qint64 connMaxReached = 0;
     double connAverage = 0.0;
     qint64 connOpen = 0;
+    qint64 connHalfOpen = 0;
+    qint64 connComplete = 0;
 
     // --- Servers ---
     qint64 srvWorking = 0;
@@ -157,11 +176,17 @@ struct StatsSnapshot {
     qint64 srvUsers = 0;
     qint64 srvFiles = 0;
     qint64 srvLowIDUsers = 0;
+    qint64 srvTotalUsers = 0;       ///< all servers; srvUsers is working servers only
+    qint64 srvTotalFiles = 0;
+    qint64 srvDeleted = 0;
+    double srvOccupation = 0.0;
 
     // --- Clients ---
     qint64 knownClients = 0;
     qint64 bannedClients = 0;
     qint64 lowIDClients = 0;    ///< MFC CClientList::GetStatistics stats[14]
+    ClientListCensus clientCensus;
+    qint64 sharedHashing = 0;   ///< files waiting for or in the hasher
     std::vector<ClientSoftStat> clientSoftwareStats;   ///< sorted by count, descending
 
     // --- Shared files ---
@@ -238,6 +263,7 @@ struct StatsSnapshot {
 
     // --- Cumulative connections ---
     qint64 cumConnPeak = 0;
+    qint64 cumConnAverage = 0;      ///< (active now + stored average) / 2, as MFC shows it
     qint64 cumConnMaxLimitReached = 0;
     qint64 cumConnReconnects = 0;
 
