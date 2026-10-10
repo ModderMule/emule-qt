@@ -98,9 +98,9 @@ Statistics → Kademlia → Nodes → "Source Publishes Received":
 | Firewalled, Direct Callback | 6 | TCP-firewalled, UDP open; needs no buddy |
 | Firewalled, without Buddy | 3, 5 without a buddy address | eMuleQt node publishing over IPv6 |
 
-The same method gave 44 % firewalled publishers with a buddy in 2006 (R. Brunner, "A
-performance evaluation of the Kad-protocol", Eurecom, 100,000 received sources; type 6 did
-not exist yet).
+The same method gave 44 % firewalled publishers with a buddy in 2006 (R. Brunner,
+["A performance evaluation of the Kad-protocol"](https://pages.di.unipi.it/ricci/A-performance-evaluation-of-the-Kad-protocol.pdf),
+Eurecom, 100,000 received sources; type 6 did not exist yet).
 
 How to read the rows:
 
@@ -110,6 +110,29 @@ How to read the rows:
   nothing. It is missing, so the firewalled share is a lower bound.
 - Only an open node is sent publishes. On a firewalled node the rows read "n/a".
 - Only publishes that were stored count; one with a filtered or banned buddy address does not.
+
+### First sample, October 2026
+
+One open eMuleQt v0.6.4 node, one hour, 276 stored publishes (2026-10-10):
+
+| | [Brunner 2006](https://pages.di.unipi.it/ricci/A-performance-evaluation-of-the-Kad-protocol.pdf) | 2026 sample |
+|---|---|---|
+| Open | 56 % | 63.0 % (174) |
+| Firewalled, with Buddy | 44 % | 29.3 % (81) |
+| Firewalled, Direct Callback | did not exist yet | 7.6 % (21) |
+| Firewalled, without Buddy | — | 0 % (0) |
+| Firewalled, total | 44 % | 36.9 % (102) |
+
+- Compare the totals. A direct-callback node would have needed a buddy in 2006.
+- The sample shows no degradation since 2006. It is too small to show an improvement: the
+  margin is about ±6 points for 276 independent publishes, and wider here because one node
+  can count several times.
+- "Without Buddy" is 0 because only eMuleQt nodes publishing over IPv6 send that type.
+- The 29 % with a buddy does not contradict the low reply rate of a single buddy search
+  above. That rate is per attempt; a node that keeps retrying gets a buddy in the end and
+  then holds it for a long time.
+
+A few thousand publishes (a day or two, cumulative scope) bring the margin to about ±2 points.
 
 Code: `process_KADEMLIA2_PUBLISH_SOURCE_REQ` (`KadUDPListener.cpp`), fields `sources*` of
 `KadCounters` (`src/core/stats/NetworkCounters.h`). They are also in `GET /api/v1/kad/stats`.
