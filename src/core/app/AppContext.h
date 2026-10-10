@@ -88,6 +88,10 @@ struct AppContext {
     /// Set once the core starts tearing down (MFC theApp.IsClosing()).
     bool closing = false;
 
+    /// CoreSession is still reading known.met, the shares and the part files: the
+    /// lists are incomplete and no P2P socket is open yet.
+    bool loading = false;
+
     /// MFC CommitAndClose policy (srchybrid/OtherFunctions.cpp:313): force a saved file
     /// to disk when commitFiles is 2, or 1 while shutting down.
     [[nodiscard]] bool commitFilesNow() const;

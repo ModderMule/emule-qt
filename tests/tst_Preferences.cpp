@@ -40,11 +40,20 @@ private slots:
         Preferences prefs;
         QCOMPARE(prefs.maxConnections(), static_cast<uint16>(500));
         QCOMPARE(prefs.maxHalfConnections(), static_cast<uint16>(50)); // eMule 2026 bandwidth default
+        // Kad: firewalled nodes served as buddy. MFC serves one.
+        QCOMPARE(prefs.maxServedBuddies(), static_cast<uint16>(8));
+        QVERIFY(prefs.toIpcMap().contains(QStringLiteral("maxServedBuddies")));
+        prefs.setMaxServedBuddies(0);
+        QCOMPARE(prefs.maxServedBuddies(), static_cast<uint16>(1));
+        prefs.setMaxServedBuddies(500);
+        QCOMPARE(prefs.maxServedBuddies(), static_cast<uint16>(32));
         // Default ON: IPv6 peers are a small population and would otherwise be outbid
         // on upload score by the IPv4 majority indefinitely.
         QCOMPARE(prefs.separateIPv6Queue(), true);
         // Default OFF: outgoing IPv6 is pinned to the stable address we advertise.
         QCOMPARE(prefs.ipv6UsePrivacyAddress(), false);
+        QCOMPARE(prefs.serverPreferIPv6(), true);
+        QVERIFY(prefs.toIpcMap().contains(QStringLiteral("serverPreferIPv6")));
     }
 
     void defaults_bandwidth()
@@ -148,6 +157,7 @@ private slots:
             p1.setFilterLANIPs(false);
             p1.setMaxConnections(200);
             p1.setMaxHalfConnections(15);
+            p1.setMaxServedBuddies(5);
             p1.setMaxUpload(50);
             p1.setMaxDownload(100);
             p1.setMinUpload(5);
@@ -165,6 +175,7 @@ private slots:
             p1.setCloseUPnPOnExit(false);
             p1.setSeparateIPv6Queue(false);   // non-default, so a lost key would show
             p1.setIpv6UsePrivacyAddress(true);
+            p1.setServerPreferIPv6(false);
             // One switch per process — both must survive the round trip
             p1.setLogToDiskCore(true);
             p1.setLogToDiskGui(true);
@@ -191,6 +202,7 @@ private slots:
         QCOMPARE(p2.filterLANIPs(), false);
         QCOMPARE(p2.maxConnections(), static_cast<uint16>(200));
         QCOMPARE(p2.maxHalfConnections(), static_cast<uint16>(15));
+        QCOMPARE(p2.maxServedBuddies(), static_cast<uint16>(5));
         QCOMPARE(p2.maxUpload(), 50u);
         QCOMPARE(p2.maxDownload(), 100u);
         QCOMPARE(p2.minUpload(), 5u);
@@ -208,6 +220,7 @@ private slots:
         QCOMPARE(p2.closeUPnPOnExit(), false);
         QCOMPARE(p2.separateIPv6Queue(), false);
         QCOMPARE(p2.ipv6UsePrivacyAddress(), true);
+        QCOMPARE(p2.serverPreferIPv6(), false);
         QCOMPARE(p2.logToDiskCore(), true);
         QCOMPARE(p2.logToDiskGui(), true);
         QCOMPARE(p2.maxLogFileSize(), 2048u);

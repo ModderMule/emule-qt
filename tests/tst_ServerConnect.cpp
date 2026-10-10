@@ -203,6 +203,11 @@ private slots:
 
     // Statistics
     void statistics_timeAndReconnectsAcrossTwoConnections();
+
+    // serverPreferIPv6: IPv6 only after an IPv4 LowID
+    void lowIdOnIPv4_redialsIPv6AndRemembers();
+    void lowIdOnIPv4_staysWithoutThePref();
+    void lowIdOnIPv4_fallsBackWhenIPv6IsDead();
 };
 
 // ---------------------------------------------------------------------------
@@ -1430,6 +1435,139 @@ void tst_ServerConnect::failedConnect_insideTheDialLeavesNoStaleAttempt()
 
     conn.checkForTimeout();                      // nothing left to time out
     QCOMPARE(listed.entry->failedCount(), uint32{0});   // and nobody to blame
+}
+
+// ---------------------------------------------------------------------------
+// Tests: serverPreferIPv6 — IPv6 only after an IPv4 LowID
+// ---------------------------------------------------------------------------
+
+/// ListedLoopback whose entry is also reachable at ::1 (same port).
+struct ListedDualStack {
+    ListedLoopback v4;
+    QTcpServer v6;
+
+    ListedDualStack(ServerList& list, bool listenV6)
+        : v4(list, QStringLiteral("Dual"))
+    {
+        if (!v4.entry)
+            return;
+        v4.entry->addAddress(Address::fromString(QStringLiteral("::1")));
+        if (listenV6 && !v6.listen(QHostAddress::LocalHostIPv6, v4.listener.serverPort()))
+            v4.entry = nullptr;
+    }
+};
+
+static QTcpSocket* acceptOn(QTcpServer& listener, int timeoutMs = 5000)
+{
+    // qWaitFor, not waitForNewConnection(): the client socket needs the event loop
+    if (!QTest::qWaitFor([&] { return listener.hasPendingConnections(); }, timeoutMs))
+        return nullptr;
+    return listener.nextPendingConnection();
+}
+
+void tst_ServerConnect::lowIdOnIPv4_redialsIPv6AndRemembers()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    ServerList list;
+    ListedDualStack dual(list, true);
+    Server* entry = dual.v4.entry;
+    if (!entry)
+        QSKIP("no dual-stack loopback listener pair");
+
+    ServerConnect conn(list);
+    auto cfg = makeTestConfig();
+    cfg.preferIPv6OnLowID = true;
+    conn.setConfig(cfg);
+    conn.connectToServer(entry, false, true);
+
+    // IPv4 first; its LowID is not kept
+    QTcpSocket* side4 = acceptOn(dual.v4.listener);
+    QVERIFY(side4);
+    QTest::qWait(200);
+    writeIdChange(side4, 0x00000042);
+
+    QTcpSocket* side6 = acceptOn(dual.v6);
+    QVERIFY(side6);
+    QVERIFY(!conn.isConnected());
+    QVERIFY(entry->preferIPv6Session());
+    QTest::qWait(200);
+    writeIdChange(side6, 0x00000043);
+    QVERIFY(QTest::qWaitFor([&] { return conn.isConnected(); }, 5000));
+    QVERIFY(conn.sessionAddress().isIPv6());
+    QVERIFY(conn.isLowID());
+
+    // The next connect goes straight to IPv6
+    conn.disconnect();
+    conn.connectToServer(entry, false, true);
+    QVERIFY(acceptOn(dual.v6));
+    QTest::qWait(300);
+    QVERIFY(!dual.v4.listener.hasPendingConnections());
+    conn.disconnect();
+}
+
+void tst_ServerConnect::lowIdOnIPv4_staysWithoutThePref()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    ServerList list;
+    ListedDualStack dual(list, true);
+    Server* entry = dual.v4.entry;
+    if (!entry)
+        QSKIP("no dual-stack loopback listener pair");
+
+    ServerConnect conn(list);
+    conn.setConfig(makeTestConfig());
+    conn.connectToServer(entry, false, true);
+
+    QTcpSocket* side4 = acceptOn(dual.v4.listener);
+    QVERIFY(side4);
+    QTest::qWait(200);
+    writeIdChange(side4, 0x00000042);
+    QVERIFY(QTest::qWaitFor([&] { return conn.isConnected(); }, 5000));
+    QVERIFY(conn.sessionAddress().isIPv4());
+    QVERIFY(!entry->preferIPv6Session());
+    QTest::qWait(300);
+    QVERIFY(!dual.v6.hasPendingConnections());
+    conn.disconnect();
+}
+
+void tst_ServerConnect::lowIdOnIPv4_fallsBackWhenIPv6IsDead()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    ServerList list;
+    ListedDualStack dual(list, false);   // nothing listens on ::1
+    Server* entry = dual.v4.entry;
+    QVERIFY(entry);
+
+    ServerConnect conn(list);
+    auto cfg = makeTestConfig();
+    cfg.preferIPv6OnLowID = true;
+    conn.setConfig(cfg);
+    conn.connectToServer(entry, false, true);
+
+    QTcpSocket* side4 = acceptOn(dual.v4.listener);
+    QVERIFY(side4);
+    QTest::qWait(200);
+    writeIdChange(side4, 0x00000042);
+
+    // IPv6 is refused: back on IPv4, and this time the LowID is kept
+    QTcpSocket* again4 = acceptOn(dual.v4.listener, 10000);
+    QVERIFY(again4);
+    QVERIFY(entry->ipv6SwitchFailed());
+    QVERIFY(!entry->preferIPv6Session());
+    QTest::qWait(200);
+    writeIdChange(again4, 0x00000042);
+    QVERIFY(QTest::qWaitFor([&] { return conn.isConnected(); }, 5000));
+    QVERIFY(conn.sessionAddress().isIPv4());
+    conn.disconnect();
 }
 
 QTEST_MAIN(tst_ServerConnect)

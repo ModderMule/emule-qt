@@ -72,6 +72,7 @@ private slots:
     void kadFirewallAck_oncePerAskedAddress();
     void requestTCP_reusesTheClientAndRefusesRepeats();
     void processKadList_releasesAStaleIncomingBuddy();
+    void incomingBuddy_pendingClaimsAreBounded();
     void callbackPacket_onlyFromBuddyToAVettedTarget();
     void ban_coversTheIPv6Prefix();
     void removeBannedClient();
@@ -99,6 +100,12 @@ private slots:
     void processKadList_firewalledKeepsItsOpenBuddy();
     void processKadList_dropsTheBuddyWhenKadLosesContact();
     void processKadList_detectsBuddyLoss();
+    void servedBuddies_claimsUpToTheLimit();
+    void servedBuddies_neverBecomeOurBuddy();
+    void servedBuddies_loweredLimitDropsTheNewest();
+    void servedBuddies_droppedWhenWeNeedABuddy();
+    void servedBuddies_droppedWhenKadLosesContact();
+    void servedBuddies_refusedWhileWeUseABuddy();
 
     // The reaper and the chat state — MFC CClientList::Process()
     void process_reapsAChatterOnceTheSessionEnds();
@@ -379,9 +386,39 @@ void tst_ClientList::processKadList_releasesAStaleIncomingBuddy()
     list.processKadList();
     QCOMPARE(claimant->kadState(), KadState::IncomingBuddy);
 
-    claimant->setKadStateSince(std::time(nullptr) - 21 * 60);
+    // Released after 5 minutes, not before
+    claimant->setKadStateSince(std::time(nullptr) - 4 * 60);
+    list.processKadList();
+    QCOMPARE(claimant->kadState(), KadState::IncomingBuddy);
+
+    claimant->setKadStateSince(std::time(nullptr) - 6 * 60);
     list.processKadList();
     QCOMPARE(claimant->kadState(), KadState::None);
+
+    list.deleteAll();
+}
+
+void tst_ClientList::incomingBuddy_pendingClaimsAreBounded()
+{
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Open);
+    kadFixture.kadPrefs().setLastContact();
+
+    ClientList list;
+    const uint8 id[16] = {0xB3};
+    const uint32 base = 0x4D080000;
+
+    for (int i = 0; i < ClientList::kMaxPendingBuddyClaims; ++i)
+        QVERIFY(list.incomingBuddy(base + static_cast<uint32>(i) + 1, 4662, 4672, id, id));
+    QCOMPARE(list.pendingBuddyClaims(), ClientList::kMaxPendingBuddyClaims);
+
+    UpDownClient* oldest = list.findByConnIP(qToBigEndian(base + 7), 4662);
+    QVERIFY(oldest != nullptr);
+    oldest->setKadStateSince(std::time(nullptr) - 60);
+
+    // One more is accepted, not refused: the oldest claim makes room
+    QVERIFY(list.incomingBuddy(base + 0x1000, 4662, 4672, id, id));
+    QCOMPARE(list.pendingBuddyClaims(), ClientList::kMaxPendingBuddyClaims);
+    QCOMPARE(oldest->kadState(), KadState::None);
 
     list.deleteAll();
 }
@@ -981,6 +1018,199 @@ void tst_ClientList::processKadList_detectsBuddyLoss()
 
     QCOMPARE(list.buddyStatus(), BuddyStatus::None);
     QVERIFY(list.getBuddy() == nullptr);
+}
+
+// ---------------------------------------------------------------------------
+// Served buddies — an open node relays for several firewalled nodes (not MFC)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A firewalled node whose buddy connection to us is up.
+UpDownClient* addServedBuddy(ClientList& list, uint32 ipHost, uint8 idByte, std::time_t since)
+{
+    auto* client = new UpDownClient();
+    client->setConnectAddress(Address::fromHostOrder(ipHost));
+    client->setUserAddress(Address::fromHostOrder(ipHost));
+    client->setUserIDHybrid(1);                       // Low ID
+    const uint8 id[16] = {idByte, 0x01, 0x02, 0x03};
+    client->setBuddyID(id);
+    client->setServedBuddy(true);
+    client->setKadState(KadState::ConnectedBuddy);
+    client->setKadStateSince(since);
+    list.addClient(client);
+    return client;
+}
+
+} // namespace
+
+void tst_ClientList::servedBuddies_claimsUpToTheLimit()
+{
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Open);
+    kadFixture.kadPrefs().setLastContact();
+    QCOMPARE(thePrefs.maxServedBuddies(), static_cast<uint16>(8));
+    thePrefs.setMaxServedBuddies(3);
+    const auto restore = qScopeGuard([] { thePrefs.setMaxServedBuddies(8); });
+
+    ClientList list;
+    const uint8 id[16] = {0xC1, 0x02};
+
+    QVERIFY(list.incomingBuddy(0x4D070801, 4662, 4672, id, id));
+    // One pending claim per IP, whatever the port
+    QVERIFY(!list.incomingBuddy(0x4D070801, 4663, 4673, id, id));
+    QVERIFY(list.incomingBuddy(0x4D070802, 4662, 4672, id, id));
+    QCOMPARE(list.pendingBuddyClaims(), 2);
+
+    // A claim reserves nothing (as MFC): 1 connected + 2 pending leaves the limit open
+    addServedBuddy(list, 0x4D070803, 0xC3, std::time(nullptr));
+    QCOMPARE(list.servedBuddyCount(), 1);
+    QVERIFY(list.canServeAnotherBuddy());
+    QVERIFY(list.incomingBuddy(0x4D070804, 4662, 4672, id, id));
+    QCOMPARE(list.pendingBuddyClaims(), 3);
+
+    // Claims stay through a pass although a buddy is connected (MFC drops them)
+    list.processKadList();
+    QCOMPARE(list.pendingBuddyClaims(), 3);
+    QCOMPARE(list.servedBuddyCount(), 1);
+
+    UpDownClient* claimant = list.findByConnIP(qToBigEndian(uint32{0x4D070801}), 4662);
+    QVERIFY(claimant && claimant->isServedBuddy());
+
+    // A claim that ran out is released
+    claimant->setKadStateSince(std::time(nullptr) - 6 * 60);
+    list.processKadList();
+    QCOMPARE(claimant->kadState(), KadState::None);
+    QVERIFY(!claimant->isServedBuddy());
+
+    // Only connected buddies fill the limit
+    addServedBuddy(list, 0x4D070805, 0xC5, std::time(nullptr));
+    QVERIFY(list.canServeAnotherBuddy());
+    addServedBuddy(list, 0x4D070806, 0xC6, std::time(nullptr));
+    QCOMPARE(list.servedBuddyCount(), 3);
+    QVERIFY(!list.canServeAnotherBuddy());
+    QVERIFY(!list.incomingBuddy(0x4D070807, 4662, 4672, id, id));
+
+    list.deleteAll();
+}
+
+void tst_ClientList::servedBuddies_neverBecomeOurBuddy()
+{
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Open);
+    kadFixture.kadPrefs().setLastContact();
+
+    ClientList list;
+    auto* a = addServedBuddy(list, 0x4D070811, 0xD1, std::time(nullptr));
+    auto* b = addServedBuddy(list, 0x4D070812, 0xD2, std::time(nullptr));
+
+    list.processKadList();
+    list.processKadList();
+
+    QCOMPARE(a->kadState(), KadState::ConnectedBuddy);
+    QCOMPARE(b->kadState(), KadState::ConnectedBuddy);
+    QCOMPARE(list.servedBuddyCount(), 2);
+    QVERIFY(list.getBuddy() == nullptr);
+    QCOMPARE(list.buddyStatus(), BuddyStatus::None);
+
+    // No socket, no relay target
+    const uint8 idA[16] = {0xD1, 0x01, 0x02, 0x03};
+    QVERIFY(list.findServedBuddy(idA) == nullptr);
+
+    // One that opened its port no longer needs us (MFC ClientList.cpp:618-622)
+    b->setUserIDHybrid(0x4D070812u);
+    QVERIFY(!b->hasLowID());
+    list.processKadList();
+    QCOMPARE(a->kadState(), KadState::ConnectedBuddy);
+    QCOMPARE(b->kadState(), KadState::None);
+
+    list.deleteAll();
+}
+
+void tst_ClientList::servedBuddies_loweredLimitDropsTheNewest()
+{
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Open);
+    kadFixture.kadPrefs().setLastContact();
+    const auto restore = qScopeGuard([] { thePrefs.setMaxServedBuddies(8); });
+
+    ClientList list;
+    const std::time_t now = std::time(nullptr);
+    auto* newest = addServedBuddy(list, 0x4D070821, 0xE1, now - 10);
+    auto* oldest = addServedBuddy(list, 0x4D070822, 0xE2, now - 300);
+    auto* middle = addServedBuddy(list, 0x4D070823, 0xE3, now - 100);
+
+    list.processKadList();
+    QCOMPARE(list.servedBuddyCount(), 3);
+    QCOMPARE(list.servedBuddies().front(), oldest);
+
+    thePrefs.setMaxServedBuddies(2);
+    list.processKadList();
+    QCOMPARE(oldest->kadState(), KadState::ConnectedBuddy);
+    QCOMPARE(middle->kadState(), KadState::ConnectedBuddy);
+    QCOMPARE(newest->kadState(), KadState::None);
+
+    list.deleteAll();
+}
+
+void tst_ClientList::servedBuddies_droppedWhenWeNeedABuddy()
+{
+    // TCP and UDP firewalled: we cannot relay for anyone.
+    eMule::testing::KadFixture kadFixture;
+    kadFixture.kadPrefs().setLastContact();
+    // reset() keeps the asked clients, so these two are not the ones used above
+    kad::UDPFirewallTester::reset();
+    kad::UDPFirewallTester::debugAddUsedTestClient(0x0A000011, 4672);
+    kad::UDPFirewallTester::setUDPFWCheckResult(false, false, 0x0A000011, 4672);
+    kad::UDPFirewallTester::debugAddUsedTestClient(0x0A000012, 4672);
+    kad::UDPFirewallTester::setUDPFWCheckResult(false, false, 0x0A000012, 4672);
+    const auto resetTester = qScopeGuard([] { kad::UDPFirewallTester::reset(); });
+    QVERIFY(kadFixture.kad().isFirewalled());
+    QVERIFY(kad::UDPFirewallTester::isFirewalledUDP(true));
+
+    ClientList list;
+    auto* served = addServedBuddy(list, 0x4D070831, 0xF1, std::time(nullptr));
+    auto* claim = new UpDownClient();
+    claim->setConnectAddress(Address::fromHostOrder(0x4D070832));
+    claim->setServedBuddy(true);
+    claim->setKadState(KadState::IncomingBuddy);
+    list.addClient(claim);
+
+    list.processKadList();
+    QCOMPARE(served->kadState(), KadState::None);
+    QCOMPARE(claim->kadState(), KadState::None);
+    QCOMPARE(list.servedBuddyCount(), 0);
+
+    list.deleteAll();
+}
+
+void tst_ClientList::servedBuddies_droppedWhenKadLosesContact()
+{
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Open);
+    QVERIFY(!kadFixture.kad().isConnected());
+
+    ClientList list;
+    auto* served = addServedBuddy(list, 0x4D070841, 0xA1, std::time(nullptr));
+    list.processKadList();
+    QCOMPARE(served->kadState(), KadState::None);
+
+    list.deleteAll();
+}
+
+void tst_ClientList::servedBuddies_refusedWhileWeUseABuddy()
+{
+    eMule::testing::KadFixture kadFixture;
+    kadFixture.kadPrefs().setLastContact();
+
+    ClientList list;
+    auto* buddy = new UpDownClient();
+    buddy->setUserAddress(Address::fromString(QStringLiteral("10.7.0.9")));
+    buddy->setKadState(KadState::ConnectedBuddy);
+    list.addClient(buddy);
+    list.setBuddy(buddy, BuddyStatus::Connected);
+
+    const uint8 id[16] = {0xB7, 0x02};
+    QVERIFY(!list.canServeAnotherBuddy());
+    QVERIFY(!list.incomingBuddy(0x4D070851, 4662, 4672, id, id));
+
+    list.deleteAll();
 }
 
 // A client kept alive only by its chat state is never collected (ClientList.cpp:465-466),

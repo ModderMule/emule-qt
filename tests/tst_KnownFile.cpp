@@ -214,6 +214,7 @@ private slots:
     void updatePartsInfo_usesUploaderStatusAndCompleteCounts();
     void publishSrc_timing();
     void publishSrc_firewalledNeedsABuddy();
+    void publishSrc_firewalledWithIPv6NeedsNoBuddy();
     void publishSrc_newBuddyRepublishes();
     void publishSrc_openNodeNeedsNoBuddy();
     void publishNotes_timing();
@@ -1138,6 +1139,28 @@ void tst_KnownFile::publishSrc_firewalledNeedsABuddy()
     delete buddy;
 }
 
+// No buddy, but a public IPv6: the record goes out naming no buddy.
+void tst_KnownFile::publishSrc_firewalledWithIPv6NeedsNoBuddy()
+{
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Firewalled);
+    kadFixture.kadPrefs().setLastContact();
+    ClientList list;
+    kad::Kademlia::setClientList(&list);
+    theApp.setPublicIPv6Override(Address::fromString(QStringLiteral("2606:4700::42")));
+    const auto restore = qScopeGuard([] {
+        theApp.setPublicIPv6Override(Address{});
+        kad::Kademlia::setClientList(nullptr);
+    });
+    if (!theApp.shouldAdvertisePublicIPv6())
+        QSKIP("no usable public IPv6 in this setup");
+
+    KnownFile kf;
+    QVERIFY(kf.publishSrc());
+    QCOMPARE(kf.lastBuddyIP(), uint32{0});
+    QVERIFY(!kf.publishSrc());
+    QVERIFY(kf.isSharedInKad());
+}
+
 // Published before the buddy existed: the record on the network does not name it.
 void tst_KnownFile::publishSrc_newBuddyRepublishes()
 {
@@ -1446,6 +1469,9 @@ void tst_KnownFile::sharedInKad_followsMfc()
     QVERIFY(!KnownFile::sharedInKad(now, now + 1, true, true, false, false));
     QVERIFY(KnownFile::sharedInKad(now, now + 1, true, true, true, false));
     QVERIFY(KnownFile::sharedInKad(now, now + 1, true, true, false, true));
+    // not MFC: or over a public IPv6
+    QVERIFY(KnownFile::sharedInKad(now, now + 1, true, true, false, false, true));
+    QVERIFY(!KnownFile::sharedInKad(now, now, true, true, false, false, true));
 }
 
 QTEST_MAIN(tst_KnownFile)

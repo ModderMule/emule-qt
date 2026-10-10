@@ -301,8 +301,13 @@ std::vector<Tag> Search::buildSourcePublishTags(const SourcePublishParams& p, bo
         tags.emplace_back(FT_SERVERPORT, static_cast<uint32>(p.buddyUDPPort));
         tags.emplace_back(FT_BUDDYHASH, buddyHashToTagString(p.buddyHash));
         addCommonPortAndSize();
+    } else if (p.firewalled && !p.ipv6Hex.isEmpty()) {
+        // No route over IPv4, but a public IPv6: the firewalled type without buddy
+        // tags. A v6-capable peer dials ip6; a stock one finds no route and drops it.
+        tags.emplace_back(FT_SOURCETYPE, static_cast<uint32>(p.largeFile ? 5 : 3));
+        addCommonPortAndSize();
     } else if (p.firewalled) {
-        // Firewalled with neither a direct callback nor a buddy — a published
+        // Firewalled with neither a direct callback, a buddy nor an IPv6 — a published
         // source nobody can reach is worse than none. It also drops the HTTP Cache
         // chunks we hold, which *are* reachable: they sit on the cache server, not here.
         // ToDo: no dummy source can carry them out — a storing node stamps FT_SOURCEIP
@@ -475,8 +480,10 @@ void Search::go(uint32 maxToSend)
     // Convergence: K contacts have responded and no untried one is closer than the
     // K-th of them. Comparing with the single closest stopped the walk while most of
     // the K closest nodes were still unasked, so they never got the action packet.
-    if (!m_possible.empty() && m_responded.size() >= kK) {
-        const UInt128 kthResponded = std::next(m_responded.begin(), kK - 1)->first;
+    // A buddy search walks on until it has enough nodes to ask.
+    const uint32 needed = m_type == SearchType::FindBuddy ? kSearchFindBuddyRequests : kK;
+    if (!m_possible.empty() && m_responded.size() >= needed) {
+        const UInt128 kthResponded = std::next(m_responded.begin(), needed - 1)->first;
         const UInt128 closestPossible = m_possible.begin()->first;
         if (!(closestPossible < kthResponded)) {
             logKad(QStringLiteral("Kad search %1: converged — best=%2 responded=%3 possible=%4 tried=%5")
@@ -1349,7 +1356,7 @@ void Search::prepareToStop()
 uint32 Search::storeLimit() const
 {
     switch (m_type) {
-    case SearchType::FindBuddy:  return kSearchFindBuddyTotal;
+    case SearchType::FindBuddy:  return kSearchFindBuddyRequests;
     case SearchType::FindSource: return kSearchFindSourceTotal;
     default:                     return kSearchStoreKeywordTotal;
     }
@@ -1373,7 +1380,8 @@ void Search::storePacket(bool flushRemaining)
     for (auto& [dist, contact] : m_tried) {
         // No cap while the search runs (MFC has none). The stop-time flush is
         // port-only, so it keeps one: it must not burst to every responder.
-        if (flushRemaining && m_storeSent.size() >= maxStore)
+        // A buddy search is capped throughout (MFC Search.cpp:814).
+        if ((flushRemaining || m_type == SearchType::FindBuddy) && m_storeSent.size() >= maxStore)
             break;
         if (!contact)
             continue;
@@ -1487,6 +1495,10 @@ void Search::storePacket(bool flushRemaining)
                 packet.writeUInt16(packetFileCount);
                 packet.seek(endPos, 0);
 
+                logKad(QStringLiteral("Kad search %1: PUBLISH_KEY_REQ → %2:%3, %4 files")
+                           .arg(m_searchID)
+                           .arg(contact->address().toString()).arg(contact->getUDPPort())
+                           .arg(packetFileCount));
                 UInt128 pubKeyClientID = contact->getClientID();
                 udpListener->sendPacket(packet, KADEMLIA2_PUBLISH_KEY_REQ,
                                         contact->address().toUint32(), contact->getUDPPort(),
@@ -1553,13 +1565,17 @@ void Search::storePacket(bool flushRemaining)
             bool canPublish = false;
             std::vector<Tag> tags = buildSourcePublishTags(sp, canPublish);
             if (!canPublish) {
-                // Firewalled, no direct callback, no buddy — nothing to publish
+                // Firewalled, no direct callback, no buddy, no IPv6 — nothing to publish
+                logKad(QStringLiteral("Kad search %1: source not published — firewalled, no buddy, no direct callback, no public IPv6")
+                           .arg(m_searchID));
                 prepareToStop();
                 break;
             }
 
             io::writeKadTagList(packet, tags);
-            logKad(QStringLiteral("Kad: PUBLISH_SOURCE_REQ pktLen=%1 tags=%2 srcType=%3")
+            logKad(QStringLiteral("Kad search %1: PUBLISH_SOURCE_REQ → %2:%3, pktLen=%4 tags=%5 srcType=%6")
+                       .arg(m_searchID)
+                       .arg(contact->address().toString()).arg(contact->getUDPPort())
                        .arg(packet.length())
                        .arg(tags.size())
                        .arg(tags.empty() ? 0 : tags[0].intValue()));
@@ -1604,6 +1620,9 @@ void Search::storePacket(bool flushRemaining)
             }
 
             io::writeKadTagList(packet, tags);
+            logKad(QStringLiteral("Kad search %1: PUBLISH_NOTES_REQ → %2:%3")
+                       .arg(m_searchID)
+                       .arg(contact->address().toString()).arg(contact->getUDPPort()));
             {
                 UInt128 pubNotesClientID = contact->getClientID();
                 udpListener->sendPacket(packet, KADEMLIA2_PUBLISH_NOTES_REQ,
@@ -1621,9 +1640,11 @@ void Search::storePacket(bool flushRemaining)
                 break;
 
             SafeMemFile packet;
-            // Write the target (= ~kadID) as BuddyID — used for callback verification.
-            // MFC writes m_uTarget directly (which is ~kadID, set at search creation).
-            io::writeUInt128(packet, m_target);
+            // BuddyID = ~kadID — echoed back and checked in FINDBUDDY_RES.
+            // MFC writes m_uTarget (always ~kadID there); ours may be a random walk target.
+            UInt128 buddyID(true);
+            buddyID.xorWith(prefs->kadId());
+            io::writeUInt128(packet, buddyID);
             // Write our client hash so the remote can do a callback
             io::writeUInt128(packet, prefs->clientHash());
             // Write our ED2K TCP port so the remote can TCP-connect to us
@@ -1632,6 +1653,10 @@ void Search::storePacket(bool flushRemaining)
             // Crypt target as MFC: without it the packet goes out in clear
             // unless the contact already gave us a UDP key.
             UInt128 clientID = contact->getClientID();
+            logKad(QStringLiteral("Kad search %1: FINDBUDDY_REQ → %2:%3 v%4 dist=%5")
+                       .arg(m_searchID)
+                       .arg(contact->address().toString()).arg(contact->getUDPPort())
+                       .arg(contact->getVersion()).arg(dist.toHexString()));
             udpListener->sendPacket(packet, KADEMLIA_FINDBUDDY_REQ,
                                     contact->address().toUint32(), contact->getUDPPort(),
                                     contact->getUDPKey(), &clientID);

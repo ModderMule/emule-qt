@@ -142,6 +142,9 @@ public:
 
     [[nodiscard]] uint16 maxHalfConnections() const;
     void setMaxHalfConnections(uint16 val);
+    /// Kad: how many firewalled nodes we serve as buddy while open (1-32). MFC serves one.
+    [[nodiscard]] uint16 maxServedBuddies() const;
+    void setMaxServedBuddies(uint16 val);
 
     /// One IPv4 or IPv6 literal every P2P socket binds to; empty = any. See BindAddress.h.
     [[nodiscard]] QString bindAddress() const;

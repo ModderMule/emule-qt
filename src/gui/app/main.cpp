@@ -6,6 +6,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFont>
+#include <QHostAddress>
 #include <QLibraryInfo>
 #include <QLocale>
 #include <QMessageBox>
@@ -13,6 +14,7 @@
 #include <QProcess>
 #include <QSocketNotifier>
 #include <QSplashScreen>
+#include <QTcpServer>
 #include <QTextStream>
 #include <QTimer>
 #include <QTranslator>
@@ -86,6 +88,22 @@ QString resolveDaemonPath()
 #endif
 
     return {};
+}
+
+/// The configured core address is another machine: nothing to discover or launch here.
+bool isRemoteCoreAddress(const QString& host)
+{
+    const QHostAddress addr(host);   // "" and "localhost" parse as null
+    return !addr.isNull() && !addr.isLoopback();
+}
+
+/// Nothing listens on the local IPC port, so no core is running. A bind probe, as
+/// the daemon's own: a connect would show up there as a client.
+bool ipcPortFree(const QString& host, uint16_t port)
+{
+    const QHostAddress addr(host);
+    QTcpServer probe;
+    return probe.listen(addr.isNull() ? QHostAddress(QHostAddress::LocalHost) : addr, port);
 }
 
 /// Try to start the daemon process. Returns true if launched.
@@ -253,6 +271,19 @@ int main(int argc, char* argv[])
     eMule::theUiState.load(configDir);
     eMule::CountryFlags::setSettings(eMule::theUiState.showCountryFlags());
 
+    // Start the core now, so it loads while the window is built instead of after.
+    // After the seeding above: the daemon seeds the same files. A core that is
+    // already there, or cannot be judged, is left to the connect path below.
+    auto weOwnDaemon = std::make_shared<bool>(false);
+    if (eMule::thePrefs.ipcEnabled() && !isRemoteCoreAddress(eMule::thePrefs.ipcListenAddress())) {
+        const QString earlyPath = resolveDaemonPath();
+        if (!earlyPath.isEmpty() && earlyPath != QStringLiteral("local")
+            && ipcPortFree(eMule::thePrefs.ipcListenAddress(), eMule::thePrefs.ipcPort())) {
+            const bool hold = !cli.screenshotMode() && !eMule::theUiState.firstStartWizardDone();
+            *weOwnDaemon = launchDaemon(earlyPath, hold);
+        }
+    }
+
     // Applied at every start, not only the first: idempotent, so it takes the
     // association back from an application that took it away, and removes it
     // promptly when the user turns the setting off.
@@ -337,9 +368,7 @@ int main(int argc, char* argv[])
         uint16_t port = eMule::thePrefs.ipcPort();
         QString daemonPath;
 
-        const QHostAddress configAddr(connectHost);
-        if (!configAddr.isNull() && !configAddr.isLoopback()
-            && connectHost != QStringLiteral("localhost") && !connectHost.isEmpty()) {
+        if (isRemoteCoreAddress(connectHost)) {
             // FAST PATH: remote address configured — skip daemon discovery
             isRemote = true;
             eMule::logInfo(QStringLiteral("Remote core configured at %1:%2 — skipping local daemon discovery.")
@@ -556,7 +585,8 @@ int main(int argc, char* argv[])
 
         // On first connection failure, try launching the daemon binary (local path only).
         // IpcClient auto-reconnects with exponential backoff regardless.
-        auto weOwnDaemon = std::make_shared<bool>(false);
+        if (*weOwnDaemon)
+            ipcClient.expectDaemonStart();
         if (!isRemote && daemonPath == QStringLiteral("local")) {
             // "local" mode: daemon should already be running; show dialog on failure
             auto dialogShown = std::make_shared<bool>(false);
@@ -586,13 +616,17 @@ int main(int argc, char* argv[])
         } else if (!isRemote && !daemonPath.isEmpty()) {
             QObject::connect(&ipcClient, &eMule::IpcClient::connectionFailed,
                              &app, [&ipcClient, daemonPath, weOwnDaemon, wizardAllowed = !cli.screenshotMode()](const QString& error) {
+                if (ipcClient.daemonStarting())
+                    return;   // launched, still loading
                 eMule::logWarning(QStringLiteral("Daemon not reachable (%1)").arg(error));
                 if (ipcClient.daemonRestarting())
                     return;   // it starts itself again
                 // Read at launch time: a relaunch after the wizard must connect
                 const bool hold = wizardAllowed && !eMule::theUiState.firstStartWizardDone();
-                if (!*weOwnDaemon && launchDaemon(daemonPath, hold))
+                if (!*weOwnDaemon && launchDaemon(daemonPath, hold)) {
                     *weOwnDaemon = true;
+                    ipcClient.expectDaemonStart();
+                }
             });
             // When the daemon we launched crashes, reset the flag so the
             // connectionFailed handler above will relaunch it on the next

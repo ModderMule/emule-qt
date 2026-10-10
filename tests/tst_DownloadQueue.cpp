@@ -166,6 +166,7 @@ private slots:
     void addServerSources_vetsIPv6LikeIPv4();
     void addKadSources_type6KeepsDirectCallback();
     void addKadSources_type6DroppedWithoutTheBit();
+    void addKadSources_firewalledKeepsBuddylessIPv6Source();
     void addKadSources_buddyIpIsNetworkOrder();
 
     // eD2K link sources
@@ -1722,6 +1723,42 @@ void tst_DownloadQueue::addKadSources_type6DroppedWithoutTheBit()
     dq.addKadSourceResult(makeKadResult(hash, 6, clientHash, sourceIP, 4662, 4672, 0x01));
 
     QCOMPARE(pf->sourceCount(), 0);
+
+    dq.deleteAll();
+}
+
+void tst_DownloadQueue::addKadSources_firewalledKeepsBuddylessIPv6Source()
+{
+    // A type-3 record with ip6 and no buddy: no use to a firewalled IPv4-only client,
+    // dialled directly once both ends have an IPv6.
+    eMule::testing::KadFixture fx{eMule::testing::KadMode::Firewalled};
+    fx.kadPrefs().setLastContact();
+    QVERIFY(theApp.isFirewalled());
+
+    DownloadQueue dq;
+    uint8 hash[16] = {62, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3};
+    auto* pf = createTestPartFile(hash, QStringLiteral("kad_type3_v6.bin"));
+    dq.addDownload(pf);
+
+    uint8 clientHash[16];
+    std::memset(clientHash, 0x5C, sizeof(clientHash));
+    const Address peerV6 = Address::fromString(QStringLiteral("2606:4700::77"));
+    const uint32 sourceIP = Address::fromString(QStringLiteral("77.66.55.42")).toUint32();
+    auto result = makeKadResult(hash, 3, clientHash, sourceIP, 4662, 4672, 0x01);
+    result.sourceIPv6 = peerV6.ipv6Bytes().data();
+
+    dq.addKadSourceResult(result);
+    QCOMPARE(pf->sourceCount(), 0);          // we have no IPv6 ourselves
+
+    theApp.setPublicIPv6Override(Address::fromString(QStringLiteral("2606:4700::42")));
+    const auto restoreV6 = qScopeGuard([] { theApp.setPublicIPv6Override(Address{}); });
+    if (!theApp.hasConfidentPublicIPv6()) {
+        dq.deleteAll();
+        QSKIP("no usable public IPv6 in this setup");
+    }
+    dq.addKadSourceResult(result);
+    QCOMPARE(pf->sourceCount(), 1);
+    QCOMPARE(pf->srcList().front()->userIPv6(), peerV6);
 
     dq.deleteAll();
 }

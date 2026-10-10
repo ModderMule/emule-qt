@@ -226,6 +226,13 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
     m_singleConnecting = !multiconnect;
     emit stateChanged();
 
+    // IPv4 gave a LowID here earlier this run: go straight to IPv6
+    Address dial = dialAddress;
+    const bool ipv6Switch = dial.isNull() && m_config.preferIPv6OnLowID
+        && server->preferIPv6Session() && server->hasBothFamilies();
+    if (ipv6Switch)
+        dial = server->ipv6Address();
+
     auto* socket = new ServerSocket(/*!multiconnect*/ m_singleConnecting, this);
     m_openSockets.push_back(socket);
 
@@ -279,8 +286,25 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
     // Dual-stack: the ident named the server's other address — one row per server.
     connect(socket, &ServerSocket::serverAddressLearned, this,
             [this, socket](const Address& addr) {
-                if (Server* entry = resolveListEntry(socket))
-                    m_serverList.attachAddress(entry, addr);
+                Server* entry = resolveListEntry(socket);
+                if (!entry)
+                    return;
+                m_serverList.attachAddress(entry, addr);
+                // The IPv6 arrived after an accepted IPv4 LowID. Deferred: we are
+                // inside this socket's packet handler.
+                if (socket == m_connectedSocket && m_connected && isLowID()
+                    && wantsIPv6Switch(socket, entry)) {
+                    QTimer::singleShot(0, this, [this, id = entry->serverId()] {
+                        Server* e = m_serverList.findById(id);
+                        if (!e || !m_connected || !isLowID() || !m_connectedSocket
+                            || !wantsIPv6Switch(m_connectedSocket, e))
+                            return;
+                        logInfo(QStringLiteral("Low ID over IPv4 on %1 — switching to its IPv6 address")
+                                    .arg(e->name()));
+                        e->setPreferIPv6Session(true);
+                        connectToServer(e);
+                    });
+                }
             });
 
     connect(socket, &ServerSocket::serverStatusReceived, this,
@@ -384,7 +408,7 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
     m_connectionAttempts[timestamp] = socket;
 
     socket->initProxySupport(thePrefs.proxySettings());
-    socket->connectTo(*server, noCrypt, dialAddress);
+    socket->connectTo(*server, noCrypt, dial, ipv6Switch);
 }
 
 // ---------------------------------------------------------------------------
@@ -524,6 +548,12 @@ void ServerConnect::connectionFailed(ServerSocket* sender)
 
     const Server* cserver = sender->currentServer();
     Server* listServer = cserver ? listEntryFor(cserver) : nullptr;
+
+    // The IPv6 dial after an IPv4 LowID did not work out: back to IPv4, keep the LowID
+    if (!lostLiveConnection && sender->isIPv6Switch() && listServer) {
+        listServer->setPreferIPv6Session(false);
+        listServer->setIPv6SwitchFailed(true);
+    }
 
     // Dual-stack: a server unreachable on one family gets one attempt on the other
     // before the failure counts against it.
@@ -795,6 +825,10 @@ void ServerConnect::checkForTimeout()
             }
 
             Server* listServer = cserver ? listEntryFor(cserver) : nullptr;
+            if (socket->isIPv6Switch() && listServer) {
+                listServer->setPreferIPv6Session(false);
+                listServer->setIPv6SwitchFailed(true);
+            }
             const Address otherFamily = otherFamilyFor(socket, listServer);
             const Address tried = socket->sessionAddress();
             // TCP never came up: the server did not answer at all, which counts like a
@@ -1166,6 +1200,26 @@ void ServerConnect::onLoginReceived(ServerSocket* socket, uint32 clientID, uint3
         // state == 0 (never armed): accept the first LowID (firewalled client).
     }
 
+    // serverPreferIPv6 (not MFC): a LowID we would keep, on the IPv4 side of a
+    // dual-stack server — redial that server over IPv6 instead.
+    if (Server* entry = listEntryFor(socket->currentServer())) {
+        if (!eMule::isLowID(clientID)) {
+            if (socket->sessionAddress().isIPv4()) {
+                entry->setPreferIPv6Session(false);
+                entry->setIPv6SwitchFailed(false);
+            }
+        } else if (wantsIPv6Switch(socket, entry)) {
+            logWarning(QStringLiteral("You have a Low ID over IPv4 on %1 — switching to its IPv6 address.")
+                           .arg(entry->name()));
+            entry->setPreferIPv6Session(true);
+            const bool single = m_singleConnecting;
+            socket->requestLowIDBounce();
+            destroySocket(socket);
+            connectToServer(entry, !single);
+            return;                                    // do NOT commit this LowID
+        }
+    }
+
     // Commit the assigned ID (HighID, an accepted LowID, or a manual connect). This
     // runs just before the socket promotes to Connected, matching srchybrid's order
     // (m_clientid set, then SetConnectionState(CS_CONNECTED), then SetClientID).
@@ -1233,6 +1287,13 @@ bool ServerConnect::retryWithoutObfuscation(Server* listServer)
     listServer->setTriedCrypt(true);
     connectToServer(listServer, false, true /*noCrypt*/);
     return true;
+}
+
+bool ServerConnect::wantsIPv6Switch(const ServerSocket* socket, const Server* entry) const
+{
+    return m_config.preferIPv6OnLowID && socket && entry
+        && socket->sessionAddress().isIPv4() && !entry->ipv6Address().isNull()
+        && entry->hasBothFamilies() && !entry->ipv6SwitchFailed();
 }
 
 Address ServerConnect::otherFamilyFor(const ServerSocket* socket, const Server* listServer) const

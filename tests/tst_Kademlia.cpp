@@ -37,6 +37,7 @@ private slots:
     void processPacket_dispatches();
     void process_refreshesTheStoreCountersEveryTick();
     void process_reportsALostConnection();
+    void buddySearchTarget_randomAfterTheFirstSearch();
 };
 
 void tst_Kademlia::cleanup()
@@ -333,6 +334,22 @@ void tst_Kademlia::process_reportsALostConnection()
     QVERIFY(!kad.isConnected());
 
     kad.stop();
+}
+
+// The first buddy search asks the neighbours of ~kadID as MFC; later ones go elsewhere.
+void tst_Kademlia::buddySearchTarget_randomAfterTheFirstSearch()
+{
+    const uint8 bytes[16] = {0x12, 0x34, 0x56, 0x78, 0x9A};
+    const UInt128 kadId(bytes);
+    UInt128 inverted(true);
+    inverted.xorWith(kadId);
+
+    QCOMPARE(Kademlia::buddySearchTarget(kadId, 0), inverted);
+    const UInt128 second = Kademlia::buddySearchTarget(kadId, 1);
+    const UInt128 third = Kademlia::buddySearchTarget(kadId, 2);
+    QVERIFY(second != inverted);
+    QVERIFY(third != inverted);
+    QVERIFY(second != third);
 }
 
 QTEST_GUILESS_MAIN(tst_Kademlia)

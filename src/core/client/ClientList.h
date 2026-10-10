@@ -118,6 +118,22 @@ public:
     [[nodiscard]] BuddyStatus buddyStatus() const { return m_buddyStatus; }
     void setBuddy(UpDownClient* buddy, BuddyStatus status);
 
+    // Served buddies: the firewalled nodes we relay for while we are open. Not MFC, which
+    // serves one and keeps it in m_pBuddy; getBuddy() here is only the buddy we use.
+    // See docs/protocol/kad-buddy-search.md.
+
+    /// Connected served buddies, oldest first.
+    [[nodiscard]] std::vector<UpDownClient*> servedBuddies() const;
+    [[nodiscard]] int servedBuddyCount() const;
+    /// Most pending claims kept; a further one releases the oldest.
+    static constexpr int kMaxPendingBuddyClaims = 64;
+    /// Nodes we answered with FINDBUDDY_RES that have not connected yet.
+    [[nodiscard]] int pendingBuddyClaims() const;
+    /// The connected served buddy with this BuddyID, or nullptr.
+    [[nodiscard]] UpDownClient* findServedBuddy(const uint8* buddyID) const;
+    /// Connected below Preferences::maxServedBuddies(). Pending claims take no slot.
+    [[nodiscard]] bool canServeAnotherBuddy() const;
+
     /// A Kad node asked us to test its TCP port. Returns the client queued for the
     /// dial, or nullptr when the request is refused (ourselves, or a client that is
     /// already in a Kad state or connected). @p ip host order. MFC RequestTCP.

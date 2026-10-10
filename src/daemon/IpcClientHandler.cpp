@@ -236,6 +236,47 @@ bool IpcClientHandler::isHandshaked() const
     return m_handshaked;
 }
 
+void IpcClientHandler::replayDeferred()
+{
+    const auto pending = std::exchange(m_deferred, {});
+    for (const IpcMessage& msg : pending)
+        onMessageReceived(msg);
+}
+
+namespace {
+
+/// Requests answered while the core still loads its files: the session itself and
+/// what the server list, the Kad page, the status bar and the log show. Everything
+/// else reads or changes lists that are not complete yet.
+bool answeredWhileLoading(IpcMsgType type)
+{
+    switch (type) {
+    case IpcMsgType::Handshake:
+    case IpcMsgType::Ping:
+    case IpcMsgType::Subscribe:
+    case IpcMsgType::Shutdown:
+    case IpcMsgType::SyncLogs:
+    case IpcMsgType::GetPreferences:
+    case IpcMsgType::GetStats:
+    case IpcMsgType::GetSpeedHistory:
+    case IpcMsgType::GetStatsHistory:
+    case IpcMsgType::GetServers:
+    case IpcMsgType::GetConnection:
+    case IpcMsgType::GetServerState:
+    case IpcMsgType::GetServerMessages:
+    case IpcMsgType::GetNetworkInfo:
+    case IpcMsgType::GetKadContacts:
+    case IpcMsgType::GetKadStatus:
+    case IpcMsgType::GetKadSearches:
+    case IpcMsgType::GetKadLookupHistory:
+        return true;
+    default:
+        return false;
+    }
+}
+
+} // namespace
+
 // ---------------------------------------------------------------------------
 // Private slots
 // ---------------------------------------------------------------------------
@@ -246,6 +287,13 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     if (!m_handshaked && msg.type() != IpcMsgType::Handshake) {
         sendMessage(IpcMessage::makeError(msg.seqId(), 401,
             QStringLiteral("Handshake required")));
+        return;
+    }
+
+    // A download added now could duplicate a part file not read yet, and a list
+    // fetched now is partial: held, and answered by replayDeferred().
+    if (theApp.loading && !answeredWhileLoading(msg.type())) {
+        m_deferred.push_back(msg);
         return;
     }
 
@@ -1938,6 +1986,7 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
         // Bound port, not the pref: a pending restart must not advertise the new one
         cfg.listenPort             = theApp.listeningTcpPort();
         cfg.smartLowIdCheck        = thePrefs.smartLowIdCheck();
+        cfg.preferIPv6OnLowID      = thePrefs.serverPreferIPv6();
         cfg.bindAddress            = BindAddress::ipv4Literal();
         theApp.serverConnect->setConfig(cfg);
     }
@@ -3580,6 +3629,8 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setNodesDatURL(val.toString());
     else if (key == QStringLiteral("smartLowIdCheck"))
         thePrefs.setSmartLowIdCheck(val.toBool());
+    else if (key == QStringLiteral("serverPreferIPv6"))
+        thePrefs.setServerPreferIPv6(val.toBool());
     else if (key == QStringLiteral("manualServerHighPriority"))
         thePrefs.setManualServerHighPriority(val.toBool());
     // Files page
@@ -3745,6 +3796,8 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setMaxConsPerFive(static_cast<uint16>(val.toInteger()));
     else if (key == QStringLiteral("maxHalfConnections"))
         thePrefs.setMaxHalfConnections(static_cast<uint16>(val.toInteger()));
+    else if (key == QStringLiteral("maxServedBuddies"))
+        thePrefs.setMaxServedBuddies(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 32)));
     else if (key == QStringLiteral("serverKeepAliveTimeout"))
         thePrefs.setServerKeepAliveTimeout(static_cast<uint32>(val.toInteger()));
     else if (key == QStringLiteral("filterLANIPs"))

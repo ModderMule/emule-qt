@@ -246,7 +246,13 @@ public:
     void endChatSession();
 
     [[nodiscard]] KadState kadState() const { return m_kadState; }
-    void setKadState(KadState state) { m_kadState = state; m_kadStateSince = std::time(nullptr); }
+    void setKadState(KadState state)
+    {
+        m_kadState = state;
+        m_kadStateSince = std::time(nullptr);
+        if (state == KadState::None)
+            m_servedBuddy = false;
+    }
     [[nodiscard]] std::time_t kadStateSince() const { return m_kadStateSince; }
     void setKadStateSince(std::time_t t) { m_kadStateSince = t; }
 
@@ -738,6 +744,15 @@ public:
     [[nodiscard]] bool allowIncomingBuddyPingPong() const;
     [[nodiscard]] bool sendBuddyPingPong() const;
     void setLastBuddyPingPongTime();
+    /// The stamp is the next allowed time. For tests: a new client accepts no ping for 3 min.
+    void setNextBuddyPingPongTime(uint64 tick) { m_lastBuddyPingPongTime = tick; }
+
+    /// A firewalled node we relay for (we are its buddy), as opposed to
+    /// ClientList::getBuddy(), the buddy we use ourselves. Cleared with the Kad state.
+    [[nodiscard]] bool isServedBuddy() const { return m_servedBuddy; }
+    void setServedBuddy(bool val) { m_servedBuddy = val; }
+    /// Counts one relayed packet; false once the per-minute limit is used up.
+    [[nodiscard]] bool allowBuddyRelay();
 
     // -- Phase 3 — upload (UploadClient.cpp) --------------------------------
 
@@ -1252,6 +1267,9 @@ private:
     uint64 m_lastSourceAnswer = 0;
     uint64 m_lastAskedForSources = 0;
     uint64 m_lastBuddyPingPongTime = 0;
+    bool m_servedBuddy = false;
+    uint64 m_buddyRelayWindowStart = 0;
+    uint32 m_buddyRelayCount = 0;
     uint64 m_lastRefreshedDLDisplay = 0;
     uint64 m_lastRefreshedULDisplay = 0;
     uint32 m_randomUpdateWait = 0;

@@ -271,6 +271,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_deadServerRetriesSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_autoUpdateServerListCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_smartLowIdCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_serverPreferIPv6Check, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_manualHighPrioCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
 
     // Proxy page
@@ -345,6 +346,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     // Extended page
     connect(m_maxConPerFiveSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_maxHalfOpenSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_maxServedBuddiesSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_serverKeepAliveSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_useCreditSystemCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_rememberUploadQueueCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
@@ -1452,6 +1454,11 @@ QWidget* OptionsDialog::createServerPage()
     // "Use smart LowID check on connect"
     m_smartLowIdCheck = new QCheckBox(tr("Use smart LowID check on connect"), miscGroup);
     miscLayout->addWidget(m_smartLowIdCheck);
+
+    m_serverPreferIPv6Check = new QCheckBox(tr("Prefer IPv6 when IPv4 gives a Low ID"), miscGroup);
+    m_serverPreferIPv6Check->setToolTip(
+        tr("Reconnect to a server over its IPv6 address when the IPv4 connection got a Low ID"));
+    miscLayout->addWidget(m_serverPreferIPv6Check);
 
     // "Safe Connect"
     m_safeServerConnectCheck = new QCheckBox(tr("Safe Connect"), miscGroup);
@@ -5137,6 +5144,17 @@ QWidget* OptionsDialog::createExtendedPage()
     tcpRow3->addStretch();
     tcpLayout->addLayout(tcpRow3);
 
+    auto* tcpRow4 = new QHBoxLayout;
+    tcpRow4->addWidget(new QLabel(tr("Max. firewalled Kad nodes served as buddy:"), tcpGroup));
+    m_maxServedBuddiesSpin = new QSpinBox(tcpGroup);
+    m_maxServedBuddiesSpin->setRange(1, 32);
+    m_maxServedBuddiesSpin->setToolTip(
+        tr("While your ports are open, eMule relays callback requests for this many "
+           "firewalled Kad nodes. Each one uses a connection."));
+    tcpRow4->addWidget(m_maxServedBuddiesSpin);
+    tcpRow4->addStretch();
+    tcpLayout->addLayout(tcpRow4);
+
     scrollLayout->addWidget(tcpGroup);
 
     // --- Ungrouped checkboxes ---
@@ -6339,6 +6357,8 @@ void OptionsDialog::saveSettings()
         thePrefs.setServerListURL(m_serverListURLValue);   // the Servers panel field shows it
         req.append(QStringLiteral("smartLowIdCheck"));
         req.append(m_smartLowIdCheck->isChecked());
+        req.append(QStringLiteral("serverPreferIPv6"));
+        req.append(m_serverPreferIPv6Check->isChecked());
         req.append(QStringLiteral("manualServerHighPriority"));
         req.append(m_manualHighPrioCheck->isChecked());
 
@@ -6599,6 +6619,8 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(m_maxConPerFiveSpin->value()));
         req.append(QStringLiteral("maxHalfConnections"));
         req.append(static_cast<qint64>(m_maxHalfOpenSpin->value()));
+        req.append(QStringLiteral("maxServedBuddies"));
+        req.append(static_cast<qint64>(m_maxServedBuddiesSpin->value()));
         req.append(QStringLiteral("serverKeepAliveTimeout"));
         req.append(static_cast<qint64>(m_serverKeepAliveSpin->value()) * 60000); // min to ms
         req.append(QStringLiteral("filterLANIPs"));
@@ -6858,6 +6880,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setAutoUpdateServerList(m_autoUpdateServerListCheck->isChecked());
         thePrefs.setServerListURL(m_serverListURLValue);
         thePrefs.setSmartLowIdCheck(m_smartLowIdCheck->isChecked());
+        thePrefs.setServerPreferIPv6(m_serverPreferIPv6Check->isChecked());
         thePrefs.setManualServerHighPriority(m_manualHighPrioCheck->isChecked());
 
         // Proxy page fallback
@@ -6942,6 +6965,7 @@ void OptionsDialog::saveSettings()
         // Extended page fallback
         thePrefs.setMaxConsPerFive(static_cast<uint16>(m_maxConPerFiveSpin->value()));
         thePrefs.setMaxHalfConnections(static_cast<uint16>(m_maxHalfOpenSpin->value()));
+        thePrefs.setMaxServedBuddies(static_cast<uint16>(m_maxServedBuddiesSpin->value()));
         thePrefs.setServerKeepAliveTimeout(static_cast<uint32>(m_serverKeepAliveSpin->value()) * 60000);
         thePrefs.setFilterLANIPs(m_filterLANIPsCheck->isChecked());
         thePrefs.setCheckDiskspace(m_checkDiskspaceCheck->isChecked());
@@ -7103,6 +7127,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_autoUpdateServerListCheck->setChecked(prefs.value(QStringLiteral("autoUpdateServerList")).toBool());
     m_serverListURLValue = prefs.value(QStringLiteral("serverListURL")).toString();
     m_smartLowIdCheck->setChecked(prefs.value(QStringLiteral("smartLowIdCheck")).toBool(true));
+    m_serverPreferIPv6Check->setChecked(prefs.value(QStringLiteral("serverPreferIPv6")).toBool(true));
     m_manualHighPrioCheck->setChecked(prefs.value(QStringLiteral("manualServerHighPriority")).toBool());
 
     // Proxy page
@@ -7304,6 +7329,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     // Extended page
     m_maxConPerFiveSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxConsPerFive")).toInteger(20)));
     m_maxHalfOpenSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxHalfConnections")).toInteger(9)));
+    m_maxServedBuddiesSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxServedBuddies")).toInteger(8)));
     m_serverKeepAliveSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("serverKeepAliveTimeout")).toInteger(0)) / 60000);
     m_useCreditSystemCheck->setChecked(prefs.value(QStringLiteral("useCreditSystem")).toBool(true));
     // toBool(true), not bare toBool(): the default is on, and an older daemon that does not

@@ -1496,10 +1496,13 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data
             // Interpret the publisher's tags rather than storing them verbatim.
             // MFC KademliaUDPListener.cpp:1300-1380.
             bool addUDPPortTag = true;
+            uint64 sourceType = 0;   // for the reachability statistics
+            bool hasBuddy = false;
             for (auto& tag : tags) {
                 switch (tag.nameId()) {
                 case FT_SOURCETYPE:
                     if (!entry->m_source) {
+                        sourceType = tag.isInt() ? tag.intValue() : 0;
                         // A source result is useless without an address, and the
                         // publisher never sends its own — so we synthesise it
                         // from the address the packet actually came from. This
@@ -1544,6 +1547,7 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data
 
                     if (reason == nullptr) {
                         entry->addTag(std::move(tag));
+                        hasBuddy = true;
                     } else {
                         entry->m_source = false;
                         logKad(QStringLiteral("Kad: publish from source %1 with %2 buddy IP — rejected")
@@ -1576,6 +1580,15 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data
             if (!stored) {
                 delete entry;
                 return;
+            }
+
+            switch (sourceType) {
+            case 1: case 4: countKad(&KadCounters::sourcesOpen); break;
+            case 3: case 5:
+                countKad(hasBuddy ? &KadCounters::sourcesBuddy : &KadCounters::sourcesNoBuddy);
+                break;
+            case 6: countKad(&KadCounters::sourcesDirectCallback); break;
+            default: break;
             }
         }
 
@@ -1613,6 +1626,8 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_RES(const uint8* data, uint3
     UInt128 target = io::readUInt128(io);
     uint8 load = io.readUInt8();
 
+    logKad(QStringLiteral("Kad: PUBLISH_RES from %1:%2, target=%3, load=%4")
+               .arg(ipToString(ip)).arg(udpPort).arg(target.toHexString()).arg(load));
     SearchManager::processPublishResult(target, load, true);
 
     // Check if the remote node requests an ACK
@@ -1840,14 +1855,16 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_REQ(const uint8* data, uint
     if (prefs->firewalled() || UDPFirewallTester::isFirewalledUDP(true)
         || !UDPFirewallTester::isVerified())
     {
+        logKad(QStringLiteral("Kad: FINDBUDDY_REQ from %1:%2 — ignored, we are firewalled")
+                   .arg(ipToString(ip)).arg(udpPort));
         return;
     }
 
-    // Already have a connected buddy — reject.
-    // Matches MFC line 1693.
-    if (clientList->buddyStatus() == eMule::BuddyStatus::Connected) {
-        logKad(QStringLiteral("Kad: FINDBUDDY_REQ from %1:%2 — already have a buddy")
-                   .arg(ipToString(ip)).arg(udpPort));
+    // MFC line 1693 refuses once one buddy is connected. Not MFC: we serve several,
+    // see docs/protocol/kad-buddy-search.md. As MFC: only connected ones count.
+    if (!clientList->canServeAnotherBuddy()) {
+        logKad(QStringLiteral("Kad: FINDBUDDY_REQ from %1:%2 — all %3 buddy slots in use")
+                   .arg(ipToString(ip)).arg(udpPort).arg(thePrefs.maxServedBuddies()));
         return;
     }
 
@@ -1940,23 +1957,26 @@ void KademliaUDPListener::process_KADEMLIA_CALLBACK_REQ(const uint8* data, uint3
     if (!clientList)
         return;
 
-    auto* buddy = clientList->getBuddy();
-    if (!buddy || clientList->buddyStatus() != eMule::BuddyStatus::Connected) {
-        logKad(QStringLiteral("Kad: CALLBACK_REQ from %1 — no connected buddy, ignoring")
-                   .arg(ipToString(ip)));
-        return;
-    }
-
-    if (!buddy->socket() || !buddy->socket()->isConnected()) {
-        logKad(QStringLiteral("Kad: CALLBACK_REQ from %1 — buddy has no active socket")
-                   .arg(ipToString(ip)));
-        return;
-    }
-
     SafeMemFile bio(data, len);
     UInt128 checkID = io::readUInt128(bio);
     UInt128 fileID  = io::readUInt128(bio);
     uint16 tcpPort  = bio.readUInt16();
+
+    // The BuddyID picks the served node. MFC forwards to its one buddy without comparing
+    // (JOHNTODO at line 1779); the firewalled side drops a callback that is not its own.
+    uint8 buddyIDBytes[16];
+    checkID.toByteArray(buddyIDBytes);
+    auto* buddy = clientList->findServedBuddy(buddyIDBytes);
+    if (!buddy) {
+        logKad(QStringLiteral("Kad: CALLBACK_REQ from %1 — no connected buddy with that ID, ignoring")
+                   .arg(ipToString(ip)));
+        return;
+    }
+    if (!buddy->allowBuddyRelay()) {
+        logKad(QStringLiteral("Kad: CALLBACK_REQ from %1 — relay limit for that buddy reached")
+                   .arg(ipToString(ip)));
+        return;
+    }
 
     // Build OP_CALLBACK TCP packet: original fields + sender's IP and port
     SafeMemFile relayPacket;

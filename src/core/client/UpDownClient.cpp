@@ -2711,7 +2711,8 @@ void UpDownClient::resetFileStatusInfo()
 void UpDownClient::onInfoPacketsReceived()
 {
     // Complete buddy link after HELLO exchange (MFC ProcessMuleInfoPacket)
-    if (m_kadState == KadState::ConnectedBuddy && theApp.clientList) {
+    // A served buddy (we relay for it) is not our own buddy.
+    if (m_kadState == KadState::ConnectedBuddy && !m_servedBuddy && theApp.clientList) {
         theApp.clientList->setBuddy(this, BuddyStatus::Connected);
     }
 
@@ -4188,7 +4189,8 @@ void UpDownClient::processReaskCallbackTCP(const uint8* data, uint32 size)
 // processBuddyPing — MFC ListenSocket.cpp OP_BUDDYPING (1401-1418)
 //
 // Our Kad buddy pings us to keep the connection alive. We verify the
-// sender is our buddy, check rate limiting, and reply with OP_BUDDYPONG.
+// sender is our buddy or a node we serve, check rate limiting, and reply
+// with OP_BUDDYPONG.
 // ===========================================================================
 
 void UpDownClient::processBuddyPing()
@@ -4197,8 +4199,11 @@ void UpDownClient::processBuddyPing()
     if (theApp.clientList)
         buddy = theApp.clientList->getBuddy();
 
-    // Verify: sender must be our buddy, with valid Kad version, not too frequent
-    if (buddy != this || m_kadVersion == 0 || !allowIncomingBuddyPingPong())
+    // The firewalled side pings, so on an open node the sender is a served buddy.
+    const bool served = m_servedBuddy && m_kadState == KadState::ConnectedBuddy;
+
+    // Verify: sender must be a buddy, with valid Kad version, not too frequent
+    if ((buddy != this && !served) || m_kadVersion == 0 || !allowIncomingBuddyPingPong())
         return;
 
     auto packet = std::make_unique<Packet>(OP_BUDDYPONG, 0, OP_EMULEPROT);
@@ -4256,6 +4261,21 @@ bool UpDownClient::sendBuddyPingPong() const
 void UpDownClient::setLastBuddyPingPongTime()
 {
     m_lastBuddyPingPongTime = getTickCount() + MIN2MS(10);
+}
+
+// Not MFC: with several served buddies the relay load is bounded per buddy.
+bool UpDownClient::allowBuddyRelay()
+{
+    constexpr uint32 kMaxBuddyRelaysPerMin = 60;
+    const uint64 now = getTickCount();
+    if (now - m_buddyRelayWindowStart >= MIN2MS(1)) {
+        m_buddyRelayWindowStart = now;
+        m_buddyRelayCount = 0;
+    }
+    if (m_buddyRelayCount >= kMaxBuddyRelaysPerMin)
+        return false;
+    ++m_buddyRelayCount;
+    return true;
 }
 
 // ===========================================================================

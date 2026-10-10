@@ -166,7 +166,7 @@ bool DaemonApp::start()
             m_notifierBridge.get(), &CoreNotifierBridge::onPortMapStatusChanged);
     connect(m_coreSession.get(), &CoreSession::portBindFailed,
             m_notifierBridge.get(), &CoreNotifierBridge::onPortBindFailed);
-    // The sockets were opened in start(), before this connection existed
+    // Any that failed before this connection existed
     for (const int port : m_coreSession->failedBindPorts())
         m_notifierBridge->onPortBindFailed(port);
 
@@ -212,8 +212,9 @@ bool DaemonApp::start()
     connect(m_ipcServer.get(), &IpcServer::indexerConfigChanged,
             this, &DaemonApp::applyIndexerConfig);
 
-    // Start web server if enabled
-    startWebServer();
+    // The web server starts in onCoreLoaded(): a REST client must not read
+    // half-loaded lists or add a download whose part file is still unread.
+    connect(m_coreSession.get(), &CoreSession::loaded, this, &DaemonApp::onCoreLoaded);
 
     // Usenet. Always constructed; usenetEnabled() gates only the auto-start, so
     // the switch takes effect without a daemon restart.
@@ -636,6 +637,14 @@ void DaemonApp::connectIndexerPushes()
         msg.append(error);
         m_ipcServer->broadcast(msg);
     });
+}
+
+void DaemonApp::onCoreLoaded()
+{
+    logInfo(QStringLiteral("Core loaded — networks starting"));
+    startWebServer();
+    if (m_ipcServer)
+        m_ipcServer->replayDeferred();
 }
 
 void DaemonApp::stopWebServer()

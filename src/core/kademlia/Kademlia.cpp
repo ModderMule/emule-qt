@@ -408,6 +408,16 @@ bool Kademlia::shouldSkipFirewallChecks()
         && instance() && instance()->isRunningInLANMode();
 }
 
+UInt128 Kademlia::buddySearchTarget(const UInt128& kadId, uint32 searchesWithoutBuddy)
+{
+    UInt128 target(true);
+    if (searchesWithoutBuddy == 0)
+        target.xorWith(kadId);      // MFC: CUInt128(true).Xor(GetKadID())
+    else
+        target.setValueRandom();
+    return target;
+}
+
 bool Kademlia::findNodeIDByIP(KadClientSearcher& requester, uint32 ip, uint16 tcpPort, uint16 udpPort)
 {
     if (!m_udpListener)
@@ -551,31 +561,43 @@ void Kademlia::process()
 
     // 6. Find buddy — set the one-shot flag on the timer; the actual search
     //    only fires below if we are firewalled and have no buddy.
-    //    Matches MFC Kademlia.cpp:227-229 + ClientList.cpp:592-610.
+    //    Matches MFC Kademlia.cpp:227-229 + ClientList.cpp:592-610, but retries
+    //    every 10 min (MFC: 20) — see docs/protocol/kad-buddy-search.md.
     if (now >= m_nextFindBuddy && m_prefs) {
         m_prefs->setFindBuddy(true);
-        m_nextFindBuddy = now + MIN2S(20);
+        m_nextFindBuddy = now + MIN2S(10);
     }
 
     // 6b. Consume the flag and start a buddy search if we actually need one:
     //     only when both TCP and UDP firewalled, no buddy, and Kad connected.
-    if (m_prefs && isConnected()
-        && isFirewalled() && UDPFirewallTester::isFirewalledUDP(true))
+    const bool needsBuddy = m_prefs && isConnected()
+        && isFirewalled() && UDPFirewallTester::isFirewalledUDP(true);
+    if (!needsBuddy
+        || (theApp.clientList && theApp.clientList->buddyStatus() == BuddyStatus::Connected))
     {
+        // next buddy loss starts again with the MFC-style search
+        m_buddySearchesWithoutBuddy = 0;
+    }
+    if (needsBuddy) {
         if (theApp.clientList && theApp.clientList->buddyStatus() == BuddyStatus::None
             && m_prefs->findBuddy() && !thePrefs.cryptLayerRequired())
         {
             // Buddy callbacks don't support obfuscation, so a buddy search is
             // futile when RequireCrypt is on. Evaluated after findBuddy() so the
             // one-shot flag is still consumed each cycle. MFC ClientList.cpp:599.
-            // Target = ~kadID (bitwise NOT).  MFC: CUInt128(true).Xor(GetKadID())
-            UInt128 target(UInt128(true));
-            target.xorWith(m_prefs->kadId());
+            // First search: target = ~kadID as MFC. Later ones walk to a random
+            // target — free buddy slots are rare and the same neighbours stay full.
+            const bool randomTarget = m_buddySearchesWithoutBuddy > 0;
+            const UInt128 target = buddySearchTarget(m_prefs->kadId(),
+                                                     m_buddySearchesWithoutBuddy);
+            // prepareLookup(start=true) already runs it
             auto* search = SearchManager::prepareLookup(SearchType::FindBuddy,
                                                          true, target);
             if (search) {
-                SearchManager::startSearch(search);
-                logKad(QStringLiteral("Kad: Initiated buddy search"));
+                ++m_buddySearchesWithoutBuddy;
+                logKad(randomTarget
+                           ? QStringLiteral("Kad: Initiated buddy search (random target)")
+                           : QStringLiteral("Kad: Initiated buddy search"));
             } else {
                 // Search ID already in use — re-set the flag for next cycle
                 m_prefs->setFindBuddy(true);

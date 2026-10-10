@@ -42,6 +42,10 @@ public:
     /// The same without the push tap: for news the tap has already seen.
     void sendToClients(const Ipc::IpcMessage& msg);
 
+    /// The core has finished loading: every client gets the answers it was kept
+    /// waiting for.
+    void replayDeferred();
+
     /// True when a handshaked client is there to receive a push.
     [[nodiscard]] bool hasReadyClient() const;
 

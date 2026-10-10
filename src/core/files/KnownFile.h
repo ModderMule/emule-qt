@@ -160,7 +160,7 @@ public:
     /// The rule behind isSharedInKad(), without the globals.
     [[nodiscard]] static bool sharedInKad(time_t now, time_t lastPublish, bool kadConnected,
                                           bool kadFirewalled, bool buddyMatches,
-                                          bool udpOpenVerified);
+                                          bool udpOpenVerified, bool ipv6Route = false);
 
     /// Kad keywords extracted from filename.
     [[nodiscard]] const std::vector<QString>& kadKeywords() const { return m_kadKeywords; }

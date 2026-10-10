@@ -179,6 +179,10 @@ QCborMap kadReply(const QCborArray& sessionCountries)
     s.udpOpenNodes = 90;
     s.tcpFirewalledNodes = 60;
     s.tcpOpenNodes = 60;
+    s.sourcesOpen = 50;
+    s.sourcesBuddy = 30;
+    s.sourcesDirectCallback = 15;
+    s.sourcesNoBuddy = 5;
     s.connectedMs = 1'800'000;
 
     KadCounters cum = s;
@@ -591,6 +595,17 @@ void tst_StatisticsPanel::kademliaCountersCarrySharesInBothScopes()
         QCOMPARE(childNamed(firewalled, QStringLiteral("TCP"))->text(0),
                  QStringLiteral("TCP: 60 (50.0%)"));
 
+        QTreeWidgetItem* publishes = childNamed(nodes, QStringLiteral("Source Publishes Received"));
+        QCOMPARE(publishes->text(0), QStringLiteral("Source Publishes Received: 100"));
+        QCOMPARE(childNamed(publishes, QStringLiteral("Open"))->text(0),
+                 QStringLiteral("Open: 50 (50.0%)"));
+        QCOMPARE(childNamed(publishes, QStringLiteral("Firewalled, with Buddy"))->text(0),
+                 QStringLiteral("Firewalled, with Buddy: 30 (30.0%)"));
+        QCOMPARE(childNamed(publishes, QStringLiteral("Firewalled, Direct Callback"))->text(0),
+                 QStringLiteral("Firewalled, Direct Callback: 15 (15.0%)"));
+        QCOMPARE(childNamed(publishes, QStringLiteral("Firewalled, without Buddy"))->text(0),
+                 QStringLiteral("Firewalled, without Buddy: 5 (5.0%)"));
+
         QTreeWidgetItem* activity = childNamed(scope, QStringLiteral("Activity"));
         QCOMPARE(childNamed(activity, QStringLiteral("Hellos Answered"))->text(0),
                  QStringLiteral("Hellos Answered: 750 (75.0%)"));
@@ -623,7 +638,9 @@ void tst_StatisticsPanel::kademliaFirewalledRowsSayNaWithoutSamples()
     QCborMap reply = kadReply({});
     for (const QString& scopeName : {QStringLiteral("session"), QStringLiteral("cumulative")}) {
         QCborMap counters = reply.value(scopeName).toMap();
-        for (const char* key : {"udpFirewalledNodes", "udpOpenNodes", "tcpFirewalledNodes"})
+        for (const char* key : {"udpFirewalledNodes", "udpOpenNodes", "tcpFirewalledNodes",
+                                "sourcesOpen", "sourcesBuddy", "sourcesDirectCallback",
+                                "sourcesNoBuddy"})
             counters.insert(QString::fromLatin1(key), 0);
         reply.insert(scopeName, counters);
     }
@@ -641,6 +658,11 @@ void tst_StatisticsPanel::kademliaFirewalledRowsSayNaWithoutSamples()
         // Samples, none of them firewalled: a real 0, not a missing one.
         QCOMPARE(childNamed(firewalled, QStringLiteral("TCP"))->text(0),
                  QStringLiteral("TCP: 0 (0.0%)"));
+        // A firewalled node is sent no publishes.
+        QTreeWidgetItem* publishes = childNamed(nodes, QStringLiteral("Source Publishes Received"));
+        QCOMPARE(publishes->text(0), QStringLiteral("Source Publishes Received: 0"));
+        QCOMPARE(childNamed(publishes, QStringLiteral("Open"))->text(0),
+                 QStringLiteral("Open: n/a"));
     }
 }
 

@@ -793,9 +793,14 @@ The RECOMMENDED pattern is consequently:
 > `CT_MOD_IP_V6`. Peer-to-peer transfers then prefer IPv6. Connect to a server over IPv6 only when
 > it has no reachable IPv4.
 
-This is why hostname resolution for servers defaults to **A first, with a single fallback to
-AAAA** rather than the usual "prefer IPv6": preferring AAAA on a dual-stack server costs a HighID
-for no gain. eMuleQt exposes a `serverPreferIPv6` preference (default `false`) that swaps the order.
+This is why hostname resolution for servers is **A first, with a single fallback to AAAA** rather
+than the usual "prefer IPv6": preferring AAAA on a dual-stack server costs a HighID for no gain.
+
+eMuleQt has a `serverPreferIPv6` preference (default `true`, Options → Server: "Prefer IPv6 when
+IPv4 gives a Low ID"). IPv4 is still dialled first. When that session is assigned a LowID that
+would be kept and the server has a known IPv6 address, the session is dropped and the same server
+is redialled over IPv6; the choice is remembered for that server until the client restarts. A
+failed IPv6 dial returns to IPv4 and keeps the LowID. A HighID over IPv4 clears it.
 
 No IPv6 branch exists anywhere in ID handling; a LowID obtained over an IPv6 session is accepted
 normally, and remains usable because IPv6 peers are dialled directly regardless of eD2K ID.
@@ -891,6 +896,13 @@ Append, **last**:
   (1, 3, 4, 5 or 6).
 - `"bi6"` — only in the firewalled-with-buddy branch, when the buddy has a known IPv6.
 
+**Buddy-less IPv6 record (eMuleQt).** A node that is firewalled on IPv4, has no direct UDP
+callback and no buddy would publish nothing at all (sources, keywords and notes are all held back).
+When the advertise gate of §2.2 is open it publishes anyway: source type 3 (5 above 4 GB) **without**
+`FT_SERVERIP` / `FT_SERVERPORT` / `FT_BUDDYHASH` / `bi6`, plus the usual port, size and
+`FT_ENCRYPTION` tags and `ip6`. Indexing nodes store it unchanged. A stock client finds no route to
+such a source and drops it without any network I/O; an IPv6-capable client dials `ip6` directly.
+
 ### 5.3 Storing and serving
 
 An indexing node stores unrecognised tags verbatim and re-serves them inside
@@ -912,7 +924,10 @@ Parse order matters: evaluate the classic numeric tags and the source-type gate 
 last valid one wins and a trailing malformed one clears the value.
 
 An accepted `ip6` marks the source IPv6-reachable, which allows a LowID (type 3/5) source to be
-dialled directly over IPv6 instead of via the buddy callback.
+dialled directly over IPv6 instead of via the buddy callback. A type 3/5 source is normally dropped
+by a client that is itself firewalled (two firewalled ends cannot meet through a buddy); eMuleQt
+keeps it when the record carries `ip6` and the client has a public IPv6 of its own. The buddy tags
+may be absent on such a record.
 
 ### 5.5 Kad DNS
 

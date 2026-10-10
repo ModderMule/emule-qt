@@ -65,6 +65,10 @@ public:
     explicit CoreSession(QObject* parent = nullptr);
     ~CoreSession() override;
 
+    /// Build the core, then load it in event-loop steps. Returns with every object
+    /// in place and server.met read, but before the IP filter, clients.met, known.met,
+    /// the shares and the part files are loaded and before any P2P socket is open — so the caller can open
+    /// its control port at once. loaded() follows.
     void start();
     void stop();
 
@@ -130,8 +134,13 @@ signals:
     /// A listen port could not be opened (MFC IDS_MAIN_SOCKETERROR).
     void portBindFailed(int port);
 
+    /// The file lists are complete and the networks are up (theApp.loading is off).
+    void loaded();
+
 private slots:
     void onTimer();
+    /// One slice of the deferred load; re-posts itself until the last.
+    void loadStep();
 
 private:
     /// `<ConfigDir>/uploadqueue.met` — the Upload Queue Storage file.
@@ -148,6 +157,7 @@ private:
     uint32 m_lastStatsFlushTick = 0;
 
     void initClientInfra();
+    void initListenSocket();
     void shutdownClientInfra();
     void initDownloadQueue();
     void shutdownDownloadQueue();
@@ -183,6 +193,8 @@ private:
     /// a port nothing is listening on.
     [[nodiscard]] std::vector<PortMapRequest> buildPortMapRequests() const;
     void stopWorkerThreads();
+    /// What start() left for after the load: sockets, auto-connect, the tick.
+    void finishStart();
     void suspendNetworking();
     void resumeNetworking();
     /// No server, no Kad, no peer socket.
@@ -196,6 +208,12 @@ private:
     bool m_resumeEd2k = false;   ///< reconnect to a server on resume
     bool m_resumeKad = false;    ///< restart Kad on resume
     bool m_connectHold = false;  ///< auto-connect deferred until releaseConnectHold()
+
+    enum class LoadStage { IpFilter, Credits, KnownFiles, SharedFiles, PartFiles, Network, Done };
+    LoadStage m_loadStage = LoadStage::Done;
+    QStringList m_pendingPartMets;    ///< .part.met files loadStep() has yet to read
+    bool m_knownFilesLoaded = false;  ///< known.met was read: saving it is safe
+    bool m_creditsLoaded = false;     ///< same for clients.met
     // Preference values the sockets were last bound with (not the socket ports:
     // a configured 0 gets an OS-assigned one).
     QList<int> m_failedBindPorts;

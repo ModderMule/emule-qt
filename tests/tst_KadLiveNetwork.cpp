@@ -1253,9 +1253,10 @@ void tst_KadLiveNetwork::buddySearch_connectsWithBuddy()
         QTest::qWait(1'000);
         SearchManager::stopAllSearches();
 
-        // Target = ~kadID (bitwise NOT), matching MFC ClientList.cpp:603
-        UInt128 target(UInt128(true));
-        target.xorWith(prefs->kadId());
+        // First attempt asks the neighbours of ~kadID (MFC ClientList.cpp:603),
+        // later ones walk to a random target like Kademlia::process().
+        const UInt128 target = Kademlia::buddySearchTarget(prefs->kadId(),
+                                                           static_cast<uint32>(attempt));
         auto* search = SearchManager::prepareLookup(SearchType::FindBuddy,
                                                      true, target);
         QVERIFY2(search != nullptr, "prepareLookup for FindBuddy returned nullptr");

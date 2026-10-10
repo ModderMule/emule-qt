@@ -68,6 +68,15 @@ DownloadQueue::~DownloadQueue()
 
 void DownloadQueue::init(const QStringList& tempDirs)
 {
+    for (const QString& metPath : partMetFiles(tempDirs))
+        loadPartMet(metPath);
+
+    sortByPriority();
+}
+
+QStringList DownloadQueue::partMetFiles(const QStringList& tempDirs)
+{
+    QStringList files;
     for (const auto& tempDir : tempDirs) {
         QDir dir(tempDir);
         if (!dir.exists())
@@ -75,65 +84,68 @@ void DownloadQueue::init(const QStringList& tempDirs)
 
         QDirIterator it(tempDir, {QStringLiteral("*.part.met")},
                         QDir::Files, QDirIterator::NoIteratorFlags);
+        while (it.hasNext())
+            files.append(it.next());
+    }
+    return files;
+}
 
-        while (it.hasNext()) {
-            it.next();
-            const QString filename = it.fileName();
-            const QString directory = QFileInfo(it.filePath()).absolutePath();
+void DownloadQueue::loadPartMet(const QString& metFile)
+{
+    const QFileInfo info(metFile);
+    const QString filename = info.fileName();
+    const QString directory = info.absolutePath();
 
-            auto* partFile = new PartFile;
-            auto result = partFile->loadPartFile(directory, filename);
+    auto* partFile = new PartFile;
+    auto result = partFile->loadPartFile(directory, filename);
 
-            // MFC CDownloadQueue::Init: if .met is corrupt, try .bak backup
-            if (result != PartFileLoadResult::LoadSuccess) {
-                const QString metPath = directory + QDir::separator() + filename;
-                const QString bakPath = metPath + QStringLiteral(".bak");
-                if (QFile::exists(bakPath)) {
-                    logInfo(QStringLiteral("Trying backup for: %1").arg(filename));
-                    QFile::remove(metPath);
-                    QFile::copy(bakPath, metPath);
-                    delete partFile;
-                    partFile = new PartFile;
-                    result = partFile->loadPartFile(directory, filename);
-                    if (result == PartFileLoadResult::LoadSuccess)
-                        partFile->savePartFile();
-                }
-            }
-
-            if (result == PartFileLoadResult::LoadSuccess) {
-                connectPartFileSignals(partFile);
-                m_items.push_back(partFile);
-                // "part files are always shared files" — srchybrid/DownloadQueue.cpp:109,127.
-                // loadPartFile() has already latched Ready if a part verified, so this
-                // is MFC's own test: GetStatus(true) == PS_READY, ignoring pause, because
-                // a paused download with a complete part stays shared.
-                // Not onlyAdd: a part file that comes back shareable is news the server
-                // should hear, and MFC arms the republish here too (:109,127). Only the
-                // bulk re-add in addPartFilesToShare() suppresses it (:73).
-                if (m_sharedFileList && partFile->status(/*ignorePause=*/true) == PartFileStatus::Ready)
-                    m_sharedFileList->safeAddKFile(partFile);
-                // Nothing left to download: the last run stopped before the file was
-                // delivered. MFC completes it here too (srchybrid/PartFile.cpp:1108-1110).
-                partFile->finishLoadedDownload();
-                // Record the state the file came back in — a download that silently
-                // loads paused is skipped by process() and will never ask for sources.
-                logInfo(QStringLiteral("Loaded part file: %1 — status=%2 paused=%3 gaps=%4 completed=%5/%6")
-                            .arg(partFile->fileName())
-                            .arg(static_cast<int>(partFile->status()))
-                            .arg(partFile->isPaused() ? 1 : 0)
-                            .arg(partFile->gapList().size())
-                            .arg(static_cast<uint64>(partFile->completedSize()))
-                            .arg(static_cast<uint64>(partFile->fileSize())));
-            } else {
-                logWarning(QStringLiteral("Failed to load part file: %1 (result=%2)")
-                               .arg(filename)
-                               .arg(static_cast<int>(result)));
-                delete partFile;
-            }
+    // MFC CDownloadQueue::Init: if .met is corrupt, try .bak backup
+    if (result != PartFileLoadResult::LoadSuccess) {
+        const QString metPath = directory + QDir::separator() + filename;
+        const QString bakPath = metPath + QStringLiteral(".bak");
+        if (QFile::exists(bakPath)) {
+            logInfo(QStringLiteral("Trying backup for: %1").arg(filename));
+            QFile::remove(metPath);
+            QFile::copy(bakPath, metPath);
+            delete partFile;
+            partFile = new PartFile;
+            result = partFile->loadPartFile(directory, filename);
+            if (result == PartFileLoadResult::LoadSuccess)
+                partFile->savePartFile();
         }
     }
 
-    sortByPriority();
+    if (result != PartFileLoadResult::LoadSuccess) {
+        logWarning(QStringLiteral("Failed to load part file: %1 (result=%2)")
+                       .arg(filename)
+                       .arg(static_cast<int>(result)));
+        delete partFile;
+        return;
+    }
+
+    connectPartFileSignals(partFile);
+    m_items.push_back(partFile);
+    // "part files are always shared files" — srchybrid/DownloadQueue.cpp:109,127.
+    // loadPartFile() has already latched Ready if a part verified, so this
+    // is MFC's own test: GetStatus(true) == PS_READY, ignoring pause, because
+    // a paused download with a complete part stays shared.
+    // Not onlyAdd: a part file that comes back shareable is news the server
+    // should hear, and MFC arms the republish here too (:109,127). Only the
+    // bulk re-add in addPartFilesToShare() suppresses it (:73).
+    if (m_sharedFileList && partFile->status(/*ignorePause=*/true) == PartFileStatus::Ready)
+        m_sharedFileList->safeAddKFile(partFile);
+    // Nothing left to download: the last run stopped before the file was
+    // delivered. MFC completes it here too (srchybrid/PartFile.cpp:1108-1110).
+    partFile->finishLoadedDownload();
+    // Record the state the file came back in — a download that silently
+    // loads paused is skipped by process() and will never ask for sources.
+    logInfo(QStringLiteral("Loaded part file: %1 — status=%2 paused=%3 gaps=%4 completed=%5/%6")
+                .arg(partFile->fileName())
+                .arg(static_cast<int>(partFile->status()))
+                .arg(partFile->isPaused() ? 1 : 0)
+                .arg(partFile->gapList().size())
+                .arg(static_cast<uint64>(partFile->completedSize()))
+                .arg(static_cast<uint64>(partFile->fileSize())));
 }
 
 // ===========================================================================
@@ -621,8 +633,9 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
 
     case 5:
     case 3: {
-        // Firewalled with buddy callback (MFC DownloadQueue.cpp:1553-1582)
-        if (theApp.isFirewalled()) {
+        // Firewalled with buddy callback (MFC DownloadQueue.cpp:1553-1582). Not MFC:
+        // kept while we are firewalled if both ends have an IPv6 to dial directly.
+        if (theApp.isFirewalled() && !(sourceIPv6 && theApp.hasConfidentPublicIPv6())) {
             logDebug(QStringLiteral("addKadSourceResult: skipping FW source type %1 — we are firewalled")
                          .arg(sourceType));
             return;
@@ -635,7 +648,8 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
             logDebug(QStringLiteral("addKadSourceResult: buddy IP %1 filtered").arg(ipstr(buddyIP)));
             return;
         }
-        if (m_clientList && m_clientList->isBannedClient(Address::fromNetworkOrder(buddyIP))) {
+        // buddyIP 0: an IPv6-only record without a buddy
+        if (buddyIP != 0 && m_clientList && m_clientList->isBannedClient(Address::fromNetworkOrder(buddyIP))) {
             logDebug(QStringLiteral("addKadSourceResult: buddy IP %1 banned").arg(ipstr(buddyIP)));
             return;
         }

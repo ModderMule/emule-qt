@@ -106,6 +106,8 @@ public:
     static void applyLogFileSettings();
 
 private:
+    /// CoreSession::loaded: start what had to wait for the file lists.
+    void onCoreLoaded();
     void startWebServer();
     void stopWebServer();
     void restartWebServer();

@@ -79,6 +79,18 @@ void IpcServer::sendToClients(const Ipc::IpcMessage& msg)
     }
 }
 
+void IpcServer::replayDeferred()
+{
+    // A snapshot, as in sendToClients(): a replayed request may drop its client
+    std::vector<IpcClientHandler*> clients;
+    clients.reserve(m_clients.size());
+    for (const auto& handler : m_clients)
+        clients.push_back(handler.get());
+
+    for (auto* handler : clients)
+        handler->replayDeferred();
+}
+
 bool IpcServer::hasReadyClient() const
 {
     return std::ranges::any_of(m_clients, [](const auto& h) { return h->isHandshaked(); });

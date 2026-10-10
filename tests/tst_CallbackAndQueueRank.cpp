@@ -16,6 +16,10 @@
 #include "files/KnownFileList.h"
 #include "files/PartFile.h"
 #include "files/SharedFileList.h"
+#include "kademlia/KadIO.h"
+#include "kademlia/KadUDPKey.h"
+#include "kademlia/KadUDPListener.h"
+#include "kademlia/Kademlia.h"
 #include "net/ClientReqSocket.h"
 #include "net/Address.h"
 #include "net/ClientUDPSocket.h"
@@ -63,6 +67,9 @@ public:
 
     bool receivedStartUpload() const { return m_receivedStartUpload; }
     bool receivedReaskcallbackTcp() const { return m_receivedReaskcallbackTcp; }
+    int callbacksReceived() const { return m_callbacksReceived; }
+    std::vector<uint8> lastCallbackData() const { return m_lastCallbackData; }
+    bool receivedBuddyPong() const { return m_receivedBuddyPong; }
     std::vector<uint8> lastReaskcallbackData() const { return m_lastReaskcallbackData; }
 
 protected:
@@ -91,6 +98,13 @@ protected:
                         reinterpret_cast<uint8*>(packet->pBuffer),
                         reinterpret_cast<uint8*>(packet->pBuffer) + packet->size);
                 break;
+            case OP_CALLBACK:
+                ++m_callbacksReceived;
+                m_lastCallbackData.assign(
+                    reinterpret_cast<uint8*>(packet->pBuffer),
+                    reinterpret_cast<uint8*>(packet->pBuffer) + packet->size);
+                break;
+            case OP_BUDDYPONG: m_receivedBuddyPong = true; break;
             default: break;
             }
         }
@@ -183,6 +197,9 @@ private:
     bool m_receivedStartUpload = false;
     bool m_receivedReaskcallbackTcp = false;
     std::vector<uint8> m_lastReaskcallbackData;
+    int m_callbacksReceived = 0;
+    std::vector<uint8> m_lastCallbackData;
+    bool m_receivedBuddyPong = false;
 };
 
 // ===========================================================================
@@ -759,8 +776,14 @@ void tst_CallbackAndQueueRank::queueRank_updatedViaUdpReask_plaintext()
 
 void tst_CallbackAndQueueRank::kadCallbackRelay_relaysToBuddy()
 {
-    std::array<uint8, 16> buddyHash;
-    std::memset(buddyHash.data(), 0x33, 16);
+    // We are open and relay for two firewalled nodes; the BuddyID in a packet picks one.
+    KadFixture kad{KadMode::Connected};
+    kad::Kademlia::setClientList(m_clientList);
+    const auto resetList = qScopeGuard([] { kad::Kademlia::setClientList(nullptr); });
+
+    // Not a byte palindrome: the Kad wire form swaps each 32-bit word.
+    const std::array<uint8, 16> buddyHash = {0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
+                                             0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F};
 
     MockSourceServer buddyServer(buddyHash, m_fileHash, 0, false, this);
     QVERIFY(buddyServer.startListening());
@@ -788,17 +811,77 @@ void tst_CallbackAndQueueRank::kadCallbackRelay_relaysToBuddy()
 
     QTRY_VERIFY_WITH_TIMEOUT(buddyClient->socket() != nullptr, 5000);
 
-    m_clientList->setBuddy(buddyClient, BuddyStatus::Connected);
-    QCOMPARE(m_clientList->getBuddy(), buddyClient);
+    QTRY_VERIFY_WITH_TIMEOUT(buddyClient->checkHandshakeFinished(), 5000);
+    // A firewalled node is LowID; one that reads as open is dropped by the Kad list pass.
+    buddyClient->setUserIDHybrid(1);
+    buddyClient->setServedBuddy(true);
+    buddyClient->setKadState(KadState::ConnectedBuddy);
+
+    // A second served node; it has no socket, so nothing can be relayed to it.
+    std::array<uint8, 16> otherID = buddyHash;
+    otherID[0] = 0x70;
+    auto* otherBuddy = new UpDownClient();
+    otherBuddy->setConnectAddress(Address::fromHostOrder(0x4D0A0B0C));
+    otherBuddy->setBuddyID(otherID.data());
+    otherBuddy->setServedBuddy(true);
+    otherBuddy->setKadState(KadState::ConnectedBuddy);
+    m_clientList->addClient(otherBuddy);
+
+    QCOMPARE(m_clientList->servedBuddyCount(), 2);
+    QVERIFY(m_clientList->getBuddy() == nullptr);
+    QCOMPARE(m_clientList->findServedBuddy(buddyHash.data()), buddyClient);
+    QVERIFY(m_clientList->findServedBuddy(otherID.data()) == nullptr);
+    std::array<uint8, 16> unknownID = buddyHash;
+    unknownID[15] = 0x00;
+    QVERIFY(m_clientList->findServedBuddy(unknownID.data()) == nullptr);
+
+    // KADEMLIA_CALLBACK_REQ: <BuddyID 16><fileID 16><tcpPort 2>. One per minute per IP,
+    // so each request comes from its own address.
+    const auto callbackReq = [this](const std::array<uint8, 16>& id, uint32 fromIP) {
+        SafeMemFile io;
+        io.writeUInt8(KADEMLIA_CALLBACK_REQ);
+        kad::io::writeUInt128(io, kad::UInt128(id.data()));
+        kad::io::writeUInt128(io, kad::UInt128(m_fileHash.data()));
+        io.writeUInt16(4662);
+        const QByteArray raw = io.buffer();
+        kad::Kademlia::getInstanceUDPListener()->processPacket(
+            reinterpret_cast<const uint8*>(raw.constData()), static_cast<uint32>(raw.size()),
+            fromIP, 4672, false, kad::KadUDPKey(0));
+    };
+    callbackReq(unknownID, 0x4D010101);   // nobody we serve
+    callbackReq(otherID, 0x4D010102);     // served, not connected
+    callbackReq(buddyHash, 0x4D010103);   // the connected one
+    QTRY_COMPARE_WITH_TIMEOUT(buddyServer.socket()->callbacksReceived(), 1, 5000);
+    QTest::qWait(300);
+    QCOMPARE(buddyServer.socket()->callbacksReceived(), 1);
+    {
+        // OP_CALLBACK: <BuddyID 16><fileID 16><caller IP 4><caller TCP port 2>
+        const auto relayed = buddyServer.socket()->lastCallbackData();
+        QCOMPARE(relayed.size(), size_t{38});
+        SafeMemFile in(relayed.data(), static_cast<uint32>(relayed.size()));
+        uint8 relayedID[16];
+        kad::io::readUInt128(in).toByteArray(relayedID);
+        QVERIFY(md4equ(relayedID, buddyHash.data()));
+        kad::io::readUInt128(in);
+        QCOMPARE(in.readUInt32(), uint32{0x4D010103});
+        QCOMPARE(in.readUInt16(), uint16{4662});
+    }
+
+    // The firewalled side keeps the link alive; any served buddy gets its pong.
+    // (set here: the hello answer that arrived meanwhile carries no Kad version)
+    buddyClient->setKadVersion(KADEMLIA_VERSION);
+    buddyClient->processBuddyPing();                       // too early after connecting
+    buddyClient->setNextBuddyPingPongTime(getTickCount() - MIN2MS(3));
+    buddyClient->processBuddyPing();
+    QTRY_VERIFY_WITH_TIMEOUT(buddyServer.socket()->receivedBuddyPong(), 5000);
 
     // Build relay payload: buddyID(16) + fileHash(16) + padding
     std::vector<uint8> reaskcallbackData(36, 0);
     std::memcpy(reaskcallbackData.data(), buddyHash.data(), 16);
     std::memcpy(reaskcallbackData.data() + 16, m_fileHash.data(), 16);
 
-    auto* buddy = m_clientList->getBuddy();
-    QVERIFY(buddy && buddy->socket());
-    QVERIFY(md4equ(reaskcallbackData.data(), buddy->buddyID()));
+    auto* buddy = m_clientList->findServedBuddy(reaskcallbackData.data());
+    QCOMPARE(buddy, buddyClient);
 
     const uint32 remoteIP = htonl(0x0A000001);
     const uint16 remotePort = 5555;
@@ -819,7 +902,8 @@ void tst_CallbackAndQueueRank::kadCallbackRelay_relaysToBuddy()
     QVERIFY(md4equ(relayedData.data() + 6, m_fileHash.data()));
 
     flushTimer->stop();
-    m_clientList->setBuddy(nullptr, BuddyStatus::None);
+    m_clientList->removeClient(otherBuddy);
+    delete otherBuddy;
     m_clientList->removeClient(buddyClient);
     delete buddyClient;
 }

@@ -345,9 +345,12 @@ bool WebServer::start(const WebServerConfig& config)
 
     // HTTPS asked for: it is TLS or nothing. Without a usable certificate neither
     // surface is served; the server stays up on loopback for the preview stream only.
-    QSslConfiguration sslConfig;
+    // Built only for HTTPS: constructing one loads the TLS backend and the system
+    // CA store, which was most of the daemon's start-up time.
+    std::optional<QSslConfiguration> sslConfig;
     if (m_config.httpsEnabled) {
-        const QString problem = loadTlsIdentity(m_config.certPath, m_config.keyPath, sslConfig);
+        const QString problem = loadTlsIdentity(m_config.certPath, m_config.keyPath,
+                                                sslConfig.emplace());
         if (!problem.isEmpty()) {
             logError(QStringLiteral("WebServer: HTTPS is enabled but %1 — web interface and "
                                     "REST API stay off").arg(problem));
@@ -453,7 +456,7 @@ bool WebServer::start(const WebServerConfig& config)
 
     if (m_config.httpsEnabled) {
         auto* sslServer = new QSslServer(m_server.get());
-        sslServer->setSslConfiguration(sslConfig);
+        sslServer->setSslConfiguration(*sslConfig);
         m_tcpServer = sslServer;
     } else {
         m_tcpServer = new QTcpServer(m_server.get());

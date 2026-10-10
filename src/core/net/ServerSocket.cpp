@@ -67,11 +67,13 @@ ServerSocket::~ServerSocket()
 // Connection
 // ---------------------------------------------------------------------------
 
-void ServerSocket::connectTo(const Server& server, bool noCrypt, const Address& dialAddress)
+void ServerSocket::connectTo(const Server& server, bool noCrypt, const Address& dialAddress,
+                             bool ipv6Switch)
 {
     m_curServer = std::make_unique<Server>(server);
     m_noCrypt = noCrypt;
-    m_familyFallback = !dialAddress.isNull();
+    m_ipv6Switch = ipv6Switch && !dialAddress.isNull();
+    m_familyFallback = !dialAddress.isNull() && !m_ipv6Switch;
     m_tcpConnected = false;
     m_startNewMessageLog = true;
 
@@ -91,18 +93,18 @@ void ServerSocket::connectTo(const Server& server, bool noCrypt, const Address& 
             logServerVerbose(QStringLiteral("connectTo: resolving dynIP hostname '%1' for server %2")
                                  .arg(m_curServer->dynIP()).arg(m_curServer->name()));
             m_dnsTriedFallback = false;
-            startDnsLookup(thePrefs.serverPreferIPv6() ? QDnsLookup::AAAA : QDnsLookup::A);
+            startDnsLookup(QDnsLookup::A);
             return;
         }
     }
 
-    // Direct connection via IP. A dual-stack server dials the preferred family (IPv4
-    // unless serverPreferIPv6: only an IPv4 session can hand out a HighID); ServerConnect
-    // passes the other family explicitly when that one failed.
+    // Direct connection via IP. A dual-stack server dials IPv4 (only an IPv4 session
+    // can hand out a HighID); ServerConnect passes the other family explicitly when
+    // that one failed, or when IPv4 gave a LowID (serverPreferIPv6).
     if (!m_curServer->hasDynIP()) {
         m_sessionAddress = (!dialAddress.isNull() && m_curServer->hasAddress(dialAddress))
             ? dialAddress
-            : m_curServer->dialAddress(thePrefs.serverPreferIPv6());
+            : m_curServer->dialAddress(false);
     }
     uint16 port = m_curServer->port();
 
@@ -242,8 +244,6 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
             m_curServer->setTCPFlags(tcpFlags);
 
         logInfo(QStringLiteral("New client ID is %1").arg(clientID));
-        if (isLowID(clientID))
-            logWarning(QStringLiteral("You have a Low ID. Please check your port forwarding and firewall settings."));
 
         // The smart-LowID decision is made by ServerConnect BEFORE we promote the
         // connection, faithfully matching srchybrid CServerSocket::ProcessPacket
@@ -254,6 +254,8 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         emit loginReceived(clientID, tcpFlags, serverReportedIP);
         if (m_lowIDBounced)
             return true;  // abandoned this LowID; ServerConnect is trying another server
+        if (isLowID(clientID))
+            logWarning(QStringLiteral("You have a Low ID. Please check your port forwarding and firewall settings."));
 
         setConnectionState(ServerConnState::Connected);
         break;

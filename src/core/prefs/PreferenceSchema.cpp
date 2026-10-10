@@ -75,6 +75,8 @@ using Kind = PrefSpec::Kind;
     t << number("maxSourcesPerFile", 1, 5000, "", "Hard limit of sources kept per download.");
     t << advanced(number("maxConsPerFive", 1, 50, "", "New connections allowed per 5 seconds."));
     t << advanced(number("maxHalfConnections", 1, 100, "", "Half-open connections allowed at once."));
+    t << advanced(number("maxServedBuddies", 1, 32, "", "Firewalled Kad nodes served as buddy at "
+                         "once while this node is reachable."));
     t << number("queueSize", 1, kMaxU32, "", "Upload queue length in clients.");
 
     // --- Networks ---
@@ -97,6 +99,7 @@ using Kind = PrefSpec::Kind;
     t << text("serverListURL", 2048, "URL of a server.met file. Empty = built-in default.");
     t << text("nodesDatURL", 2048, "URL of a Kad nodes.dat file. Empty = built-in default.");
     t << flag("smartLowIdCheck", "Retry another server when one assigns a LowID.");
+    t << flag("serverPreferIPv6", "Reconnect to a dual-stack server over IPv6 when IPv4 gives a LowID.");
     t << flag("manualServerHighPriority", "Give manually added servers high priority.");
 
     // --- Downloads ---

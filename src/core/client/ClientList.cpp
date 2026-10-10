@@ -25,8 +25,9 @@
 namespace eMule {
 
 namespace {
-/// How long a peer may claim us as its buddy without connecting.
-constexpr std::time_t kIncomingBuddyTimeoutSecs = 20 * 60;
+/// How long a peer may claim us as its buddy without connecting. A pending claim holds no
+/// slot (as MFC), this is cleanup; a real firewalled node dials within seconds.
+constexpr std::time_t kIncomingBuddyTimeoutSecs = 5 * 60;
 } // namespace
 
 // ===========================================================================
@@ -331,9 +332,9 @@ UpDownClient* ClientList::requestTCP(uint32 ip, uint16 tcpPort, uint16 udpPort,
 bool ClientList::incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
                                const uint8* clientID, const uint8* buddyID)
 {
-    // Already have a connected buddy — reject.
-    // Matches MFC ClientList.cpp:721-747.
-    if (m_buddyStatus == BuddyStatus::Connected && m_buddy)
+    // MFC ClientList.cpp:721-747, which serves one buddy. Here: while slots are free.
+    // As MFC only connected buddies take a slot, a claim reserves nothing.
+    if (!canServeAnotherBuddy())
         return false;
 
     // Not ourselves, and not a node we are running a firewall check with
@@ -344,9 +345,28 @@ bool ClientList::incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
     if (isKadFirewallCheckIP(addr.toNetworkUint32()))
         return false;
 
+    // One pending claim per IP
+    for (const auto* other : m_items) {
+        if (other->kadState() == KadState::IncomingBuddy && other->connectAddress() == addr)
+            return false;
+    }
+
     // Check if we already know this client (the lookup takes network order)
     if (findByConnIP(qToBigEndian(ip), tcpPort))
         return false;
+
+    // The request is one unverified UDP packet: bound the claims, oldest goes first.
+    // Refusing instead would let spoofed requests lock real nodes out.
+    if (pendingBuddyClaims() >= kMaxPendingBuddyClaims) {
+        UpDownClient* oldest = nullptr;
+        for (auto* other : m_items) {
+            if (other->kadState() == KadState::IncomingBuddy
+                && (!oldest || other->kadStateSince() < oldest->kadStateSince()))
+                oldest = other;
+        }
+        if (oldest)
+            oldest->setKadState(KadState::None);
+    }
 
     // Create a new client for the incoming buddy. Same reason as requestBuddy() for putting
     // the IP in the userId slot: an IncomingBuddy that we have to dial back must not look
@@ -356,6 +376,7 @@ bool ClientList::incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
     client->setKadPort(udpPort);
     client->setUserHash(clientID);
     client->setKadState(KadState::IncomingBuddy);
+    client->setServedBuddy(true);
     client->setBuddyID(buddyID);
 
     addClient(client);
@@ -365,6 +386,53 @@ bool ClientList::incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
     // Connecting for an inbound request would block a genuine outgoing attempt behind a peer
     // that may never connect.
     return true;
+}
+
+std::vector<UpDownClient*> ClientList::servedBuddies() const
+{
+    std::vector<UpDownClient*> served;
+    for (auto* client : m_items) {
+        if (client->isServedBuddy() && client->kadState() == KadState::ConnectedBuddy)
+            served.push_back(client);
+    }
+    std::ranges::stable_sort(served, {}, &UpDownClient::kadStateSince);
+    return served;
+}
+
+int ClientList::servedBuddyCount() const
+{
+    return static_cast<int>(std::ranges::count_if(m_items, [](const UpDownClient* c) {
+        return c->isServedBuddy() && c->kadState() == KadState::ConnectedBuddy;
+    }));
+}
+
+int ClientList::pendingBuddyClaims() const
+{
+    return static_cast<int>(std::ranges::count_if(m_items, [](const UpDownClient* c) {
+        return c->kadState() == KadState::IncomingBuddy;
+    }));
+}
+
+UpDownClient* ClientList::findServedBuddy(const uint8* buddyID) const
+{
+    if (!buddyID)
+        return nullptr;
+    for (auto* client : m_items) {
+        if (client->isServedBuddy() && client->kadState() == KadState::ConnectedBuddy
+            && client->socket() && client->socket()->isConnected()
+            && md4equ(buddyID, client->buddyID()))
+            return client;
+    }
+    return nullptr;
+}
+
+bool ClientList::canServeAnotherBuddy() const
+{
+    // Using a buddy ourselves means we are firewalled and no relay.
+    if (m_buddyStatus == BuddyStatus::Connected)
+        return false;
+    // Pending claims don't count: MFC KademliaUDPListener.cpp:1693 checks Connected only.
+    return servedBuddyCount() < static_cast<int>(thePrefs.maxServedBuddies());
 }
 
 void ClientList::requestBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
@@ -584,11 +652,18 @@ void ClientList::processKadList()
     // from whichever call site happened to clear m_buddy last.
     BuddyStatus seen = BuddyStatus::None;
 
+    // TCP and UDP firewalled: we look for a buddy and cannot be one.
+    const bool needsOwnBuddy = kadRunning && kadInst->isFirewalled()
+                               && kad::UDPFirewallTester::isFirewalledUDP(true);
+    int servedSeen = 0;
+
     // A copy: the transitions below dial, disconnect and re-enter the queue, any of which
     // can add or remove clients. MFC iterates a dedicated m_KadList; here the Kad clients
     // are simply the ones carrying a state, which keeps a second list from drifting out of
     // sync with m_items.
-    const std::vector<UpDownClient*> snapshot(m_items.begin(), m_items.end());
+    std::vector<UpDownClient*> snapshot(m_items.begin(), m_items.end());
+    // Oldest Kad state first, so a lowered limit drops the newest served buddies.
+    std::ranges::stable_sort(snapshot, {}, &UpDownClient::kadStateSince);
 
     for (auto* client : snapshot) {
         if (!isValidClient(client))
@@ -620,10 +695,10 @@ void ClientList::processKadList()
             break;
 
         case KadState::IncomingBuddy:
-            // A firewalled peer wants us as its buddy. If we already have one, drop it;
-            // otherwise it becomes ConnectedBuddy when its connection completes.
-            // A claim that never connects is let go, or the client is kept for good.
-            if (m_buddyStatus == BuddyStatus::Connected
+            // A firewalled peer wants us as its buddy; it becomes ConnectedBuddy when its
+            // connection completes. A claim that never connects is let go, as is every
+            // claim once we need a buddy ourselves.
+            if (needsOwnBuddy || m_buddyStatus == BuddyStatus::Connected
                 || std::time(nullptr) - client->kadStateSince() > kIncomingBuddyTimeoutSecs)
                 client->setKadState(KadState::None);
             break;
@@ -649,6 +724,15 @@ void ClientList::processKadList()
             break;
 
         case KadState::ConnectedBuddy:
+            if (client->isServedBuddy()) {
+                // We relay for this one; m_buddy is not involved and the peer pings.
+                // Dropped when we can no longer relay, when it opened its port (MFC
+                // ClientList.cpp:618-622), or when the limit was lowered (newest first).
+                if (needsOwnBuddy || !kadInst->isConnected() || !client->hasLowID()
+                    || ++servedSeen > static_cast<int>(thePrefs.maxServedBuddies()))
+                    client->setKadState(KadState::None);
+                break;
+            }
             seen = BuddyStatus::Connected;
             if (m_buddyStatus != BuddyStatus::Connected) {
                 m_buddy = client;

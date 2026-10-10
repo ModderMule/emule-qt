@@ -76,6 +76,13 @@ public:
 
     void init(const QStringList& tempDirs);
 
+    /// The .part.met files init() loads, in its order. With loadPartMet() and a
+    /// closing sortByPriority() this is init() in steps, for a caller that has an
+    /// event loop to keep alive in between.
+    [[nodiscard]] static QStringList partMetFiles(const QStringList& tempDirs);
+    /// Load one of them, falling back to its .bak.
+    void loadPartMet(const QString& metPath);
+
     /// Re-register every eligible part file with SharedFileList.
     ///
     /// SharedFileList::reload() clears its map, so a re-scan of the shared directories

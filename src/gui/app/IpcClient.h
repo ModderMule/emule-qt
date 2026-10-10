@@ -109,6 +109,12 @@ public:
     /// A requested restart is under way; gives up after kRestartGraceMs.
     [[nodiscard]] bool daemonRestarting() const;
 
+    /// The local core was just launched: retry at a short fixed interval until it
+    /// answers, instead of backing off from a port that opens within moments.
+    void expectDaemonStart();
+    /// expectDaemonStart() was called and the core has not answered yet.
+    [[nodiscard]] bool daemonStarting() const;
+
     /// The daemon's engine-wide Usenet pause, as last reported: seeded from the
     /// connect-time GetPreferences, then kept by PushUsenetEngineState.
     [[nodiscard]] bool usenetEnginePaused() const { return m_usenetEnginePaused; }
@@ -212,6 +218,9 @@ private:
     void scheduleReconnect();
     void resetConnection();
 
+    /// A connect attempt that never reached the daemon: report it, drop the socket, retry.
+    void failConnect(const QString& error);
+
     /// Unhook and close m_connection, deleting it one event-loop turn later.
     void dropConnection();
 
@@ -233,6 +242,7 @@ private:
     bool m_usenetEnginePaused = false;
     bool m_autoReconnect = false;
     QDeadlineTimer m_restartDeadline;   // expired = no restart pending
+    QDeadlineTimer m_startDeadline;     // expired = no launched core awaited
     int64_t m_lastKadId     = 0;
     int64_t m_lastUsenetId  = 0;
     int64_t m_lastServerId  = 0;
@@ -246,6 +256,8 @@ private:
     int m_remotePollingMs = 1500;
 
     static constexpr int MaxReconnectDelay      = 10'000;
+    static constexpr int StartRetryDelayMs      = 200;     // while a launched core loads
+    static constexpr int StartGraceMs           = 30'000;
     static constexpr int HandshakeTimeoutMs     = 10'000;
     static constexpr int KeepaliveIntervalMs    = 30'000;
     static constexpr int KeepaliveTimeoutMs     = 10'000;

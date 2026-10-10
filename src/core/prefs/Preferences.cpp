@@ -149,6 +149,7 @@ struct Preferences::Data {
     uint16 maxConnections = 500;
     // eMule 2026 bandwidth: modern OS handles hundreds of half-open connections. MFC default: 9
     uint16 maxHalfConnections = 50;
+    uint16 maxServedBuddies = 8;   // Kad: firewalled nodes we relay for; MFC serves 1
     QString bindAddress;
     QString publicIPv6Override;
     // How many distinct peers must independently report the same public IPv6 (via their
@@ -170,12 +171,9 @@ struct Preferences::Data {
     bool separateIPv6Queue = true;
     // Use the OS-preferred temporary IPv6 source instead of pinning the stable address.
     bool ipv6UsePrivacyAddress = false;
-    // Resolve a server hostname AAAA-first instead of A-first. Off by default: a client
-    // that reaches a server over IPv6 with no routable IPv4 is assigned a LowID
-    // unconditionally, so preferring AAAA on a dual-stack server costs a HighID for
-    // nothing. Either way the other family is tried when the first finds no records.
-    // YAML-only, no UI.
-    bool serverPreferIPv6 = false;
+    // Redial a dual-stack server over IPv6 when its IPv4 session gave a LowID. IPv4 is
+    // always tried first: only an IPv4 session can hand out a HighID.
+    bool serverPreferIPv6 = true;
 
     // Bandwidth (KB/s)
     uint32 maxUpload = kDefaultMaxUpload;
@@ -784,6 +782,12 @@ void Preferences::setMaxConnections(uint16 val) { set(&Data::maxConnections, val
 uint16 Preferences::maxHalfConnections() const { return get(&Data::maxHalfConnections); }
 
 void Preferences::setMaxHalfConnections(uint16 val) { set(&Data::maxHalfConnections, val); }
+
+uint16 Preferences::maxServedBuddies() const { return get(&Data::maxServedBuddies); }
+void Preferences::setMaxServedBuddies(uint16 val)
+{
+    set(&Data::maxServedBuddies, std::clamp<uint16>(val, 1, 32));
+}
 
 QString Preferences::bindAddress() const { return get(&Data::bindAddress); }
 
@@ -2975,6 +2979,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("serverListURL"), serverListURL());
     prefs.insert(QStringLiteral("nodesDatURL"), nodesDatURL());
     prefs.insert(QStringLiteral("smartLowIdCheck"), smartLowIdCheck());
+    prefs.insert(QStringLiteral("serverPreferIPv6"), serverPreferIPv6());
     prefs.insert(QStringLiteral("manualServerHighPriority"), manualServerHighPriority());
 
     // Proxy
@@ -3093,6 +3098,7 @@ QCborMap Preferences::toIpcMap() const
     // Extended (PPgTweaks)
     prefs.insert(QStringLiteral("maxConsPerFive"), static_cast<qint64>(maxConsPerFive()));
     prefs.insert(QStringLiteral("maxHalfConnections"), static_cast<qint64>(maxHalfConnections()));
+    prefs.insert(QStringLiteral("maxServedBuddies"), static_cast<qint64>(maxServedBuddies()));
     prefs.insert(QStringLiteral("serverKeepAliveTimeout"), static_cast<qint64>(serverKeepAliveTimeout()));
     prefs.insert(QStringLiteral("filterLANIPs"), filterLANIPs());
     prefs.insert(QStringLiteral("skipFirewalledChecksInLanMode"), skipFirewalledChecksInLanMode());
@@ -3218,6 +3224,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->nodesDatURL             = urlOrDefault(p.value(QStringLiteral("nodesDatURL")).toString(),
                                                    kDefaultNodesDatURL);
     m_data->smartLowIdCheck         = p.value(QStringLiteral("smartLowIdCheck")).toBool();
+    m_data->serverPreferIPv6        = p.value(QStringLiteral("serverPreferIPv6")).toBool(true);
     m_data->manualServerHighPriority = p.value(QStringLiteral("manualServerHighPriority")).toBool();
 
     // Proxy
@@ -3302,6 +3309,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     // Extended (PPgTweaks)
     m_data->maxConsPerFive              = static_cast<uint16>(p.value(QStringLiteral("maxConsPerFive")).toInteger());
     m_data->maxHalfConnections          = static_cast<uint16>(p.value(QStringLiteral("maxHalfConnections")).toInteger());
+    m_data->maxServedBuddies            = static_cast<uint16>(p.value(QStringLiteral("maxServedBuddies")).toInteger(8));
     m_data->serverKeepAliveTimeout      = static_cast<uint32>(p.value(QStringLiteral("serverKeepAliveTimeout")).toInteger());
     m_data->filterLANIPs                = p.value(QStringLiteral("filterLANIPs")).toBool();
     m_data->skipFirewalledChecksInLanMode = p.value(QStringLiteral("skipFirewalledChecksInLanMode")).toBool();
@@ -3424,6 +3432,9 @@ void Preferences::validate()
 
     // maxHalfConnections: clamp 1–100
     m_data->maxHalfConnections = std::clamp<uint16>(m_data->maxHalfConnections, 1, 100);
+
+    // maxServedBuddies: clamp 1–32
+    m_data->maxServedBuddies = std::clamp<uint16>(m_data->maxServedBuddies, 1, 32);
 
     // cryptTCPPaddingLength: clamp 0–254
     if (m_data->cryptTCPPaddingLength > 254)
@@ -3632,6 +3643,7 @@ bool Preferences::load(const QString& filePath)
             m_data->serverUDPPort = static_cast<uint16>(n["serverUDPPort"].as<int>(m_data->serverUDPPort));
             m_data->maxConnections = static_cast<uint16>(n["maxConnections"].as<int>(m_data->maxConnections));
             m_data->maxHalfConnections = static_cast<uint16>(n["maxHalfConnections"].as<int>(m_data->maxHalfConnections));
+            m_data->maxServedBuddies = static_cast<uint16>(n["maxServedBuddies"].as<int>(m_data->maxServedBuddies));
             m_data->bindAddress = QString::fromStdString(n["bindAddress"].as<std::string>(m_data->bindAddress.toStdString()));
             m_data->publicIPv6Override = QString::fromStdString(n["publicIPv6Override"].as<std::string>(m_data->publicIPv6Override.toStdString()));
             m_data->ipv6PublicPeerConfirmThreshold = static_cast<uint32>(n["ipv6PublicPeerConfirmThreshold"].as<int>(static_cast<int>(m_data->ipv6PublicPeerConfirmThreshold)));
@@ -4741,6 +4753,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "serverUDPPort" << YAML::Value << static_cast<int>(m_data->serverUDPPort);
     out << YAML::Key << "maxConnections" << YAML::Value << static_cast<int>(m_data->maxConnections);
     out << YAML::Key << "maxHalfConnections" << YAML::Value << static_cast<int>(m_data->maxHalfConnections);
+    out << YAML::Key << "maxServedBuddies" << YAML::Value << static_cast<int>(m_data->maxServedBuddies);
     out << YAML::Key << "bindAddress" << YAML::Value << m_data->bindAddress.toStdString();
     out << YAML::Key << "publicIPv6Override" << YAML::Value << m_data->publicIPv6Override.toStdString();
     out << YAML::Key << "ipv6PublicPeerConfirmThreshold" << YAML::Value << static_cast<int>(m_data->ipv6PublicPeerConfirmThreshold);

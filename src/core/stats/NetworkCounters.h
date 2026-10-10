@@ -232,6 +232,12 @@ struct KadCounters {
     uint64 tcpFirewalledNodes = 0;
     uint64 tcpOpenNodes = 0;
 
+    // Source publishes we stored, by how the publisher is reachable (per publish, not per node)
+    uint64 sourcesOpen = 0;            ///< type 1, 4
+    uint64 sourcesBuddy = 0;           ///< type 3, 5 with a buddy
+    uint64 sourcesDirectCallback = 0;  ///< type 6
+    uint64 sourcesNoBuddy = 0;         ///< type 3, 5 without a buddy
+
     uint64 connectedMs = 0;        ///< time Kad was connected
 
     template<class F> static constexpr void forEachField(F&& f)
@@ -259,6 +265,11 @@ struct KadCounters {
         f("udpOpenNodes", &C::udpOpenNodes, CounterAgg::Sum);
         f("tcpFirewalledNodes", &C::tcpFirewalledNodes, CounterAgg::Sum);
         f("tcpOpenNodes", &C::tcpOpenNodes, CounterAgg::Sum);
+
+        f("sourcesOpen", &C::sourcesOpen, CounterAgg::Sum);
+        f("sourcesBuddy", &C::sourcesBuddy, CounterAgg::Sum);
+        f("sourcesDirectCallback", &C::sourcesDirectCallback, CounterAgg::Sum);
+        f("sourcesNoBuddy", &C::sourcesNoBuddy, CounterAgg::Sum);
 
         f("connectedMs", &C::connectedMs, CounterAgg::Sum);
     }

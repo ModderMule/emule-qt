@@ -5,6 +5,7 @@
 
 #include "kademlia/KadPacketTracking.h"
 #include "kademlia/KadUInt128.h"
+#include "prefs/Preferences.h"
 #include "utils/Opcodes.h"
 
 #include <QTest>
@@ -38,6 +39,7 @@ private slots:
     void flood_returnZeroWhenWithinBudget();
     void flood_responsesAreNeverThrottled();
     void flood_validReceiverKeyDoesNotBypass();
+    void flood_callbackBudgetScalesWithServedBuddies();
     void flood_overBudgetReturnsOne();
     void flood_massiveFloodReturnsTwo();
     void flood_budgetsArePerOpcodeAndPerIP();
@@ -157,9 +159,38 @@ void tst_KadPacketTracking::flood_validReceiverKeyDoesNotBypass()
     TestablePacketTracking pt;
     // Regression: a valid receiver key used to short-circuit the limiter
     // entirely, handing unlimited request rate to any handshaked peer.
-    // CALLBACK_REQ has the tightest budget (1/min), so packet 2 is over.
-    QCOMPARE(pt.inTrackListIsAllowedPacket(0x0A000001, KADEMLIA_CALLBACK_REQ, true), 0);
-    QVERIFY(pt.inTrackListIsAllowedPacket(0x0A000001, KADEMLIA_CALLBACK_REQ, true) != 0);
+    // PING: 2/min, so packet 3 is over.
+    QCOMPARE(pt.inTrackListIsAllowedPacket(0x0A000001, KADEMLIA2_PING, true), 0);
+    QCOMPARE(pt.inTrackListIsAllowedPacket(0x0A000001, KADEMLIA2_PING, true), 0);
+    QVERIFY(pt.inTrackListIsAllowedPacket(0x0A000001, KADEMLIA2_PING, true) != 0);
+}
+
+void tst_KadPacketTracking::flood_callbackBudgetScalesWithServedBuddies()
+{
+    // Not MFC: a caller may want several nodes behind one buddy, so the budget
+    // is one CALLBACK_REQ per served-buddy slot instead of MFC's 1/min.
+    const uint16 saved = thePrefs.maxServedBuddies();
+
+    thePrefs.setMaxServedBuddies(8);
+    {
+        TestablePacketTracking pt;
+        for (int i = 0; i < 8; ++i)
+            QCOMPARE(pt.inTrackListIsAllowedPacket(0x0A000001, KADEMLIA_CALLBACK_REQ, false), 0);
+        QCOMPARE(pt.inTrackListIsAllowedPacket(0x0A000001, KADEMLIA_CALLBACK_REQ, false), 1);
+        // 7500 ms a packet: the ban needs a deficit beyond 180000 ms, i.e. packet 33.
+        QCOMPARE(drain(pt, 0x0A000001, KADEMLIA_CALLBACK_REQ, 23), 1);
+        QCOMPARE(pt.inTrackListIsAllowedPacket(0x0A000001, KADEMLIA_CALLBACK_REQ, false), 2);
+    }
+
+    // One slot is MFC's budget: packet 2 is over.
+    thePrefs.setMaxServedBuddies(1);
+    {
+        TestablePacketTracking pt;
+        QCOMPARE(pt.inTrackListIsAllowedPacket(0x0A000001, KADEMLIA_CALLBACK_REQ, false), 0);
+        QCOMPARE(pt.inTrackListIsAllowedPacket(0x0A000001, KADEMLIA_CALLBACK_REQ, false), 1);
+    }
+
+    thePrefs.setMaxServedBuddies(saved);
 }
 
 void tst_KadPacketTracking::flood_overBudgetReturnsOne()

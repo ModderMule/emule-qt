@@ -341,6 +341,7 @@ private:
     QCheckBox* m_addServersFromServerCheck = nullptr;
     QCheckBox* m_addServersFromClientsCheck = nullptr;
     QCheckBox* m_smartLowIdCheck = nullptr;
+    QCheckBox* m_serverPreferIPv6Check = nullptr;
     QCheckBox* m_safeServerConnectCheck = nullptr;
     QCheckBox* m_autoConnectStaticOnlyCheck = nullptr;
     QCheckBox* m_useServerPrioritiesCheck = nullptr;
@@ -570,6 +571,7 @@ private:
     // Extended page controls
     QSpinBox*     m_maxConPerFiveSpin = nullptr;
     QSpinBox*     m_maxHalfOpenSpin = nullptr;
+    QSpinBox*     m_maxServedBuddiesSpin = nullptr;
     QSpinBox*     m_serverKeepAliveSpin = nullptr;
     QSpinBox*     m_minFreeDiskSpaceSpin = nullptr;
     QCheckBox*    m_useCreditSystemCheck = nullptr;

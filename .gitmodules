@@ -1,3 +1,6 @@
 [submodule "external/enodemeta"]
 	path = external/enodemeta
 	url = https://github.com/ModderMule/enodemeta
+[submodule "docs/ed3k-spec"]
+	path = docs/ed3k-spec
+	url = https://github.com/ed3k-protocol/ed3k-spec.git

@@ -75,6 +75,7 @@ private slots:
 
     // --- NetworkInfoDialog ---------------------------------------------------
     void networkInfo_listsServerFeaturesAndLanMode();
+    void networkInfo_listsServedBuddies();
 
 private:
     QTemporaryDir m_dir;
@@ -369,7 +370,48 @@ void tst_CategoryDialog::networkInfo_listsServerFeaturesAndLanMode()
     QVERIFY(plain.contains(QStringLiteral("Soft/Hard File Limits:")));
 }
 
-// MFC CCollectionViewDialog::DownloadSelected (CollectionViewDialog.cpp:156-169). The
+// Not MFC: an open node lists the firewalled nodes it relays for.
+void tst_CategoryDialog::networkInfo_listsServedBuddies()
+{
+    const auto textOf = [](const QString& html) {
+        QTextDocument doc;
+        doc.setHtml(html);
+        return doc.toPlainText();
+    };
+    const auto infoWith = [](bool udpFirewalled, const QCborArray& served) {
+        return QCborMap{
+            {QStringLiteral("kad"),
+             QCborMap{{QStringLiteral("running"), true}, {QStringLiteral("connected"), true},
+                      {QStringLiteral("udpFirewalled"), udpFirewalled},
+                      {QStringLiteral("buddiesServed"), served.size()},
+                      {QStringLiteral("buddiesServedMax"), 8},
+                      {QStringLiteral("servedBuddies"), served}}}};
+    };
+    const QCborArray two{
+        QCborMap{{QStringLiteral("address"), QStringLiteral("192.0.2.7")}, {QStringLiteral("port"), 4662},
+                 {QStringLiteral("name"), QStringLiteral("al<i>ce")},
+                 {QStringLiteral("software"), QStringLiteral("eMule v0.50a")},
+                 {QStringLiteral("connectedSecs"), 7260}},
+        QCborMap{{QStringLiteral("address"), QStringLiteral("2001:db8::9")}, {QStringLiteral("port"), 5000},
+                 {QStringLiteral("connectedSecs"), 30}}};
+
+    const QString open = textOf(NetworkInfoDialog::infoHtml(infoWith(false, two), false));
+    QVERIFY2(open.contains(QRegularExpression(QStringLiteral("Buddies served:\\s+2 / 8"))), qPrintable(open));
+    // the name is shown literally, not parsed as markup
+    QVERIFY2(open.contains(QStringLiteral("192.0.2.7:4662, al<i>ce (eMule v0.50a), ")), qPrintable(open));
+    QVERIFY(open.contains(QStringLiteral("[2001:db8::9]:5000, ")));
+    QVERIFY(open.indexOf(QStringLiteral("192.0.2.7")) < open.indexOf(QStringLiteral("2001:db8::9")));
+
+    const QString none = textOf(NetworkInfoDialog::infoHtml(infoWith(false, {}), false));
+    QVERIFY(none.contains(QRegularExpression(QStringLiteral("Buddies served:\\s+0 / 8"))));
+
+    // firewalled: our own buddy row, no served list
+    const QString firewalled = textOf(NetworkInfoDialog::infoHtml(infoWith(true, two), false));
+    QVERIFY(firewalled.contains(QStringLiteral("Buddy:")));
+    QVERIFY(!firewalled.contains(QStringLiteral("Buddies served")));
+    QVERIFY(!firewalled.contains(QStringLiteral("192.0.2.7")));
+}
+
 // checkbox was never read and the downloads went uncategorised.
 void tst_CategoryDialog::collection_findsOrAddsItsCategory()
 {

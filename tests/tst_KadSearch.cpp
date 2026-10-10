@@ -56,6 +56,7 @@ private slots:
     void responder_isSeenByTheCensus();
     void buddyAndCallbackRequests_carryACryptTarget_data();
     void buddyAndCallbackRequests_carryACryptTarget();
+    void buddyRequest_carriesInvertedKadIdNotTheWalkTarget();
     void actionPackets_areNotCappedWhileTheSearchRuns();
 
     // Contact ownership (audit item #2)
@@ -67,6 +68,7 @@ private slots:
     void sourceTags_buddyHashUsesStockByteOrder();
     void sourceTags_notFirewalledHasNoBuddyTags();
     void sourceTags_firewalledWithoutBuddyCannotPublish();
+    void sourceTags_firewalledWithIPv6PublishesWithoutBuddy();
     void sourceTags_directCallbackSetsTheCallbackBit();
     void sourceTags_buddyBranchDoesNotClaimDirectCallback();
     void sourceTags_buddyIpTravelsInNetworkOrder();
@@ -667,6 +669,32 @@ void tst_KadSearch::sourceTags_firewalledWithoutBuddyCannotPublish()
     QVERIFY(tags.empty());
 }
 
+void tst_KadSearch::sourceTags_firewalledWithIPv6PublishesWithoutBuddy()
+{
+    // No IPv4 route and no buddy, but a public IPv6: the firewalled type, no buddy tags.
+    Search::SourcePublishParams p;
+    p.firewalled = true;
+    p.tcpPort    = 4662;
+    p.ipv6Hex    = QStringLiteral("20010db8000000000000000000000042");
+
+    bool canPublish = false;
+    auto tags = Search::buildSourcePublishTags(p, canPublish);
+    QVERIFY(canPublish);
+    const Tag* sourceType = findTag(tags, FT_SOURCETYPE);
+    QVERIFY(sourceType != nullptr);
+    QCOMPARE(sourceType->intValue(), uint32{3});
+    QVERIFY(findTag(tags, FT_SERVERIP) == nullptr);
+    QVERIFY(findTag(tags, FT_SERVERPORT) == nullptr);
+    QVERIFY(findTag(tags, FT_BUDDYHASH) == nullptr);
+    QVERIFY(std::any_of(tags.begin(), tags.end(), [&](const Tag& t) {
+        return t.name() == QByteArrayLiteral(TAG_IPV6) && t.strValue() == p.ipv6Hex;
+    }));
+
+    p.largeFile = true;
+    tags = Search::buildSourcePublishTags(p, canPublish);
+    QCOMPARE(findTag(tags, FT_SOURCETYPE)->intValue(), uint32{5});
+}
+
 void tst_KadSearch::sourceTags_directCallbackSetsTheCallbackBit()
 {
     // Regression: the publish path built FT_ENCRYPTION from the three crypt bits and
@@ -1017,6 +1045,36 @@ void tst_KadSearch::buddyAndCallbackRequests_carryACryptTarget()
     uint8 id[16] = {0x55};
     id[15] = 1;
     QCOMPARE(targets.front(), UInt128(id));
+}
+
+// A buddy search may walk to a random target; the BuddyID must stay ~kadID or
+// our own FINDBUDDY_RES check drops the offer.
+void tst_KadSearch::buddyRequest_carriesInvertedKadIdNotTheWalkTarget()
+{
+    eMule::testing::KadFixture kadFixture;
+
+    QByteArray request;
+    const auto conn = QObject::connect(
+        Kademlia::getInstanceUDPListener(), &KademliaUDPListener::packetToSend,
+        [&](const QByteArray& data) {
+            if (!data.isEmpty() && static_cast<uint8>(data[0]) == KADEMLIA_FINDBUDDY_REQ)
+                request = data;
+        });
+    const auto disconnect = qScopeGuard([&] { QObject::disconnect(conn); });
+
+    Search* search = startWalk(SearchType::FindBuddy, 3);
+    QVERIFY(search != nullptr);
+    respond(1);
+    search->storePacket(false);
+
+    QVERIFY(request.size() >= 1 + 16);
+    SafeMemFile payload(reinterpret_cast<const uint8*>(request.constData()) + 1,
+                        static_cast<uint32>(request.size() - 1));
+    UInt128 expected(true);
+    expected.xorWith(Kademlia::getInstancePrefs()->kadId());
+    const UInt128 buddyID = io::readUInt128(payload);
+    QCOMPARE(buddyID, expected);
+    QVERIFY(buddyID != walkTarget());
 }
 
 // C91: MFC sends an action packet to every responder it walks past; the port

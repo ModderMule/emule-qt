@@ -60,7 +60,10 @@ public:
     /// @param noCrypt Disable encryption for this connection attempt.
     /// @param dialAddress One of the server's addresses to dial (dual-stack family
     ///        fallback); null = the server's preferred-family address.
-    void connectTo(const Server& server, bool noCrypt = false, const Address& dialAddress = {});
+    /// @param ipv6Switch @p dialAddress is the IPv6 dialed because IPv4 gave a LowID,
+    ///        not a retry after a failure.
+    void connectTo(const Server& server, bool noCrypt = false, const Address& dialAddress = {},
+                   bool ipv6Switch = false);
 
     /// The address this session dialed — decides the session family, which a
     /// dual-stack Server copy can no longer tell by itself.
@@ -68,6 +71,9 @@ public:
 
     /// True when this attempt is the dual-stack retry on the other family.
     [[nodiscard]] bool isFamilyFallback() const { return m_familyFallback; }
+
+    /// True when this attempt dials IPv6 because the IPv4 session got a LowID.
+    [[nodiscard]] bool isIPv6Switch() const { return m_ipv6Switch; }
 
     /// True once the TCP connect succeeded (before any login).
     [[nodiscard]] bool tcpConnected() const { return m_tcpConnected; }
@@ -222,6 +228,7 @@ private:
     bool m_lowIDBounced = false;
     bool m_dnsTriedFallback = false;   // the other-family retry has been used
     bool m_familyFallback = false;     // dual-stack retry on the other family
+    bool m_ipv6Switch = false;         // IPv6 dial after an IPv4 LowID
     bool m_tcpConnected = false;
 
 };

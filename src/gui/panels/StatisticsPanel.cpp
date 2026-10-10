@@ -1702,6 +1702,10 @@ void StatisticsPanel::applyKadStats(const QCborMap& data)
                                                  + v.value(QStringLiteral("udpOpenNodes")));
         v.insert(QStringLiteral("tcpNodes"), v.value(QStringLiteral("tcpFirewalledNodes"))
                                                  + v.value(QStringLiteral("tcpOpenNodes")));
+        v.insert(QStringLiteral("sourcePublishes"),
+                 v.value(QStringLiteral("sourcesOpen")) + v.value(QStringLiteral("sourcesBuddy"))
+                     + v.value(QStringLiteral("sourcesDirectCallback"))
+                     + v.value(QStringLiteral("sourcesNoBuddy")));
         v.insert(QStringLiteral("searchesTotal"), v.value(QStringLiteral("searchesNode"))
                                                       + v.value(QStringLiteral("searchesKeyword"))
                                                       + v.value(QStringLiteral("searchesSource"))
@@ -2292,6 +2296,15 @@ std::span<const StatisticsPanel::CounterRow> StatisticsPanel::kadNodeRows()
         // Fed by incoming HELLO_REQs only: a firewalled node gets none, so 0 means no samples.
         {QT_TR_NOOP("UDP: %1 %2"), "udpFirewalledNodes", F::Count, "udpNodes", 1, false, true},
         {QT_TR_NOOP("TCP: %1 %2"), "tcpFirewalledNodes", F::Count, "tcpNodes", 1, false, true},
+        // Source publishes we stored, by the publisher's source type. Only an open node gets any.
+        {QT_TR_NOOP("Source Publishes Received: %1"), "sourcePublishes"},
+        {QT_TR_NOOP("Open: %1 %2"), "sourcesOpen", F::Count, "sourcePublishes", 1, false, true},
+        {QT_TR_NOOP("Firewalled, with Buddy: %1 %2"), "sourcesBuddy", F::Count,
+         "sourcePublishes", 1, false, true},
+        {QT_TR_NOOP("Firewalled, Direct Callback: %1 %2"), "sourcesDirectCallback", F::Count,
+         "sourcePublishes", 1, false, true},
+        {QT_TR_NOOP("Firewalled, without Buddy: %1 %2"), "sourcesNoBuddy", F::Count,
+         "sourcePublishes", 1, false, true},
     };
     return kRows;
 }
@@ -2379,6 +2392,9 @@ void StatisticsPanel::buildKademliaBranch(const QIcon& detailIcon, const QIcon& 
             } else if (key == QLatin1StringView("seenListed")) {
                 item->setToolTip(0, tr("Nodes that other nodes named in their answers; most "
                                        "are never contacted.") + QLatin1Char(' ') + estimate);
+            } else if (key == QLatin1StringView("sourcePublishes")) {
+                item->setToolTip(0, tr("Counted per publish, not per node. Firewalled nodes "
+                                       "that cannot publish are missing."));
             }
         }
     };

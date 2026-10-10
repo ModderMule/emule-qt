@@ -9,6 +9,7 @@
 #include "kademlia/KadMiscUtils.h"
 #include "kademlia/Kademlia.h"
 #include "net/Address.h"
+#include "prefs/Preferences.h"
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
@@ -126,7 +127,8 @@ int PacketTracking::inTrackListIsAllowedPacket(uint32 ip, uint8 opcode,
         token = kTokenBucketMax / 2;
         break;
     case KADEMLIA_CALLBACK_REQ:
-        token = kTokenBucketMax / 1;
+        // Not MFC (1/min): one request per served buddy, see docs/protocol/kad-buddy-search.md
+        token = kTokenBucketMax / std::max<int64>(1, thePrefs.maxServedBuddies());
         break;
     case KADEMLIA2_PING:
         token = kTokenBucketMax / 2;

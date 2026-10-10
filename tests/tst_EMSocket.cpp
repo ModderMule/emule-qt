@@ -789,14 +789,17 @@ void tst_EMSocket::rawSend_wouldBlockMarksTheSocketBusy()
     // and the socket then is writable again without anyone reading.
     bool blocked = false;
     bool busyWhenBlocked = false;
+    // The first EAGAIN is only the send buffer filling: the kernel still moves data
+    // to the peer and the socket is writable again at once. Go on until it stays blocked.
     std::thread throttler([&] {
-        for (int i = 0; i < 1000 && !blocked; ++i) {
+        for (int i = 0; i < 1000 && !busyWhenBlocked; ++i) {
             const SocketSentBytes sent = sock.sendFileAndControlData(1 << 20, 1);
             if (!sent.success)
                 return;
-            blocked = sent.sentBytesStandardPackets == 0;
-            if (blocked)
+            if (sent.sentBytesStandardPackets == 0) {
+                blocked = true;
                 busyWhenBlocked = sock.isBusyQuickCheck();
+            }
         }
     });
     throttler.join();

@@ -330,6 +330,16 @@ bool IpcClient::daemonRestarting() const
     return !m_restartDeadline.hasExpired();
 }
 
+void IpcClient::expectDaemonStart()
+{
+    m_startDeadline = QDeadlineTimer(StartGraceMs);
+}
+
+bool IpcClient::daemonStarting() const
+{
+    return !m_startDeadline.hasExpired();
+}
+
 int IpcClient::sendRequest(IpcMessage msg, ResponseCallback callback)
 {
     if (!m_connection || !m_handshaked)
@@ -416,6 +426,13 @@ void IpcClient::onSocketConnected()
     if (!m_socket)
         return;
 
+    // Darwin 27 reports a refused connect as connected(), with no peer. Taken for
+    // real, it never raised connectionFailed — so the core was never launched.
+    if (m_socket->peerPort() != m_port) {
+        failConnect(QStringLiteral("Connection refused"));
+        return;
+    }
+
     // Reset backoff on successful TCP connect
     m_reconnectDelayMs = 1000;
 
@@ -484,6 +501,7 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
         });
 
         m_restartDeadline = QDeadlineTimer();
+        m_startDeadline = QDeadlineTimer();
         emit connected();
         return;
     }
@@ -526,25 +544,7 @@ void IpcClient::onConnectionLost()
 
 void IpcClient::onSocketError()
 {
-    const QString err = m_socket ? m_socket->errorString()
-                                 : QStringLiteral("Unknown error");
-    emit connectionFailed(err);
-
-    // Clean up the failed socket so scheduleReconnect starts fresh.
-    //
-    // Disconnect *before* deleteLater, exactly as resetConnection() does.
-    // deleteLater is deferred, so the socket outlives this slot and stays wired
-    // to onSocketConnected() — and QAbstractSocket can still emit connected()
-    // afterwards from the same fetchConnectionParameters() pass. That reached
-    // onSocketConnected() with m_socket already null and crashed in
-    // IpcConnection's constructor, which dereferences the socket it is handed.
-    if (m_socket) {
-        disconnect(m_socket, nullptr, this, nullptr);
-        m_socket->deleteLater();
-        m_socket = nullptr;
-    }
-
-    scheduleReconnect();
+    failConnect(m_socket ? m_socket->errorString() : QStringLiteral("Unknown error"));
 }
 
 void IpcClient::attemptReconnect()
@@ -552,9 +552,11 @@ void IpcClient::attemptReconnect()
     if (!m_autoReconnect || m_port == 0)
         return;
 
-    const QString display = m_hostname.isEmpty() ? m_address.toString() : m_hostname;
-    logInfo(QStringLiteral("Reconnecting to daemon at %1:%2...")
-                .arg(display).arg(m_port));
+    if (!daemonStarting()) {
+        const QString display = m_hostname.isEmpty() ? m_address.toString() : m_hostname;
+        logInfo(QStringLiteral("Reconnecting to daemon at %1:%2...")
+                    .arg(display).arg(m_port));
+    }
 
     resetConnection();
 
@@ -747,6 +749,13 @@ void IpcClient::scheduleReconnect()
     if (!m_autoReconnect || m_reconnectTimer.isActive())
         return;
 
+    // A core we launched is still loading: ask again shortly, quietly. Backing
+    // off here left the window empty for seconds after the port had opened.
+    if (daemonStarting()) {
+        m_reconnectTimer.start(StartRetryDelayMs);
+        return;
+    }
+
     logInfo(QStringLiteral("Will retry in %1s...").arg(m_reconnectDelayMs / 1000));
     m_reconnectTimer.start(m_reconnectDelayMs);
 
@@ -773,6 +782,27 @@ void IpcClient::failPendingRequests()
                 callback(IpcMessage{});
         }
     });
+}
+
+void IpcClient::failConnect(const QString& error)
+{
+    emit connectionFailed(error);
+
+    // Clean up the failed socket so scheduleReconnect starts fresh.
+    //
+    // Disconnect *before* deleteLater, exactly as resetConnection() does.
+    // deleteLater is deferred, so the socket outlives this slot and stays wired
+    // to onSocketConnected() — and QAbstractSocket can still emit connected()
+    // afterwards from the same fetchConnectionParameters() pass. That reached
+    // onSocketConnected() with m_socket already null and crashed in
+    // IpcConnection's constructor, which dereferences the socket it is handed.
+    if (m_socket) {
+        disconnect(m_socket, nullptr, this, nullptr);
+        m_socket->deleteLater();
+        m_socket = nullptr;
+    }
+
+    scheduleReconnect();
 }
 
 void IpcClient::resetConnection()

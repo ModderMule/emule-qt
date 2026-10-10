@@ -99,6 +99,11 @@ public:
     [[nodiscard]] bool isRunningInLANMode() const;
     [[nodiscard]] static bool shouldSkipFirewallChecks();
 
+    /// Walk target of a buddy search: ~kadId for the first one (MFC), a random
+    /// ID once @p searchesWithoutBuddy searches went by without a buddy.
+    [[nodiscard]] static UInt128 buddySearchTarget(const UInt128& kadId,
+                                                   uint32 searchesWithoutBuddy);
+
     bool findNodeIDByIP(KadClientSearcher& requester, uint32 ip, uint16 tcpPort, uint16 udpPort);
     bool findIPByNodeID(KadClientSearcher& requester, const uint8* nodeID);
     void cancelClientSearch(const KadClientSearcher& requester);
@@ -196,6 +201,7 @@ private:
     time_t m_nextSelfLookup = 0;
     time_t m_nextFirewallCheck = 0;
     time_t m_nextFindBuddy = 0;
+    uint32 m_buddySearchesWithoutBuddy = 0;
     time_t m_statusUpdate = 0;
     time_t m_bigTimer = 0;
     time_t m_consolidate = 0;

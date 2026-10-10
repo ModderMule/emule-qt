@@ -50,6 +50,7 @@ private slots:
     void searchSourceReq_minimalPacketIsServed();
     void searchNotesReq_minimalPacketIsServed();
     void publishSource_sizeFeedsTheServingFilter();
+    void publishSource_countsReachabilityPerSourceType();
     void searchSourceReq_pagingCountsBeforeTheSizeFilter();
     void publishNotes_rejectedNoteGetsNoAnswer();
 
@@ -341,6 +342,41 @@ void tst_KadUDPListener::publishSource_sizeFeedsTheServingFilter()
     QCOMPARE(spy.results, 1);
     deliver(sourceRequest(fileID, 0, 0), kNodeIP);      // size unknown to the asker
     QCOMPARE(spy.results, 2);
+}
+
+// Stored source publishes are counted by how the publisher says it is reachable.
+void tst_KadUDPListener::publishSource_countsReachabilityPerSourceType()
+{
+    eMule::testing::ScopedStatistics stats;
+    eMule::testing::KadFixture kadFixture;
+    QTRY_VERIFY(Kademlia::getInstanceIndexed()->isLoaded());
+    const UInt128 fileID(uint32{0x51C0FFE2});
+    SentSpy spy;
+
+    uint32 nextSource = 0x60;
+    const auto publish = [&](std::vector<Tag> tags) {
+        tags.emplace_back(uint8{FT_SOURCEPORT}, uint32{4662});
+        // one sender each: the flood limit is per IP
+        deliver(publishRequest(KADEMLIA2_PUBLISH_SOURCE_REQ, fileID, UInt128(nextSource), tags),
+                kLanIP + (nextSource << 8));
+        ++nextSource;
+    };
+    const Tag buddyIP(uint8{FT_SERVERIP}, uint32{0x0A0B0C0D});
+
+    publish({Tag(uint8{FT_SOURCETYPE}, uint32{1})});
+    publish({Tag(uint8{FT_SOURCETYPE}, uint32{4})});
+    publish({Tag(uint8{FT_SOURCETYPE}, uint32{3}), buddyIP});
+    publish({Tag(uint8{FT_SOURCETYPE}, uint32{5})});            // firewalled, no buddy
+    publish({Tag(uint8{FT_SOURCETYPE}, uint32{6})});
+    publish({Tag(uint8{FT_SOURCETYPE}, uint32{9})});            // unknown type
+    publish({});                                                // not a source: not stored
+    QCOMPARE(spy.publishAnswers, 6);
+
+    const KadCounters& kad = stats->kadSession();
+    QCOMPARE(kad.sourcesOpen, uint64{2});
+    QCOMPARE(kad.sourcesBuddy, uint64{1});
+    QCOMPARE(kad.sourcesNoBuddy, uint64{1});
+    QCOMPARE(kad.sourcesDirectCallback, uint64{1});
 }
 
 // C99: the start position counts stored sources, whatever their size

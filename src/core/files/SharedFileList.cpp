@@ -10,6 +10,7 @@
 #include "files/KnownFileList.h"
 #include "client/ClientList.h"
 #include "client/UpDownClient.h"
+#include "kademlia/KadLog.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadSearch.h"
@@ -985,8 +986,17 @@ void SharedFileList::publish()
 
     // Firewalled with no buddy and no direct callback: nobody could fetch from us.
     // MFC SharedFileList.cpp:1240-1249.
-    if (!canPublishToKad())
+    if (!canPublishToKad()) {
+        if (!m_kadPublishBlocked) {
+            m_kadPublishBlocked = true;
+            kad::logKad(QStringLiteral("Kad: publishing on hold — firewalled, no buddy, no direct callback and no public IPv6"));
+        }
         return;
+    }
+    if (m_kadPublishBlocked) {
+        m_kadPublishBlocked = false;
+        kad::logKad(QStringLiteral("Kad: publishing resumed"));
+    }
 
     const time_t tProbe = std::time(nullptr);
     publishDueSource(tProbe);
@@ -1037,6 +1047,8 @@ void SharedFileList::publish()
                     locker.unlock();
 
                     if (added > 0) {
+                        kad::logKad(QStringLiteral("Kad: publishing keyword \"%1\" (%2 files)")
+                                   .arg(kw->keyword()).arg(added));
                         kad::SearchManager::startSearch(search);
                         kw->incPublishedCount();
                     } else {
@@ -2117,7 +2129,10 @@ bool SharedFileList::canPublishToKad()
         return true;
     if (theApp.clientList && theApp.clientList->buddyStatus() == BuddyStatus::Connected)
         return true;
-    return !kad::UDPFirewallTester::isFirewalledUDP(true) && kad::UDPFirewallTester::isVerified();
+    if (!kad::UDPFirewallTester::isFirewalledUDP(true) && kad::UDPFirewallTester::isVerified())
+        return true;
+    // Not MFC: a public IPv6 is a way in for v6-capable peers
+    return theApp.shouldAdvertisePublicIPv6();
 }
 
 // One probe per KADEMLIAPUBLISHTIME, as MFC SharedFileList.cpp:1314-1329.
@@ -2134,10 +2149,12 @@ void SharedFileList::publishDueSource(time_t tProbe)
         target.setValueBE(file->fileHash());
         auto* search = kad::SearchManager::prepareLookup(
                 kad::SearchType::StoreFile, true, target);
-        if (!search)
+        if (!search) {
             file->setLastPublishTimeKadSrc(0, 0);
-        else
+        } else {
             search->setGUIName(file->fileName());
+            kad::logKad(QStringLiteral("Kad: publishing source for %1").arg(file->fileName()));
+        }
     } else {
         m_srcProbeRestUntil = tProbe + kPublishProbeRestSecs;
     }
@@ -2157,10 +2174,12 @@ void SharedFileList::publishDueNotes(time_t tProbe)
         target.setValueBE(file->fileHash());
         auto* search = kad::SearchManager::prepareLookup(
                 kad::SearchType::StoreNotes, true, target);
-        if (!search)
+        if (!search) {
             file->setLastPublishTimeKadNotes(0);
-        else
+        } else {
             search->setGUIName(file->fileName());
+            kad::logKad(QStringLiteral("Kad: publishing comment/rating for %1").arg(file->fileName()));
+        }
     } else {
         m_notesProbeRestUntil = tProbe + kPublishProbeRestSecs;
     }

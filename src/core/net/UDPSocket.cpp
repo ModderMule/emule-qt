@@ -424,8 +424,7 @@ void UDPSocket::queueDNSRequest(const Server& server, uint16 port,
     // One query returns A and AAAA together; the preference only orders them. IPv4 leads
     // by default because a server reached over IPv6 without a routable IPv4 hands out a
     // LowID unconditionally — but an AAAA-only server hostname now works.
-    const auto pref = thePrefs.serverPreferIPv6() ? HostResolver::Preference::PreferIPv6
-                                                  : HostResolver::Preference::PreferIPv4;
+    const auto pref = HostResolver::Preference::PreferIPv4;
     const QString host = server.dynIP();
     const uint16 tcpPort = server.port();
     std::vector<uint8> payload(data, data + size);

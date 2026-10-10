@@ -61,6 +61,7 @@
 
 #include <QDateTime>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QTimer>
 
@@ -114,29 +115,24 @@ void CoreSession::start()
     initClientInfra();
     initDownloadQueue();
     initSearch();
-    initClientUDP();
     initServerConnect();
     initKademlia();
-    initPortMapper();
-    initScheduler();
-    if (!BindAddress::outboundAllowed()) {
-        // Nothing was opened or dialled; pick up from here when the interface appears.
-        m_netSuspended = true;
-        m_resumeEd2k = thePrefs.networkED2K() && thePrefs.autoConnect();
-        m_resumeKad = thePrefs.kadUsable() && thePrefs.autoConnect();
-    }
-    m_appliedBind = BindAddress::current();
-    rememberAppliedPorts();
-    theApp.onBindSelectionChanged = [this] { applyBindSelection(); };
-    theApp.applyListenPorts = [this] { return applyListenPorts(); };
-    theApp.releaseConnectHold = [this] { releaseConnectHold(); };
-    m_tickCounter = 0;
-    m_timer.start();
+
+    // The rest waits for the event loop, so the daemon's IPC port opens now and a
+    // GUI gets the server list while the files are still being read. No P2P socket
+    // before that is done: a peer asking for a file not loaded yet would be told
+    // we do not have it.
+    theApp.loading = true;
+    m_loadStage = LoadStage::IpFilter;
+    QTimer::singleShot(0, this, &CoreSession::loadStep);
 }
 
 void CoreSession::stop()
 {
     m_timer.stop();
+    // Mid-load: the pending step does nothing more
+    m_loadStage = LoadStage::Done;
+    theApp.loading = false;
 }
 
 void CoreSession::applyBindSelection()
@@ -229,8 +225,8 @@ void CoreSession::initUploadPipeline()
 {
     // Create KnownFileList if not already set
     if (!theApp.knownFileList) {
+        // Empty until loadStep() reads known.met
         m_knownFileList = std::make_unique<KnownFileList>();
-        m_knownFileList->init(thePrefs.configDir());
         theApp.knownFileList = m_knownFileList.get();
     }
 
@@ -279,26 +275,11 @@ void CoreSession::initUploadPipeline()
     if (!theApp.httpCache) {
         m_httpCache = std::make_unique<HttpCacheManager>();
         theApp.httpCache = m_httpCache.get();
-        m_httpCache->start();
     }
 
     // Before the scan: a file hashed by it stores its AICH recovery set in known2.
     AICHRecoveryHashSet::setKnown2MetPath(
         thePrefs.configDir() + QChar(u'/') + QString::fromUtf16(kKnown2MetFilename));
-
-    // Initial scan of shared files
-    if (theApp.sharedFileList) {
-        ensureSeenFileIndex();   // our own shares are files we have seen
-        theApp.sharedFileList->reload();
-        theApp.sharedFileList->setWatchingEnabled(true);
-    }
-
-    // MFC starts CAICHSyncThread once the shared list exists (srchybrid/EmuleDlg.cpp:641).
-    if (theApp.sharedFileList) {
-        m_aichSync = std::make_unique<AICHSyncThread>(thePrefs.configDir(), theApp.sharedFileList);
-        m_aichSync->setPurgeSource(theApp.knownFileList);
-        m_aichSync->start(QThread::LowPriority);
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -342,7 +323,8 @@ void CoreSession::shutdownUploadPipeline()
     m_uploadDiskIO.reset();
     m_uploadThrottler.reset();
     m_sharedFileList.reset();
-    if (m_knownFileList)
+    // Stopped mid-load: the list is empty and would replace the real known.met
+    if (m_knownFileList && m_knownFilesLoaded)
         m_knownFileList->save();
     m_knownFileList.reset();
 }
@@ -615,6 +597,7 @@ void CoreSession::initServerConnect()
     cfg.userNick              = thePrefs.nick();
     cfg.listenPort            = thePrefs.port();
     cfg.smartLowIdCheck       = thePrefs.smartLowIdCheck();
+    cfg.preferIPv6OnLowID     = thePrefs.serverPreferIPv6();
     cfg.bindAddress           = BindAddress::ipv4Literal();
     cfg.emuleVersionTag       = (static_cast<uint32>(SEND_EMULE_VERSION_MJR) << 17)
                               | (static_cast<uint32>(SEND_EMULE_VERSION_MIN) << 10)
@@ -715,14 +698,7 @@ void CoreSession::initServerConnect()
                     theApp.serverList->processDescResponse(data, size, from);
             });
 
-    // 9. Auto-connect to a server at startup, if enabled.
-    // MFC: CemuleDlg::StartConnection() — emuleDlg.cpp:1978, reached from
-    // DoAutoConnect() (EmuleDlg.cpp:742). autoConnect gates *connecting*;
-    // networkED2K keeps the default Kad-only profile Kad-only. The Kad arm has
-    // the mirror of this in initKademlia().
-    if (thePrefs.networkED2K() && thePrefs.autoConnect() && BindAddress::outboundAllowed()
-        && !m_connectHold)
-        m_serverConnect->connectToAnyServer();
+    // The auto-connect is finishStart()'s: nothing dials before the files are loaded.
 }
 
 // ---------------------------------------------------------------------------
@@ -808,18 +784,16 @@ void CoreSession::shutdownServerConnect()
 }
 
 // ---------------------------------------------------------------------------
-// initClientInfra — create ClientList and ListenSocket
+// initClientInfra — create ClientList, credits, friends (the listen socket is
+// initListenSocket(), after the load)
 // ---------------------------------------------------------------------------
 
 void CoreSession::initClientInfra()
 {
-    // Create and load IP filter
+    // IP filter; loadStep() reads the file
     if (!theApp.ipFilter) {
         m_ipFilter = std::make_unique<IPFilter>();
-        int count = m_ipFilter->loadFromDefaultFile(thePrefs.configDir());
         theApp.ipFilter = m_ipFilter.get();
-        if (count > 0)
-            logInfo(QStringLiteral("IP filter loaded: %1 entries").arg(count));
     }
 
     // Country flags: open the GeoLite2 db and keep it fresh
@@ -849,11 +823,8 @@ void CoreSession::initClientInfra()
     }
 
     if (!theApp.clientCredits) {
+        // loadStep() reads clients.met
         m_clientCredits = std::make_unique<ClientCreditsList>();
-        const QString creditsPath = QDir(thePrefs.configDir()).filePath(
-            QStringLiteral("clients.met"));
-        if (QFile::exists(creditsPath))
-            m_clientCredits->loadList(creditsPath);
         theApp.clientCredits = m_clientCredits.get();
     }
 
@@ -863,6 +834,19 @@ void CoreSession::initClientInfra()
         theApp.friendList = m_friendList.get();
     }
 
+    // Initialize collection signing keys
+    if (!m_collectionKeys) {
+        m_collectionKeys = std::make_unique<CollectionKeys>(thePrefs.configDir());
+        m_collectionKeys->initialize();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// initListenSocket — open the TCP listen port and hand connections to ClientList
+// ---------------------------------------------------------------------------
+
+void CoreSession::initListenSocket()
+{
     if (!theApp.listenSocket) {
         m_listenSocket = std::make_unique<ListenSocket>(this);
         if (m_listenSocket->startListening(thePrefs.port())) {
@@ -884,12 +868,6 @@ void CoreSession::initClientInfra()
         connect(theApp.listenSocket, &ListenSocket::newClientConnection,
                 theApp.clientList, &ClientList::handleIncomingConnection);
     }
-
-    // Initialize collection signing keys
-    if (!m_collectionKeys) {
-        m_collectionKeys = std::make_unique<CollectionKeys>(thePrefs.configDir());
-        m_collectionKeys->initialize();
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -901,7 +879,9 @@ void CoreSession::shutdownClientInfra()
     if (m_clientCredits) {
         const QString creditsPath = QDir(thePrefs.configDir()).filePath(
             QStringLiteral("clients.met"));
-        m_clientCredits->saveList(creditsPath);
+        // Stopped mid-load: the list is empty and would replace the real clients.met
+        if (m_creditsLoaded)
+            m_clientCredits->saveList(creditsPath);
         if (theApp.clientCredits == m_clientCredits.get())
             theApp.clientCredits = nullptr;
         m_clientCredits.reset();
@@ -949,7 +929,7 @@ void CoreSession::shutdownClientInfra()
 }
 
 // ---------------------------------------------------------------------------
-// initDownloadQueue — create DownloadQueue and load existing .part files
+// initDownloadQueue — create DownloadQueue; loadStep() reads the .part files
 // ---------------------------------------------------------------------------
 
 void CoreSession::initDownloadQueue()
@@ -980,11 +960,7 @@ void CoreSession::initDownloadQueue()
     if (thePrefs.useSaveLoadSources())
         SourceSaver::ensureDirectories(thePrefs.tempDirs());
 
-    // Load existing .part files from configured temp directories
-    m_downloadQueue->init(thePrefs.tempDirs());
-
-    logInfo(QStringLiteral("DownloadQueue initialized — %1 files loaded")
-                .arg(m_downloadQueue->fileCount()));
+    // The .part files themselves are read by loadStep()
 }
 
 // ---------------------------------------------------------------------------
@@ -1112,11 +1088,12 @@ void CoreSession::initClientUDP()
         this, [](const Endpoint& senderEP, const uint8* data, uint32 size) {
             if (!theApp.clientList)
                 return;
-            auto* buddy = theApp.clientList->getBuddy();
-            if (!buddy || !buddy->socket() || size < 17)
+            if (size < 17)
                 return;
-            // First 16 bytes = buddy ID that must match our buddy
-            if (!md4equ(data, buddy->buddyID()))
+            // First 16 bytes = buddy ID, which picks the served node (MFC compares it
+            // with its one buddy)
+            auto* buddy = theApp.clientList->findServedBuddy(data);
+            if (!buddy || !buddy->allowBuddyRelay())
                 return;
             // Strip the 16-byte buddy ID and prepend the requester's address, producing the
             // OP_REASKCALLBACKTCP body processReaskCallbackTCP expects:
@@ -1267,8 +1244,8 @@ void CoreSession::shutdownClientUDP()
 }
 
 // ---------------------------------------------------------------------------
-// initKademlia — create Kademlia when Kad is enabled, and start it when
-// autoConnect is on. Construction is independent of autoConnect so that
+// initKademlia — create Kademlia; finishStart() starts it when autoConnect
+// is on. Construction is independent of autoConnect so that
 // Kademlia::instance() is addressable for a manual connect (GUI/IPC), matching
 // MFC's always-addressable static CKademlia. The shared UDP socket is created
 // separately in initClientUDP().
@@ -1337,20 +1314,7 @@ void CoreSession::initKademlia()
     connect(m_kademlia.get(), &kad::Kademlia::started,
             this, &CoreSession::wireKadListener);
 
-    // Start now only when Kad is enabled AND auto-connect is on. Otherwise the
-    // object stays constructed and addressable via Kademlia::instance(), so a
-    // manual connect from the GUI/IPC (BootstrapKad) can start it later. MFC gates
-    // Start() the same way (StartConnection, emuleDlg.cpp:1983) while CKademlia
-    // stays an always-addressable static. A failed start is left constructed too,
-    // so a retry does not hit a null instance.
-    if (thePrefs.kadUsable() && thePrefs.autoConnect() && BindAddress::outboundAllowed()
-        && !m_connectHold) {
-        m_kademlia->start();
-        if (m_kademlia->isRunning())
-            logInfo(QStringLiteral("Kademlia started."));
-        else
-            logWarning(QStringLiteral("Kademlia failed to start."));
-    }
+    // Started by finishStart(), once the files are loaded and the UDP socket is open.
 }
 
 // ---------------------------------------------------------------------------
@@ -1759,6 +1723,8 @@ void CoreSession::releaseConnectHold()
     if (!m_connectHold)
         return;
     m_connectHold = false;
+    if (theApp.loading)
+        return;   // finishStart() does the connecting
 
     // Current prefs: the wizard may have switched a network off.
     const bool ed2k = thePrefs.networkED2K() && thePrefs.autoConnect();
@@ -1983,6 +1949,138 @@ void CoreSession::publishListenPorts()
     theApp.setListeningPorts(tcp != 0 ? tcp : m_appliedTcpPort,
                              m_appliedUdpPort == 0 ? uint16{0}
                                                    : udp != 0 ? udp : m_appliedUdpPort);
+}
+
+// ---------------------------------------------------------------------------
+// loadStep / finishStart — the part of start() that runs from the event loop
+// ---------------------------------------------------------------------------
+
+void CoreSession::loadStep()
+{
+    // Longest one slice may keep the event loop (and with it IPC) waiting
+    constexpr qint64 kSliceMs = 50;
+
+    switch (m_loadStage) {
+    case LoadStage::IpFilter:
+        // Before the part files: their sources are checked against it. The server
+        // list re-checks itself on filterLoaded.
+        if (m_ipFilter) {
+            const int count = m_ipFilter->loadFromDefaultFile(thePrefs.configDir());
+            if (count > 0)
+                logInfo(QStringLiteral("IP filter loaded: %1 entries").arg(count));
+        }
+        m_loadStage = LoadStage::Credits;
+        break;
+
+    case LoadStage::Credits:
+        // Before any client exists: loading replaces entries a client may point to
+        if (m_clientCredits) {
+            const QString creditsPath = QDir(thePrefs.configDir()).filePath(
+                QStringLiteral("clients.met"));
+            if (QFile::exists(creditsPath))
+                m_clientCredits->loadList(creditsPath);
+        }
+        m_creditsLoaded = true;
+        m_loadStage = LoadStage::KnownFiles;
+        break;
+
+    case LoadStage::KnownFiles:
+        if (m_knownFileList)
+            m_knownFileList->init(thePrefs.configDir());
+        m_knownFilesLoaded = true;
+        m_loadStage = LoadStage::SharedFiles;
+        break;
+
+    case LoadStage::SharedFiles:
+        // Initial scan of shared files
+        if (theApp.sharedFileList) {
+            ensureSeenFileIndex();   // our own shares are files we have seen
+            theApp.sharedFileList->reload();
+            theApp.sharedFileList->setWatchingEnabled(true);
+
+            // MFC starts CAICHSyncThread once the shared list exists (srchybrid/EmuleDlg.cpp:641).
+            m_aichSync = std::make_unique<AICHSyncThread>(thePrefs.configDir(), theApp.sharedFileList);
+            m_aichSync->setPurgeSource(theApp.knownFileList);
+            m_aichSync->start(QThread::LowPriority);
+        }
+        // Existing .part files from the configured temp directories
+        m_pendingPartMets = DownloadQueue::partMetFiles(thePrefs.tempDirs());
+        m_loadStage = LoadStage::PartFiles;
+        break;
+
+    case LoadStage::PartFiles: {
+        QElapsedTimer slice;
+        slice.start();
+        while (!m_pendingPartMets.isEmpty() && slice.elapsed() < kSliceMs)
+            m_downloadQueue->loadPartMet(m_pendingPartMets.takeFirst());
+        if (m_pendingPartMets.isEmpty()) {
+            m_downloadQueue->sortByPriority();
+            logInfo(QStringLiteral("DownloadQueue initialized — %1 files loaded")
+                        .arg(m_downloadQueue->fileCount()));
+            m_loadStage = LoadStage::Network;
+        }
+        break;
+    }
+
+    case LoadStage::Network:
+        finishStart();
+        m_loadStage = LoadStage::Done;
+        theApp.loading = false;
+        emit loaded();
+        return;
+
+    case LoadStage::Done:
+        return;
+    }
+    QTimer::singleShot(0, this, &CoreSession::loadStep);
+}
+
+void CoreSession::finishStart()
+{
+    // After the queues are filled: its tick scans one and writes into the other.
+    if (m_httpCache)
+        m_httpCache->start();
+
+    initListenSocket();
+    initClientUDP();
+
+    // Auto-connect to a server at startup, if enabled.
+    // MFC: CemuleDlg::StartConnection() — emuleDlg.cpp:1978, reached from
+    // DoAutoConnect() (EmuleDlg.cpp:742). autoConnect gates *connecting*;
+    // networkED2K keeps the default Kad-only profile Kad-only.
+    const bool autoConnect = thePrefs.autoConnect() && BindAddress::outboundAllowed() && !m_connectHold;
+    if (autoConnect && thePrefs.networkED2K() && m_serverConnect)
+        m_serverConnect->connectToAnyServer();
+
+    // Kad likewise: enabled AND auto-connect. Otherwise the object stays constructed
+    // and addressable via Kademlia::instance(), so a manual connect from the GUI/IPC
+    // (BootstrapKad) can start it later. MFC gates Start() the same way
+    // (StartConnection, emuleDlg.cpp:1983) while CKademlia stays an always-addressable
+    // static. A failed start is left constructed too, so a retry does not hit a null
+    // instance.
+    if (autoConnect && thePrefs.kadUsable() && m_kademlia) {
+        m_kademlia->start();
+        if (m_kademlia->isRunning())
+            logInfo(QStringLiteral("Kademlia started."));
+        else
+            logWarning(QStringLiteral("Kademlia failed to start."));
+    }
+
+    initPortMapper();
+    initScheduler();
+    if (!BindAddress::outboundAllowed()) {
+        // Nothing was opened or dialled; pick up from here when the interface appears.
+        m_netSuspended = true;
+        m_resumeEd2k = thePrefs.networkED2K() && thePrefs.autoConnect();
+        m_resumeKad = thePrefs.kadUsable() && thePrefs.autoConnect();
+    }
+    m_appliedBind = BindAddress::current();
+    rememberAppliedPorts();
+    theApp.onBindSelectionChanged = [this] { applyBindSelection(); };
+    theApp.applyListenPorts = [this] { return applyListenPorts(); };
+    theApp.releaseConnectHold = [this] { releaseConnectHold(); };
+    m_tickCounter = 0;
+    m_timer.start();
 }
 
 } // namespace eMule

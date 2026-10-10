@@ -532,6 +532,7 @@ private:
     static constexpr time_t kPublishProbeRestSecs = 10;
     time_t m_srcProbeRestUntil = 0;
     time_t m_notesProbeRestUntil = 0;
+    bool m_kadPublishBlocked = false;   // log the hold once, not every tick
     time_t m_lastPublishKadSrc = 0;
     time_t m_lastPublishKadNotes = 0;
 };

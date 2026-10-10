@@ -165,6 +165,22 @@ QCborMap networkInfo()
                     kadInfo.insert(QStringLiteral("buddyAddress"), buddy->userAddress().toString());
                 kadInfo.insert(QStringLiteral("buddyPort"), buddy->userPort());
             }
+            // Firewalled nodes we relay for
+            QCborArray served;
+            const std::time_t now = std::time(nullptr);
+            for (const UpDownClient* c : theApp.clientList->servedBuddies()) {
+                served.append(QCborMap{
+                    {QStringLiteral("address"), c->userAddress().toString()},
+                    {QStringLiteral("port"), c->userPort()},
+                    {QStringLiteral("name"), c->userName()},
+                    {QStringLiteral("software"), c->clientSoftwareStr()},
+                    {QStringLiteral("connectedSecs"),
+                     static_cast<qint64>(std::max<std::time_t>(now - c->kadStateSince(), 0))}});
+            }
+            kadInfo.insert(QStringLiteral("buddiesServed"), served.size());
+            kadInfo.insert(QStringLiteral("servedBuddies"), served);
+            kadInfo.insert(QStringLiteral("buddiesServedMax"),
+                           static_cast<int>(thePrefs.maxServedBuddies()));
         }
 
         auto* prefs = kad->getPrefs();

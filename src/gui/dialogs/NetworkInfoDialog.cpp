@@ -9,7 +9,9 @@
 #include "IpcMessage.h"
 #include "prefs/Preferences.h"
 #include "utils/DialogSizing.h"
+#include "utils/StringUtils.h"
 
+#include <QCborArray>
 #include <QCborMap>
 #include <QDialogButtonBox>
 #include <QHostAddress>
@@ -331,6 +333,28 @@ QString NetworkInfoDialog::infoHtml(const QCborMap& info, bool extended)
             default: buddy = tr("None"); break;
             }
             html += QStringLiteral("<tr><td>%1</td><td>%2</td></tr>").arg(tr("Buddy:")).arg(buddy);
+        } else if (kad.contains(QStringLiteral("buddiesServed"))) {
+            // Open: the firewalled nodes we relay for (not MFC)
+            html += QStringLiteral("<tr><td>%1</td><td>%2 / %3</td></tr>").arg(tr("Buddies served:"))
+                        .arg(kad.value(QStringLiteral("buddiesServed")).toInteger())
+                        .arg(kad.value(QStringLiteral("buddiesServedMax")).toInteger());
+            for (const QCborValue& v : kad.value(QStringLiteral("servedBuddies")).toArray()) {
+                const QCborMap b = v.toMap();
+                QString addr = b.value(QStringLiteral("address")).toString();
+                if (addr.contains(u':'))
+                    addr = QStringLiteral("[%1]").arg(addr);   // IPv6 literal
+                QString line = QStringLiteral("%1:%2").arg(addr.toHtmlEscaped())
+                                   .arg(b.value(QStringLiteral("port")).toInteger());
+                const QString name = b.value(QStringLiteral("name")).toString();
+                const QString software = b.value(QStringLiteral("software")).toString();
+                if (!name.isEmpty())
+                    line += QStringLiteral(", ") + name.toHtmlEscaped();
+                if (!software.isEmpty())
+                    line += QStringLiteral(" (%1)").arg(software.toHtmlEscaped());
+                line += QStringLiteral(", ")
+                        + formatSecondsHM(b.value(QStringLiteral("connectedSecs")).toInteger());
+                html += QStringLiteral("<tr><td></td><td>%1</td></tr>").arg(line);
+            }
         }
 
         // Kad hash

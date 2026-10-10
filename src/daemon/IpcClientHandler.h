@@ -42,6 +42,9 @@ public:
     /// Returns true if handshake has completed.
     [[nodiscard]] bool isHandshaked() const;
 
+    /// The core has finished loading: answer what was held back, in arrival order.
+    void replayDeferred();
+
     // What a preference or category save does, without a client to answer: the
     // REST API stores through the same code. What only the caller can do — tell
     // the other clients, restart the web server — comes back in the outcome.
@@ -300,6 +303,8 @@ private:
     std::unique_ptr<Ipc::IpcConnection> m_connection;
     bool m_isLocal = true;
     bool m_handshaked = false;
+    /// Requests that arrived while theApp.loading and need the file lists.
+    std::vector<Ipc::IpcMessage> m_deferred;
     /// NZB downloads this connection has in flight. Bounded so a paste of a
     /// thousand lines cannot turn the daemon into a port scanner — that, rather
     /// than any single fetch, is what makes an operator-supplied URL worth

@@ -47,6 +47,8 @@ inline constexpr uint32_t kSearchStoreKeywordTotal      = 10;
 inline constexpr uint32_t kSearchStoreNotesTotal        = 10;
 inline constexpr uint32_t kSearchNodeCompTotal          = 10;
 inline constexpr uint32_t kSearchFindBuddyTotal         = 10;
+// Nodes asked per buddy search. MFC asks ~10; free buddies are scarce, so twice that.
+inline constexpr uint32_t kSearchFindBuddyRequests      = 20;
 inline constexpr uint32_t kSearchFindSourceTotal        = 20;
 
 // ---------------------------------------------------------------------------

@@ -573,13 +573,14 @@ void KnownFile::setLastPublishTimeKadSrc(time_t t, uint32 buddyIP)
 }
 
 bool KnownFile::sharedInKad(time_t now, time_t lastPublish, bool kadConnected,
-                            bool kadFirewalled, bool buddyMatches, bool udpOpenVerified)
+                            bool kadFirewalled, bool buddyMatches, bool udpOpenVerified,
+                            bool ipv6Route)
 {
     if (!kadConnected || now >= lastPublish)
         return false;
     if (!kadFirewalled)
         return true;
-    return buddyMatches || udpOpenVerified;
+    return buddyMatches || udpOpenVerified || ipv6Route;
 }
 
 bool KnownFile::isSharedInKad() const
@@ -592,8 +593,10 @@ bool KnownFile::isSharedInKad() const
     const bool buddyMatches = buddy && m_lastBuddyIP == buddy->userAddress().toNetworkUint32();
     const bool udpOpen = kad->isRunning() && !kad::UDPFirewallTester::isFirewalledUDP(true)
                          && kad::UDPFirewallTester::isVerified();
+    // Published without a buddy (m_lastBuddyIP 0) over the IPv6 route
+    const bool ipv6Route = !buddy && m_lastBuddyIP == 0 && theApp.shouldAdvertisePublicIPv6();
     return sharedInKad(std::time(nullptr), m_lastPublishTimeKadSrc, kad->isConnected(),
-                       kad->isFirewalled(), buddyMatches, udpOpen);
+                       kad->isFirewalled(), buddyMatches, udpOpen, ipv6Route);
 }
 
 // ---------------------------------------------------------------------------
@@ -900,12 +903,14 @@ bool KnownFile::publishSrc()
         && (kad::UDPFirewallTester::isFirewalledUDP(true) || !kad::UDPFirewallTester::isVerified())) {
         auto* clientList = kad::Kademlia::getClientList();
         auto* buddy = clientList ? clientList->getBuddy() : nullptr;
-        if (!buddy)
+        // Not MFC: without a buddy a public IPv6 still gets a record out (buddyIP 0)
+        if (!buddy && !theApp.shouldAdvertisePublicIPv6())
             return false;
 
-        buddyIP = buddy->userAddress().toNetworkUint32();
+        if (buddy)
+            buddyIP = buddy->userAddress().toNetworkUint32();
         // New buddy: the published record names the old one, republish now
-        if (buddyIP != m_lastBuddyIP) {
+        if (buddy && buddyIP != m_lastBuddyIP) {
             setLastPublishTimeKadSrc(tNow + KADEMLIAREPUBLISHTIMES, buddyIP);
             return true;
         }

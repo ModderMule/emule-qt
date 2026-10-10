@@ -1,13 +1,68 @@
 {
-  "n/a": {
+  "Source Publishes Received: %1": {
     "_context": "eMule::StatisticsPanel",
-    "de_DE": "k. A.",
-    "es_ES": "n/d",
-    "fr_FR": "n/d",
-    "it_IT": "n/d",
-    "ja_JP": "データなし",
-    "ko_KR": "데이터 없음",
-    "pt_BR": "n/d",
-    "zh_CN": "无数据"
+    "de_DE": "Empfangene Quellen-Veröffentlichungen: %1",
+    "es_ES": "Publicaciones de fuentes recibidas: %1",
+    "fr_FR": "Publications de sources reçues : %1",
+    "it_IT": "Pubblicazioni di fonti ricevute: %1",
+    "ja_JP": "受信したソース公開: %1",
+    "ko_KR": "받은 소스 게시: %1",
+    "pt_BR": "Publicações de fontes recebidas: %1",
+    "zh_CN": "收到的来源发布: %1"
+  },
+  "Open: %1 %2": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "Offen: %1 %2",
+    "es_ES": "Abierto: %1 %2",
+    "fr_FR": "Ouvert : %1 %2",
+    "it_IT": "Aperto: %1 %2",
+    "ja_JP": "オープン: %1 %2",
+    "ko_KR": "개방: %1 %2",
+    "pt_BR": "Aberto: %1 %2",
+    "zh_CN": "开放: %1 %2"
+  },
+  "Firewalled, with Buddy: %1 %2": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "Hinter Firewall, mit Buddy: %1 %2",
+    "es_ES": "Tras cortafuegos, con compañero: %1 %2",
+    "fr_FR": "Derrière un pare-feu, avec buddy : %1 %2",
+    "it_IT": "Dietro firewall, con buddy: %1 %2",
+    "ja_JP": "ファイアウォール内、バディあり: %1 %2",
+    "ko_KR": "방화벽 뒤, 버디 있음: %1 %2",
+    "pt_BR": "Atrás de firewall, com buddy: %1 %2",
+    "zh_CN": "受防火墙限制，有伙伴: %1 %2"
+  },
+  "Firewalled, Direct Callback: %1 %2": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "Hinter Firewall, direkter Rückruf: %1 %2",
+    "es_ES": "Tras cortafuegos, devolución de llamada directa: %1 %2",
+    "fr_FR": "Derrière un pare-feu, rappel direct : %1 %2",
+    "it_IT": "Dietro firewall, callback diretto: %1 %2",
+    "ja_JP": "ファイアウォール内、直接コールバック: %1 %2",
+    "ko_KR": "방화벽 뒤, 직접 콜백: %1 %2",
+    "pt_BR": "Atrás de firewall, callback direto: %1 %2",
+    "zh_CN": "受防火墙限制，直接回调: %1 %2"
+  },
+  "Firewalled, without Buddy: %1 %2": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "Hinter Firewall, ohne Buddy: %1 %2",
+    "es_ES": "Tras cortafuegos, sin compañero: %1 %2",
+    "fr_FR": "Derrière un pare-feu, sans buddy : %1 %2",
+    "it_IT": "Dietro firewall, senza buddy: %1 %2",
+    "ja_JP": "ファイアウォール内、バディなし: %1 %2",
+    "ko_KR": "방화벽 뒤, 버디 없음: %1 %2",
+    "pt_BR": "Atrás de firewall, sem buddy: %1 %2",
+    "zh_CN": "受防火墙限制，无伙伴: %1 %2"
+  },
+  "Counted per publish, not per node. Firewalled nodes that cannot publish are missing.": {
+    "_context": "eMule::StatisticsPanel",
+    "de_DE": "Gezählt pro Veröffentlichung, nicht pro Knoten. Knoten hinter einer Firewall, die nicht veröffentlichen können, fehlen.",
+    "es_ES": "Se cuenta por publicación, no por nodo. Faltan los nodos tras cortafuegos que no pueden publicar.",
+    "fr_FR": "Compté par publication, pas par nœud. Les nœuds derrière un pare-feu qui ne peuvent pas publier manquent.",
+    "it_IT": "Conteggio per pubblicazione, non per nodo. Mancano i nodi dietro firewall che non possono pubblicare.",
+    "ja_JP": "ノード単位ではなく公開単位で数えます。公開できないファイアウォール内のノードは含まれません。",
+    "ko_KR": "노드가 아니라 게시 단위로 셉니다. 게시할 수 없는 방화벽 뒤 노드는 포함되지 않습니다.",
+    "pt_BR": "Contado por publicação, não por nó. Faltam os nós atrás de firewall que não conseguem publicar.",
+    "zh_CN": "按发布次数统计，而非按节点。无法发布的防火墙内节点不在其中。"
   }
 }
