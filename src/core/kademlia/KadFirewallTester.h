@@ -22,6 +22,9 @@ public:
     static void reCheckFirewallUDP(bool setUnverified);
     static bool isFWCheckUDPRunning();
     static bool isVerified();
+    /// UDP open and proven so: a direct callback reaches us, no buddy needed.
+    /// Every "needs a buddy" / "direct callback" gate asks this one question.
+    static bool isOpenAndVerified();
     static void addPossibleTestContact(const UInt128& clientID, uint32 ip,
                                         uint16 udpPort, uint16 tcpPort,
                                         const UInt128& target, uint8 version,
@@ -36,6 +39,9 @@ public:
     /// Test seam: backdate the check's start time so the 6-minute timeout can be
     /// exercised without waiting for it.
     static void debugSetTestStart(uint32 startTime);
+
+    /// Test seam: backdate the last verdict so verification expiry can be exercised.
+    static void debugSetLastVerdictTime(uint32 verdictTime);
 
     /// Test seam: register a client as "asked" without going through the TCP
     /// request in queryNextClient(), so result validation can be exercised.
@@ -53,6 +59,7 @@ public:
 
 private:
     static bool getUDPCheckClientsNeeded();
+    static void expireStaleVerification();
 
     struct UsedClient {
         Contact contact;
@@ -68,6 +75,7 @@ private:
     static uint8 s_fwChecksFinished;
     static uint32 s_testStart;
     static uint32 s_lastSucceededTime;
+    static uint32 s_lastVerdictTime;
     static std::list<Contact> s_possibleTestClients;
     static std::list<UsedClient> s_usedTestClients;
 };

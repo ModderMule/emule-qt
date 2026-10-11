@@ -165,10 +165,10 @@ def generate_compose(
             },
             "ports": [f"{host_ipc_port}:{ipc_port}"],
             "volumes": [
-                f"{volume_name}:/root/.config/eMule/Core",
+                f"{volume_name}:/root/eMuleQt/Config",
                 f"./seed/node-{i}-nodes.dat:/seed/nodes.dat:ro",
                 f"./seed/node-{i}-preferencesKad.dat:/seed/preferencesKad.dat:ro",
-                f"./crashes/node-{i}:/root/.config/eMule/Core/crashes",
+                f"./crashes/node-{i}:/root/eMuleQt/Config/crashes",
             ],
             "networks": {
                 "kadnet": {"ipv4_address": node_ip},

@@ -97,6 +97,10 @@ public:
     /// Convenience: check Address at the user's configured level.
     [[nodiscard]] bool isFiltered(const Address& addr) const;
 
+    /// Verbose-log the hit the last isFiltered() reported, if logFilteredIPs is on.
+    /// @p context says what was dropped ("UDP packet", "Kad contact", ...).
+    void logLastHit(QStringView context) const;
+
     // -- Modification ---------------------------------------------------------
 
     /// Add a single IP range (host byte order).
@@ -158,6 +162,7 @@ private:
     std::vector<IPFilterEntry6> m_entries6;
     mutable const IPFilterEntry* m_lastHit = nullptr;
     mutable const IPFilterEntry6* m_lastHit6 = nullptr;
+    mutable Address m_lastHitAddress;
     bool m_modified = false;
 };
 

@@ -591,8 +591,7 @@ bool KnownFile::isSharedInKad() const
     auto* clientList = kad::Kademlia::getClientList();
     auto* buddy = clientList ? clientList->getBuddy() : nullptr;
     const bool buddyMatches = buddy && m_lastBuddyIP == buddy->userAddress().toNetworkUint32();
-    const bool udpOpen = kad->isRunning() && !kad::UDPFirewallTester::isFirewalledUDP(true)
-                         && kad::UDPFirewallTester::isVerified();
+    const bool udpOpen = kad->isRunning() && kad::UDPFirewallTester::isOpenAndVerified();
     // Published without a buddy (m_lastBuddyIP 0) over the IPv6 route
     const bool ipv6Route = !buddy && m_lastBuddyIP == 0 && theApp.shouldAdvertisePublicIPv6();
     return sharedInKad(std::time(nullptr), m_lastPublishTimeKadSrc, kad->isConnected(),
@@ -900,7 +899,7 @@ bool KnownFile::publishSrc()
 
     // No direct route in: publish only with a buddy. MFC KnownFile.cpp:1561-1584.
     if (kad::Kademlia::instance() && theApp.isFirewalled()
-        && (kad::UDPFirewallTester::isFirewalledUDP(true) || !kad::UDPFirewallTester::isVerified())) {
+        && !kad::UDPFirewallTester::isOpenAndVerified()) {
         auto* clientList = kad::Kademlia::getClientList();
         auto* buddy = clientList ? clientList->getBuddy() : nullptr;
         // Not MFC: without a buddy a public IPv6 still gets a record out (buddyIP 0)

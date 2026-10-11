@@ -270,8 +270,10 @@ void UDPSocket::onReadyRead()
                               static_cast<uint16>(datagram.senderPort()));
 
         if (auto* filter = theApp.ipFilter) {
-            if (filter->isFiltered(sender.address(), thePrefs.ipFilterLevel()))
+            if (filter->isFiltered(sender.address(), thePrefs.ipFilterLevel())) {
+                filter->logLastHit(u"server UDP packet");
                 continue;
+            }
         }
 
         auto* buf = reinterpret_cast<uint8*>(data.data());

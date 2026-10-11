@@ -426,6 +426,7 @@ private slots:
     void directCallback_sendsRequestPayload();
     // UDP reask via buddy — real UDP packet (3 nodes)
     void udpReaskViaCallback_sendsRealPacket();
+    void udpReaskViaCallback_heldBackOverTheRelayLimit();
     // A4AF swap between two files
     void swapToAnotherFile_swapsSourceAndTracksA4AF();
     // LowID callback completion — inbound socket attaches to the waiting source
@@ -1171,6 +1172,69 @@ void tst_CallbackAndQueueRank::udpReaskViaCallback_sendsRealPacket()
     QVERIFY(md4equ(raw + 2 + 16, m_fileHash.data())); // fileHash matches
 
     // Cleanup
+    client->setReqFile(nullptr);
+    m_clientList->removeClient(client);
+    delete partFile;
+    delete client;
+}
+
+// The relay drops what exceeds 60 packets per minute for one buddy, without an answer.
+// The reask is then not sent and not left pending, or it would be booked as failed.
+void tst_CallbackAndQueueRank::udpReaskViaCallback_heldBackOverTheRelayLimit()
+{
+    UdpReaskReadyGuard udpReady;
+
+    QUdpSocket buddyReceiver;
+    QVERIFY(buddyReceiver.bind(QHostAddress::LocalHost, 0));
+    const Address buddyAddr = Address::fromHostOrder(0x7F000001);
+
+    auto* client = new UpDownClient();
+    client->setUserIDHybrid(100);
+    client->setConnectAddress(Address());
+    client->setUserPort(4662);
+    client->setUDPPort(4672);
+
+    uint8 hash[16];
+    std::memset(hash, 0x57, 16);
+    client->setUserHash(hash);
+
+    uint8 buddyId[16];
+    std::memset(buddyId, 0x68, 16);   // an ID no other test counts against
+    client->setBuddyID(buddyId);
+    client->setBuddyAddress(buddyAddr);
+    client->setBuddyPort(buddyReceiver.localPort());
+
+    auto miBuf = buildMinimalMuleInfo();
+    client->processMuleInfoPacket(reinterpret_cast<const uint8*>(miBuf.constData()),
+                                  static_cast<uint32>(miBuf.size()));
+
+    auto* partFile = new PartFile();
+    partFile->setFileName(QStringLiteral("testfile.bin"));
+    partFile->setFileSize(EMFileSize(1024 * 1024));
+    partFile->setFileHash(m_fileHash.data());
+    QVERIFY(partFile->createPartFile(m_tmpDir->filePath(QStringLiteral("temp"))));
+    client->setReqFile(partFile);
+    client->setDownloadState(DownloadState::OnQueue);
+    m_clientList->addClient(client);
+
+    // One below the limit: the reask itself takes the last slot and goes out
+    for (uint32 i = 0; i + 1 < kMaxBuddyRelaysPerMin; ++i)
+        QVERIFY(m_clientList->allowRelayRequest(buddyAddr, buddyId, RelayRequest::ReaskCallback));
+    client->udpReaskForDownload();
+    QVERIFY(client->udpPacketPending());
+    flushUDPSocket(m_receiverUDP);
+    QTRY_VERIFY_WITH_TIMEOUT(buddyReceiver.hasPendingDatagrams(), 3000);
+    buddyReceiver.receiveDatagram();
+
+    // Limit used up: nothing pending, nothing on the wire
+    client->udpReaskACK(0);
+    QVERIFY(!client->udpPacketPending());
+    client->udpReaskForDownload();
+    QVERIFY(!client->udpPacketPending());
+    flushUDPSocket(m_receiverUDP);
+    QTest::qWait(200);
+    QVERIFY(!buddyReceiver.hasPendingDatagrams());
+
     client->setReqFile(nullptr);
     m_clientList->removeClient(client);
     delete partFile;

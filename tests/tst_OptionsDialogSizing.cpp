@@ -121,6 +121,7 @@ private slots:
     void aPortChangeIsReportedAsItWasApplied();
     void onlyAPendingPortChangeOffersARestart();
     void defaultWidthShowsEveryTabTitle();
+    void windowsDoesNotForceTheContentHeight();
 };
 
 /// The regression this file exists for. Named per page, because "the dialog is too tall"
@@ -1015,6 +1016,21 @@ void TestOptionsDialogSizing::defaultWidthShowsEveryTabTitle()
     QDialog scrolling;   // arrows keep the titles whole; nothing to widen
     build(scrolling, true);
     QCOMPARE(scrolling.width(), 320);
+}
+
+/// Issue #10, the Windows half. QWindowsWindow corrects every resize of a top-level
+/// whose widget hasHeightForWidth() to QLayout::closestAcceptableSize() -- i.e. up to the
+/// layout's minimumHeightForWidth(), which behind the scroll areas is the tallest page's
+/// full content (~1000 px). The explicit minimum does not stop it, and no other platform
+/// does it, so the check asks what QWidgetWindow asks before correcting.
+void TestOptionsDialogSizing::windowsDoesNotForceTheContentHeight()
+{
+    theUiState.setOptionsDialogSize({});
+    OptionsDialog dlg(nullptr, nullptr);
+
+    const QWidget* window = &dlg;   // through the base: that is how Qt calls it
+    QVERIFY2(!window->hasHeightForWidth(),
+             "a height-for-width window is resized by Windows to the content's full height");
 }
 
 QTEST_MAIN(TestOptionsDialogSizing)

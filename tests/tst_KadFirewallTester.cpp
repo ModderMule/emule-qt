@@ -27,6 +27,8 @@ private slots:
     void addPossibleTestContact_queued();
     void setUDPFWCheckResult_updates();
     void isVerified_afterSuccess();
+    void isOpenAndVerified_needsAnOpenVerdict();
+    void verification_expiresWhenNoRecheckConcludes();
     void setUDPFWCheckResult_ignoresUnrequested();
     void setUDPFWCheckResult_dedupesSecondAnswer();
     void setUDPFWCheckResult_failureFreesSlot();
@@ -112,6 +114,58 @@ void tst_KadFirewallTester::isVerified_afterSuccess()
     // After reset, should no longer be verified
     UDPFirewallTester::reset();
     QVERIFY(!UDPFirewallTester::isVerified());
+}
+
+// One question for every "direct callback or buddy" gate: unverified is not open.
+void tst_KadFirewallTester::isOpenAndVerified_needsAnOpenVerdict()
+{
+    QVERIFY(!UDPFirewallTester::isFirewalledUDP(true));   // optimistic default...
+    QVERIFY(!UDPFirewallTester::isOpenAndVerified());     // ...which proves nothing
+
+    UDPFirewallTester::debugAddUsedTestClient(0x0A000001, 4672);
+    UDPFirewallTester::setUDPFWCheckResult(true, false, 0x0A000001, 4672);
+    QVERIFY(UDPFirewallTester::isOpenAndVerified());
+
+    UDPFirewallTester::reset();
+    UDPFirewallTester::debugAddUsedTestClient(0x0A000002, 4672);
+    UDPFirewallTester::setUDPFWCheckResult(false, false, 0x0A000002, 4672);
+    UDPFirewallTester::debugAddUsedTestClient(0x0A000003, 4672);
+    UDPFirewallTester::setUDPFWCheckResult(false, false, 0x0A000003, 4672);
+    QVERIFY(UDPFirewallTester::isVerified());
+    QVERIFY(!UDPFirewallTester::isOpenAndVerified());
+}
+
+// A verdict used to hold for the whole session: once open, a recheck that reached no
+// tester left "verified open" standing for good.
+void tst_KadFirewallTester::verification_expiresWhenNoRecheckConcludes()
+{
+    const uint32 now = static_cast<uint32>(time(nullptr));
+    const uint32 maxAge = 2 * 60 * 60 + 6 * 60;
+
+    UDPFirewallTester::debugAddUsedTestClient(0x0A000001, 4672);
+    UDPFirewallTester::setUDPFWCheckResult(true, false, 0x0A000001, 4672);
+    QVERIFY(UDPFirewallTester::isOpenAndVerified());
+
+    // No recheck pending: an old verdict is simply the current one
+    UDPFirewallTester::debugSetLastVerdictTime(now - maxAge - 60);
+    QVERIFY(UDPFirewallTester::isVerified());
+
+    // A recheck that has not concluded, verdict still young: kept
+    UDPFirewallTester::reCheckFirewallUDP(false);
+    QVERIFY(UDPFirewallTester::isFWCheckUDPRunning());
+    UDPFirewallTester::debugSetLastVerdictTime(now - maxAge + 60);
+    QVERIFY(UDPFirewallTester::isVerified());
+    QVERIFY(UDPFirewallTester::isOpenAndVerified());
+
+    // ...and past the limit: no longer trusted
+    UDPFirewallTester::debugSetLastVerdictTime(now - maxAge - 60);
+    QVERIFY(!UDPFirewallTester::isVerified());
+    QVERIFY(!UDPFirewallTester::isOpenAndVerified());
+
+    // A fresh verdict verifies again
+    UDPFirewallTester::debugAddUsedTestClient(0x0A000004, 4672);
+    UDPFirewallTester::setUDPFWCheckResult(true, false, 0x0A000004, 4672);
+    QVERIFY(UDPFirewallTester::isOpenAndVerified());
 }
 
 // C95: an address is asked once per session (MFC keeps the list in Reset() and

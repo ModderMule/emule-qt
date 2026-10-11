@@ -1322,8 +1322,10 @@ bool HttpCacheManager::urlIsAcceptable(const QString& url, const Address& sender
     if (!isGoodIP(literal))
         return false;
 
-    if (theApp.ipFilter && theApp.ipFilter->isFiltered(literal))
+    if (theApp.ipFilter && theApp.ipFilter->isFiltered(literal)) {
+        theApp.ipFilter->logLastHit(u"HTTP cache");
         return false;
+    }
 
     // LAN mode lets a local literal through isGoodIP(); it still has to come from
     // a local sender, or any peer could aim us at this machine or its LAN.

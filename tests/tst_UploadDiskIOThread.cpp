@@ -12,6 +12,7 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTemporaryFile>
+#include <QRandomGenerator>
 #include <QTest>
 
 #include <cstring>
@@ -25,6 +26,7 @@ private slots:
     void construction_defaults();
     void startStop_noCrash();
     void shouldCompressFile_known();
+    void compressBlock_onlyWhenItPays();
     void createStandardPackets_basic();
     void createPackedPackets_basic();
     void queueBlockRead_emitsSignal();
@@ -69,6 +71,10 @@ void tst_UploadDiskIOThread::shouldCompressFile_known()
     QVERIFY(!UploadDiskIOThread::shouldCompressFile(QStringLiteral("image.jpg")));
     QVERIFY(!UploadDiskIOThread::shouldCompressFile(QStringLiteral("image.png")));
     QVERIFY(!UploadDiskIOThread::shouldCompressFile(QStringLiteral("data.gz")));
+    QVERIFY(!UploadDiskIOThread::shouldCompressFile(QStringLiteral("song.M4A")));
+    QVERIFY(!UploadDiskIOThread::shouldCompressFile(QStringLiteral("film.mov")));
+    QVERIFY(!UploadDiskIOThread::shouldCompressFile(QStringLiteral("book.epub")));
+    QVERIFY(!UploadDiskIOThread::shouldCompressFile(QStringLiteral("backup.tar.zst")));
 
     // Compressible formats
     QVERIFY(UploadDiskIOThread::shouldCompressFile(QStringLiteral("document.txt")));
@@ -76,6 +82,37 @@ void tst_UploadDiskIOThread::shouldCompressFile_known()
     QVERIFY(UploadDiskIOThread::shouldCompressFile(QStringLiteral("source.cpp")));
     QVERIFY(UploadDiskIOThread::shouldCompressFile(QStringLiteral("data.bin")));
     QVERIFY(UploadDiskIOThread::shouldCompressFile(QStringLiteral("document.pdf")));
+}
+
+// Any gain at all used to send a compressed block, and every block of an unknown
+// type was deflated in full to find that out.
+void tst_UploadDiskIOThread::compressBlock_onlyWhenItPays()
+{
+    QRandomGenerator rng(0x5EED);
+    const auto noise = [&rng](qsizetype size) {
+        QByteArray data(size, Qt::Uninitialized);
+        for (char& c : data)
+            c = static_cast<char>(rng.bounded(256));
+        return data;
+    };
+    std::vector<uint8> out;
+
+    // Text shrinks: taken, and the payload is the smaller one
+    const QByteArray text = QByteArray("the quick brown fox jumps over the lazy dog\n").repeated(4096);
+    QVERIFY(UploadDiskIOThread::compressBlock(text, out));
+    QVERIFY(out.size() * 20 <= static_cast<size_t>(text.size()) * 19);
+
+    // Media-like data: sent as it is
+    QVERIFY(!UploadDiskIOThread::compressBlock(noise(EMBLOCKSIZE), out));
+
+    // A gain of a few percent is not worth the receiver's inflate (short block: no probe)
+    QByteArray marginal = noise(30000);
+    marginal.replace(0, 900, QByteArray(900, '\0'));
+    QVERIFY(!UploadDiskIOThread::compressBlock(marginal, out));
+
+    // The head decides for a full block: noise first means no deflate of the rest
+    QByteArray noiseHead = noise(16 * 1024) + QByteArray(EMBLOCKSIZE - 16 * 1024, '\0');
+    QVERIFY(!UploadDiskIOThread::compressBlock(noiseHead, out));
 }
 
 void tst_UploadDiskIOThread::createStandardPackets_basic()

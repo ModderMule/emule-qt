@@ -6,6 +6,7 @@
 #include "client/ClientList.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadPrefs.h"
+#include "kademlia/KadSearch.h"
 #include "kademlia/KadSearchManager.h"
 #include "files/Collection.h"
 #include "files/KnownFile.h"
@@ -108,6 +109,9 @@ private slots:
     // Kad publish probe
     void nextDueFile_isOneWalkAndRoundRobin();
     void publishDueNotes_probesAreSpacedTwoSeconds();
+    void sourcePublishBudget_followsTheShareSize();
+    void publishDueSource_usesTheBudget();
+    void unstoredSourcePublish_isDueAgain();
     void canPublishToKad_firewalledNeedsABuddy();
 
     // Rebuild of the media tags on request
@@ -2113,6 +2117,86 @@ void tst_SharedFileList::publishDueNotes_probesAreSpacedTwoSeconds()
     QCOMPARE(running(), 1);
     shared.publishDueNotes(t0 + KADEMLIAPUBLISHTIME);
     QCOMPARE(running(), 2);
+}
+
+// One start per 2 s into 4 slots keeps under 3,000 files published; a larger share
+// gets the pace it needs, up to a ceiling.
+void tst_SharedFileList::sourcePublishBudget_followsTheShareSize()
+{
+    struct Row { int files; int starts; time_t spacing; uint32 searches; };
+    const Row rows[] = {
+        {0, 1, 2, 4}, {100, 1, 2, 4}, {2400, 1, 2, 4}, {2401, 1, 2, 5},
+        {9000, 1, 2, 15}, {9001, 1, 1, 16}, {18000, 1, 1, 30}, {18001, 2, 1, 31},
+        {36000, 2, 1, 60}, {60000, 2, 1, 60},
+    };
+    for (const Row& row : rows) {
+        const auto budget = SharedFileList::sourcePublishBudget(row.files);
+        QCOMPARE(budget.startsPerProbe, row.starts);
+        QCOMPARE(budget.spacingSecs, row.spacing);
+        QCOMPARE(budget.maxSearches, row.searches);
+    }
+}
+
+void tst_SharedFileList::publishDueSource_usesTheBudget()
+{
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Open);
+    kadFixture.kadPrefs().setLastContact();
+    const auto stop = qScopeGuard([] { kad::SearchManager::stopAllSearches(); });
+
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    std::vector<kad::UInt128> targets;
+    for (uint8 i = 1; i <= 3; ++i) {
+        KnownFile* f = makeFile(knownFiles, i, QStringLiteral("src%1.bin").arg(i));
+        shared.safeAddKFile(f);
+        kad::UInt128 target;
+        target.setValueBE(f->fileHash());
+        targets.push_back(target);
+    }
+    const auto running = [&] {
+        return std::count_if(targets.begin(), targets.end(), [](const kad::UInt128& t) {
+            return kad::SearchManager::alreadySearchingFor(t);
+        });
+    };
+
+    // A small share keeps the MFC pace: one start per KADEMLIAPUBLISHTIME
+    const time_t t0 = std::time(nullptr);
+    shared.publishDueSource(t0);
+    QCOMPARE(running(), 1);
+    shared.publishDueSource(t0 + 1);
+    QCOMPARE(running(), 1);
+    shared.publishDueSource(t0 + KADEMLIAPUBLISHTIME);
+    QCOMPARE(running(), 2);
+}
+
+void tst_SharedFileList::unstoredSourcePublish_isDueAgain()
+{
+    KnownFileList knownFiles;
+    SharedFileList shared(&knownFiles);
+    SharedFileList* const saved = theApp.sharedFileList;
+    theApp.sharedFileList = &shared;
+    const auto restore = qScopeGuard([saved] { theApp.sharedFileList = saved; });
+
+    KnownFile* file = makeFile(knownFiles, 0x51, QStringLiteral("lonely.bin"));
+    shared.safeAddKFile(file);
+    kad::UInt128 target;
+    target.setValueBE(file->fileHash());
+    const time_t later = std::time(nullptr) + KADEMLIAREPUBLISHTIMES;
+
+    // Another search type never touches the publish time
+    kad::Search lookup;
+    lookup.setTargetID(target);
+    lookup.setSearchType(kad::SearchType::FindSource);
+    file->setLastPublishTimeKadSrc(later, 0);
+    lookup.retryUnstoredSource();
+    QCOMPARE(file->lastPublishTimeKadSrc(), later);
+
+    // A store nobody acknowledged: not published, due on the next probe
+    kad::Search store;
+    store.setTargetID(target);
+    store.setSearchType(kad::SearchType::StoreFile);
+    store.retryUnstoredSource();
+    QCOMPARE(file->lastPublishTimeKadSrc(), time_t{0});
 }
 
 void tst_SharedFileList::canPublishToKad_firewalledNeedsABuddy()

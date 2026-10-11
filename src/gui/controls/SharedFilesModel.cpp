@@ -593,12 +593,13 @@ bool SharedFilesSortProxy::lessThan(const QModelIndex& left, const QModelIndex& 
     const QVariant lv = sourceModel()->data(left, role);
     const QVariant rv = sourceModel()->data(right, role);
 
-    // Compare by type: int64, double, then string
-    if (lv.typeId() == QMetaType::LongLong || lv.typeId() == QMetaType::Int)
-        return lv.toLongLong() < rv.toLongLong();
-    if (lv.typeId() == QMetaType::Double)
+    // Compare by type: string, double, else integer. Never test for LongLong:
+    // int64_t is Long on Linux, and a size then sorted by its digits.
+    if (lv.typeId() == QMetaType::QString || rv.typeId() == QMetaType::QString)
+        return lv.toString().compare(rv.toString(), Qt::CaseInsensitive) < 0;
+    if (lv.typeId() == QMetaType::Double || lv.typeId() == QMetaType::Float)
         return lv.toDouble() < rv.toDouble();
-    return lv.toString().compare(rv.toString(), Qt::CaseInsensitive) < 0;
+    return lv.toLongLong() < rv.toLongLong();
 }
 
 } // namespace eMule

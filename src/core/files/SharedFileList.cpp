@@ -2129,22 +2129,56 @@ bool SharedFileList::canPublishToKad()
         return true;
     if (theApp.clientList && theApp.clientList->buddyStatus() == BuddyStatus::Connected)
         return true;
-    if (!kad::UDPFirewallTester::isFirewalledUDP(true) && kad::UDPFirewallTester::isVerified())
+    if (kad::UDPFirewallTester::isOpenAndVerified())
         return true;
     // Not MFC: a public IPv6 is a way in for v6-capable peers
     return theApp.shouldAdvertisePublicIPv6();
 }
 
-// One probe per KADEMLIAPUBLISHTIME, as MFC SharedFileList.cpp:1314-1329.
+// Not MFC, which starts one store per KADEMLIAPUBLISHTIME into 3 slots whatever the
+// share size. A store search holds its slot some 25 s, so that keeps under 3,000
+// files inside the KADEMLIAREPUBLISHTIMES window; the rest of a large share is
+// published late or expired. The pace follows the share instead, up to 2 starts/s.
+// Other nodes see no more of us per file: a search sends one PUBLISH_SOURCE_REQ to
+// the ~10 nodes nearest that hash (their limit: 2-3/min per sender), and at 2
+// lookups/s a routing-table contact gets about 1 KADEMLIA2_REQ/min against 10/min.
+SharedFileList::SourcePublishBudget SharedFileList::sourcePublishBudget(int sharedFiles)
+{
+    constexpr int kFilesPerSlot = 600;   // KADEMLIAREPUBLISHTIMES / a 30 s search
+    constexpr uint32 kMaxSlots = 60;
+    const int files = std::max(sharedFiles, 0);
+    // What one start per KADEMLIAPUBLISHTIME keeps current
+    const int mfcPaceFiles = static_cast<int>(KADEMLIAREPUBLISHTIMES / KADEMLIAPUBLISHTIME);
+
+    SourcePublishBudget budget{1, KADEMLIAPUBLISHTIME, KADEMLIATOTALSTORESRC};
+    if (files > mfcPaceFiles) {
+        budget.spacingSecs = 1;
+        budget.startsPerProbe = files > 2 * mfcPaceFiles ? 2 : 1;
+    }
+    budget.maxSearches = std::clamp(static_cast<uint32>((files + kFilesPerSlot - 1) / kFilesPerSlot),
+                              uint32{KADEMLIATOTALSTORESRC}, kMaxSlots);
+    return budget;
+}
+
+// MFC SharedFileList.cpp:1314-1329, paced by sourcePublishBudget().
 void SharedFileList::publishDueSource(time_t tProbe)
 {
     auto* kad = kad::Kademlia::instance();
-    if (!kad || kad->getTotalStoreSrc() >= KADEMLIATOTALSTORESRC
-        || tProbe < m_lastPublishKadSrc || tProbe < m_srcProbeRestUntil)
+    if (!kad || tProbe < m_lastPublishKadSrc || tProbe < m_srcProbeRestUntil)
+        return;
+    const SourcePublishBudget budget = sourcePublishBudget(getCount());
+    // The counter is refreshed once a tick: count this probe's own starts on top
+    uint32 running = kad->getTotalStoreSrc();
+    if (running >= budget.maxSearches)
         return;
 
-    m_lastPublishKadSrc = tProbe + KADEMLIAPUBLISHTIME;
-    if (KnownFile* file = nextDueFile(m_currFileSrc, [](KnownFile* f) { return f->publishSrc(); })) {
+    m_lastPublishKadSrc = tProbe + budget.spacingSecs;
+    for (int i = 0; i < budget.startsPerProbe && running < budget.maxSearches; ++i) {
+        KnownFile* file = nextDueFile(m_currFileSrc, [](KnownFile* f) { return f->publishSrc(); });
+        if (!file) {
+            m_srcProbeRestUntil = tProbe + kPublishProbeRestSecs;
+            return;
+        }
         kad::UInt128 target;
         target.setValueBE(file->fileHash());
         auto* search = kad::SearchManager::prepareLookup(
@@ -2152,11 +2186,10 @@ void SharedFileList::publishDueSource(time_t tProbe)
         if (!search) {
             file->setLastPublishTimeKadSrc(0, 0);
         } else {
+            ++running;
             search->setGUIName(file->fileName());
             kad::logKad(QStringLiteral("Kad: publishing source for %1").arg(file->fileName()));
         }
-    } else {
-        m_srcProbeRestUntil = tProbe + kPublishProbeRestSecs;
     }
 }
 

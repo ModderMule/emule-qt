@@ -1460,8 +1460,7 @@ void UpDownClient::sendHelloTypePacket(SafeMemFile& data)
     const bool directUDPCallback =
         kad::Kademlia::instance() && kad::Kademlia::instance()->isRunning()
         && theApp.isFirewalled()
-        && !kad::UDPFirewallTester::isFirewalledUDP(true)
-        && kad::UDPFirewallTester::isVerified();
+        && kad::UDPFirewallTester::isOpenAndVerified();
     const uint32 miscOpts2 =
         (static_cast<uint32>(KADEMLIA_VERSION) << 0) | // Kad version
         (static_cast<uint32>(1) <<  4) | // Large files
@@ -2093,14 +2092,20 @@ bool UpDownClient::tryToConnect(bool ignoreMaxCon, bool noCallbacks)
 
             auto packet = std::make_unique<Packet>(data, OP_KADEMLIAHEADER, KADEMLIA_CALLBACK_REQ);
             m_connectingState = ConnectingState::KadCallback;
+            // Not MFC: over the relay's limits the request would be dropped unanswered, so
+            // it is not sent. The attempt then ends by the callback timeout, as a drop does.
+            const bool send = !theApp.clientList
+                || theApp.clientList->allowRelayRequest(m_buddyAddress, m_buddyID.data(),
+                                                        RelayRequest::KadCallback);
             // MFC FIXME: We don't know which kad version the buddy has, so we need to send unencrypted
-            if (theApp.clientUDP)
+            if (send && theApp.clientUDP)
                 theApp.clientUDP->sendPacket(std::move(packet),
                                              Endpoint(m_buddyAddress, m_buddyPort),
                                              false, nullptr, true, 0);
             setDownloadState(DownloadState::WaitCallbackKad);
-            logDebug(QStringLiteral("tryToConnect: KAD CALLBACK via buddy %1:%2")
-                         .arg(m_buddyAddress.toQHostAddress().toString()).arg(m_buddyPort));
+            logDebug(QStringLiteral("tryToConnect: KAD CALLBACK via buddy %1:%2%3")
+                         .arg(m_buddyAddress.toQHostAddress().toString()).arg(m_buddyPort)
+                         .arg(send ? QString() : QStringLiteral(" — not sent, relay limit")));
             return true;
         }
         // Buddy IP not in routing table — fall back to FindSource search
@@ -4266,7 +4271,6 @@ void UpDownClient::setLastBuddyPingPongTime()
 // Not MFC: with several served buddies the relay load is bounded per buddy.
 bool UpDownClient::allowBuddyRelay()
 {
-    constexpr uint32 kMaxBuddyRelaysPerMin = 60;
     const uint64 now = getTickCount();
     if (now - m_buddyRelayWindowStart >= MIN2MS(1)) {
         m_buddyRelayWindowStart = now;

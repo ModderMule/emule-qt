@@ -28,6 +28,7 @@
 #include <QtEndian>
 
 #include <cstring>
+#include <vector>
 
 Q_DECLARE_METATYPE(eMule::UpDownClient*)
 
@@ -72,8 +73,12 @@ private slots:
     void kadFirewallAck_oncePerAskedAddress();
     void requestTCP_reusesTheClientAndRefusesRepeats();
     void processKadList_releasesAStaleIncomingBuddy();
+    void setBuddy_lossRearmsTheSearchWhileUdpIsUnverified();
     void incomingBuddy_pendingClaimsAreBounded();
     void callbackPacket_onlyFromBuddyToAVettedTarget();
+    void relayBudget_callbackBucketPerRelayIP();
+    void relayBudget_sixtyPerBuddyInAnyMinute();
+    void relayBudget_staysInsideTheRelaysWindow();
     void ban_coversTheIPv6Prefix();
     void removeBannedClient();
     void bannedCount();
@@ -373,9 +378,29 @@ void tst_ClientList::requestTCP_reusesTheClientAndRefusesRepeats()
     list.deleteAll();
 }
 
+// The buddy gates asked "UDP firewalled?", which reads open until a check proves
+// otherwise, while the source publish asked for a proven open port. In between a
+// node neither looked for a buddy nor published.
+void tst_ClientList::setBuddy_lossRearmsTheSearchWhileUdpIsUnverified()
+{
+    eMule::testing::KadFixture kadFixture;   // TCP firewalled
+    kad::UDPFirewallTester::reset();
+    QVERIFY(!kad::UDPFirewallTester::isFirewalledUDP(true));
+    QVERIFY(!kad::UDPFirewallTester::isVerified());
+
+    ClientList list;
+    UpDownClient buddy;
+    list.setBuddy(&buddy, BuddyStatus::Connected);
+    (void)kadFixture.kadPrefs().findBuddy();          // clear the one-shot flag
+    list.setBuddy(nullptr, BuddyStatus::None);
+    QVERIFY(kadFixture.kadPrefs().findBuddy());
+}
+
 void tst_ClientList::processKadList_releasesAStaleIncomingBuddy()
 {
-    eMule::testing::KadFixture kadFixture;
+    // Open: a node that needs a buddy itself (TCP firewalled, UDP not proven open)
+    // lets every claim go at once.
+    eMule::testing::KadFixture kadFixture(eMule::testing::KadMode::Open);
     ClientList list;
     const uint8 id[16] = {0xB2};
 
@@ -433,6 +458,100 @@ void tst_ClientList::kadFirewallAck_oncePerAskedAddress()
     QVERIFY(list.takeKadFirewallAck(ip));
     QVERIFY(!list.takeKadFirewallAck(ip));
     QVERIFY(list.isKadFirewallCheckIP(ip));   // the callback is still let in
+}
+
+// The relay takes maxServedBuddies (default 8) KADEMLIA_CALLBACK_REQ per minute from one
+// IP, as a token bucket. The reask relay has no per-IP rule.
+void tst_ClientList::relayBudget_callbackBucketPerRelayIP()
+{
+    BuddyRelayBudget budget;
+    const Address relay = Address::fromHostOrder(0x4D050607);
+    const Address otherRelay = Address::fromHostOrder(0x4D050608);
+    uint64 now = 1'000'000;
+
+    // A fresh buddy ID each time keeps the per-buddy rule out of the picture
+    uint8 id[16] = {};
+    const auto callback = [&](const Address& to) {
+        ++id[0];
+        return budget.tryCharge(to, id, RelayRequest::KadCallback, now);
+    };
+
+    for (int i = 0; i < kDefaultMaxServedBuddies; ++i)
+        QVERIFY(callback(relay));
+    QVERIFY(!callback(relay));
+    QVERIFY(callback(otherRelay));                                       // per IP
+    QVERIFY(budget.tryCharge(relay, id, RelayRequest::ReaskCallback, now));   // not limited per IP
+
+    now += 7'499;
+    QVERIFY(!callback(relay));
+    now += 1;               // one slot refilled; the refusals above cost nothing
+    QVERIFY(callback(relay));
+    QVERIFY(!callback(relay));
+
+    now += MIN2MS(10);      // full again, never more than full
+    for (int i = 0; i < kDefaultMaxServedBuddies; ++i)
+        QVERIFY(callback(relay));
+    QVERIFY(!callback(relay));
+}
+
+// 60 relayed packets per served buddy, both kinds on one counter.
+void tst_ClientList::relayBudget_sixtyPerBuddyInAnyMinute()
+{
+    BuddyRelayBudget budget;
+    const Address relay = Address::fromHostOrder(0x4D050607);
+    uint8 buddyID[16], otherID[16];
+    fillHash(buddyID, 0x11);
+    fillHash(otherID, 0x22);
+    uint64 now = 1'000'000;
+
+    // 8 callbacks (all the relay IP takes at once) and 52 reasks, one per second
+    for (uint32 i = 0; i < kMaxBuddyRelaysPerMin; ++i, now += 1'000) {
+        const auto kind = i < kDefaultMaxServedBuddies ? RelayRequest::KadCallback
+                                                       : RelayRequest::ReaskCallback;
+        QVERIFY(budget.tryCharge(relay, buddyID, kind, now));
+    }
+    now -= 1'000;           // tick of the 60th send = first send + 59 s
+    QVERIFY(!budget.tryCharge(relay, buddyID, RelayRequest::ReaskCallback, now));
+    QVERIFY(budget.tryCharge(relay, otherID, RelayRequest::ReaskCallback, now));   // per buddy
+
+    now += 999;
+    QVERIFY(!budget.tryCharge(relay, buddyID, RelayRequest::ReaskCallback, now));
+    now += 1;               // the first send is a minute old
+    QVERIFY(budget.tryCharge(relay, buddyID, RelayRequest::ReaskCallback, now));
+    QVERIFY(!budget.tryCharge(relay, buddyID, RelayRequest::ReaskCallback, now));
+}
+
+// What the budget lets out must pass the relay's own counter (allowBuddyRelay(): 60 per
+// fixed minute), wherever that minute happens to start.
+void tst_ClientList::relayBudget_staysInsideTheRelaysWindow()
+{
+    BuddyRelayBudget budget;
+    const Address relay = Address::fromHostOrder(0x4D050607);
+    uint8 buddyID[16];
+    fillHash(buddyID, 0x11);
+
+    // Ask every 100 ms for five minutes, with a pause that shifts the bursts
+    std::vector<uint64> sent;
+    for (uint64 now = 1'000'000; now < 1'000'000 + MIN2MS(5); now += 100) {
+        if (now > 1'090'000 && now < 1'127'300)
+            continue;
+        if (budget.tryCharge(relay, buddyID, RelayRequest::ReaskCallback, now))
+            sent.push_back(now);
+    }
+    QVERIFY(sent.size() > 4 * kMaxBuddyRelaysPerMin);
+
+    for (uint64 offset = 0; offset < MIN2MS(1); offset += 50) {
+        uint64 windowStart = sent.front() - offset;
+        uint32 count = 0;
+        for (const uint64 tick : sent) {
+            if (tick - windowStart >= MIN2MS(1)) {
+                windowStart = tick;
+                count = 0;
+            }
+            QVERIFY2(count < kMaxBuddyRelaysPerMin, "the relay would have dropped a packet");
+            ++count;
+        }
+    }
 }
 
 // OP_CALLBACK makes us dial an address taken from the packet. Its check value (our Kad

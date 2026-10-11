@@ -5,6 +5,9 @@
 #include "TestHelpers.h"
 #include "ipfilter/IPFilter.h"
 
+#include "prefs/Preferences.h"
+
+#include <QLoggingCategory>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -36,6 +39,7 @@ private slots:
     void saveAndLoad_roundTrip();
     void loadFromFile_realWorld_filterDat();
     void loadFromFile_realWorld_peerGuardian();
+    void logLastHit_followsLogFilteredIPs();
 };
 
 void tst_IPFilter::construct_default()
@@ -305,6 +309,41 @@ void tst_IPFilter::loadFromFile_realWorld_peerGuardian()
     const int count = filter.loadFromFile(path);
     QVERIFY2(count > 150000,
              qPrintable(QStringLiteral("Expected >150000 entries, got %1").arg(count)));
+}
+
+// A drop that only bumps a counter is invisible: every filter site reports
+// through logLastHit, into the verbose log, and only while the pref is on.
+void tst_IPFilter::logLastHit_followsLogFilteredIPs()
+{
+    static QStringList captured;
+    captured.clear();
+    QLoggingCategory::setFilterRules(QStringLiteral("emule.*.debug=true"));
+    const QtMessageHandler previous = qInstallMessageHandler(
+        [](QtMsgType type, const QMessageLogContext&, const QString& msg) {
+            if (type == QtDebugMsg)
+                captured.append(msg);
+        });
+
+    IPFilter filter;
+    filter.addIPRange(0x0A141E00, 0x0A141EFF, 50, "test range");   // 10.20.30.0/24
+    const Address hit = Address::fromNetworkOrder(htonl(0x0A141E28));   // 10.20.30.40
+
+    const bool wasOn = thePrefs.logFilteredIPs();
+    thePrefs.setLogFilteredIPs(true);
+    QVERIFY(filter.isFiltered(hit, 127));
+    filter.logLastHit(u"unit test");
+
+    thePrefs.setLogFilteredIPs(false);
+    QVERIFY(filter.isFiltered(hit, 127));
+    filter.logLastHit(u"unit test");
+
+    thePrefs.setLogFilteredIPs(wasOn);
+    qInstallMessageHandler(previous);
+    QLoggingCategory::setFilterRules(QString());
+
+    QCOMPARE(captured.size(), 1);
+    QCOMPARE(captured.first(),
+             QStringLiteral("IPFilter(unit test): Filtered IP=10.20.30.40 - IP filter (test range)"));
 }
 
 QTEST_GUILESS_MAIN(tst_IPFilter)

@@ -515,6 +515,8 @@ bool IPFilter::isFilteredV6(const Address& addr, uint32 filterLevel) const
         if (key >= it->start && key <= it->end && it->level < filterLevel) {
             it->hits++;
             m_lastHit6 = &(*it);
+            m_lastHit = nullptr;
+            m_lastHitAddress = addr;
             emit const_cast<IPFilter*>(this)->ipBlocked(
                 addr, QString::fromStdString(it->desc));
             return true;
@@ -549,6 +551,8 @@ bool IPFilter::isFiltered(uint32 ip, uint32 filterLevel) const
         if (hostIP >= it->start && hostIP <= it->end && it->level < filterLevel) {
             it->hits++;
             m_lastHit = &(*it);
+            m_lastHit6 = nullptr;
+            m_lastHitAddress = Address::fromNetworkOrder(ip);
             emit const_cast<IPFilter*>(this)->ipBlocked(
                 Address::fromNetworkOrder(ip), QString::fromStdString(it->desc));
             return true;
@@ -600,6 +604,14 @@ void IPFilter::removeAllFilters()
     m_lastHit = nullptr;
     m_lastHit6 = nullptr;
     m_modified = false;
+}
+
+void IPFilter::logLastHit(QStringView context) const
+{
+    if (!thePrefs.logFilteredIPs())
+        return;
+    logDebug(QStringLiteral("IPFilter(%1): Filtered IP=%2 - IP filter (%3)")
+                 .arg(context, ipstr(m_lastHitAddress), lastHitDescription()));
 }
 
 QString IPFilter::lastHitDescription() const

@@ -16,6 +16,7 @@
 
 #include <QFile>
 #include <QFileInfo>
+#include <QSet>
 
 
 #include <zlib.h>
@@ -62,16 +63,33 @@ void UploadDiskIOThread::queueBlockRead(BlockReadRequest request)
 bool UploadDiskIOThread::shouldCompressFile(const QString& fileName)
 {
     const QString ext = QFileInfo(fileName).suffix().toLower();
-    // Skip already-compressed formats
-    static const QStringList noCompress = {
+    // Skip already-compressed formats (MFC knows seven; the rest is not MFC)
+    static const QSet<QString> noCompress = {
+        // archives
         QStringLiteral("zip"), QStringLiteral("rar"), QStringLiteral("7z"),
-        QStringLiteral("gz"),  QStringLiteral("bz2"), QStringLiteral("xz"),
+        QStringLiteral("gz"), QStringLiteral("bz2"), QStringLiteral("xz"),
         QStringLiteral("cbz"), QStringLiteral("cbr"), QStringLiteral("ace"),
-        QStringLiteral("ogm"),
-        QStringLiteral("mp3"), QStringLiteral("mp4"), QStringLiteral("mkv"),
-        QStringLiteral("avi"), QStringLiteral("flac"), QStringLiteral("ogg"),
+        QStringLiteral("zst"), QStringLiteral("lz4"), QStringLiteral("lzma"),
+        QStringLiteral("tgz"), QStringLiteral("tbz2"), QStringLiteral("txz"),
+        QStringLiteral("cab"),
+        // zip containers
+        QStringLiteral("docx"), QStringLiteral("xlsx"), QStringLiteral("pptx"),
+        QStringLiteral("odt"), QStringLiteral("epub"), QStringLiteral("jar"),
+        QStringLiteral("apk"),
+        // video
+        QStringLiteral("ogm"), QStringLiteral("mp4"), QStringLiteral("mkv"),
+        QStringLiteral("avi"), QStringLiteral("webm"), QStringLiteral("wmv"),
+        QStringLiteral("mov"), QStringLiteral("mpg"), QStringLiteral("mpeg"),
+        QStringLiteral("m4v"), QStringLiteral("flv"),
+        QStringLiteral("m2ts"), QStringLiteral("vob"), QStringLiteral("divx"),
+        // audio
+        QStringLiteral("mp3"), QStringLiteral("flac"), QStringLiteral("ogg"),
+        QStringLiteral("m4a"), QStringLiteral("aac"), QStringLiteral("wma"),
+        QStringLiteral("opus"),
+        // images
         QStringLiteral("jpg"), QStringLiteral("jpeg"), QStringLiteral("png"),
-        QStringLiteral("gif"), QStringLiteral("webp"), QStringLiteral("webm")
+        QStringLiteral("gif"), QStringLiteral("webp"), QStringLiteral("heic"),
+        QStringLiteral("avif")
     };
     return !noCompress.contains(ext);
 }
@@ -332,23 +350,44 @@ QList<std::shared_ptr<Packet>> UploadDiskIOThread::createStandardPackets(
     return packets;
 }
 
+// Not MFC, which sends a compressed block for any gain at all (UploadDiskIOThread.cpp:422)
+// and so deflates whole blocks of media to save a fraction of a percent.
+bool UploadDiskIOThread::compressBlock(const QByteArray& data, std::vector<uint8>& out)
+{
+    constexpr uLong kProbeBytes = 16 * 1024;
+    // out * 20 <= in * 19: at least 5 % smaller
+    const auto pays = [](uLong in, uLong packed) { return packed * 20 <= in * 19; };
+
+    const auto* src = reinterpret_cast<const Bytef*>(data.constData());
+    const uLong size = static_cast<uLong>(data.size());
+
+    // Level 1 (fastest), as MFC. The head of the block tells whether the rest is
+    // worth the time: deflating incompressible data costs several times a plain send.
+    if (size > 2 * kProbeBytes) {
+        uLongf probeSize = compressBound(kProbeBytes);
+        std::vector<uint8> probe(probeSize);
+        if (compress2(probe.data(), &probeSize, src, kProbeBytes, 1) != Z_OK
+            || !pays(kProbeBytes, probeSize))
+            return false;
+    }
+
+    uLongf packedSize = size + 300;
+    out.resize(packedSize);
+    if (compress2(out.data(), &packedSize, src, size, 1) != Z_OK || !pays(size, packedSize))
+        return false;
+    out.resize(packedSize);
+    return true;
+}
+
 QList<std::shared_ptr<Packet>> UploadDiskIOThread::createPackedPackets(
     const uint8* fileHash, bool isPartFile,
     uint64 startOffset, uint64 endOffset, const QByteArray& data)
 {
-    uint32 originalSize = static_cast<uint32>(endOffset - startOffset);
-    uLongf compressedSize = originalSize + 300;
-    std::vector<uint8> compressed(compressedSize);
-
-    // Use zlib compression level 1 (fastest)
-    int zResult = compress2(compressed.data(), &compressedSize,
-                            reinterpret_cast<const Bytef*>(data.constData()),
-                            originalSize, 1);
-
-    if (zResult != Z_OK || originalSize <= compressedSize) {
-        // Compression failed or didn't reduce size — fall back to standard
+    std::vector<uint8> compressed;
+    if (!compressBlock(data, compressed))
         return createStandardPackets(fileHash, isPartFile, startOffset, endOffset, data);
-    }
+    const uLongf compressedSize = static_cast<uLongf>(compressed.size());
+    const uint32 originalSize = static_cast<uint32>(endOffset - startOffset);
 
     QList<std::shared_ptr<Packet>> packets;
     uint32 togo = static_cast<uint32>(compressedSize);

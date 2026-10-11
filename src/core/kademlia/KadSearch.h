@@ -121,6 +121,8 @@ public:
     /// Inverse: FT_BUDDYHASH text to the 16 big-endian ID bytes used as buddy ID.
     [[nodiscard]] static bool buddyHashFromTagString(const QString& str, uint8* outBuddyID);
     [[nodiscard]] bool stopping() const { return m_stopping; }
+    /// A source publish no node acknowledged leaves its file due again.
+    void retryUnstoredSource() const;
     /// This search sent its action packet (search / store request) to that node, so a
     /// result from it is one we asked for.
     [[nodiscard]] bool sentActionTo(uint32 ip, uint16 udpPort) const;

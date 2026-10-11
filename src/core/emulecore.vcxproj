@@ -186,6 +186,7 @@
     <ClCompile Include="httpcache\HttpCacheReach.cpp" />
     <ClCompile Include="httpcache\HttpCacheServerProbe.cpp" />
     <ClCompile Include="client\ClientCredits.cpp" />
+    <ClCompile Include="client\BuddyRelayBudget.cpp" />
     <ClCompile Include="client\ClientList.cpp" />
     <ClCompile Include="net\ClientReqSocket.cpp" />
     <ClCompile Include="net\ClientUDPSocket.cpp" />
@@ -398,6 +399,7 @@
     <ClInclude Include="utils\CorroborationTally.h" />
     <QtMoc Include="app\CoreSession.h" />
     <ClInclude Include="client\CorruptionBlackBox.h" />
+    <ClInclude Include="client\BuddyRelayBudget.h" />
     <ClInclude Include="client\DeadSourceList.h" />
     <ClInclude Include="client\FruitlessSessionLedger.h" />
     <ClInclude Include="net\InterfacePin.h" />

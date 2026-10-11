@@ -239,8 +239,7 @@ void Search::fillSourceReachability(SourcePublishParams& sp)
     sp.firewalled = theApp.isFirewalled();
     if (sp.firewalled) {
         sp.directUDPCallback = kadInst && kadInst->isRunning()
-            && !UDPFirewallTester::isFirewalledUDP(true)
-            && UDPFirewallTester::isVerified();
+            && UDPFirewallTester::isOpenAndVerified();
         if (!sp.directUDPCallback) {
             auto* clientList = Kademlia::getClientList();
             if (auto* buddy = clientList ? clientList->getBuddy() : nullptr) {
@@ -1353,6 +1352,20 @@ void Search::prepareToStop()
     storePacket(true);
 }
 
+void Search::retryUnstoredSource() const
+{
+    // Not MFC, which counts the attempt as published for KADEMLIAREPUBLISHTIMES.
+    if (m_type != SearchType::StoreFile || m_answers > 0 || !theApp.sharedFileList)
+        return;
+    uint8 hash[16];
+    m_target.toByteArray(hash);
+    if (KnownFile* file = theApp.sharedFileList->getFileByID(hash)) {
+        logKad(QStringLiteral("Kad search %1: source stored nowhere — %2 is due again")
+                   .arg(m_searchID).arg(file->fileName()));
+        file->setLastPublishTimeKadSrc(0, 0);
+    }
+}
+
 uint32 Search::storeLimit() const
 {
     switch (m_type) {
@@ -1568,6 +1581,10 @@ void Search::storePacket(bool flushRemaining)
                 // Firewalled, no direct callback, no buddy, no IPv6 — nothing to publish
                 logKad(QStringLiteral("Kad search %1: source not published — firewalled, no buddy, no direct callback, no public IPv6")
                            .arg(m_searchID));
+                // Not MFC: the route went while the lookup ran. Due again at once
+                // instead of counting as published for KADEMLIAREPUBLISHTIMES.
+                if (pubFile)
+                    pubFile->setLastPublishTimeKadSrc(0, 0);
                 prepareToStop();
                 break;
             }
@@ -1666,6 +1683,17 @@ void Search::storePacket(bool flushRemaining)
         case SearchType::FindSource: {
             // Send KADEMLIA_CALLBACK_REQ through the buddy's contact.
             // Matches MFC Search.cpp:844-876.
+            // Not MFC: nothing is sent over the relay's limits, it would be dropped unanswered.
+            uint8 buddyID[16];
+            m_target.toByteArray(buddyID);
+            if (auto* clientList = Kademlia::getClientList();
+                clientList && !clientList->allowRelayRequest(contact->address(), buddyID,
+                                                             RelayRequest::KadCallback))
+            {
+                logKad(QStringLiteral("Kad search %1: CALLBACK_REQ → %2 not sent, relay limit")
+                           .arg(m_searchID).arg(contact->address().toString()));
+                break;
+            }
             SafeMemFile packet;
             // Write the target ID (the buddy's ID)
             io::writeUInt128(packet, m_target);

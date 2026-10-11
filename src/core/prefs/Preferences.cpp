@@ -7,6 +7,7 @@
 #include "utils/OtherFunctions.h"
 
 #include "app/AppConfig.h"
+#include "client/BuddyRelayBudget.h"
 #include "crypto/AesCbc.h"
 #include "net/EMSocket.h"
 #include "net/ListenConflict.h"
@@ -149,7 +150,7 @@ struct Preferences::Data {
     uint16 maxConnections = 500;
     // eMule 2026 bandwidth: modern OS handles hundreds of half-open connections. MFC default: 9
     uint16 maxHalfConnections = 50;
-    uint16 maxServedBuddies = 8;   // Kad: firewalled nodes we relay for; MFC serves 1
+    uint16 maxServedBuddies = kDefaultMaxServedBuddies;   // Kad: firewalled nodes we relay for; MFC serves 1
     QString bindAddress;
     QString publicIPv6Override;
     // How many distinct peers must independently report the same public IPv6 (via their
@@ -3309,7 +3310,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     // Extended (PPgTweaks)
     m_data->maxConsPerFive              = static_cast<uint16>(p.value(QStringLiteral("maxConsPerFive")).toInteger());
     m_data->maxHalfConnections          = static_cast<uint16>(p.value(QStringLiteral("maxHalfConnections")).toInteger());
-    m_data->maxServedBuddies            = static_cast<uint16>(p.value(QStringLiteral("maxServedBuddies")).toInteger(8));
+    m_data->maxServedBuddies            = static_cast<uint16>(p.value(QStringLiteral("maxServedBuddies")).toInteger(kDefaultMaxServedBuddies));
     m_data->serverKeepAliveTimeout      = static_cast<uint32>(p.value(QStringLiteral("serverKeepAliveTimeout")).toInteger());
     m_data->filterLANIPs                = p.value(QStringLiteral("filterLANIPs")).toBool();
     m_data->skipFirewalledChecksInLanMode = p.value(QStringLiteral("skipFirewalledChecksInLanMode")).toBool();
@@ -3484,37 +3485,20 @@ void Preferences::validate()
 
 void Preferences::resolveDefaultDirectories()
 {
-#ifdef Q_OS_MACOS
-    const QString baseDir = QDir::homePath() + QStringLiteral("/eMuleQt");
-#elif defined(Q_OS_WIN)
-    QString baseDir;
-    switch (AppConfig::multiUserSharingMode()) {
-    case 0: // per-user
-        baseDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
-        break;
-    case 1: // all-users
-        baseDir = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
-                  + QStringLiteral("/eMule/eMule Qt");
-        break;
-    default: // 2 = program-dir (portable)
-        baseDir = QCoreApplication::applicationDirPath();
-        break;
-    }
-#else
-    const QString baseDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
-#endif
+    // AppConfig owns the platform layout, so the GUI and the daemon agree on it
+    const QString baseDir = AppConfig::baseDir();
 
     if (m_data->incomingDir.isEmpty())
         m_data->incomingDir = baseDir + QStringLiteral("/Incoming");
 
     if (m_data->configDir.isEmpty()) {
 #ifdef Q_OS_WIN
-        // In program-dir mode use lowercase "config" to match the bundle layout
-        if (AppConfig::multiUserSharingMode() == 2)
-            m_data->configDir = baseDir + QStringLiteral("/config");
+        // All-users mode keeps its historical Config/ subfolder
+        if (AppConfig::multiUserSharingMode() == 1)
+            m_data->configDir = baseDir + QStringLiteral("/Config");
         else
 #endif
-        m_data->configDir = baseDir + QStringLiteral("/Config");
+        m_data->configDir = AppConfig::defaultConfigDir();
     }
 
     if (m_data->tempDirs.isEmpty())

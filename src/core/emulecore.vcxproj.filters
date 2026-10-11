@@ -105,6 +105,9 @@
     <ClCompile Include="client\CorruptionBlackBox.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="client\BuddyRelayBudget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="client\DeadSourceList.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -627,6 +630,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="client\CorruptionBlackBox.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="client\BuddyRelayBudget.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="client\DeadSourceList.h">

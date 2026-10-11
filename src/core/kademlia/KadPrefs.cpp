@@ -333,8 +333,7 @@ uint8 KadPrefs::myConnectOptions(bool encryption, bool callback) const
     auto* kadInst = Kademlia::instance();
     if (callback && theApp.isFirewalled()
         && kadInst && kadInst->isRunning()
-        && !UDPFirewallTester::isFirewalledUDP(true)
-        && UDPFirewallTester::isVerified()) {
+        && UDPFirewallTester::isOpenAndVerified()) {
         options |= 0x08;
     }
     return options;

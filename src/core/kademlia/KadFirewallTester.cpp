@@ -27,6 +27,11 @@ static constexpr uint8 kUDPFWCheckClientsNeeded = 2;
 // port nobody can reach.
 static constexpr uint32 kUDPFWCheckTimeoutSecs = 6 * 60;
 
+// Not MFC: a verdict no recheck could renew for two hourly rounds (plus the timeout)
+// is no longer trusted. MFC keeps "verified open" for the whole session, so a port
+// blocked later stays advertised when no tester can be asked.
+static constexpr uint32 kVerificationMaxAgeSecs = 2 * 60 * 60 + kUDPFWCheckTimeoutSecs;
+
 // ---------------------------------------------------------------------------
 // Static data
 // ---------------------------------------------------------------------------
@@ -40,6 +45,7 @@ uint8 UDPFirewallTester::s_fwChecksRunning = 0;
 uint8 UDPFirewallTester::s_fwChecksFinished = 0;
 uint32 UDPFirewallTester::s_testStart = 0;
 uint32 UDPFirewallTester::s_lastSucceededTime = 0;
+uint32 UDPFirewallTester::s_lastVerdictTime = 0;
 std::list<Contact> UDPFirewallTester::s_possibleTestClients;
 std::list<UDPFirewallTester::UsedClient> UDPFirewallTester::s_usedTestClients;
 
@@ -52,6 +58,7 @@ bool UDPFirewallTester::isFirewalledUDP(bool lastStateIfTesting)
     if (Kademlia::shouldSkipFirewallChecks())
         return false;
 
+    expireStaleVerification();
     const bool checkingFW = isFWCheckUDPRunning();
     if (s_timedOut) {
         // A check that never produced results means firewalled, not open.
@@ -136,6 +143,7 @@ void UDPFirewallTester::setUDPFWCheckResult(bool succeeded, bool testCancelled,
             s_fwChecksRunning = 0;                          // cancel the others
             s_possibleTestClients.clear();                  // keep used clients
             s_lastSucceededTime = now;
+            s_lastVerdictTime = now;
             s_firewalledLastStateUDP = s_firewalledUDP;
             SearchManager::cancelNodeFWCheckUDPSearch();
 
@@ -161,6 +169,7 @@ void UDPFirewallTester::setUDPFWCheckResult(bool succeeded, bool testCancelled,
             s_firewalledUDP = true;
             s_isFWVerifiedUDP = true;
             s_timedOut = false;
+            s_lastVerdictTime = now;
             s_firewalledLastStateUDP = s_firewalledUDP;
             s_possibleTestClients.clear();
             SearchManager::cancelNodeFWCheckUDPSearch();
@@ -210,7 +219,13 @@ bool UDPFirewallTester::isFWCheckUDPRunning()
 bool UDPFirewallTester::isVerified()
 {
     // With the checks skipped no test runs; the state counts as verified (MFC :266).
+    expireStaleVerification();
     return s_isFWVerifiedUDP || Kademlia::shouldSkipFirewallChecks();
+}
+
+bool UDPFirewallTester::isOpenAndVerified()
+{
+    return !isFirewalledUDP(true) && isVerified();
 }
 
 bool UDPFirewallTester::needsMoreTestContacts()
@@ -255,6 +270,7 @@ void UDPFirewallTester::reset()
     s_fwChecksFinished = 0;
     s_testStart = 0;
     s_lastSucceededTime = 0;
+    s_lastVerdictTime = 0;
     s_possibleTestClients.clear();
     // keep the list of used clients (MFC :212)
 
@@ -281,6 +297,11 @@ void UDPFirewallTester::connected()
 void UDPFirewallTester::debugSetTestStart(uint32 startTime)
 {
     s_testStart = startTime;
+}
+
+void UDPFirewallTester::debugSetLastVerdictTime(uint32 verdictTime)
+{
+    s_lastVerdictTime = verdictTime;
 }
 
 void UDPFirewallTester::debugAddUsedTestClient(uint32 ip, uint16 udpPort)
@@ -399,6 +420,18 @@ void UDPFirewallTester::queryNextClient()
 bool UDPFirewallTester::getUDPCheckClientsNeeded()
 {
     return s_fwChecksRunning + s_fwChecksFinished < kUDPFWCheckClientsNeeded;
+}
+
+void UDPFirewallTester::expireStaleVerification()
+{
+    // Only while a recheck is pending: between rechecks the verdict is simply current.
+    if (!s_isFWVerifiedUDP || s_lastVerdictTime == 0 || !isFWCheckUDPRunning())
+        return;
+    if (static_cast<uint32>(time(nullptr)) < s_lastVerdictTime + kVerificationMaxAgeSecs)
+        return;
+    s_isFWVerifiedUDP = false;
+    logKad(QStringLiteral("Kad: UDP FW verdict expired — no recheck concluded for %1 min")
+               .arg(kVerificationMaxAgeSecs / 60));
 }
 
 } // namespace eMule::kad

@@ -841,7 +841,7 @@ public:
     {
         return m_blockRequests;
     }
-    /// Blocks already sent this slot, newest first — the green of the upload status bar.
+    /// The last kMaxDoneBlocks blocks sent this slot, newest first.
     [[nodiscard]] const std::list<Requested_Block_Struct*>& doneBlocks() const
     {
         return m_doneBlocks;
@@ -1340,6 +1340,10 @@ private:
     std::list<Requested_Block_Struct*> m_doneBlocks;
     uint64 m_blockReadBytesQueued = 0;      // bytes of m_blockRequests the disk thread holds
     static constexpr size_t kMaxPendingBlockRequests = 1024;
+    // Not MFC, which keeps every block of the slot and walks them all per request.
+    // A duplicate request can only repeat a block still in flight; peers keep at most
+    // some 24 of those, and anything older is a real re-download.
+    static constexpr size_t kMaxDoneBlocks = 64;
     static constexpr uint64 kMaxUploadBufferBytes = 8ull * 1024 * 1024;
     // MFC UploadDiskIOThread.cpp:42 — above this a slot buffers five blocks, not one.
     static constexpr uint32 BIGBUFFER_MINDATARATE = 75 * 1024;

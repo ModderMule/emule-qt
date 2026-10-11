@@ -286,7 +286,7 @@ void ClientList::setBuddy(UpDownClient* buddy, BuddyStatus status)
     if (status == BuddyStatus::None && (m_buddyStatus != BuddyStatus::None || m_buddy)) {
         if (auto* kadInst = kad::Kademlia::instance()) {
             if (kadInst->isRunning() && kadInst->isFirewalled()
-                && kad::UDPFirewallTester::isFirewalledUDP(true))
+                && !kad::UDPFirewallTester::isOpenAndVerified())
             {
                 if (auto* prefs = kad::Kademlia::getInstancePrefs())
                     prefs->setFindBuddy(true);
@@ -652,9 +652,9 @@ void ClientList::processKadList()
     // from whichever call site happened to clear m_buddy last.
     BuddyStatus seen = BuddyStatus::None;
 
-    // TCP and UDP firewalled: we look for a buddy and cannot be one.
+    // TCP firewalled, no proven direct UDP callback: we look for a buddy and cannot be one.
     const bool needsOwnBuddy = kadRunning && kadInst->isFirewalled()
-                               && kad::UDPFirewallTester::isFirewalledUDP(true);
+                               && !kad::UDPFirewallTester::isOpenAndVerified();
     int servedSeen = 0;
 
     // A copy: the transitions below dial, disconnect and re-enter the queue, any of which
@@ -767,7 +767,7 @@ void ClientList::processKadList()
     if (!kadInst->isConnected()) {
         // Kad lost its contacts: the buddy link is of no use either way.
         m_buddy->setKadState(KadState::None);
-    } else if (!(kadInst->isFirewalled() && kad::UDPFirewallTester::isFirewalledUDP(true))) {
+    } else if (!kadInst->isFirewalled() || kad::UDPFirewallTester::isOpenAndVerified()) {
         // We are reachable, so we are the relay and the buddy is the firewalled side.
         // One that opened its port no longer needs us. When we are the firewalled
         // side the buddy is an open node by design and must be kept.
@@ -980,6 +980,11 @@ bool ClientList::allowCallbackRequest(const Address& addr) const
     if (it == m_directCallbackRequests.end())
         return true;
     return getTickCount() >= it->second + SEC2MS(180);
+}
+
+bool ClientList::allowRelayRequest(const Address& relay, const uint8* buddyID, RelayRequest kind)
+{
+    return m_relayBudget.tryCharge(relay, buddyID, kind, getTickCount());
 }
 
 // ===========================================================================

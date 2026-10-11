@@ -1180,8 +1180,10 @@ void CoreSession::handleDirectCallbackRequest(const Endpoint& senderEP,
     const Address& senderAddr = senderEP.address();
     if (!isGoodIP(senderAddr) || theApp.clientList->isBannedClient(senderAddr))
         return;
-    if (theApp.ipFilter && theApp.ipFilter->isFiltered(senderAddr))
+    if (theApp.ipFilter && theApp.ipFilter->isFiltered(senderAddr)) {
+        theApp.ipFilter->logLastHit(u"direct callback");
         return;
+    }
 
     // One direct callback per address per 3 minutes — MFC srchybrid/ClientUDPSocket.cpp:370.
     // Answering one costs us an outgoing TCP connection on a stranger's say-so, so without

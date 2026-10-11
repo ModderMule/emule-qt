@@ -41,14 +41,21 @@ struct AppLanguage {
 
 class AppConfig {
 public:
-    /// Returns the platform-specific user config directory, creating it
-    /// if it does not exist yet.
-    ///   macOS:  ~/eMuleQt/Config
+    /// Returns the user config directory (where preferences.yml lives), creating
+    /// it if it does not exist yet. Same answer in GUI and daemon: nothing here
+    /// depends on the application name.
+    ///   macOS, Linux:  ~/eMuleQt/Config
     ///   Windows (multiUserSharing=2, default): <exe-dir>/config  (portable)
-    ///   Windows (multiUserSharing=0): per-user %APPDATA%
-    ///   Windows (multiUserSharing=1): all-users %ProgramData%
-    ///   Other:  QStandardPaths::AppConfigLocation
+    ///   Windows (multiUserSharing=0): %LOCALAPPDATA%/eMuleQt
+    ///   Windows (multiUserSharing=1): %LOCALAPPDATA%/eMule/eMule Qt
     [[nodiscard]] static QString configDir();
+
+    /// configDir() without the --config override, and without creating it.
+    [[nodiscard]] static QString defaultConfigDir();
+
+    /// Data root the default Incoming/ and Temp/ hang off.
+    ///   macOS, Linux: ~/eMuleQt;  Windows: see configDir(), program-dir = <exe-dir>
+    [[nodiscard]] static QString baseDir();
 
     /// Override the config directory. Must be called before configDir().
     static void setConfigDirOverride(const QString& path);

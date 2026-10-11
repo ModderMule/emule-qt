@@ -1214,6 +1214,7 @@ void KademliaUDPListener::process_KADEMLIA2_RES(const uint8* data, uint32 len, u
             continue;
         }
         if (ipFilter && ipFilter->isFiltered(hostIP, thePrefs.ipFilterLevel())) {
+            ipFilter->logLastHit(u"Kad contact");
             ++ignoredCount;
             continue;
         }
@@ -1539,9 +1540,10 @@ void KademliaUDPListener::process_KADEMLIA2_PUBLISH_SOURCE_REQ(const uint8* data
                     const uint32 buddyIP = tag.intValue();
                     const char* reason = nullptr;
                     auto* ipFilter = Kademlia::getIPFilter();
-                    if (ipFilter && ipFilter->isFiltered(buddyIP, thePrefs.ipFilterLevel()))
+                    if (ipFilter && ipFilter->isFiltered(buddyIP, thePrefs.ipFilterLevel())) {
+                        ipFilter->logLastHit(u"Kad buddy");
                         reason = "IP-filtered";
-                    else if (theApp.clientList
+                    } else if (theApp.clientList
                              && theApp.clientList->isBannedClient(Address::fromNetworkOrder(buddyIP)))
                         reason = "banned";
 

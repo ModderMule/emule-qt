@@ -81,34 +81,48 @@ QString AppConfig::configDirOverride()
 }
 
 // ---------------------------------------------------------------------------
-// configDir
+// baseDir / configDir
 // ---------------------------------------------------------------------------
+
+// No AppConfigLocation here: it embeds the application name, and GUI and daemon
+// carry different ones -- they would each resolve their own preferences.yml.
+
+QString AppConfig::baseDir()
+{
+#ifdef Q_OS_WIN
+    switch (multiUserSharingMode()) {
+    case 0: // per-user
+        return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+               + QStringLiteral("/eMuleQt");
+    case 1: // all-users
+        return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+               + QStringLiteral("/eMule/eMule Qt");
+    default: // 2 = program-dir (portable)
+        return QCoreApplication::applicationDirPath();
+    }
+#else
+    return QDir::homePath() + QStringLiteral("/eMuleQt");
+#endif
+}
+
+QString AppConfig::defaultConfigDir()
+{
+#ifdef Q_OS_WIN
+    switch (multiUserSharingMode()) {
+    case 0:
+    case 1:
+        return baseDir();
+    default: // lowercase matches the bundle layout
+        return baseDir() + QStringLiteral("/config");
+    }
+#else
+    return baseDir() + QStringLiteral("/Config");
+#endif
+}
 
 QString AppConfig::configDir()
 {
-    if (!s_configDirOverride.isEmpty()) {
-        QDir().mkpath(s_configDirOverride);
-        return s_configDirOverride;
-    }
-#ifdef Q_OS_MACOS
-    const QString dir = QDir::homePath() + QStringLiteral("/eMuleQt/Config");
-#elif defined(Q_OS_WIN)
-    QString dir;
-    switch (multiUserSharingMode()) {
-    case 0: // per-user
-        dir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
-        break;
-    case 1: // all-users
-        dir = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
-              + QStringLiteral("/eMule/eMule Qt");
-        break;
-    default: // 2 = program-dir (portable)
-        dir = QCoreApplication::applicationDirPath() + QStringLiteral("/config");
-        break;
-    }
-#else
-    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
-#endif
+    const QString dir = s_configDirOverride.isEmpty() ? defaultConfigDir() : s_configDirOverride;
     QDir().mkpath(dir);
     return dir;
 }

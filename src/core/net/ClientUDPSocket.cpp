@@ -343,6 +343,7 @@ void ClientUDPSocket::processDatagram(const QNetworkDatagram& datagram)
     // is checked against the IPv6 ranges instead of passing unfiltered.
     if (auto* filter = theApp.ipFilter) {
         if (filter->isFiltered(senderAddress, thePrefs.ipFilterLevel())) {
+            filter->logLastHit(u"client UDP packet");
             if (auto* stats = theApp.statistics)
                 stats->addFilteredClient();
             return;

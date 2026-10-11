@@ -23,12 +23,12 @@
 # ---------------------------------------------------------------------------
 set -e
 
-# Qt AppConfigLocation on Linux: ~/.config/<OrgName>/<AppName>
-CONFIG_DIR="${HOME}/.config/eMule/Core"
-# The Config subdirectory too: the RSA keypair for secure identification and the
-# collection signing key are written there on first start, and a daemon that
-# cannot create them logs "secure ident disabled" and carries on without it.
-mkdir -p "$CONFIG_DIR/Config"
+# Same layout as macOS; preferences.yml and the data files share one directory
+CONFIG_DIR="${HOME}/eMuleQt/Config"
+# The RSA keypair for secure identification and the collection signing key are
+# written here on first start, and a daemon that cannot create them logs
+# "secure ident disabled" and carries on without it.
+mkdir -p "$CONFIG_DIR"
 
 NODE_NICK="${NODE_NICK:-Node-$(hostname)}"
 NODE_ROLE="${NODE_ROLE:-leecher}"

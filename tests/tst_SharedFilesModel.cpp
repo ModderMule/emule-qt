@@ -34,6 +34,7 @@ private slots:
     void hiddenColumnsCarryMfcsText();
     void sharedNetworksCellIsIconsOnly();
     void rowsWithoutAValueSortLastBothWays();
+    void sizeSortsByMagnitudeNotByDigits();
     void textFilterMatchesTheCellText();
     void categoryNodesFollowMfc();
     void incompleteCategoryFilterSplitsPartFiles();
@@ -335,6 +336,32 @@ void tst_SharedFilesModel::rowsWithoutAValueSortLastBothWays()
         proxy.sort(column, Qt::DescendingOrder);
         QCOMPARE(order(), QStringLiteral("b,a,bare"));
     }
+}
+
+// int64_t is `long` on Linux: a comparator testing for LongLong fell through to
+// the text branch there, and 1.5 GB sorted below 700 MB.
+void tst_SharedFilesModel::sizeSortsByMagnitudeNotByDigits()
+{
+    SharedFilesModel model;
+    SharedFileRow mb = row(1, "mb"), gb = row(2, "gb"), kb = row(3, "kb");
+    mb.fileSize = 700'000'000;
+    gb.fileSize = 1'500'000'000;
+    kb.fileSize = 90'000;
+    model.setFiles({mb, gb, kb});
+
+    SharedFilesSortProxy proxy;
+    proxy.setSourceModel(&model);
+    proxy.setSortRole(Qt::UserRole);
+    const auto order = [&] {
+        QStringList out;
+        for (int i = 0; i < proxy.rowCount(); ++i)
+            out << proxy.index(i, 0).data().toString();
+        return out.join(QLatin1Char(','));
+    };
+    proxy.sort(SharedFilesModel::ColSize, Qt::AscendingOrder);
+    QCOMPARE(order(), QStringLiteral("kb,mb,gb"));
+    proxy.sort(SharedFilesModel::ColSize, Qt::DescendingOrder);
+    QCOMPARE(order(), QStringLiteral("gb,mb,kb"));
 }
 
 // MFC CSharedFilesCtrl::IsFilteredOut (SharedFilesCtrl.cpp:1450-1470)

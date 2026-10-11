@@ -36,6 +36,48 @@ QString daemonWebScheme()
     return ssl ? QStringLiteral("https") : QStringLiteral("http");
 }
 
+/// Hand @p url to the desktop and log a failure.
+///
+/// @p shown is what the log may name: never the URL itself for a daemon page,
+/// whose query carries the stream token.
+bool openOnDesktop(const QUrl& url, const QString& shown)
+{
+#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
+    // QDesktopServices reports success once xdg-open is spawned, so a desktop
+    // with no handler fails without a trace. Run it ourselves for the exit code.
+    // Unparented on purpose: a QProcess destroyed at quit would kill a handler
+    // that xdg-open runs in the foreground.
+    auto* proc = new QProcess;
+    QObject::connect(proc, &QProcess::errorOccurred, proc,
+                     [proc, shown](QProcess::ProcessError error) {
+        if (error != QProcess::FailedToStart)
+            return;
+        logWarning(QStringLiteral("Cannot open %1: xdg-open could not be started (%2)")
+                       .arg(shown, proc->errorString()));
+        proc->deleteLater();
+    });
+    QObject::connect(proc, &QProcess::finished, proc,
+                     [proc, shown](int exitCode, QProcess::ExitStatus status) {
+        if (status != QProcess::NormalExit || exitCode != 0) {
+            const QString detail = QString::fromLocal8Bit(proc->readAllStandardError()).trimmed();
+            logWarning(QStringLiteral("Cannot open %1: xdg-open exited with code %2%3")
+                           .arg(shown).arg(exitCode)
+                           .arg(detail.isEmpty() ? QString{} : QStringLiteral(" - ") + detail));
+        }
+        proc->deleteLater();
+    });
+    proc->start(QStringLiteral("xdg-open"),
+                {url.isLocalFile() ? url.toLocalFile() : url.toString(QUrl::FullyEncoded)});
+    return true;
+#else
+    if (QDesktopServices::openUrl(url))
+        return true;
+    logWarning(QStringLiteral("Cannot open %1: the system found nothing to open it with")
+                   .arg(shown));
+    return false;
+#endif
+}
+
 } // namespace
 
 void launchPreview(const QString& url)
@@ -255,7 +297,8 @@ bool openIncomingInBrowser(const IpcClient* ipc, const QString& streamToken,
         return false;
     }
 
-    return QDesktopServices::openUrl(QUrl(daemonIncomingUrl(ipc, streamToken, relPath)));
+    return openOnDesktop(QUrl(daemonIncomingUrl(ipc, streamToken, relPath)),
+                         QStringLiteral("the core's Incoming folder in the browser"));
 }
 
 bool openIncomingFolder(const IpcClient* ipc, const QString& streamToken,
@@ -265,7 +308,14 @@ bool openIncomingFolder(const IpcClient* ipc, const QString& streamToken,
     // we could render.
     if (ipc && ipc->isLocalConnection()) {
         const QString dir = localPath.isEmpty() ? thePrefs.incomingDir() : localPath;
-        return QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+        if (!QFileInfo(dir).isDir()) {
+            logWarning(QStringLiteral("Cannot open the downloads folder: %1 does not exist")
+                           .arg(QDir::toNativeSeparators(dir)));
+            return false;
+        }
+        return openOnDesktop(QUrl::fromLocalFile(dir),
+                             QStringLiteral("the downloads folder %1")
+                                 .arg(QDir::toNativeSeparators(dir)));
     }
 
     return openIncomingInBrowser(ipc, streamToken, relPath);

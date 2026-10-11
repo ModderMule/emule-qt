@@ -592,6 +592,10 @@ bool UpDownClient::markBlockDone(const uint8* fileId, uint64 startOffset, uint64
     }
     m_doneBlocks.push_front(*it);
     m_blockRequests.erase(it);
+    while (m_doneBlocks.size() > kMaxDoneBlocks) {
+        delete m_doneBlocks.back();
+        m_doneBlocks.pop_back();
+    }
     return true;
 }
 

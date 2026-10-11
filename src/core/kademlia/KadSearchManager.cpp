@@ -509,6 +509,7 @@ void SearchManager::jumpStart()
         }
 
         if (del) {
+            search->retryUnstoredSource();
             delete search;
             it = s_searches.erase(it);
             anyRemoved = true;

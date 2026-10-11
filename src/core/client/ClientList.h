@@ -6,6 +6,7 @@
 /// Ported from MFC CClientList (srchybrid/ClientList.h).
 /// Phase 1 covers add/remove/find and banned IP tracking.
 
+#include "client/BuddyRelayBudget.h"
 #include "client/DeadSourceList.h"
 #include "client/FruitlessSessionLedger.h"
 #include "net/Address.h"
@@ -239,6 +240,12 @@ public:
     /// Whether a direct callback request from this address may be answered right now.
     [[nodiscard]] bool allowCallbackRequest(const Address& addr) const;
 
+    // -- Buddy relay requests we send ---------------------------------------
+    /// Whether a request to `relay` for the node with `buddyID` may be sent now; counts
+    /// it if so. Mirrors the relay's limits, which drop without an answer. Not MFC.
+    [[nodiscard]] bool allowRelayRequest(const Address& relay, const uint8* buddyID,
+                                         RelayRequest kind);
+
     // -- Public member (matches MFC pattern) --------------------------------
 
     DeadSourceList globalDeadSourceList;
@@ -279,6 +286,7 @@ private:
     /// A map rather than MFC's list: it only ever asks about the newest entry per address,
     /// and the pruning walk stays proportional to the number of distinct addresses.
     std::unordered_map<Address, uint64> m_directCallbackRequests;
+    BuddyRelayBudget m_relayBudget;
 
     std::unordered_map<Address, uint64> m_bannedList;  // Address -> ban tick
     std::unordered_map<Address, TrackedClient> m_trackedClients;

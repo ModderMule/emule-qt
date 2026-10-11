@@ -616,6 +616,8 @@ void ServerPanel::setupUi()
     m_vertSplitter->addWidget(m_logWidget);
     m_vertSplitter->setStretchFactor(0, 2);
     m_vertSplitter->setStretchFactor(1, 1);
+    // First-run default, scaled to the real height: log gets ~45%
+    m_vertSplitter->setSizes({550, 450});
 
     // Restore saved splitter position and auto-save on change
     theUiState.bindServerSplitter(m_vertSplitter);

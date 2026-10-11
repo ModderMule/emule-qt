@@ -395,8 +395,15 @@ private:
     KnownFile* nextDueFile(uint32& cursor, const std::function<bool(KnownFile*)>& due);
     /// False while firewalled without a connected buddy or a direct UDP callback.
     [[nodiscard]] static bool canPublishToKad();
-    /// One source / notes store search for the next due file, at most one probe
-    /// per KADEMLIAPUBLISHTIME and only below the concurrent-store cap.
+    /// Pace of Kad source publishing for a share of @p sharedFiles files.
+    struct SourcePublishBudget {
+        int startsPerProbe;   ///< store searches one probe may start
+        time_t spacingSecs;   ///< seconds between probes
+        uint32 maxSearches;   ///< concurrent store searches
+    };
+    [[nodiscard]] static SourcePublishBudget sourcePublishBudget(int sharedFiles);
+    /// Source / notes store searches for the next due files, paced by the budget
+    /// (notes: one per KADEMLIAPUBLISHTIME) and only below the concurrent-store cap.
     void publishDueSource(time_t tProbe);
     void publishDueNotes(time_t tProbe);
 

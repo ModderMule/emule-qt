@@ -128,6 +128,10 @@ public:
     explicit DetailDialog(QWidget* parent = nullptr,
                           ContentScroll scroll = ContentScroll::Off);
 
+    /// Windows forces a height-for-width top-level up to its layout's full content
+    /// height on every resize, past the screen -- see OptionsDialog::hasHeightForWidth().
+    [[nodiscard]] bool hasHeightForWidth() const override { return false; }
+
     /// Rebuild the dialog from a fresh details map — content, window title and
     /// subject key. This is MFC's CListViewPropertySheet::ChangedData(): *every*
     /// page reflects the new item, not just the visible one.

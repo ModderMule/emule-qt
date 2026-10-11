@@ -2,8 +2,8 @@
 # entrypoint.sh — generate per-node config and launch emulecored
 set -e
 
-# Qt AppConfigLocation on Linux: ~/.config/<OrgName>/<AppName>
-CONFIG_DIR="${HOME}/.config/eMule/Core"
+# Same layout as macOS; preferences.yml and the data files share one directory
+CONFIG_DIR="${HOME}/eMuleQt/Config"
 mkdir -p "$CONFIG_DIR"
 
 # Defaults
@@ -56,8 +56,8 @@ EOF
     echo "[entrypoint] Generated preferences.yml for ${NODE_NICK}"
 fi
 
-# Seed nodes.dat and preferencesKad.dat into the Config subdirectory
-KAD_DIR="$CONFIG_DIR/Config"
+# Seed nodes.dat and preferencesKad.dat
+KAD_DIR="$CONFIG_DIR"
 mkdir -p "$KAD_DIR"
 if [ -f /seed/nodes.dat ]; then
     cp /seed/nodes.dat "$KAD_DIR/nodes.dat"

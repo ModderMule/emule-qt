@@ -569,9 +569,11 @@ void Kademlia::process()
     }
 
     // 6b. Consume the flag and start a buddy search if we actually need one:
-    //     only when both TCP and UDP firewalled, no buddy, and Kad connected.
+    //     only when TCP firewalled without a proven direct UDP callback, no buddy,
+    //     and Kad connected. Not MFC: unverified UDP counts as needing one, the
+    //     test the source publish already applies (MFC ClientList.cpp:592 skips it).
     const bool needsBuddy = m_prefs && isConnected()
-        && isFirewalled() && UDPFirewallTester::isFirewalledUDP(true);
+        && isFirewalled() && !UDPFirewallTester::isOpenAndVerified();
     if (!needsBuddy
         || (theApp.clientList && theApp.clientList->buddyStatus() == BuddyStatus::Connected))
     {

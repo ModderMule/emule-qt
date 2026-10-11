@@ -14,8 +14,10 @@ Address vetPeerAddress(const Address& addr, const IPFilter* filter, const Client
         return {};
     if (!isGoodIP(addr))
         return {};
-    if (filter && filter->isFiltered(addr))
+    if (filter && filter->isFiltered(addr)) {
+        filter->logLastHit(u"peer address");
         return {};
+    }
     if (clients && clients->isBannedClient(addr))
         return {};
     return addr;

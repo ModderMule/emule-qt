@@ -4023,8 +4023,12 @@ void PartFile::addClientSources(SafeMemFile& data, uint8 clientSXVersion, bool i
         if (!isLowID(userIdEd2k)) {
             // For high-ID clients, userId == IP: validate it, IP-filter it, and don't
             // re-admit a peer we've already banned via another path.
+            const bool filtered = isGoodIP(userIdEd2k) && theApp.ipFilter
+                                  && theApp.ipFilter->isFiltered(userIdEd2k);
+            if (filtered)
+                theApp.ipFilter->logLastHit(u"exchanged source");
             v4Usable = isGoodIP(userIdEd2k)
-                       && !(theApp.ipFilter && theApp.ipFilter->isFiltered(userIdEd2k))
+                       && !filtered
                        && !(theApp.clientList
                             && theApp.clientList->isBannedClient(
                                    Address::fromNetworkOrder(userIdEd2k)));

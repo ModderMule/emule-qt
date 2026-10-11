@@ -578,7 +578,7 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
     // IP filter on source IP (MFC:1519-1524)
     uint32 ed2kIP = htonl(ip);
     if (m_ipFilter && ip != 0 && m_ipFilter->isFiltered(ed2kIP)) {
-        logDebug(QStringLiteral("addKadSourceResult: IP %1 filtered").arg(ip));
+        m_ipFilter->logLastHit(u"Kad source");
         return;
     }
 
@@ -645,7 +645,7 @@ void DownloadQueue::addKadSourceResult(const kad::Kademlia::KadSourceResult& res
         // .cpp:1519 swaps the source IP, :1560 passes the buddy IP straight through),
         // and isFiltered(uint32) wants network order (IPFilter.h).
         if (m_ipFilter && m_ipFilter->isFiltered(buddyIP)) {
-            logDebug(QStringLiteral("addKadSourceResult: buddy IP %1 filtered").arg(ipstr(buddyIP)));
+            m_ipFilter->logLastHit(u"Kad source buddy");
             return;
         }
         // buddyIP 0: an IPv6-only record without a buddy
@@ -1050,8 +1050,10 @@ void DownloadQueue::addServerSourceClient(PartFile* file, uint32 userId, uint16 
     if (!isLowID(userId)) {
         if (!isGoodIP(userId))
             return;
-        if (m_ipFilter && m_ipFilter->isFiltered(userId))
+        if (m_ipFilter && m_ipFilter->isFiltered(userId)) {
+            m_ipFilter->logLastHit(u"server source");
             return;
+        }
         if (m_clientList &&
             m_clientList->isBannedClient(Address::fromNetworkOrder(userId)))
             return;
@@ -1251,9 +1253,13 @@ void DownloadQueue::addLinkUrlSource(PartFile* file, const ED2KLinkSource& sourc
 
     // A literal host is vetted here; a hostname is resolved by URLClient itself.
     if (!source.address.isNull()) {
-        if (!isGoodIP(source.address)
-            || (m_ipFilter && m_ipFilter->isFiltered(source.address))
-            || (m_clientList && m_clientList->isBannedClient(source.address)))
+        if (!isGoodIP(source.address))
+            return;
+        if (m_ipFilter && m_ipFilter->isFiltered(source.address)) {
+            m_ipFilter->logLastHit(u"URL source");
+            return;
+        }
+        if (m_clientList && m_clientList->isBannedClient(source.address))
             return;
     }
 
@@ -2417,7 +2423,7 @@ bool DownloadQueue::sourceFiltersPass(PartFile* file, UpDownClient* source,
     if (m_ipFilter && !source->userAddress().isNull()
         && m_ipFilter->isFiltered(source->userAddress()))
     {
-        logDebug(QStringLiteral("Source rejected by IPFilter: %1").arg(ipstr(source->userAddress())));
+        m_ipFilter->logLastHit(u"source");
         return false;
     }
 

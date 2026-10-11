@@ -10,6 +10,8 @@
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
 
+#include <QCoreApplication>
+#include <QDir>
 #include <QFile>
 #include <QTcpServer>
 #include <QTest>
@@ -137,6 +139,52 @@ private slots:
         Preferences p2;
         p2.load(file);
         QCOMPARE(p2.configDir(), realDir);
+    }
+
+    // GUI and daemon carry different application names. A path built from
+    // AppConfigLocation embeds the name, which gave each its own preferences.yml:
+    // GUI-acted settings never survived a restart, ipfilter.dat went where the
+    // daemon never looked.
+    void configDir_sameForGuiAndDaemon()
+    {
+        const QString savedName = QCoreApplication::applicationName();
+
+        QCoreApplication::setApplicationName(QStringLiteral("GUI"));
+        const QString guiConfig = AppConfig::defaultConfigDir();
+        const QString guiBase = AppConfig::baseDir();
+
+        QCoreApplication::setApplicationName(QStringLiteral("Core"));
+        const QString coreConfig = AppConfig::defaultConfigDir();
+        const QString coreBase = AppConfig::baseDir();
+
+        QCoreApplication::setApplicationName(savedName);
+
+        QCOMPARE(guiConfig, coreConfig);
+        QCOMPARE(guiBase, coreBase);
+#ifndef Q_OS_WIN
+        QCOMPARE(coreBase, QDir::homePath() + QStringLiteral("/eMuleQt"));
+        QCOMPARE(coreConfig, QDir::homePath() + QStringLiteral("/eMuleQt/Config"));
+#endif
+    }
+
+    // Bundled data is seeded into AppConfig's directory and read back through
+    // Preferences::configDir(). Two answers meant a fresh install found neither
+    // server.met nor nodes.dat.
+    void configDir_defaultMatchesAppConfig()
+    {
+        // An existing file that names no directories: the defaults fill in
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("prefs.yaml"));
+        QFile seed(file);
+        QVERIFY(seed.open(QIODevice::WriteOnly));
+        seed.write("general:\n  nick: probe\n");
+        seed.close();
+
+        Preferences loaded;
+        loaded.load(file);
+        QCOMPARE(loaded.configDir(), AppConfig::defaultConfigDir());
+        QCOMPARE(loaded.incomingDir(), AppConfig::baseDir() + QStringLiteral("/Incoming"));
+        QCOMPARE(loaded.tempDirs(), QStringList{AppConfig::baseDir() + QStringLiteral("/Temp")});
     }
 
     // -- Load / Save ----------------------------------------------------------

@@ -190,6 +190,7 @@ private slots:
     void addReqBlock_partFileServesOnlyFlushedData();
     void setUploadFileID_keepsBlockRequests();
     void markBlockDone_movesToDoneHead();
+    void markBlockDone_keepsOnlyTheRecentBlocks();
     void ban_setsState();
     void unBan_clearsState();
     void setSpammer_bansAndUnbans();
@@ -2129,6 +2130,37 @@ void tst_UpDownClient::setUploadFileID_keepsBlockRequests()
     QCOMPARE(client.blockRequests().size(), size_t{1});
 
     client.setUploadFileID(nullptr);
+    theApp.sharedFileList = nullptr;
+}
+
+// The done list grew by a block per 180 KiB for the whole slot, and every request
+// walked all of it.
+void tst_UpDownClient::markBlockDone_keepsOnlyTheRecentBlocks()
+{
+    KnownFileList knownFiles;
+    SharedFileList sharedFiles(&knownFiles);
+    theApp.sharedFileList = &sharedFiles;
+    KnownFile* file = shareFile(sharedFiles, 0x48, QStringLiteral("long.avi"), 20u * 1024 * 1024);
+    QVERIFY(file);
+
+    UpDownClient client;
+    client.setUploadState(UploadState::Uploading);
+    constexpr uint64 kBlocks = 70;
+    for (uint64 i = 0; i < kBlocks; ++i) {
+        client.addReqBlock(blockFor(file, i * EMBLOCKSIZE, (i + 1) * EMBLOCKSIZE));
+        QVERIFY(client.markBlockDone(file->fileHash(), i * EMBLOCKSIZE, (i + 1) * EMBLOCKSIZE));
+    }
+    QCOMPARE(client.doneBlocks().size(), size_t{64});
+    QCOMPARE(client.doneBlocks().front()->startOffset, (kBlocks - 1) * EMBLOCKSIZE);
+    QCOMPARE(client.doneBlocks().back()->startOffset, (kBlocks - 64) * EMBLOCKSIZE);
+
+    // A block just sent is still a duplicate; one long gone is a real re-download
+    client.addReqBlock(blockFor(file, (kBlocks - 1) * EMBLOCKSIZE, kBlocks * EMBLOCKSIZE));
+    QVERIFY(client.blockRequests().empty());
+    client.addReqBlock(blockFor(file, 0, EMBLOCKSIZE));
+    QCOMPARE(client.blockRequests().size(), size_t{1});
+
+    client.flushSendBlocks();
     theApp.sharedFileList = nullptr;
 }
 

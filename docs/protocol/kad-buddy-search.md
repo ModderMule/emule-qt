@@ -276,6 +276,24 @@ The callback limit keeps the stock bucket and ban threshold; only the cost of on
 changes. At the default of 8 a burst of 8 requests from one IP passes, the 9th is dropped,
 and the IP is banned at the 33rd. The limit for `KADEMLIA_FINDBUDDY_REQ` stays as in stock.
 
+A relay drops a request over these limits without an answer. The requesting node therefore
+counts as well and does not send what would be dropped (`BuddyRelayBudget`, reached through
+`ClientList::allowRelayRequest()`):
+
+| | Requester-side rule | Sent from |
+|---|---|---|
+| `KADEMLIA_CALLBACK_REQ` per relay IP | the relay's bucket: 8 at once, then one per 7.5 s | `UpDownClient::tryToConnect()`, `FindSource` search |
+| `KADEMLIA_CALLBACK_REQ` and `OP_REASKCALLBACKUDP` per buddy ID | 60 in any 60 s | the two above and `UpDownClient::udpReaskForDownload()` |
+
+- The requester does not know the relay's `maxServedBuddies`, so it assumes the default of 8.
+  A relay set lower still drops some requests; a relay set higher is used below its limit.
+- The per-buddy rule is a sliding window. The relay counts in a fixed minute whose start the
+  requester cannot see, so only "60 in any minute" is sure to fit into it.
+- A held-back callback request leaves the source waiting for the callback, and the attempt
+  ends by the usual timeout, as it does when the relay drops the packet. A held-back reask
+  is not counted as a sent UDP packet and is tried again on the next pass.
+- The stock limit of one callback request per minute and IP is not mirrored.
+
 The number of served buddies is kept small on purpose:
 
 - every served node depends on this one node. When it goes offline, all of them are

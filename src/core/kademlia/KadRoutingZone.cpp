@@ -134,8 +134,10 @@ bool RoutingZone::add(const UInt128& id, uint32 ip, uint16 udpPort, uint16 tcpPo
 
     // IPFilter check
     if (auto* ipFilter = Kademlia::getIPFilter()) {
-        if (ipFilter->isFiltered(htonl(ip), thePrefs.ipFilterLevel()))
+        if (ipFilter->isFiltered(htonl(ip), thePrefs.ipFilterLevel())) {
+            ipFilter->logLastHit(u"Kad contact");
             return false;
+        }
     }
 
     // Reject DNS port for older clients
@@ -780,8 +782,10 @@ void RoutingZone::readFile(const QString& specialNodesdat)
 
             // IPFilter check
             if (auto* ipFilter = Kademlia::getIPFilter()) {
-                if (ipFilter->isFiltered(htonl(ip), thePrefs.ipFilterLevel()))
+                if (ipFilter->isFiltered(htonl(ip), thePrefs.ipFilterLevel())) {
+                    ipFilter->logLastHit(u"Kad contact");
                     continue;
+                }
             }
 
             // Don't add ourselves
@@ -1031,8 +1035,10 @@ void RoutingZone::readBootstrapNodesDat(SafeFile& sf)
             continue;
 
         if (auto* ipFilter = Kademlia::getIPFilter()) {
-            if (ipFilter->isFiltered(htonl(ip), thePrefs.ipFilterLevel()))
+            if (ipFilter->isFiltered(htonl(ip), thePrefs.ipFilterLevel())) {
+                ipFilter->logLastHit(u"Kad contact");
                 continue;
+            }
         }
 
         if (id == s_localKadId)

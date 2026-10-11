@@ -470,6 +470,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
 
         if (auto* filter = theApp.ipFilter) {
             if (filter->isFiltered(clientIP, thePrefs.ipFilterLevel())) {
+                filter->logLastHit(u"callback request");
                 if (auto* stats = theApp.statistics)
                     stats->addFilteredClient();
                 break;

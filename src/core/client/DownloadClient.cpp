@@ -1530,6 +1530,17 @@ void UpDownClient::udpReaskForDownload()
         if (!theApp.clientUDP)
             return;   // nothing to send through — see the direct branch above
 
+        // Not MFC: over the relay's limit the reask would be dropped unanswered. Not sent
+        // and not counted, so it is no failed UDP packet; the next pass asks again.
+        if (theApp.clientList
+            && !theApp.clientList->allowRelayRequest(m_buddyAddress, m_buddyID.data(),
+                                                     RelayRequest::ReaskCallback))
+        {
+            logDebug(QStringLiteral("udpReaskForDownload: relay limit of buddy %1 reached, reask to %2 held back")
+                         .arg(m_buddyAddress.toString(), userName()));
+            return;
+        }
+
         m_udpPending = true;
         m_totalUDPPackets++;
 

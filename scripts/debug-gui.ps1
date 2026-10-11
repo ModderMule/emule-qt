@@ -82,12 +82,11 @@ function Get-YamlScalar {
 .DESCRIPTION
     Windows has no single fixed location: AppConfig.cpp peeks
     <exe-dir>\config\preferences.yml for transfer.multiUserSharing and picks
-    0 = per-user %APPDATA%, 1 = all-users %ProgramData%, 2 = program-dir
+    0 = per-user %LOCALAPPDATA%\eMuleQt, 1 = all-users %ProgramData%, 2 = program-dir
     (portable, and the default when the file or the key is absent).
 
-    In per-user mode the path ends in the *application* name, which differs
-    between the two binaries -- "eMule Qt Core" for the daemon, "eMule Qt" for
-    the GUI -- hence the -AppName parameter.
+    Both binaries resolve the same directory in every mode; -AppName is kept
+    for the callers and no longer changes the answer.
 
     -Override short-circuits everything: it is the --config value, which both
     binaries honour ahead of any of this.
@@ -107,7 +106,7 @@ function Get-EMuleConfigDir {
                                  -Block 'transfer' -Key 'multiUserSharing' -Default 2)
 
     switch ($mode) {
-        0 { return (Join-Path $env:APPDATA "eMule\$AppName") }
+        0 { return (Join-Path $env:LOCALAPPDATA 'eMuleQt') }
         1 { return (Join-Path $env:ProgramData 'eMule\eMule Qt') }
         default { return $portableDir }
     }

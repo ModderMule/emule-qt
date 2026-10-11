@@ -278,9 +278,9 @@ def generate_compose(args, ips: dict, pub_ips: dict, links: dict, path: str) -> 
         volumes[volume_name] = None
 
         node_volumes = [
-            f"{volume_name}:/root/.config/eMule/Core",
+            f"{volume_name}:/root/eMuleQt/Config",
             "./entrypoint.sh:/entrypoint-httpcache.sh:ro",
-            f"./crashes/node-{i}:/root/.config/eMule/Core/crashes",
+            f"./crashes/node-{i}:/root/eMuleQt/Config/crashes",
         ]
         if is_seeder:
             node_volumes.append(

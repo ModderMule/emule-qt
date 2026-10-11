@@ -22,6 +22,7 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 
 class QFile;
 
@@ -79,6 +80,10 @@ public:
 
     /// Determine if a file should be compressed based on extension.
     [[nodiscard]] static bool shouldCompressFile(const QString& fileName);
+    /// zlib-compress one block into @p out. False when it does not pay: the result
+    /// must be at least 5 % smaller, and a block whose head does not shrink is not
+    /// compressed at all.
+    [[nodiscard]] static bool compressBlock(const QByteArray& data, std::vector<uint8>& out);
 
 signals:
     /// Emitted when block packets are ready to be sent. fileId/start/end name the requested

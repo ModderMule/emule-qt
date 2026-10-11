@@ -53,6 +53,13 @@ public:
     /// Switch to a specific page by index.
     void selectPage(int page);
 
+    /// Windows only: Qt forces a top-level window with a height-for-width layout up to
+    /// the layout's minimumHeightForWidth() on every resize (WM_WINDOWPOSCHANGING), over
+    /// the explicit minimum. Behind a scroll area that is the content's *full* height --
+    /// taller than the screen, button row under the taskbar (issue #10). The window's
+    /// size is DialogSizing's business, so opt out.
+    [[nodiscard]] bool hasHeightForWidth() const override { return false; }
+
     /// Indices into the stacked widget, and the value persisted as
     /// UiState::optionsLastPage(). The sidebar groups these differently and carries
     /// the values as item ids, so this order is free to stay put -- reordering it
