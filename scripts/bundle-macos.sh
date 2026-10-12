@@ -385,11 +385,26 @@ if [ "$CREATE_DMG" = true ]; then
         cp -R "$APP_BUNDLE" "$STAGING_DIR/"
         sync
         sleep 2
-        hdiutil create -volname "eMule Qt" \
-            -srcfolder "$STAGING_DIR/$(basename "$APP_BUNDLE")" \
-            -ov -format UDZO \
-            "$DMG_OUTPUT"
+        # hdiutil sporadically fails with "Resource busy" on CI runners
+        # (Spotlight/XProtect holding the scratch image) — retry
+        DMG_OK=false
+        for attempt in 1 2 3 4 5; do
+            if hdiutil create -volname "eMule Qt" \
+                -srcfolder "$STAGING_DIR/$(basename "$APP_BUNDLE")" \
+                -ov -format UDZO \
+                "$DMG_OUTPUT"; then
+                DMG_OK=true
+                break
+            fi
+            echo "  hdiutil failed (attempt $attempt/5), retrying..."
+            rm -f "$DMG_OUTPUT"
+            sleep $((attempt * 5))
+        done
         rm -rf "$STAGING_DIR"
+        if [ "$DMG_OK" != true ]; then
+            echo "ERROR: hdiutil could not create the DMG" >&2
+            exit 1
+        fi
     fi
 
     echo "  -> $DMG_OUTPUT ($(du -h "$DMG_OUTPUT" | cut -f1))"
