@@ -50,6 +50,7 @@
 #include <QComboBox>
 #include <QDesktopServices>
 #include <QFileDialog>
+#include <QStorageInfo>
 #include <QDir>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -2175,8 +2176,18 @@ void SharedFilesPanel::initFilesystemRoot()
 #else
     // Cross-platform fallback: system drives
     const auto drives = QDir::drives();
-    for (const QFileInfo& fi : drives)
-        addFilesystemChild(m_allDirsItem, fi.absoluteFilePath(), fi.absoluteFilePath());
+    for (const QFileInfo& fi : drives) {
+        // "C:" or "Data (E:)" like the shell name MFC shows (SharedDirsTreeCtrl.cpp:757)
+        const QString path = fi.absoluteFilePath();
+        QString label = path;
+        // Drive letters only: "/" stays "/"
+        if (label.size() > 1 && label.endsWith(u'/')) {
+            label.chop(1);
+            if (const QString volume = QStorageInfo(path).name(); !volume.isEmpty())
+                label = QStringLiteral("%1 (%2)").arg(volume, label);
+        }
+        addFilesystemChild(m_allDirsItem, path, label);
+    }
 #endif
 }
 

@@ -47,6 +47,10 @@
 #include <QTest>
 #include <QTimer>
 #include <QDoubleSpinBox>
+#include <QAbstractProxyModel>
+#include <QFileSystemModel>
+#include <QTemporaryDir>
+#include <QTreeView>
 #include <QTreeWidget>
 
 using namespace eMule;
@@ -123,6 +127,7 @@ private slots:
     void onlyAPendingPortChangeOffersARestart();
     void defaultWidthShowsEveryTabTitle();
     void windowsDoesNotForceTheContentHeight();
+    void theSharedDirTreeStartsAtTheMachineRoot();
 };
 
 /// The regression this file exists for. Named per page, because "the dialog is too tall"
@@ -1062,6 +1067,53 @@ void TestOptionsDialogSizing::windowsDoesNotForceTheContentHeight()
     const QWidget* window = &dlg;   // through the base: that is how Qt calls it
     QVERIFY2(!window->hasHeightForWidth(),
              "a height-for-width window is resized by Windows to the content's full height");
+}
+
+/// The tree was rooted at the home folder, so a folder on another drive (E:, an external
+/// volume) could not be shared from this page at all.
+void TestOptionsDialogSizing::theSharedDirTreeStartsAtTheMachineRoot()
+{
+    // Before the dialog: the model lists a folder once, when it is first asked for
+    QTemporaryDir scratch(QDir::homePath() + QStringLiteral("/emuleqt-dirtree-XXXXXX"));
+    QVERIFY(scratch.isValid());
+    QVERIFY(QDir(scratch.path()).mkdir(QStringLiteral("shown")));
+    QVERIFY(QDir(scratch.path()).mkdir(QStringLiteral(".hidden")));
+
+    OptionsDialog dlg(nullptr, nullptr);
+    auto* tree = stackOf(dlg)->widget(OptionsDialog::PageDirectories)->findChild<QTreeView*>();
+    QVERIFY(tree);
+    auto* proxy = qobject_cast<QAbstractProxyModel*>(tree->model());
+    QVERIFY(proxy);
+    auto* fsModel = qobject_cast<QFileSystemModel*>(proxy->sourceModel());
+    QVERIFY(fsModel);
+
+    QVERIFY(!tree->rootIndex().isValid());
+
+    // Home is still where the tree opens, now below a drive root
+    const QModelIndex home = proxy->mapFromSource(fsModel->index(QDir::homePath()));
+    QVERIFY(home.isValid());
+    QVERIFY(tree->isExpanded(home));
+    QModelIndex top = home;
+    while (top.parent().isValid())
+        top = top.parent();
+    QVERIFY(QDir(fsModel->filePath(proxy->mapToSource(top))).isRoot());
+
+    // Hidden folders are listed by the model and dropped again by the proxy
+    // Persistent: the model re-sorts as folders load
+    const QPersistentModelIndex dir = proxy->mapFromSource(fsModel->index(scratch.path()));
+    QVERIFY(dir.isValid());
+    proxy->fetchMore(dir);
+    QTRY_COMPARE(proxy->rowCount(dir), 1);
+    QCOMPARE(proxy->index(0, 0, dir).data().toString(), QStringLiteral("shown"));
+
+#ifdef Q_OS_MACOS
+    // ...all but /Volumes, which macOS flags hidden and which holds every other disk
+    QVERIFY(proxy->mapFromSource(fsModel->index(QStringLiteral("/Volumes"))).isValid());
+    // The boot volume's alias there would only list "/" again
+    for (const QFileInfo& volume : QDir(QStringLiteral("/Volumes")).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot))
+        QCOMPARE(proxy->mapFromSource(fsModel->index(volume.absoluteFilePath())).isValid(),
+                 !volume.isSymLink());
+#endif
 }
 
 QTEST_MAIN(TestOptionsDialogSizing)

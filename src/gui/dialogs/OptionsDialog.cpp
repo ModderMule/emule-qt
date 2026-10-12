@@ -74,6 +74,7 @@
 #include <QScreen>
 #include <QSettings>
 #include <QSlider>
+#include <QSortFilterProxyModel>
 #include <QDoubleSpinBox>
 #include <QSpinBox>
 #include <QShortcut>
@@ -1575,6 +1576,8 @@ public:
 
     void setCheckedPaths(const QStringList& paths)
     {
+        // Paired: a bare layoutChanged() dangles the proxy's persistent indexes
+        emit layoutAboutToBeChanged();
         m_checked.clear();
         for (const auto& p : paths)
             m_checked.insert(p);
@@ -1597,6 +1600,33 @@ private:
     }
 
     QSet<QString> m_checked;
+};
+
+/// Hides hidden folders again once the model lists them: only /Volumes is wanted, and
+/// macOS flags it hidden.
+class VisibleDirsProxyModel : public QSortFilterProxyModel {
+public:
+    using QSortFilterProxyModel::QSortFilterProxyModel;
+
+protected:
+    bool filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const override
+    {
+        // Drive roots (MFC lists every logical drive, DirectoryTreeCtrl.cpp:210)
+        if (!sourceParent.isValid())
+            return true;
+        const auto* fsModel = static_cast<const QFileSystemModel*>(sourceModel());
+        const QFileInfo info = fsModel->fileInfo(fsModel->index(sourceRow, 0, sourceParent));
+        const QString path = info.absoluteFilePath();
+        if (path == kVolumesDir)
+            return true;
+        // The boot volume's alias would list "/" a second time
+        if (info.absolutePath() == kVolumesDir && info.isSymLink())
+            return false;
+        return !info.isHidden();
+    }
+
+private:
+    static inline const QString kVolumesDir = QStringLiteral("/Volumes");
 };
 
 } // anonymous namespace
@@ -1653,17 +1683,35 @@ QWidget* OptionsDialog::createDirectoriesPage()
     auto* sharedLayout = new QVBoxLayout(sharedGroup);
 
     auto* fsModel = new CheckableFileSystemModel(this);
-    fsModel->setFilter(QDir::AllDirs | QDir::NoDotAndDotDot);
-    fsModel->setRootPath(QDir::homePath());
+    // Hidden too: the proxy drops them again, all but /Volumes
+    fsModel->setFilter(QDir::AllDirs | QDir::NoDotAndDotDot | QDir::Hidden);
+    // Machine root: every drive is reachable, not only the home folder
+    fsModel->setRootPath(QString());
     m_sharedDirsModel = fsModel;
 
+    auto* visibleDirs = new VisibleDirsProxyModel(this);
+    visibleDirs->setSourceModel(fsModel);
+
     m_sharedDirsTree = new QTreeView(sharedGroup);
-    m_sharedDirsTree->setModel(fsModel);
-    m_sharedDirsTree->setRootIndex(fsModel->index(QDir::homePath()));
+    m_sharedDirsTree->setModel(visibleDirs);
     // Show only the Name column
-    for (int i = 1; i < fsModel->columnCount(); ++i)
+    for (int i = 1; i < visibleDirs->columnCount(); ++i)
         m_sharedDirsTree->setColumnHidden(i, true);
     m_sharedDirsTree->setHeaderHidden(true);
+
+    // Open on the home folder, where the tree used to be rooted
+    const QString home = QDir::homePath();
+    for (QModelIndex idx = visibleDirs->mapFromSource(fsModel->index(home)); idx.isValid();
+         idx = idx.parent())
+        m_sharedDirsTree->expand(idx);
+    connect(fsModel, &QFileSystemModel::directoryLoaded, this,
+        [this, fsModel, visibleDirs, home, scrolled = false](const QString& path) mutable {
+            if (scrolled || QDir::cleanPath(path) != home)
+                return;
+            scrolled = true;
+            m_sharedDirsTree->scrollTo(visibleDirs->mapFromSource(fsModel->index(home)),
+                                       QAbstractItemView::PositionAtTop);
+        });
 
     giveListRoom(m_sharedDirsTree, 8);
     sharedLayout->addWidget(m_sharedDirsTree);
