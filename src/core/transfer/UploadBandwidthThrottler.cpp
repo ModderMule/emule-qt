@@ -190,6 +190,12 @@ void UploadBandwidthThrottler::pause(bool paused)
 
 uint32 UploadBandwidthThrottler::getSlotLimit(uint32 currentUpSpeed) const
 {
+    // User-set target: plain division by its minimum rate (targetClientDataRate(true)),
+    // no boost and no floors, same as UploadQueue::slotLadderAllows
+    if (const uint32 userRate = thePrefs.uploadSlotTargetRate(); userRate != 0)
+        return std::max(currentUpSpeed / (userRate * 1024 * 3 / 4),
+                        static_cast<uint32>(MIN_UP_CLIENTS_ALLOWED));
+
     uint32 upPerClient = m_uploadQueue
         ? m_uploadQueue->targetClientDataRate(true)
         : 3u * 1024u;

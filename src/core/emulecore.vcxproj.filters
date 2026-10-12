@@ -357,6 +357,9 @@
     <ClCompile Include="prefs\PreferenceSchema.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="prefs\LegacyIdentityImport.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="prefs\DownloadCategory.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -842,6 +845,9 @@
     <QtMoc Include="net\ListenSocket.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <ClInclude Include="utils\BundleEnvironment.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\Log.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -939,6 +945,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="prefs\PreferenceSchema.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="prefs\LegacyIdentityImport.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="prefs\DownloadCategory.h">

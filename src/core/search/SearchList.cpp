@@ -647,6 +647,7 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
         addResultCount(searchID, parent->fileHash(), addedSources, parent->isConsideredSpam());
 
         assess(parent);
+        stamp(parent);
         emit resultUpdated(parent);
 
     } else {
@@ -668,6 +669,7 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
                        newFile->isConsideredSpam());
 
         assess(newFile);
+        stamp(newFile);
         emit resultAdded(newFile);
     }
 }
@@ -738,6 +740,7 @@ bool SearchList::addNotes(const uint8* fileHash, const QByteArray& publisherId,
             added = true;
             if (!file->listParent())
                 assess(file.get());
+            stamp(file.get());
             emit resultUpdated(file.get());
         }
     }
@@ -760,6 +763,7 @@ void SearchList::setNotesSearchStatus(const uint8* fileHash, bool running)
             if (!md4equ(file->fileHash(), fileHash))
                 continue;
             file->setKadCommentSearchRunning(running);
+            stamp(file.get());
             emit resultUpdated(file.get());
         }
     }
@@ -1009,6 +1013,7 @@ void SearchList::markFileAsSpam(SearchFile* file, bool addToFilter)
     }
 
     assess(file->listParent() ? file->listParent() : file);
+    stamp(file);
     emit spamStatusChanged(file);
 }
 
@@ -1041,6 +1046,7 @@ void SearchList::markFileAsNotSpam(SearchFile* file, bool removeFromFilter)
     }
 
     assess(file->listParent() ? file->listParent() : file);
+    stamp(file);
     emit spamStatusChanged(file);
 }
 
@@ -1055,6 +1061,7 @@ void SearchList::recalculateSpamRatings(uint32 searchID)
             const bool wasSpam = file->isConsideredSpam();
             doSpamRating(file.get(), false, false, false, 0);
             assess(file.get());
+            stamp(file.get());   // the verdict may have moved without the spam flag
             if (wasSpam != file->isConsideredSpam())
                 emit spamStatusChanged(file.get());
         }
@@ -1215,6 +1222,14 @@ const SearchListEntry* SearchList::findEntry(uint32 searchID) const
             return &entry;
     }
     return nullptr;
+}
+
+void SearchList::stamp(SearchFile* file)
+{
+    if (!file)
+        return;
+    SearchFile* top = file->listParent() ? file->listParent() : file;
+    top->setChangeSeq(++m_changeSeq);
 }
 
 void SearchList::resetUdpRequestTracking()

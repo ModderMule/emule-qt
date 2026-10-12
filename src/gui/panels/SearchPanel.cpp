@@ -708,6 +708,16 @@ void SearchPanel::onSearchStatePush(const IpcMessage& msg)
         if (tab.runState == 3 && before != 3)
             StatusBarNotifier::post(tr("Search \"%1\" failed: %2").arg(tab.title, tab.failure), 8000);
 
+        // Once at the end: settles anything the deltas could not carry
+        if (tab.runState == 2 && before != 2) {
+            if (isVisible()) {
+                requestSearchResults(searchID, true);
+            } else {
+                tab.resultStamp = 0;   // showEvent() drains it, as a whole list
+                m_dirtySearchIDs.insert(searchID);
+            }
+        }
+
         if (m_tabBar->currentIndex() == static_cast<int>(i)) {
             m_statusLabel->setText(tabStatusText(tab));
             m_cancelBtn->setEnabled(tab.runState == 0 || tab.runState == 1);
@@ -1375,7 +1385,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
                     });
             }
             if (tab->searchID != 0)
-                requestSearchResults(tab->searchID);   // spam re-scoring changed the rows
+                requestSearchResults(tab->searchID, true);   // spam re-scoring changed the rows
         });
     }
 
@@ -1499,18 +1509,31 @@ void SearchPanel::onResultDoubleClicked(const QModelIndex& index)
 // Request search results via IPC
 // ---------------------------------------------------------------------------
 
-void SearchPanel::requestSearchResults(uint32_t searchID)
+void SearchPanel::requestSearchResults(uint32_t searchID, bool whole)
 {
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
+    // Only what changed since the last answer: a running Kad search pushes several
+    // times a second, and the whole list each time stalls both ends.
+    quint64 since = 0;
+    if (!whole) {
+        for (const SearchTab& tab : m_tabs) {
+            if (tab.searchID == searchID && !tab.isIndexer()) {
+                since = tab.resultStamp;
+                break;
+            }
+        }
+    }
+
     IpcMessage msg(IpcMsgType::GetSearchResults);
     msg.append(static_cast<qint64>(searchID));
+    msg.append(static_cast<qint64>(since));
 
     m_fetchingSearchIDs.insert(searchID);
-    m_ipc->sendRequest(std::move(msg), [this, searchID](const IpcMessage& resp) {
+    m_ipc->sendRequest(std::move(msg), [this, searchID, since](const IpcMessage& resp) {
         m_fetchingSearchIDs.remove(searchID);
-        if (!resp.fieldBool(0))
+        if (!resp.isValid() || !resp.fieldBool(0))
             return;
 
         const auto arr = resp.fieldArray(1);
@@ -1584,7 +1607,16 @@ void SearchPanel::requestSearchResults(uint32_t searchID)
             // ED2K and indexer searches number their ids independently
             if (m_tabs[i].searchID == searchID && !m_tabs[i].isIndexer()) {
                 // Matched by hash inside the model: selection and expanded files stay
-                m_tabs[i].model->setResults(std::move(rows));
+                if (since == 0) {
+                    m_tabs[i].model->setResults(std::move(rows));
+                } else if (!m_tabs[i].model->mergeResults(std::move(rows))) {
+                    requestSearchResults(searchID, true);
+                    return;
+                }
+                m_tabs[i].resultStamp = static_cast<quint64>(resp.fieldInt(2));
+                // A delta cannot name a row that left; the total gives it away
+                if (since != 0 && m_tabs[i].model->resultCount() != resp.fieldInt(3))
+                    requestSearchResults(searchID, true);
 
                 // Update tab text with result count
                 m_tabBar->setTabText(static_cast<int>(i), tabLabel(m_tabs[i]));

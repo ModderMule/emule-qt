@@ -356,6 +356,7 @@
     <ClCompile Include="app\CoreInfo.cpp" />
     <ClCompile Include="app\CoreOps.cpp" />
     <ClCompile Include="prefs\PreferenceSchema.cpp" />
+    <ClCompile Include="prefs\LegacyIdentityImport.cpp" />
     <ClCompile Include="webserver\ApiEventHub.cpp" />
     <ClCompile Include="webserver\ApiRegistry.cpp" />
     <ClCompile Include="webserver\OpenApiWriter.cpp" />
@@ -445,6 +446,7 @@
     <ClInclude Include="app\CoreInfo.h" />
     <ClInclude Include="app\CoreOps.h" />
     <ClInclude Include="prefs\PreferenceSchema.h" />
+    <ClInclude Include="prefs\LegacyIdentityImport.h" />
     <ClInclude Include="webserver\ApiBackend.h" />
     <ClInclude Include="webserver\ApiRegistry.h" />
     <ClInclude Include="webserver\ApiTypes.h" />
@@ -483,6 +485,7 @@
     <QtMoc Include="net\LastCommonRouteFinder.h" />
     <QtMoc Include="net\ListenSocket.h" />
     <ClInclude Include="utils\CrashHandler.h" />
+    <ClInclude Include="utils\BundleEnvironment.h" />
     <ClInclude Include="utils\Log.h" />
     <ClInclude Include="crypto\MD4Hash.h" />
     <ClInclude Include="crypto\AesCbc.h" />

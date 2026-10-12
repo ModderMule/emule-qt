@@ -162,6 +162,11 @@ public:
     /// view keeps its selection and its expanded files across a refresh.
     void setResults(std::vector<SearchResultRow> results);
 
+    /// Take only the files that changed: each replaces its row or is appended, the
+    /// rest is left alone. False, with nothing done, when a hash names more than one
+    /// row here — the caller then needs a whole snapshot.
+    [[nodiscard]] bool mergeResults(std::vector<SearchResultRow> changed);
+
     /// Remove a single file by top-level row.
     void removeRow(int row);
     /// One name row of a file; the file and its other names stay.

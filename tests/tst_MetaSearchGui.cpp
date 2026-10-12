@@ -86,6 +86,7 @@ private slots:
     void networkFilterHidesForeignRows();
     void alternativeNamesAreChildRows();
     void refreshKeepsExpansionAndSelection();
+    void mergeTouchesOnlyTheChangedRows();
     void namesStayUnderTheirFileAndSpamStaysLast();
     void filterBoxFollowsMfc();
     void searchCellsFollowMfc();
@@ -500,6 +501,56 @@ void tst_MetaSearchGui::refreshKeepsExpansionAndSelection()
     model.setResults(std::move(fewer));
     QCOMPARE(model.rowCount(), 2);
     QCOMPARE(model.rowCount(model.index(1, 0)), 1);
+}
+
+void tst_MetaSearchGui::mergeTouchesOnlyTheChangedRows()
+{
+    // While a search runs only the changed files arrive. A dataChanged over the
+    // whole list per refresh is what froze the window during a Kad search.
+    SearchResultsModel model;
+    std::vector<SearchResultRow> rows;
+    rows.push_back(twoNames(QStringLiteral("AAAA"), QStringLiteral("a.avi"), QStringLiteral("a2.avi")));
+    rows.push_back(twoNames(QStringLiteral("BBBB"), QStringLiteral("b.avi"), QStringLiteral("b2.avi")));
+    rows.push_back(twoNames(QStringLiteral("CCCC"), QStringLiteral("c.avi"), QStringLiteral("c2.avi")));
+    model.setResults(std::move(rows));
+    const qint64 sourcesA = model.resultAt(0)->sourceCount;
+
+    QSignalSpy resets(&model, &QAbstractItemModel::modelReset);
+    QSignalSpy changed(&model, &QAbstractItemModel::dataChanged);
+    QSignalSpy inserted(&model, &QAbstractItemModel::rowsInserted);
+
+    SearchResultRow update = twoNames(QStringLiteral("BBBB"), QStringLiteral("b.avi"), QStringLiteral("b2.avi"));
+    update.sourceCount += 7;
+    SearchResultRow fresh;
+    fresh.hash = QStringLiteral("DDDD");
+    fresh.fileName = QStringLiteral("d.avi");
+    const qint64 sourcesB = update.sourceCount;
+    QVERIFY(model.mergeResults({update, fresh}));
+
+    QCOMPARE(resets.count(), 0);
+    QCOMPARE(model.rowCount(), 4);
+    QCOMPARE(model.resultAt(1)->sourceCount, sourcesB);
+    QCOMPARE(model.resultAt(0)->sourceCount, sourcesA);
+    QCOMPARE(model.hashAt(3), QStringLiteral("DDDD"));
+    QCOMPARE(model.rowCount(model.index(1, 0)), 2);   // its names are still there
+
+    // No top-level dataChanged reaches a row other than BBBB's
+    for (const auto& call : changed) {
+        const auto topLeft = call.at(0).toModelIndex();
+        const auto bottomRight = call.at(1).toModelIndex();
+        if (topLeft.parent().isValid())
+            QCOMPARE(topLeft.parent().row(), 1);
+        else {
+            QCOMPARE(topLeft.row(), 1);
+            QCOMPARE(bottomRight.row(), 1);
+        }
+    }
+    QCOMPARE(inserted.count(), 1);
+
+    // Nothing changed: nothing is signalled
+    changed.clear();
+    QVERIFY(model.mergeResults({}));
+    QCOMPARE(changed.count(), 0);
 }
 
 void tst_MetaSearchGui::namesStayUnderTheirFileAndSpamStaysLast()

@@ -102,6 +102,10 @@ struct SearchTab {
     /// What was asked; a double click on the tab puts it back into the form.
     SearchRequest request;
 
+    /// The daemon's change stamp of the result list this tab shows (GetSearchResults);
+    /// 0 = nothing fetched yet, the next fetch takes the whole list.
+    quint64 resultStamp = 0;
+
     [[nodiscard]] bool isIndexer() const { return indexerModel != nullptr; }
     [[nodiscard]] int resultCount() const;
 };
@@ -211,7 +215,9 @@ private:
     void setupUi();
     QWidget* createSearchBar();
     void setupResultHeader(bool forIndexer);
-    void requestSearchResults(uint32_t searchID);
+    /// Fetch what changed in a search's result list since the tab's last fetch.
+    /// @p whole takes the full list instead: rows may have left or been re-scored.
+    void requestSearchResults(uint32_t searchID, bool whole = false);
     /// Download every selected row, asking once about the ones we already have.
     ///
     /// The entry point for all four ways a download starts here — Enter, the

@@ -79,6 +79,8 @@ using Kind = PrefSpec::Kind;
                          "once while this node is reachable. In effect capped at a tenth of "
                          "maxConnections."));
     t << number("queueSize", 2000, 50000, "", "Upload queue length in clients.");
+    t << number("uploadSlotTargetRate", 0, 256, "KiB/s",
+                "Target rate per upload slot; fewer slots at a higher rate. 0 = automatic, else 12-256.");
 
     // --- Networks ---
     t << flag("networkED2K", "Use the eD2K server network. Gates the automatic connect at start only.");

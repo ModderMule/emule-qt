@@ -517,6 +517,10 @@ public:
     [[nodiscard]] uint32 queueSize() const;
     void setQueueSize(uint32 val);
 
+    /// Target rate per upload slot in KiB/s; 0 = automatic (grows with the slot count).
+    [[nodiscard]] uint32 uploadSlotTargetRate() const;
+    void setUploadSlotTargetRate(uint32 val);
+
     // Upload SpeedSense (USS)
     [[nodiscard]] bool dynUpEnabled() const;
     /// The option, or implied by an unknown upload capacity (0). What the core acts on;

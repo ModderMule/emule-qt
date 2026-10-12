@@ -243,6 +243,12 @@ float UploadQueue::getAverageCombinedFilePrioAndCredit()
 
 uint32 UploadQueue::targetClientDataRate(bool minRate) const
 {
+    // A user-set target replaces the slot-count formula
+    if (const uint32 userRate = thePrefs.uploadSlotTargetRate(); userRate != 0) {
+        const uint32 result = userRate * 1024;
+        return minRate ? result * 3 / 4 : result;
+    }
+
     uint32 openSlots = static_cast<uint32>(m_uploadingList.size());
     // 3 slots or less: 3 KiB/s; 4+: linear growth capped at UPLOAD_CLIENT_MAXDATARATE
     uint32 result;
@@ -456,6 +462,16 @@ bool UploadQueue::slotLadderAllows(int curUploadSlots, uint32 datarate) const
 {
     const uint32 maxSpeed = uploadCapKB();
     uint32 upPerClient = targetClientDataRate(false);
+
+    // User-set target: no datarate boost and no broadband floors, they would override it
+    if (thePrefs.uploadSlotTargetRate() != 0) {
+        if (maxSpeed == UNLIMITED)
+            return static_cast<uint32>(curUploadSlots) < datarate / upPerClient;
+        // 64-bit: the cap may come from USS and is not bounded like the pref
+        const uint64 nMaxSlots = uint64{maxSpeed} * 1024 / upPerClient;
+        return static_cast<uint64>(curUploadSlots)
+               < std::max<uint64>(nMaxSlots, MIN_UP_CLIENTS_ALLOWED);
+    }
 
     // eMule 2026 bandwidth: tiered upPerClient scaling matching getSlotLimit(). MFC default: single tier at >49 KB/s with /43 divisor.
     if (maxSpeed > 500) {

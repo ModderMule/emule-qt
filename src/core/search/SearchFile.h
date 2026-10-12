@@ -202,6 +202,10 @@ public:
     [[nodiscard]] uint32 searchID() const { return m_searchID; }
     void setSearchID(uint32 id) { m_searchID = id; }
 
+    /// SearchList stamp of the last change to this row or one of its names.
+    [[nodiscard]] uint64 changeSeq() const { return m_changeSeq; }
+    void setChangeSeq(uint64 seq) { m_changeSeq = seq; }
+
     /// A peer's shared file it can show preview frames of (MFC IsPreviewPossible).
     [[nodiscard]] bool isPreviewPossible() const { return m_previewPossible; }
     void setPreviewPossible(bool possible) { m_previewPossible = possible; }
@@ -269,6 +273,7 @@ private:
     bool m_aichVouchedDirectly = false;
     std::vector<Address> m_aichVoters;
     uint32 m_searchID = 0;
+    uint64 m_changeSeq = 0;
     uint32 m_spamRating = 0;
     uint32 m_clientID = 0;
     uint16 m_clientPort = 0;

@@ -163,6 +163,12 @@ private slots:
     void slotLadder_upPerClientCappedAtMaxDatarate();
     void slotLadder_unlimitedUsesTheDatarateDivisor();
     void slotLadder_ussSuppliesTheLimit();
+
+    // Slot gating — user-set target rate per slot
+    void slotTargetRate_replacesTheSlotCountFormula();
+    void slotTargetRate_boundsTheLadderWithoutBoostOrFloors();
+    void slotTargetRate_unlimitedDividesTheDatarate();
+    void slotTargetRate_boundsAcceptNewClient();
 };
 
 namespace {
@@ -231,6 +237,7 @@ public:
     SlotGateGuard()
         : m_maxUpload(thePrefs.maxUpload())
         , m_maxGraph(thePrefs.maxGraphUploadRate())
+        , m_slotRate(thePrefs.uploadSlotTargetRate())
         , m_dynUp(thePrefs.dynUpEnabled())
         , m_finder(theApp.lastCommonRouteFinder)
     {
@@ -239,6 +246,7 @@ public:
     {
         theApp.lastCommonRouteFinder = m_finder;
         thePrefs.setDynUpEnabled(m_dynUp);
+        thePrefs.setUploadSlotTargetRate(m_slotRate);
         thePrefs.setMaxGraphUploadRate(m_maxGraph);
         thePrefs.setMaxUpload(m_maxUpload);
     }
@@ -249,6 +257,7 @@ public:
 private:
     uint32 m_maxUpload;
     uint32 m_maxGraph;
+    uint32 m_slotRate;
     bool m_dynUp;
     LastCommonRouteFinder* m_finder;
 };
@@ -1573,6 +1582,96 @@ void tst_UploadQueue::slotLadder_unlimitedUsesTheDatarateDivisor()
     QVERIFY2(queue.slotLadderAllows(17, 1'000'000),
              "unlimited must derive its slot count from the datarate, not fall to the minimum");
     QVERIFY(!queue.slotLadderAllows(18, 1'000'000));
+}
+
+void tst_UploadQueue::slotTargetRate_replacesTheSlotCountFormula()
+{
+    SlotGateGuard guard;
+    UploadQueue queue;
+
+    thePrefs.setUploadSlotTargetRate(0);
+    QCOMPARE(queue.targetClientDataRate(false), 3u * 1024u);
+
+    thePrefs.setUploadSlotTargetRate(20);
+    QCOMPARE(queue.targetClientDataRate(false), 20u * 1024u);
+    QCOMPARE(queue.targetClientDataRate(true), 15u * 1024u);
+
+    // Setter keeps 0 and clamps the rest to the slider range
+    thePrefs.setUploadSlotTargetRate(5);
+    QCOMPARE(thePrefs.uploadSlotTargetRate(), 12u);
+    thePrefs.setUploadSlotTargetRate(1000);
+    QCOMPARE(thePrefs.uploadSlotTargetRate(), 256u);
+}
+
+void tst_UploadQueue::slotTargetRate_boundsTheLadderWithoutBoostOrFloors()
+{
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxGraphUploadRate(0);
+    thePrefs.setMaxUpload(200);
+
+    UploadQueue queue;
+
+    // Automatic: 3072 + 200'000/43 = 7'723 → max(204'800 / 7'723, 6) = 26 slots.
+    thePrefs.setUploadSlotTargetRate(0);
+    QVERIFY(queue.slotLadderAllows(10, 200'000));
+
+    // 20 KiB/s: 204'800 / 20'480 = 10 slots, whatever the datarate.
+    thePrefs.setUploadSlotTargetRate(20);
+    QVERIFY(queue.slotLadderAllows(9, 200'000));
+    QVERIFY(!queue.slotLadderAllows(10, 200'000));
+
+    // 250 KB/s at 100 per slot is 2 slots; the automatic floor there is MIN + 5.
+    thePrefs.setMaxUpload(250);
+    thePrefs.setUploadSlotTargetRate(100);
+    QVERIFY(queue.slotLadderAllows(1, 250'000));
+    QVERIFY(!queue.slotLadderAllows(2, 250'000));
+
+    // A target above the limit still leaves MIN_UP_CLIENTS_ALLOWED.
+    thePrefs.setMaxUpload(50);
+    thePrefs.setUploadSlotTargetRate(256);
+    QVERIFY(queue.slotLadderAllows(MIN_UP_CLIENTS_ALLOWED - 1, 50'000));
+    QVERIFY(!queue.slotLadderAllows(MIN_UP_CLIENTS_ALLOWED, 50'000));
+
+    // 256 is above UPLOAD_CLIENT_MAXDATARATE and must not be cut to it:
+    // 1'024'000 / 262'144 = 3 slots (7 if clamped to 128).
+    thePrefs.setMaxUpload(1000);
+    QVERIFY(queue.slotLadderAllows(2, 1'000'000));
+    QVERIFY(!queue.slotLadderAllows(3, 1'000'000));
+}
+
+void tst_UploadQueue::slotTargetRate_unlimitedDividesTheDatarate()
+{
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxUpload(0);
+    thePrefs.setMaxGraphUploadRate(0);
+    thePrefs.setUploadSlotTargetRate(50);
+
+    UploadQueue queue;
+
+    // 1'000'000 / 51'200 = 19
+    QVERIFY(queue.slotLadderAllows(18, 1'000'000));
+    QVERIFY(!queue.slotLadderAllows(19, 1'000'000));
+}
+
+void tst_UploadQueue::slotTargetRate_boundsAcceptNewClient()
+{
+    SlotGateGuard guard;
+    thePrefs.setDynUpEnabled(false);
+    thePrefs.setMaxGraphUploadRate(1000);
+    thePrefs.setMaxUpload(200);
+    thePrefs.setUploadSlotTargetRate(20);
+
+    UploadQueue queue;
+
+    // Limit gate: 204'800 / 20'480 = 10. Datarate high enough not to be the gate.
+    QVERIFY(queue.acceptNewClient(9, 1'000'000));
+    QVERIFY(!queue.acceptNewClient(10, 1'000'000));
+
+    // Datarate gate uses the 3/4 minimum: 100'000 / 15'360 = 6.
+    QVERIFY(queue.acceptNewClient(5, 100'000));
+    QVERIFY(!queue.acceptNewClient(6, 100'000));
 }
 
 void tst_UploadQueue::slotLadder_ussSuppliesTheLimit()

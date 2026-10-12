@@ -11,7 +11,9 @@
 
 #include "app/AppConfig.h"
 #include "app/TranslationRouter.h"
+#include "prefs/LegacyIdentityImport.h"
 #include "prefs/Preferences.h"
+#include "utils/BundleEnvironment.h"
 #include "utils/CrashHandler.h"
 #include "utils/Log.h"
 
@@ -44,6 +46,9 @@ int main(int argc, char* argv[])
     // Ignore SIGPIPE — writing to a disconnected client socket must not kill the daemon.
     std::signal(SIGPIPE, SIG_IGN);
 #endif
+
+    // Before anything is started from here
+    eMule::restoreSystemLibraryPath();
 
     QCoreApplication app(argc, argv);
 
@@ -113,6 +118,10 @@ int main(int argc, char* argv[])
 
     eMule::logInfo(QStringLiteral("eMule Core Daemon starting..."));
 
+    // MFC preferences.dat dropped into the config dir: take over its user hash
+    // before anything reads ours. Logs its own outcome; a rejected file changes nothing.
+    (void)eMule::LegacyIdentityImport::run(configDir, eMule::thePrefs);
+
     // Determine IPC target for log message
     QString ipcHost = eMule::thePrefs.ipcListenAddress();
     if (ipcHost.isEmpty())
@@ -179,6 +188,8 @@ int main(int argc, char* argv[])
         for (QByteArray& arg : argBytes)
             argvNew.push_back(arg.data());
         argvNew.push_back(nullptr);
+        // The binary itself, not the launcher: it needs the bundled libs again
+        eMule::reapplyBundleLibraryPath();
         ::execv(programBytes.constData(), argvNew.data());
         eMule::logError(QStringLiteral("Restart failed: could not start %1").arg(program));
         return 1;

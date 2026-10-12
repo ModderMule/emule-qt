@@ -417,7 +417,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+683"/>
+        <location filename="../src/gui/app/main.cpp" line="+699"/>
         <source>Download Added</source>
         <translation>ダウンロード追加</translation>
     </message>
@@ -702,7 +702,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2953"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+2986"/>
         <source>Test</source>
         <translation>テスト</translation>
     </message>
@@ -5934,36 +5934,36 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2850"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2883"/>
         <source>Options</source>
         <translation>オプション</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1846"/>
+        <location line="+1879"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-1845"/>
-        <location line="+1846"/>
+        <location line="-1878"/>
+        <location line="+1879"/>
         <source>Cancel</source>
         <translation>キャンセル</translation>
     </message>
     <message>
-        <location line="-1845"/>
-        <location line="+5482"/>
+        <location line="-1878"/>
+        <location line="+5515"/>
         <source>Apply</source>
         <translation>適用</translation>
     </message>
     <message>
-        <location line="-5481"/>
+        <location line="-5514"/>
         <source>Help</source>
         <translation>ヘルプ</translation>
     </message>
     <message>
-        <location line="+253"/>
-        <location line="+1860"/>
+        <location line="+255"/>
+        <location line="+1891"/>
         <location line="+63"/>
         <location line="+5"/>
         <location line="+9"/>
@@ -5972,7 +5972,7 @@ Download it again?</source>
         <translation>IP フィルター</translation>
     </message>
     <message>
-        <location line="-1947"/>
+        <location line="-1978"/>
         <source>IP filter reloaded: %1 entries.</source>
         <translation>IP フィルターを再読み込み：%1 エントリ。</translation>
     </message>
@@ -6003,18 +6003,18 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5406"/>
+        <location line="+5437"/>
         <source>Language</source>
         <translation>言語</translation>
     </message>
     <message>
-        <location line="-5403"/>
+        <location line="-5434"/>
         <source>System Default</source>
         <translation>システム既定</translation>
     </message>
     <message>
         <location line="+14"/>
-        <location line="+663"/>
+        <location line="+694"/>
         <location line="+267"/>
         <location line="+450"/>
         <location line="+249"/>
@@ -6022,7 +6022,7 @@ Download it again?</source>
         <translation>その他</translation>
     </message>
     <message>
-        <location line="-1626"/>
+        <location line="-1657"/>
         <source>Bring to front on link click</source>
         <translation>リンクのクリック時に前面に表示</translation>
     </message>
@@ -6108,25 +6108,25 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5342"/>
+        <location line="+5373"/>
         <source>Core</source>
         <translation>コア</translation>
     </message>
     <message>
-        <location line="-5337"/>
+        <location line="-5368"/>
         <source>Address:</source>
         <translation>アドレス：</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1107"/>
+        <location line="+1138"/>
         <location line="+694"/>
         <location line="+421"/>
         <source>Port:</source>
         <translation>ポート：</translation>
     </message>
     <message>
-        <location line="-2219"/>
+        <location line="-2250"/>
         <source>authentication token</source>
         <translation>認証トークン</translation>
     </message>
@@ -6282,7 +6282,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1583"/>
+        <location line="+1614"/>
         <location line="+128"/>
         <location line="+295"/>
         <location line="+1016"/>
@@ -6294,7 +6294,7 @@ Are you sure you want to continue?</source>
         <translation>有効</translation>
     </message>
     <message>
-        <location line="-4528"/>
+        <location line="-4559"/>
         <source>Reset</source>
         <translation>リセット</translation>
     </message>
@@ -6311,12 +6311,12 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4253"/>
+        <location line="+4284"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4256"/>
+        <location line="-4287"/>
         <source>Upload</source>
         <translation>アップロード</translation>
     </message>
@@ -6336,7 +6336,17 @@ Are you sure you want to continue?</source>
         <translation>アップロード制限</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="+11"/>
+        <source>Target rate per upload slot</source>
+        <translation>アップロードスロットあたりの目標速度</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>A higher rate opens fewer upload slots: the upload limit divided by this rate, never fewer than two. Unchecked, the rate grows with the number of slots.</source>
+        <translation>速度を上げるとアップロードスロットの数が減ります。スロット数はアップロード制限をこの速度で割った値で、2 未満にはなりません。チェックを外すと、速度はスロット数に応じて上がります。</translation>
+    </message>
+    <message>
+        <location line="+23"/>
         <source>Client Port</source>
         <translation>クライアントポート</translation>
     </message>
@@ -6377,12 +6387,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6459"/>
+        <location line="+6477"/>
         <source>Any</source>
         <translation>すべて</translation>
     </message>
     <message>
-        <location line="-6457"/>
+        <location line="-6475"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>このネットワークインターフェース（VPN トンネルなど）のみを使用します。一覧から選ぶか、IP アドレスまたは 10.64.0.0/10 のようなサブネット（その範囲のアドレスを持つインターフェース）を入力してください。プロキシ経由の接続はバインドされません。</translation>
     </message>
@@ -6467,7 +6477,7 @@ Are you sure you want to continue?</source>
         <translation>IPv6 のピアやサーバーへ、定期的に変わる一時アドレス (RFC 4941) から接続します。オフ: 常に固定アドレスを使用し、ピアが通知したアドレスに到達できるようにします。</translation>
     </message>
     <message>
-        <location line="+53"/>
+        <location line="+62"/>
         <location line="+1336"/>
         <source>General</source>
         <translation>全般</translation>
@@ -7295,7 +7305,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>アップロードスロット（オーバーヘッドなし）</translation>
     </message>
     <message>
-        <location line="-1511"/>
+        <location line="-1542"/>
         <source>Country flags (IP2Country)</source>
         <translation>国旗 (IP2Country)</translation>
     </message>
@@ -7345,7 +7355,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation type="vanished">無料の &lt;a href=&quot;https://www.maxmind.com/en/geolite2/signup&quot;&gt;MaxMind GeoLite2&lt;/a&gt; アカウントが必要です。この製品には MaxMind が作成した GeoLite2 データが含まれています。</translation>
     </message>
     <message>
-        <location line="+334"/>
+        <location line="+365"/>
         <source>Use for news servers</source>
         <translation>ニュースサーバーにも使用する</translation>
     </message>
@@ -8744,11 +8754,21 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>無効</translation>
     </message>
     <message>
+        <location line="+2708"/>
+        <source>Automatic</source>
+        <translation>自動</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>about %1 slots</source>
+        <translation>約 %1 スロット</translation>
+    </message>
+    <message>
         <source>Autotake eD2K links only during runtime</source>
         <translation type="vanished">実行中のみ eD2K リンクを自動取得</translation>
     </message>
     <message>
-        <location line="+21"/>
+        <location line="-2693"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>クレジットシステムを使用（アップロード者を報酬）</translation>
     </message>
@@ -9083,7 +9103,7 @@ News server connections switch over immediately.</source>
         <translation>「%1」は IP アドレスではありません。待ち受けアドレスは変更されませんでした。</translation>
     </message>
     <message>
-        <location line="+474"/>
+        <location line="+478"/>
         <source>File types</source>
         <translation>ファイルの種類</translation>
     </message>
@@ -9093,7 +9113,7 @@ News server connections switch over immediately.</source>
         <translation>.nzb ファイルの関連付けを更新できませんでした: %1</translation>
     </message>
     <message>
-        <location line="+579"/>
+        <location line="+584"/>
         <source>Port forwarding: %1</source>
         <translation>ポート転送: %1</translation>
     </message>
@@ -9148,17 +9168,17 @@ News server connections switch over immediately.</source>
         <translation>既定値に戻す</translation>
     </message>
     <message>
-        <location line="-4753"/>
+        <location line="-4762"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1345"/>
         <location line="+316"/>
-        <location line="+1917"/>
+        <location line="+1926"/>
         <source>Remove</source>
         <translation>削除</translation>
     </message>
     <message>
-        <location line="-5900"/>
+        <location line="-5909"/>
         <source>New eMule Qt version detected</source>
         <translation>新しい eMule Qt バージョンを検出しました</translation>
     </message>
@@ -9366,7 +9386,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1618"/>
-        <location line="+1955"/>
+        <location line="+1964"/>
         <source>Add</source>
         <translation>追加</translation>
     </message>
@@ -9379,7 +9399,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="vanished">値を入力：</translation>
     </message>
     <message>
-        <location line="-1918"/>
+        <location line="-1927"/>
         <source>Edit Value</source>
         <translation>値を編集</translation>
     </message>
@@ -9561,14 +9581,14 @@ Restart eMule for all connections to use the new proxy settings.</source>
     <name>eMule::SearchPanel</name>
     <message>
         <location filename="../src/gui/panels/SearchPanel.cpp" line="+303"/>
-        <location line="+942"/>
+        <location line="+952"/>
         <location line="+13"/>
-        <location line="+434"/>
+        <location line="+456"/>
         <source>Download</source>
         <translation>ダウンロード</translation>
     </message>
     <message>
-        <location line="-1369"/>
+        <location line="-1401"/>
         <source>Close All Searches</source>
         <translation>すべての検索を閉じる</translation>
     </message>
@@ -9784,12 +9804,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     <message>
         <location line="+34"/>
         <location line="+24"/>
-        <location line="+194"/>
+        <location line="+204"/>
         <source>Not connected to daemon — search cannot be started.</source>
         <translation>デーモンに接続していません — 検索を開始できません。</translation>
     </message>
     <message>
-        <location line="-161"/>
+        <location line="-171"/>
         <source>Search</source>
         <translation>検索</translation>
     </message>
@@ -9849,7 +9869,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>検索「%1」に失敗しました: %2</translation>
     </message>
     <message>
-        <location line="+75"/>
+        <location line="+85"/>
         <location line="+182"/>
         <source>Usenet search</source>
         <translation>Usenet 検索</translation>
@@ -9865,8 +9885,8 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>Usenet 検索: %1</translation>
     </message>
     <message>
-        <location line="-217"/>
-        <location line="+221"/>
+        <location line="-227"/>
+        <location line="+231"/>
         <source>No results</source>
         <translation>結果なし</translation>
     </message>
@@ -9958,7 +9978,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
     <message>
         <location line="+65"/>
         <location line="+7"/>
-        <location line="+927"/>
+        <location line="+949"/>
         <location line="+43"/>
         <source>Preview</source>
         <translation>プレビュー</translation>
@@ -9993,7 +10013,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>すべて</translation>
     </message>
     <message>
-        <location line="-1393"/>
+        <location line="-1415"/>
         <location line="+15"/>
         <location line="+10"/>
         <source>Mark as Spam</source>
@@ -10030,7 +10050,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>Web サービス</translation>
     </message>
     <message>
-        <location line="+933"/>
+        <location line="+955"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>プレビューは利用できません — Web サーバーが実行されていないか、ストリームトークンを受信していません。</translation>
     </message>

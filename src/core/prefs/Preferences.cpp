@@ -272,6 +272,7 @@ struct Preferences::Data {
     int hashingDiskLoad = 80;        // % of the time hashing may keep a disk busy (10-100, 100 = no limit)
     int extractMetaData = 1;         // 0=never, 1=MediaInfo library
     uint32 queueSize = 5000;         // Upload queue size (2000-50000)
+    uint32 uploadSlotTargetRate = 0; // KiB/s per upload slot (12-256), 0 = automatic
 
     // Upload SpeedSense (USS)
     bool dynUpEnabled = false;
@@ -1214,6 +1215,13 @@ void Preferences::setExtractMetaData(int val) { set(&Data::extractMetaData, val)
 uint32 Preferences::queueSize() const { return get(&Data::queueSize); }
 
 void Preferences::setQueueSize(uint32 val) { set(&Data::queueSize, val); }
+
+uint32 Preferences::uploadSlotTargetRate() const { return get(&Data::uploadSlotTargetRate); }
+
+void Preferences::setUploadSlotTargetRate(uint32 val)
+{
+    set(&Data::uploadSlotTargetRate, val ? std::clamp<uint32>(val, 12, 256) : 0);
+}
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Upload SpeedSense (USS)
@@ -3142,6 +3150,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("logWebServer"), logWebServer());
     prefs.insert(QStringLiteral("startCoreWithConsole"), startCoreWithConsole());
     prefs.insert(QStringLiteral("queueSize"), static_cast<qint64>(queueSize()));
+    prefs.insert(QStringLiteral("uploadSlotTargetRate"), static_cast<qint64>(uploadSlotTargetRate()));
     prefs.insert(QStringLiteral("rememberUploadQueue"), rememberUploadQueue());
     // USS
     prefs.insert(QStringLiteral("dynUpEnabled"), dynUpEnabled());
@@ -3349,6 +3358,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->logRawSocketPackets         = p.value(QStringLiteral("logRawSocketPackets")).toBool();
     m_data->logWebServer                = p.value(QStringLiteral("logWebServer")).toBool();
     m_data->queueSize                   = static_cast<uint32>(p.value(QStringLiteral("queueSize")).toInteger());
+    m_data->uploadSlotTargetRate        = static_cast<uint32>(p.value(QStringLiteral("uploadSlotTargetRate")).toInteger());
 
     // USS
     m_data->dynUpEnabled                       = p.value(QStringLiteral("dynUpEnabled")).toBool();
@@ -3463,6 +3473,10 @@ void Preferences::validate()
 
     // queueSize: clamp 2000–50000 (the Options slider)
     m_data->queueSize = std::clamp<uint32>(m_data->queueSize, 2000, 50000);
+
+    // uploadSlotTargetRate: 0 = automatic, else 12–256 KiB/s (the Options slider)
+    if (m_data->uploadSlotTargetRate != 0)
+        m_data->uploadSlotTargetRate = std::clamp<uint32>(m_data->uploadSlotTargetRate, 12, 256);
 
     // deadServerRetries: max 99 (the Options spin box); 0 = never disable, left alone
     m_data->deadServerRetries = std::min<uint32>(m_data->deadServerRetries, 99);
@@ -3668,6 +3682,7 @@ bool Preferences::load(const QString& filePath)
             m_data->maxDownload = b["maxDownload"].as<uint32>(m_data->maxDownload);
             m_data->minUpload = b["minUpload"].as<uint32>(m_data->minUpload);
             m_data->maxGraphUploadRate = b["maxGraphUploadRate"].as<uint32>(m_data->maxGraphUploadRate);
+            m_data->uploadSlotTargetRate = b["uploadSlotTargetRate"].as<uint32>(m_data->uploadSlotTargetRate);
             m_data->maxGraphDownloadRate = b["maxGraphDownloadRate"].as<uint32>(m_data->maxGraphDownloadRate);
             m_data->dynUpEnabled = b["dynUpEnabled"].as<bool>(m_data->dynUpEnabled);
             m_data->dynUpPingTolerance = b["dynUpPingTolerance"].as<int>(m_data->dynUpPingTolerance);
@@ -4775,6 +4790,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "maxDownload" << YAML::Value << m_data->maxDownload;
     out << YAML::Key << "minUpload" << YAML::Value << m_data->minUpload;
     out << YAML::Key << "maxGraphUploadRate" << YAML::Value << m_data->maxGraphUploadRate;
+    out << YAML::Key << "uploadSlotTargetRate" << YAML::Value << m_data->uploadSlotTargetRate;
     out << YAML::Key << "maxGraphDownloadRate" << YAML::Value << m_data->maxGraphDownloadRate;
     out << YAML::Key << "dynUpEnabled" << YAML::Value << m_data->dynUpEnabled;
     out << YAML::Key << "dynUpPingTolerance" << YAML::Value << m_data->dynUpPingTolerance;

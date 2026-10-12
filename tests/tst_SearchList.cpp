@@ -88,6 +88,7 @@ private slots:
     void newSearch_initializesCounters();
     void addToList_newParent();
     void addToList_duplicate_merges();
+    void changeSeq_stampsOnlyTheRowsThatChanged();
     void addToList_parentCountIsSumOfChildren();
     void addToList_duplicate_sameName_merges();
     void addToList_aichRoots_data();
@@ -239,6 +240,45 @@ void tst_SearchList::addToList_duplicate_merges()
     SearchFile* parent = list.searchFileByHash(hash, id);
     QVERIFY(parent != nullptr);
     QCOMPARE(parent->listChildCount(), uint32{2}); // original + new name
+}
+
+void tst_SearchList::changeSeq_stampsOnlyTheRowsThatChanged()
+{
+    // GetSearchResults sends the rows stamped after the client's last fetch. A row
+    // that keeps its stamp is not sent again; one that gets no stamp is never sent.
+    SearchList list;
+    SearchParams params;
+    const uint32 id = list.newSearch({}, params);
+
+    const auto add = [&](uint8 fill, const QString& name, uint32 ip) {
+        uint8 hash[16];
+        std::memset(hash, fill, 16);
+        QByteArray packet = buildSingleResultPacket(hash, name, 10000, 3);
+        SafeMemFile data(packet);
+        auto* file = new SearchFile(data, true, ip, 4661);
+        file->setSearchID(id);
+        list.addToList(file);
+    };
+    const auto stampOf = [&](uint8 fill) {
+        uint8 hash[16];
+        std::memset(hash, fill, 16);
+        return list.searchFileByHash(hash, id)->changeSeq();
+    };
+
+    QCOMPARE(list.changeSeq(), uint64{0});
+    add(0xA1, QStringLiteral("first.avi"), 0xC0A80001);
+    add(0xA2, QStringLiteral("second.avi"), 0xC0A80001);
+    const uint64 fetched = list.changeSeq();
+    QVERIFY(stampOf(0xA1) > 0);
+    QVERIFY(stampOf(0xA2) > stampOf(0xA1));
+    QCOMPARE(stampOf(0xA2), fetched);
+
+    // Another name for the first file: the stamp lands on its top-level row
+    const uint64 untouched = stampOf(0xA2);
+    add(0xA1, QStringLiteral("first.other.name.avi"), 0xC0A80002);
+    QVERIFY(stampOf(0xA1) > fetched);
+    QCOMPARE(stampOf(0xA2), untouched);
+    QCOMPARE(list.changeSeq(), stampOf(0xA1));
 }
 
 using ResultRows = QList<QPair<int, int>>;

@@ -194,6 +194,10 @@ public:
     /// Get the current search file type filter.
     [[nodiscard]] const QString& currentResultFileType() const { return m_resultFileType; }
 
+    /// Stamp of the newest change in any list. A client that remembers it asks only
+    /// for the rows stamped later (SearchFile::changeSeq()).
+    [[nodiscard]] uint64 changeSeq() const { return m_changeSeq; }
+
     /// Iterate over top-level search results for a given search ID.
     /// The callback receives a const pointer to each top-level SearchFile.
     /// Returns true if the search ID was found, false otherwise.
@@ -289,6 +293,9 @@ private:
     /// first note on it what the index knew until now.
     static void noteSeen(SearchFile& file, const SearchListEntry& entry, bool newToSearch);
 
+    /// Stamp the top-level row of @p file as changed. Before every result signal.
+    void stamp(SearchFile* file);
+
     /// Find the SearchListEntry for a given search ID.
     [[nodiscard]] SearchListEntry* findEntry(uint32 searchID);
     [[nodiscard]] const SearchListEntry* findEntry(uint32 searchID) const;
@@ -313,6 +320,7 @@ private:
 
     // --- Data ---
     std::vector<SearchListEntry> m_fileLists;
+    uint64 m_changeSeq = 0;
     /// Rows of restored tabs, searchID 0, oldest first. In no list: never pushed.
     std::list<std::unique_ptr<SearchFile>> m_restoredFiles;
 

@@ -387,6 +387,8 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_portMapLeaseSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_fileBufferSlider, &QSlider::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_queueSizeSlider, &QSlider::valueChanged, this, &OptionsDialog::markDirty);
+    connect(m_slotRateCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_slotRateSlider, &QSlider::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_dynUpEnabledCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_dynUpMinUploadSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
     connect(m_dynUpPingToleranceSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
@@ -1131,6 +1133,28 @@ QWidget* OptionsDialog::createConnectionPage()
     m_uploadLimitSlider->setRange(1, 250);
     limLayout->addWidget(m_uploadLimitSlider, 3, 0, 1, 2);
 
+    // Target rate per upload slot: unchecked = automatic
+    m_slotRateCheck = new QCheckBox(tr("Target rate per upload slot"), limGroup);
+    m_slotRateCheck->setToolTip(
+        tr("A higher rate opens fewer upload slots: the upload limit divided by this "
+           "rate, never fewer than two. Unchecked, the rate grows with the number of slots."));
+    limLayout->addWidget(m_slotRateCheck, 4, 0);
+    m_slotRateLabel = new QLabel(limGroup);
+    m_slotRateLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_slotRateLabel->setMinimumWidth(60);
+    limLayout->addWidget(m_slotRateLabel, 4, 1);
+    m_slotRateSlider = new QSlider(Qt::Horizontal, limGroup);
+    // KiB/s, the core's range
+    m_slotRateSlider->setRange(12, 256);
+    m_slotRateSlider->setValue(20);
+    m_slotRateSlider->setEnabled(false);
+    limLayout->addWidget(m_slotRateSlider, 5, 0, 1, 2);
+    // Own row: beside the checkbox it would widen the group past the page
+    m_slotCountLabel = new QLabel(limGroup);
+    m_slotCountLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_slotCountLabel->setEnabled(false);
+    limLayout->addWidget(m_slotCountLabel, 6, 0, 1, 2);
+
     row1->addWidget(limGroup);
     layout->addLayout(row1);
 
@@ -1285,6 +1309,15 @@ QWidget* OptionsDialog::createConnectionPage()
         m_uploadLimitSlider->setEnabled(checked);
         m_uploadLimitLabel->setEnabled(checked);
     });
+    connect(m_slotRateCheck, &QCheckBox::toggled, this, [this](bool on) {
+        m_slotRateSlider->setEnabled(on);
+        updateSlotRateLabel();
+    });
+    connect(m_slotRateSlider, &QSlider::valueChanged, this, &OptionsDialog::updateSlotRateLabel);
+    // The slot estimate follows the upload limit
+    connect(m_uploadLimitSlider, &QSlider::valueChanged, this, &OptionsDialog::updateSlotRateLabel);
+    connect(m_uploadLimitCheck, &QCheckBox::toggled, this, &OptionsDialog::updateSlotRateLabel);
+    updateSlotRateLabel();
 
     // --- Wire UDP disable checkbox → port spin ---
     connect(m_udpDisableCheck, &QCheckBox::toggled, this, [this](bool checked) {
@@ -6715,6 +6748,8 @@ void OptionsDialog::saveSettings()
         req.append(static_cast<qint64>(m_dynUpNumPingsSpin->value()));
         req.append(QStringLiteral("queueSize"));
         req.append(static_cast<qint64>(m_queueSizeSlider->value()) * 100); // slider to count
+        req.append(QStringLiteral("uploadSlotTargetRate"));
+        req.append(static_cast<qint64>(m_slotRateCheck->isChecked() ? m_slotRateSlider->value() : 0));
 
         req.append(QStringLiteral("allocFullFile"));
         req.append(m_allocFullFileCheck->isChecked());
@@ -7010,6 +7045,8 @@ void OptionsDialog::saveSettings()
         thePrefs.setDynUpGoingDownDivider(m_dynUpGoingDownSpin->value());
         thePrefs.setDynUpNumberOfPings(m_dynUpNumPingsSpin->value());
         thePrefs.setQueueSize(static_cast<uint32>(m_queueSizeSlider->value()) * 100);
+        thePrefs.setUploadSlotTargetRate(
+            m_slotRateCheck->isChecked() ? static_cast<uint32>(m_slotRateSlider->value()) : 0);
 
         thePrefs.setAllocFullFile(m_allocFullFileCheck->isChecked());
 #ifdef Q_OS_WIN
@@ -7412,6 +7449,11 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
         static_cast<int>(prefs.value(QStringLiteral("portMapLeaseSecs")).toInteger(3600)));
     m_fileBufferSlider->setValue(static_cast<int>(prefs.value(QStringLiteral("fileBufferSize")).toInteger(245760)) / 16384);
     m_queueSizeSlider->setValue(static_cast<int>(prefs.value(QStringLiteral("queueSize")).toInteger(5000)) / 100);
+    const auto slotRate = static_cast<int>(prefs.value(QStringLiteral("uploadSlotTargetRate")).toInteger(0));
+    m_slotRateCheck->setChecked(slotRate > 0);
+    if (slotRate > 0)
+        m_slotRateSlider->setValue(slotRate);
+    updateSlotRateLabel();
 
     m_allocFullFileCheck->setChecked(prefs.value(QStringLiteral("allocFullFile")).toBool());
 #ifdef Q_OS_WIN
@@ -7830,6 +7872,22 @@ void OptionsDialog::editFilenameCleanups()
     if (words != m_filenameCleanups) {
         m_filenameCleanups = words;
         markDirty();
+    }
+}
+
+void OptionsDialog::updateSlotRateLabel()
+{
+    const bool on = m_slotRateCheck->isChecked();
+    const int rate = m_slotRateSlider->value();
+    m_slotRateLabel->setText(on ? limitText(rate) : tr("Automatic"));
+
+    // Same division as UploadQueue::slotLadderAllows, two slots at least.
+    // No estimate without an upload limit: the count then follows the measured rate.
+    if (on && m_uploadLimitCheck->isChecked()) {
+        m_slotCountLabel->setText(
+            tr("about %1 slots").arg(std::max(m_uploadLimitSlider->value() / rate, 2)));
+    } else {
+        m_slotCountLabel->clear();
     }
 }
 

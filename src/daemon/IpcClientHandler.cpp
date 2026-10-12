@@ -1037,14 +1037,30 @@ void IpcClientHandler::handleGetSearchResults(const IpcMessage& msg)
     }
 
     const auto searchID = static_cast<uint32>(msg.fieldInt(0));
+    // A running search is refetched several times a second: send only what changed
+    // since the stamp the client holds. A stamp from before a restart is ahead of
+    // ours and means "everything".
+    const uint64 stampNow = theApp.searchList->changeSeq();
+    auto since = static_cast<uint64>(std::max<qint64>(msg.fieldInt(1), 0));
+    if (since > stampNow)
+        since = 0;
+
     QCborArray results;
-    theApp.searchList->forEachResult(searchID, [&results](const SearchFile* sf) {
+    qint64 total = 0;
+    theApp.searchList->forEachResult(searchID, [&results, &total, since](const SearchFile* sf) {
+        ++total;
+        if (since != 0 && sf->changeSeq() <= since)
+            return;
         QCborMap m = toCbor(*sf);
         m.insert(QStringLiteral("knownType"),
                  static_cast<int>(determineKnownType(sf->fileHash())));
         results.append(m);
     });
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(results)));
+    // total lets the client notice a row that left: a delta cannot say so
+    IpcMessage reply = IpcMessage::makeResult(msg.seqId(), true, QCborValue(results));
+    reply.append(static_cast<qint64>(stampNow));
+    reply.append(total);
+    sendMessage(reply);
 }
 
 void IpcClientHandler::handleSearchMore(const IpcMessage& msg)
@@ -3884,6 +3900,8 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setStartCoreWithConsole(val.toBool());
     else if (key == QStringLiteral("queueSize"))
         thePrefs.setQueueSize(static_cast<uint32>(val.toInteger()));
+    else if (key == QStringLiteral("uploadSlotTargetRate"))
+        thePrefs.setUploadSlotTargetRate(static_cast<uint32>(val.toInteger()));
     else if (key == QStringLiteral("rememberUploadQueue"))
         thePrefs.setRememberUploadQueue(val.toBool());
     // USS

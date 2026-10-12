@@ -100,6 +100,7 @@ private slots:
     void anUnlimitedLimitParksAtTheCapacity();
     void theIpcLogBoxShowsTheStoredValue();
     void aLargeQueueSizeSurvivesTheSlider();
+    void theSlotTargetRateSurvivesTheSlider();
     void aLargeConnectionLimitSurvivesTheSpin();
     void extendedValuesComeFromThePrefsNotFallbacks();
     void generalPageControlsEnableApply();
@@ -327,7 +328,7 @@ void TestOptionsDialogSizing::anUnlimitedLimitParksAtTheCapacity()
 
     const auto sliders =
         stackOf(dlg)->widget(OptionsDialog::PageConnection)->findChildren<QSlider*>();
-    QCOMPARE(sliders.size(), 2);   // download, then upload
+    QCOMPARE(sliders.size(), 3);   // download, upload, slot rate
     QSlider* down = sliders.front();
     QVERIFY(!down->isEnabled());
     QCOMPARE(down->value(), 300);
@@ -438,6 +439,36 @@ void TestOptionsDialogSizing::aLargeQueueSizeSurvivesTheSlider()
     QCOMPARE(queue->minimum(), 20);
     QCOMPARE(queue->value(), 420);
     thePrefs.setQueueSize(5000);
+}
+
+/// Unchecked = automatic (0); a stored rate ticks the box and lands on the slider.
+void TestOptionsDialogSizing::theSlotTargetRateSurvivesTheSlider()
+{
+    const auto slotSlider = [](OptionsDialog& dlg) -> QSlider* {
+        for (QSlider* s : stackOf(dlg)->widget(OptionsDialog::PageConnection)->findChildren<QSlider*>())
+            if (s->maximum() == 256)   // KiB/s
+                return s;
+        return nullptr;
+    };
+
+    thePrefs.setUploadSlotTargetRate(0);
+    {
+        OptionsDialog dlg(nullptr, nullptr);
+        QSlider* slider = slotSlider(dlg);
+        QVERIFY(slider);
+        QCOMPARE(slider->minimum(), 12);
+        QVERIFY(!slider->isEnabled());
+    }
+
+    thePrefs.setUploadSlotTargetRate(200);
+    {
+        OptionsDialog dlg(nullptr, nullptr);
+        QSlider* slider = slotSlider(dlg);
+        QVERIFY(slider);
+        QVERIFY(slider->isEnabled());
+        QCOMPARE(slider->value(), 200);
+    }
+    thePrefs.setUploadSlotTargetRate(0);
 }
 
 /// The spin stopped at 10 000, so a larger stored connection limit was cut down by

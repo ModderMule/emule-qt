@@ -151,6 +151,8 @@ private:
     void saveSettings();
     void fillDaemonSettings(const QCborMap& prefs);
     void fillDaemonSettingsFromPrefs();
+    /// Value text for the slot-rate slider and the slot count it yields.
+    void updateSlotRateLabel();
     void applyWizardResult(const QCborMap& applied);
     void loadSchedulerData();
     void saveSchedulerData();
@@ -311,6 +313,10 @@ private:
     QLabel*    m_uploadLimitLabel = nullptr;
     QSlider*   m_downloadLimitSlider = nullptr;
     QSlider*   m_uploadLimitSlider = nullptr;
+    QCheckBox* m_slotRateCheck = nullptr;
+    QLabel*    m_slotRateLabel = nullptr;
+    QSlider*   m_slotRateSlider = nullptr;
+    QLabel*    m_slotCountLabel = nullptr;
     QSpinBox*  m_tcpPortSpin = nullptr;
     QSpinBox*  m_udpPortSpin = nullptr;
     QCheckBox* m_udpDisableCheck = nullptr;

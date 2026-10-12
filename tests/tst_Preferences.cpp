@@ -202,6 +202,7 @@ private slots:
         QFile seed(file);
         QVERIFY(seed.open(QIODevice::WriteOnly));
         seed.write("network:\n  maxServedBuddies: -1\n"
+                   "bandwidth:\n  uploadSlotTargetRate: 5\n"
                    "transfer:\n  queueSize: 5\n"
                    "serverConnection:\n  deadServerRetries: 500\n"
                    "webserver:\n  sessionTimeout: 0\n");
@@ -211,8 +212,31 @@ private slots:
         loaded.load(file);
         QCOMPARE(loaded.maxServedBuddies(), static_cast<uint16>(1));   // not wrapped to 32
         QCOMPARE(loaded.queueSize(), uint32{2000});
+        QCOMPARE(loaded.uploadSlotTargetRate(), uint32{12});
         QCOMPARE(loaded.deadServerRetries(), uint32{99});
         QCOMPARE(loaded.webServerSessionTimeout(), 1);
+    }
+
+    // 0 = automatic and must survive; a set rate round-trips through YAML and IPC
+    void uploadSlotTargetRate_roundTrips()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("prefs.yaml"));
+
+        Preferences prefs;
+        QCOMPARE(prefs.uploadSlotTargetRate(), uint32{0});
+        QCOMPARE(prefs.toIpcMap().value(QStringLiteral("uploadSlotTargetRate")).toInteger(-1), 0);
+
+        prefs.setUploadSlotTargetRate(40);
+        QVERIFY(prefs.saveTo(file));
+
+        Preferences loaded;
+        loaded.load(file);
+        QCOMPARE(loaded.uploadSlotTargetRate(), uint32{40});
+
+        Preferences mirror;
+        mirror.updateFromCbor(loaded.toIpcMap());
+        QCOMPARE(mirror.uploadSlotTargetRate(), uint32{40});
     }
 
     // 0 = never disable a server; no Options value, but valid in the file

@@ -55,6 +55,7 @@ static void unixSignalHandler(int)
 #include "panels/TransferPanel.h"
 #include "panels/UsenetPanel.h"
 #include "prefs/Preferences.h"
+#include "utils/BundleEnvironment.h"
 #include "utils/CrashHandler.h"
 #include "utils/Log.h"
 
@@ -163,6 +164,9 @@ QIcon appIcon()
 
 int main(int argc, char* argv[])
 {
+    // Before anything is started from here: the core, xdg-open, a video player
+    eMule::restoreSystemLibraryPath();
+
     QApplication app(argc, argv);
 
     // Before anything can log: scripts/debug-gui.sh runs the daemon and the GUI
@@ -275,6 +279,8 @@ int main(int argc, char* argv[])
     // After the seeding above: the daemon seeds the same files. A core that is
     // already there, or cannot be judged, is left to the connect path below.
     auto weOwnDaemon = std::make_shared<bool>(false);
+    // The connection to the core dropped and has not come back yet
+    auto daemonLost = std::make_shared<bool>(false);
     if (eMule::thePrefs.ipcEnabled() && !isRemoteCoreAddress(eMule::thePrefs.ipcListenAddress())) {
         const QString earlyPath = resolveDaemonPath();
         if (!earlyPath.isEmpty() && earlyPath != QStringLiteral("local")
@@ -615,28 +621,38 @@ int main(int argc, char* argv[])
             });
         } else if (!isRemote && !daemonPath.isEmpty()) {
             QObject::connect(&ipcClient, &eMule::IpcClient::connectionFailed,
-                             &app, [&ipcClient, daemonPath, weOwnDaemon, wizardAllowed = !cli.screenshotMode()](const QString& error) {
+                             &app, [&ipcClient, daemonPath, weOwnDaemon, daemonLost, wizardAllowed = !cli.screenshotMode()](const QString& error) {
                 if (ipcClient.daemonStarting())
                     return;   // launched, still loading
                 eMule::logWarning(QStringLiteral("Daemon not reachable (%1)").arg(error));
                 if (ipcClient.daemonRestarting())
                     return;   // it starts itself again
+                // Ours and never lost: it was launched and has not come up. Not twice.
+                if (*weOwnDaemon && !*daemonLost)
+                    return;
+                // Something still holds the port: the core is alive, only too busy
+                // to answer. A second one could not bind anyway.
+                if (!ipcPortFree(eMule::thePrefs.ipcListenAddress(), eMule::thePrefs.ipcPort()))
+                    return;
                 // Read at launch time: a relaunch after the wizard must connect
                 const bool hold = wizardAllowed && !eMule::theUiState.firstStartWizardDone();
-                if (!*weOwnDaemon && launchDaemon(daemonPath, hold)) {
+                if (launchDaemon(daemonPath, hold)) {
                     *weOwnDaemon = true;
+                    *daemonLost = false;
                     ipcClient.expectDaemonStart();
                 }
             });
-            // When the daemon we launched crashes, reset the flag so the
-            // connectionFailed handler above will relaunch it on the next
-            // failed reconnect attempt.
+            // A lost connection only allows the relaunch above; it is not the end of
+            // the daemon. Giving up ownership here left a core that was merely slow
+            // to answer a keepalive running after quit, for every later session too.
             QObject::connect(&ipcClient, &eMule::IpcClient::disconnected,
-                             &app, [&ipcClient, weOwnDaemon]() {
-                // A requested restart brings back the daemon we own
-                if (*weOwnDaemon && !ipcClient.daemonRestarting())
-                    *weOwnDaemon = false;
+                             &app, [&ipcClient, daemonLost]() {
+                // A requested restart brings back the daemon by itself
+                if (!ipcClient.daemonRestarting())
+                    *daemonLost = true;
             });
+            QObject::connect(&ipcClient, &eMule::IpcClient::connected,
+                             &app, [daemonLost]() { *daemonLost = false; });
         } else {
             QObject::connect(&ipcClient, &eMule::IpcClient::connectionFailed,
                              &app, [](const QString& error) {

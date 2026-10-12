@@ -149,12 +149,22 @@ public:
     [[nodiscard]] uint8 pubKeyLen() const { return m_myPublicKeyLen; }
     [[nodiscard]] const uint8* publicKey() const { return m_myPublicKey.data(); }
 
-private:
-    void initializeCrypting();
-    static bool createKeyPair(const QString& keyPath);
+    /// What a cryptkey.dat holds, without adopting it.
+    struct KeyFileInfo {
+        bool ok = false;     ///< loads, RSAKEYSIZE bits, signs and verifies
+        bool pkcs8 = false;  ///< PKCS#8 = written by MFC eMule; PKCS#1 = generated here
+        int bits = 0;
+        QString error;       ///< set when !ok
+    };
+    [[nodiscard]] static KeyFileInfo inspectKeyFile(const QString& keyPath);
 
+private:
     struct EvpKeyDeleter { void operator()(evp_pkey_st* p) const; };
     using EvpKeyPtr = std::unique_ptr<evp_pkey_st, EvpKeyDeleter>;
+
+    void initializeCrypting();
+    static bool createKeyPair(const QString& keyPath);
+    static EvpKeyPtr loadKeyFile(const QString& keyPath, bool* pkcs8, QString* error);
 
     std::unordered_map<HashKeyOwn, std::unique_ptr<ClientCredits>> m_clients;
     std::chrono::steady_clock::time_point m_lastSaved{};

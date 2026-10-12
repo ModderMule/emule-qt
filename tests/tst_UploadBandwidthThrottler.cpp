@@ -95,6 +95,7 @@ private slots:
     void sentByteAccounting();
     void bytesSentOutsideTheLoopAreCounted();
     void slotLimit_calculation();
+    void slotLimit_followsTheUserTargetRate();
     void pause_resume();
     void idleDoesNotSpin();
     void idleWakesFastOnData();
@@ -188,6 +189,20 @@ void tst_UploadBandwidthThrottler::slotLimit_calculation()
     QVERIFY(slots200k >= MIN_UP_CLIENTS_ALLOWED + 3);
     QVERIFY(slots200k > slots50k);
 
+    throttler.endThread();
+}
+
+void tst_UploadBandwidthThrottler::slotLimit_followsTheUserTargetRate()
+{
+    UploadBandwidthThrottler throttler;
+    const uint32 saved = thePrefs.uploadSlotTargetRate();
+
+    // 20 KiB/s target, 15 KiB/s minimum: 204'800 / 15'360 = 13, no boost, no floor
+    thePrefs.setUploadSlotTargetRate(20);
+    QCOMPARE(throttler.getSlotLimit(200 * 1024), 13u);
+    QCOMPARE(throttler.getSlotLimit(20 * 1024), static_cast<uint32>(MIN_UP_CLIENTS_ALLOWED));
+
+    thePrefs.setUploadSlotTargetRate(saved);
     throttler.endThread();
 }
 

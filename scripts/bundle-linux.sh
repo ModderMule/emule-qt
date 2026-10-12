@@ -85,12 +85,17 @@ echo "  emuleqt-mcp"
 
 # Replace a staged binary by a launcher that points it at the bundled libs.
 # exec, and nothing printed: emuleqt-mcp speaks JSON-RPC on stdout.
+# The two EMULEQT_ variables let the binary hand the caller's path back to what it
+# starts itself (utils/BundleEnvironment.h): xdg-open, a file manager or a player
+# running on our glib and OpenSSL dies in the loader on a newer distribution.
 wrap_launcher() {
     local name="$1"
     mv "$STAGE_DIR/$name" "$STAGE_DIR/$name.bin"
     cat > "$STAGE_DIR/$name" <<LAUNCHER
 #!/usr/bin/env bash
 SCRIPT_DIR="\$(cd "\$(dirname "\$0")" && pwd)"
+export EMULEQT_BUNDLE_LIBS="\$SCRIPT_DIR/lib"
+export EMULEQT_ORIG_LD_LIBRARY_PATH="\${LD_LIBRARY_PATH-}"
 export LD_LIBRARY_PATH="\$SCRIPT_DIR/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
 exec "\$SCRIPT_DIR/$name.bin" "\$@"
 LAUNCHER

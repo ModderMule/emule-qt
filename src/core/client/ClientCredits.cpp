@@ -15,6 +15,7 @@
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
 #include <openssl/sha.h>
+#include <openssl/x509.h>
 #include <openssl/err.h>
 
 #include <QDir>
@@ -511,48 +512,12 @@ void ClientCreditsList::initializeCrypting()
         }
     }
 
-    // Load the private key from base64-DER file
-    QFile file(keyPath);
-    if (!file.open(QIODevice::ReadOnly)) {
-        logError(QStringLiteral("Cannot open key file: %1").arg(keyPath));
+    QString error;
+    m_signKey = loadKeyFile(keyPath, nullptr, &error);
+    if (!m_signKey) {
+        logError(error);
         return;
     }
-
-    QByteArray base64Data = file.readAll();
-    file.close();
-
-    QByteArray derData = QByteArray::fromBase64(base64Data);
-    if (derData.isEmpty()) {
-        logError(QStringLiteral("Key file is empty or invalid base64"));
-        return;
-    }
-
-    // Parse the private key from DER
-    const uint8* derPtr = reinterpret_cast<const uint8*>(derData.constData());
-    EVP_PKEY* rawKey = d2i_PrivateKey(EVP_PKEY_RSA, nullptr, &derPtr, derData.size());
-    if (!rawKey) {
-        // OpenSSL 3.x rejects RSA keys < 512 bits via the provider layer.
-        // Fall back to legacy decoder for existing 384-bit cryptkey.dat files.
-        ERR_clear_error();
-        derPtr = reinterpret_cast<const uint8*>(derData.constData());
-        RSA* rsa = d2i_RSAPrivateKey(nullptr, &derPtr, derData.size());
-        if (rsa) {
-            rawKey = EVP_PKEY_new();
-            if (rawKey && EVP_PKEY_assign_RSA(rawKey, rsa) > 0) {
-                // rsa now owned by rawKey
-            } else {
-                EVP_PKEY_free(rawKey);
-                RSA_free(rsa);
-                rawKey = nullptr;
-            }
-        }
-        if (!rawKey) {
-            logError(QStringLiteral("Failed to load RSA private key from %1").arg(keyPath));
-            return;
-        }
-    }
-
-    m_signKey.reset(rawKey);
 
     // Extract the public key in X.509 SubjectPublicKeyInfo format, matching
     // CryptoPP's X509PublicKey::Save() used by MFC eMule.  For 384-bit RSA
@@ -571,6 +536,38 @@ void ClientCreditsList::initializeCrypting()
 
     logInfo(QStringLiteral("RSA secure identification initialized (public key: %1 bytes)")
                 .arg(m_myPublicKeyLen));
+}
+
+ClientCreditsList::KeyFileInfo ClientCreditsList::inspectKeyFile(const QString& keyPath)
+{
+    KeyFileInfo info;
+    const EvpKeyPtr key = loadKeyFile(keyPath, &info.pkcs8, &info.error);
+    if (!key)
+        return info;
+
+    const RSA* rsa = EVP_PKEY_get0_RSA(key.get());
+    info.bits = rsa ? RSA_bits(rsa) : 0;
+    if (info.bits != RSAKEYSIZE) {
+        info.error = QStringLiteral("Key in %1 has %2 bits, expected %3")
+                         .arg(keyPath).arg(info.bits).arg(RSAKEYSIZE);
+        return info;
+    }
+
+    // Self-test with the calls createSignature() / verifyIdent() use
+    static constexpr char kProbe[] = "eMule secure ident self-test";
+    uint8 hash[SHA_DIGEST_LENGTH];
+    SHA1(reinterpret_cast<const uint8*>(kProbe), sizeof(kProbe), hash);
+    std::vector<uint8> sig(static_cast<std::size_t>(RSA_size(rsa)));
+    unsigned int sigLen = 0;
+    if (RSA_sign(NID_sha1, hash, SHA_DIGEST_LENGTH, sig.data(), &sigLen, const_cast<RSA*>(rsa)) != 1
+        || RSA_verify(NID_sha1, hash, SHA_DIGEST_LENGTH, sig.data(), sigLen, const_cast<RSA*>(rsa)) != 1) {
+        ERR_clear_error();
+        info.error = QStringLiteral("Key in %1 fails the sign/verify self-test").arg(keyPath);
+        return info;
+    }
+
+    info.ok = true;
+    return info;
 }
 
 uint8 ClientCreditsList::createSignature(ClientCredits* target, uint8* output, uint8 maxSize,
@@ -753,6 +750,65 @@ bool ClientCreditsList::verifyIdent(ClientCredits* target, const uint8* signatur
     }
 
     return ok;
+}
+
+ClientCreditsList::EvpKeyPtr ClientCreditsList::loadKeyFile(const QString& keyPath, bool* pkcs8,
+                                                            QString* error)
+{
+    if (pkcs8)
+        *pkcs8 = false;
+    const auto fail = [error](const QString& why) {
+        ERR_clear_error();
+        if (error)
+            *error = why;
+        return EvpKeyPtr{};
+    };
+
+    QFile file(keyPath);
+    if (!file.open(QIODevice::ReadOnly))
+        return fail(QStringLiteral("Cannot open key file: %1").arg(keyPath));
+
+    // Base64 DER; MFC's encoder wraps lines, the decoder skips the breaks
+    const QByteArray derData = QByteArray::fromBase64(file.readAll());
+    file.close();
+    if (derData.isEmpty())
+        return fail(QStringLiteral("Key file %1 is empty or invalid base64").arg(keyPath));
+
+    // Always a legacy RSA struct: OpenSSL 3.x providers reject RSA keys < 512 bits.
+    // MFC (CryptoPP DEREncode) writes PKCS#8 PrivateKeyInfo, createKeyPair() PKCS#1.
+    const auto* der = reinterpret_cast<const uint8*>(derData.constData());
+    const auto derLen = static_cast<long>(derData.size());
+    RSA* rsa = nullptr;
+
+    const uint8* ptr = der;
+    if (PKCS8_PRIV_KEY_INFO* p8 = d2i_PKCS8_PRIV_KEY_INFO(nullptr, &ptr, derLen)) {
+        const unsigned char* inner = nullptr;
+        int innerLen = 0;
+        const X509_ALGOR* alg = nullptr;
+        if (PKCS8_pkey_get0(nullptr, &inner, &innerLen, &alg, p8) == 1) {
+            const ASN1_OBJECT* oid = nullptr;
+            X509_ALGOR_get0(&oid, nullptr, nullptr, alg);
+            if (OBJ_obj2nid(oid) == NID_rsaEncryption)
+                rsa = d2i_RSAPrivateKey(nullptr, &inner, innerLen);
+        }
+        PKCS8_PRIV_KEY_INFO_free(p8);
+        if (rsa && pkcs8)
+            *pkcs8 = true;
+    }
+    if (!rsa) {
+        ERR_clear_error();
+        ptr = der;
+        rsa = d2i_RSAPrivateKey(nullptr, &ptr, derLen);
+    }
+    if (!rsa)
+        return fail(QStringLiteral("Failed to load RSA private key from %1").arg(keyPath));
+
+    EvpKeyPtr key(EVP_PKEY_new());
+    if (!key || EVP_PKEY_assign_RSA(key.get(), rsa) <= 0) {
+        RSA_free(rsa);
+        return fail(QStringLiteral("Failed to load RSA private key from %1").arg(keyPath));
+    }
+    return key; // rsa now owned by key
 }
 
 } // namespace eMule

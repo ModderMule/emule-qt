@@ -3,12 +3,15 @@
 
 #include "TestHelpers.h"
 #include "client/ClientCredits.h"
+#include "prefs/LegacyIdentityImport.h"
 #include "prefs/Preferences.h"
 #include "utils/OtherFunctions.h"
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
 #include "utils/TimeUtils.h"
 
+#include <QDir>
+#include <QFile>
 #include <QTest>
 
 #include <cstring>
@@ -61,6 +64,14 @@ private slots:
     void crypto_signVerifyMixedIPKinds();
     void crypto_twoPartyCrossVerify();
     void cryptoAvailable_afterInit();
+
+    // preferences.dat identity import
+    void inspectKeyFile_reportsEncoding();
+    void import_success();
+    void import_noFile();
+    void import_alreadyCurrent();
+    void import_rejects_data();
+    void import_rejects();
 };
 
 static uint8 testHash[16] = {
@@ -735,6 +746,226 @@ void tst_ClientCredits::waitTime_ipv6AddressChangeRestartsTheUnsecureWait()
 
     QVERIFY2(getTickCount() - c.secureWaitStartTime(elsewhere) < SEC2MS(5),
              "another IPv6 address inherited the wait time");
+}
+
+// ---------------------------------------------------------------------------
+// preferences.dat identity import
+// ---------------------------------------------------------------------------
+
+namespace {
+
+using UserHash = std::array<uint8, 16>;
+
+// Well-formed eMule hash: markers at [5] and [14], no symmetry
+constexpr UserHash kLegacyHash = {0x3A, 0x91, 0x07, 0xC4, 0x5E, 14, 0xB2, 0x68,
+                                  0x1D, 0xF3, 0x84, 0x29, 0x7B, 0xE6, 111, 0x50};
+
+QByteArray derLength(qsizetype len)
+{
+    if (len < 0x80)
+        return QByteArray(1, static_cast<char>(len));
+    if (len < 0x100)
+        return QByteArray("\x81", 1) + static_cast<char>(len);
+    return QByteArray("\x82", 1) + static_cast<char>(len >> 8) + static_cast<char>(len & 0xFF);
+}
+
+/// PKCS#1 RSAPrivateKey → PKCS#8 PrivateKeyInfo, as CryptoPP's DEREncode writes it.
+QByteArray wrapPkcs8(const QByteArray& pkcs1)
+{
+    // version 0, AlgorithmIdentifier { rsaEncryption, NULL }
+    static const QByteArray head = QByteArray::fromHex("020100300d06092a864886f70d0101010500");
+    const QByteArray body = head + QByteArray("\x04", 1) + derLength(pkcs1.size()) + pkcs1;
+    return QByteArray("\x30", 1) + derLength(body.size()) + body;
+}
+
+void writeFile(const QString& path, const QByteArray& data)
+{
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    QCOMPARE(f.write(data), data.size());
+}
+
+/// Key generated here (PKCS#1, one base64 line). Returns its public key.
+QByteArray writeOwnKey(const QString& dir)
+{
+    thePrefs.setConfigDir(dir);
+    ClientCreditsList list;
+    return QByteArray(reinterpret_cast<const char*>(list.publicKey()), list.pubKeyLen());
+}
+
+/// Same key the way MFC stores it: PKCS#8, base64 wrapped at 72 columns.
+QByteArray writeMfcKey(const QString& dir)
+{
+    const QByteArray pub = writeOwnKey(dir);
+    const QString path = QDir(dir).filePath(QStringLiteral("cryptkey.dat"));
+    QFile in(path);
+    if (!in.open(QIODevice::ReadOnly))
+        return {};
+    const QByteArray b64 = wrapPkcs8(QByteArray::fromBase64(in.readAll())).toBase64();
+    in.close();
+
+    QByteArray wrapped;
+    for (qsizetype i = 0; i < b64.size(); i += 72)
+        wrapped += b64.mid(i, 72) + '\n';
+    writeFile(path, wrapped);
+    return pub;
+}
+
+/// MFC Preferences_Ext_Struct: version, hash, WINDOWPLACEMENT (44 bytes).
+QByteArray legacyPrefsDat(const UserHash& hash, uint8 version = PREFFILE_VERSION)
+{
+    QByteArray data(1, static_cast<char>(version));
+    data.append(reinterpret_cast<const char*>(hash.data()), static_cast<qsizetype>(hash.size()));
+    data.append(QByteArray(44, '\x2C'));
+    return data;
+}
+
+} // namespace
+
+void tst_ClientCredits::inspectKeyFile_reportsEncoding()
+{
+    TempDir tmp;
+    const QString keyPath = tmp.filePath(QStringLiteral("cryptkey.dat"));
+
+    writeOwnKey(tmp.path());
+    auto info = ClientCreditsList::inspectKeyFile(keyPath);
+    QVERIFY2(info.ok, qPrintable(info.error));
+    QVERIFY(!info.pkcs8);
+    QCOMPARE(info.bits, RSAKEYSIZE);
+
+    writeMfcKey(tmp.path());
+    info = ClientCreditsList::inspectKeyFile(keyPath);
+    QVERIFY2(info.ok, qPrintable(info.error));
+    QVERIFY(info.pkcs8);
+    QCOMPARE(info.bits, RSAKEYSIZE);
+
+    writeFile(keyPath, "not a key");
+    info = ClientCreditsList::inspectKeyFile(keyPath);
+    QVERIFY(!info.ok);
+    QVERIFY(!info.error.isEmpty());
+}
+
+void tst_ClientCredits::import_success()
+{
+    TempDir tmp;
+    const QString ymlPath = tmp.filePath(QStringLiteral("preferences.yml"));
+    const QString datPath = tmp.filePath(QStringLiteral("preferences.dat"));
+
+    Preferences prefs;
+    prefs.load(ymlPath);
+    QVERIFY(prefs.save());
+    QVERIFY(prefs.userHash() != kLegacyHash);
+
+    const QByteArray pub = writeMfcKey(tmp.path());
+    QVERIFY(!pub.isEmpty());
+    writeFile(datPath, legacyPrefsDat(kLegacyHash));
+
+    const auto out = LegacyIdentityImport::run(tmp.path(), prefs);
+    QVERIFY2(out.result == LegacyIdentityImport::Result::Imported, qPrintable(out.error));
+    QCOMPARE(prefs.userHash(), kLegacyHash);
+    QVERIFY(!QFile::exists(datPath));
+
+    // Saved, not only set
+    Preferences reloaded;
+    QVERIFY(reloaded.load(ymlPath));
+    QCOMPARE(reloaded.userHash(), kLegacyHash);
+
+    // The MFC-format key still loads as the same key
+    thePrefs.setConfigDir(tmp.path());
+    ClientCreditsList list;
+    QVERIFY(list.cryptoAvailable());
+    QCOMPARE(QByteArray(reinterpret_cast<const char*>(list.publicKey()), list.pubKeyLen()), pub);
+
+    // Second start: nothing left to do
+    QCOMPARE(LegacyIdentityImport::run(tmp.path(), prefs).result,
+             LegacyIdentityImport::Result::NoFile);
+}
+
+void tst_ClientCredits::import_noFile()
+{
+    TempDir tmp;
+    Preferences prefs;
+    prefs.load(tmp.filePath(QStringLiteral("preferences.yml")));
+    const UserHash before = prefs.userHash();
+    writeMfcKey(tmp.path());
+
+    QCOMPARE(LegacyIdentityImport::run(tmp.path(), prefs).result,
+             LegacyIdentityImport::Result::NoFile);
+    QCOMPARE(prefs.userHash(), before);
+}
+
+void tst_ClientCredits::import_alreadyCurrent()
+{
+    TempDir tmp;
+    const QString datPath = tmp.filePath(QStringLiteral("preferences.dat"));
+    Preferences prefs;
+    prefs.load(tmp.filePath(QStringLiteral("preferences.yml")));
+    prefs.setUserHash(kLegacyHash);
+    writeMfcKey(tmp.path());
+    writeFile(datPath, legacyPrefsDat(kLegacyHash));
+
+    QCOMPARE(LegacyIdentityImport::run(tmp.path(), prefs).result,
+             LegacyIdentityImport::Result::AlreadyCurrent);
+    QCOMPARE(prefs.userHash(), kLegacyHash);
+    QVERIFY(!QFile::exists(datPath));
+}
+
+void tst_ClientCredits::import_rejects_data()
+{
+    QTest::addColumn<QByteArray>("dat");
+    QTest::addColumn<QString>("key");  // mfc | own | garbage | missing
+
+    UserHash noMarker5 = kLegacyHash;
+    noMarker5[5] = 0x8E;
+    UserHash noMarker14 = kLegacyHash;
+    noMarker14[14] = 0x6E;
+
+    const QString mfc = QStringLiteral("mfc");
+    QTest::newRow("short file") << legacyPrefsDat(kLegacyHash).left(16) << mfc;
+    QTest::newRow("empty file") << QByteArray() << mfc;
+    QTest::newRow("wrong version") << legacyPrefsDat(kLegacyHash, 0x13) << mfc;
+    QTest::newRow("null hash") << legacyPrefsDat(UserHash{}) << mfc;
+    QTest::newRow("marker byte 5") << legacyPrefsDat(noMarker5) << mfc;
+    QTest::newRow("marker byte 14") << legacyPrefsDat(noMarker14) << mfc;
+    QTest::newRow("key missing") << legacyPrefsDat(kLegacyHash) << QStringLiteral("missing");
+    QTest::newRow("key garbage") << legacyPrefsDat(kLegacyHash) << QStringLiteral("garbage");
+    QTest::newRow("key generated here") << legacyPrefsDat(kLegacyHash) << QStringLiteral("own");
+}
+
+void tst_ClientCredits::import_rejects()
+{
+    QFETCH(QByteArray, dat);
+    QFETCH(QString, key);
+
+    TempDir tmp;
+    const QString ymlPath = tmp.filePath(QStringLiteral("preferences.yml"));
+    const QString datPath = tmp.filePath(QStringLiteral("preferences.dat"));
+    const QString keyPath = tmp.filePath(QStringLiteral("cryptkey.dat"));
+
+    Preferences prefs;
+    prefs.load(ymlPath);
+    QVERIFY(prefs.save());
+    const UserHash before = prefs.userHash();
+
+    if (key == QLatin1StringView("mfc"))
+        writeMfcKey(tmp.path());
+    else if (key == QLatin1StringView("own"))
+        writeOwnKey(tmp.path());
+    else if (key == QLatin1StringView("garbage"))
+        writeFile(keyPath, "bm90IGEga2V5IGF0IGFsbA==");
+    writeFile(datPath, dat);
+
+    const auto out = LegacyIdentityImport::run(tmp.path(), prefs);
+    QCOMPARE(out.result, LegacyIdentityImport::Result::Rejected);
+    QVERIFY(!out.error.isEmpty());
+
+    // Nothing changed, in memory or on disk; the file stays for the user to fix
+    QCOMPARE(prefs.userHash(), before);
+    Preferences reloaded;
+    QVERIFY(reloaded.load(ymlPath));
+    QCOMPARE(reloaded.userHash(), before);
+    QCOMPARE(QFile::exists(datPath), true);
+    QCOMPARE(QFile::exists(keyPath), key != QLatin1StringView("missing"));
 }
 
 QTEST_MAIN(tst_ClientCredits)

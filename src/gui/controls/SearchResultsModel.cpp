@@ -576,6 +576,54 @@ void SearchResultsModel::setResults(std::vector<SearchResultRow> incoming)
     updateHasMeta();
 }
 
+bool SearchResultsModel::mergeResults(std::vector<SearchResultRow> changed)
+{
+    if (changed.empty())
+        return true;
+
+    QHash<QString, int> rowByHash;
+    rowByHash.reserve(static_cast<qsizetype>(m_rows.size()));
+    for (size_t i = 0; i < m_rows.size(); ++i)
+        rowByHash.insert(m_rows[i].hash, static_cast<int>(i));
+    if (rowByHash.size() != static_cast<qsizetype>(m_rows.size()))
+        return false;
+
+    // dataChanged per touched row only: over the whole list it makes the sort
+    // proxy go through every row again, several times a second while a search runs.
+    std::vector<SearchResultRow> toInsert;
+    QSet<QString> queued;
+    for (auto& fresh : changed) {
+        const auto it = rowByHash.constFind(fresh.hash);
+        if (it == rowByHash.constEnd()) {
+            if (!queued.contains(fresh.hash)) {
+                queued.insert(fresh.hash);
+                toInsert.push_back(std::move(fresh));
+            }
+            continue;
+        }
+        const int row = it.value();
+        SearchResultRow& current = m_rows[static_cast<size_t>(row)];
+        setChildren(row, std::move(fresh.children));
+        fresh.children = std::move(current.children);
+        fresh.uid = current.uid;
+        current = std::move(fresh);
+        emit dataChanged(index(row, 0), index(row, ColCount - 1));
+    }
+
+    if (!toInsert.empty()) {
+        const int first = static_cast<int>(m_rows.size());
+        beginInsertRows({}, first, first + static_cast<int>(toInsert.size()) - 1);
+        for (auto& row : toInsert) {
+            row.uid = m_nextUid++;
+            m_rowByUid.insert(row.uid, static_cast<int>(m_rows.size()));
+            m_rows.push_back(std::move(row));
+        }
+        endInsertRows();
+    }
+    updateHasMeta();
+    return true;
+}
+
 void SearchResultsModel::setChildren(int row, std::vector<SearchChildRow> incoming)
 {
     auto& children = m_rows[static_cast<size_t>(row)].children;
