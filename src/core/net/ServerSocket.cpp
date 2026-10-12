@@ -344,6 +344,7 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
         QString metaApiPin;
         uint32 metaApiVersion = 0;
         Address serverIPv6;
+        bool haveSvrIPv6Tag = false;    // CT_MOD_SVR_IP_V6 seen
 
         // Parse tags
         try {
@@ -361,13 +362,20 @@ bool ServerSocket::processPacket(const uint8* packet, uint32 size, uint8 opcode)
                     metaApiPin = tag.strValue();
                 else if (tag.nameId() == ST_META_API_VER && tag.isInt())
                     metaApiVersion = tag.intValue();
-                else if (tag.nameId() == CT_MOD_SVR_IP_V6 && tag.isHash()) {
+                else if ((tag.nameId() == CT_MOD_SVR_IP_V6 || tag.nameId() == CT_MOD_IP_V6)
+                         && tag.isHash()) {
                     // The server's own public IPv6: over an IPv4 session it joins the
                     // list entry (one row per dual-stack server). Unknown tags such as
                     // ST_NAT_PORT are consumed and ignored (S6 out of scope).
-                    serverIPv6 = Address::fromIPv6Bytes(tag.hashValue());
-                    logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: server IPv6 %1")
-                                         .arg(serverIPv6.toString()));
+                    // 0xAE: non-spec servers reuse the client tag id; 0xAF wins if both.
+                    const bool specTag = tag.nameId() == CT_MOD_SVR_IP_V6;
+                    if (specTag || !haveSvrIPv6Tag) {
+                        haveSvrIPv6Tag = haveSvrIPv6Tag || specTag;
+                        serverIPv6 = Address::fromIPv6Bytes(tag.hashValue());
+                        logServerVerbose(QStringLiteral("<<< OP_SERVERIDENT: server IPv6 %1 (0x%2)")
+                                             .arg(serverIPv6.toString())
+                                             .arg(tag.nameId(), 2, 16, QLatin1Char('0')));
+                    }
                 }
                 else if (tag.nameId() == CT_MOD_YOUR_IP && tag.isHash()) {
                     // The server tells us the IPv6 it observed our session arriving on — the

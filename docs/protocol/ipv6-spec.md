@@ -696,6 +696,9 @@ Observed emission conditions (server-dependent, but a useful baseline):
 - `ST_IPV6_STATUS` SHOULD be sent by servers as `TAGTYPE_UINT8`; receivers MUST accept any integer
   width (§0.3). Only the combination `IPV6ST_PROBED` set **and** `IPV6ST_REACHABLE` clear suppresses
   further advertisement — an absent tag or an unprobed verdict never suppresses.
+- Servers MUST send their own IPv6 as `CT_MOD_SVR_IP_V6` `0xAF`. A receiver MAY also accept
+  `0xAE` HASH16 in this packet as the server's IPv6 (some servers reuse the client tag id);
+  `0xAF` wins when both are present, whatever the tag order.
 - `CT_MOD_SVR_IP_V6` never changes the session: the client keeps using the address it dialled. This
   implementation uses it to merge the server's IPv4 and IPv6 into **one** server-list entry (over an
   IPv4 session: the tag; over an IPv6 session: the ident's 4-byte IP field). A merge absorbs an

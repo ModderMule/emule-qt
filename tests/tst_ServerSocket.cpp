@@ -8,6 +8,8 @@
 #include "utils/ByteOrder.h"
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
+#include "protocol/Tag.h"
+#include "utils/SafeFile.h"
 
 #include <QSignalSpy>
 #include <QTcpServer>
@@ -29,6 +31,9 @@ private slots:
     void processIdChangeExtendedRejectsLowIDReport();
     void processServerStatus();
     void processServerIdent_keepsTheSessionAddress();
+    void processServerIdent_learnsIPv6FromLegacyTag();
+    void processServerIdent_specTagWinsOverLegacyTag_data();
+    void processServerIdent_specTagWinsOverLegacyTag();
     void shortPacket_doesNotDesyncTheStream();
     void shortIdChange_disconnects();
     void processReject();
@@ -54,6 +59,20 @@ static void writeRawPacket(QTcpSocket* sock, uint8 prot, uint8 opcode, const cha
     if (payloadSize > 0)
         sock->write(payload, payloadSize);
     sock->flush();
+}
+
+/// Helper: OP_SERVERIDENT payload (hash16, ip, port, tagCount) with hash16 IPv6 tags.
+static QByteArray identWithIPv6Tags(const QList<std::pair<uint8, Address>>& tags)
+{
+    SafeMemFile data;
+    const uint8 hash[16] = {};
+    data.writeHash16(hash);
+    data.writeUInt32(htonl(0x0A010203));
+    data.writeUInt16(4661);
+    data.writeUInt32(static_cast<uint32>(tags.size()));
+    for (const auto& [id, addr] : tags)
+        Tag(id, addr.ipv6Bytes().data()).writeTagToFile(data);
+    return data.takeBuffer();
 }
 
 // ---------------------------------------------------------------------------
@@ -324,6 +343,77 @@ void tst_ServerSocket::processServerIdent_keepsTheSessionAddress()
     QTRY_COMPARE_WITH_TIMEOUT(identSpy.count(), 1, 3000);
     QVERIFY(clientSocket.currentServer());
     QCOMPARE(clientSocket.currentServer()->ipAddress().toString(), QStringLiteral("127.0.0.1"));
+
+    serverSide->close();
+    clientSocket.close();
+}
+
+// Non-spec servers send their own IPv6 under 0xAE (CT_MOD_IP_V6) instead of 0xAF
+void tst_ServerSocket::processServerIdent_learnsIPv6FromLegacyTag()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    ServerSocket clientSocket;
+    QSignalSpy learnedSpy(&clientSocket, &ServerSocket::serverAddressLearned);
+    QVERIFY(learnedSpy.isValid());
+
+    Server srv(htonl(0x7F000001), server.serverPort());
+    clientSocket.connectTo(srv);
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* serverSide = server.nextPendingConnection();
+    QVERIFY(serverSide != nullptr);
+    QVERIFY(clientSocket.waitForConnected(5000));
+
+    const Address v6 = Address::fromString(QStringLiteral("2001:db8:1:2:3:4:5:6"));
+    const QByteArray payload = identWithIPv6Tags({{CT_MOD_IP_V6, v6}});
+    writeRawPacket(serverSide, OP_EDONKEYPROT, OP_SERVERIDENT, payload.constData(),
+                   static_cast<uint32>(payload.size()));
+
+    QTRY_COMPARE_WITH_TIMEOUT(learnedSpy.count(), 1, 3000);
+    QCOMPARE(learnedSpy.first().at(0).value<Address>(), v6);
+    QVERIFY(clientSocket.currentServer());
+    QCOMPARE(clientSocket.currentServer()->ipAddress().toString(), QStringLiteral("127.0.0.1"));
+
+    serverSide->close();
+    clientSocket.close();
+}
+
+void tst_ServerSocket::processServerIdent_specTagWinsOverLegacyTag_data()
+{
+    QTest::addColumn<bool>("legacyFirst");
+    QTest::newRow("0xAE then 0xAF") << true;
+    QTest::newRow("0xAF then 0xAE") << false;
+}
+
+void tst_ServerSocket::processServerIdent_specTagWinsOverLegacyTag()
+{
+    QFETCH(bool, legacyFirst);
+
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    ServerSocket clientSocket;
+    QSignalSpy learnedSpy(&clientSocket, &ServerSocket::serverAddressLearned);
+    QVERIFY(learnedSpy.isValid());
+
+    Server srv(htonl(0x7F000001), server.serverPort());
+    clientSocket.connectTo(srv);
+    QVERIFY(server.waitForNewConnection(5000));
+    auto* serverSide = server.nextPendingConnection();
+    QVERIFY(serverSide != nullptr);
+    QVERIFY(clientSocket.waitForConnected(5000));
+
+    const Address legacy = Address::fromString(QStringLiteral("2001:db8:a:b:c:d:e:f"));
+    const Address spec = Address::fromString(QStringLiteral("2001:db8:1:2:3:4:5:6"));
+    const QByteArray payload = legacyFirst
+        ? identWithIPv6Tags({{CT_MOD_IP_V6, legacy}, {CT_MOD_SVR_IP_V6, spec}})
+        : identWithIPv6Tags({{CT_MOD_SVR_IP_V6, spec}, {CT_MOD_IP_V6, legacy}});
+    writeRawPacket(serverSide, OP_EDONKEYPROT, OP_SERVERIDENT, payload.constData(),
+                   static_cast<uint32>(payload.size()));
+
+    QTRY_COMPARE_WITH_TIMEOUT(learnedSpy.count(), 1, 3000);
+    QCOMPARE(learnedSpy.first().at(0).value<Address>(), spec);
 
     serverSide->close();
     clientSocket.close();

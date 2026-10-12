@@ -695,7 +695,7 @@
 // in the stock eDonkey c2c opcode space (srchybrid/opcodes.h has no 0xAC), so there is no clash.
 #define OP_CHANGE_CLIENT_IP         0xAC    // c2c: 16-byte IPv6 IP-change notification
 #define CT_MOD_YOUR_IP              0xAD    // visible IP: from a peer (c2c hello) or the server-observed egress (OP_SERVERIDENT); uint32 if IPv4, hash16 if IPv6
-#define CT_MOD_IP_V6                0xAE    // hash16: our public IPv6 (c2c hello + OP_LOGINREQUEST)
+#define CT_MOD_IP_V6                0xAE    // hash16: our public IPv6 (c2c hello + OP_LOGINREQUEST); also read in OP_SERVERIDENT as the server's IPv6 (non-spec servers)
 #define CT_MOD_SVR_IP_V6            0xAF    // hash16: server's own public IPv6 (OP_SERVERIDENT)
 // Extended Source Exchange per-source tag-block fields (replace the fixed serverIP/serverPort record)
 #define CT_EMULE_SERVERIP           0xBA    // uint32: source's server IP (ExtSX tag block)
