@@ -790,6 +790,12 @@ void Preferences::setMaxServedBuddies(uint16 val)
     set(&Data::maxServedBuddies, std::clamp<uint16>(val, 1, 32));
 }
 
+uint16 Preferences::servedBuddyLimit() const
+{
+    const uint16 cap = std::max<uint16>(1, maxConnections() / 10);
+    return std::min(maxServedBuddies(), cap);
+}
+
 QString Preferences::bindAddress() const { return get(&Data::bindAddress); }
 
 void Preferences::setBindAddress(const QString& val) { set(&Data::bindAddress, val); }
@@ -3455,6 +3461,15 @@ void Preferences::validate()
     // maxConsPerFive: clamp 1–50
     m_data->maxConsPerFive = std::clamp<uint16>(m_data->maxConsPerFive, 1, 50);
 
+    // queueSize: clamp 2000–50000 (the Options slider)
+    m_data->queueSize = std::clamp<uint32>(m_data->queueSize, 2000, 50000);
+
+    // deadServerRetries: max 99 (the Options spin box); 0 = never disable, left alone
+    m_data->deadServerRetries = std::min<uint32>(m_data->deadServerRetries, 99);
+
+    // webServerSessionTimeout: clamp 1–60 min; 0 expires a session at once
+    m_data->webServerSessionTimeout = std::clamp(m_data->webServerSessionTimeout, 1, 60);
+
     // viewSharedFilesAccess: clamp 0–2
     m_data->viewSharedFilesAccess = std::clamp(m_data->viewSharedFilesAccess, 0, 2);
 
@@ -3627,7 +3642,9 @@ bool Preferences::load(const QString& filePath)
             m_data->serverUDPPort = static_cast<uint16>(n["serverUDPPort"].as<int>(m_data->serverUDPPort));
             m_data->maxConnections = static_cast<uint16>(n["maxConnections"].as<int>(m_data->maxConnections));
             m_data->maxHalfConnections = static_cast<uint16>(n["maxHalfConnections"].as<int>(m_data->maxHalfConnections));
-            m_data->maxServedBuddies = static_cast<uint16>(n["maxServedBuddies"].as<int>(m_data->maxServedBuddies));
+            // clamp before narrowing: -1 would wrap to the maximum
+            m_data->maxServedBuddies = static_cast<uint16>(
+                std::clamp(n["maxServedBuddies"].as<int>(m_data->maxServedBuddies), 1, 32));
             m_data->bindAddress = QString::fromStdString(n["bindAddress"].as<std::string>(m_data->bindAddress.toStdString()));
             m_data->publicIPv6Override = QString::fromStdString(n["publicIPv6Override"].as<std::string>(m_data->publicIPv6Override.toStdString()));
             m_data->ipv6PublicPeerConfirmThreshold = static_cast<uint32>(n["ipv6PublicPeerConfirmThreshold"].as<int>(static_cast<int>(m_data->ipv6PublicPeerConfirmThreshold)));

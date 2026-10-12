@@ -76,8 +76,9 @@ using Kind = PrefSpec::Kind;
     t << advanced(number("maxConsPerFive", 1, 50, "", "New connections allowed per 5 seconds."));
     t << advanced(number("maxHalfConnections", 1, 100, "", "Half-open connections allowed at once."));
     t << advanced(number("maxServedBuddies", 1, 32, "", "Firewalled Kad nodes served as buddy at "
-                         "once while this node is reachable."));
-    t << number("queueSize", 1, kMaxU32, "", "Upload queue length in clients.");
+                         "once while this node is reachable. In effect capped at a tenth of "
+                         "maxConnections."));
+    t << number("queueSize", 2000, 50000, "", "Upload queue length in clients.");
 
     // --- Networks ---
     t << flag("networkED2K", "Use the eD2K server network. Gates the automatic connect at start only.");
@@ -93,7 +94,7 @@ using Kind = PrefSpec::Kind;
     t << flag("useServerPriorities", "Prefer servers with a higher priority when connecting.");
     t << flag("addServersFromServer", "Add servers announced by the connected server.");
     t << flag("addServersFromClients", "Add servers announced by other clients.");
-    t << number("deadServerRetries", 1, 100, "", "Failed connection attempts before a server is "
+    t << number("deadServerRetries", 1, 99, "", "Failed connection attempts before a server is "
                 "disabled.");
     t << flag("autoUpdateServerList", "Fetch the server list from serverListURL at start.");
     t << text("serverListURL", 2048, "URL of a server.met file. Empty = built-in default.");

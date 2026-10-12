@@ -323,7 +323,7 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
 <context>
     <name>PreviewLauncher</name>
     <message>
-        <location filename="../src/gui/utils/PreviewLauncher.cpp" line="+227"/>
+        <location filename="../src/gui/utils/PreviewLauncher.cpp" line="+269"/>
         <source>Not connected to the core.</source>
         <translation>코어에 연결되지 않았습니다.</translation>
     </message>
@@ -5952,12 +5952,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="-1845"/>
-        <location line="+5481"/>
+        <location line="+5482"/>
         <source>Apply</source>
         <translation>적용</translation>
     </message>
     <message>
-        <location line="-5480"/>
+        <location line="-5481"/>
         <source>Help</source>
         <translation>도움말</translation>
     </message>
@@ -6003,12 +6003,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5405"/>
+        <location line="+5406"/>
         <source>Language</source>
         <translation>언어</translation>
     </message>
     <message>
-        <location line="-5402"/>
+        <location line="-5403"/>
         <source>System Default</source>
         <translation>시스템 기본값</translation>
     </message>
@@ -6108,12 +6108,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5341"/>
+        <location line="+5342"/>
         <source>Core</source>
         <translation>코어</translation>
     </message>
     <message>
-        <location line="-5336"/>
+        <location line="-5337"/>
         <source>Address:</source>
         <translation>주소:</translation>
     </message>
@@ -6287,14 +6287,14 @@ Are you sure you want to continue?</source>
         <location line="+295"/>
         <location line="+1016"/>
         <location line="+152"/>
-        <location line="+1049"/>
+        <location line="+1050"/>
         <location line="+277"/>
         <location line="+29"/>
         <source>Enabled</source>
         <translation>활성화됨</translation>
     </message>
     <message>
-        <location line="-4527"/>
+        <location line="-4528"/>
         <source>Reset</source>
         <translation>초기화</translation>
     </message>
@@ -6311,12 +6311,12 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4252"/>
+        <location line="+4253"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4255"/>
+        <location line="-4256"/>
         <source>Upload</source>
         <translation>업로드</translation>
     </message>
@@ -6377,12 +6377,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6458"/>
+        <location line="+6459"/>
         <source>Any</source>
         <translation>모든</translation>
     </message>
     <message>
-        <location line="-6456"/>
+        <location line="-6457"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>이 네트워크 인터페이스(예: VPN 터널)만 사용합니다. 목록에서 선택하거나 IP 주소 또는 10.64.0.0/10 같은 서브넷(해당 범위의 주소를 가진 인터페이스)을 입력하십시오. 프록시를 통한 연결은 바인딩되지 않습니다.</translation>
     </message>
@@ -8748,7 +8748,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">실행 중에만 eD2K 링크 자동 수락</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+21"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>크레딧 시스템 사용(업로더 보상)</translation>
     </message>
@@ -9148,17 +9148,17 @@ News server connections switch over immediately.</source>
         <translation>기본값으로 재설정</translation>
     </message>
     <message>
-        <location line="-4752"/>
+        <location line="-4753"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1344"/>
+        <location line="+1345"/>
         <location line="+316"/>
         <location line="+1917"/>
         <source>Remove</source>
         <translation>제거</translation>
     </message>
     <message>
-        <location line="-5899"/>
+        <location line="-5900"/>
         <source>New eMule Qt version detected</source>
         <translation>새 eMule Qt 버전이 감지되었습니다</translation>
     </message>
@@ -9168,7 +9168,7 @@ News server connections switch over immediately.</source>
         <translation>URL에서 업데이트: (filter.dat 또는 PeerGuardian 형식, .gz/.zip 허용)</translation>
     </message>
     <message>
-        <location line="+2960"/>
+        <location line="+2961"/>
         <source>Write eMule core logs to disk</source>
         <translation>eMule 코어 로그를 디스크에 기록</translation>
     </message>
@@ -9228,14 +9228,14 @@ News server connections switch over immediately.</source>
         <translation>요청 임대 시간:</translation>
     </message>
     <message>
-        <location line="-2226"/>
+        <location line="-2227"/>
         <location line="+913"/>
-        <location line="+1317"/>
+        <location line="+1318"/>
         <source> s</source>
         <translation> 초</translation>
     </message>
     <message>
-        <location line="-2272"/>
+        <location line="-2273"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
@@ -9250,11 +9250,11 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
     </message>
     <message>
         <location line="+4"/>
-        <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection.</source>
-        <translation>포트가 열려 있는 동안 eMule은 이 수만큼의 방화벽 뒤 Kad 노드를 위해 콜백 요청을 중계합니다. 노드마다 연결 하나를 사용합니다.</translation>
+        <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.</source>
+        <translation>포트가 열려 있는 동안 eMule은 이 수만큼의 방화벽 뒤 Kad 노드를 위해 콜백 요청을 중계합니다. 노드마다 연결 하나를 사용하므로 &quot;최대 연결 수&quot;의 10분의 1까지만 중계합니다.</translation>
     </message>
     <message>
-        <location line="+418"/>
+        <location line="+419"/>
         <source>New</source>
         <translation>새로 만들기</translation>
     </message>
@@ -9362,10 +9362,10 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>새 일정</translation>
     </message>
     <message>
-        <location line="-2611"/>
+        <location line="-2612"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1617"/>
+        <location line="+1618"/>
         <location line="+1955"/>
         <source>Add</source>
         <translation>추가</translation>
@@ -10275,12 +10275,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="-75"/>
-        <location line="+445"/>
+        <location line="+447"/>
         <source>Connect</source>
         <translation>연결</translation>
     </message>
     <message>
-        <location line="-501"/>
+        <location line="-503"/>
         <source>Invalid URL: %1</source>
         <translation>잘못된 URL: %1</translation>
     </message>
@@ -10310,7 +10310,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>server.met을 다운로드하고 &quot;%1&quot;의 압축을 풀었습니다(%2바이트). 분석 중...</translation>
     </message>
     <message>
-        <location line="+607"/>
+        <location line="+609"/>
         <location line="+2"/>
         <location line="+24"/>
         <location line="+39"/>
@@ -10408,7 +10408,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>▸ 서버 (%1)</translation>
     </message>
     <message>
-        <location line="-634"/>
+        <location line="-636"/>
         <source>Connect To</source>
         <translation>연결 대상</translation>
     </message>
@@ -10424,12 +10424,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+523"/>
+        <location line="+525"/>
         <source>Normal</source>
         <translation>보통</translation>
     </message>
     <message>
-        <location line="-522"/>
+        <location line="-524"/>
         <source>High</source>
         <translation>높음</translation>
     </message>
@@ -10489,7 +10489,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>찾기...</translation>
     </message>
     <message>
-        <location line="+52"/>
+        <location line="+54"/>
         <source>▸ Servers (0)</source>
         <translation>▸ 서버 (0)</translation>
     </message>

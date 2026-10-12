@@ -323,7 +323,7 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
 <context>
     <name>PreviewLauncher</name>
     <message>
-        <location filename="../src/gui/utils/PreviewLauncher.cpp" line="+227"/>
+        <location filename="../src/gui/utils/PreviewLauncher.cpp" line="+269"/>
         <source>Not connected to the core.</source>
         <translation>未连接到核心。</translation>
     </message>
@@ -5952,12 +5952,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="-1845"/>
-        <location line="+5481"/>
+        <location line="+5482"/>
         <source>Apply</source>
         <translation>应用</translation>
     </message>
     <message>
-        <location line="-5480"/>
+        <location line="-5481"/>
         <source>Help</source>
         <translation>帮助</translation>
     </message>
@@ -6003,12 +6003,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5405"/>
+        <location line="+5406"/>
         <source>Language</source>
         <translation>语言</translation>
     </message>
     <message>
-        <location line="-5402"/>
+        <location line="-5403"/>
         <source>System Default</source>
         <translation>系统默认</translation>
     </message>
@@ -6108,12 +6108,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5341"/>
+        <location line="+5342"/>
         <source>Core</source>
         <translation>核心</translation>
     </message>
     <message>
-        <location line="-5336"/>
+        <location line="-5337"/>
         <source>Address:</source>
         <translation>地址：</translation>
     </message>
@@ -6287,14 +6287,14 @@ Are you sure you want to continue?</source>
         <location line="+295"/>
         <location line="+1016"/>
         <location line="+152"/>
-        <location line="+1049"/>
+        <location line="+1050"/>
         <location line="+277"/>
         <location line="+29"/>
         <source>Enabled</source>
         <translation>已启用</translation>
     </message>
     <message>
-        <location line="-4527"/>
+        <location line="-4528"/>
         <source>Reset</source>
         <translation>重置</translation>
     </message>
@@ -6311,12 +6311,12 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4252"/>
+        <location line="+4253"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4255"/>
+        <location line="-4256"/>
         <source>Upload</source>
         <translation>上传</translation>
     </message>
@@ -6377,12 +6377,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6458"/>
+        <location line="+6459"/>
         <source>Any</source>
         <translation>任意</translation>
     </message>
     <message>
-        <location line="-6456"/>
+        <location line="-6457"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>仅使用此网络接口，例如 VPN 隧道。可从列表中选择，或输入 IP 地址或子网（如 10.64.0.0/10，即拥有该范围内地址的接口）。通过代理的连接不会被绑定。</translation>
     </message>
@@ -8748,7 +8748,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">仅在运行时自动接受 eD2K 链接</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+21"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>使用信用系统（奖励上传者）</translation>
     </message>
@@ -9148,17 +9148,17 @@ News server connections switch over immediately.</source>
         <translation>恢复默认值</translation>
     </message>
     <message>
-        <location line="-4752"/>
+        <location line="-4753"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1344"/>
+        <location line="+1345"/>
         <location line="+316"/>
         <location line="+1917"/>
         <source>Remove</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location line="-5899"/>
+        <location line="-5900"/>
         <source>New eMule Qt version detected</source>
         <translation>检测到新的 eMule Qt 版本</translation>
     </message>
@@ -9168,7 +9168,7 @@ News server connections switch over immediately.</source>
         <translation>从 URL 更新：（filter.dat 或 PeerGuardian 格式，支持 .gz/.zip）</translation>
     </message>
     <message>
-        <location line="+2960"/>
+        <location line="+2961"/>
         <source>Write eMule core logs to disk</source>
         <translation>将 eMule 核心日志写入磁盘</translation>
     </message>
@@ -9228,14 +9228,14 @@ News server connections switch over immediately.</source>
         <translation>请求的租期：</translation>
     </message>
     <message>
-        <location line="-2226"/>
+        <location line="-2227"/>
         <location line="+913"/>
-        <location line="+1317"/>
+        <location line="+1318"/>
         <source> s</source>
         <translation> 秒</translation>
     </message>
     <message>
-        <location line="-2272"/>
+        <location line="-2273"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
@@ -9250,11 +9250,11 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
     </message>
     <message>
         <location line="+4"/>
-        <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection.</source>
-        <translation>端口开放时，eMule 会为这么多个防火墙内的 Kad 节点中继回调请求。每个节点占用一个连接。</translation>
+        <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.</source>
+        <translation>端口开放时，eMule 会为这么多个防火墙内的 Kad 节点中继回调请求。每个节点占用一个连接，因此最多只为“最大连接数”的十分之一提供中继。</translation>
     </message>
     <message>
-        <location line="+418"/>
+        <location line="+419"/>
         <source>New</source>
         <translation>新建</translation>
     </message>
@@ -9362,10 +9362,10 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>新建计划</translation>
     </message>
     <message>
-        <location line="-2611"/>
+        <location line="-2612"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1617"/>
+        <location line="+1618"/>
         <location line="+1955"/>
         <source>Add</source>
         <translation>添加</translation>
@@ -10275,12 +10275,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="-75"/>
-        <location line="+445"/>
+        <location line="+447"/>
         <source>Connect</source>
         <translation>连接</translation>
     </message>
     <message>
-        <location line="-501"/>
+        <location line="-503"/>
         <source>Invalid URL: %1</source>
         <translation>无效的URL: %1</translation>
     </message>
@@ -10310,7 +10310,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>已下载 server.met，解压 &quot;%1&quot;（%2 字节）。正在解析...</translation>
     </message>
     <message>
-        <location line="+607"/>
+        <location line="+609"/>
         <location line="+2"/>
         <location line="+24"/>
         <location line="+39"/>
@@ -10408,7 +10408,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>▸ 服务器 (%1)</translation>
     </message>
     <message>
-        <location line="-634"/>
+        <location line="-636"/>
         <source>Connect To</source>
         <translation>连接到</translation>
     </message>
@@ -10424,12 +10424,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+523"/>
+        <location line="+525"/>
         <source>Normal</source>
         <translation>普通</translation>
     </message>
     <message>
-        <location line="-522"/>
+        <location line="-524"/>
         <source>High</source>
         <translation>高</translation>
     </message>
@@ -10489,7 +10489,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>查找...</translation>
     </message>
     <message>
-        <location line="+52"/>
+        <location line="+54"/>
         <source>▸ Servers (0)</source>
         <translation>▸ 服务器 (0)</translation>
     </message>

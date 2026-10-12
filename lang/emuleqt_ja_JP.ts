@@ -323,7 +323,7 @@ The core keeps listening on TCP port %1 and UDP port %2.</source>
 <context>
     <name>PreviewLauncher</name>
     <message>
-        <location filename="../src/gui/utils/PreviewLauncher.cpp" line="+227"/>
+        <location filename="../src/gui/utils/PreviewLauncher.cpp" line="+269"/>
         <source>Not connected to the core.</source>
         <translation>コアに接続されていません。</translation>
     </message>
@@ -5952,12 +5952,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="-1845"/>
-        <location line="+5481"/>
+        <location line="+5482"/>
         <source>Apply</source>
         <translation>適用</translation>
     </message>
     <message>
-        <location line="-5480"/>
+        <location line="-5481"/>
         <source>Help</source>
         <translation>ヘルプ</translation>
     </message>
@@ -6003,12 +6003,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5405"/>
+        <location line="+5406"/>
         <source>Language</source>
         <translation>言語</translation>
     </message>
     <message>
-        <location line="-5402"/>
+        <location line="-5403"/>
         <source>System Default</source>
         <translation>システム既定</translation>
     </message>
@@ -6108,12 +6108,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5341"/>
+        <location line="+5342"/>
         <source>Core</source>
         <translation>コア</translation>
     </message>
     <message>
-        <location line="-5336"/>
+        <location line="-5337"/>
         <source>Address:</source>
         <translation>アドレス：</translation>
     </message>
@@ -6287,14 +6287,14 @@ Are you sure you want to continue?</source>
         <location line="+295"/>
         <location line="+1016"/>
         <location line="+152"/>
-        <location line="+1049"/>
+        <location line="+1050"/>
         <location line="+277"/>
         <location line="+29"/>
         <source>Enabled</source>
         <translation>有効</translation>
     </message>
     <message>
-        <location line="-4527"/>
+        <location line="-4528"/>
         <source>Reset</source>
         <translation>リセット</translation>
     </message>
@@ -6311,12 +6311,12 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4252"/>
+        <location line="+4253"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4255"/>
+        <location line="-4256"/>
         <source>Upload</source>
         <translation>アップロード</translation>
     </message>
@@ -6377,12 +6377,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6458"/>
+        <location line="+6459"/>
         <source>Any</source>
         <translation>すべて</translation>
     </message>
     <message>
-        <location line="-6456"/>
+        <location line="-6457"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>このネットワークインターフェース（VPN トンネルなど）のみを使用します。一覧から選ぶか、IP アドレスまたは 10.64.0.0/10 のようなサブネット（その範囲のアドレスを持つインターフェース）を入力してください。プロキシ経由の接続はバインドされません。</translation>
     </message>
@@ -8748,7 +8748,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">実行中のみ eD2K リンクを自動取得</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+21"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>クレジットシステムを使用（アップロード者を報酬）</translation>
     </message>
@@ -9148,17 +9148,17 @@ News server connections switch over immediately.</source>
         <translation>既定値に戻す</translation>
     </message>
     <message>
-        <location line="-4752"/>
+        <location line="-4753"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1344"/>
+        <location line="+1345"/>
         <location line="+316"/>
         <location line="+1917"/>
         <source>Remove</source>
         <translation>削除</translation>
     </message>
     <message>
-        <location line="-5899"/>
+        <location line="-5900"/>
         <source>New eMule Qt version detected</source>
         <translation>新しい eMule Qt バージョンを検出しました</translation>
     </message>
@@ -9168,7 +9168,7 @@ News server connections switch over immediately.</source>
         <translation>URL から更新: （filter.dat 形式または PeerGuardian 形式、.gz/.zip 可）</translation>
     </message>
     <message>
-        <location line="+2960"/>
+        <location line="+2961"/>
         <source>Write eMule core logs to disk</source>
         <translation>eMule コアのログをディスクに書き込む</translation>
     </message>
@@ -9228,14 +9228,14 @@ News server connections switch over immediately.</source>
         <translation>要求するリース時間:</translation>
     </message>
     <message>
-        <location line="-2226"/>
+        <location line="-2227"/>
         <location line="+913"/>
-        <location line="+1317"/>
+        <location line="+1318"/>
         <source> s</source>
         <translation> 秒</translation>
     </message>
     <message>
-        <location line="-2272"/>
+        <location line="-2273"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
@@ -9250,11 +9250,11 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
     </message>
     <message>
         <location line="+4"/>
-        <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection.</source>
-        <translation>ポートが開いている間、eMule はこの数のファイアウォール内 Kad ノードのコールバック要求を中継します。1 ノードにつき接続を 1 つ使用します。</translation>
+        <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.</source>
+        <translation>ポートが開いている間、eMule はこの数のファイアウォール内 Kad ノードのコールバック要求を中継します。1 ノードにつき接続を 1 つ使用するため、中継するノードは「最大接続数」の 10 分の 1 までです。</translation>
     </message>
     <message>
-        <location line="+418"/>
+        <location line="+419"/>
         <source>New</source>
         <translation>新規</translation>
     </message>
@@ -9362,10 +9362,10 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation>新しいスケジュール</translation>
     </message>
     <message>
-        <location line="-2611"/>
+        <location line="-2612"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1617"/>
+        <location line="+1618"/>
         <location line="+1955"/>
         <source>Add</source>
         <translation>追加</translation>
@@ -10275,12 +10275,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="-75"/>
-        <location line="+445"/>
+        <location line="+447"/>
         <source>Connect</source>
         <translation>接続</translation>
     </message>
     <message>
-        <location line="-501"/>
+        <location line="-503"/>
         <source>Invalid URL: %1</source>
         <translation>無効なURL: %1</translation>
     </message>
@@ -10310,7 +10310,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>server.met をダウンロードし、&quot;%1&quot; を展開しました (%2 バイト)。解析中...</translation>
     </message>
     <message>
-        <location line="+607"/>
+        <location line="+609"/>
         <location line="+2"/>
         <location line="+24"/>
         <location line="+39"/>
@@ -10408,7 +10408,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>▸ サーバー (%1)</translation>
     </message>
     <message>
-        <location line="-634"/>
+        <location line="-636"/>
         <source>Connect To</source>
         <translation>接続先</translation>
     </message>
@@ -10424,12 +10424,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+523"/>
+        <location line="+525"/>
         <source>Normal</source>
         <translation>通常</translation>
     </message>
     <message>
-        <location line="-522"/>
+        <location line="-524"/>
         <source>High</source>
         <translation>高い</translation>
     </message>
@@ -10489,7 +10489,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>検索...</translation>
     </message>
     <message>
-        <location line="+52"/>
+        <location line="+54"/>
         <source>▸ Servers (0)</source>
         <translation>▸ サーバー (0)</translation>
     </message>

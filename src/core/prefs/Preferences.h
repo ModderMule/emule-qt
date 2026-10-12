@@ -145,6 +145,9 @@ public:
     /// Kad: how many firewalled nodes we serve as buddy while open (1-32). MFC serves one.
     [[nodiscard]] uint16 maxServedBuddies() const;
     void setMaxServedBuddies(uint16 val);
+    /// The limit in effect: maxServedBuddies(), capped at a tenth of maxConnections()
+    /// (min 1), as each served buddy holds a connection.
+    [[nodiscard]] uint16 servedBuddyLimit() const;
 
     /// One IPv4 or IPv6 literal every P2P socket binds to; empty = any. See BindAddress.h.
     [[nodiscard]] QString bindAddress() const;

@@ -327,7 +327,7 @@ Le noyau continue d&apos;écouter sur le port TCP %1 et le port UDP %2.</transla
 <context>
     <name>PreviewLauncher</name>
     <message>
-        <location filename="../src/gui/utils/PreviewLauncher.cpp" line="+227"/>
+        <location filename="../src/gui/utils/PreviewLauncher.cpp" line="+269"/>
         <source>Not connected to the core.</source>
         <translation>Non connecté au noyau.</translation>
     </message>
@@ -5966,12 +5966,12 @@ Le télécharger à nouveau ?</translation>
     </message>
     <message>
         <location line="-1845"/>
-        <location line="+5481"/>
+        <location line="+5482"/>
         <source>Apply</source>
         <translation>Appliquer</translation>
     </message>
     <message>
-        <location line="-5480"/>
+        <location line="-5481"/>
         <source>Help</source>
         <translation>Aide</translation>
     </message>
@@ -6017,12 +6017,12 @@ Le télécharger à nouveau ?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5405"/>
+        <location line="+5406"/>
         <source>Language</source>
         <translation>Langue</translation>
     </message>
     <message>
-        <location line="-5402"/>
+        <location line="-5403"/>
         <source>System Default</source>
         <translation>Par défaut du système</translation>
     </message>
@@ -6122,12 +6122,12 @@ Le télécharger à nouveau ?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5341"/>
+        <location line="+5342"/>
         <source>Core</source>
         <translation>Noyau</translation>
     </message>
     <message>
-        <location line="-5336"/>
+        <location line="-5337"/>
         <source>Address:</source>
         <translation>Adresse :</translation>
     </message>
@@ -6301,14 +6301,14 @@ Voulez-vous vraiment continuer ?</translation>
         <location line="+295"/>
         <location line="+1016"/>
         <location line="+152"/>
-        <location line="+1049"/>
+        <location line="+1050"/>
         <location line="+277"/>
         <location line="+29"/>
         <source>Enabled</source>
         <translation>Activé</translation>
     </message>
     <message>
-        <location line="-4527"/>
+        <location line="-4528"/>
         <source>Reset</source>
         <translation>Réinitialiser</translation>
     </message>
@@ -6325,12 +6325,12 @@ Voulez-vous vraiment continuer ?</translation>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4252"/>
+        <location line="+4253"/>
         <source> KB/s</source>
         <translation> Ko/s</translation>
     </message>
     <message>
-        <location line="-4255"/>
+        <location line="-4256"/>
         <source>Upload</source>
         <translation>Envoi</translation>
     </message>
@@ -6391,12 +6391,12 @@ Voulez-vous vraiment continuer ?</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6458"/>
+        <location line="+6459"/>
         <source>Any</source>
         <translation>Tous</translation>
     </message>
     <message>
-        <location line="-6456"/>
+        <location line="-6457"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Utiliser uniquement cette interface réseau, par exemple un tunnel VPN. Choisissez-en une dans la liste, ou saisissez une adresse IP ou un sous-réseau tel que 10.64.0.0/10 (l&apos;interface qui y possède une adresse). Les connexions passant par un proxy ne sont pas liées.</translation>
     </message>
@@ -8762,7 +8762,7 @@ En ajouter un plus tard ne récupère pas son catalogue antérieur : un nouvel i
         <translation type="vanished">Accepter automatiquement les liens eD2K uniquement pendant l&apos;exécution</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+21"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>Utiliser le système de crédits (récompenser les envoyeurs)</translation>
     </message>
@@ -9162,17 +9162,17 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Rétablir les valeurs par défaut</translation>
     </message>
     <message>
-        <location line="-4752"/>
+        <location line="-4753"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1344"/>
+        <location line="+1345"/>
         <location line="+316"/>
         <location line="+1917"/>
         <source>Remove</source>
         <translation>Supprimer</translation>
     </message>
     <message>
-        <location line="-5899"/>
+        <location line="-5900"/>
         <source>New eMule Qt version detected</source>
         <translation>Nouvelle version d&apos;eMule Qt détectée</translation>
     </message>
@@ -9182,7 +9182,7 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Mettre à jour depuis une URL : (format filter.dat ou PeerGuardian, .gz/.zip acceptés)</translation>
     </message>
     <message>
-        <location line="+2960"/>
+        <location line="+2961"/>
         <source>Write eMule core logs to disk</source>
         <translation>Écrire les journaux du noyau eMule sur le disque</translation>
     </message>
@@ -9242,14 +9242,14 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Bail demandé :</translation>
     </message>
     <message>
-        <location line="-2226"/>
+        <location line="-2227"/>
         <location line="+913"/>
-        <location line="+1317"/>
+        <location line="+1318"/>
         <source> s</source>
         <translation> s</translation>
     </message>
     <message>
-        <location line="-2272"/>
+        <location line="-2273"/>
         <source>Decimal GB, because that is what an invoice says — the 1024-based GB used elsewhere in eMule would put a 1000 GB plan 7% over.
 
 Set it slightly under your plan. The figure is measured here, so it reads a few percent below your provider&apos;s, and articles already in flight when the limit is reached still finish.</source>
@@ -9264,11 +9264,11 @@ Réglez-le légèrement en dessous de votre forfait. Le volume est mesuré ici, 
     </message>
     <message>
         <location line="+4"/>
-        <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection.</source>
-        <translation>Tant que vos ports sont ouverts, eMule relaie les demandes de rappel pour ce nombre de nœuds Kad derrière pare-feu. Chacun utilise une connexion.</translation>
+        <source>While your ports are open, eMule relays callback requests for this many firewalled Kad nodes. Each one uses a connection, so at most a tenth of &quot;Max. connections&quot; is served.</source>
+        <translation>Tant que vos ports sont ouverts, eMule relaie les demandes de rappel pour ce nombre de nœuds Kad derrière pare-feu. Chacun utilise une connexion ; au plus un dixième de « Max. connexions » est donc servi.</translation>
     </message>
     <message>
-        <location line="+418"/>
+        <location line="+419"/>
         <source>New</source>
         <translation>Nouveau</translation>
     </message>
@@ -9376,10 +9376,10 @@ Réglez-le légèrement en dessous de votre forfait. Le volume est mesuré ici, 
         <translation>Nouveau planning</translation>
     </message>
     <message>
-        <location line="-2611"/>
+        <location line="-2612"/>
         <location line="+1019"/>
         <location line="+154"/>
-        <location line="+1617"/>
+        <location line="+1618"/>
         <location line="+1955"/>
         <source>Add</source>
         <translation>Ajouter</translation>
@@ -10290,12 +10290,12 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
     </message>
     <message>
         <location line="-75"/>
-        <location line="+445"/>
+        <location line="+447"/>
         <source>Connect</source>
         <translation>Connecter</translation>
     </message>
     <message>
-        <location line="-501"/>
+        <location line="-503"/>
         <source>Invalid URL: %1</source>
         <translation>URL invalide : %1</translation>
     </message>
@@ -10325,7 +10325,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>server.met téléchargé, &quot;%1&quot; décompressé (%2 octets). Analyse en cours...</translation>
     </message>
     <message>
-        <location line="+607"/>
+        <location line="+609"/>
         <location line="+2"/>
         <location line="+24"/>
         <location line="+39"/>
@@ -10423,7 +10423,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>▸ Serveurs (%1)</translation>
     </message>
     <message>
-        <location line="-634"/>
+        <location line="-636"/>
         <source>Connect To</source>
         <translation>Se connecter à</translation>
     </message>
@@ -10439,12 +10439,12 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
     </message>
     <message>
         <location line="+1"/>
-        <location line="+523"/>
+        <location line="+525"/>
         <source>Normal</source>
         <translation>Normale</translation>
     </message>
     <message>
-        <location line="-522"/>
+        <location line="-524"/>
         <source>High</source>
         <translation>Haute</translation>
     </message>
@@ -10504,7 +10504,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
         <translation>Rechercher...</translation>
     </message>
     <message>
-        <location line="+52"/>
+        <location line="+54"/>
         <source>▸ Servers (0)</source>
         <translation>▸ Serveurs (0)</translation>
     </message>

@@ -132,7 +132,7 @@ public:
     [[nodiscard]] int pendingBuddyClaims() const;
     /// The connected served buddy with this BuddyID, or nullptr.
     [[nodiscard]] UpDownClient* findServedBuddy(const uint8* buddyID) const;
-    /// Connected below Preferences::maxServedBuddies(). Pending claims take no slot.
+    /// Connected below Preferences::servedBuddyLimit(). Pending claims take no slot.
     [[nodiscard]] bool canServeAnotherBuddy() const;
 
     /// A Kad node asked us to test its TCP port. Returns the client queued for the

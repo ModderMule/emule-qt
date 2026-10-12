@@ -49,6 +49,13 @@ private slots:
         QCOMPARE(prefs.maxServedBuddies(), static_cast<uint16>(1));
         prefs.setMaxServedBuddies(500);
         QCOMPARE(prefs.maxServedBuddies(), static_cast<uint16>(32));
+        // In effect: at most a tenth of the connections, never below one
+        QCOMPARE(prefs.servedBuddyLimit(), static_cast<uint16>(32));   // 500 / 10 = 50
+        prefs.setMaxConnections(100);
+        QCOMPARE(prefs.servedBuddyLimit(), static_cast<uint16>(10));
+        prefs.setMaxConnections(5);
+        QCOMPARE(prefs.servedBuddyLimit(), static_cast<uint16>(1));
+        QCOMPARE(prefs.maxServedBuddies(), static_cast<uint16>(32));   // the setting stays
         // Default ON: IPv6 peers are a small population and would otherwise be outbid
         // on upload score by the IPv4 majority indefinitely.
         QCOMPARE(prefs.separateIPv6Queue(), true);
@@ -185,6 +192,42 @@ private slots:
         QCOMPARE(loaded.configDir(), AppConfig::defaultConfigDir());
         QCOMPARE(loaded.incomingDir(), AppConfig::baseDir() + QStringLiteral("/Incoming"));
         QCOMPARE(loaded.tempDirs(), QStringList{AppConfig::baseDir() + QStringLiteral("/Temp")});
+    }
+
+    // A hand-edited file is the one path past the Options ranges.
+    void load_clampsOutOfRangeValues()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("prefs.yaml"));
+        QFile seed(file);
+        QVERIFY(seed.open(QIODevice::WriteOnly));
+        seed.write("network:\n  maxServedBuddies: -1\n"
+                   "transfer:\n  queueSize: 5\n"
+                   "serverConnection:\n  deadServerRetries: 500\n"
+                   "webserver:\n  sessionTimeout: 0\n");
+        seed.close();
+
+        Preferences loaded;
+        loaded.load(file);
+        QCOMPARE(loaded.maxServedBuddies(), static_cast<uint16>(1));   // not wrapped to 32
+        QCOMPARE(loaded.queueSize(), uint32{2000});
+        QCOMPARE(loaded.deadServerRetries(), uint32{99});
+        QCOMPARE(loaded.webServerSessionTimeout(), 1);
+    }
+
+    // 0 = never disable a server; no Options value, but valid in the file
+    void load_keepsZeroDeadServerRetries()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("prefs.yaml"));
+        QFile seed(file);
+        QVERIFY(seed.open(QIODevice::WriteOnly));
+        seed.write("serverConnection:\n  deadServerRetries: 0\n");
+        seed.close();
+
+        Preferences loaded;
+        loaded.load(file);
+        QCOMPARE(loaded.deadServerRetries(), uint32{0});
     }
 
     // -- Load / Save ----------------------------------------------------------

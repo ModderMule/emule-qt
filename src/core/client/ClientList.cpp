@@ -432,7 +432,7 @@ bool ClientList::canServeAnotherBuddy() const
     if (m_buddyStatus == BuddyStatus::Connected)
         return false;
     // Pending claims don't count: MFC KademliaUDPListener.cpp:1693 checks Connected only.
-    return servedBuddyCount() < static_cast<int>(thePrefs.maxServedBuddies());
+    return servedBuddyCount() < static_cast<int>(thePrefs.servedBuddyLimit());
 }
 
 void ClientList::requestBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
@@ -729,7 +729,7 @@ void ClientList::processKadList()
                 // Dropped when we can no longer relay, when it opened its port (MFC
                 // ClientList.cpp:618-622), or when the limit was lowered (newest first).
                 if (needsOwnBuddy || !kadInst->isConnected() || !client->hasLowID()
-                    || ++servedSeen > static_cast<int>(thePrefs.maxServedBuddies()))
+                    || ++servedSeen > static_cast<int>(thePrefs.servedBuddyLimit()))
                     client->setKadState(KadState::None);
                 break;
             }

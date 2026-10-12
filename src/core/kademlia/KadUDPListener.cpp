@@ -1866,7 +1866,7 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_REQ(const uint8* data, uint
     // see docs/protocol/kad-buddy-search.md. As MFC: only connected ones count.
     if (!clientList->canServeAnotherBuddy()) {
         logKad(QStringLiteral("Kad: FINDBUDDY_REQ from %1:%2 — all %3 buddy slots in use")
-                   .arg(ipToString(ip)).arg(udpPort).arg(thePrefs.maxServedBuddies()));
+                   .arg(ipToString(ip)).arg(udpPort).arg(thePrefs.servedBuddyLimit()));
         return;
     }
 

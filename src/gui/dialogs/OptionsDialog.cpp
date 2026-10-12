@@ -5150,7 +5150,8 @@ QWidget* OptionsDialog::createExtendedPage()
     m_maxServedBuddiesSpin->setRange(1, 32);
     m_maxServedBuddiesSpin->setToolTip(
         tr("While your ports are open, eMule relays callback requests for this many "
-           "firewalled Kad nodes. Each one uses a connection."));
+           "firewalled Kad nodes. Each one uses a connection, so at most a tenth of "
+           "\"Max. connections\" is served."));
     tcpRow4->addWidget(m_maxServedBuddiesSpin);
     tcpRow4->addStretch();
     tcpLayout->addLayout(tcpRow4);
@@ -7123,7 +7124,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_addServersFromServerCheck->setChecked(prefs.value(QStringLiteral("addServersFromServer")).toBool());
     m_useUserSortedServerListCheck->setChecked(prefs.value(QStringLiteral("useUserSortedServerList")).toBool());
     m_addServersFromClientsCheck->setChecked(prefs.value(QStringLiteral("addServersFromClients")).toBool());
-    m_deadServerRetriesSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("deadServerRetries")).toInteger(1)));
+    m_deadServerRetriesSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("deadServerRetries")).toInteger(20)));
     m_autoUpdateServerListCheck->setChecked(prefs.value(QStringLiteral("autoUpdateServerList")).toBool());
     m_serverListURLValue = prefs.value(QStringLiteral("serverListURL")).toString();
     m_smartLowIdCheck->setChecked(prefs.value(QStringLiteral("smartLowIdCheck")).toBool(true));
@@ -7328,7 +7329,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
 
     // Extended page
     m_maxConPerFiveSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxConsPerFive")).toInteger(20)));
-    m_maxHalfOpenSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxHalfConnections")).toInteger(9)));
+    m_maxHalfOpenSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxHalfConnections")).toInteger(50)));
     m_maxServedBuddiesSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("maxServedBuddies")).toInteger(8)));
     m_serverKeepAliveSpin->setValue(static_cast<int>(prefs.value(QStringLiteral("serverKeepAliveTimeout")).toInteger(0)) / 60000);
     m_useCreditSystemCheck->setChecked(prefs.value(QStringLiteral("useCreditSystem")).toBool(true));

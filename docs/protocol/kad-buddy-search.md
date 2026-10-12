@@ -263,14 +263,18 @@ A served buddy is dropped when:
 | | Value | Where |
 |---|---|---|
 | Served buddies | 8, range 1–32 | preference `maxServedBuddies`, Options → Extended |
+| Served buddies in effect | the preference, at most a tenth of `maxConnections` (minimum 1) | `Preferences::servedBuddyLimit()` |
 | Pending claim (answered, not yet connected) | reserves nothing, released after 5 minutes | `kIncomingBuddyTimeoutSecs` |
 | Pending claims per IP | 1 | `ClientList::incomingBuddy()` |
 | Pending claims in total | 64, a further one releases the oldest | `ClientList::kMaxPendingBuddyClaims` |
 | Relayed packets per served buddy | 60 per minute | `UpDownClient::allowBuddyRelay()` |
-| `KADEMLIA_CALLBACK_REQ` per caller IP | `maxServedBuddies` per minute (stock: 1) | `PacketTracking::inTrackListIsAllowedPacket()` |
+| `KADEMLIA_CALLBACK_REQ` per caller IP | the limit in effect per minute (stock: 1) | `PacketTracking::inTrackListIsAllowedPacket()` |
 
 Each served buddy holds one idle TCP connection, kept open by its ping every 10 minutes, and
-counts against the connection limit.
+counts against the connection limit. That is why the limit in effect is at most a tenth of
+`maxConnections`: at the default of 500 connections the cap is 50 and never binds; at 100
+connections at most 10 nodes are served. Lowering `maxConnections` (the scheduler can do
+that too) drops the newest served buddies over the new limit.
 
 The callback limit keeps the stock bucket and ban threshold; only the cost of one request
 changes. At the default of 8 a burst of 8 requests from one IP passes, the 9th is dropped,

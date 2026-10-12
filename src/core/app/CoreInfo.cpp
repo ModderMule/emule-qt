@@ -180,7 +180,7 @@ QCborMap networkInfo()
             kadInfo.insert(QStringLiteral("buddiesServed"), served.size());
             kadInfo.insert(QStringLiteral("servedBuddies"), served);
             kadInfo.insert(QStringLiteral("buddiesServedMax"),
-                           static_cast<int>(thePrefs.maxServedBuddies()));
+                           static_cast<int>(thePrefs.servedBuddyLimit()));
         }
 
         auto* prefs = kad->getPrefs();

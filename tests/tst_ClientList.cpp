@@ -1266,6 +1266,16 @@ void tst_ClientList::servedBuddies_loweredLimitDropsTheNewest()
     QCOMPARE(middle->kadState(), KadState::ConnectedBuddy);
     QCOMPARE(newest->kadState(), KadState::None);
 
+    // Fewer connections lower the limit in effect: a tenth of them
+    const uint16 savedConnections = thePrefs.maxConnections();
+    const auto restoreConnections =
+        qScopeGuard([savedConnections] { thePrefs.setMaxConnections(savedConnections); });
+    thePrefs.setMaxConnections(10);
+    QVERIFY(!list.canServeAnotherBuddy());
+    list.processKadList();
+    QCOMPARE(oldest->kadState(), KadState::ConnectedBuddy);
+    QCOMPARE(middle->kadState(), KadState::None);
+
     list.deleteAll();
 }
 

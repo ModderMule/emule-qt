@@ -128,7 +128,7 @@ int PacketTracking::inTrackListIsAllowedPacket(uint32 ip, uint8 opcode,
         break;
     case KADEMLIA_CALLBACK_REQ:
         // Not MFC (1/min): one request per served buddy, see docs/protocol/kad-buddy-search.md
-        token = kTokenBucketMax / std::max<int64>(1, thePrefs.maxServedBuddies());
+        token = kTokenBucketMax / std::max<int64>(1, thePrefs.servedBuddyLimit());
         break;
     case KADEMLIA2_PING:
         token = kTokenBucketMax / 2;
