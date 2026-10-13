@@ -144,3 +144,6 @@ dev/
 docs/avatars
 data/nzb
 .mcp.json
+
+# Nested repos, not needed by CI yet
+libs/
