@@ -2920,6 +2920,10 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
             skipReason = "no kad responses yet";
         else if (m_stopped)
             skipReason = "file stopped";
+        else if (kadFileSearchID())
+            // Before the reask timer: that is stamped when a search starts, so a search
+            // still walking would read as one cut short and waiting an hour.
+            skipReason = "search still running";
         else if (curTick < m_lastSearchTimeKad) {
             // The reask window is 1-7 hours, so a bare "reask timer" reads the same as a file
             // that is stuck. Print what is left: a countdown that shrinks between two of these
@@ -2931,8 +2935,6 @@ uint32 PartFile::process(uint32 reduceDownload, uint32 counter)
         }
         else if (kad->getTotalFile() >= KADEMLIATOTALFILE)
             skipReason = "KADEMLIATOTALFILE reached";
-        else if (kadFileSearchID())
-            skipReason = "search id already set";
         else if (!theApp.downloadQueue->doKademliaFileRequest())
             skipReason = "queue ask throttle";
         else if (!theApp.downloadQueue->isKadSearchTurn(this))

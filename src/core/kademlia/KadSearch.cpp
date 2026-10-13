@@ -480,8 +480,11 @@ void Search::go(uint32 maxToSend)
     // K-th of them. Comparing with the single closest stopped the walk while most of
     // the K closest nodes were still unasked, so they never got the action packet.
     // A buddy search walks on until it has enough nodes to ask.
+    // Below kSearchMinContacts the walk goes on through contacts that are not closer:
+    // the K that answered may all come from one cluster handing out its own members.
     const uint32 needed = m_type == SearchType::FindBuddy ? kSearchFindBuddyRequests : kK;
-    if (!m_possible.empty() && m_responded.size() >= needed) {
+    if (!m_possible.empty() && m_responded.size() >= needed
+        && m_tried.size() >= kSearchMinContacts) {
         const UInt128 kthResponded = std::next(m_responded.begin(), needed - 1)->first;
         const UInt128 closestPossible = m_possible.begin()->first;
         if (!(closestPossible < kthResponded)) {

@@ -24,6 +24,12 @@ inline constexpr uint32_t kSearchTolerance              = 0x1000000u;
 inline constexpr uint32_t kSearchJumpstart              = 1;
 inline constexpr uint32_t kSearchJumpstartCooldown      = 3;    // seconds without response before jumpstart sends again (MFC: SEC(3))
 inline constexpr uint32_t kJumpstartMaxSend             = 1;    // packets per jumpstart (MFC sends 1; go() sends kAlphaQuery)
+// Nodes a lookup asks before it may converge. Not MFC, which walks until the lifetime:
+// a cluster of nodes vouching for each other must not end the walk at the first K.
+inline constexpr uint32_t kSearchMinContacts            = 10;
+// Inert at 10: the stop rule already needs kK responders, so m_tried.size() >= 10 by then.
+// Must be > kK to help against sybils.
+// ToDo: maybe raise dynamically when a sybil attack is suspected, e.g. n searches without results.
 inline constexpr uint32_t kSearchLifetime               = 45;
 inline constexpr uint32_t kSearchFileLifetime           = 45;
 inline constexpr uint32_t kSearchKeywordLifetime        = 45;

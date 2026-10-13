@@ -285,10 +285,10 @@ void tst_KadSearch::walk_goesOnUntilTheKClosestAreAsked()
 {
     eMule::testing::KadFixture kadFixture;
 
-    Search* search = startWalk(SearchType::Keyword, 16);
+    Search* search = startWalk(SearchType::Keyword, 24);
     QVERIFY(search != nullptr);
     QCOMPARE(search->m_tried.size(), std::size_t{3});      // ranks 1-3
-    QCOMPARE(search->m_possible.size(), std::size_t{13});
+    QCOMPARE(search->m_possible.size(), std::size_t{21});
 
     // Ranks 8-14 were asked early (they came from the routing table) and answer.
     for (auto it = std::next(search->m_possible.begin(), 4); search->m_tried.size() < 10; ) {
@@ -300,20 +300,28 @@ void tst_KadSearch::walk_goesOnUntilTheKClosestAreAsked()
     QCOMPARE(search->m_responded.size(), std::size_t{10});
     // The answers pulled in the three best candidates (4-6); 7 is still waiting.
     QCOMPARE(search->m_tried.size(), std::size_t{13});
-    QCOMPARE(search->m_possible.size(), std::size_t{3});   // ranks 7, 15, 16
+    QCOMPARE(search->m_possible.size(), std::size_t{11});  // ranks 7, 15-24
     QVERIFY(!search->stopping());
 
     search->go(1);
     QVERIFY2(!search->stopping(), "rank 7 is closer than the 10th responder");
     QCOMPARE(search->m_tried.size(), std::size_t{14});
-    QCOMPARE(search->m_possible.size(), std::size_t{2});
+    QCOMPARE(search->m_possible.size(), std::size_t{10});
 
     // Now the ten closest have all answered: nothing left that could improve on them.
+    // The walk still goes on through farther nodes, in case those ten are one cluster.
     for (uint32 rank : {4u, 5u, 6u, 7u})
         respond(rank);
+    while (search->m_tried.size() < kSearchMinContacts) {
+        const std::size_t before = search->m_tried.size();
+        search->go(1);
+        QVERIFY2(!search->stopping(), "fewer than kSearchMinContacts asked");
+        QCOMPARE(search->m_tried.size(), before + 1);
+    }
     search->go(1);
     QVERIFY(search->stopping());
-    QCOMPARE(search->m_tried.size(), std::size_t{14});
+    // 14 were asked before the ten closest had answered.
+    QCOMPARE(search->m_tried.size(), std::max(std::size_t{14}, std::size_t{kSearchMinContacts}));
 
     SearchManager::stopAllSearches();
 }
