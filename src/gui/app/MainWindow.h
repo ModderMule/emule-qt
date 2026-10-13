@@ -169,6 +169,10 @@ public:
     /// otherwise minimized. @p maximized is the state the first restore returns to.
     void startMinimized(bool maximized);
 
+    /// Bring the window back from the tray or the taskbar in the state it was left
+    /// in (normal, maximized, fullscreen), raised and active.
+    void restoreWindow();
+
     /// Update the Users/Files label in the footer with Kad network estimates.
     void setNetworkStats(quint32 users, quint32 files);
 
@@ -316,6 +320,7 @@ private:
 
     // System tray icon for popup notifications
     QSystemTrayIcon* m_trayIcon = nullptr;
+    Qt::WindowStates m_stateBeforeMinimize = Qt::WindowNoState;   // maximized/fullscreen only
     QSoundEffect* m_notifySound = nullptr;
     QStringList m_lastNotification;   ///< title, text, sound — what was last asked for
 

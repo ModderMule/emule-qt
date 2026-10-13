@@ -108,9 +108,7 @@ bool ExternalLinkHandler::eventFilter(QObject* watched, QEvent* event)
     // any window of ours taking focus (MiniMule, a tray menu) would do the same.
     if (event->type() == QEvent::ApplicationActivate && m_mainWindow
         && !m_mainWindow->isVisible()) {
-        m_mainWindow->showNormal();
-        m_mainWindow->raise();
-        m_mainWindow->activateWindow();
+        m_mainWindow->restoreWindow();
     }
 #endif
 
@@ -146,9 +144,7 @@ void ExternalLinkHandler::openNow(const QString& link)
         },
         [window] {
             if (window && thePrefs.bringToFrontOnLinkClick()) {
-                window->showNormal();
-                window->raise();
-                window->activateWindow();
+                window->restoreWindow();
             }
         });
 }

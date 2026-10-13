@@ -44,6 +44,7 @@
 #include <QAction>
 #include <QMimeData>
 #include <QDropEvent>
+#include <QWindowStateChangeEvent>
 #include <QDragMoveEvent>
 #include <QDragEnterEvent>
 #include <QActionGroup>
@@ -140,9 +141,7 @@ MainWindow::MainWindow(QWidget* parent)
                                     m_ipc && m_ipc->isConnected());
         });
         connect(m_trayMenu, &TrayMenuManager::restoreRequested, this, [this]() {
-            showNormal();
-            raise();
-            activateWindow();
+            restoreWindow();
         });
         connect(m_trayMenu, &TrayMenuManager::connectRequested,
                 this, &MainWindow::onConnectToggle);
@@ -649,9 +648,7 @@ void MainWindow::closeEvent(QCloseEvent* event)
     if (thePrefs.promptOnExit()) {
         // MFC restores the window before asking, so the question is never hidden
         if (!isVisible() || isMinimized()) {
-            showNormal();
-            raise();
-            activateWindow();
+            restoreWindow();
         }
         auto result = QMessageBox::question(
             this,
@@ -700,16 +697,41 @@ void MainWindow::startMinimized(bool maximized)
     showMinimized();
 }
 
+void MainWindow::restoreWindow()
+{
+    // Not showNormal(): that drops maximized/fullscreen, so every restore came back
+    // at the normal size. Only the minimized bit goes.
+    Qt::WindowStates state = (windowState() | m_stateBeforeMinimize) & ~Qt::WindowMinimized;
+    if (state.testFlag(Qt::WindowFullScreen))
+        state &= ~Qt::WindowMaximized;
+    setWindowState(state);
+    show();
+    raise();
+    activateWindow();
+}
+
 void MainWindow::changeEvent(QEvent* event)
 {
     QMainWindow::changeEvent(event);
     // MFC CTrayDialog::OnSysCommand (TrayDialog.cpp:255-268): with the preference on,
     // minimizing hides to the tray. Deferred, because hiding inside the state change
     // leaves some platforms' minimize animation half done.
-    if (event->type() == QEvent::WindowStateChange && isMinimized() && m_trayIcon
-        && thePrefs.minimizeToTray())
-    {
-        QTimer::singleShot(0, this, &QWidget::hide);
+    if (event->type() != QEvent::WindowStateChange)
+        return;
+    if (!isMinimized()) {
+        m_stateBeforeMinimize = Qt::WindowNoState;
+        return;
+    }
+    // Some platforms drop the maximized bit while minimized; keep it for the restore
+    const Qt::WindowStates before = static_cast<QWindowStateChangeEvent*>(event)->oldState();
+    if (!before.testFlag(Qt::WindowMinimized))
+        m_stateBeforeMinimize = before & (Qt::WindowMaximized | Qt::WindowFullScreen);
+    if (m_trayIcon && thePrefs.minimizeToTray()) {
+        // Re-checked: a restore may already have happened by the time this runs
+        QTimer::singleShot(0, this, [this] {
+            if (isMinimized())
+                hide();
+        });
     }
 }
 
@@ -1070,11 +1092,11 @@ void MainWindow::onTrayIconClicked(QSystemTrayIcon::ActivationReason reason)
 
     if (reason == QSystemTrayIcon::DoubleClick) {
         // Double-click: restore the main window; the 1st click opened MiniMule
+#ifdef Q_OS_WIN
         if (m_miniMule)
             m_miniMule->hide();
-        showNormal();
-        raise();
-        activateWindow();
+#endif
+        restoreWindow();
         return;
     }
 
@@ -1090,9 +1112,7 @@ void MainWindow::onTrayIconClicked(QSystemTrayIcon::ActivationReason reason)
             m_miniMule = new MiniMuleWidget(m_trayIcon);
             connect(m_miniMule, &MiniMuleWidget::restoreRequested, this, [this]() {
                 m_miniMule->hide();
-                showNormal();
-                raise();
-                activateWindow();
+                restoreWindow();
             });
             connect(m_miniMule, &MiniMuleWidget::openIncomingRequested,
                     this, &MainWindow::onOpenIncomingFolder);
