@@ -90,12 +90,17 @@ qint64 IpcConnection::pendingWriteBytes() const
 bool IpcConnection::hasPendingInput() const
 {
     return !m_queue.empty() || hasCompleteFrame()
-        || (m_socket && m_socket->bytesAvailable() > 0);
+        || (!m_inputClosed && m_socket && m_socket->bytesAvailable() > 0);
 }
 
 void IpcConnection::abort()
 {
     m_held.clear();
+    // Nothing queued is delivered either, so disconnected() is not held back
+    m_inputClosed = true;
+    m_queue.clear();
+    m_queuedKeys.clear();
+    m_readBuffer.clear();
     if (m_socket)
         m_socket->abort();
 }
@@ -132,6 +137,10 @@ bool IpcConnection::isEncrypted() const
 
 void IpcConnection::onReadyRead()
 {
+    if (m_inputClosed) {
+        m_socket->readAll();
+        return;
+    }
     m_readBuffer.append(m_socket->readAll());
 
     const QPointer<IpcConnection> self(this);
@@ -178,7 +187,7 @@ void IpcConnection::drain()
     });
 
     // What a handler's nested event loop left in the socket on an earlier pass
-    if (m_socket->bytesAvailable() > 0)
+    if (!m_inputClosed && m_socket->bytesAvailable() > 0)
         m_readBuffer.append(m_socket->readAll());
 
     // One pass gets m_budgetMs, then the event loop gets a turn: input and paint
@@ -186,7 +195,8 @@ void IpcConnection::drain()
     // a deep buffer cannot starve the dispatch below.
     QElapsedTimer clock;
     clock.start();
-    if (!decodeFrames(clock, m_budgetMs / 2))
+    decodeFrames(clock, m_budgetMs / 2);
+    if (!self)
         return;
 
     bool first = true;
@@ -217,8 +227,10 @@ void IpcConnection::drain()
     // Left over for the next turn: what the budget cut off, and what arrived
     // during a handler's nested event loop — no readyRead announced those bytes,
     // so without this they would wait for whatever the peer sends next.
-    if (!m_queue.empty() || hasCompleteFrame() || m_socket->bytesAvailable() > 0)
+    if (hasPendingInput())
         scheduleDrain();
+    else if (m_disconnectPending)
+        reportDisconnect();
 }
 
 void IpcConnection::onStallCheck()
@@ -232,27 +244,24 @@ void IpcConnection::onStallCheck()
 
 void IpcConnection::onDisconnected()
 {
-    if (!m_disconnectEmitted) {
-        m_disconnectEmitted = true;
-        emit disconnected();
-    }
+    reportDisconnect();
 }
 
 void IpcConnection::onErrorOccurred(QAbstractSocket::SocketError error)
 {
     Q_UNUSED(error)
-    if (!m_disconnectEmitted) {
-        m_disconnectEmitted = true;
-        emit disconnected();
-    }
+    reportDisconnect();
 }
 
 // ---------------------------------------------------------------------------
 // Private
 // ---------------------------------------------------------------------------
 
-bool IpcConnection::decodeFrames(const QElapsedTimer& clock, int budgetMs)
+void IpcConnection::decodeFrames(const QElapsedTimer& clock, int budgetMs)
 {
+    if (m_inputClosed)
+        return;
+
     for (;;) {
         if (budgetMs > 0 && !m_queue.empty() && clock.elapsed() >= budgetMs)
             break;
@@ -275,16 +284,14 @@ bool IpcConnection::decodeFrames(const QElapsedTimer& clock, int budgetMs)
 
             QByteArray plain = aesDecryptPayload(raw->payload, m_encryptionKey);
             if (plain.isEmpty()) {
-                emit protocolError(QStringLiteral("AES decryption failed"));
-                close();
-                return false;
+                closeInput(QStringLiteral("AES decryption failed"));
+                return;
             }
 
             QCborValue val = QCborValue::fromCbor(plain);
             if (!val.isArray()) {
-                emit protocolError(QStringLiteral("Invalid CBOR after decryption"));
-                close();
-                return false;
+                closeInput(QStringLiteral("Invalid CBOR after decryption"));
+                return;
             }
 
             enqueue(IpcMessage(val.toArray()));
@@ -295,12 +302,37 @@ bool IpcConnection::decodeFrames(const QElapsedTimer& clock, int budgetMs)
     if (m_readBuffer.size() >= FrameHeaderSize) {
         const auto payloadLen = qFromBigEndian<uint32_t>(
             reinterpret_cast<const uint8_t*>(m_readBuffer.constData()));
-        if (payloadLen > MaxPayloadSize) {
-            emit protocolError(QStringLiteral("Oversized frame: %1 bytes").arg(payloadLen));
-            close();
-        }
+        if (payloadLen > MaxPayloadSize)
+            closeInput(QStringLiteral("Oversized frame: %1 bytes").arg(payloadLen));
     }
-    return true;
+}
+
+void IpcConnection::closeInput(const QString& reason)
+{
+    // What was decoded ahead of the bad frame still counts; nothing after it does
+    m_inputClosed = true;
+    m_readBuffer.clear();
+    const QPointer<IpcConnection> self(this);
+    emit protocolError(reason);
+    if (self)
+        close();
+}
+
+void IpcConnection::reportDisconnect()
+{
+    if (m_disconnectEmitted)
+        return;
+
+    // What the peer sent before it closed is still owed to the handlers, and a
+    // listener told "gone" now would drop it. drain() comes back here when through.
+    if (hasPendingInput()) {
+        m_disconnectPending = true;
+        scheduleDrain();
+        return;
+    }
+    m_disconnectPending = false;
+    m_disconnectEmitted = true;
+    emit disconnected();
 }
 
 void IpcConnection::enqueue(IpcMessage msg)

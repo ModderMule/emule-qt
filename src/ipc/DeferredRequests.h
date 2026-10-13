@@ -32,7 +32,13 @@ public:
 
     [[nodiscard]] int size() const { return m_live; }
 
+    /// Slots in use, superseded ones included — bounded at 2 * kMaxHeld.
+    [[nodiscard]] int slotCount() const { return static_cast<int>(m_held.size()); }
+
 private:
+    /// Drop the superseded slots and re-index what is left.
+    void compact();
+
     std::vector<std::optional<IpcMessage>> m_held;   ///< nullopt = superseded
     QHash<QByteArray, qsizetype> m_readOnly;         ///< requestIdentity -> index in m_held
     int m_live = 0;

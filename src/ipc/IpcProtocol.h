@@ -668,7 +668,7 @@ enum class IpcMsgType : int {
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 
-    HandshakeOk          = 300,  ///< [version, motd, sessionToken, loading: bool]
+    HandshakeOk          = 300,  ///< [version, motd, sessionToken, loading: bool, loadStage: string]
     Result               = 301,  ///< [success, data]
     Error                = 302,  ///< [code, message]
 

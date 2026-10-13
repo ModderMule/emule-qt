@@ -211,6 +211,7 @@ private slots:
     void deferred_aWriteKeepsItsPlaceBeforeTheReadAfterIt();
     void deferred_differentQuestionsAreAllKept();
     void deferred_fullRefusesTheNewcomer();
+    void deferred_repeatedReadDoesNotGrowWithoutBound();
 
     // The start-up watch
     void watch_coreThatDiedIsReportedWithoutWaitingOutTheGrace();
@@ -633,7 +634,8 @@ void tst_IpcBusyStates::link_reportsALaunchedCoreAsStarting()
     QCOMPARE(client.coreLink(), Link::Starting);
 
     // Nothing listens yet; it retries quickly and keeps saying "starting"
-    QTRY_VERIFY_WITH_TIMEOUT(client.connectAttempts() >= 3, 5000);
+    // (a refused connect to loopback takes Windows seconds, not milliseconds)
+    QTRY_VERIFY_WITH_TIMEOUT(client.connectAttempts() >= 3, 15'000);
     QCOMPARE(client.coreLink(), Link::Starting);
     QVERIFY(!client.isConnected());
 }
@@ -725,6 +727,29 @@ void tst_IpcBusyStates::deferred_fullRefusesTheNewcomer()
     QVERIFY(refusedRead);
     QCOMPARE(refusedRead->seqId(), 100'000);
     QCOMPARE(held.size(), DeferredRequests::kMaxHeld);
+}
+
+void tst_IpcBusyStates::deferred_repeatedReadDoesNotGrowWithoutBound()
+{
+    DeferredRequests held;
+    QVERIFY(!held.hold(IpcMessage(IpcMsgType::PauseDownload, 1)));
+
+    // A client asking the same thing over and over through a long load
+    const int rounds = DeferredRequests::kMaxHeld * 5;
+    for (int seq = 2; seq < 2 + rounds; ++seq) {
+        const auto refused = held.hold(IpcMessage(IpcMsgType::GetDownloads, seq));
+        QCOMPARE(refused.has_value(), seq > 2);
+        if (refused)
+            QCOMPARE(refused->seqId(), seq - 1);
+        QVERIFY(held.slotCount() <= DeferredRequests::kMaxHeld * 2);
+    }
+    QCOMPARE(held.size(), 2);
+
+    // Still the write first, then the newest read
+    const auto replay = held.take();
+    QCOMPARE(replay.size(), std::size_t(2));
+    QCOMPARE(replay[0].type(), IpcMsgType::PauseDownload);
+    QCOMPARE(replay[1].seqId(), 1 + rounds);
 }
 
 // ---------------------------------------------------------------------------

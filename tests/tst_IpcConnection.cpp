@@ -32,6 +32,7 @@ private slots:
     void nestedEventLoop_holdsDispatchAndReports();
     void slowReader_snapshotPushesAreHeld();
     void stuckReader_isDropped();
+    void peerClose_deliversQueuedMessagesFirst();
 };
 
 namespace {
@@ -460,6 +461,32 @@ void tst_IpcConnection::stuckReader_isDropped()
     // Dropped means dropped: nothing more is queued for it
     QCOMPARE(server->sendMessage(bulkyReply(1)), IpcConnection::SendResult::Closed);
     QCOMPARE(server->sendPush(statsPush(1)), IpcConnection::SendResult::Closed);
+}
+
+void tst_IpcConnection::peerClose_deliversQueuedMessagesFirst()
+{
+    auto [server, client] = createPair();
+    QVERIFY(server);
+    QVERIFY(client);
+
+    // One message per pass: the close arrives long before the queue is through
+    server->setDispatchBudgetMs(1);
+    constexpr int kCount = 50;
+    int received = 0;
+    int receivedAtDisconnect = -1;
+    connect(server.get(), &IpcConnection::messageReceived, this, [&received] {
+        ++received;
+        QTest::qSleep(3);
+    });
+    connect(server.get(), &IpcConnection::disconnected, this,
+            [&] { receivedAtDisconnect = received; });
+
+    for (int seq = 1; seq <= kCount; ++seq)
+        client->sendMessage(IpcMessage(IpcMsgType::GetDownloads, seq));
+    client->close();
+
+    QTRY_VERIFY_WITH_TIMEOUT(receivedAtDisconnect >= 0, 5000);
+    QCOMPARE(receivedAtDisconnect, kCount);
 }
 
 QTEST_GUILESS_MAIN(tst_IpcConnection)

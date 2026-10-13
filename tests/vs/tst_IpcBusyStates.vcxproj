@@ -41,10 +41,10 @@
   <Import Project="$(QtMsBuild)\qt_defaults.props" Condition="Exists('$(QtMsBuild)\qt_defaults.props')" />
   <Import Project="..\..\QtVersion.props" />
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <QtModules>core;network;testlib;gui;multimedia;websockets;httpserver;concurrent;sql</QtModules>
+    <QtModules>core;network;testlib;gui;widgets;multimedia;websockets;httpserver;concurrent;sql</QtModules>
   </PropertyGroup>
   <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <QtModules>core;network;testlib;gui;multimedia;websockets;httpserver;concurrent;sql</QtModules>
+    <QtModules>core;network;testlib;gui;widgets;multimedia;websockets;httpserver;concurrent;sql</QtModules>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') OR !Exists('$(QtMsBuild)\Qt.props')">
     <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
@@ -72,7 +72,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..;..\..\src\core;..\..\src\ipc;..\..\src\usenet;..\..\src\indexer;..\..\src\vcpkg_installed\x64-windows\include;..\..\src\vcpkg_installed\x64-windows\include\miniupnpc;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..;..\stubs;..\..\src\gui;..\..\src\core;..\..\src\ipc;..\..\src\usenet;..\..\src\indexer;..\..\src\vcpkg_installed\x64-windows\include;..\..\src\vcpkg_installed\x64-windows\include\miniupnpc;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
       <AssemblerListingLocation>release\</AssemblerListingLocation>
       <BrowseInformation>false</BrowseInformation>
@@ -127,7 +127,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..;..\..\src\core;..\..\src\ipc;..\..\src\usenet;..\..\src\indexer;..\..\src\vcpkg_installed\x64-windows\include;..\..\src\vcpkg_installed\x64-windows\include\miniupnpc;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..;..\stubs;..\..\src\gui;..\..\src\core;..\..\src\ipc;..\..\src\usenet;..\..\src\indexer;..\..\src\vcpkg_installed\x64-windows\include;..\..\src\vcpkg_installed\x64-windows\include\miniupnpc;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
       <AssemblerListingLocation>debug\</AssemblerListingLocation>
       <BrowseInformation>false</BrowseInformation>
@@ -177,12 +177,18 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\tst_IpcBusyStates.cpp" />
+    <ClCompile Include="..\..\src\gui\app\IpcClient.cpp" />
+    <ClCompile Include="..\..\src\gui\app\CoreStartWatch.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="..\..\src\gui\app\IpcClient.h" />
+    <QtMoc Include="..\..\src\gui\app\CoreStartWatch.h" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\tst_IpcBusyStates.cpp.moc.cbt">
       <FileType>Document</FileType>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">"$(QTDIR)\bin\moc.exe" "..\tst_IpcBusyStates.cpp" -o "$(IntDir)tst_IpcBusyStates.moc" --include "./$(Configuration)/moc_predefs.h" -I".." -I"../../src/core" -I"../../src/ipc" -I"$(QTDIR)/include" -I"$(QTDIR)/include/QtCore" -I"$(QTDIR)/include/QtTest" -I"$(QTDIR)/include/QtNetwork" -I"$(QTDIR)/include/QtGui"</Command>
-      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">"$(QTDIR)\bin\moc.exe" "..\tst_IpcBusyStates.cpp" -o "$(IntDir)tst_IpcBusyStates.moc" --include "./$(Configuration)/moc_predefs.h" -I".." -I"../../src/core" -I"../../src/ipc" -I"$(QTDIR)/include" -I"$(QTDIR)/include/QtCore" -I"$(QTDIR)/include/QtTest" -I"$(QTDIR)/include/QtNetwork" -I"$(QTDIR)/include/QtGui"</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">"$(QTDIR)\bin\moc.exe" "..\tst_IpcBusyStates.cpp" -o "$(IntDir)tst_IpcBusyStates.moc" --include "./$(Configuration)/moc_predefs.h" -I".." -I"../../src/gui" -I"../../src/core" -I"../../src/ipc" -I"$(QTDIR)/include" -I"$(QTDIR)/include/QtCore" -I"$(QTDIR)/include/QtTest" -I"$(QTDIR)/include/QtNetwork" -I"$(QTDIR)/include/QtGui"</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">"$(QTDIR)\bin\moc.exe" "..\tst_IpcBusyStates.cpp" -o "$(IntDir)tst_IpcBusyStates.moc" --include "./$(Configuration)/moc_predefs.h" -I".." -I"../../src/gui" -I"../../src/core" -I"../../src/ipc" -I"$(QTDIR)/include" -I"$(QTDIR)/include/QtCore" -I"$(QTDIR)/include/QtTest" -I"$(QTDIR)/include/QtNetwork" -I"$(QTDIR)/include/QtGui"</Command>
       <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Moc'ing tst_IpcBusyStates.cpp...</Message>
       <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Moc'ing tst_IpcBusyStates.cpp...</Message>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)tst_IpcBusyStates.moc;%(Outputs)</Outputs>

@@ -100,7 +100,8 @@ signals:
     /// Emitted for each complete IPC message received.
     void messageReceived(const eMule::Ipc::IpcMessage& msg);
 
-    /// Emitted when the connection is closed or an error occurs.
+    /// Emitted when the connection is closed or an error occurs — after the last
+    /// message the peer sent ahead of it has been dispatched.
     void disconnected();
 
     /// Emitted on protocol errors (e.g. oversized frame).
@@ -128,8 +129,12 @@ private:
         bool live = true;   ///< false once a newer frame replaced it
     };
 
-    /// Move complete frames from m_readBuffer to m_queue. False = connection closed.
-    bool decodeFrames(const QElapsedTimer& clock, int budgetMs);
+    /// Move complete frames from m_readBuffer to m_queue.
+    void decodeFrames(const QElapsedTimer& clock, int budgetMs);
+    /// A frame that cannot be trusted: protocolError(), close, take no more bytes.
+    void closeInput(const QString& reason);
+    /// Emit disconnected(), or leave it to drain() while input is still waiting.
+    void reportDisconnect();
     void enqueue(IpcMessage msg);
     [[nodiscard]] bool hasCompleteFrame() const;
     void scheduleDrain();
@@ -164,6 +169,10 @@ private:
     QTimer m_stallTimer;
     QByteArray m_encryptionKey;  // Empty = no encryption
     bool m_disconnectEmitted = false;
+    /// The socket is gone but queued messages are not through yet.
+    bool m_disconnectPending = false;
+    /// Set by closeInput() and abort(): bytes still arriving are thrown away.
+    bool m_inputClosed = false;
 };
 
 } // namespace eMule::Ipc

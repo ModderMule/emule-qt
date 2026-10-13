@@ -18,6 +18,9 @@ std::optional<IpcMessage> DeferredRequests::hold(const IpcMessage& msg)
             // still run before the read that follows it.
             refused = std::exchange(m_held[static_cast<std::size_t>(*it)], std::nullopt);
             --m_live;
+            // The dead slots of a client repeating itself must not pile up either
+            if (static_cast<int>(m_held.size()) - m_live > kMaxHeld)
+                compact();
         } else if (m_live >= kMaxHeld) {
             return msg;
         }
@@ -43,6 +46,20 @@ std::vector<IpcMessage> DeferredRequests::take()
     m_readOnly.clear();
     m_live = 0;
     return result;
+}
+
+// ---------------------------------------------------------------------------
+// Private
+// ---------------------------------------------------------------------------
+
+void DeferredRequests::compact()
+{
+    std::erase_if(m_held, [](const auto& held) { return !held.has_value(); });
+    m_readOnly.clear();
+    for (std::size_t i = 0; i < m_held.size(); ++i) {
+        if (isReadOnlyRequest(m_held[i]->type()))
+            m_readOnly.insert(requestIdentity(*m_held[i]), static_cast<qsizetype>(i));
+    }
 }
 
 } // namespace eMule::Ipc
