@@ -254,6 +254,7 @@ jobs:
             "eMuleQt-v${VERSION}-macOS-arm64.dmg"
             "eMuleQt-v${VERSION}-macOS-x86_64.dmg"
             "eMuleQt-v${VERSION}-win64.zip"
+            "eMuleQt-v${VERSION}-win64-setup.exe"
           )
 
           missing=0
@@ -290,7 +291,8 @@ jobs:
             echo "| Linux x86_64 | \`eMuleQt-v${VERSION}-linux-x86_64.tar.gz\` |"
             echo "| macOS 13+ (Apple silicon) | \`eMuleQt-v${VERSION}-macOS-arm64.dmg\` |"
             echo "| macOS 13+ (Intel) | \`eMuleQt-v${VERSION}-macOS-x86_64.dmg\` |"
-            echo "| Windows x64 | \`eMuleQt-v${VERSION}-win64.zip\` |"
+            echo "| Windows x64 (installer) | \`eMuleQt-v${VERSION}-win64-setup.exe\` |"
+            echo "| Windows x64 (portable zip) | \`eMuleQt-v${VERSION}-win64.zip\` |"
             echo
             echo "**Full changelog:** ${compare}"
             echo

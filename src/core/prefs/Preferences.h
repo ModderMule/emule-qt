@@ -1188,8 +1188,13 @@ public:
     void setIpFilterLevel(uint32 val);
 
 
+    /// ipfilter source for the Security page's "Update from URL".
+    /// Never empty: an empty value falls back to kDefaultIpFilterUpdateUrl.
     [[nodiscard]] QString ipFilterUpdateUrl() const;
     void setIpFilterUpdateUrl(const QString& val);
+
+    static constexpr QLatin1StringView kDefaultIpFilterUpdateUrl{
+        "https://upd.emule-security.org/ipfilter.zip"};
 
     [[nodiscard]] bool useSafeKad() const;
     void setUseSafeKad(bool val);

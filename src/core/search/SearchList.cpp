@@ -539,7 +539,10 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
             }
         }
 
-        const uint32 addedSources = fileOwner->sourceCount();
+        // Servers relaying one swarm or one Kad count all report the same sources
+        const bool networkWide = parent->hasNetworkWideSources();
+        const uint32 sourcesBefore = parent->sourceCount();
+        uint32 addedSources = fileOwner->sourceCount();
 
         // Kad publish trust: the best any answer reported, not the first one's
         const auto trust = [](const SearchFile* f) { return f->kadPublishInfo() & 0xFFFF; };
@@ -592,14 +595,15 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
             entry->files.push_back(std::move(fileOwner));
         }
 
-        // Recompute the parent from its children: eD2K sums them, Kad takes the max.
+        // Recompute the parent from its children: eD2K sums them, Kad and eNode meta
+        // rows take the max.
         // Set, never add — the children already hold every answer so far. Name, size
         // and type follow the most available child (MFC SearchList.cpp:541-592).
         uint32 allSources = 0;
         uint32 allComplete = 0;
         const SearchFile* bestChild = nullptr;
         for (const auto* child : parent->listChildren()) {
-            if (parent->isKadResult()) {
+            if (networkWide) {
                 allSources = std::max(allSources, child->sourceCount());
                 allComplete = std::max(allComplete, child->completeSourceCount());
             } else {
@@ -644,6 +648,9 @@ void SearchList::addToList(SearchFile* rawFile, bool clientResponse,
                          fromUDPServerIP != 0, fromUDPServerIP);
         }
 
+        // A relayed count adds only what it raised the row by
+        if (networkWide && !parent->isKadResult())
+            addedSources = parent->sourceCount() > sourcesBefore ? parent->sourceCount() - sourcesBefore : 0;
         addResultCount(searchID, parent->fileHash(), addedSources, parent->isConsideredSpam());
 
         assess(parent);

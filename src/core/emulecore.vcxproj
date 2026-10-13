@@ -356,6 +356,7 @@
     <ClCompile Include="app\CoreInfo.cpp" />
     <ClCompile Include="app\CoreOps.cpp" />
     <ClCompile Include="prefs\PreferenceSchema.cpp" />
+    <ClCompile Include="prefs\LegacyConfigImport.cpp" />
     <ClCompile Include="prefs\LegacyIdentityImport.cpp" />
     <ClCompile Include="webserver\ApiEventHub.cpp" />
     <ClCompile Include="webserver\ApiRegistry.cpp" />
@@ -446,6 +447,7 @@
     <ClInclude Include="app\CoreInfo.h" />
     <ClInclude Include="app\CoreOps.h" />
     <ClInclude Include="prefs\PreferenceSchema.h" />
+    <ClInclude Include="prefs\LegacyConfigImport.h" />
     <ClInclude Include="prefs\LegacyIdentityImport.h" />
     <ClInclude Include="webserver\ApiBackend.h" />
     <ClInclude Include="webserver\ApiRegistry.h" />

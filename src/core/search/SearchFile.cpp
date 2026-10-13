@@ -295,8 +295,8 @@ void SearchFile::updateFileRatingCommentAvail(bool /*forceUpdate*/)
 
 void SearchFile::addSources(uint32 count)
 {
-    if (m_kadResult) {
-        // Kad: take maximum (each node reports total availability)
+    if (hasNetworkWideSources()) {
+        // Kad, eNode meta rows: take maximum (each answer reports total availability)
         m_sourceCount = std::max(m_sourceCount, count);
     } else {
         // ED2K: additive (each server reports its own sources)
@@ -306,7 +306,7 @@ void SearchFile::addSources(uint32 count)
 
 void SearchFile::addCompleteSources(uint32 count)
 {
-    if (m_kadResult) {
+    if (hasNetworkWideSources()) {
         m_completeSourceCount = std::max(m_completeSourceCount, count);
     } else {
         m_completeSourceCount += count;

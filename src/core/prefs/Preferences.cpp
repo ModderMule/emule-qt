@@ -408,7 +408,7 @@ struct Preferences::Data {
     uint32 ipFilterLevel = 127;  // lower = more restrictive
     bool useSafeKad = true;
     bool useFastKad = true;
-    QString ipFilterUpdateUrl;
+    QString ipFilterUpdateUrl = Preferences::kDefaultIpFilterUpdateUrl;
     QString appToken;
     QString bugReportApiKey;
     QString bugReportDomain;
@@ -2264,7 +2264,10 @@ void Preferences::setUseFastKad(bool val) { set(&Data::useFastKad, val); }
 
 QString Preferences::ipFilterUpdateUrl() const { return get(&Data::ipFilterUpdateUrl); }
 
-void Preferences::setIpFilterUpdateUrl(const QString& val) { set(&Data::ipFilterUpdateUrl, val); }
+void Preferences::setIpFilterUpdateUrl(const QString& val)
+{
+    set(&Data::ipFilterUpdateUrl, urlOrDefault(val, kDefaultIpFilterUpdateUrl));
+}
 
 QString Preferences::appToken() const { return get(&Data::appToken); }
 
@@ -3304,7 +3307,8 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->enableSearchResultFilter  = p.value(QStringLiteral("enableSearchResultFilter")).toBool();
     m_data->useSafeKad                = p.value(QStringLiteral("useSafeKad")).toBool();
     m_data->useFastKad                = p.value(QStringLiteral("useFastKad")).toBool();
-    m_data->ipFilterUpdateUrl         = p.value(QStringLiteral("ipFilterUpdateUrl")).toString();
+    m_data->ipFilterUpdateUrl         = urlOrDefault(p.value(QStringLiteral("ipFilterUpdateUrl")).toString(),
+                                                     kDefaultIpFilterUpdateUrl);
     m_data->geoIpAccountId            = p.value(QStringLiteral("geoIpAccountId")).toString();
     m_data->geoIpLicenseKey           = p.value(QStringLiteral("geoIpLicenseKey")).toString();
     m_data->geoIpAutoUpdate           = p.value(QStringLiteral("geoIpAutoUpdate")).toBool(true);
@@ -3967,7 +3971,9 @@ bool Preferences::load(const QString& filePath)
             m_data->useSafeKad = sec["useSafeKad"].as<bool>(m_data->useSafeKad);
             m_data->useFastKad = sec["useFastKad"].as<bool>(m_data->useFastKad);
             if (sec["ipFilterUpdateUrl"])
-                m_data->ipFilterUpdateUrl = QString::fromStdString(sec["ipFilterUpdateUrl"].as<std::string>());
+                m_data->ipFilterUpdateUrl = urlOrDefault(
+                    QString::fromStdString(sec["ipFilterUpdateUrl"].as<std::string>("")),
+                    kDefaultIpFilterUpdateUrl);
             if (sec["bugReportApiKey"])
                 m_data->bugReportApiKey = QString::fromStdString(sec["bugReportApiKey"].as<std::string>());
             if (sec["bugReportDomain"])
@@ -4550,7 +4556,8 @@ bool Preferences::load(const QString& filePath)
     }
 
     // Generate user hash if missing/invalid
-    if (isnulmd4(m_data->userHash.data()))
+    const bool hashGenerated = isnulmd4(m_data->userHash.data());
+    if (hashGenerated)
         m_data->userHash = generateUserHash();
 
     // Resolve port=0 → random. A stored UDP port of 0 is the user's "disable UDP"
@@ -4562,6 +4569,10 @@ bool Preferences::load(const QString& filePath)
 
     validate();
     resolveDefaultDirectories();
+
+    // Persist now: otherwise the file keeps the empty hash until some later save
+    if (hashGenerated && !saveImpl(m_filePath))
+        logWarning(QStringLiteral("New user hash could not be saved to %1").arg(m_filePath));
 
     // Generate REST API key if missing (existing installs with empty key)
     if (m_data->webServerApiKey.isEmpty()) {
@@ -4697,6 +4708,8 @@ std::array<uint8, 16> Preferences::generateUserHash()
     // Using any other value (e.g. 0x8E) triggers anti-leecher bans.
     hash[5] = 14;
     hash[14] = 111;
+    logInfo(QStringLiteral("Generated new user hash %1")
+                .arg(encodeBase16(std::span<const uint8>(hash.data(), 16))));
     return hash;
 }
 
@@ -5076,8 +5089,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "viewSharedFilesAccess" << YAML::Value << m_data->viewSharedFilesAccess;
     out << YAML::Key << "useSafeKad" << YAML::Value << m_data->useSafeKad;
     out << YAML::Key << "useFastKad" << YAML::Value << m_data->useFastKad;
-    if (!m_data->ipFilterUpdateUrl.isEmpty())
-        out << YAML::Key << "ipFilterUpdateUrl" << YAML::Value << m_data->ipFilterUpdateUrl.toStdString();
+    out << YAML::Key << "ipFilterUpdateUrl" << YAML::Value << m_data->ipFilterUpdateUrl.toStdString();
     if (!m_data->bugReportApiKey.isEmpty())
         out << YAML::Key << "bugReportApiKey" << YAML::Value << m_data->bugReportApiKey.toStdString();
     if (!m_data->bugReportDomain.isEmpty())

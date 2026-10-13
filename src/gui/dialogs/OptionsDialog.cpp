@@ -25,6 +25,7 @@
 #include "utils/StatusBarNotifier.h"
 #include "utils/WebServices.h"
 #include "utils/StringUtils.h"
+#include "utils/UrlPrefField.h"
 
 #include "IpcMessage.h"
 
@@ -2397,13 +2398,12 @@ QWidget* OptionsDialog::createSecurityPage()
         ipFilterGroup));
     auto* urlRow = new QHBoxLayout;
     m_ipFilterUpdateUrlEdit = new QLineEdit(ipFilterGroup);
-    m_ipFilterUpdateUrlEdit->setPlaceholderText(tr("http://example.com/ipfilter.dat"));
+    m_ipFilterUpdateUrlEdit->setPlaceholderText(QString(Preferences::kDefaultIpFilterUpdateUrl));
     urlRow->addWidget(m_ipFilterUpdateUrlEdit);
     auto* loadBtn = new QPushButton(tr("Load"), ipFilterGroup);
     connect(loadBtn, &QPushButton::clicked, this, [this, loadBtn]() {
-        const QString url = m_ipFilterUpdateUrlEdit->text().trimmed();
-        if (url.isEmpty())
-            return;
+        const QString url = urlPrefFieldValue(m_ipFilterUpdateUrlEdit,
+                                              Preferences::kDefaultIpFilterUpdateUrl);
         loadBtn->setEnabled(false);
         loadBtn->setText(tr("Loading..."));
 
@@ -6563,7 +6563,8 @@ void OptionsDialog::saveSettings()
         req.append(QStringLiteral("enableSearchResultFilter"));
         req.append(m_enableSearchResultFilterCheck->isChecked());
         req.append(QStringLiteral("ipFilterUpdateUrl"));
-        req.append(m_ipFilterUpdateUrlEdit->text().trimmed());
+        req.append(urlPrefFieldValue(m_ipFilterUpdateUrlEdit,
+                                     Preferences::kDefaultIpFilterUpdateUrl));
 
         // Display page: IP2Country download (daemon-side)
         req.append(QStringLiteral("geoIpAccountId"));
@@ -7029,7 +7030,8 @@ void OptionsDialog::saveSettings()
         thePrefs.setCryptLayerRequired(m_cryptLayerRequiredCheck->isChecked());
         thePrefs.setUseSecureIdent(m_useSecureIdentCheck->isChecked());
         thePrefs.setEnableSearchResultFilter(m_enableSearchResultFilterCheck->isChecked());
-        thePrefs.setIpFilterUpdateUrl(m_ipFilterUpdateUrlEdit->text().trimmed());
+        thePrefs.setIpFilterUpdateUrl(urlPrefFieldValue(m_ipFilterUpdateUrlEdit,
+                                                        Preferences::kDefaultIpFilterUpdateUrl));
         thePrefs.setGeoIpAccountId(m_geoIpAccountEdit->text().trimmed());
         thePrefs.setGeoIpLicenseKey(m_geoIpLicenseEdit->text().trimmed());
         thePrefs.setGeoIpAutoUpdate(m_geoIpAutoUpdateCheck->isChecked());
@@ -7310,7 +7312,12 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_cryptLayerRequiredCheck->setEnabled(cryptSupported && cryptRequested);
     m_useSecureIdentCheck->setChecked(prefs.value(QStringLiteral("useSecureIdent")).toBool(true));
     m_enableSearchResultFilterCheck->setChecked(prefs.value(QStringLiteral("enableSearchResultFilter")).toBool(true));
-    m_ipFilterUpdateUrlEdit->setText(prefs.value(QStringLiteral("ipFilterUpdateUrl")).toString());
+    {
+        // An older daemon's map has no default: never show an empty field.
+        const QString url = prefs.value(QStringLiteral("ipFilterUpdateUrl")).toString().trimmed();
+        m_ipFilterUpdateUrlEdit->setText(
+            url.isEmpty() ? QString(Preferences::kDefaultIpFilterUpdateUrl) : url);
+    }
     m_geoIpAccountEdit->setText(prefs.value(QStringLiteral("geoIpAccountId")).toString());
     m_geoIpLicenseEdit->setText(prefs.value(QStringLiteral("geoIpLicenseKey")).toString());
     m_geoIpAutoUpdateCheck->setChecked(prefs.value(QStringLiteral("geoIpAutoUpdate")).toBool(true));

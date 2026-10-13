@@ -142,6 +142,11 @@ namespace {
 constexpr std::array kSeedOnce{"nodes.dat", "server.met", "webservices.dat", "FakeFileFilter.dat",
                                kGeoIpDatabaseFilename};
 
+/// Installer-only files next to the exe: the mode switch peekMultiUserSharing()
+/// reads and the MFC import request. Never payload -- seeding the first would
+/// replace the user's preferences.yml with a two-line stub.
+constexpr std::array kNeverSeed{"preferences.yml", "mfc-import.yml"};
+
 /// Records what the last pass wrote, so we can tell a stale file from an edited
 /// one. Without it the two are indistinguishable and we would have to either
 /// clobber edits or never update anything.
@@ -166,6 +171,13 @@ using ManifestHashes = QHash<QString, QByteArray>;
 [[nodiscard]] bool isSeedOnce(const QString& relPath)
 {
     return std::ranges::any_of(kSeedOnce, [&relPath](const char* name) {
+        return relPath == QLatin1StringView(name);
+    });
+}
+
+[[nodiscard]] bool isNeverSeed(const QString& relPath)
+{
+    return std::ranges::any_of(kNeverSeed, [&relPath](const char* name) {
         return relPath == QLatin1StringView(name);
     });
 }
@@ -356,6 +368,8 @@ AppConfig::SeedReport AppConfig::seedFrom(const QString& bundleDir, const QStrin
 
         // .DS_Store and friends are build-machine litter, not payload.
         if (QFileInfo(relPath).fileName().startsWith(QLatin1Char('.')))
+            continue;
+        if (isNeverSeed(relPath))
             continue;
 
         inBundle.insert(relPath);

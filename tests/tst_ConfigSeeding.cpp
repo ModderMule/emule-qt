@@ -54,6 +54,7 @@ private slots:
     void aFileDroppedFromTheBundleIsPruned();
     void aTruncatedBundleDoesNotTriggerPruning();
     void aBundleThatIsTheConfigDirIsANoOp();
+    void installerOnlyFilesAreNeverSeeded();
     void theShippedBundleLayoutsAllResolve();
     void theShippedLangLayoutsAllResolve();
 
@@ -276,6 +277,25 @@ void TestConfigSeeding::aBundleThatIsTheConfigDirIsANoOp()
     QCOMPARE(report.seeded, 0);
     QCOMPARE(report.refreshed, 0);
     QVERIFY(!QFile::exists(bundle(QLatin1StringView(kManifest))));
+}
+
+void TestConfigSeeding::installerOnlyFilesAreNeverSeeded()
+{
+    // The installer puts its mode switch and the MFC import request next to the
+    // exe, inside the bundle dir. Treated as payload, the two-line preferences.yml
+    // would replace the user's settings.
+    makeBundle();
+    writeFile(bundle(QStringLiteral("preferences.yml")), QByteArrayLiteral("transfer: {multiUserSharing: 0}"));
+    writeFile(bundle(QStringLiteral("mfc-import.yml")), QByteArrayLiteral("source: 'C:\\eMule\\config'"));
+    writeFile(live(QStringLiteral("preferences.yml")), QByteArrayLiteral("the user's settings"));
+
+    const auto report = AppConfig::seedFrom(m_bundleDir.path(), m_configDir.path());
+
+    QCOMPARE(report.seeded, 3);
+    QCOMPARE(report.refreshed, 0);
+    QCOMPARE(readFile(live(QStringLiteral("preferences.yml"))), QByteArrayLiteral("the user's settings"));
+    QVERIFY(!QFile::exists(live(QStringLiteral("preferences.yml.bak"))));
+    QVERIFY(!QFile::exists(live(QStringLiteral("mfc-import.yml"))));
 }
 
 void TestConfigSeeding::theShippedBundleLayoutsAllResolve()

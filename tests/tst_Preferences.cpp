@@ -672,6 +672,7 @@ private slots:
         Preferences prefs;
         QCOMPARE(prefs.serverListURL(), QString(Preferences::kDefaultServerListURL));
         QCOMPARE(prefs.nodesDatURL(), QString(Preferences::kDefaultNodesDatURL));
+        QCOMPARE(prefs.ipFilterUpdateUrl(), QString(Preferences::kDefaultIpFilterUpdateUrl));
     }
 
     void updateUrls_emptyFallsBackToDefault()
@@ -679,13 +680,45 @@ private slots:
         Preferences prefs;
         prefs.setServerListURL(QStringLiteral("  https://example.org/server.met "));
         prefs.setNodesDatURL(QStringLiteral("https://example.org/nodes.dat"));
+        prefs.setIpFilterUpdateUrl(QStringLiteral(" https://example.org/ipfilter.zip "));
         QCOMPARE(prefs.serverListURL(), QStringLiteral("https://example.org/server.met"));
         QCOMPARE(prefs.nodesDatURL(), QStringLiteral("https://example.org/nodes.dat"));
+        QCOMPARE(prefs.ipFilterUpdateUrl(), QStringLiteral("https://example.org/ipfilter.zip"));
 
         prefs.setServerListURL(QString());
         prefs.setNodesDatURL(QStringLiteral("   "));
+        prefs.setIpFilterUpdateUrl(QString());
         QCOMPARE(prefs.serverListURL(), QString(Preferences::kDefaultServerListURL));
         QCOMPARE(prefs.nodesDatURL(), QString(Preferences::kDefaultNodesDatURL));
+        QCOMPARE(prefs.ipFilterUpdateUrl(), QString(Preferences::kDefaultIpFilterUpdateUrl));
+    }
+
+    void ipFilterUpdateUrl_roundTrips()
+    {
+        TempDir tmp;
+        const auto file = tmp.filePath(QStringLiteral("ipfilter_url.yaml"));
+        {
+            QFile f(file);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("security:\n  ipFilterUpdateUrl: \"\"\n");
+            f.close();
+        }
+        Preferences prefs;
+        QVERIFY(prefs.load(file));
+        QCOMPARE(prefs.ipFilterUpdateUrl(), QString(Preferences::kDefaultIpFilterUpdateUrl));
+
+        prefs.setIpFilterUpdateUrl(QStringLiteral("https://example.org/ipfilter.zip"));
+        QVERIFY(prefs.save());
+        Preferences reloaded;
+        QVERIFY(reloaded.load(file));
+        QCOMPARE(reloaded.ipFilterUpdateUrl(), QStringLiteral("https://example.org/ipfilter.zip"));
+
+        // An older daemon's map has no value; it must not blank the field.
+        QCborMap map = reloaded.toIpcMap();
+        map.insert(QStringLiteral("ipFilterUpdateUrl"), QString());
+        Preferences gui;
+        gui.updateFromCbor(map);
+        QCOMPARE(gui.ipFilterUpdateUrl(), QString(Preferences::kDefaultIpFilterUpdateUrl));
     }
 
     void updateUrls_yamlRoundTrip()

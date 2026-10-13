@@ -227,6 +227,10 @@ public:
     [[nodiscard]] bool isKadOrigin() const { return m_kadOrigin; }
     void setKadOrigin(bool val) { m_kadOrigin = val; }
 
+    /// Every answer reports the same network-wide count (Kad search, torrent swarm,
+    /// Kad-origin row): answers are maxed, never summed.
+    [[nodiscard]] bool hasNetworkWideSources() const { return m_kadResult || m_kadOrigin || isMetaResult(); }
+
     // --- GUI parent/child hierarchy ---
 
     [[nodiscard]] SearchFile* listParent() const { return m_listParent; }

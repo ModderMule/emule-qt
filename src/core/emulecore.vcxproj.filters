@@ -357,6 +357,9 @@
     <ClCompile Include="prefs\PreferenceSchema.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="prefs\LegacyConfigImport.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="prefs\LegacyIdentityImport.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -945,6 +948,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="prefs\PreferenceSchema.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="prefs\LegacyConfigImport.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="prefs\LegacyIdentityImport.h">

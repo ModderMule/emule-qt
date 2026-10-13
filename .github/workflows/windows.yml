@@ -309,6 +309,90 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "emuleqt-mcp.exe --version exited with $LASTEXITCODE" }
           Write-Host "Resolved from the OS at runtime ($($external.Count)): $((($external.Keys | Sort-Object) -join ', '))"
 
+      # Wraps the tree the Bundle step staged (stage\eMule) -- the same files the
+      # zip was just verified with.
+      - name: Build installer
+        shell: pwsh
+        run: scripts\installer-win.ps1 -InstallInno
+
+      # The setup script is Pascal that no other job compiles or runs: install,
+      # check what landed, upgrade with a faked eMule config to exercise the
+      # detection, uninstall.  The runner is an administrator without UAC.
+      - name: Verify installer
+        shell: pwsh
+        timeout-minutes: 10
+        env:
+          QT_COMMAND_LINE_PARSER_NO_GUI_MESSAGE_BOXES: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = (Get-Item "build\eMuleQt-v$env:APP_VERSION-win64-setup.exe").FullName
+          $app = Join-Path $env:RUNNER_TEMP 'emuleqt-install'
+          $request = Join-Path $app 'config\mfc-import.yml'
+          $mfcConfig = Join-Path $env:LOCALAPPDATA 'eMule\config'
+          $desktop = Join-Path $env:PUBLIC 'Desktop\eMule Qt.lnk'
+          $startMenu = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\eMule Qt.lnk'
+
+          function Invoke-Setup([string]$Tasks, [string]$Log) {
+            $logPath = Join-Path $env:RUNNER_TEMP $Log
+            $p = Start-Process -FilePath $setup -Wait -PassThru -ArgumentList @(
+              '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$app`"",
+              "/TASKS=`"$Tasks`"", "/LOG=`"$logPath`"")
+            if ($p.ExitCode -ne 0) {
+              Get-Content $logPath -ErrorAction SilentlyContinue | Select-Object -Last 60
+              throw "setup exited with $($p.ExitCode)"
+            }
+          }
+
+          # 1. Fresh install, no eMule on the machine: asking for the import must
+          #    not produce a request.
+          if (Test-Path $mfcConfig) { throw "Runner already has $mfcConfig" }
+          Invoke-Setup 'desktopicon,startmenuicon,importemule' 'setup-1.log'
+
+          foreach ($f in 'emuleqt.exe', 'emulecored.exe', 'emuleqt-mcp.exe', 'LICENSE.txt',
+                         'config\eMule.tmpl', 'unins000.exe') {
+            if (-not (Test-Path (Join-Path $app $f))) { throw "Not installed: $f" }
+          }
+          # Without it the app would treat Program Files as its config dir.
+          $mode = Get-Content (Join-Path $app 'config\preferences.yml') -Raw
+          if ($mode -notmatch 'multiUserSharing:\s*0') { throw 'config\preferences.yml lacks multiUserSharing: 0' }
+          foreach ($lnk in $desktop, $startMenu) {
+            if (-not (Test-Path $lnk)) { throw "Shortcut missing: $lnk" }
+          }
+          if (Test-Path $request) { throw 'Import request written although no eMule config exists' }
+
+          & (Join-Path $app 'emuleqt-mcp.exe') --version
+          if ($LASTEXITCODE -ne 0) { throw "installed emuleqt-mcp.exe --version exited with $LASTEXITCODE" }
+
+          # 2. Upgrade in place with an eMule config in its default location.
+          New-Item -ItemType Directory -Force $mfcConfig | Out-Null
+          Set-Content (Join-Path $mfcConfig 'preferences.ini') "[eMule]`r`nNick=ci"
+          Invoke-Setup 'importemule' 'setup-2.log'
+          if (-not (Test-Path $request)) { throw 'Import request missing although an eMule config exists' }
+          $source = Get-Content $request -Raw
+          # Unexpanded on purpose: resolved by whoever runs the daemon.
+          if (-not $source.Contains("source: '%LOCALAPPDATA%\eMule\config'")) {
+            throw "Unexpected import request:`n$source"
+          }
+
+          # 3. Declined on a later run: the request goes away again.
+          Invoke-Setup '' 'setup-3.log'
+          if (Test-Path $request) { throw 'Import request survived a run that declined it' }
+          Remove-Item (Split-Path $mfcConfig) -Recurse -Force
+
+          # 4. Uninstall leaves nothing behind.
+          $p = Start-Process -FilePath (Join-Path $app 'unins000.exe') -Wait -PassThru `
+                 -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+          if ($p.ExitCode -ne 0) { throw "uninstaller exited with $($p.ExitCode)" }
+          # The uninstaller finishes from a temp copy of itself.
+          for ($i = 0; $i -lt 30 -and (Test-Path $app); $i++) { Start-Sleep -Seconds 1 }
+          if (Test-Path $app) {
+            throw "Left behind after uninstall:`n$((Get-ChildItem $app -Recurse -Name) -join "`n")"
+          }
+          foreach ($lnk in $desktop, $startMenu) {
+            if (Test-Path $lnk) { throw "Shortcut left behind: $lnk" }
+          }
+          Write-Host 'OK: install, import request, upgrade and uninstall verified.'
+
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
@@ -316,6 +400,15 @@ jobs:
           path: build/eMuleQt-v*-win64.zip
           # Default is 'warn', which would leave the job green with no artifact
           # if the bundle script produced nothing.
+          if-no-files-found: error
+
+      # Own artifact: names must be unique within a run.  Matches the eMuleQt-v*
+      # pattern release.yml downloads, so it is published with the zip.
+      - name: Upload installer
+        uses: actions/upload-artifact@v6
+        with:
+          name: eMuleQt-v${{ env.APP_VERSION }}-win64-setup
+          path: build/eMuleQt-v*-win64-setup.exe
           if-no-files-found: error
 
       # A minidump binds to a PDB by GUID+age and every rebuild mints a new GUID,

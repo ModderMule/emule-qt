@@ -11,6 +11,8 @@
 
 #include "app/AppConfig.h"
 #include "app/TranslationRouter.h"
+#include "files/PartFileConvert.h"
+#include "prefs/LegacyConfigImport.h"
 #include "prefs/LegacyIdentityImport.h"
 #include "prefs/Preferences.h"
 #include "utils/BundleEnvironment.h"
@@ -118,6 +120,11 @@ int main(int argc, char* argv[])
 
     eMule::logInfo(QStringLiteral("eMule Core Daemon starting..."));
 
+    // Installer asked for an import of an MFC eMule config dir: copy it in first,
+    // so the identity import below finds its preferences.dat. Once per user.
+    (void)eMule::LegacyConfigImport::run(eMule::LegacyConfigImport::requestFilePath(),
+                                         configDir, eMule::thePrefs);
+
     // MFC preferences.dat dropped into the config dir: take over its user hash
     // before anything reads ours. Logs its own outcome; a rejected file changes nothing.
     (void)eMule::LegacyIdentityImport::run(configDir, eMule::thePrefs);
@@ -149,6 +156,17 @@ int main(int argc, char* argv[])
     eMule::logInfo(QStringLiteral("Daemon running. IPC listening on %1:%2")
                        .arg(ipcHost)
                        .arg(ipcPort));
+
+    // Second half of the MFC import: unfinished downloads of the old temp dirs.
+    // Copied, not moved -- the old install keeps its part files.
+    if (const QStringList oldTemps = eMule::LegacyConfigImport::takePendingTempDirs(configDir);
+        !oldTemps.isEmpty()) {
+        for (const QString& dir : oldTemps) {
+            eMule::logInfo(QStringLiteral("Importing unfinished eMule downloads from %1").arg(dir));
+            eMule::PartFileConvert::scanFolderToAdd(dir, /*recursive=*/false, /*removeSource=*/false);
+        }
+        eMule::PartFileConvert::processQueue();
+    }
 
     // Once, whoever gets there first: the event loop ending, or Windows ending the
     // session from inside it.

@@ -99,6 +99,8 @@ private slots:
     void addToList_kadOrigin_serverResultWins_data();
     void addToList_kadOrigin_serverResultWins();
     void addToList_kadOrigin_keptWhenAllAnswersAreKad();
+    void addToList_relayedCountsAreNotSummed_data();
+    void addToList_relayedCountsAreNotSummed();
     void addToList_fileTypeFilter();
     void removeResults_clearsSearch();
     void processSearchAnswer_tcp();
@@ -615,6 +617,74 @@ void tst_SearchList::addToList_kadOrigin_keptWhenAllAnswersAreKad()
     QVERIFY(hasNetworkTag(parent));
     QCOMPARE(parent->listChildCount(), uint32{1});
     QVERIFY(parent->listChildren().front()->isKadOrigin());
+}
+
+// A torrent row as @p serverIP 's catalogue hands it out, @p seeders as FT_SOURCES.
+static SearchFile* makeTorrentAnswer(const QString& name, uint32 seeders, uint32 serverIP, uint32 searchID)
+{
+    const uint8 hash[16] = {0xED, 0x2B, 0x01, 0x10, 0xFF, 0xFF, 0x1E, 0x1B, 0x36, 0x20, 0xAD, 0xE2, 0xAF, 0x9D, 0x6E, 0x77};
+    SafeMemFile mem;
+    mem.write(hash, 16);
+    mem.writeUInt32(0);
+    mem.writeUInt16(0);
+    mem.writeUInt32(6);
+    Tag(FT_FILENAME, name).writeNewEd2kTag(mem, UTF8Mode::Raw);
+    Tag(FT_FILESIZE, uint32{700000000}).writeNewEd2kTag(mem);
+    Tag(FT_SOURCES, seeders).writeNewEd2kTag(mem);
+    Tag(FT_META_KIND, uint32{1}).writeNewEd2kTag(mem);
+    Tag(FT_META_VERSION, uint32{1}).writeNewEd2kTag(mem);
+    Tag(FT_META_FILEINDEX, uint32{0xFFFFFFFF}).writeNewEd2kTag(mem);
+    QByteArray packet = mem.takeBuffer();
+    SafeMemFile data(packet);
+    auto* file = new SearchFile(data, true, serverIP, 4661);
+    file->setSearchID(searchID);
+    return file;
+}
+
+void tst_SearchList::addToList_relayedCountsAreNotSummed_data()
+{
+    QTest::addColumn<bool>("torrent");
+    QTest::addColumn<QString>("secondName");
+
+    // Same name once the prefix is gone, or a prefix that stays: a second name variant
+    QTest::newRow("torrent, same name") << true << QStringLiteral("[torrent other.org] release.mkv");
+    QTest::newRow("torrent, other name") << true << QStringLiteral("[other.org] release.mkv");
+    QTest::newRow("kad, same name") << false << QStringLiteral("[kad other.org] release.mkv");
+    QTest::newRow("kad, other name") << false << QStringLiteral("[other.org] release.mkv");
+}
+
+void tst_SearchList::addToList_relayedCountsAreNotSummed()
+{
+    QFETCH(bool, torrent);
+    QFETCH(QString, secondName);
+
+    SearchList list;
+    SearchParams params;
+    const uint32 id = list.newSearch({}, params);
+
+    uint8 kadHash[16];
+    std::memset(kadHash, 0xCF, 16);
+
+    // Two servers relay the one swarm / the one Kad count
+    SearchFile* first = torrent
+        ? makeTorrentAnswer(QStringLiteral("[torrent emule-qt.org] release.mkv"), 40, 0xC0A80001, id)
+        : makeAnswer(kadHash, QStringLiteral("[kad emule-qt.org] release.mkv"), 40, true, 0xC0A80001, id);
+    SearchFile* second = torrent
+        ? makeTorrentAnswer(secondName, 55, 0xC0A80002, id)
+        : makeAnswer(kadHash, secondName, 55, true, 0xC0A80002, id);
+    uint8 hash[16];
+    md4cpy(hash, first->fileHash());
+
+    list.addToList(first);
+    list.addToList(second);
+
+    SearchFile* parent = list.searchFileByHash(hash, id);
+    QVERIFY(parent != nullptr);
+    qInfo() << "output: parent" << parent->fileName() << "sources =" << parent->sourceCount()
+            << "children =" << parent->listChildCount() << "search total =" << list.foundSources(id);
+    QCOMPARE(parent->sourceCount(), uint32{55});
+    QCOMPARE(list.foundSources(id), uint32{55});
+    QCOMPARE(parent->servers().size(), size_t{2});
 }
 
 void tst_SearchList::addToList_fileTypeFilter()

@@ -208,6 +208,7 @@ emule_add_test(tst_SafeKadFastKad    FOLDER "Kademlia")
 # Module 29o: Preferences & configuration
 emule_add_test(tst_ConfigSeeding   FOLDER "Prefs" LIBRARIES yaml-cpp::yaml-cpp)
 emule_add_test(tst_Preferences     FOLDER "Prefs")
+emule_add_test(tst_LegacyConfigImport FOLDER "Prefs")
 emule_add_test(tst_CategoryPrefs   FOLDER "Prefs")
 
 # Module 29s: Media & Preview

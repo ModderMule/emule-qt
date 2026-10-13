@@ -1,0 +1,6 @@
+# Installed next to the exe by the Windows installer. Only this one key is read
+# from here (AppConfig peekMultiUserSharing): 0 = per-user config under
+# %LOCALAPPDATA%\eMuleQt instead of the program directory, which is read-only
+# under Program Files. Everything else lives in the user's own preferences.yml.
+transfer:
+  multiUserSharing: 0

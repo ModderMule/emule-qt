@@ -89,8 +89,8 @@ and builds both itself; the hand-maintained solution cannot, and will not link.
 
 ## Scripted build, bundle and debug run
 
-Four PowerShell scripts cover the command-line workflow. They share their Qt, vcpkg, Visual Studio
-and binary detection: `build-win.ps1` defines those helpers, and the other three dot-source it.
+Five PowerShell scripts cover the command-line workflow. They share their Qt, vcpkg, Visual Studio
+and binary detection: `build-win.ps1` defines those helpers, and the other four dot-source it.
 
 ```powershell
 # Configure (only when needed) and build
@@ -105,6 +105,10 @@ scripts\build-win.ps1 -NoVcpkg
 # Package a self-contained zip into build\
 scripts\bundle-win.ps1
 scripts\bundle-win.ps1 -NoBuild        # package an existing Visual Studio build
+
+# Wrap the staged bundle into build\eMuleQt-v<version>-win64-setup.exe (Inno Setup)
+scripts\installer-win.ps1
+scripts\installer-win.ps1 -InstallInno # fetch Inno Setup with Chocolatey when missing
 
 # Generate a Visual Studio solution into build-vs\ with a CMake VS generator
 scripts\generate-vs.ps1
@@ -280,6 +284,16 @@ It deliberately does **not** match `release.yml`'s `pattern: eMuleQt-v*`, so it 
 the release assets — which also means it expires with the normal 90-day artifact retention
 while the release itself is permanent. Attaching symbols to a release is a deliberate change
 to that allowlist, not something to do by accident.
+
+### Installer
+
+After the bundle is verified, `scripts\installer-win.ps1 -InstallInno` compiles
+`installer\windows\emuleqt.iss` around the staged tree, and a second verification step runs the
+result: silent install, check of the installed files, shortcuts and the per-user mode file, an
+upgrade with a faked eMule configuration (the import request must appear, and disappear again
+when declined), silent uninstall with nothing left behind. It is uploaded as its own artifact,
+`eMuleQt-v<version>-win64-setup`, which `release.yml` publishes next to the zip. What setup does
+is described in [windows-installer.md](windows-installer.md).
 
 ### Bundle verification
 
