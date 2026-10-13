@@ -84,6 +84,7 @@ void HashingThread::clearQueue()
 
 void HashingThread::requestStop()
 {
+    m_cancel.store(true, std::memory_order_relaxed);
     QMutexLocker locker(&m_mutex);
     m_stopRequested = true;
     m_condition.wakeAll();
@@ -97,9 +98,13 @@ void HashingThread::runRehash(const Job& job)
         job.rehashPartPath, job.rehashFileSize, job.rehashFileHash, job.rehashPartHashes,
         [this](uint32 done, uint32 count) {
             emit hashingProgress(static_cast<int>(done * 100 / std::max(1u, count)));
-            return true;
+            return !m_cancel.load(std::memory_order_relaxed);
         });
 
+    // Stopped part-way: the verdict is incomplete, and the file is verified again
+    // at the next start anyway.
+    if (m_cancel.load(std::memory_order_relaxed))
+        return;
     emit partFileRehashed(job.rehashFileHash, partOk, job.rehashToken);
 }
 
@@ -135,7 +140,13 @@ void HashingThread::run()
                                          emit hashingProgress(percent);
                                      },
                                      job.scannedMtime != 0 ? &scanned : nullptr,
-                                     &changedSinceScan);
+                                     &changedSinceScan, &m_cancel);
+
+        // Stopped mid-file: neither hashed nor failed, it is hashed at the next start
+        if (m_cancel.load(std::memory_order_relaxed)) {
+            delete kf;
+            return;
+        }
 
         if (ok) {
             logDebug(QStringLiteral("Hashed OK: %1/%2 (%3 bytes)")

@@ -8,12 +8,13 @@
 /// It also applies the filter box, and keeps a file's name rows and spam where
 /// MFC's sort puts them.
 
-#include <QSortFilterProxyModel>
+#include "controls/SortableItems.h"
+
 #include <QStringList>
 
 namespace eMule {
 
-class SearchResultsProxy : public QSortFilterProxyModel {
+class SearchResultsProxy : public SortValueProxy {
     Q_OBJECT
 
 public:

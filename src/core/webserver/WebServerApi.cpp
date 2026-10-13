@@ -1047,7 +1047,8 @@ void WebServer::buildApiTable()
     {
         Operation op = make("stats.get", Method::Get, "/api/v1/stats", "Diagnostics",
                             "Transfer statistics",
-                            "Rates are KiB per second; byte counters cover this session.");
+                            "Rates are KiB per second; byte counters cover this session. *Time is the "
+                            "average over the configured statistics window, cum* spans all sessions.");
         op.flags = ReadOnly;
         op.mcpTool = s("stats_get");
         op.handler = [this](const Call&) {
@@ -1058,6 +1059,18 @@ void WebServer::buildApiTable()
                 {s("rateUp"), static_cast<double>(m_statistics->rateUp())},
                 {s("maxDown"), static_cast<double>(m_statistics->maxDown())},
                 {s("maxUp"), static_cast<double>(m_statistics->maxUp())},
+                {s("avgDownSession"), static_cast<double>(m_statistics->avgDownloadRate(AverageType::Session))},
+                {s("avgUpSession"), static_cast<double>(m_statistics->avgUploadRate(AverageType::Session))},
+                {s("maxDownAvg"), static_cast<double>(m_statistics->maxDownAvg())},
+                {s("maxUpAvg"), static_cast<double>(m_statistics->maxUpAvg())},
+                {s("avgDownTime"), static_cast<double>(m_statistics->avgDownloadRate(AverageType::Time))},
+                {s("avgUpTime"), static_cast<double>(m_statistics->avgUploadRate(AverageType::Time))},
+                {s("cumDownAvg"), static_cast<double>(m_statistics->cumDownAvg())},
+                {s("cumUpAvg"), static_cast<double>(m_statistics->cumUpAvg())},
+                {s("maxCumDown"), static_cast<double>(m_statistics->maxCumDown())},
+                {s("maxCumUp"), static_cast<double>(m_statistics->maxCumUp())},
+                {s("maxCumDownAvg"), static_cast<double>(m_statistics->maxCumDownAvg())},
+                {s("maxCumUpAvg"), static_cast<double>(m_statistics->maxCumUpAvg())},
                 {s("sessionReceivedBytes"), static_cast<qint64>(m_statistics->sessionReceivedBytes())},
                 {s("sessionSentBytes"), static_cast<qint64>(m_statistics->sessionSentBytes())},
                 {s("reconnects"), m_statistics->reconnects()},

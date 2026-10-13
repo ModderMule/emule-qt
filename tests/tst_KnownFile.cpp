@@ -206,6 +206,7 @@ private slots:
     void createFromFile_partBoundaryAddsTheEmptyPartHash_data();
     void createFromFile_partBoundaryAddsTheEmptyPartHash();
     void createFromFile_nonExistent();
+    void createFromFile_stopsWhenCancelled();
     void createFromFile_setsDate();
     void createFromFile_refusesAFileThatChangedSinceTheScan();
     void mediaExtractVersion_isStampedStoredAndComparedOnLoad();
@@ -907,6 +908,49 @@ void tst_KnownFile::createFromFile_partBoundaryAddsTheEmptyPartHash()
     QCOMPARE(QByteArray(reinterpret_cast<const char*>(id.getMD4PartHash(
                             static_cast<uint32>(parts))), 16),
              md4(QByteArray()));
+}
+
+void tst_KnownFile::createFromFile_stopsWhenCancelled()
+{
+    // Shutdown used to wait for the file being hashed to be read to its end.
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString name = QStringLiteral("big.bin");
+    {
+        QFile file(dir.filePath(name));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QVERIFY(file.resize(4 * 1024 * 1024));
+    }
+
+    // Set before the call: nothing is read
+    std::atomic<bool> cancel{true};
+    KnownFile before;
+    QVERIFY(!before.createFromFile(dir.path(), name, {}, nullptr, nullptr, &cancel));
+
+    // Set by another thread's stop request, here from the read itself
+    struct CancellingFile : QFile {
+        using QFile::QFile;
+        std::atomic<bool>* flag = nullptr;
+        qint64 reads = 0;
+        qint64 readData(char* data, qint64 len) override
+        {
+            if (++reads == 2)
+                flag->store(true);
+            return QFile::readData(data, len);
+        }
+    };
+    cancel = false;
+    CancellingFile file(dir.filePath(name));
+    file.flag = &cancel;
+    QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Unbuffered));
+    uint8 hash[16]{};
+    QVERIFY(!KnownFile::createHash(file, static_cast<uint64>(file.size()), hash, nullptr, &cancel));
+    QVERIFY(file.pos() < file.size());   // stopped early, not at the end
+
+    // Left alone, the same file hashes
+    cancel = false;
+    KnownFile after;
+    QVERIFY(after.createFromFile(dir.path(), name, {}, nullptr, nullptr, &cancel));
 }
 
 void tst_KnownFile::createFromFile_nonExistent()

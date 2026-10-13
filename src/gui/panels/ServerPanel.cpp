@@ -6,6 +6,7 @@
 #include "utils/MetaResultActions.h"
 #include "core/app/AppConfig.h"
 #include "controls/AbstractListView.h"
+#include "controls/SortableItems.h"
 #include "controls/LogWidget.h"
 #include "controls/ServerListModel.h"
 #include "dialogs/FindInListDialog.h"
@@ -639,7 +640,7 @@ QWidget* ServerPanel::createServerListPanel()
     layout->addWidget(m_serversLabel);
 
     m_serverListModel = new ServerListModel(this);
-    auto* serverProxy = new QSortFilterProxyModel(this);
+    auto* serverProxy = new SortValueProxy(this);
     serverProxy->setSourceModel(m_serverListModel);
     serverProxy->setSortRole(Qt::UserRole);
     auto* serverView = new ListTreeView;

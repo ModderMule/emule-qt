@@ -914,7 +914,7 @@ bool DownloadSortProxy::lessThan(const QModelIndex& left, const QModelIndex& rig
         if (leftA4af != rightA4af)
             return (sortOrder() == Qt::AscendingOrder) ? rightA4af : leftA4af;
     }
-    return QSortFilterProxyModel::lessThan(left, right);
+    return SortValueProxy::lessThan(left, right);
 }
 
 } // namespace eMule

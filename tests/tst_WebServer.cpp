@@ -816,6 +816,10 @@ void tst_WebServer::getStats()
     QVERIFY(obj.contains(QStringLiteral("rateUp")));
     QVERIFY(obj.contains(QStringLiteral("sessionReceivedBytes")));
     QVERIFY(obj.contains(QStringLiteral("sessionSentBytes")));
+    for (const char* key : {"avgDownSession", "avgUpSession", "maxDownAvg", "maxUpAvg",
+                            "avgDownTime", "avgUpTime", "cumDownAvg", "cumUpAvg",
+                            "maxCumDown", "maxCumUp", "maxCumDownAvg", "maxCumUpAvg"})
+        QVERIFY2(obj.value(QLatin1StringView(key)).isDouble(), key);
 }
 
 // ---------------------------------------------------------------------------

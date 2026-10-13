@@ -3,6 +3,7 @@
 
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
+#include "controls/SortableItems.h"
 #include "controls/UsenetFileCheckList.h"
 #include "controls/UsenetProgressDelegate.h"
 #include "controls/UsenetQueueModel.h"
@@ -374,7 +375,7 @@ void UsenetPanel::setupUi()
     connect(m_model, &QAbstractItemModel::rowsRemoved, this, &UsenetPanel::updateClearCompletedState);
     connect(m_model, &QAbstractItemModel::dataChanged, this, &UsenetPanel::updateClearCompletedState);
 
-    m_proxy = new QSortFilterProxyModel(this);
+    m_proxy = new SortValueProxy(this);
     m_proxy->setSourceModel(m_model);
     // Qt::UserRole, as on Transfers: the model's display strings are formatted
     // ("1.40 GB", "7%", "612.30 KB/s") and sorting those as text is worse than

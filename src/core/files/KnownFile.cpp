@@ -1167,10 +1167,14 @@ void KnownFile::writeExtendedSourceExchangeData(SafeMemFile& data, const UpDownC
 
 bool KnownFile::createFromFile(const QString& directory, const QString& filename,
                                std::function<void(int)> progressCallback,
-                               const FileStamp* scanned, bool* changedSinceScan)
+                               const FileStamp* scanned, bool* changedSinceScan,
+                               const std::atomic<bool>* cancel)
 {
     if (changedSinceScan)
         *changedSinceScan = false;
+    const auto cancelled = [cancel] { return cancel && cancel->load(std::memory_order_relaxed); };
+    if (cancelled())
+        return false;
 
     const QString fullPath = directory + u'/' + filename;
 
@@ -1230,8 +1234,10 @@ bool KnownFile::createFromFile(const QString& directory, const QString& filename
         AICHHashTree* partTree = aichHashSet.m_hashTree.findHash(
             static_cast<uint64>(part) * PARTSIZE, partLength);
 
-        if (!createHash(file, partLength, partHash.data(), partTree)) {
-            logError(QStringLiteral("KnownFile::createFromFile: read error in '%1'").arg(fullPath));
+        if (!createHash(file, partLength, partHash.data(), partTree, cancel)) {
+            // shutting down while still hashing: not an error
+            if (!cancelled())
+                logError(QStringLiteral("KnownFile::createFromFile: read error in '%1'").arg(fullPath));
             return false;
         }
         md4HashSet.push_back(partHash);
@@ -1306,7 +1312,7 @@ bool KnownFile::createAICHHashSetOnly()
 }
 
 bool KnownFile::buildAICHHashSet(const QString& path, uint64 expectedSize,
-                                 AICHRecoveryHashSet& out)
+                                 AICHRecoveryHashSet& out, const std::atomic<bool>* cancel)
 {
     if (path.isEmpty() || expectedSize == 0)
         return false;
@@ -1324,7 +1330,7 @@ bool KnownFile::buildAICHHashSet(const QString& path, uint64 expectedSize,
 
         // Only feed AICH, discard MD4
         uint8 dummyHash[16]{};
-        if (!createHash(file, partLength, dummyHash, partTree))
+        if (!createHash(file, partLength, dummyHash, partTree, cancel))
             return false;
         remaining -= partLength;
     }
@@ -1363,7 +1369,8 @@ bool KnownFile::adoptAndStoreAICHHashSet(AICHRecoveryHashSet& hashSet)
 // ---------------------------------------------------------------------------
 
 bool KnownFile::createHash(QIODevice& device, uint64 length,
-                           uint8* md4HashOut, AICHHashTree* aichTree)
+                           uint8* md4HashOut, AICHHashTree* aichTree,
+                           const std::atomic<bool>* cancel)
 {
     static constexpr uint32 kReadBlockSize = 64 * 1024;
     // the AICH split below handles one block boundary per read
@@ -1381,6 +1388,9 @@ bool KnownFile::createHash(QIODevice& device, uint64 length,
     DiskLoadLimiter diskLoad;
 
     while (read < length) {
+        // Shutdown must not wait for the rest of a multi-GB file
+        if (cancel && cancel->load(std::memory_order_relaxed))
+            return false;
         const uint64 toRead = std::min(static_cast<uint64>(kReadBlockSize), length - read);
         qint64 got = 0;
         {

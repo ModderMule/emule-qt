@@ -10,6 +10,7 @@
 #include "dialogs/AddSourceDialog.h"
 #include "utils/Opcodes.h"
 #include "controls/AbstractListView.h"
+#include "controls/SortableItems.h"
 #include "controls/ClientListModel.h"
 #include "controls/CategoryFilterProxy.h"
 #include "controls/CategoryTabBar.h"
@@ -1210,7 +1211,7 @@ QTreeView* TransferPanel::createClientView(ClientListModel* model,
                                             std::initializer_list<int> columnWidths,
                                             std::initializer_list<int> descendingFirst)
 {
-    auto* proxy = new QSortFilterProxyModel(this);
+    auto* proxy = new SortValueProxy(this);
     proxy->setSourceModel(model);
     proxy->setSortRole(Qt::UserRole);
 

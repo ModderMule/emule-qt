@@ -213,6 +213,7 @@ private:
     LoadStage m_loadStage = LoadStage::Done;
     QStringList m_pendingPartMets;    ///< .part.met files loadStep() has yet to read
     bool m_knownFilesLoaded = false;  ///< known.met was read: saving it is safe
+    bool m_sharedFilesScanned = false;  ///< the share is listed: a shared-only save is safe
     bool m_creditsLoaded = false;     ///< same for clients.met
     // Preference values the sockets were last bound with (not the socket ports:
     // a configured 0 gets an OS-assigned one).

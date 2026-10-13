@@ -194,6 +194,11 @@ void Statistics::updateConnectionStats(float uploadRate, float downloadRate)
             m_prefs->setConnMaxDownRate(m_maxCumDown);
     }
 
+    // Session max averages. MFC raises these while painting the tree
+    // (srchybrid/StatisticsDlg.cpp:1457/1479); here nobody did, so they read 0.
+    m_maxUpAvg = std::max(m_maxUpAvg, avgUploadRate(AverageType::Session));
+    m_maxDownAvg = std::max(m_maxDownAvg, avgDownloadRate(AverageType::Session));
+
     // Update cumulative averages
     m_cumDownAvg = avgDownloadRate(AverageType::Total);
     if (m_maxCumDownAvg < m_cumDownAvg) {

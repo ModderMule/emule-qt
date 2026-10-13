@@ -15,6 +15,7 @@
 #include <QByteArray>
 #include <QObject>
 
+#include <atomic>
 #include <ctime>
 #include <functional>
 #include <map>
@@ -250,18 +251,25 @@ public:
     /// @param scanned       What the scan that queued this file saw, if anything. A
     ///                      file that differs by the time it is opened is not read.
     /// @param changedSinceScan  Set when that is why the call returned false.
+    /// @param cancel        Set from another thread to stop reading; the call then
+    ///                      returns false without logging (MFC IsClosing() checks,
+    ///                      srchybrid/KnownFile.cpp:413).
     bool createFromFile(const QString& directory, const QString& filename,
                         std::function<void(int)> progressCallback = {},
-                        const FileStamp* scanned = nullptr, bool* changedSinceScan = nullptr);
+                        const FileStamp* scanned = nullptr, bool* changedSinceScan = nullptr,
+                        const std::atomic<bool>* cancel = nullptr);
     bool createAICHHashSetOnly();
     /// Read @p path and build its complete AICH recovery set into @p out. Touches no
     /// KnownFile, so it is safe on a worker thread.
     static bool buildAICHHashSet(const QString& path, uint64 expectedSize,
-                                 AICHRecoveryHashSet& out);
+                                 AICHRecoveryHashSet& out,
+                                 const std::atomic<bool>* cancel = nullptr);
 
     // Core hash computation
+    /// @param cancel  checked before every read; a cancelled call returns false
     static bool createHash(QIODevice& device, uint64 length,
-                           uint8* md4HashOut, AICHHashTree* aichTree);
+                           uint8* md4HashOut, AICHHashTree* aichTree,
+                           const std::atomic<bool>* cancel = nullptr);
     static bool createHashFromFile(const QString& filePath, uint64 length,
                                    uint8* md4HashOut, AICHHashTree* aichTree);
     static bool createHashFromMemory(const uint8* data, uint32 size,

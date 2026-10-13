@@ -7,6 +7,7 @@
 /// representing source clients, shown when the user expands the item.
 
 #include "controls/CategoryFilterProxy.h"
+#include "controls/SortableItems.h"
 
 #include <QAbstractItemModel>
 #include <QByteArray>
@@ -267,9 +268,9 @@ private:
 
 /// Sort proxy of the downloads list: plain column sort, except that A4AF sources
 /// stay below a file's available ones.
-class DownloadSortProxy : public QSortFilterProxyModel {
+class DownloadSortProxy : public SortValueProxy {
 public:
-    using QSortFilterProxyModel::QSortFilterProxyModel;
+    using SortValueProxy::SortValueProxy;
 
 protected:
     [[nodiscard]] bool lessThan(const QModelIndex& left, const QModelIndex& right) const override;

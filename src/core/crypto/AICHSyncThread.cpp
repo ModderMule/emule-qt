@@ -104,7 +104,10 @@ void AICHSyncThread::run()
             && static_cast<uint64>(info.size()) == job.size;
 
         AICHRecoveryHashSet hashSet(job.size);
-        bool ok = KnownFile::buildAICHHashSet(job.path, job.size, hashSet);
+        bool ok = KnownFile::buildAICHHashSet(job.path, job.size, hashSet, &m_stopping);
+        // Stopped mid-file: not a failure to put on record
+        if (isClosing())
+            break;
         QByteArray master;
         if (ok) {
             master = QByteArray(reinterpret_cast<const char*>(hashSet.getMasterHash().getRawHash()),

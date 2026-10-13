@@ -27,6 +27,7 @@ private slots:
     void updateConnectionStats_tracksRates();
     void updateConnectionStats_updatesMaxRates();
     void updateConnectionStats_emitsSignal();
+    void updateConnectionStats_raisesSessionMaxAverages();
     void transferTime_tracking();
     void serverDuration_tracking();
     void add2TotalServerDuration_accumulates();
@@ -161,6 +162,31 @@ void tst_Statistics::updateConnectionStats_emitsSignal()
     QSignalSpy spy(&stats, &Statistics::statsUpdated);
     stats.updateConnectionStats(10.0f, 20.0f);
     QCOMPARE(spy.count(), 1);
+}
+
+void tst_Statistics::updateConnectionStats_raisesSessionMaxAverages()
+{
+    Statistics stats;
+    stats.updateConnectionStats(10.0f, 20.0f);
+    QCOMPARE(stats.maxUpAvg(), 0.0f);    // nothing transferred yet
+    QCOMPARE(stats.maxDownAvg(), 0.0f);
+
+    stats.setTransferStartTime(getTickCount() - SEC2MS(10));
+    stats.addSessionSentBytes(10 * 10240);      // ~10 KB/s over 10 s
+    stats.addSessionReceivedBytes(10 * 20480);  // ~20 KB/s
+    stats.updateConnectionStats(10.0f, 20.0f);
+
+    const float upPeak = stats.maxUpAvg();
+    const float downPeak = stats.maxDownAvg();
+    QVERIFY(upPeak > 5.0f && upPeak < 15.0f);
+    QVERIFY(downPeak > 10.0f && downPeak < 30.0f);
+
+    // A high-water mark: the average falling later must not lower it.
+    stats.setTransferStartTime(getTickCount() - SEC2MS(1000));
+    stats.updateConnectionStats(0.0f, 0.0f);
+    QVERIFY(stats.avgUploadRate(AverageType::Session) < upPeak);
+    QCOMPARE(stats.maxUpAvg(), upPeak);
+    QCOMPARE(stats.maxDownAvg(), downPeak);
 }
 
 void tst_Statistics::transferTime_tracking()

@@ -18,6 +18,7 @@
 
 #include <QDateTime>
 #include <QMetaType>
+#include <QSortFilterProxyModel>
 #include <QStandardItem>
 #include <QString>
 #include <QTreeWidget>
@@ -91,6 +92,51 @@ public:
         if (mine.isValid() && theirs.isValid())
             return sortValueLessThan(mine, theirs);
         return QStandardItem::operator<(other);
+    }
+};
+
+/// Whether a sort key is an integer of any width.
+///
+/// int64_t is `long` on Linux and `long long` elsewhere, so a 64-bit key arrives
+/// as QMetaType::Long there -- a type the stock comparators do not know.
+[[nodiscard]] inline bool isIntegerSortKey(const QVariant& key)
+{
+    switch (key.typeId()) {
+    case QMetaType::Bool:
+    case QMetaType::Char: case QMetaType::SChar: case QMetaType::UChar:
+    case QMetaType::Short: case QMetaType::UShort:
+    case QMetaType::Int: case QMetaType::UInt:
+    case QMetaType::Long: case QMetaType::ULong:
+    case QMetaType::LongLong: case QMetaType::ULongLong:
+        return true;
+    default:
+        return false;
+    }
+}
+
+/// The sort proxy every model-backed list uses, directly or as a base class.
+///
+/// QSortFilterProxyModel::lessThan() orders Int, UInt, LongLong, ULongLong, Float
+/// and Double as numbers and everything else as text -- Long and ULong included.
+/// A model answering its sort role with fromValue(int64_t) therefore sorted
+/// sizes and counts by their digits on Linux only (100 < 25 < 3 < 9).
+/// Integers are compared here; text, dates and doubles stay with Qt, so the
+/// case sensitivity and locale settings of the proxy keep working.
+class SortValueProxy : public QSortFilterProxyModel {
+public:
+    using QSortFilterProxyModel::QSortFilterProxyModel;
+
+protected:
+    [[nodiscard]] bool lessThan(const QModelIndex& left, const QModelIndex& right) const override
+    {
+        const QVariant a = left.data(sortRole());
+        const QVariant b = right.data(sortRole());
+        if (isIntegerSortKey(a) && isIntegerSortKey(b)) {
+            if (a.typeId() == QMetaType::ULongLong || a.typeId() == QMetaType::ULong)
+                return a.toULongLong() < b.toULongLong();
+            return a.toLongLong() < b.toLongLong();
+        }
+        return QSortFilterProxyModel::lessThan(left, right);
     }
 };
 

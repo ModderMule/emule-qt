@@ -3,6 +3,7 @@
 
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
+#include "controls/SortableItems.h"
 #include "utils/CountryFlags.h"
 #include "utils/ListActivation.h"
 #include "controls/ContactsGraph.h"
@@ -365,7 +366,7 @@ QWidget* KadPanel::createContactsPanel()
     layout->addWidget(m_contactsLabel);
 
     m_contactsModel = new KadContactsModel(this);
-    auto* proxyModel = new QSortFilterProxyModel(this);
+    auto* proxyModel = new SortValueProxy(this);
     proxyModel->setSourceModel(m_contactsModel);
     proxyModel->setSortRole(Qt::UserRole);
     auto* contactsView = new ListTreeView;
@@ -529,7 +530,7 @@ QWidget* KadPanel::createSearchesPanel()
     layout->addLayout(searchesHeader);
 
     m_searchesModel = new KadSearchesModel(this);
-    auto* searchProxy = new QSortFilterProxyModel(this);
+    auto* searchProxy = new SortValueProxy(this);
     searchProxy->setSourceModel(m_searchesModel);
     searchProxy->setSortRole(Qt::UserRole);
     auto* searchesView = new ListTreeView;

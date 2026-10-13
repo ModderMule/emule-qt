@@ -9,7 +9,7 @@
 namespace eMule {
 
 SearchResultsProxy::SearchResultsProxy(QObject* parent)
-    : QSortFilterProxyModel(parent)
+    : SortValueProxy(parent)
 {
 }
 
@@ -67,14 +67,14 @@ bool SearchResultsProxy::filterAcceptsRow(int sourceRow, const QModelIndex& sour
 bool SearchResultsProxy::lessThan(const QModelIndex& left, const QModelIndex& right) const
 {
     if (!qobject_cast<const SearchResultsModel*>(sourceModel()))
-        return QSortFilterProxyModel::lessThan(left, right);
+        return SortValueProxy::lessThan(left, right);
 
     // Name rows: by name or AICH when that is the sort column, otherwise the most
     // available first (MFC CompareChild, SearchListCtrl.cpp:604-618).
     if (left.parent().isValid()) {
         const int column = left.column();
         if (column == SearchResultsModel::ColFileName || column == SearchResultsModel::ColAichHash)
-            return QSortFilterProxyModel::lessThan(left, right);
+            return SortValueProxy::lessThan(left, right);
         const auto sources = [](const QModelIndex& idx) {
             return idx.siblingAtColumn(SearchResultsModel::ColAvailability)
                 .data(Qt::UserRole).toLongLong();
@@ -88,7 +88,7 @@ bool SearchResultsProxy::lessThan(const QModelIndex& left, const QModelIndex& ri
     if (leftSpam != rightSpam)
         return (sortOrder() == Qt::AscendingOrder) ? rightSpam : leftSpam;
 
-    return QSortFilterProxyModel::lessThan(left, right);
+    return SortValueProxy::lessThan(left, right);
 }
 
 } // namespace eMule

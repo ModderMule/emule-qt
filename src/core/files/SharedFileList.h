@@ -21,6 +21,7 @@
 #include <QWaitCondition>
 
 #include <array>
+#include <atomic>
 #include <functional>
 #include <vector>
 #include <list>
@@ -102,6 +103,8 @@ private:
     QWaitCondition m_condition;
     std::list<Job> m_queue;
     bool m_stopRequested = false;
+    /// m_stopRequested for the job being read: checked there without the mutex
+    std::atomic<bool> m_cancel{false};
 };
 
 // ---------------------------------------------------------------------------

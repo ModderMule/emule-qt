@@ -101,6 +101,7 @@ private slots:
     void aUserRolePayloadDoesNotHijackTheOrder();
     void aDateColumnSortsChronologically();
     void aStandardItemModelSortsOnTheSameRole();
+    void theProxySortsALongKeyByMagnitude();
 
     // --- the models ---------------------------------------------------------
     void theUsenetQueueSortsByMagnitude();
@@ -286,6 +287,43 @@ void tst_ListSorting::aStandardItemModelSortsOnTheSameRole()
     QCOMPARE(model.item(0, 0)->text(), QStringLiteral("big"));
 }
 
+void tst_ListSorting::theProxySortsALongKeyByMagnitude()
+{
+    // int64_t is `long` on Linux, and the stock proxy comparator orders a
+    // QMetaType::Long key by its digits: search results sorted Sources and Size
+    // as 100 < 25 < 3 < 9 there and nowhere else. `long` reproduces it anywhere.
+    QStandardItemModel model;
+    for (const long value : {9L, 100L, 25L, 3L, 1500000000L, 734003200L}) {
+        auto* item = new QStandardItem(QString::number(value));
+        item->setData(QVariant::fromValue<long>(value), Qt::UserRole);
+        model.appendRow(item);
+    }
+    QCOMPARE(model.item(0)->data(Qt::UserRole).typeId(), static_cast<int>(QMetaType::Long));
+
+    SortValueProxy proxy;
+    sortThrough(proxy, &model, 0, Qt::AscendingOrder);
+
+    QStringList order;
+    for (int row = 0; row < proxy.rowCount(); ++row)
+        order << proxy.index(row, 0).data().toString();
+    QCOMPARE(order, (QStringList{QStringLiteral("3"), QStringLiteral("9"), QStringLiteral("25"),
+                                 QStringLiteral("100"), QStringLiteral("734003200"),
+                                 QStringLiteral("1500000000")}));
+
+    // Text stays with Qt, case setting included
+    QStandardItemModel names;
+    for (const QString& name : {QStringLiteral("beta"), QStringLiteral("Alpha"), QStringLiteral("10")}) {
+        auto* item = new QStandardItem(name);
+        item->setData(name, Qt::UserRole);
+        names.appendRow(item);
+    }
+    SortValueProxy nameProxy;
+    nameProxy.setSortCaseSensitivity(Qt::CaseInsensitive);
+    sortThrough(nameProxy, &names, 0, Qt::AscendingOrder);
+    QCOMPARE(nameProxy.index(0, 0).data().toString(), QStringLiteral("10"));
+    QCOMPARE(nameProxy.index(1, 0).data().toString(), QStringLiteral("Alpha"));
+}
+
 // ---------------------------------------------------------------------------
 // The models
 // ---------------------------------------------------------------------------
@@ -299,7 +337,7 @@ void tst_ListSorting::theUsenetQueueSortsByMagnitude()
         release(QStringLiteral("big"), 10737418240LL, 100, 1048576, 90, UsenetRowStatus::Downloading),
     });
 
-    QSortFilterProxyModel proxy;
+    SortValueProxy proxy;
 
     for (const int column : {int(UsenetQueueModel::ColSize),
                              int(UsenetQueueModel::ColProgress),
@@ -331,7 +369,7 @@ void tst_ListSorting::anUnassessedReleaseSortsApartFromARuinedOne()
         release(QStringLiteral("ruined"), 1000, 0, 0, 3, UsenetRowStatus::Queued),
     });
 
-    QSortFilterProxyModel proxy;
+    SortValueProxy proxy;
     sortThrough(proxy, &model, UsenetQueueModel::ColHealth, Qt::AscendingOrder);
 
     QCOMPARE(proxy.index(0, UsenetQueueModel::ColName).data().toString(),
@@ -355,7 +393,7 @@ void tst_ListSorting::theUsenetStatusColumnSortsByProgressNotByWireOrder()
         release(QStringLiteral("busy"), 1000, 40, 0, -1, UsenetRowStatus::Downloading),
     });
 
-    QSortFilterProxyModel proxy;
+    SortValueProxy proxy;
     sortThrough(proxy, &model, UsenetQueueModel::ColStatus, Qt::AscendingOrder);
 
     const QStringList order = {
@@ -387,7 +425,7 @@ void tst_ListSorting::usenetFileRowsKeepNzbOrderUnderAnItemColumn()
     UsenetQueueModel model;
     model.setItems({item});
 
-    QSortFilterProxyModel proxy;
+    SortValueProxy proxy;
     sortThrough(proxy, &model, UsenetQueueModel::ColSpeed, Qt::AscendingOrder);
 
     const QModelIndex parent = proxy.index(0, 0);
@@ -418,7 +456,7 @@ void tst_ListSorting::serverPreferenceSortsByStrengthNotByName()
         server(QStringLiteral("l"), QStringLiteral("1.1.1.3"), 4661, 2),
     });
 
-    QSortFilterProxyModel proxy;
+    SortValueProxy proxy;
     sortThrough(proxy, &model, ServerListModel::ColPreference, Qt::AscendingOrder);
 
     QCOMPARE(proxy.index(0, ServerListModel::ColName).data().toString(), QStringLiteral("l"));
@@ -439,7 +477,7 @@ void tst_ListSorting::serverAddressesSortByOctetValue()
         server(QStringLiteral("two"), QStringLiteral("192.168.1.2"), 16000, 0),
     });
 
-    QSortFilterProxyModel proxy;
+    SortValueProxy proxy;
     sortThrough(proxy, &model, ServerListModel::ColIP, Qt::AscendingOrder);
 
     QCOMPARE(proxy.index(0, ServerListModel::ColName).data().toString(), QStringLiteral("two"));
@@ -494,7 +532,7 @@ void tst_ListSorting::downloadPrioritySortsByRankNotByName()
     }
     model.setDownloads(std::move(rows));
 
-    QSortFilterProxyModel proxy;
+    SortValueProxy proxy;
     sortThrough(proxy, &model, DownloadListModel::ColPriority, Qt::AscendingOrder);
 
     const QStringList order = {
@@ -530,7 +568,7 @@ void tst_ListSorting::downloadingClientsShowRateAndSessionTotals()
     QCOMPARE(model.headerData(5, Qt::Horizontal).toString(), QStringLiteral("Transferred Down"));
     QCOMPARE(model.headerData(6, Qt::Horizontal).toString(), QStringLiteral("Transferred Up"));
 
-    QSortFilterProxyModel proxy;
+    SortValueProxy proxy;
     sortThrough(proxy, &model, 3, Qt::AscendingOrder);
     QCOMPARE(proxy.index(0, 0).data().toString(), QStringLiteral("slow"));
 }
@@ -557,7 +595,7 @@ void tst_ListSorting::searchResultsSortByConfidence()
     rows[1].fakeReasons = {QStringLiteral("multiple_names")};
     model.setResults(std::move(rows));
 
-    QSortFilterProxyModel proxy;
+    SortValueProxy proxy;
     proxy.setSourceModel(&model);
     proxy.setSortRole(Qt::UserRole);
     proxy.sort(SearchResultsModel::ColConfidence, Qt::AscendingOrder);
@@ -604,7 +642,7 @@ void tst_ListSorting::indexerResultsShowConfidence()
     QCOMPARE(model.headerData(IndexerResultsModel::ColConfidence, Qt::Horizontal).toString(),
              QStringLiteral("Confidence"));
 
-    QSortFilterProxyModel proxy;
+    SortValueProxy proxy;
     proxy.setSourceModel(&model);
     proxy.setSortRole(Qt::UserRole);
     proxy.sort(IndexerResultsModel::ColConfidence, Qt::AscendingOrder);
@@ -1233,7 +1271,7 @@ void tst_ListSorting::serverCountsHideZeroAndCompact()
     QCOMPARE(text(1, ServerListModel::ColFiles), QString());
     QCOMPARE(text(1, ServerListModel::ColPing), QString());
 
-    QSortFilterProxyModel proxy;
+    SortValueProxy proxy;
     sortThrough(proxy, &model, ServerListModel::ColFiles, Qt::DescendingOrder);
     QCOMPARE(proxy.index(0, ServerListModel::ColName).data().toString(), QStringLiteral("mid"));
 }
@@ -1273,7 +1311,7 @@ void tst_ListSorting::onQueueColumnsFollowMfc()
     QCOMPARE(text(2, 8), QStringLiteral("Yes"));
     QCOMPARE(text(0, 9), QString());
 
-    QSortFilterProxyModel proxy;
+    SortValueProxy proxy;
     sortThrough(proxy, &model, 4, Qt::AscendingOrder);
     QCOMPARE(proxy.index(0, 0).data().toString(), QStringLiteral("next"));
     QCOMPARE(proxy.index(1, 0).data().toString(), QStringLiteral("high"));

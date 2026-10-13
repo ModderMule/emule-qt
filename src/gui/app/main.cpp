@@ -110,8 +110,10 @@ bool ipcPortFree(const QString& host, uint16_t port)
 /// Try to start the daemon process. Returns true if launched.
 /// @param holdConnect the first start wizard is about to run: the core must not
 ///        auto-connect before the ports are chosen.
-bool launchDaemon(const QString& daemonPath, bool holdConnect)
+/// @param pid the core's process id, 0 where it is not known (started in a console).
+bool launchDaemon(const QString& daemonPath, bool holdConnect, qint64& pid)
 {
+    pid = 0;
     if (daemonPath.isEmpty())
         return false;
 
@@ -147,7 +149,25 @@ bool launchDaemon(const QString& daemonPath, bool holdConnect)
 #endif
     }
 
-    return QProcess::startDetached(daemonPath, daemonArgs);
+    // The tarball launcher exec's the binary, so this is the core's own pid
+    return QProcess::startDetached(daemonPath, daemonArgs, QString(), &pid);
+}
+
+/// Stop a core we started and cannot reach over IPC: busy enough to miss a
+/// keepalive, it would otherwise outlive the GUI and greet the next one already
+/// connected. The port still being held tells it from a core that is gone.
+void terminateUnreachableDaemon(qint64 pid)
+{
+    if (pid <= 0 || ipcPortFree(eMule::thePrefs.ipcListenAddress(), eMule::thePrefs.ipcPort()))
+        return;
+#ifndef Q_OS_WIN
+    // The core turns SIGTERM into a graceful stop
+    eMule::logInfo(QStringLiteral("Core not reachable, stopping it by signal (pid %1)").arg(pid));
+    ::kill(static_cast<pid_t>(pid), SIGTERM);
+#else
+    // ToDo: Windows has no signal for this; the core needs a named event to wait on
+    eMule::logWarning(QStringLiteral("Core not reachable at exit, left running (pid %1)").arg(pid));
+#endif
 }
 
 /// The donkey at every size we have art for. One file per size rather than
@@ -281,12 +301,14 @@ int main(int argc, char* argv[])
     auto weOwnDaemon = std::make_shared<bool>(false);
     // The connection to the core dropped and has not come back yet
     auto daemonLost = std::make_shared<bool>(false);
+    // Of the core we launched; 0 = none, or not known
+    auto daemonPid = std::make_shared<qint64>(0);
     if (eMule::thePrefs.ipcEnabled() && !isRemoteCoreAddress(eMule::thePrefs.ipcListenAddress())) {
         const QString earlyPath = resolveDaemonPath();
         if (!earlyPath.isEmpty() && earlyPath != QStringLiteral("local")
             && ipcPortFree(eMule::thePrefs.ipcListenAddress(), eMule::thePrefs.ipcPort())) {
             const bool hold = !cli.screenshotMode() && !eMule::theUiState.firstStartWizardDone();
-            *weOwnDaemon = launchDaemon(earlyPath, hold);
+            *weOwnDaemon = launchDaemon(earlyPath, hold, *daemonPid);
         }
     }
 
@@ -621,7 +643,7 @@ int main(int argc, char* argv[])
             });
         } else if (!isRemote && !daemonPath.isEmpty()) {
             QObject::connect(&ipcClient, &eMule::IpcClient::connectionFailed,
-                             &app, [&ipcClient, daemonPath, weOwnDaemon, daemonLost, wizardAllowed = !cli.screenshotMode()](const QString& error) {
+                             &app, [&ipcClient, daemonPath, weOwnDaemon, daemonLost, daemonPid, wizardAllowed = !cli.screenshotMode()](const QString& error) {
                 if (ipcClient.daemonStarting())
                     return;   // launched, still loading
                 eMule::logWarning(QStringLiteral("Daemon not reachable (%1)").arg(error));
@@ -636,7 +658,7 @@ int main(int argc, char* argv[])
                     return;
                 // Read at launch time: a relaunch after the wizard must connect
                 const bool hold = wizardAllowed && !eMule::theUiState.firstStartWizardDone();
-                if (launchDaemon(daemonPath, hold)) {
+                if (launchDaemon(daemonPath, hold, *daemonPid)) {
                     *weOwnDaemon = true;
                     *daemonLost = false;
                     ipcClient.expectDaemonStart();
@@ -814,12 +836,15 @@ int main(int argc, char* argv[])
         // When the GUI closes, shut down the daemon only if we launched it.
         // If the daemon was already running independently, leave it alone.
         QObject::connect(&app, &QCoreApplication::aboutToQuit,
-                         &ipcClient, [&ipcClient, weOwnDaemon]() {
+                         &ipcClient, [&ipcClient, weOwnDaemon, daemonPid]() {
             if (*weOwnDaemon && ipcClient.isConnected()) {
                 eMule::logInfo(QStringLiteral("Shutting down daemon (we launched it)..."));
                 ipcClient.sendShutdown();
             } else {
                 ipcClient.disconnectFromDaemon();
+                // Ours, but the connection is down: there is nobody to ask
+                if (*weOwnDaemon)
+                    terminateUnreachableDaemon(*daemonPid);
             }
         });
 

@@ -309,6 +309,15 @@ void CoreSession::shutdownUploadPipeline()
         m_uploadThrottler->wait();
     }
 
+    // While the shared list is still there: with "Remember downloaded files" off,
+    // save() keeps only what is shared, and asked after the list was gone it kept
+    // nothing -- every clean shutdown emptied known.met and the next start rehashed
+    // the whole share. Stopped mid-load: the list is empty and would replace the
+    // real known.met -- as would a shared-only save before the share was scanned.
+    if (m_knownFileList && m_knownFilesLoaded
+        && (m_sharedFilesScanned || thePrefs.rememberDownloadedFiles()))
+        m_knownFileList->save();
+
     // Clear theApp pointers before destroying owned objects
     if (m_uploadQueue && theApp.uploadQueue == m_uploadQueue.get())
         theApp.uploadQueue = nullptr;
@@ -323,9 +332,6 @@ void CoreSession::shutdownUploadPipeline()
     m_uploadDiskIO.reset();
     m_uploadThrottler.reset();
     m_sharedFileList.reset();
-    // Stopped mid-load: the list is empty and would replace the real known.met
-    if (m_knownFileList && m_knownFilesLoaded)
-        m_knownFileList->save();
     m_knownFileList.reset();
 }
 
@@ -1998,6 +2004,7 @@ void CoreSession::loadStep()
         if (theApp.sharedFileList) {
             ensureSeenFileIndex();   // our own shares are files we have seen
             theApp.sharedFileList->reload();
+            m_sharedFilesScanned = true;
             theApp.sharedFileList->setWatchingEnabled(true);
 
             // MFC starts CAICHSyncThread once the shared list exists (srchybrid/EmuleDlg.cpp:641).
