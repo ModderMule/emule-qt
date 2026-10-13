@@ -1967,6 +1967,7 @@ void CoreSession::loadStep()
 {
     // Longest one slice may keep the event loop (and with it IPC) waiting
     constexpr qint64 kSliceMs = 50;
+    const LoadStage announced = m_loadStage;
 
     switch (m_loadStage) {
     case LoadStage::IpFilter:
@@ -2040,6 +2041,19 @@ void CoreSession::loadStep()
 
     case LoadStage::Done:
         return;
+    }
+
+    // Ahead of the stage it names: a stage is one blocking step, and whoever
+    // watches should know what it is waiting for
+    if (m_loadStage != announced) {
+        switch (m_loadStage) {
+        case LoadStage::Credits:     emit loadStageChanged(QStringLiteral("credits")); break;
+        case LoadStage::KnownFiles:  emit loadStageChanged(QStringLiteral("known-files")); break;
+        case LoadStage::SharedFiles: emit loadStageChanged(QStringLiteral("shared-files")); break;
+        case LoadStage::PartFiles:   emit loadStageChanged(QStringLiteral("part-files")); break;
+        case LoadStage::Network:     emit loadStageChanged(QStringLiteral("network")); break;
+        default: break;
+        }
     }
     QTimer::singleShot(0, this, &CoreSession::loadStep);
 }

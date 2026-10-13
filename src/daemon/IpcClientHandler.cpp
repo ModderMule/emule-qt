@@ -227,6 +227,9 @@ IpcClientHandler::IpcClientHandler(QTcpSocket* socket, bool isLocal, QObject* pa
                 logWarning(QStringLiteral("IPC protocol error: %1").arg(reason));
                 m_connection->close();
             });
+
+    // A GUI that stopped reading must not grow this process without bound
+    m_connection->setWriteLimits(Ipc::PushHoldBacklog, Ipc::MaxWriteBacklog);
 }
 
 IpcClientHandler::~IpcClientHandler() = default;
@@ -238,6 +241,11 @@ void IpcClientHandler::sendMessage(const IpcMessage& msg)
         sock->flush();
 }
 
+void IpcClientHandler::sendPush(const IpcMessage& msg)
+{
+    m_connection->sendPush(msg);
+}
+
 bool IpcClientHandler::isHandshaked() const
 {
     return m_handshaked;
@@ -245,8 +253,7 @@ bool IpcClientHandler::isHandshaked() const
 
 void IpcClientHandler::replayDeferred()
 {
-    const auto pending = std::exchange(m_deferred, {});
-    for (const IpcMessage& msg : pending)
+    for (const IpcMessage& msg : m_deferred.take())
         onMessageReceived(msg);
 }
 
@@ -300,7 +307,11 @@ void IpcClientHandler::onMessageReceived(const IpcMessage& msg)
     // A download added now could duplicate a part file not read yet, and a list
     // fetched now is partial: held, and answered by replayDeferred().
     if (theApp.loading && !answeredWhileLoading(msg.type())) {
-        m_deferred.push_back(msg);
+        // A polling GUI repeats itself for as long as the load takes: only the
+        // newest of identical reads is kept, the older one is refused right away.
+        if (const auto refused = m_deferred.hold(msg))
+            sendMessage(IpcMessage::makeError(refused->seqId(), Ipc::ErrSuperseded,
+                                              QStringLiteral("Core is loading")));
         return;
     }
 
@@ -512,6 +523,10 @@ void IpcClientHandler::handleHandshake(const IpcMessage& msg)
     // Field 2: daemon session token — random UUID per daemon process lifetime.
     // GUI uses this to detect daemon restarts and reset its per-type log checkpoints.
     reply.append(DaemonApp::sessionToken());
+    // Fields 3, 4: list requests are held until the load is over — say so, and
+    // which stage it is in, or the GUI shows empty lists with no explanation.
+    reply.append(static_cast<bool>(theApp.loading));
+    reply.append(DaemonApp::loadStage());
     sendMessage(reply);
     emit handshakeCompleted();
 }

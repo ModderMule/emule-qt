@@ -4,11 +4,12 @@
 
 #include "utils/IpcFeedback.h"
 
+#include "utils/AsyncMessageBox.h"
+
 #include "app/IpcClient.h"
 #include "utils/StatusBarNotifier.h"
 
 #include <QCoreApplication>
-#include <QMessageBox>
 
 namespace eMule::IpcFeedback {
 
@@ -26,7 +27,9 @@ bool checkOrWarn(const Ipc::IpcMessage& resp, QWidget* parent,
     if (text.isEmpty())
         text = QCoreApplication::translate("IpcFeedback", "The request was rejected by eMule.");
 
-    QMessageBox::warning(parent, title, text);
+    // Not the blocking kind: callers are IPC reply callbacks, and a nested event
+    // loop there stops every other reply until the box is closed
+    AsyncMessageBox::warning(parent, title, text);
     return false;
 }
 

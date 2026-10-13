@@ -313,6 +313,19 @@ emule_add_test(tst_PushCoalescer FOLDER "Ipc" LIBRARIES eMule::Ipc)
 # Daemon log buffer and its main-thread forward to the IPC sockets.
 emule_add_test(tst_LogRelay FOLDER "Ipc" LIBRARIES eMule::Ipc)
 
+# The GUI's IPC client against a mock core that is slow, silent, loading or gone:
+# polls must not stack, a late pong is not a dead core, and a start-up that goes
+# nowhere says why. IpcClient and CoreStartWatch compile standalone, as below.
+emule_add_test(tst_IpcBusyStates FOLDER "Ipc"
+    SOURCES tst_IpcBusyStates.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/CoreStartWatch.cpp")
+target_include_directories(tst_IpcBusyStates PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_IpcBusyStates PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
 # Daemon standby prevention — compiles the daemon source standalone.
 emule_add_test(tst_PowerManager FOLDER "Daemon"
     SOURCES tst_PowerManager.cpp "${CMAKE_SOURCE_DIR}/src/daemon/PowerManager.cpp")

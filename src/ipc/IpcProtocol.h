@@ -668,7 +668,7 @@ enum class IpcMsgType : int {
 
     // -- Responses (Core -> GUI) ---------------------------------------------
 
-    HandshakeOk          = 300,  ///< [version, motd]
+    HandshakeOk          = 300,  ///< [version, motd, sessionToken, loading: bool]
     Result               = 301,  ///< [success, data]
     Error                = 302,  ///< [code, message]
 
@@ -694,7 +694,13 @@ enum class IpcMsgType : int {
     ///  hasMore: bool — finished with a further page, see SearchMore].
     /// The StartSearch reply carries the same `state` and `reason`.
     PushSearchState      = 432,
+    /// [loading: bool, stage: string] — the core started or finished reading its
+    /// files. While loading, list requests are held and answered once it is over.
+    PushCoreLoading      = 440,
     PushLogMessage       = 450,  ///< [logId, category, severity: QtMsgType, message, timestamp: unix s]
+    /// [entries: array of [logId, category, severity, message, timestamp]] — every
+    /// line of one relay flush in a single frame, same entry shape as SyncLogs.
+    PushLogBatch         = 451,
     /// [rows: array] — rows of shared files that were added or changed, same shape as
     /// a GetSharedFiles row. Batched; a file is sent at most a few times a second.
     PushSharedFileUpdate = 460,
@@ -811,6 +817,17 @@ inline constexpr int MaxEd2kLinkBatch = 1000;
 /// AddServer Error code: the address is LAN/loopback and filterLANIPs is on. Distinct
 /// from a duplicate (Result false), so the GUI can tell the user instead of staying quiet.
 inline constexpr int ErrServerLanFiltered = 422;
+
+/// Unsent bytes towards one client above which state pushes are held back (1 MiB).
+inline constexpr qint64 PushHoldBacklog = 1024 * 1024;
+
+/// Unsent bytes above which a client counts as stuck and is dropped (64 MiB). Well
+/// past MaxPayloadSize, so one large reply on an idle connection never trips it.
+inline constexpr qint64 MaxWriteBacklog = 64LL * 1024 * 1024;
+
+/// Sent with Error when a held request was dropped for a newer identical one, or
+/// the core is too busy to hold more.
+inline constexpr int ErrSuperseded = 503;
 
 /// Default IPC TCP port.
 inline constexpr uint16_t DefaultIpcPort = 4712;

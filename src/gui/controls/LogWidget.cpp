@@ -202,6 +202,18 @@ void LogWidget::appendServerInfo(const QString& text, ServerMsgType type)
     noteAppended(m_serverInfoBrowser);
 }
 
+void LogWidget::beginBatch()
+{
+    if (m_batchDepth++ == 0)
+        setUpdatesEnabled(false);
+}
+
+void LogWidget::endBatch()
+{
+    if (m_batchDepth > 0 && --m_batchDepth == 0)
+        setUpdatesEnabled(true);
+}
+
 void LogWidget::appendLog(const QString& msg, const QString& ts, qint64 seqId)
 {
     const QString timestamp = ts.isEmpty()

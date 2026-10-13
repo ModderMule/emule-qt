@@ -477,7 +477,7 @@ void MessagesPanel::requestFriendList()
     const QString sel = saveSelection();
 
     IpcMessage msg(IpcMsgType::GetFriends);
-    m_ipc->sendRequest(std::move(msg), [this, sel](const IpcMessage& resp) {
+    m_ipc->sendPoll(this, std::move(msg), [this, sel](const IpcMessage& resp) {
         if (!resp.fieldBool(0))
             return;   // keep the list: a dropped connection would otherwise empty it
         const QCborArray friends = resp.fieldArray(1);

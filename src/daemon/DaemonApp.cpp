@@ -60,6 +60,7 @@ using namespace Ipc;
 DaemonApp* DaemonApp::s_instance = nullptr;
 QtMessageHandler DaemonApp::s_previousHandler = nullptr;
 QString DaemonApp::s_sessionToken;
+QString DaemonApp::s_loadStage;
 
 namespace {
 
@@ -215,6 +216,10 @@ bool DaemonApp::start()
     // The web server starts in onCoreLoaded(): a REST client must not read
     // half-loaded lists or add a download whose part file is still unread.
     connect(m_coreSession.get(), &CoreSession::loaded, this, &DaemonApp::onCoreLoaded);
+    connect(m_coreSession.get(), &CoreSession::loadStageChanged, this, [this](const QString& stage) {
+        s_loadStage = stage;
+        broadcastCoreLoading(true);
+    });
 
     // Usenet. Always constructed; usenetEnabled() gates only the auto-start, so
     // the switch takes effect without a daemon restart.
@@ -643,8 +648,22 @@ void DaemonApp::onCoreLoaded()
 {
     logInfo(QStringLiteral("Core loaded — networks starting"));
     startWebServer();
+    s_loadStage.clear();
+    // Ahead of the replay: the GUI should drop its "loading" notice before the
+    // lists it was waiting for arrive
+    broadcastCoreLoading(false);
     if (m_ipcServer)
         m_ipcServer->replayDeferred();
+}
+
+void DaemonApp::broadcastCoreLoading(bool loading)
+{
+    if (!m_ipcServer)
+        return;
+    IpcMessage msg(IpcMsgType::PushCoreLoading, 0);
+    msg.append(loading);
+    msg.append(s_loadStage);
+    m_ipcServer->broadcast(msg);
 }
 
 void DaemonApp::stopWebServer()
@@ -719,6 +738,11 @@ std::vector<Ipc::LogEntry> DaemonApp::logsSince(int64_t lastLogId)
 QString DaemonApp::sessionToken()
 {
     return s_sessionToken;
+}
+
+QString DaemonApp::loadStage()
+{
+    return s_loadStage;
 }
 
 void DaemonApp::logMessageHandler(QtMsgType type, const QMessageLogContext& context,

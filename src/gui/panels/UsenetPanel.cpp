@@ -458,7 +458,7 @@ void UsenetPanel::refresh()
     if (!m_ipc || !m_ipc->isConnected())
         return;
 
-    m_ipc->sendRequest(Ipc::IpcMessage(Ipc::IpcMsgType::GetUsenetQueue),
+    m_ipc->sendPoll(this, Ipc::IpcMessage(Ipc::IpcMsgType::GetUsenetQueue),
                        [this](const Ipc::IpcMessage& resp) {
         if (!resp.fieldBool(0))
             return;

@@ -707,7 +707,7 @@ void StatisticsPanel::requestStats()
         return;
 
     IpcMessage req(IpcMsgType::GetStats);
-    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
+    m_ipc->sendPoll(this, std::move(req), [this](const IpcMessage& resp) {
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0))
             return;
 
@@ -717,7 +717,7 @@ void StatisticsPanel::requestStats()
     // Its own request: the daemon answers GetStats every second for the status
     // bar, and the Usenet branch is only worth building while this panel shows.
     IpcMessage usenetReq(IpcMsgType::GetUsenetStats);
-    m_ipc->sendRequest(std::move(usenetReq), [this](const IpcMessage& resp) {
+    m_ipc->sendPoll(this, std::move(usenetReq), [this](const IpcMessage& resp) {
         if (!resp.isValid())
             return;   // dropped: leave the branch on screen, like the rest of the tree
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
@@ -728,7 +728,7 @@ void StatisticsPanel::requestStats()
     });
 
     IpcMessage kadReq(IpcMsgType::GetKadStats);
-    m_ipc->sendRequest(std::move(kadReq), [this](const IpcMessage& resp) {
+    m_ipc->sendPoll(this, std::move(kadReq), [this](const IpcMessage& resp) {
         if (!resp.isValid())
             return;
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
@@ -739,7 +739,7 @@ void StatisticsPanel::requestStats()
     });
 
     IpcMessage clientReq(IpcMsgType::GetClientStats);
-    m_ipc->sendRequest(std::move(clientReq), [this](const IpcMessage& resp) {
+    m_ipc->sendPoll(this, std::move(clientReq), [this](const IpcMessage& resp) {
         if (!resp.isValid())
             return;
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
@@ -758,7 +758,7 @@ void StatisticsPanel::requestGraphHistory()
 
     IpcMessage req(IpcMsgType::GetStatsHistory);
     req.append(static_cast<qint64>(m_statsSeq));
-    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
+    m_ipc->sendPoll(this, std::move(req), [this](const IpcMessage& resp) {
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0))
             return;
         applyGraphHistory(resp.fieldMap(1));

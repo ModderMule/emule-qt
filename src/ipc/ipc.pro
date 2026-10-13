@@ -21,6 +21,7 @@ win32 {
 }
 
 SOURCES += \
+    DeferredRequests.cpp \
     IpcConnection.cpp \
     IpcMessage.cpp \
     IpcProtocol.cpp \
@@ -29,6 +30,7 @@ SOURCES += \
 
 HEADERS += \
     CborSerializers.h \
+    DeferredRequests.h \
     IpcConnection.h \
     IpcMessage.h \
     IpcProtocol.h \

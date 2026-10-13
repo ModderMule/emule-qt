@@ -90,6 +90,9 @@ public:
     /// daemon restarts and reset its log checkpoints accordingly.
     [[nodiscard]] static QString sessionToken();
 
+    /// Stage of the start-up load ("part-files", …), empty once it is over.
+    [[nodiscard]] static QString loadStage();
+
     /// (Re)compose the Qt logging filter rules from the current logging prefs
     /// (verbose / kadVerboseLog / serverVerboseLog) and apply them. Each debug
     /// subsystem is enabled independently so a single toggle can surface its
@@ -108,6 +111,8 @@ public:
 private:
     /// CoreSession::loaded: start what had to wait for the file lists.
     void onCoreLoaded();
+    /// Tell every GUI whether the core is still reading its files, and which.
+    void broadcastCoreLoading(bool loading);
     void startWebServer();
     void stopWebServer();
     void restartWebServer();
@@ -165,6 +170,7 @@ private:
     static inline bool s_restartRequested = false;
     static QtMessageHandler s_previousHandler;
     static QString s_sessionToken;  ///< Random UUID for this daemon process lifetime.
+    static QString s_loadStage;     ///< See loadStage().
 };
 
 } // namespace eMule

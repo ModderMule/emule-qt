@@ -15,6 +15,7 @@
 
 #include "LogRelay.h"
 
+#include <QCborArray>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QSignalSpy>
@@ -42,7 +43,10 @@ public:
     void record(const IpcMessage& msg)
     {
         std::lock_guard lock(m_mutex);
-        m_ids.push_back(msg.fieldInt(0));
+        // One frame per flush, a row per line
+        const QCborArray rows = msg.fieldArray(0);
+        for (const auto& row : rows)
+            m_ids.push_back(row.toArray().at(0).toInteger());
         if (QThread::currentThread() != m_owner)
             ++m_offThread;
     }
@@ -102,6 +106,7 @@ private slots:
     void workerThreads_forwardOnOwnerThreadOnly();
     void ownerThreadAppend_isDeferred();
     void burst_coalescesIntoOneWakeup();
+    void burst_isOneFrame();
     void ring_capsAtMaxAndKeepsNewest();
     void push_carriesWireFields();
 };
@@ -175,13 +180,39 @@ void tst_LogRelay::burst_coalescesIntoOneWakeup()
 
     QCoreApplication::sendPostedEvents(&relay, QEvent::MetaCall);
     QCOMPARE(wakeups.count, 1);
-    QCOMPARE(spy.count(), 40);
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.at(0).at(0).value<IpcMessage>().fieldArray(0).size(), 40);
 
     // The flush re-armed: the next line posts its own instead of being stranded.
     appendLine(relay, QStringLiteral("NNTP: connected"));
     QCoreApplication::sendPostedEvents(&relay, QEvent::MetaCall);
     QCOMPARE(wakeups.count, 2);
-    QCOMPARE(spy.count(), 41);
+    QCOMPARE(spy.count(), 2);
+    QCOMPARE(spy.at(1).at(0).value<IpcMessage>().fieldArray(0).size(), 1);
+}
+
+void tst_LogRelay::burst_isOneFrame()
+{
+    LogRelay relay;
+    QSignalSpy spy(&relay, &LogRelay::ready);
+
+    // A core in trouble logs by the hundred. A frame per line made the GUI
+    // dispatch, lay out and repaint once per line; the burst is one frame now.
+    for (int i = 0; i < 300; ++i)
+        appendLine(relay, QStringLiteral("NNTP: timeout %1").arg(i));
+    QCoreApplication::sendPostedEvents(&relay, QEvent::MetaCall);
+
+    QCOMPARE(spy.count(), 1);
+    const auto msg = spy.at(0).at(0).value<IpcMessage>();
+    QCOMPARE(msg.type(), IpcMsgType::PushLogBatch);
+    const QCborArray rows = msg.fieldArray(0);
+    QCOMPARE(rows.size(), 300);
+    QCOMPARE(rows.first().toArray().at(0).toInteger(), qint64(1));
+    QCOMPARE(rows.last().toArray().at(0).toInteger(), qint64(300));
+
+    // Nothing is sent twice: an idle flush emits no empty frame
+    QCoreApplication::sendPostedEvents(&relay, QEvent::MetaCall);
+    QCOMPARE(spy.count(), 1);
 }
 
 void tst_LogRelay::ring_capsAtMaxAndKeepsNewest()
@@ -210,15 +241,17 @@ void tst_LogRelay::push_carriesWireFields()
     QCoreApplication::sendPostedEvents(&relay, QEvent::MetaCall);
     QCOMPARE(spy.count(), 1);
 
-    // The layout IpcClient::dispatchPushEvent and the GUI's LogWidget read.
+    // The row layout IpcClient::replayLogEntries reads, same as a SyncLogs entry.
     const auto msg = spy.at(0).at(0).value<IpcMessage>();
-    QCOMPARE(msg.type(), IpcMsgType::PushLogMessage);
+    QCOMPARE(msg.type(), IpcMsgType::PushLogBatch);
     QCOMPARE(msg.seqId(), 0);
-    QCOMPARE(msg.fieldInt(0), qint64(1));
-    QCOMPARE(msg.fieldString(1), QStringLiteral("emule.kad"));
-    QCOMPARE(msg.fieldInt(2), qint64(QtWarningMsg));
-    QCOMPARE(msg.fieldString(3), QStringLiteral("Kad: firewalled"));
-    QVERIFY(qAbs(msg.fieldInt(4) - QDateTime::currentSecsSinceEpoch()) <= 2);
+    QCOMPARE(msg.fieldArray(0).size(), 1);
+    const QCborArray row = msg.fieldArray(0).first().toArray();
+    QCOMPARE(row.at(0).toInteger(), qint64(1));
+    QCOMPARE(row.at(1).toString(), QStringLiteral("emule.kad"));
+    QCOMPARE(row.at(2).toInteger(), qint64(QtWarningMsg));
+    QCOMPARE(row.at(3).toString(), QStringLiteral("Kad: firewalled"));
+    QVERIFY(qAbs(row.at(4).toInteger() - QDateTime::currentSecsSinceEpoch()) <= 2);
 }
 
 QTEST_GUILESS_MAIN(tst_LogRelay)

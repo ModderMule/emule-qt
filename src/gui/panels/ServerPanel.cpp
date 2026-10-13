@@ -949,7 +949,7 @@ void ServerPanel::requestServerList()
     const QStringList keys = saveSelection();
 
     Ipc::IpcMessage req(Ipc::IpcMsgType::GetServers);
-    m_ipc->sendRequest(std::move(req), [this, keys, srvScroll](const Ipc::IpcMessage& resp) {
+    m_ipc->sendPoll(this, std::move(req), [this, keys, srvScroll](const Ipc::IpcMessage& resp) {
         if (!resp.fieldBool(0))
             return;
         const QCborArray servers = resp.fieldArray(1);

@@ -7,14 +7,17 @@
 /// for switching between tab pages (Kad, Servers, Transfers, etc.),
 /// a stacked widget holding the page content, and a status bar at the bottom.
 
+#include "app/CoreStartWatch.h"
 #include "app/SkinEngine.h"
 #include "app/ToolbarButtons.h"
 
 #include "utils/Ed2kLinkImporter.h"
 
 #include <QCloseEvent>
+#include <QElapsedTimer>
 #include <QMainWindow>
 #include <QMap>
+#include <QMessageBox>
 #include <QWidget>
 #include <QPainter>
 #include <QPointer>
@@ -195,6 +198,14 @@ public:
     /// Close and quit — the tray menu's Exit and Cmd+Q. promptOnExit still asks.
     void forceQuit();
 
+    /// The core is not coming up: say which way, and offer Retry / Open Log / Quit.
+    /// Never blocks. Problem::None takes the box down again.
+    void showCoreStartProblem(eMule::CoreStartWatch::Problem problem);
+
+    /// A log line worth a tray pop-up. At most one every few seconds: a core in
+    /// trouble logs warnings by the hundred, and a balloon each froze the window.
+    void notifyLogEntry(const QString& text);
+
     /// Run a version check. \p manual reports the "up to date" and "check failed"
     /// outcomes too, which the automatic background check stays silent about, and
     /// ignores both the versionCheckEnabled setting and the interval.
@@ -203,6 +214,10 @@ public:
     /// Start the automatic check: one now if due, then hourly. Idempotent, so the
     /// IPC connected handler can call it again on every reconnect.
     void startVersionChecks();
+
+signals:
+    /// "Retry" in the box showCoreStartProblem() puts up.
+    void coreRetryRequested();
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -240,8 +255,12 @@ private slots:
     void onToolbarContextMenu(const QPoint& pos);
     void onSubmitBugReport();
     void onClientSharedFilesReceived(const eMule::Ipc::IpcMessage& msg);
+    void onCoreLinkChanged();
+    void raiseBlockingDialog();
 
 private:
+    /// Status bar text for the load stage the core reports.
+    [[nodiscard]] QString coreLoadingText() const;
     void rebuildToolbar();
     /// Ctrl+Tab / Ctrl+Shift+Tab: next / previous window button in toolbar order
     /// (MFC CemuleDlg::GetNextWindowToolbarButton, EmuleDlg.cpp:2975).
@@ -323,6 +342,8 @@ private:
     Qt::WindowStates m_stateBeforeMinimize = Qt::WindowNoState;   // maximized/fullscreen only
     QSoundEffect* m_notifySound = nullptr;
     QStringList m_lastNotification;   ///< title, text, sound — what was last asked for
+    QElapsedTimer m_lastLogNotify;    ///< when notifyLogEntry() last showed one
+    QPointer<QMessageBox> m_coreProblemBox;
 
     // Speed graph in toolbar. The samples are the daemon's, fetched by seq — see
     // pollSpeedHistory(). m_speedSeq/m_speedEpoch say which slice of the daemon's

@@ -43,6 +43,11 @@ public:
     /// CemuleDlg::AddServerMessageLine (srchybrid/EmuleDlg.cpp:961-972).
     void appendServerInfo(const QString& text, ServerMsgType type = ServerMsgType::Info);
 
+    /// A run of append*() calls follows as one batch: hold the repaints until
+    /// endBatch(). Nests.
+    void beginBatch();
+    void endBatch();
+
     /// Append a message to the Log tab.
     /// If @p ts is non-empty it is used as the timestamp; otherwise current time.
     /// @p seqId orders entries (epoch seconds); 0 = use current time.
@@ -114,6 +119,8 @@ private:
     /// Otherwise binary-searches for the correct position.
     void insertSorted(QTextBrowser* browser, QList<qint64>& seqIds,
                       qint64 seqId, const QString& html);
+
+    int m_batchDepth = 0;   ///< open beginBatch() calls
 
     /// Remove oldest lines from @p browser if it exceeds the configured limit.
     void trimToLimit(QTextBrowser* browser, QList<qint64>& seqIds);

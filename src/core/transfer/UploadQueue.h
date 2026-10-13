@@ -23,6 +23,7 @@
 
 namespace eMule {
 
+class KnownFile;
 class Packet;
 class SafeMemFile;
 class SharedFileList;
@@ -208,7 +209,7 @@ public:
     /// Call before renaming or deleting a shared file: upload readers let go of it.
     void releaseUploadFile(const QString& path);
     [[nodiscard]] UploadDiskIOThread* diskIOThread() const { return m_diskIO; }
-    void setSharedFileList(SharedFileList* sharedFiles) { m_sharedFiles = sharedFiles; }
+    void setSharedFileList(SharedFileList* sharedFiles);
 
     // Iterate
     void forEachWaiting(const std::function<void(UpDownClient*)>& callback) const;
@@ -230,8 +231,13 @@ private slots:
                              quint64 startOffset, quint64 endOffset,
                              QList<std::shared_ptr<eMule::Packet>> packets);
     void onReadError(eMule::UpDownClient* client);
+    /// A file left the share (deleted, unshared, cancelled): end its slots, drop its waiters.
+    void onSharedFileRemoved(eMule::KnownFile* file);
 
 private:
+    /// The file a slot is being served from: its head block's, else the one it asked for.
+    [[nodiscard]] static const uint8* servedFileId(const UpDownClient* client);
+
     /// Point the client's upload file at the file a block request names — MFC
     /// srchybrid/UploadQueue.cpp:339-358. Removes the slot when that file is no longer
     /// shared; returns false then.

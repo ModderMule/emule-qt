@@ -22,6 +22,8 @@
 #include <QAction>
 #include <QHeaderView>
 #include <QMenu>
+#include <QPaintEvent>
+#include <QPainter>
 #include <QShowEvent>
 #include <QString>
 #include <QTreeView>
@@ -122,6 +124,26 @@ public:
     }
 
 protected:
+    /// An empty list says why, when someone set the "emptyNotice" property on it
+    /// (MainWindow does while the core loads its files). A dynamic property, so
+    /// the setter needs no knowledge of this template.
+    void paintEvent(QPaintEvent* event) override
+    {
+        Base::paintEvent(event);
+
+        const QString notice = this->property("emptyNotice").toString();
+        if (notice.isEmpty())
+            return;
+        const auto* model = this->model();
+        if (model && model->rowCount(this->rootIndex()) > 0)
+            return;
+
+        QPainter painter(this->viewport());
+        painter.setPen(this->palette().color(QPalette::Disabled, QPalette::Text));
+        painter.drawText(this->viewport()->rect().adjusted(8, 8, -8, -8),
+                         Qt::AlignCenter | Qt::TextWordWrap, notice);
+    }
+
     void showEvent(QShowEvent* event) override
     {
         Base::showEvent(event);

@@ -28,6 +28,8 @@
 #include "utils/SafeFile.h"
 #include "utils/TimeUtils.h"
 
+#include <QFileInfo>
+
 
 
 namespace eMule {
@@ -79,6 +81,17 @@ void UploadQueue::setDiskIOThread(UploadDiskIOThread* diskIO)
         connect(m_diskIO, &UploadDiskIOThread::readError,
                 this, &UploadQueue::onReadError,
                 Qt::QueuedConnection);
+    }
+}
+
+void UploadQueue::setSharedFileList(SharedFileList* sharedFiles)
+{
+    if (m_sharedFiles)
+        disconnect(m_sharedFiles, nullptr, this, nullptr);
+    m_sharedFiles = sharedFiles;
+    if (m_sharedFiles) {
+        connect(m_sharedFiles, &SharedFileList::fileRemoved,
+                this, &UploadQueue::onSharedFileRemoved);
     }
 }
 
@@ -134,8 +147,70 @@ void UploadQueue::onBlockPacketsReady(UpDownClient* client, QByteArray fileId,
 
 void UploadQueue::onReadError(UpDownClient* client)
 {
-    if (client)
-        removeFromUploadQueue(client);
+    // Pointer compare first, the client may be gone.
+    if (!client || std::ranges::find(m_uploadingList, client) == m_uploadingList.end())
+        return;
+
+    // Not MFC, which keeps offering a file that is gone until the user reloads: the
+    // peer would queue up again, get a slot and fail the same way.
+    QString goneDir;
+    if (const KnownFile* file = m_sharedFiles ? m_sharedFiles->getFileByID(servedFileId(client))
+                                              : nullptr;
+        file && !file->isPartFile() && !file->filePath().isEmpty()
+        && !QFileInfo::exists(file->filePath()))
+    {
+        goneDir = QFileInfo(file->filePath()).absolutePath();
+    }
+
+    // "IO/Other Error while creating data packet" — MFC srchybrid/UploadQueue.cpp:321-324.
+    removeFromUploadQueue(client);
+
+    // Takes the file out of the share (or follows a move); onSharedFileRemoved() does the rest.
+    if (!goneDir.isEmpty())
+        m_sharedFiles->rescanDirectory(goneDir);
+}
+
+// ===========================================================================
+// onSharedFileRemoved — a shared file is no longer offered
+// ===========================================================================
+
+void UploadQueue::onSharedFileRemoved(KnownFile* file)
+{
+    if (!file)
+        return;
+
+    // A reader keeps the file open; on POSIX a deleted one would go on being served
+    // from its unlinked inode and hold its disk space.
+    if (m_diskIO && !file->isPartFile())
+        m_diskIO->releaseFile(file->filePath());
+
+    const uint8* hash = file->fileHash();
+
+    // MFC ends such a slot from its IO thread ("shared file not found",
+    // srchybrid/UploadDiskIOThread.cpp:213-215 -> UploadQueue.cpp:321-324).
+    //
+    // Discarded improvement: OP_OUTOFPARTREQS + OP_FILEREQANSNOFIL here would let the
+    // peer drop us as a source at once instead of timing out. Not sent, to stay with MFC,
+    // which tells the peer nothing.
+    const std::vector<UpDownClient*> uploading = m_uploadingList;
+    for (UpDownClient* cur : uploading) {
+        if (!md4equ(servedFileId(cur), hash))
+            continue;
+        if (thePrefs.logUlDlEvents()) {
+            logDebug(QStringLiteral("%1: uploaded file \"%2\" is no longer shared — "
+                                    "removing from upload list").arg(cur->userName(), file->fileName()));
+        }
+        removeFromUploadQueue(cur);
+    }
+
+    // MFC drops these on its next slot pick (srchybrid/UploadQueue.cpp:121-125).
+    const std::vector<UpDownClient*> waiting = m_waitingList;
+    for (UpDownClient* cur : waiting) {
+        if (!md4equ(cur->reqUpFileId(), hash))
+            continue;
+        cur->clearWaitStartTime();
+        removeFromWaitingQueue(cur);
+    }
 }
 
 // ===========================================================================
@@ -1493,6 +1568,12 @@ bool UploadQueue::followRequestedFile(UpDownClient* client, const uint8* fileId)
     }
     removeFromUploadQueue(client);
     return false;
+}
+
+const uint8* UploadQueue::servedFileId(const UpDownClient* client)
+{
+    return client->blockRequests().empty() ? client->reqUpFileId()
+                                           : client->blockRequests().front()->fileID.data();
 }
 
 } // namespace eMule

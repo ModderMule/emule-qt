@@ -27,6 +27,7 @@
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QTemporaryDir>
 #include <QTest>
 
 using namespace eMule;
@@ -117,6 +118,8 @@ private slots:
     void checkForTimeOver_keepsSlotWhileOnCollection();
     void checkForTimeOver_endsSessionOnOtherFile();
     void checkForTimeOver_endsSessionWhenFileUnshared();
+    void sharedFileRemoved_endsItsSlotsAndDropsItsWaiters();
+    void readError_fileGoneFromDisk_leavesTheShare();
     void addUpNextClient_clearsStrayCollectionFlag();
 
     // score() no longer clamps at UINT32_MAX
@@ -2909,6 +2912,83 @@ Requested_Block_Struct* uploadBlock(const KnownFile* file, uint64 start, uint64 
 }
 
 } // namespace
+
+// ---------------------------------------------------------------------------
+// A shared file goes away under its uploads
+// ---------------------------------------------------------------------------
+
+void tst_UploadQueue::sharedFileRemoved_endsItsSlotsAndDropsItsWaiters()
+{
+    QueueRankEnv env;
+    thePrefs.setQueueSize(1000);
+    UploadQueue queue;
+    env.wire(queue);
+    GlobalUploadQueue queueGuard(&queue);
+
+    KnownFile* file = env.addNamedFile(0xF1, QStringLiteral("movie.avi"), 10u * 1024 * 1024);
+    auto* served = env.makeClient(90, file);
+    QVERIFY(env.connectSocket(served));
+    QVERIFY(queue.addClientToQueue(served));
+    QCOMPARE(served->uploadState(), UploadState::Uploading);
+    served->addReqBlock(uploadBlock(file, 0, EMBLOCKSIZE));
+
+    env.fillSlots(queue);
+    auto* waiter = env.makeClient(91, file);
+    auto* other = env.makeClient(92, env.veryHigh());
+    for (auto* c : {waiter, other}) {
+        QVERIFY(queue.addClientToQueue(c));
+        QCOMPARE(c->uploadState(), UploadState::OnUploadQueue);
+    }
+    const int slotCount = queue.uploadQueueLength();
+
+    QSignalSpy ended(&queue, &UploadQueue::uploadEnded);
+    QVERIFY(theApp.sharedFileList->removeFile(file));
+
+    // the slot is over, with nothing left of it
+    QCOMPARE(ended.count(), 1);
+    QVERIFY(!queue.isDownloading(served));
+    QCOMPARE(served->uploadState(), UploadState::None);
+    QVERIFY(served->blockRequests().empty());
+    QCOMPARE(queue.uploadQueueLength(), slotCount - 1);
+
+    // nobody waits for a file that is not there; everyone else keeps their place
+    QVERIFY(!queue.isOnUploadQueue(waiter));
+    QCOMPARE(waiter->uploadState(), UploadState::None);
+    QVERIFY(queue.isOnUploadQueue(other));
+    QCOMPARE(other->uploadState(), UploadState::OnUploadQueue);
+}
+
+void tst_UploadQueue::readError_fileGoneFromDisk_leavesTheShare()
+{
+    QueueRankEnv env;
+    UploadQueue queue;
+    env.wire(queue);
+    GlobalUploadQueue queueGuard(&queue);
+    UploadDiskIOThread diskIO;
+    queue.setDiskIOThread(&diskIO);
+    const auto unwire = qScopeGuard([&] { queue.setDiskIOThread(nullptr); });
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    KnownFile* file = env.addNamedFile(0xF2, QStringLiteral("gone.avi"), 10u * 1024 * 1024);
+    file->setPath(dir.path());
+    file->setFilePath(dir.filePath(QStringLiteral("gone.avi")));   // never written: deleted
+
+    auto* client = env.makeClient(93, file);
+    QVERIFY(env.connectSocket(client));
+    QVERIFY(queue.addClientToQueue(client));
+    QCOMPARE(client->uploadState(), UploadState::Uploading);
+
+    uint8 hash[16];
+    md4cpy(hash, file->fileHash());
+    client->addReqBlock(uploadBlock(file, 0, EMBLOCKSIZE));
+
+    QTRY_VERIFY(!queue.isDownloading(client));
+    QCOMPARE(client->uploadState(), UploadState::None);
+    // ... and the next peer is not offered it again
+    QVERIFY(!theApp.sharedFileList->getFileByID(hash));
+    QVERIFY(theApp.sharedFileList->isUnsharedFile(hash));
+}
 
 // ---------------------------------------------------------------------------
 // Dead upload slots

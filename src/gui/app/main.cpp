@@ -19,7 +19,12 @@
 #include <QTimer>
 #include <QTranslator>
 
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
+
 #ifndef Q_OS_WIN
+#include <cerrno>
 #include <csignal>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -35,6 +40,7 @@ static void unixSignalHandler(int)
 
 #include "app/AppConfig.h"
 #include "app/CommandLineExec.h"
+#include "app/CoreStartWatch.h"
 #include "app/ExternalLinkHandler.h"
 #include "app/IpcClient.h"
 #include "app/MainWindow.h"
@@ -151,6 +157,25 @@ bool launchDaemon(const QString& daemonPath, bool holdConnect, qint64& pid)
 
     // The tarball launcher exec's the binary, so this is the core's own pid
     return QProcess::startDetached(daemonPath, daemonArgs, QString(), &pid);
+}
+
+/// The process still runs. A core that died on start never opens its port, and
+/// waiting out the start grace for it tells the user nothing.
+bool processAlive(qint64 pid)
+{
+#ifdef Q_OS_WIN
+    const HANDLE process = ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                                         static_cast<DWORD>(pid));
+    if (!process)
+        return false;
+    DWORD exitCode = 0;
+    const bool alive = ::GetExitCodeProcess(process, &exitCode) && exitCode == STILL_ACTIVE;
+    ::CloseHandle(process);
+    return alive;
+#else
+    // Signal 0 only checks; EPERM means it exists but is not ours to signal
+    return ::kill(static_cast<pid_t>(pid), 0) == 0 || errno == EPERM;
+#endif
 }
 
 /// Stop a core we started and cannot reach over IPC: busy enough to miss a
@@ -483,6 +508,11 @@ int main(int argc, char* argv[])
                 eMule::Ed2kLinkImporter::Prompt::Silent);
         });
 
+        // A burst of log lines arrives as one batch: one repaint for the lot
+        QObject::connect(&ipcClient, &eMule::IpcClient::logBatchStarted,
+                         logWidget, &eMule::LogWidget::beginBatch);
+        QObject::connect(&ipcClient, &eMule::IpcClient::logBatchFinished,
+                         logWidget, &eMule::LogWidget::endBatch);
         QObject::connect(&ipcClient, &eMule::IpcClient::logMessageReceived,
                          logWidget, [logWidget](const eMule::Ipc::IpcMessage& msg) {
             const QString cat = msg.fieldString(1);
@@ -625,17 +655,20 @@ int main(int argc, char* argv[])
                     return;
                 *dialogShown = true;
 
-                eMule::CoreConnectDialog dlg(&mainWindow);
-                if (dlg.exec() == QDialog::Accepted) {
-                    eMule::thePrefs.setIpcListenAddress(dlg.address());
-                    eMule::thePrefs.setIpcPort(dlg.port());
-                    ipcClient.setAuthToken(dlg.token());
-                    if (dlg.saveToken())
-                        eMule::thePrefs.setIpcTokens({dlg.token()});
-                    ipcClient.connectToDaemon(QHostAddress(dlg.address()), dlg.port());
-                } else {
-                    mainWindow.forceQuit();
-                }
+                // open(), not exec(): this runs inside the socket's error signal, and
+                // a nested event loop there keeps the retry timer waiting on the dialog
+                auto* dlg = new eMule::CoreConnectDialog(&mainWindow);
+                dlg->setAttribute(Qt::WA_DeleteOnClose);
+                QObject::connect(dlg, &QDialog::accepted, &mainWindow, [dlg, &ipcClient] {
+                    eMule::thePrefs.setIpcListenAddress(dlg->address());
+                    eMule::thePrefs.setIpcPort(dlg->port());
+                    ipcClient.setAuthToken(dlg->token());
+                    if (dlg->saveToken())
+                        eMule::thePrefs.setIpcTokens({dlg->token()});
+                    ipcClient.connectToDaemon(QHostAddress(dlg->address()), dlg->port());
+                });
+                QObject::connect(dlg, &QDialog::rejected, &mainWindow, &eMule::MainWindow::forceQuit);
+                dlg->open();
             });
             QObject::connect(&ipcClient, &eMule::IpcClient::connected,
                              &mainWindow, [dialogShown]() {
@@ -747,9 +780,7 @@ int main(int argc, char* argv[])
                 const auto severity = static_cast<QtMsgType>(msg.fieldInt(2));
                 // Only notify on warnings and above to avoid spamming
                 if (severity >= QtWarningMsg) {
-                    const QString text = msg.fieldString(3);
-                    mainWindow.showNotification(
-                        QObject::tr("Log Entry"), text);
+                    mainWindow.notifyLogEntry(msg.fieldString(3));
                 }
             }
         });
@@ -772,7 +803,7 @@ int main(int argc, char* argv[])
             if (!ipcClient.isConnected())
                 return;
             eMule::Ipc::IpcMessage req(eMule::Ipc::IpcMsgType::GetStats);
-            ipcClient.sendRequest(std::move(req),
+            ipcClient.sendPoll(&mainWindow, std::move(req),
                                   [&mainWindow, &configDir](const eMule::Ipc::IpcMessage& resp) {
                 if (resp.type() != eMule::Ipc::IpcMsgType::Result || !resp.fieldBool(0))
                     return;
@@ -849,6 +880,53 @@ int main(int argc, char* argv[])
         });
 
         // Connect using hostname overload (handles both IPs and hostnames)
+        // Says so when the core does not come up, instead of retrying in silence.
+        // Not for a screenshot run: a box would end up in the picture.
+        if (!cli.screenshotMode()) {
+            auto* startWatch = new eMule::CoreStartWatch(&ipcClient, &app);
+            const bool launchesCore = !isRemote && !daemonPath.isEmpty()
+                                   && daemonPath != QStringLiteral("local");
+            eMule::CoreStartWatch::Probes probes;
+            if (launchesCore) {
+                probes.coreAlive = [&ipcClient, weOwnDaemon, daemonPid] {
+                    // Unknown pid (console start), not ours, or restarting itself
+                    if (!*weOwnDaemon || *daemonPid <= 0 || ipcClient.daemonRestarting())
+                        return true;
+                    return processAlive(*daemonPid);
+                };
+            }
+            if (!isRemote) {
+                probes.portFree = [] {
+                    return ipcPortFree(eMule::thePrefs.ipcListenAddress(), eMule::thePrefs.ipcPort());
+                };
+            }
+            startWatch->setProbes(std::move(probes));
+            const bool localMode = daemonPath == QStringLiteral("local");
+            QObject::connect(startWatch, &eMule::CoreStartWatch::problemChanged, &mainWindow,
+                             [&mainWindow, localMode](eMule::CoreStartWatch::Problem problem) {
+                // "local" mode already asks for another address when nothing listens
+                if (localMode && problem == eMule::CoreStartWatch::Problem::Unreachable)
+                    return;
+                mainWindow.showCoreStartProblem(problem);
+            });
+            QObject::connect(&mainWindow, &eMule::MainWindow::coreRetryRequested, &app,
+                             [&ipcClient, startWatch, launchesCore, daemonPath, weOwnDaemon,
+                              daemonLost, daemonPid] {
+                eMule::logInfo(QStringLiteral("Retrying the core connection"));
+                // Gone, and nothing else took the port: start it again
+                if (launchesCore
+                    && ipcPortFree(eMule::thePrefs.ipcListenAddress(), eMule::thePrefs.ipcPort())
+                    && launchDaemon(daemonPath, false, *daemonPid)) {
+                    *weOwnDaemon = true;
+                    *daemonLost = false;
+                    ipcClient.expectDaemonStart();
+                }
+                ipcClient.connectToDaemon(ipcClient.daemonHost(), ipcClient.daemonPort());
+                startWatch->restart();
+            });
+            startWatch->restart();
+        }
+
         ipcClient.connectToDaemon(connectHost, port);
     } else {
         eMule::logInfo(QStringLiteral("IPC disabled in settings."));

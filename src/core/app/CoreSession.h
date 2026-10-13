@@ -137,6 +137,10 @@ signals:
     /// The file lists are complete and the networks are up (theApp.loading is off).
     void loaded();
 
+    /// The start-up load moved on: "credits", "known-files", "shared-files",
+    /// "part-files" or "network". Emitted before the stage runs.
+    void loadStageChanged(const QString& stage);
+
 private slots:
     void onTimer();
     /// One slice of the deferred load; re-posts itself until the last.

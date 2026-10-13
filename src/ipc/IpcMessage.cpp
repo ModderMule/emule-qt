@@ -163,4 +163,97 @@ IpcMessage IpcMessage::makeError(int seqId, int code, const QString& message)
     return msg;
 }
 
+quint64 snapshotPushKey(const IpcMessage& msg)
+{
+    if (msg.seqId() != 0)
+        return 0;   // a reply, never a push
+
+    quint32 subKey = 0;
+    switch (msg.type()) {
+    case IpcMsgType::PushStatsUpdate:
+    case IpcMsgType::PushDownloadUpdate:
+    case IpcMsgType::PushDownloadAdded:
+    case IpcMsgType::PushDownloadRemoved:
+    case IpcMsgType::PushServerState:
+    case IpcMsgType::PushUploadUpdate:
+    case IpcMsgType::PushKadUpdate:
+    case IpcMsgType::PushKadSearchesChanged:
+    case IpcMsgType::PushKnownClientsChanged:
+    case IpcMsgType::PushFriendListChanged:
+    case IpcMsgType::PushPortMapStatus:
+    case IpcMsgType::PushCategoriesChanged:
+    case IpcMsgType::PushCoreLoading:
+        break;
+    // One state per search: field 0 is the search id
+    case IpcMsgType::PushSearchResult:
+    case IpcMsgType::PushGlobalSearchProgress:
+    case IpcMsgType::PushIndexerProgress:
+        subKey = static_cast<quint32>(msg.fieldInt(0));
+        break;
+    default:
+        return 0;
+    }
+    return (static_cast<quint64>(static_cast<quint32>(msg.type())) << 32) | subKey;
+}
+
+bool isReadOnlyRequest(IpcMsgType type)
+{
+    switch (type) {
+    case IpcMsgType::GetDownloads:
+    case IpcMsgType::GetDownload:
+    case IpcMsgType::GetDownloadSources:
+    case IpcMsgType::GetUploads:
+    case IpcMsgType::GetDownloadClients:
+    case IpcMsgType::GetKnownClients:
+    case IpcMsgType::GetServers:
+    case IpcMsgType::GetConnection:
+    case IpcMsgType::GetSearchResults:
+    case IpcMsgType::GetKnownTypes:
+    case IpcMsgType::GetSharedFiles:
+    case IpcMsgType::GetFriends:
+    case IpcMsgType::GetStats:
+    case IpcMsgType::GetPreferences:
+    case IpcMsgType::GetKadContacts:
+    case IpcMsgType::GetKadStatus:
+    case IpcMsgType::GetKadSearches:
+    case IpcMsgType::GetKadLookupHistory:
+    case IpcMsgType::GetNetworkInfo:
+    case IpcMsgType::GetSchedules:
+    case IpcMsgType::GetNetworkInterfaces:
+    case IpcMsgType::GetConvertJobs:
+    case IpcMsgType::GetDownloadDetails:
+    case IpcMsgType::GetClientDetails:
+    case IpcMsgType::GetSharedFileDetails:
+    case IpcMsgType::GetServerState:
+    case IpcMsgType::GetServerMessages:
+    case IpcMsgType::GetSearchResultDetails:
+    case IpcMsgType::GetKadStats:
+    case IpcMsgType::GetClientStats:
+    case IpcMsgType::GetGeoIpStatus:
+    case IpcMsgType::GetSpeedHistory:
+    case IpcMsgType::GetStatsHistory:
+    case IpcMsgType::GetCategories:
+    case IpcMsgType::GetSharedDirState:
+    case IpcMsgType::GetKnownFiles:
+    case IpcMsgType::GetIndexers:
+    case IpcMsgType::GetIndexerFeeds:
+    case IpcMsgType::GetNewsServers:
+    case IpcMsgType::GetUsenetQueue:
+    case IpcMsgType::GetUsenetKnownTypes:
+    case IpcMsgType::GetUsenetItemDetails:
+    case IpcMsgType::GetUsenetStats:
+        return true;
+    default:
+        return false;
+    }
+}
+
+QByteArray requestIdentity(const IpcMessage& msg)
+{
+    QCborArray arr = msg.toArray();
+    if (arr.size() >= 2)
+        arr[1] = 0;
+    return arr.toCborValue().toCbor();
+}
+
 } // namespace eMule::Ipc

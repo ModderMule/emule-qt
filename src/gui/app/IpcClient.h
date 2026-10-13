@@ -17,6 +17,9 @@
 #include <QTcpSocket>
 #include <QTimer>
 
+#include <QByteArray>
+#include <QHash>
+
 #include <functional>
 #include <unordered_map>
 
@@ -28,6 +31,29 @@ class IpcClient : public QObject {
 public:
     explicit IpcClient(QObject* parent = nullptr);
     ~IpcClient() override;
+
+    /// Where the link to the core stands — what the status bar shows.
+    enum class CoreLink {
+        Offline,        ///< not trying
+        Starting,       ///< a core we launched has not opened its port yet
+        Connecting,
+        Handshaking,    ///< TCP is up, the core has not answered yet
+        Loading,        ///< connected; the core still reads its files, lists are held
+        Ready,
+        NotResponding,  ///< the core accepts the connection but does not answer
+        Refused,        ///< the core answered the handshake with an error
+    };
+    Q_ENUM(CoreLink)
+
+    [[nodiscard]] CoreLink coreLink() const { return m_coreLink; }
+    /// Connect attempts since the last completed handshake.
+    [[nodiscard]] int connectAttempts() const { return m_connectAttempts; }
+    /// The core is connected but still loading its file lists.
+    [[nodiscard]] bool coreLoading() const { return m_coreLink == CoreLink::Loading; }
+    /// Stage of that load as the core names it ("part-files", …).
+    [[nodiscard]] QString loadStage() const { return m_loadStage; }
+    /// Why the core refused the handshake (CoreLink::Refused).
+    [[nodiscard]] QString refusalText() const { return m_refusalText; }
 
     /// Connect to the daemon at the given address and port.
     /// Enables auto-reconnect: on failure or disconnect the client will
@@ -79,6 +105,25 @@ public:
 
     /// Forget the callback of request @p seqId; a reply that still arrives is ignored.
     void cancelRequest(int seqId);
+
+    /// sendRequest() for a request repeated on a timer or on every push. At most
+    /// one identical request is in flight: asked again before the reply is in, it
+    /// is not sent — a slow core must not be handed a queue of the same question,
+    /// nor the GUI a queue of full lists to apply. One follow-up goes out after the
+    /// reply instead, with the newest @p callback; the callback it replaces is
+    /// dropped without being run.
+    ///
+    /// @p owner tells apart two pollers that ask the same question for different
+    /// reasons (the status bar and the Statistics page both poll GetStats): each
+    /// keeps its own request in flight and its own callback.
+    void sendPoll(const QObject* owner, Ipc::IpcMessage msg, ResponseCallback callback);
+
+    /// Polls not sent because the same one was still unanswered.
+    [[nodiscard]] quint64 pollsSkipped() const { return m_pollsSkipped; }
+
+    /// Handshake, keepalive and core-start patience in ms. For tests and slow links.
+    void setTimeouts(int handshakeMs, int keepaliveIntervalMs, int keepaliveTimeoutMs);
+    void setStartGraceMs(int ms) { m_startGraceMs = ms; }
 
     /// Fan one request per hash out to the daemon, then run @p onAllDone once the last
     /// reply lands. @p build makes the message for a hash, so callers can attach their own
@@ -135,6 +180,17 @@ signals:
 
     /// Emitted on connection failure.
     void connectionFailed(const QString& error);
+
+    /// coreLink(), connectAttempts() or loadStage() changed.
+    void coreLinkChanged();
+
+    /// Replies are waiting behind a dialog a reply handler opened. The GUI brings
+    /// that dialog to the front: hidden, it looks like a hang.
+    void dispatchBlocked();
+
+    /// Bracket a run of logMessageReceived that arrived as one batch.
+    void logBatchStarted();
+    void logBatchFinished();
 
     // -- Push event signals ---------------------------------------------------
 
@@ -211,6 +267,15 @@ private:
     void dispatchPushEvent(const Ipc::IpcMessage& msg);
     void requestLogSync();
 
+    /// Emit the lines of a SyncLogs reply or a PushLogBatch not yet shown.
+    void replayLogEntries(const QCborArray& entries);
+    void setCoreLink(CoreLink link);
+    void beginConnect();
+
+    /// The reply timer ran out: true when the core is in fact talking and it is
+    /// this process that has not got round to reading it.
+    [[nodiscard]] bool peerStillTalking() const;
+
     /// Fetch the daemon's Server Info backlog and replay it through
     /// serverMessageReceived. The daemon outlives the GUI, so without this a GUI
     /// restart shows an empty pane even though the greeting already arrived.
@@ -255,12 +320,28 @@ private:
     std::unordered_map<int, ResponseCallback> m_pendingCallbacks;
     int m_remotePollingMs = 1500;
 
+    /// A poll in flight, and what to ask once it is answered.
+    struct Poll {
+        int seqId = -1;
+        bool again = false;
+        Ipc::IpcMessage msg;
+        ResponseCallback callback;
+    };
+    QHash<QByteArray, Poll> m_polls;   ///< by requestIdentity
+    quint64 m_pollsSkipped = 0;
+
+    CoreLink m_coreLink = CoreLink::Offline;
+    int m_connectAttempts = 0;
+    QString m_loadStage;
+    QString m_refusalText;
+
+    int m_startGraceMs         = 30'000;
+    int m_handshakeTimeoutMs   = 10'000;
+    int m_keepaliveIntervalMs  = 30'000;
+    int m_keepaliveTimeoutMs   = 10'000;
+
     static constexpr int MaxReconnectDelay      = 10'000;
     static constexpr int StartRetryDelayMs      = 200;     // while a launched core loads
-    static constexpr int StartGraceMs           = 30'000;
-    static constexpr int HandshakeTimeoutMs     = 10'000;
-    static constexpr int KeepaliveIntervalMs    = 30'000;
-    static constexpr int KeepaliveTimeoutMs     = 10'000;
 };
 
 } // namespace eMule

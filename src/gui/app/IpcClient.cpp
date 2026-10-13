@@ -116,6 +116,8 @@ static QString ipcMsgTypeName(Ipc::IpcMsgType type)
     case T::PushServerState:      return QStringLiteral("PushServerState");
     case T::PushSearchResult:     return QStringLiteral("PushSearchResult");
     case T::PushLogMessage:       return QStringLiteral("PushLogMessage");
+    case T::PushLogBatch:         return QStringLiteral("PushLogBatch");
+    case T::PushCoreLoading:      return QStringLiteral("PushCoreLoading");
     case T::PushSharedFileUpdate: return QStringLiteral("PushSharedFileUpdate");
     case T::PushSharedFileRemoved: return QStringLiteral("PushSharedFileRemoved");
     case T::PushUploadUpdate:     return QStringLiteral("PushUploadUpdate");
@@ -186,6 +188,9 @@ IpcClient::IpcClient(QObject* parent)
     m_handshakeTimer.setSingleShot(true);
     connect(&m_handshakeTimer, &QTimer::timeout, this, [this]() {
         logWarning(QStringLiteral("IPC handshake timed out — will retry"));
+        // A refusal already says more than "no answer" does
+        if (m_coreLink != CoreLink::Refused)
+            setCoreLink(CoreLink::NotResponding);
         onConnectionLost();
     });
 
@@ -193,13 +198,23 @@ IpcClient::IpcClient(QObject* parent)
 
     m_keepaliveTimeoutTimer.setSingleShot(true);
     connect(&m_keepaliveTimeoutTimer, &QTimer::timeout, this, [this]() {
+        // A busy GUI reads late: the pong may sit behind a backlog of frames. A
+        // reconnect then would refetch every list on top of that backlog.
+        if (peerStillTalking()) {
+            m_keepaliveTimeoutTimer.start(m_keepaliveTimeoutMs);
+            return;
+        }
         logWarning(QStringLiteral("IPC keepalive timed out — reconnecting"));
+        setCoreLink(CoreLink::NotResponding);
         onConnectionLost();
     });
 }
 
 IpcClient::~IpcClient()
 {
+    // Silent: a listener told "offline" from in here would look at an object
+    // that is half gone, or write to state of its own that already is.
+    blockSignals(true);
     disconnectFromDaemon();
 }
 
@@ -217,16 +232,9 @@ void IpcClient::connectToDaemon(const QHostAddress& address, uint16_t port)
     m_reconnectDelayMs = 1000;
     m_reconnectTimer.stop();
 
-    resetConnection();
-
-    m_socket = new QTcpSocket(this);
-
-    connect(m_socket, &QTcpSocket::connected,
-            this, &IpcClient::onSocketConnected);
-    connect(m_socket, &QAbstractSocket::errorOccurred,
-            this, &IpcClient::onSocketError);
-
-    m_socket->connectToHost(address, port);
+    m_connectAttempts = 0;
+    m_coreLink = CoreLink::Offline;   // a fresh target: nothing sticks from the last
+    beginConnect();
 }
 
 void IpcClient::connectToDaemon(const QString& host, uint16_t port)
@@ -246,16 +254,9 @@ void IpcClient::connectToDaemon(const QString& host, uint16_t port)
     m_reconnectDelayMs = 1000;
     m_reconnectTimer.stop();
 
-    resetConnection();
-
-    m_socket = new QTcpSocket(this);
-
-    connect(m_socket, &QTcpSocket::connected,
-            this, &IpcClient::onSocketConnected);
-    connect(m_socket, &QAbstractSocket::errorOccurred,
-            this, &IpcClient::onSocketError);
-
-    m_socket->connectToHost(host, port);
+    m_connectAttempts = 0;
+    m_coreLink = CoreLink::Offline;
+    beginConnect();
 }
 
 void IpcClient::disconnectFromDaemon()
@@ -268,6 +269,7 @@ void IpcClient::disconnectFromDaemon()
 
     dropConnection();
     m_socket = nullptr;
+    setCoreLink(CoreLink::Offline);
 }
 
 bool IpcClient::isConnected() const
@@ -332,7 +334,9 @@ bool IpcClient::daemonRestarting() const
 
 void IpcClient::expectDaemonStart()
 {
-    m_startDeadline = QDeadlineTimer(StartGraceMs);
+    m_startDeadline = QDeadlineTimer(m_startGraceMs);
+    if (m_coreLink == CoreLink::Connecting)
+        setCoreLink(CoreLink::Starting);
 }
 
 bool IpcClient::daemonStarting() const
@@ -370,6 +374,56 @@ int IpcClient::sendRequest(IpcMessage msg, ResponseCallback callback)
 void IpcClient::cancelRequest(int seqId)
 {
     m_pendingCallbacks.erase(seqId);
+}
+
+void IpcClient::sendPoll(const QObject* owner, IpcMessage msg, ResponseCallback callback)
+{
+    if (!m_connection || !m_handshaked)
+        return;
+
+    const QByteArray identity = requestIdentity(msg)
+        + QByteArray::number(reinterpret_cast<quintptr>(owner), 16);
+    if (const auto it = m_polls.find(identity); it != m_polls.end()) {
+        it->again = true;
+        it->msg = std::move(msg);
+        it->callback = std::move(callback);
+        ++m_pollsSkipped;
+        return;
+    }
+
+    // The entry goes in before the send and is matched by seqId on the way out: a
+    // reply for a connection since dropped must not release the poll of the new one.
+    auto seq = std::make_shared<int>(-1);
+    m_polls.insert(identity, Poll{});
+    *seq = sendRequest(std::move(msg), [this, owner, identity, seq, callback](const IpcMessage& reply) {
+        Poll next;
+        if (const auto it = m_polls.find(identity); it != m_polls.end() && it->seqId == *seq) {
+            next = std::move(*it);
+            m_polls.erase(it);
+        }
+        if (callback)
+            callback(reply);
+        // One turn of the event loop first: applying a list and asking for the next
+        // back to back would leave no room for input on a machine that is behind.
+        if (next.again && reply.isValid()) {
+            QTimer::singleShot(0, this, [this, owner, next = std::move(next)]() mutable {
+                sendPoll(owner, std::move(next.msg), std::move(next.callback));
+            });
+        }
+    });
+    if (*seq < 0)
+        m_polls.remove(identity);
+    else
+        m_polls[identity].seqId = *seq;
+}
+
+void IpcClient::setTimeouts(int handshakeMs, int keepaliveIntervalMs, int keepaliveTimeoutMs)
+{
+    m_handshakeTimeoutMs = handshakeMs;
+    m_keepaliveIntervalMs = keepaliveIntervalMs;
+    m_keepaliveTimeoutMs = keepaliveTimeoutMs;
+    if (m_keepaliveTimer.isActive())
+        m_keepaliveTimer.start(m_keepaliveIntervalMs);
 }
 
 void IpcClient::sendBatchRequest(const QStringList& keys,
@@ -456,9 +510,18 @@ void IpcClient::onSocketConnected()
             this, &IpcClient::onMessageReceived);
     connect(m_connection.get(), &IpcConnection::disconnected,
             this, &IpcClient::onConnectionLost);
+    // Any byte from the core proves it alive, the pong included or not
+    connect(m_connection.get(), &IpcConnection::activity,
+            &m_keepaliveTimeoutTimer, &QTimer::stop);
+    connect(m_connection.get(), &IpcConnection::dispatchBlocked,
+            this, &IpcClient::dispatchBlocked);
+    // Of the state pushes waiting to be handled only the newest of a kind matters
+    m_connection->setCoalesceIncoming(true);
 
+    if (m_coreLink != CoreLink::NotResponding && m_coreLink != CoreLink::Refused)
+        setCoreLink(CoreLink::Handshaking);
     performHandshake();
-    m_handshakeTimer.start(HandshakeTimeoutMs);
+    m_handshakeTimer.start(m_handshakeTimeoutMs);
 }
 
 void IpcClient::onMessageReceived(const IpcMessage& msg)
@@ -472,7 +535,12 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
     if (!m_handshaked && msg.type() == IpcMsgType::HandshakeOk) {
         m_handshakeTimer.stop();
         m_handshaked = true;
-        m_keepaliveTimer.start(KeepaliveIntervalMs);
+        m_keepaliveTimer.start(m_keepaliveIntervalMs);
+        m_connectAttempts = 0;
+        m_refusalText.clear();
+        // Fields 3, 4: the core is still reading its files, and which
+        m_loadStage = msg.fieldString(4);
+        setCoreLink(msg.fieldBool(3) ? CoreLink::Loading : CoreLink::Ready);
         logInfo(QStringLiteral("IPC handshake complete — daemon version: %1")
                     .arg(msg.fieldString(0)));
 
@@ -503,6 +571,15 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
         m_restartDeadline = QDeadlineTimer();
         m_startDeadline = QDeadlineTimer();
         emit connected();
+        return;
+    }
+
+    // The handshake was turned down (wrong or missing token, version). The core
+    // closes right after; without this the only trace was a later timeout.
+    if (!m_handshaked && msg.type() == IpcMsgType::Error) {
+        m_refusalText = msg.fieldString(1);
+        logWarning(QStringLiteral("Core refused the connection: %1").arg(m_refusalText));
+        setCoreLink(CoreLink::Refused);
         return;
     }
 
@@ -537,6 +614,10 @@ void IpcClient::onConnectionLost()
     m_keepaliveTimeoutTimer.stop();
     m_handshaked = false;
     failPendingRequests();
+    // The core went away on its own; a timeout or a refusal has set its state already
+    if (m_coreLink == CoreLink::Ready || m_coreLink == CoreLink::Loading
+        || m_coreLink == CoreLink::Handshaking)
+        setCoreLink(m_autoReconnect ? CoreLink::Connecting : CoreLink::Offline);
     emit disconnected();
 
     scheduleReconnect();
@@ -558,19 +639,7 @@ void IpcClient::attemptReconnect()
                     .arg(display).arg(m_port));
     }
 
-    resetConnection();
-
-    m_socket = new QTcpSocket(this);
-
-    connect(m_socket, &QTcpSocket::connected,
-            this, &IpcClient::onSocketConnected);
-    connect(m_socket, &QAbstractSocket::errorOccurred,
-            this, &IpcClient::onSocketError);
-
-    if (m_hostname.isEmpty())
-        m_socket->connectToHost(m_address, m_port);
-    else
-        m_socket->connectToHost(m_hostname, m_port);
+    beginConnect();
 }
 
 // ---------------------------------------------------------------------------
@@ -610,6 +679,19 @@ void IpcClient::dispatchPushEvent(const IpcMessage& msg)
     case IpcMsgType::PushSearchResult:     emit searchResultReceived(msg); break;
     case IpcMsgType::PushGlobalSearchProgress: emit globalSearchProgress(msg); break;
     case IpcMsgType::PushSearchState:     emit searchStateChanged(msg); break;
+    case IpcMsgType::PushCoreLoading:
+        if (m_handshaked) {
+            m_loadStage = msg.fieldString(1);
+            const CoreLink link = msg.fieldBool(0) ? CoreLink::Loading : CoreLink::Ready;
+            if (link == m_coreLink)
+                emit coreLinkChanged();   // same state, another stage
+            else
+                setCoreLink(link);
+        }
+        break;
+    case IpcMsgType::PushLogBatch:
+        replayLogEntries(msg.fieldArray(0));
+        break;
     case IpcMsgType::PushLogMessage: {
         const qint64 logId  = msg.fieldInt(0);
         const QString cat    = msg.fieldString(1);
@@ -672,41 +754,51 @@ void IpcClient::requestLogSync()
     req.append(static_cast<qint64>(fromId));
 
     sendRequest(std::move(req), [this](const IpcMessage& resp) {
-        const QCborArray entries = resp.fieldArray(1);
-        for (int i = 0; i < entries.size(); ++i) {
-            const QCborArray entry = entries[i].toArray();
-            if (entry.size() < 4)
-                continue;
-
-            const qint64 logId   = entry[0].toInteger();
-            const QString cat     = entry[1].toString();
-            const auto severity   = static_cast<QtMsgType>(entry[2].toInteger());
-
-            // Select per-type checkpoint; skip if already seen for this type
-            const bool isKad     = (cat == QStringLiteral("emule.kad"));
-            const bool isUsenet  = (cat == QStringLiteral("emule.usenet"));
-            const bool isServer  = (cat == QStringLiteral("emule.server"));
-            const bool isVerbose = (severity == QtDebugMsg);
-
-            int64_t& typeId = isKad    ? m_lastKadId
-                            : isUsenet ? m_lastUsenetId
-                            : isServer ? m_lastServerId
-                            : isVerbose? m_lastVerboseId
-                            :            m_lastLogId;
-            if (logId <= typeId)
-                continue;   // already displayed in a previous sync
-            typeId = logId;
-
-            // Build synthetic PushLogMessage for uniform GUI handling
-            IpcMessage synth(IpcMsgType::PushLogMessage, 0);
-            synth.append(logId);
-            synth.append(cat);
-            synth.append(static_cast<qint64>(entry[2].toInteger()));  // severity
-            synth.append(entry[3].toString());                       // message
-            synth.append(entry.size() >= 5 ? entry[4].toInteger() : qint64(0));
-            emit logMessageReceived(synth);
-        }
+        replayLogEntries(resp.fieldArray(1));
     });
+}
+
+void IpcClient::replayLogEntries(const QCborArray& entries)
+{
+    if (entries.isEmpty())
+        return;
+
+    // Bracketed so the log view lays out and repaints once for the lot
+    emit logBatchStarted();
+    for (int i = 0; i < entries.size(); ++i) {
+        const QCborArray entry = entries[i].toArray();
+        if (entry.size() < 4)
+            continue;
+
+        const qint64 logId   = entry[0].toInteger();
+        const QString cat     = entry[1].toString();
+        const auto severity   = static_cast<QtMsgType>(entry[2].toInteger());
+
+        // Select per-type checkpoint; skip if already seen for this type
+        const bool isKad     = (cat == QStringLiteral("emule.kad"));
+        const bool isUsenet  = (cat == QStringLiteral("emule.usenet"));
+        const bool isServer  = (cat == QStringLiteral("emule.server"));
+        const bool isVerbose = (severity == QtDebugMsg);
+
+        int64_t& typeId = isKad    ? m_lastKadId
+                        : isUsenet ? m_lastUsenetId
+                        : isServer ? m_lastServerId
+                        : isVerbose? m_lastVerboseId
+                        :            m_lastLogId;
+        if (logId <= typeId)
+            continue;   // already displayed
+        typeId = logId;
+
+        // Build synthetic PushLogMessage for uniform GUI handling
+        IpcMessage synth(IpcMsgType::PushLogMessage, 0);
+        synth.append(logId);
+        synth.append(cat);
+        synth.append(static_cast<qint64>(entry[2].toInteger()));  // severity
+        synth.append(entry[3].toString());                       // message
+        synth.append(entry.size() >= 5 ? entry[4].toInteger() : qint64(0));
+        emit logMessageReceived(synth);
+    }
+    emit logBatchFinished();
 }
 
 void IpcClient::requestServerMessages()
@@ -741,7 +833,7 @@ void IpcClient::sendKeepalive()
     sendRequest(IpcMessage(IpcMsgType::Ping), [this](const IpcMessage&) {
         m_keepaliveTimeoutTimer.stop();
     });
-    m_keepaliveTimeoutTimer.start(KeepaliveTimeoutMs);
+    m_keepaliveTimeoutTimer.start(m_keepaliveTimeoutMs);
 }
 
 void IpcClient::scheduleReconnect()
@@ -768,6 +860,7 @@ void IpcClient::failPendingRequests()
     // They used to be dropped: a batch never settled and anything waiting on a reply
     // waited forever. Deferred so no callback runs inside the socket teardown (one may
     // open a dialog), and skipped entirely if this client is destroyed first.
+    m_polls.clear();   // their replies will not come; the callbacks fail below
     if (m_pendingCallbacks.empty())
         return;
     using Pending = std::vector<std::pair<int, ResponseCallback>>;
@@ -835,6 +928,46 @@ void IpcClient::dropConnection()
     // arrives with this socket's readyRead still on the stack below the prompt.
     // Stays our child, so it goes with us if the loop never turns again.
     m_connection.release()->deleteLater();
+}
+
+void IpcClient::beginConnect()
+{
+    resetConnection();
+
+    ++m_connectAttempts;
+    // NotResponding and Refused stay up until a handshake goes through: the retry
+    // in between is not news, and flipping back to "Connecting" would hide them.
+    if (m_coreLink != CoreLink::NotResponding && m_coreLink != CoreLink::Refused)
+        setCoreLink(daemonStarting() ? CoreLink::Starting : CoreLink::Connecting);
+    else
+        emit coreLinkChanged();   // the attempt count moved
+
+    m_socket = new QTcpSocket(this);
+
+    connect(m_socket, &QTcpSocket::connected,
+            this, &IpcClient::onSocketConnected);
+    connect(m_socket, &QAbstractSocket::errorOccurred,
+            this, &IpcClient::onSocketError);
+
+    if (m_hostname.isEmpty())
+        m_socket->connectToHost(m_address, m_port);
+    else
+        m_socket->connectToHost(m_hostname, m_port);
+}
+
+void IpcClient::setCoreLink(CoreLink link)
+{
+    if (link == m_coreLink)
+        return;
+    m_coreLink = link;
+    if (link != CoreLink::Loading)
+        m_loadStage.clear();
+    emit coreLinkChanged();
+}
+
+bool IpcClient::peerStillTalking() const
+{
+    return m_connection && m_connection->isConnected() && m_connection->hasPendingInput();
 }
 
 } // namespace eMule

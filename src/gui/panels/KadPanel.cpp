@@ -569,7 +569,7 @@ void KadPanel::requestContacts()
         return;
 
     IpcMessage req(IpcMsgType::GetKadContacts);
-    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
+    m_ipc->sendPoll(this, std::move(req), [this](const IpcMessage& resp) {
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
             m_contactsModel->clear();
             m_contactsLabel->setText(tr("\u25B8 Contacts (0)"));
@@ -615,7 +615,7 @@ void KadPanel::requestSearches()
         return;
 
     IpcMessage req(IpcMsgType::GetKadSearches);
-    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
+    m_ipc->sendPoll(this, std::move(req), [this](const IpcMessage& resp) {
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
             m_searchesModel->clear();
             m_searchesLabel->setText(tr("\u25B8 Current Searches (0)"));
@@ -662,7 +662,7 @@ void KadPanel::requestStatus()
         return;
 
     IpcMessage req(IpcMsgType::GetKadStatus);
-    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
+    m_ipc->sendPoll(this, std::move(req), [this](const IpcMessage& resp) {
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0))
             return;
 
@@ -691,7 +691,7 @@ void KadPanel::requestLookupHistory()
 
     IpcMessage req(IpcMsgType::GetKadLookupHistory);
     req.append(static_cast<qint64>(searchId));
-    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
+    m_ipc->sendPoll(this, std::move(req), [this](const IpcMessage& resp) {
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
             m_lookupGraph->clear();
             return;

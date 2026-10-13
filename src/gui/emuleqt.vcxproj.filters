@@ -124,6 +124,9 @@
     <ClCompile Include="app\IpcClient.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="app\CoreStartWatch.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\HttpCacheLinkImporter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -405,6 +408,9 @@
     <ClInclude Include="utils\IpcFeedback.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="utils\AsyncMessageBox.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="utils\ViewNavigation.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -505,6 +511,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="app\IpcClient.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="app\CoreStartWatch.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="panels\IrcPanel.h">

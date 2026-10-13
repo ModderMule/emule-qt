@@ -3,6 +3,7 @@
 /// @brief Search tab panel — implementation.
 
 #include "panels/SearchPanel.h"
+#include "utils/AsyncMessageBox.h"
 
 #include "app/IpcClient.h"
 #include "app/UiState.h"
@@ -599,7 +600,7 @@ void SearchPanel::sendSearchRequest(const SearchRequest& req)
         if (!resp.fieldBool(0)) {
             const QString error = resp.fieldString(1);
             if (!error.isEmpty())
-                QMessageBox::warning(this, tr("Search"), error);
+                AsyncMessageBox::warning(this, tr("Search"), error);
             return;
         }
 
@@ -791,7 +792,7 @@ void SearchPanel::sendIndexerSearchRequest(const SearchRequest& req)
             // matched" when the truth is that nothing was asked.
             const QString error = resp.fieldString(1);
             if (!error.isEmpty())
-                QMessageBox::warning(this, tr("Usenet search"), error);
+                AsyncMessageBox::warning(this, tr("Usenet search"), error);
             return;
         }
 

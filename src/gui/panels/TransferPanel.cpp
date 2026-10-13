@@ -1253,7 +1253,7 @@ void TransferPanel::requestDownloads()
         return;
 
     IpcMessage req(IpcMsgType::GetDownloads);
-    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
+    m_ipc->sendPoll(this, std::move(req), [this](const IpcMessage& resp) {
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0)) {
             m_downloadModel->clear();
             updateToolbarLabels();
@@ -1430,7 +1430,7 @@ void TransferPanel::requestUploads()
         return;
 
     IpcMessage req(IpcMsgType::GetUploads);
-    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
+    m_ipc->sendPoll(this, std::move(req), [this](const IpcMessage& resp) {
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0))
             return;
 
@@ -1462,7 +1462,7 @@ void TransferPanel::requestDownloadClients()
         return;
 
     IpcMessage req(IpcMsgType::GetDownloadClients);
-    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
+    m_ipc->sendPoll(this, std::move(req), [this](const IpcMessage& resp) {
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0))
             return;
 
@@ -1484,7 +1484,7 @@ void TransferPanel::requestKnownClients()
         return;
 
     IpcMessage req(IpcMsgType::GetKnownClients);
-    m_ipc->sendRequest(std::move(req), [this](const IpcMessage& resp) {
+    m_ipc->sendPoll(this, std::move(req), [this](const IpcMessage& resp) {
         if (resp.type() != IpcMsgType::Result || !resp.fieldBool(0))
             return;
 

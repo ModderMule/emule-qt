@@ -4,6 +4,7 @@
 #include "dialogs/FirstStartWizard.h"
 #include "dialogs/PortChangeNotice.h"
 #include "dialogs/PortMapStatusText.h"
+#include "utils/AsyncMessageBox.h"
 
 #include "app/AppConfig.h"
 #include "app/AutoStart.h"
@@ -421,7 +422,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
                 m_reloadIPFilterBtn->setEnabled(true);
                 if (resp.fieldBool(0)) {
                     auto count = resp.fieldInt(1);
-                    QMessageBox::information(this, tr("IP Filter"),
+                    AsyncMessageBox::information(this, tr("IP Filter"),
                         tr("IP filter reloaded: %1 entries.").arg(count));
                 }
             });
@@ -3732,7 +3733,7 @@ void OptionsDialog::saveNewsServers()
     m_ipc->sendRequest(std::move(msg), [self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
         if (resp.fieldBool(0) || !resp.isValid())
             return;
-        QMessageBox::warning(self, tr("News servers"),
+        AsyncMessageBox::warning(self, tr("News servers"),
                              resp.fieldString(1).isEmpty()
                                  ? tr("The news server list could not be saved.")
                                  : resp.fieldString(1));
@@ -4006,7 +4007,7 @@ void OptionsDialog::onCorrectNewsServerUsage()
         if (!self || !resp.isValid())
             return;
         if (!resp.fieldBool(0)) {
-            QMessageBox::warning(this, tr("News servers"),
+            AsyncMessageBox::warning(this, tr("News servers"),
                                  resp.fieldString(1).isEmpty()
                                      ? tr("The usage counter could not be changed.")
                                      : resp.fieldString(1));
@@ -4516,7 +4517,7 @@ void OptionsDialog::saveIndexers()
     m_ipc->sendRequest(std::move(msg), [self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
         if (resp.fieldBool(0) || !resp.isValid())
             return;
-        QMessageBox::warning(self, tr("Indexers"),
+        AsyncMessageBox::warning(self, tr("Indexers"),
                              resp.fieldString(1).isEmpty()
                                  ? tr("The indexer list could not be saved.")
                                  : resp.fieldString(1));
@@ -4610,7 +4611,7 @@ void OptionsDialog::saveFeeds()
     m_ipc->sendRequest(std::move(msg), [self = QPointer<OptionsDialog>(this)](const Ipc::IpcMessage& resp) {
         if (resp.fieldBool(0) || !resp.isValid())
             return;
-        QMessageBox::warning(self, tr("Feeds"),
+        AsyncMessageBox::warning(self, tr("Feeds"),
                              resp.fieldString(1).isEmpty()
                                  ? tr("The feed list could not be saved.")
                                  : resp.fieldString(1));
@@ -4887,7 +4888,7 @@ void OptionsDialog::checkFeedNow()
         if (!self || !resp.isValid())
             return;
         if (!resp.fieldBool(0)) {
-            QMessageBox::warning(this, tr("Feeds"),
+            AsyncMessageBox::warning(this, tr("Feeds"),
                                  resp.fieldString(1).isEmpty()
                                      ? tr("\"%1\" could not be checked.").arg(name)
                                      : resp.fieldString(1));

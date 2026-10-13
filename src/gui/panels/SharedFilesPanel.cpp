@@ -3,6 +3,7 @@
 /// @brief Shared Files tab panel — implementation.
 
 #include "panels/SharedFilesPanel.h"
+#include "utils/AsyncMessageBox.h"
 #include "utils/SharedFilesFetch.h"
 
 #include "app/IpcClient.h"
@@ -555,7 +556,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
                 const QCborMap data = resp.fieldMap(1);
                 const QString authorKeyHex = data.value(QStringLiteral("authorKeyHex")).toString();
                 if (authorKeyHex.isEmpty()) {
-                    QMessageBox::warning(self, tr("Search Author's Collections"),
+                    AsyncMessageBox::warning(self, tr("Search Author's Collections"),
                         tr("This collection carries no author key, so its author's other "
                            "collections cannot be looked up."));
                     return;

@@ -30,6 +30,9 @@
     <ClCompile Include="PushCoalescer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DeferredRequests.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CborSerializers.h">
@@ -50,6 +53,9 @@
     <QtMoc Include="PushCoalescer.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <ClInclude Include="DeferredRequests.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="debug\moc_predefs.h.cbt">

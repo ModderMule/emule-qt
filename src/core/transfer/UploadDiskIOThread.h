@@ -111,6 +111,8 @@ private:
     /// The bytes of @p req. Caller holds m_readerMutex.
     [[nodiscard]] bool readRange(const BlockReadRequest& req, QByteArray& data);
     [[nodiscard]] bool readUncached(const BlockReadRequest& req, QByteArray& data);
+    /// Open read-only without locking the file against deletion or renaming.
+    [[nodiscard]] static bool openForRead(QFile& file);
     void closeIdleReaders();
 
     static QList<std::shared_ptr<Packet>> createStandardPackets(

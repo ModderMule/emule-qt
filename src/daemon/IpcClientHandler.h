@@ -7,6 +7,7 @@
 /// dispatches to the appropriate core manager via theApp, and sends responses.
 
 #include "portmap/PortMapTypes.h"
+#include "DeferredRequests.h"
 #include "IpcConnection.h"
 #include "IpcMessage.h"
 #include "app/CoreOps.h"
@@ -38,6 +39,9 @@ public:
 
     /// Send a message to this client.
     void sendMessage(const Ipc::IpcMessage& msg);
+
+    /// Send a push. A state push is held back while this client is not reading.
+    void sendPush(const Ipc::IpcMessage& msg);
 
     /// Returns true if handshake has completed.
     [[nodiscard]] bool isHandshaked() const;
@@ -304,7 +308,7 @@ private:
     bool m_isLocal = true;
     bool m_handshaked = false;
     /// Requests that arrived while theApp.loading and need the file lists.
-    std::vector<Ipc::IpcMessage> m_deferred;
+    Ipc::DeferredRequests m_deferred;
     /// NZB downloads this connection has in flight. Bounded so a paste of a
     /// thousand lines cannot turn the daemon into a port scanner — that, rather
     /// than any single fetch, is what makes an operator-supplied URL worth

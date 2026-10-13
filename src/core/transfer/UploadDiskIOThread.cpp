@@ -21,6 +21,13 @@
 
 #include <zlib.h>
 
+#ifdef Q_OS_WIN
+#include <QDir>
+#include <windows.h>
+#include <fcntl.h>
+#include <io.h>
+#endif
+
 #include <algorithm>
 #include <chrono>
 #include <cstring>
@@ -221,7 +228,7 @@ bool UploadDiskIOThread::readRange(const BlockReadRequest& req, QByteArray& data
         reader = Reader{};
         reader.path = req.filePath;
         reader.file = std::make_unique<QFile>(req.filePath);
-        if (!reader.file->open(QIODevice::ReadOnly)) {
+        if (!openForRead(*reader.file)) {
             logWarning(QStringLiteral("UploadDiskIOThread: Cannot open file: %1").arg(req.filePath));
             return false;
         }
@@ -274,7 +281,7 @@ bool UploadDiskIOThread::readUncached(const BlockReadRequest& req, QByteArray& d
 {
     const uint64 dataLen = req.endOffset - req.startOffset;
     QFile file(req.filePath);
-    if (!file.open(QIODevice::ReadOnly)) {
+    if (!openForRead(file)) {
         logWarning(QStringLiteral("UploadDiskIOThread: Cannot open file: %1").arg(req.filePath));
         return false;
     }
@@ -291,6 +298,38 @@ bool UploadDiskIOThread::readUncached(const BlockReadRequest& req, QByteArray& d
         return false;
     }
     return true;
+}
+
+bool UploadDiskIOThread::openForRead(QFile& file)
+{
+#ifdef Q_OS_WIN
+    // QFile leaves FILE_SHARE_DELETE out, so a file being uploaded could be neither
+    // deleted nor renamed. MFC shares all three (srchybrid/UploadDiskIOThread.cpp:147).
+    QString native = QDir::toNativeSeparators(QFileInfo(file.fileName()).absoluteFilePath());
+    if (native.size() >= MAX_PATH && !native.startsWith(QStringLiteral("\\\\?\\"))) {
+        if (native.startsWith(QStringLiteral("\\\\")))
+            native = QStringLiteral("\\\\?\\UNC") + native.mid(1);
+        else
+            native.prepend(QStringLiteral("\\\\?\\"));
+    }
+    const HANDLE handle = ::CreateFileW(reinterpret_cast<LPCWSTR>(native.utf16()), GENERIC_READ,
+                                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                        nullptr, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+    if (handle == INVALID_HANDLE_VALUE)
+        return false;
+    const int fd = ::_open_osfhandle(reinterpret_cast<intptr_t>(handle), _O_RDONLY | _O_BINARY);
+    if (fd == -1) {
+        ::CloseHandle(handle);
+        return false;
+    }
+    if (!file.open(fd, QIODevice::ReadOnly, QFileDevice::AutoCloseHandle)) {
+        ::_close(fd);   // closes the handle too
+        return false;
+    }
+    return true;
+#else
+    return file.open(QIODevice::ReadOnly);
+#endif
 }
 
 void UploadDiskIOThread::closeIdleReaders()

@@ -31,8 +31,8 @@ struct LogEntry {
     qint64 timestamp = 0;  ///< Unix seconds when the message was generated.
 };
 
-/// Keeps the newest lines for SyncLogs and forwards each as a PushLogMessage,
-/// always from the relay's own thread.
+/// Keeps the newest lines for SyncLogs and forwards them as PushLogBatch frames,
+/// one per burst, always from the relay's own thread.
 ///
 /// Deferred even for a line logged on that thread, as the GUI's LogWidget does.
 /// One path keeps the id order strict, and a line logged inside a broadcast
@@ -54,11 +54,12 @@ public:
     /// Buffered lines with id > @p lastId, oldest first. Thread-safe.
     [[nodiscard]] std::vector<LogEntry> since(int64_t lastId) const;
 
-    /// The PushLogMessage frame: [logId, category, severity, message, timestamp].
-    [[nodiscard]] static IpcMessage toPush(const LogEntry& entry);
+    /// The PushLogBatch frame: [[logId, category, severity, message, timestamp], …].
+    [[nodiscard]] static IpcMessage toBatch(const std::vector<LogEntry>& entries);
 
 signals:
-    /// A line is due for broadcast. Emitted on the relay's thread, in id order.
+    /// Lines are due for broadcast: one PushLogBatch per flush. Emitted on the
+    /// relay's thread, in id order.
     void ready(const eMule::Ipc::IpcMessage& msg);
 
 private:

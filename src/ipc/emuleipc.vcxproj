@@ -156,6 +156,7 @@
     </QtMoc>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="DeferredRequests.cpp" />
     <ClCompile Include="IpcConnection.cpp" />
     <ClCompile Include="IpcMessage.cpp" />
     <ClCompile Include="IpcProtocol.cpp" />
@@ -164,6 +165,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CborSerializers.h" />
+    <ClInclude Include="DeferredRequests.h" />
     <QtMoc Include="IpcConnection.h" />
     <ClInclude Include="IpcMessage.h" />
     <ClInclude Include="IpcProtocol.h" />

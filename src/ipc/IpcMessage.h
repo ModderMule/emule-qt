@@ -93,4 +93,15 @@ private:
     QCborArray m_array;
 };
 
+/// Identity of a push that only reports current state, 0 for anything else. Of two
+/// such pushes with one key the newer makes the older worthless, so a slow reader's
+/// backlog may keep just the last. Keyed per search where the payload names one.
+[[nodiscard]] quint64 snapshotPushKey(const IpcMessage& msg);
+
+/// A request that only reads: answering it twice costs time and changes nothing.
+[[nodiscard]] bool isReadOnlyRequest(IpcMsgType type);
+
+/// Type and payload without the seqId — equal for two requests asking the same thing.
+[[nodiscard]] QByteArray requestIdentity(const IpcMessage& msg);
+
 } // namespace eMule::Ipc

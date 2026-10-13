@@ -41,14 +41,16 @@ std::vector<LogEntry> LogRelay::since(int64_t lastId) const
     return result;
 }
 
-IpcMessage LogRelay::toPush(const LogEntry& entry)
+IpcMessage LogRelay::toBatch(const std::vector<LogEntry>& entries)
 {
-    IpcMessage push(IpcMsgType::PushLogMessage, 0);
-    push.append(static_cast<qint64>(entry.id));
-    push.append(entry.category);
-    push.append(static_cast<qint64>(entry.severity));
-    push.append(entry.message);
-    push.append(entry.timestamp);
+    QCborArray rows;
+    for (const auto& entry : entries) {
+        rows.append(QCborArray{static_cast<qint64>(entry.id), entry.category,
+                               static_cast<qint64>(entry.severity), entry.message,
+                               entry.timestamp});
+    }
+    IpcMessage push(IpcMsgType::PushLogBatch, 0);
+    push.append(rows);
     return push;
 }
 
@@ -61,10 +63,12 @@ void LogRelay::flush()
     // Cleared before the read: a line appended from here on posts the next flush
     // rather than waiting in the buffer for one that already ran.
     m_flushQueued = false;
-    for (const auto& entry : since(m_lastForwarded)) {
-        m_lastForwarded = entry.id;
-        emit ready(toPush(entry));
-    }
+    const auto entries = since(m_lastForwarded);
+    if (entries.empty())
+        return;
+    m_lastForwarded = entries.back().id;
+    // One frame for the burst: a line each cost the GUI a dispatch and a repaint
+    emit ready(toBatch(entries));
 }
 
 } // namespace eMule::Ipc

@@ -48,7 +48,10 @@
 #include <QDragMoveEvent>
 #include <QDragEnterEvent>
 #include <QActionGroup>
+#include <QAbstractButton>
 #include <QApplication>
+#include <QPushButton>
+#include <QTreeView>
 #include <QClipboard>
 #include <QDesktopServices>
 #include <QCursor>
@@ -328,6 +331,16 @@ void MainWindow::setIpcClient(IpcClient* ipc)
     if (ipc)
         connect(ipc, &IpcClient::clientSharedFilesReceived, this,
                 &MainWindow::onClientSharedFilesReceived, Qt::UniqueConnection);
+
+    // Where the link to the core stands, in the status bar: an empty window with
+    // no word on why is indistinguishable from a hang.
+    if (ipc) {
+        connect(ipc, &IpcClient::coreLinkChanged, this, &MainWindow::onCoreLinkChanged,
+                Qt::UniqueConnection);
+        connect(ipc, &IpcClient::dispatchBlocked, this, &MainWindow::raiseBlockingDialog,
+                Qt::UniqueConnection);
+        onCoreLinkChanged();
+    }
 
     if (!m_speedHistoryTimer) {
         m_speedHistoryTimer = new QTimer(this);
@@ -672,6 +685,72 @@ void MainWindow::closeEvent(QCloseEvent* event)
     // Explicit quit — on macOS the QSystemTrayIcon keeps the event loop alive
     // even after the last window is closed, preventing aboutToQuit from firing.
     QApplication::quit();
+}
+
+void MainWindow::showCoreStartProblem(CoreStartWatch::Problem problem)
+{
+    using Problem = CoreStartWatch::Problem;
+
+    if (m_coreProblemBox) {
+        m_coreProblemBox->close();   // WA_DeleteOnClose
+        m_coreProblemBox = nullptr;
+    }
+    if (problem == Problem::None || !m_ipc)
+        return;
+
+    const QString where = QStringLiteral("%1:%2").arg(m_ipc->daemonHost()).arg(m_ipc->daemonPort());
+    QString text;
+    switch (problem) {
+    case Problem::CoreExited:
+        text = tr("The eMule core stopped right after it was started.");
+        break;
+    case Problem::NoAnswer:
+        text = tr("The eMule core at %1 accepts the connection but does not answer. "
+                  "It may be busy or stuck.").arg(where);
+        break;
+    case Problem::Unreachable:
+        text = tr("No eMule core is reachable at %1.").arg(where);
+        break;
+    case Problem::Refused:
+        text = tr("The eMule core at %1 refused the connection: %2")
+                   .arg(where, m_ipc->refusalText());
+        break;
+    case Problem::None:
+        return;
+    }
+    logWarning(text);
+
+    // Not modal and never exec(): this is raised from a timer while the IPC client
+    // keeps retrying, and the rest of the window has to stay usable.
+    auto* box = new QMessageBox(QMessageBox::Warning, tr("eMule Core"), text,
+                                QMessageBox::NoButton, this);
+    box->setAttribute(Qt::WA_DeleteOnClose);
+    box->setModal(false);
+    box->setInformativeText(tr("eMule keeps trying in the background."));
+    auto* retry = box->addButton(tr("Retry"), QMessageBox::AcceptRole);
+    auto* openLog = box->addButton(tr("Open Log"), QMessageBox::ActionRole);
+    auto* quit = box->addButton(tr("Quit"), QMessageBox::DestructiveRole);
+    box->addButton(QMessageBox::Close);
+    connect(retry, &QAbstractButton::clicked, this, &MainWindow::coreRetryRequested);
+    connect(openLog, &QAbstractButton::clicked, this, [this] {
+        // The log pane lives on the Servers page
+        showNormal();
+        raise();
+        switchToTab(TabServers);
+    });
+    connect(quit, &QAbstractButton::clicked, this, &MainWindow::forceQuit);
+    m_coreProblemBox = box;
+    box->show();
+    box->raise();
+}
+
+void MainWindow::notifyLogEntry(const QString& text)
+{
+    constexpr qint64 kMinGapMs = 5000;   // as long as one balloon stays up
+    if (m_lastLogNotify.isValid() && m_lastLogNotify.elapsed() < kMinGapMs)
+        return;
+    m_lastLogNotify.start();
+    showNotification(tr("Log Entry"), text);
 }
 
 void MainWindow::forceQuit()
@@ -1875,7 +1954,7 @@ void MainWindow::pollSpeedHistory()
 
     Ipc::IpcMessage req(Ipc::IpcMsgType::GetSpeedHistory);
     req.append(static_cast<qint64>(m_speedSeq));
-    m_ipc->sendRequest(std::move(req), [this](const Ipc::IpcMessage& resp) {
+    m_ipc->sendPoll(this, std::move(req), [this](const Ipc::IpcMessage& resp) {
         if (resp.type() != Ipc::IpcMsgType::Result || !resp.fieldBool(0) || !m_speedGraph)
             return;
         applySpeedHistory(resp.fieldMap(1));
@@ -1981,6 +2060,95 @@ void MainWindow::handleOtherEd2kLinks(const Ed2kLinkImporter::OtherLinks& links,
                 m_searchPanel->startSearchFromExternal(term);
         }
     }
+}
+
+void MainWindow::onCoreLinkChanged()
+{
+    if (!m_ipc)
+        return;
+
+    using Link = IpcClient::CoreLink;
+    const Link link = m_ipc->coreLink();
+    const int attempts = m_ipc->connectAttempts();
+
+    QString text;
+    switch (link) {
+    case Link::Offline:
+        text = tr("Not connected to the core");
+        break;
+    case Link::Starting:
+        text = tr("Starting the core…");
+        break;
+    case Link::Connecting:
+        // The first tries pass in a blink; a count only once it drags on
+        text = attempts > 3 ? tr("Connecting to the core… (attempt %1)").arg(attempts)
+                            : tr("Connecting to the core…");
+        break;
+    case Link::Handshaking:
+        text = tr("Waiting for the core to answer…");
+        break;
+    case Link::Loading:
+        text = coreLoadingText();
+        break;
+    case Link::Ready:
+        text = tr("Connected to the core");
+        break;
+    case Link::NotResponding:
+        text = tr("The core is not responding — retrying (attempt %1)").arg(attempts);
+        break;
+    case Link::Refused:
+        text = tr("The core refused the connection: %1").arg(m_ipc->refusalText());
+        break;
+    }
+    statusBar()->clearMessage();
+    setStatusMessage(text);
+
+    // The lists the core holds back until its files are read would otherwise sit
+    // empty without a word. The server and Kad lists are answered meanwhile.
+    const QString notice = link == Link::Loading
+        ? tr("The core is still loading its files…") : QString();
+    for (QWidget* panel : {static_cast<QWidget*>(m_transferPanel),
+                           static_cast<QWidget*>(m_sharedFilesPanel)}) {
+        if (!panel)
+            continue;
+        for (QTreeView* view : panel->findChildren<QTreeView*>()) {
+            if (view->property("emptyNotice").toString() == notice)
+                continue;
+            view->setProperty("emptyNotice", notice);
+            view->viewport()->update();
+        }
+    }
+}
+
+void MainWindow::raiseBlockingDialog()
+{
+    // A reply handler sits in a dialog's event loop and no further reply is
+    // handled until it returns. Behind another window, or with this one in the
+    // tray, that dialog is invisible and the GUI looks dead: bring it forward.
+    QWidget* modal = QApplication::activeModalWidget();
+    logWarning(QStringLiteral("IPC replies are waiting for an open dialog%1")
+                   .arg(modal ? QStringLiteral(": ") + modal->windowTitle() : QString()));
+    if (!modal)
+        return;
+    modal->show();
+    modal->raise();
+    modal->activateWindow();
+}
+
+QString MainWindow::coreLoadingText() const
+{
+    const QString stage = m_ipc ? m_ipc->loadStage() : QString();
+    if (stage == QLatin1String("credits"))
+        return tr("The core is loading: client credits…");
+    if (stage == QLatin1String("known-files"))
+        return tr("The core is loading: known files…");
+    if (stage == QLatin1String("shared-files"))
+        return tr("The core is loading: shared files…");
+    if (stage == QLatin1String("part-files"))
+        return tr("The core is loading: downloads…");
+    if (stage == QLatin1String("network"))
+        return tr("The core is starting its networks…");
+    return tr("The core is loading its files…");
 }
 
 } // namespace eMule

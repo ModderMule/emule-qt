@@ -75,7 +75,7 @@ void IpcServer::sendToClients(const Ipc::IpcMessage& msg)
 
     for (auto* handler : clients) {
         if (handler->isHandshaked())
-            handler->sendMessage(msg);
+            handler->sendPush(msg);
     }
 }
 

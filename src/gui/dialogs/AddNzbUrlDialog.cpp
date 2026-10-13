@@ -5,8 +5,10 @@
 #include "utils/NzbAdd.h"
 #include "utils/StatusBarNotifier.h"
 
+#include <QCoreApplication>
 #include <QMessageBox>
 #include <QPointer>
+#include <QTimer>
 
 namespace eMule {
 
@@ -131,6 +133,9 @@ void AddNzbUrlDialog::onAccepted()
         this,
         [self, failures, alreadyHave, alreadyHaveReasons, onEach, finish, pw,
          category, priority, paused] {
+            // One event-loop turn: the question below must not open on the stack
+            // that delivered the last reply — no other reply is read until it closes.
+            QTimer::singleShot(0, qApp, [=] {
             if (!self)
                 return;
             if (alreadyHave->isEmpty()) {
@@ -168,6 +173,7 @@ void AddNzbUrlDialog::onAccepted()
                     return msg;
                 },
                 self, finish, onEach);
+            });
         },
         onEach);
 }
