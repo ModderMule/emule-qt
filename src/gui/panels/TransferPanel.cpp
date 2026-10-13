@@ -1656,7 +1656,10 @@ void TransferPanel::sendOpenFile(const QString& hash)
         return;
     IpcMessage msg(IpcMsgType::OpenDownloadFile);
     msg.append(hash);
-    m_ipc->sendRequest(std::move(msg));
+    // Not fire-and-forget: a refused open looked like a dead double click
+    m_ipc->sendRequest(std::move(msg), [self = QPointer<TransferPanel>(this)](const IpcMessage& resp) {
+        IpcFeedback::checkOrWarn(resp, self, tr("Open File"));
+    });
 }
 
 void TransferPanel::sendOpenFolder(const QString& hash)

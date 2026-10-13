@@ -104,6 +104,10 @@
 #include <QSet>
 #include <QStorageInfo>
 
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#include <shellapi.h>
+#endif
 
 namespace eMule {
 
@@ -121,9 +125,12 @@ bool openPathWithDefaultApp(const QString& path)
 #if defined(Q_OS_MACOS)
     return QProcess::startDetached(QStringLiteral("open"), {path});
 #elif defined(Q_OS_WIN)
-    return QProcess::startDetached(QStringLiteral("cmd"),
-                                   {QStringLiteral("/c"), QStringLiteral("start"),
-                                    QString(), QDir::toNativeSeparators(path)});
+    // Not `cmd /c start`: cmd splits a name at & , ; = ^ % and QProcess only
+    // quotes on whitespace, so such a file silently opened nothing.
+    const std::wstring native = QDir::toNativeSeparators(path).toStdWString();
+    const auto result = reinterpret_cast<INT_PTR>(
+        ::ShellExecuteW(nullptr, L"open", native.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+    return result > 32;
 #else
     return QProcess::startDetached(QStringLiteral("xdg-open"), {path});
 #endif

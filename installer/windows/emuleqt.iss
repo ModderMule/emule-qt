@@ -271,7 +271,8 @@ begin
   else
   begin
     WizardForm.TasksList.ItemCaption[Index] := Title + ' (' + EmuleConfigDir + ')';
-    if not ImportTaskInitialized then
+    // Silent: the page is still passed, and /TASKS alone decides
+    if not ImportTaskInitialized and not WizardSilent then
       WizardForm.TasksList.Checked[Index] := not IsUpgrade;
   end;
   ImportTaskInitialized := True;
@@ -295,7 +296,7 @@ var
   Path: String;
   Lines: TArrayOfString;
 begin
-  Path := ExpandConstant('{app}\config') + ImportRequestFile;
+  Path := ExpandConstant('{app}\config\') + ImportRequestFile;
   if WizardIsTaskSelected('importemule') and (EmuleConfigDir <> '') then
   begin
     SetArrayLength(Lines, 2);

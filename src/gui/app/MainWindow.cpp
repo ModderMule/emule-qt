@@ -1069,7 +1069,9 @@ void MainWindow::onTrayIconClicked(QSystemTrayIcon::ActivationReason reason)
     }
 
     if (reason == QSystemTrayIcon::DoubleClick) {
-        // Double-click: restore the main window
+        // Double-click: restore the main window; the 1st click opened MiniMule
+        if (m_miniMule)
+            m_miniMule->hide();
         showNormal();
         raise();
         activateWindow();

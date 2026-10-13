@@ -19,6 +19,7 @@
 #include <QSystemTrayIcon>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QWindow>
 
 #include <qt_windows.h>
 
@@ -111,22 +112,32 @@ void MiniMuleWidget::showNearTray()
         screen = QGuiApplication::primaryScreen();
     const QRect avail = screen->availableGeometry();
 
-    int x = trayCenter.x() - width() / 2;
+    // move() places the frame, size() is the client area only: count caption + borders,
+    // or the window reaches down over the tray icon
+    winId();   // native window needed for the frame margins before the first show
+    const QMargins frame = windowHandle()->frameMargins();
+    const int fullWidth = width() + frame.left() + frame.right();
+    const int fullHeight = height() + frame.top() + frame.bottom();
+
+    // Clear of the icon, so the 2nd click of a double click still hits it
+    constexpr int trayGap = 12;
+
+    int x = trayCenter.x() - fullWidth / 2;
     int y = 0;
 
     // Place above tray if tray is at bottom, below if at top
     if (trayRect.top() > avail.center().y()) {
         // Tray is in the bottom half — place popup above it
-        y = trayRect.top() - height() - 4;
+        y = trayRect.top() - fullHeight - trayGap;
     } else {
         // Tray is in the top half — place popup below it
-        y = trayRect.bottom() + 4;
+        y = trayRect.bottom() + trayGap;
     }
 
     // Clamp to screen edges with 8px margin
     constexpr int margin = 8;
-    x = qBound(avail.left() + margin, x, avail.right() - width() - margin);
-    y = qBound(avail.top() + margin, y, avail.bottom() - height() - margin);
+    x = qBound(avail.left() + margin, x, avail.right() - fullWidth - margin);
+    y = qBound(avail.top() + margin, y, avail.bottom() - fullHeight - margin);
 
     move(x, y);
     show();

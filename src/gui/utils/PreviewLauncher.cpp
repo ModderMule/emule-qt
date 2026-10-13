@@ -110,14 +110,16 @@ bool launchPlayer(const QString& command, const QString& playerArgs, const QStri
 
     // Reuse existing VLC instance (matches original eMule ShellExecute behavior).
     // macOS VLC doesn't support --one-instance; use `open -a` which sends the URL
-    // to the running app. Linux/Windows VLC supports --one-instance --playlist-replace.
+    // to the running app. Linux/Windows VLC supports --one-instance; --no-playlist-enqueue
+    // makes the running instance play the URL instead of queueing it. There is no
+    // --playlist-replace: VLC refuses to start on an unknown option.
     const QString playerName = QFileInfo(command).completeBaseName().toLower();
     if (playerName == QStringLiteral("vlc")) {
 #ifdef Q_OS_MACOS
         return QProcess::startDetached(QStringLiteral("open"),
             QStringList{QStringLiteral("-a"), command} + argList);
 #else
-        argList.prepend(QStringLiteral("--playlist-replace"));
+        argList.prepend(QStringLiteral("--no-playlist-enqueue"));
         argList.prepend(QStringLiteral("--one-instance"));
         return QProcess::startDetached(command, argList);
 #endif
