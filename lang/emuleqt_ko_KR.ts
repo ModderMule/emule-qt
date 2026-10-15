@@ -701,7 +701,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3035"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3068"/>
         <source>Test</source>
         <translation>테스트</translation>
     </message>
@@ -6058,35 +6058,35 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2929"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2962"/>
         <source>Options</source>
         <translation>옵션</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1926"/>
+        <location line="+1929"/>
         <source>OK</source>
         <translation>확인</translation>
     </message>
     <message>
-        <location line="-1925"/>
-        <location line="+1926"/>
+        <location line="-1928"/>
+        <location line="+1929"/>
         <source>Cancel</source>
         <translation>취소</translation>
     </message>
     <message>
-        <location line="-1925"/>
-        <location line="+5561"/>
+        <location line="-1928"/>
+        <location line="+5594"/>
         <source>Apply</source>
         <translation>적용</translation>
     </message>
     <message>
-        <location line="-5560"/>
+        <location line="-5593"/>
         <source>Help</source>
         <translation>도움말</translation>
     </message>
     <message>
-        <location line="+255"/>
+        <location line="+258"/>
         <location line="+1938"/>
         <location line="+62"/>
         <location line="+5"/>
@@ -6127,12 +6127,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5483"/>
+        <location line="+5513"/>
         <source>Language</source>
         <translation>언어</translation>
     </message>
     <message>
-        <location line="-5480"/>
+        <location line="-5510"/>
         <source>System Default</source>
         <translation>시스템 기본값</translation>
     </message>
@@ -6232,25 +6232,25 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5419"/>
+        <location line="+5449"/>
         <source>Core</source>
         <translation>코어</translation>
     </message>
     <message>
-        <location line="-5414"/>
+        <location line="-5444"/>
         <source>Address:</source>
         <translation>주소:</translation>
     </message>
     <message>
         <location line="+4"/>
         <location line="+1185"/>
-        <location line="+693"/>
+        <location line="+723"/>
         <location line="+421"/>
         <source>Port:</source>
         <translation>포트:</translation>
     </message>
     <message>
-        <location line="-2296"/>
+        <location line="-2326"/>
         <source>authentication token</source>
         <translation>인증 토큰</translation>
     </message>
@@ -6406,7 +6406,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1660"/>
+        <location line="+1690"/>
         <location line="+128"/>
         <location line="+295"/>
         <location line="+1016"/>
@@ -6418,7 +6418,7 @@ Are you sure you want to continue?</source>
         <translation>활성화됨</translation>
     </message>
     <message>
-        <location line="-4605"/>
+        <location line="-4635"/>
         <source>Reset</source>
         <translation>초기화</translation>
     </message>
@@ -6435,12 +6435,12 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4330"/>
+        <location line="+4360"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4333"/>
+        <location line="-4363"/>
         <source>Upload</source>
         <translation>업로드</translation>
     </message>
@@ -6511,12 +6511,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6530"/>
+        <location line="+6582"/>
         <source>Any</source>
         <translation>모든</translation>
     </message>
     <message>
-        <location line="-6528"/>
+        <location line="-6580"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>이 네트워크 인터페이스(예: VPN 터널)만 사용합니다. 목록에서 선택하거나 IP 주소 또는 10.64.0.0/10 같은 서브넷(해당 범위의 주소를 가진 인터페이스)을 입력하십시오. 프록시를 통한 연결은 바인딩되지 않습니다.</translation>
     </message>
@@ -6602,12 +6602,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+62"/>
-        <location line="+1382"/>
+        <location line="+1412"/>
         <source>General</source>
         <translation>일반</translation>
     </message>
     <message>
-        <location line="-1379"/>
+        <location line="-1409"/>
         <source>Enable proxy</source>
         <translation>프록시 활성화</translation>
     </message>
@@ -6669,23 +6669,23 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1758"/>
+        <location line="+1788"/>
         <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>이름:</translation>
     </message>
     <message>
-        <location line="-2925"/>
+        <location line="-2955"/>
         <location line="+688"/>
-        <location line="+751"/>
+        <location line="+781"/>
         <location line="+19"/>
         <location line="+324"/>
         <source>Password:</source>
         <translation>비밀번호:</translation>
     </message>
     <message>
-        <location line="-1748"/>
+        <location line="-1778"/>
         <source>Update</source>
         <translation>업데이트</translation>
     </message>
@@ -7050,7 +7050,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
     <message>
         <location line="+9"/>
         <location line="+14"/>
-        <location line="+1146"/>
+        <location line="+1176"/>
         <source>None</source>
         <translation>없음</translation>
     </message>
@@ -7067,7 +7067,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation type="vanished">TLS/STARTTLS 사용</translation>
     </message>
     <message>
-        <location line="-1141"/>
+        <location line="-1171"/>
         <source>Username:</source>
         <translation>사용자 이름:</translation>
     </message>
@@ -7093,14 +7093,14 @@ Each rule replaces a regex pattern with a replacement string.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+895"/>
+        <location line="+925"/>
         <location line="+1027"/>
         <location line="+154"/>
         <source>Name</source>
         <translation>이름</translation>
     </message>
     <message>
-        <location line="-2074"/>
+        <location line="-2104"/>
         <source>Users</source>
         <translation>사용자</translation>
     </message>
@@ -7212,7 +7212,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+404"/>
+        <location line="+434"/>
         <source>Reload</source>
         <translation>다시 로드</translation>
     </message>
@@ -7221,7 +7221,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation type="vanished">http://example.com/ipfilter.dat</translation>
     </message>
     <message>
-        <location line="-379"/>
+        <location line="-409"/>
         <location line="+18"/>
         <source>Load</source>
         <translation>불러오기</translation>
@@ -7316,7 +7316,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation type="vanished">신뢰할 수 없는 파일 열 때 경고</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+53"/>
         <source>Graphs</source>
         <translation>그래프</translation>
     </message>
@@ -7428,7 +7428,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>업로드 슬롯(오버헤드 없음)</translation>
     </message>
     <message>
-        <location line="-1588"/>
+        <location line="-1618"/>
         <source>Country flags (IP2Country)</source>
         <translation>국기 (IP2Country)</translation>
     </message>
@@ -7572,7 +7572,47 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>UTF-8 사용</translation>
     </message>
     <message>
-        <location line="+415"/>
+        <location line="+350"/>
+        <source>Anti-Leecher</source>
+        <translation>안티 리처</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Ban leechers with DLP rules:</source>
+        <translation>DLP 규칙으로 리처 차단:</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Lite</source>
+        <translation>Lite</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>All VeryCD</source>
+        <translation>모든 VeryCD</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>easyMule</source>
+        <translation>easyMule</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>VeryCD nickname</source>
+        <translation>VeryCD 닉네임</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>VeryCD tag</source>
+        <translation>VeryCD 태그</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Only reduce the score of soft leechers instead of banning them</source>
+        <translation>경미한 리처는 차단하지 않고 점수만 낮추기</translation>
+    </message>
+    <message>
+        <location line="+80"/>
         <source>Download Usenet</source>
         <translation>Usenet 다운로드</translation>
     </message>
@@ -8877,7 +8917,17 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>비활성화됨</translation>
     </message>
     <message>
-        <location line="+2715"/>
+        <location line="+2112"/>
+        <source>specialdlp loaded, DLP v%1</source>
+        <translation>specialdlp 로드됨, DLP v%1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>specialdlp library not found, checks are inactive</source>
+        <translation>specialdlp 라이브러리를 찾을 수 없어 검사가 비활성 상태입니다</translation>
+    </message>
+    <message>
+        <location line="+624"/>
         <source>Automatic</source>
         <translation>자동</translation>
     </message>
@@ -8891,7 +8941,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">실행 중에만 eD2K 링크 자동 수락</translation>
     </message>
     <message>
-        <location line="-2700"/>
+        <location line="-2722"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>크레딧 시스템 사용(업로더 보상)</translation>
     </message>
@@ -9216,7 +9266,7 @@ News server connections switch over immediately.</source>
 뉴스 서버 연결은 즉시 전환됩니다.</translation>
     </message>
     <message>
-        <location line="+413"/>
+        <location line="+419"/>
         <source>Web Interface</source>
         <translation>웹 인터페이스</translation>
     </message>
@@ -9226,7 +9276,7 @@ News server connections switch over immediately.</source>
         <translation>&quot;%1&quot;은(는) IP 주소가 아닙니다. 수신 주소는 변경되지 않았습니다.</translation>
     </message>
     <message>
-        <location line="+479"/>
+        <location line="+482"/>
         <source>File types</source>
         <translation>파일 유형</translation>
     </message>
@@ -9236,7 +9286,7 @@ News server connections switch over immediately.</source>
         <translation>.nzb 파일 연결을 업데이트하지 못했습니다: %1</translation>
     </message>
     <message>
-        <location line="+589"/>
+        <location line="+602"/>
         <source>Port forwarding: %1</source>
         <translation>포트 전달: %1</translation>
     </message>
@@ -9291,17 +9341,17 @@ News server connections switch over immediately.</source>
         <translation>기본값으로 재설정</translation>
     </message>
     <message>
-        <location line="-4769"/>
+        <location line="-4791"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1345"/>
         <location line="+316"/>
-        <location line="+1933"/>
+        <location line="+1955"/>
         <source>Remove</source>
         <translation>제거</translation>
     </message>
     <message>
-        <location line="-5915"/>
+        <location line="-5967"/>
         <source>New eMule Qt version detected</source>
         <translation>새 eMule Qt 버전이 감지되었습니다</translation>
     </message>
@@ -9311,7 +9361,7 @@ News server connections switch over immediately.</source>
         <translation>URL에서 업데이트: (filter.dat 또는 PeerGuardian 형식, .gz/.zip 허용)</translation>
     </message>
     <message>
-        <location line="+2960"/>
+        <location line="+2990"/>
         <source>Write eMule core logs to disk</source>
         <translation>eMule 코어 로그를 디스크에 기록</translation>
     </message>
@@ -9509,7 +9559,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1618"/>
-        <location line="+1971"/>
+        <location line="+1993"/>
         <source>Add</source>
         <translation>추가</translation>
     </message>
@@ -9522,7 +9572,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="vanished">값 입력:</translation>
     </message>
     <message>
-        <location line="-1934"/>
+        <location line="-1956"/>
         <source>Edit Value</source>
         <translation>값 편집</translation>
     </message>

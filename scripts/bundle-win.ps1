@@ -79,8 +79,10 @@ $guiResult = Find-EMuleBinary -Name 'emuleqt.exe' -Config $Config -BuildDir $Bui
 $daemonResult = Find-EMuleBinary -Name 'emulecored.exe' -Config $Config -BuildDir $BuildDir -PreferVsOutput:$NoBuild
 
 $mcpResult = Find-EMuleBinary -Name 'emuleqt-mcp.exe' -Config $Config -BuildDir $BuildDir -PreferVsOutput:$NoBuild
+# specialdlp: anti-leecher rules, loaded by the daemon at runtime (sits next to it)
+$dlpResult = Find-EMuleBinary -Name 'specialdlp.dll' -Config $Config -BuildDir $BuildDir -PreferVsOutput:$NoBuild
 
-foreach ($result in @($guiResult, $daemonResult, $mcpResult)) {
+foreach ($result in @($guiResult, $daemonResult, $mcpResult, $dlpResult)) {
     if (-not $result.Path) {
         Write-Host 'Error: binary not found.' -ForegroundColor Red
         foreach ($probe in $result.Probed) { Write-Host "  Checked: $probe" }
@@ -92,6 +94,7 @@ Write-Host ''
 Write-Host "GUI binary:    $($guiResult.Path)"
 Write-Host "Daemon binary: $($daemonResult.Path)"
 Write-Host "MCP bridge:    $($mcpResult.Path)"
+Write-Host "specialdlp:    $($dlpResult.Path)"
 
 # -- Assemble staging directory ----------------------------------------------
 
@@ -105,9 +108,11 @@ Write-Host '=== Staging binaries ==='
 Copy-Item $guiResult.Path (Join-Path $stageDir 'emuleqt.exe') -Force
 Copy-Item $daemonResult.Path (Join-Path $stageDir 'emulecored.exe') -Force
 Copy-Item $mcpResult.Path (Join-Path $stageDir 'emuleqt-mcp.exe') -Force
+Copy-Item $dlpResult.Path (Join-Path $stageDir 'specialdlp.dll') -Force
 Write-Host '  emuleqt.exe'
 Write-Host '  emulecored.exe'
 Write-Host '  emuleqt-mcp.exe'
+Write-Host '  specialdlp.dll'
 
 # -- Copy config data --------------------------------------------------------
 
@@ -252,7 +257,7 @@ else {
 
 # A file that fails to reach the zip is otherwise found by a user.
 $required = @(
-    'emuleqt.exe', 'emulecored.exe', 'emuleqt-mcp.exe',
+    'emuleqt.exe', 'emulecored.exe', 'emuleqt-mcp.exe', 'specialdlp.dll',
     'config\eMule.tmpl', 'config\FakeFileFilter.dat', 'config\webserver\swagger-ui-bundle.js',
     'config\webserver\swagger-ui.css', 'config\webserver\swagger-ui.LICENSE.txt',
     'doc\openapi.json', 'doc\rest-api.md'

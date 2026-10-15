@@ -50,6 +50,7 @@ class UpDownClient;
 class UploadQueue;
 
 class ClientCensus;
+class DlpLoader;
 namespace kad { class KadNodeCensus; }
 
 struct AppContext {
@@ -72,6 +73,8 @@ struct AppContext {
     SeenFileIndex*   seenFileIndex  = nullptr;
     kad::KadNodeCensus* kadNodeCensus = nullptr;
     ClientCensus*    clientCensus   = nullptr;
+    /// specialdlp anti-leecher library; null in unit tests that do not set one.
+    DlpLoader*       dlp            = nullptr;
     GlobalSearchScheduler* globalSearch = nullptr;
     /// Runs Usenet / torrent searches on a server's Meta API. Null: not offered.
     MetaSearchRunner* metaSearch = nullptr;

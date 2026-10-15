@@ -180,6 +180,20 @@ fi
 FRAMEWORKS_DIR="$APP_BUNDLE/Contents/Frameworks"
 mkdir -p "$FRAMEWORKS_DIR"
 
+# -- specialdlp anti-leecher library (dlopen'ed by the daemon, not linked) ---
+
+DLP_LIB="$BUILD_DIR/src/daemon/libspecialdlp.dylib"
+if [ ! -f "$DLP_LIB" ]; then
+    echo "Error: specialdlp not found at $DLP_LIB"
+    echo "Build it first:  cmake --build $BUILD_DIR --target emulecored"
+    exit 1
+fi
+cp "$DLP_LIB" "$FRAMEWORKS_DIR/libspecialdlp.dylib"
+chmod u+w "$FRAMEWORKS_DIR/libspecialdlp.dylib"
+# The build-tree id points into /Users/...; the audit below would reject it
+install_name_tool -id "@rpath/libspecialdlp.dylib" "$FRAMEWORKS_DIR/libspecialdlp.dylib"
+echo "  -> $FRAMEWORKS_DIR/libspecialdlp.dylib"
+
 # Find the absolute OpenSSL path linked by the binaries
 # (absolute only: macdeployqt may already have rewritten it to @executable_path)
 OPENSSL_DYLIB=$(otool -L "$MACOS_DIR/emulecored" | awk 'NR > 1 { print $1 }' | grep '^/.*libcrypto' | head -1 || true)
@@ -247,7 +261,7 @@ done
 # -- Check the bundle is complete --------------------------------------------
 
 MISSING=0
-for rel in MacOS/emuleqt MacOS/emulecored MacOS/emuleqt-mcp \
+for rel in MacOS/emuleqt MacOS/emulecored MacOS/emuleqt-mcp Frameworks/libspecialdlp.dylib \
            Resources/config/eMule.tmpl Resources/config/FakeFileFilter.dat \
            Resources/config/webserver/swagger-ui-bundle.js \
            Resources/config/webserver/swagger-ui.css \

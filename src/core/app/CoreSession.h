@@ -39,6 +39,7 @@ class GlobalSearchScheduler;
 class SearchList;
 class SeenFileIndex;
 class ClientCensus;
+class DlpLoader;
 namespace kad { class KadNodeCensus; }
 class ServerConnect;
 class ServerList;
@@ -249,6 +250,7 @@ private:
     std::unique_ptr<SeenFileIndex> m_seenFileIndex;
     std::unique_ptr<kad::KadNodeCensus> m_kadNodeCensus;
     std::unique_ptr<ClientCensus> m_clientCensus;
+    std::unique_ptr<DlpLoader> m_dlp;
     std::unique_ptr<GlobalSearchScheduler> m_globalSearch;
     std::unique_ptr<ServerList> m_serverList;
     std::unique_ptr<ServerConnect> m_serverConnect;

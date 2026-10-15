@@ -72,6 +72,41 @@ if [[ "$PUBLISH_ONLY" -eq 0 && -n "$(git status --porcelain)" ]]; then
   exit 1
 fi
 
+# --- guard: specialdlp submodule is pushed ------------------------------------
+# CI checks out the recorded commit of external/specialdlp (ModderMule/specialdlp);
+# one that only exists locally fails every platform build after the tag push.
+DLP_DIR="external/specialdlp"
+if [[ ! -f "$DLP_DIR/CMakeLists.txt" ]]; then
+  echo "error: ${DLP_DIR} is missing -- run: git submodule update --init" >&2
+  exit 1
+fi
+if [[ "$PUBLISH_ONLY" -eq 0 ]]; then
+  DLP_COMMIT="$(git rev-parse "HEAD:${DLP_DIR}" 2>/dev/null || true)"
+  if [[ -z "$DLP_COMMIT" ]]; then
+    echo "error: ${DLP_DIR} is not recorded as a submodule in HEAD (git add it first)" >&2
+    exit 1
+  fi
+  if ! git -C "$DLP_DIR" fetch --quiet origin; then
+    echo "error: could not fetch ${DLP_DIR} from its origin" >&2
+    exit 1
+  fi
+  if [[ -z "$(git -C "$DLP_DIR" branch -r --contains "$DLP_COMMIT" 2>/dev/null)" ]]; then
+    echo "error: ${DLP_DIR} commit ${DLP_COMMIT:0:12} is not pushed to its origin" >&2
+    echo "  push it first:  git -C ${DLP_DIR} push origin HEAD:master" >&2
+    exit 1
+  fi
+fi
+
+# Versions the manifest advertises for the future library auto-update
+# (docs/specialdlp-auto-update.local.md)
+DLP_LIB_VERSION="$(sed -n 's/^project(specialdlp VERSION \([0-9.]*\).*/\1/p' "$DLP_DIR/CMakeLists.txt")"
+DLP_RULES_VERSION="$(sed -n 's/^#define DLPVERSION[[:space:]]*\([0-9]*\).*/\1/p' "$DLP_DIR/specialdlp/specialdlp/antiLeech.h" | head -1)"
+DLP_ABI="$(sed -n 's/^#define SDLP_ABI_VERSION[[:space:]]*\([0-9]*\).*/\1/p' "$DLP_DIR/include/specialdlp.h")"
+if [[ -z "$DLP_LIB_VERSION" || -z "$DLP_RULES_VERSION" || -z "$DLP_ABI" ]]; then
+  echo "error: could not read the specialdlp versions from ${DLP_DIR}" >&2
+  exit 1
+fi
+
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 REMOTE="origin"
 
@@ -236,6 +271,7 @@ fi
 echo "  manifest : ${PUBLISH_LOCAL_JSON}"
 echo "             latest=${NEW}  date=${RELEASE_DATE}"
 echo "             releaseNotes=${RELEASE_URL}"
+echo "             specialdlp=${DLP_LIB_VERSION} (DLP v${DLP_RULES_VERSION}, ABI ${DLP_ABI})"
 echo "  publish  : rsync -> ${PUBLISH_SSH_USER}@${PUBLISH_SSH_HOST}:${PUBLISH_REMOTE_PATH}"
 echo
 read -r -p "Proceed? [y/N]: " CONFIRM
@@ -299,12 +335,20 @@ fi
 # ToDo: once the GitHub workflows publish real artifacts, also update
 # .downloads[*].url / .sha256 / .size from the release assets. Until then those
 # entries keep their placeholder not-ready:// URLs, empty hashes and zero sizes.
+#
+# "specialdlp" carries the versions of the bundled anti-leecher library. Its
+# "downloads" (signed per-platform builds from ModderMule/specialdlp releases) are
+# passed through untouched -- ToDo with the library auto-update,
+# see docs/specialdlp-auto-update.local.md.
 echo "Updating ${PUBLISH_LOCAL_JSON} ..."
 MANIFEST_TMP="$(mktemp)"
 trap 'rm -f "$MANIFEST_TMP"' EXIT
 
 if ! jq --arg v "$NEW" --arg d "$RELEASE_DATE" --arg r "$RELEASE_URL" \
-        '.latest = $v | .date = $d | .releaseNotes = $r' \
+        --arg dlv "$DLP_LIB_VERSION" --argjson drv "$DLP_RULES_VERSION" --argjson dabi "$DLP_ABI" \
+        '.latest = $v | .date = $d | .releaseNotes = $r
+         | .specialdlp = ((.specialdlp // {}) + {libVersion: $dlv, rulesVersion: $drv, abi: $dabi})
+         | .specialdlp.downloads = (.specialdlp.downloads // {})' \
         "$PUBLISH_LOCAL_JSON" > "$MANIFEST_TMP"; then
   echo "error: failed to rewrite ${PUBLISH_LOCAL_JSON}" >&2
   echo "  tag ${TAG} IS already pushed -- update and upload the manifest by hand." >&2

@@ -130,6 +130,11 @@ using Kind = PrefSpec::Kind;
     t << flag("cryptLayerRequested", "Ask for obfuscated connections when the peer supports them.");
     t << flag("cryptLayerRequired", "Accept obfuscated connections only.");
     t << flag("useSecureIdent", "Use secure user identification.");
+    t << flag("antiLeecher", "Check peers against the specialdlp anti-leecher rules.");
+    t << number("antiLeecherVariant", 0, 4, "", "specialdlp rule variant: 0 = lite, 1 = all VeryCD, "
+                "2 = easyMule, 3 = VeryCD nickname, 4 = VeryCD tag.");
+    t << flag("antiLeecherSoftReduceScore", "Soft anti-leecher hits reduce the queue score "
+              "instead of banning.");
     t << flag("filterServerByIP", "Apply the IP filter to servers too.");
     t << number("ipFilterLevel", 0, 255, "", "IP filter entries with a level below this are blocked.");
     t << number("viewSharedFilesAccess", 0, 2, "", "Who may browse the shared files: 0 = nobody, "

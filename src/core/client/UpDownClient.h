@@ -45,6 +45,7 @@ class PartFile;
 class AbstractFile;
 class Packet;
 class SafeMemFile;
+class Tag;
 enum class UTF8Mode : uint8;
 
 // ---------------------------------------------------------------------------
@@ -57,6 +58,19 @@ constexpr uint32 makeClientVersion(uint32 major, uint32 minor, uint32 update)
 {
     return ((major * 100 + minor) * 10 + update) * 100;
 }
+
+/// Anti-leecher hit, the DLP subset of eMule Xtreme's BanLeecher categories
+/// (srchybrid/UploadClient.cpp:1938-1958); values kept for comparison.
+enum class LeecherCategory : uint8 {
+    None = 0,
+    Snafu = 2,      ///< suspect hello/info tag: ban
+    ModSoft = 4,    ///< soft mod string: ban or reduce score
+    Hard = 5,       ///< hard mod string / user name: ban
+    Spammer = 7,    ///< DLP chat spam: ban
+    UserSoft = 10,  ///< soft user name / name+hash+mod: ban or reduce score
+    Md4Tag = 15,    ///< md4-like string in an unknown hello tag: ban or reduce score
+    Userhash = 18,  ///< user hash list: ban
+};
 
 // ---------------------------------------------------------------------------
 // UpDownClient
@@ -508,6 +522,10 @@ public:
 
     [[nodiscard]] bool gplEvildoer() const { return m_gplEvildoer; }
     void setGPLEvildoer(bool v) { m_gplEvildoer = v; }
+
+    /// specialdlp verdict, None when clean. Any hit cuts the queue score to a third.
+    [[nodiscard]] LeecherCategory leecherCategory() const { return m_leecherCategory; }
+    [[nodiscard]] const QString& leecherReason() const { return m_leecherReason; }
 
     [[nodiscard]] bool helloAnswerPending() const { return m_helloAnswerPending; }
     void setHelloAnswerPending(bool v) { m_helloAnswerPending = v; }
@@ -1039,6 +1057,20 @@ private:
     void sendHelloTypePacket(SafeMemFile& data);
     void checkForGPLEvildoer();
 
+    // -- Anti-leecher (specialdlp, eMule Xtreme DLP port) --------------------
+    /// An unknown hello tag; first suspect tag wins. Xtreme ProcessUnknownHelloTag.
+    void processUnknownHelloTag(const Tag& tag, QString& reason, bool& md4Found) const;
+    /// An unknown emule-info tag. Xtreme ProcessUnknownInfoTag.
+    void processUnknownInfoTag(const Tag& tag, QString& reason) const;
+    /// After a hello / emule-info: tag verdicts first, then testLeecher().
+    void runAntiLeecher(const QString& tagReason, bool md4Tag);
+    /// Mod string, user hash and user name checks. Xtreme TestLeecher.
+    void testLeecher();
+    /// True when the first chat message of a non-friend is DLP spam (peer then banned).
+    bool checkDlpChatSpam(const QString& message);
+    void banLeecher(const QString& reason, LeecherCategory category);
+    void clearLeecher();
+
     // -- Phase 3 — shared file browse handlers --------------------------------
     void processAskSharedFiles();
     void processAskSharedDirs();
@@ -1295,6 +1327,10 @@ private:
     bool m_friendSlot = false;
     bool m_commentDirty = false;
     bool m_gplEvildoer = false;
+    LeecherCategory m_leecherCategory = LeecherCategory::None;
+    QString m_leecherReason;
+    QString m_dlpCheckedSoftware;   ///< software + mod last checked; recheck on change
+    QString m_dlpCheckedName;       ///< user name last checked; recheck on change
     bool m_helloAnswerPending = false;
     bool m_pendingFileRequest = false;
     bool m_incomingConnection = false;

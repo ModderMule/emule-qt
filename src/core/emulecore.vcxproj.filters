@@ -486,6 +486,9 @@
     <ClCompile Include="client\ClientCensus.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="client\DlpLoader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="kademlia\KadNodeCensus.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1089,6 +1092,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="client\ClientCensus.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="client\DlpLoader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="kademlia\KadNodeCensus.h">

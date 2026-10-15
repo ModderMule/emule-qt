@@ -71,7 +71,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;GeneratedFiles\enodemeta_proto;.;..\vcpkg_installed\x64-windows\include;..\vcpkg_installed\x64-windows\include\miniupnpc;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;GeneratedFiles\enodemeta_proto;.;..\..\external\specialdlp\include;..\vcpkg_installed\x64-windows\include;..\vcpkg_installed\x64-windows\include\miniupnpc;release;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
       <AssemblerListingLocation>release\</AssemblerListingLocation>
       <BrowseInformation>false</BrowseInformation>
@@ -118,7 +118,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;GeneratedFiles\enodemeta_proto;.;..\vcpkg_installed\x64-windows\include;..\vcpkg_installed\x64-windows\include\miniupnpc;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;GeneratedFiles\enodemeta_proto;.;..\..\external\specialdlp\include;..\vcpkg_installed\x64-windows\include;..\vcpkg_installed\x64-windows\include\miniupnpc;debug;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr -utf-8 -w34100 -w34189 -w44996 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
       <AssemblerListingLocation>debug\</AssemblerListingLocation>
       <BrowseInformation>false</BrowseInformation>
@@ -340,6 +340,7 @@
     <ClCompile Include="stats\CardinalitySketch.cpp" />
     <ClCompile Include="stats\CountryCensus.cpp" />
     <ClCompile Include="client\ClientCensus.cpp" />
+    <ClCompile Include="client\DlpLoader.cpp" />
     <ClCompile Include="stats\StatsHistory.cpp" />
     <ClCompile Include="stats\StatsSnapshot.cpp" />
     <ClCompile Include="utils\StringUtils.cpp" />
@@ -567,6 +568,7 @@
     <ClInclude Include="stats\CardinalitySketch.h" />
     <ClInclude Include="stats\CountryCensus.h" />
     <ClInclude Include="client\ClientCensus.h" />
+    <ClInclude Include="client\DlpLoader.h" />
     <ClInclude Include="stats\NetworkCounters.h" />
     <QtMoc Include="stats\Statistics.h" />
     <QtMoc Include="stats\StatsHistory.h" />

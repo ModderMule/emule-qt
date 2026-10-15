@@ -345,6 +345,9 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_useSecureIdentCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_enableSearchResultFilterCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_ipFilterUpdateUrlEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
+    connect(m_antiLeecherCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_antiLeecherVariantCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
+    connect(m_antiLeecherSoftCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
 
     // Extended page
     connect(m_maxConPerFiveSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
@@ -2511,6 +2514,36 @@ QWidget* OptionsDialog::createSecurityPage()
     miscLayout->addWidget(m_enableSearchResultFilterCheck);
 
     layout->addWidget(miscGroup);
+
+    // --- Anti-Leecher group (specialdlp, eMule Xtreme DLP) ---
+    auto* leechGroup = new QGroupBox(tr("Anti-Leecher"), page);
+    auto* leechLayout = new QVBoxLayout(leechGroup);
+
+    auto* leechRow = new QHBoxLayout;
+    m_antiLeecherCheck = new QCheckBox(tr("Ban leechers with DLP rules:"), leechGroup);
+    leechRow->addWidget(m_antiLeecherCheck);
+    m_antiLeecherVariantCombo = new QComboBox(leechGroup);
+    // Index = SDLP_VARIANT_* id
+    m_antiLeecherVariantCombo->addItems({tr("Lite"), tr("All VeryCD"), tr("easyMule"),
+                                         tr("VeryCD nickname"), tr("VeryCD tag")});
+    leechRow->addWidget(m_antiLeecherVariantCombo);
+    leechRow->addStretch();
+    leechLayout->addLayout(leechRow);
+
+    m_antiLeecherSoftCheck = new QCheckBox(
+        tr("Only reduce the score of soft leechers instead of banning them"), leechGroup);
+    leechLayout->addWidget(m_antiLeecherSoftCheck);
+
+    m_antiLeecherStatusLabel = new QLabel(leechGroup);
+    m_antiLeecherStatusLabel->setEnabled(false);   // greyed, like MFC static info text
+    leechLayout->addWidget(m_antiLeecherStatusLabel);
+
+    connect(m_antiLeecherCheck, &QCheckBox::toggled, this, [this](bool on) {
+        m_antiLeecherVariantCombo->setEnabled(on);
+        m_antiLeecherSoftCheck->setEnabled(on);
+    });
+
+    layout->addWidget(leechGroup);
     layout->addStretch();
 
     return page;
@@ -6563,6 +6596,12 @@ void OptionsDialog::saveSettings()
         req.append(m_useSecureIdentCheck->isChecked());
         req.append(QStringLiteral("enableSearchResultFilter"));
         req.append(m_enableSearchResultFilterCheck->isChecked());
+        req.append(QStringLiteral("antiLeecher"));
+        req.append(m_antiLeecherCheck->isChecked());
+        req.append(QStringLiteral("antiLeecherVariant"));
+        req.append(static_cast<qint64>(m_antiLeecherVariantCombo->currentIndex()));
+        req.append(QStringLiteral("antiLeecherSoftReduceScore"));
+        req.append(m_antiLeecherSoftCheck->isChecked());
         req.append(QStringLiteral("ipFilterUpdateUrl"));
         req.append(urlPrefFieldValue(m_ipFilterUpdateUrlEdit,
                                      Preferences::kDefaultIpFilterUpdateUrl));
@@ -7031,6 +7070,9 @@ void OptionsDialog::saveSettings()
         thePrefs.setCryptLayerRequired(m_cryptLayerRequiredCheck->isChecked());
         thePrefs.setUseSecureIdent(m_useSecureIdentCheck->isChecked());
         thePrefs.setEnableSearchResultFilter(m_enableSearchResultFilterCheck->isChecked());
+        thePrefs.setAntiLeecher(m_antiLeecherCheck->isChecked());
+        thePrefs.setAntiLeecherVariant(m_antiLeecherVariantCombo->currentIndex());
+        thePrefs.setAntiLeecherSoftReduceScore(m_antiLeecherSoftCheck->isChecked());
         thePrefs.setIpFilterUpdateUrl(urlPrefFieldValue(m_ipFilterUpdateUrlEdit,
                                                         Preferences::kDefaultIpFilterUpdateUrl));
         thePrefs.setGeoIpAccountId(m_geoIpAccountEdit->text().trimmed());
@@ -7313,6 +7355,19 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_cryptLayerRequiredCheck->setEnabled(cryptSupported && cryptRequested);
     m_useSecureIdentCheck->setChecked(prefs.value(QStringLiteral("useSecureIdent")).toBool(true));
     m_enableSearchResultFilterCheck->setChecked(prefs.value(QStringLiteral("enableSearchResultFilter")).toBool(true));
+    {
+        const bool on = prefs.value(QStringLiteral("antiLeecher")).toBool(true);
+        m_antiLeecherCheck->setChecked(on);
+        m_antiLeecherVariantCombo->setCurrentIndex(
+            std::clamp(static_cast<int>(prefs.value(QStringLiteral("antiLeecherVariant")).toInteger()), 0, 4));
+        m_antiLeecherSoftCheck->setChecked(prefs.value(QStringLiteral("antiLeecherSoftReduceScore")).toBool(true));
+        m_antiLeecherVariantCombo->setEnabled(on);
+        m_antiLeecherSoftCheck->setEnabled(on);
+        const qint64 dlpVersion = prefs.value(QStringLiteral("antiLeecherDlpVersion")).toInteger();
+        m_antiLeecherStatusLabel->setText(dlpVersion > 0
+            ? tr("specialdlp loaded, DLP v%1").arg(dlpVersion)
+            : tr("specialdlp library not found, checks are inactive"));
+    }
     {
         // An older daemon's map has no default: never show an empty field.
         const QString url = prefs.value(QStringLiteral("ipFilterUpdateUrl")).toString().trimmed();

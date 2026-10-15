@@ -169,6 +169,12 @@ emule_add_test(tst_ClientCredits      FOLDER "Client")
 
 # Module 9: UpDownClient, ClientList & URLClient
 emule_add_test(tst_UpDownClient       FOLDER "Client")
+if(TARGET specialdlp)
+    # loads the real library from the build tree
+    emule_add_test(tst_Dlp              FOLDER "Client")
+    add_dependencies(tst_Dlp specialdlp)
+    target_compile_definitions(tst_Dlp PRIVATE SPECIALDLP_LIB_PATH="$<TARGET_FILE:specialdlp>")
+endif()
 emule_add_test(tst_ClientList         FOLDER "Client")
 emule_add_test(tst_URLClient          FOLDER "Client")
 

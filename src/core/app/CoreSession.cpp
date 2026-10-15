@@ -14,6 +14,7 @@
 #include "geo/GeoIpUpdater.h"
 #include "geo/IP2Country.h"
 #include "client/ClientCensus.h"
+#include "client/DlpLoader.h"
 #include "client/ClientCredits.h"
 #include "client/ClientList.h"
 #include "files/CollectionKeys.h"
@@ -823,6 +824,13 @@ void CoreSession::initClientInfra()
         theApp.clientCensus = m_clientCensus.get();
     }
 
+    // Anti-leecher rules (eMule Xtreme DLP); loaded even when off so the switch needs no restart
+    if (!theApp.dlp) {
+        m_dlp = std::make_unique<DlpLoader>();
+        m_dlp->load();
+        theApp.dlp = m_dlp.get();
+    }
+
     if (!theApp.clientList) {
         m_clientList = std::make_unique<ClientList>(this);
         theApp.clientList = m_clientList.get();
@@ -922,6 +930,12 @@ void CoreSession::shutdownClientInfra()
         m_clientCensus->save();
         theApp.clientCensus = nullptr;
         m_clientCensus.reset();
+    }
+
+    // After the client list: no client may ask the rules any more
+    if (m_dlp) {
+        theApp.dlp = nullptr;
+        m_dlp.reset();
     }
 
     if (m_geoIpUpdater) {

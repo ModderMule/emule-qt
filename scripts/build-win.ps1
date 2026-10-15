@@ -342,7 +342,7 @@ function Resolve-VsGenerator {
 #>
 function Find-EMuleBinary {
     param(
-        [Parameter(Mandatory)][ValidateSet('emuleqt.exe', 'emulecored.exe', 'emuleqt-mcp.exe')][string]$Name,
+        [Parameter(Mandatory)][ValidateSet('emuleqt.exe', 'emulecored.exe', 'emuleqt-mcp.exe', 'specialdlp.dll')][string]$Name,
         [ValidateSet('Release', 'Debug')][string]$Config = 'Release',
         [string]$BuildDir = (Get-DefaultBuildDir),
         [string]$ProjectDir = (Get-ProjectDir),

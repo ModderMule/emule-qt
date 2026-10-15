@@ -135,6 +135,8 @@ add_library(eMule::Core ALIAS emulecore)
 target_include_directories(emulecore
     PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}"
+        # specialdlp C ABI header only; the library is loaded at runtime (DlpLoader)
+        "${CMAKE_SOURCE_DIR}/external/specialdlp/include"
     PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/utils"
 )

@@ -140,6 +140,10 @@ uint64 UpDownClient::score(bool sysValue, bool isDownloading, bool onlyBaseValue
     if ((m_emuleVersion != 0 || static_cast<uint8>(m_clientSoft) < 10) && m_emuleVersion <= 0x19)
         score *= 0.5;
 
+    // Soft anti-leecher verdict: a third of the score. Xtreme srchybrid/UploadClient.cpp:469-471.
+    if (m_leecherCategory != LeecherCategory::None)
+        score *= 0.33;
+
     // A file we have not yet given away half of once: its requesters move up by a
     // fixed 50 points, so a fresh release spreads before the well-seeded ones.
     if (!onlyBaseValue && m_uploadFile->allTimeUploadRatio() < kUnderServedRatio)

@@ -49,6 +49,7 @@
 #include "friends/Friend.h"
 #include "friends/FriendList.h"
 #include "client/ClientCensus.h"
+#include "client/DlpLoader.h"
 #include "kademlia/KadNodeCensus.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadContact.h"
@@ -1926,7 +1927,11 @@ void IpcClientHandler::handleGetStatsHistory(const IpcMessage& msg)
 
 void IpcClientHandler::handleGetPreferences(const IpcMessage& msg)
 {
-    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(thePrefs.toIpcMap())));
+    QCborMap prefs = thePrefs.toIpcMap();
+    // Read-only status for the Security page: 0 = specialdlp not loaded
+    prefs.insert(QStringLiteral("antiLeecherDlpVersion"),
+                 theApp.dlp ? static_cast<qint64>(theApp.dlp->rulesVersion()) : 0);
+    sendMessage(IpcMessage::makeResult(msg.seqId(), true, QCborValue(prefs)));
 }
 
 void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
@@ -3758,6 +3763,12 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setCryptLayerRequired(val.toBool());
     else if (key == QStringLiteral("useSecureIdent"))
         thePrefs.setUseSecureIdent(val.toBool());
+    else if (key == QStringLiteral("antiLeecher"))
+        thePrefs.setAntiLeecher(val.toBool());
+    else if (key == QStringLiteral("antiLeecherVariant"))
+        thePrefs.setAntiLeecherVariant(static_cast<int>(val.toInteger()));
+    else if (key == QStringLiteral("antiLeecherSoftReduceScore"))
+        thePrefs.setAntiLeecherSoftReduceScore(val.toBool());
     else if (key == QStringLiteral("enableSearchResultFilter"))
         thePrefs.setEnableSearchResultFilter(val.toBool());
     else if (key == QStringLiteral("ipFilterUpdateUrl"))

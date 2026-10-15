@@ -421,6 +421,18 @@ if(NOT TARGET maxminddb::maxminddb)
 endif()
 
 # ---------------------------------------------------------------------------
+# specialdlp — anti-leecher rules (eMule Xtreme DLP), a shared library that
+# emulecored loads at runtime so it can be updated on its own (DlpLoader).
+# ---------------------------------------------------------------------------
+option(EMULE_SPECIALDLP "Build and ship the specialdlp anti-leecher library" ON)
+if(EMULE_SPECIALDLP)
+    if(NOT EXISTS "${CMAKE_SOURCE_DIR}/external/specialdlp/CMakeLists.txt")
+        message(FATAL_ERROR "external/specialdlp is missing — run: git submodule update --init")
+    endif()
+    add_subdirectory(external/specialdlp)
+endif()
+
+# ---------------------------------------------------------------------------
 # Subdirectories
 # ---------------------------------------------------------------------------
 add_subdirectory(src)

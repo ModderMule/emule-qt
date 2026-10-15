@@ -11,6 +11,7 @@
 #include "client/ClientCredits.h"
 #include "client/ClientList.h"
 #include "client/DeadSourceList.h"
+#include "client/DlpLoader.h"
 #include "app/AppContext.h"
 #include "crypto/AICHHashSet.h"
 #include "files/KnownFile.h"
@@ -968,6 +969,8 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
 
     bool bIsMule = false;
     bool bPrTag = false;
+    QString dlpTagReason;
+    bool dlpMd4Tag = false;
 
     for (uint32 i = 0; i < tagCount; ++i) {
         Tag tag(data, true);
@@ -1119,6 +1122,8 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
             // Check for string-named "pr" tag (eDonkeyHybrid marker)
             if (!tag.nameId() && tag.name() == QByteArrayLiteral("pr"))
                 bPrTag = true;
+            else
+                processUnknownHelloTag(tag, dlpTagReason, dlpMd4Tag);
             break;
         }
     }
@@ -1257,6 +1262,9 @@ bool UpDownClient::processHelloTypePacket(SafeMemFile& data)
 
     if (m_isHybrid)
         m_sharedDirectories = true;
+
+    // Xtreme checks after the whole hello (srchybrid/BaseClient.cpp:1080-1162)
+    runAntiLeecher(dlpTagReason, dlpMd4Tag);
 
     return bIsMule;
 }
@@ -1619,6 +1627,7 @@ void UpDownClient::processMuleInfoPacket(const uint8* data, uint32 size)
 
     // Read tags
     const uint32 tagCount = readTagCount(file, kMaxWireTags);
+    QString dlpTagReason;
 
     for (uint32 i = 0; i < tagCount; ++i) {
         // Not UTF-8: MFC BaseClient.cpp:772 reads EMULEINFO tags as plain strings.
@@ -1676,6 +1685,7 @@ void UpDownClient::processMuleInfoPacket(const uint8* data, uint32 size)
             break;
 
         default:
+            processUnknownInfoTag(tag, dlpTagReason);
             break;
         }
     }
@@ -1697,6 +1707,9 @@ void UpDownClient::processMuleInfoPacket(const uint8* data, uint32 size)
     // the raw bitfield to makeClientVersion() decimal format.
     if (prevEmuleVersion != 0x99)
         initClientSoftwareVersion();
+
+    // Older clients send their mod string here (srchybrid/BaseClient.cpp:1499-1508)
+    runAntiLeecher(dlpTagReason, false);
 }
 
 // ===========================================================================
@@ -3465,6 +3478,9 @@ void UpDownClient::processChatMessage(SafeMemFile& data, uint32 length)
     while (message.endsWith(QChar::ReplacementCharacter))
         message.chop(1);
     if (message.isEmpty())
+        return;
+
+    if (checkDlpChatSpam(message))
         return;
 
     // Word filter
@@ -5548,6 +5564,150 @@ bool UpDownClient::expectsSourcesFor(const PartFile* file) const
     return file == m_reqFile
         || std::ranges::find(m_otherRequests, file) != m_otherRequests.end()
         || std::ranges::find(m_otherNoNeeded, file) != m_otherNoNeeded.end();
+}
+
+// ===========================================================================
+// Anti-leecher — eMule Xtreme DLP port (srchybrid/BaseClient.cpp:4316-4800,
+// UploadClient.cpp:1937-2011). Rules live in the specialdlp library (DlpLoader).
+// ===========================================================================
+
+void UpDownClient::processUnknownHelloTag(const Tag& tag, QString& reason, bool& md4Found) const
+{
+    if (!reason.isEmpty() || !theApp.dlp || !thePrefs.antiLeecher())
+        return;
+    if (const auto snafu = theApp.dlp->checkHelloTag(tag.nameId())) {
+        reason = QStringLiteral("Suspect Hello-Tag: %1").arg(*snafu);
+        return;
+    }
+    // Leecher communities hide an md4 string in a private tag
+    if (theApp.dlp->isLoaded() && tag.isStr() && tag.strValue().length() >= 32)
+        md4Found = true;
+}
+
+void UpDownClient::processUnknownInfoTag(const Tag& tag, QString& reason) const
+{
+    if (!reason.isEmpty() || !theApp.dlp || !thePrefs.antiLeecher())
+        return;
+    if (const auto snafu = theApp.dlp->checkInfoTag(tag.nameId()))
+        reason = QStringLiteral("Suspect eMuleInfo-Tag: %1").arg(*snafu);
+}
+
+void UpDownClient::runAntiLeecher(const QString& tagReason, bool md4Tag)
+{
+    if (!thePrefs.antiLeecher() || !theApp.dlp || !theApp.dlp->isLoaded()) {
+        // Switched off: soft verdicts no longer apply. Bans run out on their own.
+        if (m_leecherCategory != LeecherCategory::None)
+            clearLeecher();
+        return;
+    }
+
+    if (!tagReason.isEmpty()) {
+        banLeecher(tagReason, LeecherCategory::Snafu);
+        return;
+    }
+    if (md4Tag) {
+        banLeecher(QStringLiteral("md4-string in opcode"), LeecherCategory::Md4Tag);
+        return;
+    }
+    // A good hello now: drop the md4 verdict and look at everything again
+    if (m_leecherCategory == LeecherCategory::Md4Tag) {
+        clearLeecher();
+        m_dlpCheckedSoftware.clear();
+        m_dlpCheckedName.clear();
+    }
+
+    testLeecher();
+}
+
+void UpDownClient::testLeecher()
+{
+    DlpLoader& dlp = *theApp.dlp;
+
+    // Mod string, again only when software or mod changed
+    const QString software = m_clientSoftwareStr + QLatin1Char('|') + m_modVersion;
+    if (m_dlpCheckedSoftware.isEmpty() || m_dlpCheckedSoftware != software) {
+        m_dlpCheckedSoftware = software;
+        if (const auto reason = dlp.checkModstringHard(m_modVersion, m_clientSoftwareStr)) {
+            banLeecher(*reason, LeecherCategory::Hard);
+            return;
+        }
+        if (const auto reason = dlp.checkModstringSoft(m_modVersion, m_clientSoftwareStr)) {
+            banLeecher(*reason, LeecherCategory::ModSoft);
+            return;
+        }
+        if (m_leecherCategory == LeecherCategory::ModSoft) {
+            clearLeecher();             // a good mod now
+            m_dlpCheckedName.clear();
+        }
+    }
+
+    if (hasValidHash() && dlp.checkUserhash(m_userHash.data())) {
+        banLeecher(QStringLiteral("*AJ*"), LeecherCategory::Userhash);
+        return;
+    }
+
+    // User name, again only when it changed; Xtreme order: name+hash+mod, soft, hard
+    if (m_leecherCategory != LeecherCategory::ModSoft && !m_username.isEmpty()
+        && m_dlpCheckedName != m_username)
+    {
+        m_dlpCheckedName = m_username;
+        if (hasValidHash()) {
+            if (const auto reason = dlp.checkNameHashMod(m_username, md4str(m_userHash.data()), m_modVersion)) {
+                banLeecher(*reason, LeecherCategory::UserSoft);
+                return;
+            }
+        }
+        if (const auto reason = dlp.checkUsernameSoft(m_username)) {
+            banLeecher(*reason, LeecherCategory::UserSoft);
+            return;
+        }
+        if (const auto reason = dlp.checkUsernameHard(m_username)) {
+            banLeecher(*reason, LeecherCategory::Hard);
+            return;
+        }
+        if (m_leecherCategory == LeecherCategory::UserSoft)
+            clearLeecher();
+    }
+}
+
+bool UpDownClient::checkDlpChatSpam(const QString& message)
+{
+    // Xtreme: the first message of a non-friend only (srchybrid/BaseClient.cpp:3929-3945)
+    if (m_messagesReceived != 0 || m_friend != nullptr || !thePrefs.antiLeecher() || !theApp.dlp)
+        return false;
+    const auto reason = theApp.dlp->checkMessageSpam(message);
+    if (!reason)
+        return false;
+    endChatSession();
+    banLeecher(*reason, LeecherCategory::Spammer);
+    return true;
+}
+
+void UpDownClient::banLeecher(const QString& reason, LeecherCategory category)
+{
+    const bool soft = category == LeecherCategory::ModSoft || category == LeecherCategory::UserSoft
+                   || category == LeecherCategory::Md4Tag;
+    const bool reduceScore = soft && thePrefs.antiLeecherSoftReduceScore();
+
+    if (m_leecherCategory != category) {
+        m_leecherCategory = category;
+        m_leecherReason = reason;
+        if (thePrefs.logBannedClients())
+            logWarning(QStringLiteral("[DLP] Clients: %1 (%2), [%3] %4")
+                           .arg(statusName(), ipstr(m_userAddress), reason,
+                                reduceScore ? QStringLiteral("reduce score") : QStringLiteral("ban")));
+    }
+    if (!reduceScore)
+        ban(QStringLiteral("[DLP] ") + reason);
+}
+
+void UpDownClient::clearLeecher()
+{
+    if (thePrefs.logBannedClients())
+        logDebug(QStringLiteral("[DLP] Clients: %1 (%2), no longer flagged [%3]")
+                     .arg(statusName(), ipstr(m_userAddress), m_leecherReason));
+    m_leecherCategory = LeecherCategory::None;
+    m_leecherReason.clear();
 }
 
 } // namespace eMule

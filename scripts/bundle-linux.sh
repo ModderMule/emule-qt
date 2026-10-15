@@ -287,6 +287,15 @@ fi
 # Ensure lib/ directory exists (created by deploy-qt, or create it now)
 mkdir -p "$STAGE_DIR/lib"
 
+# specialdlp anti-leecher library: dlopen'ed by the daemon from lib/, not linked
+DLP_LIB="$BUILD_DIR/src/daemon/libspecialdlp.so"
+if [ ! -f "$DLP_LIB" ]; then
+    echo "Error: specialdlp not found at $DLP_LIB" >&2
+    exit 1
+fi
+cp "$DLP_LIB" "$STAGE_DIR/lib/libspecialdlp.so"
+echo "  lib/libspecialdlp.so"
+
 echo ""
 echo "=== Bundling OpenSSL and zlib ==="
 
@@ -398,7 +407,7 @@ echo "  All direct dependencies bundled or base system libs."
 # A file that fails to reach the tarball is otherwise found by a user.
 
 MISSING=0
-for rel in emuleqt emulecored emuleqt-mcp \
+for rel in emuleqt emulecored emuleqt-mcp lib/libspecialdlp.so \
            config/eMule.tmpl config/FakeFileFilter.dat config/webserver/swagger-ui-bundle.js \
            config/webserver/swagger-ui.css config/webserver/swagger-ui.LICENSE.txt \
            doc/openapi.json doc/rest-api.md; do

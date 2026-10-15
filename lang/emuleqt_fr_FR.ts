@@ -706,7 +706,7 @@ Contient des commentaires</translation>
         <translation type="vanished">%1 octets</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3035"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3068"/>
         <source>Test</source>
         <translation>Test</translation>
     </message>
@@ -6072,35 +6072,35 @@ Le télécharger à nouveau ?</translation>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2929"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2962"/>
         <source>Options</source>
         <translation>Options</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1926"/>
+        <location line="+1929"/>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
-        <location line="-1925"/>
-        <location line="+1926"/>
+        <location line="-1928"/>
+        <location line="+1929"/>
         <source>Cancel</source>
         <translation>Annuler</translation>
     </message>
     <message>
-        <location line="-1925"/>
-        <location line="+5561"/>
+        <location line="-1928"/>
+        <location line="+5594"/>
         <source>Apply</source>
         <translation>Appliquer</translation>
     </message>
     <message>
-        <location line="-5560"/>
+        <location line="-5593"/>
         <source>Help</source>
         <translation>Aide</translation>
     </message>
     <message>
-        <location line="+255"/>
+        <location line="+258"/>
         <location line="+1938"/>
         <location line="+62"/>
         <location line="+5"/>
@@ -6141,12 +6141,12 @@ Le télécharger à nouveau ?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5483"/>
+        <location line="+5513"/>
         <source>Language</source>
         <translation>Langue</translation>
     </message>
     <message>
-        <location line="-5480"/>
+        <location line="-5510"/>
         <source>System Default</source>
         <translation>Par défaut du système</translation>
     </message>
@@ -6246,25 +6246,25 @@ Le télécharger à nouveau ?</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5419"/>
+        <location line="+5449"/>
         <source>Core</source>
         <translation>Noyau</translation>
     </message>
     <message>
-        <location line="-5414"/>
+        <location line="-5444"/>
         <source>Address:</source>
         <translation>Adresse :</translation>
     </message>
     <message>
         <location line="+4"/>
         <location line="+1185"/>
-        <location line="+693"/>
+        <location line="+723"/>
         <location line="+421"/>
         <source>Port:</source>
         <translation>Port :</translation>
     </message>
     <message>
-        <location line="-2296"/>
+        <location line="-2326"/>
         <source>authentication token</source>
         <translation>jeton d&apos;authentification</translation>
     </message>
@@ -6420,7 +6420,7 @@ Voulez-vous vraiment continuer ?</translation>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1660"/>
+        <location line="+1690"/>
         <location line="+128"/>
         <location line="+295"/>
         <location line="+1016"/>
@@ -6432,7 +6432,7 @@ Voulez-vous vraiment continuer ?</translation>
         <translation>Activé</translation>
     </message>
     <message>
-        <location line="-4605"/>
+        <location line="-4635"/>
         <source>Reset</source>
         <translation>Réinitialiser</translation>
     </message>
@@ -6449,12 +6449,12 @@ Voulez-vous vraiment continuer ?</translation>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4330"/>
+        <location line="+4360"/>
         <source> KB/s</source>
         <translation> Ko/s</translation>
     </message>
     <message>
-        <location line="-4333"/>
+        <location line="-4363"/>
         <source>Upload</source>
         <translation>Envoi</translation>
     </message>
@@ -6525,12 +6525,12 @@ Voulez-vous vraiment continuer ?</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6530"/>
+        <location line="+6582"/>
         <source>Any</source>
         <translation>Tous</translation>
     </message>
     <message>
-        <location line="-6528"/>
+        <location line="-6580"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>Utiliser uniquement cette interface réseau, par exemple un tunnel VPN. Choisissez-en une dans la liste, ou saisissez une adresse IP ou un sous-réseau tel que 10.64.0.0/10 (l&apos;interface qui y possède une adresse). Les connexions passant par un proxy ne sont pas liées.</translation>
     </message>
@@ -6616,12 +6616,12 @@ Voulez-vous vraiment continuer ?</translation>
     </message>
     <message>
         <location line="+62"/>
-        <location line="+1382"/>
+        <location line="+1412"/>
         <source>General</source>
         <translation>Général</translation>
     </message>
     <message>
-        <location line="-1379"/>
+        <location line="-1409"/>
         <source>Enable proxy</source>
         <translation>Activer le proxy</translation>
     </message>
@@ -6683,23 +6683,23 @@ Voulez-vous vraiment continuer ?</translation>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1758"/>
+        <location line="+1788"/>
         <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>Nom :</translation>
     </message>
     <message>
-        <location line="-2925"/>
+        <location line="-2955"/>
         <location line="+688"/>
-        <location line="+751"/>
+        <location line="+781"/>
         <location line="+19"/>
         <location line="+324"/>
         <source>Password:</source>
         <translation>Mot de passe :</translation>
     </message>
     <message>
-        <location line="-1748"/>
+        <location line="-1778"/>
         <source>Update</source>
         <translation>Mettre à jour</translation>
     </message>
@@ -7064,7 +7064,7 @@ Chaque règle remplace un modèle regex par une chaîne de remplacement.</transl
     <message>
         <location line="+9"/>
         <location line="+14"/>
-        <location line="+1146"/>
+        <location line="+1176"/>
         <source>None</source>
         <translation>Aucun</translation>
     </message>
@@ -7081,7 +7081,7 @@ Chaque règle remplace un modèle regex par une chaîne de remplacement.</transl
         <translation type="vanished">Utiliser TLS/STARTTLS</translation>
     </message>
     <message>
-        <location line="-1141"/>
+        <location line="-1171"/>
         <source>Username:</source>
         <translation>Nom d&apos;utilisateur :</translation>
     </message>
@@ -7107,14 +7107,14 @@ Chaque règle remplace un modèle regex par une chaîne de remplacement.</transl
     </message>
     <message>
         <location line="+4"/>
-        <location line="+895"/>
+        <location line="+925"/>
         <location line="+1027"/>
         <location line="+154"/>
         <source>Name</source>
         <translation>Nom</translation>
     </message>
     <message>
-        <location line="-2074"/>
+        <location line="-2104"/>
         <source>Users</source>
         <translation>Utilisateurs</translation>
     </message>
@@ -7226,7 +7226,7 @@ Chaque règle remplace un modèle regex par une chaîne de remplacement.</transl
     </message>
     <message>
         <location line="+7"/>
-        <location line="+404"/>
+        <location line="+434"/>
         <source>Reload</source>
         <translation>Recharger</translation>
     </message>
@@ -7235,7 +7235,7 @@ Chaque règle remplace un modèle regex par une chaîne de remplacement.</transl
         <translation type="vanished">http://example.com/ipfilter.dat</translation>
     </message>
     <message>
-        <location line="-379"/>
+        <location line="-409"/>
         <location line="+18"/>
         <source>Load</source>
         <translation>Charger</translation>
@@ -7330,7 +7330,7 @@ Chaque règle remplace un modèle regex par une chaîne de remplacement.</transl
         <translation type="vanished">Avertir à l&apos;ouverture de fichiers non fiables</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+53"/>
         <source>Graphs</source>
         <translation>Graphiques</translation>
     </message>
@@ -7442,7 +7442,7 @@ Chaque règle remplace un modèle regex par une chaîne de remplacement.</transl
         <translation>Emplacements d&apos;envoi (sans overhead)</translation>
     </message>
     <message>
-        <location line="-1588"/>
+        <location line="-1618"/>
         <source>Country flags (IP2Country)</source>
         <translation>Drapeaux des pays (IP2Country)</translation>
     </message>
@@ -7586,7 +7586,47 @@ Chaque connexion Usenet transite alors par le proxy : sa vitesse limite donc le 
         <translation>Activer UTF-8</translation>
     </message>
     <message>
-        <location line="+415"/>
+        <location line="+350"/>
+        <source>Anti-Leecher</source>
+        <translation>Anti-Leecher</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Ban leechers with DLP rules:</source>
+        <translation>Bannir les leechers avec les règles DLP :</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Lite</source>
+        <translation>Lite</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>All VeryCD</source>
+        <translation>Tous VeryCD</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>easyMule</source>
+        <translation>easyMule</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>VeryCD nickname</source>
+        <translation>Pseudo VeryCD</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>VeryCD tag</source>
+        <translation>Étiquette VeryCD</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Only reduce the score of soft leechers instead of banning them</source>
+        <translation>Réduire seulement le score des leechers légers au lieu de les bannir</translation>
+    </message>
+    <message>
+        <location line="+80"/>
         <source>Download Usenet</source>
         <translation>Téléchargement Usenet</translation>
     </message>
@@ -8891,7 +8931,17 @@ En ajouter un plus tard ne récupère pas son catalogue antérieur : un nouvel i
         <translation>Désactivé</translation>
     </message>
     <message>
-        <location line="+2715"/>
+        <location line="+2112"/>
+        <source>specialdlp loaded, DLP v%1</source>
+        <translation>specialdlp chargé, DLP v%1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>specialdlp library not found, checks are inactive</source>
+        <translation>Bibliothèque specialdlp introuvable, les vérifications sont inactives</translation>
+    </message>
+    <message>
+        <location line="+624"/>
         <source>Automatic</source>
         <translation>Automatique</translation>
     </message>
@@ -8905,7 +8955,7 @@ En ajouter un plus tard ne récupère pas son catalogue antérieur : un nouvel i
         <translation type="vanished">Accepter automatiquement les liens eD2K uniquement pendant l&apos;exécution</translation>
     </message>
     <message>
-        <location line="-2700"/>
+        <location line="-2722"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>Utiliser le système de crédits (récompenser les envoyeurs)</translation>
     </message>
@@ -9230,7 +9280,7 @@ Redémarrez eMule pour que toutes les connexions utilisent les nouveaux paramèt
 Les connexions aux serveurs de news basculent immédiatement.</translation>
     </message>
     <message>
-        <location line="+413"/>
+        <location line="+419"/>
         <source>Web Interface</source>
         <translation>Interface web</translation>
     </message>
@@ -9240,7 +9290,7 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>« %1 » n&apos;est pas une adresse IP. L&apos;adresse d&apos;écoute n&apos;a pas été modifiée.</translation>
     </message>
     <message>
-        <location line="+479"/>
+        <location line="+482"/>
         <source>File types</source>
         <translation>Types de fichiers</translation>
     </message>
@@ -9250,7 +9300,7 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Impossible de mettre à jour l&apos;association des fichiers .nzb : %1</translation>
     </message>
     <message>
-        <location line="+589"/>
+        <location line="+602"/>
         <source>Port forwarding: %1</source>
         <translation>Redirection de ports : %1</translation>
     </message>
@@ -9305,17 +9355,17 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Rétablir les valeurs par défaut</translation>
     </message>
     <message>
-        <location line="-4769"/>
+        <location line="-4791"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1345"/>
         <location line="+316"/>
-        <location line="+1933"/>
+        <location line="+1955"/>
         <source>Remove</source>
         <translation>Supprimer</translation>
     </message>
     <message>
-        <location line="-5915"/>
+        <location line="-5967"/>
         <source>New eMule Qt version detected</source>
         <translation>Nouvelle version d&apos;eMule Qt détectée</translation>
     </message>
@@ -9325,7 +9375,7 @@ Les connexions aux serveurs de news basculent immédiatement.</translation>
         <translation>Mettre à jour depuis une URL : (format filter.dat ou PeerGuardian, .gz/.zip acceptés)</translation>
     </message>
     <message>
-        <location line="+2960"/>
+        <location line="+2990"/>
         <source>Write eMule core logs to disk</source>
         <translation>Écrire les journaux du noyau eMule sur le disque</translation>
     </message>
@@ -9523,7 +9573,7 @@ Réglez-le légèrement en dessous de votre forfait. Le volume est mesuré ici, 
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1618"/>
-        <location line="+1971"/>
+        <location line="+1993"/>
         <source>Add</source>
         <translation>Ajouter</translation>
     </message>
@@ -9536,7 +9586,7 @@ Réglez-le légèrement en dessous de votre forfait. Le volume est mesuré ici, 
         <translation type="vanished">Entrer une valeur :</translation>
     </message>
     <message>
-        <location line="-1934"/>
+        <location line="-1956"/>
         <source>Edit Value</source>
         <translation>Modifier la valeur</translation>
     </message>

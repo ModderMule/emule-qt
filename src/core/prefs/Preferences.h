@@ -1464,6 +1464,16 @@ public:
     [[nodiscard]] bool useSecureIdent() const;
     void setUseSecureIdent(bool val);
 
+    /// specialdlp anti-leecher checks (eMule Xtreme DLP port).
+    [[nodiscard]] bool antiLeecher() const;
+    void setAntiLeecher(bool val);
+    /// specialdlp rule variant, SDLP_VARIANT_* (0 lite .. 4 verycd-tag).
+    [[nodiscard]] int antiLeecherVariant() const;
+    void setAntiLeecherVariant(int val);
+    /// Soft hits (mod/user soft, md4 tag) reduce the score instead of banning.
+    [[nodiscard]] bool antiLeecherSoftReduceScore() const;
+    void setAntiLeecherSoftReduceScore(bool val);
+
     // -- Shared file visibility -----------------------------------------------
 
     /// Who can browse our shared files: 0=nobody, 1=friends, 2=everybody.

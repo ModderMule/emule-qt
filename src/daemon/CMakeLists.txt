@@ -45,3 +45,11 @@ endif()
 set_target_properties(emulecored PROPERTIES
     FOLDER "Daemon"
 )
+
+# specialdlp is loaded at runtime, not linked: keep a copy next to the daemon
+if(TARGET specialdlp)
+    add_dependencies(emulecored specialdlp)
+    add_custom_command(TARGET emulecored POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:specialdlp> $<TARGET_FILE_DIR:emulecored>
+        VERBATIM)
+endif()

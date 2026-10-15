@@ -5,3 +5,6 @@
 	path = docs/ed3k-spec
 	url = https://github.com/ed3k-protocol/ed3k-spec.git
 	update = none
+[submodule "external/specialdlp"]
+	path = external/specialdlp
+	url = https://github.com/ModderMule/specialdlp
