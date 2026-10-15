@@ -701,7 +701,7 @@ Has comments</source>
         <translation type="vanished">%1 Bytes</translation>
     </message>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3068"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="+3064"/>
         <source>Test</source>
         <translation>测试</translation>
     </message>
@@ -6058,35 +6058,35 @@ Download it again?</source>
 <context>
     <name>eMule::OptionsDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2962"/>
+        <location filename="../src/gui/dialogs/OptionsDialog.cpp" line="-2958"/>
         <source>Options</source>
         <translation>选项</translation>
     </message>
     <message>
         <location line="+61"/>
-        <location line="+1929"/>
+        <location line="+1928"/>
         <source>OK</source>
         <translation>确定</translation>
     </message>
     <message>
-        <location line="-1928"/>
-        <location line="+1929"/>
+        <location line="-1927"/>
+        <location line="+1928"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="-1928"/>
-        <location line="+5594"/>
+        <location line="-1927"/>
+        <location line="+5590"/>
         <source>Apply</source>
         <translation>应用</translation>
     </message>
     <message>
-        <location line="-5593"/>
+        <location line="-5589"/>
         <source>Help</source>
         <translation>帮助</translation>
     </message>
     <message>
-        <location line="+258"/>
+        <location line="+257"/>
         <location line="+1938"/>
         <location line="+62"/>
         <location line="+5"/>
@@ -6127,12 +6127,12 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5513"/>
+        <location line="+5510"/>
         <source>Language</source>
         <translation>语言</translation>
     </message>
     <message>
-        <location line="-5510"/>
+        <location line="-5507"/>
         <source>System Default</source>
         <translation>系统默认</translation>
     </message>
@@ -6232,25 +6232,25 @@ Download it again?</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+5449"/>
+        <location line="+5446"/>
         <source>Core</source>
         <translation>核心</translation>
     </message>
     <message>
-        <location line="-5444"/>
+        <location line="-5441"/>
         <source>Address:</source>
         <translation>地址：</translation>
     </message>
     <message>
         <location line="+4"/>
         <location line="+1185"/>
-        <location line="+723"/>
+        <location line="+720"/>
         <location line="+421"/>
         <source>Port:</source>
         <translation>端口：</translation>
     </message>
     <message>
-        <location line="-2326"/>
+        <location line="-2323"/>
         <source>authentication token</source>
         <translation>认证令牌</translation>
     </message>
@@ -6406,7 +6406,7 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+1690"/>
+        <location line="+1687"/>
         <location line="+128"/>
         <location line="+295"/>
         <location line="+1016"/>
@@ -6418,7 +6418,7 @@ Are you sure you want to continue?</source>
         <translation>已启用</translation>
     </message>
     <message>
-        <location line="-4635"/>
+        <location line="-4632"/>
         <source>Reset</source>
         <translation>重置</translation>
     </message>
@@ -6435,12 +6435,12 @@ Are you sure you want to continue?</source>
     <message>
         <location line="+3"/>
         <location line="+6"/>
-        <location line="+4360"/>
+        <location line="+4357"/>
         <source> KB/s</source>
         <translation> KB/s</translation>
     </message>
     <message>
-        <location line="-4363"/>
+        <location line="-4360"/>
         <source>Upload</source>
         <translation>上传</translation>
     </message>
@@ -6511,12 +6511,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+6582"/>
+        <location line="+6574"/>
         <source>Any</source>
         <translation>任意</translation>
     </message>
     <message>
-        <location line="-6580"/>
+        <location line="-6572"/>
         <source>Use only this network interface, for example a VPN tunnel. Pick one from the list, or type an IP address or a subnet such as 10.64.0.0/10 (the interface holding an address in it). Connections through a proxy are not bound.</source>
         <translation>仅使用此网络接口，例如 VPN 隧道。可从列表中选择，或输入 IP 地址或子网（如 10.64.0.0/10，即拥有该范围内地址的接口）。通过代理的连接不会被绑定。</translation>
     </message>
@@ -6602,12 +6602,12 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+62"/>
-        <location line="+1412"/>
+        <location line="+1409"/>
         <source>General</source>
         <translation>常规</translation>
     </message>
     <message>
-        <location line="-1409"/>
+        <location line="-1406"/>
         <source>Enable proxy</source>
         <translation>启用代理</translation>
     </message>
@@ -6669,23 +6669,23 @@ Are you sure you want to continue?</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+1788"/>
+        <location line="+1785"/>
         <location line="+1019"/>
         <location line="+152"/>
         <source>Name:</source>
         <translation>名称：</translation>
     </message>
     <message>
-        <location line="-2955"/>
+        <location line="-2952"/>
         <location line="+688"/>
-        <location line="+781"/>
+        <location line="+778"/>
         <location line="+19"/>
         <location line="+324"/>
         <source>Password:</source>
         <translation>密码：</translation>
     </message>
     <message>
-        <location line="-1778"/>
+        <location line="-1775"/>
         <source>Update</source>
         <translation>更新</translation>
     </message>
@@ -7050,7 +7050,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
     <message>
         <location line="+9"/>
         <location line="+14"/>
-        <location line="+1176"/>
+        <location line="+1173"/>
         <source>None</source>
         <translation>无</translation>
     </message>
@@ -7067,7 +7067,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation type="vanished">使用 TLS/STARTTLS</translation>
     </message>
     <message>
-        <location line="-1171"/>
+        <location line="-1168"/>
         <source>Username:</source>
         <translation>用户名：</translation>
     </message>
@@ -7093,14 +7093,14 @@ Each rule replaces a regex pattern with a replacement string.</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+925"/>
+        <location line="+922"/>
         <location line="+1027"/>
         <location line="+154"/>
         <source>Name</source>
         <translation>名称</translation>
     </message>
     <message>
-        <location line="-2104"/>
+        <location line="-2101"/>
         <source>Users</source>
         <translation>用户</translation>
     </message>
@@ -7212,7 +7212,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
     </message>
     <message>
         <location line="+7"/>
-        <location line="+434"/>
+        <location line="+431"/>
         <source>Reload</source>
         <translation>重新加载</translation>
     </message>
@@ -7221,7 +7221,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation type="vanished">http://example.com/ipfilter.dat</translation>
     </message>
     <message>
-        <location line="-409"/>
+        <location line="-406"/>
         <location line="+18"/>
         <source>Load</source>
         <translation>加载</translation>
@@ -7316,7 +7316,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation type="vanished">打开不受信任的文件时警告</translation>
     </message>
     <message>
-        <location line="+53"/>
+        <location line="+50"/>
         <source>Graphs</source>
         <translation>图表</translation>
     </message>
@@ -7428,7 +7428,7 @@ Each rule replaces a regex pattern with a replacement string.</source>
         <translation>上传位（无开销）</translation>
     </message>
     <message>
-        <location line="-1618"/>
+        <location line="-1615"/>
         <source>Country flags (IP2Country)</source>
         <translation>国旗 (IP2Country)</translation>
     </message>
@@ -7587,32 +7587,27 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>Lite</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>All VeryCD</source>
-        <translation>全部 VeryCD</translation>
+        <translation type="vanished">全部 VeryCD</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>easyMule</source>
-        <translation>easyMule</translation>
+        <translation type="vanished">easyMule</translation>
     </message>
     <message>
-        <location line="+1"/>
         <source>VeryCD nickname</source>
-        <translation>VeryCD 昵称</translation>
+        <translation type="vanished">VeryCD 昵称</translation>
     </message>
     <message>
-        <location line="+0"/>
         <source>VeryCD tag</source>
-        <translation>VeryCD 标签</translation>
+        <translation type="vanished">VeryCD 标签</translation>
     </message>
     <message>
-        <location line="+6"/>
         <source>Only reduce the score of soft leechers instead of banning them</source>
-        <translation>对轻度吸血客户端仅降低评分而不封禁</translation>
+        <translation type="vanished">对轻度吸血客户端仅降低评分而不封禁</translation>
     </message>
     <message>
-        <location line="+80"/>
+        <location line="+84"/>
         <source>Download Usenet</source>
         <translation>Usenet 下载</translation>
     </message>
@@ -7980,12 +7975,33 @@ Every Usenet connection then passes through the proxy, so its speed caps the dow
         <translation>最低 — 允许主机名不匹配</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-741"/>
+        <location line="+742"/>
         <source>Strict</source>
         <translation>严格</translation>
     </message>
     <message>
+        <location line="-742"/>
+        <source>Strict + Chinese</source>
+        <translation>严格 + 中国</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Bans hard leechers, soft leechers only lose queue score</source>
+        <translation>封禁严重吸血者，轻度吸血者只降低队列评分</translation>
+    </message>
+    <message>
         <location line="+2"/>
+        <source>Bans hard and soft leechers</source>
+        <translation>封禁严重和轻度吸血者</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Strict, and also bans VeryCD and easyMule mods</source>
+        <translation>严格，并封禁 VeryCD 和 easyMule Mod</translation>
+    </message>
+    <message>
+        <location line="+740"/>
         <source>Certificate check:</source>
         <translation>证书检查：</translation>
     </message>
@@ -8917,7 +8933,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation>已禁用</translation>
     </message>
     <message>
-        <location line="+2112"/>
+        <location line="+2107"/>
         <source>specialdlp loaded, DLP v%1</source>
         <translation>specialdlp 已加载，DLP v%1</translation>
     </message>
@@ -8941,7 +8957,7 @@ Adding one later does not fetch its back catalogue: a new indexer gets its own f
         <translation type="vanished">仅在运行时自动接受 eD2K 链接</translation>
     </message>
     <message>
-        <location line="-2722"/>
+        <location line="-2717"/>
         <source>Use credit system (reward uploaders)</source>
         <translation>使用信用系统（奖励上传者）</translation>
     </message>
@@ -9266,7 +9282,7 @@ News server connections switch over immediately.</source>
 新闻服务器连接会立即切换。</translation>
     </message>
     <message>
-        <location line="+419"/>
+        <location line="+417"/>
         <source>Web Interface</source>
         <translation>Web 界面</translation>
     </message>
@@ -9276,7 +9292,7 @@ News server connections switch over immediately.</source>
         <translation>“%1”不是 IP 地址。监听地址未更改。</translation>
     </message>
     <message>
-        <location line="+482"/>
+        <location line="+481"/>
         <source>File types</source>
         <translation>文件类型</translation>
     </message>
@@ -9286,7 +9302,7 @@ News server connections switch over immediately.</source>
         <translation>无法更新 .nzb 文件关联：%1</translation>
     </message>
     <message>
-        <location line="+602"/>
+        <location line="+600"/>
         <source>Port forwarding: %1</source>
         <translation>端口转发：%1</translation>
     </message>
@@ -9341,17 +9357,17 @@ News server connections switch over immediately.</source>
         <translation>恢复默认值</translation>
     </message>
     <message>
-        <location line="-4791"/>
+        <location line="-4786"/>
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1345"/>
         <location line="+316"/>
-        <location line="+1955"/>
+        <location line="+1950"/>
         <source>Remove</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location line="-5967"/>
+        <location line="-5959"/>
         <source>New eMule Qt version detected</source>
         <translation>检测到新的 eMule Qt 版本</translation>
     </message>
@@ -9361,7 +9377,7 @@ News server connections switch over immediately.</source>
         <translation>从 URL 更新：（filter.dat 或 PeerGuardian 格式，支持 .gz/.zip）</translation>
     </message>
     <message>
-        <location line="+2990"/>
+        <location line="+2987"/>
         <source>Write eMule core logs to disk</source>
         <translation>将 eMule 核心日志写入磁盘</translation>
     </message>
@@ -9559,7 +9575,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <location line="+1019"/>
         <location line="+154"/>
         <location line="+1618"/>
-        <location line="+1993"/>
+        <location line="+1988"/>
         <source>Add</source>
         <translation>添加</translation>
     </message>
@@ -9572,7 +9588,7 @@ Set it slightly under your plan. The figure is measured here, so it reads a few 
         <translation type="vanished">输入值：</translation>
     </message>
     <message>
-        <location line="-1956"/>
+        <location line="-1951"/>
         <source>Edit Value</source>
         <translation>编辑值</translation>
     </message>

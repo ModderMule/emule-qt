@@ -3765,10 +3765,8 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setUseSecureIdent(val.toBool());
     else if (key == QStringLiteral("antiLeecher"))
         thePrefs.setAntiLeecher(val.toBool());
-    else if (key == QStringLiteral("antiLeecherVariant"))
-        thePrefs.setAntiLeecherVariant(static_cast<int>(val.toInteger()));
-    else if (key == QStringLiteral("antiLeecherSoftReduceScore"))
-        thePrefs.setAntiLeecherSoftReduceScore(val.toBool());
+    else if (key == QStringLiteral("antiLeecherLevel"))
+        thePrefs.setAntiLeecherLevel(static_cast<int>(val.toInteger()));
     else if (key == QStringLiteral("enableSearchResultFilter"))
         thePrefs.setEnableSearchResultFilter(val.toBool());
     else if (key == QStringLiteral("ipFilterUpdateUrl"))

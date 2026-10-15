@@ -1,112 +1,46 @@
 {
-  "Anti-Leecher": {
+  "Strict + Chinese": {
     "_context": "eMule::OptionsDialog",
-    "de_DE": "Anti-Leecher",
-    "es_ES": "Anti-Leecher",
-    "fr_FR": "Anti-Leecher",
-    "it_IT": "Anti-Leecher",
-    "ja_JP": "アンチリーチャー",
-    "ko_KR": "안티 리처",
-    "pt_BR": "Anti-Leecher",
-    "zh_CN": "反吸血"
+    "de_DE": "Streng + Chinesisch",
+    "es_ES": "Estricto + chino",
+    "fr_FR": "Strict + chinois",
+    "it_IT": "Rigoroso + cinese",
+    "ja_JP": "厳格 + 中国系",
+    "ko_KR": "엄격 + 중국계",
+    "pt_BR": "Rigoroso + chinês",
+    "zh_CN": "严格 + 中国"
   },
-  "Ban leechers with DLP rules:": {
+  "Bans hard leechers, soft leechers only lose queue score": {
     "_context": "eMule::OptionsDialog",
-    "de_DE": "Leecher mit DLP-Regeln sperren:",
-    "es_ES": "Bloquear leechers con reglas DLP:",
-    "fr_FR": "Bannir les leechers avec les règles DLP :",
-    "it_IT": "Blocca i leecher con le regole DLP:",
-    "ja_JP": "DLP ルールでリーチャーを禁止:",
-    "ko_KR": "DLP 규칙으로 리처 차단:",
-    "pt_BR": "Banir leechers com regras DLP:",
-    "zh_CN": "使用 DLP 规则封禁吸血客户端："
+    "de_DE": "Sperrt harte Leecher, weiche Leecher verlieren nur Warteschlangenpunkte",
+    "es_ES": "Bloquea a los leechers graves; los leves solo pierden puntuación en la cola",
+    "fr_FR": "Bannit les leechers sévères, les leechers légers perdent seulement du score de file",
+    "it_IT": "Banna i leecher gravi, quelli lievi perdono solo punteggio in coda",
+    "ja_JP": "悪質なリーチャーを禁止し、軽度のリーチャーは待ち行列スコアを下げるだけ",
+    "ko_KR": "심각한 리처는 차단하고, 경미한 리처는 대기열 점수만 깎음",
+    "pt_BR": "Bane leechers graves; os leves só perdem pontuação na fila",
+    "zh_CN": "封禁严重吸血者，轻度吸血者只降低队列评分"
   },
-  "Lite": {
+  "Bans hard and soft leechers": {
     "_context": "eMule::OptionsDialog",
-    "de_DE": "Lite",
-    "es_ES": "Lite",
-    "fr_FR": "Lite",
-    "it_IT": "Lite",
-    "ja_JP": "Lite",
-    "ko_KR": "Lite",
-    "pt_BR": "Lite",
-    "zh_CN": "Lite"
+    "de_DE": "Sperrt harte und weiche Leecher",
+    "es_ES": "Bloquea a los leechers graves y leves",
+    "fr_FR": "Bannit les leechers sévères et légers",
+    "it_IT": "Banna i leecher gravi e lievi",
+    "ja_JP": "悪質なリーチャーも軽度のリーチャーも禁止",
+    "ko_KR": "심각한 리처와 경미한 리처를 모두 차단",
+    "pt_BR": "Bane leechers graves e leves",
+    "zh_CN": "封禁严重和轻度吸血者"
   },
-  "All VeryCD": {
+  "Strict, and also bans VeryCD and easyMule mods": {
     "_context": "eMule::OptionsDialog",
-    "de_DE": "Alle VeryCD",
-    "es_ES": "Todos VeryCD",
-    "fr_FR": "Tous VeryCD",
-    "it_IT": "Tutti VeryCD",
-    "ja_JP": "すべての VeryCD",
-    "ko_KR": "모든 VeryCD",
-    "pt_BR": "Todos VeryCD",
-    "zh_CN": "全部 VeryCD"
-  },
-  "easyMule": {
-    "_context": "eMule::OptionsDialog",
-    "de_DE": "easyMule",
-    "es_ES": "easyMule",
-    "fr_FR": "easyMule",
-    "it_IT": "easyMule",
-    "ja_JP": "easyMule",
-    "ko_KR": "easyMule",
-    "pt_BR": "easyMule",
-    "zh_CN": "easyMule"
-  },
-  "VeryCD nickname": {
-    "_context": "eMule::OptionsDialog",
-    "de_DE": "VeryCD-Nickname",
-    "es_ES": "Apodo VeryCD",
-    "fr_FR": "Pseudo VeryCD",
-    "it_IT": "Nickname VeryCD",
-    "ja_JP": "VeryCD ニックネーム",
-    "ko_KR": "VeryCD 닉네임",
-    "pt_BR": "Apelido VeryCD",
-    "zh_CN": "VeryCD 昵称"
-  },
-  "VeryCD tag": {
-    "_context": "eMule::OptionsDialog",
-    "de_DE": "VeryCD-Tag",
-    "es_ES": "Etiqueta VeryCD",
-    "fr_FR": "Étiquette VeryCD",
-    "it_IT": "Tag VeryCD",
-    "ja_JP": "VeryCD タグ",
-    "ko_KR": "VeryCD 태그",
-    "pt_BR": "Tag VeryCD",
-    "zh_CN": "VeryCD 标签"
-  },
-  "Only reduce the score of soft leechers instead of banning them": {
-    "_context": "eMule::OptionsDialog",
-    "de_DE": "Bei weichen Leechern nur die Wertung senken statt sie zu sperren",
-    "es_ES": "Solo reducir la puntuación de los leechers leves en lugar de bloquearlos",
-    "fr_FR": "Réduire seulement le score des leechers légers au lieu de les bannir",
-    "it_IT": "Riduci solo il punteggio dei leecher lievi invece di bloccarli",
-    "ja_JP": "軽度のリーチャーは禁止せずスコアを下げるだけにする",
-    "ko_KR": "경미한 리처는 차단하지 않고 점수만 낮추기",
-    "pt_BR": "Apenas reduzir a pontuação de leechers leves em vez de bani-los",
-    "zh_CN": "对轻度吸血客户端仅降低评分而不封禁"
-  },
-  "specialdlp loaded, DLP v%1": {
-    "_context": "eMule::OptionsDialog",
-    "de_DE": "specialdlp geladen, DLP v%1",
-    "es_ES": "specialdlp cargado, DLP v%1",
-    "fr_FR": "specialdlp chargé, DLP v%1",
-    "it_IT": "specialdlp caricato, DLP v%1",
-    "ja_JP": "specialdlp 読み込み済み、DLP v%1",
-    "ko_KR": "specialdlp 로드됨, DLP v%1",
-    "pt_BR": "specialdlp carregado, DLP v%1",
-    "zh_CN": "specialdlp 已加载，DLP v%1"
-  },
-  "specialdlp library not found, checks are inactive": {
-    "_context": "eMule::OptionsDialog",
-    "de_DE": "specialdlp-Bibliothek nicht gefunden, Prüfungen sind inaktiv",
-    "es_ES": "Biblioteca specialdlp no encontrada, las comprobaciones están inactivas",
-    "fr_FR": "Bibliothèque specialdlp introuvable, les vérifications sont inactives",
-    "it_IT": "Libreria specialdlp non trovata, i controlli sono inattivi",
-    "ja_JP": "specialdlp ライブラリが見つかりません。チェックは無効です",
-    "ko_KR": "specialdlp 라이브러리를 찾을 수 없어 검사가 비활성 상태입니다",
-    "pt_BR": "Biblioteca specialdlp não encontrada, as verificações estão inativas",
-    "zh_CN": "未找到 specialdlp 库，检查未启用"
+    "de_DE": "Streng, sperrt zusätzlich VeryCD- und easyMule-Mods",
+    "es_ES": "Estricto, y además bloquea los mods VeryCD y easyMule",
+    "fr_FR": "Strict, et bannit aussi les mods VeryCD et easyMule",
+    "it_IT": "Rigoroso, e banna anche le mod VeryCD ed easyMule",
+    "ja_JP": "厳格に加え、VeryCD と easyMule の Mod も禁止",
+    "ko_KR": "엄격 모드에 더해 VeryCD 및 easyMule 모드도 차단",
+    "pt_BR": "Rigoroso, e também bane mods VeryCD e easyMule",
+    "zh_CN": "严格，并封禁 VeryCD 和 easyMule Mod"
   }
 }

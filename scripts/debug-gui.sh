@@ -16,6 +16,15 @@ fi
 # arguments and the first one becomes its build directory ("cmake -B --tab").
 scripts/build.sh
 
+# A bundle-macos.sh run leaves deployed Qt in the dev bundle; after a relink the
+# binary uses ~/Qt again, so the bundled qcocoa loads a 2nd QtGui and aborts.
+APP=./build/src/gui/emuleqt.app/Contents
+if [ -d "$APP/Frameworks/QtGui.framework" ] &&
+   ! otool -l "$APP/MacOS/emuleqt" | grep -q '@executable_path/../Frameworks'; then
+    echo "Removing stale deployed Qt from dev bundle"
+    rm -rf "$APP/Frameworks" "$APP/PlugIns" "$APP/Resources/qt.conf"
+fi
+
 # No config seeding here any more.  AppConfig::seedBundledData() now reaches
 # data/config in Release builds too, through the CMake-provided
 # EMULE_SOURCE_CONFIG_DIR (cmake/CompilerSettings.cmake), and it also refreshes

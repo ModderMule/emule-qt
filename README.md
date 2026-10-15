@@ -104,3 +104,7 @@ emuleqt (GUI)  ←—  IPC/CBOR over TCP  —→  emulecored (Daemon)
 GPL-2.0 — see [LICENSE](LICENSE).
 
 Based on the original [eMule](https://www.emule-project.com/) by Merkur.
+
+---
+
+[emule-qt.org](https://emule-qt.org/)

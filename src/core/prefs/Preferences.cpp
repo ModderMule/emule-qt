@@ -14,6 +14,8 @@
 #include "utils/Log.h"
 #include "utils/Opcodes.h"
 
+#include "specialdlp.h"
+
 #include <QCborArray>
 #include <QCborMap>
 #include <QCoreApplication>
@@ -512,8 +514,7 @@ struct Preferences::Data {
     // Security (extended)
     bool useSecureIdent = true;  // Enable secure identity (RSA key exchange)
     bool antiLeecher = true;     // specialdlp checks on hello/info/chat (Xtreme DLP)
-    int antiLeecherVariant = 0;  // SDLP_VARIANT_*: 0 lite .. 4 verycd-tag
-    bool antiLeecherSoftReduceScore = true;  // soft hits reduce score instead of a ban
+    int antiLeecherLevel = 0;    // 0 lite, 1 strict, 2 strict + Chinese
     int viewSharedFilesAccess = 1;  // 0=nobody, 1=friends only, 2=everybody. MFC nobody; deliberate, 2026-10: friends are picked by the user
 
     // Download behavior
@@ -2619,13 +2620,17 @@ bool Preferences::antiLeecher() const { return get(&Data::antiLeecher); }
 
 void Preferences::setAntiLeecher(bool val) { set(&Data::antiLeecher, val); }
 
-int Preferences::antiLeecherVariant() const { return get(&Data::antiLeecherVariant); }
+int Preferences::antiLeecherLevel() const { return get(&Data::antiLeecherLevel); }
 
-void Preferences::setAntiLeecherVariant(int val) { set(&Data::antiLeecherVariant, std::clamp(val, 0, 4)); }
+void Preferences::setAntiLeecherLevel(int val) { set(&Data::antiLeecherLevel, std::clamp(val, 0, 2)); }
 
-bool Preferences::antiLeecherSoftReduceScore() const { return get(&Data::antiLeecherSoftReduceScore); }
+// Strict + Chinese = verycd-tag, the widest VeryCD/easyMule rule set
+int Preferences::antiLeecherVariant() const
+{
+    return antiLeecherLevel() == 2 ? SDLP_VARIANT_VERYCD_TAG : SDLP_VARIANT_LITE;
+}
 
-void Preferences::setAntiLeecherSoftReduceScore(bool val) { set(&Data::antiLeecherSoftReduceScore, val); }
+bool Preferences::antiLeecherSoftReduceScore() const { return antiLeecherLevel() == 0; }
 
 // ---------------------------------------------------------------------------
 // Getters / setters — Shared file visibility
@@ -3074,8 +3079,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("useFastKad"), useFastKad());
     prefs.insert(QStringLiteral("useSecureIdent"), useSecureIdent());
     prefs.insert(QStringLiteral("antiLeecher"), antiLeecher());
-    prefs.insert(QStringLiteral("antiLeecherVariant"), antiLeecherVariant());
-    prefs.insert(QStringLiteral("antiLeecherSoftReduceScore"), antiLeecherSoftReduceScore());
+    prefs.insert(QStringLiteral("antiLeecherLevel"), antiLeecherLevel());
     prefs.insert(QStringLiteral("enableSearchResultFilter"), enableSearchResultFilter());
     prefs.insert(QStringLiteral("ipFilterUpdateUrl"), ipFilterUpdateUrl());
     prefs.insert(QStringLiteral("geoIpAccountId"), geoIpAccountId());
@@ -3323,8 +3327,7 @@ void Preferences::updateFromCbor(const QCborMap& p)
     m_data->cryptLayerRequiredStrict  = p.value(QStringLiteral("cryptLayerRequiredStrict")).toBool();
     m_data->useSecureIdent            = p.value(QStringLiteral("useSecureIdent")).toBool();
     m_data->antiLeecher               = p.value(QStringLiteral("antiLeecher")).toBool(true);
-    m_data->antiLeecherVariant        = std::clamp(static_cast<int>(p.value(QStringLiteral("antiLeecherVariant")).toInteger()), 0, 4);
-    m_data->antiLeecherSoftReduceScore = p.value(QStringLiteral("antiLeecherSoftReduceScore")).toBool(true);
+    m_data->antiLeecherLevel          = std::clamp(static_cast<int>(p.value(QStringLiteral("antiLeecherLevel")).toInteger()), 0, 2);
     m_data->enableSearchResultFilter  = p.value(QStringLiteral("enableSearchResultFilter")).toBool();
     m_data->useSafeKad                = p.value(QStringLiteral("useSafeKad")).toBool();
     m_data->useFastKad                = p.value(QStringLiteral("useFastKad")).toBool();
@@ -3989,8 +3992,7 @@ bool Preferences::load(const QString& filePath)
             m_data->ipFilterLevel = sec["ipFilterLevel"].as<uint32>(m_data->ipFilterLevel);
             m_data->useSecureIdent = sec["useSecureIdent"].as<bool>(m_data->useSecureIdent);
             m_data->antiLeecher = sec["antiLeecher"].as<bool>(m_data->antiLeecher);
-            m_data->antiLeecherVariant = std::clamp(sec["antiLeecherVariant"].as<int>(m_data->antiLeecherVariant), 0, 4);
-            m_data->antiLeecherSoftReduceScore = sec["antiLeecherSoftReduceScore"].as<bool>(m_data->antiLeecherSoftReduceScore);
+            m_data->antiLeecherLevel = std::clamp(sec["antiLeecherLevel"].as<int>(m_data->antiLeecherLevel), 0, 2);
             m_data->viewSharedFilesAccess = sec["viewSharedFilesAccess"].as<int>(m_data->viewSharedFilesAccess);
             m_data->useSafeKad = sec["useSafeKad"].as<bool>(m_data->useSafeKad);
             m_data->useFastKad = sec["useFastKad"].as<bool>(m_data->useFastKad);
@@ -5111,8 +5113,7 @@ bool Preferences::saveImpl(const QString& filePath) const
     out << YAML::Key << "ipFilterLevel" << YAML::Value << m_data->ipFilterLevel;
     out << YAML::Key << "useSecureIdent" << YAML::Value << m_data->useSecureIdent;
     out << YAML::Key << "antiLeecher" << YAML::Value << m_data->antiLeecher;
-    out << YAML::Key << "antiLeecherVariant" << YAML::Value << m_data->antiLeecherVariant;
-    out << YAML::Key << "antiLeecherSoftReduceScore" << YAML::Value << m_data->antiLeecherSoftReduceScore;
+    out << YAML::Key << "antiLeecherLevel" << YAML::Value << m_data->antiLeecherLevel;
     out << YAML::Key << "viewSharedFilesAccess" << YAML::Value << m_data->viewSharedFilesAccess;
     out << YAML::Key << "useSafeKad" << YAML::Value << m_data->useSafeKad;
     out << YAML::Key << "useFastKad" << YAML::Value << m_data->useFastKad;

@@ -86,8 +86,7 @@ private slots:
 private:
     DlpLoader m_dlp;
     bool m_prevOn = true;
-    int m_prevVariant = 0;
-    bool m_prevSoft = true;
+    int m_prevLevel = 0;
 };
 
 void tst_Dlp::initTestCase()
@@ -99,23 +98,20 @@ void tst_Dlp::initTestCase()
     QVERIFY2(m_dlp.load(path), qPrintable(path));
     theApp.dlp = &m_dlp;
     m_prevOn = thePrefs.antiLeecher();
-    m_prevVariant = thePrefs.antiLeecherVariant();
-    m_prevSoft = thePrefs.antiLeecherSoftReduceScore();
+    m_prevLevel = thePrefs.antiLeecherLevel();
 }
 
 void tst_Dlp::cleanupTestCase()
 {
     theApp.dlp = nullptr;
     thePrefs.setAntiLeecher(m_prevOn);
-    thePrefs.setAntiLeecherVariant(m_prevVariant);
-    thePrefs.setAntiLeecherSoftReduceScore(m_prevSoft);
+    thePrefs.setAntiLeecherLevel(m_prevLevel);
 }
 
 void tst_Dlp::init()
 {
     thePrefs.setAntiLeecher(true);
-    thePrefs.setAntiLeecherVariant(0);
-    thePrefs.setAntiLeecherSoftReduceScore(true);
+    thePrefs.setAntiLeecherLevel(0);
 }
 
 void tst_Dlp::loader_loadsTheLibrary()
@@ -142,9 +138,11 @@ void tst_Dlp::loader_variantFollowsPreference()
 {
     const QString name = QStringLiteral("nick [VeryCD]");
     QVERIFY(!m_dlp.checkUsernameSoft(name));
-    thePrefs.setAntiLeecherVariant(4);   // verycd-tag
+    thePrefs.setAntiLeecherLevel(1);     // strict keeps the lite rules
+    QVERIFY(!m_dlp.checkUsernameSoft(name));
+    thePrefs.setAntiLeecherLevel(2);     // strict + Chinese = verycd-tag
     QCOMPARE(m_dlp.checkUsernameSoft(name), std::optional<QString>(QStringLiteral("<SDC> verycd-tag")));
-    thePrefs.setAntiLeecherVariant(0);
+    thePrefs.setAntiLeecherLevel(0);
     QVERIFY(!m_dlp.checkUsernameSoft(name));
 }
 
@@ -168,7 +166,7 @@ void tst_Dlp::hello_softModStringReducesScore()
 
 void tst_Dlp::hello_softModStringBansWhenAsked()
 {
-    thePrefs.setAntiLeecherSoftReduceScore(false);
+    thePrefs.setAntiLeecherLevel(1);     // strict bans soft hits
     UpDownClient client;
     feedHello(client, buildHello(QStringLiteral("nick"), QStringLiteral("Community 1.0")));
     QCOMPARE(client.leecherCategory(), LeecherCategory::ModSoft);

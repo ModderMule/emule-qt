@@ -346,8 +346,7 @@ OptionsDialog::OptionsDialog(IpcClient* ipc, StatisticsPanel* statsPanel,
     connect(m_enableSearchResultFilterCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
     connect(m_ipFilterUpdateUrlEdit, &QLineEdit::textChanged, this, &OptionsDialog::markDirty);
     connect(m_antiLeecherCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
-    connect(m_antiLeecherVariantCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
-    connect(m_antiLeecherSoftCheck, &QCheckBox::toggled, this, &OptionsDialog::markDirty);
+    connect(m_antiLeecherLevelCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
 
     // Extended page
     connect(m_maxConPerFiveSpin, &QSpinBox::valueChanged, this, &OptionsDialog::markDirty);
@@ -2522,26 +2521,23 @@ QWidget* OptionsDialog::createSecurityPage()
     auto* leechRow = new QHBoxLayout;
     m_antiLeecherCheck = new QCheckBox(tr("Ban leechers with DLP rules:"), leechGroup);
     leechRow->addWidget(m_antiLeecherCheck);
-    m_antiLeecherVariantCombo = new QComboBox(leechGroup);
-    // Index = SDLP_VARIANT_* id
-    m_antiLeecherVariantCombo->addItems({tr("Lite"), tr("All VeryCD"), tr("easyMule"),
-                                         tr("VeryCD nickname"), tr("VeryCD tag")});
-    leechRow->addWidget(m_antiLeecherVariantCombo);
+    m_antiLeecherLevelCombo = new QComboBox(leechGroup);
+    // Index = antiLeecherLevel
+    m_antiLeecherLevelCombo->addItems({tr("Lite"), tr("Strict"), tr("Strict + Chinese")});
+    m_antiLeecherLevelCombo->setItemData(0, tr("Bans hard leechers, soft leechers only lose queue score"),
+                                         Qt::ToolTipRole);
+    m_antiLeecherLevelCombo->setItemData(1, tr("Bans hard and soft leechers"), Qt::ToolTipRole);
+    m_antiLeecherLevelCombo->setItemData(2, tr("Strict, and also bans VeryCD and easyMule mods"),
+                                         Qt::ToolTipRole);
+    leechRow->addWidget(m_antiLeecherLevelCombo);
     leechRow->addStretch();
     leechLayout->addLayout(leechRow);
-
-    m_antiLeecherSoftCheck = new QCheckBox(
-        tr("Only reduce the score of soft leechers instead of banning them"), leechGroup);
-    leechLayout->addWidget(m_antiLeecherSoftCheck);
 
     m_antiLeecherStatusLabel = new QLabel(leechGroup);
     m_antiLeecherStatusLabel->setEnabled(false);   // greyed, like MFC static info text
     leechLayout->addWidget(m_antiLeecherStatusLabel);
 
-    connect(m_antiLeecherCheck, &QCheckBox::toggled, this, [this](bool on) {
-        m_antiLeecherVariantCombo->setEnabled(on);
-        m_antiLeecherSoftCheck->setEnabled(on);
-    });
+    connect(m_antiLeecherCheck, &QCheckBox::toggled, m_antiLeecherLevelCombo, &QComboBox::setEnabled);
 
     layout->addWidget(leechGroup);
     layout->addStretch();
@@ -6598,10 +6594,8 @@ void OptionsDialog::saveSettings()
         req.append(m_enableSearchResultFilterCheck->isChecked());
         req.append(QStringLiteral("antiLeecher"));
         req.append(m_antiLeecherCheck->isChecked());
-        req.append(QStringLiteral("antiLeecherVariant"));
-        req.append(static_cast<qint64>(m_antiLeecherVariantCombo->currentIndex()));
-        req.append(QStringLiteral("antiLeecherSoftReduceScore"));
-        req.append(m_antiLeecherSoftCheck->isChecked());
+        req.append(QStringLiteral("antiLeecherLevel"));
+        req.append(static_cast<qint64>(m_antiLeecherLevelCombo->currentIndex()));
         req.append(QStringLiteral("ipFilterUpdateUrl"));
         req.append(urlPrefFieldValue(m_ipFilterUpdateUrlEdit,
                                      Preferences::kDefaultIpFilterUpdateUrl));
@@ -7071,8 +7065,7 @@ void OptionsDialog::saveSettings()
         thePrefs.setUseSecureIdent(m_useSecureIdentCheck->isChecked());
         thePrefs.setEnableSearchResultFilter(m_enableSearchResultFilterCheck->isChecked());
         thePrefs.setAntiLeecher(m_antiLeecherCheck->isChecked());
-        thePrefs.setAntiLeecherVariant(m_antiLeecherVariantCombo->currentIndex());
-        thePrefs.setAntiLeecherSoftReduceScore(m_antiLeecherSoftCheck->isChecked());
+        thePrefs.setAntiLeecherLevel(m_antiLeecherLevelCombo->currentIndex());
         thePrefs.setIpFilterUpdateUrl(urlPrefFieldValue(m_ipFilterUpdateUrlEdit,
                                                         Preferences::kDefaultIpFilterUpdateUrl));
         thePrefs.setGeoIpAccountId(m_geoIpAccountEdit->text().trimmed());
@@ -7358,11 +7351,9 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     {
         const bool on = prefs.value(QStringLiteral("antiLeecher")).toBool(true);
         m_antiLeecherCheck->setChecked(on);
-        m_antiLeecherVariantCombo->setCurrentIndex(
-            std::clamp(static_cast<int>(prefs.value(QStringLiteral("antiLeecherVariant")).toInteger()), 0, 4));
-        m_antiLeecherSoftCheck->setChecked(prefs.value(QStringLiteral("antiLeecherSoftReduceScore")).toBool(true));
-        m_antiLeecherVariantCombo->setEnabled(on);
-        m_antiLeecherSoftCheck->setEnabled(on);
+        m_antiLeecherLevelCombo->setCurrentIndex(
+            std::clamp(static_cast<int>(prefs.value(QStringLiteral("antiLeecherLevel")).toInteger()), 0, 2));
+        m_antiLeecherLevelCombo->setEnabled(on);
         const qint64 dlpVersion = prefs.value(QStringLiteral("antiLeecherDlpVersion")).toInteger();
         m_antiLeecherStatusLabel->setText(dlpVersion > 0
             ? tr("specialdlp loaded, DLP v%1").arg(dlpVersion)

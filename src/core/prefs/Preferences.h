@@ -1467,12 +1467,13 @@ public:
     /// specialdlp anti-leecher checks (eMule Xtreme DLP port).
     [[nodiscard]] bool antiLeecher() const;
     void setAntiLeecher(bool val);
-    /// specialdlp rule variant, SDLP_VARIANT_* (0 lite .. 4 verycd-tag).
+    /// Anti-leecher level: 0 lite, 1 strict, 2 strict + Chinese (VeryCD/easyMule).
+    [[nodiscard]] int antiLeecherLevel() const;
+    void setAntiLeecherLevel(int val);
+    /// specialdlp rule variant derived from the level, SDLP_VARIANT_*.
     [[nodiscard]] int antiLeecherVariant() const;
-    void setAntiLeecherVariant(int val);
-    /// Soft hits (mod/user soft, md4 tag) reduce the score instead of banning.
+    /// Soft hits (mod/user soft, md4 tag) reduce the score instead of banning; lite only.
     [[nodiscard]] bool antiLeecherSoftReduceScore() const;
-    void setAntiLeecherSoftReduceScore(bool val);
 
     // -- Shared file visibility -----------------------------------------------
 

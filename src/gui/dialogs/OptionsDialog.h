@@ -440,8 +440,7 @@ private:
     QCheckBox*    m_enableSearchResultFilterCheck = nullptr;
     QLineEdit*    m_ipFilterUpdateUrlEdit = nullptr;
     QCheckBox*    m_antiLeecherCheck = nullptr;
-    QComboBox*    m_antiLeecherVariantCombo = nullptr;
-    QCheckBox*    m_antiLeecherSoftCheck = nullptr;
+    QComboBox*    m_antiLeecherLevelCombo = nullptr;
     QLabel*       m_antiLeecherStatusLabel = nullptr;
 
     // Scheduler page controls
