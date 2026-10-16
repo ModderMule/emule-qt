@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(eMuleQt
-    VERSION 0.6.15
+    VERSION 0.6.16
     DESCRIPTION "eMule P2P file sharing client — Qt 6 port"
     LANGUAGES CXX
 )
