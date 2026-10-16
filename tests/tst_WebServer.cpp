@@ -4662,6 +4662,15 @@ void tst_WebServer::mcp_perRequestRevision()
     QCOMPARE(failure.value(QStringLiteral("data")).toObject().value(QStringLiteral("requested")).toString(),
              QStringLiteral("2025-06-18"));
     QVERIFY(failure.value(QStringLiteral("message")).toString().contains(QStringLiteral("2026-07-28")));
+    // Issue #21: the right revision in the handshake field is still refused, but told where it goes.
+    r = sendRaw(server->port(), "POST", QStringLiteral("/mcp"),
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2026-07-28\"}}",
+                "application/json", {{QByteArrayLiteral("X-Api-Key"), m_apiKey.toUtf8()}});
+    QCOMPARE(r.statusCode, 400);
+    failure = r.json.object().value(QStringLiteral("error")).toObject();
+    QCOMPARE(failure.value(QStringLiteral("code")).toInt(), -32022);
+    QVERIFY(failure.value(QStringLiteral("message")).toString()
+                .contains(QStringLiteral("io.modelcontextprotocol/protocolVersion")));
     r = sendRaw(server->port(), "POST", QStringLiteral("/mcp"),
                 "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}",
                 "application/json", {{QByteArrayLiteral("X-Api-Key"), m_apiKey.toUtf8()}});

@@ -495,9 +495,15 @@ QFuture<QJsonValue> WebServer::handleMcpMessage(const QJsonValue& message)
     if (!kMcpVersions.contains(version)) {
         const QString requested = version.isEmpty() ? params.value(L("protocolVersion")).toString()
                                                     : version;
-        QJsonObject failure = rpcError(id, kRpcUnsupportedVersion,
-            QStringLiteral("Unsupported protocol version: this server speaks MCP %1 only")
-                .arg(kMcpVersions.join(QStringLiteral(", "))));
+        QString text = QStringLiteral("Unsupported protocol version: this server speaks MCP %1 only")
+                           .arg(kMcpVersions.join(QStringLiteral(", ")));
+        // Handshake-era clients put the right revision in the wrong place (issue #21): say where.
+        if (version.isEmpty()) {
+            text += QStringLiteral(". There is no initialize handshake; name the revision in "
+                                   "params._meta[\"%1\"] on every request")
+                        .arg(kMetaVersionKey);
+        }
+        QJsonObject failure = rpcError(id, kRpcUnsupportedVersion, text);
         QJsonObject detail = failure.value(L("error")).toObject();
         detail.insert(QStringLiteral("data"), QJsonObject{
             {QStringLiteral("supported"), QJsonArray::fromStringList(kMcpVersions)},
