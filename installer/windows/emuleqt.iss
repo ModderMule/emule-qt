@@ -7,7 +7,7 @@
 ; Start Menu shortcut, import from eMule). The import itself is not done here:
 ; setup runs elevated and must not write a user's profile, so it only leaves a
 ; request file that the daemon carries out on its next start
-; (src/core/prefs/LegacyConfigImport). See docs/windows-installer.md.
+; (src/core/prefs/LegacyConfigImport).
 ;
 ; Saved as UTF-8 with BOM: the translated [CustomMessages] need it.
 

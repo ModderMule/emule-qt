@@ -217,6 +217,19 @@ jobs:
       geoip: true
       ref: ${{ needs.guard.outputs.tag }}
 
+  # Not in release's needs: a GHCR hiccup must not hold back the GitHub Release
+  docker:
+    name: Docker image
+    needs: [guard, geoip]
+    permissions:
+      contents: read
+      packages: write   # push to ghcr.io
+    uses: ./.github/workflows/docker.yml
+    with:
+      geoip: true
+      ref: ${{ needs.guard.outputs.tag }}
+      version: ${{ needs.guard.outputs.version }}
+
   release:
     name: Publish GitHub Release
     needs: [guard, linux, macos, macos-intel, windows]

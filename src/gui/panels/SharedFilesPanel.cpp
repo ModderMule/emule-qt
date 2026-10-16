@@ -486,8 +486,8 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
         }
     }
 
-    // Collection submenu
-    {
+    // Collection submenu — advanced mode only
+    if (thePrefs.showExtControls()) {
         const bool isColl = singleSel && single && single->isCollection;
         const bool hasAuthorKey = isColl && single->hasCollectionAuthorKey;
         const QString hash = hasSel ? hashes.constFirst() : QString{};
@@ -598,8 +598,8 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
     }
 
     // The link the IRC nick menu's "Send this to friend" offers (MFC Irc_SetSendLink,
-    // srchybrid/SharedFilesCtrl.cpp:787, :826-828)
-    {
+    // srchybrid/SharedFilesCtrl.cpp:787, :826-828). Advanced mode only, as in MFC (:1318).
+    if (thePrefs.showExtControls()) {
         const QString link = single ? single->ed2kLink : QString();
         auto* act = m_contextMenu->addAction(menuIcon("IRCClipboard.ico"), tr("Add To IRC Clipboard"),
                                              this, [this, link]() { emit ircSendLinkChosen(link); });
@@ -613,8 +613,9 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
         act->setEnabled(m_proxy->rowCount() > 0);
     }
 
-    // Web Services submenu — the macros describe one file (MFC greys it for a multi-selection)
-    {
+    // Web Services submenu — the macros describe one file (MFC greys it for a multi-selection).
+    // Advanced mode only.
+    if (thePrefs.showExtControls()) {
         auto* webMenu = m_contextMenu->addMenu(menuIcon("Web.ico"), tr("Web Services"));
         if (single) {
             WebServices::instance().populateFileMenu(webMenu, single->hash, single->fileName,

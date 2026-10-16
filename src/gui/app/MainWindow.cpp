@@ -69,6 +69,7 @@
 #include <QPointer>
 #include <QShortcut>
 #include <QSoundEffect>
+#include <QScrollArea>
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QStyle>
@@ -1475,6 +1476,7 @@ void MainWindow::onToolbarContextMenu(const QPoint& pos)
 
     // --- Skin Profiles submenu ---
     auto* profilesMenu = menu.addMenu(tr("Skin Profiles"));
+    profilesMenu->menuAction()->setVisible(thePrefs.showExtControls());   // advanced mode only
 
     profilesMenu->addAction(tr("Select Skin File..."), this, [this]() {
         const QString path = QFileDialog::getOpenFileName(
@@ -1658,6 +1660,8 @@ void MainWindow::setupStatusBar()
 
     m_statusMsg = new QLabel(tr("Ready"), this);
     m_statusMsg->installEventFilter(this);
+    // Clipped, as MFC's pane: sized to its text, a long log line widened the window
+    m_statusMsg->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     sb->addWidget(m_statusMsg, 1);
 
     // Users/Files indicator with green person icon (matching MFC status bar)
@@ -1748,23 +1752,27 @@ void MainWindow::setupStatusBar()
 void MainWindow::setupPages()
 {
     m_pages = new QStackedWidget(this);
+    // Each page sits in a scroll area (addPage()), so the pages' size hints no
+    // longer set the window minimum: with large fonts that outgrew small screens
+    // (bug report #7). A floor instead, MFC's dialog has none at all.
+    m_pages->setMinimumSize(400, 240);
     setCentralWidget(m_pages);
 
     // Tab 0: Kad
     m_kadPanel = new KadPanel(this);
-    m_pages->addWidget(m_kadPanel);
+    addPage(m_kadPanel);
 
     // Tab 1: Servers
     m_serverPanel = new ServerPanel(this);
-    m_pages->addWidget(m_serverPanel);
+    addPage(m_serverPanel);
 
     // Tab 2: Transfers
     m_transferPanel = new TransferPanel(this);
-    m_pages->addWidget(m_transferPanel);
+    addPage(m_transferPanel);
 
     // Tab 3: Search
     m_searchPanel = new SearchPanel(this);
-    m_pages->addWidget(m_searchPanel);
+    addPage(m_searchPanel);
 
     // Wire "Search Related Files" from TransferPanel → SearchPanel
     connect(m_transferPanel, &TransferPanel::searchRequested,
@@ -1780,7 +1788,7 @@ void MainWindow::setupPages()
 
     // Tab 4: Shared Files
     m_sharedFilesPanel = new SharedFilesPanel(this);
-    m_pages->addWidget(m_sharedFilesPanel);
+    addPage(m_sharedFilesPanel);
 
     // Wire "Search Author's Collections…" from SharedFilesPanel → SearchPanel
     connect(m_sharedFilesPanel, &SharedFilesPanel::searchRequested,
@@ -1792,7 +1800,7 @@ void MainWindow::setupPages()
 
     // Tab 5: Messages
     m_messagesPanel = new MessagesPanel(this);
-    m_pages->addWidget(m_messagesPanel);
+    addPage(m_messagesPanel);
 
     // "Send Message" in the client lists opens a chat session (MFC StartSession)
     connect(m_transferPanel, &TransferPanel::chatRequested,
@@ -1807,17 +1815,17 @@ void MainWindow::setupPages()
             m_sharedFilesPanel, &SharedFilesPanel::setIrcConnected);
     connect(m_sharedFilesPanel, &SharedFilesPanel::ircSendLinkChosen,
             m_ircPanel, &IrcPanel::setSendLink);
-    m_pages->addWidget(m_ircPanel);
+    addPage(m_ircPanel);
 
     // Tab 7: Statistics
     m_statsPanel = new StatisticsPanel(this);
     connect(m_statsPanel, &StatisticsPanel::graphOptionsRequested, this,
             [this] { showOptionsDialog(OptionsDialog::PageStatistics); });
-    m_pages->addWidget(m_statsPanel);
+    addPage(m_statsPanel);
 
     // Tab 8: Usenet
     m_usenetPanel = new UsenetPanel(this);
-    m_pages->addWidget(m_usenetPanel);
+    addPage(m_usenetPanel);
 
     // Reached from the Tools menu as well as the panel's own context menu, so
     // show the queue the URL is being added to. Connected here rather than in
@@ -2149,6 +2157,18 @@ QString MainWindow::coreLoadingText() const
     if (stage == QLatin1String("network"))
         return tr("The core is starting its networks…");
     return tr("The core is loading its files…");
+}
+
+void MainWindow::addPage(QWidget* page)
+{
+    // Resizes the page with the window down to its minimum size hint, scrolls below
+    // it: squeezed past that, Qt's layouts draw controls over each other
+    auto* scroll = new QScrollArea(m_pages);
+    scroll->setWidget(page);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->viewport()->setAutoFillBackground(false);
+    m_pages->addWidget(scroll);
 }
 
 } // namespace eMule

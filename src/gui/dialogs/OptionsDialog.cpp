@@ -995,6 +995,11 @@ QWidget* OptionsDialog::createDisplayPage()
     m_useOriginalIconsCheck = new QCheckBox(tr("Use original eMule icons"), page);
     layout->addWidget(m_useOriginalIconsCheck);
 
+    m_showExtControlsCheck = new QCheckBox(tr("Show more controls (advanced mode controls)"), page);
+    m_showExtControlsCheck->setToolTip(
+        tr("Shows advanced entries in context menus and extra details in lists."));
+    layout->addWidget(m_showExtControlsCheck);
+
     // --- Country flags (MorphXT IP2Country, GeoLite2 database) ---
     auto* geoGroup = new QGroupBox(tr("Country flags (IP2Country)"), page);
     auto* geoGrid = new QGridLayout(geoGroup);
@@ -5284,9 +5289,6 @@ QWidget* OptionsDialog::createExtendedPage()
     m_filterLANIPsCheck = new QCheckBox(tr("Filter server and client LAN IPs"), scrollWidget);
     scrollLayout->addWidget(m_filterLANIPsCheck);
 
-    m_showExtControlsCheck = new QCheckBox(tr("Show more controls (advanced mode controls)"), scrollWidget);
-    scrollLayout->addWidget(m_showExtControlsCheck);
-
     m_a4afSaveCpuCheck = new QCheckBox(tr("Disable A4AF checks to save CPU"), scrollWidget);
     scrollLayout->addWidget(m_a4afSaveCpuCheck);
 
@@ -6337,6 +6339,7 @@ void OptionsDialog::saveSettings()
     thePrefs.setDisableQueueList(m_disableQueueListCheck->isChecked());
     thePrefs.setUseAutoCompletion(m_useAutoCompletionCheck->isChecked());
     thePrefs.setUseOriginalIcons(m_useOriginalIconsCheck->isChecked());
+    thePrefs.setShowExtControls(m_showExtControlsCheck->isChecked());
     // Keep the GUI's copy of this view-flag current so the server panel's manual-order
     // display mode and Move Up/Down menu reflect the change immediately (#24).
     thePrefs.setUseUserSortedServerList(m_useUserSortedServerListCheck->isChecked());
@@ -6389,7 +6392,6 @@ void OptionsDialog::saveSettings()
     // Messages page (GUI-only)
     thePrefs.setShowSmileys(m_showSmileysCheck->isChecked());
     thePrefs.setIndicateRatings(m_indicateRatingsCheck->isChecked());
-    thePrefs.setShowExtControls(m_showExtControlsCheck->isChecked());
 
     // Statistics page — always save locally for immediate GUI effect
     thePrefs.setGraphsUpdateSec(static_cast<uint32>(m_statsGraphUpdateSlider->value()));
@@ -7477,7 +7479,7 @@ void OptionsDialog::fillDaemonSettings(const QCborMap& prefs)
     m_rememberUploadQueueCheck->setChecked(
         prefs.value(QStringLiteral("rememberUploadQueue")).toBool(true));
     m_filterLANIPsCheck->setChecked(prefs.value(QStringLiteral("filterLANIPs")).toBool(true));
-    m_showExtControlsCheck->setChecked(prefs.value(QStringLiteral("showExtControls")).toBool());
+    m_showExtControlsCheck->setChecked(prefs.value(QStringLiteral("showExtControls")).toBool(true));
     m_a4afSaveCpuCheck->setChecked(prefs.value(QStringLiteral("a4afSaveCpu")).toBool());
     m_disableArchPreviewCheck->setChecked(!prefs.value(QStringLiteral("autoArchivePreviewStart")).toBool(true));
     m_ed2kHostnameEdit->setText(prefs.value(QStringLiteral("ed2kHostname")).toString());

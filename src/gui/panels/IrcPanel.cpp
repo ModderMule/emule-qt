@@ -1316,13 +1316,16 @@ void IrcPanel::onNickContextMenu(const QPoint& pos)
     menu.addAction(tr("Send this to friend: ")
                        + (m_sendLink.isEmpty() ? tr("No Shared File Selected") : m_sendLink),
                    this, [this, nick] { sendLinkTo(nick); });
-    menu.addAction(tr("Kick"), this, [this, channel, nick] {
-        m_irc->sendRaw(QStringLiteral("KICK %1 %2").arg(channel, nick));
-    });
-    menu.addAction(tr("Ban"), this, [this, channel, nick] {
-        m_irc->sendRaw(QStringLiteral("MODE %1 +b %2").arg(channel, nick));
-    });
-    menu.addAction(tr("Slap"), this, [this, channel, nick] {
+    // Kick/Ban only work for channel operators: advanced mode only
+    if (thePrefs.showExtControls()) {
+        menu.addAction(tr("Kick"), this, [this, channel, nick] {
+            m_irc->sendRaw(QStringLiteral("KICK %1 %2").arg(channel, nick));
+        });
+        menu.addAction(tr("Ban"), this, [this, channel, nick] {
+            m_irc->sendRaw(QStringLiteral("MODE %1 +b %2").arg(channel, nick));
+        });
+    }
+    auto* slap = menu.addAction(tr("Slap"), this, [this, channel, nick] {
         // not translated: it goes to the channel
         const QString action = QStringLiteral("slaps %1 around with a large Babelfish!").arg(nick);
         m_irc->sendCtcp(channel, QStringLiteral("ACTION"), action);
@@ -1330,6 +1333,7 @@ void IrcPanel::onNickContextMenu(const QPoint& pos)
             + QStringLiteral(" <font color='#9C009C'>* %1 %2</font>")
                   .arg(m_irc->currentNick().toHtmlEscaped(), action.toHtmlEscaped()));
     });
+    slap->setVisible(thePrefs.showExtControls());   // advanced mode only
     menu.exec(m_nickListView->viewport()->mapToGlobal(pos));
 }
 

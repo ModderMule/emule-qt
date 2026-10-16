@@ -41,6 +41,7 @@
 #include <QLineEdit>
 #include <QLocale>
 #include <QMenu>
+#include <QScrollArea>
 #include <QUrl>
 #include <QSortFilterProxyModel>
 #include <QPushButton>
@@ -342,6 +343,8 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
     auto* prioMenu = m_serverMenu->addMenu(tr("Priority"));
     prioMenu->setIcon(ico("Priority.ico", QStyle::SP_ArrowRight));
     prioMenu->setEnabled(hasSelection);
+    // Advanced mode only
+    prioMenu->menuAction()->setVisible(thePrefs.showExtControls());
 
     auto* prioGroup = new QActionGroup(prioMenu);
     prioGroup->setExclusive(true);
@@ -794,7 +797,17 @@ QWidget* ServerPanel::createControlsPanel()
     m_infoLabel->setTextFormat(Qt::RichText);
     m_infoLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
     refreshMyInfo();
-    layout->addWidget(m_infoLabel, 1);
+    // Scrolls like MFC's My Info box: a bare wrapped label pins the window's
+    // minimum height to its full text
+    auto* infoScroll = new QScrollArea;
+    infoScroll->setWidget(m_infoLabel);
+    infoScroll->setWidgetResizable(true);
+    infoScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    infoScroll->setFrameShape(QFrame::NoFrame);
+    infoScroll->setMinimumHeight(40);
+    infoScroll->viewport()->setAutoFillBackground(false);
+    m_infoLabel->setAutoFillBackground(false);
+    layout->addWidget(infoScroll, 1);
 
     layout->addStretch();
 

@@ -13,3 +13,14 @@ docker/*/seed/
 docker/*/crashes/
 docker/*/netmon/
 docker/*/nodes.log
+
+# Local-only trees: not part of the build (libs/packmule is its own repo)
+libs/
+Testing/
+Usenet/
+dev/
+*.log
+# data/config is seeded, data/legacy is in the GUI resources; the rest is test data
+data/*
+!data/config/
+!data/legacy/

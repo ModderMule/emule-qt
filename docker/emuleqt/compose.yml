@@ -1,0 +1,35 @@
+# Example compose file for the official eMuleQt image — see docs/docker.md
+#
+#   docker compose -f docker/emuleqt/compose.yml up -d
+#
+# EMULEQT_* variables are applied on the first start only (empty ./config).
+services:
+  emuleqt:
+    image: ghcr.io/moddermule/emuleqt:latest
+    container_name: emuleqt
+    restart: unless-stopped
+    # The core saves part files on SIGTERM
+    stop_grace_period: 60s
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      EMULEQT_TCP_PORT: "4662"
+      EMULEQT_UDP_PORT: "4672"
+      EMULEQT_WEB_PASSWORD: "change-me"
+      # EMULEQT_IPC_TOKEN: "set-a-long-random-token"   # else generated, see `docker logs`
+      # EMULEQT_REST: "1"
+      # EMULEQT_MCP: "1"
+      # EMULEQT_API_KEY: "set-a-long-random-key"
+      # GUI in the browser on :5800
+      # EMULEQT_GUI: "1"
+      # EMULEQT_VNC_PASSWORD: "change-me"
+    volumes:
+      - ./config:/config
+      - ./data:/data
+    ports:
+      # P2P: container and host port must match, peers are told this port
+      - "4662:4662/tcp"
+      - "4672:4672/udp"
+      - "4711:4711/tcp"   # web UI, REST API, MCP
+      - "4712:4712/tcp"   # GUI IPC (token required)
+      # - "5800:5800/tcp" # GUI via noVNC (EMULEQT_GUI=1)

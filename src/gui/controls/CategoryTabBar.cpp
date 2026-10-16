@@ -12,6 +12,8 @@
 #include "dialogs/CategoryDialog.h"
 #include "utils/PreviewLauncher.h"
 
+#include <algorithm>
+
 #include <QCborArray>
 #include <QCborMap>
 #include <QColor>
@@ -266,12 +268,18 @@ void CategoryTabBar::addViewFilterMenu(QMenu* menu, int index)
         everyFile->setCheckable(true);
         everyFile->setChecked(cat.care4all);
     }
+    // The rarer filters are advanced mode only, unless the tab already uses one
+    const auto addFilterMode = [&](int mode) {
+        static constexpr int kRare[] = {Erroneous, SeenComplete, CDImage, Program, Collection};
+        if (ext || cat.filter == mode || !std::ranges::contains(kRare, mode))
+            addMode(mode);
+    };
     filterMenu->addSeparator();
     for (const int mode : {Incomplete, Completed, Waiting, Downloading, Erroneous, Paused, SeenComplete})
-        addMode(mode);
+        addFilterMode(mode);
     filterMenu->addSeparator();
     for (const int mode : {Video, Audio, Archive, CDImage, Document, Picture, Program, Collection})
-        addMode(mode);
+        addFilterMode(mode);
 
     if (ext) {
         filterMenu->addSeparator();

@@ -292,8 +292,7 @@ After the bundle is verified, `scripts\installer-win.ps1 -InstallInno` compiles
 result: silent install, check of the installed files, shortcuts and the per-user mode file, an
 upgrade with a faked eMule configuration (the import request must appear, and disappear again
 when declined), silent uninstall with nothing left behind. It is uploaded as its own artifact,
-`eMuleQt-v<version>-win64-setup`, which `release.yml` publishes next to the zip. What setup does
-is described in [windows-installer.md](windows-installer.md).
+`eMuleQt-v<version>-win64-setup`, which `release.yml` publishes next to the zip.
 
 ### Bundle verification
 

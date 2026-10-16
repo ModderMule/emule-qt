@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# bundle-linux.sh — package eMule Qt for Linux x86_64
+# bundle-linux.sh — package eMule Qt for Linux (x86_64 or aarch64)
 #
 # Creates a tarball with binaries, config data, and translation files.
 # Optionally bundles Qt libraries via linuxdeploy for a self-contained
@@ -13,7 +13,7 @@
 #   build-dir   Path to the CMake build directory (default: ./build)
 #
 # Output:
-#   eMuleQt-vX.Y.Z-linux-x86_64.tar.gz containing:
+#   eMuleQt-vX.Y.Z-linux-<arch>.tar.gz containing (arch = uname -m):
 #     eMuleQt/
 #       emuleqt          GUI executable
 #       emulecored       daemon executable
@@ -42,6 +42,13 @@ done
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="$(cd "${BUILD_DIR:-build}" 2>/dev/null && pwd || echo "$REPO_ROOT/build")"
 VERSION=$(grep -m1 '^ *VERSION [0-9]' "$REPO_ROOT/CMakeLists.txt" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+# Host arch: x86_64 or aarch64 (Docker arm64 image); names the tarball and linuxdeploy
+ARCH="$(uname -m)"
+case "$ARCH" in
+    x86_64)  LD_SONAME="ld-linux-x86-64.so.2" ;;
+    aarch64) LD_SONAME="ld-linux-aarch64.so.1" ;;
+    *) echo "Error: unsupported arch $ARCH" >&2; exit 1 ;;
+esac
 
 GUI_BIN="$BUILD_DIR/src/gui/emuleqt"
 DAEMON_BIN="$BUILD_DIR/src/daemon/emulecored"
@@ -111,21 +118,21 @@ if [ "$DEPLOY_QT" = true ]; then
     TOOLS_DIR="$BUILD_DIR/tools"
     mkdir -p "$TOOLS_DIR"
 
-    LINUXDEPLOY="$TOOLS_DIR/linuxdeploy-x86_64.AppImage"
-    LINUXDEPLOY_QT="$TOOLS_DIR/linuxdeploy-plugin-qt-x86_64.AppImage"
+    LINUXDEPLOY="$TOOLS_DIR/linuxdeploy-$ARCH.AppImage"
+    LINUXDEPLOY_QT="$TOOLS_DIR/linuxdeploy-plugin-qt-$ARCH.AppImage"
 
     # Download linuxdeploy if not cached
     if [ ! -x "$LINUXDEPLOY" ]; then
         echo "  Downloading linuxdeploy..."
         curl -fsSL -o "$LINUXDEPLOY" \
-            "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+            "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-$ARCH.AppImage"
         chmod +x "$LINUXDEPLOY"
     fi
 
     if [ ! -x "$LINUXDEPLOY_QT" ]; then
         echo "  Downloading linuxdeploy-plugin-qt..."
         curl -fsSL -o "$LINUXDEPLOY_QT" \
-            "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
+            "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-$ARCH.AppImage"
         chmod +x "$LINUXDEPLOY_QT"
     fi
 
@@ -385,7 +392,7 @@ cp "$REPO_ROOT/docs/openapi.json" "$REPO_ROOT/docs/rest-api.md" "$DOC_DST/"
 
 echo ""
 echo "=== Auditing direct dependencies ==="
-BASE_SONAMES=" libc.so.6 libm.so.6 libstdc++.so.6 libgcc_s.so.1 ld-linux-x86-64.so.2 \
+BASE_SONAMES=" libc.so.6 libm.so.6 libstdc++.so.6 libgcc_s.so.1 $LD_SONAME \
 libpthread.so.0 libdl.so.2 librt.so.1 libGL.so.1 libEGL.so.1 "
 UNBUNDLED=0
 for bin in "$STAGE_DIR/emuleqt.bin" "$STAGE_DIR/emulecored.bin" "$STAGE_DIR/emuleqt-mcp.bin"; do
@@ -420,7 +427,7 @@ done
 
 # -- Create tarball ----------------------------------------------------------
 
-TAR_NAME="eMuleQt-v${VERSION}-linux-x86_64.tar.gz"
+TAR_NAME="eMuleQt-v${VERSION}-linux-${ARCH}.tar.gz"
 TAR_PATH="$BUILD_DIR/$TAR_NAME"
 
 echo ""

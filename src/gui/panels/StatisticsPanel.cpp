@@ -1773,7 +1773,9 @@ QMenu* StatisticsPanel::buildStatsMenu()
     restore->setEnabled(m_backupAvailable);
     menu->addSeparator();
 
-    menu->addAction(tr("Expand Main Sections"), this, &StatisticsPanel::expandMainSections);
+    // Advanced mode only
+    if (thePrefs.showExtControls())
+        menu->addAction(tr("Expand Main Sections"), this, &StatisticsPanel::expandMainSections);
     menu->addAction(tr("Expand All Sections"), this, [this]() {
         m_tree->expandAll();
     });
@@ -1785,9 +1787,11 @@ QMenu* StatisticsPanel::buildStatsMenu()
     menu->addAction(tr("Copy Branch"), this, &StatisticsPanel::copyBranch);
     menu->addAction(tr("Copy All Visible"), this, &StatisticsPanel::copyAllVisible);
     menu->addAction(tr("Copy All Statistics"), this, &StatisticsPanel::copyAllStats);
+    if (!thePrefs.showExtControls())
+        return menu;
     menu->addSeparator();
 
-    // MFC's "HTML Features" submenu (srchybrid/StatisticsTree.cpp:144-151)
+    // MFC's "HTML Features" submenu (srchybrid/StatisticsTree.cpp:144-151), advanced mode only
     QMenu* html = menu->addMenu(QIcon(QStringLiteral(":/icons/Web.ico")), tr("HTML Features"));
     html->addAction(tr("Copy Branch"), this, [this] { copyHtml(true, true); });
     html->addAction(tr("Copy All Visible"), this, [this] { copyHtml(true, false); });

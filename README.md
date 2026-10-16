@@ -79,6 +79,8 @@ Optionally run the daemon standalone for headless/server use — the GUI can con
 build/emulecored
 ```
 
+Docker: `ghcr.io/moddermule/emuleqt` runs the core, with the GUI in the browser as an option. See [docs/docker.md](docs/docker.md).
+
 To create a distributable app bundle, use the platform-specific scripts: `scripts/bundle-macos.sh`, `scripts/bundle-linux.sh`, or `scripts/bundle-win.ps1`.
 
 ## Architecture

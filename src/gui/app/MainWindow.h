@@ -271,6 +271,7 @@ private:
     void applySkinProfile(const QString& path);
     void setupStatusBar();
     void setupPages();
+    void addPage(QWidget* page);
     void updateConnectButton();
 
     /// Redraw the tray icon: connection-state base plus MFC's download-rate meter bar.

@@ -77,6 +77,14 @@ using namespace Ipc;
 
 namespace {
 
+/// Any row with this fixed (non-auto) download priority — keeps a hidden menu entry visible
+bool anyHasPrio(const std::vector<const DownloadRow*>& rows, QStringView prio)
+{
+    return std::ranges::any_of(rows, [prio](const DownloadRow* d) {
+        return !d->isAutoDownPriority && d->priority == prio;
+    });
+}
+
 /// Parse a CBOR map into a ClientRow — shared by uploads, download clients, known clients.
 ClientRow parseClient(const QCborMap& m)
 {
@@ -381,8 +389,11 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
         addPrioAction(tr("Normal"), PrNormal);
         addPrioAction(tr("High"),   PrHigh);
         prioMenu->addSeparator();
-        addPrioAction(tr("Very Low"),  PrVeryLow);
-        addPrioAction(tr("Very High"), PrVeryHigh);
+        // Very Low/High are not in MFC's menu: advanced mode, or while a file has one
+        if (thePrefs.showExtControls() || anyHasPrio(selectedDls, u"veryLow"))
+            addPrioAction(tr("Very Low"),  PrVeryLow);
+        if (thePrefs.showExtControls() || anyHasPrio(selectedDls, u"veryHigh"))
+            addPrioAction(tr("Very High"), PrVeryHigh);
         prioMenu->addSeparator();
         auto* autoAct = prioMenu->addAction(tr("Auto"), this, [this, allHashes]() {
             sendSetPriorityBatch(allHashes, PrNormal, true);
@@ -582,9 +593,9 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
     // -- 7. Find / Search Related --
     connect(m_downloadMenu->addAction(menuIcon("Search.ico"), tr("Find...")),
             &QAction::triggered, this, &TransferPanel::showFindDialog);
-    // Always there, for the whole selection; greyed unless the server answers it
-    // (MFC DownloadListCtrl.cpp:1020, SearchResultsWnd.cpp:1658-1692).
-    {
+    // Always there in advanced mode, for the whole selection; greyed unless the server
+    // answers it (MFC DownloadListCtrl.cpp:1020, SearchResultsWnd.cpp:1658-1692).
+    if (thePrefs.showExtControls()) {
         QStringList names;
         for (const DownloadRow* d : selectedDls)
             names << d->fileName;
@@ -595,7 +606,8 @@ void TransferPanel::onDownloadContextMenu(const QPoint& pos)
     }
     // Web Services submenu — external file lookup links from webservices.dat. Shown
     // greyed without exactly one file: less confusing than an entry that comes and goes.
-    {
+    // Advanced mode only.
+    if (thePrefs.showExtControls()) {
         auto* webMenu = m_downloadMenu->addMenu(menuIcon("Web.ico"), tr("Web Services"));
         if (singleSel && dl)
             WebServices::instance().populateFileMenu(webMenu, dl->hash, dl->fileName,
@@ -2315,9 +2327,12 @@ void TransferPanel::populateCategoryMenu(QMenu* menu, int index)
             sendCategoryStatus(index, Ipc::CategoryAction::Cancel);
         }
     });
-    menu->addAction(tr("Resume next file"), this, [this, index] {
-        sendCategoryStatus(index, Ipc::CategoryAction::ResumeNext);
-    });
+    // Advanced mode only
+    if (thePrefs.showExtControls()) {
+        menu->addAction(tr("Resume next file"), this, [this, index] {
+            sendCategoryStatus(index, Ipc::CategoryAction::ResumeNext);
+        });
+    }
 
     // MFC MP_DOWNLOAD_ALPHABETICAL: advanced mode, never for "All"
     if (!isAll && index < categories.size() && thePrefs.showExtControls()) {
@@ -2449,8 +2464,11 @@ void TransferPanel::showPriorityMenu()
     addPrioAction(tr("Normal"), PrNormal);
     addPrioAction(tr("High"),   PrHigh);
     menu.addSeparator();
-    addPrioAction(tr("Very Low"),  PrVeryLow);
-    addPrioAction(tr("Very High"), PrVeryHigh);
+    // Very Low/High: advanced mode, or while a file has one
+    if (thePrefs.showExtControls() || anyHasPrio(selectedDls, u"veryLow"))
+        addPrioAction(tr("Very Low"),  PrVeryLow);
+    if (thePrefs.showExtControls() || anyHasPrio(selectedDls, u"veryHigh"))
+        addPrioAction(tr("Very High"), PrVeryHigh);
     menu.addSeparator();
     {
         auto* autoAct = menu.addAction(tr("Auto"), this, [this, hashes]() {
@@ -2659,7 +2677,8 @@ void TransferPanel::addBootstrapAction(QMenu& menu, const QString& addr, int kad
 {
     // MFC offers it only while Kad runs without a connection, for a client that speaks
     // a Kad we can bootstrap from (srchybrid/UploadListCtrl.cpp:390-391).
-    if (!m_kadRunning || m_kadConnected)
+    // Advanced mode only
+    if (!m_kadRunning || m_kadConnected || !thePrefs.showExtControls())
         return;
     auto* act = menu.addAction(tr("Bootstrap"));
     act->setEnabled(!addr.isEmpty() && kadPort != 0 && kadVersion >= KADEMLIA_VERSION2_47a);

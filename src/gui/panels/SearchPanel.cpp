@@ -394,16 +394,21 @@ QWidget* SearchPanel::createSearchBar()
     });
     typeRow->addWidget(m_resetBtn);
 
+    typeRow->addStretch();
+    grid->addLayout(typeRow, 1, 0);
+
     // What the server found on other networks. The protocol cannot leave them
-    // out of an answer, so these hide rows. Beside Reset, not in the filter
-    // area: that one scrolls and would bury them.
+    // out of an answer, so these hide rows. Own row under Reset, not in the filter
+    // area: that one scrolls and would bury them. Not beside Reset either: that
+    // row set the main window's minimum width.
+    auto* networkRow = new QHBoxLayout;
+    networkRow->setSpacing(8);
     const auto addNetworkCheck = [&](const QString& text, const QString& icon, bool on) {
         auto* check = new QCheckBox(text, container);
         check->setIcon(QIcon(icon));
         check->setChecked(on);
         check->setToolTip(tr("Show results the server found on this network"));
-        typeRow->addSpacing(8);
-        typeRow->addWidget(check);
+        networkRow->addWidget(check);
         connect(check, &QCheckBox::toggled, this, &SearchPanel::onNetworkFilterChanged);
         return check;
     };
@@ -413,10 +418,10 @@ QWidget* SearchPanel::createSearchBar()
                                      theUiState.searchShowKad());
     m_showTorrentCheck = addNetworkCheck(tr("Torrent results"), QStringLiteral(":/icons/Torrent.ico"),
                                          theUiState.searchShowTorrent());
-    typeRow->addStretch();
-    grid->addLayout(typeRow, 1, 0);
+    networkRow->addStretch();
+    grid->addLayout(networkRow, 2, 0);
 
-    // Column 1: Scrollable filter area spanning both rows
+    // Column 1: Scrollable filter area spanning all rows
     m_filterWidget = new QWidget(container);
     auto* filterLayout = new QGridLayout(m_filterWidget);
     filterLayout->setContentsMargins(0, 0, 0, 0);
@@ -515,12 +520,12 @@ QWidget* SearchPanel::createSearchBar()
     connect(m_cancelBtn, &QPushButton::clicked, this, &SearchPanel::onCancelSearch);
     buttonCol->addWidget(m_cancelBtn);
     buttonCol->addStretch();
-    grid->addLayout(buttonCol, 0, 1, 2, 1);
+    grid->addLayout(buttonCol, 0, 1, 3, 1);
 
-    // Column 2: Scrollable filter area spanning both rows
-    grid->addWidget(filterScroll, 0, 2, 2, 1);
+    // Column 2: Scrollable filter area spanning all rows
+    grid->addWidget(filterScroll, 0, 2, 3, 1);
 
-    // Row 2: global-search progress, across the whole bar. A paced sweep takes
+    // Row 3: global-search progress, across the whole bar. A paced sweep takes
     // servers × 750ms, so without this the search looks stalled. Hidden unless the
     // tab on screen is the one sweeping. MFC has the same bar at the bottom of its
     // search parameters window.
@@ -528,7 +533,7 @@ QWidget* SearchPanel::createSearchBar()
     m_sweepProgress->setTextVisible(true);
     m_sweepProgress->setMaximumHeight(14);
     m_sweepProgress->setVisible(false);
-    grid->addWidget(m_sweepProgress, 2, 0, 1, 3);
+    grid->addWidget(m_sweepProgress, 3, 0, 1, 3);
 
     // Left column stretches, buttons+filters are fixed width
     grid->setColumnStretch(0, 1);
@@ -1077,9 +1082,12 @@ void SearchPanel::onTabContextMenu(const QPoint& pos)
         return;
 
     QMenu menu(this);
-    auto* restoreAct = menu.addAction(tr("Restore Search Parameters"), this,
-                                      [this, index] { onTabDoubleClicked(index); });
-    setMenuDefaultAction(&menu, restoreAct);
+    // Advanced mode only; a double-click on the tab does the same
+    if (thePrefs.showExtControls()) {
+        auto* restoreAct = menu.addAction(tr("Restore Search Parameters"), this,
+                                          [this, index] { onTabDoubleClicked(index); });
+        setMenuDefaultAction(&menu, restoreAct);
+    }
     menu.addAction(tr("Close"), this, [this, index] { closeSearch(index); });
     menu.exec(m_tabBar->mapToGlobal(pos));
 }
@@ -1324,6 +1332,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // Copy eD2K Links (HTML)
     auto* copyHtmlAction = m_contextMenu->addAction(menuIcon("Copy.ico"), tr("Copy eD2K Links (HTML)"));
     copyHtmlAction->setEnabled(hasSelection && anyEd2k);
+    copyHtmlAction->setVisible(thePrefs.showExtControls());   // advanced mode only
     connect(copyHtmlAction, &QAction::triggered, this, [this] {
         QStringList links;
         for (const auto& i : m_resultView->selectionModel()->selectedRows()) {
@@ -1444,6 +1453,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     // Without a server that answers it, one file can still be searched by name
     relatedAction->setEnabled(hasSelection && anyEd2k
                               && (m_relatedSearchSupported || (singleSel && !singleMeta)));
+    relatedAction->setVisible(thePrefs.showExtControls());    // advanced mode only
     connect(relatedAction, &QAction::triggered, this, [this, singleName] {
         if (!m_relatedSearchSupported) {
             const qsizetype dotIdx = singleName.lastIndexOf(QLatin1Char('.'));
@@ -1469,6 +1479,7 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
         WebServices::instance().populateFileMenu(webMenu, singleHash, singleName,
                                                  static_cast<uint64_t>(singleSize));
     webMenu->setEnabled(!webMenu->isEmpty());
+    webMenu->menuAction()->setVisible(thePrefs.showExtControls());   // advanced mode only
 
     m_contextMenu->popup(m_resultView->viewport()->mapToGlobal(pos));
 }
