@@ -20,6 +20,7 @@
 #include "kademlia/KadFirewallTester.h"
 #include "utils/ByteOrder.h"
 #include "utils/OtherFunctions.h"
+#include "utils/TimeUtils.h"
 
 #include <QScopeGuard>
 #include <QSignalSpy>
@@ -74,6 +75,8 @@ private slots:
     void requestTCP_reusesTheClientAndRefusesRepeats();
     void processKadList_releasesAStaleIncomingBuddy();
     void setBuddy_lossRearmsTheSearchWhileUdpIsUnverified();
+    void infoPackets_neverReplaceAConnectedBuddy();
+    void buddyPing_firstDueAfterTenMinutes();
     void incomingBuddy_pendingClaimsAreBounded();
     void callbackPacket_onlyFromBuddyToAVettedTarget();
     void relayBudget_callbackBucketPerRelayIP();
@@ -394,6 +397,36 @@ void tst_ClientList::setBuddy_lossRearmsTheSearchWhileUdpIsUnverified()
     (void)kadFixture.kadPrefs().findBuddy();          // clear the one-shot flag
     list.setBuddy(nullptr, BuddyStatus::None);
     QVERIFY(kadFixture.kadPrefs().findBuddy());
+}
+
+// MFC sets the buddy only in ProcessKadList, and only while none is connected.
+void tst_ClientList::infoPackets_neverReplaceAConnectedBuddy()
+{
+    ClientList list;
+    theApp.clientList = &list;
+    auto guard = qScopeGuard([] { theApp.clientList = nullptr; });
+
+    UpDownClient first;
+    UpDownClient second;
+    list.setBuddy(&first, BuddyStatus::Connected);
+    second.setKadState(KadState::ConnectedBuddy);
+    second.onInfoPacketsReceived();
+    QCOMPARE(list.getBuddy(), &first);
+
+    list.setBuddy(nullptr, BuddyStatus::None);
+    second.onInfoPacketsReceived();
+    QCOMPARE(list.getBuddy(), &second);
+    list.setBuddy(nullptr, BuddyStatus::None);
+}
+
+// MFC BaseClient.cpp:166: a new client pings after 10 min and takes a ping after 13.
+void tst_ClientList::buddyPing_firstDueAfterTenMinutes()
+{
+    UpDownClient client;
+    QVERIFY(!client.sendBuddyPingPong());
+    QVERIFY(!client.allowIncomingBuddyPingPong());
+    client.setNextBuddyPingPongTime(getTickCount());
+    QVERIFY(client.sendBuddyPingPong());
 }
 
 void tst_ClientList::processKadList_releasesAStaleIncomingBuddy()

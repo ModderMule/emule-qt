@@ -170,17 +170,58 @@ neighbourhood changes. That is the case the random target removes.
    connected or the node is no longer firewalled.
 3. **Retry every 10 minutes** instead of 20.
 4. **Up to 20 requests per search** instead of about 10 (`kSearchFindBuddyRequests`).
+5. **Nodes that offered are remembered** across restarts (see below).
 
 Code: `Kademlia::buddySearchTarget()` and step 6 of `Kademlia::process()`
 (`src/core/kademlia/Kademlia.cpp`), FindBuddy case of `Search::storePacket()`
 (`src/core/kademlia/KadSearch.cpp`).
 
-All four are deliberate departures from stock eMule. The extra load on the network is small:
+All five are deliberate departures from stock eMule. The extra load on the network is small:
 at most 20 small UDP packets every 10 minutes, and only while the node is firewalled and
 without a buddy.
 
 Even so, a buddy remains a matter of hours. A firewalled node with a public IPv6 address
 therefore publishes to Kad without a buddy (see `ipv6-spec.md`).
+
+### Remembered buddies
+
+Every restart used to forget which nodes had offered. The first search after a start then
+asked the same `~KadID` neighbours that had already refused. Now a node that answers
+`KADEMLIA_FINDBUDDY_RES` is stored in `<ConfigDir>/kadbuddies.dat`:
+
+- **Stored:** IP, Kad UDP port, TCP port, user hash, Kad ID (when the routing table knows it),
+  connect options, and when it last offered, was asked, and connected.
+- **Limit:** 16 nodes; a new offer replaces the oldest one.
+- **Asked:** at the start of each buddy search, up to 5 stored nodes get a
+  `KADEMLIA_FINDBUDDY_REQ` sent straight to them, newest offer first. A node is not asked
+  again within 30 minutes. The request is the same packet the search sends and is
+  out-tracked the same way, so the answer goes through the normal path.
+- **Dropped:** after one ask with no offer within 3 minutes, or 14 days after its last offer.
+
+Code: `kad::BuddyStore` (`src/core/kademlia/KadBuddyStore.{h,cpp}`),
+`Kademlia::askRememberedBuddies()`, `KademliaUDPListener::sendFindBuddyReq()`.
+
+### Log lines
+
+With Kad logging on, `emulecored_Kad.log` shows the buddy's state:
+
+| Line | Meaning |
+|---|---|
+| `Kad: dialling buddy candidate …` | an offer is being connected |
+| `Kad: buddy set — ip:tcp (UDP p) 'name' version` | we have a buddy |
+| `Kad: buddy lost — …, held N s` | it went away |
+| `Kad: buddy candidate … failed` | the dial or handshake failed |
+| `Kad: buddy link … closed (reason) after N s` | socket closed; the reason tells who closed it |
+| `Kad: BUDDYPING → ip`, `Kad: BUDDYPONG from ip` | the 10-minute keep-alive |
+| `Kad: serving buddy …`, `Kad: stop serving buddy … — reason` | an open node's served buddies |
+| `Kad: remembered buddy offer from …`, `Kad: asking N remembered buddies`, `Kad: forgetting buddy …` | `kadbuddies.dat` |
+
+### Keep-alive timing
+
+As in stock eMule (`BaseClient.cpp:166`), a new client sends its first `OP_BUDDYPING` 10
+minutes after it is created, and accepts one only 13 minutes after. Before this was fixed,
+eMuleQt pinged as soon as the buddy connected, and a stock buddy ignored that ping. The
+link survives without the ping either way: a buddy socket times out after 40 s + 15 min.
 
 ## An open eMuleQt node serves several buddies
 

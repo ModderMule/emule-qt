@@ -401,6 +401,24 @@ void KademliaUDPListener::sendPacket(const uint8* data, uint32 len, uint8 opcode
                destIP, destPort, targetKey, cryptTargetID);
 }
 
+void KademliaUDPListener::sendFindBuddyReq(uint32 ip, uint16 udpPort, const KadUDPKey& targetKey,
+                                           const UInt128* cryptTargetID)
+{
+    auto* prefs = Kademlia::getInstancePrefs();
+    if (!prefs)
+        return;
+
+    SafeMemFile packet;
+    // BuddyID = ~kadID — echoed back and checked in FINDBUDDY_RES.
+    UInt128 buddyID(true);
+    buddyID.xorWith(prefs->kadId());
+    io::writeUInt128(packet, buddyID);
+    // Our client hash so the remote can do a callback, our TCP port so it can connect
+    io::writeUInt128(packet, prefs->clientHash());
+    packet.writeUInt16(theApp.advertisedTcpPort());
+    sendPacket(packet, KADEMLIA_FINDBUDDY_REQ, ip, udpPort, targetKey, cryptTargetID);
+}
+
 void KademliaUDPListener::sendPacket(SafeMemFile& data, uint8 opcode, uint32 destIP,
                                       uint16 destPort, const KadUDPKey& targetKey,
                                       const UInt128* cryptTargetID)
@@ -1944,6 +1962,20 @@ void KademliaUDPListener::process_KADEMLIA_FINDBUDDY_RES(const uint8* data, uint
 
     logKad(QStringLiteral("Kad: FINDBUDDY_RES from %1:%2 — requesting buddy connection")
                .arg(ipToString(ip)).arg(udpPort));
+
+    // Not MFC: remember the node to ask it first next time (KadBuddyStore.h).
+    if (auto* store = Kademlia::buddyStore()) {
+        BuddyStore::Entry offer;
+        offer.ip = ip;
+        offer.udpPort = udpPort;
+        offer.tcpPort = tcpPort;
+        std::copy_n(clientIDBytes, offer.userHash.size(), offer.userHash.begin());
+        if (auto* zone = Kademlia::getInstanceRoutingZone())
+            if (const Contact* contact = zone->getContact(ip, udpPort, false))
+                offer.kadId = contact->getClientID();
+        offer.connectOptions = connectOptions;
+        store->noteOffer(offer, time(nullptr));
+    }
 }
 
 void KademliaUDPListener::process_KADEMLIA_CALLBACK_REQ(const uint8* data, uint32 len,

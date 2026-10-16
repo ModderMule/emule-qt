@@ -155,8 +155,8 @@ LogWidget::LogWidget(QWidget* parent)
     });
 
     // Initial info message
-    appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v%1 ready</font>")
-                  .arg(QString(kAppVersion)));
+    appendLog(QStringLiteral("<font color='%1'>eMule Qt v%2 ready</font>")
+                  .arg(roleColorName(TextRole::Info), QString(kAppVersion)));
     writeServerInfoBanner();
     // The start-up lines are not "new activity" — don't highlight tabs for them.
     clearHighlights();
@@ -178,9 +178,9 @@ void LogWidget::appendServerInfo(const QString& text, ServerMsgType type)
     // still gets a <span>, see below.
     QString open;
     switch (type) {
-    case ServerMsgType::Success: open = QStringLiteral("<span style='color:#0000FF'>"); break;
-    case ServerMsgType::Error:   open = QStringLiteral("<span style='color:#FF0000;font-weight:bold'>"); break;
-    case ServerMsgType::Warning: open = QStringLiteral("<span style='color:#800080'>"); break;
+    case ServerMsgType::Success: open = QStringLiteral("<span style='color:%1'>").arg(roleColorName(TextRole::Success)); break;
+    case ServerMsgType::Error:   open = QStringLiteral("<span style='color:%1;font-weight:bold'>").arg(roleColorName(TextRole::Error)); break;
+    case ServerMsgType::Warning: open = QStringLiteral("<span style='color:%1'>").arg(roleColorName(TextRole::Warning)); break;
     case ServerMsgType::Info:    open = QStringLiteral("<span>"); break;
     }
 
@@ -341,7 +341,8 @@ void LogWidget::trimToLimit(QTextBrowser* browser)
 void LogWidget::appendIpcMessage(const QString& msg, bool outgoing)
 {
     if (!m_ipcLogBrowser) return;
-    const QString color = outgoing ? QStringLiteral("#228B22") : QStringLiteral("#9933CC");
+    const QString color = outgoing ? themed(QColor(0x22, 0x8B, 0x22), QColor(0x5B, 0xC8, 0x5B)).name()
+                                   : themed(QColor(0x99, 0x33, 0xCC), QColor(0xD0, 0x8C, 0xFF)).name();
     const QString arrow = outgoing ? QStringLiteral("→") : QStringLiteral("←");
     const QString ts = QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss"));
     m_ipcLogBrowser->append(
@@ -376,8 +377,8 @@ void LogWidget::clearAll()
     m_verboseSeqIds.clear();
     m_kadSeqIds.clear();
     m_usenetSeqIds.clear();
-    appendLog(QStringLiteral("<font color='#3399FF'>eMule Qt v%1 ready</font>")
-                  .arg(QString(kAppVersion)));
+    appendLog(QStringLiteral("<font color='%1'>eMule Qt v%2 ready</font>")
+                  .arg(roleColorName(TextRole::Info), QString(kAppVersion)));
     clearHighlights();
     // The reference's Reset leaves the Server Info pane empty — the startup banner
     // is not re-written (srchybrid/ServerWnd.cpp:539).
@@ -438,15 +439,18 @@ void LogWidget::messageHandler(QtMsgType type, const QMessageLogContext& context
     QString colored;
     switch (type) {
     case QtWarningMsg:
-        colored = QStringLiteral("<font color='#CC6600'>%1</font>").arg(msg.toHtmlEscaped());
+        colored = QStringLiteral("<font color='%1'>%2</font>")
+                      .arg(roleColorName(TextRole::Caution), msg.toHtmlEscaped());
         break;
     case QtCriticalMsg:
     case QtFatalMsg:
-        colored = QStringLiteral("<font color='red'><b>%1</b></font>").arg(msg.toHtmlEscaped());
+        colored = QStringLiteral("<font color='%1'><b>%2</b></font>")
+                      .arg(roleColorName(TextRole::Error), msg.toHtmlEscaped());
         break;
     case QtInfoMsg:
     default:
-        colored = QStringLiteral("<font color='#3399FF'>%1</font>").arg(msg.toHtmlEscaped());
+        colored = QStringLiteral("<font color='%1'>%2</font>")
+                      .arg(roleColorName(TextRole::Info), msg.toHtmlEscaped());
         break;
     }
 

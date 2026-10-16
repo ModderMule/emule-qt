@@ -24,6 +24,7 @@
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadIO.h"
+#include "kademlia/KadLog.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
 #include "kademlia/KadSearch.h"
@@ -220,7 +221,7 @@ void UpDownClient::init()
     m_captchasSent = 0;
 
     m_buddyAddress = Address();
-    m_lastBuddyPingPongTime = getTickCount();
+    setLastBuddyPingPongTime();   // first ping after 10 min, as MFC BaseClient.cpp:166
     setBuddyID(nullptr);
 
     m_clientSoft = ClientSoftware::Unknown;
@@ -857,6 +858,15 @@ QString UpDownClient::dbgGetFullClientSoftVer() const
     if (m_modVersion.isEmpty())
         return m_clientSoftwareStr;
     return QStringLiteral("%1 [%2]").arg(m_clientSoftwareStr, m_modVersion);
+}
+
+QString UpDownClient::kadBuddyInfo() const
+{
+    return QStringLiteral("%1:%2 (UDP %3) '%4' %5")
+        .arg(ipstr(m_connectAddress))
+        .arg(m_userPort)
+        .arg(m_kadPort)
+        .arg(userName(), dbgGetFullClientSoftVer());
 }
 
 QString UpDownClient::dbgGetClientInfo(bool formatIP) const
@@ -2376,10 +2386,12 @@ void UpDownClient::connectionEstablished()
             sendPacket(std::move(packet));
         }
         break;
-    case KadState::QueuedBuddy:
+    case KadState::QueuedBuddy:   // not MFC: a queued candidate that connected in first
     case KadState::ConnectingBuddy:
     case KadState::IncomingBuddy:
         setKadState(KadState::ConnectedBuddy);
+        if (m_servedBuddy)
+            kad::logKad(QStringLiteral("Kad: serving buddy %1").arg(kadBuddyInfo()));
         break;
     case KadState::ConnectingFwCheckUDP:
         logDebug(QStringLiteral("connectionEstablished: KadState → FwCheckUDP, sending FW check request"));
@@ -2682,6 +2694,14 @@ bool UpDownClient::disconnected(const QString& reason, bool fromSocket)
         kad::UDPFirewallTester::setUDPFWCheckResult(false, true, m_connectAddress.toUint32(), 0);
     } else if (m_kadState == KadState::FwCheckUDP) {
         kad::UDPFirewallTester::setUDPFWCheckResult(false, false, m_connectAddress.toUint32(), 0);
+    } else if (m_kadState == KadState::ConnectedBuddy || m_kadState == KadState::ConnectingBuddy) {
+        // MFC BaseClient.cpp:1113 warns for KS_CONNECTED_BUDDY; the failed dial is ours.
+        kad::logKad(QStringLiteral("Kad: %1 link %2 closed (%3) after %4 s")
+                        .arg(m_servedBuddy ? QStringLiteral("served buddy")
+                             : m_kadState == KadState::ConnectingBuddy ? QStringLiteral("buddy candidate")
+                                                                       : QStringLiteral("buddy"),
+                             kadBuddyInfo(), reason)
+                        .arg(std::time(nullptr) - m_kadStateSince));
     }
     setKadState(KadState::None);
 
@@ -2728,9 +2748,11 @@ void UpDownClient::resetFileStatusInfo()
 
 void UpDownClient::onInfoPacketsReceived()
 {
-    // Complete buddy link after HELLO exchange (MFC ProcessMuleInfoPacket)
-    // A served buddy (we relay for it) is not our own buddy.
-    if (m_kadState == KadState::ConnectedBuddy && !m_servedBuddy && theApp.clientList) {
+    // Not MFC: MFC sets the buddy only in ProcessKadList (ClientList.cpp:559-562). This is the
+    // same rule a tick early, so never replaces a connected buddy. A served buddy (we relay
+    // for it) is not our own buddy.
+    if (m_kadState == KadState::ConnectedBuddy && !m_servedBuddy && theApp.clientList
+        && theApp.clientList->buddyStatus() != BuddyStatus::Connected) {
         theApp.clientList->setBuddy(this, BuddyStatus::Connected);
     }
 
@@ -4224,9 +4246,16 @@ void UpDownClient::processBuddyPing()
     const bool served = m_servedBuddy && m_kadState == KadState::ConnectedBuddy;
 
     // Verify: sender must be a buddy, with valid Kad version, not too frequent
-    if ((buddy != this && !served) || m_kadVersion == 0 || !allowIncomingBuddyPingPong())
+    if ((buddy != this && !served) || m_kadVersion == 0 || !allowIncomingBuddyPingPong()) {
+        kad::logKad(QStringLiteral("Kad: BUDDYPING from %1 ignored — %2")
+                        .arg(ipstr(m_connectAddress),
+                             buddy != this && !served ? QStringLiteral("not a buddy")
+                             : m_kadVersion == 0      ? QStringLiteral("no Kad version")
+                                                      : QStringLiteral("too early")));
         return;
+    }
 
+    kad::logKad(QStringLiteral("Kad: BUDDYPING from %1, sending BUDDYPONG").arg(ipstr(m_connectAddress)));
     auto packet = std::make_unique<Packet>(OP_BUDDYPONG, 0, OP_EMULEPROT);
     sendPacket(std::move(packet));
     setLastBuddyPingPongTime();
@@ -4248,6 +4277,7 @@ void UpDownClient::processBuddyPong()
     if (buddy != this || m_kadVersion == 0)
         return;
 
+    kad::logKad(QStringLiteral("Kad: BUDDYPONG from %1").arg(ipstr(m_connectAddress)));
     setLastBuddyPingPongTime();
 }
 

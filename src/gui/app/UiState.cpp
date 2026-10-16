@@ -265,7 +265,8 @@ void UiState::save(const QString& configDir)
 
 const std::array<QColor, UiState::kStatsColorCount>& UiState::defaultStatsColors()
 {
-    // MFC's defcol table, same order (srchybrid/Preferences.cpp:1817-1821). Slot 11
+    // MFC's defcol table, same order (srchybrid/Preferences.cpp:1817-1821), except slot 7
+    // for 3:1 contrast (issue #18). Slot 11
     // is the tray meter bar: MFC stores black there and overwrites it at startup from
     // the taskbar's brightness, so an invalid colour is the honest default for us.
     static const std::array<QColor, kStatsColorCount> defaults = {{
@@ -276,7 +277,7 @@ const std::array<QColor, UiState::kStatsColorCount>& UiState::defaultStatsColors
         QColor(0, 128, 0),       //  4 Download session average
         QColor(255, 128, 128),   //  5 Upload current
         QColor(200, 0, 0),       //  6 Upload average
-        QColor(140, 0, 0),       //  7 Upload session average
+        QColor(255, 64, 0),      //  7 Upload session average — MFC 140,0,0 is 2:1 on the background
         QColor(150, 150, 255),   //  8 Active connections
         QColor(192, 0, 192),     //  9 Total uploads (queue length)
         QColor(255, 255, 128),   // 10 Active uploads

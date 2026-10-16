@@ -2,6 +2,7 @@
 #include "controls/ServerListModel.h"
 
 #include "prefs/Preferences.h"
+#include "utils/Appearance.h"
 #include "utils/ColorUtils.h"
 #include "utils/CountryFlags.h"
 #include "utils/StringUtils.h"
@@ -129,14 +130,15 @@ QVariant ServerListModel::data(const QModelIndex& index, int role) const
 
     // MFC ServerListCtrl.cpp:209-214: light grey once dead, grey from the second failure.
     // deadServerRetries 0 means "never remove" here, so nothing counts as dead.
+    // Darker than MFC's 128/192 greys: 192 on white is under 3:1 contrast (issue #18).
     if (role == Qt::ForegroundRole) {
         if (m_connectedServerId != 0 && r.serverId == m_connectedServerId)
-            return QColor(0x33, 0x99, 0xFF);
+            return roleColor(TextRole::Info);
         const uint32_t deadRetries = thePrefs.deadServerRetries();
         if (r.disabled || (deadRetries > 0 && r.failed >= deadRetries))
-            return dimmedText(0.75);
+            return dimmedText(0.55);
         if (r.failed >= 2)
-            return dimmedText(0.5);
+            return dimmedText(0.35);
         return {};
     }
 

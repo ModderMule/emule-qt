@@ -268,7 +268,7 @@ QVariant SearchResultsModel::foreground(const SearchResultRow& r, int64_t source
     // SearchListCtrl.cpp:1452-1459: this one cell goes red for a file nobody has
     // complete, over whatever colour the row has. Unknown (-1) stays uncoloured.
     if (!child && column == ColComplete && completeness(r) == 0)
-        return QColor(255, 0, 0);
+        return roleColor(TextRole::Error);
     // The verdict colours its own cell only; the row keeps its meaning.
     if (!child && column == ColConfidence) {
         if (const QColor c = confidenceColor(r.confidence); c.isValid())

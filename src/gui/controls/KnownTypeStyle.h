@@ -8,6 +8,8 @@
 /// the ED2K side, and GetUsenetKnownTypes reuses it deliberately so this one
 /// helper serves both.
 
+#include "utils/Appearance.h"
+
 #include <QColor>
 #include <QObject>
 #include <QString>
@@ -33,10 +35,10 @@ namespace eMule {
 [[nodiscard]] inline QColor knownTypeColor(int knownType)
 {
     switch (knownType) {
-    case 1:  return {0xFF, 0x00, 0x00};   // Shared
-    case 2:  return {0xFF, 0x00, 0x00};   // Downloading
-    case 3:  return {0x00, 0x80, 0x00};   // Downloaded
-    case 4:  return {0x00, 0x80, 0x00};   // Cancelled
+    case 1:  return roleColor(TextRole::Error);   // Shared
+    case 2:  return roleColor(TextRole::Error);   // Downloading
+    case 3:  return roleColor(TextRole::Good);    // Downloaded
+    case 4:  return roleColor(TextRole::Good);    // Cancelled
     default: return {};
     }
 }

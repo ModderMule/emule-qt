@@ -161,6 +161,30 @@ qreal fontScale()
     return s_fontScale;
 }
 
+QColor themed(const QColor& light, const QColor& dark)
+{
+    return isDarkScheme() ? dark : light;
+}
+
+QColor roleColor(TextRole role)
+{
+    // Light values checked on #ECECEC, dark ones on #2D2D2D (worst window greys)
+    switch (role) {
+    case TextRole::Info:    return themed(QColor(0x26, 0x80, 0xE0), QColor(0x33, 0x99, 0xFF));
+    case TextRole::Success: return themed(QColor(0x00, 0x00, 0xFF), QColor(0x6C, 0xA8, 0xFF));
+    case TextRole::Warning: return themed(QColor(0x80, 0x00, 0x80), QColor(0xD0, 0x8C, 0xFF));
+    case TextRole::Error:   return themed(QColor(0xFF, 0x00, 0x00), QColor(0xFF, 0x6B, 0x6B));
+    case TextRole::Good:    return themed(QColor(0x00, 0x80, 0x00), QColor(0x5B, 0xC8, 0x5B));
+    case TextRole::Caution: return themed(QColor(0xCC, 0x66, 0x00), QColor(0xFF, 0xA5, 0x00));
+    }
+    return {};
+}
+
+QString roleColorName(TextRole role)
+{
+    return roleColor(role).name();
+}
+
 int scaledPointSize(int basePt)
 {
     return std::max(1, static_cast<int>(std::lround(basePt * s_fontScale)));

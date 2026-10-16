@@ -29,6 +29,7 @@
 #include "ipc/CborSerializers.h"
 #include "prefs/Preferences.h"
 #include "utils/ClientIcons.h"
+#include "utils/Appearance.h"
 #include "utils/ColorUtils.h"
 #include "utils/Opcodes.h"
 #include "utils/PriorityText.h"
@@ -730,13 +731,14 @@ void tst_ListSorting::failingServersAreDimmed()
     };
 
     QVERIFY(!fg(0).isValid());
-    QCOMPARE(fg(1).value<QColor>(), dimmedText(0.5));
-    QCOMPARE(fg(2).value<QColor>(), dimmedText(0.75));
-    QCOMPARE(fg(3).value<QColor>(), QColor(0x33, 0x99, 0xFF));
+    // Darker than MFC's greys to keep 3:1 contrast (issue #18)
+    QCOMPARE(fg(1).value<QColor>(), dimmedText(0.35));
+    QCOMPARE(fg(2).value<QColor>(), dimmedText(0.55));
+    QCOMPARE(fg(3).value<QColor>(), roleColor(TextRole::Info));
 
     // 0 means "never remove", so no server is dead — but a failing one still greys.
     thePrefs.setDeadServerRetries(0);
-    QCOMPARE(fg(2).value<QColor>(), dimmedText(0.5));
+    QCOMPARE(fg(2).value<QColor>(), dimmedText(0.35));
     thePrefs.setDeadServerRetries(20);
 }
 

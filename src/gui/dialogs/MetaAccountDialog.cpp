@@ -7,6 +7,7 @@
 #include "IpcMessage.h"
 #include "IpcProtocol.h"
 #include "app/IpcClient.h"
+#include "utils/Appearance.h"
 
 #include <QCborArray>
 #include <QDateTime>
@@ -77,7 +78,7 @@ MetaAccountDialog::MetaAccountDialog(IpcClient* ipc, const QCborMap& meta, Purpo
 
     m_error = new QLabel(this);
     m_error->setWordWrap(true);
-    m_error->setStyleSheet(QStringLiteral("color: #c00000;"));
+    m_error->setStyleSheet(QStringLiteral("color: %1;").arg(roleColorName(TextRole::Error)));
     layout->addWidget(m_error);
 
     auto* buttons = new QDialogButtonBox(this);

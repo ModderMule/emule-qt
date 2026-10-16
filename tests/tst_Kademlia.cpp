@@ -5,6 +5,7 @@
 
 #include "app/AppContext.h"
 #include "kademlia/Kademlia.h"
+#include "kademlia/KadBuddyStore.h"
 #include "kademlia/KadIndexed.h"
 #include "kademlia/KadPrefs.h"
 #include "kademlia/KadRoutingZone.h"
@@ -12,7 +13,9 @@
 #include "kademlia/KadUDPListener.h"
 #include "utils/Opcodes.h"
 
+#include <QFile>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QTest>
 
 using namespace eMule;
@@ -38,6 +41,11 @@ private slots:
     void process_refreshesTheStoreCountersEveryTick();
     void process_reportsALostConnection();
     void buddySearchTarget_randomAfterTheFirstSearch();
+    void buddyStore_roundTrip();
+    void buddyStore_capEvictsOldestOffer();
+    void buddyStore_dropsAfterOneMissOrExpiry();
+    void buddyStore_takeDueNewestFirstAndSkipsRecent();
+    void buddyStore_damagedFileLoadsEmpty();
 };
 
 void tst_Kademlia::cleanup()
@@ -350,6 +358,125 @@ void tst_Kademlia::buddySearchTarget_randomAfterTheFirstSearch()
     QVERIFY(second != inverted);
     QVERIFY(third != inverted);
     QVERIFY(second != third);
+}
+
+namespace {
+
+BuddyStore::Entry buddyEntry(uint32 ip, std::time_t offered = 0)
+{
+    BuddyStore::Entry e;
+    e.ip = ip;
+    e.udpPort = 4672;
+    e.tcpPort = 4662;
+    e.userHash.fill(static_cast<uint8>(ip));
+    e.kadId = UInt128(ip);
+    e.connectOptions = 0x0B;
+    e.lastOffered = offered;
+    return e;
+}
+
+} // namespace
+
+void tst_Kademlia::buddyStore_roundTrip()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QLatin1StringView(kBuddyStoreFileName));
+    const std::time_t now = 1'800'000'000;
+
+    BuddyStore store;
+    store.noteOffer(buddyEntry(0x4D010203), now);
+    store.noteConnected(0x4D010203, 4662, now + 5);
+    QVERIFY(store.save(path, now + 10));
+
+    BuddyStore loaded;
+    loaded.load(path, now + 20);
+    QCOMPARE(loaded.entries().size(), size_t{1});
+    const auto& e = loaded.entries().front();
+    QCOMPARE(e.ip, uint32{0x4D010203});
+    QCOMPARE(e.udpPort, uint16{4672});
+    QCOMPARE(e.tcpPort, uint16{4662});
+    QCOMPARE(e.userHash[0], uint8{0x03});
+    QVERIFY(e.kadId == UInt128(uint32{0x4D010203}));
+    QCOMPARE(e.connectOptions, uint8{0x0B});
+    QCOMPARE(e.lastOffered, now);
+    QCOMPARE(e.lastConnected, now + 5);
+}
+
+void tst_Kademlia::buddyStore_capEvictsOldestOffer()
+{
+    BuddyStore store;
+    const std::time_t now = 1'800'000'000;
+    for (uint32 i = 0; i < BuddyStore::kMaxEntries + 1; ++i)
+        store.noteOffer(buddyEntry(0x0A000001 + i), now + i);
+    QCOMPARE(store.entries().size(), BuddyStore::kMaxEntries);
+    QVERIFY(std::ranges::none_of(store.entries(), [](const auto& e) { return e.ip == 0x0A000001; }));
+
+    // A repeated offer refreshes, it takes no second slot.
+    store.noteOffer(buddyEntry(0x0A000002), now + 100);
+    QCOMPARE(store.entries().size(), BuddyStore::kMaxEntries);
+}
+
+void tst_Kademlia::buddyStore_dropsAfterOneMissOrExpiry()
+{
+    BuddyStore store;
+    const std::time_t now = 1'800'000'000;
+    store.noteOffer(buddyEntry(0x0A000001), now);
+    store.noteOffer(buddyEntry(0x0A000002), now);
+
+    const std::time_t ask = now + BuddyStore::kReaskSecs;
+    QCOMPARE(store.takeDue(ask).size(), size_t{2});
+    // .1 answers, .2 stays silent.
+    store.noteOffer(buddyEntry(0x0A000001), ask + 1);
+
+    // Still inside the answer window: nobody is a miss yet.
+    QCOMPARE(store.takeDue(ask + 10).size(), size_t{0});
+    QCOMPARE(store.entries().size(), size_t{2});
+
+    // One miss drops .2.
+    const auto due = store.takeDue(ask + BuddyStore::kReaskSecs);
+    QCOMPARE(due.size(), size_t{1});
+    QCOMPARE(due.front().ip, uint32{0x0A000001});
+    QCOMPARE(store.entries().size(), size_t{1});
+
+    // Never asked, but no offer for 14 days.
+    BuddyStore stale;
+    stale.noteOffer(buddyEntry(0x0A000003), now);
+    QCOMPARE(stale.takeDue(now + BuddyStore::kExpireSecs - 1).size(), size_t{1});
+    BuddyStore expired;
+    expired.noteOffer(buddyEntry(0x0A000003), now);
+    QVERIFY(expired.takeDue(now + BuddyStore::kExpireSecs).empty());
+    QVERIFY(expired.entries().empty());
+}
+
+void tst_Kademlia::buddyStore_takeDueNewestFirstAndSkipsRecent()
+{
+    BuddyStore store;
+    const std::time_t now = 1'800'000'000;
+    for (uint32 i = 0; i < BuddyStore::kAskPerSearch + 2; ++i)
+        store.noteOffer(buddyEntry(0x0A000001 + i), now + i);
+
+    const auto first = store.takeDue(now + 100);
+    QCOMPARE(first.size(), BuddyStore::kAskPerSearch);
+    QCOMPARE(first.front().ip, uint32{0x0A000001 + BuddyStore::kAskPerSearch + 1});
+
+    // The rest next; the ones just asked wait kReaskSecs.
+    const auto second = store.takeDue(now + 101);
+    QCOMPARE(second.size(), size_t{2});
+    QCOMPARE(second.back().ip, uint32{0x0A000001});
+}
+
+void tst_Kademlia::buddyStore_damagedFileLoadsEmpty()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QLatin1StringView(kBuddyStoreFileName));
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write(QByteArray("\x01\x05\x00\x00\x00\x01\x02", 7));   // count 5, then cut short
+    f.close();
+
+    BuddyStore store;
+    store.load(path, 1'800'000'000);
+    QVERIFY(store.entries().empty());
 }
 
 QTEST_GUILESS_MAIN(tst_Kademlia)

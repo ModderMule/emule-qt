@@ -283,6 +283,10 @@ private:
     /// left on "auto".
     [[nodiscard]] QColor trayMeterColor() const;
 
+    /// Colours a status bar label by TextRole (-1: default text); kept so a theme
+    /// switch can recolour it.
+    static void setStatusRole(QLabel* label, int role);
+
     /// Version, connection state and both rates, as MFC's tray tooltip carries.
     void updateTrayToolTip();
     /// "Show transfer rates on title".

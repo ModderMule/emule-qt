@@ -7,6 +7,7 @@
 /// periodic processing instead of being called from an external timer.
 
 #include "httpcache/HttpCacheOffer.h"
+#include "kademlia/KadBuddyStore.h"
 #include "kademlia/KadFastKad.h"
 #include "kademlia/KadSafeKad.h"
 #include "kademlia/KadTypes.h"
@@ -174,6 +175,8 @@ public:
     static Indexed* getInstanceIndexed() { return s_instance ? s_instance->m_indexed : nullptr; }
     static SafeKad* getInstanceSafeKad() { return s_instance ? &s_instance->m_safeKad : nullptr; }
     static FastKad* getInstanceFastKad() { return s_instance ? &s_instance->m_fastKad : nullptr; }
+    /// Remembered buddy nodes; nullptr while Kad is not running.
+    static BuddyStore* buddyStore() { return s_instance && s_instance->m_running ? &s_instance->m_buddyStore : nullptr; }
 
 signals:
     void started();
@@ -189,6 +192,8 @@ private:
     void process();
     void countSessionStats();
     uint32 calculateKadUsersNew() const;
+    /// Send FINDBUDDY_REQ straight to remembered nodes due for an ask. Not MFC.
+    void askRememberedBuddies(time_t now);
 
     KadPrefs* m_prefs = nullptr;
     RoutingZone* m_routingZone = nullptr;
@@ -202,6 +207,8 @@ private:
     time_t m_nextFirewallCheck = 0;
     time_t m_nextFindBuddy = 0;
     uint32 m_buddySearchesWithoutBuddy = 0;
+    BuddyStore m_buddyStore;
+    QString m_buddyStorePath;   ///< empty: memory only
     time_t m_statusUpdate = 0;
     time_t m_bigTimer = 0;
     time_t m_consolidate = 0;

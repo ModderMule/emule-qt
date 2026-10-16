@@ -7,6 +7,7 @@
 #include "app/UiState.h"
 #include "controls/AbstractListView.h"
 #include "controls/LogTextView.h"
+#include "utils/Appearance.h"
 #include "controls/SortableItems.h"
 #include "app/IpcClient.h"
 #include "chat/IrcClient.h"
@@ -64,6 +65,12 @@ static constexpr const char* kMircColors[] = {
     "#0000FF", "#FF00FF", "#7F7F7F", "#D2D2D2",
 };
 static constexpr int kMircColorCount = std::size(kMircColors);
+
+// mIRC purple (6) for actions and notices, lifted on dark backgrounds
+static QString ircActionColor()
+{
+    return themed(QColor(0x9C, 0x00, 0x9C), QColor(0xD0, 0x8C, 0xFF)).name();
+}
 
 // ---------------------------------------------------------------------------
 // IrcPanel
@@ -1330,8 +1337,8 @@ void IrcPanel::onNickContextMenu(const QPoint& pos)
         const QString action = QStringLiteral("slaps %1 around with a large Babelfish!").arg(nick);
         m_irc->sendCtcp(channel, QStringLiteral("ACTION"), action);
         appendToChannel(channel.toLower(), formatTimestamp()
-            + QStringLiteral(" <font color='#9C009C'>* %1 %2</font>")
-                  .arg(m_irc->currentNick().toHtmlEscaped(), action.toHtmlEscaped()));
+            + QStringLiteral(" <font color='%1'>* %2 %3</font>")
+                  .arg(ircActionColor(), m_irc->currentNick().toHtmlEscaped(), action.toHtmlEscaped()));
     });
     slap->setVisible(thePrefs.showExtControls());   // advanced mode only
     menu.exec(m_nickListView->viewport()->mapToGlobal(pos));
@@ -1378,7 +1385,8 @@ void IrcPanel::sendLinkTo(const QString& nick)
 void IrcPanel::protoNotice(const QString& text)
 {
     appendToStatus(formatTimestamp()
-        + QStringLiteral(" <font color='#9C009C'>-*EmuleProto*- %1</font>").arg(text.toHtmlEscaped()));
+        + QStringLiteral(" <font color='%1'>-*EmuleProto*- %2</font>")
+              .arg(ircActionColor(), text.toHtmlEscaped()));
 }
 
 void IrcPanel::onEmuleProto(const QString& nick, const QString& body)

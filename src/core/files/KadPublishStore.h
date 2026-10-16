@@ -11,6 +11,7 @@
 
 #include "kademlia/KadUInt128.h"
 #include "utils/Types.h"
+#include "utils/VersionedRecordFile.h"
 
 #include <QString>
 
@@ -28,7 +29,7 @@ inline constexpr time_t kKadPublishResaveSecs = 600;
 /// More keywords than any share produces; a larger file is not ours.
 inline constexpr uint32 kKadPublishMaxRecords = 500'000;
 
-class KadPublishStore {
+class KadPublishStore : private VersionedRecordFile {
 public:
     using Fingerprint = std::array<uint8, 16>;
 

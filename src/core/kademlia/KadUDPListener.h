@@ -52,6 +52,10 @@ public:
                                  const UInt128& contactID, const TagList& tags);
     void sendNullPacket(uint8 opcode, uint32 ip, uint16 udpPort,
                         const KadUDPKey& targetKey, const UInt128* cryptTargetID);
+    /// KADEMLIA_FINDBUDDY_REQ: BuddyID (~our Kad ID), our client hash, our TCP port.
+    /// Out-tracked, so the node's FINDBUDDY_RES is accepted. MFC Search.cpp:810-837.
+    void sendFindBuddyReq(uint32 ip, uint16 udpPort, const KadUDPKey& targetKey,
+                          const UInt128* cryptTargetID);
     void processPacket(const uint8* data, uint32 len, uint32 ip, uint16 udpPort,
                        bool validReceiverKey, const KadUDPKey& senderKey);
     void sendPacket(const uint8* data, uint32 len, uint32 destIP, uint16 destPort,

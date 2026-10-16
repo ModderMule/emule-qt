@@ -163,7 +163,7 @@ QVariant IndexerResultsModel::data(const QModelIndex& index, int role) const
         // discovering it after the download. It outranks the known-type colour:
         // a release we cannot open is a stronger warning than one we already have.
         if (row->passwordProtected)
-            return QColor(0xCC, 0x66, 0x00);
+            return roleColor(TextRole::Caution);
         if (const QColor c = knownTypeColor(row->knownType); c.isValid())
             return c;
     }

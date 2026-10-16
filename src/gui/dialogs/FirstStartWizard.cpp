@@ -10,6 +10,7 @@
 #include "prefs/Preferences.h"
 #include "utils/DialogSizing.h"
 #include "utils/StringUtils.h"
+#include "utils/Appearance.h"
 
 #include <QCheckBox>
 #include <QDesktopServices>
@@ -799,7 +800,7 @@ void FirstStartWizard::endUPnPWait(const QString& text, bool failed)
 
     QPalette pal;
     if (failed)
-        pal.setColor(QPalette::WindowText, QColor(200, 40, 40));
+        pal.setColor(QPalette::WindowText, roleColor(TextRole::Error));
     m_upnpStatus->setPalette(pal);
     m_upnpStatus->setText(text);
 }

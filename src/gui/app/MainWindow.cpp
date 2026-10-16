@@ -426,23 +426,21 @@ void MainWindow::setEd2kStatus(bool connected, bool connecting, bool firewalled,
             ? tr("eD2K: Connected (LowID)")
             : tr("eD2K: Connected");
         m_statusEd2k->setText(label);
-        m_statusEd2k->setStyleSheet(lowID
-            ? QStringLiteral("color: orange;")
-            : QStringLiteral("color: green;"));
+        setStatusRole(m_statusEd2k, static_cast<int>(lowID ? TextRole::Caution : TextRole::Good));
         m_connStatus->setEd2kState(lowID
             ? ConnectionStatusWidget::Firewalled
             : ConnectionStatusWidget::Connected);
     } else if (connecting) {
         m_statusEd2k->setText(tr("eD2K: Connecting..."));
-        m_statusEd2k->setStyleSheet(QStringLiteral("color: orange;"));
+        setStatusRole(m_statusEd2k, static_cast<int>(TextRole::Caution));
         m_connStatus->setEd2kState(ConnectionStatusWidget::Firewalled);
     } else if (m_netBlocked) {
         m_statusEd2k->setText(tr("Blocked: network interface not available"));
-        m_statusEd2k->setStyleSheet(QStringLiteral("color: red;"));
+        setStatusRole(m_statusEd2k, static_cast<int>(TextRole::Error));
         m_connStatus->setEd2kState(ConnectionStatusWidget::Disconnected);
     } else {
         m_statusEd2k->setText(tr("eD2K: Disconnected"));
-        m_statusEd2k->setStyleSheet(QString{});
+        setStatusRole(m_statusEd2k, -1);
         m_connStatus->setEd2kState(ConnectionStatusWidget::Disconnected);
     }
     // MFC CMuleStatusBarCtrl::GetPaneToolTipText (MuleStatusBarCtrl.cpp:86-105)
@@ -499,19 +497,19 @@ void MainWindow::setKadStatus(bool running, bool kadConnected, bool firewalled)
 
     if (kadConnected && !firewalled) {
         m_statusKad->setText(tr("Kad: Connected"));
-        m_statusKad->setStyleSheet(QStringLiteral("color: green;"));
+        setStatusRole(m_statusKad, static_cast<int>(TextRole::Good));
         m_connStatus->setKadState(ConnectionStatusWidget::Connected);
     } else if (kadConnected && firewalled) {
         m_statusKad->setText(tr("Kad: Connected (Firewalled)"));
-        m_statusKad->setStyleSheet(QStringLiteral("color: orange;"));
+        setStatusRole(m_statusKad, static_cast<int>(TextRole::Caution));
         m_connStatus->setKadState(ConnectionStatusWidget::Firewalled);
     } else if (running) {
         m_statusKad->setText(tr("Kad: Connecting..."));
-        m_statusKad->setStyleSheet(QStringLiteral("color: orange;"));
+        setStatusRole(m_statusKad, static_cast<int>(TextRole::Caution));
         m_connStatus->setKadState(ConnectionStatusWidget::Firewalled);
     } else {
         m_statusKad->setText(tr("Kad: Disconnected"));
-        m_statusKad->setStyleSheet(QString{});
+        setStatusRole(m_statusKad, -1);
         m_connStatus->setKadState(ConnectionStatusWidget::Disconnected);
     }
     updateConnectButton();
@@ -793,6 +791,14 @@ void MainWindow::restoreWindow()
 void MainWindow::changeEvent(QEvent* event)
 {
     QMainWindow::changeEvent(event);
+    // Theme switch: role colours have a light and a dark value
+    if (event->type() == QEvent::ThemeChange || event->type() == QEvent::PaletteChange) {
+        for (QLabel* label : {m_statusEd2k, m_statusKad}) {
+            if (const QVariant role = label ? label->property("textRole") : QVariant{}; role.isValid())
+                setStatusRole(label, role.toInt());
+        }
+        return;
+    }
     // MFC CTrayDialog::OnSysCommand (TrayDialog.cpp:255-268): with the preference on,
     // minimizing hides to the tray. Deferred, because hiding inside the state change
     // leaves some platforms' minimize animation half done.
@@ -2169,6 +2175,14 @@ void MainWindow::addPage(QWidget* page)
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->viewport()->setAutoFillBackground(false);
     m_pages->addWidget(scroll);
+}
+
+void MainWindow::setStatusRole(QLabel* label, int role)
+{
+    label->setProperty("textRole", role);
+    label->setStyleSheet(role < 0
+        ? QString{}
+        : QStringLiteral("color: %1;").arg(roleColorName(static_cast<TextRole>(role))));
 }
 
 } // namespace eMule

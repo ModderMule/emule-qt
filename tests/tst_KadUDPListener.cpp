@@ -23,6 +23,8 @@
 #include "utils/Opcodes.h"
 #include "utils/SafeFile.h"
 
+#include <QFile>
+#include <QScopeGuard>
 #include <QTest>
 #include <QtEndian>
 
@@ -43,6 +45,8 @@ private slots:
 
     // Answers nobody asked for
     void findBuddyRes_unrequestedIsIgnored();
+    void findBuddyRes_offerIsRememberedAcrossRestart();
+    void buddySearch_asksRememberedNodeAfterRestart();
     void firewalledAckRes_countsOnlyAskedNodesOnce();
     void firewalledReq_repeatedMakesOneClient();
 
@@ -199,6 +203,95 @@ void tst_KadUDPListener::findBuddyRes_unrequestedIsIgnored()
     UpDownClient* buddy = clients.findByConnIP(qToBigEndian(kNodeIP), kNodeTcp);
     QVERIFY(buddy != nullptr);
     QCOMPARE(buddy->kadState(), KadState::QueuedBuddy);
+
+    clients.deleteAll();
+    Kademlia::setClientList(nullptr);
+    theApp.clientList = nullptr;
+}
+
+// A node that offered is kept in kadbuddies.dat and asked directly after a restart.
+void tst_KadUDPListener::findBuddyRes_offerIsRememberedAcrossRestart()
+{
+    ClientList clients;
+    theApp.clientList = &clients;
+    Kademlia::setClientList(&clients);
+    eMule::testing::KadFixture kadFixture;
+
+    // The direct ask is out-tracked, so the answer is taken.
+    Kademlia::getInstanceUDPListener()->sendFindBuddyReq(kNodeIP, kNodeUdp, KadUDPKey(0), nullptr);
+    deliver(buddyAnswer(), kNodeIP);
+    QVERIFY(Kademlia::buddyStore() != nullptr);
+    QCOMPARE(Kademlia::buddyStore()->entries().size(), size_t{1});
+    QCOMPARE(Kademlia::buddyStore()->entries().front().tcpPort, kNodeTcp);
+
+    kadFixture.kad().stop();
+    QVERIFY(Kademlia::buddyStore() == nullptr);
+    QVERIFY(QFile::exists(kadFixture.configDir() + QStringLiteral("/kadbuddies.dat")));
+
+    kadFixture.kad().start(&kadFixture.kadPrefs());
+    QVERIFY(Kademlia::buddyStore() != nullptr);
+    QCOMPARE(Kademlia::buddyStore()->entries().size(), size_t{1});
+    QCOMPARE(Kademlia::buddyStore()->entries().front().ip, kNodeIP);
+
+    clients.deleteAll();
+    Kademlia::setClientList(nullptr);
+    theApp.clientList = nullptr;
+}
+
+// End to end: offer stored, Kad restarted, the next buddy search asks the stored node
+// straight away (it is not in the routing table), and its answer queues it as our buddy.
+void tst_KadUDPListener::buddySearch_asksRememberedNodeAfterRestart()
+{
+    ClientList clients;
+    theApp.clientList = &clients;
+    Kademlia::setClientList(&clients);
+    eMule::testing::KadFixture kadFixture;   // TCP firewalled, UDP unverified
+
+    Kademlia::getInstanceUDPListener()->sendFindBuddyReq(kNodeIP, kNodeUdp, KadUDPKey(0), nullptr);
+    deliver(buddyAnswer(), kNodeIP);
+    QCOMPARE(Kademlia::buddyStore()->entries().size(), size_t{1});
+    clients.deleteAll();
+
+    kadFixture.kad().stop();
+    kadFixture.kad().start(&kadFixture.kadPrefs());
+
+    QByteArray request;
+    uint32 requestIP = 0;
+    uint16 requestPort = 0;
+    const auto conn = QObject::connect(
+        Kademlia::getInstanceUDPListener(), &KademliaUDPListener::packetToSend,
+        [&](const QByteArray& data, uint32 ip, uint16 port) {
+            if (ip == kNodeIP && !data.isEmpty()
+                && static_cast<uint8>(data[0]) == KADEMLIA_FINDBUDDY_REQ) {
+                request = data;
+                requestIP = ip;
+                requestPort = port;
+            }
+        });
+    const auto disconnect = qScopeGuard([&] { QObject::disconnect(conn); });
+
+    // Connected and due: the next process() tick starts the search.
+    kadFixture.kadPrefs().setLastContact();
+    kadFixture.kadPrefs().setFindBuddy(true);
+    QTRY_VERIFY_WITH_TIMEOUT(!request.isEmpty(), 5000);
+    QCOMPARE(requestPort, kNodeUdp);
+
+    // [opcode] BuddyID (~our Kad ID), our client hash, our TCP port
+    QCOMPARE(request.size(), 1 + 34);
+    SafeMemFile in(reinterpret_cast<const uint8*>(request.constData()) + 1, 34);
+    UInt128 buddyID = io::readUInt128(in);
+    buddyID.xorWith(UInt128(true));
+    QVERIFY(buddyID == kadFixture.kadPrefs().kadId());
+    QVERIFY(io::readUInt128(in) == kadFixture.kadPrefs().clientHash());
+
+    // Out-tracked, so the answer is taken and refreshes the stored offer.
+    const std::time_t askedAt = Kademlia::buddyStore()->entries().front().lastAsked;
+    QVERIFY(askedAt != 0);
+    deliver(buddyAnswer(), kNodeIP);
+    UpDownClient* buddy = clients.findByConnIP(qToBigEndian(kNodeIP), kNodeTcp);
+    QVERIFY(buddy != nullptr);
+    QCOMPARE(buddy->kadState(), KadState::QueuedBuddy);
+    QVERIFY(Kademlia::buddyStore()->entries().front().lastOffered >= askedAt);
 
     clients.deleteAll();
     Kademlia::setClientList(nullptr);

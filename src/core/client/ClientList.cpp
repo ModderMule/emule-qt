@@ -15,6 +15,8 @@
 #include "net/ListenSocket.h"
 #include "server/ServerList.h"
 #include "kademlia/KadFirewallTester.h"
+#include "kademlia/KadBuddyStore.h"
+#include "kademlia/KadLog.h"
 #include "kademlia/Kademlia.h"
 #include "kademlia/KadPrefs.h"
 #include "transfer/UploadQueue.h"
@@ -281,8 +283,25 @@ UpDownClient* ClientList::findByIP_KadPort(uint32 ip, uint16 kadPort) const
 
 void ClientList::setBuddy(UpDownClient* buddy, BuddyStatus status)
 {
-    // Losing our buddy while firewalled — instantly re-trigger buddy search.
-    // Matches MFC ClientList.cpp:578-585.
+    const std::time_t now = std::time(nullptr);
+    if (status == BuddyStatus::Connected && buddy
+        && (m_buddyStatus != BuddyStatus::Connected || m_buddy != buddy)) {
+        m_buddyInfo = buddy->kadBuddyInfo();
+        m_buddySince = now;
+        kad::logKad(QStringLiteral("Kad: buddy set — %1").arg(m_buddyInfo));
+        if (auto* store = kad::Kademlia::buddyStore())
+            store->noteConnected(buddy->connectAddress().toUint32(), buddy->userPort(), now);
+    } else if (status == BuddyStatus::None) {
+        if (m_buddyStatus == BuddyStatus::Connected)
+            kad::logKad(QStringLiteral("Kad: buddy lost — %1, held %2 s")
+                            .arg(m_buddyInfo).arg(now - m_buddySince));
+        else if (m_buddyStatus == BuddyStatus::Connecting)
+            kad::logKad(QStringLiteral("Kad: buddy candidate %1 failed").arg(m_buddyCandidateInfo));
+    }
+
+    // Losing our buddy while firewalled — instantly re-trigger buddy search. Not MFC
+    // (ClientList.cpp:578-585 tests theApp.IsFirewalled() && IsFirewalledUDP(true)): the same
+    // Kad-only gate as the search start in Kademlia::process.
     if (status == BuddyStatus::None && (m_buddyStatus != BuddyStatus::None || m_buddy)) {
         if (auto* kadInst = kad::Kademlia::instance()) {
             if (kadInst->isRunning() && kadInst->isFirewalled()
@@ -334,8 +353,14 @@ bool ClientList::incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
 {
     // MFC ClientList.cpp:721-747, which serves one buddy. Here: while slots are free.
     // As MFC only connected buddies take a slot, a claim reserves nothing.
-    if (!canServeAnotherBuddy())
+    if (!canServeAnotherBuddy()) {
+        kad::logKad(QStringLiteral("Kad: buddy claim from %1 refused — %2")
+                        .arg(ipstr(Address::fromHostOrder(ip)),
+                             m_buddyStatus == BuddyStatus::Connected
+                                 ? QStringLiteral("we use a buddy ourselves")
+                                 : QStringLiteral("all %1 slots taken").arg(thePrefs.servedBuddyLimit())));
         return false;
+    }
 
     // Not ourselves, and not a node we are running a firewall check with
     // (MFC ClientList.cpp:724-730).
@@ -380,6 +405,9 @@ bool ClientList::incomingBuddy(uint32 ip, uint16 tcpPort, uint16 udpPort,
     client->setBuddyID(buddyID);
 
     addClient(client);
+    kad::logKad(QStringLiteral("Kad: buddy claim from %1:%2 accepted (%3/%4 served)")
+                    .arg(ipstr(Address::fromHostOrder(ip))).arg(tcpPort)
+                    .arg(servedBuddyCount()).arg(thePrefs.servedBuddyLimit()));
 
     // No status change: MFC leaves m_nBuddyStatus alone here (srchybrid/ClientList.cpp:735-746)
     // and lets the client become ConnectedBuddy when its connection completes. Claiming
@@ -709,6 +737,8 @@ void ClientList::processKadList()
             if (m_buddyStatus == BuddyStatus::None) {
                 seen = BuddyStatus::Connecting;
                 m_buddyStatus = BuddyStatus::Connecting;
+                m_buddyCandidateInfo = client->kadBuddyInfo();
+                kad::logKad(QStringLiteral("Kad: dialling buddy candidate %1").arg(m_buddyCandidateInfo));
                 client->setKadState(KadState::ConnectingBuddy);
                 client->tryToConnect(true, /*noCallbacks*/ true);
             } else if (m_buddyStatus == BuddyStatus::Connected) {
@@ -728,21 +758,28 @@ void ClientList::processKadList()
                 // We relay for this one; m_buddy is not involved and the peer pings.
                 // Dropped when we can no longer relay, when it opened its port (MFC
                 // ClientList.cpp:618-622), or when the limit was lowered (newest first).
-                if (needsOwnBuddy || !kadInst->isConnected() || !client->hasLowID()
-                    || ++servedSeen > static_cast<int>(thePrefs.servedBuddyLimit()))
+                const char* why = needsOwnBuddy               ? "we need a buddy ourselves"
+                                  : !kadInst->isConnected()   ? "Kad not connected"
+                                  : !client->hasLowID()       ? "it is no longer LowID"
+                                  : ++servedSeen > static_cast<int>(thePrefs.servedBuddyLimit())
+                                                              ? "over the served-buddy limit"
+                                                              : nullptr;
+                if (why) {
+                    kad::logKad(QStringLiteral("Kad: stop serving buddy %1 — %2")
+                                    .arg(client->kadBuddyInfo(), QLatin1StringView(why)));
                     client->setKadState(KadState::None);
+                }
                 break;
             }
             seen = BuddyStatus::Connected;
-            if (m_buddyStatus != BuddyStatus::Connected) {
-                m_buddy = client;
-                m_buddyStatus = BuddyStatus::Connected;
-            }
+            if (m_buddyStatus != BuddyStatus::Connected)
+                setBuddy(client, BuddyStatus::Connected);
             // The keep-alive. sendBuddyPingPong() is the schedule check its own comment says
             // "the caller ClientList::processKadList sends the actual OP_BUDDYPING" — this
             // is that caller, which until now did not exist, leaving an established buddy
             // link with nothing holding it open. MFC ClientList.cpp:564-569.
             if (m_buddy == client && theApp.isFirewalled() && client->sendBuddyPingPong()) {
+                kad::logKad(QStringLiteral("Kad: BUDDYPING → %1").arg(ipstr(client->connectAddress())));
                 auto packet = std::make_unique<Packet>(OP_BUDDYPING, 0);
                 packet->prot = OP_EMULEPROT;
                 client->sendPacket(std::move(packet));

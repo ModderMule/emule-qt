@@ -230,6 +230,7 @@
     <ClCompile Include="chat\IrcNickList.cpp" />
     <ClCompile Include="chat\IrcRouting.cpp" />
     <ClCompile Include="kademlia\KadContact.cpp" />
+    <ClCompile Include="kademlia\KadBuddyStore.cpp" />
     <ClCompile Include="kademlia\KadEntry.cpp" />
     <ClCompile Include="kademlia\KadFastKad.cpp" />
     <ClCompile Include="kademlia\KadFirewallTester.cpp" />
@@ -294,6 +295,7 @@
     <ClCompile Include="files\PublishKeywordList.cpp" />
     <ClCompile Include="crypto\SHAHash.cpp" />
     <ClCompile Include="utils\SafeFile.cpp" />
+    <ClCompile Include="utils\VersionedRecordFile.cpp" />
     <ClCompile Include="transfer\Scheduler.cpp" />
     <ClCompile Include="search\GlobalSearchScheduler.cpp" />
     <ClCompile Include="search\SearchExpr.cpp" />
@@ -458,6 +460,7 @@
     <ClInclude Include="webserver\WebTemplateStrings.h" />
     <ClInclude Include="kademlia\KadClientSearcher.h" />
     <ClInclude Include="kademlia\KadContact.h" />
+    <ClInclude Include="kademlia\KadBuddyStore.h" />
     <ClInclude Include="kademlia\KadEntry.h" />
     <ClInclude Include="kademlia\KadError.h" />
     <ClInclude Include="kademlia\KadFastKad.h" />
@@ -530,6 +533,7 @@
     <ClInclude Include="files\PublishKeywordList.h" />
     <ClInclude Include="crypto\SHAHash.h" />
     <ClInclude Include="utils\SafeFile.h" />
+    <ClInclude Include="utils\VersionedRecordFile.h" />
     <QtMoc Include="transfer\Scheduler.h" />
     <QtMoc Include="search\GlobalSearchScheduler.h" />
     <ClInclude Include="search\SearchExpr.h" />

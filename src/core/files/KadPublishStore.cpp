@@ -5,11 +5,7 @@
 
 #include "files/KadPublishStore.h"
 
-#include "app/AppContext.h"
-#include "utils/Log.h"
 #include "utils/SafeFile.h"
-
-#include <QFile>
 
 namespace eMule {
 
@@ -18,21 +14,12 @@ void KadPublishStore::load(const QString& path)
     m_records.clear();
     m_dirty = false;
 
-    if (!QFile::exists(path))
-        return;
-
+    // Nothing half-read: a damaged file only costs one round of publishing.
     std::map<kad::UInt128, Record> records;
-    try {
-        SafeFile file;
-        if (!file.open(path, QIODevice::ReadOnly))
-            return;
-        if (file.readUInt8() != kKadPublishFileVersion)
-            return;
-
+    const bool ok = readVersioned(path, kKadPublishFileVersion, [&records](SafeFile& file) {
         const uint32 count = file.readUInt32();
         if (count > kKadPublishMaxRecords)
             return;
-
         for (uint32 i = 0; i < count; ++i) {
             uint8 id[16];
             file.readHash16(id);
@@ -41,30 +28,16 @@ void KadPublishStore::load(const QString& path)
             file.readHash16(rec.files.data());
             records.emplace(kad::UInt128(id), rec);
         }
-    } catch (const std::exception& e) {
-        // Nothing half-read: a damaged file only costs one round of publishing.
-        logWarning(QStringLiteral("kadpublish.dat: read failed (%1) — ignoring the file")
-                       .arg(QString::fromUtf8(e.what())));
-        return;
-    }
-    m_records = std::move(records);
+    });
+    if (ok)
+        m_records = std::move(records);
 }
 
 bool KadPublishStore::save(const QString& path, time_t now)
 {
     std::erase_if(m_records, [now](const auto& entry) { return entry.second.due <= now; });
 
-    const QString tmpPath = path + QStringLiteral(".tmp");
-    try {
-        QFile::remove(tmpPath);
-
-        SafeFile file;
-        if (!file.open(tmpPath, QIODevice::WriteOnly)) {
-            logWarning(QStringLiteral("kadpublish.dat: cannot write %1").arg(tmpPath));
-            return false;
-        }
-
-        file.writeUInt8(kKadPublishFileVersion);
+    const bool ok = writeVersioned(path, kKadPublishFileVersion, [this](SafeFile& file) {
         file.writeUInt32(static_cast<uint32>(m_records.size()));
         for (const auto& [id, rec] : m_records) {
             uint8 raw[16];
@@ -73,16 +46,10 @@ bool KadPublishStore::save(const QString& path, time_t now)
             file.writeUInt64(static_cast<uint64>(rec.due));
             file.writeHash16(rec.files.data());
         }
-        commitAndReplace(file, tmpPath, path, theApp.commitFilesNow());
-    } catch (const std::exception& e) {
-        logError(QStringLiteral("kadpublish.dat: save failed (%1)")
-                     .arg(QString::fromUtf8(e.what())));
-        QFile::remove(tmpPath);
-        return false;
-    }
-
-    m_dirty = false;
-    return true;
+    });
+    if (ok)
+        m_dirty = false;
+    return ok;
 }
 
 std::optional<time_t> KadPublishStore::dueTime(const kad::UInt128& keywordID,

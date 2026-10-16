@@ -583,6 +583,8 @@ public:
     // -- Debug strings ------------------------------------------------------
 
     [[nodiscard]] QString dbgGetClientInfo(bool formatIP = false) const;
+    /// "ip:tcp (UDP p) 'name' soft" for Kad buddy log lines.
+    [[nodiscard]] QString kadBuddyInfo() const;
     [[nodiscard]] QString dbgGetFullClientSoftVer() const;
     [[nodiscard]] static QString dbgGetUploadState(UploadState state);
     [[nodiscard]] static QString dbgGetDownloadState(DownloadState state);

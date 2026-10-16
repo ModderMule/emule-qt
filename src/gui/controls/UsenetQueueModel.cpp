@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "controls/UsenetQueueModel.h"
+#include "utils/Appearance.h"
 
 #include "utils/MenuUtils.h"
 #include "utils/StringUtils.h"
@@ -532,11 +533,11 @@ QVariant UsenetQueueModel::data(const QModelIndex& index, int role) const
 
     case Qt::ForegroundRole:
         if (it.status == UsenetRowStatus::Failed)
-            return QVariant::fromValue(QColor(0xCC, 0x00, 0x00));
+            return QVariant::fromValue(themed(QColor(0xCC, 0x00, 0x00), QColor(0xFF, 0x6B, 0x6B)));
         if (it.status == UsenetRowStatus::Paused)
             return QVariant::fromValue(QColor(0x88, 0x88, 0x88));
         if (isPostProcessing(it.status))
-            return QVariant::fromValue(QColor(0x33, 0x99, 0xFF));
+            return QVariant::fromValue(roleColor(TextRole::Info));
         return {};
 
     default:

@@ -210,6 +210,9 @@
     <ClCompile Include="kademlia\KadContact.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="kademlia\KadBuddyStore.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="kademlia\KadEntry.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -385,6 +388,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="utils\SafeFile.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\VersionedRecordFile.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="transfer\Scheduler.cpp">
@@ -779,6 +785,9 @@
     <ClInclude Include="kademlia\KadContact.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="kademlia\KadBuddyStore.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="kademlia\KadEntry.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -984,6 +993,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\SafeFile.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\VersionedRecordFile.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <QtMoc Include="transfer\Scheduler.h">

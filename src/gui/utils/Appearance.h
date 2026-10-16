@@ -3,6 +3,8 @@
 /// @file Appearance.h
 /// @brief Theme (light/dark) override and app-wide font scaling (issue #18).
 
+#include <QColor>
+#include <QString>
 #include <QtGlobal>
 
 namespace eMule {
@@ -17,6 +19,26 @@ bool applyColorScheme(int scheme, bool allowFallback);
 
 /// True when lists are drawn dark: the forced choice, else the system scheme.
 [[nodiscard]] bool isDarkScheme();
+
+/// Semantic text colours. Each has a light and a dark value that keeps at least
+/// 3:1 contrast on the matching window/base background (issue #18).
+enum class TextRole : int {
+    Info,     ///< log info lines, static servers
+    Success,  ///< server log success (MFC blue)
+    Warning,  ///< server log warning (MFC purple)
+    Error,    ///< errors, failures
+    Good,     ///< connected / HighID / ok
+    Caution,  ///< LowID, firewalled, connecting, log warnings
+};
+
+/// @p light or @p dark, by isDarkScheme().
+[[nodiscard]] QColor themed(const QColor& light, const QColor& dark);
+
+/// Colour of @p role for the current scheme.
+[[nodiscard]] QColor roleColor(TextRole role);
+
+/// roleColor() as "#rrggbb", for HTML and style sheets.
+[[nodiscard]] QString roleColorName(TextRole role);
 
 /// Scales the app font to @p percent of the system default. Call once, before
 /// any widget is created.

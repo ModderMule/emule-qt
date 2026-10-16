@@ -7,6 +7,7 @@
 /// search/ConfidenceText.h, which the web pages use too.
 
 #include "search/ConfidenceText.h"
+#include "utils/Appearance.h"
 
 #include <QColor>
 
@@ -23,10 +24,10 @@ namespace eMule {
 [[nodiscard]] inline QColor confidenceColor(const QString& id)
 {
     switch (confidenceRank(id)) {
-    case 1:  return {0xD0, 0x00, 0x00};
+    case 1:  return themed(QColor(0xD0, 0x00, 0x00), QColor(0xFF, 0x6B, 0x6B));
     case 2:  return {0xD0, 0x60, 0x00};
     case 3:  return {0xA0, 0x80, 0x00};
-    case 5:  return {0x00, 0x80, 0x00};
+    case 5:  return roleColor(TextRole::Good);
     default: return {};
     }
 }

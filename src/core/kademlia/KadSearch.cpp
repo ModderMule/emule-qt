@@ -1654,21 +1654,10 @@ void Search::storePacket(bool flushRemaining)
         }
         case SearchType::FindBuddy: {
             // Send KADEMLIA_FINDBUDDY_REQ to closest responded contacts.
-            // Matches MFC Search.cpp:810-837.
-            auto* prefs = Kademlia::getInstancePrefs();
-            if (!prefs)
+            // Matches MFC Search.cpp:810-837. The BuddyID is ~kadID; MFC writes m_uTarget
+            // (always ~kadID there), ours may be a random walk target.
+            if (!Kademlia::getInstancePrefs())
                 break;
-
-            SafeMemFile packet;
-            // BuddyID = ~kadID — echoed back and checked in FINDBUDDY_RES.
-            // MFC writes m_uTarget (always ~kadID there); ours may be a random walk target.
-            UInt128 buddyID(true);
-            buddyID.xorWith(prefs->kadId());
-            io::writeUInt128(packet, buddyID);
-            // Write our client hash so the remote can do a callback
-            io::writeUInt128(packet, prefs->clientHash());
-            // Write our ED2K TCP port so the remote can TCP-connect to us
-            packet.writeUInt16(theApp.advertisedTcpPort());
 
             // Crypt target as MFC: without it the packet goes out in clear
             // unless the contact already gave us a UDP key.
@@ -1677,9 +1666,8 @@ void Search::storePacket(bool flushRemaining)
                        .arg(m_searchID)
                        .arg(contact->address().toString()).arg(contact->getUDPPort())
                        .arg(contact->getVersion()).arg(dist.toHexString()));
-            udpListener->sendPacket(packet, KADEMLIA_FINDBUDDY_REQ,
-                                    contact->address().toUint32(), contact->getUDPPort(),
-                                    contact->getUDPKey(), &clientID);
+            udpListener->sendFindBuddyReq(contact->address().toUint32(), contact->getUDPPort(),
+                                          contact->getUDPKey(), &clientID);
             sent = true;
             break;
         }

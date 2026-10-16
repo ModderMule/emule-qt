@@ -85,7 +85,7 @@ void MiniMuleWidget::updateStats(bool connected, double upKBs, double downKBs,
     m_connectedLabel->setText(connected ? tr("Yes") : tr("No"));
     m_connectedLabel->setStyleSheet(connected
         ? QStringLiteral("color: green; font-weight: bold;")
-        : QStringLiteral("color: red; font-weight: bold;"));
+        : QStringLiteral("color: #CC0000; font-weight: bold;"));   // red is 2.7:1 on the orange
 
     m_uploadLabel->setText(QStringLiteral("%1 KB/s").arg(upKBs, 0, 'f', 1));
     m_downloadLabel->setText(QStringLiteral("%1 KB/s").arg(downKBs, 0, 'f', 1));

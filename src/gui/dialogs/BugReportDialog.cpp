@@ -6,6 +6,7 @@
 
 #include "controls/LogWidget.h"
 #include "prefs/Preferences.h"
+#include "utils/Appearance.h"
 #include "app/AppConfig.h"
 #include "net/HttpDefaults.h"
 
@@ -121,7 +122,7 @@ BugReportDialog::BugReportDialog(LogWidget* logWidget, QWidget* parent)
 
     // Status label (hidden initially)
     m_statusLabel = new QLabel(this);
-    m_statusLabel->setStyleSheet(QStringLiteral("color: red;"));
+    m_statusLabel->setStyleSheet(QStringLiteral("color: %1;").arg(roleColorName(TextRole::Error)));
     m_statusLabel->setWordWrap(true);
     m_statusLabel->hide();
     mainLayout->addWidget(m_statusLabel);

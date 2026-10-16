@@ -478,6 +478,7 @@ target_link_libraries(tst_UrlPrefField PRIVATE
 # applyDetails() with hand-built CBOR, so no daemon and no panel.
 emule_add_test(tst_UsenetDetailsDialog FOLDER "Gui"
     SOURCES tst_UsenetDetailsDialog.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/UsenetDetailsDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetQueueModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetFileCheckList.cpp"
@@ -501,6 +502,7 @@ target_link_libraries(tst_UsenetDetailsDialog PRIVATE
 # The Usenet queue model's progress bars and file checkboxes, off hand-built rows.
 emule_add_test(tst_UsenetQueueModel FOLDER "Gui"
     SOURCES tst_UsenetQueueModel.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetQueueModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/MenuUtils.cpp")
 target_include_directories(tst_UsenetQueueModel PRIVATE
@@ -737,6 +739,7 @@ endif()
 # compiles standalone against the stub pch.
 emule_add_test(tst_DownloadStatusText FOLDER "Gui"
     SOURCES tst_DownloadStatusText.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadListModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/ClientIcons.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
@@ -752,6 +755,7 @@ target_link_libraries(tst_DownloadStatusText PRIVATE Qt6::Widgets)
 # The shared-files list updated in place: diff of a new list, single-row pushes.
 emule_add_test(tst_SharedFilesModel FOLDER "Gui"
     SOURCES tst_SharedFilesModel.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadListModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/FilterEdit.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/SharedFilesModel.cpp"
@@ -771,6 +775,7 @@ target_link_libraries(tst_SharedFilesModel PRIVATE Qt6::Widgets)
 # Same standalone-source trick as tst_DownloadStatusText above.
 emule_add_test(tst_FileMarks FOLDER "Gui"
     SOURCES tst_FileMarks.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadListModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/FilterEdit.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/SharedFilesModel.cpp"

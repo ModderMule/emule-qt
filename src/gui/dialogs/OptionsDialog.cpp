@@ -4145,7 +4145,7 @@ void OptionsDialog::testNewsServer()
         }
         if (!resp.fieldBool(0)) {
             m_usenetTestResult->setText(resp.fieldString(1));
-            m_usenetTestResult->setStyleSheet(QStringLiteral("color: #c62828;"));
+            m_usenetTestResult->setStyleSheet(QStringLiteral("color: %1;").arg(roleColorName(TextRole::Error)));
             revealTestResult(m_usenetTestResult);
             return;
         }
@@ -4156,7 +4156,7 @@ void OptionsDialog::testNewsServer()
         // does not.
         m_usenetTestResult->setText(result.at(1).toString());
         m_usenetTestResult->setStyleSheet(
-            ok ? QStringLiteral("color: #2e7d32;") : QStringLiteral("color: #c62828;"));
+            ok ? QStringLiteral("color: %1;").arg(roleColorName(TextRole::Good)) : QStringLiteral("color: %1;").arg(roleColorName(TextRole::Error)));
         revealTestResult(m_usenetTestResult);
     });
 }
@@ -5175,7 +5175,7 @@ void OptionsDialog::testIndexer()
         }
         if (!resp.fieldBool(0)) {
             m_indexerTestResult->setText(resp.fieldString(1));
-            m_indexerTestResult->setStyleSheet(QStringLiteral("color: #c62828;"));
+            m_indexerTestResult->setStyleSheet(QStringLiteral("color: %1;").arg(roleColorName(TextRole::Error)));
             revealTestResult(m_indexerTestResult);
             return;
         }
@@ -5186,7 +5186,7 @@ void OptionsDialog::testIndexer()
         m_indexerTestResult->setText(ok ? result.at(1).toString()
                                         : result.at(2).toString());
         m_indexerTestResult->setStyleSheet(
-            ok ? QStringLiteral("color: #2e7d32;") : QStringLiteral("color: #c62828;"));
+            ok ? QStringLiteral("color: %1;").arg(roleColorName(TextRole::Good)) : QStringLiteral("color: %1;").arg(roleColorName(TextRole::Error)));
         revealTestResult(m_indexerTestResult);
     });
 }
@@ -5236,7 +5236,7 @@ QWidget* OptionsDialog::createExtendedPage()
            "settings."), page);
     warning->setWordWrap(true);
     auto warnPal = warning->palette();
-    warnPal.setColor(QPalette::WindowText, QColor(0x80, 0x00, 0x00));
+    warnPal.setColor(QPalette::WindowText, themed(QColor(0x80, 0x00, 0x00), QColor(0xFF, 0x6B, 0x6B)));
     warning->setPalette(warnPal);
     outerLayout->addWidget(warning);
 

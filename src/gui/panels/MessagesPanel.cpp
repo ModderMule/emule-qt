@@ -11,6 +11,7 @@
 #include "controls/FitTextTabBar.h"
 #include "controls/FriendListModel.h"
 #include "controls/LogTextView.h"
+#include "utils/Appearance.h"
 #include "dialogs/AddFriendDialog.h"
 #include "utils/StringUtils.h"
 #include "dialogs/DetailDialog.h"
@@ -657,8 +658,9 @@ void MessagesPanel::updateChatDisplay()
             continue;
         }
 
-        const QString color = msg.outgoing ? QStringLiteral("#3399FF")
-                                            : QStringLiteral("#CC0000");
+        const QString color = msg.outgoing
+            ? roleColorName(TextRole::Info)
+            : themed(QColor(0xCC, 0x00, 0x00), QColor(0xFF, 0x6B, 0x6B)).name();
         // Linkify the raw message; smileys are rendered into the gaps between links
         // only, so a ':/' inside a URL cannot turn into an image (TextLinks.h).
         // "Show smileys" off: the text as typed (MFC ChatSelector.cpp:155)

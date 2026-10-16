@@ -6,6 +6,8 @@
 #include "net/BindAddress.h"
 #include "kademlia/KadLog.h"
 #include "kademlia/KadClientSearcher.h"
+#include "kademlia/KadContact.h"
+#include "kademlia/KadMiscUtils.h"
 #include "kademlia/KadDefines.h"
 #include "kademlia/KadFirewallTester.h"
 #include "kademlia/KadIndexed.h"
@@ -113,6 +115,13 @@ void Kademlia::start(KadPrefs* prefs)
     m_routingZone = new RoutingZone(m_prefs->kadId(), nodesFile, this);
     m_prefs->setRoutingZone(m_routingZone);
 
+    // Like Indexed, never the temp dir: a test run must not leave or read a store there.
+    m_buddyStorePath = cfgDir.isEmpty() ? QString()
+                                        : cfgDir + u'/' + QLatin1StringView(kBuddyStoreFileName);
+    m_buddyStore = BuddyStore();
+    if (!m_buddyStorePath.isEmpty())
+        m_buddyStore.load(m_buddyStorePath, time(nullptr));
+
     // Initialize timers — matches MFC Kademlia.cpp Start()
     time_t now = time(nullptr);
     m_nextSearchJumpStart = now;
@@ -176,6 +185,9 @@ void Kademlia::stop()
     // Clear zone events before deleting routing zones.
     // MFC: m_mapEvents.clear() in Stop().
     m_zoneEvents.clear();
+
+    if (!m_buddyStorePath.isEmpty())
+        m_buddyStore.save(m_buddyStorePath, time(nullptr));
 
     // Clean up components (reverse order of creation)
     delete m_routingZone;
@@ -600,6 +612,7 @@ void Kademlia::process()
                 logKad(randomTarget
                            ? QStringLiteral("Kad: Initiated buddy search (random target)")
                            : QStringLiteral("Kad: Initiated buddy search"));
+                askRememberedBuddies(now);
             } else {
                 // Search ID already in use — re-set the flag for next cycle
                 m_prefs->setFindBuddy(true);
@@ -740,6 +753,30 @@ void Kademlia::countSessionStats()
 
     if (m_routingZone)
         raiseKad(&KadCounters::peakContacts, m_routingZone->getNumContacts());
+}
+
+void Kademlia::askRememberedBuddies(time_t now)
+{
+    if (!m_udpListener)
+        return;
+    const auto due = m_buddyStore.takeDue(now);
+    if (due.empty())
+        return;
+
+    logKad(QStringLiteral("Kad: asking %1 remembered buddies").arg(due.size()));
+    for (const auto& e : due) {
+        if (s_clientList && s_clientList->isBannedClient(Address::fromHostOrder(e.ip)))
+            continue;
+        // A routing table contact carries the current UDP key and ID; else the stored ID.
+        const Contact* contact = m_routingZone ? m_routingZone->getContact(e.ip, e.udpPort, false)
+                                               : nullptr;
+        const UInt128 kadId = contact ? contact->getClientID() : e.kadId;
+        m_udpListener->sendFindBuddyReq(e.ip, e.udpPort,
+                                        contact ? contact->getUDPKey() : KadUDPKey(0),
+                                        kadId == 0 ? nullptr : &kadId);
+        logKad(QStringLiteral("Kad: FINDBUDDY_REQ → %1:%2 (remembered)")
+                   .arg(ipToString(e.ip)).arg(e.udpPort));
+    }
 }
 
 } // namespace eMule::kad

@@ -533,11 +533,14 @@ int main(int argc, char* argv[])
             // Color based on severity
             QString colored;
             if (severity == QtWarningMsg)
-                colored = QStringLiteral("<font color='#CC6600'>%1</font>").arg(text.toHtmlEscaped());
+                colored = QStringLiteral("<font color='%1'>%2</font>")
+                              .arg(eMule::roleColorName(eMule::TextRole::Caution), text.toHtmlEscaped());
             else if (severity == QtCriticalMsg || severity == QtFatalMsg)
-                colored = QStringLiteral("<font color='red'><b>%1</b></font>").arg(text.toHtmlEscaped());
+                colored = QStringLiteral("<font color='%1'><b>%2</b></font>")
+                              .arg(eMule::roleColorName(eMule::TextRole::Error), text.toHtmlEscaped());
             else
-                colored = QStringLiteral("<font color='#3399FF'>%1</font>").arg(text.toHtmlEscaped());
+                colored = QStringLiteral("<font color='%1'>%2</font>")
+                              .arg(eMule::roleColorName(eMule::TextRole::Info), text.toHtmlEscaped());
 
             // Route to the correct tab (pass epoch timestamp as seqId for sorted insertion)
             const qint64 seqId = ts > 0 ? static_cast<qint64>(ts) : 0;

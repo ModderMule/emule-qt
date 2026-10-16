@@ -307,6 +307,10 @@ private:
     std::deque<KadFirewallRequest> m_kadFirewallRequests;
     UpDownClient* m_buddy = nullptr;
     BuddyStatus m_buddyStatus = BuddyStatus::None;
+    // For the Kad log: m_buddy may be gone by the time it is reported lost.
+    QString m_buddyInfo;
+    QString m_buddyCandidateInfo;
+    std::time_t m_buddySince = 0;
 };
 
 } // namespace eMule
