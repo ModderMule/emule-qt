@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "controls/ContactsGraph.h"
+#include "utils/Appearance.h"
 
 #include <QPainter>
 #include <QPaintEvent>
@@ -69,7 +70,7 @@ void ContactsGraph::paintEvent(QPaintEvent* /*event*/)
 
     // Draw Y-axis labels
     QFont labelFont;
-    labelFont.setPointSize(7);
+    labelFont.setPointSize(scaledPointSize(7));
     p.setFont(labelFont);
     p.setPen(Qt::darkGray);
     p.drawText(QRect(0, plotArea.top() - 6, labelW - 2, 12),
@@ -80,7 +81,7 @@ void ContactsGraph::paintEvent(QPaintEvent* /*event*/)
     // Draw "Contacts" title
     p.setPen(Qt::black);
     QFont titleFont;
-    titleFont.setPointSize(7);
+    titleFont.setPointSize(scaledPointSize(7));
     titleFont.setBold(true);
     p.setFont(titleFont);
     p.drawText(QRect(plotArea.left(), r.top(), plotArea.width(), 12),

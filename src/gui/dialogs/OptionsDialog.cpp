@@ -20,6 +20,7 @@
 #include "prefs/Preferences.h"
 #include "net/SmtpClient.h"
 #include "dialogs/PortTest.h"
+#include "utils/Appearance.h"
 #include "utils/CountryFlags.h"
 #include "utils/DialogSizing.h"
 #include "utils/SharedDirState.h"
@@ -1045,6 +1046,26 @@ QWidget* OptionsDialog::createDisplayPage()
     m_disableQueueListCheck = new QCheckBox(tr("Disable Queue list"), cpuGroup);
     cpuLayout->addWidget(m_disableQueueListCheck);
     layout->addWidget(cpuGroup);
+
+    // --- Appearance group (not in MFC, issue #18) ---
+    auto* appearanceGroup = new QGroupBox(tr("Appearance"), page);
+    auto* appearanceGrid = new QGridLayout(appearanceGroup);
+    appearanceGrid->addWidget(new QLabel(tr("Theme:"), appearanceGroup), 0, 0);
+    m_colorSchemeCombo = new QComboBox(appearanceGroup);
+    m_colorSchemeCombo->addItem(tr("System default"), static_cast<int>(ThemeChoice::System));
+    m_colorSchemeCombo->addItem(tr("Light"), static_cast<int>(ThemeChoice::Light));
+    m_colorSchemeCombo->addItem(tr("Dark"), static_cast<int>(ThemeChoice::Dark));
+    appearanceGrid->addWidget(m_colorSchemeCombo, 0, 1);
+    appearanceGrid->addWidget(new QLabel(tr("Font size:"), appearanceGroup), 1, 0);
+    m_fontScaleCombo = new QComboBox(appearanceGroup);
+    for (const int percent : {80, 90, 100, 110, 125, 150, 175, 200})
+        m_fontScaleCombo->addItem(tr("%1 %").arg(percent), percent);
+    m_fontScaleCombo->setToolTip(tr("Text size of lists, menus and dialogs. Takes effect after a restart."));
+    appearanceGrid->addWidget(m_fontScaleCombo, 1, 1);
+    appearanceGrid->setColumnStretch(2, 1);
+    connect(m_colorSchemeCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
+    connect(m_fontScaleCombo, &QComboBox::currentIndexChanged, this, &OptionsDialog::markDirty);
+    layout->addWidget(appearanceGroup);
 
     // --- Font group ---
     auto* fontGroup = new QGroupBox(tr("Font for Server-, Message- and IRC-Window"), page);
@@ -6150,6 +6171,12 @@ void OptionsDialog::loadSettings()
     m_initialUseOriginalIcons = thePrefs.useOriginalIcons();
     m_showCountryFlagsCheck->setChecked(theUiState.showCountryFlags());
 
+    // Display - appearance
+    m_colorSchemeCombo->setCurrentIndex(
+        std::max(0, m_colorSchemeCombo->findData(theUiState.colorScheme())));
+    m_fontScaleCombo->setCurrentIndex(
+        std::max(0, m_fontScaleCombo->findData(theUiState.fontScalePercent())));
+
     // Display - font
     m_currentLogFont = thePrefs.logFont();
     if (!m_currentLogFont.isEmpty()) {
@@ -6354,6 +6381,22 @@ void OptionsDialog::saveSettings()
         QMessageBox::information(this, tr("Icons"),
             tr("The icon change will take effect after restarting the application."));
         m_initialUseOriginalIcons = m_useOriginalIconsCheck->isChecked();
+    }
+
+    // Display - appearance
+    if (const int scheme = m_colorSchemeCombo->currentData().toInt();
+        scheme != theUiState.colorScheme()) {
+        theUiState.setColorScheme(scheme);
+        if (!applyColorScheme(scheme, false)) {
+            QMessageBox::information(this, tr("Theme"),
+                tr("The theme change will take effect after restarting the application."));
+        }
+    }
+    if (const int percent = m_fontScaleCombo->currentData().toInt();
+        percent != theUiState.fontScalePercent()) {
+        theUiState.setFontScalePercent(percent);
+        QMessageBox::information(this, tr("Font size"),
+            tr("The font size change will take effect after restarting the application."));
     }
 
     // Display - font

@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "controls/KadContactsModel.h"
+#include "utils/Appearance.h"
 #include "utils/CountryFlags.h"
 
 #include <QFont>
@@ -62,7 +63,7 @@ QVariant KadContactsModel::data(const QModelIndex& index, int role) const
     if (role == Qt::FontRole && index.column() != ColStatus && index.column() != ColCountry) {
         QFont font;
         font.setFamily(QStringLiteral("Courier New"));
-        font.setPointSize(8);
+        font.setPointSize(scaledPointSize(8));
         return font;
     }
 

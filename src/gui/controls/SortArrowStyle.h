@@ -7,19 +7,19 @@
 /// double arrow while its second value is the sort key. Qt has one arrow; this draws it
 /// twice, side by side, when the header carries the property.
 
-#include <QProxyStyle>
+#include "utils/TooltipDelayStyle.h"
+
 #include <QStyleOption>
 #include <QWidget>
 
 namespace eMule {
 
-class SortArrowStyle : public QProxyStyle {
+class SortArrowStyle : public TooltipDelayStyle {
 public:
     static constexpr const char* kDoubleArrowProperty = "emuleDoubleSortArrow";
 
     /// Wraps the application style; @p parent owns it.
     explicit SortArrowStyle(QObject* parent)
-        : QProxyStyle()
     {
         setParent(parent);
     }
@@ -29,7 +29,7 @@ public:
     {
         if (element != PE_IndicatorHeaderArrow || !widget
             || !widget->property(kDoubleArrowProperty).toBool()) {
-            QProxyStyle::drawPrimitive(element, option, painter, widget);
+            TooltipDelayStyle::drawPrimitive(element, option, painter, widget);
             return;
         }
         // Two arrows half an arrow apart, centred on where the one would be
@@ -41,7 +41,7 @@ public:
             else
                 shifted.QStyleOption::operator=(*option);
             shifted.rect.translate(dx, 0);
-            QProxyStyle::drawPrimitive(element, &shifted, painter, widget);
+            TooltipDelayStyle::drawPrimitive(element, &shifted, painter, widget);
         }
     }
 };

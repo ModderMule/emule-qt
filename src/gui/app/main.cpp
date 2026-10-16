@@ -45,6 +45,7 @@ static void unixSignalHandler(int)
 #include "app/IpcClient.h"
 #include "app/MainWindow.h"
 #include "app/UiState.h"
+#include "utils/Appearance.h"
 #include "utils/CountryFlags.h"
 #include "utils/FileAssociation.h"
 #include "utils/StatusBarNotifier.h"
@@ -355,6 +356,10 @@ int main(int argc, char* argv[])
 
     // "Tooltip delay" (Options > Display)
     app.setStyle(new eMule::TooltipDelayStyle);
+
+    // Theme and font size (Options > Display), before any widget picks up the defaults
+    eMule::applyColorScheme(eMule::theUiState.colorScheme(), true);
+    eMule::applyFontScale(eMule::theUiState.fontScalePercent());
 
     // MFC CemuleDlg::OnInitDialog (srchybrid/EmuleDlg.cpp:395-398): no splash and no
     // window when starting minimized — but never on the very first start, where the

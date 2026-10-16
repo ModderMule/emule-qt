@@ -295,6 +295,9 @@
     <ClCompile Include="utils\RatingIcons.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
+    <ClCompile Include="utils\Appearance.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\ClientIcons.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
@@ -427,6 +430,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="controls\FitTextTabBar.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\Appearance.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="utils\ColorUtils.h">

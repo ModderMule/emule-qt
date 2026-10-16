@@ -300,6 +300,8 @@ private:
     QCheckBox* m_geoIpAutoUpdateCheck = nullptr;
     QPushButton* m_geoIpUpdateBtn = nullptr;
     QLabel* m_geoIpStatusLabel = nullptr;
+    QComboBox* m_colorSchemeCombo = nullptr;
+    QComboBox* m_fontScaleCombo = nullptr;
     QPushButton* m_selectFontBtn = nullptr;
     QLabel* m_fontPreviewLabel = nullptr;
     QString m_currentLogFont;

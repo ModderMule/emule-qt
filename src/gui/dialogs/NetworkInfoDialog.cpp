@@ -3,6 +3,7 @@
 /// @brief Network Information dialog — implementation.
 
 #include "dialogs/NetworkInfoDialog.h"
+#include "utils/Appearance.h"
 
 #include "app/IpcClient.h"
 
@@ -117,7 +118,8 @@ QString NetworkInfoDialog::infoHtml(const QCborMap& info, bool extended)
     QString html;
     html.reserve(4096);
 
-    html += QStringLiteral("<html><body style='font-family: sans-serif; font-size: 10pt;'>");
+    html += QStringLiteral("<html><body style='font-family: sans-serif; font-size: %1pt;'>")
+                .arg(scaledPointSize(10));
 
     // -----------------------------------------------------------------------
     // Client

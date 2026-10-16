@@ -3,6 +3,7 @@
 /// @brief Compact dual-pane speed graph — implementation.
 
 #include "controls/SpeedGraph.h"
+#include "utils/Appearance.h"
 
 #include <QFontMetrics>
 #include <QPainter>
@@ -109,7 +110,7 @@ void SpeedGraph::drawHalf(QPainter& p, const QRect& area,
 
     // Arrow + rate label at top-left
     QFont labelFont;
-    labelFont.setPointSize(7);
+    labelFont.setPointSize(scaledPointSize(7));
     p.setFont(labelFont);
     const QFontMetrics fm(labelFont);
 

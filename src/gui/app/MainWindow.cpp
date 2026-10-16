@@ -32,6 +32,7 @@
 #include "utils/WebServices.h"
 #include "utils/Log.h"
 #include "protocol/ED2KLink.h"
+#include "utils/Appearance.h"
 #include "utils/Ed2kLinkImporter.h"
 #include "utils/IpcFeedback.h"
 #include "utils/PreviewLauncher.h"
@@ -73,7 +74,6 @@
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QStyle>
-#include <QStyleHints>
 #include <QSystemTrayIcon>
 #include <QToolBar>
 #include <QToolButton>
@@ -1604,7 +1604,7 @@ QColor MainWindow::trayMeterColor() const
     if (const QColor chosen = theUiState.statsColor(11); chosen.isValid())
         return chosen;
 
-    return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark
+    return isDarkScheme()
         ? QColor(Qt::white)
         : QColor(Qt::black);
 }

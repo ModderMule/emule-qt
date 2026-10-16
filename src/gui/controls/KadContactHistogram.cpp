@@ -3,6 +3,7 @@
 /// @brief Qt port of MFC CKadContactHistogramCtrl::OnPaint().
 
 #include "controls/KadContactHistogram.h"
+#include "utils/Appearance.h"
 #include "controls/KadContactsModel.h"
 
 #include <QPainter>
@@ -81,7 +82,7 @@ void KadContactHistogram::paintEvent(QPaintEvent* /*event*/)
 
     // -- Fonts ---
     QFont labelFont;
-    labelFont.setPixelSize(10);
+    labelFont.setPixelSize(scaledPixelSize(10));
     const QFontMetrics fmLabel(labelFont);
 
     // MFC: measures "888" to get max numeric label width

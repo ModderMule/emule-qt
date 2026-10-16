@@ -9,6 +9,7 @@
 #include "media/MediaInfo.h"
 #include "prefs/Preferences.h"
 #include "protocol/ED2KLink.h"
+#include "utils/Appearance.h"
 #include "utils/ColorUtils.h"
 #include "utils/FileTypeIcons.h"
 #include "utils/FileTypeText.h"
@@ -24,7 +25,6 @@
 #include <QHash>
 #include <QIcon>
 #include <QSet>
-#include <QStyleHints>
 #include <QUrl>
 
 #include <algorithm>
@@ -43,7 +43,7 @@ QColor availabilityShade(int64_t sources)
     const int64_t step = std::clamp<int64_t>(sources - 1, 0, kShades - 1);
     if (step == 0)
         return {};
-    const bool dark = QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+    const bool dark = isDarkScheme();
     const QPalette pal = QGuiApplication::palette();
     const QColor base = dark ? pal.color(QPalette::Link) : QColor(0, 0, 255);
     return blend(pal.color(QPalette::Text), base,

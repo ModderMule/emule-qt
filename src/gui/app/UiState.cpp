@@ -92,6 +92,8 @@ void UiState::load(const QString& configDir)
         m_showCountryFlags = root["showCountryFlags"].as<bool>(m_showCountryFlags);
         m_showDownloadToolbar = root["showDownloadToolbar"].as<bool>(m_showDownloadToolbar);
         m_toolbarButtonStyle = root["toolbarButtonStyle"].as<int>(m_toolbarButtonStyle);
+        m_colorScheme = std::clamp(root["colorScheme"].as<int>(m_colorScheme), 0, 2);
+        m_fontScalePercent = std::clamp(root["fontScalePercent"].as<int>(m_fontScalePercent), 80, 200);
 
         m_toolbarSkinPath = QString::fromStdString(
             root["toolbarSkinPath"].as<std::string>(std::string{}));
@@ -193,6 +195,8 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "showCountryFlags" << YAML::Value << m_showCountryFlags;
     out << YAML::Key << "showDownloadToolbar" << YAML::Value << m_showDownloadToolbar;
     out << YAML::Key << "toolbarButtonStyle" << YAML::Value << m_toolbarButtonStyle;
+    out << YAML::Key << "colorScheme" << YAML::Value << m_colorScheme;
+    out << YAML::Key << "fontScalePercent" << YAML::Value << m_fontScalePercent;
 
     if (!m_toolbarSkinPath.isEmpty())
         out << YAML::Key << "toolbarSkinPath" << YAML::Value << m_toolbarSkinPath.toStdString();

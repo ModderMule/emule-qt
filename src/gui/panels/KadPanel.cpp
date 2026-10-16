@@ -4,6 +4,7 @@
 #include "app/IpcClient.h"
 #include "controls/AbstractListView.h"
 #include "controls/SortableItems.h"
+#include "utils/Appearance.h"
 #include "utils/CountryFlags.h"
 #include "utils/ListActivation.h"
 #include "controls/ContactsGraph.h"
@@ -394,7 +395,7 @@ QWidget* KadPanel::createContactsPanel()
     CountryFlags::bindFlagColumn(contactsView);
 
     // Compact monospace font for hex/binary display
-    QFont monoFont(QStringLiteral("Courier New"), 9);
+    QFont monoFont(QStringLiteral("Courier New"), scaledPointSize(9));
     m_contactsView->setFont(monoFont);
 
     layout->addWidget(m_contactsView);

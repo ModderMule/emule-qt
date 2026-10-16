@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "controls/LogWidget.h"
+#include "utils/Appearance.h"
 
 #include "controls/LogTextView.h"
 
@@ -47,7 +48,7 @@ QFont serverInfoFont()
         return QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/WineTahoma.ttf")) >= 0;
     }();
     Q_UNUSED(registered);
-    return QFont(QStringLiteral("Tahoma"), 10);
+    return QFont(QStringLiteral("Tahoma"), scaledPointSize(10));
 }
 
 } // namespace
@@ -91,7 +92,7 @@ LogWidget::LogWidget(QWidget* parent)
     // Log tab
     m_logBrowser = new LogTextView;
     m_logBrowser->setReadOnly(true);
-    m_logBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
+    m_logBrowser->setFont(QFont(QStringLiteral("Helvetica"), scaledPointSize(9)));
     if (thePrefs.useOriginalIcons())
         m_tabBar->addTab(QIcon(QStringLiteral(":/icons/Log.ico")), tr("Log"));
     else
@@ -101,7 +102,7 @@ LogWidget::LogWidget(QWidget* parent)
     // Verbose tab
     m_verboseBrowser = new LogTextView;
     m_verboseBrowser->setReadOnly(true);
-    m_verboseBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
+    m_verboseBrowser->setFont(QFont(QStringLiteral("Helvetica"), scaledPointSize(9)));
     if (thePrefs.useOriginalIcons())
         m_tabBar->addTab(QIcon(QStringLiteral(":/icons/Log.ico")), tr("Verbose"));
     else
@@ -111,7 +112,7 @@ LogWidget::LogWidget(QWidget* parent)
     // Usenet tab (shown only when showUsenetLog is true)
     m_usenetBrowser = new LogTextView;
     m_usenetBrowser->setReadOnly(true);
-    m_usenetBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
+    m_usenetBrowser->setFont(QFont(QStringLiteral("Helvetica"), scaledPointSize(9)));
     m_usenetTabIndex = m_tabBar->count();
     if (thePrefs.useOriginalIcons())
         m_tabBar->addTab(QIcon(QStringLiteral(":/icons/Usenet.ico")), tr("Usenet"));
@@ -123,7 +124,7 @@ LogWidget::LogWidget(QWidget* parent)
     // Kad tab
     m_kadBrowser = new LogTextView;
     m_kadBrowser->setReadOnly(true);
-    m_kadBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
+    m_kadBrowser->setFont(QFont(QStringLiteral("Helvetica"), scaledPointSize(9)));
     if (thePrefs.useOriginalIcons())
         m_tabBar->addTab(QIcon(QStringLiteral(":/icons/Kad.ico")), tr("Kad"));
     else
@@ -133,7 +134,7 @@ LogWidget::LogWidget(QWidget* parent)
     // IPC tab (shown only when enableIpcLog is true)
     m_ipcLogBrowser = new LogTextView;
     m_ipcLogBrowser->setReadOnly(true);
-    m_ipcLogBrowser->setFont(QFont(QStringLiteral("Helvetica"), 9));
+    m_ipcLogBrowser->setFont(QFont(QStringLiteral("Helvetica"), scaledPointSize(9)));
     m_ipcTabIndex = m_tabBar->count();
     if (thePrefs.useOriginalIcons())
         m_tabBar->addTab(QIcon(QStringLiteral(":/icons/Convert.ico")), tr("IPC"));

@@ -3,6 +3,7 @@
 /// @brief Shared Files tab panel — implementation.
 
 #include "panels/SharedFilesPanel.h"
+#include "utils/Appearance.h"
 #include "utils/AsyncMessageBox.h"
 #include "utils/SharedFilesFetch.h"
 
@@ -940,9 +941,9 @@ QWidget* SharedFilesPanel::createBottomTabs()
     // MFC uses yellow gradient bars with blue percentage text
     static const QString barStyle = QStringLiteral(
         "QProgressBar { border: 1px solid #999; background: #FFFFF0;"
-        "  text-align: center; color: #1446FF; font-size: 10px; }"
+        "  text-align: center; color: #1446FF; font-size: %1px; }"
         "QProgressBar::chunk { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
-        "  stop:0 #FFFFF0, stop:1 #FFFF00); }");
+        "  stop:0 #FFFFF0, stop:1 #FFFF00); }").arg(scaledPixelSize(10));
 
     auto makeBar = [&](QProgressBar*& bar) {
         bar = new QProgressBar;
@@ -950,7 +951,7 @@ QWidget* SharedFilesPanel::createBottomTabs()
         bar->setValue(0);
         bar->setTextVisible(true);
         bar->setFormat(QStringLiteral("%p%"));
-        bar->setFixedHeight(16);
+        bar->setFixedHeight(scaledPixelSize(16));
         bar->setStyleSheet(barStyle);
     };
 

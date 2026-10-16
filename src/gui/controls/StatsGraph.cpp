@@ -3,6 +3,7 @@
 /// @brief Oscilloscope-style line chart widget — implementation.
 
 #include "controls/StatsGraph.h"
+#include "utils/Appearance.h"
 
 #include "utils/StringUtils.h"
 
@@ -44,7 +45,7 @@ QString StatsGraph::spanCaption(int plotWidth, double sampleIntervalSec)
 QRect StatsGraph::plotRect() const
 {
     QFont labelFont;
-    labelFont.setPointSize(7);
+    labelFont.setPointSize(scaledPointSize(7));
     const QFontMetrics fm(labelFont);
     const int legendHeight = fm.height() + 8;
     const int yLabelWidth = fm.horizontalAdvance(QStringLiteral("0000.0")) + 6;
@@ -195,7 +196,7 @@ void StatsGraph::paintEvent(QPaintEvent* /*event*/)
 
     // Layout: left margin for Y labels, bottom margin for legend
     QFont labelFont;
-    labelFont.setPointSize(7);
+    labelFont.setPointSize(scaledPointSize(7));
     const QFontMetrics fm(labelFont);
 
     const int legendHeight = fm.height() + 8;

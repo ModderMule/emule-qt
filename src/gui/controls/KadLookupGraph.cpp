@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "controls/KadLookupGraph.h"
+#include "utils/Appearance.h"
 
 #include <QPainter>
 #include <QPaintEvent>
@@ -72,7 +73,7 @@ void KadLookupGraph::paintEvent(QPaintEvent* /*event*/)
 
     // Font metrics for labels
     QFont labelFont;
-    labelFont.setPointSize(8);
+    labelFont.setPointSize(scaledPointSize(8));
     p.setFont(labelFont);
     const QFontMetrics fm(labelFont);
     const int labelH = fm.height();

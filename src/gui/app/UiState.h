@@ -20,6 +20,7 @@
 #include <QTimer>
 #include <QTreeWidget>
 
+#include <algorithm>
 #include <array>
 #include <memory>
 
@@ -179,6 +180,22 @@ public:
         scheduleSave();
     }
 
+    /// Theme: 0 = follow the system, 1 = light, 2 = dark. Not in MFC (issue #18).
+    [[nodiscard]] int colorScheme() const { return m_colorScheme; }
+    void setColorScheme(int scheme)
+    {
+        m_colorScheme = std::clamp(scheme, 0, 2);
+        scheduleSave();
+    }
+
+    /// App font size in percent of the system default, 80-200. Applied at start only.
+    [[nodiscard]] int fontScalePercent() const { return m_fontScalePercent; }
+    void setFontScalePercent(int percent)
+    {
+        m_fontScalePercent = std::clamp(percent, 80, 200);
+        scheduleSave();
+    }
+
     /// Toolbar button order (empty = default).
     [[nodiscard]] const QList<int>& toolbarButtonOrder() const { return m_toolbarButtonOrder; }
     void setToolbarButtonOrder(const QList<int>& order) { m_toolbarButtonOrder = order; }
@@ -264,6 +281,8 @@ private:
     bool m_firstStartWizardDone = false;
     bool m_showCountryFlags = true;
     bool m_showDownloadToolbar = true;
+    int  m_colorScheme = 0;
+    int  m_fontScalePercent = 100;
     QList<int> m_toolbarButtonOrder;
     int  m_toolbarButtonStyle = 3;
     QString m_toolbarSkinPath;

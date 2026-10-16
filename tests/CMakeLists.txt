@@ -528,6 +528,7 @@ target_link_libraries(tst_CategoryFilterProxy PRIVATE
 # no daemon, no panel.
 emule_add_test(tst_ListSorting FOLDER "Gui"
     SOURCES tst_ListSorting.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetQueueModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/ServerListModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadListModel.cpp"
@@ -559,6 +560,7 @@ target_link_libraries(tst_ListSorting PRIVATE
 # plumbing, and saved header layouts surviving an appended column.
 emule_add_test(tst_CountryFlags FOLDER "Gui"
     SOURCES tst_CountryFlags.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/ClientListModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/ServerListModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/KadContactsModel.cpp"
@@ -586,6 +588,7 @@ target_link_libraries(tst_ConnectionPresets PRIVATE eMule::Core)
 # List header column menu (MFC CMuleListCtrl): hide/show, default-hidden, persistence.
 emule_add_test(tst_ListHeaderMenu FOLDER "Gui"
     SOURCES tst_ListHeaderMenu.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp")
 target_include_directories(tst_ListHeaderMenu PRIVATE
     "${CMAKE_SOURCE_DIR}/src/gui"
@@ -597,6 +600,7 @@ target_link_libraries(tst_ListHeaderMenu PRIVATE
 # eNode torrent/Usenet rows in the result list, and the Meta API account dialog.
 emule_add_test(tst_MetaSearchGui FOLDER "Gui"
     SOURCES tst_MetaSearchGui.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/SearchResultsModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/SearchResultsProxy.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/FilterEdit.cpp"
@@ -618,6 +622,7 @@ target_link_libraries(tst_MetaSearchGui PRIVATE
 # it needs the real dialog and DialogSizing but no daemon and no panel.
 emule_add_test(tst_CategoryDialog FOLDER "Gui"
     SOURCES tst_CategoryDialog.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CategoryDialog.cpp"
             # the Add Friend dialog rides along: same shape, same dependencies
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/AddFriendDialog.cpp"
@@ -639,6 +644,7 @@ target_link_libraries(tst_CategoryDialog PRIVATE
 # makes it the place to check what the offline load path puts on the pages.
 emule_add_test(tst_OptionsDialogSizing FOLDER "Gui"
     SOURCES tst_OptionsDialogSizing.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FirstStartWizard.cpp"
@@ -669,6 +675,7 @@ endif()
 # The Statistics window's Usenet branch, fed a GetUsenetStats reply in wire shape.
 emule_add_test(tst_StatisticsPanel FOLDER "Gui"
     SOURCES tst_StatisticsPanel.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/panels/StatisticsPanel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/StatsGraph.cpp"

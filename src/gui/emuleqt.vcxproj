@@ -219,6 +219,7 @@
     <ClCompile Include="utils\PriorityText.cpp" />
     <ClCompile Include="utils\Smileys.cpp" />
     <ClCompile Include="utils\RatingIcons.cpp" />
+    <ClCompile Include="utils\Appearance.cpp" />
     <ClCompile Include="utils\ClientIcons.cpp" />
     <ClCompile Include="utils\CountryFlags.cpp" />
     <ClCompile Include="controls\ClientListModel.cpp" />
@@ -354,6 +355,7 @@
     <ClInclude Include="utils\UrlPrefField.h" />
     <ClInclude Include="utils\ListActivation.h" />
     <ClInclude Include="utils\MenuUtils.h" />
+    <ClInclude Include="utils\Appearance.h" />
     <ClInclude Include="utils\ColorUtils.h" />
     <ClInclude Include="utils\ViewNavigation.h" />
     <ClInclude Include="utils\ViewSelection.h" />
