@@ -33,8 +33,6 @@
 #include "dialogs/CollectionCreateDialog.h"
 #include "dialogs/CollectionViewDialog.h"
 
-#include "files/Collection.h"
-#include "files/CollectionFile.h"
 #include "search/SearchParams.h"
 #include "utils/Opcodes.h"
 #include "utils/OtherFunctions.h"
@@ -534,7 +532,7 @@ void SharedFilesPanel::onFileContextMenu(const QPoint& pos)
 
         // View Collection...
         auto* viewAct = collMenu->addAction(tr("View Collection..."), this,
-                                            [this, hash]() { showCollection(hash); });
+                                            [this, hash]() { CollectionViewDialog::showForFile(m_ipc, hash, this); });
         viewAct->setEnabled(isColl);
 
         // Search Author's Collections...
@@ -1985,7 +1983,7 @@ void SharedFilesPanel::openSharedFile(const QString& hash)
     // has registered for .emulecollection — MFC branches the same way inside OpenFile()
     // (srchybrid/SharedFilesCtrl.cpp:1260-1265).
     if (file->isCollection) {
-        showCollection(hash);
+        CollectionViewDialog::showForFile(m_ipc, hash, this);
         return;
     }
 
@@ -2015,44 +2013,6 @@ void SharedFilesPanel::openSharedFile(const QString& hash)
         launchPreview(url);
     else
         QDesktopServices::openUrl(QUrl(url));
-}
-
-void SharedFilesPanel::showCollection(const QString& hash)
-{
-    if (!m_ipc || !m_ipc->isConnected() || hash.isEmpty())
-        return;
-
-    Ipc::IpcMessage msg(Ipc::IpcMsgType::GetCollectionInfo);
-    msg.append(hash);
-    m_ipc->sendRequest(std::move(msg), [this](const Ipc::IpcMessage& resp) {
-        if (resp.type() != Ipc::IpcMsgType::Result || !resp.fieldBool(0))
-            return;
-        const QCborMap data = resp.fieldMap(1);
-
-        // Build a temporary Collection from IPC data
-        auto* coll = new Collection;
-        coll->m_name = data.value(QStringLiteral("name")).toString();
-        coll->m_authorName = data.value(QStringLiteral("authorName")).toString();
-
-        const QCborArray filesArr = data.value(QStringLiteral("files")).toArray();
-        for (const auto& v : filesArr) {
-            const QCborMap fm = v.toMap();
-            auto cf = std::make_unique<CollectionFile>();
-            const QString cfHash = fm.value(QStringLiteral("hash")).toString();
-            const QByteArray hashBytes = QByteArray::fromHex(cfHash.toLatin1());
-            if (hashBytes.size() == 16)
-                cf->setFileHash(reinterpret_cast<const uint8*>(hashBytes.constData()));
-            cf->setFileSize(fm.value(QStringLiteral("fileSize")).toInteger());
-            cf->setFileName(fm.value(QStringLiteral("fileName")).toString(), true);
-            coll->addFile(cf.get(), true);
-        }
-
-        auto* dlg = new CollectionViewDialog(*coll, m_ipc, this);
-        dlg->setAttribute(Qt::WA_DeleteOnClose);
-        // Transfer ownership of collection to dialog
-        connect(dlg, &QDialog::destroyed, dlg, [coll]() { delete coll; });
-        dlg->show();
-    });
 }
 
 QModelIndex SharedFilesPanel::fileIndexFor(const QString& hash) const

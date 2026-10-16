@@ -60,6 +60,7 @@ private slots:
     void scrollToBottomRelatches();
     void restoreScrollValueSurvivesRebuild();
     void autoScrollFlag();
+    void restoreWithAutoScrollOff();
 };
 
 void tst_LogTextView::followsWhenAtBottom()
@@ -219,13 +220,46 @@ void tst_LogTextView::autoScrollFlag()
 {
     LogTextView view;
     QVERIFY(view.autoScroll());   // MFC default (HTRichEditCtrl.cpp:60)
+    showAndFill(view);
+    QVERIFY(atBottom(view));
+
+    // Off holds the view even at the very bottom (issue #14: MFC's toggle did nothing)
     view.setAutoScroll(false);
     QVERIFY(!view.autoScroll());
-    // The flag does not gate following — only the view position does.
-    showAndFill(view);
-    fill(view, 5, 1000);
+    QScrollBar* bar = view.verticalScrollBar();
+    const int held = bar->value();
+    fill(view, 20, 1000);
+    QCoreApplication::processEvents();
+    QCOMPARE(bar->value(), held);
+    QVERIFY(bar->maximum() > held);
+
+    // Within the slack, too
+    bar->setValue(bar->maximum() - LogTextView::kFollowSlackPx);
+    const int nearBottom = bar->value();
+    fill(view, 20, 2000);
+    QCoreApplication::processEvents();
+    QCOMPARE(bar->value(), nearBottom);
+
+    // Back on at the bottom: follows again
+    bar->setValue(bar->maximum());
+    view.setAutoScroll(true);
+    fill(view, 5, 3000);
     QCoreApplication::processEvents();
     QVERIFY(atBottom(view));
+}
+
+void tst_LogTextView::restoreWithAutoScrollOff()
+{
+    // MessagesPanel rebuild while the chat's Autoscroll is off: the restore wins
+    LogTextView view;
+    showAndFill(view);
+    view.setAutoScroll(false);
+    view.verticalScrollBar()->setValue(150);
+    view.clear();
+    fill(view, 201);
+    view.restoreScrollValue(150);
+    QCoreApplication::processEvents();
+    QCOMPARE(view.verticalScrollBar()->value(), 150);
 }
 
 // The chat pane is cleared and rebuilt on every message; a captcha picture is put back

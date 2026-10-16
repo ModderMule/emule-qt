@@ -28,6 +28,10 @@ public:
                                   IpcClient* ipc = nullptr,
                                   QWidget* parent = nullptr);
 
+    /// Fetch the collection the daemon parsed for shared file @p hash and show
+    /// it in a non-modal viewer. Silently does nothing if it isn't a collection.
+    static void showForFile(IpcClient* ipc, const QString& hash, QWidget* parent);
+
 private:
     void downloadSelected();
 

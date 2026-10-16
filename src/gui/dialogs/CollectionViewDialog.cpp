@@ -136,6 +136,48 @@ CollectionViewDialog::CollectionViewDialog(const Collection& collection,
 }
 
 // ---------------------------------------------------------------------------
+// showForFile
+// ---------------------------------------------------------------------------
+
+void CollectionViewDialog::showForFile(IpcClient* ipc, const QString& hash, QWidget* parent)
+{
+    if (!ipc || !ipc->isConnected() || hash.isEmpty())
+        return;
+
+    Ipc::IpcMessage msg(Ipc::IpcMsgType::GetCollectionInfo);
+    msg.append(hash);
+    QPointer<QWidget> owner(parent);
+    ipc->sendRequest(std::move(msg), [ipc, owner](const Ipc::IpcMessage& resp) {
+        if (!owner || resp.type() != Ipc::IpcMsgType::Result || !resp.fieldBool(0))
+            return;
+        const QCborMap data = resp.fieldMap(1);
+
+        // Temporary Collection from the IPC data, owned by the dialog
+        auto* coll = new Collection;
+        coll->m_name = data.value(QStringLiteral("name")).toString();
+        coll->m_authorName = data.value(QStringLiteral("authorName")).toString();
+
+        const QCborArray filesArr = data.value(QStringLiteral("files")).toArray();
+        for (const auto& v : filesArr) {
+            const QCborMap fm = v.toMap();
+            auto cf = std::make_unique<CollectionFile>();
+            const QByteArray hashBytes =
+                QByteArray::fromHex(fm.value(QStringLiteral("hash")).toString().toLatin1());
+            if (hashBytes.size() == 16)
+                cf->setFileHash(reinterpret_cast<const uint8*>(hashBytes.constData()));
+            cf->setFileSize(static_cast<EMFileSize>(fm.value(QStringLiteral("fileSize")).toInteger()));
+            cf->setFileName(fm.value(QStringLiteral("fileName")).toString(), true);
+            coll->addFile(cf.get(), true);
+        }
+
+        auto* dlg = new CollectionViewDialog(*coll, ipc, owner);
+        dlg->setAttribute(Qt::WA_DeleteOnClose);
+        connect(dlg, &QDialog::destroyed, dlg, [coll]() { delete coll; });
+        dlg->show();
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Download helpers
 // ---------------------------------------------------------------------------
 

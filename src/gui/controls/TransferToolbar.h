@@ -6,6 +6,7 @@
 /// Replicates the MFC m_btnWnd1 / m_btnWnd2 header bars that show a bold
 /// label with a row of toggled icon buttons for view switching.
 
+#include <QStringList>
 #include <QWidget>
 
 class QButtonGroup;
@@ -42,6 +43,10 @@ public:
     /// Update the bold text label (e.g. "Downloads (5)").
     void setLabelText(const QString& text);
 
+    /// Keep the label at least as wide as the widest of @p texts (and MFC's
+    /// 170 px), so the buttons after it don't shift when the view changes.
+    void reserveLabelWidth(const QStringList& texts);
+
     /// Set the leading icon shown before the label (e.g. current view icon).
     void setLeadingIcon(const QIcon& icon);
 
@@ -52,9 +57,13 @@ signals:
     void cycleRequested();
 
 protected:
+    void changeEvent(QEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
 
 private:
+    void applyLabelWidth();
+
+    QStringList m_reservedTexts;
     QHBoxLayout* m_layout = nullptr;
     QLabel* m_iconLabel = nullptr;
     QLabel* m_label = nullptr;

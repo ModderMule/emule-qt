@@ -103,7 +103,9 @@ public:
     void removeFile(PartFile* file);
     /// Cancel a download for good: remember the hash as cancelled, delete its temp
     /// files, unlink it from queue, known and shared lists and free it.
-    /// The pointer is dead afterwards.
+    /// The pointer is dead afterwards. A complete file instead has the finished
+    /// file deleted from disk and leaves the queue (MFC MP_CANCEL); a completing
+    /// one is left alone.
     void cancelFile(PartFile* file);
     void deleteAll();
     [[nodiscard]] int fileCount() const { return count(); }

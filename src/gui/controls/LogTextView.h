@@ -24,14 +24,15 @@ public:
 
     explicit LogTextView(QWidget* parent = nullptr);
 
-    /// MFC m_bAutoScroll: on by default, per pane, not persisted. As there, it
-    /// does not gate following new lines — that is decided by the view position
-    /// alone — only whether selecting a pane with unseen text jumps to its end.
+    /// MFC m_bAutoScroll: on by default, per pane, not persisted. Off, new lines
+    /// never move the view, even at the bottom (MFC lets the position override it,
+    /// so its toggle did nothing — issue #14). Also gates whether selecting a pane
+    /// with unseen text jumps to its end.
     [[nodiscard]] bool autoScroll() const { return m_autoScroll; }
-    void setAutoScroll(bool on) { m_autoScroll = on; }
+    void setAutoScroll(bool on);
 
     /// True while the view is at (or within kFollowSlackPx of) the bottom, so
-    /// new text will be followed.
+    /// new text will be followed while autoScroll() is on.
     [[nodiscard]] bool isFollowing() const { return m_follow; }
 
     /// Jump to the last line and keep following.
@@ -53,6 +54,7 @@ private:
     bool m_follow = true;
     bool m_settingValue = false;   ///< our own setValue, not the user's
     int m_pendingValue = -1;       ///< restoreScrollValue target not yet reachable
+    int m_holdValue = -1;          ///< position held against append() while Autoscroll is off
 };
 
 } // namespace eMule

@@ -5,7 +5,9 @@
 #include "controls/TransferToolbar.h"
 
 #include <QButtonGroup>
+#include <QEvent>
 #include <QFont>
+#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
@@ -83,6 +85,19 @@ void TransferToolbar::setButtonsVisible(bool on)
     setCursor(on ? Qt::ArrowCursor : Qt::PointingHandCursor);
 }
 
+void TransferToolbar::reserveLabelWidth(const QStringList& texts)
+{
+    m_reservedTexts = texts;
+    applyLabelWidth();
+}
+
+void TransferToolbar::changeEvent(QEvent* event)
+{
+    if (event->type() == QEvent::FontChange)
+        applyLabelWidth();
+    QWidget::changeEvent(event);
+}
+
 void TransferToolbar::mouseReleaseEvent(QMouseEvent* event)
 {
     if (!m_buttonsVisible && event->button() == Qt::LeftButton)
@@ -103,6 +118,18 @@ void TransferToolbar::setLeadingIcon(const QIcon& icon)
         m_iconLabel->setPixmap(icon.pixmap(16, 16));
         m_iconLabel->show();
     }
+}
+
+void TransferToolbar::applyLabelWidth()
+{
+    // MFC WND1_BUTTON_WIDTH / WND2_BUTTON_WIDTH: fixed label, buttons never move
+    constexpr int kMfcLabelWidth = 170;
+    const QFontMetrics fm(m_label->font());
+    int width = kMfcLabelWidth;
+    for (const QString& text : std::as_const(m_reservedTexts))
+        width = std::max(width, fm.horizontalAdvance(text));
+    m_label->setMinimumWidth(width + m_label->contentsMargins().left()
+                             + m_label->contentsMargins().right());
 }
 
 } // namespace eMule

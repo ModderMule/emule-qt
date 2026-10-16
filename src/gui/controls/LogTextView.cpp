@@ -8,6 +8,7 @@
 #include <QContextMenuEvent>
 #include <QMenu>
 #include <QScrollBar>
+#include <QTimer>
 
 #include <algorithm>
 #include <memory>
@@ -21,10 +22,19 @@ LogTextView::LogTextView(QWidget* parent)
     connect(verticalScrollBar(), &QScrollBar::valueChanged, this, &LogTextView::onValueChanged);
 }
 
+void LogTextView::setAutoScroll(bool on)
+{
+    m_autoScroll = on;
+    // Back on: follow again if the view sits at the bottom now
+    const QScrollBar* bar = verticalScrollBar();
+    m_follow = bar->value() >= bar->maximum() - kFollowSlackPx;
+}
+
 void LogTextView::scrollToBottom()
 {
     m_follow = true;
     m_pendingValue = -1;
+    m_holdValue = -1;
     setBarValue(verticalScrollBar()->maximum());
 }
 
@@ -32,6 +42,7 @@ void LogTextView::restoreScrollValue(int value)
 {
     m_follow = false;
     m_pendingValue = value;
+    m_holdValue = -1;
     onRangeChanged(verticalScrollBar()->minimum(), verticalScrollBar()->maximum());
 }
 
@@ -50,14 +61,23 @@ void LogTextView::contextMenuEvent(QContextMenuEvent* event)
 
 void LogTextView::onRangeChanged(int /*min*/, int max)
 {
-    // The latch still holds the position from before the document changed, so
-    // this is MFC's "was at the bottom before the insert" test.
-    if (m_follow) {
-        setBarValue(max);
-    } else if (m_pendingValue >= 0) {
+    // An explicit restore wins over both following and holding
+    if (m_pendingValue >= 0) {
         setBarValue(std::min(m_pendingValue, max));
         if (max >= m_pendingValue)
             m_pendingValue = -1;
+    } else if (!m_autoScroll) {
+        // QTextEdit::append() jumps to the new maximum right after this when it sat
+        // at the bottom; hold the position until control is back in the event loop
+        if (m_holdValue < 0) {
+            m_holdValue = verticalScrollBar()->value();
+            QTimer::singleShot(0, this, [this] { m_holdValue = -1; });
+        }
+        setBarValue(std::min(m_holdValue, max));
+    } else if (m_follow) {
+        // The latch still holds the position from before the document changed, so
+        // this is MFC's "was at the bottom before the insert" test.
+        setBarValue(max);
     }
 }
 
@@ -65,6 +85,10 @@ void LogTextView::onValueChanged(int value)
 {
     if (m_settingValue)
         return;
+    if (m_holdValue >= 0 && !m_autoScroll && !verticalScrollBar()->isSliderDown()) {
+        setBarValue(std::min(m_holdValue, verticalScrollBar()->maximum()));
+        return;
+    }
     m_pendingValue = -1;
     m_follow = value >= verticalScrollBar()->maximum() - kFollowSlackPx;
 }

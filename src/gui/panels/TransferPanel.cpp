@@ -20,6 +20,7 @@
 #include "controls/UploadStatusDelegate.h"
 #include "dialogs/CategoryDialog.h"
 #include "dialogs/ClientDetailDialog.h"
+#include "dialogs/CollectionViewDialog.h"
 #include "dialogs/FindInListDialog.h"
 #include "dialogs/RenameFileDialog.h"
 #include "utils/StatusBarNotifier.h"
@@ -695,6 +696,7 @@ void TransferPanel::setupUi()
     theUiState.bindTransferSplitter(m_vertSplitter);
 
     mainLayout->addWidget(m_vertSplitter, 1);
+    reserveToolbarLabelWidths();
 
     // Restore both saved views. The top pane wins a clash, which also repairs a
     // bottomView written before the top pane could hold that list.
@@ -1844,6 +1846,23 @@ void TransferPanel::openDownload(const QString& hash)
     if (hash.isEmpty())
         return;
 
+    QString fileName;
+    for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
+        if (m_downloadModel->hashAt(i) == hash) {
+            if (const auto* dl = m_downloadModel->downloadAt(i))
+                fileName = dl->fileName;
+            break;
+        }
+    }
+
+    // A finished collection opens in our viewer. MFC shell-opens it and gets the
+    // same, since eMule registers itself for .emulecollection; elsewhere nothing would.
+    const ED2KFileType ft = getED2KFileTypeID(fileName);
+    if (ft == ED2KFileType::EmuleCollection) {
+        CollectionViewDialog::showForFile(m_ipc, hash, this);
+        return;
+    }
+
     // Local core: the daemon opens the file on its own host, which is the same
     // machine as the GUI — nothing needs to travel over the network.
     if (m_ipc && m_ipc->isLocalConnection()) {
@@ -1859,19 +1878,8 @@ void TransferPanel::openDownload(const QString& hash)
         return;
     }
 
-    // Resolve the file name to decide media vs. non-media handling.
-    QString fileName;
-    for (int i = 0; i < m_downloadModel->downloadCount(); ++i) {
-        if (m_downloadModel->hashAt(i) == hash) {
-            if (const auto* dl = m_downloadModel->downloadAt(i))
-                fileName = dl->fileName;
-            break;
-        }
-    }
-
     // Media files stream into the configured player; everything else is handed
     // to the system default handler (browser download / associated app).
-    const ED2KFileType ft = getED2KFileTypeID(fileName);
     if (ft == ED2KFileType::Video || ft == ED2KFileType::Audio)
         launchPreview(url);
     else
@@ -2249,7 +2257,11 @@ QString TransferPanel::clientViewName(int clientView)
 
 QString TransferPanel::clientLabelText(int clientView) const
 {
-    const int n = clientSlot(clientView).model->clientCount();
+    return clientLabelText(clientView, clientSlot(clientView).model->clientCount());
+}
+
+QString TransferPanel::clientLabelText(int clientView, int n)
+{
     switch (clientView) {
     case Uploading:   return tr("Uploading (%1)").arg(n);
     case Downloading: return tr("Downloading (%1)").arg(n);
@@ -2257,6 +2269,18 @@ QString TransferPanel::clientLabelText(int clientView) const
     case Known:       return tr("Known Clients (%1)").arg(n);
     default:          return {};
     }
+}
+
+void TransferPanel::reserveToolbarLabelWidths()
+{
+    // Four digits of count; a longer one just widens the label
+    constexpr int kSampleCount = 8888;
+    QStringList texts;
+    for (int v = 0; v < ClientViewCount; ++v)
+        texts.append(clientLabelText(v, kSampleCount));
+    m_toolbar2->reserveLabelWidth(texts);
+    texts.append(tr("Downloads (%1)").arg(kSampleCount));
+    m_toolbar1->reserveLabelWidth(texts);
 }
 
 void TransferPanel::updateToolbarLabels()

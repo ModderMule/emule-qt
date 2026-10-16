@@ -47,6 +47,7 @@
 #include <QPushButton>
 #include <QScrollBar>
 #include <QSplitter>
+#include <QStyle>
 #include <QTimer>
 #include <QTreeView>
 #include <QVBoxLayout>
@@ -811,7 +812,19 @@ QWidget* ServerPanel::createControlsPanel()
 
     layout->addStretch();
 
-    return widget;
+    // The whole column scrolls too: its full height would otherwise be the top
+    // pane's minimum and stop the log splitter there. MFC lets the log grow to
+    // 100 px below the top (CServerWnd::InitSplitter, ServerWnd.cpp:776).
+    auto* scroll = new QScrollArea;
+    scroll->setWidget(widget);
+    scroll->setWidgetResizable(true);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->viewport()->setAutoFillBackground(false);
+    const int barWidth = scroll->style()->pixelMetric(QStyle::PM_ScrollBarExtent);
+    scroll->setMinimumWidth(widget->minimumWidth() + barWidth);
+    scroll->setMaximumWidth(widget->maximumWidth() + barWidth);
+    return scroll;
 }
 
 // ---------------------------------------------------------------------------

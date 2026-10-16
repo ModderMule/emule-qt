@@ -2903,10 +2903,23 @@ void IpcClientHandler::handleDeleteSharedFile(const IpcMessage& msg)
         return;
     }
     const QString path = file->filePath();
-    theApp.sharedFileList->removeFile(file);
     if (theApp.uploadQueue)
         theApp.uploadQueue->releaseUploadFile(path);
-    QFile::remove(path);
+    // MFC MPG_DELETE (srchybrid/SharedFilesCtrl.cpp:938-950): delete first, unshare only
+    // if that worked; a file unshared but still on disk comes back with the next rescan
+    if (!QFile::remove(path) && QFileInfo::exists(path)) {
+        logWarning(QStringLiteral("Could not delete shared file: %1").arg(path));
+        sendMessage(IpcMessage::makeError(msg.seqId(), 500,
+            QStringLiteral("Could not delete \"%1\"").arg(path)));
+        return;
+    }
+    theApp.sharedFileList->removeFile(file);
+    // Its finished download leaves the transfer list too (MFC ClearCompleted)
+    if (theApp.downloadQueue) {
+        PartFile* pf = theApp.downloadQueue->fileByID(hashBuf);
+        if (pf && pf == file && pf->status() == PartFileStatus::Complete)
+            theApp.downloadQueue->removeFile(pf);
+    }
     sendMessage(IpcMessage::makeResult(msg.seqId(), true));
 }
 

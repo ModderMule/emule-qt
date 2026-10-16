@@ -187,6 +187,10 @@ private:
     [[nodiscard]] static QString clientViewName(int clientView);
     /// List name with its current row count, for the toolbar's bold label.
     [[nodiscard]] QString clientLabelText(int clientView) const;
+    /// clientLabelText() with @p count in place of the live row count.
+    [[nodiscard]] static QString clientLabelText(int clientView, int count);
+    /// Size both bold labels for their widest text, so the switcher buttons stay put.
+    void reserveToolbarLabelWidths();
     // -- Categories -----------------------------------------------------------
 
     /// The ED2K-only half of a category tab's context menu. CategoryTabBar owns

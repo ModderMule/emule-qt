@@ -10,6 +10,7 @@
 #include "app/AppContext.h"
 #include "files/KnownFileList.h"
 #include "files/PartFile.h"
+#include "files/SharedFileList.h"
 #include "transfer/DownloadQueue.h"
 #include "client/UpDownClient.h"
 #include "enodemeta/MetaHash.h"
@@ -32,6 +33,8 @@
 #include "utils/OtherFunctions.h"
 
 #include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -85,6 +88,7 @@ class tst_DownloadQueue : public QObject {
 
 private slots:
     void initTestCase();
+    void cancelFile_deletesACompletedFileFromDisk();
     void construction_empty();
     void addDownload_basic();
     void addDownload_paused();
@@ -569,6 +573,45 @@ void tst_DownloadQueue::autoClear_removesACompletedFileWhenEnabled()
         kfl.clear();
     }
 }
+
+// Issue #14: Cancel on a finished download only removed .part files, so the file
+// in Incoming stayed, unknown, and the next rescan shared it again. MFC MP_CANCEL
+// deletes it, unshares it, and the record stays with the known list.
+void tst_DownloadQueue::cancelFile_deletesACompletedFileFromDisk()
+{
+    KnownFileList kfl;
+    const QString knownDir = m_tempDir.path() + QStringLiteral("/known_cancel_done");
+    QDir().mkpath(knownDir);
+    kfl.init(knownDir);
+    SharedFileList sfl(&kfl);
+
+    DownloadQueue dq;
+    dq.setKnownFileList(&kfl);
+    dq.setSharedFileList(&sfl);
+
+    uint8 hash[16] = {0xCA, 0x9C, 0xE1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2};
+    auto* pf = createTestPartFile(hash, QStringLiteral("done.bin"));
+    const QString path = m_tempDir.path() + QStringLiteral("/done.bin");
+    {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("payload");
+    }
+    pf->setFilePath(path);
+    pf->setStatus(PartFileStatus::Complete);
+    dq.addDownload(pf);
+    QVERIFY(kfl.safeAddKFile(pf));
+    QVERIFY(sfl.safeAddKFile(pf));
+
+    dq.cancelFile(pf);
+
+    QVERIFY(!QFileInfo::exists(path));
+    QCOMPARE(dq.fileCount(), 0);
+    QVERIFY(!sfl.isFilePtrInList(pf));
+    QVERIFY(kfl.isFilePtrInList(pf));   // still alive, owned by the known list
+    kfl.clear();
+}
+
 
 void tst_DownloadQueue::fileByID_found()
 {

@@ -38,6 +38,8 @@
 #include <algorithm>
 
 #include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QStorageInfo>
 #include <QDirIterator>
 #include <QTimer>
@@ -267,6 +269,28 @@ void DownloadQueue::cancelFile(PartFile* file)
 
     auto* known = m_knownFileList ? m_knownFileList : theApp.knownFileList;
     auto* shared = m_sharedFileList ? m_sharedFileList : theApp.sharedFileList;
+
+    // MFC MP_CANCEL (srchybrid/DownloadListCtrl.cpp:1288-1304): a completing file is
+    // left alone; a complete one deletes the file itself, unshares it only if that
+    // worked, then leaves the list like Clear Completed (the known list keeps it).
+    // stopFile() only removes .part files, so the finished file used to stay in
+    // Incoming, unknown, and the next rescan hashed it back into the share.
+    const PartFileStatus state = file->status();
+    if (state == PartFileStatus::Completing)
+        return;
+    if (state == PartFileStatus::Complete) {
+        const QString path = file->filePath();
+        if (theApp.uploadQueue)
+            theApp.uploadQueue->releaseUploadFile(path);
+        if (QFile::remove(path) || !QFileInfo::exists(path)) {
+            if (shared)
+                shared->removeFile(file);
+        } else {
+            logWarning(QStringLiteral("Could not delete completed file: %1").arg(path));
+        }
+        removeFile(file);
+        return;
+    }
 
     // No preference check here: KnownFileList::addCancelledFileID() owns it.
     if (known)

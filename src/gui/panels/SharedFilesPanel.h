@@ -143,10 +143,6 @@ private:
     /// nothing for a part file, as the original does not open those either.
     void openSharedFile(const QString& hash);
 
-    /// Show @p hash's collection in the collection viewer. Shared by "View
-    /// Collection..." and by opening a collection from the list.
-    void showCollection(const QString& hash);
-
     /// Locate @p hash in the view (proxy coordinates); invalid when the folder
     /// filter hides it or the file has left the share.
     [[nodiscard]] QModelIndex fileIndexFor(const QString& hash) const;
