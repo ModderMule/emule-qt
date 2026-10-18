@@ -116,7 +116,13 @@ uint64 CardinalitySketch::estimate() const
     z += m * sigma(histogram[0] / m);
 
     constexpr double kAlphaInf = 0.72134752044448170368;  // 1 / (2 ln 2)
-    return static_cast<uint64>(std::llround(kAlphaInf * m * m / z));
+    const double estimate = kAlphaInf * m * m / z;
+    // All registers saturated gives z == 0 and inf; llround of that is UB
+    // (LLONG_MIN on glibc, 0 on MSVC), so saturate explicitly
+    constexpr auto kMax = static_cast<double>(std::numeric_limits<uint64>::max());
+    if (!(estimate < kMax))
+        return std::numeric_limits<uint64>::max();
+    return static_cast<uint64>(std::round(estimate));
 }
 
 void CardinalitySketch::write(QDataStream& out) const
