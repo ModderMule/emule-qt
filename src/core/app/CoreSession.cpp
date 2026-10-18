@@ -559,21 +559,7 @@ void CoreSession::initServerConnect()
     m_serverList = std::make_unique<ServerList>();
     theApp.serverList = m_serverList.get();
 
-    const QString serverMetPath = QDir(thePrefs.configDir()).filePath(
-        QStringLiteral("server.met"));
-    if (QFile::exists(serverMetPath)) {
-        if (m_serverList->loadServerMet(serverMetPath)) {
-            if (m_serverList->serverCount() == 0)
-                logWarning(QStringLiteral("server.met loaded but contains 0 servers"));
-            else
-                logInfo(QStringLiteral("Loaded %1 servers from server.met")
-                            .arg(m_serverList->serverCount()));
-        } else {
-            logWarning(QStringLiteral("Failed to load server.met at %1").arg(serverMetPath));
-        }
-    } else {
-        logWarning(QStringLiteral("No server.met found at %1 — server list is empty").arg(serverMetPath));
-    }
+    m_serverList->init(thePrefs.configDir());
 
     // 1a. A newly loaded filter file re-checks the list (IPC reload, any loadFromFile).
     // MFC: CPPgSecurity::OnReloadIPFilter() → RemoveAllFilteredServers().

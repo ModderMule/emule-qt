@@ -253,6 +253,7 @@
     <ClCompile Include="dialogs\ImportDownloadsDialog.cpp" />
     <ClCompile Include="app\IpcClient.cpp" />
     <ClCompile Include="app\CoreStartWatch.cpp" />
+    <ClCompile Include="app\SingleInstance.cpp" />
     <ClCompile Include="panels\IrcPanel.cpp" />
     <ClCompile Include="controls\KadContactHistogram.cpp" />
     <ClCompile Include="controls\KadContactsModel.cpp" />
@@ -406,6 +407,7 @@
     <QtMoc Include="app\ExternalLinkHandler.h" />
     <QtMoc Include="app\IpcClient.h" />
     <QtMoc Include="app\CoreStartWatch.h" />
+    <QtMoc Include="app\SingleInstance.h" />
     <QtMoc Include="panels\IrcPanel.h" />
     <QtMoc Include="controls\KadContactHistogram.h" />
     <QtMoc Include="controls\KadContactsModel.h" />

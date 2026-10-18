@@ -725,7 +725,11 @@ void MainWindow::showCoreStartProblem(CoreStartWatch::Problem problem)
                                 QMessageBox::NoButton, this);
     box->setAttribute(Qt::WA_DeleteOnClose);
     box->setModal(false);
-    box->setInformativeText(tr("eMule keeps trying in the background."));
+    // A core that is gone does not come back by waiting (the one automatic
+    // relaunch is already spent by now): only Retry starts it again
+    box->setInformativeText(problem == Problem::CoreExited
+                                ? tr("Click Retry to start it again.")
+                                : tr("eMule keeps trying in the background."));
     auto* retry = box->addButton(tr("Retry"), QMessageBox::AcceptRole);
     auto* openLog = box->addButton(tr("Open Log"), QMessageBox::ActionRole);
     auto* quit = box->addButton(tr("Quit"), QMessageBox::DestructiveRole);

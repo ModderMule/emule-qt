@@ -115,6 +115,8 @@ private slots:
 
     // Static servers
     void staticServers_roundTrip();
+    void init_staticFlagSurvivesRestart();
+    void init_staticServersWithoutServerMet();
 
     // Text import
     void textImport_ipPort();
@@ -601,6 +603,53 @@ void tst_ServerList::staticServers_roundTrip()
     QVERIFY(found != nullptr);
     QVERIFY(found->isStaticMember());
     QCOMPARE(found->preference(), ServerPriority::High);
+}
+
+// Regression #26: a restart (save on shutdown, init on start-up) kept the server
+// but lost its static flag, since server.met has no static tag.
+void tst_ServerList::init_staticFlagSurvivesRestart()
+{
+    TempDir tmp;
+    {
+        ServerList session;
+        session.addServer(makeServer(0x08080808, 4661, QStringLiteral("Pinned")));
+        session.addServer(makeServer(0x09090909, 4662, QStringLiteral("Plain")));
+        // User marks it static: the IPC handler saves staticservers.dat right away
+        Server* pinned = session.findByAddress(QStringLiteral("8.8.8.8"), 4661);
+        QVERIFY(pinned);
+        pinned->setStaticMember(true);
+        pinned->setPreference(ServerPriority::Low);
+        QVERIFY(session.saveStaticServers(tmp.filePath(QStringLiteral("staticservers.dat"))));
+        QVERIFY(session.saveServerMet(tmp.filePath(QStringLiteral("server.met"))));
+    }
+
+    ServerList restarted;
+    QVERIFY(restarted.init(tmp.path()));
+    QCOMPARE(restarted.serverCount(), size_t{2});
+    Server* pinned = restarted.findByAddress(QStringLiteral("8.8.8.8"), 4661);
+    QVERIFY(pinned);
+    QVERIFY(pinned->isStaticMember());
+    QCOMPARE(pinned->preference(), ServerPriority::Low);
+    Server* plain = restarted.findByAddress(QStringLiteral("9.9.9.9"), 4662);
+    QVERIFY(plain);
+    QVERIFY(!plain->isStaticMember());
+}
+
+void tst_ServerList::init_staticServersWithoutServerMet()
+{
+    TempDir tmp;
+    {
+        ServerList session;
+        auto srv = makeServer(0x08080808, 4661, QStringLiteral("Pinned"));
+        srv->setStaticMember(true);
+        session.addServer(std::move(srv));
+        QVERIFY(session.saveStaticServers(tmp.filePath(QStringLiteral("staticservers.dat"))));
+    }
+
+    ServerList restarted;
+    QVERIFY(!restarted.init(tmp.path()));   // no server.met
+    QCOMPARE(restarted.serverCount(), size_t{1});
+    QVERIFY(restarted.serverAt(0)->isStaticMember());
 }
 
 // ---------------------------------------------------------------------------

@@ -47,6 +47,7 @@ public:
     QString refuseWith;          ///< non-empty: turn the handshake down with this text
     bool loading = false;
     QString loadStage;
+    qint64 pid = 0;              ///< 0: an older core, which sends no pid
     bool answerPing = true;
     bool answerRequests = true;  ///< everything but Handshake/Subscribe/Ping
     std::function<void(const IpcMessage&)> onRequest;
@@ -119,6 +120,8 @@ private:
             ok.append(QStringLiteral("session-1"));
             ok.append(loading);
             ok.append(loadStage);
+            if (pid != 0)
+                ok.append(pid);
             push(ok);
             return;
         }
@@ -205,6 +208,7 @@ private slots:
     void link_reportsACoreThatNeverAnswers();
     void link_reportsARefusedHandshake();
     void link_reportsALaunchedCoreAsStarting();
+    void link_takesTheCorePidFromTheHandshake();
 
     // Requests held while the core loads
     void deferred_identicalReadsCollapseToTheNewest();
@@ -643,6 +647,28 @@ void tst_IpcBusyStates::link_reportsALaunchedCoreAsStarting()
 // ---------------------------------------------------------------------------
 // Deferred requests
 // ---------------------------------------------------------------------------
+
+void tst_IpcBusyStates::link_takesTheCorePidFromTheHandshake()
+{
+    // A core restarted on Windows is a new process: the GUI must learn its pid
+    MockCore core;
+    QVERIFY(core.listen());
+    core.pid = 4242;
+    IpcClient client;
+    client.connectToDaemon(QHostAddress(QHostAddress::LocalHost), core.port());
+    QTRY_VERIFY_WITH_TIMEOUT(client.isConnected(), 3000);
+    QCOMPARE(client.corePid(), qint64(4242));
+    client.disconnectFromDaemon();
+
+    // An older core sends none: unknown, never a stale or bogus number
+    MockCore older;
+    QVERIFY(older.listen());
+    IpcClient client2;
+    client2.connectToDaemon(QHostAddress(QHostAddress::LocalHost), older.port());
+    QTRY_VERIFY_WITH_TIMEOUT(client2.isConnected(), 3000);
+    QCOMPARE(client2.corePid(), qint64(0));
+    client2.disconnectFromDaemon();
+}
 
 void tst_IpcBusyStates::deferred_identicalReadsCollapseToTheNewest()
 {

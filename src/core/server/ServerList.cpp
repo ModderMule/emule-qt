@@ -18,6 +18,7 @@
 #include "utils/SafeFile.h"
 
 #include <QDateTime>
+#include <QDir>
 #include <QFile>
 #include <QHostAddress>
 #include <QRandomGenerator>
@@ -33,6 +34,35 @@ namespace eMule {
 ServerList::ServerList(QObject* parent)
     : QObject(parent)
 {
+}
+
+// ---------------------------------------------------------------------------
+// Start-up load
+// ---------------------------------------------------------------------------
+
+bool ServerList::init(const QString& configDir)
+{
+    const QDir dir(configDir);
+    const QString serverMetPath = dir.filePath(QStringLiteral("server.met"));
+    bool ok = false;
+    if (QFile::exists(serverMetPath)) {
+        ok = loadServerMet(serverMetPath);
+        if (!ok)
+            logWarning(QStringLiteral("Failed to load server.met at %1").arg(serverMetPath));
+        else if (serverCount() == 0)
+            logWarning(QStringLiteral("server.met loaded but contains 0 servers"));
+        else
+            logInfo(QStringLiteral("Loaded %1 servers from server.met").arg(serverCount()));
+    } else {
+        logWarning(QStringLiteral("No server.met found at %1 — server list is empty").arg(serverMetPath));
+    }
+
+    // Static flags live only in staticservers.dat, not in server.met (#26).
+    // Loaded even without server.met: its entries are added if missing.
+    const size_t before = serverCount();
+    if (loadStaticServers(dir.filePath(QStringLiteral("staticservers.dat"))))
+        logInfo(QStringLiteral("Loaded static servers (%1 new)").arg(serverCount() - before));
+    return ok;
 }
 
 // ---------------------------------------------------------------------------

@@ -68,7 +68,7 @@ void paintDownloadBar(QPainter& painter, const QRect& rect, const DownloadBarDat
             if (status == 0)
                 continue;
             const uint64_t start = uint64_t(p) * PARTSIZE;
-            shader.fillRange(start, start + PARTSIZE, status == 255 ? QColor(0, 224, 0) : started);
+            shader.fillRange(start, start + PARTSIZE, status == 255 ? progress : started);
         }
     }
 

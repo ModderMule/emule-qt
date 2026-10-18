@@ -64,6 +64,7 @@ struct SourceRow {
     int fileRating = 0;
     QStringList a4afFiles;
     bool isUrl = false;
+    bool noViewShared = false;      ///< peer refuses "View Shared Files"
 };
 
 /// The tooltip of a source row, as MFC builds it. @p extended: advanced controls.

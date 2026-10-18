@@ -52,6 +52,8 @@ public:
     [[nodiscard]] bool coreLoading() const { return m_coreLink == CoreLink::Loading; }
     /// Stage of that load as the core names it ("part-files", …).
     [[nodiscard]] QString loadStage() const { return m_loadStage; }
+    /// The connected core's process id, from the handshake; 0 = not known.
+    [[nodiscard]] qint64 corePid() const { return m_corePid; }
     /// Why the core refused the handshake (CoreLink::Refused).
     [[nodiscard]] QString refusalText() const { return m_refusalText; }
 
@@ -333,6 +335,7 @@ private:
     CoreLink m_coreLink = CoreLink::Offline;
     int m_connectAttempts = 0;
     QString m_loadStage;
+    qint64 m_corePid = 0;
     QString m_refusalText;
 
     int m_startGraceMs         = 30'000;

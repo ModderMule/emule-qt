@@ -585,6 +585,8 @@ inline void insertDownloadSeed(QCborMap& m, const SearchFile& f)
         m.insert(QStringLiteral("a4afFiles"), QCborArray::fromStringList(names));
     }
     m.insert(QStringLiteral("isUrl"), c.isUrlClient());
+    // greys "View Shared Files" in client menus (MFC GetViewSharedFilesSupport)
+    m.insert(QStringLiteral("noViewSharedFiles"), !c.viewSharedFilesSupport());
     if (const auto* uf = c.uploadFile()) {
         m.insert(QStringLiteral("uploadFileName"), uf->fileName());
         m.insert(QStringLiteral("uploadFilePriority"), static_cast<int>(uf->upPriority()));
@@ -723,7 +725,6 @@ namespace eMule::Ipc {
         m.insert(QStringLiteral("scoreRatio"),      1.0);
     }
     m.insert(QStringLiteral("hasValidHash"), c.hasValidHash());
-    m.insert(QStringLiteral("noViewSharedFiles"), !c.viewSharedFilesSupport());
     // MFC shows "-" for the queue score of a client that is not in our upload path
     m.insert(QStringLiteral("uploadIdle"), c.uploadState() == UploadState::None);
 

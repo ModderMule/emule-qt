@@ -127,6 +127,9 @@
     <ClCompile Include="app\CoreStartWatch.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="app\SingleInstance.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="utils\HttpCacheLinkImporter.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -520,6 +523,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="app\CoreStartWatch.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="app\SingleInstance.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="panels\IrcPanel.h">

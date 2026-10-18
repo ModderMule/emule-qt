@@ -120,6 +120,8 @@ ClientRow parseClient(const QCborMap& m)
     row.softwareId      = static_cast<int>(m.value(QStringLiteral("softwareId")).toInteger(-1));
     row.hasCredit       = m.value(QStringLiteral("hasCredit")).toBool();
     row.isFriend        = m.value(QStringLiteral("isFriend")).toBool();
+    row.isUrl           = m.value(QStringLiteral("isUrl")).toBool();
+    row.noViewShared    = m.value(QStringLiteral("noViewSharedFiles")).toBool();
 
     // New fields for TODO columns
     row.uploadStartDelay = m.value(QStringLiteral("uploadStartDelay")).toInteger();
@@ -1424,6 +1426,7 @@ void TransferPanel::requestDownloadSources(const QString& hash)
             src.fileComment     = m.value(QStringLiteral("fileComment")).toString();
             src.fileRating      = static_cast<int>(m.value(QStringLiteral("fileRating")).toInteger());
             src.isUrl           = m.value(QStringLiteral("isUrl")).toBool();
+            src.noViewShared    = m.value(QStringLiteral("noViewSharedFiles")).toBool();
             for (const auto& name : m.value(QStringLiteral("a4afFiles")).toArray())
                 src.a4afFiles << name.toString();
             if (auto spm = m.value(QStringLiteral("sourcePartMap")).toArray(); !spm.isEmpty()) {
@@ -2050,8 +2053,10 @@ QStringList TransferPanel::saveDownloadSelectionMulti() const
 
 QString TransferPanel::saveClientSelection(QTreeView* view, ClientListModel* model) const
 {
+    // Key on the selected row, not the current one: a deselected row stays current,
+    // and restoring it would undo the deselect on the next refresh (issue #27)
     const auto sel = view->selectionModel()->currentIndex();
-    if (!sel.isValid())
+    if (!sel.isValid() || !view->selectionModel()->isSelected(sel))
         return {};
 
     // Map through proxy to source model
@@ -2573,10 +2578,11 @@ void TransferPanel::onClientContextMenu(QTreeView* view, ClientListModel* model,
         });
     }
 
-    // 4. View Shared Files
+    // 4. View Shared Files: greyed unless the peer allows it (MFC ClientListCtrl.cpp:350)
     auto* viewSharedAct = menu.addAction(menuIcon("UserFiles.ico"), tr("View Shared Files"));
-    viewSharedAct->setEnabled(client != nullptr);
-    if (client) {
+    const bool canViewShared = client && !client->isUrl && !client->noViewShared;
+    viewSharedAct->setEnabled(canViewShared);
+    if (canViewShared) {
         const QString clientHash = client->userHash;
         connect(viewSharedAct, &QAction::triggered, this, [this, clientHash]() {
             // Outcome (tab, refusal, failure) comes back as a push and a status log line
@@ -2667,16 +2673,17 @@ void TransferPanel::showSourceContextMenu(const SourceRow& src, const QString& p
                        [this, clientHash, clientName]() { emit chatRequested(clientHash, clientName); });
     }
 
-    // 4. View Shared Files
+    // 4. View Shared Files: greyed unless the peer allows it (MFC DownloadListCtrl.cpp:1068)
     {
         const QString clientHash = src.userHash;
-        menu.addAction(menuIcon("UserFiles.ico"), tr("View Shared Files"), this, [this, clientHash]() {
+        auto* viewSharedAct = menu.addAction(menuIcon("UserFiles.ico"), tr("View Shared Files"), this, [this, clientHash]() {
             if (!IpcFeedback::requireConnection(m_ipc, tr("cannot view shared files.")))
                 return;
             IpcMessage msg(IpcMsgType::RequestClientSharedFiles);
             msg.append(clientHash);
             m_ipc->sendRequest(std::move(msg));
         });
+        viewSharedAct->setEnabled(!src.isUrl && !src.noViewShared);
     }
 
     addBootstrapAction(menu, src.addr, src.kadPort, src.kadVersion);

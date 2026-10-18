@@ -421,7 +421,21 @@ Active la Interfaz web o la API REST en Opciones → Interfaz web.</translation>
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+767"/>
+        <location filename="../src/gui/app/main.cpp" line="+336"/>
+        <source>eMule Qt</source>
+        <translation>eMule Qt</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>eMule Qt is already running with this configuration but does not respond.
+
+Start it with --new-instance or --config &lt;dir&gt; to open another window.</source>
+        <translation>eMule Qt ya se está ejecutando con esta configuración, pero no responde.
+
+Inícielo con --new-instance o --config &lt;carpeta&gt; para abrir otra ventana.</translation>
+    </message>
+    <message>
+        <location line="+466"/>
         <source>Download Added</source>
         <translation>Descarga añadida</translation>
     </message>
@@ -803,7 +817,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4018"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4026"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -4547,12 +4561,12 @@ Por favor elija otro:</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1286"/>
+        <location line="+1290"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Desconectado</translation>
     </message>
     <message>
-        <location line="-1229"/>
+        <location line="-1233"/>
         <source>Kad: Connected</source>
         <translation>Kad: Conectado</translation>
     </message>
@@ -4568,17 +4582,17 @@ Por favor elija otro:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1221"/>
+        <location line="+1225"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: Desconectado</translation>
     </message>
     <message>
-        <location line="-1212"/>
+        <location line="-1216"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Usuarios: %1 | Archivos: %2</translation>
     </message>
     <message>
-        <location line="+415"/>
+        <location line="+419"/>
         <source>Open Incoming Folder...</source>
         <translation>Abrir carpeta de entrada...</translation>
     </message>
@@ -4618,14 +4632,14 @@ Por favor elija otro:</translation>
         <translation>Características</translation>
     </message>
     <message>
-        <location line="-773"/>
+        <location line="-777"/>
         <location line="+7"/>
-        <location line="+769"/>
+        <location line="+773"/>
         <source>Version Check</source>
         <translation>Comprobar versión</translation>
     </message>
     <message>
-        <location line="-831"/>
+        <location line="-835"/>
         <source>Quit eMule Qt</source>
         <translation>Salir de eMule Qt</translation>
     </message>
@@ -4764,7 +4778,12 @@ Subida: %3 | Bajada: %4</translation>
         <translation>Núcleo de eMule</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+7"/>
+        <source>Click Retry to start it again.</source>
+        <translation>Haga clic en «Reintentar» para iniciarlo de nuevo.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>eMule keeps trying in the background.</source>
         <translation>eMule sigue intentándolo en segundo plano.</translation>
     </message>
@@ -13886,7 +13905,7 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
 <context>
     <name>eMule::TransferPanel</name>
     <message>
-        <location filename="../src/gui/panels/TransferPanel.cpp" line="+730"/>
+        <location filename="../src/gui/panels/TransferPanel.cpp" line="+732"/>
         <source>Downloads</source>
         <translation>Descargas</translation>
     </message>
@@ -13897,74 +13916,74 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
     </message>
     <message>
         <location line="+29"/>
-        <location line="+1933"/>
+        <location line="+1936"/>
         <location line="+165"/>
         <source>Low</source>
         <translation>Baja</translation>
     </message>
     <message>
-        <location line="-2097"/>
-        <location line="+1932"/>
+        <location line="-2100"/>
+        <location line="+1935"/>
         <location line="+166"/>
         <source>Normal</source>
         <translation>Normal</translation>
     </message>
     <message>
-        <location line="-2097"/>
-        <location line="+1931"/>
+        <location line="-2100"/>
+        <location line="+1934"/>
         <location line="+167"/>
         <source>High</source>
         <translation>Alta</translation>
     </message>
     <message>
-        <location line="-2094"/>
-        <location line="+2098"/>
+        <location line="-2097"/>
+        <location line="+2101"/>
         <source>Very Low</source>
         <translation>Muy baja</translation>
     </message>
     <message>
-        <location line="-2096"/>
-        <location line="+2098"/>
+        <location line="-2099"/>
+        <location line="+2101"/>
         <source>Very High</source>
         <translation>Muy alta</translation>
     </message>
     <message>
-        <location line="-2096"/>
-        <location line="+2099"/>
+        <location line="-2099"/>
+        <location line="+2102"/>
         <source>Auto</source>
         <translation>Auto</translation>
     </message>
     <message>
-        <location line="-2088"/>
+        <location line="-2091"/>
         <location line="+690"/>
-        <location line="+1236"/>
+        <location line="+1239"/>
         <source>Pause</source>
         <translation>Pausa</translation>
     </message>
     <message>
-        <location line="-1917"/>
+        <location line="-1920"/>
         <location line="+687"/>
-        <location line="+1232"/>
+        <location line="+1235"/>
         <source>Stop</source>
         <translation>Detener</translation>
     </message>
     <message>
-        <location line="-1910"/>
+        <location line="-1913"/>
         <location line="+684"/>
-        <location line="+1228"/>
+        <location line="+1231"/>
         <source>Resume</source>
         <translation>Reanudar</translation>
     </message>
     <message>
-        <location line="-1899"/>
+        <location line="-1902"/>
         <location line="+677"/>
-        <location line="+1224"/>
+        <location line="+1227"/>
         <location line="+4"/>
         <source>Cancel</source>
         <translation>Cancelar</translation>
     </message>
     <message>
-        <location line="-1872"/>
+        <location line="-1875"/>
         <source>Preview with</source>
         <translation>Vista previa con</translation>
     </message>
@@ -13985,14 +14004,14 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
     </message>
     <message>
         <location line="+0"/>
-        <location line="+1284"/>
+        <location line="+1285"/>
         <location line="+1"/>
         <location line="+10"/>
         <source>Import parts to file...</source>
         <translation>Importar partes al archivo...</translation>
     </message>
     <message>
-        <location line="-1271"/>
+        <location line="-1272"/>
         <source>Source Handling</source>
         <translation>Gestión de fuentes</translation>
     </message>
@@ -14003,12 +14022,12 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
     </message>
     <message>
         <location line="+3"/>
-        <location line="+1207"/>
+        <location line="+1208"/>
         <source>Source Limit...</source>
         <translation>Límite de fuentes...</translation>
     </message>
     <message>
-        <location line="-1142"/>
+        <location line="-1143"/>
         <source>New...</source>
         <translation>Nueva...</translation>
     </message>
@@ -14023,7 +14042,7 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
         <translation>Cerrar barra de herramientas</translation>
     </message>
     <message>
-        <location line="+641"/>
+        <location line="+642"/>
         <source>Failed to execute: %1 %2</source>
         <translation>Error al ejecutar: %1 %2</translation>
     </message>
@@ -14055,12 +14074,12 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
         <translation>Ruta del archivo en la máquina del núcleo:</translation>
     </message>
     <message>
-        <location line="+542"/>
+        <location line="+544"/>
         <source>Download In Alphabetical Order</source>
         <translation>Descargar en orden alfabético</translation>
     </message>
     <message>
-        <location line="+220"/>
+        <location line="+221"/>
         <location line="+91"/>
         <source>cannot view shared files.</source>
         <translation>no se pueden ver los archivos compartidos.</translation>
@@ -14071,7 +14090,7 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
         <translation>Desbanear</translation>
     </message>
     <message>
-        <location line="+114"/>
+        <location line="+115"/>
         <source>Bootstrap</source>
         <translation>Bootstrap</translation>
     </message>
@@ -14115,29 +14134,29 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
         <translation type="vanished">Nombre de archivo:</translation>
     </message>
     <message>
-        <location line="-2473"/>
+        <location line="-2478"/>
         <location line="+668"/>
-        <location line="+550"/>
+        <location line="+551"/>
         <source>Open File</source>
         <translation>Abrir archivo</translation>
     </message>
     <message>
-        <location line="-1209"/>
+        <location line="-1210"/>
         <location line="+2"/>
         <location line="+671"/>
-        <location line="+585"/>
+        <location line="+586"/>
         <source>Preview</source>
         <translation>Vista previa</translation>
     </message>
     <message>
-        <location line="-1219"/>
-        <location line="+2029"/>
-        <location line="+98"/>
+        <location line="-1220"/>
+        <location line="+2032"/>
+        <location line="+99"/>
         <source>Details...</source>
         <translation>Detalles...</translation>
     </message>
     <message>
-        <location line="-2118"/>
+        <location line="-2122"/>
         <source>Comments...</source>
         <translation>Comentarios...</translation>
     </message>
@@ -14159,13 +14178,13 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
     </message>
     <message>
         <location line="+16"/>
-        <location line="+2021"/>
-        <location line="+71"/>
+        <location line="+2025"/>
+        <location line="+72"/>
         <source>Find...</source>
         <translation>Buscar...</translation>
     </message>
     <message>
-        <location line="-2084"/>
+        <location line="-2089"/>
         <source>Search Related Files</source>
         <translation>Buscar archivos relacionados</translation>
     </message>
@@ -14189,7 +14208,7 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
         <translation type="vanished">Todos</translation>
     </message>
     <message>
-        <location line="+1082"/>
+        <location line="+1085"/>
         <source>Uploading</source>
         <translation>Subiendo</translation>
     </message>
@@ -14209,7 +14228,7 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
         <translation>Clientes conocidos</translation>
     </message>
     <message>
-        <location line="-1195"/>
+        <location line="-1198"/>
         <source>Clients on queue:   0</source>
         <translation>Clientes en cola:   0</translation>
     </message>
@@ -14221,12 +14240,12 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
     </message>
     <message>
         <location line="-80"/>
-        <location line="+1225"/>
+        <location line="+1228"/>
         <source>Priority</source>
         <translation>Prioridad</translation>
     </message>
     <message>
-        <location line="-1188"/>
+        <location line="-1191"/>
         <source>Open Folder</source>
         <translation>Abrir carpeta</translation>
     </message>
@@ -14256,7 +14275,7 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
         <translation>Buscar</translation>
     </message>
     <message>
-        <location line="+501"/>
+        <location line="+502"/>
         <location line="+23"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Vista previa no disponible — el servidor web no está en ejecución o no se recibió el token de transmisión.</translation>
@@ -14267,7 +14286,7 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
         <translation>Abrir archivo no disponible — el servidor web no está en ejecución o no se recibió el token de transmisión.</translation>
     </message>
     <message>
-        <location line="+405"/>
+        <location line="+407"/>
         <location line="+7"/>
         <source>Downloads (%1)</source>
         <translation>Descargas (%1)</translation>
@@ -14321,13 +14340,13 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
     </message>
     <message>
         <location line="+188"/>
-        <location line="+97"/>
+        <location line="+98"/>
         <source>Add To Friends</source>
         <translation>Añadir a amigos</translation>
     </message>
     <message>
-        <location line="-75"/>
-        <location line="+100"/>
+        <location line="-76"/>
+        <location line="+101"/>
         <source>Send Message</source>
         <translation>Enviar mensaje</translation>
     </message>
@@ -14336,8 +14355,8 @@ Hacer clic de nuevo en «Restaurar estadísticas» volverá a cargar sus estadí
         <translation type="vanished">Mensaje:</translation>
     </message>
     <message>
-        <location line="-89"/>
-        <location line="+96"/>
+        <location line="-90"/>
+        <location line="+97"/>
         <source>View Shared Files</source>
         <translation>Ver archivos compartidos</translation>
     </message>
@@ -15100,14 +15119,14 @@ Esta publicación tiene una contraseña establecida.</translation>
         <translation>Dirección</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3353"/>
-        <location line="+3242"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3361"/>
+        <location line="+3250"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Sesión caducada — vuelva a iniciar sesión</translation>
     </message>
     <message>
-        <location line="-3287"/>
+        <location line="-3295"/>
         <source>Guests cannot add downloads</source>
         <translation>Los invitados no pueden añadir descargas</translation>
     </message>
@@ -15212,7 +15231,7 @@ Esta publicación tiene una contraseña establecida.</translation>
         <translation>Error al iniciar sesión</translation>
     </message>
     <message numerus="yes">
-        <location line="+226"/>
+        <location line="+234"/>
         <source>%n download(s) added</source>
         <translation>
             <numerusform>%n descarga añadida</numerusform>
@@ -15927,7 +15946,7 @@ La red que esté inactiva cede su parte a la otra.</translation>
         <translation>Archivos NZB:</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1171"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1179"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>Nombre</translation>
@@ -16329,7 +16348,7 @@ La red que esté inactiva cede su parte a la otra.</translation>
         <translation>Velocidad de subida</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1168"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1176"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation>Subidas</translation>

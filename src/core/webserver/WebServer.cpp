@@ -2177,9 +2177,12 @@ void WebServer::dispatchActions(const QUrlQuery& query, const QString& page)
             if (!srv)
                 return;
 
-            if (cmd == QStringLiteral("remove"))
+            const bool wasStatic = srv->isStaticMember();
+            if (cmd == QStringLiteral("remove")) {
                 m_serverList->removeServer(srv);
-            else if (cmd == QStringLiteral("addtostatic"))
+                return;
+            }
+            if (cmd == QStringLiteral("addtostatic"))
                 srv->setStaticMember(true);
             else if (cmd == QStringLiteral("removefromstatic"))
                 srv->setStaticMember(false);
@@ -2189,6 +2192,11 @@ void WebServer::dispatchActions(const QUrlQuery& query, const QString& page)
                 srv->setPreference(ServerPriority::Normal);
             else if (cmd == QStringLiteral("priohigh"))
                 srv->setPreference(ServerPriority::High);
+
+            // Persist static membership/priority, or it's lost on restart (#26)
+            if (wasStatic || srv->isStaticMember())
+                m_serverList->saveStaticServers(QDir(thePrefs.configDir()).filePath(
+                    QStringLiteral("staticservers.dat")));
         }
         return;
     }

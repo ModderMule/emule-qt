@@ -75,6 +75,7 @@ SOURCES += \
     app/CommandLineExec.cpp \
     app/Ed2kSchemeHandler.cpp \
     app/CoreStartWatch.cpp \
+    app/SingleInstance.cpp \
     app/IpcClient.cpp \
     app/main.cpp \
     app/MainWindow.cpp \
@@ -148,6 +149,7 @@ HEADERS += \
     app/CommandLineExec.h \
     app/Ed2kSchemeHandler.h \
     app/CoreStartWatch.h \
+    app/SingleInstance.h \
     app/IpcClient.h \
     app/MainWindow.h \
     app/MiniMuleWidget.h \

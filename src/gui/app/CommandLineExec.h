@@ -33,6 +33,12 @@ public:
     /// Options page index, or -1 if not set.
     [[nodiscard]] int optionsPage() const { return m_optionsPage; }
 
+    /// Whether --new-instance was given: skip the one-GUI-per-profile guard.
+    [[nodiscard]] bool newInstance() const { return m_newInstance; }
+
+    /// The ed2k links and .nzb files given on the command line, as typed.
+    [[nodiscard]] const QStringList& positionalArgs() const { return m_positionalArgs; }
+
     /// Config directory override from --config, or empty if not set.
     [[nodiscard]] QString configOverride() const;
 
@@ -54,6 +60,10 @@ public:
     /// It is not called handleEd2kLinks any more because a desktop launcher passes `%U`,
     /// so what arrives here is whatever the user double-clicked.
     void handleOpenArguments(ExternalLinkHandler& linkHandler) const;
+
+    /// What handleOpenArguments() does, for @p args from anywhere — also the ones a
+    /// second start of the same profile forwards to this one.
+    static void openArguments(const QStringList& args, ExternalLinkHandler& linkHandler);
 
     /// --register-file-types / --unregister-file-types, for a packager's
     /// post-install script or a user who turned the setting off. Returns true
@@ -104,6 +114,11 @@ private:
         QStringLiteral("Override config directory (default: platform-specific)."),
         QStringLiteral("path")};
 
+    QCommandLineOption m_newInstanceOption{
+        QStringLiteral("new-instance"),
+        QStringLiteral("Open another window even if one already runs for this "
+                       "install and config dir.")};
+
     QCommandLineOption m_registerTypesOption{
         QStringLiteral("register-file-types"),
         QStringLiteral("Claim .nzb files for this executable, then exit.")};
@@ -114,6 +129,7 @@ private:
 
     // Cached parsed values
     bool m_screenshotMode = false;
+    bool m_newInstance = false;
     QString m_screenshotPath;
     int m_screenshotDelay = 3000;
     int m_optionsPage = -1;

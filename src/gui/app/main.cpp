@@ -44,6 +44,7 @@ static void unixSignalHandler(int)
 #include "app/ExternalLinkHandler.h"
 #include "app/IpcClient.h"
 #include "app/MainWindow.h"
+#include "app/SingleInstance.h"
 #include "app/UiState.h"
 #include "utils/Appearance.h"
 #include "utils/ColumnTooltip.h"
@@ -309,6 +310,35 @@ int main(int argc, char* argv[])
         if (appTranslator.load(appLocale, QStringLiteral("emuleqt"), QStringLiteral("_"), path)) {
             app.installTranslator(&appTranslator);
             break;
+        }
+    }
+
+    // One GUI per install dir and profile when it starts its own core (issue #29).
+    // Another --config, another install, a remote or "local" core, or --new-instance
+    // each get a window of their own.
+    std::unique_ptr<eMule::SingleInstance> singleInstance;
+    if (!cli.screenshotMode() && !cli.newInstance() && eMule::thePrefs.ipcEnabled()
+        && !isRemoteCoreAddress(eMule::thePrefs.ipcListenAddress())) {
+        const QString ownedPath = resolveDaemonPath();
+        if (!ownedPath.isEmpty() && ownedPath != QStringLiteral("local")) {
+            singleInstance = std::make_unique<eMule::SingleInstance>(
+                QCoreApplication::applicationDirPath(), configDir);
+            if (!singleInstance->tryBecomePrimary()) {
+                const QStringList args =
+                    eMule::SingleInstance::absoluteArgs(cli.positionalArgs());
+                if (singleInstance->forwardToPrimary(args)) {
+                    eMule::logInfo(QStringLiteral("Already running for this profile, "
+                                                  "handed over to it"));
+                    return 0;
+                }
+                eMule::logWarning(QStringLiteral("Already running for this profile, "
+                                                 "but it does not answer"));
+                QMessageBox::warning(nullptr, QObject::tr("eMule Qt"),
+                    QObject::tr("eMule Qt is already running with this configuration "
+                                "but does not respond.\n\nStart it with --new-instance "
+                                "or --config <dir> to open another window."));
+                return 1;
+            }
         }
     }
 
@@ -720,7 +750,13 @@ int main(int argc, char* argv[])
                     *daemonLost = true;
             });
             QObject::connect(&ipcClient, &eMule::IpcClient::connected,
-                             &app, [daemonLost]() { *daemonLost = false; });
+                             &app, [&ipcClient, weOwnDaemon, daemonLost, daemonPid]() {
+                *daemonLost = false;
+                // The pid we launched goes stale on a Windows restart (a new
+                // process), and is unknown from a console start: take the core's own
+                if (*weOwnDaemon && ipcClient.corePid() > 0)
+                    *daemonPid = ipcClient.corePid();
+            });
         } else {
             QObject::connect(&ipcClient, &eMule::IpcClient::connectionFailed,
                              &app, [](const QString& error) {
@@ -914,19 +950,11 @@ int main(int argc, char* argv[])
                 };
             }
             startWatch->setProbes(std::move(probes));
-            const bool localMode = daemonPath == QStringLiteral("local");
-            QObject::connect(startWatch, &eMule::CoreStartWatch::problemChanged, &mainWindow,
-                             [&mainWindow, localMode](eMule::CoreStartWatch::Problem problem) {
-                // "local" mode already asks for another address when nothing listens
-                if (localMode && problem == eMule::CoreStartWatch::Problem::Unreachable)
-                    return;
-                mainWindow.showCoreStartProblem(problem);
-            });
-            QObject::connect(&mainWindow, &eMule::MainWindow::coreRetryRequested, &app,
-                             [&ipcClient, startWatch, launchesCore, daemonPath, weOwnDaemon,
-                              daemonLost, daemonPid] {
-                eMule::logInfo(QStringLiteral("Retrying the core connection"));
-                // Gone, and nothing else took the port: start it again
+
+            // Start the core again if it is gone and nothing else took the port,
+            // then wait for it afresh. Shared by Retry and the one automatic relaunch.
+            const auto relaunchCore = [&ipcClient, startWatch, launchesCore, daemonPath,
+                                       weOwnDaemon, daemonLost, daemonPid] {
                 if (launchesCore
                     && ipcPortFree(eMule::thePrefs.ipcListenAddress(), eMule::thePrefs.ipcPort())
                     && launchDaemon(daemonPath, false, *daemonPid)) {
@@ -936,6 +964,32 @@ int main(int argc, char* argv[])
                 }
                 ipcClient.connectToDaemon(ipcClient.daemonHost(), ipcClient.daemonPort());
                 startWatch->restart();
+            };
+
+            const bool localMode = daemonPath == QStringLiteral("local");
+            // A core that dies on start is started again once, silently. Only once:
+            // one that dies every time would loop; the box and its Retry take over.
+            auto autoRelaunched = std::make_shared<bool>(false);
+            QObject::connect(startWatch, &eMule::CoreStartWatch::problemChanged, &mainWindow,
+                             [&mainWindow, localMode, launchesCore, autoRelaunched,
+                              relaunchCore](eMule::CoreStartWatch::Problem problem) {
+                // "local" mode already asks for another address when nothing listens
+                if (localMode && problem == eMule::CoreStartWatch::Problem::Unreachable)
+                    return;
+                if (problem == eMule::CoreStartWatch::Problem::CoreExited && launchesCore
+                    && !*autoRelaunched) {
+                    *autoRelaunched = true;
+                    eMule::logWarning(QStringLiteral("The core stopped right after start, starting it again"));
+                    // Queued: restarting the watch from inside its own signal re-enters it
+                    QTimer::singleShot(0, &mainWindow, relaunchCore);
+                    return;
+                }
+                mainWindow.showCoreStartProblem(problem);
+            });
+            QObject::connect(&mainWindow, &eMule::MainWindow::coreRetryRequested, &app,
+                             [relaunchCore] {
+                eMule::logInfo(QStringLiteral("Retrying the core connection"));
+                relaunchCore();
             });
             startWatch->restart();
         }
@@ -943,6 +997,18 @@ int main(int argc, char* argv[])
         ipcClient.connectToDaemon(connectHost, port);
     } else {
         eMule::logInfo(QStringLiteral("IPC disabled in settings."));
+    }
+
+    // A later start of this profile: come to the front and take over its links.
+    // Queued: an import asks in a dialog, and this runs inside a socket signal.
+    if (singleInstance) {
+        QObject::connect(singleInstance.get(), &eMule::SingleInstance::activationRequested,
+                         &mainWindow, [&mainWindow, &linkHandler](const QStringList& args) {
+            QTimer::singleShot(0, &mainWindow, [&mainWindow, &linkHandler, args] {
+                mainWindow.restoreWindow();
+                eMule::CommandLineExec::openArguments(args, linkHandler);
+            });
+        });
     }
 
     // Handle ed2k:// positional args and --screenshot/--options. The macOS Apple Event

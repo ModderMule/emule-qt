@@ -528,6 +528,9 @@ void IpcClientHandler::handleHandshake(const IpcMessage& msg)
     // which stage it is in, or the GUI shows empty lists with no explanation.
     reply.append(static_cast<bool>(theApp.loading));
     reply.append(DaemonApp::loadStage());
+    // Field 5: our pid. A restart on Windows is a new process, and the GUI that
+    // launched us watches the pid to tell a crash from a slow start.
+    reply.append(QCoreApplication::applicationPid());
     sendMessage(reply);
     emit handshakeCompleted();
 }

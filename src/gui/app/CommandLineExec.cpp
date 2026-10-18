@@ -36,6 +36,7 @@ void CommandLineExec::parse(QApplication& app)
     m_parser.addOption(m_delayOption);
     m_parser.addOption(m_optionsOption);
     m_parser.addOption(m_configOption);
+    m_parser.addOption(m_newInstanceOption);
     m_parser.addOption(m_registerTypesOption);
     m_parser.addOption(m_unregisterTypesOption);
 
@@ -49,6 +50,7 @@ void CommandLineExec::parse(QApplication& app)
     // Cache parsed values
     m_screenshotMode = m_parser.isSet(m_screenshotOption);
     m_screenshotPath = m_parser.value(m_screenshotOption);
+    m_newInstance = m_parser.isSet(m_newInstanceOption);
     m_screenshotDelay = m_parser.value(m_delayOption).toInt();
     m_positionalArgs = m_parser.positionalArguments();
 
@@ -193,9 +195,14 @@ void CommandLineExec::setupScreenshotTimer(QApplication& app, MainWindow& mainWi
 
 void CommandLineExec::handleOpenArguments(ExternalLinkHandler& linkHandler) const
 {
+    openArguments(m_positionalArgs, linkHandler);
+}
+
+void CommandLineExec::openArguments(const QStringList& args, ExternalLinkHandler& linkHandler)
+{
     bool linkTaken = false;
 
-    for (const QString& arg : m_positionalArgs) {
+    for (const QString& arg : args) {
         if (arg.startsWith(QStringLiteral("ed2k:"), Qt::CaseInsensitive)) {
             // Unchanged: still the first link only.
             if (!linkTaken) {

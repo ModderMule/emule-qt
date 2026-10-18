@@ -22,6 +22,7 @@
 #include <QAction>
 #include <QHeaderView>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPainter>
 #include <QShowEvent>
@@ -142,6 +143,18 @@ protected:
         painter.setPen(this->palette().color(QPalette::Disabled, QPalette::Text));
         painter.drawText(this->viewport()->rect().adjusted(8, 8, -8, -8),
                          Qt::AlignCenter | Qt::TextWordWrap, notice);
+    }
+
+    /// A click on blank space below the rows clears the selection, as in every
+    /// MFC SysListView32. Qt does this only in multi-select modes (issue #27).
+    void mousePressEvent(QMouseEvent* event) override
+    {
+        Base::mousePressEvent(event);
+
+        if (event->button() == Qt::LeftButton
+            && this->selectionMode() == QAbstractItemView::SingleSelection
+            && !this->indexAt(event->position().toPoint()).isValid())
+            this->clearSelection();
     }
 
     void showEvent(QShowEvent* event) override

@@ -720,6 +720,14 @@ target_include_directories(tst_PendingOpenQueue PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_PendingOpenQueue PRIVATE Qt6::Widgets)
 
+# One GUI per install dir and profile (issue #29): lock, key and the hand-over.
+emule_add_test(tst_SingleInstance FOLDER "Gui"
+    SOURCES tst_SingleInstance.cpp "${CMAKE_SOURCE_DIR}/src/gui/app/SingleInstance.cpp")
+target_include_directories(tst_SingleInstance PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs"
+    "${CMAKE_SOURCE_DIR}/src/gui")
+target_link_libraries(tst_SingleInstance PRIVATE eMule::Core Qt6::Network)
+
 # The .nzb file-type registration. Only the two generators are exercised — the
 # Windows and Linux writers compile on their own platform only, so this is the
 # whole of what a developer machine can check.

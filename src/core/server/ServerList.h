@@ -44,6 +44,10 @@ public:
 
     // -- Persistence ------------------------------------------------------
 
+    /// Start-up load from the config dir: server.met, then staticservers.dat.
+    /// MFC: CServerList::Init(). Returns true when server.met loaded.
+    bool init(const QString& configDir);
+
     /// Load servers from a server.met binary file. Returns true on success.
     bool loadServerMet(const QString& filePath);
 

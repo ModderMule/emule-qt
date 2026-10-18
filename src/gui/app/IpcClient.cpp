@@ -540,6 +540,8 @@ void IpcClient::onMessageReceived(const IpcMessage& msg)
         m_refusalText.clear();
         // Fields 3, 4: the core is still reading its files, and which
         m_loadStage = msg.fieldString(4);
+        // Field 5: the core's pid; 0 from an older core
+        m_corePid = msg.fieldInt(5);
         setCoreLink(msg.fieldBool(3) ? CoreLink::Loading : CoreLink::Ready);
         logInfo(QStringLiteral("IPC handshake complete — daemon version: %1")
                     .arg(msg.fieldString(0)));

@@ -63,6 +63,8 @@ struct ClientRow {
     bool isBanned = false;
     bool hasCredit = false;
     bool isFriend = false;
+    bool isUrl = false;            ///< HTTP source, not an eD2K client
+    bool noViewShared = false;     ///< peer refuses "View Shared Files"
     int64_t upDatarate = 0;       // bytes/sec upload rate
     int64_t downDatarate = 0;     // bytes/sec download rate
     int64_t downloadedTotal = 0;  // credit totals across sessions (0 = no credits)
