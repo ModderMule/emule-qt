@@ -532,21 +532,27 @@ function Clear-StaleVcpkgCacheEntries {
     if (-not (Test-Path $CachePath)) { return $false }
 
     $stale = @()
-    $kept = foreach ($line in Get-Content -LiteralPath $CachePath) {
+    $kept = [System.Collections.Generic.List[string]]::new()
+    foreach ($line in Get-Content -LiteralPath $CachePath) {
         # <NAME>:<FILEPATH|PATH>=<value>.  Internal entries (FIND_PACKAGE_MESSAGE_
         # DETAILS_*) are left alone: CMake rewrites them from the found values.
         # Both captures are copied out before the next -match runs: an operator
         # that matches overwrites $Matches, so reading it afterwards yields the
         # groups of the wrong pattern.
-        if ($line -notmatch '^([A-Za-z0-9_\-]+):(FILEPATH|PATH)=(.+)$') { $line; continue }
+        if ($line -notmatch '^([A-Za-z0-9_\-]+):(FILEPATH|PATH)=(.+)$') { $kept.Add($line); continue }
         $name = $Matches[1]
         $path = $Matches[3]
 
         if ($path -like '*vcpkg_installed*' -and -not (Test-Path -LiteralPath $path)) {
             $stale += $name
+            # Drop its //doc comment too: a comment followed by a blank line is a
+            # cache parse error and fails the configure
+            while ($kept.Count -gt 0 -and $kept[$kept.Count - 1].StartsWith('//')) {
+                $kept.RemoveAt($kept.Count - 1)
+            }
             continue
         }
-        $line
+        $kept.Add($line)
     }
 
     if (-not $stale) { return $false }

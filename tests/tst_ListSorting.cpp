@@ -1549,7 +1549,7 @@ void tst_ListSorting::downloadBarDrawsDataWhereItSits()
     QCOMPARE(image.pixelColor(100, 1), QColor(128, 128, 128));
     bar.partMap = QByteArray("\x00\xff", 2);
     image = render(true);
-    QCOMPARE(image.pixelColor(125, 8), QColor(0, 224, 0));
+    QCOMPARE(image.pixelColor(125, 8), QColor(0, 150, 0));   // flat progress green
 
     // Round: no grey track under the strip, the shaded bar shows through
     thePrefs.setDepth3D(5);

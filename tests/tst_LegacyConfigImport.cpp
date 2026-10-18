@@ -47,6 +47,8 @@ struct MfcInstall {
     QString temp;
     QString shared;
     QString catDir;
+    QString missing;      ///< never created
+    QString uncreatable;  ///< below a regular file, so mkpath fails on every OS
 
     MfcInstall()
         : config(root.filePath(QStringLiteral("config")))
@@ -54,9 +56,15 @@ struct MfcInstall {
         , temp(root.filePath(QStringLiteral("Temp")))
         , shared(root.filePath(QStringLiteral("Müsic")))
         , catDir(root.filePath(QStringLiteral("Films")))
+        , missing(root.filePath(QStringLiteral("Gone")))
+        , uncreatable(root.filePath(QStringLiteral("blocker/dir")))
     {
         for (const QString& dir : {config, incoming, temp, shared, catDir})
             QDir().mkpath(dir);
+        // Not a fake absolute path: Windows lets a user create C:/no/such/dir
+        QFile blocker(root.filePath(QStringLiteral("blocker")));
+        if (blocker.open(QIODevice::WriteOnly))
+            blocker.write("file, not a dir");
     }
 
     [[nodiscard]] QString file(const QString& name) const { return config + u'/' + name; }
@@ -70,7 +78,7 @@ struct MfcInstall {
                    "Nick=OldMule\n"
                    "IncomingDir=%1/\n"
                    "TempDir=%2/\n"
-                   "TempDirs=%2/|/no/such/dir/\n"
+                   "TempDirs=%2/|%3/\n"
                    "DownloadCapacity=2000\n"
                    "UploadCapacityNew=500\n"
                    "MaxUpload=80\n"
@@ -93,7 +101,7 @@ struct MfcInstall {
                    "Title=night\n"
                    "[WebServer]\n"
                    "Port=4711\n")
-            .arg(incoming, temp);
+            .arg(incoming, temp, missing);
     }
 };
 
@@ -258,11 +266,11 @@ void tst_LegacyConfigImport::import_categoriesAndSharedDirs()
                              "[Cat#1]\r\nTitle=Filme für alle\r\nIncoming=%1/\r\n"
                              "Comment=hd, uncut\r\nColor=255\r\na4afPriority=2\r\n"
                              "AutoCat=*.mkv|*.avi\r\nCare4All=1\r\n"
-                             "[Cat#2]\r\nTitle=Music\r\nIncoming=/no/such/dir/\r\nColor=-1\r\n")
-                  .arg(mfc.catDir).toUtf8());
+                             "[Cat#2]\r\nTitle=Music\r\nIncoming=%2/\r\nColor=-1\r\n")
+                  .arg(mfc.catDir, mfc.uncreatable).toUtf8());
     writeFile(mfc.file(QStringLiteral("shareddir.dat")),
               utf16(mfc.shared + QStringLiteral("/\n") + mfc.incoming
-                    + QStringLiteral("/\n/no/such/dir/\n") + mfc.shared + QStringLiteral("\n")));
+                    + QStringLiteral("/\n") + mfc.missing + QStringLiteral("/\n") + mfc.shared + QStringLiteral("\n")));
 
     Profile profile(mfc.config);
     const auto out = profile.run();
