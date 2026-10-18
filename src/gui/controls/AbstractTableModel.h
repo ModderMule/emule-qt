@@ -16,6 +16,7 @@
 
 #include <QAbstractTableModel>
 
+#include <algorithm>
 #include <utility>
 #include <vector>
 
@@ -43,6 +44,22 @@ public:
         beginResetModel();
         m_rows = std::move(rows);
         endResetModel();
+    }
+
+    /// Replace all rows. When @p sameKey pairs every old row with the new one at the
+    /// same position, update in place (dataChanged) instead of a reset: a reset drops
+    /// the view's pressed index, swallowing a double click, and kills persistent indexes.
+    template<class SameKey>
+    void updateRows(std::vector<Row> rows, SameKey sameKey)
+    {
+        if (rows.empty() || rows.size() != m_rows.size()
+            || !std::ranges::equal(m_rows, rows, sameKey)) {
+            setRows(std::move(rows));
+            return;
+        }
+        m_rows = std::move(rows);
+        emit this->dataChanged(this->index(0, 0),
+                               this->index(rowCount() - 1, columnCount() - 1));
     }
 
     /// Remove all rows (full reset). No-op when already empty.

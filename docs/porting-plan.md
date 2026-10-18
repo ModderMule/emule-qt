@@ -485,7 +485,7 @@ Replace MFC custom controls with Qt equivalents.
 
 ### Module 26: Localization
 
-- [x] Convert `.rc` string tables to Qt `.ts` translation files — `lang/` directory with 9 languages (en, de_DE, es_ES, fr_FR, it_IT, ja_JP, ko_KR, pt_BR, zh_CN), both `.ts` and compiled `.qm` files
+- [x] Convert `.rc` string tables to Qt `.ts` translation files — `lang/` directory with 13 languages (en, de_DE, es_ES, fr_FR, it_IT, ja_JP, ko_KR, nl_NL, pl_PL, pt_BR, ru_RU, zh_CN, zh_TW), both `.ts` and compiled `.qm` files
 - [x] Set up `lupdate` / `lrelease` workflow in CMake — `src/gui/CMakeLists.txt` uses `qt_add_translations()` with `QM_FILES_OUTPUT_VARIABLE`, requires `Qt6::LinguistTools`
 - [x] Wrap all user-visible strings in `tr()` or `QCoreApplication::translate()` (1055+ uses across 27+ GUI files)
 - [ ] Migrate remaining language files from `.rc` format to `.ts` format (9 of 131 done)

@@ -13,6 +13,7 @@
 /// The dialog ignores `fallback` and `tabIndex`; it needs only the label and the
 /// icon. That is cheaper than keeping a second struct in step.
 
+#include <QCoreApplication>
 #include <QList>
 #include <QStyle>
 
@@ -34,7 +35,7 @@ enum class ToolbarButtonId : int {
 
 struct ToolbarButtonDef {
     ToolbarButtonId id;
-    const char* label;
+    const char* label; // untranslated; tr() under eMule::MainWindow
     const char* iconResource;
     QStyle::StandardPixmap fallback;
     int tabIndex; // -1 if not a tab button
@@ -44,22 +45,22 @@ struct ToolbarButtonDef {
 /// so the two are positional partners: a page inserted anywhere but the end
 /// renumbers every literal below.
 inline constexpr ToolbarButtonDef kAllButtons[] = {
-    {ToolbarButtonId::Connect,     "Connect",      "ConnectDrop.ico", QStyle::SP_MediaStop,               -1},
-    {ToolbarButtonId::Kad,         "Kad",           "Kad.ico",        QStyle::SP_DriveNetIcon,             0},
-    {ToolbarButtonId::Servers,     "Servers",       "Server.ico",     QStyle::SP_ComputerIcon,             1},
-    {ToolbarButtonId::Transfers,   "Transfers",     "Transfer.ico",   QStyle::SP_ArrowDown,                2},
-    {ToolbarButtonId::Search,      "Search",        "Search.ico",     QStyle::SP_FileDialogContentsView,   3},
-    {ToolbarButtonId::SharedFiles, "Shared Files",  "SharedFiles.ico",QStyle::SP_DirOpenIcon,              4},
-    {ToolbarButtonId::Messages,    "Messages",      "Messages.ico",   QStyle::SP_MessageBoxInformation,    5},
-    {ToolbarButtonId::IRC,         "IRC",           "IRC.ico",        QStyle::SP_DialogApplyButton,        6},
-    {ToolbarButtonId::Statistics,  "Statistics",     "Statistics.ico", QStyle::SP_DialogHelpButton,         7},
-    {ToolbarButtonId::Usenet,      "Usenet",        "Usenet.ico",     QStyle::SP_DriveNetIcon,             8},
+    {ToolbarButtonId::Connect,     QT_TRANSLATE_NOOP("eMule::MainWindow", "Connect"),      "ConnectDrop.ico", QStyle::SP_MediaStop,               -1},
+    {ToolbarButtonId::Kad,         QT_TRANSLATE_NOOP("eMule::MainWindow", "Kad"),           "Kad.ico",        QStyle::SP_DriveNetIcon,             0},
+    {ToolbarButtonId::Servers,     QT_TRANSLATE_NOOP("eMule::MainWindow", "Servers"),       "Server.ico",     QStyle::SP_ComputerIcon,             1},
+    {ToolbarButtonId::Transfers,   QT_TRANSLATE_NOOP("eMule::MainWindow", "Transfers"),     "Transfer.ico",   QStyle::SP_ArrowDown,                2},
+    {ToolbarButtonId::Search,      QT_TRANSLATE_NOOP("eMule::MainWindow", "Search"),        "Search.ico",     QStyle::SP_FileDialogContentsView,   3},
+    {ToolbarButtonId::SharedFiles, QT_TRANSLATE_NOOP("eMule::MainWindow", "Shared Files"),  "SharedFiles.ico",QStyle::SP_DirOpenIcon,              4},
+    {ToolbarButtonId::Messages,    QT_TRANSLATE_NOOP("eMule::MainWindow", "Messages"),      "Messages.ico",   QStyle::SP_MessageBoxInformation,    5},
+    {ToolbarButtonId::IRC,         QT_TRANSLATE_NOOP("eMule::MainWindow", "IRC"),           "IRC.ico",        QStyle::SP_DialogApplyButton,        6},
+    {ToolbarButtonId::Statistics,  QT_TRANSLATE_NOOP("eMule::MainWindow", "Statistics"),     "Statistics.ico", QStyle::SP_DialogHelpButton,         7},
+    {ToolbarButtonId::Usenet,      QT_TRANSLATE_NOOP("eMule::MainWindow", "Usenet"),        "Usenet.ico",     QStyle::SP_DriveNetIcon,             8},
     // ToDo: Torrent toolbar button (Torrent.ico) once BitTorrent lands
-    {ToolbarButtonId::DownloadsFolder, "Downloads Folder", "DownloadsFolder.ico",
+    {ToolbarButtonId::DownloadsFolder, QT_TRANSLATE_NOOP("eMule::MainWindow", "Downloads Folder"), "DownloadsFolder.ico",
                                                     QStyle::SP_DirOpenIcon,             -1},
-    {ToolbarButtonId::Options,     "Options",       "Preferences.ico",QStyle::SP_FileDialogDetailedView,  -1},
-    {ToolbarButtonId::Tools,       "Tools",         "Tools.ico",      QStyle::SP_DialogResetButton,       -1},
-    {ToolbarButtonId::Help,        "Help",          "Help.ico",       QStyle::SP_TitleBarContextHelpButton,-1},
+    {ToolbarButtonId::Options,     QT_TRANSLATE_NOOP("eMule::MainWindow", "Options"),       "Preferences.ico",QStyle::SP_FileDialogDetailedView,  -1},
+    {ToolbarButtonId::Tools,       QT_TRANSLATE_NOOP("eMule::MainWindow", "Tools"),         "Tools.ico",      QStyle::SP_DialogResetButton,       -1},
+    {ToolbarButtonId::Help,        QT_TRANSLATE_NOOP("eMule::MainWindow", "Help"),          "Help.ico",       QStyle::SP_TitleBarContextHelpButton,-1},
 };
 
 /// Raw ints, matching what is stored in uistate.yml. Separator (1) appears twice,

@@ -377,12 +377,10 @@ Status connectToServer(Server* server)
         return {};
     }
 
-    if (theApp.serverConnect->isConnected()) {
-        const auto* current = theApp.serverConnect->currentServer();
-        if (current && current->serverId() == server->serverId())
-            return {};   // already there
-        theApp.serverConnect->disconnect();
-    }
+    // Same server: keep the session or the attempt. Any other: connectToServer()
+    // aborts the running attempt / drops the session first.
+    if (theApp.serverConnect->isConnectedOrConnectingTo(server))
+        return {};
     theApp.serverConnect->connectToServer(server);
     return {};
 }

@@ -1,296 +1,137 @@
 {
- "Link containers (*.dlc *.ccf *.rsdf)": {
-  "_context": "eMule::MetaResultActions",
-  "de_DE": "Link-Container (*.dlc *.ccf *.rsdf)",
-  "es_ES": "Contenedores de enlaces (*.dlc *.ccf *.rsdf)",
-  "fr_FR": "Conteneurs de liens (*.dlc *.ccf *.rsdf)",
-  "it_IT": "Contenitori di link (*.dlc *.ccf *.rsdf)",
-  "ja_JP": "リンクコンテナ (*.dlc *.ccf *.rsdf)",
-  "ko_KR": "링크 컨테이너 (*.dlc *.ccf *.rsdf)",
-  "pt_BR": "Contêineres de links (*.dlc *.ccf *.rsdf)",
-  "zh_CN": "链接容器 (*.dlc *.ccf *.rsdf)"
- },
- "Save Link Container": {
-  "_context": "eMule::MetaResultActions",
-  "de_DE": "Link-Container speichern",
-  "es_ES": "Guardar contenedor de enlaces",
-  "fr_FR": "Enregistrer le conteneur de liens",
-  "it_IT": "Salva contenitore di link",
-  "ja_JP": "リンクコンテナを保存",
-  "ko_KR": "링크 컨테이너 저장",
-  "pt_BR": "Salvar contêiner de links",
-  "zh_CN": "保存链接容器"
- },
- "Copied %n magnet link(s) to the clipboard.": {
-  "_context": "eMule::MetaResultActions",
-  "de_DE": [
-   "%n Magnet-Link in die Zwischenablage kopiert.",
-   "%n Magnet-Links in die Zwischenablage kopiert."
-  ],
-  "es_ES": [
-   "Se copió %n enlace magnet al portapapeles.",
-   "Se copiaron %n enlaces magnet al portapapeles."
-  ],
-  "fr_FR": [
-   "%n lien magnet copié dans le presse-papiers.",
-   "%n liens magnet copiés dans le presse-papiers."
-  ],
-  "it_IT": [
-   "%n link magnet copiato negli appunti.",
-   "%n link magnet copiati negli appunti."
-  ],
-  "ja_JP": [
-   "%n 件のマグネットリンクをクリップボードにコピーしました。"
-  ],
-  "ko_KR": [
-   "마그넷 링크 %n개를 클립보드에 복사했습니다."
-  ],
-  "pt_BR": [
-   "%n link magnet copiado para a área de transferência.",
-   "%n links magnet copiados para a área de transferência."
-  ],
-  "zh_CN": [
-   "已将 %n 个磁力链接复制到剪贴板。"
-  ]
- },
- "Could not fetch the links of \"%1\": %2": {
-  "_context": "eMule::MetaResultActions",
-  "de_DE": "Die Links von „%1“ konnten nicht abgerufen werden: %2",
-  "es_ES": "No se pudieron obtener los enlaces de \"%1\": %2",
-  "fr_FR": "Impossible de récupérer les liens de « %1 » : %2",
-  "it_IT": "Impossibile recuperare i link di \"%1\": %2",
-  "ja_JP": "「%1」のリンクを取得できませんでした: %2",
-  "ko_KR": "\"%1\"의 링크를 가져올 수 없습니다: %2",
-  "pt_BR": "Não foi possível obter os links de \"%1\": %2",
-  "zh_CN": "无法获取“%1”的链接：%2"
- },
- "\"%1\" holds no links.": {
-  "_context": "eMule::MetaResultActions",
-  "de_DE": "„%1“ enthält keine Links.",
-  "es_ES": "\"%1\" no contiene enlaces.",
-  "fr_FR": "« %1 » ne contient aucun lien.",
-  "it_IT": "\"%1\" non contiene link.",
-  "ja_JP": "「%1」にはリンクがありません。",
-  "ko_KR": "\"%1\"에 링크가 없습니다.",
-  "pt_BR": "\"%1\" não contém links.",
-  "zh_CN": "“%1”不包含任何链接。"
- },
- "Web (Server)": {
-  "_context": "eMule::SearchPanel",
-  "de_DE": "Web (Server)",
-  "es_ES": "Web (servidor)",
-  "fr_FR": "Web (serveur)",
-  "it_IT": "Web (server)",
-  "ja_JP": "Web (サーバー)",
-  "ko_KR": "웹 (서버)",
-  "pt_BR": "Web (servidor)",
-  "zh_CN": "网页（服务器）"
- },
- "Web results": {
-  "_context": "eMule::SearchPanel",
-  "de_DE": "Web-Ergebnisse",
-  "es_ES": "Resultados web",
-  "fr_FR": "Résultats web",
-  "it_IT": "Risultati web",
-  "ja_JP": "Web の結果",
-  "ko_KR": "웹 결과",
-  "pt_BR": "Resultados da web",
-  "zh_CN": "网页结果"
- },
- "Copy Magnet Link": {
-  "_context": "eMule::SearchPanel",
-  "de_DE": "Magnet-Link kopieren",
-  "es_ES": "Copiar enlace magnet",
-  "fr_FR": "Copier le lien magnet",
-  "it_IT": "Copia link magnet",
-  "ja_JP": "マグネットリンクをコピー",
-  "ko_KR": "마그넷 링크 복사",
-  "pt_BR": "Copiar link magnet",
-  "zh_CN": "复制磁力链接"
- },
- "Show Links...": {
-  "_context": "eMule::SearchPanel",
-  "de_DE": "Links anzeigen...",
-  "es_ES": "Mostrar enlaces...",
-  "fr_FR": "Afficher les liens...",
-  "it_IT": "Mostra link...",
-  "ja_JP": "リンクを表示...",
-  "ko_KR": "링크 보기...",
-  "pt_BR": "Mostrar links...",
-  "zh_CN": "显示链接..."
- },
- "Download Container...": {
-  "_context": "eMule::SearchPanel",
-  "de_DE": "Container herunterladen...",
-  "es_ES": "Descargar contenedor...",
-  "fr_FR": "Télécharger le conteneur...",
-  "it_IT": "Scarica contenitore...",
-  "ja_JP": "コンテナをダウンロード...",
-  "ko_KR": "컨테이너 다운로드...",
-  "pt_BR": "Baixar contêiner...",
-  "zh_CN": "下载容器..."
- },
- "Stream": {
-  "_context": "eMule::SearchResultsModel",
-  "de_DE": "Stream",
-  "es_ES": "Stream",
-  "fr_FR": "Flux",
-  "it_IT": "Stream",
-  "ja_JP": "ストリーム",
-  "ko_KR": "스트림",
-  "pt_BR": "Stream",
-  "zh_CN": "流媒体"
- },
- "Links: %1": {
-  "_context": "eMule::WebLinksDialog",
-  "de_DE": "Links: %1",
-  "es_ES": "Enlaces: %1",
-  "fr_FR": "Liens : %1",
-  "it_IT": "Link: %1",
-  "ja_JP": "リンク: %1",
-  "ko_KR": "링크: %1",
-  "pt_BR": "Links: %1",
-  "zh_CN": "链接：%1"
- },
- "The page says these files are password protected.": {
-  "_context": "eMule::WebLinksDialog",
-  "de_DE": "Laut der Seite sind diese Dateien passwortgeschützt.",
-  "es_ES": "La página indica que estos archivos están protegidos con contraseña.",
-  "fr_FR": "La page indique que ces fichiers sont protégés par mot de passe.",
-  "it_IT": "La pagina indica che questi file sono protetti da password.",
-  "ja_JP": "ページによると、これらのファイルはパスワードで保護されています。",
-  "ko_KR": "페이지에 따르면 이 파일들은 암호로 보호되어 있습니다.",
-  "pt_BR": "A página informa que estes arquivos são protegidos por senha.",
-  "zh_CN": "页面说明这些文件受密码保护。"
- },
- "Hoster": {
-  "_context": "eMule::WebLinksDialog",
-  "de_DE": "Hoster",
-  "es_ES": "Alojamiento",
-  "fr_FR": "Hébergeur",
-  "it_IT": "Hoster",
-  "ja_JP": "ホスター",
-  "ko_KR": "호스터",
-  "pt_BR": "Hospedagem",
-  "zh_CN": "网盘"
- },
- "Copy Links": {
-  "_context": "eMule::WebLinksDialog",
-  "de_DE": "Links kopieren",
-  "es_ES": "Copiar enlaces",
-  "fr_FR": "Copier les liens",
-  "it_IT": "Copia link",
-  "ja_JP": "リンクをコピー",
-  "ko_KR": "링크 복사",
-  "pt_BR": "Copiar links",
-  "zh_CN": "复制链接"
- },
- "Open in Browser": {
-  "_context": "eMule::WebLinksDialog",
-  "de_DE": "Im Browser öffnen",
-  "es_ES": "Abrir en el navegador",
-  "fr_FR": "Ouvrir dans le navigateur",
-  "it_IT": "Apri nel browser",
-  "ja_JP": "ブラウザーで開く",
-  "ko_KR": "브라우저에서 열기",
-  "pt_BR": "Abrir no navegador",
-  "zh_CN": "在浏览器中打开"
- },
- "Save List...": {
-  "_context": "eMule::WebLinksDialog",
-  "de_DE": "Liste speichern...",
-  "es_ES": "Guardar lista...",
-  "fr_FR": "Enregistrer la liste...",
-  "it_IT": "Salva elenco...",
-  "ja_JP": "リストを保存...",
-  "ko_KR": "목록 저장...",
-  "pt_BR": "Salvar lista...",
-  "zh_CN": "保存列表..."
- },
- "Copied %n link(s) to the clipboard.": {
-  "_context": "eMule::WebLinksDialog",
-  "de_DE": [
-   "%n Link in die Zwischenablage kopiert.",
-   "%n Links in die Zwischenablage kopiert."
-  ],
-  "es_ES": [
-   "Se copió %n enlace al portapapeles.",
-   "Se copiaron %n enlaces al portapapeles."
-  ],
-  "fr_FR": [
-   "%n lien copié dans le presse-papiers.",
-   "%n liens copiés dans le presse-papiers."
-  ],
-  "it_IT": [
-   "%n link copiato negli appunti.",
-   "%n link copiati negli appunti."
-  ],
-  "ja_JP": [
-   "%n 件のリンクをクリップボードにコピーしました。"
-  ],
-  "ko_KR": [
-   "링크 %n개를 클립보드에 복사했습니다."
-  ],
-  "pt_BR": [
-   "%n link copiado para a área de transferência.",
-   "%n links copiados para a área de transferência."
-  ],
-  "zh_CN": [
-   "已将 %n 个链接复制到剪贴板。"
-  ]
- },
- "Open %n links in the browser?": {
-  "_context": "eMule::WebLinksDialog",
-  "de_DE": [
-   "%n Link im Browser öffnen?",
-   "%n Links im Browser öffnen?"
-  ],
-  "es_ES": [
-   "¿Abrir %n enlace en el navegador?",
-   "¿Abrir %n enlaces en el navegador?"
-  ],
-  "fr_FR": [
-   "Ouvrir %n lien dans le navigateur ?",
-   "Ouvrir %n liens dans le navigateur ?"
-  ],
-  "it_IT": [
-   "Aprire %n link nel browser?",
-   "Aprire %n link nel browser?"
-  ],
-  "ja_JP": [
-   "%n 件のリンクをブラウザーで開きますか?"
-  ],
-  "ko_KR": [
-   "링크 %n개를 브라우저에서 열까요?"
-  ],
-  "pt_BR": [
-   "Abrir %n link no navegador?",
-   "Abrir %n links no navegador?"
-  ],
-  "zh_CN": [
-   "要在浏览器中打开 %n 个链接吗？"
-  ]
- },
- "Save Link List": {
-  "_context": "eMule::WebLinksDialog",
-  "de_DE": "Linkliste speichern",
-  "es_ES": "Guardar lista de enlaces",
-  "fr_FR": "Enregistrer la liste de liens",
-  "it_IT": "Salva elenco di link",
-  "ja_JP": "リンクリストを保存",
-  "ko_KR": "링크 목록 저장",
-  "pt_BR": "Salvar lista de links",
-  "zh_CN": "保存链接列表"
- },
- "Link lists (*.txt);;All files (*)": {
-  "_context": "eMule::WebLinksDialog",
-  "de_DE": "Linklisten (*.txt);;Alle Dateien (*)",
-  "es_ES": "Listas de enlaces (*.txt);;Todos los archivos (*)",
-  "fr_FR": "Listes de liens (*.txt);;Tous les fichiers (*)",
-  "it_IT": "Elenchi di link (*.txt);;Tutti i file (*)",
-  "ja_JP": "リンクリスト (*.txt);;すべてのファイル (*)",
-  "ko_KR": "링크 목록 (*.txt);;모든 파일 (*)",
-  "pt_BR": "Listas de links (*.txt);;Todos os arquivos (*)",
-  "zh_CN": "链接列表 (*.txt);;所有文件 (*)"
- }
+  "Up: %1(%2)": {
+    "_context": "eMule::MainWindow",
+    "de_DE": "Up: %1(%2)",
+    "es_ES": "Subida: %1(%2)",
+    "fr_FR": "E : %1(%2)",
+    "it_IT": "Inv: %1(%2)",
+    "ja_JP": "アップ: %1(%2)",
+    "ko_KR": "업: %1(%2)",
+    "nl_NL": "Uit: %1(%2)",
+    "pl_PL": "Wysł.: %1(%2)",
+    "pt_BR": "Up: %1(%2)",
+    "ru_RU": "Отдача: %1(%2)",
+    "zh_CN": "上传:%1(%2)",
+    "zh_TW": "上傳: %1(%2)"
+  },
+  "Down: %1(%2)": {
+    "_context": "eMule::MainWindow",
+    "de_DE": "Down: %1(%2)",
+    "es_ES": "Descarga: %1(%2)",
+    "fr_FR": "R : %1(%2)",
+    "it_IT": "Ric: %1(%2)",
+    "ja_JP": "ダウン: %1(%2)",
+    "ko_KR": "다운: %1(%2)",
+    "nl_NL": "In: %1(%2)",
+    "pl_PL": "Pobr.: %1(%2)",
+    "pt_BR": "Down: %1(%2)",
+    "ru_RU": "Приём: %1(%2)",
+    "zh_CN": "下载:%1(%2)",
+    "zh_TW": "下載: %1(%2)"
+  },
+  "Up: %1": {
+    "_context": "eMule::MainWindow",
+    "de_DE": "Up: %1",
+    "es_ES": "Subida: %1",
+    "fr_FR": "E : %1",
+    "it_IT": "Inv: %1",
+    "ja_JP": "アップ: %1",
+    "ko_KR": "업: %1",
+    "nl_NL": "Uit: %1",
+    "pl_PL": "Wysł.: %1",
+    "pt_BR": "Up: %1",
+    "ru_RU": "Отдача: %1",
+    "zh_CN": "上传:%1",
+    "zh_TW": "上傳: %1"
+  },
+  "Down: %1": {
+    "_context": "eMule::MainWindow",
+    "de_DE": "Down: %1",
+    "es_ES": "Descarga: %1",
+    "fr_FR": "R : %1",
+    "it_IT": "Ric: %1",
+    "ja_JP": "ダウン: %1",
+    "ko_KR": "다운: %1",
+    "nl_NL": "In: %1",
+    "pl_PL": "Pobr.: %1",
+    "pt_BR": "Down: %1",
+    "ru_RU": "Приём: %1",
+    "zh_CN": "下载:%1",
+    "zh_TW": "下載: %1"
+  },
+  "Transfers": {
+    "_context": "eMule::MainWindow",
+    "de_DE": "Transfer",
+    "es_ES": "Tráfico",
+    "fr_FR": "Transferts",
+    "it_IT": "Trasferimenti",
+    "ja_JP": "転送",
+    "ko_KR": "전송",
+    "nl_NL": "Verkeer",
+    "pl_PL": "Transfer",
+    "pt_BR": "Transferência",
+    "ru_RU": "Передача",
+    "zh_CN": "传输",
+    "zh_TW": "傳輸"
+  },
+  "IRC": {
+    "_context": "eMule::MainWindow",
+    "de_DE": "IRC",
+    "es_ES": "IRC",
+    "fr_FR": "IRC",
+    "it_IT": "IRC",
+    "ja_JP": "IRC",
+    "ko_KR": "IRC",
+    "nl_NL": "IRC",
+    "pl_PL": "IRC",
+    "pt_BR": "IRC",
+    "ru_RU": "IRC",
+    "zh_CN": "IRC",
+    "zh_TW": "IRC"
+  },
+  "Downloads Folder": {
+    "_context": "eMule::MainWindow",
+    "de_DE": "Download-Ordner",
+    "es_ES": "Carpeta de descargas",
+    "fr_FR": "Dossier des téléchargements",
+    "it_IT": "Cartella download",
+    "ja_JP": "ダウンロード フォルダ",
+    "ko_KR": "다운로드 폴더",
+    "nl_NL": "Downloadmap",
+    "pl_PL": "Folder pobranych",
+    "pt_BR": "Pasta de downloads",
+    "ru_RU": "Папка загрузок",
+    "zh_CN": "下载文件夹",
+    "zh_TW": "下載資料夾"
+  },
+  "Tools": {
+    "_context": "eMule::MainWindow",
+    "de_DE": "Tools",
+    "es_ES": "Herramientas",
+    "fr_FR": "Outils",
+    "it_IT": "Strumenti",
+    "ja_JP": "ツール",
+    "ko_KR": "도구",
+    "nl_NL": "Hulpmiddelen",
+    "pl_PL": "Narzędzia",
+    "pt_BR": "Ferramentas",
+    "ru_RU": "Сервис",
+    "zh_CN": "工具",
+    "zh_TW": "工具"
+  },
+  "── Separator ──": {
+    "_context": "eMule::ToolbarCustomizeDialog",
+    "de_DE": "── Trennlinie ──",
+    "es_ES": "── Separador ──",
+    "fr_FR": "── Séparateur ──",
+    "it_IT": "── Separatore ──",
+    "ja_JP": "── 区切り線 ──",
+    "ko_KR": "── 구분선 ──",
+    "nl_NL": "── Scheidingslijn ──",
+    "pl_PL": "── Separator ──",
+    "pt_BR": "── Separador ──",
+    "ru_RU": "── Разделитель ──",
+    "zh_CN": "── 分隔符 ──",
+    "zh_TW": "── 分隔線 ──"
+  }
 }

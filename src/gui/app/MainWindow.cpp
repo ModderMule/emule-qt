@@ -547,13 +547,13 @@ void MainWindow::updateTransferRates(double upKBs, double downKBs,
     m_cachedDownKBs = downKBs;
 
     if (thePrefs.showOverhead()) {
-        m_statusUpLabel->setText(QStringLiteral("Up: %1(%2)")
+        m_statusUpLabel->setText(tr("Up: %1(%2)")
             .arg(upKBs, 0, 'f', 1).arg(upOH, 0, 'f', 1));
-        m_statusDownLabel->setText(QStringLiteral("Down: %1(%2)")
+        m_statusDownLabel->setText(tr("Down: %1(%2)")
             .arg(downKBs, 0, 'f', 1).arg(downOH, 0, 'f', 1));
     } else {
-        m_statusUpLabel->setText(QStringLiteral("Up: %1").arg(upKBs, 0, 'f', 1));
-        m_statusDownLabel->setText(QStringLiteral("Down: %1").arg(downKBs, 0, 'f', 1));
+        m_statusUpLabel->setText(tr("Up: %1").arg(upKBs, 0, 'f', 1));
+        m_statusDownLabel->setText(tr("Down: %1").arg(downKBs, 0, 'f', 1));
     }
 
     updateWindowTitle();

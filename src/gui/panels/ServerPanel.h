@@ -112,6 +112,9 @@ private:
     /// LAN-filtered (empty for a duplicate or a dropped connection).
     void sendAddServer(const QString& address, uint16_t port, const QString& name,
                        std::function<void(bool added, const QString& rejected)> done);
+    /// Connect to one server: double click, Enter and "Connect To" all land here.
+    /// The daemon aborts a running attempt; the same server is a no-op there.
+    void connectToServer(uint32_t ip, const QString& addr, uint16_t port);
 
     // Models
     ServerListModel* m_serverListModel = nullptr;

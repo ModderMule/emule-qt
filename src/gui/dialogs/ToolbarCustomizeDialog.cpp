@@ -23,9 +23,9 @@ static QIcon iconForButton(ToolbarButtonId id)
 static QString labelForButton(ToolbarButtonId id)
 {
     if (id == ToolbarButtonId::Separator)
-        return QStringLiteral("── Separator ──");
+        return ToolbarCustomizeDialog::tr("── Separator ──");
     if (const auto* m = findButtonDef(id))
-        return QString::fromLatin1(m->label);
+        return QCoreApplication::translate("eMule::MainWindow", m->label);
     return QStringLiteral("Unknown");
 }
 

@@ -28,7 +28,8 @@ from pathlib import Path
 
 LANG_DIR = Path(__file__).resolve().parent.parent / "lang"
 
-LANGUAGES = ["de_DE", "es_ES", "fr_FR", "it_IT", "ja_JP", "ko_KR", "pt_BR", "zh_CN"]
+LANGUAGES = ["de_DE", "es_ES", "fr_FR", "it_IT", "ja_JP", "ko_KR", "nl_NL", "pl_PL",
+             "pt_BR", "ru_RU", "zh_CN", "zh_TW"]
 
 DEFAULT_EXPORT = LANG_DIR / "missing.json"
 

@@ -160,6 +160,8 @@ public:
     [[nodiscard]] Server* currentServer() const;
     /// The address the live session dialed (a dual-stack server has two); null when offline.
     [[nodiscard]] Address sessionAddress() const;
+    /// Connected to @p server, or a single connect to it is under way.
+    [[nodiscard]] bool isConnectedOrConnectingTo(const Server* server) const;
 
     [[nodiscard]] uint32 localIP() const { return m_localIP; }
 

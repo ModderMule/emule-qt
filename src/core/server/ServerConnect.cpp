@@ -25,6 +25,8 @@
 #include <QNetworkInterface>
 #include <QTime>
 
+#include <algorithm>
+
 
 
 
@@ -409,6 +411,23 @@ void ServerConnect::connectToServer(Server* server, bool multiconnect, bool noCr
 
     socket->initProxySupport(thePrefs.proxySettings());
     socket->connectTo(*server, noCrypt, dial, ipv6Switch);
+}
+
+bool ServerConnect::isConnectedOrConnectingTo(const Server* server) const
+{
+    if (!server)
+        return false;
+    if (m_connected) {
+        const Server* current = currentServer();
+        return current && current->serverId() == server->serverId();
+    }
+    // Auto-connect dials several servers at once: picking one of them still switches
+    // to a single connect, so only a single connect counts here.
+    if (!m_connecting || !m_singleConnecting)
+        return false;
+    return std::ranges::any_of(m_openSockets, [this, server](const ServerSocket* sock) {
+        return listEntryFor(sock->currentServer()) == server;
+    });
 }
 
 // ---------------------------------------------------------------------------

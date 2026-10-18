@@ -59,15 +59,22 @@ Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
 Name: "fr"; MessagesFile: "compiler:Languages\French.isl"
 Name: "it"; MessagesFile: "compiler:Languages\Italian.isl"
 Name: "ja"; MessagesFile: "compiler:Languages\Japanese.isl"
+Name: "nl"; MessagesFile: "compiler:Languages\Dutch.isl"
+Name: "pl"; MessagesFile: "compiler:Languages\Polish.isl"
 Name: "ptbr"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
+Name: "ru"; MessagesFile: "compiler:Languages\Russian.isl"
 ; Not in every Inno Setup distribution
 #define HaveKorean FileExists(AddBackslash(CompilerPath) + "Languages\Korean.isl")
 #define HaveChinese FileExists(AddBackslash(CompilerPath) + "Languages\ChineseSimplified.isl")
+#define HaveChineseTW FileExists(AddBackslash(CompilerPath) + "Languages\ChineseTraditional.isl")
 #if HaveKorean
 Name: "ko"; MessagesFile: "compiler:Languages\Korean.isl"
 #endif
 #if HaveChinese
 Name: "zh"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+#endif
+#if HaveChineseTW
+Name: "zhtw"; MessagesFile: "compiler:Languages\ChineseTraditional.isl"
 #endif
 
 [CustomMessages]
@@ -89,9 +96,18 @@ it.ImportEmuleNotFound=(nessuna installazione di eMule trovata)
 ja.StartMenuShortcut=スタート メニューにショートカットを作成する(&S)
 ja.ImportEmule=eMule の設定をインポートする(&I)
 ja.ImportEmuleNotFound=(eMule のインストールが見つかりません)
+nl.StartMenuShortcut=Een snelkoppeling in het &Startmenu maken
+nl.ImportEmule=Instellingen uit eMule &importeren
+nl.ImportEmuleNotFound=(geen eMule-installatie gevonden)
+pl.StartMenuShortcut=Utwórz skrót w menu &Start
+pl.ImportEmule=&Importuj ustawienia z eMule
+pl.ImportEmuleNotFound=(nie znaleziono instalacji eMule)
 ptbr.StartMenuShortcut=Criar um atalho no Menu &Iniciar
 ptbr.ImportEmule=I&mportar as configurações do eMule
 ptbr.ImportEmuleNotFound=(nenhuma instalação do eMule encontrada)
+ru.StartMenuShortcut=Создать ярлык в меню «&Пуск»
+ru.ImportEmule=&Импортировать настройки из eMule
+ru.ImportEmuleNotFound=(установка eMule не найдена)
 #if HaveKorean
 ko.StartMenuShortcut=시작 메뉴에 바로 가기 만들기(&S)
 ko.ImportEmule=eMule 설정 가져오기(&I)
@@ -101,6 +117,11 @@ ko.ImportEmuleNotFound=(eMule 설치를 찾을 수 없음)
 zh.StartMenuShortcut=创建开始菜单快捷方式(&S)
 zh.ImportEmule=从 eMule 导入设置(&I)
 zh.ImportEmuleNotFound=(未找到 eMule 安装)
+#endif
+#if HaveChineseTW
+zhtw.StartMenuShortcut=建立開始功能表捷徑(&S)
+zhtw.ImportEmule=從 eMule 匯入設定(&I)
+zhtw.ImportEmuleNotFound=(找不到 eMule 安裝)
 #endif
 
 [Tasks]

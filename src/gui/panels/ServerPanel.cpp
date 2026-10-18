@@ -269,20 +269,12 @@ void ServerPanel::onServerDoubleClicked(const QModelIndex& index)
     auto* proxy = qobject_cast<QSortFilterProxyModel*>(m_serverListView->model());
     const QModelIndex srcIndex = proxy ? proxy->mapToSource(index) : index;
 
-    if (!m_ipc || !m_ipc->isConnected())
-        return;
-
     const auto* row = m_serverListModel->rowAt(srcIndex.row());
     // numericIp is 0 for an IPv6 server, so identity rests on addr.
     if (!row || (row->numericIp == 0 && row->addr.isEmpty()))
         return;
 
-    Ipc::IpcMessage req(Ipc::IpcMsgType::ConnectToServer);
-    req.append(static_cast<qint64>(row->numericIp));
-    req.append(static_cast<qint64>(row->port));
-    req.append(row->addr);
-    m_ipc->sendRequest(std::move(req));
-    m_connectBtn->setText(tr("Cancel"));
+    connectToServer(row->numericIp, row->addr, row->port);
 }
 
 void ServerPanel::onServerContextMenu(const QPoint& pos)
@@ -329,14 +321,7 @@ void ServerPanel::onServerContextMenu(const QPoint& pos)
         const QString addr = row->addr;
         const uint16_t port = row->port;
         connect(connectAction, &QAction::triggered, this, [this, ip, addr, port]() {
-            if (m_ipc && m_ipc->isConnected()) {
-                Ipc::IpcMessage req(Ipc::IpcMsgType::ConnectToServer);
-                req.append(static_cast<qint64>(ip));
-                req.append(static_cast<qint64>(port));
-                req.append(addr);
-                m_ipc->sendRequest(std::move(req));
-                m_connectBtn->setText(tr("Cancel"));
-            }
+            connectToServer(ip, addr, port);
         });
     }
 
@@ -1567,6 +1552,25 @@ void ServerPanel::sendAddServer(const QString& address, uint16_t port, const QSt
                            && resp.fieldBool(0);
         done(added, lanFiltered ? resp.fieldString(1) : QString());
     });
+}
+
+void ServerPanel::connectToServer(uint32_t ip, const QString& addr, uint16_t port)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    Ipc::IpcMessage req(Ipc::IpcMsgType::ConnectToServer);
+    req.append(static_cast<qint64>(ip));
+    req.append(static_cast<qint64>(port));
+    req.append(addr);
+    m_ipc->sendRequest(std::move(req));
+
+    // Optimistic, like onConnectClicked, so the button cancels. Connected stays as is:
+    // the same server sends no state push to correct it.
+    if (!m_ed2kConnected) {
+        m_ed2kConnecting = true;
+        updateConnectButton(m_ed2kConnected, m_ed2kConnecting);
+    }
 }
 
 void ServerPanel::resetConnectionState()

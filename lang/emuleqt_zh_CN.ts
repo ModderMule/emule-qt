@@ -812,7 +812,7 @@ Download it again?</source>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4026"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4028"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -4713,7 +4713,27 @@ Enable at least one under Options → Connection to connect.</source>
         <translation>错误！</translation>
     </message>
     <message>
-        <location line="+119"/>
+        <location line="+76"/>
+        <source>Up: %1(%2)</source>
+        <translation>上传:%1(%2)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Down: %1(%2)</source>
+        <translation>下载:%1(%2)</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Up: %1</source>
+        <translation>上传:%1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Down: %1</source>
+        <translation>下载:%1</translation>
+    </message>
+    <message>
+        <location line="+37"/>
         <source>Connected</source>
         <translation>已连接</translation>
     </message>
@@ -4966,6 +4986,7 @@ Enable it under Options → Web Interface, then try again.</source>
     </message>
     <message>
         <location line="+5"/>
+        <location filename="../src/gui/app/ToolbarButtons.h" line="+48"/>
         <source>Connect</source>
         <translation>连接</translation>
     </message>
@@ -5090,6 +5111,71 @@ Enable it under Options → Web Interface, then try again.</source>
         <location line="+1"/>
         <source>The core is loading its files…</source>
         <translation>核心正在加载文件…</translation>
+    </message>
+    <message>
+        <location filename="../src/gui/app/ToolbarButtons.h" line="+1"/>
+        <source>Kad</source>
+        <translation>Kad</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Servers</source>
+        <translation>服务器</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Transfers</source>
+        <translation>传输</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Search</source>
+        <translation>搜索</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Shared Files</source>
+        <translation>共享文件</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Messages</source>
+        <translation>消息</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>IRC</source>
+        <translation>IRC</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Statistics</source>
+        <translation>统计</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Usenet</source>
+        <translation>Usenet</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Downloads Folder</source>
+        <translation>下载文件夹</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Options</source>
+        <translation>选项</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Tools</source>
+        <translation>工具</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Help</source>
+        <translation>帮助</translation>
     </message>
 </context>
 <context>
@@ -9883,12 +9969,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <location filename="../src/gui/panels/SearchPanel.cpp" line="+310"/>
         <location line="+973"/>
         <location line="+13"/>
-        <location line="+513"/>
+        <location line="+514"/>
         <source>Download</source>
         <translation>下载</translation>
     </message>
     <message>
-        <location line="-1479"/>
+        <location line="-1480"/>
         <source>Close All Searches</source>
         <translation>关闭所有搜索</translation>
     </message>
@@ -10303,13 +10389,13 @@ Restart eMule for all connections to use the new proxy settings.</source>
     <message>
         <location line="+65"/>
         <location line="+7"/>
-        <location line="+968"/>
+        <location line="+971"/>
         <location line="+43"/>
         <source>Preview</source>
         <translation>预览</translation>
     </message>
     <message>
-        <location line="-699"/>
+        <location line="-701"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -10318,7 +10404,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 %1</translation>
     </message>
     <message>
-        <location line="+657"/>
+        <location line="+659"/>
         <source>Preview requested - please wait</source>
         <translation>已请求预览 - 请稍候</translation>
     </message>
@@ -10338,7 +10424,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>全部</translation>
     </message>
     <message>
-        <location line="-1434"/>
+        <location line="-1437"/>
         <location line="+15"/>
         <location line="+10"/>
         <source>Mark as Spam</source>
@@ -10375,7 +10461,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>Web 服务</translation>
     </message>
     <message>
-        <location line="+973"/>
+        <location line="+976"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>预览不可用 — Web 服务器未运行或未收到流令牌。</translation>
     </message>
@@ -10393,7 +10479,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>流媒体</translation>
     </message>
     <message numerus="yes">
-        <location line="+95"/>
+        <location line="+97"/>
         <source>%1 · %n name(s)</source>
         <translation>
             <numerusform>%1 · %n 个名称</numerusform>
@@ -10618,19 +10704,17 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+2"/>
-        <location line="+24"/>
-        <location line="+53"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location line="-75"/>
-        <location line="+449"/>
+        <location line="+2"/>
+        <location line="+434"/>
         <source>Connect</source>
         <translation>连接</translation>
     </message>
     <message>
-        <location line="-505"/>
+        <location line="-490"/>
         <source>Invalid URL: %1</source>
         <translation>无效的URL: %1</translation>
     </message>
@@ -10660,7 +10744,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>已下载 server.met，解压 &quot;%1&quot;（%2 字节）。正在解析...</translation>
     </message>
     <message>
-        <location line="+633"/>
+        <location line="+618"/>
         <location line="+2"/>
         <location line="+24"/>
         <location line="+39"/>
@@ -10758,12 +10842,12 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>▸ 服务器 (%1)</translation>
     </message>
     <message>
-        <location line="-660"/>
+        <location line="-653"/>
         <source>Connect To</source>
         <translation>连接到</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+13"/>
         <source>Priority</source>
         <translation>优先级</translation>
     </message>
@@ -13893,7 +13977,12 @@ Clicking &apos;Restore Stats&apos; again will reload your current statistics.</s
 <context>
     <name>eMule::ToolbarCustomizeDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ToolbarCustomizeDialog.cpp" line="+38"/>
+        <location filename="../src/gui/dialogs/ToolbarCustomizeDialog.cpp" line="+26"/>
+        <source>── Separator ──</source>
+        <translation>── 分隔符 ──</translation>
+    </message>
+    <message>
+        <location line="+12"/>
         <source>Customize Toolbar</source>
         <translation>自定义工具栏</translation>
     </message>
@@ -15233,14 +15322,14 @@ A password is set for this release.</source>
         <translation>地址</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3361"/>
-        <location line="+3250"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3363"/>
+        <location line="+3252"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>会话已过期 — 请重新登录</translation>
     </message>
     <message>
-        <location line="-3295"/>
+        <location line="-3297"/>
         <source>Guests cannot add downloads</source>
         <translation>访客无法添加下载</translation>
     </message>
@@ -15344,7 +15433,7 @@ A password is set for this release.</source>
         <translation>登录失败</translation>
     </message>
     <message numerus="yes">
-        <location line="+234"/>
+        <location line="+236"/>
         <source>%n download(s) added</source>
         <translation>
             <numerusform>已添加 %n 个下载</numerusform>
@@ -16053,7 +16142,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>NZB 文件：</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1179"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1181"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>名称</translation>
@@ -16455,7 +16544,7 @@ Whichever network is idle lends its share to the other.</source>
         <translation>上传速度</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1176"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1178"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation>上传</translation>

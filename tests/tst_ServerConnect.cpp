@@ -149,6 +149,7 @@ private slots:
     // Connect to specific server
     void connectToServer_setsConnecting();
     void connectToServer_single_loginAndConnect();
+    void connectToServer_switchAbortsAttempt();
 
     // Connect to any server
     void connectToAnyServer_emptyList_stays_notConnected();
@@ -288,6 +289,41 @@ void tst_ServerConnect::connectToServer_setsConnecting()
     QVERIFY(!stateSpy.isEmpty());
 
     conn.stopConnectionTry();
+}
+
+void tst_ServerConnect::connectToServer_switchAbortsAttempt()
+{
+    // Never answer: both attempts stay pending
+    QTcpServer tcpA;
+    QTcpServer tcpB;
+    QVERIFY(tcpA.listen(QHostAddress::LocalHost, 0));
+    QVERIFY(tcpB.listen(QHostAddress::LocalHost, 0));
+
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);        // lets loopback servers into the list
+    const auto restore = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    ServerList list;
+    Server* a = list.addServer(std::make_unique<Server>(htonl(0x7F000001), tcpA.serverPort()));
+    Server* b = list.addServer(std::make_unique<Server>(htonl(0x7F000001), tcpB.serverPort()));
+    QVERIFY(a && b);
+
+    ServerConnect conn(list);
+    conn.setConfig(makeTestConfig());
+    QVERIFY(!conn.isConnectedOrConnectingTo(a));
+
+    conn.connectToServer(a, false, true);
+    QVERIFY(conn.isConnectedOrConnectingTo(a));
+    QVERIFY(!conn.isConnectedOrConnectingTo(b));
+
+    // Another server: the running attempt is dropped
+    conn.connectToServer(b, false, true);
+    QVERIFY(conn.isConnecting());
+    QVERIFY(!conn.isConnectedOrConnectingTo(a));
+    QVERIFY(conn.isConnectedOrConnectingTo(b));
+
+    conn.stopConnectionTry();
+    QVERIFY(!conn.isConnectedOrConnectingTo(b));
 }
 
 void tst_ServerConnect::connectToServer_single_loginAndConnect()

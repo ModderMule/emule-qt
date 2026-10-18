@@ -2159,7 +2159,9 @@ void WebServer::dispatchActions(const QUrlQuery& query, const QString& page)
             const QString ip = query.queryItemValue(QStringLiteral("ip"));
             const uint16 port = query.queryItemValue(QStringLiteral("port")).toUShort();
             if (!ip.isEmpty() && port > 0 && m_serverList && m_serverConnect) {
-                if (auto* srv = m_serverList->findByAddress(ip, port))
+                // Same rule as ops::connectToServer: same server is a no-op
+                auto* srv = m_serverList->findByAddress(ip, port);
+                if (srv && !m_serverConnect->isConnectedOrConnectingTo(srv))
                     m_serverConnect->connectToServer(srv);
             } else if (m_serverConnect) {
                 m_serverConnect->connectToAnyServer();

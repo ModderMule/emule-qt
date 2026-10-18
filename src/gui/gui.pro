@@ -67,8 +67,12 @@ TRANSLATIONS += \
     ../../lang/emuleqt_it_IT.ts \
     ../../lang/emuleqt_ja_JP.ts \
     ../../lang/emuleqt_ko_KR.ts \
+    ../../lang/emuleqt_nl_NL.ts \
+    ../../lang/emuleqt_pl_PL.ts \
     ../../lang/emuleqt_pt_BR.ts \
-    ../../lang/emuleqt_zh_CN.ts
+    ../../lang/emuleqt_ru_RU.ts \
+    ../../lang/emuleqt_zh_CN.ts \
+    ../../lang/emuleqt_zh_TW.ts
 
 SOURCES += \
     app/AutoStart.cpp \

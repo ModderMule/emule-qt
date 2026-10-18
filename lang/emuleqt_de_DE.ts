@@ -817,7 +817,7 @@ Erneut herunterladen?</translation>
     <name>Units</name>
     <message>
         <location filename="../src/core/utils/StringUtils.cpp" line="+72"/>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+4026"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+4028"/>
         <source>Bytes</source>
         <translation>Bytes</translation>
     </message>
@@ -4726,7 +4726,27 @@ Aktivieren Sie mindestens eines unter Optionen → Verbindung, um sich zu verbin
         <translation>Fehler!</translation>
     </message>
     <message>
-        <location line="+119"/>
+        <location line="+76"/>
+        <source>Up: %1(%2)</source>
+        <translation>Up: %1(%2)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Down: %1(%2)</source>
+        <translation>Down: %1(%2)</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>Up: %1</source>
+        <translation>Up: %1</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Down: %1</source>
+        <translation>Down: %1</translation>
+    </message>
+    <message>
+        <location line="+37"/>
         <source>Connected</source>
         <translation>Verbunden</translation>
     </message>
@@ -4979,6 +4999,7 @@ Aktivieren Sie sie unter Optionen → Weboberfläche und versuchen Sie es erneut
     </message>
     <message>
         <location line="+5"/>
+        <location filename="../src/gui/app/ToolbarButtons.h" line="+48"/>
         <source>Connect</source>
         <translation>Verbinden</translation>
     </message>
@@ -5103,6 +5124,71 @@ Aktivieren Sie sie unter Optionen → Weboberfläche und versuchen Sie es erneut
         <location line="+1"/>
         <source>The core is loading its files…</source>
         <translation>Der Core lädt seine Dateien…</translation>
+    </message>
+    <message>
+        <location filename="../src/gui/app/ToolbarButtons.h" line="+1"/>
+        <source>Kad</source>
+        <translation>Kad</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Servers</source>
+        <translation>Server</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Transfers</source>
+        <translation>Transfer</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Search</source>
+        <translation>Suche</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Shared Files</source>
+        <translation>Freigegebene Dateien</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Messages</source>
+        <translation>Nachrichten</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>IRC</source>
+        <translation>IRC</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Statistics</source>
+        <translation>Statistik</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Usenet</source>
+        <translation>Usenet</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Downloads Folder</source>
+        <translation>Download-Ordner</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Options</source>
+        <translation>Optionen</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Tools</source>
+        <translation>Tools</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Help</source>
+        <translation>Hilfe</translation>
     </message>
 </context>
 <context>
@@ -9898,12 +9984,12 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <location filename="../src/gui/panels/SearchPanel.cpp" line="+310"/>
         <location line="+973"/>
         <location line="+13"/>
-        <location line="+513"/>
+        <location line="+514"/>
         <source>Download</source>
         <translation>Download</translation>
     </message>
     <message>
-        <location line="-1479"/>
+        <location line="-1480"/>
         <source>Close All Searches</source>
         <translation>Alle Suchen schließen</translation>
     </message>
@@ -10318,13 +10404,13 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
     <message>
         <location line="+65"/>
         <location line="+7"/>
-        <location line="+968"/>
+        <location line="+971"/>
         <location line="+43"/>
         <source>Preview</source>
         <translation>Vorschau</translation>
     </message>
     <message>
-        <location line="-699"/>
+        <location line="-701"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -10333,7 +10419,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
 %1</translation>
     </message>
     <message>
-        <location line="+657"/>
+        <location line="+659"/>
         <source>Preview requested - please wait</source>
         <translation>Vorschau angefordert - bitte warten</translation>
     </message>
@@ -10353,7 +10439,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>Alle</translation>
     </message>
     <message>
-        <location line="-1434"/>
+        <location line="-1437"/>
         <location line="+15"/>
         <location line="+10"/>
         <source>Mark as Spam</source>
@@ -10390,7 +10476,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>Webdienste</translation>
     </message>
     <message>
-        <location line="+973"/>
+        <location line="+976"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Vorschau nicht verfügbar — der Webserver läuft nicht oder es wurde kein Stream-Token empfangen.</translation>
     </message>
@@ -10408,7 +10494,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>Stream</translation>
     </message>
     <message numerus="yes">
-        <location line="+95"/>
+        <location line="+97"/>
         <source>%1 · %n name(s)</source>
         <translation>
             <numerusform>%1 · %n Name</numerusform>
@@ -10634,19 +10720,17 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
     </message>
     <message>
         <location line="+2"/>
-        <location line="+24"/>
-        <location line="+53"/>
         <source>Cancel</source>
         <translation>Abbrechen</translation>
     </message>
     <message>
-        <location line="-75"/>
-        <location line="+449"/>
+        <location line="+2"/>
+        <location line="+434"/>
         <source>Connect</source>
         <translation>Verbinden</translation>
     </message>
     <message>
-        <location line="-505"/>
+        <location line="-490"/>
         <source>Invalid URL: %1</source>
         <translation>Ungültige URL: %1</translation>
     </message>
@@ -10676,7 +10760,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>server.met heruntergeladen, &quot;%1&quot; entpackt (%2 Bytes). Wird verarbeitet...</translation>
     </message>
     <message>
-        <location line="+633"/>
+        <location line="+618"/>
         <location line="+2"/>
         <location line="+24"/>
         <location line="+39"/>
@@ -10774,12 +10858,12 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>▸ Server (%1)</translation>
     </message>
     <message>
-        <location line="-660"/>
+        <location line="-653"/>
         <source>Connect To</source>
         <translation>Verbinden mit</translation>
     </message>
     <message>
-        <location line="+20"/>
+        <location line="+13"/>
         <source>Priority</source>
         <translation>Priorität</translation>
     </message>
@@ -13915,7 +13999,12 @@ Ein erneuter Klick auf „Statistiken wiederherstellen“ lädt Ihre aktuellen S
 <context>
     <name>eMule::ToolbarCustomizeDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/ToolbarCustomizeDialog.cpp" line="+38"/>
+        <location filename="../src/gui/dialogs/ToolbarCustomizeDialog.cpp" line="+26"/>
+        <source>── Separator ──</source>
+        <translation>── Trennlinie ──</translation>
+    </message>
+    <message>
+        <location line="+12"/>
         <source>Customize Toolbar</source>
         <translation>Symbolleiste anpassen</translation>
     </message>
@@ -15266,14 +15355,14 @@ Für dieses Release ist ein Passwort festgelegt.</translation>
         <translation>Adresse</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-3361"/>
-        <location line="+3250"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-3363"/>
+        <location line="+3252"/>
         <location line="+49"/>
         <source>Session expired — log in again</source>
         <translation>Sitzung abgelaufen — bitte erneut anmelden</translation>
     </message>
     <message>
-        <location line="-3295"/>
+        <location line="-3297"/>
         <source>Guests cannot add downloads</source>
         <translation>Gäste können keine Downloads hinzufügen</translation>
     </message>
@@ -15378,7 +15467,7 @@ Für dieses Release ist ein Passwort festgelegt.</translation>
         <translation>Anmeldung fehlgeschlagen</translation>
     </message>
     <message numerus="yes">
-        <location line="+234"/>
+        <location line="+236"/>
         <source>%n download(s) added</source>
         <translation>
             <numerusform>%n Download hinzugefügt</numerusform>
@@ -16093,7 +16182,7 @@ Das jeweils untätige Netz überlässt seinen Anteil dem anderen.</translation>
         <translation>NZB-Dateien:</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="-1179"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="-1181"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Name</source>
         <translation>Name</translation>
@@ -16495,7 +16584,7 @@ Das jeweils untätige Netz überlässt seinen Anteil dem anderen.</translation>
         <translation>Uploadgeschwindigkeit</translation>
     </message>
     <message>
-        <location filename="../src/core/webserver/WebServer.cpp" line="+1176"/>
+        <location filename="../src/core/webserver/WebServer.cpp" line="+1178"/>
         <location filename="../src/core/webserver/WebTemplateStrings.h" line="+1"/>
         <source>Uploads</source>
         <translation>Uploads</translation>
