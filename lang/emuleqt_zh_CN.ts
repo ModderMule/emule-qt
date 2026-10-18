@@ -417,7 +417,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+759"/>
+        <location filename="../src/gui/app/main.cpp" line="+767"/>
         <source>Download Added</source>
         <translation>下载已添加</translation>
     </message>
@@ -452,7 +452,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
         <translation type="vanished">非常低</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/UsenetQueueModel.cpp" line="+200"/>
+        <location filename="../src/gui/controls/UsenetQueueModel.cpp" line="+201"/>
         <source>Skipped</source>
         <translation>已跳过</translation>
     </message>
@@ -651,7 +651,7 @@ Has comments</source>
         <translation>未知</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/KnownTypeStyle.h" line="+22"/>
+        <location filename="../src/gui/controls/KnownTypeStyle.h" line="+24"/>
         <source>Shared</source>
         <translation>已共享</translation>
     </message>
@@ -1401,7 +1401,7 @@ M	压缩数据尚未完全下载
 <context>
     <name>eMule::BugReportDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/BugReportDialog.cpp" line="+54"/>
+        <location filename="../src/gui/dialogs/BugReportDialog.cpp" line="+55"/>
         <location line="+133"/>
         <location line="+128"/>
         <source>Submit Bug Report</source>
@@ -3368,7 +3368,7 @@ ED2K 哈希：	%2
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+60"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+61"/>
         <source>eMule First Runtime Wizard</source>
         <translation>eMule 首次运行向导</translation>
     </message>
@@ -3918,7 +3918,7 @@ If your ISP tries throttle or block eMule, enabling obfuscation will help to cir
 <context>
     <name>eMule::IrcPanel</name>
     <message>
-        <location filename="../src/gui/panels/IrcPanel.cpp" line="+136"/>
+        <location filename="../src/gui/panels/IrcPanel.cpp" line="+143"/>
         <source>Select an IRC nick.</source>
         <translation>选择一个 IRC 昵称。</translation>
     </message>
@@ -4139,7 +4139,7 @@ Please choose another:</source>
         <translation>拍打</translation>
     </message>
     <message>
-        <location line="+94"/>
+        <location line="+95"/>
         <source>%1 attempted to send you a file. If you wanted to accept the files from this person, enable Receive files in the IRC Preferences.</source>
         <translation>%1 试图向您发送文件。如果想接受此人的文件，请在 IRC 首选项中启用接收文件。</translation>
     </message>
@@ -4498,7 +4498,7 @@ Please choose another:</source>
         <translation>IPC</translation>
     </message>
     <message>
-        <location line="+369"/>
+        <location line="+373"/>
         <source>Click here to check if a new version is available</source>
         <translation>点击此处检查是否有新版本</translation>
     </message>
@@ -4507,12 +4507,12 @@ Please choose another:</source>
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+90"/>
-        <location line="+488"/>
+        <location line="+486"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-379"/>
+        <location line="-377"/>
         <location line="+9"/>
         <source>New Version Available</source>
         <translation>有新版本可用</translation>
@@ -4528,18 +4528,18 @@ Please choose another:</source>
         <translation>eD2K：已连接</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+7"/>
         <source>eD2K: Connecting...</source>
         <translation>eD2K：连接中...</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1278"/>
+        <location line="+1286"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K：已断开</translation>
     </message>
     <message>
-        <location line="-1221"/>
+        <location line="-1229"/>
         <source>Kad: Connected</source>
         <translation>Kad：已连接</translation>
     </message>
@@ -4555,17 +4555,17 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1213"/>
+        <location line="+1221"/>
         <source>Kad: Disconnected</source>
         <translation>Kad：已断开</translation>
     </message>
     <message>
-        <location line="-1204"/>
+        <location line="-1212"/>
         <source>Users: %1 | Files: %2</source>
         <translation>用户：%1 | 文件：%2</translation>
     </message>
     <message>
-        <location line="+407"/>
+        <location line="+415"/>
         <source>Open Incoming Folder...</source>
         <translation>打开接收文件夹...</translation>
     </message>
@@ -4605,14 +4605,14 @@ Please choose another:</source>
         <translation>功能</translation>
     </message>
     <message>
-        <location line="-767"/>
+        <location line="-773"/>
         <location line="+7"/>
-        <location line="+763"/>
+        <location line="+769"/>
         <source>Version Check</source>
         <translation>版本检查</translation>
     </message>
     <message>
-        <location line="-825"/>
+        <location line="-831"/>
         <source>Quit eMule Qt</source>
         <translation>退出 eMule Qt</translation>
     </message>
@@ -4674,7 +4674,7 @@ Enable at least one under Options → Connection to connect.</source>
         <translation>eMule 版本 %1 已就绪</translation>
     </message>
     <message>
-        <location line="+77"/>
+        <location line="+75"/>
         <source>Blocked: network interface not available</source>
         <translation>已阻止：网络接口不可用</translation>
     </message>
@@ -4776,7 +4776,7 @@ Up: %3 | Down: %4</source>
         <translation>日志条目</translation>
     </message>
     <message>
-        <location line="+102"/>
+        <location line="+110"/>
         <source>eMule Log</source>
         <translation>eMule 日志</translation>
     </message>
@@ -5162,13 +5162,13 @@ Enable it under Options → Web Interface, then try again.</source>
 <context>
     <name>eMule::MessagesPanel</name>
     <message>
-        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+153"/>
-        <location line="+546"/>
+        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+154"/>
+        <location line="+547"/>
         <source> ...failed</source>
         <translation> ...失败</translation>
     </message>
     <message>
-        <location line="-544"/>
+        <location line="-545"/>
         <source>Me</source>
         <translation>我</translation>
     </message>
@@ -5306,7 +5306,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>添加到好友列表</translation>
     </message>
     <message>
-        <location line="+104"/>
+        <location line="+105"/>
         <source>*** Connecting</source>
         <translation>*** 连接中</translation>
     </message>
@@ -5353,7 +5353,7 @@ Enable it under Options → Web Interface, then try again.</source>
 <context>
     <name>eMule::MetaAccountDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/MetaAccountDialog.cpp" line="+63"/>
+        <location filename="../src/gui/dialogs/MetaAccountDialog.cpp" line="+64"/>
         <source>User name:</source>
         <translation>用户名：</translation>
     </message>
@@ -10412,7 +10412,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+76"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+77"/>
         <source>%1 (disabled)</source>
         <translation>%1（已禁用）</translation>
     </message>
@@ -10429,7 +10429,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>否</translation>
     </message>
     <message>
-        <location line="+88"/>
+        <location line="+89"/>
         <source>Server Name</source>
         <translation>服务器名称</translation>
     </message>
@@ -10929,7 +10929,30 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>%1 Kbit/s</translation>
     </message>
     <message>
-        <location line="+141"/>
+        <location line="+7"/>
+        <source>File Name:	%1
+ED2K Hash:	%2
+Type:	%3
+Priority:	%4
+Requests:	%5 (%6)
+Accepted:	%7 (%8)
+Transferred:	%9 (%10)
+Complete Sources:	%11
+Shared eD2K|Kad:	%12
+Folder:	%13</source>
+        <translation>文件名：	%1
+ED2K 哈希：	%2
+类型：	%3
+优先级：	%4
+请求：	%5 (%6)
+已接受：	%7 (%8)
+已传输：	%9 (%10)
+完整来源：	%11
+共享 eD2K|Kad：	%12
+文件夹：	%13</translation>
+    </message>
+    <message>
+        <location line="+134"/>
         <source>File Name</source>
         <translation>文件名</translation>
     </message>

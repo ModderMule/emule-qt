@@ -1,13 +1,13 @@
 {
-  "Shows advanced entries in context menus and extra details in lists.": {
-    "_context": "eMule::OptionsDialog",
-    "de_DE": "Zeigt erweiterte Einträge in Kontextmenüs und zusätzliche Details in Listen.",
-    "es_ES": "Muestra entradas avanzadas en los menús contextuales y detalles adicionales en las listas.",
-    "fr_FR": "Affiche des entrées avancées dans les menus contextuels et des détails supplémentaires dans les listes.",
-    "it_IT": "Mostra voci avanzate nei menu contestuali e dettagli aggiuntivi negli elenchi.",
-    "ja_JP": "コンテキストメニューに詳細な項目を、リストに追加情報を表示します。",
-    "ko_KR": "컨텍스트 메뉴에 고급 항목을, 목록에 추가 정보를 표시합니다.",
-    "pt_BR": "Mostra itens avançados nos menus de contexto e detalhes extras nas listas.",
-    "zh_CN": "在右键菜单中显示高级项目，并在列表中显示更多详细信息。"
+  "File Name:\t%1\nED2K Hash:\t%2\nType:\t%3\nPriority:\t%4\nRequests:\t%5 (%6)\nAccepted:\t%7 (%8)\nTransferred:\t%9 (%10)\nComplete Sources:\t%11\nShared eD2K|Kad:\t%12\nFolder:\t%13": {
+    "_context": "eMule::SharedFilesModel",
+    "de_DE": "Dateiname:\t%1\nED2K-Hash:\t%2\nTyp:\t%3\nPriorität:\t%4\nAnfragen:\t%5 (%6)\nAkzeptiert:\t%7 (%8)\nÜbertragen:\t%9 (%10)\nVollständige Quellen:\t%11\nFreigegeben eD2K|Kad:\t%12\nOrdner:\t%13",
+    "es_ES": "Nombre del archivo:\t%1\nHash ED2K:\t%2\nTipo:\t%3\nPrioridad:\t%4\nSolicitudes:\t%5 (%6)\nAceptadas:\t%7 (%8)\nTransferido:\t%9 (%10)\nFuentes completas:\t%11\nCompartido eD2K|Kad:\t%12\nCarpeta:\t%13",
+    "fr_FR": "Nom du fichier :\t%1\nHash ED2K :\t%2\nType :\t%3\nPriorité :\t%4\nRequêtes :\t%5 (%6)\nAcceptées :\t%7 (%8)\nTransféré :\t%9 (%10)\nSources complètes :\t%11\nPartagé eD2K|Kad :\t%12\nDossier :\t%13",
+    "it_IT": "Nome file:\t%1\nHash ED2K:\t%2\nTipo:\t%3\nPriorità:\t%4\nRichieste:\t%5 (%6)\nAccettate:\t%7 (%8)\nTrasferito:\t%9 (%10)\nFonti complete:\t%11\nCondiviso eD2K|Kad:\t%12\nCartella:\t%13",
+    "ja_JP": "ファイル名:\t%1\nED2K ハッシュ:\t%2\n種類:\t%3\n優先度:\t%4\n要求:\t%5 (%6)\n承認:\t%7 (%8)\n転送済み:\t%9 (%10)\n完全なソース:\t%11\n共有 eD2K|Kad:\t%12\nフォルダ:\t%13",
+    "ko_KR": "파일 이름:\t%1\nED2K 해시:\t%2\n유형:\t%3\n우선순위:\t%4\n요청:\t%5 (%6)\n수락:\t%7 (%8)\n전송됨:\t%9 (%10)\n완전한 소스:\t%11\n공유 eD2K|Kad:\t%12\n폴더:\t%13",
+    "pt_BR": "Nome do arquivo:\t%1\nHash ED2K:\t%2\nTipo:\t%3\nPrioridade:\t%4\nRequisições:\t%5 (%6)\nAceitas:\t%7 (%8)\nTransferido:\t%9 (%10)\nFontes completas:\t%11\nCompartilhado eD2K|Kad:\t%12\nPasta:\t%13",
+    "zh_CN": "文件名：\t%1\nED2K 哈希：\t%2\n类型：\t%3\n优先级：\t%4\n请求：\t%5 (%6)\n已接受：\t%7 (%8)\n已传输：\t%9 (%10)\n完整来源：\t%11\n共享 eD2K|Kad：\t%12\n文件夹：\t%13"
   }
 }

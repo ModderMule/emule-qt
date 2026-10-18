@@ -46,6 +46,7 @@ static void unixSignalHandler(int)
 #include "app/MainWindow.h"
 #include "app/UiState.h"
 #include "utils/Appearance.h"
+#include "utils/ColumnTooltip.h"
 #include "utils/CountryFlags.h"
 #include "utils/FileAssociation.h"
 #include "utils/StatusBarNotifier.h"
@@ -356,6 +357,10 @@ int main(int argc, char* argv[])
 
     // "Tooltip delay" (Options > Display)
     app.setStyle(new eMule::TooltipDelayStyle);
+
+    // "Label:\tvalue" list tooltips in two aligned columns, as MFC draws them
+    eMule::ColumnTooltipFilter columnTooltips;
+    app.installEventFilter(&columnTooltips);
 
     // Theme and font size (Options > Display), before any widget picks up the defaults
     eMule::applyColorScheme(eMule::theUiState.colorScheme(), true);

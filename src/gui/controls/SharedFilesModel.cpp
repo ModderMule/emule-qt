@@ -158,7 +158,7 @@ QVariant SharedFilesModel::data(const QModelIndex& index, int role) const
     }
 
     if (role == Qt::ToolTipRole) {
-        const QString tip = QStringLiteral(
+        const QString tip = tr(
             "File Name:\t%1\n"
             "ED2K Hash:\t%2\n"
             "Type:\t%3\n"

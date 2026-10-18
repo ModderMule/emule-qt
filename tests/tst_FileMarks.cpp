@@ -10,6 +10,7 @@
 #include "controls/DownloadListModel.h"
 #include "controls/SharedFilesModel.h"
 #include "prefs/Preferences.h"
+#include "utils/ColumnTooltip.h"
 #include "utils/RatingIcons.h"
 
 #include <QIcon>
@@ -33,6 +34,7 @@ private slots:
     void theSharedListDrawsTheSameFakeMarkAsTheDownloadList();
     void aNetworkBadgeFollowsTheTypeIcon();
     void anEmptyBadgeKeepsTheSlot();
+    void tabbedTooltipLinesBecomeAlignedColumns();
 
 private:
     [[nodiscard]] static QImage renderOf(const QIcon& icon);
@@ -269,6 +271,22 @@ void tst_FileMarks::anEmptyBadgeKeepsTheSlot()
         for (int x = 36; x < 68 && empty; ++x)
             empty = qAlpha(b.pixel(x, y)) == 0;
     QVERIFY(empty);
+}
+
+void tst_FileMarks::tabbedTooltipLinesBecomeAlignedColumns()
+{
+    // Issue #22: a tab only reached the next fixed stop, so "Accepted Requests:"
+    // pushed its value out of line. Labels and values now get a column each.
+    const QString html = columnTooltipHtml(
+        QStringLiteral("Size:\t1 MB\nAccepted Requests:\t0\n\nHas <comments>"));
+    QVERIFY(html.startsWith(QStringLiteral("<table")));
+    QVERIFY(html.contains(QStringLiteral(">Size:</td><td style=\"white-space:pre\">1 MB</td>")));
+    QVERIFY(html.contains(QStringLiteral(">Accepted Requests:</td><td style=\"white-space:pre\">0</td>")));
+    QVERIFY(html.contains(QStringLiteral("colspan=\"2\" style=\"white-space:pre\">Has &lt;comments&gt;</td>")));
+    QVERIFY(!html.contains(u'\t'));
+
+    // Untabbed text is left alone
+    QCOMPARE(columnTooltipHtml(QStringLiteral("plain")), QStringLiteral("plain"));
 }
 
 QTEST_MAIN(tst_FileMarks)

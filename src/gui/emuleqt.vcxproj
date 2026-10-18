@@ -218,6 +218,7 @@
     <ClCompile Include="utils\NzbDrop.cpp" />
     <ClCompile Include="utils\PriorityText.cpp" />
     <ClCompile Include="utils\Smileys.cpp" />
+    <ClCompile Include="utils\ColumnTooltip.cpp" />
     <ClCompile Include="utils\RatingIcons.cpp" />
     <ClCompile Include="utils\Appearance.cpp" />
     <ClCompile Include="utils\ClientIcons.cpp" />
@@ -344,6 +345,7 @@
     <ClInclude Include="utils\NotifierText.h" />
     <ClInclude Include="utils\SharedFilesFetch.h" />
     <ClInclude Include="utils\Smileys.h" />
+    <ClInclude Include="utils\ColumnTooltip.h" />
     <ClInclude Include="utils\RatingIcons.h" />
     <ClInclude Include="utils\Ed2kLinkImporter.h" />
     <ClInclude Include="utils\HttpCacheLinkImporter.h" />

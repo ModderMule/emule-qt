@@ -421,7 +421,7 @@ Ative a Interface web ou a API REST em Opções → Interface web.</translation>
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+759"/>
+        <location filename="../src/gui/app/main.cpp" line="+767"/>
         <source>Download Added</source>
         <translation>Download adicionado</translation>
     </message>
@@ -456,7 +456,7 @@ Ative a Interface web ou a API REST em Opções → Interface web.</translation>
         <translation type="vanished">Muito baixa</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/UsenetQueueModel.cpp" line="+200"/>
+        <location filename="../src/gui/controls/UsenetQueueModel.cpp" line="+201"/>
         <source>Skipped</source>
         <translation>Ignorado</translation>
     </message>
@@ -656,7 +656,7 @@ Tem comentários</translation>
         <translation>Desconhecido</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/KnownTypeStyle.h" line="+22"/>
+        <location filename="../src/gui/controls/KnownTypeStyle.h" line="+24"/>
         <source>Shared</source>
         <translation>Compartilhado</translation>
     </message>
@@ -1413,7 +1413,7 @@ M	os dados compactados ainda não foram totalmente baixados
 <context>
     <name>eMule::BugReportDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/BugReportDialog.cpp" line="+54"/>
+        <location filename="../src/gui/dialogs/BugReportDialog.cpp" line="+55"/>
         <location line="+133"/>
         <location line="+128"/>
         <source>Submit Bug Report</source>
@@ -3381,7 +3381,7 @@ Enviado:	%12</translation>
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+60"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+61"/>
         <source>eMule First Runtime Wizard</source>
         <translation>Assistente de primeira execução do eMule</translation>
     </message>
@@ -3931,7 +3931,7 @@ Se o seu provedor tenta limitar ou bloquear o eMule, a ofuscação ajuda a conto
 <context>
     <name>eMule::IrcPanel</name>
     <message>
-        <location filename="../src/gui/panels/IrcPanel.cpp" line="+136"/>
+        <location filename="../src/gui/panels/IrcPanel.cpp" line="+143"/>
         <source>Select an IRC nick.</source>
         <translation>Selecione um nick para IRC.</translation>
     </message>
@@ -4152,7 +4152,7 @@ Por favor, escolha outro:</translation>
         <translation>Dar um tapa</translation>
     </message>
     <message>
-        <location line="+94"/>
+        <location line="+95"/>
         <source>%1 attempted to send you a file. If you wanted to accept the files from this person, enable Receive files in the IRC Preferences.</source>
         <translation>%1 tentou enviar um arquivo para você. Se quiser aceitar arquivos desta pessoa, ative o recebimento de arquivos nas preferências de IRC.</translation>
     </message>
@@ -4511,7 +4511,7 @@ Por favor, escolha outro:</translation>
         <translation>IPC</translation>
     </message>
     <message>
-        <location line="+369"/>
+        <location line="+373"/>
         <source>Click here to check if a new version is available</source>
         <translation>Clique aqui para verificar se há uma nova versão</translation>
     </message>
@@ -4520,12 +4520,12 @@ Por favor, escolha outro:</translation>
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+90"/>
-        <location line="+488"/>
+        <location line="+486"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-379"/>
+        <location line="-377"/>
         <location line="+9"/>
         <source>New Version Available</source>
         <translation>Nova versão disponível</translation>
@@ -4541,18 +4541,18 @@ Por favor, escolha outro:</translation>
         <translation>eD2K: Conectado</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+7"/>
         <source>eD2K: Connecting...</source>
         <translation>eD2K: Conectando...</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1278"/>
+        <location line="+1286"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Desconectado</translation>
     </message>
     <message>
-        <location line="-1221"/>
+        <location line="-1229"/>
         <source>Kad: Connected</source>
         <translation>Kad: Conectado</translation>
     </message>
@@ -4568,17 +4568,17 @@ Por favor, escolha outro:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1213"/>
+        <location line="+1221"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: Desconectado</translation>
     </message>
     <message>
-        <location line="-1204"/>
+        <location line="-1212"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Usuários: %1 | Arquivos: %2</translation>
     </message>
     <message>
-        <location line="+407"/>
+        <location line="+415"/>
         <source>Open Incoming Folder...</source>
         <translation>Abrir pasta de entrada...</translation>
     </message>
@@ -4618,14 +4618,14 @@ Por favor, escolha outro:</translation>
         <translation>Recursos</translation>
     </message>
     <message>
-        <location line="-767"/>
+        <location line="-773"/>
         <location line="+7"/>
-        <location line="+763"/>
+        <location line="+769"/>
         <source>Version Check</source>
         <translation>Verificar versão</translation>
     </message>
     <message>
-        <location line="-825"/>
+        <location line="-831"/>
         <source>Quit eMule Qt</source>
         <translation>Sair do eMule Qt</translation>
     </message>
@@ -4687,7 +4687,7 @@ Ative pelo menos uma em Opções → Conexão para conectar.</translation>
         <translation>eMule versão %1 pronto</translation>
     </message>
     <message>
-        <location line="+77"/>
+        <location line="+75"/>
         <source>Blocked: network interface not available</source>
         <translation>Bloqueado: interface de rede indisponível</translation>
     </message>
@@ -4789,7 +4789,7 @@ Envio: %3 | Download: %4</translation>
         <translation>Entrada de log</translation>
     </message>
     <message>
-        <location line="+102"/>
+        <location line="+110"/>
         <source>eMule Log</source>
         <translation>Registro do eMule</translation>
     </message>
@@ -5175,13 +5175,13 @@ Ative-a em Opções → Interface web e tente novamente.</translation>
 <context>
     <name>eMule::MessagesPanel</name>
     <message>
-        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+153"/>
-        <location line="+546"/>
+        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+154"/>
+        <location line="+547"/>
         <source> ...failed</source>
         <translation> ...falhou</translation>
     </message>
     <message>
-        <location line="-544"/>
+        <location line="-545"/>
         <source>Me</source>
         <translation>Eu</translation>
     </message>
@@ -5319,7 +5319,7 @@ Ative-a em Opções → Interface web e tente novamente.</translation>
         <translation>Adicionar à lista de amigos</translation>
     </message>
     <message>
-        <location line="+104"/>
+        <location line="+105"/>
         <source>*** Connecting</source>
         <translation>*** Conectando</translation>
     </message>
@@ -5366,7 +5366,7 @@ Ative-a em Opções → Interface web e tente novamente.</translation>
 <context>
     <name>eMule::MetaAccountDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/MetaAccountDialog.cpp" line="+63"/>
+        <location filename="../src/gui/dialogs/MetaAccountDialog.cpp" line="+64"/>
         <source>User name:</source>
         <translation>Nome de usuário:</translation>
     </message>
@@ -10427,7 +10427,7 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+76"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+77"/>
         <source>%1 (disabled)</source>
         <translation>%1 (desativado)</translation>
     </message>
@@ -10444,7 +10444,7 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
         <translation>Não</translation>
     </message>
     <message>
-        <location line="+88"/>
+        <location line="+89"/>
         <source>Server Name</source>
         <translation>Nome do servidor</translation>
     </message>
@@ -10945,7 +10945,30 @@ Reinicie o eMule para que todas as conexões usem as novas configurações de pr
         <translation>%1 Kbit/s</translation>
     </message>
     <message>
-        <location line="+141"/>
+        <location line="+7"/>
+        <source>File Name:	%1
+ED2K Hash:	%2
+Type:	%3
+Priority:	%4
+Requests:	%5 (%6)
+Accepted:	%7 (%8)
+Transferred:	%9 (%10)
+Complete Sources:	%11
+Shared eD2K|Kad:	%12
+Folder:	%13</source>
+        <translation>Nome do arquivo:	%1
+Hash ED2K:	%2
+Tipo:	%3
+Prioridade:	%4
+Requisições:	%5 (%6)
+Aceitas:	%7 (%8)
+Transferido:	%9 (%10)
+Fontes completas:	%11
+Compartilhado eD2K|Kad:	%12
+Pasta:	%13</translation>
+    </message>
+    <message>
+        <location line="+134"/>
         <source>File Name</source>
         <translation>Nome do arquivo</translation>
     </message>

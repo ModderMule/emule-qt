@@ -417,7 +417,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
 %1</translation>
     </message>
     <message>
-        <location filename="../src/gui/app/main.cpp" line="+759"/>
+        <location filename="../src/gui/app/main.cpp" line="+767"/>
         <source>Download Added</source>
         <translation>다운로드 추가됨</translation>
     </message>
@@ -452,7 +452,7 @@ Enable Web Interface or REST API under Options → Web Interface.</source>
         <translation type="vanished">매우 낮음</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/UsenetQueueModel.cpp" line="+200"/>
+        <location filename="../src/gui/controls/UsenetQueueModel.cpp" line="+201"/>
         <source>Skipped</source>
         <translation>건너뜀</translation>
     </message>
@@ -651,7 +651,7 @@ Has comments</source>
         <translation>알 수 없음</translation>
     </message>
     <message>
-        <location filename="../src/gui/controls/KnownTypeStyle.h" line="+22"/>
+        <location filename="../src/gui/controls/KnownTypeStyle.h" line="+24"/>
         <source>Shared</source>
         <translation>공유됨</translation>
     </message>
@@ -1401,7 +1401,7 @@ M	압축된 데이터가 아직 모두 다운로드되지 않음
 <context>
     <name>eMule::BugReportDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/BugReportDialog.cpp" line="+54"/>
+        <location filename="../src/gui/dialogs/BugReportDialog.cpp" line="+55"/>
         <location line="+133"/>
         <location line="+128"/>
         <source>Submit Bug Report</source>
@@ -3368,7 +3368,7 @@ ED2K 해시:	%2
 <context>
     <name>eMule::FirstStartWizard</name>
     <message>
-        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+60"/>
+        <location filename="../src/gui/dialogs/FirstStartWizard.cpp" line="+61"/>
         <source>eMule First Runtime Wizard</source>
         <translation>eMule 첫 실행 마법사</translation>
     </message>
@@ -3918,7 +3918,7 @@ ISP가 eMule을 제한하거나 차단하려는 경우, 난독화를 켜면 그�
 <context>
     <name>eMule::IrcPanel</name>
     <message>
-        <location filename="../src/gui/panels/IrcPanel.cpp" line="+136"/>
+        <location filename="../src/gui/panels/IrcPanel.cpp" line="+143"/>
         <source>Select an IRC nick.</source>
         <translation>IRC 닉네임을 선택하세요.</translation>
     </message>
@@ -4139,7 +4139,7 @@ Please choose another:</source>
         <translation>때리기</translation>
     </message>
     <message>
-        <location line="+94"/>
+        <location line="+95"/>
         <source>%1 attempted to send you a file. If you wanted to accept the files from this person, enable Receive files in the IRC Preferences.</source>
         <translation>%1 님이 파일을 보내려고 했습니다. 이 사용자의 파일을 받으려면 IRC 환경설정에서 파일 수신을 켜십시오.</translation>
     </message>
@@ -4498,7 +4498,7 @@ Please choose another:</source>
         <translation>IPC</translation>
     </message>
     <message>
-        <location line="+369"/>
+        <location line="+373"/>
         <source>Click here to check if a new version is available</source>
         <translation>여기를 클릭하여 새 버전이 있는지 확인하세요</translation>
     </message>
@@ -4507,12 +4507,12 @@ Please choose another:</source>
     <name>eMule::MainWindow</name>
     <message>
         <location filename="../src/gui/app/MainWindow.cpp" line="+90"/>
-        <location line="+488"/>
+        <location line="+486"/>
         <source>eMule Qt v%1</source>
         <translation>eMule Qt v%1</translation>
     </message>
     <message>
-        <location line="-379"/>
+        <location line="-377"/>
         <location line="+9"/>
         <source>New Version Available</source>
         <translation>새 버전 사용 가능</translation>
@@ -4528,18 +4528,18 @@ Please choose another:</source>
         <translation>eD2K: 연결됨</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+7"/>
         <source>eD2K: Connecting...</source>
         <translation>eD2K: 연결 중...</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1278"/>
+        <location line="+1286"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: 연결 해제됨</translation>
     </message>
     <message>
-        <location line="-1221"/>
+        <location line="-1229"/>
         <source>Kad: Connected</source>
         <translation>Kad: 연결됨</translation>
     </message>
@@ -4555,17 +4555,17 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1213"/>
+        <location line="+1221"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: 연결 해제됨</translation>
     </message>
     <message>
-        <location line="-1204"/>
+        <location line="-1212"/>
         <source>Users: %1 | Files: %2</source>
         <translation>사용자: %1 | 파일: %2</translation>
     </message>
     <message>
-        <location line="+407"/>
+        <location line="+415"/>
         <source>Open Incoming Folder...</source>
         <translation>수신 폴더 열기...</translation>
     </message>
@@ -4605,14 +4605,14 @@ Please choose another:</source>
         <translation>기능</translation>
     </message>
     <message>
-        <location line="-767"/>
+        <location line="-773"/>
         <location line="+7"/>
-        <location line="+763"/>
+        <location line="+769"/>
         <source>Version Check</source>
         <translation>버전 확인</translation>
     </message>
     <message>
-        <location line="-825"/>
+        <location line="-831"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt 종료</translation>
     </message>
@@ -4674,7 +4674,7 @@ Enable at least one under Options → Connection to connect.</source>
         <translation>eMule 버전 %1 준비됨</translation>
     </message>
     <message>
-        <location line="+77"/>
+        <location line="+75"/>
         <source>Blocked: network interface not available</source>
         <translation>차단됨: 네트워크 인터페이스를 사용할 수 없음</translation>
     </message>
@@ -4776,7 +4776,7 @@ Up: %3 | Down: %4</source>
         <translation>로그 항목</translation>
     </message>
     <message>
-        <location line="+102"/>
+        <location line="+110"/>
         <source>eMule Log</source>
         <translation>eMule 로그</translation>
     </message>
@@ -5162,13 +5162,13 @@ Enable it under Options → Web Interface, then try again.</source>
 <context>
     <name>eMule::MessagesPanel</name>
     <message>
-        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+153"/>
-        <location line="+546"/>
+        <location filename="../src/gui/panels/MessagesPanel.cpp" line="+154"/>
+        <location line="+547"/>
         <source> ...failed</source>
         <translation> ...실패</translation>
     </message>
     <message>
-        <location line="-544"/>
+        <location line="-545"/>
         <source>Me</source>
         <translation>나</translation>
     </message>
@@ -5306,7 +5306,7 @@ Enable it under Options → Web Interface, then try again.</source>
         <translation>친구 목록에 추가</translation>
     </message>
     <message>
-        <location line="+104"/>
+        <location line="+105"/>
         <source>*** Connecting</source>
         <translation>*** 연결 중</translation>
     </message>
@@ -5353,7 +5353,7 @@ Enable it under Options → Web Interface, then try again.</source>
 <context>
     <name>eMule::MetaAccountDialog</name>
     <message>
-        <location filename="../src/gui/dialogs/MetaAccountDialog.cpp" line="+63"/>
+        <location filename="../src/gui/dialogs/MetaAccountDialog.cpp" line="+64"/>
         <source>User name:</source>
         <translation>사용자 이름:</translation>
     </message>
@@ -10412,7 +10412,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::ServerListModel</name>
     <message>
-        <location filename="../src/gui/controls/ServerListModel.cpp" line="+76"/>
+        <location filename="../src/gui/controls/ServerListModel.cpp" line="+77"/>
         <source>%1 (disabled)</source>
         <translation>%1 (비활성화됨)</translation>
     </message>
@@ -10429,7 +10429,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>아니오</translation>
     </message>
     <message>
-        <location line="+88"/>
+        <location line="+89"/>
         <source>Server Name</source>
         <translation>서버 이름</translation>
     </message>
@@ -10929,7 +10929,30 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>%1 Kbit/s</translation>
     </message>
     <message>
-        <location line="+141"/>
+        <location line="+7"/>
+        <source>File Name:	%1
+ED2K Hash:	%2
+Type:	%3
+Priority:	%4
+Requests:	%5 (%6)
+Accepted:	%7 (%8)
+Transferred:	%9 (%10)
+Complete Sources:	%11
+Shared eD2K|Kad:	%12
+Folder:	%13</source>
+        <translation>파일 이름:	%1
+ED2K 해시:	%2
+유형:	%3
+우선순위:	%4
+요청:	%5 (%6)
+수락:	%7 (%8)
+전송됨:	%9 (%10)
+완전한 소스:	%11
+공유 eD2K|Kad:	%12
+폴더:	%13</translation>
+    </message>
+    <message>
+        <location line="+134"/>
         <source>File Name</source>
         <translation>파일 이름</translation>
     </message>

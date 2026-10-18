@@ -2,11 +2,17 @@
 
 [![Windows CI](https://github.com/ModderMule/emule-qt/actions/workflows/windows.yml/badge.svg)](https://github.com/ModderMule/emule-qt/actions/workflows/windows.yml) [![macOS CI](https://github.com/ModderMule/emule-qt/actions/workflows/macos.yml/badge.svg)](https://github.com/ModderMule/emule-qt/actions/workflows/macos.yml) [![Linux CI](https://github.com/ModderMule/emule-qt/actions/workflows/linux.yml/badge.svg)](https://github.com/ModderMule/emule-qt/actions/workflows/linux.yml)
 
+[![Release](https://img.shields.io/github/v/release/ModderMule/emule-qt)](https://github.com/ModderMule/emule-qt/releases/latest) [![Downloads](https://img.shields.io/github/downloads/ModderMule/emule-qt/total)](https://github.com/ModderMule/emule-qt/releases) [![Docker](https://ghcr-badge.egpl.dev/moddermule/emuleqt/latest_tag?label=docker)](https://github.com/ModderMule/emule-qt/pkgs/container/emuleqt) [![License](https://img.shields.io/github/license/ModderMule/emule-qt)](https://github.com/ModderMule/emule-qt/blob/main/LICENSE) ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue) ![Qt 6](https://img.shields.io/badge/Qt-6-41CD52?logo=qt&logoColor=white) ![C++23](https://img.shields.io/badge/C%2B%2B-23-00599C?logo=cplusplus&logoColor=white)
+
 **eMule Qt** is a free, open-source file sharing client for the **ED2K** and **Kademlia** networks, with a full **Usenet** engine built in — rebuilt from the ground up with **Qt 6** and **modern C++23**.
 
 Cross-platform. Fully compatible with the existing eMule network.
 
 Website: [emule-qt.org](https://emule-qt.org/)
+
+<p align="center">
+  <img src="docs/screens/emuleqt-gui.png" alt="eMule Qt main window" width="800">
+</p>
 
 ## Features
 

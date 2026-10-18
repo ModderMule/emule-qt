@@ -776,6 +776,7 @@ target_link_libraries(tst_SharedFilesModel PRIVATE Qt6::Widgets)
 emule_add_test(tst_FileMarks FOLDER "Gui"
     SOURCES tst_FileMarks.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/ColumnTooltip.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/DownloadListModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/FilterEdit.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/SharedFilesModel.cpp"
