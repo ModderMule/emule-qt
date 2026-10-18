@@ -3133,7 +3133,12 @@ QString UpDownClient::uploadStateToken() const
 
 bool UpDownClient::uploadStalled() const
 {
-    return m_uploadState == UploadState::Uploading && payloadInBuffer() == 0;
+    // MFC: GetPayloadInBuffer() == 0 (srchybrid/BaseClient.cpp:2496). Our bigger send buffer
+    // hides blocks MFC still sees queued, so a slow but busy slot read as stalled.
+    if (m_uploadState != UploadState::Uploading || payloadInBuffer() != 0)
+        return false;
+    const EMSocket* sock = getFileUploadSocket();
+    return !sock || sock->sendBacklogBeyondMfc() == 0;
 }
 
 QString UpDownClient::uploadStateDisplayString() const
@@ -3154,7 +3159,7 @@ QString UpDownClient::uploadStateDisplayString() const
         // Nothing left in the send buffers means the peer has stopped asking for blocks, not
         // that we stopped sending. MFC shows this only in advanced mode, because on a healthy
         // link it flickers between states between two block requests.
-        if (thePrefs.showExtControls() && payloadInBuffer() == 0)
+        if (thePrefs.showExtControls() && uploadStalled())
             return QCoreApplication::translate("UpDownClient",
                                                "Stalled! Waiting for block request.");
         if (theApp.uploadQueue

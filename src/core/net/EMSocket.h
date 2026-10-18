@@ -104,6 +104,11 @@ public:
     uint64 getSentBytesControlPacketSinceLastCallAndReset();
     uint32 getSentPayloadSinceLastCall(bool reset);
 
+    /// Bytes past our send queue that MFC would still have counted as buffered: Qt's write
+    /// buffer, plus whatever the kernel holds beyond MFC's 128 KiB SO_SNDBUF. Our 1 MiB
+    /// buffer swallows several blocks of a slow slot at once. Any thread.
+    [[nodiscard]] uint64 sendBacklogBeyondMfc() const;
+
     // --- ThrottledFileSocket interface ---
 
     SocketSentBytes sendControlData(uint32 maxNumberOfBytesToSend, uint32 minFragSize) override;
@@ -227,6 +232,8 @@ private:
     uint64 m_lastSent = 0;
     uint64 m_lastFinishedStandard = 0;
     std::atomic<uint32> m_actualPayloadSizeSent{0};
+    /// Every byte handed to the OS, either path. Windows backlog = this minus acked.
+    std::atomic<uint64> m_bytesToKernel{0};
     uint32 m_actualPayloadSize = 0;
     bool m_currentPacketIsControl = false;
     bool m_currentPackageIsFromPartFile = false;

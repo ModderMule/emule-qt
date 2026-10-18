@@ -19,14 +19,49 @@
 
 #ifdef Q_OS_WIN
 #include <winsock2.h>
+#include <cstddef>
 #else
 #include <sys/socket.h>
+#include <sys/ioctl.h>
 #include <poll.h>
+#ifdef Q_OS_LINUX
+#include <linux/sockios.h>
+#endif
 #include <cerrno>
 #endif
 
 #ifndef MSG_NOSIGNAL
 #define MSG_NOSIGNAL 0
+#endif
+
+#ifdef Q_OS_WIN
+namespace {
+// SIO_TCP_INFO / TCP_INFO_v0 from mstcpip.h (Windows 10 1703+). Qt targets plain
+// Windows 10, which hides them, so they are spelled out here.
+constexpr DWORD kSioTcpInfo = _WSAIORW(IOC_VENDOR, 39);
+struct WinTcpInfoV0 {
+    int State;
+    ULONG Mss;
+    ULONG64 ConnectionTimeMs;
+    BOOLEAN TimestampsEnabled;
+    ULONG RttUs;
+    ULONG MinRttUs;
+    ULONG BytesInFlight;
+    ULONG Cwnd;
+    ULONG SndWnd;
+    ULONG RcvWnd;
+    ULONG RcvBuf;
+    ULONG64 BytesOut;
+    ULONG64 BytesIn;
+    ULONG BytesReordered;
+    ULONG BytesRetrans;
+    ULONG FastRetrans;
+    ULONG DupAcksIn;
+    ULONG TimeoutEpisodes;
+    UCHAR SynRetrans;
+};
+static_assert(offsetof(WinTcpInfoV0, BytesOut) == 48 && sizeof(WinTcpInfoV0) == 88);
+} // namespace
 #endif
 
 namespace eMule {
@@ -206,8 +241,12 @@ void EMSocket::onSocketError(QAbstractSocket::SocketError socketError)
     onError(static_cast<int>(error()));
 }
 
-void EMSocket::onBytesWritten(qint64 /*bytes*/)
+void EMSocket::onBytesWritten(qint64 bytes)
 {
+    // Qt flushed this much of its buffer to the OS
+    if (bytes > 0)
+        m_bytesToKernel.fetch_add(static_cast<uint64>(bytes), std::memory_order_relaxed);
+
     const bool wasBusy = m_busy.load(std::memory_order_relaxed);
     const qint64 backlogBefore = m_cachedBytesToWrite.load(std::memory_order_relaxed);
     const qint64 backlog = bytesToWrite();
@@ -712,6 +751,7 @@ SocketSentBytes EMSocket::send(uint32 maxNumberOfBytesToSend, uint32 minFragSize
                     return ret;
                 }
                 m_rawBusy.store(false, std::memory_order_relaxed);
+                m_bytesToKernel.fetch_add(static_cast<uint64>(result), std::memory_order_relaxed);
             } else {
                 // Owner thread — use Qt's write() for proper event handling
                 result = write(m_sendBuffer + m_sent, toSend);
@@ -999,6 +1039,40 @@ bool EMSocket::rawBusyNow() const
     if (writable)
         m_rawBusy.store(false, std::memory_order_relaxed);
     return !writable;
+}
+
+uint64 EMSocket::sendBacklogBeyondMfc() const
+{
+    // MFC UseBigSendBuffer, srchybrid/EMSocket.cpp:1106
+    constexpr int64 mfcBigSize = 128 * 1024;
+    int64 kernel = 0;
+    if (const auto fd = socketDescriptor(); fd != -1) {
+        int queued = 0;
+#if defined(Q_OS_DARWIN)
+        socklen_t len = sizeof(queued);
+        if (getsockopt(static_cast<int>(fd), SOL_SOCKET, SO_NWRITE, &queued, &len) == 0)
+            kernel = queued;
+#elif defined(Q_OS_LINUX)
+        if (::ioctl(static_cast<int>(fd), SIOCOUTQ, &queued) == 0)
+            kernel = queued;
+#elif defined(Q_OS_WIN)
+        // No unsent-bytes query on Windows: handed over minus acked, which is what
+        // SO_NWRITE gives on macOS. Acked = sent - retransmitted - in flight.
+        DWORD version = 0;
+        WinTcpInfoV0 info{};
+        DWORD got = 0;
+        if (WSAIoctl(static_cast<SOCKET>(fd), kSioTcpInfo, &version, sizeof(version),
+                     &info, sizeof(info), &got, nullptr, nullptr) == 0
+            && got >= offsetof(WinTcpInfoV0, FastRetrans))
+        {
+            const int64 acked = static_cast<int64>(info.BytesOut) - info.BytesRetrans - info.BytesInFlight;
+            kernel = static_cast<int64>(m_bytesToKernel.load(std::memory_order_relaxed)) - acked;
+        }
+        (void)queued;
+#endif
+    }
+    const int64 qtBuffered = m_cachedBytesToWrite.load(std::memory_order_relaxed);
+    return static_cast<uint64>(std::max<int64>(qtBuffered, 0) + std::max<int64>(kernel - mfcBigSize, 0));
 }
 
 bool EMSocket::hasQueues(bool onlyStandardPackets) const
