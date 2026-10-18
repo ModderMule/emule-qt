@@ -35,6 +35,19 @@ void showAndFill(LogTextView& view, int lines = 200)
     QVERIFY(view.verticalScrollBar()->maximum() > 4 * view.height());
 }
 
+QString topLine(const QTextBrowser& view)
+{
+    return view.cursorForPosition(QPoint(2, 2)).block().text();
+}
+
+void trimOldest(QTextBrowser& view, int blocks)
+{
+    QTextCursor cursor(view.document());
+    cursor.movePosition(QTextCursor::Start);
+    cursor.movePosition(QTextCursor::NextBlock, QTextCursor::KeepAnchor, blocks);
+    cursor.removeSelectedText();
+}
+
 bool atBottom(const QTextBrowser& view)
 {
     const QScrollBar* bar = view.verticalScrollBar();
@@ -61,6 +74,9 @@ private slots:
     void restoreScrollValueSurvivesRebuild();
     void autoScrollFlag();
     void restoreWithAutoScrollOff();
+    void trimWhileScrolledUpKeepsTopLine();
+    void trimWithAutoScrollOffKeepsTopLine();
+    void lateInsertAboveKeepsTopLine();
 };
 
 void tst_LogTextView::followsWhenAtBottom()
@@ -260,6 +276,57 @@ void tst_LogTextView::restoreWithAutoScrollOff()
     view.restoreScrollValue(150);
     QCoreApplication::processEvents();
     QCOMPARE(view.verticalScrollBar()->value(), 150);
+}
+
+// Issue #24: Verbose/Kad hit the line cap fast; every trim of the oldest lines slid
+// the text up under a fixed scrollbar, so "Autoscroll off" still scrolled.
+void tst_LogTextView::trimWhileScrolledUpKeepsTopLine()
+{
+    LogTextView view;
+    showAndFill(view);
+    view.verticalScrollBar()->setValue(view.verticalScrollBar()->maximum() / 2);
+    QVERIFY(!view.isFollowing());
+    const QString top = topLine(view);
+    for (int i = 0; i < 10; ++i) {
+        fill(view, 5, 1000 + i * 5);
+        trimOldest(view, 5);
+    }
+    QCoreApplication::processEvents();
+    QCOMPARE(topLine(view), top);
+    QVERIFY(!view.isFollowing());
+}
+
+void tst_LogTextView::trimWithAutoScrollOffKeepsTopLine()
+{
+    // At the very bottom with Autoscroll off: neither append nor trim moves the text
+    LogTextView view;
+    showAndFill(view);
+    QVERIFY(atBottom(view));
+    view.setAutoScroll(false);
+    const QString top = topLine(view);
+    for (int i = 0; i < 10; ++i) {
+        fill(view, 5, 1000 + i * 5);
+        trimOldest(view, 5);
+        QCoreApplication::processEvents();
+    }
+    QCOMPARE(topLine(view), top);
+}
+
+void tst_LogTextView::lateInsertAboveKeepsTopLine()
+{
+    // LogWidget::insertSorted slow path: an older seqId lands above the view
+    LogTextView view;
+    showAndFill(view);
+    view.verticalScrollBar()->setValue(view.verticalScrollBar()->maximum() / 2);
+    const QString top = topLine(view);
+    QTextCursor cursor(view.document());
+    cursor.setPosition(view.document()->findBlockByNumber(3).position());
+    for (int i = 0; i < 10; ++i) {
+        cursor.insertBlock();
+        cursor.insertHtml(QStringLiteral("<span>late %1</span>").arg(i));
+    }
+    QCoreApplication::processEvents();
+    QCOMPARE(topLine(view), top);
 }
 
 // The chat pane is cleared and rebuilt on every message; a captcha picture is put back

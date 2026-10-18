@@ -9,8 +9,14 @@
 /// resize, a font change or a trim of the oldest lines leaves the view stranded.
 /// This pane keeps one "following" latch instead and re-pins whenever the
 /// document's height changes, whatever changed it.
+///
+/// When not following, the view is anchored to the line at its top rather than a
+/// pixel offset, so trimming the oldest lines or a late line sorted in above the
+/// view does not slide the text (issue #24; MFC restores the raw scroll position
+/// there and drifts once its buffer is full).
 
 #include <QTextBrowser>
+#include <QTextCursor>
 
 namespace eMule {
 
@@ -49,12 +55,16 @@ private:
     void onRangeChanged(int min, int max);
     void onValueChanged(int value);
     void setBarValue(int value);
+    void captureAnchor();
+    [[nodiscard]] int anchoredValue() const;
 
     bool m_autoScroll = true;
     bool m_follow = true;
     bool m_settingValue = false;   ///< our own setValue, not the user's
+    bool m_holding = false;        ///< anchor held against append() while Autoscroll is off
     int m_pendingValue = -1;       ///< restoreScrollValue target not yet reachable
-    int m_holdValue = -1;          ///< position held against append() while Autoscroll is off
+    QTextCursor m_anchor;          ///< start of the top visible block; moves with edits
+    int m_anchorOffset = 0;        ///< view top minus that block's top, px
 };
 
 } // namespace eMule

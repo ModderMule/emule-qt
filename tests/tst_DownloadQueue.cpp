@@ -89,6 +89,7 @@ class tst_DownloadQueue : public QObject {
 private slots:
     void initTestCase();
     void cancelFile_deletesACompletedFileFromDisk();
+    void addDownloadFromED2KLink_refusesAlreadySharedFile();
     void construction_empty();
     void addDownload_basic();
     void addDownload_paused();
@@ -577,6 +578,45 @@ void tst_DownloadQueue::autoClear_removesACompletedFileWhenEnabled()
 // Issue #14: Cancel on a finished download only removed .part files, so the file
 // in Incoming stayed, unknown, and the next rescan shared it again. MFC MP_CANCEL
 // deletes it, unshares it, and the record stays with the known list.
+// Issue #24: a finished file that left the transfer list was fetched again as
+// "name(1).ext"; cancelling that copy let a rescan re-share the original.
+// MFC IsFileExisting checks the shared list first (srchybrid/DownloadQueue.cpp:324).
+void tst_DownloadQueue::addDownloadFromED2KLink_refusesAlreadySharedFile()
+{
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    KnownFileList kfl;
+    kfl.init(temp.path());
+    SharedFileList sfl(&kfl);
+
+    DownloadQueue dq;
+    dq.setKnownFileList(&kfl);
+    dq.setSharedFileList(&sfl);
+
+    const uint8 hash[16] = {0xD0, 0x0B, 0x1E, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3};
+    auto* pf = createTestPartFile(hash, QStringLiteral("again.bin"));
+    pf->setStatus(PartFileStatus::Complete);
+    dq.addDownload(pf);
+    QVERIFY(kfl.safeAddKFile(pf));
+    QVERIFY(sfl.safeAddKFile(pf));
+    dq.removeFile(pf);   // Clear Completed: still shared
+    QCOMPARE(dq.fileCount(), 0);
+
+    QVERIFY(dq.isFileExisting(hash));
+    QVERIFY(!dq.addDownloadFromED2KLink(fileLinkFor(hash, QStringLiteral("again.bin")), temp.path()));
+    QCOMPARE(dq.fileCount(), 0);
+    QCOMPARE(partMetCount(temp.path()), 0);
+
+    // control: an unknown hash still goes through
+    const uint8 other[16] = {0xD0, 0x0B, 0x1E, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4};
+    QVERIFY(!dq.isFileExisting(other));
+    QVERIFY(dq.addDownloadFromED2KLink(fileLinkFor(other, QStringLiteral("new.bin")), temp.path()));
+    QCOMPARE(dq.fileCount(), 1);
+
+    dq.deleteAll();
+    kfl.clear();
+}
+
 void tst_DownloadQueue::cancelFile_deletesACompletedFileFromDisk()
 {
     KnownFileList kfl;

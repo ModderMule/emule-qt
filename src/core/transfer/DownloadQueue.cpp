@@ -177,9 +177,9 @@ void DownloadQueue::addDownload(PartFile* file, bool paused)
     if (!file)
         return;
 
-    // Check for duplicate (hash-based) up front so we only do the call-specific
-    // pre-work for files we will actually add.
-    if (isFileExisting(file->fileHash()))
+    // Queue-only guard, as in MFC AddDownload. Already-shared files are refused at
+    // the user entry points (isFileExisting), not here.
+    if (fileByID(file->fileHash()))
         return;
 
     if (paused)
@@ -372,9 +372,24 @@ PartFile* DownloadQueue::fileByKadFileSearchID(uint32 id) const
     return nullptr;
 }
 
-bool DownloadQueue::isFileExisting(const uint8* hash) const
+bool DownloadQueue::isFileExisting(const uint8* hash, bool logWarnings) const
 {
-    return fileByID(hash) != nullptr;
+    // MFC CDownloadQueue::IsFileExisting (srchybrid/DownloadQueue.cpp:324-342): the
+    // shared list first, so a finished file that left the transfer list is not
+    // fetched again as "name(1).ext" (issue #24)
+    const auto* shared = m_sharedFileList ? m_sharedFileList : theApp.sharedFileList;
+    if (const KnownFile* file = shared ? shared->getFileByID(hash) : nullptr) {
+        if (logWarnings) {
+            logWarning(file->isPartFile()
+                ? QStringLiteral("You are already trying to download the file %1").arg(file->fileName())
+                : QStringLiteral("You already have the file %1").arg(file->fileName()));
+        }
+        return true;
+    }
+    const PartFile* part = fileByID(hash);
+    if (part && logWarnings)
+        logWarning(QStringLiteral("You are already trying to download the file %1").arg(part->fileName()));
+    return part != nullptr;
 }
 
 // ===========================================================================
@@ -785,8 +800,7 @@ bool DownloadQueue::addDownloadFromED2KLink(const QString& link, const QString& 
     }
 
     // Check for duplicate
-    if (isFileExisting(fileLink->hash.data())) {
-        logInfo(QStringLiteral("addDownloadFromED2KLink: file already exists: %1").arg(fileLink->name));
+    if (isFileExisting(fileLink->hash.data(), /*logWarnings=*/true)) {
         // The download is already here, but the link may still carry sources and an
         // AICH hash we lack. MFC seeds an existing download the same way
         // (srchybrid/DownloadQueue.cpp:271-289).

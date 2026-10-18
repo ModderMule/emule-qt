@@ -123,7 +123,9 @@ public:
     /// The file that owns the Kad source search @p id, if any.
     /// MFC CDownloadQueue::GetFileByKadFileSearchID (DownloadQueue.cpp:439).
     [[nodiscard]] PartFile* fileByKadFileSearchID(uint32 id) const;
-    [[nodiscard]] bool isFileExisting(const uint8* hash) const;
+    /// Shared (complete or part) or queued. MFC IsFileExisting: refuses a file
+    /// that was downloaded already.
+    [[nodiscard]] bool isFileExisting(const uint8* hash, bool logWarnings = false) const;
     [[nodiscard]] const std::vector<PartFile*>& files() const { return items(); }
 
     // -- Source management (basic) --------------------------------------------
