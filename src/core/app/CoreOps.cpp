@@ -218,7 +218,7 @@ AddOutcome addDownloadFromLink(const QString& linkIn, qint64 category, bool paus
     }
     // a meta hash is not an eD2K file — never queue it
     if (enodemeta::isMetaHash(fileLink->hash.data())) {
-        out.status = Status::fail(400, QStringLiteral("Torrent/Usenet results are not eD2K downloads"));
+        out.status = Status::fail(400, QStringLiteral("Torrent, Usenet and web results are not eD2K downloads"));
         return out;
     }
 
@@ -248,7 +248,7 @@ AddOutcome addDownloadFromSearch(const QString& hashHex, const QString& fileName
     uint8 hash[16]{};
     const bool hashOk = hexToHash(hashHex, hash);
     if (hashOk && enodemeta::isMetaHash(hash)) {
-        out.status = Status::fail(400, QStringLiteral("Torrent/Usenet results are not eD2K downloads"));
+        out.status = Status::fail(400, QStringLiteral("Torrent, Usenet and web results are not eD2K downloads"));
         return out;
     }
     out.hash = hashHex;

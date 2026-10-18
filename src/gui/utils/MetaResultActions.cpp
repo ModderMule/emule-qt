@@ -1,6 +1,6 @@
 #include "pch.h"
 /// @file MetaResultActions.cpp
-/// @brief Actions on eNode torrent/Usenet search rows, including the login detour.
+/// @brief Actions on eNode torrent/Usenet/web/container search rows, including the login detour.
 
 #include "utils/MetaResultActions.h"
 
@@ -10,10 +10,13 @@
 #include "app/UiState.h"
 #include "controls/SearchResultsModel.h"
 #include "dialogs/MetaAccountDialog.h"
+#include "dialogs/WebLinksDialog.h"
+#include "enodemeta/LinkContainer.h"
 #include "utils/NzbAdd.h"
 #include "utils/StatusBarNotifier.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QCborMap>
 #include <QDir>
 #include <QFile>
@@ -36,7 +39,7 @@ QString startDir()
     return QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
 }
 
-QString safeName(QString name, bool nzb)
+QString safeName(QString name, const MetaResultActions::Row& row)
 {
     static const QString bad = QStringLiteral("\\/:*?\"<>|");
     for (QChar& c : name)
@@ -45,7 +48,30 @@ QString safeName(QString name, bool nzb)
     name = name.trimmed();
     if (name.isEmpty())
         name = QStringLiteral("release");
-    return name + (nzb ? QStringLiteral(".nzb") : QStringLiteral(".torrent"));
+    if (row.isNzb())
+        return name + QStringLiteral(".nzb");
+    // a container keeps the extension its page gave; the fetch may correct it
+    if (row.isContainer())
+        return enodemeta::containerFormat(name).isEmpty() ? name + QStringLiteral(".dlc") : name;
+    return name + QStringLiteral(".torrent");
+}
+
+QString fileFilter(const MetaResultActions::Row& row)
+{
+    if (row.isNzb())
+        return MetaResultActions::tr("NZB files (*.nzb)");
+    if (row.isContainer())
+        return MetaResultActions::tr("Link containers (*.dlc *.ccf *.rsdf)");
+    return MetaResultActions::tr("Torrent files (*.torrent)");
+}
+
+QString saveTitle(const MetaResultActions::Row& row)
+{
+    if (row.isNzb())
+        return MetaResultActions::tr("Save NZB File");
+    if (row.isContainer())
+        return MetaResultActions::tr("Save Link Container");
+    return MetaResultActions::tr("Save Torrent File");
 }
 
 } // namespace
@@ -61,7 +87,7 @@ void MetaResultActions::downloadUsenet(quint32 searchID, const QList<Row>& rows,
                                        QPointer<SearchResultsModel> model)
 {
     for (const Row& row : rows)
-        if (row.nzb)
+        if (row.isNzb())
             sendDownload(searchID, row, category, /*force*/ false, model);
 }
 
@@ -72,10 +98,8 @@ void MetaResultActions::saveMetaFiles(quint32 searchID, const QList<Row>& rows)
     // asked up front: a dialog after the fetch would open from an IPC reply
     if (rows.size() == 1) {
         const Row& row = rows.first();
-        const QString filter = row.nzb ? tr("NZB files (*.nzb)") : tr("Torrent files (*.torrent)");
         const QString path = QFileDialog::getSaveFileName(
-            m_parent, row.nzb ? tr("Save NZB File") : tr("Save Torrent File"),
-            QDir(startDir()).filePath(safeName(row.name, row.nzb)), filter);
+            m_parent, saveTitle(row), QDir(startDir()).filePath(safeName(row.name, row)), fileFilter(row));
         if (path.isEmpty())
             return;
         theUiState.setMetaFileSaveDir(QFileInfo(path).absolutePath());
@@ -89,6 +113,24 @@ void MetaResultActions::saveMetaFiles(quint32 searchID, const QList<Row>& rows)
     theUiState.setMetaFileSaveDir(dir);
     for (const Row& row : rows)
         fetchAndSave(searchID, row, dir, true);
+}
+
+void MetaResultActions::showWebLinks(quint32 searchID, const QList<Row>& rows)
+{
+    for (const Row& row : rows)
+        fetchAndShowLinks(searchID, row);
+}
+
+void MetaResultActions::copyMagnets(const QList<Row>& rows)
+{
+    QStringList links;
+    for (const Row& row : rows)
+        if (!row.magnet.isEmpty())
+            links << row.magnet;
+    if (links.isEmpty())
+        return;
+    QApplication::clipboard()->setText(links.join(u'\n'));
+    StatusBarNotifier::post(tr("Copied %n magnet link(s) to the clipboard.", nullptr, int(links.size())));
 }
 
 void MetaResultActions::manageAccount(const QString& serverAddr, const QString& serverName)
@@ -187,11 +229,18 @@ void MetaResultActions::fetchAndSave(quint32 searchID, const Row& row, const QSt
         const QCborMap data = resp.fieldMap(1);
         const QByteArray content = data.value(QStringLiteral("content")).toByteArray();
         QString target = path;
+        const QString served = data.value(QStringLiteral("fileName")).toString();
         if (pathIsDir) {
-            QString name = data.value(QStringLiteral("fileName")).toString();
+            QString name = served;
             if (name.isEmpty() || name.contains(u'/') || name.contains(u'\\'))
-                name = safeName(row.name, row.nzb);
+                name = safeName(row.name, row);
             target = QDir(path).filePath(name);
+        } else if (row.isContainer()) {
+            // the format is only known now: a .ccf saved as .dlc would not open
+            const QString want = enodemeta::containerFormat(served);
+            const QString have = enodemeta::containerFormat(target);
+            if (!want.isEmpty() && !have.isEmpty() && want != have)
+                target = target.chopped(have.size()) + want;
         }
         QFile file(target);
         if (!file.open(QIODevice::WriteOnly) || file.write(content) != content.size()) {
@@ -199,6 +248,48 @@ void MetaResultActions::fetchAndSave(quint32 searchID, const Row& row, const QSt
             return;
         }
         StatusBarNotifier::post(tr("Saved %1").arg(QDir::toNativeSeparators(target)));
+    });
+}
+
+void MetaResultActions::fetchAndShowLinks(quint32 searchID, const Row& row)
+{
+    if (!m_ipc || !m_ipc->isConnected())
+        return;
+
+    IpcMessage msg(IpcMsgType::FetchMetaFile);
+    msg.append(static_cast<qint64>(searchID));
+    msg.append(row.hash);
+    msg.append(row.ref);
+
+    QPointer<MetaResultActions> self(this);
+    m_ipc->sendRequest(std::move(msg), [self, searchID, row](const IpcMessage& resp) {
+        if (!self || !resp.isValid())
+            return;
+        if (!resp.fieldBool(0)) {
+            const auto retry = [self, searchID, row] {
+                if (self)
+                    self->fetchAndShowLinks(searchID, row);
+            };
+            if (!self->handleAuth(resp.fieldMap(2), retry))
+                self->warn(tr("Could not fetch the links of \"%1\": %2").arg(row.name, resp.fieldString(1)));
+            return;
+        }
+        const QCborMap data = resp.fieldMap(1);
+        const QCborMap links = data.value(QStringLiteral("links")).toMap();
+        if (links.value(QStringLiteral("links")).toArray().isEmpty()) {
+            self->warn(tr("\"%1\" holds no links.").arg(row.name));
+            return;
+        }
+        const QByteArray content = data.value(QStringLiteral("content")).toByteArray();
+        const QString fileName = data.value(QStringLiteral("fileName")).toString();
+        // one event-loop turn: never a dialog inside the reply's own stack
+        QTimer::singleShot(0, self, [self, row, links, content, fileName] {
+            if (!self)
+                return;
+            auto* dlg = new WebLinksDialog(row.name, links, content, fileName, self->m_parent);
+            dlg->setAttribute(Qt::WA_DeleteOnClose);
+            dlg->show();
+        });
     });
 }
 

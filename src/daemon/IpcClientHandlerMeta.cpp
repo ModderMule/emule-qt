@@ -1,7 +1,7 @@
 /// @file IpcClientHandlerMeta.cpp
 /// @brief IPC handlers for eNode meta search rows (750-754).
 ///
-/// Torrent/Usenet rows arrive inside eD2K search answers; their metafile lives
+/// Torrent/Usenet/web/container rows arrive inside eD2K search answers; their metafile lives
 /// behind the answering server's Meta API. MetaSearchService does the calls;
 /// this file only maps IPC requests onto it.
 
@@ -12,6 +12,8 @@
 #include "queue/UsenetQueue.h"
 
 #include "app/AppContext.h"
+#include "enodemeta/LinkContainer.h"
+#include "enodemeta/WebLinks.h"
 #include "prefs/Preferences.h"
 #include "search/SearchFile.h"
 #include "search/SearchList.h"
@@ -51,13 +53,51 @@ struct MetaRow {
     [[nodiscard]] bool isNzb() const { return kind == enodemeta::Kind::Nzb; }
 };
 
-/// "Release.Name" + ".torrent"/".nzb", safe as a file name.
-QString suggestedFileName(const MetaRow& r)
+/// "Release.Name" + the kind's extension, safe as a file name. A container is
+/// named by the format its content type says (enodemeta amendment 27).
+QString suggestedFileName(const MetaRow& r, const QString& contentType)
 {
     QString base = stripInvalidFilenameChars(r.name).trimmed();
     if (base.isEmpty())
         base = md4str(reinterpret_cast<const uint8*>(r.hash16.constData()));
-    return base + (r.isNzb() ? QStringLiteral(".nzb") : QStringLiteral(".torrent"));
+    switch (r.kind) {
+    case enodemeta::Kind::Nzb:
+        return base + QStringLiteral(".nzb");
+    case enodemeta::Kind::Web:
+        return base + QStringLiteral(".txt");
+    case enodemeta::Kind::Container: {
+        QString format = enodemeta::containerFormatOf(contentType);
+        const QString own = enodemeta::containerFormat(base);
+        if (format.isEmpty())
+            format = own.isEmpty() ? QStringLiteral("dlc") : own;
+        if (!own.isEmpty())
+            base.chop(own.size() + 1);
+        return base + u'.' + format;
+    }
+    default:
+        return base + QStringLiteral(".torrent");
+    }
+}
+
+/// A web row's links, parsed for the GUI's dialog.
+QCborMap webLinksMap(const QByteArray& content)
+{
+    const auto set = enodemeta::parseWebLinks(content);
+    if (!set)
+        return {};
+    QCborArray links;
+    for (const enodemeta::WebLink& l : set->links) {
+        links.append(QCborMap{
+            {QStringLiteral("url"),    QString::fromUtf8(l.url)},
+            {QStringLiteral("file"),   static_cast<qint64>(l.file)},
+            {QStringLiteral("name"),   l.name},
+            {QStringLiteral("size"),   static_cast<qint64>(l.size)},
+            {QStringLiteral("hoster"), l.hoster},
+        });
+    }
+    return {{QStringLiteral("title"), set->title},
+            {QStringLiteral("protected"), set->isProtected},
+            {QStringLiteral("links"), links}};
 }
 
 /// The row a request names: the live search's, else the one the GUI stored
@@ -115,25 +155,28 @@ void IpcClientHandler::handleFetchMetaFile(const IpcMessage& msg)
         return;
     }
 
-    const QString fileName = suggestedFileName(*row);
-    const int kind = static_cast<int>(row->kind);
     QPointer<IpcClientHandler> self(this);
     const int seqId = msg.seqId();
 
     MetaSearchService::instance().fetch(*row->target, row->hash16, row->catalogId, kMaxIpcMetafile,
-              [self, seqId, fileName, kind](MetaStatus status, const QString& error, const QCborMap& meta,
-                                             const enodemeta::pb::MetaFile& file) {
+              [self, seqId, r = *row](MetaStatus status, const QString& error, const QCborMap& meta,
+                                       const enodemeta::pb::MetaFile& file) {
         if (!self)
             return;
         if (status != MetaStatus::Ok) {
             self->sendMessage(metaFailure(seqId, error, meta));
             return;
         }
-        self->sendMessage(IpcMessage::makeResult(seqId, true, QCborMap{
-            {QStringLiteral("content"),  file.content()},
-            {QStringLiteral("fileName"), fileName},
-            {QStringLiteral("kind"),     kind},
-        }));
+        QCborMap reply{
+            {QStringLiteral("content"),     file.content()},
+            {QStringLiteral("fileName"),    suggestedFileName(r, file.contentType())},
+            {QStringLiteral("kind"),        static_cast<int>(r.kind)},
+            {QStringLiteral("contentType"), file.contentType()},
+        };
+        // verified already, so it parses; the GUI never reads a uri-list itself
+        if (r.kind == enodemeta::Kind::Web)
+            reply.insert(QStringLiteral("links"), webLinksMap(file.content()));
+        self->sendMessage(IpcMessage::makeResult(seqId, true, reply));
     });
 }
 

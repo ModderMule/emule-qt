@@ -79,6 +79,12 @@ using namespace Ipc;
 
 namespace {
 
+/// What MetaResultActions needs of an eNode row.
+MetaResultActions::Row metaRow(const SearchResultRow& r)
+{
+    return {.hash = r.hash, .name = r.fileName, .kind = r.metaKind, .ref = r.metaRef(), .magnet = r.magnet};
+}
+
 /// UiState key for the shared search-results header layout (all tabs share it).
 const QString kSearchHeaderKey = QStringLiteral("searchResults");
 
@@ -383,6 +389,8 @@ QWidget* SearchPanel::createSearchBar()
                            tr("Usenet (Server)"), 6);   // SearchType::MetaUsenet
     m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Torrent.ico")),
                            tr("Torrent (Server)"), 7);  // SearchType::MetaTorrent
+    m_methodCombo->addItem(QIcon(QStringLiteral(":/icons/Web.ico")),
+                           tr("Web (Server)"), 8);      // SearchType::MetaWeb
     typeRow->addWidget(m_methodCombo);
     m_resetBtn = new QPushButton(tr("Reset"), container);
     connect(m_resetBtn, &QPushButton::clicked, this, [this] {
@@ -391,6 +399,7 @@ QWidget* SearchPanel::createSearchBar()
         m_showUsenetCheck->setChecked(true);
         m_showKadCheck->setChecked(true);
         m_showTorrentCheck->setChecked(true);
+        m_showWebCheck->setChecked(true);
     });
     typeRow->addWidget(m_resetBtn);
 
@@ -418,6 +427,8 @@ QWidget* SearchPanel::createSearchBar()
                                      theUiState.searchShowKad());
     m_showTorrentCheck = addNetworkCheck(tr("Torrent results"), QStringLiteral(":/icons/Torrent.ico"),
                                          theUiState.searchShowTorrent());
+    m_showWebCheck = addNetworkCheck(tr("Web results"), QStringLiteral(":/icons/Web.ico"),
+                                     theUiState.searchShowWeb());
     networkRow->addStretch();
     grid->addLayout(networkRow, 2, 0);
 
@@ -1032,7 +1043,7 @@ void SearchPanel::onResetFilters()
 void SearchPanel::onNetworkFilterChanged()
 {
     theUiState.setSearchShowNetworks(m_showUsenetCheck->isChecked(), m_showKadCheck->isChecked(),
-                                     m_showTorrentCheck->isChecked());
+                                     m_showTorrentCheck->isChecked(), m_showWebCheck->isChecked());
     for (SearchTab& tab : m_tabs)
         applyNetworkFilter(tab);
     if (const auto* tab = currentTab()) {
@@ -1223,7 +1234,10 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     bool anyDownloadable = false;
     bool anyEd2k = false;
     bool anyUsenet = false;
-    bool anyTorrent = false;
+    bool anyTorrent = false;    ///< with a .torrent to fetch
+    bool anyMagnetOnly = false;
+    bool anyWeb = false;
+    bool anyContainer = false;
     bool anyMagnet = false;
     bool singleMeta = false;
     QString singleHash;
@@ -1245,11 +1259,16 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
         }
         anyEd2k |= !result->isMeta();
         anyUsenet |= result->isUsenet();
-        anyTorrent |= result->isTorrent();
+        anyTorrent |= result->isTorrent() && !result->isMagnetOnly();
+        anyMagnetOnly |= result->isMagnetOnly();
+        anyWeb |= result->isWeb();
+        anyContainer |= result->isContainer();
         anyMagnet |= !result->isMeta() || !result->magnet.isEmpty();
         // eD2K rows: not already in the transfer list. Usenet rows: the daemon asks.
-        if (result->isUsenet() || (!result->isMeta()
-                                   && (!m_downloadModel || !m_downloadModel->findByHash(result->hash))))
+        // Web, container and magnet-only rows always have something to do.
+        if (result->isUsenet() || result->isWeb() || result->isContainer()
+            || (result->isMagnetOnly() && !result->magnet.isEmpty())
+            || (!result->isMeta() && (!m_downloadModel || !m_downloadModel->findByHash(result->hash))))
             anyDownloadable = true;
         if (singleSel) {
             singleHash = result->hash;
@@ -1287,15 +1306,56 @@ void SearchPanel::onResultContextMenu(const QPoint& pos)
     if (anyUsenet) {
         auto* nzbAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Usenet.ico")),
                                                    tr("Download NZB File..."));
-        connect(nzbAction, &QAction::triggered, this, [this] { saveMetaFiles(/*nzb*/ true); });
+        connect(nzbAction, &QAction::triggered, this, [this] { saveMetaFiles(3); });
     }
+    const bool onlyOne = int(anyEd2k) + int(anyUsenet) + int(anyTorrent) + int(anyMagnetOnly) + int(anyWeb)
+                       + int(anyContainer) == 1;
     // eNode torrent rows: the .torrent — the default for them until BitTorrent lands
     if (anyTorrent) {
         auto* torrentAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Torrent.ico")),
                                                        tr("Download Torrent"));
-        connect(torrentAction, &QAction::triggered, this, [this] { saveMetaFiles(/*nzb*/ false); });
-        if (!anyEd2k && !anyUsenet)
+        connect(torrentAction, &QAction::triggered, this, [this] { saveMetaFiles(1); });
+        if (onlyOne)
             defaultAction = torrentAction;
+    }
+    // a magnet-only torrent has no .torrent: its magnet is what there is
+    if (anyMagnetOnly) {
+        auto* magnetAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Torrent.ico")),
+                                                      tr("Copy Magnet Link"));
+        connect(magnetAction, &QAction::triggered, this, [this] {
+            QList<MetaResultActions::Row> rows;
+            for (const auto& idx : m_resultView->selectionModel()->selectedRows())
+                if (const auto* r = refAt(idx).row; r && r->isMagnetOnly())
+                    rows.append(metaRow(*r));
+            MetaResultActions::copyMagnets(rows);
+        });
+        if (onlyOne)
+            defaultAction = magnetAction;
+    }
+    // eNode web rows: the links the page offered
+    if (anyWeb) {
+        auto* linksAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Web.ico")),
+                                                     tr("Show Links..."));
+        connect(linksAction, &QAction::triggered, this, [this] {
+            auto* tab = currentTab();
+            if (!tab)
+                return;
+            QList<MetaResultActions::Row> rows;
+            for (const auto& idx : m_resultView->selectionModel()->selectedRows())
+                if (const auto* r = refAt(idx).row; r && r->isWeb())
+                    rows.append(metaRow(*r));
+            metaActions()->showWebLinks(tab->searchID, rows);
+        });
+        if (onlyOne)
+            defaultAction = linksAction;
+    }
+    // eNode link containers: the .dlc/.ccf/.rsdf as the page served it
+    if (anyContainer) {
+        auto* containerAction = m_contextMenu->addAction(QIcon(QStringLiteral(":/icons/Container.ico")),
+                                                         tr("Download Container..."));
+        connect(containerAction, &QAction::triggered, this, [this] { saveMetaFiles(6); });
+        if (onlyOne)
+            defaultAction = containerAction;
     }
     setMenuDefaultAction(m_contextMenu, defaultAction);
 
@@ -1562,6 +1622,7 @@ void SearchPanel::requestSearchResults(uint32_t searchID, bool whole)
             row.completeSourceCount = m.value(QStringLiteral("completeSourceCount")).toInteger();
             row.isKad              = m.value(QStringLiteral("isKad")).toBool();
             row.kadOrigin          = m.value(QStringLiteral("kadOrigin")).toBool();
+            row.webOrigin          = m.value(QStringLiteral("webOrigin")).toBool();
             row.inDirectory        = m.value(QStringLiteral("inDirectory")).toBool();
             row.fileType           = m.value(QStringLiteral("fileType")).toString();
             row.knownType          = static_cast<int>(m.value(QStringLiteral("knownType")).toInteger());
@@ -1584,6 +1645,7 @@ void SearchPanel::requestSearchResults(uint32_t searchID, bool whole)
             row.codec              = m.value(QStringLiteral("codec")).toString();
             row.metaKind           = static_cast<int>(m.value(QStringLiteral("metaKind")).toInteger());
             row.magnet             = m.value(QStringLiteral("magnet")).toString();
+            row.metaFlags          = m.value(QStringLiteral("metaFlags")).toInteger();
             row.metaAgeDays        = m.value(QStringLiteral("metaAge")).toInteger();
             row.metaIndexer        = m.value(QStringLiteral("metaIndexer")).toString();
             row.metaCatalogId      = m.value(QStringLiteral("metaCatalogId")).toString();
@@ -1672,24 +1734,36 @@ void SearchPanel::downloadResults(const QModelIndexList& proxyRows, int category
         category = m_categoryTabs->count() > 1 ? std::max(m_categoryTabs->currentIndex(), 0) : 0;
 
     // eNode rows leave here: Usenet goes to the Usenet queue, a torrent is saved
-    // as a .torrent until BitTorrent downloads exist
+    // as a .torrent until BitTorrent downloads exist (a magnet-only one has none:
+    // its magnet goes to the clipboard), a web row shows its links, a link
+    // container is saved
     QModelIndexList ed2kRows;
     if (!tab->isIndexer() && tab->model) {
         QList<MetaResultActions::Row> usenet;
-        QList<MetaResultActions::Row> torrents;
+        QList<MetaResultActions::Row> metafiles;
+        QList<MetaResultActions::Row> magnets;
+        QList<MetaResultActions::Row> web;
         for (const auto& idx : proxyRows) {
             const auto* r = refAt(idx).row;
-            if (r && r->isUsenet())
-                usenet.append({r->hash, r->fileName, true, r->metaRef()});
-            else if (r && r->isTorrent())
-                torrents.append({r->hash, r->fileName, false, r->metaRef()});
-            else
+            if (!r || !r->isMeta())
                 ed2kRows.append(idx);
+            else if (r->isUsenet())
+                usenet.append(metaRow(*r));
+            else if (r->isMagnetOnly())
+                magnets.append(metaRow(*r));
+            else if (r->isWeb())
+                web.append(metaRow(*r));
+            else
+                metafiles.append(metaRow(*r));
         }
         if (!usenet.isEmpty())
             metaActions()->downloadUsenet(tab->searchID, usenet, category, QPointer(tab->model));
-        if (!torrents.isEmpty())
-            metaActions()->saveMetaFiles(tab->searchID, torrents);
+        if (!metafiles.isEmpty())
+            metaActions()->saveMetaFiles(tab->searchID, metafiles);
+        if (!magnets.isEmpty())
+            MetaResultActions::copyMagnets(magnets);
+        if (!web.isEmpty())
+            metaActions()->showWebLinks(tab->searchID, web);
         if (ed2kRows.isEmpty())
             return;
     } else {
@@ -1806,7 +1880,7 @@ void SearchPanel::copyEd2kLink(const QModelIndex& proxyIndex)
         QApplication::clipboard()->setText(link);
 }
 
-void SearchPanel::saveMetaFiles(bool nzb)
+void SearchPanel::saveMetaFiles(int kind)
 {
     auto* tab = currentTab();
     if (!tab || tab->isIndexer() || !tab->model)
@@ -1814,8 +1888,10 @@ void SearchPanel::saveMetaFiles(bool nzb)
     QList<MetaResultActions::Row> rows;
     for (const auto& idx : m_resultView->selectionModel()->selectedRows()) {
         const auto* r = refAt(idx).row;
-        if (r && (nzb ? r->isUsenet() : r->isTorrent()))
-            rows.append({r->hash, r->fileName, nzb, r->metaRef()});
+        // a magnet-only torrent has no .torrent to fetch
+        const bool match = r && (kind == 1 ? r->isTorrent() && !r->isMagnetOnly() : r->metaKind == kind);
+        if (match)
+            rows.append(metaRow(*r));
     }
     metaActions()->saveMetaFiles(tab->searchID, rows);
 }
@@ -2041,6 +2117,7 @@ QJsonObject ed2kRowToJson(const SearchResultRow& row)
     o[QStringLiteral("completeSourceCount")] = static_cast<qint64>(row.completeSourceCount);
     o[QStringLiteral("isKad")]               = row.isKad;
     o[QStringLiteral("kadOrigin")]           = row.kadOrigin;
+    o[QStringLiteral("webOrigin")]           = row.webOrigin;
     o[QStringLiteral("inDirectory")]         = row.inDirectory;
     o[QStringLiteral("artist")]              = row.artist;
     o[QStringLiteral("album")]               = row.album;
@@ -2091,9 +2168,10 @@ QJsonObject ed2kRowToJson(const SearchResultRow& row)
         o[QStringLiteral("children")] = children;
     }
     if (row.isMeta()) {
-        // torrent/Usenet rows: the daemon refetches their metafile by this
+        // torrent/Usenet/web rows: the daemon refetches their metafile by this
         o[QStringLiteral("metaKind")]      = row.metaKind;
         o[QStringLiteral("magnet")]        = row.magnet;
+        o[QStringLiteral("metaFlags")]     = static_cast<qint64>(row.metaFlags);
         o[QStringLiteral("metaAge")]       = static_cast<qint64>(row.metaAgeDays);
         o[QStringLiteral("metaIndexer")]   = row.metaIndexer;
         o[QStringLiteral("metaCatalogId")] = row.metaCatalogId;
@@ -2113,6 +2191,7 @@ SearchResultRow ed2kRowFromJson(const QJsonObject& r)
     row.completeSourceCount = static_cast<qint64>(r[QStringLiteral("completeSourceCount")].toDouble());
     row.isKad               = r[QStringLiteral("isKad")].toBool();
     row.kadOrigin           = r[QStringLiteral("kadOrigin")].toBool();
+    row.webOrigin           = r[QStringLiteral("webOrigin")].toBool();
     row.inDirectory         = r[QStringLiteral("inDirectory")].toBool();
     row.artist              = r[QStringLiteral("artist")].toString();
     row.album               = r[QStringLiteral("album")].toString();
@@ -2155,6 +2234,7 @@ SearchResultRow ed2kRowFromJson(const QJsonObject& r)
         row.fakeReasons.push_back(reason.toString());
     row.metaKind            = r[QStringLiteral("metaKind")].toInt();
     row.magnet              = r[QStringLiteral("magnet")].toString();
+    row.metaFlags           = static_cast<qint64>(r[QStringLiteral("metaFlags")].toDouble());
     row.metaAgeDays         = static_cast<qint64>(r[QStringLiteral("metaAge")].toDouble());
     row.metaIndexer         = r[QStringLiteral("metaIndexer")].toString();
     row.metaCatalogId       = r[QStringLiteral("metaCatalogId")].toString();
@@ -2897,6 +2977,7 @@ QIcon SearchPanel::tabIcon(const SearchTab& tab)
     case 3:  return QIcon(QStringLiteral(":/icons/SearchKad.ico"));   // Kademlia
     case 6:  return QIcon(QStringLiteral(":/icons/Usenet.ico"));      // Usenet (Server)
     case 7:  return QIcon(QStringLiteral(":/icons/Torrent.ico"));     // Torrent (Server)
+    case 8:  return QIcon(QStringLiteral(":/icons/Web.ico"));         // Web (Server)
     default: return QIcon(QStringLiteral(":/icons/KadServer.ico"));   // Automatic
     }
 }
@@ -2943,12 +3024,13 @@ void SearchPanel::applyNetworkFilter(SearchTab& tab)
     if (!proxy)
         return;
     SearchResultsProxy::NetworkFilter filter;
-    // Usenet / torrent via server: that network was asked for, and an emptied
+    // Usenet / torrent / web via server: that network was asked for, and an emptied
     // list would have loadMoreIfAtEnd() pull every page
-    if (tab.method != 6 && tab.method != 7 && m_showUsenetCheck) {
+    if (tab.method != 6 && tab.method != 7 && tab.method != 8 && m_showUsenetCheck) {
         filter.usenet = m_showUsenetCheck->isChecked();
         filter.kad = m_showKadCheck->isChecked();
         filter.torrent = m_showTorrentCheck->isChecked();
+        filter.web = m_showWebCheck->isChecked();
     }
     proxy->setNetworkFilter(filter);
 }

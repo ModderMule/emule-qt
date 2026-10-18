@@ -273,6 +273,7 @@
     <ClCompile Include="dialogs\MetaAccountDialog.cpp" />
     <ClCompile Include="dialogs\PasteLinksDialog.cpp" />
     <ClCompile Include="dialogs\PasteTextDialog.cpp" />
+    <ClCompile Include="dialogs\WebLinksDialog.cpp" />
     <ClCompile Include="dialogs\PeerPreviewDialog.cpp" />
     <ClCompile Include="dialogs\ToolbarCustomizeDialog.cpp" />
     <ClCompile Include="panels\SearchPanel.cpp" />
@@ -427,6 +428,7 @@
     <QtMoc Include="dialogs\MetaAccountDialog.h" />
     <QtMoc Include="dialogs\PasteLinksDialog.h" />
     <QtMoc Include="dialogs\PasteTextDialog.h" />
+    <QtMoc Include="dialogs\WebLinksDialog.h" />
     <QtMoc Include="dialogs\PeerPreviewDialog.h" />
     <QtMoc Include="dialogs\ToolbarCustomizeDialog.h" />
     <QtMoc Include="panels\SearchPanel.h" />
@@ -677,6 +679,8 @@
     <None Include="..\..\resources\icons\UserFiles.ico" />
     <None Include="..\..\resources\icons\UserMessage.ico" />
     <None Include="..\..\resources\icons\Web.ico" />
+    <None Include="..\..\resources\icons\Container.ico" />
+    <None Include="..\..\resources\icons\WebEd2k.ico" />
     <None Include="..\..\resources\icons\Wizard.ico" />
     <None Include="..\..\resources\icons\bold.ico" />
     <None Include="..\..\resources\icons\colour.ico" />

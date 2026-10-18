@@ -471,9 +471,9 @@
 #define FT_KADNOTECACHE             0x90  // cached Kad notes-search results (filenames + comments, keyed by publisher)
 #define FT_MEDIAEXTRACTVER          0x91  // known.met only: version of the media extractor that last read the file
 
-// eNode meta search rows (torrent/Usenet in eD2K results) — enodemeta/tags/tags.go.
+// eNode meta search rows (torrent/Usenet/web/container in eD2K results) — enodemeta/tags/tags.go.
 // 0x60-0x6F is unused under FT_ in stock, MorphXT and eMuleAI.
-#define FT_META_KIND                0x60  // uint8: 1=bt-v1/hybrid 2=bt-v2 3=nzb
+#define FT_META_KIND                0x60  // uint8: 1=bt-v1/hybrid 2=bt-v2 3=nzb 5=web 6=container
 #define FT_META_VERSION             0x61  // uint8: meta hash scheme version
 #define FT_META_FILEINDEX           0x62  // uint32: full-width file index, 0xFFFFFFFF = whole release
 #define FT_META_FILEPATH            0x63  // string: path in torrent / NZB subject
@@ -490,6 +490,7 @@
 // another network. The row's only meta tag: FT_META_KIND never comes with it.
 #define FT_META_NETWORK             0x6D  // uint8: META_NETWORK_*
 #define FT_META_NETWORK_KAD            3     // found on the Kad network
+#define FT_META_NETWORK_WEB            5     // offered by a web page (enodemeta amendment 28)
 
 // FT_META_FLAGS bits
 #define META_FLAG_PASSWORD_PROTECTED 0x01

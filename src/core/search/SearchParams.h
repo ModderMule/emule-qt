@@ -40,12 +40,15 @@ enum class SearchType : uint8 {
     /// no crawler is asked by us. Which server: see metaSearchCandidates().
     MetaUsenet  = 6,
     MetaTorrent = 7,
+    /// Web network: link sets, link containers, and the eD2K files, torrents and
+    /// magnets web pages offer (enodemeta amendment 27).
+    MetaWeb     = 8,
 };
 
 /// A search an eD2K server's Meta API answers.
 [[nodiscard]] constexpr bool isMetaSearchType(SearchType type)
 {
-    return type == SearchType::MetaUsenet || type == SearchType::MetaTorrent;
+    return type == SearchType::MetaUsenet || type == SearchType::MetaTorrent || type == SearchType::MetaWeb;
 }
 
 // ---------------------------------------------------------------------------

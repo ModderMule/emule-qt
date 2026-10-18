@@ -163,7 +163,8 @@ QJsonObject componentSchemas()
         {s("completeSourceCount"), schemaInteger(s("Of those, peers with the whole file."))},
         {s("isKadResult"), schemaBoolean()},
         {s("kadOrigin"), schemaBoolean()},
-        {s("metaKind"), schemaString(s("\"torrent\" or \"nzb\": a release an eD2K server listed from "
+        {s("webOrigin"), schemaBoolean(s("With kadOrigin: an eD2K file the server found on a web page, not on Kad."))},
+        {s("metaKind"), schemaString(s("\"torrent\", \"nzb\", \"web\" or \"container\": a release an eD2K server listed from "
                                        "its catalogue. Empty for an eD2K file. Not downloadable "
                                        "through POST /search/{id}/download."))},
         {s("magnet"), schemaString(s("Magnet link of a torrent result, when the server sent one; else empty."))},

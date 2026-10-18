@@ -40,6 +40,7 @@ private slots:
     void kadOrigin_recognizedByTag();
     void kadOrigin_prefixStrippedOnlyWithTag();
     void kadOrigin_survivesStoreAndLoad();
+    void webOrigin_dropsOnlyTheWebPrefix();
     void kadOrigin_ignoredOnMetaRow();
 };
 
@@ -493,6 +494,43 @@ void tst_SearchFile::kadOrigin_prefixStrippedOnlyWithTag()
     SearchFile file(plainData, true);
     QVERIFY(!file.isKadOrigin());
     QCOMPARE(file.fileName(), QStringLiteral("[kad emule-qt.org] A.B.avi"));
+}
+
+void tst_SearchFile::webOrigin_dropsOnlyTheWebPrefix()
+{
+    uint8 hash[16];
+    std::memset(hash, 0x57, 16);
+
+    // FT_META_NETWORK 5: a web page's eD2K file, a Kad-origin row that drops "[web …]"
+    for (const auto& [in, out] : {std::pair{QStringLiteral("[web] G.avi"), QStringLiteral("G.avi")},
+                                  std::pair{QStringLiteral("[web emule-qt.org] H.avi"), QStringLiteral("H.avi")},
+                                  std::pair{QStringLiteral("[webrip] I.avi"), QStringLiteral("[webrip] I.avi")},
+                                  std::pair{QStringLiteral("[kad] J.avi"), QStringLiteral("[kad] J.avi")}}) {
+        QByteArray p = buildKadOriginPacket(hash, in, 7000, 0, FT_META_NETWORK_WEB);
+        SafeMemFile d(p);
+        SearchFile f(d, true);
+        qInfo() << "input:" << in << "network 5; output:" << f.fileName() << "web =" << f.isWebOrigin();
+        QVERIFY(f.isKadOrigin());
+        QVERIFY(f.isWebOrigin());
+        QCOMPARE(f.fileName(), out);
+    }
+
+    // a Kad row keeps a "[web]" name: only its own network's bracket goes
+    QByteArray kad = buildKadOriginPacket(hash, QStringLiteral("[web] K.avi"), 7000, 1);
+    SafeMemFile kadData(kad);
+    SearchFile kadFile(kadData, true);
+    QVERIFY(kadFile.isKadOrigin());
+    QVERIFY(!kadFile.isWebOrigin());
+    QCOMPARE(kadFile.fileName(), QStringLiteral("[web] K.avi"));
+
+    // a copy keeps the mark; clearing the origin clears it too
+    QByteArray web = buildKadOriginPacket(hash, QStringLiteral("[web] L.avi"), 7000, 0, FT_META_NETWORK_WEB);
+    SafeMemFile webData(web);
+    SearchFile webFile(webData, true);
+    SearchFile webCopy(&webFile);
+    QVERIFY(webCopy.isWebOrigin());
+    webCopy.setKadOrigin(false);
+    QVERIFY(!webCopy.isWebOrigin());
 }
 
 void tst_SearchFile::kadOrigin_survivesStoreAndLoad()

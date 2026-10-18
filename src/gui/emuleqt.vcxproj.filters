@@ -217,6 +217,9 @@
     <ClCompile Include="dialogs\PasteTextDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="dialogs\WebLinksDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="panels\SearchPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -583,6 +586,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="dialogs\PasteTextDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="dialogs\WebLinksDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="app\PendingOpenQueue.h">
@@ -1285,6 +1291,12 @@
       <Filter>Resource Files</Filter>
     </None>
     <None Include="..\..\resources\icons\Web.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\Container.ico">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="..\..\resources\icons\WebEd2k.ico">
       <Filter>Resource Files</Filter>
     </None>
     <None Include="..\..\resources\icons\Wizard.ico">

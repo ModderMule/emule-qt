@@ -224,11 +224,13 @@ public:
     [[nodiscard]] bool searchShowUsenet() const { return m_searchShowUsenet; }
     [[nodiscard]] bool searchShowKad() const { return m_searchShowKad; }
     [[nodiscard]] bool searchShowTorrent() const { return m_searchShowTorrent; }
-    void setSearchShowNetworks(bool usenet, bool kad, bool torrent)
+    [[nodiscard]] bool searchShowWeb() const { return m_searchShowWeb; }
+    void setSearchShowNetworks(bool usenet, bool kad, bool torrent, bool web)
     {
         m_searchShowUsenet = usenet;
         m_searchShowKad = kad;
         m_searchShowTorrent = torrent;
+        m_searchShowWeb = web;
         scheduleSave();
     }
 
@@ -291,6 +293,7 @@ private:
     bool m_searchShowUsenet = true;
     bool m_searchShowKad = true;
     bool m_searchShowTorrent = true;
+    bool m_searchShowWeb = true;
     std::array<QColor, kStatsColorCount> m_statsColors = defaultStatsColors();
     QMap<QString, QByteArray> m_headerStates;
     QMap<QString, bool> m_sortValues;

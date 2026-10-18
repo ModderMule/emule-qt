@@ -438,7 +438,7 @@ void MetaSearchService::fetchWithToken(const Target& target, const pb::Caps& cap
         QCborMap m = baseMap(MetaStatus::AuthRequired, target);
         addCaps(m, caps);
         m.insert(QStringLiteral("username"), store().account(origin).username);
-        cb(MetaStatus::AuthRequired, tr("%1 needs an account to download torrent and Usenet results.")
+        cb(MetaStatus::AuthRequired, tr("%1 needs an account to download its torrent, Usenet and web results.")
                                          .arg(target.endpoint.serverName), m, {});
         return;
     }

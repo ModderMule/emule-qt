@@ -11,6 +11,7 @@
 #include "search/FakeFileDetector.h"
 #include "net/Address.h"
 #include "search/SearchParams.h"
+#include "utils/Opcodes.h"
 #include "utils/Types.h"
 
 #include <QString>
@@ -60,7 +61,7 @@ public:
         }
     };
 
-    /// eNode meta row (torrent/Usenet release inside an eD2K answer).
+    /// eNode meta row (torrent/Usenet/web/container release inside an eD2K answer).
     struct MetaInfo {
         enodemeta::Kind kind = enodemeta::Kind::Unspecified;  ///< from the hash, not the name
         uint8  hashFlags = 0;       ///< enodemeta::HashFlag bits
@@ -80,6 +81,10 @@ public:
             return kind == enodemeta::Kind::BtV1 || kind == enodemeta::Kind::BtV2;
         }
         [[nodiscard]] bool isNzb() const { return kind == enodemeta::Kind::Nzb; }
+        [[nodiscard]] bool isWeb() const { return kind == enodemeta::Kind::Web; }
+        [[nodiscard]] bool isContainer() const { return kind == enodemeta::Kind::Container; }
+        /// A torrent with no fetchable metafile: the magnet is all there is.
+        [[nodiscard]] bool isMagnetOnly() const { return isTorrent() && (flags & META_FLAG_MAGNET_ONLY) != 0; }
     };
 
     /// Whether this file is known locally.
@@ -221,11 +226,13 @@ public:
     /// the search list drops these (enodemeta plan §8.1).
     [[nodiscard]] bool isInvalidMetaResult() const { return m_metaInvalid; }
 
-    /// A server result the server itself found on Kad (FT_META_NETWORK): an ordinary
-    /// eD2K file, downloadable like any other. Not a result of our own Kad search —
-    /// that is isKadResult().
+    /// A server result the server itself found on Kad or a web page (FT_META_NETWORK):
+    /// an ordinary eD2K file, downloadable like any other. Not a result of our own Kad
+    /// search — that is isKadResult().
     [[nodiscard]] bool isKadOrigin() const { return m_kadOrigin; }
-    void setKadOrigin(bool val) { m_kadOrigin = val; }
+    void setKadOrigin(bool val) { m_kadOrigin = val; if (!val) m_webOrigin = false; }
+    /// A Kad-origin row a web page offered (FT_META_NETWORK 5): web badge, not Kad's.
+    [[nodiscard]] bool isWebOrigin() const { return m_webOrigin; }
 
     /// Every answer reports the same network-wide count (Kad search, torrent swarm,
     /// Kad-origin row): answers are maxed, never summed.
@@ -294,6 +301,7 @@ private:
     MetaInfo m_meta;
     bool m_metaInvalid = false;
     bool m_kadOrigin = false;
+    bool m_webOrigin = false;
 };
 
 } // namespace eMule

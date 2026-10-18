@@ -23,6 +23,7 @@ public:
         bool usenet = true;
         bool kad = true;      ///< found on Kad by the server; never our own Kad results
         bool torrent = true;
+        bool web = true;      ///< web link sets and link containers
 
         bool operator==(const NetworkFilter&) const = default;
     };

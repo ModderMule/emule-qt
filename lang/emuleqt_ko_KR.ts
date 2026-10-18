@@ -4468,7 +4468,7 @@ Please choose another:</source>
 <context>
     <name>eMule::LogTextView</name>
     <message>
-        <location filename="../src/gui/controls/LogTextView.cpp" line="+54"/>
+        <location filename="../src/gui/controls/LogTextView.cpp" line="+59"/>
         <source>Autoscroll</source>
         <translation>자동 스크롤</translation>
     </message>
@@ -4548,12 +4548,12 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1290"/>
+        <location line="+1294"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: 연결 해제됨</translation>
     </message>
     <message>
-        <location line="-1233"/>
+        <location line="-1237"/>
         <source>Kad: Connected</source>
         <translation>Kad: 연결됨</translation>
     </message>
@@ -4569,17 +4569,17 @@ Please choose another:</source>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1225"/>
+        <location line="+1229"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: 연결 해제됨</translation>
     </message>
     <message>
-        <location line="-1216"/>
+        <location line="-1220"/>
         <source>Users: %1 | Files: %2</source>
         <translation>사용자: %1 | 파일: %2</translation>
     </message>
     <message>
-        <location line="+419"/>
+        <location line="+423"/>
         <source>Open Incoming Folder...</source>
         <translation>수신 폴더 열기...</translation>
     </message>
@@ -4619,14 +4619,14 @@ Please choose another:</source>
         <translation>기능</translation>
     </message>
     <message>
-        <location line="-777"/>
+        <location line="-781"/>
         <location line="+7"/>
-        <location line="+773"/>
+        <location line="+777"/>
         <source>Version Check</source>
         <translation>버전 확인</translation>
     </message>
     <message>
-        <location line="-835"/>
+        <location line="-839"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt 종료</translation>
     </message>
@@ -4790,12 +4790,12 @@ Up: %3 | Down: %4</source>
         <translation>종료</translation>
     </message>
     <message>
-        <location line="+21"/>
+        <location line="+20"/>
         <source>Log Entry</source>
         <translation>로그 항목</translation>
     </message>
     <message>
-        <location line="+110"/>
+        <location line="+115"/>
         <source>eMule Log</source>
         <translation>eMule 로그</translation>
     </message>
@@ -5505,32 +5505,49 @@ Enable it under Options → Web Interface, then try again.</source>
 <context>
     <name>eMule::MetaResultActions</name>
     <message>
-        <location filename="../src/gui/utils/MetaResultActions.cpp" line="+75"/>
+        <location filename="../src/gui/utils/MetaResultActions.cpp" line="+62"/>
         <source>NZB files (*.nzb)</source>
         <translation>NZB 파일 (*.nzb)</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="+2"/>
+        <source>Link containers (*.dlc *.ccf *.rsdf)</source>
+        <translation>링크 컨테이너 (*.dlc *.ccf *.rsdf)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Torrent files (*.torrent)</source>
         <translation>토렌트 파일 (*.torrent)</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+6"/>
         <source>Save NZB File</source>
         <translation>NZB 파일 저장</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="+2"/>
+        <source>Save Link Container</source>
+        <translation>링크 컨테이너 저장</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Save Torrent File</source>
         <translation>토렌트 파일 저장</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+36"/>
         <source>Save Files To</source>
         <translation>파일 저장 위치</translation>
     </message>
+    <message numerus="yes">
+        <location line="+23"/>
+        <source>Copied %n magnet link(s) to the clipboard.</source>
+        <translation>
+            <numerusform>마그넷 링크 %n개를 클립보드에 복사했습니다.</numerusform>
+        </translation>
+    </message>
     <message>
-        <location line="+44"/>
+        <location line="+39"/>
         <source>Queued &quot;%1&quot; for Usenet download.</source>
         <translation>&quot;%1&quot;을(를) Usenet 다운로드 대기열에 추가했습니다.</translation>
     </message>
@@ -5559,7 +5576,7 @@ Download it again?</source>
         <translation>&quot;%1&quot;을(를) 다운로드할 수 없습니다: %2</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+22"/>
         <source>Could not write %1: %2</source>
         <translation>%1을(를) 쓸 수 없습니다: %2</translation>
     </message>
@@ -5569,7 +5586,17 @@ Download it again?</source>
         <translation>%1 저장됨</translation>
     </message>
     <message>
-        <location line="+45"/>
+        <location line="+24"/>
+        <source>Could not fetch the links of &quot;%1&quot;: %2</source>
+        <translation>&quot;%1&quot;의 링크를 가져올 수 없습니다: %2</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>&quot;%1&quot; holds no links.</source>
+        <translation>&quot;%1&quot;에 링크가 없습니다.</translation>
+    </message>
+    <message>
+        <location line="+57"/>
         <source>Search</source>
         <translation>검색</translation>
     </message>
@@ -9853,15 +9880,15 @@ Restart eMule for all connections to use the new proxy settings.</source>
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+304"/>
-        <location line="+960"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+310"/>
+        <location line="+973"/>
         <location line="+13"/>
-        <location line="+459"/>
+        <location line="+513"/>
         <source>Download</source>
         <translation>다운로드</translation>
     </message>
     <message>
-        <location line="-1412"/>
+        <location line="-1479"/>
         <source>Close All Searches</source>
         <translation>모든 검색 닫기</translation>
     </message>
@@ -9967,11 +9994,21 @@ Restart eMule for all connections to use the new proxy settings.</source>
     </message>
     <message>
         <location line="+2"/>
+        <source>Web (Server)</source>
+        <translation>웹 (서버)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Reset</source>
         <translation>초기화</translation>
     </message>
     <message>
-        <location line="+44"/>
+        <location line="+35"/>
+        <source>Web results</source>
+        <translation>웹 결과</translation>
+    </message>
+    <message>
+        <location line="+12"/>
         <source>Min. Size [MB]:</source>
         <translation>최소 크기 [MB]:</translation>
     </message>
@@ -10025,17 +10062,17 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>아티스트:</translation>
     </message>
     <message>
-        <location line="-77"/>
+        <location line="-79"/>
         <source>Show results the server found on this network</source>
         <translation>서버가 이 네트워크에서 찾은 결과 표시</translation>
     </message>
     <message>
-        <location line="-209"/>
+        <location line="-212"/>
         <source>Related</source>
         <translation>관련</translation>
     </message>
     <message>
-        <location line="+214"/>
+        <location line="+217"/>
         <source>Usenet results</source>
         <translation>Usenet 결과</translation>
     </message>
@@ -10050,7 +10087,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>토렌트 결과</translation>
     </message>
     <message>
-        <location line="+46"/>
+        <location line="+48"/>
         <source>Min. Bitrate [Kbit/s]:</source>
         <translation>최소 비트레이트 [Kbit/s]:</translation>
     </message>
@@ -10199,7 +10236,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>이름 복사(&amp;N)</translation>
     </message>
     <message>
-        <location line="+75"/>
+        <location line="+83"/>
         <source>%1 (%2)</source>
         <translation>%1 (%2)</translation>
     </message>
@@ -10214,9 +10251,24 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>NZB 파일 다운로드...</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+8"/>
         <source>Download Torrent</source>
         <translation>토렌트 다운로드</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Copy Magnet Link</source>
+        <translation>마그넷 링크 복사</translation>
+    </message>
+    <message>
+        <location line="+14"/>
+        <source>Show Links...</source>
+        <translation>링크 보기...</translation>
+    </message>
+    <message>
+        <location line="+17"/>
+        <source>Download Container...</source>
+        <translation>컨테이너 다운로드...</translation>
     </message>
     <message>
         <location line="+10"/>
@@ -10251,13 +10303,13 @@ Restart eMule for all connections to use the new proxy settings.</source>
     <message>
         <location line="+65"/>
         <location line="+7"/>
-        <location line="+951"/>
+        <location line="+968"/>
         <location line="+43"/>
         <source>Preview</source>
         <translation>미리보기</translation>
     </message>
     <message>
-        <location line="-695"/>
+        <location line="-699"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -10266,7 +10318,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
 %1</translation>
     </message>
     <message>
-        <location line="+653"/>
+        <location line="+657"/>
         <source>Preview requested - please wait</source>
         <translation>미리 보기를 요청했습니다 - 잠시 기다려 주세요</translation>
     </message>
@@ -10286,7 +10338,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>전체</translation>
     </message>
     <message>
-        <location line="-1417"/>
+        <location line="-1434"/>
         <location line="+15"/>
         <location line="+10"/>
         <source>Mark as Spam</source>
@@ -10323,7 +10375,7 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <translation>웹 서비스</translation>
     </message>
     <message>
-        <location line="+956"/>
+        <location line="+973"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>미리보기를 사용할 수 없습니다 — 웹 서버가 실행 중이 아니거나 스트림 토큰을 받지 못했습니다.</translation>
     </message>
@@ -10335,8 +10387,13 @@ Restart eMule for all connections to use the new proxy settings.</source>
         <source>Yes</source>
         <translation>예</translation>
     </message>
+    <message>
+        <location line="+270"/>
+        <source>Stream</source>
+        <translation>스트림</translation>
+    </message>
     <message numerus="yes">
-        <location line="+357"/>
+        <location line="+95"/>
         <source>%1 · %n name(s)</source>
         <translation>
             <numerusform>%1 · 이름 %n개</numerusform>
@@ -15039,6 +15096,93 @@ A password is set for this release.</source>
         <location line="+7"/>
         <source>the version manifest has no &apos;latest&apos; field</source>
         <translation>버전 매니페스트에 &apos;latest&apos; 필드가 없습니다</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::WebLinksDialog</name>
+    <message>
+        <location filename="../src/gui/dialogs/WebLinksDialog.cpp" line="+47"/>
+        <source>Links: %1</source>
+        <translation>링크: %1</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>The page says these files are password protected.</source>
+        <translation>페이지에 따르면 이 파일들은 암호로 보호되어 있습니다.</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>File</source>
+        <translation>파일</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Name</source>
+        <translation>이름</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Size</source>
+        <translation>크기</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Hoster</source>
+        <translation>호스터</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Link</source>
+        <translation>링크</translation>
+    </message>
+    <message>
+        <location line="+21"/>
+        <source>Copy Links</source>
+        <translation>링크 복사</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Open in Browser</source>
+        <translation>브라우저에서 열기</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Save List...</source>
+        <translation>목록 저장...</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+32"/>
+        <source>Copied %n link(s) to the clipboard.</source>
+        <translation>
+            <numerusform>링크 %n개를 클립보드에 복사했습니다.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location line="+7"/>
+        <source>Open %n links in the browser?</source>
+        <translation>
+            <numerusform>링크 %n개를 브라우저에서 열까요?</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>Save Link List</source>
+        <translation>링크 목록 저장</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Link lists (*.txt);;All files (*)</source>
+        <translation>링크 목록 (*.txt);;모든 파일 (*)</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Could not write %1: %2</source>
+        <translation>%1을(를) 쓸 수 없습니다: %2</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Saved %1</source>
+        <translation>%1 저장됨</translation>
     </message>
 </context>
 <context>

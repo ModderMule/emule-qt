@@ -52,7 +52,8 @@ struct SearchResultRow {
     int seenNames = 0;          ///< names it has been seen under
     int64_t firstSeen = 0;      ///< unix seconds; 0 = not on record
     bool isKad = false;         ///< Kad results carry no complete-source count
-    bool kadOrigin = false;     ///< server result the server found on Kad: Kad badge
+    bool kadOrigin = false;     ///< server result the server found on Kad (or a web page): Kad badge
+    bool webOrigin = false;     ///< with kadOrigin: found on a web page, web eD2K badge
     bool inDirectory = false;   ///< from browsing a client's shared files
     bool isSpam = false;
     bool hasComment = false;
@@ -67,6 +68,7 @@ struct SearchResultRow {
     // eNode meta row — network from the meta hash (enodemeta::Kind), 0 = eD2K
     int metaKind = 0;
     QString magnet;       ///< torrents only, may be empty
+    int64_t metaFlags = 0;   ///< FT_META_FLAGS (META_FLAG_*)
     int64_t metaAgeDays = 0;
     QString metaIndexer;
     QString metaCatalogId;   ///< FT_META_ID, echoed on the metafile fetch
@@ -90,6 +92,10 @@ struct SearchResultRow {
     [[nodiscard]] bool isMeta() const { return metaKind != 0; }
     [[nodiscard]] bool isTorrent() const { return metaKind == 1 || metaKind == 2; }
     [[nodiscard]] bool isUsenet() const { return metaKind == 3; }
+    [[nodiscard]] bool isWeb() const { return metaKind == 5; }
+    [[nodiscard]] bool isContainer() const { return metaKind == 6; }
+    /// A torrent with no .torrent to fetch: its magnet is all there is.
+    [[nodiscard]] bool isMagnetOnly() const { return isTorrent() && (metaFlags & 0x08) != 0; }
 
     /// ed2k:// link; empty for meta rows (their hash is not an MD4).
     /// @p name stands in for the file's own name (a name row).

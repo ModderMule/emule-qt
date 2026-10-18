@@ -121,6 +121,10 @@ void Kademlia::start(KadPrefs* prefs)
     m_buddyStore = BuddyStore();
     if (!m_buddyStorePath.isEmpty())
         m_buddyStore.load(m_buddyStorePath, time(nullptr));
+    // Not MFC: a node firewalled last time asks its remembered buddies right on connect
+    m_sessionVerdict = BuddyStore::SessionVerdict::Unknown;
+    m_askBuddiesOnConnect = m_buddyStore.lastSessionVerdict() == BuddyStore::SessionVerdict::Firewalled
+                            && !m_buddyStore.entries().empty();
 
     // Initialize timers — matches MFC Kademlia.cpp Start()
     time_t now = time(nullptr);
@@ -186,6 +190,9 @@ void Kademlia::stop()
     // MFC: m_mapEvents.clear() in Stop().
     m_zoneEvents.clear();
 
+    // no final verdict this session: keep the last one
+    if (m_sessionVerdict != BuddyStore::SessionVerdict::Unknown)
+        m_buddyStore.setLastSessionVerdict(m_sessionVerdict);
     if (!m_buddyStorePath.isEmpty())
         m_buddyStore.save(m_buddyStorePath, time(nullptr));
 
@@ -592,6 +599,19 @@ void Kademlia::process()
         // next buddy loss starts again with the MFC-style search
         m_buddySearchesWithoutBuddy = 0;
     }
+    // Not MFC: firewalled last session, so likely again. Ask the remembered buddies now
+    // rather than at the first buddy search (+5 min). Dropped once we turn out open.
+    updateSessionVerdict();
+    if (m_askBuddiesOnConnect && m_sessionVerdict == BuddyStore::SessionVerdict::Open)
+        m_askBuddiesOnConnect = false;
+    if (m_askBuddiesOnConnect && needsBuddy && !thePrefs.cryptLayerRequired()
+        && theApp.clientList && theApp.clientList->buddyStatus() == BuddyStatus::None)
+    {
+        m_askBuddiesOnConnect = false;
+        logKad(QStringLiteral("Kad: firewalled last session — asking remembered buddies on connect"));
+        askRememberedBuddies(now, /*ignoreReask*/ true);
+    }
+
     if (needsBuddy) {
         if (theApp.clientList && theApp.clientList->buddyStatus() == BuddyStatus::None
             && m_prefs->findBuddy() && !thePrefs.cryptLayerRequired())
@@ -755,11 +775,11 @@ void Kademlia::countSessionStats()
         raiseKad(&KadCounters::peakContacts, m_routingZone->getNumContacts());
 }
 
-void Kademlia::askRememberedBuddies(time_t now)
+void Kademlia::askRememberedBuddies(time_t now, bool ignoreReask)
 {
     if (!m_udpListener)
         return;
-    const auto due = m_buddyStore.takeDue(now);
+    const auto due = m_buddyStore.takeDue(now, ignoreReask);
     if (due.empty())
         return;
 
@@ -777,6 +797,18 @@ void Kademlia::askRememberedBuddies(time_t now)
         logKad(QStringLiteral("Kad: FINDBUDDY_REQ → %1:%2 (remembered)")
                    .arg(ipToString(e.ip)).arg(e.udpPort));
     }
+}
+
+void Kademlia::updateSessionVerdict()
+{
+    if (!m_prefs || !isConnected())
+        return;
+    // Open: TCP confirmed by 2 nodes, or UDP open and verified. Firewalled: the TCP
+    // check finished without that. A later open result overrides.
+    if (!isFirewalled() || UDPFirewallTester::isOpenAndVerified())
+        m_sessionVerdict = BuddyStore::SessionVerdict::Open;
+    else if (!m_prefs->recheckIP())
+        m_sessionVerdict = BuddyStore::SessionVerdict::Firewalled;
 }
 
 } // namespace eMule::kad

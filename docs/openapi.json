@@ -254,7 +254,7 @@
                         "type": "string"
                     },
                     "metaKind": {
-                        "description": "\"torrent\" or \"nzb\": a release an eD2K server listed from its catalogue. Empty for an eD2K file. Not downloadable through POST /search/{id}/download.",
+                        "description": "\"torrent\", \"nzb\", \"web\" or \"container\": a release an eD2K server listed from its catalogue. Empty for an eD2K file. Not downloadable through POST /search/{id}/download.",
                         "type": "string"
                     },
                     "seenBefore": {
@@ -272,6 +272,10 @@
                     "spamRating": {
                         "description": "Spam filter score; 60 and above counts as spam.",
                         "type": "integer"
+                    },
+                    "webOrigin": {
+                        "description": "With kadOrigin: an eD2K file the server found on a web page, not on Kad.",
+                        "type": "boolean"
                     }
                 },
                 "type": "object"
@@ -347,7 +351,7 @@
     "info": {
         "description": "Control and observe an eMuleQt core: eD2K and Kad file sharing plus Usenet downloads.\n\n**Authentication.** Send the API key in the `X-Api-Key` header (or as `Authorization: Bearer <key>`). `/health`, `/openapi.json` and `/docs` need none. The stream routes take `?token=` instead.\n\n**Errors.** Every failure is `{\"error\": {\"code\": <HTTP status>, \"message\": \"...\"}}`. An unknown field or query parameter is a 400, never silently ignored. 409 means the request is fine but the core is in the wrong state for it; 503 that a part of the core is not running.\n\n**Lists.** Answer `{items, total, offset, limit}`; page with `?limit=` (1-1000, default 100) and `?offset=`.\n\n**Destructive calls** need `\"confirm\": true` (in the body, or `?confirm=true` on DELETE).\n\n**Identifiers.** A file is named by its eD2K hash, 32 hexadecimal digits. Sizes are bytes. A category is an index into `GET /categories`.\n\n**Terms.** *HighID*: reachable from outside, the normal state. *LowID* / *firewalled*: not reachable, so fewer sources and slower transfers — check port forwarding. *Kad*: the serverless network; it works alongside the eD2K servers. *Source*: a peer that has (part of) a file.\n\n**Typical flow.** `GET /snapshot` → `POST /search` → `GET /search/{id}/results` until `state` is `finished` → `POST /search/{id}/download` → watch `GET /downloads/{hash}` or the `/events` stream.\n\n**Changes.** Every response carries `X-Contract-Version`. `GET /events` pushes changes so clients need not poll.",
         "title": "eMuleQt REST API",
-        "version": "0.6.10",
+        "version": "0.6.17",
         "x-contract-version": 1
     },
     "openapi": "3.1.0",
@@ -3061,7 +3065,7 @@
                 "x-mcp-tool": "search_list"
             },
             "post": {
-                "description": "Returns a searchID at once; results arrive over the next seconds — fetch them with GET /search/{id}/results until state is \"finished\". 202 means the search is queued and goes out by itself once a network is connected. \"automatic\" picks the best network available and is the right choice unless one is wanted. \"usenetServer\" and \"torrentServer\" ask an eD2K server's own catalogue for Usenet or torrent releases (keywords and NOT only); their results have metaKind set and are not eD2K downloads.",
+                "description": "Returns a searchID at once; results arrive over the next seconds — fetch them with GET /search/{id}/results until state is \"finished\". 202 means the search is queued and goes out by itself once a network is connected. \"automatic\" picks the best network available and is the right choice unless one is wanted. \"usenetServer\", \"torrentServer\" and \"webServer\" ask an eD2K server's own catalogue for Usenet, torrent or web releases (keywords and NOT only); their results have metaKind set and are not eD2K downloads.",
                 "operationId": "search.start",
                 "requestBody": {
                     "content": {
@@ -3150,7 +3154,8 @@
                                             "ed2kGlobal",
                                             "kad",
                                             "usenetServer",
-                                            "torrentServer"
+                                            "torrentServer",
+                                            "webServer"
                                         ],
                                         "type": "string"
                                     }

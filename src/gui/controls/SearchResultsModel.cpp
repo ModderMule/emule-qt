@@ -348,7 +348,11 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
     if (role == Qt::DisplayRole) {
         switch (index.column()) {
         case ColFileName:     return r.fileName;
-        case ColSize:         return formatByteSize(r.fileSize);
+        // size 0: a stream on a web row; a container or a magnet states none
+        case ColSize:
+            if (r.fileSize == 0 && r.isMeta())
+                return r.isWeb() ? tr("Stream") : QString();
+            return formatByteSize(r.fileSize);
         case ColAvailability: return availabilityText(r);
         case ColComplete:     return completeSourcesText(r);
         case ColType:         return fileTypeText(r.fileType, r.fileName);
@@ -382,12 +386,18 @@ QVariant SearchResultsModel::data(const QModelIndex& index, int role) const
         // MFC's search list registers the overlay image and then never draws it.
         // eNode torrent/Usenet rows keep their type icon and add their network
         // (the toolbar icons) right after it, and so does a file the server found on
-        // Kad; eD2K rows beside them keep the slot blank.
+        // Kad or a web page; eD2K rows beside them keep the slot blank.
         QString network;
         if (r.isUsenet())
             network = QStringLiteral(":/icons/Usenet.ico");
         else if (r.isTorrent())
             network = QStringLiteral(":/icons/Torrent.ico");
+        else if (r.isWeb())
+            network = QStringLiteral(":/icons/Web.ico");
+        else if (r.isContainer())
+            network = QStringLiteral(":/icons/Container.ico");
+        else if (r.webOrigin)
+            network = QStringLiteral(":/icons/WebEd2k.ico");
         else if (r.kadOrigin)
             network = QStringLiteral(":/icons/Kad.ico");
         else if (m_hasMeta)

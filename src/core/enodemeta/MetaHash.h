@@ -3,7 +3,7 @@
 /// @file MetaHash.h
 /// @brief eNode meta pseudo-hash — port of enodemeta/metahash (Go).
 ///
-/// A torrent or Usenet row in an eD2K search answer carries a 16-byte
+/// A torrent, Usenet, web or link-container row in an eD2K search answer carries a 16-byte
 /// pseudo-hash instead of an MD4:
 ///
 ///   offset size field
@@ -42,6 +42,9 @@ enum class Kind : uint8 {
     BtV1        = 1,   ///< BitTorrent v1 or hybrid, identity = 20-byte v1 infohash
     BtV2        = 2,   ///< BitTorrent v2 only, identity = 32-byte v2 infohash
     Nzb         = 3,   ///< Usenet, identity = 32-byte canonical NZB digest
+    Ed2k        = 4,   ///< native eD2K file: its hash is its MD4, never a meta hash
+    Web         = 5,   ///< web link set, identity = 32-byte canonical link-set digest
+    Container   = 6,   ///< .dlc/.ccf/.rsdf, identity = SHA-256 of the file
 };
 
 /// Hash flag bits (low nibble). Not the FT_META_FLAGS bitfield.
@@ -71,11 +74,14 @@ struct ParsedHash {
 
     [[nodiscard]] bool isTorrent() const { return kind == Kind::BtV1 || kind == Kind::BtV2; }
     [[nodiscard]] bool isNzb() const { return kind == Kind::Nzb; }
+    [[nodiscard]] bool isWeb() const { return kind == Kind::Web; }
+    [[nodiscard]] bool isContainer() const { return kind == Kind::Container; }
 };
 
 [[nodiscard]] constexpr bool isValidKind(Kind k)
 {
-    return k == Kind::BtV1 || k == Kind::BtV2 || k == Kind::Nzb;
+    return k == Kind::BtV1 || k == Kind::BtV2 || k == Kind::Nzb || k == Kind::Web
+        || k == Kind::Container;
 }
 
 /// Identity length a kind takes (20 or 32), 0 for an invalid kind.

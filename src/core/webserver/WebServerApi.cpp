@@ -111,6 +111,7 @@ using L = QLatin1StringView;
     return type == SearchType::Kademlia ? QStringLiteral("kad")
          : type == SearchType::MetaUsenet ? QStringLiteral("usenetServer")
          : type == SearchType::MetaTorrent ? QStringLiteral("torrentServer")
+         : type == SearchType::MetaWeb ? QStringLiteral("webServer")
          : type == SearchType::Ed2kGlobal ? QStringLiteral("ed2kGlobal")
          : type == SearchType::Automatic ? QStringLiteral("automatic")
                                          : QStringLiteral("ed2kServer");
@@ -510,15 +511,16 @@ void WebServer::buildApiTable()
                             "\"finished\". 202 means the search is queued and goes out by itself "
                             "once a network is connected. \"automatic\" picks the best network "
                             "available and is the right choice unless one is wanted. "
-                            "\"usenetServer\" and \"torrentServer\" ask an eD2K server's own "
-                            "catalogue for Usenet or torrent releases (keywords and NOT only); "
+                            "\"usenetServer\", \"torrentServer\" and \"webServer\" ask an eD2K "
+                            "server's own catalogue for Usenet, torrent or web releases (keywords "
+                            "and NOT only); "
                             "their results have metaKind set and are not eD2K downloads.");
         op.mcpTool = s("search_start");
         op.params = {
             bodyStr(s("expression"), s("Keywords. AND, OR and NOT are understood.")).req().range(1, 512),
             bodyStr(s("type"), s("Network to search."))
                 .oneOf({s("automatic"), s("ed2kServer"), s("ed2kGlobal"), s("kad"),
-                        s("usenetServer"), s("torrentServer")})
+                        s("usenetServer"), s("torrentServer"), s("webServer")})
                 .def(s("automatic")),
             bodyStr(s("fileType"), s("Restrict to a type: Audio, Video, Image, Pro (programs), "
                                      "Doc, Arc (archives), Iso (CD images)."))
@@ -1677,6 +1679,7 @@ Result WebServer::apiSearchStart(const Call& call)
     params.type = type == L("kad") ? SearchType::Kademlia
                 : type == L("usenetServer") ? SearchType::MetaUsenet
                 : type == L("torrentServer") ? SearchType::MetaTorrent
+                : type == L("webServer") ? SearchType::MetaWeb
                 : type == L("ed2kGlobal") ? SearchType::Ed2kGlobal
                 : type == L("ed2kServer") ? SearchType::Ed2kServer
                                           : SearchType::Automatic;

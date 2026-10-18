@@ -805,11 +805,14 @@ void ClientList::processKadList()
         // Kad lost its contacts: the buddy link is of no use either way.
         m_buddy->setKadState(KadState::None);
     } else if (!kadInst->isFirewalled() || kad::UDPFirewallTester::isOpenAndVerified()) {
-        // We are reachable, so we are the relay and the buddy is the firewalled side.
-        // One that opened its port no longer needs us. When we are the firewalled
-        // side the buddy is an open node by design and must be kept.
-        if (!m_buddy->hasLowID())
+        // We are reachable (TCP confirmed or UDP open and verified), so we need no buddy.
+        // A HighID buddy is the open node we used while firewalled: drop it.
+        if (!m_buddy->hasLowID() && m_buddy->kadState() == KadState::ConnectedBuddy) {
+            kad::logKad(QStringLiteral("Kad: dropping buddy %1 — we are open (%2 verified)")
+                            .arg(m_buddy->kadBuddyInfo(),
+                                 kadInst->isFirewalled() ? QStringLiteral("UDP") : QStringLiteral("TCP")));
             m_buddy->setKadState(KadState::None);
+        }
     }
 }
 

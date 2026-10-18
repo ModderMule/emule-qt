@@ -104,6 +104,7 @@ void UiState::load(const QString& configDir)
         m_searchShowUsenet = root["searchShowUsenet"].as<bool>(m_searchShowUsenet);
         m_searchShowKad = root["searchShowKad"].as<bool>(m_searchShowKad);
         m_searchShowTorrent = root["searchShowTorrent"].as<bool>(m_searchShowTorrent);
+        m_searchShowWeb = root["searchShowWeb"].as<bool>(m_searchShowWeb);
 
         m_toolbarButtonOrder = readIntList(root, "toolbarButtonOrder");
 
@@ -207,6 +208,7 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "searchShowUsenet" << YAML::Value << m_searchShowUsenet;
     out << YAML::Key << "searchShowKad" << YAML::Value << m_searchShowKad;
     out << YAML::Key << "searchShowTorrent" << YAML::Value << m_searchShowTorrent;
+    out << YAML::Key << "searchShowWeb" << YAML::Value << m_searchShowWeb;
 
     if (!m_toolbarButtonOrder.isEmpty())
         writeIntList(out, "toolbarButtonOrder", m_toolbarButtonOrder);

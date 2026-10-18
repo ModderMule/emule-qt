@@ -168,6 +168,7 @@ SOURCES += \
     enodemeta/MetaApiClient.cpp \
     enodemeta/MetaHash.cpp \
     enodemeta/MetaIdentity.cpp \
+    enodemeta/WebLinks.cpp \
     search/SearchList.cpp \
     search/SearchParams.cpp \
     search/SearchStarter.cpp \
@@ -324,6 +325,8 @@ HEADERS += \
     enodemeta/MetaApiClient.h \
     enodemeta/MetaHash.h \
     enodemeta/MetaIdentity.h \
+    enodemeta/WebLinks.h \
+    enodemeta/LinkContainer.h \
     search/SearchList.h \
     search/SearchParams.h \
     search/SearchStarter.h \

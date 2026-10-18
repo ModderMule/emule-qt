@@ -4481,7 +4481,7 @@ Bitte wählen Sie einen anderen:</translation>
 <context>
     <name>eMule::LogTextView</name>
     <message>
-        <location filename="../src/gui/controls/LogTextView.cpp" line="+54"/>
+        <location filename="../src/gui/controls/LogTextView.cpp" line="+59"/>
         <source>Autoscroll</source>
         <translation>Autoscrollen</translation>
     </message>
@@ -4561,12 +4561,12 @@ Bitte wählen Sie einen anderen:</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1290"/>
+        <location line="+1294"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Getrennt</translation>
     </message>
     <message>
-        <location line="-1233"/>
+        <location line="-1237"/>
         <source>Kad: Connected</source>
         <translation>Kad: Verbunden</translation>
     </message>
@@ -4582,17 +4582,17 @@ Bitte wählen Sie einen anderen:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1225"/>
+        <location line="+1229"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: Getrennt</translation>
     </message>
     <message>
-        <location line="-1216"/>
+        <location line="-1220"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Benutzer: %1 | Dateien: %2</translation>
     </message>
     <message>
-        <location line="+419"/>
+        <location line="+423"/>
         <source>Open Incoming Folder...</source>
         <translation>Eingangsordner öffnen...</translation>
     </message>
@@ -4632,14 +4632,14 @@ Bitte wählen Sie einen anderen:</translation>
         <translation>Funktionen</translation>
     </message>
     <message>
-        <location line="-777"/>
+        <location line="-781"/>
         <location line="+7"/>
-        <location line="+773"/>
+        <location line="+777"/>
         <source>Version Check</source>
         <translation>Versionsprüfung</translation>
     </message>
     <message>
-        <location line="-835"/>
+        <location line="-839"/>
         <source>Quit eMule Qt</source>
         <translation>eMule Qt beenden</translation>
     </message>
@@ -4803,12 +4803,12 @@ Hoch: %3 | Runter: %4</translation>
         <translation>Beenden</translation>
     </message>
     <message>
-        <location line="+21"/>
+        <location line="+20"/>
         <source>Log Entry</source>
         <translation>Protokolleintrag</translation>
     </message>
     <message>
-        <location line="+110"/>
+        <location line="+115"/>
         <source>eMule Log</source>
         <translation>eMule-Protokoll</translation>
     </message>
@@ -5518,32 +5518,50 @@ Aktivieren Sie sie unter Optionen → Weboberfläche und versuchen Sie es erneut
 <context>
     <name>eMule::MetaResultActions</name>
     <message>
-        <location filename="../src/gui/utils/MetaResultActions.cpp" line="+75"/>
+        <location filename="../src/gui/utils/MetaResultActions.cpp" line="+62"/>
         <source>NZB files (*.nzb)</source>
         <translation>NZB-Dateien (*.nzb)</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="+2"/>
+        <source>Link containers (*.dlc *.ccf *.rsdf)</source>
+        <translation>Link-Container (*.dlc *.ccf *.rsdf)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Torrent files (*.torrent)</source>
         <translation>Torrent-Dateien (*.torrent)</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+6"/>
         <source>Save NZB File</source>
         <translation>NZB-Datei speichern</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="+2"/>
+        <source>Save Link Container</source>
+        <translation>Link-Container speichern</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Save Torrent File</source>
         <translation>Torrent-Datei speichern</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+36"/>
         <source>Save Files To</source>
         <translation>Dateien speichern unter</translation>
     </message>
+    <message numerus="yes">
+        <location line="+23"/>
+        <source>Copied %n magnet link(s) to the clipboard.</source>
+        <translation>
+            <numerusform>%n Magnet-Link in die Zwischenablage kopiert.</numerusform>
+            <numerusform>%n Magnet-Links in die Zwischenablage kopiert.</numerusform>
+        </translation>
+    </message>
     <message>
-        <location line="+44"/>
+        <location line="+39"/>
         <source>Queued &quot;%1&quot; for Usenet download.</source>
         <translation>„%1“ zum Usenet-Download eingereiht.</translation>
     </message>
@@ -5572,7 +5590,7 @@ Erneut herunterladen?</translation>
         <translation>„%1“ konnte nicht heruntergeladen werden: %2</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+22"/>
         <source>Could not write %1: %2</source>
         <translation>%1 konnte nicht geschrieben werden: %2</translation>
     </message>
@@ -5582,7 +5600,17 @@ Erneut herunterladen?</translation>
         <translation>%1 gespeichert</translation>
     </message>
     <message>
-        <location line="+45"/>
+        <location line="+24"/>
+        <source>Could not fetch the links of &quot;%1&quot;: %2</source>
+        <translation>Die Links von „%1“ konnten nicht abgerufen werden: %2</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>&quot;%1&quot; holds no links.</source>
+        <translation>„%1“ enthält keine Links.</translation>
+    </message>
+    <message>
+        <location line="+57"/>
         <source>Search</source>
         <translation>Suche</translation>
     </message>
@@ -9867,15 +9895,15 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+304"/>
-        <location line="+960"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+310"/>
+        <location line="+973"/>
         <location line="+13"/>
-        <location line="+459"/>
+        <location line="+513"/>
         <source>Download</source>
         <translation>Download</translation>
     </message>
     <message>
-        <location line="-1412"/>
+        <location line="-1479"/>
         <source>Close All Searches</source>
         <translation>Alle Suchen schließen</translation>
     </message>
@@ -9981,11 +10009,21 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
     </message>
     <message>
         <location line="+2"/>
+        <source>Web (Server)</source>
+        <translation>Web (Server)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Reset</source>
         <translation>Zurücksetzen</translation>
     </message>
     <message>
-        <location line="+44"/>
+        <location line="+35"/>
+        <source>Web results</source>
+        <translation>Web-Ergebnisse</translation>
+    </message>
+    <message>
+        <location line="+12"/>
         <source>Min. Size [MB]:</source>
         <translation>Min. Größe [MB]:</translation>
     </message>
@@ -10039,17 +10077,17 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>Künstler:</translation>
     </message>
     <message>
-        <location line="-77"/>
+        <location line="-79"/>
         <source>Show results the server found on this network</source>
         <translation>Ergebnisse anzeigen, die der Server in diesem Netzwerk gefunden hat</translation>
     </message>
     <message>
-        <location line="-209"/>
+        <location line="-212"/>
         <source>Related</source>
         <translation>Verwandt</translation>
     </message>
     <message>
-        <location line="+214"/>
+        <location line="+217"/>
         <source>Usenet results</source>
         <translation>Usenet-Ergebnisse</translation>
     </message>
@@ -10064,7 +10102,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>Torrent-Ergebnisse</translation>
     </message>
     <message>
-        <location line="+46"/>
+        <location line="+48"/>
         <source>Min. Bitrate [Kbit/s]:</source>
         <translation>Min. Bitrate [Kbit/s]:</translation>
     </message>
@@ -10213,7 +10251,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>&amp;Name kopieren</translation>
     </message>
     <message>
-        <location line="+75"/>
+        <location line="+83"/>
         <source>%1 (%2)</source>
         <translation>%1 (%2)</translation>
     </message>
@@ -10228,9 +10266,24 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>NZB-Datei herunterladen...</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+8"/>
         <source>Download Torrent</source>
         <translation>Torrent herunterladen</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Copy Magnet Link</source>
+        <translation>Magnet-Link kopieren</translation>
+    </message>
+    <message>
+        <location line="+14"/>
+        <source>Show Links...</source>
+        <translation>Links anzeigen...</translation>
+    </message>
+    <message>
+        <location line="+17"/>
+        <source>Download Container...</source>
+        <translation>Container herunterladen...</translation>
     </message>
     <message>
         <location line="+10"/>
@@ -10265,13 +10318,13 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
     <message>
         <location line="+65"/>
         <location line="+7"/>
-        <location line="+951"/>
+        <location line="+968"/>
         <location line="+43"/>
         <source>Preview</source>
         <translation>Vorschau</translation>
     </message>
     <message>
-        <location line="-695"/>
+        <location line="-699"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -10280,7 +10333,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
 %1</translation>
     </message>
     <message>
-        <location line="+653"/>
+        <location line="+657"/>
         <source>Preview requested - please wait</source>
         <translation>Vorschau angefordert - bitte warten</translation>
     </message>
@@ -10300,7 +10353,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>Alle</translation>
     </message>
     <message>
-        <location line="-1417"/>
+        <location line="-1434"/>
         <location line="+15"/>
         <location line="+10"/>
         <source>Mark as Spam</source>
@@ -10337,7 +10390,7 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <translation>Webdienste</translation>
     </message>
     <message>
-        <location line="+956"/>
+        <location line="+973"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Vorschau nicht verfügbar — der Webserver läuft nicht oder es wurde kein Stream-Token empfangen.</translation>
     </message>
@@ -10349,8 +10402,13 @@ Starten Sie eMule neu, damit alle Verbindungen die neuen Proxy-Einstellungen ver
         <source>Yes</source>
         <translation>Ja</translation>
     </message>
+    <message>
+        <location line="+270"/>
+        <source>Stream</source>
+        <translation>Stream</translation>
+    </message>
     <message numerus="yes">
-        <location line="+357"/>
+        <location line="+95"/>
         <source>%1 · %n name(s)</source>
         <translation>
             <numerusform>%1 · %n Name</numerusform>
@@ -15069,6 +15127,95 @@ Für dieses Release ist ein Passwort festgelegt.</translation>
         <location line="+7"/>
         <source>the version manifest has no &apos;latest&apos; field</source>
         <translation>das Versionsmanifest hat kein Feld &apos;latest&apos;</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::WebLinksDialog</name>
+    <message>
+        <location filename="../src/gui/dialogs/WebLinksDialog.cpp" line="+47"/>
+        <source>Links: %1</source>
+        <translation>Links: %1</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>The page says these files are password protected.</source>
+        <translation>Laut der Seite sind diese Dateien passwortgeschützt.</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>File</source>
+        <translation>Datei</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Name</source>
+        <translation>Name</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Size</source>
+        <translation>Größe</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Hoster</source>
+        <translation>Hoster</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Link</source>
+        <translation>Link</translation>
+    </message>
+    <message>
+        <location line="+21"/>
+        <source>Copy Links</source>
+        <translation>Links kopieren</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Open in Browser</source>
+        <translation>Im Browser öffnen</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Save List...</source>
+        <translation>Liste speichern...</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+32"/>
+        <source>Copied %n link(s) to the clipboard.</source>
+        <translation>
+            <numerusform>%n Link in die Zwischenablage kopiert.</numerusform>
+            <numerusform>%n Links in die Zwischenablage kopiert.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location line="+7"/>
+        <source>Open %n links in the browser?</source>
+        <translation>
+            <numerusform>%n Link im Browser öffnen?</numerusform>
+            <numerusform>%n Links im Browser öffnen?</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>Save Link List</source>
+        <translation>Linkliste speichern</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Link lists (*.txt);;All files (*)</source>
+        <translation>Linklisten (*.txt);;Alle Dateien (*)</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Could not write %1: %2</source>
+        <translation>%1 konnte nicht geschrieben werden: %2</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Saved %1</source>
+        <translation>%1 gespeichert</translation>
     </message>
 </context>
 <context>

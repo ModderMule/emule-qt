@@ -737,8 +737,7 @@ void MainWindow::showCoreStartProblem(CoreStartWatch::Problem problem)
     connect(retry, &QAbstractButton::clicked, this, &MainWindow::coreRetryRequested);
     connect(openLog, &QAbstractButton::clicked, this, [this] {
         // The log pane lives on the Servers page
-        showNormal();
-        raise();
+        restoreWindow();
         switchToTab(TabServers);
     });
     connect(quit, &QAbstractButton::clicked, this, &MainWindow::forceQuit);
@@ -786,6 +785,11 @@ void MainWindow::restoreWindow()
     Qt::WindowStates state = (windowState() | m_stateBeforeMinimize) & ~Qt::WindowMinimized;
     if (state.testFlag(Qt::WindowFullScreen))
         state &= ~Qt::WindowMaximized;
+    // X11: un-minimizing a hidden window maps it behind Qt's back
+    // (QXcbWindow::setWindowState), so it is never painted and the compositor shows
+    // stale pixels of another app (issue #24). Map it iconic first, then de-iconify.
+    if (!isVisible() && QGuiApplication::platformName() == QLatin1String("xcb"))
+        show();
     setWindowState(state);
     show();
     raise();

@@ -46,6 +46,9 @@ private slots:
     void buddyStore_dropsAfterOneMissOrExpiry();
     void buddyStore_takeDueNewestFirstAndSkipsRecent();
     void buddyStore_damagedFileLoadsEmpty();
+    void buddyStore_sessionVerdictRoundTrip();
+    void buddyStore_v1FileLoadsWithUnknownVerdict();
+    void buddyStore_mostRecentBuddyFirstAndIgnoreReask();
 };
 
 void tst_Kademlia::cleanup()
@@ -477,6 +480,83 @@ void tst_Kademlia::buddyStore_damagedFileLoadsEmpty()
     BuddyStore store;
     store.load(path, 1'800'000'000);
     QVERIFY(store.entries().empty());
+}
+
+void tst_Kademlia::buddyStore_sessionVerdictRoundTrip()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QLatin1StringView(kBuddyStoreFileName));
+    const std::time_t now = 1'800'000'000;
+
+    BuddyStore store;
+    QCOMPARE(store.lastSessionVerdict(), BuddyStore::SessionVerdict::Unknown);
+    store.noteOffer(buddyEntry(0x4D010203), now);
+    store.setLastSessionVerdict(BuddyStore::SessionVerdict::Firewalled);
+    QVERIFY(store.save(path, now));
+
+    BuddyStore loaded;
+    loaded.load(path, now + 1);
+    QCOMPARE(loaded.lastSessionVerdict(), BuddyStore::SessionVerdict::Firewalled);
+    QCOMPARE(loaded.entries().size(), size_t{1});
+
+    // Empty store still keeps the verdict
+    BuddyStore open;
+    open.setLastSessionVerdict(BuddyStore::SessionVerdict::Open);
+    QVERIFY(open.save(path, now));
+    loaded.load(path, now + 1);
+    QCOMPARE(loaded.lastSessionVerdict(), BuddyStore::SessionVerdict::Open);
+    QVERIFY(loaded.entries().empty());
+}
+
+void tst_Kademlia::buddyStore_v1FileLoadsWithUnknownVerdict()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QLatin1StringView(kBuddyStoreFileName));
+    // v1: version, count, ip, udp, tcp, hash, kadId, options, offered, asked, connected
+    QByteArray v1;
+    v1.append('\x01');
+    v1.append(QByteArray::fromHex("01000000"));
+    v1.append(QByteArray::fromHex("6d5c2c02" "4012" "3612"));
+    v1.append(QByteArray(16, '\x11'));
+    v1.append(QByteArray(16, '\0'));
+    v1.append('\x03');
+    v1.append(QByteArray::fromHex("89b1d46a00000000"));
+    v1.append(QByteArray(8, '\0'));
+    v1.append(QByteArray::fromHex("8ab1d46a00000000"));
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write(v1);
+    f.close();
+
+    BuddyStore store;
+    store.load(path, 0x6ad4b189 + 60);
+    QCOMPARE(store.lastSessionVerdict(), BuddyStore::SessionVerdict::Unknown);
+    QCOMPARE(store.entries().size(), size_t{1});
+    QCOMPARE(store.entries().front().ip, uint32{0x022c5c6d});
+    QCOMPARE(store.entries().front().tcpPort, uint16{4662});
+}
+
+void tst_Kademlia::buddyStore_mostRecentBuddyFirstAndIgnoreReask()
+{
+    BuddyStore store;
+    const std::time_t now = 1'800'000'000;
+    // .1 offered last, but .2 was the most recent buddy link
+    store.noteOffer(buddyEntry(0x0A000002), now);
+    store.noteOffer(buddyEntry(0x0A000001), now + 50);
+    store.noteConnected(0x0A000002, 4662, now + 10);
+
+    const auto first = store.takeDue(now + 100);
+    QCOMPARE(first.size(), size_t{2});
+    QCOMPARE(first.front().ip, uint32{0x0A000002});
+    QCOMPARE(first.back().ip, uint32{0x0A000001});
+
+    // Both answer; inside the reask window only the on-connect ask gets them
+    store.noteOffer(buddyEntry(0x0A000001), now + 101);
+    store.noteOffer(buddyEntry(0x0A000002), now + 101);
+    QVERIFY(store.takeDue(now + 200).empty());
+    const auto again = store.takeDue(now + 200, /*ignoreReask*/ true);
+    QCOMPARE(again.size(), size_t{2});
+    QCOMPARE(again.front().ip, uint32{0x0A000002});
 }
 
 QTEST_GUILESS_MAIN(tst_Kademlia)

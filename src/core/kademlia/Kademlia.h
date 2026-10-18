@@ -193,7 +193,10 @@ private:
     void countSessionStats();
     uint32 calculateKadUsersNew() const;
     /// Send FINDBUDDY_REQ straight to remembered nodes due for an ask. Not MFC.
-    void askRememberedBuddies(time_t now);
+    /// @p ignoreReask: ask all, as on connect after a firewalled session.
+    void askRememberedBuddies(time_t now, bool ignoreReask = false);
+    /// Record this session's firewall verdict once a check gave a final answer.
+    void updateSessionVerdict();
 
     KadPrefs* m_prefs = nullptr;
     RoutingZone* m_routingZone = nullptr;
@@ -209,6 +212,8 @@ private:
     uint32 m_buddySearchesWithoutBuddy = 0;
     BuddyStore m_buddyStore;
     QString m_buddyStorePath;   ///< empty: memory only
+    BuddyStore::SessionVerdict m_sessionVerdict = BuddyStore::SessionVerdict::Unknown;
+    bool m_askBuddiesOnConnect = false;   ///< last session firewalled: ask on connect
     time_t m_statusUpdate = 0;
     time_t m_bigTimer = 0;
     time_t m_consolidate = 0;

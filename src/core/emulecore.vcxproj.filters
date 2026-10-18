@@ -426,6 +426,9 @@
     <ClCompile Include="enodemeta\MetaIdentity.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="enodemeta\WebLinks.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="GeneratedFiles\enodemeta_proto\meta.qpb.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
@@ -1035,6 +1038,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="enodemeta\MetaIdentity.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="enodemeta\WebLinks.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="enodemeta\LinkContainer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <QtMoc Include="GeneratedFiles\enodemeta_proto\meta.qpb.h">

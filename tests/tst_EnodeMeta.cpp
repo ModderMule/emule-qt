@@ -1,15 +1,17 @@
 /// @file tst_EnodeMeta.cpp
 /// @brief eNode meta hash, metafile identity, gRPC-Web framing, account store.
 ///
-/// Hash and NZB vectors are the cross-repository ones from
+/// Hash, NZB and web vectors are the cross-repository ones from
 /// external/enodemeta/testdata — every implementation must reproduce them.
 
 #include "TestHelpers.h"
 #include "enodemeta/GrpcWeb.h"
+#include "enodemeta/LinkContainer.h"
 #include "enodemeta/MetaAccountStore.h"
 #include "enodemeta/MetaApiClient.h"
 #include "enodemeta/MetaHash.h"
 #include "enodemeta/MetaIdentity.h"
+#include "enodemeta/WebLinks.h"
 #include "search/MetaSearchRequest.h"
 #include "search/SearchFile.h"
 #include "server/Server.h"
@@ -98,6 +100,14 @@ private slots:
     void torrent_bareInfoDict();
     void torrent_v2AndHybrid();
     void verifyMetaFile_matchAndMismatch();
+    void web_canonicalVectors();
+    void web_identityVectors();
+    void web_sameIdentity();
+    void web_differentIdentity();
+    void web_reject();
+    void web_parseHints();
+    void container_identityAndVerify();
+    void container_formats();
     void grpcweb_frameRoundTrip();
     void grpcweb_trailersOnly();
     void grpcweb_truncated();
@@ -110,6 +120,7 @@ private slots:
     void search_requestRefusesWhatTheApiCannotTake();
     void search_entryBecomesAResultRow();
     void search_entryOfAnotherNetworkOrABadHashIsDropped();
+    void search_webNetworkRows();
 };
 
 void tst_EnodeMeta::fold_vectors()
@@ -293,6 +304,151 @@ void tst_EnodeMeta::verifyMetaFile_matchAndMismatch()
     auto nzbHash = *h;
     nzbHash[3] = static_cast<uint8>(0x30 | FlagPathAuthoritative);
     QVERIFY(!verifyMetaFile(nzbHash.data(), info));
+}
+
+void tst_EnodeMeta::web_canonicalVectors()
+{
+    const auto vectors = loadVectors("web-identity-vectors.json").value(u"canonical").toArray();
+    QVERIFY(vectors.size() >= 10);
+    for (const auto& e : vectors) {
+        const auto o = e.toObject();
+        const auto got = canonicalLink(o.value(u"link").toString().toUtf8());
+        QVERIFY2(got, qPrintable(o.value(u"label").toString()));
+        QCOMPARE(*got, o.value(u"canonical").toString().toUtf8());
+    }
+}
+
+void tst_EnodeMeta::web_identityVectors()
+{
+    const auto vectors = loadVectors("web-identity-vectors.json").value(u"identity").toArray();
+    QVERIFY(!vectors.isEmpty());
+    for (const auto& e : vectors) {
+        const auto o = e.toObject();
+        const QString label = o.value(u"label").toString();
+        const QByteArray container = o.value(u"container").toString().toUtf8();
+        const auto set = parseWebLinks(container);
+        QVERIFY2(set, qPrintable(label + u": " + (set ? QString() : set.error())));
+        QCOMPARE(set->links.size(), o.value(u"links").toInt());
+        QCOMPARE(set->fileCount(), o.value(u"files").toInt());
+        QCOMPARE(set->isProtected, o.value(u"protected").toBool());
+
+        const auto pre = webIdentityPreimage(*set);
+        QVERIFY(pre);
+        QCOMPARE(hex(*pre), o.value(u"preimageHex").toString().toUpper().toLatin1());
+        const auto id = webIdentity(container);
+        QVERIFY(id);
+        QCOMPARE(hex(*id), o.value(u"digestHex").toString().toUpper().toLatin1());
+        QCOMPARE(digestHex(fold10(*id)), o.value(u"fold10Hex").toString().toUpper().toLatin1());
+
+        // every row minted from it verifies against the container
+        QStringList hashes;
+        for (const auto& h : o.value(u"fileMetaHashHex").toArray())
+            hashes << h.toString();
+        if (const QString whole = o.value(u"wholeSetMetaHashHex").toString(); !whole.isEmpty())
+            hashes << whole;
+        QVERIFY(!hashes.isEmpty());
+        for (const QString& h : hashes) {
+            const QByteArray raw = QByteArray::fromHex(h.toLatin1());
+            QCOMPARE(raw.size(), kMetaHashSize);
+            const auto p = parse(reinterpret_cast<const uint8*>(raw.constData()));
+            QVERIFY2(p && p->isWeb(), qPrintable(label));
+            QVERIFY2(verifyMetaFile(reinterpret_cast<const uint8*>(raw.constData()), container), qPrintable(label));
+        }
+    }
+}
+
+void tst_EnodeMeta::web_sameIdentity()
+{
+    const auto pairs = loadVectors("web-identity-vectors.json").value(u"sameIdentity").toArray();
+    QVERIFY(!pairs.isEmpty());
+    for (const auto& e : pairs) {
+        const auto o = e.toObject();
+        const auto a = webIdentity(o.value(u"a").toString().toUtf8());
+        const auto b = webIdentity(o.value(u"b").toString().toUtf8());
+        QVERIFY2(a && b, qPrintable(o.value(u"label").toString()));
+        QCOMPARE(*a, *b);
+        QCOMPARE(hex(*a), o.value(u"digestHex").toString().toUpper().toLatin1());
+    }
+}
+
+void tst_EnodeMeta::web_differentIdentity()
+{
+    const auto pairs = loadVectors("web-identity-vectors.json").value(u"differentIdentity").toArray();
+    QVERIFY(!pairs.isEmpty());
+    for (const auto& e : pairs) {
+        const auto o = e.toObject();
+        const auto a = webIdentity(o.value(u"a").toString().toUtf8());
+        const auto b = webIdentity(o.value(u"b").toString().toUtf8());
+        QVERIFY2(a && b, qPrintable(o.value(u"label").toString()));
+        QCOMPARE(hex(*a), o.value(u"digestAHex").toString().toUpper().toLatin1());
+        QCOMPARE(hex(*b), o.value(u"digestBHex").toString().toUpper().toLatin1());
+    }
+}
+
+void tst_EnodeMeta::web_reject()
+{
+    const auto rejects = loadVectors("web-identity-vectors.json").value(u"reject").toArray();
+    QVERIFY(!rejects.isEmpty());
+    for (const auto& e : rejects) {
+        const auto o = e.toObject();
+        QVERIFY2(!webIdentity(o.value(u"container").toString().toUtf8()), qPrintable(o.value(u"label").toString()));
+    }
+}
+
+void tst_EnodeMeta::web_parseHints()
+{
+    const QByteArray doc = "#title: Some Release\r\n#protected: 1\r\n"
+                           "#file: 1\n#name: b.rar\n#size: 42\n#hoster: other\nhttps://Other.test:443/d/x#Key\n"
+                           "#file: 0\n#size: junk\nhttp://a.test/f\n";
+    const auto set = parseWebLinks(doc);
+    QVERIFY(set);
+    QCOMPARE(set->title, QStringLiteral("Some Release"));
+    QVERIFY(set->isProtected);
+    QCOMPARE(set->links.size(), 2);
+    QCOMPARE(set->links[0].url, QByteArray("https://other.test/d/x#Key"));
+    QCOMPARE(set->links[0].file, uint32{1});
+    QCOMPARE(set->links[0].name, QStringLiteral("b.rar"));
+    QCOMPARE(set->links[0].size, uint64{42});
+    QCOMPARE(set->links[0].hoster, QStringLiteral("other"));
+    // hints describe the next link only; a bad size reads as unknown
+    QCOMPARE(set->links[1].name, QString());
+    QCOMPARE(set->links[1].size, uint64{0});
+    QCOMPARE(set->fileCount(), 2);
+}
+
+void tst_EnodeMeta::container_identityAndVerify()
+{
+    const QByteArray dlc = QByteArray("encrypted container bytes ").repeated(40);
+    const auto id = identityOf(Kind::Container, dlc);
+    QVERIFY(id);
+    QCOMPARE(*id, QCryptographicHash::hash(dlc, QCryptographicHash::Sha256));
+
+    const auto h = build(Kind::Container, FlagProtected, 0, *id);
+    QVERIFY(h);
+    QCOMPARE(h->at(3), uint8{0x64});
+    const auto p = parse(h->data());
+    QVERIFY(p && p->isContainer());
+    QVERIFY(verifyMetaFile(h->data(), dlc));
+    QVERIFY(!verifyMetaFile(h->data(), dlc + 'x'));
+
+    QVERIFY(!identityOf(Kind::Container, {}));
+    QVERIFY(!identityOf(Kind::Container, QByteArray(kMaxContainerSize + 1, 'a')));
+    QVERIFY(identityOf(Kind::Container, QByteArray(kMaxContainerSize, 'a')));
+    QCOMPARE(kindName(Kind::Container), QStringLiteral("container"));
+    QCOMPARE(kindName(Kind::Web), QStringLiteral("web"));
+    QCOMPARE(identityLength(Kind::Ed2k), 0);   // native: no meta hash
+}
+
+void tst_EnodeMeta::container_formats()
+{
+    QCOMPARE(containerFormatOf(QStringLiteral("application/x-dlc")), QStringLiteral("dlc"));
+    QCOMPARE(containerFormatOf(QStringLiteral(" Application/X-CCF; charset=binary")), QStringLiteral("ccf"));
+    QCOMPARE(containerFormatOf(QStringLiteral("application/x-rsdf")), QStringLiteral("rsdf"));
+    QCOMPARE(containerFormatOf(QStringLiteral("application/octet-stream")), QString());
+    QCOMPARE(containerFormat(QStringLiteral("Some.Release.DLC")), QStringLiteral("dlc"));
+    QCOMPARE(containerFormat(QStringLiteral("https://h.test/get/x.rsdf?token=1#a")), QStringLiteral("rsdf"));
+    QCOMPARE(containerFormat(QStringLiteral("a.dlc.zip")), QString());
+    QCOMPARE(containerFormat(QStringLiteral("no-extension")), QString());
 }
 
 void tst_EnodeMeta::grpcweb_frameRoundTrip()
@@ -648,6 +804,61 @@ void tst_EnodeMeta::search_entryOfAnotherNetworkOrABadHashIsDropped()
     pb::MetaEntry unnamed = bt;
     unnamed.setName({});
     QVERIFY(!searchFileFromMetaEntry(unnamed, SearchType::MetaTorrent, p, 0, 0));
+}
+
+// A web search answers with link sets, containers, torrents, magnets and eD2K
+// files (enodemeta amendment 27).
+void tst_EnodeMeta::search_webNetworkRows()
+{
+    const SearchParams p;
+    pb::MetaEntry web = entryOf(Kind::Web, 0, QStringLiteral("[web] Some Page"));
+    web.setSize(0);   // a stream states no size
+    web.setTotalSize(0);
+    web.setSeeders(3);   // mirrors alive
+    auto row = searchFileFromMetaEntry(web, SearchType::MetaWeb, p, 0, 0);
+    QVERIFY(row);
+    QVERIFY(row->meta().isWeb());
+    QCOMPARE(row->fileName(), QStringLiteral("Some Page"));
+    QCOMPARE(static_cast<quint64>(row->fileSize()), quint64{0});
+    QCOMPARE(row->sourceCount(), uint32{3});
+
+    pb::MetaEntry ctr = entryOf(Kind::Container, 0, QStringLiteral("[web] links.dlc"));
+    ctr.setSize(0);
+    row = searchFileFromMetaEntry(ctr, SearchType::MetaWeb, p, 0, 0);
+    QVERIFY(row);
+    QVERIFY(row->meta().isContainer());
+    QCOMPARE(row->fileName(), QStringLiteral("links.dlc"));
+
+    // a magnet with no .torrent and no size
+    pb::MetaEntry magnet = entryOf(Kind::BtV1, 0, QStringLiteral("Magnet.Release"));
+    magnet.setSize(0);
+    magnet.setTotalSize(0);
+    magnet.setMagnet(QStringLiteral("magnet:?xt=urn:btih:abc"));
+    magnet.setFlags(META_FLAG_MAGNET_ONLY);
+    row = searchFileFromMetaEntry(magnet, SearchType::MetaWeb, p, 0, 0);
+    QVERIFY(row);
+    QVERIFY(row->meta().isMagnetOnly());
+
+    // an eD2K link from a page: a plain row, its hash the MD4
+    pb::MetaEntry ed2k;
+    ed2k.setKind(pb::MetaKindGadget::MetaKind::META_KIND_ED2K);
+    ed2k.setMetaHash(QByteArray(16, '\x41'));
+    ed2k.setName(QStringLiteral("file.iso"));
+    ed2k.setSize(700000000);
+    row = searchFileFromMetaEntry(ed2k, SearchType::MetaWeb, p, 0, 0);
+    QVERIFY(row);
+    QVERIFY(!row->isMetaResult());
+    QVERIFY(row->isKadOrigin());
+    QVERIFY(row->isWebOrigin());   // a web page's file: web badge, as from an eD2K search
+    QCOMPARE(static_cast<quint64>(row->fileSize()), quint64{700000000});
+    ed2k.setSize(0);   // no size, no eD2K download
+    QVERIFY(!searchFileFromMetaEntry(ed2k, SearchType::MetaWeb, p, 0, 0));
+
+    // other searches keep out what is not theirs
+    QVERIFY(!searchFileFromMetaEntry(web, SearchType::MetaTorrent, p, 0, 0));
+    QVERIFY(!searchFileFromMetaEntry(ctr, SearchType::MetaUsenet, p, 0, 0));
+    QVERIFY(!searchFileFromMetaEntry(entryOf(Kind::Nzb, 0, QStringLiteral("x")), SearchType::MetaWeb, p, 0, 0));
+    QCOMPARE(metaNetworkFor(SearchType::MetaWeb), uint32{5});
 }
 
 QTEST_GUILESS_MAIN(tst_EnodeMeta)

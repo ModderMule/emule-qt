@@ -101,6 +101,8 @@
         <file alias="IPFilter.ico">icons/IPFilter.ico</file>
         <file alias="eD2kLinkPaste.ico">icons/eD2kLinkPaste.ico</file>
         <file alias="Web.ico">icons/Web.ico</file>
+        <file alias="Container.ico">icons/Container.ico</file>
+        <file alias="WebEd2k.ico">icons/WebEd2k.ico</file>
         <file alias="Scheduler.ico">icons/Scheduler.ico</file>
         <!-- Tray speed icons -->
         <file alias="Speed.ico">icons/Speed.ico</file>

@@ -131,6 +131,7 @@ SOURCES += \
     utils/MetaResultActions.cpp \
     dialogs/PasteLinksDialog.cpp \
     dialogs/PasteTextDialog.cpp \
+    dialogs/WebLinksDialog.cpp \
     dialogs/PeerPreviewDialog.cpp \
     dialogs/SearchDetailDialog.cpp \
     dialogs/UsenetArchiveEntryDialog.cpp \
@@ -217,6 +218,7 @@ HEADERS += \
     utils/UrlPrefField.h \
     dialogs/PasteLinksDialog.h \
     dialogs/PasteTextDialog.h \
+    dialogs/WebLinksDialog.h \
     dialogs/PeerPreviewDialog.h \
     dialogs/SearchDetailDialog.h \
     dialogs/UsenetArchiveEntryDialog.h \

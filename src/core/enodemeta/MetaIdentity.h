@@ -3,7 +3,8 @@
 /// @file MetaIdentity.h
 /// @brief Release identities behind a meta hash, and the fetched-file check.
 ///
-/// Port of enodemeta's torrentmeta identity, nzbmeta.Identity and
+/// Port of enodemeta's torrentmeta identity, nzbmeta.Identity, weblinks /
+/// linkcontainer identity and
 /// VerifyMetaFile. The check binds a row (arrived over eD2K) to the metafile
 /// (arrived over HTTPS from a separate listener). It cannot catch a server
 /// lying consistently; it catches a different origin (cache, proxy, MITM).

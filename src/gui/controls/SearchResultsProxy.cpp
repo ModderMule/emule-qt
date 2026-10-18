@@ -59,6 +59,8 @@ bool SearchResultsProxy::filterAcceptsRow(int sourceRow, const QModelIndex& sour
         return m_filter.usenet;
     if (row->isTorrent())
         return m_filter.torrent;
+    if (row->isWeb() || row->isContainer() || row->webOrigin)
+        return m_filter.web;
     if (row->kadOrigin)
         return m_filter.kad;
     return true;

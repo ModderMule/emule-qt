@@ -190,11 +190,21 @@ asked the same `~KadID` neighbours that had already refused. Now a node that ans
 `KADEMLIA_FINDBUDDY_RES` is stored in `<ConfigDir>/kadbuddies.dat`:
 
 - **Stored:** IP, Kad UDP port, TCP port, user hash, Kad ID (when the routing table knows it),
-  connect options, and when it last offered, was asked, and connected.
+  connect options, and when it last offered, was asked, and connected. File v2 also keeps
+  the last session's firewall verdict (firewalled / open / unknown); v1 files load as unknown.
 - **Limit:** 16 nodes; a new offer replaces the oldest one.
 - **Asked:** at the start of each buddy search, up to 5 stored nodes get a
-  `KADEMLIA_FINDBUDDY_REQ` sent straight to them, newest offer first. A node is not asked
-  again within 30 minutes. The request is the same packet the search sends and is
+  `KADEMLIA_FINDBUDDY_REQ` sent straight to them, most recent buddy first (last link up,
+  then last offer). A node is not asked again within 30 minutes.
+- **Asked on connect:** if the last session ended firewalled, all stored nodes (up to 5) are
+  asked as soon as Kad connects and still needs a buddy, ignoring the 30-minute window,
+  instead of waiting for the first buddy search at +5 min. Kad starts out firewalled until
+  the TCP check confirms otherwise, so this is the normal start state.
+- **Verdict:** open once TCP is confirmed by 2 nodes or UDP is open and verified;
+  firewalled once the TCP check finishes without that. A session with no final answer keeps
+  the previous verdict.
+- **Open later:** when Kad turns open, the buddy link is dropped (`Kad: dropping buddy …
+  — we are open`); the node stays stored. The request is the same packet the search sends and is
   out-tracked the same way, so the answer goes through the normal path.
 - **Dropped:** after one ask with no offer within 3 minutes, or 14 days after its last offer.
 
@@ -215,6 +225,8 @@ With Kad logging on, `emulecored_Kad.log` shows the buddy's state:
 | `Kad: BUDDYPING → ip`, `Kad: BUDDYPONG from ip` | the 10-minute keep-alive |
 | `Kad: serving buddy …`, `Kad: stop serving buddy … — reason` | an open node's served buddies |
 | `Kad: remembered buddy offer from …`, `Kad: asking N remembered buddies`, `Kad: forgetting buddy …` | `kadbuddies.dat` |
+| `Kad: loaded N remembered buddies, last session firewalled`, `Kad: firewalled last session — asking remembered buddies on connect` | ask on connect |
+| `Kad: dropping buddy … — we are open (TCP\|UDP verified)` | no buddy needed any more |
 
 ### Keep-alive timing
 

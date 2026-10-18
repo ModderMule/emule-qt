@@ -7,6 +7,8 @@
 /// search after a start re-asks the same neighbours that refused last time. Nodes that
 /// answered FINDBUDDY_RES are kept in `<ConfigDir>/kadbuddies.dat` and asked directly at
 /// each buddy search. One unanswered ask or 14 days without an offer drops a node.
+/// The file also keeps the last session's firewall verdict: a node that was firewalled
+/// asks its remembered buddies right on connect instead of waiting for the first search.
 
 #include "kademlia/KadUInt128.h"
 #include "utils/Types.h"
@@ -24,7 +26,8 @@ inline constexpr auto kBuddyStoreFileName = "kadbuddies.dat";
 
 class BuddyStore : private VersionedRecordFile {
 public:
-    static constexpr uint8 kFileVersion = 1;
+    static constexpr uint8 kFileVersion = 2;    ///< v2 adds the session verdict
+    static constexpr uint8 kFileVersionV1 = 1;
     static constexpr size_t kMaxEntries = 16;
     static constexpr std::time_t kExpireSecs = 14 * 24 * 3600;
     /// Not asked again sooner; also longer than any search, so one search never asks twice.
@@ -32,6 +35,9 @@ public:
     /// An ask unanswered for this long is a miss (KadPacketTracking kTrackTimeout).
     static constexpr std::time_t kAnswerWindowSecs = 180;
     static constexpr size_t kAskPerSearch = 5;
+
+    /// Firewall state a session ended with. Unknown: no final check result yet.
+    enum class SessionVerdict : uint8 { Unknown = 0, Firewalled = 1, Open = 2 };
 
     struct Entry {
         uint32 ip = 0;          ///< host order
@@ -56,16 +62,21 @@ public:
     void noteConnected(uint32 ip, uint16 tcpPort, std::time_t now);
 
     /// Drop missed and expired nodes, then pick up to kAskPerSearch not asked within
-    /// kReaskSecs, newest offer first, and stamp them asked.
-    [[nodiscard]] std::vector<Entry> takeDue(std::time_t now);
+    /// kReaskSecs (any, with @p ignoreReask), most recent buddy first, and stamp them asked.
+    /// Most recent: last link up, then last offer.
+    [[nodiscard]] std::vector<Entry> takeDue(std::time_t now, bool ignoreReask = false);
 
     [[nodiscard]] const std::vector<Entry>& entries() const { return m_entries; }
+
+    [[nodiscard]] SessionVerdict lastSessionVerdict() const { return m_lastSessionVerdict; }
+    void setLastSessionVerdict(SessionVerdict verdict) { m_lastSessionVerdict = verdict; }
 
 private:
     /// Removes missed and expired entries, logging each.
     void prune(std::time_t now);
 
     std::vector<Entry> m_entries;
+    SessionVerdict m_lastSessionVerdict = SessionVerdict::Unknown;
 };
 
 } // namespace eMule::kad

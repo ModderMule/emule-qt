@@ -4481,7 +4481,7 @@ Por favor elija otro:</translation>
 <context>
     <name>eMule::LogTextView</name>
     <message>
-        <location filename="../src/gui/controls/LogTextView.cpp" line="+54"/>
+        <location filename="../src/gui/controls/LogTextView.cpp" line="+59"/>
         <source>Autoscroll</source>
         <translation>AutoDesplazamiento</translation>
     </message>
@@ -4561,12 +4561,12 @@ Por favor elija otro:</translation>
     </message>
     <message>
         <location line="+8"/>
-        <location line="+1290"/>
+        <location line="+1294"/>
         <source>eD2K: Disconnected</source>
         <translation>eD2K: Desconectado</translation>
     </message>
     <message>
-        <location line="-1233"/>
+        <location line="-1237"/>
         <source>Kad: Connected</source>
         <translation>Kad: Conectado</translation>
     </message>
@@ -4582,17 +4582,17 @@ Por favor elija otro:</translation>
     </message>
     <message>
         <location line="+4"/>
-        <location line="+1225"/>
+        <location line="+1229"/>
         <source>Kad: Disconnected</source>
         <translation>Kad: Desconectado</translation>
     </message>
     <message>
-        <location line="-1216"/>
+        <location line="-1220"/>
         <source>Users: %1 | Files: %2</source>
         <translation>Usuarios: %1 | Archivos: %2</translation>
     </message>
     <message>
-        <location line="+419"/>
+        <location line="+423"/>
         <source>Open Incoming Folder...</source>
         <translation>Abrir carpeta de entrada...</translation>
     </message>
@@ -4632,14 +4632,14 @@ Por favor elija otro:</translation>
         <translation>Características</translation>
     </message>
     <message>
-        <location line="-777"/>
+        <location line="-781"/>
         <location line="+7"/>
-        <location line="+773"/>
+        <location line="+777"/>
         <source>Version Check</source>
         <translation>Comprobar versión</translation>
     </message>
     <message>
-        <location line="-835"/>
+        <location line="-839"/>
         <source>Quit eMule Qt</source>
         <translation>Salir de eMule Qt</translation>
     </message>
@@ -4803,12 +4803,12 @@ Subida: %3 | Bajada: %4</translation>
         <translation>Salir</translation>
     </message>
     <message>
-        <location line="+21"/>
+        <location line="+20"/>
         <source>Log Entry</source>
         <translation>Entrada de registro</translation>
     </message>
     <message>
-        <location line="+110"/>
+        <location line="+115"/>
         <source>eMule Log</source>
         <translation>Registro de eMule</translation>
     </message>
@@ -5518,32 +5518,50 @@ Actívela en Opciones → Interfaz web e inténtelo de nuevo.</translation>
 <context>
     <name>eMule::MetaResultActions</name>
     <message>
-        <location filename="../src/gui/utils/MetaResultActions.cpp" line="+75"/>
+        <location filename="../src/gui/utils/MetaResultActions.cpp" line="+62"/>
         <source>NZB files (*.nzb)</source>
         <translation>Archivos NZB (*.nzb)</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="+2"/>
+        <source>Link containers (*.dlc *.ccf *.rsdf)</source>
+        <translation>Contenedores de enlaces (*.dlc *.ccf *.rsdf)</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Torrent files (*.torrent)</source>
         <translation>Archivos torrent (*.torrent)</translation>
     </message>
     <message>
-        <location line="+2"/>
+        <location line="+6"/>
         <source>Save NZB File</source>
         <translation>Guardar archivo NZB</translation>
     </message>
     <message>
-        <location line="+0"/>
+        <location line="+2"/>
+        <source>Save Link Container</source>
+        <translation>Guardar contenedor de enlaces</translation>
+    </message>
+    <message>
+        <location line="+1"/>
         <source>Save Torrent File</source>
         <translation>Guardar archivo torrent</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+36"/>
         <source>Save Files To</source>
         <translation>Guardar archivos en</translation>
     </message>
+    <message numerus="yes">
+        <location line="+23"/>
+        <source>Copied %n magnet link(s) to the clipboard.</source>
+        <translation>
+            <numerusform>Se copió %n enlace magnet al portapapeles.</numerusform>
+            <numerusform>Se copiaron %n enlaces magnet al portapapeles.</numerusform>
+        </translation>
+    </message>
     <message>
-        <location line="+44"/>
+        <location line="+39"/>
         <source>Queued &quot;%1&quot; for Usenet download.</source>
         <translation>«%1» añadido a la cola de descargas de Usenet.</translation>
     </message>
@@ -5572,7 +5590,7 @@ Download it again?</source>
         <translation>No se pudo descargar «%1»: %2</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+22"/>
         <source>Could not write %1: %2</source>
         <translation>No se pudo escribir %1: %2</translation>
     </message>
@@ -5582,7 +5600,17 @@ Download it again?</source>
         <translation>Guardado %1</translation>
     </message>
     <message>
-        <location line="+45"/>
+        <location line="+24"/>
+        <source>Could not fetch the links of &quot;%1&quot;: %2</source>
+        <translation>No se pudieron obtener los enlaces de &quot;%1&quot;: %2</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>&quot;%1&quot; holds no links.</source>
+        <translation>&quot;%1&quot; no contiene enlaces.</translation>
+    </message>
+    <message>
+        <location line="+57"/>
         <source>Search</source>
         <translation>Búsqueda</translation>
     </message>
@@ -9867,15 +9895,15 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
 <context>
     <name>eMule::SearchPanel</name>
     <message>
-        <location filename="../src/gui/panels/SearchPanel.cpp" line="+304"/>
-        <location line="+960"/>
+        <location filename="../src/gui/panels/SearchPanel.cpp" line="+310"/>
+        <location line="+973"/>
         <location line="+13"/>
-        <location line="+459"/>
+        <location line="+513"/>
         <source>Download</source>
         <translation>Descarga</translation>
     </message>
     <message>
-        <location line="-1412"/>
+        <location line="-1479"/>
         <source>Close All Searches</source>
         <translation>Cerrar todas las búsquedas</translation>
     </message>
@@ -9981,11 +10009,21 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
     </message>
     <message>
         <location line="+2"/>
+        <source>Web (Server)</source>
+        <translation>Web (servidor)</translation>
+    </message>
+    <message>
+        <location line="+2"/>
         <source>Reset</source>
         <translation>Restablecer</translation>
     </message>
     <message>
-        <location line="+44"/>
+        <location line="+35"/>
+        <source>Web results</source>
+        <translation>Resultados web</translation>
+    </message>
+    <message>
+        <location line="+12"/>
         <source>Min. Size [MB]:</source>
         <translation>Tamaño mín. [MB]:</translation>
     </message>
@@ -10039,17 +10077,17 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
         <translation>Artista:</translation>
     </message>
     <message>
-        <location line="-77"/>
+        <location line="-79"/>
         <source>Show results the server found on this network</source>
         <translation>Mostrar los resultados que el servidor encontró en esta red</translation>
     </message>
     <message>
-        <location line="-209"/>
+        <location line="-212"/>
         <source>Related</source>
         <translation>Relacionados</translation>
     </message>
     <message>
-        <location line="+214"/>
+        <location line="+217"/>
         <source>Usenet results</source>
         <translation>Resultados de Usenet</translation>
     </message>
@@ -10064,7 +10102,7 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
         <translation>Resultados de torrent</translation>
     </message>
     <message>
-        <location line="+46"/>
+        <location line="+48"/>
         <source>Min. Bitrate [Kbit/s]:</source>
         <translation>Tasa de bits mín. [Kbit/s]:</translation>
     </message>
@@ -10213,7 +10251,7 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
         <translation>Copiar &amp;nombre</translation>
     </message>
     <message>
-        <location line="+75"/>
+        <location line="+83"/>
         <source>%1 (%2)</source>
         <translation>%1 (%2)</translation>
     </message>
@@ -10228,9 +10266,24 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
         <translation>Descargar archivo NZB...</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+8"/>
         <source>Download Torrent</source>
         <translation>Descargar torrent</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>Copy Magnet Link</source>
+        <translation>Copiar enlace magnet</translation>
+    </message>
+    <message>
+        <location line="+14"/>
+        <source>Show Links...</source>
+        <translation>Mostrar enlaces...</translation>
+    </message>
+    <message>
+        <location line="+17"/>
+        <source>Download Container...</source>
+        <translation>Descargar contenedor...</translation>
     </message>
     <message>
         <location line="+10"/>
@@ -10265,13 +10318,13 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
     <message>
         <location line="+65"/>
         <location line="+7"/>
-        <location line="+951"/>
+        <location line="+968"/>
         <location line="+43"/>
         <source>Preview</source>
         <translation>Vista previa</translation>
     </message>
     <message>
-        <location line="-695"/>
+        <location line="-699"/>
         <source>You have already downloaded the following file(s). Download them again?
 
 %1</source>
@@ -10280,7 +10333,7 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
 %1</translation>
     </message>
     <message>
-        <location line="+653"/>
+        <location line="+657"/>
         <source>Preview requested - please wait</source>
         <translation>Vista previa solicitada - espere</translation>
     </message>
@@ -10300,7 +10353,7 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
         <translation>Todas</translation>
     </message>
     <message>
-        <location line="-1417"/>
+        <location line="-1434"/>
         <location line="+15"/>
         <location line="+10"/>
         <source>Mark as Spam</source>
@@ -10337,7 +10390,7 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
         <translation>Servicios web</translation>
     </message>
     <message>
-        <location line="+956"/>
+        <location line="+973"/>
         <source>Preview not available — web server is not running or stream token not received.</source>
         <translation>Vista previa no disponible — el servidor web no está en ejecución o no se recibió el token de transmisión.</translation>
     </message>
@@ -10349,8 +10402,13 @@ Reinicie eMule para que todas las conexiones usen la nueva configuración de pro
         <source>Yes</source>
         <translation>Sí</translation>
     </message>
+    <message>
+        <location line="+270"/>
+        <source>Stream</source>
+        <translation>Stream</translation>
+    </message>
     <message numerus="yes">
-        <location line="+357"/>
+        <location line="+95"/>
         <source>%1 · %n name(s)</source>
         <translation>
             <numerusform>%1 · %n nombre</numerusform>
@@ -15069,6 +15127,95 @@ Esta publicación tiene una contraseña establecida.</translation>
         <location line="+7"/>
         <source>the version manifest has no &apos;latest&apos; field</source>
         <translation>el manifiesto de versión no tiene el campo &apos;latest&apos;</translation>
+    </message>
+</context>
+<context>
+    <name>eMule::WebLinksDialog</name>
+    <message>
+        <location filename="../src/gui/dialogs/WebLinksDialog.cpp" line="+47"/>
+        <source>Links: %1</source>
+        <translation>Enlaces: %1</translation>
+    </message>
+    <message>
+        <location line="+5"/>
+        <source>The page says these files are password protected.</source>
+        <translation>La página indica que estos archivos están protegidos con contraseña.</translation>
+    </message>
+    <message>
+        <location line="+8"/>
+        <source>File</source>
+        <translation>Archivo</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Name</source>
+        <translation>Nombre</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Size</source>
+        <translation>Tamaño</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Hoster</source>
+        <translation>Alojamiento</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Link</source>
+        <translation>Enlace</translation>
+    </message>
+    <message>
+        <location line="+21"/>
+        <source>Copy Links</source>
+        <translation>Copiar enlaces</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Open in Browser</source>
+        <translation>Abrir en el navegador</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Save List...</source>
+        <translation>Guardar lista...</translation>
+    </message>
+    <message numerus="yes">
+        <location line="+32"/>
+        <source>Copied %n link(s) to the clipboard.</source>
+        <translation>
+            <numerusform>Se copió %n enlace al portapapeles.</numerusform>
+            <numerusform>Se copiaron %n enlaces al portapapeles.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location line="+7"/>
+        <source>Open %n links in the browser?</source>
+        <translation>
+            <numerusform>¿Abrir %n enlace en el navegador?</numerusform>
+            <numerusform>¿Abrir %n enlaces en el navegador?</numerusform>
+        </translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>Save Link List</source>
+        <translation>Guardar lista de enlaces</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Link lists (*.txt);;All files (*)</source>
+        <translation>Listas de enlaces (*.txt);;Todos los archivos (*)</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Could not write %1: %2</source>
+        <translation>No se pudo escribir %1: %2</translation>
+    </message>
+    <message>
+        <location line="+4"/>
+        <source>Saved %1</source>
+        <translation>Guardado %1</translation>
     </message>
 </context>
 <context>

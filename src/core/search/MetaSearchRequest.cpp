@@ -1,6 +1,6 @@
 #include "pch.h"
 /// @file MetaSearchRequest.cpp
-/// @brief A Usenet / torrent search through an eD2K server's Meta API.
+/// @brief A Usenet / torrent / web search through an eD2K server's Meta API.
 
 #include "search/MetaSearchRequest.h"
 
@@ -78,6 +78,27 @@ bool endsWithExtension(const QString& name, const QString& ext)
     return name.endsWith(u'.' + ext, Qt::CaseInsensitive);
 }
 
+/// Patch the tag count in and read the record back through the one parser.
+std::unique_ptr<SearchFile> finishRecord(SafeMemFile& rec, qint64 countPos, uint32 count,
+                                         uint32 serverIP, uint16 serverPort, bool meta)
+{
+    rec.seek(countPos, 0);
+    rec.writeUInt32(count);
+    rec.seek(0, 0);
+
+    std::unique_ptr<SearchFile> file;
+    try {
+        file = std::make_unique<SearchFile>(rec, true, serverIP, serverPort);
+    } catch (const FileException&) {
+        return nullptr;
+    }
+    // the hash has to say the same as the entry, or the row is not what it claims;
+    // an eD2K file is no meta row, and an MD4 that parses as one is refused
+    if (file->isInvalidMetaResult() || file->isMetaResult() != meta)
+        return nullptr;
+    return file;
+}
+
 } // namespace
 
 uint32 metaNetworkFor(SearchType type)
@@ -85,15 +106,18 @@ uint32 metaNetworkFor(SearchType type)
     switch (type) {
     case SearchType::MetaUsenet:  return static_cast<uint32>(MetaNetwork::META_NETWORK_USENET);
     case SearchType::MetaTorrent: return static_cast<uint32>(MetaNetwork::META_NETWORK_TORRENT);
+    case SearchType::MetaWeb:     return static_cast<uint32>(MetaNetwork::META_NETWORK_WEB);
     default:                      return 0;
     }
 }
 
 QString metaNetworkName(SearchType type)
 {
-    return type == SearchType::MetaUsenet
-        ? QCoreApplication::translate("eMule::IpcClientHandler", "Usenet")
-        : QCoreApplication::translate("eMule::IpcClientHandler", "torrent");
+    switch (type) {
+    case SearchType::MetaUsenet: return QCoreApplication::translate("eMule::IpcClientHandler", "Usenet");
+    case SearchType::MetaWeb:    return QCoreApplication::translate("eMule::IpcClientHandler", "web");
+    default:                     return QCoreApplication::translate("eMule::IpcClientHandler", "torrent");
+    }
 }
 
 std::vector<MetaSearchCandidate>
@@ -199,7 +223,8 @@ buildMetaSearchRequest(const SearchParams& params, SearchType type)
     // availability means sources; only a torrent has any
     if (type == SearchType::MetaTorrent)
         req.setMinSeeders(params.availability);
-    req.setLimit(type == SearchType::MetaTorrent ? kPageReleasesTorrent : kPageReleasesUsenet);
+    // a web answer holds torrents too: a row a file, as for a torrent search
+    req.setLimit(type == SearchType::MetaUsenet ? kPageReleasesUsenet : kPageReleasesTorrent);
     return req;
 }
 
@@ -209,8 +234,22 @@ searchFileFromMetaEntry(const pb::MetaEntry& entry, SearchType type, const Searc
 {
     const MetaKind kind = entry.kind();
     const bool torrent = kind == MetaKind::META_KIND_BT_V1 || kind == MetaKind::META_KIND_BT_V2;
-    const bool wanted = type == SearchType::MetaUsenet ? kind == MetaKind::META_KIND_NZB : torrent;
+    // A web page offers link sets, containers, torrents, magnets and eD2K files
+    // (enodemeta amendment 27); an eD2K file is a plain row, its hash an MD4.
+    const bool ed2k = kind == MetaKind::META_KIND_ED2K;
+    bool wanted = false;
+    switch (type) {
+    case SearchType::MetaUsenet:  wanted = kind == MetaKind::META_KIND_NZB; break;
+    case SearchType::MetaTorrent: wanted = torrent; break;
+    case SearchType::MetaWeb:
+        wanted = torrent || ed2k || kind == MetaKind::META_KIND_WEB || kind == MetaKind::META_KIND_CONTAINER;
+        break;
+    default: break;
+    }
     if (!wanted || entry.metaHash().size() != enodemeta::kMetaHashSize || entry.name().isEmpty())
+        return nullptr;
+    // a page states no size for a file it links; eD2K cannot download one without
+    if (ed2k && entry.size() == 0)
         return nullptr;
 
     const bool wholeRelease = entry.fileIndex() == enodemeta::kFileIndexWholeSet32;
@@ -238,8 +277,13 @@ searchFileFromMetaEntry(const pb::MetaEntry& entry, SearchType type, const Searc
     put(Tag(FT_FILESIZE, static_cast<uint64>(entry.size())));
     if (!entry.type().isEmpty())
         put(Tag(FT_FILETYPE, entry.type()));
-    if (torrent && entry.seeders() != 0)
+    if ((torrent || kind == MetaKind::META_KIND_WEB) && entry.seeders() != 0)
         put(Tag(FT_SOURCES, static_cast<uint32>(entry.seeders())));
+    if (ed2k) {
+        // marked as an eD2K search answer marks it: a web page's file, web badge
+        put(Tag(FT_META_NETWORK, uint32{FT_META_NETWORK_WEB}));
+        return finishRecord(rec, countPos, count, serverIP, serverPort, /*meta*/ false);
+    }
     put(Tag(FT_META_KIND, static_cast<uint32>(kind)));
     put(Tag(FT_META_FILEINDEX, static_cast<uint32>(entry.fileIndex())));
     if (!entry.filePath().isEmpty())
@@ -261,20 +305,7 @@ searchFileFromMetaEntry(const pb::MetaEntry& entry, SearchType type, const Searc
     if (!entry.magnet().isEmpty())
         put(Tag(FT_META_MAGNET, entry.magnet()));
 
-    rec.seek(countPos, 0);
-    rec.writeUInt32(count);
-    rec.seek(0, 0);
-
-    std::unique_ptr<SearchFile> file;
-    try {
-        file = std::make_unique<SearchFile>(rec, true, serverIP, serverPort);
-    } catch (const FileException&) {
-        return nullptr;
-    }
-    // the hash has to say the same as the entry, or the row is not what it claims
-    if (!file->isMetaResult() || file->isInvalidMetaResult())
-        return nullptr;
-    return file;
+    return finishRecord(rec, countPos, count, serverIP, serverPort, /*meta*/ true);
 }
 
 } // namespace eMule

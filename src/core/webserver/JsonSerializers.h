@@ -132,15 +132,19 @@ inline void insertFakeVerdict(QJsonObject& o, const FakeFileVerdict& verdict, bo
         {QStringLiteral("completeSourceCount"), static_cast<qint64>(f.completeSourceCount())},
         {QStringLiteral("isKadResult"),         f.isKadResult()},
         {QStringLiteral("kadOrigin"),           f.isKadOrigin()},
+        {QStringLiteral("webOrigin"),           f.isWebOrigin()},
         {QStringLiteral("spamRating"),          static_cast<qint64>(f.spamRating())},
         {QStringLiteral("seenBefore"),          f.seenBefore()},
         {QStringLiteral("seenNames"),           f.seenNames()},
         {QStringLiteral("firstSeen"),           f.firstSeen()},   // unix seconds, 0 = never
     };
-    // a torrent / Usenet release an eNode server listed is not an eD2K download;
-    // both empty for an eD2K file
+    // a torrent / Usenet / web release an eNode server listed is not an eD2K
+    // download; both empty for an eD2K file
     o.insert(QStringLiteral("metaKind"), !f.isMetaResult() ? QString()
-                                         : f.meta().isNzb() ? QStringLiteral("nzb") : QStringLiteral("torrent"));
+                                         : f.meta().isNzb() ? QStringLiteral("nzb")
+                                         : f.meta().isWeb() ? QStringLiteral("web")
+                                         : f.meta().isContainer() ? QStringLiteral("container")
+                                                                  : QStringLiteral("torrent"));
     o.insert(QStringLiteral("magnet"), f.meta().magnet);
     insertFakeVerdict(o, f.fakeVerdict(), f.hasFakeVerdict());
     return o;

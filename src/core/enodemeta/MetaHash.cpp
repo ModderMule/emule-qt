@@ -31,7 +31,10 @@ int identityLength(Kind k)
     switch (k) {
     case Kind::BtV1: return 20;
     case Kind::BtV2: return 32;
-    case Kind::Nzb:  return 32;
+    case Kind::Nzb:
+    case Kind::Web:
+    case Kind::Container:
+        return 32;
     default:         return 0;
     }
 }
@@ -136,6 +139,9 @@ QString kindName(Kind k)
     case Kind::BtV1: return QStringLiteral("bt-v1");
     case Kind::BtV2: return QStringLiteral("bt-v2");
     case Kind::Nzb:  return QStringLiteral("nzb");
+    case Kind::Ed2k: return QStringLiteral("ed2k");
+    case Kind::Web:  return QStringLiteral("web");
+    case Kind::Container: return QStringLiteral("container");
     default:         return QStringLiteral("unspecified");
     }
 }

@@ -310,6 +310,7 @@
     <ClCompile Include="enodemeta\MetaApiClient.cpp" />
     <ClCompile Include="enodemeta\MetaHash.cpp" />
     <ClCompile Include="enodemeta\MetaIdentity.cpp" />
+    <ClCompile Include="enodemeta\WebLinks.cpp" />
     <ClCompile Include="GeneratedFiles\enodemeta_proto\meta.qpb.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <ForcedIncludeFiles></ForcedIncludeFiles>
@@ -551,6 +552,8 @@
     <QtMoc Include="enodemeta\MetaApiClient.h" />
     <ClInclude Include="enodemeta\MetaHash.h" />
     <ClInclude Include="enodemeta\MetaIdentity.h" />
+    <ClInclude Include="enodemeta\WebLinks.h" />
+    <ClInclude Include="enodemeta\LinkContainer.h" />
     <QtMoc Include="GeneratedFiles\enodemeta_proto\meta.qpb.h" />
     <QtMoc Include="GeneratedFiles\enodemeta_proto\api.qpb.h" />
     <ClInclude Include="server\Server.h" />

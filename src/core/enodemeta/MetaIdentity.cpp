@@ -4,6 +4,9 @@
 
 #include "enodemeta/MetaIdentity.h"
 
+#include "enodemeta/LinkContainer.h"
+#include "enodemeta/WebLinks.h"
+
 #include <QCryptographicHash>
 #include <QXmlStreamReader>
 
@@ -303,6 +306,16 @@ std::expected<QByteArray, QString> identityOf(Kind kind, const QByteArray& metaf
     }
     case Kind::Nzb:
         return nzbIdentity(metafile);
+    case Kind::Web:
+        return webIdentity(metafile);
+    case Kind::Container:
+        // encrypted: the bytes as served are the identity
+        if (metafile.isEmpty())
+            return std::unexpected(QStringLiteral("a container has bytes"));
+        if (metafile.size() > kMaxContainerSize)
+            return std::unexpected(QStringLiteral("a container is at most 1 MiB, got %1 bytes")
+                                       .arg(metafile.size()));
+        return QCryptographicHash::hash(metafile, QCryptographicHash::Sha256);
     default:
         return std::unexpected(QStringLiteral("no identity function for kind %1")
                                    .arg(static_cast<int>(kind)));

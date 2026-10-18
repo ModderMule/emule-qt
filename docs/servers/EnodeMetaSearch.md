@@ -1,7 +1,7 @@
-# eNode meta search: torrent, Usenet and Kad results
+# eNode meta search: torrent, Usenet, web and Kad results
 
-eNode-go servers can mix torrent and Usenet releases into ordinary eD2K search
-answers. eMuleQt recognises these rows, shows a network icon in front of each
+eNode-go servers can mix torrent, Usenet and web releases into ordinary eD2K
+search answers. eMuleQt recognises these rows, shows a network icon in front of each
 one, and downloads through the server's **Meta API**.
 
 The contract is the shared `enodemeta` repo, a git submodule at
@@ -15,15 +15,32 @@ A meta row is an `OP_SEARCHRESULT` entry whose 16-byte hash is a pseudo-hash:
 
 ```
 ED 2B | version 01 | kind<<4 | flags | file index (u16 LE) | fold10(identity)
-kind: 1 = bt-v1/hybrid, 2 = bt-v2, 3 = nzb
+kind: 1 = bt-v1/hybrid, 2 = bt-v2, 3 = nzb, 5 = web, 6 = container
 ```
+
+Kind 4 is a native eD2K file and never a meta hash. Kinds 5 and 6 are enodemeta
+amendments 24 and 27:
+
+- **Web (5)** is a set of links one web page offered (file hosters, stream hosts,
+  direct media). Its metafile is a `text/uri-list` (`enodemeta/WebLinks.h`), and
+  its identity is SHA-256 over `"web1\n"` plus each distinct canonical link and
+  `"\n"`, sorted by bytes. Hint comments (`#file:`, `#name:`, `#size:`,
+  `#hoster:`, `#title:`, `#protected:`) are outside the identity. A web row of
+  size 0 is a stream; the Size column reads "Stream".
+- **Container (6)** is an encrypted `.dlc`, `.ccf` or `.rsdf`. It is never read:
+  its identity is the SHA-256 of its bytes (at most 1 MiB), and it is saved as
+  served. The content type names the format (`application/x-dlc` and so on,
+  `enodemeta/LinkContainer.h`).
+- **Magnet-only torrents.** A web page may offer a magnet without a `.torrent`.
+  The row is BT with `META_FLAG_MAGNET_ONLY` (0x08) in `FT_META_FLAGS`, and may
+  have size 0. Nothing is fetched for it: its magnet is all there is.
 
 - **Hash parsing.** `SearchFile::resolveMeta()` parses the hash with
   `enodemeta::parse()`.
 - **Tag cross-check.** If the row carries `FT_META_*` tags (0x60–0x6C), kind,
   version and the low 16 bits of the index must agree with the hash. The row is
   dropped (§8.1) when they disagree, or when the scheme version is unknown.
-- **Name prefix.** The server adds a prefix such as `[torrent] ` or
+- **Name prefix.** The server adds a prefix such as `[torrent] `, `[web] ` or
   `[usenet example.org] ` for legacy clients. Only a bracket that names the
   network is stripped; `[Group] Title` is left alone.
 - **Capability bits.** The client announces `SRVCAP_META_SEARCH` (0x10000) at
@@ -73,8 +90,8 @@ IPC: `toCbor(SearchFile)` adds `kadOrigin`; the web JSON has it too.
 
 ## Hiding networks
 
-The search form has three checkboxes beside Reset: **Usenet results**, **Kad results** and
-**Torrent results**. Unticking one hides those rows in the result list.
+The search form has four checkboxes beside Reset: **Usenet results**, **Kad results**,
+**Torrent results** and **Web results** (web link sets and link containers). Unticking one hides those rows in the result list.
 
 - **Client-side.** The protocol has no per-search switch: the client announces
   `SRVCAP_META_SEARCH` once at login and the server then mixes the rows into every
@@ -83,10 +100,10 @@ The search form has three checkboxes beside Reset: **Usenet results**, **Kad res
   search, and a stored tab keeps all its rows.
 - **All tabs, at once.** The setting is not part of a search. It applies to every
   open tab and is kept in `uistate.yml` (`searchShowUsenet`, `searchShowKad`,
-  `searchShowTorrent`). Reset ticks all three again.
+  `searchShowTorrent`, `searchShowWeb`). Reset ticks all four again.
 - **Kad** means Kad-origin rows, the ones the server found on Kad. Results of our
   own Kad search are never hidden. The server's own eD2K files are always shown.
-- **Exempt.** A Usenet (Server) or Torrent (Server) tab shows everything: that
+- **Exempt.** A Usenet (Server), Torrent (Server) or Web (Server) tab shows everything: that
   network is what was asked for, and an emptied list would make the scroll-to-load
   fetch every page. Usenet indexer tabs are not affected either.
 - **Counts.** The tab label keeps the total. The status line reads
@@ -132,12 +149,13 @@ unknown, the daemon falls back to the server it is connected to.
   nothing reports an error.
 - **Verification.** Every metafile is checked before use with
   `fold10(identity) == hash[6..16)`. The identity is the torrent's infohash
-  (v1, or v2-only) or the canonical NZB digest.
+  (v1, or v2-only), the canonical NZB digest, the canonical link-set digest of a
+  web row, or the SHA-256 of a link container.
 
-## Usenet (Server) / Torrent (Server) search
+## Usenet (Server) / Torrent (Server) / Web (Server) search
 
-Two search methods ask a server's catalogue for one network only
-(`SearchType::MetaUsenet = 6`, `MetaTorrent = 7`). The request is
+Three search methods ask a server's catalogue for one network only
+(`SearchType::MetaUsenet = 6`, `MetaTorrent = 7`, `MetaWeb = 8`). The request is
 `MetaApi.Search` with `SearchRequest.network`, sent to the server's Meta API. The
 crawler daemons behind the server are never asked by the client.
 
@@ -164,7 +182,10 @@ crawler daemons behind the server are never asked by the client.
   ends it; the rows stay.
 - **Rows.** A `MetaEntry` is written as an eD2K result record and read by the
   `SearchFile` parser, so the hash checks and the stored-search format are the same
-  as for a blended row. Entries of another kind than asked are dropped.
+  as for a blended row. Entries of another kind than asked are dropped. The web
+  network answers with several kinds (amendment 27): web link sets, containers,
+  torrents and magnets, and eD2K files. An eD2K file becomes a plain eD2K row (its
+  hash is the MD4) and downloads as one; one without a size is dropped.
 - **Expression.** Keywords, quoted phrases, `NOT word` and `-word`. `OR` and
   brackets are refused when the search is started. File type, min/max size and
   (torrent) availability go into the request; the extension filter runs on the
@@ -176,8 +197,9 @@ crawler daemons behind the server are never asked by the client.
   `Caps.networks` are kept in `server.met` as the string-named tags `metaapi`,
   `metaapipin` and `metanetworks`. MFC and older builds skip tags they do not
   know. An ident without a Meta API clears them.
-- **REST / MCP.** `POST /api/v1/search` takes `type` `usenetServer` and
-  `torrentServer`; result rows carry `metaKind` and `magnet`.
+- **REST / MCP.** `POST /api/v1/search` takes `type` `usenetServer`,
+  `torrentServer` and `webServer`; result rows carry `metaKind` (`torrent`, `nzb`,
+  `web`, `container`) and `magnet`.
 
 ## Actions
 
@@ -186,10 +208,23 @@ crawler daemons behind the server are never asked by the client.
 | eD2K | Download (eD2K queue) | Copy eD2K Links, **Copy Magnet Links** (`urn:ed2k`) |
 | Usenet | Download: the daemon fetches the NZB and queues it in eMuleQt's Usenet downloader | **Download NZB File...** |
 | Torrent | **Download Torrent**: save the `.torrent`, until BitTorrent downloads exist | **Copy Magnet Links** (the server's magnet) |
+| Magnet-only torrent | **Copy Magnet Link**: the magnet to the clipboard | **Copy Magnet Links** |
+| Web | **Show Links...**: `WebLinksDialog` lists file, name, size, hoster and link, with **Copy Links**, **Open in Browser** and **Save List...** | |
+| Container | **Download Container...**: save the `.dlc`/`.ccf`/`.rsdf` | |
 
 - Meta rows get no eD2K link, no Details/Comments, no Search Related and no Web
   Services, because all of these key on the eD2K hash.
-- Usenet rows have no magnet, so the magnet entry skips them.
+- Usenet, web and container rows have no magnet, so the magnet entry skips them.
+- The bold default goes to the row type's own entry when the selection holds one
+  type only.
+- A web row's links come from the daemon: it fetches, verifies and parses the
+  uri-list, and the `FetchMetaFile` reply carries `links` (title, protected, and
+  `url`/`file`/`name`/`size`/`hoster` per link) beside `content` and
+  `contentType`. The GUI never parses a uri-list. Open in Browser asks first for
+  more than 5 links; the parser lets only `http(s)` through.
+- A container's file name takes the extension its content type names. When one
+  row is saved, the name is asked before the fetch, so the extension the user
+  typed is corrected afterwards if the served format differs.
 - Saving asks for a file name (one row) or a folder (several rows). The last
   folder is remembered in `uistate.yml` (`metaFileSaveDir`).
 - A metafile saved through the GUI travels over IPC, so it is capped just below
@@ -222,7 +257,7 @@ are `http(s)`.
 
 | Opcode | Name | Purpose |
 |---|---|---|
-| 750 | `FetchMetaFile` | fetch the metafile for the GUI to save |
+| 750 | `FetchMetaFile` | fetch the metafile for the GUI to save, or a web row's links |
 | 751 | `DownloadMetaResult` | queue a Usenet row |
 | 752 | `GetMetaAuthStatus` | account status |
 | 753 | `MetaLogin` | log in |
@@ -233,8 +268,9 @@ for the field layouts.
 
 ## Tests
 
-- **`tst_EnodeMeta`:** the cross-repository vectors (fold, mint, reject, NZB
-  digest), torrent v1/v2/hybrid identity, `verifyMetaFile`, gRPC-Web parsing
+- **`tst_EnodeMeta`:** the cross-repository vectors (fold, mint incl. web and
+  container, reject, NZB digest, web canonical links and link-set digest),
+  container identity and formats, web-network rows, torrent v1/v2/hybrid identity, `verifyMetaFile`, gRPC-Web parsing
   including `ErrorInfo` details, the token store, and the rule that credentials
   go only over TLS.
 - **`tst_SearchFile`:** a meta row is recognised by its hash, a row with
@@ -246,6 +282,9 @@ for the field layouts.
 - **`tst_SearchList`:** a file one server has itself is a plain result even when another server found it on Kad, in either order and after a stored search is loaded; two Kad-origin answers keep the flag.
 - **`tst_MetaSearchGui` (filter):** each checkbox hides exactly its rows, own Kad
   results and eD2K files stay, rows arriving while filtered stay hidden.
+- **`tst_MetaSearchGui` (web):** Web and Container badges, "Stream" for a size-0
+  web row, the Web results filter, magnet-only rows, and `WebLinksDialog` listing
+  and copying links.
 - **`tst_MetaSearchGui`:** network icons, the Kad badge and its `?` for unknown
   completeness, and the dialog's login, pending and accept states. Set
   `EMULE_TEST_SHOTS=<dir>` to get PNGs.
@@ -265,5 +304,7 @@ for the field layouts.
   torrent default, and the toolbar gets a `Torrent.ico` button.
 - The web UI doesn't show meta rows yet. The REST API marks them (`metaKind`,
   `magnet`) but cannot download them.
-- Usenet (Server) / Torrent (Server): no login prompt from the search tab when the
+- Magnet-only rows: hand the magnet to the torrent engine once BitTorrent lands.
+- Web rows: hand the links to a downloader (hoster support) instead of the browser.
+- Usenet (Server) / Torrent (Server) / Web (Server): no login prompt from the search tab when the
   only server wants an account.

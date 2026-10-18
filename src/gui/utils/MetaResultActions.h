@@ -1,12 +1,14 @@
 #pragma once
 
 /// @file MetaResultActions.h
-/// @brief Actions on eNode torrent/Usenet search rows, including the login detour.
+/// @brief Actions on eNode torrent/Usenet/web/container search rows, including the login detour.
 ///
 /// Usenet "Download" queues the NZB daemon-side (DownloadMetaResult); "Download
-/// NZB File" and "Download Torrent" fetch the metafile and save it here. Any of
-/// them may answer AuthRequired / AccountInactive: one MetaAccountDialog per
-/// server opens, and every request that hit it is retried once it accepts.
+/// NZB File", "Download Torrent" and "Download Container" fetch the metafile and
+/// save it here; a web row's links open in WebLinksDialog; a magnet-only torrent
+/// has nothing to fetch, so its magnet goes to the clipboard. Any fetch may answer
+/// AuthRequired / AccountInactive: one MetaAccountDialog per server opens, and
+/// every request that hit it is retried once it accepts.
 
 #include <QCborMap>
 #include <QHash>
@@ -33,8 +35,12 @@ public:
     struct Row {
         QString hash;
         QString name;
-        bool nzb = false;
+        int kind = 0;   ///< enodemeta::Kind
         QCborMap ref;   ///< SearchResultRow::metaRef(), for a row whose search is gone
+        QString magnet;
+
+        [[nodiscard]] bool isNzb() const { return kind == 3; }
+        [[nodiscard]] bool isContainer() const { return kind == 6; }
     };
 
     MetaResultActions(IpcClient* ipc, QWidget* parentWidget);
@@ -43,8 +49,14 @@ public:
     void downloadUsenet(quint32 searchID, const QList<Row>& rows, int category,
                         QPointer<SearchResultsModel> model);
 
-    /// Save the .torrent/.nzb behind @p rows: a file dialog for one, a folder for several.
+    /// Save the .torrent/.nzb/.dlc behind @p rows: a file dialog for one, a folder for several.
     void saveMetaFiles(quint32 searchID, const QList<Row>& rows);
+
+    /// Fetch each web row's links and show them, a dialog a row.
+    void showWebLinks(quint32 searchID, const QList<Row>& rows);
+
+    /// Magnet-only torrents: their magnets to the clipboard, one a line.
+    static void copyMagnets(const QList<Row>& rows);
 
     /// Account status / log out for a server (server list).
     void manageAccount(const QString& serverAddr, const QString& serverName);
@@ -53,6 +65,7 @@ private:
     void sendDownload(quint32 searchID, const Row& row, int category, bool force,
                       QPointer<SearchResultsModel> model);
     void fetchAndSave(quint32 searchID, const Row& row, const QString& path, bool pathIsDir);
+    void fetchAndShowLinks(quint32 searchID, const Row& row);
 
     /// Handle an auth failure: open (or reuse) the server's dialog, retry on accept.
     /// Returns false when @p meta is no auth problem.

@@ -599,10 +599,16 @@ target_include_directories(tst_ListHeaderMenu PRIVATE
 target_link_libraries(tst_ListHeaderMenu PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
-# eNode torrent/Usenet rows in the result list, and the Meta API account dialog.
+# eNode torrent/Usenet/web rows in the result list, the Meta API account dialog
+# and a web row's links dialog.
 emule_add_test(tst_MetaSearchGui FOLDER "Gui"
     SOURCES tst_MetaSearchGui.cpp
             "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/WebLinksDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/StatusBarNotifier.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/SearchResultsModel.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/SearchResultsProxy.cpp"
             "${CMAKE_SOURCE_DIR}/src/gui/controls/FilterEdit.cpp"

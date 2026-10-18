@@ -1,5 +1,6 @@
 /// @file tst_MetaSearchGui.cpp
-/// @brief eNode torrent/Usenet rows in the search list, and the account dialog.
+/// @brief eNode torrent/Usenet/web rows in the search list, the account dialog
+/// and the web links dialog.
 ///
 /// Set EMULE_TEST_SHOTS=<dir> to also write PNGs of the rendered list and dialog.
 
@@ -8,10 +9,12 @@
 #include "controls/SearchResultsModel.h"
 #include "controls/SearchResultsProxy.h"
 #include "dialogs/MetaAccountDialog.h"
+#include "dialogs/WebLinksDialog.h"
 #include "utils/ViewSelection.h"
 #include "IpcProtocol.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QCborArray>
 #include <QCborMap>
 #include <QDir>
@@ -23,6 +26,7 @@
 #include <QSortFilterProxyModel>
 #include <QTest>
 #include <QTreeView>
+#include <QTreeWidget>
 
 using namespace eMule;
 using Ipc::MetaStatus;
@@ -84,6 +88,8 @@ private slots:
     void magnetLinkForMetaRows();
     void multiSelectionSurvivesReset();
     void networkFilterHidesForeignRows();
+    void webAndContainerRows();
+    void webLinksDialog_listsAndCopies();
     void alternativeNamesAreChildRows();
     void refreshKeepsExpansionAndSelection();
     void mergeTouchesOnlyTheChangedRows();
@@ -140,12 +146,17 @@ void tst_MetaSearchGui::kadOriginGetsKadBadge()
     kad.kadOrigin = true;
     SearchResultRow kadComplete = kad;
     kadComplete.completeSourceCount = 2;
+    // the same file found on a web page: the web eD2K badge instead of Kad's
+    SearchResultRow web = kad;
+    web.hash = QStringLiteral("57575757575757575757575757575757");
+    web.webOrigin = true;
 
     SearchResultsModel model;
     model.setResults({row(QStringLiteral("Ubuntu.Server.iso"), 0, QStringLiteral("Iso")),
                       kad,
                       row(QStringLiteral("UBUNTU Linux Server"), 1),
-                      kadComplete});
+                      kadComplete,
+                      web});
 
     const auto icon = [&](int r) {
         return model.data(model.index(r, SearchResultsModel::ColFileName), Qt::DecorationRole).value<QIcon>();
@@ -162,6 +173,11 @@ void tst_MetaSearchGui::kadOriginGetsKadBadge()
     // same type as the torrent row ("Video"), so only the badge can differ; and the
     // eD2K row's slot is blank where the Kad row's is drawn
     QVERIFY(kadImg.copy(34, 0, 34, 32) != ed2kImg.copy(34, 0, 34, 32));
+    const QImage webImg = icon(4).pixmap(QSize(34, 16), 2).toImage();
+    QCOMPARE(icon(4).availableSizes(), wide);
+    QVERIFY(webImg.copy(34, 0, 34, 32) != kadImg.copy(34, 0, 34, 32));
+    QVERIFY(webImg.copy(34, 0, 34, 32) != ed2kImg.copy(34, 0, 34, 32));
+    QVERIFY(model.resultAt(4)->ed2kLink().startsWith(QStringLiteral("ed2k://|file|")));
 
     // still an eD2K file: a link, and "?" where Kad reported no complete sources
     QVERIFY(model.resultAt(1)->ed2kLink().startsWith(QStringLiteral("ed2k://|file|")));
@@ -176,14 +192,17 @@ void tst_MetaSearchGui::kadOriginGetsKadBadge()
     QCOMPARE(icon(0).availableSizes(), wide);
     model.removeRow(2);
     model.removeRow(1);
+    QCOMPARE(icon(0).availableSizes(), wide);   // the web page's file holds it alone
+    model.removeRow(1);
     QVERIFY(icon(0).availableSizes() != wide);
 
-    model.setResults({row(QStringLiteral("Ubuntu.Server.iso"), 0, QStringLiteral("Iso")), kad, kadComplete});
+    web.fileName = QStringLiteral("Night.Of.The.Living.Dead.Web.avi");
+    model.setResults({row(QStringLiteral("Ubuntu.Server.iso"), 0, QStringLiteral("Iso")), kad, kadComplete, web});
     QTreeView view;
     view.setRootIsDecorated(false);
     view.setModel(&model);
     view.header()->resizeSection(0, 260);
-    view.resize(560, 110);
+    view.resize(560, 130);
     shoot(&view, QStringLiteral("kad_results.png"));
 }
 
@@ -390,6 +409,94 @@ void tst_MetaSearchGui::networkFilterHidesForeignRows()
     proxy.setNetworkFilter(Filter{});
     QCOMPARE(proxy.rowCount(), 8);
     QCOMPARE(proxy.hiddenCount(), 0);
+}
+
+// Web link sets and link containers: their own badge, filter and size text.
+void tst_MetaSearchGui::webAndContainerRows()
+{
+    std::vector<SearchResultRow> rows;
+    rows.push_back(row(QStringLiteral("torrent"), 1));
+    rows.push_back(row(QStringLiteral("web"), 5));
+    rows.back().hash = QStringLiteral("ED2B0152FFFF1E1B3620ADE2AF9D6E90");
+    rows.back().fileSize = 0;
+    rows.push_back(row(QStringLiteral("container"), 6));
+    rows.back().hash = QStringLiteral("ED2B01600000C0AD674404C49C4C52AC");
+    rows.back().fileSize = 0;
+    rows.push_back(row(QStringLiteral("magnet"), 1));
+    rows.back().hash = QStringLiteral("ED2B01100000AAAD674404C49C4C52AC");
+    rows.back().metaFlags = 0x08;
+    rows.back().magnet = QStringLiteral("magnet:?xt=urn:btih:abc");
+    // an eD2K file a web page offered (FT_META_NETWORK 5): a web row for the filter
+    rows.push_back(row(QStringLiteral("webEd2k"), 0));
+    rows.back().hash = QStringLiteral("57575757575757575757575757575757");
+    rows.back().kadOrigin = true;
+    rows.back().webOrigin = true;
+
+    SearchResultsModel model;
+    model.setResults(rows);
+    const auto icon = [&](int r) {
+        return model.data(model.index(r, SearchResultsModel::ColFileName), Qt::DecorationRole)
+            .value<QIcon>().pixmap(QSize(34, 16), 2).toImage();
+    };
+    QVERIFY(icon(1) != icon(0));   // Web.ico, not the torrent badge
+    QVERIFY(icon(2) != icon(1));   // the container's own icon
+    QVERIFY(icon(3) == icon(0));   // a magnet is a torrent
+    QVERIFY(!QIcon(QStringLiteral(":/icons/Container.ico")).isNull());
+    QVERIFY(!QIcon(QStringLiteral(":/icons/WebEd2k.ico")).isNull());
+    QVERIFY(icon(4) != icon(1));   // not the link set's plain globe
+
+    const auto size = [&](int r) { return model.index(r, SearchResultsModel::ColSize).data().toString(); };
+    QCOMPARE(size(1), SearchResultsModel::tr("Stream"));
+    QCOMPARE(size(2), QString());
+    QVERIFY(!size(0).isEmpty());
+
+    QVERIFY(model.resultAt(1)->isWeb() && model.resultAt(2)->isContainer());
+    QVERIFY(model.resultAt(3)->isMagnetOnly() && !model.resultAt(0)->isMagnetOnly());
+    QCOMPARE(model.resultAt(3)->magnetLink(), QStringLiteral("magnet:?xt=urn:btih:abc"));
+    QVERIFY(model.resultAt(1)->ed2kLink().isEmpty());
+
+    SearchResultsProxy proxy;
+    proxy.setSourceModel(&model);
+    QCOMPARE(proxy.rowCount(), 5);
+    proxy.setNetworkFilter(SearchResultsProxy::NetworkFilter{.web = false});
+    QCOMPARE(proxy.rowCount(), 2);   // the torrent and the magnet stay
+    proxy.setNetworkFilter(SearchResultsProxy::NetworkFilter{.kad = false});
+    QCOMPARE(proxy.rowCount(), 5);   // the web page's file is the web's, not Kad's
+    proxy.setNetworkFilter(SearchResultsProxy::NetworkFilter{.torrent = false});
+    QCOMPARE(proxy.rowCount(), 3);
+}
+
+void tst_MetaSearchGui::webLinksDialog_listsAndCopies()
+{
+    const QCborArray links{
+        QCborMap{{QStringLiteral("url"), QStringLiteral("https://a.test/f/1")}, {QStringLiteral("file"), 0},
+                 {QStringLiteral("name"), QStringLiteral("part1.rar")}, {QStringLiteral("size"), 1048576},
+                 {QStringLiteral("hoster"), QStringLiteral("a")}},
+        QCborMap{{QStringLiteral("url"), QStringLiteral("https://b.test/f/1")}, {QStringLiteral("file"), 0},
+                 {QStringLiteral("hoster"), QStringLiteral("b")}},
+    };
+    const QCborMap map{{QStringLiteral("title"), QStringLiteral("Some Release")},
+                       {QStringLiteral("protected"), true},
+                       {QStringLiteral("links"), links}};
+    WebLinksDialog dlg(QStringLiteral("row"), map, "https://a.test/f/1\r\n", QStringLiteral("row.txt"));
+    QVERIFY(dlg.windowTitle().contains(QStringLiteral("Some Release")));
+    QVERIFY(visibleChild<QLabel>(&dlg, [](QLabel* l) { return l->text().contains(u"password"); }));
+
+    auto* list = dlg.findChild<QTreeWidget*>();
+    QVERIFY(list);
+    QCOMPARE(list->topLevelItemCount(), 2);
+    QCOMPARE(list->topLevelItem(0)->text(4), QStringLiteral("https://a.test/f/1"));
+    QCOMPARE(list->topLevelItem(0)->text(0), QStringLiteral("1"));   // file numbers count from 1
+    QVERIFY(list->topLevelItem(1)->text(2).isEmpty());                // no size hint
+
+    auto* copy = visibleChild<QPushButton>(&dlg, [](QPushButton* b) { return b->text() == WebLinksDialog::tr("Copy Links"); });
+    QVERIFY(copy);
+    copy->click();   // nothing selected: all of them
+    QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("https://a.test/f/1\nhttps://b.test/f/1"));
+    list->topLevelItem(1)->setSelected(true);
+    copy->click();
+    QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("https://b.test/f/1"));
+    shoot(&dlg, QStringLiteral("web-links.png"));
 }
 
 namespace {

@@ -243,7 +243,8 @@ private:
     [[nodiscard]] QString buildMagnetLink(const QModelIndex& proxyIndex);
     void copyEd2kLink(const QModelIndex& proxyIndex);
     /// Save the selected eNode rows' .nzb (@p nzb) or .torrent files.
-    void saveMetaFiles(bool nzb);
+    /// Save the metafiles of the selected rows of @p kind (enodemeta::Kind; 1 = any torrent).
+    void saveMetaFiles(int kind);
     [[nodiscard]] MetaResultActions* metaActions();
     void closeSearch(int tabIndex);
     void closeAllSearches();
@@ -358,6 +359,7 @@ private:
     QCheckBox* m_showUsenetCheck = nullptr;
     QCheckBox* m_showKadCheck = nullptr;
     QCheckBox* m_showTorrentCheck = nullptr;
+    QCheckBox* m_showWebCheck = nullptr;
 
     // Tab bar + results
     QTabBar* m_tabBar = nullptr;
