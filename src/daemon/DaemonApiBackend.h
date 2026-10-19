@@ -16,7 +16,7 @@ public:
     [[nodiscard]] QList<LogRecord> logs(qint64 sinceId) const override;
     [[nodiscard]] QJsonArray categories() const override;
     ops::Status setCategories(const QJsonArray& categories) override;
-    ops::Status applyPreferences(const PrefChanges& changes) override;
+    PrefApplyReport applyPreferences(const PrefChanges& changes) override;
     void requestShutdown() override;
 
 private:

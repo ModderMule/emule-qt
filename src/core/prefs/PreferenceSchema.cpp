@@ -61,10 +61,13 @@ using Kind = PrefSpec::Kind;
     PrefSpec nick = text("nick", 50, "User name shown to other clients.");
     nick.min = 1;
     t << nick;
-    t << readOnly(restart(number("port", 1, 65535, "", "TCP port for client connections. Must be "
-                                 "reachable from outside for a HighID.")));
-    t << readOnly(restart(number("udpPort", 0, 65535, "", "UDP port for Kad and client UDP. 0 "
-                                 "disables UDP.")));
+    // Rebound at once when nothing is connected, else at the next start
+    t << restart(number("port", 1, 65535, "", "TCP port for client connections. Must be "
+                        "reachable from outside for a HighID. Moves at once while nothing is "
+                        "connected, otherwise at the next start."));
+    t << restart(number("udpPort", 0, 65535, "", "UDP port for Kad and client UDP. 0 disables "
+                        "UDP. Moves at once while nothing is connected, otherwise at the next "
+                        "start; switching UDP on or off always needs a restart."));
     t << text("bindAddress", 255, "Network interface, IP address or subnet all P2P traffic is bound "
               "to. Empty = any. While the selected interface is missing nothing connects.");
 

@@ -74,6 +74,25 @@ against it before changing anything, then stores through the same code a GUI sav
 Credentials, API keys and anything naming a program or certificate are not in the schema and
 cannot be read or set here; the web server's own switches are shown but read-only.
 
+`port` and `udpPort` can be set. The reply then says in `listenPorts` what happened:
+
+```json
+"listenPorts": { "result": "applied", "tcpPort": 12346, "udpPort": 12345 }
+```
+
+| `result` | Meaning |
+|---|---|
+| `unchanged` | no port moved |
+| `applied` | listening on the new ports now |
+| `restartRequired` | connected to a network or peer, or UDP switched on/off: saved, the old ports stay until the daemon restarts |
+| `bindFailed` | a new port is in use by another program: that socket stays on its old port |
+
+`tcpPort`/`udpPort` are the ports listening at that moment, `0` for a closed socket. Sending
+`bindAddress` in the same patch reopens every socket on the new interface and the new ports at
+once, connected or not; UDP switched on/off then applies too, unless the daemon started with it off.
+The web server's own port is not touched. There is no restart route: `POST /api/v1/app/shutdown`
+and let a supervisor (Docker, systemd) start it again.
+
 ## MCP
 
 `POST /mcp` speaks the Model Context Protocol over streamable HTTP, stateless, tools only, in

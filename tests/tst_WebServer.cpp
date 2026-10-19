@@ -184,7 +184,9 @@ public:
         return {};
     }
 
-    ops::Status applyPreferences(const PrefChanges& changes) override
+    PrefApplyReport nextPrefReport;
+
+    PrefApplyReport applyPreferences(const PrefChanges& changes) override
     {
         for (const auto& [key, value] : changes) {
             calls.append(QStringLiteral("pref:%1").arg(key));
@@ -198,8 +200,12 @@ public:
                 prefs->setMaxDownload(static_cast<uint32>(value.toInteger()));
             else if (key == QLatin1StringView("autoConnect"))
                 prefs->setAutoConnect(value.toBool());
+            else if (key == QLatin1StringView("port"))
+                prefs->setPort(static_cast<uint16>(value.toInteger()));
+            else if (key == QLatin1StringView("udpPort"))
+                prefs->setUdpPort(static_cast<uint16>(value.toInteger()));
         }
-        return {};
+        return nextPrefReport;
     }
 
     void requestShutdown() override { shutdownRequested = true; }
@@ -484,6 +490,7 @@ private slots:
     void webOptionsForm_savesOrChangesNothing();
     void rest_emptyApiKeyLetsNobodyIn();
     void rest_patchPreferencesIsAllOrNothing();
+    void rest_patchPortsReportsListenPorts();
     void rest_unknownSearchResultsIs404();
     void log_masksTokensAndSecretHeaders();
     void https_withoutAUsableCertificateServesNothing();
@@ -1285,7 +1292,8 @@ void tst_WebServer::rest_patchPreferencesIsAllOrNothing()
     QCOMPARE(patch(R"({"nick":"changed","maxUpload":-5})"), 400);
     QCOMPARE(patch(R"({"nick":"changed","maxUpload":1.5})"), 400);
     QCOMPARE(patch(R"({"nick":"changed","maxUpload":"12"})"), 400);
-    QCOMPARE(patch(R"({"nick":"changed","port":4662})"), 400);        // read-only
+    QCOMPARE(patch(R"({"nick":"changed","webServerPort":4711})"), 400);   // read-only
+    QCOMPARE(patch(R"({"nick":"changed","port":0})"), 400);
     QCOMPARE(patch(R"({"nick":"changed","noSuchKey":true})"), 400);
     QCOMPARE(patch(R"({"nick":""})"), 400);
     QCOMPARE(patch(R"({"autoConnect":1})"), 400);
@@ -1295,6 +1303,42 @@ void tst_WebServer::rest_patchPreferencesIsAllOrNothing()
     QCOMPARE(patch(R"({"maxUpload":77})"), 200);
     QCOMPARE(m_preferences->maxUpload(), uint32{77});
     m_preferences->setMaxUpload(up);
+}
+
+void tst_WebServer::rest_patchPortsReportsListenPorts()
+{
+    const uint16 tcp = m_preferences->port();
+    const uint16 udp = m_preferences->udpPort();
+    const auto restore = qScopeGuard([&] {
+        m_preferences->setPort(tcp);
+        m_preferences->setUdpPort(udp);
+        m_apiBackend.nextPrefReport = {};
+    });
+
+    m_apiBackend.nextPrefReport.ports = PortApplyResult::RestartRequired;
+    m_apiBackend.nextPrefReport.tcpPort = tcp;
+    m_apiBackend.nextPrefReport.udpPort = udp;
+    const auto r = sendRequest(QByteArrayLiteral("PATCH"), QStringLiteral("/api/v1/preferences"),
+                               QByteArrayLiteral(R"({"port":12346,"udpPort":12345})"));
+    QCOMPARE(r.statusCode, 200);
+    QCOMPARE(m_preferences->port(), uint16{12346});
+    QCOMPARE(m_preferences->udpPort(), uint16{12345});
+
+    const QJsonObject body = r.json.object();
+    QCOMPARE(body.value(QStringLiteral("port")).toInt(), 12346);
+    const QJsonObject ports = body.value(QStringLiteral("listenPorts")).toObject();
+    QCOMPARE(ports.value(QStringLiteral("result")).toString(), QStringLiteral("restartRequired"));
+    QCOMPARE(ports.value(QStringLiteral("tcpPort")).toInt(), int(tcp));
+    QCOMPARE(ports.value(QStringLiteral("udpPort")).toInt(), int(udp));
+
+    // Nothing about ports: still answered, as unchanged
+    m_apiBackend.nextPrefReport = {};
+    const auto plain = sendRequest(QByteArrayLiteral("PATCH"), QStringLiteral("/api/v1/preferences"),
+                                   QByteArrayLiteral(R"({"autoConnect":false})"));
+    QCOMPARE(plain.statusCode, 200);
+    QCOMPARE(plain.json.object().value(QStringLiteral("listenPorts"))
+                 .toObject().value(QStringLiteral("result")).toString(),
+             QStringLiteral("unchanged"));
 }
 
 void tst_WebServer::rest_unknownSearchResultsIs404()

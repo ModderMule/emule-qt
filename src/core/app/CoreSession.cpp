@@ -136,7 +136,7 @@ void CoreSession::stop()
     theApp.loading = false;
 }
 
-void CoreSession::applyBindSelection()
+PortApplyResult CoreSession::applyBindSelection()
 {
     // Compared with what the sockets were opened on, not with the resolver's cache:
     // any socket asking in between has already refreshed that.
@@ -144,13 +144,52 @@ void CoreSession::applyBindSelection()
     const BindAddress::Resolution now = BindAddress::current();
     const bool allowed = now.state != BindAddress::State::Blocked;
     if (now == m_appliedBind && m_netSuspended != allowed)
-        return;   // nothing new: still fine, or still waiting
+        return PortApplyResult::Unchanged;   // nothing new: still fine, or still waiting
     m_appliedBind = now;
+    const uint16 tcpBefore = m_appliedTcpPort;
+    const uint16 udpBefore = m_appliedUdpPort;
     // Sockets pinned to the previous interface are dead or on the wrong one.
     if (!m_netSuspended)
         suspendNetworking();
-    if (allowed)
-        resumeNetworking();
+    if (!allowed)
+        return PortApplyResult::Unchanged;   // applyListenPorts() records them for the resume
+    resumeNetworking();
+
+    // resumeNetworking() opened the configured ports
+    if (m_appliedTcpPort == tcpBefore && m_appliedUdpPort == udpBefore)
+        return PortApplyResult::Unchanged;
+    const bool tcpOk = boundTcpPort() == m_appliedTcpPort;
+    const bool udpOk = boundUdpPort() == m_appliedUdpPort;   // 0 = off and closed
+    if (tcpOk && udpOk)
+        return PortApplyResult::Applied;
+
+    // UDP switched on without a socket object: only a start creates one
+    const bool udpToggled = (m_appliedUdpPort == 0) != (udpBefore == 0);
+    // New port taken: that socket back to its old one, a socket that moved stays
+    if (!tcpOk && m_listenSocket && !m_listenSocket->rebind(tcpBefore))
+        logError(QStringLiteral("TCP listen socket is closed: port %1 could not be reopened")
+                     .arg(tcpBefore));
+    if (!udpOk && !udpToggled && m_clientUDP && !m_clientUDP->rebind(udpBefore))
+        logError(QStringLiteral("Client UDP socket is closed: port %1 could not be reopened")
+                     .arg(udpBefore));
+    if (!tcpOk)
+        m_appliedTcpPort = tcpBefore;
+    if (!udpOk)
+        m_appliedUdpPort = udpBefore;
+    publishListenPorts();
+    if (theApp.serverConnect) {
+        ServerConnectConfig cfg = theApp.serverConnect->config();
+        cfg.listenPort = boundTcpPort();
+        theApp.serverConnect->setConfig(cfg);
+    }
+    updatePortMappings();
+    if (tcpOk && udpToggled)
+        return PortApplyResult::RestartRequired;
+    logError(QStringLiteral("Port change failed (TCP %1, UDP %2) — port in use? Listening on "
+                            "TCP %3, UDP %4.")
+                 .arg(thePrefs.port()).arg(thePrefs.udpPort())
+                 .arg(boundTcpPort()).arg(boundUdpPort()));
+    return PortApplyResult::BindFailed;
 }
 
 void CoreSession::stopWorkerThreads()
@@ -1719,7 +1758,7 @@ uint16 CoreSession::boundTcpPort() const
 
 uint16 CoreSession::boundUdpPort() const
 {
-    return m_clientUDP ? m_clientUDP->connectedPort() : uint16{0};
+    return m_clientUDP && m_clientUDP->isBound() ? m_clientUDP->connectedPort() : uint16{0};
 }
 
 // ---------------------------------------------------------------------------
@@ -1896,7 +1935,9 @@ void CoreSession::resumeNetworking()
 
     if (m_listenSocket && !m_listenSocket->startListening(thePrefs.port()))
         logWarning(QStringLiteral("Failed to bind TCP listen socket on port %1").arg(thePrefs.port()));
-    if (m_clientUDP && !m_clientUDP->rebind(static_cast<uint16>(thePrefs.udpPort())))
+    // Port 0 is UDP off, not "any port"
+    if (m_clientUDP && thePrefs.udpPort() != 0
+        && !m_clientUDP->rebind(static_cast<uint16>(thePrefs.udpPort())))
         logError(QStringLiteral("Failed to bind client UDP socket on port %1").arg(thePrefs.udpPort()));
     if (m_serverUDP && !m_serverUDP->create())
         logWarning(QStringLiteral("Failed to bind server UDP socket"));
@@ -1905,6 +1946,8 @@ void CoreSession::resumeNetworking()
     if (theApp.serverConnect) {
         ServerConnectConfig cfg = theApp.serverConnect->config();
         cfg.bindAddress = BindAddress::ipv4Literal();
+        if (const uint16 tcp = boundTcpPort())
+            cfg.listenPort = tcp;   // the login announces it
         theApp.serverConnect->setConfig(cfg);
     }
     updatePublicIPv6(scanBoundIPv6());
@@ -2099,7 +2142,7 @@ void CoreSession::finishStart()
     }
     m_appliedBind = BindAddress::current();
     rememberAppliedPorts();
-    theApp.onBindSelectionChanged = [this] { applyBindSelection(); };
+    theApp.onBindSelectionChanged = [this] { return applyBindSelection(); };
     theApp.applyListenPorts = [this] { return applyListenPorts(); };
     theApp.releaseConnectHold = [this] { releaseConnectHold(); };
     m_tickCounter = 0;

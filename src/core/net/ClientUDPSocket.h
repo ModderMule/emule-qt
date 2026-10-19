@@ -68,6 +68,9 @@ public:
     /// Get the bound port.
     [[nodiscard]] uint16 connectedPort() const { return m_port; }
 
+    /// Open; connectedPort() keeps the last port after a failed rebind
+    [[nodiscard]] bool isBound() const { return m_socket.state() == QAbstractSocket::BoundState; }
+
     /// SO_RCVBUF as the OS reports it.
     [[nodiscard]] int receiveBufferSize();
 

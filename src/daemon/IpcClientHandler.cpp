@@ -1957,9 +1957,11 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
     QCborMap result;
     result.insert(QStringLiteral("ports"), static_cast<int>(outcome.ports));
     result.insert(QStringLiteral("tcpPort"),
-                  theApp.listenSocket ? theApp.listenSocket->connectedPort() : 0);
+                  theApp.listenSocket && theApp.listenSocket->isListening()
+                      ? theApp.listenSocket->connectedPort() : 0);
     result.insert(QStringLiteral("udpPort"),
-                  theApp.clientUDP ? theApp.clientUDP->connectedPort() : 0);
+                  theApp.clientUDP && theApp.clientUDP->isBound()
+                      ? theApp.clientUDP->connectedPort() : 0);
     sendMessage(IpcMessage::makeResult(msg.seqId(), true, result));
 }
 
@@ -1970,6 +1972,7 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
     // Captured before the apply loop: moving the incoming directory has to move
     // the category folders that lived inside it (see below).
     const QString oldIncomingDir = thePrefs.incomingDir();
+    const QString oldBind = thePrefs.bindAddress().trimmed();
 
     // Detect whether shared directory / standby settings changed before saving
     bool sharedDirsChanged = false;
@@ -2008,9 +2011,17 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
 
     outcome.saved = thePrefs.save();
 
-    // Before the ServerConnect config below reads the bound port
-    if (theApp.applyListenPorts)
-        outcome.ports = theApp.applyListenPorts();
+    // Before the ServerConnect config below reads the bound port. A new bind
+    // selection closes every socket and reopens it on the new interface; done after
+    // the loop, so the ports of the same patch come along whatever the key order.
+    if (thePrefs.bindAddress().trimmed() != oldBind && theApp.onBindSelectionChanged)
+        outcome.ports = theApp.onBindSelectionChanged();
+    // Unchanged: no reopen, or blocked (suspended: applyListenPorts() records them)
+    if (outcome.ports == PortApplyResult::Unchanged && theApp.applyListenPorts) {
+        const PortApplyResult rest = theApp.applyListenPorts();
+        if (rest != PortApplyResult::Unchanged)
+            outcome.ports = rest;
+    }
 
     // Update scheduler baselines so restoreOriginals() doesn't revert these changes
     if (theApp.scheduler)
@@ -3604,15 +3615,9 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setPort(static_cast<uint16>(val.toInteger()));
     else if (key == QStringLiteral("udpPort"))
         thePrefs.setUdpPort(static_cast<uint16>(val.toInteger()));
-    else if (key == QStringLiteral("bindAddress")) {
-        const QString selection = val.toString().trimmed();
-        if (selection != thePrefs.bindAddress().trimmed()) {
-            thePrefs.setBindAddress(selection);
-            // Live: every socket is closed and reopened on the new selection.
-            if (theApp.onBindSelectionChanged)
-                theApp.onBindSelectionChanged();
-        }
-    }
+    else if (key == QStringLiteral("bindAddress"))
+        // Reopened once all keys are in: applyPreferenceChanges()
+        thePrefs.setBindAddress(val.toString().trimmed());
     else if (key == QStringLiteral("maxUpload"))
         thePrefs.setMaxUpload(static_cast<uint32>(val.toInteger()));
     else if (key == QStringLiteral("maxDownload"))

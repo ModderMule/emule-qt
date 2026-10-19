@@ -230,7 +230,8 @@ struct AppContext {
     std::function<void(const Address& effective)> onPublicIPv6Changed;
 
     /// The bind selection preference was edited: re-resolve and reopen. Set by CoreSession.
-    std::function<void()> onBindSelectionChanged;
+    /// Returns what became of a port change the reopen picked up.
+    std::function<PortApplyResult()> onBindSelectionChanged;
     /// Networks went down (true) / came back (false) with the bound interface; for the
     /// parts outside the session (Usenet, IRC, state pushes).
     std::function<void(bool suspended)> onNetworkSuspended;

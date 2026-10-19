@@ -6,6 +6,9 @@
 #include "DaemonApp.h"
 #include "IpcClientHandler.h"
 #include "IpcServer.h"
+#include "app/AppContext.h"
+#include "net/ClientUDPSocket.h"
+#include "net/ListenSocket.h"
 
 #include <QCborArray>
 #include <QCoreApplication>
@@ -41,12 +44,21 @@ ops::Status DaemonApiBackend::setCategories(const QJsonArray& categories)
     return st;
 }
 
-ops::Status DaemonApiBackend::applyPreferences(const PrefChanges& changes)
+ApiBackend::PrefApplyReport DaemonApiBackend::applyPreferences(const PrefChanges& changes)
 {
     const IpcClientHandler::PrefApplyOutcome outcome =
         IpcClientHandler::applyPreferenceChanges(changes);
+    PrefApplyReport report;
+    report.ports = outcome.ports;
+    // Same as the SetPreferences reply: where the sockets are, not the prefs
+    report.tcpPort = theApp.listenSocket && theApp.listenSocket->isListening()
+        ? theApp.listenSocket->connectedPort() : uint16{0};
+    report.udpPort = theApp.clientUDP && theApp.clientUDP->isBound()
+        ? theApp.clientUDP->connectedPort() : uint16{0};
+    if (!outcome.saved)
+        report.status = ops::Status::fail(500, QStringLiteral("Could not write preferences.yml"));
     if (!m_ipcServer)
-        return {};
+        return report;
 
     if (outcome.categoriesChanged)
         m_ipcServer->notifyCategoriesChanged();
@@ -56,8 +68,7 @@ ops::Status DaemonApiBackend::applyPreferences(const PrefChanges& changes)
         if (standby)
             emit server->standbyConfigChanged();
     });
-    return outcome.saved ? ops::Status{}
-                         : ops::Status::fail(500, QStringLiteral("Could not write preferences.yml"));
+    return report;
 }
 
 void DaemonApiBackend::requestShutdown()

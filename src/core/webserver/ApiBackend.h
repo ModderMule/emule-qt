@@ -8,7 +8,9 @@
 /// UsenetWebBackend: core declares it, DaemonApp installs the implementation.
 
 #include "app/CoreOps.h"
+#include "portmap/PortMapTypes.h"
 #include "prefs/PreferenceSchema.h"
+#include "utils/Types.h"
 
 #include <QJsonArray>
 #include <QJsonObject>
@@ -39,8 +41,15 @@ public:
     /// (moved or edited); one without is new; a missing old index was deleted.
     virtual ops::Status setCategories(const QJsonArray& categories) = 0;
 
+    struct PrefApplyReport {
+        ops::Status status;
+        PortApplyResult ports = PortApplyResult::Unchanged;   ///< what became of a port change
+        uint16 tcpPort = 0;   ///< listening now; 0 = closed
+        uint16 udpPort = 0;
+    };
+
     /// Stores @p changes exactly as a GUI save does, side effects included.
-    virtual ops::Status applyPreferences(const PrefChanges& changes) = 0;
+    virtual PrefApplyReport applyPreferences(const PrefChanges& changes) = 0;
 
     /// Quits the daemon once the reply is out.
     virtual void requestShutdown() = 0;

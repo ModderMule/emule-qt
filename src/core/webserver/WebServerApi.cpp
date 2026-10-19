@@ -98,6 +98,17 @@ using L = QLatin1StringView;
 }
 
 /// debug < info < warning < error < fatal — QtMsgType is not in that order.
+[[nodiscard]] QString portApplyResultName(PortApplyResult result)
+{
+    switch (result) {
+    case PortApplyResult::Applied:         return s("applied");
+    case PortApplyResult::RestartRequired: return s("restartRequired");
+    case PortApplyResult::BindFailed:      return s("bindFailed");
+    case PortApplyResult::Unchanged:       break;
+    }
+    return s("unchanged");
+}
+
 [[nodiscard]] int severityRank(const QString& name)
 {
     static const QStringList order{QStringLiteral("debug"), QStringLiteral("info"),
@@ -1171,7 +1182,11 @@ void WebServer::buildApiTable()
                             "Preferences", "Change preferences",
                             "A JSON object of key and new value. Every key is checked against "
                             "the schema first; one bad value and nothing is changed. Applied at "
-                            "once unless the schema says restartRequired.");
+                            "once unless the schema says restartRequired. The reply holds the new "
+                            "values plus \"listenPorts\": {result, tcpPort, udpPort}, where "
+                            "result is unchanged, applied, restartRequired (connected: the old "
+                            "ports stay until a restart) or bindFailed (port in use: the old "
+                            "ports stay), and the ports are the ones listening now.");
         op.flags = FreeBody;
         op.mcpTool = s("preferences_set");
         op.handler = [this](const Call& c) {
@@ -1180,11 +1195,18 @@ void WebServer::buildApiTable()
             PrefChanges changes;
             if (const QString problem = checkPreferencePatch(c.args, changes); !problem.isEmpty())
                 return error(400, problem);
+            ApiBackend::PrefApplyReport report;
             if (!changes.isEmpty()) {
-                if (const ops::Status st = m_apiBackend->applyPreferences(changes); !st.ok())
-                    return error(st.code, st.message);
+                report = m_apiBackend->applyPreferences(changes);
+                if (!report.status.ok())
+                    return error(report.status.code, report.status.message);
             }
-            return ok(preferenceValues(*m_preferences));
+            QJsonObject reply = preferenceValues(*m_preferences);
+            reply.insert(s("listenPorts"),
+                         QJsonObject{{s("result"), portApplyResultName(report.ports)},
+                                     {s("tcpPort"), report.tcpPort},
+                                     {s("udpPort"), report.udpPort}});
+            return ok(reply);
         };
         add(op);
     }
