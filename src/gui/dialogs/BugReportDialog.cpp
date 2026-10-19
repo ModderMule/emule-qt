@@ -85,6 +85,8 @@ BugReportDialog::BugReportDialog(LogWidget* logWidget, QWidget* parent)
     auto* descLayout = new QVBoxLayout(descGroup);
     m_descriptionEdit = new QTextEdit(this);
     m_descriptionEdit->setPlaceholderText(tr("Describe the issue in detail..."));
+    // A scroll area's own minimum is ~90 px; a few lines do on a small screen
+    m_descriptionEdit->setMinimumHeight(4 * fontMetrics().lineSpacing());
     descLayout->addWidget(m_descriptionEdit);
     mainLayout->addWidget(descGroup, 1); // stretch
 
@@ -95,17 +97,21 @@ BugReportDialog::BugReportDialog(LogWidget* logWidget, QWidget* parent)
     auto* screenshotLabel = new QLabel(tr("Screenshots:"), this);
     attachLayout->addWidget(screenshotLabel);
 
+    // Buttons beside the list, not below it: one row less on an 800x600 screen
+    auto* screenshotRow = new QHBoxLayout;
     m_screenshotList = new QListWidget(this);
+    m_screenshotList->setMinimumHeight(3 * fontMetrics().lineSpacing());
     m_screenshotList->setMaximumHeight(80);
-    attachLayout->addWidget(m_screenshotList);
+    screenshotRow->addWidget(m_screenshotList, 1);
 
-    auto* screenshotBtnLayout = new QHBoxLayout;
+    auto* screenshotBtnLayout = new QVBoxLayout;
     auto* addScreenBtn = new QPushButton(tr("Add..."), this);
     auto* removeScreenBtn = new QPushButton(tr("Remove"), this);
     screenshotBtnLayout->addWidget(addScreenBtn);
     screenshotBtnLayout->addWidget(removeScreenBtn);
     screenshotBtnLayout->addStretch();
-    attachLayout->addLayout(screenshotBtnLayout);
+    screenshotRow->addLayout(screenshotBtnLayout);
+    attachLayout->addLayout(screenshotRow);
 
     auto* crashDumpLayout = new QHBoxLayout;
     crashDumpLayout->addWidget(new QLabel(tr("Crash Dump:"), this));

@@ -595,10 +595,7 @@ void FileDetailDialog::updateEd2kLinkDisplay()
     }
 
     // No hash in the details map (older core): fall back to the plain variant.
-    if (m_chkHtml->isChecked())
-        m_linkEdit->setHtml(m_ed2kLink);
-    else
-        m_linkEdit->setPlainText(m_ed2kLink);
+    m_linkEdit->setPlainText(m_ed2kLink);
 }
 
 void FileDetailDialog::applyEd2kLink(const QString& link, bool sourceHintAvailable)
@@ -606,10 +603,9 @@ void FileDetailDialog::applyEd2kLink(const QString& link, bool sourceHintAvailab
     if (!m_chkHtml || !m_chkHostname || !m_linkEdit)
         return;   // the ED2K tab was torn down by a navigation
 
-    if (m_chkHtml->isChecked())
-        m_linkEdit->setHtml(link);
-    else
-        m_linkEdit->setPlainText(link);
+    // Plain text for the HTML variant too: MFC shows the markup, and copying it is the
+    // point -- a rendered anchor showed and copied only the file name (issue #36)
+    m_linkEdit->setPlainText(link);
 
     m_chkHostname->setEnabled(sourceHintAvailable);
     if (!sourceHintAvailable && m_chkHostname->isChecked())

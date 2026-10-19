@@ -10,7 +10,8 @@
 /// is exactly what the Client Details dialog did on a short window.
 ///
 /// The numbers in the dialogs were picked for one font, one language and one platform,
-/// so they stay as a floor only — the content raises them whenever it needs more.
+/// so they stay as a floor only — the content raises them whenever it needs more. They
+/// were also picked for a 1024x768 screen: a smaller one scales them down (issue #36).
 
 #include <QSize>
 
@@ -35,6 +36,8 @@ enum class Fit {
 
 /// Give @p dialog a minimum size that shows all of its content, and a default size at
 /// least that large. Both are clamped to what the screen can actually display.
+/// Fit::Content taller than the screen opens at the screen's height but may shrink to
+/// the layout minimum -- the content's scroll area takes the rest.
 /// The default is also widened until every tab title is readable where the style
 /// elides them (macOS), as far as the screen allows.
 /// A dialog that is already up is widened the same way, but only when its tab row

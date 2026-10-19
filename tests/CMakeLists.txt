@@ -836,6 +836,105 @@ target_include_directories(tst_CommentsPanel PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
 target_link_libraries(tst_CommentsPanel PRIVATE Qt6::Widgets)
 
+# File Details on an 800x600 screen, and the ED2K Link page's HTML format (issue #36).
+emule_add_test(tst_FileDetailDialog FOLDER "Gui"
+    SOURCES tst_FileDetailDialog.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FileDetailDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/DetailDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/ClientDetailDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CommentsPanel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CommentEditPanel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/ArchivePreviewPanel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MetadataPage.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FindInListDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/IpcFeedback.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/StatusBarNotifier.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/ListActivation.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
+target_include_directories(tst_FileDetailDialog PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_SOURCE_DIR}/src/core"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_FileDetailDialog PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+
+# Every dialog on an 800x600 screen: fits, and its minimum is what it needs (issue #36).
+emule_add_test(tst_SmallScreenDialogs FOLDER "Gui"
+    SOURCES tst_SmallScreenDialogs.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/AddFriendDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/AddSourceDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/ArchivePreviewPanel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/BugReportDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FirstStartWizard.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MetaAccountDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/OptionsDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/ToolbarCustomizeDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/AccordionSidebar.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/LogTextView.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/LogWidget.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/StatsGraph.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/panels/StatisticsPanel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/FileAssociation.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/PanelPoller.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/WebServices.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/AutoStart.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/Ed2kSchemeHandler.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CategoryDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/ClientDetailDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CollectionCreateDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CollectionViewDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CommentEditPanel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CommentsPanel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/CoreConnectDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/DetailDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FileDetailDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/FindInListDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/ImportDownloadsDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/MetadataPage.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/NetworkInfoDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/NzbFileChooserDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/PasteTextDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/SearchDetailDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/UsenetArchiveEntryDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/UsenetDetailsDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/dialogs/WebLinksDialog.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/BarShader.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/ContentScrollArea.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetFileCheckList.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetProgressDelegate.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/controls/UsenetQueueModel.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/Appearance.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/CountryFlags.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/DialogSizing.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/FileTypeIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/IpcFeedback.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/ListActivation.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/MenuUtils.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/PreviewLauncher.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/RatingIcons.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/SharedFilesFetch.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/utils/StatusBarNotifier.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp"
+            "${CMAKE_SOURCE_DIR}/src/gui/app/IpcClient.cpp"
+            "${CMAKE_SOURCE_DIR}/resources/emuleqt.qrc")
+target_include_directories(tst_SmallScreenDialogs PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_SOURCE_DIR}/src/core"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_SmallScreenDialogs PRIVATE
+    eMule::Core eMule::Ipc Qt6::Widgets)
+if(WIN32)
+    target_link_libraries(tst_SmallScreenDialogs PRIVATE shell32)  # SHChangeNotify
+endif()
+
 # MFC list accelerators (Del/⌫, F2, clipboard, find) and the find-next state — the
 # event filter and dialog compile standalone against the stub pch.
 emule_add_test(tst_ListKeys FOLDER "Gui"

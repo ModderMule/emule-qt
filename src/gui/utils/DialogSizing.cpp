@@ -37,6 +37,27 @@ QSize screenBudget(const QWidget* dialog)
     return {std::max(320, avail.width() - 40), std::max(240, avail.height() - 60)};
 }
 
+/// The screen the hand-picked sizes were made for. Smaller screens scale them down.
+constexpr QSize kDesignedScreen{1024, 768};
+
+/// @p designedMin scaled down to a screen smaller than kDesignedScreen -- a floor picked
+/// for a desktop locks a window at full height on 800x600 (issue #36). Content still wins.
+QSize scaledFloor(QSize designedMin, QSize budget)
+{
+    const QSize designedBudget(kDesignedScreen.width() - 40, kDesignedScreen.height() - 60);
+    const auto scaled = [](int floor, int have, int designed) {
+        return have >= designed ? floor : floor * have / designed;
+    };
+    return {scaled(designedMin.width(), budget.width(), designedBudget.width()),
+            scaled(designedMin.height(), budget.height(), designedBudget.height())};
+}
+
+/// What @p dialog may shrink to, and the size it would like to open at.
+struct Fitted {
+    QSize minimum;
+    QSize preferred;
+};
+
 /// The size at which nothing in @p dialog is clipped.
 ///
 /// Width comes from the layout *minimum* — the size hint of a wrapping label is as wide
@@ -44,12 +65,13 @@ QSize screenBudget(const QWidget* dialog)
 ///
 /// The height depends on what the content is (see Fit). A form row's layout minimum is a
 /// single line of text, so a dialog of labels has to claim its preferred height, measured
-/// at the width it will really have.
-QSize contentSize(QWidget* dialog, QSize designedMin, Fit fit)
+/// at the width it will really have -- unless that is taller than the screen: then a
+/// scroll area has to take the rest, and the minimum falls back to the layout's own.
+Fitted contentSize(QWidget* dialog, QSize floor, Fit fit, QSize budget)
 {
     QLayout* layout = dialog->layout();
     if (!layout)
-        return designedMin;
+        return {floor.boundedTo(budget), floor.boundedTo(budget)};
 
     // Invalidate first, and the whole tree of them: activate() is happy to hand back
     // hints cached before the content was swapped, and invalidating the dialog's own
@@ -60,13 +82,16 @@ QSize contentSize(QWidget* dialog, QSize designedMin, Fit fit)
     layout->invalidate();
     layout->activate();
 
-    const int width  = std::max(designedMin.width(), layout->totalMinimumSize().width());
-    int       height = layout->totalMinimumSize().height();
+    const QSize layoutMin = layout->totalMinimumSize();
+    const int   width     = std::max(floor.width(), layoutMin.width());
+    const int   minHeight = std::max(floor.height(), layoutMin.height());
+    int         preferred = minHeight;
 
     if (fit == Fit::Content)
-        height = std::max(height, neededHeight(layout, width));
+        preferred = std::max(preferred, neededHeight(layout, width));
 
-    return {width, std::max(designedMin.height(), height)};
+    const int minimum = preferred <= budget.height() ? preferred : minHeight;
+    return {QSize(width, minimum).boundedTo(budget), QSize(width, preferred).boundedTo(budget)};
 }
 
 /// Widest tab row a dialog was sized for so far.
@@ -97,6 +122,32 @@ int tabTitlesWidth(const QWidget* dialog)
     return width;
 }
 
+/// How tall @p tabs has to be at @p width: every page at its minimum, except that a page
+/// whose height follows its width (a form of wrapping labels) gets its wrapped height.
+/// Lists and text edits give way, so their preferred height does not count.
+int tabPagesHeight(const QTabWidget* tabs, int width)
+{
+    int maxMin = 0, maxMinWidth = 0, maxNeeded = 0;
+    for (int i = 0; i < tabs->count(); ++i) {
+        const QSize min = tabs->widget(i)->minimumSizeHint();
+        maxMin      = std::max(maxMin, min.height());
+        maxMinWidth = std::max(maxMinWidth, min.width());
+    }
+
+    // Tab frame and bar, as the widget itself adds them to its pages' minimum
+    const QSize chrome  = tabs->minimumSizeHint() - QSize(maxMinWidth, maxMin);
+    const int pageWidth = width - std::max(0, chrome.width());
+
+    for (int i = 0; i < tabs->count(); ++i) {
+        const QWidget* page = tabs->widget(i);
+        int needed = page->minimumSizeHint().height();
+        if (page->hasHeightForWidth())
+            needed = std::max(needed, page->heightForWidth(pageWidth));
+        maxNeeded = std::max(maxNeeded, needed);
+    }
+    return tabs->minimumSizeHint().height() + maxNeeded - maxMin;
+}
+
 } // anonymous namespace
 
 // ── public API ─────────────────────────────────────────────────────────
@@ -120,6 +171,18 @@ int neededHeight(QLayout* layout, int width)
         const QWidget*     widget = item->widget();
         int                needed = -1;
 
+        if (const auto* tabs = qobject_cast<const QTabWidget*>(widget)) {
+            // Replaces the hint, also downwards: Qt's is the tallest *preferred* page,
+            // and a page's text edit or list asks for far more than it needs (issue #36)
+            height += tabPagesHeight(tabs, inner) - item->sizeHint().height();
+            continue;
+        }
+        if (auto* nested = qobject_cast<QVBoxLayout*>(const_cast<QLayoutItem*>(item)->layout())) {
+            // A nested column (DetailDialog's content) -- signed, so a tab widget inside
+            // can bring the height down too
+            height += neededHeight(nested, inner) - item->sizeHint().height();
+            continue;
+        }
         if (const auto* area = qobject_cast<const ContentScrollArea*>(widget)) {
             // Has to be asked by name: QWidgetItem answers heightForWidth() from the
             // scroll area's own viewport layout, so the form inside is invisible to
@@ -127,8 +190,8 @@ int neededHeight(QLayout* layout, int width)
             needed = area->contentHeightForWidth(inner);
         } else if (widget && qobject_cast<QVBoxLayout*>(widget->layout())) {
             // A plain stacked container — its children each get the full width, so the
-            // same rule applies one level down. Everything else (a form, a group box, a
-            // tab widget) is left to Qt: those implement heightForWidth themselves.
+            // same rule applies one level down. Everything else (a form, a group box) is
+            // left to Qt: those implement heightForWidth themselves.
             needed = neededHeight(widget->layout(), inner);
         } else if (item->hasHeightForWidth()) {
             needed = item->heightForWidth(inner);
@@ -147,6 +210,7 @@ void applySize(QWidget* dialog, QSize designedMin, QSize designedDefault, Fit fi
         return;
 
     const QSize budget = screenBudget(dialog);
+    const QSize floor  = scaledFloor(designedMin, budget);
     QSize       needed;
 
     // Measure, apply, measure again. A word-wrapping label answers sizeHint() differently
@@ -154,11 +218,11 @@ void applySize(QWidget* dialog, QSize designedMin, QSize designedDefault, Fit fi
     // measurement can be a line short — and the line it is short of is the one the user
     // would not be able to read. It settles after a pass or two; the count is the stop.
     for (int pass = 0; pass < 4; ++pass) {
-        const QSize measured = contentSize(dialog, designedMin, fit).boundedTo(budget);
-        if (measured == needed)
+        const Fitted measured = contentSize(dialog, floor, fit, budget);
+        if (measured.minimum == needed)
             break;
 
-        needed = measured;
+        needed = measured.minimum;
         dialog->setMinimumSize(needed);
 
         // Only the first call places the window. Once it is up the user's own size wins —
@@ -181,7 +245,7 @@ void applySize(QWidget* dialog, QSize designedMin, QSize designedDefault, Fit fi
                           dialog->height());
         dialog->resize(dialog->isVisible()
                            ? grown.expandedTo(needed).boundedTo(budget.expandedTo(dialog->size()))
-                           : wished.expandedTo(needed).boundedTo(budget));
+                           : wished.expandedTo(measured.preferred).boundedTo(budget));
     }
 }
 
@@ -191,10 +255,12 @@ void applyFixedSize(QWidget* dialog, QSize designed)
         return;
 
     const QSize budget = screenBudget(dialog);
+    const QSize floor  = scaledFloor(designed, budget);
     QSize       needed;
 
     for (int pass = 0; pass < 3; ++pass) {   // settles like applySize(), see there
-        const QSize measured = contentSize(dialog, designed, Fit::Content).boundedTo(budget);
+        // Can't be resized, so can't scroll either: all of the content, cut to the screen
+        const QSize measured = contentSize(dialog, floor, Fit::Content, budget).preferred;
         if (measured == needed)
             break;
         needed = measured;
