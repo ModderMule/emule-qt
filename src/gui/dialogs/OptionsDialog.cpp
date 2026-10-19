@@ -75,7 +75,6 @@
 #include <QPainter>
 #include <QPushButton>
 #include <QScreen>
-#include <QSettings>
 #include <QSlider>
 #include <QSortFilterProxyModel>
 #include <QDoubleSpinBox>
@@ -1097,8 +1096,7 @@ QWidget* OptionsDialog::createDisplayPage()
     autoCompLayout->addWidget(m_useAutoCompletionCheck);
     auto* resetBtn = new QPushButton(tr("Reset"), autoCompGroup);
     connect(resetBtn, &QPushButton::clicked, this, [resetBtn] {
-        QSettings settings;
-        settings.remove(QStringLiteral("search/history"));
+        theUiState.setSearchHistory({});
         resetBtn->setEnabled(false);
     });
     autoCompLayout->addWidget(resetBtn);

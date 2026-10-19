@@ -14,6 +14,7 @@
 #include <QProcess>
 #include <QSocketNotifier>
 #include <QSplashScreen>
+#include <QStandardPaths>
 #include <QTcpServer>
 #include <QTextStream>
 #include <QTimer>
@@ -26,6 +27,7 @@
 #ifndef Q_OS_WIN
 #include <cerrno>
 #include <csignal>
+#include <optional>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -116,6 +118,54 @@ bool ipcPortFree(const QString& host, uint16_t port)
     return probe.listen(addr.isNull() ? QHostAddress(QHostAddress::LocalHost) : addr, port);
 }
 
+#if !defined(Q_OS_MACOS) && !defined(Q_OS_WIN)
+/// A terminal emulator and the arguments that make it run the command after them.
+struct Terminal {
+    QString program;
+    QStringList args;
+};
+
+/// The user's terminal: $TERMINAL, then Debian's x-terminal-emulator, then the
+/// common desktop ones. Each takes the command its own way.
+std::optional<Terminal> findTerminal()
+{
+    static const QList<std::pair<QString, QStringList>> known = {
+        {QStringLiteral("x-terminal-emulator"), {QStringLiteral("-e")}},
+        {QStringLiteral("gnome-terminal"),      {QStringLiteral("--")}},
+        {QStringLiteral("kgx"),                 {QStringLiteral("--")}},
+        {QStringLiteral("ptyxis"),              {QStringLiteral("--")}},
+        {QStringLiteral("konsole"),             {QStringLiteral("-e")}},
+        {QStringLiteral("xfce4-terminal"),      {QStringLiteral("-x")}},
+        {QStringLiteral("mate-terminal"),       {QStringLiteral("-x")}},
+        {QStringLiteral("lxterminal"),          {QStringLiteral("-e")}},
+        {QStringLiteral("tilix"),               {QStringLiteral("-e")}},
+        {QStringLiteral("terminator"),          {QStringLiteral("-x")}},
+        {QStringLiteral("kitty"),               {}},
+        {QStringLiteral("wezterm"),             {QStringLiteral("start"), QStringLiteral("--")}},
+        {QStringLiteral("alacritty"),           {QStringLiteral("-e")}},
+        {QStringLiteral("foot"),                {}},
+        {QStringLiteral("xterm"),               {QStringLiteral("-e")}},
+    };
+
+    // $TERMINAL is a bare program name or path; -e is the common convention
+    if (const QString env = qEnvironmentVariable("TERMINAL").trimmed(); !env.isEmpty()) {
+        if (const QString path = QStandardPaths::findExecutable(env); !path.isEmpty()) {
+            const QString name = QFileInfo(path).fileName();
+            for (const auto& [program, args] : known) {
+                if (program == name)
+                    return Terminal{path, args};
+            }
+            return Terminal{path, {QStringLiteral("-e")}};
+        }
+    }
+    for (const auto& [program, args] : known) {
+        if (const QString path = QStandardPaths::findExecutable(program); !path.isEmpty())
+            return Terminal{path, args};
+    }
+    return std::nullopt;
+}
+#endif
+
 /// Try to start the daemon process. Returns true if launched.
 /// @param holdConnect the first start wizard is about to run: the core must not
 ///        auto-connect before the ports are chosen.
@@ -153,8 +203,18 @@ bool launchDaemon(const QString& daemonPath, bool holdConnect, qint64& pid)
         return QProcess::startDetached(QStringLiteral("cmd"),
                                        QStringList{QStringLiteral("/k"), daemonPath} + daemonArgs);
 #else
-        return QProcess::startDetached(QStringLiteral("xterm"),
-                                       QStringList{QStringLiteral("-e"), daemonPath} + daemonArgs);
+        // No xterm on most desktops (issue #32): the desktop's own terminal, and
+        // a plain start when there is none or it will not run
+        if (const auto terminal = findTerminal()) {
+            if (QProcess::startDetached(terminal->program,
+                                        terminal->args + QStringList{daemonPath} + daemonArgs))
+                return true;
+            eMule::logWarning(QStringLiteral("Could not start the core in %1, starting it without console")
+                                  .arg(terminal->program));
+        } else {
+            eMule::logWarning(QStringLiteral("No terminal found for \"Start core with console\", "
+                                             "starting the core without console"));
+        }
 #endif
     }
 

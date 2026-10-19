@@ -27,6 +27,7 @@
 #include <QTest>
 #include <QTreeView>
 #include <QTreeWidget>
+#include <QUrl>
 
 using namespace eMule;
 using Ipc::MetaStatus;
@@ -90,6 +91,7 @@ private slots:
     void networkFilterHidesForeignRows();
     void webAndContainerRows();
     void webLinksDialog_listsAndCopies();
+    void webLinksDialog_listsOnionLinks();
     void alternativeNamesAreChildRows();
     void refreshKeepsExpansionAndSelection();
     void mergeTouchesOnlyTheChangedRows();
@@ -487,6 +489,7 @@ void tst_MetaSearchGui::webLinksDialog_listsAndCopies()
     QCOMPARE(list->topLevelItemCount(), 2);
     QCOMPARE(list->topLevelItem(0)->text(4), QStringLiteral("https://a.test/f/1"));
     QCOMPARE(list->topLevelItem(0)->text(0), QStringLiteral("1"));   // file numbers count from 1
+    QVERIFY(!dlg.findChild<QLabel*>(QStringLiteral("onionNote")));   // no onion link, no Tor hint
     QVERIFY(list->topLevelItem(1)->text(2).isEmpty());                // no size hint
 
     auto* copy = visibleChild<QPushButton>(&dlg, [](QPushButton* b) { return b->text() == WebLinksDialog::tr("Copy Links"); });
@@ -497,6 +500,32 @@ void tst_MetaSearchGui::webLinksDialog_listsAndCopies()
     copy->click();
     QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("https://b.test/f/1"));
     shoot(&dlg, QStringLiteral("web-links.png"));
+}
+
+void tst_MetaSearchGui::webLinksDialog_listsOnionLinks()
+{
+    const QString onion = QStringLiteral("http://abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion/f/ccc1");
+    const QCborMap map{{QStringLiteral("title"), QStringLiteral("Hidden Release")},
+                       {QStringLiteral("links"), QCborArray{QCborMap{{QStringLiteral("url"), onion},
+                                                                     {QStringLiteral("file"), 0},
+                                                                     {QStringLiteral("hoster"), QStringLiteral("onionhost")}}}}};
+    WebLinksDialog dlg(QStringLiteral("row"), map, onion.toUtf8() + "\r\n", QStringLiteral("row.txt"));
+
+    auto* list = dlg.findChild<QTreeWidget*>();
+    QVERIFY(list);
+    QCOMPARE(list->topLevelItemCount(), 1);
+    QCOMPARE(list->topLevelItem(0)->text(4), onion);
+    QCOMPARE(list->topLevelItem(0)->text(3), QStringLiteral("onionhost"));
+    QVERIFY(QUrl(onion, QUrl::StrictMode).isValid());   // what Open in Browser hands on
+    auto* note = dlg.findChild<QLabel*>(QStringLiteral("onionNote"));
+    QVERIFY(note);
+    QVERIFY(note->text().contains(u"Tor Browser"));
+
+    auto* copy = visibleChild<QPushButton>(&dlg, [](QPushButton* b) { return b->text() == WebLinksDialog::tr("Copy Links"); });
+    QVERIFY(copy);
+    copy->click();
+    QCOMPARE(QApplication::clipboard()->text(), onion);
+    shoot(&dlg, QStringLiteral("web-links-onion.png"));
 }
 
 namespace {

@@ -209,6 +209,11 @@ private slots:
     void lowIdOnIPv4_redialsIPv6AndRemembers();
     void lowIdOnIPv4_staysWithoutThePref();
     void lowIdOnIPv4_fallsBackWhenIPv6IsDead();
+
+    // Smart LowID check (MFC ServerSocket.cpp:326-338)
+    void smartLowId_unarmedKeepsFirstLowID();
+    void smartLowId_armedBouncesTwiceThenKeeps();
+    void smartLowId_manualConnectKeepsLowID();
 };
 
 // ---------------------------------------------------------------------------
@@ -1603,6 +1608,127 @@ void tst_ServerConnect::lowIdOnIPv4_fallsBackWhenIPv6IsDead()
     writeIdChange(again4, 0x00000042);
     QVERIFY(QTest::qWaitFor([&] { return conn.isConnected(); }, 5000));
     QVERIFY(conn.sessionAddress().isIPv4());
+    conn.disconnect();
+}
+
+// ---------------------------------------------------------------------------
+// Tests: smart LowID check — armed by a HighID, at most two bounces
+// ---------------------------------------------------------------------------
+
+/// Accept the next dial on @p listener and log it in with @p clientID.
+static bool loginOn(QTcpServer& listener, uint32 clientID)
+{
+    QTcpSocket* side = acceptOn(listener);
+    if (!side)
+        return false;
+    QTest::qWait(200);
+    writeIdChange(side, clientID);
+    return true;
+}
+
+/// One dial at a time, so each bounce goes to exactly one next server.
+static ServerConnectConfig makeSmartIdConfig()
+{
+    ServerConnectConfig cfg = makeTestConfig();
+    cfg.safeServerConnect = true;
+    cfg.smartLowIdCheck = true;
+    return cfg;
+}
+
+static bool connectedTo(const ServerConnect& conn, const ListedLoopback& server)
+{
+    return conn.isConnected() && conn.currentServer()
+        && conn.currentServer()->port() == server.listener.serverPort();
+}
+
+// Never had a HighID (firewalled): the first LowID is kept, no bounce.
+void tst_ServerConnect::smartLowId_unarmedKeepsFirstLowID()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    ServerList list;
+    ListedLoopback a(list, QStringLiteral("A"));
+    ListedLoopback b(list, QStringLiteral("B"));
+    QVERIFY(a.entry && b.entry);
+
+    ServerConnect conn(list);
+    conn.setConfig(makeSmartIdConfig());
+    conn.connectToAnyServer();
+
+    QVERIFY(loginOn(a.listener, 0x00000042));
+    QVERIFY(QTest::qWaitFor([&] { return conn.isConnected(); }, 5000));
+    QVERIFY(connectedTo(conn, a));
+    QVERIFY(conn.isLowID());
+    QTest::qWait(300);
+    QVERIFY(!b.listener.hasPendingConnections());
+    conn.disconnect();
+}
+
+// After a HighID, two LowIDs in a row bounce to the next server; the third is kept.
+void tst_ServerConnect::smartLowId_armedBouncesTwiceThenKeeps()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    ServerList list;
+    ListedLoopback a(list, QStringLiteral("A"));
+    ListedLoopback b(list, QStringLiteral("B"));
+    ListedLoopback c(list, QStringLiteral("C"));
+    QVERIFY(a.entry && b.entry && c.entry);
+
+    ServerConnect conn(list);
+    conn.setConfig(makeSmartIdConfig());
+
+    // Arm: HighID on A
+    conn.connectToAnyServer();
+    QVERIFY(loginOn(a.listener, 0x12345678));
+    QVERIFY(QTest::qWaitFor([&] { return conn.isConnected(); }, 5000));
+    QVERIFY(!conn.isLowID());
+
+    // Reconnect from the top: A, then B give a LowID and are left
+    conn.connectToAnyServer();
+    QVERIFY(loginOn(a.listener, 0x00000042));
+    QVERIFY(loginOn(b.listener, 0x00000043));
+    QVERIFY(!conn.isConnected());
+
+    // Third LowID in a row is kept
+    QVERIFY(loginOn(c.listener, 0x00000044));
+    QVERIFY(QTest::qWaitFor([&] { return conn.isConnected(); }, 5000));
+    QVERIFY(connectedTo(conn, c));
+    QVERIFY(conn.isLowID());
+    conn.disconnect();
+}
+
+// A manual connect to one server keeps its LowID even when armed.
+void tst_ServerConnect::smartLowId_manualConnectKeepsLowID()
+{
+    const bool hadLanFilter = thePrefs.filterLANIPs();
+    thePrefs.setFilterLANIPs(false);
+    const auto restoreFilter = qScopeGuard([&] { thePrefs.setFilterLANIPs(hadLanFilter); });
+
+    ServerList list;
+    ListedLoopback a(list, QStringLiteral("A"));
+    ListedLoopback b(list, QStringLiteral("B"));
+    QVERIFY(a.entry && b.entry);
+
+    ServerConnect conn(list);
+    conn.setConfig(makeSmartIdConfig());
+
+    conn.connectToAnyServer();
+    QVERIFY(loginOn(a.listener, 0x12345678));
+    QVERIFY(QTest::qWaitFor([&] { return conn.isConnected(); }, 5000));
+    conn.disconnect();
+
+    conn.connectToServer(a.entry, false, true);
+    QVERIFY(loginOn(a.listener, 0x00000042));
+    QVERIFY(QTest::qWaitFor([&] { return conn.isConnected(); }, 5000));
+    QVERIFY(connectedTo(conn, a));
+    QVERIFY(conn.isLowID());
+    QTest::qWait(300);
+    QVERIFY(!b.listener.hasPendingConnections());
     conn.disconnect();
 }
 

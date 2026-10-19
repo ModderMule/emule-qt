@@ -61,7 +61,6 @@
 #include <QMessageBox>
 #include <QProcess>
 #include <QScrollBar>
-#include <QSettings>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
 #include <QPointer>
@@ -702,11 +701,8 @@ void TransferPanel::setupUi()
 
     // Restore both saved views. The top pane wins a clash, which also repairs a
     // bottomView written before the top pane could hold that list.
-    QSettings settings;
-    const int savedTop =
-        settings.value(QStringLiteral("transfer/topView"), TopView::Downloads).toInt();
-    const int savedBottom =
-        settings.value(QStringLiteral("transfer/bottomView"), ClientView::Uploading).toInt();
+    const int savedTop = theUiState.transferTopView(TopView::Downloads);
+    const int savedBottom = theUiState.transferBottomView(ClientView::Uploading);
     applyViews(savedTop, savedBottom, Pane::Top);
 
     // "Show additional toolbar on Transfers window"
@@ -2199,9 +2195,7 @@ void TransferPanel::applyViews(int topId, int clientView, Pane priority)
     // hidden, as MFC does (TransferWnd.cpp:1408), and only shown when not closed
     m_actionToolbar->setVisible(showingDownloads && theUiState.showDownloadToolbar());
 
-    QSettings settings;
-    settings.setValue(QStringLiteral("transfer/topView"), topId);
-    settings.setValue(QStringLiteral("transfer/bottomView"), clientView);
+    theUiState.setTransferViews(topId, clientView);
 
     updateToolbarLabels();
 

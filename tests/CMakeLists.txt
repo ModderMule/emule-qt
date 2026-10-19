@@ -579,6 +579,17 @@ target_include_directories(tst_CountryFlags PRIVATE
 target_link_libraries(tst_CountryFlags PRIVATE
     eMule::Core eMule::Ipc Qt6::Widgets)
 
+# uistate.yml search/transfer keys and the one-time import from QSettings (issue #25).
+emule_add_test(tst_UiState FOLDER "Gui"
+    SOURCES tst_UiState.cpp
+            "${CMAKE_SOURCE_DIR}/src/gui/app/UiState.cpp")
+target_include_directories(tst_UiState PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/gui"
+    "${CMAKE_SOURCE_DIR}/src/core"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs")
+target_link_libraries(tst_UiState PRIVATE
+    eMule::Core Qt6::Widgets)
+
 # First start wizard: line type presets and the limits derived from them.
 emule_add_test(tst_ConnectionPresets FOLDER "Gui"
     SOURCES tst_ConnectionPresets.cpp)

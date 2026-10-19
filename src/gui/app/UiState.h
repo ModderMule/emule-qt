@@ -17,6 +17,7 @@
 #include <QSize>
 #include <QSplitter>
 #include <QString>
+#include <QStringList>
 #include <QTimer>
 #include <QTreeWidget>
 
@@ -234,6 +235,46 @@ public:
         scheduleSave();
     }
 
+    /// Search method used last, as a SearchType value; @p fallback before the first search.
+    [[nodiscard]] int searchLastMethod(int fallback) const
+    {
+        return m_searchLastMethod >= 0 ? m_searchLastMethod : fallback;
+    }
+    void setSearchLastMethod(int type)
+    {
+        if (m_searchLastMethod == type)
+            return;
+        m_searchLastMethod = type;
+        scheduleSave();
+    }
+
+    /// Search box auto completion history, newest first.
+    [[nodiscard]] const QStringList& searchHistory() const { return m_searchHistory; }
+    void setSearchHistory(const QStringList& history)
+    {
+        m_searchHistory = history;
+        scheduleSave();
+    }
+
+    /// Lists shown in the transfer window's two panes (TransferPanel view ids);
+    /// @p fallback when never saved.
+    [[nodiscard]] int transferTopView(int fallback) const
+    {
+        return m_transferTopView >= 0 ? m_transferTopView : fallback;
+    }
+    [[nodiscard]] int transferBottomView(int fallback) const
+    {
+        return m_transferBottomView >= 0 ? m_transferBottomView : fallback;
+    }
+    void setTransferViews(int top, int bottom)
+    {
+        if (m_transferTopView == top && m_transferBottomView == bottom)
+            return;
+        m_transferTopView = top;
+        m_transferBottomView = bottom;
+        scheduleSave();
+    }
+
     /// Number of statistics colours, in MFC's index order
     /// (srchybrid/Preferences.h:198 — m_adwStatsColors[15]), plus our own slots
     /// appended after MFC's: 15 is the Download graph's Usenet line.
@@ -261,6 +302,9 @@ private:
     /// Shared by all eight bind*Splitter() entry points.
     void bindSplitter(QSplitter* splitter, QList<int>& sizes);
 
+    /// One-time move of the keys older builds kept in the platform QSettings store
+    /// (~/.config/eMule/GUI.conf, a macOS plist, the registry), which ignored --config.
+    void importLegacySettings();
 
     QList<int> m_serverSplitSizes;
     QList<int> m_kadSplitSizes;
@@ -294,6 +338,10 @@ private:
     bool m_searchShowKad = true;
     bool m_searchShowTorrent = true;
     bool m_searchShowWeb = true;
+    int  m_searchLastMethod = -1;     ///< -1 = never saved
+    QStringList m_searchHistory;
+    int  m_transferTopView = -1;      ///< -1 = never saved
+    int  m_transferBottomView = -1;
     std::array<QColor, kStatsColorCount> m_statsColors = defaultStatsColors();
     QMap<QString, QByteArray> m_headerStates;
     QMap<QString, bool> m_sortValues;

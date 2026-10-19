@@ -106,6 +106,7 @@ private slots:
     void web_differentIdentity();
     void web_reject();
     void web_parseHints();
+    void web_onionLinks();
     void container_identityAndVerify();
     void container_formats();
     void grpcweb_frameRoundTrip();
@@ -414,6 +415,25 @@ void tst_EnodeMeta::web_parseHints()
     QCOMPARE(set->links[1].name, QString());
     QCOMPARE(set->links[1].size, uint64{0});
     QCOMPARE(set->fileCount(), 2);
+}
+
+void tst_EnodeMeta::web_onionLinks()
+{
+    // The container and row hash eNode-go's TestFetcherServesOnionLinks serves:
+    // a link on a hidden service is a link like any other.
+    const QByteArray onion = "http://abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion/f/ccc1";
+    const QByteArray container = "#title: Hidden.Release.2026\r\n#file: 0\r\n#name: hidden.release.mkv\r\n"
+                                 "#hoster: onionhost\r\n" + onion + "\r\n"
+                                 "#file: 0\r\n#hoster: examplehost\r\nhttps://examplehost.test/f/ccc1\r\n";
+    const QByteArray raw = QByteArray::fromHex("ED2B0152000013154985543455F8FA85");
+
+    const auto set = parseWebLinks(container);
+    QVERIFY2(set, qPrintable(set ? QString() : set.error()));
+    QCOMPARE(set->links.size(), 2);
+    QCOMPARE(set->links[0].url, onion);
+    QCOMPARE(set->links[0].hoster, QStringLiteral("onionhost"));
+    QCOMPARE(*canonicalLink("HTTP://ABCDEFGHIJKLMNOPQRSTUVWXYZ234567abcdefghijklmnopqrstuvwx.ONION:80/f/ccc1"), onion);
+    QVERIFY(verifyMetaFile(reinterpret_cast<const uint8*>(raw.constData()), container));
 }
 
 void tst_EnodeMeta::container_identityAndVerify()

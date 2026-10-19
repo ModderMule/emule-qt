@@ -586,23 +586,18 @@ void ServerPanel::setupUi()
     mainLayout->setContentsMargins(2, 2, 2, 2);
     mainLayout->setSpacing(0);
 
-    m_vertSplitter = new QSplitter(Qt::Vertical, this);
+    // MFC layout (CServerWnd): controls column spans the full height on the
+    // right; the log sits only under the server list (issue #33)
+    m_vertSplitter = new QSplitter(Qt::Vertical);
     m_vertSplitter->setHandleWidth(4);
     m_vertSplitter->setChildrenCollapsible(false);
     m_vertSplitter->setStyleSheet(
         QStringLiteral("QSplitter::handle { background: palette(mid); }"));
 
-    // Top section: server list (left) + controls (right)
-    auto* topSplitter = new QSplitter(Qt::Horizontal);
-    topSplitter->addWidget(createServerListPanel());
-    topSplitter->addWidget(createControlsPanel());
-    topSplitter->setStretchFactor(0, 4);
-    topSplitter->setStretchFactor(1, 1);
-
-    // Bottom section: log tabs
+    // Left column: server list (top) + log tabs (bottom)
     m_logWidget = new LogWidget;
 
-    m_vertSplitter->addWidget(topSplitter);
+    m_vertSplitter->addWidget(createServerListPanel());
     m_vertSplitter->addWidget(m_logWidget);
     m_vertSplitter->setStretchFactor(0, 2);
     m_vertSplitter->setStretchFactor(1, 1);
@@ -612,7 +607,14 @@ void ServerPanel::setupUi()
     // Restore saved splitter position and auto-save on change
     theUiState.bindServerSplitter(m_vertSplitter);
 
-    mainLayout->addWidget(m_vertSplitter);
+    auto* horzSplitter = new QSplitter(Qt::Horizontal, this);
+    horzSplitter->setChildrenCollapsible(false);
+    horzSplitter->addWidget(m_vertSplitter);
+    horzSplitter->addWidget(createControlsPanel());
+    horzSplitter->setStretchFactor(0, 4);
+    horzSplitter->setStretchFactor(1, 1);
+
+    mainLayout->addWidget(horzSplitter);
 }
 
 QWidget* ServerPanel::createServerListPanel()
@@ -793,13 +795,11 @@ QWidget* ServerPanel::createControlsPanel()
     infoScroll->setMinimumHeight(40);
     infoScroll->viewport()->setAutoFillBackground(false);
     m_infoLabel->setAutoFillBackground(false);
+    // My Info fills the rest of the full-height column, as in MFC
     layout->addWidget(infoScroll, 1);
 
-    layout->addStretch();
-
-    // The whole column scrolls too: its full height would otherwise be the top
-    // pane's minimum and stop the log splitter there. MFC lets the log grow to
-    // 100 px below the top (CServerWnd::InitSplitter, ServerWnd.cpp:776).
+    // The whole column scrolls too: its full height would otherwise pin the
+    // main window's minimum height.
     auto* scroll = new QScrollArea;
     scroll->setWidget(widget);
     scroll->setWidgetResizable(true);

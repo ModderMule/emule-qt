@@ -40,9 +40,10 @@
 ///      encrypted OP_LoginRequest, holds the socket open, but never returns
 ///      OP_IDCHANGE — so the client waits out the whole timeout. Plain login to
 ///      the same host works. Hence the plain default here.
-///   2. Smart-LowID (ServerConnectConfig::smartLowIdCheck, default true) makes a
-///      firewalled client DISCONNECT on every LowID and retry another server,
-///      never settling. Turned OFF here so the assigned ID can be measured.
+///   2. Smart-LowID (ServerConnectConfig::smartLowIdCheck, default true) leaves a
+///      server that gives a LowID, but only after a HighID this run, and at most
+///      twice in a row (see tst_ServerConnect smartLowId_*). Turned OFF here so the
+///      first assigned ID is the one measured.
 ///   3. Public servers tarpit repeated connection storms — hammering the same
 ///      IPs in quick succession degrades to full-timeout hangs. Run sparingly.
 ///

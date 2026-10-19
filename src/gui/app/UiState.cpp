@@ -6,7 +6,11 @@
 
 #include <QAbstractItemView>
 #include <QItemSelectionModel>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QSaveFile>
+#include <QSettings>
 
 #include <yaml-cpp/yaml.h>
 
@@ -67,7 +71,7 @@ void UiState::load(const QString& configDir)
     try {
         YAML::Node root = YAML::LoadFile(path.toStdString());
         if (!root.IsMap())
-            return;
+            root = YAML::Node(YAML::NodeType::Map);   // empty file: defaults, still import below
 
         m_serverSplitSizes     = readIntList(root, "serverSplitSizes");
         m_kadSplitSizes        = readIntList(root, "kadSplitSizes");
@@ -105,6 +109,14 @@ void UiState::load(const QString& configDir)
         m_searchShowKad = root["searchShowKad"].as<bool>(m_searchShowKad);
         m_searchShowTorrent = root["searchShowTorrent"].as<bool>(m_searchShowTorrent);
         m_searchShowWeb = root["searchShowWeb"].as<bool>(m_searchShowWeb);
+        m_searchLastMethod = root["searchLastMethod"].as<int>(m_searchLastMethod);
+        m_transferTopView = root["transferTopView"].as<int>(m_transferTopView);
+        m_transferBottomView = root["transferBottomView"].as<int>(m_transferBottomView);
+        if (auto hist = root["searchHistory"]; hist && hist.IsSequence()) {
+            m_searchHistory.clear();
+            for (const auto& item : hist)
+                m_searchHistory.append(QString::fromStdString(item.as<std::string>()));
+        }
 
         m_toolbarButtonOrder = readIntList(root, "toolbarButtonOrder");
 
@@ -141,6 +153,8 @@ void UiState::load(const QString& configDir)
         logWarning(QStringLiteral("Failed to parse uistate.yml: %1 — using defaults")
                        .arg(QString::fromStdString(ex.what())));
     }
+
+    importLegacySettings();
 }
 
 void UiState::save()
@@ -209,6 +223,18 @@ void UiState::save(const QString& configDir)
     out << YAML::Key << "searchShowKad" << YAML::Value << m_searchShowKad;
     out << YAML::Key << "searchShowTorrent" << YAML::Value << m_searchShowTorrent;
     out << YAML::Key << "searchShowWeb" << YAML::Value << m_searchShowWeb;
+    if (m_searchLastMethod >= 0)
+        out << YAML::Key << "searchLastMethod" << YAML::Value << m_searchLastMethod;
+    if (m_transferTopView >= 0)
+        out << YAML::Key << "transferTopView" << YAML::Value << m_transferTopView;
+    if (m_transferBottomView >= 0)
+        out << YAML::Key << "transferBottomView" << YAML::Value << m_transferBottomView;
+    if (!m_searchHistory.isEmpty()) {
+        out << YAML::Key << "searchHistory" << YAML::Value << YAML::BeginSeq;
+        for (const QString& s : m_searchHistory)
+            out << s.toStdString();
+        out << YAML::EndSeq;
+    }
 
     if (!m_toolbarButtonOrder.isEmpty())
         writeIntList(out, "toolbarButtonOrder", m_toolbarButtonOrder);
@@ -534,6 +560,40 @@ void UiState::bindSplitter(QSplitter* splitter, QList<int>& sizes)
         sizes = splitter->sizes();
         scheduleSave();
     });
+}
+
+void UiState::importLegacySettings()
+{
+    // Default-constructed QSettings = the platform store, keyed by org/app name.
+    // Reading a store that does not exist creates nothing.
+    QSettings legacy;
+    legacy.setFallbacksEnabled(false);   // macOS would add global system keys
+    const QStringList keys = legacy.allKeys();
+    if (keys.isEmpty())
+        return;
+
+    // uistate.yml wins when it already holds a value
+    if (m_searchLastMethod < 0)
+        m_searchLastMethod = legacy.value(QStringLiteral("search/lastMethodType"), -1).toInt();
+    if (m_searchHistory.isEmpty())
+        m_searchHistory = legacy.value(QStringLiteral("search/history")).toStringList();
+    if (m_transferTopView < 0)
+        m_transferTopView = legacy.value(QStringLiteral("transfer/topView"), -1).toInt();
+    if (m_transferBottomView < 0)
+        m_transferBottomView = legacy.value(QStringLiteral("transfer/bottomView"), -1).toInt();
+
+    legacy.clear();
+    legacy.sync();
+#ifdef Q_OS_LINUX
+    // INI file ~/.config/eMule/GUI.conf: drop it, and its folder when empty.
+    // macOS plist / Windows registry are left to clear().
+    const QFileInfo file(legacy.fileName());
+    QFile::remove(file.absoluteFilePath());
+    QDir().rmdir(file.absolutePath());
+#endif
+    logInfo(QStringLiteral("Moved %1 GUI setting(s) from %2 to uistate.yml")
+                .arg(keys.size()).arg(legacy.fileName()));
+    save();
 }
 
 } // namespace eMule

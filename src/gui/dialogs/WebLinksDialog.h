@@ -28,6 +28,8 @@ public:
                    const QString& fileName, QWidget* parent = nullptr);
 
 private:
+    /// Whether any listed link is on a Tor hidden service.
+    [[nodiscard]] bool hasOnionLink() const;
     /// The selected links, or every link when none is selected.
     [[nodiscard]] QStringList chosenUrls() const;
     void copyLinks();

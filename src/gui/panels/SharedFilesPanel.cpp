@@ -71,6 +71,7 @@
 #include <QPushButton>
 #include <QScrollBar>
 #include <QSet>
+#include <QScrollArea>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QPointer>
@@ -929,6 +930,17 @@ QWidget* SharedFilesPanel::createBottomTabs()
 {
     m_bottomTabs = new QTabWidget;
 
+    // Pages scroll below their size hint: a tab widget is as tall as its tallest
+    // page, which would stop the splitter well above the tab bar (issue #31)
+    auto scrolled = [](QWidget* page) -> QWidget* {
+        auto* scroll = new QScrollArea;
+        scroll->setWidget(page);
+        scroll->setWidgetResizable(true);
+        scroll->setFrameShape(QFrame::NoFrame);
+        scroll->viewport()->setAutoFillBackground(false);
+        return scroll;
+    };
+
     // --- Statistics tab (flat grid with percentage bars, matching MFC) ---
     auto* statsWidget = new QWidget;
     auto* grid = new QGridLayout(statsWidget);
@@ -1043,7 +1055,7 @@ QWidget* SharedFilesPanel::createBottomTabs()
     grid->setColumnStretch(2, 1); // bars stretch
     grid->setColumnMinimumWidth(1, 60);
 
-    m_bottomTabs->addTab(statsWidget, QIcon(QStringLiteral(":/icons/FileInfo.ico")),
+    m_bottomTabs->addTab(scrolled(statsWidget), QIcon(QStringLiteral(":/icons/FileInfo.ico")),
                          tr("Statistics"));
 
     // --- Content tab (archive preview / media info) ---
@@ -1052,7 +1064,7 @@ QWidget* SharedFilesPanel::createBottomTabs()
     m_archivePreview = new ArchivePreviewPanel;
     m_contentStack->addWidget(m_mediaInfoPanel);   // index 0
     m_contentStack->addWidget(m_archivePreview);   // index 1
-    m_bottomTabs->addTab(m_contentStack, QIcon(QStringLiteral(":/icons/FileInfo.ico")),
+    m_bottomTabs->addTab(scrolled(m_contentStack), QIcon(QStringLiteral(":/icons/FileInfo.ico")),
                          tr("Content"));
 
     // --- eD2K Links tab (matching MFC CED2kLinkDlg layout) ---
@@ -1109,7 +1121,7 @@ QWidget* SharedFilesPanel::createBottomTabs()
     m_ed2kHostnameCheck->setToolTip(
         tr("Requires a hostname configured in Preferences, or a public IPv6"));
 
-    m_ed2kTabIndex = m_bottomTabs->addTab(ed2kWidget,
+    m_ed2kTabIndex = m_bottomTabs->addTab(scrolled(ed2kWidget),
                                           QIcon(QStringLiteral(":/icons/eD2kLink.ico")),
                                           tr("eD2K Links"));
 

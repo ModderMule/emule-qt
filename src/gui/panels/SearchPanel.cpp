@@ -57,7 +57,6 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
-#include <QSettings>
 #include <QSignalBlocker>
 #include <QSortFilterProxyModel>
 #include <QCheckBox>
@@ -164,9 +163,7 @@ void SearchPanel::setIpcClient(IpcClient* client)
     // Restore the last-used search method. Stored as the SearchType value, not the
     // combo index — startSearchFromExternal() already reads the combo as data, and an
     // index would silently mean a different method if the entries were ever reordered.
-    QSettings settings;
-    const int lastMethod = settings.value(QStringLiteral("search/lastMethodType"),
-                                          static_cast<int>(SearchType::Kademlia)).toInt();
+    const int lastMethod = theUiState.searchLastMethod(static_cast<int>(SearchType::Kademlia));
     if (const int idx = m_methodCombo->findData(lastMethod); idx >= 0)
         m_methodCombo->setCurrentIndex(idx);
 
@@ -570,8 +567,7 @@ void SearchPanel::onStartSearch()
     addToSearchHistory(req.expression);
 
     // Save last-used method, by type rather than by combo position
-    QSettings settings;
-    settings.setValue(QStringLiteral("search/lastMethodType"), m_methodCombo->currentData().toInt());
+    theUiState.setSearchLastMethod(m_methodCombo->currentData().toInt());
 
     if (req.method == static_cast<int>(SearchType::UsenetIndexer)) {
         sendIndexerSearchRequest(req);
@@ -2071,9 +2067,7 @@ void SearchPanel::setupAutoComplete()
 {
     m_historyModel = new QStringListModel(this);
 
-    QSettings settings;
-    const QStringList history = settings.value(QStringLiteral("search/history")).toStringList();
-    m_historyModel->setStringList(history);
+    m_historyModel->setStringList(theUiState.searchHistory());
 
     m_completer = new QCompleter(m_historyModel, this);
     m_completer->setCaseSensitivity(Qt::CaseInsensitive);
@@ -2088,16 +2082,15 @@ void SearchPanel::addToSearchHistory(const QString& expression)
     if (!thePrefs.useAutoCompletion() || expression.isEmpty())
         return;
 
-    QStringList list = m_historyModel->stringList();
+    // From UiState, not the model: Options > Reset may have cleared it since
+    QStringList list = theUiState.searchHistory();
     list.removeAll(expression);
     list.prepend(expression);
     if (list.size() > 50)
         list = list.mid(0, 50);
 
     m_historyModel->setStringList(list);
-
-    QSettings settings;
-    settings.setValue(QStringLiteral("search/history"), list);
+    theUiState.setSearchHistory(list);
 }
 
 // ---------------------------------------------------------------------------

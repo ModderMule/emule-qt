@@ -73,6 +73,14 @@ WebLinksDialog::WebLinksDialog(const QString& rowName, const QCborMap& links, co
     for (int c = ColFile; c < ColLink; ++c)
         m_list->resizeColumnToContents(c);
     layout->addWidget(m_list, 1);
+
+    if (hasOnionLink()) {
+        auto* note = new QLabel(tr("Links to .onion addresses are Tor hidden services. "
+                                   "Copy them into Tor Browser: other browsers cannot open them."), this);
+        note->setWordWrap(true);
+        note->setObjectName(QStringLiteral("onionNote"));
+        layout->addWidget(note);
+    }
     connect(m_list, &QTreeWidget::itemDoubleClicked, this, [](QTreeWidgetItem* item) {
         QDesktopServices::openUrl(QUrl(item->text(ColLink), QUrl::StrictMode));
     });
@@ -95,6 +103,16 @@ WebLinksDialog::WebLinksDialog(const QString& rowName, const QCborMap& links, co
 // ---------------------------------------------------------------------------
 // private
 // ---------------------------------------------------------------------------
+
+bool WebLinksDialog::hasOnionLink() const
+{
+    for (int i = 0; i < m_list->topLevelItemCount(); ++i) {
+        const QString host = QUrl(m_list->topLevelItem(i)->text(ColLink)).host();
+        if (host.endsWith(QLatin1String(".onion"), Qt::CaseInsensitive))
+            return true;
+    }
+    return false;
+}
 
 QStringList WebLinksDialog::chosenUrls() const
 {
