@@ -57,6 +57,8 @@ public:
         bool standbyChanged = false;
         bool categoriesChanged = false;
         PortApplyResult ports = PortApplyResult::Unchanged;
+        BindApplyResult network = BindApplyResult::Unchanged;   ///< bindAddress change
+        bool usenetChanged = false;   ///< a usenet* value moved: the session re-reads them
     };
     static PrefApplyOutcome applyPreferenceChanges(const PrefChanges& changes);
     [[nodiscard]] static QCborArray categoryList();

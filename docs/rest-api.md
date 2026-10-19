@@ -93,6 +93,20 @@ once, connected or not; UDP switched on/off then applies too, unless the daemon 
 The web server's own port is not touched. There is no restart route: `POST /api/v1/app/shutdown`
 and let a supervisor (Docker, systemd) start it again.
 
+`bindAddress` needs no restart. The reply says in `network` what the change did:
+
+| `network.result` | Meaning |
+|---|---|
+| `unchanged` | no change, or it resolves to the interface the sockets are already on |
+| `reopened` | every connection was closed and the sockets reopened on the new interface; eD2K and Kad reconnect (new client ID, Kad firewall re-checked), port mapping restarts |
+| `waiting` | the interface is not present: nothing connects until it appears, then it reconnects by itself |
+
+Every other writable key takes effect at once except the ones the schema marks
+`restartRequired`: `port`/`udpPort` while connected (see above) and `useSecureIdent`. A few apply
+to what comes next by design and say so: `networkED2K`, `kadEnabled`, `autoConnect` and
+`autoUpdateServerList` act at start; `autoDownloadPriority`/`autoSharedFilesPriority` act on
+new files; obfuscation switches act on new connections.
+
 ## MCP
 
 `POST /mcp` speaks the Model Context Protocol over streamable HTTP, stateless, tools only, in

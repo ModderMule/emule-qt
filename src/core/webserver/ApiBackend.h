@@ -44,6 +44,7 @@ public:
     struct PrefApplyReport {
         ops::Status status;
         PortApplyResult ports = PortApplyResult::Unchanged;   ///< what became of a port change
+        BindApplyResult network = BindApplyResult::Unchanged;   ///< what a bindAddress change did
         uint16 tcpPort = 0;   ///< listening now; 0 = closed
         uint16 udpPort = 0;
     };

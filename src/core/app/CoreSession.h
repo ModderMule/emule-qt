@@ -104,7 +104,7 @@ public:
     /// While it does not resolve the networks stay down; the daemon keeps running.
     /// Reopening binds the configured ports, so a port change rides along: the result
     /// says what became of it (Unchanged when the ports stayed the same).
-    PortApplyResult applyBindSelection();
+    BindApplyReport applyBindSelection();
     [[nodiscard]] bool isNetworkSuspended() const { return m_netSuspended; }
 
     /// Listen ports that did not open at start(): portBindFailed fires before anyone

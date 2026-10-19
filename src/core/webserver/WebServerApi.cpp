@@ -97,7 +97,6 @@ using L = QLatin1StringView;
     }
 }
 
-/// debug < info < warning < error < fatal — QtMsgType is not in that order.
 [[nodiscard]] QString portApplyResultName(PortApplyResult result)
 {
     switch (result) {
@@ -109,6 +108,17 @@ using L = QLatin1StringView;
     return s("unchanged");
 }
 
+[[nodiscard]] QString bindApplyResultName(BindApplyResult result)
+{
+    switch (result) {
+    case BindApplyResult::Reopened:  return s("reopened");
+    case BindApplyResult::Waiting:   return s("waiting");
+    case BindApplyResult::Unchanged: break;
+    }
+    return s("unchanged");
+}
+
+/// debug < info < warning < error < fatal — QtMsgType is not in that order.
 [[nodiscard]] int severityRank(const QString& name)
 {
     static const QStringList order{QStringLiteral("debug"), QStringLiteral("info"),
@@ -1186,7 +1196,11 @@ void WebServer::buildApiTable()
                             "values plus \"listenPorts\": {result, tcpPort, udpPort}, where "
                             "result is unchanged, applied, restartRequired (connected: the old "
                             "ports stay until a restart) or bindFailed (port in use: the old "
-                            "ports stay), and the ports are the ones listening now.");
+                            "ports stay), and the ports are the ones listening now. "
+                            "\"network\": {result} says what a bindAddress change did: "
+                            "unchanged, reopened (every connection closed, the networks "
+                            "reconnect on the new interface; no restart needed) or waiting "
+                            "(interface missing: nothing connects until it appears).");
         op.flags = FreeBody;
         op.mcpTool = s("preferences_set");
         op.handler = [this](const Call& c) {
@@ -1206,6 +1220,8 @@ void WebServer::buildApiTable()
                          QJsonObject{{s("result"), portApplyResultName(report.ports)},
                                      {s("tcpPort"), report.tcpPort},
                                      {s("udpPort"), report.udpPort}});
+            reply.insert(s("network"),
+                         QJsonObject{{s("result"), bindApplyResultName(report.network)}});
             return ok(reply);
         };
         add(op);

@@ -108,6 +108,18 @@ enum class PortApplyResult : uint8 {
     BindFailed = 3,       ///< new port could not be opened: old ports stay
 };
 
+/// What a changed bind selection led to (CoreSession::applyBindSelection).
+enum class BindApplyResult : uint8 {
+    Unchanged = 0,   ///< resolves to what the sockets are already on
+    Reopened = 1,    ///< every connection closed, sockets reopened, networks reconnecting
+    Waiting = 2,     ///< selection not present: networks down until it appears
+};
+
+struct BindApplyReport {
+    BindApplyResult network = BindApplyResult::Unchanged;
+    PortApplyResult ports = PortApplyResult::Unchanged;   ///< a port change the reopen picked up
+};
+
 } // namespace eMule
 
 // Needed so these cross a thread boundary in queued signals (UPnPWorker runs on

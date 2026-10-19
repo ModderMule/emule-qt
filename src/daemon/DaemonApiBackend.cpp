@@ -50,6 +50,7 @@ ApiBackend::PrefApplyReport DaemonApiBackend::applyPreferences(const PrefChanges
         IpcClientHandler::applyPreferenceChanges(changes);
     PrefApplyReport report;
     report.ports = outcome.ports;
+    report.network = outcome.network;
     // Same as the SetPreferences reply: where the sockets are, not the prefs
     report.tcpPort = theApp.listenSocket && theApp.listenSocket->isListening()
         ? theApp.listenSocket->connectedPort() : uint16{0};
@@ -63,10 +64,13 @@ ApiBackend::PrefApplyReport DaemonApiBackend::applyPreferences(const PrefChanges
     if (outcome.categoriesChanged)
         m_ipcServer->notifyCategoriesChanged();
     // Queued: the web server answering this request may be the thing that restarts.
-    QTimer::singleShot(0, m_ipcServer, [server = m_ipcServer, standby = outcome.standbyChanged] {
+    QTimer::singleShot(0, m_ipcServer, [server = m_ipcServer, standby = outcome.standbyChanged,
+                                        usenet = outcome.usenetChanged] {
         emit server->webServerConfigChanged();
         if (standby)
             emit server->standbyConfigChanged();
+        if (usenet)
+            emit server->usenetConfigChanged();
     });
     return report;
 }

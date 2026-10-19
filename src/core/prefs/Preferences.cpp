@@ -3106,7 +3106,7 @@ QCborMap Preferences::toIpcMap() const
     prefs.insert(QStringLiteral("usenetHealthMinPercent"),
                  static_cast<qint64>(usenetHealthMinPercent()));
     prefs.insert(QStringLiteral("usenetAutoAddPaused"), usenetAutoAddPaused());
-    // Read-only here: SetUsenetPaused is the only writer.
+    // GUI writes it with SetUsenetPaused; REST through SetPreferences
     prefs.insert(QStringLiteral("usenetPaused"), usenetPaused());
     prefs.insert(QStringLiteral("usenetUseProxy"), usenetUseProxy());
     prefs.insert(QStringLiteral("usenetSfvCheck"), usenetSfvCheck());

@@ -5,6 +5,7 @@
 #include "webserver/WebServer.h"
 #include "net/BindAddress.h"
 #include "net/ListenConflict.h"
+#include "webserver/ApiBackend.h"
 #include "webserver/ApiEventHub.h"
 #include "webserver/WebSessionManager.h"
 #include "webserver/WebTemplateEngine.h"
@@ -2318,6 +2319,43 @@ void WebServer::webOptionsAction(const QUrlQuery& form)
         return;
     }
 
+    m_webPrefsFailed = false;
+    // The daemon's own apply path: moves the ports when it can and says if not
+    if (m_apiBackend) {
+        const PrefChanges changes{
+            {QStringLiteral("nick"), nick},
+            {QStringLiteral("maxDownload"), qint64{maxDown}},
+            {QStringLiteral("maxUpload"), qint64{maxUp}},
+            {QStringLiteral("port"), qint64{port}},
+            {QStringLiteral("udpPort"), qint64{udpPort}},
+        };
+        const ApiBackend::PrefApplyReport report = m_apiBackend->applyPreferences(changes);
+        if (!report.status.ok()) {
+            m_webPrefsFailed = true;
+            m_webPrefsNotice = tr("Not saved: %1").arg(report.status.message);
+            return;
+        }
+        switch (report.ports) {
+        case PortApplyResult::Applied:
+            m_webPrefsNotice = tr("Saved. Now listening on TCP %1, UDP %2.")
+                                   .arg(report.tcpPort).arg(report.udpPort);
+            break;
+        case PortApplyResult::RestartRequired:
+            m_webPrefsNotice = tr("Saved. The new ports are used after a restart.");
+            break;
+        case PortApplyResult::BindFailed:
+            m_webPrefsFailed = true;
+            m_webPrefsNotice = tr("Saved, but a new port is in use. Still listening on TCP %1, "
+                                  "UDP %2.").arg(report.tcpPort).arg(report.udpPort);
+            break;
+        case PortApplyResult::Unchanged:
+            m_webPrefsNotice = tr("Saved.");
+            break;
+        }
+        return;
+    }
+
+    // No daemon behind it (tests): store only
     const bool portsChanged = port != m_preferences->port() || udpPort != m_preferences->udpPort();
     m_preferences->setNick(nick);
     m_preferences->setMaxDownload(maxDown);
@@ -2325,8 +2363,6 @@ void WebServer::webOptionsAction(const QUrlQuery& form)
     m_preferences->setPort(static_cast<uint16>(port));
     m_preferences->setUdpPort(static_cast<uint16>(udpPort));
     m_preferences->save();
-
-    // Same follow-ups as a save from the application's own options.
     if (theApp.scheduler)
         theApp.scheduler->saveOriginals();
     if (m_serverConnect) {
@@ -2334,8 +2370,6 @@ void WebServer::webOptionsAction(const QUrlQuery& form)
         cfg.userNick = nick;
         m_serverConnect->setConfig(cfg);
     }
-
-    m_webPrefsFailed = false;
     m_webPrefsNotice = portsChanged ? tr("Saved. The new ports are used after a restart.") : tr("Saved.");
 }
 

@@ -69,7 +69,9 @@ using Kind = PrefSpec::Kind;
                         "UDP. Moves at once while nothing is connected, otherwise at the next "
                         "start; switching UDP on or off always needs a restart."));
     t << text("bindAddress", 255, "Network interface, IP address or subnet all P2P traffic is bound "
-              "to. Empty = any. While the selected interface is missing nothing connects.");
+              "to. Empty = any. A change closes every connection and reconnects on the new "
+              "interface at once, no restart. While the selected interface is missing nothing "
+              "connects.");
 
     // --- Speed and connection limits ---
     t << number("maxUpload", 0, kMaxU32, "KiB/s", "Upload limit. 0 = unlimited.");
@@ -103,7 +105,8 @@ using Kind = PrefSpec::Kind;
                 "disabled.");
     t << flag("autoUpdateServerList", "Fetch the server list from serverListURL at start.");
     t << text("serverListURL", 2048, "URL of a server.met file. Empty = built-in default.");
-    t << text("nodesDatURL", 2048, "URL of a Kad nodes.dat file. Empty = built-in default.");
+    t << text("nodesDatURL", 2048, "URL of a Kad nodes.dat file the Kad window offers for a "
+              "bootstrap. Empty = built-in default.");
     t << flag("smartLowIdCheck", "Retry another server when one assigns a LowID.");
     t << flag("serverPreferIPv6", "Reconnect to a dual-stack server over IPv6 when IPv4 gives a LowID.");
     t << flag("manualServerHighPriority", "Give manually added servers high priority.");
@@ -132,7 +135,9 @@ using Kind = PrefSpec::Kind;
                        "require it."));
     t << flag("cryptLayerRequested", "Ask for obfuscated connections when the peer supports them.");
     t << flag("cryptLayerRequired", "Accept obfuscated connections only.");
-    t << flag("useSecureIdent", "Use secure user identification.");
+    // Keys are loaded at start only, as in MFC
+    t << restart(flag("useSecureIdent", "Use secure user identification. Takes effect at the next "
+                      "start."));
     t << flag("antiLeecher", "Check peers against the specialdlp anti-leecher rules.");
     t << number("antiLeecherLevel", 0, 2, "", "Anti-leecher level: 0 = lite (soft hits only reduce the "
                 "queue score), 1 = strict (soft hits are banned too), 2 = strict + Chinese VeryCD/easyMule mods.");

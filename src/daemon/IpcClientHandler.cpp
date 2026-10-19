@@ -1947,6 +1947,8 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
     const PrefApplyOutcome outcome = applyPreferenceChanges(changes);
     if (outcome.categoriesChanged)
         emit categoriesChanged();
+    if (outcome.usenetChanged)
+        emit usenetConfigChanged();
 
     // Notify web server config changes
     emit webServerConfigChanged();
@@ -1956,6 +1958,7 @@ void IpcClientHandler::handleSetPreferences(const IpcMessage& msg)
     // What became of a port change, and where the sockets are now
     QCborMap result;
     result.insert(QStringLiteral("ports"), static_cast<int>(outcome.ports));
+    result.insert(QStringLiteral("network"), static_cast<int>(outcome.network));
     result.insert(QStringLiteral("tcpPort"),
                   theApp.listenSocket && theApp.listenSocket->isListening()
                       ? theApp.listenSocket->connectedPort() : 0);
@@ -1973,6 +1976,10 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
     // the category folders that lived inside it (see below).
     const QString oldIncomingDir = thePrefs.incomingDir();
     const QString oldBind = thePrefs.bindAddress().trimmed();
+    const bool oldFilterServers = thePrefs.filterServerByIP();
+    const uint32 oldFilterLevel = thePrefs.ipFilterLevel();
+    // Usenet switches are copied into the session: tell it only when one moved
+    const QCborMap before = thePrefs.toIpcMap();
 
     // Detect whether shared directory / standby settings changed before saving
     bool sharedDirsChanged = false;
@@ -2009,13 +2016,27 @@ IpcClientHandler::PrefApplyOutcome IpcClientHandler::applyPreferenceChanges(cons
 
     outcome.categoriesChanged = rebaseCategoryDirs(oldIncomingDir);
 
+    const QCborMap after = thePrefs.toIpcMap();
+    for (const auto& [key, val] : changes) {
+        if (key.startsWith(QLatin1StringView("usenet")) && before.value(key) != after.value(key))
+            outcome.usenetChanged = true;
+    }
+
+    // MFC PPgSecurity::OnApply: a stricter server filter prunes the list at once
+    if (thePrefs.filterServerByIP() && theApp.serverList
+        && (!oldFilterServers || oldFilterLevel != thePrefs.ipFilterLevel()))
+        theApp.serverList->removeFilteredServers();
+
     outcome.saved = thePrefs.save();
 
     // Before the ServerConnect config below reads the bound port. A new bind
     // selection closes every socket and reopens it on the new interface; done after
     // the loop, so the ports of the same patch come along whatever the key order.
-    if (thePrefs.bindAddress().trimmed() != oldBind && theApp.onBindSelectionChanged)
-        outcome.ports = theApp.onBindSelectionChanged();
+    if (thePrefs.bindAddress().trimmed() != oldBind && theApp.onBindSelectionChanged) {
+        const BindApplyReport bind = theApp.onBindSelectionChanged();
+        outcome.network = bind.network;
+        outcome.ports = bind.ports;
+    }
     // Unchanged: no reopen, or blocked (suspended: applyListenPorts() records them)
     if (outcome.ports == PortApplyResult::Unchanged && theApp.applyListenPorts) {
         const PortApplyResult rest = theApp.applyListenPorts();
@@ -3808,6 +3829,8 @@ bool IpcClientHandler::applyPreferenceA(const QString& key, const QCborValue& va
         thePrefs.setAppToken(val.toString());
     else if (key == QStringLiteral("usenetEnabled"))
         thePrefs.setUsenetEnabled(val.toBool());
+    else if (key == QStringLiteral("usenetPaused"))   // the engine follows via usenetChanged
+        thePrefs.setUsenetPaused(val.toBool());
     else if (key == QStringLiteral("usenetRetryIntervalSeconds"))
         thePrefs.setUsenetRetryIntervalSeconds(int(val.toInteger()));
     else if (key == QStringLiteral("usenetDownloadSharePercent"))
@@ -3868,8 +3891,10 @@ bool IpcClientHandler::applyPreferenceB(const QString& key, const QCborValue& va
         thePrefs.setMaxServedBuddies(static_cast<uint16>(std::clamp<qint64>(val.toInteger(), 1, 32)));
     else if (key == QStringLiteral("serverKeepAliveTimeout"))
         thePrefs.setServerKeepAliveTimeout(static_cast<uint32>(val.toInteger()));
-    else if (key == QStringLiteral("filterLANIPs"))
+    else if (key == QStringLiteral("filterLANIPs")) {
         thePrefs.setFilterLANIPs(val.toBool());
+        Address::setLabNetworkMode(!val.toBool());   // IPv6 acceptance follows at once
+    }
     else if (key == QStringLiteral("checkDiskspace")) {
         thePrefs.setCheckDiskspace(val.toBool());
         if (theApp.downloadQueue)

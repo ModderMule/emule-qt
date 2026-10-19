@@ -136,32 +136,32 @@ void CoreSession::stop()
     theApp.loading = false;
 }
 
-PortApplyResult CoreSession::applyBindSelection()
+BindApplyReport CoreSession::applyBindSelection()
 {
     // Compared with what the sockets were opened on, not with the resolver's cache:
     // any socket asking in between has already refreshed that.
     BindAddress::refresh();
     const BindAddress::Resolution now = BindAddress::current();
     const bool allowed = now.state != BindAddress::State::Blocked;
-    if (now == m_appliedBind && m_netSuspended != allowed)
-        return PortApplyResult::Unchanged;   // nothing new: still fine, or still waiting
+    if (now == m_appliedBind && m_netSuspended != allowed)   // nothing new: still fine, or still waiting
+        return {allowed ? BindApplyResult::Unchanged : BindApplyResult::Waiting};
     m_appliedBind = now;
     const uint16 tcpBefore = m_appliedTcpPort;
     const uint16 udpBefore = m_appliedUdpPort;
     // Sockets pinned to the previous interface are dead or on the wrong one.
     if (!m_netSuspended)
         suspendNetworking();
-    if (!allowed)
-        return PortApplyResult::Unchanged;   // applyListenPorts() records them for the resume
+    if (!allowed)   // applyListenPorts() records the ports for the resume
+        return {BindApplyResult::Waiting};
     resumeNetworking();
 
     // resumeNetworking() opened the configured ports
     if (m_appliedTcpPort == tcpBefore && m_appliedUdpPort == udpBefore)
-        return PortApplyResult::Unchanged;
+        return {BindApplyResult::Reopened};
     const bool tcpOk = boundTcpPort() == m_appliedTcpPort;
     const bool udpOk = boundUdpPort() == m_appliedUdpPort;   // 0 = off and closed
     if (tcpOk && udpOk)
-        return PortApplyResult::Applied;
+        return {BindApplyResult::Reopened, PortApplyResult::Applied};
 
     // UDP switched on without a socket object: only a start creates one
     const bool udpToggled = (m_appliedUdpPort == 0) != (udpBefore == 0);
@@ -184,12 +184,12 @@ PortApplyResult CoreSession::applyBindSelection()
     }
     updatePortMappings();
     if (tcpOk && udpToggled)
-        return PortApplyResult::RestartRequired;
+        return {BindApplyResult::Reopened, PortApplyResult::RestartRequired};
     logError(QStringLiteral("Port change failed (TCP %1, UDP %2) — port in use? Listening on "
                             "TCP %3, UDP %4.")
                  .arg(thePrefs.port()).arg(thePrefs.udpPort())
                  .arg(boundTcpPort()).arg(boundUdpPort()));
-    return PortApplyResult::BindFailed;
+    return {BindApplyResult::Reopened, PortApplyResult::BindFailed};
 }
 
 void CoreSession::stopWorkerThreads()

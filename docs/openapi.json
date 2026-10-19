@@ -2899,7 +2899,7 @@
                 "x-mcp-tool": "preferences_get"
             },
             "patch": {
-                "description": "A JSON object of key and new value. Every key is checked against the schema first; one bad value and nothing is changed. Applied at once unless the schema says restartRequired. The reply holds the new values plus \"listenPorts\": {result, tcpPort, udpPort}, where result is unchanged, applied, restartRequired (connected: the old ports stay until a restart) or bindFailed (port in use: the old ports stay), and the ports are the ones listening now.",
+                "description": "A JSON object of key and new value. Every key is checked against the schema first; one bad value and nothing is changed. Applied at once unless the schema says restartRequired. The reply holds the new values plus \"listenPorts\": {result, tcpPort, udpPort}, where result is unchanged, applied, restartRequired (connected: the old ports stay until a restart) or bindFailed (port in use: the old ports stay), and the ports are the ones listening now. \"network\": {result} says what a bindAddress change did: unchanged, reopened (every connection closed, the networks reconnect on the new interface; no restart needed) or waiting (interface missing: nothing connects until it appears).",
                 "operationId": "preferences.patch",
                 "requestBody": {
                     "content": {

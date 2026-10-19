@@ -1339,6 +1339,21 @@ void tst_WebServer::rest_patchPortsReportsListenPorts()
     QCOMPARE(plain.json.object().value(QStringLiteral("listenPorts"))
                  .toObject().value(QStringLiteral("result")).toString(),
              QStringLiteral("unchanged"));
+    QCOMPARE(plain.json.object().value(QStringLiteral("network"))
+                 .toObject().value(QStringLiteral("result")).toString(),
+             QStringLiteral("unchanged"));
+
+    // A bind change reconnects live: no restart
+    const QString bind = m_preferences->bindAddress();
+    const auto restoreBind = qScopeGuard([&] { m_preferences->setBindAddress(bind); });
+    m_apiBackend.nextPrefReport.network = BindApplyResult::Reopened;
+    const auto rebound = sendRequest(QByteArrayLiteral("PATCH"),
+                                     QStringLiteral("/api/v1/preferences"),
+                                     QByteArrayLiteral(R"({"bindAddress":"lo0"})"));
+    QCOMPARE(rebound.statusCode, 200);
+    QCOMPARE(rebound.json.object().value(QStringLiteral("network"))
+                 .toObject().value(QStringLiteral("result")).toString(),
+             QStringLiteral("reopened"));
 }
 
 void tst_WebServer::rest_unknownSearchResultsIs404()
@@ -3139,6 +3154,23 @@ void tst_WebServer::webOptionsForm_savesOrChangesNothing()
     QCOMPARE(m_preferences->udpPort(), uint16{4001});
     page = rawGetBody(port, QStringLiteral("/?ses=%1&w=options").arg(admin));
     QVERIFY(page.contains(QStringLiteral("value=\"Web Nick\"")));
+
+    // With a daemon behind it: its apply path, and the page says where it listens
+    const auto restoreUdp = qScopeGuard([&, udp = m_preferences->udpPort()] {
+        m_preferences->setUdpPort(udp);
+        m_apiBackend.nextPrefReport = {};
+        server->setApiBackend(nullptr);
+    });
+    server->setApiBackend(&m_apiBackend);
+    m_apiBackend.calls.clear();
+    m_apiBackend.nextPrefReport.ports = PortApplyResult::Applied;
+    m_apiBackend.nextPrefReport.tcpPort = 4002;
+    m_apiBackend.nextPrefReport.udpPort = 4003;
+    submit(admin, "nick=Web+Nick&maxdown=500&maxup=50&port=4002&udpport=4003");
+    QVERIFY(m_apiBackend.calls.contains(QStringLiteral("pref:port")));
+    QCOMPARE(m_preferences->port(), uint16{4002});
+    page = rawGetBody(port, QStringLiteral("/?ses=%1&w=options").arg(admin));
+    QVERIFY2(page.contains(QStringLiteral("TCP 4002, UDP 4003")), qPrintable(page.left(4000)));
 
     server->stop();
 }

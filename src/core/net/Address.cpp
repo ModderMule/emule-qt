@@ -114,7 +114,7 @@ QString Address::toString() const
 // ============================================================================
 
 namespace {
-/// Set once at startup from !thePrefs.filterLANIPs(); read from every isPublicIP() call,
+/// Set from !thePrefs.filterLANIPs() at startup and on change; read from every isPublicIP() call,
 /// including ones on the socket threads, hence atomic. net/ must not depend on prefs/, so
 /// the value is pushed in rather than pulled.
 std::atomic<bool> g_labNetworkMode{false};
