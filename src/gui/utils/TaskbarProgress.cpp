@@ -5,7 +5,8 @@
 #include "utils/TaskbarProgress.h"
 
 #include <QPainter>
-#include <QRect>
+#include <QPen>
+#include <QRectF>
 
 #include <algorithm>
 
@@ -34,12 +35,21 @@ TaskbarProgressValue computeTaskbarProgress(qint64 totalSize, qint64 totalDone,
 QColor dockProgressColor(TaskbarState state)
 {
     switch (state) {
-    case TaskbarState::Normal: return QColor(0x2f, 0x7f, 0xf0);
-    case TaskbarState::Paused: return QColor(0xf0, 0xb4, 0x00);
-    case TaskbarState::Error:  return QColor(0xe0, 0x30, 0x30);
+    case TaskbarState::Normal: return QColor(0x35, 0x74, 0xf0);
+    case TaskbarState::Paused: return QColor(0xf0, 0xa7, 0x32);
+    case TaskbarState::Error:  return QColor(0xe5, 0x48, 0x4d);
     case TaskbarState::None:   break;
     }
     return {};
+}
+
+QRectF dockProgressTrackRect(int sizePx)
+{
+    const qreal size = std::max(16, sizePx);
+    const qreal height = std::max(4.0, size * 0.12);
+    const qreal side = size * 0.12;
+    const qreal bottom = size * 0.08;
+    return {side, size - bottom - height, size - 2 * side, height};
 }
 
 QPixmap renderDockProgressIcon(const QIcon& base, const TaskbarProgressValue& value, int sizePx)
@@ -62,17 +72,28 @@ QPixmap renderDockProgressIcon(const QIcon& base, const TaskbarProgressValue& va
     }
 
     if (value.state != TaskbarState::None) {
-        // Bar along the bottom, like Finder's copy progress on the Dock
-        const int margin = size / 10;
-        const int border = std::max(1, size / 64);
-        const QRect outer(margin, size - margin - size / 8, size - 2 * margin, size / 8);
-        painter.fillRect(outer, QColor(0xf0, 0xf0, 0xf0));
-        const QRect inner = outer.adjusted(border, border, -border, -border);
-        painter.fillRect(inner, QColor(0x40, 0x40, 0x40));
-        const int filled = inner.width() * std::clamp(value.permille, 0, 1000) / 1000;
-        if (filled > 0)
-            painter.fillRect(QRect(inner.left(), inner.top(), filled, inner.height()),
-                             dockProgressColor(value.state));
+        // Pill along the bottom, like JetBrains IDEs while indexing
+        painter.setRenderHint(QPainter::Antialiasing);
+        const QRectF track = dockProgressTrackRect(size);
+        const qreal outline = std::max(1.0, size / 128.0);
+        const qreal radius = track.height() / 2;
+
+        painter.setPen(QPen(QColor(0, 0, 0, 110), outline));
+        painter.setBrush(QColor(0xe8, 0xe8, 0xe8));
+        painter.drawRoundedRect(track.adjusted(outline / 2, outline / 2, -outline / 2, -outline / 2),
+                                radius, radius);
+
+        // Inset fill, never narrower than its height so it stays round
+        const qreal pad = std::max(outline * 1.5, track.height() / 6);
+        const QRectF inner = track.adjusted(pad, pad, -pad, -pad);
+        const int permille = std::clamp(value.permille, 0, 1000);
+        if (permille > 0) {
+            const qreal width = std::max(inner.height(), inner.width() * permille / 1000.0);
+            const qreal r = inner.height() / 2;
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(dockProgressColor(value.state));
+            painter.drawRoundedRect(QRectF(inner.left(), inner.top(), width, inner.height()), r, r);
+        }
     }
     painter.end();
     return canvas;

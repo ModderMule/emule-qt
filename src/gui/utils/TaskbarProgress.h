@@ -15,6 +15,7 @@
 
 #include <QIcon>
 #include <QPixmap>
+#include <QRectF>
 #include <QtGlobal>
 
 #include <cstdint>
@@ -46,6 +47,9 @@ struct TaskbarProgressValue {
 
 /// Bar colour of the painted Dock progress for @p state.
 [[nodiscard]] QColor dockProgressColor(TaskbarState state);
+
+/// Outer rect of the rounded Dock progress track on a @p sizePx icon.
+[[nodiscard]] QRectF dockProgressTrackRect(int sizePx);
 
 /// @p base at @p sizePx with a progress bar along its bottom. None returns the
 /// plain icon. Pure painting, so it is tested on every platform.

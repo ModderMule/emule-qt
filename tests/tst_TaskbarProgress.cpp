@@ -38,7 +38,7 @@ QIcon blankIcon()
 }
 
 /// Row through the middle of the bar, see renderDockProgressIcon()
-int barRow(int size) { return size - size / 10 - size / 16; }
+int barRow(int size) { return static_cast<int>(dockProgressTrackRect(size).center().y()); }
 
 } // anonymous namespace
 

@@ -519,6 +519,25 @@ void tst_PartFile::chunkSelection_previewBeatsVeryRare()
         QVERIFY2(part == 0 || part == 19, qPrintable(QString::number(part)));
     }
 
+    // Issue #34 follow-up: 3 copies of every part, nothing looks rare in the GUI;
+    // still very rare for the picker (bound is at least 3), preview must win
+    for (int i = 0; i < 20; ++i) {
+        PartFile pf;
+        pf.setFileName(QStringLiteral("movie.mkv"));
+        pf.setFileSize(PARTSIZE * 20);
+        uint8 hash[16] = {1};
+        pf.setFileHash(hash);
+        std::ranges::fill(pf.srcPartFrequency(), uint16{3});
+
+        UpDownClient client;
+        client.setCompleteSource(true);
+        Requested_Block_Struct* blocks[1] = {};
+        int count = 1;
+        QVERIFY(pf.getNextRequestedBlock(&client, blocks, count));
+        const uint64 part = blocks[0]->startOffset / PARTSIZE;
+        QVERIFY2(part == 0 || part == 19, qPrintable(QString::number(part)));
+    }
+
     // Not a preview type: rarest wins as before
     QCOMPARE(firstPickedPart(20, [](PartFile& pf) {
         auto& freq = pf.srcPartFrequency();

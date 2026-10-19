@@ -103,6 +103,38 @@ set_target_properties(emuleqt PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 
+# Dev builds: keep the helpers inside emuleqt.app current. The GUI launches the
+# emulecored next to itself first, so a copy left by bundle-macos.sh went stale.
+# Path built by hand: a genex naming emuleqt here would make it depend on itself.
+if(APPLE)
+    get_property(_emule_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+    if(_emule_multi_config)
+        set(_emule_bundle_dir "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/emuleqt.app/Contents")
+    else()
+        set(_emule_bundle_dir "${CMAKE_CURRENT_BINARY_DIR}/emuleqt.app/Contents")
+    endif()
+    set(_emule_bundle_cmds
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${_emule_bundle_dir}/MacOS"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:emulecored> "${_emule_bundle_dir}/MacOS/emulecored")
+    if(TARGET emuleqt-mcp)
+        list(APPEND _emule_bundle_cmds
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_FILE:emuleqt-mcp> "${_emule_bundle_dir}/MacOS/emuleqt-mcp")
+    endif()
+    if(TARGET specialdlp)
+        list(APPEND _emule_bundle_cmds
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${_emule_bundle_dir}/Frameworks"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_FILE:specialdlp> "${_emule_bundle_dir}/Frameworks/libspecialdlp.dylib")
+    endif()
+    add_custom_target(emuleqt_bundle_helpers ${_emule_bundle_cmds}
+        COMMENT "Refreshing helpers in emuleqt.app"
+        VERBATIM)
+    set_target_properties(emuleqt_bundle_helpers PROPERTIES FOLDER "Gui")
+    add_dependencies(emuleqt emuleqt_bundle_helpers)
+endif()
+
 # -- Precompiled header -------------------------------------------------------
 # Independent PCH for the GUI — cannot REUSE_FROM emulecore because emuleqt
 # links Qt6::Widgets (different include paths / compile flags).
